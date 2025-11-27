@@ -6,7 +6,10 @@ import {
   extractRequestMetadata,
   insertMessageToBigQuery,
 } from './helpers'
-import { OpenRouterStreamChatCompletionChunkSchema } from './type/openrouter'
+import {
+  OpenRouterErrorResponseSchema,
+  OpenRouterStreamChatCompletionChunkSchema,
+} from './type/openrouter'
 
 import type { UsageData } from './helpers'
 import type { OpenRouterStreamChatCompletionChunk } from './type/openrouter'
@@ -14,7 +17,6 @@ import type { InsertMessageBigqueryFn } from '@codebuff/common/types/contracts/b
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 
 type StreamState = { responseText: string; reasoningText: string }
-
 function createOpenRouterRequest(params: {
   body: any
   openrouterApiKey: string | null
@@ -93,9 +95,9 @@ export async function handleOpenRouterNonStream({
 
     const responses = await Promise.all(requests)
     if (responses.every((r) => !r.ok)) {
-      throw new Error(
-        `Failed to make all ${n} requests: ${responses.map((r) => r.statusText).join(', ')}`,
-      )
+      // Return provider-specific error from the first failed response
+      const firstFailedResponse = responses[0]
+      throw await parseOpenRouterError(firstFailedResponse)
     }
     const allData = await Promise.all(responses.map((r) => r.json()))
 
@@ -183,9 +185,7 @@ export async function handleOpenRouterNonStream({
   })
 
   if (!response.ok) {
-    throw new Error(
-      `OpenRouter API error (${response.statusText}): ${await response.text()}`,
-    )
+    throw await parseOpenRouterError(response)
   }
 
   const data = await response.json()
@@ -261,9 +261,7 @@ export async function handleOpenRouterStream({
   })
 
   if (!response.ok) {
-    throw new Error(
-      `OpenRouter API error (${response.statusText}): ${await response.text()}`,
-    )
+    throw await parseOpenRouterError(response)
   }
 
   const reader = response.body?.getReader()
@@ -531,4 +529,85 @@ async function handleStreamChunk({
   state.responseText += choice.delta?.content ?? ''
   state.reasoningText += choice.delta?.reasoning ?? ''
   return state
+}
+
+/**
+ * Custom error class for OpenRouter API errors that preserves provider-specific details.
+ */
+export class OpenRouterError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    public readonly statusText: string,
+    public readonly errorBody: {
+      error: {
+        message: string
+        code: string | number | null
+        type?: string | null
+        param?: unknown
+        metadata?: {
+          raw?: string
+          provider_name?: string
+        }
+      }
+    },
+  ) {
+    super(errorBody.error.message)
+    this.name = 'OpenRouterError'
+  }
+
+  /**
+   * Returns the error in a format suitable for API responses.
+   */
+  toJSON() {
+    return {
+      error: {
+        message: this.errorBody.error.message,
+        code: this.errorBody.error.code,
+        type: this.errorBody.error.type,
+        param: this.errorBody.error.param,
+        metadata: this.errorBody.error.metadata,
+      },
+    }
+  }
+}
+
+/**
+ * Parses an error response from OpenRouter and returns an OpenRouterError.
+ */
+async function parseOpenRouterError(
+  response: Response,
+): Promise<OpenRouterError> {
+  const errorText = await response.text()
+  let errorBody: OpenRouterError['errorBody']
+  try {
+    const parsed = JSON.parse(errorText)
+    const validated = OpenRouterErrorResponseSchema.safeParse(parsed)
+    if (validated.success) {
+      errorBody = {
+        error: {
+          message: validated.data.error.message,
+          code: validated.data.error.code ?? null,
+          type: validated.data.error.type,
+          param: validated.data.error.param,
+          // metadata is not in the schema but OpenRouter includes it for provider errors
+          metadata: (parsed as any).error?.metadata,
+        },
+      }
+    } else {
+      errorBody = {
+        error: {
+          message: errorText || response.statusText,
+          code: response.status,
+        },
+      }
+    }
+  } catch {
+    errorBody = {
+      error: {
+        message: errorText || response.statusText,
+        code: response.status,
+      },
+    }
+  }
+  return new OpenRouterError(response.status, response.statusText, errorBody)
 }

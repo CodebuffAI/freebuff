@@ -1,6 +1,6 @@
 import z from 'zod/v4'
 
-import { $getToolCallString, jsonToolResultSchema } from '../utils'
+import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -156,7 +156,7 @@ Notes:
 ${gitCommitGuidePrompt}
 
 Example:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {
@@ -165,7 +165,7 @@ ${$getToolCallString({
   endsAgentStep,
 })}
 
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

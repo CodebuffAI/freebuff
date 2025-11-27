@@ -1,7 +1,7 @@
 import z from 'zod/v4'
 
 import { updateFileResultSchema } from './str-replace'
-import { $getToolCallString, jsonToolResultSchema } from '../utils'
+import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -39,7 +39,7 @@ Do not use this tool to delete or rename a file. Instead run a terminal command 
 Examples:
 
 Example 1 - Simple file creation:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {
@@ -51,7 +51,7 @@ ${$getToolCallString({
 })}
 
 Example 2 - Editing with placeholder comments:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

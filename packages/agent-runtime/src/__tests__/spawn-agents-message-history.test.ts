@@ -52,7 +52,7 @@ describe('Spawn Agents Message History', () => {
             assistantMessage('Mock agent response'),
           ],
         },
-        output: { type: 'lastMessage', value: 'Mock agent response' },
+        output: { type: 'lastMessage', value: [assistantMessage('Mock agent response')] },
       }
     })
 

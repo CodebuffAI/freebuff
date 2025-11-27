@@ -5,6 +5,8 @@
  * It imports base types from the user-facing template to eliminate duplication.
  */
 
+import { z } from 'zod/v4'
+
 import type { MCPConfig } from './mcp'
 import type { Model } from '../old-constants'
 import type { ToolResultOutput } from './messages/content-part'
@@ -15,7 +17,6 @@ import type {
 } from '../templates/initial-agents-dir/types/agent-definition'
 import type { Logger } from '../templates/initial-agents-dir/types/util-types'
 import type { ToolName } from '../tools/constants'
-import type { z } from 'zod/v4'
 
 export type AgentId = `${string}/${string}@${number}.${number}.${number}`
 
@@ -140,6 +141,33 @@ export type AgentTemplate<
 
 export type StepText = { type: 'STEP_TEXT'; text: string }
 export type GenerateN = { type: 'GENERATE_N'; n: number }
+
+// Zod schemas for handleSteps yield values
+export const StepTextSchema = z.object({
+  type: z.literal('STEP_TEXT'),
+  text: z.string(),
+})
+
+export const GenerateNSchema = z.object({
+  type: z.literal('GENERATE_N'),
+  n: z.number().int().positive(),
+})
+
+export const HandleStepsToolCallSchema = z.object({
+  toolName: z.string().min(1),
+  input: z.record(z.string(), z.any()),
+  includeToolCall: z.boolean().optional(),
+})
+
+export const HandleStepsYieldValueSchema = z.union([
+  z.literal('STEP'),
+  z.literal('STEP_ALL'),
+  StepTextSchema,
+  GenerateNSchema,
+  HandleStepsToolCallSchema,
+])
+
+export type HandleStepsYieldValue = z.infer<typeof HandleStepsYieldValueSchema>
 
 export type StepGenerator = Generator<
   Omit<ToolCall, 'toolCallId'> | 'STEP' | 'STEP_ALL' | StepText | GenerateN, // Generic tool call type

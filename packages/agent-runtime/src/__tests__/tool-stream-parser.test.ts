@@ -4,7 +4,7 @@ import { getToolCallString } from '@codebuff/common/tools/utils'
 import { beforeEach, describe, expect, it } from 'bun:test'
 
 import { globalStopSequence } from '../constants'
-import { processStreamWithTags } from '../tool-stream-parser'
+import { processStreamWithTools } from '../tool-stream-parser'
 
 import type { AgentRuntimeDeps } from '@codebuff/common/types/contracts/agent-runtime'
 
@@ -61,7 +61,7 @@ describe('processStreamWithTags', () => {
       }
     }
 
-    for await (const chunk of processStreamWithTags({
+    for await (const chunk of processStreamWithTools({
       ...agentRuntimeImpl,
       stream,
       processors,
@@ -129,7 +129,7 @@ describe('processStreamWithTags', () => {
       }
     }
 
-    for await (const chunk of processStreamWithTags({
+    for await (const chunk of processStreamWithTools({
       ...agentRuntimeImpl,
       stream,
       processors,
@@ -206,7 +206,7 @@ describe('processStreamWithTags', () => {
       }
     }
 
-    for await (const chunk of processStreamWithTags({
+    for await (const chunk of processStreamWithTools({
       ...agentRuntimeImpl,
       stream,
       processors,
@@ -282,7 +282,7 @@ describe('processStreamWithTags', () => {
       }
     }
 
-    for await (const chunk of processStreamWithTags({
+    for await (const chunk of processStreamWithTools({
       ...agentRuntimeImpl,
       stream,
       processors,
@@ -349,7 +349,7 @@ describe('processStreamWithTags', () => {
       }
     }
 
-    for await (const chunk of processStreamWithTags({
+    for await (const chunk of processStreamWithTools({
       ...agentRuntimeImpl,
       stream,
       processors,
@@ -415,7 +415,7 @@ describe('processStreamWithTags', () => {
       }
     }
 
-    for await (const chunk of processStreamWithTags({
+    for await (const chunk of processStreamWithTools({
       ...agentRuntimeImpl,
       stream,
       processors,
@@ -488,7 +488,7 @@ describe('processStreamWithTags', () => {
       }
     }
 
-    for await (const chunk of processStreamWithTags({
+    for await (const chunk of processStreamWithTools({
       ...agentRuntimeImpl,
       stream,
       processors,
@@ -555,7 +555,7 @@ describe('processStreamWithTags', () => {
       }
     }
 
-    for await (const chunk of processStreamWithTags({
+    for await (const chunk of processStreamWithTools({
       ...agentRuntimeImpl,
       stream,
       processors,
@@ -612,7 +612,7 @@ describe('processStreamWithTags', () => {
       }
     }
 
-    for await (const chunk of processStreamWithTags({
+    for await (const chunk of processStreamWithTools({
       ...agentRuntimeImpl,
       stream,
       processors,
@@ -655,7 +655,7 @@ describe('processStreamWithTags', () => {
       }
     }
 
-    for await (const chunk of processStreamWithTags({
+    for await (const chunk of processStreamWithTools({
       ...agentRuntimeImpl,
       stream,
       processors,
@@ -716,7 +716,7 @@ describe('processStreamWithTags', () => {
       }
     }
 
-    for await (const chunk of processStreamWithTags({
+    for await (const chunk of processStreamWithTools({
       ...agentRuntimeImpl,
       stream,
       processors,
@@ -787,7 +787,7 @@ describe('processStreamWithTags', () => {
         }
       }
 
-      for await (const chunk of processStreamWithTags({
+      for await (const chunk of processStreamWithTools({
         ...agentRuntimeImpl,
         stream,
         processors,

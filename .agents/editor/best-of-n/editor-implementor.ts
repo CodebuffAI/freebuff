@@ -37,7 +37,7 @@ export const createBestOfNImplementor = (options: {
     
 Your task is to write out ALL the code changes needed to complete the user's request in a single comprehensive response.
 
-Important: You can not make any other tool calls besides editing files. You cannot read more files, write todos, or spawn agents.
+Important: You can not make any other tool calls besides editing files. You cannot read more files, write todos, spawn agents, or set output. Do not call any of these tools!
 
 Write out what changes you would make using the tool call format below. Use this exact format for each file change:
 

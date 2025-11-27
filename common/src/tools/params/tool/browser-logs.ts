@@ -1,7 +1,7 @@
 import z from 'zod/v4'
 
 import { BrowserResponseSchema } from '../../../browser-actions'
-import { $getToolCallString, jsonToolResultSchema } from '../utils'
+import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -64,7 +64,7 @@ Navigate:
    - \`waitUntil\`: (required) One of 'load', 'domcontentloaded', 'networkidle0'
 
 Example:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

@@ -1433,6 +1433,240 @@ describe('runProgrammaticStep', () => {
     })
   })
 
+  describe('yield value validation', () => {
+    it('should reject invalid yield values', async () => {
+      const mockGenerator = (function* () {
+        yield { invalid: 'value' } as any
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const responseChunks: any[] = []
+      mockParams.onResponseChunk = (chunk) => responseChunks.push(chunk)
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(true)
+      expect(result.agentState.output?.error).toContain(
+        'Invalid yield value from handleSteps',
+      )
+    })
+
+    it('should reject yield values with wrong types', async () => {
+      const mockGenerator = (function* () {
+        yield { type: 'STEP_TEXT', text: 123 } as any // text should be string
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const responseChunks: any[] = []
+      mockParams.onResponseChunk = (chunk) => responseChunks.push(chunk)
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(true)
+      expect(result.agentState.output?.error).toContain(
+        'Invalid yield value from handleSteps',
+      )
+    })
+
+    it('should reject GENERATE_N with non-positive n', async () => {
+      const mockGenerator = (function* () {
+        yield { type: 'GENERATE_N', n: 0 } as any
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const responseChunks: any[] = []
+      mockParams.onResponseChunk = (chunk) => responseChunks.push(chunk)
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(true)
+      expect(result.agentState.output?.error).toContain(
+        'Invalid yield value from handleSteps',
+      )
+    })
+
+    it('should reject GENERATE_N with negative n', async () => {
+      const mockGenerator = (function* () {
+        yield { type: 'GENERATE_N', n: -5 } as any
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const responseChunks: any[] = []
+      mockParams.onResponseChunk = (chunk) => responseChunks.push(chunk)
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(true)
+      expect(result.agentState.output?.error).toContain(
+        'Invalid yield value from handleSteps',
+      )
+    })
+
+    it('should accept valid STEP literal', async () => {
+      const mockGenerator = (function* () {
+        yield 'STEP'
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(false)
+      expect(result.agentState.output?.error).toBeUndefined()
+    })
+
+    it('should accept valid STEP_ALL literal', async () => {
+      const mockGenerator = (function* () {
+        yield 'STEP_ALL'
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(false)
+      expect(result.agentState.output?.error).toBeUndefined()
+    })
+
+    it('should accept valid STEP_TEXT object', async () => {
+      const mockGenerator = (function* () {
+        yield { type: 'STEP_TEXT', text: 'Custom response text' }
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(false)
+      expect(result.agentState.output?.error).toBeUndefined()
+    })
+
+    it('should accept valid GENERATE_N object', async () => {
+      const mockGenerator = (function* () {
+        yield { type: 'GENERATE_N', n: 3 }
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(false)
+      expect(result.generateN).toBe(3)
+      expect(result.agentState.output?.error).toBeUndefined()
+    })
+
+    it('should accept valid tool call object', async () => {
+      const mockGenerator = (function* () {
+        yield { toolName: 'read_files', input: { paths: ['test.txt'] } }
+        yield { toolName: 'end_turn', input: {} }
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(true)
+      expect(result.agentState.output?.error).toBeUndefined()
+    })
+
+    it('should accept tool call with includeToolCall option', async () => {
+      const mockGenerator = (function* () {
+        yield {
+          toolName: 'read_files',
+          input: { paths: ['test.txt'] },
+          includeToolCall: false,
+        }
+        yield { toolName: 'end_turn', input: {} }
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(true)
+      expect(result.agentState.output?.error).toBeUndefined()
+    })
+
+    it('should reject random string values', async () => {
+      const mockGenerator = (function* () {
+        yield 'INVALID_STEP' as any
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(true)
+      expect(result.agentState.output?.error).toContain(
+        'Invalid yield value from handleSteps',
+      )
+    })
+
+    it('should reject null yield values', async () => {
+      const mockGenerator = (function* () {
+        yield null as any
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(true)
+      expect(result.agentState.output?.error).toContain(
+        'Invalid yield value from handleSteps',
+      )
+    })
+
+    it('should reject undefined yield values', async () => {
+      const mockGenerator = (function* () {
+        yield undefined as any
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(true)
+      expect(result.agentState.output?.error).toContain(
+        'Invalid yield value from handleSteps',
+      )
+    })
+
+    it('should reject tool call without toolName', async () => {
+      const mockGenerator = (function* () {
+        yield { input: { paths: ['test.txt'] } } as any
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(true)
+      expect(result.agentState.output?.error).toContain(
+        'Invalid yield value from handleSteps',
+      )
+    })
+
+    it('should reject tool call without input', async () => {
+      const mockGenerator = (function* () {
+        yield { toolName: 'read_files' } as any
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      const result = await runProgrammaticStep(mockParams)
+
+      expect(result.endTurn).toBe(true)
+      expect(result.agentState.output?.error).toContain(
+        'Invalid yield value from handleSteps',
+      )
+    })
+  })
+
   describe('logging and context', () => {
     it('should log agent execution start', async () => {
       const mockGenerator = (function* () {

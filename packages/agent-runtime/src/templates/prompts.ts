@@ -73,17 +73,6 @@ Notes:
 - There are two types of input arguments for agents: prompt and params. The prompt is a string, and the params is a json object. Some agents require only one or the other, some require both, and some require none.
 - Below are the *only* available agents by their agent_type. Other agents may be referenced earlier in the conversation, but they are not available to you.
 
-Example:
-
-${getToolCallString('spawn_agents', {
-  agents: [
-    {
-      agent_type: 'example-agent',
-      prompt: 'Do an example task for me',
-    },
-  ],
-})}
-
 Spawn only the below agents:
 
 ${agentsDescription}`

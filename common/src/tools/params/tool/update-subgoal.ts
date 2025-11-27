@@ -1,6 +1,6 @@
 import z from 'zod/v4'
 
-import { $getToolCallString, jsonToolResultSchema } from '../utils'
+import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -31,7 +31,7 @@ const description = `
 Examples:
 
 Usage 1 (update status):
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {
@@ -42,7 +42,7 @@ ${$getToolCallString({
 })}
 
 Usage 2 (update plan):
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {
@@ -53,7 +53,7 @@ ${$getToolCallString({
 })}
 
 Usage 3 (add log):
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {
@@ -64,7 +64,7 @@ ${$getToolCallString({
 })}
 
 Usage 4 (update status and add log):
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

@@ -1,7 +1,7 @@
 import z from 'zod/v4'
 
 import { terminalCommandOutputSchema } from './run-terminal-command'
-import { $getToolCallString, jsonToolResultSchema } from '../utils'
+import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -25,7 +25,7 @@ Use cases:
 The client will run only the hooks whose filePattern matches the provided files.
 
 Example:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

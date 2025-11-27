@@ -1,6 +1,6 @@
 import z from 'zod/v4'
 
-import { $getToolCallString } from '../utils'
+import { $getNativeToolCallExampleString } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -16,7 +16,7 @@ You must use this tool as it is the only way to report any findings to the user.
 
 Please set the output with all the information and analysis you want to pass on to the user. If you just want to send a simple message, use an object with the key "message" and value of the message you want to send.
 Example:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

@@ -351,6 +351,9 @@ export async function* promptAiSdkStream(
         }
       }
     }
+    if (chunk.type === 'tool-call') {
+      yield chunk
+    }
   }
   const flushed = stopSequenceHandler.flush()
   if (flushed) {

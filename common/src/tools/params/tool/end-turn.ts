@@ -1,6 +1,9 @@
 import z from 'zod/v4'
 
-import { $getToolCallString, emptyToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  emptyToolResultSchema,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -20,14 +23,14 @@ Only use this tool to hand control back to the user.
 - Effect: Signals the UI to wait for the user's reply; any pending tool results will be ignored.
 
 *INCORRECT USAGE*:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName: 'some_tool_that_produces_results',
   inputSchema: null,
   input: { query: 'some example search term' },
   endsAgentStep: false,
 })}
 
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {},
@@ -37,7 +40,7 @@ ${$getToolCallString({
 *CORRECT USAGE*:
 All done! Would you like some more help with xyz?
 
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {},

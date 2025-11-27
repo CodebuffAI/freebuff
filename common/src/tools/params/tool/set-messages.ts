@@ -1,6 +1,9 @@
 import z from 'zod/v4'
 
-import { $getToolCallString, emptyToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  emptyToolResultSchema,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -13,7 +16,7 @@ const inputSchema = z
   .describe(`Set the conversation history to the provided messages.`)
 const description = `
 Example:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

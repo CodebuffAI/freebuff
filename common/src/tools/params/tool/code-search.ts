@@ -1,6 +1,6 @@
 import z from 'zod/v4'
 
-import { $getToolCallString, jsonToolResultSchema } from '../utils'
+import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -85,37 +85,37 @@ RESULT LIMITING:
 - If the global limit is reached, remaining files will be skipped
 
 Examples:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: { pattern: 'foo' },
   endsAgentStep,
 })}
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: { pattern: 'foo\\.bar = 1\\.0' },
   endsAgentStep,
 })}
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: { pattern: 'import.*foo', cwd: 'src' },
   endsAgentStep,
 })}
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: { pattern: 'function.*authenticate', flags: '-i -t ts -t js' },
   endsAgentStep,
 })}
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: { pattern: 'TODO', flags: '-n --type-not py' },
   endsAgentStep,
 })}
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: { pattern: 'getUserData', maxResults: 10 },

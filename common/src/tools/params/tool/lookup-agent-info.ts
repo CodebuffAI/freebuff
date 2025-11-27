@@ -1,7 +1,7 @@
 import z from 'zod/v4'
 
 import { jsonValueSchema } from '../../../types/json'
-import { $getToolCallString, jsonToolResultSchema } from '../utils'
+import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -18,7 +18,7 @@ const description = `
 Retrieve information about an agent by ID for proper spawning. Use this when you see a request with a full agent ID like "@publisher/agent-id@version" to validate the agent exists and get its metadata. Only agents that are published under a publisher and version are supported for this tool. 
 
 Example:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

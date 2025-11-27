@@ -1,7 +1,7 @@
 import z from 'zod/v4'
 
 import { jsonObjectSchema } from '../../../types/json'
-import { $getToolCallString, jsonToolResultSchema } from '../utils'
+import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -36,7 +36,7 @@ Use this tool to spawn agents to help you complete the user request. Each agent 
 The prompt field is a simple string, while params is a JSON object that gets validated against the agent's schema.
 
 Example:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

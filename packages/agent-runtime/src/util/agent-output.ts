@@ -1,9 +1,48 @@
 import type { AgentTemplate } from '@codebuff/common/types/agent-template'
-import type { AssistantMessage } from '@codebuff/common/types/messages/codebuff-message'
+import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 import type {
   AgentState,
   AgentOutput,
 } from '@codebuff/common/types/session-state'
+
+/**
+ * Get the last assistant turn messages, which includes the last assistant message
+ * and any subsequent tool messages that are responses to its tool calls.
+ */
+function getLastAssistantTurnMessages(messageHistory: Message[]): Message[] {
+  // Find the index of the last assistant message
+  let lastAssistantIndex = -1
+  for (let i = messageHistory.length - 1; i >= 0; i--) {
+    if (messageHistory[i].role === 'assistant') {
+      lastAssistantIndex = i
+      break
+    }
+  }
+
+  for (let i = lastAssistantIndex; i >= 0; i--) {
+    if (messageHistory[i].role === 'assistant') {
+      lastAssistantIndex = i
+    } else break
+  }
+
+  if (lastAssistantIndex === -1) {
+    return []
+  }
+
+  // Collect the assistant message and all subsequent tool messages
+  const result: Message[] = []
+  for (let i = lastAssistantIndex; i < messageHistory.length; i++) {
+    const message = messageHistory[i]
+    if (message.role === 'assistant' || message.role === 'tool') {
+      result.push(message)
+    } else {
+      // Stop if we hit a user or system message
+      break
+    }
+  }
+
+  return result
+}
 
 export function getAgentOutput(
   agentState: AgentState,
@@ -16,11 +55,10 @@ export function getAgentOutput(
     }
   }
   if (agentTemplate.outputMode === 'last_message') {
-    const assistantMessages = agentState.messageHistory.filter(
-      (message): message is AssistantMessage => message.role === 'assistant',
+    const lastTurnMessages = getLastAssistantTurnMessages(
+      agentState.messageHistory,
     )
-    const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]
-    if (!lastAssistantMessage) {
+    if (lastTurnMessages.length === 0) {
       return {
         type: 'error',
         message: 'No response from agent',
@@ -28,7 +66,7 @@ export function getAgentOutput(
     }
     return {
       type: 'lastMessage',
-      value: lastAssistantMessage.content,
+      value: lastTurnMessages,
     }
   }
   if (agentTemplate.outputMode === 'all_messages') {

@@ -75,7 +75,6 @@ describe('read_docs tool with researcher agent (via web API facade)', () => {
     runAgentStepBaseParams = {
       ...agentRuntimeImpl,
       additionalToolDefinitions: () => Promise.resolve({}),
-      textOverride: null,
       runId: 'test-run-id',
       ancestorRunIds: [],
       repoId: undefined,
@@ -89,6 +88,7 @@ describe('read_docs tool with researcher agent (via web API facade)', () => {
       agentType: 'researcher',
       spawnParams: undefined,
       signal: new AbortController().signal,
+      tools: {},
     }
   })
 
@@ -214,7 +214,6 @@ describe('read_docs tool with researcher agent (via web API facade)', () => {
 
     const { agentState: newAgentState } = await runAgentStep({
       ...runAgentStepBaseParams,
-      textOverride: null,
       fileContext: mockFileContextWithAgents,
       localAgentTemplates: agentTemplates,
       agentState,

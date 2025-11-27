@@ -41,7 +41,7 @@ export type ToolMessage = {
   role: 'tool'
   toolCallId: string
   toolName: string
-  content: ToolResultOutput[]
+  content: ToolResultOutput
 } & AuxiliaryMessageData
 
 export type Message =

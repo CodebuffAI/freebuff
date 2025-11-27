@@ -1,8 +1,5 @@
 import { cloneDeep, has, isEqual } from 'lodash'
 
-import { getToolCallString } from '../tools/utils'
-
-import type { JSONValue } from '../types/json'
 import type {
   AssistantMessage,
   AuxiliaryMessageData,
@@ -11,7 +8,6 @@ import type {
   ToolMessage,
   UserMessage,
 } from '../types/messages/codebuff-message'
-import type { ToolResultOutput } from '../types/messages/content-part'
 import type { ProviderMetadata } from '../types/messages/provider-metadata'
 import type {
   AssistantModelMessage,
@@ -100,56 +96,52 @@ function assistantToCodebuffMessage(
     content: Exclude<AssistantMessage['content'], string>[number]
   },
 ): AssistantMessage {
-  if (message.content.type === 'tool-call') {
-    return cloneDeep({
-      ...message,
-      content: [
-        {
-          type: 'text',
-          text: getToolCallString(
-            message.content.toolName,
-            message.content.input,
-            false,
-          ),
-        },
-      ],
-    })
-  }
+  // if (message.content.type === 'tool-call') {
+  //   return cloneDeep({
+  //     ...message,
+  //     content: [
+  //       {
+  //         type: 'text',
+  //         text: getToolCallString(
+  //           message.content.toolName,
+  //           message.content.input,
+  //           false,
+  //         ),
+  //       },
+  //     ],
+  //   })
+  // }
   return cloneDeep({ ...message, content: [message.content] })
 }
 
 function convertToolResultMessage(
   message: ToolMessage,
 ): ModelMessageWithAuxiliaryData[] {
-  return message.content.map((c) => {
-    if (c.type === 'json') {
-      const toolResult = {
-        toolName: message.toolName,
-        toolCallId: message.toolCallId,
-        output: c.value,
-      }
-      return cloneDeep<UserMessage>({
-        ...message,
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: `<tool_result>\n${JSON.stringify(toolResult, null, 2)}\n</tool_result>`,
-          },
-        ],
-      })
-    }
-    if (c.type === 'media') {
-      return cloneDeep<UserMessage>({
+  const messages: ModelMessageWithAuxiliaryData[] = [
+    cloneDeep<ToolModelMessage>({
+      ...message,
+      role: 'tool',
+      content: [
+        {
+          ...message,
+          output: { type: 'json', value: message.content.value },
+          type: 'tool-result',
+        },
+      ],
+    }),
+  ]
+
+  for (const c of message.content.media ?? []) {
+    messages.push(
+      cloneDeep<UserMessage>({
         ...message,
         role: 'user',
         content: [{ type: 'file', data: c.data, mediaType: c.mediaType }],
-      })
-    }
-    c satisfies never
-    const oAny = c as any
-    throw new Error(`Invalid tool output type: ${oAny.type}`)
-  })
+      }),
+    )
+  }
+
+  return messages
 }
 
 function convertToolMessage(message: Message): ModelMessageWithAuxiliaryData[] {
@@ -422,33 +414,4 @@ export function assistantMessage(
     role: 'assistant',
     content: assistantContent(params),
   }
-}
-
-export function jsonToolResult<T extends JSONValue>(
-  value: T,
-): [
-  Extract<ToolResultOutput, { type: 'json' }> & {
-    value: T
-  },
-] {
-  return [
-    {
-      type: 'json',
-      value,
-    },
-  ]
-}
-
-export function mediaToolResult(params: {
-  data: string
-  mediaType: string
-}): [Extract<ToolResultOutput, { type: 'media' }>] {
-  const { data, mediaType } = params
-  return [
-    {
-      type: 'media',
-      data,
-      mediaType,
-    },
-  ]
 }

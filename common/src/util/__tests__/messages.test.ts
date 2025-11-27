@@ -13,6 +13,7 @@ import {
 } from '../messages'
 
 import type { Message } from '../../types/messages/codebuff-message'
+import type { AssistantModelMessage, ToolResultPart } from 'ai'
 
 describe('withCacheControl', () => {
   it('should add cache control to object without providerOptions', () => {
@@ -189,12 +190,6 @@ describe('convertCbToModelMessages', () => {
 
   describe('tool message conversion', () => {
     it('should convert tool messages with JSON output', () => {
-      const toolResult = [
-        {
-          type: 'json',
-          value: { result: 'success' },
-        },
-      ]
       const messages: Message[] = [
         {
           role: 'tool',
@@ -211,15 +206,17 @@ describe('convertCbToModelMessages', () => {
 
       expect(result).toEqual([
         expect.objectContaining({
-          role: 'user',
+          role: 'tool',
           content: [
             expect.objectContaining({
-              type: 'text',
-            }),
+              type: 'tool-result',
+              toolCallId: 'call_123',
+              toolName: 'test_tool',
+              output: { type: 'json', value: { result: 'success' } },
+            } satisfies ToolResultPart),
           ],
         }),
       ])
-      expect((result as any)[0].content[0].text).toContain('<tool_result>')
     })
 
     it('should convert tool messages with media output', () => {
@@ -270,14 +267,15 @@ describe('convertCbToModelMessages', () => {
         includeCacheControl: false,
       })
 
-      console.dir({ result }, { depth: null })
       // Multiple tool outputs are aggregated into one user message
       expect(result).toEqual([
         expect.objectContaining({
-          role: 'user',
+          role: 'tool',
+        }),
+        expect.objectContaining({
+          role: 'tool',
         }),
       ])
-      expect(result[0].content).toHaveLength(2)
     })
   })
 
@@ -806,14 +804,19 @@ describe('convertCbToModelMessages', () => {
         includeCacheControl: false,
       })
 
-      expect(result).toHaveLength(1)
-      expect(result[0].role).toBe('assistant')
-      if (typeof result[0].content !== 'string') {
-        expect(result[0].content[0].type).toBe('text')
-        if (result[0].content[0].type === 'text') {
-          expect(result[0].content[0].text).toContain('test_tool')
-        }
-      }
+      expect(result).toEqual([
+        {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool-call',
+              toolCallId: 'call_123',
+              toolName: 'test_tool',
+              input: { param: 'value' },
+            },
+          ],
+        } satisfies AssistantModelMessage,
+      ])
     })
 
     it('should preserve message metadata during conversion', () => {

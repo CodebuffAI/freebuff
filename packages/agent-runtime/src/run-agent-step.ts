@@ -14,7 +14,8 @@ import { runProgrammaticStep } from './run-programmatic-step'
 import { additionalSystemPrompts } from './system-prompt/prompts'
 import { getAgentTemplate } from './templates/agent-registry'
 import { getAgentPrompt } from './templates/strings'
-import { processStreamWithTools } from './tools/stream-parser'
+import { getToolSet } from './tools/prompts'
+import { processStream } from './tools/stream-parser'
 import { getAgentOutput } from './util/agent-output'
 import {
   withSystemInstructionTags,
@@ -106,7 +107,7 @@ export const runAgentStep = async (
     trackEvent: TrackEventFn
     promptAiSdk: PromptAiSdkFn
   } & ParamsExcluding<
-    typeof processStreamWithTools,
+    typeof processStream,
     | 'agentContext'
     | 'agentState'
     | 'agentStepId'
@@ -337,6 +338,7 @@ export const runAgentStep = async (
   let fullResponse = ''
   const toolResults: ToolMessage[] = []
 
+  // Raw stream from AI SDK
   const stream = getAgentStreamFromTemplate({
     ...params,
     agentId: agentState.parentId ? agentState.agentId : undefined,
@@ -352,7 +354,7 @@ export const runAgentStep = async (
     messageId,
     toolCalls,
     toolResults: newToolResults,
-  } = await processStreamWithTools({
+  } = await processStream({
     ...params,
     agentContext,
     agentState,
@@ -468,37 +470,35 @@ export const runAgentStep = async (
 
 export async function loopAgentSteps(
   params: {
-    userInputId: string
-    agentType: AgentTemplateType
-    agentState: AgentState
-    prompt: string | undefined
-    content?: Array<TextPart | ImagePart>
-    spawnParams: Record<string, any> | undefined
-    fileContext: ProjectFileContext
-    localAgentTemplates: Record<string, AgentTemplate>
-    clearUserPromptMessagesAfterResponse?: boolean
-    parentSystemPrompt?: string
-    signal: AbortSignal
-
-    userId: string | undefined
-    clientSessionId: string
-
-    startAgentRun: StartAgentRunFn
-    finishAgentRun: FinishAgentRunFn
     addAgentStep: AddAgentStepFn
+    agentState: AgentState
+    agentType: AgentTemplateType
+    clearUserPromptMessagesAfterResponse?: boolean
+    clientSessionId: string
+    content?: Array<TextPart | ImagePart>
+    fileContext: ProjectFileContext
+    finishAgentRun: FinishAgentRunFn
+    localAgentTemplates: Record<string, AgentTemplate>
     logger: Logger
+    parentSystemPrompt?: string
+    prompt: string | undefined
+    signal: AbortSignal
+    spawnParams: Record<string, any> | undefined
+    startAgentRun: StartAgentRunFn
+    userId: string | undefined
+    userInputId: string
   } & ParamsExcluding<typeof additionalToolDefinitions, 'agentTemplate'> &
     ParamsExcluding<
       typeof runProgrammaticStep,
-      | 'runId'
       | 'agentState'
-      | 'template'
-      | 'prompt'
-      | 'toolCallParams'
-      | 'stepsComplete'
-      | 'stepNumber'
-      | 'system'
       | 'onCostCalculated'
+      | 'prompt'
+      | 'runId'
+      | 'stepNumber'
+      | 'stepsComplete'
+      | 'system'
+      | 'template'
+      | 'toolCallParams'
     > &
     ParamsExcluding<typeof getAgentTemplate, 'agentId'> &
     ParamsExcluding<
@@ -526,7 +526,7 @@ export async function loopAgentSteps(
       | 'runId'
       | 'spawnParams'
       | 'system'
-      | 'textOverride'
+      | 'tools'
     > &
     ParamsExcluding<
       AddAgentStepFn,
@@ -543,23 +543,23 @@ export async function loopAgentSteps(
   output: AgentOutput
 }> {
   const {
-    userInputId,
-    agentType,
-    agentState,
-    prompt,
-    content,
-    spawnParams,
-    fileContext,
-    localAgentTemplates,
-    userId,
-    clientSessionId,
-    clearUserPromptMessagesAfterResponse = true,
-    parentSystemPrompt,
-    signal,
-    startAgentRun,
-    finishAgentRun,
     addAgentStep,
+    agentState,
+    agentType,
+    clearUserPromptMessagesAfterResponse = true,
+    clientSessionId,
+    content,
+    fileContext,
+    finishAgentRun,
+    localAgentTemplates,
     logger,
+    parentSystemPrompt,
+    prompt,
+    signal,
+    spawnParams,
+    startAgentRun,
+    userId,
+    userInputId,
   } = params
 
   const agentTemplate = await getAgentTemplate({
@@ -630,6 +630,19 @@ export async function loopAgentSteps(
             return cachedAdditionalToolDefinitions
           },
         })) ?? ''
+
+  const tools = await getToolSet({
+    toolNames: agentTemplate.toolNames,
+    additionalToolDefinitions: async () => {
+      if (!cachedAdditionalToolDefinitions) {
+        cachedAdditionalToolDefinitions = await additionalToolDefinitions({
+          ...params,
+          agentTemplate,
+        })
+      }
+      return cachedAdditionalToolDefinitions
+    },
+  })
 
   const hasUserMessage = Boolean(
     prompt ||
@@ -704,26 +717,26 @@ export async function loopAgentSteps(
       const startTime = new Date()
 
       // 1. Run programmatic step first if it exists
-      let textOverride = null
       let n: number | undefined = undefined
 
       if (agentTemplate.handleSteps) {
         const programmaticResult = await runProgrammaticStep({
           ...params,
-          runId,
+
           agentState: currentAgentState,
-          template: agentTemplate,
           localAgentTemplates,
-          prompt: currentPrompt,
-          toolCallParams: currentParams,
-          system,
-          stepsComplete: shouldEndTurn,
-          stepNumber: totalSteps,
           nResponses,
           onCostCalculated: async (credits: number) => {
             agentState.creditsUsed += credits
             agentState.directCreditsUsed += credits
           },
+          prompt: currentPrompt,
+          runId,
+          stepNumber: totalSteps,
+          stepsComplete: shouldEndTurn,
+          system,
+          template: agentTemplate,
+          toolCallParams: currentParams,
         })
         const {
           agentState: programmaticAgentState,
@@ -731,7 +744,6 @@ export async function loopAgentSteps(
           stepNumber,
           generateN,
         } = programmaticResult
-        textOverride = programmaticResult.textOverride
         n = generateN
 
         currentAgentState = programmaticAgentState
@@ -788,6 +800,15 @@ export async function loopAgentSteps(
         nResponses: generatedResponses,
       } = await runAgentStep({
         ...params,
+
+        agentState: currentAgentState,
+        n,
+        prompt: currentPrompt,
+        runId,
+        spawnParams: currentParams,
+        system,
+        tools,
+
         additionalToolDefinitions: async () => {
           if (!cachedAdditionalToolDefinitions) {
             cachedAdditionalToolDefinitions = await additionalToolDefinitions({
@@ -797,13 +818,6 @@ export async function loopAgentSteps(
           }
           return cachedAdditionalToolDefinitions
         },
-        textOverride: textOverride,
-        runId,
-        agentState: currentAgentState,
-        prompt: currentPrompt,
-        spawnParams: currentParams,
-        system,
-        n,
       })
 
       if (newAgentState.runId) {

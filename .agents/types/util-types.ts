@@ -74,16 +74,15 @@ export type ToolCallPart = {
   providerExecuted?: boolean
 }
 
-export type ToolResultOutput =
-  | {
-      type: 'json'
-      value: JSONValue
-    }
-  | {
-      type: 'media'
-      data: string
-      mediaType: string
-    }
+export type MediaToolResultOutputSchema = {
+  data: string
+  mediaType: string
+}
+
+export type ToolResultOutput = {
+  value: JSONValue
+  media?: MediaToolResultOutputSchema[]
+}
 
 // ===== Message Types =====
 export type AuxiliaryMessageData = {

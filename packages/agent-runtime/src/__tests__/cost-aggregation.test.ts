@@ -159,7 +159,7 @@ describe('Cost Aggregation System', () => {
             stepsRemaining: 10,
             creditsUsed: 75, // First subagent uses 75 credits
           },
-          output: { type: 'lastMessage', value: 'Sub-agent 1 response' },
+          output: { type: 'lastMessage', value: [assistantMessage('Sub-agent 1 response')] },
         })
         .mockResolvedValueOnce({
           agentState: {
@@ -169,7 +169,7 @@ describe('Cost Aggregation System', () => {
             stepsRemaining: 10,
             creditsUsed: 100, // Second subagent uses 100 credits
           },
-          output: { type: 'lastMessage', value: 'Sub-agent 2 response' },
+          output: { type: 'lastMessage', value: [assistantMessage('Sub-agent 2 response')] },
         })
 
       const mockToolCall = {
@@ -223,7 +223,7 @@ describe('Cost Aggregation System', () => {
             stepsRemaining: 10,
             creditsUsed: 50, // Successful agent
           },
-          output: { type: 'lastMessage', value: 'Successful response' },
+          output: { type: 'lastMessage', value: [assistantMessage('Successful response')] },
         })
         .mockRejectedValueOnce(
           (() => {
@@ -370,7 +370,7 @@ describe('Cost Aggregation System', () => {
             stepsRemaining: 10,
             creditsUsed: subAgent1Cost,
           } as AgentState,
-          output: { type: 'lastMessage', value: 'Sub-agent 1 response' },
+          output: { type: 'lastMessage', value: [assistantMessage('Sub-agent 1 response')] },
         })
         .mockResolvedValueOnce({
           agentState: {
@@ -381,7 +381,7 @@ describe('Cost Aggregation System', () => {
             stepsRemaining: 10,
             creditsUsed: subAgent2Cost,
           } as AgentState,
-          output: { type: 'lastMessage', value: 'Sub-agent 2 response' },
+          output: { type: 'lastMessage', value: [assistantMessage('Sub-agent 2 response')] },
         })
 
       const mockToolCall = {

@@ -64,17 +64,22 @@ Do not use any further tools or spawn any further agents.
       },
     } satisfies ToolCall
 
-    const filesResult =
-      extractSpawnResults<{ text: string }[]>(fileListerResults)[0]
-    if (!Array.isArray(filesResult)) {
+    const spawnResults = extractSpawnResults(fileListerResults)
+    const firstResult = spawnResults[0]
+    const fileListText = extractLastMessageText(firstResult)
+    
+    if (!fileListText) {
+      const errorMessage = extractErrorMessage(firstResult)
       yield {
         type: 'STEP_TEXT',
-        text: filesResult.errorMessage,
+        text: errorMessage 
+          ? `Error from file-lister: ${errorMessage}`
+          : 'Error: Could not extract file list from spawned agent',
       } satisfies StepText
       return
     }
 
-    const paths = filesResult[0].text.split('\n').filter(Boolean)
+    const paths = fileListText.split('\n').filter(Boolean)
 
     yield {
       toolName: 'read_files',
@@ -85,24 +90,71 @@ Do not use any further tools or spawn any further agents.
 
     yield 'STEP'
 
-    function extractSpawnResults<T>(
-      results: any[] | undefined,
-    ): (T | { errorMessage: string })[] {
-      if (!results) return []
-      const spawnedResults = results
-        .filter((result) => result.type === 'json')
-        .map((result) => result.value)
-        .flat() as {
-        agentType: string
-        value: { value?: T; errorMessage?: string }
-      }[]
-      return spawnedResults.map(
-        (result) =>
-          result.value.value ?? {
-            errorMessage:
-              result.value.errorMessage ?? 'Error extracting spawn results',
-          },
-      )
+    /**
+     * Extracts the array of subagent results from spawn_agents tool output.
+     * 
+     * The spawn_agents tool result structure is:
+     * [{ type: 'json', value: [{ agentName, agentType, value: AgentOutput }] }]
+     * 
+     * Returns an array of agent outputs, one per spawned agent.
+     */
+    function extractSpawnResults(results: any[] | undefined): any[] {
+      if (!results || results.length === 0) return []
+      
+      // Find the json result containing spawn results
+      const jsonResult = results.find((r) => r.type === 'json')
+      if (!jsonResult?.value) return []
+      
+      // Get the spawned agent results array
+      const spawnedResults = Array.isArray(jsonResult.value) ? jsonResult.value : [jsonResult.value]
+      
+      // Extract the value (AgentOutput) from each result
+      return spawnedResults.map((result: any) => result?.value).filter(Boolean)
+    }
+
+    /**
+     * Extracts the text content from a 'lastMessage' AgentOutput.
+     * 
+     * For agents with outputMode: 'last_message', the output structure is:
+     * { type: 'lastMessage', value: [{ role: 'assistant', content: [{ type: 'text', text: '...' }] }] }
+     * 
+     * Returns the text from the last assistant message, or null if not found.
+     */
+    function extractLastMessageText(agentOutput: any): string | null {
+      if (!agentOutput) return null
+      
+      // Handle 'lastMessage' output mode - the value contains an array of messages
+      if (agentOutput.type === 'lastMessage' && Array.isArray(agentOutput.value)) {
+        // Find the last assistant message with text content
+        for (let i = agentOutput.value.length - 1; i >= 0; i--) {
+          const message = agentOutput.value[i]
+          if (message.role === 'assistant' && Array.isArray(message.content)) {
+            // Find text content in the message
+            for (const part of message.content) {
+              if (part.type === 'text' && typeof part.text === 'string') {
+                return part.text
+              }
+            }
+          }
+        }
+      }
+      
+      return null
+    }
+
+    /**
+     * Extracts the error message from an AgentOutput if it's an error type.
+     * 
+     * Returns the error message string, or null if not an error output.
+     */
+    function extractErrorMessage(agentOutput: any): string | null {
+      if (!agentOutput) return null
+      
+      if (agentOutput.type === 'error') {
+        return agentOutput.message ?? agentOutput.value ?? null
+      }
+      
+      return null
     }
   },
 }

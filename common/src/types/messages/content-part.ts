@@ -45,15 +45,16 @@ export const toolCallPartSchema = z.object({
 })
 export type ToolCallPart = z.infer<typeof toolCallPartSchema>
 
-export const toolResultOutputSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('json'),
-    value: jsonValueSchema,
-  }),
-  z.object({
-    type: z.literal('media'),
-    data: z.string(),
-    mediaType: z.string(),
-  }),
-])
+export const mediaToolResultOutputSchema = z.object({
+  data: z.string(),
+  mediaType: z.string(),
+})
+export type MediaToolResultOutputSchema = z.infer<
+  typeof mediaToolResultOutputSchema
+>
+
+export const toolResultOutputSchema = z.object({
+  value: jsonValueSchema,
+  media: mediaToolResultOutputSchema.array().optional(),
+})
 export type ToolResultOutput = z.infer<typeof toolResultOutputSchema>

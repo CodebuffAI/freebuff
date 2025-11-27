@@ -16,7 +16,7 @@ import {
 } from 'bun:test'
 
 import { mockFileContext } from './test-utils'
-import { processStreamWithTools } from '../tools/stream-parser'
+import { processStream } from '../tools/stream-parser'
 
 import type { AgentTemplate } from '../templates/types'
 import type {
@@ -34,7 +34,7 @@ let agentRuntimeImpl: AgentRuntimeDeps = { ...TEST_AGENT_RUNTIME_IMPL }
 describe('malformed tool call error handling', () => {
   let testAgent: AgentTemplate
   let agentRuntimeImpl: AgentRuntimeDeps & AgentRuntimeScopedDeps
-  let defaultParams: ParamsOf<typeof processStreamWithTools>
+  let defaultParams: ParamsOf<typeof processStream>
 
   beforeEach(() => {
     agentRuntimeImpl = { ...TEST_AGENT_RUNTIME_IMPL }
@@ -139,7 +139,7 @@ describe('malformed tool call error handling', () => {
 
     const stream = createMockStream(chunks)
 
-    await processStreamWithTools({
+    await processStream({
       ...defaultParams,
       stream,
     })
@@ -177,7 +177,7 @@ describe('malformed tool call error handling', () => {
 
     const stream = createMockStream(chunks)
 
-    await processStreamWithTools({
+    await processStream({
       ...defaultParams,
       stream,
     })
@@ -204,7 +204,7 @@ describe('malformed tool call error handling', () => {
 
     const stream = createMockStream(chunks)
 
-    const result = await processStreamWithTools({
+    const result = await processStream({
       ...defaultParams,
       stream,
     })
@@ -235,7 +235,7 @@ describe('malformed tool call error handling', () => {
 
     const stream = createMockStream(chunks)
 
-    await processStreamWithTools({
+    await processStream({
       ...defaultParams,
       stream,
     })
@@ -268,7 +268,7 @@ describe('malformed tool call error handling', () => {
 
     const stream = createMockStream(chunks)
 
-    await processStreamWithTools({
+    await processStream({
       ...defaultParams,
       requestFiles: async ({ filePaths }) => {
         return Object.fromEntries(
@@ -307,7 +307,7 @@ describe('malformed tool call error handling', () => {
 
     const stream = createMockStream(chunks)
 
-    await processStreamWithTools({
+    await processStream({
       ...defaultParams,
       stream,
     })

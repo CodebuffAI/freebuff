@@ -1,6 +1,6 @@
 import z from 'zod/v4'
 
-import { $getToolCallString, jsonToolResultSchema } from '../utils'
+import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -50,7 +50,7 @@ Use cases:
 The tool will search for the library and return the most relevant documentation content. If a topic is specified, it will focus the results on that specific area.
 
 Example:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {
@@ -61,7 +61,7 @@ ${$getToolCallString({
   endsAgentStep,
 })}
 
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

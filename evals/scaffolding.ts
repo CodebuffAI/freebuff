@@ -206,13 +206,15 @@ export async function runAgentStepScaffolding(
   const result = await runAgentStep({
     ...EVALS_AGENT_RUNTIME_IMPL,
     ...agentRuntimeScopedImpl,
+
     additionalToolDefinitions: () => Promise.resolve({}),
-    textOverride: null,
-    runId: 'test-run-id',
-    userId: TEST_USER_ID,
-    userInputId: generateCompactId(),
+    agentState,
+    agentType,
+    ancestorRunIds: [],
     clientSessionId: sessionId,
+    fileContext,
     fingerprintId: 'test-fingerprint-id',
+    localAgentTemplates,
     onResponseChunk: (chunk: string | PrintModeEvent) => {
       if (typeof chunk !== 'string') {
         return
@@ -222,17 +224,16 @@ export async function runAgentStepScaffolding(
       }
       fullResponse += chunk
     },
-    agentType,
-    fileContext,
-    localAgentTemplates,
-    agentState,
     prompt,
-    ancestorRunIds: [],
-    spawnParams: undefined,
-    repoUrl: undefined,
     repoId: undefined,
-    system: 'Test system prompt',
+    repoUrl: undefined,
+    runId: 'test-run-id',
     signal: new AbortController().signal,
+    spawnParams: undefined,
+    system: 'Test system prompt',
+    tools: {},
+    userId: TEST_USER_ID,
+    userInputId: generateCompactId(),
   })
 
   return {

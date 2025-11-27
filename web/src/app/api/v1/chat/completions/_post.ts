@@ -12,6 +12,7 @@ import {
 import {
   handleOpenRouterNonStream,
   handleOpenRouterStream,
+  OpenRouterError,
 } from '@/llm-api/openrouter'
 import { extractApiKeyFromHeader } from '@/util/auth'
 
@@ -339,6 +340,12 @@ export async function postChatCompletions(params: {
         },
         logger,
       })
+
+      // Pass through OpenRouter provider-specific errors
+      if (error instanceof OpenRouterError) {
+        return NextResponse.json(error.toJSON(), { status: error.statusCode })
+      }
+
       return NextResponse.json(
         { error: 'Failed to process request' },
         { status: 500 },

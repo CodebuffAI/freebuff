@@ -1,7 +1,7 @@
 import z from 'zod/v4'
 
 import { updateFileResultSchema } from './str-replace'
-import { $getToolCallString, jsonToolResultSchema } from '../utils'
+import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -52,7 +52,7 @@ After creating the plan, you should end turn to let the user review the plan.
 Important: Use this tool sparingly. Do not use this tool more than once in a conversation, unless in ask mode.
 
 Examples:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

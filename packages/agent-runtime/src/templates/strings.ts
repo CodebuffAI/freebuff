@@ -11,11 +11,6 @@ import {
   getProjectFileTreePrompt,
   getSystemInfoPrompt,
 } from '../system-prompt/prompts'
-import {
-  fullToolList,
-  getShortToolInstructions,
-  getToolsInstructions,
-} from '../tools/prompts'
 import { parseUserMessage } from '../util/messages'
 
 import type { AgentTemplate, PlaceholderValue } from './types'
@@ -113,8 +108,7 @@ export async function formatPrompt(
     [PLACEHOLDER.REMAINING_STEPS]: () => `${agentState.stepsRemaining!}`,
     [PLACEHOLDER.PROJECT_ROOT]: () => fileContext.projectRoot,
     [PLACEHOLDER.SYSTEM_INFO_PROMPT]: () => getSystemInfoPrompt(fileContext),
-    [PLACEHOLDER.TOOLS_PROMPT]: async () =>
-      getToolsInstructions(tools, (await additionalToolDefinitions()) ?? {}),
+    [PLACEHOLDER.TOOLS_PROMPT]: async () => '',
     [PLACEHOLDER.AGENTS_PROMPT]: () => buildSpawnableAgentsDescription(params),
     [PLACEHOLDER.USER_CWD]: () => fileContext.cwd,
     [PLACEHOLDER.USER_INPUT_PROMPT]: () => escapeString(lastUserInput ?? ''),
@@ -204,15 +198,7 @@ export async function getAgentPrompt<T extends StringField>(
 
   // Add tool instructions, spawnable agents, and output schema prompts to instructionsPrompt
   if (promptType.type === 'instructionsPrompt' && agentState.agentType) {
-    const toolsInstructions = agentTemplate.inheritParentSystemPrompt
-      ? fullToolList(agentTemplate.toolNames, await additionalToolDefinitions())
-      : getShortToolInstructions(
-          agentTemplate.toolNames,
-          await additionalToolDefinitions(),
-        )
     addendum +=
-      '\n\n' +
-      toolsInstructions +
       '\n\n' +
       (await buildSpawnableAgentsDescription({
         ...params,

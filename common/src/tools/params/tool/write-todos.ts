@@ -1,6 +1,6 @@
 import z from 'zod/v4'
 
-import { $getToolCallString } from '../utils'
+import { $getNativeToolCallExampleString } from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -30,7 +30,7 @@ After completing each todo step, call this tool again to update the list and mar
 Use this tool frequently as you work through tasks to update the list of todos with their current status. Doing this is extremely useful because it helps you stay on track and complete all the requirements of the user's request. It also helps inform the user of your plans and the current progress, which they want to know at all times.
 
 Example:
-${$getToolCallString({
+${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {

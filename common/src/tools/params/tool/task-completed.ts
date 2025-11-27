@@ -1,6 +1,9 @@
 import z from 'zod/v4'
 
-import { $getToolCallString, emptyToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  emptyToolResultSchema,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -34,19 +37,19 @@ Use this tool to signal that the task is complete.
 
 All changes have been implemented and tested successfully!
 
-${$getToolCallString({ toolName, inputSchema, input: {}, endsAgentStep })}
+${$getNativeToolCallExampleString({ toolName, inputSchema, input: {}, endsAgentStep })}
 
 OR
 
 I need more information to proceed. Which database schema should I use for this migration?
 
-${$getToolCallString({ toolName, inputSchema, input: {}, endsAgentStep })}
+${$getNativeToolCallExampleString({ toolName, inputSchema, input: {}, endsAgentStep })}
 
 OR
 
 I can't get the tests to pass after several different attempts. I need help from the user to proceed.
 
-${$getToolCallString({ toolName, inputSchema, input: {}, endsAgentStep })}
+${$getNativeToolCallExampleString({ toolName, inputSchema, input: {}, endsAgentStep })}
 `.trim()
 
 export const taskCompletedParams = {

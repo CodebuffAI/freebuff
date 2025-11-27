@@ -5,6 +5,7 @@
     "skipLibCheck": true,
     "types": ["bun", "node"],
     "paths": {
+      "@codebuff/sdk": ["../sdk/src/index.ts"],
       "@codebuff/common/*": ["../common/src/*"]
     }
   },

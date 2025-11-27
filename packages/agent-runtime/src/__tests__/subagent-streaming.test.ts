@@ -96,7 +96,7 @@ describe('Subagent Streaming', () => {
           ...options.agentState,
           messageHistory: [assistantMessage('Test response from subagent')],
         },
-        output: { type: 'lastMessage', value: 'Test response from subagent' },
+        output: { type: 'lastMessage', value: [assistantMessage('Test response from subagent')] },
       }
     })
 

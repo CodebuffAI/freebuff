@@ -7,7 +7,7 @@ import {
 import { generateCompactId } from '@codebuff/common/util/string'
 import { cloneDeep } from 'lodash'
 
-import { processStreamWithTags } from '../tool-stream-parser'
+import { processStreamWithTools } from '../tool-stream-parser'
 import { executeCustomToolCall, executeToolCall } from './tool-executor'
 import { expireMessages } from '../util/messages'
 
@@ -33,7 +33,7 @@ export type ToolCallError = {
   error: string
 } & Omit<ToolCallPart, 'type'>
 
-export async function processStreamWithTools(
+export async function processStream(
   params: {
     agentContext: Record<string, Subgoal>
     agentTemplate: AgentTemplate
@@ -65,7 +65,7 @@ export async function processStreamWithTools(
     | 'toolResultsToAddAfterStream'
   > &
     ParamsExcluding<
-      typeof processStreamWithTags,
+      typeof processStreamWithTools,
       'processors' | 'defaultProcessor' | 'onError' | 'loggerOptions'
     >,
 ) {
@@ -80,12 +80,14 @@ export async function processStreamWithTools(
     runId,
     signal,
     userId,
+    logger,
   } = params
   const fullResponseChunks: string[] = [fullResponse]
 
   const toolResults: ToolMessage[] = []
   const toolResultsToAddAfterStream: ToolMessage[] = []
   const toolCalls: (CodebuffToolCall | CustomToolCall)[] = []
+  const assistantMessages: Message[] = []
   const { promise: streamDonePromise, resolve: resolveStreamDonePromise } =
     Promise.withResolvers<void>()
   let previousToolCallFinished = streamDonePromise
@@ -122,6 +124,14 @@ export async function processStreamWithTools(
           toolResultsToAddAfterStream,
 
           onCostCalculated,
+          onResponseChunk: (chunk) => {
+            if (typeof chunk !== 'string' && chunk.type === 'tool_call') {
+              assistantMessages.push(
+                assistantMessage({ ...chunk, type: 'tool-call' }),
+              )
+            }
+            return onResponseChunk(chunk)
+          },
         })
       },
     }
@@ -147,19 +157,27 @@ export async function processStreamWithTools(
           toolCalls,
           toolResults,
           toolResultsToAddAfterStream,
+
+          onResponseChunk: (chunk) => {
+            if (typeof chunk !== 'string' && chunk.type === 'tool_call') {
+              assistantMessages.push(
+                assistantMessage({ ...chunk, type: 'tool-call' }),
+              )
+            }
+            return onResponseChunk(chunk)
+          },
         })
       },
     }
   }
 
-  const streamWithTags = processStreamWithTags({
+  const streamWithTags = processStreamWithTools({
     ...params,
     processors: Object.fromEntries([
       ...toolNames.map((toolName) => [toolName, toolCallback(toolName)]),
-      ...Object.keys(fileContext.customToolDefinitions ?? {}).map((toolName) => [
-        toolName,
-        customToolCallback(toolName),
-      ]),
+      ...Object.keys(fileContext.customToolDefinitions ?? {}).map(
+        (toolName) => [toolName, customToolCallback(toolName)],
+      ),
     ]),
     defaultProcessor: customToolCallback,
     onError: (toolName, error) => {
@@ -178,6 +196,21 @@ export async function processStreamWithTools(
       userId,
       model: agentTemplate.model,
       agentName: agentTemplate.id,
+    },
+    onResponseChunk: (chunk) => {
+      if (chunk.type === 'text') {
+        if (chunk.text) {
+          assistantMessages.push(assistantMessage(chunk.text))
+        }
+      } else if (chunk.type === 'error') {
+        // do nothing
+      } else {
+        chunk satisfies never
+        throw new Error(
+          `Internal error: unhandled chunk type: ${(chunk as any).type}`,
+        )
+      }
+      return onResponseChunk(chunk)
     },
   })
 
@@ -204,15 +237,17 @@ export async function processStreamWithTools(
       fullResponseChunks.push(chunk.text)
     } else if (chunk.type === 'error') {
       onResponseChunk(chunk)
+    } else if (chunk.type === 'tool-call') {
+      // Do nothing, the onResponseChunk for tool is handled in the processor
     } else {
       chunk satisfies never
+      throw new Error(`Unhandled chunk type: ${(chunk as any).type}`)
     }
   }
 
   agentState.messageHistory = buildArray<Message>([
     ...expireMessages(agentState.messageHistory, 'agentStep'),
-    fullResponseChunks.length > 0 &&
-      assistantMessage(fullResponseChunks.join('')),
+    ...assistantMessages,
     ...toolResultsToAddAfterStream,
   ])
 

@@ -1,10 +1,12 @@
+import { assistantMessage } from '@codebuff/common/util/messages'
 import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test'
 
-import { ErrorCodes, NetworkError } from '../errors'
+import { ErrorCodes } from '../errors'
 import { run } from '../run'
 import * as runModule from '../run'
 
 import type { RunState } from '../run-state'
+import type { SessionState } from '@codebuff/common/types/session-state'
 
 const baseOptions = {
   apiKey: 'test-key',
@@ -19,8 +21,13 @@ describe('run retry wrapper', () => {
   })
 
   it('returns immediately on success without retrying', async () => {
-    const expectedState = { sessionState: {} as any, output: { type: 'lastMessage', value: 'hi' } } as RunState
-    const runSpy = spyOn(runModule, 'runOnce').mockResolvedValueOnce(expectedState)
+    const expectedState: RunState = {
+      sessionState: {} as SessionState,
+      output: { type: 'lastMessage', value: [assistantMessage('hi')] },
+    }
+    const runSpy = spyOn(runModule, 'runOnce').mockResolvedValueOnce(
+      expectedState,
+    )
 
     const result = await run(baseOptions)
 
@@ -29,11 +36,14 @@ describe('run retry wrapper', () => {
   })
 
   it('retries once on retryable error output and then succeeds', async () => {
-    const errorState = {
-      sessionState: {} as any,
-      output: { type: 'error', message: 'NetworkError: Service unavailable' }
-    } as RunState
-    const successState = { sessionState: {} as any, output: { type: 'lastMessage', value: 'hi' } } as RunState
+    const errorState: RunState = {
+      sessionState: {} as SessionState,
+      output: { type: 'error', message: 'NetworkError: Service unavailable' },
+    }
+    const successState: RunState = {
+      sessionState: {} as SessionState,
+      output: { type: 'lastMessage', value: [assistantMessage('hi')] },
+    }
 
     const runSpy = spyOn(runModule, 'runOnce')
       .mockResolvedValueOnce(errorState)
@@ -51,7 +61,7 @@ describe('run retry wrapper', () => {
   it('stops after max retries are exhausted and returns error output', async () => {
     const errorState = {
       sessionState: {} as any,
-      output: { type: 'error', message: 'NetworkError: Connection timeout' }
+      output: { type: 'error', message: 'NetworkError: Connection timeout' },
     } as RunState
 
     const runSpy = spyOn(runModule, 'runOnce').mockResolvedValue(errorState)
@@ -73,7 +83,7 @@ describe('run retry wrapper', () => {
   it('does not retry non-retryable error outputs', async () => {
     const errorState = {
       sessionState: {} as any,
-      output: { type: 'error', message: 'Invalid input' }
+      output: { type: 'error', message: 'Invalid input' },
     } as RunState
 
     const runSpy = spyOn(runModule, 'runOnce').mockResolvedValue(errorState)
@@ -91,7 +101,7 @@ describe('run retry wrapper', () => {
   it('skips retry when retry is false even for retryable error outputs', async () => {
     const errorState = {
       sessionState: {} as any,
-      output: { type: 'error', message: 'NetworkError: Connection failed' }
+      output: { type: 'error', message: 'NetworkError: Connection failed' },
     } as RunState
 
     const runSpy = spyOn(runModule, 'runOnce').mockResolvedValue(errorState)
@@ -106,11 +116,14 @@ describe('run retry wrapper', () => {
   })
 
   it('retries when provided custom retryableErrorCodes set', async () => {
-    const errorState = {
+    const errorState: RunState = {
       sessionState: {} as any,
-      output: { type: 'error', message: 'Server error (500)' }
-    } as RunState
-    const successState = { sessionState: {} as any, output: { type: 'lastMessage', value: 'hi' } } as RunState
+      output: { type: 'error', message: 'Server error (500)' },
+    }
+    const successState: RunState = {
+      sessionState: {} as SessionState,
+      output: { type: 'lastMessage', value: [assistantMessage('hi')] },
+    }
 
     const runSpy = spyOn(runModule, 'runOnce')
       .mockResolvedValueOnce(errorState)
@@ -149,11 +162,14 @@ describe('run retry wrapper', () => {
   })
 
   it('calls onRetry callback with correct parameters on error output', async () => {
-    const errorState = {
-      sessionState: {} as any,
-      output: { type: 'error', message: 'Service unavailable (503)' }
-    } as RunState
-    const successState = { sessionState: {} as any, output: { type: 'lastMessage', value: 'done' } } as RunState
+    const errorState: RunState = {
+      sessionState: {} as SessionState,
+      output: { type: 'error', message: 'Service unavailable (503)' },
+    }
+    const successState: RunState = {
+      sessionState: {} as SessionState,
+      output: { type: 'lastMessage', value: [assistantMessage('done')] },
+    }
 
     const runSpy = spyOn(runModule, 'runOnce')
       .mockResolvedValueOnce(errorState)
@@ -178,7 +194,7 @@ describe('run retry wrapper', () => {
   it('calls onRetryExhausted after all retries fail', async () => {
     const errorState = {
       sessionState: {} as any,
-      output: { type: 'error', message: 'NetworkError: timeout' }
+      output: { type: 'error', message: 'NetworkError: timeout' },
     } as RunState
 
     spyOn(runModule, 'runOnce').mockResolvedValue(errorState)
@@ -200,7 +216,7 @@ describe('run retry wrapper', () => {
 
   it('returns error output without sessionState on first attempt failure', async () => {
     const errorState = {
-      output: { type: 'error', message: 'Not retryable' }
+      output: { type: 'error', message: 'Not retryable' },
     } as RunState
 
     spyOn(runModule, 'runOnce').mockResolvedValue(errorState)
@@ -216,14 +232,14 @@ describe('run retry wrapper', () => {
 
   it('preserves sessionState from previousRun on retry', async () => {
     const previousSession = { fileContext: { cwd: '/test' } } as any
-    const errorState = {
-      sessionState: { fileContext: { cwd: '/new' } } as any,
-      output: { type: 'error', message: 'Service unavailable' }
-    } as RunState
-    const successState = {
-      sessionState: { fileContext: { cwd: '/final' } } as any,
-      output: { type: 'lastMessage', value: 'ok' }
-    } as RunState
+    const errorState: RunState = {
+      sessionState: { fileContext: { cwd: '/new' } } as SessionState,
+      output: { type: 'error', message: 'Service unavailable' },
+    }
+    const successState: RunState = {
+      sessionState: { fileContext: { cwd: '/final' } } as SessionState,
+      output: { type: 'lastMessage', value: [assistantMessage('ok')] },
+    }
 
     const runSpy = spyOn(runModule, 'runOnce')
       .mockResolvedValueOnce(errorState)
@@ -231,7 +247,10 @@ describe('run retry wrapper', () => {
 
     const result = await run({
       ...baseOptions,
-      previousRun: { sessionState: previousSession, output: { type: 'lastMessage', value: 'prev' } },
+      previousRun: {
+        sessionState: previousSession,
+        output: { type: 'lastMessage', value: [assistantMessage('prev')] },
+      },
       retry: { backoffBaseMs: 1, backoffMaxMs: 2 },
     })
 
@@ -240,11 +259,17 @@ describe('run retry wrapper', () => {
   })
 
   it('handles 503 Service Unavailable errors as retryable', async () => {
-    const errorState = {
-      sessionState: {} as any,
-      output: { type: 'error', message: 'Error from AI SDK: 503 Service Unavailable' }
-    } as RunState
-    const successState = { sessionState: {} as any, output: { type: 'lastMessage', value: 'ok' } } as RunState
+    const errorState: RunState = {
+      sessionState: {} as SessionState,
+      output: {
+        type: 'error',
+        message: 'Error from AI SDK: 503 Service Unavailable',
+      },
+    }
+    const successState: RunState = {
+      sessionState: {} as SessionState,
+      output: { type: 'lastMessage', value: [assistantMessage('ok')] },
+    }
 
     const runSpy = spyOn(runModule, 'runOnce')
       .mockResolvedValueOnce(errorState)
@@ -260,11 +285,14 @@ describe('run retry wrapper', () => {
   })
 
   it('applies exponential backoff correctly', async () => {
-    const errorState = {
-      sessionState: {} as any,
-      output: { type: 'error', message: 'NetworkError: Connection refused' }
+    const errorState: RunState = {
+      sessionState: {} as SessionState,
+      output: { type: 'error', message: 'NetworkError: Connection refused' },
     } as RunState
-    const successState = { sessionState: {} as any, output: { type: 'lastMessage', value: 'ok' } } as RunState
+    const successState: RunState = {
+      sessionState: {} as SessionState,
+      output: { type: 'lastMessage', value: [assistantMessage('ok')] },
+    }
 
     spyOn(runModule, 'runOnce')
       .mockResolvedValueOnce(errorState)

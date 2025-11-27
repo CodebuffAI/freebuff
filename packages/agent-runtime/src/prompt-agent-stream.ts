@@ -12,6 +12,7 @@ import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type { ParamsOf } from '@codebuff/common/types/function-params'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 import type { OpenRouterProviderOptions } from '@codebuff/internal/openrouter-ai-sdk'
+import type { ToolSet } from 'ai'
 
 export const getAgentStreamFromTemplate = (params: {
   agentId?: string
@@ -25,7 +26,7 @@ export const getAgentStreamFromTemplate = (params: {
   runId: string
   sessionConnections: SessionRecord
   template: AgentTemplate
-  textOverride: string | null
+  tools: ToolSet
   userId: string | undefined
   userInputId: string
 
@@ -46,7 +47,7 @@ export const getAgentStreamFromTemplate = (params: {
     runId,
     sessionConnections,
     template,
-    textOverride,
+    tools,
     userId,
     userInputId,
 
@@ -56,14 +57,6 @@ export const getAgentStreamFromTemplate = (params: {
     trackEvent,
   } = params
 
-  if (textOverride !== null) {
-    async function* stream(): ReturnType<PromptAiSdkStreamFn> {
-      yield { type: 'text', text: textOverride!, agentId }
-      return crypto.randomUUID()
-    }
-    return stream()
-  }
-
   if (!template) {
     throw new Error('Agent template is null/undefined')
   }
@@ -71,24 +64,26 @@ export const getAgentStreamFromTemplate = (params: {
   const { model } = template
 
   const aiSdkStreamParams: ParamsOf<PromptAiSdkStreamFn> = {
+    agentId,
     apiKey,
-    runId,
-    messages,
-    model,
-    stopSequences: [globalStopSequence],
     clientSessionId,
     fingerprintId,
-    userInputId,
-    userId,
-    maxOutputTokens: 32_000,
-    onCostCalculated,
     includeCacheControl,
-    agentId,
-    maxRetries: 3,
-    sendAction,
-    liveUserInputRecord,
-    sessionConnections,
     logger,
+    liveUserInputRecord,
+    maxOutputTokens: 32_000,
+    maxRetries: 3,
+    messages,
+    model,
+    runId,
+    sessionConnections,
+    stopSequences: [globalStopSequence],
+    tools,
+    userId,
+    userInputId,
+
+    onCostCalculated,
+    sendAction,
     trackEvent,
   }
 

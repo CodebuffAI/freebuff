@@ -4,6 +4,7 @@ import * as agentRegistry from '@codebuff/agent-runtime/templates/agent-registry
 import { TEST_USER_ID } from '@codebuff/common/old-constants'
 import { TEST_AGENT_RUNTIME_IMPL } from '@codebuff/common/testing/impl/agent-runtime'
 import { getInitialSessionState } from '@codebuff/common/types/session-state'
+import { generateCompactId } from '@codebuff/common/util/string'
 import {
   spyOn,
   beforeEach,
@@ -22,6 +23,7 @@ import type {
   AgentRuntimeScopedDeps,
 } from '@codebuff/common/types/contracts/agent-runtime'
 import type { SendActionFn } from '@codebuff/common/types/contracts/client'
+import type { StreamChunk } from '@codebuff/common/types/contracts/llm'
 import type { ParamsExcluding } from '@codebuff/common/types/function-params'
 import type { ProjectFileContext } from '@codebuff/common/util/file'
 import type { Mock } from 'bun:test'
@@ -149,15 +151,30 @@ describe('Cost Aggregation Integration Tests', () => {
         if (callCount === 1) {
           // Main agent spawns a subagent
           yield {
-            type: 'text' as const,
-            text: '<codebuff_tool_call>\n{"cb_tool_name": "spawn_agents", "agents": [{"agent_type": "editor", "prompt": "Write a simple hello world file"}]}\n</codebuff_tool_call>',
-          }
+            type: 'tool-call',
+            toolName: 'spawn_agents',
+            toolCallId: generateCompactId('test-id-'),
+            input: {
+              agents: [
+                {
+                  agent_type: 'editor',
+                  prompt: 'Write a simple hello world file',
+                },
+              ],
+            },
+          } satisfies StreamChunk
         } else {
           // Subagent writes a file
           yield {
-            type: 'text' as const,
-            text: '<codebuff_tool_call>\n{"cb_tool_name": "write_file", "path": "hello.txt", "instructions": "Create hello world file", "content": "Hello, World!"}\n</codebuff_tool_call>',
-          }
+            type: 'tool-call',
+            toolName: 'write_file',
+            toolCallId: generateCompactId('test-id-'),
+            input: {
+              path: 'hello.txt',
+              instructions: 'Create hello world file',
+              content: 'Hello, World!',
+            },
+          } satisfies StreamChunk
         }
         return 'mock-message-id'
       },
@@ -252,8 +269,8 @@ describe('Cost Aggregation Integration Tests', () => {
 
     // Verify the total cost includes both main agent and subagent costs
     const finalCreditsUsed = result.sessionState.mainAgentState.creditsUsed
-    // The actual cost is higher than expected due to multiple steps in agent execution
-    expect(finalCreditsUsed).toEqual(73)
+    // 10 for the first call, 7 for the subagent, 7*9 for the next 9 calls
+    expect(finalCreditsUsed).toEqual(80)
 
     // Verify the cost breakdown makes sense
     expect(finalCreditsUsed).toBeGreaterThan(0)
@@ -307,21 +324,35 @@ describe('Cost Aggregation Integration Tests', () => {
       if (callCount === 1) {
         // Main agent spawns first-level subagent
         yield {
-          type: 'text' as const,
-          text: '<codebuff_tool_call>\n{"cb_tool_name": "spawn_agents", "agents": [{"agent_type": "editor", "prompt": "Create files"}]}\n</codebuff_tool_call>',
-        }
+          type: 'tool-call',
+          toolName: 'spawn_agents',
+          toolCallId: generateCompactId('test-id-'),
+          input: {
+            agents: [{ agent_type: 'editor', prompt: 'Create files' }],
+          },
+        } satisfies StreamChunk
       } else if (callCount === 2) {
         // First-level subagent spawns second-level subagent
         yield {
-          type: 'text' as const,
-          text: '<codebuff_tool_call>\n{"cb_tool_name": "spawn_agents", "agents": [{"agent_type": "editor", "prompt": "Write specific file"}]}\n</codebuff_tool_call>',
-        }
+          type: 'tool-call',
+          toolName: 'spawn_agents',
+          toolCallId: generateCompactId('test-id-'),
+          input: {
+            agents: [{ agent_type: 'editor', prompt: 'Write specific file' }],
+          },
+        } satisfies StreamChunk
       } else {
         // Second-level subagent does actual work
         yield {
-          type: 'text' as const,
-          text: '<codebuff_tool_call>\n{"cb_tool_name": "write_file", "path": "nested.txt", "instructions": "Create nested file", "content": "Nested content"}\n</codebuff_tool_call>',
-        }
+          type: 'tool-call',
+          toolName: 'write_file',
+          toolCallId: generateCompactId('test-id-'),
+          input: {
+            path: 'nested.txt',
+            instructions: 'Create nested file',
+            content: 'Nested content',
+          },
+        } satisfies StreamChunk
       }
 
       return 'mock-message-id'
@@ -348,8 +379,8 @@ describe('Cost Aggregation Integration Tests', () => {
 
     // Should aggregate costs from all levels: main + sub1 + sub2
     const finalCreditsUsed = result.sessionState.mainAgentState.creditsUsed
-    // Multi-level agents should have higher costs than simple ones
-    expect(finalCreditsUsed).toEqual(50)
+    // 10 calls from base agent, 1 from first subagent, 1 from second subagent: 12 calls total
+    expect(finalCreditsUsed).toEqual(60)
   })
 
   it('should maintain cost integrity when subagents fail', async () => {
@@ -365,12 +396,19 @@ describe('Cost Aggregation Integration Tests', () => {
       if (callCount === 1) {
         // Main agent spawns subagent
         yield {
-          type: 'text' as const,
-          text: '<codebuff_tool_call>\n{"cb_tool_name": "spawn_agents", "agents": [{"agent_type": "editor", "prompt": "This will fail"}]}\n</codebuff_tool_call>',
-        }
+          type: 'tool-call',
+          toolName: 'spawn_agents',
+          toolCallId: generateCompactId('test-id-'),
+          input: {
+            agents: [{ agent_type: 'editor', prompt: 'This will fail' }],
+          },
+        } satisfies StreamChunk
       } else {
         // Subagent fails after incurring cost
-        yield { type: 'text' as const, text: 'Some response' }
+        yield {
+          type: 'text',
+          text: 'Some response',
+        } satisfies StreamChunk
         throw new Error('Subagent execution failed')
       }
 
