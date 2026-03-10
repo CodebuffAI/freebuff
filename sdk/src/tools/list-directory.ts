@@ -13,7 +13,10 @@ export async function listDirectory(params: {
   try {
     const resolvedPath = path.resolve(projectPath, directoryPath)
 
-    if (!resolvedPath.startsWith(projectPath)) {
+    if (
+      !resolvedPath.startsWith(projectPath + path.sep) &&
+      resolvedPath !== projectPath
+    ) {
       return [
         {
           type: 'json',
