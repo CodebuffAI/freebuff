@@ -41,6 +41,7 @@
   "dependencies": {
     "@t3-oss/env-nextjs": "^0.7.3",
     "canvas": "^3.2.0",
+    "geoip-lite": "^2.0.1",
     "gif-encoder-2": "^1.0.5",
     "zod": "^4.2.1"
   },

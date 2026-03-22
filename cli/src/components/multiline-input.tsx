@@ -89,16 +89,16 @@ const TAB_WIDTH = 4
  */
 function isPrintableCharacterKey(key: KeyEvent): boolean {
   const name = key.name
-  
+
   // No name = likely multi-byte input (Chinese, Japanese, Korean, etc.) - treat as printable
   if (!name) return true
-  
+
   // Single character name = regular ASCII printable (a, b, 1, $, etc.)
   if (name.length === 1) return true
-  
+
   // Special case: space key has name 'space' but is printable
   if (name === 'space') return true
-  
+
   // Multi-char name = special key (up, f1, backspace, etc.)
   return false
 }
@@ -122,8 +122,8 @@ function renderPositionToOriginal(text: string, renderPos: number): number {
 
 type KeyWithPreventDefault =
   | {
-      preventDefault?: () => void
-    }
+    preventDefault?: () => void
+  }
   | null
   | undefined
 
@@ -136,9 +136,9 @@ function isAltModifier(key: KeyEvent): boolean {
   const ESC = '\x1b'
   return Boolean(
     key.option ||
-      (key.sequence?.length === 2 &&
-        key.sequence[0] === ESC &&
-        key.sequence[1] !== '['),
+    (key.sequence?.length === 2 &&
+      key.sequence[0] === ESC &&
+      key.sequence[1] !== '['),
   )
 }
 
@@ -241,9 +241,9 @@ export const MultilineInput = forwardRef<
 
   const lineInfo = textRef.current
     ? (
-        (textRef.current satisfies TextRenderable as any)
-          .textBufferView as TextBufferView
-      ).lineInfo
+      (textRef.current satisfies TextRenderable as any)
+        .textBufferView as TextBufferView
+    ).lineInfo
     : null
 
   // Focus/blur scrollbox when focused prop changes
@@ -271,13 +271,13 @@ export const MultilineInput = forwardRef<
     [],
   )
 
-  const cursorRow = lineInfo
+  const cursorRow = lineInfo && lineInfo.lineStartCols
     ? Math.max(
-        0,
-        lineInfo.lineStartCols.findLastIndex(
-          (lineStart) => lineStart <= cursorPosition,
-        ),
-      )
+      0,
+      lineInfo.lineStartCols.findLastIndex(
+        (lineStart: number) => lineStart <= cursorPosition,
+      ),
+    )
     : 0
 
   // Auto-scroll to cursor when content changes
@@ -314,7 +314,7 @@ export const MultilineInput = forwardRef<
   // Helper to clear the current selection
   const clearSelection = useCallback(() => {
     // Use renderer's clearSelection for proper visual clearing
-    ;(renderer as any)?.clearSelection?.()
+    ; (renderer as any)?.clearSelection?.()
   }, [renderer])
 
   // Helper to delete selected text and return new value and cursor position
@@ -803,7 +803,7 @@ export const MultilineInput = forwardRef<
       // Fall back to logical line boundaries if visual info is unavailable
       const lineStarts = currentLineInfo?.lineStartCols ?? []
       const visualLineIndex = lineStarts.findLastIndex(
-        (start) => start <= cursorPosition,
+        (start: number) => start <= cursorPosition,
       )
       const visualLineStart = visualLineIndex >= 0
         ? lineStarts[visualLineIndex]
@@ -1091,7 +1091,7 @@ export const MultilineInput = forwardRef<
     const effectiveMinHeight = Math.max(1, Math.min(minHeight, safeMaxHeight))
 
     const totalLines =
-      lineInfo === null ? 0 : lineInfo.lineStartCols.length
+      lineInfo === null || !lineInfo.lineStartCols ? 0 : lineInfo.lineStartCols.length
 
     // Add bottom gutter when cursor is on line 2 of exactly 2 lines
     const gutterEnabled =

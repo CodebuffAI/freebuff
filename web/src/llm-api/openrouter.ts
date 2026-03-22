@@ -1,8 +1,8 @@
-import { Agent } from 'undici'
 
 import { PROFIT_MARGIN } from '@codebuff/common/constants/limits'
 import { getErrorObject } from '@codebuff/common/util/error'
 import { env } from '@codebuff/internal/env'
+import { Agent } from 'undici'
 
 import {
   consumeCreditsForMessage,
@@ -16,12 +16,11 @@ import {
 
 import type { UsageData } from './helpers'
 import type { OpenRouterStreamChatCompletionChunk } from './type/openrouter'
-import type { InsertMessageBigqueryFn } from '@codebuff/common/types/contracts/bigquery'
-import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type {
   ChatCompletionRequestBody,
-  OpenRouterErrorMetadata,
 } from './types'
+import type { InsertMessageBigqueryFn } from '@codebuff/common/types/contracts/bigquery'
+import type { Logger } from '@codebuff/common/types/contracts/logger'
 
 type StreamState = { responseText: string; reasoningText: string; ttftMs: number | null }
 
@@ -432,6 +431,50 @@ export async function handleOpenRouterStream({
   return stream
 }
 
+/**
+ * Attempt to parse and recover from truncated/malformed JSON responses.
+ * Some models like kimi-k2 may send incomplete JSON at newline boundaries.
+ * This function tries to recover common truncation patterns.
+ */
+function attemptJSONParse(raw: string): unknown | null {
+  // First attempt: parse as-is
+  try {
+    return JSON.parse(raw)
+  } catch (e) {
+    // Silent fail, will try recovery below
+  }
+
+  // Recovery attempt 1: Remove trailing newline if present
+  const trimmed = raw.trimEnd()
+  if (trimmed !== raw) {
+    try {
+      return JSON.parse(trimmed)
+    } catch (e) {
+      // Continue to next recovery attempt
+    }
+  }
+
+  // Recovery attempt 2: Try to close incomplete JSON structures
+  // This handles cases where JSON is truncated mid-object or mid-array
+  const recoveryAttempts = [
+    trimmed + '}',      // Close single object
+    trimmed + ']}',     // Close nested array in object
+    trimmed + '}]}',    // Close nested structures
+    trimmed + '[]',     // Complete empty array
+  ]
+
+  for (const attempt of recoveryAttempts) {
+    try {
+      return JSON.parse(attempt)
+    } catch (e) {
+      // Continue to next attempt
+    }
+  }
+
+  // All recovery attempts failed
+  return null
+}
+
 async function handleLine({
   userId,
   stripeCustomerId,
@@ -470,24 +513,48 @@ async function handleLine({
     return { state }
   }
 
-  // Parse the string into an object
-  let obj
-  try {
-    obj = JSON.parse(raw)
-  } catch (error) {
-    logger.warn(
-      { error: getErrorObject(error, { includeRawError: true }) },
-      'Received non-JSON OpenRouter response',
+  // Parse the string into an object with defensive recovery
+  let obj = attemptJSONParse(raw)
+  if (obj === null) {
+    // All parsing attempts failed - log with detailed context for debugging
+    logger.debug(
+      {
+        rawLength: raw.length,
+        rawPreview: raw.slice(0, 200),
+        error: 'JSON parsing failed after recovery attempts',
+      },
+      'Could not parse OpenRouter response - may be truncated chunk from model like kimi-k2',
     )
     return { state }
   }
 
-  // Extract usage
+  // Validate against schema, but be lenient with model quirks
   const parsed = OpenRouterStreamChatCompletionChunkSchema.safeParse(obj)
   if (!parsed.success) {
-    logger.warn(
-      { error: getErrorObject(parsed.error, { includeRawError: true }) },
-      'Unable to parse OpenRouter response',
+    // Schema validation failed - check if it's an error response or just malformed
+    // Some models send slightly different formats that we should still attempt to handle
+    const isErrorLike = obj && typeof obj === 'object' && 'error' in obj
+
+    if (isErrorLike) {
+      // Try to handle as error even if schema doesn't match perfectly
+      logger.warn(
+        {
+          error: getErrorObject(parsed.error, { includeRawError: true }),
+          rawObject: JSON.stringify(obj).slice(0, 500),
+        },
+        'OpenRouter response matches error pattern but schema validation failed',
+      )
+      // handleResponse already returns { state } for error data, so skip processing
+      return { state }
+    }
+
+    // Not an error, likely a malformed chunk - log and skip
+    logger.debug(
+      {
+        error: getErrorObject(parsed.error, { includeRawError: true }),
+        rawPreview: JSON.stringify(obj).slice(0, 300),
+      },
+      'OpenRouter response failed schema validation - skipping malformed chunk (may be truncated from streaming)',
     )
     return { state }
   }
@@ -641,8 +708,15 @@ async function handleStreamChunk({
     return state
   }
 
-  if (!data.choices.length) {
-    logger.warn({ streamChunk: data }, 'Received empty choices from OpenRouter')
+  if (!data.choices || !Array.isArray(data.choices) || !data.choices.length) {
+    logger.debug(
+      {
+        hasChoices: 'choices' in data,
+        choicesLength: Array.isArray(data.choices) ? data.choices.length : 'N/A',
+        streamChunk: JSON.stringify(data).slice(0, 500),
+      },
+      'Received empty/missing choices from OpenRouter - likely truncated streaming chunk',
+    )
     return state
   }
   const choice = data.choices[0]
