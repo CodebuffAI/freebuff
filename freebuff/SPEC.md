@@ -84,7 +84,7 @@ Freebuff only supports **FREE mode**. All mode-related features are stripped.
 | `/agent:gpt-5` | Premium agent, not available in free tier |
 | `/review` | Uses thinker-gpt under the hood |
 | `/publish` | Agent publishing not available in free tier |
-| `/image` (+ `/img`, `/attach`) | Image attachments unavailable with free model (MiniMax M2.5) |
+| `/image` (+ `/img`, `/attach`) | Image attachments unavailable with free model (MiniMax M2.7) |
 
 ### Commands to KEEP
 

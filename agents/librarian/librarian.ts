@@ -9,7 +9,7 @@ const librarian: AgentDefinition = {
   id: 'librarian',
   publisher,
   displayName: 'Librarian',
-  model: 'minimax/minimax-m2.5',
+  model: 'minimax/minimax-m2.7',
 
   spawnerPrompt:
     'Spawn the librarian agent to shallow-clone a GitHub repository into /tmp and answer questions about its code, structure, or documentation. The agent returns structured output with `answer`, `relevantFiles` (absolute paths in the cloned repo), and `cloneDir`. You can use `run_terminal_command` with `cat` to read the returned `relevantFiles` paths. Clean up `cloneDir` with `rm -rf` when done.',

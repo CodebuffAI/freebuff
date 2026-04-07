@@ -64,7 +64,7 @@ describe('editor agent', () => {
 
     test('creates minimax editor', () => {
       const minimaxEditor = createCodeEditor({ model: 'minimax' })
-      expect(minimaxEditor.model).toBe('minimax/minimax-m2.5')
+      expect(minimaxEditor.model).toBe('minimax/minimax-m2.7')
     })
 
     test('gpt-5 editor does not include think tags in instructions', () => {

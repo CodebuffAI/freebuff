@@ -71,7 +71,7 @@ const outputSchema = {
 const definition: AgentDefinition = {
   id: 'tmux-cli',
   displayName: 'Tmux CLI Agent',
-  model: 'minimax/minimax-m2.5',
+  model: 'minimax/minimax-m2.7',
   // Provider options are tightly coupled to the model choice above.
   // If you change the model, update these accordingly.
   providerOptions: {

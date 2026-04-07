@@ -13,7 +13,7 @@ export const createCodeEditor = (options: {
       options.model === 'gpt-5'
         ? 'openai/gpt-5.1'
         : options.model === 'minimax'
-          ? 'minimax/minimax-m2.5'
+          ? 'minimax/minimax-m2.7'
           : 'anthropic/claude-opus-4.6',
     ...(options.model === 'opus' && {
       providerOptions: {
