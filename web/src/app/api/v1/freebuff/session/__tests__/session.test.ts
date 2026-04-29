@@ -281,19 +281,6 @@ describe('POST /api/v1/freebuff/session', () => {
     expect(body.status).toBe('queued')
   })
 
-  test('returns model_unavailable for Kimi outside deployment hours', async () => {
-    const sessionDeps = makeSessionDeps()
-    const resp = await postFreebuffSession(
-      makeReq('ok', { model: 'moonshotai/kimi-k2.6' }),
-      makeDeps(sessionDeps, 'u1'),
-    )
-    expect(resp.status).toBe(409)
-    const body = await resp.json()
-    expect(body.status).toBe('model_unavailable')
-    expect(body.availableHours).toBe('9am ET-5pm PT every day')
-    expect(sessionDeps.rows.size).toBe(0)
-  })
-
   // Banned bots with valid API keys were POSTing every few seconds and
   // inflating queueDepth between the 15s admission-tick sweeps. Rejecting at
   // the HTTP layer with 403 (terminal, like country_blocked) keeps them out

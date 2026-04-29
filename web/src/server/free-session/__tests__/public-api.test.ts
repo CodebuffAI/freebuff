@@ -200,20 +200,6 @@ describe('requestSession', () => {
     expect(state.instanceId).toBe('inst-1')
   })
 
-  test('deployment-hours-only model is unavailable outside deployment hours', async () => {
-    const state = await requestSession({
-      userId: 'u1',
-      model: 'moonshotai/kimi-k2.6',
-      deps,
-    })
-    expect(state).toEqual({
-      status: 'model_unavailable',
-      requestedModel: 'moonshotai/kimi-k2.6',
-      availableHours: '9am ET-5pm PT every day',
-    })
-    expect(deps.rows.size).toBe(0)
-  })
-
   test('queued response includes a per-model depth snapshot for the selector', async () => {
     deps._tick(new Date('2026-04-17T16:00:00Z'))
     // Seed 2 users in MiniMax + 1 in Kimi so the returned map captures both.
@@ -325,9 +311,7 @@ describe('requestSession', () => {
 
   // Per-user rate limit (5 Kimi admissions per 12h) — the wire limit is
   // hard-coded in public-api.ts, so tests seed the fake admit log directly
-  // rather than configuring it. Kimi also has deployment-hours gating, so
-  // these tests bump `now` into the open window (12pm ET on a weekday)
-  // before issuing the request.
+  // rather than configuring it.
   const KIMI_MODEL = 'moonshotai/kimi-k2.6'
   const KIMI_LIMIT = 5
   const KIMI_WINDOW_HOURS = 12
@@ -636,8 +620,8 @@ describe('getSessionState', () => {
     // Regression: the POST response attached rateLimit, but GET polls did
     // not — so the "Sessions N/M used" line flashed once then disappeared on
     // the next 5s poll. GET must attach the same quota snapshot. Rate
-    // limits only apply to Kimi, so this test uses Kimi explicitly (inside
-    // deployment hours) rather than the Minimax DEFAULT_MODEL.
+    // limits only apply to Kimi, so this test uses Kimi explicitly rather
+    // than the Minimax DEFAULT_MODEL.
     deps._tick(new Date('2026-04-17T16:00:00Z'))
     const now = deps._now()
     deps.admits.push({

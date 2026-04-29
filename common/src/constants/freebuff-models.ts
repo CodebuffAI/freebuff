@@ -39,7 +39,7 @@ interface LocalTimeFormatOptions {
   timeZone?: string
 }
 
-export const FREEBUFF_MODELS = [
+export const FREEBUFF_MODELS: readonly FreebuffModelOption[] = [
   {
     id: FREEBUFF_MINIMAX_MODEL_ID,
     displayName: 'MiniMax M2.7',
@@ -50,16 +50,15 @@ export const FREEBUFF_MODELS = [
     id: FREEBUFF_KIMI_MODEL_ID,
     displayName: 'Kimi K2.6',
     tagline: 'Smartest',
-    availability: 'deployment_hours',
+    availability: 'always',
   },
-] as const satisfies readonly FreebuffModelOption[]
+]
 
-export type FreebuffModelId = (typeof FREEBUFF_MODELS)[number]['id']
+export type FreebuffModelId =
+  | typeof FREEBUFF_MINIMAX_MODEL_ID
+  | typeof FREEBUFF_KIMI_MODEL_ID
 
-/** What new freebuff users see selected in the picker. May not be currently
- *  available (Kimi is closed outside deployment hours); callers that need an
- *  always-available id for resolution / auto-fallbacks should use
- *  FALLBACK_FREEBUFF_MODEL_ID instead. */
+/** What new freebuff users see selected in the picker. */
 export const DEFAULT_FREEBUFF_MODEL_ID: FreebuffModelId = FREEBUFF_KIMI_MODEL_ID
 
 /** Always-available fallback used when the requested model can't be served

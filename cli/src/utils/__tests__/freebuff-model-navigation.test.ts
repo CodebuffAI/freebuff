@@ -7,40 +7,40 @@ import {
 
 describe('nextSelectableFreebuffModelId', () => {
   test('skips unavailable models when moving forward', () => {
-    const modelIds = ['glm', 'minimax']
+    const modelIds = ['kimi', 'minimax']
 
     expect(
       nextSelectableFreebuffModelId({
         modelIds,
         focusedId: 'minimax',
         direction: 'forward',
-        isSelectable: (id) => id !== 'glm',
+        isSelectable: (id) => id !== 'kimi',
       }),
     ).toBe('minimax')
   })
 
   test('skips unavailable models when moving backward', () => {
-    const modelIds = ['glm', 'minimax']
+    const modelIds = ['kimi', 'minimax']
 
     expect(
       nextSelectableFreebuffModelId({
         modelIds,
         focusedId: 'minimax',
         direction: 'backward',
-        isSelectable: (id) => id !== 'glm',
+        isSelectable: (id) => id !== 'kimi',
       }),
     ).toBe('minimax')
   })
 
   test('moves to the next available model when more than one is selectable', () => {
-    const modelIds = ['glm', 'minimax', 'other']
+    const modelIds = ['kimi', 'minimax', 'other']
 
     expect(
       nextSelectableFreebuffModelId({
         modelIds,
         focusedId: 'minimax',
         direction: 'forward',
-        isSelectable: (id) => id !== 'glm',
+        isSelectable: (id) => id !== 'kimi',
       }),
     ).toBe('other')
   })
@@ -48,8 +48,8 @@ describe('nextSelectableFreebuffModelId', () => {
   test('returns null when no selectable model exists', () => {
     expect(
       nextSelectableFreebuffModelId({
-        modelIds: ['glm'],
-        focusedId: 'glm',
+        modelIds: ['kimi'],
+        focusedId: 'kimi',
         direction: 'forward',
         isSelectable: () => false,
       }),
@@ -61,10 +61,10 @@ describe('resolveFreebuffModelCommitTarget', () => {
   test('falls back to the selected model when focus is on a closed model', () => {
     expect(
       resolveFreebuffModelCommitTarget({
-        focusedId: 'glm',
+        focusedId: 'kimi',
         selectedId: 'minimax',
         committedId: null,
-        isSelectable: (id) => id !== 'glm',
+        isSelectable: (id) => id !== 'kimi',
       }),
     ).toBe('minimax')
   })
@@ -73,7 +73,7 @@ describe('resolveFreebuffModelCommitTarget', () => {
     expect(
       resolveFreebuffModelCommitTarget({
         focusedId: 'minimax',
-        selectedId: 'glm',
+        selectedId: 'kimi',
         committedId: null,
         isSelectable: (id) => id === 'minimax',
       }),

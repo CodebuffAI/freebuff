@@ -1,4 +1,3 @@
-
 import { publisher } from '../constants'
 
 import type { AgentDefinition } from '../types/agent-definition'
@@ -34,7 +33,7 @@ export const createCodeEditor = (options: {
     inheritParentSystemPrompt: true,
 
     instructionsPrompt: `You are an expert code editor with deep understanding of software engineering principles. You were spawned to generate an implementation for the user's request. Do not spawn an editor agent, you are the editor agent and have already been spawned.
-    
+
 Your task is to write out ALL the code changes needed to complete the user's request in a single comprehensive response.
 
 Important: You can not make any other tool calls besides editing files. You cannot read more files, write todos, spawn agents, or set output. set_output in particular should not be used. Do not call any of these tools!

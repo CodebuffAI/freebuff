@@ -62,9 +62,9 @@ describe('editor agent', () => {
       expect(gpt5Editor.model).toBe('openai/gpt-5.1')
     })
 
-    test('creates glm editor', () => {
-      const glmEditor = createCodeEditor({ model: 'glm' })
-      expect(glmEditor.model).toBe('z-ai/glm-5.1')
+    test('creates kimi editor', () => {
+      const kimiEditor = createCodeEditor({ model: 'kimi' })
+      expect(kimiEditor.model).toBe('moonshotai/kimi-k2.6')
     })
 
     test('creates kimi editor', () => {
@@ -83,10 +83,10 @@ describe('editor agent', () => {
       expect(gpt5Editor.instructionsPrompt).not.toContain('</think>')
     })
 
-    test('glm editor does not include think tags in instructions', () => {
-      const glmEditor = createCodeEditor({ model: 'glm' })
-      expect(glmEditor.instructionsPrompt).not.toContain('<think>')
-      expect(glmEditor.instructionsPrompt).not.toContain('</think>')
+    test('kimi editor does not include think tags in instructions', () => {
+      const kimiEditor = createCodeEditor({ model: 'kimi' })
+      expect(kimiEditor.instructionsPrompt).not.toContain('<think>')
+      expect(kimiEditor.instructionsPrompt).not.toContain('</think>')
     })
 
     test('kimi editor does not include think tags in instructions', () => {
@@ -110,17 +110,17 @@ describe('editor agent', () => {
     test('all variants have same base properties', () => {
       const opusEditor = createCodeEditor({ model: 'opus' })
       const gpt5Editor = createCodeEditor({ model: 'gpt-5' })
-      const glmEditor = createCodeEditor({ model: 'glm' })
+      const kimiEditor = createCodeEditor({ model: 'kimi' })
 
       // All should have same basic structure
       expect(opusEditor.displayName).toBe(gpt5Editor.displayName)
-      expect(gpt5Editor.displayName).toBe(glmEditor.displayName)
+      expect(gpt5Editor.displayName).toBe(kimiEditor.displayName)
 
       expect(opusEditor.outputMode).toBe(gpt5Editor.outputMode)
-      expect(gpt5Editor.outputMode).toBe(glmEditor.outputMode)
+      expect(gpt5Editor.outputMode).toBe(kimiEditor.outputMode)
 
       expect(opusEditor.toolNames).toEqual(gpt5Editor.toolNames)
-      expect(gpt5Editor.toolNames).toEqual(glmEditor.toolNames)
+      expect(gpt5Editor.toolNames).toEqual(kimiEditor.toolNames)
     })
   })
 
