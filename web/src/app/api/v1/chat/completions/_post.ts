@@ -109,6 +109,50 @@ export const formatQuotaResetCountdown = (
   return `in ${pluralize(minutes, 'minute')}`
 }
 
+type ProviderHandlerArgs = Parameters<typeof handleCanopyWaveStream>[0]
+type ProviderHandler<T> = (args: ProviderHandlerArgs) => Promise<T>
+
+function shouldFallbackCanopyWaveToFireworks(
+  error: unknown,
+  model: string,
+): error is CanopyWaveError {
+  if (!(error instanceof CanopyWaveError) || !isFireworksModel(model)) {
+    return false
+  }
+  const message = error.errorBody.error.message.toLowerCase()
+  return (
+    error.statusCode === 429 ||
+    error.statusCode >= 500 ||
+    message.includes('no available workers')
+  )
+}
+
+async function handleCanopyWaveWithFireworksFallback<T>(
+  args: ProviderHandlerArgs,
+  handleCanopyWave: ProviderHandler<T>,
+  handleFireworks: ProviderHandler<T>,
+): Promise<T> {
+  try {
+    return await handleCanopyWave(args)
+  } catch (error) {
+    if (!shouldFallbackCanopyWaveToFireworks(error, args.body.model)) {
+      throw error
+    }
+
+    args.logger.warn(
+      {
+        error: getErrorObject(error),
+        model: args.body.model,
+        providerStatusCode: error.statusCode,
+        providerStatusText: error.statusText,
+      },
+      'CanopyWave request failed, falling back to Fireworks',
+    )
+
+    return handleFireworks(args)
+  }
+}
+
 export type CheckSessionAdmissibleFn = typeof checkSessionAdmissible
 
 type GateRejectCode = Extract<SessionGateResult, { ok: false }>['code']
@@ -599,7 +643,8 @@ export async function postChatCompletions(params: {
       if (bodyStream) {
         // Streaming request — route to SiliconFlow/CanopyWave/Fireworks for supported models
         const useSiliconFlow = false // isSiliconFlowModel(typedBody.model)
-        const useCanopyWave = isCanopyWaveModel(typedBody.model)
+        const useCanopyWave =
+          !!env.CANOPYWAVE_API_KEY && isCanopyWaveModel(typedBody.model)
         const useFireworks = !useCanopyWave && isFireworksModel(typedBody.model)
         const useOpenAIDirect =
           !useCanopyWave &&
@@ -616,15 +661,19 @@ export async function postChatCompletions(params: {
               insertMessageBigquery,
             })
           : useCanopyWave
-            ? await handleCanopyWaveStream({
-                body: typedBody,
-                userId,
-                stripeCustomerId,
-                agentId,
-                fetch,
-                logger,
-                insertMessageBigquery,
-              })
+            ? await handleCanopyWaveWithFireworksFallback(
+                {
+                  body: typedBody,
+                  userId,
+                  stripeCustomerId,
+                  agentId,
+                  fetch,
+                  logger,
+                  insertMessageBigquery,
+                },
+                handleCanopyWaveStream,
+                handleFireworksStream,
+              )
             : useFireworks
               ? await handleFireworksStream({
                   body: typedBody,
@@ -678,7 +727,8 @@ export async function postChatCompletions(params: {
         // Non-streaming request — route to SiliconFlow/CanopyWave/Fireworks for supported models
         const model = typedBody.model
         const useSiliconFlow = false // isSiliconFlowModel(model)
-        const useCanopyWave = isCanopyWaveModel(model)
+        const useCanopyWave =
+          !!env.CANOPYWAVE_API_KEY && isCanopyWaveModel(model)
         const useFireworks = !useCanopyWave && isFireworksModel(model)
         const shouldUseOpenAIEndpoint =
           !useCanopyWave && !useFireworks && isOpenAIDirectModel(model)
@@ -694,15 +744,19 @@ export async function postChatCompletions(params: {
               insertMessageBigquery,
             })
           : useCanopyWave
-            ? handleCanopyWaveNonStream({
-                body: typedBody,
-                userId,
-                stripeCustomerId,
-                agentId,
-                fetch,
-                logger,
-                insertMessageBigquery,
-              })
+            ? handleCanopyWaveWithFireworksFallback(
+                {
+                  body: typedBody,
+                  userId,
+                  stripeCustomerId,
+                  agentId,
+                  fetch,
+                  logger,
+                  insertMessageBigquery,
+                },
+                handleCanopyWaveNonStream,
+                handleFireworksNonStream,
+              )
             : useFireworks
               ? handleFireworksNonStream({
                   body: typedBody,

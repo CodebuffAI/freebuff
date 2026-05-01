@@ -6,6 +6,7 @@ import {
   FREEBUFF_GLM_MODEL_ID,
   isFreebuffDeploymentHours,
 } from '@codebuff/common/constants/freebuff-models'
+import { env } from '@codebuff/internal/env'
 import { formatQuotaResetCountdown, postChatCompletions } from '../_post'
 import {
   checkFreeModeRateLimit,
@@ -1075,6 +1076,116 @@ describe('/api/v1/chat/completions POST endpoint', () => {
   })
 
   describe('Successful responses', () => {
+    const withCanopyWaveApiKey = async (testFn: () => Promise<void>) => {
+      const previousCanopyWaveApiKey = env.CANOPYWAVE_API_KEY
+      env.CANOPYWAVE_API_KEY = 'test'
+      try {
+        await testFn()
+      } finally {
+        env.CANOPYWAVE_API_KEY = previousCanopyWaveApiKey
+      }
+    }
+
+    const createCanopyWaveFallbackRequest = (stream: boolean) =>
+      new NextRequest('http://localhost:3000/api/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-api-key-123' },
+        body: JSON.stringify({
+          model: 'minimax/minimax-m2.5',
+          stream,
+          codebuff_metadata: {
+            run_id: 'run-123',
+            client_id: 'test-client-id-123',
+            client_request_id: 'test-client-session-id-123',
+          },
+        }),
+      })
+
+    const createCanopyWaveNoWorkersThenFireworksFetch = (stream: boolean) => {
+      const fetchedBodies: Record<string, unknown>[] = []
+      const fetch = mock(
+        async (_url: string | URL | Request, init?: RequestInit) => {
+          fetchedBodies.push(JSON.parse(init?.body as string))
+
+          if (fetchedBodies.length === 1) {
+            return Response.json(
+              {
+                error: {
+                  message: 'No available workers',
+                  code: 'no_available_workers',
+                },
+              },
+              { status: 503 },
+            )
+          }
+
+          if (!stream) {
+            return Response.json({
+              id: 'test-id',
+              model: 'accounts/fireworks/models/minimax-m2p5',
+              choices: [{ message: { content: 'fireworks response' } }],
+              usage: {
+                prompt_tokens: 10,
+                completion_tokens: 20,
+                total_tokens: 30,
+              },
+            })
+          }
+
+          const encoder = new TextEncoder()
+          const fireworksStream = new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                encoder.encode(
+                  'data: {"id":"test-id","model":"accounts/fireworks/models/minimax-m2p5","choices":[{"delta":{"content":"test"}}]}\n\n',
+                ),
+              )
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+              controller.close()
+            },
+          })
+
+          return new Response(fireworksStream, {
+            status: 200,
+            headers: { 'Content-Type': 'text/event-stream' },
+          })
+        },
+      ) as unknown as typeof globalThis.fetch
+
+      return { fetch, fetchedBodies }
+    }
+
+    const postCanopyWaveFallbackRequest = async ({
+      fetch,
+      stream,
+    }: {
+      fetch: typeof globalThis.fetch
+      stream: boolean
+    }) =>
+      postChatCompletions({
+        req: createCanopyWaveFallbackRequest(stream),
+        getUserInfoFromApiKey: mockGetUserInfoFromApiKey,
+        logger: mockLogger,
+        trackEvent: mockTrackEvent,
+        getUserUsageData: mockGetUserUsageData,
+        getAgentRunFromId: mockGetAgentRunFromId,
+        fetch,
+        insertMessageBigquery: mockInsertMessageBigquery,
+        loggerWithContext: mockLoggerWithContext,
+        checkSessionAdmissible: mockCheckSessionAdmissibleAllow,
+      })
+
+    const expectCanopyWaveThenFireworks = (
+      fetchedBodies: Record<string, unknown>[],
+    ) => {
+      expect(fetchedBodies).toHaveLength(2)
+      expect(fetchedBodies[0].model).toBe('minimax/minimax-m2.5')
+      expect(fetchedBodies[1].model).toBe(
+        'accounts/fireworks/models/minimax-m2p5',
+      )
+      expect(mockLogger.warn).toHaveBeenCalled()
+    }
+
     it('returns stream with correct headers', async () => {
       const req = new NextRequest(
         'http://localhost:3000/api/v1/chat/completions',
@@ -1155,6 +1266,48 @@ describe('/api/v1/chat/completions POST endpoint', () => {
         const body = await response.json()
         expect(body.id).toBe('test-id')
         expect(body.choices[0].message.content).toBe('test response')
+      },
+      FETCH_PATH_TEST_TIMEOUT_MS,
+    )
+
+    it(
+      'falls back to Fireworks when CanopyWave has no available workers for non-streaming requests',
+      async () => {
+        await withCanopyWaveApiKey(async () => {
+          const { fetch, fetchedBodies } =
+            createCanopyWaveNoWorkersThenFireworksFetch(false)
+          const response = await postCanopyWaveFallbackRequest({
+            fetch,
+            stream: false,
+          })
+
+          expect(response.status).toBe(200)
+          expectCanopyWaveThenFireworks(fetchedBodies)
+
+          const body = await response.json()
+          expect(body.model).toBe('minimax/minimax-m2.5')
+          expect(body.provider).toBe('Fireworks')
+          expect(body.choices[0].message.content).toBe('fireworks response')
+        })
+      },
+      FETCH_PATH_TEST_TIMEOUT_MS,
+    )
+
+    it(
+      'falls back to Fireworks when CanopyWave has no available workers for streaming requests',
+      async () => {
+        await withCanopyWaveApiKey(async () => {
+          const { fetch, fetchedBodies } =
+            createCanopyWaveNoWorkersThenFireworksFetch(true)
+          const response = await postCanopyWaveFallbackRequest({
+            fetch,
+            stream: true,
+          })
+
+          expect(response.status).toBe(200)
+          expect(response.headers.get('Content-Type')).toBe('text/event-stream')
+          expectCanopyWaveThenFireworks(fetchedBodies)
+        })
       },
       FETCH_PATH_TEST_TIMEOUT_MS,
     )
