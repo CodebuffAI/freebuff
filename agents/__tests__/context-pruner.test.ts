@@ -324,6 +324,27 @@ describe('context-pruner handleSteps', () => {
     expect(content).toContain('edited file: file1.ts')
   })
 
+  test('includes inspected path for single read calls', () => {
+    const messages = [
+      createMessage('user', 'Read one file'),
+      createToolCallMessage('call-1', 'read', {
+        path: 'src/index.ts',
+        offset: 25,
+        limit: 50,
+      }),
+      createToolResultMessage('call-1', 'read', {
+        path: 'src/index.ts',
+        content: 'file data',
+      }),
+    ]
+
+    const results = runHandleSteps(messages, 50000, 10000)
+    const content = results[0].input.messages[0].content[0].text
+
+    expect(content).toContain('inspected file: src/index.ts')
+    expect(content).not.toContain('used tool read')
+  })
+
   test('summarizes various tool types correctly', () => {
     const messages = [
       createMessage('user', 'Do various tasks'),

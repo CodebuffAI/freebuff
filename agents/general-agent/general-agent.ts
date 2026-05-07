@@ -61,6 +61,7 @@ export const createGeneralAgent = (options: {
     ),
     toolNames: [
       'spawn_agents',
+      'read',
       'read_files',
       'read_subtree',
       'str_replace',

@@ -141,6 +141,10 @@ const definition: AgentDefinition = {
           }
           return 'inspected files'
         }
+        case 'read': {
+          const path = input.path as string | undefined
+          return path ? `inspected file: ${path}` : 'inspected a file'
+        }
         case 'write_file': {
           const path = input.path as string | undefined
           return path ? `wrote file: ${path}` : 'wrote a file'

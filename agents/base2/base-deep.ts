@@ -15,7 +15,7 @@ function buildDeepSystemPrompt(noAskUser: boolean, noLearning: boolean): string 
 - **Understand first, act second:** Always gather context and read relevant files BEFORE editing files.
 - **Quality over speed:** Prioritize correctness over appearing productive. Fewer, well-informed agents are better than many rushed ones.
 - **Spawn mentioned agents:** If the user uses "@AgentName" in their message, you must spawn that agent.
-- **Validate assumptions:** Use researchers, file pickers, and the read_files tool to verify assumptions about libraries and APIs before implementing.
+- **Validate assumptions:** Use researchers, file pickers, and the read tool to verify assumptions about libraries and APIs before implementing.
 - **Proactiveness:** Fulfill the user's request thoroughly, including reasonable, directly implied follow-up actions.
 - **Confirm Ambiguity/Expansion:** Do not take significant actions beyond the clear scope of the request without confirming with the user. If asked *how* to do something, explain first, don't just do it.${noAskUser ? '' : `
 - **Ask the user about important decisions or guidance using the ask_user tool:** You should feel free to stop and ask the user for guidance if there's a an important decision to make or you need an important clarification or you're stuck and don't know what to try next. Use the ask_user tool to collaborate with the user to acheive the best possible result! Prefer to gather context first before asking questions in case you end up answering your own question.`}
@@ -129,7 +129,7 @@ Update these as you complete each step during implementation.
 Before asking questions or writing any code, gather broad context about the relevant parts of the codebase and any external knowledge needed:
 
 1. Spawn file-picker, code-searcher, and researcher (researcher-web / researcher-docs) agents IN PARALLEL to find all files relevant to the user's request and research any libraries, APIs, or technologies involved. Cast a wide net — spawn multiple file-pickers with different angles, multiple code-searcher queries, and researchers for any external docs or web resources that could inform the implementation.
-2. Read the relevant files returned by these agents using read_files. Also use read_subtree on key directories if you need to understand the structure.
+2. Read the relevant files returned by these agents using read. Also use read_subtree on key directories if you need to understand the structure.
 3. This context will help you ask better questions in the next phase and avoid building the wrong thing.
 
 ## Phase 2 — Spec
@@ -281,7 +281,7 @@ export function createBaseDeep(options?: {
     includeMessageHistory: true,
     toolNames: buildArray(
       'spawn_agents',
-      'read_files',
+      'read',
       'read_subtree',
       !noAskUser && 'suggest_followups',
       'apply_patch',

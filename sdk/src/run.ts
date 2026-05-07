@@ -27,6 +27,7 @@ import { applyPatchTool } from './tools/apply-patch'
 import { codeSearch } from './tools/code-search'
 import { glob } from './tools/glob'
 import { listDirectory } from './tools/list-directory'
+import { readFile } from './tools/read'
 import { getFiles } from './tools/read-files'
 import { runTerminalCommand } from './tools/run-terminal-command'
 
@@ -397,6 +398,7 @@ async function runOnce({
           : {},
         cwd,
         fs,
+        fileFilter,
         env,
       })
     },
@@ -607,6 +609,7 @@ async function handleToolCall({
   customToolDefinitions,
   cwd,
   fs,
+  fileFilter,
   env,
 }: {
   action: ServerAction<'tool-call-request'>
@@ -614,6 +617,7 @@ async function handleToolCall({
   customToolDefinitions: Record<string, CustomToolDefinition>
   cwd?: string
   fs: CodebuffFileSystem
+  fileFilter?: FileFilter
   env?: Record<string, string>
 }): Promise<{ output: ToolResultOutput[] }> {
   const toolName = action.toolName
@@ -706,6 +710,25 @@ async function handleToolCall({
         projectPath: requireCwd(cwd, 'list_directory'),
         fs,
       })
+    } else if (toolName === 'read') {
+      const readInput = input as {
+        path: string
+        offset?: number
+        limit?: number
+      }
+      result = [
+        {
+          type: 'json',
+          value: await readFile({
+            filePath: readInput.path,
+            offset: readInput.offset,
+            limit: readInput.limit,
+            cwd: requireCwd(cwd, 'read'),
+            fs,
+            fileFilter,
+          }),
+        },
+      ]
     } else if (toolName === 'glob') {
       result = await glob({
         pattern: (input as { pattern: string; cwd?: string }).pattern,

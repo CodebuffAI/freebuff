@@ -65,6 +65,7 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
 
   // Code reviewer for free mode
   'code-reviewer-lite': new Set(FREEBUFF_ALLOWED_MODEL_IDS),
+  'code-reviewer-deepseek': new Set([FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]),
 
   // Legacy: kept for the standalone gemini thinker agent if invoked directly.
   [FREEBUFF_GEMINI_THINKER_AGENT_ID]: new Set([FREEBUFF_GEMINI_PRO_MODEL_ID]),

@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
-import { FREEBUFF_GEMINI_PRO_MODEL_ID } from '../constants/freebuff-models'
+import {
+  FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
+  FREEBUFF_GEMINI_PRO_MODEL_ID,
+} from '../constants/freebuff-models'
 import { FREEBUFF_GEMINI_THINKER_AGENT_ID } from '../constants/freebuff-gemini-thinker'
 import {
   isFreebuffGeminiThinkerAgent,
@@ -41,6 +44,21 @@ describe('free mode agent model allowlist', () => {
     expect(
       isFreebuffGeminiThinkerAgent(
         `other/${FREEBUFF_GEMINI_THINKER_AGENT_ID}@0.0.1`,
+      ),
+    ).toBe(false)
+  })
+
+  test('allows the DeepSeek reviewer only with DeepSeek V4 Pro', () => {
+    expect(
+      isFreeModeAllowedAgentModel(
+        'code-reviewer-deepseek',
+        FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
+      ),
+    ).toBe(true)
+    expect(
+      isFreeModeAllowedAgentModel(
+        'code-reviewer-deepseek',
+        FREEBUFF_GEMINI_PRO_MODEL_ID,
       ),
     ).toBe(false)
   })

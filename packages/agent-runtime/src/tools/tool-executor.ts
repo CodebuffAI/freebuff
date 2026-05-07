@@ -61,6 +61,7 @@ const bareStringFieldRepairAllowlist: Partial<
   glob: ['pattern'],
   list_directory: ['path'],
   lookup_agent_info: ['agentId'],
+  read: ['path'],
   read_files: ['paths'],
   read_subtree: ['paths'],
   skill: ['name'],

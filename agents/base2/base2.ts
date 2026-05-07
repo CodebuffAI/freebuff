@@ -5,6 +5,7 @@ import {
   FREEBUFF_GEMINI_THINKER_STEP_PROMPT,
   FREEBUFF_GEMINI_THINKER_SYSTEM_INSTRUCTION,
 } from '@codebuff/common/constants/freebuff-gemini-thinker'
+import { FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID } from '@codebuff/common/constants/freebuff-models'
 
 import { publisher } from '../constants'
 import {
@@ -45,8 +46,12 @@ export function createBase2(
     (mode === 'lite'
       ? 'moonshotai/kimi-k2.6'
       : mode === 'free'
-        ? 'deepseek/deepseek-v4-pro'
+        ? FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID
         : 'anthropic/claude-opus-4.7')
+  const freeCodeReviewerAgent =
+    model === FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID
+      ? 'code-reviewer-deepseek'
+      : 'code-reviewer-lite'
   // Bundled free-mode definitions ship with the gemini-thinker spawnable +
   // prompts; the CLI strips them at runtime if the user picks a fast model
   // that doesn't benefit (e.g. MiniMax). Smart freebuff models (Kimi,
@@ -86,7 +91,7 @@ export function createBase2(
     includeMessageHistory: true,
     toolNames: buildArray(
       'spawn_agents',
-      'read_files',
+      'read',
       'read_subtree',
       !isFast && 'write_todos',
       !isFast && !noAskUser && 'suggest_followups',
@@ -114,7 +119,7 @@ export function createBase2(
       isMax && 'editor-multi-prompt',
       'tmux-cli',
       'browser-use',
-      isFree && 'code-reviewer-lite',
+      isFree && freeCodeReviewerAgent,
       isDefault && 'code-reviewer',
       isMax && 'code-reviewer-multi-prompt',
       hasFreeGeminiThinker && FREEBUFF_GEMINI_THINKER_AGENT_ID,
@@ -130,7 +135,7 @@ export function createBase2(
 - **Understand first, act second:** Always gather context and read relevant files BEFORE editing files.
 - **Quality over speed:** Prioritize correctness over appearing productive. Fewer, well-informed agents are better than many rushed ones.
 - **Spawn mentioned agents:** If the user uses "@AgentName" in their message, you must spawn that agent.
-- **Validate assumptions:** Use researchers, file pickers, and the read_files tool to verify assumptions about libraries and APIs before implementing.
+- **Validate assumptions:** Use researchers, file pickers, and the read tool to verify assumptions about libraries and APIs before implementing.
 - **Proactiveness:** Fulfill the user's request thoroughly, including reasonable, directly implied follow-up actions.
 - **Confirm Ambiguity/Expansion:** Do not take significant actions beyond the clear scope of the request without confirming with the user. If asked *how* to do something, explain first, don't just do it.${
       noAskUser
@@ -183,7 +188,7 @@ Use the spawn_agents tool to spawn specialized agents to help you complete the u
     isMax &&
       `- IMPORTANT: You must spawn the editor-multi-prompt agent to implement the changes after you have gathered all the context you need. You must spawn this agent for non-trivial changes, since it writes much better code than you would with the str_replace or write_file tools. Don't spawn the editor in parallel with context-gathering agents.`,
     isFree &&
-      '- Spawn a code-reviewer-lite to review the changes after you have implemented the changes.',
+      `- Spawn a ${freeCodeReviewerAgent} to review the changes after you have implemented the changes.`,
     '- Spawn bashers sequentially if the second command depends on the the first.',
     isDefault &&
       '- Spawn a code-reviewer to review the changes after you have implemented the changes.',
@@ -231,11 +236,11 @@ ${buildArray(
 <response>
 [ You spawn 3 file-pickers, 2 code-searchers, and a docs researcher in parallel to find relevant files and do research online. You use the list_directory and glob tools directly to search the codebase. ]
 
-[ You read a few of the relevant files using the read_files tool in two separate tool calls ]
+[ You read a few of the relevant files using the read tool in separate tool calls ]
 
 [ You spawn another file-picker and code-searcher to find more relevant files, and use glob tools ]
 
-[ You read a few other relevant files using the read_files tool ]${
+[ You read a few other relevant files using the read tool ]${
       !noAskUser
         ? `\n\n[ You ask the user for important clarifications on their request or alternate implementation strategies using the ask_user tool ]`
         : ''
@@ -252,7 +257,7 @@ ${
   isDefault
     ? `[ You spawn a code-reviewer, a basher to typecheck the changes, and another basher to run tests, all in parallel ]`
     : isFree
-      ? `[ You spawn a code-reviewer-lite to review the changes, a basher to typecheck the local changes, a basher to typecheck the whole project, and another basher to run tests, all in parallel ]`
+      ? `[ You spawn a ${freeCodeReviewerAgent} to review the changes, a basher to typecheck the local changes, a basher to typecheck the whole project, and another basher to run tests, all in parallel ]`
       : isMax
         ? `[  You spawn a basher to typecheck the changes, and another basher to run tests, in parallel. Then, you spawn a code-reviewer-multi-prompt to review the changes. ]`
         : '[ You spawn a basher to typecheck the changes and another basher to run tests, all in parallel ]'
@@ -262,7 +267,7 @@ ${
   isDefault
     ? `[ You fix the issues found by the code-reviewer and type/test errors ]`
     : isFree
-      ? `[ You fix the issues found by the code-reviewer-lite and type/test errors ]`
+      ? `[ You fix the issues found by the ${freeCodeReviewerAgent} and type/test errors ]`
       : isMax
         ? `[ You fix the issues found by the code-reviewer-multi-prompt and type/test errors ]`
         : '[ You fix the issues found by the type/test errors and spawn more bashers to confirm ]'
@@ -302,6 +307,7 @@ ${PLACEHOLDER.GIT_CHANGES_PROMPT}
           isDefault,
           isMax,
           isFree,
+          freeCodeReviewerAgent,
           hasFreeGeminiThinker,
           hasNoValidation,
           noAskUser,
@@ -315,6 +321,7 @@ ${PLACEHOLDER.GIT_CHANGES_PROMPT}
           hasNoValidation,
           isSonnet,
           isFree,
+          freeCodeReviewerAgent,
           hasFreeGeminiThinker,
           noAskUser,
         }),
@@ -356,7 +363,7 @@ ${PLACEHOLDER.GIT_CHANGES_PROMPT}
   }
 }
 
-const EXPLORE_PROMPT = `- Iteratively spawn file pickers, code searchers, bashers, and web/docs researchers to gather context as needed. Use the list_directory and glob tools directly for searching and exploring the codebase. The file-picker and code-searcher agents are very useful to find relevant files -- try spawning multiple in parallel (say, 2-5 file-pickers and 1-3 code-searchers) to explore different parts of the codebase. Use read_subtree if you need to grok a particular part of the codebase. Read all the relevant files using the read_files tool.`
+const EXPLORE_PROMPT = `- Iteratively spawn file pickers, code searchers, bashers, and web/docs researchers to gather context as needed. Use the list_directory and glob tools directly for searching and exploring the codebase. The file-picker and code-searcher agents are very useful to find relevant files -- try spawning multiple in parallel (say, 2-5 file-pickers and 1-3 code-searchers) to explore different parts of the codebase. Use read_subtree if you need to grok a particular part of the codebase. Read relevant files using the read tool.`
 
 function buildImplementationInstructionsPrompt({
   isSonnet,
@@ -364,6 +371,7 @@ function buildImplementationInstructionsPrompt({
   isDefault,
   isMax,
   isFree,
+  freeCodeReviewerAgent,
   hasFreeGeminiThinker,
   hasNoValidation,
   noAskUser,
@@ -373,6 +381,7 @@ function buildImplementationInstructionsPrompt({
   isDefault: boolean
   isMax: boolean
   isFree: boolean
+  freeCodeReviewerAgent: string
   hasFreeGeminiThinker: boolean
   hasNoValidation: boolean
   noAskUser: boolean
@@ -407,7 +416,7 @@ ${buildArray(
   (isDefault || isMax) &&
     `- Spawn a ${isDefault ? 'code-reviewer' : 'code-reviewer-multi-prompt'} to review the changes after you have implemented changes. (Skip this step only if the change is extremely straightforward and obvious.)`,
   isFree &&
-    `- Spawn a code-reviewer-lite to review the changes after you have implemented changes. (Skip this step only if the change is extremely straightforward and obvious.)`,
+    `- Spawn a ${freeCodeReviewerAgent} to review the changes after you have implemented changes. (Skip this step only if the change is extremely straightforward and obvious.)`,
   `- Inform the user that you have completed the task in one sentence or a few short bullet points.${isSonnet ? " Don't create any markdown summary files or example documentation files, unless asked by the user." : ''}`,
   !isFast &&
     !noAskUser &&
@@ -422,6 +431,7 @@ function buildImplementationStepPrompt({
   hasNoValidation,
   isSonnet,
   isFree,
+  freeCodeReviewerAgent,
   hasFreeGeminiThinker,
   noAskUser,
 }: {
@@ -431,6 +441,7 @@ function buildImplementationStepPrompt({
   hasNoValidation: boolean
   isSonnet: boolean
   isFree: boolean
+  freeCodeReviewerAgent: string
   hasFreeGeminiThinker: boolean
   noAskUser: boolean
 }) {
@@ -444,7 +455,7 @@ function buildImplementationStepPrompt({
     (isDefault || isMax) &&
       `You must spawn a ${isDefault ? 'code-reviewer' : 'code-reviewer-multi-prompt'} to review the changes after you have implemented the changes and in parallel with typechecking or testing.`,
     isFree &&
-      `You must spawn a code-reviewer-lite to review the changes after you have implemented the changes and in parallel with typechecking or testing.`,
+      `You must spawn a ${freeCodeReviewerAgent} to review the changes after you have implemented the changes and in parallel with typechecking or testing.`,
     `After completing the user request, summarize your changes in a sentence${isFast ? '' : ' or a few short bullet points'}.${isSonnet ? " Don't create any summary markdown files or example documentation files, unless asked by the user." : ''}.`,
     !isFast &&
       !noAskUser &&

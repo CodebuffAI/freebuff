@@ -16,6 +16,7 @@ import { listDirectoryParams } from './params/tool/list-directory'
 import { lookupAgentInfoParams } from './params/tool/lookup-agent-info'
 import { proposeStrReplaceParams } from './params/tool/propose-str-replace'
 import { proposeWriteFileParams } from './params/tool/propose-write-file'
+import { readParams } from './params/tool/read'
 import { readDocsParams } from './params/tool/read-docs'
 import { readFilesParams } from './params/tool/read-files'
 import { readSubtreeParams } from './params/tool/read-subtree'
@@ -56,6 +57,7 @@ export const toolParams = {
   lookup_agent_info: lookupAgentInfoParams,
   propose_str_replace: proposeStrReplaceParams,
   propose_write_file: proposeWriteFileParams,
+  read: readParams,
   read_docs: readDocsParams,
   read_files: readFilesParams,
   read_subtree: readSubtreeParams,
@@ -126,6 +128,10 @@ export const clientToolCallSchema = z.discriminatedUnion('toolName', [
   z.object({
     toolName: z.literal('list_directory'),
     input: toolParams.list_directory.inputSchema,
+  }),
+  z.object({
+    toolName: z.literal('read'),
+    input: toolParams.read.inputSchema,
   }),
   z.object({
     toolName: z.literal('run_file_change_hooks'),

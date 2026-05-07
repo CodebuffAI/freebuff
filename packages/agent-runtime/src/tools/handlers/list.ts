@@ -13,6 +13,7 @@ import { handleListDirectory } from './tool/list-directory'
 import { handleLookupAgentInfo } from './tool/lookup-agent-info'
 import { handleProposeStrReplace } from './tool/propose-str-replace'
 import { handleProposeWriteFile } from './tool/propose-write-file'
+import { handleRead } from './tool/read'
 import { handleReadDocs } from './tool/read-docs'
 import { handleReadFiles } from './tool/read-files'
 import { handleReadSubtree } from './tool/read-subtree'
@@ -61,6 +62,7 @@ export const codebuffToolHandlers = {
   lookup_agent_info: handleLookupAgentInfo,
   propose_str_replace: handleProposeStrReplace,
   propose_write_file: handleProposeWriteFile,
+  read: handleRead,
   read_docs: handleReadDocs,
   read_files: handleReadFiles,
   read_subtree: handleReadSubtree,

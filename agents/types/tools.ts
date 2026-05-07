@@ -14,6 +14,7 @@ export type ToolName =
   | 'lookup_agent_info'
   | 'propose_str_replace'
   | 'propose_write_file'
+  | 'read'
   | 'read_docs'
   | 'read_files'
   | 'read_subtree'
@@ -48,6 +49,7 @@ export interface ToolParamsMap {
   lookup_agent_info: LookupAgentInfoParams
   propose_str_replace: ProposeStrReplaceParams
   propose_write_file: ProposeWriteFileParams
+  read: ReadParams
   read_docs: ReadDocsParams
   read_files: ReadFilesParams
   read_subtree: ReadSubtreeParams
@@ -256,6 +258,18 @@ export interface ReadDocsParams {
   topic: string
   /** Optional maximum number of tokens to return. Defaults to 20000. Values less than 10000 are automatically increased to 10000. */
   max_tokens?: number
+}
+
+/**
+ * Read the contents of a single text file. Use offset and limit for large files.
+ */
+export interface ReadParams {
+  /** Path to the file to read, relative to the project root or absolute within the project. */
+  path: string
+  /** Line number to start reading from (1-indexed). */
+  offset?: number
+  /** Maximum number of lines to read. */
+  limit?: number
 }
 
 /**
