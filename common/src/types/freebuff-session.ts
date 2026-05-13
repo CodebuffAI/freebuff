@@ -1,11 +1,9 @@
 import type { FreebuffAccessTier } from '../constants/freebuff-models'
 
 /**
- * Wire-level shapes returned by `/api/v1/freebuff/session`. Source of truth
- * for the CLI (which deserializes these) and the server (which serializes
- * them) — keep both in sync by importing this module from either side.
- *
- * The CLI uses these shapes directly; there are no client-only states.
+ * Shapes used by `/api/v1/freebuff/session` and the CLI. Most variants are
+ * wire-level responses serialized by the server; explicitly documented
+ * compatibility variants may be synthesized by the CLI for older servers.
  */
 
 /**
@@ -67,8 +65,8 @@ export type FreebuffIpPrivacySignal =
 
 export type FreebuffSessionServerResponse =
   | {
-      /** Waiting room is globally off; free-mode requests flow through
-       *  unchanged. Client should treat this as "admitted forever". */
+      /** Compatibility fallback for older servers without the session
+       *  endpoint. Client should treat this as "admitted forever". */
       status: 'disabled'
     }
   | {

@@ -72,7 +72,6 @@ function makeDeps(overrides: Partial<SessionDeps> = {}): SessionDeps & {
       currentNow = n
     },
     _now: () => currentNow,
-    isWaitingRoomEnabled: () => true,
     graceMs: GRACE_MS,
     sessionLengthMs: SESSION_LEN,
     // Test default: instant-admit disabled (capacity 0) so existing FIFO
@@ -225,17 +224,6 @@ describe('requestSession', () => {
   let deps: ReturnType<typeof makeDeps>
   beforeEach(() => {
     deps = makeDeps()
-  })
-
-  test('disabled flag returns { status: disabled } and does not touch DB', async () => {
-    const offDeps = makeDeps({ isWaitingRoomEnabled: () => false })
-    const state = await requestSession({
-      userId: 'u1',
-      model: DEFAULT_MODEL,
-      deps: offDeps,
-    })
-    expect(state).toEqual({ status: 'disabled' })
-    expect(offDeps.rows.size).toBe(0)
   })
 
   test('banned user is rejected before joinOrTakeOver runs', async () => {
@@ -897,12 +885,6 @@ describe('getSessionState', () => {
     deps = makeDeps()
   })
 
-  test('disabled flag returns disabled', async () => {
-    const offDeps = makeDeps({ isWaitingRoomEnabled: () => false })
-    const state = await getSessionState({ userId: 'u1', deps: offDeps })
-    expect(state).toEqual({ status: 'disabled' })
-  })
-
   test('banned user returns banned without hitting the DB', async () => {
     const state = await getSessionState({
       userId: 'u1',
@@ -1182,30 +1164,6 @@ describe('checkSessionAdmissible', () => {
     deps = makeDeps()
   })
 
-  test('disabled flag → ok with reason=disabled', async () => {
-    const offDeps = makeDeps({ isWaitingRoomEnabled: () => false })
-    const result = await checkSessionAdmissible({
-      userId: 'u1',
-      claimedInstanceId: undefined,
-      deps: offDeps,
-    })
-    expect(result.ok).toBe(true)
-  })
-
-  test('requireActiveSession ignores disabled shortcut and requires a row', async () => {
-    const offDeps = makeDeps({ isWaitingRoomEnabled: () => false })
-    const result = await checkSessionAdmissible({
-      userId: 'u1',
-      claimedInstanceId: 'inst-1',
-      requestedModel: FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
-      requireActiveSession: true,
-      deps: offDeps,
-    })
-    expect(result.ok).toBe(false)
-    if (result.ok) throw new Error('unreachable')
-    expect(result.code).toBe('waiting_room_required')
-  })
-
   test('no session → waiting_room_required', async () => {
     const result = await checkSessionAdmissible({
       userId: 'u1',
@@ -1217,51 +1175,9 @@ describe('checkSessionAdmissible', () => {
     expect(result.code).toBe('waiting_room_required')
   })
 
-  test('bypassed email (team@codebuff.com) → ok with reason=disabled, no DB read', async () => {
-    const result = await checkSessionAdmissible({
-      userId: 'u1',
-      userEmail: 'team@codebuff.com',
-      claimedInstanceId: undefined,
-      deps,
-    })
-    expect(result.ok).toBe(true)
-    if (!result.ok) throw new Error('unreachable')
-    expect(result.reason).toBe('disabled')
-    expect(deps.rows.size).toBe(0)
-  })
-
-  test('requireActiveSession ignores bypassed emails', async () => {
-    const result = await checkSessionAdmissible({
-      userId: 'u1',
-      userEmail: 'team@codebuff.com',
-      claimedInstanceId: 'inst-1',
-      requestedModel: FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
-      requireActiveSession: true,
-      deps,
-    })
-    expect(result.ok).toBe(false)
-    if (result.ok) throw new Error('unreachable')
-    expect(result.code).toBe('waiting_room_required')
-  })
-
-  test('bypassed email is case-insensitive', async () => {
-    const result = await checkSessionAdmissible({
-      userId: 'u1',
-      userEmail: 'Team@Codebuff.COM',
-      claimedInstanceId: undefined,
-      deps,
-    })
-    expect(result.ok).toBe(true)
-  })
-
-  test('requireActiveSession still admits Gemini thinker for smart model rows when waiting room is disabled', async () => {
-    // requireActiveSession=true forces a DB-backed row check even when the
-    // waiting room is globally off — the gemini-thinker child agent uses this
-    // path so its Gemini Pro call only succeeds when the parent session is
-    // bound to one of the smart freebuff models (Kimi or DeepSeek).
-    const offDeps = makeDeps({ isWaitingRoomEnabled: () => false })
-    const now = offDeps._now()
-    offDeps.rows.set('u1', {
+  test('active smart model session admits Gemini thinker requests', async () => {
+    const now = deps._now()
+    deps.rows.set('u1', {
       user_id: 'u1',
       status: 'active',
       active_instance_id: 'inst-1',
@@ -1278,7 +1194,7 @@ describe('checkSessionAdmissible', () => {
       claimedInstanceId: 'inst-1',
       requestedModel: FREEBUFF_GEMINI_PRO_MODEL_ID,
       requireActiveSession: true,
-      deps: offDeps,
+      deps,
     })
     expect(result.ok).toBe(true)
   })
@@ -1517,20 +1433,4 @@ describe('endUserSession', () => {
     expect(deps.admits[0]?.session_units).toBe(0.3)
   })
 
-  test('is no-op when disabled', async () => {
-    const deps = makeDeps({ isWaitingRoomEnabled: () => false })
-    deps.rows.set('u1', {
-      user_id: 'u1',
-      status: 'active',
-      active_instance_id: 'x',
-      model: DEFAULT_MODEL,
-      queued_at: new Date(),
-      admitted_at: null,
-      expires_at: null,
-      created_at: new Date(),
-      updated_at: new Date(),
-    })
-    await endUserSession({ userId: 'u1', deps })
-    expect(deps.rows.has('u1')).toBe(true)
-  })
 })

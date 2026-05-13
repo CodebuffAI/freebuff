@@ -56,14 +56,6 @@ export const serverEnvSchema = clientEnvSchema.extend({
   // sweep but risks rate-limiting.
   BOT_SWEEP_GITHUB_TOKEN: z.string().min(1).optional(),
 
-  // Freebuff waiting room. Defaults to OFF so the feature requires explicit
-  // opt-in per environment — the CLI/SDK do not yet send
-  // freebuff_instance_id, so enabling this before they ship would reject
-  // every free-mode request with 428 waiting_room_required.
-  FREEBUFF_WAITING_ROOM_ENABLED: z
-    .enum(['true', 'false'])
-    .default('false')
-    .transform((v) => v === 'true'),
   FREEBUFF_SESSION_LENGTH_MS: z.coerce
     .number()
     .int()
@@ -136,8 +128,7 @@ export const serverProcessEnv: ServerInput = {
   BOT_SWEEP_SECRET: process.env.BOT_SWEEP_SECRET,
   BOT_SWEEP_GITHUB_TOKEN: process.env.BOT_SWEEP_GITHUB_TOKEN,
 
-  // Freebuff waiting room
-  FREEBUFF_WAITING_ROOM_ENABLED: process.env.FREEBUFF_WAITING_ROOM_ENABLED,
+  // Freebuff session gate
   FREEBUFF_SESSION_LENGTH_MS: process.env.FREEBUFF_SESSION_LENGTH_MS,
   FREEBUFF_DEV_FORCE_LIMITED: process.env.FREEBUFF_DEV_FORCE_LIMITED,
 }

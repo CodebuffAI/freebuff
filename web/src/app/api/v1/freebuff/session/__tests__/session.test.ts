@@ -102,7 +102,6 @@ function makeSessionDeps(overrides: Partial<SessionDeps> = {}): SessionDeps & {
   let instanceCounter = 0
   return {
     rows,
-    isWaitingRoomEnabled: () => true,
     graceMs: 30 * 60 * 1000,
     sessionLengthMs: 60 * 60 * 1000,
     // Keep instant-admit disabled in handler tests — they verify queue/state
@@ -223,16 +222,6 @@ describe('POST /api/v1/freebuff/session', () => {
       ip_privacy_signals: [],
       client_ip_hash: 'test-ip-hash',
     })
-  })
-
-  test('returns disabled when waiting room flag is off', async () => {
-    const sessionDeps = makeSessionDeps({ isWaitingRoomEnabled: () => false })
-    const resp = await postFreebuffSession(
-      makeReq('ok'),
-      makeDeps(sessionDeps, 'u1'),
-    )
-    const body = await resp.json()
-    expect(body.status).toBe('disabled')
   })
 
   test('creates a limited DeepSeek Flash session for disallowed country', async () => {

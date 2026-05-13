@@ -496,11 +496,11 @@ export const WaitingRoomScreen: React.FC<WaitingRoomScreenProps> = ({
             </box>
           )}
 
-          {/* Server says the waiting room is disabled — this screen should not
-              normally render in that case, but show a minimal message just in
-              case App.tsx's guard is bypassed. */}
+          {/* Compatibility fallback for older servers without the session
+              endpoint. This should not normally render because App.tsx treats
+              it as admitted. */}
           {session?.status === 'disabled' && (
-            <text style={{ fg: theme.muted }}>Waiting room disabled.</text>
+            <text style={{ fg: theme.muted }}>Session gate unavailable.</text>
           )}
 
           {/* Country outside the free-mode allowlist. Terminal — polling has
