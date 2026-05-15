@@ -1,4 +1,5 @@
 import os from 'os'
+import { spawn } from 'child_process'
 
 import open from 'open'
 
@@ -16,6 +17,25 @@ import { logger } from './logger'
  * @returns `true` if the browser was (likely) opened, `false` if skipped.
  */
 export async function safeOpen(url: string): Promise<boolean> {
+  if (os.platform() === 'win32') {
+    try {
+      const subprocess = spawn(
+        'rundll32.exe',
+        ['url.dll,FileProtocolHandler', url],
+        {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        },
+      )
+      subprocess.unref()
+      return true
+    } catch (err) {
+      logger.error(err, 'Failed to open browser with Windows URL handler')
+      return false
+    }
+  }
+
   if (os.platform() === 'linux') {
     const env = getCliEnv()
     const hasDisplay = Boolean(env.DISPLAY || env.WAYLAND_DISPLAY)

@@ -20,6 +20,28 @@ import { logger } from './logger'
 let machineIdModule: typeof import('node-machine-id') | null = null
 let systeminformationModule: typeof import('systeminformation') | null = null
 
+const ENHANCED_FINGERPRINT_TIMEOUT_MS = 3000
+
+export function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error(timeoutMessage))
+    }, timeoutMs)
+  })
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout)
+    }
+  })
+}
+
 async function getMachineId(): Promise<string> {
   if (!machineIdModule) {
     machineIdModule = await import('node-machine-id')
@@ -162,7 +184,11 @@ export function getFingerprintId(): Promise<string> {
  */
 export async function calculateFingerprint(): Promise<string> {
   try {
-    const fingerprint = await calculateEnhancedFingerprint()
+    const fingerprint = await withTimeout(
+      calculateEnhancedFingerprint(),
+      ENHANCED_FINGERPRINT_TIMEOUT_MS,
+      `Enhanced CLI fingerprinting timed out after ${ENHANCED_FINGERPRINT_TIMEOUT_MS}ms`,
+    )
     logger.debug(
       {
         fingerprintType: 'enhanced_cli',
