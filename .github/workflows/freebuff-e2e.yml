@@ -178,6 +178,7 @@ jobs:
           # startup failures (e.g. the Parser.init rejection from a broken
           # tree-sitter wasm load).
           ./cli/bin/freebuff.exe --version
+          ./cli/bin/freebuff.exe --smoke-login-primitives
           # Run for several seconds so unhandled rejections during module
           # init have time to fire — the freebuff 0.0.62 wasm regression
           # surfaced through the *late* renderer-cleanup handler, after the

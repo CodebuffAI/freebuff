@@ -262,6 +262,66 @@ async function main(): Promise<void> {
     }
   }
 
+  // CI gate: `<binary> --smoke-login-primitives` checks the local pieces that
+  // must work before browser OAuth can complete. This is intentionally not a
+  // full OAuth flow: CI should not depend on a real GitHub account/browser
+  // round trip just to validate the compiled Windows executable.
+  if (process.argv.includes('--smoke-login-primitives')) {
+    try {
+      const [{ withTimeout }, fingerprint, { getWindowsOpenUrlCommand }] =
+        await Promise.all([
+          import('@codebuff/common/util/promise'),
+          import('./utils/fingerprint'),
+          import('./utils/open-url'),
+        ])
+
+      let timeoutRejected = false
+      try {
+        await withTimeout(
+          new Promise<never>(() => {}),
+          50,
+          'login smoke expected timeout',
+        )
+      } catch (err) {
+        timeoutRejected =
+          err instanceof Error &&
+          err.message.includes('login smoke expected timeout')
+      }
+      if (!timeoutRejected) {
+        throw new Error('withTimeout did not reject a hanging promise')
+      }
+
+      const fingerprintId = await withTimeout(
+        fingerprint.calculateFingerprint(),
+        5_000,
+        'calculateFingerprint exceeded login smoke timeout',
+      )
+      const fingerprintType = fingerprint.getFingerprintType(fingerprintId)
+      if (fingerprintType === 'unknown') {
+        throw new Error(`Unexpected fingerprint type for ${fingerprintId}`)
+      }
+
+      if (process.platform === 'win32') {
+        const opener = getWindowsOpenUrlCommand('https://example.com')
+        if (
+          opener.command !== 'rundll32.exe' ||
+          opener.args[0] !== 'url.dll,FileProtocolHandler' ||
+          opener.args[1] !== 'https://example.com'
+        ) {
+          throw new Error(
+            `Unexpected Windows URL opener: ${opener.command} ${opener.args.join(' ')}`,
+          )
+        }
+      }
+
+      console.log(`login primitives smoke ok (${fingerprintType})`)
+      process.exit(0)
+    } catch (err) {
+      console.error('login primitives smoke FAIL:', err)
+      process.exit(1)
+    }
+  }
+
   // Run OSC theme detection BEFORE anything else.
   // This MUST happen before OpenTUI starts because OSC responses come through stdin,
   // and OpenTUI also listens to stdin. Running detection here ensures stdin is clean.

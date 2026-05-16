@@ -338,6 +338,7 @@ jobs:
 
           # Sync check — exits via commander before async tasks fire.
           "$BIN" --version
+          "$BIN" --smoke-login-primitives
 
           # Long-running check — gives async startup failures time to surface.
           # This is the step that would have caught the post-OpenTUI-upgrade

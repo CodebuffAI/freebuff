@@ -11,6 +11,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { cpus, networkInterfaces } from 'node:os'
 
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
+import { withTimeout } from '@codebuff/common/util/promise'
 
 import { trackEvent } from './analytics'
 import { detectShell } from './detect-shell'
@@ -21,26 +22,6 @@ let machineIdModule: typeof import('node-machine-id') | null = null
 let systeminformationModule: typeof import('systeminformation') | null = null
 
 const ENHANCED_FINGERPRINT_TIMEOUT_MS = 3000
-
-export function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  timeoutMessage: string,
-): Promise<T> {
-  let timeout: ReturnType<typeof setTimeout> | null = null
-
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeout = setTimeout(() => {
-      reject(new Error(timeoutMessage))
-    }, timeoutMs)
-  })
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeout) {
-      clearTimeout(timeout)
-    }
-  })
-}
 
 async function getMachineId(): Promise<string> {
   if (!machineIdModule) {

@@ -1,10 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 
-import {
-  getFingerprintType,
-  generateFingerprintIdSync,
-  withTimeout,
-} from '../fingerprint'
+import { getFingerprintType, generateFingerprintIdSync } from '../fingerprint'
 
 describe('fingerprint utilities', () => {
   describe('getFingerprintType', () => {
@@ -146,19 +142,4 @@ describe('fingerprint utilities', () => {
     })
   })
 
-  describe('withTimeout', () => {
-    test('resolves when the promise finishes before the timeout', async () => {
-      await expect(
-        withTimeout(Promise.resolve('ok'), 100, 'too slow'),
-      ).resolves.toBe('ok')
-    })
-
-    test('rejects when the promise exceeds the timeout', async () => {
-      const neverResolves = new Promise<string>(() => {})
-
-      await expect(withTimeout(neverResolves, 1, 'too slow')).rejects.toThrow(
-        'too slow',
-      )
-    })
-  })
 })
