@@ -30,7 +30,7 @@ const BASE64URL_ALPHABET =
 type RandomValuesProvider = {
   getRandomValues: (bytes: Uint8Array) => Uint8Array
 }
-type FingerprintLogLevel = 'debug' | 'info' | 'warn' | 'error'
+type FingerprintLogLevel = 'debug' | 'info' | 'warn'
 
 function logFingerprint(
   level: FingerprintLogLevel,
@@ -169,47 +169,63 @@ function calculateLegacyFingerprint(): string {
   return `codebuff-cli-${randomSuffix}`
 }
 
+function encodeLegacyFingerprintSuffix(bytes: Uint8Array): string {
+  return Buffer.from(bytes)
+    .toString('base64url')
+    .substring(0, LEGACY_FINGERPRINT_SUFFIX_LENGTH)
+}
+
+function tryGenerateLegacyFingerprintSuffix(
+  readBytes: () => Uint8Array,
+  warning: string,
+): string | null {
+  try {
+    return encodeLegacyFingerprintSuffix(readBytes())
+  } catch (err) {
+    logFingerprint(
+      'warn',
+      {
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+      warning,
+    )
+    return null
+  }
+}
+
+function generateMathRandomSuffix(): string {
+  return Array.from({ length: LEGACY_FINGERPRINT_SUFFIX_LENGTH }, () => {
+    return BASE64URL_ALPHABET[Math.floor(Math.random() * BASE64URL_ALPHABET.length)]
+  }).join('')
+}
+
 export function generateLegacyFingerprintSuffix(
   randomByteSource: (byteCount: number) => Uint8Array = randomBytes,
   randomValuesProvider: RandomValuesProvider | undefined = globalThis.crypto,
 ): string {
-  try {
-    return Buffer.from(randomByteSource(LEGACY_FINGERPRINT_RANDOM_BYTES))
-      .toString('base64url')
-      .substring(0, LEGACY_FINGERPRINT_SUFFIX_LENGTH)
-  } catch (err) {
-    logFingerprint(
-      'warn',
-      {
-        errorMessage: err instanceof Error ? err.message : String(err),
-      },
-      'Node crypto randomBytes failed for legacy fingerprint suffix',
-    )
+  const nodeSuffix = tryGenerateLegacyFingerprintSuffix(
+    () => randomByteSource(LEGACY_FINGERPRINT_RANDOM_BYTES),
+    'Node crypto randomBytes failed for legacy fingerprint suffix',
+  )
+  if (nodeSuffix) {
+    return nodeSuffix
   }
 
-  try {
-    if (randomValuesProvider) {
-      const bytes = new Uint8Array(LEGACY_FINGERPRINT_RANDOM_BYTES)
-      randomValuesProvider.getRandomValues(bytes)
-      return Buffer.from(bytes)
-        .toString('base64url')
-        .substring(0, LEGACY_FINGERPRINT_SUFFIX_LENGTH)
-    }
-  } catch (err) {
-    logFingerprint(
-      'warn',
-      {
-        errorMessage: err instanceof Error ? err.message : String(err),
+  if (randomValuesProvider) {
+    const webCryptoSuffix = tryGenerateLegacyFingerprintSuffix(
+      () => {
+        const bytes = new Uint8Array(LEGACY_FINGERPRINT_RANDOM_BYTES)
+        randomValuesProvider.getRandomValues(bytes)
+        return bytes
       },
       'Web Crypto getRandomValues failed for legacy fingerprint suffix',
     )
+    if (webCryptoSuffix) {
+      return webCryptoSuffix
+    }
   }
 
-  let suffix = ''
-  for (let i = 0; i < LEGACY_FINGERPRINT_SUFFIX_LENGTH; i++) {
-    suffix += BASE64URL_ALPHABET[Math.floor(Math.random() * BASE64URL_ALPHABET.length)]
-  }
-  return suffix
+  return generateMathRandomSuffix()
 }
 
 /**
@@ -266,35 +282,22 @@ export async function calculateFingerprint(): Promise<string> {
       'Enhanced CLI fingerprinting failed, using legacy fallback',
     )
 
-    try {
-      const fingerprint = calculateLegacyFingerprint()
-      logFingerprint(
-        'debug',
-        {
-          fingerprintType: 'legacy_fallback',
-          fingerprintId: fingerprint,
-        },
-        'Legacy fingerprint generated successfully as fallback',
-      )
-      trackFingerprintGenerated({
-        fingerprintType: 'legacy',
-        success: true,
-        fallbackReason:
-          enhancedError instanceof Error ? enhancedError.message : 'unknown',
-      })
-      return fingerprint
-    } catch (legacyError) {
-      logFingerprint(
-        'error',
-        {
-          errorMessage:
-            legacyError instanceof Error ? legacyError.message : String(legacyError),
-          fingerprintType: 'failed',
-        },
-        'Both enhanced and legacy fingerprint generation failed',
-      )
-      throw new Error('Fingerprint generation failed')
-    }
+    const fingerprint = calculateLegacyFingerprint()
+    logFingerprint(
+      'debug',
+      {
+        fingerprintType: 'legacy_fallback',
+        fingerprintId: fingerprint,
+      },
+      'Legacy fingerprint generated successfully as fallback',
+    )
+    trackFingerprintGenerated({
+      fingerprintType: 'legacy',
+      success: true,
+      fallbackReason:
+        enhancedError instanceof Error ? enhancedError.message : 'unknown',
+    })
+    return fingerprint
   }
 }
 
