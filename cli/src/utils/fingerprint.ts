@@ -22,6 +22,14 @@ let machineIdModule: typeof import('node-machine-id') | null = null
 let systeminformationModule: typeof import('systeminformation') | null = null
 
 const ENHANCED_FINGERPRINT_TIMEOUT_MS = 3000
+const LEGACY_FINGERPRINT_SUFFIX_LENGTH = 8
+const LEGACY_FINGERPRINT_RANDOM_BYTES = 6
+const BASE64URL_ALPHABET =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+
+type RandomValuesProvider = {
+  getRandomValues: (bytes: Uint8Array) => Uint8Array
+}
 
 async function getMachineId(): Promise<string> {
   if (!machineIdModule) {
@@ -136,8 +144,49 @@ async function calculateEnhancedFingerprint(): Promise<string> {
  * Used as a fallback when enhanced fingerprinting fails.
  */
 function calculateLegacyFingerprint(): string {
-  const randomSuffix = randomBytes(6).toString('base64url').substring(0, 8)
+  const randomSuffix = generateLegacyFingerprintSuffix()
   return `codebuff-cli-${randomSuffix}`
+}
+
+export function generateLegacyFingerprintSuffix(
+  randomByteSource: (byteCount: number) => Uint8Array = randomBytes,
+  randomValuesProvider: RandomValuesProvider | undefined = globalThis.crypto,
+): string {
+  try {
+    return Buffer.from(randomByteSource(LEGACY_FINGERPRINT_RANDOM_BYTES))
+      .toString('base64url')
+      .substring(0, LEGACY_FINGERPRINT_SUFFIX_LENGTH)
+  } catch (err) {
+    logger.warn(
+      {
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+      'Node crypto randomBytes failed for legacy fingerprint suffix',
+    )
+  }
+
+  try {
+    if (randomValuesProvider) {
+      const bytes = new Uint8Array(LEGACY_FINGERPRINT_RANDOM_BYTES)
+      randomValuesProvider.getRandomValues(bytes)
+      return Buffer.from(bytes)
+        .toString('base64url')
+        .substring(0, LEGACY_FINGERPRINT_SUFFIX_LENGTH)
+    }
+  } catch (err) {
+    logger.warn(
+      {
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+      'Web Crypto getRandomValues failed for legacy fingerprint suffix',
+    )
+  }
+
+  let suffix = ''
+  for (let i = 0; i < LEGACY_FINGERPRINT_SUFFIX_LENGTH; i++) {
+    suffix += BASE64URL_ALPHABET[Math.floor(Math.random() * BASE64URL_ALPHABET.length)]
+  }
+  return suffix
 }
 
 /**

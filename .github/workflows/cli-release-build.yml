@@ -184,6 +184,7 @@ jobs:
           # Fast path: --version exits synchronously through commander, so it
           # only catches early sync failures. Run it for parity with old CI.
           "$BIN" --version
+          "$BIN" --smoke-login-primitives
 
           # Slow path: keep the binary alive long enough for *async* startup
           # failures (e.g. the Parser.init rejection that crashed the
