@@ -30,6 +30,27 @@ const BASE64URL_ALPHABET =
 type RandomValuesProvider = {
   getRandomValues: (bytes: Uint8Array) => Uint8Array
 }
+type FingerprintLogLevel = 'debug' | 'info' | 'warn' | 'error'
+
+function logFingerprint(
+  level: FingerprintLogLevel,
+  data: Record<string, any>,
+  message: string,
+): void {
+  try {
+    logger[level](data, message)
+  } catch {
+    // Fingerprinting is part of login; logging must not block it.
+  }
+}
+
+function trackFingerprintGenerated(properties: Record<string, any>): void {
+  try {
+    trackEvent(AnalyticsEvent.FINGERPRINT_GENERATED, properties)
+  } catch {
+    // Fingerprinting is part of login; telemetry must not block it.
+  }
+}
 
 async function getMachineId(): Promise<string> {
   if (!machineIdModule) {
@@ -157,7 +178,8 @@ export function generateLegacyFingerprintSuffix(
       .toString('base64url')
       .substring(0, LEGACY_FINGERPRINT_SUFFIX_LENGTH)
   } catch (err) {
-    logger.warn(
+    logFingerprint(
+      'warn',
       {
         errorMessage: err instanceof Error ? err.message : String(err),
       },
@@ -174,7 +196,8 @@ export function generateLegacyFingerprintSuffix(
         .substring(0, LEGACY_FINGERPRINT_SUFFIX_LENGTH)
     }
   } catch (err) {
-    logger.warn(
+    logFingerprint(
+      'warn',
       {
         errorMessage: err instanceof Error ? err.message : String(err),
       },
@@ -219,20 +242,22 @@ export async function calculateFingerprint(): Promise<string> {
       ENHANCED_FINGERPRINT_TIMEOUT_MS,
       `Enhanced CLI fingerprinting timed out after ${ENHANCED_FINGERPRINT_TIMEOUT_MS}ms`,
     )
-    logger.debug(
+    logFingerprint(
+      'debug',
       {
         fingerprintType: 'enhanced_cli',
         fingerprintId: fingerprint.substring(0, 20) + '...',
       },
       'Enhanced CLI fingerprint generated successfully',
     )
-    trackEvent(AnalyticsEvent.FINGERPRINT_GENERATED, {
+    trackFingerprintGenerated({
       fingerprintType: 'enhanced_cli',
       success: true,
     })
     return fingerprint
   } catch (enhancedError) {
-    logger.info(
+    logFingerprint(
+      'info',
       {
         errorMessage:
           enhancedError instanceof Error ? enhancedError.message : String(enhancedError),
@@ -243,14 +268,15 @@ export async function calculateFingerprint(): Promise<string> {
 
     try {
       const fingerprint = calculateLegacyFingerprint()
-      logger.debug(
+      logFingerprint(
+        'debug',
         {
           fingerprintType: 'legacy_fallback',
           fingerprintId: fingerprint,
         },
         'Legacy fingerprint generated successfully as fallback',
       )
-      trackEvent(AnalyticsEvent.FINGERPRINT_GENERATED, {
+      trackFingerprintGenerated({
         fingerprintType: 'legacy',
         success: true,
         fallbackReason:
@@ -258,7 +284,8 @@ export async function calculateFingerprint(): Promise<string> {
       })
       return fingerprint
     } catch (legacyError) {
-      logger.error(
+      logFingerprint(
+        'error',
         {
           errorMessage:
             legacyError instanceof Error ? legacyError.message : String(legacyError),
