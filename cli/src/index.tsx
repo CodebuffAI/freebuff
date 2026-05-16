@@ -322,6 +322,22 @@ async function main(): Promise<void> {
     }
   }
 
+  // CI gate: `<binary> --smoke-runtime-primitives` exercises the highest-risk
+  // compiled runtime integrations without entering the TUI: disk IO, vendored
+  // native tools, subprocesses, and the real login-code HTTP endpoint.
+  if (process.argv.includes('--smoke-runtime-primitives')) {
+    try {
+      const { runRuntimePrimitivesSmoke } = await import(
+        './smoke/runtime-primitives'
+      )
+      await runRuntimePrimitivesSmoke()
+      process.exit(0)
+    } catch (err) {
+      console.error('runtime primitives smoke FAIL:', err)
+      process.exit(1)
+    }
+  }
+
   // Run OSC theme detection BEFORE anything else.
   // This MUST happen before OpenTUI starts because OSC responses come through stdin,
   // and OpenTUI also listens to stdin. Running detection here ensures stdin is clean.
