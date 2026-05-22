@@ -56,6 +56,9 @@ export type PromptAiSdkStreamFn = (
     includeCacheControl?: boolean
     cacheDebugCorrelation?: string
     agentProviderOptions?: OpenRouterProviderRoutingOptions
+    /** Fallback custom-provider config injected by the SDK Client.
+     *  Lower precedence than an agent's own providerOptions.baseUrl. */
+    clientCustomProvider?: { baseUrl?: string; apiKey?: string }
     /** List of agents that can be spawned - used to transform agent tool calls */
     spawnableAgents?: string[]
     /** Map of locally available agent templates - used to transform agent tool calls */

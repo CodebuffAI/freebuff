@@ -167,6 +167,8 @@ export const DynamicAgentDefinitionSchema = z.object({
           request: z.union([z.number(), z.string()]).optional(),
         })
         .optional(),
+      baseUrl: z.string().url().optional(),
+      apiKey: z.string().optional(),
     })
     .optional(),
 

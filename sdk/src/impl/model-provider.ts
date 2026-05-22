@@ -86,6 +86,8 @@ export interface ModelRequestParams {
   skipChatGptOAuth?: boolean
   /** Cost mode (e.g. 'free') — affects fallback behavior for OAuth routes */
   costMode?: string
+  /** When set, route this request directly to the OpenAI-compatible endpoint and bypass Codebuff/OAuth. */
+  customProvider?: { baseUrl: string; apiKey?: string }
 }
 
 /**
@@ -96,6 +98,8 @@ export interface ModelResult {
   model: LanguageModel
   /** Whether this model uses ChatGPT OAuth direct (affects cost tracking) */
   isChatGptOAuth: boolean
+  /** Whether this model uses a custom OpenAI-compatible endpoint (affects cost tracking + metadata) */
+  isCustomProvider: boolean
 }
 
 // Usage accounting type for OpenRouter/Codebuff backend responses
@@ -115,7 +119,21 @@ type OpenRouterUsageAccounting = {
  * This function is async because it may need to refresh the OAuth token.
  */
 export async function getModelForRequest(params: ModelRequestParams): Promise<ModelResult> {
-  const { apiKey, model, skipChatGptOAuth, costMode } = params
+  const { apiKey, model, skipChatGptOAuth, costMode, customProvider } = params
+
+  // 1) Custom OpenAI-compatible endpoint wins — explicit per-agent / client / env override.
+  //    Bypasses Codebuff backend AND ChatGPT OAuth.
+  if (customProvider?.baseUrl) {
+    return {
+      model: createCustomProviderModel({
+        model,
+        baseUrl: customProvider.baseUrl,
+        apiKey: customProvider.apiKey,
+      }),
+      isChatGptOAuth: false,
+      isCustomProvider: true,
+    }
+  }
 
   // Check if we should use ChatGPT OAuth direct
   // Only attempt for allowlisted models; non-allowlisted models silently fall through to backend.
@@ -140,6 +158,7 @@ export async function getModelForRequest(params: ModelRequestParams): Promise<Mo
         return {
           model: createOpenAIOAuthModel(model, chatGptOAuthCredentials.accessToken),
           isChatGptOAuth: true,
+          isCustomProvider: false,
         }
       }
 
@@ -156,6 +175,7 @@ export async function getModelForRequest(params: ModelRequestParams): Promise<Mo
   return {
     model: createCodebuffBackendModel(apiKey, model),
     isChatGptOAuth: false,
+    isCustomProvider: false,
   }
 }
 
@@ -251,6 +271,38 @@ function createCodebuffBackendModel(
         },
       }),
     },
+    fetch: undefined,
+    includeUsage: undefined,
+    supportsStructuredOutputs: true,
+  })
+}
+
+/**
+ * Create an OpenAI-compatible model pointed at a user-supplied base URL.
+ * Used for local providers (Ollama, LM Studio) and self-hosted endpoints.
+ *
+ * No metadata extractor — direct calls don't flow through Codebuff's usage
+ * accounting. No codebuff_metadata is sent (handled by the caller).
+ */
+function createCustomProviderModel(params: {
+  model: string
+  baseUrl: string
+  apiKey?: string
+}): LanguageModel {
+  const { model, baseUrl, apiKey } = params
+  const trimmedBase = baseUrl.replace(/\/+$/, '')
+
+  return new OpenAICompatibleChatLanguageModel(model, {
+    provider: 'custom',
+    url: ({ path: endpoint }) => `${trimmedBase}${endpoint}`,
+    headers: () => ({
+      // Most local runtimes (Ollama, LM Studio) ignore the Authorization header
+      // entirely. Send a non-empty placeholder since some servers reject empty
+      // Bearer values; never send the user's Codebuff key on this code path.
+      Authorization: `Bearer ${apiKey ?? 'unused'}`,
+      'Content-Type': 'application/json',
+      'user-agent': `ai-sdk/openai-compatible/${VERSION}/codebuff-custom-provider`,
+    }),
     fetch: undefined,
     includeUsage: undefined,
     supportsStructuredOutputs: true,

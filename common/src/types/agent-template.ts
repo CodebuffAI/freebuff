@@ -37,6 +37,12 @@ export type OpenRouterReasoningOptions = {
     }
 )
 
+/**
+ * OpenRouter provider-routing options, plus optional fields to override the
+ * upstream endpoint with an OpenAI-compatible base URL (e.g. Ollama, LM Studio,
+ * self-hosted). The routing fields below are OpenRouter-specific and are
+ * ignored when `baseUrl` is set.
+ */
 export type OpenRouterProviderRoutingOptions = {
   /**
    * List of provider slugs to try in order (e.g. ["anthropic", "openai"])
@@ -90,6 +96,20 @@ export type OpenRouterProviderRoutingOptions = {
     audio?: number | string
     request?: number | string
   }
+  /**
+   * Override the upstream LLM endpoint with an OpenAI-compatible base URL.
+   * When set, this agent's calls bypass the Codebuff backend / OpenRouter
+   * and go directly to `${baseUrl}/chat/completions`.
+   *
+   * Other keys above (order, allow_fallbacks, ...) are OpenRouter-specific and
+   * are ignored when baseUrl is set. Falls back to env var CODEBUFF_BASE_URL.
+   */
+  baseUrl?: string
+  /**
+   * API key for the endpoint set in `baseUrl`. Ignored if baseUrl is unset.
+   * Falls back to env var CODEBUFF_PROVIDER_API_KEY.
+   */
+  apiKey?: string
 }
 
 export type OpenRouterProviderOptions = {

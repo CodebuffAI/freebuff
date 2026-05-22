@@ -29,6 +29,8 @@ export function getAgentRuntimeImpl(
     logger?: Logger
     apiKey: string
     clientEnv?: ClientEnv
+    /** Default custom provider used for runs that don't set one per-agent. */
+    clientCustomProvider?: { baseUrl?: string; apiKey?: string }
   } & Pick<
     AgentRuntimeScopedDeps,
     | 'handleStepsLogChunk'
@@ -44,6 +46,7 @@ export function getAgentRuntimeImpl(
     logger,
     apiKey,
     clientEnv = clientEnvDefault,
+    clientCustomProvider,
     handleStepsLogChunk,
     requestToolCall,
     requestMcpToolData,
@@ -87,7 +90,10 @@ export function getAgentRuntimeImpl(
       }),
 
     // LLM
-    promptAiSdkStream,
+    promptAiSdkStream: clientCustomProvider
+      ? (streamParams) =>
+          promptAiSdkStream({ ...streamParams, clientCustomProvider })
+      : promptAiSdkStream,
     promptAiSdk,
     promptAiSdkStructured,
 

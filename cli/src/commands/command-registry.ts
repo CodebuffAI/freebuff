@@ -5,6 +5,7 @@ import { handleAdsEnable, handleAdsDisable } from './ads'
 import { handleHelpCommand } from './help'
 import { handleImageCommand } from './image'
 import { handleInitializationFlowLocally } from './init'
+import { applyLocalAction, parseLocalArgs } from './local-provider'
 import { buildInterviewPrompt, buildPlanPrompt, buildReviewPromptFromArgs } from './prompt-builders'
 import { runBashCommand } from './router'
 import { handleUsageCommand } from './usage'
@@ -390,6 +391,18 @@ const ALL_COMMANDS: CommandDefinition[] = [
       useChatStore.getState().setInputMode('image')
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
+    },
+  }),
+  defineCommandWithArgs({
+    name: 'local',
+    handler: async (params, args) => {
+      const userText = params.inputValue.trim()
+      params.setMessages((prev) => [...prev, getUserMessage(userText)])
+      params.saveToHistory(userText)
+      clearInput(params)
+
+      const message = await applyLocalAction(parseLocalArgs(args))
+      params.setMessages((prev) => [...prev, getSystemMessage(message)])
     },
   }),
   // Mode commands generated from AGENT_MODES (excluded in Freebuff)

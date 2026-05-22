@@ -109,6 +109,25 @@ export interface AgentDefinition {
       audio?: number | string
       request?: number | string
     }
+    /**
+     * Override the upstream LLM endpoint with an OpenAI-compatible base URL.
+     * When set, this agent's LLM calls bypass the Codebuff backend / OpenRouter
+     * and go directly to `${baseUrl}/chat/completions`.
+     *
+     * Use for local models (Ollama, LM Studio) or self-hosted OpenAI-compatible
+     * providers. The other providerOptions keys (order, allow_fallbacks, etc.)
+     * are OpenRouter-specific and ignored when `baseUrl` is set.
+     *
+     * Falls back to env var CODEBUFF_BASE_URL when unset.
+     * Example: "http://localhost:11434/v1"
+     */
+    baseUrl?: string
+    /**
+     * API key for the endpoint set in `baseUrl`. Ignored if `baseUrl` is unset.
+     * Falls back to env var CODEBUFF_PROVIDER_API_KEY. Most local runtimes
+     * (Ollama, LM Studio) ignore the value entirely.
+     */
+    apiKey?: string
   }
 
   // ============================================================================

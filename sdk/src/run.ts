@@ -86,6 +86,16 @@ export type CodebuffClientOptions = {
   maxAgentSteps?: number
   env?: Record<string, string>
 
+  /**
+   * Default custom OpenAI-compatible provider base URL for runs that don't set
+   * one per-agent. Used for local models (Ollama, LM Studio) or self-hosted
+   * endpoints. Lower precedence than an agent's own providerOptions.baseUrl;
+   * higher precedence than the CODEBUFF_BASE_URL env var.
+   */
+  providerBaseUrl?: string
+  /** Default API key paired with providerBaseUrl. Ignored if providerBaseUrl is unset. */
+  providerApiKey?: string
+
   handleEvent?: (event: PrintModeEvent) => void | Promise<void>
   handleStreamChunk?: (
     chunk:
@@ -201,6 +211,8 @@ async function runOnce({
   agentDefinitions,
   maxAgentSteps = MAX_AGENT_STEPS_DEFAULT,
   env,
+  providerBaseUrl,
+  providerApiKey,
 
   handleEvent,
   handleStreamChunk,
@@ -381,6 +393,9 @@ async function runOnce({
   const agentRuntimeImpl = getAgentRuntimeImpl({
     logger,
     apiKey,
+    clientCustomProvider: providerBaseUrl
+      ? { baseUrl: providerBaseUrl, apiKey: providerApiKey }
+      : undefined,
     handleStepsLogChunk: () => {
       // Does nothing for now
     },

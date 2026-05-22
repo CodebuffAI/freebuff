@@ -163,6 +163,11 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     description: 'Attach an image file (or Ctrl+V to paste from clipboard)',
     aliases: ['img', 'attach'],
   },
+  {
+    id: 'local',
+    label: 'local',
+    description: 'Toggle local LLM provider (Ollama/LM Studio). Usage: /local [on <model>|off|model <name>|list|status]',
+  },
   ...MODE_COMMANDS,
   // {
   //   id: 'publish',

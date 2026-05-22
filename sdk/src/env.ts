@@ -7,6 +7,11 @@
 
 import { BYOK_OPENROUTER_ENV_VAR } from '@codebuff/common/constants/byok'
 import { CHATGPT_OAUTH_TOKEN_ENV_VAR } from '@codebuff/common/constants/chatgpt-oauth'
+import {
+  PROVIDER_API_KEY_ENV_VAR,
+  PROVIDER_BASE_URL_ENV_VAR,
+  PROVIDER_MODEL_ENV_VAR,
+} from '@codebuff/common/constants/custom-provider'
 import { API_KEY_ENV_VAR } from '@codebuff/common/constants/paths'
 import { getBaseEnv } from '@codebuff/common/env-process'
 
@@ -47,4 +52,29 @@ export const getByokOpenrouterApiKeyFromEnv = (): string | undefined => {
  */
 export const getChatGptOAuthTokenFromEnv = (): string | undefined => {
   return process.env[CHATGPT_OAUTH_TOKEN_ENV_VAR]
+}
+
+/**
+ * Get the custom upstream provider base URL from environment.
+ * Used when an agent's providerOptions.baseUrl is unset and no CodebuffClient option overrides it.
+ */
+export const getCustomProviderBaseUrlFromEnv = (): string | undefined => {
+  return process.env[PROVIDER_BASE_URL_ENV_VAR]
+}
+
+/**
+ * Get the custom upstream provider API key from environment.
+ * Paired with getCustomProviderBaseUrlFromEnv.
+ */
+export const getCustomProviderApiKeyFromEnv = (): string | undefined => {
+  return process.env[PROVIDER_API_KEY_ENV_VAR]
+}
+
+/**
+ * Get the override model name from environment. When the custom provider is
+ * active, this value replaces the agent's declared model.
+ * Returns undefined if unset.
+ */
+export const getCustomProviderModelFromEnv = (): string | undefined => {
+  return process.env[PROVIDER_MODEL_ENV_VAR]
 }
