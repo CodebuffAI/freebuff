@@ -38,6 +38,10 @@ const FIREWORKS_MODEL_MAP: Record<string, string> = {
   'minimax/minimax-m2.7': 'accounts/fireworks/models/minimax-m2p7',
   'moonshotai/kimi-k2.6': 'accounts/fireworks/models/kimi-k2p6',
   'z-ai/glm-5.1': 'accounts/fireworks/models/glm-5p1',
+  // Fallback target when the official DeepSeek API is unhealthy. Routing is
+  // gated by the DeepSeek circuit breaker in deepseek-health.ts — when the
+  // circuit is closed, requests still go to the official API.
+  'deepseek/deepseek-v4-flash': 'accounts/fireworks/models/deepseek-v4-flash',
 }
 
 /** Models that stay limited to freebuff deployment hours even on serverless. */
@@ -190,6 +194,11 @@ const FIREWORKS_PRICING_MAP: Record<string, FireworksPricing> = {
     inputCostPerToken: 1.4 / 1_000_000,
     cachedInputCostPerToken: 0.26 / 1_000_000,
     outputCostPerToken: 4.4 / 1_000_000,
+  },
+  'deepseek/deepseek-v4-flash': {
+    inputCostPerToken: 0.14 / 1_000_000,
+    cachedInputCostPerToken: 0.03 / 1_000_000,
+    outputCostPerToken: 0.28 / 1_000_000,
   },
 }
 
