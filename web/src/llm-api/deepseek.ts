@@ -15,6 +15,11 @@ import {
   buildDeepSeekRequestBody,
   DEEPSEEK_MODEL_IDS,
 } from './deepseek-request-body'
+import {
+  isLikelyDeepSeekOutage,
+  recordDeepSeekFailure,
+  recordDeepSeekSuccess,
+} from './deepseek-health'
 
 import type { UsageData } from './helpers'
 import type { InsertMessageBigqueryFn } from '@codebuff/common/types/contracts/bigquery'
@@ -27,10 +32,25 @@ const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
 // a long time to start streaming.
 const DEEPSEEK_HEADERS_TIMEOUT_MS = 30 * 60 * 1000
 
+// Tighter TTFB timeout for the non-reasoning Flash model so that when DeepSeek
+// is unreachable we surface a failure within seconds instead of holding the
+// connection open for half an hour. This feeds the circuit breaker which then
+// fails open to Fireworks for subsequent requests.
+const DEEPSEEK_FLASH_HEADERS_TIMEOUT_MS = 60 * 1000
+
 const deepseekAgent = new Agent({
   headersTimeout: DEEPSEEK_HEADERS_TIMEOUT_MS,
   bodyTimeout: 0,
 })
+
+const deepseekFlashAgent = new Agent({
+  headersTimeout: DEEPSEEK_FLASH_HEADERS_TIMEOUT_MS,
+  bodyTimeout: 0,
+})
+
+function getDeepSeekDispatcher(model: string): Agent {
+  return isDeepSeekV4FlashModel(model) ? deepseekFlashAgent : deepseekAgent
+}
 
 // DeepSeek per-token pricing (dollars per token)
 interface DeepSeekPricing {
@@ -82,6 +102,38 @@ function isDeepSeekV4FlashModel(model: string): boolean {
   )
 }
 
+/** Wraps createDeepSeekRequest so that transient outages (network, timeout,
+ *  5xx) feed the circuit breaker and a healthy response resets it. 4xx
+ *  request errors (bad input, auth) are NOT counted as outages. */
+async function createDeepSeekRequestTracked(params: {
+  body: ChatCompletionRequestBody
+  originalModel: string
+  fetch: typeof globalThis.fetch
+}): Promise<Response> {
+  let response: Response
+  try {
+    response = await createDeepSeekRequest(params)
+  } catch (error) {
+    if (isLikelyDeepSeekOutage(error)) {
+      recordDeepSeekFailure({
+        model: params.originalModel,
+        reason: error instanceof Error ? error.message : String(error),
+      })
+    }
+    throw error
+  }
+  if (isLikelyDeepSeekOutage(undefined, response.status)) {
+    recordDeepSeekFailure({
+      model: params.originalModel,
+      reason: `HTTP ${response.status}`,
+      statusCode: response.status,
+    })
+  } else if (response.ok) {
+    recordDeepSeekSuccess()
+  }
+  return response
+}
+
 function getDeepSeekPricing(model: string): DeepSeekPricing {
   const entry = DEEPSEEK_MODELS[model]
   if (!entry) {
@@ -131,7 +183,7 @@ export function createDeepSeekRequest(params: {
     },
     body: JSON.stringify(deepseekBody),
     // @ts-expect-error - dispatcher is a valid undici option not in fetch types
-    dispatcher: deepseekAgent,
+    dispatcher: getDeepSeekDispatcher(originalModel),
   })
 }
 
@@ -206,7 +258,11 @@ export async function handleDeepSeekNonStream({
   })
   const auditRequest = createRequestAuditRecord(body)
 
-  const response = await createDeepSeekRequest({ body, originalModel, fetch })
+  const response = await createDeepSeekRequestTracked({
+    body,
+    originalModel,
+    fetch,
+  })
 
   if (!response.ok) {
     throw await parseDeepSeekError(response)
@@ -291,7 +347,11 @@ export async function handleDeepSeekStream({
   const auditRequest = createRequestAuditRecord(body)
   const skipDisconnectedBilling = isDeepSeekV4FlashModel(body.model)
 
-  const response = await createDeepSeekRequest({ body, originalModel, fetch })
+  const response = await createDeepSeekRequestTracked({
+    body,
+    originalModel,
+    fetch,
+  })
 
   if (!response.ok) {
     throw await parseDeepSeekError(response)

@@ -68,6 +68,10 @@ import {
   isDeepSeekModel,
 } from '@/llm-api/deepseek'
 import {
+  isLikelyDeepSeekOutage,
+  shouldBypassDeepSeek,
+} from '@/llm-api/deepseek-health'
+import {
   handleMoonshotNonStream,
   handleMoonshotStream,
   isMoonshotModel,
@@ -118,6 +122,23 @@ import { extractApiKeyFromHeader } from '@/util/auth'
 import { withDefaultProperties } from '@codebuff/common/analytics'
 import { checkFreeModeRateLimit as defaultCheckFreeModeRateLimit } from './free-mode-rate-limiter'
 import { beginChatCompletionRequestMetrics } from './request-metrics'
+
+/**
+ * Decide whether a failed DeepSeek request should transparently fail over to
+ * Fireworks. Pre-stream errors (network/timeout/5xx) on a model that has a
+ * known Fireworks fallback are eligible. The circuit-breaker failure was
+ * already recorded inside the DeepSeek handler.
+ */
+function canFailoverDeepSeekToFireworks(
+  error: unknown,
+  model: string,
+): boolean {
+  if (!isFireworksModel(model)) return false
+  if (error instanceof DeepSeekError) {
+    return isLikelyDeepSeekOutage(undefined, error.statusCode)
+  }
+  return isLikelyDeepSeekOutage(error)
+}
 
 export const formatQuotaResetCountdown = (
   nextQuotaReset: string | null | undefined,
@@ -837,10 +858,18 @@ export async function postChatCompletions(params: {
         const useMoonshot = !useOpenCodeZen && isMoonshotModel(typedBody.model)
         const useCanopyWave =
           !useMoonshot && !useOpenCodeZen && isCanopyWaveModel(typedBody.model)
+        const deepseekBypassed = shouldBypassDeepSeek(typedBody.model)
+        if (deepseekBypassed) {
+          providerLogger.info(
+            { model: typedBody.model },
+            'DeepSeek circuit open — routing to Fireworks fallback',
+          )
+        }
         const useDeepSeek =
           !useMoonshot &&
           !useOpenCodeZen &&
           !useCanopyWave &&
+          !deepseekBypassed &&
           isDeepSeekModel(typedBody.model)
         const useFireworks =
           !useMoonshot &&
@@ -864,6 +893,23 @@ export async function postChatCompletions(params: {
           logger: providerLogger,
           insertMessageBigquery,
         }
+        const callDeepSeekStream = async () => {
+          try {
+            return await handleDeepSeekStream(baseArgs)
+          } catch (error) {
+            if (canFailoverDeepSeekToFireworks(error, typedBody.model)) {
+              providerLogger.warn(
+                {
+                  model: typedBody.model,
+                  error: getErrorObject(error),
+                },
+                'DeepSeek failed pre-stream — falling back to Fireworks',
+              )
+              return await handleFireworksStream(baseArgs)
+            }
+            throw error
+          }
+        }
         const stream = useSiliconFlow
           ? await handleSiliconFlowStream(baseArgs)
           : useMoonshot
@@ -873,7 +919,7 @@ export async function postChatCompletions(params: {
               : useCanopyWave
                 ? await handleCanopyWaveStream(baseArgs)
                 : useDeepSeek
-                  ? await handleDeepSeekStream(baseArgs)
+                  ? await callDeepSeekStream()
                   : useFireworks
                     ? await handleFireworksStream(baseArgs)
                     : useOpenAIDirect
@@ -909,10 +955,18 @@ export async function postChatCompletions(params: {
         const useMoonshot = !useOpenCodeZen && isMoonshotModel(model)
         const useCanopyWave =
           !useMoonshot && !useOpenCodeZen && isCanopyWaveModel(model)
+        const deepseekBypassed = shouldBypassDeepSeek(model)
+        if (deepseekBypassed) {
+          providerLogger.info(
+            { model },
+            'DeepSeek circuit open — routing to Fireworks fallback',
+          )
+        }
         const useDeepSeek =
           !useMoonshot &&
           !useOpenCodeZen &&
           !useCanopyWave &&
+          !deepseekBypassed &&
           isDeepSeekModel(model)
         const useFireworks =
           !useMoonshot &&
@@ -937,6 +991,20 @@ export async function postChatCompletions(params: {
           logger: providerLogger,
           insertMessageBigquery,
         }
+        const callDeepSeekNonStream = async () => {
+          try {
+            return await handleDeepSeekNonStream(baseArgs)
+          } catch (error) {
+            if (canFailoverDeepSeekToFireworks(error, model)) {
+              providerLogger.warn(
+                { model, error: getErrorObject(error) },
+                'DeepSeek failed — falling back to Fireworks',
+              )
+              return await handleFireworksNonStream(baseArgs)
+            }
+            throw error
+          }
+        }
         const nonStreamRequest = useSiliconFlow
           ? handleSiliconFlowNonStream(baseArgs)
           : useMoonshot
@@ -946,7 +1014,7 @@ export async function postChatCompletions(params: {
               : useCanopyWave
                 ? handleCanopyWaveNonStream(baseArgs)
                 : useDeepSeek
-                  ? handleDeepSeekNonStream(baseArgs)
+                  ? callDeepSeekNonStream()
                   : useFireworks
                     ? handleFireworksNonStream(baseArgs)
                     : shouldUseOpenAIEndpoint
