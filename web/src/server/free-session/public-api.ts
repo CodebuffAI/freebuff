@@ -24,8 +24,6 @@ import {
   getInstantAdmitCapacity,
   getSessionGraceMs,
   getSessionLengthMs,
-  isWaitingRoomBypassedForEmail,
-  isWaitingRoomEnabled,
 } from './config'
 import {
   activeCountForModel,
@@ -246,7 +244,6 @@ export interface SessionDeps {
    *  force-enable / force-disable instant admit without mutating the
    *  shared model registry. */
   getInstantAdmitCapacity: (model: string) => number
-  isWaitingRoomEnabled: () => boolean
   /** Plain values, not getters: these never change at runtime. The deps
    *  interface uses values rather than thunks so tests can pass numbers
    *  inline without wrapping. */
@@ -265,7 +262,6 @@ const defaultDeps: SessionDeps = {
   listRecentPremiumAdmits,
   promoteQueuedUser,
   getInstantAdmitCapacity,
-  isWaitingRoomEnabled,
   get graceMs() {
     // Read-through getter keeps the default deps aligned with config while
     // tests can still inject a plain graceMs value through SessionDeps.
@@ -348,8 +344,6 @@ export type RequestSessionResult =
 /**
  * Client calls this on CLI startup with the model they want to use.
  * Semantics:
- *   - Waiting room disabled → { status: 'disabled' } (model still respected
- *     downstream by chat-completions)
  *   - No existing session → create queued row for `model`, fresh instance_id
  *   - Existing active (unexpired), same model → rotate instance_id (takeover)
  *   - Existing active (unexpired), different model → { status: 'model_locked' }
@@ -366,7 +360,6 @@ export async function requestSession(params: {
   userId: string
   model: string
   accessTier?: FreebuffAccessTier
-  userEmail?: string | null | undefined
   countryAccess?: FreeSessionCountryAccessMetadata
   /** True if the account is banned. Short-circuited here so banned bots never
    *  create a queued row — otherwise they inflate `queueDepth` between the
@@ -380,12 +373,6 @@ export async function requestSession(params: {
   const now = nowOf(deps)
   if (params.userBanned) {
     return { status: 'banned' }
-  }
-  if (
-    !deps.isWaitingRoomEnabled() ||
-    isWaitingRoomBypassedForEmail(params.userEmail)
-  ) {
-    return { status: 'disabled' }
   }
 
   // Rate-limit check runs before joinOrTakeOver so heavy users never even
@@ -549,7 +536,6 @@ async function attachRateLimit(
  * active capacity after the CLI receives `none`.
  *
  * Returns:
- *   - `disabled` when the waiting room is off
  *   - `none` when the user has no row at all (or the row was swept past
  *     the grace window)
  *   - `superseded` when the caller's id no longer matches the stored one
@@ -559,7 +545,6 @@ async function attachRateLimit(
 export async function getSessionState(params: {
   userId: string
   accessTier?: FreebuffAccessTier
-  userEmail?: string | null | undefined
   userBanned?: boolean
   claimedInstanceId?: string | null | undefined
   deps?: SessionDeps
@@ -568,12 +553,6 @@ export async function getSessionState(params: {
   const accessTier = params.accessTier ?? 'full'
   if (params.userBanned) {
     return { status: 'banned' }
-  }
-  if (
-    !deps.isWaitingRoomEnabled() ||
-    isWaitingRoomBypassedForEmail(params.userEmail)
-  ) {
-    return { status: 'disabled' }
   }
   const row = await deps.getSessionRow(params.userId)
 
@@ -622,16 +601,9 @@ export async function getSessionState(params: {
 
 export async function endUserSession(params: {
   userId: string
-  userEmail?: string | null | undefined
   deps?: SessionDeps
 }): Promise<void> {
   const deps = params.deps ?? defaultDeps
-  if (
-    !deps.isWaitingRoomEnabled() ||
-    isWaitingRoomBypassedForEmail(params.userEmail)
-  ) {
-    return
-  }
   await deps.endSession({
     userId: params.userId,
     now: nowOf(deps),
@@ -640,7 +612,6 @@ export async function endUserSession(params: {
 }
 
 export type SessionGateResult =
-  | { ok: true; reason: 'disabled' }
   | { ok: true; reason: 'active'; remainingMs: number }
   | {
       ok: true
@@ -673,11 +644,9 @@ export type SessionGateResult =
 export async function checkSessionAdmissible(params: {
   userId: string
   accessTier?: FreebuffAccessTier
-  userEmail?: string | null | undefined
   claimedInstanceId: string | null | undefined
-  /** Forces a real active session row check even when the waiting room is
-   *  globally disabled or the user email normally bypasses it. Use for
-   *  subagent/model combinations that must be bound to trusted session state. */
+  /** Forces a real active session row check for subagent/model combinations
+   *  that must be bound to trusted session state. */
   requireActiveSession?: boolean
   /** Model the chat-completions request is for. When provided, the gate
    *  rejects requests whose model doesn't match the active session's model
@@ -687,13 +656,6 @@ export async function checkSessionAdmissible(params: {
 }): Promise<SessionGateResult> {
   const deps = params.deps ?? defaultDeps
   const accessTier = params.accessTier ?? 'full'
-  if (
-    !params.requireActiveSession &&
-    (!deps.isWaitingRoomEnabled() ||
-      isWaitingRoomBypassedForEmail(params.userEmail))
-  ) {
-    return { ok: true, reason: 'disabled' }
-  }
 
   // Pre-waiting-room CLIs never send a freebuff_instance_id. Classify that up
   // front so the caller gets a distinct code (→ 426 Upgrade Required) and the

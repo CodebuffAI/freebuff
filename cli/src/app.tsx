@@ -261,7 +261,7 @@ export const App = ({
   }
 
   // Render project picker FIRST when at home directory or outside a project.
-  // This deliberately precedes the login/auth and waiting-room gates so the
+  // This deliberately precedes the login/auth and freebuff session gate so the
   // user always gets to pick a working directory before anything else — auth
   // failures or a banned/queued freebuff session would otherwise replace the
   // picker mid-flash and look like being kicked out of the app.
@@ -340,7 +340,7 @@ interface AuthedSurfaceProps {
 }
 
 /**
- * Rendered only after auth is confirmed. Owns the freebuff waiting-room gate
+ * Rendered only after auth is confirmed. Owns the freebuff session gate
  * so `useFreebuffSession` runs exactly once per authed session (not before
  * we have a token).
  */

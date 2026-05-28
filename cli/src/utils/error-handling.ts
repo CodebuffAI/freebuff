@@ -167,7 +167,7 @@ export const getFreeModeUnavailableErrorMessage = (
 }
 
 /**
- * Freebuff waiting-room gate errors returned by /api/v1/chat/completions.
+ * Freebuff session gate errors returned by /api/v1/chat/completions.
  *
  * Contract (see docs/freebuff-waiting-room.md):
  *   - 428 `waiting_room_required`   — no session row exists; POST /session to join.

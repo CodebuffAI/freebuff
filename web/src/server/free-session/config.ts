@@ -19,22 +19,6 @@ export const FREEBUFF_ADMISSION_LOCK_ID = 573924815
 export const ADMISSION_TICK_MS = 15_000
 export const SESSION_GRACE_MS = 30 * 60 * 1000
 
-export function isWaitingRoomEnabled(): boolean {
-  return env.FREEBUFF_WAITING_ROOM_ENABLED
-}
-
-/** Per-account override on top of the global kill switch. The internal
- *  `team@codebuff.com` account drives e2e tests in CI; landing it in the
- *  queue would make those tests flake whenever the waiting room is warm.
- *  Bypassed users behave exactly as if the waiting room were disabled. */
-const WAITING_ROOM_BYPASS_EMAILS = new Set<string>(['team@codebuff.com'])
-export function isWaitingRoomBypassedForEmail(
-  email: string | null | undefined,
-): boolean {
-  if (!email) return false
-  return WAITING_ROOM_BYPASS_EMAILS.has(email.toLowerCase())
-}
-
 export function getSessionLengthMs(): number {
   return env.FREEBUFF_SESSION_LENGTH_MS
 }

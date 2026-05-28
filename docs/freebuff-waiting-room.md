@@ -8,21 +8,13 @@ The waiting room is the admission control layer for **free-mode** requests again
 2. **Gate on per-deployment health and hours** — a single fleet probe per tick (`getFleetHealth` in `web/src/server/free-session/fireworks-health.ts`) hits the Fireworks metrics endpoint and classifies each dedicated deployment as `healthy | degraded | unhealthy`. Only models whose deployment is `healthy` and currently available admit that tick; models without a dedicated deployment are treated as serverless and always available.
 3. **One instance per account** — prevent a single user from running N concurrent freebuff CLIs to get N× throughput.
 
-Users who cannot be admitted immediately are placed in the queue for their chosen model and given an estimated wait time. Admitted users get a fixed-length session (default 1h) bound to the model they were admitted on; chat completions use that model for the life of the session.
+Users who cannot be admitted immediately are placed in the queue for their chosen model and given an estimated wait time. With the current high instant-admit capacities, most users go straight from model selection to an active session; the queue only appears when a model is actually saturated. Admitted users get a fixed-length session (default 1h) bound to the model they were admitted on; chat completions use that model for the life of the session.
 
-The entire system is gated by the env flag `FREEBUFF_WAITING_ROOM_ENABLED`. When `false`, the gate is a no-op and the admission ticker does not start; free-mode traffic flows through unchanged.
-
-## Kill Switch
+## Configuration
 
 ```bash
-# Disable entirely (both the gate on chat/completions and the admission loop)
-FREEBUFF_WAITING_ROOM_ENABLED=false
-
-# Other knob (only read when enabled)
 FREEBUFF_SESSION_LENGTH_MS=3600000         # 1 hour
 ```
-
-Flipping the flag is safe at runtime: existing rows stay in the DB and will be admitted / expired correctly whenever the flag is flipped back on.
 
 ## Architecture
 
@@ -186,9 +178,6 @@ Before any of those state transitions, the handler requires a resolved country a
 Response shapes:
 
 ```jsonc
-// Waiting room disabled — CLI should treat this as "always admitted"
-{ "status": "disabled" }
-
 // In queue
 {
   "status": "queued",
@@ -272,9 +261,7 @@ For free-mode requests (`codebuff_metadata.cost_mode === 'free'`), `_post.ts` ca
 | 409  | `session_superseded`       | Claimed `instance_id` does not match stored one — another CLI took over.                                                                       |
 | 410  | `session_expired`          | `expires_at + grace < now()` (past the hard cutoff). Client should POST /session to re-queue.                                                  |
 
-Successful results carry one of three reasons: `disabled` (gate is off), `active` (`expires_at > now()`, `remainingMs` provided), or `draining` (`expires_at <= now() < expires_at + grace`, `gracePeriodRemainingMs` provided). The CLI should treat `draining` as "let any in-flight agent run finish, but block new user prompts" — see [Drain / Grace Window](#drain--grace-window) below. The corresponding wire status from `getSessionState` is `ended`.
-
-When the waiting room is disabled, the gate returns `{ ok: true, reason: 'disabled' }` without touching the DB.
+Successful results carry one of two reasons: `active` (`expires_at > now()`, `remainingMs` provided), or `draining` (`expires_at <= now() < expires_at + grace`, `gracePeriodRemainingMs` provided). The CLI should treat `draining` as "let any in-flight agent run finish, but block new user prompts" — see [Drain / Grace Window](#drain--grace-window) below. The corresponding wire status from `getSessionState` is `ended`.
 
 ## Drain / Grace Window
 
@@ -313,8 +300,6 @@ The CLI:
 7. **On every chat request**, includes `codebuff_metadata.freebuff_instance_id: <stored id>`.
 8. **Handles chat-gate errors:** the same statuses are reachable via the gate's 409/410/428/429 for fast in-flight feedback, and the CLI calls the matching `markFreebuff*` helper to flip local state without waiting for the next poll.
 9. **On clean exit**, calls `DELETE /api/v1/freebuff/session` so the next user can be admitted sooner.
-
-The `disabled` response means the server has the waiting room turned off. CLI treats it identically to `active` with infinite remaining time — no countdown, and chat requests can omit `freebuff_instance_id` entirely.
 
 ## Multi-pod Behavior
 

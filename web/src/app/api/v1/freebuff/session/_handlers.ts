@@ -149,7 +149,7 @@ export interface FreebuffSessionDeps {
 
 type AuthResult =
   | { error: NextResponse }
-  | { userId: string; userEmail: string | null; userBanned: boolean }
+  | { userId: string; userBanned: boolean }
 
 async function resolveUser(
   req: NextRequest,
@@ -169,7 +169,7 @@ async function resolveUser(
   }
   const userInfo = await deps.getUserInfoFromApiKey({
     apiKey,
-    fields: ['id', 'email', 'banned'],
+    fields: ['id', 'banned'],
     logger: deps.logger,
   })
   if (!userInfo?.id) {
@@ -182,7 +182,6 @@ async function resolveUser(
   }
   return {
     userId: String(userInfo.id),
-    userEmail: userInfo.email ?? null,
     userBanned: Boolean(userInfo.banned),
   }
 }
@@ -240,7 +239,6 @@ export async function postFreebuffSession(
   try {
     const state = await requestSession({
       userId: auth.userId,
-      userEmail: auth.userEmail,
       userBanned: auth.userBanned,
       model: requestedModel,
       accessTier,
@@ -292,7 +290,6 @@ export async function getFreebuffSession(
     const state = await getSessionState({
       userId: auth.userId,
       accessTier,
-      userEmail: auth.userEmail,
       userBanned: auth.userBanned,
       claimedInstanceId,
       deps: deps.sessionDeps,
@@ -330,7 +327,6 @@ export async function deleteFreebuffSession(
   try {
     await endUserSession({
       userId: auth.userId,
-      userEmail: auth.userEmail,
       deps: deps.sessionDeps,
     })
     return NextResponse.json({ status: 'ended' }, { status: 200 })

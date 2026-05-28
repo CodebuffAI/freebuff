@@ -208,7 +208,7 @@ export async function postChatCompletions(params: {
     logger: Logger
   }) => Promise<BlockGrantResult | null>
   getUserPreferences?: GetUserPreferencesFn
-  /** Optional override for the freebuff waiting-room gate. Defaults to the
+  /** Optional override for the freebuff session gate. Defaults to the
    *  real check backed by Postgres; tests inject a no-op. */
   checkSessionAdmissible?: CheckSessionAdmissibleFn
   /** Optional override for the free-mode rate limiter. Tests inject this to
@@ -640,16 +640,14 @@ export async function postChatCompletions(params: {
 
     let freeModeSessionGate: SessionGateResult | null = null
 
-    // Freebuff waiting-room gate. Usually enforced only when
-    // FREEBUFF_WAITING_ROOM_ENABLED=true. Runs before the rate limiter so
-    // rejected requests don't burn a queued user's free-mode counters.
+    // Freebuff session gate. Runs before the rate limiter so rejected requests
+    // don't burn a queued user's free-mode counters.
     if (isFreeModeRequest) {
       const claimedInstanceId =
         typedBody.codebuff_metadata?.freebuff_instance_id
       freeModeSessionGate = await checkSession({
         userId,
         accessTier: freebuffAccessTier,
-        userEmail: userInfo.email,
         claimedInstanceId,
         requestedModel: typedBody.model,
         requireActiveSession: isFreebuffGeminiThinkerAgent(agentId),

@@ -7,7 +7,6 @@ import {
   ADMISSION_TICK_MS,
   getSessionGraceMs,
   getSessionLengthMs,
-  isWaitingRoomEnabled,
 } from './config'
 import { getFleetHealth } from './fireworks-health'
 import {
@@ -189,13 +188,6 @@ function runTick() {
 
 export function startFreeSessionAdmission(): boolean {
   if (interval) return true
-  if (!isWaitingRoomEnabled()) {
-    logger.info(
-      {},
-      '[FreeSessionAdmission] Waiting room disabled — ticker not started',
-    )
-    return false
-  }
   interval = setInterval(runTick, ADMISSION_TICK_MS)
   if (typeof interval.unref === 'function') interval.unref()
   runTick() // fire first tick immediately

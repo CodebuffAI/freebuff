@@ -81,11 +81,10 @@ describe('/api/v1/chat/completions POST endpoint', () => {
   let mockInsertMessageBigquery: InsertMessageBigqueryFn
   let nextQuotaReset: string
 
-  // Bypasses the freebuff waiting-room gate in tests that exercise free-mode
-  // flow without seeding a session. Matches the real return for the disabled
-  // path so downstream logic proceeds normally.
+  // Bypasses the freebuff session gate in tests that exercise free-mode flow
+  // without seeding a session.
   const mockCheckSessionAdmissibleAllow = async () =>
-    ({ ok: true, reason: 'disabled' }) as const
+    ({ ok: true, reason: 'active', remainingMs: 60 * 60 * 1000 }) as const
   const mockResolveFreeModeCountryAccess = async (
     _userId: string,
     req: Parameters<typeof getFreeModeCountryAccess>[0],
