@@ -1,6 +1,10 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, spyOn } from 'bun:test'
 
-import { getFingerprintType, generateFingerprintIdSync } from '../fingerprint'
+import {
+  getFingerprintType,
+  generateFingerprintIdSync,
+  generateLegacyFingerprintSuffix,
+} from '../fingerprint'
 
 describe('fingerprint utilities', () => {
   describe('getFingerprintType', () => {
@@ -139,6 +143,45 @@ describe('fingerprint utilities', () => {
           expect(getFingerprintType(fingerprint)).toBe('legacy')
         }
       })
+    })
+  })
+
+  describe('generateLegacyFingerprintSuffix', () => {
+    test('falls back to Web Crypto when node randomBytes fails', () => {
+      const suffix = generateLegacyFingerprintSuffix(
+        () => {
+          throw new Error('randomBytes unavailable')
+        },
+        {
+          getRandomValues: (bytes) => {
+            bytes.set([0, 1, 2, 3, 4, 5])
+            return bytes
+          },
+        },
+      )
+
+      expect(suffix).toBe('AAECAwQF')
+    })
+
+    test('falls back to Math.random when node and Web Crypto both fail', () => {
+      const mathRandomSpy = spyOn(Math, 'random').mockReturnValue(0)
+
+      try {
+        const suffix = generateLegacyFingerprintSuffix(
+          () => {
+            throw new Error('randomBytes unavailable')
+          },
+          {
+            getRandomValues: () => {
+              throw new Error('getRandomValues unavailable')
+            },
+          },
+        )
+
+        expect(suffix).toBe('AAAAAAAA')
+      } finally {
+        mathRandomSpy.mockRestore()
+      }
     })
   })
 })

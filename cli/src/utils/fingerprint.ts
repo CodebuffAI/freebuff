@@ -11,6 +11,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { cpus, networkInterfaces } from 'node:os'
 
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
+import { withTimeout } from '@codebuff/common/util/promise'
 
 import { trackEvent } from './analytics'
 import { detectShell } from './detect-shell'
@@ -19,6 +20,37 @@ import { logger } from './logger'
 // Lazy imports for optional dependencies
 let machineIdModule: typeof import('node-machine-id') | null = null
 let systeminformationModule: typeof import('systeminformation') | null = null
+
+const ENHANCED_FINGERPRINT_TIMEOUT_MS = 3000
+const LEGACY_FINGERPRINT_SUFFIX_LENGTH = 8
+const LEGACY_FINGERPRINT_RANDOM_BYTES = 6
+const BASE64URL_ALPHABET =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+
+type RandomValuesProvider = {
+  getRandomValues: (bytes: Uint8Array) => Uint8Array
+}
+type FingerprintLogLevel = 'debug' | 'info' | 'warn'
+
+function logFingerprint(
+  level: FingerprintLogLevel,
+  data: Record<string, any>,
+  message: string,
+): void {
+  try {
+    logger[level](data, message)
+  } catch {
+    // Fingerprinting is part of login; logging must not block it.
+  }
+}
+
+function trackFingerprintGenerated(properties: Record<string, any>): void {
+  try {
+    trackEvent(AnalyticsEvent.FINGERPRINT_GENERATED, properties)
+  } catch {
+    // Fingerprinting is part of login; telemetry must not block it.
+  }
+}
 
 async function getMachineId(): Promise<string> {
   if (!machineIdModule) {
@@ -133,8 +165,67 @@ async function calculateEnhancedFingerprint(): Promise<string> {
  * Used as a fallback when enhanced fingerprinting fails.
  */
 function calculateLegacyFingerprint(): string {
-  const randomSuffix = randomBytes(6).toString('base64url').substring(0, 8)
+  const randomSuffix = generateLegacyFingerprintSuffix()
   return `codebuff-cli-${randomSuffix}`
+}
+
+function encodeLegacyFingerprintSuffix(bytes: Uint8Array): string {
+  return Buffer.from(bytes)
+    .toString('base64url')
+    .substring(0, LEGACY_FINGERPRINT_SUFFIX_LENGTH)
+}
+
+function tryGenerateLegacyFingerprintSuffix(
+  readBytes: () => Uint8Array,
+  warning: string,
+): string | null {
+  try {
+    return encodeLegacyFingerprintSuffix(readBytes())
+  } catch (err) {
+    logFingerprint(
+      'warn',
+      {
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+      warning,
+    )
+    return null
+  }
+}
+
+function generateMathRandomSuffix(): string {
+  return Array.from({ length: LEGACY_FINGERPRINT_SUFFIX_LENGTH }, () => {
+    return BASE64URL_ALPHABET[Math.floor(Math.random() * BASE64URL_ALPHABET.length)]
+  }).join('')
+}
+
+export function generateLegacyFingerprintSuffix(
+  randomByteSource: (byteCount: number) => Uint8Array = randomBytes,
+  randomValuesProvider: RandomValuesProvider | undefined = globalThis.crypto,
+): string {
+  const nodeSuffix = tryGenerateLegacyFingerprintSuffix(
+    () => randomByteSource(LEGACY_FINGERPRINT_RANDOM_BYTES),
+    'Node crypto randomBytes failed for legacy fingerprint suffix',
+  )
+  if (nodeSuffix) {
+    return nodeSuffix
+  }
+
+  if (randomValuesProvider) {
+    const webCryptoSuffix = tryGenerateLegacyFingerprintSuffix(
+      () => {
+        const bytes = new Uint8Array(LEGACY_FINGERPRINT_RANDOM_BYTES)
+        randomValuesProvider.getRandomValues(bytes)
+        return bytes
+      },
+      'Web Crypto getRandomValues failed for legacy fingerprint suffix',
+    )
+    if (webCryptoSuffix) {
+      return webCryptoSuffix
+    }
+  }
+
+  return generateMathRandomSuffix()
 }
 
 /**
@@ -162,21 +253,27 @@ export function getFingerprintId(): Promise<string> {
  */
 export async function calculateFingerprint(): Promise<string> {
   try {
-    const fingerprint = await calculateEnhancedFingerprint()
-    logger.debug(
+    const fingerprint = await withTimeout(
+      calculateEnhancedFingerprint(),
+      ENHANCED_FINGERPRINT_TIMEOUT_MS,
+      `Enhanced CLI fingerprinting timed out after ${ENHANCED_FINGERPRINT_TIMEOUT_MS}ms`,
+    )
+    logFingerprint(
+      'debug',
       {
         fingerprintType: 'enhanced_cli',
         fingerprintId: fingerprint.substring(0, 20) + '...',
       },
       'Enhanced CLI fingerprint generated successfully',
     )
-    trackEvent(AnalyticsEvent.FINGERPRINT_GENERATED, {
+    trackFingerprintGenerated({
       fingerprintType: 'enhanced_cli',
       success: true,
     })
     return fingerprint
   } catch (enhancedError) {
-    logger.info(
+    logFingerprint(
+      'info',
       {
         errorMessage:
           enhancedError instanceof Error ? enhancedError.message : String(enhancedError),
@@ -185,33 +282,22 @@ export async function calculateFingerprint(): Promise<string> {
       'Enhanced CLI fingerprinting failed, using legacy fallback',
     )
 
-    try {
-      const fingerprint = calculateLegacyFingerprint()
-      logger.debug(
-        {
-          fingerprintType: 'legacy_fallback',
-          fingerprintId: fingerprint,
-        },
-        'Legacy fingerprint generated successfully as fallback',
-      )
-      trackEvent(AnalyticsEvent.FINGERPRINT_GENERATED, {
-        fingerprintType: 'legacy',
-        success: true,
-        fallbackReason:
-          enhancedError instanceof Error ? enhancedError.message : 'unknown',
-      })
-      return fingerprint
-    } catch (legacyError) {
-      logger.error(
-        {
-          errorMessage:
-            legacyError instanceof Error ? legacyError.message : String(legacyError),
-          fingerprintType: 'failed',
-        },
-        'Both enhanced and legacy fingerprint generation failed',
-      )
-      throw new Error('Fingerprint generation failed')
-    }
+    const fingerprint = calculateLegacyFingerprint()
+    logFingerprint(
+      'debug',
+      {
+        fingerprintType: 'legacy_fallback',
+        fingerprintId: fingerprint,
+      },
+      'Legacy fingerprint generated successfully as fallback',
+    )
+    trackFingerprintGenerated({
+      fingerprintType: 'legacy',
+      success: true,
+      fallbackReason:
+        enhancedError instanceof Error ? enhancedError.message : 'unknown',
+    })
+    return fingerprint
   }
 }
 

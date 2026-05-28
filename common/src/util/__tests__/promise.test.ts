@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 
-import { INITIAL_RETRY_DELAY, withRetry } from '../promise'
+import { INITIAL_RETRY_DELAY, withRetry, withTimeout } from '../promise'
 
 describe('withRetry', () => {
   describe('basic functionality', () => {
@@ -321,5 +321,42 @@ describe('withRetry', () => {
 
       expect(operation).toHaveBeenCalledTimes(1)
     })
+  })
+})
+
+describe('withTimeout', () => {
+  it('should resolve when the promise finishes before the timeout', async () => {
+    await expect(
+      withTimeout(Promise.resolve('ok'), 100, 'too slow'),
+    ).resolves.toBe('ok')
+  })
+
+  it('should reject when the promise exceeds the timeout', async () => {
+    const neverResolves = new Promise<string>(() => {})
+
+    await expect(withTimeout(neverResolves, 1, 'too slow')).rejects.toThrow(
+      'too slow',
+    )
+  })
+
+  it('should clear the timeout when the wrapped promise rejects first', async () => {
+    let clearedTimeout: ReturnType<typeof setTimeout> | null = null
+    const originalClearTimeout = globalThis.clearTimeout
+    const clearTimeoutSpy = spyOn(globalThis, 'clearTimeout').mockImplementation(
+      ((timeout: ReturnType<typeof setTimeout>) => {
+        clearedTimeout = timeout
+        return originalClearTimeout(timeout)
+      }) as typeof clearTimeout,
+    )
+
+    try {
+      await expect(
+        withTimeout(Promise.reject(new Error('failed first')), 100, 'too slow'),
+      ).rejects.toThrow('failed first')
+
+      expect(clearedTimeout).not.toBeNull()
+    } finally {
+      clearTimeoutSpy.mockRestore()
+    }
   })
 })

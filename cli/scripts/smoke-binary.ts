@@ -8,8 +8,13 @@
  * binary, lets it run for a few seconds, then kills it and asserts the TUI
  * actually rendered a known boot screen.
  *
- * The positive check matters more than the negative one: a "did the boot
- * screen appear" assertion catches *any* startup failure — known fatals,
+ * Before the long-running UI check, this also invokes explicit compiled
+ * runtime smoke flags in the binary. Those cover startup-sensitive assets
+ * (tree-sitter) and non-UI runtime integrations (network, subprocesses,
+ * vendored native tools, filesystem IO).
+ *
+ * The positive boot check matters more than the negative one: a "did the
+ * boot screen appear" assertion catches *any* startup failure — known fatals,
  * novel error messages, silent crashes, hangs, segfaults that produce no
  * output. Negative pattern matches are kept only for clearer diagnostics
  * when a known regression recurs.
@@ -81,9 +86,21 @@ const FATAL_PATTERNS = [
 // the renderer is up).
 const DEFAULT_RUN_SECONDS = 10
 
-function runTreeSitterSmoke(binary: string): Promise<void> {
+function runFlagSmoke({
+  binary,
+  flag,
+  label,
+  okPattern,
+  timeoutMs,
+}: {
+  binary: string
+  flag: string
+  label: string
+  okPattern: RegExp
+  timeoutMs: number
+}): Promise<void> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(binary, ['--smoke-tree-sitter'], {
+    const proc = spawn(binary, [flag], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, NO_COLOR: '1', TERM: 'dumb' },
     })
@@ -95,16 +112,36 @@ function runTreeSitterSmoke(binary: string): Promise<void> {
     proc.stdout?.on('data', append)
     proc.stderr?.on('data', append)
 
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      proc.kill('SIGKILL')
+    }, timeoutMs)
+
     proc.once('error', reject)
     proc.once('exit', (code) => {
-      if (code === 0 && /tree-sitter smoke ok/.test(captured)) {
+      clearTimeout(timeout)
+
+      if (timedOut) {
+        reject(
+          new Error(
+            `${label} smoke timed out after ${timeoutMs}ms\n${captured.slice(
+              0,
+              8 * 1024,
+            )}`,
+          ),
+        )
+        return
+      }
+
+      if (code === 0 && okPattern.test(captured)) {
         resolve()
         return
       }
 
       reject(
         new Error(
-          `tree-sitter smoke failed with exit code ${code}\n${captured.slice(
+          `${label} smoke failed with exit code ${code}\n${captured.slice(
             0,
             8 * 1024,
           )}`,
@@ -133,8 +170,23 @@ async function main(): Promise<void> {
 
   console.log(`smoke-binary: spawning ${binary} for ${runSeconds}s…`)
 
-  await runTreeSitterSmoke(binary)
+  await runFlagSmoke({
+    binary,
+    flag: '--smoke-tree-sitter',
+    label: 'tree-sitter',
+    okPattern: /tree-sitter smoke ok/,
+    timeoutMs: 30_000,
+  })
   console.log('smoke-binary: tree-sitter init OK.')
+
+  await runFlagSmoke({
+    binary,
+    flag: '--smoke-runtime-primitives',
+    label: 'runtime primitives',
+    okPattern: /runtime primitives smoke ok/,
+    timeoutMs: 90_000,
+  })
+  console.log('smoke-binary: runtime primitives OK.')
 
   const proc = spawn(binary, [], {
     stdio: ['ignore', 'pipe', 'pipe'],
