@@ -111,8 +111,6 @@ export function createBase2(
       ENABLE_COMPOSIO_TOOLS && COMPOSIO_META_TOOL_NAMES,
     ),
     spawnableAgents: buildArray(
-      !isMax && 'file-picker',
-      isMax && 'file-picker-max',
       'code-searcher',
       'researcher-web',
       'researcher-docs',
@@ -142,7 +140,7 @@ Current date: ${PLACEHOLDER.CURRENT_DATE}.
 - **Understand first, act second:** Always gather context and read relevant files BEFORE editing files.
 - **Quality over speed:** Prioritize correctness over appearing productive. Fewer, well-informed agents are better than many rushed ones.
 - **Spawn mentioned agents:** If the user uses "@AgentName" in their message, you must spawn that agent.
-- **Validate assumptions:** Use researchers, file pickers, and the read_files tool to verify assumptions about libraries and APIs before implementing.
+- **Validate assumptions:** Use researchers, code-searcher, and the read_files tool to verify assumptions about libraries and APIs before implementing.
 - **Proactiveness:** Fulfill the user's request thoroughly, including reasonable, directly implied follow-up actions.
 - **Confirm Ambiguity/Expansion:** Do not take significant actions beyond the clear scope of the request without confirming with the user. If asked *how* to do something, explain first, don't just do it.${
       noAskUser
@@ -185,7 +183,7 @@ Use the spawn_agents tool to spawn specialized agents to help you complete the u
 - **Spawn multiple agents in parallel:** This increases the speed of your response **and** allows you to be more comprehensive by spawning more total agents to synthesize the best response.
 - **Sequence agents properly:** Keep in mind dependencies when spawning different agents. Don't spawn agents in parallel that depend on each other.
   ${buildArray(
-    '- Spawn context-gathering agents (file pickers, code searchers, and web/docs researchers) before making edits. Use the list_directory and glob tools directly for searching and exploring the codebase.',
+    '- Spawn code-searcher and web/docs researchers before making edits. Use list_directory, glob, read_subtree, and read_files directly for codebase exploration.',
     isFree &&
       'Do not spawn the thinker-gpt agent, unless the user asks. Not everyone has connected their ChatGPT subscription to Codebuff to allow for it.',
     hasFreeGeminiThinker && FREEBUFF_GEMINI_THINKER_SYSTEM_INSTRUCTION,
@@ -242,11 +240,11 @@ ${buildArray(
 <user>please implement [a complex new feature]</user>
 
 <response>
-[ You spawn 3 file-pickers, 2 code-searchers, and a docs researcher in parallel to find relevant files and do research online. You use the list_directory and glob tools directly to search the codebase. ]
+[ You spawn 2 code-searchers and a docs researcher in parallel to find relevant code and do research online. You use the list_directory, glob, read_subtree, and read_files tools directly to explore the codebase. ]
 
 [ You read a few of the relevant files using the read_files tool in two separate tool calls ]
 
-[ You spawn another file-picker and code-searcher to find more relevant files, and use glob tools ]
+[ You spawn another code-searcher to find more relevant code, and use glob and list_directory tools ]
 
 [ You read a few other relevant files using the read_files tool ]${
       !noAskUser
@@ -371,7 +369,7 @@ ${PLACEHOLDER.GIT_CHANGES_PROMPT}
   }
 }
 
-const EXPLORE_PROMPT = `- Iteratively spawn file pickers, code searchers, bashers, and web/docs researchers to gather context as needed. Use the list_directory and glob tools directly for searching and exploring the codebase. The file-picker and code-searcher agents are very useful to find relevant files -- try spawning multiple in parallel (say, 2-5 file-pickers and 1-3 code-searchers) to explore different parts of the codebase. Use read_subtree if you need to grok a particular part of the codebase. Read all the relevant files using the read_files tool.`
+const EXPLORE_PROMPT = `- Iteratively spawn code-searcher, bashers, and web/docs researchers to gather context as needed. For codebase exploration, use code-searcher briefly alongside the glob, list_directory, read_subtree, and read_files tools.`
 
 function buildImplementationInstructionsPrompt({
   isSonnet,
