@@ -49,6 +49,9 @@ export type AgentState = {
    * This is updated on every agent step via the /api/v1/token-count endpoint.
    */
   contextTokenCount: number
+  toolCallState?: {
+    nextIndex: number
+  }
 }
 
 export const AgentOutputSchema = z.discriminatedUnion('type', [
@@ -137,6 +140,7 @@ export function getInitialAgentState(): AgentState {
     systemPrompt: '',
     toolDefinitions: {},
     contextTokenCount: 0,
+    toolCallState: { nextIndex: 0 },
   }
 }
 export function getInitialSessionState(

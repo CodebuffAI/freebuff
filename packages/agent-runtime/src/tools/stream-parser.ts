@@ -5,7 +5,6 @@ import {
   assistantMessage,
   userMessage,
 } from '@codebuff/common/util/messages'
-import { generateCompactId } from '@codebuff/common/util/string'
 
 import { processStreamWithTools } from '../tool-stream-parser'
 import { INCLUDE_REASONING_IN_MESSAGE_HISTORY } from '../constants'
@@ -14,6 +13,7 @@ import {
   executeToolCall,
   tryTransformAgentToolCall,
 } from './tool-executor'
+import { createToolCallIdGenerator } from '../util/tool-call-id'
 import { withSystemTags } from '../util/messages'
 
 import type { CustomToolCall, ExecuteToolCallParams } from './tool-executor'
@@ -91,6 +91,7 @@ export async function processStream(
   const toolCalls: (CodebuffToolCall | CustomToolCall)[] = []
   const toolCallsToAddToMessageHistory: (CodebuffToolCall | CustomToolCall)[] = []
   const assistantMessages: Message[] = []
+  const getToolCallId = createToolCallIdGenerator(agentState)
   let hadToolCallError = false
   const errorMessages: Message[] = []
   const { promise: streamDonePromise, resolve: resolveStreamDonePromise } =
@@ -137,7 +138,6 @@ export async function processStream(
         if (signal.aborted) {
           return
         }
-        const toolCallId = generateCompactId()
         const isNativeTool = toolNames.includes(toolName as ToolName)
 
         // Check if this is an agent tool call that should be transformed to spawn_agents
@@ -160,19 +160,20 @@ export async function processStream(
         // Determine which executor to use and with what parameters
         let toolPromise: Promise<void>
         if (isNativeTool || transformed) {
+          const effectiveToolName = transformed
+            ? transformed.toolName
+            : (toolName as ToolName)
           // Use executeToolCall for native tools or transformed agent calls
           toolPromise = executeToolCall({
             ...params,
-            toolName: transformed
-              ? transformed.toolName
-              : (toolName as ToolName),
+            toolName: effectiveToolName,
             input: transformed ? transformed.input : input,
             fromHandleSteps: false,
 
             fileProcessingState,
             fullResponse: fullResponseChunks.join(''),
             previousToolCallFinished: previousPromise,
-            toolCallId,
+            toolCallId: getToolCallId(effectiveToolName),
             toolCalls,
             toolCallsToAddToMessageHistory,
             toolResults,
@@ -191,7 +192,7 @@ export async function processStream(
             fileProcessingState,
             fullResponse: fullResponseChunks.join(''),
             previousToolCallFinished: previousPromise,
-            toolCallId,
+            toolCallId: getToolCallId(toolName),
             toolCalls,
             toolCallsToAddToMessageHistory,
             toolResults,

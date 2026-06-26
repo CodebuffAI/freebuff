@@ -212,6 +212,28 @@ describe('runProgrammaticStep', () => {
   })
 
   describe('tool execution', () => {
+    it('assigns deterministic global ids to handleSteps tool calls', async () => {
+      const mockGenerator = (function* () {
+        yield { toolName: 'read_files', input: { paths: ['first.txt'] } }
+        yield { toolName: 'read_files', input: { paths: ['second.txt'] } }
+        yield { toolName: 'end_turn', input: {} }
+      })() as StepGenerator
+
+      mockTemplate.handleSteps = () => mockGenerator
+
+      await runProgrammaticStep(mockParams)
+
+      expect(executeToolCallSpy.mock.calls[0][0].toolCallId).toBe(
+        'functions.read_files.0',
+      )
+      expect(executeToolCallSpy.mock.calls[1][0].toolCallId).toBe(
+        'functions.read_files.1',
+      )
+      expect(executeToolCallSpy.mock.calls[2][0].toolCallId).toBe(
+        'functions.end_turn.2',
+      )
+    })
+
     it('should not add tool call message for add_message tool', async () => {
       const mockGenerator = (function* () {
         yield {

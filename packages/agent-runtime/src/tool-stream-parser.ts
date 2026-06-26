@@ -79,7 +79,6 @@ export async function* processStreamWithTools(params: {
   }
   trackEvent: TrackEventFn
   executeXmlToolCall: (params: {
-    toolCallId: string
     toolName: string
     input: Record<string, unknown>
   }) => Promise<void>
@@ -180,12 +179,9 @@ export async function* processStreamWithTools(params: {
 
       // Then process and yield any XML tool calls found
       for (const toolCall of toolCalls) {
-        const toolCallId = `xml-${crypto.randomUUID().slice(0, 8)}`
-
         // Execute the tool immediately if callback provided, pausing the stream
         // The callback handles emitting tool_call and tool_result events
         await executeXmlToolCall({
-          toolCallId,
           toolName: toolCall.toolName,
           input: toolCall.input,
         })

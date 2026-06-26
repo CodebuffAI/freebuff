@@ -9,6 +9,7 @@ import { generateCompactId } from '@codebuff/common/util/string'
 import { loopAgentSteps } from '../../../run-agent-step'
 import { getAgentTemplate } from '../../../templates/agent-registry'
 import { formatValueForError } from '../../../util/format-value'
+import { ensureToolCallState } from '../../../util/tool-call-id'
 import {
   filterUnfinishedToolCalls,
   withSystemTags,
@@ -256,6 +257,7 @@ export function createAgentState(
   agentContext: Record<string, Subgoal>,
 ): AgentState {
   const agentId = generateCompactId()
+  const toolCallState = ensureToolCallState(parentAgentState)
 
   // When including message history, filter out any tool calls that don't have
   // corresponding tool responses. This prevents the spawned agent from seeing
@@ -295,6 +297,7 @@ export function createAgentState(
     systemPrompt: '',
     toolDefinitions: {},
     contextTokenCount: parentAgentState.contextTokenCount,
+    toolCallState,
   }
 }
 

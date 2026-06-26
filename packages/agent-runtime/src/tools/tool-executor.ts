@@ -1,12 +1,13 @@
 import { endsAgentStepParam, toolNames } from '@codebuff/common/tools/constants'
 import { toolParams } from '@codebuff/common/tools/list'
-import { generateCompactId } from '@codebuff/common/util/string'
+import { normalizeAgentIdForLookup } from '@codebuff/common/util/agent-id-parsing'
 import { cloneDeep } from 'lodash'
 
 import { getMCPToolData } from '../mcp'
 import { MCP_TOOL_SEPARATOR } from '../mcp-constants'
 import { getAgentShortName, getAgentToolName } from '../templates/prompts'
 import { formatValueForError } from '../util/format-value'
+import { createToolCallIdGenerator } from '../util/tool-call-id'
 import { codebuffToolHandlers } from './handlers/list'
 import { getMatchingSpawn } from './handlers/tool/spawn-agent-utils'
 import { getAgentTemplate } from '../templates/agent-registry'
@@ -309,7 +310,9 @@ export async function executeToolCall<T extends ToolName>(
     onResponseChunk,
     requestToolCall,
   } = params
-  const toolCallId = params.toolCallId ?? generateCompactId()
+  const toolCallId =
+    params.toolCallId ??
+    createToolCallIdGenerator(agentState, toolCalls)(toolName)
 
   const toolCall: CodebuffToolCall<T> | ToolCallError = parseRawToolCall<T>({
     rawToolCall: {
@@ -370,7 +373,9 @@ export async function executeToolCall<T extends ToolName>(
             }
           }
 
-          let agentIdToLoad = agentTypeStr
+          let agentIdToLoad = isBaseAgent
+            ? normalizeAgentIdForLookup(agentTypeStr)
+            : agentTypeStr
           if (!isBaseAgent) {
             const matchingSpawn = getMatchingSpawn(
               agentTemplate.spawnableAgents,
@@ -419,7 +424,13 @@ export async function executeToolCall<T extends ToolName>(
             }
           }
 
-          return { valid: true as const, agent }
+          return {
+            valid: true as const,
+            agent: {
+              ...(agent as Record<string, unknown>),
+              agent_type: agentIdToLoad,
+            },
+          }
         }),
       )
 
@@ -448,8 +459,8 @@ export async function executeToolCall<T extends ToolName>(
         }
         const errorMsg = `Some agents could not be spawned: ${errors.join('; ')}. Proceeding with valid agents only.`
         onResponseChunk({ type: 'error', message: errorMsg })
-        effectiveInput = { ...effectiveInput, agents: validAgents }
       }
+      effectiveInput = { ...effectiveInput, agents: validAgents }
     }
   }
 
@@ -641,7 +652,9 @@ export async function executeCustomToolCall(
     }),
     rawToolCall: {
       toolName,
-      toolCallId: toolCallId ?? generateCompactId(),
+      toolCallId:
+        toolCallId ??
+        createToolCallIdGenerator(agentState, toolCalls)(toolName),
       input,
     },
     autoInsertEndStepParam,

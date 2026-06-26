@@ -506,6 +506,7 @@ describe('tool validation error handling', () => {
     )
     expect(toolCallEvents.length).toBe(1)
     expect(toolCallEvents[0].toolName).toBe('read_files')
+    expect(toolCallEvents[0].toolCallId).toBe('functions.read_files.0')
 
     // Verify tool_result event was emitted
     const toolResultEvents = responseChunks.filter(
@@ -513,6 +514,8 @@ describe('tool validation error handling', () => {
         typeof chunk !== 'string' && chunk.type === 'tool_result',
     )
     expect(toolResultEvents.length).toBe(1)
+    expect(toolResultEvents[0].toolName).toBe('read_files')
+    expect(toolResultEvents[0].toolCallId).toBe('functions.read_files.0')
 
     // Verify NO error events
     const errorEvents = responseChunks.filter(
