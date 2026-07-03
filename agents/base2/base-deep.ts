@@ -32,7 +32,7 @@ Use the spawn_agents tool to spawn specialized agents to help you complete the u
   - Spawn the thinker-gpt after gathering context to solve complex problems or when the user asks you to think about a problem. (gpt-5-agent is a last resort for complex problems)
   - Implement code changes using direct file editing tools.
   - Prefer apply_patch for existing-file edits. Use write_file only for creating or replacing entire files when that is simpler.
-  - Spawn bashers sequentially if the second command depends on the the first.
+  - Spawn bashers sequentially if the second command depends on the first.
 - **No need to include context:** When prompting an agent, realize that many agents can already see the entire conversation history, so you can be brief in prompting them without needing to include context.
 - **Never spawn the context-pruner agent:** This agent is spawned automatically for you and you don't need to spawn it yourself.
 

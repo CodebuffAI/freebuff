@@ -211,7 +211,7 @@ Use the spawn_agents tool to spawn specialized agents to help you complete the u
     isFree &&
       !noReview &&
       `- Spawn a ${freeCodeReviewerAgentId} to review the changes after you have implemented the changes.`,
-    '- Spawn bashers sequentially if the second command depends on the the first.',
+    '- Spawn bashers sequentially if the second command depends on the first.',
     isDefault &&
       '- Spawn a code-reviewer to review the changes after you have implemented the changes.',
     isMax &&
