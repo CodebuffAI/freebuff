@@ -48,7 +48,7 @@ import {
   buildUserMessageContent,
   expireMessages,
 } from './util/messages'
-import { countTokensJson } from './util/token-counter'
+import { countTokensJson, safeJsonStringify } from './util/token-counter'
 
 import type { AgentTemplate } from '@codebuff/common/types/agent-template'
 import type { TrackEventFn } from '@codebuff/common/types/contracts/analytics'
@@ -863,7 +863,7 @@ export async function loopAgentSteps(
   // Convert tools to a serializable format for context-pruner token counting
   const toolDefinitions = mapValues(tools, (tool) => ({
     description: tool.description,
-    inputSchema: tool.inputSchema as {},
+    inputSchema: JSON.parse(safeJsonStringify(tool.inputSchema)),
   }))
 
   const additionalToolDefinitionsWithCache = async () => {
