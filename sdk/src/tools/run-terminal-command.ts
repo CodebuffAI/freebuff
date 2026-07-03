@@ -57,10 +57,23 @@ const GIT_BASH_COMMON_PATHS = [
 
 // WSL bash paths that are often unreliable (VM may not be running, quote escaping issues)
 // These are checked last as a fallback only
-const WSL_BASH_PATH_PATTERNS = [
-  'system32',
-  'windowsapps',
-]
+const WSL_BASH_PATH_PATTERNS = ['system32', 'windowsapps']
+
+function getScoopGitBashPaths(env: NodeJS.ProcessEnv): string[] {
+  const scoopBases = [
+    env.SCOOP,
+    env.USERPROFILE ? path.win32.join(env.USERPROFILE, 'scoop') : undefined,
+    env.SCOOP_GLOBAL,
+  ].filter((base): base is string => Boolean(base))
+
+  return [...new Set(scoopBases)].flatMap((scoopBase) => {
+    const gitDir = path.win32.join(scoopBase, 'apps', 'git', 'current')
+    return [
+      path.win32.join(gitDir, 'bin', 'bash.exe'),
+      path.win32.join(gitDir, 'usr', 'bin', 'bash.exe'),
+    ]
+  })
+}
 
 /**
  * Find bash executable on Windows.
@@ -69,37 +82,48 @@ const WSL_BASH_PATH_PATTERNS = [
  * 2. Common Git Bash installation locations (most reliable)
  * 3. Non-WSL bash in PATH (e.g., Git Bash added to PATH)
  * 4. WSL bash in PATH (last resort - System32, WindowsApps)
- * 
+ *
  * WSL bash is deprioritized because it can fail with cryptic errors when:
  * - The WSL VM is not running
  * - Quote/argument escaping issues between Windows and Linux
  * - UTF-16 encoding mismatches
  */
-function findWindowsBash(env: NodeJS.ProcessEnv): string | null {
+export function findWindowsBash(
+  env: NodeJS.ProcessEnv,
+  existsSync: (path: string) => boolean = fs.existsSync,
+): string | null {
   // Check for user-specified path via environment variable
   const customPath = env.CODEBUFF_GIT_BASH_PATH
-  if (customPath && fs.existsSync(customPath)) {
+  if (customPath && existsSync(customPath)) {
     return customPath
   }
 
   // Check common Git Bash installation locations first (most reliable)
   for (const commonPath of GIT_BASH_COMMON_PATHS) {
-    if (fs.existsSync(commonPath)) {
+    if (existsSync(commonPath)) {
       return commonPath
+    }
+  }
+
+  for (const scoopPath of getScoopGitBashPaths(env)) {
+    if (existsSync(scoopPath)) {
+      return scoopPath
     }
   }
 
   // Fall back to bash.exe in PATH, but skip WSL paths initially
   const pathEnv = env.PATH || env.Path || ''
-  const pathDirs = pathEnv.split(path.delimiter)
+  const pathDirs = pathEnv.split(';')
   const wslFallbackPaths: string[] = []
-  
+
   for (const dir of pathDirs) {
     const dirLower = dir.toLowerCase()
-    const isWslPath = WSL_BASH_PATH_PATTERNS.some(pattern => dirLower.includes(pattern))
-    
-    const bashPath = path.join(dir, 'bash.exe')
-    if (fs.existsSync(bashPath)) {
+    const isWslPath = WSL_BASH_PATH_PATTERNS.some((pattern) =>
+      dirLower.includes(pattern),
+    )
+
+    const bashPath = path.win32.join(dir, 'bash.exe')
+    if (existsSync(bashPath)) {
       if (isWslPath) {
         // Save WSL paths for last resort
         wslFallbackPaths.push(bashPath)
@@ -108,10 +132,10 @@ function findWindowsBash(env: NodeJS.ProcessEnv): string | null {
         return bashPath
       }
     }
-    
+
     // Also check for just 'bash' (without .exe)
-    const bashPathNoExt = path.join(dir, 'bash')
-    if (fs.existsSync(bashPathNoExt)) {
+    const bashPathNoExt = path.win32.join(dir, 'bash')
+    if (existsSync(bashPathNoExt)) {
       if (isWslPath) {
         wslFallbackPaths.push(bashPathNoExt)
       } else {
