@@ -10,7 +10,7 @@ import type {
 
 import { IS_FREEBUFF } from './constants'
 
-const defaultAppUrl = env.NEXT_PUBLIC_CODEBUFF_APP_URL || 'https://codebuff.com'
+const defaultAppUrl = env.NEXT_PUBLIC_CODEBUFF_APP_URL || 'https://www.codebuff.com'
 
 // Normalize unknown errors to a user-facing string.
 const extractErrorMessage = (error: unknown, fallback: string): string => {
