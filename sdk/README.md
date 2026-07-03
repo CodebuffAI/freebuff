@@ -262,6 +262,31 @@ The `RunState` object contains:
 - `sessionState`: Internal state to be passed to the next run
 - `output`: The agent's output (text, error, or other types)
 
+## Model providers
+
+By default, the SDK sends requests through the Codebuff backend, which routes to
+the upstream model provider (OpenRouter). Model ids use the `provider/model`
+form, e.g. `openai/gpt-4o-mini` or `anthropic/claude-sonnet-4.5`.
+
+### Requesty (direct, OpenAI-compatible)
+
+[Requesty](https://requesty.ai) exposes an OpenAI-compatible router. When the
+`REQUESTY_API_KEY` environment variable is set, the SDK routes chat completions
+directly to the Requesty router (`https://router.requesty.ai/v1`) instead of the
+Codebuff backend, using the same `provider/model` ids:
+
+```bash
+export REQUESTY_API_KEY="sk-..."   # from https://app.requesty.ai/api-keys
+```
+
+- Router base URL: `https://router.requesty.ai/v1`
+- API keys: https://app.requesty.ai/api-keys
+- Available models: https://app.requesty.ai/router/list
+- Docs: https://docs.requesty.ai
+
+When `REQUESTY_API_KEY` is unset, behavior is unchanged (requests go through the
+Codebuff backend).
+
 ## License
 
 MIT

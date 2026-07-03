@@ -7,6 +7,7 @@
 
 import { BYOK_OPENROUTER_ENV_VAR } from '@codebuff/common/constants/byok'
 import { CHATGPT_OAUTH_TOKEN_ENV_VAR } from '@codebuff/common/constants/chatgpt-oauth'
+import { REQUESTY_ENV_VAR } from '@codebuff/common/constants/requesty'
 import { API_KEY_ENV_VAR } from '@codebuff/common/constants/paths'
 import { getBaseEnv } from '@codebuff/common/env-process'
 
@@ -53,6 +54,16 @@ export const getSystemProcessEnv = (): NodeJS.ProcessEnv => {
 
 export const getByokOpenrouterApiKeyFromEnv = (): string | undefined => {
   return process.env[BYOK_OPENROUTER_ENV_VAR]
+}
+
+/**
+ * Get the Requesty API key from the environment.
+ *
+ * When set, the SDK routes chat completions directly to the Requesty
+ * OpenAI-compatible router instead of going through the Codebuff backend.
+ */
+export const getRequestyApiKeyFromEnv = (): string | undefined => {
+  return process.env[REQUESTY_ENV_VAR]
 }
 
 /**

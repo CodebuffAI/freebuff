@@ -10,6 +10,7 @@ import path from 'path'
 
 import { BYOK_OPENROUTER_HEADER } from '@codebuff/common/constants/byok'
 import { isFreeMode } from '@codebuff/common/constants/free-agents'
+import { REQUESTY_BASE_URL } from '@codebuff/common/constants/requesty'
 import {
   CHATGPT_BACKEND_BASE_URL,
   CHATGPT_OAUTH_ENABLED,
@@ -24,7 +25,10 @@ import {
 
 import { getWebsiteUrl } from '../constants'
 import { getValidChatGptOAuthCredentials } from '../credentials'
-import { getByokOpenrouterApiKeyFromEnv } from '../env'
+import {
+  getByokOpenrouterApiKeyFromEnv,
+  getRequestyApiKeyFromEnv,
+} from '../env'
 import {
   createChatGptBackendFetch,
   extractChatGptAccountId,
@@ -117,6 +121,18 @@ export async function getModelForRequest(
 ): Promise<ModelResult> {
   const { apiKey, model, skipChatGptOAuth, costMode } = params
 
+  // Direct Requesty route: when REQUESTY_API_KEY is set, send chat completions
+  // straight to the Requesty OpenAI-compatible router instead of the Codebuff
+  // backend. Model ids use the same `provider/model` form (e.g.
+  // "openai/gpt-4o-mini"), so no remapping is required.
+  const requestyApiKey = getRequestyApiKeyFromEnv()
+  if (requestyApiKey) {
+    return {
+      model: createRequestyModel(model, requestyApiKey),
+      isChatGptOAuth: false,
+    }
+  }
+
   // Check if we should use ChatGPT OAuth direct
   // Only attempt for allowlisted models; non-allowlisted models silently fall through to backend.
   if (
@@ -188,6 +204,30 @@ function createOpenAIOAuthModel(
     fetch: createChatGptBackendFetch(),
     supportsStructuredOutputs: true,
     includeUsage: undefined,
+  })
+}
+
+/**
+ * Create a model that routes directly to the Requesty OpenAI-compatible router
+ * (https://router.requesty.ai/v1). Used when REQUESTY_API_KEY is set.
+ *
+ * This mirrors createOpenAIOAuthModel: it builds an OpenAICompatibleChatLanguageModel
+ * pointed at a fixed upstream base URL with a Bearer API key, rather than going
+ * through the Codebuff backend. Model ids use the same `provider/model` form as
+ * OpenRouter (e.g. "openai/gpt-4o-mini").
+ */
+function createRequestyModel(model: string, apiKey: string): LanguageModel {
+  return new OpenAICompatibleChatLanguageModel(model, {
+    provider: 'requesty',
+    url: ({ path }) => `${REQUESTY_BASE_URL}${path}`,
+    headers: () => ({
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'user-agent': `ai-sdk/openai-compatible/${VERSION}/codebuff-requesty`,
+    }),
+    fetch: undefined,
+    includeUsage: undefined,
+    supportsStructuredOutputs: true,
   })
 }
 
