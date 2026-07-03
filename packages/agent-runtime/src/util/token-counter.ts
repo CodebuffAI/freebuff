@@ -27,9 +27,33 @@ export function countTokens(text: string): number {
   }
 }
 
-export function countTokensJson(text: string | object): number {
-  return countTokens(JSON.stringify(text))
+export function safeJsonStringify(obj: any): string {
+  const seen = new WeakSet()
+  return JSON.stringify(obj, (key, value) => {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) {
+        return '[Circular]'
+      }
+      seen.add(value)
+    }
+    if (typeof value === 'function') {
+      return value.toString()
+    }
+    return value
+  })
 }
+
+export function countTokensJson(text: string | object): number {
+  if (typeof text === 'string') {
+    return countTokens(text)
+  }
+  try {
+    return countTokens(JSON.stringify(text))
+  } catch (e) {
+    return countTokens(safeJsonStringify(text))
+  }
+}
+
 
 export function countTokensForFiles(
   files: Record<string, string | null>,
