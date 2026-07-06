@@ -6,7 +6,7 @@ import * as path from 'path'
 import type { ChildProcess } from 'child_process'
 
 import {
-  stripColors,
+  stripAnsi,
   truncateStringWithMessage,
 } from '../../../common/src/util/string'
 import { getSystemProcessEnv } from '../env'
@@ -175,6 +175,14 @@ export function runTerminalCommand({
     const processEnv = {
       ...getSystemProcessEnv(),
       ...(env ?? {}),
+      // Use a plain-text sudo prompt so sudo doesn't emit ANSI color/cursor
+      // sequences when asking for a password. Without this, sudo writes
+      // decorated prompts to /dev/tty that can bleed into the TUI.
+      SUDO_PROMPT: '[sudo] password: ',
+      // Signal to child programs that this is a dumb non-interactive terminal
+      // so they suppress color output and cursor-movement sequences.
+      // (Only set if the caller hasn't explicitly overridden it.)
+      ...((env ?? {}).TERM === undefined && { TERM: 'dumb' }),
     } as NodeJS.ProcessEnv
 
     if (signal?.aborted) {
@@ -248,7 +256,12 @@ export function runTerminalCommand({
 
     const truncateOutput = (str: string) =>
       truncateStringWithMessage({
-        str: stripColors(str),
+        // Strip all ANSI/VT escape sequences (not just color codes) so that
+        // cursor-movement, scroll-region, alternate-screen and other control
+        // sequences emitted by sudo and interactive programs don't bleed into
+        // the TUI and corrupt its scroll state or render garbage characters.
+        // Also normalise bare \r that sudo uses to overwrite its prompt line.
+        str: stripAnsi(str).replace(/\r/g, ''),
         maxLength: COMMAND_OUTPUT_LIMIT,
         remove: 'MIDDLE',
       })
