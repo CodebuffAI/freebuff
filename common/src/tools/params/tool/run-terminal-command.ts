@@ -49,12 +49,15 @@ When the user requests a new git commit, please follow these steps closely:
    - Note which files have been altered or added.
    - Categorize the nature of the changes (e.g., new feature, fix, refactor, documentation, etc.).
    - Consider the purpose or motivation behind the alterations.
+   - Base the commit title and body on the actual git status/diff, not on the original user prompt.
+   - Treat the user prompt only as background context. Never copy the prompt, a truncated prompt, or a user instruction such as "add this" as the commit title.
    - Refrain from using tools to inspect code beyond what is presented in the git context.
    - Evaluate the overall impact on the project.
    - Check for sensitive details that should not be committed.
    - Draft a concise, one- to two-sentence commit message focusing on the “why” rather than the “what.”
    - Use precise, straightforward language that accurately represents the changes.
    - Ensure the message provides clarity—avoid generic or vague terms like “Update” or “Fix” without context.
+   - If your draft could still describe the user's request without seeing the diff, rewrite it from the changed files and behavior.
    - Revisit your draft to confirm it truly reflects the changes and their intention.
 
 4. **Create the commit, ending with this specific footer:**
@@ -93,6 +96,7 @@ When the user requests a new git commit, please follow these steps closely:
 - Avoid using interactive flags (e.g., \`-i\`) that require unsupported interactive input.
 - Do not create an empty commit if there are no changes.
 - Make sure your commit message is concise yet descriptive, focusing on the intention behind the changes rather than merely describing them.
+- Do not use the original user prompt as the commit message, even if the user asked for the same change in natural language. Summarize what actually changed.
 `
 
 const toolName = 'run_terminal_command'
