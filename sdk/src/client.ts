@@ -3,8 +3,14 @@ import { API_KEY_ENV_VAR } from '@codebuff/common/constants/paths'
 import { getWebsiteUrl } from './constants'
 import { getCodebuffApiKeyFromEnv } from './env'
 import { run } from './run'
+import {
+  anySignal,
+  CodebuffRunController,
+  createRunController,
+} from './run-controller'
 
 import type { RunOptions, CodebuffClientOptions } from './run'
+import type { CancellableRun } from './run-controller'
 import type { RunState } from './run-state'
 
 export class CodebuffClient {
@@ -57,6 +63,30 @@ export class CodebuffClient {
     options: RunOptions & CodebuffClientOptions,
   ): Promise<RunState> {
     return run({ ...this.options, ...options })
+  }
+
+  /**
+   * Start a run and return an explicit controller that can terminate it.
+   *
+   * Hosts with their own UI or API surface can keep `controller` (or the
+   * returned `cancel` function) in their in-flight run registry and call it
+   * from a Stop/Terminate action. Cancellation flows through the same
+   * AbortSignal used by terminal commands, LLM streams, and subagents.
+   */
+  public runCancellable(
+    options: RunOptions & CodebuffClientOptions,
+    controller: CodebuffRunController = createRunController(),
+  ): CancellableRun {
+    const signal = anySignal([options.signal, controller.signal])
+    const result = run({ ...this.options, ...options, signal })
+
+    return {
+      id: controller.id,
+      controller,
+      signal,
+      result,
+      cancel: (reason?: string | Error) => controller.cancel(reason),
+    }
   }
 
   /**
