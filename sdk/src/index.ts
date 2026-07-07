@@ -7,6 +7,11 @@ export type {
   ImagePart,
 } from '@codebuff/common/types/messages/content-part'
 export { run, STATE_SNAPSHOT_INTERRUPTION_MESSAGE } from './run'
+export {
+  CodebuffRunController,
+  createRunController,
+} from './run-controller'
+export type { CancellableRun } from './run-controller'
 export { getFiles } from './tools/read-files'
 export type { FileFilter, FileFilterResult } from './tools/read-files'
 export type {
