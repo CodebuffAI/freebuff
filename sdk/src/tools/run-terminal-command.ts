@@ -213,15 +213,16 @@ export function runTerminalCommand({
       cwd: resolvedCwd,
       env: processEnv,
       stdio: 'pipe',
-      // On POSIX, give the command its own process group so that killing it
-      // (timeout or user abort) also kills any grandchild processes.
-      detached: !isWindows,
-      // On Windows, give the child its own invisible console (CREATE_NO_WINDOW)
-      // instead of attaching it to the TUI's console. Console-attached
-      // descendants can open CONIN$/CONOUT$ directly (cmd, pause, choice,
-      // PSReadLine, ...) even when stdio is piped, stealing the VT input that
-      // ConPTY generates for the TUI's mouse/focus tracking and echoing it as
-      // gibberish like `^[[I^[[<35;12;7M` painted over the UI.
+      // Give the command its own process group so that killing it (timeout or
+      // user abort) also kills any grandchild processes. On POSIX this uses a
+      // negative pid kill against the process group. On Windows `detached: true`
+      // maps to DETACHED_PROCESS, which combined with CREATE_NO_WINDOW (from
+      // windowsHide) completely detaches the child from the parent's console.
+      // Without DETACHED_PROCESS, console-attached descendants can open
+      // CONIN$/CONOUT$ directly even when stdio is piped, stealing the VT input
+      // that ConPTY generates for the TUI's mouse/focus tracking and echoing it
+      // as gibberish like `^[[I^[[<35;12;7M` painted over the UI.
+      detached: true,
       windowsHide: true,
     })
 
