@@ -4,6 +4,7 @@ import * as os from 'os'
 import * as path from 'path'
 
 import type { ChildProcess } from 'child_process'
+import { protectChildWithJob } from './isolated-command'
 
 import { stripColors } from '../../../common/src/util/string'
 import { getSystemProcessEnv } from '../env'
@@ -245,6 +246,12 @@ export function runTerminalCommand({
     const processEnv = {
       ...getSystemProcessEnv(),
       ...(env ?? {}),
+      // On Windows, prevent MSYS2 (Git Bash) from allocating its own PTY
+      // via ConPTY, which can reattach to the parent console even when
+      // DETACHED_PROCESS is set. MSYS=disable_pcon tells the MSYS2 runtime
+      // to skip pseudo console allocation, keeping console interaction
+      // minimal and preventing ConPTY mouse/focus VT events from leaking.
+      ...(isWindows ? { MSYS: 'disable_pcon' } : {}),
     } as NodeJS.ProcessEnv
     if (isWindows) {
       // Preserve other MSYS options while preventing Git Bash descendants from
@@ -302,6 +309,12 @@ export function runTerminalCommand({
       detached: true,
       windowsHide: true,
     })
+
+    // On Windows, add Job Object protection so the child is terminated
+    // automatically if this process crashes or is killed (taskkill /F).
+    const jobCleanup = isWindows && childProcess.pid != null
+      ? protectChildWithJob(childProcess.pid)
+      : null
 
     liveChildren.add(childProcess)
     installExitSweep()
@@ -383,6 +396,7 @@ export function runTerminalCommand({
     // Handle process completion
     childProcess.on('close', (exitCode) => {
       liveChildren.delete(childProcess)
+      if (jobCleanup) jobCleanup()
       if (sigkillTimer) {
         clearTimeout(sigkillTimer)
         sigkillTimer = null
