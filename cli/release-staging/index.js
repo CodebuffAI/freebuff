@@ -243,9 +243,11 @@ function linuxCpuHasAvx2() {
 // Windows version. Feature 40 = PF_AVX2_INSTRUCTIONS_AVAILABLE.
 function probeWindowsAvx2() {
   const script =
-    "$f = Add-Type -MemberDefinition '[DllImport(\"kernel32.dll\")] " +
+    "$f = Add-Type -MemberDefinition '" +
+    '[System.Runtime.InteropServices.DllImport("kernel32.dll")] ' +
     "public static extern bool IsProcessorFeaturePresent(uint feature);' " +
-    "-Name Cpu -Namespace Win32 -PassThru; $f::IsProcessorFeaturePresent(40)"
+    "-Name Cpu -Namespace Win32 -PassThru -ErrorAction Stop; " +
+    "$f::IsProcessorFeaturePresent(40)"
   try {
     const out = execFileSync(
       'powershell.exe',
