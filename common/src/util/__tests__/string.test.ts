@@ -1,6 +1,52 @@
 import { describe, expect, it } from 'bun:test'
 
-import { pluralize } from '../string'
+import { pluralize, truncateStringWithMessage } from '../string'
+
+describe('truncateStringWithMessage', () => {
+  it('should keep the truncation marker within maxLength for end truncation', () => {
+    const result = truncateStringWithMessage({
+      str: 'abcdefghijklmnopqrstuvwxyz',
+      maxLength: 10,
+    })
+
+    expect(result).toHaveLength(10)
+    expect(result).toBe('\n[TRUNCATE')
+  })
+
+  it('should keep the truncation marker within maxLength for start truncation', () => {
+    const result = truncateStringWithMessage({
+      str: 'abcdefghijklmnopqrstuvwxyz',
+      maxLength: 10,
+      remove: 'START',
+    })
+
+    expect(result).toHaveLength(10)
+    expect(result).toBe('[...TRUNCA')
+  })
+
+  it('should keep the truncation marker within maxLength for middle truncation', () => {
+    const result = truncateStringWithMessage({
+      str: 'abcdefghijklmnopqrstuvwxyz',
+      maxLength: 10,
+      remove: 'MIDDLE',
+    })
+
+    expect(result).toHaveLength(10)
+    expect(result).toBe('\n[...TRUNC')
+  })
+
+  it('should preserve context around the marker when maxLength allows it', () => {
+    const result = truncateStringWithMessage({
+      str: 'abcdefghijklmnopqrstuvwxyz',
+      maxLength: 19,
+      message: 'CUT',
+      remove: 'MIDDLE',
+    })
+
+    expect(result).toBe('abc\n[...CUT...]\nxyz')
+    expect(result).toHaveLength(19)
+  })
+})
 
 describe('pluralize', () => {
   it('should handle singular and plural cases correctly', () => {
@@ -236,4 +282,3 @@ describe('pluralize', () => {
     expect(pluralize(2, 'dependency')).toBe('2 dependencies')
   })
 })
-
