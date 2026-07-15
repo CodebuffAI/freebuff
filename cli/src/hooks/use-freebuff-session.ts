@@ -73,7 +73,7 @@ const playAdmissionSound = () => {
 
 const sessionEndpoint = (): string => {
   const base = (
-    env.NEXT_PUBLIC_CODEBUFF_APP_URL || 'https://codebuff.com'
+    env.NEXT_PUBLIC_CODEBUFF_APP_URL || 'https://www.codebuff.com'
   ).replace(/\/$/, '')
   return `${base}/api/v1/freebuff/session`
 }

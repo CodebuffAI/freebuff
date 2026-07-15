@@ -26,7 +26,7 @@ export interface ValidateAgentsOptions {
   /**
    * The base URL of the Codebuff website API.
    * Optional - defaults to NEXT_PUBLIC_CODEBUFF_APP_URL or environment-based URL.
-   * Example: 'https://codebuff.com'
+   * Example: 'https://www.codebuff.com'
    */
   websiteUrl?: string
 }
