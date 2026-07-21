@@ -90,6 +90,14 @@ export class BoundedOutputBuffer {
 }
 
 function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals) {
+  // SAFETY: Never kill our own process. If a child somehow has the same pid
+  // as this process (e.g. pid reuse race, or the child ran a command that
+  // reports the parent's pid), skip it to prevent self-kill which would
+  // leave the terminal buffer unflushed and cause ASCII/UTF-8 decoding errors.
+  if (child.pid === process.pid) {
+    return
+  }
+
   if (os.platform() === 'win32' && child.pid) {
     // Node's child.kill() only terminates the direct process on Windows. Since
     // the direct process is Git Bash, killing it first can orphan Bun/Node
@@ -168,6 +176,10 @@ function installExitSweep() {
   exitSweepInstalled = true
   process.on('exit', () => {
     for (const child of liveChildren) {
+      // SAFETY: Never kill our own process in the exit sweep. liveChildren
+      // should never contain process.pid, but guard defensively to prevent
+      // the self-kill scenario that would leave the terminal buffer unflushed.
+      if (child.pid === process.pid) continue
       killProcessGroup(child, 'SIGKILL')
     }
   })

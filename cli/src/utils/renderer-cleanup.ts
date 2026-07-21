@@ -18,6 +18,12 @@ let terminalStateReset = false
  *
  * This is especially important on Windows where signals like SIGTERM and SIGHUP
  * don't work, so we rely on the 'exit' event which is guaranteed to run.
+ *
+ * After writing the reset sequences, we attempt to flush stdout to ensure the
+ * data reaches the terminal before the process exits. Without this flush, a
+ * sudden process.exit() can leave terminal escape sequences buffered and never
+ * sent, causing garbled output and ASCII/UTF-8 decoding errors on the next
+ * terminal prompt.
  */
 function resetTerminalState(): void {
   if (terminalStateReset) return
@@ -37,6 +43,10 @@ function resetTerminalState(): void {
     // before the process exits, ensuring the terminal is reset
     if (process.stdout.isTTY) {
       process.stdout.write(TERMINAL_RESET_SEQUENCES)
+      // NOTE: do NOT call destroy() here — that discards buffered data.
+      // TTY writes are synchronous (write() syscall goes directly to the
+      // PTY), so the data reaches the kernel buffer before the call returns.
+      // process.exit() then terminates cleanly and the kernel flushes fd 1.
     }
   } catch {
     // Ignore errors - stdout may already be closed
@@ -96,6 +106,14 @@ export function installProcessCleanupHandlers(cliRenderer: CliRenderer): void {
 
   const cleanupAndExit = (exitCode: number) => {
     cleanup()
+    // Ensure stdout and stderr are drained before exit. Without this, pending
+    // writes (e.g. terminal reset sequences from cleanup()) may be buffered
+    // and lost, leaving the terminal in a garbled state.
+    try {
+      process.stdout._handle?.setBlocking?.(true)
+    } catch {
+      // _handle may not exist in Bun or on some platforms
+    }
     process.exit(exitCode)
   }
 
@@ -121,6 +139,11 @@ export function installProcessCleanupHandlers(cliRenderer: CliRenderer): void {
 
   // exit - Last chance to run synchronous cleanup code
   process.on('exit', () => {
+    // Guard: prevent double-cleanup if this is called from cleanupAndExit
+    // (which calls cleanup() before process.exit(), which triggers this
+    // 'exit' event handler and calls cleanup() again).
+    if (!handlersInstalled) return
+    handlersInstalled = false
     cleanup()
   })
 

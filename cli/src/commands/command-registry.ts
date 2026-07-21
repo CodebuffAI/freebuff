@@ -311,7 +311,13 @@ const ALL_COMMANDS: CommandDefinition[] = [
     name: 'exit',
     aliases: ['quit', 'q'],
     handler: () => {
-      process.kill(process.pid, 'SIGINT')
+      // Directly exit with cleanup instead of sending SIGINT to our own process.
+      // process.kill(process.pid, 'SIGINT') would trigger multiple SIGINT
+      // handlers simultaneously (both renderer-cleanup and use-exit-handler),
+      // creating a race condition and potentially leaving the terminal buffer
+      // unflushed. Calling process.exit(0) triggers the 'exit' event handlers
+      // which run cleanup synchronously before terminating.
+      process.exit(0)
     },
   }),
   defineCommandWithArgs({
