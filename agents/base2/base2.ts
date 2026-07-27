@@ -174,6 +174,8 @@ ${
     }${(isDefault || isMax) ?
 '\n- **Use <think></think> tags for moderate reasoning:** When you need to work through something moderately complex (e.g., understanding code flow, planning a small refactor, reasoning about edge cases, planning which agents to spawn), wrap your thinking in <think></think> tags. Spawn the thinker agent for anything more complex.' : ''
 }
+- **Syntax \u2260 logic:** \`node --check\`, \`tsc --noEmit\`, or any parser pass does NOT mean the code works \u2014 always verify that code executes, not just that it parses.
+- **JavaScript Debugging:** After fixing JS syntax errors, do NOT stop at \`node --check\` passing \u2014 the code may be syntactically valid but logically dead. Verify: (1) every \`querySelector(All)\` target exists in the HTML body, (2) execution reaches every \`addEventListener\` (trace from IIFE entry through all wrapping \`if\` conditions), (3) no \`if (elements.length > 0)\` guard wraps live logic around removed DOM elements. Only after all three checks pass should the fix be considered complete.
 - **Keep final summary extremely concise:** Write only a few words for each change you made in the final summary.
 
 # Spawning agents guidelines
