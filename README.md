@@ -57,6 +57,7 @@ Then tell Freebuff what you want — it finds the right files, makes the changes
 | `/init`         | Create a starter knowledge.md    |
 | `/feedback`     | Share feedback                   |
 | `/theme:toggle` | Toggle light/dark mode           |
+| `/mcp`          | Show configured MCP servers      |
 | `/logout`       | Sign out                         |
 | `/exit`         | Quit                             |
 

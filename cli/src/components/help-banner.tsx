@@ -84,7 +84,10 @@ export const HelpBanner = () => {
               </text>
             )}
             <text style={{ fg: theme.muted }}>
-              Use @ to reference agents to spawn or files to read
+               Use @ to reference agents to spawn or files to read
+            </text>
+            <text style={{ fg: theme.muted }}>
+               /mcp — check MCP server status and tool counts
             </text>
             <text style={{ fg: theme.muted }}>
               Drag to select text — it copies automatically (or click ⎘ on a

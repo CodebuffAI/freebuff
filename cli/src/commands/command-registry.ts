@@ -6,6 +6,7 @@ import { handleCopyConversationCommand } from './copy-conversation'
 import { handleHelpCommand } from './help'
 import { handleImageCommand } from './image'
 import { handleInitializationFlowLocally } from './init'
+import { handleMcpCommand } from './mcp-command'
 import {
   collectProcessDiagnostics,
   formatProcessDiagnostics,
@@ -220,6 +221,16 @@ const ALL_COMMANDS: CommandDefinition[] = [
     handler: (params) => {
       const diagnostics = formatProcessDiagnostics(collectProcessDiagnostics())
       params.setMessages((prev) => [...prev, getSystemMessage(diagnostics)])
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+    },
+  }),
+  defineCommandWithArgs({
+    name: 'mcp',
+    aliases: ['mcp-servers'],
+    handler: (params, args) => {
+      const { postUserMessage } = handleMcpCommand(args)
+      params.setMessages((prev) => postUserMessage(prev))
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
     },

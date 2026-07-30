@@ -62,6 +62,12 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     description: 'Show local CLI resource usage and terminal tool process IDs',
     aliases: ['diag', 'processes'],
   },
+  {
+    id: 'mcp',
+    label: 'mcp',
+    description: 'Show configured MCP servers and their connection status',
+    aliases: ['mcp-servers'],
+  },
   ...(CHATGPT_OAUTH_ENABLED
     ? [
         {

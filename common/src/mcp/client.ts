@@ -25,6 +25,20 @@ const listToolsCache: Record<
 > = {}
 
 /**
+ * Synchronously populated map from client ID to tool count, updated when
+ * listMCPTools resolves. Used by the status API to avoid awaiting a promise
+ * that may already be cached.
+ */
+const resolvedToolCounts: Record<string, number> = {}
+
+/**
+ * Maps client config hashes to sanitized error messages when a connection
+ * attempt fails. Cleared on the next successful connection for that key.
+ * Used by the /mcp CLI command to surface failures without reconnecting.
+ */
+const connectionErrors: Record<string, string> = {}
+
+/**
  * Substitutes environment variable references ($VAR_NAME) in a string with their values.
  * Supports both simple replacement ("$VAR_NAME") and interpolation ("Bearer $VAR_NAME").
  */
@@ -78,6 +92,69 @@ function hashConfig(config: MCPConfig): string {
   throw new Error(
     `Internal error in hashConfig: invalid MCP config type ${config.type}`,
   )
+}
+
+// Patterns whose presence in an error string indicates a credential/token
+// value that should be redacted.
+//
+// This is intentionally conservative — patterns known to be safe are
+// excluded; everything else that looks like a credential is replaced.
+// URL regex for sanitizing user:password@host patterns
+const URL_CREDENTIALS_PATTERN = /https?:\/\/[A-Za-z0-9_.~-]+:[A-Za-z0-9_.~!@#$%^&*()_+\-={}[\]\\|;:',.<>/?]+@/g
+
+const SENSITIVE_PATTERNS = [
+  /sk-[A-Za-z0-9_-]{20,}/g, // OpenAI-style secret keys (sk-proj-xxx, sk-user-xxx)
+  /ghp_[A-Za-z0-9]{36,}/g, // GitHub personal access tokens
+  /gho_[A-Za-z0-9]{36,}/g, // GitHub OAuth tokens
+  /github_pat_[A-Za-z0-9]{50,}/g, // GitHub fine-grained PATs
+  /Bearer\s+[A-Za-z0-9._~+/=-]{8,}/g, // Bearer tokens in headers
+  /(^|\n)\s*Authorization['"]?\s*[:=]\s*.+/gi, // Authorization header lines
+  /Basic\s+[A-Za-z0-9+/=]{8,}/g, // Basic auth tokens
+  /api[_-]?key['"]?\s*[:=]\s*['"]?[A-Za-z0-9_/-]{16,}/gi, // api_key=... patterns
+  /access_token['"]?\s*[:=]\s*['"]?[A-Za-z0-9_./-]{8,}/gi, // access_token patterns
+  /refresh_token['"]?\s*[:=]\s*['"]?[A-Za-z0-9_./-]{8,}/gi, // refresh_token patterns
+  /client_secret['"]?\s*[:=]\s*['"]?[A-Za-z0-9_./-]{8,}/gi, // client_secret patterns
+  /token['"]?\s*[:=]\s*['"]?[A-Za-z0-9_./-]{8,}/gi, // token=... patterns
+  /secret['"]?\s*[:=]\s*['"]?[A-Za-z0-9_./-]{8,}/gi, // secret=... patterns
+  /password['"]?\s*[:=]\s*['"]?[A-Za-z0-9_@!$%&*+-]{4,}/gi, // password=... patterns
+  /passwd['"]?\s*[:=]\s*['"]?[A-Za-z0-9_@!$%&*+-]{4,}/gi, // passwd=... patterns
+  URL_CREDENTIALS_PATTERN, // https://user:pass@host URLs
+]
+
+export const REDACTED_PLACEHOLDER = '<REDACTED>'
+
+/**
+ * Sanitize a string for display by redacting any value that matches a
+ * known credential pattern. Safe to call on user-facing error messages
+ * and config values.
+ *
+ * This is a best-effort heuristic, not a cryptographic guarantee. If no
+ * pattern matches, the value passes through unchanged.
+ */
+export function sanitizeErrorForDisplay(input: string): string {
+  let result = input
+  for (const pattern of SENSITIVE_PATTERNS) {
+    result = result.replace(pattern, REDACTED_PLACEHOLDER)
+  }
+  return result
+}
+
+/**
+ * Truncate a string at the last safe boundary before `maxLength` chars.
+ * Appends a truncation indicator.
+ */
+export const TRUNCATION_INDICATOR = '… (truncated)'
+
+export function truncateError(
+  input: string,
+  maxLength: number = 2000,
+): string {
+  if (input.length <= maxLength) return input
+  // Try to break at a newline or space boundary before maxLength
+  const cutoff = input.lastIndexOf('\n', maxLength)
+  const breakAt = cutoff > 0 ? cutoff : input.lastIndexOf(' ', maxLength)
+  const endAt = breakAt > 0 ? breakAt : maxLength
+  return input.slice(0, endAt) + '\n' + TRUNCATION_INDICATOR
 }
 
 export async function getMCPClient(config: MCPConfig): Promise<string> {
@@ -140,19 +217,26 @@ export async function getMCPClient(config: MCPConfig): Promise<string> {
     await client.connect(transport)
   } catch (error) {
     const baseMessage = getErrorObject(error).message
-    if (config.type === 'stdio') {
-      const commandStr = [config.command, ...(config.args ?? [])].join(' ')
-      const detail = stderrBuffer.trim()
-      throw new Error(
-        `${baseMessage}. Failed to start MCP server via \`${commandStr}\`. ` +
-          `Ensure the command is installed and runnable (e.g. an up-to-date ` +
-          `node/npm/npx, or python/uvx) and that any required env vars are set.` +
-          (detail ? `\nServer stderr:\n${detail}` : ''),
+    const enrichedError = (() => {
+      if (config.type === 'stdio') {
+        const commandStr = [config.command, ...(config.args ?? [])].join(' ')
+        const detail = stderrBuffer.trim()
+        return new Error(
+          `${baseMessage}. Failed to start MCP server via \`${commandStr}\`. ` +
+            `Ensure the command is installed and runnable (e.g. an up-to-date ` +
+            `node/npm/npx, or python/uvx) and that any required env vars are set.` +
+            (detail ? `\nServer stderr:\n${detail}` : ''),
+        )
+      }
+      return new Error(
+        `${baseMessage}. Failed to connect to MCP server at ${config.url}.`,
       )
-    }
-    throw new Error(
-      `${baseMessage}. Failed to connect to MCP server at ${config.url}.`,
-    )
+    })()
+
+    // Store a sanitized version for the /mcp status command without
+    // breaking the existing throw contract
+    connectionErrors[key] = sanitizeErrorForDisplay(enrichedError.message)
+    throw enrichedError
   }
   runningClients[key] = client
 
@@ -168,7 +252,11 @@ export function listMCPTools(
     throw new Error(`listTools: client not found with id: ${clientId}`)
   }
   if (!listToolsCache[clientId]) {
-    listToolsCache[clientId] = client.listTools(...args)
+    const promise = client.listTools(...args)
+    listToolsCache[clientId] = promise.then((result) => {
+      resolvedToolCounts[clientId] = result.tools.length
+      return result
+    })
   }
   return listToolsCache[clientId]
 }
@@ -230,4 +318,42 @@ export async function callMCPTool(
       value: fallbackValue,
     } satisfies ToolResultOutput
   })
+}
+
+// ---------------------------------------------------------------------------
+// Public status API — used by the /mcp CLI command
+// ---------------------------------------------------------------------------
+
+/**
+ * Runtime status snapshot for a single MCP server config.
+ *
+ * All fields are derived from module-level state that was already populated
+ * by normal agent operation — no new connections are initiated.
+ */
+export type McpClientConnectionInfo = {
+  /** Whether the client is currently connected */
+  connected: boolean
+  /** Number of discovered tools, or null if the tool list hasn't resolved yet */
+  toolCount: number | null
+  /** Sanitized error message from the last failed connection, or null */
+  errorLabel: string | null
+}
+
+/**
+ * Returns a readonly snapshot of the connection status for a single MCP
+ * server configuration, without initiating any new connection.
+ *
+ * - `connected` — checked against the live `runningClients` map
+ * - `toolCount` — populated lazily from the resolved `listTools` cache
+ * - `errorLabel` — populated from the last failed `getMCPClient` attempt
+ *
+ * The returned object is a plain value type. Callers cannot mutate internal
+ * module state through it.
+ */
+export function getMCPClientConnectionInfo(config: MCPConfig): McpClientConnectionInfo {
+  const key = hashConfig(config)
+  const connected = key in runningClients
+  const toolCount = key in resolvedToolCounts ? resolvedToolCounts[key] : null
+  const errorLabel = connected ? null : (key in connectionErrors ? connectionErrors[key] : null)
+  return { connected, toolCount, errorLabel }
 }
