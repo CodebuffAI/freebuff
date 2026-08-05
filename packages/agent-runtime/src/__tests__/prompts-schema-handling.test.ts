@@ -247,6 +247,43 @@ describe('Schema handling error recovery', () => {
       expect(toolSet['problematic_tool']).toBeDefined()
     })
 
+    test('getToolSet preserves MCP JSON Schema properties', async () => {
+      const customToolDefs = {
+        marionette__connect: {
+          description: 'Connect to the VM service',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              uri: {
+                type: 'string',
+                description: 'VM service URI',
+              },
+            },
+            required: ['uri'],
+            additionalProperties: false,
+          },
+          endsAgentStep: true,
+        },
+      }
+
+      const toolSet = await getToolSet({
+        toolNames: [],
+        additionalToolDefinitions: async () => customToolDefs,
+        agentTools: {},
+        skills: {},
+      })
+
+      const inputSchema = toolSet['marionette__connect']?.inputSchema as {
+        properties?: Record<string, unknown>
+      }
+
+      expect(inputSchema).toBeDefined()
+      expect(inputSchema.properties).toBeDefined()
+      expect(inputSchema.properties?.uri).toEqual(
+        expect.objectContaining({ type: 'string' }),
+      )
+    })
+
     test('ensureZodSchema converts JSON Schema to Zod schema', () => {
       const jsonSchema = {
         type: 'object',

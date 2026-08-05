@@ -392,13 +392,14 @@ export async function getToolSet(params: {
   const toolDefinitions = await additionalToolDefinitions()
   for (const [toolName, toolDefinition] of Object.entries(toolDefinitions)) {
     const clonedDef = cloneDeep(toolDefinition)
-    // Custom tool inputSchema may be JSON Schema (from SDK) or Zod (from MCP)
-    // Ensure it's a Zod schema for the AI SDK
-    const zodSchema = ensureZodSchema(clonedDef.inputSchema)
-    const safeSchema = ensureJsonSchemaCompatible(zodSchema)
+    // Custom tool inputSchema may be JSON Schema (from SDK) or Zod (from MCP).
+    // Keep the original schema object on the tool definition so nested JSON
+    // Schema details like `properties` survive registration unchanged. Use a
+    // Zod conversion only for description generation.
+    ensureZodSchema(clonedDef.inputSchema)
     toolSet[toolName] = {
       ...clonedDef,
-      inputSchema: safeSchema,
+      inputSchema: cloneDeep(clonedDef.inputSchema),
     } as (typeof toolSet)[string]
   }
 
