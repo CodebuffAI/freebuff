@@ -10,7 +10,7 @@ Instead of using one model for everything, Codebuff coordinates specialized agen
   <img src="./assets/codebuff-vs-claude-code.png" alt="Codebuff vs Claude Code" width="400">
 </div>
 
-Codebuff beats Claude Code at 61% vs 53% on [our evals](evals/README.md) across 175+ coding tasks over multiple open-source repos that simulate real-world tasks.
+Codebuff beats Claude Code at 61% vs 53% on [our evals](evals/buffbench/README.md) across 175+ coding tasks over multiple open-source repos that simulate real-world tasks.
 
 ## Freebuff: the free coding agent
 
