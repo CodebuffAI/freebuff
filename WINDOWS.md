@@ -212,6 +212,35 @@ This is **not an error** - it's an informational message indicating:
 
 ---
 
+### Issue: Mouse wheel behaves like arrow keys / Shift+Enter doesn't create newline
+
+**Symptom**:
+- Mouse scroll wheel moves cursor up/down instead of scrolling
+- Shift+Enter behaves like Enter (submits instead of new line)
+
+**Cause**:
+Some Windows terminal emulators (MobaXTerm, Git Bash, older Windows Terminal versions) have incomplete terminal escape sequence support. They may:
+- Send different escape codes for mouse events
+- Not properly handle Shift+Enter as a distinct key from Enter
+
+**Solutions**:
+
+1. **Use Windows Terminal** (recommended):
+   - Install from Microsoft Store: `winget install Microsoft.WindowsTerminal`
+   - Windows Terminal has the best terminal emulation on Windows
+
+2. **Use VS Code integrated terminal**:
+   - Open VS Code → Terminal → New Terminal
+   - VS Code's terminal has better escape sequence support
+
+3. **Use PowerShell 7+**:
+   - Install: `winget install Microsoft.PowerShell`
+   - PowerShell 7 has improved terminal handling
+
+**Reference**: Issue [#789](https://github.com/CodebuffAI/codebuff/issues/789)
+
+---
+
 ### Still Having Issues?
 
 If these solutions don't resolve your problem:
