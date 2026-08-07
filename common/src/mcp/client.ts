@@ -65,6 +65,7 @@ function hashConfig(config: MCPConfig): string {
       type: 'http',
       url: config.url,
       params: config.params,
+      headers: config.headers,
     })
   }
   if (config.type === 'sse') {
@@ -72,6 +73,7 @@ function hashConfig(config: MCPConfig): string {
       type: 'sse',
       url: config.url,
       params: config.params,
+      headers: config.headers,
     })
   }
   config.type satisfies never
@@ -230,4 +232,26 @@ export async function callMCPTool(
       value: fallbackValue,
     } satisfies ToolResultOutput
   })
+}
+
+/**
+ * Close an MCP client connection and clean up associated resources.
+ *
+ * Removes the client from the running clients registry and clears any cached
+ * tool listings. The underlying transport (stdio child process, HTTP/SSE
+ * connection) is also torn down via the MCP SDK's client.close() method.
+ *
+ * Safe to call on an already-closed or unknown client id (no-ops silently).
+ */
+export async function closeMCPClient(clientId: string): Promise<void> {
+  const client = runningClients[clientId]
+  if (client) {
+    try {
+      await client.close()
+    } catch {
+      // Ignore errors during close — the transport may already be dead.
+    }
+    delete runningClients[clientId]
+  }
+  delete listToolsCache[clientId]
 }
