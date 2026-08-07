@@ -30,7 +30,7 @@ async function main() {
   // First run
   const runState1 = await client.run({
     // The agent id. Any agent on the store (https://codebuff.com/store)
-    agent: 'codebuff/base@0.0.16',
+    agent: 'codebuff/base@0.10.7',
     prompt: 'Create a simple calculator class',
     handleEvent: (event) => {
       // All events that happen during the run: agent start/finish, tool calls/results, text responses, errors.
@@ -40,7 +40,7 @@ async function main() {
 
   // Continue the same session with a follow-up
   const runOrError2 = await client.run({
-    agent: 'codebuff/base@0.0.16',
+    agent: 'codebuff/base@0.10.7',
     prompt: 'Add unit tests for the calculator',
     previousRun: runState1, // <-- this is where your next run differs from the previous run
     handleEvent: (event) => {
@@ -147,7 +147,7 @@ Override with `knowledgeFiles` (replaces project files) or `userKnowledgeFiles` 
 
 ```typescript
 await client.run({
-  agent: 'codebuff/base@0.0.16',
+  agent: 'codebuff/base@0.10.7',
   prompt: 'Help me refactor',
   knowledgeFiles: { 'knowledge.md': '# Guidelines\n- Use TypeScript' },
   userKnowledgeFiles: { '~/.knowledge.md': '# Preferences\n- Be concise' },
