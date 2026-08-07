@@ -16,6 +16,7 @@ import type { AgentMode } from './constants'
 const DEFAULT_SETTINGS: Settings = {
   mode: 'DEFAULT' as const,
   adsEnabled: true,
+  undo: true,
 }
 
 // Note: The old FREE mode has been renamed back to LITE; migrate on load.
@@ -38,6 +39,8 @@ export interface Settings {
    *  first-time onboarding suggested prompts so they only show to brand-new
    *  users and quietly retire afterwards. */
   hasSubmittedFirstPrompt?: boolean
+  /** Whether /undo and /redo are enabled. Defaults to true. */
+  undo?: boolean
 }
 
 /**
@@ -146,6 +149,11 @@ const validateSettings = (parsed: unknown): Settings => {
     settings.hasSubmittedFirstPrompt = obj.hasSubmittedFirstPrompt
   }
 
+  // Validate undo toggle
+  if (typeof obj.undo === 'boolean') {
+    settings.undo = obj.undo
+  }
+
   return settings
 }
 
@@ -223,4 +231,16 @@ export const hasSubmittedFirstPrompt = (): boolean => {
 export const markFirstPromptSubmitted = (): void => {
   if (loadSettings().hasSubmittedFirstPrompt === true) return
   saveSettings({ hasSubmittedFirstPrompt: true })
+}
+
+/**
+ * Whether /undo and /redo are enabled. Defaults to true.
+ */
+export const isUndoEnabled = (): boolean => loadSettings().undo !== false
+
+/**
+ * Enable or disable /undo and /redo.
+ */
+export const setUndoEnabled = (enabled: boolean): void => {
+  saveSettings({ undo: enabled })
 }

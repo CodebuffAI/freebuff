@@ -15,8 +15,9 @@ import { handleUsageCommand } from './usage'
 import { returnToFreebuffLanding } from '../hooks/use-freebuff-session'
 import { useThemeStore } from '../hooks/use-theme'
 import { WEBSITE_URL } from '../login/constants'
-import { startNewChat } from '../project-files'
+import { getCurrentChatId, startNewChat, tryGetProjectRoot } from '../project-files'
 import { useChatStore } from '../state/chat-store'
+import { listRedoEntries, listUndoEntries } from '../state/undo-store'
 import { stopActiveRun } from '../utils/active-run'
 import { useFeedbackStore } from '../state/feedback-store'
 import { useLoginStore } from '../state/login-store'
@@ -24,7 +25,9 @@ import { AGENT_MODES, END_SESSION_MESSAGE, IS_FREEBUFF } from '../utils/constant
 import { exitCliCleanly } from '../utils/exit-cleanly'
 import { getSystemMessage, getUserMessage } from '../utils/message-history'
 import { capturePendingAttachments } from '../utils/pending-attachments'
+import { isUndoEnabled } from '../utils/settings'
 import { getSkillByName } from '../utils/skill-registry'
+import { isUndoAvailable } from '../utils/undo-snapshot'
 
 import type { MultilineInputHandle } from '../components/multiline-input'
 import type { InputValue, PendingAttachment } from '../types/store'
@@ -63,6 +66,8 @@ export type CommandResult = {
   openFeedbackMode?: boolean
   openPublishMode?: boolean
   openChatHistory?: boolean
+  openUndoHistory?: boolean
+  openRedoHistory?: boolean
   openReviewScreen?: boolean
   preSelectAgents?: string[]
 } | void
@@ -487,6 +492,103 @@ const ALL_COMMANDS: CommandDefinition[] = [
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
       return { openChatHistory: true }
+    },
+  }),
+  defineCommand({
+    name: 'undo',
+    aliases: ['u'],
+    handler: (params) => {
+      const { streamingAgents, isChainInProgress } = useChatStore.getState()
+      if (streamingAgents.size > 0 || isChainInProgress) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage(
+            '⏳ Please wait for the current task to finish before undoing.',
+          ),
+        ])
+        return
+      }
+      if (!isUndoEnabled()) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage('Undo is disabled in settings.'),
+        ])
+        return
+      }
+      const projectRoot = tryGetProjectRoot()
+      if (!projectRoot) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage('No project is open to undo.'),
+        ])
+        return
+      }
+      if (!isUndoAvailable(projectRoot)) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage(
+            'Undo requires the project to be a git repository.',
+          ),
+        ])
+        return
+      }
+      if (listUndoEntries(getCurrentChatId()).length === 0) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage('Nothing to undo.'),
+        ])
+        return
+      }
+
+      // Always open the picker: the user chooses which recorded turn to
+      // revert (Enter reverts that turn and everything newer).
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+      return { openUndoHistory: true }
+    },
+  }),
+  defineCommand({
+    name: 'redo',
+    aliases: ['r'],
+    handler: (params) => {
+      const { streamingAgents, isChainInProgress } = useChatStore.getState()
+      if (streamingAgents.size > 0 || isChainInProgress) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage(
+            '⏳ Please wait for the current task to finish before redoing.',
+          ),
+        ])
+        return
+      }
+      if (!isUndoEnabled()) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage('Redo is disabled in settings.'),
+        ])
+        return
+      }
+      const projectRoot = tryGetProjectRoot()
+      if (!projectRoot) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage('No project is open to redo.'),
+        ])
+        return
+      }
+      if (listRedoEntries(getCurrentChatId()).length === 0) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage('Nothing to redo.'),
+        ])
+        return
+      }
+
+      // Always open the picker: the user chooses which undone change to
+      // restore.
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+      return { openRedoHistory: true }
     },
   }),
   defineCommandWithArgs({

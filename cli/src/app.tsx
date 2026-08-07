@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 
 import { Chat } from './chat'
 import { ChatHistoryScreen } from './components/chat-history-screen'
+import { UndoHistoryScreen } from './components/undo-history-screen'
 import { ChatRuntimeProvider } from './contexts/chat-runtime-context'
 import { FreebuffSupersededScreen } from './components/freebuff-superseded-screen'
 import { LoginModal } from './components/login-modal'
@@ -13,10 +14,13 @@ import { useAuthQuery } from './hooks/use-auth-query'
 import { useAuthState } from './hooks/use-auth-state'
 import { useFreebuffSession } from './hooks/use-freebuff-session'
 import { useTerminalFocus } from './hooks/use-terminal-focus'
-import { getProjectRoot, startNewChat } from './project-files'
+import { getCurrentChatId, getProjectRoot, startNewChat } from './project-files'
 import { useChatHistoryStore } from './state/chat-history-store'
+import { useUndoHistoryStore } from './state/undo-history-store'
+import { redoToRecord, undoToRecord } from './state/undo-store'
 import { stopActiveRun } from './utils/active-run'
 import { useChatStore } from './state/chat-store'
+import { getSystemMessage } from './utils/message-history'
 import type { TopBannerType } from './types/store'
 import { IS_FREEBUFF } from './utils/constants'
 import { findGitRoot } from './utils/git'
@@ -160,6 +164,13 @@ export const App = ({
   // Chat history state from store
   const { showChatHistory, closeChatHistory } = useChatHistoryStore()
 
+  const {
+    showUndoHistory,
+    closeUndoHistory,
+    showRedoHistory,
+    closeRedoHistory,
+  } = useUndoHistoryStore()
+
   // State to track which chat to resume (set when user selects from history)
   const [resumeChatId, setResumeChatId] = useState<string | null>(null)
 
@@ -186,6 +197,68 @@ export const App = ({
     startNewChat()
     setResumeChatId(null)
   }, [closeChatHistory, resetChatStore])
+
+  // Undo/redo pickers: revert (or restore) the selected record against the
+  // project, then surface the result as a system message in the current chat.
+  const handleUndoSelect = useCallback(
+    async (recordId: string) => {
+      stopActiveRun('undo-history')
+      closeUndoHistory()
+      try {
+        const message =
+          (await undoToRecord(getCurrentChatId(), projectRoot, recordId)) ??
+          'Could not undo — the snapshot store is unavailable.'
+        useChatStore.getState().setMessages((prev) => [
+          ...prev,
+          getSystemMessage(message, { commandResult: 'undo' }),
+        ])
+      } catch (error) {
+        useChatStore.getState().setMessages((prev) => [
+          ...prev,
+          getSystemMessage('Could not undo the selected change.', {
+            commandResult: 'undo',
+          }),
+        ])
+      }
+      setInputFocused(true)
+    },
+    [closeUndoHistory, projectRoot, setInputFocused],
+  )
+
+  const handleRedoSelect = useCallback(
+    async (recordId: string) => {
+      stopActiveRun('redo-history')
+      closeRedoHistory()
+      try {
+        const message =
+          (await redoToRecord(getCurrentChatId(), projectRoot, recordId)) ??
+          'Could not redo — the snapshot store is unavailable.'
+        useChatStore.getState().setMessages((prev) => [
+          ...prev,
+          getSystemMessage(message, { commandResult: 'redo' }),
+        ])
+      } catch (error) {
+        useChatStore.getState().setMessages((prev) => [
+          ...prev,
+          getSystemMessage('Could not redo the selected change.', {
+            commandResult: 'redo',
+          }),
+        ])
+      }
+      setInputFocused(true)
+    },
+    [closeRedoHistory, projectRoot, setInputFocused],
+  )
+
+  const handleCancelUndoHistory = useCallback(() => {
+    closeUndoHistory()
+    setInputFocused(true)
+  }, [closeUndoHistory, setInputFocused])
+
+  const handleCancelRedoHistory = useCallback(() => {
+    closeRedoHistory()
+    setInputFocused(true)
+  }, [closeRedoHistory, setInputFocused])
 
   // Determine effective continueChat values
   const effectiveContinueChat = continueChat || resumeChatId !== null
@@ -260,6 +333,12 @@ export const App = ({
       onSelectChat={handleResumeChat}
       onCancelChatHistory={closeChatHistory}
       onNewChat={handleNewChat}
+      showUndoHistory={showUndoHistory}
+      onUndoSelect={handleUndoSelect}
+      onCancelUndoHistory={handleCancelUndoHistory}
+      showRedoHistory={showRedoHistory}
+      onRedoSelect={handleRedoSelect}
+      onCancelRedoHistory={handleCancelRedoHistory}
     />
   )
 }
@@ -285,6 +364,12 @@ interface AuthedSurfaceProps {
   onSelectChat: (chatId: string) => void
   onCancelChatHistory: () => void
   onNewChat: () => void
+  showUndoHistory: boolean
+  onUndoSelect: (recordId: string) => void
+  onCancelUndoHistory: () => void
+  showRedoHistory: boolean
+  onRedoSelect: (recordId: string) => void
+  onCancelRedoHistory: () => void
 }
 
 /**
@@ -327,6 +412,12 @@ const AuthedSurfaceRoutes = ({
   onSelectChat,
   onCancelChatHistory,
   onNewChat,
+  showUndoHistory,
+  onUndoSelect,
+  onCancelUndoHistory,
+  showRedoHistory,
+  onRedoSelect,
+  onCancelRedoHistory,
   session,
   sessionFailure,
 }: AuthedSurfaceProps & {
@@ -377,6 +468,26 @@ const AuthedSurfaceRoutes = ({
         onSelectChat={onSelectChat}
         onCancel={onCancelChatHistory}
         onNewChat={onNewChat}
+      />
+    )
+  }
+
+  if (showUndoHistory) {
+    return (
+      <UndoHistoryScreen
+        mode="undo"
+        onSelect={onUndoSelect}
+        onCancel={onCancelUndoHistory}
+      />
+    )
+  }
+
+  if (showRedoHistory) {
+    return (
+      <UndoHistoryScreen
+        mode="redo"
+        onSelect={onRedoSelect}
+        onCancel={onCancelRedoHistory}
       />
     )
   }

@@ -161,6 +161,9 @@ export type AgentMessage = {
 export type ChatMessageMetadata = {
   /** Working directory where a bash command was executed */
   bashCwd?: string
+  /** UI-only marker for /undo or /redo confirmation messages so they render
+   * with a distinct color instead of looking like plain agent output. */
+  commandResult?: 'undo' | 'redo'
   /** UI-only marker for a response created in this process. Restored messages
    * strip it so ads are never fetched retroactively into settled history. */
   allowInlineAds?: boolean

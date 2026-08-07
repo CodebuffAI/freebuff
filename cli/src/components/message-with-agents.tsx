@@ -180,12 +180,23 @@ export const MessageWithAgents = memo(
       )
     }
 
+    // /undo and /redo confirmations get their own color so they don't read
+    // as plain agent output: amber while reverting, green when restoring.
+    // (Only textColor is used: the vertical line renders for user messages,
+    // and these confirmations are ai-variant.)
+    const commandResult = message.metadata?.commandResult
+    const commandColor =
+      commandResult === 'undo'
+        ? theme?.warning
+        : commandResult === 'redo'
+          ? theme?.success
+          : undefined
     const lineColor = isError
       ? 'red'
       : isAi
         ? theme?.aiLine ?? 'white'
         : theme?.userLine ?? 'white'
-    const textColor = theme?.foreground ?? 'white'
+    const textColor = commandColor ?? theme?.foreground ?? 'white'
     const timestampColor = isError
       ? 'red'
       : isAi
