@@ -106,30 +106,71 @@ Bash is required but was not found on this Windows system.
 ```
 
 **Cause**:
-Codebuff requires bash for command execution. This error appears when:
-- Git for Windows is not installed
-- You're not running inside WSL
-- bash.exe is not in your PATH
+Codebuff requires bash for command execution. On Windows, Codebuff looks for bash in this order:
+
+1. `CODEBUFF_GIT_BASH_PATH` if you set it and the file exists.
+2. Common Git for Windows locations such as `C:\Program Files\Git\bin\bash.exe`.
+3. A non-WSL `bash.exe` or `bash` found on `PATH`.
+4. WSL-provided bash paths as a last resort.
+
+This error appears when Git for Windows is not installed, WSL is not available, or `bash.exe` cannot be found through those checks.
+
+**Supported shells**:
+
+- **PowerShell or Command Prompt with Git for Windows installed**: recommended for most Windows users.
+- **Git Bash**: supported, but browser login auto-open may need the manual workaround below.
+- **WSL**: supported when you install and run Codebuff inside the Linux distribution; WSL bash discovered from Windows `PATH` is only a fallback.
+
+**Diagnostics**:
+
+Run these from the same terminal where `codebuff` fails so the `PATH` matches Codebuff's environment:
+
+```powershell
+where.exe bash
+Test-Path "C:\Program Files\Git\bin\bash.exe"
+$env:PATH -split ';' | Select-String -Pattern 'Git|WindowsApps|System32'
+```
+
+If `where.exe bash` only prints `C:\Windows\System32\bash.exe` or a `WindowsApps` path, Windows is pointing Codebuff at the WSL launcher rather than Git Bash. That launcher can fail when WSL is not installed, the distro is stopped, or Windows-to-Linux quoting behaves differently.
 
 **Solutions**:
 
 1. **Install Git for Windows** (recommended):
    - Download from https://git-scm.com/download/win
-   - This installs `bash.exe` which Codebuff will automatically detect
-   - Works in PowerShell, CMD, or Git Bash terminals
+   - Keep the default install location when possible: `C:\Program Files\Git\bin\bash.exe`
+   - Restart PowerShell, CMD, Windows Terminal, or your IDE after installing so it reloads `PATH`
+   - Verify with `where.exe bash`; a Git path should appear before any WSL path
+   - Works in PowerShell, CMD, Windows Terminal, and Git Bash terminals
 
-2. **Use WSL (Windows Subsystem for Linux)**:
-   - Provides full Linux environment with native bash
-   - Install: `wsl --install` in PowerShell (Admin)
-   - Run codebuff inside WSL for best compatibility
+2. **Use WSL intentionally**:
+   - Install WSL from an elevated PowerShell: `wsl --install`
+   - Open your Linux distribution and install Node/npm inside WSL
+   - Install Codebuff inside WSL with `npm install -g codebuff`
+   - Run `codebuff` from the WSL shell, not from Windows PowerShell pointing at the WSL launcher
+   - Keep the project under the WSL filesystem when possible for better file and shell behavior
 
-3. **Set custom bash path** (advanced):
-   - If bash.exe is installed in a non-standard location:
+3. **Pin the exact Git Bash executable** (advanced):
+   - Use this when Git is installed in a custom location or another `bash.exe` appears earlier on `PATH`
+   - For the current PowerShell session:
    ```powershell
-   set CODEBUFF_GIT_BASH_PATH=C:\path\to\bash.exe
+   $env:CODEBUFF_GIT_BASH_PATH = "C:\Program Files\Git\bin\bash.exe"
+   codebuff
    ```
+   - For Command Prompt:
+   ```cmd
+   set CODEBUFF_GIT_BASH_PATH=C:\Program Files\Git\bin\bash.exe
+   codebuff
+   ```
+   - To persist it for new terminals, add `CODEBUFF_GIT_BASH_PATH` in Windows Environment Variables or use `setx CODEBUFF_GIT_BASH_PATH "C:\Program Files\Git\bin\bash.exe"`
 
-**Reference**: Issue [#274](https://github.com/CodebuffAI/codebuff/issues/274)
+4. **Fix `PATH` ordering if the wrong bash is selected**:
+   - Put `C:\Program Files\Git\bin` before `C:\Windows\System32` and WindowsApps entries only if you understand the system-wide impact
+   - Prefer `CODEBUFF_GIT_BASH_PATH` if you only want to change Codebuff's behavior
+   - Restart your terminal after changing environment variables
+
+**When opening an issue about bash detection**, include the terminal type, Windows version, Codebuff version, the output of `where.exe bash`, whether Git for Windows or WSL is installed, and any `CODEBUFF_GIT_BASH_PATH` value you set.
+
+**Reference**: Issues [#274](https://github.com/CodebuffAI/codebuff/issues/274) and [#819](https://github.com/CodebuffAI/codebuff/issues/819)
 
 ---
 
