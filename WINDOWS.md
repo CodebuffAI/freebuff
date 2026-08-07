@@ -133,6 +133,61 @@ Codebuff requires bash for command execution. This error appears when:
 
 ---
 
+### Issue: Illegal Instruction or Immediate Crash on Older CPUs
+
+**Symptom**:
+```powershell
+PS C:\> freebuff
+Download complete! Starting Freebuff...
+Bun v1.3.14
+CPU: sse42 avx
+Features: no_avx2
+
+panic: Illegal instruction
+```
+
+Codebuff or Freebuff may also exit immediately with code `3221225501`
+(`0xC000001D`), which is Windows' illegal-instruction crash code.
+
+**Cause**:
+Some older x64 CPUs support AVX but not AVX2. The normal Windows x64 binary
+requires AVX2, while the `win32-x64-baseline` binary is built for older CPUs.
+
+**Solutions**:
+
+1. **Force the baseline binary**:
+
+   **Freebuff:**
+   ```cmd
+   set FREEBUFF_BINARY_TARGET=win32-x64-baseline
+   del "%USERPROFILE%\.config\manicode\freebuff.exe"
+   del "%USERPROFILE%\.config\manicode\freebuff-metadata.json"
+   freebuff
+   ```
+
+   **Codebuff:**
+   ```cmd
+   set CODEBUFF_BINARY_TARGET=win32-x64-baseline
+   del "%USERPROFILE%\.config\manicode\codebuff.exe"
+   del "%USERPROFILE%\.config\manicode\codebuff-metadata.json"
+   codebuff
+   ```
+
+2. **Make the override permanent**:
+   Add `FREEBUFF_BINARY_TARGET=win32-x64-baseline` or
+   `CODEBUFF_BINARY_TARGET=win32-x64-baseline` to your Windows User
+   Environment Variables.
+
+3. **Verify the installed target**:
+   The metadata file should show `"target": "win32-x64-baseline"`:
+   ```cmd
+   type "%USERPROFILE%\.config\manicode\freebuff-metadata.json"
+   ```
+
+**Reference**: Issue [#822](https://github.com/CodebuffAI/codebuff/issues/822)
+
+---
+
 ### Issue: Git Commands Fail on Windows
 
 **Symptom**:
