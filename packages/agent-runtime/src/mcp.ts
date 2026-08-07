@@ -1,5 +1,4 @@
 import { getErrorObject } from '@codebuff/common/util/error'
-import { convertJsonSchemaToZod } from 'zod-from-json-schema'
 
 import { MCP_TOOL_SEPARATOR } from './mcp-constants'
 
@@ -56,7 +55,7 @@ export async function getMCPToolData(
 
           for (const { name, description, inputSchema } of mcpData) {
             writeTo[mcpName + MCP_TOOL_SEPARATOR + name] = {
-              inputSchema: convertJsonSchemaToZod(inputSchema as any) as any,
+              inputSchema: inputSchema as Record<string, unknown>,
               endsAgentStep: true,
               description,
             }
