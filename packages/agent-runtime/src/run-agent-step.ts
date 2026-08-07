@@ -864,6 +864,27 @@ export async function loopAgentSteps(
     system = systemPrompt ?? ''
   }
 
+  // Inject loaded skills into the system prompt so they are always
+  // available without needing the agent to call the `skill` tool.
+  // Skills are installed via `/skills install` or `npx skills add`.
+  if (!agentTemplate.inheritParentSystemPrompt || !parentSystemPrompt) {
+    const skills = fileContext.skills ?? {}
+    const skillEntries = Object.values(skills)
+    if (skillEntries.length > 0) {
+      const skillsInstructions = skillEntries
+        .map(
+          (skill) => {
+            // Strip YAML frontmatter from the skill content so the model
+            // only sees the actual instructions, not metadata noise.
+            const body = skill.content.replace(/^---[\s\S]*?---\n*/, '').trim()
+            return `## Skill: ${skill.name}\n\n${body}`
+          },
+        )
+        .join('\n\n---\n\n')
+      system += `\n\n# Pre-loaded Skills\n\nThe following skills are pre-loaded and always available. You do NOT need to use the \`skill\` tool to load them — their full instructions are already part of your context. Use \`/skills install <owner/repo> [--skill <name>]\` to install more, or \`/skills list\` to see available skills.\n\n---\n\n${skillsInstructions}`
+    }
+  }
+
   // Build agent tools (agents as direct tool calls) for non-inherited tools
   const agentTools = useParentTools
     ? {}

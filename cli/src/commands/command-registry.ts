@@ -24,7 +24,12 @@ import { AGENT_MODES, END_SESSION_MESSAGE, IS_FREEBUFF } from '../utils/constant
 import { exitCliCleanly } from '../utils/exit-cleanly'
 import { getSystemMessage, getUserMessage } from '../utils/message-history'
 import { capturePendingAttachments } from '../utils/pending-attachments'
-import { getSkillByName } from '../utils/skill-registry'
+import {
+  getSkillByName,
+  getLoadedSkills,
+  initializeSkillRegistry,
+} from '../utils/skill-registry'
+import { execSync } from 'child_process'
 
 import type { MultilineInputHandle } from '../components/multiline-input'
 import type { InputValue, PendingAttachment } from '../types/store'
@@ -596,6 +601,115 @@ const ALL_COMMANDS: CommandDefinition[] = [
         // The hook surfaces poll errors via the session store; nothing to do
         // here beyond letting the chat history reflect the attempt.
       })
+    },
+  }),
+  // /skills install <owner/repo> [--skill <name>] — install a skill from a GitHub repo
+  defineCommandWithArgs({
+    name: 'skills',
+    aliases: [],
+    handler: async (params, args) => {
+      const trimmedArgs = args.trim()
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+
+      // Parse subcommand
+      const parts = trimmedArgs.split(/\s+/)
+      const subcommand = parts[0]?.toLowerCase()
+
+      if (subcommand === 'list') {
+        const skills = getLoadedSkills()
+        const skillNames = Object.keys(skills)
+        if (skillNames.length === 0) {
+          params.setMessages((prev) => [
+            ...prev,
+            getSystemMessage(
+              'No skills installed.\n\nInstall skills with: /skills install <owner/repo> [--skill <name>]\nOr from the terminal: npx skills add <owner/repo> --skill <name> --yes',
+            ),
+          ])
+        } else {
+          const list = skillNames
+            .map(
+              (name) =>
+                `  • ${name}: ${skills[name].description.slice(0, 80)}`,
+            )
+            .join('\n')
+          params.setMessages((prev) => [
+            ...prev,
+            getSystemMessage(
+              `Installed skills (${skillNames.length}):\n${list}\n\nSkills are automatically available to the agent. Install more with: /skills install <owner/repo> [--skill <name>]`,
+            ),
+          ])
+        }
+        return
+      }
+
+      if (subcommand === 'install') {
+        const repo = parts[1]
+        if (!repo) {
+          params.setMessages((prev) => [
+            ...prev,
+            getSystemMessage(
+              'Usage: /skills install <owner/repo> [--skill <name>]\n\nExample: /skills install anthropics/skills --skill git-release',
+            ),
+          ])
+          return
+        }
+
+        // Parse --skill flag
+        const skillFlagIdx = parts.indexOf('--skill')
+        const skillName =
+          skillFlagIdx !== -1 ? parts[skillFlagIdx + 1] : undefined
+        const extraArgs = skillFlagIdx !== -1 ? parts.slice(skillFlagIdx + 2) : []
+
+        const installCmd = [
+          'npx',
+          'skills',
+          'add',
+          repo,
+          ...(skillName ? ['--skill', skillName] : []),
+          '--yes',
+          ...extraArgs,
+        ].join(' ')
+
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage(`Installing skill from ${repo}...`),
+        ])
+
+        try {
+          const output = execSync(installCmd, {
+            encoding: 'utf8',
+            stdio: 'pipe',
+            timeout: 60_000,
+          })
+          // Refresh the skill registry so newly installed skills are picked up
+          await initializeSkillRegistry()
+          params.setMessages((prev) => [
+            ...prev,
+            getSystemMessage(
+              `${output.trim()}\n\nSkill installed to .agents/skills/. It will be available in your next session (use /new to start a fresh chat).`,
+            ),
+          ])
+        } catch (error) {
+          const errMsg =
+            error instanceof Error ? error.message : String(error)
+          params.setMessages((prev) => [
+            ...prev,
+            getSystemMessage(
+              `Failed to install skill: ${errMsg}\n\nMake sure you have npx available and the repo exists.`,
+            ),
+          ])
+        }
+        return
+      }
+
+      // Unknown subcommand — show help
+      params.setMessages((prev) => [
+        ...prev,
+        getSystemMessage(
+          'Skills commands:\n  /skills list — show installed skills\n  /skills install <owner/repo> [--skill <name>] — install a skill from GitHub\n\nExample: /skills install anthropics/skills --skill git-release',
+        ),
+      ])
     },
   }),
 ]

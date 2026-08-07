@@ -168,6 +168,12 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
   //   description: 'Publish agents to the agent store',
   // },
   {
+    id: 'skills',
+    label: 'skills',
+    description: 'Install or list automatically-loaded skills',
+    aliases: [],
+  },
+  {
     id: 'theme:toggle',
     label: 'theme:toggle',
     description: 'Toggle between light and dark mode',
