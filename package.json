@@ -30,8 +30,7 @@
   },
   "dependencies": {
     "canvas": "^3.2.0",
-    "gif-encoder-2": "^1.0.5",
-    "zod": "^4.2.1"
+    "gif-encoder-2": "^1.0.5"
   },
   "overrides": {
     "react": "^19.0.0",
