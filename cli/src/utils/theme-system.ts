@@ -321,7 +321,16 @@ const resolveZedSettingsPaths = (
   return paths
 }
 
-const extractVSCodeTheme = (content: string): ThemeName | null => {
+export const extractVSCodeTheme = (content: string): ThemeName | null => {
+  const autoDetectMatch = content.match(
+    /"window\.autoDetectColorScheme"\s*:\s*(true|false)/i,
+  )
+  const autoDetectEnabled = autoDetectMatch?.[1]?.toLowerCase() === 'true'
+
+  if (autoDetectEnabled) {
+    return null
+  }
+
   // Try standard colorTheme setting
   const colorThemeMatch = content.match(
     /"workbench\.colorTheme"\s*:\s*"([^"]+)"/i,
@@ -329,31 +338,6 @@ const extractVSCodeTheme = (content: string): ThemeName | null => {
   if (colorThemeMatch) {
     const inferred = inferThemeFromName(colorThemeMatch[1])
     if (inferred) return inferred
-  }
-
-  // Check if auto-detect is enabled and try preferred themes
-  const autoDetectMatch = content.match(
-    /"window\.autoDetectColorScheme"\s*:\s*(true|false)/i,
-  )
-  const autoDetectEnabled = autoDetectMatch?.[1]?.toLowerCase() === 'true'
-
-  if (autoDetectEnabled) {
-    // Try to extract both preferred themes and infer from their names
-    const preferredDarkMatch = content.match(
-      /"workbench\.preferredDarkColorTheme"\s*:\s*"([^"]+)"/i,
-    )
-    if (preferredDarkMatch) {
-      const inferred = inferThemeFromName(preferredDarkMatch[1])
-      if (inferred) return inferred
-    }
-
-    const preferredLightMatch = content.match(
-      /"workbench\.preferredLightColorTheme"\s*:\s*"([^"]+)"/i,
-    )
-    if (preferredLightMatch) {
-      const inferred = inferThemeFromName(preferredLightMatch[1])
-      if (inferred) return inferred
-    }
   }
 
   return null
