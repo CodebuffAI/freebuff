@@ -1,5 +1,4 @@
 import { OPUS_MODEL, publisher } from '../constants'
-
 import type { SecretAgentDefinition } from '../types/secret-agent-definition'
 
 const definition: SecretAgentDefinition = {
@@ -40,37 +39,38 @@ You are a thinker agent. Use the <think> tag to think deeply about the user requ
 When satisfied, write out a brief response to the user's request. The parent agent will see your response -- no need to call any tools. DO NOT call the set_output tool, as that will be done for you.
 `.trim(),
 
-  handleSteps: function* () {
+  *handleSteps() {
     const { agentState } = yield 'STEP'
 
-    // Find the last assistant message
-    const lastAssistantMessage = [...agentState.messageHistory]
-      .reverse()
-      .find((m) => m.role === 'assistant')
+    // Find the last assistant message without copying the array using findLast
+    const lastAssistantMessage = agentState.messageHistory.findLast(
+      (m) => m.role === 'assistant'
+    )
 
     if (!lastAssistantMessage) {
-      const errorMsg =
-        'Error: No assistant message found in conversation history'
       yield {
         toolName: 'set_output',
-        input: { message: errorMsg },
+        input: {
+          message: 'Error: No assistant message found in conversation history',
+        },
       }
       return
     }
 
-    // Extract text content from the assistant message
+    // Extract text content safely from string or structured content array
     const content = lastAssistantMessage.content
     let textContent = ''
+
     if (typeof content === 'string') {
       textContent = content
     } else if (Array.isArray(content)) {
       textContent = content
-        .filter((part) => part.type === 'text')
+        .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
         .map((part) => part.text)
         .join('')
     }
 
-    // Remove text within <think> tags (including the tags themselves)
+    // Strip <think>...</think> tags and sanitize output
     const cleanedText = textContent
       .replace(/<think>[\s\S]*?<\/think>/g, '')
       .trim()
