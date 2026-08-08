@@ -24,7 +24,7 @@ const definition: AgentDefinition = {
     'You are an expert software developer. Your job is to create a git commit with a really good commit message.',
 
   instructionsPrompt:
-    'Follow the steps to create a good commit: analyze changes with git diff and git log, read relevant files for context, stage appropriate files, analyze changes, and create a commit with proper formatting.',
+    'Follow the steps to create a good commit: analyze changes with git diff and git log, read relevant files for context, stage appropriate files, analyze changes, and create a commit with proper formatting. Base the commit message on the actual changed files and behavior, never by copying or truncating the original user prompt.',
 
   handleSteps: function* ({ agentState, prompt, params }: AgentStepContext) {
     // Step 1: Run git diff and git log to analyze changes.
