@@ -790,10 +790,19 @@ export async function applyOverridesToSessionState(
     maxAgentSteps?: number
   },
 ): Promise<SessionState> {
-  // Deep clone to avoid mutating the original session state
-  const sessionState = JSON.parse(
-    JSON.stringify(baseSessionState),
-  ) as SessionState
+  // Deep clone to avoid mutating the original session state. A JSON
+  // round-trip is the fast path, but run state can carry cyclic values
+  // (e.g. recursive zod schemas inside tool blocks) that make
+  // JSON.stringify throw ("cannot serialize cyclic structures"); lodash
+  // cloneDeep handles cycles, so fall back to it. Mirrors cloneSessionState.
+  let sessionState: SessionState
+  try {
+    sessionState = JSON.parse(
+      JSON.stringify(baseSessionState),
+    ) as SessionState
+  } catch {
+    sessionState = cloneDeep(baseSessionState)
+  }
 
   // Apply maxAgentSteps override
   if (overrides.maxAgentSteps !== undefined) {
