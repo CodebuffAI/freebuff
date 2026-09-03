@@ -518,9 +518,17 @@ const ALL_COMMANDS: CommandDefinition[] = [
 
       // If user provided a path directly, process it immediately
       if (trimmedArgs) {
-        await handleImageCommand(trimmedArgs)
+        const remainingMessage = await handleImageCommand(trimmedArgs)
         params.saveToHistory(params.inputValue.trim())
-        clearInput(params)
+        if (remainingMessage) {
+          params.setInputValue({
+            text: remainingMessage,
+            cursorPosition: remainingMessage.length,
+            lastEditDueToNav: false,
+          })
+        } else {
+          clearInput(params)
+        }
         return
       }
 
