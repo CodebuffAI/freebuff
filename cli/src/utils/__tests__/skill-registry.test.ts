@@ -15,6 +15,8 @@ import {
 } from '../skill-registry'
 
 let tmpRoot: string
+let oldHome: string | undefined
+let oldUserProfile: string | undefined
 
 const writeSkill = (
   kind: 'project' | 'global',
@@ -40,10 +42,22 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-registry-'))
   setProjectRoot(tmpRoot)
+  // Hermetic home: includeHomeSkills makes the SDK load real ~/.claude/skills
+  // too, so on a machine with skills installed for Claude Code (any
+  // maintainer's, in practice) the counts below would include those. Redirect
+  // the home directory so tests only see what they write themselves.
+  oldHome = process.env.HOME
+  oldUserProfile = process.env.USERPROFILE
+  process.env.HOME = tmpRoot
+  process.env.USERPROFILE = tmpRoot
 })
 
 afterEach(() => {
   __resetSkillRegistryForTests()
+  if (oldHome !== undefined) process.env.HOME = oldHome
+  else delete process.env.HOME
+  if (oldUserProfile !== undefined) process.env.USERPROFILE = oldUserProfile
+  else delete process.env.USERPROFILE
   fs.rmSync(tmpRoot, { recursive: true, force: true })
 })
 

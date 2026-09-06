@@ -17,6 +17,11 @@ import { clamp } from '../utils/math'
 import {
   resolveSkillsPanelAction,
 } from '../utils/skills-panel-actions'
+import {
+  estimateTokens,
+  matchesSkillQuery,
+  renderTokens,
+} from '../utils/skills-panel-format'
 import { BORDER_CHARS } from '../utils/ui-constants'
 
 import type { SkillDefinition } from '@codebuff/common/types/skill'
@@ -87,12 +92,24 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
   )
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [query, setQuery] = useState('')
 
+  const filtered = useMemo(
+    () => skills.filter((skill) => matchesSkillQuery(skill, query)),
+    [skills, query],
+  )
+
+  // Selection rides through the filter by name; when the current selection
+  // (or the whole list) filters away, snap to the top so Enter is never dead.
   const selectedIndex = Math.max(
     0,
-    skills.findIndex((skill) => skill.name === selectedName),
+    filtered.findIndex((skill) => skill.name === selectedName),
   )
-  const selected = skills[selectedIndex]
+  const selected = filtered[selectedIndex]
+  useEffect(() => {
+    if (!selected) setSelectedName(filtered[0]?.name ?? null)
+  }, [selected, filtered])
 
   // Nothing left to manage: hand the composer back rather than leave an empty
   // box for the user to dismiss.
@@ -123,7 +140,7 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
       // a whole-skills-directory delete deserves instant feedback).
       void refreshSkillRegistry()
       // Dropping the row moves the cursor to whatever fills the vacancy.
-      const successor = skills[selectedIndex + 1] ?? skills[selectedIndex - 1]
+      const successor = filtered[selectedIndex + 1] ?? filtered[selectedIndex - 1]
       setSelectedName(successor?.name ?? null)
       setNotice(`Deleted ${skillDir}`)
     } catch (error) {
@@ -131,7 +148,7 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
         `Could not delete: ${error instanceof Error ? error.message : String(error)}`,
       )
     }
-  }, [selected, skills, selectedIndex])
+  }, [selected, filtered, selectedIndex])
 
   const openInEditor = useCallback(() => {
     if (!selected) return
@@ -147,7 +164,7 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
 
   const handleKey = useCallback(
     (key: KeyEvent) => {
-      const action = resolveSkillsPanelAction(key, { confirmingDelete })
+      const action = resolveSkillsPanelAction(key, { confirmingDelete, searching })
       if (action.type === 'none') return
       // Any deliberate action supersedes the last complaint.
       if (action.type !== 'confirm') setNotice(null)
@@ -159,9 +176,24 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
         case 'cancel':
           setConfirmingDelete(false)
           return
+        case 'search-start':
+          setSearching(true)
+          return
+        case 'search-exit':
+          setSearching(false)
+          return
+        case 'search-input':
+          setQuery((prev) => prev + action.char)
+          return
+        case 'search-backspace':
+          if (query.length > 0) setQuery(query.slice(0, -1))
+          // Backspace on an empty query leaves search mode (common editor
+          // convention) instead of stranding the user in an empty search.
+          else setSearching(false)
+          return
         case 'select': {
-          const to = clamp(selectedIndex + action.delta, 0, skills.length - 1)
-          setSelectedName(skills[to]?.name ?? null)
+          const to = clamp(selectedIndex + action.delta, 0, filtered.length - 1)
+          setSelectedName(filtered[to]?.name ?? null)
           return
         }
         case 'invoke':
@@ -182,26 +214,32 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
     [
       confirmingDelete,
       deleteSelected,
+      filtered,
       onClose,
       onInvoke,
       openInEditor,
+      query,
+      searching,
       selected,
-      skills,
       selectedIndex,
-    ],
+   ],
   )
 
   useKeyboard(handleKey)
 
   // A row must fit one line or it wraps and the list stops being scannable.
-  // Budget: two border columns, two padding columns, then "❯ " + badge + gap.
-  const promptWidth = Math.max(10, width - 16)
+  // Budget: two border columns, two padding columns, then "❯ " + badge + gap
+  // + right-aligned token estimate, so descriptions truncate where the
+  // composer would.
+  const promptWidth = Math.max(10, width - 22)
   const rowLabel = useCallback(
     (skill: SkillDefinition) => {
       const badge = sourceOf(skill) === 'project' ? 'project' : 'global'
+      const tokens = renderTokens(estimateTokens(skill))
+      const suffix = ` ${tokens}`
       const body =
-        truncateToSingleLinePreview(skill.description, promptWidth) ?? ''
-      return `${badge.padEnd(7)} ${body}`
+        truncateToSingleLinePreview(skill.description, promptWidth - suffix.length) ?? ''
+      return `${badge.padEnd(7)} ${body.padEnd(Math.max(0, promptWidth - suffix.length))}${suffix}`
     },
     [promptWidth],
   )
@@ -211,10 +249,12 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
     [skills],
   )
   const globalCount = skills.length - projectCount
+  const hiddenBySearch = skills.length - filtered.length
+  const filterActive = query.trim().length > 0
 
-  const start = windowStart(selectedIndex, skills.length, maxVisibleRows)
-  const visible = skills.slice(start, start + maxVisibleRows)
-  const hiddenBelow = skills.length - (start + visible.length)
+  const start = windowStart(selectedIndex, filtered.length, maxVisibleRows)
+  const visible = filtered.slice(start, start + maxVisibleRows)
+  const hiddenBelow = filtered.length - (start + visible.length)
 
   return (
     <ClickableTitleBox
@@ -264,15 +304,25 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
         <text style={{ fg: theme.muted }}>{`  ↓ ${hiddenBelow} more`}</text>
       )}
 
+      {hiddenBySearch > 0 && (
+        <text style={{ fg: theme.muted }}>
+          {`${hiddenBySearch} hidden by filter · esc clears`}
+        </text>
+      )}
+
       {notice && <text style={{ fg: theme.warning }}>{notice}</text>}
 
-      {confirmingDelete ? (
+      {searching ? (
+        <text style={{ fg: theme.info, wrapMode: 'none' }}>
+          {`/${query}▏ type to filter · esc done`}
+        </text>
+      ) : confirmingDelete ? (
         <text style={{ fg: theme.warning }}>
           {`Delete ${selected && path.dirname(selected.filePath)}/? Enter confirm · Esc cancel`}
         </text>
       ) : (
         <text style={{ fg: theme.muted }}>
-          {'Enter run · o open · d delete · esc close'}
+          {'/ filter · Enter run · o open · d delete · esc close'}
         </text>
       )}
     </ClickableTitleBox>
