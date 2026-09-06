@@ -94,6 +94,7 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
   const [notice, setNotice] = useState<string | null>(null)
   const [searching, setSearching] = useState(false)
   const [query, setQuery] = useState('')
+  const filterActive = query.length > 0
 
   const filtered = useMemo(
     () => skills.filter((skill) => matchesSkillQuery(skill, query)),
@@ -164,7 +165,11 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
 
   const handleKey = useCallback(
     (key: KeyEvent) => {
-      const action = resolveSkillsPanelAction(key, { confirmingDelete, searching })
+      const action = resolveSkillsPanelAction(key, {
+        confirmingDelete,
+        searching,
+        filterActive,
+      })
       if (action.type === 'none') return
       // Any deliberate action supersedes the last complaint.
       if (action.type !== 'confirm') setNotice(null)
@@ -181,6 +186,9 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
           return
         case 'search-exit':
           setSearching(false)
+          return
+        case 'search-clear':
+          setQuery('')
           return
         case 'search-input':
           setQuery((prev) => prev + action.char)
@@ -215,6 +223,7 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
       confirmingDelete,
       deleteSelected,
       filtered,
+      filterActive,
       onClose,
       onInvoke,
       openInEditor,
@@ -250,7 +259,6 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
   )
   const globalCount = skills.length - projectCount
   const hiddenBySearch = skills.length - filtered.length
-  const filterActive = query.trim().length > 0
 
   const start = windowStart(selectedIndex, filtered.length, maxVisibleRows)
   const visible = filtered.slice(start, start + maxVisibleRows)
@@ -306,8 +314,8 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
 
       {hiddenBySearch > 0 && (
         <text style={{ fg: theme.muted }}>
-          {`${hiddenBySearch} hidden by filter · esc clears`}
-        </text>
+          {`${hiddenBySearch} hidden by filter`}
+          </text>
       )}
 
       {notice && <text style={{ fg: theme.warning }}>{notice}</text>}
@@ -322,7 +330,9 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
         </text>
       ) : (
         <text style={{ fg: theme.muted }}>
-          {'/ filter · Enter run · o open · d delete · esc close'}
+          {filterActive
+            ? '/ filter · esc clears filter · esc again closes'
+            : '/ filter · Enter run · o open · d delete · esc close'}
         </text>
       )}
     </ClickableTitleBox>

@@ -25,6 +25,8 @@ export type SkillsPanelAction =
   | { type: 'search-backspace' }
   /** Leave search mode, keeping the current filter (search mode only). */
   | { type: 'search-exit' }
+  /** Clear the active filter (browsing with a non-empty query only). */
+  | { type: 'search-clear' }
   | { type: 'none' }
 
 export type SkillsPanelKeyboardState = {
@@ -34,6 +36,9 @@ export type SkillsPanelKeyboardState = {
   /** While search mode is active, printable keys edit the query instead of
    *  firing single-letter shortcuts like o/d/j/k. */
   searching: boolean
+  /** True while a non-empty query filters the list: escape then clears the
+   *  filter instead of closing the panel (press it again to close). */
+  filterActive: boolean
 }
 
 /** A printable character keypress (no ctrl/meta modifiers). */
@@ -61,15 +66,16 @@ export function resolveSkillsPanelAction(
     return { type: 'none' }
   }
 
-  // `q` closes, mirroring the queue panel. Ctrl+C closes even from search.
-  if (isEscape && !state.searching) return { type: 'close' }
-  if (isCtrlC) return { type: 'close' }
+  // Escape unwinds one layer at a time: search mode → filter → close.
+  // (Ctrl+C always closes; `q` closes, mirroring the queue panel.)
+  if (isEscape && state.searching) return { type: 'search-exit' }
+  if (isEscape && state.filterActive) return { type: 'search-clear' }
+  if (isEscape || isCtrlC) return { type: 'close' }
   if (key.name === 'q' && !state.searching) return { type: 'close' }
 
   if (state.searching) {
     if (key.name === 'backspace')
       return { type: 'search-backspace' }
-    if (isEscape) return { type: 'search-exit' }
     // Arrows and enter keep working while typing — but only their named
     // forms: letters (j/k/q/d/o) are query edits in search mode.
     if (key.name === 'up') return { type: 'select', delta: -1 }

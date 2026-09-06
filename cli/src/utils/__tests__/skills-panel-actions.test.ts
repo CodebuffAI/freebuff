@@ -15,9 +15,26 @@ const createKey = (overrides: Partial<KeyEvent> = {}): KeyEvent =>
     ...overrides,
   }) as KeyEvent
 
-const browsing = { confirmingDelete: false, searching: false }
-const confirming = { confirmingDelete: true, searching: false }
-const searching = { confirmingDelete: false, searching: true }
+const browsing = {
+  confirmingDelete: false,
+  searching: false,
+  filterActive: false,
+}
+const confirming = {
+  confirmingDelete: true,
+  searching: false,
+  filterActive: false,
+}
+const searching = {
+  confirmingDelete: false,
+  searching: true,
+  filterActive: false,
+}
+const filtered = {
+  confirmingDelete: false,
+  searching: false,
+  filterActive: true,
+}
 
 describe('resolveSkillsPanelAction', () => {
   test('arrows and j/k move the selection', () => {
@@ -167,15 +184,37 @@ describe('resolveSkillsPanelAction', () => {
     expect(
       resolveSkillsPanelAction(
         createKey({ name: 'd', sequence: 'd' }),
-        { confirmingDelete: true, searching: true },
+        { confirmingDelete: true, searching: true, filterActive: true },
       ),
     ).toEqual({ type: 'none' })
     expect(
       resolveSkillsPanelAction(
         createKey({ name: 'return' }),
-        { confirmingDelete: true, searching: true },
+        { confirmingDelete: true, searching: true, filterActive: true },
       ),
     ).toEqual({ type: 'confirm' })
+  })
+
+  test('escape unwinds one layer at a time: search, then filter, then close', () => {
+    // Browsing with an active filter: escape clears the filter, not the panel.
+    expect(
+      resolveSkillsPanelAction(createKey({ name: 'escape' }), filtered),
+    ).toEqual({ type: 'search-clear' })
+    // With the filter gone, the same key closes.
+    expect(
+      resolveSkillsPanelAction(createKey({ name: 'escape' }), browsing),
+    ).toEqual({ type: 'close' })
+    // And from inside search mode it only leaves the search.
+    expect(
+      resolveSkillsPanelAction(createKey({ name: 'escape' }), searching),
+    ).toEqual({ type: 'search-exit' })
+    // q and ctrl+c still close even while a filter is active.
+    expect(
+      resolveSkillsPanelAction(createKey({ name: 'q' }), filtered),
+    ).toEqual({ type: 'close' })
+    expect(
+      resolveSkillsPanelAction(createKey({ name: 'c', ctrl: true }), filtered),
+    ).toEqual({ type: 'close' })
   })
 
   test('unbound keys do nothing', () => {
