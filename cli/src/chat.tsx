@@ -32,6 +32,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 
@@ -64,6 +65,11 @@ import {
 import { TopBanner } from './components/top-banner'
 import { useChatRuntime } from './contexts/chat-runtime-context'
 import { getSlashCommandsWithSkills } from './data/slash-commands'
+import {
+  getSkillsVersion,
+  refreshSkillRegistry,
+  subscribeToSkillsVersion,
+} from './utils/skill-registry'
 import { useAskUserBridge } from './hooks/use-ask-user-bridge'
 import { useChatInput } from './hooks/use-chat-input'
 import {
@@ -757,8 +763,19 @@ export const Chat = ({
   const setInputMode = useChatStore((state) => state.setInputMode)
   const askUserState = useChatStore((state) => state.askUserState)
 
-  // Get loaded skills for slash commands
-  const loadedSkills = useMemo(() => getLoadedSkills(), [])
+  // Get loaded skills for slash commands. Keyed on the registry version so a
+  // live-reload (watcher or /skills refresh) swaps the list without a
+  // restart — the registry object itself is mutated in place, which zustand
+  // and useMemo would never notice.
+  const skillsVersion = useSyncExternalStore(
+    subscribeToSkillsVersion,
+    getSkillsVersion,
+    getSkillsVersion,
+  )
+  const loadedSkills = useMemo(() => {
+    void skillsVersion
+    return getLoadedSkills()
+  }, [skillsVersion])
 
   // Filter slash commands based on current ads state - only show the option that changes state
   // Hide both ads commands entirely for subscribers
@@ -1459,6 +1476,14 @@ export const Chat = ({
     setInputFocused(true)
     inputRef.current?.focus()
   }, [closeSkillsPanel, setInputFocused, inputRef])
+
+  // Refresh the registry when the /skills panel opens, so a skill installed
+  // moments ago shows up even if the watcher missed it (e.g. directory
+  // created and populated before the watcher could arm on it).
+  useEffect(() => {
+    if (!skillsPanelOpen) return
+    void refreshSkillRegistry()
+  }, [skillsPanelOpen])
 
   // Invoking from the panel closes it and drops into the existing skill input
   // mode — the exact path /skill:<name> takes, so the two entries cannot

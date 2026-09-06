@@ -1,13 +1,17 @@
 import { spawnSync } from 'child_process'
 import { existsSync } from 'fs'
-import { unlink } from 'fs/promises'
+import { rm } from 'fs/promises'
+import path from 'path'
 
+import { resolveSkillsDirs } from '@codebuff/sdk'
 import { useKeyboard } from '@opentui/react'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from './button'
 import { ClickableTitleBox } from './clickable-title-box'
 import { useTheme } from '../hooks/use-theme'
+import { getProjectRoot, tryGetProjectRoot } from '../project-files'
+import { refreshSkillRegistry } from '../utils/skill-registry'
 import { truncateToSingleLinePreview } from '../utils/agent-display'
 import { clamp } from '../utils/math'
 import {
@@ -43,10 +47,28 @@ function windowStart(
 }
 
 /** Which skills directory a skill loaded from, for the row badge. */
+let projectSkillsDirs: Set<string> | null = null
+
+function getProjectSkillsDirs(): Set<string> {
+  // Lazily computed on first render: getProjectRoot() is only meaningful
+  // after the CLI finishes booting, and module-load order does not guarantee
+  // that. One Set, resolved once — the project root cannot change mid-session.
+  projectSkillsDirs ??= new Set(
+    resolveSkillsDirs({ cwd: tryGetProjectRoot() || process.cwd() }).map(
+      (dir) => path.resolve(dir),
+    ),
+  )
+  return projectSkillsDirs
+}
+
 function sourceOf(skill: SkillDefinition): 'project' | 'global' {
-  return skill.filePath.includes('.agents') && !skill.filePath.split('.agents')[0].startsWith(process.env.HOME ?? '~')
-    ? 'project'
-    : 'global'
+  // <skillsDir>/<skill-name>/SKILL.md — the grandparent of the file is the
+  // skills directory it was discovered in. Resolved on both sides so mixed
+  // separators cannot break the comparison on Windows.
+  const skillsDir = path.resolve(
+    path.dirname(path.dirname(skill.filePath)),
+  )
+  return getProjectSkillsDirs().has(skillsDir) ? 'project' : 'global'
 }
 
 export const SkillsPanel: React.FC<SkillsPanelProps> = ({
@@ -86,19 +108,24 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
 
   const deleteSelected = useCallback(async () => {
     if (!selected) return
-    // The path came from the skill registry, but double-check existence so a
-    // stale entry reports honestly instead of throwing raw ENOENT.
-    if (!existsSync(selected.filePath)) {
-      setNotice(`File not found: ${selected.filePath}`)
+    // Claude Code semantics: removing a skill removes its DIRECTORY, not just
+    // SKILL.md — a skill can carry supporting files (reference docs, scripts)
+    // that would otherwise be orphaned.
+    const skillDir = path.dirname(selected.filePath)
+    if (!existsSync(skillDir)) {
+      setNotice(`Directory not found: ${skillDir}`)
       return
     }
     try {
-      await unlink(selected.filePath)
-      // Dropping the row moves the cursor to whatever fills the vacancy; the
-      // parent re-renders with the refreshed list.
+      await rm(skillDir, { recursive: true })
+      // Refresh the registry right away: the version bump re-renders the
+      // panel with the refreshed list (the watcher would also catch it, but
+      // a whole-skills-directory delete deserves instant feedback).
+      void refreshSkillRegistry()
+      // Dropping the row moves the cursor to whatever fills the vacancy.
       const successor = skills[selectedIndex + 1] ?? skills[selectedIndex - 1]
       setSelectedName(successor?.name ?? null)
-      setNotice(`Deleted ${selected.filePath}`)
+      setNotice(`Deleted ${skillDir}`)
     } catch (error) {
       setNotice(
         `Could not delete: ${error instanceof Error ? error.message : String(error)}`,
@@ -241,7 +268,7 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
 
       {confirmingDelete ? (
         <text style={{ fg: theme.warning }}>
-          {`Delete ${selected?.filePath}? Enter confirm · Esc cancel`}
+          {`Delete ${selected && path.dirname(selected.filePath)}/? Enter confirm · Esc cancel`}
         </text>
       ) : (
         <text style={{ fg: theme.muted }}>

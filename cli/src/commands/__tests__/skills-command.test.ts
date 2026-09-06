@@ -7,7 +7,7 @@ import {
 } from '../../utils/skill-registry'
 import { findCommand } from '../command-registry'
 
-import type { RouterParams } from '../../command-registry'
+import type { RouterParams } from '../command-registry'
 import type { SkillDefinition } from '@codebuff/common/types/skill'
 
 const PROJECT_SKILL: SkillDefinition = {

@@ -733,7 +733,7 @@ const ALL_COMMANDS: CommandDefinition[] = [
           ...prev,
           getUserMessage(params.inputValue.trim()),
           getSystemMessage(
-            'No skills loaded.\n\nSkills load from:\n  - ~/.agents/skills/  (global)\n  - .agents/skills/    (project)\n\nInstall some with: npx skills add <owner/repo>',
+            'No skills loaded.\n\nSkills load from:\n  - ~/.claude/skills/   (global, Claude Code compatible)\n  - ~/.agents/skills/   (global)\n  - .claude/skills/     (project, Claude Code compatible)\n  - .agents/skills/     (project, overrides global)\n\nInstall some with: npx skills add <owner/repo>\nNew and changed skills are picked up live — no restart needed.',
           ),
         ])
         params.saveToHistory(params.inputValue.trim())
