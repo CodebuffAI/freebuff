@@ -123,6 +123,12 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     aliases: ['queued'],
   },
   {
+    id: 'skills',
+    label: 'skills',
+    description: 'Browse, run, open, or delete your loaded skills',
+    aliases: ['skill'],
+  },
+  {
     id: 'new',
     label: 'new',
     description: 'Clear the conversation history and start a new chat',
