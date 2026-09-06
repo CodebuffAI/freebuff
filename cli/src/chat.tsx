@@ -764,9 +764,9 @@ export const Chat = ({
   const askUserState = useChatStore((state) => state.askUserState)
 
   // Get loaded skills for slash commands. Keyed on the registry version so a
-  // live-reload (watcher or /skills refresh) swaps the list without a
-  // restart — the registry object itself is mutated in place, which zustand
-  // and useMemo would never notice.
+  // mid-session change (delete via the panel, edit on disk + reopen) swaps the
+  // list without a restart — the registry object itself is mutated in place,
+  // which zustand and useMemo would never notice.
   const skillsVersion = useSyncExternalStore(
     subscribeToSkillsVersion,
     getSkillsVersion,
@@ -1478,8 +1478,7 @@ export const Chat = ({
   }, [closeSkillsPanel, setInputFocused, inputRef])
 
   // Refresh the registry when the /skills panel opens, so a skill installed
-  // moments ago shows up even if the watcher missed it (e.g. directory
-  // created and populated before the watcher could arm on it).
+  // or edited moments ago shows up without restarting the CLI.
   useEffect(() => {
     if (!skillsPanelOpen) return
     void refreshSkillRegistry()

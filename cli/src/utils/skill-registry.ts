@@ -1,7 +1,6 @@
 import os from 'os'
-import { watch, type FSWatcher } from 'fs'
 
-import { loadSkills as sdkLoadSkills, resolveSkillsDirs } from '@codebuff/sdk'
+import { loadSkills as sdkLoadSkills } from '@codebuff/sdk'
 
 import { getProjectRoot, tryGetProjectRoot } from '../project-files'
 import { logger } from './logger'
@@ -93,62 +92,11 @@ export async function refreshSkillRegistry(): Promise<boolean> {
 }
 
 // ============================================================================
-// Live reload (Claude Code parity)
+// Live reload
 // ============================================================================
-// Claude Code watches skill directories and picks up add/edit/delete within
-// the running session. Without this, a skill installed mid-session is
-// invisible until restart — the "install every time" complaint.
-
-const SKILLS_WATCH_DEBOUNCE_MS = 300
-
-let skillWatchers: FSWatcher[] = []
-
-/**
- * Start watching the resolved skill directories (global + project, Claude
- * locations included). Idempotent. A directory that does not exist yet is
- * skipped — installs that create it later are caught by the refresh when the
- * /skills panel opens.
- */
-export function startSkillDirWatcher(): void {
-  if (skillWatchers.length > 0) return
-
-  const cwd = skillsCwd()
-  const homeDir = os.homedir()
-  const dirs = resolveSkillsDirs({ cwd, homeDir })
-
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null
-  const scheduleRefresh = () => {
-    if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null
-      void refreshSkillRegistry()
-    }, SKILLS_WATCH_DEBOUNCE_MS)
-  }
-
-  for (const dir of dirs) {
-    try {
-      const watcher = watch(dir, { persistent: false }, () => {
-        // Filter nothing: skill installs create directories AND write
-        // SKILL.md inside them, whole-skill deletes only touch the dir name,
-        // and the refresh itself is a debounced handful of stat+read calls.
-        // Simpler and correct beats a filename heuristic that misses cases.
-        scheduleRefresh()
-      })
-      watcher.on('error', (error) => {
-        logger.warn({ error }, `Skill watcher error for ${dir}`)
-      })
-      skillWatchers.push(watcher)
-    } catch {
-      // Directory does not exist (e.g. no ~/.agents/skills yet). Nothing to
-      // watch; installs create it fresh and a restart picks them up.
-    }
-  }
-}
-
-export function stopSkillDirWatcher(): void {
-  for (const watcher of skillWatchers) watcher.close()
-  skillWatchers = []
-}
+// Implemented on feat/skills-reload — deliberately not here. Watching skill
+// directories is an independently reviewable feature (recursive watch
+// semantics differ per platform) and lives in its own PR.
 
 /**
  * Initialize the skill registry by loading skills via the SDK.
@@ -237,7 +185,6 @@ export function getLoadedSkillsMessage(): string | null {
 export function __resetSkillRegistryForTests(): void {
   skillsCache = {}
   skillsVersion = 0
-  stopSkillDirWatcher()
 }
 
 /**

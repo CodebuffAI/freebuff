@@ -10,7 +10,6 @@ import {
   getSkillsVersion,
   initializeSkillRegistry,
   refreshSkillRegistry,
-  startSkillDirWatcher,
   subscribeToSkillsVersion,
 } from '../skill-registry'
 
@@ -36,8 +35,6 @@ const writeSkill = (
   )
   return skillDir
 }
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-registry-'))
@@ -137,28 +134,6 @@ describe('skill-registry refresh', () => {
     unsubscribe()
     await refreshSkillRegistry()
     expect(onChange).toHaveBeenCalledTimes(1)
-  })
-
-  test('watcher picks up an install without restart', async () => {
-    // The skills directory must exist BEFORE the watcher arms on it — fs.watch
-    // cannot watch a directory that does not exist. (A directory created and
-    // populated later is caught by the refresh-on-panel-open instead.)
-    fs.mkdirSync(path.join(tmpRoot, '.agents', 'skills'), { recursive: true })
-    startSkillDirWatcher()
-
-    await initializeSkillRegistry()
-    expect(getSkillCountForTest()).toBe(0)
-
-    writeSkill('project', 'deploy', {
-      name: 'deploy',
-      description: 'Deploy the app',
-    })
-
-    // Watcher debounce is 300ms; give it room on slow CI.
-    await wait(900)
-
-    expect(getSkillsVersion()).toBeGreaterThan(0)
-    expect(getLoadedSkills()['deploy']).toBeDefined()
   })
 })
 

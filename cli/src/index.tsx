@@ -59,10 +59,7 @@ import {
 import { startWindowsMachineProcessCensus } from './utils/helper-process-telemetry'
 import { startTerminalWatchdog } from './utils/terminal-watchdog'
 import { installTerminalProtocolController } from './utils/terminal-protocol-controller'
-import {
-  initializeSkillRegistry,
-  startSkillDirWatcher,
-} from './utils/skill-registry'
+import { initializeSkillRegistry } from './utils/skill-registry'
 import { detectTerminalTheme } from './utils/terminal-color-detection'
 import { setOscDetectedTheme } from './utils/theme-system'
 
@@ -320,11 +317,6 @@ async function main(): Promise<void> {
 
   // Initialize skill registry (loads skills from .agents/skills)
   await initializeSkillRegistry()
-
-  // Claude Code parity: watch skill directories so skills installed, edited,
-  // or deleted mid-session appear without a restart. A no-op when none of the
-  // directories exist yet.
-  startSkillDirWatcher()
 
   // Handle publish command before rendering the app
   if (isPublishCommand) {

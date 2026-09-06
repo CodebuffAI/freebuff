@@ -137,8 +137,8 @@ export const SkillsPanel: React.FC<SkillsPanelProps> = ({
     try {
       await rm(skillDir, { recursive: true })
       // Refresh the registry right away: the version bump re-renders the
-      // panel with the refreshed list (the watcher would also catch it, but
-      // a whole-skills-directory delete deserves instant feedback).
+      // panel with the refreshed list instead of waiting for the
+      // refresh-on-open.
       void refreshSkillRegistry()
       // Dropping the row moves the cursor to whatever fills the vacancy.
       const successor = filtered[selectedIndex + 1] ?? filtered[selectedIndex - 1]
