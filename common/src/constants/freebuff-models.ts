@@ -1765,12 +1765,6 @@ const MUSE_SPARK_12_CONTRIBUTOR_MODEL = {
   // better model. migrateSupersededFreebuffModelPreference rewrites a saved
   // 1.2 pick to 1.3 on load, which is the only way a browser that remembered
   // this row ever reaches the new one — the retired row itself is not offered.
-  supersededBy: {
-    modelId: FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
-    notice:
-      'Muse Spark 1.3 replaces 1.2: same price and terms, better at agentic coding.',
-    actionLabel: 'Switch to Muse Spark 1.3',
-  },
 } as const satisfies FreebuffModelOption
 
 /**
@@ -1888,6 +1882,7 @@ export const SUPPORTED_FREEBUFF_MODELS = [
   SOLAR_PRO_4_MODEL,
   GEMINI_38_FLASH_MODEL,
   MUSE_SPARK_13_CONTRIBUTOR_MODEL,
+  MUSE_SPARK_12_CONTRIBUTOR_MODEL,
   GLM_V52_MODEL,
   GLM_V53_FLASH_MODEL,
   DEEPSEEK_V4_FLASH_MODEL,
@@ -1985,14 +1980,29 @@ export const FREEBUFF_MODELS = [
   // served; the pause is. Its row stays in SUPPORTED_FREEBUFF_MODELS so the id
   // stays recognisable and coercible for the installed binaries that hold it.
   //
-  // MUSE SPARK 1.3 JOINED on 2026-09-04, and is last on purpose: ordering is
-  // the only steer this list gives, and this is the one row that may answer on
-  // a different model when its shared ceiling is full. A row carrying that
-  // caveat should not outrank one without it. Joining here is also what puts it
-  // in the premium pool and in the Web picker — both are derived from this list
-  // and the row's own `premium` flag, so there is no second entry to keep in
-  // step.
-  MUSE_SPARK_13_CONTRIBUTOR_MODEL,
+  // MUSE SPARK 1.3 LEFT on 2026-09-07, three days after joining. It is not
+  // busy or flapping any more, it is GONE at Meta: probed that day, all four
+  // keys returned `404 model_not_found` on 5 of 5 attempts each, while 1.2
+  // answered 5 of 5 on the same keys in the same minute. Meanwhile 2,838
+  // sessions a day were still being admitted on it, every one of them served
+  // on DeepSeek V4 Flash by the fallback — a row in the picker that cannot
+  // answer is a promise we break on every turn, however well the fallback
+  // works. Its id is PAUSED rather than deleted so the installed binaries
+  // that hold it are coerced instead of refused.
+  //
+  // 1.2 TAKES ITS PLACE, on every surface (2026-09-07). It answered 5 of 5 on
+  // all four keys in the same probe that found 1.3 dead, and the reason it was
+  // Freebuff Web only for its first life no longer holds: the completions
+  // layer reroutes anything the shared ceiling cannot absorb to DeepSeek V4
+  // Flash with no client involvement, and the key pool made saturation rare —
+  // so a surface no longer needs somewhere to render a wait, which was the
+  // only thing that kept it browser-bound. That is the same argument that
+  // widened 1.3 three days ago; it did not depend on the version.
+  //
+  // Last in the list on purpose, as 1.3 was: this is still the one row that
+  // may answer as another model when Meta's team-wide ceiling is full, and a
+  // row carrying that caveat should not outrank one without it.
+  MUSE_SPARK_12_CONTRIBUTOR_MODEL,
 ] as const satisfies readonly FreebuffModelOption[]
 
 /** Public full-access models metered by the shared premium pool. The catalog
@@ -2074,6 +2084,12 @@ export function getFreebuffPerModelSessionSpendCap(
  * clients that need it are the ones already installed.
  */
 export const FREEBUFF_PAUSED_FREE_MODEL_IDS: readonly string[] = [
+  // Muse Spark 1.3, withdrawn 2026-09-07: `404 model_not_found` on every key,
+  // every attempt. Paused rather than deleted for the reason the whole list
+  // exists — an id the server does not recognise can only be refused, and a
+  // refusal is the retry loop that cost the limited tier 2.5x its admissions
+  // in #1801. See its row in FREEBUFF_MODELS for the measurement.
+  FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
   // Withdrawn from free mode entirely on 2026-08-20. Its hourly burn became
   // the largest single line on the bill — and is not worth that at any tier.
   //
@@ -2276,11 +2292,9 @@ export const FREEBUFF_WEB_MODELS = [
   // back in the picker without making it admissible — a visible row whose
   // first send is coerced away, which is the offer-without-gate shape
   // common/src/testing/freebuff-offer-invariants.ts exists to catch.
-  // Muse Spark 1.2 is RETIRED from the picker as of 2026-09-02
-  // (FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS) and stays here only so sessions
-  // admitted on it finish their hour. Remove this entry with the row once
-  // those sessions have drained.
-  MUSE_SPARK_12_CONTRIBUTOR_MODEL,
+  // Muse Spark 1.2 reaches this list by spreading FREEBUFF_MODELS again,
+  // as it did before its 2026-09-02 retirement; naming it here too would
+  // duplicate the row.
   // Gemini 3.8 Flash is listed HERE rather than in FREEBUFF_MODELS, and the
   // difference is the whole gate. It is a Pro row
   // (FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS), and Pro is enforced on Freebuff Web
@@ -2351,7 +2365,6 @@ export const FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS = [
   // budget at Meta. A saved pick is rewritten to 1.3 by `supersededBy`.
   // Finish the removal (row, roots, allowlist entries, this line) once the
   // last 1.2 session is gone — a day is plenty.
-  FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
 ] as const
 
 /** Whether the Web/Cloud picker should offer `id` as a new selection. False

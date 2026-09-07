@@ -17,6 +17,7 @@ import base3FreeGlmV53Flash from '../base3-free-glm-5-3-flash'
 import base3FreeLuna from '../base3-free-luna'
 import base3FreeMimo from '../base3-free-mimo'
 import base3FreeMinimaxM3 from '../base3-free-minimax-m3'
+import base3FreeMuseSpark from '../base3-free-muse-spark'
 import base3FreeMuseSpark13 from '../base3-free-muse-spark-1-3'
 import base3FreeOxAlpha from '../base3-free-ox-alpha'
 import base3FreeGemini38Flash from '../base3-free-gemini-3-8-flash'
@@ -56,14 +57,17 @@ const CLI_ROOTS = [
   base3FreeOxAlpha,
   base3FreeSolarPro4,
   base3FreeGemini38Flash,
+  base3FreeMuseSpark,
   base3FreeMuseSpark13,
 ]
 
 describe('base3 CLI roots', () => {
   test('keeps the efficiency flags the runtime reads', () => {
-    // 16 since Muse Spark 1.3 reached the CLI. The count is asserted so a root
-    // added without the flags below cannot slip in unnoticed.
-    expect(CLI_ROOTS.length).toBe(16)
+    // 17 since Muse Spark 1.2 was restored beside the withdrawn 1.3 root (the
+    // paused id stays a recognised pick for binaries already shipped). The
+    // count is asserted so a root added without the flags below cannot slip in
+    // unnoticed.
+    expect(CLI_ROOTS.length).toBe(17)
     for (const agent of CLI_ROOTS) {
       // Windowed reads + the 100-entry glob cap + search-first tool wording.
       expect(agent.windowedFileReads).toBe(true)

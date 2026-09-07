@@ -39,7 +39,7 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 | **GPT-5.6 Luna**            | Full access             | Strong all-around with native images                              |
 | **MiMo 2.5**                | Full and limited access | Balanced performance with image support                           |
 | **Solar Pro 4**             | Full and limited access | Limited-time trial; 524K context, text only; unmetered at full access |
-| **Muse Spark 1.3**          | Full access             | Meta's agentic coding model; 1M context. Rate limited and shared by every user, so it queues when busy and answers on DeepSeek V4 Flash rather than making you wait |
+| **Muse Spark 1.2**          | Full access             | Meta's agentic coding model; 1M context. Rate limited and shared by every user, so it queues when busy and answers on DeepSeek V4 Flash rather than making you wait |
 
 Most models draw on your normal daily sessions rather than a separate limit. GLM 5.3 Flash, DeepSeek V4 Flash 07/31, MiMo 2.5 and Solar Pro 4 are unmetered at full access and cost no session at all. Models may still serve from a quantized (Q8_0) build.
 

@@ -19,7 +19,7 @@ freebuff
 
 ## Why Freebuff?
 
-**Choice of leading models** — The regular CLI picker includes GLM 5.3 Flash, DeepSeek, GPT-5.6 Luna, MiMo, Solar Pro 4, and Muse Spark 1.3, with GLM 5.3 Flash selected by default.
+**Choice of leading models** — The regular CLI picker includes GLM 5.3 Flash, DeepSeek, GPT-5.6 Luna, MiMo, Solar Pro 4, and Muse Spark 1.2, with GLM 5.3 Flash selected by default.
 
 **Fast** — 5–10× speed up. 3–5× tokens per second compared to Claude, plus context gathering in seconds.
 
@@ -29,7 +29,7 @@ freebuff
 
 **How can it be free?** Freebuff is supported by text ads.
 
-**What models do you use?** In full mode, the regular picker includes GLM 5.3 Flash, DeepSeek V4 Flash 07/31, GPT-5.6 Luna, MiMo 2.5, Solar Pro 4, and Muse Spark 1.3. Solar Pro 4 is a limited-time trial. Muse Spark 1.3 has a 1M-token context and is rate limited across all users, so at busy times it queues and then answers on DeepSeek V4 Flash instead of leaving you waiting. GLM 5.3 Flash is the CLI default, and it costs no session at all, so the default is always available no matter how much you have used. Limited mode uses GLM 5.3 Flash, DeepSeek V4 Flash 07/31, MiMo 2.5, and Solar Pro 4. Most models draw on your normal daily sessions rather than a separate limit; GLM 5.3 Flash, DeepSeek V4 Flash 07/31, MiMo 2.5, and Solar Pro 4 are unmetered at full access. Models may still serve from a quantized (Q8_0) build.
+**What models do you use?** In full mode, the regular picker includes GLM 5.3 Flash, DeepSeek V4 Flash 07/31, GPT-5.6 Luna, MiMo 2.5, Solar Pro 4, and Muse Spark 1.2. Solar Pro 4 is a limited-time trial. Muse Spark 1.2 has a 1M-token context and is rate limited across all users, so at busy times it queues and then answers on DeepSeek V4 Flash instead of leaving you waiting. GLM 5.3 Flash is the CLI default, and it costs no session at all, so the default is always available no matter how much you have used. Limited mode uses GLM 5.3 Flash, DeepSeek V4 Flash 07/31, MiMo 2.5, and Solar Pro 4. Most models draw on your normal daily sessions rather than a separate limit; GLM 5.3 Flash, DeepSeek V4 Flash 07/31, MiMo 2.5, and Solar Pro 4 are unmetered at full access. Models may still serve from a quantized (Q8_0) build.
 
 **Which countries is Freebuff available in?** All countries. Freebuff runs in "full" mode in the US, Canada, UK, EU, and other select countries, and in "limited" mode everywhere else (or while using a VPN). See [freebuff.com](https://freebuff.com) for the full list.
 

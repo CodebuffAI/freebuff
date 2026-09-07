@@ -176,6 +176,7 @@ export const FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   // with the Web map above like every other model both surfaces offer.
   [FREEBUFF_GEMINI_38_FLASH_MODEL_ID]: 'base3-free-gemini-3-8-flash',
   // Muse Spark 1.3 did the same on 2026-09-04.
+  [FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID]: 'base3-free-muse-spark',
   [FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID]: 'base3-free-muse-spark-1-3',
 }
 
@@ -462,6 +463,7 @@ export const FREEBUFF_REVIEWER_AGENT_ID_BY_MODEL: Record<string, string> = {
   // Required the moment Muse Spark became CLI-selectable, for the same reason.
   // Both of its roots set `noReview`, so nothing spawns this today — it is what
   // stops a base2 rollback falling through to the Flash reviewer and 403ing.
+  [FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID]: 'code-reviewer-muse-spark',
   [FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID]: 'code-reviewer-muse-spark-1-3',
 }
 
@@ -476,6 +478,7 @@ const FREEBUFF_DESKTOP_MODELS = new Set([
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_OX_ALPHA_MODEL_ID,
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
+  FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
   FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
 ])
 
@@ -603,7 +606,9 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
     FREEBUFF_DEEPSEEK_V4_FLASH_MAX_MODEL_ID,
   ]),
   'base2-free-luna-max': new Set([FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID]),
-  // Web-only Muse Spark root. Exactly one model, like every other pinned root:
+  // The Muse Spark root — on every surface since 2026-09-07, when 1.3 was
+  // withdrawn and 1.2 took its place. Exactly one model, like every other
+  // pinned root:
   // the rate-limit queue accounts by model, so a root that could also run
   // something else would let a turn escape the queue's bookkeeping.
   'base2-free-muse-spark': new Set([
@@ -701,6 +706,9 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   'code-reviewer-fable': new Set([FREEBUFF_FABLE_5_MODEL_ID]),
   'code-reviewer-gemini-3-8-flash': new Set([
     FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
+  ]),
+  'code-reviewer-muse-spark': new Set([
+    FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
   ]),
   'code-reviewer-muse-spark-1-3': new Set([
     FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
