@@ -116,8 +116,9 @@ export function isFreebuffStreakGlmBonusActive(): boolean {
  * The GLM pool resets daily since 2026-07-29 (weekly before), so these units
  * refill at that cadence. The name keeps its historical "Weekly". */
 export function getFreebuffStreakGlmWeeklyUnits(streak: number): number {
+  const safeStreak = Math.max(0, streak)
   const tiers = Math.min(
-    Math.floor(streak / FREEBUFF_STREAK_REWARD_INTERVAL_DAYS),
+    Math.floor(safeStreak / FREEBUFF_STREAK_REWARD_INTERVAL_DAYS),
     FREEBUFF_STREAK_REWARD_BONUS_MAX_MULTIPLIER,
   )
   return tiers * FREEBUFF_STREAK_BONUS_SESSION_UNITS
