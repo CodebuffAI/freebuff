@@ -292,8 +292,10 @@ export function evaluateStatCoverage(row: StatCoverageRow): StatCoverage {
   // may break the alert that does not consult it.
   const statementsBlind = statementRows === 0
   const activityBlind = activityVisible === 0
-  const pct = (part: number, whole: number) =>
-    whole > 0 ? Math.round((part / whole) * 100) : 0
+  const pct = (part: number, whole: number) => {
+    if (!Number.isFinite(part) || !Number.isFinite(whole) || whole <= 0) return 0
+    return Math.round((part / whole) * 100)
+  }
   const summary = row.has_read_all_stats
     ? `role ${row.role} has pg_read_all_stats: full fleet visibility`
     : `role ${row.role} lacks pg_read_all_stats — ${statementsWithText}/${statementRows} ` +
