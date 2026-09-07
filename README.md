@@ -64,7 +64,7 @@ Freebuff uses specialized agents instead of sending every task through one model
 
 ## Free access
 
-Freebuff is available in every country. Supported regions receive full access; other regions and VPN users receive limited access to DeepSeek V4 Flash 07/31, GLM 5.3 Flash, MiMo 2.5, and Solar Pro 4. Accounts on Freebucks use the displayed model price and balance. On the legacy session system, limited access includes six one-hour sessions per day, earnable up to seven; GLM uses earned reward sessions instead.
+Freebuff is available in every country. Supported regions receive full access; other regions and VPN users receive limited access to GLM 5.3 Flash, DeepSeek V4 Flash 07/31, MiMo 2.5, and Solar Pro 4. Accounts on Freebucks use the displayed model price and balance. On the legacy session system, limited access includes six one-hour sessions per day, earnable up to seven; GLM uses earned reward sessions instead.
 
 Text ads support the included models. Freebuff shows the applicable session limits and any model-specific data-use notice before you start.
 

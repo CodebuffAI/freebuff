@@ -2734,20 +2734,36 @@ export const FALLBACK_FREEBUFF_MODEL_ID: FreebuffModelId =
 
 /** The limited tier's hero, and the model an out-of-tier or stale pick is
  *  coerced to. The same row as the full-access default since 2026-09-02. */
-// NOT the full-access default, and the divergence is deliberate as of
-// 2026-09-05. GLM 5.3 Flash became the default on every surface that day, and
-// this tier is the one place it cannot follow: at limited access without a paid
-// plan the CLI meters GLM by the EARNED reward balance
-// (`referral.weeklySessionsRemaining`), so a limited user who has earned
-// nothing has it locked. A hero is the row Enter lands on, so a locked hero is
-// a first keypress that fails — the exact invariant
-// `getRecommendedFreebuffModelId` exists to hold.
+// Since 2026-09-07 this is the COERCION TARGET and no longer the hero: the
+// row an out-of-tier or stale pick is rewritten to, and the row a limited
+// session is substituted onto. The hero — what the picker leads with and
+// Enter lands on — is LIMITED_FREEBUFF_HERO_MODEL_ID below. They were one
+// constant until then; splitting them is what lets the limited tier
+// recommend GLM 5.3 Flash while keeping a coercion target that is joinable
+// with NO meter, NO grant and NO plan.
 //
-// DeepSeek V4 Flash stays because it is unmetered and always joinable here. Fold
-// this back into the default only once GLM is reachable at limited access
-// WITHOUT a grant.
+// Why the two differ: at limited access without a plan, OFF the Freebucks
+// meter, GLM is metered by the EARNED reward balance, so a limited user who
+// has earned nothing has it locked. The meter now covers every account
+// (audience `all`, 2026-09-05) and prices GLM at 5 on every tier, which is
+// why GLM can be the hero — but the audience knob is also the documented
+// rollback for Freebucks, and a rollback must not turn every coerced limited
+// pick into a refusal. DeepSeek V4 Flash stays here because it is joinable
+// under every configuration this server can be in.
 export const LIMITED_FREEBUFF_MODEL_ID: FreebuffModelId =
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
+/** The limited tier's HERO — the row its pickers lead with and recommend —
+ *  as distinct from the coercion target above. GLM 5.3 Flash since
+ *  2026-09-07: it is the cheapest row we serve (~5x under DeepSeek V4 Flash
+ *  per message, and Flash carried 51.6% of a day's cost on 2026-09-06 with
+ *  17k users to GLM's 3.5k), it is priced at 5 Freebucks on every tier, and
+ *  the limited tier was the last surface still leading with the dear row.
+ *  Reachable at limited access because every account is on the meter; if the
+ *  meter is ever rolled back, every picker already repairs a locked hero onto
+ *  the next joinable row (the CLI's grid repair, Desktop's `canStart` filter),
+ *  and the server coerces onto LIMITED_FREEBUFF_MODEL_ID, never onto this. */
+export const LIMITED_FREEBUFF_HERO_MODEL_ID: FreebuffModelId =
+  FREEBUFF_GLM_V53_FLASH_MODEL_ID
 /**
  * The limited tier's catalog, hero first — the ONE owner of which models are
  * limited-tier: the web geo-exempt list, the quota pool, and chat's list all
@@ -2772,12 +2788,12 @@ export const LIMITED_FREEBUFF_MODEL_ID: FreebuffModelId =
 // Solar Pro 4 joined on 2026-09-03. Limited access is still metered by the
 // regional pool, so this widens the catalog without making that tier unmetered.
 export const LIMITED_FREEBUFF_MODEL_IDS = [
-  // Hero first — and it stayed here on 2026-09-05 when the full-access default
-  // moved to GLM 5.3 Flash. See LIMITED_FREEBUFF_MODEL_ID for why this tier
-  // cannot follow: GLM is earned-metered at limited access.
+  // Hero first (LIMITED_FREEBUFF_HERO_MODEL_ID). GLM 5.3 Flash since
+  // 2026-09-07 — see LIMITED_FREEBUFF_MODEL_ID for why the coercion target
+  // is a different row.
+  FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_MIMO_V25_MODEL_ID,
-  FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   ...(FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.limitedAccess
     ? [FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.modelId]
     : []),
@@ -3041,7 +3057,7 @@ export function getRecommendedFreebuffModelId(
   accessTier: FreebuffAccessTier | null | undefined,
   options: { premiumExhausted?: boolean } = {},
 ): SupportedFreebuffModelId {
-  if (accessTier === 'limited') return LIMITED_FREEBUFF_MODEL_ID
+  if (accessTier === 'limited') return LIMITED_FREEBUFF_HERO_MODEL_ID
   // The step-down fires only if the default actually DRAWS on the pool that ran
   // dry. It used to fire unconditionally, which was correct for as long as
   // every default was premium (2026-08-18 onwards) and became wrong the moment
@@ -3065,7 +3081,7 @@ export function getRecommendedFreebuffWebModelId(
   accessTier: FreebuffAccessTier | null | undefined,
   options: { premiumExhausted?: boolean } = {},
 ): FreebuffWebModelId {
-  if (accessTier === 'limited') return LIMITED_FREEBUFF_MODEL_ID
+  if (accessTier === 'limited') return LIMITED_FREEBUFF_HERO_MODEL_ID
   // Same condition as getRecommendedFreebuffModelId, and for the same reason —
   // see the comment there. Keyed off the WEB default, since the two constants
   // are allowed to name different models and have done.

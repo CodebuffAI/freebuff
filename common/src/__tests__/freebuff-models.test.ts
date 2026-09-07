@@ -39,6 +39,7 @@ import {
   FREEBUFF_WEB_GOD_ONLY_MODELS,
   FREEBUFF_WEB_MODELS,
   FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS,
+  LIMITED_FREEBUFF_HERO_MODEL_ID,
   LIMITED_FREEBUFF_MODEL_ID,
   LIMITED_FREEBUFF_MODEL_IDS,
   LIMITED_FREEBUFF_MODEL_MISMATCH_MESSAGE,
@@ -1269,18 +1270,22 @@ describe('freebuff model availability', () => {
     expect(completion).toBeLessThan(6.0)
   })
 
-  test('limited access exposes Flash, MiMo, GLM 5.3 Flash, and Solar Pro 4', () => {
-    // The limited default is the same model as the full default, hero first.
+  test('limited access exposes GLM 5.3 Flash, Flash, MiMo, and Solar Pro 4', () => {
+    // Two constants since 2026-09-07. The HERO (what the pickers lead with
+    // and recommend) is the same row as the full default again: GLM 5.3
+    // Flash, the cheapest row we serve, priced at 5 on every tier now that
+    // the meter covers every account. The COERCION TARGET (where an
+    // out-of-tier pick and a substituted session land) stays on DeepSeek V4
+    // Flash, the one row joinable with no meter, no grant and no plan — so a
+    // rollback of the Freebucks audience cannot turn coercion into refusal.
+    expect(LIMITED_FREEBUFF_HERO_MODEL_ID).toBe(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
+    expect(LIMITED_FREEBUFF_HERO_MODEL_ID).toBe(DEFAULT_FREEBUFF_MODEL_ID)
     expect(LIMITED_FREEBUFF_MODEL_ID).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
-    // DIVERGED from the full-access default on 2026-09-05, deliberately. GLM
-    // 5.3 Flash became the default everywhere else; at limited access without a
-    // plan it is metered by the EARNED reward balance, so a user who has earned
-    // nothing has it locked — and a locked hero is a first keypress that fails.
-    expect(LIMITED_FREEBUFF_MODEL_ID).not.toBe(DEFAULT_FREEBUFF_MODEL_ID)
+    expect(LIMITED_FREEBUFF_MODEL_IDS[0]).toBe(LIMITED_FREEBUFF_HERO_MODEL_ID)
     expect(LIMITED_FREEBUFF_MODEL_IDS).toEqual([
+      FREEBUFF_GLM_V53_FLASH_MODEL_ID,
       FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
       FREEBUFF_MIMO_V25_MODEL_ID,
-      FREEBUFF_GLM_V53_FLASH_MODEL_ID,
       FREEBUFF_SOLAR_PRO_4_MODEL_ID,
     ])
     expect(getFreebuffModelsForAccessTier('limited').map((m) => m.id)).toEqual(
@@ -1335,7 +1340,7 @@ describe('freebuff model availability', () => {
       ),
     ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     expect(LIMITED_FREEBUFF_MODEL_MISMATCH_MESSAGE).toBe(
-      'Limited free access is only available with DeepSeek V4 Flash 07/31 or MiMo 2.5 or GLM 5.3 Flash or Solar Pro 4.',
+      'Limited free access is only available with GLM 5.3 Flash or DeepSeek V4 Flash 07/31 or MiMo 2.5 or Solar Pro 4.',
     )
     // No row in the tier supersedes another, so no picker may offer a switch
     // that admission would coerce straight back.
@@ -1379,7 +1384,7 @@ describe('freebuff model availability', () => {
     // load-bearing one: the hero is the row Enter lands on, so a hero outside
     // the tier's own set is a first keypress that fails admission.
     expect(getRecommendedFreebuffModelId('limited')).toBe(
-      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+      FREEBUFF_GLM_V53_FLASH_MODEL_ID,
     )
     expect(
       getFreebuffModelsForAccessTier('limited').some(
@@ -1390,7 +1395,7 @@ describe('freebuff model availability', () => {
     // hero anywhere — that tier has no premium pool to spend.
     expect(
       getRecommendedFreebuffModelId('limited', { premiumExhausted: true }),
-    ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+    ).toBe(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
   })
 
   test('every surface starts on GLM 5.3 Flash, on two separate constants', () => {
@@ -1418,12 +1423,12 @@ describe('freebuff model availability', () => {
         FREEBUFF_WEB_MODELS.map((model) => model.id),
       ),
     ).toBeUndefined()
-    // The limited tier cannot name the full-access default at all. Asserted
-    // through the tier constant so the hero and the catalog cannot part company.
-    // (The full-access pool running dry no longer moves this hero — the default
+    // The limited tier recommends its own HERO. Asserted through the tier
+    // constant so the hero and the catalog cannot part company. (The
+    // full-access pool running dry no longer moves this hero — the default
     // is unmetered — but the tier split is unchanged and still load-bearing.)
     expect(getRecommendedFreebuffWebModelId('limited')).toBe(
-      LIMITED_FREEBUFF_MODEL_ID,
+      LIMITED_FREEBUFF_HERO_MODEL_ID,
     )
     // Does NOT step down, for the same reason the CLI hero does not: the Web
     // default is unmetered as of 2026-08-30, so a spent PREMIUM pool says
@@ -1455,7 +1460,10 @@ describe('freebuff model availability', () => {
         DEFAULT_FREEBUFF_WEB_MODEL_ID,
       ),
     ).toBe(true)
+    // The limited COERCION target is a different row on purpose (the one
+    // joinable off the meter); the limited HERO is this same row.
     expect(DEFAULT_FREEBUFF_WEB_MODEL_ID).not.toBe(LIMITED_FREEBUFF_MODEL_ID)
+    expect(DEFAULT_FREEBUFF_WEB_MODEL_ID).toBe(LIMITED_FREEBUFF_HERO_MODEL_ID)
     // A limited user must reach it with NO grant and NO plan. This is the real
     // invariant: the hero is the row Enter lands on, so if the only door to it
     // were an earned one, every limited user without a grant would fail their
