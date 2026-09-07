@@ -30,7 +30,10 @@
  */
 
 import type { StreamRecoverySource } from '@codebuff/common/types/contracts/llm'
-import { isTransientNetworkError } from '@codebuff/common/util/error'
+import {
+  extractApiErrorDetails,
+  isTransientNetworkError,
+} from '@codebuff/common/util/error'
 
 export interface StreamFinishInfo {
   finishReason: string
@@ -134,11 +137,26 @@ export function classifyStreamEndRecovery(params: {
  * `ConnectionClosed` / `ECONNRESET`) instead of the graceful-but-incomplete
  * stream ending handled by {@link classifyStreamEndRecovery}. Both represent
  * the same recoverable condition to the agent loop.
+ *
+ * A provider-reported 5xx/429 that arrives mid-stream — the openai-compatible
+ * shim enqueues it as an `error` part with `finishReason='error'` — is the
+ * same transient event as a severed body: the upstream had a bad moment, and
+ * the retry the agent loop forces (capped) is the response either way. A
+ * client-error status (400/401/402/403) is deterministic — retrying cannot
+ * help — so it stays fatal and propagates to the run's error handling.
  */
 export function classifyThrownStreamRecovery(params: {
   aborted: boolean
   error: unknown
 }): StreamEndRecovery | null {
-  if (params.aborted || !isTransientNetworkError(params.error)) return null
-  return STREAM_INTERRUPTED_RECOVERY
+  if (params.aborted) return null
+  if (isTransientNetworkError(params.error)) return STREAM_INTERRUPTED_RECOVERY
+  const { statusCode } = extractApiErrorDetails(params.error)
+  if (statusCode === 429 || (statusCode !== undefined && statusCode >= 500)) {
+    return {
+      source: 'stream-interrupted',
+      message: `The provider reported a temporary failure (HTTP ${statusCode}) while the response was streaming, so the output above may be cut off mid-thought. Continue from where it left off (or start the step over if nothing useful arrived).`,
+    }
+  }
+  return null
 }
