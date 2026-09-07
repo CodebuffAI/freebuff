@@ -207,8 +207,19 @@ async function postToImprezia(params: {
         onFailure?.('provider_error')
         return null
       }
+      // WITH THE BODY, truncated. Without it the line says only "400" and the
+      // cause is unknowable from the logs: on 2026-09-07 this fired ~270 times
+      // an hour for weeks and nobody could say why, because every field we
+      // logged was one we already knew. Imprezia's error bodies name the
+      // rejected field. Read defensively — a body that stalls or is already
+      // consumed must not turn a failed ad fetch into a failed turn — and
+      // capped, because this is a third party's string in our logs.
+      const detail = await response
+        .text()
+        .then((text) => text.slice(0, 300))
+        .catch(() => null)
       logger.error(
-        { baseUrl, url, status: response.status },
+        { baseUrl, url, status: response.status, detail },
         '[ads:imprezia] API returned error',
       )
       onFailure?.('provider_error')
