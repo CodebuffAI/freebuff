@@ -5,14 +5,17 @@ export class MinHeap<T> {
   private heap: { item: T; score: number }[] = []
 
   private getParentIndex(index: number): number {
+    if (!Number.isFinite(index)) return 0
     return Math.floor((index - 1) / 2)
   }
 
   private getLeftChildIndex(index: number): number {
+    if (!Number.isFinite(index)) return 0
     return 2 * index + 1
   }
 
   private getRightChildIndex(index: number): number {
+    if (!Number.isFinite(index)) return 0
     return 2 * index + 2
   }
 
