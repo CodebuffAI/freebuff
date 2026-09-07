@@ -216,3 +216,17 @@ test('marks response loss and server errors after a POST as unknown outcomes', (
     ),
   ).toBe('retry')
 })
+
+test('DELETE sends the held instance and preserves the server refund receipt', async () => {
+  fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
+    Response.json({ status: 'ended', freebucksRefund: 4 }),
+  )
+  const result = await callFreebuffSession('DELETE', 'test-token', {
+    instanceId: 'held-cli',
+  })
+  expect(result).toEqual({ status: 'ended', freebucksRefund: 4 })
+  const [, init] = fetchSpy.mock.calls[0]!
+  expect(new Headers(init?.headers).get('x-freebuff-instance-id')).toBe(
+    'held-cli',
+  )
+})

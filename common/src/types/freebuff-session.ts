@@ -785,6 +785,10 @@ export type FreebuffSessionAdmissionResponse = (
        *  client may also synthesize a no-grace `{ status: 'ended' }` when a
        *  poll reveals the row was swept. Both render the same UI. */
       status: 'ended'
+      /** Final early-end refund receipt, including zero; retries return the same amount. */
+      freebucksRefund?: number
+      /** Final usage is still outstanding; replay DELETE with the same instance for its receipt. */
+      freebucksRefundPending?: boolean
       accessTier?: FreebuffAccessTier
       instanceId?: string
       admittedAt?: string

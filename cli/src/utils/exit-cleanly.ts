@@ -1,7 +1,7 @@
 import { flushAnalytics } from './analytics'
 import { IS_FREEBUFF } from './constants'
 import { stopEngagementTracking } from './engagement'
-import { endFreebuffSessionBestEffort } from './freebuff-session-api'
+import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import { drainClientLogs } from './log-shipper'
 import { settleInterruptedSponsoredRun } from './sponsored-run-exit'
 import { withTimeout } from './terminal-color-detection'
@@ -99,7 +99,7 @@ export const exitCliCleanly = createExitCliCleanly({
   stopEngagementTracking,
   flushAnalytics,
   drainClientLogs,
-  endFreebuffSession: endFreebuffSessionBestEffort,
+  endFreebuffSession: () => useFreebuffSessionStore.getState().releaseSlot(),
   settleSponsoredRun: settleInterruptedSponsoredRun,
   // `process.stdout.write`, not the logger and not the renderer: the renderer is
   // gone by now, and a line about a directory that exists on the user's disk is

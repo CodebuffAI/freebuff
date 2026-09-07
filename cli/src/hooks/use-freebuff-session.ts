@@ -42,7 +42,6 @@ import {
   holdsLiveFreebuffSlot,
   isFreebuffSessionTimeoutError,
   mergeCompactActiveSession,
-  releaseFreebuffSlot,
 } from '../utils/freebuff-session-api'
 import {
   failedPollDelayMs,
@@ -212,16 +211,42 @@ async function restartFreebuffSession(
   // resetting its store so late deltas cannot land in the next session.
   if (opts.resetChat) {
     stopActiveRun('session-transition')
-    useChatStore.getState().reset()
   }
   // Halt the running poll loop before we touch local stores or DELETE the
   // slot. Otherwise an in-flight GET could land mid-reset and overwrite
   // state, or the next scheduled tick could fire between DELETE and
   // restart() with stale assumptions. restart() re-aborts and re-arms
   // below; the extra abort here is cheap.
-  controller?.abort()
-  if (opts.releaseSlot) await releaseFreebuffSlot()
-  await controller?.restart(mode)
+  const currentController = controller
+  const currentToken = getAuthTokenDetails().token
+  const currentSession = useFreebuffSessionStore.getState().session
+  const stillCurrent = () =>
+    controller === currentController &&
+    getAuthTokenDetails().token === currentToken &&
+    useFreebuffSessionStore.getState().session === currentSession
+  currentController?.abort()
+  if (opts.releaseSlot) {
+    try {
+      await useFreebuffSessionStore.getState()
+    .releaseSlot()
+    } catch (error) {
+      if (!stillCurrent()) throw error
+      // Keep the chat and held instance: the server may already have credited
+      // the refund. A retry must use that same instance to recover its receipt.
+      useChatStore
+        .getState()
+        .setMessages((messages) => [
+          ...messages,
+          getSystemMessage(
+            `Could not confirm the session ended. Retry /end-session. ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        ])
+      throw error
+    }
+  }
+  if (!stillCurrent()) return
+  if (opts.resetChat) useChatStore.getState().reset()
+  await currentController?.restart(mode)
 }
 
 /**
@@ -356,7 +381,9 @@ export function markFreebuffSessionCountryBlocked(params: {
   controller?.apply({ status: 'country_blocked', ...params })
   // Best-effort DELETE so we don't hold a session row the server is already
   // refusing to serve at chat time.
-  releaseFreebuffSlot().catch(() => {})
+  useFreebuffSessionStore
+    .getState().releaseSlot()
+    .catch(() => {})
 }
 
 /** Flip into the local `ended` state without an instanceId (server has lost
@@ -382,6 +409,8 @@ export function markFreebuffSessionEnded(): void {
 interface UseFreebuffSessionResult {
   session: FreebuffSessionResponse | null
   failure: ReturnType<typeof useFreebuffSessionStore.getState>['failure']
+  lastRefund: number | null
+  refundPending: boolean
 }
 
 /**
@@ -400,6 +429,26 @@ interface UseFreebuffSessionResult {
 export function useFreebuffSession(): UseFreebuffSessionResult {
   const session = useFreebuffSessionStore((s) => s.session)
   const failure = useFreebuffSessionStore((s) => s.failure)
+  const lastRefund = useFreebuffSessionStore((s) => s.lastRefund)
+  const pendingRefund = useFreebuffSessionStore((s) => s.pendingRefund)
+  useEffect(() => {
+    if (!pendingRefund) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      try {
+        await useFreebuffSessionStore.getState().refreshRefund()
+      } catch {
+        /* Keep the pending receipt for a later retry. */
+      }
+      if (!cancelled) timer = setTimeout(poll, 3000)
+    }
+    timer = setTimeout(poll, 3000)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [pendingRefund])
 
   useEffect(() => {
     const { setSession, setFailure } = useFreebuffSessionStore.getState()
@@ -525,7 +574,7 @@ export function useFreebuffSession(): UseFreebuffSessionResult {
         // another model rejects the switch. Two cases:
         //   - DELIBERATE pick (the explicit-pick marker was set): honor the
         //     click — end the locked session (usually a stale row from a
-        //     crashed CLI; DELETE is keyed on user, not instance) and
+        //     crashed CLI; read its instance before deleting) and
         //     re-claim on the requested model. The marker is consume-once,
         //     so if the retried POST races another instance back into
         //     model_locked we take the revert branch instead of looping.
@@ -541,10 +590,21 @@ export function useFreebuffSession(): UseFreebuffSessionResult {
             const requested = getFreebuffModel(explicitPickModel).displayName
             let released = false
             try {
-              await callFreebuffSession('DELETE', token, {
+              const held = await callFreebuffSession('GET', token, {
                 signal: fetchController.signal,
               })
-              released = true
+              if (
+                !cancelled &&
+                !fetchController.signal.aborted &&
+                generation === restartGeneration &&
+                held.status === 'active' &&
+                held.model === next.currentModel
+              ) {
+                await useFreebuffSessionStore
+                  .getState()
+                  .releaseSlot(held, fetchController.signal)
+                released = true
+              }
             } catch {
               // DELETE failed — fall through to the revert-with-explanation
               // path below rather than stranding the user mid-switch.
@@ -857,12 +917,15 @@ export function useFreebuffSession(): UseFreebuffSessionResult {
       // Fire-and-forget DELETE. Only release if we actually held a slot so
       // we don't generate spurious DELETEs (e.g. HMR before POST completes).
       if (holdsLiveFreebuffSlot(current)) {
-        callFreebuffSession('DELETE', token).catch(() => {})
+        useFreebuffSessionStore
+          .getState()
+          .releaseSlot()
+          .catch(() => {})
       }
       setSession(null)
       setFailure(null)
     }
   }, [])
 
-  return { session, failure }
+  return { session, failure, lastRefund, refundPending: pendingRefund !== null }
 }

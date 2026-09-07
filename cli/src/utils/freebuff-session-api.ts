@@ -5,10 +5,6 @@ import {
   FREEBUFF_MODEL_HEADER,
 } from '@codebuff/common/constants/freebuff-models'
 
-import { useFreebuffSessionStore } from '../state/freebuff-session-store'
-import { getAuthTokenDetails } from './auth'
-import { IS_FREEBUFF } from './constants'
-
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
 import type { FreebuffSessionServerResponse } from '@codebuff/common/types/freebuff-session'
 
@@ -111,7 +107,7 @@ export async function callFreebuffSession(
   } = {},
 ): Promise<FreebuffSessionServerResponse> {
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
-  if (method === 'GET' && opts.instanceId) {
+  if ((method === 'GET' || method === 'DELETE') && opts.instanceId) {
     headers[FREEBUFF_INSTANCE_HEADER] = opts.instanceId
   }
   if (method === 'GET' && opts.compact) {
@@ -229,25 +225,4 @@ export function holdsLiveFreebuffSlot(
     current.status === 'active' ||
     (current.status === 'ended' && Boolean(current.instanceId))
   )
-}
-
-/** Best-effort DELETE of the caller's session row when it holds a live slot. */
-export async function releaseFreebuffSlot(): Promise<void> {
-  const current = useFreebuffSessionStore.getState().session
-  if (!holdsLiveFreebuffSlot(current)) return
-
-  const { token } = getAuthTokenDetails()
-  if (!token) return
-
-  try {
-    await callFreebuffSession('DELETE', token)
-  } catch {
-    // The server-side sweep is the backstop.
-  }
-}
-
-/** Release the Freebuff slot on exit paths that skip React unmount. */
-export async function endFreebuffSessionBestEffort(): Promise<void> {
-  if (!IS_FREEBUFF) return
-  await releaseFreebuffSlot()
 }
