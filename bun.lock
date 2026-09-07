@@ -446,7 +446,7 @@
 
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
 
-    "@posthog/core": ["@posthog/core@1.50.6", "", { "dependencies": { "@posthog/types": "^1.409.1" } }, "sha512-Lno7WoIk5QI/HvlkW+ajfrE/DKTrKoA5pULB/HK6Om/ShGGUAJfOpOn22yWBtBvZ6R+bhAEsWXtzcc8QwNF8gQ=="],
+    "@posthog/core": ["@posthog/core@1.51.0", "", { "dependencies": { "@posthog/types": "^1.409.1" } }, "sha512-LilmmtjcrjV1LgaVNQXrAUt4IXcWIYMrwEtx6VJUUFDeBBdmeI99jshKGtAWugYeB3Wkcp9xQIVCrxIYRpNiRA=="],
 
     "@posthog/types": ["@posthog/types@1.409.1", "", {}, "sha512-lA2sSGQUdVknSQl93uN9eUXDwkCMjAuthq24GONGHzMWwVygsKNHlWCnlJsVv2giDokj2p1NopO4zsE2S7gYjA=="],
 
