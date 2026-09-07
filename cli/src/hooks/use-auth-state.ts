@@ -2,12 +2,14 @@ import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 import { useCallback, useEffect, useState } from 'react'
 
 import { useAuthQuery, useLogoutMutation } from './use-auth-query'
+import { getSessionBoundUserId } from './use-freebuff-session'
 import { useLoginStore } from '../state/login-store'
 import { identifyUser, trackEvent } from '../utils/analytics'
-import { getUserCredentials } from '../utils/auth'
+import { clearUserCredentials, getUserCredentials } from '../utils/auth'
 import { resetCodebuffClient } from '../utils/codebuff-client'
 import { IS_FREEBUFF } from '../utils/constants'
-import { loggerContext } from '../utils/logger'
+import { logger, loggerContext } from '../utils/logger'
+import { clearSessionBinding } from '../utils/session-binding'
 
 import type { MultilineInputHandle } from '../components/multiline-input'
 import type { User } from '../utils/auth'
@@ -91,9 +93,29 @@ export const useAuthState = ({
     }
   }, [authQuery.isSuccess, authQuery.isError, authQuery.data, user])
 
-  // Handle successful login
+  // Handle successful login. Returns a rejection reason if the login was
+  // blocked (e.g. session bound to a different account), or null on success.
   const handleLoginSuccess = useCallback(
-    (loggedInUser: User) => {
+    (loggedInUser: User): string | null => {
+      // Prevent multi-account abuse: if a session is bound to a different user,
+      // reject the login and clear the just-saved credentials.
+      const boundUserId = getSessionBoundUserId()
+      if (boundUserId && loggedInUser.id !== boundUserId) {
+        logger.warn(
+          {
+            sessionBoundUserId: boundUserId,
+            attemptedUserId: loggedInUser.id,
+          },
+          '[auth] Login rejected: session bound to different user',
+        )
+        trackEvent(AnalyticsEvent.ACCOUNT_SWITCH_BLOCKED, {
+          sessionBoundUserId: boundUserId,
+          attemptedUserId: loggedInUser.id ?? 'unknown',
+        })
+        clearUserCredentials()
+        return 'This session is tied to another account. End the current session first, or log out with /logout --force.'
+      }
+
       // Identify first (aliases the pre-login anonymous history to the real
       // user id) so the login event below is attributed to the user.
       if (loggedInUser.id && loggedInUser.email) {
@@ -118,6 +140,7 @@ export const useAuthState = ({
       setInputFocused(true)
       setUser(loggedInUser)
       setIsAuthenticated(true)
+      return null
     },
     [resetChatStore, resetLoginState, setInputFocused],
   )

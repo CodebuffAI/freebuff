@@ -207,7 +207,7 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
   {
     id: 'logout',
     label: 'logout',
-    description: 'Sign out of your session',
+    description: 'Sign out of your session (--force to bypass active session check)',
     aliases: ['signout'],
     implicitCommand: true,
   },

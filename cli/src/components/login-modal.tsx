@@ -27,7 +27,7 @@ import { getLogoBlockColor, getLogoAccentColor } from '../utils/theme-system'
 import type { User } from '../utils/auth'
 
 interface LoginModalProps {
-  onLoginSuccess: (user: User) => void
+  onLoginSuccess: (user: User) => string | null
   hasInvalidCredentials?: boolean | null
 }
 
@@ -148,7 +148,11 @@ export const LoginModal = ({
   const handleLoginSuccess = useCallback((user: User) => {
     loginMutationRef.current.mutate(user, {
       onSuccess: (validatedUser) => {
-        onLoginSuccessRef.current(validatedUser)
+        const rejectionReason = onLoginSuccessRef.current(validatedUser)
+        if (rejectionReason) {
+          setError(rejectionReason)
+          setIsWaitingForEnter(false)
+        }
       },
       onError: (error) => {
         logger.error(
@@ -157,7 +161,11 @@ export const LoginModal = ({
           },
           '❌ Login validation failed, proceeding with raw user',
         )
-        onLoginSuccessRef.current(user)
+        const rejectionReason = onLoginSuccessRef.current(user)
+        if (rejectionReason) {
+          setError(rejectionReason)
+          setIsWaitingForEnter(false)
+        }
       },
     })
   }, [])

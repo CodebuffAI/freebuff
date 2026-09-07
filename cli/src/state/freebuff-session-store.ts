@@ -40,14 +40,24 @@ export type FreebuffSessionFailure =
 interface FreebuffSessionStore {
   session: FreebuffSessionResponse | null
   failure: FreebuffSessionFailure | null
+  /**
+   * The user ID that owns the current active session. Set when the session
+   * becomes `active`, cleared when the session ends. Used to prevent
+   * account-switching abuse — if a session is bound to user A, user B
+   * cannot log in on the same machine without ending the session first.
+   */
+  sessionBoundUserId: string | null
 
   setSession: (session: FreebuffSessionResponse | null) => void
   setFailure: (failure: FreebuffSessionFailure | null) => void
+  setSessionBoundUserId: (userId: string | null) => void
 }
 
 export const useFreebuffSessionStore = create<FreebuffSessionStore>((set) => ({
   session: null,
   failure: null,
+  sessionBoundUserId: null,
   setSession: (session) => set({ session }),
   setFailure: (failure) => set({ failure }),
+  setSessionBoundUserId: (userId) => set({ sessionBoundUserId: userId }),
 }))

@@ -21,7 +21,7 @@ import {
 } from '../state/freebuff-model-store'
 import { useChatStore } from '../state/chat-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
-import { getAuthTokenDetails } from '../utils/auth'
+import { getAuthTokenDetails, getUserCredentials } from '../utils/auth'
 import { stopActiveRun } from '../utils/active-run'
 import { IS_FREEBUFF } from '../utils/constants'
 import {
@@ -29,6 +29,11 @@ import {
   recordFreebuffInstanceOwner,
 } from '../utils/freebuff-instance-owner'
 import { logger } from '../utils/logger'
+import {
+  clearSessionBinding,
+  persistSessionBinding,
+  readSessionBinding,
+} from '../utils/session-binding'
 import { getSystemMessage } from '../utils/message-history'
 import {
   clearReferralCache,
@@ -141,6 +146,13 @@ export function getFreebuffInstanceId(): string | undefined {
   const current = useFreebuffSessionStore.getState().session
   if (!current || !holdsLiveFreebuffSlot(current)) return undefined
   return 'instanceId' in current ? current.instanceId : undefined
+}
+
+/** Read the user ID bound to the current session. Returns `null` when no
+ *  session is active or the session has no binding. Used by the logout
+ *  guard and login validation to enforce single-account-per-session. */
+export function getSessionBoundUserId(): string | null {
+  return useFreebuffSessionStore.getState().sessionBoundUserId
 }
 
 /** True when the session represents a server-side slot the caller is
@@ -426,6 +438,41 @@ export function useFreebuffSession(): UseFreebuffSessionResult {
       return
     }
 
+    // Startup guard: if a session is bound to a different user, end it
+    // immediately to prevent multi-account abuse on the same machine.
+    // Check both in-memory state and persisted binding (survives restarts).
+    const inMemoryBoundUserId = useFreebuffSessionStore.getState().sessionBoundUserId
+    const persistedBoundUserId = readSessionBinding()
+    const boundUserId = inMemoryBoundUserId ?? persistedBoundUserId
+    const currentUser = getUserCredentials()
+    if (boundUserId && currentUser?.id !== boundUserId) {
+      logger.warn(
+        {
+          sessionBoundUserId: boundUserId,
+          currentUserId: currentUser?.id,
+        },
+        '[freebuff-session] Session bound to different user; ending session',
+      )
+      useFreebuffSessionStore.getState().setSessionBoundUserId(null)
+      clearSessionBinding()
+      releaseFreebuffSlot().catch(() => {})
+      setSession({
+        status: 'ended',
+        accessTier: undefined,
+        rateLimitsByModel: undefined,
+        subscription: undefined,
+      })
+      return
+    }
+
+    // If we have a persisted binding but no in-memory state (e.g. after restart),
+    // restore the binding so the guard works on the next startup too.
+    if (persistedBoundUserId && !inMemoryBoundUserId) {
+      useFreebuffSessionStore
+        .getState()
+        .setSessionBoundUserId(persistedBoundUserId)
+    }
+
     let cancelled = false
     let abortController = new AbortController()
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -453,6 +500,23 @@ export function useFreebuffSession(): UseFreebuffSessionResult {
       }
       if (next.status === 'active') {
         recordFreebuffInstanceOwner(next.instanceId)
+        // Bind the session to the current user to prevent multi-account abuse.
+        // Persist to disk so the binding survives process restarts.
+        const credentials = getUserCredentials()
+        if (credentials?.id) {
+          useFreebuffSessionStore
+            .getState()
+            .setSessionBoundUserId(credentials.id)
+          persistSessionBinding(credentials.id)
+        }
+      } else if (
+        next.status === 'ended' ||
+        next.status === 'none' ||
+        next.status === 'superseded'
+      ) {
+        // Clear the binding when the session is no longer active.
+        useFreebuffSessionStore.getState().setSessionBoundUserId(null)
+        clearSessionBinding()
       }
       // A refusal carries no `freebucks` block of its own, and the landing
       // decides its wording by that block: without the carry, the monthly

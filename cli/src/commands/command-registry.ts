@@ -25,7 +25,13 @@ import { buildInterviewPrompt, buildPlanPrompt, buildReviewPromptFromArgs, build
 import { handleReasoningCommand } from './reasoning'
 import { runBashCommand } from './router'
 import { handleUsageCommand } from './usage'
-import { returnToFreebuffLanding } from '../hooks/use-freebuff-session'
+import {
+  returnToFreebuffLanding,
+  getSessionBoundUserId,
+} from '../hooks/use-freebuff-session'
+import { releaseFreebuffSlot } from '../utils/freebuff-session-api'
+import { clearSessionBinding } from '../utils/session-binding'
+import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import { useThemeStore } from '../hooks/use-theme'
 import { LOGIN_WEBSITE_URL, WEBSITE_URL } from '../login/constants'
 import { startNewChat } from '../project-files'
@@ -398,11 +404,34 @@ const ALL_COMMANDS: CommandDefinition[] = [
       clearInput(params)
     },
   }),
-  defineCommand({
+  defineCommandWithArgs({
     name: 'logout',
     aliases: ['signout'],
-    handler: (params) => {
+    handler: (params, args) => {
+      // Check if a session is bound to this account. If so, require --force
+      // or ask the user to end the session first to prevent multi-account abuse.
+      const boundUserId = getSessionBoundUserId()
+      const force = args.trim() === '--force'
+      if (boundUserId && !force) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage(
+            'You have an active session tied to this account. End it first with /end-session, or force logout with /logout --force.',
+          ),
+        ])
+        clearInput(params)
+        return
+      }
+
       stopActiveRun('logout')
+
+      // When force-logging out with an active session, release the server-side
+      // slot and clear the binding before clearing credentials.
+      if (boundUserId && force) {
+        releaseFreebuffSlot().catch(() => {})
+        useFreebuffSessionStore.getState().setSessionBoundUserId(null)
+        clearSessionBinding()
+      }
 
       const { resetLoginState } = useLoginStore.getState()
       params.logoutMutation.mutate(undefined, {
