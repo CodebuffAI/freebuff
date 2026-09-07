@@ -283,9 +283,13 @@ const getFileName = (filePath: string): string => {
   return lastSlash === -1 ? filePath : filePath.slice(lastSlash + 1)
 }
 
-const createHighlightIndices = (start: number, end: number): number[] => [
-  ...range(start, end),
-]
+const createHighlightIndices = (start: number, end: number): number[] => {
+  const result: number[] = []
+  for (let i = start; i < end; i++) {
+    result.push(i)
+  }
+  return result
+}
 
 const createPushUnique = <T, K>(
   getKey: (item: T) => K,
@@ -351,9 +355,13 @@ const fuzzyMatch = (
   // - Fewer gaps = better
   // - Longer consecutive matches = better
   // - Matches at word boundaries (after /) = better
-  const boundaryBonus = indices.filter(
-    (idx) => idx === 0 || text[idx - 1] === '/'
-  ).length
+  let boundaryBonus = 0
+  for (let i = 0; i < indices.length; i++) {
+    const idx = indices[i]
+    if (idx === 0 || text[idx - 1] === '/') {
+      boundaryBonus++
+    }
+  }
 
   const score =
     gaps * 10 -
@@ -364,7 +372,7 @@ const fuzzyMatch = (
   return { indices, score }
 }
 
-const filterFileMatches = (
+export const filterFileMatches = (
   pathInfos: PathInfo[],
   query: string,
 ): MatchedFileInfo[] => {
@@ -489,7 +497,7 @@ const filterFileMatches = (
   // Sort by score (lower is better)
   matches.sort((a, b) => (a.matchScore ?? 0) - (b.matchScore ?? 0))
 
-  return matches
+  return matches.length > 100 ? matches.slice(0, 100) : matches
 }
 
 const filterAgentMatches = (
