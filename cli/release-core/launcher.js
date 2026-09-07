@@ -932,6 +932,55 @@ function createLauncher(productConfig) {
     }
   }
 
+  /**
+   * Path to the marker the running binary writes (run-activity-marker.ts)
+   * for the duration of an agent turn. Named by its own pid, which we
+   * already have from spawning it -- no handshake needed.
+   */
+  function runActivityMarkerPath(pid) {
+    return path.join(os.tmpdir(), `codebuff-run-active-${pid}`)
+  }
+
+  /**
+   * Drop a marker left behind by a process that died before it could clear
+   * its own -- SIGKILL, a native crash -- since its exit handler never ran.
+   * Called with a pid we have only just spawned, so any marker at that path
+   * belongs to an earlier process the OS has since reused the pid for; the
+   * binary cannot have started a turn yet. Without this, that stale file
+   * stalls the new run's updates for the whole RUN_IDLE_MAX_WAIT_MS bound.
+   */
+  function clearStaleRunActivityMarker(pid) {
+    try {
+      fs.rmSync(runActivityMarkerPath(pid), { force: true })
+    } catch {
+      // Best effort: a marker we can't remove only costs us the bounded wait.
+    }
+  }
+
+  const RUN_IDLE_POLL_INTERVAL_MS = 1_000
+  // Don't stall an update behind one long-running turn forever; fall back to
+  // today's immediate-restart behavior once this elapses.
+  const RUN_IDLE_MAX_WAIT_MS = 10 * 60 * 1000
+
+  /**
+   * Wait for the running CLI to finish its current turn before an update
+   * restarts it. The marker's absence -- already idle, an older binary that
+   * predates this file, or the process already gone -- resolves
+   * immediately, preserving the pre-existing restart-right-away behavior.
+   */
+  async function waitForRunIdle(pid, options = {}) {
+    const {
+      maxWaitMs = RUN_IDLE_MAX_WAIT_MS,
+      pollIntervalMs = RUN_IDLE_POLL_INTERVAL_MS,
+    } = options
+    const markerPath = runActivityMarkerPath(pid)
+    const deadline = Date.now() + maxWaitMs
+    while (fs.existsSync(markerPath)) {
+      if (Date.now() >= deadline) return
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+    }
+  }
+
   function stopRunningProcess(runningProcess) {
     return new Promise((resolve, reject) => {
       let forceKillTimer
@@ -999,6 +1048,11 @@ function createLauncher(productConfig) {
           getDownloadTargetKey(),
           { quiet: true },
         )
+
+        // Don't interrupt a turn that's still running: wait for the binary
+        // to clear its activity marker (or the bounded wait to elapse)
+        // before stopping it for the update.
+        await waitForRunIdle(runningProcess.pid)
 
         term.clearLine()
 
@@ -1267,6 +1321,8 @@ function createLauncher(productConfig) {
     child.on('error', exitOnSpawnFailure)
     child.launch = watchLaunch(child)
 
+    if (child.pid !== undefined) clearStaleRunActivityMarker(child.pid)
+
     return child
   }
 
@@ -1461,6 +1517,9 @@ function createLauncher(productConfig) {
       getRequiredWrapperVersion,
       ensureBinaryReady,
       isTargetAllowedForThisMachine,
+      runActivityMarkerPath,
+      clearStaleRunActivityMarker,
+      waitForRunIdle,
       CONFIG,
     },
   }
