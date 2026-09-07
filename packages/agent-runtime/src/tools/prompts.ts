@@ -44,7 +44,11 @@ function ensureJsonSchemaCompatible(schema: z.ZodType): z.ZodType {
     return schema
   } catch {
     const fallback = z.object({}).passthrough()
-    return schema.description ? fallback.describe(schema.description) : fallback
+    try {
+      return schema.description ? fallback.describe(schema.description) : fallback
+    } catch {
+      return fallback
+    }
   }
 }
 
