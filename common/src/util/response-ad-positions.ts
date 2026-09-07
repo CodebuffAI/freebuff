@@ -18,11 +18,10 @@ export function responseAdSlotCount(params: {
   step?: number
   firstAdAfterNodes?: number
 }): number {
-  const step = Math.max(1, params.step ?? RESPONSE_AD_NODE_STEP)
-  const firstAdAfterNodes = Math.max(
-    1,
-    params.firstAdAfterNodes ?? RESPONSE_AD_FIRST_NODE_COUNT,
-  )
+  const safeStep = params.step !== undefined && Number.isFinite(params.step) ? params.step : RESPONSE_AD_NODE_STEP
+  const safeFirstAdAfterNodes = params.firstAdAfterNodes !== undefined && Number.isFinite(params.firstAdAfterNodes) ? params.firstAdAfterNodes : RESPONSE_AD_FIRST_NODE_COUNT
+  const step = Math.max(1, safeStep)
+  const firstAdAfterNodes = Math.max(1, safeFirstAdAfterNodes)
   return Math.max(
     0,
     Math.floor((params.nodeCount - firstAdAfterNodes - 1) / step) + 1,
