@@ -40,6 +40,7 @@ export interface FreebuffPlanSummary {
 
 /** Session units, without trailing ".0" noise: 2, 0.5, 1.5. */
 export function formatPlanUnits(units: number): string {
+  if (!Number.isFinite(units)) return '0'
   const rounded = Math.round(units * 10) / 10
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
 }
