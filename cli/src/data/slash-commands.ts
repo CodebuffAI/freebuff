@@ -147,6 +147,13 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     aliases: ['export-chat'],
   },
   {
+    id: 'compact',
+    label: 'compact',
+    description: 'Compact conversation history to reclaim context space',
+    aliases: ['summarize'],
+    implicitCommand: true,
+  },
+  {
     id: 'agent:gpt-5',
     label: 'agent:gpt-5',
     description: 'Spawn the GPT-5 agent to help solve complex problems',

@@ -12,6 +12,7 @@ import {
   handleProposalReport,
   handleProposalsOff,
 } from './ads'
+import { handleCompactCommand } from './compact'
 import { handleCopyConversationCommand } from './copy-conversation'
 import { handleExportConversationCommand } from './export-conversation'
 import { handleHelpCommand } from './help'
@@ -345,6 +346,13 @@ const ALL_COMMANDS: CommandDefinition[] = [
     aliases: ['export-chat'],
     handler: async (params, args) => {
       await handleExportConversationCommand(params, args)
+    },
+  }),
+  defineCommand({
+    name: 'compact',
+    aliases: ['summarize'],
+    handler: async (params) => {
+      await handleCompactCommand(params)
     },
   }),
   defineCommandWithArgs({
