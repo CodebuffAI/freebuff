@@ -64,13 +64,15 @@ export function calculateFreebuffStreak(params: {
   lastUsageDate: string | null
 } {
   const { usageDates, todayDateKey } = params
-  const usageDateSet = new Set(
-    usageDates.filter((date) => date <= todayDateKey),
-  )
-  const lastUsageDate = usageDates.reduce<string | null>((latest, date) => {
-    if (date > todayDateKey) return latest
-    return latest === null || date > latest ? date : latest
-  }, null)
+  const usageDateSet = new Set<string>()
+  let lastUsageDate: string | null = null
+  for (const date of usageDates) {
+    if (date > todayDateKey) continue
+    usageDateSet.add(date)
+    if (lastUsageDate === null || date > lastUsageDate) {
+      lastUsageDate = date
+    }
+  }
   const todayUsed = usageDateSet.has(todayDateKey)
 
   let anchorDateKey = todayDateKey
