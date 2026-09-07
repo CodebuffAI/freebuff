@@ -4,35 +4,45 @@ export const tryToDoStringReplacementWithExtraIndentation = (params: {
   replaceContent: string
 }) => {
   const { oldFileContent, searchContent, replaceContent } = params
+  const searchLines = searchContent.split('\n')
+  const firstNonEmptyLine = searchLines.find((line) => Boolean(line))
+
+  const indentLines = (lines: string[], prefix: string) =>
+    lines.map((line) => (line ? prefix + line : line)).join('\n')
+
   for (let i = 1; i <= 12; i++) {
-    const searchContentWithIndentation = searchContent
-      .split('\n')
-      .map((line) => (line ? ' '.repeat(i) + line : line))
-      .join('\n')
+    const prefix = ' '.repeat(i)
+    if (
+      firstNonEmptyLine !== undefined &&
+      !oldFileContent.includes(prefix + firstNonEmptyLine)
+    ) {
+      continue
+    }
+    const searchContentWithIndentation = indentLines(searchLines, prefix)
     if (oldFileContent.includes(searchContentWithIndentation)) {
       return {
         searchContent: searchContentWithIndentation,
-        replaceContent: replaceContent
-          .split('\n')
-          .map((line) => (line ? ' '.repeat(i) + line : line))
-          .join('\n'),
+        replaceContent: indentLines(replaceContent.split('\n'), prefix),
       }
     }
   }
+
   for (let i = 1; i <= 6; i++) {
-    const searchContentWithIndentation = searchContent
-      .split('\n')
-      .map((line) => (line ? '\t'.repeat(i) + line : line))
-      .join('\n')
+    const prefix = '\t'.repeat(i)
+    if (
+      firstNonEmptyLine !== undefined &&
+      !oldFileContent.includes(prefix + firstNonEmptyLine)
+    ) {
+      continue
+    }
+    const searchContentWithIndentation = indentLines(searchLines, prefix)
     if (oldFileContent.includes(searchContentWithIndentation)) {
       return {
         searchContent: searchContentWithIndentation,
-        replaceContent: replaceContent
-          .split('\n')
-          .map((line) => (line ? '\t'.repeat(i) + line : line))
-          .join('\n'),
+        replaceContent: indentLines(replaceContent.split('\n'), prefix),
       }
     }
   }
+
   return null
 }
