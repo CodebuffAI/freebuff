@@ -11,6 +11,7 @@ import {
   ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT,
   ADS_CAMPAIGN_INGRESS_EVIDENCE_EVENT,
   ADS_ADVERTISER_REPORTING_READ_EVENT,
+  ADS_MCP_TOOL_CALL_EVENT,
   ADS_IMPREZIA_FETCH_COMPLETED_EVENT,
   CONTEXT_PRUNING_COMPLETED_EVENT,
   getAxiomOnlyLogEvent,
@@ -21,6 +22,17 @@ import {
 } from '../axiom-only-log'
 
 describe('getAxiomOnlyLogEvent', () => {
+  test('keeps a content-free MCP census and drops arguments, results and secrets', () => {
+    expect(getAxiomOnlyLogEvent({
+      axiomEvent: ADS_MCP_TOOL_CALL_EVENT,
+      advertiser_id: 'advertiser-a', key_id: 'key-a', tool: 'get_account',
+      outcome: 'ok', duration_ms: 12,
+      arguments: { campaign: 'private-input' }, result: { profile: 'private-output' },
+      authorization: 'Bearer must-not-leak', error: { message: 'private' },
+    })).toEqual({ event: ADS_MCP_TOOL_CALL_EVENT, data: {
+      advertiser_id: 'advertiser-a', key_id: 'key-a', tool: 'get_account', outcome: 'ok', duration_ms: 12,
+    } })
+  })
   test('keeps only the advertiser reporting audit contract', () => {
     expect(
       getAxiomOnlyLogEvent({

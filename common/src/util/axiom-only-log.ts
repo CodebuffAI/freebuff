@@ -87,6 +87,8 @@ export const ADS_CAMPAIGN_INGRESS_EVIDENCE_EVENT =
   'ads.campaign_ingress_evidence_v1' as const
 export const ADS_ADVERTISER_REPORTING_READ_EVENT =
   'ads.advertiser_reporting_read' as const
+/** Content-free advertiser MCP operation census; never arguments or results. */
+export const ADS_MCP_TOOL_CALL_EVENT = 'ads.mcp_tool_call' as const
 /** Browser-side Imprezia decisions. The route deliberately reports only
  * bounded serving dimensions: request/content/creative identifiers, URLs, and
  * raw provider errors never enter this event. */
@@ -760,6 +762,15 @@ const ADS_CAMPAIGN_INGRESS_EVIDENCE_FIELDS = {
   traffic_class_version: 'string',
 } as const satisfies AxiomOnlyFieldSchema
 
+const ADS_MCP_TOOL_CALL_FIELDS = {
+  advertiser_id: 'string',
+  key_id: 'string',
+  tool: 'string',
+  outcome: 'string',
+  error_code: 'string',
+  duration_ms: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
 const ADS_ADVERTISER_REPORTING_READ_FIELDS = {
   advertiser_id: 'string',
   key_id: 'string',
@@ -837,6 +848,7 @@ export type AxiomOnlyLogEvent = {
     | typeof ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT
     | typeof ADS_CAMPAIGN_INGRESS_EVIDENCE_EVENT
     | typeof ADS_ADVERTISER_REPORTING_READ_EVENT
+    | typeof ADS_MCP_TOOL_CALL_EVENT
     | typeof ADS_IMPREZIA_FETCH_COMPLETED_EVENT
     | typeof ADS_REQUEST_REJECTED_EVENT
     | SponsorBreakEvent
@@ -976,6 +988,12 @@ export function getAxiomOnlyLogEvent(
         record,
         ADS_ADVERTISER_REPORTING_READ_FIELDS,
       ),
+    }
+  }
+  if (eventName === ADS_MCP_TOOL_CALL_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, ADS_MCP_TOOL_CALL_FIELDS),
     }
   }
   return null
