@@ -72,7 +72,7 @@ export function buildLogRows(params: {
     }
     return {
       id: crypto.randomUUID(),
-      timestamp: isNaN(ts.getTime()) ? now : ts,
+      timestamp: Number.isNaN(ts.getTime()) ? now : ts,
       level: record.level,
       source,
       service,
