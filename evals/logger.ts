@@ -2,7 +2,7 @@ import { mkdirSync } from 'fs'
 import path, { dirname } from 'path'
 
 import { IS_CI, IS_TEST } from '@codebuff/common/env'
-import { pino } from 'pino'
+import pino, { type LogFn } from 'pino'
 
 let logPath: string | undefined = undefined
 let pinoLogger: any = undefined
@@ -57,7 +57,7 @@ function log(level: LogLevel, data: any, msg?: string, ...args: any[]): void {
  *
  * e.g. logger.info({eventId: AnalyticsEvent.SOME_EVENT, field: value}, 'some message')
  */
-export const logger: Record<LogLevel, pino.LogFn> = Object.fromEntries(
+export const logger: Record<LogLevel, LogFn> = Object.fromEntries(
   loggingLevels.map((level) => {
     return [
       level,
@@ -65,4 +65,4 @@ export const logger: Record<LogLevel, pino.LogFn> = Object.fromEntries(
         log(level, data, msg, ...args),
     ]
   }),
-) as Record<LogLevel, pino.LogFn>
+) as Record<LogLevel, LogFn>
