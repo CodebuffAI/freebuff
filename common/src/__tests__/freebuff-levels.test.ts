@@ -17,8 +17,6 @@ import * as freebuffModels from '../constants/freebuff-models'
 import {
   FREEBUFF_LIMITED_SESSION_LIMIT,
   FREEBUFF_PREMIUM_SESSION_LIMIT,
-  FREEBUFF_PRE_LEVELS_LIMITED_SESSION_LIMIT,
-  FREEBUFF_PRE_LEVELS_PREMIUM_SESSION_LIMIT,
 } from '../constants/freebuff-models'
 
 describe('the ladder', () => {
@@ -102,26 +100,13 @@ describe('the ladder', () => {
     }
   })
 
-  it('climbs past what the pools paid BEFORE the reduction', () => {
-    // The promise that makes the cut defensible: a user who engages ends up
-    // with more than they had before Levels, on both pools. If a re-tune ever
-    // left the ceiling at or below the pre-Levels base, the ladder would be a
-    // way to claw back a takeaway rather than a reward.
-    expect(FREEBUFF_MAX_LEVEL.premiumSessionsPerDay).toBeGreaterThan(
-      FREEBUFF_PRE_LEVELS_PREMIUM_SESSION_LIMIT,
-    )
-    expect(FREEBUFF_MAX_LEVEL.freeSessionsPerDay).toBeGreaterThan(
-      FREEBUFF_PRE_LEVELS_LIMITED_SESSION_LIMIT,
-    )
-  })
-
   it('gets a limited-region account back above the old base within a few levels', () => {
     // The cut that actually stings is 6 → 3. This pins how much work undoing
     // it costs: if a re-tune pushes it past a handful of engagements, the
     // reduction has stopped being a nudge and become a wall.
     const recovered = FREEBUFF_LEVELS.find(
       (tier) =>
-        tier.freeSessionsPerDay >= FREEBUFF_PRE_LEVELS_LIMITED_SESSION_LIMIT,
+        tier.freeSessionsPerDay >= FREEBUFF_LIMITED_SESSION_LIMIT,
     )
     expect(recovered).toBeDefined()
     expect(recovered!.level).toBeLessThanOrEqual(5)

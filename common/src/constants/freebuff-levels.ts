@@ -185,7 +185,7 @@ export const FREEBUFF_LEVELS: readonly FreebuffLevelTier[] = [
     trustRequired: 0,
     trustPerEngagement: 50,
     freeSessionsPerDay: 6,
-    premiumSessionsPerDay: 4,
+    premiumSessionsPerDay: 5,
   },
   {
     level: 1,
@@ -193,7 +193,7 @@ export const FREEBUFF_LEVELS: readonly FreebuffLevelTier[] = [
     trustRequired: 100,
     trustPerEngagement: 55,
     freeSessionsPerDay: 6,
-    premiumSessionsPerDay: 4,
+    premiumSessionsPerDay: 5,
   },
   {
     level: 2,

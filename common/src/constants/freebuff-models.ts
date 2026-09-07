@@ -896,7 +896,12 @@ export const FREEBUFF_FORCE_LIMITED_MODE = false
  * Referral, streak, bounty and operator entitlement still add on top of this,
  * unchanged.
  */
-export const FREEBUFF_PREMIUM_SESSION_LIMIT = 4
+// Back to 5 on 2026-09-07, the day Levels were retired: the 5 → 4 retune
+// existed so a Level could add the difference back, and with the ladder gone
+// a reduced base is the pure takeaway the switch below was built to prevent.
+// Moot for a metered account (Freebucks is the meter and these pools are not
+// consulted), so this is the rollback-safety value, not a live limit.
+export const FREEBUFF_PREMIUM_SESSION_LIMIT = 5
 /**
  * Limited-region base sessions per Pacific day.
  *
@@ -911,21 +916,6 @@ export const FREEBUFF_PREMIUM_SESSION_LIMIT = 4
  */
 export const FREEBUFF_LIMITED_SESSION_LIMIT = 6
 
-/**
- * What those two pools paid BEFORE Levels, and the revert lever.
- *
- * `FREEBUFF_LEVEL_SESSIONS=off` selects these instead of the reduced bases
- * above, and suppresses the level bonus with them. The two halves have to move
- * together: a reduced base with the ladder switched off is a pure takeaway,
- * which is the one configuration this feature must never be able to land in.
- * That is why the switch gates the whole change rather than just the bonus.
- *
- * Delete both, and the branch in `free-session/public-api.ts` that reads them,
- * once Levels has been on long enough that rolling back is not a thing anyone
- * would do.
- */
-export const FREEBUFF_PRE_LEVELS_PREMIUM_SESSION_LIMIT = 5
-export const FREEBUFF_PRE_LEVELS_LIMITED_SESSION_LIMIT = 6
 /**
  * There is no standard-model session limit, on any surface.
  *
