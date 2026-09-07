@@ -1,4 +1,5 @@
 import * as analytics from '@codebuff/common/analytics'
+import { FREEBUFF_TURN_SPEND_LIMIT_MESSAGE } from '@codebuff/common/constants/freebuff-errors'
 import { TEST_USER_ID } from '@codebuff/common/old-constants'
 import { createTestAgentRuntimeParams } from '@codebuff/common/testing/fixtures/agent-runtime'
 import { clearMockedModules } from '@codebuff/common/testing/mock-modules'
@@ -155,6 +156,57 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
 
   afterAll(() => {
     clearMockedModules()
+  })
+
+  it('retains completed steps after a spending cap and resumes under a new run id', async () => {
+    mockTemplate.handleSteps = function* () {
+      yield 'STEP'
+      yield 'STEP'
+    }
+    let calls = 0
+    const capped = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      startAgentRun: async () => 'capped-run',
+      promptAiSdkStream: async function* () {
+        if (++calls === 2) {
+          throw new APICallError({
+            statusCode: 429,
+            message: FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
+            url: 'http://localhost/api/v1/chat/completions',
+            requestBodyValues: {},
+            responseBody: JSON.stringify({
+              error: 'turn_spend_limit',
+              message: FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
+            }),
+            isRetryable: false,
+          })
+        }
+        yield { type: 'text' as const, text: 'Completed research: result 42.' }
+        yield createToolCallChunk('end_turn', {})
+        return promptSuccess('completed-step')
+      },
+    })
+    expect(calls).toBe(2)
+    expect(capped.output).toMatchObject({
+      type: 'error',
+      error: 'turn_spend_limit',
+    })
+    expect(JSON.stringify(capped.agentState.messageHistory)).toContain(
+      'Completed research: result 42.',
+    )
+    expect(capped.agentState.runId).toBe('capped-run')
+
+    const resumed = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      agentState: capped.agentState,
+      prompt: 'Continue',
+      startAgentRun: async () => 'fresh-run',
+    })
+    expect(resumed.output.type).not.toBe('error')
+    expect(resumed.agentState.runId).toBe('fresh-run')
+    const history = JSON.stringify(resumed.agentState.messageHistory)
+    expect(history).toContain('Completed research: result 42.')
+    expect(history).toContain('Continue')
   })
 
   it('an abort during agent-run registration is a cancel, not a failed run', async () => {
