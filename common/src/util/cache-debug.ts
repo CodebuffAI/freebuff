@@ -53,7 +53,7 @@ function summarizeDataUrl(value: string): SerializableValue {
   const payload = firstComma >= 0 ? value.slice(firstComma + 1) : ''
   return {
     type: 'data-url',
-    mediaType: header.slice(5).split(';')[0] || 'unknown',
+    mediaType: header.startsWith('data:') ? header.slice(5).split(';')[0] || 'unknown' : 'unknown',
     payloadLength: payload.length,
     preview: payload.slice(0, 32),
   }
