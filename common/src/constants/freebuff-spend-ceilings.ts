@@ -242,7 +242,7 @@ export const FREEBUFF_BUDGET_NOTICE_REASONS: ReadonlySet<string> = new Set([
  * the plan itself sets.
  */
 export const FREEBUFF_FREEBUCKS_CEILING_NOTICE =
-  'This account hit today’s hard usage cap. Freebucks pay for sessions, but the compute a day can draw is capped at three times what its Freebucks are worth, to protect the service from runaway usage.'
+  'This account hit today’s hard usage cap. Freebucks pay for sessions, but the compute a day can draw is capped at four times what its Freebucks are worth, to protect the service from runaway usage.'
 
 /**
  * The refusal copy for a plain daily allowance.
