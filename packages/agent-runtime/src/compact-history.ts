@@ -332,25 +332,41 @@ const SCAFFOLDING_TAGS = [
   'SUBAGENT_SPAWN',
 ]
 
+/** Message tag stamped on the summary message this module (and the inlined
+ *  copy in agents/context-pruner.ts) produces, so the next compaction finds
+ *  the real memory artifact by provenance instead of by content. Identity by
+ *  content is unsafe: a USER message that quotes the summary markers — asking
+ *  about this very mechanism, pasting an old summary back — used to be taken
+ *  for the real one. The `findLast` then picked the quote, the actual summary
+ *  was dropped with the rest of the history, and every earlier turn vanished
+ *  from the model's context at the next compaction. */
+export const CONVERSATION_SUMMARY_TAG = 'CONVERSATION_SUMMARY'
+
 /**
  * Recognizes a memory artifact this module (or the context-pruner) produced.
  *
- * Both markers are required, and that is the point. A summary is dropped from
- * the history and re-parsed into entries, so anything mistaken for one is
- * silently eaten — and the bare `<conversation_summary>` tag is a string a user
- * can easily send, most obviously when asking about this very code. Requiring
- * the header too means only text that reproduces our envelope qualifies.
+ * The tag is the identity: only messages this pass itself produced carry it,
+ * and a user message can never gain it by content alone. The envelope check
+ * below is a legacy fallback only — summaries written before the tag existed
+ * carry no marker, so re-summarizing them (which preserves their text as an
+ * entry, nested once) beats losing them. It requires the FULL envelope
+ * including `<historical_memory>`: a user message that merely quotes the tag
+ * and the header must not qualify.
  *
- * The context-pruner matches on the tag alone. That is a deliberate divergence
- * (see the parity test): it matters much more here, because the cache-expiry
- * trigger compacts on ordinary idle turns rather than only near the context
- * limit, so a user message can meet a compaction pass within minutes.
+ * The context-pruner matches on the tag alone in its pre-tag copy. That is a
+ * deliberate divergence to port (see the parity test): a bare
+ * `<conversation_summary>` in a user message is easy to send, most obviously
+ * when asking about this very code.
  */
 function isConversationSummary(message: Message): boolean {
   if (message.role !== 'user') return false
+  if (message.tags?.includes(CONVERSATION_SUMMARY_TAG)) return true
   const text = getTextContent(message)
   return (
-    text.includes('<conversation_summary>') && text.includes(SUMMARY_HEADER)
+    text.includes('<conversation_summary>') &&
+    text.includes('</conversation_summary>') &&
+    text.includes(SUMMARY_HEADER) &&
+    text.includes('<historical_memory>')
   )
 }
 
@@ -709,6 +725,7 @@ ${SUMMARY_DISCLAIMER}`,
     role: 'user',
     content: [textPart, ...imageParts],
     sentAt,
+    tags: [CONVERSATION_SUMMARY_TAG],
   }
 }
 
