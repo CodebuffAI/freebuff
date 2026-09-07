@@ -116,7 +116,10 @@ export async function getFiles(params: {
 
       const content = await fs.readFile(fullPath, 'utf8')
 
-      const windows = fileWindows?.[filePath]
+      const windows =
+        fileWindows?.[filePath] ??
+        fileWindows?.[relativePath] ??
+        (fullPath ? fileWindows?.[fullPath] : undefined)
       const windowedContent =
         limitContent && fileWindows !== undefined
           ? (windows?.length ? windows : [{}])

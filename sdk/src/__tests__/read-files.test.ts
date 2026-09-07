@@ -848,5 +848,56 @@ describe('getFiles', () => {
       expect(result['src/big.ts']).toContain('showing lines 10-14 of 3000')
       expect(result['src/big.ts']).toContain('showing lines 2500-2504 of 3000')
     })
+
+    test('resolves fileWindows keyed by relative path when filePaths has leading dot-slash', async () => {
+      const mockFs = createMockFs({
+        files: { '/project/src/big.ts': { content: bigFile } },
+      })
+
+      const result = await getFiles({
+        filePaths: ['./src/big.ts'],
+        cwd: '/project',
+        fs: mockFs,
+        fileWindows: { 'src/big.ts': [{ offset: 2500, limit: 10 }] },
+      })
+
+      expect(result['src/big.ts']).toContain('line 2500')
+      expect(result['src/big.ts']).toContain('showing lines 2500-2509 of 3000')
+      expect(result['src/big.ts']).not.toContain('line 100\n')
+    })
+
+    test('resolves fileWindows keyed by relative path when filePaths has absolute path', async () => {
+      const mockFs = createMockFs({
+        files: { '/project/src/big.ts': { content: bigFile } },
+      })
+
+      const result = await getFiles({
+        filePaths: ['/project/src/big.ts'],
+        cwd: '/project',
+        fs: mockFs,
+        fileWindows: { 'src/big.ts': [{ offset: 2500, limit: 10 }] },
+      })
+
+      expect(result['src/big.ts']).toContain('line 2500')
+      expect(result['src/big.ts']).toContain('showing lines 2500-2509 of 3000')
+      expect(result['src/big.ts']).not.toContain('line 100\n')
+    })
+
+    test('resolves fileWindows keyed by absolute path when filePaths has relative path', async () => {
+      const mockFs = createMockFs({
+        files: { '/project/src/big.ts': { content: bigFile } },
+      })
+
+      const result = await getFiles({
+        filePaths: ['src/big.ts'],
+        cwd: '/project',
+        fs: mockFs,
+        fileWindows: { '/project/src/big.ts': [{ offset: 2500, limit: 10 }] },
+      })
+
+      expect(result['src/big.ts']).toContain('line 2500')
+      expect(result['src/big.ts']).toContain('showing lines 2500-2509 of 3000')
+      expect(result['src/big.ts']).not.toContain('line 100\n')
+    })
   })
 })
