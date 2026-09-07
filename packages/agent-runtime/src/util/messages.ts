@@ -238,7 +238,7 @@ export function trimMessagesToFitTokenLimit(params: {
   // keepDuringTruncation on a tool result whose call was removed: keeping the
   // pair together would exceed the budget and keeping the result alone would
   // be rejected, so a result cannot outlive its call.
-  const removedCallIds = new Set<string>()
+  const inputCallIds = new Set<string>()
   const survivingCallIds = new Set<string>()
   const collectCallIds = (message: Message, into: Set<string>) => {
     if (message.role !== 'assistant' || !Array.isArray(message.content)) {
@@ -251,9 +251,9 @@ export function trimMessagesToFitTokenLimit(params: {
     }
   }
   for (const message of messages) {
-    collectCallIds(message, removedCallIds)
+    collectCallIds(message, inputCallIds)
   }
-  if (removedCallIds.size > 0) {
+  if (inputCallIds.size > 0) {
     for (const message of filteredMessages) {
       if (message === placeholder) continue
       collectCallIds(message, survivingCallIds)
@@ -262,7 +262,7 @@ export function trimMessagesToFitTokenLimit(params: {
       const message = filteredMessages[i]
       if (message === placeholder || message.role !== 'tool') continue
       if (
-        removedCallIds.has(message.toolCallId) &&
+        inputCallIds.has(message.toolCallId) &&
         !survivingCallIds.has(message.toolCallId)
       ) {
         filteredMessages.splice(i, 1)

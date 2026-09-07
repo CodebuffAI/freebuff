@@ -655,6 +655,84 @@ describe('trimMessagesToFitTokenLimit', () => {
       expect(ghost).toBeDefined()
     })
 
+    it('drops only the orphaned results when one assistant message carries multiple tool calls', () => {
+      // Parallel tool calls: a single assistant message with calls c1 and c2.
+      // The trim removes the call message; the drop matches per toolCallId, so
+      // every result whose call was removed is dropped and nothing keyed to a
+      // surviving call is touched.
+      const messages: Message[] = [
+        userMessage('write two files'),
+        assistantMessage({
+          content: [
+            toolCallPart('c1', 'x'.repeat(3000)),
+            toolCallPart('c2', 'y'.repeat(3000)),
+          ],
+        }),
+        toolResultMessage('c1', 'ok1'),
+        userMessage({ content: 'steer', keepDuringTruncation: true }),
+        toolResultMessage('c2', 'ok2'),
+        assistantMessage('done'),
+      ]
+
+      const result = trimMessagesToFitTokenLimit({
+        messages,
+        systemTokens: 0,
+        maxTotalTokens: 600,
+        logger,
+      })
+
+      expectNoOrphanedToolResults(result)
+      // Neither orphaned result may survive in any form...
+      expect(
+        result.filter(
+          (message) =>
+            message.role === 'tool' &&
+            (message.toolCallId === 'c1' || message.toolCallId === 'c2'),
+        ),
+      ).toEqual([])
+      // ...while the kept steer message and the final reply still do.
+      expect(
+        result.some(
+          (message) =>
+            message.role === 'user' &&
+            message.content.some(
+              (part) => part.type === 'text' && part.text === 'steer',
+            ),
+        ),
+      ).toBe(true)
+      expect(
+        result.some(
+          (message) =>
+            message.role === 'assistant' &&
+            message.content.some(
+              (part) => part.type === 'text' && part.text === 'done',
+            ),
+        ),
+      ).toBe(true)
+    })
+
+    it('keeps every result of a multi-call assistant message that survives the trim', () => {
+      const messages: Message[] = [
+        userMessage('write two files'),
+        assistantMessage({
+          content: [toolCallPart('c1', 'ok'), toolCallPart('c2', 'ok')],
+        }),
+        toolResultMessage('c1', 'ok1'),
+        toolResultMessage('c2', 'ok2'),
+        assistantMessage('done'),
+      ]
+
+      // Generous budget: the multi-call message and both results survive.
+      const result = trimMessagesToFitTokenLimit({
+        messages,
+        systemTokens: 0,
+        maxTotalTokens: 60_000,
+        logger,
+      })
+
+      expect(result).toEqual(messages)
+    })
+
     it('keeps the invariant across a sweep of budgets', () => {
       const messages: Message[] = [
         userMessage('please write the file'),
