@@ -47,8 +47,9 @@ export function getFreebuffStreakLine(
   // Fill toward the 7-day milestone, then stay full — a 19-day streak should
   // read as fully earned, not roll back over into a partial second week. Past
   // the week, a trailing "+" marks that the streak has run beyond the row.
-  const filled = Math.min(streak, FREEBUFF_STREAK_WEEK)
-  const beyond = streak > FREEBUFF_STREAK_WEEK
+  const safeStreak = Number.isFinite(streak) ? streak : 0
+  const filled = Math.min(safeStreak, FREEBUFF_STREAK_WEEK)
+  const beyond = safeStreak > FREEBUFF_STREAK_WEEK
   const dots =
     chars.filled.repeat(filled) +
     chars.empty.repeat(FREEBUFF_STREAK_WEEK - filled) +
@@ -57,7 +58,7 @@ export function getFreebuffStreakLine(
   // "day" stays singular — it's a compound modifier ("7 day streak"), not a
   // count of days on its own.
   return {
-    label: `${streak} day streak`,
+    label: `${safeStreak} day streak`,
     dots,
     progress: { filled, total: FREEBUFF_STREAK_WEEK, beyond },
   }
