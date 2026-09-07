@@ -368,3 +368,34 @@ describe('evaluateBusyBackendRank', () => {
     expect(evaluateBusyBackendRank([])).toEqual({ breach: false, top: null })
   })
 })
+
+describe('evaluateStatCoverage percentage formatting', () => {
+  it('handles zero whole gracefully', () => {
+    const cov = evaluateStatCoverage(
+      coverageRow({ pgss_rows: 0, pgss_with_text: 0 }),
+    )
+    expect(cov.summary).toContain('0/0')
+    expect(cov.summary).toContain('0%')
+  })
+
+  it('formats normal percentages correctly', () => {
+    const cov = evaluateStatCoverage(
+      coverageRow({ pgss_rows: 200, pgss_with_text: 50 }),
+    )
+    expect(cov.summary).toContain('25%')
+  })
+
+  it('rounds percentages correctly', () => {
+    const cov = evaluateStatCoverage(
+      coverageRow({ pgss_rows: 300, pgss_with_text: 100 }),
+    )
+    expect(cov.summary).toContain('33%')
+  })
+
+  it('handles 100% correctly', () => {
+    const cov = evaluateStatCoverage(
+      coverageRow({ pgss_rows: 100, pgss_with_text: 100 }),
+    )
+    expect(cov.summary).toContain('100%')
+  })
+})
