@@ -475,25 +475,8 @@ export const FREEBUFF_TRUST_MIN_BALANCE = 0
 
 export const FREEBUFF_TRUST_CURRENCY_NAME = 'Trust'
 
-/**
- * The one line every client shows to point at the Earn page, and where it
- * points.
- *
- * Shared because the prompt has to be identical in the CLI, Desktop and the
- * browser: it is the same offer, and three surfaces phrasing it three ways is
- * how a user concludes they are three different programs. The pickers used to
- * say "Earn GLM 5.2 with bounties", which names the reward we happen to have
- * rather than the thing a rate-limited user actually wants — which is always
- * MORE SESSIONS. Lead with that; GLM is one route to it, not the headline.
- */
-export const FREEBUFF_EARN_PROMPT = `Earn ${FREEBUFF_TRUST_CURRENCY_NAME} · level up for more daily sessions`
-
-/** Shorter form, for a row that already has a quota summary beside it. */
-export const FREEBUFF_EARN_PROMPT_SHORT = `Earn ${FREEBUFF_TRUST_CURRENCY_NAME} for more sessions`
-
-/** Relative to the Freebuff web app. The Trust subroute, not the Earn index:
- *  it is the tab that pays today, and the index only redirects here. */
-export const FREEBUFF_EARN_PATH = '/earn/trust'
+// The Earn path and prompts moved to `freebuff-earn.ts` on 2026-09-07: the
+// page outlived the currency, so its constants should not die with it.
 
 /** Shown under the progress bar. Indexed by level, falling back to the last. */
 export const FREEBUFF_LEVEL_BLURBS: Record<number, string> = {

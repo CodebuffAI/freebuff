@@ -1,7 +1,7 @@
 import {
   FREEBUFF_EARN_PATH,
   FREEBUFF_EARN_PROMPT_SHORT,
-} from '@codebuff/common/constants/freebuff-levels'
+} from '@codebuff/common/constants/freebuff-earn'
 import { TextAttributes } from '@opentui/core'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 
