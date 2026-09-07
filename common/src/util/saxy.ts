@@ -163,7 +163,7 @@ const parseEntities = (input: string): string => {
         value = parseInt(entityName.slice(1), 10)
       }
 
-      if (isNaN(value)) {
+      if (Number.isNaN(value)) {
         parts.push('&' + entityName + ';')
       } else {
         parts.push(String.fromCharCode(value))
