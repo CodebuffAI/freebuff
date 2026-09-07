@@ -37,7 +37,12 @@ const LN_BASE = Math.log(TTFT_HISTOGRAM_BASE)
  * Sub-millisecond and zero samples land in bucket 0 rather than at -Infinity.
  */
 export function ttftBucketIndex(ttftMs: number): number {
-  const index = Math.floor(Math.log(Math.max(ttftMs, 1)) / LN_BASE)
+  // Only special-case NaN. Infinity naturally flows through Math.max/Math.log
+  // and gets clamped to the top bucket by the Math.min below, which is the
+  // correct behavior. Treating Infinity as 0 would route it to the wrong end
+  // of the histogram.
+  const safeTtftMs = Number.isNaN(ttftMs) ? 0 : ttftMs
+  const index = Math.floor(Math.log(Math.max(safeTtftMs, 1)) / LN_BASE)
   return Math.min(TTFT_HISTOGRAM_BUCKET_COUNT - 1, Math.max(0, index))
 }
 
