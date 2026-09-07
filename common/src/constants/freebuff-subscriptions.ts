@@ -340,22 +340,19 @@ export const FREEBUFF_SUBSCRIPTION_FIVE_DAY_WINDOW_DAYS = 7
  * reads as the way in, and sends the user to spend a balance that will not
  * open it.
  *
- * ## Why these two, as of 2026-09-04
+ * ## Why Gemini 3.8 Flash
  *
- * GPT-5.6 Luna and Gemini 3.8 Flash are the two dearest rows we serve, and
- * both were already half-fenced. Luna has been plan-locked for the limited
- * tier since 2026-09-04 (`LIMITED_TIER_PLAN_LOCKED_MODELS`) and is in the
- * sub-capped premium half above; Gemini 3.8 Flash was withdrawn outright the
- * day it shipped. Putting both behind the plan is the same decision applied to
- * the whole audience rather than to one tier.
+ * Gemini 3.8 Flash was withdrawn outright the day it shipped and restored as
+ * a Web-only paid row. GPT-5.6 Luna is deliberately NOT in this set: it stays
+ * plan-locked at limited access, but full-access users may spend their shared
+ * premium allowance on it just as CLI and Desktop users can.
  *
  * ## Scope
  *
- * Enforced on FREEBUFF WEB ONLY — see FREEBUFF_PRO_ENFORCED_SURFACES. Desktop
- * and the CLI keep serving Luna free, because a released binary holding the id
- * must not have the model taken away by a server deploy it did not ask for.
- * Widening is one edit to that constant, and should be made with a client
- * release rather than ahead of one.
+ * Enforced on FREEBUFF WEB ONLY — see FREEBUFF_PRO_ENFORCED_SURFACES. Gemini is
+ * absent from the CLI/Desktop catalog, so the Web-only listing and Web-only
+ * gate stay paired. Widening is one edit to that constant, and should be made
+ * with a client release rather than ahead of one.
  *
  * Withdrawn history: V4 Pro was the one entry for a few hours (#2254) and left
  * on 2026-08-26 with its withdrawal from free mode — a row nothing may admit
@@ -368,11 +365,13 @@ export const FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS: readonly string[] =
 /**
  * The Pro rows are enforced on **Freebuff Web only**, for now.
  *
- * Desktop and the CLI keep serving V4 Pro exactly as they do today — free, at
- * every hour, on the Cheaper Inference lane with its existing fallbacks —
- * while Web moves to the paid, direct, off-peak arrangement. Legacy clients
- * are mid-transition and must not have a model taken away by a server deploy
- * they did not ask for.
+ * The current Pro row, Gemini 3.8 Flash, is Web-only too. A future native
+ * rollout must add the surface here before adding the row to the shared
+ * CLI/Desktop catalog, and must ship clients that understand the refusal
+ * before the server can take a model away from them.
+ *
+ * Luna is deliberately outside this policy: it is available from the shared
+ * premium pool on every full-access surface.
  *
  * Web is identified server-side by the Freebuff Web SERVICE ACCOUNT key, never
  * by a client-supplied header, so a CLI cannot claim to be Web to dodge the

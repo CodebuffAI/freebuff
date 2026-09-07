@@ -2893,7 +2893,8 @@ export const FREEBUFF_CLOUD_PLANNER_TURN_LIMIT = 12
 /**
  * Models available to limited-region Freebuff Web users.
  *
- * **Widened 2026-09-04 to the whole Web free catalog except GPT-5.6 Luna.**
+ * **Widened 2026-09-04 to the whole Web free catalog except the rows a plan
+ * unlocks at limited access.**
  * It used to alias `LIMITED_FREEBUFF_MODEL_IDS` (Flash, MiMo, Solar), which
  * left limited regions without the CHEAPEST row we serve — GLM 5.3 Flash at 5
  * Freebucks an hour, a third of the Flash price — so the tier that can least
@@ -2906,10 +2907,12 @@ export const FREEBUFF_CLOUD_PLANNER_TURN_LIMIT = 12
  * on a row that goes further. Before the meter, catalog WAS the control, which
  * is why this list was narrow.
  *
- * Luna is the deliberate exception: it stays plan-gated at this tier
+ * Luna is the deliberate full-access exception: it stays plan-gated only at
+ * the limited tier
  * (`isFreebuffSubscriptionModelIdForAccessTier` admits it only with a live
- * paid plan), and the Web picker lists it locked rather than hiding it, so the
- * row is an offer instead of an absence.
+ * paid plan there), while a full-access account may spend its ordinary premium
+ * allowance on it. The Web picker lists it locked at limited access rather
+ * than hiding it, so the row is an offer instead of an absence.
  *
  * Its own name, and NOT `LIMITED_FREEBUFF_MODEL_IDS`, because this is a
  * broader browser catalog: CLI/Desktop also offer GLM 5.3 Flash, while
@@ -2931,23 +2934,38 @@ export const FREEBUFF_CLOUD_PLANNER_TURN_LIMIT = 12
  * cannot import that one — freebuff-subscriptions.ts already imports this
  * module, so the dependency only runs one way.
  *
- * That it is needed here at all is the point. The limited tier's catalog used
- * to exclude Luna by NAME, which was correct only while Luna was the sole row
- * a plan stood in front of; the moment a second one existed, the free limited
- * catalog silently handed it out. One definition, consumed by both, is what
- * stops the next Pro row repeating it.
+ * The limited-tier plan-only set below extends this one. Defining the global
+ * paid boundary once keeps a future Pro row out of the free limited catalog
+ * without making Luna globally Pro-only just because it has the narrower
+ * limited-tier restriction.
  */
 export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
-  Object.freeze([
-    FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
-    FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
-  ])
+  Object.freeze([FREEBUFF_GEMINI_38_FLASH_MODEL_ID])
 
 /** Whether the catalog marks `id` openable only on a paid session. Exact match:
  *  the suffix-tolerant public predicate is
  *  `isFreebuffSubscriptionProModelId`. */
 export function isFreebuffProOnlyCatalogModelId(id: string): boolean {
   return FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS.includes(id)
+}
+
+/**
+ * Rows an unpaid LIMITED-tier account cannot open.
+ *
+ * Every globally Pro-only row belongs here, plus Luna: Luna is part of the
+ * ordinary full-access premium pool, but a paid plan is still what unlocks it
+ * at limited access. Keeping this distinction explicit prevents the global Pro
+ * gate from accidentally paywalling full-access users just to preserve the
+ * limited-tier catalog boundary.
+ */
+export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
+  Object.freeze([
+    FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+    ...FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
+  ])
+
+export function isFreebuffLimitedTierPlanOnlyModelId(id: string): boolean {
+  return FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.includes(id)
 }
 
 export const FREEBUFF_WEB_GEO_EXEMPT_MODEL_IDS: readonly string[] = [
@@ -2957,13 +2975,10 @@ export const FREEBUFF_WEB_GEO_EXEMPT_MODEL_IDS: readonly string[] = [
       (model) =>
         isFreebuffWebSelectableModelId(model.id) &&
         !isFreebuffWebGodOnlyModelId(model.id) &&
-        // Every Pro row, not just Luna. This read `!== LUNA` while Luna was
-        // the only model a plan stood in front of, so "the row a plan gates"
-        // and "Luna" were the same set and the narrower reading was the one
-        // written down. Gemini 3.8 Flash joining the Pro rows on 2026-09-04
-        // separated them: the old test would have put the dearest row in the
-        // catalog into the FREE limited catalog.
-        !isFreebuffProOnlyCatalogModelId(model.id),
+        // This is deliberately broader than the global Pro set. Luna is free
+        // from the premium pool at full access but still plan-locked here;
+        // Gemini 3.8 Flash is plan-only at every tier.
+        !isFreebuffLimitedTierPlanOnlyModelId(model.id),
     ).map((model) => model.id),
   ]),
 ]

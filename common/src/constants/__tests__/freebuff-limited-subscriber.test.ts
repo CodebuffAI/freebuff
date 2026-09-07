@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS,
   FREEBUFF_WEB_LIMITED_MODEL_IDS,
   LIMITED_FREEBUFF_MODEL_ID,
   LIMITED_FREEBUFF_MODEL_IDS,
@@ -103,6 +105,34 @@ describe('paid plans at limited access', () => {
     }
   })
 
+  test('Luna is free at full access and plan-locked only at limited access', () => {
+    expect(FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS).not.toContain(
+      FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+    )
+    expect(FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS).toContain(
+      FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+    )
+    expect(
+      isFreebuffSessionModelAllowedForAccessTier(
+        FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+        'full',
+      ),
+    ).toBe(true)
+    expect(
+      isFreebuffSessionModelAllowedForAccessTier(
+        FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+        'limited',
+      ),
+    ).toBe(false)
+    expect(
+      isFreebuffSessionModelAllowedForAccessTier(
+        FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+        'limited',
+        true,
+      ),
+    ).toBe(true)
+  })
+
   test('every plan model is admissible at limited access with a plan', () => {
     // The two lists CANNOT drift any more: both the plan set and the predicate
     // read FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS, since 2026-09-04. This
@@ -121,14 +151,11 @@ describe('paid plans at limited access', () => {
     expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(5)
   })
 
-  test('a Pro row is never free at limited access', () => {
-    // The limited catalog excluded Luna BY NAME until 2026-09-04, which was
-    // indistinguishable from "excludes the Pro rows" while Luna was the only
-    // one. Gemini 3.8 Flash separated the two readings, and the by-name
-    // version would have put the dearest row in the catalog into the FREE
-    // limited catalog. Asserted over the whole Pro set so the next row added
-    // to it cannot repeat that.
-    for (const model of FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS) {
+  test('a limited-tier plan-only row is never free at limited access', () => {
+    // This set is intentionally broader than the global Pro set: Luna is free
+    // at full access and still plan-locked here. Assert over the actual tier
+    // boundary so changing either policy cannot silently widen this catalog.
+    for (const model of FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS) {
       expect(freeAtLimitedTier(model)).toBe(false)
       expect(isFreebuffSessionModelAllowedForAccessTier(model, 'limited')).toBe(
         false,
@@ -138,7 +165,7 @@ describe('paid plans at limited access', () => {
         isFreebuffSessionModelAllowedForAccessTier(model, 'limited', true),
       ).toBe(true)
     }
-    expect(FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS.length).toBeGreaterThan(0)
+    expect(FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.length).toBeGreaterThan(0)
   })
 
   test('every plan model resolves in the Web catalog', () => {
