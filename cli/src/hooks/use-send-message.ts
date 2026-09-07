@@ -187,7 +187,21 @@ export const useSendMessage = ({
       if (loadedState) {
         previousRunStateRef.current = loadedState.runState
         setRunState(loadedState.runState)
-        setMessages(sanitizeRestoredMessages(loadedState.messages))
+        const restoredMessages = sanitizeRestoredMessages(loadedState.messages)
+        if (loadedState.runStateRestored) {
+          setMessages(restoredMessages)
+        } else {
+          // The agent's context was lost (torn run-state.json, nothing
+          // recoverable) while the transcript survived. Surface it: without
+          // this the model just answers as if the earlier turns never
+          // happened, which reads as the assistant being broken.
+          setMessages([
+            createErrorChatMessage(
+              'The saved agent context could not be restored, so the assistant starts this chat without memory of earlier turns. The transcript below is intact.',
+            ),
+            ...restoredMessages,
+          ])
+        }
         if (loadedState.chatId) {
           setCurrentChatId(loadedState.chatId)
         }
