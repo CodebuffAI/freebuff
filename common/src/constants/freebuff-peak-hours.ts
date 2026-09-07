@@ -126,7 +126,7 @@ export const FALLBACK_WINDOW_TIME_ZONE = 'UTC'
  * depends on — and only falls through to UTC where the runtime has no zone to
  * report at all.
  */
-function resolveWindowTimeZone(timeZone?: string): string {
+export function resolveWindowTimeZone(timeZone?: string): string {
   if (timeZone) return timeZone
   try {
     return (

@@ -1,3 +1,7 @@
+import {
+  freebucksPeakCopy,
+  isFreebucksPeakModel,
+} from '@codebuff/common/util/freebuff-peak-price'
 import { watchFreebucksPriceChanges } from '@codebuff/common/util/freebuff-price-changes'
 import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
@@ -328,8 +332,11 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     [freebucks],
   )
   const taglineFor = useCallback(
-    (model: FreebuffModelOption) => freebucks?.priceNotices?.[model.id] ?? model.tagline,
-    [freebucks?.priceNotices],
+    (model: FreebuffModelOption) =>
+      isFreebucksPeakModel(freebucks, model.id)
+        ? model.tagline
+        : (freebucks?.priceNotices?.[model.id] ?? model.tagline),
+    [freebucks],
   )
   const referral = getReferralInfo(session)
   const meterFor = useCallback(
@@ -427,6 +434,17 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         })
       }
       if (model.warning) details.push({ text: model.warning, warn: true })
+      // PEAK PRICING as its own detail chip, in the reader's zone. Line 1
+      // keeps the row's tagline (the server's prose notice is the same fact
+      // and is dropped for a peaked row, see taglineFor); the price above
+      // already moved, and this is the why and the when.
+      if (freebucks?.peak && isFreebucksPeakModel(freebucks, model.id)) {
+        const base = (rowPrice ?? 0) - freebucks.peak.surcharge
+        details.push({
+          text: freebucksPeakCopy({ peak: freebucks.peak, basePrice: base, now }).tooltip,
+          warn: true,
+        })
+      }
       if (model.availability === 'deployment_hours') {
         // Carries both the in-hours and out-of-hours signal, so a row with
         // hours never also needs the closed note below.

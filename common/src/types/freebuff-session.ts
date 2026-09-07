@@ -257,10 +257,26 @@ export interface FreebuffFreebucksInfo {
   planId: string | null
   /** Session price per model id. Only models on the meter appear here. */
   prices: Record<string, number>
-  /** Copy resolved with the price, overriding the static model tagline. */
+  /** Copy resolved with the price, overriding the static model tagline.
+   *  A client that renders `peak` as a badge should ignore the entry for a
+   *  model in `peak.modelIds` — that entry is the same fact as prose, kept
+   *  for builds that predate the badge. */
   priceNotices?: Record<string, string>
+  /** The rows whose price carries the peak surcharge RIGHT NOW, and until
+   *  when. Absent off peak. Clients render it as a badge with a tooltip in
+   *  the reader's own time zone (`freebucksPeakCopy`). */
+  peak?: FreebuffFreebucksPeak
   /** Scheduled changes announced by the server; do not reprice admitted sessions. */
   priceChanges?: readonly FreebuffPriceChange[]
+}
+
+export interface FreebuffFreebucksPeak {
+  /** Model ids priced at base + `surcharge` at the moment of the response. */
+  modelIds: string[]
+  /** Freebucks added to each of those rows' session price. */
+  surcharge: number
+  /** ISO instant the surcharge lifts (the end of the expensive window). */
+  endsAt: string
 }
 
 export interface FreebuffPriceChange {
