@@ -99,7 +99,27 @@ export async function getFiles(params: {
         ...(isEnvTemplate ? { allowEnvTemplate: true } : {}),
       })
       if (ignored) {
-        result[relativePath] = FILE_READ_STATUS.IGNORED
+        // The internal-edit path (enforceEnvPolicy: false) skips the env
+        // gate above, so secrets can reach this branch via built-in ignore
+        // defaults. Never explain or hint unblocking for them.
+        if (isSensitiveEnvFilePath(relativePath)) {
+          result[relativePath] = FILE_READ_STATUS.IGNORED
+          continue
+        }
+        // Keep the sentinel as the prefix (consumers match with startsWith)
+        // and append the reason, following the FILE_TOO_LARGE precedent.
+        // The ignore check never touches the file itself, so only claim
+        // existence when a stat confirms it.
+        let exists = false
+        try {
+          await fs.stat(fullPath)
+          exists = true
+        } catch {
+          // missing or unreadable: omit the existence claim
+        }
+        result[relativePath] =
+          FILE_READ_STATUS.IGNORED +
+          `: ${isEnvTemplate ? 'blocked by ignore-rule checking' : 'excluded by ignore rules'} (.gitignore, .codebuffignore, or built-in defaults), not an OS permission issue.${exists ? ' The file exists on disk;' : ''} glob and code_search omit it for the same reason. To allow tool reads, adjust or negate the matching rule in .codebuffignore (a file-level negation cannot re-include a path under an excluded directory).`
         continue
       }
     }

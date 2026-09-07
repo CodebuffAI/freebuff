@@ -275,7 +275,9 @@ describe('CodebuffClientOptions fileFilter', () => {
     })
 
     expect(result.output.type).toBe('lastMessage')
-    expect(requestedFiles['.env.example']).toBe(FILE_READ_STATUS.IGNORED)
+    expect(
+      requestedFiles['.env.example']!.startsWith(FILE_READ_STATUS.IGNORED),
+    ).toBe(true)
   })
 
   it('should pass fileFilter to requestOptionalFile as well', async () => {
