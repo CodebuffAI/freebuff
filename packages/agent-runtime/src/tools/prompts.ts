@@ -9,13 +9,12 @@ import { buildArray } from '@codebuff/common/util/array'
 import { formatAvailableSkillsXml } from '@codebuff/common/util/skills'
 import { pluralize } from '@codebuff/common/util/string'
 import { cloneDeepKeepingZod } from '../util/zod-safe-clone'
-import { jsonSchema as wrapJsonSchema } from 'ai'
+import { serveInputSchema } from './serve-input-schema'
 import z from 'zod/v4'
 import { convertJsonSchemaToZod } from 'zod-from-json-schema'
 
 import type { ToolName } from '@codebuff/common/tools/constants'
 import type { SkillsMap } from '@codebuff/common/types/skill'
-import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type {
   CustomToolDefinitions,
   customToolDefinitionsSchema,
@@ -40,29 +39,11 @@ export function ensureZodSchema(
   return convertJsonSchemaToZod(schema as Record<string, unknown>)
 }
 
-function ensureJsonSchemaCompatible(
-  schema: z.ZodType,
-  opts?: { logger?: Logger; name?: string },
-): z.ZodType {
+function ensureJsonSchemaCompatible(schema: z.ZodType): z.ZodType {
   try {
     z.toJSONSchema(schema, { io: 'input' })
     return schema
-  } catch (error) {
-    // This fallback once silently consumed zod schemas whose internals had
-    // been stripped by a shallow clone (lodash cloneDeep drops zod v4's
-    // non-enumerable _zod), turning a broken schema into an empty tool
-    // schema for the model. Loud failure here would have surfaced that bug
-    // in minutes instead of sessions.
-    opts?.logger?.warn(
-      {
-        toolName: opts.name,
-        error: String(error),
-        schemaConstructor: schema?.constructor?.name,
-      },
-      `input schema failed JSON Schema conversion; serving empty schema${
-        opts.name ? ` for '${opts.name}'` : ''
-      }`,
-    )
+  } catch {
     const fallback = z.object({}).passthrough()
     return schema.description ? fallback.describe(schema.description) : fallback
   }
@@ -378,60 +359,6 @@ const readStyleDisplayVariants: Partial<
 
 type DisplayVariant = { description: string; inputSchema: z.ZodType }
 
-/**
- * Prepares a custom tool's inputSchema for the AI SDK. The schema ends up in
- * two places, with different fidelity requirements:
- *
- * 1. The tool definition sent to the LLM provider. The model reads this to
- *    decide what arguments to emit, so it must match what the MCP server
- *    declared. JSON Schema inputs are therefore passed through verbatim,
- *    wrapped in ai's jsonSchema() (a pass-through container).
- * 2. Argument validation at call time (the validate callback below).
- *    Approximation is acceptable here — a wrong rejection is recoverable,
- *    the model can retry — so the zod conversion does this job.
- *
- * Converting the schema to zod and back would be lossy: schemas zod cannot
- * represent (e.g. a property typed only `{ "type": "object" }`) come back
- * as an empty object schema, and a model reading an empty argument schema
- * emits `{}` — a tool call with no arguments. Zod-typed inputSchemas
- * (internal tools defined in TypeScript) keep the
- * ensureJsonSchemaCompatible path, which converts in one direction only.
- */
-function serveInputSchema(
-  inputSchema: z.ZodType | Record<string, unknown>,
-  opts: { logger?: Logger; name?: string },
-): z.ZodType | ReturnType<typeof wrapJsonSchema> {
-  if (
-    inputSchema &&
-    typeof (inputSchema as { safeParse?: unknown }).safeParse === 'function'
-  ) {
-    return ensureJsonSchemaCompatible(inputSchema as z.ZodType, opts)
-  }
-  const rawJsonSchema = inputSchema as Record<string, unknown>
-  // Validation only. The zod conversion handles checking arguments fine;
-  // its weakness is serializing back to JSON Schema, which we never do here.
-  const validationSchema = ensureZodSchema(rawJsonSchema)
-  const served = wrapJsonSchema(
-    rawJsonSchema as unknown as Parameters<typeof wrapJsonSchema>[0],
-    {
-      validate: (value: unknown) => {
-        const result = validationSchema.safeParse(value)
-        return result.success
-          ? { success: true as const, value: result.data }
-          : { success: false as const, error: result.error }
-      },
-    },
-  )
-  if (
-    typeof rawJsonSchema.description === 'string' &&
-    rawJsonSchema.description.length > 0
-  ) {
-    ;(served as { description?: string }).description ??=
-      rawJsonSchema.description
-  }
-  return served
-}
-
 export async function getToolSet(params: {
   toolNames: string[]
   windowedFileReads: boolean
@@ -443,7 +370,6 @@ export async function getToolSet(params: {
   additionalToolDefinitions: () => Promise<CustomToolDefinitions>
   agentTools: ToolSet
   skills: SkillsMap
-  logger?: Logger
 }): Promise<ToolSet> {
   const {
     toolNames,
@@ -452,7 +378,6 @@ export async function getToolSet(params: {
     additionalToolDefinitions,
     agentTools,
     skills,
-    logger,
   } = params
 
   // Generate available skills XML for the skill tool description
@@ -511,10 +436,7 @@ export async function getToolSet(params: {
     // JSON Schema is served verbatim (see serveInputSchema); the former
     // unconditional zod round-trip stripped loose schemas to an empty
     // object schema at the model.
-    const safeSchema = serveInputSchema(clonedDef.inputSchema, {
-      logger,
-      name: toolName,
-    })
+    const safeSchema = serveInputSchema(clonedDef.inputSchema)
     toolSet[toolName] = {
       ...clonedDef,
       inputSchema: safeSchema,

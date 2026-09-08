@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 
-import { mcpContentToToolResultOutputs } from '../client'
+import { mcpContentToToolResultOutputs } from '../content-mapping'
 
 /**
  * Regression tests for MCP tool-result content mapping.
