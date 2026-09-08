@@ -32,10 +32,8 @@ export interface FreebuffPlanSummary {
   blocked?: { label: string; resetsAt?: string }
   /** ISO instant the daily window resets — the soonest recurring boundary. */
   dayResetAt: string
-  /** ISO instant the billing period (monthly caps, spend cap) rolls. */
+  /** ISO instant the billing period (monthly session quota) rolls. */
   periodEndsAt: string
-  /** Month-to-date provider spend against the tier ceiling, USD. */
-  spend: { usedUsd: number; limitUsd: number }
 }
 
 /** Session units, without trailing ".0" noise: 2, 0.5, 1.5. */
@@ -52,14 +50,13 @@ export function formatPlanWindows(summary: FreebuffPlanSummary): string {
 }
 
 const BLOCKED_LABELS: Record<
-  NonNullable<FreebuffSubscriptionInfo['blockedBy']>,
+  Exclude<NonNullable<FreebuffSubscriptionInfo['blockedBy']>, 'monthly_spend'>,
   string
 > = {
   daily: "today's plan sessions are used",
   five_day: 'weekly limit reached',
   monthly: "this period's sessions are used",
   premium_daily: "today's premium sessions are used",
-  monthly_spend: "this period's compute cap is reached",
 }
 
 /**
@@ -77,14 +74,15 @@ export function freebuffPlanSummary(
   const tierName =
     info.tiers.find((tier) => tier.current)?.displayName ?? info.tierId
 
-  const blocked = info.blockedBy
-    ? {
-        label: BLOCKED_LABELS[info.blockedBy],
-        // The rolling weekly window frees capacity continuously, so naming one
-        // instant would be wrong for it; everything else has a real boundary.
-        ...(info.blockedBy === 'daily' || info.blockedBy === 'premium_daily'
-          ? { resetsAt: usage.dayResetAt }
-          : info.blockedBy === 'monthly' || info.blockedBy === 'monthly_spend'
+  const blocked =
+    info.blockedBy && info.blockedBy !== 'monthly_spend'
+      ? {
+          label: BLOCKED_LABELS[info.blockedBy],
+          // The rolling weekly window frees capacity continuously, so naming one
+          // instant would be wrong for it; everything else has a real boundary.
+          ...(info.blockedBy === 'daily' || info.blockedBy === 'premium_daily'
+            ? { resetsAt: usage.dayResetAt }
+            : info.blockedBy === 'monthly'
             ? { resetsAt: usage.periodEndsAt }
             : {}),
       }
@@ -101,10 +99,6 @@ export function freebuffPlanSummary(
     ...(blocked ? { blocked } : {}),
     dayResetAt: usage.dayResetAt,
     periodEndsAt: usage.periodEndsAt,
-    spend: {
-      usedUsd: usage.monthSpendUsd,
-      limitUsd: usage.monthSpendLimitUsd,
-    },
   }
 }
 

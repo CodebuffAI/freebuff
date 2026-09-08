@@ -123,7 +123,9 @@ export function freebucksRowIntent(
  * with an alphabetical one — a regression for everyone not yet on the meter.
  * An unpriced row on a metered account sorts LAST: `undefined` is not free.
  */
-export function sortModelsByPrice<T extends { id: string; displayName: string }>(
+export function sortModelsByPrice<
+  T extends { id: string; displayName: string },
+>(
   models: readonly T[],
   freebucks: FreebuffFreebucksInfo | undefined,
 ): readonly T[] {
@@ -169,11 +171,6 @@ export function freebucksHeaderLine(
   // reads as something to worry about. Web and Desktop hide it too.
   if (freebucks.wallet.balance > 0) {
     parts.push(`${formatFreebucks(freebucks.wallet.balance)} in wallet`)
-  }
-  if (freebucks.monthly) {
-    parts.push(
-      `${formatAllowanceUsd(freebucks.monthly.remainingUsd)} monthly usage left`,
-    )
   }
   return parts.join(' · ')
 }

@@ -405,7 +405,7 @@ export const SOLAR_PRO_4_OPENROUTER_ENDPOINT = 'upstage/zdr'
  *    drift onto Vertex shows up as a doubled $/msg on /web/admin/spend rather
  *    than as free traffic.
  *
- * The row is PREMIUM and carries a per-session dollar ceiling
+ * The row is PREMIUM and carries a per-session pacing target
  * (FREEBUFF_PER_MODEL_SESSION_SPEND_CAPS). At the flex rate and the cache
  * rates the browser surfaces actually get, it prices out at roughly 4x DeepSeek
  * V4 Flash and 9x GLM 5.3 Flash per message; the cache-read rate is the dearest
@@ -930,7 +930,7 @@ export const FREEBUFF_LIMITED_SESSION_LIMIT = 6
  * length that session COUNT is the wrong thing to meter — starting a session
  * costs nothing and an idle session costs nothing, while the traffic inside it
  * is bounded four separate ways (`messagesPerDay`, `messagesPer5Hours`,
- * `userMessagesPerDay`, and the daily spend ceiling). The churn it was aimed
+ * `userMessagesPerDay`). The churn it was aimed
  * at is project creation, which has its own gate
  * (`docs/freebuff-web-creation-gate.md`).
  *
@@ -1521,8 +1521,7 @@ const SOLAR_PRO_4_MODEL = {
 /**
  * Gemini 3.8 Flash. Premium, and unlike most premium rows it is priced premium
  * as well as badged it — see FREEBUFF_GEMINI_38_FLASH_MODEL_ID for the tier
- * table and FREEBUFF_PER_MODEL_SESSION_SPEND_CAPS for the ceiling that bounds
- * one session on it.
+ * table and FREEBUFF_PER_MODEL_SESSION_SPEND_CAPS for its pacing target.
  */
 const GEMINI_38_FLASH_MODEL = {
   id: FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
@@ -2040,8 +2039,8 @@ export function isFreebuffExperimentalModel(
 }
 
 /**
- * Per-session provider-spend ceilings. The lookup happens before any database
- * read, so models absent from this table stay off the spend-gate path.
+ * Historical per-model ceilings, retained as soft session pacing targets.
+ * Crossing a target adds a pause; it never refuses a prompt or model call.
  */
 export const FREEBUFF_PER_MODEL_SESSION_SPEND_CAPS: Readonly<
   Record<string, number>
@@ -2051,7 +2050,7 @@ export const FREEBUFF_PER_MODEL_SESSION_SPEND_CAPS: Readonly<
   [FREEBUFF_GEMINI_38_FLASH_MODEL_ID]: 0.5,
 }
 
-/** The per-session dollar ceiling for `model`, or undefined when it has none. */
+/** Optional model-specific pacing target; the legacy name is retained. */
 export function getFreebuffPerModelSessionSpendCap(
   model: string | null | undefined,
 ): number | undefined {
@@ -2445,7 +2444,6 @@ export const FREEBUFF_REWARD_MODEL_IDS = [FREEBUFF_REWARD_MODEL_ID] as const
 export const FREEBUFF_REWARD_MODEL_DISPLAY_NAME: string =
   SUPPORTED_FREEBUFF_MODELS.find((m) => m.id === FREEBUFF_REWARD_MODEL_ID)
     ?.displayName ?? 'GLM 5.3 Flash'
-
 
 /** Wire headers for the free-mode session endpoints
  *  (/api/v1/freebuff/session). Shared so the server handlers and every client
@@ -2903,12 +2901,8 @@ export const FREEBUFF_CLOUD_PLANNER_TURN_LIMIT = 12
  * Freebucks an hour, a third of the Flash price — so the tier that can least
  * afford a session was also the one barred from the cheap one.
  *
- * What makes this safe is that the tier is no longer metered by CATALOG. On
- * the Freebucks meter a limited account holds 25 Freebucks a day under a hard
- * $0.50 daily ceiling, and every row is priced, so widening WHAT they may pick
- * cannot widen HOW MUCH they draw — it only lets them spend the same allowance
- * on a row that goes further. Before the meter, catalog WAS the control, which
- * is why this list was narrow.
+ * Freebucks meters access through session prices and a daily pool, while
+ * session length and per-session pacing govern usage within an hour.
  *
  * Luna is the deliberate full-access exception: it stays plan-gated only at
  * the limited tier

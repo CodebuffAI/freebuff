@@ -1,12 +1,8 @@
-import {
-  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
-} from './freebuff-model-ids'
+import { FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID } from './freebuff-model-ids'
 import {
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
-  FREEBUFF_KIMI_K3_ECO_MODEL_ID,
   FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS,
   FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
   getFreebuffWebModel,
@@ -163,17 +159,6 @@ export interface FreebuffSubscriptionTier {
   /** Pooled sessions per billing period. */
   monthlySessions: number
   /**
-   * Provider-spend ceiling per billing period, in USD.
-   *
-   * The session caps bound COUNT; this bounds COST, and it exists because the
-   * two diverge badly — sessions differ ~5x in provider price by model, so a
-   * month of maxed Luna sessions costs several times a month of Flash. When
-   * period spend reaches this, plan sessions pause for the rest of the period
-   * (free sessions keep working), the same fallback shape as the peak-hours
-   * pause. Advertised on the pricing write-up as subject to change.
-   */
-  monthlySpendLimitUsd: number
-  /**
    * How many of the DAILY sessions may be spent on premium models
    * (Luna / GLM 5.3 Flash). The rest must go to the cheaper pool.
    */
@@ -199,7 +184,6 @@ export const FREEBUFF_FREE_TIER_ALLOWANCE = Object.freeze({
   dailySessions: 4,
   weeklySessions: 14,
   monthlySessions: 40,
-  monthlySpendLimitUsd: 20,
 })
 
 export const FREEBUFF_SUBSCRIPTION_TIERS: readonly FreebuffSubscriptionTier[] =
@@ -219,7 +203,6 @@ export const FREEBUFF_SUBSCRIPTION_TIERS: readonly FreebuffSubscriptionTier[] =
       dailySessions: 3,
       fiveDaySessions: 10,
       monthlySessions: 30,
-      monthlySpendLimitUsd: 15,
       // Equal to dailySessions: the Luna/Pro sub-cap was LIFTED (2026-08-26).
       // Kept as a field rather than deleted so the wire shape and the
       // enforcement stay in place — set it lower again to reinstate the cap
@@ -234,7 +217,6 @@ export const FREEBUFF_SUBSCRIPTION_TIERS: readonly FreebuffSubscriptionTier[] =
       dailySessions: 7,
       fiveDaySessions: 26,
       monthlySessions: 100,
-      monthlySpendLimitUsd: 50,
       // Equal to dailySessions — sub-cap lifted; see the starter tier note.
       dailyPremiumSessions: 7,
     },
@@ -246,7 +228,6 @@ export const FREEBUFF_SUBSCRIPTION_TIERS: readonly FreebuffSubscriptionTier[] =
       dailySessions: 11,
       fiveDaySessions: 66,
       monthlySessions: 210,
-      monthlySpendLimitUsd: 180,
       // Sub-cap lifted, like the others.
       dailyPremiumSessions: 11,
     },
@@ -303,9 +284,6 @@ export function freebuffSubscriptionTierDisclaimers(
     'Daily hours reset at midnight Pacific; unused ones do not carry over',
     'Adds to your free sessions rather than replacing them',
   ]
-  out.push(
-    `Up to $${tier.monthlySpendLimitUsd} of ${FREEBUFF_SPEND_UNIT_LABEL} per month; plan sessions pause if reached, free sessions keep working`,
-  )
   out.push('Limits are subject to change')
   return out
 }
@@ -397,9 +375,9 @@ export const FREEBUFF_PRO_ENFORCED_SURFACES = ['freebuff-web'] as const
  * future Pro row on DeepSeek direct joins the list below; one on any other
  * provider must not.
  */
-const FREEBUFF_WEB_PEAK_CLOSED_PRO_MODEL_IDS: readonly string[] = Object.freeze([
-  FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
-])
+const FREEBUFF_WEB_PEAK_CLOSED_PRO_MODEL_IDS: readonly string[] = Object.freeze(
+  [FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID],
+)
 
 export function isFreebuffWebProClosedNow(
   id: string,
@@ -553,12 +531,5 @@ export function freebuffPlanHoursSummary(tier: {
   ].join(' · ')
 }
 
-/**
- * What the monthly ceiling is spent ON, in the user's words.
- *
- * "compute" is our word for it and meant nothing to the people reading the
- * plan — "tokens" is what a developer buying an AI plan already understands
- * they are paying for. Kept as a constant so the label moves in one place if
- * that stops being true.
- */
+/** Token label used by the plans page's value explanation. */
 export const FREEBUFF_SPEND_UNIT_LABEL = 'tokens'

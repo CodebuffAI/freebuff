@@ -16,7 +16,12 @@ const metered = (
   over: Partial<FreebuffFreebucksInfo> = {},
 ): FreebuffFreebucksInfo => ({
   balance: 50,
-  daily: { limit: 75, spent: 45, remaining: 30, resetAt: '2026-09-05T07:00:00Z' },
+  daily: {
+    limit: 75,
+    spent: 45,
+    remaining: 30,
+    resetAt: '2026-09-05T07:00:00Z',
+  },
   wallet: { balance: 20, monthlyBonus: 0 },
   spend: { limitUsd: 1.5, resetAt: '2026-09-05T07:00:00Z' },
   monthly: {
@@ -125,7 +130,9 @@ describe('freebucksRowIntent', () => {
     // verdict carrying the wallet share, never two stacked asks.
     expect(
       freebucksRowIntent(
-        metered({ daily: { limit: 75, spent: 70, remaining: 5, resetAt: 'x' } }),
+        metered({
+          daily: { limit: 75, spent: 70, remaining: 5, resetAt: 'x' },
+        }),
         'flash',
         'glm',
       ),
@@ -171,12 +178,9 @@ describe('ordering', () => {
   test('an unpriced row sorts last, not first', () => {
     // `undefined` is not free.
     const withUnpriced = [{ id: 'muse', displayName: 'Muse Spark' }, ...rows]
-    expect(sortModelsByPrice(withUnpriced, metered()).map((r) => r.id)).toEqual([
-      'glm',
-      'mimo',
-      'flash',
-      'muse',
-    ])
+    expect(sortModelsByPrice(withUnpriced, metered()).map((r) => r.id)).toEqual(
+      ['glm', 'mimo', 'flash', 'muse'],
+    )
   })
 
   test('equal prices break on name, so the order is stable', () => {
@@ -192,8 +196,10 @@ describe('ordering', () => {
 })
 
 describe('the header line', () => {
-  test('reads daily over limit, wallet, and the dollar allowance', () => {
-    expect(freebucksHeaderLine(metered())).toBe('30/75 Freebucks daily · 20 in wallet · $20 monthly usage left')
+  test('shows session balances and ignores legacy dollar caps', () => {
+    expect(freebucksHeaderLine(metered())).toBe(
+      '30/75 Freebucks daily · 20 in wallet',
+    )
   })
 
   test('omits the allowance a server did not send, rather than showing $0', () => {
@@ -207,7 +213,7 @@ describe('the header line', () => {
   test('carries the reset countdown when given a clock', () => {
     const now = Date.parse('2026-09-05T02:48:00Z') // 4h 12m before the fixture's reset
     expect(freebucksHeaderLine(metered(), now)).toBe(
-      '30/75 Freebucks daily · resets in 4h 12m · 20 in wallet · $20 monthly usage left',
+      '30/75 Freebucks daily · resets in 4h 12m · 20 in wallet',
     )
   })
 
@@ -222,18 +228,9 @@ describe('the header line', () => {
   test('hides an empty wallet, as Web and Desktop do', () => {
     expect(
       freebucksHeaderLine(metered({ wallet: { balance: 0, monthlyBonus: 0 } })),
-    ).toBe('30/75 Freebucks daily · $20 monthly usage left')
+    ).toBe('30/75 Freebucks daily')
   })
 
-  test('small allowances keep their cents', () => {
-    expect(
-      freebucksHeaderLine(
-        metered({
-          monthly: { limitUsd: 25, spentUsd: 24.6, remainingUsd: 0.4, resetAt: 'x' },
-        }),
-      ),
-    ).toContain('$0.40 monthly usage left')
-  })
 })
 
 describe('the price label', () => {

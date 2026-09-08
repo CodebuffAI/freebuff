@@ -141,6 +141,7 @@ export async function callFreebuffSession(
 
   if (response.status === 409 && method === 'POST') {
     const body = (await response
+      .clone()
       .json()
       .catch(() => null)) as FreebuffSessionServerResponse | null
     if (

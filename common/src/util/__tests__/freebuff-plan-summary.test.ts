@@ -59,7 +59,13 @@ describe('freebuffPlanSummary', () => {
       'today 1.3 of 2 · week 3 of 6 · month 11 of 50',
     )
     expect(s.blocked).toBeUndefined()
-    expect(s.spend).toEqual({ usedUsd: 3.21, limitUsd: 40 })
+    expect(s).not.toHaveProperty('spend')
+  })
+
+  test('ignores retired spend blocks from an older server', () => {
+    expect(
+      freebuffPlanSummary(info({ blockedBy: 'monthly_spend' }))!.blocked,
+    ).toBeUndefined()
   })
 
   test('absent for no plan, and for a server that omits usage', () => {
@@ -79,7 +85,6 @@ describe('freebuffPlanSummary', () => {
     ['daily', USAGE.dayResetAt],
     ['premium_daily', USAGE.dayResetAt],
     ['monthly', USAGE.periodEndsAt],
-    ['monthly_spend', USAGE.periodEndsAt],
   ] as const)('blockedBy %s names the binding reset', (blockedBy, resetsAt) => {
     const s = freebuffPlanSummary(info({ blockedBy }))!
     expect(s.blocked?.resetsAt).toBe(resetsAt)

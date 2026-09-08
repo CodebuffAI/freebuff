@@ -1,9 +1,5 @@
-/**
- * The client half of the per-turn spend breaker (packages/billing/src/
- * freebuff-turn-spend.ts): a 429 with `error: 'turn_spend_limit'` is final
- * for the turn, so the SDK must not spend the AI SDK's retry budget on it —
- * and must hand the server's own copy to the runtime unchanged.
- */
+/** Older servers can still return a final turn_spend_limit refusal. The SDK
+ * must preserve its copy and avoid retrying it. Current servers use pacing. */
 import {
   FREEBUFF_TURN_SPEND_LIMIT_ERROR_CODE,
   FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
