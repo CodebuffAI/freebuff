@@ -1,21 +1,13 @@
 #!/usr/bin/env node
-
+'use strict'
 const fs = require('fs')
 const path = require('path')
 
-const packagedLauncherPath = path.join(__dirname, 'launcher.js')
-const sourceLauncherPath = path.join(
-  __dirname,
-  '..',
-  'release-core',
-  'launcher.js',
-)
-// Published packages must not let an unrelated sibling path shadow their
-// bundled launcher. Source checkouts only fall back when that copy is absent.
+const packaged = path.join(__dirname, 'launcher.js')
+const source = path.join(__dirname, '..', 'release-core', 'launcher.js')
+
 const { createLauncher } = require(
-  fs.existsSync(packagedLauncherPath)
-    ? packagedLauncherPath
-    : sourceLauncherPath,
+  fs.existsSync(packaged) ? packaged : source
 )
 
 const launcher = createLauncher({
@@ -28,8 +20,8 @@ const launcher = createLauncher({
 module.exports = launcher
 
 if (require.main === module) {
-  launcher.main().catch((error) => {
-    console.error('❌ Unexpected error:', error.message)
+  launcher.main().catch(err => {
+    console.error('❌ Unexpected error:', err.message)
     process.exit(1)
   })
 }
