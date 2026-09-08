@@ -15,26 +15,4 @@ server.registerTool('get_text_resource', { inputSchema: {} }, async () => ({
   }],
 }))
 
-server.registerTool('get_gzip_resource', { inputSchema: {} }, async () => ({
-  content: [{
-    type: 'resource',
-    resource: {
-      uri: 'file:///archive.gz',
-      mimeType: 'application/gzip',
-      blob: 'aGVsbG8=',
-    },
-  }],
-}))
-
-server.registerTool('get_png_resource', { inputSchema: {} }, async () => ({
-  content: [{
-    type: 'resource',
-    resource: {
-      uri: 'file:///logo.png',
-      mimeType: 'image/png',
-      blob: 'aGVsbG8=',
-    },
-  }],
-}))
-
 await server.connect(new StdioServerTransport())
