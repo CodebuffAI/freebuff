@@ -968,10 +968,14 @@ export async function loopAgentSteps(
   )
 
   // Convert tools to a serializable format for context-pruner token counting
+  // Convert tool definitions to a JSON-serializable format. These live in
+  // agent state (persisted, snapshotted, shipped over the wire), so every
+  // inputSchema must be plain JSON Schema — Zod instances are cyclic and
+  // detonate any JSON.stringify over the state (turn 2+ would die).
   const toolDefinitions = mapValues(tools, (tool) => ({
     description:
       typeof tool.description === 'string' ? tool.description : undefined,
-    inputSchema: tool.inputSchema as {},
+    inputSchema: toTokenCountInputSchema(tool.inputSchema) ?? {},
   }))
 
   const additionalToolDefinitionsWithCache = async () => {
@@ -994,7 +998,8 @@ export async function loopAgentSteps(
 
   // Convert tool definitions to Anthropic format for accurate token counting.
   // Tool definitions are stored as { [name]: { description, inputSchema } },
-  // where inputSchema is a Zod schema. Anthropic's count_tokens API expects
+  // where inputSchema is plain JSON Schema (see toolDefinitions above).
+  // Anthropic's count_tokens API expects
   // [{ name, description, input_schema }] with input_schema being real JSON
   // Schema (with a top-level `type: 'object'`) — see toTokenCountInputSchema.
   const toolsForTokenCount = Object.entries(toolDefinitions).map(
