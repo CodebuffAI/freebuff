@@ -47,6 +47,14 @@ const effectiveJsonSchema = async (
   return z.toJSONSchema(served as never, { io: 'input' }) as Record<string, unknown>
 }
 
+const propertyAt = (
+  schema: Record<string, unknown>,
+  name: string,
+): Record<string, unknown> | undefined =>
+  schema.properties as Record<string, Record<string, unknown>> | undefined
+    ? (schema.properties as Record<string, Record<string, unknown>>)[name]
+    : undefined
+
 describe('getToolSet serves custom tool inputSchemas', () => {
   test('keeps_live_zod_schema_functional_through_clone_and_serving', async () => {
     const { z } = await import('zod/v4')
@@ -75,7 +83,7 @@ describe('getToolSet serves custom tool inputSchemas', () => {
 
     const served = (toolSet['shaped_tool'] as { inputSchema: unknown }).inputSchema
     const modelSchema = await effectiveJsonSchema(served)
-    expect(modelSchema.properties?.['verbose']).toBeDefined()
+    expect(propertyAt(modelSchema, 'verbose')).toBeDefined()
   })
 
   test('serves_bare_object_typed_property_without_amputation', async () => {
@@ -90,6 +98,6 @@ describe('getToolSet serves custom tool inputSchemas', () => {
 
     const served = (toolSet['shaped_tool'] as { inputSchema: unknown }).inputSchema
     const modelSchema = await effectiveJsonSchema(served)
-    expect((modelSchema.properties?.['payload'] as { type?: string })?.type).toBe('object')
+    expect((propertyAt(modelSchema, 'payload') as { type?: string })?.type).toBe('object')
   })
 })

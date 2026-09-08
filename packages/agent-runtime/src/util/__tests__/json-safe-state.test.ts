@@ -81,7 +81,7 @@ const runStepToPopulation = async (fileContext: ProjectFileContext) => {
   agentState.messageHistory = []
 
   await loopAgentSteps({
-    ...(TEST_AGENT_RUNTIME_IMPL as never),
+    ...(TEST_AGENT_RUNTIME_IMPL as unknown as Record<string, unknown>),
     sendAction: () => {},
     additionalToolDefinitions: () => Promise.resolve({}),
     ancestorRunIds: [],
