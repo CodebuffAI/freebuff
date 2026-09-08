@@ -187,6 +187,11 @@ interface FreebuffModelSelectorProps {
    *  about what hour CI happened to run at. Unset in production, where the
    *  clock ticks so a row reopens without a relaunch. */
   nowMs?: number
+  /** Ignore every key while something above the picker owns the keyboard.
+   *  The Freebucks intro card is the one caller: it says "press any key to
+   *  continue", and without this the same key also committed the focused row
+   *  and charged for a session the user never picked. */
+  keyboardSuspended?: boolean
 }
 
 /** Every model id this screen can offer a tier: the grid, plus the banner's
@@ -220,6 +225,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   onExpandedChange,
   belowToggle,
   nowMs,
+  keyboardSuspended = false,
   startSession = startFreebuffSession,
 }) => {
   const theme = useTheme()
@@ -525,6 +531,39 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     (modelId: string) =>
       freebucksRowIntent(freebucks, modelId, activeSessionModel),
     [freebucks, activeSessionModel],
+  )
+
+  /**
+   * A row the meter alone refuses: open for business, priced, and dearer than
+   * the balance.
+   *
+   * It is NOT joinable, but it must still be PRESSABLE. `isJoinable` gated the
+   * Enter handler and the click handler, so a row the user could not afford
+   * did nothing at all when pressed — no message, no plans link, no sound — and
+   * the paywall wording written for exactly this case (`askLineFor`) and the
+   * plans link behind it (`pick`) were unreachable from either input. On a
+   * metered account that is the whole failure the user reports as "I can't
+   * change models": the cheapest row starts, every dearer one is silent
+   * (2026-09-08).
+   *
+   * Deliberately narrower than `!isJoinable`. A row that is closed for the
+   * hour, withdrawn, or out of trial slots already says so on its own second
+   * line and has no second press that changes the answer, so those stay inert.
+   */
+  const isPricedOut = useCallback(
+    (modelId: string) =>
+      !isJoinable(modelId) &&
+      isFreebuffModelAvailable(modelId, new Date(now)) &&
+      !offerByModelId.has(modelId) &&
+      rowIntent(modelId).kind === 'paywall',
+    [isJoinable, now, offerByModelId, rowIntent],
+  )
+
+  /** Whether pressing the row does anything at all — starts a session, asks a
+   *  question, or explains a wall. */
+  const isPressable = useCallback(
+    (modelId: string) => isJoinable(modelId) || isPricedOut(modelId),
+    [isJoinable, isPricedOut],
   )
 
   /**
@@ -1030,7 +1069,9 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     (modelId: string) => {
       if (admissionPending.current) return
       if (modelId === committedModelId) return
-      if (!isJoinable(modelId)) return
+      // Priced-out rows fall through on purpose: the branches below raise the
+      // wall and then open the plans page. Everything else unjoinable stops.
+      if (!isPressable(modelId)) return
       // The meter's gates. The first Enter on a row that costs something
       // irreversible ASKS; the second commits. Re-pressing on the row already
       // asking is the confirmation, which is why this compares against
@@ -1057,7 +1098,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         setPending(null)
       })
     },
-    [committedModelId, isJoinable, startSession, rowIntent, pendingAsk],
+    [committedModelId, isPressable, startSession, rowIntent, pendingAsk],
   )
 
   const toggleExpanded = useCallback(() => {
@@ -1074,6 +1115,10 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   useKeyboard(
     useCallback(
       (key: KeyEvent) => {
+        // The Freebucks intro card is up and its "press any key" belongs to it
+        // alone; committing a row on that key charges for a session the user
+        // never picked.
+        if (keyboardSuspended) return
         if (pending) return
         const name = key.name ?? ''
         const direction = freebuffModelNavigationDirectionForKey(key)
@@ -1098,7 +1143,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
             extraTarget.activate()
             return
           }
-          if (isJoinable(focusedId) && focusedId !== committedModelId) {
+          if (isPressable(focusedId) && focusedId !== committedModelId) {
             key.preventDefault?.()
             key.stopPropagation?.()
             pick(focusedId)
@@ -1118,12 +1163,13 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         }
       },
       [
+        keyboardSuspended,
         pending,
         pick,
         toggleExpanded,
         focusedId,
         committedModelId,
-        isJoinable,
+        isPressable,
         navIds,
         extraTargets,
       ],
@@ -1143,8 +1189,11 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     const isFocused = focusedId === model.id
     const canJoin = isJoinable(model.id)
     // Clickable whenever picking would actually do something — i.e.
-    // anything except re-picking the queue we're already in.
-    const interactable = !pending && canJoin && model.id !== committedModelId
+    // anything except re-picking the queue we're already in. A priced-out row
+    // counts: the click raises the wall and offers the plans page, where
+    // before it was silently inert.
+    const interactable =
+      !pending && isPressable(model.id) && model.id !== committedModelId
 
     // Focused row: green border + arrow indicator + bold name. The name
     // itself stays the normal foreground color so it doesn't shout — the

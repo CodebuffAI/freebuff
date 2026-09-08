@@ -13,7 +13,7 @@ import {
 import { Button } from './button'
 import { ChoiceAdBanner, AD_CARD_HEIGHT } from './ad-banner'
 import { visibleWaitingRoomPlacementIds } from '@codebuff/common/ads/waiting-room-placements'
-import { FreebucksIntroCard } from './freebucks-intro-card'
+import { FreebucksIntroCard, useFreebucksIntro } from './freebucks-intro-card'
 import { FreebuffModelSelector } from './freebuff-model-selector'
 import { ShimmerText } from './shimmer-text'
 import {
@@ -460,6 +460,16 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   // state: show the picker with a prompt. Picking a model triggers
   // startFreebuffSession, which POSTs and transitions straight to 'active' (chat).
   const isLanding = session?.status === 'none'
+  // The one-time Freebucks introduction, only where the picker itself is on
+  // screen and only where it fits: on a short terminal it would push the
+  // picker off the bottom, and an unseen card is shown on the next launch
+  // instead (it is marked seen only when it becomes visible, so a launch that
+  // lands on a wall instead of the picker must not consume it). Held here
+  // rather than inside the card so the picker below can be told to ignore the
+  // key that dismisses it — see `useFreebucksIntro`.
+  const freebucksIntro = useFreebucksIntro(
+    isLanding && terminalHeight >= 30 && freebucksOf(session) !== undefined,
+  )
   // On the meter, nothing below counts sessions.
   const metered = freebucksOf(session) !== undefined
   const streakQuery = useFreebuffStreakQuery({
@@ -710,14 +720,10 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
                 gap: 0,
               }}
             >
-              {/* The one-time Freebucks introduction, only where it fits:
-                  on a short terminal it would push the picker off the
-                  bottom, and an unseen card is shown on the next launch
-                  instead (it is marked seen only when it renders). */}
-              {terminalHeight >= 30 && (
+              {freebucksIntro.visible && (
                 <FreebucksIntroCard
-                  metered={freebucksOf(session) !== undefined}
                   width={Math.min(contentMaxWidth, 72)}
+                  onDismiss={freebucksIntro.dismiss}
                 />
               )}
               <LandingHeadingRow
@@ -730,6 +736,9 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
               <FreebuffModelSelector
                 maxHeight={selectorMaxHeight}
                 onExpandedChange={setSelectorExpanded}
+                // The intro card owns the keyboard while it is up: its "press
+                // any key" must not also commit the focused row.
+                keyboardSuspended={freebucksIntro.visible}
                 belowToggle={
                   showBelowPickerCounter ? (
                     <text

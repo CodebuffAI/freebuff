@@ -10,6 +10,8 @@ import { createTestRenderer } from '@opentui/core/testing'
 import { createRoot, flushSync } from '@opentui/react'
 import React from 'react'
 
+import { FREEBUCKS_LABEL } from '../../utils/freebucks'
+import * as openUrl from '../../utils/open-url'
 import { FreebuffModelSelector } from '../freebuff-model-selector'
 import {
   FREEBUFF_REWARD_MODEL_ID,
@@ -917,6 +919,88 @@ test.each([
     expect(getSelectedFreebuffModel()).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
   },
 )
+
+// A row the meter cannot cover used to be inert in both directions: the Enter
+// handler and the click handler both gated on `isJoinable`, so pressing it did
+// nothing at all — no message, no plans link. On a metered account that is the
+// whole of what users reported as "I can't change models": the cheapest row
+// starts and every dearer one is silent (2026-09-08). The wall now speaks, and
+// the second press opens the page that is the only thing which changes the
+// answer.
+describe('a row the balance cannot cover', () => {
+  const renderUnaffordableLuna = async () => {
+    useFreebuffSessionStore.getState().setSession({
+      status: 'none',
+      accessTier: 'full',
+      freebucks: freebucksFixture(10, {
+        [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 20,
+        [FREEBUFF_MIMO_V25_MODEL_ID]: 10,
+      }),
+    })
+    useFreebuffModelStore
+      .getState()
+      .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
+    const requested: string[] = []
+    const setup = await renderSelector(40, async (model) => {
+      requested.push(model)
+    })
+    await setup.renderOnce()
+    // Walk the focus onto Luna rather than assuming where it lands.
+    for (let i = 0; i < 12; i++) {
+      if (setup.captureCharFrame().includes('› GPT-5.6 Luna')) break
+      flushSync(() => setup.mockInput.pressKey('ARROW_DOWN'))
+      await setup.renderOnce()
+    }
+    expect(setup.captureCharFrame()).toContain('› GPT-5.6 Luna')
+    return { setup, requested }
+  }
+
+  test('explains the wall on the first press instead of doing nothing', async () => {
+    const { setup, requested } = await renderUnaffordableLuna()
+    flushSync(() => setup.mockInput.pressEnter())
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain(`Not enough ${FREEBUCKS_LABEL}`)
+    expect(frame).toContain('Enter opens plans')
+    expect(requested).toEqual([])
+  })
+
+  test('opens the plans page on the second press, and starts nothing', async () => {
+    const openSpy = spyOn(openUrl, 'safeOpen').mockResolvedValue(true)
+    try {
+      const { setup, requested } = await renderUnaffordableLuna()
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(openSpy).toHaveBeenCalledWith('https://freebuff.com/plans')
+      expect(requested).toEqual([])
+      expect(getSelectedFreebuffModel()).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    } finally {
+      openSpy.mockRestore()
+    }
+  })
+
+  test('a row closed for the hour stays inert — no wall to raise', async () => {
+    useFreebuffSessionStore.getState().setSession({
+      status: 'none',
+      accessTier: 'full',
+      freebucks: freebucksFixture(10, {
+        [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 20,
+      }),
+    })
+    useFreebuffModelStore
+      .getState()
+      .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
+    const setup = await renderSelector()
+    await setup.renderOnce()
+    // Nothing is asking anything before a press; the assertion above is what
+    // makes the two cases distinguishable at all.
+    expect(setup.captureCharFrame()).not.toContain(
+      `Not enough ${FREEBUCKS_LABEL}`,
+    )
+  })
+})
 
 test.each([false, true])(
   'Freebucks does not change Luna plan access (paid=%s)',
