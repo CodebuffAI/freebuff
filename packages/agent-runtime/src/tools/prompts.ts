@@ -8,7 +8,7 @@ import { getToolCallString } from '@codebuff/common/tools/utils'
 import { buildArray } from '@codebuff/common/util/array'
 import { formatAvailableSkillsXml } from '@codebuff/common/util/skills'
 import { pluralize } from '@codebuff/common/util/string'
-import { cloneDeep } from 'lodash'
+import { cloneDeepKeepingZod } from '../util/zod-safe-clone'
 import z from 'zod/v4'
 import { convertJsonSchemaToZod } from 'zod-from-json-schema'
 
@@ -430,7 +430,7 @@ export async function getToolSet(params: {
 
   const toolDefinitions = await additionalToolDefinitions()
   for (const [toolName, toolDefinition] of Object.entries(toolDefinitions)) {
-    const clonedDef = cloneDeep(toolDefinition)
+    const clonedDef = cloneDeepKeepingZod(toolDefinition)
     // Custom tool inputSchema may be JSON Schema (from SDK) or Zod (from MCP)
     // Ensure it's a Zod schema for the AI SDK
     const zodSchema = ensureZodSchema(clonedDef.inputSchema)

@@ -1,7 +1,7 @@
 import { endsAgentStepParam, toolNames } from '@codebuff/common/tools/constants'
 import { toolParams } from '@codebuff/common/tools/list'
 import { generateCompactId } from '@codebuff/common/util/string'
-import { cloneDeep } from 'lodash'
+import { cloneDeepKeepingZod } from '../util/zod-safe-clone'
 
 import { getMCPToolData } from '../mcp'
 import { MCP_TOOL_SEPARATOR } from '../mcp-constants'
@@ -724,7 +724,7 @@ export async function executeCustomToolCall(
       ...params,
       toolNames: agentTemplate.toolNames,
       mcpServers: agentTemplate.mcpServers,
-      writeTo: cloneDeep(fileContext.customToolDefinitions),
+      writeTo: cloneDeepKeepingZod(fileContext.customToolDefinitions),
     }),
     rawToolCall: {
       toolName,
