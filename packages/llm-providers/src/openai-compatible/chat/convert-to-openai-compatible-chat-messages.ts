@@ -14,6 +14,25 @@ function getOpenAIMetadata(message: {
   return message?.providerOptions?.openaiCompatible ?? {}
 }
 
+/** Approximate payload size of a file part's data, for placeholder text. */
+function filePartByteLength(data: unknown): number {
+  let value = data
+  if (value && typeof value === 'object' && 'type' in value) {
+    if (value.type === 'data' && 'data' in value) {
+      value = value.data
+    } else if (value.type === 'url' && 'url' in value) {
+      value = value.url
+    }
+  }
+  if (typeof value === 'string') {
+    return Math.round((value.length * 3) / 4)
+  }
+  if (value instanceof Uint8Array) {
+    return value.byteLength
+  }
+  return 0
+}
+
 function imageUrlFromData(data: unknown, mediaType: string): string {
   // AI SDK 7 adapts this v2 provider to v4, whose file data is tagged. The
   // compatibility proxy passes that v4 shape through to the v2 implementation.
@@ -89,9 +108,17 @@ export function convertToOpenAICompatibleChatMessages(
                     ...partMetadata,
                   }
                 } else {
-                  throw new UnsupportedFunctionalityError({
-                    functionality: `file part media type ${part.mediaType}`,
-                  })
+                  // Non-image file parts (e.g. application/gzip from an MCP
+                  // resource) have no OpenAI-compatible representation.
+                  // Degrade to a text placeholder instead of throwing: a
+                  // throw here fails the entire prompt build and, because
+                  // the message stays in history, kills the session on every
+                  // subsequent turn.
+                  return {
+                    type: 'text',
+                    text: `[${part.mediaType} file part not displayable (~${filePartByteLength(part.data)} bytes)]`,
+                    ...partMetadata,
+                  }
                 }
               }
             }
