@@ -1,31 +1,62 @@
-// With the help of opus 5. I mostly did it tho. Just had opus to fix any bugs and make it easier to read.
+// had opus 5 help me. Mostly did it myself for once.
 
-// type
+import {
+  formatTokens,
+  freshInputTokens,
+  totalTokens,
+} from '@codebuff/common/util/tokens' // ← verify this specifier
+
+// types
+
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool'
 
-// minimal structure
 export interface ChatMessage {
   role: MessageRole
   content: unknown
- //set on use by syntehtic data
+  /** Set by us on synthetic summary messages. */
   _compaction?: CompactionMeta
   [key: string]: unknown
 }
 
 export interface CompactionMeta {
   kind: 'summary'
-  // hhow many original messages this summary stands in for
+  /** How many original messages this summary stands in for. */
   replacedCount: number
-  // token count of it
+  /** Token count of the messages that were replaced. */
   replacedTokens: number
-  // goes up everytime a summary is summazried
+  /** Incremented each time a summary is re-summarized. */
   generation: number
   createdAt: number
 }
 
+/**
+ * A provider usage row, in the same shape `util/tokens` consumes.
+ *
+ * `inputTokens` is the provider's `prompt_tokens` and ALREADY INCLUDES
+ * `cacheReadTokens` — never add them together. See `totalTokens`.
+ */
+export interface UsageSnapshot {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  /**
+   * How many leading entries of the message array this row accounts for,
+   * INCLUDING the assistant message the row's `outputTokens` produced.
+   *
+   * Anything past this index has never been sent to the provider and must be
+   * estimated. Get this wrong and the threshold silently drifts.
+   */
+  coversMessageCount: number
+}
+
 export interface CompressionOptions {
-  // ceiling of the token
+  /** Hard ceiling for the conversation, in tokens. */
   maxContextTokens: number
+  /**
+   * Most recent provider usage row. When supplied, the threshold check uses
+   * real numbers for the covered prefix instead of the ~4 chars/token guess.
+   */
+  lastUsage?: UsageSnapshot
   /**
    * Fraction of `maxContextTokens` at which compression kicks in.
    * @default 0.8
@@ -48,11 +79,23 @@ export interface CompressionOptions {
    */
   minMessagesToSummarize?: number
   /**
+   * Skip compression while the provider is prefilling less than this fraction
+   * of the prompt, i.e. while the cache is doing the work for us.
+   *
+   * Compaction rewrites the prefix and invalidates the cached prefill, so a
+   * conversation at 85% cache hit can get *more* expensive after compressing.
+   * Requires `lastUsage`; ignored without it.
+   *
+   * Set to 0 to always compress on threshold.
+   * @default 0.15
+   */
+  minFreshInputRatio?: number
+  /**
    * Number of leading messages treated as pinned (system prompt, etc.).
    * Auto-detected from leading `system` messages if omitted.
    */
   pinnedHeadCount?: number
-  /** Token counter. Defaults to a ~4 chars/token heuristic. */
+  /** Fallback estimator for messages the provider has not priced. */
   countTokens?: (message: ChatMessage) => number
   /** Produces the summary text. Required when compression actually runs. */
   summarize?: Summarizer
@@ -71,9 +114,13 @@ export interface SummarizeInput {
 
 export type CompressionReason =
   | 'under-threshold'
+  | 'cache-warm'
   | 'nothing-to-summarize'
-  | 'compressed'
   | 'no-summarizer'
+  | 'compressed'
+
+/** Where a token figure came from. Worth surfacing — the two differ a lot. */
+export type TokenSource = 'provider' | 'estimated' | 'mixed'
 
 export interface CompressionResult {
   messages: ChatMessage[]
@@ -81,6 +128,7 @@ export interface CompressionResult {
   reason: CompressionReason
   tokensBefore: number
   tokensAfter: number
+  tokenSource: TokenSource
   messagesRemoved: number
   /** Index in the returned array where the summary lives, if any. */
   summaryIndex?: number
@@ -95,6 +143,7 @@ const DEFAULTS = {
   targetRatio: 0.5,
   minTailMessages: 6,
   minMessagesToSummarize: 4,
+  minFreshInputRatio: 0.15,
 } as const
 
 /** Rough heuristic: ~4 characters per token for English + code. */
@@ -104,7 +153,7 @@ const CHARS_PER_TOKEN = 4
 const PER_MESSAGE_OVERHEAD_TOKENS = 4
 
 // ---------------------------------------------------------------------------
-// Token estimation
+// Token estimation (fallback only)
 // ---------------------------------------------------------------------------
 
 /**
@@ -145,6 +194,57 @@ export function estimateTotalTokens(
   let total = 0
   for (const message of messages) total += countTokens(message)
   return total
+}
+
+// ---------------------------------------------------------------------------
+// Context measurement
+// ---------------------------------------------------------------------------
+
+export interface ContextMeasurement {
+  tokens: number
+  source: TokenSource
+}
+
+/**
+ * Current conversation size.
+ *
+ * With a usage row: `totalTokens(row)` for the covered prefix — the provider's
+ * own prompt+completion figure, cached prefix counted exactly once — plus an
+ * estimate for anything appended since. Without one: pure estimate.
+ */
+export function measureContext(
+  messages: readonly ChatMessage[],
+  options: Pick<CompressionOptions, 'lastUsage' | 'countTokens'>,
+): ContextMeasurement {
+  const { lastUsage, countTokens = estimateMessageTokens } = options
+
+  if (!lastUsage) {
+    return { tokens: estimateTotalTokens(messages, countTokens), source: 'estimated' }
+  }
+
+  const covered = Math.min(
+    Math.max(0, lastUsage.coversMessageCount),
+    messages.length,
+  )
+  const uncounted = messages.slice(covered)
+  const tokens =
+    totalTokens(lastUsage) + estimateTotalTokens(uncounted, countTokens)
+
+  return {
+    tokens,
+    source: uncounted.length === 0 ? 'provider' : 'mixed',
+  }
+}
+
+/**
+ * Fraction of the last prompt the provider actually had to prefill.
+ *
+ * Returns 1 when there is nothing to go on, so a missing usage row never
+ * suppresses compression.
+ */
+export function freshInputRatio(usage: UsageSnapshot | undefined): number {
+  if (!usage || usage.inputTokens <= 0) return 1
+  return freshInputTokens(usage) / usage.inputTokens
 }
 
 // ---------------------------------------------------------------------------
@@ -239,9 +339,13 @@ export function buildSummaryMessage(
   summaryText: string,
   meta: Omit<CompactionMeta, 'kind' | 'createdAt'>,
 ): ChatMessage {
+  const header =
+    `${SUMMARY_PREAMBLE}\n` +
+    `[${meta.replacedCount} messages, ${formatTokens(meta.replacedTokens)} tokens]`
+
   return {
     role: 'user',
-    content: `${SUMMARY_PREAMBLE}\n\n${summaryText.trim()}`,
+    content: `${header}\n\n${summaryText.trim()}`,
     _compaction: {
       kind: 'summary',
       createdAt: Date.now(),
@@ -258,18 +362,23 @@ export function shouldCompress(
   messages: readonly ChatMessage[],
   options: Pick<
     CompressionOptions,
-    'maxContextTokens' | 'triggerRatio' | 'countTokens'
+    | 'maxContextTokens'
+    | 'triggerRatio'
+    | 'countTokens'
+    | 'lastUsage'
+    | 'minFreshInputRatio'
   >,
 ): boolean {
   const {
     maxContextTokens,
     triggerRatio = DEFAULTS.triggerRatio,
-    countTokens = estimateMessageTokens,
+    minFreshInputRatio = DEFAULTS.minFreshInputRatio,
   } = options
-  return (
-    estimateTotalTokens(messages, countTokens) >=
-    maxContextTokens * triggerRatio
-  )
+
+  const { tokens } = measureContext(messages, options)
+  if (tokens < maxContextTokens * triggerRatio) return false
+
+  return freshInputRatio(options.lastUsage) >= minFreshInputRatio
 }
 
 /**
@@ -284,10 +393,12 @@ export async function compressChat(
 ): Promise<CompressionResult> {
   const {
     maxContextTokens,
+    lastUsage,
     triggerRatio = DEFAULTS.triggerRatio,
     targetRatio = DEFAULTS.targetRatio,
     minTailMessages = DEFAULTS.minTailMessages,
     minMessagesToSummarize = DEFAULTS.minMessagesToSummarize,
+    minFreshInputRatio = DEFAULTS.minFreshInputRatio,
     countTokens = estimateMessageTokens,
     summarize,
   } = options
@@ -295,19 +406,23 @@ export async function compressChat(
   const pinnedHeadCount =
     options.pinnedHeadCount ?? detectPinnedHeadCount(messages)
 
-  const tokensBefore = estimateTotalTokens(messages, countTokens)
+  const before = measureContext(messages, options)
 
   const unchanged = (reason: CompressionReason): CompressionResult => ({
     messages,
     compressed: false,
     reason,
-    tokensBefore,
-    tokensAfter: tokensBefore,
+    tokensBefore: before.tokens,
+    tokensAfter: before.tokens,
+    tokenSource: before.source,
     messagesRemoved: 0,
   })
 
-  if (tokensBefore < maxContextTokens * triggerRatio) {
+  if (before.tokens < maxContextTokens * triggerRatio) {
     return unchanged('under-threshold')
+  }
+  if (freshInputRatio(lastUsage) < minFreshInputRatio) {
+    return unchanged('cache-warm')
   }
 
   const headTokens = estimateTotalTokens(
@@ -315,10 +430,7 @@ export async function compressChat(
     countTokens,
   )
   const targetTokens = maxContextTokens * targetRatio
-  const maxSummaryTokens = Math.max(
-    256,
-    Math.floor(targetTokens * 0.15),
-  )
+  const maxSummaryTokens = Math.max(256, Math.floor(targetTokens * 0.15))
   const tailBudgetTokens = Math.max(
     0,
     targetTokens - headTokens - maxSummaryTokens,
@@ -371,12 +483,15 @@ export async function compressChat(
     ...messages.slice(tailStart),
   ]
 
+  // The usage row described the *old* prefix, which no longer exists. Every
+  // figure from here on is an estimate until the next response comes back.
   return {
     messages: next,
     compressed: true,
     reason: 'compressed',
-    tokensBefore,
+    tokensBefore: before.tokens,
     tokensAfter: estimateTotalTokens(next, countTokens),
+    tokenSource: before.source === 'provider' ? 'mixed' : before.source,
     messagesRemoved: middle.length - 1,
     summaryIndex: pinnedHeadCount,
   }
@@ -385,37 +500,55 @@ export async function compressChat(
 /**
  * Convenience wrapper: compress repeatedly until under the target, or until
  * no further progress is possible. Guards against summarizer no-ops.
+ *
+ * Only the first pass can use the provider usage row — after that the prefix
+ * has been rewritten, so subsequent passes drop it and estimate.
  */
 export async function compressChatToFit(
   messages: ChatMessage[],
   options: CompressionOptions,
   maxPasses = 3,
 ): Promise<CompressionResult> {
+  const targetRatio = options.targetRatio ?? DEFAULTS.targetRatio
   let current = messages
+  let currentOptions = options
   let last: CompressionResult | undefined
 
   for (let pass = 0; pass < maxPasses; pass++) {
-    const result = await compressChat(current, options)
+    const result = await compressChat(current, currentOptions)
     last = result
     if (!result.compressed) break
     if (result.tokensAfter >= result.tokensBefore) break
+
     current = result.messages
-    if (
-      result.tokensAfter <
-      options.maxContextTokens * (options.targetRatio ?? DEFAULTS.targetRatio)
-    ) {
-      break
-    }
+    currentOptions = { ...currentOptions, lastUsage: undefined }
+
+    if (result.tokensAfter < options.maxContextTokens * targetRatio) break
   }
 
+  if (last) return last
+
+  const measured = measureContext(messages, options)
+  return {
+    messages,
+    compressed: false,
+    reason: 'under-threshold',
+    tokensBefore: measured.tokens,
+    tokensAfter: measured.tokens,
+    tokenSource: measured.source,
+    messagesRemoved: 0,
+  }
+}
+
+/** One-line rendering for logs and the status bar. */
+export function describeCompression(result: CompressionResult): string {
+  if (!result.compressed) {
+    return `no compression (${result.reason}, ${formatTokens(result.tokensBefore)})`
+  }
+  const saved = result.tokensBefore - result.tokensAfter
   return (
-    last ?? {
-      messages,
-      compressed: false,
-      reason: 'under-threshold',
-      tokensBefore: estimateTotalTokens(messages, options.countTokens),
-      tokensAfter: estimateTotalTokens(messages, options.countTokens),
-      messagesRemoved: 0,
-    }
+    `compacted ${result.messagesRemoved} messages: ` +
+    `${formatTokens(result.tokensBefore)} → ${formatTokens(result.tokensAfter)} ` +
+    `(−${formatTokens(saved)})`
   )
 }
