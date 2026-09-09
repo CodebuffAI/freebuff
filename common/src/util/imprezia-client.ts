@@ -136,6 +136,8 @@ async function postToImprezia(params: {
   url: string
   apiKey: string
   userAgent: string
+  /** Single end-user IP from the server's proxy-aware resolver; never the raw XFF chain. */
+  clientIp?: string
   /** Only the display API needs this; chat is not origin-gated. */
   origin?: string
   body: unknown
@@ -155,6 +157,7 @@ async function postToImprezia(params: {
     url,
     apiKey,
     userAgent,
+    clientIp,
     origin,
     body,
     productLabel,
@@ -188,6 +191,7 @@ async function postToImprezia(params: {
         // Imprezia targets and measures off this; sending our runtime's UA
         // would look like datacenter traffic and be discounted as invalid.
         'X-Forwarded-User-Agent': userAgent,
+        ...(clientIp ? { 'X-Forwarded-For': clientIp } : {}),
         ...(origin ? { Origin: origin } : {}),
       },
       body: JSON.stringify(body),
@@ -270,6 +274,8 @@ export async function fetchImpreziaChatAd(params: {
   request: ImpreziaChatAdRequest
   /** The END USER's UA, forwarded verbatim. Never our HTTP client's. */
   userAgent: string
+  /** Single end-user IP from the server's proxy-aware resolver; never the raw XFF chain. */
+  clientIp?: string
   /** False in production. A sandbox key must not serve real users. */
   testMode: boolean
   /** Serve sandbox creatives in production; see the guard below. */
@@ -285,6 +291,7 @@ export async function fetchImpreziaChatAd(params: {
     apiKey,
     request,
     userAgent,
+    clientIp,
     testMode,
     allowSandbox,
     signal,
@@ -315,6 +322,7 @@ export async function fetchImpreziaChatAd(params: {
     url: `${baseUrl}${CHAT_ADS_PATH}`,
     apiKey,
     userAgent,
+    clientIp,
     productLabel: 'chat ads',
     signal,
     onFailure: (outcome) => observeOutcome(onOutcome, outcome),
@@ -394,13 +402,23 @@ export async function fetchImpreziaDisplayAd(params: {
   request: ImpreziaDisplayRequest
   /** The END USER's UA, forwarded verbatim. Never our HTTP client's. */
   userAgent: string
+  /** Single end-user IP from the server's proxy-aware resolver; never the raw XFF chain. */
+  clientIp?: string
   testMode: boolean
   allowSandbox?: boolean
   logger: Logger
   fetch: typeof globalThis.fetch
 }): Promise<{ requestId: string; ad: ImpreziaDisplayAd | null } | null> {
-  const { apiKey, request, userAgent, testMode, allowSandbox, logger, fetch } =
-    params
+  const {
+    apiKey,
+    request,
+    userAgent,
+    clientIp,
+    testMode,
+    allowSandbox,
+    logger,
+    fetch,
+  } = params
 
   if (refusesSandboxKey({ apiKey, testMode, allowSandbox, logger })) return null
 
@@ -408,6 +426,7 @@ export async function fetchImpreziaDisplayAd(params: {
     url: `${impreziaBaseUrlForKey(apiKey)}${DISPLAY_ADS_PATH}`,
     apiKey,
     userAgent,
+    clientIp,
     // Without this the API answers 403 origin_not_allowed; it is built for
     // the browser SDK and expects the header a browser would have sent.
     origin: IMPREZIA_DISPLAY_ORIGIN,
