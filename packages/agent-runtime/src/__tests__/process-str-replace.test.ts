@@ -509,4 +509,138 @@ function test3() {
     const successResult = result as { content: string }
     expect(successResult.content).toBe('line 1\nhello $$world!\nline 2\n')
   })
+
+  describe('whitespace-only oldString that is absent from the file', () => {
+    // Regression: the whitespace-insensitive last-resort match collapsed a
+    // whitespace-only oldString to '', and `indexOf('')` vacuously succeeded
+    // at position 0. The resulting empty match made replaceAll insert the new
+    // string between EVERY character of the file — and the tool reported
+    // success. The file must be left untouched with a not-found error instead.
+    const cases = [
+      { name: 'a space', oldString: ' ' },
+      { name: 'tabs', oldString: '\t\t' },
+      { name: 'newlines', oldString: '\n\n' },
+      { name: 'mixed whitespace', oldString: ' \t\n ' },
+    ]
+
+    for (const { name, oldString } of cases) {
+      it(`does not corrupt the file for ${name}`, async () => {
+        const initialContent = 'a\tb\nc\td\n'
+
+        const result = await processStrReplace({
+          path: 'test.ts',
+          replacements: [
+            { oldString, newString: 'X', allowMultiple: false },
+          ],
+          initialContentPromise: Promise.resolve(initialContent),
+          logger,
+        })
+
+        expect('error' in result).toBe(true)
+        if ('error' in result) {
+          expect(result.error).toContain('was not found')
+        }
+      })
+    }
+
+    it('reports the not-found error even when the file is entirely whitespace', async () => {
+      // Whitespace-only file and whitespace-only old string collapse to the
+      // same empty search — which must still be a not-found, not a vacuous
+      // match. ('\t\t' is absent: the file only has a single tab.)
+      const result = await processStrReplace({
+        path: 'test.ts',
+        replacements: [
+          { oldString: '\t\t', newString: 'X', allowMultiple: false },
+        ],
+        initialContentPromise: Promise.resolve(' \n\t\n'),
+        logger,
+      })
+
+      expect('error' in result).toBe(true)
+      if ('error' in result) {
+        expect(result.error).toContain('was not found')
+      }
+    })
+
+    it('still replaces whitespace-only old strings that exist in the file', async () => {
+      // count === 1 exact match: a whitespace-only old string found verbatim
+      // must keep working through the exact-match branch, not the fallback.
+      const result = await processStrReplace({
+        path: 'test.ts',
+        replacements: [
+          { oldString: ' ', newString: '_', allowMultiple: false },
+        ],
+        initialContentPromise: Promise.resolve('a b\n'),
+        logger,
+      })
+
+      expect('content' in result).toBe(true)
+      if ('content' in result) {
+        expect(result.content).toBe('a_b\n')
+      }
+    })
+
+    it('still replaces all whitespace occurrences with allowMultiple: true', async () => {
+      const result = await processStrReplace({
+        path: 'test.ts',
+        replacements: [
+          { oldString: '\t', newString: '  ', allowMultiple: true },
+        ],
+        initialContentPromise: Promise.resolve('a\tb\tc\n'),
+        logger,
+      })
+
+      expect('content' in result).toBe(true)
+      if ('content' in result) {
+        expect(result.content).toBe('a  b  c\n')
+      }
+    })
+
+    it('lets later replacements proceed after a failed whitespace-only one', async () => {
+      // File deliberately contains no spaces so the whitespace-only pair
+      // takes the not-found path instead of matching anything.
+      const initialContent = 'aaa\nbbb\n'
+      const result = await processStrReplace({
+        path: 'test.ts',
+        replacements: [
+          { oldString: ' ', newString: 'X', allowMultiple: false },
+          { oldString: 'aaa', newString: 'ccc', allowMultiple: false },
+        ],
+        initialContentPromise: Promise.resolve(initialContent),
+        logger,
+      })
+
+      expect('content' in result).toBe(true)
+      if ('content' in result) {
+        expect(result.content).toBe('ccc\nbbb\n')
+      }
+      expect('messages' in result && result.messages).toContain(
+        'The old string " " was not found in the file, skipping. Please try again with a different old string that matches the file content exactly.',
+      )
+    })
+
+    it('keeps whitespace-insensitive matching working for non-empty anchors', async () => {
+      // Guard the fix from over-correcting: the fallback must still fire when
+      // the old string genuinely has non-whitespace content whose whitespace
+      // differs from the file.
+      const initialContent = 'function foo() {\n\treturn 1;\n}\n'
+      const result = await processStrReplace({
+        path: 'test.ts',
+        replacements: [
+          {
+            oldString: 'function foo() {\n  return 1;\n}',
+            newString: 'function foo() {\n\treturn 2;\n}',
+            allowMultiple: false,
+          },
+        ],
+        initialContentPromise: Promise.resolve(initialContent),
+        logger,
+      })
+
+      expect('content' in result).toBe(true)
+      if ('content' in result) {
+        expect(result.content).toBe('function foo() {\n\treturn 2;\n}\n')
+      }
+    })
+  })
 })
