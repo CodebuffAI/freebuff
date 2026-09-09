@@ -13,6 +13,7 @@ import {
 const solar = 'upstage/solar-pro4'
 const start = Date.parse('2026-09-05T07:00:00Z')
 const end = Date.parse('2026-09-08T07:00:00Z')
+const restored = Date.parse('2026-09-09T15:49:00Z')
 const quoteBeforeStart = () => ({
   ...freebucksFixture(0, { [solar]: SOLAR_REGULAR_OFFER.price }),
   priceNotices: { [solar]: SOLAR_REGULAR_OFFER.tagline },
@@ -20,7 +21,7 @@ const quoteBeforeStart = () => ({
 })
 
 describe('announced Freebucks price changes', () => {
-  it('keeps a serialized quote coherent at both boundaries without mutating balances or the input', () => {
+  it('keeps a serialized quote coherent at every boundary without mutating balances or the input', () => {
     const quote = JSON.parse(JSON.stringify(quoteBeforeStart()))
     expect(applyFreebucksPriceChanges(quote, start - 1)).toBe(quote)
     const free = applyFreebucksPriceChanges(quote, start)
@@ -33,15 +34,20 @@ describe('announced Freebucks price changes', () => {
     expect(expired.balance).toBe(0)
     expect(expired.daily).toEqual(quote.daily)
     expect(expired.wallet).toEqual(quote.wallet)
-    expect(nextFreebucksPriceChange(expired)).toBe(Infinity)
+    expect(nextFreebucksPriceChange(expired)).toBe(restored)
+    const freeAgain = applyFreebucksPriceChanges(expired, restored)
+    expect(freeAgain.prices[solar]).toBe(0)
+    expect(freeAgain.priceNotices[solar]).toBe('0 Freebucks')
+    expect(nextFreebucksPriceChange(freeAgain)).toBe(Infinity)
     expect(quote.prices[solar]).toBe(5)
-    expect(quote.priceChanges).toHaveLength(2)
+    expect(quote.priceChanges).toHaveLength(3)
   })
 
-  it('catches up across both transitions, even when a delayed response lists them out of order', () => {
+  it('catches up across all transitions, even when a delayed response lists them out of order', () => {
     const quote = quoteBeforeStart()
     quote.priceChanges.reverse()
     expect(applyFreebucksPriceChanges(quote, end).prices[solar]).toBe(5)
+    expect(applyFreebucksPriceChanges(quote, restored).prices[solar]).toBe(0)
   })
 
   it('does not add an unpriced model or invent metadata on older server responses', () => {

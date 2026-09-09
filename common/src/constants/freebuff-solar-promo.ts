@@ -5,8 +5,8 @@ export const SOLAR_REGULAR_OFFER = {
   tagline: 'Limited-time trial',
 } as const
 
-// The customer offer is September 5–7, Pacific time. These transitions travel
-// with the server quote so idle clients can update even during a slow refresh.
+// These transitions travel with the server quote so idle clients can update
+// even during a slow refresh. Preserve past prices for historical accounting.
 export const SOLAR_PRICE_CHANGES = [
   {
     at: '2026-09-05T00:00:00-07:00',
@@ -18,6 +18,12 @@ export const SOLAR_PRICE_CHANGES = [
     at: '2026-09-08T00:00:00-07:00',
     modelId: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
     ...SOLAR_REGULAR_OFFER,
+  },
+  {
+    at: '2026-09-09T15:49:00Z',
+    modelId: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+    price: 0,
+    tagline: '0 Freebucks',
   },
 ] as const
 

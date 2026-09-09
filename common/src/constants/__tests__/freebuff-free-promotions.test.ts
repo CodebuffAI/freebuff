@@ -23,6 +23,11 @@ describe('free-promotion spend windows', () => {
         from: new Date(Date.parse(free.at)).toISOString(),
         to: new Date(Date.parse(back.at)).toISOString(),
       },
+      {
+        modelId: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+        from: '2026-09-09T15:49:00.000Z',
+        to: '2099-01-01T00:00:00.000Z',
+      },
     ])
   })
 
@@ -34,6 +39,8 @@ describe('free-promotion spend windows', () => {
     // The instant the price goes back to 5, spend counts again — with no
     // deploy, which is the point of deriving this from the schedule.
     expect(isFreePromotionSpendAt(solar, new Date('2026-09-08T00:00:00-07:00'))).toBe(false)
+    expect(isFreePromotionSpendAt(solar, new Date('2026-09-09T15:48:59.999Z'))).toBe(false)
+    expect(isFreePromotionSpendAt(solar, new Date('2026-09-09T15:49:00Z'))).toBe(true)
   })
 
   it('exempts nothing else', () => {
