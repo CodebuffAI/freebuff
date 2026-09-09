@@ -313,7 +313,7 @@ export const FREEBUFF_GPT_5_6_LUNA_MAX_PRICE = {
 export const FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT = 'high' as const
 /** Solar Pro 4 (Upstage), served through OpenRouter and constrained to Upstage
  *  by `applyOpenRouterProviderRouting`. Context 524,288, text in / text out,
- *  and the `upstage/zdr` (zero data retention) tag.
+ *  using Upstage's non-ZDR endpoint for provider-side debugging.
  *
  *  PRICE: Upstage's LIST card is $0.30/M in, $0.06/M cached, $1.20/M out.
  *  OpenRouter's card shows $0.03/$0.006/$0.12 with `"discount": 0.9` — that is
@@ -333,23 +333,9 @@ export const FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT = 'high' as const
  *  and falls back to OpenRouter's figure — correct again at list — when it
  *  ends. Re-evaluate the row before then rather than silently changing what
  *  "unmetered" means when the price changes. */
-/**
- * The OpenRouter endpoint Solar Pro 4 is pinned to — TAG-QUALIFIED, not the
- * bare `upstage` provider slug.
- *
- * OpenRouter lists two endpoints for this model that are identical in price,
- * context, supported parameters and `provider_name`, and differ only by `tag`:
- * this one and an untagged `upstage`. The bare slug matches both, which split
- * traffic across two prompt caches (worse hit rates with no warming than
- * every other high-volume row) and — because SOLAR_PRO_4_MODEL's
- * `dataUse: 'service'` rests on the ZDR tag — let half of all turns run on an
- * endpoint that is not zero-data-retention while the UI suppressed the training
- * notice.
- *
- * See applyOpenRouterProviderRouting for the full reasoning and for the probe
- * that shows OpenRouter validates tags rather than ignoring them.
- */
-export const SOLAR_PRO_4_OPENROUTER_ENDPOINT = 'upstage/zdr'
+/** Upstage's requested non-ZDR route for debugging. Pair with
+ *  `allow_fallbacks: false` in applyOpenRouterProviderRouting. */
+export const SOLAR_PRO_4_OPENROUTER_ENDPOINT = 'upstage'
 
 /**
  * Gemini 3.8 Flash (Google), served through OpenRouter. The id is OpenRouter's
@@ -1510,8 +1496,8 @@ const SOLAR_PRO_4_MODEL = {
   displayName: 'Solar Pro 4',
   tagline: SOLAR_REGULAR_OFFER.tagline,
   availability: 'always',
-  // `upstage/zdr` — zero data retention, so no training notice and no trace
-  // storage (FREEBUFF_TRACED_MODEL_IDS keys off this field).
+  // Provider-side debugging logs are allowed; this is not a ZDR promise or
+  // permission for AI training. Keep our own training traces disabled.
   dataUse: 'service',
   // Limited access still uses its tier-specific metering.
   premium: FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.fullAccess.premium,
