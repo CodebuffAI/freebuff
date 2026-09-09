@@ -90,3 +90,6 @@ ads-pilot-launch.local.json
 # one — and because a worktree carries its own generated migrations, it also
 # drags a DUPLICATE migration index into whichever branch swept it up.
 .claude/worktrees/
+
+# Short-lived GitHub OIDC credentials for the bounded IntentBuff runner.
+gha-creds-*.json
