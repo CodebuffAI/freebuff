@@ -817,18 +817,21 @@ describe('canonical root prompt openings match their source definitions', () => 
   })
 
   test('every desktop mission prompt variant opens with the canonical line', () => {
-    // The prompt moved out of services/mission.ts into shared/mission-prompt.ts, which holds the
-    // shipped variant and whatever candidates the mission eval is comparing against it. Each one can
-    // be made live by pointing ACTIVE_MISSION_PROMPT at it, so the check is per variant rather than
-    // per file: a candidate that drops the line would 403 every tab on Auto the day it shipped.
-    const source = read('freebuff-desktop', 'src', 'shared', 'mission-prompt.ts')
+    // Both shipped renderers must keep the free-mode root signature at position zero.
+    const source = read(
+      'freebuff-desktop',
+      'src',
+      'shared',
+      'mission-prompt.ts',
+    )
     const opening = 'You are Buffy, the auto-run agent behind Freebuff Desktop.'
     // The decision is a free-mode ROOT request, so this sentence has to sit at
     // position 0 of the first system message or the gate 403s every tab on Auto
     // — which is a silent failure, since a tab that cannot decide just stops.
-    const renders = source.match(/render: \([^)]*\) => `/g) ?? []
+    const renders =
+      source.match(/export function renderMission\w+Prompt\(/g) ?? []
     expect(renders.length).toBeGreaterThan(0)
-    expect(source.split(`=> \`${opening}`).length - 1).toBe(renders.length)
+    expect(source.split(`return \`${opening}`).length - 1).toBe(renders.length)
     expect(FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS).toContain(opening)
   })
 
