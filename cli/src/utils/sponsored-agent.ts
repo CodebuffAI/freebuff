@@ -48,6 +48,11 @@ import {
   sponsoredLocalToolNames,
 } from '@codebuff/common/ads/sponsored-local-execution'
 
+import {
+  sponsoredProcedureRuntimeInputsSection,
+  type SponsoredProcedureRuntimeInputs,
+} from '@codebuff/common/ads/sponsored-procedure-inputs'
+
 import type { SponsoredCapability } from '@codebuff/common/ads/sponsored-local-execution'
 import type { AgentDefinition } from '@codebuff/sdk'
 
@@ -83,8 +88,22 @@ const CLI_SPONSORED_GUIDANCE = [
   '- There is nobody watching this run. Do not ask questions; decide and proceed, or stop.',
 ].join('\n')
 
-export function buildSponsoredPrompt(procedure: string): string {
-  return [CLI_SPONSORED_GUIDANCE, `User request:\n${procedure}`].join('\n\n')
+export function buildSponsoredPrompt(
+  procedure: string,
+  runtimeInputs: SponsoredProcedureRuntimeInputs = {},
+): string {
+  // The procedure is never rewritten (COD-512): the consent covered these
+  // exact bytes. The advertiser link, when the procedure declared
+  // `{{advertiserLink}}`, rides as its own section after it.
+  const inputs = sponsoredProcedureRuntimeInputsSection(
+    procedure,
+    runtimeInputs,
+  )
+  return [
+    CLI_SPONSORED_GUIDANCE,
+    `User request:\n${procedure}`,
+    ...(inputs ? [inputs] : []),
+  ].join('\n\n')
 }
 
 /**
@@ -101,7 +120,12 @@ export function sponsoredAgentDefinition(options: {
   isFreebuff: boolean
   grant?: ReadonlySet<SponsoredCapability>
 }): AgentDefinition {
-  const { agentId, model, isFreebuff, grant = SPONSORED_LOCAL_V1_GRANT } = options
+  const {
+    agentId,
+    model,
+    isFreebuff,
+    grant = SPONSORED_LOCAL_V1_GRANT,
+  } = options
   const root = createBase3CliRoot({
     ...(model ? { model } : {}),
     isFreebuff,

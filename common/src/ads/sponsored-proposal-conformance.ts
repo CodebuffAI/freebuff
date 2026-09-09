@@ -101,6 +101,13 @@ const VM_CHECKS = check('VM', [
   'an accept label puts the Accept first and changes nothing else',
   'an empty accept label is not an Accept',
   'the standing controls survive an Accept being added above them',
+  // VM-29..VM-32: the advertiser CTA (COD-512). The campaign landing URL
+  // carrying the signed conversion token, composed by the SERVER projection
+  // and gated on render exactly like `pr_url`.
+  'committed, landed and merged offer the advertiser CTA under a neutral label',
+  'no state before a diff exists offers the advertiser CTA, and failed never does',
+  'an absent advertiser CTA renders no action and no placeholder',
+  'a hostile advertiser CTA URL never becomes a destination and does not cost the card',
 ])
 
 const R_CHECKS = check('R', [
@@ -276,13 +283,15 @@ export const SPONSORED_CONFORMANCE_ACCEPTED_WAIVERS: Record<
     // sponsored run is not a thread at all and never becomes a pointer, so
     // there is no send target to protect and no view pointer to discard. A
     // `pass` would claim a control that does not exist.
-    'V-1': 'no second thread on this surface: a sponsored run is never a send target',
+    'V-1':
+      'no second thread on this surface: a sponsored run is never a send target',
     'V-2': 'no second thread on this surface',
     'V-3': 'no composer to repoint: the CLI has one',
     'V-4': 'no view pointer on this surface',
     'V-5': 'no watched thread header; the card carries the disclosure instead',
     'V-6': 'no view pointer on this surface',
-    'R-6': 'no read-only view: the run’s transcript is not interleaved with the user’s own',
+    'R-6':
+      'no read-only view: the run’s transcript is not interleaved with the user’s own',
     'R-9': 'no read-only view',
     // A terminal cannot make a link; it can only print a destination the user
     // may copy. The sanitizing is the part that still has to hold.

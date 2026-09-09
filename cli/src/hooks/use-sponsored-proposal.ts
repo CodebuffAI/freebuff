@@ -224,7 +224,8 @@ function findProposalBlockForTarget(
 ): SponsoredProposalContentBlock | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     for (const block of messages[i]!.blocks ?? []) {
-      if (isSponsoredProposalBlock(block) && block.target === target) return block
+      if (isSponsoredProposalBlock(block) && block.target === target)
+        return block
     }
   }
   return null
@@ -246,6 +247,7 @@ function proposalPayloadEqual(
     left.thread_ref === right.thread_ref &&
     left.branch === right.branch &&
     left.pr_url === right.pr_url &&
+    left.advertiser_cta_url === right.advertiser_cta_url &&
     left.failure_reason === right.failure_reason &&
     stepsEqual(left.steps, right.steps)
   )

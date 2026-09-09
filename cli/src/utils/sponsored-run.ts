@@ -79,7 +79,11 @@ import {
   sponsoredLocalAvailability,
 } from '@codebuff/common/ads/sponsored-local-execution'
 import { evaluateSponsoredWritePath } from '@codebuff/common/ads/sponsored-capabilities'
-import { sponsoredPullRequestHref } from '@codebuff/common/ads/sponsored-proposal-view'
+import type { SponsoredProcedureRuntimeInputs } from '@codebuff/common/ads/sponsored-procedure-inputs'
+import {
+  sponsoredAdvertiserCtaHref,
+  sponsoredPullRequestHref,
+} from '@codebuff/common/ads/sponsored-proposal-view'
 import {
   existsSync,
   mkdirSync,
@@ -521,7 +525,12 @@ export class SponsoredRun {
       // "running" through a failed create is a card that lied.
       await this.report(authToken, { state: 'running' })
 
-      void this.execute(authToken, accepted.accept.procedure)
+      void this.execute(authToken, accepted.accept.procedure, {
+        advertiserLink:
+          typeof accepted.accept.advertiserLink === 'string'
+            ? sponsoredAdvertiserCtaHref(accepted.accept.advertiserLink)
+            : null,
+      })
       return { ok: true }
     } catch (error) {
       const message =
@@ -544,13 +553,17 @@ export class SponsoredRun {
    * run that announced a commit it did not make, or made one through a path we
    * were not watching, is answered correctly either way.
    */
-  private async execute(authToken: string, procedure: string): Promise<void> {
+  private async execute(
+    authToken: string,
+    procedure: string,
+    runtimeInputs: SponsoredProcedureRuntimeInputs = {},
+  ): Promise<void> {
     const active = this.active
     if (!active?.worktree) return
     let errorText: string | null = null
     try {
       errorText = await this.deps.runTurn({
-        prompt: buildSponsoredPrompt(procedure),
+        prompt: buildSponsoredPrompt(procedure, runtimeInputs),
         worktree: active.worktree,
         runtimeDir: sponsoredRuntimeDir(
           this.projectRoot,

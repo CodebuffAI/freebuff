@@ -57,6 +57,11 @@ export type SponsoredAccept = {
   procedure: string
   advertiserName: string
   headline: string
+  /**
+   * The advertiser CTA URL as a RUNTIME INPUT to the procedure (COD-512);
+   * absent until settlement minted a token. Never part of `procedure`.
+   */
+  advertiserLink?: string
   runToken: string
   /** ISO-8601. After this the token stops being honoured upstream. */
   expiresAt: string
@@ -190,6 +195,7 @@ function isSponsoredProposal(value: unknown): value is SponsoredProposal {
     optionalString(row.thread_ref) &&
     optionalString(row.branch) &&
     optionalString(row.pr_url) &&
+    optionalString(row.advertiser_cta_url) &&
     optionalString(row.failure_reason) &&
     (row.steps === undefined ||
       (Array.isArray(row.steps) &&

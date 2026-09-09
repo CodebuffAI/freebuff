@@ -33,7 +33,18 @@ export const AGENTIC_FUNNEL_EVENT_TYPES = [
    * settlement — never through funnel-event recording.
    */
   'accepted',
-  /** The sponsored run opened a pull request. */
+  /**
+   * RETIRED 2026-09-09 (COD-516). Never had a producer, and `landed` already
+   * means "a pull request exists" everywhere it is read — `sponsoredDelivery.ts`
+   * records the PR and only then calls the row `landed`, the off-Cloud state
+   * route writes `landed` on a `pr_url`, and the shared view model renders the
+   * link from `landed`. A second word for the same fact would put the same PR
+   * in two funnel rows and make the drop-off between them read as loss.
+   *
+   * Stays in the array because the Postgres enum mirrors it in ORDER (see
+   * below) and an enum value cannot be dropped; readouts skip it through
+   * `RETIRED_AGENTIC_FUNNEL_EVENT_TYPES`. Nothing may write it.
+   */
   'pr_made',
   /** The PR's branch landed (CI green, pushed). */
   'landed',
@@ -79,6 +90,18 @@ export const AGENTIC_FUNNEL_EVENT_TYPES = [
 ] as const
 
 export type AgenticFunnelEventType = (typeof AGENTIC_FUNNEL_EVENT_TYPES)[number]
+
+/**
+ * Members that remain in the array only because the Postgres enum is
+ * append-only. No producer writes them, and every readout
+ * (`packages/internal/src/ad-serving/agentic-funnel-readout.ts`) excludes
+ * them, so a stray row -- a seeder, an old build -- can never surface as a
+ * funnel stage. Kept as data so the exclusion is asserted rather than trusted.
+ */
+export const RETIRED_AGENTIC_FUNNEL_EVENT_TYPES = ['pr_made'] as const
+
+export type RetiredAgenticFunnelEventType =
+  (typeof RETIRED_AGENTIC_FUNNEL_EVENT_TYPES)[number]
 
 /**
  * The `accepted` event's idempotency key, derived from the PROPOSAL id.

@@ -120,6 +120,7 @@ export const SponsoredProposalBlock: React.FC<{
     ...(acceptable && accept ? { acceptLabel: accept.label } : {}),
   })
   const openPullRequest = sponsoredProposalAction(view, 'open-pull-request')
+  const openAdvertiser = sponsoredProposalAction(view, 'open-advertiser')
   const answered = block.answered === true
   const busy = block.busy === true
   const consent = refreshUnavailable ? null : (block.consent ?? null)
@@ -389,6 +390,15 @@ export const SponsoredProposalBlock: React.FC<{
       {openPullRequest?.href && (
         <text style={{ fg: theme.muted, wrapMode: 'none' }}>
           {clip(`${openPullRequest.label}: ${openPullRequest.href}`, inner)}
+        </text>
+      )}
+
+      {/* The advertiser CTA (COD-512), under the same waiver: sanitized text
+          the user may copy, never a link. `advertiserCtaHref` is null for
+          anything that is not absolute https. */}
+      {openAdvertiser?.href && (
+        <text style={{ fg: theme.muted, wrapMode: 'none' }}>
+          {clip(`${openAdvertiser.label}: ${openAdvertiser.href}`, inner)}
         </text>
       )}
 

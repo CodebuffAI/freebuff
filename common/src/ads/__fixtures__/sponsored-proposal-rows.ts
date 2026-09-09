@@ -50,6 +50,15 @@ export const FIXTURE_THREAD_REF = 'thread-1'
 /** The one pull request URL that is allowed to become a destination. */
 export const FIXTURE_PR_URL = 'https://github.com/x/y/pull/7'
 
+/**
+ * The advertiser CTA as the server projection composes it (COD-512): the
+ * campaign landing URL carrying a `bfcid`. Shape-valid, never verifiable --
+ * the token here is not signed by any secret, and no surface checks that
+ * (only the postback does).
+ */
+export const FIXTURE_ADVERTISER_CTA_URL =
+  'https://acme.example/signup?bfcid=bfc_1.eyJpZCI6ImF0dHJpYnV0aW9uXzEifQ.c2ln'
+
 const BASE: SponsoredProposalRow = {
   state: 'offered',
   advertiser_name: FIXTURE_ADVERTISER_NAME,

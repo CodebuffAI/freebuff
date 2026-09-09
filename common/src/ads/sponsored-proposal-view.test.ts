@@ -12,6 +12,8 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  FIXTURE_ADVERTISER_CTA_URL,
+  FIXTURE_PR_URL,
   HOSTILE_PR_URLS,
   MALFORMED_LOGO_TOKENS,
   VALID_LOGO_TOKEN,
@@ -369,4 +371,62 @@ describe('sponsoredProposalMenu and the optional Accept', () => {
       'opt-out',
     ])
   })
+})
+
+describe('the advertiser CTA (COD-512)', () => {
+  const CTA = FIXTURE_ADVERTISER_CTA_URL
+
+  test('VM-29 committed, landed and merged offer the CTA under a neutral label carrying the advertiser name', () => {
+    for (const state of ['committed', 'landed', 'merged'] as const) {
+      const v = view({ state, advertiser_cta_url: CTA })
+      expect(v.advertiserCtaHref).toBe(CTA)
+      const action = sponsoredProposalAction(v, 'open-advertiser')
+      expect(action).toEqual({
+        kind: 'open-advertiser',
+        label: 'Create your Acme Deploys project',
+        href: CTA,
+      })
+      // Never the lead answer: the PR decision and the PR link keep primacy.
+      expect(action!.primary).toBeUndefined()
+    }
+  })
+
+  test('VM-30 no state before a diff exists offers it, and failed never does', () => {
+    for (const state of ['offered', 'accepted', 'running', 'failed'] as const) {
+      const v = view({ state, advertiser_cta_url: CTA })
+      expect(v.advertiserCtaHref).toBeNull()
+      expect(kinds({ state, advertiser_cta_url: CTA })).not.toContain(
+        'open-advertiser',
+      )
+    }
+  })
+
+  test('VM-31 an absent CTA is absent: no action, no placeholder, and the card is otherwise unchanged', () => {
+    for (const state of ['committed', 'landed', 'merged'] as const) {
+      const without = view({ state, pr_url: FIXTURE_PR_URL })
+      const withCta = view({
+        state,
+        pr_url: FIXTURE_PR_URL,
+        advertiser_cta_url: CTA,
+      })
+      expect(without.advertiserCtaHref).toBeNull()
+      expect(kinds({ state })).not.toContain('open-advertiser')
+      expect(
+        withCta.actions.filter((a) => a.kind !== 'open-advertiser'),
+      ).toEqual(without.actions)
+    }
+  })
+
+  for (const advertiser_cta_url of HOSTILE_PR_URLS) {
+    test(`VM-32 refuses ${JSON.stringify(advertiser_cta_url)} before it becomes a destination`, () => {
+      const v = view({ state: 'committed', advertiser_cta_url })
+      expect(v.advertiserCtaHref).toBeNull()
+      expect(sponsoredProposalAction(v, 'open-advertiser')).toBeNull()
+      // A refused link does not cost the rest of the card.
+      expect(v.title).toBe(SPONSORED_STATE_TITLE.committed)
+      expect(kinds({ state: 'committed', advertiser_cta_url })).toContain(
+        'create-pull-request',
+      )
+    })
+  }
 })

@@ -18,14 +18,14 @@ import { sanitizeAdUrl } from '../util/ad-creative-safety'
  *
  * ## The two gates are the point, not the formatting
  *
- * `pr_url` and `advertiser_logo_token` are the only fields on this record that
- * stop being text and become a capability when rendered: one becomes an
- * `href`, the other a request path. Both come off a row written by the
- * sponsored run, so a surface that reads them raw re-inherits a problem this
- * module exists to have already solved. {@link sponsoredProposalViewModel}
- * hands back the sanitized destination or null, and the shape-checked logo
- * handle or null — a surface never needs the raw field, and reading it anyway
- * is the bug.
+ * `pr_url`, `advertiser_cta_url` and `advertiser_logo_token` are the only
+ * fields on this record that stop being text and become a capability when
+ * rendered: two become an `href`, the other a request path. All come off a
+ * row written by the sponsored run or its settlement, so a surface that reads
+ * them raw re-inherits a problem this module exists to have already solved.
+ * {@link sponsoredProposalViewModel} hands back the sanitized destinations or
+ * null, and the shape-checked logo handle or null — a surface never needs the
+ * raw field, and reading it anyway is the bug.
  *
  * Note this is the SECOND layer for `pr_url`: `setProposalState` in
  * `freebuff/web/convex/ads/proposals.ts` runs the same gate and drops the
@@ -160,6 +160,16 @@ export type SponsoredProposalRow = {
   branch?: string
   pr_url?: string
   failure_reason?: string
+  /**
+   * The advertiser CTA: the campaign's landing URL carrying the signed
+   * `bfcid` conversion token (COD-512). DERIVED BY THE SERVER PROJECTION
+   * (`sponsoredAdvertiserCtaUrl` in {@link ./sponsored-proposal-cta.ts}) and
+   * present only once the Accept settled with a real click behind it. A
+   * surface never assembles this from a token; the raw token is not on the
+   * row it receives. Gated here exactly like `pr_url` before it becomes an
+   * `href`.
+   */
+  advertiser_cta_url?: string
 }
 
 /**
@@ -176,6 +186,11 @@ export type SponsoredProposalActionKind =
   | 'create-pull-request'
   | 'view-run'
   | 'open-pull-request'
+  // The advertiser's own next step, once there is a diff to take it with
+  // (COD-512). Carries the conversion token the advertiser's postback
+  // verifies; the label is neutral by design, the advertiser's name is the
+  // only string of theirs in it.
+  | 'open-advertiser'
   | 'dismiss'
   | 'never-advertiser'
   | 'report'
@@ -188,7 +203,10 @@ export type SponsoredProposalAction = {
   primary?: boolean
   /** Turns something off for good rather than declining this one offer. */
   destructive?: boolean
-  /** Present only on `open-pull-request`, and only past the destination gate. */
+  /**
+   * Present only on `open-pull-request` and `open-advertiser`, and only past
+   * the destination gate.
+   */
   href?: string
 }
 
@@ -279,9 +297,24 @@ export function sponsoredProposalMenu(
 export function sponsoredPullRequestHref(
   rawPrUrl: string | undefined,
 ): string | null {
-  if (!rawPrUrl) return null
+  return sponsoredDestinationHref(rawPrUrl)
+}
+
+/**
+ * The advertiser CTA, through the same gate as the PR link. The server
+ * projection already ran `sanitizeAdUrl` when it composed the URL; this is
+ * the render-side second layer, for the same reason `pr_url` has one.
+ */
+export function sponsoredAdvertiserCtaHref(
+  rawCtaUrl: string | undefined,
+): string | null {
+  return sponsoredDestinationHref(rawCtaUrl)
+}
+
+function sponsoredDestinationHref(raw: string | undefined): string | null {
+  if (!raw) return null
   try {
-    return sanitizeAdUrl(rawPrUrl)
+    return sanitizeAdUrl(raw)
   } catch {
     return null
   }
@@ -339,6 +372,11 @@ export type SponsoredProposalViewModel = {
   logoToken: string | null
   logoSrc: string | null
   pullRequestHref: string | null
+  /**
+   * Null before the run has a diff to take the advertiser's next step with
+   * (`committed` onwards), and null whenever the row carries no settled CTA.
+   */
+  advertiserCtaHref: string | null
   actions: SponsoredProposalAction[]
 }
 
@@ -356,12 +394,34 @@ export function sponsoredProposalViewModel(
   const steps = row.steps ?? []
   const pullRequestHref = sponsoredPullRequestHref(row.pr_url)
   const logoToken = sponsoredLogoToken(row.advertiser_logo_token)
+  // Only once there is a committed diff to go with it: the CTA is the
+  // advertiser's "now set up your account" and before `committed` there is
+  // nothing to set it up for. `landed` and `merged` are the same finished run
+  // further on. Never on `failed` -- the settlement may have charged, but the
+  // card is telling the user nothing changed and must not sell beside that.
+  const ctaStates: SponsoredProposalState[] = ['committed', 'landed', 'merged']
+  const advertiserCtaHref = ctaStates.includes(row.state)
+    ? sponsoredAdvertiserCtaHref(row.advertiser_cta_url)
+    : null
 
   const viewRun = (label: string): SponsoredProposalAction[] =>
     row.thread_ref ? [{ kind: 'view-run', label }] : []
   const openPullRequest = (label: string): SponsoredProposalAction[] =>
     pullRequestHref
       ? [{ kind: 'open-pull-request', label, href: pullRequestHref }]
+      : []
+  // Neutral label; the advertiser contributes the name and nothing else. It
+  // is an href on every surface that can make one and sanitized text on the
+  // terminal, never markup.
+  const openAdvertiser = (): SponsoredProposalAction[] =>
+    advertiserCtaHref
+      ? [
+          {
+            kind: 'open-advertiser',
+            label: `Create your ${row.advertiser_name} project`,
+            href: advertiserCtaHref,
+          },
+        ]
       : []
 
   const stateActions: SponsoredProposalAction[] = (() => {
@@ -380,6 +440,7 @@ export function sponsoredProposalViewModel(
             primary: true,
           },
           ...viewRun('View what it did'),
+          ...openAdvertiser(),
         ]
       case 'landed':
         return [
@@ -388,9 +449,10 @@ export function sponsoredProposalViewModel(
           // transcript is still the only record of what the advertiser's agent
           // actually did.
           ...viewRun('View what it did'),
+          ...openAdvertiser(),
         ]
       case 'merged':
-        return openPullRequest('view on GitHub')
+        return [...openPullRequest('view on GitHub'), ...openAdvertiser()]
       // `accepted` is a handoff and `failed` is over; neither offers an answer
       // beyond the decline and the standing controls below.
       case 'accepted':
@@ -413,6 +475,7 @@ export function sponsoredProposalViewModel(
     logoToken,
     logoSrc: sponsoredLogoSrc(row.advertiser_logo_token),
     pullRequestHref,
+    advertiserCtaHref,
     actions: [
       ...stateActions,
       // Every state declines the same way, and this is the ONLY decline — the

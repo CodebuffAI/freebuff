@@ -17,6 +17,8 @@
  * nobody notices.
  */
 import {
+  FIXTURE_ADVERTISER_CTA_URL,
+  FIXTURE_ADVERTISER_NAME,
   HOSTILE_PR_URLS,
   MALFORMED_LOGO_TOKENS,
   SPONSORED_FIXTURE_STATES,
@@ -272,6 +274,42 @@ describe('states that carry more than a headline', () => {
     expect(await render(blockFor(SPONSORED_ROW_FIXTURES.failed), 60)).toContain(
       'Budget exceeded',
     )
+  })
+})
+
+describe('the advertiser CTA (COD-512)', () => {
+  test('a settled CTA is printed as sanitized text under the neutral label', async () => {
+    const frame = await render(
+      blockFor({
+        ...SPONSORED_ROW_FIXTURES.committed,
+        advertiser_cta_url: FIXTURE_ADVERTISER_CTA_URL,
+      }),
+      120,
+    )
+    expect(frame).toContain(
+      `Create your ${FIXTURE_ADVERTISER_NAME} project: ${FIXTURE_ADVERTISER_CTA_URL}`,
+    )
+  })
+
+  test('an unsettled row prints no CTA and no placeholder', async () => {
+    const frame = await render(blockFor(SPONSORED_ROW_FIXTURES.committed), 120)
+    expect(frame).not.toContain('Create your')
+  })
+
+  test('no hostile CTA URL is ever printed, and the card survives', async () => {
+    for (const advertiser_cta_url of HOSTILE_PR_URLS) {
+      const frame = await render(
+        blockFor({ ...SPONSORED_ROW_FIXTURES.committed, advertiser_cta_url }),
+        60,
+      )
+      expect(frame, advertiser_cta_url).not.toContain('Create your')
+      if (advertiser_cta_url.length > 0) {
+        expect(frame, advertiser_cta_url).not.toContain(
+          advertiser_cta_url.slice(0, 12),
+        )
+      }
+      expect(frame, advertiser_cta_url).toContain('SPONSORED')
+    }
   })
 })
 
