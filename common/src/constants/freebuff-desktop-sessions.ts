@@ -69,3 +69,7 @@ export function occupiesFreebuffDesktopSlot(
 
 /** Idle time after which Desktop may reclaim a constrained session slot. */
 export const FREEBUFF_DESKTOP_IDLE_RELEASE_MS = 10 * 60 * 1000
+
+/** Versioned opt-in: instance ids become single-use execution claims. */
+export const FREEBUFF_PURCHASE_CONTINUITY_HEADER =
+  'x-freebuff-purchase-continuity'

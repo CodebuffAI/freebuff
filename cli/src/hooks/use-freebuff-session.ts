@@ -96,6 +96,9 @@ function nextDelayMs(next: FreebuffSessionResponse): number | null {
     case 'ip_capped':
     case 'model_unavailable':
     case 'premium_slot_taken':
+    case 'purchase_claim_released':
+    case 'purchase_in_use':
+    case 'purchase_capacity':
       return null
   }
 }

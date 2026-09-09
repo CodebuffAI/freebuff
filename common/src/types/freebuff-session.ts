@@ -954,6 +954,17 @@ export type FreebuffSessionAdmissionResponse = (
       upgrade?: FreebuffUpgradeHint
     }
   | {
+      /** Retired single-use Desktop claim; persist a new id before retrying. */
+      status: 'purchase_claim_released'
+      accessTier?: FreebuffAccessTier
+    }
+  | {
+      status: 'purchase_in_use' | 'purchase_capacity'
+      accessTier?: FreebuffAccessTier
+      requestedModel: string
+      currentInstanceId: string
+    }
+  | {
       /** Freebuff Desktop only: every slot-bound session is occupied. Free
        *  accounts get one slot-bound and three multi-tab sessions; subscribers
        *  get three and eight. Limited free access makes every model slot-bound.
@@ -972,6 +983,10 @@ export type FreebuffSessionAdmissionResponse = (
       currentInstanceId: string
     }
 ) & {
+  /** Unexpired Desktop purchases, including occupied hours. Picker metadata;
+   * admission still checks ownership, liveness, and capacity atomically. */
+  desktopPurchases?: FreebuffDesktopPurchaseInfo[]
+  desktopRefunds?: FreebuffDesktopRefundInfo[]
   /** Multi-session Desktop responses only. Counts live, unexpired rows across
    * all Desktop processes for this user. */
   desktopSessionCounts?: FreebuffDesktopSessionCounts
@@ -987,7 +1002,30 @@ export type FreebuffSessionServerResponse =
        *  surfaces it as a 409 for fast in-flight feedback. */
       status: 'superseded'
       desktopSessionCounts?: FreebuffDesktopSessionCounts
+      desktopPurchases?: FreebuffDesktopPurchaseInfo[]
+      desktopRefunds?: FreebuffDesktopRefundInfo[]
     }
+
+/** Emitted only after the reversal ledger entry and purchase marker commit. */
+export interface FreebuffDesktopRefundInfo {
+  /** Durable execution claims belonging to this purchase; omitted by older APIs. */
+  claimInstanceIds?: string[]
+  purchaseId: string
+  model: string
+  amount: number
+  walletAmount: number
+  /** Refunded bonus retired in the same settlement; absent on older APIs. */
+  expiredBonusAmount?: number
+  refundedAt: string
+  /** Original debit's accounting instant; identifies the daily pool restored. */
+  poolDate: string
+}
+
+export interface FreebuffDesktopPurchaseInfo {
+  model: string
+  expiresAt: string
+  holderInstanceId?: string
+}
 
 /**
  * The session gate on `/api/v1/chat/completions`, as a wire contract.
