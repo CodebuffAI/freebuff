@@ -147,6 +147,7 @@ import type {
 } from './sponsored-proposal-api'
 import type { SponsoredLocalAvailability } from '@codebuff/common/ads/sponsored-local-execution'
 import type { FileReadWindow } from '@codebuff/common/types/contracts/client'
+import type { OverrideToolHandlers } from '@codebuff/sdk'
 
 /** The title, and therefore the branch slug. */
 export function sponsoredRunTitle(advertiserName: string): string {
@@ -1181,13 +1182,35 @@ export function sponsoredReadGuard(
 }
 
 /**
+ * The handlers a sponsored turn installs. The SDK's own `overrideTools` type,
+ * narrowed to the seven tools the grant admits and with every one REQUIRED:
+ * a sponsored run with one of these missing would fall through to the SDK's
+ * uncontained default for that tool, so an absent handler is a type error
+ * here rather than a hole found in production.
+ */
+export type SponsoredOverrideTools = Required<
+  Pick<
+    OverrideToolHandlers,
+    | 'read_files'
+    | 'code_search'
+    | 'list_directory'
+    | 'glob'
+    | 'write_file'
+    | 'apply_patch'
+    | 'run_terminal_command'
+  >
+>
+
+/**
  * `overrideTools` for a sponsored turn.
  *
  * Exported so the clamps can be asserted directly rather than only through a
  * live run: every entry here is a boundary, and a boundary that is only
  * exercised end-to-end is a boundary nobody tests.
  */
-export function sponsoredOverrideTools(context: SponsoredTurnContext) {
+export function sponsoredOverrideTools(
+  context: SponsoredTurnContext,
+): SponsoredOverrideTools {
   const workspaceRoot = context.worktree.path
   const processBroker = createSponsoredCodeSearchBroker({
     workspaceRoot,
@@ -1366,7 +1389,7 @@ export async function runSponsoredTurn(
       signal: context.signal,
       agentDefinitions: [],
       customToolDefinitions: [],
-      overrideTools: sponsoredOverrideTools(context) as never,
+      overrideTools: sponsoredOverrideTools(context),
       ...(IS_FREEBUFF ? { costMode: 'free' as const } : {}),
       // The marker says the run is sponsored; where it is BILLED is the
       // server's answer to give. HONEST LIMIT: no server route reads this field

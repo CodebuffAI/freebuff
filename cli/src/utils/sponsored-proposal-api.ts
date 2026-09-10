@@ -324,14 +324,48 @@ async function upstreamMessage(response: Response): Promise<string> {
       error?: unknown
       message?: unknown
     }
-    const text = body?.error ?? body?.message
-    if (typeof text === 'string' && text.trim() !== '') return text.trim()
+    const written = typeof body?.message === 'string' ? body.message.trim() : ''
+    const error = typeof body?.error === 'string' ? body.error.trim() : ''
+    // An ENUMERATED CODE is not a sentence (COD-438). The routes ship the
+    // code in `error` and, when they have one, the English in `message`; the
+    // code used to win and the user read `funded_accept_required` in a
+    // terminal. A known code gets our sentence, an unknown one gets whatever
+    // prose came with it, and only genuine prose in `error` is shown as-is.
+    if (error) {
+      const mapped = PROPOSAL_ERROR_SENTENCES[error]
+      if (mapped) return mapped
+      if (!looksLikeMachineCode(error)) return error
+      if (written) return written
+    } else if (written) {
+      return written
+    }
   } catch {
     // fall through
   }
   return response.status === 401
     ? 'Sign in to Freebuff to accept a sponsored task.'
     : 'Freebuff refused this sponsored task.'
+}
+
+/**
+ * The accept route's refusal codes, as sentences a person can act on.
+ *
+ * `funded_accept_required` is the one this CLI will actually meet: the only
+ * Accept off Cloud is the funded Desktop one (COD-438), and a CLI Accept
+ * carries no compute binding, so the server refuses it by name. The card
+ * renders the refusal and keeps both buttons; nothing is started.
+ */
+const PROPOSAL_ERROR_SENTENCES: Record<string, string> = {
+  funded_accept_required:
+    'Sponsored tasks can be accepted in Freebuff Desktop. Nothing was started.',
+  invalid_state: 'This proposal is no longer on offer.',
+  cloud_keyed:
+    'This proposal belongs to a Freebuff Cloud project. Open it in the web app.',
+}
+
+/** `snake_case` or a bare lowercase word: how the routes spell a code. */
+function looksLikeMachineCode(said: string): boolean {
+  return /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/.test(said)
 }
 
 /**

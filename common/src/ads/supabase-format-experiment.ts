@@ -751,3 +751,174 @@ export function aggregateSupabaseFormatExperiment(
     primaryVerdict,
   }
 }
+
+// ---------------------------------------------------------------------------
+// The format pairs (COD-446 / COD-449)
+// ---------------------------------------------------------------------------
+
+/**
+ * One display + agentic campaign pair serving one intent angle, and the exact
+ * reviewed procedure the agentic arm must carry. Defined ONCE here so the
+ * Next serving path, the Convex reservation contract, the Convex audience
+ * exception and the runtime readiness check cannot drift: before this
+ * registry the same two campaign ids and one procedure hash were pinned
+ * byte-for-byte in four source files.
+ *
+ * `procedureSha256` is the catalog hash of
+ * `${procedureId}@${procedureVersion}` in
+ * `evals/sponsored/procedures/supabase/acquisition-catalog.ts`; the catalog
+ * test asserts the two agree. Readiness refuses to serve a pair whose stored
+ * `sponsored_procedure` hashes to anything else — including the previous
+ * version — so bumping the version here is a CONTRACT CHANGE that darkens the
+ * pair until an operator re-POSTs the new procedure text onto the campaign.
+ */
+export type SupabaseFormatPair = Readonly<{
+  angle: SupabaseIntentAngle
+  displayCampaignId: string
+  agenticCampaignId: string
+  procedureId: string
+  procedureVersion: string
+  procedureSha256: `sha256:${string}`
+  consentSummary: string
+}>
+
+/** `null` means the angle has no pair configured and every consumer treats it as absent. */
+export type SupabaseFormatPairs = Readonly<
+  Record<SupabaseIntentAngle, SupabaseFormatPair | null>
+>
+
+/** Catalog entry `supabase-database-persist-one-feature@1.1.0`. */
+export const SUPABASE_FORMAT_DATABASE_PAIR: SupabaseFormatPair = Object.freeze({
+  angle: 'database',
+  displayCampaignId: '456fe7bd-2c28-47de-be2d-79b651991f3b',
+  agenticCampaignId: '32f72345-38e9-4c53-b66d-8898c3ea7d8d',
+  procedureId: 'supabase-database-persist-one-feature',
+  procedureVersion: '1.1.0',
+  procedureSha256:
+    'sha256:11ed035b0bc0f75d621a2c23b3c0a41e9d891e403ba48f03259310d8a7e688fd',
+  consentSummary:
+    "Scaffold Supabase locally and wire one requested feature's identified create and read path.",
+})
+
+/**
+ * Catalog entry `supabase-auth-one-feature@1.1.0`. The Auth pair's campaign
+ * ids are not checked in: the rows do not exist yet, and they arrive through
+ * `FREEBUFF_SUPABASE_AUTH_FORMAT_CAMPAIGN_IDS` (see `supabaseFormatPairs`).
+ */
+export const SUPABASE_FORMAT_AUTH_PROCEDURE = Object.freeze({
+  angle: 'auth',
+  procedureId: 'supabase-auth-one-feature',
+  procedureVersion: '1.1.0',
+  procedureSha256:
+    'sha256:e9766dbc2575c2bbeec4fd5d8473f14585e13aeb97fbe187dee654598843b816',
+  consentSummary:
+    'Implement one requested Supabase Auth flow locally, including its established session and server authorization boundary.',
+} as const satisfies Omit<
+  SupabaseFormatPair,
+  'displayCampaignId' | 'agenticCampaignId'
+>)
+
+/**
+ * `"<displayCampaignId>,<agenticCampaignId>"`. Unset means no Auth pair.
+ * Read from `process.env` by every consumer (Next through the env schema or
+ * directly, Convex directly, the way `FREEBUFF_SUPABASE_FORMAT_AUDIENCE` is)
+ * and handed to `supabaseFormatPairs` — this module never reads the
+ * environment itself.
+ */
+export const SUPABASE_AUTH_FORMAT_CAMPAIGN_IDS_ENV =
+  'FREEBUFF_SUPABASE_AUTH_FORMAT_CAMPAIGN_IDS'
+
+const CAMPAIGN_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * Parse the Auth pair's ids. Anything but exactly two distinct lowercase
+ * campaign UUIDs, neither of which is a database-pair id, reads as ABSENT:
+ * a malformed value must darken the Auth pair rather than admit a stray id
+ * into the format contract.
+ */
+export function parseSupabaseAuthFormatCampaignIds(
+  raw: string | null | undefined,
+): Pick<SupabaseFormatPair, 'displayCampaignId' | 'agenticCampaignId'> | null {
+  if (typeof raw !== 'string') return null
+  const parts = raw.split(',').map((part) => part.trim().toLowerCase())
+  if (parts.length !== 2) return null
+  const [displayCampaignId, agenticCampaignId] = parts as [string, string]
+  const reserved = new Set([
+    SUPABASE_FORMAT_DATABASE_PAIR.displayCampaignId,
+    SUPABASE_FORMAT_DATABASE_PAIR.agenticCampaignId,
+  ])
+  if (
+    !CAMPAIGN_ID_PATTERN.test(displayCampaignId) ||
+    !CAMPAIGN_ID_PATTERN.test(agenticCampaignId) ||
+    displayCampaignId === agenticCampaignId ||
+    reserved.has(displayCampaignId) ||
+    reserved.has(agenticCampaignId)
+  ) {
+    return null
+  }
+  return { displayCampaignId, agenticCampaignId }
+}
+
+export type SupabaseFormatPairsEnv = {
+  FREEBUFF_SUPABASE_AUTH_FORMAT_CAMPAIGN_IDS?: string | null | undefined
+}
+
+/**
+ * The registry, keyed by intent angle. The database pair is fixed; the Auth
+ * pair exists only while its env value parses. Callers pass `process.env`
+ * (or any object carrying that one key) so tests can set the value per case.
+ */
+export function supabaseFormatPairs(env: SupabaseFormatPairsEnv): SupabaseFormatPairs {
+  const authIds = parseSupabaseAuthFormatCampaignIds(
+    env.FREEBUFF_SUPABASE_AUTH_FORMAT_CAMPAIGN_IDS,
+  )
+  return Object.freeze({
+    database: SUPABASE_FORMAT_DATABASE_PAIR,
+    auth: authIds
+      ? Object.freeze({ ...SUPABASE_FORMAT_AUTH_PROCEDURE, ...authIds })
+      : null,
+  })
+}
+
+/** Angles in the order every consumer iterates them. */
+export const SUPABASE_INTENT_ANGLES: readonly SupabaseIntentAngle[] =
+  Object.freeze(['database', 'auth'])
+
+/** Every configured pair, database first. */
+export function configuredSupabaseFormatPairs(
+  pairs: SupabaseFormatPairs,
+): SupabaseFormatPair[] {
+  return SUPABASE_INTENT_ANGLES.flatMap((angle) => {
+    const pair = pairs[angle]
+    return pair ? [pair] : []
+  })
+}
+
+/** Every campaign id in every configured pair. */
+export function supabaseFormatCampaignIds(pairs: SupabaseFormatPairs): string[] {
+  return configuredSupabaseFormatPairs(pairs).flatMap((pair) => [
+    pair.displayCampaignId,
+    pair.agenticCampaignId,
+  ])
+}
+
+export function supabaseFormatCampaignIdForArm(
+  pair: SupabaseFormatPair,
+  arm: SupabaseFormatArm,
+): string {
+  return arm === 'display' ? pair.displayCampaignId : pair.agenticCampaignId
+}
+
+/** Which configured pair and arm a campaign id belongs to, if any. */
+export function supabaseFormatPairForCampaignId(
+  pairs: SupabaseFormatPairs,
+  campaignId: string | null | undefined,
+): { pair: SupabaseFormatPair; arm: SupabaseFormatArm } | null {
+  if (!isNonEmptyString(campaignId)) return null
+  for (const pair of configuredSupabaseFormatPairs(pairs)) {
+    if (campaignId === pair.displayCampaignId) return { pair, arm: 'display' }
+    if (campaignId === pair.agenticCampaignId) return { pair, arm: 'agentic' }
+  }
+  return null
+}

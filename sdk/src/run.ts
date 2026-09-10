@@ -78,10 +78,19 @@ import type { SkillsMap } from '@codebuff/common/types/skill'
 import type { Source } from '@codebuff/common/types/source'
 import type { CodebuffSpawn } from '@codebuff/common/types/spawn'
 
-type OverrideToolHandlers = {
-  [K in PublishedClientToolName]?: (input: any) => Promise<ToolResultOutput[]>
+/**
+ * Client-side replacements for the tools the SDK would otherwise execute
+ * itself, keyed by tool name. `read_files` is EXCLUDED from the mapped half
+ * and declared on its own because its signature differs: it answers a map of
+ * path to content rather than a tool-result array. As an intersection with the
+ * mapped half it was unsatisfiable — an implementation had to be assignable to
+ * both signatures at once — which is why callers cast to `never`.
+ */
+export type OverrideToolHandlers = {
+  [K in Exclude<PublishedClientToolName, 'read_files'>]?: (
+    input: any,
+  ) => Promise<ToolResultOutput[]>
 } & {
-  // Include read_files separately, since it has a different signature.
   read_files?: (input: {
     filePaths: string[]
     /** Present only for `windowedFileReads` agents. An override that ignores

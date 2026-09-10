@@ -16,10 +16,10 @@ import {
   createSponsoredCodeSearchBroker,
   createSponsoredTerminalBroker,
   sponsoredCodeSearchFlagsRefusal,
-  sponsoredContainment,
   sponsoredMacProfile,
 } from '../tools/sponsored-sandbox'
 import { codeSearch, parseCodeSearchFlags } from '../tools/code-search'
+import { sponsoredContainmentTestGate } from '../../test/sponsored-containment-gate'
 
 /**
  * COD-336's two acceptance tests, at the layer that actually holds them.
@@ -34,26 +34,11 @@ import { codeSearch, parseCodeSearchFlags } from '../tools/code-search'
  */
 
 /**
- * Some hosts cannot start a nested OS sandbox at all — Codex's own parent
- * Seatbelt profile rejects `sandbox-exec`, and a minimal Linux runner may have
- * no `bwrap`. Those SKIP; a profile broken on our side must stay red, which is
- * why this probes a PERMISSIVE profile rather than matching failure text.
+ * Skip, or in CI on Linux FAIL, when no OS sandbox can be started here. The
+ * rule and the reason live in `sdk/test/sponsored-containment-gate.ts`.
  */
-function containmentUsable(): boolean {
-  if (process.platform === 'darwin') {
-    return (
-      spawnSync('/usr/bin/sandbox-exec', [
-        '-p',
-        '(version 1)(allow default)',
-        '/usr/bin/true',
-      ]).status === 0
-    )
-  }
-  if (process.platform === 'linux') return sponsoredContainment().available
-  return false
-}
-
-const containedIt = it.skipIf(!containmentUsable())
+const CONTAINMENT_USABLE = sponsoredContainmentTestGate()
+const containedIt = it.skipIf(!CONTAINMENT_USABLE)
 
 function workspace(): { root: string; runtime: string; parent: string } {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'sponsored-sandbox-'))
@@ -68,6 +53,22 @@ async function drain(stream: NodeJS.ReadableStream): Promise<string> {
   let out = ''
   for await (const chunk of stream) out += String(chunk)
   return out
+}
+
+/**
+ * What `echo x > /dev/stderr` answers on THIS host with NO sandbox, spawned the
+ * way the broker spawns -- `'pipe'` stdio, which Bun backs with a socketpair.
+ * On Linux `/dev/stderr` is `/proc/self/fd/2` and open() on a socket through
+ * `/proc` is ENXIO, so the honest expectation for the contained run is "the
+ * same as the host", not "ok". Measured identical with and without bwrap.
+ */
+function uncontainedStderrVerdict(): 'ok' | 'DENIED' {
+  const probe = spawnSync(
+    'bash',
+    ['-c', 'echo x > /dev/stderr 2>/dev/null && echo ok || echo DENIED'],
+    { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' },
+  )
+  return probe.stdout.includes('ok') ? 'ok' : 'DENIED'
 }
 
 /** The user's environment as a sponsored run must never see it. */
@@ -410,11 +411,87 @@ describe('sponsored git (the commit the whole feature exists to produce)', () =>
         await stderr
         const out = await stdout
         expect(out).toContain('null=ok')
-        // `/dev/stderr` is a symlink to `/dev/fd/2`, and seatbelt matches the
-        // path the KERNEL resolves -- so this passes because `/dev/fd` is
-        // granted, and would still fail if only `/dev/stderr` were.
-        expect(out).toContain('stderr=ok')
-        expect(out).toContain('zero=denied')
+        if (process.platform === 'darwin') {
+          // `/dev/stderr` is a symlink to `/dev/fd/2`, and seatbelt matches the
+          // path the KERNEL resolves -- so this passes because `/dev/fd` is
+          // granted, and would still fail if only `/dev/stderr` were.
+          expect(out).toContain('stderr=ok')
+          expect(out).toContain('zero=denied')
+        } else {
+          // Linux, where the two macOS assertions measure the wrong things:
+          //
+          //  - `/dev/stderr` resolves to `/proc/self/fd/2`, and the kernel
+          //    refuses to open() that when fd 2 is a SOCKET (ENXIO). Bun's
+          //    `spawn` hands every `'pipe'` child a socketpair, so the redirect
+          //    fails with NO sandbox at all -- measured, identical under bwrap
+          //    and under a bare `spawn`. The containment property is that the
+          //    run gets the SAME answer the host gives, which is what the
+          //    uncontained control below pins; a sandbox that DENIED something
+          //    the host allows would still fail here.
+          //  - `/dev/zero` stood in for the host's dangerous nodes, and on this
+          //    arm there are none to stand in for: `--dev /dev` is a fresh
+          //    devtmpfs, so the assertion is the whole directory listing.
+          expect(out).toContain(`stderr=${uncontainedStderrVerdict()}`)
+        }
+      } finally {
+        fs.rmSync(parent, { recursive: true, force: true })
+      }
+    },
+  )
+
+  /**
+   * bubblewrap's `--dev /dev` documents its contents; this pins them. The host
+   * this was first measured on had 100+ entries in `/dev` -- `vda`..`vdf`,
+   * `loop0`..`loop7`, `kmsg`, `mem`-class nodes, `userfaultfd` -- and the run
+   * saw exactly the fourteen below. The list is a whitelist on purpose: a new
+   * bwrap adding a node shows up here as a question rather than a hole.
+   */
+  it.skipIf(!CONTAINMENT_USABLE || process.platform !== 'linux')(
+    "the run's /dev is bubblewrap's fresh devtmpfs and carries none of the host's devices",
+    async () => {
+      const { root, runtime, parent } = workspace()
+      try {
+        const handle = createSponsoredTerminalBroker({
+          workspaceRoot: root,
+          runtimeDir: runtime,
+        }).start({
+          executable: 'bash',
+          args: ['-c', 'ls -A /dev'],
+          cwd: root,
+          env: POLLUTED_ENV as NodeJS.ProcessEnv,
+        })
+        const stdout = drain(handle.stdout)
+        const stderr = drain(handle.stderr)
+        await handle.completion
+        await stderr
+        const entries = (await stdout).split('\n').filter(Boolean).sort()
+        const allowed = new Set([
+          'console', // only when bwrap has a tty on stdin; it does not here
+          'core',
+          'fd',
+          'full',
+          'null',
+          'ptmx',
+          'pts',
+          'random',
+          'shm',
+          'stderr',
+          'stdin',
+          'stdout',
+          'tty',
+          'urandom',
+          'zero',
+        ])
+        expect(entries.length).toBeGreaterThan(0)
+        for (const entry of entries)
+          expect(allowed.has(entry), entry).toBe(true)
+        // And the classes that matter are absent by name, so a failure reads
+        // as what it is rather than as a set difference.
+        for (const entry of entries) {
+          expect(entry, entry).not.toMatch(
+            /^(sd|vd|nvme|loop|dm-|mem|kmem|kmsg|port|bpf|userfaultfd|fuse)/,
+          )
+        }
       } finally {
         fs.rmSync(parent, { recursive: true, force: true })
       }
@@ -913,8 +990,26 @@ describe('sponsored git in the layout Desktop actually creates', () => {
           layout.worktree,
           script,
         )
-        for (const [name] of probes) expect(out).toContain(`${name}=denied`)
-        expect(out).not.toContain('ALLOWED')
+        // Two kinds of target. EXISTING entries of the common dir (a file, or a
+        // name under an existing directory) are rebound read-only on Linux and
+        // denied by the profile on macOS: `Read-only file system` inside the
+        // sandbox, on both arms. NEW names at the common dir's ROOT — a file
+        // that does not exist yet, `config.worktree`, and `packed-refs`, which
+        // the Linux arm hides from the run — land in the Linux tmpfs: the
+        // write succeeds INSIDE and reaches nothing. macOS refuses those too.
+        // Either way the assertion that matters is the host's, below.
+        const discardedOnLinux = new Set([
+          'config-worktree',
+          'packed-refs',
+          'common-root',
+        ])
+        for (const [name] of probes) {
+          if (process.platform === 'linux' && discardedOnLinux.has(name)) {
+            expect(out).toContain(`${name}=ALLOWED`)
+          } else {
+            expect(out).toContain(`${name}=denied`)
+          }
+        }
 
         // And the user's repository is genuinely untouched by the attempt.
         expect(
@@ -923,6 +1018,19 @@ describe('sponsored git in the layout Desktop actually creates', () => {
         expect(fs.existsSync(path.join(common, 'hooks', 'post-checkout'))).toBe(
           false,
         )
+        expect(fs.existsSync(path.join(common, 'config.worktree'))).toBe(false)
+        expect(fs.existsSync(path.join(common, 'a-new-file'))).toBe(false)
+        const packed = fs.readFileSync(path.join(common, 'packed-refs'), 'utf8')
+        expect(packed).toContain('refs/heads/main')
+        expect(packed).not.toContain('pwned')
+        expect(
+          fs.readFileSync(path.join(common, 'info', 'exclude'), 'utf8'),
+        ).not.toContain('pwned')
+        expect(
+          spawnSync('git', ['-C', layout.project, 'rev-parse', 'main'], {
+            encoding: 'utf8',
+          }).status,
+        ).toBe(0)
       } finally {
         fs.rmSync(layout.parent, { recursive: true, force: true })
       }
@@ -936,6 +1044,13 @@ describe('sponsored git in the layout Desktop actually creates', () => {
    * `literal` rather than the directory being writable: git must be able to
    * CREATE the lock for a ref transaction to run at all, and rewriting the
    * packed ref table is where deleting somebody else's branch would happen.
+   *
+   * On Linux the same property comes from a different mechanism: the common
+   * dir is a tmpfs with the real entries rebound read-only and `packed-refs`
+   * left out, so the lock (a new name) is creatable, and a rewrite of the
+   * table lands in the tmpfs rather than on the host. git 2.55 takes the lock
+   * on an ordinary commit — the CI runner found that the first time these
+   * tests ran there — so a Linux arm that could not grant it could not commit.
    */
   containedIt(
     'lets git take the packed-refs lock without letting it rewrite packed-refs',
@@ -957,7 +1072,73 @@ describe('sponsored git in the layout Desktop actually creates', () => {
           ].join('\n'),
         )
         expect(out).toContain('lock=writable')
-        expect(out).toContain('table=denied')
+        if (process.platform === 'darwin') {
+          expect(out).toContain('table=denied')
+        } else {
+          // Linux hides `packed-refs` and gives the run a tmpfs for new names,
+          // so the write succeeds INSIDE and is discarded with the sandbox.
+          expect(out).toContain('table=WRITABLE')
+        }
+        const packed = fs.readFileSync(path.join(common, 'packed-refs'), 'utf8')
+        expect(packed).not.toMatch(/^x$/m)
+        expect(packed).toContain('refs/heads/main')
+        expect(fs.existsSync(path.join(common, 'packed-refs.lock'))).toBe(false)
+      } finally {
+        fs.rmSync(layout.parent, { recursive: true, force: true })
+      }
+    },
+  )
+
+  /**
+   * The run's OWN branch packed, which `git gc` does to every branch in time.
+   *
+   * `pack-refs` deletes `refs/heads/<namespace>/` once nothing loose is left in
+   * it, so a grant expressed as a bind mount has no source directory — bwrap
+   * refused to start with "Can't find source path" until the directories were
+   * created ahead of the spawn. The macOS profile names paths and never
+   * noticed. Asserted as the product outcome, with the failure text named.
+   */
+  containedIt(
+    "commits when the run's own branch is packed and its ref directory is gone",
+    async () => {
+      const layout = desktopLayout()
+      const common = layout.linkedWorktree.commonDir
+      try {
+        spawnSync('git', ['-C', layout.project, 'pack-refs', '--all'])
+        expect(
+          fs.existsSync(path.join(common, 'refs', 'heads', 'freebuff')),
+        ).toBe(false)
+        const { exitCode, out, err } = await runInSandbox(
+          {
+            workspaceRoot: layout.worktree,
+            runtimeDir: layout.runtime,
+            linkedWorktree: layout.linkedWorktree,
+          },
+          layout.worktree,
+          COMMIT_SCRIPT,
+        )
+        expect(err).not.toContain("Can't find source path")
+        expect(err).not.toContain('packed-refs.lock')
+        expect(err).not.toContain('Read-only file system')
+        expect(exitCode).toBe(0)
+        expect(out).toContain('sponsored change')
+        const tip = spawnSync(
+          'git',
+          ['-C', layout.project, 'log', '--oneline', '-1', layout.branch],
+          { encoding: 'utf8' },
+        )
+        expect(tip.stdout).toContain('sponsored change')
+        // The packed table itself was not rewritten by the run.
+        expect(
+          fs.readFileSync(path.join(common, 'packed-refs'), 'utf8'),
+        ).toContain('refs/heads/main')
+        // The Linux arm materialised the run's own branch as a loose ref
+        // before the spawn (its packed entry stays and is shadowed); on macOS
+        // git wrote the loose ref itself. Either way the user's git resolves
+        // it to the sponsored commit, which the `log` above proved.
+        expect(
+          fs.existsSync(path.join(common, 'refs', 'heads', layout.branch)),
+        ).toBe(true)
       } finally {
         fs.rmSync(layout.parent, { recursive: true, force: true })
       }

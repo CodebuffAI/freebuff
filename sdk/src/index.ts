@@ -15,6 +15,7 @@ export { getFiles } from './tools/read-files'
 export type { FileFilter, FileFilterResult } from './tools/read-files'
 export type {
   CodebuffClientOptions,
+  OverrideToolHandlers,
   RunOptions,
   MessageContent,
   TextContent,

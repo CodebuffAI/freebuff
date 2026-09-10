@@ -22,7 +22,6 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
 
 import { ensureCliTestEnv } from '../../__tests__/test-utils'
 
@@ -30,8 +29,8 @@ ensureCliTestEnv()
 
 const { sponsoredOverrideTools, sponsoredReadGuard, sponsoredWriteGuard } =
   await import('../sponsored-run')
-const { sponsoredContainment } =
-  await import('../../../../sdk/src/tools/sponsored-sandbox')
+const { sponsoredContainmentTestGate } =
+  await import('../../../../sdk/test/sponsored-containment-gate')
 const { sponsoredAgentDefinition } = await import('../sponsored-agent')
 const { SPONSORED_LOCAL_V1_GRANT } =
   await import('@codebuff/common/ads/sponsored-local-execution')
@@ -45,18 +44,10 @@ const WORKTREE = join(FIXTURE_PARENT, 'worktree')
 mkdirSync(WORKTREE, { recursive: true })
 afterAll(() => rmSync(FIXTURE_PARENT, { recursive: true, force: true }))
 
-function containmentUsable(): boolean {
-  if (process.platform === 'darwin') {
-    return (
-      spawnSync('/usr/bin/sandbox-exec', [
-        '-p',
-        '(version 1)(allow default)',
-        '/usr/bin/true',
-      ]).status === 0
-    )
-  }
-  return process.platform === 'linux' && sponsoredContainment().available
-}
+// Skip, or in CI on Linux FAIL, when no OS sandbox can be started here. The
+// rule and the reason live in `sdk/test/sponsored-containment-gate.ts`.
+const CONTAINMENT_USABLE = sponsoredContainmentTestGate()
+const containmentUsable = () => CONTAINMENT_USABLE
 
 const context = (): SponsoredTurnContext => ({
   prompt: 'do the thing',

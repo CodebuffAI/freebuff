@@ -780,7 +780,11 @@ const SPONSORED_SHELL_SELECT_READ_LITERALS: readonly string[] = [
  *    `commit=FAIL`. It is the LOCK ONLY and deliberately not `packed-refs`
  *    itself, which stays unwritable — so a run can take the lock git needs and
  *    still cannot rewrite the packed ref table, which is where deleting
- *    somebody else's branch would happen.
+ *    somebody else's branch would happen. Linux cannot express this literal;
+ *    it hides `packed-refs` from the run altogether and lets the lock land in
+ *    a tmpfs instead (see `prepareLinkedWorktreeForLinux`), which is the same
+ *    property by a different mechanism: git gets its lock, the table is never
+ *    rewritten on the host.
  *
  * Everything else in the common dir is readable and not writable. Measured, all
  * `Operation not permitted`: `hooks/`, `config`, `config.worktree`, `info/`,
@@ -978,62 +982,107 @@ function spawnMac(
 }
 
 /**
- * The linked-worktree grant, expressed in bind mounts instead of path rules.
+ * How the Linux arm bounds the user's real `.git` (the linked worktree's
+ * common dir), and why it is a tmpfs with the real entries rebound on top.
  *
- * INVERTED RELATIVE TO macOS, and the inversion is forced rather than chosen.
- * Seatbelt filters paths, so the macOS arm states an ALLOWLIST and everything
- * unnamed is refused. bubblewrap composes MOUNTS, and a read-only mount refuses
- * the creation of new names inside it — including `packed-refs.lock`, which git
- * must be able to create for `commit` to work at all on a repository with
- * packed refs. So the common dir is bound writable and the dangerous paths are
- * covered with read-only binds on top.
+ * `spawnLinux` mounts an EMPTY tmpfs at the common dir, then rebinds every
+ * entry that exists there read-only — `HEAD`, `config`, `hooks/`, `info/`,
+ * `refs/`, `logs/`, `worktrees/`, all of them — and finally binds the granted
+ * write subpaths writable ON TOP: this worktree's admin dir, `objects`,
+ * `refs/heads/<namespace>`, `logs/refs/heads/<namespace>`. bubblewrap applies
+ * mounts in order, so everything an existing entry covers stays read-only
+ * (`hooks/`, `config`, `info/`, every other branch's ref and reflog, every
+ * other worktree's admin dir), and a NEW name at the common dir's root lands
+ * in the tmpfs — visible to the run, gone when it exits, never written to the
+ * user's repository.
  *
- * That makes this arm a DENY-LIST where macOS is an allowlist, which is weaker
- * in the way deny-lists always are: a path nobody thought of is writable here
- * and refused there. The paths that matter are covered — `hooks`, `config`,
- * `config.worktree`, `info` and `packed-refs`, plus every branch ref and reflog
- * outside the run's own namespace and every other worktree's admin dir — so the
- * two arms agree on every property the macOS measurements assert. They do not
- * agree on what happens to a path neither list names.
+ * Two entries are deliberately NOT rebound: `packed-refs` and `packed-refs.lock`.
  *
- * NOT VERIFIED ON A LINUX HOST. There is none on the machine this was written
- * on, and the SDK's containment tests self-skip without `bwrap`, so CI's Linux
- * runner does not close it either — the same honest caveat the `--dev` reasoning
- * below already carries. The git regression test will exercise this the first
- * time it runs somewhere `bwrap` exists.
+ *  - git ≥ 2.5x takes `packed-refs.lock` on an ordinary `git commit` in a
+ *    linked worktree even when the branch it updates is loose (measured on
+ *    the CI runner's git 2.55; git 2.43 does not). The lock is a NEW name in
+ *    the common dir, and a read-only mount cannot host one, so the previous
+ *    arm — the common dir bound read-only outright — failed every commit on a
+ *    modern git with `Unable to create '.git/packed-refs.lock': Read-only
+ *    file system`. In the tmpfs the lock is creatable and disposable.
+ *  - With `packed-refs` hidden, git sees a repository whose refs are all
+ *    loose. It has no packed table to consult, lock or rewrite, so the one
+ *    place deleting somebody else's branch would happen (a rewrite of that
+ *    table) is not reachable at all, and a rewrite attempted anyway lands in
+ *    the tmpfs. The cost is that the run cannot resolve any ref that exists
+ *    ONLY packed — the user's `main` after `pack-refs`, typically. Nothing a
+ *    sponsored procedure does needs another branch; it commits on its own.
+ *
+ * Hiding the table has one precondition, met on the host before the spawn:
+ * the run's OWN branch must be loose, or HEAD would resolve to nothing and
+ * the first commit would become an unrelated root commit. `pack-refs` moves a
+ * branch into the table and removes its ref directory, so
+ * `prepareLinkedWorktreeForLinux` reads the host's `packed-refs`, writes a
+ * loose file for every ref under `refs/heads/<namespace>/` that lacks one
+ * (exactly what git writes when it updates the ref; the packed entry is left
+ * in place and a loose ref shadows it), and creates the two namespace
+ * directories a writable bind needs as a SOURCE. Only the run's namespace is
+ * touched, on the trusted side, with values read from the user's own table.
+ *
+ * This replaced two earlier shapes the first time the tests ran on a Linux
+ * host (COD-435). A deny-list (common dir writable, dangerous paths covered
+ * read-only) could not refuse a name that did not exist yet — a LOOSE
+ * `refs/heads/main` on a packed repository would have let a run overwrite the
+ * user's main branch. A plain read-only bind refused that, and also refused
+ * git's lock. The tmpfs keeps the allowlist property and gives git its
+ * scratch space, and `sdk/src/__tests__/sponsored-sandbox.test.ts` asserts
+ * both halves: the existing entries stay `Read-only file system`, and nothing
+ * written to a new name reaches the host.
  */
-function linkedWorktreeBindArgs(linked: SponsoredLinkedWorktree): string[] {
+function prepareLinkedWorktreeForLinux(linked: SponsoredLinkedWorktree): void {
   const commonDir = path.resolve(linked.commonDir)
-  if (!fs.existsSync(commonDir)) return []
-  const args = ['--bind', commonDir, commonDir]
-  const readOnly = (target: string) => {
-    if (fs.existsSync(target)) args.push('--ro-bind', target, target)
+  if (!fs.existsSync(commonDir)) return
+  const namespace = linked.branchNamespace.replace(/^\/+|\/+$/g, '')
+  for (const dir of [
+    path.join(commonDir, 'refs', 'heads', namespace),
+    path.join(commonDir, 'logs', 'refs', 'heads', namespace),
+  ]) {
+    fs.mkdirSync(dir, { recursive: true })
   }
-  for (const entry of SPONSORED_GIT_FORBIDDEN_WRITES) {
-    readOnly(path.join(commonDir, entry))
+  const packedRefsPath = path.join(commonDir, 'packed-refs')
+  if (!fs.existsSync(packedRefsPath)) return
+  const prefix = `refs/heads/${namespace}/`
+  for (const line of fs.readFileSync(packedRefsPath, 'utf8').split('\n')) {
+    // `<sha> <refname>`; `#` is the header, `^<sha>` a peeled tag line.
+    if (line.startsWith('#') || line.startsWith('^')) continue
+    const space = line.indexOf(' ')
+    if (space === -1) continue
+    const sha = line.slice(0, space)
+    const ref = line.slice(space + 1).trim()
+    if (!/^[0-9a-f]{40,64}$/.test(sha) || !ref.startsWith(prefix)) continue
+    // No traversal out of the namespace, whatever the table says.
+    const rel = ref.slice('refs/heads/'.length)
+    if (rel.split('/').some((part) => part === '' || part === '..')) continue
+    const loose = path.join(commonDir, 'refs', 'heads', rel)
+    if (fs.existsSync(loose)) continue
+    fs.mkdirSync(path.dirname(loose), { recursive: true })
+    fs.writeFileSync(loose, `${sha}\n`)
   }
-  // Everything in these directories EXCEPT the run's own namespace, so the
-  // grant matches macOS's `refs/heads/<namespace>` scoping rather than handing
-  // over every branch in the repository.
-  const siblingsOf = (dir: string, keep: string) => {
-    let entries: string[]
-    try {
-      entries = fs.readdirSync(dir)
-    } catch {
-      return
-    }
-    for (const entry of entries) {
-      if (entry !== keep) readOnly(path.join(dir, entry))
-    }
+}
+
+/** Entries of the common dir that must not be rebound; see `prepareLinkedWorktreeForLinux`. */
+const HIDDEN_COMMON_DIR_ENTRIES = new Set(['packed-refs', 'packed-refs.lock'])
+
+/**
+ * The mount plan for the common dir: an empty tmpfs, then every existing entry
+ * except the hidden two rebound read-only at its own path. The writable grants
+ * are bound afterwards by the caller, on top.
+ */
+function linuxCommonDirMounts(commonDir: string): string[] {
+  const args = ['--tmpfs', commonDir]
+  for (const entry of fs.readdirSync(commonDir).sort()) {
+    if (HIDDEN_COMMON_DIR_ENTRIES.has(entry)) continue
+    const target = path.join(commonDir, entry)
+    args.push('--ro-bind', target, target)
   }
-  siblingsOf(path.join(commonDir, 'refs', 'heads'), linked.branchNamespace)
-  siblingsOf(
-    path.join(commonDir, 'logs', 'refs', 'heads'),
-    linked.branchNamespace,
-  )
-  siblingsOf(path.join(commonDir, 'worktrees'), path.basename(linked.gitDir))
   return args
 }
+
 
 function spawnLinux(
   request: TerminalCommandSpawnRequest,
@@ -1078,30 +1127,41 @@ function spawnLinux(
   ]) {
     if (fs.existsSync(dir)) args.push('--ro-bind', dir, dir)
   }
+  const commonDir = linkedWorktree
+    ? path.resolve(linkedWorktree.commonDir)
+    : null
   for (const dir of additionalReadRoots) {
-    if (fs.existsSync(dir)) args.push('--ro-bind', dir, dir)
+    if (!fs.existsSync(dir)) continue
+    if (commonDir !== null && path.resolve(dir) === commonDir) {
+      // The user's real `.git`: a tmpfs with the real entries rebound
+      // read-only, not a plain read-only bind. See `prepareLinkedWorktreeForLinux`.
+      args.push(...linuxCommonDirMounts(commonDir))
+      continue
+    }
+    args.push('--ro-bind', dir, dir)
   }
   // `--dev /dev` mounts a FRESH devtmpfs the run owns, so the macOS device
   // problem does not exist on this arm: bubblewrap populates it with
   // null/zero/full/random/urandom/tty (writable, because the mount is the
   // run's own) plus the `/dev/fd -> /proc/self/fd` and stdin/stdout/stderr
-  // symlinks, and it does NOT carry the host's `bpf*`, `disk*` or
-  // `auditpipe`. The macOS profile has to enumerate literals precisely
+  // symlinks, and it does NOT carry the host's block devices, `kmsg`, `mem`
+  // or anything else. The macOS profile has to enumerate literals precisely
   // because seatbelt filters the host's real `/dev` rather than replacing it.
   //
-  // NOT VERIFIED ON A LINUX HOST — there is none on the machine this was
-  // written on, and the SDK's containment tests self-skip without `bwrap`, so
-  // CI's Linux runner does not close this either. It is read off bubblewrap's
-  // documented `--dev` behaviour, and the git regression test in
-  // `sdk/src/__tests__/sponsored-sandbox.test.ts` will exercise it the first
-  // time it runs somewhere `bwrap` exists.
+  // Measured on Linux (bubblewrap 0.9.0, COD-435): the run's `/dev` holds
+  // exactly core, fd, full, null, ptmx, pts, random, shm, stderr, stdin,
+  // stdout, tty, urandom and zero, on a host whose `/dev` has 100+ entries.
+  // `sdk/src/__tests__/sponsored-sandbox.test.ts` asserts that set.
   args.push('--proc', '/proc', '--dev', '/dev')
+  // AFTER the read roots, which include the linked worktree's common dir as
+  // a tmpfs with its entries rebound read-only: bubblewrap applies binds in
+  // order, so these writable binds land on top and are the ONLY writable
+  // paths under it that reach the host. `prepareLinkedWorktreeForLinux`
+  // explains the tmpfs and creates the bind sources this needs.
+  if (linkedWorktree) prepareLinkedWorktreeForLinux(linkedWorktree)
   for (const dir of writeRoots) {
     if (fs.existsSync(dir)) args.push('--bind', dir, dir)
   }
-  // AFTER the write roots, because bubblewrap applies binds in order and the
-  // read-only covers inside this one have to land on top of anything above.
-  if (linkedWorktree) args.push(...linkedWorktreeBindArgs(linkedWorktree))
   args.push('--chdir', request.cwd, '--clearenv')
   for (const [key, value] of Object.entries(env)) {
     if (value !== undefined) args.push('--setenv', key, value)
