@@ -2202,6 +2202,24 @@ export function freebuffWithdrawnModelAvailabilityLabel(): string {
   return `no longer offered in free mode — we recommend ${replacement}`
 }
 
+/**
+ * What a client that understands `updateRequired` says: the model is fine,
+ * the build is not, and updating costs nothing extra.
+ */
+export function freebuffUpdateRequiredModelMessage(id: string): string {
+  const model = SUPPORTED_FREEBUFF_MODELS.find((m) => m.id === id)
+  const name = model?.displayName ?? id
+  return `Update Freebuff Desktop to keep using ${name}. This version can't resume your purchased time — the model itself is fine, and updating won't charge you again.`
+}
+
+/** The same fact shaped to sit inside "<model> isn't available right now (…)",
+ *  which is the only sentence a binary that predates `updateRequired` can
+ *  build. Scopes the unavailability to the client version, so the reader is
+ *  not told the model is down. */
+export function freebuffUpdateRequiredAvailabilityLabel(): string {
+  return 'only on this version of Freebuff Desktop — update it to resume your purchased time without another charge'
+}
+
 /** Suffix-tolerant like the other model predicates, so a dated provider
  *  snapshot of a paused model cannot slip past the pause. */
 export function isFreebuffPausedFreeModelId(

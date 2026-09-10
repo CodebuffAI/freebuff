@@ -876,6 +876,19 @@ export type FreebuffSessionAdmissionResponse = (
        * the field.
        */
       withdrawn?: boolean
+      /**
+       * The MODEL is fine; this CLIENT BUILD cannot resume a purchased hour,
+       * and the server refused rather than charge the hour again. Set only on
+       * the Desktop multi-session path, for a binary too old to rotate a
+       * purchase claim.
+       *
+       * Older clients ignore it and still render `availableHours`, which is
+       * worded so the sentence they build around it does not blame the model.
+       * The refusal it replaces read "<model> isn't available right now
+       * (Update Freebuff Desktop …)", which sent a user off the model that was
+       * working onto whatever was not.
+       */
+      updateRequired?: boolean
     }
   | {
       /** Account is banned. Returned from every endpoint so banned bots can't
