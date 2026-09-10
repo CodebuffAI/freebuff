@@ -1,4 +1,12 @@
-import { describe, test, expect, afterAll, beforeEach, afterEach, mock } from 'bun:test'
+import {
+  describe,
+  test,
+  expect,
+  afterAll,
+  beforeEach,
+  afterEach,
+  mock,
+} from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -570,7 +578,12 @@ describe('live chat state provider', () => {
 describe('atomic save and resilient load', () => {
   const chatDir = path.join(TEST_ROOT, 'codebuff-test-resilient-chatdir')
 
-  const runState = { output: { type: 'error', message: 'x' } } as RunState
+  const runState = {
+    output: { type: 'error', message: 'x' },
+    sessionState: {
+      mainAgentState: { messageHistory: [] },
+    } as any,
+  } as RunState
   const messages: ChatMessage[] = [
     {
       id: 'msg-1',
@@ -615,7 +628,9 @@ describe('atomic save and resilient load', () => {
 
     expect(loaded).not.toBeNull()
     expect(loaded!.messages[0].content).toBe('the prompt')
-    expect(loaded!.runState.output.type).toBe('error')
+    // Torn run-state has no readable session state: no continuation state
+    // is adopted, but the transcript survives the load.
+    expect(loaded!.runState).toBeNull()
   })
 
   test('torn chat-messages.json still restores the run state', () => {
@@ -626,7 +641,7 @@ describe('atomic save and resilient load', () => {
 
     expect(loaded).not.toBeNull()
     expect(loaded!.messages).toHaveLength(0)
-    expect((loaded!.runState.output as any).message).toBe('x')
+    expect((loaded!.runState!.output as any).message).toBe('x')
   })
 
   test('returns null when both files are unreadable', () => {
@@ -635,6 +650,50 @@ describe('atomic save and resilient load', () => {
     fs.writeFileSync(path.join(chatDir, 'chat-messages.json'), '[')
 
     expect(loadMostRecentChatState()).toBeNull()
+  })
+
+  test('a run-state without sessionState is not adopted as continuation state', () => {
+    // A crashed/aborted first turn can persist a shell run-state (trace id
+    // + error output, no session) before the SDK ever emitted a snapshot.
+    // On resume that shell must not become previousRun: it would make the
+    // SDK build a blank session and silently discard the conversation.
+    const shellRunState = {
+      traceSessionId: 'trace-shell',
+      output: {
+        type: 'error',
+        message: 'The session ended before this response completed.',
+      },
+    } as RunState
+    saveChatState(shellRunState, messages)
+
+    const loaded = loadMostRecentChatState()
+
+    expect(loaded).not.toBeNull()
+    expect(loaded!.runState).toBeNull()
+    expect(loaded!.messages[0].content).toBe('the prompt')
+  })
+
+  test('a run-state with sessionState is restored as continuation state', () => {
+    const fullRunState = {
+      traceSessionId: 'trace-full',
+      sessionState: {
+        mainAgentState: {
+          messageHistory: [
+            { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+          ],
+        },
+      } as any,
+      output: { type: 'lastMessage' as const, value: [] },
+    } as unknown as RunState
+    saveChatState(fullRunState, messages)
+
+    const loaded = loadMostRecentChatState()
+
+    expect(loaded!.runState).not.toBeNull()
+    expect(loaded!.runState?.traceSessionId).toBe('trace-full')
+    expect(
+      (loaded!.runState!.sessionState as any).mainAgentState.messageHistory,
+    ).toHaveLength(1)
   })
 })
 

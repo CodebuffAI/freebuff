@@ -272,6 +272,11 @@ export const setupStreamingContext = (params: {
   setMessages: (updater: (messages: ChatMessage[]) => ChatMessage[]) => void
   streamRefs: StreamController
   abortController?: AbortController
+  /** Invoked synchronously at the top of the abort listener, before the
+   *  input lock is released. Lets the run owner checkpoint its latest SDK
+   *  snapshot so a follow-up message sent immediately after an interrupt
+   *  resumes from fresh state instead of stale or null continuation state. */
+  onAbort?: () => void
   setStreamStatus: (status: StreamStatus) => void
   setCanProcessQueue: (can: boolean) => void
   isQueuePausedRef?: MutableRefObject<boolean>
@@ -303,9 +308,19 @@ export const setupStreamingContext = (params: {
   const abortController = params.abortController ?? new AbortController()
 
   abortController.signal.addEventListener('abort', () => {
-    // Abort means the user stopped streaming; update UI with an interruption notice.
-    // Release the chain lock immediately so new messages can be sent directly instead
-    // of being queued.
+    // Let the run owner checkpoint its latest SDK snapshot synchronously
+    // BEFORE the input lock below is released, so a follow-up message sent
+    // the moment the user hits Esc inherits the latest state instead of
+    // stale (or null) continuation state. Best-effort: an onAbort failure
+    // must never block interruption cleanup.
+    try {
+      params.onAbort?.()
+    } catch {
+      // Checkpoint callbacks are best-effort; never skip abort cleanup.
+    }
+    // Abort means the user stopped streaming; update UI with an interruption
+    // notice. Release the chain lock immediately so new messages can be sent
+    // directly instead of being queued.
     streamRefs.setters.setWasAbortedByUser(true)
     setIsRetrying(false)
     timerController.stop('aborted')

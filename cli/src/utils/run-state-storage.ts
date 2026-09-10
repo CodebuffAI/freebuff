@@ -22,7 +22,10 @@ import type { RunState } from '@codebuff/sdk'
 const RUN_STATE_FILENAME = 'run-state.json'
 
 type SavedChatState = {
-  runState: RunState
+  /** Continuation state for the next run. Null when nothing usable was
+   *  persisted (a run-state without sessionState is never adopted — see
+   *  loadMostRecentChatState). */
+  runState: RunState | null
   messages: ChatMessage[]
   chatId?: string
 }
@@ -534,6 +537,18 @@ export function loadMostRecentChatState(
       )
     }
 
+    // A run-state without sessionState is not continuation state: handing
+    // it to the SDK makes the next run build a blank session and silently
+    // discard the conversation (freebuff #1054). Treat it as unrestorable —
+    // the transcript still restores below.
+    if (runState && !runState.sessionState) {
+      logger.debug(
+        { runStatePath },
+        'Run state has no session state; restoring transcript without agent context',
+      )
+      runState = null
+    }
+
     if (!runState && !messages) {
       logger.debug(
         { runStatePath, messagesPath },
@@ -542,13 +557,9 @@ export function loadMostRecentChatState(
       return null
     }
 
-    runState ??= {
-      output: {
-        type: 'error',
-        message: 'Previous run state could not be restored.',
-      },
-    } as RunState
-    runState.traceSessionId ??= randomUUID()
+    if (runState) {
+      runState.traceSessionId ??= randomUUID()
+    }
     messages ??= []
 
     const resolvedChatId = path.basename(chatDir)

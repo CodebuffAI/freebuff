@@ -1859,3 +1859,144 @@ describe('freebuff gate errors', () => {
     expect(messages[0].userError).toBeUndefined()
   })
 })
+
+describe('onAbort checkpoint callback (freebuff #1054)', () => {
+  test('runs synchronously at the top of the abort listener, before the input lock is released', () => {
+    let messages = createBaseMessages()
+    const streamRefs = createStreamController()
+    const timerController = createMockTimerController()
+    // Cast the initializers: TS narrows `let` vars from literal
+    // initializers and the abort listener's closure assignments never
+    // reset that narrowing, which would mis-type the assertions below.
+    let streamStatus = 'streaming' as StreamStatus
+    let statusSeenInOnAbort = null as StreamStatus | null
+    let chainInProgress = true
+    let onAbortCalls = 0
+
+    const { abortController } = setupStreamingContext({
+      aiMessageId: 'ai-1',
+      timerController,
+      setMessages: (fn: any) => {
+        messages = fn(messages)
+      },
+      streamRefs,
+      onAbort: () => {
+        onAbortCalls++
+        // The listener below swaps this to 'idle'; seeing 'streaming'
+        // proves onAbort ran BEFORE the lock release / UI reset.
+        statusSeenInOnAbort = streamStatus
+      },
+      setStreamStatus: (status: StreamStatus) => {
+        streamStatus = status
+      },
+      setCanProcessQueue: () => {
+        chainInProgress = false
+      },
+      updateChainInProgress: () => {},
+      setIsRetrying: () => {},
+      setStreamingAgents: () => {},
+    })
+
+    abortController.abort()
+
+    expect(onAbortCalls).toBe(1)
+    expect(statusSeenInOnAbort).toBe('streaming')
+    expect(streamStatus).toBe('idle')
+  })
+
+  test('a throwing onAbort still runs the interruption cleanup', () => {
+    let messages = createBaseMessages()
+    const streamRefs = createStreamController()
+    const timerController = createMockTimerController()
+    let chainInProgress = true
+
+    const { abortController } = setupStreamingContext({
+      aiMessageId: 'ai-1',
+      timerController,
+      setMessages: (fn: any) => {
+        messages = fn(messages)
+      },
+      streamRefs,
+      onAbort: () => {
+        throw new Error('checkpoint boom')
+      },
+      setStreamStatus: () => {},
+      setCanProcessQueue: () => {
+        chainInProgress = false
+      },
+      updateChainInProgress: () => {},
+      setIsRetrying: () => {},
+      setStreamingAgents: () => {},
+    })
+
+    expect(() => abortController.abort()).not.toThrow()
+    expect(chainInProgress).toBe(false)
+    expect(streamRefs.state.wasAbortedByUser).toBe(true)
+  })
+
+  test('abort leaves the full message history in the continuation snapshot', () => {
+    // Mirrors the hook wiring: onAbort stores the latest in-flight snapshot
+    // into the continuation ref used by the next sendMessage. This is the
+    // exact path that used to hand the SDK an empty previousRun after an
+    // interrupt, resetting the conversation to a blank session.
+    const previousRunStateRef = { current: null as RunState | null }
+    const snapshot = {
+      traceSessionId: 'trace-1',
+      sessionState: {
+        mainAgentState: {
+          messageHistory: [
+            {
+              role: 'user',
+              content: [{ type: 'text', text: 'implement authentication' }],
+            },
+            {
+              role: 'assistant',
+              content: [{ type: 'text', text: 'reading project files' }],
+            },
+            {
+              role: 'tool',
+              toolName: 'read_files',
+              content: [{ type: 'text', value: { files: ['src/auth.ts'] } }],
+            },
+          ],
+        },
+      } as any,
+      output: {
+        type: 'error',
+        message: 'Session ended before this response completed.',
+      },
+    } as unknown as RunState
+
+    const { abortController } = setupStreamingContext({
+      aiMessageId: 'ai-1',
+      timerController: createMockTimerController(),
+      setMessages: (fn: any) => {},
+      streamRefs: createStreamController(),
+      onAbort: () => {
+        previousRunStateRef.current = snapshot
+      },
+      setStreamStatus: () => {},
+      setCanProcessQueue: () => {},
+      updateChainInProgress: () => {},
+      setIsRetrying: () => {},
+      setStreamingAgents: () => {},
+    })
+
+    abortController.abort()
+
+    // The continuation snapshot now carries the full history instead of
+    // null (which would make the SDK build a blank session and re-explore
+    // from scratch on the next prompt). The hook-level test in
+    // cli/src/hooks/__tests__/use-send-message.test.tsx asserts the same
+    // through the real createRunConfig/client.run path.
+    expect(previousRunStateRef.current).toBe(snapshot)
+    expect(
+      (previousRunStateRef.current!.sessionState as any).mainAgentState
+        .messageHistory,
+    ).toHaveLength(3)
+    expect(
+      (previousRunStateRef.current!.sessionState as any).mainAgentState
+        .messageHistory[2].toolName,
+    ).toBe('read_files')
+  })
+})

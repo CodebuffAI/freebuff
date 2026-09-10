@@ -15,6 +15,18 @@ import type { ClientToolCall } from '@codebuff/common/tools/list'
 
 let clientInstance: CodebuffClient | null = null
 
+// Test-only escape hatch: tests inject a controllable client factory instead
+// of constructing a real SDK client (see docs/testing.md: DI over module
+// mocking — mock.module leaks across bun test files).
+let clientFactoryOverride: (() => Promise<CodebuffClient | null>) | undefined
+
+export function setClientFactoryOverrideForTesting(
+  factory: (() => Promise<CodebuffClient | null>) | undefined,
+): void {
+  clientFactoryOverride = factory
+  clientInstance = null
+}
+
 /**
  * Recursively removes undefined values from an object to ensure clean JSON serialization.
  * This prevents issues with APIs that don't accept explicit undefined values.
@@ -48,6 +60,10 @@ export function resetCodebuffClient(): void {
 
 export async function getCodebuffClient(): Promise<CodebuffClient | null> {
   if (!clientInstance) {
+    if (clientFactoryOverride) {
+      clientInstance = await clientFactoryOverride()
+      return clientInstance
+    }
     const { token: apiKey } = getAuthTokenDetails()
 
     if (!apiKey) {
