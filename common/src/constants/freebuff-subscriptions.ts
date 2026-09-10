@@ -531,5 +531,14 @@ export function freebuffPlanHoursSummary(tier: {
   ].join(' · ')
 }
 
-/** Token label used by the plans page's value explanation. */
-export const FREEBUFF_SPEND_UNIT_LABEL = 'tokens'
+/**
+ * What the monthly ceiling is spent ON, in the user's words.
+ *
+ * "compute" is our word for it and meant nothing to the people reading the
+ * plan. It was "tokens" for a while, until the account hub started showing
+ * real token COUNTS on the same page as "$4.10 of $25 tokens" — one word for a
+ * count and a dollar figure at once. "Model spend" is the canonical name for
+ * the dollar quantity everywhere now (see CONTEXT.md); "tokens" only ever
+ * means a count. Kept as a constant so the label moves in one place.
+ */
+export const FREEBUFF_SPEND_UNIT_LABEL = 'model spend'

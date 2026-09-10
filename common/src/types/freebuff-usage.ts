@@ -38,6 +38,14 @@ export interface FreebuffRecentUsage {
    *  `inputTokens`, and re-adding it inflates the total ~1.8x at agentic cache
    *  hit rates. */
   totalTokens: number
+  /**
+   * Model spend over the same window: what these requests cost at list price,
+   * USD, rounded to cents. An estimate the user can quote, never a bill.
+   * ABSENT when the operator has closed the dollar figure to this account
+   * (`FREEBUFF_MODEL_SPEND_AUDIENCE`), so a client that finds it missing simply
+   * has no card to draw — no audience logic lives client-side.
+   */
+  modelSpendUsd?: number
 }
 
 export interface FreebuffUsageSessionsByModel {
