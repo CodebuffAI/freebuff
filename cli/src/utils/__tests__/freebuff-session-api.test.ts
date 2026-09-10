@@ -10,7 +10,10 @@ import {
   classifyFreebuffSessionRequestFailure,
   FreebuffSessionRequestError,
   mergeCompactActiveSession,
+  planModelLockedSwitch,
 } from '../freebuff-session-api'
+
+import type { FreebuffSessionServerResponse } from '@codebuff/common/types/freebuff-session'
 
 let fetchSpy: ReturnType<typeof spyOn> | undefined
 
@@ -228,5 +231,47 @@ test('DELETE sends the held instance and preserves the server refund receipt', a
   const [, init] = fetchSpy.mock.calls[0]!
   expect(new Headers(init?.headers).get('x-freebuff-instance-id')).toBe(
     'held-cli',
+  )
+})
+
+const heldActive = (model: string): FreebuffSessionServerResponse => ({
+  status: 'active',
+  accessTier: 'full',
+  instanceId: 'inst-held',
+  model,
+  admittedAt: '2026-09-09T00:00:00.000Z',
+  expiresAt: '2026-09-09T01:00:00.000Z',
+  remainingMs: 60_000,
+})
+
+test('a deliberate pick releases the row that holds the lock', () => {
+  expect(planModelLockedSwitch(heldActive('x/mimo'), 'x/mimo')).toBe('release')
+})
+
+test('an ended row still inside the grace window is released (#1298)', () => {
+  expect(
+    planModelLockedSwitch(
+      { status: 'ended', instanceId: 'inst-held' },
+      'x/mimo',
+    ),
+  ).toBe('release')
+})
+
+test('an ended row past grace means nothing to end: retry the pick', () => {
+  expect(planModelLockedSwitch({ status: 'ended' }, 'x/mimo')).toBe('retry')
+})
+
+test('a swept row means nothing to end: retry the pick', () => {
+  expect(planModelLockedSwitch({ status: 'none' }, 'x/mimo')).toBe('retry')
+})
+
+test('a different model than the lock named is never deleted', () => {
+  expect(planModelLockedSwitch(heldActive('x/other'), 'x/mimo')).toBe('explain')
+})
+
+test('no readable row explains instead of claiming a failed end', () => {
+  expect(planModelLockedSwitch(undefined, 'x/mimo')).toBe('explain')
+  expect(planModelLockedSwitch({ status: 'superseded' }, 'x/mimo')).toBe(
+    'explain',
   )
 })
