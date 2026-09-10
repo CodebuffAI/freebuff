@@ -67,8 +67,15 @@ export function occupiesFreebuffDesktopSlot(
   )
 }
 
-/** Idle time after which Desktop may reclaim a constrained session slot. */
-export const FREEBUFF_DESKTOP_IDLE_RELEASE_MS = 10 * 60 * 1000
+/** Idle time after which Desktop ends a hosted session and frees its slot. */
+export const FREEBUFF_DESKTOP_IDLE_RELEASE_MS = 15 * 60 * 1000
+
+/** Pins an end/refund request to one window of a stable Desktop tab. */
+export const FREEBUFF_DESKTOP_ADMITTED_AT_HEADER =
+  'x-freebuff-desktop-admitted-at'
+
+/** Client-persisted identity for a possibly unacknowledged Desktop POST. */
+export const FREEBUFF_DESKTOP_ATTEMPT_HEADER = 'x-freebuff-desktop-attempt-id'
 
 /** Versioned opt-in: instance ids become single-use execution claims. */
 export const FREEBUFF_PURCHASE_CONTINUITY_HEADER =
