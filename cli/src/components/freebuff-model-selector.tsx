@@ -575,11 +575,47 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
    * the other two surfaces: it takes every other price off screen, and the
    * comparison between prices is the thing the reader is in the middle of.
    */
+  /**
+   * The limited-tier upgrade offer for a row, or undefined to draw nothing.
+   *
+   * Drawn on EVERY surcharged row rather than only the selected one, unlike
+   * `supersededNoticeFor`: that nudge is about a pick the user has already
+   * made, while this is the reason this row's price differs from what the
+   * reader may remember. Someone comparing rows needs it before they choose.
+   *
+   * The tier and plan come from the SESSION RESPONSE, never from a local
+   * belief about entitlement.
+   */
+  const upgradeOfferFor = useCallback(
+    (model: FreebuffModelOption) => {
+      // OFF THE WIRE, never derived here. The copy is built from Freebucks
+      // constants the CLI cannot hold (they are export-excluded), and who is
+      // offered what is the server's verdict — tier, plan, plans audience —
+      // so `freebucks.upgrade` is absent for everyone it does not apply to.
+      const upgrade = freebucks?.upgrade
+      return upgrade?.kind === 'limited_offer' && upgrade.modelId === model.id
+        ? upgrade
+        : undefined
+    },
+    [freebucks],
+  )
   const askLineFor = useCallback(
     (model: FreebuffModelOption): string | undefined => {
       if (pendingAsk !== model.id) return undefined
       const intent = rowIntent(model.id)
       if (intent.kind === 'paywall') {
+        // On the row the limited-tier offer discounts, say what a plan does
+        // rather than what is missing. Kept about as short as the line it
+        // replaces: this line is measured and clipped, never wrapped, and the
+        // CTA line under it already carries "Get 7x usage for $5".
+        const offer = upgradeOfferFor(model)
+        if (offer) {
+          // The first clause of the server's copy ("DeepSeek V4.1 Flash drops
+          // to 15 Freebucks on a plan"): the whole tooltip is a sentence and a
+          // half, and this line sizes the card and is clipped, never wrapped.
+          const lead = offer.tooltip.split(' — ')[0] ?? offer.tooltip
+          return `${lead}. Enter opens plans.`
+        }
         return `Not enough ${FREEBUCKS_LABEL} — ${freebucksPriceLabel(
           intent.price,
         )} against ${formatFreebucks(freebucks?.balance ?? 0)} left. Enter opens plans.`
@@ -599,7 +635,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       }
       return undefined
     },
-    [pendingAsk, rowIntent, freebucks, activeSessionModel],
+    [pendingAsk, rowIntent, freebucks, activeSessionModel, upgradeOfferFor],
   )
 
   const supersededNoticeFor = useCallback(
@@ -615,6 +651,13 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           )?.notice
         : undefined,
     [availableModels, selectedModel],
+  )
+  const upgradeLineFor = useCallback(
+    (model: FreebuffModelOption): string | undefined => {
+      const offer = upgradeOfferFor(model)
+      return offer ? `${offer.cta} →` : undefined
+    },
+    [upgradeOfferFor],
   )
   const otherModels = useMemo(
     () => availableModels.filter((m) => m.id !== recommendedModel.id),
@@ -872,6 +915,10 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         Math.max(
           supersededNoticeFor(m)?.length ?? 0,
           askLineFor(m)?.length ?? 0,
+          // The upgrade CTA is a short phrase rather than a sentence, but it
+          // still has to be measured: a card sized for the shorter lines clips
+          // whichever is actually drawn, silently, because wrapMode is 'none'.
+          upgradeLineFor(m)?.length ?? 0,
         )
 
       // Compact image indicator (" · Images", 9 chars) appended to the tagline on
@@ -987,7 +1034,8 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       // The meter's question occupies a real row too. Left out, the first
       // frame after an Enter is one row short and the toggle is clipped —
       // the same failure the plan line caused before it was counted.
-      (askLineFor(m) ? 1 : 0)
+      (askLineFor(m) ? 1 : 0) +
+      (upgradeLineFor(m) ? 1 : 0)
     if (showStandaloneRecommended) {
       y += rowHeight(recommendedModel)
     }
@@ -1242,6 +1290,12 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       Math.floor((buttonInnerWidth - (supersededNotice?.length ?? 0)) / 2),
     )
 
+    const upgradeLine = upgradeLineFor(model)
+    const upgradePad = Math.max(
+      0,
+      Math.floor((buttonInnerWidth - (upgradeLine?.length ?? 0)) / 2),
+    )
+
     // Spaces inside <span>s render verbatim, so we hand-pad the name to align
     // taglines into a column. nameColumnWidth is the longest name across all
     // rows, so the diff is >= 0; +NAME_GAP guarantees breathing room even on
@@ -1343,6 +1397,16 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           <text>
             <span>{' '.repeat(supersededPad)}</span>
             <span fg={mutedColor}>{supersededNotice}</span>
+          </text>
+        )}
+        {upgradeLine && (
+          <text style={{ wrapMode: 'none' }}>
+            <span>{' '.repeat(upgradePad)}</span>
+            {/* The one line on a row drawn in the accent colour. Every other
+                detail here is muted or a warning; this is the only one that is
+                an OFFER, and it has to be findable while the reader is
+                comparing prices rather than after they have chosen. */}
+            <span fg={theme.primary}>{upgradeLine}</span>
           </text>
         )}
       </Button>

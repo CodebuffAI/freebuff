@@ -857,7 +857,7 @@ export const MUSE_SPARK_FALLBACK_AFTER_MS = 15_000
  *  MUSE_SPARK_FALLBACK_MODEL_ID actually points at; a catalog invariant test
  *  checks the two agree. */
 export const MUSE_SPARK_FALLBACK_NOTICE =
-  'Rate limited and shared by all users: queues when busy, then answers on DeepSeek V4 Flash.'
+  'Rate limited and shared by all users: queues when busy, then answers on DeepSeek V4.1 Flash.'
 
 /** UI-only rollout switch. Backend support and free-mode allowlists remain
  *  wired even when these models are hidden from the Freebuff picker. */
@@ -1284,10 +1284,21 @@ const MIMO_V25_MODEL = {
 
 const DEEPSEEK_V4_FLASH_MODEL = {
   id: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  // Dated on purpose: the wire id is undated and auto-updates, so without the
-  // date a returning user sees the same name and assumes the same model. The
-  // 0731 GA build is a different, re-post-trained model.
-  displayName: 'DeepSeek V4 Flash 07/31',
+  // RENAMED 2026-09-10, and the rename is the point rather than cosmetic.
+  //
+  // The old name carried a BUILD DATE ('DeepSeek V4 Flash 07/31') for exactly
+  // one reason: the wire id is undated and auto-updates, so without something
+  // in the name a returning user sees the same row and assumes the same model.
+  // That reason has not gone away — it has been satisfied better. DeepSeek
+  // moved this id onto V4.1 Flash on 2026-09-10, and a VERSION says what a
+  // build date was standing in for, in the vocabulary the vendor and the user
+  // both already use.
+  //
+  // Note what this costs: `compactChatModelName` and `shortModelName` both
+  // strip a trailing ` MM/DD`, so they are now no-ops on this row and the full
+  // name reaches the compact surfaces. That is intended — 'DeepSeek V4.1 Flash'
+  // is shorter than the dated name it replaces, so nothing got wider.
+  displayName: 'DeepSeek V4.1 Flash',
   // "Smart & Fast" survived Flash becoming premium on 2026-08-18: it describes
   // the model, and the one word in it that described the TIER ("unlimited") had
   // already gone when Pro took the recommendation on 2026-08-12. The picker
@@ -1363,10 +1374,27 @@ const DEEPSEEK_V4_FLASH_MODEL = {
   // Reverting is this flag plus the FREEBUFF_PREMIUM_MODEL_IDS entry, which
   // move together, and the FREEBUFF_TIER_CHANGE_NOTICE copy.
   premium: false,
-  multimodal: false,
+  // TRUE since 2026-09-10, when the undated `deepseek-v4-flash` wire id began
+  // resolving to V4.1 Flash, which is natively multimodal. Verified against the
+  // live API rather than taken from the announcement: `deepseek-flash` reads an
+  // inline base64 PNG and names its colour, where `deepseek-v4-pro` sent the
+  // same part answers "Unknown".
+  //
+  // This flag is what stops `describeImagePartsForTextOnlyModel` running for
+  // this row — the image now reaches the model instead of a description of it.
+  // It only holds on the DIRECT lane, which is why the router flattens image
+  // parts for every other lane rather than trusting this flag alone.
+  multimodal: true,
   reasoningEffort: 'high',
   // The 07/31 build has native low/high/max prompt templates. Medium is not a
   // distinct level and is intentionally absent.
+  //
+  // V4.1 Flash WIDENED this: the live API now validates `reasoning_effort`
+  // against none|minimal|low|medium|high|xhigh|max and 400s on anything else,
+  // where V4 accepted any string and ignored it. `toDeepSeekReasoningEffort`
+  // still collapses onto low|high|max, which remains VALID — the wider enum is
+  // an opportunity to stop collapsing, not a break. Measured n=3/level: minimal
+  // ~6.9k reasoning tokens, max ~30.7k, so the parameter is finally real.
   efforts: DEEPSEEK_V4_REASONING_EFFORTS,
   defaultEffort: 'high',
   isNew: true,
@@ -2609,7 +2637,7 @@ export type SupportedFreebuffModelId =
 export type FreebuffWebModelId = (typeof FREEBUFF_WEB_ALL_MODELS)[number]['id']
 
 /** What new freebuff users see selected in the CLI and Desktop pickers, and the
- *  model their "RECOMMENDED" hero opens on. DeepSeek V4 Flash 07/31 as of
+ *  model their "RECOMMENDED" hero opens on. DeepSeek V4.1 Flash as of
  *  2026-09-02 (unmetered on the Luminal lane; it carries the AI-training
  *  notice, and it is also the limited tier's default). The paragraphs below
  *  were written for the GLM 5.3 Flash default of 2026-08-30 and still hold.
@@ -2654,7 +2682,7 @@ export const FREEBUFF_DEFAULT_MODEL_MIGRATION_ID =
   'glm-5.3-flash-2026-09-05'
 
 /** What new Freebuff Web/Cloud users see selected in the browser pickers, and
- *  the model a new Cloud thread starts on. DeepSeek V4 Flash 07/31 as of
+ *  the model a new Cloud thread starts on. DeepSeek V4.1 Flash as of
  *  2026-09-02, moving with DEFAULT_FREEBUFF_MODEL_ID rather than independently.
  *
  *  The browser surfaces are where this default matters most and where the trade

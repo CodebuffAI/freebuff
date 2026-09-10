@@ -276,7 +276,7 @@ describe('FreebuffModelSelector tier layout', () => {
       .getState()
       .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     const frame = (await renderSelector()).captureCharFrame()
-    expect(frame).toContain('DeepSeek V4 Flash 07/31')
+    expect(frame).toContain('DeepSeek V4.1 Flash')
     expect(frame).toContain('NEW')
   })
 
@@ -527,7 +527,7 @@ describe('FreebuffModelSelector tier layout', () => {
     // trimEnd drops the terminal's blank columns to the right of the card, so
     // what's left ends at the card's own right border.
     const heroRow = (
-      frame.split('\n').find((line) => line.includes('› DeepSeek V4 Flash')) ??
+      frame.split('\n').find((line) => line.includes('› DeepSeek V4.1 Flash')) ??
       ''
     ).trimEnd()
 
@@ -1165,4 +1165,68 @@ test('an open Solar CLI picker leaves the holiday price at the cutoff and submit
     timerSpy.mockRestore()
     clock.mockRestore()
   }
+})
+
+describe('FreebuffModelSelector limited upgrade CTA', () => {
+  // The prompt arrives ON THE WIRE (`freebucks.upgrade`), computed by the
+  // server for the account; the picker only draws what it is sent. So these
+  // tests drive the wire field directly — a literal here is the wire contract,
+  // not a second copy of the marketing arithmetic.
+  const LIMITED_OFFER = {
+    kind: 'limited_offer' as const,
+    modelId: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+    cta: 'Get 7x usage for $5',
+    tooltip:
+      'DeepSeek V4.1 Flash drops to 15 Freebucks on a plan — 7 hours a day instead of 1 hour. $5 first month, $8/mo after.',
+  }
+  const renderWith = async (
+    upgrade: typeof LIMITED_OFFER | undefined,
+    accessTier: 'limited' | 'full' = 'limited',
+  ) => {
+    useFreebuffSessionStore.getState().setSession({
+      status: 'none',
+      accessTier,
+      subscription: { tierId: null, tiers: [] },
+      freebucks: {
+        ...freebucksFixture(25, { [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 25 }),
+        ...(upgrade ? { upgrade } : {}),
+      },
+    })
+    useFreebuffModelStore
+      .getState()
+      .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+    const setup = await renderSelector(40)
+    // Expand so every row is on screen regardless of which one the landing
+    // repair settled on.
+    const toggleY = setup
+      .captureCharFrame()
+      .split('\n')
+      .findIndex((line) => line.includes('See all'))
+    if (toggleY >= 0) {
+      await setup.mockMouse.click(15, toggleY)
+      await setup.renderOnce()
+    }
+    return setup.captureCharFrame()
+  }
+
+  test('draws the offer the server sent, on the row it names', async () => {
+    const frame = await renderWith(LIMITED_OFFER)
+    expect(frame).toContain('Get 7x usage for $5')
+  })
+
+  test('draws nothing when the server sent no prompt (subscriber, no plans audience, old server)', async () => {
+    expect(await renderWith(undefined)).not.toContain('usage for $')
+  })
+
+  test('draws nothing on a row the offer does not name', async () => {
+    const frame = await renderWith({ ...LIMITED_OFFER, modelId: FREEBUFF_MIMO_V25_MODEL_ID })
+    const deepseekRow = frame.split('\n').find((line) => line.includes('DeepSeek V4.1 Flash')) ?? ''
+    expect(deepseekRow).not.toContain('usage for $')
+  })
+
+  test('ignores a full-access "Upgrade" prompt, which belongs to the composer', async () => {
+    expect(
+      await renderWith({ ...LIMITED_OFFER, kind: 'upgrade' as never, modelId: undefined as never }, 'full'),
+    ).not.toContain('usage for $')
+  })
 })

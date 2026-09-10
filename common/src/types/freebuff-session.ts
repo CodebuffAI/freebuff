@@ -267,6 +267,30 @@ export interface FreebuffFreebucksInfo {
   peak?: FreebuffFreebucksPeak
   /** Scheduled changes announced by the server; do not reprice admitted sessions. */
   priceChanges?: readonly FreebuffPriceChange[]
+  /**
+   * The upgrade prompt the SERVER computed for this account, when one applies.
+   *
+   * On the wire, like `prices`, rather than derived on the client: the copy is
+   * built from the Freebucks constants, which are export-excluded, so a public
+   * client cannot hold them — and a client deciding who is offered what would
+   * be reading its own belief about tier and entitlement. Absent means "draw
+   * nothing": a subscriber, an account outside the plans audience, or a server
+   * that predates the field.
+   */
+  upgrade?: FreebuffFreebucksUpgrade
+}
+
+export interface FreebuffFreebucksUpgrade {
+  /** `limited_offer` is the DeepSeek discount for an unpaid limited account;
+   *  `upgrade` is the plain prompt for an unpaid full-access account. */
+  kind: 'limited_offer' | 'upgrade'
+  /** One line, for a button or a row. */
+  cta: string
+  /** The full promise, including the renewal price the CTA has no room for. */
+  tooltip: string
+  /** For `limited_offer`: the row the discount applies to, so a picker can
+   *  draw it on that row alone. */
+  modelId?: string
 }
 
 export interface FreebuffFreebucksPeak {

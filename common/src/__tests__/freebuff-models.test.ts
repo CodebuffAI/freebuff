@@ -1341,7 +1341,7 @@ describe('freebuff model availability', () => {
       ),
     ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     expect(LIMITED_FREEBUFF_MODEL_MISMATCH_MESSAGE).toBe(
-      'Limited free access is only available with GLM 5.3 Flash or DeepSeek V4 Flash 07/31 or MiMo 2.5 or Solar Pro 4.',
+      'Limited free access is only available with GLM 5.3 Flash or DeepSeek V4.1 Flash or MiMo 2.5 or Solar Pro 4.',
     )
     // No row in the tier supersedes another, so no picker may offer a switch
     // that admission would coerce straight back.
@@ -1571,13 +1571,18 @@ describe('freebuff model availability', () => {
     }
   })
 
-  test('marks both new DeepSeek builds as NEW and dates their names', () => {
+  test('marks both new DeepSeek builds as NEW and versions their names', () => {
     // The wire ids are undated and auto-update, so the display has to carry the
     // signal that this is a different model than the one users already judged.
     // Pro left this list when it was paused on 2026-08-18 — it is no longer in
     // FREEBUFF_MODELS at all, and its row keeps its dated name in SUPPORTED for
     // whenever it returns.
-    const dated = [[FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, '07/31']] as const
+    //
+    // Flash carries a VERSION rather than a build date as of 2026-09-10:
+    // DeepSeek moved the id onto V4.1 Flash, and a version number is what the
+    // date was always standing in for. The invariant is unchanged — the name
+    // must still say which build this is — only its spelling moved.
+    const dated = [[FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'V4.1']] as const
     // Widened to the interface: the const-asserted tuple's union type only
     // exposes optional fields set on EVERY member, so `isNew` is unreachable
     // through it unless the find() narrows to a single literal id.
