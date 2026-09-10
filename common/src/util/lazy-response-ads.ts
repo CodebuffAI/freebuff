@@ -58,9 +58,11 @@ export function requestLazyResponseAds<T extends { impUrl: string }>(params: {
   onAd: (ad: T) => void
 }): Promise<void> | null {
   const { queue, messageId, fetchOne, onAd } = params
-  const count = Number.isFinite(params.count)
-    ? Math.min(MAX_RESPONSE_AD_POOL_SIZE, Math.max(0, Math.floor(params.count)))
-    : 0
+  const safeCount = Number.isFinite(params.count) ? params.count : 0
+  const count = Math.min(
+    MAX_RESPONSE_AD_POOL_SIZE,
+    Math.max(0, Math.floor(safeCount)),
+  )
   const previousTarget = queue.targetCounts.get(messageId) ?? 0
   if (count <= previousTarget) return queue.inFlight.get(messageId) ?? null
 
