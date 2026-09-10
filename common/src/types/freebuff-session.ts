@@ -889,6 +889,22 @@ export type FreebuffSessionAdmissionResponse = (
        * working onto whatever was not.
        */
       updateRequired?: boolean
+      /**
+       * The MODEL is fine; minting NEW purchased Desktop sessions is paused
+       * server-side (FREEBUFF_DESKTOP_PURCHASE_ADMISSION), so an up-to-date
+       * build that needs a fresh purchase is refused rather than charged for
+       * an hour it could not be issued. Not an update problem and not a
+       * model problem: the pick works again as soon as the pause lifts, on
+       * the build the user already has. Set only on the Desktop
+       * multi-session path.
+       *
+       * Older clients ignore it and still render `availableHours`, which is
+       * worded so the sentence they build around it does not blame the model.
+       * The refusal it replaces read "<model> isn't available right now
+       * (Purchased Desktop sessions are temporarily unavailable …)", which a
+       * reader takes as the model being down and switches away from.
+       */
+      purchasesPaused?: boolean
     }
   | {
       /** Account is banned. Returned from every endpoint so banned bots can't

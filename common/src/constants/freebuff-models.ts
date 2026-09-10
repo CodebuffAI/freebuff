@@ -2220,6 +2220,25 @@ export function freebuffUpdateRequiredAvailabilityLabel(): string {
   return 'only on this version of Freebuff Desktop — update it to resume your purchased time without another charge'
 }
 
+/**
+ * What a client that understands `purchasesPaused` says: purchased Desktop
+ * sessions are paused, the model is fine, and nothing about the user's build
+ * or pick needs changing.
+ */
+export function freebuffPurchasesPausedModelMessage(id: string): string {
+  const model = SUPPORTED_FREEBUFF_MODELS.find((m) => m.id === id)
+  const name = model?.displayName ?? id
+  return `Purchased Desktop sessions are paused right now, so a new one for ${name} can't be started yet — the model itself is fine. Try again shortly.`
+}
+
+/** The same fact shaped to sit inside "<model> isn't available right now (…)",
+ *  which is the only sentence a binary that predates `purchasesPaused` can
+ *  build. Scopes the unavailability to purchased sessions, so the reader is
+ *  not told the model is down. */
+export function freebuffPurchasesPausedAvailabilityLabel(): string {
+  return 'purchased sessions are paused right now — the model itself is fine; try again shortly'
+}
+
 /** Suffix-tolerant like the other model predicates, so a dated provider
  *  snapshot of a paused model cannot slip past the pause. */
 export function isFreebuffPausedFreeModelId(
