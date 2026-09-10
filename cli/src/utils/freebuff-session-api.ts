@@ -227,3 +227,29 @@ export function holdsLiveFreebuffSlot(
     (current.status === 'ended' && Boolean(current.instanceId))
   )
 }
+
+/** What the `model_locked` takeover should do with the row a follow-up GET
+ *  returned. One function asks this so "we tried to end it and failed" stays
+ *  distinguishable from "there was nothing to end":
+ *   - 'release': the row still holds a slot — active on the locked model, or
+ *     `ended` inside the grace window (the stale row from a crashed CLI; its
+ *     DELETE replays the refund receipt idempotently via the instance id).
+ *   - 'retry': no row is left to release (#1298: the lock raced and released
+ *     itself) — re-POST instead of reporting a failed end.
+ *   - 'explain': anything we cannot attribute to this lock, including a row
+ *     that arrived under an unexpected status — never delete it blindly.
+ */
+export type ModelLockedSwitchAction = 'release' | 'retry' | 'explain'
+
+export function planModelLockedSwitch(
+  held: FreebuffSessionServerResponse | undefined,
+  lockedModel: string,
+): ModelLockedSwitchAction {
+  if (!held) return 'explain'
+  if (held.status === 'none') return 'retry'
+  if (held.status === 'ended') {
+    return held.instanceId ? 'release' : 'retry'
+  }
+  if (held.status === 'active' && held.model === lockedModel) return 'release'
+  return 'explain'
+}
