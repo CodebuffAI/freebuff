@@ -47,7 +47,7 @@ export interface AgentDefinition {
         max_tokens: number
       }
     | {
-        effort: 'high' | 'medium' | 'low' | 'minimal' | 'none'
+        effort: 'max' | 'xhigh' | 'high' | 'medium' | 'low' | 'minimal' | 'none'
       }
   )
 

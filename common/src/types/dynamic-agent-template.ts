@@ -131,7 +131,15 @@ export const DynamicAgentDefinitionSchema = z.object({
       z.union([
         z.object({ max_tokens: z.number() }),
         z.object({
-          effort: z.enum(['high', 'medium', 'low', 'minimal', 'none']),
+          effort: z.enum([
+            'max',
+            'xhigh',
+            'high',
+            'medium',
+            'low',
+            'minimal',
+            'none',
+          ]),
         }),
       ]),
     )
