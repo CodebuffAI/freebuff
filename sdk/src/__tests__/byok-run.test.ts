@@ -112,6 +112,20 @@ describe('direct BYOK SDK runs', () => {
     if (changed.output.type !== 'error') throw new Error('expected inference pin error')
     expect(changed.output.message).toContain('different inference connection')
 
+    const beforeSwitch = seen.length
+    const hostedHistory = { ...result, inference: { source: 'codebuff' as const } }
+    const switched = await client.run({ agent: agent.id, prompt: 'Continue with my key.', previousRun: hostedHistory })
+    expect(switched.output.type).not.toBe('error')
+    expect(switched.inference).toEqual(result.inference)
+    expect(seen.length).toBeGreaterThan(beforeSwitch)
+    expect(seen.at(-1)!.body).toContain('Create result.txt.')
+    expect(seen.slice(beforeSwitch).every(request => request.url === 'http://127.0.0.1:9876/v1/chat/completions')).toBe(true)
+    const hostedClient = new CodebuffClient({ cwd, apiKey: 'hosted-test-key', agentDefinitions: [agent] })
+    const beforeReverse = seen.length
+    const reverse = await hostedClient.run({ agent: agent.id, prompt: 'Go back.', previousRun: switched })
+    expect(reverse.output.type).toBe('error')
+    expect(seen).toHaveLength(beforeReverse)
+
     const legacy = await client.run({
       agent: agent.id, prompt: 'Legacy.', previousRun: { ...result, inference: undefined },
     })

@@ -391,9 +391,12 @@ export async function run(options: RunExecutionOptions): Promise<RunState> {
       output: { type: 'error', message: 'This session has no inference source pin; start a new BYOK task.' },
     }
   }
+  // Hosted history can move to a personal provider once. A BYOK pin must never
+  // return to hosted inference or silently change credentials on a resumed run.
   if (
     previousInference &&
-    (previousInference.source !== requestedInference.source ||
+    ((previousInference.source !== requestedInference.source &&
+        !(previousInference.source === 'codebuff' && requestedInference.source === 'byok')) ||
       (previousInference.source === 'byok' &&
         requestedInference.source === 'byok' &&
         (previousInference.connectionId !== requestedInference.connectionId ||
