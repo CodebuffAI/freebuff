@@ -3,6 +3,7 @@ import { API_KEY_ENV_VAR } from '@codebuff/common/constants/paths'
 import { getWebsiteUrl } from './constants'
 import { getCodebuffApiKeyFromEnv } from './env'
 import { run } from './run'
+import { normalizeByokBaseUrl } from './byok'
 
 import type { RunOptions, CodebuffClientOptions } from './run'
 import type { RunState } from './run-state'
@@ -15,14 +16,13 @@ export class CodebuffClient {
 
   constructor(options: CodebuffClientOptions) {
     const foundApiKey = options.apiKey ?? getCodebuffApiKeyFromEnv()
-    if (!foundApiKey) {
+    if (!foundApiKey && !options.byok) {
       throw new Error(
         `Codebuff API key not found. Please provide an apiKey in the constructor of CodebuffClient or set the ${API_KEY_ENV_VAR} environment variable.`,
       )
     }
 
     this.options = {
-      apiKey: foundApiKey,
       handleEvent: (event) => {
         if (event.type === 'error') {
           throw new Error(
@@ -32,6 +32,10 @@ export class CodebuffClient {
       },
       fingerprintId: `codebuff-sdk-${Math.random().toString(36).substring(2, 15)}`,
       ...options,
+      // The direct runtime never sends this placeholder anywhere. It keeps the
+      // established runtime contract while allowing CLI/Desktop BYOK without a
+      // Codebuff account or API key.
+      apiKey: foundApiKey ?? 'byok-local',
     }
   }
 
@@ -56,7 +60,13 @@ export class CodebuffClient {
   public async run(
     options: RunOptions & CodebuffClientOptions,
   ): Promise<RunState> {
-    return run({ ...this.options, ...options })
+    return run({
+      ...this.options,
+      ...options,
+      // An omitted/undefined per-call config inherits the client snapshot.
+      // Switching a resumed conversation is refused by run() itself.
+      byok: options.byok ?? this.options.byok,
+    })
   }
 
   /**
@@ -65,6 +75,24 @@ export class CodebuffClient {
    * @returns Promise that resolves to true if connected, false otherwise
    */
   public async checkConnection(): Promise<boolean> {
+    if (this.options.byok) {
+      try {
+        await this.options.byok.assertCurrent?.()
+        const baseUrl = normalizeByokBaseUrl(
+          this.options.byok.provider,
+          this.options.byok.baseUrl,
+        )
+        const response = await fetch(new URL(this.options.byok.provider === 'openrouter' ? 'key' : 'models', baseUrl.replace(/\/?$/, '/')), {
+          headers: { Authorization: `Bearer ${this.options.byok.apiKey}` },
+          signal: AbortSignal.timeout(5000),
+          redirect: 'error',
+        })
+        await response.body?.cancel()
+        return response.ok
+      } catch {
+        return false
+      }
+    }
     try {
       const response = await fetch(`${getWebsiteUrl()}/api/healthz`, {
         method: 'GET',

@@ -18,8 +18,10 @@ import * as auth from '../auth'
 import {
   getSettingsPath,
   hasSeenFreebucksIntro,
+  loadSettings,
   markFreebucksIntroSeen,
   loadFreebuffModelPreference,
+  saveSettings,
   saveFreebuffModelPreference,
 } from '../settings'
 
@@ -33,6 +35,36 @@ afterEach(() => {
     fs.rmSync(testConfigDir, { recursive: true, force: true })
     testConfigDir = undefined
   }
+})
+
+describe('BYOK connection selection', () => {
+  test('persists only an opaque connection id and revision', () => {
+    testConfigDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'freebuff-settings-test-'),
+    )
+    getConfigDirSpy = spyOn(auth, 'getConfigDir').mockReturnValue(testConfigDir)
+
+    saveSettings({ byokConnection: { id: 'connection-id', revision: 3 } })
+
+    expect(loadSettings().byokConnection).toEqual({
+      id: 'connection-id',
+      revision: 3,
+    })
+    expect(fs.readFileSync(getSettingsPath(), 'utf8')).not.toContain('apiKey')
+  })
+
+  test('drops malformed or stale selection shapes', () => {
+    testConfigDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'freebuff-settings-test-'),
+    )
+    getConfigDirSpy = spyOn(auth, 'getConfigDir').mockReturnValue(testConfigDir)
+    fs.writeFileSync(
+      getSettingsPath(),
+      JSON.stringify({ byokConnection: { id: 'connection-id', revision: 0 } }),
+    )
+
+    expect(loadSettings().byokConnection).toBeUndefined()
+  })
 })
 
 describe('freebuff model preference', () => {

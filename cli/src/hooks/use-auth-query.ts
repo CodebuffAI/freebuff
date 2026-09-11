@@ -117,6 +117,7 @@ export interface UseAuthQueryDeps {
   getUserCredentials?: () => User | null
   getUserInfoFromApiKey?: GetUserInfoFromApiKeyFn
   logger?: Logger
+  enabled?: boolean
 }
 
 /**
@@ -130,6 +131,7 @@ export function useAuthQuery(deps: UseAuthQueryDeps = {}) {
     getUserCredentials = defaultGetUserCredentials,
     getUserInfoFromApiKey = defaultGetUserInfoFromApiKey,
     logger = defaultLogger,
+    enabled = true,
   } = deps
 
   const userCredentials = getUserCredentials()
@@ -138,7 +140,7 @@ export function useAuthQuery(deps: UseAuthQueryDeps = {}) {
   return useQuery({
     queryKey: authQueryKeys.validation(apiKey),
     queryFn: () => validateApiKey({ apiKey, getUserInfoFromApiKey, logger }),
-    enabled: !!apiKey,
+    enabled: enabled && !!apiKey,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes
     // Retry only for retryable network errors (5xx, timeouts, etc.)

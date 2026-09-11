@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { getCodebuffClient } from '../utils/codebuff-client'
 import { logger } from '../utils/logger'
+import { useByokSelectionStore } from '../utils/byok'
 import {
   failedPollDelayMs,
   jitterPollIntervalMs,
@@ -49,11 +50,21 @@ export function getNextInterval(consecutiveSuccesses: number): number {
 export const useConnectionStatus = (
   onReconnect?: (isInitialConnection: boolean) => void,
 ) => {
+  const hasSelectedByokConnection = useByokSelectionStore(
+    (state) => state.selected !== undefined,
+  )
   const [isConnected, setIsConnected] = useState(true)
   // null = never connected, false = was disconnected, true = was connected
   const previousConnectedRef = useRef<boolean | null>(null)
 
   useEffect(() => {
+    // A BYOK run talks directly to its selected provider. Do not probe the
+    // Codebuff backend just to paint a connection badge.
+    if (hasSelectedByokConnection) {
+      setIsConnected(true)
+      previousConnectedRef.current = true
+      return
+    }
     let isMounted = true
     let timeoutId: NodeJS.Timeout | null = null
     let consecutiveSuccesses = 0
@@ -136,7 +147,7 @@ export const useConnectionStatus = (
         clearTimeout(timeoutId)
       }
     }
-  }, [])
+  }, [hasSelectedByokConnection, onReconnect])
 
   return isConnected
 }

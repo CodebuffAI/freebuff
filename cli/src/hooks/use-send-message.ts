@@ -11,6 +11,10 @@ import {
 } from './use-freebuff-session'
 import { getSelectedFreebuffReasoningEffort } from '../state/freebuff-model-store'
 import { getCodebuffClient } from '../utils/codebuff-client'
+import {
+  resolveByokConnection,
+  selectedByokConnection,
+} from '../utils/byok'
 import { AGENT_MODE_TO_COST_MODE, IS_FREEBUFF } from '../utils/constants'
 import { createEventHandlerState } from '../utils/create-event-handler-state'
 import { createRunConfig } from '../utils/create-run-config'
@@ -128,6 +132,24 @@ const buildPromptWithContext = (
   }
 
   return ''
+}
+
+type PinnedByokRunState = RunState & {
+  byokConnection?: { id: string; revision: number }
+}
+
+function pinnedByokConnection(
+  runState: RunState | null,
+): { id: string; revision: number } | undefined {
+  return (runState as PinnedByokRunState | null)?.byokConnection
+}
+
+function pinByokConnection(
+  runState: RunState,
+  connection: { id: string; revision: number } | undefined,
+): RunState {
+  if (!connection) return runState
+  return { ...runState, byokConnection: connection } as PinnedByokRunState
 }
 
 export const useSendMessage = ({
@@ -273,13 +295,18 @@ export const useSendMessage = ({
       updateChainInProgress(true)
       setCanProcessQueue(false)
 
+      // Snapshot the source before any await. A selected connection always
+      // runs directly and must never attempt Freebuff session admission.
+      const selectedByok = IS_FREEBUFF ? selectedByokConnection() : undefined
+      const shouldUseByok = selectedByok !== undefined
+
       // Freebuff run-start guard: without a live session slot the server
       // rejects the request outright, consuming the message. Hold it at the
       // head of the queue instead; it resumes when the user rejoins from the
       // session-ended banner. Catches sends that bypass the queue's
       // sendBlocked hold (direct review-screen answers) and the dequeue race
       // where the slot expires between the queue's check and this call.
-      if (IS_FREEBUFF && !getFreebuffInstanceId()) {
+      if (IS_FREEBUFF && !shouldUseByok && !getFreebuffInstanceId()) {
         markFreebuffSessionEnded()
         requeueMessageAtFront?.({ content, attachments: attachments ?? [] })
         resetEarlyReturnState({
@@ -470,8 +497,10 @@ export const useSendMessage = ({
 
       // Get SDK client
       let client: Awaited<ReturnType<typeof getCodebuffClient>>
+      let byok: Awaited<ReturnType<typeof resolveByokConnection>> | undefined
       try {
-        client = await getClient()
+        byok = selectedByok ? await resolveByokConnection(selectedByok) : undefined
+        client = await getClient({ ...(byok ? { byok } : {}) })
       } catch (error) {
         if (releaseIfStopped()) return
         logger.error(
@@ -481,7 +510,9 @@ export const useSendMessage = ({
         setMessages((prev) => [
           ...prev,
           createErrorChatMessage(
-            '⚠️ Unable to create the client. Please check your authentication and try again.',
+            shouldUseByok
+              ? '⚠️ Unable to load the selected BYOK connection. Check its credential and select it again.'
+              : '⚠️ Unable to create the client. Please check your authentication and try again.',
           ),
         ])
         finishPreflight()
@@ -599,18 +630,42 @@ export const useSendMessage = ({
         const freebuffReasoningEffort = IS_FREEBUFF
           ? getSelectedFreebuffReasoningEffort()
           : null
+        const priorByok = pinnedByokConnection(previousRunStateRef.current)
+        if (
+          priorByok &&
+          (!selectedByok ||
+            priorByok.id !== selectedByok.id ||
+            priorByok.revision !== selectedByok.revision)
+        ) {
+          throw new Error(
+            'This chat is pinned to a different BYOK connection. Run /byok select <name> to start a new chat with that connection.',
+          )
+        }
+        const canResumePreviousRun = priorByok
+          ? Boolean(
+              selectedByok &&
+                priorByok.id === selectedByok.id &&
+                priorByok.revision === selectedByok.revision,
+            )
+          : !byok
         const runConfig = createRunConfig({
           logger,
           agent: resolvedAgent,
           prompt: effectivePrompt,
           content: messageContent,
-          previousRunState: previousRunStateRef.current,
+          // A persisted run has a non-secret source pin. Never resume its
+          // transcript after switching to Freebuff or another BYOK revision.
+          previousRunState: canResumePreviousRun
+            ? previousRunStateRef.current
+            : null,
           agentDefinitions,
           eventHandlerState,
           signal: abortController.signal,
-          costMode: AGENT_MODE_TO_COST_MODE[agentMode],
+          // BYOK never enters the Freebuff free-mode admission or budget path.
+          costMode: byok ? 'normal' : AGENT_MODE_TO_COST_MODE[agentMode],
+          ...(byok ? { byok } : {}),
           extraCodebuffMetadata:
-            IS_FREEBUFF && freebuffInstanceId
+            IS_FREEBUFF && !byok && freebuffInstanceId
               ? {
                   freebuff_instance_id: freebuffInstanceId,
                   ...(freebuffReasoningEffort
@@ -619,7 +674,8 @@ export const useSendMessage = ({
                 }
               : undefined,
           onStateSnapshot: (snapshot) => {
-            latestRunStateSnapshot = snapshot
+            const pinnedSnapshot = pinByokConnection(snapshot, selectedByok)
+            latestRunStateSnapshot = pinnedSnapshot
             // Don't persist once the run is aborted or the user has switched
             // chats: the store's messages then belong to a different
             // conversation, and checkpointing them into this run's directory
@@ -628,14 +684,14 @@ export const useSendMessage = ({
             if (abortController.signal.aborted || !runChatIsCurrent()) {
               return
             }
-            previousRunStateRef.current = snapshot
+            previousRunStateRef.current = pinnedSnapshot
             // Persist asynchronously and coalescing: the periodic snapshot
             // fires ~every 5s at step boundaries, and a synchronous save of the
             // (growing) transcript on the render/input thread is what stalls
             // long sessions. The authoritative synchronous saves below still
             // capture the final state.
             scheduleCheckpointSave(
-              snapshot,
+              pinnedSnapshot,
               useChatStore.getState().messages,
               runChatDir,
             )
@@ -669,6 +725,9 @@ export const useSendMessage = ({
               agentDefinitionCount: agentDefinitions.length,
               costMode: runConfig.costMode,
               maxAgentSteps: runConfig.maxAgentSteps,
+              ...(byok
+                ? { byok: { provider: byok.provider, model: byok.model } }
+                : {}),
             },
           },
           '[send-message] Sending message with sdk run config',
@@ -676,7 +735,10 @@ export const useSendMessage = ({
         // Open the steering mailbox for this run only once we're committed to
         // calling run(); the router falls back to the queue before this point.
         activateSteering(runOwnerId)
-        const runState = await client.run(runConfig)
+        const runState = pinByokConnection(
+          await client.run(runConfig),
+          selectedByok,
+        )
 
         // Only adopt and persist the result while this run's chat is still
         // the active one. After a mid-run chat switch (/new, resuming from
@@ -708,6 +770,7 @@ export const useSendMessage = ({
           updater,
           aiMessageId,
           wasAbortedByUser: abortController.signal.aborted,
+          isByokRun: shouldUseByok,
           hasReceivedContent: hasReceivedContentRef.current,
           setStreamStatus,
           setCanProcessQueue,
@@ -734,6 +797,7 @@ export const useSendMessage = ({
             isProcessingQueueRef,
             isQueuePausedRef,
             hasReceivedContent: hasReceivedContentRef.current,
+            isByokRun: shouldUseByok,
           })
           // Persist the last checkpoint plus the error banner so a restart
           // after a failed run still shows this turn. Settle async checkpoints

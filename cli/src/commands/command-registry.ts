@@ -25,6 +25,7 @@ import { buildInterviewPrompt, buildPlanPrompt, buildReviewPromptFromArgs, build
 import { handleReasoningCommand } from './reasoning'
 import { runBashCommand } from './router'
 import { handleUsageCommand } from './usage'
+import { handleByokCommand } from './byok'
 import { returnToFreebuffLanding } from '../hooks/use-freebuff-session'
 import { useThemeStore } from '../hooks/use-theme'
 import { LOGIN_WEBSITE_URL, WEBSITE_URL } from '../login/constants'
@@ -196,6 +197,7 @@ const FREEBUFF_REMOVED_COMMANDS = new Set([
 ])
 
 const FREEBUFF_ONLY_COMMANDS = new Set([
+  'byok',
   'plan',
   'end-session',
   'dashboard',
@@ -737,6 +739,11 @@ const ALL_COMMANDS: CommandDefinition[] = [
   // selected model. Takes effect on the NEXT message: the effort rides
   // codebuff_metadata on each request, so nothing about the live session has to
   // be restarted for a change to land.
+  defineCommandWithArgs({
+    name: 'byok',
+    aliases: ['provider'],
+    handler: handleByokCommand,
+  }),
   defineCommandWithArgs({
     name: 'reasoning',
     aliases: ['effort', 'think'],

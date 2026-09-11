@@ -14,6 +14,7 @@ import type {
   AgentDefinition,
   FileFilter,
   MessageContent,
+  ResolvedByokConnection,
   RunState,
 } from '@codebuff/sdk'
 
@@ -27,6 +28,8 @@ export type CreateRunConfigParams = {
   eventHandlerState: EventHandlerState
   signal: AbortSignal
   costMode?: 'free' | 'lite' | 'normal' | 'max' | 'experimental' | 'ask'
+  /** Runtime-only direct inference credential. Never persist this object. */
+  byok?: ResolvedByokConnection
   extraCodebuffMetadata?: Record<string, string>
   /** Periodic in-flight RunState checkpoints (see RunOptions.onStateSnapshot). */
   onStateSnapshot?: (runState: RunState) => void
@@ -99,6 +102,7 @@ export const createRunConfig = (params: CreateRunConfigParams) => {
     agentDefinitions,
     eventHandlerState,
     costMode,
+    byok,
     extraCodebuffMetadata,
     onStateSnapshot,
     drainSteeringMessages,
@@ -116,6 +120,7 @@ export const createRunConfig = (params: CreateRunConfigParams) => {
     handleEvent: createEventHandler(eventHandlerState),
     signal: params.signal,
     costMode,
+    byok,
     extraCodebuffMetadata,
     onStateSnapshot,
     drainSteeringMessages,

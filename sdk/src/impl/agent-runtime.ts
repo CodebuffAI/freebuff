@@ -5,6 +5,7 @@ import { shouldTrackAnalyticsEvent } from '@codebuff/common/util/analytics-sampl
 import { success } from '@codebuff/common/util/error'
 
 import { getWebsiteUrl } from '../constants'
+import type { ResolvedByokConnection } from '../byok'
 
 import {
   addAgentStep,
@@ -52,6 +53,8 @@ export function getAgentRuntimeImpl(
     traceWriter?: TraceWriter
     apiKey: string
     clientEnv?: ClientEnv
+    /** Enables an auth-free, direct local runtime for this one run. */
+    byok?: ResolvedByokConnection
   } & Pick<
     AgentRuntimeScopedDeps,
     | 'handleStepsLogChunk'
@@ -67,6 +70,7 @@ export function getAgentRuntimeImpl(
     logger,
     traceWriter,
     apiKey,
+    byok,
     clientEnv: clientEnvInput,
     handleStepsLogChunk,
     requestToolCall,
@@ -103,11 +107,15 @@ export function getAgentRuntimeImpl(
     ciEnv: getCiEnv(),
 
     // Database
-    getUserInfoFromApiKey,
-    fetchAgentFromDatabase,
-    startAgentRun,
-    finishAgentRun,
-    addAgentStep,
+    getUserInfoFromApiKey: byok
+      ? async () => ({ id: 'byok-local' }) as any
+      : getUserInfoFromApiKey,
+    // A BYOK run only uses its local agent registry. A missing local agent is
+    // an error, never a reason to send its prompt or identity to Freebuff.
+    fetchAgentFromDatabase: byok ? async () => null : fetchAgentFromDatabase,
+    startAgentRun: byok ? async () => `byok-${crypto.randomUUID()}` : startAgentRun,
+    finishAgentRun: byok ? async () => {} : finishAgentRun,
+    addAgentStep: byok ? async () => `byok-step-${crypto.randomUUID()}` : addAgentStep,
 
     // Billing
     consumeCreditsWithFallback: async () =>
@@ -116,20 +124,33 @@ export function getAgentRuntimeImpl(
       }),
 
     // LLM
-    promptAiSdkStream,
-    promptAiSdk,
-    promptAiSdkStructured,
+    promptAiSdkStream: byok
+      ? ((params) => promptAiSdkStream({ ...params, byok } as any))
+      : promptAiSdkStream,
+    promptAiSdk: byok
+      ? ((params) => promptAiSdk({ ...params, byok } as any))
+      : promptAiSdk,
+    promptAiSdkStructured: byok
+      ? ((params) => promptAiSdkStructured({ ...params, byok } as any))
+      : promptAiSdkStructured,
 
     // Mutable State
-    databaseAgentCache,
+    databaseAgentCache: byok ? new Map() : databaseAgentCache,
 
     // Analytics
-    trackEvent: trackSdkRuntimeEvent,
+    trackEvent: byok ? (() => {}) : trackSdkRuntimeEvent,
 
     // Other
     logger: logger ?? noopLogger,
     traceWriter,
-    fetch: globalThis.fetch,
+    // Server-side research/Gravity helpers use this runtime fetch. BYOK has
+    // no Codebuff service allowance, so fail closed; model requests use the
+    // direct provider fetch constructed in model-provider.ts instead.
+    fetch: byok
+      ? (async () => {
+          throw new Error('Hosted service tools are unavailable in a direct BYOK run')
+        }) as unknown as typeof globalThis.fetch
+      : globalThis.fetch,
 
     // Client (WebSocket)
     handleStepsLogChunk,

@@ -2,8 +2,12 @@ import { validateAgents } from '@codebuff/sdk'
 import { useCallback, useState } from 'react'
 
 import { loadAgentDefinitions } from '../utils/local-agent-registry'
+import { hasSelectedByokConnection } from '../utils/byok'
+import { IS_FREEBUFF } from '../utils/constants'
 import { logger } from '../utils/logger'
 import { filterNetworkErrors } from '../utils/validation-error-helpers'
+
+import type { AgentDefinition } from '@codebuff/sdk'
 
 export type ValidationError = {
   id: string
@@ -14,6 +18,20 @@ export type ValidationCheckResult = {
   success: boolean
   errors: ValidationError[]
 }
+
+/** BYOK runs validate local agent definitions without sending them to Freebuff. */
+export const shouldValidateAgentsRemotely = (
+  isFreebuff = IS_FREEBUFF,
+): boolean => !isFreebuff || !hasSelectedByokConnection()
+
+/** Invoke SDK validation using the inference source selected when a send starts. */
+export const validateSelectedAgentDefinitions = (
+  agentDefinitions: AgentDefinition[],
+  options?: { isFreebuff?: boolean },
+) =>
+  validateAgents(agentDefinitions, {
+    remote: shouldValidateAgentsRemotely(options?.isFreebuff),
+  })
 
 type UseAgentValidationResult = {
   validationErrors: ValidationError[]
@@ -39,9 +57,11 @@ export const useAgentValidation = (): UseAgentValidationResult => {
     try {
       const agentDefinitions = loadAgentDefinitions()
 
-      const validationResult = await validateAgents(agentDefinitions, {
-        remote: true,
-      })
+      // Read selection at send time so changing provider never leaves a stale
+      // render using the hosted validation endpoint.
+      const validationResult = await validateSelectedAgentDefinitions(
+        agentDefinitions,
+      )
 
       if (validationResult.success) {
         setValidationErrors([])

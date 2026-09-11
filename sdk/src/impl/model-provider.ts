@@ -20,6 +20,8 @@ import { APICallError } from 'ai'
 
 import { getWebsiteUrl } from '../constants'
 import { getByokOpenrouterApiKeyFromEnv } from '../env'
+import { byokCompletionUrl } from '../byok'
+import type { ResolvedByokConnection } from '../byok'
 
 import type { LanguageModel } from 'ai'
 
@@ -33,6 +35,8 @@ export interface ModelRequestParams {
   model: string
   /** End user represented by a trusted service-account request. */
   userId?: string
+  /** Direct, run-scoped credential. Never stored on the model or in metadata. */
+  byok?: ResolvedByokConnection
 }
 
 // Usage accounting type for OpenRouter/Codebuff backend responses
@@ -93,6 +97,72 @@ function requestUrlOf(input: Parameters<typeof globalThis.fetch>[0]): string {
       ? input.toString()
       : input.url
 }
+
+/** Preserve streaming while removing a credential even when it crosses chunks. */
+export function redactProviderStream(
+  body: ReadableStream<Uint8Array> | null,
+  secret: string,
+): ReadableStream<Uint8Array> | null {
+  if (!body || !secret) return body
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  let pending = ''
+  const retain = Math.max(0, secret.length - 1)
+  const redact = (text: string) => text.split(secret).join('[redacted]')
+  const transformed = body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      pending += decoder.decode(chunk, { stream: true })
+      let boundary = Math.max(0, pending.length - retain)
+      // Do not emit the prefix of a complete secret just because its suffix
+      // happens to be in the retained tail. Extend the safe boundary through
+      // every complete match that starts before it, then redact as one unit.
+      for (let start = pending.indexOf(secret); start !== -1; start = pending.indexOf(secret, start + secret.length)) {
+        if (start >= boundary) break
+        boundary = Math.max(boundary, start + secret.length)
+      }
+      controller.enqueue(encoder.encode(redact(pending.slice(0, boundary))))
+      pending = pending.slice(boundary)
+    },
+    flush(controller) {
+      pending += decoder.decode()
+      controller.enqueue(encoder.encode(redact(pending)))
+    },
+  }))
+  const reader = transformed.getReader()
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const next = await reader.read()
+        if (next.done) controller.close()
+        else controller.enqueue(next.value)
+      } catch {
+        controller.error(new Error('BYOK provider stream failed'))
+      }
+    },
+    cancel() { return reader.cancel().catch(() => {}) },
+  })
+}
+
+/** A fixed, actionable message for a provider status. Never include upstream
+ * response text: gateways commonly echo credential fragments in error bodies. */
+export function getByokProviderErrorMessage(status: number): string {
+  if (status === 401)
+    return 'BYOK provider rejected the API key (HTTP 401). Check or replace the key.'
+  if (status === 403)
+    return 'BYOK API key cannot access this model or account (HTTP 403). Choose an allowed model or use another key.'
+  if (status === 402)
+    return 'BYOK provider account needs credits or a supported plan (HTTP 402). Add provider credit or choose another model.'
+  if (status === 404)
+    return 'BYOK provider could not find this model or endpoint (HTTP 404). Check the model ID and provider URL.'
+  if (status === 429)
+    return 'BYOK provider rate limit reached (HTTP 429). Wait, then retry the task.'
+  if (status >= 500)
+    return `BYOK provider is temporarily unavailable (HTTP ${status}). Retry the task later.`
+  return `BYOK provider request failed (HTTP ${status}). Check the provider settings and retry.`
+}
+
+export const BYOK_CONNECTION_FAILURE_MESSAGE =
+  'Could not connect to the BYOK provider. Check the provider URL and network connection, then retry.'
 
 /**
  * The per-turn spend breaker (HTTP 429, body `{ error: 'turn_spend_limit',
@@ -180,7 +250,46 @@ export function getModelForRequest({
   apiKey,
   model,
   userId,
+  byok,
 }: ModelRequestParams): LanguageModel {
+  if (byok) {
+    return new OpenAICompatibleChatLanguageModel(byok.model, {
+      provider: 'byok',
+      url: () => byokCompletionUrl(byok),
+      headers: () => ({
+        Authorization: `Bearer ${byok.apiKey}`,
+        'user-agent': `ai-sdk/openai-compatible/${VERSION}/freebuff-byok`,
+      }),
+      // Check the durable revision before every provider attempt. The AI SDK
+      // invokes this again on retries and later tool-loop steps, so removing
+      // or replacing a connection stops subsequent inference immediately.
+      fetch: (async (...args: Parameters<typeof globalThis.fetch>) => {
+        try {
+          await byok.assertCurrent?.()
+          const response = await globalThis.fetch(
+            args[0],
+            { ...(args[1] ?? {}), redirect: 'error' },
+          )
+          if (!response.ok) {
+            return new Response(
+              JSON.stringify({ error: { message: getByokProviderErrorMessage(response.status) } }),
+              { status: response.status, headers: { 'content-type': 'application/json' } },
+            )
+          }
+          return new Response(redactProviderStream(response.body, byok.apiKey), {
+            status: response.status,
+            headers: {
+              'content-type': response.headers.get('content-type') ?? 'text/event-stream',
+            },
+          })
+        } catch {
+          throw new Error(BYOK_CONNECTION_FAILURE_MESSAGE)
+        }
+      }) as typeof globalThis.fetch,
+      includeUsage: undefined,
+      supportsStructuredOutputs: true,
+    })
+  }
   const openrouterUsage: OpenRouterUsageAccounting = {
     cost: null,
     costDetails: {

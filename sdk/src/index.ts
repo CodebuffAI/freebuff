@@ -41,6 +41,7 @@ export * from './constants'
 
 export { getUserInfoFromApiKey } from './impl/database'
 export * from './credentials'
+export * from './byok'
 export { loadLocalAgents } from './agents/load-agents'
 export { loadMCPConfig, loadMCPConfigSync } from './agents/load-mcp-config'
 export {

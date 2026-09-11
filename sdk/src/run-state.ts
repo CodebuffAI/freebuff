@@ -63,6 +63,10 @@ export type RunState = {
   sessionState?: SessionState
   output: AgentOutput
   traceSessionId: string
+  /** Non-secret inference identity pinned for resumed conversations. */
+  inference?:
+    | { source: 'codebuff' }
+    | { source: 'byok'; connectionId: string; revision: number; model: string }
 }
 
 /** Result of indexing `projectFiles`: the file tree plus tree-sitter token

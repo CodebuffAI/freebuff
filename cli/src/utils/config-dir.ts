@@ -3,6 +3,8 @@ import path from 'path'
 
 import { env } from '@codebuff/common/env'
 
+import { getCliEnv } from './env'
+
 /**
  * Resolve the on-disk config directory for the CLI.
  *
@@ -12,6 +14,16 @@ import { env } from '@codebuff/common/env'
  * otherwise create an import cycle.
  */
 export const getConfigDir = (): string => {
+  const configuredDir = getCliEnv().FREEBUFF_CONFIG_DIR
+  if (configuredDir) {
+    if (!path.isAbsolute(configuredDir)) {
+      throw new Error(
+        'FREEBUFF_CONFIG_DIR must be an absolute path so CLI settings cannot be written relative to the current project.',
+      )
+    }
+    return configuredDir
+  }
+
   return path.join(
     os.homedir(),
     '.config',

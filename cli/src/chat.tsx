@@ -59,6 +59,7 @@ import { useChatUI } from './hooks/use-chat-ui'
 import { useClipboard } from './hooks/use-clipboard'
 import { useEvent } from './hooks/use-event'
 import { useGravityAd } from './hooks/use-gravity-ad'
+import { useByokSelectionStore } from './utils/byok'
 import { DOCK_CHORD_HINT, useDockPanel } from './hooks/use-dock-panel'
 import { useInputHistory } from './hooks/use-input-history'
 import { usePublishMutation } from './hooks/use-publish-mutation'
@@ -198,6 +199,9 @@ export const Chat = ({
     moveQueuedMessage,
   } = useChatRuntime()
   const hasSubscription = subscriptionData?.hasSubscription ?? false
+  const hasSelectedByokConnection = useByokSelectionStore(
+    (state) => state.selected !== undefined,
+  )
 
   const {
     ads,
@@ -206,7 +210,7 @@ export const Chat = ({
     recordClick,
     recordImpression,
   } = useGravityAd({
-    enabled: IS_FREEBUFF || !hasSubscription,
+    enabled: !hasSelectedByokConnection && (IS_FREEBUFF || !hasSubscription),
     provider: 'gravity',
     inline: true,
     surface: 'cli_chat',
@@ -215,7 +219,7 @@ export const Chat = ({
     // Keep the rotating above-input slot separate for reporting continuity.
     slotPlacementId: 'Single-Ad-Unit-1',
   })
-  const showInlineAds = IS_FREEBUFF || getAdsEnabled()
+  const showInlineAds = !hasSelectedByokConnection && (IS_FREEBUFF || getAdsEnabled())
 
   // Stable identities so the message-block callbacks (set once) always call
   // the latest recorder from the hook.
@@ -432,7 +436,7 @@ export const Chat = ({
 
   // Mounted here rather than inside the card, because the card does not exist
   // until this hook puts it there (COD-339: nothing polled before it).
-  useSponsoredProposal()
+  useSponsoredProposal({ enabled: !hasSelectedByokConnection })
 
   // Set initial mode from CLI flag on mount
   useEffect(() => {
@@ -1759,8 +1763,10 @@ export const Chat = ({
   }, [subscriptionRateLimit?.limited, fallbackToALaCarte])
 
   const hasActiveFreebuffSession =
+    !hasSelectedByokConnection &&
     IS_FREEBUFF && freebuffSession?.status === 'active'
   const isFreebuffSessionOver =
+    !hasSelectedByokConnection &&
     IS_FREEBUFF && freebuffSession?.status === 'ended'
 
   // A takeover screen owns both the keyboard and the rows above the composer.

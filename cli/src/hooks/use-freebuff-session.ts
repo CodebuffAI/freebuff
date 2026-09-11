@@ -429,13 +429,15 @@ interface UseFreebuffSessionResult {
  *   - DELETE on unmount so the slot frees up for the next user
  *   - plays a bell on admission to an active session
  */
-export function useFreebuffSession(): UseFreebuffSessionResult {
+export function useFreebuffSession(
+  { enabled = true }: { enabled?: boolean } = {},
+): UseFreebuffSessionResult {
   const session = useFreebuffSessionStore((s) => s.session)
   const failure = useFreebuffSessionStore((s) => s.failure)
   const lastRefund = useFreebuffSessionStore((s) => s.lastRefund)
   const pendingRefund = useFreebuffSessionStore((s) => s.pendingRefund)
   useEffect(() => {
-    if (!pendingRefund) return
+    if (!enabled || !pendingRefund) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
@@ -451,12 +453,12 @@ export function useFreebuffSession(): UseFreebuffSessionResult {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [pendingRefund])
+  }, [enabled, pendingRefund])
 
   useEffect(() => {
     const { setSession, setFailure } = useFreebuffSessionStore.getState()
 
-    if (!IS_FREEBUFF) {
+    if (!IS_FREEBUFF || !enabled) {
       // Non-freebuff (Codebuff) builds never gate on a free session; leave the
       // store empty (app.tsx's session routing is all behind IS_FREEBUFF).
       setSession(null)
@@ -928,7 +930,7 @@ export function useFreebuffSession(): UseFreebuffSessionResult {
       setSession(null)
       setFailure(null)
     }
-  }, [])
+  }, [enabled])
 
   return { session, failure, lastRefund, refundPending: pendingRefund !== null }
 }

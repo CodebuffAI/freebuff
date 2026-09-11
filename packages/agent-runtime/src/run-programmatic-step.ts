@@ -196,7 +196,10 @@ export async function runProgrammaticStep(
       model: template.model,
       // Serialized generators cannot import the per-model tables.
       contextPruning: {
-        maxContextLength: contextPrunerBudgetForModel(template.model),
+        maxContextLength:
+          (typeof template.compactContext === 'object'
+            ? template.compactContext.maxContextLength
+            : undefined) ?? contextPrunerBudgetForModel(template.model),
         ...compactionPolicyForModel(template.model),
       },
       logger: streamingLogger,

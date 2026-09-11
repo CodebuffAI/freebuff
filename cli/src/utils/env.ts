@@ -82,6 +82,7 @@ export const getCliEnv = (): CliEnv => ({
   CODEBUFF_SHIP_LOGS: process.env.CODEBUFF_SHIP_LOGS,
   CODEBUFF_NO_TERMINAL_WATCHDOG: process.env.CODEBUFF_NO_TERMINAL_WATCHDOG,
   FREEBUFF_MODE: process.env.FREEBUFF_MODE,
+  FREEBUFF_CONFIG_DIR: process.env.FREEBUFF_CONFIG_DIR,
 })
 
 /**

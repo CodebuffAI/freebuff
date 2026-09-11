@@ -570,10 +570,7 @@ export const runAgentStep = async (
   // injection did not) replaced the whole history with an ordinary answer.
   const wasCompacted = isCompactCommandPrompt(prompt)
   if (wasCompacted) {
-    if (
-      fullResponse.trim().length > 0 &&
-      !isThinkOnlyResponse(fullResponse)
-    ) {
+    if (fullResponse.trim().length > 0 && !isThinkOnlyResponse(fullResponse)) {
       agentState.messageHistory = [
         userMessage(
           withSystemTags(
@@ -1110,14 +1107,21 @@ export async function loopAgentSteps(
             : {}),
           messages: currentAgentState.messageHistory,
           contextTokenCount: currentAgentState.contextTokenCount,
-          maxContextLength: contextPrunerBudgetForModel(agentTemplate.model),
+          maxContextLength:
+            (typeof agentTemplate.compactContext === 'object'
+              ? agentTemplate.compactContext.maxContextLength
+              : undefined) ?? contextPrunerBudgetForModel(agentTemplate.model),
           logger,
           runId,
           onCompaction: (trigger) => {
             if (initialAgentState.parentId) return
             params.onCompaction?.({
               trigger,
-              thresholdTokens: contextPrunerBudgetForModel(agentTemplate.model),
+              thresholdTokens:
+                (typeof agentTemplate.compactContext === 'object'
+                  ? agentTemplate.compactContext.maxContextLength
+                  : undefined) ??
+                contextPrunerBudgetForModel(agentTemplate.model),
             })
           },
         })

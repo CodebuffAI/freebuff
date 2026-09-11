@@ -137,7 +137,11 @@ export type AgentTemplate<
   suppressCommitAttribution?: boolean
   compactContext?:
     | boolean
-    | { cacheExpiryMs?: number | null; cacheExpiryMinTokens?: number | null }
+    | {
+        maxContextLength?: number
+        cacheExpiryMs?: number | null
+        cacheExpiryMinTokens?: number | null
+      }
   outputMode: 'last_message' | 'all_messages' | 'structured_output'
   outputSchema?: z.ZodSchema<any>
 

@@ -341,6 +341,8 @@ export const handleRunCompletion = (params: {
   updater: BatchedMessageUpdater
   aiMessageId: string
   wasAbortedByUser: boolean
+  /** Immutable inference source captured when this run started. */
+  isByokRun?: boolean
   /** Whether the run streamed any content before finishing. A freebuff gate
    *  rejection with no content means the prompt was consumed unprocessed —
    *  surfaced as an inline error instead of silently looking sent. */
@@ -360,6 +362,7 @@ export const handleRunCompletion = (params: {
     timerController,
     updater,
     wasAbortedByUser,
+    isByokRun = false,
     setStreamStatus,
     setCanProcessQueue,
     updateChainInProgress,
@@ -398,13 +401,13 @@ export const handleRunCompletion = (params: {
   }
 
   if (output.type === 'error') {
-    if (IS_FREEBUFF && isFreebuffProviderUsageError(output)) {
+    if (IS_FREEBUFF && !isByokRun && isFreebuffProviderUsageError(output)) {
       updater.setError(FREEBUFF_PROVIDER_USAGE_MESSAGE)
       finalizeAfterError()
       return
     }
 
-    if (isOutOfCreditsError(output)) {
+    if (!isByokRun && isOutOfCreditsError(output)) {
       updater.setError(OUT_OF_CREDITS_MESSAGE)
       useChatStore.getState().setInputMode('outOfCredits')
       invalidateActivityQuery(usageQueryKeys.current())
@@ -412,7 +415,7 @@ export const handleRunCompletion = (params: {
       return
     }
 
-    if (isFreeModeUnavailableError(output)) {
+    if (!isByokRun && isFreeModeUnavailableError(output)) {
       updater.setError(getFreeModeUnavailableErrorMessage(output))
       if (IS_FREEBUFF) {
         markFreebuffSessionCountryBlocked(
@@ -426,7 +429,7 @@ export const handleRunCompletion = (params: {
     }
 
     const gateKind = getFreebuffGateErrorKind(output)
-    if (gateKind) {
+    if (!isByokRun && gateKind) {
       handleFreebuffGateError(gateKind, updater, {
         messageWasDropped: params.hasReceivedContent === false,
       })
@@ -434,7 +437,7 @@ export const handleRunCompletion = (params: {
       return
     }
 
-    const freebuffRateLimitMessage = IS_FREEBUFF
+    const freebuffRateLimitMessage = IS_FREEBUFF && !isByokRun
       ? getFreebuffRateLimitErrorMessage(output)
       : null
     if (freebuffRateLimitMessage) {
@@ -494,6 +497,8 @@ export const handleRunError = (params: {
   isQueuePausedRef?: MutableRefObject<boolean>
   /** See handleRunCompletion — flags an unprocessed prompt on gate errors. */
   hasReceivedContent?: boolean
+  /** Immutable inference source captured when this run started. */
+  isByokRun?: boolean
 }) => {
   const {
     error,
@@ -506,6 +511,7 @@ export const handleRunError = (params: {
     isProcessingQueueRef,
     isQueuePausedRef,
     hasReceivedContent,
+    isByokRun = false,
   } = params
 
   const errorInfo = getErrorObject(error, { includeRawError: true })
@@ -521,19 +527,19 @@ export const handleRunError = (params: {
   })
   timerController.stop('error')
 
-  if (IS_FREEBUFF && isFreebuffProviderUsageError(error)) {
+  if (IS_FREEBUFF && !isByokRun && isFreebuffProviderUsageError(error)) {
     updater.setError(FREEBUFF_PROVIDER_USAGE_MESSAGE)
     return
   }
 
-  if (isOutOfCreditsError(error)) {
+  if (!isByokRun && isOutOfCreditsError(error)) {
     updater.setError(OUT_OF_CREDITS_MESSAGE)
     useChatStore.getState().setInputMode('outOfCredits')
     invalidateActivityQuery(usageQueryKeys.current())
     return
   }
 
-  if (isFreeModeUnavailableError(error)) {
+  if (!isByokRun && isFreeModeUnavailableError(error)) {
     updater.setError(getFreeModeUnavailableErrorMessage(error))
     if (IS_FREEBUFF) {
       markFreebuffSessionCountryBlocked(
@@ -546,14 +552,14 @@ export const handleRunError = (params: {
   }
 
   const gateKind = getFreebuffGateErrorKind(error)
-  if (gateKind) {
+  if (!isByokRun && gateKind) {
     handleFreebuffGateError(gateKind, updater, {
       messageWasDropped: hasReceivedContent === false,
     })
     return
   }
 
-  const freebuffRateLimitMessage = IS_FREEBUFF
+  const freebuffRateLimitMessage = IS_FREEBUFF && !isByokRun
     ? getFreebuffRateLimitErrorMessage(error)
     : null
   if (freebuffRateLimitMessage) {

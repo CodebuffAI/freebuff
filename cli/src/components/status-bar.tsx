@@ -13,6 +13,7 @@ import { ShimmerText } from './shimmer-text'
 import { useFreebuffSessionProgress } from '../hooks/use-freebuff-session-progress'
 import { useTheme } from '../hooks/use-theme'
 import { useChatStore } from '../state/chat-store'
+import { useByokSelectionStore } from '../utils/byok'
 import { freebucksOf } from '../utils/freebucks'
 import { formatElapsedTime } from '../utils/format-elapsed-time'
 import { formatContextUsage } from '../utils/format-token-count'
@@ -77,6 +78,7 @@ export const StatusBar = ({
   freebuffSession,
 }: StatusBarProps) => {
   const theme = useTheme()
+  const byok = useByokSelectionStore((state) => state.selected)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
   // Show timer when actively working (streaming or waiting for response) or paused (ask_user)
@@ -199,6 +201,13 @@ export const StatusBar = ({
         return null
 
       case 'idle':
+        if (byok?.provider && byok.model) {
+          const provider =
+            byok.provider === 'openrouter'
+              ? 'OpenRouter'
+              : 'OpenAI-compatible'
+          return <span fg={theme.secondary}>{`BYOK · ${provider} · ${byok.model}`}</span>
+        }
         if (sessionProgress !== null) {
           const isUrgent =
             sessionProgress.remainingMs < FREEBUFF_COUNTDOWN_VISIBLE_MS

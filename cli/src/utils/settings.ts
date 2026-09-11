@@ -49,6 +49,14 @@ export interface Settings {
    *  absent from this map runs its catalog default, which is also what the
    *  server does when the client sends nothing. */
   freebuffReasoningEfforts?: Record<string, ReasoningEffort>
+  /** The run-scoped BYOK connection selected in this CLI. Credentials remain
+   * in the OS keychain or an explicitly named environment variable. */
+  byokConnection?: {
+    id: string
+    revision: number
+    provider?: 'openrouter' | 'openai-compatible'
+    model?: string
+  }
   /** @deprecated Use server-side fallbackToALaCarte setting instead */
   alwaysUseALaCarte?: boolean
   /** @deprecated Use server-side fallbackToALaCarte setting instead */
@@ -172,6 +180,28 @@ const validateSettings = (parsed: unknown): Settings => {
     }
     if (Object.keys(efforts).length > 0) {
       settings.freebuffReasoningEfforts = efforts
+    }
+  }
+
+  const byokConnection = obj.byokConnection as Record<string, unknown> | null
+  if (
+    byokConnection &&
+    typeof byokConnection === 'object' &&
+    typeof byokConnection.id === 'string' &&
+    typeof byokConnection.revision === 'number' &&
+    Number.isSafeInteger(byokConnection.revision) &&
+    byokConnection.revision > 0
+  ) {
+    settings.byokConnection = {
+      id: byokConnection.id,
+      revision: byokConnection.revision,
+      ...(byokConnection.provider === 'openrouter' ||
+      byokConnection.provider === 'openai-compatible'
+        ? { provider: byokConnection.provider }
+        : {}),
+      ...(typeof byokConnection.model === 'string' && byokConnection.model
+        ? { model: byokConnection.model }
+        : {}),
     }
   }
 

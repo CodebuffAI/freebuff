@@ -12,8 +12,10 @@ import { getRgPath } from '../native/ripgrep'
 import { getProjectRoot } from '../project-files'
 
 import type { ClientToolCall } from '@codebuff/common/tools/list'
+import type { ResolvedByokConnection } from '@codebuff/sdk'
 
 let clientInstance: CodebuffClient | null = null
+let byokClientIdentity: string | null = null
 
 /**
  * Recursively removes undefined values from an object to ensure clean JSON serialization.
@@ -44,13 +46,19 @@ function removeUndefinedValues<T>(obj: T): T {
  */
 export function resetCodebuffClient(): void {
   clientInstance = null
+  byokClientIdentity = null
 }
 
-export async function getCodebuffClient(): Promise<CodebuffClient | null> {
-  if (!clientInstance) {
+export async function getCodebuffClient(
+  options: { byok?: ResolvedByokConnection } = {},
+): Promise<CodebuffClient | null> {
+  const byokIdentity = options.byok
+    ? `${options.byok.id}:${options.byok.revision}`
+    : null
+  if (!clientInstance || byokClientIdentity !== byokIdentity) {
     const { token: apiKey } = getAuthTokenDetails()
 
-    if (!apiKey) {
+    if (!apiKey && !options.byok) {
       logger.warn(
         {},
         `No authentication token found. Please run the login flow or set ${API_KEY_ENV_VAR}.`,
@@ -75,7 +83,8 @@ export async function getCodebuffClient(): Promise<CodebuffClient | null> {
     try {
       const agentDefinitions = loadAgentDefinitions()
       clientInstance = new CodebuffClient({
-        apiKey,
+        ...(apiKey ? { apiKey } : {}),
+        ...(options.byok ? { byok: options.byok } : {}),
         cwd: projectRoot,
         // Keeps the model's skill list identical to the one the registry shows
         // (utils/skill-registry.ts). The SDK default is project-only so that a
@@ -105,6 +114,7 @@ export async function getCodebuffClient(): Promise<CodebuffClient | null> {
           },
         },
       })
+      byokClientIdentity = byokIdentity
     } catch (error) {
       logger.error(error, 'Failed to initialize CodebuffClient')
       return null

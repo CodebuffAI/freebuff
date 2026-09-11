@@ -36,6 +36,8 @@ import { isSensitiveEnvFilePath } from '@codebuff/common/util/env-file-path'
 import { cloneDeep } from 'lodash'
 
 import { executeComposioToolViaServer } from './composio'
+import { byokModelLimits } from './byok'
+import type { ResolvedByokConnection } from './byok'
 import { getErrorStatusCode } from './error-utils'
 import { getAgentRuntimeImpl } from './impl/agent-runtime'
 import { getUserInfoFromApiKey } from './impl/database'
@@ -113,8 +115,26 @@ function isRunPauseError(error: unknown) {
   )
 }
 
+/** Remove the resolved credential and conventional provider variables before a
+ * terminal tool inherits the host environment. This does not disable normal
+ * user tooling network access; it only prevents an agent from reading BYOK
+ * credentials through a subprocess. */
+function scrubByokCredentialEnv(
+  env: Record<string, string> | undefined,
+  credential: string,
+): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [key, value] of Object.entries(env ?? {})) {
+    if (value === credential || /(?:openrouter|openai|anthropic).*api.*key/i.test(key)) continue
+    result[key] = value
+  }
+  return result
+}
+
 export type CodebuffClientOptions = {
   apiKey?: string
+  /** Direct, local inference for this run. The key is intentionally runtime-only. */
+  byok?: ResolvedByokConnection
 
   cwd?: string
   /** Optional directory path to load skills from. Skills found here will be available to the `skill` tool. */
@@ -359,6 +379,34 @@ type RunExecutionOptions = RunOptions &
 type RunReturnType = RunState
 
 export async function run(options: RunExecutionOptions): Promise<RunState> {
+  const requestedInference = options.byok
+    ? { source: 'byok' as const, connectionId: options.byok.id, revision: options.byok.revision, model: options.byok.model }
+    : { source: 'codebuff' as const }
+  const previousInference = options.previousRun?.inference
+  if (options.previousRun && !previousInference && options.byok) {
+    return {
+      sessionState: options.previousRun.sessionState,
+      traceSessionId: options.previousRun.traceSessionId ?? crypto.randomUUID(),
+      inference: undefined,
+      output: { type: 'error', message: 'This session has no inference source pin; start a new BYOK task.' },
+    }
+  }
+  if (
+    previousInference &&
+    (previousInference.source !== requestedInference.source ||
+      (previousInference.source === 'byok' &&
+        requestedInference.source === 'byok' &&
+        (previousInference.connectionId !== requestedInference.connectionId ||
+          previousInference.revision !== requestedInference.revision ||
+          previousInference.model !== requestedInference.model)))
+  ) {
+    return {
+      sessionState: options.previousRun?.sessionState,
+      traceSessionId: options.previousRun?.traceSessionId ?? crypto.randomUUID(),
+      inference: previousInference,
+      output: { type: 'error', message: 'This session is bound to a different inference connection; start a new task.' },
+    }
+  }
   const { signal } = options
 
   if (signal?.aborted) {
@@ -367,6 +415,7 @@ export async function run(options: RunExecutionOptions): Promise<RunState> {
       sessionState: options.previousRun?.sessionState,
       traceSessionId:
         options.previousRun?.traceSessionId ?? crypto.randomUUID(),
+      inference: requestedInference,
       output: {
         type: 'error',
         message: abortError.message,
@@ -374,12 +423,23 @@ export async function run(options: RunExecutionOptions): Promise<RunState> {
     }
   }
 
-  return runOnce(options)
+  const result = await runOnce({
+    ...options,
+    onStateSnapshot: options.onStateSnapshot
+      ? (snapshot) =>
+          options.onStateSnapshot?.({
+            ...snapshot,
+            inference: requestedInference,
+          })
+      : undefined,
+  })
+  return { ...result, inference: requestedInference }
 }
 
 async function runOnce({
   apiKey,
   fingerprintId,
+  byok,
 
   cwd,
   skillsDir,
@@ -431,6 +491,9 @@ async function runOnce({
     spawn = require('child_process').spawn as CodebuffSpawn
   }
   let activeCustomToolDefinitions = customToolDefinitions ?? []
+  // Never hand a provider credential to an agent subprocess. The credential is
+  // only closed over by the model implementation below.
+  const toolEnv = byok ? scrubByokCredentialEnv(env, byok.apiKey) : env
 
   // Init session state
   let agentId
@@ -475,6 +538,28 @@ async function runOnce({
     })
   }
   const traceSessionId = previousRun?.traceSessionId ?? crypto.randomUUID()
+
+  if (byok) {
+    // The selected connection is a run snapshot. Apply its model to every
+    // local helper/subagent template so no helper silently consumes Freebuff
+    // inference or switches to a different provider.
+    const limits = byokModelLimits(byok)
+    for (const template of Object.values(sessionState.fileContext.agentTemplates)) {
+      if (template && typeof template === 'object') {
+        const byokTemplate = template as {
+          model?: string
+          compactContext?: boolean | Record<string, unknown>
+        }
+        byokTemplate.model = byok.model
+        byokTemplate.compactContext = {
+          ...(typeof byokTemplate.compactContext === 'object'
+            ? byokTemplate.compactContext
+            : {}),
+          maxContextLength: limits.maxContextLength,
+        }
+      }
+    }
+  }
 
   for (const toolName of COMPOSIO_META_TOOL_NAMES) {
     delete sessionState.fileContext.customToolDefinitions[toolName]
@@ -602,6 +687,7 @@ async function runOnce({
     logger,
     traceWriter,
     apiKey,
+    byok,
     handleStepsLogChunk: () => {
       // Does nothing for now
     },
@@ -624,9 +710,10 @@ async function runOnce({
           : {},
         cwd,
         fs,
-        env,
+        env: toolEnv,
         terminalCommandBroker,
         apiKey,
+        byok,
         signal,
       })
     },
@@ -733,25 +820,27 @@ async function runOnce({
 
   // Send input. The lookup rides the run's signal: a socket that never answers here held the run
   // for the whole retry budget with the abort unable to reach it.
-  let userInfo: { id: string } | null
-  try {
-    userInfo = await getUserInfoFromApiKey({
-      ...agentRuntimeImpl,
-      apiKey,
-      fields: ['id'],
-      signal,
-    })
-  } catch (error) {
-    if (signal?.aborted) {
-      return getCancelledRunState('Run cancelled by user.')
+  let userId: string | undefined
+  if (byok) {
+    // BYOK is intentionally auth-free: no Codebuff identity, run ledger,
+    // token-count, analytics, or helper request is necessary for inference.
+    userId = requestedUserId ?? 'byok-local'
+  } else {
+    let userInfo: { id: string } | null
+    try {
+      userInfo = await getUserInfoFromApiKey({
+        ...agentRuntimeImpl,
+        apiKey,
+        fields: ['id'],
+        signal,
+      })
+    } catch (error) {
+      if (signal?.aborted) return getCancelledRunState('Run cancelled by user.')
+      throw error
     }
-    throw error
+    if (!userInfo) return getCancelledRunState('Invalid API key or user not found')
+    userId = requestedUserId ?? userInfo.id
   }
-  if (!userInfo) {
-    return getCancelledRunState('Invalid API key or user not found')
-  }
-  const authenticatedUserId = userInfo.id
-  const userId = requestedUserId ?? authenticatedUserId
 
   if (signal?.aborted) {
     return getCancelledRunState('Run cancelled by user.')
@@ -987,6 +1076,7 @@ async function handleToolCall({
   env,
   terminalCommandBroker,
   apiKey,
+  byok,
   signal,
 }: {
   action: ServerAction<'tool-call-request'>
@@ -997,10 +1087,20 @@ async function handleToolCall({
   env?: Record<string, string>
   terminalCommandBroker?: TerminalCommandBroker
   apiKey: string
+  byok?: ResolvedByokConnection
   signal?: AbortSignal
 }): Promise<{ output: ToolResultOutput[] }> {
   const toolName = action.toolName
   const input = action.input
+
+  if (
+    byok &&
+    ['web_search', 'read_docs', 'gravity_index', 'render_ui'].includes(toolName)
+  ) {
+    return {
+      output: [{ type: 'json', value: { errorMessage: `${toolName} is unavailable in a direct BYOK run` } }],
+    }
+  }
 
   if (signal?.aborted) {
     return {
@@ -1095,6 +1195,15 @@ async function handleToolCall({
         ...input,
         cwd: path.resolve(resolvedCwd, input.cwd ?? '.'),
         env,
+        scrubEnvironmentKeys: byok
+          ? [
+              'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY',
+              ...(byok.credentialRef.startsWith('env:')
+                ? [byok.credentialRef.slice(4)]
+                : []),
+            ]
+          : undefined,
+        scrubEnvironmentValues: byok ? [byok.apiKey] : undefined,
         signal,
         terminalCommandBroker,
       } as Parameters<typeof runTerminalCommand>[0])
@@ -1139,6 +1248,9 @@ async function handleToolCall({
         },
       ]
     } else if (isComposioMetaToolName(toolName)) {
+      if (byok) {
+        throw new Error('Composio tools are unavailable in a direct BYOK run')
+      }
       result = await executeComposioToolViaServer({
         apiKey,
         toolName,

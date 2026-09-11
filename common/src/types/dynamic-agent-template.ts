@@ -203,6 +203,7 @@ export const DynamicAgentDefinitionSchema = z.object({
       z.boolean(),
       z
         .object({
+          maxContextLength: z.number().int().positive().optional(),
           cacheExpiryMs: z.number().nullish(),
           cacheExpiryMinTokens: z.number().nullish(),
         })

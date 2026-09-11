@@ -22,6 +22,8 @@ import {
 } from 'ai'
 
 import { getModelForRequest } from './model-provider'
+import { byokModelLimits } from '../byok'
+import type { ResolvedByokConnection } from '../byok'
 import {
   classifyStreamEndRecovery,
   classifyThrownStreamRecovery,
@@ -200,7 +202,7 @@ function emitCacheDebugUsage(params: {
 }
 
 export async function* promptAiSdkStream(
-  params: ParamsOf<PromptAiSdkStreamFn>,
+  params: ParamsOf<PromptAiSdkStreamFn> & { byok?: ResolvedByokConnection },
 ): ReturnType<PromptAiSdkStreamFn> {
   const { providerOptions: originalProviderOptions, ...streamParams } = params
 
@@ -223,10 +225,17 @@ export async function* promptAiSdkStream(
     apiKey: params.apiKey,
     model: params.model,
     userId: params.userId,
+    byok: params.byok,
   })
 
   const response = streamText({
     ...streamParams,
+    ...(params.byok && {
+      maxOutputTokens: Math.min(
+        params.maxOutputTokens ?? byokModelLimits(params.byok).maxOutputTokens,
+        byokModelLimits(params.byok).maxOutputTokens,
+      ),
+    }),
     abortSignal: params.signal,
     prompt: undefined,
     model: aiSDKModel,
@@ -236,7 +245,7 @@ export async function* promptAiSdkStream(
       ...streamParams.include,
       requestBody: true,
     },
-    providerOptions: getProviderOptions({
+    providerOptions: params.byok ? originalProviderOptions : getProviderOptions({
       ...params,
       providerOptions: originalProviderOptions,
       agentProviderOptions: params.agentProviderOptions,
@@ -677,7 +686,7 @@ export async function* promptAiSdkStream(
 }
 
 export async function promptAiSdk(
-  params: ParamsOf<PromptAiSdkFn>,
+  params: ParamsOf<PromptAiSdkFn> & { byok?: ResolvedByokConnection },
 ): ReturnType<PromptAiSdkFn> {
   const { logger } = params
 
@@ -696,10 +705,17 @@ export async function promptAiSdk(
     apiKey: params.apiKey,
     model: params.model,
     userId: params.userId,
+    byok: params.byok,
   })
 
   const response = await generateText({
     ...params,
+    ...(params.byok && {
+      maxOutputTokens: Math.min(
+        params.maxOutputTokens ?? byokModelLimits(params.byok).maxOutputTokens,
+        byokModelLimits(params.byok).maxOutputTokens,
+      ),
+    }),
     prompt: undefined,
     model: aiSDKModel,
     messages: convertCbToModelMessages(params),
@@ -708,7 +724,7 @@ export async function promptAiSdk(
       ...params.include,
       requestBody: true,
     },
-    providerOptions: getProviderOptions({
+    providerOptions: params.byok ? undefined : getProviderOptions({
       ...params,
       agentProviderOptions: params.agentProviderOptions,
       cacheDebugCorrelation: params.cacheDebugCorrelation,
@@ -749,7 +765,7 @@ export async function promptAiSdk(
 }
 
 export async function promptAiSdkStructured<T>(
-  params: PromptAiSdkStructuredInput<T>,
+  params: PromptAiSdkStructuredInput<T> & { byok?: ResolvedByokConnection },
 ): PromptAiSdkStructuredOutput<T> {
   const { logger } = params
 
@@ -767,17 +783,24 @@ export async function promptAiSdkStructured<T>(
     apiKey: params.apiKey,
     model: params.model,
     userId: params.userId,
+    byok: params.byok,
   })
 
   const response = await generateText({
     ...params,
+    ...(params.byok && {
+      maxOutputTokens: Math.min(
+        params.maxTokens ?? byokModelLimits(params.byok).maxOutputTokens,
+        byokModelLimits(params.byok).maxOutputTokens,
+      ),
+    }),
     prompt: undefined,
     model: aiSDKModel,
     output: Output.object({ schema: params.schema }),
     messages: convertCbToModelMessages(params),
     allowSystemInMessages: true,
     include: { requestBody: true },
-    providerOptions: getProviderOptions({
+    providerOptions: params.byok ? undefined : getProviderOptions({
       ...params,
       agentProviderOptions: params.agentProviderOptions,
       cacheDebugCorrelation: params.cacheDebugCorrelation,

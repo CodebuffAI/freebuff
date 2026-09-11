@@ -82,6 +82,8 @@ export type CliEnv = BaseEnv & {
   // the PowerShell process shape conflicts with endpoint-security policy.
   CODEBUFF_NO_TERMINAL_WATCHDOG?: string
   FREEBUFF_MODE?: string
+  /** Absolute per-process override for isolated CLI settings and transcripts. */
+  FREEBUFF_CONFIG_DIR?: string
 }
 
 /**

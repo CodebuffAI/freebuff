@@ -42,6 +42,7 @@ const FREEBUFF_REMOVED_COMMAND_IDS = new Set([
 ])
 
 const FREEBUFF_ONLY_COMMAND_IDS = new Set([
+  'byok',
   'plan',
   'end-session',
   'dashboard',
@@ -185,6 +186,12 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     id: 'theme:toggle',
     label: 'theme:toggle',
     description: 'Toggle between light and dark mode',
+  },
+  {
+    id: 'byok',
+    label: 'byok',
+    description: 'Manage direct OpenRouter or OpenAI-compatible inference',
+    aliases: ['provider'],
   },
   {
     id: 'reasoning',

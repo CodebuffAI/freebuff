@@ -22,6 +22,7 @@ import {
 } from '../hooks/use-subscription-query'
 import { useChatStore } from '../state/chat-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
+import { useByokSelectionStore } from '../utils/byok'
 import { IS_FREEBUFF } from '../utils/constants'
 import { logger } from '../utils/logger'
 import {
@@ -114,7 +115,13 @@ export const ChatRuntimeProvider = ({
   }, [askUserState, mainAgentTimer])
 
   const freebuffSession = useFreebuffSessionStore((state) => state.session)
-  const sendBlocked = IS_FREEBUFF && !holdsLiveFreebuffSlot(freebuffSession)
+  const hasSelectedByokConnection = useByokSelectionStore(
+    (state) => state.selected !== undefined,
+  )
+  const sendBlocked =
+    IS_FREEBUFF &&
+    !hasSelectedByokConnection &&
+    !holdsLiveFreebuffSlot(freebuffSession)
 
   useEffect(() => {
     if (sendBlocked) {

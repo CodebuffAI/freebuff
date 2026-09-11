@@ -25,6 +25,7 @@ const clearAuthLoggerContext = () => {
 
 interface UseAuthStateOptions {
   requireAuth: boolean | null
+  skipAuth?: boolean
   inputRef: React.MutableRefObject<MultilineInputHandle | null>
   setInputFocused: (focused: boolean) => void
   resetChatStore: () => void
@@ -32,11 +33,12 @@ interface UseAuthStateOptions {
 
 export const useAuthState = ({
   requireAuth,
+  skipAuth = false,
   inputRef,
   setInputFocused,
   resetChatStore,
 }: UseAuthStateOptions) => {
-  const authQuery = useAuthQuery()
+  const authQuery = useAuthQuery({ enabled: !skipAuth })
   const logoutMutation = useLogoutMutation()
   const { resetLoginState } = useLoginStore()
 

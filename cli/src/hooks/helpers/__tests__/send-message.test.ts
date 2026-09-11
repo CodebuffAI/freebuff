@@ -505,9 +505,132 @@ describe('handleRunCompletion', () => {
       IS_FREEBUFF ? FREEBUFF_PROVIDER_USAGE_MESSAGE : 'Not Enough Credits',
     )
   })
+
+  test('hosted completion 402 retains credit-mode handling', () => {
+    let messages = createBaseMessages()
+    const timerController = createMockTimerController()
+    const updater = createBatchedMessageUpdater('ai-1', (fn: any) => {
+      messages = fn(messages)
+    })
+    const originalGetState = useChatStore.getState
+    const setInputModeMock = mock(() => {})
+    useChatStore.getState = () => ({
+      ...originalGetState(),
+      setInputMode: setInputModeMock,
+    })
+
+    try {
+      handleRunCompletion({
+        runState: {
+          traceSessionId: 'trace-test',
+          sessionState: undefined,
+          output: {
+            type: 'error',
+            statusCode: 402,
+            message: 'Out of credits',
+          },
+        },
+        actualCredits: undefined,
+        agentMode: 'DEFAULT' as any,
+        timerController,
+        updater,
+        aiMessageId: 'ai-1',
+        wasAbortedByUser: false,
+        isByokRun: false,
+        setStreamStatus: () => {},
+        setCanProcessQueue: () => {},
+        updateChainInProgress: () => {},
+        setHasReceivedPlanResponse: () => {},
+      })
+
+      if (IS_FREEBUFF) {
+        expect(setInputModeMock).not.toHaveBeenCalled()
+      } else {
+        expect(setInputModeMock).toHaveBeenCalledWith('outOfCredits')
+      }
+    } finally {
+      useChatStore.getState = originalGetState
+    }
+  })
+
+  test('BYOK completion 429 preserves the provider message', () => {
+    let messages = createBaseMessages()
+    const updater = createBatchedMessageUpdater('ai-1', (fn: any) => {
+      messages = fn(messages)
+    })
+
+    handleRunCompletion({
+      runState: {
+        traceSessionId: 'trace-test',
+        sessionState: undefined,
+        output: {
+          type: 'error',
+          statusCode: 429,
+          message: 'Provider rate limit exceeded',
+        },
+      },
+      actualCredits: undefined,
+      agentMode: 'DEFAULT' as any,
+      timerController: createMockTimerController(),
+      updater,
+      aiMessageId: 'ai-1',
+      wasAbortedByUser: false,
+      isByokRun: true,
+      setStreamStatus: () => {},
+      setCanProcessQueue: () => {},
+      updateChainInProgress: () => {},
+      setHasReceivedPlanResponse: () => {},
+    })
+
+    expect(messages[0]?.userError).toBe('Provider rate limit exceeded')
+  })
+
+  test('BYOK completion 402 preserves the provider message and leaves the composer usable', () => {
+    let messages = createBaseMessages()
+    const timerController = createMockTimerController()
+    const updater = createBatchedMessageUpdater('ai-1', (fn: any) => {
+      messages = fn(messages)
+    })
+    const originalGetState = useChatStore.getState
+    const setInputModeMock = mock(() => {})
+    useChatStore.getState = () => ({
+      ...originalGetState(),
+      setInputMode: setInputModeMock,
+    })
+
+    try {
+      handleRunCompletion({
+        runState: {
+          traceSessionId: 'trace-test',
+          sessionState: undefined,
+          output: {
+            type: 'error',
+            statusCode: 402,
+            message: 'Provider quota exhausted',
+          },
+        },
+        actualCredits: undefined,
+        agentMode: 'DEFAULT' as any,
+        timerController,
+        updater,
+        aiMessageId: 'ai-1',
+        wasAbortedByUser: false,
+        isByokRun: true,
+        setStreamStatus: () => {},
+        setCanProcessQueue: () => {},
+        updateChainInProgress: () => {},
+        setHasReceivedPlanResponse: () => {},
+      })
+
+      expect(messages[0]?.userError).toBe('Provider quota exhausted')
+      expect(setInputModeMock).not.toHaveBeenCalled()
+    } finally {
+      useChatStore.getState = originalGetState
+    }
+  })
 })
 
-describe('finalizeQueueState', () => {
+describe('finalizeQueueState' , () => {
   test('sets stream status to idle and resets queue state', () => {
     let streamStatus = 'streaming' as StreamStatus
     let canProcessQueue = false
@@ -527,7 +650,7 @@ describe('finalizeQueueState', () => {
       isProcessingQueueRef,
     })
 
-    expect(streamStatus).toBe('idle')
+    expect(String(streamStatus)).toBe('idle')
     expect(canProcessQueue).toBe(true)
     expect(chainInProgress).toBe(false)
     expect(isProcessingQueueRef.current).toBe(false)
@@ -864,6 +987,145 @@ describe('handleRunError', () => {
 
     // Timer should be stopped with error
     expect(timerController.stopCalls).toContain('error')
+  })
+
+  test('BYOK thrown 429 preserves the provider message', () => {
+    let messages = createBaseMessages()
+    const updater = createBatchedMessageUpdater('ai-1', (fn: any) => {
+      messages = fn(messages)
+    })
+
+    const providerRateLimitError = Object.assign(
+      new Error('Provider rate limit exceeded'),
+      { statusCode: 429 },
+    )
+
+    handleRunError({
+      error: providerRateLimitError,
+      timerController: createMockTimerController(),
+      updater,
+      setIsRetrying: () => {},
+      setStreamStatus: () => {},
+      setCanProcessQueue: () => {},
+      updateChainInProgress: () => {},
+      isByokRun: true,
+    })
+
+    expect(messages[0]?.userError).toBe('Provider rate limit exceeded')
+  })
+
+  test('BYOK thrown 401 preserves the provider key guidance instead of Freebuff billing text', () => {
+    let messages = createBaseMessages()
+    const updater = createBatchedMessageUpdater('ai-1', (fn: any) => {
+      messages = fn(messages)
+    })
+    const setInputModeMock = mock(() => {})
+    useChatStore.getState = () => ({
+      ...originalGetState(),
+      setInputMode: setInputModeMock,
+    })
+
+    handleRunError({
+      error: Object.assign(new Error('BYOK provider rejected the API key (HTTP 401). Check or replace the key.'), {
+        statusCode: 401,
+      }),
+      timerController: createMockTimerController(),
+      updater,
+      setIsRetrying: () => {},
+      setStreamStatus: () => {},
+      setCanProcessQueue: () => {},
+      updateChainInProgress: () => {},
+      isByokRun: true,
+    })
+
+    expect(messages[0]?.userError).toContain('Check or replace the key')
+    expect(messages[0]?.userError).not.toBe(FREEBUFF_PROVIDER_USAGE_MESSAGE)
+    expect(setInputModeMock).not.toHaveBeenCalled()
+  })
+
+  test('BYOK network failure restores the send state for a retry', () => {
+    let messages = createBaseMessages()
+    let streamStatus: StreamStatus = 'streaming'
+    let canProcessQueue = false
+    let chainInProgress = true
+    let isRetrying = true
+    const updater = createBatchedMessageUpdater('ai-1', (fn: any) => {
+      messages = fn(messages)
+    })
+
+    handleRunError({
+      error: new Error('Could not connect to the BYOK provider. Check the provider URL and network connection, then retry.'),
+      timerController: createMockTimerController(),
+      updater,
+      setIsRetrying: (value) => { isRetrying = value },
+      setStreamStatus: (value: StreamStatus) => { streamStatus = value },
+      setCanProcessQueue: (value: boolean) => { canProcessQueue = value },
+      updateChainInProgress: (value: boolean) => { chainInProgress = value },
+      isByokRun: true,
+    })
+
+    expect(messages[0]?.userError).toContain('network connection')
+    expect(String(streamStatus)).toBe('idle')
+    expect(canProcessQueue).toBe(true)
+    expect(chainInProgress).toBe(false)
+    expect(isRetrying).toBe(false)
+  })
+
+  test('BYOK thrown 402 preserves the provider message and leaves the composer usable', () => {
+    let messages = createBaseMessages()
+    const timerController = createMockTimerController()
+    const updater = createBatchedMessageUpdater('ai-1', (fn: any) => {
+      messages = fn(messages)
+    })
+    const setInputModeMock = mock(() => {})
+    useChatStore.getState = () => ({
+      ...originalGetState(),
+      setInputMode: setInputModeMock,
+    })
+
+    handleRunError({
+      error: createPaymentRequiredError('Provider quota exhausted'),
+      timerController,
+      updater,
+      setIsRetrying: () => {},
+      setStreamStatus: () => {},
+      setCanProcessQueue: () => {},
+      updateChainInProgress: () => {},
+      isByokRun: true,
+    })
+
+    expect(messages[0]?.userError).toContain('Provider quota exhausted')
+    expect(setInputModeMock).not.toHaveBeenCalled()
+  })
+
+  test('hosted thrown 402 retains credit-mode handling', () => {
+    let messages = createBaseMessages()
+    const timerController = createMockTimerController()
+    const updater = createBatchedMessageUpdater('ai-1', (fn: any) => {
+      messages = fn(messages)
+    })
+    const setInputModeMock = mock(() => {})
+    useChatStore.getState = () => ({
+      ...originalGetState(),
+      setInputMode: setInputModeMock,
+    })
+
+    handleRunError({
+      error: createPaymentRequiredError('Out of credits'),
+      timerController,
+      updater,
+      setIsRetrying: () => {},
+      setStreamStatus: () => {},
+      setCanProcessQueue: () => {},
+      updateChainInProgress: () => {},
+      isByokRun: false,
+    })
+
+    if (IS_FREEBUFF) {
+      expect(setInputModeMock).not.toHaveBeenCalled()
+    } else {
+      expect(setInputModeMock).toHaveBeenCalledWith('outOfCredits')
+    }
   })
 
   test('Payment required error (402) uses the billing policy for this client', () => {

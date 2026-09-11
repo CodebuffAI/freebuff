@@ -220,6 +220,8 @@ export interface AgentDefinition {
   compactContext?:
     | boolean
     | {
+        /** Explicit input budget for a custom model, after reserving output tokens. */
+        maxContextLength?: number
         cacheExpiryMs?: number | null
         cacheExpiryMinTokens?: number | null
       }

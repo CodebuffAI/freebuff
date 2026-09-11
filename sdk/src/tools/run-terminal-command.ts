@@ -300,6 +300,8 @@ export function runTerminalCommand({
   cwd,
   timeout_seconds,
   env,
+  scrubEnvironmentKeys,
+  scrubEnvironmentValues,
   signal,
   terminalCommandBroker,
 }: {
@@ -308,6 +310,9 @@ export function runTerminalCommand({
   cwd: string
   timeout_seconds: number
   env?: NodeJS.ProcessEnv
+  /** Keys removed after merging the host environment. Used for run-only keys. */
+  scrubEnvironmentKeys?: readonly string[]
+  scrubEnvironmentValues?: readonly string[]
   signal?: AbortSignal
   terminalCommandBroker?: TerminalCommandBroker
 }): Promise<CodebuffToolOutput<'run_terminal_command'>> {
@@ -321,6 +326,12 @@ export function runTerminalCommand({
       ...getSystemProcessEnv(),
       ...(env ?? {}),
     } as NodeJS.ProcessEnv
+    for (const key of scrubEnvironmentKeys ?? []) delete processEnv[key]
+    for (const [key, value] of Object.entries(processEnv)) {
+      if (value !== undefined && scrubEnvironmentValues?.some((secret) => value.trim() === secret.trim())) {
+        delete processEnv[key]
+      }
+    }
     if (isWindows) {
       // Preserve other MSYS options while preventing Git Bash descendants from
       // allocating a ConPTY despite the detached/hidden process flags.

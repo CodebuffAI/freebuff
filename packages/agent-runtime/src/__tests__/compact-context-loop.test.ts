@@ -190,6 +190,27 @@ describe('compactContext in loopAgentSteps', () => {
     expect(history).toContain('<conversation_summary>')
   })
 
+  it('uses a custom model input budget rather than the hosted model default', async () => {
+    const history = idleHistory(0)
+    history.splice(1, 0, {
+      ...assistantMessage('old context '.repeat(2000)),
+      sentAt: 1_000_000,
+    })
+    await runLoop(
+      {
+        ...baseTemplate,
+        compactContext: { maxContextLength: 1024, cacheExpiryMs: null },
+      },
+      history,
+    )
+    expect(seenMessages[0].map(textOf).join('\n')).toContain(
+      '<conversation_summary>',
+    )
+    expect(seenMessages[0].map(textOf).join('\n')).toContain(
+      'the live question',
+    )
+  })
+
   it('honours a per-agent cache TTL', async () => {
     await runLoop(
       {

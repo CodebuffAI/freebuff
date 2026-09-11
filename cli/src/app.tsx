@@ -19,6 +19,7 @@ import { stopActiveRun } from './utils/active-run'
 import { useChatStore } from './state/chat-store'
 import type { TopBannerType } from './types/store'
 import { IS_FREEBUFF } from './utils/constants'
+import { useByokSelectionStore } from './utils/byok'
 import { findGitRoot } from './utils/git'
 
 import type { MultilineInputHandle } from './components/multiline-input'
@@ -51,6 +52,9 @@ export const App = ({
   showProjectPicker,
   onProjectChange,
 }: AppProps) => {
+  const hasSelectedByokConnection = useByokSelectionStore(
+    (state) => state.selected !== undefined,
+  )
   const inputRef = useRef<MultilineInputHandle | null>(null)
   const initialPromptConsumedRef = useRef(false)
   const consumeInitialPrompt = useCallback(() => {
@@ -93,7 +97,9 @@ export const App = ({
   })
 
   // Get auth query for network status tracking
-  const authQuery = useAuthQuery()
+  const authQuery = useAuthQuery({
+    enabled: !(IS_FREEBUFF && hasSelectedByokConnection),
+  })
 
   const {
     isAuthenticated,
@@ -103,6 +109,7 @@ export const App = ({
     logoutMutation,
   } = useAuthState({
     requireAuth,
+    skipAuth: IS_FREEBUFF && hasSelectedByokConnection,
     inputRef,
     setInputFocused,
     resetChatStore,
@@ -228,6 +235,7 @@ export const App = ({
   if (
     requireAuth !== null &&
     isAuthenticated === false &&
+    !(IS_FREEBUFF && hasSelectedByokConnection) &&
     authStatus === 'ok'
   ) {
     return (
@@ -293,12 +301,15 @@ interface AuthedSurfaceProps {
  * we have a token).
  */
 const AuthedSurface = (props: AuthedSurfaceProps) => {
+  const hasSelectedByokConnection = useByokSelectionStore(
+    (state) => state.selected !== undefined,
+  )
   const {
     session,
     failure: sessionFailure,
     lastRefund,
     refundPending,
-  } = useFreebuffSession()
+  } = useFreebuffSession({ enabled: !hasSelectedByokConnection })
 
   return (
     <ChatRuntimeProvider
@@ -344,10 +355,17 @@ const AuthedSurfaceRoutes = ({
   lastRefund: ReturnType<typeof useFreebuffSession>['lastRefund']
   refundPending: boolean
 }) => {
+  const hasSelectedByokConnection = useByokSelectionStore(
+    (state) => state.selected !== undefined,
+  )
   // Terminal state: a 409 from the gate means another CLI rotated our
   // instance id. Show a dedicated screen and stop polling — don't fall back
   // into the pre-chat screen, which would look like normal startup progress.
-  if (IS_FREEBUFF && session?.status === 'superseded') {
+  if (
+    IS_FREEBUFF &&
+    !hasSelectedByokConnection &&
+    session?.status === 'superseded'
+  ) {
     return <FreebuffSupersededScreen />
   }
 
@@ -366,6 +384,7 @@ const AuthedSurfaceRoutes = ({
   // itself swaps the input box for the session-ended banner.
   if (
     IS_FREEBUFF &&
+    !hasSelectedByokConnection &&
     (session === null ||
       session.status === 'none' ||
       session.status === 'country_blocked' ||
