@@ -104,6 +104,63 @@ export const ADS_IMPREZIA_FETCH_COMPLETED_EVENT =
  * `reason` is a closed enum owned by `ad-route-rate-limit.ts`.
  */
 export const ADS_REQUEST_REJECTED_EVENT = 'ads.request_rejected' as const
+export const ADS_SHOWCASE_PRESENTED_EVENT =
+  AnalyticsEvent.ADS_SHOWCASE_PRESENTED
+
+const SHOWCASE_PRESENTATION_VARIANTS = [
+  'curated',
+  'legacy',
+  'inline_fallback',
+  'text_only_image_failure',
+] as const
+
+/** Bounded client report of a presentation; this does not prove delivery. */
+export function createGravityShowcasePresentationTelemetry(
+  value: unknown,
+): Record<string, string> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const row = value as Record<string, unknown>
+  const variant = row.gravity_showcase_variant
+  const inlineFallback = variant === 'inline_fallback'
+  if (
+    row.gravity_showcase_version !== 'gravity-showcase-v1' ||
+    typeof row.gravity_showcase_config_id !== 'string' ||
+    !/^gsc_[a-z0-9]{1,60}$/.test(row.gravity_showcase_config_id) ||
+    (row.gravity_showcase_arm !== 'treatment' &&
+      row.gravity_showcase_arm !== 'control') ||
+    typeof row.gravity_showcase_attempt_id !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      row.gravity_showcase_attempt_id,
+    ) ||
+    typeof row.gravity_showcase_opportunity_id !== 'string' ||
+    !/^opp_[0-9a-f]{32}$/.test(row.gravity_showcase_opportunity_id) ||
+    typeof variant !== 'string' ||
+    !(SHOWCASE_PRESENTATION_VARIANTS as readonly string[]).includes(variant) ||
+    row.placement_id !==
+      (inlineFallback ? 'Desktop-Below-Chat' : 'Desktop-Showcase') ||
+    row.format !== (inlineFallback ? 'inline' : 'showcase') ||
+    row.surface !== 'cli_chat' ||
+    row.client_family !== 'desktop' ||
+    typeof row.client_event_id !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      row.client_event_id,
+    )
+  )
+    return null
+  return {
+    gravity_showcase_version: row.gravity_showcase_version,
+    gravity_showcase_config_id: row.gravity_showcase_config_id,
+    gravity_showcase_arm: row.gravity_showcase_arm,
+    gravity_showcase_attempt_id: row.gravity_showcase_attempt_id,
+    gravity_showcase_opportunity_id: row.gravity_showcase_opportunity_id,
+    gravity_showcase_variant: variant,
+    placement_id: inlineFallback ? 'Desktop-Below-Chat' : 'Desktop-Showcase',
+    surface: row.surface,
+    format: inlineFallback ? 'inline' : 'showcase',
+    client_event_id: row.client_event_id,
+    client_family: row.client_family,
+  }
+}
 
 type AxiomOnlyFieldType = 'string' | 'number' | 'boolean'
 type AxiomOnlyFieldSchema = Record<string, AxiomOnlyFieldType>
@@ -382,6 +439,11 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    */
   sponsor_break_arm: 'string',
   showcase_arm: 'string',
+  /** COD-548: bounded server-derived Gravity Showcase experiment correlation. */
+  gravity_showcase_version: 'string',
+  gravity_showcase_config_id: 'string',
+  gravity_showcase_arm: 'string',
+  gravity_showcase_attempt_id: 'string',
   /**
    * The daily-cap verdict, present only on a request that RESOLVED a break
    * placement: `allowed`, `capped`, `too_early` or `unavailable`.
@@ -851,6 +913,7 @@ export type AxiomOnlyLogEvent = {
     | typeof ADS_MCP_TOOL_CALL_EVENT
     | typeof ADS_IMPREZIA_FETCH_COMPLETED_EVENT
     | typeof ADS_REQUEST_REJECTED_EVENT
+    | typeof ADS_SHOWCASE_PRESENTED_EVENT
     | SponsorBreakEvent
   data: Record<string, string | number | boolean>
 }
@@ -955,6 +1018,13 @@ export function getAxiomOnlyLogEvent(
       event: eventName,
       data: sanitizeAllowlistedFields(record, ADS_REQUEST_REJECTED_FIELDS),
     }
+  }
+  if (eventName === ADS_SHOWCASE_PRESENTED_EVENT) {
+    const data = createGravityShowcasePresentationTelemetry(record)
+    // Keep the event inside the restricted branch even when malformed. The
+    // sink treats `null` as an ordinary row and would otherwise retain the raw
+    // client payload that failed validation.
+    return { event: eventName, data: data ?? {} }
   }
   if (
     eventName === ADS_BREAK_SHOWN_EVENT ||

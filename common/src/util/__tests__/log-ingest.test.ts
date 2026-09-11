@@ -20,7 +20,85 @@ const acknowledgement = {
   client_family: 'cli',
 }
 
+const showcasePresentation = {
+  gravity_showcase_version: 'gravity-showcase-v1',
+  gravity_showcase_config_id: 'gsc_abc123',
+  gravity_showcase_arm: 'control',
+  gravity_showcase_attempt_id: '5b32fd40-758b-4d10-8ce5-9fd098299453',
+  gravity_showcase_opportunity_id: 'opp_0123456789abcdef0123456789abcdef',
+  gravity_showcase_variant: 'inline_fallback',
+  placement_id: 'Desktop-Below-Chat',
+  surface: 'cli_chat',
+  format: 'inline',
+  client_event_id: '6b32fd40-758b-4d10-8ce5-9fd098299453',
+  client_family: 'desktop',
+}
+
 describe('buildLogRows', () => {
+  test('bounds authenticated Showcase presentation and clears free-form identity', () => {
+    const [row] = buildLogRows({
+      ...base,
+      records: [
+        {
+          level: 'info',
+          event: AnalyticsEvent.ADS_SHOWCASE_PRESENTED,
+          timestamp: '2099-01-01T00:00:00.000Z',
+          message: 'private message',
+          client_session_id: 'private-session',
+          client_request_id: 'private-request',
+          fingerprint_id: 'private-fingerprint',
+          data: { ...showcasePresentation, token: 'private-token' },
+        },
+      ],
+    })
+    expect(row).toMatchObject({
+      timestamp: base.now,
+      event: AnalyticsEvent.ADS_SHOWCASE_PRESENTED,
+      message: null,
+      user_id: base.userId,
+      client_session_id: null,
+      client_request_id: null,
+      fingerprint_id: null,
+      data: showcasePresentation,
+    })
+    expect(JSON.stringify(row)).not.toContain('private')
+  })
+
+  test('drops anonymous and malformed Showcase presentation rows', () => {
+    const record = {
+      level: 'info' as const,
+      event: AnalyticsEvent.ADS_SHOWCASE_PRESENTED,
+      data: showcasePresentation,
+    }
+    expect(buildLogRows({ ...base, userId: null, records: [record] })).toEqual(
+      [],
+    )
+    expect(
+      buildLogRows({
+        ...base,
+        records: [
+          { ...record, data: { ...showcasePresentation, format: 'showcase' } },
+        ],
+      }),
+    ).toEqual([])
+    expect(
+      buildLogRows({
+        ...base,
+        userId: null,
+        records: [
+          {
+            level: 'info',
+            event: 'ordinary.event',
+            data: {
+              ...showcasePresentation,
+              axiomEvent: AnalyticsEvent.ADS_SHOWCASE_PRESENTED,
+              token: 'private-token',
+            },
+          },
+        ],
+      }),
+    ).toEqual([])
+  })
   test('accepts only the exact view acknowledgement payload, clears every identity field, and uses server receive time', () => {
     const [row] = buildLogRows({
       ...base,

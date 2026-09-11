@@ -13,6 +13,7 @@ import {
   ADS_ADVERTISER_REPORTING_READ_EVENT,
   ADS_MCP_TOOL_CALL_EVENT,
   ADS_IMPREZIA_FETCH_COMPLETED_EVENT,
+  ADS_SHOWCASE_PRESENTED_EVENT,
   CONTEXT_PRUNING_COMPLETED_EVENT,
   getAxiomOnlyLogEvent,
   STREAM_RECOVERY_EVENT,
@@ -22,6 +23,43 @@ import {
 } from '../axiom-only-log'
 
 describe('getAxiomOnlyLogEvent', () => {
+  test('strictly bounds client-reported Showcase presentation telemetry', () => {
+    const valid = {
+      axiomEvent: ADS_SHOWCASE_PRESENTED_EVENT,
+      gravity_showcase_version: 'gravity-showcase-v1',
+      gravity_showcase_config_id: 'gsc_abc123',
+      gravity_showcase_arm: 'treatment',
+      gravity_showcase_attempt_id: '5b32fd40-758b-4d10-8ce5-9fd098299453',
+      gravity_showcase_opportunity_id: 'opp_0123456789abcdef0123456789abcdef',
+      gravity_showcase_variant: 'curated',
+      placement_id: 'Desktop-Showcase',
+      surface: 'cli_chat',
+      format: 'showcase',
+      client_event_id: '6b32fd40-758b-4d10-8ce5-9fd098299453',
+      client_family: 'desktop',
+      token: 'private-token',
+    }
+    const result = getAxiomOnlyLogEvent(valid)
+    expect(result?.event).toBe(ADS_SHOWCASE_PRESENTED_EVENT)
+    expect(result?.data).not.toHaveProperty('token')
+    expect(result?.data).toMatchObject({
+      gravity_showcase_attempt_id: valid.gravity_showcase_attempt_id,
+      gravity_showcase_variant: 'curated',
+      placement_id: 'Desktop-Showcase',
+      format: 'showcase',
+    })
+    for (const invalid of [
+      { ...valid, gravity_showcase_arm: 'other' },
+      { ...valid, gravity_showcase_attempt_id: 'not-a-uuid' },
+      { ...valid, gravity_showcase_opportunity_id: 'opp_private' },
+      { ...valid, placement_id: 'Desktop-Below-Chat' },
+      { ...valid, client_family: 'web' },
+    ])
+      expect(getAxiomOnlyLogEvent(invalid)).toEqual({
+        event: ADS_SHOWCASE_PRESENTED_EVENT,
+        data: {},
+      })
+  })
   test('keeps a content-free MCP census and drops arguments, results and secrets', () => {
     expect(getAxiomOnlyLogEvent({
       axiomEvent: ADS_MCP_TOOL_CALL_EVENT,
