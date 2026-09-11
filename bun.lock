@@ -446,7 +446,7 @@
 
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
 
-    "@posthog/core": ["@posthog/core@1.53.0", "", { "dependencies": { "@posthog/types": "^1.411.0" } }, "sha512-qlEavIUVIdTUJIsJoMLO+mPxB9OfUiTMPwaIRkO+r8iabEQGeatu+MDCiDWYIvHaSQsWQhBvZfojYRmqoom7KQ=="],
+    "@posthog/core": ["@posthog/core@1.53.1", "", { "dependencies": { "@posthog/types": "^1.411.0" } }, "sha512-7mBwBWbcowIHVgwzGC5SHXI74hHLqu3Z2PDZqtuaSn3h+GHrr9GNf1+tFg85mijPZ97PxamBMm82qd2MmpWxdg=="],
 
     "@posthog/types": ["@posthog/types@1.411.0", "", {}, "sha512-QGdIzlcdCHKYvu3aANP2yjM80ly5Y5BRCygFrLMzavJ9WqiLtsPJQG1fRnpMAelK3j07DjmVwgTSlFY1FBCpzw=="],
 
@@ -1336,7 +1336,7 @@
 
     "postgres-interval": ["postgres-interval@1.2.0", "", { "dependencies": { "xtend": "^4.0.0" } }, "sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ=="],
 
-    "posthog-node": ["posthog-node@5.52.0", "", { "dependencies": { "@posthog/core": "^1.53.0" }, "peerDependencies": { "rxjs": "^7.0.0" }, "optionalPeers": ["rxjs"] }, "sha512-WTYvQ4Y7yO1KGDnfQpHAUszx4O9M9W0Cuz6sEJSn0Wxpd8v21miZ3yu6VrRsfpBw796HDvZjN9NGhh1woD5ZRg=="],
+    "posthog-node": ["posthog-node@5.52.1", "", { "dependencies": { "@posthog/core": "^1.53.1" }, "peerDependencies": { "rxjs": "^7.0.0" }, "optionalPeers": ["rxjs"] }, "sha512-Xt0xazhAR1Bf2DEnPPZETkWx19jckKeMkJ4qMMTv1xuyKSNjy8AXREEkiuDbJWWr3k6KpgoYH6sURWBROpRKlA=="],
 
     "preact": ["preact@10.29.8", "", { "peerDependencies": { "preact-render-to-string": ">=5" }, "optionalPeers": ["preact-render-to-string"] }, "sha512-ej2aVZ+vZ8WO7tvlQWRM9N63A0KzF9q4mWJfDUHgYaIofWY9hu74QdnQrjoPMmZi2/nZ5gN0bJCQF49xQqx09Q=="],
 
@@ -1662,7 +1662,7 @@
 
     "yoga-layout": ["yoga-layout@3.2.1", "", {}, "sha512-0LPOt3AxKqMdFBZA3HBAt/t/8vIKq7VaQYbuA8WxCgung+p9TVyKRYdpvCb80HcdTN2NkbIKbhNwKUfm3tQywQ=="],
 
-    "zod": ["zod@4.6.1", "", {}, "sha512-341aRWQsve0rvronKNTqZpjmzdbUDlFuzHaI/XLg/Ej82qffDJRRfBTCuv7+9q/rMjB6LSLyEBnW4InJeMtt/Q=="],
+    "zod": ["zod@4.6.2", "", {}, "sha512-lh5RCAGFa1Cm2hjtNwLQhSs/AsqdWnTQaBER9fEwN/88pSh7KOtJavtBx/0VlkN/uFd61SwYmljLMDAsHlvzBQ=="],
 
     "zod-from-json-schema": ["zod-from-json-schema@0.4.2", "", { "dependencies": { "zod": "^3.25.25" } }, "sha512-U+SIzUUT7P6w1UNAz81Sj0Vko77eQPkZ8LbJeXqQbwLmq1MZlrjB3Gj4LuebqJW25/CzS9WA8SjTgR5lvuv+zA=="],
 
