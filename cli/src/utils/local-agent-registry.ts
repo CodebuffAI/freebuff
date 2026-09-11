@@ -55,6 +55,8 @@ let mcpServersCache: Record<string, MCPConfig> = {}
  * Later directories take precedence, so project agents override global ones.
  */
 export async function initializeAgentRegistry(): Promise<void> {
+  cachedAgentsByMode.clear()
+  cachedAgentsDir = null
   try {
     // Let SDK load from all default directories (cwd, parent, home)
     userAgentsCache = await sdkLoadLocalAgents({ verbose: false })
