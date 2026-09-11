@@ -22,6 +22,79 @@ const logger = {
   },
 }
 
+describe('credit calculation from OpenRouter usage accounting', () => {
+  test('takes max of cost and upstream_inference_cost, never the sum', async () => {
+    // usage.cost is the total amount charged and already includes the
+    // upstream portion reported separately in cost_details
+    // (issue #1164): summing them roughly doubles credits on normal
+    // OpenRouter routes. BYOK routes carry the spend in upstream with
+    // cost = 0, which max handles and sum would zero out.
+    const costs: number[] = []
+    const chunks = [
+      {
+        id: 'chatcmpl-credits-1',
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'test-model',
+        choices: [
+          {
+            index: 0,
+            delta: { content: 'hello' },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        id: 'chatcmpl-credits-1',
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'test-model',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 20,
+          total_tokens: 120,
+          cost: 0.01,
+          cost_details: { upstream_inference_cost: 0.02 },
+        },
+      },
+    ]
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(
+          `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`,
+          { headers: { 'Content-Type': 'text/event-stream' } },
+        ),
+      )) as unknown as typeof fetch
+
+    const stream = promptAiSdkStream({
+      apiKey: 'test-key',
+      runId: 'run-credits-1',
+      messages: [{ role: 'user', content: 'hello' }],
+      clientSessionId: 'session-credits-1',
+      fingerprintId: 'fingerprint-credits-1',
+      model: 'openai/gpt-5.6-luna',
+      userId: 'user-1',
+      userInputId: 'input-credits-1',
+      onCostCalculated: async (credits: number) => {
+        costs.push(credits)
+      },
+      sendAction: async () => undefined,
+      logger,
+      trackEvent: async () => undefined,
+      signal: new AbortController().signal,
+    } as unknown as Parameters<typeof promptAiSdkStream>[0])
+
+    for await (const chunk of stream) {
+      void chunk
+    }
+
+    expect(costs).toHaveLength(1)
+    // max(0.01, 0.02) = 0.02 → * 1.055 margin * 100 credits-per-dollar.
+    expect(costs[0]).toBe(Math.round(0.02 * 1.055 * 100))
+  })
+})
+
 describe('stream usage receipts', () => {
   test('reports final usage and cost before yielding an output-limit recovery', async () => {
     const usage: Array<Record<string, number | undefined>> = []
