@@ -13,6 +13,7 @@
  */
 
 import { AD_CAMPAIGN_STATUSES } from './freebuff-ads'
+import { IOS_AD_PLACEMENTS, IOS_AD_SURFACE } from '../ads/ios-placements'
 
 import type { AdCampaignStatus } from './freebuff-ads'
 
@@ -189,6 +190,12 @@ export function isInterruptingBreakFormat(format: PlacementFormat): boolean {
  * rendered surface.
  */
 export const PLACEMENT_SLOTS = [
+  ...IOS_AD_PLACEMENTS.map(({ id }) => ({
+    id,
+    surface: IOS_AD_SURFACE,
+    available: true,
+    format: 'inline' as const,
+  })),
   {
     id: 'waiting-room-1',
     surface: 'waiting_room',

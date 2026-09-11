@@ -172,7 +172,7 @@ describe('house ad catalog', () => {
     expect(HOUSE_AD_DISPLAY_CREATIVE).toBe(HOUSE_AD_DISPLAY_VARIATIONS[0]!)
   })
 
-  test('every sellable slot belongs to a surface that has copy', () => {
+  test('every sellable surface has house copy except the explicit iOS opt-out', () => {
     // The seed script groups slots by surface and skips a surface it has no
     // creatives for. Without this, adding a slot on a new surface would leave
     // that surface out of the campaign silently -- the run would report
@@ -183,6 +183,12 @@ describe('house ad catalog', () => {
       ),
     )
     for (const surface of surfacesWithSlots) {
+      // iOS deliberately has no automatic subscription promotion or seeded
+      // house campaign. Mobile inventory requires a separate, explicit rollout.
+      if (surface === 'ios') {
+        expect(Object.hasOwn(HOUSE_AD_VARIATIONS, surface)).toBe(false)
+        continue
+      }
       expect(HOUSE_AD_VARIATIONS[surface as HouseAdSurface]).toBeDefined()
     }
   })
