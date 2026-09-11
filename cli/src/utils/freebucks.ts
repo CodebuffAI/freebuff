@@ -37,12 +37,12 @@ export function formatFreebucks(amount: number): string {
   return Math.max(0, Math.round(amount)).toLocaleString()
 }
 
-/** The caller's meter, or undefined when this account is not on it. Presence
+/** The caller's meter: null when unavailable, undefined when absent. Presence
  *  of the block IS the gate on every surface — there is deliberately no
  *  client-side role check that could drift from what is actually charged. */
 export function freebucksOf(
   session: { status: string } | null | undefined,
-): FreebuffFreebucksInfo | undefined {
+): FreebuffFreebucksInfo | null | undefined {
   return getFreebucksInfo(
     session as FreebuffSessionServerResponse | null | undefined,
   )
@@ -57,58 +57,14 @@ export function freebucksOf(
  * is the allowlist, so asking it is the only correct way to know.
  */
 export function freebucksPriceFor(
-  freebucks: FreebuffFreebucksInfo | undefined,
+  freebucks: FreebuffFreebucksInfo | null | undefined,
   modelId: string,
 ): number | undefined {
   return freebucks?.prices[modelId]
 }
 
-/**
- * What picking a row costs, and therefore what to ask before it happens.
- *
- * Deliberately identical to Desktop's `freebucksRowIntent` and Web's
- * `rowIntent`: three surfaces selling one currency must not disagree about
- * when it is spent. Ordered by what the case costs the reader —
- *
- * - `paywall` — pool AND wallet together cannot cover it, so nothing else
- *   about the row matters: it cannot start. Refused where the balance is
- *   already on screen rather than after a prompt is typed and thrown away.
- * - `confirm` — affordable, but spends something that does not come back: a
- *   live session, or wallet Freebucks (the daily pool refills at midnight, the
- *   wallet never does).
- * - `allow` — everything else, including every row on an unmetered account.
- *
- * Re-picking the model already running is `allow` on purpose: a question with
- * nothing behind it is one people learn to click through, and then it protects
- * nobody on the picks that matter.
- */
-export type FreebucksRowIntent =
-  | { kind: 'allow'; price: number | undefined; walletSpend: number }
-  | { kind: 'paywall'; price: number; walletSpend: 0 }
-  | { kind: 'confirm'; price: number; walletSpend: number }
-
-export function freebucksRowIntent(
-  freebucks: FreebuffFreebucksInfo | undefined,
-  modelId: string,
-  /** The model the live session is bound to, if there is one. */
-  activeModelId: string | undefined,
-): FreebucksRowIntent {
-  const price = freebucksPriceFor(freebucks, modelId)
-  if (!freebucks || price === undefined) {
-    return { kind: 'allow', price, walletSpend: 0 }
-  }
-  // `<` not `<=`: a balance that exactly equals the price BUYS the session.
-  // `<=` would refuse one the server admits and strand the last Freebucks in
-  // the account.
-  if (freebucks.balance < price) {
-    return { kind: 'paywall', price, walletSpend: 0 }
-  }
-  const walletSpend = Math.max(0, price - freebucks.daily.remaining)
-  const endsSession = activeModelId !== undefined && activeModelId !== modelId
-  return endsSession || walletSpend > 0
-    ? { kind: 'confirm', price, walletSpend }
-    : { kind: 'allow', price, walletSpend }
-}
+export { freebucksRowIntent } from '@codebuff/common/util/freebuff-model-selection'
+export type { FreebucksRowIntent } from '@codebuff/common/util/freebuff-model-selection'
 
 /**
  * The picker's rows, CHEAPEST FIRST — the same order Web and Desktop use.
@@ -127,14 +83,15 @@ export function sortModelsByPrice<
   T extends { id: string; displayName: string },
 >(
   models: readonly T[],
-  freebucks: FreebuffFreebucksInfo | undefined,
+  freebucks: FreebuffFreebucksInfo | null | undefined,
 ): readonly T[] {
   if (!freebucks) return models
   const priceOf = (id: string) =>
     freebucksPriceFor(freebucks, id) ?? Number.POSITIVE_INFINITY
   return [...models].sort(
     (a, b) =>
-      priceOf(a.id) - priceOf(b.id) || a.displayName.localeCompare(b.displayName),
+      priceOf(a.id) - priceOf(b.id) ||
+      a.displayName.localeCompare(b.displayName),
   )
 }
 
@@ -165,7 +122,9 @@ export function freebucksHeaderLine(
     )} ${FREEBUCKS_LABEL} daily`,
   ]
   if (nowMs !== undefined) {
-    parts.push(`resets in ${freebucksResetCountdown(freebucks.daily.resetAt, nowMs)}`)
+    parts.push(
+      `resets in ${freebucksResetCountdown(freebucks.daily.resetAt, nowMs)}`,
+    )
   }
   // An empty wallet is the ordinary case for a free account, and "0 wallet"
   // reads as something to worry about. Web and Desktop hide it too.
@@ -222,7 +181,10 @@ export const FREEBUCKS_PICKER_NOTICE =
  * "4h 12m", "38m", "2d 5h" — until the daily pool refills. Same shape as the
  * Web and Desktop pickers' countdowns; "now" once it has passed.
  */
-export function freebucksResetCountdown(resetAt: string, nowMs: number): string {
+export function freebucksResetCountdown(
+  resetAt: string,
+  nowMs: number,
+): string {
   const remainingMs = Date.parse(resetAt) - nowMs
   if (!Number.isFinite(remainingMs) || remainingMs <= 0) return 'now'
   const totalMinutes = Math.ceil(remainingMs / 60_000)

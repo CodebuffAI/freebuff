@@ -1,10 +1,9 @@
 import type { FreebuffFreebucksInfo } from '../types/freebuff-session'
 
 /** Apply the SERVER'S announced schedule, including on delayed responses. */
-export function applyFreebucksPriceChanges<T extends FreebuffFreebucksInfo>(
-  info: T,
-  now = Date.now(),
-): T {
+export function applyFreebucksPriceChanges<
+  T extends Pick<FreebuffFreebucksInfo, 'prices' | 'priceNotices' | 'priceChanges'>,
+>(info: T, now = Date.now()): T {
   const due = info.priceChanges?.filter(
     (change) => Date.parse(change.at) <= now,
   )
@@ -29,7 +28,7 @@ export function applyFreebucksPriceChanges<T extends FreebuffFreebucksInfo>(
 }
 
 export function nextFreebucksPriceChange(
-  info: FreebuffFreebucksInfo | null | undefined,
+  info: Pick<FreebuffFreebucksInfo, 'priceChanges'> | null | undefined,
 ): number {
   return Math.min(
     ...(info?.priceChanges ?? [])
@@ -40,7 +39,7 @@ export function nextFreebucksPriceChange(
 
 /** Wake an open picker at its quote's next change. Returns effect cleanup. */
 export function watchFreebucksPriceChanges(
-  info: FreebuffFreebucksInfo | null | undefined,
+  info: Pick<FreebuffFreebucksInfo, 'priceChanges'> | null | undefined,
   onChange: () => void,
 ): () => void {
   const next = nextFreebucksPriceChange(info)

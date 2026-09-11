@@ -241,11 +241,15 @@ export interface FreebuffFreebucksMonthlyAllowance {
  * shape carried day/week/month windows beside the session pools' own rings;
  * this one is the whole indicator set for an account on the meter.
  */
+// A session response carries null when this block cannot refresh. Clients
+// must clear the old balance; undefined still means no meter was supplied.
 export interface FreebuffFreebucksInfo {
   /** Server-authorized quota exemption: new sessions remain usable at zero balance. */
   quotaExempt?: boolean
   /** Spendable right now: `daily.remaining + wallet.balance`. */
   balance: number
+  /** Eligible earned grants admission may convert; excluded from spendable balances. */
+  claimableGrantFreebucks?: number
   daily: FreebuffFreebucksWindow
   wallet: FreebuffFreebucksWallet
   /** @deprecated Provider-spend caps are no longer enforced or displayed. */
@@ -548,18 +552,16 @@ export const getRateLimitsByModel = (
         .rateLimitsByModel
     : undefined
 
-/** Pull the per-model subscription offers off whichever statuses carry them
- *  (none, active, ended). Loose parameter type for the same reason as
- *  `getRateLimitsByModel`. Undefined from a server that predates
- *  subscriptions, so callers render nothing rather than an empty upsell. */
-/** The caller's Freebucks block, wherever it rides the response. */
+/** The caller's usable Freebucks block. Wire null means refresh unavailable;
+ * undefined means no meter supplied. Never synthesize a balance for either. */
 export const getFreebucksInfo = (
   session: { status: string } | null | undefined,
-): FreebuffFreebucksInfo | undefined => {
-  const info = session && 'freebucks' in session
-    ? (session as { freebucks?: FreebuffFreebucksInfo }).freebucks
-    : undefined
-  return info ? applyFreebucksPriceChanges(info) : undefined
+): FreebuffFreebucksInfo | null | undefined => {
+  const info =
+    session && 'freebucks' in session
+      ? (session as { freebucks?: FreebuffFreebucksInfo | null }).freebucks
+      : undefined
+  return info ? applyFreebucksPriceChanges(info) : info
 }
 
 /**
@@ -728,7 +730,22 @@ export interface FreebuffLimitedModeReason {
   ipPrivacySignals?: FreebuffIpPrivacySignal[] | null
 }
 
+/** Permission for one requested session: a wallet ceiling, or explicit consent
+ * to its current price when the balance/quote was unavailable. Absence is zero. */
+export type FreebuffWalletSpendLimit = number | 'session'
+
+export interface FreebuffWalletConsent {
+  price: number
+  walletSpend: number
+}
+
 export type FreebuffSessionAdmissionResponse = (
+  | {
+      status: 'consent_required'
+      accessTier?: FreebuffAccessTier
+      walletConsent: FreebuffWalletConsent
+      freebucks: null
+    }
   | ({
       /** User has no session row. CLI must POST to start a session. Also
        *  returned when `getSessionState` notices the user has been swept past
@@ -771,7 +788,7 @@ export type FreebuffSessionAdmissionResponse = (
       /** Spendable Freebucks and the per-model session prices. Rides
        *  every state for the same reason `subscription` does: the
        *  balance is shown in the picker, mid-session and after it. */
-      freebucks?: FreebuffFreebucksInfo
+      freebucks?: FreebuffFreebucksInfo | null
     } & FreebuffLimitedModeReason)
   | ({
       status: 'active'
@@ -795,7 +812,7 @@ export type FreebuffSessionAdmissionResponse = (
       /** Spendable Freebucks and the per-model session prices. Rides
        *  every state for the same reason `subscription` does: the
        *  balance is shown in the picker, mid-session and after it. */
-      freebucks?: FreebuffFreebucksInfo
+      freebucks?: FreebuffFreebucksInfo | null
     } & FreebuffLimitedModeReason)
   | ({
       /** Session is over. While `instanceId` is present we're inside the
@@ -832,7 +849,7 @@ export type FreebuffSessionAdmissionResponse = (
       /** Spendable Freebucks and the per-model session prices. Rides
        *  every state for the same reason `subscription` does: the
        *  balance is shown in the picker, mid-session and after it. */
-      freebucks?: FreebuffFreebucksInfo
+      freebucks?: FreebuffFreebucksInfo | null
     } & FreebuffLimitedModeReason)
   | {
       /** Request originated outside the free-mode allowlist, or from an
@@ -963,7 +980,7 @@ export type FreebuffSessionAdmissionResponse = (
       upgrade?: FreebuffUpgradeHint
       /** Not sent by the server on a refusal; a client may CARRY the block it
        *  was holding so the refusal is still rendered in the meter's words. */
-      freebucks?: FreebuffFreebucksInfo
+      freebucks?: FreebuffFreebucksInfo | null
       /** The freebuff model the user tried to join. */
       model: string
       /** The pool that refused, as on `FreebuffSessionRateLimit` — opaque. */
@@ -999,7 +1016,7 @@ export type FreebuffSessionAdmissionResponse = (
       status: 'spend_limited'
       accessTier?: FreebuffAccessTier
       /** See `rate_limited`: carried by the client, never sent. */
-      freebucks?: FreebuffFreebucksInfo
+      freebucks?: FreebuffFreebucksInfo | null
       message: string
       resetAt: string
       retryAfterMs: number

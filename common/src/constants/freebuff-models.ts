@@ -2500,7 +2500,17 @@ export const FREEBUFF_REWARD_MODEL_DISPLAY_NAME: string =
  *  (/api/v1/freebuff/session). Shared so the server handlers and every client
  *  (CLI, desktop) agree on the exact strings instead of redefining literals. */
 export const FREEBUFF_INSTANCE_HEADER = 'x-freebuff-instance-id'
+/** Reuse this exact live single-session instance; never buy or take over. */
+export const FREEBUFF_REUSE_INSTANCE_HEADER = 'x-freebuff-reuse-instance-id'
 export const FREEBUFF_MODEL_HEADER = 'x-freebuff-model'
+export const FREEBUFF_WALLET_SPEND_LIMIT_HEADER =
+  'x-freebuff-wallet-spend-limit'
+/** Dedicated routes fail closed on servers predating these guarantees. */
+export const FREEBUFF_SESSION_ADMISSION_PATH =
+  '/api/v1/freebuff/session/admission'
+export const FREEBUFF_SESSION_REUSE_PATH = '/api/v1/freebuff/session/reuse'
+export const FREEBUFF_SESSION_UNSUPPORTED_MESSAGE =
+  'This server cannot safely start or resume your session yet. Reload or update Freebuff and try again shortly. No purchase was made.'
 /** Trusted server-to-server header. Only the Codebuff API may honor this when
  *  the request authenticates as the Freebuff Web service account; browser and
  *  normal API callers must not be able to select another user's session row. */

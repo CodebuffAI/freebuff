@@ -110,12 +110,16 @@ export function getFreebuffModelMeter({
   quota?: FreebuffSessionRateLimit
   legacyRemaining?: number
 }) {
+  // Pending settlement or a failed refresh does not revive legacy quotas.
+  if (freebucks === null) return { canStart: true }
   if (freebucks) freebucks = applyFreebucksPriceChanges(freebucks)
   const price = model ? freebucks?.prices[model] : undefined
   if (price !== undefined && freebucks) {
     return {
       budget: { price, balance: freebucks.balance },
-      canStart: freebucks.quotaExempt === true || freebucks.balance >= price,
+      canStart:
+        freebucks.quotaExempt === true ||
+        freebucks.balance + (freebucks.claimableGrantFreebucks ?? 0) >= price,
     }
   }
   return {

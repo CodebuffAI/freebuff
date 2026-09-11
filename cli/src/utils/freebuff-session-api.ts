@@ -1,8 +1,12 @@
+import type { FreebuffWalletSpendLimit } from '@codebuff/common/types/freebuff-session'
 import { env } from '@codebuff/common/env'
 import {
   FREEBUFF_COMPACT_SESSION_HEADER,
   FREEBUFF_INSTANCE_HEADER,
   FREEBUFF_MODEL_HEADER,
+  FREEBUFF_WALLET_SPEND_LIMIT_HEADER,
+  FREEBUFF_SESSION_ADMISSION_PATH,
+  FREEBUFF_SESSION_UNSUPPORTED_MESSAGE,
 } from '@codebuff/common/constants/freebuff-models'
 
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
@@ -89,11 +93,11 @@ export function sessionFetchSignal(
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
 
-function sessionEndpoint(): string {
+function sessionEndpoint(method: FreebuffSessionMethod): string {
   const base = (
     env.NEXT_PUBLIC_CODEBUFF_APP_URL || 'https://codebuff.com'
   ).replace(/\/$/, '')
-  return `${base}/api/v1/freebuff/session`
+  return `${base}${method === 'POST' ? FREEBUFF_SESSION_ADMISSION_PATH : '/api/v1/freebuff/session'}`
 }
 
 export async function callFreebuffSession(
@@ -102,6 +106,7 @@ export async function callFreebuffSession(
   opts: {
     instanceId?: string
     model?: string
+    walletSpendLimit?: FreebuffWalletSpendLimit
     signal?: AbortSignal
     compact?: boolean
   } = {},
@@ -113,16 +118,27 @@ export async function callFreebuffSession(
   if (method === 'GET' && opts.compact) {
     headers[FREEBUFF_COMPACT_SESSION_HEADER] = '1'
   }
-  if (method === 'POST' && opts.model) {
-    headers[FREEBUFF_MODEL_HEADER] = opts.model
+  if (method === 'POST') {
+    if (opts.model) headers[FREEBUFF_MODEL_HEADER] = opts.model
+    headers[FREEBUFF_WALLET_SPEND_LIMIT_HEADER] = String(
+      opts.walletSpendLimit ?? 0,
+    )
   }
 
-  const response = await fetch(sessionEndpoint(), {
+  const response = await fetch(sessionEndpoint(method), {
     method,
     headers,
     signal: sessionFetchSignal(opts.signal),
   })
 
+  if (method === 'POST' && [404, 405].includes(response.status)) {
+    throw new FreebuffSessionRequestError(
+      FREEBUFF_SESSION_UNSUPPORTED_MESSAGE,
+      response.status,
+      undefined,
+      'session_admission_unsupported',
+    )
+  }
   if (response.status === 404) {
     return { status: 'none' }
   }
@@ -146,7 +162,9 @@ export async function callFreebuffSession(
       .catch(() => null)) as FreebuffSessionServerResponse | null
     if (
       body &&
-      (body.status === 'model_locked' || body.status === 'model_unavailable')
+      (body.status === 'model_locked' ||
+        body.status === 'model_unavailable' ||
+        body.status === 'consent_required')
     ) {
       return body
     }
@@ -214,7 +232,7 @@ export function mergeCompactActiveSession(
     // cannot change during a session anyway — a session is charged once, at
     // admission — so the carried block is not merely a placeholder, it is
     // still correct.
-    freebucks: next.freebucks ?? current.freebucks,
+    freebucks: next.freebucks !== undefined ? next.freebucks : current.freebucks,
   }
 }
 

@@ -283,6 +283,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // accounts it meters, so there is no client-side role check here that could
   // drift from what is actually charged.
   const freebucks = freebucksOf(session)
+  const balanceUnavailable = freebucks === null
   // The plan the daily pool was sized from. `planId` is the server's own
   // verdict, so the name cannot disagree with the number beside it.
   const planName = freebucks?.planId
@@ -291,7 +292,10 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // The live session's model, for the switch question. `activeModel` is only
   // set while a session is running, so an idle picker never asks.
   const activeSessionModel =
-    session?.status === 'active' ? session.model : undefined
+    session?.status === 'active' &&
+    Date.parse(session.expiresAt) > (nowMs ?? Date.now())
+      ? session.model
+      : undefined
   const availableModels = useMemo(
     // CHEAPEST FIRST once metered — the same order Web and Desktop use. Off
     // the meter this returns the catalog untouched, so the recommended-first
@@ -334,7 +338,8 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   const rateLimitsByModel = getRateLimitsByModel(session)
   const [, refreshPrices] = useState(0)
   useEffect(
-    () => watchFreebucksPriceChanges(freebucks, () => refreshPrices((n) => n + 1)),
+    () =>
+      watchFreebucksPriceChanges(freebucks, () => refreshPrices((n) => n + 1)),
     [freebucks],
   )
   const taglineFor = useCallback(
@@ -447,7 +452,11 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       if (freebucks?.peak && isFreebucksPeakModel(freebucks, model.id)) {
         const base = (rowPrice ?? 0) - freebucks.peak.surcharge
         details.push({
-          text: freebucksPeakCopy({ peak: freebucks.peak, basePrice: base, now }).tooltip,
+          text: freebucksPeakCopy({
+            peak: freebucks.peak,
+            basePrice: base,
+            now,
+          }).tooltip,
           warn: true,
         })
       }
@@ -483,7 +492,13 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       }
       return details
     },
-    [deploymentAvailabilityLabel, now, premiumSectionQuotas, meterFor, freebucks],
+    [
+      deploymentAvailabilityLabel,
+      now,
+      premiumSectionQuotas,
+      meterFor,
+      freebucks,
+    ],
   )
   const rowDetailsText = useCallback(
     (model: FreebuffModelOption): string =>
@@ -503,9 +518,15 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       // a quota nobody is using.
       const offer = offerByModelId.get(modelId)
       if (offer) return offer.userRemaining > 0
+      if (
+        session?.status === 'active' &&
+        session.model === modelId &&
+        Date.parse(session.expiresAt) > (nowMs ?? Date.now())
+      )
+        return true
       return meterFor(modelId).canStart
     },
-    [now, offerByModelId, meterFor],
+    [now, nowMs, session, offerByModelId, meterFor],
   )
 
   const recommendedModel = useMemo(() => {
@@ -529,8 +550,15 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
    */
   const rowIntent = useCallback(
     (modelId: string) =>
-      freebucksRowIntent(freebucks, modelId, activeSessionModel),
-    [freebucks, activeSessionModel],
+      freebucksRowIntent(
+        freebucks,
+        modelId,
+        session?.status === 'active' &&
+          Date.parse(session.expiresAt) > (nowMs ?? Date.now())
+          ? session.model
+          : undefined,
+      ),
+    [freebucks, session, nowMs],
   )
 
   /**
@@ -621,10 +649,15 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         )} against ${formatFreebucks(freebucks?.balance ?? 0)} left. Enter opens plans.`
       }
       if (intent.kind === 'confirm') {
+        if (intent.price === undefined) {
+          return `Balance unavailable. Enter may spend wallet Freebucks${activeSessionModel ? ' and end this session' : ''}.`
+        }
         // ONE question. When a switch would also dip into the wallet the
         // wallet is the fact that matters — the daily pool refills, the wallet
         // does not — so the overage wording wins outright and the session
         // ending is a clause inside it, never a second prompt.
+        if (intent.claimEarned)
+          return `Claim earned Freebucks on admission, then spend ${intent.price} for this session. Enter to confirm.`
         return intent.walletSpend > 0
           ? `Today's ${FREEBUCKS_LABEL} are spent. Enter uses ${formatFreebucks(
               intent.walletSpend,
@@ -1141,7 +1174,12 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       // Two Enter events can arrive before React commits the pending state.
       admissionPending.current = true
       setPending(modelId)
-      startSession(modelId).finally(() => {
+      startSession(
+        modelId,
+        intent.kind === 'confirm'
+          ? (intent.walletSpend ?? 'session')
+          : undefined,
+      ).finally(() => {
         admissionPending.current = false
         setPending(null)
       })
@@ -1566,14 +1604,23 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
             meters for one account is the arrangement that lies outright: the
             windows count sessions that nothing charges any more, while the
             balance quietly drains beside them. */}
+        {balanceUnavailable && (
+          <text style={{ fg: theme.muted, marginTop: SECTION_GAP }}>
+            Freebucks balance temporarily unavailable.
+          </text>
+        )}
         {freebucks && (
           <text
-            style={{ fg: theme.muted, wrapMode: 'none', marginTop: SECTION_GAP }}
+            style={{
+              fg: theme.muted,
+              wrapMode: 'none',
+              marginTop: SECTION_GAP,
+            }}
           >
             {planName.toUpperCase()} · {freebucksHeaderLine(freebucks, now)}
           </text>
         )}
-        {!freebucks && freeWindows && !planSummary && (
+        {freebucks === undefined && freeWindows && !planSummary && (
           <text
             style={{
               fg: theme.muted,
@@ -1584,7 +1631,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
             FREE · {formatPlanWindows(freeWindows as never)}
           </text>
         )}
-        {!freebucks && planSummary && (
+        {freebucks === undefined && planSummary && (
           <text
             style={{
               fg: theme.muted,
@@ -1600,7 +1647,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
             overruns the card width, and wrapMode 'none' clips it silently — the
             one part of the summary a blocked user actually needs was the part
             that vanished. */}
-        {!freebucks && planSummary?.blocked && (
+        {freebucks === undefined && planSummary?.blocked && (
           <text style={{ fg: theme.secondary, wrapMode: 'none' }}>
             {planSummary.blocked.label}
             {planSummary.blocked.resetsAt

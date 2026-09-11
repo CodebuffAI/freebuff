@@ -89,6 +89,10 @@ test('compact active state retains the admission quota and Freebucks snapshots',
   )
 
   expect(merged).toMatchObject({ remainingMs: 500, rateLimit, freebucks })
+  if (merged?.status !== 'active') throw new Error('expected active session')
+  const unavailable = mergeCompactActiveSession(merged, { ...merged, freebucks: null })
+  expect(unavailable).toMatchObject({ freebucks: null })
+  expect(mergeCompactActiveSession(unavailable, { ...merged, freebucks })).toMatchObject({ freebucks })
 })
 
 test('compact state requests a full refresh instead of carrying quota across models', () => {
@@ -230,3 +234,47 @@ test('DELETE sends the held instance and preserves the server refund receipt', a
     'held-cli',
   )
 })
+
+test.each([undefined, 5, 'session'] as const)(
+  'POST carries wallet authorization %s and preserves a consent refusal',
+  async (walletSpendLimit) => {
+    const state = {
+      status: 'consent_required' as const,
+      walletConsent: { price: 10, walletSpend: 10 },
+      freebucks: null,
+    }
+    fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      Response.json(state, { status: 409 }),
+    )
+    expect(
+      await callFreebuffSession('POST', 'test-token', {
+        model: 'mimo/mimo-v2.5',
+        walletSpendLimit,
+      }),
+    ).toEqual(state)
+    expect(
+      new Headers(fetchSpy.mock.calls[0]![1]?.headers).get(
+        'x-freebuff-wallet-spend-limit',
+      ),
+    ).toBe(String(walletSpendLimit ?? 0))
+  },
+)
+
+test.each([404, 405])(
+  'unsupported admission (%s) stops without legacy fallback',
+  async (status) => {
+    fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('Not found', { status }),
+    )
+    await expect(callFreebuffSession('POST', 'test-token')).rejects.toThrow(
+      'Reload or update Freebuff',
+    )
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(String(fetchSpy.mock.calls[0]![0])).toEndWith('/session/admission')
+    expect(
+      new Headers(fetchSpy.mock.calls[0]![1]?.headers).get(
+        'x-freebuff-wallet-spend-limit',
+      ),
+    ).toBe('0')
+  },
+)

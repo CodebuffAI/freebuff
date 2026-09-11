@@ -1,4 +1,8 @@
-import { SOLAR_PRICE_CHANGES, solarOfferAt } from '@codebuff/common/constants/freebuff-solar-promo'
+import { getFreebucksInfo } from '@codebuff/common/types/freebuff-session'
+import {
+  SOLAR_PRICE_CHANGES,
+  solarOfferAt,
+} from '@codebuff/common/constants/freebuff-solar-promo'
 import {
   toLandingSession,
   resolveFreebuffModelPickForSession,
@@ -73,7 +77,7 @@ afterEach(() => {
 
 const renderSelector = async (
   maxHeight = 40,
-  startSession?: (model: string) => Promise<void>,
+  startSession?: (model: string, limit?: number | 'session') => Promise<void>,
 ) => {
   // Tear down any selector this test already rendered. Only the LAST one was
   // reachable from afterEach, so a test that renders twice used to leave the
@@ -1118,8 +1122,12 @@ test('an open Solar CLI picker leaves the holiday price at the cutoff and submit
           [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 5,
           [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: 0,
         }),
-        priceNotices: { [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: solarOfferAt(cutoff - 137).tagline },
-        priceChanges: SOLAR_PRICE_CHANGES.filter((change) => Date.parse(change.at) >= cutoff),
+        priceNotices: {
+          [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: solarOfferAt(cutoff - 137).tagline,
+        },
+        priceChanges: SOLAR_PRICE_CHANGES.filter(
+          (change) => Date.parse(change.at) >= cutoff,
+        ),
       },
     })
     useFreebuffModelStore
@@ -1155,7 +1163,9 @@ test('an open Solar CLI picker leaves the holiday price at the cutoff and submit
     await setup.renderOnce()
     expect(setup.captureCharFrame()).not.toContain('Labor Day weekend')
     expect(setup.captureCharFrame()).toContain('Solar Pro 4')
-    expect(setup.captureCharFrame()).toMatch(/Solar Pro 4[^\n]*\n[^\n]*5 Freebucks\/hr/)
+    expect(setup.captureCharFrame()).toMatch(
+      /Solar Pro 4[^\n]*\n[^\n]*5 Freebucks\/hr/,
+    )
     await setup.mockInput.pressEnter()
     await setup.renderOnce()
     expect(requested).toEqual([FREEBUFF_SOLAR_PRO_4_MODEL_ID])
@@ -1230,3 +1240,166 @@ describe('FreebuffModelSelector limited upgrade CTA', () => {
     ).not.toContain('usage for $')
   })
 })
+
+describe('unavailable balances in the mounted CLI picker', () => {
+  test.each(['full', 'limited'] as const)(
+    '%s: fresh admission requires confirmation and ignores exhausted legacy quotas',
+    async (accessTier) => {
+      const id = FREEBUFF_GLM_V53_FLASH_MODEL_ID
+      const pending = {
+        status: 'none' as const,
+        accessTier,
+        freebucks: null,
+        rateLimitsByModel: {
+          [id]: {
+            model: id,
+            limit: 0,
+            recentCount: 0,
+            period: 'pacific_day' as const,
+            resetTimeZone: 'America/Los_Angeles',
+            resetAt: '2027-01-01',
+            windowHours: 24,
+          },
+        },
+      }
+      useFreebuffSessionStore.getState().setSession(pending)
+      useFreebuffModelStore.getState().setSelectedModel(id)
+      const requests: string[] = []
+      const limits: (number | 'session' | undefined)[] = []
+      const setup = await renderSelector(40, async (model, limit) => {
+        limits.push(limit)
+        requests.push(
+          resolveFreebuffModelPickForSession(
+            model,
+            useFreebuffSessionStore.getState().session,
+          ),
+        )
+      })
+      expect(getSelectedFreebuffModel()).toBe(id)
+      expect(setup.captureCharFrame()).toContain(
+        'balance temporarily unavailable',
+      )
+      expect(setup.captureCharFrame()).not.toContain('0 of 0')
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(requests).toEqual([])
+      expect(setup.captureCharFrame()).toContain('Balance unavailable')
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(requests).toEqual([id])
+      // A poll recovers the open control without remounting or changing its model.
+      useFreebuffSessionStore
+        .getState()
+        .setSession({ ...pending, freebucks: freebucksFixture(5) })
+      await setup.renderOnce()
+      expect(setup.captureCharFrame()).not.toContain('unavailable')
+      expect(setup.captureCharFrame()).toContain('5 Freebucks/hr')
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(requests).toEqual([id, id])
+      const known = freebucksFixture(5)
+      useFreebuffSessionStore.getState().setSession({
+        ...pending,
+        freebucks: {
+          ...known,
+          daily: { ...known.daily, remaining: 0 },
+          wallet: { ...known.wallet, balance: 5 },
+        },
+      })
+      await setup.renderOnce()
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(requests).toEqual([id, id])
+      expect(setup.captureCharFrame()).toContain(
+        'Enter uses 5 from your wallet',
+      )
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(requests).toEqual([id, id, id])
+      expect(limits).toEqual(['session', undefined, 5])
+    },
+  )
+
+  test.each(['full', 'limited'] as const)(
+    '%s: paid reuse is accessible until expiry, then asks before admission',
+    async (accessTier) => {
+      const id = FREEBUFF_GLM_V53_FLASH_MODEL_ID
+      const live = {
+        status: 'active' as const,
+        accessTier,
+        model: id,
+        instanceId: 'paid-picker',
+        admittedAt: new Date(FIXED_NOW_MS - 30_000).toISOString(),
+        remainingMs: 30_000,
+        expiresAt: new Date(FIXED_NOW_MS + 30_000).toISOString(),
+        freebucks: null,
+      }
+      useFreebuffSessionStore.getState().setSession(live)
+      useFreebuffModelStore.getState().setSelectedModel(id)
+      const requests: string[] = []
+      const setup = await renderSelector(40, async (model) => {
+        requests.push(model)
+      })
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(requests).toEqual([id])
+      // Even a known zero balance cannot hide a paid reuse.
+      useFreebuffSessionStore
+        .getState()
+        .setSession({ ...live, freebucks: freebucksFixture(0) })
+      await setup.renderOnce()
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(requests).toEqual([id, id])
+      useFreebuffSessionStore.getState().setSession({
+        ...live,
+        expiresAt: new Date(FIXED_NOW_MS).toISOString(),
+      })
+      await setup.renderOnce()
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(requests).toHaveLength(2)
+      expect(setup.captureCharFrame()).toContain('Balance unavailable')
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(requests).toEqual([id, id, id])
+    },
+  )
+
+  test('returning to the landing picker preserves null rather than reviving the legacy meter', () => {
+    expect(
+      toLandingSession({ status: 'ended', freebucks: null }).freebucks,
+    ).toBeNull()
+    expect(toLandingSession({ status: 'ended' }).freebucks).toBeUndefined()
+  })
+})
+
+
+test.each(['full', 'limited'] as const)(
+  '%s earned grants offer confirmation without inflating the CLI balance',
+  async (accessTier) => {
+    const id = FREEBUFF_GLM_V53_FLASH_MODEL_ID
+    useFreebuffSessionStore
+      .getState()
+      .setSession({
+        status: 'none',
+        accessTier,
+        freebucks: { ...freebucksFixture(0), claimableGrantFreebucks: 15 },
+      })
+    useFreebuffModelStore.getState().setSelectedModel(id)
+    const picked: string[] = []
+    const setup = await renderSelector(40, async (model) => {
+      picked.push(model)
+    })
+    flushSync(() => setup.mockInput.pressEnter())
+    await setup.renderOnce()
+    expect(picked).toEqual([])
+    expect(setup.captureCharFrame()).toContain('Claim earned Freebucks')
+    expect(getFreebucksInfo(useFreebuffSessionStore.getState().session!)?.balance).toBe(
+      0,
+    )
+    flushSync(() => setup.mockInput.pressEnter())
+    await setup.renderOnce()
+    expect(picked).toEqual([id])
+  },
+)

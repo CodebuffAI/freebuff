@@ -1,3 +1,4 @@
+import type { FreebuffWalletSpendLimit } from '@codebuff/common/types/freebuff-session'
 import { nextFreebucksPriceChange } from '@codebuff/common/util/freebuff-price-changes'
 import {
   FALLBACK_FREEBUFF_MODEL_ID,
@@ -85,6 +86,7 @@ function nextDelayMs(next: FreebuffSessionResponse): number | null {
       // Inside the grace window we keep checking so the post-grace transition
       // (server returns `none`, we synthesize ended-no-instanceId) is prompt.
       return next.instanceId ? activeCadenceMs : null
+    case 'consent_required':
     case 'none':
     case 'superseded':
     case 'takeover_prompt':
@@ -133,6 +135,14 @@ let controller: PollController | null = null
  * rejoin/race: only the former deserves a visible explanation. Cleared on
  * every response so a stale pick can never annotate a later, unrelated lock.
  */
+let pendingWalletConsent:
+  | {
+      model: string
+      token: string | undefined
+      limit: FreebuffWalletSpendLimit
+      expiresAt: number
+    }
+  | undefined
 let pendingExplicitPickModel: string | null = null
 
 /** Read the current instance id for outgoing chat requests. Defined via
@@ -191,7 +201,7 @@ export function toLandingSession(
     ...(rateLimitsByModel ? { rateLimitsByModel } : {}),
     ...(referral ? { referral } : {}),
     ...(subscription ? { subscription } : {}),
-    ...(freebucks ? { freebucks } : {}),
+    ...(freebucks !== undefined ? { freebucks } : {}),
     ...(limitedModelOffers.length > 0 ? { limitedModelOffers } : {}),
     ...(countryCode ? { countryCode } : {}),
     ...(countryBlockReason ? { countryBlockReason } : {}),
@@ -230,8 +240,7 @@ async function restartFreebuffSession(
   currentController?.abort()
   if (opts.releaseSlot) {
     try {
-      await useFreebuffSessionStore.getState()
-    .releaseSlot()
+      await useFreebuffSessionStore.getState().releaseSlot()
     } catch (error) {
       if (!stillCurrent()) throw error
       // Keep the chat and held instance: the server may already have credited
@@ -328,7 +337,10 @@ export function resolveFreebuffModelSelectionForSession(
  * that session and re-claims on the requested model (see the model_locked
  * branch). Background rejoins hitting the same lock revert silently instead.
  */
-export function startFreebuffSession(model: string): Promise<void> {
+export function startFreebuffSession(
+  model: string,
+  walletSpendLimit?: FreebuffWalletSpendLimit,
+): Promise<void> {
   if (!IS_FREEBUFF) return Promise.resolve()
   // This is the only explicit user-pick path (called from the picker on
   // click / Enter), so persistence belongs here — and ONLY here. Server-
@@ -338,6 +350,15 @@ export function startFreebuffSession(model: string): Promise<void> {
   const resolved = resolveFreebuffModelPickForSession(model, current)
   // Remember that the next POST is a deliberate pick, so a `model_locked`
   // rejection explains itself in chat instead of reverting silently.
+  pendingWalletConsent =
+    walletSpendLimit === undefined
+      ? undefined
+      : {
+          model: resolved,
+          token: getAuthTokenDetails().token,
+          limit: walletSpendLimit,
+          expiresAt: Date.now() + 120_000,
+        }
   pendingExplicitPickModel = resolved
   useFreebuffModelStore.getState().setSelectedModel(resolved)
   saveFreebuffModelPreference(resolved)
@@ -385,7 +406,8 @@ export function markFreebuffSessionCountryBlocked(params: {
   // Best-effort DELETE so we don't hold a session row the server is already
   // refusing to serve at chat time.
   useFreebuffSessionStore
-    .getState().releaseSlot()
+    .getState()
+    .releaseSlot()
     .catch(() => {})
 }
 
@@ -520,7 +542,9 @@ export function useFreebuffSession(
         const carried = getFreebucksInfo(
           useFreebuffSessionStore.getState().session,
         )
-        setSession(carried ? { ...next, freebucks: carried } : next)
+        setSession(
+          carried !== undefined ? { ...next, freebucks: carried } : next,
+        )
       } else {
         setSession(next)
       }
@@ -556,6 +580,12 @@ export function useFreebuffSession(
           instanceId,
           model,
           compact,
+          walletSpendLimit:
+            pendingWalletConsent?.model === model &&
+            pendingWalletConsent.token === token &&
+            pendingWalletConsent.expiresAt > Date.now()
+              ? pendingWalletConsent.limit
+              : undefined,
         })
         if (
           cancelled ||
@@ -565,6 +595,22 @@ export function useFreebuffSession(
           return
         }
         consecutiveFailures = 0
+        if (method === 'POST' && next.status !== 'model_locked')
+          pendingWalletConsent = undefined
+        if (next.status === 'consent_required') {
+          apply({
+            status: 'none',
+            freebucks: null,
+            accessTier: next.accessTier,
+          })
+          setFailure({
+            type: 'other',
+            message: `Your balance changed. Choose the model again to confirm ${next.walletConsent.walletSpend} wallet Freebucks.`,
+            retry: null,
+            outcomeUnknown: false,
+          })
+          return
+        }
         // After any successful call, default back to GET polling. The
         // takeover and model_locked branches below override this when they
         // need another POST.
@@ -756,7 +802,10 @@ export function useFreebuffSession(
               getSubscriptionInfo(next) ?? getSubscriptionInfo(current),
             // Prefer the fresh block: a session that just ended was CHARGED,
             // so the server's balance is newer than the one we were holding.
-            freebucks: getFreebucksInfo(next) ?? getFreebucksInfo(current),
+            freebucks:
+              next.freebucks !== undefined
+                ? next.freebucks
+                : getFreebucksInfo(current),
           })
           return
         }
@@ -776,8 +825,12 @@ export function useFreebuffSession(
           schedule(0)
           return
         }
-        const priceDelay = nextFreebucksPriceChange(getFreebucksInfo(next)) - Date.now()
-        const delay = Math.min(nextDelayMs(next) ?? Infinity, Math.max(0, priceDelay))
+        const priceDelay =
+          nextFreebucksPriceChange(getFreebucksInfo(next)) - Date.now()
+        const delay = Math.min(
+          nextDelayMs(next) ?? Infinity,
+          Math.max(0, priceDelay),
+        )
         if (Number.isFinite(delay)) schedule(delay)
       } catch (err) {
         if (

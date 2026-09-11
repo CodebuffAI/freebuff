@@ -451,7 +451,7 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   // instead.
   const belowPickerNotices = compact
     ? []
-    : freebucksOf(session)
+    : freebucksOf(session) !== undefined
       ? [FREEBUCKS_PICKER_NOTICE]
       : accessTier === 'limited'
         ? [getLimitedModeNotice(session)]
