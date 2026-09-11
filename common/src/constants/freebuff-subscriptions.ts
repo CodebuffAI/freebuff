@@ -118,11 +118,31 @@ export const FREEBUFF_SUBSCRIPTION_TIER_IDS = [
 export type FreebuffSubscriptionTierId =
   (typeof FREEBUFF_SUBSCRIPTION_TIER_IDS)[number]
 
+export const FREEBUFF_SUBSCRIPTION_BILLING_INTERVALS = [
+  'monthly',
+  'yearly',
+] as const
+export type FreebuffSubscriptionBillingInterval =
+  (typeof FREEBUFF_SUBSCRIPTION_BILLING_INTERVALS)[number]
+
+export function isFreebuffSubscriptionBillingInterval(
+  value: unknown,
+): value is FreebuffSubscriptionBillingInterval {
+  return (
+    typeof value === 'string' &&
+    FREEBUFF_SUBSCRIPTION_BILLING_INTERVALS.includes(
+      value as FreebuffSubscriptionBillingInterval,
+    )
+  )
+}
+
 export interface FreebuffSubscriptionTier {
   id: FreebuffSubscriptionTierId
   displayName: string
   /** Every period after the first, in USD. */
   priceUsd: number
+  /** Annual charge in USD. Usage allowances still refresh monthly. */
+  yearlyPriceUsd: number
   /**
    * First billing period, in USD.
    *
@@ -199,6 +219,7 @@ export const FREEBUFF_SUBSCRIPTION_TIERS: readonly FreebuffSubscriptionTier[] =
       id: 'starter',
       displayName: 'Starter',
       priceUsd: 8,
+      yearlyPriceUsd: 75,
       introPriceUsd: 5,
       dailySessions: 3,
       fiveDaySessions: 10,
@@ -213,6 +234,7 @@ export const FREEBUFF_SUBSCRIPTION_TIERS: readonly FreebuffSubscriptionTier[] =
       id: 'plus',
       displayName: 'Plus',
       priceUsd: 25,
+      yearlyPriceUsd: 235,
       introPriceUsd: 19,
       dailySessions: 7,
       fiveDaySessions: 26,
@@ -224,6 +246,7 @@ export const FREEBUFF_SUBSCRIPTION_TIERS: readonly FreebuffSubscriptionTier[] =
       id: 'pro',
       displayName: 'Pro',
       priceUsd: 60,
+      yearlyPriceUsd: 560,
       introPriceUsd: 45,
       dailySessions: 11,
       fiveDaySessions: 66,

@@ -71,6 +71,7 @@ export interface FreebuffSubscriptionTierOffer {
   id: string
   displayName: string
   priceUsd: number
+  yearlyPriceUsd?: number
   /** What this caller would actually be charged for the first period —
    *  `introPriceUsd` only while the account has never used its intro. */
   firstPeriodPriceUsd: number
@@ -89,6 +90,10 @@ export interface FreebuffSubscriptionTierOffer {
   /** True when it is below. A downgrade is SCHEDULED for the next renewal
    *  rather than applied now, so clients must not word it as immediate. */
   downgrade: boolean
+  /** Whether the monthly Stripe price is configured. Optional on old servers. */
+  purchasable?: boolean
+  /** Annual checkout remains unavailable until its Stripe price is configured. */
+  yearlyPurchasable?: boolean
 }
 
 /**
@@ -317,6 +322,12 @@ export interface FreebuffPriceChange {
 export interface FreebuffSubscriptionInfo {
   /** The caller's tier id, or null when they have no live subscription. */
   tierId: string | null
+  /** Entitlement origin. Optional for compatibility with older servers. */
+  source?: 'stripe' | 'grant'
+  /** Billing cadence for the live plan. Absent on legacy server payloads. */
+  billingInterval?: 'monthly' | 'yearly'
+  /** Stripe paid-through/renewal instant, distinct from monthly usage reset. */
+  renewsAt?: string
   /** Present only while subscribed. */
   usage?: FreebuffSubscriptionUsage
   /** Raw Stripe status, so a client can surface a failed payment. */
