@@ -1,4 +1,5 @@
 import type { FreebuffAccessTier } from '../constants/freebuff-models'
+import type { FreebuffDesktopConcurrency } from '../constants/freebuff-model-entitlements'
 import type { FreebuffStandingInfo } from '../constants/freebuff-standing'
 import { applyFreebucksPriceChanges } from '../util/freebuff-price-changes'
 
@@ -1033,6 +1034,10 @@ export type FreebuffSessionAdmissionResponse = (
       accessTier?: FreebuffAccessTier
       requestedModel: string
       currentInstanceId: string
+      /** Capacity refusals carry the exact admission bucket and entitlement-derived
+       * limit. Older servers omit these; clients must not guess the limit. */
+      concurrency?: FreebuffDesktopConcurrency
+      slotLimit?: number
     }
   | {
       /** Freebuff Desktop only: every slot-bound session is occupied. Free
