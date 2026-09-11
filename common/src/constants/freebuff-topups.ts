@@ -65,7 +65,10 @@ export const AD_STATEMENT_DESCRIPTOR_SUFFIX = 'FREEBUFF.COM'
 export const AD_TOP_UP_CURRENCY = 'usd'
 
 /** Default maximum unpaid placement spend after an advertiser saves a card. */
-export const AD_POSTPAID_DEFAULT_CREDIT_LINE_CENTS = 10_000
+export const AD_POSTPAID_DEFAULT_CREDIT_LINE_CENTS = 20_000
+
+/** Collection must start before the minimum credit line can stop delivery. */
+export const AD_POSTPAID_COLLECTION_THRESHOLD_CENTS = 10_000
 
 /**
  * Referral launch promotion: qualify only after $100 has both been collected
@@ -113,14 +116,13 @@ export const AD_CREDIT_LINE_MIN_ACCOUNT_AGE_DAYS = 14
 export const AD_CREDIT_LINE_MIN_SUCCESSFUL_COLLECTIONS = 3
 
 /**
- * Per-run move limits. Growth may at most double the live line (or add one
- * default line, whichever is larger, so a $0 line is not permanently stuck at
+ * Per-run move limits. Growth may at most double the live line (or add $100,
+ * whichever is larger, so a $0 line is not permanently stuck at
  * zero); a decrease may take at most 25% in one run, matching the repricer's
  * clamp. The dispute cut is deliberately EXEMPT from the decrease clamp.
  */
 export const AD_CREDIT_LINE_MAX_GROWTH_BPS = 10_000
-export const AD_CREDIT_LINE_MIN_GROWTH_STEP_CENTS =
-  AD_POSTPAID_DEFAULT_CREDIT_LINE_CENTS
+export const AD_CREDIT_LINE_MIN_GROWTH_STEP_CENTS = 10_000
 export const AD_CREDIT_LINE_MAX_DECREASE_BPS = 2_500
 
 /** Direct placements never sell below one dollar per billable click. */

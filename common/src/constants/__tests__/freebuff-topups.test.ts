@@ -69,8 +69,8 @@ describe('the entry rule', () => {
 })
 
 describe('placements postpaid defaults', () => {
-  it('starts new card-on-file advertisers with at most one day of $100 debt', () => {
-    expect(AD_POSTPAID_DEFAULT_CREDIT_LINE_CENTS).toBe(10_000)
+  it('starts new card-on-file advertisers with a $200 credit line', () => {
+    expect(AD_POSTPAID_DEFAULT_CREDIT_LINE_CENTS).toBe(20_000)
   })
 })
 
