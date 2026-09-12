@@ -13,8 +13,33 @@ import {
   firstPartyPrimaryBucket,
   firstPartyPrimaryBasisPoints,
   houseLegOpen,
+  houseSubscriptionBillingArmForUser,
   isImpreziaAudienceEmail,
+  parseHouseSubscriptionBillingExperimentMode,
 } from '../ad-experiment'
+
+describe('house subscription billing experiment', () => {
+  test('defaults unknown and absent modes off', () => {
+    for (const value of [undefined, null, '', 'ON', 'shadow']) {
+      expect(parseHouseSubscriptionBillingExperimentMode(value)).toBe('off')
+    }
+    expect(parseHouseSubscriptionBillingExperimentMode('on')).toBe('on')
+  })
+
+  test('keeps users sticky and assigns approximately half to each arm', () => {
+    const N = 20_000
+    let monthly = 0
+    for (let index = 0; index < N; index++) {
+      const userId = `user-${index}`
+      const arm = houseSubscriptionBillingArmForUser(userId)
+      expect(houseSubscriptionBillingArmForUser(userId)).toBe(arm)
+      if (arm === 'monthly') monthly++
+    }
+    const monthlyPercent = (monthly / N) * 100
+    expect(monthlyPercent).toBeGreaterThan(48.5)
+    expect(monthlyPercent).toBeLessThan(51.5)
+  })
+})
 
 describe('imprezia experiment arm', () => {
   test('signed-out sessions stay in control', () => {

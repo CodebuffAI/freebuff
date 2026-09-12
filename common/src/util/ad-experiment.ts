@@ -259,6 +259,34 @@ export function fnv1a(input: string): number {
 }
 
 /**
+ * Sticky destination split for the Freebuff house-subscription promotion.
+ *
+ * Its own dated salt keeps this acquisition experiment independent from ad
+ * routing and creative-selection experiments. Changing the salt starts a new
+ * experiment because it reassigns users.
+ */
+export const HOUSE_SUBSCRIPTION_BILLING_EXPERIMENT =
+  'house_subscription_billing_2026_09'
+
+export type HouseSubscriptionBillingExperimentMode = 'off' | 'on'
+export type HouseSubscriptionBillingArm = 'monthly' | 'yearly'
+
+export function parseHouseSubscriptionBillingExperimentMode(
+  raw: string | null | undefined,
+): HouseSubscriptionBillingExperimentMode {
+  return raw === 'on' ? 'on' : 'off'
+}
+
+/** 50% assignment probability, stable across sessions and pods for one user. */
+export function houseSubscriptionBillingArmForUser(
+  userId: string,
+): HouseSubscriptionBillingArm {
+  return fnv1a(`${HOUSE_SUBSCRIPTION_BILLING_EXPERIMENT}:${userId}`) % 100 < 50
+    ? 'monthly'
+    : 'yearly'
+}
+
+/**
  * Deterministic arm for a signed-in user, stable across products and sessions.
  */
 export function adExperimentArmForUser(
