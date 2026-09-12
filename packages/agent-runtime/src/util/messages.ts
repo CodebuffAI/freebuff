@@ -229,6 +229,47 @@ export function trimMessagesToFitTokenLimit(params: {
     }
   }
 
+  // The removal run stops as soon as the token budget is met, which can land
+  // between an assistant tool-call and its result: the surviving tool message
+  // then reaches the provider without its call and is rejected with
+  // "tool_call_id does not exist", failing the whole step. Drop results whose
+  // call this trim removed — but only those, so orphans that were already in
+  // the input history pass through unchanged. This also overrides
+  // keepDuringTruncation on a tool result whose call was removed: keeping the
+  // pair together would exceed the budget and keeping the result alone would
+  // be rejected, so a result cannot outlive its call.
+  const inputCallIds = new Set<string>()
+  const survivingCallIds = new Set<string>()
+  const collectCallIds = (message: Message, into: Set<string>) => {
+    if (message.role !== 'assistant' || !Array.isArray(message.content)) {
+      return
+    }
+    for (const part of message.content) {
+      if (part.type === 'tool-call' && part.providerExecuted !== true) {
+        into.add(part.toolCallId)
+      }
+    }
+  }
+  for (const message of messages) {
+    collectCallIds(message, inputCallIds)
+  }
+  if (inputCallIds.size > 0) {
+    for (const message of filteredMessages) {
+      if (message === placeholder) continue
+      collectCallIds(message, survivingCallIds)
+    }
+    for (let i = filteredMessages.length - 1; i >= 0; i--) {
+      const message = filteredMessages[i]
+      if (message === placeholder || message.role !== 'tool') continue
+      if (
+        inputCallIds.has(message.toolCallId) &&
+        !survivingCallIds.has(message.toolCallId)
+      ) {
+        filteredMessages.splice(i, 1)
+      }
+    }
+  }
+
   return filteredMessages.map((m) =>
     m === placeholder ? replacementMessage : m,
   )
