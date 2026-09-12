@@ -38,7 +38,7 @@ import { AGENT_MODES, END_SESSION_MESSAGE, IS_FREEBUFF } from '../utils/constant
 import { exitCliCleanly } from '../utils/exit-cleanly'
 import { getSystemMessage, getUserMessage } from '../utils/message-history'
 import { capturePendingAttachments } from '../utils/pending-attachments'
-import { getSkillByName } from '../utils/skill-registry'
+import { getSkillByName, getSkillCount } from '../utils/skill-registry'
 
 import type { MultilineInputHandle } from '../components/multiline-input'
 import type { InputValue, PendingAttachment } from '../types/store'
@@ -82,6 +82,7 @@ export type CommandResult = {
   openChatHistory?: boolean
   openReviewScreen?: boolean
   openQueuePanel?: boolean
+  openSkillsPanel?: boolean
   preSelectAgents?: string[]
 } | void
 
@@ -719,6 +720,27 @@ const ALL_COMMANDS: CommandDefinition[] = [
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
       return { openQueuePanel: true }
+    },
+  }),
+  defineCommand({
+    name: 'skills',
+    aliases: ['skill'],
+    handler: (params) => {
+      if (getSkillCount() === 0) {
+        params.setMessages((prev) => [
+          ...prev,
+          getUserMessage(params.inputValue.trim()),
+          getSystemMessage(
+            'No skills loaded.\n\nSkills load from:\n  - ~/.claude/skills/   (global, Claude Code compatible)\n  - ~/.agents/skills/   (global)\n  - .claude/skills/     (project, Claude Code compatible)\n  - .agents/skills/     (project, overrides global)\n\nInstall some with: npx skills add <owner/repo>\nNew and changed skills are picked up live — no restart needed.',
+          ),
+        ])
+        params.saveToHistory(params.inputValue.trim())
+        clearInput(params)
+        return
+      }
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+      return { openSkillsPanel: true }
     },
   }),
   defineCommand({

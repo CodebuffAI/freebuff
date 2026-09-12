@@ -123,6 +123,12 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     aliases: ['queued'],
   },
   {
+    id: 'skills',
+    label: 'skills',
+    description: 'Browse, run, open, or delete your loaded skills',
+    aliases: ['skill'],
+  },
+  {
     id: 'new',
     label: 'new',
     description: 'Clear the conversation history and start a new chat',
@@ -254,14 +260,20 @@ function truncateDescription(description: string): string {
 /**
  * Returns SLASH_COMMANDS merged with skill commands.
  * Skills become slash commands that users can invoke directly.
+ *
+ * Skills marked `user-invocable: false` (Claude Code frontmatter parity) are
+ * model-only knowledge: they are hidden from the / menu, the same way Claude
+ * Code hides them from its / menu.
  */
 export function getSlashCommandsWithSkills(skills: SkillsMap): SlashCommand[] {
-  const skillCommands: SlashCommand[] = Object.values(skills).map((skill) => ({
-    id: `skill:${skill.name}`,
-    label: `skill:${skill.name}`,
-    description: truncateDescription(skill.description),
-    insertText: `/skill:${skill.name} `,
-  }))
+  const skillCommands: SlashCommand[] = Object.values(skills)
+    .filter((skill) => skill.userInvocable !== false)
+    .map((skill) => ({
+      id: `skill:${skill.name}`,
+      label: `skill:${skill.name}`,
+      description: truncateDescription(skill.description),
+      insertText: `/skill:${skill.name} `,
+    }))
 
   const commands = [...SLASH_COMMANDS, ...skillCommands]
 

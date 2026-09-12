@@ -48,6 +48,7 @@ export {
   loadSkills,
   loadSkillsSync,
   parseSkillFileContent,
+  resolveSkillsDirs,
 } from './skills/load-skills'
 export { formatAvailableSkillsXml } from '@codebuff/common/util/skills'
 export type { LoadSkillsOptions } from './skills/load-skills'
