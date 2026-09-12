@@ -16,7 +16,12 @@ function directBroker(): TerminalCommandBroker {
     start(request) {
       const child = spawn(request.executable, request.args, {
         cwd: request.cwd,
-        env: request.env,
+        // Pin the locale for the helper subprocess. A guard failure is asserted
+        // on the message coreutils prints, and coreutils translates that message
+        // ("El archivo ya existe"), so without this the test passes on the
+        // English CI runners and fails on any other locale. LC_ALL=C alone is
+        // enough: it takes precedence over LANG and LANGUAGE.
+        env: { ...request.env, LC_ALL: 'C' },
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       return {
