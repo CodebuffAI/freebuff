@@ -12,6 +12,8 @@ import { handleLookupAgentInfo } from '../tools/handlers/tool/lookup-agent-info'
 import {
   ensureZodSchema,
   buildToolDescription,
+  cloneCustomToolDefinitions,
+  cloneToolDefinition,
   getToolSet,
 } from '../tools/prompts'
 
@@ -508,5 +510,85 @@ describe('getToolSet: commit-attribution suppression', () => {
     expect(suppressed.read_files?.description).toBe(
       ordinary.read_files?.description,
     )
+  })
+})
+
+describe('cloneToolDefinition: Zod schema preservation (issue #1306)', () => {
+  const mcpJsonSchema = {
+    type: 'object',
+    properties: {
+      query: { type: 'string' },
+      max_results: { type: 'number' },
+    },
+    required: ['query'],
+    additionalProperties: false,
+  }
+
+  test('keeps genuine Zod schemas by reference with _zod intact', () => {
+    const mcpSchema = convertJsonSchemaToZod(mcpJsonSchema as any) as any
+    const def = {
+      description: 'Search the web',
+      inputSchema: mcpSchema,
+      endsAgentStep: true,
+    }
+
+    const cloned = cloneToolDefinition(def)
+
+    // New container, same live schema — lodash cloneDeep would strip the
+    // non-enumerable `_zod` engine and break all later conversions.
+    expect(cloned).not.toBe(def)
+    expect(cloned.inputSchema).toBe(mcpSchema)
+    expect((cloned.inputSchema as any)._zod).toBeDefined()
+    expect(cloned.inputSchema instanceof z.ZodType).toBe(true)
+    const jsonSchema = z.toJSONSchema(cloned.inputSchema, {
+      io: 'input',
+    }) as any
+    expect(Object.keys(jsonSchema.properties ?? {})).toContain('query')
+  })
+
+  test('deep-clones plain JSON Schema objects so edits do not alias', () => {
+    const defs = {
+      json_tool: {
+        description: 'json tool',
+        inputSchema: {
+          type: 'object',
+          properties: { q: { type: 'string' } },
+        } as Record<string, unknown>,
+        endsAgentStep: false,
+      },
+    }
+
+    const cloned = cloneCustomToolDefinitions(defs)
+
+    expect(cloned.json_tool).not.toBe(defs.json_tool)
+    expect(cloned.json_tool.inputSchema).not.toBe(defs.json_tool.inputSchema)
+    expect(cloned.json_tool.inputSchema).toEqual(defs.json_tool.inputSchema)
+  })
+
+  test('getToolSet serves MCP params after the run-agent-step clone path', async () => {
+    const mcpSchema = convertJsonSchemaToZod(mcpJsonSchema as any) as any
+    // Simulates run-agent-step.ts additionalToolDefinitions: the defs map is
+    // cloned before MCP data is merged in.
+    const defs = cloneCustomToolDefinitions({
+      web__search: {
+        description: 'Search the web',
+        inputSchema: mcpSchema,
+        endsAgentStep: true,
+      },
+    })
+
+    const toolSet = await getToolSet({
+      toolNames: [],
+      windowedFileReads: false,
+      additionalToolDefinitions: async () => defs,
+      agentTools: {},
+      skills: {},
+    })
+
+    const served = (toolSet as any).web__search.inputSchema
+    const jsonSchema = z.toJSONSchema(served, { io: 'input' }) as any
+    const props = jsonSchema.properties ?? {}
+    expect(Object.keys(props)).toContain('query')
+    expect(Object.keys(props)).toContain('max_results')
   })
 })

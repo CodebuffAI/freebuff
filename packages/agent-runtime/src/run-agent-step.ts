@@ -22,7 +22,7 @@ import {
   userMessage,
 } from '@codebuff/common/util/messages'
 import { type ToolSet } from 'ai'
-import { cloneDeep, mapValues } from 'lodash'
+import { mapValues } from 'lodash'
 import z from 'zod/v4'
 
 import { maybeCompactHistory } from './compact-history'
@@ -41,7 +41,7 @@ import {
 import { getAgentTemplate } from './templates/agent-registry'
 import { buildAgentToolSet } from './templates/prompts'
 import { getAgentPrompt } from './templates/strings'
-import { getToolSet } from './tools/prompts'
+import { cloneCustomToolDefinitions, getToolSet } from './tools/prompts'
 import { processStream } from './tools/stream-parser'
 import { getAgentOutput } from './util/agent-output'
 import {
@@ -151,7 +151,9 @@ async function additionalToolDefinitions(
 ): Promise<CustomToolDefinitions> {
   const { agentTemplate, fileContext } = params
 
-  const defs = cloneDeep(
+  // Zod-aware clone: plain cloneDeep would strip Zod v4's non-enumerable
+  // `_zod` engine from MCP tool schemas and break them downstream.
+  const defs = cloneCustomToolDefinitions(
     Object.fromEntries(
       Object.entries(fileContext.customToolDefinitions).filter(([toolName]) =>
         agentTemplate!.toolNames.includes(toolName),

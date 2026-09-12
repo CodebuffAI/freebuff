@@ -1,7 +1,6 @@
 import { endsAgentStepParam, toolNames } from '@codebuff/common/tools/constants'
 import { toolParams } from '@codebuff/common/tools/list'
 import { generateCompactId } from '@codebuff/common/util/string'
-import { cloneDeep } from 'lodash'
 
 import { getMCPToolData } from '../mcp'
 import { MCP_TOOL_SEPARATOR } from '../mcp-constants'
@@ -11,7 +10,7 @@ import { codebuffToolHandlers } from './handlers/list'
 import { getMatchingSpawn } from './handlers/tool/spawn-agent-utils'
 import { getAgentTemplate } from '../templates/agent-registry'
 import { resolveGravityIndexLink } from './gravity-index-cta'
-import { ensureZodSchema } from './prompts'
+import { cloneCustomToolDefinitions, ensureZodSchema } from './prompts'
 
 import type { AgentTemplate } from '../templates/types'
 import type { CodebuffToolHandlerFunction } from './handlers/handler-function-type'
@@ -675,7 +674,9 @@ export async function executeCustomToolCall(
       ...params,
       toolNames: agentTemplate.toolNames,
       mcpServers: agentTemplate.mcpServers,
-      writeTo: cloneDeep(fileContext.customToolDefinitions),
+      // Zod-aware clone: plain cloneDeep would strip Zod v4's
+      // non-enumerable `_zod` engine and break validation downstream.
+      writeTo: cloneCustomToolDefinitions(fileContext.customToolDefinitions),
     }),
     rawToolCall: {
       toolName,

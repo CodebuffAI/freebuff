@@ -38,6 +38,49 @@ export function ensureZodSchema(
   return convertJsonSchemaToZod(schema as Record<string, unknown>)
 }
 
+/**
+ * Clone a custom tool definition without destroying Zod schemas.
+ *
+ * lodash `cloneDeep` only copies enumerable own properties, but Zod v4 keeps
+ * its engine in the non-enumerable `_zod` field. Deep-cloning a Zod schema
+ * therefore produces a broken lookalike: `safeParse` is copied, so
+ * `ensureZodSchema` still accepts it, but any `z.toJSONSchema()` call
+ * crashes on the missing `_zod` and the tool's params collapse to `{}`.
+ *
+ * Shallow-copy the definition, keep genuine Zod schemas by reference (they
+ * are treated as immutable downstream), and deep-clone only plain JSON
+ * Schema objects plus the remaining fields.
+ */
+export function cloneToolDefinition<
+  T extends { inputSchema?: z.ZodType | Record<string, unknown> },
+>(toolDefinition: T): T {
+  const { inputSchema, ...rest } = toolDefinition
+  const clonedRest = cloneDeep(rest)
+  const clonedSchema =
+    inputSchema instanceof z.ZodType || inputSchema == null
+      ? inputSchema
+      : cloneDeep(inputSchema)
+  return { ...clonedRest, inputSchema: clonedSchema } as T
+}
+
+/**
+ * Clone a map of custom tool definitions, preserving Zod schema identity
+ * (see `cloneToolDefinition`).
+ */
+export function cloneCustomToolDefinitions<
+  T extends Record<
+    string,
+    { inputSchema?: z.ZodType | Record<string, unknown> }
+  >,
+>(toolDefinitions: T): T {
+  return Object.fromEntries(
+    Object.entries(toolDefinitions).map(([toolName, toolDefinition]) => [
+      toolName,
+      cloneToolDefinition(toolDefinition),
+    ]),
+  ) as T
+}
+
 function ensureJsonSchemaCompatible(schema: z.ZodType): z.ZodType {
   try {
     z.toJSONSchema(schema, { io: 'input' })
@@ -430,7 +473,9 @@ export async function getToolSet(params: {
 
   const toolDefinitions = await additionalToolDefinitions()
   for (const [toolName, toolDefinition] of Object.entries(toolDefinitions)) {
-    const clonedDef = cloneDeep(toolDefinition)
+    // Zod-aware clone: plain cloneDeep would strip Zod v4's non-enumerable
+    // `_zod` engine and break the schema (see cloneToolDefinition).
+    const clonedDef = cloneToolDefinition(toolDefinition)
     // Custom tool inputSchema may be JSON Schema (from SDK) or Zod (from MCP)
     // Ensure it's a Zod schema for the AI SDK
     const zodSchema = ensureZodSchema(clonedDef.inputSchema)
