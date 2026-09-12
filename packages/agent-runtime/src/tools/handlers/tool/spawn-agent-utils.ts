@@ -89,6 +89,7 @@ export function extractSubagentContextParams(
     requestToolCall: params.requestToolCall,
     requestMcpToolData: params.requestMcpToolData,
     requestFiles: params.requestFiles,
+    requestImageFile: params.requestImageFile,
     requestOptionalFile: params.requestOptionalFile,
     sendAction: params.sendAction,
     sendSubagentChunk: params.sendSubagentChunk,

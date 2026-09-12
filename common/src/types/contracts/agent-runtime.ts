@@ -3,6 +3,7 @@ import type { ConsumeCreditsWithFallbackFn } from './billing'
 import type {
   HandleStepsLogChunkFn,
   RequestFilesFn,
+  RequestImageFileFn,
   RequestMcpToolDataFn,
   RequestOptionalFileFn,
   RequestToolCallFn,
@@ -68,6 +69,9 @@ export type AgentRuntimeScopedDeps = {
   requestMcpToolData: RequestMcpToolDataFn
   requestFiles: RequestFilesFn
   requestOptionalFile: RequestOptionalFileFn
+  /** Only hosts that read the workspace locally provide this. Without it,
+   *  read_files sends image paths through `requestFiles` like any file. */
+  requestImageFile?: RequestImageFileFn
   sendAction: SendActionFn
   sendSubagentChunk: SendSubagentChunkFn
 

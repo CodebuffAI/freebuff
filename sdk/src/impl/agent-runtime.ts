@@ -61,6 +61,7 @@ export function getAgentRuntimeImpl(
     | 'requestToolCall'
     | 'requestMcpToolData'
     | 'requestFiles'
+    | 'requestImageFile'
     | 'requestOptionalFile'
     | 'sendAction'
     | 'sendSubagentChunk'
@@ -76,6 +77,7 @@ export function getAgentRuntimeImpl(
     requestToolCall,
     requestMcpToolData,
     requestFiles,
+    requestImageFile,
     requestOptionalFile,
     sendAction,
     sendSubagentChunk,
@@ -157,6 +159,7 @@ export function getAgentRuntimeImpl(
     requestToolCall,
     requestMcpToolData,
     requestFiles,
+    requestImageFile,
     requestOptionalFile,
     sendAction,
     sendSubagentChunk,

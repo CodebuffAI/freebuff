@@ -1,4 +1,10 @@
+import path from 'path'
+
 import { countTokens } from '@codebuff/agent-runtime/util/token-counter'
+import {
+  getImageMimeType,
+  MAX_IMAGE_BASE64_SIZE,
+} from '@codebuff/common/constants/images'
 import { FILE_READ_STATUS } from '@codebuff/common/old-constants'
 import { isFileIgnored } from '@codebuff/common/project-file-tree'
 import {
@@ -12,7 +18,10 @@ import {
 
 import { resolveFilePath } from './path-utils'
 
-import type { FileReadWindow } from '@codebuff/common/types/contracts/client'
+import type {
+  FileReadWindow,
+  RequestImageFileFn,
+} from '@codebuff/common/types/contracts/client'
 import type { CodebuffFileSystem } from '@codebuff/common/types/filesystem'
 
 export type FileFilterResult = {
@@ -143,4 +152,62 @@ export async function getFiles(params: {
     }
   }
   return { ...result }
+}
+
+/**
+ * The largest image read_files attaches: the base64 ceiling the CLI enforces on
+ * a pasted image after compressing it. The SDK has no image codec to shrink a
+ * larger file, so the refusal tells the model how to make a smaller copy.
+ */
+const MAX_IMAGE_READ_BYTES = Math.floor((MAX_IMAGE_BASE64_SIZE * 3) / 4)
+
+/** read_files for an image: the same policy as `getFiles`, but the bytes. */
+export async function getImageFile(params: {
+  filePath: string
+  cwd: string
+  fs: CodebuffFileSystem
+  fileFilter?: FileFilter
+}): ReturnType<RequestImageFileFn> {
+  const { filePath, cwd, fs, fileFilter } = params
+  const { relativePath, fullPath, isWithinProject } = resolveFilePath(
+    cwd,
+    filePath,
+  )
+  const mediaType = getImageMimeType(path.extname(relativePath))
+  if (!mediaType) return { path: relativePath, error: FILE_READ_STATUS.ERROR }
+  if (fileFilter?.(relativePath).status === 'blocked') {
+    return { path: relativePath, error: FILE_READ_STATUS.IGNORED }
+  }
+  if (
+    !fileFilter &&
+    isWithinProject &&
+    (await isFileIgnored({ filePath: relativePath, projectRoot: cwd, fs }))
+  ) {
+    return { path: relativePath, error: FILE_READ_STATUS.IGNORED }
+  }
+
+  try {
+    const stats = await fs.stat(fullPath)
+    if (stats.size > MAX_IMAGE_READ_BYTES) {
+      const kb = (bytes: number) => Math.round(bytes / 1024)
+      return {
+        path: relativePath,
+        error:
+          FILE_READ_STATUS.TOO_LARGE +
+          ` [Image is ${kb(stats.size)} KB; images over ${kb(MAX_IMAGE_READ_BYTES)} KB cannot be attached. Save a downscaled copy with a terminal command (for example \`magick ${relativePath} -resize 1024x1024 /tmp/preview.png\`) and read that instead.]`,
+      }
+    }
+    const data = Buffer.from(await fs.readFile(fullPath)).toString('base64')
+    return { path: relativePath, data, mediaType, bytes: stats.size }
+  } catch (error) {
+    const missing =
+      !!error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    return {
+      path: relativePath,
+      error: missing ? FILE_READ_STATUS.DOES_NOT_EXIST : FILE_READ_STATUS.ERROR,
+    }
+  }
 }

@@ -49,7 +49,7 @@ import { codeSearch } from './tools/code-search'
 import { glob } from './tools/glob'
 import { listDirectory } from './tools/list-directory'
 import { getProjectPathLookupKeys } from './tools/path-utils'
-import { getFiles } from './tools/read-files'
+import { getFiles, getImageFile } from './tools/read-files'
 import { readUrl } from './tools/read-url'
 import { runTerminalCommand } from './tools/run-terminal-command'
 import type { TerminalCommandBroker } from './tools/run-terminal-command'
@@ -747,6 +747,17 @@ async function runOnce({
         cwd,
         fs,
       }),
+    // Only a local read can return an image's bytes. An override reads a
+    // remote workspace through the text-only contract, so it keeps images.
+    requestImageFile: overrideTools?.read_files
+      ? undefined
+      : ({ filePath }) =>
+          getImageFile({
+            filePath,
+            cwd: requireCwd(cwd, 'read_files'),
+            fs,
+            fileFilter,
+          }),
     requestOptionalFile: async ({ filePath }) => {
       const files = await readFiles({
         filePaths: [filePath],

@@ -11,7 +11,7 @@ import {
   spyOn,
 } from 'bun:test'
 
-import { getFiles } from '../tools/read-files'
+import { getFiles, getImageFile } from '../tools/read-files'
 
 import type { CodebuffFileSystem } from '@codebuff/common/types/filesystem'
 import type { PathLike } from 'node:fs'
@@ -848,5 +848,82 @@ describe('getFiles', () => {
       expect(result['src/big.ts']).toContain('showing lines 10-14 of 3000')
       expect(result['src/big.ts']).toContain('showing lines 2500-2504 of 3000')
     })
+  })
+})
+
+describe('getImageFile', () => {
+  let isFileIgnoredSpy: ReturnType<typeof spyOn>
+
+  beforeEach(() => {
+    isFileIgnoredSpy = spyOn(
+      projectFileTree,
+      'isFileIgnored',
+    ).mockResolvedValue(false)
+  })
+
+  afterEach(() => {
+    mock.restore()
+  })
+
+  test('returns the bytes as base64 with the media type', async () => {
+    const mockFs = createMockFs({
+      files: { '/project/shot.png': { content: 'PNGDATA' } },
+    })
+
+    expect(
+      await getImageFile({ filePath: 'shot.png', cwd: '/project', fs: mockFs }),
+    ).toEqual({
+      path: 'shot.png',
+      data: Buffer.from('PNGDATA').toString('base64'),
+      mediaType: 'image/png',
+      bytes: 7,
+    })
+  })
+
+  test('refuses an image too large to attach and says how to shrink it', async () => {
+    const mockFs = createMockFs({
+      files: { '/project/big.jpg': { content: 'x', size: 5 * 1024 * 1024 } },
+    })
+
+    const result = await getImageFile({
+      filePath: 'big.jpg',
+      cwd: '/project',
+      fs: mockFs,
+    })
+
+    expect('error' in result ? result.error : '').toContain(
+      FILE_READ_STATUS.TOO_LARGE,
+    )
+    expect('error' in result ? result.error : '').toContain('downscaled copy')
+  })
+
+  test('applies the gitignore and filter policy of read_files', async () => {
+    const mockFs = createMockFs({
+      files: { '/project/shot.png': { content: 'PNGDATA' } },
+    })
+
+    expect(
+      await getImageFile({
+        filePath: 'shot.png',
+        cwd: '/project',
+        fs: mockFs,
+        fileFilter: () => ({ status: 'blocked' }),
+      }),
+    ).toEqual({ path: 'shot.png', error: FILE_READ_STATUS.IGNORED })
+
+    isFileIgnoredSpy.mockResolvedValue(true)
+    expect(
+      await getImageFile({ filePath: 'shot.png', cwd: '/project', fs: mockFs }),
+    ).toEqual({ path: 'shot.png', error: FILE_READ_STATUS.IGNORED })
+  })
+
+  test('reports a missing image the way read_files reports a missing file', async () => {
+    expect(
+      await getImageFile({
+        filePath: 'gone.webp',
+        cwd: '/project',
+        fs: createMockFs({}),
+      }),
+    ).toEqual({ path: 'gone.webp', error: FILE_READ_STATUS.DOES_NOT_EXIST })
   })
 })

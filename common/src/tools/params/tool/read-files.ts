@@ -105,5 +105,13 @@ export const readFilesParams = {
   endsAgentStep,
   description,
   inputSchema: windowedInputSchema,
-  outputSchema: jsonToolResultSchema(fileContentsSchema.array()),
+  // The file listing, then one media part per image that was read, so the
+  // model sees the picture rather than its bytes decoded as text.
+  outputSchema: jsonToolResultSchema(fileContentsSchema.array()).rest(
+    z.object({
+      type: z.literal('media'),
+      data: z.string(),
+      mediaType: z.string(),
+    }),
+  ),
 } satisfies $ToolParams

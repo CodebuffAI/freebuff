@@ -33,6 +33,18 @@ export type RequestOptionalFileFn = (params: {
   filePath: string
 }) => Promise<string | null>
 
+/**
+ * Read an image file as base64, so read_files can hand the model the picture
+ * instead of its bytes decoded as text. `error` is a read_files status line
+ * (missing, blocked, too large) in the slot the image would have occupied.
+ */
+export type RequestImageFileFn = (params: {
+  filePath: string
+}) => Promise<
+  | { path: string; data: string; mediaType: string; bytes: number }
+  | { path: string; error: string }
+>
+
 export type SendSubagentChunkFn = (params: {
   userInputId: string
   agentId: string

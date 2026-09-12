@@ -150,4 +150,62 @@ describe('handleReadFiles with prototype-member paths', () => {
     expect(({} as Record<string, unknown>).offset).toBeUndefined()
     expect(Object.prototype).not.toHaveProperty('offset')
   })
+
+  it('attaches images as media instead of reading their bytes as text', async () => {
+    const seenFilePaths: string[][] = []
+    const { output } = await handleReadFiles({
+      previousToolCallFinished: Promise.resolve(),
+      toolCall: {
+        toolName: 'read_files',
+        toolCallId: 'tc-1',
+        input: { paths: ['a.ts', 'shot.PNG', 'missing.jpg', 'shot.PNG'] },
+      },
+      agentTemplate: agentTemplate(false),
+      fileContext: { tokenCallers: {} } as any,
+      requestFiles: async ({ filePaths }) => {
+        seenFilePaths.push(filePaths)
+        return Object.fromEntries(filePaths.map((path) => [path, 'content']))
+      },
+      requestImageFile: async ({ filePath }) =>
+        filePath === 'shot.PNG'
+          ? {
+              path: filePath,
+              data: 'iVBORw0KGgo=',
+              mediaType: 'image/png',
+              bytes: 2048,
+            }
+          : { path: filePath, error: '[FILE_DOES_NOT_EXIST]' },
+    })
+
+    expect(seenFilePaths).toEqual([['a.ts']])
+    expect(output).toEqual([
+      {
+        type: 'json',
+        value: [
+          { path: 'a.ts', content: 'content', referencedBy: {} },
+          {
+            path: 'shot.PNG',
+            content:
+              '[IMAGE] image/png, 2 KB. The image is attached after this result.',
+            referencedBy: {},
+          },
+          {
+            path: 'missing.jpg',
+            content: '[FILE_DOES_NOT_EXIST]',
+            referencedBy: {},
+          },
+        ],
+      },
+      { type: 'media', data: 'iVBORw0KGgo=', mediaType: 'image/png' },
+    ])
+  })
+
+  it('reads images as ordinary files when the host cannot read binary', async () => {
+    const { seenFilePaths } = await runHandler({
+      paths: ['shot.png'],
+      windowed: false,
+    })
+
+    expect(seenFilePaths).toEqual(['shot.png'])
+  })
 })
