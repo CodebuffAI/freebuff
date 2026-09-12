@@ -426,9 +426,12 @@ function createLauncher(productConfig) {
 
   async function getLatestVersion() {
     try {
-      const res = await httpGet(
-        `https://registry.npmjs.org/${packageName}/latest`,
-      )
+      // The release host is already overridable via NEXT_PUBLIC_CODEBUFF_APP_URL;
+      // mirror that for the registry so tests can answer the version check with
+      // a server they control instead of the real npm registry.
+      const registryUrl =
+        process.env.CODEBUFF_NPM_REGISTRY_URL || 'https://registry.npmjs.org'
+      const res = await httpGet(`${registryUrl}/${packageName}/latest`)
 
       if (res.statusCode !== 200) return null
 
@@ -897,11 +900,48 @@ function createLauncher(productConfig) {
     return wrapperVersion
   }
 
+  /**
+   * The installed version to compare against the registry when deciding whether
+   * to update, given what getCurrentVersion() could verify.
+   *
+   * getCurrentVersion() returns null when the metadata cache is missing or
+   * unreadable even though the binary itself is still installed. The wrapper
+   * and its release binary share a version, so the wrapper version is the best
+   * available record of a binary this wrapper installed; using it keeps genuine
+   * updates flowing while stopping the full re-download that a null current
+   * version used to trigger on every launch. Null means there is no installed
+   * binary to compare — the caller must download.
+   */
+  function getUpdateComparisonVersion(currentVersion) {
+    if (currentVersion !== null) {
+      return currentVersion
+    }
+    if (fs.existsSync(CONFIG.binaryPath) && wrapperVersion) {
+      return wrapperVersion
+    }
+    return null
+  }
+
   async function ensureBinaryReady() {
     const currentVersion = getCurrentVersion()
     const requiredWrapperVersion = getRequiredWrapperVersion(currentVersion)
 
     if (currentVersion !== null && requiredWrapperVersion === null) {
+      return
+    }
+
+    // A missing or unreadable metadata file must not read as "not installed":
+    // the binary itself may be exactly the release this wrapper installed. The
+    // metadata is only a cache of what was installed, so re-downloading a
+    // present binary on every launch wastes a full release transfer — and when
+    // the release host is unreachable it turns a lost cache file into a hard
+    // startup failure. Whether the installed binary is genuinely stale is the
+    // background update check's job; here we only need the binary to exist.
+    if (
+      currentVersion === null &&
+      getCurrentMetadata() === null &&
+      fs.existsSync(CONFIG.binaryPath)
+    ) {
       return
     }
 
@@ -989,10 +1029,18 @@ function createLauncher(productConfig) {
       const latestVersion = await getLatestVersion()
       if (!latestVersion) return
 
+      // Download new version if the installed binary is missing or outdated.
+      // getCurrentVersion() returns null when the metadata cache is lost even
+      // though the binary itself is still installed; that must not read as
+      // "outdated", or a healthy install re-downloads the full platform binary
+      // on every launch. The wrapper and its release binary share a version,
+      // so the wrapper version is the best available record of what was
+      // installed when the cache is gone.
+      const comparisonVersion = getUpdateComparisonVersion(currentVersion)
       if (
-        // Download new version if current version is unknown or outdated.
-        currentVersion === null ||
-        compareVersions(currentVersion, latestVersion) < 0
+        !fs.existsSync(CONFIG.binaryPath) ||
+        (comparisonVersion !== null &&
+          compareVersions(comparisonVersion, latestVersion) < 0)
       ) {
         const stagedBinary = await stageBinary(
           latestVersion,
@@ -1012,7 +1060,9 @@ function createLauncher(productConfig) {
         stoppedForUpdate = true
 
         resetTerminal({ exitAlternateScreen: true })
-        console.log(`Update available: ${currentVersion} → ${latestVersion}`)
+        console.log(
+          `Update available: ${comparisonVersion ?? 'unknown'} → ${latestVersion}`,
+        )
 
         installStagedBinary(stagedBinary)
 
@@ -1459,6 +1509,7 @@ function createLauncher(productConfig) {
       getCurrentVersion,
       getMetadataVersion,
       getRequiredWrapperVersion,
+      getUpdateComparisonVersion,
       ensureBinaryReady,
       isTargetAllowedForThisMachine,
       CONFIG,
