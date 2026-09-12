@@ -7,7 +7,7 @@ import {
   buildAgentToolInputSchema,
   buildAgentToolSet,
 } from '../templates/prompts'
-import { tryTransformAgentToolCall } from '../tools/tool-executor'
+import { parseRawCustomToolCall, tryTransformAgentToolCall } from '../tools/tool-executor'
 import { handleLookupAgentInfo } from '../tools/handlers/tool/lookup-agent-info'
 import {
   ensureZodSchema,
@@ -221,8 +221,13 @@ describe('Schema handling error recovery', () => {
 
       expect(description).toContain('greet__greet')
       expect(description).toContain('Params: {')
-      expect(description).toContain('allOf')
-      expect(description).toContain('name')
+      // The business contract: the MCP-declared params survive into the
+      // description the model reads. (Do NOT assert the serializer's token
+      // choice — zod may render this shape as allOf or as flattened
+      // properties depending on version; coupling to that caused a
+      // permanently-flaky test.)
+      expect(description).toContain('"name"')
+      expect(description).toContain('cb_easp')
       expect(description).not.toContain('Params: None')
     })
 
@@ -510,3 +515,134 @@ describe('getToolSet: commit-attribution suppression', () => {
     )
   })
 })
+
+// An MCP server declares a tool's arguments as a JSON Schema, and that schema
+// is forwarded to the LLM — the model reads it to decide what arguments to
+// emit. MCP allows these schemas to be vague: SEP-2106 requires only
+// `type: "object"`
+// (https://modelcontextprotocol.io/seps/2106-json-schema-2020-12), so a
+// property may be a bare `{ "type": "object" }` with no named fields.
+// The conversion to zod and back used to strip such schemas down to an empty
+// object schema, and a model that reads an empty argument schema calls the
+// tool with `{}` — no arguments at all. These tests pin the contract: what
+// the server declared is what the model must see.
+describe('getToolSet: loose MCP schemas survive the point-of-use round-trip', () => {
+  // quwin's minimal repro from the issue #912 follow-up, verbatim:
+  // one tight field, one loose field, both required.
+  const LOOSE_MCP_SCHEMA = {
+    type: 'object',
+    properties: {
+      project_id: { type: 'string' },
+      payload: { type: 'object' },
+    },
+    required: ['project_id', 'payload'],
+  }
+
+  // The AI SDK Schema contract getToolSet serves for JSON-Schema inputs:
+  // the raw schema passes to providers verbatim; args validate via callback.
+  type ServedSchema = {
+    jsonSchema: Record<string, unknown>
+    validate: (value: unknown) => { success: boolean; value?: unknown }
+  }
+
+  const buildWithCustomTool = async (inputSchema: unknown) =>
+    getToolSet({
+      toolNames: [],
+      windowedFileReads: false,
+      additionalToolDefinitions: async () => ({
+        loose_schema_tool: {
+          description: 'Tool with a loose schema',
+          inputSchema: inputSchema as z.ZodType,
+          endsAgentStep: false,
+        },
+      }),
+      agentTools: {},
+      skills: {},
+    })
+
+  test('a loose MCP schema reaches the model with its named properties intact', async () => {
+    // Given a custom tool whose JSON Schema contains a bare
+    // `{ type: 'object' }` property (unconvertible to a named zod shape),
+    // when getToolSet serves the tool's inputSchema,
+    // then the model-facing JSON Schema round-trip succeeds and still names
+    // both properties and both required fields - the served schema must not
+    // be the empty passthrough fallback.
+
+    // Arrange
+    const toolSet = await buildWithCustomTool(LOOSE_MCP_SCHEMA)
+    const servedSchema = toolSet['loose_schema_tool']?.inputSchema as unknown as ServedSchema
+
+    // Act
+    const modelFacing = servedSchema.jsonSchema
+
+    // Assert: the raw JSON Schema must reach the model intact -
+    // both named properties and the required list, no passthrough fallback.
+    const properties = modelFacing.properties as
+      | Record<string, unknown>
+      | undefined
+    expect(properties).toBeDefined()
+    expect(properties).toHaveProperty('project_id')
+    expect(properties).toHaveProperty('payload')
+    expect(modelFacing.required).toEqual(
+      expect.arrayContaining(['project_id', 'payload']),
+    )
+  })
+
+  test('the served loose schema accepts arbitrary payloads but still rejects missing required fields', async () => {
+    // Given the same loose-schema tool served by getToolSet,
+    // when arguments are validated against the served inputSchema,
+    // then both sides of the validation contract hold:
+    // (a) the loose payload accepts arbitrary nested data - the served schema
+    //     must not become stricter than what the MCP server declared, and
+    // (b) calls with missing required fields fail - the served schema must not
+    //     become the old empty passthrough fallback, which accepted anything,
+    //     including calls the MCP server declared invalid.
+
+    // Arrange
+    const toolSet = await buildWithCustomTool(LOOSE_MCP_SCHEMA)
+    const servedSchema = toolSet['loose_schema_tool']?.inputSchema as unknown as ServedSchema
+
+    // Act (a): both required fields present; payload is arbitrary nested data,
+    // which the server deliberately left unconstrained.
+    const validArgs = servedSchema.validate({
+      project_id: 'p1',
+      payload: { anything: { deep: true } },
+    })
+
+    // Act (b): no arguments at all, so both required fields are missing.
+    const missingRequired = servedSchema.validate({})
+
+    // Assert: (a) accepted, (b) rejected.
+    expect(validArgs.success).toBe(true)
+    expect(missingRequired.success).toBe(false)
+  })
+
+  test('a tight MCP schema is unaffected by the loose-schema path', async () => {
+    // Given a fully named (tight) MCP schema - every property a concrete
+    // scalar type, the pattern served by e.g. the MCP reference "everything"
+    // server (@modelcontextprotocol/server-everything) -
+    // when getToolSet serves it,
+    // then its properties round-trip intact. Control test: the loose-schema
+    // fix must not degrade the tight path that already worked.
+
+    // Arrange
+    const tightSchema = {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+      },
+      required: ['name'],
+      additionalProperties: false,
+    }
+    const toolSet = await buildWithCustomTool(tightSchema)
+    const servedSchema = toolSet['loose_schema_tool']?.inputSchema as unknown as ServedSchema
+
+    // Act
+    const modelFacing = servedSchema.jsonSchema
+
+    // Assert
+    expect(modelFacing.properties).toHaveProperty('name')
+    expect(modelFacing.required).toEqual(['name'])
+  })
+})
+
