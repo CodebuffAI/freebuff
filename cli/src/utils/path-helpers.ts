@@ -2,7 +2,7 @@ import os from 'os'
 import path from 'path'
 
 import { getCliEnv } from './env'
-import { getProjectRoot } from '../project-files'
+import { tryGetProjectRoot } from '../project-files'
 
 import type { CliEnv } from '../types/env'
 
@@ -30,7 +30,10 @@ export function getRelativePath(filePath: string): string {
   // If it's already a relative path, return as-is
   if (!filePath.startsWith('/')) return filePath
 
-  const projectRoot = getProjectRoot()
+  // Use the non-throwing accessor: the project root may legitimately be
+  // unset (e.g. during early startup or in tests), and the fallback below
+  // must actually be reachable rather than an uncaught throw.
+  const projectRoot = tryGetProjectRoot()
   if (!projectRoot) return filePath
 
   // Use Node's path.relative for proper relative path calculation
