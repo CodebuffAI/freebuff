@@ -48,7 +48,7 @@ export function getFreebuffUsageDateKey(
 
 export function addDaysToDateKey(dateKey: string, days: number): string {
   const date = new Date(`${dateKey}T00:00:00.000Z`)
-  if (Number.isNaN(date.getTime())) {
+  if (!Number.isFinite(date.getTime())) {
     throw new Error(`Invalid date key: ${dateKey}`)
   }
 
