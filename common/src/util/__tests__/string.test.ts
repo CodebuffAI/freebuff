@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { pluralize } from '../string'
+import { escapeHtml, escapeString, pluralize } from '../string'
 
 describe('pluralize', () => {
   it('should handle singular and plural cases correctly', () => {
@@ -237,3 +237,38 @@ describe('pluralize', () => {
   })
 })
 
+
+
+describe('escapeString', () => {
+  it('should escape JSON special characters', () => {
+    expect(escapeString('hello "world"')).toBe('hello \\"world\\"')
+    expect(escapeString('back\\slash')).toBe('back\\\\slash')
+    expect(escapeString('line\nbreak')).toBe('line\\nbreak')
+  })
+
+  it('should NOT escape HTML-unsafe characters (use escapeHtml for that)', () => {
+    // escapeString is for generic string escaping, not HTML contexts
+    expect(escapeString('<script>')).toBe('<script>')
+    expect(escapeString('a & b')).toBe('a & b')
+  })
+})
+
+describe('escapeHtml', () => {
+  it('should escape HTML-unsafe characters to prevent XSS', () => {
+    expect(escapeHtml('<script>alert("xss")</script>')).toBe(
+      '\\u003cscript\\u003ealert(\\"xss\\")\\u003c/script\\u003e',
+    )
+    expect(escapeHtml('a & b')).toBe('a \\u0026 b')
+    expect(escapeHtml("it's")).toBe('it\\u0027s')
+    expect(escapeHtml('5 > 3')).toBe('5 \\u003e 3')
+  })
+
+  it('should handle empty strings', () => {
+    expect(escapeHtml('')).toBe('')
+  })
+
+  it('should preserve regular characters', () => {
+    expect(escapeHtml('hello world')).toBe('hello world')
+    expect(escapeHtml('123')).toBe('123')
+  })
+})
