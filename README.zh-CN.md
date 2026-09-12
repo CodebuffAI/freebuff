@@ -1,6 +1,6 @@
 # Freebuff
 
-[English](./README.md) | 简体中文
+[English](./README.md) | 简体中文 | [繁體中文（台灣）](./README.zh-TW.md) | [繁體中文（香港）](./README.zh-HK.md)
 
 **面向编程、构建和研究的五款免费 AI 产品。** 无需订阅、积分或 API 密钥。
 

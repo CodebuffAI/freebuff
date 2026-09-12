@@ -1,6 +1,6 @@
 # Freebuff
 
-English | [简体中文](./README.zh-CN.md)
+English | [简体中文](./README.zh-CN.md) | [繁體中文（台灣）](./README.zh-TW.md) | [繁體中文（香港）](./README.zh-HK.md)
 
 **Five free AI products for coding, building, and research.** No subscription, credits, or API key required.
 
