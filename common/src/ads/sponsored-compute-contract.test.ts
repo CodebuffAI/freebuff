@@ -45,6 +45,30 @@ describe('sponsored compute admission policy', () => {
       ).toBeNull()
     }
   })
+  test('configures a $1 Accept without changing the compute allowance', () => {
+    expect(
+      readSponsoredComputePolicy({
+        ...enabled,
+        FREEBUFF_SPONSORED_COMPUTE_ACCEPTANCE_PRICE_CENTS: '100',
+      }),
+    ).toMatchObject({ acceptancePriceCents: 100, allowanceUsdMicros: 500_000 })
+    for (const price of [
+      '',
+      '0',
+      '-1',
+      '1.5',
+      '100x',
+      '1e2',
+      '9007199254740992',
+    ]) {
+      expect(
+        readSponsoredComputePolicy({
+          ...enabled,
+          FREEBUFF_SPONSORED_COMPUTE_ACCEPTANCE_PRICE_CENTS: price,
+        }),
+      ).toBeNull()
+    }
+  })
   test('admitted policy fixes the commercial fee and bounds internal compute', () => {
     const policy = readSponsoredComputePolicy(enabled)!
     expect(policy.acceptancePriceCents).toBe(200)
