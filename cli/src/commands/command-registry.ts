@@ -644,15 +644,10 @@ const ALL_COMMANDS: CommandDefinition[] = [
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
 
-      // If user provided text directly, send it immediately
+      // If user provided text directly, send it now (or queue it if a run
+      // is already in progress)
       if (trimmedArgs) {
-        params.sendMessage({
-          content: buildInterviewPrompt(trimmedArgs),
-          agentMode: params.agentMode,
-        })
-        setTimeout(() => {
-          params.scrollToLatest()
-        }, 0)
+        sendOrQueuePrompt(params, buildInterviewPrompt(trimmedArgs))
         return
       }
 
@@ -669,15 +664,10 @@ const ALL_COMMANDS: CommandDefinition[] = [
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
 
-      // If user provided plan text directly, send it immediately
+      // If user provided plan text directly, send it now (or queue it if a
+      // run is already in progress)
       if (trimmedArgs) {
-        params.sendMessage({
-          content: buildPlanPrompt(trimmedArgs),
-          agentMode: params.agentMode,
-        })
-        setTimeout(() => {
-          params.scrollToLatest()
-        }, 0)
+        sendOrQueuePrompt(params, buildPlanPrompt(trimmedArgs))
         return
       }
 
@@ -694,15 +684,10 @@ const ALL_COMMANDS: CommandDefinition[] = [
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
 
-      // If user provided review text directly, send it immediately without showing the screen
+      // If user provided review text directly, send it now without showing
+      // the screen (or queue it if a run is already in progress)
       if (trimmedArgs) {
-        params.sendMessage({
-          content: buildReviewPromptFromArgs(trimmedArgs),
-          agentMode: params.agentMode,
-        })
-        setTimeout(() => {
-          params.scrollToLatest()
-        }, 0)
+        sendOrQueuePrompt(params, buildReviewPromptFromArgs(trimmedArgs))
         return
       }
 
@@ -849,6 +834,42 @@ function createSkillCommand(skillName: string): CommandDefinition {
 }
 
 /**
+ * Send a prompt immediately, or queue it behind an in-progress run so it
+ * isn't dropped. Shared by every command whose handler can also fire
+ * mid-turn (skill args, /plan, /interview, /review, and their input-mode
+ * counterparts in the router) so those entry paths can't drift out of sync
+ * with the busy check.
+ *
+ * Attachments are handled on exactly one side of the branch, and must stay
+ * that way. A queued send passes its attachments explicitly, which suppresses
+ * the pendingAttachments fallback in prepareUserMessage, so the queue entry
+ * has to carry them or they sit in the store and surface on some later,
+ * unrelated message. An immediate send passes no attachments key at all and
+ * relies on that same fallback, so capturing here would clear them into a
+ * value this branch never forwards.
+ */
+export function sendOrQueuePrompt(params: RouterParams, content: string): void {
+  if (
+    params.isStreaming ||
+    params.streamMessageIdRef.current ||
+    params.isChainInProgressRef.current
+  ) {
+    params.addToQueue(content, capturePendingAttachments())
+    params.setInputFocused(true)
+    params.inputRef.current?.focus()
+    return
+  }
+
+  params.sendMessage({
+    content,
+    agentMode: params.agentMode,
+  })
+  setTimeout(() => {
+    params.scrollToLatest()
+  }, 0)
+}
+
+/**
  * Send (or queue, mid-turn) a user-invoked skill prompt. Shared by the
  * /skill:<name> args form and the skill input mode's submit (router), so the
  * two entry paths for the same feature cannot drift.
@@ -858,24 +879,5 @@ export function dispatchSkillPrompt(
   skill: { name: string; content: string },
   input: string,
 ): void {
-  const userPrompt = buildSkillPrompt(skill, input)
-
-  if (
-    params.isStreaming ||
-    params.streamMessageIdRef.current ||
-    params.isChainInProgressRef.current
-  ) {
-    params.addToQueue(userPrompt, capturePendingAttachments())
-    params.setInputFocused(true)
-    params.inputRef.current?.focus()
-    return
-  }
-
-  params.sendMessage({
-    content: userPrompt,
-    agentMode: params.agentMode,
-  })
-  setTimeout(() => {
-    params.scrollToLatest()
-  }, 0)
+  sendOrQueuePrompt(params, buildSkillPrompt(skill, input))
 }
