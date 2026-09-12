@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 
 import { describe, expect, it } from 'bun:test'
+import z from 'zod/v4'
 
 import {
   applyOverridesToSessionState,
@@ -193,6 +194,78 @@ describe('repository snapshot persistence', () => {
     expect(continuedSessionState.fileContext.knowledgeFiles).toEqual({
       'AGENTS.md': 'Updated instructions',
     })
+  })
+
+  it('clones a resumed state whose run state carries a cycle', async () => {
+    // Resuming used to die on the second interaction with "JSON.stringify
+    // cannot serialize cyclic structures". The state carries the previous
+    // turn's tool blocks, and a recursive zod `lazy` schema in one of them is
+    // self-referential, so the clone has to survive a cycle.
+    const baseSessionState = getInitialSessionState(getStubProjectFileContext())
+    const circular: Record<string, unknown> = {}
+    circular.self = circular
+    ;(baseSessionState.mainAgentState as any).output = circular
+
+    const continuedSessionState = await applyOverridesToSessionState(
+      '/repo',
+      baseSessionState,
+      { maxAgentSteps: 7 },
+    )
+
+    // The overrides still apply...
+    expect(continuedSessionState.mainAgentState.stepsRemaining).toBe(7)
+    // ...and the result is an independent copy whose cycle came across intact.
+    expect(continuedSessionState.mainAgentState).not.toBe(
+      baseSessionState.mainAgentState,
+    )
+    const clonedOutput = (continuedSessionState.mainAgentState as any).output
+    expect(clonedOutput.self).toBe(clonedOutput)
+  })
+
+  it('keeps a live zod schema intact when the fallback clone runs', async () => {
+    // The fallback runs exactly when the state is cyclic, and what makes it
+    // cyclic is a zod schema: mcp.ts stores MCP tools as live zod schemas, and
+    // a zod schema is self-referential. lodash copies own *enumerable*
+    // properties only, while zod keeps its internals on a non-enumerable
+    // `_zod`, so a plain cloneDeep hands back something that still looks like a
+    // schema -- `safeParse` comes from the prototype -- but throws on the first
+    // zod call with "undefined is not an object (evaluating '_zod.parent')".
+    const schema = z.object({ path: z.string() })
+    const baseSessionState = getInitialSessionState(getStubProjectFileContext())
+    const circular: Record<string, unknown> = { schema }
+    circular.self = circular
+    ;(baseSessionState.mainAgentState as any).output = circular
+
+    const continuedSessionState = await applyOverridesToSessionState(
+      '/repo',
+      baseSessionState,
+      {},
+    )
+
+    const clonedSchema = (continuedSessionState.mainAgentState as any).output
+      .schema
+    expect(clonedSchema._zod).toBeDefined()
+    expect(z.toJSONSchema(clonedSchema, { io: 'input' })).toMatchObject({
+      type: 'object',
+    })
+  })
+
+  it('falls back to a deep copy for values JSON.stringify rejects (BigInt)', async () => {
+    // The fallback is broader than "cycles only": BigInt makes JSON.stringify
+    // throw too, and cloneDeep preserves it rather than dropping the key.
+    const baseSessionState = getInitialSessionState(getStubProjectFileContext())
+    ;(baseSessionState.mainAgentState as any).output = { token: 10n }
+
+    const continuedSessionState = await applyOverridesToSessionState(
+      '/repo',
+      baseSessionState,
+      {},
+    )
+
+    expect((continuedSessionState.mainAgentState as any).output.token).toBe(10n)
+    expect(continuedSessionState.mainAgentState).not.toBe(
+      baseSessionState.mainAgentState,
+    )
   })
 })
 
