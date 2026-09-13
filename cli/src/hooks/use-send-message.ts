@@ -356,6 +356,12 @@ export const useSendMessage = ({
         clearActiveRun(runOwnerId)
       }
 
+      const syncRunState = (state: RunState) => {
+        if (!runChatIsCurrent()) return
+        previousRunStateRef.current = state
+        setRunState(state)
+      }
+
       registerActiveRun(runOwnerId, (reason) => {
         if (abortController.signal.aborted) return
 
@@ -370,6 +376,10 @@ export const useSendMessage = ({
           updateChainInProgress(false)
           if (isProcessingQueueRef) isProcessingQueueRef.current = false
         }
+
+        // Keep in-memory previousRunStateRef fresh so immediate follow-up
+        // messages carry the latest snapshot even before client.run settles.
+        syncRunState(latestRunStateSnapshot)
 
         // Capture the old chat's array now. Context-changing callers reset the
         // store immediately after stopActiveRun returns.
@@ -749,8 +759,7 @@ export const useSendMessage = ({
         // same chat, so the interrupted turn is still saved as before.)
         if (!abortController.signal.aborted && runChatIsCurrent()) {
           // Finalize: persist state and mark complete
-          previousRunStateRef.current = runState
-          setRunState(runState)
+          syncRunState(runState)
           setIsRetrying(false)
 
           // Drop any queued/in-flight async checkpoint first so a stale write
@@ -804,6 +813,7 @@ export const useSendMessage = ({
           // first so a stale write can't clobber this one. Skipped after a
           // mid-run chat switch — the store's messages belong to the new chat.
           if (runChatIsCurrent()) {
+            syncRunState(latestRunStateSnapshot)
             await settleCheckpointSave()
             saveChatState(
               latestRunStateSnapshot,

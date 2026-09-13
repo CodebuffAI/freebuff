@@ -305,7 +305,8 @@ export const setupStreamingContext = (params: {
   abortController.signal.addEventListener('abort', () => {
     // Abort means the user stopped streaming; update UI with an interruption notice.
     // Release the chain lock immediately so new messages can be sent directly instead
-    // of being queued.
+    // of being queued. registerActiveRun updates previousRunStateRef synchronously
+    // with the latest snapshot so immediate follow-ups retain preserved context.
     streamRefs.setters.setWasAbortedByUser(true)
     setIsRetrying(false)
     timerController.stop('aborted')
