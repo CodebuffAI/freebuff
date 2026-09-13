@@ -8,7 +8,14 @@ import {
   setCurrentChatId,
 } from '../project-files'
 import { beginUndoTurn, isLatestUndoTurn } from '../state/undo-guards'
-import { recordUndoEntry } from '../state/undo-store'
+import { applyRewind, lastUserMessageIndex } from '../state/undo-rewind'
+import {
+  clearRewindBoundary,
+  getRewindBoundary,
+  recordUndoEntry,
+} from '../state/undo-store'
+
+import type { RewindAnchor } from '../state/undo-rewind'
 import { createStreamController } from './stream-state'
 import { useChatStore } from '../state/chat-store'
 import {
@@ -589,6 +596,9 @@ export const useSendMessage = ({
       // can run after a newer turn has already started (Esc releases the chain
       // lock first), and by then this turn's diff is no longer only its own.
       let undoTurnStamp: number | null = null
+      // Where the conversation stood when this turn started, recorded with the
+      // entry so an undo can rewind the model as well as the worktree.
+      let undoTurnAnchor: RewindAnchor | null = null
 
       // Checkpoint the turn to disk immediately so that killing the process
       // (closed terminal, crash) can't lose the user's prompt, then keep the
@@ -666,6 +676,11 @@ export const useSendMessage = ({
                 priorByok.revision === selectedByok.revision,
             )
           : !byok
+        // A staged conversation rewind is applied here, at the one place a run
+        // is built: the model's history is what this argument becomes. Nothing
+        // was deleted to stage it, so /redo can still lift it, and a chat that
+        // never rewound passes the very same state through.
+        const rewindBoundary = getRewindBoundary(runChatId)
         const runConfig = createRunConfig({
           logger,
           agent: resolvedAgent,
@@ -674,7 +689,10 @@ export const useSendMessage = ({
           // A persisted run has a non-secret source pin. Never resume its
           // transcript after switching to Freebuff or another BYOK revision.
           previousRunState: canResumePreviousRun
-            ? previousRunStateRef.current
+            ? applyRewind(
+                previousRunStateRef.current,
+                rewindBoundary?.historyLength ?? null,
+              )
             : null,
           agentDefinitions,
           eventHandlerState,
@@ -758,6 +776,19 @@ export const useSendMessage = ({
             undoSnapshotHash = await trackSnapshot(getProjectRoot())
             if (undoSnapshotHash) {
               undoTurnStamp = beginUndoTurn(runChatId)
+              // Read here, as the turn starts and before its own run can append
+              // anything, so "the last prompt" is this turn's.
+              const transcriptIndex = lastUserMessageIndex(
+                useChatStore.getState().messages,
+              )
+              if (transcriptIndex >= 0) {
+                undoTurnAnchor = {
+                  historyLength:
+                    previousRunStateRef.current?.sessionState?.mainAgentState
+                      .messageHistory.length ?? 0,
+                  transcriptIndex,
+                }
+              }
             }
           }
         } catch (error) {
@@ -796,6 +827,11 @@ export const useSendMessage = ({
           // and JSON.stringify of the (unbounded) transcript through proxy
           // traps is several times slower.
           saveChatState(runState, useChatStore.getState().messages, runChatDir)
+
+          // This run was built from the cut history, so the cut is baked into
+          // the state just persisted and the staged mark has done its job. An
+          // interrupted or failed run keeps it: nothing absorbed the cut.
+          if (rewindBoundary) clearRewindBoundary(runChatId)
         }
         handleRunCompletion({
           runState,
@@ -910,6 +946,7 @@ export const useSendMessage = ({
                   hashBefore: undoSnapshotHash,
                   files: undoFiles,
                   message: content,
+                  ...(undoTurnAnchor ? { anchor: undoTurnAnchor } : {}),
                 })
               }
             } catch (error) {

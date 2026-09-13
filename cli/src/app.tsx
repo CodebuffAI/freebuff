@@ -213,7 +213,11 @@ export const App = ({
       closeUndoHistory()
       try {
         const message =
-          (await undoToRecord(getCurrentChatId(), projectRoot, recordId)) ??
+          (await undoToRecord(getCurrentChatId(), projectRoot, recordId, {
+            // Both halves by default: reverting the files while the model keeps
+            // remembering the turn is what made it write them back again.
+            conversation: true,
+          })) ??
           'Could not undo — the snapshot store is unavailable.'
         useChatStore.getState().setMessages((prev) => [
           ...prev,

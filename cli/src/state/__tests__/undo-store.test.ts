@@ -22,6 +22,8 @@ import {
   trackSnapshot,
 } from '../../utils/undo-snapshot'
 import {
+  clearRewindBoundary,
+  getRewindBoundary,
   loadUndoState,
   peekRedo,
   peekUndo,
@@ -30,9 +32,13 @@ import {
   pushRedo,
   pushUndo,
   recordUndoEntry,
+  redoToRecord,
+  setRewindBoundary,
   sweepAnchors,
   undoToRecord,
 } from '../undo-store'
+
+import type { RewindAnchor } from '../undo-rewind'
 
 const CHAT_ID = 'undo-store-test-chat'
 
@@ -259,6 +265,128 @@ describe('snapshot anchors', () => {
     sweepAnchors(projectDir)
 
     expect(listAnchors(projectDir)).toContainEqual({ key: CHAT_ID, hash: hash! })
+  })
+})
+
+describe('the conversation rewind', () => {
+  /**
+   * The journal as persisted. Read raw on purpose: a staged cut is a promise
+   * about what is on disk, and a test that only asked the getter could pass
+   * while the write silently dropped it.
+   */
+  const readJournal = (): {
+    rewind?: {
+      recordId: string
+      historyLength: number
+      transcriptIndex: number
+      createdAt: string
+    }
+  } =>
+    JSON.parse(
+      readFileSync(
+        path.join(getProjectDataDir(), 'chats', CHAT_ID, 'undo.json'),
+        'utf8',
+      ),
+    )
+
+  /** A turn that rewrites a file, recorded with the anchor it captured. */
+  const recordTurn = async (name: string, anchor?: RewindAnchor) => {
+    const file = path.join(projectDir, name)
+    writeFileSync(file, 'the user wrote this\n')
+    const hash = await trackSnapshot(projectDir)
+    writeFileSync(file, 'the agent changed it\n')
+    recordUndoEntry(CHAT_ID, {
+      hashBefore: hash!,
+      files: [name],
+      message: 'a turn worth rewinding',
+      ...(anchor ? { anchor } : {}),
+    })
+    return { file, id: peekUndo(CHAT_ID)!.id }
+  }
+
+  test('an undo takes the turn out of the model conversation too', async () => {
+    const { file, id } = await recordTurn('rewritten.txt', {
+      historyLength: 3,
+      transcriptIndex: 1,
+    })
+
+    const message = await undoToRecord(CHAT_ID, projectDir, id, {
+      conversation: true,
+    })
+
+    // Both halves: the file is back, and the model no longer remembers writing
+    // it — which is what stops it from writing it a second time.
+    expect(readFileSync(file, 'utf8')).toBe('the user wrote this\n')
+    expect(message).toContain('↶')
+    expect(readJournal().rewind).toEqual({
+      recordId: id,
+      historyLength: 3,
+      transcriptIndex: 1,
+      createdAt: expect.any(String),
+    })
+  })
+
+  test('a file-only undo stages no conversation cut', async () => {
+    const { id } = await recordTurn('files-only.txt', {
+      historyLength: 2,
+      transcriptIndex: 0,
+    })
+
+    const message = await undoToRecord(CHAT_ID, projectDir, id)
+
+    expect(message).not.toContain('↶')
+    expect(readJournal().rewind).toBeUndefined()
+    expect(getRewindBoundary(CHAT_ID)).toBeNull()
+  })
+
+  test('an entry with no anchor reverts its files and does not cut', async () => {
+    const { file, id } = await recordTurn('unanchored.txt')
+
+    const message = await undoToRecord(CHAT_ID, projectDir, id, {
+      conversation: true,
+    })
+
+    // A guess is worse than no cut: the file half still did its job.
+    expect(readFileSync(file, 'utf8')).toBe('the user wrote this\n')
+    expect(message).not.toContain('↶')
+    expect(getRewindBoundary(CHAT_ID)).toBeNull()
+  })
+
+  test('a turn recorded while a cut is staged does not lift it', async () => {
+    setRewindBoundary(CHAT_ID, {
+      recordId: 'r1',
+      historyLength: 4,
+      transcriptIndex: 2,
+      createdAt: new Date().toISOString(),
+    })
+
+    recordUndoEntry(CHAT_ID, {
+      hashBefore: 'later',
+      files: ['later.txt'],
+      message: 'a newer turn',
+      anchor: { historyLength: 6, transcriptIndex: 4 },
+    })
+
+    expect(getRewindBoundary(CHAT_ID)?.historyLength).toBe(4)
+  })
+
+  test('a redo lifts the staged cut', async () => {
+    const { id } = await recordTurn('redone.txt', {
+      historyLength: 1,
+      transcriptIndex: 0,
+    })
+    await undoToRecord(CHAT_ID, projectDir, id, { conversation: true })
+    expect(getRewindBoundary(CHAT_ID)).not.toBeNull()
+
+    await redoToRecord(CHAT_ID, projectDir, peekRedo(CHAT_ID)!.id)
+
+    expect(getRewindBoundary(CHAT_ID)).toBeNull()
+  })
+
+  test('lifting a cut that is not there is safe', () => {
+    expect(getRewindBoundary(CHAT_ID)).toBeNull()
+    clearRewindBoundary(CHAT_ID)
+    expect(getRewindBoundary(CHAT_ID)).toBeNull()
   })
 })
 

@@ -21,6 +21,7 @@ import path from 'node:path'
 
 import { getProjectDataDir, tryGetProjectRoot } from '../project-files'
 import { logger } from '../utils/logger'
+import { anchorOf, type RewindAnchor } from './undo-rewind'
 import {
   anchorSnapshot,
   diffSnapshot,
@@ -41,6 +42,12 @@ export type UndoRecord = {
   files: string[]
   /** The user message that started the turn. */
   message: string
+  /**
+   * Where the turn started in the conversation, captured as its run begins.
+   * Absent for entries written before the conversation rewind existed, and for
+   * a turn whose transcript could not be read.
+   */
+  anchor?: RewindAnchor
   createdAt: string
   /** Snapshot captured at /undo time; set only while the record is redoable. */
   hashAfter?: string
@@ -51,9 +58,29 @@ export type UndoRecord = {
   restored?: UndoRecord[]
 }
 
+/**
+ * A conversation cut, staged by an undo that rewinds the conversation too.
+ *
+ * Staged, not applied: setting it deletes nothing, so `/redo` lifts it and
+ * cannot lose a message. A turn that runs afterwards absorbs it — the state
+ * that turn builds already excludes the cut messages — and it is cleared then.
+ */
+export type RewindBoundary = {
+  /** The entry whose turn the conversation was rewound to. */
+  recordId: string
+  /** `messageHistory.length` the model's history is cut back to. */
+  historyLength: number
+  /** Transcript index of the prompt that turn started from. */
+  transcriptIndex: number
+  /** When the cut was staged. */
+  createdAt: string
+}
+
 export type UndoState = {
   undoStack: UndoRecord[]
   redoStack: UndoRecord[]
+  /** Present while a conversation cut is staged for this chat. */
+  rewind?: RewindBoundary
 }
 
 const MAX_UNDO_ENTRIES = 20
@@ -82,6 +109,9 @@ export function loadUndoState(chatId: string): UndoState {
       return {
         undoStack: Array.isArray(parsed.undoStack) ? parsed.undoStack : [],
         redoStack: Array.isArray(parsed.redoStack) ? parsed.redoStack : [],
+        // A staged cut has to survive every other journal write, or a turn
+        // recorded while it is pending would silently lift it.
+        ...(parsed.rewind ? { rewind: parsed.rewind } : {}),
       }
     }
   } catch {
@@ -216,7 +246,12 @@ function sweepAnchorsInBackground(): void {
  */
 export function recordUndoEntry(
   chatId: string,
-  entry: { hashBefore: string; files: string[]; message: string },
+  entry: {
+    hashBefore: string
+    files: string[]
+    message: string
+    anchor?: RewindAnchor
+  },
 ): void {
   if (!entry.hashBefore || entry.files.length === 0) return
   const state = loadUndoState(chatId)
@@ -227,6 +262,7 @@ export function recordUndoEntry(
     hashBefore: entry.hashBefore,
     files: entry.files,
     message: truncateMessage(entry.message),
+    ...(entry.anchor ? { anchor: entry.anchor } : {}),
     createdAt: new Date().toISOString(),
   })
   if (state.undoStack.length > MAX_UNDO_ENTRIES) {
@@ -284,6 +320,37 @@ export function pushRedo(chatId: string, record: UndoRecord): void {
   saveUndoState(chatId, state)
 }
 
+/**
+ * The conversation cut staged for a chat, if any.
+ *
+ * Read on the way into a run (see `applyRewind`) and by the picker, so it has
+ * to be one journal read: this sits on the send path.
+ */
+export function getRewindBoundary(chatId: string): RewindBoundary | null {
+  return loadUndoState(chatId).rewind ?? null
+}
+
+/** Stage a conversation cut. Nothing is deleted; `/redo` lifts it. */
+export function setRewindBoundary(
+  chatId: string,
+  boundary: RewindBoundary,
+): void {
+  const state = loadUndoState(chatId)
+  state.rewind = boundary
+  saveUndoState(chatId, state)
+}
+
+/**
+ * Lift a staged cut: what a redo does, and what a turn does once it has run
+ * (its state was built from the cut history, so the cut is baked in by then).
+ */
+export function clearRewindBoundary(chatId: string): void {
+  const state = loadUndoState(chatId)
+  if (!state.rewind) return
+  delete state.rewind
+  saveUndoState(chatId, state)
+}
+
 /** The undo stack for a chat, oldest turn first. */
 export function listUndoEntries(chatId: string): UndoRecord[] {
   return loadUndoState(chatId).undoStack
@@ -301,11 +368,17 @@ export function listRedoEntries(chatId: string): UndoRecord[] {
  * turns move onto the redo stack so /redo can restore the exact state that
  * was left behind. Returns the confirmation message, or null when the
  * snapshot store is unavailable (in which case nothing is changed).
+ *
+ * With `options.conversation`, the turn is also taken out of the model's
+ * memory — staged, so a redo puts it back. The cut is skipped for an entry with
+ * no anchor (recorded before this existed), because a wrong cut is worse than a
+ * file-only undo; the entry still reverts its files either way.
  */
 export async function undoToRecord(
   chatId: string,
   projectRoot: string,
   recordId: string,
+  options: { conversation?: boolean } = {},
 ): Promise<string | null> {
   const state = loadUndoState(chatId)
   const index = state.undoStack.findIndex((record) => record.id === recordId)
@@ -338,6 +411,19 @@ export async function undoToRecord(
 
   state.undoStack = state.undoStack.slice(0, index)
   state.redoStack.push({ ...record, hashAfter, restored: affected })
+  // The conversation half, when it was asked for and this turn knows where it
+  // started. Staged, never applied: the files are already back, and the model's
+  // history is cut on its way into the next run.
+  const anchor = anchorOf(record)
+  const rewound = Boolean(options.conversation && anchor)
+  if (rewound && anchor) {
+    state.rewind = {
+      recordId: record.id,
+      historyLength: anchor.historyLength,
+      transcriptIndex: anchor.transcriptIndex,
+      createdAt: new Date().toISOString(),
+    }
+  }
   saveUndoState(chatId, state)
 
   const undone = [
@@ -350,7 +436,8 @@ export async function undoToRecord(
     turns === 1
       ? '**Undid the last change:**'
       : `**Undid ${turns} change(s) back to: ${truncateMessage(record.message)}**`
-  return `${heading}\n${undone}${diffStat ? `\n\n${diffStat}` : ''}`
+  const rewoundNote = rewound ? '\n  ↶ the conversation was rewound with it' : ''
+  return `${heading}\n${undone}${rewoundNote}${diffStat ? `\n\n${diffStat}` : ''}`
 }
 
 /**
@@ -378,6 +465,9 @@ export async function redoToRecord(
   // Drop newer redo actions — jumping back invalidates them.
   const referenced = referencedHashes(state)
   state.redoStack = state.redoStack.slice(0, index)
+  // A redo puts the conversation back as well, so it lifts any staged cut:
+  // that mark is the only thing standing between the user and the messages.
+  delete state.rewind
   if (record.restored && record.restored.length > 0) {
     state.undoStack.push(...record.restored)
   } else {
