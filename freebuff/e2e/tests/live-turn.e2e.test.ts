@@ -71,11 +71,24 @@ async function focusModelRow(
 describe('Freebuff: live turn against the backend', () => {
   let session: FreebuffSession | null = null
   let configDir: string | null = null
+  // set once the test has ended its own session; otherwise afterEach does it, so a failed
+  // assertion does not leave an hour-long session open on the account (the first CI run did)
+  let ended = false
 
   afterEach(async () => {
     await session?.captureLabeled('final')
+    // only from the chat screen: on the landing picker those keys would press Enter on a row
+    if (
+      session &&
+      !ended &&
+      (await session.capture()).includes('End session')
+    ) {
+      await session.send('/end-session')
+      await session.waitForText('Start coding for free', 60_000).catch(() => {})
+    }
     await session?.stop()
     session = null
+    ended = false
     if (configDir) fs.rmSync(configDir, { recursive: true, force: true })
     configDir = null
   })
@@ -121,6 +134,7 @@ describe('Freebuff: live turn against the backend', () => {
       // confirmed the end, and the backend is then asked directly.
       await session.send('/end-session')
       await session.waitForText('Start coding for free', 60_000)
+      ended = true
       let status = await backendSessionStatus()
       for (let i = 0; i < 15 && status !== 'none'; i++) {
         await sleep(2_000)
