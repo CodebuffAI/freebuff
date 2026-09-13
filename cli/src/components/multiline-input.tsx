@@ -27,6 +27,11 @@ import {
 } from '../utils/terminal-enter-detection'
 import { supportsTruecolor } from '../utils/theme-system'
 import { calculateNewCursorPosition } from '../utils/word-wrap-utils'
+import {
+  findNextWordBoundary,
+  findPreviousWordBoundary,
+  getWordNavigationPosition,
+} from '../utils/word-navigation'
 
 import type { InputValue } from '../types/store'
 import type {
@@ -56,38 +61,6 @@ function findLineEnd(text: string, cursor: number): number {
   while (pos < text.length && text[pos] !== '\n') {
     pos++
   }
-  return pos
-}
-
-function findPreviousWordBoundary(text: string, cursor: number): number {
-  let pos = Math.max(0, Math.min(cursor, text.length))
-
-  // Skip whitespace backwards
-  while (pos > 0 && /\s/.test(text[pos - 1])) {
-    pos--
-  }
-
-  // Skip word characters backwards
-  while (pos > 0 && !/\s/.test(text[pos - 1])) {
-    pos--
-  }
-
-  return pos
-}
-
-function findNextWordBoundary(text: string, cursor: number): number {
-  let pos = Math.max(0, Math.min(cursor, text.length))
-
-  // Skip non-whitespace forwards
-  while (pos < text.length && !/\s/.test(text[pos])) {
-    pos++
-  }
-
-  // Skip whitespace forwards
-  while (pos < text.length && /\s/.test(text[pos])) {
-    pos++
-  }
-
   return pos
 }
 
@@ -836,8 +809,6 @@ export const MultilineInput = forwardRef<
       const isAltLikeModifier = isAltModifier(key)
       const logicalLineStart = findLineStart(value, cursorPosition)
       const logicalLineEnd = findLineEnd(value, cursorPosition)
-      const wordStart = findPreviousWordBoundary(value, cursorPosition)
-      const wordEnd = findNextWordBoundary(value, cursorPosition)
 
       // Read lineInfo inside the callback to get current value (not stale from closure)
       const currentLineInfo = textRef.current
@@ -857,29 +828,18 @@ export const MultilineInput = forwardRef<
         ? lineStarts[visualLineIndex + 1] - 1
         : logicalLineEnd
 
-      // Alt+Left/B: Word left
-      if (
-        isAltLikeModifier &&
-        (key.name === 'left' || lowerKeyName === 'b')
-      ) {
+      // Alt+Left/Right (or B/F), plus Ctrl+Left/Right on Windows: word-wise movement.
+      const wordNavigationPosition = getWordNavigationPosition(
+        key,
+        value,
+        cursorPosition,
+        isAltLikeModifier,
+      )
+      if (wordNavigationPosition !== null) {
         preventKeyDefault(key)
         onChange({
           text: value,
-          cursorPosition: wordStart,
-          lastEditDueToNav: false,
-        })
-        return true
-      }
-
-      // Alt+Right/F: Word right
-      if (
-        isAltLikeModifier &&
-        (key.name === 'right' || lowerKeyName === 'f')
-      ) {
-        preventKeyDefault(key)
-        onChange({
-          text: value,
-          cursorPosition: wordEnd,
+          cursorPosition: wordNavigationPosition,
           lastEditDueToNav: false,
         })
         return true
