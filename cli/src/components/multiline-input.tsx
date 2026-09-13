@@ -12,6 +12,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import stringWidth from 'string-width'
 
 import { InputCursor } from './input-cursor'
 import { useTheme } from '../hooks/use-theme'
@@ -31,10 +32,10 @@ import { calculateNewCursorPosition } from '../utils/word-wrap-utils'
 import type { InputValue } from '../types/store'
 import type {
   KeyEvent,
+  LineInfo,
   MouseEvent,
   PasteEvent,
   ScrollBoxRenderable,
-  TextBufferView,
   TextRenderable,
 } from '@opentui/core'
 
@@ -94,6 +95,80 @@ function findNextWordBoundary(text: string, cursor: number): number {
 export const CURSOR_CHAR = '▍'
 const CONTROL_CHAR_REGEX = /[\u0000-\u0008\u000b-\u000c\u000e-\u001f\u007f]/
 const TAB_WIDTH = 4
+
+type TextBufferViewWithVisualLineInfo = {
+  lineInfo?: {
+    lineStartCols?: unknown
+  }
+}
+
+/**
+ * Get the visual (wrapped) line info used by this component.
+ *
+ * OpenTUI 0.3.4 publicly exposes logical line info on TextRenderable, but
+ * navigation and layout here already depend on the visual wrapped line info.
+ * Keep that internal dependency in one guarded adapter until OpenTUI exposes
+ * the equivalent visual data publicly.
+ */
+function getVisualLineInfo(
+  textRenderable: TextRenderable | null,
+): Pick<LineInfo, 'lineStartCols'> | null {
+  const textBufferView = (
+    textRenderable as unknown as {
+      textBufferView?: TextBufferViewWithVisualLineInfo
+    } | null
+  )?.textBufferView
+  const lineInfo = textBufferView?.lineInfo
+  const lineStartCols = lineInfo?.lineStartCols
+
+  if (
+    !Array.isArray(lineStartCols) ||
+    !lineStartCols.every((lineStart) => typeof lineStart === 'number')
+  ) {
+    return null
+  }
+
+  return lineInfo as Pick<LineInfo, 'lineStartCols'>
+}
+
+export function calculateMultilineInputCursorPosition({
+  text,
+  cursorPosition,
+  lineInfo,
+  viewportX,
+  viewportY,
+  verticalScrollPosition,
+}: {
+  text: string
+  cursorPosition: number
+  lineInfo: Pick<LineInfo, 'lineStartCols'> | null
+  viewportX: number
+  viewportY: number
+  verticalScrollPosition: number
+}): { x: number; y: number } {
+  const safeCursorPosition = Math.max(0, Math.min(cursorPosition, text.length))
+  const renderedPrefix = text
+    .slice(0, safeCursorPosition)
+    .replace(/\t/g, ' '.repeat(TAB_WIDTH))
+  const displayColumn =
+    stringWidth(renderedPrefix) + (renderedPrefix.match(/\n/g)?.length ?? 0)
+
+  // OpenTUI reports lineStartCols as cumulative display-column offsets for
+  // visual lines. Compare against the rendered width, not the source index.
+  const lineStarts = lineInfo?.lineStartCols ?? [0]
+  const visualRow = Math.max(
+    0,
+    lineStarts.findLastIndex((lineStart) => lineStart <= displayColumn),
+  )
+  const visualLineStart = lineStarts[visualRow] ?? 0
+
+  // OpenTUI's renderer cursor coordinates are 1-based terminal coordinates;
+  // viewport x/y are 0-based screen layout coordinates.
+  return {
+    x: viewportX + displayColumn - visualLineStart + 1,
+    y: viewportY + visualRow - verticalScrollPosition + 1,
+  }
+}
 
 /**
  * Check if a key event represents printable character input (not a special key).
@@ -236,10 +311,12 @@ export const MultilineInput = forwardRef<
   // updated synchronously to ensure each keystroke builds on the previous one.
   const valueRef = useRef(value)
   const cursorPositionRef = useRef(cursorPosition)
+  const focusedRef = useRef(focused)
 
   // Keep refs current on every render (synchronous assignment avoids useEffect timing issues)
   valueRef.current = value
   cursorPositionRef.current = cursorPosition
+  focusedRef.current = focused
 
   // Helper to get or set the sticky column for vertical navigation.
   // When stickyColumnRef.current is set, we return it (preserving column across
@@ -269,12 +346,7 @@ export const MultilineInput = forwardRef<
 
   const textRef = useRef<TextRenderable | null>(null)
 
-  const lineInfo = textRef.current
-    ? (
-        (textRef.current satisfies TextRenderable as any)
-          .textBufferView as TextBufferView
-      ).lineInfo
-    : null
+  const lineInfo = getVisualLineInfo(textRef.current)
 
   // Focus/blur scrollbox when focused prop changes
   const prevFocusedRef = useRef(false)
@@ -513,6 +585,60 @@ export const MultilineInput = forwardRef<
     /\t/g,
     ' '.repeat(TAB_WIDTH),
   )
+  const hardwareCursorTextRef = useRef(displayValue)
+  hardwareCursorTextRef.current = displayValue
+
+  // Keep the terminal's hardware cursor at the same screen-cell position as
+  // the existing visual caret so terminal IMEs can anchor their UI correctly.
+  const syncHardwareCursor = useCallback(() => {
+    if (!focusedRef.current) {
+      renderer.setCursorPosition(0, 0, false)
+      return
+    }
+
+    const scrollBox = scrollBoxRef.current
+    const lineInfo = getVisualLineInfo(textRef.current)
+
+    if (!scrollBox || !lineInfo) {
+      renderer.setCursorPosition(0, 0, false)
+      return
+    }
+
+    const viewport = scrollBox.viewport
+    const cursor = calculateMultilineInputCursorPosition({
+      text: hardwareCursorTextRef.current,
+      cursorPosition: cursorPositionRef.current,
+      lineInfo,
+      viewportX: Number(viewport.x),
+      viewportY: Number(viewport.y),
+      verticalScrollPosition: scrollBox.verticalScrollBar.scrollPosition,
+    })
+
+    renderer.setCursorPosition(cursor.x, cursor.y, true)
+  }, [renderer])
+
+  useEffect(() => {
+    syncHardwareCursor()
+  }, [focused, displayValue, cursorPosition, lineInfo, syncHardwareCursor])
+
+  useEffect(() => {
+    if (!focused) return
+
+    // React effects can run before OpenTUI has completed the layout pass that
+    // establishes wrapping and viewport coordinates. TextRenderable emits
+    // this event after its line information is recalculated.
+    const textRenderable = textRef.current
+    textRenderable?.on('line-info-change', syncHardwareCursor)
+    return () => {
+      textRenderable?.off('line-info-change', syncHardwareCursor)
+    }
+  }, [focused, syncHardwareCursor])
+
+  useEffect(() => {
+    return () => {
+      renderer.setCursorPosition(0, 0, false)
+    }
+  }, [renderer])
 
   // Calculate cursor position in the expanded string (accounting for tabs)
   let renderCursorPosition = 0
@@ -840,9 +966,7 @@ export const MultilineInput = forwardRef<
       const wordEnd = findNextWordBoundary(value, cursorPosition)
 
       // Read lineInfo inside the callback to get current value (not stale from closure)
-      const currentLineInfo = textRef.current
-        ? ((textRef.current as any).textBufferView as TextBufferView)?.lineInfo
-        : null
+      const currentLineInfo = getVisualLineInfo(textRef.current)
 
       // Calculate visual line boundaries from lineInfo (accounts for word wrap)
       // Fall back to logical line boundaries if visual info is unavailable
