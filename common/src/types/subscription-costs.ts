@@ -20,12 +20,17 @@ export interface SubscriptionCostMetrics {
   attributionComplete: boolean
 }
 
-/** Recent, fully covered UTC-day cost report for the paid subscriber cohort. */
+/** Recent, completed-hour cost report for the paid subscriber cohort. */
 export interface SubscriptionCostReport {
   status: 'collecting' | 'ready' | 'unavailable'
   windowStart: string | null
   windowEnd: string | null
+  /** Completed covered hours, including partial UTC days. */
+  observedHours?: number
   completeDays: number
+  /** Complete-day basis for forecasts, separate from recent measured hours. */
+  forecastObservationStart?: string | null
+  forecastObservationEnd?: string | null
   forecastStart: string
   forecastEnd: string
   forecastDays: 30
