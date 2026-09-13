@@ -884,7 +884,10 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
                   <span fg={theme.foreground}>
                     {formatRetryAfter(session.retryAfterMs)}
                   </span>
-                  , or pick a cheaper model. Press Ctrl+C to exit.
+                  , or pick a cheaper model. Turn on auto top-up to keep
+                  going:{' '}
+                  <span fg={theme.foreground}>https://freebuff.com/freebucks</span>
+                  . Press Ctrl+C to exit.
                 </text>
               ) : metered && session.period === 'pacific_month' ? (
                 // The monthly dollar allowance, sent in CENTS in the pool's
