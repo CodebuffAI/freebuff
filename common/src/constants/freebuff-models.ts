@@ -315,24 +315,25 @@ export const FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT = 'high' as const
  *  by `applyOpenRouterProviderRouting`. Context 524,288, text in / text out,
  *  using Upstage's non-ZDR endpoint for provider-side debugging.
  *
- *  PRICE: Upstage's LIST card is $0.30/M in, $0.06/M cached, $1.20/M out.
- *  OpenRouter's card shows $0.03/$0.006/$0.12 with `"discount": 0.9` — that is
- *  Upstage's own launch promo ("Solar Pro 4: 90% off through Sep 10 (UTC)" on
- *  the Upstage console), not an OpenRouter-only price.
+ *  PRICE: Upstage's LIST card is $0.30/M in, $0.06/M cached, $1.20/M out, and
+ *  Upstage bills our key 90% off it ($0.03/$0.006/$0.12). That began as a
+ *  launch promo ("Solar Pro 4: 90% off through Sep 10 (UTC)" on the Upstage
+ *  console; OpenRouter shows `"discount": 0.9`) and our rate outlived the
+ *  banner's date. It is not an OpenRouter-only price.
  *
  *  The route is BYOK (`usage.is_byok: true`): OpenRouter serves it with our
  *  own Upstage key, bills nothing itself (`usage.cost` is 0) and reports an
  *  ESTIMATE of the upstream charge in `cost_details.upstream_inference_cost`,
- *  computed at the LIST card. It does not know our key is on the promo, so
- *  through 2026-09-10 that estimate is ten times Upstage's invoice. An earlier
- *  version of this comment read the estimate as "what we are billed" and
- *  concluded BYOK forfeits the discount; Upstage's invoice says otherwise.
+ *  computed at the LIST card. It does not know our key's rate, so that
+ *  estimate is ten times Upstage's invoice. An earlier version of this comment
+ *  read the estimate as "what we are billed" and concluded BYOK forfeits the
+ *  discount; Upstage's invoice says otherwise.
  *
- *  The OpenRouter lane therefore reprices this model from tokens while the
- *  promo runs (web/src/llm-api/openrouter-price-overrides.ts, with the dates),
- *  and falls back to OpenRouter's figure — correct again at list — when it
- *  ends. Re-evaluate the row before then rather than silently changing what
- *  "unmetered" means when the price changes. */
+ *  The OpenRouter lane therefore reprices this model from tokens
+ *  (web/src/llm-api/openrouter-price-overrides.ts), with no expiry while the
+ *  discount holds. Date or remove that entry when Upstage's invoice changes.
+ *  The Freebucks price is a separate, operator-set decision
+ *  (freebuff-solar-promo.ts). */
 /** Upstage's requested non-ZDR route for debugging. Pair with
  *  `allow_fallbacks: false` in applyOpenRouterProviderRouting. */
 export const SOLAR_PRO_4_OPENROUTER_ENDPOINT = 'upstage'

@@ -26,7 +26,7 @@ describe('free-promotion spend windows', () => {
       {
         modelId: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
         from: '2026-09-09T15:49:00.000Z',
-        to: '2099-01-01T00:00:00.000Z',
+        to: '2026-09-13T05:00:00.000Z',
       },
     ])
   })

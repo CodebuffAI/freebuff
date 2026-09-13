@@ -25,6 +25,12 @@ export const SOLAR_PRICE_CHANGES = [
     price: 0,
     tagline: '0 Freebucks',
   },
+  {
+    // Metered again. Takes effect as each server deploys it.
+    at: '2026-09-13T05:00:00Z',
+    modelId: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+    ...SOLAR_REGULAR_OFFER,
+  },
 ] as const
 
 export function solarOfferAt(now: number = Date.now()) {
