@@ -65,6 +65,22 @@ export const terminalCommandOutputSchema = z.union([
   }),
 ])
 
+// FREEBUFF_MODE is injected for Freebuff builds and read once when this module
+// is initialized. Tests can pass an explicit product flag to avoid depending on
+// process.env mutation after import.
+const isFreebuffBuild = process.env.FREEBUFF_MODE === 'true'
+
+type CommitAttribution = {
+  productName: 'Freebuff' | 'Codebuff'
+  productDomain: 'freebuff.com' | 'codebuff.com'
+}
+
+function getCommitAttribution(isFreebuff: boolean): CommitAttribution {
+  return isFreebuff
+    ? { productName: 'Freebuff', productDomain: 'freebuff.com' }
+    : { productName: 'Codebuff', productDomain: 'codebuff.com' }
+}
+
 /**
  * The commit guidance, with or without the agent attribution trailer.
  *
@@ -80,34 +96,48 @@ export const terminalCommandOutputSchema = z.union([
  * `git commit` example containing the trailer, and a prose instruction losing
  * to a concrete example is the ordinary failure here. The variant removes the
  * footer step and the example both.
- *
- * The default is byte-identical to what shipped before, so a normal user run is
- * unchanged.
  */
 export function buildGitCommitGuidePrompt(options: {
   attribution: boolean
+  isFreebuff?: boolean
 }): string {
+  const commitAttribution = getCommitAttribution(
+    options.isFreebuff ?? isFreebuffBuild,
+  )
+
   return GIT_COMMIT_GUIDE_HEAD.concat(
-    options.attribution ? GIT_COMMIT_ATTRIBUTION_STEP : GIT_COMMIT_PLAIN_STEP,
+    options.attribution
+      ? getGitCommitAttributionStep(commitAttribution)
+      : GIT_COMMIT_PLAIN_STEP,
     GIT_COMMIT_GUIDE_TAIL,
   )
 }
 
-const GIT_COMMIT_ATTRIBUTION_STEP = `4. **Create the commit, ending with this specific footer:**
+/** Build the attributed guide for an explicit product, or the current build. */
+export function getGitCommitGuidePrompt(isFreebuff?: boolean): string {
+  return buildGitCommitGuidePrompt({ attribution: true, isFreebuff })
+}
+
+function getGitCommitAttributionStep({
+  productName,
+  productDomain,
+}: CommitAttribution): string {
+  return `4. **Create the commit, ending with this specific footer:**
    \`\`\`
-   Generated with Codebuff 🤖
-   Co-Authored-By: Codebuff <noreply@codebuff.com>
+   Generated with ${productName} 🤖
+   Co-Authored-By: ${productName} <noreply@${productDomain}>
    \`\`\`
    Commands run in bash on every OS (Git Bash on Windows), so always use HEREDOC syntax to format the message:
    \`\`\`
    git commit -m "$(cat <<'EOF'
    Your commit message here.
 
-   🤖 Generated with Codebuff
-   Co-Authored-By: Codebuff <noreply@codebuff.com>
+   🤖 Generated with ${productName}
+   Co-Authored-By: ${productName} <noreply@${productDomain}>
    EOF
    )"
    \`\`\``
+}
 
 const GIT_COMMIT_PLAIN_STEP = `4. **Create the commit.** Do NOT add any trailer, footer, co-author line or attribution of any kind to the commit message — no \`Co-Authored-By\`, no "Generated with" line. The message is the message and nothing else.
    Commands run in bash on every OS (Git Bash on Windows), so always use HEREDOC syntax to format the message:
@@ -157,10 +187,8 @@ const GIT_COMMIT_GUIDE_TAIL = `
 - Make sure your commit message is concise yet descriptive, focusing on the intention behind the changes rather than merely describing them.
 `
 
-/** The default guidance. Byte-identical to what shipped before it was split. */
-export const gitCommitGuidePrompt = buildGitCommitGuidePrompt({
-  attribution: true,
-})
+/** The default guidance for the product that owns the current binary. */
+export const gitCommitGuidePrompt = getGitCommitGuidePrompt()
 
 const toolName = 'run_terminal_command'
 const endsAgentStep = true
@@ -197,7 +225,18 @@ const inputSchema = z
   .describe(
     `Execute a CLI command from the **project root** (different from the user's cwd).`,
   )
-const buildDescription = (options: { attribution: boolean }) => `
+
+type BuildDescriptionOptions = {
+  attribution: boolean
+  isFreebuff?: boolean
+}
+
+const buildDescription = (options: BuildDescriptionOptions) => {
+  const { productName, productDomain } = getCommitAttribution(
+    options.isFreebuff ?? isFreebuffBuild,
+  )
+
+  return `
 Stick to these use cases:
 1. Typechecking the project or running build (e.g., "npm run build"). Reading the output can help you edit code to fix build errors. If possible, use an option that performs checks but doesn't emit files, e.g. \`tsc --noEmit\`.
 2. Running tests (e.g., "npm test"). Reading the output can help you edit code to fix failing tests. Or, you could write new unit tests and then run them.
@@ -242,13 +281,14 @@ ${$getNativeToolCallExampleString({
     command: options.attribution
       ? `git commit -m "Your commit message here.
 
-🤖 Generated with Codebuff
-Co-Authored-By: Codebuff <noreply@codebuff.com>"`
+🤖 Generated with ${productName}
+Co-Authored-By: ${productName} <noreply@${productDomain}>"`
       : `git commit -m "Your commit message here."`,
   },
   endsAgentStep,
 })}
     `.trim()
+}
 
 const description = buildDescription({ attribution: true })
 
