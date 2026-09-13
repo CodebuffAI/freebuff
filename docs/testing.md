@@ -54,8 +54,15 @@ catches the known names; `web/scripts/prod-smoke.ts` catches the class. After
 the Next build, `build-web` starts `next start` on the pinned Node against a
 migrated Postgres container and drives one real client journey — session
 admission, agent-run start, a streamed chat completion — with every external
-HTTP call stubbed by `web/scripts/prod-smoke-upstream.cjs`. A request that
-cannot complete end to end fails the job. The `web` Render service deploys
+HTTP call stubbed. A request that cannot complete end to end fails the job.
+
+Both smokes are thin: `packages/internal/src/prod-smoke/harness.ts` owns the
+loopback-only database guard, the Bun-shim refusal, the seeded fixture (ad-data
+lifecycle row, user, session), staging a build outside the repo, the server
+spawn with log relay, `/api/healthz` polling with the optional runner gate, the
+authenticated request helper and teardown; `upstream-stub.cjs` beside it is the
+one table of stubbed upstream endpoints. An app's `scripts/prod-smoke.ts`
+supplies only its port, launch command, environment, auth header and journey. The `web` Render service deploys
 manually, so this makes `main` red before someone deploys it rather than
 blocking the deploy itself.
 
@@ -65,6 +72,31 @@ it refuses any other host):
 
 ```bash
 cd web && DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/testdb bun run smoke:prod
+```
+
+`build-freebuff-web` has the same gate for the builder app,
+`freebuff/web/scripts/prod-smoke.ts`, and it matters more there: `freebuff-web`
+auto-deploys from `main`. Two differences. The pin is that service's own
+`freebuff/web/.node-version`, not the repo root's, because Render applies the
+root file to every service and a root pin meant for `web` moved freebuff-web
+from 22.x to 20.15.1 on 2026-09-13, breaking its build on a Node 20 flag while
+CI stayed green; the job now installs that Node _before_ the compile, since the
+app's build script runs `node` itself. And the journey is a chat turn behind a
+seeded database session cookie rather than an API-key completion, because that
+is the path that `import()`s `@codebuff/sdk` out of the standalone tree at
+request time and runs the agent in-process; the SDK's calls to the backend
+(`/api/v1/me`, the run ledger, the model) all land in the stub's table.
+Hiding `@codebuff/sdk` from the standalone tree makes it fail, which is the
+proof that it exercises what the build's import check only approximates. The
+embedded agent runner is made _required_ (as on a deployed instance) with
+placeholder Convex credentials, so a runner that cannot boot is a 503 from
+`/api/healthz` and a fast red rather than a warning; note that Next polyfills
+`WebSocket` on its server, so the runner's "Node >= 22 required" bail does not
+fire on Node 20 under this app — a Node downgrade is caught by building and
+smoking on the pinned version, not by that check.
+
+```bash
+cd freebuff/web && DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/testdb bun run smoke:prod
 ```
 
 ## What CI actually spends its time on
