@@ -171,7 +171,7 @@ export type MatchedSlashCommand = Prettify<
     >
 >
 
-const filterSlashCommands = (
+export const filterSlashCommands = (
   commands: SlashCommand[],
   query: string,
 ): MatchedSlashCommand[] => {
@@ -186,57 +186,40 @@ const filterSlashCommands = (
     (command) => command.id,
     seen,
   )
+
+  // Prefix and substring matching on id/alias share everything but the string-match predicate.
+  const matchByIdOrAlias = (
+    test: (haystack: string, needle: string) => boolean,
+  ) => {
+    for (const command of commands) {
+      if (seen.has(command.id)) continue
+      const id = command.id.toLowerCase()
+      const aliasList = (command.aliases ?? []).map((alias) =>
+        alias.toLowerCase(),
+      )
+
+      if (
+        test(id, normalized) ||
+        aliasList.some((alias) => test(alias, normalized))
+      ) {
+        const label = command.label.toLowerCase()
+        const firstIndex = label.indexOf(normalized)
+        const indices =
+          firstIndex === -1
+            ? null
+            : createHighlightIndices(firstIndex, firstIndex + normalized.length)
+        pushUnique(matches, {
+          ...command,
+          ...(indices && { labelHighlightIndices: indices }),
+        })
+      }
+    }
+  }
+
   // Prefix of ID
-  for (const command of commands) {
-    if (seen.has(command.id)) continue
-    const id = command.id.toLowerCase()
-    const aliasList = (command.aliases ?? []).map((alias) =>
-      alias.toLowerCase(),
-    )
-
-    if (
-      id.startsWith(normalized) ||
-      aliasList.some((alias) => alias.startsWith(normalized))
-    ) {
-      const label = command.label.toLowerCase()
-      const firstIndex = label.indexOf(normalized)
-      const indices =
-        firstIndex === -1
-          ? null
-          : createHighlightIndices(firstIndex, firstIndex + normalized.length)
-      pushUnique(matches, {
-        ...command,
-        ...(indices && { labelHighlightIndices: indices }),
-      })
-    }
-  }
-
+  matchByIdOrAlias((haystack, needle) => haystack.startsWith(needle))
   // Substring of ID
-  for (const command of commands) {
-    if (seen.has(command.id)) continue
-    const id = command.id.toLowerCase()
-    const aliasList = (command.aliases ?? []).map((alias) =>
-      alias.toLowerCase(),
-    )
-
-    if (
-      id.includes(normalized) ||
-      aliasList.some((alias) => alias.includes(normalized))
-    ) {
-      const label = command.label.toLowerCase()
-      const firstIndex = label.indexOf(normalized)
-      const indices =
-        firstIndex === -1
-          ? null
-          : createHighlightIndices(firstIndex, firstIndex + normalized.length)
-      pushUnique(matches, {
-        ...command,
-        ...(indices && {
-          labelHighlightIndices: indices,
-        }),
-      })
-    }
-  }
+  matchByIdOrAlias((haystack, needle) => haystack.includes(needle))
 
   // Substring of description
   for (const command of commands) {
