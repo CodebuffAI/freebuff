@@ -17,8 +17,11 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { FreebuffSession, requireFreebuffBinary } from '../utils'
 
 const FLASH_DISPLAY_NAME = 'DeepSeek V4.1 Flash'
-const SMOKE_PROMPT = 'What is 4187 + 2359? Reply with only the number.'
-const SMOKE_ANSWER = '6546'
+// Not arithmetic (Flash once answered 4187 + 2359 with 6536), and "seven" never
+// appears in the echoed prompt.
+const SMOKE_PROMPT =
+  'Reply with only the English word for the number 7, in lowercase.'
+const SMOKE_ANSWER = 'seven'
 
 const apiKey =
   process.env.FREEBUFF_SMOKE_API_KEY || process.env.CODEBUFF_API_KEY || null
