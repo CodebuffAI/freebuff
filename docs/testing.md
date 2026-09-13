@@ -43,6 +43,30 @@ This exists because every check bun gives you is blind to the failure mode that 
 
 **`[test].exclude` in `bunfig.toml` does nothing on bun 1.3.14.** Verified by pointing it at an ordinary test file, which still ran. That is why the repo-root `exclude` does not keep `*.integration.test.*` out of a root run, and why CI filters them with `find ... ! -name '*.integration.test.ts'`. Gate on a runtime condition instead of trusting the key.
 
+## The production-runtime smoke in `build-web`
+
+Everything else in CI runs under Bun. Production `web` runs under Node (Render's
+default, pinned in `.node-version` so CI and Render read the same file), and
+the two disagree on which JS built-ins exist: on 2026-09-11 a
+`Promise.withResolvers()` in the completions handler was green everywhere and
+threw on every request in production (#3218). `scripts/check-node-runtime-apis.ts`
+catches the known names; `web/scripts/prod-smoke.ts` catches the class. After
+the Next build, `build-web` starts `next start` on the pinned Node against a
+migrated Postgres container and drives one real client journey — session
+admission, agent-run start, a streamed chat completion — with every external
+HTTP call stubbed by `web/scripts/prod-smoke-upstream.cjs`. A request that
+cannot complete end to end fails the job. The `web` Render service deploys
+manually, so this makes `main` red before someone deploys it rather than
+blocking the deploy itself.
+
+Run it locally after `bun run build` in `web/` with `DATABASE_URL` pointing at
+a loopback Postgres that has the migrations applied (the script seeds rows, so
+it refuses any other host):
+
+```bash
+cd web && DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/testdb bun run smoke:prod
+```
+
 ## What CI actually spends its time on
 
 `ci.yml` is one flat fan-out: `typecheck`, `build-web`, and three test matrices,
