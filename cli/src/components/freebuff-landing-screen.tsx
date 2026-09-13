@@ -98,6 +98,17 @@ export const FreebuffNothingToContinueNotice: React.FC = () => {
   )
 }
 
+/** The notice must only ever appear when the user asked to resume AND no
+ *  session is actually resumed. A successful resume either lands outside this
+ *  screen entirely or surfaces a `status: 'active'`/takeover session, never a
+ *  `status: 'none'` one, so gating on that status is what makes
+ *  `isLanding` mean "nothing was resumed". Exported so the invariant is
+ *  testable without mounting the whole landing screen. */
+export const shouldShowContinueNotice = (
+  continueRequested: boolean,
+  session: FreebuffSessionResponse | null,
+): boolean => continueRequested && session?.status === 'none'
+
 /** "in ~3h 20m" / "in ~45 min" / "in under a minute". Used on the
  *  rate-limited screen so users know when they can try again. */
 const formatRetryAfter = (ms: number): string => {
@@ -617,10 +628,12 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   const belowPickerRows = streakRows + noticeRows + streakBonusRows
   // The continue notice renders above the picker, so its rows must be carved
   // out of the picker's viewport budget the way the heading's are.
-  const continueNoticeRows =
-    continueRequested && isLanding
-      ? 1 /* marginTop */ + wrappedRows(NOTHING_TO_CONTINUE_MESSAGE)
-      : 0
+  const continueNoticeRows = shouldShowContinueNotice(
+    continueRequested === true,
+    session,
+  )
+    ? 1 /* marginTop */ + wrappedRows(NOTHING_TO_CONTINUE_MESSAGE)
+    : 0
   const reservedChrome = 2 + adRows + 1 /* main paddingBottom */ + logoBlockRows
   const landingTextRows =
     wrappedRows(LANDING_HEADING) +
@@ -757,7 +770,9 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
                   onDismiss={freebucksIntro.dismiss}
                 />
               )}
-              {continueRequested && <FreebuffNothingToContinueNotice />}
+              {shouldShowContinueNotice(continueRequested === true, session) && (
+                <FreebuffNothingToContinueNotice />
+              )}
               <LandingHeadingRow
                 streakLine={streakOnHeadingRow ? streakLine : null}
                 marginBottom={textMarginBottom}
