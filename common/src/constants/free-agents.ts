@@ -606,9 +606,10 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
     FREEBUFF_DEEPSEEK_V4_FLASH_MAX_MODEL_ID,
   ]),
   'base2-free-luna-max': new Set([FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID]),
-  // The Muse Spark root — on every surface since 2026-09-07, when 1.3 was
-  // withdrawn and 1.2 took its place. Exactly one model, like every other
-  // pinned root:
+  // The Muse Spark 1.2 root. The offered row from 2026-09-07, while 1.3 was
+  // withdrawn, until 1.3 replaced it again on 2026-09-13; it now serves live
+  // sessions and installed builds that still hold 1.2. Exactly one model, like
+  // every other pinned root:
   // the rate-limit queue accounts by model, so a root that could also run
   // something else would let a turn escape the queue's bookkeeping.
   'base2-free-muse-spark': new Set([

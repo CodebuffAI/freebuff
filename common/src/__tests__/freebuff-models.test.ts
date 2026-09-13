@@ -724,10 +724,11 @@ describe('freebuff model availability', () => {
     // It is a temporary occupant — see the removal order on its constant. If
     // anything ELSE turns up here, check it against the same three questions
     // before accepting it.
-    // EMPTY since 2026-09-07: its only occupant, Muse Spark 1.2, went back
-    // into the pickers when 1.3 was withdrawn. An id landing here again should
-    // be checked against the same three questions in the comment above.
-    expect(FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS).toEqual([])
+    // Empty 2026-09-07 → 2026-09-13 while 1.2 was the offered row; it is back
+    // here now that 1.3 has replaced it again.
+    expect(FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS).toEqual([
+      FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
+    ])
     for (const id of FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS) {
       // Still a session model (live sessions keep running) and still metered
       // by some pool (never unlimited by omission).
@@ -1875,58 +1876,59 @@ describe('limited-offer models (Claude Fable 5)', () => {
 describe('Meta Muse Spark 1.3 Contributor', () => {
   const ID = FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID
 
-  test('is withdrawn: recognised, paused, and in no picker', () => {
-    // Withdrawn 2026-09-07, three days after it was listed. Not busy and not
-    // flapping — GONE: probed that day, all four Meta keys answered `404
-    // model_not_found` on 5 of 5 attempts each, while 1.2 answered 5 of 5 on
-    // the same keys in the same minute. 2,838 sessions a day were still being
-    // admitted on it and every one was served on DeepSeek V4 Flash by the
-    // fallback, which is a promise broken on every turn however well the
-    // fallback works.
-    expect(isFreebuffPausedFreeModelId(ID)).toBe(true)
-    expect(FREEBUFF_MODELS.map((model) => model.id)).not.toContain(ID)
-    expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).not.toContain(ID)
-    // RECOGNISED, though: every released CLI and Desktop holds this id and
-    // will keep sending it. An id the server does not know can only be
-    // refused, and a refusal is the retry loop of #1801; listed in
-    // SUPPORTED_FREEBUFF_MODELS it is coerced instead.
+  test('is the offered Muse Spark row, everywhere', () => {
+    // Withdrawn 2026-09-07 (`404 model_not_found` on every key, every attempt)
+    // and restored 2026-09-13, when it answered every probe on the live keys
+    // exactly as 1.2 did. It replaces 1.2 on every surface.
+    expect(isFreebuffPausedFreeModelId(ID)).toBe(false)
+    expect(FREEBUFF_MODELS.map((model) => model.id)).toContain(ID)
+    expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).toContain(ID)
+    expect(isFreebuffWebSelectableModelId(ID)).toBe(true)
+    expect(isFreebuffSessionModelId(ID)).toBe(true)
+    expect(isFreebuffWebPremiumModelId(ID)).toBe(true)
+    expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(ID)
     expect(SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)).toContain(ID)
     expect(isSupportedFreebuffModelId(ID)).toBe(true)
   })
-
 })
 
 describe('Meta Muse Spark 1.2 Contributor', () => {
   const ID = FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID
 
-  test('is the offered Muse Spark row, everywhere', () => {
-    // It was retired to a draining row on 2026-09-02 in favour of 1.3, and it
-    // came back on 2026-09-07 when 1.3 turned out to be gone at Meta — `404
-    // model_not_found` on all four keys, 5 of 5 each, while this one answered
-    // 5 of 5 on the same keys in the same minute.
+  test('is retired from every picker but still served', () => {
+    // Replaced by 1.3 on 2026-09-13, as it first was on 2026-09-02. Gone from
+    // the CLI/Desktop grid and hidden in the browser pickers, but still a
+    // premium-metered session model and a recognised id, so a live session and
+    // an installed build that holds it keep running on it. NOT paused: a pause
+    // would coerce that pick to the tier default instead.
+    expect(FREEBUFF_MODELS.map((model) => model.id)).not.toContain(ID)
+    expect(isFreebuffWebSelectableModelId(ID)).toBe(false)
+    expect(FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS).toContain(ID)
     expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).toContain(ID)
     expect(isFreebuffSessionModelId(ID)).toBe(true)
     expect(isFreebuffWebPremiumModelId(ID)).toBe(true)
-    expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(ID)
-    // Offered by every picker now, not hidden behind the retirement list.
-    expect(isFreebuffWebSelectableModelId(ID)).toBe(true)
-    expect(FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS).not.toContain(ID)
-    expect(FREEBUFF_MODELS.map((model) => model.id)).toContain(ID)
+    expect(isFreebuffPausedFreeModelId(ID)).toBe(false)
     expect(SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)).toContain(ID)
     expect(isSupportedFreebuffModelId(ID)).toBe(true)
   })
 
-  test('a saved 1.2 pick is no longer pushed anywhere', () => {
-    // It used to point at 1.3, which was the only route from a browser that
-    // remembered 1.2 to the row that replaced it. 1.3 was withdrawn on
-    // 2026-09-07 (`404 model_not_found` on every key), so the arrow went with
-    // it: superseding a pick onto a model that cannot answer is worse than
-    // leaving it where it is.
+  test('a saved 1.2 pick moves to 1.3 wherever 1.3 is offered', () => {
     const webSelectable = FREEBUFF_WEB_MODELS.map((model) => model.id).filter(
       (id) => isFreebuffWebSelectableModelId(id),
     )
-    expect(migrateSupersededFreebuffModelPreference(ID, webSelectable)).toBeNull()
-    expect(getFreebuffModelSupersededBy(ID, webSelectable)).toBeUndefined()
+    expect(migrateSupersededFreebuffModelPreference(ID, webSelectable)).toBe(
+      FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+    )
+    expect(getFreebuffModelSupersededBy(ID, webSelectable)?.modelId).toBe(
+      FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+    )
+    // The CLI migrates against the grid it renders.
+    expect(
+      migrateSupersededFreebuffModelPreference(
+        ID,
+        FREEBUFF_MODELS.map((model) => model.id),
+      ),
+    ).toBe(FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID)
     // A surface that cannot show 1.3 is not told to switch to it.
     expect(
       migrateSupersededFreebuffModelPreference(ID, [
