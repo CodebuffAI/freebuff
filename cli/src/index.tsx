@@ -378,6 +378,7 @@ async function main(): Promise<void> {
         hasInvalidCredentials={hasInvalidCredentials}
         fileTree={fileTree}
         continueChat={continueChat}
+        continueRequested={continueChat}
         continueChatId={continueId ?? undefined}
         initialMode={initialMode}
         showProjectPicker={showProjectPickerScreen}
