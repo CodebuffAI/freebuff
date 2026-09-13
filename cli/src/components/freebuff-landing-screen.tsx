@@ -69,6 +69,11 @@ interface FreebuffLandingScreenProps {
   failure: FreebuffSessionFailure | null
   lastRefund: number | null
   refundPending: boolean
+  /** True when the CLI was launched with `-c` / `--continue`. Drives the
+   *  "nothing to continue" notice: only a session resume can satisfy the
+   *  user's ask, so the landing screen has to say it found nothing rather
+   *  than behaving like a plain first launch. */
+  continueRequested?: boolean
 }
 
 /** Landing-screen heading. Referenced both as rendered text and by the
@@ -76,6 +81,22 @@ interface FreebuffLandingScreenProps {
  *  the two from drifting. */
 const LANDING_HEADING = 'Start coding for free'
 const COLLAPSED_LOGO_MIN_HEIGHT = 26
+
+/** Shown on the landing screen when the user launched with `-c` /
+ *  `--continue` but the probe found no active session to resume (no seat,
+ *  expired, or explicitly ended). Exported so the render test can mount it
+ *  without the landing screen's ad/streak/logo machinery. */
+export const NOTHING_TO_CONTINUE_MESSAGE =
+  "There's nothing to continue — no active session was found. Pick a model below to start a new one."
+
+export const FreebuffNothingToContinueNotice: React.FC = () => {
+  const theme = useTheme()
+  return (
+    <text style={{ fg: theme.secondary, wrapMode: 'word', marginTop: 1 }}>
+      {NOTHING_TO_CONTINUE_MESSAGE}
+    </text>
+  )
+}
 
 /** "in ~3h 20m" / "in ~45 min" / "in under a minute". Used on the
  *  rate-limited screen so users know when they can try again. */
@@ -358,6 +379,7 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   failure,
   lastRefund,
   refundPending,
+  continueRequested,
 }) => {
   const theme = useTheme()
   const renderer = useRenderer()
@@ -593,9 +615,18 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   // scrollbox is measured by the selector itself and must NOT be reserved
   // here as well, or the viewport shrinks while the content grows.
   const belowPickerRows = streakRows + noticeRows + streakBonusRows
+  // The continue notice renders above the picker, so its rows must be carved
+  // out of the picker's viewport budget the way the heading's are.
+  const continueNoticeRows =
+    continueRequested && isLanding
+      ? 1 /* marginTop */ + wrappedRows(NOTHING_TO_CONTINUE_MESSAGE)
+      : 0
   const reservedChrome = 2 + adRows + 1 /* main paddingBottom */ + logoBlockRows
   const landingTextRows =
-    wrappedRows(LANDING_HEADING) + textMarginBottom + belowPickerRows
+    wrappedRows(LANDING_HEADING) +
+    textMarginBottom +
+    continueNoticeRows +
+    belowPickerRows
   // Floor = one whole recommended card: 2 border rows + its 2 text lines (name
   // + tagline, then the AI-training warning on its own line). Rows grew from
   // one text line to two when the warning stopped inlining, so the old floor of
@@ -726,6 +757,7 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
                   onDismiss={freebucksIntro.dismiss}
                 />
               )}
+              {continueRequested && <FreebuffNothingToContinueNotice />}
               <LandingHeadingRow
                 streakLine={streakOnHeadingRow ? streakLine : null}
                 marginBottom={textMarginBottom}
