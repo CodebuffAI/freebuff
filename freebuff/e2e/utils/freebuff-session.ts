@@ -20,9 +20,12 @@ export class FreebuffSession {
   public readonly name: string
   public readonly workDir: string
 
-  private constructor(sessionName: string, workDir: string) {
+  private readonly envDir: string | null
+
+  private constructor(sessionName: string, workDir: string, envDir: string | null) {
     this.name = sessionName
     this.workDir = workDir
+    this.envDir = envDir
   }
 
   /**
@@ -36,6 +39,11 @@ export class FreebuffSession {
       width?: number
       height?: number
       initialFiles?: Record<string, string>
+      /** Extra environment for the binary (a credential, a config dir). Written
+       *  to a 0600 file OUTSIDE the project directory and sourced by the tmux
+       *  shell, so a secret never lands in the project the CLI indexes, nor in
+       *  the session's recorded command line. */
+      env?: Record<string, string>
     },
   ): Promise<FreebuffSession> {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freebuff-e2e-'))
@@ -59,7 +67,9 @@ export class FreebuffSession {
       }
     }
 
-    const command = `cd '${tmpDir}' && '${binaryPath}'`
+    const envDir = writeEnvFile(options?.env)
+    const prelude = envDir ? `. '${path.join(envDir, 'env.sh')}' && ` : ''
+    const command = `${prelude}cd '${tmpDir}' && '${binaryPath}'`
     const sessionName = tmuxStart({
       command,
       waitSeconds: options?.waitSeconds ?? 4,
@@ -67,7 +77,7 @@ export class FreebuffSession {
       height: options?.height ?? 30,
     })
 
-    return new FreebuffSession(sessionName, tmpDir)
+    return new FreebuffSession(sessionName, tmpDir, envDir)
   }
 
   /** Write a file into the session's working directory. */
@@ -212,10 +222,28 @@ export class FreebuffSession {
   /** Stop the tmux session and clean up the temp directory. */
   async stop(): Promise<void> {
     tmuxStop(this.name)
-    try {
-      fs.rmSync(this.workDir, { recursive: true, force: true })
-    } catch {
-      // Ignore cleanup errors
+    for (const dir of [this.workDir, this.envDir]) {
+      if (!dir) continue
+      try {
+        fs.rmSync(dir, { recursive: true, force: true })
+      } catch {
+        // Ignore cleanup errors
+      }
     }
   }
+}
+
+const shellQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`
+
+/** Materialize `env` as a sourceable file in its own temp dir; null when there is nothing to set. */
+function writeEnvFile(env: Record<string, string> | undefined): string | null {
+  const entries = Object.entries(env ?? {})
+  if (entries.length === 0) return null
+  const envDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freebuff-e2e-env-'))
+  fs.writeFileSync(
+    path.join(envDir, 'env.sh'),
+    entries.map(([name, value]) => `export ${name}=${shellQuote(value)}`).join('\n') + '\n',
+    { encoding: 'utf-8', mode: 0o600 },
+  )
+  return envDir
 }

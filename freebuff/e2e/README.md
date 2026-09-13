@@ -74,6 +74,27 @@ describe('Agent Test', () => {
 })
 ```
 
+### 3. Live smoke against production
+
+`tests/live-turn.e2e.test.ts` is the one file here that talks to the real backend:
+it navigates the landing picker to DeepSeek V4.1 Flash, starts a session, sends a
+prompt, waits for the answer, then runs `/end-session` and checks the backend shows
+no open session. It skips unless `FREEBUFF_SMOKE_API_KEY` (or
+`CODEBUFF_API_KEY`) is set, and needs a binary built with the production public
+env. It is not in the `freebuff-e2e.yml` matrix — `.github/workflows/prod-smoke.yml`
+runs it on a schedule and before each release.
+
+```bash
+NEXT_PUBLIC_CB_ENVIRONMENT=prod NEXT_PUBLIC_CODEBUFF_APP_URL=https://www.codebuff.com \
+NEXT_PUBLIC_FREEBUFF_APP_URL=https://freebuff.com NEXT_PUBLIC_SUPPORT_EMAIL=support@codebuff.com \
+NEXT_PUBLIC_POSTHOG_API_KEY=test NEXT_PUBLIC_POSTHOG_HOST_URL=http://127.0.0.1:9 \
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=test NEXT_PUBLIC_STRIPE_CUSTOMER_PORTAL=http://127.0.0.1:9 \
+NEXT_PUBLIC_WEB_PORT=3000 bun freebuff/cli/build.ts 0.0.0-smoke
+CODEBUFF_API_KEY=<your token> bun test freebuff/e2e/tests/live-turn.e2e.test.ts --timeout=300000
+```
+
+The CLI runs with its own `FREEBUFF_CONFIG_DIR`, so your real profile is untouched.
+
 ## Prerequisites
 
 - **tmux** must be installed: `brew install tmux` (macOS) or `sudo apt-get install tmux` (Ubuntu)
