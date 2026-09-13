@@ -1,5 +1,5 @@
 /**
- * Centralized prompt builders for /plan and /review commands.
+ * Centralized prompt builders for /plan, /review, and /btw commands.
  * This ensures consistent behavior regardless of entry path. Both run on the
  * user's currently selected model.
  */
@@ -9,6 +9,17 @@ const PLAN_BASE_PROMPT =
   'Gather all the relevant context and then think carefully about how to implement the following:'
 const REVIEW_BASE_PROMPT =
   'Please gather all relevant context and then carefully review:'
+
+const BTW_BASE_PROMPT =
+  'The user has an additional thought for the current task. Consider it without abandoning the original request:'
+
+/** Build the prompt sent by `/btw` without the command syntax. */
+export function buildBtwPrompt(input: string): string {
+  const trimmedInput = input.trim()
+  return trimmedInput
+    ? `${BTW_BASE_PROMPT}\n\n${trimmedInput}`
+    : BTW_BASE_PROMPT
+}
 
 /**
  * Build a plan prompt from user input.
@@ -117,4 +128,3 @@ export function buildReviewPromptFromArgs(input: string): string {
   // Use the same format as preset scopes for consistency
   return `${REVIEW_BASE_PROMPT} ${trimmedInput}`
 }
-
