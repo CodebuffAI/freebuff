@@ -171,13 +171,32 @@ export async function callMainPrompt(
     assembleLocalAgentTemplates({ fileContext, logger })
 
   if (validationErrors.length > 0) {
+    const errorMessage = `Invalid agent config: ${validationErrors.map((err) => err.message).join('\n')}`
     sendAction({
       action: {
         type: 'prompt-error',
-        message: `Invalid agent config: ${validationErrors.map((err) => err.message).join('\n')}`,
+        message: errorMessage,
         userInputId: promptId,
       },
     })
+
+    const errorResult = {
+      sessionState: action.sessionState,
+      output: { type: 'error' as const, message: errorMessage },
+    }
+
+    sendAction({
+      action: {
+        type: 'prompt-response',
+        promptId,
+        sessionState: errorResult.sessionState,
+        toolCalls: [],
+        toolResults: [],
+        output: errorResult.output,
+      },
+    })
+
+    return errorResult
   }
 
   sendAction({
