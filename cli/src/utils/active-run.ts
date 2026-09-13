@@ -4,6 +4,8 @@ export type ActiveRunStopReason =
   | 'logout'
   | 'new-chat'
   | 'history-resume'
+  | 'undo-history'
+  | 'redo-history'
   | 'session-transition'
   | 'process-exit'
 
@@ -24,6 +26,8 @@ export const ACTIVE_RUN_QUEUE_POLICIES = {
   logout: 'clear-and-block',
   'new-chat': 'clear-and-block',
   'history-resume': 'clear-and-block',
+  'undo-history': 'clear-and-block',
+  'redo-history': 'clear-and-block',
   'session-transition': 'clear-and-block',
   'process-exit': 'preserve-and-block',
 } satisfies Record<ActiveRunStopReason, ActiveRunQueuePolicy>

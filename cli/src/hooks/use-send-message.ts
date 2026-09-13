@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto'
 
 import { useCallback, useEffect, useRef } from 'react'
 
-import { setCurrentChatId } from '../project-files'
+import {
+  getCurrentChatId,
+  getProjectRoot,
+  setCurrentChatId,
+} from '../project-files'
+import { beginUndoTurn, isLatestUndoTurn } from '../state/undo-guards'
+import { recordUndoEntry } from '../state/undo-store'
 import { createStreamController } from './stream-state'
 import { useChatStore } from '../state/chat-store'
 import {
@@ -18,6 +24,8 @@ import {
 import { AGENT_MODE_TO_COST_MODE, IS_FREEBUFF } from '../utils/constants'
 import { createEventHandlerState } from '../utils/create-event-handler-state'
 import { createRunConfig } from '../utils/create-run-config'
+import { isUndoEnabled } from '../utils/settings'
+import { patchSnapshot, trackSnapshot } from '../utils/undo-snapshot'
 import { getAgentIdForMode } from '../utils/freebuff-agent-selection'
 import { loadAgentDefinitions } from '../utils/local-agent-registry'
 import { logger } from '../utils/logger'
@@ -337,6 +345,9 @@ export const useSendMessage = ({
       const abortController = new AbortController()
       const runChatDir = resolveCurrentChatDir()
       const runChatIsCurrent = () => resolveCurrentChatDir() === runChatDir
+      // The chat that started this run — undo entries must follow it even if
+      // the user switches chats (/new, /history) while the run is in flight.
+      const runChatId = getCurrentChatId()
       let latestRunStateSnapshot: RunState = previousRunStateRef.current ?? {
         traceSessionId: randomUUID(),
         output: {
@@ -571,6 +582,13 @@ export const useSendMessage = ({
       // called at the start of sendMessage to ensure they happen synchronously
       // before any async work, so the router can correctly detect busy state.
       let actualCredits: number | undefined
+      // Snapshot hash captured before the run; consumed in the finally block
+      // to record an undo entry for this turn.
+      let undoSnapshotHash: string | null = null
+      // Stamped when the turn starts, presented when it records. The finally
+      // can run after a newer turn has already started (Esc releases the chain
+      // lock first), and by then this turn's diff is no longer only its own.
+      let undoTurnStamp: number | null = null
 
       // Checkpoint the turn to disk immediately so that killing the process
       // (closed terminal, crash) can't lose the user's prompt, then keep the
@@ -732,6 +750,23 @@ export const useSendMessage = ({
           },
           '[send-message] Sending message with sdk run config',
         )
+        // Undo support: snapshot the project before the turn so /undo can
+        // restore the pre-turn state. Best-effort — a failure only disables
+        // undo for this turn.
+        try {
+          if (isUndoEnabled()) {
+            undoSnapshotHash = await trackSnapshot(getProjectRoot())
+            if (undoSnapshotHash) {
+              undoTurnStamp = beginUndoTurn(runChatId)
+            }
+          }
+        } catch (error) {
+          logger.debug(
+            { error },
+            '[send-message] Failed to capture undo snapshot',
+          )
+        }
+
         // Open the steering mailbox for this run only once we're committed to
         // calling run(); the router falls back to the queue before this point.
         activateSteering(runOwnerId)
@@ -847,6 +882,45 @@ export const useSendMessage = ({
             })
           }
         }
+
+        // Undo: record the turn's file changes (success, error, or abort) so
+        // the user can revert them with /undo. No-op when nothing changed.
+        if (undoSnapshotHash && undoTurnStamp !== null) {
+          if (!isLatestUndoTurn(runChatId, undoTurnStamp)) {
+            // A newer turn started before this one finished, so this turn's
+            // diff would claim files the newer one changed. Drop the turn
+            // rather than record a change the user never selected.
+            logger.debug(
+              {},
+              '[send-message] Skipping undo entry: a newer turn started first',
+            )
+          } else {
+            try {
+              const undoFiles = await patchSnapshot(
+                getProjectRoot(),
+                undoSnapshotHash,
+              )
+              // Checked again after the diff: this await is exactly where a
+              // newer turn can start editing the worktree.
+              if (
+                undoFiles.length > 0 &&
+                isLatestUndoTurn(runChatId, undoTurnStamp)
+              ) {
+                recordUndoEntry(runChatId, {
+                  hashBefore: undoSnapshotHash,
+                  files: undoFiles,
+                  message: content,
+                })
+              }
+            } catch (error) {
+              logger.debug(
+                { error },
+                '[send-message] Failed to record undo entry',
+              )
+            }
+          }
+        }
+
         // Stop exit-flushing this run's checkpoint; the final state (or last
         // checkpoint, on error) has been saved above. Owner-guarded so an
         // aborted run resolving late can't clear a newer run's provider.

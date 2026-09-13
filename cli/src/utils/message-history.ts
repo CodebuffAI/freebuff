@@ -5,7 +5,14 @@ import { getConfigDir } from './auth'
 import { formatTimestamp } from './helpers'
 import { logger } from './logger'
 
-import type { ChatMessage, ContentBlock, FileAttachment, ImageAttachment, TextAttachment } from '../types/chat'
+import type {
+  ChatMessage,
+  ChatMessageMetadata,
+  ContentBlock,
+  FileAttachment,
+  ImageAttachment,
+  TextAttachment,
+} from '../types/chat'
 
 const MAX_HISTORY_SIZE = 1000
 
@@ -35,6 +42,7 @@ export function getUserMessage(
 
 export function getSystemMessage(
   content: string | ContentBlock[],
+  metadata?: ChatMessageMetadata,
 ): ChatMessage {
   return {
     id: `sys-${Date.now()}`,
@@ -48,6 +56,7 @@ export function getSystemMessage(
           blocks: content,
         }),
     timestamp: formatTimestamp(),
+    ...(metadata ? { metadata } : {}),
   }
 }
 
