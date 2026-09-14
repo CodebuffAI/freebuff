@@ -14,6 +14,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 
@@ -32,6 +33,7 @@ import { ChatHeader } from './components/chat-header'
 import { FreebuffActiveSessionSummary } from './components/freebuff-active-session-summary'
 import { LoadPreviousButton } from './components/load-previous-button'
 import { QueuePanel } from './components/queue-panel'
+import { SkillsPanel } from './components/skills-panel'
 import { ReviewScreen } from './components/review-screen'
 import { MessageWithAgents } from './components/message-with-agents'
 import { areCreditsRestored } from './components/out-of-credits-banner'
@@ -46,6 +48,11 @@ import {
 import { TopBanner } from './components/top-banner'
 import { useChatRuntime } from './contexts/chat-runtime-context'
 import { getSlashCommandsWithSkills } from './data/slash-commands'
+import {
+  getSkillsVersion,
+  refreshSkillRegistry,
+  subscribeToSkillsVersion,
+} from './utils/skill-registry'
 import { useAskUserBridge } from './hooks/use-ask-user-bridge'
 import { useChatInput } from './hooks/use-chat-input'
 import {
@@ -70,6 +77,7 @@ import { getProjectRoot } from './project-files'
 import { useChatHistoryStore } from './state/chat-history-store'
 import { useChatStore } from './state/chat-store'
 import { useQueuePanelStore } from './state/queue-panel-store'
+import { useSkillsPanelStore } from './state/skills-panel-store'
 import { useReviewStore } from './state/review-store'
 import { useFeedbackStore } from './state/feedback-store'
 import { useMessageBlockStore } from './state/message-block-store'
@@ -552,8 +560,19 @@ export const Chat = ({
   const setInputMode = useChatStore((state) => state.setInputMode)
   const askUserState = useChatStore((state) => state.askUserState)
 
-  // Get loaded skills for slash commands
-  const loadedSkills = useMemo(() => getLoadedSkills(), [])
+  // Get loaded skills for slash commands. Keyed on the registry version so a
+  // mid-session change (delete via the panel, edit on disk + reopen) swaps the
+  // list without a restart — the registry object itself is mutated in place,
+  // which zustand and useMemo would never notice.
+  const skillsVersion = useSyncExternalStore(
+    subscribeToSkillsVersion,
+    getSkillsVersion,
+    getSkillsVersion,
+  )
+  const loadedSkills = useMemo(() => {
+    void skillsVersion
+    return getLoadedSkills()
+  }, [skillsVersion])
 
   // Filter slash commands based on current ads state - only show the option that changes state
   // Hide both ads commands entirely for subscribers
@@ -999,6 +1018,13 @@ export const Chat = ({
       })),
     )
 
+  const { skillsPanelOpen, closeSkillsPanel } = useSkillsPanelStore(
+    useShallow((state) => ({
+      skillsPanelOpen: state.skillsPanelOpen,
+      closeSkillsPanel: state.closeSkillsPanel,
+    })),
+  )
+
   // Review and ask_user take the composer's place too. Leaving the panel
   // flagged open behind them would keep chat's keyboard disabled with nothing
   // rendered to handle keys, so hand the surface back for real.
@@ -1008,10 +1034,23 @@ export const Chat = ({
     }
   }, [queuePanelOpen, reviewMode, askUserState, closeQueuePanel])
 
+  // Same arbitration as the queue panel: review/ask-user own the surface and
+  // the keyboard, so the skills panel hands them back rather than linger
+  // invisibly under them.
+  useEffect(() => {
+    if (skillsPanelOpen && (reviewMode || askUserState !== null)) {
+      closeSkillsPanel()
+    }
+  }, [skillsPanelOpen, reviewMode, askUserState, closeSkillsPanel])
+
   // The panel store outlives this component and a Freebuff session can end on
   // its own, unmounting chat mid-edit. Without this, the next session would
   // open onto a panel for a queue that no longer exists.
   useEffect(() => () => useQueuePanelStore.getState().closeQueuePanel(), [])
+
+  // A Freebuff session can end on its own, unmounting chat mid-panel; without
+  // this the next session would open onto a stale skills panel.
+  useEffect(() => () => useSkillsPanelStore.getState().closeSkillsPanel(), [])
 
   const publishMutation = usePublishMutation()
 
@@ -1054,6 +1093,10 @@ export const Chat = ({
         // one would just flash. Say so instead.
         if (queuedCount > 0) useQueuePanelStore.getState().openQueuePanel()
         else setMessages((prev) => [...prev, getSystemMessage('Nothing queued.')])
+      }
+
+      if (result.openSkillsPanel) {
+        useSkillsPanelStore.getState().openSkillsPanel()
       }
     },
     [
@@ -1223,6 +1266,32 @@ export const Chat = ({
     setInputFocused(true)
     inputRef.current?.focus()
   }, [closeQueuePanel, setInputFocused, inputRef])
+
+  const handleCloseSkillsPanel = useCallback(() => {
+    closeSkillsPanel()
+    setInputFocused(true)
+    inputRef.current?.focus()
+  }, [closeSkillsPanel, setInputFocused, inputRef])
+
+  // Refresh the registry when the /skills panel opens, so a skill installed
+  // or edited moments ago shows up without restarting the CLI.
+  useEffect(() => {
+    if (!skillsPanelOpen) return
+    void refreshSkillRegistry()
+  }, [skillsPanelOpen])
+
+  // Invoking from the panel closes it and drops into the existing skill input
+  // mode — the exact path /skill:<name> takes, so the two entries cannot
+  // drift. Focus returns first so the composer receives what the user types.
+  const handleSkillsPanelInvoke = useCallback(
+    (name: string) => {
+      closeSkillsPanel()
+      setInputFocused(true)
+      inputRef.current?.focus()
+      useChatStore.getState().enterSkillMode(name)
+    },
+    [closeSkillsPanel, setInputFocused, inputRef],
+  )
 
   const handleReviewCustom = useCallback(() => {
     closeReviewScreen()
@@ -1598,6 +1667,7 @@ export const Chat = ({
       askUserState !== null ||
       reviewMode ||
       queuePanelOpen ||
+      skillsPanelOpen ||
       sponsoredProposalMenuOpen,
   })
 
@@ -1777,6 +1847,7 @@ export const Chat = ({
     askUserState !== null ||
     reviewMode ||
     queuePanelOpen ||
+    skillsPanelOpen ||
     sponsoredProposalMenuOpen ||
     isFreebuffSessionOver
   useEffect(() => {
@@ -1958,6 +2029,14 @@ export const Chat = ({
             onDelete={removeQueuedMessage}
             onMove={moveQueuedMessage}
             onClose={handleCloseQueuePanel}
+            width={separatorWidth}
+            maxVisibleRows={isCompactHeight ? 4 : 8}
+          />
+        ) : skillsPanelOpen && !askUserState ? (
+          <SkillsPanel
+            skills={Object.values(loadedSkills)}
+            onInvoke={handleSkillsPanelInvoke}
+            onClose={handleCloseSkillsPanel}
             width={separatorWidth}
             maxVisibleRows={isCompactHeight ? 4 : 8}
           />
