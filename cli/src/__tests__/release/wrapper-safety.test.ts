@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { createServer } from 'node:http'
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -166,7 +167,7 @@ describe('shared release launcher safety', () => {
   const launcherPath = join(repoRoot, 'cli/release-core/launcher.js')
   const { createLauncher } = require(launcherPath)
 
-  test('stages an update before stopping the running process', () => {
+  test('stages an update, waits for the run to go idle, then stops the running process', () => {
     const source = readFileSync(launcherPath, 'utf8')
     const updateFunction = source.slice(
       source.indexOf('async function checkForUpdates'),
@@ -174,6 +175,7 @@ describe('shared release launcher safety', () => {
     const stageIndex = updateFunction.indexOf(
       'const stagedBinary = await stageBinary',
     )
+    const waitIndex = updateFunction.indexOf('await waitForRunIdle(')
     const stopIndex = updateFunction.indexOf(
       'await stopRunningProcess(runningProcess)',
     )
@@ -182,8 +184,118 @@ describe('shared release launcher safety', () => {
     )
 
     expect(stageIndex).toBeGreaterThan(-1)
-    expect(stopIndex).toBeGreaterThan(stageIndex)
+    expect(waitIndex).toBeGreaterThan(stageIndex)
+    expect(stopIndex).toBeGreaterThan(waitIndex)
     expect(installIndex).toBeGreaterThan(stopIndex)
+  })
+
+  test('waitForRunIdle resolves immediately when no activity marker exists', async () => {
+    const { waitForRunIdle, runActivityMarkerPath } = createLauncher({
+      packageName: 'test',
+      displayName: 'Test',
+    }).__testing
+    const pid = 999_999_001
+
+    rmSync(runActivityMarkerPath(pid), { force: true })
+
+    const start = Date.now()
+    await waitForRunIdle(pid, { maxWaitMs: 5_000, pollIntervalMs: 5_000 })
+
+    // No poll tick should have been needed at all.
+    expect(Date.now() - start).toBeLessThan(500)
+  })
+
+  test('waitForRunIdle waits while the run is active and returns once it clears', async () => {
+    const { waitForRunIdle, runActivityMarkerPath } = createLauncher({
+      packageName: 'test',
+      displayName: 'Test',
+    }).__testing
+    const pid = 999_999_002
+    const markerPath = runActivityMarkerPath(pid)
+
+    writeFileSync(markerPath, '')
+    setTimeout(() => rmSync(markerPath, { force: true }), 30)
+
+    try {
+      await waitForRunIdle(pid, { maxWaitMs: 2_000, pollIntervalMs: 10 })
+      expect(existsSync(markerPath)).toBe(false)
+    } finally {
+      rmSync(markerPath, { force: true })
+    }
+  })
+
+  test('waitForRunIdle gives up once maxWaitMs elapses, marker or not', async () => {
+    const { waitForRunIdle, runActivityMarkerPath } = createLauncher({
+      packageName: 'test',
+      displayName: 'Test',
+    }).__testing
+    const pid = 999_999_003
+    const markerPath = runActivityMarkerPath(pid)
+
+    // Never cleared during the wait: the bound must still return.
+    writeFileSync(markerPath, '')
+
+    try {
+      const start = Date.now()
+      await waitForRunIdle(pid, { maxWaitMs: 30, pollIntervalMs: 10 })
+      expect(Date.now() - start).toBeLessThan(1_000)
+      // The marker itself is untouched -- the wrapper gives up waiting, it
+      // doesn't force the run to look idle.
+      expect(existsSync(markerPath)).toBe(true)
+    } finally {
+      rmSync(markerPath, { force: true })
+    }
+  })
+
+  test('a spawned binary starts from a clean activity marker', () => {
+    const { clearStaleRunActivityMarker, runActivityMarkerPath } =
+      createLauncher({
+        packageName: 'test',
+        displayName: 'Test',
+      }).__testing
+    const pid = 999_999_004
+    const markerPath = runActivityMarkerPath(pid)
+
+    // A marker left by a process that died before it could clear its own --
+    // SIGKILL, a native crash -- outlives it in tmpdir. Reaching the same pid
+    // again would otherwise stall that run's updates for the full bound.
+    writeFileSync(markerPath, '')
+
+    try {
+      clearStaleRunActivityMarker(pid)
+      expect(existsSync(markerPath)).toBe(false)
+    } finally {
+      rmSync(markerPath, { force: true })
+    }
+  })
+
+  test('clearing a stale marker tolerates there being none', () => {
+    const { clearStaleRunActivityMarker, runActivityMarkerPath } =
+      createLauncher({
+        packageName: 'test',
+        displayName: 'Test',
+      }).__testing
+    const pid = 999_999_005
+
+    rmSync(runActivityMarkerPath(pid), { force: true })
+
+    expect(() => clearStaleRunActivityMarker(pid)).not.toThrow()
+  })
+
+  test('spawnInstalledBinary clears the stale marker once it has a pid', () => {
+    const source = readFileSync(launcherPath, 'utf8')
+    const spawnFunction = source.slice(
+      source.indexOf('function spawnInstalledBinary'),
+    )
+    const spawnIndex = spawnFunction.indexOf('child = spawn(CONFIG.binaryPath')
+    const clearIndex = spawnFunction.indexOf('clearStaleRunActivityMarker(')
+    const returnIndex = spawnFunction.indexOf('return child')
+
+    expect(spawnIndex).toBeGreaterThan(-1)
+    // The pid only exists after the spawn, and the marker must be gone before
+    // the caller can hand this child to checkForUpdates.
+    expect(clearIndex).toBeGreaterThan(spawnIndex)
+    expect(returnIndex).toBeGreaterThan(clearIndex)
   })
 
   test('requires the wrapper release only for missing or older binaries', () => {
