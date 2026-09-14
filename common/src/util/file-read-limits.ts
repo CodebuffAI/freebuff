@@ -22,9 +22,11 @@ export function windowFileRead(
   const lines = content.split('\n')
   if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
   const totalLines = lines.length
-  const start = Math.max(1, Math.floor(offset ?? 1))
+  const safeOffset = offset !== undefined && Number.isFinite(offset) ? offset : 1
+  const safeLimit = limit !== undefined && Number.isFinite(limit) ? limit : MAX_READ_FILE_LINES
+  const start = Math.max(1, Math.floor(safeOffset))
   const maxLines = Math.min(
-    Math.max(1, Math.floor(limit ?? MAX_READ_FILE_LINES)),
+    Math.max(1, Math.floor(safeLimit)),
     MAX_READ_FILE_LINES,
   )
 
