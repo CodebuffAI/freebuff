@@ -358,6 +358,13 @@ async function main(): Promise<void> {
         setProjectRoot(newProjectPath)
         // Reset client to ensure tools use the updated project root
         resetCodebuffClient()
+        // Reload agent/MCP and skill registries for the new project
+        await initializeAgentRegistry()
+        await initializeSkillRegistry()
+        logger.debug(
+          { projectPath: newProjectPath },
+          'Reloaded MCP servers and skills for new project',
+        )
         // Save to recent projects list
         saveRecentProject(newProjectPath)
         // Update local state
