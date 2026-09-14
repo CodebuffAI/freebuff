@@ -8,19 +8,17 @@ import type {
 } from 'child_process'
 import type { Readable } from 'stream'
 
-import { stripColors } from '../../../common/src/util/string'
+import { stripAnsi } from '../../../common/src/util/string'
 import { getSystemProcessEnv } from '../env'
-import {
-  createWindowsBashNotFoundError,
-  findWindowsBash,
-} from './windows-bash'
+import { createWindowsBashNotFoundError, findWindowsBash } from './windows-bash'
 
 import type { CodebuffToolOutput } from '../../../common/src/tools/list'
 
 const COMMAND_OUTPUT_LIMIT = 50_000
 const TRUNCATION_MARKER = '\n[...TRUNCATED DUE TO LENGTH...]\n'
-const MAX_PENDING_COLOR_SEQUENCE_LENGTH = 32
-const INCOMPLETE_COLOR_SEQUENCE_REGEX = /\x1B\[[0-9;]*$/
+const MAX_PENDING_ESCAPE_SEQUENCE_LENGTH = 32
+const INCOMPLETE_ESCAPE_SEQUENCE_REGEX =
+  /\x1B(?:\[[0-?]*[ -/]*|\][^\x07\x1B]*(?:\x1B)?)?$/
 // Grace period between SIGTERM and SIGKILL for commands that trap or ignore
 // SIGTERM.
 const KILL_ESCALATION_MS = 1500
@@ -64,7 +62,7 @@ export class BoundedOutputBuffer {
   private head = ''
   private tail = ''
   private truncated = false
-  private pendingColorSequence = ''
+  private pendingEscapeSequence = ''
   private readonly headLimit: number
   private readonly tailLimit: number
 
@@ -80,19 +78,19 @@ export class BoundedOutputBuffer {
   append(value: string): void {
     if (!value) return
 
-    let normalized = this.pendingColorSequence + value
-    this.pendingColorSequence = ''
-    const incompleteColorSequence = normalized.match(
-      INCOMPLETE_COLOR_SEQUENCE_REGEX,
+    let normalized = this.pendingEscapeSequence + value
+    this.pendingEscapeSequence = ''
+    const incompleteEscapeSequence = normalized.match(
+      INCOMPLETE_ESCAPE_SEQUENCE_REGEX,
     )?.[0]
     if (
-      incompleteColorSequence &&
-      incompleteColorSequence.length <= MAX_PENDING_COLOR_SEQUENCE_LENGTH
+      incompleteEscapeSequence &&
+      incompleteEscapeSequence.length <= MAX_PENDING_ESCAPE_SEQUENCE_LENGTH
     ) {
-      this.pendingColorSequence = incompleteColorSequence
-      normalized = normalized.slice(0, -incompleteColorSequence.length)
+      this.pendingEscapeSequence = incompleteEscapeSequence
+      normalized = normalized.slice(0, -incompleteEscapeSequence.length)
     }
-    normalized = stripColors(normalized)
+    normalized = stripAnsi(normalized)
     if (!normalized) return
 
     if (!this.truncated) {
