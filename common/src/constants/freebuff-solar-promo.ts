@@ -1,5 +1,6 @@
 import { FREEBUFF_SOLAR_PRO_4_MODEL_ID } from './freebuff-model-entitlements'
 
+// Historical offer; use solarOfferAt() for the current price.
 export const SOLAR_REGULAR_OFFER = {
   price: 5,
   tagline: 'Limited-time trial',
@@ -30,6 +31,12 @@ export const SOLAR_PRICE_CHANGES = [
     at: '2026-09-13T05:00:00Z',
     modelId: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
     ...SOLAR_REGULAR_OFFER,
+  },
+  {
+    at: '2026-09-14T03:46:00Z',
+    modelId: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+    price: 10,
+    tagline: SOLAR_REGULAR_OFFER.tagline,
   },
 ] as const
 

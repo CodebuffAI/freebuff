@@ -1098,8 +1098,12 @@ test('a funded Luna row does not show its exhausted legacy quota in the section 
   expect(getSelectedFreebuffModel()).toBe(id)
 })
 
-test('an open Solar CLI picker leaves the holiday price at the cutoff and submits at 5', async () => {
-  const cutoff = Date.parse('2026-09-08T07:00:00Z')
+test.each([
+  { at: '2026-09-08T07:00:00Z', before: 0, price: 5, balance: 5 },
+  { at: '2026-09-14T03:46:00Z', before: 5, price: 10, balance: 9 },
+  { at: '2026-09-14T03:46:00Z', before: 5, price: 10, balance: 10 },
+])('an open Solar CLI picker updates price and purchase affordability: %j', async ({ at, before, price, balance }) => {
+  const cutoff = Date.parse(at)
   const clock = spyOn(Date, 'now').mockReturnValue(cutoff - 137)
   const realTimeout = globalThis.setTimeout
   let wake: (() => void) | undefined
@@ -1117,10 +1121,10 @@ test('an open Solar CLI picker leaves the holiday price at the cutoff and submit
       status: 'none',
       accessTier: 'full',
       freebucks: {
-        ...freebucksFixture(5, {
+        ...freebucksFixture(balance, {
           [DEFAULT_FREEBUFF_MODEL_ID]: 15,
           [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 5,
-          [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: 0,
+          [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: before,
         }),
         priceNotices: {
           [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: solarOfferAt(cutoff - 137).tagline,
@@ -1136,16 +1140,9 @@ test('an open Solar CLI picker leaves the holiday price at the cutoff and submit
     const setup = await renderSelector(40, async (model) => {
       requested.push(model)
     })
-    expect(setup.captureCharFrame()).toContain('Labor Day weekend')
-    expect(setup.captureCharFrame()).toContain('0 Freebucks')
+    expect(setup.captureCharFrame()).toContain(solarOfferAt(cutoff - 137).tagline)
     expect(wake).toBeDefined()
-    // Keep the whole catalog open: the collapsed recommendation can change
-    // when another model becomes the cheapest affordable choice. Whether it
-    // OPENS collapsed depends on the hero: a default the balance cannot cover
-    // (DeepSeek at 15) fell back to Solar, the selection, so it collapsed;
-    // an affordable default (GLM at 5, since 2026-09-05) is not the selection,
-    // so it opens expanded with the cursor already on Solar. Only reach for
-    // the toggle when there is one, or Down walks the cursor onto GLM.
+    // Expand if the affordable recommendation initially collapsed the catalog.
     if (!setup.captureCharFrame().includes('Show fewer')) {
       await setup.mockInput.pressArrow('down')
       await setup.renderOnce()
@@ -1162,13 +1159,24 @@ test('an open Solar CLI picker leaves the holiday price at the cutoff and submit
     })
     await setup.renderOnce()
     expect(setup.captureCharFrame()).not.toContain('Labor Day weekend')
-    expect(setup.captureCharFrame()).toContain('Solar Pro 4')
     expect(setup.captureCharFrame()).toMatch(
-      /Solar Pro 4[^\n]*\n[^\n]*5 Freebucks\/hr/,
+      new RegExp(`Solar Pro 4[^\\n]*\\n[^\\n]*${price} Freebucks/hr`),
     )
-    await setup.mockInput.pressEnter()
+    // Return to Solar if the price increase moved focus to a cheaper model.
+    for (let i = 0; i < 12; i++) {
+      if (setup.captureCharFrame().includes('› Solar Pro 4')) break
+      flushSync(() => setup.mockInput.pressKey('ARROW_DOWN'))
+      await setup.renderOnce()
+    }
+    expect(setup.captureCharFrame()).toContain('› Solar Pro 4')
+    flushSync(() => setup.mockInput.pressEnter())
     await setup.renderOnce()
-    expect(requested).toEqual([FREEBUFF_SOLAR_PRO_4_MODEL_ID])
+    if (balance < price) {
+      expect(requested).toEqual([])
+      expect(setup.captureCharFrame()).toContain(`Not enough ${FREEBUCKS_LABEL}`)
+    } else {
+      expect(requested).toEqual([FREEBUFF_SOLAR_PRO_4_MODEL_ID])
+    }
   } finally {
     cleanupRenderer?.()
     cleanupRenderer = undefined

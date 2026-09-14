@@ -15,6 +15,7 @@ const start = Date.parse('2026-09-05T07:00:00Z')
 const end = Date.parse('2026-09-08T07:00:00Z')
 const restored = Date.parse('2026-09-09T15:49:00Z')
 const metered = Date.parse('2026-09-13T05:00:00Z')
+const increased = Date.parse('2026-09-14T03:46:00Z')
 const quoteBeforeStart = () => ({
   ...freebucksFixture(0, { [solar]: SOLAR_REGULAR_OFFER.price }),
   priceNotices: { [solar]: SOLAR_REGULAR_OFFER.tagline },
@@ -43,9 +44,15 @@ describe('announced Freebucks price changes', () => {
     const meteredAgain = applyFreebucksPriceChanges(freeAgain, metered)
     expect(meteredAgain.prices[solar]).toBe(5)
     expect(meteredAgain.priceNotices[solar]).toBe('Limited-time trial')
-    expect(nextFreebucksPriceChange(meteredAgain)).toBe(Infinity)
+    expect(nextFreebucksPriceChange(meteredAgain)).toBe(increased)
+    expect(applyFreebucksPriceChanges(meteredAgain, increased - 1)).toBe(meteredAgain)
+    expect(applyFreebucksPriceChanges(meteredAgain, increased)).toEqual({
+      ...meteredAgain,
+      prices: { ...meteredAgain.prices, [solar]: 10 },
+      priceChanges: [],
+    })
     expect(quote.prices[solar]).toBe(5)
-    expect(quote.priceChanges).toHaveLength(4)
+    expect(quote.priceChanges).toHaveLength(5)
   })
 
   it('catches up across all transitions, even when a delayed response lists them out of order', () => {
@@ -54,6 +61,7 @@ describe('announced Freebucks price changes', () => {
     expect(applyFreebucksPriceChanges(quote, end).prices[solar]).toBe(5)
     expect(applyFreebucksPriceChanges(quote, restored).prices[solar]).toBe(0)
     expect(applyFreebucksPriceChanges(quote, metered).prices[solar]).toBe(5)
+    expect(applyFreebucksPriceChanges(quote, increased).prices[solar]).toBe(10)
   })
 
   it('does not add an unpriced model or invent metadata on older server responses', () => {
