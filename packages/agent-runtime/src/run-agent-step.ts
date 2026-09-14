@@ -1092,12 +1092,12 @@ export async function loopAgentSteps(
 
       // Mechanical compaction: no model call, so it costs nothing but the
       // prompt-cache break that rewriting the history forces anyway. The
-      // budget is sized to the model in use (see contextPrunerBudgetForModel),
-      // which is the same budget base2 hands the context-pruner agent.
+      // budget is sized to the model in use, including fixed request overhead.
+      // Preserve the fresh tool exchange; only older history becomes a summary.
       //
-      // Fires once per turn at most: compaction stamps every surviving message
-      // with a fresh sentAt and drops the assistant messages that preceded the
-      // live prompt, so the cache gap it measured is gone on the next step.
+      // Cache expiry fires once per turn. Size-triggered compaction can fire
+      // again after any tool batch, so its output must fit without erasing the
+      // results the model has not had a chance to consume yet.
       if (agentTemplate.compactContext) {
         const compacted = maybeCompactHistory({
           // The option object is exactly the tunable subset, so it forwards
@@ -1107,6 +1107,12 @@ export async function loopAgentSteps(
             : {}),
           messages: currentAgentState.messageHistory,
           contextTokenCount: currentAgentState.contextTokenCount,
+          fixedTokenCount:
+            countTokens(system) +
+            countTokensJson(toolsForTokenCount) +
+            (stepPrompt
+              ? countTokensMessages([userMessage({ content: stepPrompt })])
+              : 0),
           maxContextLength:
             (typeof agentTemplate.compactContext === 'object'
               ? agentTemplate.compactContext.maxContextLength

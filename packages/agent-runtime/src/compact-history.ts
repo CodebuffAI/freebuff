@@ -23,6 +23,8 @@
  */
 
 import { DEFAULT_COMPACTION_POLICY } from '@codebuff/common/constants/compaction-policy'
+import { fitToolResults } from './util/fit-tool-results'
+import { countTokens, countTokensMessages } from './util/token-counter'
 import type {
   FilePart,
   ImagePart,
@@ -839,6 +841,185 @@ export function compactMessages(params: {
   }
 }
 
+/** The last unconsumed assistant/tool exchange, including parallel tool calls.
+ * Stream parsing appends assistant messages, then the whole tool-result batch.
+ * A later assistant response means that batch has already been consumed.
+ */
+function latestToolExchangeStart(messages: Message[]): number {
+  const lastTool = messages.findLastIndex((message) => message.role === 'tool')
+  if (
+    lastTool < 0 ||
+    messages.slice(lastTool + 1).some((message) => message.role === 'assistant')
+  ) {
+    return messages.length
+  }
+  let start = lastTool
+  while (start > 0 && messages[start - 1].role === 'tool') start--
+  const resultIds = new Set(
+    messages
+      .slice(start, lastTool + 1)
+      .flatMap((message) =>
+        message.role === 'tool' ? [message.toolCallId] : [],
+      ),
+  )
+  const calls = new Set<string>()
+  while (start > 0 && messages[start - 1].role === 'assistant') {
+    start--
+    const message = messages[start]
+    if (message.role === 'assistant') {
+      for (const part of message.content) {
+        if (part.type === 'tool-call') calls.add(part.toolCallId)
+      }
+    }
+  }
+  // Do not preserve orphan results (interrupted histories are cleaned by the
+  // request builder), or cut a call away from another result in its batch.
+  return calls.size === resultIds.size &&
+    [...calls].every((id) => resultIds.has(id))
+    ? start
+    : messages.length
+}
+
+/** Runtime-only request budgeting around the shared historical summarizer.
+ * The serialized context-pruner still uses compactMessages' summary algorithm;
+ * it does not own the parent's live model request or its fixed token overhead.
+ */
+function compactRequestHistory(messages: Message[], tokenBudget: number) {
+  const tailStart = latestToolExchangeStart(messages)
+  let promptStart = messages
+    .slice(0, tailStart)
+    .findLastIndex((message) => message.tags?.includes('USER_PROMPT'))
+  // Several steering prompts may have arrived together; keep all of them.
+  while (
+    promptStart > 0 &&
+    messages[promptStart - 1].tags?.includes('USER_PROMPT')
+  )
+    promptStart--
+  const instructionIndex = messages.findLastIndex((message) =>
+    message.tags?.includes('INSTRUCTIONS_PROMPT'),
+  )
+  const livePrompts = messages
+    .slice(Math.max(0, promptStart), tailStart)
+    .filter(
+      (message) => promptStart >= 0 && message.tags?.includes('USER_PROMPT'),
+    )
+  const prefix: Message[] = [
+    ...(instructionIndex >= 0 && instructionIndex < tailStart
+      ? [messages[instructionIndex]]
+      : []),
+    ...livePrompts,
+  ]
+  if (!prefix.some((message) => message.tags?.includes('USER_PROMPT'))) {
+    prefix.push({
+      role: 'user',
+      content: [{ type: 'text', text: CONTINUATION_TEXT }],
+      sentAt: Date.now(),
+    })
+  }
+  const fresh = messages
+    .slice(tailStart)
+    .filter((message) => !message.tags?.includes('STEP_PROMPT'))
+  const protectedMessages = new Set([...prefix, ...fresh])
+  const older = messages
+    .slice(0, tailStart)
+    .filter((message) => !protectedMessages.has(message))
+  const result = compactMessages({ messages: older })
+  const entries = parseSummaryIntoEntries(result.summaryText)
+  const now = Date.now()
+  // Old persisted compactions put the current request inside the summary and
+  // remove USER_PROMPT tags. Reserve that request as historical memory rather
+  // than letting a large fresh read squeeze the task itself out of context.
+  const historicalRequest =
+    livePrompts.length === 0 &&
+    !fresh.some((message) => message.tags?.includes('USER_PROMPT'))
+      ? entries.findLast(
+          (entry) =>
+            entry.role === 'user' &&
+            !entry.parts.includes(`[USER]\n${CONTINUATION_TEXT}`),
+        )
+      : undefined
+  const reservedMemory = historicalRequest
+    ? countTokensMessages([
+        buildSummaryMessage(renderSummaryText([historicalRequest]), [], now),
+      ])
+    : 0
+  const prefixTokens = countTokensMessages(prefix)
+  if (prefixTokens + reservedMemory > tokenBudget) {
+    throw new Error(
+      'The current request and agent instructions exceed the configured context window. Shorten the request/project instructions or configure a larger context window supported by your provider.',
+    )
+  }
+  const fitted = fitToolResults(
+    fresh,
+    tokenBudget - prefixTokens - reservedMemory,
+  )
+  const remainingTokens =
+    tokenBudget - prefixTokens - countTokensMessages(fitted)
+
+  // Keep the newest historical entries that fit the actual remainder. The
+  // 50k/20k summary budgets are ceilings, never permission to exceed a BYOK
+  // window. Count the envelope and images too, not just summary text.
+  const selected = new Set<SummaryEntry>(
+    historicalRequest ? [historicalRequest] : [],
+  )
+  let images = result.messages[0].content.filter(
+    (part): part is ImagePart | FilePart =>
+      part.type === 'image' || part.type === 'file',
+  )
+  if (
+    countTokensMessages([
+      buildSummaryMessage(renderSummaryText([...selected]), images, now),
+    ]) > remainingTokens
+  )
+    images = []
+  let available =
+    remainingTokens -
+    countTokensMessages([
+      buildSummaryMessage(renderSummaryText([...selected]), images, now),
+    ])
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (selected.has(entries[i])) continue
+    const tokens = countTokens(
+      entries[i].parts.join(ENTRY_SEPARATOR) + ENTRY_SEPARATOR,
+    )
+    if (tokens > available) continue
+    selected.add(entries[i])
+    available -= tokens
+  }
+  const kept = entries.filter((entry) => selected.has(entry))
+  let summary = buildSummaryMessage(renderSummaryText(kept), images, now)
+  while (kept.length && countTokensMessages([summary]) > remainingTokens) {
+    const removable = kept.findIndex((entry) => entry !== historicalRequest)
+    if (removable < 0) break
+    kept.splice(removable, 1)
+    summary = buildSummaryMessage(renderSummaryText(kept), images, now)
+  }
+  const output = [
+    ...(countTokensMessages([summary]) <= remainingTokens ? [summary] : []),
+    ...prefix.map((message) => ({ ...message, sentAt: now })),
+    ...fitted,
+  ]
+  if (countTokensMessages(output) > tokenBudget) {
+    throw new Error(
+      'Unable to fit the latest tool results into the configured context window. Request smaller outputs or configure a larger supported context window.',
+    )
+  }
+  return {
+    ...result,
+    messages: output,
+    stats: {
+      ...result.stats,
+      mid_turn: fresh.length > 0,
+      live_user_prompt_found: livePrompts.length > 0,
+      summary_estimated_tokens: Math.ceil(
+        renderSummaryText(kept).length / CHARS_PER_TOKEN,
+      ),
+      budget_dropped_summary_parts: entries.length - kept.length,
+      preserved_fresh_messages: fitted.length,
+    },
+  }
+}
+
 /**
  * How long the conversation sat idle before the live user prompt arrived, or
  * null when the history has no pair of timestamps to measure between.
@@ -937,6 +1118,8 @@ export function maybeCompactHistory(params: {
   messages: Message[]
   contextTokenCount: number
   maxContextLength: number
+  /** System prompt, tool schemas and next step's scaffolding, outside history. */
+  fixedTokenCount?: number
   /** Pass null to compact on the context limit only. */
   cacheExpiryMs?: number | null
   /** Pass null to take the opportunistic compaction at any size. */
@@ -958,7 +1141,10 @@ export function maybeCompactHistory(params: {
     })
   if (!trigger) return null
 
-  const result = compactMessages({ messages })
+  const result = compactRequestHistory(
+    messages,
+    maxContextLength - (params.fixedTokenCount ?? 0),
+  )
   try {
     params.onCompaction?.(trigger)
   } catch {
