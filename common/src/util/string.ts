@@ -424,3 +424,17 @@ export function suffixPrefixOverlap(source: string, next: string): string {
 export const escapeString = (str: string) => {
   return JSON.stringify(str).slice(1, -1)
 }
+
+/**
+ * Escape characters that have special meaning in HTML/XML contexts to prevent
+ * XSS attacks and HTML injection. Use this when embedding user-controlled
+ * strings into HTML output, not for general string escaping (use escapeString).
+ */
+export const escapeHtml = (str: string): string => {
+  return JSON.stringify(str)
+    .slice(1, -1)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/'/g, '\\u0027')
+}
