@@ -33,6 +33,10 @@ import {
   REPEATED_STREAM_INTERRUPTIONS_MESSAGE,
   STREAM_INTERRUPTED_TAG,
 } from '../tools/stream-parser'
+import {
+  TODO_LOOP_RECOVERY_MESSAGE,
+  TODO_LOOP_STOP_MESSAGE,
+} from '../util/todo-loop'
 import { createToolCallChunk, mockFileContext } from './test-utils'
 
 import type { AgentTemplate } from '../templates/types'
@@ -156,6 +160,120 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
 
   afterAll(() => {
     clearMockedModules()
+  })
+
+  it('stops an unchanged to-do loop after recovery attempts and can resume on a new prompt', async () => {
+    mockTemplate.toolNames.push('write_todos')
+    mockAgentState.stepsRemaining = 200
+    let calls = 0
+    const seenPrompts: string[] = []
+    const result = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      promptAiSdkStream: async function* ({ messages }) {
+        calls++
+        seenPrompts.push(JSON.stringify(messages))
+        yield { type: 'reasoning', text: 'I should stop repeating the list.' }
+        yield { type: 'text', text: 'Executing now.' }
+        yield createToolCallChunk('write_todos', {
+          todos: [{ task: 'x', completed: false }],
+        })
+        return promptSuccess(`todo-${calls}`)
+      },
+    })
+
+    expect(calls).toBe(6)
+    expect(seenPrompts[2]).not.toContain(TODO_LOOP_RECOVERY_MESSAGE)
+    expect(seenPrompts[3]).toContain(TODO_LOOP_RECOVERY_MESSAGE)
+    expect(result.output).toMatchObject({
+      type: 'error',
+      message: TODO_LOOP_STOP_MESSAGE,
+    })
+    // The real tool handler completed each call; the error is the model loop,
+    // not a lost result or a tool that never resolves.
+    expect(
+      result.agentState.messageHistory.filter(
+        (m) => m.role === 'tool' && m.toolName === 'write_todos',
+      ),
+    ).toHaveLength(6)
+
+    let resumeCalls = 0
+    const resumed = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      agentState: result.agentState,
+      prompt: 'Continue with a different approach',
+      promptAiSdkStream: async function* () {
+        if (++resumeCalls === 1) {
+          yield createToolCallChunk('write_todos', {
+            todos: [{ task: 'x', completed: false }],
+          })
+        } else {
+          yield createToolCallChunk('end_turn', {})
+        }
+        return promptSuccess(`resumed-${resumeCalls}`)
+      },
+    })
+    expect(resumeCalls).toBe(2)
+    expect(resumed.output.type).not.toBe('error')
+  })
+
+  it('allows the model to recover by using another tool, then update its list again', async () => {
+    mockTemplate.toolNames.push('write_todos')
+    let calls = 0
+    const result = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      promptAiSdkStream: async function* ({ messages }) {
+        calls++
+        if (calls === 4) {
+          expect(JSON.stringify(messages)).toContain(
+            TODO_LOOP_RECOVERY_MESSAGE,
+          )
+          yield createToolCallChunk('read_files', { paths: ['src/example.ts'] })
+        } else if (calls === 7) {
+          yield createToolCallChunk('end_turn', {})
+        } else {
+          yield createToolCallChunk('write_todos', {
+            todos: [{ task: 'x', completed: false }],
+          })
+        }
+        return promptSuccess(`recovery-${calls}`)
+      },
+    })
+    expect(calls).toBe(7)
+    expect(result.output.type).not.toBe('error')
+    expect(
+      JSON.stringify(result.agentState.messageHistory).split(
+        TODO_LOOP_RECOVERY_MESSAGE,
+      ),
+    ).toHaveLength(2)
+  })
+
+  it('does not interrupt changing to-do lists or completion updates', async () => {
+    mockTemplate.toolNames.push('write_todos')
+    let calls = 0
+    const result = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      promptAiSdkStream: async function* () {
+        calls++
+        if (calls === 9) {
+          yield createToolCallChunk('end_turn', {})
+        } else {
+          yield createToolCallChunk('write_todos', {
+            todos: [
+              {
+                task: calls <= 4 ? 'Read code' : 'Run tests',
+                completed: calls % 4 > 2 || calls % 4 === 0,
+              },
+            ],
+          })
+        }
+        return promptSuccess(`progress-${calls}`)
+      },
+    })
+    expect(calls).toBe(9)
+    expect(result.output.type).not.toBe('error')
+    expect(JSON.stringify(result.agentState.messageHistory)).not.toContain(
+      TODO_LOOP_RECOVERY_MESSAGE,
+    )
   })
 
   it('retains completed steps after a spending cap and resumes under a new run id', async () => {
