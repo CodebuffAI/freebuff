@@ -1,8 +1,4 @@
-import {
-  decodePasteBytes,
-  stripAnsiSequences,
-  TextAttributes,
-} from '@opentui/core'
+import { decodePasteBytes, stripAnsiSequences } from '@opentui/core'
 import { useAppContext, useKeyboard, useRenderer } from '@opentui/react'
 import {
   forwardRef,
@@ -10,12 +6,11 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
-  useState,
 } from 'react'
 
-import { InputCursor } from './input-cursor'
 import { useTheme } from '../hooks/use-theme'
 import { useChatStore } from '../state/chat-store'
+import { caretCell } from '../utils/ime-caret'
 import {
   getKeypadPrintableSequence,
   isKeypadEnter,
@@ -25,7 +20,6 @@ import {
   isLinefeedActingAsEnter,
   markReturnKeySeenForKey,
 } from '../utils/terminal-enter-detection'
-import { supportsTruecolor } from '../utils/theme-system'
 import { calculateNewCursorPosition } from '../utils/word-wrap-utils'
 
 import type { InputValue } from '../types/store'
@@ -91,7 +85,6 @@ function findNextWordBoundary(text: string, cursor: number): number {
   return pos
 }
 
-export const CURSOR_CHAR = '▍'
 const CONTROL_CHAR_REGEX = /[\u0000-\u0008\u000b-\u000c\u000e-\u001f\u007f]/
 const TAB_WIDTH = 4
 
@@ -226,7 +219,6 @@ export const MultilineInput = forwardRef<
   const effectiveShouldBlinkCursor = shouldBlinkCursor ?? hookBlinkValue
 
   const scrollBoxRef = useRef<ScrollBoxRenderable | null>(null)
-  const [lastActivity, setLastActivity] = useState(Date.now())
 
   const stickyColumnRef = useRef<number | null>(null)
 
@@ -261,11 +253,6 @@ export const MultilineInput = forwardRef<
     },
     [cursorPosition],
   )
-
-  // Update last activity on value or cursor changes
-  useEffect(() => {
-    setLastActivity(Date.now())
-  }, [value, cursorPosition])
 
   const textRef = useRef<TextRenderable | null>(null)
 
@@ -506,7 +493,6 @@ export const MultilineInput = forwardRef<
 
   const isPlaceholder = value.length === 0 && placeholder.length > 0
   const displayValue = isPlaceholder ? placeholder : value
-  const showCursor = focused
 
   // Replace tabs with spaces for proper rendering
   const displayValueForRendering = displayValue.replace(
@@ -520,32 +506,99 @@ export const MultilineInput = forwardRef<
     renderCursorPosition += displayValue[i] === '\t' ? TAB_WIDTH : 1
   }
 
-  const { beforeCursor, afterCursor, activeChar, shouldHighlight } = (() => {
-    if (!showCursor) {
-      return {
-        beforeCursor: '',
-        afterCursor: '',
-        activeChar: ' ',
-        shouldHighlight: false,
-      }
-    }
+  // Whether the caret sits *on* a character rather than past the end of a line.
+  // Vertical navigation uses it to keep the column; the caret itself is drawn by
+  // the terminal now (see the renderAfter hook below), not by this component.
+  const caretOverCharacter =
+    !isPlaceholder &&
+    renderCursorPosition < displayValueForRendering.length &&
+    displayValue[cursorPosition] !== '\n' &&
+    displayValue[cursorPosition] !== '\t'
 
-    const beforeCursor = displayValueForRendering.slice(0, renderCursorPosition)
-    const afterCursor = displayValueForRendering.slice(renderCursorPosition)
-    const activeChar = afterCursor.charAt(0) || ' '
-    const shouldHighlight =
-      !isPlaceholder &&
-      renderCursorPosition < displayValueForRendering.length &&
-      displayValue[cursorPosition] !== '\n' &&
-      displayValue[cursorPosition] !== '\t'
+  // Terminals anchor an IME candidate window to their *real* cursor (Windows
+  // Terminal via ConPTY, macOS, ibus/fcitx), and this input used to draw its own
+  // caret instead of moving it — so Chinese/Japanese/Korean popups landed
+  // wherever the last frame happened to write text (#1128). Publishing the
+  // caret's cell here keeps the real cursor on the caret instead.
+  const caretStateRef = useRef({
+    focused,
+    blinking: Boolean(effectiveShouldBlinkCursor),
+    caretIndex: renderCursorPosition,
+    text: displayValueForRendering,
+  })
+  caretStateRef.current = {
+    focused,
+    blinking: Boolean(effectiveShouldBlinkCursor),
+    caretIndex: renderCursorPosition,
+    text: displayValueForRendering,
+  }
 
-    return {
-      beforeCursor,
-      afterCursor,
-      activeChar,
-      shouldHighlight,
+  const publishedBlinkingRef = useRef<boolean | null>(null)
+
+  // Runs every frame, so a scroll or a resize moves the real cursor too, without
+  // waiting for a React re-render (and without a drawn caret that could go
+  // stale). `renderAfter` is not usable here: the text renderable overrides
+  // `render()` without calling it.
+  const publishCarets = useCallback(() => {
+    const text = textRef.current
+    const scrollBox = scrollBoxRef.current
+    const {
+      focused: inputFocused,
+      blinking,
+      caretIndex,
+      text: renderedText,
+    } = caretStateRef.current
+    if (!text || !inputFocused || !scrollBox) {
+      renderer.setCursorPosition(0, 0, false)
+      return
     }
-  })()
+    // Read the wrap info at frame time: a value captured during render is one
+    // layout behind, which would put every caret on the first line.
+    const lineStarts =
+      (
+        text as unknown as {
+          textBufferView?: { lineInfo?: { lineStartCols?: number[] } }
+        }
+      ).textBufferView?.lineInfo?.lineStartCols ?? []
+    const viewport = (
+      scrollBox as { viewport?: { y?: number; height?: number } }
+    ).viewport
+    const viewportRows = Math.round(Number(viewport?.height ?? 0))
+    // The first callback of a frame still sees the previous layout, before the
+    // input box has any height. Leaving the cursor alone beats flickering it off
+    // for a frame.
+    if (viewportRows <= 0) return
+    const cell = caretCell({
+      text: renderedText,
+      caretIndex,
+      lineStarts,
+      originRow: Math.round(text.screenY),
+      originCol: Math.round(text.screenX),
+      viewportTop: Math.round(Number(viewport?.y ?? 0)),
+      viewportRows,
+    })
+    if (!cell) {
+      // Scrolled out of view: no cursor is better than one parked outside.
+      renderer.setCursorPosition(0, 0, false)
+      return
+    }
+    // Keep the "no blinking" preference meaningful now that the caret is real,
+    // but only on change: re-sending the style every frame would re-emit the
+    // terminal sequence for no reason.
+    if (publishedBlinkingRef.current !== blinking) {
+      publishedBlinkingRef.current = blinking
+      renderer.setCursorStyle({ blinking })
+    }
+    renderer.setCursorPosition(cell.col, cell.row, true)
+  }, [renderer])
+
+  useEffect(() => {
+    const onFrame = async () => publishCarets()
+    renderer.setFrameCallback(onFrame)
+    return () => {
+      renderer.removeFrameCallback(onFrame)
+    }
+  }, [renderer, publishCarets])
 
   // --- Keyboard Handler Helpers ---
 
@@ -978,13 +1031,13 @@ export const MultilineInput = forwardRef<
       // Up arrow (no modifiers)
       if (key.name === 'up' && !key.ctrl && !key.meta && !key.option) {
         preventKeyDefault(key)
-        const desiredIndex = getOrSetStickyColumn(lineStarts, !shouldHighlight)
+        const desiredIndex = getOrSetStickyColumn(lineStarts, !caretOverCharacter)
         onChange({
           text: value,
           cursorPosition: calculateNewCursorPosition({
             cursorPosition,
             lineStarts,
-            cursorIsChar: !shouldHighlight,
+            cursorIsChar: !caretOverCharacter,
             direction: 'up',
             desiredIndex,
           }),
@@ -996,13 +1049,13 @@ export const MultilineInput = forwardRef<
       // Down arrow (no modifiers)
       if (key.name === 'down' && !key.ctrl && !key.meta && !key.option) {
         preventKeyDefault(key)
-        const desiredIndex = getOrSetStickyColumn(lineStarts, !shouldHighlight)
+        const desiredIndex = getOrSetStickyColumn(lineStarts, !caretOverCharacter)
         onChange({
           text: value,
           cursorPosition: calculateNewCursorPosition({
             cursorPosition,
             lineStarts,
-            cursorIsChar: !shouldHighlight,
+            cursorIsChar: !caretOverCharacter,
             direction: 'down',
             desiredIndex,
           }),
@@ -1013,7 +1066,14 @@ export const MultilineInput = forwardRef<
 
       return false
     },
-    [value, cursorPosition, onChange, moveCursor, shouldHighlight, getOrSetStickyColumn],
+    [
+      value,
+      cursorPosition,
+      onChange,
+      moveCursor,
+      caretOverCharacter,
+      getOrSetStickyColumn,
+    ],
   )
 
   // Handle character input (regular chars, tab, and IME/multi-byte input)
@@ -1157,9 +1217,6 @@ export const MultilineInput = forwardRef<
       ? theme.inputFocusedFg
       : theme.inputFg
 
-  // Use theme's info color for selection highlight background
-  const highlightBg = theme.info
-
   return (
     <scrollbox
       ref={scrollBoxRef}
@@ -1202,39 +1259,8 @@ export const MultilineInput = forwardRef<
         ref={textRef}
         style={{ bg: 'transparent', fg: inputColor, wrapMode: 'word' }}
       >
-        {showCursor ? (
-          <>
-            {beforeCursor}
-            {shouldHighlight ? (
-              <span
-                bg={highlightBg}
-                fg={theme.background}
-                attributes={TextAttributes.BOLD}
-              >
-                {activeChar === ' ' ? '\u00a0' : activeChar}
-              </span>
-            ) : (
-              <InputCursor
-                visible={true}
-                focused={focused}
-                shouldBlink={effectiveShouldBlinkCursor}
-                color={supportsTruecolor() ? theme.info : 'lime'}
-                key={lastActivity}
-              />
-            )}
-            {shouldHighlight
-              ? afterCursor.length > 0
-                ? afterCursor.slice(1)
-                : ''
-              : afterCursor}
-            {layoutMetrics.gutterEnabled ? '\n' : ''}
-          </>
-        ) : (
-          <>
-            {displayValueForRendering}
-            {layoutMetrics.gutterEnabled ? '\n' : ''}
-          </>
-        )}
+        {displayValueForRendering}
+        {layoutMetrics.gutterEnabled ? '\n' : ''}
       </text>
     </scrollbox>
   )
