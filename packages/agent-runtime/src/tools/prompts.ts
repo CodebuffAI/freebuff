@@ -430,10 +430,19 @@ export async function getToolSet(params: {
 
   const toolDefinitions = await additionalToolDefinitions()
   for (const [toolName, toolDefinition] of Object.entries(toolDefinitions)) {
-    const clonedDef = cloneDeep(toolDefinition)
+    // Copy the definition without deep-cloning its inputSchema. lodash copies
+    // own *enumerable* properties only, and zod keeps its internals on a
+    // non-enumerable `_zod`, so a deep clone hands back something that still
+    // looks like a schema (`safeParse` lives on the prototype) but has lost
+    // `_zod` -- and the next zod call on it throws "undefined is not an object
+    // (evaluating 'schema._zod.parent')". Every MCP tool hits this, because
+    // mcp.ts stores its input schema as a zod schema. Schemas are immutable, so
+    // carry the reference instead.
+    const { inputSchema, ...restOfDefinition } = toolDefinition
+    const clonedDef = { ...cloneDeep(restOfDefinition), inputSchema }
     // Custom tool inputSchema may be JSON Schema (from SDK) or Zod (from MCP)
     // Ensure it's a Zod schema for the AI SDK
-    const zodSchema = ensureZodSchema(clonedDef.inputSchema)
+    const zodSchema = ensureZodSchema(inputSchema)
     const safeSchema = ensureJsonSchemaCompatible(zodSchema)
     toolSet[toolName] = {
       ...clonedDef,
