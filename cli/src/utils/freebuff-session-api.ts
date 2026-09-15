@@ -1,3 +1,4 @@
+import { FIRST_TAB_DISCOUNT_HEADER } from '@codebuff/common/util/freebuff-first-tab-discount'
 import type { FreebuffWalletSpendLimit } from '@codebuff/common/types/freebuff-session'
 import { freebucksTimeZoneHeaders } from '@codebuff/common/util/freebucks-timezone'
 import { env } from '@codebuff/common/env'
@@ -108,6 +109,7 @@ export async function callFreebuffSession(
     instanceId?: string
     model?: string
     walletSpendLimit?: FreebuffWalletSpendLimit
+    firstTabDiscount?: boolean
     signal?: AbortSignal
     compact?: boolean
   } = {},
@@ -115,6 +117,7 @@ export async function callFreebuffSession(
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     ...freebucksTimeZoneHeaders(),
+    [FIRST_TAB_DISCOUNT_HEADER]: opts.firstTabDiscount ? '1' : '0',
   }
   if ((method === 'GET' || method === 'DELETE') && opts.instanceId) {
     headers[FREEBUFF_INSTANCE_HEADER] = opts.instanceId
@@ -168,6 +171,7 @@ export async function callFreebuffSession(
       body &&
       (body.status === 'model_locked' ||
         body.status === 'model_unavailable' ||
+        body.status === 'first_tab_discount_changed' ||
         body.status === 'consent_required')
     ) {
       return body

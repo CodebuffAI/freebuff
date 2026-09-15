@@ -3,6 +3,7 @@ import {
   isFreebucksPeakModel,
 } from '@codebuff/common/util/freebuff-peak-price'
 import { watchFreebucksPriceChanges } from '@codebuff/common/util/freebuff-price-changes'
+import { firstTabDiscountCopy } from '@codebuff/common/util/freebuff-first-tab-discount'
 import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
 import React, {
@@ -443,6 +444,9 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           text: freebucksPriceLabel(rowPrice),
           warn: (freebucks?.balance ?? 0) < rowPrice,
         })
+        if (freebucks?.firstTabDiscount?.available) {
+          details.push({ text: 'First-tab discount', warn: false })
+        }
       }
       if (model.warning) details.push({ text: model.warning, warn: true })
       // PEAK PRICING as its own detail chip, in the reader's zone. Line 1
@@ -666,7 +670,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
               intent.price,
             )}. Enter to confirm.`
       }
-      return undefined
+      return freebucks ? firstTabDiscountCopy(freebucks) : undefined
     },
     [pendingAsk, rowIntent, freebucks, activeSessionModel, upgradeOfferFor],
   )

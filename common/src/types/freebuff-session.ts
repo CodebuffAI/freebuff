@@ -267,6 +267,16 @@ export interface FreebuffFreebucksInfo {
   planId: string | null
   /** Session price per model id. Only models on the meter appear here. */
   prices: Record<string, number>
+  /** Account-wide first-tab offer. Prices already include it when available. */
+  firstTabDiscount?: {
+    amount: number
+    available: boolean
+    holder?: {
+      instanceId: string | null
+      surface: 'desktop' | 'single'
+      expiresAt: string
+    }
+  }
   /** Copy resolved with the price, overriding the static model tagline.
    *  A client that renders `peak` as a badge should ignore the entry for a
    *  model in `peak.modelIds` — that entry is the same fact as prose, kept
@@ -454,6 +464,7 @@ export type FreebuffSessionRateLimitByModel = Record<
 
 /** Timing needed by multi-session clients to show the active session window. */
 export interface FreebuffActiveSessionInfo {
+  instanceId?: string
   model: string
   admittedAt: string
   expiresAt: string
@@ -752,6 +763,11 @@ export interface FreebuffWalletConsent {
 }
 
 export type FreebuffSessionAdmissionResponse = (
+  | {
+      status: 'first_tab_discount_changed'
+      accessTier?: FreebuffAccessTier
+      freebucks: FreebuffFreebucksInfo | null
+    }
   | {
       status: 'consent_required'
       accessTier?: FreebuffAccessTier

@@ -21,6 +21,7 @@
  * below. If the currency is ever renamed, this is the second place to change.
  */
 
+import { firstTabQuoteForSession } from '@codebuff/common/util/freebuff-first-tab-discount'
 import { getFreebucksInfo } from '@codebuff/common/types/freebuff-session'
 import {
   FREEBUCKS_REFILL_PENDING_LABEL,
@@ -48,8 +49,11 @@ export function formatFreebucks(amount: number): string {
 export function freebucksOf(
   session: { status: string } | null | undefined,
 ): FreebuffFreebucksInfo | null | undefined {
-  return getFreebucksInfo(
-    session as FreebuffSessionServerResponse | null | undefined,
+  const state = session as FreebuffSessionServerResponse | null | undefined
+  return firstTabQuoteForSession(
+    getFreebucksInfo(state),
+    state?.status === 'active' ? state : undefined,
+    'single',
   )
 }
 

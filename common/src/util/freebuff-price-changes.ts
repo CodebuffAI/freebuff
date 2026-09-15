@@ -1,8 +1,12 @@
 import type { FreebuffFreebucksInfo } from '../types/freebuff-session'
+import { discountedSessionPrice } from './freebuff-first-tab-discount'
 
 /** Apply the SERVER'S announced schedule, including on delayed responses. */
 export function applyFreebucksPriceChanges<
-  T extends Pick<FreebuffFreebucksInfo, 'prices' | 'priceNotices' | 'priceChanges'>,
+  T extends Pick<
+    FreebuffFreebucksInfo,
+    'prices' | 'priceNotices' | 'priceChanges' | 'firstTabDiscount'
+  >,
 >(info: T, now = Date.now()): T {
   const due = info.priceChanges?.filter(
     (change) => Date.parse(change.at) <= now,
@@ -14,7 +18,10 @@ export function applyFreebucksPriceChanges<
     (a, b) => Date.parse(a.at) - Date.parse(b.at),
   )) {
     if (prices[change.modelId] === undefined) continue
-    prices[change.modelId] = change.price
+    prices[change.modelId] = discountedSessionPrice(
+      change.price,
+      info.firstTabDiscount?.available ? info.firstTabDiscount.amount : 0,
+    )
     priceNotices[change.modelId] = change.tagline
   }
   return {
