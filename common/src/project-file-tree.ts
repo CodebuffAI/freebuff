@@ -128,20 +128,34 @@ export async function getProjectFileTree(params: {
   ]
   let totalFiles = 0
   let dirsScanned = 0
+  let queueIndex = 0
 
-  while (queue.length > 0 && totalFiles < maxFiles && dirsScanned < maxDirs) {
-    const { node, fullPath, ignores, depth } = queue.shift()!
+  while (queueIndex < queue.length && totalFiles < maxFiles && dirsScanned < maxDirs) {
+    const { node, fullPath, ignores, depth } = queue[queueIndex++]
     dirsScanned++
-    const dirIgnores = [
-      ...ignores,
-      {
-        base: toPosixPath(path.relative(projectRoot, fullPath)),
-        ig: await parseGitignore({ fullDirPath: fullPath, fs }),
-      },
-    ]
 
     try {
       const files = await fs.readdir(fullPath)
+      const filesSet = new Set(files)
+
+      let dirIgnores = ignores
+      const hasIgnoreFile = PROJECT_IGNORE_FILES.some((fileName) =>
+        filesSet.has(fileName),
+      )
+      if (hasIgnoreFile) {
+        dirIgnores = [
+          ...ignores,
+          {
+            base: toPosixPath(path.relative(projectRoot, fullPath)),
+            ig: await parseGitignore({
+              fullDirPath: fullPath,
+              fs,
+              directoryEntries: filesSet,
+            }),
+          },
+        ]
+      }
+
       for (const file of files) {
         if (totalFiles >= maxFiles) break
 
@@ -199,13 +213,15 @@ async function parseGitignoreWithMode(params: {
   fullDirPath: string
   fs: CodebuffFileSystem
   throwOnReadError: boolean
+  directoryEntries?: Set<string>
 }): Promise<ignore.Ignore> {
-  const { fullDirPath, fs, throwOnReadError } = params
+  const { fullDirPath, fs, throwOnReadError, directoryEntries: entriesParam } = params
 
   const ig = ignore.default()
-  const directoryEntries = throwOnReadError
-    ? new Set(await fs.readdir(fullDirPath))
-    : undefined
+  let directoryEntries = entriesParam
+  if (!directoryEntries && throwOnReadError) {
+    directoryEntries = new Set(await fs.readdir(fullDirPath))
+  }
 
   for (const fileName of PROJECT_IGNORE_FILES) {
     const ignoreFilePath = path.join(fullDirPath, fileName)
@@ -237,6 +253,7 @@ async function parseGitignoreWithMode(params: {
 export async function parseGitignore(params: {
   fullDirPath: string
   fs: CodebuffFileSystem
+  directoryEntries?: Set<string>
 }): Promise<ignore.Ignore> {
   return parseGitignoreWithMode({ ...params, throwOnReadError: false })
 }
