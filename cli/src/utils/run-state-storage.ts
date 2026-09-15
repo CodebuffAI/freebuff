@@ -25,6 +25,11 @@ type SavedChatState = {
   runState: RunState
   messages: ChatMessage[]
   chatId?: string
+  /** False only when run-state.json was unreadable AND nothing could be
+   *  recovered from the backup or checkpoint temps, so the restored RunState
+   *  is a placeholder without agent context — the model starts amnesiac next
+   *  turn. The UI surfaces this so the loss is not silent. */
+  runStateRestored: boolean
 }
 
 type LiveChatState = {
@@ -244,6 +249,120 @@ type SerializedChatState = {
   messagesJson?: string
 }
 
+/** The previous generation of run-state.json, rotated aside by saveChatState.
+ *  loadMostRecentChatState recovers from it when the primary is torn. */
+const RUN_STATE_BACKUP_SUFFIX = '.bak'
+
+function tryReadRunState(filePath: string): RunState | undefined {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as RunState
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Read run-state.json with best-effort recovery when it is torn.
+ *
+ * The atomic write makes the rename indivisible, but without an fsync a power
+ * loss can still land the rename while the file's data blocks were never
+ * written — leaving a truncated or empty primary (and even with the fsync,
+ * external corruption exists). Two older complete generations can be lying in
+ * the chat directory when that happens:
+ *
+ *  - `run-state.json.bak` — the state the primary replaced at the last
+ *    synchronous save (saveChatState rotates the previous file aside).
+ *  - `run-state.json.<pid>.<uuid>.tmp` — a write that was killed in the
+ *    window between its write and its rename (writeFileAtomic unlinks its own
+ *    temp on error, but a SIGKILL cannot).
+ *
+ * Try the primary, then every fallback candidate — the .bak and each leftover
+ * checkpoint .tmp — ordered newest-first by mtime (path comparison breaks
+ * ties on coarse-mtime filesystems), and self-heal the primary from whichever
+ * recovered. `fromPrimary` is false when
+ * recovery had to fall back, so the caller can warn that some agent context
+ * is missing instead of losing it silently.
+ */
+function readRunStateWithRecovery(chatDir: string): {
+  runState: RunState
+  fromPrimary: boolean
+} | null {
+  const runStatePath = path.join(chatDir, RUN_STATE_FILENAME)
+  let primaryError: unknown
+  try {
+    return {
+      runState: JSON.parse(fs.readFileSync(runStatePath, 'utf8')) as RunState,
+      fromPrimary: true,
+    }
+  } catch (error) {
+    primaryError = error
+  }
+
+  // Candidates in recency order, newest first. Each .tmp is a complete write
+  // that never got renamed; the .bak is the previous completed generation.
+  // mtimeMs alone can be coarse (FAT, some CI filesystems quantize it), so
+  // ties fall back to path comparison, and the recency probe is best-effort —
+  // an unreadable candidate is skipped by the loop below, not fatal.
+  const bakPath = runStatePath + RUN_STATE_BACKUP_SUFFIX
+  const candidates = [bakPath]
+  try {
+    candidates.push(
+      ...fs
+        .readdirSync(chatDir)
+        .filter(
+          (file) =>
+            file.startsWith(RUN_STATE_FILENAME + '.') && file.endsWith('.tmp'),
+        )
+        .map((file) => path.join(chatDir, file)),
+    )
+  } catch {
+    // Directory vanished mid-load; the loop below just finds nothing extra.
+  }
+  const candidatesWithMtime = candidates.map((filePath) => {
+    let mtimeMs = 0
+    try {
+      mtimeMs = fs.statSync(filePath).mtimeMs
+    } catch {
+      // Candidate vanished between readdir and stat: try it last.
+    }
+    return { filePath, mtimeMs }
+  })
+  candidatesWithMtime.sort(
+    (a, b) => b.mtimeMs - a.mtimeMs || b.filePath.localeCompare(a.filePath),
+  )
+  for (const { filePath: candidatePath } of candidatesWithMtime) {
+    const recovered = tryReadRunState(candidatePath)
+    if (recovered !== undefined) {
+      bestEffortLog(
+        'warn',
+        { runStatePath, recoveredFrom: candidatePath },
+        'run-state.json was unreadable; restored agent context from a backup generation',
+      )
+      // Self-heal: make the recovered generation the primary again.
+      try {
+        writeFileAtomic(runStatePath, JSON.stringify(recovered))
+      } catch {
+        // Best-effort; the candidate file still exists for the next load.
+      }
+      return { runState: recovered, fromPrimary: false }
+    }
+  }
+
+  bestEffortLog(
+    'warn',
+    {
+      runStatePath,
+      primaryError:
+        primaryError instanceof Error
+          ? primaryError.message
+          : String(primaryError),
+      candidatesTried: candidatesWithMtime.length,
+    },
+    'Could not read run state; restoring transcript without agent context',
+  )
+  return null
+}
+
 /**
  * Serialize the two chat-state files independently, so a poisoned run state
  * cannot block persisting the transcript (and vice versa). Cyclic and
@@ -341,10 +460,18 @@ export function saveChatState(
     // since (e.g. the chat deleted from /history mid-run).
     fs.mkdirSync(chatDir, { recursive: true })
     if (serialized.runStateJson) {
-      writeFileAtomic(
-        path.join(chatDir, RUN_STATE_FILENAME),
-        serialized.runStateJson,
-      )
+      const runStatePath = path.join(chatDir, RUN_STATE_FILENAME)
+      // Rotate the previous generation aside before overwriting: it is the
+      // newest complete state readRunStateWithRecovery can fall back to if
+      // this write's rename lands but its data is later found torn.
+      try {
+        if (fs.existsSync(runStatePath)) {
+          fs.renameSync(runStatePath, runStatePath + RUN_STATE_BACKUP_SUFFIX)
+        }
+      } catch {
+        // Rotation is best-effort; the overwrite below still proceeds.
+      }
+      writeFileAtomic(runStatePath, serialized.runStateJson)
     }
     if (serialized.messagesJson) {
       writeFileAtomic(
@@ -507,14 +634,16 @@ export function loadMostRecentChatState(
     // must not lose the transcript, and vice versa. Restore whatever is
     // readable and fall back for the rest.
     let runState: RunState | null = null
-    try {
-      runState = JSON.parse(fs.readFileSync(runStatePath, 'utf8')) as RunState
-    } catch (error) {
+    let runStateRestored = false
+    const recovered = readRunStateWithRecovery(chatDir)
+    if (recovered) {
+      // Agent context is present — whether straight from the primary or
+      // recovered from a backup/temp (both carry a real sessionState).
+      runState = recovered.runState
+      runStateRestored = true
+    } else {
       logger.warn(
-        {
-          runStatePath,
-          error: error instanceof Error ? error.message : String(error),
-        },
+        { runStatePath },
         'Could not read run state; restoring transcript without agent context',
       )
     }
@@ -563,7 +692,12 @@ export function loadMostRecentChatState(
       'Loaded chat state from chat directory',
     )
 
-    return { runState, messages, chatId: resolvedChatId }
+    return {
+      runState,
+      messages,
+      chatId: resolvedChatId,
+      runStateRestored,
+    }
   } catch (error) {
     logger.error(
       {
@@ -583,13 +717,14 @@ export function clearChatState(): void {
     const runStatePath = getRunStatePath()
     const messagesPath = getChatMessagesPath()
     const metaPath = path.join(resolveCurrentChatDir(), CHAT_META_FILENAME)
+    const backupPath = runStatePath + RUN_STATE_BACKUP_SUFFIX
 
-    for (const filePath of [runStatePath, messagesPath, metaPath]) {
+    for (const filePath of [runStatePath, backupPath, messagesPath, metaPath]) {
       fs.rmSync(filePath, { force: true })
     }
 
     logger.debug(
-      { runStatePath, messagesPath, metaPath },
+      { runStatePath, backupPath, messagesPath, metaPath },
       'Cleared chat state files',
     )
   } catch (error) {
