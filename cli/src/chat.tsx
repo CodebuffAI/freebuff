@@ -70,6 +70,7 @@ import { getProjectRoot } from './project-files'
 import { useChatHistoryStore } from './state/chat-history-store'
 import { useChatStore } from './state/chat-store'
 import { useQueuePanelStore } from './state/queue-panel-store'
+import { useUndoHistoryStore } from './state/undo-history-store'
 import { useReviewStore } from './state/review-store'
 import { useFeedbackStore } from './state/feedback-store'
 import { useMessageBlockStore } from './state/message-block-store'
@@ -1043,6 +1044,14 @@ export const Chat = ({
 
       if (result.openChatHistory) {
         useChatHistoryStore.getState().openChatHistory()
+      }
+
+      if (result.openUndoHistory) {
+        useUndoHistoryStore.getState().openUndoHistory()
+      }
+
+      if (result.openRedoHistory) {
+        useUndoHistoryStore.getState().openRedoHistory()
       }
 
       if (result.openReviewScreen) {
