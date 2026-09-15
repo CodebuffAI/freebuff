@@ -1,6 +1,7 @@
-import { describe, test, expect, mock } from 'bun:test'
+import { afterEach, describe, test, expect, mock } from 'bun:test'
 
 import { useFeedbackStore } from '../../state/feedback-store'
+import { useChatStore } from '../../state/chat-store'
 import {
   registerActiveRun,
   stopActiveRun,
@@ -178,6 +179,7 @@ describe('command factory pattern', () => {
       // mode:* commands also accept args now
       const expectedWithArgs = [
         'feedback',
+        'btw',
         'bash',
         'image',
         'publish',
@@ -344,6 +346,93 @@ describe('command factory pattern', () => {
 
       // Should still return openFeedbackMode
       expect(result).toEqual({ openFeedbackMode: true })
+    })
+  })
+
+  describe('/btw command', () => {
+    afterEach(() => {
+      useChatStore.getState().clearPendingAttachments()
+    })
+
+    test('queues the note and pending attachments while a turn is active', () => {
+      const btwCmd = COMMAND_REGISTRY.find((c) => c.name === 'btw')
+      expect(btwCmd).toBeDefined()
+
+      const attachment = {
+        kind: 'text' as const,
+        id: 'note.txt',
+        content: 'remember the edge case',
+        preview: 'remember the edge case',
+        charCount: 22,
+      }
+      useChatStore.getState().clearPendingAttachments()
+      useChatStore.getState().addPendingAttachment(attachment)
+
+      const addToQueue = mock(() => {})
+      const sendMessage = mock(async () => {})
+      const setInputFocused = mock(() => {})
+      const saveToHistory = mock(() => {})
+      const focus = mock(() => {})
+      const params = createMockParams({
+        inputRef: { current: { focus } } as RouterParams['inputRef'],
+        inputValue: '/btw remember the edge case',
+        isStreaming: true,
+        addToQueue,
+        saveToHistory,
+        sendMessage,
+        setInputFocused,
+      })
+
+      btwCmd!.handler(params, 'remember the edge case')
+
+      expect(addToQueue).toHaveBeenCalledWith(
+        expect.stringContaining('remember the edge case'),
+        [attachment],
+      )
+      expect(sendMessage).not.toHaveBeenCalled()
+      expect(saveToHistory).toHaveBeenCalledWith('/btw remember the edge case')
+      expect(setInputFocused).toHaveBeenCalledWith(true)
+      expect(focus).toHaveBeenCalledTimes(1)
+      expect(useChatStore.getState().pendingAttachments).toEqual([])
+    })
+
+    test('sends the note immediately when the CLI is idle', () => {
+      const btwCmd = COMMAND_REGISTRY.find((c) => c.name === 'btw')
+      expect(btwCmd).toBeDefined()
+
+      const addToQueue = mock(() => {})
+      const sendMessage = mock(async () => {})
+      const params = createMockParams({
+        inputValue: '/btw check the parser',
+        addToQueue,
+        sendMessage,
+      })
+
+      btwCmd!.handler(params, 'check the parser')
+
+      expect(sendMessage).toHaveBeenCalledWith({
+        content: expect.stringContaining('check the parser'),
+        agentMode: 'DEFAULT',
+      })
+      expect(addToQueue).not.toHaveBeenCalled()
+    })
+
+    test('shows usage instead of sending an empty note', () => {
+      const btwCmd = COMMAND_REGISTRY.find((c) => c.name === 'btw')
+      expect(btwCmd).toBeDefined()
+
+      const setMessages = mock(() => {})
+      const sendMessage = mock(async () => {})
+      const params = createMockParams({
+        inputValue: '/btw',
+        setMessages,
+        sendMessage,
+      })
+
+      btwCmd!.handler(params, '')
+
+      expect(setMessages).toHaveBeenCalled()
+      expect(sendMessage).not.toHaveBeenCalled()
     })
   })
 })
