@@ -393,9 +393,72 @@ describe('getFiles', () => {
         fs: mockFs,
       })
 
-      expect(result['node_modules/package/index.js']).toBe(
-        FILE_READ_STATUS.IGNORED,
+      expect(
+        result['node_modules/package/index.js']!.startsWith(
+          FILE_READ_STATUS.IGNORED,
+        ),
+      ).toBe(true)
+      expect(result['node_modules/package/index.js']).toContain(
+        'excluded by ignore rules',
       )
+    })
+
+    test('ignore-rule block explains reason and unblock path; env-policy block stays opaque', async () => {
+      isFileIgnoredSpy.mockResolvedValue(true)
+
+      const mockFs = createMockFs({
+        files: {
+          '/project/AGENTS.local.md': { content: 'private notes' },
+        },
+      })
+
+      const result = await getFiles({
+        filePaths: ['AGENTS.local.md'],
+        cwd: '/project',
+        fs: mockFs,
+      })
+
+      expect(
+        result['AGENTS.local.md']!.startsWith(FILE_READ_STATUS.IGNORED),
+      ).toBe(true)
+      expect(result['AGENTS.local.md']).toContain('excluded by ignore rules')
+      expect(result['AGENTS.local.md']).toContain('cannot re-include')
+
+      // Ignored-and-deleted: the block must not assert the file exists.
+      const goneFs = createMockFs({ files: {} })
+      const goneResult = await getFiles({
+        filePaths: ['AGENTS.local.md'],
+        cwd: '/project',
+        fs: goneFs,
+      })
+      expect(
+        goneResult['AGENTS.local.md']!.startsWith(FILE_READ_STATUS.IGNORED),
+      ).toBe(true)
+      expect(goneResult['AGENTS.local.md']).not.toContain('exists on disk')
+
+      // Internal-edit path (no env policy): a secret blocked by built-in
+      // ignore defaults must stay opaque too.
+      const editFs = createMockFs({
+        files: { '/project/.env': { content: 'SECRET=value' } },
+      })
+      const editResult = await getFiles({
+        filePaths: ['.env'],
+        cwd: '/project',
+        fs: editFs,
+        enforceEnvPolicy: false,
+      })
+      expect(editResult['.env']).toBe(FILE_READ_STATUS.IGNORED)
+
+      // The env-policy block must NOT leak a reason or an unblock hint.
+      const envFs = createMockFs({
+        files: { '/project/.env': { content: 'SECRET=value' } },
+      })
+      const envResult = await getFiles({
+        filePaths: ['.env'],
+        cwd: '/project',
+        fs: envFs,
+      })
+      expect(envResult['.env']).toBe(FILE_READ_STATUS.IGNORED)
     })
 
     test('should call isFileIgnored with correct parameters', async () => {
@@ -436,7 +499,11 @@ describe('getFiles', () => {
       })
 
       expect(result['src/index.ts']).toBe('main code')
-      expect(result['node_modules/pkg/index.js']).toBe(FILE_READ_STATUS.IGNORED)
+      expect(
+        result['node_modules/pkg/index.js']!.startsWith(
+          FILE_READ_STATUS.IGNORED,
+        ),
+      ).toBe(true)
     })
   })
 
@@ -454,10 +521,13 @@ describe('getFiles', () => {
         filePaths: ['node_modules/pkg/index.js'],
         cwd: '/project',
         fs: mockFs,
-        // No fileFilter provided - SDK applies default gitignore checking
       })
 
-      expect(result['node_modules/pkg/index.js']).toBe(FILE_READ_STATUS.IGNORED)
+      expect(
+        result['node_modules/pkg/index.js']!.startsWith(
+          FILE_READ_STATUS.IGNORED,
+        ),
+      ).toBe(true)
       expect(isFileIgnoredSpy).toHaveBeenCalled()
     })
 
@@ -615,8 +685,12 @@ describe('getFiles', () => {
         fileFilter: () => ({ status: 'allow' }),
       })
 
-      expect(result['.env.example']).toBe(FILE_READ_STATUS.IGNORED)
-      expect(result['.ENV.SAMPLE']).toBe(FILE_READ_STATUS.IGNORED)
+      expect(result['.env.example']!.startsWith(FILE_READ_STATUS.IGNORED)).toBe(
+        true,
+      )
+      expect(result['.ENV.SAMPLE']!.startsWith(FILE_READ_STATUS.IGNORED)).toBe(
+        true,
+      )
       expect(isFileIgnoredSpy).toHaveBeenCalledTimes(2)
     })
 
