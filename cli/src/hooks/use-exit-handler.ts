@@ -1,8 +1,16 @@
+import path from 'path'
+
 import { useCallback, useEffect, useState } from 'react'
 
-import { getCurrentChatId } from '../project-files'
+import { getCurrentChatId, getProjectDataDir } from '../project-files'
 import { IS_FREEBUFF } from '../utils/constants'
+import {
+  buildExitBanner,
+  exitBannerSupportsColor,
+  frameExitBanner,
+} from '../utils/exit-banner'
 import { exitCliCleanly } from '../utils/exit-cleanly'
+import { sessionForExit } from '../utils/exit-session'
 
 import type { InputValue } from '../types/store'
 
@@ -13,20 +21,40 @@ interface UseExitHandlerOptions {
 
 let exitHandlerRegistered = false
 
+/** Where this project's chats live, so the banner can read the one in progress. */
+function currentSessionForExit() {
+  const chatId = getCurrentChatId()
+  if (!chatId) return null
+
+  return sessionForExit({
+    chatId,
+    chatDir: path.join(getProjectDataDir(), 'chats', chatId),
+  })
+}
+
 function setupExitMessageHandler() {
   if (exitHandlerRegistered) return
   exitHandlerRegistered = true
 
   process.on('exit', () => {
     try {
-      const chatId = getCurrentChatId()
-      if (chatId) {
-        // This runs synchronously during the exit phase
-        // OpenTUI has already cleaned up by this point
-        const cliName = IS_FREEBUFF ? 'freebuff' : 'codebuff'
-        process.stdout.write(
-          `\nTo continue this session later, run:\n${cliName} --continue ${chatId}\n`,
-        )
+      // This runs synchronously during the exit phase
+      // OpenTUI has already cleaned up by this point
+      const session = currentSessionForExit()
+      if (!session) return
+
+      const banner = buildExitBanner({
+        cliName: IS_FREEBUFF ? 'freebuff' : 'codebuff',
+        chatId: session.chatId,
+        sessionLabel: session.sessionLabel,
+        terminalWidth: process.stdout.columns ?? 80,
+        color: exitBannerSupportsColor({
+          env: process.env,
+          isTty: Boolean(process.stdout.isTTY),
+        }),
+      })
+      if (banner) {
+        process.stdout.write(frameExitBanner(banner))
       }
     } catch {
       // Silent fail - don't block exit
