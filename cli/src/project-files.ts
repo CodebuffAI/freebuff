@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, statSync } from 'fs'
 import path from 'path'
 
-import { getConfigDir } from './utils/auth'
+import { getConfigDir } from './utils/config-dir'
 
 let projectRoot: string | undefined
 let currentChatId: string | undefined

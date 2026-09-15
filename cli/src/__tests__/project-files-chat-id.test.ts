@@ -8,7 +8,10 @@ import {
   getCurrentChatId,
   setCurrentChatId,
   startNewChat,
+  setProjectRoot,
+  getProjectDataDir,
 } from '../project-files'
+import { getConfigDir } from '../utils/config-dir'
 
 describe('chat id lifecycle', () => {
   test('getCurrentChatId is stable across calls', () => {
@@ -30,5 +33,22 @@ describe('chat id lifecycle', () => {
     expect(getCurrentChatId()).toBe(rotated)
     // New ids are filesystem-safe ISO timestamps
     expect(rotated).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z$/)
+  })
+})
+
+describe('getProjectDataDir', () => {
+  test('returns a path containing the project basename', () => {
+    setProjectRoot('/tmp/my-project')
+    const dataDir = getProjectDataDir()
+    expect(dataDir).toContain('my-project')
+    expect(dataDir).toContain('projects')
+  })
+
+  test('uses config-dir getConfigDir (not auth re-export)', () => {
+    setProjectRoot('/tmp/test-repo')
+    const dataDir = getProjectDataDir()
+    // Should resolve via config-dir's getConfigDir without pulling in auth.ts
+    const configDir = getConfigDir()
+    expect(dataDir).toContain(configDir)
   })
 })
