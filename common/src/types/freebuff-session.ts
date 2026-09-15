@@ -271,9 +271,8 @@ export interface FreebuffFreebucksInfo {
    *  model in `peak.modelIds` — that entry is the same fact as prose, kept
    *  for builds that predate the badge. */
   priceNotices?: Record<string, string>
-  /** The rows whose price carries the peak surcharge RIGHT NOW, and until
-   *  when. Absent off peak. Clients render it as a badge with a tooltip in
-   *  the reader's own time zone (`freebucksPeakCopy`). */
+  /** @deprecated Legacy peak surcharge; new servers omit it now that Flash
+   *  uses Luminal's flat rate. Retained for older server responses. */
   peak?: FreebuffFreebucksPeak
   /** Scheduled changes announced by the server; do not reprice admitted sessions. */
   priceChanges?: readonly FreebuffPriceChange[]
