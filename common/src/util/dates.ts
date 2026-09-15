@@ -9,7 +9,12 @@
  */
 export const getNextQuotaReset = (referenceDate: Date | null): Date => {
   const now = new Date()
-  let nextMonth = new Date(referenceDate ?? now)
+  if (referenceDate === null) {
+    const next = new Date(now)
+    next.setMonth(next.getMonth() + 1)
+    return next
+  }
+  let nextMonth = new Date(referenceDate)
   while (nextMonth <= now) {
     nextMonth.setMonth(nextMonth.getMonth() + 1)
   }
