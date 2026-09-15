@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { pluralize } from '../string'
+import { pluralize, truncateStringWithMessage } from '../string'
 
 describe('pluralize', () => {
   it('should handle singular and plural cases correctly', () => {
@@ -234,6 +234,92 @@ describe('pluralize', () => {
     expect(pluralize(2, 'token')).toBe('2 tokens')
     expect(pluralize(2, 'query')).toBe('2 queries')
     expect(pluralize(2, 'dependency')).toBe('2 dependencies')
+  })
+
+  describe('truncateStringWithMessage', () => {
+    it('should return original string when within maxLength', () => {
+      const result = truncateStringWithMessage({
+        str: 'Short',
+        maxLength: 100
+      })
+      expect(result).toBe('Short')
+    })
+
+    it('should handle empty string', () => {
+      const result = truncateStringWithMessage({
+        str: '',
+        maxLength: 10
+      })
+      expect(result).toBe('')
+    })
+
+    it('should truncate from END mode', () => {
+      const result = truncateStringWithMessage({
+        str: 'This is a very long string that needs to be truncated for testing purposes',
+        maxLength: 50,
+        remove: 'END'
+      })
+      expect(result).toContain('TRUNCATED DUE TO LENGTH')
+      expect(result.startsWith('This is')).toBe(true)
+    })
+
+    it('should truncate from START mode', () => {
+      const result = truncateStringWithMessage({
+        str: 'This is a very long string that needs to be truncated for testing purposes',
+        maxLength: 50,
+        remove: 'START'
+      })
+      expect(result).toContain('TRUNCATED DUE TO LENGTH')
+      expect(result.endsWith('purposes')).toBe(true)
+    })
+
+    it('should truncate from MIDDLE mode', () => {
+      const result = truncateStringWithMessage({
+        str: 'This is a very long string that needs to be truncated for testing purposes',
+        maxLength: 50,
+        remove: 'MIDDLE'
+      })
+      expect(result).toContain('TRUNCATED DUE TO LENGTH')
+      expect(result.startsWith('This is')).toBe(true)
+      expect(result.endsWith('purposes')).toBe(true)
+    })
+
+    it('should handle negative available length for END mode', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world',
+        maxLength: 5,
+        remove: 'END'
+      })
+      expect(result).toBe('\n[TRUNCATED DUE TO LENGTH...]')
+    })
+
+    it('should handle negative available length for START mode', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world',
+        maxLength: 5,
+        remove: 'START'
+      })
+      expect(result).toBe('[...TRUNCATED DUE TO LENGTH]\n')
+    })
+
+    it('should handle negative available length for MIDDLE mode', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world',
+        maxLength: 5,
+        remove: 'MIDDLE'
+      })
+      expect(result).toContain('TRUNCATED DUE TO LENGTH')
+    })
+
+    it('should use custom message when provided', () => {
+      const result = truncateStringWithMessage({
+        str: 'This is a very long string that needs to be truncated for testing purposes',
+        maxLength: 50,
+        message: 'CUSTOM MSG'
+      })
+      expect(result).toContain('CUSTOM MSG')
+      expect(result.startsWith('This is')).toBe(true)
+    })
   })
 })
 
