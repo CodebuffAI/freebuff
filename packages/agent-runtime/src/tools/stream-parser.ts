@@ -2,10 +2,7 @@ import { toolNames } from '@codebuff/common/tools/constants'
 import { buildArray } from '@codebuff/common/util/array'
 import { STREAM_RECOVERY_EVENT } from '@codebuff/common/util/axiom-only-log'
 import { AbortError } from '@codebuff/common/util/error'
-import {
-  assistantMessage,
-  userMessage,
-} from '@codebuff/common/util/messages'
+import { assistantMessage, userMessage } from '@codebuff/common/util/messages'
 import { generateCompactId } from '@codebuff/common/util/string'
 
 import { processStreamWithTools } from '../tool-stream-parser'
@@ -18,11 +15,11 @@ import {
 } from './tool-executor'
 import { withSystemTags } from '../util/messages'
 import {
+  historyHasUnclosedOpen,
   historyLeaksThinkTags,
   stripThinkScaffolding,
   ThinkTagStream,
 } from '../util/think-tag-stream'
-
 import type { CustomToolCall, ExecuteToolCallParams } from './tool-executor'
 import type { ThinkStreamSegment } from '../util/think-tag-stream'
 import type { AgentTemplate } from '../templates/types'
@@ -156,9 +153,7 @@ export async function processStream(
   > &
     ParamsExcluding<
       typeof processStreamWithTools,
-      | 'processors'
-      | 'defaultProcessor'
-      | 'executeXmlToolCall'
+      'processors' | 'defaultProcessor' | 'executeXmlToolCall'
     >,
 ) {
   const {
@@ -180,10 +175,11 @@ export async function processStream(
   // Reasoning that a lane failed to put in its native field arrives here as
   // ordinary text, tags and all. Reclassify it before it reaches a surface, so
   // the thinking box is the only place a chain of thought is ever rendered.
-  // See util/think-tag-stream.ts for the three shapes and why the implicit-open
-  // rule is armed from the history rather than from a model id.
+  // See util/think-tag-stream.ts for the three shapes and why the hold rules
+  // are armed from the history rather than from a model id.
   const thinkTagStream = new ThinkTagStream({
     implicitOpen: historyLeaksThinkTags(agentState.messageHistory),
+    holdExplicitOpens: historyHasUnclosedOpen(agentState.messageHistory),
   })
   const emitThinkSegments = (segments: ThinkStreamSegment[]): void => {
     for (const segment of segments) {
@@ -205,7 +201,8 @@ export async function processStream(
   const toolResults: ToolMessage[] = []
   const toolResultsToAddToMessageHistory: ToolMessage[] = []
   const toolCalls: (CodebuffToolCall | CustomToolCall)[] = []
-  const toolCallsToAddToMessageHistory: (CodebuffToolCall | CustomToolCall)[] = []
+  const toolCallsToAddToMessageHistory: (CodebuffToolCall | CustomToolCall)[] =
+    []
   const assistantMessages: Message[] = []
   // Inline agents replace the parent's history with their result. Track which
   // current-step messages they inherited so finalization does not append them
@@ -255,7 +252,7 @@ export async function processStream(
   function createToolExecutionCallback(toolName: string, isXmlMode: boolean) {
     const responseHandler = createResponseHandler()
     return {
-      onTagStart: () => { },
+      onTagStart: () => {},
       onTagEnd: async (_: string, input: Record<string, string>) => {
         if (signal.aborted) {
           return
@@ -266,10 +263,10 @@ export async function processStream(
         // Check if this is an agent tool call that should be transformed to spawn_agents
         const transformed = !isNativeTool
           ? tryTransformAgentToolCall({
-            toolName,
-            input,
-            spawnableAgents: agentTemplate.spawnableAgents,
-          })
+              toolName,
+              input,
+              spawnableAgents: agentTemplate.spawnableAgents,
+            })
           : null
         const isSpawnCall =
           Boolean(transformed) ||
@@ -629,17 +626,18 @@ export async function processStream(
     const completedToolCallIds = new Set(
       toolResultsToAddToMessageHistory.map((r) => r.toolCallId),
     )
-    const filteredToolCalls =
-      toolCallsToAddToMessageHistory.filter((tc) =>
-        completedToolCallIds.has(tc.toolCallId),
-      )
+    const filteredToolCalls = toolCallsToAddToMessageHistory.filter((tc) =>
+      completedToolCallIds.has(tc.toolCallId),
+    )
 
     agentState.messageHistory = buildArray<Message>([
       ...agentState.messageHistory,
       ...assistantMessages.filter(
         (message) => !claimedByInlineAgent.has(message),
       ),
-      ...filteredToolCalls.map((toolCall) => assistantMessage({ ...toolCall, type: 'tool-call' })),
+      ...filteredToolCalls.map((toolCall) =>
+        assistantMessage({ ...toolCall, type: 'tool-call' }),
+      ),
       ...toolResultsToAddToMessageHistory,
       ...errorMessages,
     ])
