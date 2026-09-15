@@ -16,6 +16,7 @@ import {
 } from '@codebuff/common/types/freebuff-session'
 import { useEffect } from 'react'
 
+import { startNewChat } from '../project-files'
 import {
   getSelectedFreebuffModel,
   useFreebuffModelStore,
@@ -257,7 +258,12 @@ async function restartFreebuffSession(
     }
   }
   if (!stillCurrent()) return
-  if (opts.resetChat) useChatStore.getState().reset()
+  if (opts.resetChat) {
+    useChatStore.getState().reset()
+    // Rotate the chat id like /new does, so the next session saves to its own
+    // directory instead of overwriting this conversation in /history.
+    startNewChat()
+  }
   await currentController?.restart(mode)
 }
 

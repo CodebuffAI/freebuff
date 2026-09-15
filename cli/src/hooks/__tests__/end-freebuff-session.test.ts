@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 
+import { getCurrentChatId } from '../../project-files'
 import { useChatStore } from '../../state/chat-store'
 import { useFreebuffSessionStore } from '../../state/freebuff-session-store'
 import * as auth from '../../utils/auth'
@@ -43,10 +44,12 @@ describe.skipIf(!IS_FREEBUFF)('end-session transition', () => {
 
   test('failed end preserves history and identity, explains retry, then resets on confirmation', async () => {
     const original = useChatStore.getState().messages[0]
+    const originalChatId = getCurrentChatId()
     await expect(returnToFreebuffLanding({ resetChat: true })).rejects.toThrow(
       'offline',
     )
     expect(useChatStore.getState().messages[0]).toEqual(original)
+    expect(getCurrentChatId()).toBe(originalChatId)
     expect(JSON.stringify(useChatStore.getState().messages)).toContain(
       'Retry /end-session',
     )
@@ -54,8 +57,12 @@ describe.skipIf(!IS_FREEBUFF)('end-session transition', () => {
     fetchSpy.mockResolvedValue(
       Response.json({ status: 'ended', freebucksRefund: 4 }),
     )
+    // Keep the ids from colliding: they are millisecond timestamps.
+    await new Promise((resolve) => setTimeout(resolve, 2))
     await returnToFreebuffLanding({ resetChat: true })
     expect(useChatStore.getState().messages).toHaveLength(0)
+    // The next session saves to a new chat, so the ended one stays in /history.
+    expect(getCurrentChatId()).not.toBe(originalChatId)
     expect(useFreebuffSessionStore.getState().lastRefund).toBe(4)
     for (const [, init] of fetchSpy.mock.calls) {
       expect(new Headers(init.headers).get('x-freebuff-instance-id')).toBe(
@@ -72,6 +79,7 @@ describe.skipIf(!IS_FREEBUFF)('end-session transition', () => {
           respond = resolve
         }),
     )
+    const replacementChatId = getCurrentChatId()
     const ending = returnToFreebuffLanding({ resetChat: true })
     useFreebuffSessionStore
       .getState()
@@ -81,6 +89,7 @@ describe.skipIf(!IS_FREEBUFF)('end-session transition', () => {
     respond(Response.json({ status: 'ended', freebucksRefund: 4 }))
     await ending
     expect(useChatStore.getState().messages).toEqual([replacement])
+    expect(getCurrentChatId()).toBe(replacementChatId)
     expect(useFreebuffSessionStore.getState().lastRefund).toBeNull()
   })
 })
