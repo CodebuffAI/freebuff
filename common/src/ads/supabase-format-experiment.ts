@@ -3,6 +3,13 @@ import { fnv1a } from '../util/ad-experiment'
 export const SUPABASE_FORMAT_EXPERIMENT_VERSION =
   'supabase-acquisition-format-v1'
 
+/** Single-arm delivery pilot; never pool these offers into the randomized v1 report. */
+export const SUPABASE_AGENTIC_PILOT_VERSION =
+  'supabase-agentic-priority-pilot-v1'
+export type SupabaseDeliveryVersion =
+  | typeof SUPABASE_FORMAT_EXPERIMENT_VERSION
+  | typeof SUPABASE_AGENTIC_PILOT_VERSION
+
 export type SupabaseFormatArm = 'display' | 'agentic'
 export type SupabaseIntentAngle = 'database' | 'auth'
 
@@ -41,7 +48,7 @@ export type SupabaseMatchedEligibility =
     }
   | {
       eligible: true
-      experimentVersion: typeof SUPABASE_FORMAT_EXPERIMENT_VERSION
+      experimentVersion: SupabaseDeliveryVersion
       userId: string
       angle: SupabaseIntentAngle
       decisionId: string
@@ -72,7 +79,7 @@ export type SupabaseFormatAdmission =
     }
   | {
       status: 'no_fill'
-      experimentVersion: typeof SUPABASE_FORMAT_EXPERIMENT_VERSION
+      experimentVersion: SupabaseDeliveryVersion
       arm: SupabaseFormatArm
       userId: string
       decisionId: string
@@ -80,7 +87,7 @@ export type SupabaseFormatAdmission =
     }
   | {
       status: 'serve'
-      experimentVersion: typeof SUPABASE_FORMAT_EXPERIMENT_VERSION
+      experimentVersion: SupabaseDeliveryVersion
       arm: SupabaseFormatArm
       userId: string
       angle: SupabaseIntentAngle
@@ -599,7 +606,10 @@ export function aggregateSupabaseFormatExperiment(
     Extract<SupabaseFormatExperimentEvent, { type: 'eligible' }>
   >()
   for (const event of accepted) {
-    if (event.type === 'eligible' && !firstEligibilityByUser.has(event.userId)) {
+    if (
+      event.type === 'eligible' &&
+      !firstEligibilityByUser.has(event.userId)
+    ) {
       // accepted is timestamp ordered, so this freezes experiment enrollment
       // at the user's first eligible opportunity across retries and surfaces.
       firstEligibilityByUser.set(event.userId, event)
@@ -800,6 +810,20 @@ export const SUPABASE_FORMAT_DATABASE_PAIR: SupabaseFormatPair = Object.freeze({
     "Scaffold Supabase locally and wire one requested feature's identified create and read path.",
 })
 
+/** Accept old reservations after rollout/rollback, without relabeling A/B results. */
+export function supabaseDeliveryVersionMatches(input: {
+  experimentVersion: string
+  campaignId: string
+  arm: SupabaseFormatArm
+}): boolean {
+  return (
+    input.experimentVersion === SUPABASE_FORMAT_EXPERIMENT_VERSION ||
+    (input.experimentVersion === SUPABASE_AGENTIC_PILOT_VERSION &&
+      input.campaignId === SUPABASE_FORMAT_DATABASE_PAIR.agenticCampaignId &&
+      input.arm === 'agentic')
+  )
+}
+
 /**
  * Catalog entry `supabase-auth-one-feature@1.1.0`. The Auth pair's campaign
  * ids are not checked in: the rows do not exist yet, and they arrive through
@@ -869,7 +893,9 @@ export type SupabaseFormatPairsEnv = {
  * pair exists only while its env value parses. Callers pass `process.env`
  * (or any object carrying that one key) so tests can set the value per case.
  */
-export function supabaseFormatPairs(env: SupabaseFormatPairsEnv): SupabaseFormatPairs {
+export function supabaseFormatPairs(
+  env: SupabaseFormatPairsEnv,
+): SupabaseFormatPairs {
   const authIds = parseSupabaseAuthFormatCampaignIds(
     env.FREEBUFF_SUPABASE_AUTH_FORMAT_CAMPAIGN_IDS,
   )
@@ -896,7 +922,9 @@ export function configuredSupabaseFormatPairs(
 }
 
 /** Every campaign id in every configured pair. */
-export function supabaseFormatCampaignIds(pairs: SupabaseFormatPairs): string[] {
+export function supabaseFormatCampaignIds(
+  pairs: SupabaseFormatPairs,
+): string[] {
   return configuredSupabaseFormatPairs(pairs).flatMap((pair) => [
     pair.displayCampaignId,
     pair.agenticCampaignId,
