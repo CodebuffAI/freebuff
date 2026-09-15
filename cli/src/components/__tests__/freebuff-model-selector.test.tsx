@@ -1195,7 +1195,7 @@ describe('FreebuffModelSelector limited upgrade CTA', () => {
     modelId: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
     cta: 'Get 7x usage for $5',
     tooltip:
-      'DeepSeek V4.1 Flash drops to 15 Freebucks on a plan — 7 hours a day instead of 1 hour. $5 first month, $8/mo after.',
+      'DeepSeek V4.1 Flash: 7 hours a day on Starter instead of 1 hour for free. $5 first month, $8/mo after.',
   }
   const renderWith = async (
     upgrade: typeof LIMITED_OFFER | undefined,
