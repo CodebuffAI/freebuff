@@ -39,6 +39,44 @@ export function getNextInterval(consecutiveSuccesses: number): number {
 }
 
 /**
+ * Number of consecutive failed health checks required before the CLI reports
+ * itself as disconnected.
+ */
+export const DISCONNECT_FAILURE_THRESHOLD = 2
+
+/**
+ * Tracks consecutive failed health probes across the hook's lifetime.
+ *
+ * `recordFailure` returns whether the badge may flip to "connecting": a single
+ * failed probe is not evidence of a disconnection. Transient blips (a slow
+ * proxy, one dropped packet, a momentary 5xx) would otherwise paint a false
+ * badge and, because failures back off exponentially, leave that wrong state on
+ * screen for minutes.
+ *
+ * Recovery is deliberately not hysteretic: a success always clears the streak,
+ * so coming back feels instant. Slow to alarm, fast to clear.
+ *
+ * Exported for testing purposes.
+ */
+export function createProbeFailureTracker({
+  threshold = DISCONNECT_FAILURE_THRESHOLD,
+}: { threshold?: number } = {}) {
+  let consecutiveFailures = 0
+  return {
+    get consecutiveFailures() {
+      return consecutiveFailures
+    },
+    recordFailure(): boolean {
+      consecutiveFailures += 1
+      return consecutiveFailures >= threshold
+    },
+    recordSuccess(): void {
+      consecutiveFailures = 0
+    },
+  }
+}
+
+/**
  * Hook to monitor connection status to the Codebuff backend.
  * Jitters the adaptive healthy cadence and exponentially backs off failures so
  * a shared outage cannot synchronize every CLI into a fixed retry wave.
@@ -68,7 +106,7 @@ export const useConnectionStatus = (
     let isMounted = true
     let timeoutId: NodeJS.Timeout | null = null
     let consecutiveSuccesses = 0
-    let consecutiveFailures = 0
+    const probeFailures = createProbeFailureTracker()
 
     const scheduleNextCheck = (interval: number) => {
       if (!isMounted) return
@@ -77,18 +115,19 @@ export const useConnectionStatus = (
 
     const scheduleFailedCheck = (message: string, error?: unknown): void => {
       if (!isMounted) return
-      setIsConnected(false)
-      previousConnectedRef.current = false
       consecutiveSuccesses = 0
-      consecutiveFailures++
+      if (probeFailures.recordFailure()) {
+        setIsConnected(false)
+        previousConnectedRef.current = false
+      }
       const delayMs = failedPollDelayMs({
-        consecutiveFailures,
+        consecutiveFailures: probeFailures.consecutiveFailures,
       })
       logger.debug(
         {
           ...(error === undefined ? {} : { error }),
           delayMs,
-          consecutiveFailures,
+          consecutiveFailures: probeFailures.consecutiveFailures,
         },
         message,
       )
@@ -107,11 +146,11 @@ export const useConnectionStatus = (
         if (!isMounted) return
 
         const prevConnected = previousConnectedRef.current
-        setIsConnected(connected)
-        previousConnectedRef.current = connected
 
         if (connected) {
-          consecutiveFailures = 0
+          probeFailures.recordSuccess()
+          setIsConnected(true)
+          previousConnectedRef.current = true
           // Determine if this is the initial connection (null) or a reconnection (false)
           const isInitialConnection = prevConnected === null
           const shouldFireReconnectCallback =
@@ -131,6 +170,8 @@ export const useConnectionStatus = (
             }),
           )
         } else {
+          // The badge is flipped by scheduleFailedCheck alone, so a single
+          // failed probe cannot report a disconnection by itself.
           scheduleFailedCheck('Health check failed, backing off')
         }
       } catch (error) {
