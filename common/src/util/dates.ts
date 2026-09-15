@@ -59,7 +59,7 @@ export const formatTimeUntil = (
   const target = typeof date === 'string' ? new Date(date) : date
   const diffMs = target.getTime() - Date.now()
 
-  if (isNaN(diffMs) || diffMs <= 0) return fallback
+  if (Number.isNaN(diffMs) || diffMs <= 0) return fallback
 
   const diffMins = Math.floor(diffMs / (1000 * 60))
   const diffHours = Math.floor(diffMins / 60)
