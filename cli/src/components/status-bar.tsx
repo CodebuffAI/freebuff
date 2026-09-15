@@ -147,6 +147,48 @@ export const StatusBar = ({
       ? formatContextUsage(contextTokenCount, contextWindow)
       : null
 
+  // The persistent lane: which model and connection this session runs on, how
+  // long is left, and how full the context is. It renders independently of the
+  // indicator, so no transient status can blank it — the row is two lanes
+  // rather than one slot with a priority list.
+  const renderSessionReadout = () => {
+    if (byok?.provider && byok.model) {
+      const provider =
+        byok.provider === 'openrouter' ? 'OpenRouter' : 'OpenAI-compatible'
+      return (
+        <span fg={theme.secondary}>{`BYOK · ${provider} · ${byok.model}`}</span>
+      )
+    }
+    if (sessionProgress === null) {
+      return null
+    }
+    const isUrgent = sessionProgress.remainingMs < FREEBUFF_COUNTDOWN_VISIBLE_MS
+    const modelName =
+      freebuffSession?.status === 'active'
+        ? getFreebuffModel(freebuffSession.model).displayName
+        : null
+    // One template string on purpose: conditional text-node children inside a
+    // <span> trip OpenTUI's reconciler (see knowledge.md).
+    const idleLabel = `${modelName ? `${modelName} · ` : ''}${
+      isUnlimited
+        ? 'unlimited'
+        : formatFreebuffSessionRemaining(sessionProgress.remainingMs)
+    }${contextUsage ? ` · ${contextUsage}` : ''}`
+    return (
+      <span
+        fg={
+          isUnlimited
+            ? theme.secondary
+            : isUrgent
+              ? theme.warning
+              : theme.secondary
+        }
+      >
+        {idleLabel}
+      </span>
+    )
+  }
+
   const renderStatusIndicator = () => {
     switch (statusIndicatorState.kind) {
       case 'ctrlC':
@@ -200,42 +242,10 @@ export const StatusBar = ({
       case 'paused':
         return null
 
+      // The readout is not a status message and no longer lives here: it has
+      // its own lane (renderSessionReadout), so a transient indicator —
+      // including 'paused', which draws nothing — cannot take it away.
       case 'idle':
-        if (byok?.provider && byok.model) {
-          const provider =
-            byok.provider === 'openrouter'
-              ? 'OpenRouter'
-              : 'OpenAI-compatible'
-          return <span fg={theme.secondary}>{`BYOK · ${provider} · ${byok.model}`}</span>
-        }
-        if (sessionProgress !== null) {
-          const isUrgent =
-            sessionProgress.remainingMs < FREEBUFF_COUNTDOWN_VISIBLE_MS
-          const modelName =
-            freebuffSession?.status === 'active'
-              ? getFreebuffModel(freebuffSession.model).displayName
-              : null
-          // One template string on purpose: conditional text-node children
-          // inside a <span> trip OpenTUI's reconciler (see knowledge.md).
-          const idleLabel = `${modelName ? `${modelName} · ` : ''}${
-            isUnlimited
-              ? 'unlimited'
-              : formatFreebuffSessionRemaining(sessionProgress.remainingMs)
-          }${contextUsage ? ` · ${contextUsage}` : ''}`
-          return (
-            <span
-              fg={
-                isUnlimited
-                  ? theme.secondary
-                  : isUrgent
-                    ? theme.warning
-                    : theme.secondary
-              }
-            >
-              {idleLabel}
-            </span>
-          )
-        }
         return null
     }
   }
@@ -248,14 +258,18 @@ export const StatusBar = ({
     return <span fg={theme.secondary}>{formatElapsedTime(elapsedSeconds)}</span>
   }
 
+  const sessionReadoutContent = renderSessionReadout()
   const statusIndicatorContent = renderStatusIndicator()
   const elapsedTimeContent = renderElapsedTime()
 
-  // Show gray background when there's status indicator, timer, or when the
-  // freebuff session fill is visible (otherwise the fill would float over
-  // transparent space).
+  // Show gray background when there's a session readout, a status indicator, a
+  // timer, or when the freebuff session fill is visible (otherwise the fill
+  // would float over transparent space).
   const hasContent =
-    statusIndicatorContent || elapsedTimeContent || sessionProgress !== null
+    sessionReadoutContent ||
+    statusIndicatorContent ||
+    elapsedTimeContent ||
+    sessionProgress !== null
 
   return (
     <box
@@ -283,6 +297,7 @@ export const StatusBar = ({
           }}
         />
       )}
+      {/* Persistent lane: never preempted by the transient lane below. */}
       <box
         style={{
           flexGrow: 1,
@@ -290,7 +305,7 @@ export const StatusBar = ({
           flexBasis: 0,
         }}
       >
-        <text style={{ wrapMode: 'none' }}>{statusIndicatorContent}</text>
+        <text style={{ wrapMode: 'none' }}>{sessionReadoutContent}</text>
       </box>
 
       <box style={{ flexShrink: 0 }}>
@@ -308,6 +323,7 @@ export const StatusBar = ({
           gap: 1,
         }}
       >
+        <text style={{ wrapMode: 'none' }}>{statusIndicatorContent}</text>
         <text style={{ wrapMode: 'none' }}>{elapsedTimeContent}</text>
         {onStop &&
           (statusIndicatorState.kind === 'waiting' ||
