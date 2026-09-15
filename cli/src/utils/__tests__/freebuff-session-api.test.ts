@@ -34,6 +34,9 @@ test('the reward model reaches the session POST header unchanged', async () => {
 
   expect(fetchSpy).toHaveBeenCalledTimes(1)
   const [, init] = fetchSpy.mock.calls[0]!
+  expect(new Headers(init?.headers).get('x-fb-timezone')).toBe(
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  )
   expect(new Headers(init?.headers).get('x-freebuff-model')).toBe(
     FREEBUFF_REWARD_MODEL_ID,
   )

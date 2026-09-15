@@ -148,7 +148,7 @@ export interface FreebuffSubscriptionUsage {
  */
 /** The daily Freebucks pool, as the client should render it. */
 export interface FreebuffFreebucksWindow {
-  /** Freebucks granted for the Pacific day: the access tier's free pool, or
+  /** Freebucks granted for the account's day: the access tier's free pool, or
    *  the plan's daily pool for a subscriber (the plan REPLACES the free
    *  figure rather than stacking on it). */
   limit: number
@@ -158,6 +158,7 @@ export interface FreebuffFreebucksWindow {
   remaining: number
   /** ISO instant the pool refills. */
   resetAt: string
+  resetTimeZone?: string
 }
 
 /**
@@ -1102,8 +1103,11 @@ export interface FreebuffDesktopRefundInfo {
   /** Refunded bonus retired in the same settlement; absent on older APIs. */
   expiredBonusAmount?: number
   refundedAt: string
-  /** Original debit's accounting instant; identifies the daily pool restored. */
+  /** Original debit's accounting instant; legacy receipts use Pacific dates. */
   poolDate: string
+  /** Immutable pool opening date (YYYY-MM-DD) in its historical reset timezone.
+   * Absent for legacy Pacific debits and older APIs. */
+  poolLocalDate?: string
 }
 
 export interface FreebuffDesktopPurchaseInfo {

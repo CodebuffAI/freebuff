@@ -1,4 +1,5 @@
 import type { FreebuffWalletSpendLimit } from '@codebuff/common/types/freebuff-session'
+import { freebucksTimeZoneHeaders } from '@codebuff/common/util/freebucks-timezone'
 import { env } from '@codebuff/common/env'
 import {
   FREEBUFF_COMPACT_SESSION_HEADER,
@@ -111,7 +112,10 @@ export async function callFreebuffSession(
     compact?: boolean
   } = {},
 ): Promise<FreebuffSessionServerResponse> {
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    ...freebucksTimeZoneHeaders(),
+  }
   if ((method === 'GET' || method === 'DELETE') && opts.instanceId) {
     headers[FREEBUFF_INSTANCE_HEADER] = opts.instanceId
   }

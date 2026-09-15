@@ -14,7 +14,7 @@ import { createTestRenderer } from '@opentui/core/testing'
 import { createRoot, flushSync } from '@opentui/react'
 import React from 'react'
 
-import { FREEBUCKS_LABEL } from '../../utils/freebucks'
+import { FREEBUCKS_LABEL, FREEBUCKS_PICKER_NOTICE } from '../../utils/freebucks'
 import * as openUrl from '../../utils/open-url'
 import { FreebuffModelSelector } from '../freebuff-model-selector'
 import {
@@ -133,6 +133,36 @@ const renderSelectorWithGlmRemaining = async (remaining?: number) => {
   await Promise.resolve()
   await nextSetup.renderOnce()
 }
+
+test('the Freebucks picker waits after an expired reset and displays a confirmed refill', async () => {
+  const meter = freebucksFixture(0)
+  const publish = (remaining: number, resetAt: number) => {
+    flushSync(() => useFreebuffSessionStore.getState().setSession({
+      status: 'none',
+      accessTier: 'full',
+      freebucks: {
+        ...meter,
+        balance: remaining,
+        daily: { ...meter.daily, limit: 100, remaining, spent: 100 - remaining, resetAt: new Date(resetAt).toISOString() },
+      },
+    }))
+  }
+  publish(0, FIXED_NOW_MS + 60_000)
+  const setup = await renderSelector()
+  expect(setup.captureCharFrame()).toContain('0/100 Freebucks daily · resets in 1m')
+  for (const resetAt of [FIXED_NOW_MS, FIXED_NOW_MS - 60_000]) {
+    publish(0, resetAt)
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain('0/100 Freebucks daily · Updating balance…')
+    expect(setup.captureCharFrame()).not.toContain('resets in now')
+  }
+  publish(100, FIXED_NOW_MS + 86_400_000)
+  await setup.renderOnce()
+  expect(setup.captureCharFrame()).toContain('100/100 Freebucks daily · resets in 1d 0h')
+  expect(setup.captureCharFrame()).not.toContain('Updating balance')
+  expect(FREEBUCKS_PICKER_NOTICE).toContain('first refill may arrive earlier')
+  expect(FREEBUCKS_PICKER_NOTICE).toContain('keep your scheduled refill and may delay the following one')
+})
 
 describe('FreebuffModelSelector referral selection', () => {
   test('keeps a fractional unlocked reward session selected while its request is pending', async () => {
