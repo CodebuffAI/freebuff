@@ -5,7 +5,7 @@ import { safeOpen } from './utils/open-url'
 import { getAuthToken } from './utils/auth'
 import { isSponsoredProposalBlock } from './types/chat'
 import { runSponsoredProposalControl } from './utils/sponsored-proposal-control'
-import { sponsoredRunFor } from './utils/sponsored-run'
+import { sponsoredRunFor, sponsoredTaskEvidence } from './utils/sponsored-run'
 import { useSponsoredProposal } from './hooks/use-sponsored-proposal'
 import {
   useCallback,
@@ -380,7 +380,10 @@ export const Chat = ({
     ) return
     void (async () => {
       const run = sponsoredRunFor(getProjectRoot())
-      const consent = await run.consentFor(block.proposal)
+      const consent = await run.consentFor(
+        block.proposal,
+        sponsoredTaskEvidence(messages),
+      )
       if (!consent.ok) {
         setMessages((prev) => [...prev, getSystemMessage(consent.message)])
         return
@@ -411,7 +414,11 @@ export const Chat = ({
       patchProposalBlock(target, { busy: true })
       void (async () => {
         const run = sponsoredRunFor(getProjectRoot())
-        const outcome = await run.accept(block.proposal, consent.runId)
+        const outcome = await run.accept(
+          block.proposal,
+          consent.runId,
+          sponsoredTaskEvidence(messages),
+        )
         // `runStarted` is what makes the poller watch: the row upstream still
         // reads `offered` until the first poll after the accept, and keying the
         // cadence on the state alone would slow it down at exactly the moment

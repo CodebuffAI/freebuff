@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync, statSync } from 'fs'
 import path from 'path'
 
 import { getConfigDir } from './utils/auth'
+import { ensureSponsoredProjectIdentity } from './utils/sponsored-project-identity'
 
 let projectRoot: string | undefined
 let currentChatId: string | undefined
@@ -12,6 +13,9 @@ function ensureChatDirectory(dir: string) {
 
 export function setProjectRoot(dir: string) {
   projectRoot = dir
+  // Project selection is the normal lifecycle owner for a remote-less
+  // workspace identity. Sponsored polling only ever reads this marker.
+  ensureSponsoredProjectIdentity(dir)
   return projectRoot
 }
 

@@ -1,4 +1,7 @@
 import { normalizeRepoFullName } from '@codebuff/common/ads/sponsored-proposal-target'
+import type { SponsoredLocalTarget } from '@codebuff/common/ads/sponsored-capability'
+import type { SponsoredComputeGrant } from '@codebuff/common/ads/sponsored-compute-contract'
+import { createHash } from 'node:crypto'
 
 import { FREEBUFF_WEB_URL } from '../login/constants'
 
@@ -65,6 +68,15 @@ export type SponsoredAccept = {
   runToken: string
   /** ISO-8601. After this the token stops being honoured upstream. */
   expiresAt: string
+  computeGrant: SponsoredComputeGrant
+}
+
+export type SponsoredAcceptPreview = {
+  proposalId: string
+  procedure: string
+  procedureSha256: string
+  /** Present for foundation offers; absent preserves outstanding legacy offers. */
+  target?: SponsoredLocalTarget
 }
 
 /** One transition, exactly as the state route takes it (COD-396). */
@@ -101,6 +113,14 @@ export type SponsoredAcceptResult =
   | { ok: false; status: number; message: string }
 
 const REQUEST_TIMEOUT_MS = 10_000
+const SHA256 = /^[a-f0-9]{64}$/
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const COMPUTE_TOKEN = /^scg_1_[A-Za-z0-9_-]{43}$/
+
+export function sponsoredProcedureSha256(procedure: string): string {
+  return createHash('sha256').update(procedure, 'utf8').digest('hex')
+}
 
 /**
  * The freebuff.com origin these calls go to.
@@ -157,10 +177,13 @@ export async function fetchSponsoredProposal(
   repoFullName: string,
   authToken: string,
 ): Promise<SponsoredProposalFetchResult> {
-  const repo = normalizeRepoFullName(repoFullName)
-  if (!repo) return { status: 'unavailable' }
+  const workspace = /^workspace:([0-9a-f-]{36})$/i.exec(repoFullName)?.[1]
+  const repo = workspace ? null : normalizeRepoFullName(repoFullName)
+  if (!repo && !workspace) return { status: 'unavailable' }
 
-  const path = `/api/v1/ads/proposal?repo=${encodeURIComponent(repo)}`
+  const path = workspace
+    ? `/api/v1/ads/proposal?workspace=${encodeURIComponent(workspace)}`
+    : `/api/v1/ads/proposal?repo=${encodeURIComponent(repo!)}`
   try {
     const response = await fetch(`${baseUrl()}${path}`, {
       method: 'GET',
@@ -253,6 +276,24 @@ export async function reportSponsoredProposal(
 }
 
 /**
+ * Best-effort acknowledgement from a mounted terminal card. This is telemetry
+ * only; a failed request never changes the transcript or a user's controls.
+ */
+export async function acknowledgeSponsoredProposalDisplay(
+  proposalId: string,
+  authToken: string,
+): Promise<boolean> {
+  return (
+    (await call(
+      'POST',
+      `/api/v1/ads/proposal/${encodeURIComponent(proposalId)}/display`,
+      authToken,
+      {},
+    )) !== null
+  )
+}
+
+/**
  * A standing channel preference: one advertiser refused, or the whole channel
  * turned off. Exactly one per call — they are different weights of answer, and
  * a request that did both would leave no record of which the user chose.
@@ -308,6 +349,47 @@ async function callDetailed<T>(
     // A 2xx whose body is not JSON is still a write that landed. Only the
     // accept needs the body, and it checks its own fields below.
     return { ok: true, status: response.status, value: {} as T }
+  }
+}
+
+/** Read the immutable procedure before showing terminal consent. */
+async function getDetailed<T>(
+  path: string,
+  authToken: string,
+): Promise<
+  | { ok: true; status: number; value: T }
+  | { ok: false; status: number; message: string }
+> {
+  let response: Response
+  try {
+    response = await fetch(`${baseUrl()}${path}`, {
+      method: 'GET',
+      headers: { authorization: `Bearer ${authToken}` },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+  } catch (error) {
+    logger.debug({ error, path }, '[sponsored-proposal] request failed')
+    return { ok: false, status: 0, message: 'Could not reach Freebuff.' }
+  }
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      message: await upstreamMessage(response),
+    }
+  }
+  try {
+    return {
+      ok: true,
+      status: response.status,
+      value: (await response.json()) as T,
+    }
+  } catch {
+    return {
+      ok: false,
+      status: 502,
+      message: 'Freebuff did not return the reviewed task.',
+    }
   }
 }
 
@@ -383,11 +465,28 @@ function looksLikeMachineCode(said: string): boolean {
 export async function acceptSponsoredProposal(
   proposalId: string,
   authToken: string,
+  binding?: {
+    runId: string
+    procedureSha256: string
+    target?: SponsoredLocalTarget
+  },
 ): Promise<SponsoredAcceptResult> {
+  if (
+    !binding ||
+    !UUID.test(binding.runId) ||
+    !SHA256.test(binding.procedureSha256)
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        'Review this sponsored task in the terminal before accepting it.',
+    }
+  }
   const attempt = await callDetailed<SponsoredAccept>(
     `/api/v1/ads/proposal/${encodeURIComponent(proposalId)}/accept`,
     authToken,
-    { surface: 'cli' },
+    { surface: 'cli', ...binding },
   )
   if (!attempt.ok) {
     return { ok: false, status: attempt.status, message: attempt.message }
@@ -395,7 +494,7 @@ export async function acceptSponsoredProposal(
   // A 200 missing either field the run cannot proceed without is a REFUSAL,
   // not a run with an empty procedure: `callDetailed` degrades an unparseable
   // 2xx to `{}`, which is right for a write and exactly wrong here.
-  if (!attempt.value?.procedure || !attempt.value?.runToken) {
+  if (!isFundedAccept(attempt.value, proposalId, binding)) {
     return {
       ok: false,
       status: 502,
@@ -404,6 +503,78 @@ export async function acceptSponsoredProposal(
     }
   }
   return { ok: true, accept: attempt.value }
+}
+
+/**
+ * The server's exact reviewed procedure. GET is deliberately separate from
+ * accept: the user sees these bytes before a funded acceptance is recorded.
+ */
+export async function previewSponsoredProposal(
+  proposalId: string,
+  authToken: string,
+  target?: SponsoredLocalTarget,
+): Promise<
+  | { ok: true; preview: SponsoredAcceptPreview }
+  | { ok: false; status: number; message: string }
+> {
+  const attempt = await getDetailed<SponsoredAcceptPreview>(
+    `/api/v1/ads/proposal/${encodeURIComponent(proposalId)}/accept${
+      target
+        ? `?${
+            target.kind === 'repo'
+              ? `repo=${encodeURIComponent(target.repoFullName)}`
+              : `workspace=${encodeURIComponent(target.workspaceId)}`
+          }`
+        : ''
+    }`,
+    authToken,
+  )
+  if (!attempt.ok) return attempt
+  const preview = attempt.value
+  if (
+    !preview ||
+    preview.proposalId !== proposalId ||
+    typeof preview.procedure !== 'string' ||
+    !preview.procedure ||
+    typeof preview.procedureSha256 !== 'string' ||
+    !SHA256.test(preview.procedureSha256) ||
+    sponsoredProcedureSha256(preview.procedure) !== preview.procedureSha256
+  ) {
+    return {
+      ok: false,
+      status: 502,
+      message: 'Freebuff returned an invalid reviewed task.',
+    }
+  }
+  return { ok: true, preview }
+}
+
+function isFundedAccept(
+  value: SponsoredAccept | undefined,
+  proposalId: string,
+  binding: { runId: string; procedureSha256: string },
+): value is SponsoredAccept {
+  const grant = value?.computeGrant
+  return Boolean(
+    value &&
+    value.proposalId === proposalId &&
+    typeof value.procedure === 'string' &&
+    value.procedure &&
+    sponsoredProcedureSha256(value.procedure) === binding.procedureSha256 &&
+    typeof value.runToken === 'string' &&
+    grant &&
+    typeof grant.token === 'string' &&
+    COMPUTE_TOKEN.test(grant.token) &&
+    grant.proposalId === proposalId &&
+    grant.runId === binding.runId &&
+    grant.procedureSha256 === binding.procedureSha256 &&
+    typeof grant.modelId === 'string' &&
+    Boolean(grant.modelId) &&
+    Number.isSafeInteger(grant.expiresAtMs) &&
+    grant.expiresAtMs > Date.now() &&
+    Number.isSafeInteger(grant.allowanceUsdMicros) &&
+    grant.allowanceUsdMicros > 0,
+  )
 }
 
 /**

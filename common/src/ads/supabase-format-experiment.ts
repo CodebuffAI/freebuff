@@ -1,3 +1,4 @@
+import { supabaseFoundationMode } from './sponsored-capability'
 import { fnv1a } from '../util/ad-experiment'
 
 export const SUPABASE_FORMAT_EXPERIMENT_VERSION =
@@ -6,9 +7,11 @@ export const SUPABASE_FORMAT_EXPERIMENT_VERSION =
 /** Single-arm delivery pilot; never pool these offers into the randomized v1 report. */
 export const SUPABASE_AGENTIC_PILOT_VERSION =
   'supabase-agentic-priority-pilot-v1'
+export const SUPABASE_FOUNDATION_VERSION = 'supabase-database-foundation-v1'
 export type SupabaseDeliveryVersion =
   | typeof SUPABASE_FORMAT_EXPERIMENT_VERSION
   | typeof SUPABASE_AGENTIC_PILOT_VERSION
+  | typeof SUPABASE_FOUNDATION_VERSION
 
 export type SupabaseFormatArm = 'display' | 'agentic'
 export type SupabaseIntentAngle = 'database' | 'auth'
@@ -810,6 +813,47 @@ export const SUPABASE_FORMAT_DATABASE_PAIR: SupabaseFormatPair = Object.freeze({
     "Scaffold Supabase locally and wire one requested feature's identified create and read path.",
 })
 
+/** Foundation is a distinct offer, never silently substituted for a stored v1 offer. */
+export const SUPABASE_FORMAT_FOUNDATION_PAIR: SupabaseFormatPair =
+  Object.freeze({
+    ...SUPABASE_FORMAT_DATABASE_PAIR,
+    procedureId: 'supabase-database-foundation',
+    procedureVersion: '1.0.0',
+    procedureSha256:
+      'sha256:3113f74211ba7e34f9032378c872750b80dde4c75a9eaf85386a120a18361768',
+    consentSummary:
+      'Set up a local Supabase foundation without guessing an application feature.',
+  })
+
+/** Frozen protocol chooses old/new procedure independently of the current rollout mode. */
+export function supabasePairForDeliveryVersion(
+  pair: SupabaseFormatPair,
+  version: string,
+): SupabaseFormatPair {
+  if (pair.angle === 'database')
+    return version === SUPABASE_FOUNDATION_VERSION
+      ? SUPABASE_FORMAT_FOUNDATION_PAIR
+      : SUPABASE_FORMAT_DATABASE_PAIR
+  return pair
+}
+
+export function supabaseDeliverySurfaceMatches(
+  version: string,
+  surface: string,
+): boolean {
+  return version === SUPABASE_FOUNDATION_VERSION
+    ? [
+        'desktop_macos',
+        'desktop_linux',
+        'cli_macos',
+        'cli_linux',
+        'cli_wsl',
+        'web',
+        'cloud',
+      ].includes(surface)
+    : surface === 'desktop_macos'
+}
+
 /** Accept old reservations after rollout/rollback, without relabeling A/B results. */
 export function supabaseDeliveryVersionMatches(input: {
   experimentVersion: string
@@ -818,7 +862,8 @@ export function supabaseDeliveryVersionMatches(input: {
 }): boolean {
   return (
     input.experimentVersion === SUPABASE_FORMAT_EXPERIMENT_VERSION ||
-    (input.experimentVersion === SUPABASE_AGENTIC_PILOT_VERSION &&
+    ((input.experimentVersion === SUPABASE_AGENTIC_PILOT_VERSION ||
+      input.experimentVersion === SUPABASE_FOUNDATION_VERSION) &&
       input.campaignId === SUPABASE_FORMAT_DATABASE_PAIR.agenticCampaignId &&
       input.arm === 'agentic')
   )
@@ -885,6 +930,7 @@ export function parseSupabaseAuthFormatCampaignIds(
 }
 
 export type SupabaseFormatPairsEnv = {
+  FREEBUFF_SUPABASE_FORMAT_DELIVERY?: string | null | undefined
   FREEBUFF_SUPABASE_AUTH_FORMAT_CAMPAIGN_IDS?: string | null | undefined
 }
 
@@ -900,7 +946,9 @@ export function supabaseFormatPairs(
     env.FREEBUFF_SUPABASE_AUTH_FORMAT_CAMPAIGN_IDS,
   )
   return Object.freeze({
-    database: SUPABASE_FORMAT_DATABASE_PAIR,
+    database: supabaseFoundationMode(env.FREEBUFF_SUPABASE_FORMAT_DELIVERY)
+      ? SUPABASE_FORMAT_FOUNDATION_PAIR
+      : SUPABASE_FORMAT_DATABASE_PAIR,
     auth: authIds
       ? Object.freeze({ ...SUPABASE_FORMAT_AUTH_PROCEDURE, ...authIds })
       : null,

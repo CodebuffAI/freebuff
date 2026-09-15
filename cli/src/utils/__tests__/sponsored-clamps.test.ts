@@ -52,6 +52,18 @@ const containmentUsable = () => CONTAINMENT_USABLE
 const context = (): SponsoredTurnContext => ({
   prompt: 'do the thing',
   proposalId: 'proposal-1',
+  procedureSha256:
+    'e0398edf7222298cb1af685870a496350db33a54d32e766b8d94523f4848e304',
+  computeGrant: {
+    token: `scg_1_${'a'.repeat(43)}`,
+    proposalId: 'proposal-1',
+    runId: '00000000-0000-4000-8000-000000000001',
+    procedureSha256:
+      'e0398edf7222298cb1af685870a496350db33a54d32e766b8d94523f4848e304',
+    modelId: 'test-sponsored-model',
+    expiresAtMs: Date.now() + 60_000,
+    allowanceUsdMicros: 1,
+  },
   runtimeDir: join(FIXTURE_PARENT, 'runtime'),
   signal: new AbortController().signal,
   worktree: {

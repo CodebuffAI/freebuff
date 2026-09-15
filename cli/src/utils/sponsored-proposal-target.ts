@@ -19,6 +19,9 @@
  * command twice.
  */
 import { repoFullNameFromRemote } from '@codebuff/common/ads/sponsored-proposal-target'
+import type { SponsoredLocalTarget } from '@codebuff/common/ads/sponsored-capability'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
 import { logger } from './logger'
 import { tryGetProjectRoot } from '../project-files'
@@ -27,6 +30,8 @@ import { tryGetProjectRoot } from '../project-files'
 export type RemoteReader = (cwd: string) => Promise<string | null>
 
 const REMOTE_TIMEOUT_MS = 5_000
+const WORKSPACE_TARGET =
+  /^workspace:([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i
 
 /**
  * `git remote get-url origin`, or null.
@@ -54,7 +59,13 @@ const readOriginRemote: RemoteReader = async (cwd) => {
   }
 }
 
-let cached: Promise<string | null> | null = null
+let cached: Promise<SponsoredLocalTarget | null> | null = null
+
+function targetKey(target: SponsoredLocalTarget): string {
+  return target.kind === 'repo'
+    ? target.repoFullName
+    : `workspace:${target.workspaceId}`
+}
 
 /**
  * The repository this terminal's offers are keyed to, or null.
@@ -66,18 +77,48 @@ let cached: Promise<string | null> | null = null
 export async function sponsoredProposalTarget(
   read?: RemoteReader,
 ): Promise<string | null> {
+  const target = await sponsoredProposalLocalTarget(read)
+  return target ? targetKey(target) : null
+}
+
+/**
+ * The opaque local target behind a card.  This is the binding carried from
+ * preview to funded accept; it is intentionally recomputed at accept time so
+ * a changed remote or workspace marker cannot charge a different project.
+ */
+export async function sponsoredProposalLocalTarget(
+  read?: RemoteReader,
+): Promise<SponsoredLocalTarget | null> {
   if (read) return resolve(read)
   if (!cached) cached = resolve(readOriginRemote)
   return cached
 }
 
-async function resolve(read: RemoteReader): Promise<string | null> {
+async function resolve(
+  read: RemoteReader,
+): Promise<SponsoredLocalTarget | null> {
   // `tryGetProjectRoot`, not `getProjectRoot`: the ad rail must never be the
   // thing that throws during startup, and a root that is not set yet is
   // simply "no card this tick".
   const root = tryGetProjectRoot()
   if (!root) return null
-  return repoFullNameFromRemote(await read(root))
+  const repo = repoFullNameFromRemote(await read(root))
+  if (repo) return { kind: 'repo', repoFullName: repo }
+  // The v2 ad request already trusts only this persistent opaque UUID. Reuse
+  // it here so a local project can poll the same offer it was eligible to see.
+  try {
+    const workspaceId = readFileSync(
+      join(root, '.freebuff', 'project-id'),
+      'utf8',
+    )
+      .trim()
+      .toLowerCase()
+    return WORKSPACE_TARGET.test(`workspace:${workspaceId}`)
+      ? { kind: 'workspace', workspaceId }
+      : null
+  } catch {
+    return null
+  }
 }
 
 /** Test-only: forget the process-wide answer. */

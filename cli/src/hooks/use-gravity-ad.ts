@@ -15,12 +15,15 @@ import { getAdsEnabled } from '../commands/ads'
 import { useChatStore } from '../state/chat-store'
 import { isUserActive, subscribeToActivity } from '../utils/activity-tracker'
 import { getAuthToken } from '../utils/auth'
+import { FREEBUFF_WEB_URL } from '../login/constants'
 import { IS_FREEBUFF } from '../utils/constants'
 import { getCliEnv } from '../utils/env'
 import { logger } from '../utils/logger'
 import { enqueueClientLog } from '../utils/log-shipper'
 import { AI_MESSAGE_ID_PREFIX } from '../utils/ai-message-id'
 import { trackEvent } from '../utils/analytics'
+import { tryGetProjectRoot } from '../project-files'
+import { sponsoredCliCapability } from '../utils/sponsored-cli-capability'
 import {
   createLazyResponseAdQueue,
   MAX_RESPONSE_AD_POOL_SIZE,
@@ -516,33 +519,47 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       }
     }
 
+    const projectRoot = tryGetProjectRoot()
+    const capability = projectRoot
+      ? await sponsoredCliCapability(projectRoot)
+      : null
+    const capabilityRoute = capability !== null
     try {
-      const response = await fetch(`${WEBSITE_URL}/api/v1/ads`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-          'User-Agent': getCliAdRequestUserAgent(),
+      const response = await fetch(
+        `${capabilityRoute ? FREEBUFF_WEB_URL : WEBSITE_URL}${capabilityRoute ? '/api/ads' : '/api/v1/ads'}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+            'User-Agent': getCliAdRequestUserAgent(),
+          },
+          body: JSON.stringify({
+            provider,
+            messages: adMessages,
+            sessionId: useChatStore.getState().chatSessionId,
+            device: getDeviceInfo(),
+            ...(capability?.sponsoredCapability
+              ? { sponsoredCapability: capability.sponsoredCapability }
+              : {}),
+            ...(capability
+              ? { capabilityInspection: capability.capabilityInspection }
+              : {}),
+            ...(surface ? { surface } : {}),
+            ...(params?.placementId ? { placementId: params.placementId } : {}),
+            ...(params?.placementIds?.length
+              ? { placementIds: params.placementIds }
+              : {}),
+            // Native runtime UAs look bot-like to ad networks. Send the shared
+            // browser-like UA so every provider sees a usable targeting signal.
+            userAgent: getAdUserAgent(),
+            // The dock arm THIS session cached (COD-457). Omitted until the
+            // policy resolves, so the server falls back to its own assignment
+            // rather than being handed a guess.
+            ...(getSessionDockArm() ? { cliDockArm: getSessionDockArm() } : {}),
+          }),
         },
-        body: JSON.stringify({
-          provider,
-          messages: adMessages,
-          sessionId: useChatStore.getState().chatSessionId,
-          device: getDeviceInfo(),
-          ...(surface ? { surface } : {}),
-          ...(params?.placementId ? { placementId: params.placementId } : {}),
-          ...(params?.placementIds?.length
-            ? { placementIds: params.placementIds }
-            : {}),
-          // Native runtime UAs look bot-like to ad networks. Send the shared
-          // browser-like UA so every provider sees a usable targeting signal.
-          userAgent: getAdUserAgent(),
-          // The dock arm THIS session cached (COD-457). Omitted until the
-          // policy resolves, so the server falls back to its own assignment
-          // rather than being handed a guess.
-          ...(getSessionDockArm() ? { cliDockArm: getSessionDockArm() } : {}),
-        }),
-      })
+      )
 
       if (!response.ok) {
         let responseBody: unknown

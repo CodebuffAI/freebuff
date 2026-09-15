@@ -62,6 +62,7 @@ export type SponsoredLocalUnavailableReason =
   | 'bubblewrap-missing'
   | 'unsupported-platform'
   | 'no-consent-bridge'
+  | 'containment-probe-failed'
 
 export type SponsoredLocalContainment =
   | { available: true; mechanism: 'sandbox-exec' | 'bubblewrap' }
@@ -79,6 +80,8 @@ export const SPONSORED_LOCAL_UNAVAILABLE_COPY: Record<
   SponsoredLocalUnavailableReason,
   string
 > = Object.freeze({
+  'containment-probe-failed':
+    'Sponsored tasks cannot start because the workspace sandbox is not working on this machine. No paid task has started.',
   'windows-no-containment':
     'Sponsored tasks can’t run on Windows yet: Freebuff has no way to keep an advertiser’s commands inside the workspace on this operating system.',
   'bubblewrap-missing':

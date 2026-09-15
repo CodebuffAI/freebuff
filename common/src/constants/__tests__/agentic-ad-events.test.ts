@@ -33,6 +33,7 @@ describe('agentic funnel vocabulary', () => {
       'dismissed',
       'run_failed',
       'run_committed',
+      'proposal_displayed',
     ])
   })
 
@@ -87,6 +88,7 @@ describe('the billing rule', () => {
     expect(isBillableAgenticFunnelEvent('dismissed')).toBe(false)
     expect(isBillableAgenticFunnelEvent('run_failed')).toBe(false)
     expect(isBillableAgenticFunnelEvent('run_committed')).toBe(false)
+    expect(isBillableAgenticFunnelEvent('proposal_displayed')).toBe(false)
   })
 })
 

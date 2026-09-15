@@ -19,8 +19,13 @@ import { ensureCliTestEnv } from '../../__tests__/test-utils'
 
 ensureCliTestEnv()
 
-const { SponsoredRun, diagnosticCause, noHooksEnv, sponsoredRunTitle } =
-  await import('../sponsored-run')
+const {
+  SponsoredRun,
+  diagnosticCause,
+  noHooksEnv,
+  sponsoredRunTitle,
+  sponsoredTaskEvidence,
+} = await import('../sponsored-run')
 
 import type { SponsoredRunDeps, SponsoredTurnContext } from '../sponsored-run'
 import type { SponsoredProposal } from '../sponsored-proposal-api'
@@ -43,6 +48,16 @@ const ACCEPT = {
   headline: 'Add one-click deploys',
   runToken: 'token-1',
   expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+  computeGrant: {
+    token: 'scg_1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    proposalId: 'proposal-1',
+    runId: '00000000-0000-4000-8000-000000000001',
+    procedureSha256:
+      'e0398edf7222298cb1af685870a496350db33a54d32e766b8d94523f4848e304',
+    modelId: 'freebuff/deepseek-v4-flash',
+    expiresAtMs: Date.now() + 86_400_000,
+    allowanceUsdMicros: 500_000,
+  },
 }
 
 type Reported = {
@@ -88,9 +103,28 @@ function fakes(
   }
 
   const deps: SponsoredRunDeps = {
-    accept: async (proposalId) => {
+    preview: async (proposalId) => ({
+      ok: true,
+      preview: {
+        proposalId,
+        procedure: ACCEPT.procedure,
+        procedureSha256: ACCEPT.computeGrant.procedureSha256,
+      },
+    }),
+    accept: async (proposalId, _token, binding) => {
       accepts.push(proposalId)
-      return { ok: true, accept: ACCEPT }
+      return {
+        ok: true,
+        accept: {
+          ...ACCEPT,
+          computeGrant: {
+            ...ACCEPT.computeGrant,
+            runId: binding?.runId ?? ACCEPT.computeGrant.runId,
+            procedureSha256:
+              binding?.procedureSha256 ?? ACCEPT.computeGrant.procedureSha256,
+          },
+        },
+      }
     },
     reportState: async (_id, _token, update) => {
       reported.push(update as Reported)
@@ -101,6 +135,11 @@ function fakes(
     // The worktree is never created on disk here; `git worktree add` is faked.
     exists: () => true,
     platform: 'darwin',
+    containment: (platform) =>
+      platform === 'win32'
+        ? { available: false, reason: 'windows-no-containment' }
+        : { available: true, mechanism: 'sandbox-exec' },
+    target: async () => ({ kind: 'repo', repoFullName: 'acme/app' }),
     runTurn: async (context) => {
       turns.push(context)
       return null
@@ -141,7 +180,18 @@ function fakes(
 async function acceptThrough(f: ReturnType<typeof fakes>) {
   const consent = await f.service.consentFor(PROPOSAL)
   if (!consent.ok) throw new Error(consent.message)
-  return { consent, outcome: await f.service.accept(PROPOSAL, consent.runId) }
+  return {
+    consent,
+    outcome: await f.service.accept(PROPOSAL, consent.runId, reviewedTask()),
+  }
+}
+
+function reviewedTask() {
+  const task = sponsoredTaskEvidence([
+    { variant: 'user', content: 'Review this sponsored task.' },
+  ])
+  if (!task) throw new Error('expected task evidence')
+  return task
 }
 
 describe('availability decides whether anything can be offered at all', () => {
@@ -194,7 +244,7 @@ describe('consent', () => {
     const f = fakes()
     const consent = await f.service.consentFor(PROPOSAL)
     if (!consent.ok) throw new Error('refused')
-    await f.service.accept(PROPOSAL, consent.runId)
+    await f.service.accept(PROPOSAL, consent.runId, reviewedTask())
     expect(f.turns[0]!.worktree.branch).toBe(consent.consent.branch)
     expect(sponsoredRunTitle('Acme Deploys')).toBe('Sponsored: Acme Deploys')
   })
@@ -206,8 +256,8 @@ describe('accept', () => {
     const consent = await f.service.consentFor(PROPOSAL)
     if (!consent.ok) throw new Error('refused')
     const [first, second] = await Promise.all([
-      f.service.accept(PROPOSAL, consent.runId),
-      f.service.accept(PROPOSAL, consent.runId),
+      f.service.accept(PROPOSAL, consent.runId, reviewedTask()),
+      f.service.accept(PROPOSAL, consent.runId, reviewedTask()),
     ])
     expect([first.ok, second.ok].filter(Boolean)).toHaveLength(1)
     expect(f.accepts).toEqual(['proposal-1'])
@@ -243,6 +293,22 @@ describe('accept', () => {
     expect(outcome).toMatchObject({ ok: false, message: 'no longer on offer' })
     expect(attempts).toHaveLength(1)
     expect(f.reported).toEqual([])
+  })
+
+  test('missing task evidence after consent refuses before funded acceptance', async () => {
+    const f = fakes()
+    const consent = await f.service.consentFor(PROPOSAL, reviewedTask())
+    if (!consent.ok) throw new Error('refused')
+
+    const outcome = await f.service.accept(PROPOSAL, consent.runId, null)
+
+    expect(outcome).toEqual({
+      ok: false,
+      message:
+        'The task context changed after review. Review the sponsored task again.',
+    })
+    expect(f.accepts).toEqual([])
+    expect(f.turns).toEqual([])
   })
 
   test('a row accepted upstream that cannot start locally is reported failed', async () => {
@@ -290,7 +356,7 @@ describe('the verdict is decided by git, not by the run', () => {
       f.moveHead('new-sha')
       return original(context)
     }
-    await f.service.accept(PROPOSAL, consent.runId)
+    await f.service.accept(PROPOSAL, consent.runId, reviewedTask())
     await settle()
     expect(f.reported.map((r) => r.state)).toEqual(['running', 'committed'])
   })
@@ -471,7 +537,7 @@ describe('the verdict is decided by git, not by the run', () => {
     await firstStartedPromise
     const consent = await service.consentFor(PROPOSAL)
     if (!consent.ok) throw new Error('refused')
-    await service.accept(PROPOSAL, consent.runId)
+    await service.accept(PROPOSAL, consent.runId, reviewedTask())
     const interrupted = service.interrupt('ctrl-c')
 
     // Persist-before-HTTP: the second intent survives a crash even while the
@@ -665,7 +731,9 @@ describe('delivery', () => {
         // as far as the gitdir check this test is about.
         return {
           exitCode: 0,
-          stdout: heads++ === 0 ? 'base-sha\n' : 'moved-sha\n',
+          // Consent reads HEAD twice; both must agree. Worktree creation then
+          // captures the same base before the simulated turn moves it.
+          stdout: heads++ < 5 ? 'base-sha\n' : 'moved-sha\n',
           stderr: '',
         }
       }
@@ -674,7 +742,7 @@ describe('delivery', () => {
     const service = new SponsoredRun(ROOT, f.deps)
     const consent = await service.consentFor(PROPOSAL)
     if (!consent.ok) throw new Error('refused')
-    await service.accept(PROPOSAL, consent.runId)
+    await service.accept(PROPOSAL, consent.runId, reviewedTask())
     await settle()
     asked = 0
     const outcome = await service.createPullRequest()
@@ -694,7 +762,7 @@ describe('delivery', () => {
       f.moveHead('moved-sha')
       return original(context)
     }
-    await f.service.accept(PROPOSAL, consent.runId)
+    await f.service.accept(PROPOSAL, consent.runId, reviewedTask())
     await settle()
     const outcome = await f.service.createPullRequest()
     expect(outcome).toMatchObject({
@@ -726,7 +794,7 @@ describe('delivery', () => {
       f.moveHead('moved-sha')
       return original(context)
     }
-    await f.service.accept(PROPOSAL, consent.runId)
+    await f.service.accept(PROPOSAL, consent.runId, reviewedTask())
     await settle()
     expect(await f.service.createPullRequest()).toMatchObject({ ok: false })
     expect(f.reported.some((r) => r.state === 'landed')).toBe(false)

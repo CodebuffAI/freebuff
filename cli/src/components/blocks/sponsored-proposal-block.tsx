@@ -11,9 +11,11 @@ import {
 } from '@codebuff/common/ads/sponsored-proposal-view'
 import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 
 import { useMessageBlockStore } from '../../state/message-block-store'
+import { getAuthToken } from '../../utils/auth'
+import { acknowledgeSponsoredProposalDisplay } from '../../utils/sponsored-proposal-api'
 import { isPlainEnterKey } from '../../utils/terminal-enter-detection'
 import {
   sponsoredCliCanRun,
@@ -105,6 +107,15 @@ export const SponsoredProposalBlock: React.FC<{
   const [menuIndex, setMenuIndex] = useState(0)
 
   const [consentIndex, setConsentIndex] = useState(0)
+
+  useEffect(() => {
+    // OpenTUI runs effects only after this block mounts into the terminal
+    // renderer; storing it in the transcript alone is not a displayed offer.
+    if (block.proposal.state !== 'offered') return
+    const token = getAuthToken()
+    if (!token) return
+    void acknowledgeSponsoredProposalDisplay(block.proposal._id, token)
+  }, [block.proposal._id, block.proposal.state])
 
   const view = sponsoredProposalViewModel(block.proposal)
   const width = Math.max(20, availableWidth)

@@ -87,6 +87,14 @@ export const AGENTIC_FUNNEL_EVENT_TYPES = [
    * that is never opened does not mean the work was not done.
    */
   'run_committed',
+  /**
+   * The sponsored proposal card was actually visible on a supported surface.
+   *
+   * This is deliberately later than `proposal_offered`: the latter is a
+   * durable server decision while this records a card the owner could see.
+   * It is telemetry only and is never a billing trigger.
+   */
+  'proposal_displayed',
 ] as const
 
 export type AgenticFunnelEventType = (typeof AGENTIC_FUNNEL_EVENT_TYPES)[number]

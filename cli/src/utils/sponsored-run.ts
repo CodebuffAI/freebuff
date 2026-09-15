@@ -124,7 +124,9 @@ import {
 } from './sponsored-agent'
 import {
   acceptSponsoredProposal,
+  previewSponsoredProposal,
   reportSponsoredRunState,
+  sponsoredProcedureSha256,
 } from './sponsored-proposal-api'
 import {
   bunGitRunner,
@@ -142,12 +144,17 @@ import {
 import { getSelectedFreebuffModel } from '../state/freebuff-model-store'
 
 import type {
+  SponsoredAcceptPreview,
   SponsoredProposal,
   SponsoredStateUpdate,
 } from './sponsored-proposal-api'
+import type { SponsoredComputeGrant } from '@codebuff/common/ads/sponsored-compute-contract'
+import type { SponsoredLocalTarget } from '@codebuff/common/ads/sponsored-capability'
 import type { SponsoredLocalAvailability } from '@codebuff/common/ads/sponsored-local-execution'
+import type { SponsoredLocalContainment } from '@codebuff/common/ads/sponsored-local-execution'
 import type { FileReadWindow } from '@codebuff/common/types/contracts/client'
 import type { OverrideToolHandlers } from '@codebuff/sdk'
+import { sponsoredProposalLocalTarget } from './sponsored-proposal-target'
 
 /** The title, and therefore the branch slug. */
 export function sponsoredRunTitle(advertiserName: string): string {
@@ -183,6 +190,10 @@ export type SponsoredConsent = {
   advertiserName: string
   headline: string
   body: string
+  /** Exact reviewed procedure returned by the server preview. */
+  procedure: string
+  /** Whole user messages that established why this offer is relevant. */
+  taskContext: readonly string[]
   /** The checkout the run will be cut from. */
   folder: string
   /** The exact branch that will be created, not "a branch". */
@@ -229,6 +240,7 @@ export type SponsoredDeliveryOutcome =
 
 /** Injected so every decision below is testable without a network or a checkout. */
 export type SponsoredRunDeps = {
+  preview: typeof previewSponsoredProposal
   accept: typeof acceptSponsoredProposal
   reportState: typeof reportSponsoredRunState
   getToken: () => string | null | undefined
@@ -236,6 +248,7 @@ export type SponsoredRunDeps = {
   /** Is this path on disk? Injected with `git`, for the same reason. */
   exists: (path: string) => boolean
   platform: NodeJS.Platform
+  containment: (platform: NodeJS.Platform) => SponsoredLocalContainment
   /** The SDK turn. Returns the error text, or null for a clean finish. */
   runTurn: (context: SponsoredTurnContext) => Promise<string | null>
   /** `gh`/`git` for delivery. Separate from `git` so a test can refuse a push. */
@@ -249,6 +262,23 @@ export type SponsoredRunDeps = {
     read: () => string | null
     write: (value: string) => void
   }
+  /** Re-read this rooted identity before the paid accept. */
+  target: () => Promise<SponsoredLocalTarget | null>
+}
+
+function sameTarget(
+  left: SponsoredLocalTarget,
+  right: SponsoredLocalTarget,
+): boolean {
+  return (
+    left.kind === right.kind &&
+    (left.kind === 'repo'
+      ? left.repoFullName ===
+        (right as Extract<SponsoredLocalTarget, { kind: 'repo' }>).repoFullName
+      : left.workspaceId ===
+        (right as Extract<SponsoredLocalTarget, { kind: 'workspace' }>)
+          .workspaceId)
+  )
 }
 
 type DurableTerminalReport = {
@@ -279,10 +309,95 @@ const TERMINAL_REPORT_MAX_ATTEMPTS = 8
 
 export type SponsoredTurnContext = {
   prompt: string
+  procedureSha256: string
   worktree: SponsoredWorktree
   runtimeDir: string
   proposalId: string
+  computeGrant: SponsoredComputeGrant
   signal: AbortSignal
+}
+
+export type SponsoredTaskEvidence = {
+  /** A bounded identity, never sent as telemetry. */
+  identity: string
+  messages: readonly string[]
+}
+
+const SPONSORED_TASK_MESSAGES_MAX = 8
+const SPONSORED_TASK_CONTEXT_MAX = 8_192
+
+/**
+ * Retain whole user messages only. This is the context the terminal consent
+ * actually reviewed, and it is re-read before the paid acceptance.
+ */
+export function sponsoredTaskEvidence(
+  messages: readonly { variant: string; content: string }[],
+): SponsoredTaskEvidence | null {
+  const selected = messages
+    .filter((message) => message.variant === 'user')
+    .map((message) => message.content.trim())
+    .filter(Boolean)
+    .slice(-SPONSORED_TASK_MESSAGES_MAX)
+  if (
+    !selected.length ||
+    selected.at(-1)!.length > SPONSORED_TASK_CONTEXT_MAX
+  ) {
+    return null
+  }
+  const whole: string[] = []
+  let size = 0
+  for (let index = selected.length - 1; index >= 0; index -= 1) {
+    const message = selected[index]!
+    if (size + message.length > SPONSORED_TASK_CONTEXT_MAX) break
+    whole.unshift(message)
+    size += message.length
+  }
+  if (!whole.length) return null
+  return { messages: whole, identity: JSON.stringify(whole) }
+}
+
+type SponsoredSourceEvidence = {
+  head: string
+  branch: string
+}
+
+async function sponsoredSourceEvidence(
+  projectRoot: string,
+  git: GitRunner,
+): Promise<SponsoredSourceEvidence | null> {
+  if (!(await isGitRepository(projectRoot, git))) return null
+  const [tracked, untracked, branch, firstHead, secondHead] = await Promise.all(
+    [
+      git(['-C', projectRoot, 'status', '--porcelain', '--untracked-files=no']),
+      git([
+        '-C',
+        projectRoot,
+        'ls-files',
+        '--others',
+        '--exclude-standard',
+        '--',
+        ':!:.freebuff',
+        ':(exclude,glob)**/.freebuff/**',
+      ]),
+      git(['-C', projectRoot, 'symbolic-ref', '--short', 'HEAD']),
+      git(['-C', projectRoot, 'rev-parse', 'HEAD']),
+      git(['-C', projectRoot, 'rev-parse', 'HEAD']),
+    ],
+  )
+  const head = firstHead.stdout.trim()
+  if (
+    tracked.exitCode !== 0 ||
+    untracked.exitCode !== 0 ||
+    branch.exitCode !== 0 ||
+    firstHead.exitCode !== 0 ||
+    secondHead.exitCode !== 0 ||
+    tracked.stdout.trim() ||
+    untracked.stdout.trim() ||
+    !head ||
+    head !== secondHead.stdout.trim()
+  )
+    return null
+  return { head, branch: branch.stdout.trim() }
 }
 
 /**
@@ -301,6 +416,7 @@ export class SponsoredRun {
   private active: {
     proposalId: string
     runToken: string
+    computeGrant: SponsoredComputeGrant
     advertiserName: string
     worktree: SponsoredWorktree | null
     abort: AbortController
@@ -309,6 +425,14 @@ export class SponsoredRun {
   } | null = null
 
   private accepting = false
+  private prepared: {
+    proposalId: string
+    runId: string
+    preview: SponsoredAcceptPreview
+    task: SponsoredTaskEvidence
+    source: SponsoredSourceEvidence
+    target: SponsoredLocalTarget
+  } | null = null
   private pushing = false
   private reportRetryTimer: ReturnType<typeof setTimeout> | null = null
   private terminalReportFlushChain: Promise<void> = Promise.resolve()
@@ -356,7 +480,7 @@ export class SponsoredRun {
    * because a boundary that holds on one OS is not a boundary.
    */
   availability(): SponsoredLocalAvailability {
-    return sponsoredLocalAvailability(sponsoredContainment(this.deps.platform))
+    return sponsoredLocalAvailability(this.deps.containment(this.deps.platform))
   }
 
   /**
@@ -371,6 +495,9 @@ export class SponsoredRun {
    */
   async consentFor(
     proposal: SponsoredProposal,
+    task = sponsoredTaskEvidence([
+      { variant: 'user', content: 'Review this sponsored task.' },
+    ]),
   ): Promise<
     | { ok: true; consent: SponsoredConsent; runId: string }
     | { ok: false; message: string }
@@ -384,17 +511,53 @@ export class SponsoredRun {
     if (this.active) {
       return { ok: false, message: 'A sponsored task is already running here.' }
     }
-    // A folder that is not a repository has no worktree to isolate the run in,
-    // and the card should never have offered an Accept for it -- the proposal
-    // is keyed to a GitHub remote. Checked anyway: the command is reachable
-    // without the card.
-    if (!(await isGitRepository(this.projectRoot, this.deps.git))) {
+    if (!task) {
+      return { ok: false, message: 'There is no task context to review.' }
+    }
+    const authToken = this.deps.getToken()
+    if (!authToken) {
       return {
         ok: false,
-        message: 'A sponsored task needs a git repository to work in.',
+        message: 'Sign in to Freebuff to review this sponsored task.',
       }
     }
-    const runId = crypto.randomUUID()
+    const source = await sponsoredSourceEvidence(
+      this.projectRoot,
+      this.deps.git,
+    )
+    if (!source) {
+      return {
+        ok: false,
+        message:
+          'Sponsored tasks need a clean git worktree with a committed HEAD.',
+      }
+    }
+    const target = await this.deps.target()
+    if (!target) {
+      return {
+        ok: false,
+        message:
+          'This project no longer has a stable sponsored-workspace identity.',
+      }
+    }
+    const preview = await this.deps.preview(proposal._id, authToken, target)
+    if (!preview.ok) return { ok: false, message: preview.message }
+    if (preview.preview.target && !sameTarget(preview.preview.target, target)) {
+      return {
+        ok: false,
+        message:
+          'This sponsored task belongs to a different project. Review it again.',
+      }
+    }
+    const runId = randomUUID()
+    this.prepared = {
+      proposalId: proposal._id,
+      runId,
+      preview: preview.preview,
+      task,
+      source,
+      target,
+    }
     return {
       ok: true,
       runId,
@@ -403,6 +566,8 @@ export class SponsoredRun {
         advertiserName: proposal.advertiser_name,
         headline: proposal.headline,
         body: proposal.body,
+        procedure: preview.preview.procedure,
+        taskContext: task.messages,
         folder: this.projectRoot,
         branch: sponsoredBranchFor(
           sponsoredRunTitle(proposal.advertiser_name),
@@ -422,6 +587,7 @@ export class SponsoredRun {
   async accept(
     proposal: SponsoredProposal,
     runId: string,
+    task?: SponsoredTaskEvidence | null,
   ): Promise<SponsoredRunOutcome> {
     if (this.availability() !== 'available') {
       return {
@@ -445,7 +611,59 @@ export class SponsoredRun {
         message: 'Sign in to Freebuff to accept a sponsored task.',
       }
     }
+    const prepared = this.prepared
+    if (
+      !prepared ||
+      prepared.proposalId !== proposal._id ||
+      prepared.runId !== runId
+    ) {
+      return {
+        ok: false,
+        message: 'Review this sponsored task again before accepting it.',
+      }
+    }
+    // Lock before the asynchronous source re-check. Otherwise two Enter
+    // events can both pass this point and create two funded accept requests.
     this.accepting = true
+    // The context must still be available and exactly what the user reviewed.
+    // A missing snapshot (for example, after a long replacement message) is
+    // not evidence that the reviewed task is still current.
+    if (!task || task.identity !== prepared.task.identity) {
+      this.prepared = null
+      this.accepting = false
+      return {
+        ok: false,
+        message:
+          'The task context changed after review. Review the sponsored task again.',
+      }
+    }
+    const source = await sponsoredSourceEvidence(
+      this.projectRoot,
+      this.deps.git,
+    )
+    if (
+      !source ||
+      source.head !== prepared.source.head ||
+      source.branch !== prepared.source.branch
+    ) {
+      this.prepared = null
+      this.accepting = false
+      return {
+        ok: false,
+        message:
+          'Your project changed after review. Review the sponsored task again.',
+      }
+    }
+    const target = await this.deps.target()
+    if (!target || !sameTarget(target, prepared.target)) {
+      this.prepared = null
+      this.accepting = false
+      return {
+        ok: false,
+        message:
+          'Your project identity changed after review. Review the sponsored task again.',
+      }
+    }
     this.set({
       phase: 'accepting',
       proposalId: proposal._id,
@@ -464,9 +682,17 @@ export class SponsoredRun {
       // accepted, with a token nobody holds and no way to ask for it again.
       // ONLY status 0: a 409 or a 422 is an answer, and retrying an answer is
       // how one refusal becomes two.
-      let accepted = await this.deps.accept(proposal._id, authToken)
+      let accepted = await this.deps.accept(proposal._id, authToken, {
+        runId,
+        procedureSha256: prepared.preview.procedureSha256,
+        target,
+      })
       if (!accepted.ok && accepted.status === 0) {
-        accepted = await this.deps.accept(proposal._id, authToken)
+        accepted = await this.deps.accept(proposal._id, authToken, {
+          runId,
+          procedureSha256: prepared.preview.procedureSha256,
+          target,
+        })
       }
       if (!accepted.ok) {
         this.set({ phase: 'idle', proposalId: null, advertiserName: null })
@@ -478,6 +704,16 @@ export class SponsoredRun {
       // nothing behind it, forever, and no sweep finds it because there is no
       // run to find. So the failure is reported here rather than thrown away.
       const runToken = accepted.accept.runToken
+      if (
+        sponsoredProcedureSha256(accepted.accept.procedure) !==
+        prepared.preview.procedureSha256
+      ) {
+        this.set({ phase: 'idle', proposalId: null, advertiserName: null })
+        return {
+          ok: false,
+          message: 'Freebuff returned a task different from the reviewed task.',
+        }
+      }
       let worktree: SponsoredWorktree
       try {
         worktree = await createSponsoredWorktree(
@@ -513,6 +749,7 @@ export class SponsoredRun {
         advertiserName:
           accepted.accept.advertiserName || proposal.advertiser_name,
         worktree,
+        computeGrant: accepted.accept.computeGrant,
         abort: new AbortController(),
         settled: false,
       }
@@ -532,6 +769,7 @@ export class SponsoredRun {
             ? sponsoredAdvertiserCtaHref(accepted.accept.advertiserLink)
             : null,
       })
+      this.prepared = null
       return { ok: true }
     } catch (error) {
       const message =
@@ -565,12 +803,14 @@ export class SponsoredRun {
     try {
       errorText = await this.deps.runTurn({
         prompt: buildSponsoredPrompt(procedure, runtimeInputs),
+        procedureSha256: active.computeGrant.procedureSha256,
         worktree: active.worktree,
         runtimeDir: sponsoredRuntimeDir(
           this.projectRoot,
           runIdOf(active.worktree),
         ),
         proposalId: active.proposalId,
+        computeGrant: active.computeGrant,
         signal: active.abort.signal,
       })
     } catch (error) {
@@ -1374,6 +1614,16 @@ function fileToolPath(input: unknown): string | null {
 export async function runSponsoredTurn(
   context: SponsoredTurnContext,
 ): Promise<string | null> {
+  const grant = context.computeGrant
+  if (
+    grant.proposalId !== context.proposalId ||
+    grant.runId !== runIdOf(context.worktree) ||
+    !/^[a-f0-9]{64}$/.test(context.procedureSha256) ||
+    grant.procedureSha256 !== context.procedureSha256 ||
+    grant.expiresAtMs <= Date.now()
+  ) {
+    return 'The sponsored compute authorization is missing or expired. Nothing was started.'
+  }
   const client = await getCodebuffClient()
   if (!client) return 'Not signed in.'
   const agentId = getAgentIdForMode('LITE')
@@ -1381,7 +1631,7 @@ export async function runSponsoredTurn(
     await client.run({
       agent: sponsoredAgentDefinition({
         agentId,
-        ...(IS_FREEBUFF ? { model: getSelectedFreebuffModel() } : {}),
+        model: grant.modelId,
         isFreebuff: IS_FREEBUFF,
       }),
       prompt: context.prompt,
@@ -1390,17 +1640,14 @@ export async function runSponsoredTurn(
       agentDefinitions: [],
       customToolDefinitions: [],
       overrideTools: sponsoredOverrideTools(context),
-      ...(IS_FREEBUFF ? { costMode: 'free' as const } : {}),
-      // The marker says the run is sponsored; where it is BILLED is the
-      // server's answer to give. HONEST LIMIT: no server route reads this field
-      // today. The metering that would route the cost to the advertiser's
-      // campaign is COD-119's and is not built, so a local sponsored run takes
-      // the ORDINARY path and the user's own session and credits pay for it —
-      // which is the decision (Owen, 2026-09-03), and which is what the card
-      // says. Sent regardless, so the day the metering is built there is
-      // nothing to remember to add here.
+      // A signed one-run grant is the only route through sponsored metering.
+      // Do not fall back to the user's free/ordinary session when it is absent.
       extraCodebuffMetadata: {
         freebuff_sponsored_proposal_id: context.proposalId,
+        freebuff_sponsored_run_id: grant.runId,
+        freebuff_sponsored_procedure_sha256: grant.procedureSha256,
+        freebuff_sponsored_compute_token: grant.token,
+        freebuff_sponsored_surface: 'cli',
       },
       // A sponsored run is unattended, so its stream goes to the log rather
       // than into the user's transcript: the card is the surface for it, and
@@ -1452,12 +1699,15 @@ function terminalReportStore(
 export const defaultSponsoredRunDeps = (
   projectRoot: string,
 ): SponsoredRunDeps => ({
+  preview: previewSponsoredProposal,
   accept: acceptSponsoredProposal,
   reportState: reportSponsoredRunState,
   getToken: getAuthToken,
   git: bunGitRunner,
   exists: existsSync,
   platform: process.platform,
+  containment: sponsoredContainment,
+  target: () => sponsoredProposalLocalTarget(),
   runTurn: runSponsoredTurn,
   deliver: async (command, args, options) => {
     try {

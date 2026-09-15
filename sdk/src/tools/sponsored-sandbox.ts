@@ -42,7 +42,7 @@
  * the run at all where the answer is no.
  */
 
-import { spawn } from 'child_process'
+import { spawn, spawnSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 
@@ -74,11 +74,70 @@ export function findBubblewrap(): string | null {
  * The disk probe is HERE and the decision is in `common`, so the rule is
  * stated once and shared with the surfaces that render a refusal.
  */
+export function probeSponsoredContainment(
+  platform: NodeJS.Platform,
+  dependencies: {
+    exists: (pathname: string) => boolean
+    execute: (command: string, args: string[]) => boolean
+  },
+): SponsoredLocalContainment {
+  const bwrap =
+    platform === 'linux' ? BWRAP_PATHS.find(dependencies.exists) : undefined
+  const containment = sponsoredLocalContainment(platform, {
+    bwrapAvailable: Boolean(bwrap),
+  })
+  if (!containment.available) return containment
+  // Exercise the kernel boundary, not merely the presence of an executable.
+  // In particular WSL/Linux may disable user namespaces even with bwrap installed.
+  let command: string
+  let args: string[]
+  if (platform === 'darwin') {
+    command = '/usr/bin/sandbox-exec'
+    args = [
+      '-p',
+      '(version 1)(deny default)(allow process-exec)(allow process-fork)(allow file-read*)(allow sysctl-read)',
+      '/usr/bin/true',
+    ]
+  } else {
+    command = bwrap!
+    args = ['--die-with-parent', '--unshare-all', '--new-session']
+    for (const directory of ['/usr', '/bin', '/lib', '/lib64']) {
+      if (dependencies.exists(directory))
+        args.push('--ro-bind', directory, directory)
+    }
+    args.push(
+      '--proc',
+      '/proc',
+      '--dev',
+      '/dev',
+      '--clearenv',
+      '--',
+      '/bin/true',
+    )
+  }
+  if (!dependencies.exists(command) || !dependencies.execute(command, args)) {
+    return { available: false, reason: 'containment-probe-failed' }
+  }
+  return containment
+}
+
 export function sponsoredContainment(
   platform: NodeJS.Platform = process.platform,
 ): SponsoredLocalContainment {
-  return sponsoredLocalContainment(platform, {
-    bwrapAvailable: platform === 'linux' ? findBubblewrap() !== null : false,
+  return probeSponsoredContainment(platform, {
+    exists: fs.existsSync,
+    execute: (command, args) => {
+      try {
+        const result = spawnSync(command, args, {
+          timeout: 2_000,
+          stdio: 'ignore',
+          env: { PATH: '/usr/bin:/bin', NODE_ENV: 'production' },
+        })
+        return !result.error && result.status === 0
+      } catch {
+        return false
+      }
+    },
   })
 }
 
@@ -1082,7 +1141,6 @@ function linuxCommonDirMounts(commonDir: string): string[] {
   }
   return args
 }
-
 
 function spawnLinux(
   request: TerminalCommandSpawnRequest,
