@@ -399,4 +399,50 @@ describe('shared release launcher safety', () => {
     )
     expect(runningProcess.listenerCount('exit')).toBe(0)
   })
+
+  test('directs crash reports to the product repository issues tracker', () => {
+    const freebuffLauncher = createLauncher({
+      packageName: 'freebuff',
+      displayName: 'Freebuff',
+    })
+    const codebuffLauncher = createLauncher({
+      packageName: 'codebuff',
+      displayName: 'Codebuff',
+    })
+
+    const freebuffErrors: string[] = []
+    const codebuffErrors: string[] = []
+
+    const originalConsoleError = console.error
+    try {
+      console.error = (...args: unknown[]) => {
+        freebuffErrors.push(args.join(' '))
+      }
+      freebuffLauncher.__testing.printCrashDiagnostics(null, 'SIGSEGV')
+
+      console.error = (...args: unknown[]) => {
+        codebuffErrors.push(args.join(' '))
+      }
+      codebuffLauncher.__testing.printCrashDiagnostics(null, 'SIGSEGV')
+    } finally {
+      console.error = originalConsoleError
+    }
+
+    expect(
+      freebuffErrors.some((line) =>
+        line.includes('https://github.com/CodebuffAI/freebuff/issues'),
+      ),
+    ).toBe(true)
+    expect(
+      freebuffErrors.some((line) =>
+        line.includes('https://github.com/CodebuffAI/codebuff/issues'),
+      ),
+    ).toBe(false)
+
+    expect(
+      codebuffErrors.some((line) =>
+        line.includes('https://github.com/CodebuffAI/codebuff/issues'),
+      ),
+    ).toBe(true)
+  })
 })

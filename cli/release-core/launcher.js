@@ -1141,7 +1141,7 @@ function createLauncher(productConfig) {
     }
     console.error('')
     console.error('Please report this issue at:')
-    console.error('  https://github.com/CodebuffAI/codebuff/issues')
+    console.error(`  https://github.com/CodebuffAI/${packageName}/issues`)
     console.error('')
   }
 
