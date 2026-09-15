@@ -13,7 +13,7 @@ import {
 } from '@codebuff/common/project-file-tree'
 import { getInitialSessionState } from '@codebuff/common/types/session-state'
 import { getErrorObject } from '@codebuff/common/util/error'
-import { cloneDeep } from 'lodash'
+import { cloneDeep, cloneDeepWith } from 'lodash'
 import z from 'zod/v4'
 
 import { loadLocalAgents } from './agents/load-agents'
@@ -1098,6 +1098,33 @@ export function withMessageHistory({
 }
 
 /**
+ * True for a zod schema, which is the only kind of value a clone has to be
+ * careful with here.
+ */
+const isZodSchema = (value: unknown): boolean => {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as { safeParse?: unknown; _zod?: unknown }
+  return (
+    typeof candidate.safeParse === 'function' && candidate._zod !== undefined
+  )
+}
+
+/**
+ * Deep-clones a value without destroying the zod schemas inside it.
+ *
+ * zod installs its internals on a non-enumerable `_zod` property, and lodash
+ * copies own *enumerable* properties only. A plain `cloneDeep` therefore
+ * returns something that still looks like a schema -- `safeParse` lives on the
+ * prototype, so it survives -- but has lost `_zod`, and the next zod call on it
+ * throws "undefined is not an object (evaluating 'schema._zod.parent')".
+ * Schemas are immutable, so the clone keeps them as they are.
+ */
+export const cloneDeepPreservingZodSchemas = <T>(value: T): T =>
+  cloneDeepWith(value, (candidate) =>
+    isZodSchema(candidate) ? candidate : undefined,
+  )
+
+/**
  * Applies overrides to an existing session state, allowing specific fields to be updated
  * even when continuing from a previous run.
  */
@@ -1115,10 +1142,33 @@ export async function applyOverridesToSessionState(
     maxAgentSteps?: number
   },
 ): Promise<SessionState> {
-  // Deep clone to avoid mutating the original session state
-  const sessionState = JSON.parse(
-    JSON.stringify(baseSessionState),
-  ) as SessionState
+  // Deep clone to avoid mutating the original session state. The JSON
+  // round-trip is the fast path - it matches what a persisted snapshot looks
+  // like - but this state can hold values JSON.stringify rejects. A resumed
+  // session carries the tool blocks of the turn before it, and a recursive zod
+  // `lazy` schema is cyclic: stringifying it throws "cannot serialize cyclic
+  // structures" and the resume dies. lodash cloneDeep handles cycles, so fall
+  // back to it and keep the clone working instead of losing the session.
+  //
+  // The catch is deliberately not narrowed, but it is narrower than "any JSON
+  // failure": in practice the throw comes from a cycle or a BigInt. Values JSON
+  // merely drops or coerces - `undefined`, functions, symbols, Date, URL - do
+  // not throw, so they keep taking the JSON path exactly as they did before and
+  // never reach cloneDeep. The fallback therefore only runs where this function
+  // used to throw: it repairs the resume that used to fail rather than changing
+  // one that used to work. On that path cloneDeep keeps the whole graph, which
+  // is the safe side to err on, since the clone is this turn's working copy.
+  // It goes through cloneDeepPreservingZodSchemas rather than plain cloneDeep:
+  // the values that make this state cyclic are the live zod schemas of the
+  // previous turn's MCP tools, and lodash drops a schema's non-enumerable
+  // internals, leaving a schema-shaped object that throws on first use.
+  // Mirrors cloneSessionState, which falls back the same way in run.ts.
+  let sessionState: SessionState
+  try {
+    sessionState = JSON.parse(JSON.stringify(baseSessionState)) as SessionState
+  } catch {
+    sessionState = cloneDeepPreservingZodSchemas(baseSessionState)
+  }
 
   // Apply maxAgentSteps override
   if (overrides.maxAgentSteps !== undefined) {
