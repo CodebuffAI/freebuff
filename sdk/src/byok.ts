@@ -239,11 +239,11 @@ export function createByokConnectionStore(params: {
     const connection = connections.find((item) => item.id === id)
     if (!connection)
       throw new Error(
-        'BYOK connection was removed; choose a connection for a new task',
+        'BYOK connection was removed; select another provider or a Freebuff model to continue',
       )
     if (connection.revision !== revision)
       throw new Error(
-        'BYOK connection changed; start a new task with its current revision',
+        'BYOK connection changed; select its current revision to continue',
       )
     return { connection, connections }
   }

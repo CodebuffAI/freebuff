@@ -5,6 +5,9 @@ import path from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
 
 import { CodebuffClient } from '../client'
+import { createByokConnectionStore, type ByokConnection } from '../byok'
+import { getWebsiteUrl } from '../constants'
+import type { RunState } from '../run-state'
 
 import type { AgentDefinition } from '@codebuff/common/templates/initial-agents-dir/types/agent-definition'
 
@@ -154,6 +157,72 @@ describe('direct BYOK SDK runs', () => {
     expect(requests).toHaveLength(2)
     expect(requests.every((url) => url === 'http://127.0.0.1:9876/v1/chat/completions')).toBe(true)
   })
+
+  test('explicit connection recovery retains history, repins checkpoints, and can return to hosted inference', async () => {
+    let metadata: ByokConnection[] = []
+    const keys = new Map<string, string>()
+    const store = createByokConnectionStore({
+      metadataStore: { get: async () => metadata, set: async value => { metadata = value } },
+      secretStore: { get: async ref => keys.get(ref), set: async (ref, value) => { keys.set(ref, value) }, delete: async ref => { keys.delete(ref) } },
+    })
+    const requests: Array<{ url: string; auth: string | null; body: string }> = []
+    globalThis.fetch = (async (input, init) => {
+      const url = new URL(String(input))
+      if (url.pathname === '/api/v1/me') return Response.json({ id: 'recovery-user' })
+      if (url.pathname === '/api/v1/agent-runs') return Response.json({ runId: 'recovery-run', success: true })
+      if (!url.pathname.endsWith('/chat/completions')) return new Response('Unexpected fixture request', { status: 400 })
+      requests.push({ url: url.toString(), auth: new Headers(init?.headers).get('authorization'), body: String(init?.body) })
+      return sse({ id: 'reply', object: 'chat.completion.chunk', created: 1, model: 'fixture', choices: [{ index: 0, delta: { role: 'assistant', content: 'Remembered.' }, finish_reason: 'stop' }] })
+    }) as typeof fetch
+
+    const original = await store.create({ name: 'Original', provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:9876/v1', model: 'original/model', apiKey: 'original-canary' })
+    const client = new CodebuffClient({ byok: await store.resolve(original), agentDefinitions: [agent] })
+    const first = await client.run({ agent: agent.id, prompt: 'Remember the recovery marker: violet-otter.' })
+    expect(first.output.type).not.toBe('error')
+    const saved = JSON.stringify(first)
+    await store.remove(original)
+    await expect(store.resolve(original)).rejects.toThrow('was removed')
+
+    const replacement = await store.create({ name: 'Replacement', provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:9877/v1', model: 'replacement/model', apiKey: 'replacement-canary' })
+    const replacementClient = new CodebuffClient({ byok: await store.resolve(replacement), agentDefinitions: [agent] })
+    const beforeRejected = requests.length
+    const rejected = await replacementClient.run({ agent: agent.id, prompt: 'Unapproved switch.', previousRun: first })
+    expect(rejected.output.type).toBe('error')
+    expect(requests).toHaveLength(beforeRejected)
+
+    const checkpoints: RunState[] = []
+    const recovered = await replacementClient.run({ agent: agent.id, prompt: 'Continue on the selected connection.', previousRun: JSON.parse(saved), allowInferenceSourceChange: true, onStateSnapshot: state => { checkpoints.push(state) } })
+    expect(recovered.output.type).not.toBe('error')
+    expect(recovered.inference).toEqual({ source: 'byok', connectionId: replacement.id, revision: 1, model: replacement.model })
+    expect(checkpoints.length).toBeGreaterThan(0)
+    expect(checkpoints.every(state => JSON.stringify(state.inference) === JSON.stringify(recovered.inference))).toBe(true)
+    expect(requests.at(-1)).toMatchObject({ url: 'http://127.0.0.1:9877/v1/chat/completions', auth: 'Bearer replacement-canary' })
+    expect(requests.at(-1)!.body).toContain('violet-otter')
+    expect(requests.at(-1)!.body).toContain('replacement/model')
+    expect(JSON.stringify(first)).toBe(saved)
+
+    const updated = await store.update({ ...replacement, patch: { apiKey: 'rotated-canary', model: 'updated/model' } })
+    const updatedClient = new CodebuffClient({ byok: await store.resolve(updated), agentDefinitions: [agent] })
+    const rotated = await updatedClient.run({ agent: agent.id, prompt: 'Use my updated key and model.', previousRun: recovered, allowInferenceSourceChange: true })
+    expect(rotated.output.type).not.toBe('error')
+    expect(rotated.inference).toMatchObject({ connectionId: replacement.id, revision: 2, model: 'updated/model' })
+    expect(requests.at(-1)!.auth).toBe('Bearer rotated-canary')
+    expect(requests.at(-1)!.body).toContain('updated/model')
+    expect(requests.at(-1)!.body).toContain('violet-otter')
+
+    const hosted = new CodebuffClient({ apiKey: 'hosted-recovery-canary', agentDefinitions: [agent] })
+    const returned = await hosted.run({ agent: agent.id, prompt: 'Continue with Freebuff.', previousRun: rotated, allowInferenceSourceChange: true })
+    expect(returned.output.type).not.toBe('error')
+    expect(returned.inference).toEqual({ source: 'codebuff' })
+    expect(requests.at(-1)).toMatchObject({ url: new URL('/api/v1/chat/completions', getWebsiteUrl()).toString(), auth: 'Bearer hosted-recovery-canary' })
+    expect(requests.at(-1)!.body).toContain(agent.model!)
+    expect(requests.at(-1)!.body).toContain('violet-otter')
+    expect(requests.at(-1)!.body).not.toContain('rotated-canary')
+
+    const legacy = await replacementClient.run({ agent: agent.id, prompt: 'Continue older history.', previousRun: { ...returned, inference: undefined }, allowInferenceSourceChange: true, byok: await store.resolve(updated) })
+    expect(legacy.output.type).not.toBe('error')
+    expect(requests.at(-1)!.body).toContain('violet-otter')
+  }, 30_000)
 
   test.each([
     [401, 'Check or replace the key.'],

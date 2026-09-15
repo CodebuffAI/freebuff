@@ -224,6 +224,10 @@ export type RunOptions = {
   content?: MessageContent[]
   params?: Record<string, any>
   previousRun?: RunState
+  /** Explicitly resume this history on the selected inference source. Hosts must
+   * only enable this for a user-selected connection, never as an error fallback.
+   * The returned state and checkpoints pin the new source for subsequent runs. */
+  allowInferenceSourceChange?: boolean
   extraToolResults?: ToolMessage[]
   signal?: AbortSignal
   /** Optional steering hook. Drained at each agent step boundary during the run;
@@ -383,7 +387,7 @@ export async function run(options: RunExecutionOptions): Promise<RunState> {
     ? { source: 'byok' as const, connectionId: options.byok.id, revision: options.byok.revision, model: options.byok.model }
     : { source: 'codebuff' as const }
   const previousInference = options.previousRun?.inference
-  if (options.previousRun && !previousInference && options.byok) {
+  if (options.previousRun && !previousInference && options.byok && !options.allowInferenceSourceChange) {
     return {
       sessionState: options.previousRun.sessionState,
       traceSessionId: options.previousRun.traceSessionId ?? crypto.randomUUID(),
@@ -391,9 +395,10 @@ export async function run(options: RunExecutionOptions): Promise<RunState> {
       output: { type: 'error', message: 'This session has no inference source pin; start a new BYOK task.' },
     }
   }
-  // Hosted history can move to a personal provider once. A BYOK pin must never
-  // return to hosted inference or silently change credentials on a resumed run.
+  // Preserve source pinning by default. A host with an explicit user selection
+  // can transfer history; provider failures never authorize a transfer.
   if (
+    !options.allowInferenceSourceChange &&
     previousInference &&
     ((previousInference.source !== requestedInference.source &&
         !(previousInference.source === 'codebuff' && requestedInference.source === 'byok')) ||

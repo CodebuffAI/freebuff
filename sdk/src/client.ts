@@ -64,7 +64,7 @@ export class CodebuffClient {
       ...this.options,
       ...options,
       // An omitted/undefined per-call config inherits the client snapshot.
-      // Switching a resumed conversation is refused by run() itself.
+      // run() enforces the history pin unless the host explicitly authorizes a switch.
       byok: options.byok ?? this.options.byok,
     })
   }
