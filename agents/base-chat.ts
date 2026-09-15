@@ -115,7 +115,8 @@ End every response by calling the suggest_followups tool with exactly 3 followup
 
     // `model` is absent only when the generator is driven directly (tests) or
     // by a runtime predating AgentStepContext.model.
-    const contextWindow = CONTEXT_WINDOWS[model ?? ''] ?? DEFAULT_CONTEXT_WINDOW
+    const contextWindow =
+      (model && CONTEXT_WINDOWS[model]) ?? DEFAULT_CONTEXT_WINDOW
     const maxContextLength = Math.floor(contextWindow * CONTEXT_BUDGET_FRACTION)
 
     while (true) {
