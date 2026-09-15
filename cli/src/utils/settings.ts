@@ -25,6 +25,7 @@ import type { ReasoningEffort } from '@codebuff/common/constants/reasoning-effor
 const DEFAULT_SETTINGS: Settings = {
   mode: 'DEFAULT' as const,
   adsEnabled: true,
+  undo: true,
 }
 
 // Note: The old FREE mode has been renamed back to LITE; migrate on load.
@@ -69,6 +70,8 @@ export interface Settings {
    *  moment it renders, not when it is dismissed, so "once" holds however
    *  the launch ends. */
   freebucksIntroSeenAt?: string
+  /** Whether /undo and /redo are enabled. Defaults to true. */
+  undo?: boolean
 }
 
 /**
@@ -227,6 +230,11 @@ const validateSettings = (parsed: unknown): Settings => {
     settings.freebucksIntroSeenAt = obj.freebucksIntroSeenAt
   }
 
+  // Validate undo toggle
+  if (typeof obj.undo === 'boolean') {
+    settings.undo = obj.undo
+  }
+
   return settings
 }
 
@@ -356,4 +364,16 @@ export const hasSeenFreebucksIntro = (): boolean =>
 
 export const markFreebucksIntroSeen = (): void => {
   saveSettings({ freebucksIntroSeenAt: new Date().toISOString() })
+}
+
+/**
+ * Whether /undo and /redo are enabled. Defaults to true.
+ */
+export const isUndoEnabled = (): boolean => loadSettings().undo !== false
+
+/**
+ * Enable or disable /undo and /redo.
+ */
+export const setUndoEnabled = (enabled: boolean): void => {
+  saveSettings({ undo: enabled })
 }
