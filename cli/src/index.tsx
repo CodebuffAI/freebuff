@@ -378,6 +378,11 @@ async function main(): Promise<void> {
         hasInvalidCredentials={hasInvalidCredentials}
         fileTree={fileTree}
         continueChat={continueChat}
+        // continueRequested is the raw CLI `-c` / `--continue` flag. It feeds
+        // the landing screen's "nothing to continue" notice and can diverge
+        // from continueChat once app.tsx folds in a history-pick resume
+        // (effectiveContinueChat = continueChat || resumeChatId !== null).
+        continueRequested={continueChat}
         continueChatId={continueId ?? undefined}
         initialMode={initialMode}
         showProjectPicker={showProjectPickerScreen}

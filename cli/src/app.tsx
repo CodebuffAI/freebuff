@@ -34,6 +34,10 @@ interface AppProps {
   hasInvalidCredentials: boolean
   fileTree: FileTreeNode[]
   continueChat: boolean
+  /** Raw `-c` / `--continue` flag from the CLI, before history-pick resume
+   *  folds in. Lets the landing screen distinguish "I asked to continue a
+   *  session" from "I resumed a historical conversation". */
+  continueRequested?: boolean
   continueChatId?: string
   initialMode?: AgentMode
   showProjectPicker: boolean
@@ -47,6 +51,7 @@ export const App = ({
   hasInvalidCredentials,
   fileTree,
   continueChat,
+  continueRequested,
   continueChatId,
   initialMode,
   showProjectPicker,
@@ -260,6 +265,7 @@ export const App = ({
       logoutMutation={logoutMutation}
       continueChat={effectiveContinueChat}
       continueChatId={effectiveContinueChatId}
+      continueRequested={continueRequested === true}
       authStatus={authStatus}
       initialMode={initialMode}
       gitRoot={gitRoot}
@@ -285,6 +291,7 @@ interface AuthedSurfaceProps {
   logoutMutation: ReturnType<typeof useAuthState>['logoutMutation']
   continueChat: boolean
   continueChatId: string | undefined
+  continueRequested: boolean
   authStatus: AuthStatus
   initialMode: AgentMode | undefined
   gitRoot: string | null | undefined
@@ -338,6 +345,7 @@ const AuthedSurfaceRoutes = ({
   setUser,
   logoutMutation,
   authStatus,
+  continueRequested,
   initialMode,
   gitRoot,
   onSwitchToGitRoot,
@@ -400,6 +408,7 @@ const AuthedSurfaceRoutes = ({
         failure={sessionFailure}
         lastRefund={lastRefund}
         refundPending={refundPending}
+        continueRequested={continueRequested}
       />
     )
   }
