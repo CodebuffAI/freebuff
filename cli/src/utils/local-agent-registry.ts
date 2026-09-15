@@ -90,6 +90,19 @@ export async function initializeAgentRegistry(): Promise<void> {
 }
 
 /**
+ * Reload the local agent registry after the active project changes.
+ *
+ * The derived agent-list and directory caches depend on the current working
+ * directory, so they must be cleared before the registry is initialized for
+ * the new project.
+ */
+export async function reloadLocalAgentRegistry(): Promise<void> {
+  cachedAgentsByMode.clear()
+  cachedAgentsDir = null
+  await initializeAgentRegistry()
+}
+
+/**
  * Get default agent directories to scan.
  * Matches the SDK's getDefaultAgentDirs() to ensure consistency.
  */
