@@ -9,6 +9,7 @@ import {
   ONBOARDING_LEGACY_OPTION_IDS,
   ONBOARDING_OTHER_TEXT_MAX,
   OTHER_OPTION_ID,
+  parseOnboardingSurface,
   type OnboardingAnswer,
   validateOnboardingSubmission,
 } from '../freebuff-onboarding'
@@ -352,5 +353,14 @@ describe('question set (2026-09-16 edit)', () => {
       answers: [{ questionId: 'role', optionIds: ['pm'] }],
     })
     expect(result.ok).toBe(false)
+  })
+})
+
+describe('parseOnboardingSurface', () => {
+  it('accepts a known surface and falls back to web for anything else', () => {
+    expect(parseOnboardingSurface('cli_login')).toBe('cli_login')
+    expect(parseOnboardingSurface('web')).toBe('web')
+    expect(parseOnboardingSurface(undefined)).toBe('web')
+    expect(parseOnboardingSurface('desktop; drop table')).toBe('web')
   })
 })

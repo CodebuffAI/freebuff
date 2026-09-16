@@ -306,6 +306,23 @@ export type OnboardingSubmission = {
 
 export const ONBOARDING_OTHER_TEXT_MAX = 200
 
+/**
+ * Where a submission was made. Stored on the row for segmentation. `web` is
+ * the dashboard dialog; `cli_login` is the browser landing page every CLI and
+ * Desktop sign-in ends on (the two are indistinguishable there — both redeem
+ * the same auth code).
+ */
+export const ONBOARDING_SURFACES = ['web', 'cli_login'] as const
+export type OnboardingSurface = (typeof ONBOARDING_SURFACES)[number]
+
+/** A client-supplied surface, or `web` for anything unknown: an older form
+ *  sends none, and a forged value must not become a segment. */
+export function parseOnboardingSurface(raw: unknown): OnboardingSurface {
+  return (ONBOARDING_SURFACES as readonly unknown[]).includes(raw)
+    ? (raw as OnboardingSurface)
+    : 'web'
+}
+
 export type OnboardingValidationError = {
   /** Null when the complaint is about the submission as a whole rather than
    *  about one question — the only such case is an entirely empty one. */
