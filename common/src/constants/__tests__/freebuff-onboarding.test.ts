@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'bun:test'
 
 import {
+  applyOnboardingAnswersToTally,
   classifyOnboardingOtherText,
+  emptyOnboardingTally,
   FREEBUFF_ONBOARDING_QUESTIONS,
   isOnboardingComplete,
   ONBOARDING_LEGACY_OPTION_IDS,
   ONBOARDING_OTHER_TEXT_MAX,
   OTHER_OPTION_ID,
-  validateOnboardingSubmission,
   type OnboardingAnswer,
+  validateOnboardingSubmission,
 } from '../freebuff-onboarding'
 
 /** A complete, valid submission. */
@@ -263,5 +265,92 @@ describe('isOnboardingComplete — the blocking gate reads this', () => {
   it('does not count an answer with no options chosen', () => {
     const hollow = fullAnswers([{ questionId: 'role', optionIds: [] }])
     expect(isOnboardingComplete(hollow)).toBe(false)
+  })
+})
+
+describe('applyOnboardingAnswersToTally', () => {
+  it('folds retired ids into their successor and drops ids nothing defines', () => {
+    const tally = emptyOnboardingTally()
+    applyOnboardingAnswersToTally(tally, [
+      { questionId: 'referral_source', optionIds: ['reddit'] },
+      { questionId: 'role', optionIds: ['pm'] },
+      { questionId: 'subscriptions', optionIds: ['copilot', 'cursor'] },
+      { questionId: 'intended_use', optionIds: ['prototyping', 'never_existed'] },
+      { questionId: 'retired_question', optionIds: ['x'] },
+    ])
+    expect(tally.referral_source[OTHER_OPTION_ID]).toBe(1)
+    expect(tally.referral_source.reddit).toBeUndefined()
+    expect(tally.role[OTHER_OPTION_ID]).toBe(1)
+    expect(tally.subscriptions[OTHER_OPTION_ID]).toBe(1)
+    expect(tally.subscriptions.cursor).toBe(1)
+    expect(tally.intended_use.website).toBe(1)
+    expect(tally.retired_question).toBeUndefined()
+  })
+
+  it('counts a write-in that names an option as that option, and lists the rest', () => {
+    const tally = emptyOnboardingTally()
+    const others = applyOnboardingAnswersToTally(tally, [
+      {
+        questionId: 'referral_source',
+        optionIds: [OTHER_OPTION_ID],
+        otherText: 'instagram reels',
+      },
+      {
+        questionId: 'role',
+        optionIds: [OTHER_OPTION_ID],
+        otherText: 'lighthouse keeper',
+      },
+    ])
+    expect(tally.referral_source.tiktok).toBe(1)
+    expect(tally.referral_source[OTHER_OPTION_ID]).toBe(0)
+    expect(tally.role[OTHER_OPTION_ID]).toBe(1)
+    expect(others).toEqual({ role: ['lighthouse keeper'] })
+  })
+
+  it('removes a resubmitted answer with sign -1 so a replace is not a double count', () => {
+    const tally = emptyOnboardingTally()
+    const first = [{ questionId: 'role', optionIds: ['student'] }]
+    const second = [{ questionId: 'role', optionIds: ['founder'] }]
+    applyOnboardingAnswersToTally(tally, first, 1)
+    applyOnboardingAnswersToTally(tally, first, -1)
+    applyOnboardingAnswersToTally(tally, second, 1)
+    expect(tally.role.student).toBe(0)
+    expect(tally.role.founder).toBe(1)
+  })
+
+  it('offers every current option at zero, so an unanswered question still has bars', () => {
+    const tally = emptyOnboardingTally()
+    for (const q of FREEBUFF_ONBOARDING_QUESTIONS) {
+      expect(Object.keys(tally[q.id]).sort()).toEqual(
+        q.options.map((o) => o.id).sort(),
+      )
+    }
+  })
+})
+
+describe('question set (2026-09-16 edit)', () => {
+  const byId = Object.fromEntries(FREEBUFF_ONBOARDING_QUESTIONS.map((q) => [q.id, q]))
+  it('no longer offers Reddit, GitHub, Designer/PM, Non-technical or Copilot', () => {
+    const ids = (q: string) => byId[q].options.map((o) => o.id)
+    expect(ids('referral_source')).not.toContain('reddit')
+    expect(ids('referral_source')).not.toContain('github')
+    expect(ids('role')).not.toContain('pm')
+    expect(ids('role')).not.toContain('non_technical')
+    expect(ids('subscriptions')).not.toContain('copilot')
+  })
+  it('keeps the build and subscriptions questions multi-select', () => {
+    expect(byId.intended_use.multi).toBe(true)
+    expect(byId.subscriptions.multi).toBe(true)
+  })
+  it('shuffles only the referral question', () => {
+    expect(
+      FREEBUFF_ONBOARDING_QUESTIONS.filter((q) => q.shuffleOptions).map((q) => q.id),
+    ).toEqual(['referral_source'])
+  })
+  it('still validates a retired id as unknown rather than silently storing it', () => {
+    const result = validateOnboardingSubmission({
+      answers: [{ questionId: 'role', optionIds: ['pm'] }],
+    })
+    expect(result.ok).toBe(false)
   })
 })

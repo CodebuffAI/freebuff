@@ -45,6 +45,11 @@ export type OnboardingQuestion = {
    *  distance between two answers means something and the control should say
    *  so. Everything else is a chip list. Storage is identical either way. */
   kind?: 'choice' | 'scale'
+  /** Present the options in a random order, once per form mount, with the
+   *  "other" option pinned last. For a question with no natural order the
+   *  first chip wins on position alone; shuffling spreads that bias evenly
+   *  instead of handing it to whichever channel happens to be listed first. */
+  shuffleOptions?: boolean
 }
 
 /** Every question offers this. The accompanying free text is stored separately
@@ -70,11 +75,10 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
       { id: 'x_twitter', label: 'X / Twitter' },
       { id: 'search', label: 'Google / AI search' },
       { id: 'friend', label: 'A friend' },
-      { id: 'reddit', label: 'Reddit' },
-      { id: 'github', label: 'GitHub' },
       { id: OTHER_OPTION_ID, label: 'Somewhere else' },
     ],
     multi: false,
+    shuffleOptions: true,
   },
   {
     id: 'role',
@@ -84,8 +88,6 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
       { id: 'founder', label: 'Founder' },
       { id: 'student', label: 'Student' },
       { id: 'hobbyist', label: 'Hobbyist' },
-      { id: 'pm', label: 'Designer or PM' },
-      { id: 'non_technical', label: 'Non-technical' },
       { id: OTHER_OPTION_ID, label: 'Something else' },
     ],
     multi: false,
@@ -131,7 +133,6 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
       { id: 'claude_code', label: 'Claude Code' },
       { id: 'cursor', label: 'Cursor' },
       { id: 'opencode', label: 'opencode' },
-      { id: 'copilot', label: 'GitHub Copilot' },
       { id: 'codex', label: 'Codex' },
       { id: 'gemini', label: 'Gemini' },
       { id: 'app_builder', label: 'Lovable / Replit' },
@@ -152,15 +153,29 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
 export const ONBOARDING_LEGACY_OPTION_IDS: Partial<
   Record<OnboardingQuestionId, Record<string, string>>
 > = {
-  // Discord and blog/newsletter were dropped as options; both are honestly
-  // "somewhere else" rather than any of the channels that remain.
-  referral_source: { discord: OTHER_OPTION_ID, blog_news: OTHER_OPTION_ID },
-  // Data/ML folded into the broader developer bucket, designer into the
-  // designer-or-PM one.
-  role: { data_ml: 'professional_dev', designer: 'pm' },
+  // Discord, blog/newsletter, Reddit and GitHub were dropped as options; all
+  // are honestly "somewhere else" rather than any of the channels that remain.
+  referral_source: {
+    discord: OTHER_OPTION_ID,
+    blog_news: OTHER_OPTION_ID,
+    reddit: OTHER_OPTION_ID,
+    github: OTHER_OPTION_ID,
+  },
+  // Data/ML folded into the broader developer bucket. Designer-or-PM and
+  // non-technical were retired without a successor (2026-09-16), so they and
+  // the older `designer` id that used to fold into PM all read as "something
+  // else".
+  role: {
+    data_ml: 'professional_dev',
+    designer: OTHER_OPTION_ID,
+    pm: OTHER_OPTION_ID,
+    non_technical: OTHER_OPTION_ID,
+  },
   // Prototypes and demos are websites and apps; code review has no successor
   // narrow enough to claim it, so it goes to "something else".
   intended_use: { prototyping: 'website', debugging: OTHER_OPTION_ID },
+  // GitHub Copilot was dropped as an option (2026-09-16).
+  subscriptions: { copilot: OTHER_OPTION_ID },
 }
 
 /**
@@ -202,6 +217,79 @@ export function classifyOnboardingOtherText(
     if (rule.pattern.test(text)) return rule.optionId
   }
   return null
+}
+
+/** Per question, per current option id: how many respondents it counts. */
+export type OnboardingTally = Record<string, Record<string, number>>
+
+/** A stored answer as the database hands it back: ids are plain strings there,
+ *  because a question retired since the row was written is still a row. */
+export type StoredOnboardingAnswer = {
+  questionId: string
+  optionIds: readonly string[]
+  otherText?: string
+}
+
+/**
+ * Bump whenever the mapping below would count an existing answer
+ * differently: an option retired or added, a legacy id remapped, a write-in
+ * rule changed. The stored aggregate in Convex carries the version it was
+ * built under, and a mismatch is what triggers a full rebuild — so forgetting
+ * this bump leaves the admin bars counting history under the old rules.
+ */
+export const ONBOARDING_TALLY_VERSION = 3
+
+/** Every current option at zero, so a question nobody has answered still
+ *  renders its full bar list rather than vanishing. */
+export function emptyOnboardingTally(
+  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_QUESTIONS,
+): OnboardingTally {
+  return Object.fromEntries(
+    questions.map((q) => [
+      q.id,
+      Object.fromEntries(q.options.map((o) => [o.id, 0])),
+    ]),
+  )
+}
+
+/**
+ * Add one respondent's answers into a tally, IN PLACE, under the current
+ * rules: retired ids fold into their successor, a write-in that names an
+ * option we now offer counts as that option, and ids the current question set
+ * does not define are dropped. `sign` of -1 removes the same answers again,
+ * which is how a resubmission (replace, not append) keeps the running
+ * aggregate honest.
+ *
+ * Returns the write-in texts that stayed "other", per question, so a caller
+ * listing them never disagrees with the bars about the same answer.
+ */
+export function applyOnboardingAnswersToTally(
+  tally: OnboardingTally,
+  answers: readonly StoredOnboardingAnswer[] | null | undefined,
+  sign: 1 | -1 = 1,
+  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_QUESTIONS,
+): Record<string, string[]> {
+  const otherTexts: Record<string, string[]> = {}
+  const known = new Set(questions.map((q) => q.id))
+  for (const answer of answers ?? []) {
+    if (!known.has(answer.questionId as OnboardingQuestionId)) continue
+    const questionId = answer.questionId as OnboardingQuestionId
+    const bucket = (tally[questionId] ??= {})
+    const legacy = ONBOARDING_LEGACY_OPTION_IDS[questionId] ?? {}
+    const text = answer.otherText?.trim()
+    const reclassified = text ? classifyOnboardingOtherText(questionId, text) : null
+    for (const rawId of answer.optionIds ?? []) {
+      const id =
+        rawId === OTHER_OPTION_ID && reclassified
+          ? reclassified
+          : (legacy[rawId] ?? rawId)
+      // Only ids the current question set defines: a retired option with no
+      // successor would otherwise appear as an unexplained row in the UI.
+      if (id in bucket) bucket[id] += sign
+    }
+    if (text && !reclassified) (otherTexts[questionId] ??= []).push(text)
+  }
+  return otherTexts
 }
 
 export type OnboardingAnswer = {
