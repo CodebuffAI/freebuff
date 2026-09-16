@@ -105,6 +105,13 @@ describe('terminal command broker', () => {
         new Error('terminal command broker protocol response was missing'),
       ),
     ).toBe('protocol_missing')
+    expect(
+      classifyTerminalBrokerFailure(
+        new Error(
+          'terminal command broker protocol response was missing\nBroker stderr: [freebuff-broker] protocol write failed: ENOSPC',
+        ),
+      ),
+    ).toBe('protocol_write_failed')
     expect(sanitizeWindowsCliVersion('0.0.142')).toBe('0.0.142')
     expect(sanitizeWindowsCliVersion('private path/and details')).toBe(
       'unknown',
@@ -351,6 +358,65 @@ describe('terminal command broker', () => {
     expect(failures).toEqual([
       { stage: 'completion', failureCode: 'protocol_missing' },
     ])
+  })
+
+  test('explains a missing protocol response with the broker stderr reason', async () => {
+    if (process.platform === 'win32') return
+    const failures: Array<{ stage: string; failureCode: string }> = []
+    const broker = createTerminalCommandBroker({
+      invocation: () => ({
+        executable: '/bin/sh',
+        args: [
+          '-c',
+          'echo "[freebuff-broker] protocol write failed: ENOSPC" >&2; exit 1',
+        ],
+      }),
+      reportFailure: (failure) => failures.push(failure),
+    })
+
+    let failureMessage = ''
+    try {
+      await runTerminalCommand({
+        command: `printf 'must not run'`,
+        process_type: 'SYNC',
+        cwd: process.cwd(),
+        timeout_seconds: 10,
+        terminalCommandBroker: broker,
+      })
+    } catch (error) {
+      failureMessage = error instanceof Error ? error.message : String(error)
+    }
+
+    expect(failureMessage).toContain('protocol response was missing')
+    expect(failureMessage).toContain(
+      '[freebuff-broker] protocol write failed: ENOSPC',
+    )
+    expect(failures).toEqual([
+      { stage: 'completion', failureCode: 'protocol_write_failed' },
+    ])
+  })
+
+  test('tolerates a protocol file written just after the helper exits', async () => {
+    if (process.platform === 'win32') return
+    const broker = createTerminalCommandBroker({
+      invocation: () => ({
+        executable: '/bin/sh',
+        args: [
+          '-c',
+          `(sleep 0.04; printf '%s\\n' '{"ok":true,"exitCode":0}' > "$CODEBUFF_TERMINAL_COMMAND_BROKER_PROTOCOL") & exit 0`,
+        ],
+      }),
+    })
+
+    const result = await runTerminalCommand({
+      command: `printf 'must not run'`,
+      process_type: 'SYNC',
+      cwd: process.cwd(),
+      timeout_seconds: 10,
+      terminalCommandBroker: broker,
+    })
+
+    expect(result[0].value).toMatchObject({ exitCode: 0 })
   })
 
   test('does not add broker recovery guidance to a command spawn failure', async () => {
