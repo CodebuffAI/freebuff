@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { spawn, spawnSync } from 'child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
 
@@ -171,6 +179,54 @@ describe('terminal command broker', () => {
         ),
       }),
     ).toThrow('terminal command broker protocol path was invalid')
+  })
+
+  test('accepts a protocol path spelled through a symlinked temp directory', () => {
+    const linkPath = path.join(
+      tmpdir(),
+      `freebuff-broker-tmp-link-${crypto.randomUUID()}`,
+    )
+    try {
+      symlinkSync(tmpdir(), linkPath, 'dir')
+    } catch {
+      // Hosts without symlink permission cannot exercise this spelling.
+      return
+    }
+    const validName = `freebuff-terminal-command-broker-${process.pid}-${crypto.randomUUID()}.json`
+    try {
+      expect(
+        protocolPathFromEnv({
+          CODEBUFF_TERMINAL_COMMAND_BROKER_PROTOCOL: path.join(
+            linkPath,
+            validName,
+          ),
+        }),
+      ).toBe(path.join(linkPath, validName))
+      expect(() =>
+        protocolPathFromEnv({
+          CODEBUFF_TERMINAL_COMMAND_BROKER_PROTOCOL: path.join(
+            linkPath,
+            'wrong-prefix.json',
+          ),
+        }),
+      ).toThrow('terminal command broker protocol path was invalid')
+    } finally {
+      rmSync(linkPath, { force: true })
+    }
+  })
+
+  test('compares the protocol directory case-insensitively on Windows', () => {
+    if (process.platform !== 'win32') return
+    const validName = `freebuff-terminal-command-broker-${process.pid}-${crypto.randomUUID()}.json`
+    const upperCasedDirectory = tmpdir().toUpperCase()
+    expect(
+      protocolPathFromEnv({
+        CODEBUFF_TERMINAL_COMMAND_BROKER_PROTOCOL: path.join(
+          upperCasedDirectory,
+          validName,
+        ),
+      }),
+    ).toBe(path.join(upperCasedDirectory, validName))
   })
 
   test('relays stdout, stderr, and the command exit code', async () => {
@@ -417,6 +473,70 @@ describe('terminal command broker', () => {
     })
 
     expect(result[0].value).toMatchObject({ exitCode: 0 })
+  })
+
+  test('reaps the shell tree promptly when the protocol write fails', async () => {
+    if (process.platform === 'win32') return
+    const tempDir = mkdtempSync(path.join(tmpdir(), 'codebuff-broker-reap-'))
+    const commandPidPath = path.join(tempDir, 'command.pid')
+    const protocolPath = path.join(
+      tmpdir(),
+      `freebuff-terminal-command-broker-${process.pid}-${crypto.randomUUID()}.json`,
+    )
+    // `wx` refuses to replace an existing file, so the one-shot write fails
+    // while the path is still the validated temp path.
+    writeFileSync(protocolPath, 'already here')
+    const broker = spawn(process.execPath, [brokerFixture], {
+      env: {
+        ...process.env,
+        CODEBUFF_TERMINAL_COMMAND_BROKER: '1',
+        CODEBUFF_TERMINAL_COMMAND_BROKER_PROTOCOL: protocolPath,
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true,
+    })
+    const brokerPid = broker.pid as number
+    let stderr = ''
+    broker.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8')
+    })
+    const brokerClosed = new Promise<void>((resolve) => {
+      broker.once('close', () => resolve())
+    })
+    broker.stdin?.end(
+      JSON.stringify({
+        executable: '/bin/sh',
+        args: ['-c', `sleep 30 & echo $! > ${JSON.stringify(commandPidPath)}`],
+        cwd: process.cwd(),
+        env: { PATH: process.env.PATH ?? '' },
+      }),
+    )
+
+    const commandPid = (await waitFor(() => existsSync(commandPidPath), 3_000))
+      ? Number(readFileSync(commandPidPath, 'utf8'))
+      : 0
+    try {
+      await Promise.race([brokerClosed, Bun.sleep(3_000)])
+      expect(commandPid).toBeGreaterThan(0)
+      expect(await waitFor(() => !isProcessRunning(commandPid), 3_000)).toBe(
+        true,
+      )
+      expect(() => process.kill(-brokerPid, 0)).toThrow()
+      expect(stderr).toContain('[freebuff-broker] protocol write failed:')
+    } finally {
+      try {
+        process.kill(-brokerPid, 'SIGKILL')
+      } catch {
+        // The broker already reaped its whole process group.
+      }
+      try {
+        process.kill(commandPid, 'SIGKILL')
+      } catch {
+        // The command descendant was reaped together with the broker group.
+      }
+      rmSync(protocolPath, { force: true })
+      rmSync(tempDir, { recursive: true, force: true })
+    }
   })
 
   test('does not add broker recovery guidance to a command spawn failure', async () => {

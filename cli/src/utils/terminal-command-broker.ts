@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'child_process'
-import { readFileSync, rmSync, writeFileSync } from 'fs'
+import { readFileSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
 
@@ -29,6 +29,9 @@ const MAX_BROKER_STDERR_TAIL_BYTES = 4 * 1024
 // Cross-process contract: the detached broker emits this marker on stderr
 // before reaping itself so the parent can surface the write failure reason.
 const BROKER_STDERR_MARKER = '[freebuff-broker] protocol write failed:'
+// The marker must be flushed before the broker SIGKILLs its own process group,
+// but never at the cost of holding the shell tree open indefinitely.
+const BROKER_STDERR_FLUSH_TIMEOUT_MS = 200
 
 export type TerminalBrokerFailureStage = 'spawn' | 'stdio' | 'completion'
 export type TerminalBrokerFailureCode =
@@ -128,6 +131,22 @@ function isSpawnRequest(value: unknown): value is TerminalCommandSpawnRequest {
   )
 }
 
+/**
+ * Compare the protocol directory after resolving symlinks and Windows casing:
+ * a raw string compare rejects the parent's own path when the temp dir is
+ * reached through a link (macOS `/var` -> `/private/var`) or a differently
+ * cased spelling.
+ */
+function normalizeProtocolDirectory(directory: string): string {
+  let resolved = path.resolve(directory)
+  try {
+    resolved = realpathSync.native(resolved)
+  } catch {
+    // The directory may not exist yet; the raw resolution stays comparable.
+  }
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
+
 export function protocolPathFromEnv(
   env: NodeJS.ProcessEnv = getSystemProcessEnv(),
 ): string {
@@ -138,7 +157,8 @@ export function protocolPathFromEnv(
 
   const resolvedProtocolPath = path.resolve(protocolPath)
   if (
-    path.dirname(resolvedProtocolPath) !== path.resolve(os.tmpdir()) ||
+    normalizeProtocolDirectory(path.dirname(resolvedProtocolPath)) !==
+      normalizeProtocolDirectory(os.tmpdir()) ||
     !path.basename(resolvedProtocolPath).startsWith(PROTOCOL_FILE_PREFIX)
   ) {
     throw new Error('terminal command broker protocol path was invalid')
@@ -162,41 +182,21 @@ function removeProtocolFile(protocolPath: string): void {
   }
 }
 
-function protocolWriteTargets(): string[] {
-  try {
-    return [protocolPathFromEnv()]
-  } catch {
-    // Path validation can only reject a broken environment; still attempt the
-    // parent-provided path so a valid response is not lost to over-strictness.
-    const raw = getSystemProcessEnv()[TERMINAL_COMMAND_BROKER_PROTOCOL_ENV]
-    return raw ? [path.resolve(raw)] : []
-  }
-}
-
 function writeProtocol(message: BrokerProtocol): void {
   const payload = `${JSON.stringify(message)}\n`
   if (Buffer.byteLength(payload) > MAX_PROTOCOL_BYTES) {
     throw new Error('terminal command broker response was too large')
   }
-  let lastError: unknown = new Error(
-    'terminal command broker protocol path was invalid',
-  )
-  for (const target of protocolWriteTargets()) {
-    try {
-      // A constrained one-shot file avoids Bun's unreliable custom stdio pipes on
-      // Windows. `wx` ensures even an accidentally reused path is never replaced.
-      writeFileSync(target, payload, {
-        encoding: 'utf8',
-        flag: 'wx',
-        mode: 0o600,
-      })
-      return
-    } catch (error) {
-      lastError = error
-    }
-  }
-  if (lastError instanceof Error) throw lastError
-  throw new Error(errorMessage(lastError))
+  // A constrained one-shot file avoids Bun's unreliable custom stdio pipes on
+  // Windows. `wx` ensures even an accidentally reused path is never replaced.
+  // Only the validated path is written: an unvalidated fallback would let a
+  // corrupted environment place the protocol file outside the temp directory,
+  // and a rejected path now surfaces on stderr instead of losing the response.
+  writeFileSync(protocolPathFromEnv(), payload, {
+    encoding: 'utf8',
+    flag: 'wx',
+    mode: 0o600,
+  })
 }
 
 function waitForParentDisconnect(): Promise<void> {
@@ -265,6 +265,35 @@ async function readRequest(): Promise<TerminalCommandSpawnRequest> {
   return value
 }
 
+/**
+ * Deliver the write-failure marker before the detached broker kills its own
+ * process group. `process.stderr` is an asynchronous pipe on POSIX, so without
+ * waiting for the write callback the reason can be lost with the process; the
+ * wait is bounded so shell-tree containment never stalls behind it.
+ */
+function flushBrokerStderrMarker(error: unknown): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = () => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      resolve()
+    }
+    timer = setTimeout(finish, BROKER_STDERR_FLUSH_TIMEOUT_MS)
+    try {
+      process.stderr.write(
+        `\n${BROKER_STDERR_MARKER} ${errorMessage(error)}\n`,
+        finish,
+      )
+    } catch {
+      // The pipe may already be gone; the parent still sees the missing file.
+      finish()
+    }
+  })
+}
+
 /** Run inside the detached helper process. It never initializes OpenTUI. */
 export async function serveTerminalCommandBroker(): Promise<void> {
   const parentDisconnected = waitForParentDisconnect()
@@ -301,11 +330,10 @@ export async function serveTerminalCommandBroker(): Promise<void> {
   } catch (error) {
     // Never vanish silently: relay the write failure on stderr so the parent
     // can explain the missing protocol instead of a generic ENOENT message.
-    try {
-      process.stderr.write(`\n${BROKER_STDERR_MARKER} ${errorMessage(error)}\n`)
-    } catch {
-      // The pipe may already be gone; the parent still sees the missing file.
-    }
+    await flushBrokerStderrMarker(error)
+    // Reap here explicitly: a failed write must not leave the detached shell
+    // tree alive any longer than a successful one.
+    return reapOwnProcessGroup()
   }
 
   // Normal cleanup belongs to this detached process. In particular, Windows
