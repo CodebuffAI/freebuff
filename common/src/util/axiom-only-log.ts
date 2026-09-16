@@ -224,6 +224,17 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    * ones that filled nothing -- to the row the rest of that chain reaches.
    */
   opportunity_id: 'string',
+  profile_lift_experiment_id: 'string',
+  profile_lift_epoch_id: 'string',
+  profile_lift_assignment_version: 'string',
+  profile_lift_arm: 'string',
+  profile_lift_arm_probability_ppm: 'number',
+  profile_lift_followup_start_ms: 'number',
+  profile_lift_followup_end_ms: 'number',
+  profile_lift_maturity_at_ms: 'number',
+  profile_lift_config_digest: 'string',
+  profile_lift_mode: 'string',
+  profile_lift_serving_assignment_applied: 'boolean',
   /**
    * The frozen decision policy. `policy_version` is a 12-character digest of
    * the selection version, the deploy commit and the serving flag tuple;

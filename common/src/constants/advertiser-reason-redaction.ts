@@ -6,7 +6,7 @@
  * through this map and must never serialize an input reason directly.
  */
 export const ADVERTISER_REASON_REDACTION_VERSION =
-  'advertiser_reason_redaction_2026_09_v2'
+  'advertiser_reason_redaction_2026_09_v3'
 
 export const ADVERTISER_OPERATOR_REASON_CODES = [
   'not_active',
@@ -16,6 +16,9 @@ export const ADVERTISER_OPERATOR_REASON_CODES = [
   'country_excluded',
   'country_unresolved',
   'intent_gate_no',
+  'semantic_requirement_invalid',
+  'semantic_evidence_unavailable',
+  'semantic_mismatch',
   'balance_empty',
   'daily_cap_spent',
   'total_budget_spent',
@@ -75,6 +78,18 @@ export const ADVERTISER_VISIBLE_REASONS = {
   country_excluded: { kind: 'show', reason: 'country_excluded' },
   country_unresolved: { kind: 'show', reason: 'country_unresolved' },
   intent_gate_no: { kind: 'generalize', reason: 'context_filtered' },
+  // The advertiser owns the rule, but the viewer's evidence and whether it
+  // matched remain request-private. All semantic refusal states share the
+  // existing bounded context projection.
+  semantic_requirement_invalid: {
+    kind: 'generalize',
+    reason: 'context_filtered',
+  },
+  semantic_evidence_unavailable: {
+    kind: 'generalize',
+    reason: 'context_filtered',
+  },
+  semantic_mismatch: { kind: 'generalize', reason: 'context_filtered' },
   balance_empty: { kind: 'show', reason: 'balance_empty' },
   daily_cap_spent: { kind: 'show', reason: 'daily_cap_spent' },
   total_budget_spent: { kind: 'show', reason: 'total_budget_spent' },
