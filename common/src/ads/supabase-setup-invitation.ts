@@ -4,10 +4,12 @@ import { z } from 'zod'
  * Read-only Desktop facts used to decide whether a setup invitation may be
  * returned. This is deliberately not a sponsored-execution capability: it
  * proves neither a committed checkout nor a runnable paid task.
+ * Version 2 recognizes existing third-party provider packages. Do not accept
+ * version 1's incomplete provider evidence for serving new invitations.
  */
 export const supabaseSetupInvitationCapabilitySchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     target: z
       .object({ kind: z.literal('workspace'), workspaceId: z.string().uuid() })
       .strict(),
@@ -31,7 +33,7 @@ export const supabaseSetupInvitationCapabilitySchema = z
   })
   .strict()
 
-export type SupabaseSetupInvitationCapabilityV1 = z.infer<
+export type SupabaseSetupInvitationCapabilityV2 = z.infer<
   typeof supabaseSetupInvitationCapabilitySchema
 >
 

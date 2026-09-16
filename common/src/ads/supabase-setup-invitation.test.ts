@@ -11,7 +11,7 @@ describe('Supabase setup invitation contracts', () => {
   test('accepts the bounded read-only request capability', () => {
     expect(
       supabaseSetupInvitationCapabilitySchema.safeParse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         target: { kind: 'workspace', workspaceId },
         framework: 'react-vite',
         execution: { surface: 'desktop_linux', status: 'available' },
@@ -27,7 +27,7 @@ describe('Supabase setup invitation contracts', () => {
 
   test('refuses a path, unsupported framework, or unavailable execution', () => {
     const base = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       target: { kind: 'workspace', workspaceId },
       framework: 'nextjs',
       execution: { surface: 'desktop_macos', status: 'available' },
@@ -38,6 +38,12 @@ describe('Supabase setup invitation contracts', () => {
         storage: 'missing',
       },
     }
+    expect(
+      supabaseSetupInvitationCapabilitySchema.safeParse({
+        ...base,
+        schemaVersion: 1,
+      }).success,
+    ).toBe(false)
     expect(
       supabaseSetupInvitationCapabilitySchema.safeParse({
         ...base,
@@ -71,12 +77,16 @@ describe('Supabase setup invitation contracts', () => {
     }
     expect(supabaseSetupInvitationSchema.safeParse(response).success).toBe(true)
     expect(
-      supabaseSetupInvitationSchema.safeParse({ ...response, target: workspaceId })
-        .success,
+      supabaseSetupInvitationSchema.safeParse({
+        ...response,
+        target: workspaceId,
+      }).success,
     ).toBe(false)
     expect(
-      supabaseSetupInvitationSchema.safeParse({ ...response, impUrl: 'bill-me' })
-        .success,
+      supabaseSetupInvitationSchema.safeParse({
+        ...response,
+        impUrl: 'bill-me',
+      }).success,
     ).toBe(false)
   })
 })
