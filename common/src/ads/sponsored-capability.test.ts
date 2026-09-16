@@ -77,6 +77,24 @@ describe('foundation execution admission', () => {
       ).toBe(false)
     }
   })
+  test('provider evidence is additive and missing remains unknown for older v2 clients', () => {
+    const older = sponsoredCapabilitySchema.parse(capability)
+    expect(older.hasCommittedAuthBoundary).toBeUndefined()
+    expect(older.hasCommittedStorageBoundary).toBeUndefined()
+    const current = sponsoredCapabilitySchema.parse({
+      ...capability,
+      hasCommittedAuthBoundary: false,
+      hasCommittedStorageBoundary: true,
+    })
+    expect(current.hasCommittedAuthBoundary).toBe(false)
+    expect(current.hasCommittedStorageBoundary).toBe(true)
+    expect(
+      sponsoredCapabilitySchema.safeParse({
+        ...capability,
+        hasCommittedAuthBoundary: 'unknown',
+      }).success,
+    ).toBe(false)
+  })
   test('wire rejects paths, unsupported platforms, extra evidence and invalid identity', () => {
     expect(sponsoredCapabilitySchema.safeParse(capability).success).toBe(true)
     expect(

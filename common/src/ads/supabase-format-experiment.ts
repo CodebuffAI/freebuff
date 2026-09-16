@@ -8,13 +8,25 @@ export const SUPABASE_FORMAT_EXPERIMENT_VERSION =
 export const SUPABASE_AGENTIC_PILOT_VERSION =
   'supabase-agentic-priority-pilot-v1'
 export const SUPABASE_FOUNDATION_VERSION = 'supabase-database-foundation-v1'
+export const SUPABASE_BACKEND_FOUNDATION_VERSION =
+  'supabase-backend-foundation-v1'
+
+export function supabaseFoundationDeliveryVersion(
+  raw: string | null | undefined,
+) {
+  return raw === 'foundation-backend-desktop'
+    ? SUPABASE_BACKEND_FOUNDATION_VERSION
+    : SUPABASE_FOUNDATION_VERSION
+}
+
 export type SupabaseDeliveryVersion =
   | typeof SUPABASE_FORMAT_EXPERIMENT_VERSION
   | typeof SUPABASE_AGENTIC_PILOT_VERSION
   | typeof SUPABASE_FOUNDATION_VERSION
+  | typeof SUPABASE_BACKEND_FOUNDATION_VERSION
 
 export type SupabaseFormatArm = 'display' | 'agentic'
-export type SupabaseIntentAngle = 'database' | 'auth'
+export type SupabaseIntentAngle = 'database' | 'auth' | 'storage'
 
 export type SupabaseMatchedEligibilityInput = {
   userId: string | null | undefined
@@ -159,7 +171,7 @@ export function evaluateSupabaseMatchedEligibility(
     !isNonEmptyString(input.relevance.policyVersion) ||
     !isNonEmptyString(input.sameTaskProcedure.procedureHash) ||
     !isNonEmptyString(input.executionSurface.surface) ||
-    (input.relevance.angle !== 'database' && input.relevance.angle !== 'auth')
+    !['database', 'auth', 'storage'].includes(input.relevance.angle)
   ) {
     return { eligible: false, reason: 'malformed_evidence' }
   }
@@ -797,7 +809,8 @@ export type SupabaseFormatPair = Readonly<{
 
 /** `null` means the angle has no pair configured and every consumer treats it as absent. */
 export type SupabaseFormatPairs = Readonly<
-  Record<SupabaseIntentAngle, SupabaseFormatPair | null>
+  Record<'database' | 'auth', SupabaseFormatPair | null> &
+    Partial<Record<'storage', SupabaseFormatPair | null>>
 >
 
 /** Catalog entry `supabase-database-persist-one-feature@1.1.0`. */
@@ -825,11 +838,25 @@ export const SUPABASE_FORMAT_FOUNDATION_PAIR: SupabaseFormatPair =
       'Set up a local Supabase foundation without guessing an application feature.',
   })
 
+/** One reviewed procedure and one campaign budget across all backend needs. */
+export const SUPABASE_FORMAT_BACKEND_FOUNDATION_PAIR: SupabaseFormatPair =
+  Object.freeze({
+    ...SUPABASE_FORMAT_DATABASE_PAIR,
+    procedureId: 'supabase-backend-foundation',
+    procedureVersion: '1.0.0',
+    procedureSha256:
+      'sha256:3e9ffe2d3d54f29a0257439955f88d5cd859b5217dfd0dac9e3f9228feb5bc19',
+    consentSummary:
+      'Set up a local Supabase foundation for an open data, Auth, or Storage need without guessing a feature or access rules.',
+  })
+
 /** Frozen protocol chooses old/new procedure independently of the current rollout mode. */
 export function supabasePairForDeliveryVersion(
   pair: SupabaseFormatPair,
   version: string,
 ): SupabaseFormatPair {
+  if (version === SUPABASE_BACKEND_FOUNDATION_VERSION)
+    return { ...SUPABASE_FORMAT_BACKEND_FOUNDATION_PAIR, angle: pair.angle }
   if (pair.angle === 'database')
     return version === SUPABASE_FOUNDATION_VERSION
       ? SUPABASE_FORMAT_FOUNDATION_PAIR
@@ -841,6 +868,8 @@ export function supabaseDeliverySurfaceMatches(
   version: string,
   surface: string,
 ): boolean {
+  if (version === SUPABASE_BACKEND_FOUNDATION_VERSION)
+    return surface === 'desktop_macos' || surface === 'desktop_linux'
   return version === SUPABASE_FOUNDATION_VERSION
     ? [
         'desktop_macos',
@@ -863,7 +892,8 @@ export function supabaseDeliveryVersionMatches(input: {
   return (
     input.experimentVersion === SUPABASE_FORMAT_EXPERIMENT_VERSION ||
     ((input.experimentVersion === SUPABASE_AGENTIC_PILOT_VERSION ||
-      input.experimentVersion === SUPABASE_FOUNDATION_VERSION) &&
+      input.experimentVersion === SUPABASE_FOUNDATION_VERSION ||
+      input.experimentVersion === SUPABASE_BACKEND_FOUNDATION_VERSION) &&
       input.campaignId === SUPABASE_FORMAT_DATABASE_PAIR.agenticCampaignId &&
       input.arm === 'agentic')
   )
@@ -942,6 +972,19 @@ export type SupabaseFormatPairsEnv = {
 export function supabaseFormatPairs(
   env: SupabaseFormatPairsEnv,
 ): SupabaseFormatPairs {
+  if (env.FREEBUFF_SUPABASE_FORMAT_DELIVERY === 'foundation-backend-desktop') {
+    return Object.freeze({
+      database: SUPABASE_FORMAT_BACKEND_FOUNDATION_PAIR,
+      auth: Object.freeze({
+        ...SUPABASE_FORMAT_BACKEND_FOUNDATION_PAIR,
+        angle: 'auth' as const,
+      }),
+      storage: Object.freeze({
+        ...SUPABASE_FORMAT_BACKEND_FOUNDATION_PAIR,
+        angle: 'storage' as const,
+      }),
+    })
+  }
   const authIds = parseSupabaseAuthFormatCampaignIds(
     env.FREEBUFF_SUPABASE_AUTH_FORMAT_CAMPAIGN_IDS,
   )
@@ -957,7 +1000,7 @@ export function supabaseFormatPairs(
 
 /** Angles in the order every consumer iterates them. */
 export const SUPABASE_INTENT_ANGLES: readonly SupabaseIntentAngle[] =
-  Object.freeze(['database', 'auth'])
+  Object.freeze(['database', 'auth', 'storage'])
 
 /** Every configured pair, database first. */
 export function configuredSupabaseFormatPairs(
@@ -990,9 +1033,15 @@ export function supabaseFormatCampaignIdForArm(
 export function supabaseFormatPairForCampaignId(
   pairs: SupabaseFormatPairs,
   campaignId: string | null | undefined,
+  angle?: SupabaseIntentAngle,
 ): { pair: SupabaseFormatPair; arm: SupabaseFormatArm } | null {
   if (!isNonEmptyString(campaignId)) return null
-  for (const pair of configuredSupabaseFormatPairs(pairs)) {
+  const candidates = angle
+    ? pairs[angle]
+      ? [pairs[angle]!]
+      : []
+    : configuredSupabaseFormatPairs(pairs)
+  for (const pair of candidates) {
     if (campaignId === pair.displayCampaignId) return { pair, arm: 'display' }
     if (campaignId === pair.agenticCampaignId) return { pair, arm: 'agentic' }
   }

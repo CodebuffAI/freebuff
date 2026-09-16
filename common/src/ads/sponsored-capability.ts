@@ -57,6 +57,9 @@ export const sponsoredCapabilitySchema = z
     packageManager: z.enum(['bun', 'npm', 'pnpm', 'yarn', 'unknown']),
     hasSupabaseBoundary: z.boolean(),
     hasCommittedDatabaseBoundary: z.boolean(),
+    // Missing on older clients means unknown, never provider-open.
+    hasCommittedAuthBoundary: z.boolean().optional(),
+    hasCommittedStorageBoundary: z.boolean().optional(),
     hasGitRepository: z.boolean(),
     hasCommittedHead: z.boolean(),
     execution: z
@@ -79,6 +82,7 @@ export type SponsoredCapabilityReason = z.infer<
 export const SUPABASE_FOUNDATION_MODES = [
   'foundation-mac',
   'foundation-desktop',
+  'foundation-backend-desktop',
   'foundation-local',
   'foundation-all',
 ] as const
@@ -112,7 +116,7 @@ export function supabaseFoundationCapabilityEligible(
       capability.framework === 'nextjs'
     )
   }
-  if (mode === 'foundation-desktop')
+  if (mode === 'foundation-desktop' || mode === 'foundation-backend-desktop')
     return capability.execution.surface.startsWith('desktop_')
   return true
 }
