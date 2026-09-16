@@ -18,6 +18,7 @@ import {
 } from '@codebuff/llm-providers/openai-compatible'
 import { APICallError } from 'ai'
 
+import { byokRequestTransform } from './byok-request'
 import { getWebsiteUrl } from '../constants'
 import { getByokOpenrouterApiKeyFromEnv } from '../env'
 import { byokCompletionUrl } from '../byok'
@@ -255,6 +256,7 @@ export function getModelForRequest({
   if (byok) {
     return new OpenAICompatibleChatLanguageModel(byok.model, {
       provider: 'byok',
+      transformRequestBody: byokRequestTransform(byok),
       url: () => byokCompletionUrl(byok),
       headers: () => ({
         Authorization: `Bearer ${byok.apiKey}`,

@@ -45,6 +45,8 @@ export type OpenAICompatibleChatConfig = {
   includeUsage?: boolean
   errorStructure?: ProviderErrorStructure<any>
   metadataExtractor?: MetadataExtractor
+  /** Endpoint-specific compatibility, applied before serialization in both modes. */
+  transformRequestBody?: (body: Record<string, unknown>) => Record<string, unknown>
 
   /**
    * Whether the model supports structured outputs.
@@ -158,7 +160,7 @@ export class OpenAICompatibleChatLanguageModel implements LanguageModelV2 {
       toolChoice,
     })
 
-    return {
+    const result = {
       args: {
         // model id:
         model: this.modelId,
@@ -212,6 +214,10 @@ export class OpenAICompatibleChatLanguageModel implements LanguageModelV2 {
         tool_choice: openaiToolChoice,
       },
       warnings: [...warnings, ...toolWarnings],
+    }
+    return {
+      ...result,
+      args: this.config.transformRequestBody?.(result.args) ?? result.args,
     }
   }
 
