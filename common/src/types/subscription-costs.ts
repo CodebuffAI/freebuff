@@ -63,3 +63,15 @@ export interface SubscriptionCostReport {
   tiers: Array<SubscriptionCostMetrics & { tier: string; subscribers: number }>
   totals: SubscriptionCostMetrics & { subscribers: number }
 }
+
+/**
+ * Last known subscription-cost report, returned independently from the
+ * subscriber-list scan so an interrupted collector never erases useful data.
+ */
+export interface SubscriptionCostSnapshot {
+  costs: SubscriptionCostReport | null
+  savedAt: string | null
+  snapshotStatus: 'fresh' | 'stale' | 'empty'
+  refreshStatus: 'idle' | 'running' | 'cooldown' | 'failed' | 'unavailable'
+  nextRefreshAt: string | null
+}
