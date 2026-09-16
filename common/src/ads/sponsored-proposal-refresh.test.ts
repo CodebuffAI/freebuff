@@ -24,6 +24,7 @@ import {
   sponsoredProposalAwaitsVerdict,
   type SponsoredProposalState,
 } from './sponsored-proposal-view'
+import { sponsoredProposalRefreshMayPoll } from './sponsored-proposal-refresh'
 
 const ALL_STATES: SponsoredProposalState[] = [
   'offered',
@@ -70,5 +71,31 @@ describe('sponsoredProposalAwaitsVerdict', () => {
       expect(sponsoredProposalAwaitsVerdict(state, true)).toBe(false)
       expect(sponsoredProposalAwaitsVerdict(state, false)).toBe(false)
     }
+  })
+})
+
+describe('sponsoredProposalRefreshMayPoll', () => {
+  test('refreshes an active thread in a visible desktop window without activity', () => {
+    expect(
+      sponsoredProposalRefreshMayPoll({
+        windowVisible: true,
+        threadIsActive: true,
+      }),
+    ).toBe(true)
+  })
+
+  test('does not refresh a hidden window or an inactive thread', () => {
+    expect(
+      sponsoredProposalRefreshMayPoll({
+        windowVisible: false,
+        threadIsActive: true,
+      }),
+    ).toBe(false)
+    expect(
+      sponsoredProposalRefreshMayPoll({
+        windowVisible: true,
+        threadIsActive: false,
+      }),
+    ).toBe(false)
   })
 })
