@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  advertiserClickIdFromLink,
   ADVERTISER_LINK_PLACEHOLDER,
   procedureDeclaresAdvertiserLink,
   sponsoredProcedureRuntimeInputsSection,
@@ -29,6 +30,85 @@ describe('procedureDeclaresAdvertiserLink', () => {
     expect(procedureDeclaresAdvertiserLink('advertiserLink')).toBe(false)
     expect(procedureDeclaresAdvertiserLink('{{ advertiserLink }}')).toBe(false)
     expect(ADVERTISER_LINK_PLACEHOLDER).toBe('{{advertiserLink}}')
+  })
+})
+
+describe('command-scoped advertiser attribution', () => {
+  const procedure =
+    "SPECIFIC_FREEBUFF_BFCID='{{advertiserClickId}}' specific login\nSPECIFIC_FREEBUFF_BFCID='{{advertiserClickId}}' specific claim"
+
+  test('supplies the click ID without rewriting consent or exposing an unrequested URL', () => {
+    const section = sponsoredProcedureRuntimeInputsSection(procedure, {
+      advertiserLink: LINK,
+    })!
+    expect(section).toContain('- advertiserClickId: bfc_1.p.s')
+    expect(section).not.toContain(LINK)
+    expect(section).toContain('command-scoped environment variable')
+    expect(section).toContain('never export it globally')
+    expect(procedure).toContain('{{advertiserClickId}}')
+    expect(
+      sponsoredProcedureRuntimeInputsSection(DECLARING, {
+        advertiserLink: LINK,
+      }),
+    ).not.toContain('- advertiserClickId:')
+  })
+
+  test('can declare both runtime values independently', () => {
+    const section = sponsoredProcedureRuntimeInputsSection(
+      `${DECLARING}\n${procedure}`,
+      { advertiserLink: LINK },
+    )!
+    expect(section).toContain(`- advertiserLink: ${LINK}`)
+    expect(section).toContain('- advertiserClickId: bfc_1.p.s')
+  })
+
+  test('accepts live and test IDs and preserves their bytes', () => {
+    for (const token of ['bfc_1.ab_C-12.sig_34', 'bfc_test_1.ab_C-12.sig_34']) {
+      expect(
+        advertiserClickIdFromLink(
+          `https://specific.dev/?other=1&bfcid=${token}#start`,
+        ),
+      ).toBe(token)
+    }
+  })
+
+  test('refuses absent, ambiguous, oversized and shell-unsafe IDs without leaking them', () => {
+    for (const link of [
+      undefined,
+      null,
+      '',
+      'not a URL',
+      'http://specific.dev/?bfcid=bfc_1.p.s',
+      'https://specific.dev/',
+      'https://specific.dev/?bfcid=spct_placeholder',
+      'https://specific.dev/?bfcid=bfc_1.p.s&bfcid=bfc_1.p.s',
+      `https://specific.dev/?bfcid=bfc_1.${'p'.repeat(512)}.s`,
+      'https://specific.dev/?bfcid=bfc_1.p.s%27%3Btouch%20bad',
+      'https://specific.dev/?bfcid=bfc_1.p.s%0Aecho%20bad',
+    ]) {
+      expect(advertiserClickIdFromLink(link)).toBeNull()
+      const section = sponsoredProcedureRuntimeInputsSection(procedure, {
+        advertiserLink: link,
+      })!
+      expect(section).toContain('advertiserClickId: unavailable')
+      expect(section).toContain('Skip commands')
+      expect(section).not.toContain('bfc_1.')
+    }
+  })
+
+  test('a command-scoped assignment reaches the child but not the next command', async () => {
+    const token = advertiserClickIdFromLink(LINK)!
+    // A harmless child process stands in for Specific; no login or network activity.
+    const child = Bun.spawn(
+      [
+        '/bin/sh',
+        '-c',
+        `SPECIFIC_FREEBUFF_BFCID='${token}' sh -c 'printf "%s" "$SPECIFIC_FREEBUFF_BFCID"'; printf "|%s" "${'$'}{SPECIFIC_FREEBUFF_BFCID-unset}"`,
+      ],
+      { env: { PATH: '/usr/bin:/bin' }, stdout: 'pipe', stderr: 'pipe' },
+    )
+    expect(await new Response(child.stdout).text()).toBe(`${token}|unset`)
+    expect(await child.exited).toBe(0)
   })
 })
 
