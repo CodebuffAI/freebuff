@@ -58,6 +58,17 @@ export const FREE_MODE_ALLOWED_COUNTRIES = new Set([
   ...FREE_MODE_TIER_THREE_COUNTRIES,
 ])
 
+/**
+ * Countries that LEFT full access on 2026-09-15, and whose subscribers keep
+ * the full-access plan pools they bought.
+ *
+ * Grandfathering is scoped to these countries on purpose. "Any limited-access
+ * subscriber whose subscription predates the cutover" would also hand the
+ * full pools to the ~550 subscribers in countries that were limited all
+ * along, who bought the limited plan and are owed the limited plan.
+ */
+export const FREE_MODE_PLAN_GRANDFATHERED_COUNTRIES = new Set(['SG', 'IL'])
+
 /** ISO codes as public copy lists them: "US, CA and GB". */
 export function formatCountryCodes(codes: Iterable<string>): string {
   const list = [...codes]
