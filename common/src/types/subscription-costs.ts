@@ -23,6 +23,30 @@ export interface SubscriptionCostMetrics {
 /** Recent, completed-hour cost report for the paid subscriber cohort. */
 export interface SubscriptionCostReport {
   status: 'collecting' | 'ready' | 'unavailable'
+  /**
+   * Method behind the existing USD forecasts. It remains a daily run-rate
+   * extrapolation until a retained admission-to-provider-cost grain supports
+   * an allowance-constrained estimate.
+   */
+  forecastMethod?: 'uncapped_daily_run_rate'
+  /**
+   * Whether an additional Freebucks-allowance-constrained USD estimate is
+   * available. It is separate from the run-rate forecast above.
+   */
+  allowanceForecastStatus?: 'unavailable'
+  /** Why the allowance-constrained forecast is unavailable. */
+  allowanceForecastReason?: 'missing_funding_cost_basis'
+  /**
+   * Freshness of the newest completed cost-rollup hour. This is deliberately
+   * independent from `status`: a report can be `collecting` while the
+   * collector is current but has not yet completed a full forecast day.
+   */
+  coverageStatus?: 'current' | 'missing' | 'stale'
+  /**
+   * Newest completed hour attested by the expanded-cost collector, even when
+   * it is too old to use for measured costs. Null means no attested hour.
+   */
+  latestCoveredHour?: string | null
   windowStart: string | null
   windowEnd: string | null
   /** Completed covered hours, including partial UTC days. */
