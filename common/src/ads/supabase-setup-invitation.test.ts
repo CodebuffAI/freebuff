@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  supabaseInvitationInspectionReasonSchema,
   supabaseSetupInvitationCapabilitySchema,
   supabaseSetupInvitationSchema,
 } from './supabase-setup-invitation'
@@ -61,6 +62,52 @@ describe('Supabase setup invitation contracts', () => {
         ...base,
         execution: { surface: 'desktop_macos', status: 'unavailable' },
       }).success,
+    ).toBe(false)
+  })
+
+  test('accepts v3 discovery facts without treating readiness as proven', () => {
+    const request = {
+      schemaVersion: 3,
+      target: { kind: 'workspace', workspaceId },
+      framework: 'unknown',
+      execution: { surface: 'desktop_macos', status: 'unchecked' },
+      setupReason: 'compatibility_check_required',
+      providerEvidence: {
+        database: 'unknown',
+        auth: 'unknown',
+        storage: 'unknown',
+      },
+    }
+    expect(supabaseSetupInvitationCapabilitySchema.safeParse(request).success).toBe(
+      true,
+    )
+    expect(
+      supabaseSetupInvitationCapabilitySchema.safeParse({
+        ...request,
+        execution: { surface: 'desktop_macos', status: 'available' },
+      }).success,
+    ).toBe(false)
+  })
+
+  test('accepts the v2 discovery response and bounded inspection reasons', () => {
+    const response = {
+      schemaVersion: 2,
+      kind: 'supabase_setup',
+      invitationId: '00000000-0000-4000-8000-000000000002',
+      framework: 'unknown',
+      surface: 'desktop_linux',
+      angle: 'database',
+      setupReason: 'compatibility_check_required',
+      expiresAt: 1,
+    }
+    expect(supabaseSetupInvitationSchema.safeParse(response).success).toBe(true)
+    expect(
+      supabaseInvitationInspectionReasonSchema.safeParse(
+        'unreadable_package_manifest',
+      ).success,
+    ).toBe(true)
+    expect(
+      supabaseInvitationInspectionReasonSchema.safeParse('/private/project').success,
     ).toBe(false)
   })
 
