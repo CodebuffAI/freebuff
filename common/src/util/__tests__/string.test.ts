@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { pluralize } from '../string'
+import { pluralize, truncateStringWithMessage } from '../string'
 
 describe('pluralize', () => {
   it('should handle singular and plural cases correctly', () => {
@@ -234,6 +234,128 @@ describe('pluralize', () => {
     expect(pluralize(2, 'token')).toBe('2 tokens')
     expect(pluralize(2, 'query')).toBe('2 queries')
     expect(pluralize(2, 'dependency')).toBe('2 dependencies')
+  })
+
+  describe('truncateStringWithMessage', () => {
+    it('should truncate from end by default', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world, this is a test string',
+        maxLength: 20
+      })
+      expect(result).toContain('TRUNCATED')
+      expect(result.startsWith('Hello')).toBe(true)
+    })
+
+    it('should handle negative available length for END truncation', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello',
+        maxLength: 5,
+        remove: 'END'
+      })
+      expect(result).toBe('\n[TRUNCATED DUE TO LENGTH...]')
+    })
+
+    it('should handle zero available length for END truncation', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world',
+        maxLength: 10,
+        remove: 'END'
+      })
+      expect(result).toBe('\n[TRUNCATED DUE TO LENGTH...]')
+    })
+
+    it('should truncate from start correctly', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world, this is a test string',
+        maxLength: 50,
+        remove: 'START'
+      })
+      expect(result).toContain('TRUNCATED DUE TO LENGTH')
+      expect(result.endsWith('string')).toBe(true)
+    })
+
+    it('should handle negative available length for START truncation', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world',
+        maxLength: 5,
+        remove: 'START'
+      })
+      expect(result).toBe('[...TRUNCATED DUE TO LENGTH]\n')
+    })
+
+    it('should handle zero available length for START truncation', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world',
+        maxLength: 10,
+        remove: 'START'
+      })
+      expect(result).toBe('[...TRUNCATED DUE TO LENGTH]\n')
+    })
+
+    it('should truncate from middle correctly', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world, this is a test string',
+        maxLength: 20,
+        remove: 'MIDDLE'
+      })
+      expect(result).toContain('TRUNCATED')
+      expect(result.startsWith('Hello')).toBe(true)
+      expect(result.endsWith('string')).toBe(true)
+    })
+
+    it('should truncate from start correctly', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world, this is a test string',
+        maxLength: 50,
+        remove: 'START'
+      })
+      expect(result).toContain('TRUNCATED DUE TO LENGTH')
+      expect(result.endsWith('string')).toBe(true)
+    })
+
+    it('should handle negative available length for MIDDLE truncation', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world',
+        maxLength: 5,
+        remove: 'MIDDLE'
+      })
+      expect(result).toBe('\n[...TRUNCATED DUE TO LENGTH...]\n')
+    })
+
+    it('should handle zero available length for MIDDLE truncation', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world',
+        maxLength: 10,
+        remove: 'MIDDLE'
+      })
+      expect(result).toBe('\n[...TRUNCATED DUE TO LENGTH...]\n')
+    })
+
+    it('should return original string when within maxLength', () => {
+      const result = truncateStringWithMessage({
+        str: 'Short',
+        maxLength: 100
+      })
+      expect(result).toBe('Short')
+    })
+
+    it('should use custom message when provided', () => {
+      const result = truncateStringWithMessage({
+        str: 'Hello world, this is a test string',
+        maxLength: 20,
+        message: 'CUSTOM MSG'
+      })
+      expect(result).toContain('CUSTOM MSG')
+      expect(result.startsWith('Hello')).toBe(true)
+    })
+
+    it('should handle empty string', () => {
+      const result = truncateStringWithMessage({
+        str: '',
+        maxLength: 10
+      })
+      expect(result).toBe('')
+    })
   })
 })
 
