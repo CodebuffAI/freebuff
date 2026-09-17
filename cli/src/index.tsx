@@ -234,6 +234,9 @@ async function main(): Promise<void> {
   const homeDir = os.homedir()
   const startCwd = process.cwd()
   const showProjectPicker = shouldShowProjectPicker(startCwd, homeDir)
+  if (!showProjectPicker) {
+    saveRecentProject(projectRoot)
+  }
 
   // Requires analytics to be initialized, which is done in initializeApp
   trackEvent(AnalyticsEvent.APP_LAUNCHED, {

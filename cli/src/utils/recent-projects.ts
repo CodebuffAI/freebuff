@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 
-import { getConfigDir } from './auth'
+import { getConfigDir } from './config-dir'
 import { logger } from './logger'
 
 const MAX_RECENT_PROJECTS = 10
@@ -88,12 +88,13 @@ export const clearRecentProjects = (): void => {
  * Remove a specific project from the recent projects list
  */
 export const removeRecentProject = (projectPath: string): void => {
+  const resolvedPath = path.resolve(projectPath)
   const recentProjectsPath = getRecentProjectsPath()
 
   try {
     const existingProjects = loadRecentProjects()
     const filteredProjects = existingProjects.filter(
-      (p) => p.path !== projectPath,
+      (p) => path.resolve(p.path) !== resolvedPath,
     )
 
     fs.writeFileSync(
@@ -115,9 +116,11 @@ export const removeRecentProject = (projectPath: string): void => {
  * Validates that the path exists before saving.
  */
 export const saveRecentProject = (projectPath: string): void => {
+  const resolvedPath = path.resolve(projectPath)
+
   // Validate path exists before saving
-  if (!fs.existsSync(projectPath)) {
-    logger.debug({ projectPath }, 'Skipping save for non-existent project path')
+  if (!fs.existsSync(resolvedPath)) {
+    logger.debug({ projectPath: resolvedPath }, 'Skipping save for non-existent project path')
     return
   }
 
@@ -134,12 +137,12 @@ export const saveRecentProject = (projectPath: string): void => {
 
     // Remove the project if it already exists (we'll add it back at the top)
     const filteredProjects = existingProjects.filter(
-      (p) => p.path !== projectPath,
+      (p) => path.resolve(p.path) !== resolvedPath,
     )
 
     // Add the new/updated project at the beginning
     const updatedProjects: RecentProject[] = [
-      { path: projectPath, lastOpened: Date.now() },
+      { path: resolvedPath, lastOpened: Date.now() },
       ...filteredProjects,
     ].slice(0, MAX_RECENT_PROJECTS)
 
