@@ -45,6 +45,7 @@ import {
   exitCliWithFatalError,
   installProcessCleanupHandlers,
 } from './utils/renderer-cleanup'
+import { startRunActivityMarker } from './utils/run-activity-marker'
 import { startTerminalWatchdog } from './utils/terminal-watchdog'
 import { installTerminalProtocolController } from './utils/terminal-protocol-controller'
 import { initializeSkillRegistry } from './utils/skill-registry'
@@ -400,6 +401,12 @@ async function main(): Promise<void> {
   // process disappears. Started before the renderer begins enabling terminal
   // modes; the clean-shutdown path (renderer-cleanup) disarms it.
   startTerminalWatchdog()
+
+  // Lets the npm-wrapper launcher defer an auto-update restart until any
+  // in-progress turn finishes, instead of interrupting it. Started early so
+  // no isChainInProgress transition can slip by before the subscription
+  // exists.
+  startRunActivityMarker()
 
   const renderer = await createCliRenderer({
     backgroundColor: 'transparent',
