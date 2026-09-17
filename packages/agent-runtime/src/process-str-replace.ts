@@ -169,7 +169,14 @@ const tryMatchOldStr = (params: {
     // Try matching without any whitespace as a last resort
     const noWhitespaceSearch = oldStr.replace(/\s+/g, '')
     const noWhitespaceOld = initialContent.replace(/\s+/g, '')
-    const noWhitespaceIndex = noWhitespaceOld.indexOf(noWhitespaceSearch)
+    // An old string made only of whitespace has nothing left to search for
+    // once its whitespace is stripped, and `indexOf('')` would vacuously
+    // succeed at position 0, producing an empty match that `replaceAll` then
+    // turns into newStr inserted between every character of the file.
+    const noWhitespaceIndex =
+      noWhitespaceSearch === ''
+        ? -1
+        : noWhitespaceOld.indexOf(noWhitespaceSearch)
 
     if (noWhitespaceIndex >= 0) {
       // Count non-whitespace characters to find the real position
