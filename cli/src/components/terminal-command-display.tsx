@@ -61,7 +61,8 @@ export const TerminalCommandDisplay = ({
       </span>
       {timeoutLabel && (
         <span fg={theme.muted} attributes={TextAttributes.DIM}>
-          {' '}({timeoutLabel})
+          {' '}
+          ({timeoutLabel})
         </span>
       )}
     </text>
@@ -82,38 +83,89 @@ export const TerminalCommandDisplay = ({
   const width = Math.max(10, availableWidth ?? separatorWidth)
   const allLines = output.split('\n')
 
-  // Calculate total visual lines across all output lines
-  let totalVisualLines = 0
-  const visualLinesByOriginalLine: string[][] = []
-
-  for (const line of allLines) {
-    const { lines: wrappedLines } = getLastNVisualLines(line, width, Infinity)
-    visualLinesByOriginalLine.push(wrappedLines)
-    totalVisualLines += wrappedLines.length
-  }
-
-  const hasMoreLines = totalVisualLines > maxLines
-  const hiddenLinesCount = totalVisualLines - maxLines
-
-  // Build display output
+  let hasMoreLines = false
+  let hiddenLinesCount = 0
   let displayOutput: string
-  if (isExpanded || !hasMoreLines) {
+
+  if (isExpanded) {
+    if (allLines.length > maxLines) {
+      hasMoreLines = true
+    } else {
+      let totalVisual = 0
+      for (const line of allLines) {
+        if (line.length === 0) {
+          totalVisual++
+        } else if (line.length <= width) {
+          totalVisual++
+        } else {
+          totalVisual += Math.max(1, Math.ceil(line.length / width))
+        }
+      }
+      hasMoreLines = totalVisual > maxLines
+    }
+    hiddenLinesCount = 0
     displayOutput = output
   } else {
-    // Take first N visual lines
+    // Only wrap lines until maxLines visual lines are gathered
     const displayLines: string[] = []
-    let count = 0
+    let linesProcessed = 0
+    let excessInProcessedLine = 0
 
-    for (const wrappedLines of visualLinesByOriginalLine) {
-      for (const line of wrappedLines) {
-        if (count >= maxLines) break
-        displayLines.push(line)
-        count++
+    for (const line of allLines) {
+      if (line.length === 0) {
+        linesProcessed++
+        displayLines.push('')
+        if (displayLines.length >= maxLines) break
+        continue
       }
-      if (count >= maxLines) break
+      const { lines: wrapped } = getLastNVisualLines(line, width, Infinity)
+      let brokeEarly = false
+      for (let i = 0; i < wrapped.length; i++) {
+        if (displayLines.length < maxLines) {
+          displayLines.push(wrapped[i])
+        } else {
+          excessInProcessedLine = wrapped.length - i
+          brokeEarly = true
+          break
+        }
+      }
+      linesProcessed++
+      if (brokeEarly || displayLines.length >= maxLines) break
     }
 
-    displayOutput = displayLines.join('\n')
+    hasMoreLines = excessInProcessedLine > 0 || linesProcessed < allLines.length
+
+    if (!hasMoreLines) {
+      displayOutput = output
+      hiddenLinesCount = 0
+    } else {
+      displayOutput = displayLines.slice(0, maxLines).join('\n')
+
+      let remainingVisualLines = excessInProcessedLine
+      const EXACT_WRAP_LINE_BUDGET = 50
+      let exactLinesCount = 0
+
+      for (let i = linesProcessed; i < allLines.length; i++) {
+        const line = allLines[i]
+        if (line.length === 0) {
+          remainingVisualLines++
+          continue
+        }
+        if (exactLinesCount < EXACT_WRAP_LINE_BUDGET) {
+          const { lines: wrapped } = getLastNVisualLines(line, width, Infinity)
+          remainingVisualLines += wrapped.length
+          exactLinesCount++
+        } else {
+          remainingVisualLines +=
+            line.length <= width
+              ? 1
+              : Math.max(1, Math.ceil(line.length / width))
+        }
+      }
+
+      const totalVisualLines = displayLines.length + remainingVisualLines
+      hiddenLinesCount = Math.max(1, totalVisualLines - maxLines)
+    }
   }
 
   return (
