@@ -357,6 +357,11 @@ export const SponsoredProposalBlock: React.FC<{
       </text>
       <text style={{ fg: theme.foreground }}>{clip(view.headline, inner)}</text>
       {showBody && <text style={{ fg: theme.muted }}>{view.body}</text>}
+      {view.state === 'offered' && (
+        <text style={{ fg: theme.muted, wrapMode: 'none' }}>
+          {inner < 30 ? 'Code/setup/check' : 'Code → account setup → verify'}
+        </text>
+      )}
 
       {view.state === 'running' && view.steps.length > 0 && (
         <box style={{ width: '100%', flexDirection: 'column' }}>
@@ -404,13 +409,17 @@ export const SponsoredProposalBlock: React.FC<{
         </text>
       )}
 
-      {/* The advertiser CTA (COD-512), under the same waiver: sanitized text
-          the user may copy, never a link. `advertiserCtaHref` is null for
-          anything that is not absolute https. */}
-      {openAdvertiser?.href && (
-        <text style={{ fg: theme.muted, wrapMode: 'none' }}>
-          {clip(`${openAdvertiser.label}: ${openAdvertiser.href}`, inner)}
-        </text>
+      {view.setupGuide && (
+        <box style={{ width: '100%', flexDirection: 'column' }}>
+          <text style={{ fg: theme.foreground, wrapMode: 'none' }}>
+            {clip('Setup → verify', inner)}
+          </text>
+          {openAdvertiser?.href && (
+            <text style={{ fg: theme.muted, wrapMode: 'none' }}>
+              {clip(`${openAdvertiser.label}: ${openAdvertiser.href}`, inner)}
+            </text>
+          )}
+        </box>
       )}
 
       {/* Owen, 2026-09-03: the offer names the worktree and nothing about

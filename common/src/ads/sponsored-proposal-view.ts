@@ -355,6 +355,19 @@ const DEFAULT_WHY_THIS =
 const DEFAULT_FAILURE_REASON =
   'The sponsored thread could not finish. Nothing was changed in your project.'
 
+/** Guidance, not activation evidence. A finished run proves only local work;
+ * neither a signup link nor a merged PR proves the service works. Keep this
+ * separate from execution steps and from the terminal run state/grant.
+ */
+export type SponsoredSetupGuide = {
+  title: string
+  eyebrow: string
+  heading: string
+  description: string
+  steps: Array<{ title: string; detail: string }>
+  verificationNote: string
+}
+
 export type SponsoredProposalViewModel = {
   state: SponsoredProposalState
   /** The state's headline copy — what happened, never what to do next. */
@@ -377,6 +390,8 @@ export type SponsoredProposalViewModel = {
    * (`committed` onwards), and null whenever the row carries no settled CTA.
    */
   advertiserCtaHref: string | null
+  setupExpectation: string
+  setupGuide: SponsoredSetupGuide | null
   actions: SponsoredProposalAction[]
 }
 
@@ -418,7 +433,7 @@ export function sponsoredProposalViewModel(
       ? [
           {
             kind: 'open-advertiser',
-            label: `Create your ${row.advertiser_name} project`,
+            label: `Set up ${row.advertiser_name}`,
             href: advertiserCtaHref,
           },
         ]
@@ -476,6 +491,34 @@ export function sponsoredProposalViewModel(
     logoSrc: sponsoredLogoSrc(row.advertiser_logo_token),
     pullRequestHref,
     advertiserCtaHref,
+    setupExpectation: 'Account setup may be needed after the code is ready.',
+    setupGuide: ctaStates.includes(row.state)
+      ? {
+          title: 'Finish setup and verify',
+          eyebrow: row.state === 'merged' ? 'Finish setup' : 'Before you merge',
+          heading: `Connect ${row.advertiser_name}`,
+          description:
+            'Your code is ready. Create an account or sign in, then add your project settings.',
+          steps: [
+            {
+              title: '1. Review the code',
+              detail:
+                'Review the changes and setup notes. The code is ready for review; the live connection still needs checking.',
+            },
+            {
+              title: '2. Set up your account',
+              detail: `Create or sign in to your ${row.advertiser_name} account if needed. Follow the setup notes to connect your project and configure credentials in your environment settings.`,
+            },
+            {
+              title: '3. Verify in your app',
+              detail:
+                'Run the feature against your connected project using the setup notes. A signup or passing local tests alone does not verify the integration.',
+            },
+          ],
+          verificationNote:
+            'Live integration verification is not recorded by this card. These are your next steps; they do not restart the sponsored run.',
+        }
+      : null,
     actions: [
       ...stateActions,
       // Every state declines the same way, and this is the ONLY decline — the

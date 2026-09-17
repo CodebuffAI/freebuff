@@ -72,6 +72,54 @@ describe('state copy', () => {
   })
 })
 
+describe('setup handoff', () => {
+  test('VM-33 prompts before merge without claiming an already-merged PR is pending', () => {
+    for (const state of ['committed', 'landed'] as const) {
+      expect(view({ state }).setupGuide?.eyebrow).toBe('Before you merge')
+    }
+    expect(view({ state: 'merged' }).setupGuide?.eyebrow).toBe('Finish setup')
+  })
+  test('VM-34 execution completion exposes guidance without asserting activation', () => {
+    for (const state of ['committed', 'landed', 'merged'] as const) {
+      const model = view({
+        state,
+        advertiser_cta_url: FIXTURE_ADVERTISER_CTA_URL,
+      })
+      expect(model.setupGuide?.steps.map((step) => step.title)).toEqual([
+        '1. Review the code',
+        '2. Set up your account',
+        '3. Verify in your app',
+      ])
+      expect(model.setupGuide?.verificationNote).toContain('not recorded')
+      expect(model.steps).toEqual([])
+      expect(model.doneStepCount).toBe(0)
+      expect(sponsoredProposalAction(model, 'open-advertiser')?.href).toBe(
+        FIXTURE_ADVERTISER_CTA_URL,
+      )
+    }
+  })
+
+  test('VM-35 does not offer setup before code is ready or after failure', () => {
+    for (const state of ['offered', 'accepted', 'running', 'failed'] as const) {
+      const model = view({
+        state,
+        advertiser_cta_url: FIXTURE_ADVERTISER_CTA_URL,
+      })
+      expect(model.setupGuide).toBeNull()
+      expect(sponsoredProposalAction(model, 'open-advertiser')).toBeNull()
+    }
+  })
+
+  test('VM-36 missing or unsafe tracking links leave instructions without inventing a destination', () => {
+    for (const advertiser_cta_url of [undefined, ...HOSTILE_PR_URLS]) {
+      const model = view({ state: 'committed', advertiser_cta_url })
+      expect(model.setupGuide).not.toBeNull()
+      expect(model.advertiserCtaHref).toBeNull()
+      expect(sponsoredProposalAction(model, 'open-advertiser')).toBeNull()
+    }
+  })
+})
+
 describe('steps', () => {
   const STEPS = [
     { text: 'Install the SDK', state: 'done' as const },
@@ -383,7 +431,7 @@ describe('the advertiser CTA (COD-512)', () => {
       const action = sponsoredProposalAction(v, 'open-advertiser')
       expect(action).toEqual({
         kind: 'open-advertiser',
-        label: 'Create your Acme Deploys project',
+        label: 'Set up Acme Deploys',
         href: CTA,
       })
       // Never the lead answer: the PR decision and the PR link keep primacy.

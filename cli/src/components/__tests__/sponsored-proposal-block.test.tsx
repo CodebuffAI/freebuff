@@ -287,7 +287,7 @@ describe('the advertiser CTA (COD-512)', () => {
       120,
     )
     expect(frame).toContain(
-      `Create your ${FIXTURE_ADVERTISER_NAME} project: ${FIXTURE_ADVERTISER_CTA_URL}`,
+      `Set up ${FIXTURE_ADVERTISER_NAME}: ${FIXTURE_ADVERTISER_CTA_URL}`,
     )
   })
 

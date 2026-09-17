@@ -108,6 +108,11 @@ const VM_CHECKS = check('VM', [
   'no state before a diff exists offers the advertiser CTA, and failed never does',
   'an absent advertiser CTA renders no action and no placeholder',
   'a hostile advertiser CTA URL never becomes a destination and does not cost the card',
+  // VM-33..VM-36: post-code account setup guidance (COD-590).
+  'setup prompts before merge and uses completion language after merge',
+  'execution completion exposes guidance without asserting activation',
+  'setup is absent before code is ready and after failure',
+  'missing or unsafe tracking links retain instructions without inventing a destination',
 ])
 
 const R_CHECKS = check('R', [
