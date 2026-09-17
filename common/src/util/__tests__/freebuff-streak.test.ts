@@ -5,6 +5,7 @@ import {
   calculateFreebuffStreak,
   getFreebuffDailyStreakRewardPool,
   getFreebuffStreakGlmBonusUnits,
+  getFreebuffStreakGlmWeeklyUnits,
   getFreebuffUsageDateKey,
 } from '../freebuff-streak'
 
@@ -198,5 +199,15 @@ describe('freebuff streak rewards', () => {
         accessTier: 'full',
       }),
     ).toBeNull()
+  })
+
+  test('getFreebuffStreakGlmWeeklyUnits clamps negative streaks to zero', () => {
+    // Negative streak values would produce negative bonus units without the clamp.
+    expect(getFreebuffStreakGlmWeeklyUnits(-1)).toBe(0)
+    expect(getFreebuffStreakGlmWeeklyUnits(-100)).toBe(0)
+    // Zero and positive values work as before.
+    expect(getFreebuffStreakGlmWeeklyUnits(0)).toBe(0)
+    expect(getFreebuffStreakGlmWeeklyUnits(7)).toBe(1)
+    expect(getFreebuffStreakGlmWeeklyUnits(14)).toBe(2)
   })
 })
