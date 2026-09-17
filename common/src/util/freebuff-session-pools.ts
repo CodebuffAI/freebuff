@@ -91,8 +91,10 @@ export function getFreebuffSectionQuotas(
 export function formatFreebuffRowQuota(
   quota: FreebuffSessionRateLimit,
 ): string {
-  const used = Math.min(quota.recentCount, quota.limit)
-  const count = `${used} of ${quota.limit} ${quota.countsAdmissions ? 'starts' : 'used'}`
+  const safeRecentCount = Number.isFinite(quota.recentCount) ? quota.recentCount : 0
+  const safeLimit = Number.isFinite(quota.limit) ? quota.limit : 0
+  const used = Math.min(safeRecentCount, safeLimit)
+  const count = `${used} of ${safeLimit} ${quota.countsAdmissions ? 'starts' : 'used'}`
   return quota.poolLabel ? `${quota.poolLabel}: ${count}` : count
 }
 
