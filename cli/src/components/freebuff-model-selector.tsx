@@ -3,7 +3,10 @@ import {
   isFreebucksPeakModel,
 } from '@codebuff/common/util/freebuff-peak-price'
 import { watchFreebucksPriceChanges } from '@codebuff/common/util/freebuff-price-changes'
-import { firstTabDiscountCopy } from '@codebuff/common/util/freebuff-first-tab-discount'
+import {
+  firstTabDiscountCopy,
+  firstTabListPriceFor,
+} from '@codebuff/common/util/freebuff-first-tab-discount'
 import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
 import React, {
@@ -133,6 +136,15 @@ const TOGGLE_ID = '__freebuff_toggle__'
 
 /** Joins the parts of a row's second line (see `rowDetails`). */
 const DETAIL_SEPARATOR = ' · '
+
+/** One chip on a row's second line. `struck` is drawn crossed out, one space
+ *  ahead of `text` — the regular price beside a discounted one. */
+type RowDetail = { struck?: string; text: string; warn: boolean }
+
+/** The chip as plain characters, for the width math (a struck price still
+ *  takes its columns). */
+const detailText = (detail: RowDetail): string =>
+  detail.struck !== undefined ? `${detail.struck} ${detail.text}` : detail.text
 
 // There used to be a right-aligned "Press Enter ↵" cue on the focused row, with
 // its width reserved in the line-1 budget below. Both are gone: the cue was
@@ -423,8 +435,8 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
    * off the first frame.
    */
   const rowDetails = useCallback(
-    (model: FreebuffModelOption): { text: string; warn: boolean }[] => {
-      const details: { text: string; warn: boolean }[] = []
+    (model: FreebuffModelOption): RowDetail[] => {
+      const details: RowDetail[] = []
       // THE PRICE LEADS LINE 2, and on the meter it is often the only thing
       // on it.
       //
@@ -440,12 +452,20 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       // on the other two surfaces.
       const rowPrice = freebucksPriceFor(freebucks, model.id)
       if (rowPrice !== undefined) {
+        // The regular price struck through ahead of the discounted one
+        // ("~~15~~ 5 Freebucks/hr") while the first-tab offer is available,
+        // only on rows the offer actually moved.
+        const listPrice = firstTabListPriceFor(freebucks, model.id)
         details.push({
+          struck:
+            listPrice !== undefined ? formatFreebucks(listPrice) : undefined,
           text: freebucksPriceLabel(rowPrice),
           warn: (freebucks?.balance ?? 0) < rowPrice,
         })
         if (freebucks?.firstTabDiscount?.available) {
-          details.push({ text: 'First-tab discount', warn: false })
+          // A promotion, not a price: named as one so nobody plans around a
+          // row that will one day cost its regular price again.
+          details.push({ text: 'Limited-time first-tab discount', warn: false })
         }
       }
       if (model.warning) details.push({ text: model.warning, warn: true })
@@ -506,9 +526,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   )
   const rowDetailsText = useCallback(
     (model: FreebuffModelOption): string =>
-      rowDetails(model)
-        .map((detail) => detail.text)
-        .join(DETAIL_SEPARATOR),
+      rowDetails(model).map(detailText).join(DETAIL_SEPARATOR),
     [rowDetails],
   )
 
@@ -1419,6 +1437,15 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
             {details.map((detail, index) => (
               <React.Fragment key={`${index}-${detail.text}`}>
                 {index > 0 && <span fg={mutedColor}>{DETAIL_SEPARATOR}</span>}
+                {detail.struck !== undefined && (
+                  <span
+                    fg={mutedColor}
+                    attributes={TextAttributes.STRIKETHROUGH}
+                  >
+                    {detail.struck}
+                  </span>
+                )}
+                {detail.struck !== undefined && <span> </span>}
                 <span fg={detail.warn ? warningColor : mutedColor}>
                   {detail.text}
                 </span>

@@ -267,6 +267,13 @@ export interface FreebuffFreebucksInfo {
   planId: string | null
   /** Session price per model id. Only models on the meter appear here. */
   prices: Record<string, number>
+  /**
+   * The list price per model id BEFORE the first-tab discount, so a client
+   * can cross it out beside the discounted `prices` entry. Present only on a
+   * quote that carries `firstTabDiscount`; it equals `prices` while the
+   * discount is unavailable. Never used for admission or charging.
+   */
+  listPrices?: Record<string, number>
   /** Account-wide first-tab offer. Prices already include it when available. */
   firstTabDiscount?: {
     amount: number

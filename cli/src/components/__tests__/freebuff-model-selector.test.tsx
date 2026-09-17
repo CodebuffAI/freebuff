@@ -8,6 +8,7 @@ import {
   resolveFreebuffModelPickForSession,
 } from '../../hooks/use-freebuff-session'
 import { freebucksFixture } from '@codebuff/common/testing/freebuff'
+import { applyFirstTabDiscount } from '@codebuff/common/util/freebuff-first-tab-discount'
 import { FREEBUFF_EARN_PROMPT_SHORT } from '@codebuff/common/constants/freebuff-earn'
 import { afterEach, beforeAll, describe, expect, test, spyOn } from 'bun:test'
 import { createTestRenderer } from '@opentui/core/testing'
@@ -831,6 +832,39 @@ describe('GLM selection uses the applicable meter', () => {
       if (balance >= 5)
         // The price reads `5/hr`; the balance lives in the header line.
         expect(setup.captureCharFrame()).toContain('5 Freebucks/hr')
+    },
+  )
+
+  test.each([true, false])(
+    'an available first-tab discount strikes the regular price and is named limited-time, available=%s',
+    async (available) => {
+      useFreebuffSessionStore.getState().setSession({
+        status: 'none',
+        accessTier: 'limited',
+        freebucks: applyFirstTabDiscount(
+          freebucksFixture(25, { [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 15 }),
+          { amount: 10, available },
+        ),
+      })
+      useFreebuffModelStore
+        .getState()
+        .setSelectedModel(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
+      const setup = await renderSelector()
+      await setup.renderOnce()
+      const frame = setup.captureCharFrame()
+      if (available) {
+        // "~~15~~ 5 Freebucks/hr": the struck regular price one column ahead
+        // of the discounted one (the strikethrough is an attribute, not a
+        // character, so the frame reads as plain text).
+        expect(frame).toContain('15 5 Freebucks/hr')
+        expect(frame).toContain('Limited-time first-tab discount')
+      } else {
+        // In use elsewhere: the full price is the price, nothing struck, and
+        // nothing advertised.
+        expect(frame).toContain('15 Freebucks/hr')
+        expect(frame).not.toContain('15 15 Freebucks/hr')
+        expect(frame).not.toContain('first-tab discount')
+      }
     },
   )
 

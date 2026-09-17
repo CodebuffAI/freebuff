@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { freebucksFixture } from '../../testing/freebuff'
 import {
   applyFirstTabDiscount,
+  firstTabListPriceFor,
   firstTabQuoteForSession,
 } from '../freebuff-first-tab-discount'
 import { applyFreebucksPriceChanges } from '../freebuff-price-changes'
@@ -75,6 +76,53 @@ describe('first-tab quotes', () => {
     ).toEqual(original.prices)
   })
 
+  test('carries the list prices for the crossed-out original and never stacks on re-application', () => {
+    const original = freebucksFixture(7, { cheap: 5, premium: 25, promo: 0 })
+    const quote = applyFirstTabDiscount(original, {
+      amount: 10,
+      available: true,
+    })
+    expect(quote.listPrices).toEqual(original.prices)
+    // Re-applying discounts from the LIST price, not the discounted one.
+    expect(
+      applyFirstTabDiscount(quote, { amount: 10, available: true }).prices,
+    ).toEqual(quote.prices)
+    // Withdrawing (in use elsewhere) restores the list prices as the quote.
+    const inUse = applyFirstTabDiscount(quote, { amount: 10, available: false })
+    expect(inUse.prices).toEqual(original.prices)
+    expect(inUse.listPrices).toEqual(original.prices)
+  })
+
+  test('the crossed-out price shows only where an available discount moved the price', () => {
+    const original = freebucksFixture(7, { cheap: 5, premium: 25, promo: 0 })
+    const quote = applyFirstTabDiscount(original, {
+      amount: 10,
+      available: true,
+    })
+    expect(firstTabListPriceFor(quote, 'premium')).toBe(25)
+    expect(firstTabListPriceFor(quote, 'cheap')).toBe(5)
+    // Already free: "0 off 0" is not a discount.
+    expect(firstTabListPriceFor(quote, 'promo')).toBeUndefined()
+    expect(firstTabListPriceFor(quote, 'unpriced')).toBeUndefined()
+    // In use by another session: the full price is the price, nothing struck.
+    expect(
+      firstTabListPriceFor(
+        applyFirstTabDiscount(quote, { amount: 10, available: false }),
+        'premium',
+      ),
+    ).toBeUndefined()
+    // No offer at all, and an older server's quote without list prices:
+    // undefined rather than a guessed `price + amount`.
+    expect(firstTabListPriceFor(original, 'premium')).toBeUndefined()
+    expect(firstTabListPriceFor(null, 'premium')).toBeUndefined()
+    expect(
+      firstTabListPriceFor(
+        { prices: { premium: 15 }, firstTabDiscount: { amount: 10, available: true } },
+        'premium',
+      ),
+    ).toBeUndefined()
+  })
+
   test('scheduled list-price changes keep the same discount and do not stack it', () => {
     const quote = applyFirstTabDiscount(
       {
@@ -96,5 +144,8 @@ describe('first-tab quotes', () => {
     )
     expect(after.prices.model).toBe(0)
     expect(applyFreebucksPriceChanges(after).prices.model).toBe(0)
+    // The crossed-out original follows the list price the change set.
+    expect(after.listPrices?.model).toBe(8)
+    expect(firstTabListPriceFor(after, 'model')).toBe(8)
   })
 })

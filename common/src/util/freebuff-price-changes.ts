@@ -5,7 +5,7 @@ import { discountedSessionPrice } from './freebuff-first-tab-discount'
 export function applyFreebucksPriceChanges<
   T extends Pick<
     FreebuffFreebucksInfo,
-    'prices' | 'priceNotices' | 'priceChanges' | 'firstTabDiscount'
+    'prices' | 'listPrices' | 'priceNotices' | 'priceChanges' | 'firstTabDiscount'
   >,
 >(info: T, now = Date.now()): T {
   const due = info.priceChanges?.filter(
@@ -13,6 +13,9 @@ export function applyFreebucksPriceChanges<
   )
   if (!due?.length) return info
   const prices = { ...info.prices }
+  // The crossed-out original moves with the list price, or the strikethrough
+  // would keep showing the price the change just retired.
+  const listPrices = info.listPrices && { ...info.listPrices }
   const priceNotices = { ...info.priceNotices }
   for (const change of due.sort(
     (a, b) => Date.parse(a.at) - Date.parse(b.at),
@@ -22,11 +25,13 @@ export function applyFreebucksPriceChanges<
       change.price,
       info.firstTabDiscount?.available ? info.firstTabDiscount.amount : 0,
     )
+    if (listPrices) listPrices[change.modelId] = change.price
     priceNotices[change.modelId] = change.tagline
   }
   return {
     ...info,
     prices,
+    ...(listPrices ? { listPrices } : {}),
     priceNotices,
     priceChanges: info.priceChanges?.filter(
       (change) => Date.parse(change.at) > now,
