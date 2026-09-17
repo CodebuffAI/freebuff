@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { pluralize } from '../string'
+import { pluralize, stripAnsi, stripColors } from '../string'
 
 describe('pluralize', () => {
   it('should handle singular and plural cases correctly', () => {
@@ -53,13 +53,13 @@ describe('pluralize', () => {
     expect(pluralize(2, 'person')).toBe('2 people')
     expect(pluralize(2, 'child')).toBe('2 children')
     expect(pluralize(2, 'mouse')).toBe('2 mice')
-    
+
     // -ex/-ix → -ices (no reliable rule, must be hardcoded)
     expect(pluralize(2, 'index')).toBe('2 indices')
     expect(pluralize(2, 'vertex')).toBe('2 vertices')
     expect(pluralize(2, 'matrix')).toBe('2 matrices')
     expect(pluralize(2, 'appendix')).toBe('2 appendices')
-    
+
     // Latin -um → -a
     expect(pluralize(2, 'datum')).toBe('2 data')
     expect(pluralize(2, 'medium')).toBe('2 media')
@@ -123,7 +123,7 @@ describe('pluralize', () => {
     expect(pluralize(2, 'data')).toBe('2 data')
     expect(pluralize(2, 'metadata')).toBe('2 metadata')
     expect(pluralize(2, 'feedback')).toBe('2 feedback')
-    
+
     // Other words ending in -s that don't change
     expect(pluralize(2, 'series')).toBe('2 series')
     expect(pluralize(2, 'chassis')).toBe('2 chassis')
@@ -135,7 +135,7 @@ describe('pluralize', () => {
     expect(pluralize(2, 'hero')).toBe('2 heroes')
     expect(pluralize(2, 'echo')).toBe('2 echoes')
     expect(pluralize(2, 'veto')).toBe('2 vetoes')
-    
+
     // Tech terms that just add -s
     expect(pluralize(2, 'photo')).toBe('2 photos')
     expect(pluralize(2, 'video')).toBe('2 videos')
@@ -160,11 +160,11 @@ describe('pluralize', () => {
     expect(pluralize(2, 'shelf')).toBe('2 shelves')
     expect(pluralize(2, 'self')).toBe('2 selves')
     expect(pluralize(2, 'leaf')).toBe('2 leaves')
-    
+
     // -fe to -ves
     expect(pluralize(2, 'knife')).toBe('2 knives')
     expect(pluralize(2, 'life')).toBe('2 lives')
-    
+
     // Tech/design terms that just add -s
     expect(pluralize(2, 'proof')).toBe('2 proofs') // mathematical proofs
     expect(pluralize(2, 'brief')).toBe('2 briefs') // design briefs
@@ -237,3 +237,51 @@ describe('pluralize', () => {
   })
 })
 
+describe('stripAnsi', () => {
+  it('strips ANSI color escape sequences', () => {
+    expect(stripAnsi('\u001b[31;1mred text\u001b[0m')).toBe('red text')
+    expect(stripAnsi('\u001b[38;5;196mcolored\u001b[0m normal')).toBe(
+      'colored normal',
+    )
+  })
+
+  it('strips CSI control sequences (line clears, cursor movement, visibility)', () => {
+    expect(stripAnsi('building...\u001b[2K\r')).toBe('building...\r')
+    expect(stripAnsi('\u001b[?25lhidden\u001b[?25h')).toBe('hidden')
+    expect(stripAnsi('\u001b[1A\u001b[2Jcleared')).toBe('cleared')
+  })
+
+  it('strips OSC sequences terminated by BEL (\\u0007)', () => {
+    expect(stripAnsi('\u001b]0;my window title\u0007window')).toBe('window')
+    expect(stripAnsi('prefix\u001b]2;tab title\u0007suffix')).toBe(
+      'prefixsuffix',
+    )
+  })
+
+  it('strips OSC sequences terminated by String Terminator (ST, ESC \\)', () => {
+    expect(stripAnsi('\u001b]0;my window title\u001b\\window')).toBe('window')
+    expect(stripAnsi('prefix\u001b]2;tab title\u001b\\suffix')).toBe(
+      'prefixsuffix',
+    )
+  })
+
+  it('strips 2-character Fe escape sequences', () => {
+    expect(stripAnsi('\u001bMreverse index')).toBe('reverse index')
+    expect(stripAnsi('\u001bNsingle shift 2')).toBe('single shift 2')
+  })
+
+  it('preserves plain text without escape sequences', () => {
+    expect(stripAnsi('hello world 123 !@#$%^&*()')).toBe(
+      'hello world 123 !@#$%^&*()',
+    )
+  })
+})
+
+describe('stripColors', () => {
+  it('strips only ANSI color codes while leaving other sequences alone', () => {
+    expect(stripColors('\u001b[31mred\u001b[0m')).toBe('red')
+    expect(stripColors('status: \u001b[2K\rline')).toBe(
+      'status: \u001b[2K\rline',
+    )
+  })
+})

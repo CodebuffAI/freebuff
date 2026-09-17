@@ -378,7 +378,8 @@ export function stripColors(str: string): string {
   return str.replace(ansiColorsRegex, '')
 }
 
-const ansiRegex = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x1B]*\x1B\\?)/g
+const ansiRegex =
+  /\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)|[@-Z\\-_])/g
 export function stripAnsi(str: string): string {
   return str.replace(ansiRegex, '')
 }
