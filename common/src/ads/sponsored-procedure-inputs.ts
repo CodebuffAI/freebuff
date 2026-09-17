@@ -103,7 +103,7 @@ export function sponsoredProcedureRuntimeInputsSection(
     if (clickId) {
       lines.push(
         `- advertiserClickId: ${clickId}`,
-        `Use this exact opaque value for \`${ADVERTISER_CLICK_ID_PLACEHOLDER}\` only in the reviewed advertiser command. Pass it as a command-scoped environment variable; never export it globally or write it to a file, shell profile, commit, or PR. Do not print it or send it to unrelated commands.`,
+        `Use this exact opaque value only where the reviewed advertiser command contains \`${ADVERTISER_CLICK_ID_PLACEHOLDER}\`. Keep the reviewed placement unchanged: the default is a command-scoped environment variable assignment; an argument is allowed only when the reviewed command explicitly places the placeholder in that argument; never export it globally or write it to a file, shell profile, commit, or PR. Do not print it or send it to unrelated commands.`,
       )
     } else {
       lines.push(

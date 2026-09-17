@@ -20,3 +20,9 @@
  * pauses for as long as the person using it does.
  */
 export const SPONSORED_RUN_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Reporting grace for observing the recorded PR after execution authority
+ * expires. Only the state route's `merged` report opts into this bound.
+ */
+export const SPONSORED_MERGE_REPORT_TTL_MS = 30 * 24 * 60 * 60 * 1000
