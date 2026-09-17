@@ -380,8 +380,9 @@ export function evaluateInvalidIndexes(
     const stuck =
       building && buildSeconds !== null && buildSeconds >= stuckMinutes * 60
     if (!building || stuck) {
+      const safeBuildSeconds = buildSeconds !== null && Number.isFinite(buildSeconds) ? buildSeconds : 0
       const where = building
-        ? `building ${Math.round((buildSeconds ?? 0) / 60)}m`
+        ? `building ${Math.round(safeBuildSeconds / 60)}m`
         : 'not building'
       offenders.push(
         `${row.schema}.${row.table_name}.${row.index_name} (${where}, indisready=${row.indisready})`,
