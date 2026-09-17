@@ -1,4 +1,5 @@
 import { getErrorObject } from '@codebuff/common/util/error'
+import { convertJsonSchemaToZod } from 'zod-from-json-schema'
 
 import { MCP_TOOL_SEPARATOR } from './mcp-constants'
 
@@ -54,13 +55,8 @@ export async function getMCPToolData(
           })
 
           for (const { name, description, inputSchema } of mcpData) {
-            // Store the raw JSON Schema from the server, NOT the converted Zod
-            // schema. Tool definitions are persisted in run state / session
-            // state and must stay JSON-serializable; Zod instances are cyclic
-            // and make any JSON.stringify over that state detonate. Consumers
-            // convert at point of use (ensureZodSchema / toTokenCountInputSchema).
             writeTo[mcpName + MCP_TOOL_SEPARATOR + name] = {
-              inputSchema: inputSchema as {},
+              inputSchema: convertJsonSchemaToZod(inputSchema as any) as any,
               endsAgentStep: true,
               description,
             }

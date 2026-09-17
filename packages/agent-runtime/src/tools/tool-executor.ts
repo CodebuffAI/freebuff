@@ -1,7 +1,7 @@
 import { endsAgentStepParam, toolNames } from '@codebuff/common/tools/constants'
 import { toolParams } from '@codebuff/common/tools/list'
 import { generateCompactId } from '@codebuff/common/util/string'
-import { cloneDeepKeepingZod } from '../util/zod-safe-clone'
+import { cloneDeep } from 'lodash'
 
 import { getMCPToolData } from '../mcp'
 import { MCP_TOOL_SEPARATOR } from '../mcp-constants'
@@ -10,7 +10,6 @@ import { formatValueForError } from '../util/format-value'
 import { codebuffToolHandlers } from './handlers/list'
 import { getMatchingSpawn } from './handlers/tool/spawn-agent-utils'
 import { getAgentTemplate } from '../templates/agent-registry'
-import { repairStringEncodedUnionMembers } from '../util/repair-string-encoded-union-members'
 import { resolveGravityIndexLink } from './gravity-index-cta'
 import { ensureZodSchema } from './prompts'
 
@@ -619,7 +618,6 @@ export function parseRawCustomToolCall(params: {
 
   const rawSchema = customToolDefs?.[toolName]?.inputSchema
   if (rawSchema) {
-    repairStringEncodedUnionMembers(processedParameters, rawSchema)
     const paramsSchema = ensureZodSchema(rawSchema)
     const result = paramsSchema.safeParse(processedParameters)
 
@@ -637,9 +635,7 @@ export function parseRawCustomToolCall(params: {
     }
   }
 
-  // processedParameters is what the schema saw (including the union repair
-  // above), so it - not the untouched raw input - is what the handler gets.
-  const input = JSON.parse(JSON.stringify(processedParameters))
+  const input = JSON.parse(JSON.stringify(parsedInput.input))
   if (endsAgentStepParam in input) {
     delete input[endsAgentStepParam]
   }
@@ -679,7 +675,7 @@ export async function executeCustomToolCall(
       ...params,
       toolNames: agentTemplate.toolNames,
       mcpServers: agentTemplate.mcpServers,
-      writeTo: cloneDeepKeepingZod(fileContext.customToolDefinitions),
+      writeTo: cloneDeep(fileContext.customToolDefinitions),
     }),
     rawToolCall: {
       toolName,

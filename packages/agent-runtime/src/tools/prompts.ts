@@ -8,8 +8,7 @@ import { getToolCallString } from '@codebuff/common/tools/utils'
 import { buildArray } from '@codebuff/common/util/array'
 import { formatAvailableSkillsXml } from '@codebuff/common/util/skills'
 import { pluralize } from '@codebuff/common/util/string'
-import { cloneDeepKeepingZod } from '../util/zod-safe-clone'
-import { serveInputSchema } from './serve-input-schema'
+import { cloneDeep } from 'lodash'
 import z from 'zod/v4'
 import { convertJsonSchemaToZod } from 'zod-from-json-schema'
 
@@ -431,12 +430,11 @@ export async function getToolSet(params: {
 
   const toolDefinitions = await additionalToolDefinitions()
   for (const [toolName, toolDefinition] of Object.entries(toolDefinitions)) {
-    const clonedDef = cloneDeepKeepingZod(toolDefinition)
-    // Custom tool inputSchema may be JSON Schema (from SDK) or Zod (from MCP).
-    // JSON Schema is served verbatim (see serveInputSchema); the former
-    // unconditional zod round-trip stripped loose schemas to an empty
-    // object schema at the model.
-    const safeSchema = serveInputSchema(clonedDef.inputSchema)
+    const clonedDef = cloneDeep(toolDefinition)
+    // Custom tool inputSchema may be JSON Schema (from SDK) or Zod (from MCP)
+    // Ensure it's a Zod schema for the AI SDK
+    const zodSchema = ensureZodSchema(clonedDef.inputSchema)
+    const safeSchema = ensureJsonSchemaCompatible(zodSchema)
     toolSet[toolName] = {
       ...clonedDef,
       inputSchema: safeSchema,
