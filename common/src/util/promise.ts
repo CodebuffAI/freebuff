@@ -32,8 +32,9 @@ export async function withRetry<T>(
 
       // Exponential backoff with jitter (±20%) to prevent thundering herd
       const baseDelayMs = retryDelayMs * Math.pow(2, attempt)
+      const safeBaseDelayMs = Number.isFinite(baseDelayMs) ? baseDelayMs : Number.MAX_SAFE_INTEGER
       const jitter = 0.8 + Math.random() * 0.4 // Random multiplier between 0.8 and 1.2
-      const delayMs = Math.round(baseDelayMs * jitter)
+      const delayMs = Math.round(safeBaseDelayMs * jitter)
       await new Promise((resolve) => setTimeout(resolve, delayMs))
     }
   }
