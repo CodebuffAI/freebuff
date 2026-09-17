@@ -80,6 +80,9 @@ export function fitsFreebuffStreakOnHeadingRow(params: {
 export function getFreebuffStreakBonusNoteForLayout(params: {
   streak: number
   accessTier: 'full' | 'limited'
+  /** From the streak response: Freebucks a streak day pays on the meter, or
+   *  null/undefined (an older server) for the session copy. */
+  freebucksDailyBonus?: number | null
   terminalHeight: number
   availableWidth: number
 }): string | null {

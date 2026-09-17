@@ -486,6 +486,8 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
     ? getFreebuffStreakBonusNoteForLayout({
         streak,
         accessTier: accessTier === 'limited' ? 'limited' : 'full',
+        // Server-decided, so the perk drawn here is the one the ledger pays.
+        freebucksDailyBonus: streakQuery.data?.freebucksDailyBonus ?? null,
         terminalHeight,
         availableWidth: contentMaxWidth,
       })

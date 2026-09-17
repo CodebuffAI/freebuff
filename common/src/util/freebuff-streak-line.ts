@@ -63,6 +63,28 @@ export function getFreebuffStreakLine(
   }
 }
 
+/** The perk a 7+ day streak pays, as copy: Freebucks on the meter (every
+ *  day, into the wallet), sessions off it. */
+function getFreebuffStreakPerk(params: {
+  streak: number
+  accessTier: 'full' | 'limited'
+  freebucksDailyBonus?: number | null
+}): string {
+  if (params.freebucksDailyBonus != null && params.freebucksDailyBonus > 0) {
+    return `+${params.freebucksDailyBonus} Freebucks every day`
+  }
+  // Only advertise GLM when the recurring full-access streak entitlement is
+  // active, so the copy never promises a perk the gate won't honor.
+  const includesGlm =
+    params.accessTier === 'full' && isFreebuffStreakGlmBonusActive()
+  // Below the milestone this is the first tier being unlocked (1/day); at 7+
+  // it's whatever tier the current streak has earned (up to 4/day).
+  const glmDaily = Math.max(1, getFreebuffStreakGlmWeeklyUnits(params.streak))
+  return includesGlm
+    ? `+1 bonus session every day + ${glmDaily} reward ${glmDaily === 1 ? 'session' : 'sessions'} each day`
+    : '+1 bonus session every day'
+}
+
 /**
  * A short perk note for an active streak. Below the 7-day milestone it teases
  * the countdown ("N more days to unlock …") so the reward motivates the users
@@ -77,23 +99,23 @@ export function getFreebuffStreakLine(
  * earned line shows the current tier's count. The exact remaining GLM count
  * lives in the referral banner; this line is the motivational why. GLM is
  * full-access only, so limited users get the daily session bonus alone.
+ *
+ * On the Freebucks meter none of that buys anything, and the streak pays
+ * `freebucksDailyBonus` Freebucks a day instead (both tiers); the server says
+ * which applies through the streak response, so the copy never promises a
+ * currency the ledger will not credit.
  */
 export function getFreebuffStreakBonusNote(params: {
   streak: number
   accessTier: 'full' | 'limited'
+  /** Freebucks a streak day pays on this account (the streak response's
+   *  `freebucksDailyBonus`). A positive number means the account is on the
+   *  meter and the perk is Freebucks; null/undefined keeps the session copy. */
+  freebucksDailyBonus?: number | null
 }): string | null {
   if (!FREEBUFF_STREAK_REWARDS_ENABLED) return null
   if (params.streak <= 0) return null
-  // Only advertise GLM when the recurring full-access streak entitlement is
-  // active, so the copy never promises a perk the gate won't honor.
-  const includesGlm =
-    params.accessTier === 'full' && isFreebuffStreakGlmBonusActive()
-  // Below the milestone this is the first tier being unlocked (1/day); at 7+
-  // it's whatever tier the current streak has earned (up to 4/day).
-  const glmDaily = Math.max(1, getFreebuffStreakGlmWeeklyUnits(params.streak))
-  const perk = includesGlm
-    ? `+1 bonus session every day + ${glmDaily} reward ${glmDaily === 1 ? 'session' : 'sessions'} each day`
-    : '+1 bonus session every day'
+  const perk = getFreebuffStreakPerk(params)
 
   if (params.streak < FREEBUFF_STREAK_WEEK) {
     const remaining = FREEBUFF_STREAK_WEEK - params.streak
