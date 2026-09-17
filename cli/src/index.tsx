@@ -28,17 +28,19 @@ import { loadPackageVersion, parseArgs } from './cli-args'
 import { handlePublish } from './commands/publish'
 import { runPlainLogin } from './login/plain-login'
 import { initializeApp } from './init/init-app'
-import { getProjectRoot, setProjectRoot } from './project-files'
+import { getProjectRoot } from './project-files'
 import { trackEvent } from './utils/analytics'
 import { getAuthToken, getAuthTokenDetails } from './utils/auth'
-import { resetCodebuffClient } from './utils/codebuff-client'
 import { setApiClientAuthToken } from './utils/codebuff-api'
 import { IS_FREEBUFF } from './utils/constants'
 import { initializeAgentRegistry } from './utils/local-agent-registry'
 import { trimOversizedChatLogs } from './utils/chat-history'
 import { clearLogFile, logger } from './utils/logger'
 import { drainClientLogs } from './utils/log-shipper'
-import { shouldShowProjectPicker } from './utils/project-picker'
+import {
+  activateProject,
+  shouldShowProjectPicker,
+} from './utils/project-picker'
 import { saveRecentProject } from './utils/recent-projects'
 import { startEngagementTracking } from './utils/engagement'
 import {
@@ -343,8 +345,9 @@ async function main(): Promise<void> {
     // Callback for when user selects a new project from the picker
     const handleProjectChange = React.useCallback(
       async (newProjectPath: string) => {
-        // Change process working directory
-        process.chdir(newProjectPath)
+        await activateProject(newProjectPath, {
+          reloadAgentRegistry: !hasAgentOverride,
+        })
 
         // Track directory change (avoid logging full paths for privacy)
         const isGitRepo = fs.existsSync(path.join(newProjectPath, '.git'))
@@ -354,10 +357,6 @@ async function main(): Promise<void> {
           pathDepth,
           isHomeDir: newProjectPath === os.homedir(),
         })
-        // Update the project root in the module state
-        setProjectRoot(newProjectPath)
-        // Reset client to ensure tools use the updated project root
-        resetCodebuffClient()
         // Save to recent projects list
         saveRecentProject(newProjectPath)
         // Update local state
@@ -367,7 +366,7 @@ async function main(): Promise<void> {
         // Hide the picker and show the chat
         setShowProjectPickerScreen(false)
       },
-      [],
+      [hasAgentOverride],
     )
 
     return (
