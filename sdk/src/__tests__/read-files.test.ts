@@ -897,6 +897,30 @@ describe('getImageFile', () => {
     expect('error' in result ? result.error : '').toContain('downscaled copy')
   })
 
+  test('refuses a BMP or TIFF, which no provider decodes, and says how to convert it', async () => {
+    // Attached anyway, the part 400s this turn and every replayed turn after
+    // it: "You have uploaded an unsupported image ... webp, png, jpeg, and gif".
+    const mockFs = createMockFs({
+      files: {
+        '/project/scan.tiff': { content: 'II*' },
+        '/project/shot.bmp': { content: 'BM' },
+      },
+    })
+
+    for (const filePath of ['scan.tiff', 'shot.bmp']) {
+      const result = await getImageFile({
+        filePath,
+        cwd: '/project',
+        fs: mockFs,
+      })
+      expect('data' in result).toBe(false)
+      const error = 'error' in result ? result.error : ''
+      expect(error).toContain(FILE_READ_STATUS.ERROR)
+      expect(error).toContain('PNG, JPEG, GIF and WebP')
+      expect(error).toContain(`magick ${filePath}`)
+    }
+  })
+
   test('applies the gitignore and filter policy of read_files', async () => {
     const mockFs = createMockFs({
       files: { '/project/shot.png': { content: 'PNGDATA' } },

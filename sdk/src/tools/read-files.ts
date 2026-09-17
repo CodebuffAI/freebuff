@@ -3,6 +3,7 @@ import path from 'path'
 import { countTokens } from '@codebuff/agent-runtime/util/token-counter'
 import {
   getImageMimeType,
+  isProviderSupportedImageMediaType,
   MAX_IMAGE_BASE64_SIZE,
 } from '@codebuff/common/constants/images'
 import { FILE_READ_STATUS } from '@codebuff/common/old-constants'
@@ -173,8 +174,21 @@ export async function getImageFile(params: {
     cwd,
     filePath,
   )
-  const mediaType = getImageMimeType(path.extname(relativePath))
+  const ext = path.extname(relativePath)
+  const mediaType = getImageMimeType(ext)
   if (!mediaType) return { path: relativePath, error: FILE_READ_STATUS.ERROR }
+  // A BMP or TIFF is an image we recognise but no vision provider decodes:
+  // attached anyway, it 400s this turn AND every later turn of the thread
+  // (history is replayed) with "unsupported image ... webp, png, jpeg, and
+  // gif". Refuse here, where the model can still act on it.
+  if (!isProviderSupportedImageMediaType(mediaType)) {
+    return {
+      path: relativePath,
+      error:
+        FILE_READ_STATUS.ERROR +
+        ` [${ext} images cannot be attached; models accept only PNG, JPEG, GIF and WebP. Convert it with a terminal command (for example \`magick ${relativePath} /tmp/preview.png\`) and read that instead.]`,
+    }
+  }
   if (fileFilter?.(relativePath).status === 'blocked') {
     return { path: relativePath, error: FILE_READ_STATUS.IGNORED }
   }
