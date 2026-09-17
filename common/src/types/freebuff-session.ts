@@ -674,6 +674,11 @@ export const getLimitedModelOffers = (
 
 export type FreebuffCountryBlockReason =
   | 'country_not_allowed'
+  /** The request's own network passed, but the ACCOUNT was seen from a
+   *  not-allowed country within the access-floor window, so it keeps that
+   *  country's limits. Set by the floor in `access-cache.ts`, never by an
+   *  IP lookup. */
+  | 'recent_limited_country'
   | 'anonymized_or_unknown_country'
   | 'anonymous_network'
   | 'missing_client_ip'

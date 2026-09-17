@@ -98,6 +98,8 @@ export function getFreebuffModelAvailabilityNotice(
       return `Some models aren't available in ${
         countryCode ? formatFreebuffCountryName(countryCode) : 'your region'
       } yet`
+    case 'recent_limited_country':
+      return "This account was recently used from a region where some models aren't available yet, so those limits still apply for a while. Moved? Verify your country at freebuff.com/account?tab=country"
     case 'anonymized_or_unknown_country':
     case 'missing_client_ip':
     case 'unresolved_client_ip':
