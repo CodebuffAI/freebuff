@@ -43,6 +43,32 @@ This exists because every check bun gives you is blind to the failure mode that 
 
 **`[test].exclude` in `bunfig.toml` does nothing on bun 1.3.14.** Verified by pointing it at an ordinary test file, which still ran. That is why the repo-root `exclude` does not keep `*.integration.test.*` out of a root run, and why CI filters them with `find ... ! -name '*.integration.test.ts'`. Gate on a runtime condition instead of trusting the key.
 
+## Cloud Agent smoke test (no credentials)
+
+A Cloud Agent — or any checkout without Infisical — can confirm the workspace can run a package-local unit test from the placeholder fixture alone. This is one file in `@codebuff/internal`. A pass does not validate the rest of the application, CI, or production runtime.
+
+The repo pins Bun **1.3.14** (`.bun-version`, `package.json` `engines.bun` / `packageManager`) and Node **20.15.1** (`.node-version`). The smoke test runs under Bun, not Node. If the VM has no Bun, install that pin from the official installer without changing tracked runtime files:
+
+```bash
+curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.14"
+```
+
+Do not use the repo `.bin/bun` wrapper for this. `.envrc` puts `.bin` first on `PATH`, and the wrapper tries Infisical; with `.env.example` present and no `.env.local` it exits 1 before invoking the real binary.
+
+Resolve the installed Bun **before** `.envrc` prepends `.bin`. If bun is already on `PATH` (mise, a system package, a prior install), capture that path. Use `$HOME/.bun/bin/bun` only when you just ran the official installer above.
+
+```bash
+# Before direnv / .envrc, if bun is already installed:
+REAL_BUN="$(command -v bun)"
+# Only after the official installer, if bun was missing:
+# REAL_BUN="$HOME/.bun/bin/bun"
+
+cd packages/internal
+"$REAL_BUN" test src/ad-targeting/__tests__/iso-3166-alpha2.test.ts
+```
+
+`bun install` is not required for this file. The package `bunfig.toml` preloads `sdk/test/setup-env.ts`. Expect 3 passing tests.
+
 ## The production-runtime smoke in `build-web`
 
 Everything else in CI runs under Bun. Production `web` runs under Node (Render's
