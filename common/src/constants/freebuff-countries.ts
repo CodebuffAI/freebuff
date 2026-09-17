@@ -36,7 +36,10 @@ export const FREE_MODE_TIER_TWO_COUNTRIES = new Set([
 
 // SG and IL left full access on 2026-09-15: ads fill 8-25% of their requests
 // against 43-80% across the rest of these groups, so they earn about a tenth
-// of a US account. KR fills as poorly and stays here by decision.
+// of a US account. KR fills as poorly and stays here by decision. SG and IL
+// subscribers briefly kept the full-access PAID pools; that carve-out was
+// retired on 2026-09-18 and they are now limited access uniformly, plan or no
+// plan — see `freebucksPlan`.
 export const FREE_MODE_TIER_THREE_COUNTRIES = new Set([
   'DE',
   'FR',
@@ -57,17 +60,6 @@ export const FREE_MODE_ALLOWED_COUNTRIES = new Set([
   ...FREE_MODE_TIER_TWO_COUNTRIES,
   ...FREE_MODE_TIER_THREE_COUNTRIES,
 ])
-
-/**
- * Countries that LEFT full access on 2026-09-15, and whose subscribers keep
- * the full-access plan pools they bought.
- *
- * Grandfathering is scoped to these countries on purpose. "Any limited-access
- * subscriber whose subscription predates the cutover" would also hand the
- * full pools to the ~550 subscribers in countries that were limited all
- * along, who bought the limited plan and are owed the limited plan.
- */
-export const FREE_MODE_PLAN_GRANDFATHERED_COUNTRIES = new Set(['SG', 'IL'])
 
 /** ISO codes as public copy lists them: "US, CA and GB". */
 export function formatCountryCodes(codes: Iterable<string>): string {
