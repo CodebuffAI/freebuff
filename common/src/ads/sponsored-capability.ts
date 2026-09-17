@@ -3,6 +3,8 @@ import { z } from 'zod'
 /** Client evidence only: the execution host rechecks these facts before Accept. */
 export const sponsoredCapabilityReasonSchema = z.enum([
   'no_git_repository',
+  'enclosing_repository',
+  'git_unavailable',
   'missing_workspace_identity',
   'no_committed_head',
   'windows_no_containment',

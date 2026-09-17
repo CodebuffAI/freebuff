@@ -129,6 +129,8 @@ export const supabaseSetupInvitationV1Schema = z
     angle: z.enum(['database', 'auth', 'storage']),
     setupReason: z.enum(['no_git_repository', 'no_committed_head']),
     expiresAt: z.number().int().positive(),
+    /** Server-issued, user/workspace/campaign-bound telemetry capability. */
+    attributionToken: z.string().min(1).max(1024).optional(),
   })
   .strict()
 
@@ -156,6 +158,8 @@ export const supabaseSetupInvitationV2Schema = z
     angle: z.enum(['database', 'auth', 'storage']),
     setupReason: z.literal('compatibility_check_required'),
     expiresAt: z.number().int().positive(),
+    /** Optional so older strict response readers remain compatible. */
+    attributionToken: z.string().min(1).max(1024).optional(),
   })
   .strict()
 
