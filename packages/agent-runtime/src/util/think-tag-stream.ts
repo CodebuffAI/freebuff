@@ -22,8 +22,20 @@
  *
  *  1. `<think>…</think>` — paired tags. Content between them is reasoning.
  *     Unambiguous, free, always on.
- *  2. A bare `<think>` that never closes (a truncated thought). Everything
- *     after it is reasoning.
+ *  2. A bare `<think>` that never closes. Two different events produce this:
+ *     a thought truncated mid-stream, or the tag written as PROSE — docs that
+ *     mention the tag, a quoted template, a lane with a broken chat template.
+ *     The two are indistinguishable while the deltas arrive. On a lane whose
+ *     history shows no unclosed open — the majority, every model that pairs
+ *     its tags — the block streams live as reasoning, exactly like rule 1:
+ *     buffering a genuine chain of thought until its close would freeze the
+ *     thinking box for the whole trace. When {@link historyHasUnclosedOpen}
+ *     proves the lane leaves opens unclosed,
+ *     {@link ThinkTagStreamOptions.holdExplicitOpens} holds from the open
+ *     instead: a close settles it as reasoning, and the budget or the end of
+ *     the step releases it as text, so an answer is delayed but never
+ *     swallowed. The cost of arming from history is one step of lag on a
+ *     lane that leaks for the first time — the same accepted gap rule 3 has.
  *  3. An orphan `</think>` with no open tag — the DeepSeek shape above, where
  *     the open tag was consumed by the chat template's prefill. The text
  *     BEFORE it is reasoning, but by the time the marker arrives that text has
@@ -58,14 +70,30 @@ export interface ThinkTagStreamOptions {
    * buffer as text.
    */
   implicitOpen?: boolean
+
+  /**
+   * Hold from every explicit `<think>` open until a close, the
+   * {@link IMPLICIT_OPEN_BUDGET_CHARS}, or the end of the step settles it.
+   *
+   * Off — the default — keeps rule 1 free: a paired block streams live with
+   * zero buffering, and the only cost is that a prose-quoted open on a lane
+   * with no history swallows that one step into the thinking box. Arm it from
+   * {@link historyHasUnclosedOpen}, never unconditionally: on a lane proven
+   * to leave opens unclosed the hold is protection, but on a clean lane it
+   * would delay every genuine trace for nothing.
+   */
+  holdExplicitOpens?: boolean
 }
 
 /**
- * How much leading content to hold while waiting for an orphan `</think>`.
+ * How much leading content to hold while waiting for a settling marker.
  *
  * A leaked chain of thought runs well past this, so the cap is not there to
- * fit one — it bounds the wrong case. If the marker has not arrived by here
+ * fit one — it bounds the wrong case. If the close has not arrived by here
  * the step is answering, not thinking, and the buffer is released as text.
+ * It bounds the implicit head ({@link ThinkTagStreamOptions.implicitOpen})
+ * and, when armed, every explicit open
+ * ({@link ThinkTagStreamOptions.holdExplicitOpens}) alike.
  */
 export const IMPLICIT_OPEN_BUDGET_CHARS = 4000
 
@@ -142,6 +170,38 @@ export function historyLeaksThinkTags(
   }
   return false
 }
+/**
+ * True when the most recent assistant turn ended inside an explicit think
+ * block — its text contains an open with no close after it.
+ *
+ * The arming signal for {@link ThinkTagStreamOptions.holdExplicitOpens},
+ * symmetric with {@link historyLeaksThinkTags}: the same lane decision the
+ * history is kept for. A lane that pairs its tags cleanly never arms, so
+ * rule 1 stays free; a lane proven to leave an open unclosed arms the next
+ * step so a prose-quoted tag cannot swallow the answer.
+ */
+export function historyHasUnclosedOpen(
+  messages: readonly { role: string; content: unknown }[],
+): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message.role !== 'assistant') continue
+    if (!Array.isArray(message.content)) return false
+    let text = ''
+    for (const part of message.content) {
+      if (
+        part &&
+        typeof part === 'object' &&
+        (part as { type?: unknown }).type === 'text' &&
+        typeof (part as { text?: unknown }).text === 'string'
+      ) {
+        text += (part as { text: string }).text
+      }
+    }
+    return text.lastIndexOf(OPEN_TAG) > text.lastIndexOf(CLOSE_TAG)
+  }
+  return false
+}
 
 /**
  * Incremental classifier over one step's content stream.
@@ -153,27 +213,40 @@ export function historyLeaksThinkTags(
 export class ThinkTagStream {
   /** Trailing bytes withheld because they may be the start of a tag. */
   private partial = ''
-  /** Leading content withheld while `implicitOpen` is still undecided. */
+  /** Content withheld while the classification of the open block is still
+   *  undecided: the implicit head, or everything since an explicit open on an
+   *  armed lane. */
   private held = ''
   private implicitOpen: boolean
   private inThinkBlock: boolean
+  /** True while `held` is waiting for the close that settles its
+   *  classification. Armed by construction (implicitOpen) and by an explicit
+   *  open when {@link ThinkTagStreamOptions.holdExplicitOpens} is set;
+   *  cleared by the close ({@link confirmOpenHold}) or by giving up
+   *  ({@link abandonOpenHold}) — budget, a native reasoning chunk, or flush. */
+  private holdingForOpen: boolean
+  private holdExplicitOpens: boolean
 
   constructor(options: ThinkTagStreamOptions = {}) {
     this.implicitOpen = options.implicitOpen ?? false
+    this.holdExplicitOpens = options.holdExplicitOpens ?? false
     this.inThinkBlock = this.implicitOpen
+    this.holdingForOpen = this.implicitOpen
   }
 
   /**
-   * Give up on `implicitOpen` and release anything held as text.
+   * Give up on the hold — the implicit head's, or an explicit open's when
+   * {@link ThinkTagStreamOptions.holdExplicitOpens} armed it — and release
+   * anything held as text.
    *
-   * Called when the step turns out not to be leaking after all. The strongest
-   * such signal is a native reasoning chunk: a lane that populates
-   * `reasoning_content` is by definition not putting the thought in `content`,
-   * so whatever is in `content` is the answer.
+   * Called when the step turns out not to be thinking in `content` after all.
+   * The strongest such signal is a native reasoning chunk: a lane that
+   * populates `reasoning_content` is by definition not putting the thought in
+   * `content`, so whatever is in `content` is the answer.
    */
   disarmImplicitOpen(): ThinkStreamSegment[] {
-    if (!this.implicitOpen) return []
-    return this.abandonImplicitOpen()
+    if (!this.holdingForOpen) return []
+    return this.abandonOpenHold()
   }
 
   push(chunk: string): ThinkStreamSegment[] {
@@ -189,10 +262,11 @@ export class ThinkTagStream {
         this.addReasoning(segments, buffer.slice(0, closeIdx))
         buffer = buffer.slice(closeIdx + CLOSE_TAG.length)
         this.inThinkBlock = false
-        // The close the implicit block was waiting for: everything held is
-        // confirmed reasoning. It can only happen once — a later orphan close
-        // is an ordinary stray marker and is stripped below.
-        this.confirmImplicitOpen(segments)
+        // The close the hold was waiting for: everything held is confirmed
+        // reasoning — whether the block was opened implicitly (a leaked chain
+        // of thought) or explicitly. A later orphan close is an ordinary
+        // stray marker and is stripped below.
+        this.confirmOpenHold(segments)
         continue
       }
 
@@ -203,6 +277,12 @@ export class ThinkTagStream {
         this.addText(segments, buffer.slice(0, openIdx))
         buffer = buffer.slice(openIdx + OPEN_TAG.length)
         this.inThinkBlock = true
+        // An open tag could be a block the model is thinking in, or the tag
+        // quoted as prose. On a clean lane it is near-certainly the former —
+        // rule 1 streams it live, free. Only a lane the history has proven
+        // to leave opens unclosed holds from here, so the answer behind a
+        // quoted tag is delayed rather than swallowed.
+        if (this.holdExplicitOpens) this.holdingForOpen = true
         continue
       }
       // Orphan close with nothing to close: drop the marker so it cannot reach
@@ -220,23 +300,28 @@ export class ThinkTagStream {
   }
 
   /** Emit everything withheld. A partial tag that never completed was always
-   *  just text, and content held for an orphan close that never came is the
-   *  answer — releasing both here is what makes the speculation lossless. */
+   *  just text — except at the tail of an unclosed block on a clean lane,
+   *  where it belongs with the reasoning it would have ended. Content held
+   *  for a close that never came is the answer: releasing it here is what
+   *  makes the hold lossless. An unclosed open on an armed lane is treated
+   *  exactly like an orphan close — the marker is scaffolding, the text
+   *  around it is the answer. */
   flush(): ThinkStreamSegment[] {
     const segments: ThinkStreamSegment[] = []
+    if (this.holdingForOpen) segments.push(...this.abandonOpenHold())
     const trailing = this.partial
     this.partial = ''
     if (trailing) {
       if (this.inThinkBlock) this.addReasoning(segments, trailing)
       else this.addText(segments, trailing)
     }
-    if (this.implicitOpen) segments.push(...this.abandonImplicitOpen())
     return segments
   }
 
-  /** The orphan close arrived: what was held was reasoning after all. */
-  private confirmImplicitOpen(segments: ThinkStreamSegment[]): void {
-    if (!this.implicitOpen) return
+  /** The close arrived: what was held was reasoning after all. */
+  private confirmOpenHold(segments: ThinkStreamSegment[]): void {
+    if (!this.holdingForOpen) return
+    this.holdingForOpen = false
     this.implicitOpen = false
     const held = this.held
     this.held = ''
@@ -244,7 +329,8 @@ export class ThinkTagStream {
   }
 
   /** No close is coming: what was held was the answer. */
-  private abandonImplicitOpen(): ThinkStreamSegment[] {
+  private abandonOpenHold(): ThinkStreamSegment[] {
+    this.holdingForOpen = false
     this.implicitOpen = false
     this.inThinkBlock = false
     const held = this.held
@@ -252,23 +338,21 @@ export class ThinkTagStream {
     return held ? [{ type: 'text', text: held }] : []
   }
 
-  private addReasoning(
-    segments: ThinkStreamSegment[],
-    text: string,
-  ): void {
+  private addReasoning(segments: ThinkStreamSegment[], text: string): void {
     // A nested/duplicated open tag inside a block is scaffolding, never thought.
     const cleaned = text.split(OPEN_TAG).join('')
     if (!cleaned) return
-    if (!this.implicitOpen) {
+    if (!this.holdingForOpen) {
       push(segments, 'reasoning', cleaned)
       return
     }
-    // Still undecided: this is reasoning only if an orphan close confirms it,
-    // so hold rather than send. Past the budget the step is answering, not
+    // Undecided: reasoning only if a close confirms it, so hold rather than
+    // send. A held chain of thought — implicit head or armed explicit open —
+    // runs well past the budget, so past it the step is answering, not
     // thinking, and the hold is released as text.
     this.held += cleaned
     if (this.held.length >= IMPLICIT_OPEN_BUDGET_CHARS) {
-      segments.push(...this.abandonImplicitOpen())
+      segments.push(...this.abandonOpenHold())
     }
   }
 
