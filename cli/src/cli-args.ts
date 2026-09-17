@@ -62,8 +62,12 @@ export function parseArgs({
         'Set the working directory (default: current directory)',
       )
       .addArgument(
-        new Argument('[command]', 'Command to run').choices(['login']),
+        new Argument('[command]', 'Command to run').choices([
+          'login',
+          'plugin',
+        ]),
       )
+      .allowExcessArguments(true)
       .helpOption('-h, --help', 'Show this help message')
   } else {
     // Codebuff: full CLI with all options
