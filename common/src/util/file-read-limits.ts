@@ -170,10 +170,12 @@ function limitFileReadContent(
   remainingTokens: number,
   countTokens?: (text: string) => number,
 ): LimitedFileRead {
-  const charLimit = Math.min(content.length, Math.max(0, remainingChars))
+  const safeRemainingChars = Number.isFinite(remainingChars) ? remainingChars : 0
+  const charLimit = Math.min(content.length, Math.max(0, safeRemainingChars))
   const safeCharLimit = avoidSplittingSurrogatePair(content, charLimit)
   const charLimitedContent = content.slice(0, safeCharLimit)
-  const tokenBudget = Math.max(0, remainingTokens)
+  const safeRemainingTokens = Number.isFinite(remainingTokens) ? remainingTokens : 0
+  const tokenBudget = Math.max(0, safeRemainingTokens)
   const tokenLimit = countTokens
     ? limitContentByTokens(charLimitedContent, tokenBudget, countTokens)
     : {
