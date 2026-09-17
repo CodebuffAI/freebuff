@@ -1,17 +1,29 @@
 import { describe, expect, test } from 'bun:test'
+import z from 'zod/v4'
 
 import {
+  CLAUDE_CODE_TOOLS,
+  PROXY_HOLLOW_END_TURN,
+  stubTool,
+  wireTool,
+  wireTools,
+} from './foreign-client-wire-tools'
+import {
+  canonicalToolParameterKeys,
   detectForeignFreebuffClient,
   FREEBUFF_DOWNGRADE_MODEL_ID,
   FREEBUFF_SIGNATURE_TOOL_NAMES,
   GENERIC_TOOL_NAMES,
+  isGenuineSignatureTool,
   resolveForeignClientDowngrade,
 } from '../constants/foreign-client-signals'
 import { toolNames } from '../tools/constants'
+import { toolParams } from '../tools/list'
+import { readFilesDisplayVariants } from '../tools/params/tool/read-files'
 
-function tools(...names: string[]) {
-  return names.map((name) => ({ type: 'function', function: { name } }))
-}
+/** Wire-shaped tools: our names carry our schema, everything else a generic
+ *  one. See foreign-client-wire-tools.ts. */
+const tools = wireTools
 
 /** Toolsets observed on real freebuff traffic over 24h of DeepSeek V4 Flash. */
 const FREEBUFF_TOOLSETS = [
@@ -163,7 +175,8 @@ describe('detectForeignFreebuffClient', () => {
       detectForeignFreebuffClient({ tools: tools('web_search') }).signal,
     ).toBe('foreign_toolset')
     expect(
-      detectForeignFreebuffClient({ tools: tools('glob', 'web_search') }).signal,
+      detectForeignFreebuffClient({ tools: tools('glob', 'web_search') })
+        .signal,
     ).toBe('foreign_toolset')
   })
 
@@ -234,7 +247,15 @@ describe('detectForeignFreebuffClient', () => {
   })
 
   test('tolerates malformed tool entries without throwing', () => {
-    for (const tools of [null, undefined, 'nope', [], [null], [{}], [{ function: {} }]]) {
+    for (const tools of [
+      null,
+      undefined,
+      'nope',
+      [],
+      [null],
+      [{}],
+      [{ function: {} }],
+    ]) {
       expect(() =>
         detectForeignFreebuffClient({ tools } as never),
       ).not.toThrow()
@@ -251,6 +272,174 @@ describe('detectForeignFreebuffClient', () => {
     })
     expect(verdict.signal).toBe('foreign_toolset')
     expect(verdict.sampleToolNames[0]!.length).toBeLessThanOrEqual(64)
+  })
+
+  describe('a signature tool must carry our schema, not only our name', () => {
+    // Read from the public resale proxies on 2026-09-17: freebuff2api and its
+    // forks, trefeon/freebuff-proxy, 9router's freebuff executor. Every one of
+    // them cleared the name-only rule by appending the same hollow `end_turn`
+    // to the real harness's toolset — the laundering vector the abuse doc had
+    // named as "the obvious evasion once enforcement is noticed".
+    test('a hollow end_turn does not launder Claude Code', () => {
+      const verdict = detectForeignFreebuffClient({
+        tools: [...CLAUDE_CODE_TOOLS, PROXY_HOLLOW_END_TURN],
+      })
+      expect(verdict.signal).toBe('foreign_toolset')
+      expect(verdict.hollowToolNames).toEqual(['end_turn'])
+      expect(
+        resolveForeignClientDowngrade({
+          body: {
+            model: 'deepseek/deepseek-v4-flash',
+            tools: [...CLAUDE_CODE_TOOLS, PROXY_HOLLOW_END_TURN],
+          },
+        })?.downgradeTo,
+      ).toBe(FREEBUFF_DOWNGRADE_MODEL_ID)
+    })
+
+    test('a hollow end_turn does not launder a bare completion proxy', () => {
+      // The other shape the same proxies produce: no harness tools at all,
+      // just the injected definition.
+      expect(
+        detectForeignFreebuffClient({ tools: [PROXY_HOLLOW_END_TURN] }).signal,
+      ).toBe('foreign_toolset')
+    })
+
+    test('our name over a foreign schema is not ours', () => {
+      // trefeon/freebuff-proxy's "tool-name tolerance": Claude Code's `Read`
+      // is relabelled `read_files` on the way up and back on the way down,
+      // with the client's own parameter schema forwarded untouched. The model
+      // is still asked for `file_path`, which we never defined.
+      const relabelled = [
+        stubTool('read_files', schema('file_path', 'offset', 'limit')),
+        stubTool(
+          'str_replace',
+          schema('file_path', 'old_string', 'new_string'),
+        ),
+        stubTool(
+          'run_terminal_command',
+          schema('command', 'timeout', 'description'),
+        ),
+        stubTool('code_search', schema('pattern', 'path', 'output_mode')),
+        stubTool('list_directory', schema('path', 'ignore')),
+      ]
+      const verdict = detectForeignFreebuffClient({ tools: relabelled })
+      expect(verdict.signal).toBe('foreign_toolset')
+      expect(verdict.hollowToolNames).toEqual([
+        'read_files',
+        'str_replace',
+        'run_terminal_command',
+        'code_search',
+        'list_directory',
+      ])
+    })
+
+    test('our name with no schema at all is not ours', () => {
+      // Every client we ship serialises a schema for every tool, so a missing
+      // `parameters` under one of our names is not a version skew, it is a
+      // name copied without the thing that makes it a tool.
+      expect(
+        detectForeignFreebuffClient({
+          tools: [stubTool('read_files'), stubTool('spawn_agents')],
+        }).signal,
+      ).toBe('foreign_toolset')
+      expect(
+        detectForeignFreebuffClient({
+          tools: [stubTool('read_files', { type: 'object', properties: {} })],
+        }).signal,
+      ).toBe('foreign_toolset')
+    })
+
+    test('every parameterised tool we define is genuine as we ship it', () => {
+      for (const name of Object.keys(toolParams)) {
+        const keys = canonicalToolParameterKeys(name)
+        expect(keys).not.toBeNull()
+        if (keys!.size === 0) continue
+        expect({
+          name,
+          genuine: isGenuineSignatureTool(offered(name)),
+        }).toEqual({ name, genuine: !GENERIC_TOOL_NAMES.has(name) })
+      }
+    })
+
+    test('the windowed read_files variant clears', () => {
+      // Web and Cloud serve the windowed schema (line ranges inside `paths`);
+      // CLI and Desktop the legacy one. Same top-level names, so both clear.
+      const windowed = stubTool(
+        'read_files',
+        z.toJSONSchema(readFilesDisplayVariants.windowed.inputSchema, {
+          io: 'input',
+        }),
+      )
+      expect(isGenuineSignatureTool(offered(windowed))).toBe(true)
+      expect(
+        detectForeignFreebuffClient({ tools: [windowed] }).signal,
+      ).toBeNull()
+    })
+
+    test('a client one release behind an added optional field clears', () => {
+      // A subset of our names is still ours: the server deploys before the
+      // clients, so an older binary lacking a field we just added must not
+      // read as foreign.
+      expect(
+        detectForeignFreebuffClient({
+          tools: [stubTool('run_terminal_command', schema('command', 'cwd'))],
+        }).signal,
+      ).toBeNull()
+    })
+
+    test('zero-parameter tools never count on their own', () => {
+      // `end_turn` and `task_completed` have nothing structural to verify — a
+      // copied name over `{}` is byte-identical to the real definition — so
+      // they contribute nothing, in either direction. Every agent we ship
+      // carries a parameterised signature tool beside them (the shipped-agents
+      // test asserts it), so this costs our own traffic nothing.
+      expect(
+        detectForeignFreebuffClient({ tools: tools('end_turn') }).signal,
+      ).toBe('foreign_toolset')
+      expect(
+        detectForeignFreebuffClient({
+          tools: tools('end_turn', 'task_completed'),
+        }).signal,
+      ).toBe('foreign_toolset')
+      expect(
+        detectForeignFreebuffClient({ tools: tools('end_turn', 'read_files') })
+          .signal,
+      ).toBeNull()
+      // Our own hollow-by-nature tools are not reported as laundering either.
+      expect(
+        detectForeignFreebuffClient({ tools: tools('end_turn', 'read_files') })
+          .hollowToolNames,
+      ).toEqual([])
+    })
+
+    test('a custom tool is still taken at its name', () => {
+      // `decide` has no schema in toolParams to check against.
+      expect(
+        detectForeignFreebuffClient({ tools: [stubTool('decide')] }).signal,
+      ).toBeNull()
+    })
+
+    test('genuine toolsets report no hollow names', () => {
+      for (const toolset of FREEBUFF_TOOLSETS) {
+        expect(
+          detectForeignFreebuffClient({ tools: toolset }).hollowToolNames,
+        ).toEqual([])
+      }
+    })
+
+    test('MCP tools beside our real tools still clear', () => {
+      // The reason the rule is "at least one genuine" and not "all ours": a CLI
+      // user can attach any MCP server to a base agent.
+      expect(
+        detectForeignFreebuffClient({
+          tools: [
+            ...tools('read_files', 'run_terminal_command', 'str_replace'),
+            stubTool('ghidra__decompile_function', schema('address')),
+            stubTool('ghidra__list_functions', schema('offset', 'limit')),
+          ],
+        }).signal,
+      ).toBeNull()
+    })
   })
 
   test('reports bounded evidence for the log line', () => {
@@ -272,7 +461,9 @@ describe('detectForeignFreebuffClient', () => {
     // flagged on 100% of 334,042 requests from 4,821 users, autorun on 100% of
     // 2,904 from 41. `web_search` cannot join the signature (opencode ships
     // it), so these clear by the every-tool-is-ours rule instead.
-    expect(detectForeignFreebuffClient({ tools: tools(...names) }).signal).toBeNull()
+    expect(
+      detectForeignFreebuffClient({ tools: tools(...names) }).signal,
+    ).toBeNull()
   })
 
   test('borrowing one distinctive name clears an otherwise foreign toolset', () => {
@@ -283,7 +474,8 @@ describe('detectForeignFreebuffClient', () => {
     // the moment it shows up in the logs, and the proxy has to actually
     // implement the tool for its own loop to keep working.
     expect(
-      detectForeignFreebuffClient({ tools: tools('read_files', 'Bash') }).signal,
+      detectForeignFreebuffClient({ tools: tools('read_files', 'Bash') })
+        .signal,
     ).toBeNull()
   })
 
@@ -309,7 +501,8 @@ describe('detectForeignFreebuffClient', () => {
       detectForeignFreebuffClient({ tools: tools('ask_user') }, true).signal,
     ).toBeNull()
     expect(
-      detectForeignFreebuffClient({ tools: tools('Bash', 'Edit') }, true).signal,
+      detectForeignFreebuffClient({ tools: tools('Bash', 'Edit') }, true)
+        .signal,
     ).toBe('foreign_toolset')
   })
 
@@ -377,3 +570,15 @@ describe('resolveForeignClientDowngrade', () => {
     expect(decision.downgradeTo).toBeNull()
   })
 })
+
+function schema(...keys: string[]) {
+  return {
+    type: 'object',
+    properties: Object.fromEntries(keys.map((k) => [k, { type: 'string' }])),
+  }
+}
+
+function offered(tool: string | ReturnType<typeof wireTool>) {
+  const t = typeof tool === 'string' ? wireTool(tool) : tool
+  return { name: t.function.name, parameters: t.function.parameters }
+}

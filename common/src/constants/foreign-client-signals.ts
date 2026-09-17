@@ -1,4 +1,7 @@
+import z from 'zod/v4'
+
 import { toolNames } from '../tools/constants'
+import { toolParams } from '../tools/list'
 
 /**
  * Where a free-mode request goes when it did not come from a freebuff client.
@@ -63,6 +66,15 @@ export const FREEBUFF_CUSTOM_TOOL_NAMES = ['decide'] as const
  * harness dispatches on the tool name the model returns, so sending ours means
  * also executing ours and speaking our result format. Evading this check
  * converges on behaving like a real client, which is the outcome we want.
+ *
+ * A NAME alone stopped being enough on 2026-09-17. Every public resale proxy
+ * (freebuff2api and its forks, freebuff-proxy, 9router) had adapted to the
+ * `some(signature)` rule the same way: append one hollow definition —
+ * `end_turn` with an empty schema and a one-line description we never shipped
+ * — to whatever toolset the real harness (Claude Code, Codex, Cline, opencode)
+ * sent, and let the model never call it. Names are strings; strings are free.
+ * So a signature tool now has to be GENUINE — see `isGenuineSignatureTool` —
+ * which means carrying the parameter schema we ship under that name.
  */
 export const FREEBUFF_SIGNATURE_TOOL_NAMES: ReadonlySet<string> = new Set([
   ...(toolNames as readonly string[]).filter(
@@ -82,6 +94,13 @@ export type ForeignClientVerdict = {
   toolCount: number
   /** A few offered tool names, for the log line. Bounded so logs stay small. */
   sampleToolNames: string[]
+  /**
+   * Offered tools that carry one of our signature NAMES but not our schema —
+   * the laundering shape. Bounded like `sampleToolNames`. Logged so the next
+   * adaptation (a proxy copying a real schema) is visible as a change in what
+   * these look like, not only as a drop in the enforcement count.
+   */
+  hollowToolNames: string[]
 }
 
 type InspectableRequest = {
@@ -96,15 +115,160 @@ type InspectableRequest = {
  *  untruncated one is a log-flood vector; nothing legitimate is near this. */
 const MAX_LOGGED_TOOL_NAME_LENGTH = 64
 
-function readToolNames(tools: unknown): string[] {
+type OfferedTool = {
+  name: string
+  parameters: unknown
+  description?: unknown
+}
+
+function readOfferedTools(tools: unknown): OfferedTool[] {
   if (!Array.isArray(tools)) return []
-  return tools
-    .map((tool) =>
-      typeof tool === 'object' && tool !== null
-        ? (tool as { function?: { name?: unknown } }).function?.name
-        : undefined,
-    )
-    .filter((name): name is string => typeof name === 'string')
+  const offered: OfferedTool[] = []
+  for (const tool of tools) {
+    if (typeof tool !== 'object' || tool === null) continue
+    const fn = (
+      tool as {
+        function?: {
+          name?: unknown
+          parameters?: unknown
+          description?: unknown
+        }
+      }
+    ).function
+    if (typeof fn?.name !== 'string') continue
+    offered.push({
+      name: fn.name,
+      parameters: fn.parameters,
+      description: fn.description,
+    })
+  }
+  return offered
+}
+
+/**
+ * Top-level property names of a JSON-Schema-shaped object, or null when the
+ * value is not an object schema at all (absent, a string, an array …).
+ *
+ * Reads `properties` and, for a top-level union or intersection, the
+ * `properties` of every branch — the shape `z.toJSONSchema` produces for the
+ * schemas in `toolParams`, and the shape the AI SDK forwards verbatim as
+ * `function.parameters` (`@ai-sdk/openai-compatible` `prepareTools`).
+ */
+function schemaPropertyKeys(schema: unknown): Set<string> | null {
+  if (typeof schema !== 'object' || schema === null || Array.isArray(schema)) {
+    return null
+  }
+  const keys = new Set<string>()
+  const record = schema as Record<string, unknown>
+  const properties = record.properties
+  if (typeof properties === 'object' && properties !== null) {
+    for (const key of Object.keys(properties)) keys.add(key)
+  }
+  for (const combinator of ['anyOf', 'oneOf', 'allOf']) {
+    const branches = record[combinator]
+    if (!Array.isArray(branches)) continue
+    for (const branch of branches) {
+      for (const key of schemaPropertyKeys(branch) ?? []) keys.add(key)
+    }
+  }
+  return keys
+}
+
+/**
+ * The top-level parameter names we ship for a tool in `toolParams`, or null
+ * for a name we do not define there (custom tools, agent-as-tool names).
+ *
+ * Computed from the same Zod schema every client serializes onto the wire, so
+ * it cannot drift from what our clients send. Top-level names only: the
+ * windowed and legacy `read_files` variants differ INSIDE `paths`, and a
+ * client one release behind may lack a newly added optional field, so the
+ * comparison below is "a subset of ours", never equality. Memoised because
+ * `z.toJSONSchema` runs per tool per request otherwise.
+ */
+const canonicalKeysByTool = new Map<string, ReadonlySet<string> | null>()
+export function canonicalToolParameterKeys(
+  name: string,
+): ReadonlySet<string> | null {
+  const cached = canonicalKeysByTool.get(name)
+  if (cached !== undefined) return cached
+  const params = (toolParams as Record<string, { inputSchema?: unknown }>)[name]
+  let keys: ReadonlySet<string> | null = null
+  if (params?.inputSchema) {
+    try {
+      keys = schemaPropertyKeys(
+        z.toJSONSchema(params.inputSchema as z.ZodType, { io: 'input' }),
+      )
+    } catch {
+      keys = null
+    }
+  }
+  canonicalKeysByTool.set(name, keys)
+  return keys
+}
+
+/**
+ * Whether an offered tool is one of ours in substance, not only in name.
+ *
+ * Three cases:
+ *
+ *  - A custom tool (`FREEBUFF_CUSTOM_TOOL_NAMES`) has no schema in `toolParams`
+ *    to check against, so its name is taken at face value, as before.
+ *  - A tool we define with parameters is genuine when it carries a NON-EMPTY
+ *    schema whose top-level names are a subset of ours. A subset, so a client a
+ *    release behind an added optional field still clears; non-empty, so a bare
+ *    `{}` under one of our names does not. This is what a renamed foreign tool
+ *    fails: Claude Code's `Read` relabelled `read_files` still asks for
+ *    `file_path`/`offset`/`limit`, not `paths`.
+ *  - A tool we define WITHOUT parameters (`end_turn`, `task_completed`) never
+ *    counts. There is nothing structural to verify — a copied name plus `{}`
+ *    is byte-identical to the real thing — and the alternative, comparing the
+ *    description string, is a check every client one release behind a wording
+ *    edit would fail. Every root and subagent we ship carries a parameterised
+ *    signature tool as well, and the shipped-agents CI test asserts it.
+ */
+export function isGenuineSignatureTool(tool: OfferedTool): boolean {
+  if (!FREEBUFF_SIGNATURE_TOOL_NAMES.has(tool.name)) return false
+  if ((FREEBUFF_CUSTOM_TOOL_NAMES as readonly string[]).includes(tool.name)) {
+    return true
+  }
+  const ours = canonicalToolParameterKeys(tool.name)
+  if (!ours || ours.size === 0) return false
+  const theirs = schemaPropertyKeys(tool.parameters)
+  if (!theirs || theirs.size === 0) return false
+  for (const key of theirs) {
+    if (!ours.has(key)) return false
+  }
+  return true
+}
+
+/**
+ * Whether an offered tool wears one of our signature names without being
+ * ours — the laundering shape, for the log line. Never decides anything.
+ *
+ * For a parameterised tool this is simply "not genuine". For a
+ * zero-parameter tool, which `isGenuineSignatureTool` cannot vouch for either
+ * way, the DESCRIPTION is compared instead: that is the one field the hollow
+ * `end_turn` the proxies inject gets wrong ("Signal the end of the current
+ * task." against the paragraph we ship), and because this only feeds a log,
+ * a client one release behind a wording edit costs a misleading log line, not
+ * a downgrade. Which is exactly why the same comparison is not enforced.
+ */
+export function isHollowSignatureTool(tool: OfferedTool): boolean {
+  if (!FREEBUFF_SIGNATURE_TOOL_NAMES.has(tool.name)) return false
+  if ((FREEBUFF_CUSTOM_TOOL_NAMES as readonly string[]).includes(tool.name)) {
+    return false
+  }
+  const ours = canonicalToolParameterKeys(tool.name)
+  if (!ours) return false
+  if (ours.size > 0) return !isGenuineSignatureTool(tool)
+  const shipped = (toolParams as Record<string, { description?: unknown }>)[
+    tool.name
+  ]?.description
+  return (
+    typeof shipped !== 'string' ||
+    typeof tool.description !== 'string' ||
+    tool.description.trim() !== shipped.trim()
+  )
 }
 
 /**
@@ -112,9 +276,12 @@ function readToolNames(tools: unknown): string[] {
  *
  * Three signals, checked in a deliberate order:
  *
- *  1. The request offers tools and not one of them is distinctively ours.
- *     Measured over 24h of DeepSeek V4 Flash traffic: 557 users / 75,741
- *     requests.
+ *  1. The request offers tools and not one of them is GENUINELY ours — our
+ *     name over our parameter schema (`isGenuineSignatureTool`). Measured over
+ *     24h of DeepSeek V4 Flash traffic before the schema requirement: 557
+ *     users / 75,741 requests; by 2026-09-17 the name-only rule enforced on
+ *     ~816 requests/day from 71 users while the resale proxies passed it with
+ *     a hollow `end_turn`.
  *  2. The request offers NO tools and the agent is one of our roots, which are
  *     agentic by definition — a caller using a root agent id as a bare
  *     completion endpoint. Reported only; never enforced.
@@ -135,19 +302,24 @@ export function detectForeignFreebuffClient(
    *  — see `root_agent_no_tools` below. */
   isRootAgent = false,
 ): ForeignClientVerdict {
-  const offered = readToolNames(body.tools)
+  const offered = readOfferedTools(body.tools)
   const sampleToolNames = offered
     .slice(0, 8)
-    .map((name) => name.slice(0, MAX_LOGGED_TOOL_NAME_LENGTH))
+    .map((tool) => tool.name.slice(0, MAX_LOGGED_TOOL_NAME_LENGTH))
+  // Our name, not our schema. Empty on every request our clients send and on
+  // every unadapted foreign harness; populated exactly by the laundering shape.
+  const hollowToolNames = offered
+    .filter(isHollowSignatureTool)
+    .slice(0, 8)
+    .map((tool) => tool.name.slice(0, MAX_LOGGED_TOOL_NAME_LENGTH))
 
   if (offered.length > 0) {
-    const hasSignatureTool = offered.some((name) =>
-      FREEBUFF_SIGNATURE_TOOL_NAMES.has(name),
-    )
+    const hasSignatureTool = offered.some(isGenuineSignatureTool)
     return {
       signal: hasSignatureTool ? null : 'foreign_toolset',
       toolCount: offered.length,
       sampleToolNames,
+      hollowToolNames,
     }
   }
 
@@ -194,6 +366,7 @@ export function detectForeignFreebuffClient(
       signal: 'root_agent_no_tools',
       toolCount: 0,
       sampleToolNames,
+      hollowToolNames,
     }
   }
 
@@ -215,6 +388,7 @@ export function detectForeignFreebuffClient(
     signal: setsSamplingParams ? 'sampling_params' : null,
     toolCount: 0,
     sampleToolNames,
+    hollowToolNames,
   }
 }
 

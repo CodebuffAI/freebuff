@@ -3,11 +3,12 @@ import { join, relative } from 'node:path'
 
 import { describe, expect, test } from 'bun:test'
 
-import { FREEBUFF_ROOT_AGENT_IDS } from '../constants/free-agents'
+import { wireTools } from './foreign-client-wire-tools'
 import {
   detectForeignFreebuffClient,
   FREEBUFF_CUSTOM_TOOL_NAMES,
 } from '../constants/foreign-client-signals'
+import { FREEBUFF_ROOT_AGENT_IDS } from '../constants/free-agents'
 
 /**
  * Nothing we ship may be mistaken for a third-party client.
@@ -131,9 +132,12 @@ function collectDeclarations(): Declaration[] {
 
 const DECLARATIONS = collectDeclarations()
 
-function asToolSchemas(names: string[]) {
-  return names.map((name) => ({ type: 'function', function: { name } }))
-}
+/** Wire-shaped, so the schema check sees what production sees: a name in
+ *  `toolParams` carries our real parameters, anything else a generic schema.
+ *  A declaration whose only signature tools are zero-parameter (`end_turn`,
+ *  `task_completed`) fails below by design — those never count, see
+ *  `isGenuineSignatureTool`. */
+const asToolSchemas = (names: readonly string[]) => wireTools(...names)
 
 describe('no shipped freebuff agent is flagged as a foreign client', () => {
   test('the scan actually found our agents', () => {
@@ -167,12 +171,15 @@ describe('no shipped freebuff agent is flagged as a foreign client', () => {
     ['researcher-web', 'agents/researcher/researcher-web.ts'],
     ['desktop mission', 'freebuff-desktop/src/server/services/mission.ts'],
     ['glob-matcher', 'agents/file-explorer/glob-matcher.ts'],
-  ])('still covers %s, which the scan must not silently drop', (_name, path) => {
-    // The first two are the agents this test exists because of. The third has
-    // exactly one signature tool (`glob` is generic, `set_output` is not), so
-    // it is the closest thing we ship to the failure mode.
-    expect(DECLARATIONS.some((d) => d.file === path)).toBe(true)
-  })
+  ])(
+    'still covers %s, which the scan must not silently drop',
+    (_name, path) => {
+      // The first two are the agents this test exists because of. The third has
+      // exactly one signature tool (`glob` is generic, `set_output` is not), so
+      // it is the closest thing we ship to the failure mode.
+      expect(DECLARATIONS.some((d) => d.file === path)).toBe(true)
+    },
+  )
 
   test('every root agent we ship declares tools', () => {
     // `root_agent_no_tools` downgrades any ROOT agent request that offers no
