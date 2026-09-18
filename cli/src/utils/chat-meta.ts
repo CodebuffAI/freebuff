@@ -31,6 +31,13 @@ const chatMetaSchema = z.object({
 export type ChatMeta = z.infer<typeof chatMetaSchema>
 
 /**
+ * Standing label for a chat whose transcript holds no user turn yet. Callers
+ * that offer to come back to a chat use it to tell "a conversation" from "a
+ * session the user never typed into".
+ */
+export const EMPTY_CHAT_PROMPT = '(empty chat)'
+
+/**
  * Get the first user message from a list of chat messages
  */
 export function getFirstUserPrompt(messages: ChatMessage[]): string {
@@ -44,7 +51,7 @@ export function getFirstUserPrompt(messages: ChatMessage[]): string {
       return content
     }
   }
-  return '(empty chat)'
+  return EMPTY_CHAT_PROMPT
 }
 
 /**
