@@ -11,10 +11,15 @@ import {
 import {
   canonicalToolParameterKeys,
   detectForeignFreebuffClient,
+  ENFORCED_SIGNALS,
+  findForeignHarnessPromptMarker,
+  FOREIGN_HARNESS_TOOL_NAMES,
+  FREEBUFF_CUSTOM_TOOL_NAMES,
   FREEBUFF_DOWNGRADE_MODEL_ID,
   FREEBUFF_SIGNATURE_TOOL_NAMES,
   GENERIC_TOOL_NAMES,
   isGenuineSignatureTool,
+  listUnrecognisedToolNames,
   resolveForeignClientDowngrade,
 } from '../constants/foreign-client-signals'
 import { toolNames } from '../tools/constants'
@@ -151,9 +156,12 @@ describe('detectForeignFreebuffClient', () => {
   })
 
   test.each(FOREIGN_TOOLSETS)('flags %s', (_name, toolset) => {
-    expect(detectForeignFreebuffClient({ tools: toolset }).signal).toBe(
-      'foreign_toolset',
-    )
+    // Which enforced signal fires depends on whether the harness's own names
+    // are on the harness list (Claude Code, OpenClaw's `delegate_task`) or it
+    // is caught by having no genuine tool of ours; both downgrade.
+    const { signal } = detectForeignFreebuffClient({ tools: toolset })
+    expect(signal).not.toBeNull()
+    expect(ENFORCED_SIGNALS.has(signal!)).toBe(true)
   })
 
   test('sharing a few generic names does not launder a foreign harness', () => {
@@ -284,7 +292,9 @@ describe('detectForeignFreebuffClient', () => {
       const verdict = detectForeignFreebuffClient({
         tools: [...CLAUDE_CODE_TOOLS, PROXY_HOLLOW_END_TURN],
       })
-      expect(verdict.signal).toBe('foreign_toolset')
+      // Claude Code's own names now settle it first; the hollow list still
+      // records the stub for the log line.
+      expect(verdict.signal).toBe('foreign_tool_names')
       expect(verdict.hollowToolNames).toEqual(['end_turn'])
       expect(
         resolveForeignClientDowngrade({
@@ -466,17 +476,138 @@ describe('detectForeignFreebuffClient', () => {
     ).toBeNull()
   })
 
-  test('borrowing one distinctive name clears an otherwise foreign toolset', () => {
-    // Known and accepted, not an oversight. `some` semantics are what let an
-    // MCP user attach `ghidra__*` alongside our tools without being flagged,
-    // and the cost is that a proxy declaring one of our names is cleared too.
-    // Self-limiting: the borrowed name becomes a GENERIC_TOOL_NAMES candidate
-    // the moment it shows up in the logs, and the proxy has to actually
-    // implement the tool for its own loop to keep working.
+  test('a harness tool name is foreign even beside our genuine tools', () => {
+    // This test used to assert the opposite — that one borrowed distinctive
+    // name clears an otherwise foreign toolset — as a known cost of `some`
+    // semantics. 2026-09-18: a proxy appended our REAL definitions to Claude
+    // Code's toolset and cleared the schema rule the morning after it
+    // shipped. `some` still holds for names we cannot classify (MCP, local
+    // agents); it no longer holds for a name only a harness we do not ship
+    // uses.
+    const verdict = detectForeignFreebuffClient({
+      tools: [
+        ...tools('read_files', 'run_terminal_command'),
+        ...CLAUDE_CODE_TOOLS,
+      ],
+    })
+    expect(verdict.signal).toBe('foreign_tool_names')
+    expect(verdict.hollowToolNames).toEqual([])
     expect(
-      detectForeignFreebuffClient({ tools: tools('read_files', 'Bash') })
-        .signal,
+      resolveForeignClientDowngrade({
+        body: {
+          model: 'deepseek/deepseek-v4-flash',
+          tools: [...tools('read_files'), stubTool('Bash', schema('command'))],
+        },
+      })?.downgradeTo,
+    ).toBe(FREEBUFF_DOWNGRADE_MODEL_ID)
+  })
+
+  test('the harness list never names a tool any of our surfaces registers', () => {
+    for (const name of FOREIGN_HARNESS_TOOL_NAMES) {
+      expect(FREEBUFF_SIGNATURE_TOOL_NAMES.has(name)).toBe(false)
+      expect(GENERIC_TOOL_NAMES.has(name)).toBe(false)
+      expect(
+        (FREEBUFF_CUSTOM_TOOL_NAMES as readonly string[]).includes(name),
+      ).toBe(false)
+      // Desktop THREAD_TOOL_SPECS and Web image/document tools, by name.
+      expect([
+        'suggest_prompts',
+        'ask_questions',
+        'exit_plan',
+        'request_elevation',
+        'read_thread_context',
+        'register_preview',
+        'preview_snapshot',
+        'preview_screenshot',
+        'preview_click',
+        'preview_type',
+        'preview_navigate',
+        'inspect_image',
+        'search_files',
+        'read_file_lines',
+      ]).not.toContain(name)
+    }
+    // Our names and MCP names never look like harness names.
+    for (const name of toolNames) {
+      expect(FOREIGN_HARNESS_TOOL_NAMES.has(name)).toBe(false)
+    }
+  })
+
+  test('a harness identity in a system message is foreign', () => {
+    const claudeCodePrompt =
+      'You are Buffy, the strategic coding assistant.\n\n' +
+      "You are Claude Code, Anthropic's official CLI for Claude."
+    expect(
+      detectForeignFreebuffClient({
+        tools: tools('read_files', 'run_terminal_command'),
+        messages: [{ role: 'system', content: claudeCodePrompt }],
+      }).signal,
+    ).toBe('foreign_system_prompt')
+    // Any system message, not only the first, and content-part arrays too.
+    expect(
+      detectForeignFreebuffClient({
+        messages: [
+          {
+            role: 'system',
+            content: 'You are Buffy, the strategic coding assistant.',
+          },
+          {
+            role: 'system',
+            content: [
+              {
+                type: 'text',
+                text: 'x-anthropic-billing-header: cc_version=2.1.0; cc_entrypoint=cli',
+              },
+            ],
+          },
+        ],
+      }).signal,
+    ).toBe('foreign_system_prompt')
+    expect(
+      findForeignHarnessPromptMarker([
+        { role: 'system', content: claudeCodePrompt },
+      ]),
+    ).toBe('You are Claude Code')
+  })
+
+  test('a harness identity in a USER message is not', () => {
+    // A Freebuff user pasting a Claude Code transcript into a chat must never
+    // be downgraded, let alone permanently flagged. Only system-role text
+    // counts, and that text is client-authored.
+    expect(
+      detectForeignFreebuffClient({
+        tools: tools('read_files'),
+        messages: [
+          {
+            role: 'system',
+            content: 'You are Buffy, the strategic coding assistant.',
+          },
+          {
+            role: 'user',
+            content:
+              'why does it say "You are Claude Code, Anthropic\'s official CLI" here?',
+          },
+        ],
+      }).signal,
     ).toBeNull()
+  })
+
+  test('reports unrecognised names for the observe-only line', () => {
+    const verdict = detectForeignFreebuffClient({
+      tools: [
+        ...tools('read_files', 'file_picker'),
+        stubTool('ghidra__decompile', schema('address')),
+        stubTool('my_local_agent', schema('prompt')),
+      ],
+    })
+    expect(verdict.signal).toBeNull()
+    // `file_picker` is an agent-as-tool name the server cannot enumerate, so
+    // it is reported too — which is why nothing enforces on this list.
+    expect(verdict.unrecognisedToolNames).toEqual([
+      'file_picker',
+      'my_local_agent',
+    ])
+    expect(listUnrecognisedToolNames(CLAUDE_CODE_TOOLS)).toEqual([])
   })
 
   test('a root agent offering no tools is a bare completion proxy', () => {
@@ -503,7 +634,7 @@ describe('detectForeignFreebuffClient', () => {
     expect(
       detectForeignFreebuffClient({ tools: tools('Bash', 'Edit') }, true)
         .signal,
-    ).toBe('foreign_toolset')
+    ).toBe('foreign_tool_names')
   })
 
   test('a tool-free SUBagent is untouched', () => {
@@ -566,7 +697,7 @@ describe('resolveForeignClientDowngrade', () => {
     const decision = resolveForeignClientDowngrade({
       body: { ...foreign, model: FREEBUFF_DOWNGRADE_MODEL_ID },
     })!
-    expect(decision.signal).toBe('foreign_toolset')
+    expect(ENFORCED_SIGNALS.has(decision.signal)).toBe(true)
     expect(decision.downgradeTo).toBeNull()
   })
 })
