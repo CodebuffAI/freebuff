@@ -141,17 +141,20 @@ export enum AnalyticsEvent {
   WEB_SEARCH_VALIDATION_ERROR = 'api.web_search_validation_error',
   WEB_SEARCH_INSUFFICIENT_CREDITS = 'api.web_search_insufficient_credits',
   WEB_SEARCH_ERROR = 'api.web_search_error',
+  WEB_SEARCH_RATE_LIMITED = 'api.web_search_rate_limited',
 
   DOCS_SEARCH_REQUEST = 'api.docs_search_request',
   DOCS_SEARCH_AUTH_ERROR = 'api.docs_search_auth_error',
   DOCS_SEARCH_VALIDATION_ERROR = 'api.docs_search_validation_error',
   DOCS_SEARCH_INSUFFICIENT_CREDITS = 'api.docs_search_insufficient_credits',
   DOCS_SEARCH_ERROR = 'api.docs_search_error',
+  DOCS_SEARCH_RATE_LIMITED = 'api.docs_search_rate_limited',
 
   GRAVITY_INDEX_REQUEST = 'api.gravity_index_request',
   GRAVITY_INDEX_AUTH_ERROR = 'api.gravity_index_auth_error',
   GRAVITY_INDEX_VALIDATION_ERROR = 'api.gravity_index_validation_error',
   GRAVITY_INDEX_ERROR = 'api.gravity_index_error',
+  GRAVITY_INDEX_RATE_LIMITED = 'api.gravity_index_rate_limited',
 
   // Web - Feedback API
   FEEDBACK_SUBMITTED = 'api.feedback_submitted',
@@ -161,6 +164,7 @@ export enum AnalyticsEvent {
   // Web - Logs ingest API (client logs/events → BigQuery)
   LOGS_INGEST_AUTH_ERROR = 'api.logs_ingest_auth_error',
   LOGS_INGEST_VALIDATION_ERROR = 'api.logs_ingest_validation_error',
+  LOGS_INGEST_RATE_LIMITED = 'api.logs_ingest_rate_limited',
 
   // Web - Ads API
   ADS_API_AUTH_ERROR = 'api.ads_auth_error',
