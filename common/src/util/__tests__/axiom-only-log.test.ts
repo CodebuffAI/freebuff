@@ -61,15 +61,29 @@ describe('getAxiomOnlyLogEvent', () => {
       })
   })
   test('keeps a content-free MCP census and drops arguments, results and secrets', () => {
-    expect(getAxiomOnlyLogEvent({
-      axiomEvent: ADS_MCP_TOOL_CALL_EVENT,
-      advertiser_id: 'advertiser-a', key_id: 'key-a', tool: 'get_account',
-      outcome: 'ok', duration_ms: 12,
-      arguments: { campaign: 'private-input' }, result: { profile: 'private-output' },
-      authorization: 'Bearer must-not-leak', error: { message: 'private' },
-    })).toEqual({ event: ADS_MCP_TOOL_CALL_EVENT, data: {
-      advertiser_id: 'advertiser-a', key_id: 'key-a', tool: 'get_account', outcome: 'ok', duration_ms: 12,
-    } })
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: ADS_MCP_TOOL_CALL_EVENT,
+        advertiser_id: 'advertiser-a',
+        key_id: 'key-a',
+        tool: 'get_account',
+        outcome: 'ok',
+        duration_ms: 12,
+        arguments: { campaign: 'private-input' },
+        result: { profile: 'private-output' },
+        authorization: 'Bearer must-not-leak',
+        error: { message: 'private' },
+      }),
+    ).toEqual({
+      event: ADS_MCP_TOOL_CALL_EVENT,
+      data: {
+        advertiser_id: 'advertiser-a',
+        key_id: 'key-a',
+        tool: 'get_account',
+        outcome: 'ok',
+        duration_ms: 12,
+      },
+    })
   })
   test('keeps only the advertiser reporting audit contract', () => {
     expect(
@@ -268,6 +282,20 @@ describe('getAxiomOnlyLogEvent', () => {
         external_settlement_enabled: false,
         first_party_primary_cohort: 'pilot-a',
         first_party_primary_cohort_percent: 1,
+        first_party_metrics_schema_version: 'v1',
+        first_party_primary_routing_eligible: true,
+        first_party_primary_routing_reason: 'eligible',
+        first_party_primary_route_admitted: true,
+        first_party_primary_admitted: true,
+        first_party_primary_entrypoint: 'draw',
+        first_party_primary_outcome: 'frequency_capped',
+        first_party_primary_terminal_reason: 'frequency_capped',
+        first_party_primary_requested_placement_count: 2,
+        first_party_primary_filled_placement_count: 0,
+        first_party_primary_frequency_capped_placement_count: 2,
+        first_party_primary_frequency_unavailable_placement_count: 0,
+        first_party_primary_candidate_cap_rejection_count: 3,
+        first_party_primary_partial_fill: false,
         first_party_served_cohort: 'pilot-a',
         first_party_entrypoint: 'primary',
         first_party_geo_tier: 'full',
@@ -359,6 +387,20 @@ describe('getAxiomOnlyLogEvent', () => {
         external_settlement_enabled: false,
         first_party_primary_cohort: 'pilot-a',
         first_party_primary_cohort_percent: 1,
+        first_party_metrics_schema_version: 'v1',
+        first_party_primary_routing_eligible: true,
+        first_party_primary_routing_reason: 'eligible',
+        first_party_primary_route_admitted: true,
+        first_party_primary_admitted: true,
+        first_party_primary_entrypoint: 'draw',
+        first_party_primary_outcome: 'frequency_capped',
+        first_party_primary_terminal_reason: 'frequency_capped',
+        first_party_primary_requested_placement_count: 2,
+        first_party_primary_filled_placement_count: 0,
+        first_party_primary_frequency_capped_placement_count: 2,
+        first_party_primary_frequency_unavailable_placement_count: 0,
+        first_party_primary_candidate_cap_rejection_count: 3,
+        first_party_primary_partial_fill: false,
         first_party_served_cohort: 'pilot-a',
         first_party_entrypoint: 'primary',
         first_party_geo_tier: 'full',

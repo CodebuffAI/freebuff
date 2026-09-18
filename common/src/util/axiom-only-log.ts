@@ -322,6 +322,27 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    */
   first_party_primary_cohort: 'string',
   first_party_primary_cohort_percent: 'number',
+  /**
+   * v1 request-grain primary-allocation telemetry. `route_admitted` records
+   * the route before selection; `admitted` deliberately excludes an intent
+   * preference that selected first-party inventory without consuming the
+   * sampled allocation draw. The per-placement counts are never request
+   * counts, and make a partial multi-placement result explicit.
+   */
+  first_party_metrics_schema_version: 'string',
+  first_party_primary_routing_eligible: 'boolean',
+  first_party_primary_routing_reason: 'string',
+  first_party_primary_route_admitted: 'boolean',
+  first_party_primary_admitted: 'boolean',
+  first_party_primary_entrypoint: 'string',
+  first_party_primary_outcome: 'string',
+  first_party_primary_terminal_reason: 'string',
+  first_party_primary_requested_placement_count: 'number',
+  first_party_primary_filled_placement_count: 'number',
+  first_party_primary_frequency_capped_placement_count: 'number',
+  first_party_primary_frequency_unavailable_placement_count: 'number',
+  first_party_primary_candidate_cap_rejection_count: 'number',
+  first_party_primary_partial_fill: 'boolean',
   /** The opaque cohort that actually produced a first-party fill, or `none`. */
   first_party_served_cohort: 'string',
   /** `primary`, `gravity_no_fill_backfill`, `house_leg`, ..., or `none`. */
