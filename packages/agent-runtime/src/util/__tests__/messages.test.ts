@@ -511,6 +511,253 @@ describe('trimMessagesToFitTokenLimit', () => {
       expect(replacementMessages.length).toBeGreaterThan(0)
     })
   })
+
+  describe('orphaned tool results at the removal boundary', () => {
+    // Regression: the removal run stops as soon as the token budget is met,
+    // which can land exactly between an assistant tool-call and its result.
+    // The kept tool message then reaches the provider without its call and
+    // is rejected with "tool_call_id does not exist", failing the whole step.
+
+    const toolCallPart = (toolCallId: string, filler: string) => ({
+      type: 'tool-call' as const,
+      toolCallId,
+      toolName: 'write_file' as const,
+      input: { content: filler },
+    })
+
+    const toolResultMessage = (
+      toolCallId: string,
+      filler: string,
+    ): Message => ({
+      role: 'tool',
+      toolName: 'write_file',
+      toolCallId,
+      content: jsonToolResult(filler),
+    })
+
+    /** Every tool result in the output must have its call in the output. */
+    const expectNoOrphanedToolResults = (result: Message[]) => {
+      const keptToolCallIds = new Set<string>()
+      for (const message of result) {
+        if (message.role !== 'assistant' || !Array.isArray(message.content)) {
+          continue
+        }
+        for (const part of message.content) {
+          if (part.type === 'tool-call') {
+            keptToolCallIds.add(part.toolCallId)
+          }
+        }
+      }
+      const orphaned = result.filter(
+        (message) =>
+          message.role === 'tool' && !keptToolCallIds.has(message.toolCallId),
+      )
+      expect(orphaned).toEqual([])
+    }
+
+    it('drops a tool result whose call was removed at the boundary', () => {
+      const messages: Message[] = [
+        userMessage('please write the file'),
+        assistantMessage({
+          content: [toolCallPart('c1', 'x'.repeat(4000))],
+        }),
+        toolResultMessage('c1', 'ok'),
+        assistantMessage('done'),
+      ]
+
+      const result = trimMessagesToFitTokenLimit({
+        messages,
+        systemTokens: 0,
+        maxTotalTokens: 600,
+        logger,
+      })
+
+      expectNoOrphanedToolResults(result)
+      // The final 'done' assistant message must survive the trim.
+      expect(
+        result.some(
+          (message) =>
+            message.role === 'assistant' &&
+            message.content.some(
+              (part) => part.type === 'text' && part.text === 'done',
+            ),
+        ),
+      ).toBe(true)
+    })
+
+    it('drops tool results orphaned after a kept keepDuringTruncation message', () => {
+      // The removal run is not a pure prefix when keepDuringTruncation
+      // messages sit in the middle: the boundary orphan can appear anywhere,
+      // not just leading the kept run.
+      const messages: Message[] = [
+        userMessage('please write the file'),
+        assistantMessage({
+          content: [toolCallPart('c1', 'x'.repeat(4000))],
+        }),
+        userMessage({ content: 'steer', keepDuringTruncation: true }),
+        toolResultMessage('c1', 'ok'),
+        assistantMessage('done'),
+      ]
+
+      const result = trimMessagesToFitTokenLimit({
+        messages,
+        systemTokens: 0,
+        maxTotalTokens: 600,
+        logger,
+      })
+
+      expectNoOrphanedToolResults(result)
+    })
+
+    it('keeps tool results whose call survives the trim', () => {
+      const messages: Message[] = [
+        userMessage('please write the file'),
+        assistantMessage({
+          content: [toolCallPart('c1', 'x'.repeat(4000))],
+        }),
+        toolResultMessage('c1', 'ok'),
+        assistantMessage('done'),
+      ]
+
+      // Generous budget: nothing gets removed, pairing stays intact.
+      const result = trimMessagesToFitTokenLimit({
+        messages,
+        systemTokens: 0,
+        maxTotalTokens: 60_000,
+        logger,
+      })
+
+      expect(result).toEqual(messages)
+    })
+
+    it('leaves pre-existing orphans in an already-malformed history untouched', () => {
+      // The tool result has no call anywhere in the input: trimming did not
+      // create this orphan, so this fix leaves it alone instead of silently
+      // rewriting histories it did not break. The trim is active here (the
+      // large user message is removed) — only calls removed BY the trim
+      // cause their results to be dropped.
+      const messages: Message[] = [
+        userMessage('x'.repeat(4000)),
+        assistantMessage('done'),
+        toolResultMessage('ghost', 'ok'),
+      ]
+
+      const result = trimMessagesToFitTokenLimit({
+        messages,
+        systemTokens: 0,
+        maxTotalTokens: 600,
+        logger,
+      })
+
+      const ghost = result.find(
+        (message) => message.role === 'tool' && message.toolCallId === 'ghost',
+      )
+      expect(ghost).toBeDefined()
+    })
+
+    it('drops only the orphaned results when one assistant message carries multiple tool calls', () => {
+      // Parallel tool calls: a single assistant message with calls c1 and c2.
+      // The trim removes the call message; the drop matches per toolCallId, so
+      // every result whose call was removed is dropped and nothing keyed to a
+      // surviving call is touched.
+      const messages: Message[] = [
+        userMessage('write two files'),
+        assistantMessage({
+          content: [
+            toolCallPart('c1', 'x'.repeat(3000)),
+            toolCallPart('c2', 'y'.repeat(3000)),
+          ],
+        }),
+        toolResultMessage('c1', 'ok1'),
+        userMessage({ content: 'steer', keepDuringTruncation: true }),
+        toolResultMessage('c2', 'ok2'),
+        assistantMessage('done'),
+      ]
+
+      const result = trimMessagesToFitTokenLimit({
+        messages,
+        systemTokens: 0,
+        maxTotalTokens: 600,
+        logger,
+      })
+
+      expectNoOrphanedToolResults(result)
+      // Neither orphaned result may survive in any form...
+      expect(
+        result.filter(
+          (message) =>
+            message.role === 'tool' &&
+            (message.toolCallId === 'c1' || message.toolCallId === 'c2'),
+        ),
+      ).toEqual([])
+      // ...while the kept steer message and the final reply still do.
+      expect(
+        result.some(
+          (message) =>
+            message.role === 'user' &&
+            message.content.some(
+              (part) => part.type === 'text' && part.text === 'steer',
+            ),
+        ),
+      ).toBe(true)
+      expect(
+        result.some(
+          (message) =>
+            message.role === 'assistant' &&
+            message.content.some(
+              (part) => part.type === 'text' && part.text === 'done',
+            ),
+        ),
+      ).toBe(true)
+    })
+
+    it('keeps every result of a multi-call assistant message that survives the trim', () => {
+      const messages: Message[] = [
+        userMessage('write two files'),
+        assistantMessage({
+          content: [toolCallPart('c1', 'ok'), toolCallPart('c2', 'ok')],
+        }),
+        toolResultMessage('c1', 'ok1'),
+        toolResultMessage('c2', 'ok2'),
+        assistantMessage('done'),
+      ]
+
+      // Generous budget: the multi-call message and both results survive.
+      const result = trimMessagesToFitTokenLimit({
+        messages,
+        systemTokens: 0,
+        maxTotalTokens: 60_000,
+        logger,
+      })
+
+      expect(result).toEqual(messages)
+    })
+
+    it('keeps the invariant across a sweep of budgets', () => {
+      const messages: Message[] = [
+        userMessage('please write the file'),
+        assistantMessage({
+          content: [toolCallPart('c1', 'x'.repeat(3000))],
+        }),
+        toolResultMessage('c1', 'ok'),
+        assistantMessage({
+          content: [toolCallPart('c2', 'y'.repeat(1500))],
+        }),
+        toolResultMessage('c2', 'ok'),
+        assistantMessage('done'),
+      ]
+
+      for (const maxTotalTokens of [200, 400, 800, 1600, 3200, 6400]) {
+        const result = trimMessagesToFitTokenLimit({
+          messages,
+          systemTokens: 0,
+          maxTotalTokens,
+          logger,
+        })
+        expectNoOrphanedToolResults(result)
+      }
+    })
+  })
 })
 
 describe('getPreviouslyReadFiles', () => {
