@@ -1,6 +1,9 @@
 import { describe, test, expect } from 'bun:test'
 
-import { getNextInterval } from '../use-connection-status'
+import {
+  createProbeFailureTracker,
+  getNextInterval,
+} from '../use-connection-status'
 
 /**
  * Tests for the adaptive health check interval logic.
@@ -107,6 +110,65 @@ describe('useConnectionStatus - adaptive interval logic', () => {
       expect(getNextInterval(10)).toBe(120_000)
       expect(getNextInterval(15)).toBe(300_000)
       expect(getNextInterval(20)).toBe(600_000)
+    })
+  })
+
+  describe('disconnect hysteresis', () => {
+    test('a single failed probe does not report a disconnection', () => {
+      const tracker = createProbeFailureTracker()
+
+      expect(tracker.recordFailure()).toBe(false)
+    })
+
+    test('a sustained streak still reports a disconnection', () => {
+      const tracker = createProbeFailureTracker()
+
+      expect(tracker.recordFailure()).toBe(false)
+      expect(tracker.recordFailure()).toBe(true)
+      // Stays reported while the outage lasts; it is not a one-shot signal.
+      expect(tracker.recordFailure()).toBe(true)
+    })
+
+    test('a sequence of isolated blips never flips the badge', () => {
+      const tracker = createProbeFailureTracker()
+      const reportedDisconnected: boolean[] = []
+
+      // fail → success → fail → success → fail → success
+      for (let i = 0; i < 3; i++) {
+        reportedDisconnected.push(tracker.recordFailure())
+        tracker.recordSuccess()
+      }
+
+      expect(reportedDisconnected).toEqual([false, false, false])
+    })
+
+    test('recovery is immediate: one success clears the streak', () => {
+      const tracker = createProbeFailureTracker()
+      tracker.recordFailure()
+      tracker.recordFailure()
+
+      tracker.recordSuccess()
+
+      expect(tracker.consecutiveFailures).toBe(0)
+      // The cleared streak means the next blip is tolerated again.
+      expect(tracker.recordFailure()).toBe(false)
+    })
+
+    test('the streak still measures the length of the outage for backoff', () => {
+      const tracker = createProbeFailureTracker()
+      expect(tracker.consecutiveFailures).toBe(0)
+
+      tracker.recordFailure()
+      tracker.recordFailure()
+      tracker.recordFailure()
+
+      expect(tracker.consecutiveFailures).toBe(3)
+    })
+
+    test('threshold 1 reproduces the old notify-on-first-failure behaviour', () => {
+      const tracker = createProbeFailureTracker({ threshold: 1 })
+
+      expect(tracker.recordFailure()).toBe(true)
     })
   })
 })
