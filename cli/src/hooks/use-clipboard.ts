@@ -1,7 +1,6 @@
 import { useRenderer } from '@opentui/react'
 import { useEffect, useRef, useState } from 'react'
 
-import { CURSOR_CHAR } from '../components/multiline-input'
 import {
   copyTextToClipboard,
   registerClipboardRenderer,
@@ -54,9 +53,7 @@ export const useClipboard = () => {
           ? selectionObj
           : null
 
-      // Filter out cursor character from selected text
-      const cleanedText =
-        rawText?.replace(new RegExp(CURSOR_CHAR, 'g'), '') ?? null
+      const cleanedText = rawText
 
       if (!cleanedText || cleanedText.trim().length === 0) {
         pendingSelectionRef.current = null
