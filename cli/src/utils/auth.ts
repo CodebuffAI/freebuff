@@ -4,7 +4,6 @@ import path from 'path'
 import { getCiEnv } from '@codebuff/common/env-ci'
 import { z } from 'zod'
 
-
 import { getApiClient, setApiClientAuthToken } from './codebuff-api'
 import { getConfigDir as getConfigDirBase } from './config-dir'
 import { logger } from './logger'
@@ -38,6 +37,36 @@ export const getConfigDir = (): string => getConfigDirBase()
 // Get the credentials file path
 export const getCredentialsPath = (): string => {
   return path.join(getConfigDir(), 'credentials.json')
+}
+
+/** Owner read/write only: the file holds the bearer token for every API call. */
+const CREDENTIALS_FILE_MODE = 0o600
+/** Owner-only config dir, matching sdk/src/byok.ts and sponsored-run.ts. */
+const CONFIG_DIR_MODE = 0o700
+
+/**
+ * Best-effort: clamp the credentials file to owner read/write.
+ *
+ * `writeFileSync` only applies `mode` when it CREATES the file, so an install
+ * that already has a umask-wide `credentials.json` (e.g. `-rw-rw-r--`) keeps
+ * it across every rewrite. Called after each write and on read, so existing
+ * installs are healed on the next launch. Skipped on Windows, where POSIX
+ * mode bits do not apply and `chmod` can throw. Never throws: a failed chmod
+ * must not cost the user their login.
+ */
+const tightenCredentialsFileMode = (credentialsPath: string): void => {
+  if (process.platform === 'win32') return
+  try {
+    const mode = fs.statSync(credentialsPath).mode & 0o777
+    if (mode !== CREDENTIALS_FILE_MODE) {
+      fs.chmodSync(credentialsPath, CREDENTIALS_FILE_MODE)
+    }
+  } catch (error) {
+    logger.debug(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Could not tighten credentials file permissions',
+    )
+  }
 }
 
 /**
@@ -79,6 +108,7 @@ export const getUserCredentials = (): User | null => {
   }
 
   try {
+    tightenCredentialsFileMode(credentialsPath)
     const credentialsFile = fs.readFileSync(credentialsPath, 'utf8')
     const user = userFromJson(credentialsFile)
     return user || null
@@ -171,11 +201,14 @@ export const saveUserCredentials = (user: User): void => {
 
   try {
     if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true })
+      fs.mkdirSync(configDir, { recursive: true, mode: CONFIG_DIR_MODE })
     }
 
     const updatedData = { ...readCredentialsFile(), default: user }
-    fs.writeFileSync(credentialsPath, JSON.stringify(updatedData, null, 2))
+    fs.writeFileSync(credentialsPath, JSON.stringify(updatedData, null, 2), {
+      mode: CREDENTIALS_FILE_MODE,
+    })
+    tightenCredentialsFileMode(credentialsPath)
   } catch (error) {
     logger.error(
       {
@@ -202,7 +235,10 @@ export const clearUserCredentials = (): void => {
     if (Object.keys(rest).length === 0) {
       fs.unlinkSync(credentialsPath)
     } else {
-      fs.writeFileSync(credentialsPath, JSON.stringify(rest, null, 2))
+      fs.writeFileSync(credentialsPath, JSON.stringify(rest, null, 2), {
+        mode: CREDENTIALS_FILE_MODE,
+      })
+      tightenCredentialsFileMode(credentialsPath)
     }
   } catch (error) {
     logger.error(
