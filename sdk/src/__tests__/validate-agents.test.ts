@@ -693,6 +693,67 @@ describe('validateAgents', () => {
       expect(result.success).toBe(true)
     })
 
+    describe('Authorization header', () => {
+      const agents: AgentDefinition[] = [
+        { id: 'test-agent', displayName: 'Test Agent', model: 'm' },
+      ]
+      const okResponse = {
+        ok: true,
+        json: async () => ({
+          success: true,
+          validationErrors: [],
+          errorCount: 0,
+        }),
+      }
+      const originalEnvKey = process.env.CODEBUFF_API_KEY
+
+      afterEach(() => {
+        if (originalEnvKey === undefined) delete process.env.CODEBUFF_API_KEY
+        else process.env.CODEBUFF_API_KEY = originalEnvKey
+      })
+
+      const sentHeaders = () =>
+        (mockFetch.mock.calls[0] as unknown[])[1] as {
+          headers: Record<string, string>
+        }
+
+      it('sends the apiKey option as a bearer', async () => {
+        delete process.env.CODEBUFF_API_KEY
+        mockFetch.mockResolvedValue(okResponse)
+        await validateAgents(agents, {
+          remote: true,
+          websiteUrl: 'https://test.codebuff.com',
+          apiKey: 'key-from-option',
+        })
+        expect(sentHeaders().headers).toEqual({
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer key-from-option',
+        })
+      })
+
+      it('falls back to CODEBUFF_API_KEY from the environment', async () => {
+        process.env.CODEBUFF_API_KEY = 'key-from-env'
+        mockFetch.mockResolvedValue(okResponse)
+        await validateAgents(agents, {
+          remote: true,
+          websiteUrl: 'https://test.codebuff.com',
+        })
+        expect(sentHeaders().headers.Authorization).toBe('Bearer key-from-env')
+      })
+
+      it('sends no Authorization header when no key is available', async () => {
+        delete process.env.CODEBUFF_API_KEY
+        mockFetch.mockResolvedValue(okResponse)
+        await validateAgents(agents, {
+          remote: true,
+          websiteUrl: 'https://test.codebuff.com',
+        })
+        expect(sentHeaders().headers).toEqual({
+          'Content-Type': 'application/json',
+        })
+      })
+    })
+
     it('should use default websiteUrl from environment when not provided', async () => {
       const agents: AgentDefinition[] = [
         {

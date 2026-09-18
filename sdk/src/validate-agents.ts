@@ -4,6 +4,7 @@ import {
 } from '@codebuff/common/templates/agent-validation'
 
 import { getWebsiteUrl } from './constants'
+import { getCodebuffApiKeyFromEnv } from './env'
 
 import type { AgentDefinition } from '@codebuff/common/templates/initial-agents-dir/types/agent-definition'
 
@@ -29,6 +30,14 @@ export interface ValidateAgentsOptions {
    * Example: 'https://codebuff.com'
    */
   websiteUrl?: string
+
+  /**
+   * Codebuff API key to send with remote validation.
+   * Optional — the endpoint is anonymous, but past its per-IP budget (shared
+   * NAT, CI runners) an authenticated caller is admitted on its own per-user
+   * budget. Defaults to the CODEBUFF_API_KEY environment variable.
+   */
+  apiKey?: string
 }
 
 /**
@@ -86,13 +95,18 @@ export async function validateAgents(
     // Remote validation: call the web API
     // Use provided websiteUrl or fall back to the default from environment
     const websiteUrl = options.websiteUrl || getWebsiteUrl()
+    const apiKey = options.apiKey ?? getCodebuffApiKeyFromEnv()
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`
+    }
 
     try {
       const response = await fetch(`${websiteUrl}/api/agents/validate`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ agentDefinitions: definitions }),
       })
 

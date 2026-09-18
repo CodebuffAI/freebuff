@@ -1,6 +1,7 @@
 import { validateAgents } from '@codebuff/sdk'
 import { useCallback, useState } from 'react'
 
+import { getAuthToken } from '../utils/auth'
 import { loadAgentDefinitions } from '../utils/local-agent-registry'
 import { hasSelectedByokConnection } from '../utils/byok'
 import { IS_FREEBUFF } from '../utils/constants'
@@ -24,13 +25,19 @@ export const shouldValidateAgentsRemotely = (
   isFreebuff = IS_FREEBUFF,
 ): boolean => !isFreebuff || !hasSelectedByokConnection()
 
-/** Invoke SDK validation using the inference source selected when a send starts. */
+/**
+ * Invoke SDK validation using the inference source selected when a send starts.
+ * The auth token rides along so a logged-in CLI behind a shared NAT is
+ * admitted on its own per-user budget once the endpoint's per-IP budget is
+ * spent; the endpoint itself stays anonymous.
+ */
 export const validateSelectedAgentDefinitions = (
   agentDefinitions: AgentDefinition[],
   options?: { isFreebuff?: boolean },
 ) =>
   validateAgents(agentDefinitions, {
     remote: shouldValidateAgentsRemotely(options?.isFreebuff),
+    apiKey: getAuthToken(),
   })
 
 type UseAgentValidationResult = {
