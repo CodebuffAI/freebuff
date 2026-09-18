@@ -772,7 +772,7 @@ export const OVERSHOOT_POLICY_COPY =
  */
 export const PLACEMENT_DAILY_CAP_MIN_CENTS = 500
 export const PLACEMENT_DAILY_CAP_MAX_CENTS = 500_000
-export const PLACEMENT_DAILY_CAP_DEFAULT_CENTS = 2_500
+export const PLACEMENT_DAILY_CAP_DEFAULT_CENTS = 10_000
 
 /** Whole cents inside the bounds, which is exactly what the API accepts. */
 export function clampPlacementDailyCapCents(cents: number): number {
