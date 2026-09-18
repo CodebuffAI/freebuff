@@ -144,8 +144,8 @@ const DISPOSABLE_EMAIL_DOMAINS = [
   // gmail/qq/163/outlook. Naming the farm by domain is what lets the geography
   // cap come off — see FREEBUFF_ELEVATED_COUNTRIES.
   //
-  // Rates below are "share of the domain's accounts carrying an automated ban,
-  // honeypot hit, or foreign-toolset detection". Baselines from the same
+  // Rates below are "share of the domain's accounts carrying an automated ban
+  // or an abuse-detector hit". Baselines from the same
   // window: gmail.com 5%, proton.me 7%, outlook.com 23%.
   //
   // dhisy.com      28 accounts, 93%  — clears the >=20 / >=75% statistical bar
@@ -175,25 +175,23 @@ const DISPOSABLE_EMAIL_DOMAINS = [
   // flaggedEmailDomain"; it was priced by the five entries above, and the rest
   // of the family kept registering. These five are still signing up.
   //
-  // Qualified on HONEYPOT PROBING, not on the >=75% account bar, which none of
-  // them clear. A honeypot hit is a request for a model id no shipped client
-  // can produce, so it is proof of intent rather than evidence to be weighed --
-  // and the share of a domain's accounts that probe separates these from
-  // ordinary mail cleanly. Baselines from the same query: gmail.com 0% of
-  // accounts probing, outlook.com 5%.
+  // Qualified on DETECTOR HITS, not on the >=75% account bar, which none of
+  // them clear: the share of a domain's accounts carrying one separates these
+  // from ordinary mail cleanly. Baselines from the same query: gmail.com 0% of
+  // accounts flagged, outlook.com 5%.
   //
-  //   duojumbo.online  511 accts  61% banned  52% probing
-  //   gmaoiil.com    1,086 accts  47% banned  34% probing  (typosquat of gmail)
-  //   itesun.com       321 accts  87% banned  30% probing
-  //   duojumbo.com     620 accts  30% banned  24% probing  (same operator)
-  //   geusil.com       446 accts  57% banned  22% probing
+  //   duojumbo.online  511 accts  61% banned  52% flagged
+  //   gmaoiil.com    1,086 accts  47% banned  34% flagged  (typosquat of gmail)
+  //   itesun.com       321 accts  87% banned  30% flagged
+  //   duojumbo.com     620 accts  30% banned  24% flagged  (same operator)
+  //   geusil.com       446 accts  57% banned  22% flagged
   //
   // Deliberately NOT added, on the same reasoning that kept gmisel.com out:
-  //   gieemel.com   295 accts, 35% banned, 0% probing -- zero honeypot hits of
+  //   gieemel.com   295 accts, 35% banned, 0% flagged -- zero detector hits of
   //                 any kind. Looks like the family, behaves like nothing.
-  //   bekri.site    306 accts, 23% banned, 18% probing -- ban rate identical to
+  //   bekri.site    306 accts, 23% banned, 18% flagged -- ban rate identical to
   //                 outlook.com's baseline.
-  //   gmatos.com    214 accts, 17% banned, 17% probing -- below that baseline.
+  //   gmatos.com    214 accts, 17% banned, 17% flagged -- below that baseline.
   'gmaoiil.com',
   'duojumbo.online',
   'duojumbo.com',

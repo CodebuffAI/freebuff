@@ -82,7 +82,7 @@ describe('paid plans at limited access', () => {
   })
 
   test('paying does not unlock anything the plan does not cover', () => {
-    // The god-only bait ids are the case that matters: a plan must never be a
+    // The god-only ids are the case that matters: a plan must never be a
     // way into a model nobody sells.
     expect(
       isFreebuffSessionModelAllowedForAccessTier(

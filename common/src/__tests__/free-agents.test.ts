@@ -711,11 +711,16 @@ describe('every freebuff root agent declares a prompt opening', () => {
     'base2-free-luna-es': BASE2,
     // Limited-offer trial root; createBase2('free', …) like its siblings.
     'base2-free-fable': BASE2,
-    // Extended-context `-max` roots; createBase2('free', …) like their
-    // siblings.
+    // Provisioned-tier and internal-evaluation roots; createBase2('free', …)
+    // like their siblings.
     'base2-free-deepseek-pro-max': BASE2,
     'base2-free-deepseek-flash-max': BASE2,
     'base2-free-luna-max': BASE2,
+    'base2-free-deepseek-v4-1-flash': BASE2,
+    'base2-free-deepseek-v4-1-pro': BASE2,
+    'base2-free-glm-5-3': BASE2,
+    'base2-free-astra-discount-test': BASE2,
+    'base2-free-fable-test': BASE2,
     // Muse Spark roots (1.2 draining, 1.3 live); createBase2('free', …) like
     // their siblings.
     'base2-free-muse-spark': BASE2,

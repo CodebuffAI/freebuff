@@ -459,6 +459,32 @@ export const FREEBUFF_DEEPSEEK_V4_PRO_MAX_MODEL_ID =
 export const FREEBUFF_DEEPSEEK_V4_FLASH_MAX_MODEL_ID =
   'deepseek/deepseek-v4-flash-max'
 export const FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID = 'openai/gpt-5.6-luna-max'
+/**
+ * Early-access tiers, provisioned per-account on the same terms as the
+ * extended-context tiers above: wire ids only, absent from FREEBUFF_MODELS and
+ * every quota list, and carried directly on the request by accounts that hold
+ * the grant. Sessions are admitted against the base route each one is built
+ * on, so none of them needs its own quota or price entry.
+ */
+export const FREEBUFF_DEEPSEEK_V41_FLASH_MODEL_ID =
+  'deepseek/deepseek-v4.1-flash'
+export const FREEBUFF_DEEPSEEK_V41_PRO_MODEL_ID = 'deepseek/deepseek-v4.1-pro'
+export const FREEBUFF_GLM_V53_MODEL_ID = 'z-ai/glm-5.3'
+
+/**
+ * Internal evaluation routes. NOT released, and not to be surfaced.
+ *
+ * Staff-only wire ids for two things still under evaluation: an unreleased
+ * Fable 5.1 build, and a discounted Astra lane on pricing we have not
+ * announced. Access is enabled per account, so neither is in FREEBUFF_MODELS,
+ * FREEBUFF_WEB_MODELS or any quota list, and neither may appear in a picker,
+ * the changelog or release notes until a decision is made on each. See
+ * FREEBUFF_INTERNAL_EVAL_MODELS for the rows.
+ */
+export const FREEBUFF_FABLE_5_1_TEST_MODEL_ID =
+  'anthropic/claude-fable-5.1-test'
+export const FREEBUFF_GPT_6_ASTRA_DISCOUNT_TEST_MODEL_ID =
+  'openai/gpt-6-astra-discount-test'
 
 /**
  * Claude Fable 5.1 — Anthropic's frontier model, offered to free CLI users as a
@@ -1451,6 +1477,44 @@ const GPT_5_6_LUNA_MAX_MODEL = {
   reasoningEffort: FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT,
 } as const satisfies FreebuffModelOption
 
+const DEEPSEEK_V41_FLASH_MODEL = {
+  id: FREEBUFF_DEEPSEEK_V41_FLASH_MODEL_ID,
+  displayName: 'DeepSeek V4.1 Flash',
+  tagline: 'Early access',
+  availability: 'always',
+  warning: FREEBUFF_AI_TRAINING_NOTICE,
+  dataUse: 'training',
+  premium: false,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const DEEPSEEK_V41_PRO_MODEL = {
+  id: FREEBUFF_DEEPSEEK_V41_PRO_MODEL_ID,
+  displayName: 'DeepSeek V4.1 Pro',
+  tagline: 'Early access',
+  availability: 'always',
+  warning: FREEBUFF_AI_TRAINING_NOTICE,
+  dataUse: 'training',
+  premium: false,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GLM_V53_MODEL = {
+  id: FREEBUFF_GLM_V53_MODEL_ID,
+  displayName: 'GLM 5.3',
+  tagline: 'Early access',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
 /**
  * The provisioned tiers, as rows. Exported for the provisioning tooling and
  * for support lookups; NOT spread into any catalog, for the reason above.
@@ -1459,6 +1523,45 @@ export const FREEBUFF_PROVISIONED_MODELS = [
   DEEPSEEK_V4_PRO_MAX_MODEL,
   DEEPSEEK_V4_FLASH_MAX_MODEL,
   GPT_5_6_LUNA_MAX_MODEL,
+  DEEPSEEK_V41_FLASH_MODEL,
+  DEEPSEEK_V41_PRO_MODEL,
+  GLM_V53_MODEL,
+] as const satisfies readonly FreebuffModelOption[]
+
+const FABLE_5_1_TEST_MODEL = {
+  id: FREEBUFF_FABLE_5_1_TEST_MODEL_ID,
+  displayName: 'Claude Fable 5.1 (hidden test)',
+  tagline: 'Internal evaluation only',
+  availability: 'always',
+  warning: FREEBUFF_AI_TRAINING_NOTICE,
+  dataUse: 'training',
+  premium: true,
+  multimodal: true,
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_6_ASTRA_DISCOUNT_TEST_MODEL = {
+  id: FREEBUFF_GPT_6_ASTRA_DISCOUNT_TEST_MODEL_ID,
+  displayName: 'GPT-6 Astra (discount test)',
+  tagline: 'Discount route — evaluation only',
+  availability: 'always',
+  dataUse: 'service',
+  // TRUE so it can never fall into FREEBUFF_STANDARD_MODEL_IDS if it is ever
+  // added to a catalog by mistake: that set is derived from `!premium`.
+  premium: true,
+  multimodal: false,
+  reasoningEffort: FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT,
+} as const satisfies FreebuffModelOption
+
+/**
+ * The internal evaluation routes, as rows, for support lookups and the usage
+ * ledger's display names. NOT spread into any catalog: see
+ * FREEBUFF_FABLE_5_1_TEST_MODEL_ID.
+ */
+export const FREEBUFF_INTERNAL_EVAL_MODELS = [
+  FABLE_5_1_TEST_MODEL,
+  GPT_6_ASTRA_DISCOUNT_TEST_MODEL,
 ] as const satisfies readonly FreebuffModelOption[]
 
 const MINIMAX_M3_MODEL = {

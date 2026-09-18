@@ -7,10 +7,9 @@
  * first derived from the array above (so it cannot drift), the second
  * hand-maintained and the one this test actually pins. Both are load-bearing:
  * the first is the actual god-only gate, the second is what keeps a premium
- * model metered by SOME pool rather than none. See docs/freebuff-honeypot-models.md
- * for why this class of gap matters. This file pins the invariant the same
- * way kimi-k3-god-only.test.ts pins Kimi's — by construction for the first
- * list, by this test for the second.
+ * model metered by SOME pool rather than none. This file pins the invariant
+ * the same way kimi-k3-god-only.test.ts pins Kimi's — by construction for the
+ * first list, by this test for the second.
  */
 import { describe, expect, it } from 'bun:test'
 

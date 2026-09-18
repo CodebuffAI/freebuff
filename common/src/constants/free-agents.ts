@@ -17,6 +17,11 @@ import {
   FREEBUFF_DEEPSEEK_V4_FLASH_MAX_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MAX_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V41_FLASH_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V41_PRO_MODEL_ID,
+  FREEBUFF_GLM_V53_MODEL_ID,
+  FREEBUFF_GPT_6_ASTRA_DISCOUNT_TEST_MODEL_ID,
+  FREEBUFF_FABLE_5_1_TEST_MODEL_ID,
   FREEBUFF_KIMI_K3_ECO_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_ES_MODEL_ID,
   FREEBUFF_MINIMAX_M3_MODEL_ID,
@@ -337,17 +342,21 @@ export const FREEBUFF_ROOT_AGENT_IDS = [
   'base2-free-glm-5-3-flash',
   'base2-free-kimi-k3-eco',
   'base2-free-luna-es',
-  // Extended-context `-max` roots. Listed here for the same reason every other
-  // root is: a root absent from this list is treated as a subagent, so a
-  // top-level request on one fails the hierarchy check with
+  // Provisioned-tier and internal-evaluation roots. Listed here for the same
+  // reason every other root is: a root absent from this list is treated as a
+  // subagent, so a top-level request on one fails the hierarchy check with
   // free_mode_invalid_agent_hierarchy instead of running.
   //
-  // base2 only. Every base3 root is enumerated by the by-model maps above, and
-  // these tiers are provisioned rather than picked, so they have no entry
-  // there and no base3 twin to list.
+  // base2 only. None of these is picked from a catalog, so none has a base3
+  // twin to list.
   'base2-free-deepseek-pro-max',
   'base2-free-deepseek-flash-max',
   'base2-free-luna-max',
+  'base2-free-deepseek-v4-1-flash',
+  'base2-free-deepseek-v4-1-pro',
+  'base2-free-glm-5-3',
+  'base2-free-astra-discount-test',
+  'base2-free-fable-test',
   // Muse Spark roots, Web/Cloud only. 1.2's root stays while its Web
   // sessions drain (the model is retired from the picker as of 2026-09-02);
   // 1.3's is the live one. Listed here like every other root so their
@@ -422,6 +431,19 @@ export const FREEBUFF_ROOT_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID]: 'base2-free-muse-spark-1-3',
   [FREEBUFF_OX_ALPHA_MODEL_ID]: 'base2-free-ox-alpha',
   [FREEBUFF_GEMINI_38_FLASH_MODEL_ID]: 'base2-free-gemini-3-8-flash',
+  // Provisioned tiers. Resolved here so an account holding the grant starts on
+  // the tier's own root; no picker offers them (see FREEBUFF_PROVISIONED_MODELS).
+  [FREEBUFF_DEEPSEEK_V4_PRO_MAX_MODEL_ID]: 'base2-free-deepseek-pro-max',
+  [FREEBUFF_DEEPSEEK_V4_FLASH_MAX_MODEL_ID]: 'base2-free-deepseek-flash-max',
+  [FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID]: 'base2-free-luna-max',
+  [FREEBUFF_DEEPSEEK_V41_FLASH_MODEL_ID]: 'base2-free-deepseek-v4-1-flash',
+  [FREEBUFF_DEEPSEEK_V41_PRO_MODEL_ID]: 'base2-free-deepseek-v4-1-pro',
+  [FREEBUFF_GLM_V53_MODEL_ID]: 'base2-free-glm-5-3',
+  // Internal evaluation routes (see FREEBUFF_FABLE_5_1_TEST_MODEL_ID). Staff
+  // accounts only; not for release.
+  [FREEBUFF_FABLE_5_1_TEST_MODEL_ID]: 'base2-free-fable-test',
+  [FREEBUFF_GPT_6_ASTRA_DISCOUNT_TEST_MODEL_ID]:
+    'base2-free-astra-discount-test',
 }
 
 /**
@@ -603,6 +625,17 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
     FREEBUFF_DEEPSEEK_V4_FLASH_MAX_MODEL_ID,
   ]),
   'base2-free-luna-max': new Set([FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID]),
+  // Early-access and internal-evaluation roots, pinned one model each on the
+  // same terms.
+  'base2-free-deepseek-v4-1-flash': new Set([
+    FREEBUFF_DEEPSEEK_V41_FLASH_MODEL_ID,
+  ]),
+  'base2-free-deepseek-v4-1-pro': new Set([FREEBUFF_DEEPSEEK_V41_PRO_MODEL_ID]),
+  'base2-free-glm-5-3': new Set([FREEBUFF_GLM_V53_MODEL_ID]),
+  'base2-free-astra-discount-test': new Set([
+    FREEBUFF_GPT_6_ASTRA_DISCOUNT_TEST_MODEL_ID,
+  ]),
+  'base2-free-fable-test': new Set([FREEBUFF_FABLE_5_1_TEST_MODEL_ID]),
   // The Muse Spark root — on every surface since 2026-09-07, when 1.3 was
   // withdrawn and 1.2 took its place. Exactly one model, like every other
   // pinned root:
@@ -919,7 +952,7 @@ export function isFreeModeAllowedAgentModel(
  * Both halves of the free-mode decision must admit that request — the gate in
  * chat/completions and the billing check in llm-api/helpers.ts. If they
  * disagree it falls into the METERED path: credit ledger writes for an account
- * with no balance. Same trap `isHoneypotFreeModeAllowed` avoids, same shape.
+ * with no balance.
  *
  * Cannot be an escalation, which is what the allowlist exists to prevent. Both
  * accepted targets are models the server picks for users it is stepping DOWN,

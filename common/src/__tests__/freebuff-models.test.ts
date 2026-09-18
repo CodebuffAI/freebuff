@@ -1008,7 +1008,7 @@ describe('freebuff model availability', () => {
   test('Codex (test)/Luna-ES is a god-only Freebuff Web/Cloud test model', () => {
     // Mirrors the Kimi K3 assertions above: a god-only model must carry its id
     // in both FREEBUFF_WEB_GOD_ONLY_MODEL_IDS and FREEBUFF_WEB_PREMIUM_MODEL_IDS,
-    // or it is neither gated nor metered. See docs/freebuff-honeypot-models.md.
+    // or it is neither gated nor metered.
     expect(FREEBUFF_GPT_5_6_LUNA_ES_MODEL_ID).toBe('openai/gpt-5.6-luna-es')
 
     expect(FREEBUFF_WEB_GOD_ONLY_MODELS.map((model) => model.id)).toContain(
