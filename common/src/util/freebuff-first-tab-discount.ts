@@ -82,6 +82,6 @@ export function firstTabDiscountCopy(
   const discount = info.firstTabDiscount
   if (!discount) return undefined
   return discount.available
-    ? `Limited-time first-tab discount: up to ${discount.amount} Freebucks off one session at a time, shared across Desktop and CLI. Prices shown include the discount; the crossed-out price is the regular one.`
+    ? `Limited-time first-tab discount: up to ${discount.amount} Freebucks off one session at a time, shared across Web, Desktop and CLI. Prices shown include the discount; the crossed-out price is the regular one.`
     : `Your first-tab discount is in use. Parallel sessions pay the regular price. The discount becomes available when that session ends.`
 }
