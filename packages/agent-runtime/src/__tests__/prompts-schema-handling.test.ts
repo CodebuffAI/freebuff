@@ -248,6 +248,39 @@ describe('Schema handling error recovery', () => {
       expect(toolSet['problematic_tool']).toBeDefined()
     })
 
+    test('getToolSet keeps an MCP tool schema usable after copying the definition', async () => {
+      // MCP tools arrive as Zod schemas: mcp.ts converts the server's JSON
+      // Schema with convertJsonSchemaToZod. Building the tool set copies the
+      // definition, and lodash drops Zod's non-enumerable `_zod`, which left a
+      // clone that still looked like a schema but threw on any Zod call.
+      const mcpToolDefs = {
+        exa__web_search_exa: {
+          description: 'Search the web with Exa',
+          inputSchema: convertJsonSchemaToZod({
+            type: 'object',
+            properties: { query: { type: 'string' } },
+            required: ['query'],
+          }),
+          endsAgentStep: true,
+        },
+      }
+
+      const toolSet = await getToolSet({
+        toolNames: [],
+        windowedFileReads: false,
+        additionalToolDefinitions: async () => mcpToolDefs,
+        agentTools: {},
+        skills: {},
+      })
+
+      const tool = toolSet['exa__web_search_exa'] as {
+        inputSchema: { safeParse: (input: unknown) => { success: boolean } }
+      }
+      expect(tool).toBeDefined()
+      // A clone without `_zod` throws here instead of validating.
+      expect(tool.inputSchema.safeParse({ query: 'hello' }).success).toBe(true)
+    })
+
     test('ensureZodSchema converts JSON Schema to Zod schema', () => {
       const jsonSchema = {
         type: 'object',
