@@ -3,6 +3,7 @@ import {
   isFreebucksPeakModel,
 } from '@codebuff/common/util/freebuff-peak-price'
 import { watchFreebucksPriceChanges } from '@codebuff/common/util/freebuff-price-changes'
+import { freebucksOffPeakCopy } from '@codebuff/common/util/freebuff-off-peak-price'
 import {
   firstTabDiscountCopy,
   firstTabListPriceFor,
@@ -357,7 +358,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   )
   const taglineFor = useCallback(
     (model: FreebuffModelOption) =>
-      isFreebucksPeakModel(freebucks, model.id)
+      isFreebucksPeakModel(freebucks, model.id) || freebucks?.offPeak?.[model.id]
         ? model.tagline
         : (freebucks?.priceNotices?.[model.id] ?? model.tagline),
     [freebucks],
@@ -451,6 +452,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       // the balance cannot cover it — the same signal the dimmed price carries
       // on the other two surfaces.
       const rowPrice = freebucksPriceFor(freebucks, model.id)
+      const offPeakCopy = freebucksOffPeakCopy(freebucks, model.id, { now: nowMs ?? Date.now() })
       if (rowPrice !== undefined) {
         // The regular price struck through ahead of the discounted one
         // ("~~15~~ 5 Freebucks/hr") while the first-tab offer is available,
@@ -462,6 +464,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           text: freebucksPriceLabel(rowPrice),
           warn: (freebucks?.balance ?? 0) < rowPrice,
         })
+        if (offPeakCopy) details.push({ text: offPeakCopy.detail, warn: false })
         if (freebucks?.firstTabDiscount?.available) {
           // A promotion, not a price: named as one so nobody plans around a
           // row that will one day cost its regular price again.
@@ -519,6 +522,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     [
       deploymentAvailabilityLabel,
       now,
+      nowMs,
       premiumSectionQuotas,
       meterFor,
       freebucks,

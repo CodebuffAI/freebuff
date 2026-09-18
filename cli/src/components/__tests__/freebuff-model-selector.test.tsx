@@ -79,6 +79,7 @@ afterEach(() => {
 const renderSelector = async (
   maxHeight = 40,
   startSession?: (model: string, limit?: number | 'session') => Promise<void>,
+  nowMs = FIXED_NOW_MS,
 ) => {
   // Tear down any selector this test already rendered. Only the LAST one was
   // reachable from afterEach, so a test that renders twice used to leave the
@@ -97,7 +98,7 @@ const renderSelector = async (
     root.render(
       <FreebuffModelSelector
         maxHeight={maxHeight}
-        nowMs={FIXED_NOW_MS}
+        nowMs={nowMs}
         startSession={startSession}
       />,
     ),
@@ -105,6 +106,52 @@ const renderSelector = async (
   await setup.renderOnce()
   return setup
 }
+
+test.each([
+  ['2026-09-17T23:00:00Z', '2026-09-19T06:00:00Z', 10, 15, 'Off-peak 10/hr', 0],
+  ['2026-09-17T21:00:00Z', '2026-09-18T22:00:00Z', 15, 10, 'normally 15/hr', 0],
+  ['2026-09-17T23:00:00Z', '2026-09-19T06:00:00Z', 10, 15, 'Off-peak 10/hr', 10],
+  ['2026-09-17T21:00:00Z', '2026-09-18T22:00:00Z', 15, 10, 'normally 15/hr', 10],
+] as const)('the mounted CLI picker catches up after multi-day sleep from %s', async (issued, resumed, before, after, explanation, discount) => {
+  const now = Date.parse(issued)
+  const clock = spyOn(Date, 'now').mockReturnValue(now)
+  const realTimeout = globalThis.setTimeout
+  let wake: (() => void) | undefined
+  const timer = spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms: number, ...args: unknown[]) => {
+    if (ms >= 3_600_000) wake = fn
+    return realTimeout(fn, ms, ...args)
+  }) as typeof setTimeout)
+  const id = FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
+  try {
+    useFreebuffSessionStore.getState().setSession({
+      status: 'none', accessTier: 'full',
+      freebucks: applyFirstTabDiscount({
+        ...freebucksFixture(25, { [id]: before }),
+        offPeak: { [id]: { startHourUtc: 22, endHourUtc: 6, price: 10, regularPrice: 15 } },
+        priceChanges: [],
+        priceNotices: { [id]: 'Server fallback price notice' },
+      }, { amount: 10, available: discount > 0 }),
+    })
+    useFreebuffModelStore.getState().setSelectedModel(id)
+    const setup = await renderSelector(40, undefined, now)
+    expect(setup.captureCharFrame()).toContain(`${discount ? `${before} ` : ''}${before - discount} Freebucks/hr`)
+    expect(setup.captureCharFrame()).toContain(before === 10 ? 'normally 15/hr' : 'Off-peak 10/hr')
+    expect(setup.captureCharFrame()).not.toContain('Server fallback price notice')
+    expect(wake).toBeDefined()
+    flushSync(() => {
+      clock.mockReturnValue(Date.parse(resumed))
+      wake!()
+    })
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain(`${discount ? `${after} ` : ''}${after - discount} Freebucks/hr`)
+    expect(setup.captureCharFrame()).toContain(explanation)
+  } finally {
+    cleanupRenderer?.()
+    cleanupRenderer = undefined
+    timer.mockRestore()
+    clock.mockRestore()
+  }
+})
 
 /**
  * LIMITED tier, which since 2026-08-31 is the only tier where the reward is a

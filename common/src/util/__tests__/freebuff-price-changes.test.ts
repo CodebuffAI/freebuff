@@ -1,5 +1,6 @@
-import { describe, expect, it, spyOn } from 'bun:test'
+import { describe, expect, it, test, spyOn } from 'bun:test'
 import { freebucksFixture } from '../../testing/freebuff'
+import { applyFirstTabDiscount } from '../freebuff-first-tab-discount'
 import {
   SOLAR_PRICE_CHANGES,
   SOLAR_REGULAR_OFFER,
@@ -45,7 +46,9 @@ describe('announced Freebucks price changes', () => {
     expect(meteredAgain.prices[solar]).toBe(5)
     expect(meteredAgain.priceNotices[solar]).toBe('Limited-time trial')
     expect(nextFreebucksPriceChange(meteredAgain)).toBe(increased)
-    expect(applyFreebucksPriceChanges(meteredAgain, increased - 1)).toBe(meteredAgain)
+    expect(applyFreebucksPriceChanges(meteredAgain, increased - 1)).toBe(
+      meteredAgain,
+    )
     expect(applyFreebucksPriceChanges(meteredAgain, increased)).toEqual({
       ...meteredAgain,
       prices: { ...meteredAgain.prices, [solar]: 10 },
@@ -71,6 +74,7 @@ describe('announced Freebucks price changes', () => {
     const missing = {
       ...old,
       priceChanges: SOLAR_PRICE_CHANGES,
+      offPeak: { [solar]: flashPolicy },
     }
     expect(
       applyFreebucksPriceChanges(missing, end).prices[solar],
@@ -92,6 +96,86 @@ describe('announced Freebucks price changes', () => {
     } finally {
       clock.mockRestore()
       clear.mockRestore()
+    }
+  })
+})
+
+const flashPolicy = {
+  startHourUtc: 22,
+  endHourUtc: 6,
+  price: 10,
+  regularPrice: 15,
+}
+
+describe('recurring server prices', () => {
+  test.each([
+    ['2026-09-19T06:00:00Z', 10, 15, '2026-09-19T22:00:00Z'],
+    ['2026-09-18T22:00:00Z', 15, 10, '2026-09-19T06:00:00Z'],
+  ] as const)(
+    'repairs an exhausted quote at %s without touching the balance',
+    (at, stale, price, next) => {
+      const quote = {
+        ...freebucksFixture(25, { flash: stale }),
+        offPeak: { flash: flashPolicy },
+        priceChanges: [],
+      }
+      const now = Date.parse(at)
+      const current = applyFreebucksPriceChanges(quote, now)
+      expect(current.prices.flash).toBe(price)
+      expect(current.balance).toBe(quote.balance)
+      expect(current.daily).toBe(quote.daily)
+      expect(current.wallet).toBe(quote.wallet)
+      expect(quote.prices.flash).toBe(stale)
+      expect(applyFreebucksPriceChanges(current, now)).toBe(current)
+      expect(nextFreebucksPriceChange(current, now)).toBe(Date.parse(next))
+      const discounted = applyFirstTabDiscount(quote, { amount: 10, available: true })
+      const firstTab = applyFreebucksPriceChanges(discounted, now)
+      expect(firstTab.prices.flash).toBe(price - 10)
+      expect(firstTab.listPrices?.flash).toBe(price)
+      expect(discounted.listPrices?.flash).toBe(stale)
+      expect(applyFreebucksPriceChanges(firstTab, now)).toBe(firstTab)
+      expect(applyFirstTabDiscount(firstTab, { amount: 10, available: false }).prices.flash).toBe(price)
+      // A stale crossed-out price still needs repair when the payable price is current.
+      expect(applyFreebucksPriceChanges({ ...firstTab, listPrices: { flash: stale } }, now).listPrices?.flash).toBe(price)
+    },
+  )
+
+  it('keeps waking when a multi-day sleep returns to the same price with no dated changes left', () => {
+    const clock = spyOn(Date, 'now').mockReturnValue(
+      Date.parse('2026-09-18T07:00:00Z'),
+    )
+    const realTimeout = globalThis.setTimeout
+    let wake: (() => void) | undefined
+    const timer = spyOn(globalThis, 'setTimeout').mockImplementation(((
+      fn: () => void,
+      ms: number,
+    ) => {
+      wake = fn
+      return realTimeout(fn, ms)
+    }) as typeof setTimeout)
+    const quote = applyFreebucksPriceChanges({
+      prices: { flash: 15 },
+      offPeak: { flash: flashPolicy },
+      priceChanges: [],
+    })
+    const seen: number[] = []
+    const stop = watchFreebucksPriceChanges(quote, () => {
+      seen.push(applyFreebucksPriceChanges(quote).prices.flash)
+    })
+    try {
+      clock.mockReturnValue(Date.parse('2026-09-20T07:00:00Z'))
+      wake!()
+      expect(applyFreebucksPriceChanges(quote)).toBe(quote)
+      expect(seen).toEqual([15])
+      expect(timer.mock.calls.at(-1)?.[1]).toBe(15 * 3_600_000)
+      clock.mockReturnValue(Date.parse('2026-09-20T22:00:00Z'))
+      wake!()
+      expect(seen).toEqual([15, 10])
+      expect(timer.mock.calls.at(-1)?.[1]).toBe(8 * 3_600_000)
+    } finally {
+      stop()
+      timer.mockRestore()
+      clock.mockRestore()
     }
   })
 })

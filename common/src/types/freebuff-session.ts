@@ -289,9 +289,13 @@ export interface FreebuffFreebucksInfo {
    *  model in `peak.modelIds` — that entry is the same fact as prose, kept
    *  for builds that predate the badge. */
   priceNotices?: Record<string, string>
-  /** @deprecated Legacy peak surcharge; new servers omit it now that Flash
-   *  uses Luminal's flat rate. Retained for older server responses. */
+  /** @deprecated Legacy peak surcharge. Current Flash offers use priceNotices
+   *  and priceChanges; retained for older server responses. */
   peak?: FreebuffFreebucksPeak
+  /** Server-owned recurring prices for new sessions. Clients project this policy
+   *  into `prices` (including first-tab discounts) even when refreshes fail.
+   *  A fresh response replaces the policy; admitted charges never change. */
+  offPeak?: Record<string, FreebuffOffPeakPrice>
   /** Scheduled changes announced by the server; do not reprice admitted sessions. */
   priceChanges?: readonly FreebuffPriceChange[]
   /**
@@ -327,6 +331,14 @@ export interface FreebuffFreebucksPeak {
   surcharge: number
   /** ISO instant the surcharge lifts (the end of the expensive window). */
   endsAt: string
+}
+
+export interface FreebuffOffPeakPrice {
+  /** UTC hours, daily [start, end); end may be on the next day. */
+  startHourUtc: number
+  endHourUtc: number
+  price: number
+  regularPrice: number
 }
 
 export interface FreebuffPriceChange {
