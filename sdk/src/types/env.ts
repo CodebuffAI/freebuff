@@ -19,6 +19,9 @@ export type SdkEnv = BaseEnv & {
   CODEBUFF_RG_PATH?: string
   CODEBUFF_WASM_DIR?: string
 
+  // Registry publishers whose executable (handleSteps) agents may run
+  CODEBUFF_TRUSTED_AGENT_PUBLISHERS?: string
+
   // Build flags
   VERBOSE?: string
   OVERRIDE_TARGET?: string

@@ -135,6 +135,16 @@ export type CodebuffClientOptions = {
   apiKey?: string
   /** Direct, local inference for this run. The key is intentionally runtime-only. */
   byok?: ResolvedByokConnection
+  /**
+   * Registry publishers whose agents may run executable `handleSteps` in this
+   * process. A template fetched from the public registry with a `handleSteps`
+   * source string is code the runtime evals on this machine, so it is refused
+   * unless its publisher is `codebuff`, listed here, or named in the
+   * `CODEBUFF_TRUSTED_AGENT_PUBLISHERS` env var (comma-separated). Local
+   * `.agents` files and `agentDefinitions` are never gated. See
+   * `sdk/src/agent-publisher-trust.ts`.
+   */
+  trustedAgentPublishers?: string[]
 
   cwd?: string
   /** Optional directory path to load skills from. Skills found here will be available to the `skill` tool. */
@@ -448,6 +458,7 @@ async function runOnce({
   apiKey,
   fingerprintId,
   byok,
+  trustedAgentPublishers,
 
   cwd,
   skillsDir,
@@ -696,6 +707,7 @@ async function runOnce({
     traceWriter,
     apiKey,
     byok,
+    trustedAgentPublishers,
     handleStepsLogChunk: () => {
       // Does nothing for now
     },

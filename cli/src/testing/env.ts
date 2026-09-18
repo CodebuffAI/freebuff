@@ -40,6 +40,7 @@ export const createTestCliEnv = (overrides: Partial<CliEnv> = {}): CliEnv => ({
   CODEBUFF_CLI_VERSION: undefined,
   CODEBUFF_CLI_TARGET: undefined,
   CODEBUFF_RG_PATH: undefined,
+  CODEBUFF_TRUSTED_AGENT_PUBLISHERS: undefined,
   CODEBUFF_SCROLL_MULTIPLIER: undefined,
   FREEBUFF_MODE: undefined,
   ...overrides,

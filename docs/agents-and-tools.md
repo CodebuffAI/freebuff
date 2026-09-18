@@ -3,7 +3,27 @@
 ## Agents
 
 - Prompt/programmatic agents live in `.agents/` (programmatic agents use `handleSteps` generators).
-- Generator functions execute in a sandbox; agent templates define tool access and subagents.
+- Generator functions are NOT sandboxed: the runtime `eval`s a `handleSteps` source string in the process that runs the agent (`packages/agent-runtime/src/run-programmatic-step.ts`); agent templates define tool access and subagents.
+
+### Registry agents with executable `handleSteps` require publisher trust
+
+A template fetched from the public agent registry (`--agent publisher/agent`, a
+registry id in a local agent's `spawnableAgents`, or a bare id falling back to
+`codebuff/<id>`) is executable code when it carries `handleSteps`: the row's
+`handleSteps` is a source string, validation only checks that it starts with
+`function*`, and the runtime evals it with no isolation on the user's machine.
+The registry GET is public, any account can create a publisher and publish
+without review, and `latest` is unpinned. So the SDK's `fetchAgentFromDatabase`
+refuses a registry template with a string `handleSteps` unless its publisher is
+trusted (`sdk/src/agent-publisher-trust.ts`), and throws an
+`UntrustedAgentPublisherError` whose message names `publisher/agent@version`
+and the knob to set. Trusted publishers are `codebuff` (our own, also bundled)
+plus the comma-separated `CODEBUFF_TRUSTED_AGENT_PUBLISHERS` env var plus the
+`trustedAgentPublishers` option on `CodebuffClient` / `run()`. Data-only
+registry templates (no `handleSteps`) load as before, and local `.agents` files
+and SDK `agentDefinitions` are never gated — they are code the user already
+chose to run. This is a trust floor, not isolation: sandboxing the eval,
+signing templates and pinning `latest` are separate work.
 
 ### Shell Shims
 

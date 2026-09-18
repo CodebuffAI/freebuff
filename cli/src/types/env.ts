@@ -72,6 +72,9 @@ export type CliEnv = BaseEnv & {
   CODEBUFF_CLI_VERSION?: string
   CODEBUFF_CLI_TARGET?: string
   CODEBUFF_RG_PATH?: string
+  // Comma-separated registry publishers whose agents may run executable
+  // handleSteps on this machine; read by the SDK (sdk/src/agent-publisher-trust.ts)
+  CODEBUFF_TRUSTED_AGENT_PUBLISHERS?: string
   CODEBUFF_SCROLL_MULTIPLIER?: string
   CODEBUFF_PERF_TEST?: string
   CODEBUFF_TRACE?: string

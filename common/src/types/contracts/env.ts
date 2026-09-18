@@ -134,6 +134,9 @@ export type ProcessEnv = BaseEnv & {
   CODEBUFF_CLI_TARGET?: string
   CODEBUFF_RG_PATH?: string
   CODEBUFF_WASM_DIR?: string
+  // Comma-separated registry publishers whose agents may run executable
+  // handleSteps on this machine (see sdk/src/agent-publisher-trust.ts)
+  CODEBUFF_TRUSTED_AGENT_PUBLISHERS?: string
 
   // Build/CI flags
   VERBOSE?: string

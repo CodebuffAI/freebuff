@@ -13,6 +13,8 @@ import {
   isAllowedRuntimeAppUrl,
 } from '@codebuff/common/util/runtime-app-url'
 
+import { TRUSTED_AGENT_PUBLISHERS_ENV_VAR } from './agent-publisher-trust'
+
 import type { SdkEnv } from './types/env'
 
 export { isAllowedRuntimeAppUrl }
@@ -27,6 +29,9 @@ export const getSdkEnv = (): SdkEnv => ({
   // SDK-specific paths
   CODEBUFF_RG_PATH: process.env.CODEBUFF_RG_PATH,
   CODEBUFF_WASM_DIR: process.env.CODEBUFF_WASM_DIR,
+
+  // Registry publishers whose executable (handleSteps) agents may run
+  CODEBUFF_TRUSTED_AGENT_PUBLISHERS: process.env.CODEBUFF_TRUSTED_AGENT_PUBLISHERS,
 
   // Build flags
   VERBOSE: process.env.VERBOSE,
@@ -60,6 +65,14 @@ const warnRejectedRuntimeAppUrl = (variable: string, value: string): void => {
   console.warn(
     `[codebuff] Ignoring ${variable} (${origin}): the runtime app URL must be https, or http on localhost. Using the bundled URL instead.`,
   )
+}
+
+/**
+ * Raw comma-separated list of registry publishers whose agents may run
+ * executable `handleSteps` on this machine. See ./agent-publisher-trust.ts.
+ */
+export const getTrustedAgentPublishersFromEnv = (): string | undefined => {
+  return process.env[TRUSTED_AGENT_PUBLISHERS_ENV_VAR]
 }
 
 /**

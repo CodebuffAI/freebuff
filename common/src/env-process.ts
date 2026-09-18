@@ -80,6 +80,8 @@ export const getProcessEnv = (): ProcessEnv => ({
   CODEBUFF_CLI_TARGET: process.env.CODEBUFF_CLI_TARGET,
   CODEBUFF_RG_PATH: process.env.CODEBUFF_RG_PATH,
   CODEBUFF_WASM_DIR: process.env.CODEBUFF_WASM_DIR,
+  CODEBUFF_TRUSTED_AGENT_PUBLISHERS:
+    process.env.CODEBUFF_TRUSTED_AGENT_PUBLISHERS,
 
   // Build/CI flags
   VERBOSE: process.env.VERBOSE,

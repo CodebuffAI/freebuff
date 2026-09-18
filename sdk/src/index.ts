@@ -41,6 +41,12 @@ export * from './constants'
 export { isAllowedRuntimeAppUrl } from './env'
 
 export { getUserInfoFromApiKey } from './impl/database'
+export {
+  ALWAYS_TRUSTED_AGENT_PUBLISHERS,
+  TRUSTED_AGENT_PUBLISHERS_ENV_VAR,
+  UntrustedAgentPublisherError,
+  isUntrustedAgentPublisherError,
+} from './agent-publisher-trust'
 export * from './credentials'
 export * from './byok'
 export { loadLocalAgents } from './agents/load-agents'

@@ -6,7 +6,13 @@ import { getErrorObject } from '@codebuff/common/util/error'
 import { truncateString } from '@codebuff/common/util/string'
 import z from 'zod/v4'
 
+import {
+  checkRemoteAgentTemplateTrust,
+  isUntrustedAgentPublisherError,
+  resolveTrustedAgentPublishers,
+} from '../agent-publisher-trust'
 import { getWebsiteUrl } from '../constants'
+import { getTrustedAgentPublishersFromEnv } from '../env'
 import {
   createAuthError,
   createNetworkError,
@@ -233,10 +239,31 @@ export async function getUserInfoFromApiKey<T extends UserColumn>(
   ) as Awaited<GetUserInfoFromApiKeyOutput<T>>
 }
 
+/**
+ * Fetch a template from the public agent registry.
+ *
+ * A registry template with a `handleSteps` source string is executable code
+ * that the runtime will `eval` in this process, so after validation it is
+ * gated on publisher trust (see ../agent-publisher-trust.ts). An untrusted
+ * executable template THROWS `UntrustedAgentPublisherError` rather than
+ * returning null: null reads as "agent not found" to every caller, which
+ * would hide the one line that tells the operator how to proceed.
+ */
 export async function fetchAgentFromDatabase(
-  params: ParamsOf<FetchAgentFromDatabaseFn>,
+  params: ParamsOf<FetchAgentFromDatabaseFn> & {
+    /** `CodebuffClientOptions.trustedAgentPublishers`; unioned with the env var. */
+    trustedAgentPublishers?: readonly string[]
+    /** Test seam for the `CODEBUFF_TRUSTED_AGENT_PUBLISHERS` read. */
+    readTrustedAgentPublishersEnv?: () => string | undefined
+  },
 ): ReturnType<FetchAgentFromDatabaseFn> {
-  const { apiKey, parsedAgentId, logger } = params
+  const {
+    apiKey,
+    parsedAgentId,
+    logger,
+    trustedAgentPublishers,
+    readTrustedAgentPublishersEnv = getTrustedAgentPublishersFromEnv,
+  } = params
   const { publisherId, agentId, version } = parsedAgentId
 
   const url = new URL(
@@ -299,6 +326,32 @@ export async function fetchAgentFromDatabase(
       id: `${publisherId}/${agentId}@${agentConfig.version}`,
     }
 
+    // Validation only proved handleSteps LOOKS like a generator; it is still
+    // arbitrary code from whoever owns the publisher. Refuse it unless the
+    // publisher is trusted. Data-only templates pass through unchanged.
+    const trustError = checkRemoteAgentTemplateTrust({
+      template: agentTemplate,
+      publisherId,
+      agentId,
+      version: agentConfig.version,
+      trustedPublishers: resolveTrustedAgentPublishers({
+        trustedAgentPublishers,
+        envValue: readTrustedAgentPublishersEnv(),
+      }),
+    })
+    if (trustError) {
+      logger.error(
+        {
+          publisherId,
+          agentId,
+          version: agentConfig.version,
+          fullAgentId: agentTemplate.id,
+        },
+        `fetchAgentFromDatabase: refused executable agent from untrusted publisher. ${trustError.message}`,
+      )
+      throw trustError
+    }
+
     logger.debug(
       {
         publisherId,
@@ -312,6 +365,9 @@ export async function fetchAgentFromDatabase(
 
     return agentTemplate
   } catch (error) {
+    // The trust refusal is the one failure that must reach the caller as
+    // itself (see the doc comment above); everything else stays "not found".
+    if (isUntrustedAgentPublisherError(error)) throw error
     logger.error(
       { error: getErrorObject(error), parsedAgentId },
       'fetchAgentFromDatabase error',

@@ -68,6 +68,7 @@ export const createTestProcessEnv = (
   CODEBUFF_CLI_TARGET: undefined,
   CODEBUFF_RG_PATH: undefined,
   CODEBUFF_WASM_DIR: undefined,
+  CODEBUFF_TRUSTED_AGENT_PUBLISHERS: undefined,
 
   // Build/CI flags
   VERBOSE: undefined,

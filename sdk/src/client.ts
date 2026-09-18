@@ -54,6 +54,7 @@ export class CodebuffClient {
    * @param skillsDir - (Optional) Path to a directory containing skills to load. Each skill should be in its own subdirectory with a SKILL.md file (e.g., `skillsDir/my-skill/SKILL.md`). When provided, skills are loaded from this directory instead of the default locations. The loaded skills will be listed in the `skill` tool's description and can be loaded by the agent.
    * @param maxAgentSteps - (Optional) Maximum number of steps the agent can take before stopping. Use this as a safety measure in case your agent starts going off the rails. A reasonable number is around 20.
    * @param env - (Optional) Environment variables to pass to terminal commands executed by the agent. These will be merged with the current process environment, with the custom values taking precedence. Can also be provided in individual run() calls to override.
+   * @param trustedAgentPublishers - (Optional) Registry publishers whose agents may run executable `handleSteps` in this process. Registry templates with `handleSteps` are code that is eval'd on this machine, so they are refused unless the publisher is `codebuff`, listed here, or in the `CODEBUFF_TRUSTED_AGENT_PUBLISHERS` env var. Local agent definitions are never gated.
    *
    * @returns A Promise that resolves to a RunState JSON object which you can pass to a subsequent run() call to continue the run. Use result.output to get the agent's output.
    */

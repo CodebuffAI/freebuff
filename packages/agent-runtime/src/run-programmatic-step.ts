@@ -37,6 +37,17 @@ const runIdToGenerator: Record<string, StepGenerator | undefined> = {}
 export const runIdToStepAll: Set<string> = new Set()
 type HandleStepsFn = Exclude<AgentTemplate['handleSteps'], string | undefined>
 
+// SECURITY: this evals arbitrary code in the current process with no
+// isolation. A string `handleSteps` reaches here from two kinds of source: a
+// template the user supplied locally (an `.agents` file or the SDK's
+// `agentDefinitions`, code they chose to run), or a template fetched from the
+// public agent registry — anyone can publish there without review. The ONLY
+// thing standing between "codebuff --agent someone/anything" and remote code
+// execution is the publisher-trust gate in the SDK's `fetchAgentFromDatabase`
+// (sdk/src/agent-publisher-trust.ts): an untrusted publisher's executable
+// template is refused before it can be cached or reach this function. Keep
+// that gate, and keep it in front of every path that hands a REMOTE template
+// to the runtime.
 function deserializeHandleSteps(source: string): HandleStepsFn {
   const globalEval = eval as unknown as (code: string) => unknown
   return globalEval(`(${source})`) as HandleStepsFn

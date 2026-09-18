@@ -55,6 +55,8 @@ export function getAgentRuntimeImpl(
     clientEnv?: ClientEnv
     /** Enables an auth-free, direct local runtime for this one run. */
     byok?: ResolvedByokConnection
+    /** Registry publishers whose executable agents may load; see ../agent-publisher-trust.ts. */
+    trustedAgentPublishers?: readonly string[]
   } & Pick<
     AgentRuntimeScopedDeps,
     | 'handleStepsLogChunk'
@@ -72,6 +74,7 @@ export function getAgentRuntimeImpl(
     traceWriter,
     apiKey,
     byok,
+    trustedAgentPublishers,
     clientEnv: clientEnvInput,
     handleStepsLogChunk,
     requestToolCall,
@@ -114,7 +117,12 @@ export function getAgentRuntimeImpl(
       : getUserInfoFromApiKey,
     // A BYOK run only uses its local agent registry. A missing local agent is
     // an error, never a reason to send its prompt or identity to Freebuff.
-    fetchAgentFromDatabase: byok ? async () => null : fetchAgentFromDatabase,
+    // Otherwise a registry template is fetched through the publisher-trust
+    // gate: its handleSteps is code this process would eval.
+    fetchAgentFromDatabase: byok
+      ? async () => null
+      : (fetchParams) =>
+          fetchAgentFromDatabase({ ...fetchParams, trustedAgentPublishers }),
     startAgentRun: byok ? async () => `byok-${crypto.randomUUID()}` : startAgentRun,
     finishAgentRun: byok ? async () => {} : finishAgentRun,
     addAgentStep: byok ? async () => `byok-step-${crypto.randomUUID()}` : addAgentStep,
