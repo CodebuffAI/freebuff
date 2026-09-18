@@ -8,8 +8,14 @@
 import { BYOK_OPENROUTER_ENV_VAR } from '@codebuff/common/constants/byok'
 import { API_KEY_ENV_VAR } from '@codebuff/common/constants/paths'
 import { getBaseEnv } from '@codebuff/common/env-process'
+import {
+  describeRuntimeAppUrlOrigin,
+  isAllowedRuntimeAppUrl,
+} from '@codebuff/common/util/runtime-app-url'
 
 import type { SdkEnv } from './types/env'
+
+export { isAllowedRuntimeAppUrl }
 
 /**
  * Get SDK environment values.
@@ -33,17 +39,53 @@ export const getCodebuffApiKeyFromEnv = (): string | undefined => {
   return process.env[API_KEY_ENV_VAR]
 }
 
+const RUNTIME_APP_URL_ENV_VARS = [
+  'NEXT_PUBLIC_CODEBUFF_APP_URL',
+  'CODEBUFF_APP_URL',
+] as const
+
+/**
+ * Rejected overrides already warned about, keyed by variable and origin, so a
+ * bad value produces one line per process rather than one per API call. There
+ * is no SDK-wide logger at this layer (the run logger is created per run), so
+ * this goes to `console.warn`.
+ */
+const warnedRuntimeAppUrlOverrides = new Set<string>()
+
+const warnRejectedRuntimeAppUrl = (variable: string, value: string): void => {
+  const origin = describeRuntimeAppUrlOrigin(value)
+  const key = `${variable}=${origin}`
+  if (warnedRuntimeAppUrlOverrides.has(key)) return
+  warnedRuntimeAppUrlOverrides.add(key)
+  console.warn(
+    `[codebuff] Ignoring ${variable} (${origin}): the runtime app URL must be https, or http on localhost. Using the bundled URL instead.`,
+  )
+}
+
 /**
  * Runtime override for the Codebuff backend base URL. Remote hosts that bundle
  * the SDK (Convex Node actions, Next server routes) set this at deploy time;
  * the bundle-time value can inline a dev-machine localhost URL the remote
  * runtime cannot reach.
+ *
+ * The override is honoured only when {@link isAllowedRuntimeAppUrl} accepts it
+ * (https anywhere, or http on a loopback host). Every request that carries the
+ * user's bearer token is addressed to this URL, and it is read from the live
+ * environment after things like the CLI's direnv import have run, so an
+ * unchecked value lets anything that can set an env var redirect the
+ * credential-bearing API plane. A rejected value is ignored — the caller falls
+ * back to the bundled URL — and warned about once.
  */
 export const getRuntimeAppUrlFromEnv = (): string | undefined => {
-  return (
-    process.env['NEXT_PUBLIC_CODEBUFF_APP_URL'] ??
-    process.env['CODEBUFF_APP_URL']
-  )
+  for (const variable of RUNTIME_APP_URL_ENV_VARS) {
+    const value = process.env[variable]
+    if (value === undefined) continue
+    if (value.trim() === '') return undefined
+    if (isAllowedRuntimeAppUrl(value)) return value
+    warnRejectedRuntimeAppUrl(variable, value)
+    return undefined
+  }
+  return undefined
 }
 
 export const getSystemProcessEnv = (): NodeJS.ProcessEnv => {

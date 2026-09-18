@@ -38,6 +38,7 @@ export * from './native/ripgrep'
 export * from './run-state'
 export { ToolHelpers } from './tools'
 export * from './constants'
+export { isAllowedRuntimeAppUrl } from './env'
 
 export { getUserInfoFromApiKey } from './impl/database'
 export * from './credentials'
