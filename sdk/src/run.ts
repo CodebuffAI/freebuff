@@ -145,6 +145,16 @@ export type CodebuffClientOptions = {
    * `sdk/src/agent-publisher-trust.ts`.
    */
   trustedAgentPublishers?: string[]
+  /**
+   * Refuse every agent-registry fetch for this run. Unknown or missing agent
+   * ids fail as "not found" instead of falling back to
+   * `codebuff/<id>@latest` on the public registry. For hosts that bundle
+   * every agent they will ever run (the embedded Freebuff Web runner): a
+   * registry template can carry executable `handleSteps`, and `codebuff` is
+   * an always-trusted publisher, so on a server the fallback is a code path
+   * from a publisher account into the host process for no benefit.
+   */
+  disableAgentRegistry?: boolean
 
   cwd?: string
   /** Optional directory path to load skills from. Skills found here will be available to the `skill` tool. */
@@ -459,6 +469,7 @@ async function runOnce({
   fingerprintId,
   byok,
   trustedAgentPublishers,
+  disableAgentRegistry,
 
   cwd,
   skillsDir,
@@ -708,6 +719,7 @@ async function runOnce({
     apiKey,
     byok,
     trustedAgentPublishers,
+    disableAgentRegistry,
     handleStepsLogChunk: () => {
       // Does nothing for now
     },

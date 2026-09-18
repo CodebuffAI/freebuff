@@ -57,6 +57,8 @@ export function getAgentRuntimeImpl(
     byok?: ResolvedByokConnection
     /** Registry publishers whose executable agents may load; see ../agent-publisher-trust.ts. */
     trustedAgentPublishers?: readonly string[]
+    /** Never fetch from the agent registry; see `CodebuffClientOptions.disableAgentRegistry`. */
+    disableAgentRegistry?: boolean
   } & Pick<
     AgentRuntimeScopedDeps,
     | 'handleStepsLogChunk'
@@ -75,6 +77,7 @@ export function getAgentRuntimeImpl(
     apiKey,
     byok,
     trustedAgentPublishers,
+    disableAgentRegistry,
     clientEnv: clientEnvInput,
     handleStepsLogChunk,
     requestToolCall,
@@ -119,7 +122,7 @@ export function getAgentRuntimeImpl(
     // an error, never a reason to send its prompt or identity to Freebuff.
     // Otherwise a registry template is fetched through the publisher-trust
     // gate: its handleSteps is code this process would eval.
-    fetchAgentFromDatabase: byok
+    fetchAgentFromDatabase: byok || disableAgentRegistry
       ? async () => null
       : (fetchParams) =>
           fetchAgentFromDatabase({ ...fetchParams, trustedAgentPublishers }),

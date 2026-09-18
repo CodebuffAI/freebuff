@@ -251,6 +251,41 @@ describe('fetchAgentFromDatabase publisher trust', () => {
     })
     expect(template?.id).toBe('acme/deployer@1.2.0')
   })
+
+  test('disableAgentRegistry refuses every registry fetch, even a trusted publisher', async () => {
+    // The embedded Freebuff Web runner bundles every agent it runs; a missing
+    // spawnable id must be "not found", never a fetch of codebuff/<id>@latest.
+    let fetched = 0
+    globalThis.fetch = (async () => {
+      fetched++
+      throw new Error('registry must not be reached')
+    }) as unknown as typeof fetch
+    const noop = async () => {
+      throw new Error('not used')
+    }
+    const impl = getAgentRuntimeImpl({
+      apiKey: 'k',
+      disableAgentRegistry: true,
+      trustedAgentPublishers: ['acme'],
+      handleStepsLogChunk: () => {},
+      requestToolCall: noop as any,
+      requestMcpToolData: noop as any,
+      requestFiles: noop as any,
+      requestImageFile: noop as any,
+      requestOptionalFile: noop as any,
+      sendAction: () => {},
+      sendSubagentChunk: () => {},
+    })
+    for (const publisherId of ['codebuff', 'acme']) {
+      const template = await impl.fetchAgentFromDatabase({
+        apiKey: 'k',
+        parsedAgentId: { publisherId, agentId: 'deployer', version: undefined },
+        logger: createLogger(),
+      })
+      expect(template).toBeNull()
+    }
+    expect(fetched).toBe(0)
+  })
 })
 
 describe('trusted publisher list parsing', () => {
