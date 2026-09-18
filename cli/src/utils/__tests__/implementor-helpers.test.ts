@@ -44,6 +44,24 @@ describe('extractValueForKey', () => {
     expect(extractValueForKey(output, 'nonexistent')).toBeNull()
   })
 
+  test('returns null when key name appears without colon', () => {
+    const output = 'This mentions file but has no colon'
+    expect(extractValueForKey(output, 'file')).toBeNull()
+  })
+
+  test('extracts value from last line without trailing newline', () => {
+    const output = 'first: line\nlast: value'
+    expect(extractValueForKey(output, 'last')).toBe('value')
+  })
+
+  test('handles large outputs efficiently without error', () => {
+    const large =
+      Array.from({ length: 5000 }, (_, i) => `log_${i}: data`).join('\n') +
+      '\nfile: src/target.ts'
+    expect(extractValueForKey(large, 'file')).toBe('src/target.ts')
+    expect(extractValueForKey(large, 'missing')).toBeNull()
+  })
+
   test('handles empty output', () => {
     expect(extractValueForKey('', 'file')).toBeNull()
   })
