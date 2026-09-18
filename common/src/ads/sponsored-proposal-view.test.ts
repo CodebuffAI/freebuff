@@ -118,6 +118,43 @@ describe('setup handoff', () => {
       expect(sponsoredProposalAction(model, 'open-advertiser')).toBeNull()
     }
   })
+
+  test('VM-37 frozen criteria expose verify-again and keep setup guidance unclaimed', () => {
+    const model = view({
+      state: 'committed',
+      advertiser_cta_url: FIXTURE_ADVERTISER_CTA_URL,
+      acceptance_criteria_sha256: 'a'.repeat(64),
+      latest_verification: {
+        attempt_id: 'p1:1',
+        sequence: 1,
+        overall: 'inconclusive',
+        user_facing: 'setup_needed',
+        stale: false,
+        missing: ['Live authentication has not been observed.'],
+      },
+    })
+    expect(model.setupGuide?.verificationNote).toContain('not recorded')
+    expect(model.verification).toEqual({
+      userFacing: 'setup_needed',
+      label: 'Setup needed',
+      overall: 'inconclusive',
+      stale: false,
+      completedAt: null,
+      missing: ['Live authentication has not been observed.'],
+      canRecheck: true,
+    })
+    expect(sponsoredProposalAction(model, 'verify-again')?.label).toBe(
+      'Verify again',
+    )
+  })
+
+  test('VM-38 a run with no rubric is explicitly not verifiable', () => {
+    const model = view({ state: 'committed' })
+    expect(model.verification?.userFacing).toBe('couldnt_verify')
+    expect(model.verification?.canRecheck).toBe(false)
+    expect(model.verification?.missing[0]).toContain('no frozen')
+    expect(sponsoredProposalAction(model, 'verify-again')).toBeNull()
+  })
 })
 
 describe('steps', () => {

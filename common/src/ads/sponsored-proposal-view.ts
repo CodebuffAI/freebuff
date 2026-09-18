@@ -170,6 +170,21 @@ export type SponsoredProposalRow = {
    * `href`.
    */
   advertiser_cta_url?: string
+  /**
+   * Latest COD-597 verification pointer. Absent on legacy rows and when the
+   * gate is off. Never redefines `verified_outcomes`.
+   */
+  latest_verification?: {
+    attempt_id: string
+    sequence: number
+    overall: string
+    user_facing: string
+    stale: boolean
+    target_revision?: string
+    completed_at?: number
+    missing?: string[]
+  }
+  acceptance_criteria_sha256?: string
 }
 
 /**
@@ -191,6 +206,7 @@ export type SponsoredProposalActionKind =
   // verifies; the label is neutral by design, the advertiser's name is the
   // only string of theirs in it.
   | 'open-advertiser'
+  | 'verify-again'
   | 'dismiss'
   | 'never-advertiser'
   | 'report'
@@ -368,6 +384,25 @@ export type SponsoredSetupGuide = {
   verificationNote: string
 }
 
+export const VERIFICATION_USER_FACING_LABEL: Record<string, string> = {
+  pending: 'Checking…',
+  success: 'Verified',
+  failed: 'Verification failed',
+  setup_needed: 'Setup needed',
+  code_ready: 'Code ready',
+  couldnt_verify: "Couldn't verify",
+}
+
+export type SponsoredVerificationPanel = {
+  userFacing: string
+  label: string
+  overall: string
+  stale: boolean
+  completedAt: number | null
+  missing: string[]
+  canRecheck: boolean
+}
+
 export type SponsoredProposalViewModel = {
   state: SponsoredProposalState
   /** The state's headline copy — what happened, never what to do next. */
@@ -392,6 +427,7 @@ export type SponsoredProposalViewModel = {
   advertiserCtaHref: string | null
   setupExpectation: string
   setupGuide: SponsoredSetupGuide | null
+  verification: SponsoredVerificationPanel | null
   actions: SponsoredProposalAction[]
 }
 
@@ -438,6 +474,45 @@ export function sponsoredProposalViewModel(
           },
         ]
       : []
+  const verifyAgain = (): SponsoredProposalAction[] =>
+    row.acceptance_criteria_sha256 && ctaStates.includes(row.state)
+      ? [{ kind: 'verify-again', label: 'Verify again' }]
+      : []
+  const verification = row.latest_verification
+    ? {
+        userFacing: row.latest_verification.user_facing,
+        label:
+          VERIFICATION_USER_FACING_LABEL[row.latest_verification.user_facing] ??
+          VERIFICATION_USER_FACING_LABEL.couldnt_verify,
+        overall: row.latest_verification.overall,
+        stale: row.latest_verification.stale,
+        completedAt: row.latest_verification.completed_at ?? null,
+        missing: row.latest_verification.missing ?? [],
+        canRecheck: Boolean(row.acceptance_criteria_sha256),
+      }
+    : row.acceptance_criteria_sha256 && ctaStates.includes(row.state)
+      ? {
+          userFacing: 'pending',
+          label: VERIFICATION_USER_FACING_LABEL.pending,
+          overall: 'inconclusive',
+          stale: false,
+          completedAt: null,
+          missing: ['Verification has not finished.'],
+          canRecheck: true,
+        }
+      : row.acceptance_criteria_sha256
+        ? null
+        : ctaStates.includes(row.state)
+          ? {
+              userFacing: 'couldnt_verify',
+              label: VERIFICATION_USER_FACING_LABEL.couldnt_verify,
+              overall: 'inconclusive',
+              stale: false,
+              completedAt: null,
+              missing: ['This run has no frozen acceptance-criteria contract.'],
+              canRecheck: false,
+            }
+          : null
 
   const stateActions: SponsoredProposalAction[] = (() => {
     switch (row.state) {
@@ -456,6 +531,7 @@ export function sponsoredProposalViewModel(
           },
           ...viewRun('View what it did'),
           ...openAdvertiser(),
+          ...verifyAgain(),
         ]
       case 'landed':
         return [
@@ -465,9 +541,14 @@ export function sponsoredProposalViewModel(
           // actually did.
           ...viewRun('View what it did'),
           ...openAdvertiser(),
+          ...verifyAgain(),
         ]
       case 'merged':
-        return [...openPullRequest('view on GitHub'), ...openAdvertiser()]
+        return [
+          ...openPullRequest('view on GitHub'),
+          ...openAdvertiser(),
+          ...verifyAgain(),
+        ]
       // `accepted` is a handoff and `failed` is over; neither offers an answer
       // beyond the decline and the standing controls below.
       case 'accepted':
@@ -519,6 +600,7 @@ export function sponsoredProposalViewModel(
             'Live integration verification is not recorded by this card. These are your next steps; they do not restart the sponsored run.',
         }
       : null,
+    verification,
     actions: [
       ...stateActions,
       // Every state declines the same way, and this is the ONLY decline — the

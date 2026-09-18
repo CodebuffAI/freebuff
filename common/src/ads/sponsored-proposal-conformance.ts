@@ -113,6 +113,9 @@ const VM_CHECKS = check('VM', [
   'execution completion exposes guidance without asserting activation',
   'setup is absent before code is ready and after failure',
   'missing or unsafe tracking links retain instructions without inventing a destination',
+  // VM-37..VM-38: independent acceptance-criteria verification (COD-597).
+  'frozen criteria expose verify-again and keep setup guidance unclaimed',
+  'a run with no rubric is explicitly not verifiable',
 ])
 
 const R_CHECKS = check('R', [
