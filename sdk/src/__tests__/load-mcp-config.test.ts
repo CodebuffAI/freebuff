@@ -4,12 +4,18 @@ import path from 'path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 
-import { loadMCPConfig, loadMCPConfigSync, mcpFileSchema } from '../agents/load-mcp-config'
+import {
+  loadMCPConfig,
+  loadMCPConfigSync,
+  mcpFileSchema,
+} from '../agents/load-mcp-config'
 
 import type { MCPConfig } from '@codebuff/common/types/mcp'
 
 // Helper to safely access stdio config properties
-function isStdioConfig(config: MCPConfig): config is MCPConfig & { command: string; env?: Record<string, string> } {
+function isStdioConfig(
+  config: MCPConfig,
+): config is MCPConfig & { command: string; env?: Record<string, string> } {
   return 'command' in config
 }
 
@@ -54,7 +60,9 @@ describe('mcpFileSchema', () => {
     if (result.success) {
       const remoteServer = result.data.mcpServers.remoteServer
       expect(remoteServer).toBeDefined()
-      expect('url' in remoteServer && remoteServer.url).toBe('https://example.com/mcp')
+      expect('url' in remoteServer && remoteServer.url).toBe(
+        'https://example.com/mcp',
+      )
     }
   })
 
@@ -273,5 +281,55 @@ describe('loadMCPConfig', () => {
     if (isStdioConfig(asyncServer)) {
       expect(asyncServer.command).toBe('async-command')
     }
+  })
+})
+
+describe('configDirs option', () => {
+  let tempDir: string
+
+  const writeMcpJson = (dir: string, name: string) => {
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'mcp.json'),
+      JSON.stringify({ mcpServers: { [name]: { command: 'node' } } }),
+    )
+  }
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-config-dirs-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  it('reads mcp.json only from the listed directories (sync)', () => {
+    const trusted = path.join(tempDir, 'trusted')
+    const untrusted = path.join(tempDir, 'untrusted')
+    writeMcpJson(trusted, 'okServer')
+    writeMcpJson(untrusted, 'evilServer')
+
+    const result = loadMCPConfigSync({ configDirs: [trusted] })
+
+    expect(Object.keys(result.mcpServers)).toEqual(['okServer'])
+    expect(result._sourceFilePath).toBe(path.join(trusted, 'mcp.json'))
+  })
+
+  it('reads mcp.json only from the listed directories (async)', async () => {
+    const trusted = path.join(tempDir, 'trusted')
+    const untrusted = path.join(tempDir, 'untrusted')
+    writeMcpJson(trusted, 'okServer')
+    writeMcpJson(untrusted, 'evilServer')
+
+    const result = await loadMCPConfig({ configDirs: [trusted] })
+
+    expect(Object.keys(result.mcpServers)).toEqual(['okServer'])
+  })
+
+  it('an empty list loads nothing', async () => {
+    writeMcpJson(path.join(tempDir, '.agents'), 'server')
+
+    expect(loadMCPConfigSync({ configDirs: [] }).mcpServers).toEqual({})
+    expect((await loadMCPConfig({ configDirs: [] })).mcpServers).toEqual({})
   })
 })

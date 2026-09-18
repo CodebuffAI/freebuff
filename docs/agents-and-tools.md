@@ -25,6 +25,44 @@ and SDK `agentDefinitions` are never gated — they are code the user already
 chose to run. This is a trust floor, not isolation: sandboxing the eval,
 signing templates and pinning `latest` are separate work.
 
+### Trust gate for repository `.agents` directories
+
+`loadLocalAgents` dynamically imports every `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs`
+file under `{cwd}/.agents` and `{cwd}/../.agents`, and `loadMCPConfigSync`
+reads an `mcp.json` there whose stdio servers are spawned on the first prompt
+with `$VAR` env values filled from the CLI's own environment. Both execute
+repository-supplied code, so cloning a hostile repo and running the CLI inside
+it must not run anything without consent. The CLI therefore gates those two
+repository-scoped directories (`cli/src/utils/agent-dir-trust.ts`):
+
+- **What needs trust**: a directory containing at least one executable agent
+  file (the loader's extension filter, minus `.d.ts` and tests) or an
+  `mcp.json`. A directory holding only `skills/` markdown does not, and
+  `~/.agents` never does (it is the user's own). Skills still load from an
+  untrusted directory; only agents and `mcp.json` are withheld.
+- **The prompt**: on an interactive launch (stdin and stdout are TTYs) the CLI
+  prints a plain-terminal prompt before the TUI mounts, listing the directory,
+  its agent files (capped at 10) and the commands or URLs its `mcp.json` would
+  start, and asks `Load and run these? [y/N]`. `y` records the directory;
+  anything else skips it for this run and prints how to trust it later.
+- **The store**: `<configDir>/trusted-agent-dirs.json` (next to
+  `credentials.json`, written with mode `0600`), a map of the normalized
+  absolute directory path to `{ "trustedAt": "<ISO>" }`. Delete an entry to
+  be asked again.
+- **Non-interactive runs** (no TTY, CI) never prompt: the directory is skipped
+  with a warning unless `CODEBUFF_TRUST_AGENT_DIRS=1` or `--trust-agents` is
+  passed, which trusts every repository directory for that run only and writes
+  nothing to the store.
+- **SDK semantics are unchanged**: `loadLocalAgents({ agentDirs })` and
+  `loadMCPConfig{,Sync}({ configDirs })` are opt-in options; omitting them
+  keeps the default search, so Desktop and external SDK consumers behave as
+  before. `getDefaultAgentDirs()` and `listLocalAgentFiles()` are exported so a
+  host can build its own gate on the loader's own filter.
+
+Trust is per directory, not per file content: a trusted repository that later
+pulls a malicious agent file is loaded without a new prompt, the same trade-off
+other coding agents make for their project-level config.
+
 ### Shell Shims
 
 Direct commands without `codebuff` prefix:

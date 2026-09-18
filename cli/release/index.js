@@ -18,10 +18,13 @@ const { createLauncher } = require(
     : sourceLauncherPath,
 )
 
+const packageJson = require('./package.json')
+
 const launcher = createLauncher({
   packageName: 'codebuff',
   displayName: 'Codebuff',
-  wrapperVersion: require('./package.json').version,
+  wrapperVersion: packageJson.version,
+  binaryChecksums: packageJson.binaryChecksums ?? null,
   tempDownloadDirName: '.download-temp',
 })
 

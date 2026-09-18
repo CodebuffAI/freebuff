@@ -86,7 +86,7 @@ function resolveMcpConfigEnv(config: MCPFileConfig): void {
   }
 }
 
-const MCP_CONFIG_FILE_NAME = 'mcp.json'
+export const MCP_CONFIG_FILE_NAME = 'mcp.json'
 
 /**
  * Get default directories to search for mcp.json.
@@ -111,6 +111,10 @@ const getDefaultMcpConfigDirs = (): string[] => {
  * Environment variable references (e.g., `$API_KEY`) are resolved from process.env.
  *
  * @param options.verbose - Whether to log errors during loading
+ * @param options.configDirs - Optional explicit list of `.agents` directories to
+ *   read `mcp.json` from instead of the defaults. A host that gates
+ *   repository-scoped `.agents` content behind user consent passes only the
+ *   directories the user trusted; omitting it keeps the default search.
  * @returns Record of MCP server configurations keyed by server name
  *
  * @example
@@ -126,15 +130,16 @@ const getDefaultMcpConfigDirs = (): string[] => {
  */
 export async function loadMCPConfig(options: {
   verbose?: boolean
+  configDirs?: string[]
 }): Promise<LoadedMCPConfig> {
-  const { verbose = false } = options
+  const { verbose = false, configDirs } = options
 
   const mergedConfig: LoadedMCPConfig = {
     mcpServers: {},
     _sourceFilePath: '',
   }
 
-  const mcpConfigDirs = getDefaultMcpConfigDirs()
+  const mcpConfigDirs = configDirs ?? getDefaultMcpConfigDirs()
 
   for (const dir of mcpConfigDirs) {
     const configPath = path.join(dir, MCP_CONFIG_FILE_NAME)
@@ -201,19 +206,22 @@ export async function loadMCPConfig(options: {
  * This is a sync version for use in contexts where async is not available.
  *
  * @param options.verbose - Whether to log errors during loading
+ * @param options.configDirs - Optional explicit list of `.agents` directories to
+ *   read `mcp.json` from instead of the defaults (see `loadMCPConfig`).
  * @returns Record of MCP server configurations keyed by server name
  */
 export function loadMCPConfigSync(options: {
   verbose?: boolean
+  configDirs?: string[]
 }): LoadedMCPConfig {
-  const { verbose = false } = options
+  const { verbose = false, configDirs } = options
 
   const mergedConfig: LoadedMCPConfig = {
     mcpServers: {},
     _sourceFilePath: '',
   }
 
-  const mcpConfigDirs = getDefaultMcpConfigDirs()
+  const mcpConfigDirs = configDirs ?? getDefaultMcpConfigDirs()
 
   for (const dir of mcpConfigDirs) {
     const configPath = path.join(dir, MCP_CONFIG_FILE_NAME)

@@ -49,8 +49,17 @@ export {
 } from './agent-publisher-trust'
 export * from './credentials'
 export * from './byok'
-export { loadLocalAgents } from './agents/load-agents'
-export { loadMCPConfig, loadMCPConfigSync } from './agents/load-mcp-config'
+export {
+  getDefaultAgentDirs,
+  listLocalAgentFiles,
+  loadLocalAgents,
+} from './agents/load-agents'
+export {
+  MCP_CONFIG_FILE_NAME,
+  loadMCPConfig,
+  loadMCPConfigSync,
+  mcpFileSchema,
+} from './agents/load-mcp-config'
 export {
   loadSkills,
   loadSkillsSync,

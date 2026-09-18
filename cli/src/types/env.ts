@@ -84,6 +84,9 @@ export type CliEnv = BaseEnv & {
   // Set to 1/true to suppress the terminal-reset watchdog on machines where
   // the PowerShell process shape conflicts with endpoint-security policy.
   CODEBUFF_NO_TERMINAL_WATCHDOG?: string
+  // Set to 1/true to load repository `.agents` files and mcp.json without the
+  // interactive trust prompt (CI opt-in; see utils/agent-dir-trust.ts).
+  CODEBUFF_TRUST_AGENT_DIRS?: string
   FREEBUFF_MODE?: string
   /** Absolute per-process override for isolated CLI settings and transcripts. */
   FREEBUFF_CONFIG_DIR?: string

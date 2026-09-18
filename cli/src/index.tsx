@@ -13,6 +13,7 @@ import path from 'path'
 
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 import { getProjectFileTree } from '@codebuff/common/project-file-tree'
+import { getDefaultAgentDirs } from '@codebuff/sdk'
 import { createCliRenderer } from '@opentui/core'
 import { createRoot } from '@opentui/react'
 import {
@@ -30,10 +31,17 @@ import { runPlainLogin } from './login/plain-login'
 import { initializeApp } from './init/init-app'
 import { getProjectRoot, setProjectRoot } from './project-files'
 import { trackEvent } from './utils/analytics'
+import {
+  getTrustStorePath,
+  isTruthyOptIn,
+  promptForAgentDirTrust,
+  resolveTrustedAgentDirs,
+} from './utils/agent-dir-trust'
 import { getAuthToken, getAuthTokenDetails } from './utils/auth'
 import { resetCodebuffClient } from './utils/codebuff-client'
 import { setApiClientAuthToken } from './utils/codebuff-api'
 import { IS_FREEBUFF } from './utils/constants'
+import { getCliEnv } from './utils/env'
 import { initializeAgentRegistry } from './utils/local-agent-registry'
 import { trimOversizedChatLogs } from './utils/chat-history'
 import { clearLogFile, logger } from './utils/logger'
@@ -212,6 +220,7 @@ async function main(): Promise<void> {
     continueId,
     cwd,
     initialMode,
+    trustAgents,
   } = parseArgs()
 
   const isLoginCommand = command === 'login'
@@ -256,8 +265,29 @@ async function main(): Promise<void> {
 
   // Initialize agent registry (loads user agents via SDK).
   // When --agent is provided, skip local .agents to avoid overrides.
+  // Repository-scoped .agents directories (cwd and its parent) execute code
+  // on import and spawn mcp.json servers, so they pass the trust gate first;
+  // ~/.agents is the user's own and is always loaded.
   if (isPublishCommand || !hasAgentOverride) {
-    await initializeAgentRegistry()
+    const { agentDirs, skippedDirs } = await resolveTrustedAgentDirs({
+      candidateDirs: getDefaultAgentDirs(),
+      homeAgentsDir: path.join(os.homedir(), '.agents'),
+      interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      trustAll:
+        trustAgents || isTruthyOptIn(getCliEnv().CODEBUFF_TRUST_AGENT_DIRS),
+      storePath: getTrustStorePath(),
+      prompt: promptForAgentDirTrust,
+      notify: (message) => {
+        console.log(yellow(message))
+      },
+    })
+    if (skippedDirs.length > 0) {
+      logger.warn(
+        { skippedDirs },
+        '[agents] Untrusted repository .agents directories were not loaded',
+      )
+    }
+    await initializeAgentRegistry({ agentDirs })
   }
 
   // Initialize skill registry (loads skills from .agents/skills)

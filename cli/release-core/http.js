@@ -4,6 +4,73 @@ const fs = require('fs')
 const { pipeline } = require('stream/promises')
 const tls = require('tls')
 
+/**
+ * Hosts a release request may be redirected to, beyond the host it started
+ * on. The download route on codebuff.com answers with a 302 to a GitHub
+ * release asset, which GitHub in turn serves from *.githubusercontent.com.
+ * Anything outside this list is refused: a redirect is the one place where a
+ * compromised or misconfigured origin could otherwise hand the download to an
+ * arbitrary host.
+ */
+const REDIRECT_ALLOWED_HOSTS = new Set([
+  'codebuff.com',
+  'www.codebuff.com',
+  'freebuff.com',
+  'www.freebuff.com',
+  'github.com',
+])
+const REDIRECT_ALLOWED_HOST_SUFFIXES = ['.githubusercontent.com']
+
+function isRedirectHostAllowed(hostname, originalHostname) {
+  const host = hostname.toLowerCase()
+  if (host === originalHostname.toLowerCase()) return true
+  if (REDIRECT_ALLOWED_HOSTS.has(host)) return true
+  return REDIRECT_ALLOWED_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix))
+}
+
+/**
+ * Decide whether a redirect may be followed. Pure, so it can be tested
+ * without a transport.
+ *
+ * @param {string} currentUrl the URL that answered with the redirect
+ * @param {string} location its Location header (absolute or relative)
+ * @param {{ originalUrl?: string }} [options] the first URL of the chain;
+ *   its host is always an acceptable destination
+ * @returns {{ ok: true, url: string } | { ok: false, reason: string }}
+ */
+function evaluateRedirect(currentUrl, location, options = {}) {
+  const from = new URL(currentUrl)
+  let target
+  try {
+    target = new URL(location, currentUrl)
+  } catch {
+    return { ok: false, reason: `Redirect to an invalid URL: ${location}` }
+  }
+
+  if (!['http:', 'https:'].includes(target.protocol)) {
+    return {
+      ok: false,
+      reason: `Redirect to unsupported protocol: ${target.protocol}`,
+    }
+  }
+  if (from.protocol === 'https:' && target.protocol === 'http:') {
+    return {
+      ok: false,
+      reason: `Refusing redirect from https to insecure http host ${target.hostname}`,
+    }
+  }
+
+  const originalHostname = new URL(options.originalUrl || currentUrl).hostname
+  if (!isRedirectHostAllowed(target.hostname, originalHostname)) {
+    return {
+      ok: false,
+      reason: `Refusing redirect to unexpected host ${target.hostname}`,
+    }
+  }
+
+  return { ok: true, url: target.href }
+}
+
 function createReleaseHttpClient({
   env = process.env,
   userAgent,
@@ -200,8 +267,22 @@ function createReleaseHttpClient({
             return
           }
 
-          httpGet(new URL(res.headers.location, url).href, {
+          const originalUrl = options.originalUrl || url
+          const redirect = evaluateRedirect(url, res.headers.location, {
+            originalUrl,
+          })
+          if (!redirect.ok) {
+            const error = new Error(redirect.reason)
+            error.code = 'EREDIRECT_REFUSED'
+            error.retryable = false
+            error.requestUrl = url
+            reject(error)
+            return
+          }
+
+          httpGet(redirect.url, {
             ...options,
+            originalUrl,
             redirectCount: redirectCount + 1,
           })
             .then(resolve)
@@ -436,4 +517,5 @@ function createReleaseHttpClient({
 
 module.exports = {
   createReleaseHttpClient,
+  evaluateRedirect,
 }

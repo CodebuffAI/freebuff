@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const { spawn } = require('child_process')
+const crypto = require('crypto')
 const fs = require('fs')
 const http = require('http')
 const https = require('https')
@@ -12,11 +13,127 @@ const zlib = require('zlib')
 const tar = require('tar')
 const { createReleaseHttpClient } = require('./http')
 
+const DEFAULT_DOWNLOAD_ORIGIN = 'https://codebuff.com'
+const NPM_REGISTRY_ORIGIN = 'https://registry.npmjs.org'
+
+/**
+ * Every binary target a release ships, in the order the release workflow
+ * builds them. The launcher derives its download filename from these keys and
+ * `write-binary-checksums.js` stamps one sha256 per key into the published
+ * package.json, so the two lists must agree — a test pins that.
+ */
+const PLATFORM_TARGET_KEYS = [
+  'linux-x64',
+  'linux-x64-baseline',
+  'linux-arm64',
+  'darwin-x64',
+  'darwin-arm64',
+  'win32-x64',
+  'win32-x64-baseline',
+]
+
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
+
+/**
+ * Decide where release archives are downloaded from.
+ *
+ * NEXT_PUBLIC_CODEBUFF_APP_URL is read at runtime, so anyone able to set an
+ * environment variable could point the launcher at a plain-http origin and
+ * let a network attacker substitute the archive. The override is honoured
+ * only over https, or over http on a loopback host (local release servers in
+ * development and tests). Anything else is ignored with a warning and the
+ * default origin is used.
+ */
+function resolveDownloadOrigin(configuredOrigin, { warn = () => {} } = {}) {
+  if (typeof configuredOrigin !== 'string' || configuredOrigin.trim() === '') {
+    return DEFAULT_DOWNLOAD_ORIGIN
+  }
+
+  const trimmed = configuredOrigin.trim().replace(/\/+$/, '')
+  let parsed
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    warn(
+      `Ignoring NEXT_PUBLIC_CODEBUFF_APP_URL=${configuredOrigin}: not a valid URL. Downloading from ${DEFAULT_DOWNLOAD_ORIGIN}.`,
+    )
+    return DEFAULT_DOWNLOAD_ORIGIN
+  }
+
+  const isLocal = LOCAL_HOSTNAMES.has(parsed.hostname.toLowerCase())
+  if (
+    parsed.protocol === 'https:' ||
+    (parsed.protocol === 'http:' && isLocal)
+  ) {
+    return trimmed
+  }
+
+  warn(
+    `Ignoring NEXT_PUBLIC_CODEBUFF_APP_URL=${configuredOrigin}: release downloads must use https (http is allowed only for localhost). Downloading from ${DEFAULT_DOWNLOAD_ORIGIN}.`,
+  )
+  return DEFAULT_DOWNLOAD_ORIGIN
+}
+
+function isSha256Hex(value) {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value)
+}
+
+function computeFileSha256(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256')
+    const stream = fs.createReadStream(filePath)
+    stream.on('error', reject)
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('end', () => resolve(hash.digest('hex')))
+  })
+}
+
+/**
+ * Compare a file against an expected sha256. Fails closed: a missing or
+ * malformed expectation is a failure, never a pass.
+ *
+ * @returns {Promise<{ ok: boolean, actual: string | null, reason?: string }>}
+ */
+async function verifyFileSha256(filePath, expectedSha256) {
+  if (!isSha256Hex(expectedSha256)) {
+    return {
+      ok: false,
+      actual: null,
+      reason: 'no sha256 checksum is published for this archive',
+    }
+  }
+  const actual = await computeFileSha256(filePath)
+  if (actual !== expectedSha256.toLowerCase()) {
+    return {
+      ok: false,
+      actual,
+      reason: `sha256 mismatch: expected ${expectedSha256.toLowerCase()}, downloaded ${actual}`,
+    }
+  }
+  return { ok: true, actual }
+}
+
+/**
+ * The checksum map published for a release, or null when the document does
+ * not carry one. Values are validated on use, not here.
+ */
+function readBinaryChecksums(packageData) {
+  const checksums = packageData?.binaryChecksums
+  return checksums && typeof checksums === 'object' && !Array.isArray(checksums)
+    ? checksums
+    : null
+}
+
 function createLauncher(productConfig) {
   const {
     packageName,
     displayName,
     wrapperVersion = null,
+    // The `binaryChecksums` field of the wrapper's own package.json: sha256 per
+    // target for the archives of the release that shares its version. Reaches
+    // the launcher through npm, which is a separate trust root from the
+    // download origin.
+    binaryChecksums: ownBinaryChecksums = null,
     includeTreeSitterWasm = true,
     startupBanner = [],
     telemetryEvent = 'cli.update_codebuff_failed',
@@ -228,15 +345,14 @@ function createLauncher(productConfig) {
     }
   }
 
-  const PLATFORM_TARGETS = {
-    'linux-x64': `${packageName}-linux-x64.tar.gz`,
-    'linux-x64-baseline': `${packageName}-linux-x64-baseline.tar.gz`,
-    'linux-arm64': `${packageName}-linux-arm64.tar.gz`,
-    'darwin-x64': `${packageName}-darwin-x64.tar.gz`,
-    'darwin-arm64': `${packageName}-darwin-arm64.tar.gz`,
-    'win32-x64': `${packageName}-win32-x64.tar.gz`,
-    'win32-x64-baseline': `${packageName}-win32-x64-baseline.tar.gz`,
-  }
+  // target key -> release archive filename, e.g. freebuff-darwin-arm64.tar.gz.
+  // The same key indexes the published `binaryChecksums` map.
+  const PLATFORM_TARGETS = Object.fromEntries(
+    PLATFORM_TARGET_KEYS.map((targetKey) => [
+      targetKey,
+      `${packageName}-${targetKey}.tar.gz`,
+    ]),
+  )
 
   const BASELINE_FALLBACK_TARGETS = {
     'linux-x64': 'linux-x64-baseline',
@@ -424,21 +540,88 @@ function createLauncher(productConfig) {
     return getDefaultTargetKey()
   }
 
-  async function getLatestVersion() {
+  /**
+   * One version document from the npm registry: `latest` or an exact version.
+   * Returns null when the registry cannot answer. The document is the source
+   * of the expected archive checksums for any release other than the
+   * wrapper's own, so it is fetched over TLS from the registry and never from
+   * the download origin.
+   */
+  async function fetchRegistryRelease(versionOrTag) {
     try {
       const res = await httpGet(
-        `https://registry.npmjs.org/${packageName}/latest`,
+        `${NPM_REGISTRY_ORIGIN}/${packageName}/${encodeURIComponent(versionOrTag)}`,
       )
 
-      if (res.statusCode !== 200) return null
+      if (res.statusCode !== 200) {
+        res.resume()
+        return null
+      }
 
       const body = await streamToString(res)
       const packageData = JSON.parse(body)
+      if (typeof packageData.version !== 'string' || !packageData.version) {
+        return null
+      }
 
-      return packageData.version || null
+      return {
+        version: packageData.version,
+        binaryChecksums: readBinaryChecksums(packageData),
+      }
     } catch (error) {
       return null
     }
+  }
+
+  async function getLatestRelease() {
+    return fetchRegistryRelease('latest')
+  }
+
+  async function getLatestVersion() {
+    const release = await getLatestRelease()
+    return release?.version ?? null
+  }
+
+  /**
+   * The checksum map to verify `version`'s archives against.
+   *
+   * Order: a map the caller already holds (the registry document that named
+   * the version), then the wrapper's own package.json when the versions
+   * match, then a registry lookup of that exact version. Null means no map
+   * could be found, which the caller must treat as a failure.
+   */
+  async function resolveBinaryChecksums(version, provided = null) {
+    if (provided && typeof provided === 'object') {
+      return provided
+    }
+    if (wrapperVersion && version === wrapperVersion && ownBinaryChecksums) {
+      return ownBinaryChecksums
+    }
+    const release = await fetchRegistryRelease(version)
+    return release?.binaryChecksums ?? null
+  }
+
+  function createChecksumError(message, version, targetKey) {
+    const error = new Error(message)
+    error.code = 'ECHECKSUM'
+    error.stage = 'checksum'
+    error.retryable = false
+    error.version = version
+    error.target = targetKey
+    return error
+  }
+
+  async function getExpectedChecksum(version, targetKey, provided = null) {
+    const checksums = await resolveBinaryChecksums(version, provided)
+    const expected = checksums?.[targetKey]
+    if (!isSha256Hex(expected)) {
+      throw createChecksumError(
+        `No sha256 checksum is published for ${packageName} ${version} (${targetKey}); refusing to install an unverifiable binary.`,
+        version,
+        targetKey,
+      )
+    }
+    return expected.toLowerCase()
   }
 
   function streamToString(stream) {
@@ -609,6 +792,19 @@ function createLauncher(productConfig) {
         `Download source: ${formatDownloadSource(error.requestUrl)}`,
       )
     }
+    if (error.code === 'ECHECKSUM') {
+      // Not a transport failure: retrying fetches the same bytes. Either the
+      // package on npm carries no checksum for this target (a release bug)
+      // or the archive served did not match it.
+      console.error(
+        'The archive was not installed because it could not be verified against',
+      )
+      console.error(
+        'the checksum published on npm. If this persists, please report it at:',
+      )
+      console.error('  https://github.com/CodebuffAI/codebuff/issues')
+      return
+    }
     if (error.downloadedBytes > 0) {
       const total = error.totalBytes
         ? ` of ${formatBytes(error.totalBytes)}`
@@ -634,11 +830,26 @@ function createLauncher(productConfig) {
     fs.mkdirSync(CONFIG.tempDownloadDir, { recursive: true })
   }
 
+  /**
+   * Admit only the files a release archive is known to contain, as plain
+   * files at the archive root. The workflow packs exactly the binary and
+   * tree-sitter.wasm; anything else in an archive — a path with `..`, a
+   * symlink, a stray directory — is a sign of tampering, not a newer layout,
+   * and is dropped. preservePaths:false is tar's own guard against absolute
+   * and parent-traversing entries; this filter is the allowlist on top.
+   */
+  function isAllowedArchiveEntry(entryPath, entry) {
+    if (entry && entry.type !== 'File') return false
+    const normalized = String(entryPath).replace(/^(\.\/)+/, '')
+    if (normalized === CONFIG.binaryName) return true
+    return includeTreeSitterWasm && normalized === 'tree-sitter.wasm'
+  }
+
   async function downloadAndExtract(
     downloadUrl,
     version,
     targetKey,
-    { quiet = false } = {},
+    { quiet = false, expectedChecksum = null } = {},
   ) {
     let attempts = 0
     const partialArchivePath = getPartialArchivePath(version, targetKey)
@@ -677,11 +888,33 @@ function createLauncher(productConfig) {
           })
           totalBytes = result.totalBytes
 
+          // Verify the archive as downloaded, before a single byte of it is
+          // unpacked. The expected hash came from npm, not from the host that
+          // served the archive, so the download origin (and every redirect
+          // hop) can no longer substitute a binary.
+          if (!quiet) term.write('Verifying download...')
+          const verification = await verifyFileSha256(
+            partialArchivePath,
+            expectedChecksum,
+          )
+          if (!verification.ok) {
+            removeFileIfPresent(partialArchivePath)
+            throw createChecksumError(
+              `Downloaded ${packageName} ${version} (${targetKey}) failed verification: ${verification.reason}`,
+              version,
+              targetKey,
+            )
+          }
+
           try {
             await pipeline(
               fs.createReadStream(partialArchivePath),
               zlib.createGunzip(),
-              tar.x({ cwd: CONFIG.tempDownloadDir }),
+              tar.x({
+                cwd: CONFIG.tempDownloadDir,
+                preservePaths: false,
+                filter: isAllowedArchiveEntry,
+              }),
             )
           } catch (error) {
             // A complete archive that cannot be extracted is corrupt. Do not
@@ -726,7 +959,7 @@ function createLauncher(productConfig) {
       }
 
       trackUpdateFailed(error.message, version, {
-        stage: 'download',
+        stage: error.stage || 'download',
         errorCode: error.code,
         statusCode: error.statusCode,
         target: targetKey,
@@ -759,16 +992,37 @@ function createLauncher(productConfig) {
       throw error
     }
 
-    const downloadUrl = `${
-      process.env.NEXT_PUBLIC_CODEBUFF_APP_URL || 'https://codebuff.com'
-    }/api/releases/download/${version}/${fileName}`
+    // Resolved before the download so an unverifiable release is refused
+    // without spending the bandwidth, and so a missing map surfaces as its
+    // own error rather than as a mismatch.
+    let expectedChecksum
+    try {
+      expectedChecksum = await getExpectedChecksum(
+        version,
+        targetKey,
+        options.binaryChecksums,
+      )
+    } catch (error) {
+      trackUpdateFailed(error.message, version, {
+        stage: 'checksum',
+        errorCode: error.code,
+        target: targetKey,
+      })
+      throw error
+    }
+
+    const downloadOrigin = resolveDownloadOrigin(
+      process.env.NEXT_PUBLIC_CODEBUFF_APP_URL,
+      { warn: (message) => console.error(`⚠️  ${message}`) },
+    )
+    const downloadUrl = `${downloadOrigin}/api/releases/download/${version}/${fileName}`
 
     fs.mkdirSync(CONFIG.configDir, { recursive: true })
     const tempBinaryPath = await downloadAndExtract(
       downloadUrl,
       version,
       targetKey,
-      options,
+      { quiet: options.quiet, expectedChecksum },
     )
 
     try {
@@ -881,8 +1135,12 @@ function createLauncher(productConfig) {
     console.log(`Download complete! Starting ${displayName}...`)
   }
 
-  async function downloadBinary(version, targetKey = getDownloadTargetKey()) {
-    const stagedBinary = await stageBinary(version, targetKey)
+  async function downloadBinary(
+    version,
+    targetKey = getDownloadTargetKey(),
+    options = {},
+  ) {
+    const stagedBinary = await stageBinary(version, targetKey, options)
     installStagedBinary(stagedBinary)
   }
 
@@ -910,7 +1168,15 @@ function createLauncher(productConfig) {
     // check starts, it can otherwise remain stuck forever. The wrapper and its
     // release binary share a version, so repair that stale cache synchronously
     // without adding a registry lookup to healthy launches.
-    const version = requiredWrapperVersion ?? (await getLatestVersion())
+    // The wrapper release carries its own checksums; a `latest` lookup hands
+    // back the registry document's map alongside the version it named.
+    let version = requiredWrapperVersion
+    let binaryChecksums = null
+    if (!version) {
+      const latest = await getLatestRelease()
+      version = latest?.version ?? null
+      binaryChecksums = latest?.binaryChecksums ?? null
+    }
     if (!version) {
       console.error('❌ Failed to determine latest version')
       console.error('Please check your internet connection and try again')
@@ -918,7 +1184,9 @@ function createLauncher(productConfig) {
     }
 
     try {
-      await downloadBinary(version)
+      await downloadBinary(version, getDownloadTargetKey(), {
+        binaryChecksums,
+      })
     } catch (error) {
       term.clearLine()
       printDownloadFailure(error)
@@ -977,7 +1245,10 @@ function createLauncher(productConfig) {
     // relaunch's download for the shared temp directory (prepareTempDownloadDir
     // rmSyncs it) and then spend six seconds SIGKILLing a process that has
     // already exited.
-    if (runningProcess.exitCode !== null || runningProcess.signalCode !== null) {
+    if (
+      runningProcess.exitCode !== null ||
+      runningProcess.signalCode !== null
+    ) {
       return
     }
 
@@ -986,7 +1257,8 @@ function createLauncher(productConfig) {
     try {
       const currentVersion = getCurrentVersion()
 
-      const latestVersion = await getLatestVersion()
+      const latestRelease = await getLatestRelease()
+      const latestVersion = latestRelease?.version ?? null
       if (!latestVersion) return
 
       if (
@@ -997,7 +1269,7 @@ function createLauncher(productConfig) {
         const stagedBinary = await stageBinary(
           latestVersion,
           getDownloadTargetKey(),
-          { quiet: true },
+          { quiet: true, binaryChecksums: latestRelease.binaryChecksums },
         )
 
         term.clearLine()
@@ -1361,7 +1633,13 @@ function createLauncher(productConfig) {
       recordMachineLacksAvx2()
     }
 
-    const version = metadata?.version || (await getLatestVersion())
+    let version = metadata?.version || null
+    let binaryChecksums = null
+    if (!version) {
+      const latest = await getLatestRelease()
+      version = latest?.version ?? null
+      binaryChecksums = latest?.binaryChecksums ?? null
+    }
     if (!version) {
       return false
     }
@@ -1377,7 +1655,7 @@ function createLauncher(productConfig) {
     )
 
     try {
-      await downloadBinary(version, fallbackTarget)
+      await downloadBinary(version, fallbackTarget, { binaryChecksums })
     } catch (error) {
       term.clearLine()
       console.error(`Failed to download ${fallbackTarget}: ${error.message}`)
@@ -1461,9 +1739,22 @@ function createLauncher(productConfig) {
       getRequiredWrapperVersion,
       ensureBinaryReady,
       isTargetAllowedForThisMachine,
+      resolveBinaryChecksums,
+      getExpectedChecksum,
+      stageBinary,
+      isAllowedArchiveEntry,
+      PLATFORM_TARGETS,
       CONFIG,
     },
   }
 }
 
-module.exports = { createLauncher }
+module.exports = {
+  createLauncher,
+  DEFAULT_DOWNLOAD_ORIGIN,
+  PLATFORM_TARGET_KEYS,
+  resolveDownloadOrigin,
+  computeFileSha256,
+  verifyFileSha256,
+  isSha256Hex,
+}

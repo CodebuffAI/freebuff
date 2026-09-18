@@ -124,7 +124,16 @@ const isLoadableAgentFileName = (fileName: string): boolean => {
   )
 }
 
-const getAllAgentFiles = (dir: string): string[] => {
+/**
+ * List every file under `dir` that `loadLocalAgents` would import: `.ts`,
+ * `.tsx`, `.js`, `.mjs` or `.cjs`, minus `.d.ts` and test files, skipping
+ * `skills/`, `scripts/`, `node_modules` and dot-directories. Hosts use this to
+ * decide whether a repository-scoped `.agents` directory contains anything
+ * executable before importing it.
+ *
+ * @returns Absolute file paths; empty when the directory does not exist.
+ */
+export const listLocalAgentFiles = (dir: string): string[] => {
   const files: string[] = []
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true })
@@ -132,7 +141,7 @@ const getAllAgentFiles = (dir: string): string[] => {
       const fullPath = path.join(dir, entry.name)
       if (entry.isDirectory()) {
         if (shouldSkipAgentDirectory(entry.name)) continue
-        files.push(...getAllAgentFiles(fullPath))
+        files.push(...listLocalAgentFiles(fullPath))
         continue
       }
       const isAgentFile = entry.isFile() && isLoadableAgentFileName(entry.name)
@@ -146,7 +155,12 @@ const getAllAgentFiles = (dir: string): string[] => {
   return files
 }
 
-const getDefaultAgentDirs = () => {
+/**
+ * The directories `loadLocalAgents` and `loadMCPConfig` search by default:
+ * `{cwd}/.agents`, `{cwd}/../.agents` and `{homedir}/.agents`, in that order
+ * (later entries take precedence when ids collide).
+ */
+export const getDefaultAgentDirs = (): string[] => {
   const cwdAgents = path.join(process.cwd(), '.agents')
   const parentAgents = path.join(process.cwd(), '..', '.agents')
   const homeAgents = path.join(os.homedir(), '.agents')
@@ -165,6 +179,10 @@ const getDefaultAgentDirs = () => {
  * TypeScript files are loaded natively by Bun's runtime.
  *
  * @param options.agentsPath - Optional path to a specific agents directory
+ * @param options.agentDirs - Optional explicit list of directories to scan
+ *   instead of the defaults. A host that gates repository-scoped `.agents`
+ *   content behind user consent passes only the directories the user trusted;
+ *   omitting it keeps the default search. Ignored when `agentsPath` is set.
  * @param options.verbose - Whether to log errors during loading
  * @param options.validate - Whether to validate agents after loading
  * @returns When validate is false/omitted: Record of agent definitions keyed by agent ID.
@@ -200,6 +218,7 @@ const getDefaultAgentDirs = () => {
 // Overload: validate: true returns result with agents and errors
 export async function loadLocalAgents(options: {
   agentsPath?: string
+  agentDirs?: string[]
   verbose?: boolean
   validate: true
 }): Promise<LoadLocalAgentsResult>
@@ -207,6 +226,7 @@ export async function loadLocalAgents(options: {
 // Overload: validate: false or omitted returns just agents (backward compatible)
 export async function loadLocalAgents(options: {
   agentsPath?: string
+  agentDirs?: string[]
   verbose?: boolean
   validate?: false
 }): Promise<LoadedAgents>
@@ -214,17 +234,21 @@ export async function loadLocalAgents(options: {
 // Implementation
 export async function loadLocalAgents({
   agentsPath,
+  agentDirs: explicitAgentDirs,
   verbose = false,
   validate = false,
 }: {
   agentsPath?: string
+  agentDirs?: string[]
   verbose?: boolean
   validate?: boolean
 }): Promise<LoadedAgents | LoadLocalAgentsResult> {
   const agents: LoadedAgents = {}
 
-  const agentDirs = agentsPath ? [agentsPath] : getDefaultAgentDirs()
-  const allAgentFiles = agentDirs.flatMap((dir) => getAllAgentFiles(dir))
+  const agentDirs = agentsPath
+    ? [agentsPath]
+    : (explicitAgentDirs ?? getDefaultAgentDirs())
+  const allAgentFiles = agentDirs.flatMap((dir) => listLocalAgentFiles(dir))
 
   if (allAgentFiles.length === 0) {
     return validate ? { agents, validationErrors: [] } : agents

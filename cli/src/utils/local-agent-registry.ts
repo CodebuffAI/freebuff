@@ -1,9 +1,9 @@
 import fs from 'fs'
-import os from 'os'
 import path from 'path'
 
 import { pluralize } from '@codebuff/common/util/string'
 import {
+  getDefaultAgentDirs,
   loadLocalAgents as sdkLoadLocalAgents,
   loadMCPConfigSync,
 } from '@codebuff/sdk'
@@ -53,13 +53,19 @@ let mcpServersCache: Record<string, MCPConfig> = {}
  * - ~/.agents (global, user's home directory)
  *
  * Later directories take precedence, so project agents override global ones.
+ *
+ * @param options.agentDirs - The directories to load from. The CLI entry point
+ *   passes the set that survived the trust gate (`agent-dir-trust.ts`) so an
+ *   untrusted repository's agents and mcp.json are never imported; omitting it
+ *   loads every default directory.
  */
-export async function initializeAgentRegistry(): Promise<void> {
+export async function initializeAgentRegistry({
+  agentDirs = getDefaultAgentDirs(),
+}: { agentDirs?: string[] } = {}): Promise<void> {
   try {
-    // Let SDK load from all default directories (cwd, parent, home)
-    userAgentsCache = await sdkLoadLocalAgents({ verbose: false })
-    // Build ID-to-filepath map by scanning all agent directories
-    userAgentFilePaths = buildAgentFilePathMap(getDefaultAgentDirs())
+    userAgentsCache = await sdkLoadLocalAgents({ verbose: false, agentDirs })
+    // Build ID-to-filepath map by scanning the same agent directories
+    userAgentFilePaths = buildAgentFilePathMap(agentDirs)
   } catch (error) {
     // Fall back to empty cache if SDK loading fails, but log a warning
     logger.warn(
@@ -70,9 +76,12 @@ export async function initializeAgentRegistry(): Promise<void> {
     userAgentFilePaths = new Map()
   }
 
-  // Load MCP config from mcp.json files in .agents directories
+  // Load MCP config from mcp.json files in the same .agents directories
   try {
-    const mcpConfig = loadMCPConfigSync({ verbose: false })
+    const mcpConfig = loadMCPConfigSync({
+      verbose: false,
+      configDirs: agentDirs,
+    })
     mcpServersCache = mcpConfig.mcpServers
     if (Object.keys(mcpServersCache).length > 0) {
       logger.debug(
@@ -87,17 +96,6 @@ export async function initializeAgentRegistry(): Promise<void> {
     logger.warn({ error }, 'Failed to load MCP config from .agents directories')
     mcpServersCache = {}
   }
-}
-
-/**
- * Get default agent directories to scan.
- * Matches the SDK's getDefaultAgentDirs() to ensure consistency.
- */
-const getDefaultAgentDirs = (): string[] => {
-  const cwdAgents = path.join(process.cwd(), AGENTS_DIR_NAME)
-  const parentAgents = path.join(process.cwd(), '..', AGENTS_DIR_NAME)
-  const homeAgents = path.join(os.homedir(), AGENTS_DIR_NAME)
-  return [cwdAgents, parentAgents, homeAgents]
 }
 
 /**

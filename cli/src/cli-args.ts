@@ -16,6 +16,8 @@ export type ParsedArgs = {
   continueId?: string | null
   cwd?: string
   initialMode?: AgentMode
+  /** Load repository `.agents` content without the trust prompt (CI opt-in). */
+  trustAgents: boolean
 }
 
 export function loadPackageVersion(): string {
@@ -61,6 +63,10 @@ export function parseArgs({
         '--cwd <directory>',
         'Set the working directory (default: current directory)',
       )
+      .option(
+        '--trust-agents',
+        "Load this repository's .agents files and mcp.json without asking (for CI)",
+      )
       .addArgument(
         new Argument('[command]', 'Command to run').choices(['login']),
       )
@@ -86,6 +92,10 @@ export function parseArgs({
       .option(
         '--cwd <directory>',
         'Set the working directory (default: current directory)',
+      )
+      .option(
+        '--trust-agents',
+        "Load this repository's .agents files and mcp.json without asking (for CI)",
       )
       .option('--lite', 'Start in LITE mode')
       .option('--free', 'Start in LITE mode (deprecated alias)')
@@ -130,5 +140,6 @@ export function parseArgs({
         : null,
     cwd: options.cwd,
     initialMode,
+    trustAgents: Boolean(options.trustAgents),
   }
 }

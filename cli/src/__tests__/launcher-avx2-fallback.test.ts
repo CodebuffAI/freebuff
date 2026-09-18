@@ -14,6 +14,7 @@
  * forever instead.
  */
 import { execFileSync } from 'child_process'
+import { createHash } from 'crypto'
 import {
   existsSync,
   mkdirSync,
@@ -65,8 +66,15 @@ function makeLauncher(
     configurable: true,
   })
   Object.defineProperty(process, 'arch', { value: arch, configurable: true })
-  return createLauncher({ packageName: 'freebuff', configDir: tempConfigDir })
-    .__testing
+  return createLauncher({
+    packageName: 'freebuff',
+    configDir: tempConfigDir,
+    // The wrapper shares the installed version, so the archive checksums come
+    // from its own manifest — `releaseChecksums`, filled by the test — and
+    // never from a registry lookup.
+    wrapperVersion: '1.2.3',
+    binaryChecksums: releaseChecksums,
+  }).__testing
 }
 
 /** Poll until `done()`, so tests wait on the event rather than on a timer. */
@@ -83,7 +91,10 @@ async function waitFor(done: () => boolean, timeoutMs = 5000) {
  * matters beyond the assertions: a relaunched child's handler firing after a
  * test would otherwise call the real process.exit and take the runner down.
  */
-const launcher = { lines: [] as string[], exitCodes: [] as (number | undefined)[] }
+const launcher = {
+  lines: [] as string[],
+  exitCodes: [] as (number | undefined)[],
+}
 let restoreLauncherCapture = () => {}
 
 function captureLauncherOutput() {
@@ -123,7 +134,20 @@ function baselineTarball(script: string) {
  * treats as final — so failure paths fail fast instead of backing off.
  */
 let releaseTarball: Buffer | null = null
+/**
+ * What the wrapper's package.json says the baseline archive hashes to. A
+ * placeholder by default so a download is attempted (and 404s) as it always
+ * did; `serveBaselineTarball` replaces it with the real digest.
+ */
+let releaseChecksums: Record<string, string> = {}
 let releaseServer: ReturnType<typeof createServer>
+
+function serveBaselineTarball(script: string) {
+  releaseTarball = baselineTarball(script)
+  releaseChecksums['win32-x64-baseline'] = createHash('sha256')
+    .update(releaseTarball)
+    .digest('hex')
+}
 let restoreReleaseEnv = () => {}
 
 beforeAll(async () => {
@@ -170,6 +194,7 @@ beforeEach(() => {
   originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
   originalArch = Object.getOwnPropertyDescriptor(process, 'arch')
   releaseTarball = null
+  releaseChecksums = { 'win32-x64-baseline': '0'.repeat(64) }
   restoreLauncherCapture = captureLauncherOutput()
 })
 
@@ -201,9 +226,9 @@ describe('windows AVX2 detection', () => {
 
     expect(t.detectMachineHasAvx2()).toBe(false)
     expect(t.readCachedAvx2()).toBe(false)
-    expect(JSON.parse(readFileSync(t.getCpuFeatureCachePath(), 'utf8'))).toEqual(
-      { avx2: false },
-    )
+    expect(
+      JSON.parse(readFileSync(t.getCpuFeatureCachePath(), 'utf8')),
+    ).toEqual({ avx2: false })
   })
 
   test('a recorded failure selects baseline up front on the NEXT launch', () => {
@@ -265,7 +290,10 @@ describe('windows AVX2 detection', () => {
 describe('recovery after a recorded failure', () => {
   /** Simulate a completed install of `target` at `version`. */
   function installBinary(t: ReturnType<typeof makeLauncher>, target: string) {
-    writeFileSync(t.CONFIG.metadataPath, JSON.stringify({ version: '1.2.3', target }))
+    writeFileSync(
+      t.CONFIG.metadataPath,
+      JSON.stringify({ version: '1.2.3', target }),
+    )
     writeFileSync(t.CONFIG.binaryPath, 'pretend binary')
   }
 
@@ -580,7 +608,7 @@ describe('recovering from the reported crash', () => {
   test('0xC0000409 during startup lands the user on the baseline build', async () => {
     const t = makeLauncher()
     const ranMarker = join(tempConfigDir, 'baseline-ran')
-    releaseTarball = baselineTarball(`echo ran > ${ranMarker}`)
+    serveBaselineTarball(`echo ran > ${ranMarker}`)
 
     writeFileSync(t.CONFIG.binaryPath, '#!/bin/sh\nexit 3\n', { mode: 0o755 })
     writeFileSync(

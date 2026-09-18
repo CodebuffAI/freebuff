@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { createServer } from 'node:http'
 import {
@@ -244,10 +245,16 @@ describe('shared release launcher safety', () => {
     mkdirSync(configDir, { recursive: true })
     mkdirSync(archiveDir, { recursive: true })
 
+    // The wrapper's own package.json carries the checksums of its release;
+    // the map is filled in once the archive exists (same object, by
+    // reference), exactly as npm would have shipped it.
+    const target = process.platform + '-' + process.arch
+    const binaryChecksums: Record<string, string> = {}
     const launcher = createLauncher({
       packageName: 'repair-test',
       displayName: 'Repair Test',
       wrapperVersion: '2.0.0',
+      binaryChecksums,
       includeTreeSitterWasm: false,
       configDir,
     })
@@ -255,10 +262,7 @@ describe('shared release launcher safety', () => {
     writeFileSync(CONFIG.binaryPath, 'stale binary')
     writeFileSync(
       CONFIG.metadataPath,
-      JSON.stringify({
-        version: '1.0.0',
-        target: process.platform + '-' + process.arch,
-      }),
+      JSON.stringify({ version: '1.0.0', target }),
     )
     writeFileSync(join(archiveDir, CONFIG.binaryName), 'replacement binary')
 
@@ -267,6 +271,7 @@ describe('shared release launcher safety', () => {
       CONFIG.binaryName,
     ])
     const archive = readFileSync(archivePath)
+    binaryChecksums[target] = createHash('sha256').update(archive).digest('hex')
     try {
       await withLocalReleaseServer(
         {
@@ -311,10 +316,14 @@ describe('shared release launcher safety', () => {
 
   test('keeps a runnable cached binary when repair is unavailable', async () => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), 'launcher-offline-'))
+    const target = process.platform + '-' + process.arch
     const launcher = createLauncher({
       packageName: 'offline-test',
       displayName: 'Offline Test',
       wrapperVersion: '2.0.0',
+      // Any published checksum lets the download proceed to the 404 under
+      // test; without one the launcher refuses before contacting the server.
+      binaryChecksums: { [target]: 'a'.repeat(64) },
       includeTreeSitterWasm: false,
       configDir: fixtureRoot,
     })

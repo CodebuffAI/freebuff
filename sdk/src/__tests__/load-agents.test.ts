@@ -12,7 +12,11 @@ import {
   spyOn,
 } from 'bun:test'
 
-import { loadLocalAgents } from '../agents/load-agents'
+import {
+  getDefaultAgentDirs,
+  listLocalAgentFiles,
+  loadLocalAgents,
+} from '../agents/load-agents'
 
 import type {
   LoadedAgents,
@@ -927,6 +931,84 @@ describe('loadLocalAgents', () => {
       })
 
       expect(result['test-agent']).toBeDefined()
+    })
+  })
+
+  describe('agentDirs option', () => {
+    const agentSource = (id: string) => `
+      export default { id: '${id}', displayName: '${id}', model: '${MODEL_NAME}' }
+    `
+
+    test('loads only the listed directories', async () => {
+      const trusted = path.join(tempDir, 'trusted')
+      const untrusted = path.join(tempDir, 'untrusted')
+      mkdirSync(trusted, { recursive: true })
+      mkdirSync(untrusted, { recursive: true })
+      writeAgentFile(trusted, 'ok.ts', agentSource('ok-agent'))
+      writeAgentFile(untrusted, 'evil.ts', agentSource('evil-agent'))
+
+      const result = await loadLocalAgents({ agentDirs: [trusted] })
+
+      expect(Object.keys(result)).toEqual(['ok-agent'])
+    })
+
+    test('an empty list loads nothing', async () => {
+      mkdirSync(agentsDir, { recursive: true })
+      writeAgentFile(agentsDir, 'a.ts', agentSource('a'))
+
+      expect(await loadLocalAgents({ agentDirs: [] })).toEqual({})
+      expect(await loadLocalAgents({ agentDirs: [], validate: true })).toEqual({
+        agents: {},
+        validationErrors: [],
+      })
+    })
+
+    test('agentsPath still wins over agentDirs', async () => {
+      const other = path.join(tempDir, 'other')
+      mkdirSync(agentsDir, { recursive: true })
+      mkdirSync(other, { recursive: true })
+      writeAgentFile(agentsDir, 'a.ts', agentSource('from-path'))
+      writeAgentFile(other, 'b.ts', agentSource('from-dirs'))
+
+      const result = await loadLocalAgents({
+        agentsPath: agentsDir,
+        agentDirs: [other],
+      })
+
+      expect(Object.keys(result)).toEqual(['from-path'])
+    })
+  })
+
+  describe('listLocalAgentFiles', () => {
+    test('returns the files the loader would import and nothing else', () => {
+      mkdirSync(path.join(agentsDir, 'skills', 'x'), { recursive: true })
+      mkdirSync(path.join(agentsDir, 'nested'), { recursive: true })
+      mkdirSync(path.join(agentsDir, 'node_modules'), { recursive: true })
+      writeFileSync(path.join(agentsDir, 'a.ts'), '')
+      writeFileSync(path.join(agentsDir, 'b.mjs'), '')
+      writeFileSync(path.join(agentsDir, 'nested', 'c.js'), '')
+      writeFileSync(path.join(agentsDir, 'types.d.ts'), '')
+      writeFileSync(path.join(agentsDir, 'a.test.ts'), '')
+      writeFileSync(path.join(agentsDir, 'README.md'), '')
+      writeFileSync(path.join(agentsDir, 'skills', 'x', 'SKILL.md'), '')
+      writeFileSync(path.join(agentsDir, 'node_modules', 'dep.js'), '')
+
+      expect(listLocalAgentFiles(agentsDir).sort()).toEqual([
+        path.join(agentsDir, 'a.ts'),
+        path.join(agentsDir, 'b.mjs'),
+        path.join(agentsDir, 'nested', 'c.js'),
+      ])
+      expect(listLocalAgentFiles(path.join(tempDir, 'missing'))).toEqual([])
+    })
+  })
+
+  describe('getDefaultAgentDirs', () => {
+    test('returns cwd, parent and home .agents in precedence order', () => {
+      expect(getDefaultAgentDirs()).toEqual([
+        path.join(process.cwd(), '.agents'),
+        path.join(process.cwd(), '..', '.agents'),
+        path.join(os.homedir(), '.agents'),
+      ])
     })
   })
 })
