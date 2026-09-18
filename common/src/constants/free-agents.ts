@@ -8,7 +8,7 @@ import {
   FALLBACK_FREEBUFF_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
-  FREEBUFF_FABLE_5_MODEL_ID,
+  FREEBUFF_FABLE_5_1_MODEL_ID,
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GEMINI_PRO_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
@@ -153,7 +153,7 @@ export const FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
  *
  * Kept as its own map rather than folded into the Web one because the model
  * sets genuinely differ in both directions: Web offers Kimi K3 Eco and Muse
- * Spark, which no CLI build can select; the CLI offers Claude Fable 5,
+ * Spark, which no CLI build can select; the CLI offers Claude Fable 5.1 on base2,
  * which Web never surfaces. `freebuff_bundled_agents.test.ts` asserts the Web
  * map covers exactly the Web base2 models, so a CLI-only model added there
  * would fail that parity check for the wrong reason.
@@ -166,7 +166,6 @@ export const FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 'base3-free-luna',
   [FREEBUFF_GLM_V52_MODEL_ID]: 'base3-free-glm',
   [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 'base3-free-glm-5-3-flash',
-  [FREEBUFF_FABLE_5_MODEL_ID]: 'base3-free-fable',
   // Ox Alpha reached CLI and Desktop on 2026-08-24. The WEB map above has
   // pointed at the same root id since 2026-08-20; both surfaces share it, which
   // is the arrangement described in docs/freebuff-base3-harness.md.
@@ -364,7 +363,7 @@ export const FREEBUFF_ROOT_AGENT_IDS = [
   // subagents keep passing through this hierarchy gate. Dropping the root would
   // 403 them mid-run.
   'base2-free-ox-alpha',
-  // Capacity-limited trial orchestrator (Claude Fable 5). Reachable only while
+  // Capacity-limited trial orchestrator (Claude Fable 5.1). Reachable only while
   // the server is still advertising the offer, but it must be listed here
   // unconditionally: a session admitted while the pool was open runs its full
   // hour after the pool empties, and dropping the root would 403 its subagents
@@ -398,9 +397,6 @@ export const FREEBUFF_ROOT_AGENT_IDS = [
   'base3-free-muse-spark-1-3',
   'base3-free-ox-alpha',
   'base3-free-gemini-3-8-flash',
-  // Freebuff CLI base3 roots. Every other id it needs is already above,
-  // shared with Web; Fable is the one model the CLI offers and Web does not.
-  'base3-free-fable',
   ...FREEBUFF_DESKTOP_THREAD_AGENT_IDS,
   // The Desktop auto-run decider. Spawns nothing, but the hierarchy gate reads
   // this list for the ROOT itself, and a decision has no parent run to hang off.
@@ -421,7 +417,7 @@ export const FREEBUFF_ROOT_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 'base2-free-glm-5-3-flash',
   [FREEBUFF_KIMI_K3_ECO_MODEL_ID]: 'base2-free-kimi-k3-eco',
   [FREEBUFF_GPT_5_6_LUNA_ES_MODEL_ID]: 'base2-free-luna-es',
-  [FREEBUFF_FABLE_5_MODEL_ID]: 'base2-free-fable',
+  [FREEBUFF_FABLE_5_1_MODEL_ID]: 'base2-free-fable',
   [FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID]: 'base2-free-muse-spark',
   [FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID]: 'base2-free-muse-spark-1-3',
   [FREEBUFF_OX_ALPHA_MODEL_ID]: 'base2-free-ox-alpha',
@@ -451,7 +447,7 @@ export const FREEBUFF_REVIEWER_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 'code-reviewer-deepseek-flash',
   [FREEBUFF_GLM_V52_MODEL_ID]: 'code-reviewer-glm',
   [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 'code-reviewer-glm-5-3-flash',
-  [FREEBUFF_FABLE_5_MODEL_ID]: 'code-reviewer-fable',
+  [FREEBUFF_FABLE_5_1_MODEL_ID]: 'code-reviewer-fable',
   // Required the moment Ox Alpha became CLI-selectable: without its own entry
   // a base2 session falls back to the DeepSeek Flash reviewer, which that
   // session's allowlist does not permit, so the subagent is rejected mid-run.
@@ -506,7 +502,8 @@ export function getFreebuffRootAgentIdForModel(model: string): string {
  * root, for the reason resolveFreebuffAgentId does the same on Web: running the
  * requested model on the older harness is a cost regression, running a
  * different model is a `session_model_mismatch` 403. Every model the picker can
- * select has a base3 twin, so the fallback is a backstop rather than a path.
+ * select normally has a base3 twin. Fable 5.1 deliberately uses this fallback
+ * to collect base2 orchestration traces with subagents.
  */
 export function getFreebuffBase3RootAgentIdForModel(model: string): string {
   return (
@@ -642,7 +639,7 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // Limited-offer trial root. Only this agent may run Fable for free, and only
   // on Fable — the pool accounting keys off the model, so a root that could
   // also run something else would let a session escape it.
-  'base2-free-fable': new Set([FREEBUFF_FABLE_5_MODEL_ID]),
+  'base2-free-fable': new Set([FREEBUFF_FABLE_5_1_MODEL_ID]),
   // Freebuff Cloud custom-stack planner (freebuff_bundled_agents.ts). One
   // variant per model, each allowed exactly the model its definition pins.
   'base2-free-cloud-planner': new Set([CLOUD_PLANNER_MODEL_ID]),
@@ -690,6 +687,7 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // Command execution
   basher: GEMINI_HELPER_MODELS,
   'tmux-cli': new Set([FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]),
+  'tmux-cli-fable': new Set([FREEBUFF_FABLE_5_1_MODEL_ID]),
 
   // Code reviewer for free mode
   'code-reviewer-minimax-m3': new Set([FREEBUFF_MINIMAX_M3_MODEL_ID]),
@@ -703,7 +701,7 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   'code-reviewer-mimo': new Set([FREEBUFF_MIMO_V25_MODEL_ID]),
   'code-reviewer-glm': new Set([FREEBUFF_GLM_V52_MODEL_ID]),
   'code-reviewer-glm-5-3-flash': new Set([FREEBUFF_GLM_V53_FLASH_MODEL_ID]),
-  'code-reviewer-fable': new Set([FREEBUFF_FABLE_5_MODEL_ID]),
+  'code-reviewer-fable': new Set([FREEBUFF_FABLE_5_1_MODEL_ID]),
   'code-reviewer-gemini-3-8-flash': new Set([
     FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   ]),

@@ -13,7 +13,7 @@ import {
   EFFORTS_THROUGH_XHIGH,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
-  FREEBUFF_FABLE_5_MODEL_ID,
+  FREEBUFF_FABLE_5_1_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
@@ -118,11 +118,11 @@ describe('per-model effort ladders', () => {
     ).toBe('high')
   })
 
-  test('Claude Fable 5 exposes every enabled effort', () => {
-    expect(getFreebuffModelEfforts(FREEBUFF_FABLE_5_MODEL_ID)).toEqual(
+  test('Claude Fable 5.1 exposes every enabled effort', () => {
+    expect(getFreebuffModelEfforts(FREEBUFF_FABLE_5_1_MODEL_ID)).toEqual(
       EFFORTS_THROUGH_MAX,
     )
-    expect(getFreebuffModelDefaultEffort(FREEBUFF_FABLE_5_MODEL_ID)).toBe(
+    expect(getFreebuffModelDefaultEffort(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(
       'high',
     )
   })

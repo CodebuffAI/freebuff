@@ -655,10 +655,10 @@ export const getSubscriptionInfo = (
  * offer invisible instead of a broken-looking greyed-out row.
  *
  * `remaining`/`total` describe the GLOBAL pool shared by every user, while
- * `userRemaining` describes the caller's own daily ceiling. A row is joinable
+ * `userRemaining` describes the caller's campaign allowance. A row is joinable
  * only while both are non-zero, and the client must treat `userRemaining === 0`
  * as "not now" rather than hiding the row — the user has already had their
- * session and the reset time explains when they get another.
+ * session. Campaign offers have no daily reset.
  *
  * The ceiling itself is not on the wire: it is fixed by construction
  * (FREEBUFF_LIMITED_OFFER_SESSION_LIMIT, which no streak or referral can
@@ -674,10 +674,10 @@ export interface FreebuffLimitedModelOffer {
   remaining: number
   /** Pool size for the current wave, for "N of M left" copy. */
   total: number
-  /** Sessions this user may still start today. May be 0. */
+  /** Sessions this user may still start in this campaign. May be 0. */
   userRemaining: number
-  /** ISO timestamp at which `userRemaining` refills. */
-  userResetAt: string
+  /** Legacy daily reset timestamp; null for a one-per-campaign offer. */
+  userResetAt: string | null
 }
 
 /** Pull the limited-model offers off whichever session status carries them.
@@ -932,6 +932,8 @@ export type FreebuffSessionAdmissionResponse = (
       status: 'model_unavailable'
       accessTier?: FreebuffAccessTier
       requestedModel: string
+      /** A used personal trial cannot be replenished by waiting or upgrading. */
+      limitedOfferReason?: 'used' | 'closed' | 'exhausted'
       /**
        * Prose, and quoted in UTC with the zone NAMED — the server cannot know
        * where the reader is, and the container it runs in is not a guess worth

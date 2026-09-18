@@ -132,6 +132,44 @@ const mountHost = async () => {
 }
 
 describe('useSendMessage continuation state', () => {
+  test('persists the final streamed text and completion state before returning', async () => {
+    const { setup, root } = await mountHost()
+    const run = sendMessageFromHost!({
+      content: 'finish',
+      agentMode: 'DEFAULT',
+    })
+
+    try {
+      await waitFor('SDK run', () => runCalls.length === 1)
+      const finalText = 'Finished the cache TTL change. All 14 tests pass.'
+      const finalState = {
+        ...makeRunState('completed'),
+        output: { type: 'lastMessage', value: [] },
+      } as RunState
+      // Return immediately after the last chunk, before the 100ms UI batch
+      // flush. The live screen and a resumed chat must retain the same answer.
+      runCalls[0].runConfig.handleStreamChunk(finalText)
+      runCalls[0].resolve(finalState)
+      await run
+
+      const saved = JSON.parse(
+        fs.readFileSync(path.join(testRoot, 'chat-messages.json'), 'utf8'),
+      ).at(-1)
+      expect(saved.blocks).toContainEqual({
+        type: 'text',
+        textType: 'text',
+        content: finalText,
+      })
+      expect(saved.isComplete).toBe(true)
+      expect(saved.metadata.runState).toEqual(finalState)
+    } finally {
+      settlePendingRuns()
+      await run
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
   test('follow-ups inherit rejected and aborted run snapshots without stale replacement', async () => {
     const { setup, root } = await mountHost()
     const runs: Promise<void>[] = []

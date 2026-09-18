@@ -758,15 +758,14 @@ export function useFreebuffSession(
               ])
           } else if (isFreebuffLimitedOfferModelId(next.requestedModel)) {
             const requested = getFreebuffModel(next.requestedModel).displayName
-            const fallback = getFreebuffModel(
-              FALLBACK_FREEBUFF_MODEL_ID,
-            ).displayName
             useChatStore
               .getState()
               .setMessages((prev) => [
                 ...prev,
                 getSystemMessage(
-                  `${requested}'s trial sessions just ran out, so this session started on ${fallback} instead. Check back later — we release more in batches.`,
+                  next.limitedOfferReason === 'used'
+                    ? `You've used your one ${requested} trial session. Switching to another model.`
+                    : `${requested}'s trial is currently unavailable. Switching to another model.`,
                 ),
               ])
           }

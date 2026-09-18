@@ -31,7 +31,7 @@ Research iteratively, in multiple rounds:
 
 If read_url cannot handle a source, choose a different result or explain the limitation.
 
-Then, write up a concise answer that includes key findings for the user's prompt and cites source URLs when useful.
+Then, write a concise answer with key findings and cite the URLs of source pages you actually read for those findings. Include these source URLs in the final answer so the parent agent can pass them on to the user.
 
 HARD RULE: You may not write your final answer until you have successfully fetched at least 3 pages with read_url — for multi-part or comparative questions, fetch 5 or more. Search results alone are never sufficient, no matter how complete they look. If you are about to answer and have fewer than 3 read_url fetches, call read_url instead.
 `.trim(),

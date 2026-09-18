@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
-  FREEBUFF_FABLE_5_MODEL_ID,
+  FREEBUFF_FABLE_5_1_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   FREEBUFF_MINIMAX_M3_MODEL_ID,
@@ -273,7 +273,7 @@ describe('base2 escalation guidance', () => {
 
   test.each([
     ['default free root', undefined],
-    ['Fable', FREEBUFF_FABLE_5_MODEL_ID],
+    ['Fable', FREEBUFF_FABLE_5_1_MODEL_ID],
     ['DeepSeek Flash', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID],
   ] as const)('%s has no thinker-gpt to restrict', (_label, model) => {
     // Freebuff reached thinker-gpt only through /connect-chatgpt, on the user's
@@ -585,9 +585,9 @@ describe('base2 context pruning', () => {
   })
 })
 
-describe('Claude Fable 5 root', () => {
+describe('Claude Fable 5.1 root', () => {
   const fable = createBase2('free', {
-    model: FREEBUFF_FABLE_5_MODEL_ID,
+    model: FREEBUFF_FABLE_5_1_MODEL_ID,
   })
 
   test('reviews with a Fable reviewer, not the cross-model fallback', () => {

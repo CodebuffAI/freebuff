@@ -461,7 +461,7 @@ export const FREEBUFF_DEEPSEEK_V4_FLASH_MAX_MODEL_ID =
 export const FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID = 'openai/gpt-5.6-luna-max'
 
 /**
- * Claude Fable 5 — Anthropic's frontier model, offered to free CLI users as a
+ * Claude Fable 5.1 — Anthropic's frontier model, offered to free CLI users as a
  * capacity-limited trial rather than as a standing picker model.
  *
  * It is deliberately NOT in FREEBUFF_MODELS: no client may render it from its
@@ -470,7 +470,7 @@ export const FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID = 'openai/gpt-5.6-luna-max'
  * (`limitedModelOffers`); a client that receives nothing renders exactly what
  * it rendered before the offer existed. See FREEBUFF_LIMITED_OFFER_MODEL_IDS.
  */
-export const FREEBUFF_FABLE_5_MODEL_ID = 'anthropic/claude-fable-5'
+export const FREEBUFF_FABLE_5_1_MODEL_ID = 'anthropic/claude-fable-5.1'
 
 /**
  * Meta Muse Spark 1.2 (Contributor tier), served by Meta's own developer API
@@ -1727,9 +1727,9 @@ const KIMI_K3_ECO_MODEL = {
   // control until this concrete route reports distinct supported levels.
 } as const satisfies FreebuffModelOption
 
-const FABLE_5_MODEL = {
-  id: FREEBUFF_FABLE_5_MODEL_ID,
-  displayName: 'Claude Fable 5',
+const FABLE_5_1_MODEL = {
+  id: FREEBUFF_FABLE_5_1_MODEL_ID,
+  displayName: 'Claude Fable 5.1',
   tagline: "Anthropic's most intelligent model",
   availability: 'always',
   // Load-bearing, not decoration: `dataUse: 'training'` is what puts this model
@@ -1901,7 +1901,7 @@ export const SUPPORTED_FREEBUFF_MODELS = [
   GLM_V53_FLASH_MODEL,
   DEEPSEEK_V4_FLASH_MODEL,
   MIMO_V25_MODEL,
-  FABLE_5_MODEL,
+  FABLE_5_1_MODEL,
 ] as const satisfies readonly FreebuffModelOption[]
 
 // GLM 5.2 is intentionally NOT in FREEBUFF_MODELS: it isn't a freely-pickable
@@ -2298,7 +2298,7 @@ export function isFreebuffPausedFreeModelId(
 
 /** Models offered only while their shared global pool has sessions left. */
 export const FREEBUFF_LIMITED_OFFER_MODEL_IDS = [
-  FREEBUFF_FABLE_5_MODEL_ID,
+  FREEBUFF_FABLE_5_1_MODEL_ID,
 ] as const
 
 export type FreebuffLimitedOfferModelId =
@@ -2315,24 +2315,10 @@ export function isFreebuffLimitedOfferModelId(
   )
 }
 
-/**
- * Per-user daily ceiling on limited-offer sessions, on top of the global pool.
- *
- * One. A 50-session pool spent by five people is five traces of five people's
- * habits; spent by fifty people it is the distribution we actually want to
- * learn from. It also bounds what one account can cost us on a frontier model
- * whose sessions run a full hour.
- */
+/** One admission per user for the entire campaign; early ends do not refund it. */
 export const FREEBUFF_LIMITED_OFFER_SESSION_LIMIT = 1
-
-/** Reset cadence for the per-user ceiling above — same Pacific-day boundary as
- *  every other freebuff pool, so a user sees one reset time, not two. */
-export const FREEBUFF_LIMITED_OFFER_SESSION_PERIOD =
-  FREEBUFF_PREMIUM_SESSION_PERIOD
-export const FREEBUFF_LIMITED_OFFER_SESSION_RESET_TIMEZONE =
-  FREEBUFF_PREMIUM_SESSION_RESET_TIMEZONE
-export const FREEBUFF_LIMITED_OFFER_SESSION_WINDOW_HOURS =
-  FREEBUFF_PREMIUM_SESSION_WINDOW_HOURS
+/** Hard ceiling for the Fable 5.1 trace campaign, even if an env value is larger. */
+export const FREEBUFF_LIMITED_OFFER_MAX_SESSIONS = 500
 
 /** Freebuff Web-only picker/support set: the CLI/Desktop catalog plus the
  *  earned GLM 5.2 row. */

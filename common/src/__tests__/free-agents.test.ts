@@ -1,3 +1,4 @@
+import { isFreebuffLimitedOfferModelId } from '@codebuff/common/constants/freebuff-models'
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -426,6 +427,7 @@ describe('free mode agent model allowlist', () => {
     // A model missing here silently falls back to its base2 root — no error,
     // just the old cost profile for whoever picked it.
     for (const model of SUPPORTED_FREEBUFF_MODELS) {
+      if (isFreebuffLimitedOfferModelId(model.id)) continue
       expect(FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL[model.id]).toBeDefined()
     }
   })

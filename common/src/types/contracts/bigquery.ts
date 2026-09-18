@@ -22,6 +22,13 @@ export type InsertMessageBigqueryFn = (params: {
   logger: Logger
 }) => Promise<boolean>
 
+/** Evidence stored in an assistant response trace's request JSON marker. */
+export type ChatCompletionEvidence = {
+  finish_reason: string | null
+  /** Includes provider error frames and capture data-frame parse failures. */
+  transport_status: 'complete' | 'error'
+}
+
 export type ChatCompletionTraceRow = {
   id: string
   user_id: string

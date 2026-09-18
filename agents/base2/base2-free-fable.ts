@@ -1,26 +1,19 @@
-import { FREEBUFF_FABLE_5_MODEL_ID } from '@codebuff/common/constants/freebuff-models'
+import { FREEBUFF_FABLE_5_1_MODEL_ID } from '@codebuff/common/constants/freebuff-models'
 
 import { createBase2 } from './base2'
 
-/**
- * Buffy on Claude Fable 5, the capacity-limited trial root.
- *
- * Reachable only while the server still advertises the offer (see
- * FREEBUFF_LIMITED_OFFER_MODEL_IDS); admission is what gates it, not this
- * definition. Provider routing is inherited from createBase2's anthropic/*
- * branch — the same Bedrock-only, data_collection:'deny' pin the paid Opus
- * orchestrators use — so a provider outage cannot silently reroute a free
- * frontier model onto a differently-priced endpoint.
- *
- * Its reviewer also runs Fable: the session gate rejects cross-model subagents,
- * so the usual DeepSeek Flash fallback cannot review a Fable-bound session.
- */
+/** Fable 5.1 trace campaign: base2 delegates exploration and reviews with
+ *  Fable 5.1. Capacity and the one-per-user limit are enforced at admission. */
 const definition = {
   ...createBase2('free', {
-    model: FREEBUFF_FABLE_5_MODEL_ID,
+    model: FREEBUFF_FABLE_5_1_MODEL_ID,
+    // Live runs ended on follow-up cards without a written answer. Keep
+    // questions and delegation, but omit the optional cards and their prompt.
+    noFollowups: true,
   }),
   id: 'base2-free-fable',
-  displayName: 'Buffy the Claude Fable 5 Free Orchestrator',
+  displayName: 'Buffy the Claude Fable 5.1 Free Orchestrator',
+  stepPrompt: `Continue working on the user's request. If the task is complete, write your answer in ordinary assistant text, summarizing the subagents' findings and citing source URLs for research.`,
 }
 
 export default definition

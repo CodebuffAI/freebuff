@@ -26,7 +26,7 @@ import {
   FREEBUFF_MIMO_V25_MODEL_ID,
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
-  FREEBUFF_FABLE_5_MODEL_ID,
+  FREEBUFF_FABLE_5_1_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
   FREEBUFF_MINIMAX_M3_MODEL_ID,
@@ -79,6 +79,7 @@ afterEach(() => {
 const renderSelector = async (
   maxHeight = 40,
   startSession?: (model: string, limit?: number | 'session') => Promise<void>,
+  width = 100,
   nowMs = FIXED_NOW_MS,
 ) => {
   // Tear down any selector this test already rendered. Only the LAST one was
@@ -88,7 +89,7 @@ const renderSelector = async (
   // test ran next.
   cleanupRenderer?.()
   cleanupRenderer = undefined
-  const setup = await createTestRenderer({ width: 100, height: 40 })
+  const setup = await createTestRenderer({ width, height: 40 })
   const root = createRoot(setup.renderer)
   cleanupRenderer = () => {
     flushSync(() => root.unmount())
@@ -133,7 +134,7 @@ test.each([
       }, { amount: 10, available: discount > 0 }),
     })
     useFreebuffModelStore.getState().setSelectedModel(id)
-    const setup = await renderSelector(40, undefined, now)
+    const setup = await renderSelector(40, undefined, 100, now)
     expect(setup.captureCharFrame()).toContain(`${discount ? `${before} ` : ''}${before - discount} Freebucks/hr`)
     expect(setup.captureCharFrame()).toContain(before === 10 ? 'normally 15/hr' : 'Off-peak 10/hr')
     expect(setup.captureCharFrame()).not.toContain('Server fallback price notice')
@@ -646,18 +647,18 @@ describe('FreebuffModelSelector limited-model offer', () => {
       remaining: number
       total: number
       userRemaining: number
-      userResetAt: string
+      userResetAt: string | null
     }> = {},
   ) => ({
     status: 'none' as const,
     accessTier: 'full' as const,
     limitedModelOffers: [
       {
-        model: FREEBUFF_FABLE_5_MODEL_ID,
-        remaining: 38,
-        total: 50,
+        model: FREEBUFF_FABLE_5_1_MODEL_ID,
+        remaining: 488,
+        total: 500,
         userRemaining: 1,
-        userResetAt: new Date(FIXED_NOW_MS + 5 * 60 * 60_000).toISOString(),
+        userResetAt: null,
         ...offer,
       },
     ],
@@ -679,8 +680,8 @@ describe('FreebuffModelSelector limited-model offer', () => {
     useFreebuffSessionStore.getState().setSession(offerSession())
     const frame = (await renderSelector()).captureCharFrame()
     expect(frame).toContain('LIMITED TRIAL')
-    expect(frame).toContain('38 of 50 sessions left')
-    expect(frame).toContain('Claude Fable 5')
+    expect(frame).toContain('488 of 500 sessions left')
+    expect(frame).toContain('Claude Fable 5.1')
     // The disclosure that makes collecting the traces legitimate travels on the
     // row itself, not in a footnote somewhere else.
     expect(frame).toContain('May use data for AI training')
@@ -694,7 +695,7 @@ describe('FreebuffModelSelector limited-model offer', () => {
     useFreebuffSessionStore.getState().setSession(offerSession())
     const frame = (await renderSelector()).captureCharFrame()
     expect(frame).toContain('See all')
-    expect(frame).toContain('Claude Fable 5')
+    expect(frame).toContain('Claude Fable 5.1')
     expect(frame).not.toContain('PREMIUM')
   })
 
@@ -703,10 +704,51 @@ describe('FreebuffModelSelector limited-model offer', () => {
       .getState()
       .setSession(offerSession({ userRemaining: 0 }))
     const frame = (await renderSelector()).captureCharFrame()
-    expect(frame).toContain('Claude Fable 5')
-    expect(frame).toContain("you've used yours")
-    expect(frame).toContain('resets in')
+    expect(frame).toContain('Claude Fable 5.1')
+    expect(frame).toContain("trial used")
+    expect(frame).not.toContain('resets in')
+    expect(frame).toContain('1 per user')
   })
+
+  test.each([60, 80, 100])(
+    'trial clicks at %s columns start only an unused trial at zero balance',
+    async (width) => {
+      const starts: string[] = []
+      const publish = (userRemaining: number) =>
+        useFreebuffSessionStore.getState().setSession({
+          ...offerSession({ userRemaining }),
+          freebucks: freebucksFixture(0),
+        })
+      publish(1)
+      useFreebuffModelStore
+        .getState()
+        .setSelectedModel(FREEBUFF_FABLE_5_1_MODEL_ID)
+      const setup = await renderSelector(
+        40,
+        async (model) => {
+          starts.push(model)
+        },
+        width,
+      )
+      const clickFable = async () => {
+        const y = setup
+          .captureCharFrame()
+          .split('\n')
+          .findIndex((line) => line.includes('Claude Fable'))
+        expect(y).toBeGreaterThanOrEqual(0)
+        await setup.mockMouse.click(8, y)
+        await setup.renderOnce()
+      }
+      expect(setup.captureCharFrame()).toContain('May use data for AI training')
+      await clickFable()
+      expect(starts).toEqual([FREEBUFF_FABLE_5_1_MODEL_ID])
+      publish(0)
+      await setup.renderOnce()
+      expect(setup.captureCharFrame()).toContain('trial used')
+      await clickFable()
+      expect(starts).toHaveLength(1)
+    },
+  )
 
   test('drops an offer this build has no catalog entry for', async () => {
     // A server rolling out a model older clients don't know must be a no-op,
@@ -734,9 +776,9 @@ describe('FreebuffModelSelector limited-model offer', () => {
     // invalid-selection repair would otherwise bounce the user off the row they
     // just picked.
     useFreebuffSessionStore.getState().setSession(offerSession())
-    useFreebuffModelStore.getState().setSelectedModel(FREEBUFF_FABLE_5_MODEL_ID)
+    useFreebuffModelStore.getState().setSelectedModel(FREEBUFF_FABLE_5_1_MODEL_ID)
     await renderSelector()
-    expect(getSelectedFreebuffModel()).toBe(FREEBUFF_FABLE_5_MODEL_ID)
+    expect(getSelectedFreebuffModel()).toBe(FREEBUFF_FABLE_5_1_MODEL_ID)
   })
 
   test('repairs the selection once the wave ends', async () => {
@@ -744,7 +786,7 @@ describe('FreebuffModelSelector limited-model offer', () => {
       status: 'none',
       accessTier: 'full',
     })
-    useFreebuffModelStore.getState().setSelectedModel(FREEBUFF_FABLE_5_MODEL_ID)
+    useFreebuffModelStore.getState().setSelectedModel(FREEBUFF_FABLE_5_1_MODEL_ID)
     await renderSelector()
     expect(isFreebuffModelId(getSelectedFreebuffModel())).toBe(true)
   })

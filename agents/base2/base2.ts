@@ -9,9 +9,11 @@ import { FREEBUFF_REVIEWER_AGENT_ID_BY_MODEL } from '@codebuff/common/constants/
 import {
   canFreebuffModelSpawnGeminiThinker,
   FREEBUFF_MINIMAX_M3_MODEL_ID,
+  FREEBUFF_FABLE_5_1_MODEL_ID,
 } from '@codebuff/common/constants/freebuff-models'
 
 import {
+  FABLE_PROVIDER_OPTIONS,
   FOLLOWUP_STYLE_GUIDANCE,
   gravityIndexGuidance,
   LITE_MODEL,
@@ -66,6 +68,7 @@ export function createBase2(
     hasNoValidation?: boolean
     planOnly?: boolean
     noAskUser?: boolean
+    noFollowups?: boolean
     noReview?: boolean
     noGravityIndex?: boolean
     model?: SecretAgentDefinition['model']
@@ -76,6 +79,7 @@ export function createBase2(
     hasNoValidation = mode === 'fast',
     planOnly = false,
     noAskUser = false,
+    noFollowups = false,
     noReview = false,
     noGravityIndex = false,
     model: modelOverride,
@@ -206,7 +210,7 @@ ${
       'read_files',
       'read_subtree',
       !isFast && !planOnly && 'write_todos',
-      !noAskUser && 'suggest_followups',
+      !noAskUser && !noFollowups && 'suggest_followups',
       // Plan mode is enforced by the toolset, not only by the prompt. Prose
       // alone lost: a user who picked PLAN got the whole feature built and
       // committed, because every capability a build turn has was still here
@@ -240,7 +244,8 @@ ${
       isMax && 'thinker-best-of-n-opus',
       isDefault && !planOnly && 'editor',
       isMax && !planOnly && 'editor-multi-prompt',
-      !planOnly && 'tmux-cli',
+      !planOnly &&
+        (model === FREEBUFF_FABLE_5_1_MODEL_ID ? 'tmux-cli-fable' : 'tmux-cli'),
       'browser-use',
       isLean && !noReview && !planOnly && leanCodeReviewerAgentId,
       isDefault && !planOnly && 'code-reviewer',
@@ -383,6 +388,7 @@ ${PLACEHOLDER.GIT_CHANGES_PROMPT}
           hasGeminiThinker,
           hasNoValidation,
           noAskUser,
+          noFollowups,
           noReview,
           leanCodeReviewerAgentId,
         }),
@@ -412,6 +418,9 @@ type Base2HandleSteps = NonNullable<SecretAgentDefinition['handleSteps']>
 function getBase2ProviderOptions(
   model: SecretAgentDefinition['model'],
 ): SecretAgentDefinition['providerOptions'] {
+  if (model === FREEBUFF_FABLE_5_1_MODEL_ID) {
+    return FABLE_PROVIDER_OPTIONS
+  }
   return model.startsWith('anthropic/')
     ? { only: ['amazon-bedrock'], data_collection: 'deny' }
     : { data_collection: 'deny' }
@@ -471,6 +480,7 @@ function buildImplementationInstructionsPrompt({
   hasGeminiThinker,
   hasNoValidation,
   noAskUser,
+  noFollowups,
   noReview,
   leanCodeReviewerAgentId,
 }: {
@@ -481,6 +491,7 @@ function buildImplementationInstructionsPrompt({
   hasGeminiThinker: boolean
   hasNoValidation: boolean
   noAskUser: boolean
+  noFollowups: boolean
   noReview: boolean
   leanCodeReviewerAgentId: string
 }) {
@@ -519,6 +530,7 @@ ${buildArray(
     `- Spawn a ${leanCodeReviewerAgentId} to review the changes after you have implemented code changes. (Skip this step only if the change is extremely straightforward and obvious.)`,
   !isFast &&
     !noAskUser &&
+    !noFollowups &&
     `- At the end of your turn, use the suggest_followups tool to suggest ~3 next steps the user might want to take — e.g., "Add unit tests for UserService", "Split the auth module into smaller files", "Continue with the next step". ${FOLLOWUP_STYLE_GUIDANCE}`,
 ).join('\n')}`
 }

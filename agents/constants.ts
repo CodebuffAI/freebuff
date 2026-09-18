@@ -1,5 +1,12 @@
 export const publisher = 'codebuff'
 
+/** Fable 5.1's Bedrock route is BYOK-only. Root and helpers use the public
+ *  Anthropic route with provider training disabled. */
+export const FABLE_PROVIDER_OPTIONS = {
+  only: ['anthropic'],
+  data_collection: 'deny' as const,
+}
+
 /**
  * How a suggested followup should be phrased, shared by every agent that ends
  * its turn with suggest_followups.

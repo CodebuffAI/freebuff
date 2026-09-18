@@ -756,11 +756,6 @@ export const useSendMessage = ({
           // Drop any queued/in-flight async checkpoint first so a stale write
           // can't land after this authoritative final save.
           await settleCheckpointSave()
-          // Read committed state rather than saving inside a setMessages
-          // updater: the store uses immer, so the updater sees a draft proxy
-          // and JSON.stringify of the (unbounded) transcript through proxy
-          // traps is several times slower.
-          saveChatState(runState, useChatStore.getState().messages, runChatDir)
         }
         handleRunCompletion({
           runState,
@@ -780,6 +775,11 @@ export const useSendMessage = ({
           isProcessingQueueRef,
           isQueuePausedRef,
         })
+        if (!abortController.signal.aborted && runChatIsCurrent()) {
+          // Completion flushes the last batched text and marks the message
+          // finished. Persist that committed state, not the preceding frame.
+          saveChatState(runState, useChatStore.getState().messages, runChatDir)
+        }
       } catch (error) {
         // If this run was aborted, the abort handler already handled cleanup.
         // Don't run error handling to avoid interfering with any new run that

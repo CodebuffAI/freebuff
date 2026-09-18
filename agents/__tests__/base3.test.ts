@@ -1,3 +1,4 @@
+import { isFreebuffLimitedOfferModelId } from '@codebuff/common/constants/freebuff-models'
 import {
   FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL,
   hasFreebuffRootSystemPromptOpening,
@@ -11,7 +12,6 @@ import base3Evals from '../base3-evals'
 import base3FreeDeepseek from '../base3-free-deepseek'
 import base3FreeDeepseekFlash from '../base3-free-deepseek-flash'
 import base3FreeDeepseekFlashEvals from '../base3-free-deepseek-flash-evals'
-import base3FreeFable from '../base3-free-fable'
 import base3FreeGlm from '../base3-free-glm'
 import base3FreeGlmV53Flash from '../base3-free-glm-5-3-flash'
 import base3FreeLuna from '../base3-free-luna'
@@ -53,7 +53,6 @@ const CLI_ROOTS = [
   base3FreeGlm,
   base3FreeGlmV53Flash,
   base3FreeLuna,
-  base3FreeFable,
   base3FreeOxAlpha,
   base3FreeSolarPro4,
   base3FreeGemini38Flash,
@@ -63,11 +62,10 @@ const CLI_ROOTS = [
 
 describe('base3 CLI roots', () => {
   test('keeps the efficiency flags the runtime reads', () => {
-    // 17 since Muse Spark 1.2 was restored beside the withdrawn 1.3 root (the
-    // paused id stays a recognised pick for binaries already shipped). The
+    // Fable 5.1 deliberately runs base2 for the trace campaign. The
     // count is asserted so a root added without the flags below cannot slip in
     // unnoticed.
-    expect(CLI_ROOTS.length).toBe(17)
+    expect(CLI_ROOTS.length).toBe(16)
     for (const agent of CLI_ROOTS) {
       // Windowed reads + the 100-entry glob cap + search-first tool wording.
       expect(agent.windowedFileReads).toBe(true)
@@ -137,6 +135,7 @@ describe('base3 CLI roots', () => {
 
   test('ships a root for every model the picker offers', () => {
     for (const model of SUPPORTED_FREEBUFF_MODELS) {
+      if (isFreebuffLimitedOfferModelId(model.id)) continue
       const agentId = FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL[model.id]
       expect(agentId).toBeDefined()
       expect(CLI_ROOTS.some((a) => a.id === agentId)).toBe(true)

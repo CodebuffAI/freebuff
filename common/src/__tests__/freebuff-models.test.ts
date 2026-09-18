@@ -10,7 +10,7 @@ import {
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   FREEBUFF_ENABLE_MIMO_MODELS_IN_UI,
-  FREEBUFF_FABLE_5_MODEL_ID,
+  FREEBUFF_FABLE_5_1_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
   FREEBUFF_REWARD_MODEL_ID,
   FREEBUFF_REWARD_MODEL_IDS,
@@ -1783,37 +1783,37 @@ describe('freebuff model availability', () => {
   })
 })
 
-describe('limited-offer models (Claude Fable 5)', () => {
+describe('limited-offer models (Claude Fable 5.1)', () => {
   test('is deliberately absent from every client picker catalog', () => {
     // The whole mechanism rests on this: no client may render Fable from its
     // own catalog, because only the server knows whether the wave still has
     // sessions. A client that has never been told about the offer must look
     // exactly like it does today.
     expect(FREEBUFF_MODELS.map((m) => m.id)).not.toContain(
-      FREEBUFF_FABLE_5_MODEL_ID,
+      FREEBUFF_FABLE_5_1_MODEL_ID,
     )
-    expect(isFreebuffModelId(FREEBUFF_FABLE_5_MODEL_ID)).toBe(false)
+    expect(isFreebuffModelId(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(false)
     expect(FREEBUFF_WEB_ALL_MODELS.map((m) => m.id)).not.toContain(
-      FREEBUFF_FABLE_5_MODEL_ID,
+      FREEBUFF_FABLE_5_1_MODEL_ID,
     )
     expect(
       getFreebuffModelsForAccessTier('full').map((m) => m.id),
-    ).not.toContain(FREEBUFF_FABLE_5_MODEL_ID)
+    ).not.toContain(FREEBUFF_FABLE_5_1_MODEL_ID)
   })
 
   test('is still a model the session and chat layers accept', () => {
     // Same shape as referral GLM: out of the picker catalog, in the supported
     // catalog, so admission, the chat gate and the display-name lookup all
     // resolve it.
-    expect(isSupportedFreebuffModelId(FREEBUFF_FABLE_5_MODEL_ID)).toBe(true)
+    expect(isSupportedFreebuffModelId(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(true)
     expect(
       isFreebuffSessionModelAllowedForAccessTier(
-        FREEBUFF_FABLE_5_MODEL_ID,
+        FREEBUFF_FABLE_5_1_MODEL_ID,
         'full',
       ),
     ).toBe(true)
-    expect(getFreebuffModel(FREEBUFF_FABLE_5_MODEL_ID).displayName).toBe(
-      'Claude Fable 5',
+    expect(getFreebuffModel(FREEBUFF_FABLE_5_1_MODEL_ID).displayName).toBe(
+      'Claude Fable 5.1',
     )
   })
 
@@ -1822,29 +1822,29 @@ describe('limited-offer models (Claude Fable 5)', () => {
     // the offer models were passed through, pressing Enter on the Fable row
     // would have started a DeepSeek session with no explanation.
     expect(
-      resolveFreebuffModelForAccessTier(FREEBUFF_FABLE_5_MODEL_ID, 'full'),
-    ).toBe(FREEBUFF_FABLE_5_MODEL_ID)
+      resolveFreebuffModelForAccessTier(FREEBUFF_FABLE_5_1_MODEL_ID, 'full'),
+    ).toBe(FREEBUFF_FABLE_5_1_MODEL_ID)
   })
 
   test('limited-region users cannot reach it', () => {
     expect(
       isFreebuffSessionModelAllowedForAccessTier(
-        FREEBUFF_FABLE_5_MODEL_ID,
+        FREEBUFF_FABLE_5_1_MODEL_ID,
         'limited',
       ),
     ).toBe(false)
     expect(
       resolveFreebuffSessionModelForAccessTier(
-        FREEBUFF_FABLE_5_MODEL_ID,
+        FREEBUFF_FABLE_5_1_MODEL_ID,
         'limited',
       ),
     ).toBe(LIMITED_FREEBUFF_MODEL_ID)
   })
 
   test('traces are collected, which is the point of running the wave at all', () => {
-    expect(isFreebuffTracedModelId(FREEBUFF_FABLE_5_MODEL_ID)).toBe(true)
+    expect(isFreebuffTracedModelId(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(true)
     const fable = SUPPORTED_FREEBUFF_MODELS.find(
-      (m) => m.id === FREEBUFF_FABLE_5_MODEL_ID,
+      (m) => m.id === FREEBUFF_FABLE_5_1_MODEL_ID,
     )
     expect((fable as { warning?: string } | undefined)?.warning).toBe(
       'May use data for AI training',
@@ -1855,15 +1855,15 @@ describe('limited-offer models (Claude Fable 5)', () => {
     // It is marked `premium: true` for styling and to keep it out of the free
     // Standard pool, but joining FREEBUFF_PREMIUM_MODEL_IDS would put trial
     // sessions on the quota M3 and DeepSeek Pro share.
-    expect(isFreebuffPremiumModelId(FREEBUFF_FABLE_5_MODEL_ID)).toBe(false)
-    expect(isFreebuffWebPremiumModelId(FREEBUFF_FABLE_5_MODEL_ID)).toBe(false)
-    expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(FREEBUFF_FABLE_5_MODEL_ID)
-    expect(isFreebuffLimitedOfferModelId(FREEBUFF_FABLE_5_MODEL_ID)).toBe(true)
+    expect(isFreebuffPremiumModelId(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(false)
+    expect(isFreebuffWebPremiumModelId(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(false)
+    expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(FREEBUFF_FABLE_5_1_MODEL_ID)
+    expect(isFreebuffLimitedOfferModelId(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(true)
   })
 
   test('the offer predicate tolerates dated provider snapshots', () => {
     expect(
-      isFreebuffLimitedOfferModelId(`${FREEBUFF_FABLE_5_MODEL_ID}-20260815`),
+      isFreebuffLimitedOfferModelId(`${FREEBUFF_FABLE_5_1_MODEL_ID}-20260815`),
     ).toBe(true)
     expect(
       isFreebuffLimitedOfferModelId(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID),

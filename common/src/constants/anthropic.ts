@@ -35,6 +35,7 @@ const OPENROUTER_TO_ANTHROPIC_MODEL_MAP: Record<string, string> = {
 
   // Claude 5.x models
   'anthropic/claude-fable-5': 'claude-fable-5',
+  'anthropic/claude-fable-5.1': 'claude-fable-5-1',
   'anthropic/claude-opus-5': 'claude-opus-5',
 
   // Claude 4.x Opus models
