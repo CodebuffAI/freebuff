@@ -103,7 +103,8 @@ describe('stream usage receipts', () => {
       },
     ])
     expect(costs).toHaveLength(1)
-    expect(costs[0]).toBeGreaterThan(0)
+    // max(0.01, 0.02) * 1.055 * 100 = 2.11, rounded to 2
+    expect(costs[0]).toBe(2)
     expect(callbackOrder).toEqual(['usage', 'cost'])
   })
 
