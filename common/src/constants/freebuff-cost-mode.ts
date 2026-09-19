@@ -66,19 +66,23 @@ export const FREEBUFF_COST_MODE_ESCALATION_MESSAGE =
   'Freebuff agents run in free mode. Send codebuff_metadata.cost_mode = "free", or pick a non-Freebuff agent.'
 
 /**
- * Accounts exempted from third-party-client ENFORCEMENT, from
- * `FREEBUFF_ENFORCEMENT_EXEMPT_USER_IDS` (comma-separated user ids).
+ * Accounts exempted from the PUNISHMENT for using a third-party client, from
+ * `FREEBUFF_BAN_EXEMPT_USER_IDS` (comma-separated user ids).
  *
- * Two reasons this exists rather than a code constant. A researcher who
- * reports a bypass in good faith must not be downgraded, permanently flagged
- * or swept into a ban for the traffic that demonstrated it — they did us a
- * favour, and the first one who gets banned for it is the last one who tells
- * us. And support needs a lever to clear a false positive without a deploy.
+ * A researcher who reports a bypass in good faith must not be permanently
+ * flagged or swept into a ban for the traffic that demonstrated it — they did
+ * us a favour, and the first one who gets banned for it is the last one who
+ * tells us. Support also needs a lever to clear a false positive without a
+ * deploy.
  *
- * Detection is deliberately NOT exempted: an exempt account is still measured,
- * still logged, and still visible in the dashboards. Only the consequences are
- * withheld — the downgrade, the sticky `third_party_client` flag, and the ban
- * evidence row that the sweep acts on.
+ * Scope is narrow and was corrected once: the DOWNGRADE still applies. An
+ * earlier version waived it too, which made the exempt account the only place
+ * on the platform where the third-party rule did not hold. The reporter,
+ * testing from that account, measured the lane as still open and wrote it up
+ * as unfixed — their requests were being detected the whole time and served
+ * anyway. The downgrade is the rule; the sticky flag and the `ban_event` row
+ * are the punishment. Only the punishment is waived, and detection is never
+ * suppressed, so an exempt account stays visible in every dashboard.
  */
 export function parseExemptUserIds(
   raw: string | undefined,
