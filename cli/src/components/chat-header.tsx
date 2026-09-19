@@ -8,6 +8,7 @@ import { IS_FREEBUFF } from '../utils/constants'
 import { openFileAtPath } from '../utils/open-file'
 import { formatCwd } from '../utils/path-helpers'
 import { getLogoAccentColor, getLogoBlockColor } from '../utils/theme-system'
+import { shouldAnimateChatHeader } from '../utils/chat-header-animation'
 import { TerminalLink } from './terminal-link'
 
 export const ChatHeader = memo(function ChatHeader({
@@ -23,7 +24,7 @@ export const ChatHeader = memo(function ChatHeader({
   const blockColor = getLogoBlockColor(theme.name)
   const accentColor = getLogoAccentColor(theme.name)
   const { applySheenToChar } = useSheenAnimation({
-    enabled: animationEnabled,
+    enabled: shouldAnimateChatHeader(animationEnabled, IS_FREEBUFF),
     logoColor: theme.foreground,
     accentColor,
     blockColor,
