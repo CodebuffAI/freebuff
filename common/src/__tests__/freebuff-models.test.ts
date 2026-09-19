@@ -1826,19 +1826,12 @@ describe('limited-offer models (Claude Fable 5.1)', () => {
     ).toBe(FREEBUFF_FABLE_5_1_MODEL_ID)
   })
 
-  test('limited-region users cannot reach it', () => {
-    expect(
-      isFreebuffSessionModelAllowedForAccessTier(
-        FREEBUFF_FABLE_5_1_MODEL_ID,
-        'limited',
-      ),
-    ).toBe(false)
-    expect(
-      resolveFreebuffSessionModelForAccessTier(
-        FREEBUFF_FABLE_5_1_MODEL_ID,
-        'limited',
-      ),
-    ).toBe(LIMITED_FREEBUFF_MODEL_ID)
+  test.each(['full', 'limited'] as const)('campaign selection and admission preserve Fable at %s access', (tier) => {
+    expect(isFreebuffSessionModelAllowedForAccessTier(FREEBUFF_FABLE_5_1_MODEL_ID, tier)).toBe(true)
+    expect(resolveFreebuffSessionModelForAccessTier(FREEBUFF_FABLE_5_1_MODEL_ID, tier)).toBe(FREEBUFF_FABLE_5_1_MODEL_ID)
+    expect(resolveFreebuffModelForAccessTier(FREEBUFF_FABLE_5_1_MODEL_ID, tier)).toBe(FREEBUFF_FABLE_5_1_MODEL_ID)
+    // An arbitrary suffix is not an additional supported campaign model.
+    expect(isFreebuffSessionModelAllowedForAccessTier(`${FREEBUFF_FABLE_5_1_MODEL_ID}-unknown`, tier)).toBe(false)
   })
 
   test('traces are collected, which is the point of running the wave at all', () => {

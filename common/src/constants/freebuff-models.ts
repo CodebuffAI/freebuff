@@ -3341,6 +3341,8 @@ export function isFreebuffSessionModelAllowedForAccessTier(
   // Widening WHAT a limited user may pick, not how much: the limited pool is
   // keyed on the tier rather than the model.
   return (
+    // Campaign admission owns its global and per-user caps, on either tier.
+    FREEBUFF_LIMITED_OFFER_MODEL_IDS.some((modelId) => modelId === model) ||
     isRewardModelRedeemableAtLimitedTier(model) ||
     FREEBUFF_WEB_LIMITED_MODEL_IDS.some((modelId) => modelId === model) ||
     // Paid plans reach limited regions too — see `hasPaidSubscription`.
@@ -3433,7 +3435,7 @@ export function resolveFreebuffWebModel(
 
 /** Resolve an explicit CLI selection for an access tier. The ordinary picker
  * uses `FREEBUFF_MODELS`; a limited-tier user may also hold an earned reward
- * balance for the reward model, and a full-access user may have been told about
+ * balance for the reward model, and any user may have been told about
  * a limited-offer model this launch. Both live outside what the tier's picker
  * lists, so without these passes an explicit pick of either would be silently
  * rewritten to the fallback model — the user would press Enter on Fable and
@@ -3444,6 +3446,10 @@ export function resolveFreebuffModelForAccessTier(
   /** See `hasPaidSubscription` on isFreebuffSessionModelAllowedForAccessTier. */
   hasPaidSubscription = false,
 ): FreebuffModelId | FreebuffLimitedOfferModelId {
+  const limitedOffer = FREEBUFF_LIMITED_OFFER_MODEL_IDS.find(
+    (modelId) => modelId === id,
+  )
+  if (limitedOffer) return limitedOffer
   if (accessTier === 'limited') {
     // The reward model survives the coercion at limited tier so an earned
     // session is launchable from any region; the pool decides whether it is
@@ -3461,10 +3467,6 @@ export function resolveFreebuffModelForAccessTier(
       ? (id as FreebuffModelId)
       : LIMITED_FREEBUFF_MODEL_ID
   }
-  const limitedOffer = FREEBUFF_LIMITED_OFFER_MODEL_IDS.find(
-    (modelId) => modelId === id,
-  )
-  if (limitedOffer) return limitedOffer
   return resolveFreebuffModel(id)
 }
 

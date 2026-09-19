@@ -639,7 +639,7 @@ describe('FreebuffModelSelector tier layout', () => {
   })
 })
 
-describe('FreebuffModelSelector limited-model offer', () => {
+describe.each(['full', 'limited'] as const)('FreebuffModelSelector limited-model offer (%s)', (accessTier) => {
   const offerSession = (
     offer: Partial<{
       remaining: number
@@ -649,7 +649,7 @@ describe('FreebuffModelSelector limited-model offer', () => {
     }> = {},
   ) => ({
     status: 'none' as const,
-    accessTier: 'full' as const,
+    accessTier,
     limitedModelOffers: [
       {
         model: FREEBUFF_FABLE_5_1_MODEL_ID,
@@ -724,7 +724,12 @@ describe('FreebuffModelSelector limited-model offer', () => {
       const setup = await renderSelector(
         40,
         async (model) => {
-          starts.push(model)
+          starts.push(
+            resolveFreebuffModelPickForSession(
+              model,
+              useFreebuffSessionStore.getState().session,
+            ),
+          )
         },
         width,
       )
