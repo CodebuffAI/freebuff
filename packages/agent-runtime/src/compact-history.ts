@@ -1176,3 +1176,57 @@ export function maybeCompactHistory(params: {
 
   return result.messages
 }
+
+/**
+ * Compact once, on demand, whatever the triggers say.
+ *
+ * Same mechanical pass `maybeCompactHistory` runs — same protected prefix, same
+ * fresh tool exchange, same budget walk — with the decision removed. A user who
+ * asks for it has already decided; `evaluateCompactionTrigger` exists to answer
+ * "is this worth doing unasked", which is a different question.
+ *
+ * Returns null when the pass would not make the history smaller. That is not a
+ * failure, it is the honest answer for a short conversation: rewriting it would
+ * break the provider's prompt cache and hand back an envelope around the same
+ * content. The caller reports it as a no-op rather than a compaction.
+ *
+ * Throws what `compactRequestHistory` throws — the live request alone over
+ * budget — with its user-presentable sentence intact.
+ */
+export function compactHistoryNow(params: {
+  messages: Message[]
+  maxContextLength: number
+  /** System prompt, tool schemas and next step's scaffolding, outside history. */
+  fixedTokenCount?: number
+  logger?: Logger
+  runId?: string
+}): { messages: Message[]; previousTokens: number; nextTokens: number } | null {
+  const { messages, maxContextLength, logger, runId } = params
+  const result = compactRequestHistory(
+    messages,
+    maxContextLength - (params.fixedTokenCount ?? 0),
+  )
+  const previousTokens = countTokensMessages(messages)
+  const nextTokens = countTokensMessages(result.messages)
+  if (nextTokens >= previousTokens) return null
+
+  // Telemetry is best-effort and must never block the compaction itself.
+  try {
+    logger?.info(
+      {
+        axiomEvent: 'context_compaction_completed',
+        agent_run_id: runId,
+        trigger_reason: 'manual',
+        context_token_count: previousTokens,
+        max_context_length: maxContextLength,
+        message_count: messages.length,
+        ...result.stats,
+      },
+      'Context compaction completed',
+    )
+  } catch {
+    // Ignore logging failures.
+  }
+
+  return { messages: result.messages, previousTokens, nextTokens }
+}
