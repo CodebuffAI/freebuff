@@ -15,7 +15,7 @@ import { createTestRenderer } from '@opentui/core/testing'
 import { createRoot, flushSync } from '@opentui/react'
 import React from 'react'
 
-import { FREEBUCKS_LABEL, FREEBUCKS_PICKER_NOTICE } from '../../utils/freebucks'
+import { FREEBUCKS_LABEL } from '../../utils/freebucks'
 import * as openUrl from '../../utils/open-url'
 import { FreebuffModelSelector } from '../freebuff-model-selector'
 import {
@@ -135,7 +135,7 @@ test.each([
     })
     useFreebuffModelStore.getState().setSelectedModel(id)
     const setup = await renderSelector(40, undefined, 100, now)
-    expect(setup.captureCharFrame()).toContain(`${discount ? `${before} ` : ''}${before - discount} Freebucks/hr`)
+    expect(setup.captureCharFrame()).toContain(`│ ${before - discount} Freebucks/hr`)
     expect(setup.captureCharFrame()).toContain(before === 10 ? 'normally 15/hr' : 'Off-peak 10/hr')
     expect(setup.captureCharFrame()).not.toContain('Server fallback price notice')
     expect(wake).toBeDefined()
@@ -144,7 +144,7 @@ test.each([
       wake!()
     })
     await setup.renderOnce()
-    expect(setup.captureCharFrame()).toContain(`${discount ? `${after} ` : ''}${after - discount} Freebucks/hr`)
+    expect(setup.captureCharFrame()).toContain(`│ ${after - discount} Freebucks/hr`)
     expect(setup.captureCharFrame()).toContain(explanation)
   } finally {
     cleanupRenderer?.()
@@ -209,8 +209,6 @@ test('the Freebucks picker waits after an expired reset and displays a confirmed
   await setup.renderOnce()
   expect(setup.captureCharFrame()).toContain('100/100 Freebucks daily · resets in 1d 0h')
   expect(setup.captureCharFrame()).not.toContain('Updating balance')
-  expect(FREEBUCKS_PICKER_NOTICE).toContain('first refill may arrive earlier')
-  expect(FREEBUCKS_PICKER_NOTICE).toContain('keep your scheduled refill and may delay the following one')
 })
 
 describe('FreebuffModelSelector referral selection', () => {
@@ -925,7 +923,7 @@ describe('GLM selection uses the applicable meter', () => {
   )
 
   test.each([true, false])(
-    'an available first-tab discount strikes the regular price and is named limited-time, available=%s',
+    'an available first-tab discount shows only the discounted price and is named limited-time, available=%s',
     async (available) => {
       useFreebuffSessionStore.getState().setSession({
         status: 'none',
@@ -942,10 +940,11 @@ describe('GLM selection uses the applicable meter', () => {
       await setup.renderOnce()
       const frame = setup.captureCharFrame()
       if (available) {
-        // "~~15~~ 5 Freebucks/hr": the struck regular price one column ahead
-        // of the discounted one (the strikethrough is an attribute, not a
-        // character, so the frame reads as plain text).
-        expect(frame).toContain('15 5 Freebucks/hr')
+        // Only the price charged: many terminals drop the strikethrough
+        // attribute, and "15 5 Freebucks/hr" then reads as two prices.
+        expect(frame).toContain('5 Freebucks/hr')
+        expect(frame).not.toContain('15 5 Freebucks/hr')
+        expect(frame).not.toContain('15 Freebucks/hr')
         expect(frame).toContain('Limited-time first-tab discount')
       } else {
         // In use elsewhere: the full price is the price, nothing struck, and

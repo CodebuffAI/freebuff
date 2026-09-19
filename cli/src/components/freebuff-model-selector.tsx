@@ -138,14 +138,12 @@ const TOGGLE_ID = '__freebuff_toggle__'
 /** Joins the parts of a row's second line (see `rowDetails`). */
 const DETAIL_SEPARATOR = ' · '
 
-/** One chip on a row's second line. `struck` is drawn crossed out, one space
- *  ahead of `text` — the regular price beside a discounted one. */
-type RowDetail = { struck?: string; text: string; warn: boolean }
+/** One chip on a row's second line. `highlight` draws it in the accent colour
+ *  — a price the first-tab discount moved. */
+type RowDetail = { text: string; warn: boolean; highlight?: boolean }
 
-/** The chip as plain characters, for the width math (a struck price still
- *  takes its columns). */
-const detailText = (detail: RowDetail): string =>
-  detail.struck !== undefined ? `${detail.struck} ${detail.text}` : detail.text
+/** The chip as plain characters, for the width math. */
+const detailText = (detail: RowDetail): string => detail.text
 
 // There used to be a right-aligned "Press Enter ↵" cue on the focused row, with
 // its width reserved in the line-1 budget below. Both are gone: the cue was
@@ -454,15 +452,15 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       const rowPrice = freebucksPriceFor(freebucks, model.id)
       const offPeakCopy = freebucksOffPeakCopy(freebucks, model.id, { now: nowMs ?? Date.now() })
       if (rowPrice !== undefined) {
-        // The regular price struck through ahead of the discounted one
-        // ("~~15~~ 5 Freebucks/hr") while the first-tab offer is available,
-        // only on rows the offer actually moved.
-        const listPrice = firstTabListPriceFor(freebucks, model.id)
+        // Only the price that will be charged. The regular price is NOT
+        // shown beside it: many terminals ignore the strikethrough attribute,
+        // and "10 0 Freebucks/hr" then reads as two prices. A row the
+        // first-tab offer moved is drawn in the accent colour instead, next to
+        // the "Limited-time first-tab discount" chip that says why.
         details.push({
-          struck:
-            listPrice !== undefined ? formatFreebucks(listPrice) : undefined,
           text: freebucksPriceLabel(rowPrice),
           warn: (freebucks?.balance ?? 0) < rowPrice,
+          highlight: firstTabListPriceFor(freebucks, model.id) !== undefined,
         })
         if (offPeakCopy) details.push({ text: offPeakCopy.detail, warn: false })
         if (freebucks?.firstTabDiscount?.available) {
@@ -1441,16 +1439,20 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
             {details.map((detail, index) => (
               <React.Fragment key={`${index}-${detail.text}`}>
                 {index > 0 && <span fg={mutedColor}>{DETAIL_SEPARATOR}</span>}
-                {detail.struck !== undefined && (
-                  <span
-                    fg={mutedColor}
-                    attributes={TextAttributes.STRIKETHROUGH}
-                  >
-                    {detail.struck}
-                  </span>
-                )}
-                {detail.struck !== undefined && <span> </span>}
-                <span fg={detail.warn ? warningColor : mutedColor}>
+                <span
+                  fg={
+                    detail.warn
+                      ? warningColor
+                      : detail.highlight
+                        ? theme.primary
+                        : mutedColor
+                  }
+                  attributes={
+                    detail.highlight && !detail.warn
+                      ? TextAttributes.BOLD
+                      : TextAttributes.NONE
+                  }
+                >
                   {detail.text}
                 </span>
               </React.Fragment>

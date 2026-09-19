@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   FREEBUCKS_LABEL,
-  FREEBUCKS_PICKER_NOTICE,
   formatAllowanceUsd,
   formatFreebucks,
   freebucksOf,
@@ -447,12 +446,14 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   // Hidden in compact terminals either way: nice-to-have context, and below 22
   // rows every line competes with the picker itself.
   // On the meter the tier notices describe pools that no longer gate ("your
-  // shared premium allowance"), so the line says how sessions are priced
-  // instead.
+  // shared premium allowance"), so nothing goes here: each row already shows
+  // its price per hour and the header shows the daily pool and its reset. A
+  // paragraph restating that (and the timezone refill policy) was clutter
+  // under a list the reader had just finished reading.
   const belowPickerNotices = compact
     ? []
     : freebucksOf(session) !== undefined
-      ? [FREEBUCKS_PICKER_NOTICE]
+      ? []
       : accessTier === 'limited'
         ? [getLimitedModeNotice(session)]
         : [FREEBUFF_TIER_CHANGE_NOTICE]

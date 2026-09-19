@@ -25,7 +25,6 @@ import { firstTabQuoteForSession } from '@codebuff/common/util/freebuff-first-ta
 import { getFreebucksInfo } from '@codebuff/common/types/freebuff-session'
 import {
   FREEBUCKS_REFILL_PENDING_LABEL,
-  FREEBUCKS_RESET_POLICY_COPY,
   freebucksRefillPending,
 } from '@codebuff/common/util/freebucks-reset'
 
@@ -183,9 +182,6 @@ export const FREEBUCKS_INTRO = {
   ],
   dismiss: 'Shown once. Press any key to continue.',
 } as const
-
-/** Under the picker on a metered account, in place of the tier notices. */
-export const FREEBUCKS_PICKER_NOTICE = `Each model is priced in Freebucks per hour of session, charged once when the session starts. ${FREEBUCKS_RESET_POLICY_COPY} The wallet keeps what you buy or earn.`
 
 /**
  * "4h 12m", "38m", "2d 5h" — until the daily pool refills. Same shape as the
