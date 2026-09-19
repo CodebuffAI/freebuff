@@ -94,6 +94,14 @@ export interface FreebuffSubscriptionTierOffer {
   purchasable?: boolean
   /** Annual checkout remains unavailable until its Stripe price is configured. */
   yearlyPurchasable?: boolean
+  /**
+   * Whether a year of this tier can be bought with ONE payment and no
+   * auto-renew (checkout body `paymentMode: 'once'`). That checkout is a
+   * one-time payment, which is what lets it offer the methods a subscription
+   * cannot: crypto, Alipay / WeChat Pay, iDEAL, Bancontact, and UPI above the
+   * AutoPay cap. Optional on old servers; absent means no.
+   */
+  yearlyPrepaidPurchasable?: boolean
 }
 
 /**
@@ -351,8 +359,19 @@ export interface FreebuffPriceChange {
 export interface FreebuffSubscriptionInfo {
   /** The caller's tier id, or null when they have no live subscription. */
   tierId: string | null
-  /** Entitlement origin. Optional for compatibility with older servers. */
-  source?: 'stripe' | 'grant'
+  /**
+   * Entitlement origin. Optional for compatibility with older servers.
+   * `prepaid` is a year bought with one payment: it never renews, so it also
+   * reports `cancelAtPeriodEnd: true` and `renewsAt` is its paid-through date —
+   * which is how clients that predate this value already describe it
+   * correctly as ending rather than renewing.
+   */
+  source?: 'stripe' | 'grant' | 'prepaid'
+  /**
+   * `prepaid` only: from when another pay-once year can be bought. Buying one
+   * then extends the plan by a year from its current end, so there is no gap.
+   */
+  prepaidRenewableAt?: string
   /** Billing cadence for the live plan. Absent on legacy server payloads. */
   billingInterval?: 'monthly' | 'yearly'
   /** Stripe paid-through/renewal instant, distinct from monthly usage reset. */
