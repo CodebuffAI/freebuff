@@ -2,7 +2,7 @@ import { mock } from 'bun:test'
 
 import type { CodebuffFileSystem } from '../../types/filesystem'
 import type { Mock } from 'bun:test'
-import type { PathLike , Stats } from 'node:fs'
+import type { PathLike, Stats } from 'node:fs'
 
 export interface CreateMockFsOptions {
   files?: Record<string, string>
@@ -14,6 +14,7 @@ export interface CreateMockFsOptions {
     path: string,
     options?: { recursive?: boolean },
   ) => Promise<string | undefined>
+  realpathImpl?: (path: string) => Promise<string>
   statImpl?: (path: string) => Promise<Stats>
 }
 
@@ -31,6 +32,7 @@ export interface MockFsWithMocks {
       options?: { recursive?: boolean },
     ) => Promise<string | undefined>
   >
+  realpath: Mock<(path: PathLike) => Promise<string>>
   stat: Mock<(path: PathLike) => Promise<Stats>>
 }
 
@@ -43,6 +45,7 @@ export function createMockFs(options: CreateMockFsOptions = {}): MockFs {
     readdirImpl,
     writeFileImpl,
     mkdirImpl,
+    realpathImpl,
     statImpl,
   } = options
 
@@ -77,6 +80,20 @@ export function createMockFs(options: CreateMockFsOptions = {}): MockFs {
     const pathStr = String(path)
     createdDirs.add(pathStr)
     return undefined
+  }
+
+  const defaultRealpath = async (path: PathLike): Promise<string> => {
+    const pathStr = String(path)
+    const isKnownPath =
+      pathStr in writtenFiles ||
+      pathStr in directories ||
+      createdDirs.has(pathStr)
+
+    if (!isKnownPath) {
+      throw new Error(`Path not found: ${pathStr}`)
+    }
+
+    return pathStr
   }
 
   const defaultStat = async (path: PathLike): Promise<Stats> => {
@@ -134,6 +151,10 @@ export function createMockFs(options: CreateMockFsOptions = {}): MockFs {
         mkdirImpl(String(path), opts)
     : defaultMkdir
 
+  const realpathFn = realpathImpl
+    ? async (path: PathLike) => realpathImpl(String(path))
+    : defaultRealpath
+
   const statFn = statImpl
     ? async (path: PathLike) => statImpl(String(path))
     : defaultStat
@@ -143,6 +164,7 @@ export function createMockFs(options: CreateMockFsOptions = {}): MockFs {
     readdir: mock(readdirFn),
     writeFile: mock(writeFileFn),
     mkdir: mock(mkdirFn),
+    realpath: mock(realpathFn),
     stat: mock(statFn),
   } as unknown as MockFs
 }
@@ -153,6 +175,7 @@ export function restoreMockFs(mockFs: MockFs): void {
   mocks.readdir.mockRestore()
   mocks.writeFile.mockRestore()
   mocks.mkdir.mockRestore()
+  mocks.realpath.mockRestore()
   mocks.stat.mockRestore()
 }
 
@@ -162,5 +185,6 @@ export function clearMockFs(mockFs: MockFs): void {
   mocks.readdir.mockClear()
   mocks.writeFile.mockClear()
   mocks.mkdir.mockClear()
+  mocks.realpath.mockClear()
   mocks.stat.mockClear()
 }
