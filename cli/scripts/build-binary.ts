@@ -177,6 +177,14 @@ async function main() {
     '--compile',
     '--production', // Required so compiled binaries use the production JSX runtime (avoids jsxDEV crashes).
     '--no-compile-autoload-bunfig', // User project bunfig.toml must not affect the standalone CLI.
+    // Bun's standalone executables load `.env` / `.env.local` from the
+    // working directory by default. The SDK resolves its API base URL from
+    // `NEXT_PUBLIC_CODEBUFF_APP_URL` / `CODEBUFF_APP_URL` at runtime, so a
+    // repository's `.env` could send every bearer-authenticated SDK call
+    // (/api/v1/me, completions, agent runs) to a host of its choosing the
+    // moment the CLI starts in it. A value exported in the user's own shell
+    // is still honoured; only the project file is no longer read.
+    '--no-compile-autoload-dotenv',
     `--target=${targetInfo.bunTarget}`,
     ...(OVERRIDE_COMPILE_EXECUTABLE_PATH
       ? [`--compile-executable-path=${OVERRIDE_COMPILE_EXECUTABLE_PATH}`]
