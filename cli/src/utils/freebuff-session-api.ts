@@ -95,11 +95,57 @@ export function sessionFetchSignal(
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
 
+function sessionBaseUrl(): string {
+  return (env.NEXT_PUBLIC_CODEBUFF_APP_URL || 'https://codebuff.com').replace(
+    /\/$/,
+    '',
+  )
+}
+
 function sessionEndpoint(method: FreebuffSessionMethod): string {
-  const base = (
-    env.NEXT_PUBLIC_CODEBUFF_APP_URL || 'https://codebuff.com'
-  ).replace(/\/$/, '')
-  return `${base}${method === 'POST' ? FREEBUFF_SESSION_ADMISSION_PATH : '/api/v1/freebuff/session'}`
+  return `${sessionBaseUrl()}${method === 'POST' ? FREEBUFF_SESSION_ADMISSION_PATH : '/api/v1/freebuff/session'}`
+}
+
+/** The host the session API is reached on, for copy that names it. */
+export function freebuffSessionHost(): string {
+  try {
+    return new URL(sessionBaseUrl()).host
+  } catch {
+    return sessionBaseUrl()
+  }
+}
+
+/**
+ * A network-layer failure: nothing came back, as opposed to a response we did
+ * not like. Bun's `fetch` surfaces these as `fetch failed`, a TimeoutError, or
+ * a bare socket code.
+ */
+export function isFreebuffSessionNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  if (isFreebuffSessionTimeoutError(error)) return true
+  return /fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|EAI_AGAIN|network/i.test(
+    `${error.message} ${(error.cause as Error | undefined)?.message ?? ''}`,
+  )
+}
+
+/**
+ * What the landing screen shows for a session request that never got an
+ * answer.
+ *
+ * Until 2026-09-19 it printed the runtime's error verbatim, so a user whose
+ * ISP could not route to this host — while every browser on the machine
+ * reached freebuff.com, which sits on a different address — read
+ * `The operation timed out.` and reinstalled. Four PLDT (Philippines) users
+ * reported exactly that in two days; switching ISP fixed each one. Name the
+ * host we could not reach and the two things that actually help, and never
+ * blame the machine: the server was serving everyone else at the time.
+ */
+export function freebuffSessionUnreachableMessage(host: string): string {
+  return (
+    `Couldn't get a response from ${host}. If your browser can open ` +
+    `freebuff.com, this network isn't routing to that host: try mobile data ` +
+    `or another ISP, or use freebuff.com/web meanwhile.`
+  )
 }
 
 export async function callFreebuffSession(

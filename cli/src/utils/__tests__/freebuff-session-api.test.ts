@@ -9,6 +9,9 @@ import {
   callFreebuffSession,
   classifyFreebuffSessionRequestFailure,
   FreebuffSessionRequestError,
+  freebuffSessionHost,
+  freebuffSessionUnreachableMessage,
+  isFreebuffSessionNetworkError,
   mergeCompactActiveSession,
 } from '../freebuff-session-api'
 
@@ -281,3 +284,35 @@ test.each([404, 405])(
     ).toBe('0')
   },
 )
+
+// The landing screen used to print the runtime's error verbatim ("The operation
+// timed out.", "fetch failed"). Users whose ISP could not route to the API host
+// read that as a broken install. What is shown must name the host and the two
+// things that help — and only for failures where nothing came back at all.
+test('a request that got no answer is a network error, a refused one is not', () => {
+  const timeout = new Error('The operation timed out.')
+  timeout.name = 'TimeoutError'
+  expect(isFreebuffSessionNetworkError(timeout)).toBe(true)
+  expect(isFreebuffSessionNetworkError(new Error('fetch failed'))).toBe(true)
+  const withCause = new Error('fetch failed')
+  ;(withCause as Error & { cause: Error }).cause = new Error('connect ECONNREFUSED 216.24.57.16:443')
+  expect(isFreebuffSessionNetworkError(withCause)).toBe(true)
+  expect(isFreebuffSessionNetworkError(new Error('getaddrinfo ENOTFOUND codebuff.com'))).toBe(true)
+
+  expect(isFreebuffSessionNetworkError(new FreebuffSessionRequestError('slow down', 429))).toBe(false)
+  expect(isFreebuffSessionNetworkError(new Error('Unexpected token < in JSON'))).toBe(false)
+  expect(isFreebuffSessionNetworkError('fetch failed')).toBe(false)
+})
+
+test('the unreachable copy names the host and never blames the machine', () => {
+  const msg = freebuffSessionUnreachableMessage('www.codebuff.com')
+  expect(msg).toContain('www.codebuff.com')
+  expect(msg).toContain('freebuff.com/web')
+  expect(msg).toContain('another ISP')
+  expect(msg).not.toMatch(/reinstall|firewall|antivirus/i)
+})
+
+test('the session host is the API origin without scheme or path', () => {
+  expect(freebuffSessionHost()).toMatch(/^[a-z0-9.:-]+$/i)
+  expect(freebuffSessionHost()).not.toContain('/')
+})

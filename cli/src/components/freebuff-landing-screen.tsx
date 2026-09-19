@@ -40,6 +40,11 @@ import {
   getFreebuffStreakLine,
 } from '../utils/freebuff-streak-line'
 import { formatSessionUnits } from '../utils/format-session-units'
+import {
+  freebuffSessionHost,
+  freebuffSessionUnreachableMessage,
+  isFreebuffSessionNetworkError,
+} from '../utils/freebuff-session-api'
 import { isPlainEnterKey } from '../utils/terminal-enter-detection'
 import { getLogoAccentColor, getLogoBlockColor } from '../utils/theme-system'
 import { INVERTED_CTA_FG } from '../utils/ui-constants'
@@ -100,6 +105,25 @@ const getLimitedModeNotice = (
   getFreebuffModelAvailabilityNotice(
     session && 'countryBlockReason' in session ? session : null,
   )
+
+/**
+ * The landing screen's ⚠ line. HTTP failures keep the server's wording; a
+ * request that got NO answer is explained instead of echoing the runtime
+ * (`The operation timed out.` / `fetch failed` told nobody anything).
+ */
+export function getLandingFailureMessage(
+  failure: FreebuffSessionFailure,
+  host: string = freebuffSessionHost(),
+): string {
+  const unreachable =
+    failure.type === 'timeout' ||
+    (failure.type === 'other' &&
+      isFreebuffSessionNetworkError(new Error(failure.message)))
+  if (!unreachable) return failure.message
+  return failure.retry
+    ? `${freebuffSessionUnreachableMessage(host)} Retrying automatically.`
+    : freebuffSessionUnreachableMessage(host)
+}
 
 function getTakeoverErrorMessage(failure: FreebuffSessionFailure): string {
   if (failure.type === 'http' && failure.statusCode === 503) {
@@ -692,7 +716,7 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
         >
           {failure && (!session || session.status === 'none') && (
             <text style={{ fg: theme.secondary, wrapMode: 'word' }}>
-              ⚠ {failure.message}
+              ⚠ {getLandingFailureMessage(failure)}
             </text>
           )}
 
