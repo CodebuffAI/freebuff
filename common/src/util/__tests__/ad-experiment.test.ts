@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test'
 import {
   DEFAULT_FIRST_PARTY_BACKFILL,
   DEFAULT_FIRST_PARTY_PRIMARY_PERCENT,
-  IMPREZIA_EXPERIMENT_PERCENT,
   adExperimentArmForUser,
   firstPartyAdRouteForUser,
   firstPartyAdRouteForGeoRequest,
@@ -42,42 +41,21 @@ describe('house subscription billing experiment', () => {
 })
 
 describe('imprezia experiment arm', () => {
-  test('signed-out sessions stay in control', () => {
-    for (const id of [null, undefined, '']) {
+  test('keeps ordinary, signed-out, and former preview users in control', () => {
+    for (const id of [null, undefined, '', 'user-42']) {
       expect(adExperimentArmForUser(id)).toBe('control')
     }
-  })
-
-  test('a user gets the same arm every time', () => {
-    for (const id of ['abc', 'user-42', 'a-very-long-uuid-like-identifier']) {
-      const first = adExperimentArmForUser(id)
-      for (let i = 0; i < 20; i++) {
-        expect(adExperimentArmForUser(id)).toBe(first)
-      }
-    }
-  })
-
-  test(`puts ~${IMPREZIA_EXPERIMENT_PERCENT}% of users in the arm`, () => {
-    const N = 20_000
-    let inArm = 0
-    for (let i = 0; i < N; i++) {
-      if (adExperimentArmForUser(`user-${i}`) === 'imprezia_first') inArm++
-    }
-    const percent = (inArm / N) * 100
-    // FNV-1a over sequential ids is not a perfect uniform source, so allow a
-    // point of slack rather than asserting an exact count.
-    expect(percent).toBeGreaterThan(IMPREZIA_EXPERIMENT_PERCENT - 1.5)
-    expect(percent).toBeLessThan(IMPREZIA_EXPERIMENT_PERCENT + 1.5)
-  })
-
-  test('forces only the Imprezia domain and named test account', () => {
     for (const email of ['dev@Imprezia.AI', 'jahooma@gmail.com']) {
-      expect(isImpreziaAudienceEmail(email)).toBe(true)
-      expect(adExperimentArmForUser('user', email)).toBe('imprezia_forced')
+      expect(adExperimentArmForUser('user', email)).toBe('control')
     }
+  })
+
+  test('removes the personal account from the legacy preview audience', () => {
+    expect(isImpreziaAudienceEmail('dev@Imprezia.AI')).toBe(true)
     for (const email of [
+      'jahooma@gmail.com',
+      ' JAHOOMA@gmail.com ',
       'dev@imprezia.ai.evil.com',
-      'jahooma+test@gmail.com',
     ]) {
       expect(isImpreziaAudienceEmail(email)).toBe(false)
     }
@@ -231,7 +209,6 @@ describe('first-party request routing', () => {
         {
           geoTier: 'tier1',
           terminalPaidFallback: false,
-          impreziaFirstRefusal: false,
         },
         'sample',
       ),
@@ -252,7 +229,6 @@ describe('first-party request routing', () => {
         {
           geoTier: 'tier2',
           terminalPaidFallback: false,
-          impreziaFirstRefusal: false,
         },
         'sample',
       ),
@@ -264,7 +240,6 @@ describe('first-party request routing', () => {
         {
           geoTier: 'tier2',
           terminalPaidFallback: true,
-          impreziaFirstRefusal: false,
         },
         'sample',
       ),
@@ -276,7 +251,6 @@ describe('first-party request routing', () => {
         {
           geoTier: 'unknown',
           terminalPaidFallback: true,
-          impreziaFirstRefusal: false,
         },
         'sample',
       ),
@@ -296,173 +270,10 @@ describe('first-party request routing', () => {
         {
           geoTier: 'unknown',
           terminalPaidFallback: false,
-          impreziaFirstRefusal: false,
         },
         'sample',
       ),
     ).toBe('gravity_then_first_party')
-  })
-})
-
-describe('first-party ahead of Imprezia (COD-338)', () => {
-  const config = {
-    primaryPercent: 0,
-    backfill: false,
-    geoRouting: true,
-    tier2BonusPercent: 0,
-    impreziaArmPercent: 100,
-  }
-  const tier1 = { geoTier: 'tier1' as const, terminalPaidFallback: false }
-
-  test('routes ahead of Imprezia only where Imprezia holds first refusal', () => {
-    expect(
-      firstPartyAdRouteForGeoRequest(
-        'user',
-        config,
-        { ...tier1, impreziaFirstRefusal: true },
-        'sample',
-      ),
-    ).toBe('first_party_before_imprezia')
-    expect(
-      firstPartyAdRouteForGeoRequest(
-        'user',
-        config,
-        { ...tier1, impreziaFirstRefusal: false },
-        'sample',
-      ),
-    ).toBe('paid_network_only')
-  })
-
-  test('never fires outside Tier 1, with geo routing off, at 0, or unset', () => {
-    const refusal = { terminalPaidFallback: true, impreziaFirstRefusal: true }
-    expect(
-      firstPartyAdRouteForGeoRequest(
-        'user',
-        config,
-        { geoTier: 'tier2', ...refusal },
-        'sample',
-      ),
-    ).toBe('paid_network_only')
-    expect(
-      firstPartyAdRouteForGeoRequest(
-        'user',
-        config,
-        { geoTier: 'unknown', ...refusal },
-        'sample',
-      ),
-    ).toBe('paid_network_only')
-    expect(
-      firstPartyAdRouteForGeoRequest(
-        'user',
-        { ...config, geoRouting: false },
-        { geoTier: 'tier1', ...refusal },
-        'sample',
-      ),
-    ).toBe('paid_network_only')
-    expect(
-      firstPartyAdRouteForGeoRequest(
-        'user',
-        { ...config, impreziaArmPercent: 0 },
-        { geoTier: 'tier1', ...refusal },
-        'sample',
-      ),
-    ).toBe('paid_network_only')
-    expect(
-      firstPartyAdRouteForGeoRequest(
-        'user',
-        {
-          primaryPercent: 0,
-          backfill: false,
-          geoRouting: true,
-          tier2BonusPercent: 0,
-        },
-        { geoTier: 'tier1', ...refusal },
-        'sample',
-      ),
-    ).toBe('paid_network_only')
-  })
-
-  test('the primary window wins and the arm window stacks above it', () => {
-    const context = { ...tier1, impreziaFirstRefusal: true }
-    let primary = 0
-    let preempt = 0
-    let paidOnly = 0
-    for (let index = 0; index < 4_000; index++) {
-      const route = firstPartyAdRouteForGeoRequest(
-        'user',
-        { ...config, primaryPercent: 25, impreziaArmPercent: 50 },
-        context,
-        `sample-${index}`,
-      )
-      if (route === 'first_party_primary') primary++
-      else if (route === 'first_party_before_imprezia') preempt++
-      else if (route === 'paid_network_only') paidOnly++
-      else throw new Error(`unexpected route ${route}`)
-    }
-    expect(primary / 4_000).toBeGreaterThan(0.21)
-    expect(primary / 4_000).toBeLessThan(0.29)
-    expect(preempt / 4_000).toBeGreaterThan(0.46)
-    expect(preempt / 4_000).toBeLessThan(0.54)
-    expect(paidOnly / 4_000).toBeGreaterThan(0.21)
-    expect(paidOnly / 4_000).toBeLessThan(0.29)
-  })
-
-  test('a stack past 100% takes every remaining request and nothing more', () => {
-    const context = { ...tier1, impreziaFirstRefusal: true }
-    for (let index = 0; index < 1_000; index++) {
-      const route = firstPartyAdRouteForGeoRequest(
-        'user',
-        { ...config, primaryPercent: 60, impreziaArmPercent: 75 },
-        context,
-        `sample-${index}`,
-      )
-      expect(
-        route === 'first_party_primary' ||
-          route === 'first_party_before_imprezia',
-      ).toBe(true)
-    }
-  })
-
-  test('the primary window is identical with and without first refusal', () => {
-    for (let index = 0; index < 2_000; index++) {
-      const sampleId = `sample-${index}`
-      const withRefusal = firstPartyAdRouteForGeoRequest(
-        'user',
-        { ...config, primaryPercent: 30, backfill: true },
-        { ...tier1, impreziaFirstRefusal: true },
-        sampleId,
-      )
-      const without = firstPartyAdRouteForGeoRequest(
-        'user',
-        { ...config, primaryPercent: 30, backfill: true },
-        { ...tier1, impreziaFirstRefusal: false },
-        sampleId,
-      )
-      expect(withRefusal === 'first_party_primary').toBe(
-        without === 'first_party_primary',
-      )
-      if (withRefusal !== 'first_party_before_imprezia') {
-        expect(withRefusal).toBe(without)
-      }
-    }
-  })
-
-  test('backfill stays the route when the sample misses the arm window', () => {
-    let backfill = 0
-    for (let index = 0; index < 2_000; index++) {
-      if (
-        firstPartyAdRouteForGeoRequest(
-          'user',
-          { ...config, backfill: true, impreziaArmPercent: 50 },
-          { ...tier1, impreziaFirstRefusal: true },
-          `sample-${index}`,
-        ) === 'gravity_then_first_party'
-      ) {
-        backfill++
-      }
-    }
-    expect(backfill / 2_000).toBeGreaterThan(0.46)
-    expect(backfill / 2_000).toBeLessThan(0.54)
   })
 })
 

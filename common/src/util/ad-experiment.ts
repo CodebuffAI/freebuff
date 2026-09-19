@@ -1,33 +1,5 @@
-/**
- * Which ad network gets first refusal on a sponsored slot.
- *
- * Imprezia reaches users three ways, and this module keeps them tellable apart:
- *
- * - Exclusively for the Imprezia team and our test account.
- * - As the PRIMARY for a random {@link IMPREZIA_EXPERIMENT_PERCENT}% of users.
- *   This is the experiment arm — a clean random subset whose revenue can be
- *   compared against control.
- * - As Gravity's FALLBACK for everyone else, ahead of Carbon. This is not
- *   random: it only ever sees the turns Gravity declined, which is a biased
- *   sample by construction and would drag the arm's numbers down if the two
- *   were pooled.
- *
- * Bucketing lives in `common` rather than in either web app because a user
- * must land in the same arm on every surface. Bucketing per product would let
- * one person be in the arm on the CLI and in control in chat, which makes
- * per-arm revenue uncomparable across products — the exact comparison this
- * experiment exists to support.
- */
-
-/**
- * Salt for the assignment hash. Changing this re-randomizes every user, so it
- * carries a date: a new experiment gets a new key rather than silently
- * reshuffling this one's cohort mid-flight.
- */
+/** Historical Imprezia experiment id, retained for reporting. */
 export const IMPREZIA_EXPERIMENT = 'ads_imprezia_primary_2026_08'
-
-/** Share of signed-in users who get Imprezia first refusal. */
-export const IMPREZIA_EXPERIMENT_PERCENT = 10
 
 /**
  * Stable salt for request sampling. The sample key rotates per ad request, but
@@ -60,7 +32,6 @@ export const DEFAULT_FIRST_PARTY_PRIMARY_PERCENT = 0
 export const DEFAULT_FIRST_PARTY_BACKFILL = false
 export const DEFAULT_FIRST_PARTY_GEO_ROUTING = false
 export const DEFAULT_FIRST_PARTY_TIER2_BONUS_PERCENT = 0
-export const DEFAULT_FIRST_PARTY_IMPREZIA_ARM_PERCENT = 0
 /**
  * The house leg (COD-358) is a dark deploy too: absent means the house
  * campaigns keep their legacy single door behind the paid rotation.
@@ -79,14 +50,6 @@ export type FirstPartyAdRoute =
   | 'first_party_primary'
   | 'gravity_then_first_party'
   | 'paid_networks_then_first_party_bonus'
-  /**
-   * Our book ahead of Imprezia, with Gravity's position unchanged. Only ever
-   * chosen for the `imprezia_first` arm, where Imprezia holds first refusal:
-   * a fill here displaces Imprezia's slot, and Gravity still backs both up.
-   * Never a control-arm route -- there Gravity is the primary, and putting
-   * our book in front of it is what the primary gate already meters.
-   */
-  | 'first_party_before_imprezia'
 
 export interface FirstPartyRoutingConfig {
   /** Request share, 0..100, that tries our book before paid networks. */
@@ -100,13 +63,6 @@ export interface FirstPartyGeoRoutingConfig extends FirstPartyRoutingConfig {
   geoRouting: boolean
   /** Share of terminal Tier-2 paid no-fills offered non-billable inventory. */
   tier2BonusPercent: number
-  /**
-   * Share, 0..100, of the `imprezia_first` arm's Tier-1 requests that try our
-   * book before Imprezia. Sampled from the same request bucket as the primary
-   * gate and stacked on top of it, so raising this never shrinks the primary
-   * window. Absent means 0, the dark deploy.
-   */
-  impreziaArmPercent?: number
 }
 
 /**
@@ -243,9 +199,7 @@ export function isImpreziaAudienceEmail(
 ): boolean {
   if (!email) return false
   const normalized = email.trim().toLowerCase()
-  return (
-    normalized === 'jahooma@gmail.com' || normalized.endsWith('@imprezia.ai')
-  )
+  return normalized.endsWith('@imprezia.ai')
 }
 
 /** FNV-1a 32-bit: tiny, dependency-free, stable across runtimes. */
@@ -286,22 +240,12 @@ export function houseSubscriptionBillingArmForUser(
     : 'yearly'
 }
 
-/**
- * Deterministic arm for a signed-in user, stable across products and sessions.
- */
+/** Gravity exclusivity retires the Imprezia cohorts. */
 export function adExperimentArmForUser(
-  userId: string | null | undefined,
-  userEmail?: string | null,
+  _userId: string | null | undefined,
+  _userEmail?: string | null,
 ): AdExperimentArm {
-  // Every ad surface rejects unauthenticated callers, so a missing id means no
-  // ad is served at all. Park those in control rather than letting them dilute
-  // the arm with impressions that never happened.
-  if (!userId) return 'control'
-
-  if (isImpreziaAudienceEmail(userEmail)) return 'imprezia_forced'
-
-  const bucket = fnv1a(`${IMPREZIA_EXPERIMENT}:${userId}`) % 100
-  return bucket < IMPREZIA_EXPERIMENT_PERCENT ? 'imprezia_first' : 'control'
+  return 'control'
 }
 
 /**
@@ -330,11 +274,9 @@ export function firstPartyAdRouteForUser(
  * Whether the HOUSE leg may run on this request (COD-358).
  *
  * The house campaigns are our own promotion: they bill nobody, so none of
- * the sampled windows above apply to them. The leg sits immediately ahead of
- * Carbon on CLI/Desktop and at the terminal position on the browser surfaces,
- * on Tier 1 AND Tier 2. Unknown geography stays closed while geo routing is
- * on, for the same
- * reason every other first-party door is: a missing or untrusted signal never
+ * the sampled windows above apply to them. The leg follows paid no-fill, ahead
+ * of bonus inventory, on Tier 1 AND Tier 2. Unknown geography stays closed
+ * while geo routing is on: a missing or untrusted signal never
  * opens inventory. With geo routing off there is no tier, and the knob alone
  * decides.
  *
@@ -362,19 +304,6 @@ export function houseLegOpen(
  *   paid provider available on that surface has declined, a sampled request
  *   may receive explicitly non-billable bonus inventory.
  * - Unknown geography stays on paid networks only.
- *
- * `terminalPaidFallback` is server routing context, not a claim that a
- * particular network filled. Browser surfaces set it only on the second leg
- * of their sequencer, after the other paid network has returned no fill.
- *
- * `impreziaFirstRefusal` says whether Imprezia holds first refusal on THIS
- * request's chain -- the `imprezia_first` arm on a surface that asks Imprezia
- * before Gravity, and never a pin. It is the only thing that unlocks the
- * Imprezia-preempt leg: a Tier-1 request that missed the primary window may
- * still try our book before Imprezia when its sample lands in the next
- * `impreziaArmPercent` of buckets. The field is required rather than
- * defaulted so a surface where Gravity goes first cannot forget to say so and
- * end up with our book in front of Gravity.
  */
 export function firstPartyAdRouteForGeoRequest(
   userId: string | null | undefined,
@@ -382,7 +311,6 @@ export function firstPartyAdRouteForGeoRequest(
   context: {
     geoTier: FirstPartyAdGeoTier
     terminalPaidFallback: boolean
-    impreziaFirstRefusal: boolean
   },
   sampleId?: string,
 ): FirstPartyAdRoute {
@@ -391,27 +319,7 @@ export function firstPartyAdRouteForGeoRequest(
   }
   if (!userId) return 'paid_network_only'
   if (context.geoTier === 'tier1') {
-    // One bucket, one ladder: the primary window first, then the preempt
-    // window stacked directly above it. Both read the same sample so the two
-    // windows can never overlap, and raising the arm knob never shrinks the
-    // primary window. A stack past 100% is simply "every remaining request".
-    const bucket = firstPartyPrimaryBucket(sampleId || userId)
-    const primaryBasisPoints = firstPartyPrimaryBasisPoints(
-      config.primaryPercent,
-    )
-    if (bucket < primaryBasisPoints) return 'first_party_primary'
-    if (
-      context.impreziaFirstRefusal &&
-      bucket <
-        primaryBasisPoints +
-          firstPartyPrimaryBasisPoints(
-            config.impreziaArmPercent ??
-              DEFAULT_FIRST_PARTY_IMPREZIA_ARM_PERCENT,
-          )
-    ) {
-      return 'first_party_before_imprezia'
-    }
-    return config.backfill ? 'gravity_then_first_party' : 'paid_network_only'
+    return firstPartyAdRouteForUser(userId, config, sampleId)
   }
   if (
     context.geoTier === 'tier2' &&
