@@ -48,6 +48,9 @@ function normalizeForJson(value: unknown): SerializableValue {
 }
 
 function summarizeDataUrl(value: string): SerializableValue {
+  if (!value.startsWith('data:')) {
+    return value
+  }
   const firstComma = value.indexOf(',')
   const header = firstComma >= 0 ? value.slice(0, firstComma) : value
   const payload = firstComma >= 0 ? value.slice(firstComma + 1) : ''
