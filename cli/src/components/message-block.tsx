@@ -2,6 +2,7 @@ import { TextAttributes } from '@opentui/core'
 import { memo, useState } from 'react'
 
 import { BlocksRenderer } from './blocks/blocks-renderer'
+import { CommandResultBlock } from './blocks/command-result-block'
 import { UserContentWithCopyButton } from './blocks/user-content-copy'
 import { Button } from './button'
 import { FileAttachmentCard } from './file-attachment-card'
@@ -273,7 +274,12 @@ export const MessageBlock = memo(({
         )}
 
       <box style={{ flexDirection: 'column', gap: 1, width: '100%' }}>
-        {blocks ? (
+        {metadata?.commandResult ? (
+          <CommandResultBlock
+            content={content}
+            commandResult={metadata.commandResult}
+          />
+        ) : blocks ? (
           <box
             style={{
               flexDirection: 'column',
