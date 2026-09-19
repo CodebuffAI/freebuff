@@ -40,6 +40,8 @@ const base: Omit<SendPaidSocialConversionParams, 'config'> = {
   attribution: {
     clickId: 'click-id',
     userAgent: 'Browser',
+    ipAddress: '203.0.113.9',
+    ttp: 'CiXyZ.tt.1',
     signupPath: '/api/auth/callback/github',
     campaign: { utm_campaign: 'internal-only-campaign' },
   },
@@ -107,6 +109,7 @@ describe('paid social transport contracts', () => {
     { clickId: 'https://private/path', hashedEmail: emailHash },
     { clickId: '', hashedEmail: emailHash },
     { hashedEmail: 'not-a-hash' },
+    { ipAddress: '999.1.1.1' },
     { userAgent: '' },
     { userAgent: ' '.repeat(10) },
     { userAgent: 'a'.repeat(513) },
@@ -127,7 +130,7 @@ describe('paid social transport contracts', () => {
       expect(fetchImpl).not.toHaveBeenCalled()
     },
   )
-  test('TikTok organic registration omits the click and never forwards X email matching', () => {
+  test('TikTok organic registration omits the click but forwards the hashed email, address and _ttp', () => {
     const request = buildPaidSocialRequest({
       ...base,
       config: tiktok,
@@ -140,20 +143,24 @@ describe('paid social transport contracts', () => {
     expect(request.body.data).toMatchObject([
       {
         user: {
+          ttp: 'CiXyZ.tt.1',
           external_id: paidSocialId('tiktok', 'internal-account'),
+          email: emailHash,
+          ip: '203.0.113.9',
           user_agent: 'Browser',
         },
       },
     ])
     const body = JSON.stringify(request.body)
     expect(body).not.toContain('ttclid')
-    expect(body).not.toContain('email')
-    expect(body).not.toContain(emailHash)
+    expect(body.toLowerCase()).not.toContain('test@x.com')
   })
   test.each([
     { userAgent: '' },
     { userAgent: 'x'.repeat(513) },
     { clickId: 'malformed click' },
+    { ttp: 'bad ttp' },
+    { ipAddress: 'not-an-ip' },
   ])('TikTok still rejects invalid browser matching data', (fields) => {
     expect(() =>
       buildPaidSocialRequest({
@@ -249,7 +256,9 @@ describe('paid social transport contracts', () => {
           event_id: 'stable-occurrence',
           user: {
             ttclid: 'click-id',
+            ttp: 'CiXyZ.tt.1',
             external_id: paidSocialId('tiktok', 'internal-account'),
+            ip: '203.0.113.9',
             user_agent: 'Browser',
           },
           page: { url: 'https://freebuff.com/api/auth/callback/github' },

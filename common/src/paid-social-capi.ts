@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto'
+import { hashMatchingEmail } from './matching-hash'
 import {
   normalizePaidSocialAttribution,
   paidSocialSignupPath,
@@ -27,14 +28,8 @@ export function paidSocialId(platform: PaidSocialPlatform, value: string) {
   return createHash('sha256').update(`${platform}-capi:${value}`).digest('hex')
 }
 
-/** X's matching contract: normalized email, unsalted SHA-256; server use only. */
-export function hashPaidSocialEmail(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const email = value.trim().toLowerCase()
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-    return undefined
-  return createHash('sha256').update(email).digest('hex')
-}
+/** X `hashed_email` and TikTok `email` share one normalization; server use only. */
+export const hashPaidSocialEmail = hashMatchingEmail
 
 const encode = (value: string) =>
   encodeURIComponent(value).replace(
@@ -130,7 +125,12 @@ export function buildPaidSocialRequest(
             event_id: params.eventId,
             user: {
               ...(attribution.clickId ? { ttclid: attribution.clickId } : {}),
+              ...(attribution.ttp ? { ttp: attribution.ttp } : {}),
               external_id: paidSocialId('tiktok', params.userId),
+              ...(attribution.hashedEmail
+                ? { email: attribution.hashedEmail }
+                : {}),
+              ...(attribution.ipAddress ? { ip: attribution.ipAddress } : {}),
               user_agent: attribution.userAgent,
             },
             // Runtime-validated static public OAuth path, with no query or fragment.

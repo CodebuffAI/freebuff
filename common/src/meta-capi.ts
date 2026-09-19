@@ -12,7 +12,11 @@ export const META_GRAPH_API_VERSION = 'v26.0'
 export type MetaConversionAttribution = {
   fbc?: string
   fbp?: string
-  /** Original signup browser agent, used only for the website signup event. */
+  /** Unsalted SHA-256 of the trimmed, lowercased account email (Meta's `em`). */
+  hashedEmail?: string
+  /** Client address resolved at enrollment, sent as `client_ip_address`. */
+  ipAddress?: string
+  /** Enrollment browser agent, sent as `client_user_agent` on every event. */
   userAgent: string
 }
 
@@ -52,6 +56,7 @@ export function buildMetaConversionBody(params: SendMetaConversionParams) {
   ) {
     throw new Error('Subscribe requires a positive confirmed USD payment')
   }
+  const { attribution } = params
   return {
     data: [
       {
@@ -64,13 +69,19 @@ export function buildMetaConversionBody(params: SendMetaConversionParams) {
         ...(params.surface === 'web'
           ? { event_source_url: 'https://freebuff.com/' }
           : {}),
+        // Every key below identifies the PERSON, not the event's own network
+        // hop, so the enrollment browser's agent and address ride on native
+        // events too. Match quality is what decides whether Meta can tie a
+        // conversion back to the ad; measured 4.7/10 with fbp+external_id only.
         user_data: {
           external_id: [metaExternalId(params.userId)],
-          ...(params.attribution.fbc ? { fbc: params.attribution.fbc } : {}),
-          ...(params.attribution.fbp ? { fbp: params.attribution.fbp } : {}),
-          ...(params.surface === 'web'
-            ? { client_user_agent: params.attribution.userAgent }
+          ...(attribution.hashedEmail ? { em: [attribution.hashedEmail] } : {}),
+          ...(attribution.fbc ? { fbc: attribution.fbc } : {}),
+          ...(attribution.fbp ? { fbp: attribution.fbp } : {}),
+          ...(attribution.ipAddress
+            ? { client_ip_address: attribution.ipAddress }
             : {}),
+          client_user_agent: attribution.userAgent,
         },
         custom_data: {
           surface: params.surface,

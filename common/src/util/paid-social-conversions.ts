@@ -1,3 +1,8 @@
+import {
+  validHashedEmailHex,
+  validMatchingIpAddress,
+} from './acquisition-matching'
+
 export const PAID_SOCIAL_PLATFORMS = ['x', 'tiktok'] as const
 export type PaidSocialPlatform = (typeof PAID_SOCIAL_PLATFORMS)[number]
 export const PAID_SOCIAL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
@@ -5,6 +10,8 @@ export const PAID_SOCIAL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 export const PAID_SOCIAL_PERMISSION_COOKIE = 'freebuff_paid_social_allowed'
 export const paidSocialClickCookie = (platform: PaidSocialPlatform) =>
   `freebuff_${platform}_click`
+/** TikTok's own first-party browser cookie, set by its pixel on public pages. */
+export const TIKTOK_BROWSER_COOKIE = '_ttp'
 // Public, static OAuth endpoints only. No arbitrary URL, query, user ID, or
 // project path may enter the vendor's required website-event page context.
 export const PAID_SOCIAL_SIGNUP_PATHS = [
@@ -20,8 +27,12 @@ export function paidSocialSignupPath(
 }
 export type PaidSocialAttribution = {
   clickId?: string
-  /** X matching only. Never retain or send this field for TikTok. */
+  /** Unsalted SHA-256 of the trimmed, lowercased account email. */
   hashedEmail?: string
+  /** Client address resolved at enrollment. Forwarded to TikTok as `ip`. */
+  ipAddress?: string
+  /** TikTok's `_ttp` browser cookie; never retained for X. */
+  ttp?: string
   userAgent: string
   signupPath?: PaidSocialSignupPath
   /** First-party cohort dimensions only: never put these in a vendor payload. */
@@ -59,8 +70,10 @@ export function validPaidSocialClickId(value: unknown): string | undefined {
     : undefined
 }
 
-export function validPaidSocialHashedEmail(value: unknown): string | undefined {
-  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
+export const validPaidSocialHashedEmail = validHashedEmailHex
+
+export function validTikTokBrowserId(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[A-Za-z0-9._-]{1,256}$/.test(value)
     ? value
     : undefined
 }
@@ -82,18 +95,20 @@ export function normalizePaidSocialAttribution(
   )
     return undefined
   const signupPath = paidSocialSignupPath(input.signupPath)
-  const hashedEmail =
-    platform === 'x' ? validPaidSocialHashedEmail(input.hashedEmail) : undefined
-  if (
-    platform === 'x'
-      ? (!clickId && !hashedEmail) ||
-        (input.hashedEmail !== undefined && !hashedEmail)
-      : !signupPath
-  )
+  const hashedEmail = validPaidSocialHashedEmail(input.hashedEmail)
+  if (input.hashedEmail !== undefined && !hashedEmail) return undefined
+  const ipAddress = validMatchingIpAddress(input.ipAddress)
+  if (input.ipAddress !== undefined && !ipAddress) return undefined
+  const ttp =
+    platform === 'tiktok' ? validTikTokBrowserId(input.ttp) : undefined
+  if (platform === 'tiktok' && input.ttp !== undefined && !ttp) return undefined
+  if (platform === 'x' ? !clickId && !hashedEmail : !signupPath)
     return undefined
   return {
     clickId,
     ...(hashedEmail ? { hashedEmail } : {}),
+    ...(ipAddress ? { ipAddress } : {}),
+    ...(ttp ? { ttp } : {}),
     userAgent: input.userAgent,
     signupPath,
     campaign: paidSocialCampaign(input.campaign),

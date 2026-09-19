@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, test } from 'bun:test'
 
+import { hashMatchingEmail } from '../matching-hash'
 import {
   buildMetaConversionBody,
   metaConversionId,
@@ -8,10 +9,12 @@ import {
   type SendMetaConversionParams,
 } from '../meta-capi'
 import {
+  metaClickCookieValue,
   metaTrackingOptedOut,
   validMetaBrowserId,
 } from '../util/meta-conversions'
 
+const hashedEmail = hashMatchingEmail(' Person@Example.com ')!
 const params: SendMetaConversionParams = {
   pixelId: '123456789',
   accessToken: 'secret-never-in-body',
@@ -23,6 +26,8 @@ const params: SendMetaConversionParams = {
   attribution: {
     fbc: 'fb.1.1790000000000.click',
     fbp: 'fb.1.1790000000000.1234',
+    hashedEmail,
+    ipAddress: '203.0.113.9',
     userAgent: 'Browser',
   },
 }
@@ -59,20 +64,37 @@ describe('Meta conversion payload and attribution', () => {
       ).toThrow('positive confirmed USD payment')
     }
   })
-  test('uses seconds and hashed canonical identity, without email, URL parameters, or token', () => {
+  test('uses seconds, hashed identity and every enrollment match key, never the raw email, URL parameters or token', () => {
     const body = buildMetaConversionBody(params)
     expect(body.data[0]?.event_time).toBe(1789907420)
-    expect(body.data[0]?.user_data.external_id).toEqual([
-      createHash('sha256').update('canonical-user').digest('hex'),
-    ])
-    expect(body.data[0]?.user_data.fbc).toBe(params.attribution.fbc)
+    expect(body.data[0]?.user_data).toEqual({
+      external_id: [
+        createHash('sha256').update('canonical-user').digest('hex'),
+      ],
+      em: [hashedEmail],
+      fbc: params.attribution.fbc,
+      fbp: params.attribution.fbp,
+      client_ip_address: '203.0.113.9',
+      client_user_agent: 'Browser',
+    })
     expect(body.data[0]?.action_source).toBe('website')
     expect(body.data[0]?.event_source_url).toBe('https://freebuff.com/')
-    expect(JSON.stringify(body)).not.toContain('canonical-user')
-    expect(JSON.stringify(body)).not.toContain('secret-never-in-body')
-    expect(body.data[0]?.user_data).not.toHaveProperty('em')
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toContain('canonical-user')
+    expect(serialized).not.toContain('secret-never-in-body')
+    expect(serialized.toLowerCase()).not.toContain('person@example.com')
   })
-  test('reports native coding as other, without a fictional website event or browser user agent', () => {
+  test('omits match keys it does not have rather than sending empty values', () => {
+    const userData = buildMetaConversionBody({
+      ...params,
+      attribution: { fbp: params.attribution.fbp, userAgent: 'Browser' },
+    }).data[0]?.user_data
+    expect(userData).not.toHaveProperty('em')
+    expect(userData).not.toHaveProperty('fbc')
+    expect(userData).not.toHaveProperty('client_ip_address')
+    expect(userData?.client_user_agent).toBe('Browser')
+  })
+  test('reports native coding as other, without a fictional website event, but with the same person match keys', () => {
     const event = buildMetaConversionBody({
       ...params,
       eventName: 'CodingActivation',
@@ -80,7 +102,9 @@ describe('Meta conversion payload and attribution', () => {
     }).data[0]
     expect(event?.action_source).toBe('other')
     expect(event).not.toHaveProperty('event_source_url')
-    expect(event?.user_data).not.toHaveProperty('client_user_agent')
+    expect(event?.user_data.client_user_agent).toBe('Browser')
+    expect(event?.user_data.client_ip_address).toBe('203.0.113.9')
+    expect(event?.user_data.em).toEqual([hashedEmail])
     expect(metaConversionId('CompleteRegistration', params.userId)).not.toBe(
       metaConversionId('CodingActivation', params.userId),
     )
@@ -99,6 +123,18 @@ describe('Meta conversion payload and attribution', () => {
     expect(metaTrackingOptedOut(new Headers({ 'Sec-GPC': '1' }))).toBe(true)
     expect(metaTrackingOptedOut(new Headers({ DNT: '1' }))).toBe(true)
     expect(metaTrackingOptedOut(new Headers())).toBe(false)
+  })
+  test("builds a first-party _fbc in Meta's own shape that the server-side validator accepts", () => {
+    const value = metaClickCookieValue('IwAR0abc_-123', 1790000000000.7)
+    expect(value).toBe('fb.1.1790000000000.IwAR0abc_-123')
+    expect(validMetaBrowserId(value)).toBe(value)
+    for (const clickId of ['', 'not a click', 'a'.repeat(401), undefined])
+      expect(metaClickCookieValue(clickId, 1790000000000)).toBeUndefined()
+  })
+  test('normalizes the email before hashing and refuses anything that is not one', () => {
+    expect(hashMatchingEmail('person@example.com')).toBe(hashedEmail)
+    for (const value of [undefined, null, 1, '', 'not-email', 'a b@c.com'])
+      expect(hashMatchingEmail(value)).toBeUndefined()
   })
 })
 
