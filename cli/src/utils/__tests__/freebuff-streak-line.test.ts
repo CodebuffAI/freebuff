@@ -175,21 +175,21 @@ describe('getFreebuffStreakBonusNote', () => {
         accessTier: 'full',
         freebucksDailyBonus: 15,
       }),
-    ).toBe('🎁 Streak perk: +15 Freebucks every day')
+    ).toBe('🎁 Streak perk: +15 Freebucks every Pacific day')
     expect(
       getFreebuffStreakBonusNote({
         streak: 14,
         accessTier: 'limited',
         freebucksDailyBonus: 15,
       }),
-    ).toBe('🎁 Streak perk: +15 Freebucks every day')
+    ).toBe('🎁 Streak perk: +15 Freebucks every Pacific day')
     expect(
       getFreebuffStreakBonusNote({
         streak: 3,
         accessTier: 'full',
         freebucksDailyBonus: 15,
       }),
-    ).toBe('🎁 4 more days to unlock +15 Freebucks every day')
+    ).toBe('🎁 4 more days to unlock +15 Freebucks every Pacific day')
     // An older server sends no field; null keeps the session copy.
     expect(
       getFreebuffStreakBonusNote({

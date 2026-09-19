@@ -71,7 +71,11 @@ function getFreebuffStreakPerk(params: {
   freebucksDailyBonus?: number | null
 }): string {
   if (params.freebucksDailyBonus != null && params.freebucksDailyBonus > 0) {
-    return `+${params.freebucksDailyBonus} Freebucks every day`
+    // Streak days are Pacific (`FREEBUFF_STREAK_TIME_ZONE`), while the daily
+    // pool the user watches resets on THEIR clock. East of Pacific one local
+    // day spans a Pacific midnight, so two credits can land the same local
+    // day and read as a double pay; naming the clock is the whole fix.
+    return `+${params.freebucksDailyBonus} Freebucks every Pacific day`
   }
   // Only advertise GLM when the recurring full-access streak entitlement is
   // active, so the copy never promises a perk the gate won't honor.
