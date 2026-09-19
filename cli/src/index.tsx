@@ -13,7 +13,7 @@ import path from 'path'
 
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 import { getProjectFileTree } from '@codebuff/common/project-file-tree'
-import { getDefaultAgentDirs } from '@codebuff/sdk'
+import { getDefaultAgentDirs, getWebsiteUrl } from '@codebuff/sdk'
 import { createCliRenderer } from '@opentui/core'
 import { createRoot } from '@opentui/react'
 import {
@@ -165,6 +165,16 @@ async function main(): Promise<void> {
       console.error('tree-sitter smoke FAIL:', err)
       process.exit(1)
     }
+  }
+
+  // CI gate: `<binary> --smoke-api-url` prints the backend URL the SDK resolved
+  // and exits, so cli/scripts/smoke-binary.ts can prove dotenv files in the CWD
+  // cannot steer it (see --no-compile-autoload-dotenv in build-binary.ts). Must
+  // precede commander.parse(), which rejects unknown flags.
+  if (process.argv.includes('--smoke-api-url')) {
+    // Marker parsed by cli/scripts/smoke-binary.ts — keep this exact prefix.
+    console.log(`api-url smoke: ${getWebsiteUrl()}`)
+    process.exit(0)
   }
 
   // Native-Windows release gate. The external harness starts the packaged

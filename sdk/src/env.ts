@@ -9,6 +9,7 @@ import { BYOK_OPENROUTER_ENV_VAR } from '@codebuff/common/constants/byok'
 import { API_KEY_ENV_VAR } from '@codebuff/common/constants/paths'
 import { getBaseEnv } from '@codebuff/common/env-process'
 import {
+  RUNTIME_APP_URL_ENV_VARS,
   describeRuntimeAppUrlOrigin,
   isAllowedRuntimeAppUrl,
 } from '@codebuff/common/util/runtime-app-url'
@@ -43,11 +44,6 @@ export const getSdkEnv = (): SdkEnv => ({
 export const getCodebuffApiKeyFromEnv = (): string | undefined => {
   return process.env[API_KEY_ENV_VAR]
 }
-
-const RUNTIME_APP_URL_ENV_VARS = [
-  'NEXT_PUBLIC_CODEBUFF_APP_URL',
-  'CODEBUFF_APP_URL',
-] as const
 
 /**
  * Rejected overrides already warned about, keyed by variable and origin, so a

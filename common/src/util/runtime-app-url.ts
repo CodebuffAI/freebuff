@@ -14,6 +14,15 @@
  * reads the same variable at module load on a repo launch) apply one rule.
  */
 
+/**
+ * The variables, in precedence order, through which a runtime may override the
+ * app URL. Shared so the SDK resolver and the release smoke test agree.
+ */
+export const RUNTIME_APP_URL_ENV_VARS = [
+  'NEXT_PUBLIC_CODEBUFF_APP_URL',
+  'CODEBUFF_APP_URL',
+] as const
+
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1'])
 
 /**
