@@ -237,10 +237,27 @@ export const FREEBUFF_GLM_V53_FLASH_MODEL_ID = 'z-ai/glm-5.3-flash'
  * to raise the number. `max_price` takes prompt and completion only; the cache
  * read that dominates an agent turn is not expressible here, and the two bands
  * move together anyway.
+ *
+ * RAISED 2026-09-19 FROM $0.10/$0.30, because the bands above no longer exist
+ * and the raise is a reprice, not the Ox Alpha mistake. The market moved under
+ * the fence: Z.ai went to the dear band ($0.15/$0.50), Novita to $0.132/$0.44
+ * and GMICloud to $0.105/$0.35 — all three preferred endpoints ABOVE the old
+ * ceiling. What was left under it was DeepInfra (fp4), InferenceNet (deranked,
+ * stalls 60s with no token) and Relace (intermittent 401 "Invalid API key" and
+ * 504 idle timeouts from its own upstream). When Merge Gateway threw 429s and
+ * breaker 503s that morning, ~2,600 diverted turns in ten minutes landed on
+ * those three: Relace failed ~2,000 of them, InferenceNet stalled ~600 more,
+ * and DeepInfra — the one healthy survivor — began answering 429.
+ *
+ * $0.14/$0.45 sits strictly above Novita ($0.132/$0.44) and strictly below the
+ * $0.141/$0.47 and $0.15/$0.50 endpoints, so the dear band stays fenced out
+ * (verified live: a `z-ai`-only request under this ceiling 404s). The endpoints
+ * that fail in ways a ceiling cannot express are refused by name — see
+ * GLM_V53_FLASH_OPENROUTER_IGNORED.
  */
 export const FREEBUFF_GLM_V53_FLASH_MAX_PRICE = {
-  prompt: 0.1,
-  completion: 0.3,
+  prompt: 0.14,
+  completion: 0.45,
 } as const
 /** GPT-5.6 Luna (OpenAI), served through OpenRouter. The id is OpenRouter's own
  *  slug, so it falls through to the default OpenRouter route with no
