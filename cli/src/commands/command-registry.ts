@@ -21,11 +21,17 @@ import {
   collectProcessDiagnostics,
   formatProcessDiagnostics,
 } from './process-diagnostics'
-import { buildInterviewPrompt, buildPlanPrompt, buildReviewPromptFromArgs, buildSkillPrompt } from './prompt-builders'
+import {
+  buildInterviewPrompt,
+  buildPlanPrompt,
+  buildReviewPromptFromArgs,
+  buildSkillPrompt,
+} from './prompt-builders'
 import { handleReasoningCommand } from './reasoning'
 import { runBashCommand } from './router'
 import { handleUsageCommand } from './usage'
 import { handleByokCommand } from './byok'
+import { handleEverestCommand } from './everest'
 import { returnToFreebuffLanding } from '../hooks/use-freebuff-session'
 import { useThemeStore } from '../hooks/use-theme'
 import { LOGIN_WEBSITE_URL, WEBSITE_URL } from '../login/constants'
@@ -34,7 +40,11 @@ import { useChatStore } from '../state/chat-store'
 import { stopActiveRun } from '../utils/active-run'
 import { useFeedbackStore } from '../state/feedback-store'
 import { useLoginStore } from '../state/login-store'
-import { AGENT_MODES, END_SESSION_MESSAGE, IS_FREEBUFF } from '../utils/constants'
+import {
+  AGENT_MODES,
+  END_SESSION_MESSAGE,
+  IS_FREEBUFF,
+} from '../utils/constants'
 import { exitCliCleanly } from '../utils/exit-cleanly'
 import { getSystemMessage, getUserMessage } from '../utils/message-history'
 import { capturePendingAttachments } from '../utils/pending-attachments'
@@ -198,6 +208,7 @@ const FREEBUFF_REMOVED_COMMANDS = new Set([
 
 const FREEBUFF_ONLY_COMMANDS = new Set([
   'byok',
+  'everest',
   'plan',
   'end-session',
   'dashboard',
@@ -243,7 +254,8 @@ const ALL_COMMANDS: CommandDefinition[] = [
       const message = handleProposalMenu(useChatStore.getState().messages)
       // Null means it opened the menu, which is visible on its own; a system
       // line would only push the card it refers to further up the transcript.
-      if (message) params.setMessages((prev) => [...prev, getSystemMessage(message)])
+      if (message)
+        params.setMessages((prev) => [...prev, getSystemMessage(message)])
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
     },
@@ -252,7 +264,8 @@ const ALL_COMMANDS: CommandDefinition[] = [
     name: 'ads:dismiss-proposal',
     handler: (params) => {
       const message = handleProposalDismiss(useChatStore.getState().messages)
-      if (message) params.setMessages((prev) => [...prev, getSystemMessage(message)])
+      if (message)
+        params.setMessages((prev) => [...prev, getSystemMessage(message)])
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
     },
@@ -265,7 +278,8 @@ const ALL_COMMANDS: CommandDefinition[] = [
     handler: (params) => {
       const message = handleProposalAccept(useChatStore.getState().messages)
       // Null means the consent screen is up, which is visible on its own.
-      if (message) params.setMessages((prev) => [...prev, getSystemMessage(message)])
+      if (message)
+        params.setMessages((prev) => [...prev, getSystemMessage(message)])
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
     },
@@ -291,7 +305,9 @@ const ALL_COMMANDS: CommandDefinition[] = [
   defineCommand({
     name: 'ads:report-proposal',
     handler: async (params) => {
-      const message = await handleProposalReport(useChatStore.getState().messages)
+      const message = await handleProposalReport(
+        useChatStore.getState().messages,
+      )
       params.setMessages((prev) => [...prev, getSystemMessage(message)])
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
@@ -300,7 +316,9 @@ const ALL_COMMANDS: CommandDefinition[] = [
   defineCommand({
     name: 'ads:never-advertiser',
     handler: async (params) => {
-      const message = await handleProposalNeverAdvertiser(useChatStore.getState().messages)
+      const message = await handleProposalNeverAdvertiser(
+        useChatStore.getState().messages,
+      )
       params.setMessages((prev) => [...prev, getSystemMessage(message)])
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
@@ -745,6 +763,10 @@ const ALL_COMMANDS: CommandDefinition[] = [
     handler: handleByokCommand,
   }),
   defineCommandWithArgs({
+    name: 'everest',
+    handler: handleEverestCommand,
+  }),
+  defineCommandWithArgs({
     name: 'reasoning',
     aliases: ['effort', 'think'],
     handler: (params, args) => {
@@ -824,13 +846,21 @@ function createSkillCommand(skillName: string): CommandDefinition {
           getSystemMessage(`Skill not found: ${skillName}`),
         ])
         params.saveToHistory(params.inputValue.trim())
-        params.setInputValue({ text: '', cursorPosition: 0, lastEditDueToNav: false })
+        params.setInputValue({
+          text: '',
+          cursorPosition: 0,
+          lastEditDueToNav: false,
+        })
         return
       }
 
       const trimmed = params.inputValue.trim()
       params.saveToHistory(trimmed)
-      params.setInputValue({ text: '', cursorPosition: 0, lastEditDueToNav: false })
+      params.setInputValue({
+        text: '',
+        cursorPosition: 0,
+        lastEditDueToNav: false,
+      })
 
       // Bare invocation: like /interview, drop into an input mode so the
       // user can add instructions before the skill is sent. Enter with an

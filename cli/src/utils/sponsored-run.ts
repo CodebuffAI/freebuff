@@ -114,6 +114,11 @@ import {
 } from '../../../sdk/src/tools/sponsored-sandbox'
 import { getAuthToken } from './auth'
 import { getCodebuffClient } from './codebuff-client'
+import {
+  EVEREST_FOCUS_INSTRUCTION,
+  compressCompletedTerminalResult,
+} from './everest-compression'
+import { loadSettings } from './settings'
 import { IS_FREEBUFF } from './constants'
 import { getSystemProcessEnv } from './env'
 import { getAgentIdForMode } from './freebuff-agent-selection'
@@ -201,12 +206,7 @@ export type SponsoredConsent = {
 }
 
 export type SponsoredRunPhase =
-  | 'idle'
-  | 'accepting'
-  | 'running'
-  | 'committed'
-  | 'landed'
-  | 'failed'
+  'idle' | 'accepting' | 'running' | 'committed' | 'landed' | 'failed'
 
 /** What the transcript and the card read while a run is in flight or over. */
 export type SponsoredRunSnapshot = {
@@ -230,9 +230,7 @@ const IDLE: SponsoredRunSnapshot = {
 }
 
 export type SponsoredRunOutcome =
-  | { ok: true }
-  | { ok: false; declined: true }
-  | { ok: false; message: string }
+  { ok: true } | { ok: false; declined: true } | { ok: false; message: string }
 
 export type SponsoredDeliveryOutcome =
   | { ok: true; prUrl: string; recorded: boolean }
@@ -1576,10 +1574,11 @@ export function sponsoredOverrideTools(
       if (commandInstallsDependencies(input.command)) {
         return refusal(SPONSORED_LOCAL_INSTALL_REFUSAL)
       }
-      return runTerminalCommand({
+      const cwd = path.resolve(workspaceRoot, input.cwd ?? '.')
+      const result = await runTerminalCommand({
         command: input.command,
         process_type: input.process_type ?? 'SYNC',
-        cwd: path.resolve(workspaceRoot, input.cwd ?? '.'),
+        cwd,
         timeout_seconds: input.timeout_seconds ?? 30,
         signal: context.signal,
         // The BROKER is what bounds a sponsored shell. It also discards the
@@ -1590,6 +1589,16 @@ export function sponsoredOverrideTools(
         // something that is put back.
         terminalCommandBroker: processBroker,
       })
+      return IS_FREEBUFF && loadSettings().everestCompression === true
+        ? compressCompletedTerminalResult(
+            result,
+            input.command,
+            context.prompt,
+            cwd,
+            undefined,
+            context.signal,
+          )
+        : result
     },
   }
 }
@@ -1634,7 +1643,10 @@ export async function runSponsoredTurn(
         model: grant.modelId,
         isFreebuff: IS_FREEBUFF,
       }),
-      prompt: context.prompt,
+      prompt:
+        IS_FREEBUFF && loadSettings().everestCompression === true
+          ? `${context.prompt}\n\n${EVEREST_FOCUS_INSTRUCTION}`
+          : context.prompt,
       cwd: context.worktree.path,
       signal: context.signal,
       agentDefinitions: [],

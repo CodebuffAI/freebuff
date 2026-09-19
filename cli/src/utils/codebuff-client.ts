@@ -40,6 +40,21 @@ function removeUndefinedValues<T>(obj: T): T {
   return obj
 }
 
+/** Keep the CLI's ask_user override when a run supplies another tool override. */
+export async function askUserOverride(
+  input: ClientToolCall<'ask_user'>['input'],
+) {
+  const askUserResponse = await AskUserBridge.request(
+    'cli-override',
+    input.questions,
+  )
+  const response = askUserResponse as {
+    answers?: Array<{ questionIndex: number; selectedOption: string }>
+    skipped?: boolean
+  }
+  return [{ type: 'json' as const, value: removeUndefinedValues(response) }]
+}
+
 /**
  * Reset the cached CodebuffClient instance.
  * This should be called after login to ensure the client is re-initialized with new credentials.
@@ -96,22 +111,7 @@ export async function getCodebuffClient(
         traceWriter: createTraceWriter(),
         terminalCommandBroker,
         overrideTools: {
-          ask_user: async (input: ClientToolCall<'ask_user'>['input']) => {
-            const askUserResponse = await AskUserBridge.request(
-              'cli-override',
-              input.questions,
-            )
-            const response = askUserResponse as {
-              answers?: Array<{ questionIndex: number; selectedOption: string }>
-              skipped?: boolean
-            }
-            return [
-              {
-                type: 'json',
-                value: removeUndefinedValues(response),
-              },
-            ]
-          },
+          ask_user: askUserOverride,
         },
       })
       byokClientIdentity = byokIdentity

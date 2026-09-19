@@ -67,6 +67,21 @@ describe('BYOK connection selection', () => {
   })
 })
 
+describe('Everest compression preference', () => {
+  test('is off by default and persists enable and disable without changing other settings', () => {
+    testConfigDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'freebuff-settings-test-'),
+    )
+    getConfigDirSpy = spyOn(auth, 'getConfigDir').mockReturnValue(testConfigDir)
+    expect(loadSettings().everestCompression).toBeUndefined()
+    saveSettings({ everestCompression: true })
+    expect(loadSettings().everestCompression).toBe(true)
+    saveSettings({ everestCompression: false })
+    expect(loadSettings().everestCompression).toBe(false)
+    expect(loadSettings().adsEnabled).toBe(true)
+  })
+})
+
 describe('freebuff model preference', () => {
   test('referral-only GLM does not replace the remembered picker model', () => {
     testConfigDir = fs.mkdtempSync(

@@ -1,6 +1,7 @@
 import { flushAnalytics } from './analytics'
 import { IS_FREEBUFF } from './constants'
 import { stopEngagementTracking } from './engagement'
+import { closeEverestBridge } from './everest-compression'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import { drainClientLogs } from './log-shipper'
 import { settleInterruptedSponsoredRun } from './sponsored-run-exit'
@@ -95,7 +96,10 @@ export function createExitCliCleanly(deps: ExitCliDependencies) {
 
 export const exitCliCleanly = createExitCliCleanly({
   isFreebuff: IS_FREEBUFF,
-  cleanupLocal: () => localExitCleanup?.(),
+  cleanupLocal: () => {
+    closeEverestBridge()
+    localExitCleanup?.()
+  },
   stopEngagementTracking,
   flushAnalytics,
   drainClientLogs,

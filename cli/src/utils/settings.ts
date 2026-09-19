@@ -35,6 +35,8 @@ const DEFAULT_SETTINGS: Settings = {
 export interface Settings {
   mode?: AgentMode
   adsEnabled?: boolean
+  /** Send opted-in terminal output to the installed Everest compressor. */
+  everestCompression?: boolean
   /** Last model the user picked in the freebuff model selector. Restored on
    *  next freebuff launch so users land in the queue for their preferred
    *  model without re-picking. Persisted as the canonical model id. */
@@ -140,6 +142,9 @@ const validateSettings = (parsed: unknown): Settings => {
   if (typeof obj.adsEnabled === 'boolean') {
     settings.adsEnabled = obj.adsEnabled
   }
+  if (typeof obj.everestCompression === 'boolean') {
+    settings.everestCompression = obj.everestCompression
+  }
 
   // Validate freebuffModel against the current picker catalog. Server support
   // may intentionally outlive client visibility during a staged model
@@ -169,7 +174,10 @@ const validateSettings = (parsed: unknown): Settings => {
   // own ladder. A rung dropped from a catalog row (or a model that stopped
   // offering a choice at all) must not survive in the file and get sent as a
   // request the server would only have to clamp.
-  if (obj.freebuffReasoningEfforts && typeof obj.freebuffReasoningEfforts === 'object') {
+  if (
+    obj.freebuffReasoningEfforts &&
+    typeof obj.freebuffReasoningEfforts === 'object'
+  ) {
     const efforts: Record<string, ReasoningEffort> = {}
     for (const [modelId, effort] of Object.entries(
       obj.freebuffReasoningEfforts as Record<string, unknown>,

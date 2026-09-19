@@ -2,7 +2,6 @@ import { AGENT_MODES, IS_FREEBUFF } from '../utils/constants'
 
 import type { SkillsMap } from '@codebuff/common/types/skill'
 
-
 export interface SlashCommand {
   id: string
   label: string
@@ -43,6 +42,7 @@ const FREEBUFF_REMOVED_COMMAND_IDS = new Set([
 
 const FREEBUFF_ONLY_COMMAND_IDS = new Set([
   'byok',
+  'everest',
   'plan',
   'end-session',
   'dashboard',
@@ -104,7 +104,8 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
   {
     id: 'interview',
     label: 'interview',
-    description: 'AI asks a series of questions to flesh out request into a spec',
+    description:
+      'AI asks a series of questions to flesh out request into a spec',
   },
   {
     id: 'plan',
@@ -138,13 +139,15 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
   {
     id: 'copy',
     label: 'copy',
-    description: 'Copy the full conversation (messages + tool results) to the clipboard',
+    description:
+      'Copy the full conversation (messages + tool results) to the clipboard',
     aliases: ['copy-chat'],
   },
   {
     id: 'export',
     label: 'export',
-    description: 'Write the full conversation to a file (.md, or .json for raw messages)',
+    description:
+      'Write the full conversation to a file (.md, or .json for raw messages)',
     aliases: ['export-chat'],
   },
   {
@@ -162,7 +165,9 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
   {
     id: 'feedback',
     label: 'feedback',
-    description: IS_FREEBUFF ? 'Share general feedback about Freebuff' : 'Share general feedback about Codebuff',
+    description: IS_FREEBUFF
+      ? 'Share general feedback about Freebuff'
+      : 'Share general feedback about Codebuff',
   },
   {
     id: 'bash',
@@ -192,6 +197,11 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     label: 'byok',
     description: 'Manage direct OpenRouter or OpenAI-compatible inference',
     aliases: ['provider'],
+  },
+  {
+    id: 'everest',
+    label: 'everest',
+    description: 'Set Everest terminal output compression (on / off / status)',
   },
   {
     id: 'reasoning',
@@ -231,9 +241,7 @@ export const SLASH_COMMANDS = IS_FREEBUFF
   ? ALL_SLASH_COMMANDS.filter(
       (cmd) => !FREEBUFF_REMOVED_COMMAND_IDS.has(cmd.id),
     )
-  : ALL_SLASH_COMMANDS.filter(
-      (cmd) => !FREEBUFF_ONLY_COMMAND_IDS.has(cmd.id),
-    )
+  : ALL_SLASH_COMMANDS.filter((cmd) => !FREEBUFF_ONLY_COMMAND_IDS.has(cmd.id))
 
 export const SLASHLESS_COMMAND_IDS = new Set(
   SLASH_COMMANDS.filter((cmd) => cmd.implicitCommand).map((cmd) =>

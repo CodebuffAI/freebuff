@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import path from 'node:path'
 
 import { useCallback, useEffect, useRef } from 'react'
 
-import { setCurrentChatId } from '../project-files'
+import { getProjectRoot, setCurrentChatId } from '../project-files'
 import { createStreamController } from './stream-state'
 import { useChatStore } from '../state/chat-store'
 import {
@@ -10,17 +11,21 @@ import {
   markFreebuffSessionEnded,
 } from './use-freebuff-session'
 import { getSelectedFreebuffReasoningEffort } from '../state/freebuff-model-store'
-import { getCodebuffClient } from '../utils/codebuff-client'
-import {
-  resolveByokConnection,
-  selectedByokConnection,
-} from '../utils/byok'
+import { askUserOverride, getCodebuffClient } from '../utils/codebuff-client'
+import { resolveByokConnection, selectedByokConnection } from '../utils/byok'
 import { AGENT_MODE_TO_COST_MODE, IS_FREEBUFF } from '../utils/constants'
 import { createEventHandlerState } from '../utils/create-event-handler-state'
 import { createRunConfig } from '../utils/create-run-config'
 import { getAgentIdForMode } from '../utils/freebuff-agent-selection'
 import { loadAgentDefinitions } from '../utils/local-agent-registry'
 import { logger } from '../utils/logger'
+import {
+  EVEREST_FOCUS_INSTRUCTION,
+  compressCompletedTerminalResult,
+} from '../utils/everest-compression'
+import { loadSettings } from '../utils/settings'
+import { terminalCommandBroker } from '../utils/terminal-command-broker'
+import { runTerminalCommand } from '../../../sdk/src/tools/run-terminal-command'
 import { clearActiveRun, registerActiveRun } from '../utils/active-run'
 import {
   clearLiveChatStateProvider,
@@ -499,7 +504,9 @@ export const useSendMessage = ({
       let client: Awaited<ReturnType<typeof getCodebuffClient>>
       let byok: Awaited<ReturnType<typeof resolveByokConnection>> | undefined
       try {
-        byok = selectedByok ? await resolveByokConnection(selectedByok) : undefined
+        byok = selectedByok
+          ? await resolveByokConnection(selectedByok)
+          : undefined
         client = await getClient({ ...(byok ? { byok } : {}) })
       } catch (error) {
         if (releaseIfStopped()) return
@@ -644,8 +651,8 @@ export const useSendMessage = ({
         const canResumePreviousRun = priorByok
           ? Boolean(
               selectedByok &&
-                priorByok.id === selectedByok.id &&
-                priorByok.revision === selectedByok.revision,
+              priorByok.id === selectedByok.id &&
+              priorByok.revision === selectedByok.revision,
             )
           : !byok
         const runConfig = createRunConfig({
@@ -735,8 +742,55 @@ export const useSendMessage = ({
         // Open the steering mailbox for this run only once we're committed to
         // calling run(); the router falls back to the queue before this point.
         activateSteering(runOwnerId)
+        const useEverest =
+          IS_FREEBUFF && loadSettings().everestCompression === true
+        const runCwd = getProjectRoot()
+        const everestRunConfig = useEverest
+          ? {
+              ...runConfig,
+              prompt: `${runConfig.prompt}\n\n${EVEREST_FOCUS_INSTRUCTION}`,
+              overrideTools: {
+                ask_user: askUserOverride,
+                run_terminal_command: async (
+                  input: Parameters<typeof runTerminalCommand>[0],
+                ) => {
+                  const cwd = path.resolve(runCwd, input.cwd ?? '.')
+                  // Mirror the SDK default's broker, cancellation and BYOK
+                  // credential scrub before transforming the completed result.
+                  const byok = runConfig.byok
+                  const result = await runTerminalCommand({
+                    ...input,
+                    cwd,
+                    signal: runConfig.signal,
+                    terminalCommandBroker,
+                    scrubEnvironmentKeys: byok
+                      ? [
+                          'OPENROUTER_API_KEY',
+                          'OPENAI_API_KEY',
+                          'ANTHROPIC_API_KEY',
+                          ...(byok.credentialRef.startsWith('env:')
+                            ? [byok.credentialRef.slice(4)]
+                            : []),
+                        ]
+                      : undefined,
+                    scrubEnvironmentValues: byok ? [byok.apiKey] : undefined,
+                  })
+                  return loadSettings().everestCompression === true
+                    ? compressCompletedTerminalResult(
+                        result,
+                        input.command,
+                        effectivePrompt,
+                        cwd,
+                        undefined,
+                        runConfig.signal,
+                      )
+                    : result
+                },
+              },
+            }
+          : runConfig
         const runState = pinByokConnection(
-          await client.run(runConfig),
+          await client.run(everestRunConfig),
           selectedByok,
         )
 

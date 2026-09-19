@@ -24,6 +24,22 @@ Run the test suite:
 bun test
 ```
 
+## Everest terminal output compression
+
+Freebuff can optionally send eligible terminal stdout and stderr to the
+installed Everest CLI for compression before the agent sees the result.
+Install Everest and run `everest login`, then enter `/everest on` in Freebuff.
+Use `/everest status` to check the local setting and `/everest off` to disable
+it. The setting is stored in Freebuff's normal `settings.json`; removing
+Everest does not alter Freebuff's settings or command execution.
+
+Freebuff executes commands through its regular terminal broker and applies
+compression only to completed output. Missing Everest, a logged-out session,
+timeout, or compressor failure leaves the original result in place. Short
+output, `# coact-focus: raw`, failed commands, and interrupted commands also
+keep their original result. The opt-in does not change model selection or tool
+permissions.
+
 ### Interactive E2E Testing
 
 For testing interactive CLI features, install tmux:
@@ -53,7 +69,7 @@ bun run test:tmux-poc
 # ✅ Works:  tmux send-keys -t session $'\e[200~hello\e[201~'
 ```
 
-See [tmux.knowledge.md](tmux.knowledge.md) for comprehensive tmux documentation and [src/__tests__/README.md](src/__tests__/README.md) for testing documentation.
+See [tmux.knowledge.md](tmux.knowledge.md) for comprehensive tmux documentation and [src/**tests**/README.md](src/__tests__/README.md) for testing documentation.
 
 ## Build
 
