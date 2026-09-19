@@ -19,7 +19,9 @@ export function paidSocialSignupPath(
   return PAID_SOCIAL_SIGNUP_PATHS.find((path) => path === value)
 }
 export type PaidSocialAttribution = {
-  clickId: string
+  clickId?: string
+  /** X matching only. Never retain or send this field for TikTok. */
+  hashedEmail?: string
   userAgent: string
   signupPath?: PaidSocialSignupPath
   /** First-party cohort dimensions only: never put these in a vendor payload. */
@@ -55,6 +57,47 @@ export function validPaidSocialClickId(value: unknown): string | undefined {
     /^[A-Za-z0-9._~-]+$/.test(value)
     ? value
     : undefined
+}
+
+export function validPaidSocialHashedEmail(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
+    ? value
+    : undefined
+}
+
+/** Validate both enrollment and stored data, retaining only approved fields. */
+export function normalizePaidSocialAttribution(
+  platform: PaidSocialPlatform,
+  value: unknown,
+): PaidSocialAttribution | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return undefined
+  const input = value as Record<string, unknown>
+  const clickId = validPaidSocialClickId(input.clickId)
+  if (input.clickId !== undefined && !clickId) return undefined
+  if (
+    typeof input.userAgent !== 'string' ||
+    !input.userAgent.trim() ||
+    input.userAgent.length > 512
+  )
+    return undefined
+  const signupPath = paidSocialSignupPath(input.signupPath)
+  const hashedEmail =
+    platform === 'x' ? validPaidSocialHashedEmail(input.hashedEmail) : undefined
+  if (
+    platform === 'x'
+      ? (!clickId && !hashedEmail) ||
+        (input.hashedEmail !== undefined && !hashedEmail)
+      : !signupPath
+  )
+    return undefined
+  return {
+    clickId,
+    ...(hashedEmail ? { hashedEmail } : {}),
+    userAgent: input.userAgent,
+    signupPath,
+    campaign: paidSocialCampaign(input.campaign),
+  }
 }
 
 export function paidSocialOptedOut(headers: {

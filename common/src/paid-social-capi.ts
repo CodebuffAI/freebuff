@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 import {
+  normalizePaidSocialAttribution,
   paidSocialSignupPath,
   type PaidSocialAttribution,
   type PaidSocialEvent,
@@ -24,6 +25,15 @@ export type PaidSocialConfig =
 
 export function paidSocialId(platform: PaidSocialPlatform, value: string) {
   return createHash('sha256').update(`${platform}-capi:${value}`).digest('hex')
+}
+
+/** X's matching contract: normalized email, unsalted SHA-256; server use only. */
+export function hashPaidSocialEmail(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const email = value.trim().toLowerCase()
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    return undefined
+  return createHash('sha256').update(email).digest('hex')
 }
 
 const encode = (value: string) =>
@@ -91,10 +101,15 @@ export function buildPaidSocialRequest(
   body: Record<string, unknown>
 } {
   const { config } = params
+  const attribution = normalizePaidSocialAttribution(
+    config.platform,
+    params.attribution,
+  )
+  if (!attribution) throw new Error('Invalid paid social matching data')
   if (config.platform === 'tiktok') {
     if (params.eventName !== 'CompleteRegistration')
       throw new Error('Native coding activation is not a TikTok website event')
-    const signupPath = paidSocialSignupPath(params.attribution.signupPath)
+    const signupPath = paidSocialSignupPath(attribution.signupPath)
     if (!signupPath)
       throw new Error(
         'TikTok registration requires a known public auth callback',
@@ -114,9 +129,9 @@ export function buildPaidSocialRequest(
             event_time: Math.floor(params.eventAt.getTime() / 1000),
             event_id: params.eventId,
             user: {
-              ttclid: params.attribution.clickId,
+              ...(attribution.clickId ? { ttclid: attribution.clickId } : {}),
               external_id: paidSocialId('tiktok', params.userId),
-              user_agent: params.attribution.userAgent,
+              user_agent: attribution.userAgent,
             },
             // Runtime-validated static public OAuth path, with no query or fragment.
             page: { url: `https://freebuff.com${signupPath}` },
@@ -149,7 +164,14 @@ export function buildPaidSocialRequest(
             config.pixelToken !== undefined
               ? `tw-${config.pixelId}-${eventId}`
               : eventId,
-          identifiers: [{ twclid: params.attribution.clickId }],
+          identifiers: [
+            {
+              ...(attribution.clickId ? { twclid: attribution.clickId } : {}),
+              ...(attribution.hashedEmail
+                ? { hashed_email: attribution.hashedEmail }
+                : {}),
+            },
+          ],
           conversion_id: params.eventId,
         },
       ],

@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
 import {
   buildPaidSocialRequest,
+  hashPaidSocialEmail,
   paidSocialId,
   sendPaidSocialConversion,
   xEventId,
@@ -43,7 +44,125 @@ const base: Omit<SendPaidSocialConversionParams, 'config'> = {
     campaign: { utm_campaign: 'internal-only-campaign' },
   },
 }
+const emailHash =
+  '5806dc6b2f04fb728708a8f7b81c14edcd4fba36f77914cf0c9368d9a3a25f76'
 describe('paid social transport contracts', () => {
+  test('normalizes a real email before unsalted SHA256 and rejects invalid input', () => {
+    expect(hashPaidSocialEmail('  Test@X.com  ')).toBe(emailHash)
+    for (const value of [
+      undefined,
+      null,
+      1,
+      '',
+      'not-email',
+      'a@@b.com',
+      'a b@c.com',
+      `${'x'.repeat(255)}@x.com`,
+    ])
+      expect(hashPaidSocialEmail(value)).toBeUndefined()
+  })
+  test.each([x, xPixelToken])(
+    'X accepts genuine signup and native email matching without a click',
+    (config) => {
+      for (const eventName of [
+        'CompleteRegistration',
+        'CodingActivation',
+      ] as const) {
+        const request = buildPaidSocialRequest({
+          ...base,
+          config,
+          eventName,
+          attribution: { userAgent: 'Browser', hashedEmail: emailHash },
+        })
+        expect(request.body).toEqual({
+          conversions: [
+            {
+              conversion_time: '2026-09-18T12:00:00.000Z',
+              event_id: `${config.pixelToken ? 'tw-abc-' : ''}${eventName === 'CompleteRegistration' ? 'signup' : 'activation'}`,
+              identifiers: [{ hashed_email: emailHash }],
+              conversion_id: 'stable-occurrence',
+            },
+          ],
+        })
+        expect(JSON.stringify(request.body)).not.toContain('internal-account')
+        expect(JSON.stringify(request.body)).not.toContain('user_agent')
+        expect(JSON.stringify(request.body)).not.toContain('url')
+      }
+    },
+  )
+  test('X includes both genuine matching identifiers when available', () => {
+    const request = buildPaidSocialRequest({
+      ...base,
+      config: xPixelToken,
+      attribution: { ...base.attribution, hashedEmail: emailHash },
+    })
+    expect(request.body.conversions).toMatchObject([
+      { identifiers: [{ twclid: 'click-id', hashed_email: emailHash }] },
+    ])
+  })
+  test.each([
+    { clickId: undefined },
+    { clickId: undefined, hashedEmail: 'raw@example.com' },
+    { clickId: undefined, hashedEmail: emailHash.toUpperCase() },
+    { clickId: 'https://private/path', hashedEmail: emailHash },
+    { clickId: '', hashedEmail: emailHash },
+    { hashedEmail: 'not-a-hash' },
+    { userAgent: '' },
+    { userAgent: ' '.repeat(10) },
+    { userAgent: 'a'.repeat(513) },
+  ])(
+    'X rejects missing or malformed matching data before network delivery',
+    async (fields) => {
+      const fetchImpl = mock(async () =>
+        Response.json({ data: { conversions_processed: 1 } }),
+      ) as unknown as typeof fetch
+      await expect(
+        sendPaidSocialConversion({
+          ...base,
+          config: xPixelToken,
+          attribution: { ...base.attribution, ...fields },
+          fetchImpl,
+        }),
+      ).rejects.toThrow('Invalid paid social matching data')
+      expect(fetchImpl).not.toHaveBeenCalled()
+    },
+  )
+  test('TikTok organic registration omits the click and never forwards X email matching', () => {
+    const request = buildPaidSocialRequest({
+      ...base,
+      config: tiktok,
+      attribution: {
+        ...base.attribution,
+        clickId: undefined,
+        hashedEmail: emailHash,
+      },
+    })
+    expect(request.body.data).toMatchObject([
+      {
+        user: {
+          external_id: paidSocialId('tiktok', 'internal-account'),
+          user_agent: 'Browser',
+        },
+      },
+    ])
+    const body = JSON.stringify(request.body)
+    expect(body).not.toContain('ttclid')
+    expect(body).not.toContain('email')
+    expect(body).not.toContain(emailHash)
+  })
+  test.each([
+    { userAgent: '' },
+    { userAgent: 'x'.repeat(513) },
+    { clickId: 'malformed click' },
+  ])('TikTok still rejects invalid browser matching data', (fields) => {
+    expect(() =>
+      buildPaidSocialRequest({
+        ...base,
+        config: tiktok,
+        attribution: { ...base.attribution, ...fields },
+      }),
+    ).toThrow()
+  })
   test('X sends the configured event with stable occurrence, ISO time and only click matching', () => {
     const request = buildPaidSocialRequest({ ...base, config: x })
     expect(request.url).toBe(
