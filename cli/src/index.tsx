@@ -26,6 +26,7 @@ import React from 'react'
 
 import { App } from './app'
 import { loadPackageVersion, parseArgs } from './cli-args'
+import { runPluginCommand } from './commands/plugin-install-command'
 import { handlePublish } from './commands/publish'
 import { runPlainLogin } from './login/plain-login'
 import { initializeApp } from './init/init-app'
@@ -235,6 +236,14 @@ async function main(): Promise<void> {
   // Handle login command before rendering the app
   if (isLoginCommand) {
     await runPlainLogin()
+    return
+  }
+
+  // Handle the plugin command before rendering the app
+  if (command === 'plugin') {
+    await runPluginCommand(
+      process.argv.slice(process.argv.indexOf('plugin') + 1),
+    )
     return
   }
 
