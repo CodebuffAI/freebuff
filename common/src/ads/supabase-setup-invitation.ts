@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SUPABASE_FORMAT_CPC_EXPERIMENT_VERSION } from './supabase-format-cpc-experiment'
 
 /**
  * Read-only Desktop facts used to decide whether a setup invitation may be
@@ -167,10 +168,42 @@ export type SupabaseSetupInvitationV2 = z.infer<
   typeof supabaseSetupInvitationV2Schema
 >
 
-/** Accept outstanding v1 cards while new clients render v2 discovery cards. */
+/**
+ * The paid discovery experiment charges a single advertiser CPC when the user
+ * starts the compatibility path. The opaque token is server-issued and bound
+ * to the invitation; Desktop never derives or reuses it for another card.
+ */
+export const supabaseSetupInvitationV3Schema = z
+  .object({
+    schemaVersion: z.literal(3),
+    kind: z.literal('supabase_setup'),
+    invitationId: z.string().uuid(),
+    framework: z.enum([
+      'nextjs',
+      'react-vite',
+      'nodejs',
+      'unknown',
+      'unsupported',
+    ]),
+    surface: z.enum(['desktop_macos', 'desktop_linux']),
+    angle: z.enum(['database', 'auth', 'storage']),
+    setupReason: z.literal('compatibility_check_required'),
+    expiresAt: z.number().int().positive(),
+    attributionToken: z.string().min(1).max(1024).optional(),
+    billingToken: z.string().min(1).max(4096),
+    experimentVersion: z.literal(SUPABASE_FORMAT_CPC_EXPERIMENT_VERSION),
+  })
+  .strict()
+
+export type SupabaseSetupInvitationV3 = z.infer<
+  typeof supabaseSetupInvitationV3Schema
+>
+
+/** Accept outstanding v1/v2 cards while new clients render paid v3 discovery cards. */
 export const supabaseSetupInvitationSchema = z.union([
   supabaseSetupInvitationV1Schema,
   supabaseSetupInvitationV2Schema,
+  supabaseSetupInvitationV3Schema,
 ])
 
 export type SupabaseSetupInvitation = z.infer<

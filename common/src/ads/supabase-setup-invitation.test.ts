@@ -111,6 +111,30 @@ describe('Supabase setup invitation contracts', () => {
     ).toBe(false)
   })
 
+  test('accepts only the bounded v3 billing capability', () => {
+    const response = {
+      schemaVersion: 3,
+      kind: 'supabase_setup',
+      invitationId: '00000000-0000-4000-8000-000000000002',
+      framework: 'nextjs',
+      surface: 'desktop_linux',
+      angle: 'database',
+      setupReason: 'compatibility_check_required',
+      expiresAt: 1,
+      billingToken: 'opaque-token',
+      experimentVersion: 'supabase_format_cpc_v1',
+    }
+    expect(supabaseSetupInvitationSchema.safeParse(response).success).toBe(true)
+    expect(
+      supabaseSetupInvitationSchema.safeParse({ ...response, billingToken: '' })
+        .success,
+    ).toBe(false)
+    expect(
+      supabaseSetupInvitationSchema.safeParse({ ...response, extra: 'forbidden' })
+        .success,
+    ).toBe(false)
+  })
+
   test('keeps target, commands, and billing identifiers out of the response', () => {
     const response = {
       schemaVersion: 1,
