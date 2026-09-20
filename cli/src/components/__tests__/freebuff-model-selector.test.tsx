@@ -109,11 +109,11 @@ const renderSelector = async (
 }
 
 test.each([
-  ['2026-09-17T23:00:00Z', '2026-09-19T06:00:00Z', 10, 15, 'Off-peak 10/hr', 0],
-  ['2026-09-17T21:00:00Z', '2026-09-18T22:00:00Z', 15, 10, 'normally 15/hr', 0],
-  ['2026-09-17T23:00:00Z', '2026-09-19T06:00:00Z', 10, 15, 'Off-peak 10/hr', 10],
-  ['2026-09-17T21:00:00Z', '2026-09-18T22:00:00Z', 15, 10, 'normally 15/hr', 10],
-] as const)('the mounted CLI picker catches up after multi-day sleep from %s', async (issued, resumed, before, after, explanation, discount) => {
+  ['2026-09-17T23:00:00Z', '2026-09-19T06:00:00Z', 10, 15, 0],
+  ['2026-09-17T21:00:00Z', '2026-09-18T22:00:00Z', 15, 10, 0],
+  ['2026-09-17T23:00:00Z', '2026-09-19T06:00:00Z', 10, 15, 10],
+  ['2026-09-17T21:00:00Z', '2026-09-18T22:00:00Z', 15, 10, 10],
+] as const)('the mounted CLI picker catches up after multi-day sleep from %s', async (issued, resumed, before, after, discount) => {
   const now = Date.parse(issued)
   const clock = spyOn(Date, 'now').mockReturnValue(now)
   const realTimeout = globalThis.setTimeout
@@ -135,8 +135,9 @@ test.each([
     })
     useFreebuffModelStore.getState().setSelectedModel(id)
     const setup = await renderSelector(40, undefined, 100, now)
-    expect(setup.captureCharFrame()).toContain(`│ ${before - discount} Freebucks/hr`)
-    expect(setup.captureCharFrame()).toContain(before === 10 ? 'normally 15/hr' : 'Off-peak 10/hr')
+    expect(setup.captureCharFrame()).toMatch(new RegExp(`│ +${before - discount} Freebucks/hr`))
+    expect(setup.captureCharFrame()).not.toContain('Off-peak')
+    expect(setup.captureCharFrame()).not.toContain('normally 15/hr')
     expect(setup.captureCharFrame()).not.toContain('Server fallback price notice')
     expect(wake).toBeDefined()
     flushSync(() => {
@@ -144,14 +145,51 @@ test.each([
       wake!()
     })
     await setup.renderOnce()
-    expect(setup.captureCharFrame()).toContain(`│ ${after - discount} Freebucks/hr`)
-    expect(setup.captureCharFrame()).toContain(explanation)
+    expect(setup.captureCharFrame()).toMatch(new RegExp(`│ +${after - discount} Freebucks/hr`))
+    expect(setup.captureCharFrame()).not.toContain('Off-peak')
+    expect(setup.captureCharFrame()).not.toContain('normally 15/hr')
   } finally {
     cleanupRenderer?.()
     cleanupRenderer = undefined
     timer.mockRestore()
     clock.mockRestore()
   }
+})
+
+test.each([
+  ['priceNotices', 40],
+  ['priceNotices', 100],
+  ['peak', 40],
+  ['peak', 100],
+] as const)('legacy %s copy stays hidden at %s columns while Flash remains selectable', async (payload, width) => {
+  const id = FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
+  const price = payload === 'peak' ? 25 : 10
+  useFreebuffSessionStore.getState().setSession({
+    status: 'none',
+    accessTier: 'full',
+    freebucks: {
+      ...freebucksFixture(25, { [id]: price }),
+      priceNotices: { [id]: 'Off-peak pricing · 15 Freebucks/hour at peak' },
+      ...(payload === 'peak' ? {
+        peak: {
+          modelIds: [id],
+          surcharge: 10,
+          endsAt: new Date(FIXED_NOW_MS + 3_600_000).toISOString(),
+        },
+      } : {}),
+    },
+  })
+  useFreebuffModelStore.getState().setSelectedModel(id)
+  const requested: string[] = []
+  const setup = await renderSelector(40, async (model) => { requested.push(model) }, width)
+  const frame = setup.captureCharFrame()
+  expect(frame).toContain('› DeepSeek V4.1 Flash')
+  expect(frame).toContain('Smart &')
+  expect(frame).toMatch(new RegExp(`│ +${price} Freebucks/hr`))
+  expect(frame).not.toMatch(/Off-peak|Peak pricing|charges double|Freebucks\/hour at peak/)
+  flushSync(() => setup.mockInput.pressEnter())
+  await setup.renderOnce()
+  expect(requested).toEqual([id])
 })
 
 /**
@@ -928,7 +966,7 @@ describe('GLM selection uses the applicable meter', () => {
   )
 
   test.each([true, false])(
-    'an available first-tab discount shows only the discounted price and is named limited-time, available=%s',
+    'first-tab discount availability changes the displayed price without extra copy, available=%s',
     async (available) => {
       useFreebuffSessionStore.getState().setSession({
         status: 'none',
@@ -950,14 +988,14 @@ describe('GLM selection uses the applicable meter', () => {
         expect(frame).toContain('5 Freebucks/hr')
         expect(frame).not.toContain('15 5 Freebucks/hr')
         expect(frame).not.toContain('15 Freebucks/hr')
-        expect(frame).toContain('Limited-time first-tab discount')
       } else {
         // In use elsewhere: the full price is the price, nothing struck, and
         // nothing advertised.
         expect(frame).toContain('15 Freebucks/hr')
         expect(frame).not.toContain('15 15 Freebucks/hr')
-        expect(frame).not.toContain('first-tab discount')
       }
+      expect(frame).not.toContain('first-tab discount')
+      expect(frame).not.toContain('Prices shown include the discount')
     },
   )
 
@@ -1140,6 +1178,34 @@ describe('a row the balance cannot cover', () => {
     } finally {
       openSpy.mockRestore()
     }
+  })
+
+  test('a pending paywall clears without discount prose when the balance refresh makes the row affordable', async () => {
+    const { setup, requested } = await renderUnaffordableLuna()
+    flushSync(() => setup.mockInput.pressEnter())
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain(`Not enough ${FREEBUCKS_LABEL}`)
+    expect(requested).toEqual([])
+
+    flushSync(() => useFreebuffSessionStore.getState().setSession({
+      status: 'none',
+      accessTier: 'full',
+      freebucks: applyFirstTabDiscount(freebucksFixture(25, {
+        [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 20,
+        [FREEBUFF_MIMO_V25_MODEL_ID]: 10,
+      }), { amount: 10, available: true }),
+    }))
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain('› GPT-5.6 Luna')
+    expect(frame).toMatch(/│ +10 Freebucks\/hr/)
+    expect(frame).not.toContain(`Not enough ${FREEBUCKS_LABEL}`)
+    expect(frame).not.toMatch(/first-tab discount|Prices shown include the discount/)
+    expect(requested).toEqual([])
+
+    flushSync(() => setup.mockInput.pressEnter())
+    await setup.renderOnce()
+    expect(requested).toEqual([FREEBUFF_GPT_5_6_LUNA_MODEL_ID])
   })
 
   test('a row closed for the hour stays inert — no wall to raise', async () => {

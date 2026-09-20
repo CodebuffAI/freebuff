@@ -7,7 +7,7 @@ import { discountedSessionPrice } from './freebuff-first-tab-discount'
 import { offPeakPriceAt } from './freebuff-price-changes'
 
 /** Presentation only: prices and schedules come from the server, never the
- *  private rate card (this helper also ships in the public CLI). */
+ *  private rate card. */
 export function freebucksOffPeakCopy(
   info:
     | Pick<FreebuffFreebucksInfo, 'prices' | 'offPeak' | 'firstTabDiscount'>
@@ -39,10 +39,6 @@ export function freebucksOffPeakCopy(
   return {
     active,
     badge: 'Off-peak',
-    // Terminals have no hover: show a concise explanation inline.
-    detail: active
-      ? `Off-peak · normally ${offer.regularPrice}/hr · until ${fmt.format(end)} ${endZone}`
-      : `Off-peak ${offer.price}/hr · ${hours}`,
     tooltip: `Off-peak: ${offer.price} Freebucks/hour, daily ${hours}.`,
   }
 }

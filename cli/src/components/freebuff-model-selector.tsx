@@ -1,13 +1,6 @@
-import {
-  freebucksPeakCopy,
-  isFreebucksPeakModel,
-} from '@codebuff/common/util/freebuff-peak-price'
+import { isFreebucksPeakModel } from '@codebuff/common/util/freebuff-peak-price'
 import { watchFreebucksPriceChanges } from '@codebuff/common/util/freebuff-price-changes'
-import { freebucksOffPeakCopy } from '@codebuff/common/util/freebuff-off-peak-price'
-import {
-  firstTabDiscountCopy,
-  firstTabListPriceFor,
-} from '@codebuff/common/util/freebuff-first-tab-discount'
+import { firstTabListPriceFor } from '@codebuff/common/util/freebuff-first-tab-discount'
 import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
 import React, {
@@ -38,6 +31,7 @@ const FREEBUCKS_PLANS_URL = 'https://freebuff.com/plans'
 
 import { FreebuffReferralBanner } from './freebuff-referral-banner'
 import {
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_REWARD_MODEL_ID,
   getFreebuffDeploymentAvailabilityLabel,
   getFreebuffModelUnavailableLabel,
@@ -356,6 +350,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   )
   const taglineFor = useCallback(
     (model: FreebuffModelOption) =>
+      model.id === FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID ||
       isFreebucksPeakModel(freebucks, model.id) || freebucks?.offPeak?.[model.id]
         ? model.tagline
         : (freebucks?.priceNotices?.[model.id] ?? model.tagline),
@@ -450,41 +445,18 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       // the balance cannot cover it — the same signal the dimmed price carries
       // on the other two surfaces.
       const rowPrice = freebucksPriceFor(freebucks, model.id)
-      const offPeakCopy = freebucksOffPeakCopy(freebucks, model.id, { now: nowMs ?? Date.now() })
       if (rowPrice !== undefined) {
         // Only the price that will be charged. The regular price is NOT
         // shown beside it: many terminals ignore the strikethrough attribute,
         // and "10 0 Freebucks/hr" then reads as two prices. A row the
-        // first-tab offer moved is drawn in the accent colour instead, next to
-        // the "Limited-time first-tab discount" chip that says why.
+        // first-tab offer moved is drawn in the accent colour instead.
         details.push({
           text: freebucksPriceLabel(rowPrice),
           warn: (freebucks?.balance ?? 0) < rowPrice,
           highlight: firstTabListPriceFor(freebucks, model.id) !== undefined,
         })
-        if (offPeakCopy) details.push({ text: offPeakCopy.detail, warn: false })
-        if (freebucks?.firstTabDiscount?.available) {
-          // A promotion, not a price: named as one so nobody plans around a
-          // row that will one day cost its regular price again.
-          details.push({ text: 'Limited-time first-tab discount', warn: false })
-        }
       }
       if (model.warning) details.push({ text: model.warning, warn: true })
-      // PEAK PRICING as its own detail chip, in the reader's zone. Line 1
-      // keeps the row's tagline (the server's prose notice is the same fact
-      // and is dropped for a peaked row, see taglineFor); the price above
-      // already moved, and this is the why and the when.
-      if (freebucks?.peak && isFreebucksPeakModel(freebucks, model.id)) {
-        const base = (rowPrice ?? 0) - freebucks.peak.surcharge
-        details.push({
-          text: freebucksPeakCopy({
-            peak: freebucks.peak,
-            basePrice: base,
-            now,
-          }).tooltip,
-          warn: true,
-        })
-      }
       if (model.availability === 'deployment_hours') {
         // Carries both the in-hours and out-of-hours signal, so a row with
         // hours never also needs the closed note below.
@@ -520,7 +492,6 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     [
       deploymentAvailabilityLabel,
       now,
-      nowMs,
       premiumSectionQuotas,
       meterFor,
       freebucks,
@@ -690,7 +661,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
               intent.price,
             )}. Enter to confirm.`
       }
-      return freebucks ? firstTabDiscountCopy(freebucks) : undefined
+      return undefined
     },
     [pendingAsk, rowIntent, freebucks, activeSessionModel, upgradeOfferFor],
   )
