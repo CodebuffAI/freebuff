@@ -87,3 +87,75 @@ export function compactRunState(params: {
     nextTokens: next.mainAgentState.contextTokenCount,
   }
 }
+
+/**
+ * Cut a stored run's history back to the point a user edit rewinds to.
+ *
+ * ## Why this exists
+ *
+ * A host that lets someone edit an earlier message has two representations of
+ * the same conversation: the transcript it shows, and the `RunState` the model
+ * actually resumes from. Deleting from the transcript alone leaves the model
+ * remembering turns the user can no longer see. Clearing the state instead —
+ * which is what Freebuff Desktop did until 2026-09-19 — leaves the transcript
+ * intact and the model with no memory of any of it, so editing the third
+ * message of a long thread made the assistant behave as though the
+ * conversation had just started. That is the bug this closes; the two
+ * representations have to be cut at the same place.
+ *
+ * ## The boundary
+ *
+ * `keepUserTurns` is how many user turns survive the rewind — for an edit of
+ * the message at 0-based ordinal N, exactly N. History is kept up to, and not
+ * including, the (N+1)-th user message, so the assistant and tool messages
+ * belonging to the preserved turns come with them and everything the edit
+ * removed goes.
+ *
+ * ## Why it can answer null
+ *
+ * The mapping between a host's user rows and user messages in `messageHistory`
+ * is an assumption, not a guarantee: a host may inject prompts of its own, and
+ * an older state may predate whatever it is being matched against. So this
+ * counts rather than trusts, and when the history does not contain enough user
+ * messages to place the cut it returns null instead of guessing. A caller that
+ * gets null should fall back to clearing the state — amnesia is a bad outcome,
+ * but a state that silently disagrees with the transcript is a worse one.
+ *
+ * `keepUserTurns: 0` also answers null: nothing survives, which is the
+ * clearing case and not something to express as an empty history.
+ */
+export function truncateRunStateAtUserTurn(params: {
+  runState: RunState
+  keepUserTurns: number
+}): RunState | null {
+  const { runState, keepUserTurns } = params
+  if (!Number.isInteger(keepUserTurns) || keepUserTurns <= 0) return null
+  const sessionState = runState.sessionState
+  const agentState = sessionState?.mainAgentState
+  if (!sessionState || !agentState) return null
+  const history = agentState.messageHistory
+  if (!history?.length) return null
+
+  let seen = 0
+  let cutAt = -1
+  for (let i = 0; i < history.length; i++) {
+    if (history[i]?.role !== 'user') continue
+    seen++
+    if (seen === keepUserTurns + 1) {
+      cutAt = i
+      break
+    }
+  }
+  // Fewer user messages than the transcript claims: the two representations
+  // are not aligned, so there is no boundary this can honestly place.
+  if (cutAt === -1) return null
+
+  const next = cloneSessionState(sessionState)
+  next.mainAgentState.messageHistory = history.slice(0, cutAt)
+  // The count is advisory and rebuilt on the next turn; leaving a stale, larger
+  // number would make the next request think it has less room than it does.
+  next.mainAgentState.contextTokenCount = countTokensMessages(
+    next.mainAgentState.messageHistory,
+  )
+  return { ...runState, sessionState: next }
+}

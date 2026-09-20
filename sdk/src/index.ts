@@ -36,7 +36,10 @@ export * from './client'
 export * from './custom-tool'
 export * from './native/ripgrep'
 export * from './run-state'
-export { compactRunState } from './compact-run-state'
+export {
+  compactRunState,
+  truncateRunStateAtUserTurn,
+} from './compact-run-state'
 export type { CompactedRunState } from './compact-run-state'
 export { ToolHelpers } from './tools'
 export * from './constants'
