@@ -83,9 +83,31 @@ export type SendPaidSocialConversionParams = {
   eventAt: Date
   userId: string
   attribution: PaidSocialAttribution
+  /** Where the claim was made; decides the page TikTok is told an activation happened on. */
+  surface?: 'web' | 'desktop' | 'cli'
   fetchImpl?: typeof fetch
   sleepImpl?: (ms: number) => Promise<void>
   canSend?: () => Promise<boolean>
+}
+
+/**
+ * The page TikTok is told the event happened on. Registration completes on
+ * the public OAuth callback the user actually hit. Activation happens inside
+ * Desktop or the CLI, off the site, so it is reported as a CUSTOM web event on
+ * that surface's public product page — decided 2026-09-19, because cost per
+ * activation is the campaign's primary metric and TikTok can only see what it
+ * is sent. Never a private URL, query or token.
+ */
+function tikTokEventPage(
+  eventName: PaidSocialEvent,
+  signupPath: string | undefined,
+  surface: SendPaidSocialConversionParams['surface'],
+): string | undefined {
+  if (eventName === 'CompleteRegistration')
+    return signupPath ? `https://freebuff.com${signupPath}` : undefined
+  return surface === 'desktop' || surface === 'cli'
+    ? `https://freebuff.com/${surface}`
+    : undefined
 }
 
 export function buildPaidSocialRequest(
@@ -102,12 +124,16 @@ export function buildPaidSocialRequest(
   )
   if (!attribution) throw new Error('Invalid paid social matching data')
   if (config.platform === 'tiktok') {
-    if (params.eventName !== 'CompleteRegistration')
-      throw new Error('Native coding activation is not a TikTok website event')
-    const signupPath = paidSocialSignupPath(attribution.signupPath)
-    if (!signupPath)
+    const page = tikTokEventPage(
+      params.eventName,
+      paidSocialSignupPath(attribution.signupPath),
+      params.surface,
+    )
+    if (!page)
       throw new Error(
-        'TikTok registration requires a known public auth callback',
+        params.eventName === 'CompleteRegistration'
+          ? 'TikTok registration requires a known public auth callback'
+          : 'TikTok activation requires a native surface',
       )
     return {
       url: 'https://business-api.tiktok.com/open_api/v1.3/event/track/',
@@ -120,7 +146,7 @@ export function buildPaidSocialRequest(
         event_source_id: config.pixelId,
         data: [
           {
-            event: 'CompleteRegistration',
+            event: params.eventName,
             event_time: Math.floor(params.eventAt.getTime() / 1000),
             event_id: params.eventId,
             user: {
@@ -133,8 +159,7 @@ export function buildPaidSocialRequest(
               ...(attribution.ipAddress ? { ip: attribution.ipAddress } : {}),
               user_agent: attribution.userAgent,
             },
-            // Runtime-validated static public OAuth path, with no query or fragment.
-            page: { url: `https://freebuff.com${signupPath}` },
+            page: { url: page },
           },
         ],
       },

@@ -268,14 +268,34 @@ describe('paid social transport contracts', () => {
     expect(JSON.stringify(request.body)).not.toContain('internal-only-campaign')
     expect(JSON.stringify(request.body)).not.toContain('internal-account')
   })
-  test('TikTok refuses native or arbitrary/private/query-bearing website contexts', () => {
-    expect(() =>
-      buildPaidSocialRequest({
+  test('TikTok reports native activation as a custom event on the product page of its surface', () => {
+    for (const surface of ['desktop', 'cli'] as const) {
+      const request = buildPaidSocialRequest({
         ...base,
         config: tiktok,
         eventName: 'CodingActivation',
-      }),
-    ).toThrow()
+        surface,
+      })
+      expect(request.body.data).toMatchObject([
+        {
+          event: 'CodingActivation',
+          event_id: 'stable-occurrence',
+          page: { url: `https://freebuff.com/${surface}` },
+          user: { ttclid: 'click-id', user_agent: 'Browser' },
+        },
+      ])
+    }
+    for (const surface of [undefined, 'web'] as const)
+      expect(() =>
+        buildPaidSocialRequest({
+          ...base,
+          config: tiktok,
+          eventName: 'CodingActivation',
+          surface,
+        }),
+      ).toThrow('native surface')
+  })
+  test('TikTok refuses arbitrary/private/query-bearing registration contexts', () => {
     for (const signupPath of [
       undefined,
       '/web/project/private',
