@@ -254,6 +254,22 @@ export const FREEBUFF_GLM_V53_FLASH_MODEL_ID = 'z-ai/glm-5.3-flash'
  * (verified live: a `z-ai`-only request under this ceiling 404s). The endpoints
  * that fail in ways a ceiling cannot express are refused by name — see
  * GLM_V53_FLASH_OPENROUTER_IGNORED.
+ *
+ * HELD AT $0.14/$0.45 ON 2026-09-20, after a raise to $0.16/$0.55 was written
+ * and then rejected on cost. That raise would have admitted the ~$0.15/$0.50
+ * commodity band — twenty live probes spread over fourteen hosts, which is
+ * real capacity — but blended at the hit rate this lane's traffic actually
+ * runs at, it is ~1.9x the hosts this ceiling admits and several times the
+ * lane in front. The capacity problem it was solving is better solved by a
+ * cheaper SECOND LANE than by paying the commodity band on the third one.
+ * GLM_V53_FLASH_CHEAPER_INFERENCE_PROVIDER_ROUTE carries that comparison;
+ * this file is exported publicly, so the measured rates stay there.
+ *
+ * What stays under $0.14/$0.45, after GLM_V53_FLASH_OPENROUTER_IGNORED: Novita
+ * ($0.132/$0.44), GMICloud ($0.105/$0.35) and DeepInfra fp4 ($0.075/$0.25).
+ * Three hosts is thin, and the answer to that is NOT this number — see the
+ * emptied order on GLM_V53_FLASH_OPENROUTER_UPSTREAM_ORDER, which is what
+ * stopped all three being funnelled into whichever one was listed first.
  */
 export const FREEBUFF_GLM_V53_FLASH_MAX_PRICE = {
   prompt: 0.14,
