@@ -13,7 +13,9 @@ test('formats both sides of local midnight and seasonal time changes', () => {
     now: Date.parse('2026-09-17T23:00:00Z'),
     timeZone: 'America/Los_Angeles',
   })!
-  expect(summer.tooltip).toContain('3:00 PM–11:00 PM PDT')
+  expect(summer.tooltip).toBe(
+    'Off-peak: 10 Freebucks/hour, daily 3:00 PM–11:00 PM PDT.',
+  )
   const winter = freebucksOffPeakCopy(quote, 'flash', {
     now: Date.parse('2026-12-01T23:00:00Z'),
     timeZone: 'America/Los_Angeles',
@@ -31,7 +33,7 @@ test('formats both sides of local midnight and seasonal time changes', () => {
   expect(dst.tooltip).toContain('12:00 AM GMT+2–7:00 AM GMT+1')
 })
 
-test('explains stacked first-tab discounts without replacing the quoted price', () => {
+test('recognizes stacked first-tab discounts without replacing the quoted price', () => {
   const discounted = {
     ...quote,
     prices: { flash: 0 },
@@ -39,9 +41,12 @@ test('explains stacked first-tab discounts without replacing the quoted price', 
   }
   const copy = freebucksOffPeakCopy(discounted, 'flash', {
     now: Date.parse('2026-09-17T23:00:00Z'),
+    timeZone: 'America/Los_Angeles',
   })!
   expect(copy.active).toBe(true)
-  expect(copy.tooltip).toContain('first-tab discount is also included')
+  expect(copy.tooltip).toBe(
+    'Off-peak: 10 Freebucks/hour, daily 3:00 PM–11:00 PM PDT.',
+  )
   expect(discounted.prices.flash).toBe(0)
 })
 

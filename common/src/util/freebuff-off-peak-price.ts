@@ -43,12 +43,6 @@ export function freebucksOffPeakCopy(
     detail: active
       ? `Off-peak · normally ${offer.regularPrice}/hr · until ${fmt.format(end)} ${endZone}`
       : `Off-peak ${offer.price}/hr · ${hours}`,
-    tooltip:
-      `Off-peak: ${offer.price} Freebucks/hour, daily ${hours}. ` +
-      `Regular price: ${offer.regularPrice} Freebucks/hour. ` +
-      'The price at session start is locked for the full hour.' +
-      (info.firstTabDiscount?.available
-        ? ' Your first-tab discount is also included in the displayed price.'
-        : ''),
+    tooltip: `Off-peak: ${offer.price} Freebucks/hour, daily ${hours}.`,
   }
 }
