@@ -23,6 +23,93 @@ const logger = {
 }
 
 describe('stream usage receipts', () => {
+  test.each([true, false])(
+    'BYOK requests streaming token counts (provider reports them: %s)',
+    async (reportsUsage) => {
+      const usage: ModelUsageData[] = []
+      let incomplete = 0
+      let requestedUsage = false
+      globalThis.fetch = (async (_input, init) => {
+        const body = JSON.parse(String(init?.body))
+        requestedUsage = body.stream_options?.include_usage === true
+        const chunks = [
+          {
+            choices: [
+              { index: 0, delta: { content: 'OK' }, finish_reason: 'stop' },
+            ],
+          },
+          ...(requestedUsage && reportsUsage
+            ? [
+                {
+                  choices: [],
+                  usage: {
+                    prompt_tokens: 100,
+                    completion_tokens: 20,
+                    total_tokens: 120,
+                  },
+                },
+              ]
+            : []),
+        ]
+        return new Response(
+          `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`,
+          { headers: { 'Content-Type': 'text/event-stream' } },
+        )
+      }) as typeof fetch
+
+      const stream = promptAiSdkStream({
+        apiKey: 'unused-hosted-key',
+        byok: {
+          id: 'nvidia-fixture',
+          revision: 1,
+          name: 'NVIDIA',
+          provider: 'openai-compatible',
+          baseUrl: 'https://integrate.api.nvidia.com/v1',
+          model: 'z-ai/glm-5.3-flash',
+          apiKey: 'test-provider-key',
+          credentialRef: 'env:TEST_PROVIDER_KEY',
+          createdAt: 'x',
+          updatedAt: 'x',
+        },
+        runId: 'byok-run',
+        messages: [{ role: 'user', content: 'Reply with OK.' }],
+        clientSessionId: 'byok-session',
+        fingerprintId: 'byok-fingerprint',
+        model: 'z-ai/glm-5.3-flash',
+        userId: 'user-1',
+        userInputId: 'byok-input',
+        onUsageReceived: (receipt: ModelUsageData) => usage.push(receipt),
+        onUsageIncomplete: () => incomplete++,
+        sendAction: async () => undefined,
+        logger,
+        trackEvent: async () => undefined,
+        signal: new AbortController().signal,
+      } as unknown as Parameters<typeof promptAiSdkStream>[0])
+
+      let text = ''
+      for await (const chunk of stream) {
+        expect(chunk.type).not.toBe('error')
+        if (chunk.type === 'text') text += chunk.text
+      }
+
+      expect(requestedUsage).toBe(true)
+      expect(text).toBe('OK')
+      expect(usage).toEqual(
+        reportsUsage
+          ? [
+              {
+                inputTokens: 100,
+                cachedInputTokens: 0,
+                outputTokens: 20,
+                totalTokens: 120,
+              },
+            ]
+          : [],
+      )
+      expect(incomplete).toBe(reportsUsage ? 0 : 1)
+    },
+  )
+
   test('reports final usage and cost before yielding an output-limit recovery', async () => {
     const usage: Array<Record<string, number | undefined>> = []
     const costs: number[] = []

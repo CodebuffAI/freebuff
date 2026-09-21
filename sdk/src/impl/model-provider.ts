@@ -288,7 +288,7 @@ export function getModelForRequest({
           throw new Error(BYOK_CONNECTION_FAILURE_MESSAGE)
         }
       }) as typeof globalThis.fetch,
-      includeUsage: undefined,
+      includeUsage: true,
       supportsStructuredOutputs: true,
     })
   }
