@@ -71,8 +71,6 @@ import type { KeyEvent } from '@opentui/core'
 interface FreebuffLandingScreenProps {
   session: FreebuffSessionResponse | null
   failure: FreebuffSessionFailure | null
-  lastRefund: number | null
-  refundPending: boolean
 }
 
 /** Landing-screen heading. Referenced both as rendered text and by the
@@ -379,8 +377,6 @@ export const LandingHeadingRow: React.FC<{
 export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   session,
   failure,
-  lastRefund,
-  refundPending,
 }) => {
   const theme = useTheme()
   const renderer = useRenderer()
@@ -717,19 +713,6 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
           {failure && (!session || session.status === 'none') && (
             <text style={{ fg: theme.secondary, wrapMode: 'word' }}>
               ⚠ {getLandingFailureMessage(failure)}
-            </text>
-          )}
-
-          {refundPending && (
-            <text style={{ fg: theme.secondary, wrapMode: 'word' }}>
-              Your refund is awaiting final usage. Once settled, it will appear
-              in your wallet.
-            </text>
-          )}
-          {lastRefund !== null && (
-            <text style={{ fg: theme.secondary, wrapMode: 'word' }}>
-              {lastRefund} {lastRefund === 1 ? 'Freebuck' : FREEBUCKS_LABEL}{' '}
-              returned to your wallet.
             </text>
           )}
 

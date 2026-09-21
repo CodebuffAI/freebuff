@@ -307,8 +307,6 @@ const AuthedSurface = (props: AuthedSurfaceProps) => {
   const {
     session,
     failure: sessionFailure,
-    lastRefund,
-    refundPending,
   } = useFreebuffSession({ enabled: !hasSelectedByokConnection })
 
   return (
@@ -323,8 +321,6 @@ const AuthedSurface = (props: AuthedSurfaceProps) => {
         {...props}
         session={session}
         sessionFailure={sessionFailure}
-        lastRefund={lastRefund}
-        refundPending={refundPending}
       />
     </ChatRuntimeProvider>
   )
@@ -347,13 +343,9 @@ const AuthedSurfaceRoutes = ({
   onNewChat,
   session,
   sessionFailure,
-  lastRefund,
-  refundPending,
 }: AuthedSurfaceProps & {
   session: ReturnType<typeof useFreebuffSession>['session']
   sessionFailure: ReturnType<typeof useFreebuffSession>['failure']
-  lastRefund: ReturnType<typeof useFreebuffSession>['lastRefund']
-  refundPending: boolean
 }) => {
   const hasSelectedByokConnection = useByokSelectionStore(
     (state) => state.selected !== undefined,
@@ -398,8 +390,6 @@ const AuthedSurfaceRoutes = ({
       <FreebuffLandingScreen
         session={session}
         failure={sessionFailure}
-        lastRefund={lastRefund}
-        refundPending={refundPending}
       />
     )
   }
