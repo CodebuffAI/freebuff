@@ -25,7 +25,9 @@ import {
   FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT,
   FREEBUFF_KIMI_K3_ECO_MODEL_ID,
   FREEBUFF_MIMO_V25_MODEL_ID,
+  FREEBUFF_MIMO_V26_PRO_MODEL_ID,
   FREEBUFF_MODELS,
+  freebuffModelIdMatches,
   FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
   FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
   FREEBUFF_MUSE_SPARK_MODEL_IDS,
@@ -575,6 +577,70 @@ describe('freebuff model availability', () => {
 
     expect(isFreebuffPremiumModelId(FREEBUFF_MIMO_V25_MODEL_ID)).toBe(false)
     expect(getFreebuffModelImageSupport(FREEBUFF_MIMO_V25_MODEL_ID)).toBe(true)
+  })
+
+  test('the MiMo row serves 2.6 Flash under its unchanged wire id', () => {
+    const row = SUPPORTED_FREEBUFF_MODELS.find(
+      (model) => model.id === FREEBUFF_MIMO_V25_MODEL_ID,
+    )!
+    expect(FREEBUFF_MIMO_V25_MODEL_ID).toBe('mimo/mimo-v2.5')
+    expect(row.displayName).toBe('MiMo 2.6 Flash')
+    // Still the unmetered fallback every surface steps down to.
+    expect(FALLBACK_FREEBUFF_MODEL_ID).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+  })
+
+  test('MiMo 2.6 Pro is on Luna terms (plan-only at limited access) with a price warning', () => {
+    const row: FreebuffModelOption = SUPPORTED_FREEBUFF_MODELS.find(
+      (model) => model.id === FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+    )!
+    expect(FREEBUFF_MODELS.map((model) => model.id)).toContain(
+      FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+    )
+    expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).toContain(
+      FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+    )
+    expect(isFreebuffModelId(FREEBUFF_MIMO_V26_PRO_MODEL_ID)).toBe(true)
+    expect(isFreebuffSessionModelId(FREEBUFF_MIMO_V26_PRO_MODEL_ID)).toBe(true)
+    expect(
+      (LIMITED_FREEBUFF_MODEL_IDS as readonly string[]).includes(
+        FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+      ),
+    ).toBe(false)
+    expect(getFreebuffModelImageSupport(FREEBUFF_MIMO_V26_PRO_MODEL_ID)).toBe(
+      true,
+    )
+    expect(row.priceWarning).toContain('Price subject to change')
+    // Luna's terms: open at full access, plan-only at limited access.
+    expect(
+      isFreebuffSessionModelAllowedForAccessTier(
+        FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+        'full',
+      ),
+    ).toBe(true)
+    expect(
+      isFreebuffSessionModelAllowedForAccessTier(
+        FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+        'limited',
+        false,
+      ),
+    ).toBe(false)
+    expect(
+      isFreebuffSessionModelAllowedForAccessTier(
+        FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+        'limited',
+        true,
+      ),
+    ).toBe(true)
+    expect(isFreebuffWebGeoExemptModelId(FREEBUFF_MIMO_V26_PRO_MODEL_ID)).toBe(
+      false,
+    )
+    // The dated-suffix matcher must not read the Pro id as the Flash row's.
+    expect(
+      freebuffModelIdMatches(
+        FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+        FREEBUFF_MIMO_V25_MODEL_ID,
+      ),
+    ).toBe(false)
   })
 
   test('MiMo 2.5 Pro is fully removed from Freebuff', () => {
@@ -1341,7 +1407,7 @@ describe('freebuff model availability', () => {
       ),
     ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     expect(LIMITED_FREEBUFF_MODEL_MISMATCH_MESSAGE).toBe(
-      'Limited free access is only available with GLM 5.3 Flash or DeepSeek V4.1 Flash or MiMo 2.5 or Solar Pro 4.',
+      'Limited free access is only available with GLM 5.3 Flash or DeepSeek V4.1 Flash or MiMo 2.6 Flash or Solar Pro 4.',
     )
     // No row in the tier supersedes another, so no picker may offer a switch
     // that admission would coerce straight back.
@@ -1610,6 +1676,10 @@ describe('freebuff model availability', () => {
       // Muse Spark 1.3 reached the CLI and Desktop on 2026-09-04. Its wire id
       // names its version, so there is no build date to disambiguate either.
       FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+      // MiMo 2.6 Flash took over the MiMo row on 2026-09-21 and 2.6 Pro
+      // arrived the same day; both names carry the version.
+      FREEBUFF_MIMO_V25_MODEL_ID,
+      FREEBUFF_MIMO_V26_PRO_MODEL_ID,
     ]
     expect(
       catalog.filter((model) => model.isNew && !undatedNew.includes(model.id)),
@@ -1826,13 +1896,33 @@ describe('limited-offer models (Claude Fable 5.1)', () => {
     ).toBe(FREEBUFF_FABLE_5_1_MODEL_ID)
   })
 
-  test.each(['full', 'limited'] as const)('campaign selection and admission preserve Fable at %s access', (tier) => {
-    expect(isFreebuffSessionModelAllowedForAccessTier(FREEBUFF_FABLE_5_1_MODEL_ID, tier)).toBe(true)
-    expect(resolveFreebuffSessionModelForAccessTier(FREEBUFF_FABLE_5_1_MODEL_ID, tier)).toBe(FREEBUFF_FABLE_5_1_MODEL_ID)
-    expect(resolveFreebuffModelForAccessTier(FREEBUFF_FABLE_5_1_MODEL_ID, tier)).toBe(FREEBUFF_FABLE_5_1_MODEL_ID)
-    // An arbitrary suffix is not an additional supported campaign model.
-    expect(isFreebuffSessionModelAllowedForAccessTier(`${FREEBUFF_FABLE_5_1_MODEL_ID}-unknown`, tier)).toBe(false)
-  })
+  test.each(['full', 'limited'] as const)(
+    'campaign selection and admission preserve Fable at %s access',
+    (tier) => {
+      expect(
+        isFreebuffSessionModelAllowedForAccessTier(
+          FREEBUFF_FABLE_5_1_MODEL_ID,
+          tier,
+        ),
+      ).toBe(true)
+      expect(
+        resolveFreebuffSessionModelForAccessTier(
+          FREEBUFF_FABLE_5_1_MODEL_ID,
+          tier,
+        ),
+      ).toBe(FREEBUFF_FABLE_5_1_MODEL_ID)
+      expect(
+        resolveFreebuffModelForAccessTier(FREEBUFF_FABLE_5_1_MODEL_ID, tier),
+      ).toBe(FREEBUFF_FABLE_5_1_MODEL_ID)
+      // An arbitrary suffix is not an additional supported campaign model.
+      expect(
+        isFreebuffSessionModelAllowedForAccessTier(
+          `${FREEBUFF_FABLE_5_1_MODEL_ID}-unknown`,
+          tier,
+        ),
+      ).toBe(false)
+    },
+  )
 
   test('traces are collected, which is the point of running the wave at all', () => {
     expect(isFreebuffTracedModelId(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(true)
@@ -1850,8 +1940,12 @@ describe('limited-offer models (Claude Fable 5.1)', () => {
     // sessions on the quota M3 and DeepSeek Pro share.
     expect(isFreebuffPremiumModelId(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(false)
     expect(isFreebuffWebPremiumModelId(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(false)
-    expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(FREEBUFF_FABLE_5_1_MODEL_ID)
-    expect(isFreebuffLimitedOfferModelId(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(true)
+    expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(
+      FREEBUFF_FABLE_5_1_MODEL_ID,
+    )
+    expect(isFreebuffLimitedOfferModelId(FREEBUFF_FABLE_5_1_MODEL_ID)).toBe(
+      true,
+    )
   })
 
   test('the offer predicate tolerates dated provider snapshots', () => {
@@ -1886,7 +1980,6 @@ describe('Meta Muse Spark 1.3 Contributor', () => {
     expect(SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)).toContain(ID)
     expect(isSupportedFreebuffModelId(ID)).toBe(true)
   })
-
 })
 
 describe('Meta Muse Spark 1.2 Contributor', () => {
@@ -1918,7 +2011,9 @@ describe('Meta Muse Spark 1.2 Contributor', () => {
     const webSelectable = FREEBUFF_WEB_MODELS.map((model) => model.id).filter(
       (id) => isFreebuffWebSelectableModelId(id),
     )
-    expect(migrateSupersededFreebuffModelPreference(ID, webSelectable)).toBeNull()
+    expect(
+      migrateSupersededFreebuffModelPreference(ID, webSelectable),
+    ).toBeNull()
     expect(getFreebuffModelSupersededBy(ID, webSelectable)).toBeUndefined()
     // A surface that cannot show 1.3 is not told to switch to it.
     expect(
@@ -1986,7 +2081,8 @@ describe('Muse Spark rate-limit fallback', () => {
     // stays recognisable, and its copy still has to describe what the server
     // does for anyone who reaches it.
     const model = SUPPORTED_FREEBUFF_MODELS.find(
-      (candidate) => candidate.id === FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+      (candidate) =>
+        candidate.id === FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
     )!
     // The tagline carries all three facts on its own — rate limited, queues,
     // can answer as another model — because the CLI and Desktop pickers render

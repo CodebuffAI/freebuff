@@ -432,7 +432,7 @@ describe('FreebuffModelSelector tier layout', () => {
     //
     // MiMo 2.5 is that row since 2026-08-18 — Flash moved into the premium
     // group and can no longer be what a spent user lands on.
-    const heroModelIndex = frame.indexOf('MiMo 2.5', unlimitedHeaderIndex)
+    const heroModelIndex = frame.indexOf('MiMo 2.6 Flash', unlimitedHeaderIndex)
 
     expect(unlimitedHeaderIndex).toBeGreaterThan(premiumHeaderIndex)
     expect(heroModelIndex).toBeGreaterThan(unlimitedHeaderIndex)
@@ -562,6 +562,25 @@ describe('FreebuffModelSelector tier layout', () => {
     expect(frame).not.toContain('UNLIMITED')
   })
 
+  test('prints the price caveat under MiMo 2.6 Pro and no other row', async () => {
+    useFreebuffSessionStore.getState().setSession({
+      status: 'none',
+      accessTier: 'full',
+    })
+    useFreebuffModelStore
+      .getState()
+      .setSelectedModel(FREEBUFF_MINIMAX_M3_MODEL_ID)
+
+    const lines = (await renderSelector()).captureCharFrame().split('\n')
+    const proRow = lines.findIndex((line) => line.includes('MiMo 2.6 Pro'))
+    expect(proRow).toBeGreaterThanOrEqual(0)
+    // Line 2 of the row — the details line — carries the caveat, in full.
+    expect(lines[proRow + 1]).toContain('Price subject to change')
+    expect(
+      lines.filter((line) => line.includes('Price subject to change')),
+    ).toHaveLength(1)
+  })
+
   test('badges only natively multimodal rows with Images', async () => {
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
@@ -577,9 +596,9 @@ describe('FreebuffModelSelector tier layout', () => {
     const frame = (await renderSelector()).captureCharFrame()
 
     // Natively multimodal: the badge is a real capability claim.
-    expect(rowOf(frame, 'MiMo 2.5')).toContain('Images')
+    expect(rowOf(frame, 'MiMo 2.6 Flash')).toContain('Images')
     expect(rowOf(frame, 'GPT-5.6 Luna')).toContain('Images')
-    expect(rowOf(frame, 'MiMo 2.5')).toContain('Images')
+    expect(rowOf(frame, 'MiMo 2.6 Flash')).toContain('Images')
     // Text-only. They still accept a pasted image (read server-side as a
     // description), but badging them made the label mean nothing — and the
     // badge is what widened the hero card.

@@ -75,6 +75,13 @@ export const mimoModels = {
   mimoV25: 'mimo/mimo-v2.5',
   mimoV25ProDirect: 'mimo-v2.5-pro',
   mimoV25Pro: 'mimo/mimo-v2.5-pro',
+  // MiMo 2.6 Flash has NO wire id of its own: it is served under `mimoV25`,
+  // which every released client, allowlist and fallback already names — the
+  // same move as DeepSeek V4.1 under the undated V4 Flash id. This is only the
+  // upstream name Xiaomi's API (and OpenRouter's `xiaomi/` slug) calls it.
+  mimoV26FlashDirect: 'mimo-v2.6-flash',
+  mimoV26ProDirect: 'mimo-v2.6-pro',
+  mimoV26Pro: 'mimo/mimo-v2.6-pro',
 } as const
 export type MimoModel = (typeof mimoModels)[keyof typeof mimoModels]
 

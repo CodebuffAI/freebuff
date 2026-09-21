@@ -31,6 +31,7 @@ import {
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
   LIMITED_FREEBUFF_MODEL_ID,
   FREEBUFF_MIMO_V25_MODEL_ID,
+  FREEBUFF_MIMO_V26_PRO_MODEL_ID,
 } from './freebuff-models'
 import {
   GEMINI_3_1_FLASH_LITE_MODEL_ID,
@@ -130,6 +131,7 @@ export const FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]: 'base3-free-deepseek',
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 'base3-free-deepseek-flash',
   [FREEBUFF_MIMO_V25_MODEL_ID]: 'base3-free-mimo',
+  [FREEBUFF_MIMO_V26_PRO_MODEL_ID]: 'base3-free-mimo-2-6-pro',
   [FREEBUFF_MINIMAX_M3_MODEL_ID]: 'base3-free-minimax-m3',
   [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 'base3-free-luna',
   [FREEBUFF_GLM_V52_MODEL_ID]: 'base3-free-glm',
@@ -167,6 +169,7 @@ export const FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]: 'base3-free-deepseek',
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 'base3-free-deepseek-flash',
   [FREEBUFF_MIMO_V25_MODEL_ID]: 'base3-free-mimo',
+  [FREEBUFF_MIMO_V26_PRO_MODEL_ID]: 'base3-free-mimo-2-6-pro',
   [FREEBUFF_MINIMAX_M3_MODEL_ID]: 'base3-free-minimax-m3',
   [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 'base3-free-luna',
   [FREEBUFF_GLM_V52_MODEL_ID]: 'base3-free-glm',
@@ -335,6 +338,11 @@ export const FREEBUFF_ROOT_AGENT_IDS = [
   'base2-free-deepseek',
   'base2-free-deepseek-flash',
   'base2-free-mimo',
+  // MiMo 2.6 Pro (2026-09-21). NEW ids rather than the retired
+  // `base2-free-mimo-pro`: released builds from before 2026-08-04 still bundle
+  // that id pinned to MiMo 2.5 Pro, and reusing it would make those requests
+  // look like this model's traffic in every per-agent query.
+  'base2-free-mimo-2-6-pro',
   'base2-free-minimax-m3',
   'base2-free-luna',
   'base2-free-solar-pro4',
@@ -395,6 +403,7 @@ export const FREEBUFF_ROOT_AGENT_IDS = [
   'base3-free-deepseek',
   'base3-free-deepseek-flash',
   'base3-free-mimo',
+  'base3-free-mimo-2-6-pro',
   'base3-free-minimax-m3',
   'base3-free-luna',
   'base3-free-solar-pro4',
@@ -417,6 +426,7 @@ const FREEBUFF_ROOT_AGENT_ID_SET: ReadonlySet<string> = new Set(
 
 export const FREEBUFF_ROOT_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_MIMO_V25_MODEL_ID]: 'base2-free-mimo',
+  [FREEBUFF_MIMO_V26_PRO_MODEL_ID]: 'base2-free-mimo-2-6-pro',
   [FREEBUFF_MINIMAX_M3_MODEL_ID]: 'base2-free-minimax-m3',
   [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 'base2-free-luna',
   [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: 'base2-free-solar-pro4',
@@ -462,6 +472,7 @@ export const FREEBUFF_ROOT_AGENT_ID_BY_MODEL: Record<string, string> = {
  */
 export const FREEBUFF_REVIEWER_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_MIMO_V25_MODEL_ID]: 'code-reviewer-mimo',
+  [FREEBUFF_MIMO_V26_PRO_MODEL_ID]: 'code-reviewer-mimo-2-6-pro',
   [FREEBUFF_MINIMAX_M3_MODEL_ID]: 'code-reviewer-minimax-m3',
   [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 'code-reviewer-luna',
   [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: 'code-reviewer-solar-pro4',
@@ -492,6 +503,7 @@ const FREEBUFF_DESKTOP_MODELS = new Set([
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_MIMO_V25_MODEL_ID,
+  FREEBUFF_MIMO_V26_PRO_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_OX_ALPHA_MODEL_ID,
@@ -589,6 +601,9 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   'base2-free-deepseek': new Set([FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]),
   'base2-free-deepseek-flash': new Set([FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]),
   'base2-free-mimo': new Set([FREEBUFF_MIMO_V25_MODEL_ID]),
+  // Pinned to its one model like every root: a root that allowed both MiMo
+  // ids would sell the 50-Freebuck Pro through the 10-Freebuck Flash session.
+  'base2-free-mimo-2-6-pro': new Set([FREEBUFF_MIMO_V26_PRO_MODEL_ID]),
   // M3 was WITHDRAWN on 2026-08-20 (see FREEBUFF_PAUSED_FREE_MODEL_IDS), and
   // this entry stays on purpose. Withdrawal is enforced at ADMISSION: no new
   // session can be opened for the model. Sessions admitted before the deploy
@@ -732,6 +747,7 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
     FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   ]),
   'code-reviewer-mimo': new Set([FREEBUFF_MIMO_V25_MODEL_ID]),
+  'code-reviewer-mimo-2-6-pro': new Set([FREEBUFF_MIMO_V26_PRO_MODEL_ID]),
   'code-reviewer-glm': new Set([FREEBUFF_GLM_V52_MODEL_ID]),
   'code-reviewer-glm-5-3-flash': new Set([FREEBUFF_GLM_V53_FLASH_MODEL_ID]),
   'code-reviewer-fable': new Set([FREEBUFF_FABLE_5_1_MODEL_ID]),

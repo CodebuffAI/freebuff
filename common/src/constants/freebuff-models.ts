@@ -126,6 +126,13 @@ export interface FreebuffModelOption {
    *  in the picker as a "TEST" badge with a tooltip so users know it is not
    *  yet production-grade. */
   experimental?: boolean
+  /** A caveat about this row's PRICE, rendered as a warning-coloured "Price"
+   *  badge whose tooltip is this text (the CLI, which has no tooltips, prints
+   *  it inline). For a row whose Freebucks price is provisional — a launch
+   *  rate card the vendor has not committed to — so a user does not build a
+   *  habit on a number that may move. Distinct from `warning` (data use) and
+   *  `experimental` (reliability): a row can be dependable and still repriced. */
+  priceWarning?: string
   /** Tooltip attached to the tagline, for a tagline that names a behavior the
    *  word alone cannot explain (e.g. "Queue"). Rendered with the same
    *  dotted-underline affordance as the data-use "Data" label, so a row can
@@ -164,7 +171,18 @@ export const FREEBUFF_DEEPSEEK_V4_FLASH_FIREWORKS_MODEL_ID =
 // its paid lane, and the `tencent/hy3*` model-config entries have all been
 // deleted. Nothing routes these slugs now — a request for one falls through to
 // the ordinary unknown-model path.
+/** The MiMo row's wire id. Serves MiMo 2.6 FLASH since 2026-09-21 — the
+ *  `v2.5` in the id is history, not the model. Kept rather than minted anew for
+ *  the reason DeepSeek V4.1 kept its undated id: every installed binary, saved
+ *  pick, allowlist, fallback and the limited catalog already names this one,
+ *  and a new id would strand all of them on a row that no longer exists. The
+ *  upstream name is chosen in web/src/llm-api/mimo-request-body.ts. */
 export const FREEBUFF_MIMO_V25_MODEL_ID = mimoModels.mimoV25
+/** MiMo 2.6 Pro (2026-09-21), plan-only at limited access, 50 Freebucks. Unlike the MiMo
+ *  row above it has its own id: it is a different, dearer model, and one wire
+ *  id per entitlement is the rule (a Pro served under the Flash id would be a
+ *  50-Freebuck model sold at 10). */
+export const FREEBUFF_MIMO_V26_PRO_MODEL_ID = mimoModels.mimoV26Pro
 /** GLM 5.2, served by CrofAI's direct OpenAI-compatible API (moved off
  *  Fireworks serverless 2026-07-29, at ~4x less than Fireworks' list price).
  *  The `z-ai/` prefix is a wire id inherited from the Fireworks era — nothing
@@ -1314,7 +1332,11 @@ const DEEPSEEK_V4_PRO_MODEL = {
 
 const MIMO_V25_MODEL = {
   id: FREEBUFF_MIMO_V25_MODEL_ID,
-  displayName: 'MiMo 2.5',
+  // MiMo 2.6 Flash since 2026-09-21, under the unchanged wire id (see
+  // FREEBUFF_MIMO_V25_MODEL_ID). Same Xiaomi rate card as 2.5 to the cent
+  // ($0.14 in / $0.28 out / $0.0028 cache read per M), so nothing about this
+  // row's economics or its unmetered/fallback role moved with the name.
+  displayName: 'MiMo 2.6 Flash',
   tagline: 'Balanced',
   availability: 'always',
   dataUse: 'service',
@@ -1340,6 +1362,38 @@ const MIMO_V25_MODEL = {
   //
   // Restore it together with Flash leaving FREEBUFF_PREMIUM_MODEL_IDS, not
   // before: the argument returns only when Flash is free again.
+  //
+  // NEW because the model under this row changed (2.5 -> 2.6 Flash) while its
+  // id did not — exactly the returning user the badge exists for.
+  isNew: true,
+} as const satisfies FreebuffModelOption
+
+/** The Price badge's tooltip on MiMo 2.6 Pro. Its Freebucks price is an
+ *  estimate from Xiaomi's launch card ($0.435 in / $0.87 out / $0.0036 cache
+ *  read per M) and a probe of its output volume, not from measured sessions —
+ *  there are none yet. */
+export const FREEBUFF_MIMO_V26_PRO_PRICE_WARNING =
+  'Price subject to change. MiMo 2.6 Pro is on launch pricing, and its Freebucks price may go up.'
+
+const MIMO_V26_PRO_MODEL = {
+  id: FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+  displayName: 'MiMo 2.6 Pro',
+  // Full access only: deliberately absent from LIMITED_FREEBUFF_MODEL_IDS.
+  tagline: 'Strong reasoning',
+  availability: 'always',
+  // Same host and terms as the MiMo row: Xiaomi's API, reached through
+  // OpenRouter's `xiaomi/fp8` endpoint with Xiaomi direct as the backup lane.
+  dataUse: 'service',
+  // Unmetered by the legacy premium pool, like the MiMo row: Freebucks is the
+  // meter for every account, and its price (the dearest row) is what bounds it.
+  premium: false,
+  // OpenRouter lists text + image (+ audio, video) input; verified with a real
+  // image against both lanes before shipping.
+  multimodal: true,
+  // Like MiMo 2.6 Flash, no effort ladder: Xiaomi exposes thinking on/off
+  // only, and the product has no separate control for that.
+  isNew: true,
+  priceWarning: FREEBUFF_MIMO_V26_PRO_PRICE_WARNING,
 } as const satisfies FreebuffModelOption
 
 const DEEPSEEK_V4_FLASH_MODEL = {
@@ -2037,6 +2091,7 @@ export const SUPPORTED_FREEBUFF_MODELS = [
   GLM_V53_FLASH_MODEL,
   DEEPSEEK_V4_FLASH_MODEL,
   MIMO_V25_MODEL,
+  MIMO_V26_PRO_MODEL,
   FABLE_5_1_MODEL,
 ] as const satisfies readonly FreebuffModelOption[]
 
@@ -2113,7 +2168,9 @@ export const FREEBUFF_MODELS = [
   GLM_V53_FLASH_MODEL,
   DEEPSEEK_V4_FLASH_MODEL,
   GPT_5_6_LUNA_MODEL,
-  ...(FREEBUFF_ENABLE_MIMO_MODELS_IN_UI ? [MIMO_V25_MODEL] : []),
+  ...(FREEBUFF_ENABLE_MIMO_MODELS_IN_UI
+    ? [MIMO_V25_MODEL, MIMO_V26_PRO_MODEL]
+    : []),
   // OX ALPHA LEFT THIS LIST on 2026-08-27, when its anonymous host ended the
   // free promotion the row existed for. MiMo is the sole UNMETERED row again.
   //
@@ -2811,8 +2868,7 @@ export const DEFAULT_FREEBUFF_MODEL_ID: FreebuffModelId =
  *  inherited, not chosen. Bump both together at the next flip. */
 export const PREVIOUS_DEFAULT_FREEBUFF_MODEL_ID: FreebuffModelId =
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
-export const FREEBUFF_DEFAULT_MODEL_MIGRATION_ID =
-  'glm-5.3-flash-2026-09-05'
+export const FREEBUFF_DEFAULT_MODEL_MIGRATION_ID = 'glm-5.3-flash-2026-09-05'
 
 /** What new Freebuff Web/Cloud users see selected in the browser pickers, and
  *  the model a new Cloud thread starts on. DeepSeek V4.1 Flash as of
@@ -3142,6 +3198,11 @@ export function isFreebuffProOnlyCatalogModelId(id: string): boolean {
 export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
   Object.freeze([
     FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+    // MiMo 2.6 Pro (2026-09-21) takes Luna's shape exactly: buyable with
+    // Freebucks at full access on every surface, plan-only at limited access.
+    // It is NOT globally Pro-only — that gate runs on Freebuff Web alone
+    // (FREEBUFF_PRO_ENFORCED_SURFACES), and this one runs everywhere.
+    FREEBUFF_MIMO_V26_PRO_MODEL_ID,
     ...FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
   ])
 
@@ -3408,6 +3469,9 @@ export const FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS: readonly string[] =
     FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
     FREEBUFF_KIMI_K3_ECO_MODEL_ID,
     FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
+    // With Luna: this list is what widens the limited tier for a subscriber,
+    // so a plan-only row missing here would be offered and then coerced away.
+    FREEBUFF_MIMO_V26_PRO_MODEL_ID,
   ])
 
 /**

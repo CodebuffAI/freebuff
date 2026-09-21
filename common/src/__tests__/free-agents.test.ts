@@ -727,6 +727,7 @@ describe('every freebuff root agent declares a prompt opening', () => {
     'base2-free-muse-spark-1-3': BASE2,
     // Gemini 3.8 Flash's root; createBase2('free', …) like its siblings.
     'base2-free-gemini-3-8-flash': BASE2,
+    'base2-free-mimo-2-6-pro': BASE2,
     // Web/Cloud-only Ox Alpha root; createBase2('free', …) like its siblings.
     'base2-free-ox-alpha': BASE2,
     'base2-free-cloud-planner': CLOUD_PLANNER,

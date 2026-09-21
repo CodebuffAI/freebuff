@@ -456,6 +456,12 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           highlight: firstTabListPriceFor(freebucks, model.id) !== undefined,
         })
       }
+      // Beside the price it qualifies, in the warning colour. The terminal has
+      // no tooltip to hold the catalog's full sentence, so the row carries its
+      // short form; line 2 is sized from these details, so it cannot truncate.
+      if (model.priceWarning) {
+        details.push({ text: 'Price subject to change', warn: true })
+      }
       if (model.warning) details.push({ text: model.warning, warn: true })
       if (model.availability === 'deployment_hours') {
         // Carries both the in-hours and out-of-hours signal, so a row with
