@@ -71,6 +71,21 @@ export function freebucksPriceFor(
   return freebucks?.prices[modelId]
 }
 
+/**
+ * True when the meter leaves nothing to start: every priced row costs more than
+ * the balance (plus any earned grant admission would claim). That is the state
+ * where the picker's only answer is a plan, so it is where BYOK is offered.
+ */
+export function freebucksCannotAffordAnyModel(
+  freebucks: FreebuffFreebucksInfo | null | undefined,
+): boolean {
+  if (!freebucks || freebucks.quotaExempt) return false
+  const prices = Object.values(freebucks.prices)
+  if (prices.length === 0) return false
+  const spendable = freebucks.balance + (freebucks.claimableGrantFreebucks ?? 0)
+  return spendable < Math.min(...prices)
+}
+
 export { freebucksRowIntent } from '@codebuff/common/util/freebuff-model-selection'
 export type { FreebucksRowIntent } from '@codebuff/common/util/freebuff-model-selection'
 

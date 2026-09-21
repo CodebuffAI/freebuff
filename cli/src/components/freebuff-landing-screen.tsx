@@ -6,6 +6,7 @@ import {
   FREEBUCKS_LABEL,
   formatAllowanceUsd,
   formatFreebucks,
+  freebucksCannotAffordAnyModel,
   freebucksOf,
   freebucksPriceLabel,
 } from '../utils/freebucks'
@@ -63,10 +64,42 @@ import {
 } from '@codebuff/common/util/freebuff-model-availability'
 import { formatFreebuffHardBlockedPrivacySignals } from '@codebuff/common/util/freebuff-privacy'
 
+import { enterByokSetup } from '../commands/byok'
+
 import type { FreebuffStreakLine } from '../utils/freebuff-streak-line'
 import type { FreebuffSessionFailure } from '../state/freebuff-session-store'
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
 import type { KeyEvent } from '@opentui/core'
+
+/**
+ * The way past a Freebucks wall that costs no Freebucks. `/byok` is a chat
+ * command, and neither the out-of-Freebucks picker nor the refusal walls have
+ * an input box, so a user who ran out could neither select a connection they
+ * already had nor add one. `B` opens the chat in BYOK setup without a Freebuff
+ * session. Mounted only where it is offered; the picker binds no letter keys.
+ */
+const BYOK_OFFER_PREFIX = 'Have your own API key? Press '
+const BYOK_OFFER_SUFFIX = ` to use BYOK — it never spends ${FREEBUCKS_LABEL}.`
+const BYOK_OFFER_TEXT = `${BYOK_OFFER_PREFIX}B${BYOK_OFFER_SUFFIX}`
+
+const ByokWallOffer = () => {
+  const theme = useTheme()
+  useKeyboard(
+    useCallback((key: KeyEvent) => {
+      if (key.ctrl || key.meta || key.option) return
+      if ((key.name ?? '').toLowerCase() !== 'b') return
+      key.preventDefault?.()
+      enterByokSetup()
+    }, []),
+  )
+  return (
+    <text style={{ fg: theme.muted, wrapMode: 'word', marginTop: 1 }}>
+      {BYOK_OFFER_PREFIX}
+      <span fg={theme.foreground}>B</span>
+      {BYOK_OFFER_SUFFIX}
+    </text>
+  )
+}
 
 interface FreebuffLandingScreenProps {
   session: FreebuffSessionResponse | null
@@ -615,7 +648,15 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   // lines below the selector reduce its viewport. Anything inside the
   // scrollbox is measured by the selector itself and must NOT be reserved
   // here as well, or the viewport shrinks while the content grows.
-  const belowPickerRows = streakRows + noticeRows + streakBonusRows
+  // Out of Freebucks on the picker: every row's Enter opens plans, so BYOK is
+  // the one way to keep working today.
+  const showByokOffer =
+    isLanding && freebucksCannotAffordAnyModel(freebucksOf(session))
+  const byokOfferRows = showByokOffer
+    ? 1 /* marginTop */ + wrappedRows(BYOK_OFFER_TEXT)
+    : 0
+  const belowPickerRows =
+    streakRows + noticeRows + streakBonusRows + byokOfferRows
   const reservedChrome = 2 + adRows + 1 /* main paddingBottom */ + logoBlockRows
   const landingTextRows =
     wrappedRows(LANDING_HEADING) + textMarginBottom + belowPickerRows
@@ -787,6 +828,7 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
                   {streakBonusNote}
                 </text>
               )}
+              {showByokOffer && <ByokWallOffer />}
             </box>
           )}
 
@@ -944,6 +986,7 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
                     ? 'Get more Freebucks with a plan: https://freebuff.com/plans'
                     : 'Get more sessions with a plan: https://freebuff.com/plans'}
               </text>
+              <ByokWallOffer />
             </>
           )}
 
@@ -969,6 +1012,7 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
                     ? 'A plan raises the daily cap: https://freebuff.com/plans'
                     : 'Get more sessions with a plan: https://freebuff.com/plans'}
               </text>
+              <ByokWallOffer />
             </>
           )}
 

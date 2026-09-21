@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  freebucksCannotAffordAnyModel,
   freebucksHeaderLine,
   freebucksResetCountdown,
   freebucksPriceFor,
@@ -245,5 +246,32 @@ describe('freebucksPriceFor', () => {
   test('is undefined off the meter and for a row the map omits', () => {
     expect(freebucksPriceFor(undefined, 'glm')).toBeUndefined()
     expect(freebucksPriceFor(metered(), 'nope')).toBeUndefined()
+  })
+})
+
+describe('freebucksCannotAffordAnyModel (where BYOK is offered)', () => {
+  test('true only when every priced row costs more than the balance', () => {
+    expect(freebucksCannotAffordAnyModel(metered({ balance: 0 }))).toBe(true)
+    expect(freebucksCannotAffordAnyModel(metered({ balance: 4 }))).toBe(true)
+    expect(freebucksCannotAffordAnyModel(metered({ balance: 5 }))).toBe(false)
+  })
+
+  test('an earned grant admission would claim still buys a session', () => {
+    expect(
+      freebucksCannotAffordAnyModel(
+        metered({ balance: 0, claimableGrantFreebucks: 5 }),
+      ),
+    ).toBe(false)
+  })
+
+  test('never offered off the meter, when exempt, or with nothing priced', () => {
+    expect(freebucksCannotAffordAnyModel(undefined)).toBe(false)
+    expect(freebucksCannotAffordAnyModel(null)).toBe(false)
+    expect(
+      freebucksCannotAffordAnyModel(metered({ balance: 0, quotaExempt: true })),
+    ).toBe(false)
+    expect(
+      freebucksCannotAffordAnyModel(metered({ balance: 0, prices: {} })),
+    ).toBe(false)
   })
 })

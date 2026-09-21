@@ -12,6 +12,7 @@ import {
 import { getSelectedFreebuffReasoningEffort } from '../state/freebuff-model-store'
 import { getCodebuffClient } from '../utils/codebuff-client'
 import {
+  isByokSetupOpen,
   resolveByokConnection,
   selectedByokConnection,
 } from '../utils/byok'
@@ -307,7 +308,9 @@ export const useSendMessage = ({
       // sendBlocked hold (direct review-screen answers) and the dequeue race
       // where the slot expires between the queue's check and this call.
       if (IS_FREEBUFF && !shouldUseByok && !getFreebuffInstanceId()) {
-        markFreebuffSessionEnded()
+        // During BYOK setup there is no session to end; marking it would swap
+        // the setup chat for the session-ended banner.
+        if (!isByokSetupOpen()) markFreebuffSessionEnded()
         requeueMessageAtFront?.({ content, attachments: attachments ?? [] })
         resetEarlyReturnState({
           setCanProcessQueue,
@@ -638,7 +641,7 @@ export const useSendMessage = ({
             priorByok.revision !== selectedByok.revision)
         ) {
           throw new Error(
-            'This chat is pinned to a different BYOK connection. Run /byok select <name> to start a new chat with that connection.',
+            'This chat is pinned to a different BYOK connection. Run `/byok select <name>` to start a new chat with that connection.',
           )
         }
         const canResumePreviousRun = priorByok

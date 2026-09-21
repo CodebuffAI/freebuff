@@ -17,6 +17,7 @@ import { getProjectRoot } from '../project-files'
 import { useChatStore } from '../state/chat-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import { trackEvent } from '../utils/analytics'
+import { hasSelectedByokConnection, isByokSetupOpen } from '../utils/byok'
 import {
   buildBashHistoryMessages,
   createRunTerminalToolResult,
@@ -447,6 +448,24 @@ export async function routeUserPrompt(
       // is responsible for validating and handling args
       return await commandDef.handler(params, parsedCommand.args)
     }
+  }
+
+  // BYOK setup opened from a Freebuff wall holds no session, so a prompt has
+  // nowhere to run until a connection is selected. Keep the text in the input
+  // rather than consuming it.
+  if (
+    IS_FREEBUFF &&
+    isByokSetupOpen() &&
+    !hasSelectedByokConnection() &&
+    !isSlashCommand(trimmed)
+  ) {
+    setMessages((prev) => [
+      ...prev,
+      getSystemMessage(
+        'Select a BYOK connection first: `/byok add …`, then `/byok select <name>`. `/byok off` returns to Freebuff.',
+      ),
+    ])
+    return
   }
 
   // Regular message or unknown slash command - send to agent

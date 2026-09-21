@@ -1,10 +1,14 @@
+import { useChatStore } from '../state/chat-store'
 import { getSystemMessage } from '../utils/message-history'
 import { startNewChat } from '../project-files'
 import { stopActiveRun } from '../utils/active-run'
 import {
   describeByokConnection,
   getCliByokStore,
+  closeByokSetup,
   isByokEnvironmentVariableName,
+  isByokSetupOpen,
+  openByokSetup,
   saveSelectedByokConnection,
   selectedByokConnection,
 } from '../utils/byok'
@@ -12,18 +16,41 @@ import {
 import type { ByokConnection, ByokProvider } from '@codebuff/sdk'
 import type { RouterParams } from './command-registry'
 
-const usage = [
+export const BYOK_USAGE = [
   'BYOK uses your provider account directly. Keys are read from an environment variable and never stored in Freebuff.',
   'Use the environment-variable NAME only, for example OPENROUTER_API_KEY. Never paste an API key into this command.',
   'Usage:',
-  '/byok list',
-  '/byok add <name> <openrouter|openai-compatible> <model> <ENV_VAR> [base-url] [--context-window=N] [--max-output-tokens=N]',
-  '/byok update <name> <model> [base-url] [--context-window=N] [--max-output-tokens=N]',
-  '/byok validate <name>',
-  '/byok select <name>',
-  '/byok remove <name>',
-  '/byok off',
+  '`/byok list`',
+  '`/byok add <name> <openrouter|openai-compatible> <model> <ENV_VAR> [base-url] [--context-window=N] [--max-output-tokens=N]`',
+  '`/byok update <name> <model> [base-url] [--context-window=N] [--max-output-tokens=N]`',
+  '`/byok validate <name>`',
+  '`/byok select <name>`',
+  '`/byok remove <name>`',
+  '`/byok off`',
 ].join('\n')
+
+/**
+ * Entry from a Freebuff wall (Freebucks spent, daily cap reached). Those
+ * screens have no input, so without this a user who ran out could never type
+ * `/byok` — the one route that does not need Freebucks at all.
+ */
+export function enterByokSetup(): void {
+  useChatStore
+    .getState()
+    .setMessages((messages) => [
+      ...messages,
+      getSystemMessage(
+        [
+          'Set up your own provider key (BYOK). BYOK runs never spend Freebucks.',
+          '',
+          BYOK_USAGE,
+          '',
+          'Add a connection, then `/byok select <name>` to start. `/byok off` returns to Freebuff.',
+        ].join('\n'),
+      ),
+    ])
+  openByokSetup()
+}
 
 function post(params: RouterParams, message: string): void {
   params.setMessages((messages) => [...messages, getSystemMessage(message)])
@@ -159,7 +186,7 @@ export async function handleByokCommand(
       return
     }
     if (!action || action === 'help') {
-      post(params, usage)
+      post(params, BYOK_USAGE)
       return
     }
     if (parsedArgs.error) {
@@ -173,7 +200,7 @@ export async function handleByokCommand(
       post(
         params,
         connections.length === 0
-          ? 'No BYOK connections configured.\n\n' + usage
+          ? 'No BYOK connections configured.\n\n' + BYOK_USAGE
           : connections
               .map((connection) => `${selected?.id === connection.id && selected.revision === connection.revision ? '●' : '○'} ${describeByokConnection(connection)}`)
               .join('\n'),
@@ -185,7 +212,7 @@ export async function handleByokCommand(
       const [name, providerValue, model, environmentVariable, baseUrl] = args
       const provider = providerValue && parseProvider(providerValue)
       if (!name || !provider || !model || !environmentVariable) {
-        post(params, usage)
+        post(params, BYOK_USAGE)
         return
       }
       if (!isByokEnvironmentVariableName(environmentVariable)) {
@@ -193,7 +220,7 @@ export async function handleByokCommand(
         return
       }
       if (provider === 'openai-compatible' && !baseUrl) {
-        post(params, 'An OpenAI-compatible connection requires a base URL.\n\n' + usage)
+        post(params, 'An OpenAI-compatible connection requires a base URL.\n\n' + BYOK_USAGE)
         return
       }
       if (provider === 'openrouter' && baseUrl) {
@@ -237,7 +264,7 @@ export async function handleByokCommand(
     if (action === 'update') {
       const [name, model, baseUrl] = args
       if (!name || !model) {
-        post(params, usage)
+        post(params, BYOK_USAGE)
         return
       }
       const connection = connectionByName(await byokStore.list(), name)
@@ -278,7 +305,7 @@ export async function handleByokCommand(
     if (action === 'validate' || action === 'select' || action === 'remove') {
       const name = args.join(' ')
       if (!name) {
-        post(params, usage)
+        post(params, BYOK_USAGE)
         return
       }
       const connection = connectionByName(await byokStore.list(), name)
@@ -316,6 +343,11 @@ export async function handleByokCommand(
     }
 
     if (action === 'off') {
+      if (!selectedByokConnection() && isByokSetupOpen()) {
+        closeByokSetup()
+        post(params, 'BYOK setup closed.')
+        return
+      }
       if (!selectedByokConnection()) {
         post(params, 'BYOK is already off.')
         return
@@ -326,7 +358,7 @@ export async function handleByokCommand(
       return
     }
 
-    post(params, usage)
+    post(params, BYOK_USAGE)
   } catch (error) {
     post(params, error instanceof Error ? `BYOK error: ${error.message}` : 'BYOK error.')
   }

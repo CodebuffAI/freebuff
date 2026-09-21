@@ -19,14 +19,47 @@ let store: ByokConnectionStore | undefined
 
 type ByokSelectionStore = {
   selected: SelectedByokConnection | undefined
+  /**
+   * The user asked, from a Freebuff wall, to set up BYOK. `/byok` is a chat
+   * command, and a user whose Freebucks are spent never reaches the chat: the
+   * landing screen's refusal has no input. This opens the chat WITHOUT a
+   * Freebuff session so the command can run; nothing but slash commands can
+   * be sent until a connection is selected.
+   */
+  setupOpen: boolean
   setSelected: (connection: SelectedByokConnection | undefined) => void
+  setSetupOpen: (open: boolean) => void
 }
 
 /** React-visible selection, initialized once from the non-secret settings file. */
 export const useByokSelectionStore = create<ByokSelectionStore>((set) => ({
   selected: loadSettings().byokConnection,
+  setupOpen: false,
   setSelected: (selected) => set({ selected }),
+  setSetupOpen: (setupOpen) => set({ setupOpen }),
 }))
+
+export function openByokSetup(): void {
+  useByokSelectionStore.getState().setSetupOpen(true)
+}
+
+export function closeByokSetup(): void {
+  useByokSelectionStore.getState().setSetupOpen(false)
+}
+
+export function isByokSetupOpen(): boolean {
+  return useByokSelectionStore.getState().setupOpen
+}
+
+/**
+ * True when the chat may be shown without a Freebuff session: a connection is
+ * selected, or the user is setting one up.
+ */
+export function useBypassesFreebuffSession(): boolean {
+  return useByokSelectionStore(
+    (state) => state.selected !== undefined || state.setupOpen,
+  )
+}
 
 /**
  * CLI keys are deliberately environment references. A command may name an
@@ -65,6 +98,9 @@ export function saveSelectedByokConnection(
         }
       : { byokConnection: undefined },
   )
+  // Selecting ends setup; turning BYOK off (or removing the selected
+  // connection) returns the user to the Freebuff landing screen.
+  closeByokSetup()
   useByokSelectionStore.getState().setSelected(
     connection
       ? {

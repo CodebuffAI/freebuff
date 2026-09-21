@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 
-import { handleByokCommand } from '../byok'
+import { enterByokSetup, handleByokCommand } from '../byok'
+import { useChatStore } from '../../state/chat-store'
 import {
+  isByokSetupOpen,
   resetCliByokStoreForTests,
   setCliByokStoreForTests,
+  useByokSelectionStore,
 } from '../../utils/byok'
 
 import type { RouterParams } from '../command-registry'
@@ -37,7 +40,33 @@ const createParams = (inputValue: string) => {
   return { params, messages, history }
 }
 
-afterEach(() => resetCliByokStoreForTests())
+afterEach(() => {
+  resetCliByokStoreForTests()
+  useByokSelectionStore.setState({ selected: undefined, setupOpen: false })
+  useChatStore.getState().setMessages([])
+})
+
+describe('BYOK setup from a Freebuff wall', () => {
+  test('opens setup and explains the commands in the chat', () => {
+    useByokSelectionStore.setState({ selected: undefined, setupOpen: false })
+    enterByokSetup()
+    expect(isByokSetupOpen()).toBe(true)
+    const text = useChatStore
+      .getState()
+      .messages.map((message) => message.content)
+      .join('\n')
+    expect(text).toContain('/byok add')
+    expect(text).toContain('never spend Freebucks')
+  })
+
+  test('/byok off closes setup when nothing is selected', async () => {
+    useByokSelectionStore.setState({ selected: undefined, setupOpen: true })
+    const { params, messages } = createParams('/byok off')
+    await handleByokCommand(params, 'off')
+    expect(isByokSetupOpen()).toBe(false)
+    expect(messages.join('\n')).toContain('BYOK setup closed.')
+  })
+})
 
 describe('/byok', () => {
   test('never saves setup arguments with an unrecognized credential format to history', async () => {

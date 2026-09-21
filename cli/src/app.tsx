@@ -19,7 +19,10 @@ import { stopActiveRun } from './utils/active-run'
 import { useChatStore } from './state/chat-store'
 import type { TopBannerType } from './types/store'
 import { IS_FREEBUFF } from './utils/constants'
-import { useByokSelectionStore } from './utils/byok'
+import {
+  useBypassesFreebuffSession,
+  useByokSelectionStore,
+} from './utils/byok'
 import { findGitRoot } from './utils/git'
 
 import type { MultilineInputHandle } from './components/multiline-input'
@@ -347,9 +350,9 @@ const AuthedSurfaceRoutes = ({
   session: ReturnType<typeof useFreebuffSession>['session']
   sessionFailure: ReturnType<typeof useFreebuffSession>['failure']
 }) => {
-  const hasSelectedByokConnection = useByokSelectionStore(
-    (state) => state.selected !== undefined,
-  )
+  // A selected connection, or BYOK setup opened from a Freebuff wall, reaches
+  // the chat without a Freebuff session.
+  const hasSelectedByokConnection = useBypassesFreebuffSession()
   // Terminal state: a 409 from the gate means another CLI rotated our
   // instance id. Show a dedicated screen and stop polling — don't fall back
   // into the pre-chat screen, which would look like normal startup progress.
