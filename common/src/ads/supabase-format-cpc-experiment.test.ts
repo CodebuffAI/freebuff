@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   SUPABASE_AGENTIC_INITIAL_CTA_BILLING_VERSION,
+  SUPABASE_CPC_AD_SURFACE,
   SUPABASE_FORMAT_CPC_DAILY_CAP_CENTS,
   SUPABASE_FORMAT_CPC_EXPERIMENT_VERSION,
+  SUPABASE_FORMAT_CPC_EXECUTION_SURFACES,
   SUPABASE_FORMAT_CPC_PRICE_CENTS,
   evaluateSupabaseFormatCpcEligibility,
+  resolveSupabaseCpcDeliverySurfaces,
   supabaseFormatCpcArmForUser,
   supabaseFormatCpcExperimentMode,
   supabaseFormatCpcPolicyForArm,
@@ -117,10 +120,57 @@ describe('Supabase CPC format experiment policy', () => {
       { ...eligibleInput('user-1'), qualifiedRelevance: false },
       { ...eligibleInput('user-1'), geoTier: 'unknown' },
       { ...eligibleInput('user-1'), executionSurface: 'cli_linux' },
+      { ...eligibleInput('user-1'), executionSurface: SUPABASE_CPC_AD_SURFACE },
       { ...eligibleInput('user-1'), userId: null },
     ]) {
       expect(evaluateSupabaseFormatCpcEligibility(input).eligible).toBe(false)
     }
+  })
+
+  test('treats the ads-request surface as distinct from execution surfaces', () => {
+    expect(SUPABASE_FORMAT_CPC_EXECUTION_SURFACES).toEqual([
+      'desktop_macos',
+      'desktop_linux',
+    ])
+    expect(
+      (SUPABASE_FORMAT_CPC_EXECUTION_SURFACES as readonly string[]).includes(
+        SUPABASE_CPC_AD_SURFACE,
+      ),
+    ).toBe(false)
+    expect(
+      resolveSupabaseCpcDeliverySurfaces({
+        adSurface: 'cli_chat',
+        executionSurface: 'desktop_macos',
+      }),
+    ).toEqual({
+      ok: true,
+      adSurface: 'cli_chat',
+      executionSurface: 'desktop_macos',
+    })
+    expect(
+      resolveSupabaseCpcDeliverySurfaces({
+        adSurface: 'cli_chat',
+        executionSurface: 'desktop_linux',
+      }).ok,
+    ).toBe(true)
+    expect(
+      resolveSupabaseCpcDeliverySurfaces({
+        adSurface: 'cli_chat',
+        executionSurface: 'cli_chat',
+      }),
+    ).toEqual({ ok: false, reason: 'surface_mismatch' })
+    expect(
+      resolveSupabaseCpcDeliverySurfaces({
+        adSurface: 'freebuff_web_chat',
+        executionSurface: 'desktop_linux',
+      }),
+    ).toEqual({ ok: false, reason: 'ad_surface_mismatch' })
+    expect(
+      resolveSupabaseCpcDeliverySurfaces({
+        adSurface: 'cli_chat',
+        executionSurface: 'desktop_windows',
+      }),
+    ).toEqual({ ok: false, reason: 'surface_mismatch' })
   })
 
   test('requires v1 initial-CTA billing support only for the agentic arm', () => {

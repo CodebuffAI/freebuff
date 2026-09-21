@@ -41,6 +41,67 @@ export function supabaseAgenticRelevanceMode(
 }
 
 /**
+ * Auction/placement grain for this experiment. Desktop inline inventory is
+ * requested as `cli_chat`; that is not a local-execution surface.
+ */
+export const SUPABASE_CPC_AD_SURFACE = 'cli_chat' as const
+export type SupabaseCpcAdSurface = typeof SUPABASE_CPC_AD_SURFACE
+
+/**
+ * Local-execution grain the invitation capability may report. Distinct from
+ * `AdSurface` / `SUPABASE_CPC_AD_SURFACE`: a Desktop ads request is
+ * `cli_chat` AND `desktop_macos` or `desktop_linux`.
+ */
+export const SUPABASE_FORMAT_CPC_EXECUTION_SURFACES = [
+  'desktop_macos',
+  'desktop_linux',
+] as const
+export type SupabaseFormatCpcExecutionSurface =
+  (typeof SUPABASE_FORMAT_CPC_EXECUTION_SURFACES)[number]
+
+export function isSupabaseCpcAdSurface(
+  value: string | null | undefined,
+): value is SupabaseCpcAdSurface {
+  return value === SUPABASE_CPC_AD_SURFACE
+}
+
+export function isSupabaseFormatCpcExecutionSurface(
+  value: string | null | undefined,
+): value is SupabaseFormatCpcExecutionSurface {
+  return (
+    value === 'desktop_macos' || value === 'desktop_linux'
+  )
+}
+
+/**
+ * Separate the ads-request surface from the capability execution surface.
+ * Passing `cli_chat` as an execution surface is a mismatch, not a qualified
+ * Desktop client.
+ */
+export function resolveSupabaseCpcDeliverySurfaces(input: {
+  adSurface: string | null | undefined
+  executionSurface: string | null | undefined
+}):
+  | {
+      ok: true
+      adSurface: SupabaseCpcAdSurface
+      executionSurface: SupabaseFormatCpcExecutionSurface
+    }
+  | { ok: false; reason: 'ad_surface_mismatch' | 'surface_mismatch' } {
+  if (!isSupabaseCpcAdSurface(input.adSurface)) {
+    return { ok: false, reason: 'ad_surface_mismatch' }
+  }
+  if (!isSupabaseFormatCpcExecutionSurface(input.executionSurface)) {
+    return { ok: false, reason: 'surface_mismatch' }
+  }
+  return {
+    ok: true,
+    adSurface: input.adSurface,
+    executionSurface: input.executionSurface,
+  }
+}
+
+/**
  * Reach is per ARM, not per experiment. The two arms do not cost the same to
  * be wrong about: display renders a card, while agentic offers to run a
  * sponsored procedure in the user's own checkout. Both arms currently serve
@@ -59,17 +120,20 @@ export const SUPABASE_FORMAT_CPC_ARM_REACH = Object.freeze({
     // desktop_windows is deliberately absent: the capability schema and the
     // Desktop client both stop at Mac/Linux, so adding it here alone would
     // widen nothing. It needs a client release, not a server constant.
-    executionSurfaces: ['desktop_macos', 'desktop_linux'],
+    executionSurfaces: SUPABASE_FORMAT_CPC_EXECUTION_SURFACES,
   },
   agentic: {
     geoTiers: ['tier1'],
     // Windows has no local containment (`windows-no-containment`), so the
     // agentic arm may never offer sponsored execution there.
-    executionSurfaces: ['desktop_macos', 'desktop_linux'],
+    executionSurfaces: SUPABASE_FORMAT_CPC_EXECUTION_SURFACES,
   },
 } satisfies Record<
   SupabaseFormatArm,
-  { geoTiers: readonly string[]; executionSurfaces: readonly string[] }
+  {
+    geoTiers: readonly string[]
+    executionSurfaces: readonly SupabaseFormatCpcExecutionSurface[]
+  }
 >)
 
 export type SupabaseFormatCpcExperimentMode = 'off' | 'on'
@@ -198,7 +262,7 @@ export function evaluateSupabaseFormatCpcEligibility(
     return { eligible: false, reason: 'geo_not_eligible' }
   }
   if (
-    typeof input.executionSurface !== 'string' ||
+    !isSupabaseFormatCpcExecutionSurface(input.executionSurface) ||
     !reach.executionSurfaces.includes(input.executionSurface)
   ) {
     return { eligible: false, reason: 'surface_not_eligible' }
