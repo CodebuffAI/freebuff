@@ -38,7 +38,7 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 | **DeepSeek V4.1 Flash** | Full and limited access | Fast coding and tool use, unmetered                               |
 | **GPT-5.6 Luna**            | Full access             | Strong all-around with native images                              |
 | **MiMo 2.6 Flash**          | Full and limited access | Balanced performance with image support                           |
-| **MiMo 2.6 Pro**            | Full access             | Xiaomi's stronger reasoning model, with image support; launch pricing, so its price may change |
+| **MiMo 2.6 Pro**            | Paid plans              | Xiaomi's stronger reasoning model, with image support |
 | **Solar Pro 4**             | Full and limited access | Limited-time trial; 524K context, text only; unmetered at full access |
 | **Muse Spark 1.2**          | Full access             | Meta's agentic coding model; 1M context. Rate limited and shared by every user, so it queues when busy and answers on DeepSeek V4 Flash rather than making you wait |
 

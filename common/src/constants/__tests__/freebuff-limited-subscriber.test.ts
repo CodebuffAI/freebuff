@@ -13,6 +13,7 @@ import {
   isFreebuffWebModelId,
   resolveFreebuffSessionModelForAccessTier,
   resolveFreebuffWebModelForLimitedTier,
+  FREEBUFF_MIMO_V26_PRO_MODEL_ID,
 } from '../freebuff-models'
 import {
   FREEBUFF_SUBSCRIPTION_MODEL_IDS,
@@ -253,9 +254,14 @@ describe('a plan model survives resolution, not just the allowlist', () => {
     }
   })
 
-  test('full access is untouched by the widened catalog', () => {
-    expect(
-      getFreebuffModelsForAccessTier('full', true).map((m) => m.id),
-    ).toEqual(getFreebuffModelsForAccessTier('full').map((m) => m.id))
+  test('at full access a plan adds exactly the paid-only rows', () => {
+    // MiMo 2.6 Pro (2026-09-21) is paid-only on every surface, so it is the
+    // one row a plan adds at full access; nothing else moves.
+    const paid = getFreebuffModelsForAccessTier('full', true).map((m) => m.id)
+    const free = getFreebuffModelsForAccessTier('full').map((m) => m.id)
+    expect(paid.filter((id) => !free.includes(id))).toEqual([
+      FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+    ])
+    expect(free.every((id) => paid.includes(id))).toBe(true)
   })
 })

@@ -602,7 +602,7 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   'base2-free-deepseek-flash': new Set([FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]),
   'base2-free-mimo': new Set([FREEBUFF_MIMO_V25_MODEL_ID]),
   // Pinned to its one model like every root: a root that allowed both MiMo
-  // ids would sell the 50-Freebuck Pro through the 10-Freebuck Flash session.
+  // ids would sell the 30-Freebuck Pro through the 10-Freebuck Flash session.
   'base2-free-mimo-2-6-pro': new Set([FREEBUFF_MIMO_V26_PRO_MODEL_ID]),
   // M3 was WITHDRAWN on 2026-08-20 (see FREEBUFF_PAUSED_FREE_MODEL_IDS), and
   // this entry stays on purpose. Withdrawal is enforced at ADMISSION: no new

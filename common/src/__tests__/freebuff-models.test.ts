@@ -609,7 +609,7 @@ describe('freebuff model availability', () => {
     expect(getFreebuffModelImageSupport(FREEBUFF_MIMO_V26_PRO_MODEL_ID)).toBe(
       true,
     )
-    expect(row.priceWarning).toContain('Price subject to change')
+    expect(row.priceWarning).toBeUndefined()
     // Luna's terms: open at full access, plan-only at limited access.
     expect(
       isFreebuffSessionModelAllowedForAccessTier(

@@ -178,10 +178,10 @@ export const FREEBUFF_DEEPSEEK_V4_FLASH_FIREWORKS_MODEL_ID =
  *  and a new id would strand all of them on a row that no longer exists. The
  *  upstream name is chosen in web/src/llm-api/mimo-request-body.ts. */
 export const FREEBUFF_MIMO_V25_MODEL_ID = mimoModels.mimoV25
-/** MiMo 2.6 Pro (2026-09-21), plan-only at limited access, 50 Freebucks. Unlike the MiMo
+/** MiMo 2.6 Pro (2026-09-21), paid-only on every surface, 30 Freebucks. Unlike the MiMo
  *  row above it has its own id: it is a different, dearer model, and one wire
  *  id per entitlement is the rule (a Pro served under the Flash id would be a
- *  50-Freebuck model sold at 10). */
+ *  30-Freebuck model sold at 10). */
 export const FREEBUFF_MIMO_V26_PRO_MODEL_ID = mimoModels.mimoV26Pro
 /** GLM 5.2, served by CrofAI's direct OpenAI-compatible API (moved off
  *  Fireworks serverless 2026-07-29, at ~4x less than Fireworks' list price).
@@ -1368,13 +1368,6 @@ const MIMO_V25_MODEL = {
   isNew: true,
 } as const satisfies FreebuffModelOption
 
-/** The Price badge's tooltip on MiMo 2.6 Pro. Its Freebucks price is an
- *  estimate from Xiaomi's launch card ($0.435 in / $0.87 out / $0.0036 cache
- *  read per M) and a probe of its output volume, not from measured sessions —
- *  there are none yet. */
-export const FREEBUFF_MIMO_V26_PRO_PRICE_WARNING =
-  'Price subject to change. MiMo 2.6 Pro is on launch pricing, and its Freebucks price may go up.'
-
 const MIMO_V26_PRO_MODEL = {
   id: FREEBUFF_MIMO_V26_PRO_MODEL_ID,
   displayName: 'MiMo 2.6 Pro',
@@ -1384,16 +1377,16 @@ const MIMO_V26_PRO_MODEL = {
   // Same host and terms as the MiMo row: Xiaomi's API, reached through
   // OpenRouter's `xiaomi/fp8` endpoint with Xiaomi direct as the backup lane.
   dataUse: 'service',
-  // Unmetered by the legacy premium pool, like the MiMo row: Freebucks is the
-  // meter for every account, and its price (the dearest row) is what bounds it.
-  premium: false,
+  // Premium, like Gemini 3.8 Flash: a paid-only row must not be read as a
+  // STANDARD (free, unmetered) model — FREEBUFF_STANDARD_MODEL_IDS is derived
+  // from `!premium`. Freebucks is still the meter that prices it.
+  premium: true,
   // OpenRouter lists text + image (+ audio, video) input; verified with a real
   // image against both lanes before shipping.
   multimodal: true,
   // Like MiMo 2.6 Flash, no effort ladder: Xiaomi exposes thinking on/off
   // only, and the product has no separate control for that.
   isNew: true,
-  priceWarning: FREEBUFF_MIMO_V26_PRO_PRICE_WARNING,
 } as const satisfies FreebuffModelOption
 
 const DEEPSEEK_V4_FLASH_MODEL = {
@@ -3177,7 +3170,38 @@ export const FREEBUFF_CLOUD_PLANNER_TURN_LIMIT = 12
  * limited-tier restriction.
  */
 export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
-  Object.freeze([FREEBUFF_GEMINI_38_FLASH_MODEL_ID])
+  Object.freeze([
+    FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
+    // MiMo 2.6 Pro, paid-only from 2026-09-21 — and on EVERY surface, unlike
+    // Gemini (see FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS).
+    FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+  ])
+
+/**
+ * Pro-only rows whose paywall is enforced on CLI and Desktop too, not only on
+ * Freebuff Web (FREEBUFF_PRO_ENFORCED_SURFACES).
+ *
+ * Gemini is Pro-only by being absent from the CLI/Desktop catalog. MiMo 2.6
+ * Pro is in that catalog, so two things carry the gate there instead: session
+ * admission refuses a non-paying account on every surface (`checkProOnlyModel`
+ * in web/src/server/free-session/public-api.ts), and
+ * `getFreebuffModelsForAccessTier` leaves the row out of the CLI and Desktop
+ * pickers for an account without a live plan. The first is the gate; the second
+ * only stops the picker offering what admission would refuse.
+ */
+export const FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS: readonly string[] =
+  Object.freeze([FREEBUFF_MIMO_V26_PRO_MODEL_ID])
+
+export function isFreebuffProOnlyEverySurfaceModelId(
+  id: string | null | undefined,
+): boolean {
+  return (
+    !!id &&
+    FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS.some((pro) =>
+      freebuffModelIdMatches(id, pro),
+    )
+  )
+}
 
 /** Whether the catalog marks `id` openable only on a paid session. Exact match:
  *  the suffix-tolerant public predicate is
@@ -3198,11 +3222,8 @@ export function isFreebuffProOnlyCatalogModelId(id: string): boolean {
 export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
   Object.freeze([
     FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
-    // MiMo 2.6 Pro (2026-09-21) takes Luna's shape exactly: buyable with
-    // Freebucks at full access on every surface, plan-only at limited access.
-    // It is NOT globally Pro-only — that gate runs on Freebuff Web alone
-    // (FREEBUFF_PRO_ENFORCED_SURFACES), and this one runs everywhere.
-    FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+    // MiMo 2.6 Pro arrives through the spread below: it is paid-only at every
+    // tier, which includes this one.
     ...FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
   ])
 
@@ -3276,6 +3297,11 @@ export function resolveFreebuffWebModelForLimitedTier(
     : LIMITED_FREEBUFF_MODEL_ID
 }
 
+const FREEBUFF_MODELS_WITHOUT_PAID_ONLY: readonly FreebuffModelOption[] =
+  FREEBUFF_MODELS.filter(
+    (model) => !isFreebuffProOnlyEverySurfaceModelId(model.id),
+  )
+
 export function getFreebuffModelsForAccessTier(
   accessTier: FreebuffAccessTier | null | undefined,
   /** See `hasPaidSubscription` on isFreebuffSessionModelAllowedForAccessTier.
@@ -3286,7 +3312,13 @@ export function getFreebuffModelsForAccessTier(
    *  offer rows admission then refuses. */
   hasPaidSubscription = false,
 ): readonly FreebuffModelOption[] {
-  if (accessTier !== 'limited') return FREEBUFF_MODELS
+  if (accessTier !== 'limited') {
+    // A paid-only row is offered only to a paying account; admission refuses
+    // everyone else anyway (FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS).
+    return hasPaidSubscription
+      ? FREEBUFF_MODELS
+      : FREEBUFF_MODELS_WITHOUT_PAID_ONLY
+  }
   if (!hasPaidSubscription) return LIMITED_FREEBUFF_MODELS
   // Plan rows are appended rather than merged in catalog order: the limited
   // rows are what this account can still run for free once the plan's windows

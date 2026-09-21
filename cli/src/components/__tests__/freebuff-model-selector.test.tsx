@@ -562,7 +562,7 @@ describe('FreebuffModelSelector tier layout', () => {
     expect(frame).not.toContain('UNLIMITED')
   })
 
-  test('prints the price caveat under MiMo 2.6 Pro and no other row', async () => {
+  test('offers MiMo 2.6 Pro only to a paying account', async () => {
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'full',
@@ -570,15 +570,23 @@ describe('FreebuffModelSelector tier layout', () => {
     useFreebuffModelStore
       .getState()
       .setSelectedModel(FREEBUFF_MINIMAX_M3_MODEL_ID)
+    const frame = (await renderSelector()).captureCharFrame()
+    expect(frame).toContain('MiMo 2.6 Flash')
+    expect(frame).not.toContain('MiMo 2.6 Pro')
+  })
 
-    const lines = (await renderSelector()).captureCharFrame().split('\n')
-    const proRow = lines.findIndex((line) => line.includes('MiMo 2.6 Pro'))
-    expect(proRow).toBeGreaterThanOrEqual(0)
-    // Line 2 of the row — the details line — carries the caveat, in full.
-    expect(lines[proRow + 1]).toContain('Price subject to change')
-    expect(
-      lines.filter((line) => line.includes('Price subject to change')),
-    ).toHaveLength(1)
+  test('shows MiMo 2.6 Pro to a paying account, with no price caveat', async () => {
+    useFreebuffSessionStore.getState().setSession({
+      status: 'none',
+      accessTier: 'full',
+      subscription: { tierId: 'starter', tiers: [] },
+    })
+    useFreebuffModelStore
+      .getState()
+      .setSelectedModel(FREEBUFF_MINIMAX_M3_MODEL_ID)
+    const frame = (await renderSelector()).captureCharFrame()
+    expect(frame).toContain('MiMo 2.6 Pro')
+    expect(frame).not.toContain('Price subject to change')
   })
 
   test('badges only natively multimodal rows with Images', async () => {
