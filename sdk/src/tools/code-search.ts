@@ -1,4 +1,5 @@
 import { getSystemProcessEnv } from '../env'
+import { isUtf8 } from 'buffer'
 import { spawn } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -236,10 +237,14 @@ export function codeSearch({
     let jsonRemainder = ''
     const stdoutDecoder = new StringDecoder('utf8')
     // -l overrides --json; adapt each NUL-delimited path to the match pipeline.
-    const parseOutputRecord = (record: string) =>
-      filenamesOnly
-        ? { type: 'match', data: { path: { text: record } } }
-        : JSON.parse(record)
+    const parseOutputRecord = (record: string) => {
+      if (!filenamesOnly) return JSON.parse(record)
+      const bytes = Buffer.from(record, 'latin1')
+      const filePath = isUtf8(bytes)
+        ? { text: bytes.toString('utf8') }
+        : { bytes: bytes.toString('base64') }
+      return { type: 'match', data: { path: filePath } }
+    }
     let stderrBuf = ''
     // Track matches by file for grouping and limiting
     const fileGroups = new Map<string, string[]>()
@@ -342,8 +347,12 @@ export function codeSearch({
     // Parse ripgrep output for early stopping.
     childProcess.stdout.on('data', (chunk: Buffer | string) => {
       if (isResolved) return
-      const chunkStr =
-        typeof chunk === 'string' ? chunk : stdoutDecoder.write(chunk)
+      // Preserve filename bytes until a complete NUL-delimited record is available.
+      const chunkStr = filenamesOnly
+        ? (typeof chunk === 'string' ? Buffer.from(chunk) : chunk).toString('latin1')
+        : typeof chunk === 'string'
+          ? chunk
+          : stdoutDecoder.write(chunk)
       jsonRemainder += chunkStr
 
       // The last JSON line or filename may be split across chunks.
