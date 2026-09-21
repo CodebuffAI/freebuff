@@ -1,5 +1,3 @@
-import { globalStopSequence } from './constants'
-
 import type { AgentTemplate } from './templates/types'
 import type { TrackEventFn } from '@codebuff/common/types/contracts/analytics'
 import type { SendActionFn } from '@codebuff/common/types/contracts/client'
@@ -97,7 +95,6 @@ export const getAgentStreamFromTemplate = (params: {
     runId,
     signal: params.signal,
     spawnableAgents: template.spawnableAgents,
-    stopSequences: [globalStopSequence],
     tools,
     userId,
     userInputId,

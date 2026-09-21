@@ -1,7 +1,3 @@
-import { endsAgentStepParam } from '@codebuff/common/tools/constants'
-
-export const globalStopSequence = `${JSON.stringify(endsAgentStepParam)}`
-
 /**
  * Set to `true` to log the full LLM request (system prompt, tools, messages)
  * to `debug/cache-debug/` on each user prompt. Use with:
