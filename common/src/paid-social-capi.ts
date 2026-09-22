@@ -195,6 +195,15 @@ export function buildPaidSocialRequest(
               ...(attribution.hashedEmail
                 ? { hashed_email: attribution.hashedEmail }
                 : {}),
+              // Identity keys, not a claim about where the event happened:
+              // the native CodingActivation carries the signup browser's
+              // address and agent, exactly as Meta's does. X requires each to
+              // travel with another identifier, and the normalizer above has
+              // already insisted on a click ID or an email hash.
+              ...(attribution.ipAddress
+                ? { ip_address: attribution.ipAddress }
+                : {}),
+              user_agent: attribution.userAgent,
             },
           ],
           conversion_id: params.eventId,

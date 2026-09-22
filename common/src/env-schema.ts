@@ -12,7 +12,11 @@ export const clientEnvSchema = z.object({
   NEXT_PUBLIC_GRAVITY_PIXEL_ID: z.uuid().optional(),
   /** Public Meta dataset/pixel ID. Unset disables Freebuff landing tracking. */
   NEXT_PUBLIC_META_PIXEL_ID: z.string().regex(/^\d+$/).max(32).optional(),
-  /** Optional paid-social dataset IDs; absent leaves first-party capture off. */
+  /**
+   * Optional paid-social pixel IDs. Each one enables its browser pixel on the
+   * public pages AND the first-party `twclid` / `ttclid` capture; absent
+   * leaves both off. X's is the lowercase base-36 ID (`rfga1`).
+   */
   NEXT_PUBLIC_X_PIXEL_ID: z
     .string()
     .regex(/^[a-z0-9]+$/)

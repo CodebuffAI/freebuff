@@ -5,7 +5,23 @@ import {
 
 export const PAID_SOCIAL_PLATFORMS = ['x', 'tiktok'] as const
 export type PaidSocialPlatform = (typeof PAID_SOCIAL_PLATFORMS)[number]
+/** Signup -> native activation, and how long a pending event may still retry. */
 export const PAID_SOCIAL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+/**
+ * How long a captured ad click may precede the signup it is attached to, per
+ * platform. Separate from PAID_SOCIAL_WINDOW_MS on purpose: the acquisition
+ * window is about the account, this is about the click. X's is 90 days —
+ * `twclid` is the one identifier that matches exactly without hashing, X's
+ * post-engagement attribution window is configurable up to 90 days, and a
+ * visitor who installs Desktop and only creates the account when the app
+ * opens the browser to sign in can be weeks behind the ad. Whether the click
+ * earns credit is the ad account's event window (7-day click today), never
+ * this constant. TikTok's stays at the seven-day acquisition window.
+ */
+export const PAID_SOCIAL_CLICK_WINDOW_MS: Record<PaidSocialPlatform, number> = {
+  x: 90 * 24 * 60 * 60 * 1000,
+  tiktok: PAID_SOCIAL_WINDOW_MS,
+}
 /** Eligibility for an auth handoff, not an explicit consent record. */
 export const PAID_SOCIAL_PERMISSION_COOKIE = 'freebuff_paid_social_allowed'
 export const paidSocialClickCookie = (platform: PaidSocialPlatform) =>
@@ -126,8 +142,18 @@ export function withinPaidSocialWindow(from: Date, now: Date): boolean {
   return age >= 0 && age < PAID_SOCIAL_WINDOW_MS
 }
 
+export function withinPaidSocialClickWindow(
+  platform: PaidSocialPlatform,
+  capturedAt: Date,
+  now: Date,
+): boolean {
+  const age = now.getTime() - capturedAt.getTime()
+  return age >= 0 && age < PAID_SOCIAL_CLICK_WINDOW_MS[platform]
+}
+
 /** Timestamp the landing capture: cookie expiry alone is not a server-side fence. */
 export function parsePaidSocialClickData(
+  platform: PaidSocialPlatform,
   value: string | undefined,
   now: Date,
 ): { clickId: string; campaign?: PaidSocialCampaign } | undefined {
@@ -144,7 +170,7 @@ export function parsePaidSocialClickData(
     return validId &&
       typeof capturedAt === 'number' &&
       Number.isFinite(capturedAt) &&
-      withinPaidSocialWindow(new Date(capturedAt), now)
+      withinPaidSocialClickWindow(platform, new Date(capturedAt), now)
       ? { clickId: validId, campaign: paidSocialCampaign(campaign) }
       : undefined
   } catch {
@@ -152,6 +178,10 @@ export function parsePaidSocialClickData(
   }
 }
 
-export function parsePaidSocialClick(value: string | undefined, now: Date) {
-  return parsePaidSocialClickData(value, now)?.clickId
+export function parsePaidSocialClick(
+  platform: PaidSocialPlatform,
+  value: string | undefined,
+  now: Date,
+) {
+  return parsePaidSocialClickData(platform, value, now)?.clickId
 }

@@ -81,26 +81,52 @@ describe('paid social transport contracts', () => {
             {
               conversion_time: '2026-09-18T12:00:00.000Z',
               event_id: `${config.pixelToken ? 'tw-abc-' : ''}${eventName === 'CompleteRegistration' ? 'signup' : 'activation'}`,
-              identifiers: [{ hashed_email: emailHash }],
+              // The agent always rides along; X pairs it with the email hash.
+              identifiers: [{ hashed_email: emailHash, user_agent: 'Browser' }],
               conversion_id: 'stable-occurrence',
             },
           ],
         })
         expect(JSON.stringify(request.body)).not.toContain('internal-account')
-        expect(JSON.stringify(request.body)).not.toContain('user_agent')
+        expect(JSON.stringify(request.body)).not.toContain('ip_address')
         expect(JSON.stringify(request.body)).not.toContain('url')
       }
     },
   )
-  test('X includes both genuine matching identifiers when available', () => {
+  test('X sends every identifier it has in one identifier object', () => {
     const request = buildPaidSocialRequest({
       ...base,
       config: xPixelToken,
       attribution: { ...base.attribution, hashedEmail: emailHash },
     })
-    expect(request.body.conversions).toMatchObject([
-      { identifiers: [{ twclid: 'click-id', hashed_email: emailHash }] },
+    expect(request.body.conversions).toEqual([
+      {
+        conversion_time: '2026-09-18T12:00:00.000Z',
+        event_id: 'tw-abc-signup',
+        identifiers: [
+          {
+            twclid: 'click-id',
+            hashed_email: emailHash,
+            ip_address: '203.0.113.9',
+            user_agent: 'Browser',
+          },
+        ],
+        conversion_id: 'stable-occurrence',
+      },
     ])
+    // TikTok's browser cookie and the first-party cohort stay out of X's body.
+    const body = JSON.stringify(request.body)
+    expect(body).not.toContain('CiXyZ')
+    expect(body).not.toContain('internal-only-campaign')
+  })
+  test('X never pairs the address or agent with nothing stronger', () => {
+    expect(() =>
+      buildPaidSocialRequest({
+        ...base,
+        config: xPixelToken,
+        attribution: { userAgent: 'Browser', ipAddress: '203.0.113.9' },
+      }),
+    ).toThrow('Invalid paid social matching data')
   })
   test.each([
     { clickId: undefined },
@@ -170,7 +196,7 @@ describe('paid social transport contracts', () => {
       }),
     ).toThrow()
   })
-  test('X sends the configured event with stable occurrence, ISO time and only click matching', () => {
+  test('X sends the configured event with stable occurrence, ISO time and click matching', () => {
     const request = buildPaidSocialRequest({ ...base, config: x })
     expect(request.url).toBe(
       'https://ads-api.x.com/12/measurement/conversions/abc',
@@ -180,7 +206,13 @@ describe('paid social transport contracts', () => {
         {
           conversion_time: '2026-09-18T12:00:00.000Z',
           event_id: 'signup',
-          identifiers: [{ twclid: 'click-id' }],
+          identifiers: [
+            {
+              twclid: 'click-id',
+              ip_address: '203.0.113.9',
+              user_agent: 'Browser',
+            },
+          ],
           conversion_id: 'stable-occurrence',
         },
       ],
@@ -216,7 +248,13 @@ describe('paid social transport contracts', () => {
           {
             conversion_time: '2026-09-18T12:00:00.000Z',
             event_id: 'tw-abc-signup',
-            identifiers: [{ twclid: 'click-id' }],
+            identifiers: [
+              {
+                twclid: 'click-id',
+                ip_address: '203.0.113.9',
+                user_agent: 'Browser',
+              },
+            ],
             conversion_id: 'stable-occurrence',
           },
         ],
