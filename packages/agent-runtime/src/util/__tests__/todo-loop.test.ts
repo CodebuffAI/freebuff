@@ -2,8 +2,15 @@ import { assistantMessage, userMessage } from '@codebuff/common/util/messages'
 import { describe, expect, it } from 'bun:test'
 
 import {
+  FILE_EDIT_TOOLS_UNAVAILABLE_NOTE,
+  latestRecordedTodoListKey,
+  TODO_LOOP_RECOVERY_MESSAGE,
   TODO_LOOP_RECOVERY_TAG,
+  todoListKey,
+  todoLoopRecoveryMessage,
   trailingIdenticalTodoCalls,
+  WRITE_TODOS_UNCHANGED_MESSAGE,
+  writeTodosUnchangedMessage,
 } from '../todo-loop'
 
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
@@ -73,5 +80,60 @@ describe('trailingIdenticalTodoCalls', () => {
         ...exchange('new'),
       ]),
     ).toBe(1)
+  })
+})
+
+describe('latestRecordedTodoListKey', () => {
+  const xKey = todoListKey({ todos: [{ task: 'x', completed: false }] })
+
+  it('returns the most recent completed list, across a user message', () => {
+    expect(
+      latestRecordedTodoListKey([
+        ...exchange('a', [{ task: 'old', completed: false }]),
+        ...exchange('b'),
+        userMessage('continue'),
+        ...exchange('read', [], 'read_files'),
+        assistantMessage('Working on it.'),
+      ]),
+    ).toBe(xKey)
+  })
+
+  it('skips a call that never completed', () => {
+    expect(
+      latestRecordedTodoListKey([
+        ...exchange('a'),
+        ...exchange('orphan', [{ task: 'y', completed: false }]).slice(0, 1),
+      ]),
+    ).toBe(xKey)
+  })
+
+  it('is undefined when no list was recorded', () => {
+    expect(latestRecordedTodoListKey([userMessage('hi')])).toBeUndefined()
+  })
+
+  it('ignores key order but not status', () => {
+    expect(todoListKey({ todos: [{ completed: false, task: 'x' }] })).toBe(
+      xKey,
+    )
+    expect(
+      todoListKey({ todos: [{ task: 'x', completed: true }] }),
+    ).not.toBe(xKey)
+  })
+})
+
+describe('guidance messages', () => {
+  it('names the missing file-editing tools only when none is offered', () => {
+    const planTools = ['read_files', 'write_todos', 'run_terminal_command']
+    const buildTools = [...planTools, 'str_replace']
+    expect(writeTodosUnchangedMessage(buildTools)).toBe(
+      WRITE_TODOS_UNCHANGED_MESSAGE,
+    )
+    expect(todoLoopRecoveryMessage(buildTools)).toBe(TODO_LOOP_RECOVERY_MESSAGE)
+    expect(writeTodosUnchangedMessage(planTools)).toBe(
+      `${WRITE_TODOS_UNCHANGED_MESSAGE} ${FILE_EDIT_TOOLS_UNAVAILABLE_NOTE}`,
+    )
+    expect(todoLoopRecoveryMessage(planTools)).toBe(
+      `${TODO_LOOP_RECOVERY_MESSAGE} ${FILE_EDIT_TOOLS_UNAVAILABLE_NOTE}`,
+    )
   })
 })

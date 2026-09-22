@@ -34,8 +34,10 @@ import {
   STREAM_INTERRUPTED_TAG,
 } from '../tools/stream-parser'
 import {
+  FILE_EDIT_TOOLS_UNAVAILABLE_NOTE,
   TODO_LOOP_RECOVERY_MESSAGE,
   TODO_LOOP_STOP_MESSAGE,
+  WRITE_TODOS_UNCHANGED_MESSAGE,
 } from '../util/todo-loop'
 import { createToolCallChunk, mockFileContext } from './test-utils'
 
@@ -274,6 +276,155 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
     expect(JSON.stringify(result.agentState.messageHistory)).not.toContain(
       TODO_LOOP_RECOVERY_MESSAGE,
     )
+  })
+
+  describe('unchanged write_todos results', () => {
+    const todoResults = (state: AgentState): string[] =>
+      state.messageHistory.flatMap((m) =>
+        m.role === 'tool' && m.toolName === 'write_todos'
+          ? m.content.map((part) =>
+              part.type === 'json'
+                ? String((part.value as { message: unknown }).message)
+                : '',
+            )
+          : [],
+      )
+
+    it('answers a repeated list as a no-op from the first repeat', async () => {
+      mockTemplate.toolNames.push('write_todos')
+      let calls = 0
+      const seenPrompts: string[] = []
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* ({ messages }) {
+          calls++
+          seenPrompts.push(JSON.stringify(messages))
+          if (calls === 3) {
+            yield createToolCallChunk('end_turn', {})
+          } else {
+            yield createToolCallChunk('write_todos', {
+              todos: [{ task: 'Write the script', completed: false }],
+            })
+          }
+          return promptSuccess(`unchanged-${calls}`)
+        },
+      })
+
+      expect(calls).toBe(3)
+      expect(result.output.type).not.toBe('error')
+      expect(todoResults(result.agentState)).toEqual([
+        'Todos written',
+        WRITE_TODOS_UNCHANGED_MESSAGE,
+      ])
+      // The model sees it on the very next step, well before the streak
+      // detector's recovery guidance at the third identical call.
+      expect(seenPrompts[2]).toContain(WRITE_TODOS_UNCHANGED_MESSAGE)
+      expect(seenPrompts[2]).not.toContain(TODO_LOOP_RECOVERY_MESSAGE)
+    })
+
+    it('never flags a list whose status or tasks changed', async () => {
+      mockTemplate.toolNames.push('write_todos')
+      const lists = [
+        [
+          { task: 'Read code', completed: false },
+          { task: 'Write fix', completed: false },
+        ],
+        [
+          { task: 'Read code', completed: true },
+          { task: 'Write fix', completed: false },
+        ],
+        [
+          { task: 'Read code', completed: true },
+          { task: 'Write fix', completed: true },
+        ],
+        [
+          { task: 'Read code', completed: true },
+          { task: 'Write fix', completed: true },
+          { task: 'Run tests', completed: false },
+        ],
+      ]
+      let calls = 0
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* () {
+          const todos = lists[calls++]
+          yield todos
+            ? createToolCallChunk('write_todos', { todos })
+            : createToolCallChunk('end_turn', {})
+          return promptSuccess(`progress-${calls}`)
+        },
+      })
+
+      expect(result.output.type).not.toBe('error')
+      expect(todoResults(result.agentState)).toEqual(
+        lists.map(() => 'Todos written'),
+      )
+    })
+
+    it('flags a list re-sent unchanged at the start of the next turn', async () => {
+      mockTemplate.toolNames.push('write_todos')
+      const todos = [{ task: 'Write the script', completed: false }]
+      const first = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* () {
+          yield createToolCallChunk('write_todos', { todos })
+          yield createToolCallChunk('end_turn', {})
+          return promptSuccess('turn-1')
+        },
+      })
+      const second = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        agentState: first.agentState,
+        prompt: 'continue',
+        promptAiSdkStream: async function* () {
+          yield createToolCallChunk('write_todos', { todos })
+          yield createToolCallChunk('end_turn', {})
+          return promptSuccess('turn-2')
+        },
+      })
+
+      expect(todoResults(second.agentState)).toEqual([
+        'Todos written',
+        WRITE_TODOS_UNCHANGED_MESSAGE,
+      ])
+    })
+
+    it('tells a model without file-editing tools not to substitute write_todos', async () => {
+      // Desktop plan mode withholds the write tools. A model that meant to
+      // call write_file kept emitting write_todos instead.
+      mockTemplate.toolNames = ['read_files', 'write_todos', 'end_turn']
+      mockAgentState.stepsRemaining = 200
+      let calls = 0
+      const seenPrompts: string[] = []
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* ({ messages }) {
+          calls++
+          seenPrompts.push(JSON.stringify(messages))
+          yield { type: 'text', text: 'Writing the script with write_file now:' }
+          yield createToolCallChunk('write_todos', {
+            todos: [{ task: 'Write the QC script', completed: false }],
+          })
+          return promptSuccess(`plan-${calls}`)
+        },
+      })
+
+      expect(calls).toBe(6)
+      expect(result.output).toMatchObject({
+        type: 'error',
+        message: TODO_LOOP_STOP_MESSAGE,
+      })
+      expect(todoResults(result.agentState).slice(1)).toEqual(
+        Array(5).fill(
+          `${WRITE_TODOS_UNCHANGED_MESSAGE} ${FILE_EDIT_TOOLS_UNAVAILABLE_NOTE}`,
+        ),
+      )
+      expect(seenPrompts[3]).toContain(
+        JSON.stringify(
+          `${TODO_LOOP_RECOVERY_MESSAGE} ${FILE_EDIT_TOOLS_UNAVAILABLE_NOTE}`,
+        ).slice(1, -1),
+      )
+    })
   })
 
   it('retains completed steps after a spending cap and resumes under a new run id', async () => {
