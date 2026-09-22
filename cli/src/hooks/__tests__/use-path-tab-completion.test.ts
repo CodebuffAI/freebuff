@@ -13,33 +13,18 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
  * - Path transformation for display
  */
 
+import {
+  isAbsolutePath,
+  isCompleteDirectory,
+  toRelativePath,
+} from '../use-path-tab-completion'
+
 // Helper to expand ~ to home directory (same as in the hook)
 const expandPath = (inputPath: string): string => {
   if (inputPath.startsWith('~')) {
     return path.join(os.homedir(), inputPath.slice(1))
   }
   return inputPath
-}
-
-// Helper to check if a path is absolute-style (starts with / or ~)
-const isAbsolutePath = (searchQuery: string): boolean => {
-  return searchQuery.startsWith('/') || searchQuery.startsWith('~')
-}
-
-// Helper to check if completion result indicates a full directory
-const isCompleteDirectory = (completed: string): boolean => {
-  return completed.endsWith('/')
-}
-
-// Helper to convert absolute completion back to relative for display
-const toRelativePath = (
-  completed: string,
-  currentPath: string,
-): string | null => {
-  if (completed.startsWith(currentPath + path.sep)) {
-    return completed.slice(currentPath.length + 1)
-  }
-  return null
 }
 
 describe('usePathTabCompletion - path type detection', () => {
@@ -54,6 +39,13 @@ describe('usePathTabCompletion - path type detection', () => {
       expect(isAbsolutePath('~')).toBe(true)
       expect(isAbsolutePath('~/Documents')).toBe(true)
       expect(isAbsolutePath('~/')).toBe(true)
+    })
+
+    test('returns true for Windows drive paths', () => {
+      expect(isAbsolutePath('C:\\Users')).toBe(true)
+      expect(isAbsolutePath('D:\\projects')).toBe(true)
+      expect(isAbsolutePath('C:/Users/Documents')).toBe(true)
+      expect(isAbsolutePath('C:\\')).toBe(true)
     })
 
     test('returns false for relative paths', () => {
@@ -82,9 +74,16 @@ describe('usePathTabCompletion - completion result detection', () => {
       expect(isCompleteDirectory('relative/path/')).toBe(true)
     })
 
-    test('returns false for paths not ending with /', () => {
+    test('returns true for Windows paths ending with backslash', () => {
+      expect(isCompleteDirectory('C:\\Users\\')).toBe(true)
+      expect(isCompleteDirectory('relative\\path\\')).toBe(true)
+      expect(isCompleteDirectory('\\')).toBe(true)
+    })
+
+    test('returns false for paths not ending with / or \\', () => {
       expect(isCompleteDirectory('/usr/local')).toBe(false)
       expect(isCompleteDirectory('~/Documents')).toBe(false)
+      expect(isCompleteDirectory('C:\\Users')).toBe(false)
       expect(isCompleteDirectory('partial')).toBe(false)
     })
 
