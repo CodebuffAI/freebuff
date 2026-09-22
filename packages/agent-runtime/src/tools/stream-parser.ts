@@ -60,6 +60,24 @@ export const REPEATED_STREAM_INTERRUPTIONS_MESSAGE =
 export const REPEATED_OUTPUT_LIMIT_MESSAGE =
   'The model kept ending after reasoning without producing a response. Try a simpler request or a different model.'
 
+/**
+ * Follow-up suggestion tools render a clickable card per call and do nothing
+ * else, so a model that degenerates into repeating one inside a single
+ * response has no natural brake: every call streams, executes and renders
+ * before the model ever sees a result. Seen 2026-09-22 on Freebuff Desktop
+ * (MiMo v2.5): a single response streamed suggest_prompts calls for 3.5
+ * minutes (the turn logged 90 tool calls) until the user pressed Stop. The
+ * guidance asks for two to four, one per call, so this cap leaves generous
+ * headroom for legitimate use.
+ */
+export const FOLLOWUP_SUGGESTION_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'suggest_prompts',
+  'suggest_followups',
+])
+export const MAX_FOLLOWUP_SUGGESTION_CALLS_PER_RESPONSE = 8
+export const FOLLOWUP_SUGGESTION_LIMIT_TAG = 'FOLLOWUP_SUGGESTION_LIMIT'
+export const FOLLOWUP_SUGGESTION_LIMIT_MESSAGE = `Your previous response was cut off because it called a follow-up suggestion tool more than ${MAX_FOLLOWUP_SUGGESTION_CALLS_PER_RESPONSE} times. The first ${MAX_FOLLOWUP_SUGGESTION_CALLS_PER_RESPONSE} suggestions were shown to the user. Do not suggest more follow-ups this turn.`
+
 const RECOVERY_BY_SOURCE: Record<
   StreamRecoverySource,
   { tag: string; giveUpMessage: string }
@@ -138,6 +156,9 @@ export async function processStream(
 
     onCostCalculated: (credits: number) => Promise<void>
     onResponseChunk: (chunk: string | PrintModeEvent) => void
+    /** Cancels this step's model request (not the run). Called when the
+     *  response is cut short by the follow-up suggestion cap. */
+    stopStream?: () => void
   } & Omit<
     ExecuteToolCallParams<any>,
     | 'currentAssistantMessages'
@@ -172,6 +193,7 @@ export async function processStream(
     onResponseChunk,
     runId,
     signal,
+    stopStream,
     userId,
   } = params
   const fullResponseChunks: string[] = [fullResponse]
@@ -213,6 +235,8 @@ export async function processStream(
   const claimedByInlineAgent = new Set<Message>()
   let hadToolCallError = false
   let sawStreamRecovery = false
+  let followupSuggestionCalls = 0
+  let followupSuggestionLimitHit = false
   const errorMessages: Message[] = []
   let resolveStreamDonePromise!: () => void
   const streamDonePromise = new Promise<void>((resolve) => {
@@ -257,8 +281,31 @@ export async function processStream(
     return {
       onTagStart: () => { },
       onTagEnd: async (_: string, input: Record<string, string>) => {
-        if (signal.aborted) {
+        if (signal.aborted || followupSuggestionLimitHit) {
           return
+        }
+        if (FOLLOWUP_SUGGESTION_TOOL_NAMES.has(toolName)) {
+          followupSuggestionCalls++
+          if (
+            followupSuggestionCalls > MAX_FOLLOWUP_SUGGESTION_CALLS_PER_RESPONSE
+          ) {
+            // Neither executed nor surfaced, so no card renders for it; the
+            // consumption loop sees the flag and stops reading the response.
+            followupSuggestionLimitHit = true
+            logger.warn(
+              {
+                metric: 'followup_suggestion_limit_hit',
+                toolName,
+                limit: MAX_FOLLOWUP_SUGGESTION_CALLS_PER_RESPONSE,
+                model: agentTemplate.model,
+                agentId: agentTemplate.id,
+                userId,
+                runId,
+              },
+              'Response repeated a follow-up suggestion tool past the cap; cutting it off',
+            )
+            return
+          }
         }
         const toolCallId = generateCompactId()
         const isNativeTool = toolNames.includes(toolName as ToolName)
@@ -433,6 +480,12 @@ export async function processStream(
         break
       }
       const { value: chunk, done } = await streamWithTags.next()
+      if (followupSuggestionLimitHit && !done) {
+        // Stop reading the runaway response and cancel the request behind it;
+        // the rest of this step (tool completion, history) proceeds normally.
+        stopStream?.()
+        break
+      }
       if (done) {
         // Handle PromptResult: extract value if success, null if aborted
         if (chunk && typeof chunk === 'object' && 'aborted' in chunk) {
@@ -551,6 +604,17 @@ export async function processStream(
           `Unhandled chunk type: ${(chunk as { type: unknown }).type}`,
         )
       }
+    }
+
+    if (followupSuggestionLimitHit) {
+      // Not a tool error: it must not force another step, since a response of
+      // nothing but suggestions should still end the turn.
+      errorMessages.push(
+        userMessage({
+          content: withSystemTags(FOLLOWUP_SUGGESTION_LIMIT_MESSAGE),
+          tags: [FOLLOWUP_SUGGESTION_LIMIT_TAG],
+        }),
+      )
     }
 
     // The step's content is complete: release anything the split still holds,

@@ -216,6 +216,7 @@ export const runAgentStep = async (
     | 'onCostCalculated'
     | 'repoId'
     | 'stream'
+    | 'stopStream'
   > &
     ParamsExcluding<
       typeof getAgentStreamFromTemplate,
@@ -517,9 +518,14 @@ export const runAgentStep = async (
   let fullResponse = ''
   const toolResults: ToolMessage[] = []
 
+  // Lets processStream cancel this step's request without cancelling the run
+  // (a runaway response it has decided to stop reading).
+  const streamStop = new AbortController()
+
   // Raw stream from AI SDK
   const stream = getAgentStreamFromTemplate({
     ...params,
+    signal: AbortSignal.any([params.signal, streamStop.signal]),
     agentId: agentState.parentId ? agentState.agentId : undefined,
     costMode: params.costMode,
     cacheDebugCorrelation: cacheDebugCorrelation
@@ -559,6 +565,7 @@ export const runAgentStep = async (
     repoId,
     stream,
     onCostCalculated,
+    stopStream: () => streamStop.abort(),
   })
 
   toolResults.push(...newToolResults)
