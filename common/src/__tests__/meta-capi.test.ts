@@ -200,3 +200,19 @@ describe('Meta conversion transport', () => {
     ).rejects.toThrow('Meta conversion delivery failed')
   })
 })
+
+test('Ads events use the public advertiser source and opt-in Test Events code without leaking credentials', () => {
+  const body = buildMetaConversionBody({
+    ...params,
+    eventName: 'CampaignSubmitted',
+    eventSourceUrl: 'https://freebuff.com/advertisers',
+    testEventCode: 'TEST123',
+  })
+  expect(body.test_event_code).toBe('TEST123')
+  expect(body.data[0]?.event_name).toBe('CampaignSubmitted')
+  expect(body.data[0]?.event_source_url).toBe(
+    'https://freebuff.com/advertisers',
+  )
+  expect(JSON.stringify(body)).not.toContain(params.accessToken)
+  expect(buildMetaConversionBody(params)).not.toHaveProperty('test_event_code')
+})

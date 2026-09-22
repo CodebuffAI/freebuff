@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
 
+import type { MetaAdsEventName } from './util/meta-ads'
+
 import {
   isMetaConversionValue,
   type MetaConversionEventName,
@@ -25,7 +27,7 @@ export function metaExternalId(userId: string): string {
 }
 
 export function metaConversionId(
-  eventName: MetaConversionEventName,
+  eventName: MetaConversionEventName | MetaAdsEventName,
   userId: string,
 ): string {
   return createHash('sha256')
@@ -36,12 +38,14 @@ export function metaConversionId(
 export type SendMetaConversionParams = {
   pixelId: string
   accessToken: string
-  eventName: MetaConversionEventName
+  eventName: MetaConversionEventName | MetaAdsEventName
   eventId: string
   eventAt: Date
   userId: string
   attribution: MetaConversionAttribution
   surface: 'web' | 'desktop' | 'cli'
+  testEventCode?: string
+  eventSourceUrl?: 'https://freebuff.com/advertisers'
   conversionValue?: MetaConversionValue
   fetchImpl?: typeof fetch
   sleepImpl?: (ms: number) => Promise<void>
@@ -58,6 +62,7 @@ export function buildMetaConversionBody(params: SendMetaConversionParams) {
   }
   const { attribution } = params
   return {
+    ...(params.testEventCode ? { test_event_code: params.testEventCode } : {}),
     data: [
       {
         event_name: params.eventName,
@@ -67,7 +72,10 @@ export function buildMetaConversionBody(params: SendMetaConversionParams) {
         // SDK event. Keep its source honest even when enrollment was on the web.
         action_source: params.surface === 'web' ? 'website' : 'other',
         ...(params.surface === 'web'
-          ? { event_source_url: 'https://freebuff.com/' }
+          ? {
+              event_source_url:
+                params.eventSourceUrl ?? 'https://freebuff.com/',
+            }
           : {}),
         // Every key below identifies the PERSON, not the event's own network
         // hop, so the enrollment browser's agent and address ride on native
