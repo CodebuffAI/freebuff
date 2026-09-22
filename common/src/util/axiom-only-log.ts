@@ -89,6 +89,14 @@ export const ADS_ADVERTISER_REPORTING_READ_EVENT =
   'ads.advertiser_reporting_read' as const
 /** Content-free advertiser MCP operation census; never arguments or results. */
 export const ADS_MCP_TOOL_CALL_EVENT = 'ads.mcp_tool_call' as const
+/**
+ * One row per completed paid API chat completion (`POST /api/v1/paid/chat/
+ * completions` on `web`), whatever the outcome: success, rejection at auth or
+ * admission, upstream failure, or client abort. Ids and counters only -- the
+ * key SECRET, prompts, completions and upstream error bodies are never
+ * fields. Money is integer micro-dollars. See docs/paid-api-axiom-dashboard.md.
+ */
+export const PAID_API_REQUEST_EVENT = 'paid_api_request' as const
 /** Browser-side Imprezia decisions. The route deliberately reports only
  * bounded serving dimensions: request/content/creative identifiers, URLs, and
  * raw provider errors never enter this event. */
@@ -865,6 +873,39 @@ const ADS_MCP_TOOL_CALL_FIELDS = {
   duration_ms: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
+const PAID_API_REQUEST_FIELDS = {
+  /** Our request id, echoed to the client as `x-request-id`. */
+  request_id: 'string',
+  api_key_id: 'string',
+  account_id: 'string',
+  /** The public model id the client asked for. */
+  model: 'string',
+  /** The provider that served (or last failed) the request. */
+  provider: 'string',
+  provider_request_id: 'string',
+  /** success | rejected | unavailable | upstream_error | client_abort | internal_error */
+  outcome: 'string',
+  http_status: 'number',
+  error_code: 'string',
+  /** settled | pending | released | none -- what happened to the reservation. */
+  billing_state: 'string',
+  billing_reason: 'string',
+  attempts: 'number',
+  stream: 'boolean',
+  input_tokens: 'number',
+  cached_input_tokens: 'number',
+  output_tokens: 'number',
+  reasoning_tokens: 'number',
+  upstream_cost_micros: 'number',
+  charged_micros: 'number',
+  latency_ms: 'number',
+  ttft_ms: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+export const PAID_API_REQUEST_FIELD_NAMES: readonly string[] = Object.keys(
+  PAID_API_REQUEST_FIELDS,
+)
+
 const ADS_ADVERTISER_REPORTING_READ_FIELDS = {
   advertiser_id: 'string',
   key_id: 'string',
@@ -943,6 +984,7 @@ export type AxiomOnlyLogEvent = {
     | typeof ADS_CAMPAIGN_INGRESS_EVIDENCE_EVENT
     | typeof ADS_ADVERTISER_REPORTING_READ_EVENT
     | typeof ADS_MCP_TOOL_CALL_EVENT
+    | typeof PAID_API_REQUEST_EVENT
     | typeof ADS_IMPREZIA_FETCH_COMPLETED_EVENT
     | typeof ADS_REQUEST_REJECTED_EVENT
     | typeof ADS_SHOWCASE_PRESENTED_EVENT
@@ -1096,6 +1138,12 @@ export function getAxiomOnlyLogEvent(
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(record, ADS_MCP_TOOL_CALL_FIELDS),
+    }
+  }
+  if (eventName === PAID_API_REQUEST_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, PAID_API_REQUEST_FIELDS),
     }
   }
   return null
