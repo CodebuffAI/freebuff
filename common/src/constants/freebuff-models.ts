@@ -2174,11 +2174,9 @@ export const FREEBUFF_MODELS = [
   // coercible for the installed binaries that still hold it.
   SOLAR_PRO_4_MODEL,
   // GEMINI 3.8 FLASH LEFT THIS LIST on 2026-09-03, hours after joining it, when
-  // the row was withdrawn (FREEBUFF_PAUSED_FREE_MODEL_IDS). Dropping it here is
-  // what takes it out of every picker on every surface — FREEBUFF_WEB_MODELS
-  // reaches it only by spreading this list — but it is NOT what stops it being
-  // served; the pause is. Its row stays in SUPPORTED_FREEBUFF_MODELS so the id
-  // stays recognisable and coercible for the installed binaries that hold it.
+  // the row was withdrawn, and came back to Web alone behind the paywall on
+  // 09-04. It returned to this list on 2026-09-21 — see the note above Muse
+  // Spark 1.2 below.
   //
   // MUSE SPARK 1.3 LEFT on 2026-09-07, three days after joining. It is not
   // busy or flapping any more, it is GONE at Meta: probed that day, all four
@@ -2199,6 +2197,14 @@ export const FREEBUFF_MODELS = [
   // only thing that kept it browser-bound. That is the same argument that
   // widened 1.3 three days ago; it did not depend on the version.
   //
+  // GEMINI 3.8 FLASH IS BACK IN THIS LIST since 2026-09-21, on every surface,
+  // and still a PAID-ONLY row (FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS). What kept
+  // it Web-only was that its paywall ran on Web alone; it is now in
+  // FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS beside MiMo 2.6 Pro, so listing
+  // it here no longer hands the dearest row out free. The CLI and Desktop pickers draw it LOCKED
+  // for an account without a plan (`freebuffPlanRequired`): no price, a "paid
+  // plan" note, and a press that opens the plans page.
+  GEMINI_38_FLASH_MODEL,
   // Last in the list on purpose, as 1.3 was: this is still the one row that
   // may answer as another model when Meta's team-wide ceiling is full, and a
   // row carrying that caveat should not outrank one without it.
@@ -2382,11 +2388,10 @@ export const FREEBUFF_PAUSED_FREE_MODEL_IDS: readonly string[] = [
   //
   // It comes back BEHIND THE PAYWALL rather than to where it was:
   // FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS, listed to everyone without a price and
-  // openable only on a paid session. It is also Web-only now — it is in
-  // FREEBUFF_WEB_MODELS and deliberately NOT back in FREEBUFF_MODELS, because
-  // Pro is enforced on Web alone (FREEBUFF_PRO_ENFORCED_SURFACES) and listing
-  // the dearest row in the catalog on a surface that cannot charge for it would
-  // hand it out free.
+  // openable only on a paid session. It was Web-only until 2026-09-21, while
+  // its paywall ran on Web alone; it now runs on every surface
+  // (FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS) and the row is in
+  // FREEBUFF_MODELS.
 ]
 
 /**
@@ -2518,14 +2523,9 @@ export const FREEBUFF_WEB_MODELS = [
   // Muse Spark 1.2 reaches this list by spreading FREEBUFF_MODELS again,
   // as it did before its 2026-09-02 retirement; naming it here too would
   // duplicate the row.
-  // Gemini 3.8 Flash is listed HERE rather than in FREEBUFF_MODELS, and the
-  // difference is the whole gate. It is a Pro row
-  // (FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS), and Pro is enforced on Freebuff Web
-  // alone; naming it in FREEBUFF_MODELS would put it in the CLI and Desktop
-  // pickers too, where `checkProOnlyModel` does not run and the row would be
-  // served free. Web-only listing and Web-only enforcement are the same
-  // decision written in two places, and they must move together.
-  GEMINI_38_FLASH_MODEL,
+  // Gemini 3.8 Flash reaches this list by spreading FREEBUFF_MODELS since
+  // 2026-09-21. It was named here alone while the paywall ran on Web alone;
+  // naming it here too would now duplicate the row.
   // GLM 5.2 LEFT on 2026-08-31, when the reward it backed moved to GLM 5.3
   // Flash and the row was withdrawn (FREEBUFF_PAUSED_FREE_MODEL_IDS). It
   // reached this list, and only this list, as the earned row the browser picker
@@ -3172,8 +3172,8 @@ export const FREEBUFF_CLOUD_PLANNER_TURN_LIMIT = 12
 export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
   Object.freeze([
     FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
-    // MiMo 2.6 Pro, paid-only from 2026-09-21 — and on EVERY surface, unlike
-    // Gemini (see FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS).
+    // MiMo 2.6 Pro, paid-only from 2026-09-21. Both rows are paid-only on
+    // EVERY surface since that day (FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS).
     FREEBUFF_MIMO_V26_PRO_MODEL_ID,
   ])
 
@@ -3181,16 +3181,21 @@ export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
  * Pro-only rows whose paywall is enforced on CLI and Desktop too, not only on
  * Freebuff Web (FREEBUFF_PRO_ENFORCED_SURFACES).
  *
- * Gemini is Pro-only by being absent from the CLI/Desktop catalog. MiMo 2.6
- * Pro is in that catalog, so two things carry the gate there instead: session
- * admission refuses a non-paying account on every surface (`checkProOnlyModel`
- * in web/src/server/free-session/public-api.ts), and
- * `getFreebuffModelsForAccessTier` leaves the row out of the CLI and Desktop
- * pickers for an account without a live plan. The first is the gate; the second
- * only stops the picker offering what admission would refuse.
+ * Both are in the CLI/Desktop catalog (FREEBUFF_MODELS): MiMo 2.6 Pro since it
+ * shipped, Gemini 3.8 Flash since 2026-09-21 (it was Web-only before, which is
+ * what kept it paid there). Two things carry the gate on those surfaces:
+ * session admission refuses a non-paying account (`checkProOnlyModel` in
+ * web/src/server/free-session/public-api.ts), and the CLI and Desktop pickers
+ * draw the row LOCKED for an account without a live plan
+ * (`freebuffPlanRequired`): listed, with no price, and a press opens the plans
+ * page instead of starting a session. The first is the gate; the second only
+ * stops the picker offering what admission would refuse.
  */
 export const FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS: readonly string[] =
-  Object.freeze([FREEBUFF_MIMO_V26_PRO_MODEL_ID])
+  Object.freeze([
+    FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
+    FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+  ])
 
 export function isFreebuffProOnlyEverySurfaceModelId(
   id: string | null | undefined,
@@ -3297,11 +3302,6 @@ export function resolveFreebuffWebModelForLimitedTier(
     : LIMITED_FREEBUFF_MODEL_ID
 }
 
-const FREEBUFF_MODELS_WITHOUT_PAID_ONLY: readonly FreebuffModelOption[] =
-  FREEBUFF_MODELS.filter(
-    (model) => !isFreebuffProOnlyEverySurfaceModelId(model.id),
-  )
-
 export function getFreebuffModelsForAccessTier(
   accessTier: FreebuffAccessTier | null | undefined,
   /** See `hasPaidSubscription` on isFreebuffSessionModelAllowedForAccessTier.
@@ -3312,13 +3312,13 @@ export function getFreebuffModelsForAccessTier(
    *  offer rows admission then refuses. */
   hasPaidSubscription = false,
 ): readonly FreebuffModelOption[] {
-  if (accessTier !== 'limited') {
-    // A paid-only row is offered only to a paying account; admission refuses
-    // everyone else anyway (FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS).
-    return hasPaidSubscription
-      ? FREEBUFF_MODELS
-      : FREEBUFF_MODELS_WITHOUT_PAID_ONLY
-  }
+  // At full access a paid-only row is LISTED to every account, and the CLI and
+  // Desktop pickers draw it LOCKED for one without a plan
+  // (`freebuffPlanRequired`): no price, and a press opens the plans page.
+  // Listed rather than hidden (a product call, 2026-09-21) because the thing
+  // between the user and the row is a plan we sell. Admission refuses a
+  // planless start regardless (FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS).
+  if (accessTier !== 'limited') return FREEBUFF_MODELS
   if (!hasPaidSubscription) return LIMITED_FREEBUFF_MODELS
   // Plan rows are appended rather than merged in catalog order: the limited
   // rows are what this account can still run for free once the plan's windows

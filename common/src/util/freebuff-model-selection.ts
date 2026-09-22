@@ -1,5 +1,34 @@
+import { isFreebuffSubscriptionProModelId } from '../constants/freebuff-subscriptions'
 import type { FreebuffFreebucksInfo } from '../types/freebuff-session'
 import { getFreebuffModelMeter } from './freebuff-session-pools'
+
+/**
+ * Whether a picker must draw this row LOCKED: a paid-only row
+ * (FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS) and an account without a live plan.
+ *
+ * Listed, not hidden — the thing standing between the user and the row is a
+ * plan we sell, and hiding it gives the upgrade nothing to point at. A locked
+ * row shows no Freebucks price (a figure beside a row Freebucks cannot open
+ * reads as the way in) and a press opens the plans page instead of starting a
+ * session. The server refuses the admission on every surface regardless
+ * (`checkProOnlyModel`, `requiresSubscription: true`); this only decides what
+ * the picker draws.
+ *
+ * `hasPaidSubscription` must be the SERVER's verdict — `subscription.tierId`
+ * on the session response — never a local belief.
+ */
+export function freebuffPlanRequired(
+  modelId: string,
+  hasPaidSubscription: boolean,
+): boolean {
+  return !hasPaidSubscription && isFreebuffSubscriptionProModelId(modelId)
+}
+
+/** The locked row's short label, for a badge or a detail line. */
+export const FREEBUFF_PLAN_REQUIRED_LABEL = 'Paid plan'
+
+/** The locked row's sentence. Matches the server refusal's `availableHours`. */
+export const FREEBUFF_PLAN_REQUIRED_LINE = 'Included with a paid plan.'
 
 export type FreebucksRowIntent =
   | { kind: 'allow'; price: number | undefined; walletSpend: number }

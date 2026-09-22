@@ -27,6 +27,7 @@ import {
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
   FREEBUFF_FABLE_5_1_MODEL_ID,
+  FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
   FREEBUFF_MINIMAX_M3_MODEL_ID,
@@ -562,7 +563,9 @@ describe('FreebuffModelSelector tier layout', () => {
     expect(frame).not.toContain('UNLIMITED')
   })
 
-  test('offers MiMo 2.6 Pro only to a paying account', async () => {
+  test('lists both paid-only rows to a free account, locked', async () => {
+    // Listed rather than hidden since 2026-09-21: MiMo 2.6 Pro and Gemini 3.8
+    // Flash each say "Paid plan" on their detail line instead of a price.
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'full',
@@ -570,9 +573,13 @@ describe('FreebuffModelSelector tier layout', () => {
     useFreebuffModelStore
       .getState()
       .setSelectedModel(FREEBUFF_MINIMAX_M3_MODEL_ID)
-    const frame = (await renderSelector()).captureCharFrame()
-    expect(frame).toContain('MiMo 2.6 Flash')
-    expect(frame).not.toContain('MiMo 2.6 Pro')
+    const lines = (await renderSelector()).captureCharFrame().split('\n')
+    for (const name of ['MiMo 2.6 Pro', 'Gemini 3.8 Flash']) {
+      const row = lines.findIndex((line) => line.includes(name))
+      expect(row).toBeGreaterThanOrEqual(0)
+      expect(lines[row + 1]).toContain('Paid plan')
+    }
+    expect(lines.some((line) => line.includes('MiMo 2.6 Flash'))).toBe(true)
   })
 
   test('shows MiMo 2.6 Pro to a paying account, with no price caveat', async () => {
@@ -1145,6 +1152,123 @@ test.each([
     expect(getSelectedFreebuffModel()).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
   },
 )
+
+// Gemini 3.8 Flash is PAID-ONLY on every surface since 2026-09-21, and the
+// CLI lists it: locked rather than hidden, so the upgrade has something to
+// point at. Locked means no price, a "Paid plan" note, and a press that opens
+// the plans page and never starts a session. The balance here easily covers
+// the row, so what is pinned is the PLAN gate, not the meter.
+describe('a paid-only row on an account without a plan', () => {
+  const STARTER_PLAN = {
+    tierId: 'starter',
+    tiers: [
+      {
+        id: 'starter',
+        displayName: 'Starter',
+        priceUsd: 8,
+        firstPeriodPriceUsd: 2.5,
+        dailySessions: 2,
+        fiveDaySessions: 6,
+        monthlySessions: 50,
+        monthlySpendLimitUsd: 40,
+        dailyPremiumSessions: 2,
+        disclaimers: [],
+        current: true,
+        upgrade: false,
+        downgrade: false,
+      },
+    ],
+    usage: {
+      dayUsed: 0,
+      dayLimit: 2,
+      fiveDayUsed: 0,
+      fiveDayLimit: 6,
+      monthUsed: 0,
+      monthLimit: 50,
+      dayPremiumUsed: 0,
+      dayPremiumLimit: 2,
+      dayResetAt: new Date(FIXED_NOW_MS + 3 * 3600_000).toISOString(),
+      periodEndsAt: new Date(FIXED_NOW_MS + 20 * 24 * 3600_000).toISOString(),
+      monthSpendUsd: 0,
+      monthSpendLimitUsd: 40,
+    },
+  }
+  const renderOnGemini = async (withPlan: boolean) => {
+    useFreebuffSessionStore.getState().setSession({
+      status: 'none',
+      accessTier: 'full',
+      freebucks: freebucksFixture(1_000, {
+        [FREEBUFF_GEMINI_38_FLASH_MODEL_ID]: 80,
+        [FREEBUFF_MIMO_V25_MODEL_ID]: 10,
+      }),
+      ...(withPlan ? { subscription: STARTER_PLAN } : {}),
+    } as never)
+    useFreebuffModelStore
+      .getState()
+      .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
+    const requested: string[] = []
+    const setup = await renderSelector(40, async (model) => {
+      requested.push(model)
+    })
+    await setup.renderOnce()
+    for (let i = 0; i < 20; i++) {
+      if (setup.captureCharFrame().includes('› Gemini 3.8 Flash')) break
+      flushSync(() => setup.mockInput.pressKey('ARROW_DOWN'))
+      await setup.renderOnce()
+    }
+    expect(setup.captureCharFrame()).toContain('› Gemini 3.8 Flash')
+    return { setup, requested }
+  }
+  const detailLineOf = (frame: string) => {
+    const lines = frame.split('\n')
+    const row = lines.findIndex((line) => line.includes('Gemini 3.8 Flash'))
+    expect(row).toBeGreaterThanOrEqual(0)
+    return lines[row + 1] ?? ''
+  }
+
+  test('is listed, marked Paid plan, with no price', async () => {
+    const { setup } = await renderOnGemini(false)
+    const details = detailLineOf(setup.captureCharFrame())
+    expect(details).toContain('Paid plan')
+    expect(details).not.toContain('Freebucks/hr')
+  })
+
+  test('explains the plan on the first press and starts nothing', async () => {
+    const { setup, requested } = await renderOnGemini(false)
+    flushSync(() => setup.mockInput.pressEnter())
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain('Included with a paid plan. Enter opens plans.')
+    expect(frame).not.toContain(`Not enough ${FREEBUCKS_LABEL}`)
+    expect(requested).toEqual([])
+  })
+
+  test('opens the plans page on the second press, and starts nothing', async () => {
+    const openSpy = spyOn(openUrl, 'safeOpen').mockResolvedValue(true)
+    try {
+      const { setup, requested } = await renderOnGemini(false)
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(openSpy).toHaveBeenCalledWith('https://freebuff.com/plans')
+      expect(requested).toEqual([])
+      expect(getSelectedFreebuffModel()).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    } finally {
+      openSpy.mockRestore()
+    }
+  })
+
+  test('is an ordinary priced row for a subscriber, and Enter starts it', async () => {
+    const { setup, requested } = await renderOnGemini(true)
+    const details = detailLineOf(setup.captureCharFrame())
+    expect(details).not.toContain('Paid plan')
+    expect(details).toContain('80 Freebucks/hr')
+    flushSync(() => setup.mockInput.pressEnter())
+    await setup.renderOnce()
+    expect(requested).toEqual([FREEBUFF_GEMINI_38_FLASH_MODEL_ID])
+  })
+})
 
 // A row the meter cannot cover used to be inert in both directions: the Enter
 // handler and the click handler both gated on `isJoinable`, so pressing it did

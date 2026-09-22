@@ -24,6 +24,11 @@ import {
   sortModelsByPrice,
 } from '../utils/freebucks'
 import { safeOpen } from '../utils/open-url'
+import {
+  FREEBUFF_PLAN_REQUIRED_LABEL,
+  FREEBUFF_PLAN_REQUIRED_LINE,
+  freebuffPlanRequired,
+} from '@codebuff/common/util/freebuff-model-selection'
 
 /** Where a wall sends the reader — the same destination as the landing
  *  screen's upgrade line, so the two cannot point at different pages. */
@@ -275,6 +280,13 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // than on anything it decides for itself.
   const subscriptionInfo = getSubscriptionInfo(session)
   const hasPaidSubscription = Boolean(subscriptionInfo?.tierId)
+  // A paid-only row (Gemini 3.8 Flash) on an account without a plan: drawn
+  // LOCKED rather than hidden, with no price, and Enter opens the plans page.
+  // The server refuses the admission anyway; this is what the picker shows.
+  const planRequired = useCallback(
+    (modelId: string) => freebuffPlanRequired(modelId, hasPaidSubscription),
+    [hasPaidSubscription],
+  )
   // The paid plan's own windows, rendered as a single muted line below the
   // catalog — the CLI counterpart of the web dropdown's plan panel. The same
   // shared summary drives Desktop and the web usage page, so all three name
@@ -430,6 +442,11 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
    */
   const rowDetails = useCallback(
     (model: FreebuffModelOption): RowDetail[] => {
+      // A locked row says only why it is locked. No price: a Freebucks figure
+      // beside a row Freebucks cannot open reads as the way in.
+      if (planRequired(model.id)) {
+        return [{ text: FREEBUFF_PLAN_REQUIRED_LABEL, warn: true }]
+      }
       const details: RowDetail[] = []
       // THE PRICE LEADS LINE 2, and on the meter it is often the only thing
       // on it.
@@ -501,6 +518,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       premiumSectionQuotas,
       meterFor,
       freebucks,
+      planRequired,
     ],
   )
   const rowDetailsText = useCallback(
@@ -525,9 +543,12 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         Date.parse(session.expiresAt) > (nowMs ?? Date.now())
       )
         return true
+      // After the active-session check: a session already running on the row
+      // stays joinable; only STARTING one needs the plan.
+      if (planRequired(modelId)) return false
       return meterFor(modelId).canStart
     },
-    [now, nowMs, session, offerByModelId, meterFor],
+    [now, nowMs, session, offerByModelId, meterFor, planRequired],
   )
 
   const recommendedModel = useMemo(() => {
@@ -550,16 +571,21 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
    * `freebucksRowIntent`.
    */
   const rowIntent = useCallback(
-    (modelId: string) =>
-      freebucksRowIntent(
-        freebucks,
-        modelId,
+    (modelId: string): ReturnType<typeof freebucksRowIntent> => {
+      const activeModelId =
         session?.status === 'active' &&
-          Date.parse(session.expiresAt) > (nowMs ?? Date.now())
+        Date.parse(session.expiresAt) > (nowMs ?? Date.now())
           ? session.model
-          : undefined,
-      ),
-    [freebucks, session, nowMs],
+          : undefined
+      // A locked row takes the WALL's path: first Enter explains, second
+      // opens the plans page, and nothing ever starts a session. Not for the
+      // row a session is already on, which the meter allows as usual.
+      if (modelId !== activeModelId && planRequired(modelId)) {
+        return { kind: 'paywall', price: 0, walletSpend: 0 }
+      }
+      return freebucksRowIntent(freebucks, modelId, activeModelId)
+    },
+    [freebucks, session, nowMs, planRequired],
   )
 
   /**
@@ -632,6 +658,9 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     (model: FreebuffModelOption): string | undefined => {
       if (pendingAsk !== model.id) return undefined
       const intent = rowIntent(model.id)
+      if (intent.kind === 'paywall' && planRequired(model.id)) {
+        return `${FREEBUFF_PLAN_REQUIRED_LINE} Enter opens plans.`
+      }
       if (intent.kind === 'paywall') {
         // On the row the limited-tier offer discounts, say what a plan does
         // rather than what is missing. Kept about as short as the line it
@@ -669,7 +698,14 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       }
       return undefined
     },
-    [pendingAsk, rowIntent, freebucks, activeSessionModel, upgradeOfferFor],
+    [
+      pendingAsk,
+      rowIntent,
+      freebucks,
+      activeSessionModel,
+      upgradeOfferFor,
+      planRequired,
+    ],
   )
 
   const supersededNoticeFor = useCallback(

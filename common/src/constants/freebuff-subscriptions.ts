@@ -348,10 +348,14 @@ export const FREEBUFF_SUBSCRIPTION_FIVE_DAY_WINDOW_DAYS = 7
  *
  * ## Scope
  *
- * Enforced on FREEBUFF WEB ONLY — see FREEBUFF_PRO_ENFORCED_SURFACES. Gemini is
- * absent from the CLI/Desktop catalog, so the Web-only listing and Web-only
- * gate stay paired. Widening is one edit to that constant, and should be made
- * with a client release rather than ahead of one.
+ * Enforced on Freebuff Web by default (FREEBUFF_PRO_ENFORCED_SURFACES), and on
+ * the CLI and Desktop too for every row in
+ * FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS — which since 2026-09-21 is both
+ * current rows, Gemini 3.8 Flash and MiMo 2.6 Pro, because both sit in the
+ * CLI/Desktop catalog. Those pickers list them LOCKED to an account without a
+ * plan (`freebuffPlanRequired`). Gemini was Web-only until then, and the
+ * Web-only gate leaked: released CLI binaries that still held the id opened it
+ * with no plan.
  *
  * Withdrawn history: V4 Pro was the one entry for a few hours (#2254) and left
  * on 2026-08-26 with its withdrawal from free mode — a row nothing may admit
@@ -362,12 +366,13 @@ export const FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS: readonly string[] =
   FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS
 
 /**
- * The Pro rows are enforced on **Freebuff Web only**, for now.
+ * Where a Pro row is enforced BY DEFAULT: Freebuff Web.
  *
- * The current Pro row, Gemini 3.8 Flash, is Web-only too. A future native
- * rollout must add the surface here before adding the row to the shared
- * CLI/Desktop catalog, and must ship clients that understand the refusal
- * before the server can take a model away from them.
+ * A row in FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS is enforced on the CLI
+ * and Desktop too, which is every current row (Gemini 3.8 Flash and MiMo 2.6
+ * Pro, since 2026-09-21). A future Pro row that is Web-only needs nothing
+ * more; one added to the shared CLI/Desktop catalog must join that list, or it
+ * is served free on those surfaces.
  *
  * Luna is deliberately outside this policy: it is available from the shared
  * premium pool on every full-access surface.

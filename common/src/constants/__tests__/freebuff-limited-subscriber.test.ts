@@ -13,6 +13,7 @@ import {
   isFreebuffWebModelId,
   resolveFreebuffSessionModelForAccessTier,
   resolveFreebuffWebModelForLimitedTier,
+  FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_MIMO_V26_PRO_MODEL_ID,
 } from '../freebuff-models'
 import {
@@ -254,14 +255,16 @@ describe('a plan model survives resolution, not just the allowlist', () => {
     }
   })
 
-  test('at full access a plan adds exactly the paid-only rows', () => {
-    // MiMo 2.6 Pro (2026-09-21) is paid-only on every surface, so it is the
-    // one row a plan adds at full access; nothing else moves.
+  test('at full access a plan changes no rows: paid-only rows are listed to everyone', () => {
+    // MiMo 2.6 Pro and Gemini 3.8 Flash are paid-only on every surface. Since
+    // 2026-09-21 the CLI and Desktop LIST them to a free account too, drawn
+    // locked (`freebuffPlanRequired`), rather than hiding them — so the list
+    // is the same with and without a plan, and the plan changes what a row
+    // DOES, not whether it is there. Admission is what refuses a free start.
     const paid = getFreebuffModelsForAccessTier('full', true).map((m) => m.id)
     const free = getFreebuffModelsForAccessTier('full').map((m) => m.id)
-    expect(paid.filter((id) => !free.includes(id))).toEqual([
-      FREEBUFF_MIMO_V26_PRO_MODEL_ID,
-    ])
-    expect(free.every((id) => paid.includes(id))).toBe(true)
+    expect(free).toEqual(paid)
+    expect(free).toContain(FREEBUFF_MIMO_V26_PRO_MODEL_ID)
+    expect(free).toContain(FREEBUFF_GEMINI_38_FLASH_MODEL_ID)
   })
 })
