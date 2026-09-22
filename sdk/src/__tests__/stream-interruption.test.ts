@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
+import { APICallError } from 'ai'
+
 import {
   classifyStreamEndRecovery,
   classifyThrownStreamRecovery,
@@ -201,4 +203,64 @@ describe('classifyThrownStreamRecovery', () => {
       }),
     ).toBeNull()
   })
+
+  it('recovers a provider-reported 500 that arrived mid-stream', () => {
+    // The openai-compatible shim enqueues a provider 5xx as an error part
+    // carrying an APICallError — the same transient event as a severed body,
+    // so it takes the same capped recovery path instead of ending the run.
+    const recovery = classifyThrownStreamRecovery({
+      aborted: false,
+      error: apiError(500, 'Internal Server Error'),
+    })
+    expect(recovery?.source).toBe('stream-interrupted')
+    expect(recovery?.message).toContain('HTTP 500')
+  })
+
+  it('recovers a provider-reported 429 that arrived mid-stream', () => {
+    const recovery = classifyThrownStreamRecovery({
+      aborted: false,
+      error: apiError(429, 'Too Many Requests'),
+    })
+    expect(recovery?.source).toBe('stream-interrupted')
+    expect(recovery?.message).toContain('HTTP 429')
+  })
+
+  it('recovers a wrapped provider 503 behind a RetryError cause chain', () => {
+    const error = new Error('Failed after 4 attempts', {
+      cause: apiError(503, 'Service Unavailable'),
+    })
+    expect(
+      classifyThrownStreamRecovery({ aborted: false, error })?.source,
+    ).toBe('stream-interrupted')
+  })
+
+  it('leaves client-error statuses fatal', () => {
+    for (const statusCode of [400, 401, 402, 403, 404]) {
+      expect(
+        classifyThrownStreamRecovery({
+          aborted: false,
+          error: apiError(statusCode, `HTTP ${statusCode}`),
+        }),
+      ).toBeNull()
+    }
+  })
+
+  it('does not recover a provider 5xx after user cancellation', () => {
+    expect(
+      classifyThrownStreamRecovery({
+        aborted: true,
+        error: apiError(500, 'Internal Server Error'),
+      }),
+    ).toBeNull()
+  })
 })
+
+function apiError(statusCode: number, message: string): APICallError {
+  return new APICallError({
+    message,
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requestBodyValues: { prompt: 'x' },
+    statusCode,
+    isRetryable: statusCode === 429 || statusCode >= 500,
+  })
+}
