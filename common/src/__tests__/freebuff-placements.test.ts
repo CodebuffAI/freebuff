@@ -425,7 +425,7 @@ describe('placement daily cap', () => {
   it('offers a self-serve ceiling of 500_000 cents a day', () => {
     // The bound the campaigns API validates. If this moves, the API moves with
     // it -- both read this constant, which is the whole reason it is here.
-    expect(PLACEMENT_DAILY_CAP_MIN_CENTS).toBe(500)
+    expect(PLACEMENT_DAILY_CAP_MIN_CENTS).toBe(2_500)
     expect(PLACEMENT_DAILY_CAP_MAX_CENTS).toBe(500_000)
   })
 
@@ -435,7 +435,7 @@ describe('placement daily cap', () => {
     expect(clampPlacementDailyCapCents(9_999_999)).toBe(
       PLACEMENT_DAILY_CAP_MAX_CENTS,
     )
-    expect(clampPlacementDailyCapCents(1_234.6)).toBe(1_235)
+    expect(clampPlacementDailyCapCents(3_234.6)).toBe(3_235)
     // A cap off the slider's ladder is a legal cap: the input takes any
     // amount, and nothing on the way to the database snaps it.
     expect(clampPlacementDailyCapCents(13_700)).toBe(13_700)

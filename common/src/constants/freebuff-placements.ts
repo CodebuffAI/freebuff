@@ -770,7 +770,7 @@ export const OVERSHOOT_POLICY_COPY =
  * blunt -- it exists because comments in this package leaked real cost figures
  * once already -- so the phrasing moves here, never the pattern there.
  */
-export const PLACEMENT_DAILY_CAP_MIN_CENTS = 500
+export const PLACEMENT_DAILY_CAP_MIN_CENTS = 2_500
 export const PLACEMENT_DAILY_CAP_MAX_CENTS = 500_000
 export const PLACEMENT_DAILY_CAP_DEFAULT_CENTS = 10_000
 
