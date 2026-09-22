@@ -47,6 +47,8 @@ process.env.FREEBUFF_GOD_QUOTA_EXEMPT = 'on'
 // Integration CI imports production secrets. Fixture campaigns must never
 // notify the real ads channel; notification tests inject their own transport.
 delete process.env.FREEBUFF_ADS_SLACK_WEBHOOK_URL
+// Submission fixtures must never update real Loops contacts or enroll leads.
+process.env.FREEBUFF_ADS_LEAD_NURTURE = 'off'
 
 for (const [key, value] of Object.entries(testDefaults)) {
   if (!process.env[key]) {
