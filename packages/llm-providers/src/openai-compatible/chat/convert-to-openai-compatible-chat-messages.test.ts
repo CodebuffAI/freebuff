@@ -1083,3 +1083,47 @@ describe('consecutive assistant messages', () => {
     ])
   })
 })
+
+/**
+ * Regression tests for non-image file parts.
+ *
+ * MCP resources can put non-image file parts (e.g. gzip) into message
+ * history, which is replayed into every later prompt build. The
+ * OpenAI-compatible converter must degrade such parts to a text
+ * placeholder: throwing here failed the entire prompt build and, because
+ * the message stays in history, killed the session on every subsequent
+ * turn.
+ */
+describe('non-image file parts', () => {
+  // The fixture's base64 string is 20 chars; the placeholder estimates raw
+  // bytes as round(20 * 3 / 4) = 15.
+  const GZIP_FIXTURE_BASE64 = Buffer.from('Hello freebuff!').toString('base64')
+  const EXPECTED_BYTE_ESTIMATE = 15
+
+  it('degrades non-image file part to text placeholder instead of throwing', () => {
+    const result = convertToOpenAICompatibleChatMessages([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'file',
+            data: GZIP_FIXTURE_BASE64,
+            mediaType: 'application/gzip',
+          },
+        ],
+      },
+    ])
+
+    expect(result).toEqual([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `[application/gzip file part not displayable (~${EXPECTED_BYTE_ESTIMATE} bytes)]`,
+          },
+        ],
+      },
+    ])
+  })
+})
