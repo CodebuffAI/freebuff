@@ -1,5 +1,8 @@
+import { parseImageCommandArgs } from './parse-image-args'
 import { getProjectRoot } from '../project-files'
 import { validateAndAddImage } from '../utils/pending-attachments'
+
+export { parseImageCommandArgs }
 
 /**
  * Handle the /image command to attach an image file.
@@ -10,11 +13,11 @@ import { validateAndAddImage } from '../utils/pending-attachments'
  * Errors are shown in the pending images banner with auto-remove.
  */
 export async function handleImageCommand(args: string): Promise<string> {
-  const [imagePath, ...rest] = args.trim().split(/\s+/)
-  
+  const { imagePath, message } = parseImageCommandArgs(args)
+
   if (imagePath) {
     await validateAndAddImage(imagePath, getProjectRoot())
   }
-  
-  return rest.join(' ')
+
+  return message
 }
