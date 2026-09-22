@@ -194,6 +194,54 @@ export enum AnalyticsEvent {
   /** The detail panel closed, with the method that closed it and the dwell. */
   ADS_DOCK_COLLAPSED = 'ads.dock_collapsed',
 
+  // Web - Advertiser funnel (the BUYER side: /advertisers pitch → /ads console).
+  // Distinct from the `ads.*` serving events above, which are the viewer side.
+  // Properties are enums, lengths, amounts and ids only — never advertiser
+  // free text, URLs or emails. See
+  // freebuff/web/src/components/advertisers/analytics.knowledge.md.
+  ADVERTISER_LANDING_VIEWED = 'advertiser.landing_viewed',
+  ADVERTISER_LANDING_CTA_CLICKED = 'advertiser.landing_cta_clicked',
+  /** A hero surface tab (CLI/Desktop/Web/Mobile) was picked by hand. */
+  ADVERTISER_LANDING_SURFACE_SELECTED = 'advertiser.landing_surface_selected',
+  ADVERTISER_EXPERT_FORM_OPENED = 'advertiser.expert_form_opened',
+  ADVERTISER_EXPERT_FORM_SUBMITTED = 'advertiser.expert_form_submitted',
+  ADVERTISER_EXPERT_FORM_FAILED = 'advertiser.expert_form_failed',
+  ADVERTISER_SIGNUP_STARTED = 'advertiser.signup_started',
+  ADVERTISER_SIGNUP_SUBMITTED = 'advertiser.signup_submitted',
+  ADVERTISER_SIGNUP_FAILED = 'advertiser.signup_failed',
+  ADVERTISER_EMAIL_VERIFIED = 'advertiser.email_verified',
+  ADVERTISER_EMAIL_VERIFY_FAILED = 'advertiser.email_verify_failed',
+  ADVERTISER_AGREEMENT_ACCEPTED = 'advertiser.agreement_accepted',
+  /** A step of the guided setup (CampaignSetupProgress) was shown. */
+  ADVERTISER_ONBOARDING_STEP_VIEWED = 'advertiser.onboarding_step_viewed',
+  ADVERTISER_CAMPAIGN_TYPE_SELECTED = 'advertiser.campaign_type_selected',
+  ADVERTISER_BUILDER_OPENED = 'advertiser.builder_opened',
+  ADVERTISER_BUILDER_SECTION_TOUCHED = 'advertiser.builder_section_touched',
+  /** The builder's preview was switched to another ad format. */
+  ADVERTISER_BUILDER_PREVIEW_SWITCHED = 'advertiser.builder_preview_switched',
+  ADVERTISER_BUILDER_VALIDATION_FAILED = 'advertiser.builder_validation_failed',
+  /** Left the builder (navigated away, closed the tab) without saving. */
+  ADVERTISER_BUILDER_ABANDONED = 'advertiser.builder_abandoned',
+  ADVERTISER_CAMPAIGN_SAVED = 'advertiser.campaign_saved',
+  ADVERTISER_CAMPAIGN_SAVE_FAILED = 'advertiser.campaign_save_failed',
+  ADVERTISER_CREATIVE_SAVED = 'advertiser.creative_saved',
+  ADVERTISER_CAMPAIGN_LIFECYCLE_ACTION = 'advertiser.campaign_lifecycle_action',
+  ADVERTISER_TOPUP_OPENED = 'advertiser.topup_opened',
+  ADVERTISER_TOPUP_CHECKOUT_STARTED = 'advertiser.topup_checkout_started',
+  ADVERTISER_TOPUP_CHECKOUT_FAILED = 'advertiser.topup_checkout_failed',
+  ADVERTISER_CARD_SETUP_STARTED = 'advertiser.card_setup_started',
+  ADVERTISER_CARD_SETUP_FAILED = 'advertiser.card_setup_failed',
+  ADVERTISER_API_KEY_CREATED = 'advertiser.api_key_created',
+  ADVERTISER_MEMBER_INVITED = 'advertiser.member_invited',
+  // Server-side: the off-page facts the browser cannot see. distinct_id is the
+  // Postgres user id (the browser identifies by email), so these count and
+  // trend but do not join a browser funnel. Top-up CREDITS are not here: the
+  // Stripe webhook runs in the `web` service; read `ad_spend_ledger` instead.
+  ADVERTISER_CREATED = 'advertiser.created',
+  ADVERTISER_CAMPAIGN_APPROVED = 'advertiser.campaign_approved',
+  ADVERTISER_CAMPAIGN_REJECTED = 'advertiser.campaign_rejected',
+  ADVERTISER_CAMPAIGN_CHANGES_REQUESTED = 'advertiser.campaign_changes_requested',
+
   // Web - Token Count API
   TOKEN_COUNT_REQUEST = 'api.token_count_request',
   TOKEN_COUNT_AUTH_ERROR = 'api.token_count_auth_error',
