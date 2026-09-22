@@ -161,6 +161,17 @@ export enum AnalyticsEvent {
   FEEDBACK_AUTH_ERROR = 'api.feedback_auth_error',
   FEEDBACK_VALIDATION_ERROR = 'api.feedback_validation_error',
 
+  // Feedback hub - the Axiom mirror (docs/freebuff-feedback-hub.md §14).
+  // One row per feedback_item the hub inserted or changed, from EVERY source:
+  // support email, Discord, GitHub, the in-product forms, CLI and Desktop.
+  // This is the event to query when you want to know what users are saying.
+  FEEDBACK_ITEM_INGESTED = 'feedback.item_ingested',
+  // Emitted at the door by the surface that RECEIVED the message, so a
+  // submission is queryable even when the hub write fails or Convex is
+  // unconfigured. Deliberately a different name from the hub mirror above:
+  // one means "a person pressed send", the other "the hub holds this".
+  FEEDBACK_RECEIVED = 'feedback.received',
+
   // Web - Logs ingest API (client logs/events → BigQuery)
   LOGS_INGEST_AUTH_ERROR = 'api.logs_ingest_auth_error',
   LOGS_INGEST_VALIDATION_ERROR = 'api.logs_ingest_validation_error',
