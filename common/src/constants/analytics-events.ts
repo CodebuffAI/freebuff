@@ -9,6 +9,8 @@ export enum AnalyticsEvent {
   // per-surface DAU (filter on the `surface` property) and a combined DAU (no
   // filter). The `surface` property is one of: cli, web, chat, desktop, cloud
   // (web = the freebuff.com builder, cloud = connected-repo builder projects).
+  // Native sends additionally carry `client_platform: 'ios' | 'android'`;
+  // surface still describes the mode, and missing platform means unknown.
   // Emission points: cli client analytics; chat's stream route (server-side);
   // desktop's analytics module; web/cloud via the Convex send mutation
   // (PostHog + Axiom, both direct from Convex — see convex/analytics.ts).
