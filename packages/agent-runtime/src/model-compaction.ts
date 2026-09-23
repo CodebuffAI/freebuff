@@ -1,11 +1,14 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod/v4'
-import { AbortError } from '@codebuff/common/util/error'
+import { MODEL_COMPACTION_FALLBACK_EVENT } from '@codebuff/common/util/axiom-only-log'
+import { AbortError, isAbortError } from '@codebuff/common/util/error'
 
+import { compactHistoryNow } from './compact-history'
 import { COMPACTION_PROMPT } from './compaction-prompt'
 import { countTokens, countTokensMessages } from './util/token-counter'
 
 import type { PromptAiSdkStreamFn } from '@codebuff/common/types/contracts/llm'
+import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 import type {
   ImagePart,
@@ -23,6 +26,46 @@ export const compactionTools: ToolSet = {
       'Save the complete coding-session handoff summary. Only available during context compaction.',
     inputSchema: summarySchema,
   }),
+}
+
+const lenientSummarySchema = z.object({ summary: z.string() })
+
+function stripCodeFence(text: string): string {
+  const fenced = text.match(/^```[A-Za-z0-9_-]*\s*\n?([\s\S]*?)\n?```$/)
+  return fenced ? fenced[1].trim() : text
+}
+
+/**
+ * The summary from a `complete_compaction` call, or undefined when the
+ * arguments hold none.
+ *
+ * `input` is NOT guaranteed to be an object. When the arguments fail the tool
+ * schema, the AI SDK still emits the call (flagged `invalid`) with `input` set
+ * to whatever the raw argument text JSON-parsed to, or to the raw text itself
+ * when it does not parse. A double-encoded argument object therefore arrives
+ * as a STRING of JSON, and a strict `.parse` on it threw a bare ZodError
+ * ("expected object, received string") that failed the whole user run.
+ * Decode like the tool executor does (`parseStringifiedToolInput`): unwrap up
+ * to three layers of string encoding, tolerate a Markdown fence, and ignore
+ * unknown keys. Prose that is not JSON at all is the model writing the handoff
+ * directly into the argument slot, and is taken as the summary; anything that
+ * looks like JSON but does not parse (typically arguments cut off by the
+ * output cap) is rejected rather than installed half-written.
+ */
+export function parseCompactionSummary(input: unknown): string | undefined {
+  let value = input
+  for (let depth = 0; depth < 3 && typeof value === 'string'; depth++) {
+    const text = stripCodeFence(value.trim())
+    try {
+      value = JSON.parse(text)
+    } catch {
+      if (depth > 0 || /^[{["]/.test(text)) return undefined
+      return text || undefined
+    }
+  }
+  const parsed = lenientSummarySchema.safeParse(value)
+  if (!parsed.success) return undefined
+  return parsed.data.summary.trim() || undefined
 }
 
 export function hasCompactableHistory(messages: Message[]): boolean {
@@ -171,7 +214,7 @@ export async function compactWithModel(params: {
           'Compaction returned an unexpected tool call. History has been preserved.',
         )
       }
-      candidate = summarySchema.parse(chunk.input).summary
+      candidate = parseCompactionSummary(chunk.input) ?? ''
     }
     params.signal.throwIfAborted()
     if (!candidate || countTokens(candidate) > summaryBudget) {
@@ -204,4 +247,100 @@ export async function compactWithModel(params: {
       'The compaction summary does not fit the context window. History has been preserved.',
     )
   return { messages, summary, preTokens, postTokens }
+}
+
+/** A fixed, content-free label for why the model handoff failed. */
+function compactionErrorKind(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (error instanceof Error && error.name === 'ZodError')
+    return 'invalid_summary'
+  if (message.includes('valid, concise compaction summary'))
+    return 'invalid_summary'
+  if (message.includes('unexpected tool call')) return 'unexpected_tool_call'
+  if (
+    message.includes('too little room') ||
+    message.includes('compaction context budget') ||
+    message.includes('No room for conversation history')
+  )
+    return 'budget'
+  return 'provider_error'
+}
+
+/**
+ * `compactWithModel`, but a compaction failure never fails the user's run.
+ *
+ * The model handoff is the preferred compaction, not the only one: when the
+ * summarizer errors, returns malformed arguments, or cannot be sized, the
+ * mechanical pass (`compactHistoryNow` — no model call) takes over, exactly
+ * as it ran before model compaction existed. If that also cannot shrink the
+ * history, the history is left untouched and the caller's over-budget guard
+ * decides. Only a cancellation propagates.
+ */
+export async function compactWithModelOrFallback(
+  params: Parameters<typeof compactWithModel>[0] & {
+    logger: Logger
+    runId?: string
+    model?: string
+    trigger?: string
+  },
+): Promise<{
+  messages: Message[]
+  summary: string
+  preTokens: number
+  postTokens: number
+  fallback?: true
+} | null> {
+  const { logger, runId, model, trigger, ...modelParams } = params
+  try {
+    return await compactWithModel(modelParams)
+  } catch (error) {
+    if (params.signal.aborted || isAbortError(error)) throw error
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    let fallback: ReturnType<typeof compactHistoryNow> = null
+    let fallbackError: string | undefined
+    try {
+      fallback = compactHistoryNow({
+        messages: params.messages,
+        maxContextLength: params.maxContextLength,
+        fixedTokenCount: params.fixedTokenCount,
+        logger,
+        runId,
+      })
+    } catch (mechanicalError) {
+      fallbackError =
+        mechanicalError instanceof Error
+          ? mechanicalError.message
+          : String(mechanicalError)
+    }
+    try {
+      logger.warn(
+        {
+          axiomEvent: MODEL_COMPACTION_FALLBACK_EVENT,
+          agent_run_id: runId,
+          model,
+          trigger_reason: trigger,
+          error_kind: compactionErrorKind(error),
+          error_name: error instanceof Error ? error.name : typeof error,
+          fallback_applied: Boolean(fallback),
+          fallback_failed: fallbackError !== undefined,
+          // Not allowlisted for Axiom; local/debug logs only.
+          error: errorMessage,
+          ...(fallbackError ? { fallback_error: fallbackError } : {}),
+        },
+        fallback
+          ? 'Model compaction failed; used mechanical compaction'
+          : 'Model compaction failed; history left unchanged',
+      )
+    } catch {
+      // Logging must never turn a recovered compaction into a failed run.
+    }
+    if (!fallback) return null
+    return {
+      messages: fallback.messages,
+      summary: fallback.summaryText,
+      preTokens: fallback.previousTokens + params.fixedTokenCount,
+      postTokens: fallback.nextTokens + params.fixedTokenCount,
+      fallback: true,
+    }
+  }
 }

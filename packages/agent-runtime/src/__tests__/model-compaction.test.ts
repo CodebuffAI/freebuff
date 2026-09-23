@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { compactWithModel, COMPACTION_TAG } from '../model-compaction'
+import {
+  compactWithModel,
+  compactWithModelOrFallback,
+  COMPACTION_TAG,
+  parseCompactionSummary,
+} from '../model-compaction'
 import { promptSuccess } from '@codebuff/common/util/error'
 import { countTokensMessages } from '../util/token-counter'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
@@ -199,4 +204,125 @@ test('a handoff without new work is a no-op', async () => {
       { messages: first!.messages },
     ),
   ).toBeNull()
+})
+
+// Regression for "ZodError: expected object, received string at
+// compactWithModel" (Freebuff Cloud, 2026-09-23). The AI SDK emits a tool call
+// whose arguments failed the schema with `input` as the parsed-or-raw TEXT, so
+// the summarizer's call can reach the runtime as a string.
+test('parseCompactionSummary decodes every argument shape a provider produces', () => {
+  const obj = { summary }
+  expect(parseCompactionSummary(obj)).toBe(summary)
+  // Double-encoded arguments: the SDK parsed one layer, one remains.
+  expect(parseCompactionSummary(JSON.stringify(obj))).toBe(summary)
+  expect(parseCompactionSummary(JSON.stringify(JSON.stringify(obj)))).toBe(
+    summary,
+  )
+  // A Markdown fence around the arguments.
+  expect(
+    parseCompactionSummary('```json\n' + JSON.stringify(obj) + '\n```'),
+  ).toBe(summary)
+  // Unknown keys are ignored rather than rejecting the whole handoff.
+  expect(parseCompactionSummary({ summary, note: 'extra' })).toBe(summary)
+  // Prose written straight into the argument slot is the handoff itself.
+  expect(parseCompactionSummary(summary)).toBe(summary)
+  // Truncated JSON (output cap), empty, and non-summary shapes are rejected.
+  expect(parseCompactionSummary('{"summary": "half a sum')).toBeUndefined()
+  expect(parseCompactionSummary('')).toBeUndefined()
+  expect(parseCompactionSummary({ summary: '   ' })).toBeUndefined()
+  expect(parseCompactionSummary({ text: summary })).toBeUndefined()
+  expect(parseCompactionSummary(['a'])).toBeUndefined()
+  expect(parseCompactionSummary(null)).toBeUndefined()
+  expect(parseCompactionSummary(42)).toBeUndefined()
+})
+
+const stringInput = (text: string) => text as unknown as Record<string, unknown>
+
+test('a string-encoded complete_compaction call compacts instead of throwing a ZodError', async () => {
+  const result = await run(async function* () {
+    yield {
+      type: 'tool-call',
+      toolCallId: 'summary',
+      toolName: 'complete_compaction',
+      input: stringInput(JSON.stringify({ summary })),
+    }
+    return promptSuccess('compaction-id')
+  })
+  expect(result?.summary).toBe(summary)
+})
+
+const noopLogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+}
+
+test('compactWithModelOrFallback falls back to mechanical compaction on any summarizer failure', async () => {
+  const before = structuredClone(messages)
+  const warnings: unknown[] = []
+  const failures: Array<() => ReturnType<PromptAiSdkStreamFn>> = [
+    async function* () {
+      yield {
+        type: 'tool-call',
+        toolCallId: 's',
+        toolName: 'complete_compaction',
+        input: stringInput('{"summary": "cut off'),
+      }
+      return promptSuccess(null)
+    },
+    async function* () {
+      yield { type: 'error', message: 'provider 500' }
+      return promptSuccess(null)
+    },
+    async function* () {
+      throw new Error('connection reset')
+    },
+  ]
+  for (const stream of failures) {
+    const result = await compactWithModelOrFallback({
+      messages,
+      system: 'You are a coding agent.',
+      maxContextLength: 16_384,
+      fixedTokenCount: 500,
+      signal: new AbortController().signal,
+      stream,
+      logger: { ...noopLogger, warn: (data: unknown) => warnings.push(data) },
+    })
+    expect(result?.fallback).toBe(true)
+    expect(result!.postTokens).toBeLessThan(result!.preTokens)
+    // The live request survives the mechanical pass.
+    expect(JSON.stringify(result!.messages)).toContain(
+      'Compare the time units in a.ts and b.ts.',
+    )
+  }
+  expect(warnings).toHaveLength(failures.length)
+  expect(warnings.map((w) => (w as { error_kind: string }).error_kind)).toEqual(
+    ['invalid_summary', 'provider_error', 'provider_error'],
+  )
+  expect(warnings[0]).toMatchObject({
+    axiomEvent: 'model_compaction.fallback',
+    fallback_applied: true,
+    fallback_failed: false,
+  })
+  expect(messages).toEqual(before)
+})
+
+test('compactWithModelOrFallback still propagates cancellation', async () => {
+  const controller = new AbortController()
+  await expect(
+    compactWithModelOrFallback({
+      messages,
+      system: 'You are a coding agent.',
+      maxContextLength: 16_384,
+      fixedTokenCount: 500,
+      signal: controller.signal,
+      logger: noopLogger,
+      stream: async function* () {
+        controller.abort()
+        yield { type: 'text', text: '' }
+        return promptSuccess(null)
+      },
+    }),
+  ).rejects.toThrow()
 })

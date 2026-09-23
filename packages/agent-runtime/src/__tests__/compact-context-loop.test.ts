@@ -47,6 +47,12 @@ describe('compactContext in loopAgentSteps', () => {
   let dbSpies: DbSpies
   let seenMessages: Message[][]
   let runtimeImpl: any
+  const defaultCompactionInput: unknown = {
+    summary:
+      'the first request: DISTINCTIVE PRIOR ANSWER. Continue with the live question.',
+  }
+  /** What the summarizer's `complete_compaction` call carries, or a throw. */
+  let compactionInput: unknown | (() => never) = defaultCompactionInput
 
   const baseTemplate: AgentTemplate = {
     id: 'test-agent',
@@ -99,7 +105,11 @@ describe('compactContext in loopAgentSteps', () => {
       if (params.tools.complete_compaction) {
         expect(Object.keys(params.tools)).toEqual(['complete_compaction'])
         expect(params.model).toBe(baseTemplate.model)
-        yield createToolCallChunk('complete_compaction', { summary: 'the first request: DISTINCTIVE PRIOR ANSWER. Continue with the live question.' })
+        if (typeof compactionInput === 'function') compactionInput()
+        yield {
+          ...createToolCallChunk('complete_compaction', {}),
+          input: compactionInput,
+        } as ReturnType<typeof createToolCallChunk>
         return promptSuccess('compaction-message-id')
       }
       seenMessages.push(params.messages)
@@ -137,6 +147,7 @@ describe('compactContext in loopAgentSteps', () => {
 
   beforeEach(() => {
     seenMessages = []
+    compactionInput = defaultCompactionInput
     dbSpies = setupDbSpies(createMockDbOperations())
     spyOn(analytics, 'trackEvent').mockImplementation(() => {})
   })
@@ -168,6 +179,87 @@ describe('compactContext in loopAgentSteps', () => {
     expect(history).toContain('the live question')
     expect(history).toContain('<conversation_summary>')
     expect(history).not.toContain('/compact')
+  })
+
+  // Regression: on 2026-09-23 a Freebuff Cloud run failed with
+  // `Agent run error: [{"expected":"object","code":"invalid_type",...}] ZodError
+  // at compactWithModel`. An argument object that fails the tool schema reaches
+  // the runtime as a STRING (the AI SDK's `invalid` tool call), and a strict
+  // `.parse` on it threw straight out of the agent loop.
+  it('accepts a double-encoded compaction summary instead of failing the run', async () => {
+    // What the AI SDK hands over for a model that double-encoded its
+    // arguments: the outer layer parsed, the object still a JSON string.
+    compactionInput = JSON.stringify({
+      summary: 'DOUBLE ENCODED HANDOFF for the live question.',
+    })
+    const result = await runLoop(baseTemplate, idleHistory(0), '/compact')
+    expect(result.output.type).not.toBe('error')
+    const history = result.agentState.messageHistory.map(textOf).join('\n')
+    expect(history).toContain('DOUBLE ENCODED HANDOFF')
+    expect(history).toContain('the live question')
+  })
+
+  it('falls back to mechanical compaction when the summary is unusable', async () => {
+    // Arguments cut off by the output cap: JSON that never closes.
+    compactionInput = '{"summary": "the first request was about'
+    // A bulky old tool result gives the mechanical pass something to reclaim.
+    const history = idleHistory(120)
+    history.splice(
+      1,
+      0,
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool-call',
+            toolCallId: 'old-read',
+            toolName: 'read_files',
+            input: { paths: ['big.ts'] },
+          },
+        ],
+        sentAt: 1_000_000,
+      },
+      {
+        role: 'tool',
+        toolName: 'read_files',
+        toolCallId: 'old-read',
+        content: [
+          {
+            type: 'json',
+            value: [
+              { path: 'big.ts', content: 'BULKY FILE BODY '.repeat(4000) },
+            ],
+          },
+        ],
+      },
+    )
+    const result = await runLoop(
+      { ...baseTemplate, compactContext: { cacheExpiryMinTokens: null } },
+      history,
+    )
+    expect(result.output.type).not.toBe('error')
+    const sent = seenMessages[0].map(textOf).join('\n')
+    expect(sent).toContain('<conversation_summary>')
+    expect(sent).toContain('the live question')
+    expect(sent).not.toContain('the first request was about')
+    expect(JSON.stringify(seenMessages[0])).not.toContain(
+      'BULKY FILE BODY '.repeat(50),
+    )
+  })
+
+  it('a summarizer that throws never fails the turn', async () => {
+    compactionInput = () => {
+      throw new Error('provider exploded mid-compaction')
+    }
+    const result = await runLoop(
+      { ...baseTemplate, compactContext: { cacheExpiryMinTokens: null } },
+      idleHistory(120),
+    )
+    expect(result.output.type).not.toBe('error')
+    expect(seenMessages).toHaveLength(1)
+    expect(seenMessages[0].map(textOf).join('\n')).toContain(
+      'the live question',
+    )
   })
 
   it('leaves a small conversation alone however cold the cache is', async () => {
@@ -280,7 +372,9 @@ describe('compactContext in loopAgentSteps', () => {
     runtimeImpl = { ...baseRuntimeParams }
     runtimeImpl.promptAiSdkStream = mock(async function* (params: any) {
       if (params.tools.complete_compaction) {
-        yield createToolCallChunk('complete_compaction', { summary: 'the first request: DISTINCTIVE PRIOR ANSWER.' })
+        yield createToolCallChunk('complete_compaction', {
+          summary: 'the first request: DISTINCTIVE PRIOR ANSWER.',
+        })
         return promptSuccess('compaction-message-id')
       }
       seenMessages.push(params.messages)

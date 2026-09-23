@@ -27,7 +27,7 @@ import { cloneDeep, mapValues } from 'lodash'
 import z from 'zod/v4'
 
 import { evaluateCompactionTrigger } from './compact-history'
-import { compactWithModel, compactionTools } from './model-compaction'
+import { compactWithModelOrFallback, compactionTools } from './model-compaction'
 import { CACHE_DEBUG_FULL_LOGGING } from './constants'
 import { getMCPToolData } from './mcp'
 import { getAgentStreamFromTemplate } from './prompt-agent-stream'
@@ -1173,7 +1173,9 @@ export async function loopAgentSteps(
         if (trigger) {
           const before = currentAgentState.directCreditsUsed
           const started = Date.now()
-          const compacted = await compactWithModel({
+          // A compaction failure must never fail the turn: a summarizer error
+          // or malformed handoff falls back to the mechanical pass.
+          const compacted = await compactWithModelOrFallback({
             messages: currentAgentState.messageHistory,
             system,
             maxContextLength,
@@ -1184,6 +1186,10 @@ export async function loopAgentSteps(
                 ? countTokensMessages([userMessage({ content: stepPrompt })])
                 : 0),
             signal,
+            logger,
+            runId,
+            model: agentTemplate.model,
+            trigger,
             stream: (messages, maxOutputTokens) =>
               getAgentStreamFromTemplate({
                 ...params,

@@ -994,8 +994,9 @@ function compactRequestHistory(messages: Message[], tokenBudget: number) {
     kept.splice(removable, 1)
     summary = buildSummaryMessage(renderSummaryText(kept), images, now)
   }
+  const summaryInstalled = countTokensMessages([summary]) <= remainingTokens
   const output = [
-    ...(countTokensMessages([summary]) <= remainingTokens ? [summary] : []),
+    ...(summaryInstalled ? [summary] : []),
     ...prefix.map((message) => ({ ...message, sentAt: now })),
     ...fitted,
   ]
@@ -1007,6 +1008,9 @@ function compactRequestHistory(messages: Message[], tokenBudget: number) {
   return {
     ...result,
     messages: output,
+    // What the installed summary message actually carries, after the budget
+    // walk — not the untrimmed text `compactMessages` produced.
+    summaryText: summaryInstalled ? renderSummaryText(kept) : '',
     stats: {
       ...result.stats,
       mid_turn: fresh.length > 0,
@@ -1200,7 +1204,13 @@ export function compactHistoryNow(params: {
   fixedTokenCount?: number
   logger?: Logger
   runId?: string
-}): { messages: Message[]; previousTokens: number; nextTokens: number } | null {
+}): {
+  messages: Message[]
+  /** Text of the installed summary message; '' when none fit. */
+  summaryText: string
+  previousTokens: number
+  nextTokens: number
+} | null {
   const { messages, maxContextLength, logger, runId } = params
   const result = compactRequestHistory(
     messages,
@@ -1228,5 +1238,10 @@ export function compactHistoryNow(params: {
     // Ignore logging failures.
   }
 
-  return { messages: result.messages, previousTokens, nextTokens }
+  return {
+    messages: result.messages,
+    summaryText: result.summaryText,
+    previousTokens,
+    nextTokens,
+  }
 }

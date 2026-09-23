@@ -46,6 +46,13 @@ export const CONTEXT_PRUNING_COMPLETED_EVENT =
  *  allowlisted event — `_gave_up` logs at error level, which already ships
  *  raw and doesn't need the allowlist. */
 export const STREAM_RECOVERY_EVENT = 'stream_recovery' as const
+/** Model-based context compaction failed and the runtime fell back to the
+ *  mechanical pass (packages/agent-runtime/src/model-compaction.ts). The SDK
+ *  is otherwise silent in the Web/Cloud runner, so without an allowlisted
+ *  event a summarizer failure is invisible there. Content-free: the error is
+ *  reduced to a fixed `error_kind`, never its message. */
+export const MODEL_COMPACTION_FALLBACK_EVENT =
+  'model_compaction.fallback' as const
 export const ADS_FETCH_COMPLETED_EVENT = AnalyticsEvent.ADS_FETCH_COMPLETED
 export const ADS_FIRST_PARTY_DECISION_EVENT =
   AnalyticsEvent.ADS_FIRST_PARTY_DECISION
@@ -208,6 +215,16 @@ const STREAM_RECOVERY_FIELDS = {
   finishReason: 'string',
   hasYieldedContent: 'boolean',
   consecutive: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const MODEL_COMPACTION_FALLBACK_FIELDS = {
+  model: 'string',
+  agent_run_id: 'string',
+  trigger_reason: 'string',
+  error_kind: 'string',
+  error_name: 'string',
+  fallback_applied: 'boolean',
+  fallback_failed: 'boolean',
 } as const satisfies AxiomOnlyFieldSchema
 
 const ADS_FETCH_COMPLETED_FIELDS = {
@@ -990,6 +1007,7 @@ export type AxiomOnlyLogEvent = {
   event:
     | typeof CONTEXT_PRUNING_COMPLETED_EVENT
     | typeof STREAM_RECOVERY_EVENT
+    | typeof MODEL_COMPACTION_FALLBACK_EVENT
     | typeof ADS_FETCH_COMPLETED_EVENT
     | typeof ADS_FIRST_PARTY_DECISION_EVENT
     | typeof ADS_FIRST_PARTY_SETTLEMENT_EVENT
@@ -1061,6 +1079,12 @@ export function getAxiomOnlyLogEvent(
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(record, STREAM_RECOVERY_FIELDS),
+    }
+  }
+  if (eventName === MODEL_COMPACTION_FALLBACK_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, MODEL_COMPACTION_FALLBACK_FIELDS),
     }
   }
   if (eventName === ADS_FETCH_COMPLETED_EVENT) {

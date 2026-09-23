@@ -18,6 +18,7 @@ import {
   CONTEXT_PRUNING_COMPLETED_EVENT,
   getAxiomOnlyLogEvent,
   STREAM_RECOVERY_EVENT,
+  MODEL_COMPACTION_FALLBACK_EVENT,
   ADS_CLIENT_EVENT_HYGIENE_FIELDS,
   ADS_FIRST_PARTY_TRACKING_FIELD_NAMES,
   FIRST_PARTY_VIEW_ACK_FIELD_NAMES,
@@ -279,6 +280,36 @@ describe('getAxiomOnlyLogEvent', () => {
         finishReason: 'unknown',
         hasYieldedContent: true,
         consecutive: 2,
+      },
+    })
+  })
+
+  test('model-compaction fallback ships a fixed error kind, never the message', () => {
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: MODEL_COMPACTION_FALLBACK_EVENT,
+        agent_run_id: 'run-1',
+        model: 'z-ai/glm-5.3-flash',
+        trigger_reason: 'context_limit',
+        error_kind: 'invalid_summary',
+        error_name: 'ZodError',
+        fallback_applied: true,
+        fallback_failed: false,
+        // Not in the allowlist: may carry provider text or user content.
+        error: 'Invalid input: expected object, received string',
+        fallback_error: 'secret',
+        messageHistory: [{ role: 'user', content: 'secret' }],
+      }),
+    ).toEqual({
+      event: MODEL_COMPACTION_FALLBACK_EVENT,
+      data: {
+        agent_run_id: 'run-1',
+        model: 'z-ai/glm-5.3-flash',
+        trigger_reason: 'context_limit',
+        error_kind: 'invalid_summary',
+        error_name: 'ZodError',
+        fallback_applied: true,
+        fallback_failed: false,
       },
     })
   })
