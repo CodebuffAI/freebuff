@@ -367,6 +367,22 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    * price the same, and only `first_party_geo_floored` tells them apart. */
   first_party_geo_multiplier_bps: 'number',
   first_party_geo_cpc_bucket: 'string',
+  /**
+   * COD-635: the price book the charge came from -- `static-v1`, a learned
+   * version id, or `none` when nothing was priced. One value per promotion,
+   * so bounded however many requests carry it.
+   */
+  first_party_geo_cpc_version: 'string',
+  /**
+   * COD-635: what the served click WOULD have billed under the shadow
+   * (candidate) book, which is never charged. Present only when a shadow book
+   * rode the request; absent rather than zeroed otherwise, so "no candidate"
+   * cannot read as a candidate that priced the click at nothing. The price
+   * is bucketed exactly like `first_party_geo_cpc_bucket`, never raw cents.
+   */
+  first_party_geo_shadow_version: 'string',
+  first_party_geo_shadow_multiplier_bps: 'number',
+  first_party_geo_shadow_cpc_bucket: 'string',
   geo_cpc_enabled: 'boolean',
   /** Whether the immediately preceding Gravity attempt filled, no-filled, or
    * failed. This makes recovered no-fill inventory observable without logging
