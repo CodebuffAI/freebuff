@@ -59,11 +59,28 @@ export type SponsoredGitSetupPreview =
       expiresAt: number
       canonicalRoot: string
       files: SponsoredGitSetupFile[]
+      /**
+       * Prefill for the one approval: the user's effective Git identity
+       * (global, then system config) when it has one, else a neutral local
+       * default. Never the Freebuff account email. Always editable, and only
+       * ever applied to the setup commit -- no Git config is written.
+       */
+      identity: SponsoredGitSetupSuggestedIdentity
     }
   | { status: 'not_needed'; inspection: SponsoredGitInspection }
   | { status: 'unavailable'; inspection: SponsoredGitInspection }
 
 export type SponsoredGitSetupIdentity = { name: string; email: string }
+
+export type SponsoredGitSetupSuggestedIdentity = SponsoredGitSetupIdentity & {
+  source: 'git_config' | 'local_default'
+}
+
+/** Neutral identity for a machine with no Git identity configured. */
+export const SPONSORED_GIT_SETUP_DEFAULT_IDENTITY: SponsoredGitSetupIdentity = {
+  name: 'Freebuff User',
+  email: 'freebuff@users.noreply.local',
+}
 
 export type SponsoredGitSetupApproval =
   | {
