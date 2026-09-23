@@ -27,6 +27,7 @@ const PLATFORM_TARGET_KEYS = [
   'linux-x64-baseline',
   'linux-arm64',
   'darwin-x64',
+  'darwin-x64-baseline',
   'darwin-arm64',
   'win32-x64',
   'win32-x64-baseline',
@@ -356,6 +357,7 @@ function createLauncher(productConfig) {
 
   const BASELINE_FALLBACK_TARGETS = {
     'linux-x64': 'linux-x64-baseline',
+    'darwin-x64': 'darwin-x64-baseline',
     'win32-x64': 'win32-x64-baseline',
   }
 
@@ -433,8 +435,8 @@ function createLauncher(productConfig) {
 
     // Everything else assumes AVX2 — true of every x64 CPU since ~2013.
     //
-    // Windows is the case that matters, since it's the only other platform with
-    // a baseline build. It has no /proc/cpuinfo equivalent we can read without
+    // Windows and macOS use the crash fallback rather than a subprocess probe.
+    // Windows has no /proc/cpuinfo equivalent we can read without
     // spawning something, and the probe that used to fill the gap asked
     // PowerShell to compile a C# stub and P/Invoke
     // kernel32!IsProcessorFeaturePresent — accurate, but a textbook malware
@@ -490,14 +492,14 @@ function createLauncher(productConfig) {
 
     const platformKey = getPlatformKey()
     // Linux still detects up front (reading /proc/cpuinfo is free). Windows
-    // cannot without spawning a process, and the PowerShell probe that used to
-    // do it tripped Defender, so Windows is optimistic-then-corrected: see
+    // and macOS are optimistic-then-corrected; the old Windows PowerShell
+    // probe tripped Defender. See
     // detectMachineHasAvx2() and tryFallbackToBaseline(). Once a machine has
     // failed once, readCachedAvx2() answers here and baseline is chosen up front
     // exactly as it used to be.
     //
     // This assumes every baseline target is gated on AVX2 specifically, which
-    // holds today (only linux-x64 and win32-x64 have baseline builds, both
+    // holds today (linux-x64, darwin-x64 and win32-x64 have baseline builds, all
     // AVX2-gated). If a baseline build is ever added for a different reason, give
     // BASELINE_FALLBACK_TARGETS a per-target capability and check that instead.
     if (BASELINE_FALLBACK_TARGETS[platformKey] && !machineHasAvx2()) {

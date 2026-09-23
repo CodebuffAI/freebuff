@@ -444,10 +444,10 @@ describe('write-binary-checksums.js (release side)', () => {
       expect(written.binaryChecksums).toEqual(digests)
       expect(() => checksumScript.verifyChecksums({ packageDir })).not.toThrow()
 
-      delete written.binaryChecksums['win32-x64-baseline']
+      delete written.binaryChecksums['darwin-x64-baseline']
       writeFileSync(packageJsonPath, JSON.stringify(written))
       expect(() => checksumScript.verifyChecksums({ packageDir })).toThrow(
-        'win32-x64-baseline: missing',
+        'darwin-x64-baseline: missing',
       )
     } finally {
       rmSync(root, { recursive: true, force: true })

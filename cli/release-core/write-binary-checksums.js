@@ -33,6 +33,7 @@ const TARGET_KEYS = [
   'linux-x64-baseline',
   'linux-arm64',
   'darwin-x64',
+  'darwin-x64-baseline',
   'darwin-arm64',
   'win32-x64',
   'win32-x64-baseline',

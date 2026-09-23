@@ -17,6 +17,20 @@ cd ~/my-project
 freebuff
 ```
 
+### Older Intel Macs (without AVX2)
+
+The npm launcher automatically switches to the `darwin-x64-baseline` build if
+the standard Intel binary exits with an illegal-instruction error (`SIGILL`).
+To select that build before the first launch:
+
+```bash
+FREEBUFF_BINARY_TARGET=darwin-x64-baseline freebuff
+```
+
+For manual installation, download `freebuff-darwin-x64-baseline.tar.gz` from the
+[Freebuff CLI releases](https://github.com/CodebuffAI/codebuff-community/releases?q=freebuff-v)
+and keep the extracted `freebuff` binary and `tree-sitter.wasm` together.
+
 ## Why Freebuff?
 
 **Choice of leading models** — The regular CLI picker includes GLM 5.3 Flash, DeepSeek, GPT-6 Luna, MiMo 2.6 Flash, MiMo 2.6 Pro, Solar Pro 4, Gemini 3.8 Flash, and Muse Spark 1.2, with GLM 5.3 Flash selected by default.

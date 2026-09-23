@@ -117,14 +117,14 @@ function captureLauncherOutput() {
   }
 }
 
-/** A tar.gz holding a single `freebuff.exe` that runs `script`. */
-function baselineTarball(script: string) {
+/** A tar.gz holding a single executable that runs `script`. */
+function baselineTarball(script: string, binaryName: string) {
   const stageDir = mkdtempSync(join(tmpdir(), 'launcher-baseline-'))
-  writeFileSync(join(stageDir, 'freebuff.exe'), `#!/bin/sh\n${script}\n`, {
+  writeFileSync(join(stageDir, binaryName), `#!/bin/sh\n${script}\n`, {
     mode: 0o755,
   })
   const archive = join(stageDir, 'out.tar.gz')
-  execFileSync('tar', ['-czf', archive, '-C', stageDir, 'freebuff.exe'])
+  execFileSync('tar', ['-czf', archive, '-C', stageDir, binaryName])
   return readFileSync(archive)
 }
 
@@ -142,9 +142,12 @@ let releaseTarball: Buffer | null = null
 let releaseChecksums: Record<string, string> = {}
 let releaseServer: ReturnType<typeof createServer>
 
-function serveBaselineTarball(script: string) {
-  releaseTarball = baselineTarball(script)
-  releaseChecksums['win32-x64-baseline'] = createHash('sha256')
+function serveBaselineTarball(script: string, platform = 'win32') {
+  releaseTarball = baselineTarball(
+    script,
+    platform === 'win32' ? 'freebuff.exe' : 'freebuff',
+  )
+  releaseChecksums[`${platform}-x64-baseline`] = createHash('sha256')
     .update(releaseTarball)
     .digest('hex')
 }
@@ -152,8 +155,8 @@ let restoreReleaseEnv = () => {}
 
 beforeAll(async () => {
   releaseServer = createServer((request, response) => {
-    const wantsBaseline = request.url?.endsWith(
-      'freebuff-win32-x64-baseline.tar.gz',
+    const wantsBaseline = ['win32', 'darwin'].some((platform) =>
+      request.url?.endsWith(`freebuff-${platform}-x64-baseline.tar.gz`),
     )
     if (releaseTarball && wantsBaseline) {
       response.writeHead(200)
@@ -284,6 +287,26 @@ describe('windows AVX2 detection', () => {
 
     expect(t.detectMachineHasAvx2()).toBe(true)
     expect(t.getDefaultTargetKey()).toBe('win32-x64')
+  })
+})
+
+describe('macOS baseline selection', () => {
+  test('supports an explicit baseline override', () => {
+    const t = makeLauncher('darwin')
+    expect(t.getDefaultTargetKey()).toBe('darwin-x64')
+    process.env.FREEBUFF_BINARY_TARGET = 'darwin-x64-baseline'
+    try {
+      expect(t.getDefaultTargetKey()).toBe('darwin-x64-baseline')
+    } finally {
+      delete process.env.FREEBUFF_BINARY_TARGET
+    }
+  })
+
+  test('Apple Silicon has no x64 fallback, even with a recorded crash', async () => {
+    const t = makeLauncher('darwin', 'arm64')
+    t.recordMachineLacksAvx2()
+    expect(t.getDefaultTargetKey()).toBe('darwin-arm64')
+    expect(await t.tryFallbackToBaseline(null, 'SIGILL', 40)).toBe(false)
   })
 })
 
@@ -605,6 +628,37 @@ describe('the crash report a windows user sees', () => {
  * come back up on the baseline build without the user doing anything.
  */
 describe('recovering from the reported crash', () => {
+  test('macOS SIGILL downloads and runs baseline, then keeps it on subsequent launches', async () => {
+    const t = makeLauncher('darwin')
+    const ranMarker = join(tempConfigDir, 'baseline-ran')
+    serveBaselineTarball(`echo ran > ${ranMarker}`, 'darwin')
+
+    writeFileSync(t.CONFIG.binaryPath, '#!/bin/sh\nexit 3\n', { mode: 0o755 })
+    writeFileSync(
+      t.CONFIG.metadataPath,
+      JSON.stringify({ version: '1.2.3', target: 'darwin-x64' }),
+    )
+
+    const child = t.spawnInstalledBinary()
+    await new Promise((resolve) => child.once('close', resolve))
+    await t.attachExitHandler(child)(null, 'SIGILL')
+    await waitFor(() => launcher.exitCodes.length > 0)
+
+    expect(launcher.exitCodes).toEqual([0])
+    expect(existsSync(ranMarker)).toBe(true)
+    expect(
+      JSON.parse(readFileSync(t.CONFIG.metadataPath, 'utf8')),
+    ).toMatchObject({
+      target: 'darwin-x64-baseline',
+    })
+    const next = makeLauncher('darwin')
+    expect(next.readCachedAvx2()).toBe(false)
+    expect(next.getDefaultTargetKey()).toBe('darwin-x64-baseline')
+    expect(next.isTargetAllowedForThisMachine('darwin-x64')).toBe(false)
+    expect(next.getCurrentVersion()).toBe('1.2.3')
+    expect(await next.tryFallbackToBaseline(null, 'SIGILL', 40)).toBe(false)
+  }, 20000)
+
   test('0xC0000409 during startup lands the user on the baseline build', async () => {
     const t = makeLauncher()
     const ranMarker = join(tempConfigDir, 'baseline-ran')
