@@ -7,7 +7,9 @@ import {
   DEFAULT_FREEBUFF_WEB_MODEL_ID,
   FALLBACK_FREEBUFF_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  FREEBUFF_SOLAR_MINI_4_MODEL_ID,
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+  FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   FREEBUFF_ENABLE_MIMO_MODELS_IN_UI,
   FREEBUFF_FABLE_5_1_MODEL_ID,
@@ -232,7 +234,12 @@ describe('freebuff model availability', () => {
       // that changes behavior) while the warning still tells a user what they
       // want to know before pasting a private repo into an anonymous provider.
       // ox-alpha.test.ts pins the pairing so it reads as a decision.
-      if (model.id === FREEBUFF_OX_ALPHA_MODEL_ID) {
+      // Space Bunny Alpha (2026-09-23) is the second stealth row with the
+      // same host terms, so it carries the same pairing.
+      if (
+        model.id === FREEBUFF_OX_ALPHA_MODEL_ID ||
+        model.id === FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID
+      ) {
         expect(model.dataUse).toBe('service')
         expect(model.warning).toBeDefined()
         continue
@@ -547,15 +554,24 @@ describe('freebuff model availability', () => {
   })
 
   test('Solar is fully unlimited at full access', () => {
-    expect(isFreebuffPremiumModelId(FREEBUFF_SOLAR_PRO_4_MODEL_ID)).toBe(false)
+    expect(isFreebuffPremiumModelId(FREEBUFF_SOLAR_MINI_4_MODEL_ID)).toBe(false)
     expect(FREEBUFF_STANDARD_MODEL_IDS as readonly string[]).toContain(
+      FREEBUFF_SOLAR_MINI_4_MODEL_ID,
+    )
+    // Solar Pro 4 is retired from every picker (2026-09-23) but still
+    // recognised, so its saved picks migrate rather than fail.
+    expect(isFreebuffPremiumModelId(FREEBUFF_SOLAR_PRO_4_MODEL_ID)).toBe(false)
+    expect(FREEBUFF_MODELS.map((model) => model.id)).not.toContain(
+      FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+    )
+    expect(SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)).toContain(
       FREEBUFF_SOLAR_PRO_4_MODEL_ID,
     )
   })
 
   test('the tier notice states the Solar entitlement directly', () => {
     expect(FREEBUFF_TIER_CHANGE_NOTICE).toContain(
-      'Solar Pro 4 is now unmetered at full access',
+      'Solar Mini 4 is now unmetered at full access',
     )
     expect(FREEBUFF_TIER_CHANGE_NOTICE).toContain(
       'available with limited access',
@@ -1324,7 +1340,7 @@ describe('freebuff model availability', () => {
     expect(completion).toBeLessThan(6.0)
   })
 
-  test('limited access exposes GLM 5.3 Flash, Flash, MiMo, and Solar Pro 4', () => {
+  test('limited access exposes GLM 5.3 Flash, Flash, MiMo, and Solar Mini 4', () => {
     // Two constants since 2026-09-07. The HERO (what the pickers lead with
     // and recommend) is the same row as the full default again: GLM 5.3
     // Flash, the cheapest row we serve, priced at 5 on every tier now that
@@ -1340,7 +1356,7 @@ describe('freebuff model availability', () => {
       FREEBUFF_GLM_V53_FLASH_MODEL_ID,
       FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
       FREEBUFF_MIMO_V25_MODEL_ID,
-      FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+      FREEBUFF_SOLAR_MINI_4_MODEL_ID,
     ])
     expect(getFreebuffModelsForAccessTier('limited').map((m) => m.id)).toEqual(
       LIMITED_FREEBUFF_MODEL_IDS,
@@ -1370,10 +1386,18 @@ describe('freebuff model availability', () => {
     ).toBe(true)
     expect(
       isFreebuffModelAllowedForAccessTier(
-        FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+        FREEBUFF_SOLAR_MINI_4_MODEL_ID,
         'limited',
       ),
     ).toBe(true)
+    // Retired 2026-09-23: a limited-tier pick of Pro 4 from an old binary is
+    // coerced like any other out-of-tier pick.
+    expect(
+      isFreebuffModelAllowedForAccessTier(
+        FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+        'limited',
+      ),
+    ).toBe(false)
     expect(
       isFreebuffModelAllowedForAccessTier(
         FREEBUFF_MIMO_V25_PRO_MODEL_ID,
@@ -1394,7 +1418,7 @@ describe('freebuff model availability', () => {
       ),
     ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     expect(LIMITED_FREEBUFF_MODEL_MISMATCH_MESSAGE).toBe(
-      'Limited free access is only available with GLM 5.3 Flash or DeepSeek V4.1 Flash or MiMo 2.6 Flash or Solar Pro 4.',
+      'Limited free access is only available with GLM 5.3 Flash or DeepSeek V4.1 Flash or MiMo 2.6 Flash or Solar Mini 4.',
     )
     // No row in the tier supersedes another, so no picker may offer a switch
     // that admission would coerce straight back.
@@ -1669,6 +1693,10 @@ describe('freebuff model availability', () => {
       FREEBUFF_MIMO_V26_PRO_MODEL_ID,
       // GPT-6 Luna arrived 2026-09-22; its wire id names the version.
       FREEBUFF_GPT_6_LUNA_MODEL_ID,
+      // Solar Mini 4 and Space Bunny Alpha arrived 2026-09-23; neither has a
+      // build date to disambiguate.
+      FREEBUFF_SOLAR_MINI_4_MODEL_ID,
+      FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID,
     ]
     expect(
       catalog.filter((model) => model.isNew && !undatedNew.includes(model.id)),

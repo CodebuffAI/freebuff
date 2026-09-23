@@ -24,7 +24,7 @@ import type {
  * the catalog; this is only the user-facing explanation of the change.
  */
 export const FREEBUFF_TIER_CHANGE_NOTICE =
-  'Solar Pro 4 is now unmetered at full access and available with limited access. GPT-5.6 Luna still uses your shared premium allowance, charging partial time rounded up to a tenth. —❤️ Freebuff Team'
+  'Solar Mini 4 is now unmetered at full access and available with limited access. GPT-5.6 Luna still uses your shared premium allowance, charging partial time rounded up to a tenth. —❤️ Freebuff Team'
 
 const PRIVACY_SIGNAL_LABELS: Partial<Record<FreebuffIpPrivacySignal, string>> =
   {

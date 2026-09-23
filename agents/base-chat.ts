@@ -74,6 +74,10 @@ End every response by calling the suggest_followups tool with exactly 3 followup
       'z-ai/glm-5.3-flash': 1_000_000,
       // Solar Pro 4: 524,288 published, entered low for the same reason.
       'upstage/solar-pro4': 500_000,
+      // Solar Mini 4: the same 524,288 published.
+      'upstage/solar-mini4': 500_000,
+      // Space Bunny Alpha: 1,000,000 published.
+      'stealth/space-bunny-alpha': 1_000_000,
     }
 
     /** For any model not listed above. Assuming a window is smaller than it is

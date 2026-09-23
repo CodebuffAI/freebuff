@@ -702,6 +702,8 @@ describe('every freebuff root agent declares a prompt opening', () => {
     'base2-free-luna': BASE2,
     'base2-free-luna-6': BASE2,
     'base2-free-solar-pro4': BASE2,
+    'base2-free-solar-mini4': BASE2,
+    'base2-free-space-bunny-alpha': BASE2,
     'base2-free-glm': BASE2,
     // GLM 5.3 Flash's own root — a separate agent from 'base2-free-glm' above
     // because the two models draw on different pools; createBase2('free', …)

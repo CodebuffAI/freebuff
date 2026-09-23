@@ -25,7 +25,7 @@ import {
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_MIMO_V25_MODEL_ID,
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
-  FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+  FREEBUFF_SOLAR_MINI_4_MODEL_ID,
   FREEBUFF_FABLE_5_1_MODEL_ID,
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
@@ -90,7 +90,7 @@ const renderSelector = async (
   // test ran next.
   cleanupRenderer?.()
   cleanupRenderer = undefined
-  const setup = await createTestRenderer({ width, height: 40 })
+  const setup = await createTestRenderer({ width, height: Math.max(40, maxHeight) })
   const root = createRoot(setup.renderer)
   cleanupRenderer = () => {
     flushSync(() => root.unmount())
@@ -288,7 +288,10 @@ describe('FreebuffModelSelector tier layout', () => {
       .getState()
       .setSelectedModel(FREEBUFF_MINIMAX_M3_MODEL_ID)
 
-    const frame = (await renderSelector()).captureCharFrame()
+    // 48 rows since 2026-09-23: Solar Mini 4 and Space Bunny Alpha made the
+    // full catalog one row taller than a 40-row frame holds with the referral
+    // actions beneath it.
+    const frame = (await renderSelector(48)).captureCharFrame()
     const actionRow =
       frame.split('\n').find((line) => line.includes('Copy invite link')) ?? ''
 
@@ -307,18 +310,18 @@ describe('FreebuffModelSelector tier layout', () => {
       status: 'none',
       accessTier: 'full',
     })
-    // Solar Pro 4 moved into UNLIMITED on 2026-09-03. Keeping it as the saved
-    // pick exercises both section ordering and focus without relying on a
-    // second premium row that no longer exists.
+    // Solar (Mini 4 since 2026-09-23) sits in UNLIMITED. Keeping it as the
+    // saved pick exercises both section ordering and focus without relying on
+    // a second premium row that no longer exists.
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_SOLAR_PRO_4_MODEL_ID)
+      .setSelectedModel(FREEBUFF_SOLAR_MINI_4_MODEL_ID)
 
     const setup = await renderSelector()
     const frame = setup.captureCharFrame()
     const premiumHeaderIndex = frame.indexOf('PREMIUM')
     const recommendedModelIndex = frame.indexOf('GPT-6 Luna')
-    const selectedModelIndex = frame.indexOf('Solar Pro 4')
+    const selectedModelIndex = frame.indexOf('Solar Mini 4')
     const unlimitedHeaderIndex = frame.indexOf('UNLIMITED')
 
     expect(premiumHeaderIndex).toBeGreaterThanOrEqual(0)
@@ -326,7 +329,7 @@ describe('FreebuffModelSelector tier layout', () => {
     expect(unlimitedHeaderIndex).toBeGreaterThan(recommendedModelIndex)
     expect(selectedModelIndex).toBeGreaterThan(unlimitedHeaderIndex)
     // The cursor sits on the SAVED pick, not on the recommendation.
-    expect(frame).toContain('› Solar Pro 4')
+    expect(frame).toContain('› Solar Mini 4')
     expect(frame).not.toContain('› GPT-6 Luna')
   })
 
@@ -1442,7 +1445,7 @@ test('the collapsed picker recommends affordable GLM when the default costs too 
       [DEFAULT_FREEBUFF_MODEL_ID]: 15,
       [FREEBUFF_MIMO_V25_MODEL_ID]: 10,
       [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 5,
-      [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: 5,
+      [FREEBUFF_SOLAR_MINI_4_MODEL_ID]: 5,
     }),
   })
   useFreebuffModelStore.getState().setSelectedModel(DEFAULT_FREEBUFF_MODEL_ID)
@@ -1495,6 +1498,7 @@ test.each([
   { at: '2026-09-14T03:46:00Z', before: 5, price: 10, balance: 9 },
   { at: '2026-09-14T03:46:00Z', before: 5, price: 10, balance: 10 },
 ])('an open Solar CLI picker updates price and purchase affordability: %j', async ({ at, before, price, balance }) => {
+  const SOLAR = FREEBUFF_SOLAR_MINI_4_MODEL_ID
   const cutoff = Date.parse(at)
   const clock = spyOn(Date, 'now').mockReturnValue(cutoff - 137)
   const realTimeout = globalThis.setTimeout
@@ -1516,19 +1520,22 @@ test.each([
         ...freebucksFixture(balance, {
           [DEFAULT_FREEBUFF_MODEL_ID]: 15,
           [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 5,
-          [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: before,
+          [SOLAR]: before,
         }),
         priceNotices: {
-          [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: solarOfferAt(cutoff - 137).tagline,
+          [SOLAR]: solarOfferAt(cutoff - 137).tagline,
         },
+        // Solar Mini 4's recorded schedule, replayed on the row that replaced
+        // it in the picker (2026-09-23): the mechanism under test is generic,
+        // and a retired row no longer renders.
         priceChanges: SOLAR_PRICE_CHANGES.filter(
           (change) => Date.parse(change.at) >= cutoff,
-        ),
+        ).map((change) => ({ ...change, modelId: SOLAR })),
       },
     })
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_SOLAR_PRO_4_MODEL_ID)
+      .setSelectedModel(SOLAR)
     const setup = await renderSelector(40, async (model) => {
       requested.push(model)
     })
@@ -1552,22 +1559,22 @@ test.each([
     await setup.renderOnce()
     expect(setup.captureCharFrame()).not.toContain('Labor Day weekend')
     expect(setup.captureCharFrame()).toMatch(
-      new RegExp(`Solar Pro 4[^\\n]*\\n[^\\n]*${price} Freebucks/hr`),
+      new RegExp(`Solar Mini 4[^\\n]*\\n[^\\n]*${price} Freebucks/hr`),
     )
     // Return to Solar if the price increase moved focus to a cheaper model.
     for (let i = 0; i < 12; i++) {
-      if (setup.captureCharFrame().includes('› Solar Pro 4')) break
+      if (setup.captureCharFrame().includes('› Solar Mini 4')) break
       flushSync(() => setup.mockInput.pressKey('ARROW_DOWN'))
       await setup.renderOnce()
     }
-    expect(setup.captureCharFrame()).toContain('› Solar Pro 4')
+    expect(setup.captureCharFrame()).toContain('› Solar Mini 4')
     flushSync(() => setup.mockInput.pressEnter())
     await setup.renderOnce()
     if (balance < price) {
       expect(requested).toEqual([])
       expect(setup.captureCharFrame()).toContain(`Not enough ${FREEBUCKS_LABEL}`)
     } else {
-      expect(requested).toEqual([FREEBUFF_SOLAR_PRO_4_MODEL_ID])
+      expect(requested).toEqual([SOLAR])
     }
   } finally {
     cleanupRenderer?.()

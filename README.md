@@ -39,11 +39,12 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 | **GPT-6 Luna**              | US or paid plans        | Strong all-around with native images; runs on OpenAI flex capacity |
 | **MiMo 2.6 Flash**          | Full and limited access | Balanced performance with image support                           |
 | **MiMo 2.6 Pro**            | Paid plans              | Xiaomi's stronger reasoning model, with image support |
-| **Solar Pro 4**             | Full and limited access | Limited-time trial; 524K context, text only; unmetered at full access |
+| **Solar Mini 4**            | Full and limited access | Upstage's fast, compact model; 524K context, text only |
+| **Space Bunny Alpha**       | Full access             | Beta. A stealth model from an anonymous provider that retains prompts; 1M context, images |
 | **Gemini 3.8 Flash**        | Paid plans              | 1M context, and the only model that accepts audio, video and PDF |
 | **Muse Spark 1.2**          | Full access             | Meta's agentic coding model; 1M context. Rate limited and shared by every user, so it queues when busy and answers on DeepSeek V4 Flash rather than making you wait |
 
-Most models draw on your normal daily sessions rather than a separate limit. GLM 5.3 Flash, DeepSeek V4.1 Flash, MiMo 2.6 Flash and Solar Pro 4 are unmetered at full access and cost no session at all. Models may still serve from a quantized (Q8_0) build.
+Most models draw on your normal daily sessions rather than a separate limit. GLM 5.3 Flash, DeepSeek V4.1 Flash, MiMo 2.6 Flash and Solar Mini 4 are unmetered at full access and cost no session at all. Models may still serve from a quantized (Q8_0) build.
 
 DeepSeek V4 Pro was retired from the catalog; GLM 5.3 Flash replaces it as the deep-reasoning pick.
 
@@ -66,7 +67,7 @@ Freebuff uses specialized agents instead of sending every task through one model
 
 ## Free access
 
-Freebuff is available in every country. Supported regions receive full access; other regions and VPN users receive limited access to GLM 5.3 Flash, DeepSeek V4.1 Flash, MiMo 2.6 Flash, and Solar Pro 4. Accounts on Freebucks use the displayed model price and balance. On the legacy session system, limited access includes six one-hour sessions per day, earnable up to seven; GLM uses earned reward sessions instead.
+Freebuff is available in every country. Supported regions receive full access; other regions and VPN users receive limited access to GLM 5.3 Flash, DeepSeek V4.1 Flash, MiMo 2.6 Flash, and Solar Mini 4. Accounts on Freebucks use the displayed model price and balance. On the legacy session system, limited access includes six one-hour sessions per day, earnable up to seven; GLM uses earned reward sessions instead.
 
 Text ads support the included models. Freebuff shows the applicable session limits and any model-specific data-use notice before you start.
 
