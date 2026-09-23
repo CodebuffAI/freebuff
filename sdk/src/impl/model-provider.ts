@@ -208,9 +208,53 @@ export function redactProviderStream(
   })
 }
 
+/**
+ * Does this provider error body say the MODEL ID is wrong?
+ *
+ * A mistyped model is the most common BYOK 400/404, and the provider usually
+ * says so plainly — DeepSeek answers `The supported API model names are
+ * deepseek-flash, deepseek-v4-pro, but you passed deepseek/deepseek-v4-flash`,
+ * OpenAI and Groq `The model \`x\` does not exist`, OpenRouter `x is not a
+ * valid model ID`. Behind the fixed "request failed (HTTP 400). Check the
+ * provider settings" line a user cannot tell that from a malformed request
+ * (support email, 2026-09-23: a DeepSeek key that "always" failed on one model
+ * id and worked on another). The body is only CLASSIFIED here; its text never
+ * reaches the message, which is built from the connection's own model id.
+ */
+export function isByokModelIdRejection(body: string): boolean {
+  if (!body) return false
+  const text = body.slice(0, 16_384)
+  return BYOK_MODEL_REJECTION_PATTERNS.some((pattern) => pattern.test(text))
+}
+
+/** Each names the MODEL as what is wrong, so an unrelated 400 that merely
+ *  mentions a model elsewhere in its body is not reclassified. */
+const BYOK_MODEL_REJECTION_PATTERNS: readonly RegExp[] = [
+  /"code"\s*:\s*"model_not_found"/i,
+  // Same sentence only (a dot inside a model id like `gpt-5.6` is fine).
+  /\bmodels?\b(?:(?![.!?]\s)[^\n]){0,80}?\b(?:does not exist|not exist|not found|is not supported|not supported)/i,
+  /\b(?:invalid|unknown|no such|not a valid|unable to access) model\b/i,
+  /\bsupported (?:api )?model(?: name)?s? (?:are|is)\b/i,
+]
+
+const MAX_MODEL_ID_IN_MESSAGE = 120
+
 /** A fixed, actionable message for a provider status. Never include upstream
- * response text: gateways commonly echo credential fragments in error bodies. */
-export function getByokProviderErrorMessage(status: number): string {
+ * response text: gateways commonly echo credential fragments in error bodies.
+ * `modelRejected` is a classification of that text (isByokModelIdRejection),
+ * and `model` is the connection's own configured id — both ours to show. */
+export function getByokProviderErrorMessage(
+  status: number,
+  detail: { model?: string; modelRejected?: boolean } = {},
+): string {
+  if (
+    detail.modelRejected &&
+    (status === 400 || status === 404 || status === 422)
+  ) {
+    const model = (detail.model ?? '').slice(0, MAX_MODEL_ID_IN_MESSAGE)
+    const named = model ? ` "${model}"` : ''
+    return `BYOK provider does not recognise the model ID${named} (HTTP ${status}). Use the exact model name from the provider's API model list and retry.`
+  }
   if (status === 401)
     return 'BYOK provider rejected the API key (HTTP 401). Check or replace the key.'
   if (status === 403)
@@ -338,8 +382,21 @@ export function getModelForRequest({
             { ...(args[1] ?? {}), redirect: 'error' },
           )
           if (!response.ok) {
+            const modelRejected =
+              response.status === 400 ||
+              response.status === 404 ||
+              response.status === 422
+                ? isByokModelIdRejection(await response.text().catch(() => ''))
+                : false
             return new Response(
-              JSON.stringify({ error: { message: getByokProviderErrorMessage(response.status) } }),
+              JSON.stringify({
+                error: {
+                  message: getByokProviderErrorMessage(response.status, {
+                    model: byok.model,
+                    modelRejected,
+                  }),
+                },
+              }),
               { status: response.status, headers: { 'content-type': 'application/json' } },
             )
           }

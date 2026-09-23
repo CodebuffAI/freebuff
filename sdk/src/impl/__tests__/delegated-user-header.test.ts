@@ -6,6 +6,7 @@ import {
   BYOK_CONNECTION_FAILURE_MESSAGE,
   getByokProviderErrorMessage,
   getModelForRequest,
+  isByokModelIdRejection,
   redactProviderStream,
 } from '../model-provider'
 import { streamText } from 'ai'
@@ -123,6 +124,66 @@ describe('SDK delegated user headers', () => {
     }
     expect(message).toContain('needs credits or a supported plan')
     expect(message).toContain('HTTP 402')
+    expect(message).not.toContain(upstreamCanary)
+    expect(message).not.toContain('key-canary')
+  })
+
+  test('recognises a provider saying the model id is wrong, and nothing else', () => {
+    // Verbatim bodies. DeepSeek's was measured 2026-09-23.
+    const rejections = [
+      '{"error":{"message":"The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed deepseek/deepseek-v4-flash.","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}',
+      '{"error":{"message":"The model `gpt-5.6-lunaa` does not exist or you do not have access to it.","type":"invalid_request_error","code":"model_not_found"}}',
+      '{"error":{"message":"foo/bar is not a valid model ID","code":400}}',
+      '{"error":{"code":404,"message":"models/gemini-9 is not found for API version v1beta, or is not supported for generateContent."}}',
+      '{"message":"Invalid model: mistral-hyper"}',
+    ]
+    for (const body of rejections) expect(isByokModelIdRejection(body)).toBe(true)
+
+    const others = [
+      '{"error":{"message":"The `reasoning_content` in the thinking mode must be passed back to the API.","type":"invalid_request_error"}}',
+      '{"error":{"message":"max_tokens is too large for this model. Tool calls not found in history."}}',
+      '<html><body>404 page not found</body></html>',
+      '',
+    ]
+    for (const body of others) expect(isByokModelIdRejection(body)).toBe(false)
+  })
+
+  test('names the configured model, never the upstream text, when the model id is rejected', () => {
+    const message = getByokProviderErrorMessage(400, {
+      model: 'deepseek/deepseek-v4-flash',
+      modelRejected: true,
+    })
+    expect(message).toContain('does not recognise the model ID "deepseek/deepseek-v4-flash"')
+    expect(message).toContain('HTTP 400')
+    // A rejection on a status that cannot mean "bad model" keeps its own copy.
+    expect(getByokProviderErrorMessage(401, { model: 'm', modelRejected: true })).toContain(
+      'rejected the API key',
+    )
+    // Unclassified 400s are unchanged.
+    expect(getByokProviderErrorMessage(400)).toBe(
+      'BYOK provider request failed (HTTP 400). Check the provider settings and retry.',
+    )
+  })
+
+  test('a provider 400 for an unknown model reaches the user as a model-id problem', async () => {
+    const upstreamCanary = 'provider-body-secret-canary'
+    globalThis.fetch = mock(async () => new Response(
+      JSON.stringify({ error: { message: `The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed deepseek/deepseek-v4-flash. ${upstreamCanary}` } }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    )) as unknown as typeof fetch
+    const result = streamText({
+      model: getModelForRequest({
+        apiKey: 'ignored', model: 'ignored',
+        byok: { id: 'conn', revision: 1, name: 'deepseek', provider: 'openai-compatible', baseUrl: 'https://api.deepseek.com', model: 'deepseek/deepseek-v4-flash', credentialRef: 'connection:conn', createdAt: 'x', updatedAt: 'x', apiKey: 'key-canary' },
+      }),
+      messages: [{ role: 'user', content: 'hello' }],
+      maxRetries: 0,
+    })
+    let message = ''
+    for await (const part of result.stream) {
+      if (part.type === 'error') message = String(part.error)
+    }
+    expect(message).toContain('does not recognise the model ID "deepseek/deepseek-v4-flash"')
     expect(message).not.toContain(upstreamCanary)
     expect(message).not.toContain('key-canary')
   })
