@@ -208,6 +208,12 @@ export enum AnalyticsEvent {
   ADVERTISER_EXPERT_FORM_OPENED = 'advertiser.expert_form_opened',
   ADVERTISER_EXPERT_FORM_SUBMITTED = 'advertiser.expert_form_submitted',
   ADVERTISER_EXPERT_FORM_FAILED = 'advertiser.expert_form_failed',
+  /** Authenticated advertiser signup reached (also covers an existing login). */
+  ADVERTISER_SIGNED_IN = 'advertiser.signed_in',
+  ADVERTISER_CAMPAIGN_PREVIEW_ACCEPTED = 'advertiser.campaign_preview_accepted',
+  /** Server-confirmed outcomes, using the browser's email identity. */
+  ADVERTISER_CARD_SETUP_COMPLETED = 'advertiser.card_setup_completed',
+  ADVERTISER_CAMPAIGN_SUBMITTED = 'advertiser.campaign_submitted',
   ADVERTISER_SIGNUP_STARTED = 'advertiser.signup_started',
   ADVERTISER_SIGNUP_SUBMITTED = 'advertiser.signup_submitted',
   ADVERTISER_SIGNUP_FAILED = 'advertiser.signup_failed',
