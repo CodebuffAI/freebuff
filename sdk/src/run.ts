@@ -273,7 +273,7 @@ export type RunOptions = {
   onUsage?: (usage: AgentUsageData) => void
   /** A model request ended before an exact provider usage receipt arrived. */
   onUsageIncomplete?: () => void
-  /** Mechanical context compaction performed by the root agent runtime. */
+  /** Successful model-generated compaction, including the exact saved summary. */
   onCompaction?: (data: ContextCompactionData) => void
 }
 

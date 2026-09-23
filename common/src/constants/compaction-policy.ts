@@ -1,11 +1,16 @@
 import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from './freebuff-model-ids'
 
+/** Leave input headroom for the model-based compaction request. */
+export function modelCompactionThreshold(maxContextLength: number): number {
+  return Math.floor(maxContextLength * 0.8)
+}
+
 /**
  * When a root agent rewrites its own history after an idle gap: the user
  * comes back after `cacheExpiryMs` of silence AND the history is at least
  * `cacheExpiryMinTokens`. Below the floor a cold cache is not enough, because
- * compaction is free in tokens but never in information — it drops tool
- * results and truncates prose. The context-limit trigger ignores the floor.
+ * compaction costs inference and some detail. The context-limit trigger
+ * ignores the floor. Model-based compaction preserves findings from tool results.
  *
  * The numbers live only here. base3 roots hand the object to the runtime as
  * `compactContext`; the runtime defaults `compactContext: true` to
@@ -25,11 +30,9 @@ export type CompactionPolicy = {
  * of dropped tool results, and under an hour that reads as "the model forgot
  * everything" (a top user complaint) while the cache may still be warm.
  *
- * 140k tokens is two summary ceilings (20k assistant/tool + 50k user, in
- * compact-history.ts). Below one ceiling the budget walk evicts nothing, so a
- * mostly-prose history comes back the same size plus the envelope; the second
- * ceiling is margin for the two sides being measured with different rulers
- * (`chars / 3` against a BPE count x1.35, up to 1.32x apart on dense JSON).
+ * The 140k floor originated as twice the mechanical summary ceilings. Keep
+ * the idle policy stable while switching compactContext to a model handoff;
+ * small idle histories do not justify another inference request.
  */
 export const DEFAULT_COMPACTION_POLICY: CompactionPolicy = {
   cacheExpiryMs: 60 * 60 * 1000,

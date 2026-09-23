@@ -40,6 +40,43 @@ describe('direct BYOK SDK runs', () => {
   const originalFetch = globalThis.fetch
   afterEach(() => { globalThis.fetch = originalFetch })
 
+  test('manual compaction uses the provider tool channel and resumes from the exact saved summary', async () => {
+    const summary = '## Objective\nDocument retry behavior.\n## Important Details\n- uploader.ts retries only network failures.\n## Work State\n### Completed\n- Retry implemented.\n### Active\n- Documentation.\n### Blocked\n- (none)\n## Next Move\n1. Update docs/uploads.md.\n## Relevant Files\n- uploader.ts: retries use milliseconds.'
+    const requests: any[] = []
+    globalThis.fetch = (async (input, init) => {
+      expect(String(input)).toBe('http://127.0.0.1:9876/v1/chat/completions')
+      const body = JSON.parse(String(init?.body))
+      requests.push(body)
+      const compacting = body.tools?.some((t: any) => t.function.name === 'complete_compaction')
+      if (compacting) {
+        expect(body.model).toBe('scripted/model')
+        expect(body.tool_choice).toBe('required')
+        expect(body.tools.map((t: any) => t.function.name)).toEqual(['complete_compaction'])
+        expect(JSON.stringify(body.messages)).toContain('READ_FINDING: timeout uses milliseconds')
+        return sse({ id: 'summary', object: 'chat.completion.chunk', created: 1, model: body.model,
+          choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'compact', type: 'function', function: { name: 'complete_compaction', arguments: JSON.stringify({ summary }) } }] }, finish_reason: 'tool_calls' }] })
+      }
+      return sse({ id: 'work', object: 'chat.completion.chunk', created: 1, model: body.model,
+        choices: [{ index: 0, delta: { content: requests.length === 1 ? 'READ_FINDING: timeout uses milliseconds. '.repeat(1000) : 'Documented.' }, finish_reason: 'stop' }] })
+    }) as typeof fetch
+    const client = new CodebuffClient({ byok: connection({ contextWindow: 32_768, maxOutputTokens: 4096 }), agentDefinitions: [agent] })
+    const original = await client.run({ agent: agent.id, prompt: 'Document retry behavior.' })
+    expect(original.output.type).not.toBe('error')
+    const saved = JSON.stringify(original)
+    const receipts: unknown[] = []
+    const compacted = await client.run({ agent: agent.id, prompt: '/compact', previousRun: original, onCompaction: (receipt) => receipts.push(receipt) })
+    expect(compacted.output.type).not.toBe('error')
+    expect(requests).toHaveLength(2)
+    expect(receipts).toMatchObject([{ trigger: 'manual', summary }])
+    expect(JSON.stringify(original)).toBe(saved)
+    const resumed = await client.run({ agent: agent.id, prompt: 'Continue.', previousRun: JSON.parse(JSON.stringify(compacted)) })
+    expect(resumed.output.type).not.toBe('error')
+    expect(requests).toHaveLength(3)
+    expect(JSON.stringify(requests.at(-1).messages)).toContain(summary.replaceAll('\n', '\\n'))
+    expect(JSON.stringify(requests.at(-1).messages)).not.toContain('READ_FINDING')
+    expect(requests.at(-1).tools.some((t: any) => t.function.name === 'complete_compaction')).toBe(false)
+  })
+
   test('runs a real local write-file tool loop without any Codebuff request', async () => {
     const cwd = await mkdtemp(path.join(tmpdir(), 'freebuff-byok-'))
     await writeFile(path.join(cwd, 'input.txt'), 'source value')

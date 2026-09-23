@@ -73,7 +73,7 @@ describe('compactContext in loopAgentSteps', () => {
   const idleHistory = (gapMinutes: number): Message[] => [
     { ...userMessage('the first request'), sentAt: 1_000_000 },
     {
-      ...assistantMessage('DISTINCTIVE PRIOR ANSWER'),
+      ...assistantMessage('DISTINCTIVE PRIOR ANSWER '.repeat(100)),
       sentAt: 1_000_000,
     },
     {
@@ -86,6 +86,7 @@ describe('compactContext in loopAgentSteps', () => {
   const runLoop = async (
     template: AgentTemplate,
     messageHistory: Message[],
+    prompt?: string,
   ) => {
     const {
       agentTemplate: _,
@@ -95,6 +96,12 @@ describe('compactContext in loopAgentSteps', () => {
 
     runtimeImpl = { ...baseRuntimeParams }
     runtimeImpl.promptAiSdkStream = mock(async function* (params: any) {
+      if (params.tools.complete_compaction) {
+        expect(Object.keys(params.tools)).toEqual(['complete_compaction'])
+        expect(params.model).toBe(baseTemplate.model)
+        yield createToolCallChunk('complete_compaction', { summary: 'the first request: DISTINCTIVE PRIOR ANSWER. Continue with the live question.' })
+        return promptSuccess('compaction-message-id')
+      }
       seenMessages.push(params.messages)
       yield { type: 'text' as const, text: 'ok' }
       yield createToolCallChunk('end_turn', {})
@@ -116,7 +123,7 @@ describe('compactContext in loopAgentSteps', () => {
         output: undefined,
         stepsRemaining: 5,
       },
-      prompt: undefined,
+      prompt,
       spawnParams: undefined,
       fingerprintId: 'test-fingerprint',
       fileContext: mockFileContext,
@@ -150,6 +157,17 @@ describe('compactContext in loopAgentSteps', () => {
     const sent = seenMessages[0].map(textOf).join('\n')
     expect(sent).toContain('DISTINCTIVE PRIOR ANSWER')
     expect(sent).not.toContain('<conversation_summary>')
+  })
+
+  it('manual compaction ends after its dedicated tool and preserves the live request', async () => {
+    const result = await runLoop(baseTemplate, idleHistory(0), '/compact')
+    expect(result.output.type).not.toBe('error')
+    expect(seenMessages).toHaveLength(0)
+    expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(1)
+    const history = result.agentState.messageHistory.map(textOf).join('\n')
+    expect(history).toContain('the live question')
+    expect(history).toContain('<conversation_summary>')
+    expect(history).not.toContain('/compact')
   })
 
   it('leaves a small conversation alone however cold the cache is', async () => {
@@ -199,7 +217,7 @@ describe('compactContext in loopAgentSteps', () => {
     await runLoop(
       {
         ...baseTemplate,
-        compactContext: { maxContextLength: 1024, cacheExpiryMs: null },
+        compactContext: { maxContextLength: 4096, cacheExpiryMs: null },
       },
       history,
     )
@@ -261,6 +279,10 @@ describe('compactContext in loopAgentSteps', () => {
     } = createTestAgentRuntimeParams()
     runtimeImpl = { ...baseRuntimeParams }
     runtimeImpl.promptAiSdkStream = mock(async function* (params: any) {
+      if (params.tools.complete_compaction) {
+        yield createToolCallChunk('complete_compaction', { summary: 'the first request: DISTINCTIVE PRIOR ANSWER.' })
+        return promptSuccess('compaction-message-id')
+      }
       seenMessages.push(params.messages)
       call++
       yield { type: 'text' as const, text: `STEP ${call} OUTPUT` }

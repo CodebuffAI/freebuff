@@ -83,10 +83,18 @@ for (const contextWindow of [32768, 131072]) {
       return { output: [{ type: 'json', value: { message: 'File written' } }] }
     })
     runtime.promptAiSdkStream = mock(async function* ({
-      messages,
+      messages, tools,
     }: {
       messages: Message[]
+      tools: Record<string, unknown>
     }) {
+      if (tools.complete_compaction) {
+        // The summarizer sees the actual file contents, including older reads,
+        // and hands their finding to the coding model instead of just paths.
+        expect(JSON.stringify(messages)).toContain('FILE_CONTENT_CANARY')
+        yield createToolCallChunk('complete_compaction', { summary: 'FILE_CONTENT_CANARY: inspected app.tsx and theme.ts. The action rows have enabled=true. Next write ready.ts.' })
+        return promptSuccess('compaction-response')
+      }
       requests.push(structuredClone(messages))
       expect(countTokensMessages(messages)).toBeLessThanOrEqual(
         limits.maxContextLength,
@@ -152,18 +160,10 @@ for (const contextWindow of [32768, 131072]) {
       expect(reads).toBe(1)
       expect(writes['ready.ts']).toBe('export const ready = true\n')
       const afterRead = requests[1]
-      expect(
-        afterRead.some(
-          (message) =>
-            message.role === 'tool' && message.toolName === 'read_files',
-        ),
-      ).toBe(true)
       expect(JSON.stringify(afterRead)).toContain('FILE_CONTENT_CANARY')
       if (contextWindow === 32768) {
         expect(compactions).toBeGreaterThan(0)
-        expect(JSON.stringify(afterRead)).toContain(
-          'omitted to fit the context window',
-        )
+        expect(JSON.stringify(afterRead)).toContain('action rows have enabled=true')
       } else {
         expect(compactions).toBe(0)
         expect(JSON.stringify(afterRead)).not.toContain(

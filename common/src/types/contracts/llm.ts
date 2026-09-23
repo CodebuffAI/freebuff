@@ -67,8 +67,12 @@ export type AgentUsageData = ModelUsageData & {
 }
 
 export type ContextCompactionData = {
-  trigger: 'context_limit' | 'cache_expiry' | 'context_limit_and_cache_expiry'
+  trigger: 'manual' | 'context_limit' | 'cache_expiry' | 'context_limit_and_cache_expiry'
   thresholdTokens: number
+  summary?: string
+  preTokens?: number
+  postTokens?: number
+  durationMs?: number
 }
 
 export type PromptAiSdkStreamFn = (

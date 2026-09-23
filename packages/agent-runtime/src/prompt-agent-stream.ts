@@ -27,6 +27,8 @@ export const getAgentStreamFromTemplate = (params: {
   signal: AbortSignal
   template: AgentTemplate
   tools: ToolSet
+  toolChoice?: 'required'
+  maxOutputTokens?: number
   userId: string | undefined
   userInputId: string
   cacheDebugCorrelation?: string
@@ -88,7 +90,8 @@ export const getAgentStreamFromTemplate = (params: {
     includeCacheControl,
     logger,
     localAgentTemplates,
-    maxOutputTokens: undefined,
+    maxOutputTokens: params.maxOutputTokens,
+    toolChoice: params.toolChoice,
     maxRetries: 3,
     messages,
     model,

@@ -53,7 +53,7 @@ export const GENERIC_TOOL_NAMES: ReadonlySet<string> = new Set([
  * nothing else, so without this it had no signature tool at all and was flagged
  * on 100% of its 2,904 requests from 41 users over 30 days.
  */
-export const FREEBUFF_CUSTOM_TOOL_NAMES = ['decide'] as const
+export const FREEBUFF_CUSTOM_TOOL_NAMES = ['decide', 'complete_compaction'] as const
 
 /**
  * Tool names that, on their own, mark a request as coming from one of our

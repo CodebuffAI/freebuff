@@ -203,12 +203,11 @@ export interface AgentDefinition {
    */
   suppressCommitAttribution?: boolean
 
-  /** Opt in to mechanical context compaction: the runtime rewrites old history
-   * into a condensed summary before the next step. Defaults to false.
+  /** Opt in to model-based context compaction: the same model writes a handoff
+   * through complete_compaction before continuing. Defaults to false.
    *
-   * Compaction runs when the context grows past the model's budget, and also
-   * once the prompt cache has gone cold — the next request re-reads the whole
-   * history at full price anyway, so rewriting it there is free. Pass
+   * Compaction reserves input headroom and also runs after an idle gap. It is
+   * an inference request and uses the run's normal billing/provider. Pass
    * `{ cacheExpiryMs }` to tune that idle threshold, or `{ cacheExpiryMs: null }`
    * to compact on the context limit only.
    *

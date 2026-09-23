@@ -1,4 +1,5 @@
 import { contextPrunerBudgetForModel } from '@codebuff/common/constants/model-config'
+import { modelCompactionThreshold } from '@codebuff/common/constants/compaction-policy'
 import {
   supportsAssistantPrefill,
   supportsCacheControl,
@@ -25,7 +26,8 @@ import { type ToolSet } from 'ai'
 import { cloneDeep, mapValues } from 'lodash'
 import z from 'zod/v4'
 
-import { maybeCompactHistory } from './compact-history'
+import { evaluateCompactionTrigger } from './compact-history'
+import { compactWithModel, compactionTools } from './model-compaction'
 import { CACHE_DEBUG_FULL_LOGGING } from './constants'
 import { getMCPToolData } from './mcp'
 import { getAgentStreamFromTemplate } from './prompt-agent-stream'
@@ -617,34 +619,6 @@ export const runAgentStep = async (
     'agentStep',
   )
 
-  // Handle the compact command: replace message history with the summary. The
-  // trigger is COUPLED to the instruction injection (isCompactCommandPrompt
-  // reads the same map that injected compactPrompt above), so it cannot match
-  // a prompt that never received the summarize instruction — a divergence
-  // (the old lowercased comparison matched `/Compact`, which the exact-key
-  // injection did not) replaced the whole history with an ordinary answer.
-  const wasCompacted = isCompactCommandPrompt(prompt)
-  if (wasCompacted) {
-    if (fullResponse.trim().length > 0 && !isThinkOnlyResponse(fullResponse)) {
-      agentState.messageHistory = [
-        userMessage(
-          withSystemTags(
-            `The following is a summary of the conversation between you and the user. The conversation continues after this summary:\n\n${fullResponse}`,
-          ),
-        ),
-      ]
-      logger.debug({ summary: fullResponse }, 'Compacted messages')
-    } else {
-      // An interrupted, tool-only, or think-only response would replace the
-      // history with a non-summary — total, unrecoverable amnesia. Keep the
-      // history instead.
-      logger.warn(
-        { messageCount: agentState.messageHistory.length },
-        'Skipped compact: model returned no summary text',
-      )
-    }
-  }
-
   const hasNoToolResults =
     toolCalls.filter(
       (call) => !TOOLS_WHICH_WONT_FORCE_NEXT_STEP.includes(call.toolName),
@@ -906,6 +880,7 @@ export async function loopAgentSteps(
   const useParentTools =
     agentTemplate.inheritParentSystemPrompt && parentTools !== undefined
 
+  const manualCompaction = isCompactCommandPrompt(prompt)
   // Initialize message history with user prompt and instructions on first iteration
   const instructionsPrompt = await getAgentPrompt({
     ...params,
@@ -927,7 +902,9 @@ export async function loopAgentSteps(
   // Build the initial message history with user prompt and instructions
   // Generate system prompt once, using parent's if inheritParentSystemPrompt is true
   let system: string
-  if (agentTemplate.inheritParentSystemPrompt && parentSystemPrompt) {
+  if (manualCompaction && initialAgentState.systemPrompt) {
+    system = initialAgentState.systemPrompt
+  } else if (agentTemplate.inheritParentSystemPrompt && parentSystemPrompt) {
     system = parentSystemPrompt
   } else {
     const systemPrompt = await getAgentPrompt({
@@ -977,11 +954,13 @@ export async function loopAgentSteps(
         skills: fileContext.skills ?? {},
       })
 
-  const hasUserMessage = Boolean(
-    prompt ||
-    (spawnParams && Object.keys(spawnParams).length > 0) ||
-    (content && content.length > 0),
-  )
+  const hasUserMessage =
+    !manualCompaction &&
+    Boolean(
+      prompt ||
+      (spawnParams && Object.keys(spawnParams).length > 0) ||
+      (content && content.length > 0),
+    )
 
   const initialMessages = buildArray<Message>(
     ...initialAgentState.messageHistory,
@@ -1020,11 +999,14 @@ export async function loopAgentSteps(
   )
 
   // Convert tools to a serializable format for context-pruner token counting
-  const toolDefinitions = mapValues(tools, (tool) => ({
-    description:
-      typeof tool.description === 'string' ? tool.description : undefined,
-    inputSchema: tool.inputSchema as {},
-  }))
+  const toolDefinitions =
+    manualCompaction && initialAgentState.toolDefinitions
+      ? initialAgentState.toolDefinitions
+      : mapValues(tools, (tool) => ({
+          description:
+            typeof tool.description === 'string' ? tool.description : undefined,
+          inputSchema: tool.inputSchema as {},
+        }))
 
   const additionalToolDefinitionsWithCache = async () => {
     if (!cachedAdditionalToolDefinitions) {
@@ -1145,53 +1127,98 @@ export async function loopAgentSteps(
       // only need an estimate.
       currentAgentState.contextTokenCount = estimateContextTokensLocally()
 
-      // Mechanical compaction: no model call, so it costs nothing but the
-      // prompt-cache break that rewriting the history forces anyway. The
-      // budget is sized to the model in use, including fixed request overhead.
-      // Preserve the fresh tool exchange; only older history becomes a summary.
-      //
-      // Cache expiry fires once per turn. Size-triggered compaction can fire
-      // again after any tool batch, so its output must fit without erasing the
-      // results the model has not had a chance to consume yet.
-      if (agentTemplate.compactContext) {
-        const compacted = maybeCompactHistory({
-          // The option object is exactly the tunable subset, so it forwards
-          // whole. Spread first: the fields below are not the agent's to set.
-          ...(typeof agentTemplate.compactContext === 'object'
+      if (
+        (agentTemplate.compactContext && !shouldEndTurn) ||
+        manualCompaction
+      ) {
+        const policy =
+          typeof agentTemplate.compactContext === 'object'
             ? agentTemplate.compactContext
-            : {}),
-          messages: currentAgentState.messageHistory,
-          contextTokenCount: currentAgentState.contextTokenCount,
-          fixedTokenCount:
-            countTokens(system) +
-            countTokensJson(toolsForTokenCount) +
-            (stepPrompt
-              ? countTokensMessages([userMessage({ content: stepPrompt })])
-              : 0),
-          maxContextLength:
-            (typeof agentTemplate.compactContext === 'object'
-              ? agentTemplate.compactContext.maxContextLength
-              : undefined) ?? contextPrunerBudgetForModel(agentTemplate.model),
-          logger,
-          runId,
-          onCompaction: (trigger) => {
-            if (initialAgentState.parentId) return
-            params.onCompaction?.({
-              trigger,
-              thresholdTokens:
-                (typeof agentTemplate.compactContext === 'object'
-                  ? agentTemplate.compactContext.maxContextLength
-                  : undefined) ??
-                contextPrunerBudgetForModel(agentTemplate.model),
-            })
-          },
-        })
-        if (compacted) {
-          currentAgentState.messageHistory = compacted
-          currentAgentState.contextTokenCount =
-            countTokensMessages(compacted) +
-            countTokens(system) +
-            countTokensJson(toolsForTokenCount)
+            : {}
+        const maxContextLength =
+          policy.maxContextLength ??
+          contextPrunerBudgetForModel(agentTemplate.model)
+        const thresholdTokens = modelCompactionThreshold(maxContextLength)
+        const trigger = manualCompaction
+          ? 'manual'
+          : evaluateCompactionTrigger({
+              ...policy,
+              messages: currentAgentState.messageHistory,
+              contextTokenCount: currentAgentState.contextTokenCount,
+              maxContextLength: thresholdTokens,
+            }).trigger
+        if (trigger) {
+          const before = currentAgentState.directCreditsUsed
+          const started = Date.now()
+          const compacted = await compactWithModel({
+            messages: currentAgentState.messageHistory,
+            system,
+            maxContextLength,
+            fixedTokenCount:
+              countTokens(system) +
+              countTokensJson(toolsForTokenCount) +
+              (stepPrompt
+                ? countTokensMessages([userMessage({ content: stepPrompt })])
+                : 0),
+            signal,
+            stream: (messages, maxOutputTokens) =>
+              getAgentStreamFromTemplate({
+                ...params,
+                agentId: agentType,
+                template: agentTemplate,
+                runId,
+                messages,
+                tools: compactionTools,
+                toolChoice: 'required',
+                maxOutputTokens,
+                onCostCalculated: async (credits) => {
+                  currentAgentState.creditsUsed += credits
+                  currentAgentState.directCreditsUsed += credits
+                },
+                // Compaction usage is spend, not the next root request's context.
+                onUsageReceived: (usage) =>
+                  params.onAgentUsageReceived?.({
+                    ...usage,
+                    isRoot: false,
+                    agentId: currentAgentState.agentId,
+                  }),
+                onUsageIncomplete: params.onAgentUsageIncomplete,
+              }),
+          })
+          await addAgentStep({
+            ...params,
+            agentRunId: runId,
+            stepNumber: totalSteps,
+            credits: currentAgentState.directCreditsUsed - before,
+            childRunIds: [],
+            messageId: null,
+            status: 'completed',
+            startTime,
+          })
+          if (compacted) {
+            currentAgentState.messageHistory = compacted.messages
+            currentAgentState.contextTokenCount = compacted.postTokens
+            if (!initialAgentState.parentId)
+              params.onCompaction?.({
+                trigger,
+                thresholdTokens,
+                summary: compacted.summary,
+                preTokens: compacted.preTokens,
+                postTokens: compacted.postTokens,
+                durationMs: Date.now() - started,
+              })
+          }
+          // A manual request is a maintenance operation, never a coding turn.
+          if (manualCompaction) break
+          if (
+            !compacted &&
+            currentAgentState.contextTokenCount > maxContextLength
+          ) {
+            throw new Error(
+              'Compaction did not reduce the context enough. History has been preserved.',
+            )
+          }
+          totalSteps++
         }
       }
 
@@ -1361,7 +1388,9 @@ export async function loopAgentSteps(
 
     return {
       agentState: currentAgentState,
-      output: getAgentOutput(currentAgentState, agentTemplate),
+      output: manualCompaction
+        ? { type: 'lastMessage', value: [] }
+        : getAgentOutput(currentAgentState, agentTemplate),
     }
   } catch (error) {
     // Handle user-initiated aborts separately - don't log as errors
