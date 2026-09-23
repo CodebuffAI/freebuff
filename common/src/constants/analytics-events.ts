@@ -216,6 +216,8 @@ export enum AnalyticsEvent {
   ADVERTISER_AGREEMENT_ACCEPTED = 'advertiser.agreement_accepted',
   /** A step of the guided setup (CampaignSetupProgress) was shown. */
   ADVERTISER_ONBOARDING_STEP_VIEWED = 'advertiser.onboarding_step_viewed',
+  /** Guided setup could not draft a campaign from the advertiser's website. */
+  ADVERTISER_CAMPAIGN_PREFILL_FAILED = 'advertiser.campaign_prefill_failed',
   ADVERTISER_CAMPAIGN_TYPE_SELECTED = 'advertiser.campaign_type_selected',
   ADVERTISER_BUILDER_OPENED = 'advertiser.builder_opened',
   ADVERTISER_BUILDER_SECTION_TOUCHED = 'advertiser.builder_section_touched',
