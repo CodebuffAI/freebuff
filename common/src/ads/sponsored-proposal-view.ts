@@ -478,39 +478,39 @@ export function sponsoredProposalViewModel(
     row.acceptance_criteria_sha256 && ctaStates.includes(row.state)
       ? [{ kind: 'verify-again', label: 'Verify again' }]
       : []
-  const verification = row.latest_verification
-    ? {
-        userFacing: row.latest_verification.user_facing,
-        label:
-          VERIFICATION_USER_FACING_LABEL[row.latest_verification.user_facing] ??
-          VERIFICATION_USER_FACING_LABEL.couldnt_verify,
-        overall: row.latest_verification.overall,
-        stale: row.latest_verification.stale,
-        completedAt: row.latest_verification.completed_at ?? null,
-        missing: row.latest_verification.missing ?? [],
-        canRecheck: Boolean(row.acceptance_criteria_sha256),
-      }
-    : row.acceptance_criteria_sha256 && ctaStates.includes(row.state)
-      ? {
-          userFacing: 'pending',
-          label: VERIFICATION_USER_FACING_LABEL.pending,
-          overall: 'inconclusive',
-          stale: false,
-          completedAt: null,
-          missing: ['Verification has not finished.'],
-          canRecheck: true,
-        }
-      : row.acceptance_criteria_sha256
-        ? null
+  // No frozen contract means the campaign set no success criteria: nothing
+  // was checked, so there is no verdict to show. Labelling it "Couldn't
+  // verify" read as a check the run had failed. A `latest_verification` on
+  // such a row is only the reducer's no-contract answer (Desktop reports
+  // after every committed run, and the contract and its hash are frozen
+  // together at Accept), so it is withheld too. "Couldn't verify" stays for
+  // a run WITH a contract whose check came back inconclusive; the advertiser
+  // rollups still count contract-less runs as no-criteria.
+  const verification: SponsoredVerificationPanel | null =
+    !row.acceptance_criteria_sha256
+      ? null
+      : row.latest_verification
+        ? {
+            userFacing: row.latest_verification.user_facing,
+            label:
+              VERIFICATION_USER_FACING_LABEL[
+                row.latest_verification.user_facing
+              ] ?? VERIFICATION_USER_FACING_LABEL.couldnt_verify,
+            overall: row.latest_verification.overall,
+            stale: row.latest_verification.stale,
+            completedAt: row.latest_verification.completed_at ?? null,
+            missing: row.latest_verification.missing ?? [],
+            canRecheck: true,
+          }
         : ctaStates.includes(row.state)
           ? {
-              userFacing: 'couldnt_verify',
-              label: VERIFICATION_USER_FACING_LABEL.couldnt_verify,
+              userFacing: 'pending',
+              label: VERIFICATION_USER_FACING_LABEL.pending,
               overall: 'inconclusive',
               stale: false,
               completedAt: null,
-              missing: ['This run has no frozen acceptance-criteria contract.'],
-              canRecheck: false,
+              missing: ['Verification has not finished.'],
+              canRecheck: true,
             }
           : null
 

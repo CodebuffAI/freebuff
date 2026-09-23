@@ -113,9 +113,13 @@ const VM_CHECKS = check('VM', [
   'execution completion exposes guidance without asserting activation',
   'setup is absent before code is ready and after failure',
   'missing or unsafe tracking links retain instructions without inventing a destination',
-  // VM-37..VM-38: independent acceptance-criteria verification (COD-597).
+  // VM-37..VM-39: independent acceptance-criteria verification (COD-597).
+  // VM-38 once asserted a "Couldn't verify" badge for a run with no rubric;
+  // that read as a failed check when there was nothing to check, so the same
+  // case now asserts no verdict at all.
   'frozen criteria expose verify-again and keep setup guidance unclaimed',
-  'a run with no rubric is explicitly not verifiable',
+  'a run with no rubric shows no verdict, even with a stored no-contract result',
+  "an inconclusive check against a frozen contract still says Couldn't verify",
 ])
 
 const R_CHECKS = check('R', [

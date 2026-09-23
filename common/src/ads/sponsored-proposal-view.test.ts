@@ -148,12 +148,58 @@ describe('setup handoff', () => {
     )
   })
 
-  test('VM-38 a run with no rubric is explicitly not verifiable', () => {
-    const model = view({ state: 'committed' })
-    expect(model.verification?.userFacing).toBe('couldnt_verify')
-    expect(model.verification?.canRecheck).toBe(false)
-    expect(model.verification?.missing[0]).toContain('no frozen')
-    expect(sponsoredProposalAction(model, 'verify-again')).toBeNull()
+  test('VM-38 a run with no rubric shows no verdict, even with a stored no-contract result', () => {
+    // A campaign with no success criteria had nothing to check. The panel is
+    // absent rather than "Couldn't verify", which reads as a failed check.
+    const noContractResult = {
+      attempt_id: 'p1:1',
+      sequence: 1,
+      overall: 'inconclusive',
+      user_facing: 'couldnt_verify',
+      stale: false,
+      missing: ['This run has no frozen acceptance-criteria contract.'],
+    }
+    for (const state of ALL_STATES) {
+      for (const latest_verification of [undefined, noContractResult]) {
+        const model = view({ state, latest_verification })
+        expect(model.verification).toBeNull()
+        expect(sponsoredProposalAction(model, 'verify-again')).toBeNull()
+      }
+    }
+    // The setup card is unaffected: it is instructions, not a verdict.
+    expect(view({ state: 'landed' }).setupGuide).not.toBeNull()
+  })
+
+  test('VM-39 an inconclusive check against a frozen contract still says Couldn\'t verify', () => {
+    const model = view({
+      state: 'landed',
+      acceptance_criteria_sha256: 'a'.repeat(64),
+      latest_verification: {
+        attempt_id: 'p1:2',
+        sequence: 2,
+        overall: 'inconclusive',
+        user_facing: 'couldnt_verify',
+        stale: false,
+        missing: ['The live service could not be reached.'],
+      },
+    })
+    expect(model.verification).toEqual({
+      userFacing: 'couldnt_verify',
+      label: "Couldn't verify",
+      overall: 'inconclusive',
+      stale: false,
+      completedAt: null,
+      missing: ['The live service could not be reached.'],
+      canRecheck: true,
+    })
+    expect(sponsoredProposalAction(model, 'verify-again')?.label).toBe(
+      'Verify again',
+    )
+    // And before the first attempt finishes, a contract run reads as pending.
+    expect(
+      view({ state: 'landed', acceptance_criteria_sha256: 'a'.repeat(64) })
+        .verification?.userFacing,
+    ).toBe('pending')
   })
 })
 
