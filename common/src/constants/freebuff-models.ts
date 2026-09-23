@@ -511,8 +511,16 @@ export const FREEBUFF_GEMINI_38_FLASH_MODEL_ID = 'google/gemini-3.8-flash'
  * The price ceiling Gemini 3.8 Flash routes under, in dollars per MILLION
  * tokens (OpenRouter's `provider.max_price` unit).
  *
- * Sits strictly BETWEEN the flex band ($0.375/$1.875) and the standard band
- * ($0.75/$3.75), and both halves of "strictly" are load-bearing:
+ * RAISED 2026-09-23 from {0.5, 2.5} (between flex and standard) to sit
+ * strictly between the STANDARD band ($0.75/$3.75) and priority
+ * ($1.35/$6.75): OpenRouter delisted AI Studio flex, the only endpoint under
+ * the old ceiling that was not the BYOK Vertex pair, and every request 404'd.
+ * The fence against priority is kept; the fence against standard is given up
+ * until flex returns (the order still tries flex first). The reasoning below
+ * describes the original flex-only fence.
+ *
+ * Originally strictly BETWEEN the flex band ($0.375/$1.875) and the standard
+ * band ($0.75/$3.75), and both halves of "strictly" were load-bearing:
  *
  *   - Strictly ABOVE flex. A ceiling equal to list is an outage: verified
  *     against the live API 2026-09-03, `max_price` of exactly
@@ -528,8 +536,8 @@ export const FREEBUFF_GEMINI_38_FLASH_MODEL_ID = 'google/gemini-3.8-flash'
  * this number.
  */
 export const FREEBUFF_GEMINI_38_FLASH_MAX_PRICE = {
-  prompt: 0.5,
-  completion: 2.5,
+  prompt: 0.8,
+  completion: 4.0,
 } as const
 /**
  * Kimi K3 (Eco), served by CrofAI. God-only on Freebuff Web, for testing.
