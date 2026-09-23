@@ -1094,7 +1094,7 @@ export const FREEBUFF_REWARD_SESSION_WINDOW_HOURS = 24
  * Restored on 2026-08-25. Between 2026-07-30 and that date the pool was
  * effectively unbounded: the old `FREEBUFF_GLM_V52_REFERRAL_CAP = 10` was
  * removed, so entitlement scaled 1:1 with qualified referrals up to
- * FREEBUFF_REFERRAL_SIGNUP_LIMIT (100), and a referral farm converted
+ * the then per-referrer signup limit (100), and a referral farm converted
  * directly into a hundred paid hours a day.
  *
  * IT IS A CEILING ON THE SUM, NOT ON THE REFERRAL TERM. Capping only the

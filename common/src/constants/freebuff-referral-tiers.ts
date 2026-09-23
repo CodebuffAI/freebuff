@@ -15,7 +15,8 @@
  * deploy watermark is globally disabled (prod_branding_injection_enabled =
  * false), so both perks were marketing for things users didn't get. What
  * remains in this file is the qualification machinery: GitHub account-age
- * bars, attribution windows, and anti-farming ceilings.
+ * bars, attribution windows, and the web/CLI anti-farming ceilings. The unified
+ * referral_v2 program has no per-referrer attribution cap.
  */
 
 /** Referred users must have a GitHub account at least this old for the
@@ -57,16 +58,6 @@ export const FREEBUFF_WEB_REFERRAL_LIMIT = 20
  * Shared by the unified referral_v2 redemption path and its clients.
  */
 export const REFERRAL_SIGNUP_WINDOW_DAYS = 30
-
-/**
- * Max attributed referrals (referral_v2 rows) a single referrer may accumulate.
- * Since the GLM reward was uncapped (2026-07-30) this is no longer a pure
- * anti-spam ceiling: GLM entitlement now scales 1:1 with qualified referrals,
- * so this limit IS the effective maximum (100 GLM sessions/day). The other
- * rewards are still capped at read time (the web tier ladder, the CLI bonus at
- * REFERRAL_CLI_DAILY_SESSION_BONUS_CAP), so for those it stays a formality.
- */
-export const FREEBUFF_REFERRAL_SIGNUP_LIMIT = 100
 
 /** Whether a GitHub account created at `githubCreatedAtMs` satisfies the
  *  referral age requirement at time `nowMs`. Months are computed on the

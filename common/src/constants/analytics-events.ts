@@ -259,8 +259,7 @@ export enum AnalyticsEvent {
   // via the server logger → Axiom `event` column).
   FREEBUFF_REFERRAL_REDEEMED = 'freebuff.referral.redeemed',
   // A redemption attempt that hit one of the one-shot eligibility guards
-  // (signup_too_old, user_banned, referrer_limit_reached, reverse_referral,
-  // self_referral). Deliberately EXCLUDES the two repeat-prone errors —
+  // (signup_too_old, user_banned, reverse_referral, self_referral). Deliberately EXCLUDES the two repeat-prone errors —
   // invalid_code (cookie intentionally kept for legacy codes) and
   // already_referred (cookie can outlive redemption on the /onboard RSC hop)
   // — which would otherwise re-fire on every <=10-min token mint; those log
