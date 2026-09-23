@@ -95,30 +95,68 @@ export function supabaseFoundationMode(
   return SUPABASE_FOUNDATION_MODES.find((mode) => mode === raw) ?? null
 }
 
+/**
+ * The stacks the reviewed Supabase foundation procedure runs on. THE ONE LIST:
+ * paid fulfillment (`supabaseFoundationCapabilityEligible`) and the paid
+ * invitation's serve gate both read it through `supabaseFoundationStackEligible`,
+ * so a billable invitation is never served for a stack fulfillment refuses.
+ * `unknown` and `unsupported` are deliberately absent.
+ */
+export const SUPABASE_FOUNDATION_RUNNABLE_FRAMEWORKS = [
+  'nextjs',
+  'react-vite',
+  'nodejs',
+] as const satisfies readonly SponsoredCapability['framework'][]
+
+export function supabaseFoundationFrameworkRunnable(
+  framework: string,
+): framework is (typeof SUPABASE_FOUNDATION_RUNNABLE_FRAMEWORKS)[number] {
+  return (
+    SUPABASE_FOUNDATION_RUNNABLE_FRAMEWORKS as readonly string[]
+  ).includes(framework)
+}
+
+/**
+ * The framework-and-surface half of foundation admission, per wave. It needs
+ * only facts a non-billable invitation capability also carries, so the paid
+ * serve gate applies exactly what fulfillment will. Git, head and containment
+ * are the other half, checked only on the sponsored capability.
+ */
+export function supabaseFoundationStackEligible(
+  stack: {
+    framework: string
+    surface: SponsoredCapability['execution']['surface']
+  },
+  rawMode: string | null | undefined,
+): boolean {
+  const mode = supabaseFoundationMode(rawMode)
+  if (!mode || !supabaseFoundationFrameworkRunnable(stack.framework))
+    return false
+  if (mode === 'foundation-mac')
+    return stack.surface === 'desktop_macos' && stack.framework === 'nextjs'
+  if (mode === 'foundation-desktop' || mode === 'foundation-backend-desktop')
+    return stack.surface.startsWith('desktop_')
+  return true
+}
+
 /** Each later wave includes the earlier wave; absent/legacy settings never opt in. */
 export function supabaseFoundationCapabilityEligible(
   capability: SponsoredCapability | null | undefined,
   rawMode: string | null | undefined,
 ): boolean {
-  const mode = supabaseFoundationMode(rawMode)
   if (
-    !mode ||
     !capability ||
     !capability.hasGitRepository ||
     !capability.hasCommittedHead ||
     capability.execution.status !== 'available' ||
-    capability.execution.reason !== undefined ||
-    capability.framework === 'unsupported' ||
-    capability.framework === 'unknown'
+    capability.execution.reason !== undefined
   )
     return false
-  if (mode === 'foundation-mac') {
-    return (
-      capability.execution.surface === 'desktop_macos' &&
-      capability.framework === 'nextjs'
-    )
-  }
-  if (mode === 'foundation-desktop' || mode === 'foundation-backend-desktop')
-    return capability.execution.surface.startsWith('desktop_')
-  return true
+  return supabaseFoundationStackEligible(
+    {
+      framework: capability.framework,
+      surface: capability.execution.surface,
+    },
+    rawMode,
+  )
 }

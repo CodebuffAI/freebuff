@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
   sponsoredCapabilitySchema,
+  SUPABASE_FOUNDATION_MODES,
+  SUPABASE_FOUNDATION_RUNNABLE_FRAMEWORKS,
   supabaseFoundationCapabilityEligible,
+  supabaseFoundationFrameworkRunnable,
+  supabaseFoundationStackEligible,
   type SponsoredCapability,
 } from './sponsored-capability'
 const capability: SponsoredCapability = {
@@ -115,5 +119,43 @@ describe('foundation execution admission', () => {
         execution: { surface: 'windows', status: 'available' },
       }).success,
     ).toBe(false)
+  })
+  test('the stack half is the serve gate: it agrees with full admission on every wave, framework and surface', () => {
+    const frameworks = sponsoredCapabilitySchema.shape.framework.options
+    const surfaces = ['desktop_macos', 'desktop_linux', 'cli_wsl'] as const
+    for (const mode of [...SUPABASE_FOUNDATION_MODES, 'on', undefined]) {
+      for (const framework of frameworks) {
+        for (const surface of surfaces) {
+          expect(
+            supabaseFoundationStackEligible({ framework, surface }, mode),
+          ).toBe(
+            supabaseFoundationCapabilityEligible(
+              {
+                ...capability,
+                framework,
+                execution: { surface, status: 'available' },
+              },
+              mode,
+            ),
+          )
+        }
+      }
+    }
+  })
+  test('unknown and unsupported frameworks are never runnable', () => {
+    expect([...SUPABASE_FOUNDATION_RUNNABLE_FRAMEWORKS]).toEqual([
+      'nextjs',
+      'react-vite',
+      'nodejs',
+    ])
+    for (const framework of ['unknown', 'unsupported', 'vue', '']) {
+      expect(supabaseFoundationFrameworkRunnable(framework)).toBe(false)
+      expect(
+        supabaseFoundationStackEligible(
+          { framework, surface: 'desktop_macos' },
+          'foundation-backend-desktop',
+        ),
+      ).toBe(false)
+    }
   })
 })
