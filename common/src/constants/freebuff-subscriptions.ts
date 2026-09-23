@@ -298,7 +298,7 @@ export function freebuffSubscriptionTierDisclaimers(
     // sentence would describe a restriction that does not exist.
     ...(tier.dailyPremiumSessions < tier.dailySessions
       ? [
-          `${tier.dailyPremiumSessions} of your ${tier.dailySessions} daily sessions can be GPT 5.6 Luna or GLM 5.3 Flash; the rest use DeepSeek V4 Flash or Kimi K3 Eco`,
+          `${tier.dailyPremiumSessions} of your ${tier.dailySessions} daily sessions can be GPT-6 Luna or GLM 5.3 Flash; the rest use DeepSeek V4.1 Flash or Kimi K3 Eco`,
         ]
       : []),
     // Says "weekly" and takes the length from the constant: the window widened

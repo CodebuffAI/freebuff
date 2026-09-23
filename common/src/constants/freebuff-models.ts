@@ -1894,10 +1894,10 @@ const SOLAR_PRO_4_MODEL = {
  *
  * PRICE: OpenRouter lists $0.05 in / $0.005 cached / $0.20 out per M with
  * `discount: 0.5`, i.e. a $0.10/$0.40 LIST card, and its BYOK
- * `upstream_inference_cost` is computed at that list card. No ledger override
- * exists for this row on purpose: the Pro 4 lesson is to date an override
- * only from Upstage's invoice, never from a banner, so until one is read the
- * ledger may overstate this model by the discount.
+ * `upstream_inference_cost` is computed at that list card. The OpenRouter
+ * lane records this row at the LOW END of that range, the discounted card
+ * (web/src/llm-api/openrouter-price-overrides.ts), by operator decision; a
+ * list-price invoice from Upstage would be the reason to add a phase there.
  *
  * Reasoning is OFF by default at Upstage (`default_enabled: false`) and the
  * row runs bare, as Pro 4 did.
