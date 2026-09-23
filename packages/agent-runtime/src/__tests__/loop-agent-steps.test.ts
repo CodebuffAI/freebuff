@@ -1408,6 +1408,56 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       }
     })
 
+    it('a session gate refusing a later step keeps every step that completed', async () => {
+      // Hosts resume a free-mode turn that lost its session from this state
+      // (Desktop checkpoints it; the CLI adopts it). If the refusal dropped the
+      // steps before it, "continue" after a session ended would start over.
+      const llmOnlyTemplate = { ...mockTemplate, handleSteps: undefined }
+      let calls = 0
+      loopAgentStepsBaseParams.promptAiSdkStream = async function* () {
+        calls++
+        if (calls === 1) {
+          yield { type: 'text' as const, text: 'Reading the schema first.\n\n' }
+          yield createToolCallChunk('read_files', { paths: ['schema.sql'] })
+          return promptSuccess('step-1')
+        }
+        throw new APICallError({
+          statusCode: 428,
+          message: 'Precondition Required',
+          url: 'https://api.codebuff.com/v1/chat/completions',
+          requestBodyValues: {},
+          responseBody: JSON.stringify({
+            error: 'waiting_room_required',
+            message: 'Your free session has ended.',
+          }),
+          isRetryable: false,
+        })
+      }
+
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        agentType: 'test-agent',
+        localAgentTemplates: { 'test-agent': llmOnlyTemplate },
+      })
+
+      expect(calls).toBe(2)
+      expect(result.output.type).toBe('error')
+      if (result.output.type === 'error') {
+        expect(result.output.error).toBe('waiting_room_required')
+        expect(result.output.statusCode).toBe(428)
+      }
+      const history = JSON.stringify(result.agentState.messageHistory)
+      expect(history).toContain('Reading the schema first.')
+      expect(history).toContain('schema.sql')
+      expect(
+        result.agentState.messageHistory.some((m) => m.role === 'tool'),
+      ).toBe(true)
+      // the host's snapshots read the SAME object, so they see the step too
+      expect(mockAgentState.messageHistory).toBe(
+        result.agentState.messageHistory,
+      )
+    })
+
     it('should unwrap retry errors to propagate underlying 409 gate errors', async () => {
       const llmOnlyTemplate = {
         ...mockTemplate,
