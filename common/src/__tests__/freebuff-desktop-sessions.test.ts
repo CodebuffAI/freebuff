@@ -4,7 +4,7 @@ import {
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
-  FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_MODELS,
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
   FREEBUFF_WEB_PREMIUM_MODEL_IDS,
@@ -33,7 +33,8 @@ describe('Freebuff Desktop session concurrency', () => {
   test('classifies models by tier and plan', () => {
     const cases = [
       [
-        `${FREEBUFF_GPT_5_6_LUNA_MODEL_ID}-20260709`,
+        // GPT-6 Luna since 2026-09-22, when it took 5.6's slot-bound entry.
+        `${FREEBUFF_GPT_6_LUNA_MODEL_ID}-20260922`,
         'full',
         false,
         'slot-bound',

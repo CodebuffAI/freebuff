@@ -5,6 +5,7 @@ import {
 import {
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_MIMO_V26_PRO_MODEL_ID,
   FREEBUFF_MUSE_SPARK_MODEL_IDS,
   freebuffModelIdMatches,
@@ -15,7 +16,8 @@ const FREEBUFF_DESKTOP_SLOT_BOUND_MODEL_IDS = [
   // Every quota-metered Desktop model must stay slot-bound until admit stamps
   // identify the tab; same-millisecond parallel admits otherwise pair
   // ambiguously when usage is finalized.
-  FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  // GPT-6 Luna, 2026-09-22, in 5.6's slot: quota-metered, so slot-bound.
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   // MiMo 2.6 Pro, the dearest row after Gemini and paid-only.
   FREEBUFF_MIMO_V26_PRO_MODEL_ID,

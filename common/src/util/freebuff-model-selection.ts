@@ -20,8 +20,16 @@ import { getFreebuffModelMeter } from './freebuff-session-pools'
 export function freebuffPlanRequired(
   modelId: string,
   hasPaidSubscription: boolean,
+  /** The session response's Freebucks block, when the caller has it. Its
+   *  `planRequiredModelIds` is the SERVER's per-viewer verdict and wins over
+   *  the static list: a US viewer opens FREEBUFF_US_OR_PAID_MODEL_IDS rows
+   *  with no plan, which no client can work out for itself. */
+  freebucks?: Pick<FreebuffFreebucksInfo, 'planRequiredModelIds'> | null,
 ): boolean {
-  return !hasPaidSubscription && isFreebuffSubscriptionProModelId(modelId)
+  if (hasPaidSubscription) return false
+  const serverVerdict = freebucks?.planRequiredModelIds
+  if (serverVerdict) return serverVerdict.includes(modelId)
+  return isFreebuffSubscriptionProModelId(modelId)
 }
 
 /** The locked row's short label, for a badge or a detail line. */

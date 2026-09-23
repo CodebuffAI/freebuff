@@ -11,7 +11,7 @@ import {
   FREEBUFF_REWARD_MODEL_ID,
   getFreebuffModelsForAccessTier,
   FREEBUFF_GLM_V52_MODEL_ID,
-  FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
   LIMITED_FREEBUFF_MODEL_ID,
 } from '@codebuff/common/constants/freebuff-models'
 import { freebuffOfferViolations } from '@codebuff/common/testing/freebuff-offer-invariants'
@@ -96,13 +96,13 @@ describe('freebuff rows the CLI offers', () => {
 
     expect(
       resolveFreebuffModelSelectionForSession(
-        FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+        FREEBUFF_GPT_6_LUNA_MODEL_ID,
         paidSession,
       ),
-    ).toBe(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)
+    ).toBe(FREEBUFF_GPT_6_LUNA_MODEL_ID)
     expect(
       resolveFreebuffModelSelectionForSession(
-        FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+        FREEBUFF_GPT_6_LUNA_MODEL_ID,
         unpaidSession,
       ),
     ).toBe(LIMITED_FREEBUFF_MODEL_ID)

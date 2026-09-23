@@ -187,7 +187,7 @@ describe('ordering', () => {
   test('equal prices break on name, so the order is stable', () => {
     const tied = [
       { id: 'solar', displayName: 'Solar Pro 4' },
-      { id: 'luna', displayName: 'GPT-5.6 Luna' },
+      { id: 'luna', displayName: 'GPT-6 Luna' },
     ]
     const prices = { solar: 20, luna: 20 }
     expect(

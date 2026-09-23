@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
+  FREEBUFF_MODELS,
   FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS,
   FREEBUFF_WEB_LIMITED_MODEL_IDS,
   LIMITED_FREEBUFF_MODEL_ID,
@@ -107,28 +109,29 @@ describe('paid plans at limited access', () => {
     }
   })
 
-  test('Luna is free at full access and plan-locked only at limited access', () => {
-    expect(FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS).not.toContain(
+  test('GPT-6 Luna is US-or-paid, and 5.6 is retired from the catalog', () => {
+    // 5.6's old shape (free at full access, plan-locked at limited) is gone
+    // with the row: it left FREEBUFF_MODELS on 2026-09-22.
+    expect(FREEBUFF_MODELS.map((m) => m.id)).not.toContain(
       FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+    )
+    // Its replacement is paid-only at every tier unless the viewer is in the
+    // US, which only the server can know — so the catalog lists it here.
+    expect(FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS).toContain(
+      FREEBUFF_GPT_6_LUNA_MODEL_ID,
     )
     expect(FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS).toContain(
-      FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+      FREEBUFF_GPT_6_LUNA_MODEL_ID,
     )
     expect(
       isFreebuffSessionModelAllowedForAccessTier(
-        FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
-        'full',
-      ),
-    ).toBe(true)
-    expect(
-      isFreebuffSessionModelAllowedForAccessTier(
-        FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+        FREEBUFF_GPT_6_LUNA_MODEL_ID,
         'limited',
       ),
     ).toBe(false)
     expect(
       isFreebuffSessionModelAllowedForAccessTier(
-        FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+        FREEBUFF_GPT_6_LUNA_MODEL_ID,
         'limited',
         true,
       ),

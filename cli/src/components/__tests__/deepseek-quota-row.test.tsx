@@ -7,7 +7,7 @@ import { describe, expect, test, beforeEach } from 'bun:test'
 
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
 } from '@codebuff/common/constants/freebuff-models'
 import {
   formatFreebuffRowQuota,
@@ -34,12 +34,12 @@ const quota = (
 
 describe('a section holding two pools', () => {
   const rows = [
-    FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+    FREEBUFF_GPT_6_LUNA_MODEL_ID,
     FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   ]
   const quotas = {
-    [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: quota(
-      FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+    [FREEBUFF_GPT_6_LUNA_MODEL_ID]: quota(
+      FREEBUFF_GPT_6_LUNA_MODEL_ID,
       'premium',
       'Premium',
       5,
@@ -87,10 +87,10 @@ describe('a section holding two pools', () => {
 
   test('nothing is singled out when every row shares a pool', () => {
     const onePool = {
-      [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: quotas[FREEBUFF_GPT_5_6_LUNA_MODEL_ID]!,
+      [FREEBUFF_GPT_6_LUNA_MODEL_ID]: quotas[FREEBUFF_GPT_6_LUNA_MODEL_ID]!,
     }
     const { header, perModel } = getFreebuffSectionQuotas(
-      [FREEBUFF_GPT_5_6_LUNA_MODEL_ID],
+      [FREEBUFF_GPT_6_LUNA_MODEL_ID],
       onePool,
     )
     expect(header?.pool).toBe('premium')
@@ -101,8 +101,8 @@ describe('a section holding two pools', () => {
     // One bucket, header from the first row, nothing inline — a new client
     // against an old server must not start annotating rows at random.
     const legacy = {
-      [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: {
-        ...quotas[FREEBUFF_GPT_5_6_LUNA_MODEL_ID]!,
+      [FREEBUFF_GPT_6_LUNA_MODEL_ID]: {
+        ...quotas[FREEBUFF_GPT_6_LUNA_MODEL_ID]!,
         pool: undefined,
         poolLabel: undefined,
       },
@@ -113,7 +113,7 @@ describe('a section holding two pools', () => {
       },
     }
     const { header, perModel } = getFreebuffSectionQuotas(rows, legacy)
-    expect(header?.model).toBe(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)
+    expect(header?.model).toBe(FREEBUFF_GPT_6_LUNA_MODEL_ID)
     expect(perModel).toEqual({})
   })
 

@@ -3,6 +3,7 @@ import {
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS,
   FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
   getFreebuffWebModel,
@@ -57,7 +58,10 @@ export const FREEBUFF_SUBSCRIPTION_PREMIUM_MODEL_IDS: readonly string[] =
     // users. It remains in this subscription-only classification because that
     // list controls the plan's daily sub-cap, not free-tier entitlement.
     FREEBUFF_GLM_V53_FLASH_MODEL_ID,
-    FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+    // GPT-6 Luna replaced 5.6 here on 2026-09-22. Priced at 20 like the row it
+    // replaces, so a subscriber spending every daily session on it is exactly
+    // what this sub-cap exists to bound.
+    FREEBUFF_GPT_6_LUNA_MODEL_ID,
     // Gemini 3.8 Flash is the dearest row in the catalog per message, so it
     // belongs in the sub-capped half for exactly the reason this list exists:
     // without the cap, a subscriber spending every daily session here would

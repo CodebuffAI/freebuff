@@ -292,6 +292,20 @@ export interface FreebuffFreebucksInfo {
       expiresAt: string
     }
   }
+  /**
+   * Rows THIS viewer must buy a plan to open, decided by the server.
+   *
+   * On the wire for the reason `upgrade` is: the decision turns on the
+   * viewer's resolved COUNTRY (FREEBUFF_US_OR_PAID_MODEL_IDS — US or paid),
+   * and no client is told its country on a full-access session. A client
+   * deciding this for itself would be reading its own belief.
+   *
+   * Absent (an older server, or a viewer no row is gated for) means "fall back
+   * to the static paid-only list", which is what every client did before
+   * 2026-09-22 — so an old client simply keeps drawing Gemini and MiMo 2.6 Pro
+   * locked and never learns about the country half.
+   */
+  planRequiredModelIds?: readonly string[]
   /** Copy resolved with the price, overriding the static model tagline.
    *  A client that renders `peak` as a badge should ignore the entry for a
    *  model in `peak.modelIds` — that entry is the same fact as prose, kept

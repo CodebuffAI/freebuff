@@ -362,6 +362,61 @@ export const FREEBUFF_GPT_5_6_LUNA_MAX_PRICE = {
 } as const
 /** Reasoning effort every Luna turn runs at. */
 export const FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT = 'high' as const
+
+/**
+ * GPT-6 Luna (OpenAI), served through OpenRouter. Replaces GPT-5.6 Luna on
+ * 2026-09-22.
+ *
+ * Its own wire id, not a swap under 5.6's: this is a different model on a
+ * different rate card, and 5.6 keeps serving the sessions already admitted on
+ * it (see FREEBUFF_GPT_5_6_LUNA_MODEL_ID).
+ *
+ * NOTE the lane change that comes with it. 5.6 runs Cheaper Inference ->
+ * Novita -> OpenRouter; NEITHER of the cheap lanes carries a gpt-6 slug
+ * (probed 2026-09-22: CI, Novita, Infron, Merge, Luminal and CrofAI all stop
+ * at 5.6), so this row is OpenRouter-only and the cascade does not apply.
+ */
+export const FREEBUFF_GPT_6_LUNA_MODEL_ID = 'openai/gpt-6-luna'
+/**
+ * Endpoint order for GPT-6 Luna: OpenAI's FLEX tier first, standard behind it.
+ *
+ * Flex is exactly half of standard on every term ($0.05/$0.25/$0.005 against
+ * $0.10/$0.50/$0.010) and — measured 2026-09-22 at 23:34Z, a busy hour, over
+ * 260 requests — is not meaningfully slower: sustained 2 req/s for 60s gave
+ * TTFT p50 2115ms against standard's 2149ms with zero errors on either, 60
+ * simultaneous requests gave p50 3823ms against 3939ms, and flex was FASTER on
+ * a 150k-token prompt and on output throughput (123 vs 113 tok/s). Prompt
+ * caching works on flex and is what makes the row cheap: a warm 40k prefix
+ * billed $0.000204 against $0.002503 cold, 40,022 of 40,025 tokens cached.
+ *
+ * Standard is the backup rather than the primary because OpenAI documents flex
+ * as best-effort capacity (429 `resource_unavailable`, more 408s). None
+ * reproduced in probing, but the fallback costs nothing while flex is healthy
+ * and is what keeps a capacity refusal from becoming a dead turn. It is a
+ * COST REGRESSION when used — 1.21x today's 5.6 Luna bill against flex's 0.60x
+ * — so a sustained rise in standard-tier share is a signal, not noise.
+ */
+export const FREEBUFF_GPT_6_LUNA_UPSTREAM_ORDER = [
+  'openai/flex',
+  'openai',
+] as const
+/**
+ * Price ceiling for GPT-6 Luna, USD per million. Same fence as every other
+ * OpenRouter row: OpenRouter REFUSES to route above it rather than serving and
+ * billing, so a reprice surfaces as a loud error instead of an invoice.
+ *
+ * $0.15/$0.75 sits strictly above standard ($0.10/$0.50) and above Bedrock
+ * ($0.11/$0.55), which stays reachable as a third rung, and strictly below
+ * OpenAI's `fast` tier ($0.20/$1.00), which is the band this fences out. It
+ * must stay ABOVE list on both terms: a ceiling equal to list 404s every
+ * request (verified on 5.6 — see FREEBUFF_GPT_5_6_LUNA_MAX_PRICE).
+ */
+export const FREEBUFF_GPT_6_LUNA_MAX_PRICE = {
+  prompt: 0.15,
+  completion: 0.75,
+} as const
+/** Reasoning effort every GPT-6 Luna turn runs at, as on 5.6. */
+export const FREEBUFF_GPT_6_LUNA_REASONING_EFFORT = 'high' as const
 /** Solar Pro 4 (Upstage), served through OpenRouter and constrained to Upstage
  *  by `applyOpenRouterProviderRouting`. Context 524,288, text in / text out,
  *  using Upstage's non-ZDR endpoint for provider-side debugging.
@@ -1156,6 +1211,7 @@ export const FREEBUFF_GEMINI_THINKER_PARENT_MODELS = new Set<string>([
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   FREEBUFF_MINIMAX_M3_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
 ])
 
 export function canFreebuffModelSpawnGeminiThinker(modelId: string): boolean {
@@ -1209,6 +1265,8 @@ export const FREEBUFF_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   // summarize rewrites history from the front and throws away the prompt cache
   // with it.
   [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 1_000_000,
+  // GPT-6 Luna publishes the same 1,050,000; entered low for the same reason.
+  [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 1_000_000,
   // Novita publishes 372k for the `-es` route (their /v1/models, 2026-08-21),
   // far below Luna's own 1M — it is a Codex session, not the Luna API model.
   // Sized from what the provider states rather than inherited from the name.
@@ -1454,7 +1512,11 @@ const DEEPSEEK_V4_FLASH_MODEL = {
   // bills the 2x card, because DeepSeek still charges it. What is removed is
   // only the decision to stop SERVING inside that window.
   availability: 'always',
-  unavailableFallback: FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  // REPOINTED off Luna 2026-09-22: GPT-6 Luna is gated to US-or-paid accounts,
+  // and a fallback that most users cannot open is not a fallback. GLM 5.3
+  // Flash is ungated and the cheapest row we serve. Inert while this row is
+  // `always`, like the pointer it replaces.
+  unavailableFallback: FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   warning: FREEBUFF_AI_TRAINING_NOTICE,
   dataUse: 'training',
   // UNLIMITED again as of 2026-08-24, reversing the 2026-08-18 metering. Flash
@@ -1701,6 +1763,39 @@ const GPT_5_6_LUNA_MODEL = {
   // dominate agent traffic, and dearer on fresh input and output (full table on
   // that constant). Steering on quality is honest; implying a settled price
   // difference in either direction would not be.
+} as const satisfies FreebuffModelOption
+
+const GPT_6_LUNA_MODEL = {
+  id: FREEBUFF_GPT_6_LUNA_MODEL_ID,
+  displayName: 'GPT-6 Luna',
+  // Inherits 5.6's tagline because it is the same slot in the catalog: the
+  // general-purpose premium row, no training notice, native image input.
+  tagline: 'Strong all-around',
+  availability: 'always',
+  // OpenAI's API does not train on request data and the route carries
+  // data_collection: 'deny', so no AI-training notice and no trace storage
+  // (FREEBUFF_TRACED_MODEL_IDS keys off this field).
+  dataUse: 'service',
+  premium: true,
+  // OpenRouter reports text + image + file input.
+  multimodal: true,
+  reasoningEffort: FREEBUFF_GPT_6_LUNA_REASONING_EFFORT,
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: FREEBUFF_GPT_6_LUNA_REASONING_EFFORT,
+  // NEW because the row is new to every surface on 2026-09-22, and because a
+  // returning user needs to notice that the Luna they knew is a different
+  // model now.
+  isNew: true,
+  // BETA, and the badge is about the LANE rather than the model. This row is
+  // served on OpenAI's FLEX capacity, which is best-effort by design (OpenAI
+  // documents 429 `resource_unavailable` and more 408s under load). Measured
+  // 2026-09-22 over 260 requests in a busy hour it was no slower than the
+  // standard tier and returned no errors, and standard sits behind it as a
+  // backup — so the honest claim is "cheaper capacity that can be busy",
+  // which is what the badge and its tooltip say.
+  experimental: true,
+  taglineTooltip:
+    'Runs on OpenAI flex capacity: half the token price, the same speed in our measurements, and a standard-tier backup when flex is busy.',
 } as const satisfies FreebuffModelOption
 
 const SOLAR_PRO_4_MODEL = {
@@ -2075,7 +2170,11 @@ export const SUPPORTED_FREEBUFF_MODELS = [
   OX_ALPHA_MODEL,
   DEEPSEEK_V4_PRO_MODEL,
   MINIMAX_M3_MODEL,
+  // 5.6 stays SUPPORTED after its 2026-09-22 retirement so the server still
+  // recognises the id: sessions admitted before the swap drain on it, and the
+  // released binaries that still hold it get a coercion instead of a refusal.
   GPT_5_6_LUNA_MODEL,
+  GPT_6_LUNA_MODEL,
   SOLAR_PRO_4_MODEL,
   GEMINI_38_FLASH_MODEL,
   MUSE_SPARK_13_CONTRIBUTOR_MODEL,
@@ -2160,7 +2259,10 @@ export const FREEBUFF_MODELS = [
   // only reason this line ever moves.
   GLM_V53_FLASH_MODEL,
   DEEPSEEK_V4_FLASH_MODEL,
-  GPT_5_6_LUNA_MODEL,
+  // GPT-6 LUNA TAKES 5.6'S SLOT (2026-09-22). Same position, same tagline,
+  // half the price on the flex lane; 5.6 left this list in the same change and
+  // is paused (FREEBUFF_PAUSED_FREE_MODEL_IDS).
+  GPT_6_LUNA_MODEL,
   ...(FREEBUFF_ENABLE_MIMO_MODELS_IN_UI
     ? [MIMO_V25_MODEL, MIMO_V26_PRO_MODEL]
     : []),
@@ -2290,6 +2392,19 @@ export function getFreebuffPerModelSessionSpendCap(
  * clients that need it are the ones already installed.
  */
 export const FREEBUFF_PAUSED_FREE_MODEL_IDS: readonly string[] = [
+  // GPT-5.6 Luna is NOT here, and that is deliberate. It was retired from
+  // every picker on 2026-09-22 (it left FREEBUFF_MODELS) and replaced by
+  // GPT-6 Luna, but it stays ADMISSIBLE:
+  //
+  //  - Sessions admitted before the swap drain on it, and its agents stay
+  //    bundled for them.
+  //  - Server-side machinery outside this package still resolves the id and
+  //    needs admission to succeed for it. Pausing it would turn those requests
+  //    into refusals; the reasoning is in web/ and in the internal docs, which
+  //    are not exported.
+  //
+  // This is the picker-only first stage of a retirement. Pausing is stage two
+  // and has a prerequisite recorded with that machinery, not here.
   // Muse Spark 1.3, withdrawn 2026-09-07: `404 model_not_found` on every key,
   // every attempt. Paused rather than deleted for the reason the whole list
   // exists — an id the server does not recognise can only be refused, and a
@@ -3174,8 +3289,49 @@ export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
     FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
     // MiMo 2.6 Pro, paid-only from 2026-09-21. Both rows are paid-only on
     // EVERY surface since that day (FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS).
+    //
+    // MiMo 2.6 Pro and GPT-6 Luna carry a US EXEMPTION from 2026-09-22: a
+    // viewer in the US opens them with no plan. They stay listed here because
+    // for everyone else the paywall is exactly this one — see
+    // FREEBUFF_US_OR_PAID_MODEL_IDS, which is the exemption, not a second gate.
     FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+    FREEBUFF_GPT_6_LUNA_MODEL_ID,
   ])
+
+/**
+ * Rows a viewer opens when they are IN THE US **or** hold a live plan.
+ * Everyone else sees them listed and locked, and admission refuses the start.
+ *
+ * The country half is resolved SERVER-SIDE from the authenticated request
+ * (`countryAccess.countryCode`, the same resolution the access tier uses), and
+ * never from anything a client sends — a client-chosen country is one an
+ * abusive client rotates. US is FREE_MODE_TIER_ONE_COUNTRIES.
+ *
+ * It fails CLOSED: a viewer whose country cannot be resolved is treated as
+ * non-US and sees the paywall, the direction every narrowing control here
+ * takes.
+ *
+ * No client can see the country this turns on, so the server ships the
+ * VERDICT per viewer on the session response
+ * (`FreebuffFreebucksInfo.planRequiredModelIds`) and the pickers draw their
+ * existing lock from it. Same shape as the first-tab discount, which also
+ * sends the decision rather than the geography.
+ */
+export const FREEBUFF_US_OR_PAID_MODEL_IDS: readonly string[] = Object.freeze([
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
+  FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+])
+
+export function isFreebuffUsOrPaidModelId(
+  id: string | null | undefined,
+): boolean {
+  return (
+    !!id &&
+    FREEBUFF_US_OR_PAID_MODEL_IDS.some((gated) =>
+      freebuffModelIdMatches(id, gated),
+    )
+  )
+}
 
 /**
  * Pro-only rows whose paywall is enforced on CLI and Desktop too, not only on
@@ -3226,7 +3382,7 @@ export function isFreebuffProOnlyCatalogModelId(id: string): boolean {
  */
 export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
   Object.freeze([
-    FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+    FREEBUFF_GPT_6_LUNA_MODEL_ID,
     // MiMo 2.6 Pro arrives through the spread below: it is paid-only at every
     // tier, which includes this one.
     ...FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
@@ -3497,7 +3653,10 @@ export function isFreebuffSessionModelAllowedForAccessTier(
 export const FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS: readonly string[] =
   Object.freeze([
     FREEBUFF_GLM_V53_FLASH_MODEL_ID,
-    FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+    // GPT-6 Luna replaced 5.6 here on 2026-09-22. 5.6 LEFT rather than
+    // lingering: a plan can only cover a model admission will actually open,
+    // and 5.6 is out of every picker.
+    FREEBUFF_GPT_6_LUNA_MODEL_ID,
     FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
     FREEBUFF_KIMI_K3_ECO_MODEL_ID,
     FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
@@ -3781,6 +3940,20 @@ export function isFreebuffGpt56LunaModelId(
   id: string | null | undefined,
 ): boolean {
   return freebuffModelIdMatches(id, FREEBUFF_GPT_5_6_LUNA_MODEL_ID)
+}
+
+/** Whether `id` is GPT-6 Luna, tolerating a dated snapshot suffix. Used by the
+ *  OpenRouter layer to apply the flex-first endpoint order and the price
+ *  ceiling (FREEBUFF_GPT_6_LUNA_UPSTREAM_ORDER / _MAX_PRICE).
+ *
+ *  Separate from isFreebuffGpt56LunaModelId and never prefix-matched on
+ *  `openai/gpt-`: 5.6 routes through the Cheaper Inference -> Novita cascade,
+ *  which cannot serve a gpt-6 slug at all, so one shared predicate would send
+ *  this row to a lane that 404s it. */
+export function isFreebuffGpt6LunaModelId(
+  id: string | null | undefined,
+): boolean {
+  return freebuffModelIdMatches(id, FREEBUFF_GPT_6_LUNA_MODEL_ID)
 }
 
 /**

@@ -62,6 +62,8 @@ End every response by calling the suggest_followups tool with exactly 3 followup
       // budget below lands on exactly 400k. Without this Luna took
       // DEFAULT_CONTEXT_WINDOW and got a 52k budget on a million-token model.
       'openai/gpt-5.6-luna': 1_000_000,
+      // GPT-6 Luna publishes the same 1,050,000; entered low like its peers.
+      'openai/gpt-6-luna': 1_000_000,
       'openai/gpt-5.6-luna-es': 372_000,
       'meta/muse-spark-1.2-contributor': 1_000_000,
       'google/gemini-3.8-flash': 1_000_000,

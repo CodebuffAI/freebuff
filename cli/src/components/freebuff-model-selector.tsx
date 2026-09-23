@@ -280,13 +280,6 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // than on anything it decides for itself.
   const subscriptionInfo = getSubscriptionInfo(session)
   const hasPaidSubscription = Boolean(subscriptionInfo?.tierId)
-  // A paid-only row (Gemini 3.8 Flash) on an account without a plan: drawn
-  // LOCKED rather than hidden, with no price, and Enter opens the plans page.
-  // The server refuses the admission anyway; this is what the picker shows.
-  const planRequired = useCallback(
-    (modelId: string) => freebuffPlanRequired(modelId, hasPaidSubscription),
-    [hasPaidSubscription],
-  )
   // The paid plan's own windows, rendered as a single muted line below the
   // catalog — the CLI counterpart of the web dropdown's plan panel. The same
   // shared summary drives Desktop and the web usage page, so all three name
@@ -301,6 +294,19 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // accounts it meters, so there is no client-side role check here that could
   // drift from what is actually charged.
   const freebucks = freebucksOf(session)
+  // A paid-only row on an account without a plan: drawn LOCKED rather than
+  // hidden, with no price, and Enter opens the plans page. The server refuses
+  // the admission anyway; this is only what the picker shows.
+  //
+  // `freebucks` carries the server's per-viewer verdict
+  // (`planRequiredModelIds`), which is what makes the US-or-paid rows lockable
+  // here at all: the CLI is never told its country. Declared after the
+  // balance it reads.
+  const planRequired = useCallback(
+    (modelId: string) =>
+      freebuffPlanRequired(modelId, hasPaidSubscription, freebucks),
+    [hasPaidSubscription, freebucks],
+  )
   const balanceUnavailable = freebucks === null
   // The plan the daily pool was sized from. `planId` is the server's own
   // verdict, so the name cannot disagree with the number beside it.

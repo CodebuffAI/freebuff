@@ -21,6 +21,8 @@ import {
   FREEBUFF_GPT_5_6_LUNA_ES_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MAX_PRICE,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
+  isFreebuffGpt6LunaModelId,
   FREEBUFF_GPT_5_6_LUNA_PROVIDER_ROUTE,
   FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT,
   FREEBUFF_KIMI_K3_ECO_MODEL_ID,
@@ -310,7 +312,7 @@ describe('freebuff model availability', () => {
     // (migrateSupersededFreebuffModelPreference) — a user who deliberately
     // chose another row would be moved off it at each launch.
     expect(
-      getFreebuffModelSupersededBy(FREEBUFF_GPT_5_6_LUNA_MODEL_ID, all),
+      getFreebuffModelSupersededBy(FREEBUFF_GPT_6_LUNA_MODEL_ID, all),
     ).toBeUndefined()
   })
 
@@ -1245,77 +1247,62 @@ describe('freebuff model availability', () => {
     )
   })
 
-  test('GPT-5.6 Luna is a premium model on every full-access surface', () => {
+  test('GPT-6 Luna is the premium Luna row, and 5.6 is retired', () => {
     // The wire id must stay OpenRouter's own slug: getChatCompletionsProvider
     // has no Luna branch, so it only reaches OpenRouter by falling through to
     // the default route with the slug intact.
-    expect(FREEBUFF_GPT_5_6_LUNA_MODEL_ID).toBe('openai/gpt-5.6-luna')
+    expect(FREEBUFF_GPT_6_LUNA_MODEL_ID).toBe('openai/gpt-6-luna')
 
-    // CLI/Desktop picker, Web/Cloud picker, and the session/chat layers.
-    expect(FREEBUFF_MODELS.map((model) => model.id)).toContain(
+    // CLI/Desktop picker, Web/Cloud picker, and the session layers.
+    for (const list of [
+      FREEBUFF_MODELS,
+      SUPPORTED_FREEBUFF_MODELS,
+      FREEBUFF_WEB_MODELS,
+      getFreebuffModelsForAccessTier('full'),
+    ]) {
+      expect(list.map((model) => model.id)).toContain(
+        FREEBUFF_GPT_6_LUNA_MODEL_ID,
+      )
+    }
+    expect(isFreebuffWebGodOnlyModelId(FREEBUFF_GPT_6_LUNA_MODEL_ID)).toBe(
+      false,
+    )
+    expect(isFreebuffWebSelectableModelId(FREEBUFF_GPT_6_LUNA_MODEL_ID)).toBe(
+      true,
+    )
+
+    // Metered by the SHARED daily premium pool, never a pool of its own or the
+    // unmetered standard class.
+    expect(isFreebuffPremiumModelId(FREEBUFF_GPT_6_LUNA_MODEL_ID)).toBe(true)
+    expect(isFreebuffWebPremiumModelId(FREEBUFF_GPT_6_LUNA_MODEL_ID)).toBe(true)
+    expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(
+      FREEBUFF_GPT_6_LUNA_MODEL_ID,
+    )
+    // Dated snapshots can't dodge the premium quota or the pinned routing.
+    expect(
+      isFreebuffPremiumModelId(`${FREEBUFF_GPT_6_LUNA_MODEL_ID}-20260922`),
+    ).toBe(true)
+    expect(
+      isFreebuffGpt6LunaModelId(`${FREEBUFF_GPT_6_LUNA_MODEL_ID}-20260922`),
+    ).toBe(true)
+    // ...and the two Luna predicates never answer for each other: 5.6 routes
+    // through the Cheaper Inference cascade, which cannot serve a gpt-6 slug.
+    expect(isFreebuffGpt56LunaModelId(FREEBUFF_GPT_6_LUNA_MODEL_ID)).toBe(false)
+    expect(isFreebuffGpt6LunaModelId(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)).toBe(
+      false,
+    )
+
+    // 5.6 is out of every picker but still RECOGNISED: draining sessions and
+    // server-side machinery outside this package both depend on that.
+    expect(FREEBUFF_MODELS.map((model) => model.id)).not.toContain(
       FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
     )
     expect(SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)).toContain(
       FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
     )
-    expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).toContain(
-      FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
-    )
-    expect(getFreebuffModelsForAccessTier('full').map((m) => m.id)).toContain(
-      FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
-    )
-    // Everyone on the tier can pick it — it is not god-only and not retired.
-    expect(isFreebuffWebGodOnlyModelId(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)).toBe(
+    expect(isFreebuffPausedFreeModelId(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)).toBe(
       false,
     )
-    expect(isFreebuffWebSelectableModelId(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)).toBe(
-      true,
-    )
-
-    // Metered by the SHARED daily premium pool on every surface, never a pool
-    // of its own or the unmetered standard class.
-    expect(isFreebuffPremiumModelId(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)).toBe(true)
-    expect(isFreebuffWebPremiumModelId(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)).toBe(
-      true,
-    )
-    expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(
-      FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
-    )
-    expect(isFreebuffRewardModelId(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)).toBe(false)
-    // Dated snapshots can't dodge the premium quota or the pinned routing.
-    expect(
-      isFreebuffPremiumModelId(`${FREEBUFF_GPT_5_6_LUNA_MODEL_ID}-20260709`),
-    ).toBe(true)
-    expect(
-      isFreebuffGpt56LunaModelId(`${FREEBUFF_GPT_5_6_LUNA_MODEL_ID}-20260709`),
-    ).toBe(true)
-    expect(isFreebuffGpt56LunaModelId(FREEBUFF_MIMO_V25_MODEL_ID)).toBe(false)
-
-    const model = getFreebuffWebModel(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)
-    expect(model.displayName).toBe('GPT-5.6 Luna')
-    // OpenAI's API does not train on request data, so no warning and no
-    // trace storage — and it accepts images.
-    expect(model.dataUse).toBe('service')
-    expect(model.warning).toBeUndefined()
-    expect(isFreebuffTracedModelId(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)).toBe(false)
-    expect(getFreebuffModelImageSupport(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)).toBe(
-      true,
-    )
-    // Cheap per token, so it is not one of the muted "costly premium" rows.
-    expect(
-      isFreebuffWebDeemphasizedModelId(FREEBUFF_GPT_5_6_LUNA_MODEL_ID),
-    ).toBe(false)
-
-    // Limited regions stay geo-gated to the two limited-tier models.
-    expect(
-      isFreebuffWebModelAllowedForLimitedTier(FREEBUFF_GPT_5_6_LUNA_MODEL_ID),
-    ).toBe(false)
-    expect(
-      isFreebuffModelAllowedForAccessTier(
-        FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
-        'limited',
-      ),
-    ).toBe(false)
   })
 
   test('GPT-5.6 Luna carries its pinned OpenAI route, price ceiling, and effort', () => {
@@ -1602,22 +1589,22 @@ describe('freebuff model availability', () => {
     ).toBeUndefined()
   })
 
-  test('does not steer users off GPT-5.6 Luna, which is now the recommendation', () => {
+  test('does not steer users off the Luna row, which is now the recommendation', () => {
     // Luna pointed at Flash until 2026-08-19. It cannot any more: a model
     // cannot both BE the recommended default and carry a one-click switch away
     // from itself, and migrateSupersededFreebuffModelPreference would have
     // rewritten every saved Luna pick onto a DeepSeek row metered one a day.
     const all = FREEBUFF_MODELS.map((model) => model.id)
     expect(
-      getFreebuffModelSupersededBy(FREEBUFF_GPT_5_6_LUNA_MODEL_ID, all),
+      getFreebuffModelSupersededBy(FREEBUFF_GPT_6_LUNA_MODEL_ID, all),
     ).toBeUndefined()
     expect(
       migrateSupersededFreebuffModelPreference(
-        FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+        FREEBUFF_GPT_6_LUNA_MODEL_ID,
         all,
       ),
     ).toBeNull()
-    expect(all).toContain(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)
+    expect(all).toContain(FREEBUFF_GPT_6_LUNA_MODEL_ID)
     expect(
       isFreebuffWebDeemphasizedModelId(FREEBUFF_GPT_5_6_LUNA_MODEL_ID),
     ).toBe(false)
@@ -1680,6 +1667,8 @@ describe('freebuff model availability', () => {
       // arrived the same day; both names carry the version.
       FREEBUFF_MIMO_V25_MODEL_ID,
       FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+      // GPT-6 Luna arrived 2026-09-22; its wire id names the version.
+      FREEBUFF_GPT_6_LUNA_MODEL_ID,
     ]
     expect(
       catalog.filter((model) => model.isNew && !undatedNew.includes(model.id)),

@@ -29,7 +29,7 @@ import {
   FREEBUFF_FABLE_5_1_MODEL_ID,
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
-  FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_MINIMAX_M3_MODEL_ID,
   FREEBUFF_MODELS,
   getFreebuffModelSupersededBy,
@@ -317,7 +317,7 @@ describe('FreebuffModelSelector tier layout', () => {
     const setup = await renderSelector()
     const frame = setup.captureCharFrame()
     const premiumHeaderIndex = frame.indexOf('PREMIUM')
-    const recommendedModelIndex = frame.indexOf('GPT-5.6 Luna')
+    const recommendedModelIndex = frame.indexOf('GPT-6 Luna')
     const selectedModelIndex = frame.indexOf('Solar Pro 4')
     const unlimitedHeaderIndex = frame.indexOf('UNLIMITED')
 
@@ -327,7 +327,7 @@ describe('FreebuffModelSelector tier layout', () => {
     expect(selectedModelIndex).toBeGreaterThan(unlimitedHeaderIndex)
     // The cursor sits on the SAVED pick, not on the recommendation.
     expect(frame).toContain('› Solar Pro 4')
-    expect(frame).not.toContain('› GPT-5.6 Luna')
+    expect(frame).not.toContain('› GPT-6 Luna')
   })
 
   /**
@@ -406,8 +406,8 @@ describe('FreebuffModelSelector tier layout', () => {
       status: 'none',
       accessTier: 'full',
       rateLimitsByModel: {
-        [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: {
-          model: FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+        [FREEBUFF_GPT_6_LUNA_MODEL_ID]: {
+          model: FREEBUFF_GPT_6_LUNA_MODEL_ID,
           limit: 6,
           period: 'pacific_day',
           resetTimeZone: 'America/Los_Angeles',
@@ -457,8 +457,8 @@ describe('FreebuffModelSelector tier layout', () => {
       status: 'none',
       accessTier: 'full',
       rateLimitsByModel: {
-        [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: {
-          model: FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+        [FREEBUFF_GPT_6_LUNA_MODEL_ID]: {
+          model: FREEBUFF_GPT_6_LUNA_MODEL_ID,
           limit: 6,
           period: 'pacific_day',
           resetTimeZone: 'America/Los_Angeles',
@@ -470,7 +470,7 @@ describe('FreebuffModelSelector tier layout', () => {
     })
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)
+      .setSelectedModel(FREEBUFF_GPT_6_LUNA_MODEL_ID)
 
     const setup = await renderSelector()
     await Promise.resolve()
@@ -497,8 +497,8 @@ describe('FreebuffModelSelector tier layout', () => {
       status: 'none',
       accessTier: 'full',
       rateLimitsByModel: {
-        [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: {
-          model: FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+        [FREEBUFF_GPT_6_LUNA_MODEL_ID]: {
+          model: FREEBUFF_GPT_6_LUNA_MODEL_ID,
           limit: 6,
           period: 'pacific_day',
           resetTimeZone: 'America/Los_Angeles',
@@ -558,7 +558,7 @@ describe('FreebuffModelSelector tier layout', () => {
     }
     // The pre-transition pick was a full-access model, so this is the path
     // where a full-access-only row would linger.
-    expect(frame).not.toContain('GPT-5.6 Luna')
+    expect(frame).not.toContain('GPT-6 Luna')
     expect(frame).not.toContain('PREMIUM')
     expect(frame).not.toContain('UNLIMITED')
   })
@@ -612,7 +612,7 @@ describe('FreebuffModelSelector tier layout', () => {
 
     // Natively multimodal: the badge is a real capability claim.
     expect(rowOf(frame, 'MiMo 2.6 Flash')).toContain('Images')
-    expect(rowOf(frame, 'GPT-5.6 Luna')).toContain('Images')
+    expect(rowOf(frame, 'GPT-6 Luna')).toContain('Images')
     expect(rowOf(frame, 'MiMo 2.6 Flash')).toContain('Images')
     // Text-only. They still accept a pasted image (read server-side as a
     // description), but badging them made the label mean nothing — and the
@@ -636,7 +636,7 @@ describe('FreebuffModelSelector tier layout', () => {
     const frame = (await renderSelector()).captureCharFrame()
 
     expect(rowOf(frame, 'Smart & Fast')).toContain('Reasoning: high')
-    const lunaRow = rowOf(frame, 'GPT-5.6 Luna')
+    const lunaRow = rowOf(frame, 'GPT-6 Luna')
     expect(lunaRow).toContain('Strong all-around')
     expect(lunaRow).toContain('Reasoning: high')
     expect(rowOf(frame, 'MiniMax M3')).not.toContain('Reasoning')
@@ -1282,10 +1282,15 @@ describe('a row the balance cannot cover', () => {
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'full',
-      freebucks: freebucksFixture(10, {
-        [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 20,
-        [FREEBUFF_MIMO_V25_MODEL_ID]: 10,
-      }),
+      freebucks: {
+        // The Freebucks wall, not the plan wall: this row must be affordable-
+        // in-principle for the balance message to be what the press explains.
+        planRequiredModelIds: [],
+        ...freebucksFixture(10, {
+          [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 20,
+          [FREEBUFF_MIMO_V25_MODEL_ID]: 10,
+        }),
+      },
     })
     useFreebuffModelStore
       .getState()
@@ -1297,11 +1302,11 @@ describe('a row the balance cannot cover', () => {
     await setup.renderOnce()
     // Walk the focus onto Luna rather than assuming where it lands.
     for (let i = 0; i < 12; i++) {
-      if (setup.captureCharFrame().includes('› GPT-5.6 Luna')) break
+      if (setup.captureCharFrame().includes('› GPT-6 Luna')) break
       flushSync(() => setup.mockInput.pressKey('ARROW_DOWN'))
       await setup.renderOnce()
     }
-    expect(setup.captureCharFrame()).toContain('› GPT-5.6 Luna')
+    expect(setup.captureCharFrame()).toContain('› GPT-6 Luna')
     return { setup, requested }
   }
 
@@ -1341,14 +1346,21 @@ describe('a row the balance cannot cover', () => {
     flushSync(() => useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'full',
-      freebucks: applyFirstTabDiscount(freebucksFixture(25, {
-        [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 20,
-        [FREEBUFF_MIMO_V25_MODEL_ID]: 10,
-      }), { amount: 10, available: true }),
+      freebucks: {
+        // Same viewer as the fixture above: nothing plan-locked for them.
+        planRequiredModelIds: [],
+        ...applyFirstTabDiscount(
+          freebucksFixture(25, {
+            [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 20,
+            [FREEBUFF_MIMO_V25_MODEL_ID]: 10,
+          }),
+          { amount: 10, available: true },
+        ),
+      },
     }))
     await setup.renderOnce()
     const frame = setup.captureCharFrame()
-    expect(frame).toContain('› GPT-5.6 Luna')
+    expect(frame).toContain('› GPT-6 Luna')
     expect(frame).toMatch(/│ +10 Freebucks\/hr/)
     expect(frame).not.toContain(`Not enough ${FREEBUCKS_LABEL}`)
     expect(frame).not.toMatch(/first-tab discount|Prices shown include the discount/)
@@ -1356,7 +1368,7 @@ describe('a row the balance cannot cover', () => {
 
     flushSync(() => setup.mockInput.pressEnter())
     await setup.renderOnce()
-    expect(requested).toEqual([FREEBUFF_GPT_5_6_LUNA_MODEL_ID])
+    expect(requested).toEqual([FREEBUFF_GPT_6_LUNA_MODEL_ID])
   })
 
   test('a row closed for the hour stays inert — no wall to raise', async () => {
@@ -1364,7 +1376,7 @@ describe('a row the balance cannot cover', () => {
       status: 'none',
       accessTier: 'full',
       freebucks: freebucksFixture(10, {
-        [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 20,
+        [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 20,
       }),
     })
     useFreebuffModelStore
@@ -1386,21 +1398,21 @@ test.each([false, true])(
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'limited',
-      freebucks: freebucksFixture(25, { [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 20 }),
+      freebucks: freebucksFixture(25, { [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 20 }),
       ...(paid ? { subscription: { tierId: 'starter', tiers: [] } } : {}),
     })
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)
+      .setSelectedModel(FREEBUFF_GPT_6_LUNA_MODEL_ID)
     const setup = await renderSelector()
     await setup.renderOnce()
     // Unpaid at limited access repairs onto the LIMITED hero, which since
     // 2026-09-05 is not the full-access default.
     expect(getSelectedFreebuffModel()).toBe(
-      paid ? FREEBUFF_GPT_5_6_LUNA_MODEL_ID : LIMITED_FREEBUFF_MODEL_ID,
+      paid ? FREEBUFF_GPT_6_LUNA_MODEL_ID : LIMITED_FREEBUFF_MODEL_ID,
     )
-    if (paid) expect(setup.captureCharFrame()).toContain('GPT-5.6 Luna')
-    else expect(setup.captureCharFrame()).not.toContain('GPT-5.6 Luna')
+    if (paid) expect(setup.captureCharFrame()).toContain('GPT-6 Luna')
+    else expect(setup.captureCharFrame()).not.toContain('GPT-6 Luna')
   },
 )
 
@@ -1409,16 +1421,17 @@ test('quota-exempt Luna remains selected at zero Freebucks', async () => {
     status: 'none',
     accessTier: 'full',
     freebucks: {
-      ...freebucksFixture(0, { [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 20 }),
+      planRequiredModelIds: [],
+      ...freebucksFixture(0, { [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 20 }),
       quotaExempt: true,
     },
   })
   useFreebuffModelStore
     .getState()
-    .setSelectedModel(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)
+    .setSelectedModel(FREEBUFF_GPT_6_LUNA_MODEL_ID)
   const setup = await renderSelector()
   await setup.renderOnce()
-  expect(getSelectedFreebuffModel()).toBe(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)
+  expect(getSelectedFreebuffModel()).toBe(FREEBUFF_GPT_6_LUNA_MODEL_ID)
 })
 
 test('the collapsed picker recommends affordable GLM when the default costs too much', async () => {
@@ -1446,11 +1459,16 @@ test('the collapsed picker recommends affordable GLM when the default costs too 
 })
 
 test('a funded Luna row does not show its exhausted legacy quota in the section header', async () => {
-  const id = FREEBUFF_GPT_5_6_LUNA_MODEL_ID
+  const id = FREEBUFF_GPT_6_LUNA_MODEL_ID
   useFreebuffSessionStore.getState().setSession({
     status: 'none',
     accessTier: 'full',
-    freebucks: freebucksFixture(25, { [id]: 20 }),
+    // Empty = "no row is plan-locked for this viewer", the server's verdict
+    // for a US account. Without it the Luna row is drawn locked and priceless.
+    freebucks: {
+      ...freebucksFixture(25, { [id]: 20 }),
+      planRequiredModelIds: [],
+    },
     rateLimitsByModel: {
       [id]: {
         model: id,
