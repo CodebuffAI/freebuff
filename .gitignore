@@ -16,6 +16,9 @@ tags
 
 node_modules
 dev
+# The agentic e2e harness's interactive mode lives in folders named `dev`.
+!scripts/agentic-e2e/dev/
+!freebuff-desktop/src/ui/dev/
 dist
 dist-env
 tsconfig.tsbuildinfo
