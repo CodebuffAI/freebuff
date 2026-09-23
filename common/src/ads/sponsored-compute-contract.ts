@@ -11,9 +11,18 @@ export type SponsoredComputeGrant = Readonly<{
   allowanceUsdMicros: number
 }>
 
+/**
+ * Which campaigns the sponsored runtime may execute. `all` admits every
+ * campaign; each consumer still requires the campaign's own reviewed procedure,
+ * so approval is what makes a campaign runnable. `listed` is the scalpel.
+ */
+export type SponsoredComputeCampaigns =
+  | Readonly<{ kind: 'all' }>
+  | Readonly<{ kind: 'listed'; ids: readonly string[] }>
+
 export type SponsoredComputePolicy = Readonly<{
   modelId: string
-  campaignIds: readonly string[]
+  campaigns: SponsoredComputeCampaigns
   allowanceUsdMicros: number
   acceptancePriceCents: number
   ttlMs: number
@@ -39,6 +48,37 @@ export function sponsoredComputeAcceptancePriceCents(
   return Number.isSafeInteger(cents) ? cents : null
 }
 
+/** The value of `FREEBUFF_SPONSORED_COMPUTE_CAMPAIGN_IDS` that admits every campaign. */
+export const SPONSORED_COMPUTE_ALL_CAMPAIGNS = '*'
+
+function parseSponsoredComputeCampaigns(
+  raw: string | undefined,
+): SponsoredComputeCampaigns | null {
+  const trimmed = raw?.trim()
+  if (!trimmed) return null
+  // Only the whole value. `*,<uuid>` is a typo, and a typo must close
+  // admission rather than widen it.
+  if (trimmed === SPONSORED_COMPUTE_ALL_CAMPAIGNS) {
+    return Object.freeze({ kind: 'all' })
+  }
+  const ids = trimmed.split(',').map((id) => id.trim())
+  if (ids.length > 100 || ids.some((id) => !UUID.test(id))) return null
+  return Object.freeze({
+    kind: 'listed',
+    ids: Object.freeze([...new Set(ids)]),
+  })
+}
+
+/** Whether the sponsored runtime may execute this campaign's reviewed procedure. */
+export function sponsoredComputeAdmitsCampaign(
+  policy: Pick<SponsoredComputePolicy, 'campaigns'>,
+  campaignId: string,
+): boolean {
+  return policy.campaigns.kind === 'all'
+    ? UUID.test(campaignId)
+    : policy.campaigns.ids.includes(campaignId)
+}
+
 /** Server configuration only. An absent or incomplete policy admits nothing. */
 export function readSponsoredComputePolicy(
   env: SponsoredComputePolicyEnv,
@@ -48,8 +88,8 @@ export function readSponsoredComputePolicy(
     env.FREEBUFF_SPONSORED_COMPUTE_ACCEPTANCE_PRICE_CENTS,
   )
   const modelId = env.FREEBUFF_SPONSORED_COMPUTE_MODEL_ID?.trim()
-  const campaigns = env.FREEBUFF_SPONSORED_COMPUTE_CAMPAIGN_IDS?.split(',').map(
-    (id) => id.trim(),
+  const campaigns = parseSponsoredComputeCampaigns(
+    env.FREEBUFF_SPONSORED_COMPUTE_CAMPAIGN_IDS,
   )
   if (
     acceptancePriceCents === null ||
@@ -57,14 +97,12 @@ export function readSponsoredComputePolicy(
     modelId !== FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID ||
     modelId.length > 128 ||
     !/^[a-zA-Z0-9._:/-]+$/.test(modelId) ||
-    !campaigns?.length ||
-    campaigns.length > 100 ||
-    campaigns.some((id) => !UUID.test(id))
+    !campaigns
   )
     return null
   return Object.freeze({
     modelId,
-    campaignIds: Object.freeze([...new Set(campaigns)]),
+    campaigns,
     // The configured acceptance fee is the only commercial charge. Compute is an
     // internal, bounded cost of fulfilling that offer, capped here at $0.50.
     allowanceUsdMicros: 500_000,

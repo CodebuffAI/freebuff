@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { readSponsoredComputePolicy } from './sponsored-compute-contract'
+import {
+  readSponsoredComputePolicy,
+  sponsoredComputeAdmitsCampaign,
+} from './sponsored-compute-contract'
 import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from '../constants/freebuff-model-ids'
 
 const enabled = {
@@ -32,8 +35,10 @@ describe('sponsored compute admission policy', () => {
   })
   test('invalid allowlists are refused as a whole', () => {
     for (const ids of [
-      '*',
       '',
+      '*,' + enabled.FREEBUFF_SPONSORED_COMPUTE_CAMPAIGN_IDS,
+      enabled.FREEBUFF_SPONSORED_COMPUTE_CAMPAIGN_IDS + ',*',
+      '**',
       enabled.FREEBUFF_SPONSORED_COMPUTE_CAMPAIGN_IDS + ',',
       'not-a-campaign',
     ]) {
@@ -74,10 +79,45 @@ describe('sponsored compute admission policy', () => {
     expect(policy.acceptancePriceCents).toBe(200)
     expect(policy.allowanceUsdMicros).toBe(500_000)
     expect(policy.ttlMs).toBe(3_600_000)
-    expect(policy.campaignIds).toEqual([
-      enabled.FREEBUFF_SPONSORED_COMPUTE_CAMPAIGN_IDS,
-    ])
+    expect(policy.campaigns).toEqual({
+      kind: 'listed',
+      ids: [enabled.FREEBUFF_SPONSORED_COMPUTE_CAMPAIGN_IDS],
+    })
     expect(Object.isFrozen(policy)).toBe(true)
-    expect(Object.isFrozen(policy.campaignIds)).toBe(true)
+    expect(Object.isFrozen(policy.campaigns)).toBe(true)
+  })
+  test('a listed policy admits exactly its campaigns', () => {
+    const policy = readSponsoredComputePolicy(enabled)!
+    expect(
+      sponsoredComputeAdmitsCampaign(
+        policy,
+        enabled.FREEBUFF_SPONSORED_COMPUTE_CAMPAIGN_IDS,
+      ),
+    ).toBe(true)
+    expect(
+      sponsoredComputeAdmitsCampaign(
+        policy,
+        'bc458fc3-6f78-4e7e-9754-c17f451723aa',
+      ),
+    ).toBe(false)
+  })
+  test('* admits every campaign, so review alone decides', () => {
+    for (const value of ['*', ' * ']) {
+      const policy = readSponsoredComputePolicy({
+        ...enabled,
+        FREEBUFF_SPONSORED_COMPUTE_CAMPAIGN_IDS: value,
+      })!
+      expect(policy.campaigns).toEqual({ kind: 'all' })
+      expect(
+        sponsoredComputeAdmitsCampaign(
+          policy,
+          'bc458fc3-6f78-4e7e-9754-c17f451723aa',
+        ),
+      ).toBe(true)
+      // A malformed id is still not a campaign.
+      expect(sponsoredComputeAdmitsCampaign(policy, 'not-a-campaign')).toBe(
+        false,
+      )
+    }
   })
 })
