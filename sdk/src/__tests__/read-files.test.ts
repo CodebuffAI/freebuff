@@ -1,4 +1,6 @@
 import { FILE_READ_STATUS } from '@codebuff/common/old-constants'
+import { countTokens } from '@codebuff/agent-runtime/util/token-counter'
+import { MAX_READ_FILES_TOKENS } from '@codebuff/common/util/file-read-limits'
 import * as projectFileTree from '@codebuff/common/project-file-tree'
 import { createNodeError } from '@codebuff/common/testing/errors'
 import {
@@ -209,7 +211,7 @@ describe('getFiles', () => {
   })
 
   describe('file too large', () => {
-    test('should truncate files over 100k chars to first 100k chars with message', async () => {
+    test('should apply the token budget even to highly compressible ASCII', async () => {
       const largeContent = 'x'.repeat(100_001) + 'y'.repeat(1000) // over limit
       const mockFs = createMockFs({
         files: {
@@ -226,16 +228,18 @@ describe('getFiles', () => {
         fs: mockFs,
       })
 
-      // Should contain first 100k chars
-      expect(result['large.bin']).toContain('x'.repeat(100_000))
-      // Should NOT contain content beyond the limit
-      expect(result['large.bin']).not.toContain('y')
-      // Should contain truncation message
+      // We no longer run BPE to discover that these characters compress well.
+      // The conservative estimate can bind before the 100k character ceiling.
+      const prefix = result['large.bin']!.split('\n\n')[0]
+      expect(prefix.length).toBeGreaterThan(0)
+      expect(countTokens(prefix)).toBeLessThanOrEqual(MAX_READ_FILES_TOKENS)
+      expect(largeContent.startsWith(prefix)).toBe(true)
+      expect(prefix.includes('y')).toBe(false)
       expect(result['large.bin']).toContain('FILE_TOO_LARGE')
-      expect(result['large.bin']).toContain('101,001 characters')
+      expect(result['large.bin']).toContain('estimated-token per-file limit')
     })
 
-    test('should read files at exactly 100k chars', async () => {
+    test('should enforce the token budget even at exactly the character ceiling', async () => {
       const exactly100kContent = 'x'.repeat(100_000) // exactly 100k chars
       const mockFs = createMockFs({
         files: {
@@ -252,9 +256,13 @@ describe('getFiles', () => {
         fs: mockFs,
       })
 
-      // Should be read fully (no truncation message)
-      expect(result['exactly100k.bin']).toBe(exactly100kContent)
-      expect(result['exactly100k.bin']).not.toContain('FILE_TOO_LARGE')
+      const prefix = result['exactly100k.bin']!.split('\n\n')[0]
+      expect(prefix.length).toBeGreaterThan(0)
+      expect(prefix.length).toBeLessThan(exactly100kContent.length)
+      expect(countTokens(prefix)).toBeLessThanOrEqual(MAX_READ_FILES_TOKENS)
+      expect(result['exactly100k.bin']).toContain(
+        'estimated-token per-file limit',
+      )
     })
 
     test('should reject files over 10MB without reading them', async () => {
@@ -277,13 +285,13 @@ describe('getFiles', () => {
       expect(result['huge.bin']).toContain('15.0MB')
     })
 
-    test('should read files just under 100k chars', async () => {
-      const justUnder100k = 'x'.repeat(99_000) // under limit
+    test('should read files within both the character and token budgets', async () => {
+      const smallContent = 'x'.repeat(30_000)
       const mockFs = createMockFs({
         files: {
           '/project/underlimit.bin': {
-            content: justUnder100k,
-            size: justUnder100k.length,
+            content: smallContent,
+            size: smallContent.length,
           },
         },
       })
@@ -295,16 +303,18 @@ describe('getFiles', () => {
       })
 
       // Should be read fully (no truncation message)
-      expect(result['underlimit.bin']).toBe(justUnder100k)
+      expect(result['underlimit.bin']).toBe(smallContent)
       expect(result['underlimit.bin']).not.toContain('FILE_TOO_LARGE')
     })
 
-    test('should cap combined file contents at 100k chars', async () => {
+    test('should spend the shared token budget in requested file order', async () => {
       const mockFs = createMockFs({
         files: {
-          '/project/a.txt': { content: 'a'.repeat(60_000) },
-          '/project/b.txt': { content: 'a'.repeat(60_000) },
-          '/project/c.txt': { content: 'UNIQUE_THIRD_FILE_CONTENT' },
+          '/project/a.txt': { content: 'a'.repeat(40_000) },
+          '/project/b.txt': { content: 'b'.repeat(40_000) },
+          '/project/c.txt': {
+            content: 'UNIQUE_THIRD_FILE_CONTENT'.repeat(100),
+          },
         },
       })
 
@@ -314,19 +324,23 @@ describe('getFiles', () => {
         fs: mockFs,
       })
 
-      expect(result['a.txt']).toBe('a'.repeat(60_000))
-      expect(result['b.txt']).toStartWith('a'.repeat(40_000))
-      expect(result['b.txt']).not.toContain('a'.repeat(40_001))
+      expect(result['a.txt']).toBe('a'.repeat(40_000))
+      const secondPrefix = result['b.txt']!.split('\n\n')[0]
+      expect(secondPrefix.length).toBeGreaterThan(0)
+      expect(secondPrefix.length).toBeLessThan(40_000)
+      expect(
+        countTokens(result['a.txt']!) + countTokens(secondPrefix),
+      ).toBeLessThanOrEqual(MAX_READ_FILES_TOKENS)
       expect(result['b.txt']).toContain('combined read_files output')
       expect(result['c.txt']).not.toContain('UNIQUE_THIRD_FILE_CONTENT')
-      expect(result['c.txt']).toContain('truncated after 0 characters')
+      expect(result['c.txt']).toContain('truncated after 0 estimated tokens')
     })
 
     test('should not spend the shared budget twice on path aliases', async () => {
       const mockFs = createMockFs({
         files: {
-          '/project/a.txt': { content: 'a'.repeat(60_000) },
-          '/project/b.txt': { content: 'a'.repeat(40_000) },
+          '/project/a.txt': { content: 'a'.repeat(30_000) },
+          '/project/b.txt': { content: 'a'.repeat(20_000) },
         },
       })
 
@@ -336,8 +350,8 @@ describe('getFiles', () => {
         fs: mockFs,
       })
 
-      expect(result['a.txt']).toBe('a'.repeat(60_000))
-      expect(result['b.txt']).toBe('a'.repeat(40_000))
+      expect(result['a.txt']).toBe('a'.repeat(30_000))
+      expect(result['b.txt']).toBe('a'.repeat(20_000))
     })
 
     test('should return files with prototype-named paths', async () => {
@@ -764,7 +778,10 @@ describe('getFiles', () => {
   })
 
   describe('windowed reads', () => {
-    const bigFile = Array.from({ length: 3000 }, (_, i) => `line ${i + 1}`).join('\n')
+    const bigFile = Array.from(
+      { length: 3000 },
+      (_, i) => `line ${i + 1}`,
+    ).join('\n')
 
     test('reads the whole file when no fileWindows map is given', async () => {
       const mockFs = createMockFs({

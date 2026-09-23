@@ -12,6 +12,7 @@ import { getMatchingSpawn } from './handlers/tool/spawn-agent-utils'
 import { getAgentTemplate } from '../templates/agent-registry'
 import { resolveGravityIndexLink } from './gravity-index-cta'
 import { ensureZodSchema } from './prompts'
+import { boundToolResult } from '../util/context-size-guard'
 
 import type { AgentTemplate } from '../templates/types'
 import type { CodebuffToolHandlerFunction } from './handlers/handler-function-type'
@@ -556,16 +557,18 @@ export async function executeToolCall<T extends ToolName>(
 
     toolResults.push(toolResult)
 
-    if (!excludeToolFromMessageHistory) {
-      toolResultsToAddToMessageHistory.push(toolResult)
-    }
-
     // After tool completes, resolve any pending creditsUsed promise
     if (creditsUsed) {
       onCostCalculated(creditsUsed)
       logger.debug(
         { credits: creditsUsed, totalCredits: agentState.creditsUsed },
         `Added ${creditsUsed} credits from ${toolName} to agent state`,
+      )
+    }
+
+    if (!excludeToolFromMessageHistory) {
+      toolResultsToAddToMessageHistory.push(
+        boundToolResult(toolResult, agentTemplate),
       )
     }
   })
@@ -783,7 +786,9 @@ export async function executeCustomToolCall(
       toolResults.push(toolResult)
 
       if (!excludeToolFromMessageHistory) {
-        toolResultsToAddToMessageHistory.push(toolResult)
+        toolResultsToAddToMessageHistory.push(
+          boundToolResult(toolResult, agentTemplate),
+        )
       }
 
       return

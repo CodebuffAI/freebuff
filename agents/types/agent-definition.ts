@@ -321,14 +321,10 @@ export interface AgentState {
   >
 
   /**
-   * Estimated size of the next prompt: message history + system prompt + tool
-   * schemas, counted locally with a GPT-4o BPE tokenizer.
-   *
-   * NOT a provider's number, and deliberately not exact. Counting models that
-   * have their own tokenizers with this one biases the estimate low, which the
-   * runtime's compaction budget leaves headroom for. Updated on every agent
-   * step before the model call, again after a mechanical compaction rewrites
-   * the history, and once more when a root agent's turn ends.
+   * Latest model call's reported input + output tokens, adjusted with cheap
+   * length estimates for subsequent tool results and history edits. Before a
+   * receipt (or after compaction/model change), entirely a length estimate.
+   * This is context occupancy, never accumulated/billed usage across calls.
    */
   contextTokenCount: number
 }

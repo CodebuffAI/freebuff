@@ -2,11 +2,15 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   adjustContextTokenCountForHistoryEdit,
+  estimateContextTokens,
+  recordContextUsage,
   recountContextTokens,
 } from '../context-token-count'
 import { countTokensMessages } from '../token-counter'
 
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
+import type { AgentState } from '@codebuff/common/types/session-state'
+import type { ModelUsageData } from '@codebuff/common/types/contracts/llm'
 
 const text = (role: 'user' | 'assistant', body: string) =>
   ({ role, content: [{ type: 'text', text: body }] }) as unknown as Message
@@ -18,6 +22,97 @@ const HISTORY: Message[] = [
 
 const SYSTEM = 'you are a coding agent'.repeat(100)
 const TOOLS = { read_files: { description: 'read', inputSchema: {} } }
+
+describe('provider-anchored context size', () => {
+  const receipt: ModelUsageData = {
+    inputTokens: 12_000,
+    outputTokens: 500,
+    totalTokens: 12_500,
+    cachedInputTokens: 10_000,
+  }
+  const setup = () => {
+    const agentState: Pick<
+      AgentState,
+      'messageHistory' | 'contextTokenCount' | 'contextTokenBaseline'
+    > = {
+      messageHistory: [...HISTORY],
+      contextTokenCount: 0,
+    }
+    const params = {
+      agentState,
+      model: 'test-model',
+      systemPrompt: SYSTEM,
+      toolsForTokenCount: TOOLS,
+    }
+    const estimatedInputTokens = estimateContextTokens(params)
+    const output = text('assistant', 'done')
+    agentState.messageHistory.push(output)
+    recordContextUsage({
+      agentState,
+      model: params.model,
+      usage: receipt,
+      estimatedInputTokens,
+      estimatedOutputTokens: countTokensMessages([output]),
+    })
+    return params
+  }
+
+  test('uses actual input + output, without adding cached input twice', () => {
+    expect(estimateContextTokens(setup())).toBe(12_500)
+  })
+
+  test('adds fresh tool output and survives persistence and cancellation edits', () => {
+    const params = setup()
+    const result: Message = {
+      role: 'tool',
+      toolName: 'read_files',
+      toolCallId: 'r',
+      content: [
+        { type: 'json', value: { content: 'const x = 1;\n'.repeat(1000) } },
+      ],
+    }
+    const previousHistory = [...params.agentState.messageHistory]
+    params.agentState.messageHistory.push(result)
+    const expected = 12_500 + countTokensMessages([result])
+    expect(estimateContextTokens(params)).toBe(expected)
+    const persisted = JSON.parse(JSON.stringify(params.agentState))
+    expect(estimateContextTokens({ ...params, agentState: persisted })).toBe(
+      expected,
+    )
+    expect(
+      adjustContextTokenCountForHistoryEdit({
+        contextTokenCount: 12_500,
+        previousHistory,
+        nextHistory: persisted.messageHistory,
+      }),
+    ).toBe(expected)
+  })
+
+  test('does not use a different model’s receipt and forgets it after compaction', () => {
+    const params = setup()
+    const fallback = estimateContextTokens({
+      ...params,
+      model: 'another-model',
+    })
+    expect(fallback).not.toBe(12_500)
+    params.agentState.contextTokenBaseline = undefined
+    expect(estimateContextTokens(params)).toBe(fallback)
+  })
+
+  test('missing, zero, negative and non-finite receipts do not erase a valid anchor', () => {
+    const params = setup()
+    for (const inputTokens of [0, -1, NaN, Infinity]) {
+      recordContextUsage({
+        agentState: params.agentState,
+        model: params.model,
+        usage: { ...receipt, inputTokens },
+        estimatedInputTokens: 1,
+        estimatedOutputTokens: 1,
+      })
+      expect(estimateContextTokens(params)).toBe(12_500)
+    }
+  })
+})
 
 describe('recountContextTokens', () => {
   test('counts the history, the system prompt and the tool schemas', () => {
@@ -36,7 +131,7 @@ describe('recountContextTokens', () => {
     expect(counted).toBeGreaterThan(countTokensMessages(HISTORY))
   })
 
-  test('leaves a subagent\'s count alone instead of paying to recompute it', () => {
+  test("leaves a subagent's count alone instead of paying to recompute it", () => {
     // Only the ROOT agent's count is ever read — the host reads
     // sessionState.mainAgentState. Every spawned agent (file-picker, thinker,
     // context-pruner, …) otherwise pays a full countTokensMessages over its

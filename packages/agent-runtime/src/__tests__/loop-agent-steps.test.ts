@@ -226,9 +226,7 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       promptAiSdkStream: async function* ({ messages }) {
         calls++
         if (calls === 4) {
-          expect(JSON.stringify(messages)).toContain(
-            TODO_LOOP_RECOVERY_MESSAGE,
-          )
+          expect(JSON.stringify(messages)).toContain(TODO_LOOP_RECOVERY_MESSAGE)
           yield createToolCallChunk('read_files', { paths: ['src/example.ts'] })
         } else if (calls === 7) {
           yield createToolCallChunk('end_turn', {})
@@ -401,7 +399,10 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
         promptAiSdkStream: async function* ({ messages }) {
           calls++
           seenPrompts.push(JSON.stringify(messages))
-          yield { type: 'text', text: 'Writing the script with write_file now:' }
+          yield {
+            type: 'text',
+            text: 'Writing the script with write_file now:',
+          }
           yield createToolCallChunk('write_todos', {
             todos: [{ task: 'Write the QC script', completed: false }],
           })
@@ -1679,6 +1680,115 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
     })
   })
 
+  describe('provider usage as context size', () => {
+    it('uses receipts without a host callback, replaces them each step, and persists across turns', async () => {
+      mockTemplate.stepPrompt = ''
+      mockTemplate.instructionsPrompt = ''
+      mockTemplate.toolNames.push('write_todos')
+      let calls = 0
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* ({ onUsageReceived }) {
+          calls++
+          if (calls === 1) {
+            yield createToolCallChunk('write_todos', {
+              todos: [{ task: 'inspect', completed: false }],
+            })
+          } else {
+            expect(mockAgentState.contextTokenCount).toBeGreaterThan(30_000)
+            yield { type: 'text', text: 'done' }
+          }
+          onUsageReceived?.({
+            inputTokens: calls === 1 ? 30_000 : 35_000,
+            outputTokens: 100,
+            totalTokens: 999_999,
+            cachedInputTokens: 20_000,
+          })
+          return promptSuccess(`receipt-${calls}`)
+        },
+      })
+      expect(calls).toBe(2)
+      expect(result.agentState.contextTokenCount).toBe(35_100)
+
+      const restored = JSON.parse(
+        JSON.stringify(result.agentState),
+      ) as AgentState
+      await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        agentState: restored,
+        prompt: 'One more thing',
+        promptAiSdkStream: async function* () {
+          expect(restored.contextTokenCount).toBeGreaterThan(35_100)
+          expect(restored.contextTokenCount).toBeLessThan(35_200)
+          yield { type: 'text', text: 'ok' }
+          return promptSuccess('missing-usage')
+        },
+      })
+      expect(restored.contextTokenCount).toBeGreaterThan(35_100)
+    })
+
+    it('compacts on reported usage even when local history is small, then resets the anchor', async () => {
+      mockTemplate.stepPrompt = ''
+      mockTemplate.instructionsPrompt = ''
+      mockTemplate.compactContext = {
+        maxContextLength: 16_384,
+        cacheExpiryMs: null,
+      }
+      mockTemplate.toolNames.push('write_todos')
+      mockAgentState.messageHistory.push(
+        assistantMessage('prior finding '.repeat(1000)),
+      )
+      let calls = 0
+      let compactions = 0
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* ({
+          tools,
+          onUsageReceived,
+          messages,
+        }) {
+          if (tools?.complete_compaction) {
+            compactions++
+            onUsageReceived?.({
+              inputTokens: 90_000,
+              outputTokens: 100,
+              totalTokens: 90_100,
+              cachedInputTokens: 0,
+            })
+            yield createToolCallChunk('complete_compaction', {
+              summary: 'Prior finding. Next inspect the requested code.',
+            })
+          } else if (++calls === 1) {
+            yield createToolCallChunk('write_todos', {
+              todos: [{ task: 'inspect', completed: false }],
+            })
+            onUsageReceived?.({
+              inputTokens: 15_000,
+              outputTokens: 500,
+              totalTokens: 15_500,
+              cachedInputTokens: 0,
+            })
+          } else {
+            expect(JSON.stringify(messages)).toContain('<conversation_summary>')
+            expect(mockAgentState.contextTokenBaseline).toBeUndefined()
+            yield { type: 'text', text: 'done' }
+            onUsageReceived?.({
+              inputTokens: 1000,
+              outputTokens: 10,
+              totalTokens: 1010,
+              cachedInputTokens: 0,
+            })
+          }
+          return promptSuccess('step')
+        },
+      })
+      expect(result.output.type).not.toBe('error')
+      expect(compactions).toBe(1)
+      expect(calls).toBe(2)
+      expect(result.agentState.contextTokenCount).toBe(1010)
+    })
+  })
+
   describe('the end-of-turn context recount', () => {
     // The cancel exit is where the recount earns its keep, and it is also the
     // only exit where the two behaviours are far apart enough to assert
@@ -1715,22 +1825,13 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       expect(asRoot).toBeGreaterThan(10_000)
     })
 
-    it('does not pay to recount a subagent nobody reads', async () => {
-      // Only the root's count leaves the runtime — the host reads
-      // sessionState.mainAgentState. Recounting here tokenizes a spawned
-      // agent's whole history (file-picker, thinker, context-pruner, …) for a
-      // value that is discarded with the agent, which on a one-step subagent
-      // roughly doubles its tokenizer cost.
-      //
-      // Same predicate as the compaction callback: parentId.
+    it('keeps partial subagent output in its cheap fallback estimate too', async () => {
       const asRoot = await contextTokensAfterCancelledTurn(withHistory())
       const asSubagent = await contextTokensAfterCancelledTurn(
         withHistory({ parentId: 'parent-agent-id' }),
       )
-
-      // Not merely different: the subagent's number is the estimate taken
-      // before the model call, which predates everything the model produced.
-      expect(asRoot).toBeGreaterThan(asSubagent * 2)
+      expect(asRoot).toBeGreaterThan(10_000)
+      expect(asSubagent).toBeGreaterThan(10_000)
     })
   })
 })

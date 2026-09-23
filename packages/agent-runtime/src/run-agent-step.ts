@@ -66,7 +66,12 @@ import {
   buildUserMessageContent,
   expireMessages,
 } from './util/messages'
-import { recountContextTokens } from './util/context-token-count'
+import {
+  estimateContextTokens,
+  recordContextUsage,
+  recountContextTokens,
+} from './util/context-token-count'
+import { assertUserContentSize } from './util/context-size-guard'
 import {
   countTokens,
   countTokensJson,
@@ -149,6 +154,14 @@ export function toTokenCountInputSchema(
     jsonSchema.type = 'object'
   }
   return jsonSchema
+}
+
+function toolsForContextEstimate(definitions: AgentState['toolDefinitions']) {
+  return Object.entries(definitions).map(([name, def]) => ({
+    name,
+    ...(def.description && { description: def.description }),
+    input_schema: toTokenCountInputSchema(def.inputSchema),
+  }))
 }
 
 async function additionalToolDefinitions(
@@ -525,6 +538,17 @@ export const runAgentStep = async (
   // (a runaway response it has decided to stop reading).
   const streamStop = new AbortController()
 
+  // The parser appends model output AND tool results before returning. Only
+  // the former is covered by outputTokens. The persisted anchor is scalar;
+  // this request-local snapshot neither copies text nor tokenizes it.
+  const inputHistory = [...agentState.messageHistory]
+  const contextTools = toolsForContextEstimate(agentState.toolDefinitions)
+  const estimatedInputTokens =
+    countTokensMessages(inputHistory) +
+    countTokens(system) +
+    countTokensJson(contextTools)
+  let contextUsage: ModelUsageData | undefined
+
   // Raw stream from AI SDK
   const stream = getAgentStreamFromTemplate({
     ...params,
@@ -538,14 +562,14 @@ export const runAgentStep = async (
     messages: [systemMessage(system), ...agentState.messageHistory],
     onCacheDebugProviderRequestBuilt,
     onCacheDebugUsageReceived,
-    onUsageReceived: params.onAgentUsageReceived
-      ? (usage: ModelUsageData) =>
-          params.onAgentUsageReceived?.({
-            ...usage,
-            isRoot: !agentState.parentId,
-            agentId: agentState.agentId,
-          })
-      : undefined,
+    onUsageReceived: (usage: ModelUsageData) => {
+      contextUsage = usage
+      params.onAgentUsageReceived?.({
+        ...usage,
+        isRoot: !agentState.parentId,
+        agentId: agentState.agentId,
+      })
+    },
     onUsageIncomplete: params.onAgentUsageIncomplete,
     template: agentTemplate,
     onCostCalculated,
@@ -569,6 +593,31 @@ export const runAgentStep = async (
     stream,
     onCostCalculated,
     stopStream: () => streamStop.abort(),
+  }).finally(() => {
+    // Inline agents can replace history (set_messages). A receipt for the old
+    // request is not a baseline for a replacement summary.
+    if (
+      contextUsage &&
+      inputHistory.every((m, i) => agentState.messageHistory[i] === m)
+    ) {
+      recordContextUsage({
+        agentState,
+        model,
+        usage: contextUsage,
+        estimatedInputTokens,
+        estimatedOutputTokens: countTokensMessages(
+          agentState.messageHistory
+            .slice(inputHistory.length)
+            .filter((m) => m.role === 'assistant'),
+        ),
+      })
+    }
+    agentState.contextTokenCount = estimateContextTokens({
+      agentState,
+      model,
+      systemPrompt: system,
+      toolsForTokenCount: contextTools,
+    })
   })
 
   toolResults.push(...newToolResults)
@@ -1025,53 +1074,19 @@ export async function loopAgentSteps(
   initialAgentState.systemPrompt = system
   initialAgentState.toolDefinitions = toolDefinitions
   let currentAgentState: AgentState = initialAgentState
+  if (currentAgentState.contextTokenBaseline?.model !== agentTemplate.model) {
+    currentAgentState.contextTokenBaseline = undefined
+  }
 
-  // Convert tool definitions to Anthropic format for accurate token counting.
-  // Tool definitions are stored as { [name]: { description, inputSchema } },
-  // where inputSchema is a Zod schema. Anthropic's count_tokens API expects
-  // [{ name, description, input_schema }] with input_schema being real JSON
-  // Schema (with a top-level `type: 'object'`) — see toTokenCountInputSchema.
-  const toolsForTokenCount = Object.entries(toolDefinitions).map(
-    ([name, def]) => {
-      const input_schema = toTokenCountInputSchema(def.inputSchema)
-      return {
-        name,
-        ...(def.description && { description: def.description }),
-        ...(input_schema && { input_schema }),
-      }
-    },
-  )
+  // Estimate the wire schemas, not Zod's internal object graph.
+  const toolsForTokenCount = toolsForContextEstimate(toolDefinitions)
 
-  // Recount against the history the turn actually ends with.
-  //
-  // Inside the loop the count is taken BEFORE the model call, so the last
-  // step's assistant response and every tool result it produced are missing
-  // from it — systematically the most recently added content, and on a step
-  // that read several files easily tens of thousands of tokens. That was
-  // harmless while the number only fed the compaction check, which runs again
-  // at the top of the next step anyway. It stops being harmless now that hosts
-  // persist it and show it to the user between turns.
-  //
-  // Same formula as estimateContextTokensLocally below, minus the step prompt:
-  // `system` and `toolsForTokenCount` are loop-invariant, and the step prompt
-  // is per-step scaffolding rather than part of the history the next turn is
-  // sent on top of. Once per turn against once per step is not a hot-path cost.
-  //
-  // Root agents only, which is the whole reason the count lives in its own
-  // module with a test: a subagent's final count is discarded with the
-  // subagent, and recounting it tokenizes that agent's entire history for
-  // nobody.
+  // Keep the persisted/displayed count aligned after cancellation and TTL edits.
+  // Uses the latest receipt plus cheap deltas; never re-tokenizes the history.
   const recountContextTokensForTurnEnd = () => {
     currentAgentState.contextTokenCount = recountContextTokens({
-      agentState: {
-        // `initialAgentState` is the same object `currentAgentState` points at
-        // (every reassignment below assigns it), so this is exactly the
-        // predicate the compaction callback already uses two hundred lines
-        // down: nothing a subagent computes here leaves the subagent.
-        parentId: initialAgentState.parentId,
-        messageHistory: currentAgentState.messageHistory,
-        contextTokenCount: currentAgentState.contextTokenCount,
-      },
+      agentState: currentAgentState,
+      model: agentTemplate.model,
       systemPrompt: system,
       toolsForTokenCount,
     })
@@ -1090,6 +1105,17 @@ export async function loopAgentSteps(
       totalSteps++
       if (signal.aborted) {
         throw new AbortError()
+      }
+
+      if (totalSteps === 1 && hasUserMessage) {
+        assertUserContentSize(
+          [
+            userMessage({
+              content: buildUserMessageContent(prompt, spawnParams, content),
+            }),
+          ],
+          agentTemplate,
+        )
       }
 
       const startTime = new Date()
@@ -1112,20 +1138,17 @@ export async function loopAgentSteps(
           }),
       )
 
-      // Count structured message content (not JSON.stringify, which inflates the
-      // count and counts image base64 as text); system is a plain string; tool
-      // schemas stay JSON since that's roughly how the model sees them.
-      const estimateContextTokensLocally = () =>
-        countTokensMessages(messagesWithStepPrompt) +
-        countTokens(system) +
-        countTokensJson(toolsForTokenCount)
-
-      // Always count locally. The token-count web API round-trip (full
-      // history + tools shipped to the server, which relays to Anthropic)
-      // added seconds of serial overhead to every step; there is no paid mode
-      // anymore that needs Anthropic-exact counts, and context-limit checks
-      // only need an estimate.
-      currentAgentState.contextTokenCount = estimateContextTokensLocally()
+      // Each completed response supplies the baseline. Only content added or
+      // removed since then (tools, steering, step scaffolding) is estimated.
+      currentAgentState.contextTokenCount = estimateContextTokens({
+        agentState: {
+          ...currentAgentState,
+          messageHistory: messagesWithStepPrompt,
+        },
+        model: agentTemplate.model,
+        systemPrompt: system,
+        toolsForTokenCount,
+      })
 
       if (
         (agentTemplate.compactContext && !shouldEndTurn) ||
@@ -1197,6 +1220,7 @@ export async function loopAgentSteps(
           })
           if (compacted) {
             currentAgentState.messageHistory = compacted.messages
+            currentAgentState.contextTokenBaseline = undefined
             currentAgentState.contextTokenCount = compacted.postTokens
             if (!initialAgentState.parentId)
               params.onCompaction?.({
@@ -1354,6 +1378,10 @@ export async function loopAgentSteps(
       // rather than waiting for the whole turn to finish.
       const steered = params.drainSteeringMessages?.()
       if (steered?.length) {
+        assertUserContentSize(
+          steered.map((text) => userMessage(text)),
+          agentTemplate,
+        )
         currentAgentState.messageHistory = [
           ...currentAgentState.messageHistory,
           ...steered.map((text) =>

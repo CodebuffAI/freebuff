@@ -329,8 +329,10 @@ export interface AgentState {
   >
 
   /**
-   * The token count from the Anthropic API.
-   * This is updated on every agent step via the /api/v1/token-count endpoint.
+   * Latest model call's reported input + output tokens, adjusted with cheap
+   * length estimates for subsequent tool results and history edits. Before a
+   * receipt (or after compaction/model change), entirely a length estimate.
+   * This is context occupancy, never accumulated/billed usage across calls.
    */
   contextTokenCount: number
 }

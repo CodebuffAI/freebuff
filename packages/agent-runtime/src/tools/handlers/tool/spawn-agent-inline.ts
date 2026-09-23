@@ -173,6 +173,7 @@ export const handleSpawnAgentInline = (async (
 
   // Update parent agent state to reflect shared message history
   parentAgentState.messageHistory = result.agentState.messageHistory
+  parentAgentState.contextTokenBaseline = undefined
 
   return { output: [{ type: 'json', value: { message: 'Agent spawned.' } }] }
 }) satisfies CodebuffToolHandlerFunction<ToolName>

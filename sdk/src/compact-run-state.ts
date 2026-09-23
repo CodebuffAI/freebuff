@@ -79,6 +79,7 @@ export function compactRunState(params: {
 
   const next = cloneSessionState(sessionState, logger)
   next.mainAgentState.messageHistory = compacted.messages
+  next.mainAgentState.contextTokenBaseline = undefined
   next.mainAgentState.contextTokenCount =
     countTokensMessages(compacted.messages) + fixedTokenCount
   return {
@@ -152,6 +153,7 @@ export function truncateRunStateAtUserTurn(params: {
 
   const next = cloneSessionState(sessionState)
   next.mainAgentState.messageHistory = history.slice(0, cutAt)
+  next.mainAgentState.contextTokenBaseline = undefined
   // The count is advisory and rebuilt on the next turn; leaving a stale, larger
   // number would make the next request think it has less room than it does.
   next.mainAgentState.contextTokenCount = countTokensMessages(

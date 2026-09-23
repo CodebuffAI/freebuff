@@ -45,23 +45,18 @@ export type AgentState = {
     { description: string | undefined; inputSchema: {} }
   >
   /**
-   * Estimated size of the next prompt: message history + system prompt + tool
-   * schemas, counted locally with a GPT-4o BPE tokenizer.
-   *
-   * NOT a provider's number. The round trip that used to make it
-   * Anthropic-exact was deleted (run-agent-step.ts, "Always count locally")
-   * because it added seconds of serial overhead per step and nothing left needs
-   * a provider-exact count: the context-limit check only needs an estimate, and
-   * counting models that have their own tokenizers with this one biases the
-   * estimate low — headroom contextPrunerBudgetForModel absorbs deliberately.
-   *
-   * Updated on every agent step before the model call, again after a mechanical
-   * compaction rewrites the history, and once more when the turn ends so the
-   * final value covers the last step's output rather than stopping short of it.
-   * That last recount is for root agents only: a subagent's final count is
-   * discarded with the subagent, and counting it is pure tokenizer cost.
+   * Latest model call's reported input + output tokens, adjusted with cheap
+   * length estimates for subsequent tool results and history edits. Before a
+   * receipt (or after compaction/model change), entirely a length estimate.
+   * This is context occupancy, never accumulated/billed usage across calls.
    */
   contextTokenCount: number
+  /** Serializable anchor; old saved sessions safely fall back to estimation. */
+  contextTokenBaseline?: {
+    model: string
+    tokens: number
+    estimatedTokens: number
+  }
 }
 
 export const AgentOutputSchema = z.discriminatedUnion('type', [

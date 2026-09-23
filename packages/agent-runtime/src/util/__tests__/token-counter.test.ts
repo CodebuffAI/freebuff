@@ -8,7 +8,54 @@ import {
 
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 
+test('pathological repeated text is safe even when restoring a multi-MB conversation', async () => {
+  // A subprocess gives the test a real wall-clock limit: a synchronous BPE
+  // regression cannot block this test runner's own timeout/event loop.
+  const modulePath = new URL('../token-counter.ts', import.meta.url).pathname
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      '-e',
+      `
+    import { countTokensMessages } from ${JSON.stringify(modulePath)};
+    const size = countTokensMessages([
+      { role: 'assistant', content: [{type: 'text', text: ' '.repeat(21_000_000)}] },
+      { role: 'tool', content: [{type: 'json', value: {stdout: 'A'.repeat(21_000_000)}}] }
+    ]);
+    if (!Number.isFinite(size) || size < 1_000_000) process.exit(1);
+  `,
+    ],
+    { stdout: 'pipe', stderr: 'pipe' },
+  )
+  const timeout = setTimeout(() => child.kill(), 3000)
+  try {
+    expect(await child.exited).toBe(0)
+  } finally {
+    clearTimeout(timeout)
+    child.kill()
+  }
+}, 5000)
+
 describe('countTokensMessages', () => {
+  test('charges token-dense Unicode in text and nested tool results', () => {
+    const dense = '🧑‍💻🔥🚀⚠️'.repeat(5_000)
+    expect(countTokens(dense)).toBeGreaterThan(20_000)
+    expect(countTokens('漢字'.repeat(15_000))).toBeGreaterThan(20_000)
+    expect(countTokensJson({ stdout: dense })).toBeGreaterThanOrEqual(
+      countTokens(dense),
+    )
+    expect(
+      countTokensMessages([
+        {
+          role: 'tool',
+          toolCallId: '1',
+          toolName: 'read_files',
+          content: [{ type: 'json', value: { content: dense } }],
+        },
+      ]),
+    ).toBeGreaterThan(20_000)
+  })
+
   test('counts text content plus per-message overhead', () => {
     const messages = [
       { role: 'user', content: [{ type: 'text', text: 'hello world' }] },

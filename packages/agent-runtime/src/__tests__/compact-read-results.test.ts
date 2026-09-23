@@ -28,7 +28,8 @@ afterEach(() => mock.restore())
 // The reporter's failure shape: a ~9k live request plus an SDK-limited batch
 // of file reads exceeds BYOK's default 25,804-token input threshold. Previously
 // each successful read vanished before inference, so the model could only
-// reread. The control uses identical history and files with a larger window.
+// reread. Fresh results are now bounded before entering history; the model must
+// still see findings and progress. The control uses the same files and history.
 for (const contextWindow of [32768, 131072]) {
   it(`progresses from reading to writing with a ${contextWindow}-token BYOK window`, async () => {
     const db = setupDbSpies(createMockDbOperations())
@@ -83,7 +84,8 @@ for (const contextWindow of [32768, 131072]) {
       return { output: [{ type: 'json', value: { message: 'File written' } }] }
     })
     runtime.promptAiSdkStream = mock(async function* ({
-      messages, tools,
+      messages,
+      tools,
     }: {
       messages: Message[]
       tools: Record<string, unknown>
@@ -92,7 +94,10 @@ for (const contextWindow of [32768, 131072]) {
         // The summarizer sees the actual file contents, including older reads,
         // and hands their finding to the coding model instead of just paths.
         expect(JSON.stringify(messages)).toContain('FILE_CONTENT_CANARY')
-        yield createToolCallChunk('complete_compaction', { summary: 'FILE_CONTENT_CANARY: inspected app.tsx and theme.ts. The action rows have enabled=true. Next write ready.ts.' })
+        yield createToolCallChunk('complete_compaction', {
+          summary:
+            'FILE_CONTENT_CANARY: inspected app.tsx and theme.ts. The action rows have enabled=true. Next write ready.ts.',
+        })
         return promptSuccess('compaction-response')
       }
       requests.push(structuredClone(messages))
@@ -162,8 +167,12 @@ for (const contextWindow of [32768, 131072]) {
       const afterRead = requests[1]
       expect(JSON.stringify(afterRead)).toContain('FILE_CONTENT_CANARY')
       if (contextWindow === 32768) {
-        expect(compactions).toBeGreaterThan(0)
-        expect(JSON.stringify(afterRead)).toContain('action rows have enabled=true')
+        // The new per-result guard makes this fit without a compaction call,
+        // while retaining real source rather than only the files' paths.
+        expect(compactions).toBe(0)
+        expect(JSON.stringify(afterRead)).toContain(
+          'omitted to fit the context window',
+        )
       } else {
         expect(compactions).toBe(0)
         expect(JSON.stringify(afterRead)).not.toContain(
