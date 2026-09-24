@@ -13,7 +13,14 @@ import type { CiEnv } from '@codebuff/common/types/contracts/env'
 // User schema
 const userSchema = z.object({
   id: z.string().optional(),
-  name: z.string(),
+  // The server's user record allows a null name (see `userSchema` in
+  // common/src/util/credentials.ts), and the login response is written to disk
+  // as-is. Requiring a string here made every launch fail to parse the file
+  // for those accounts, so they could never stay logged in.
+  name: z
+    .string()
+    .nullish()
+    .transform((name) => name ?? ''),
   email: z.string(),
   authToken: z.string(),
   fingerprintId: z.string().optional(),
@@ -204,7 +211,9 @@ export const saveUserCredentials = (user: User): void => {
       fs.mkdirSync(configDir, { recursive: true, mode: CONFIG_DIR_MODE })
     }
 
-    const updatedData = { ...readCredentialsFile(), default: user }
+    // The login response is cast to `User`, so `name` can be null at runtime.
+    const normalizedUser = { ...user, name: user.name ?? '' }
+    const updatedData = { ...readCredentialsFile(), default: normalizedUser }
     fs.writeFileSync(credentialsPath, JSON.stringify(updatedData, null, 2), {
       mode: CREDENTIALS_FILE_MODE,
     })

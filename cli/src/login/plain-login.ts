@@ -93,7 +93,11 @@ export async function runPlainLogin(): Promise<void> {
     }
 
     console.log()
-    console.log(green(`✓ Logged in as ${user.name} (${user.email})`))
+    console.log(green(
+        user.name
+          ? `✓ Logged in as ${user.name} (${user.email})`
+          : `✓ Logged in as ${user.email}`,
+      ))
     console.log()
     const cliName = IS_FREEBUFF ? 'freebuff' : 'codebuff'
     console.log('You can now run ' + cyan(cliName) + ' to start.')

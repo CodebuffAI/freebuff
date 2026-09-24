@@ -330,6 +330,51 @@ describe('Credentials Storage Integration', () => {
     })
   })
 
+  // The server's user record allows a null name and the login response is
+  // written to disk as-is. A strict `name: z.string()` made the whole file
+  // fail to parse, so these accounts were logged out on every launch.
+  describe('P0: Accounts without a name', () => {
+    const writeCredentialsFile = (profile: Record<string, unknown>) => {
+      fs.writeFileSync(
+        path.join(tempConfigDir, 'credentials.json'),
+        JSON.stringify({ default: profile }, null, 2),
+      )
+    }
+
+    test('should stay logged in when the file has "name": null', () => {
+      writeCredentialsFile({ ...TEST_USER, name: null })
+
+      const user = getUserCredentials()
+
+      expect(user).not.toBeNull()
+      expect(user?.authToken).toBe(TEST_USER.authToken)
+      expect(user?.email).toBe(TEST_USER.email)
+      expect(user?.name).toBe('')
+    })
+
+    test('should stay logged in when the file has no name at all', () => {
+      const { name: _name, ...withoutName } = TEST_USER
+      writeCredentialsFile(withoutName)
+
+      const user = getUserCredentials()
+
+      expect(user?.authToken).toBe(TEST_USER.authToken)
+      expect(user?.name).toBe('')
+    })
+
+    test('should not write a null name for a login response without one', () => {
+      // The login response is cast to `User`, so null reaches the writer.
+      saveUserCredentials({ ...TEST_USER, name: null } as unknown as User)
+
+      const parsed = JSON.parse(
+        fs.readFileSync(path.join(tempConfigDir, 'credentials.json'), 'utf8'),
+      )
+
+      expect(parsed.default.name).toBe('')
+      expect(getUserCredentials()?.authToken).toBe(TEST_USER.authToken)
+    })
+  })
+
   describe('P2: File System Edge Cases', () => {
     test('should preserve file permissions when writing credentials', () => {
       // Save credentials
