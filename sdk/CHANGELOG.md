@@ -4,7 +4,7 @@ All notable changes to the @codebuff/sdk package will be documented in this file
 
 ## [Unreleased]
 
-- Added `sdk/examples/telegram-bot.ts`, a self-hosted Telegram bridge: point a bot token and API key at a project directory and chat with an agent remotely (per-chat sessions, `/new` to reset). See `sdk/README.md`.
+- Added `sdk/examples/telegram-bot.ts`, a self-hosted Telegram bridge: point a bot token and API key at a project directory and chat with an agent remotely (per-chat sessions, `/new` to reset, retry/backoff on Telegram API failures). See `sdk/README.md`.
 
 - `run()` now returns promptly when its `signal` aborts during the user lookup or agent-run registration that precede the first model request. Those requests had no signal and retried through a backoff, so a socket that never answered held the run for the whole retry budget; they now end on abort and the run resolves with `Run cancelled by user.`
 
