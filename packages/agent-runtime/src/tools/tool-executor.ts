@@ -673,13 +673,25 @@ export async function executeCustomToolCall(
     toolResultsToAddToMessageHistory,
     userInputId,
   } = params
+  const customToolDefs = await getMCPToolData({
+    ...params,
+    toolNames: agentTemplate.toolNames,
+    mcpServers: agentTemplate.mcpServers,
+    writeTo: cloneDeep(fileContext.customToolDefinitions),
+  })
+  // A sanitized MCP name carries its real server/tool; otherwise the legacy
+  // `server__tool` split still applies.
+  const mcpTarget = (
+    name: string,
+  ): { server: string; tool: string } | undefined => {
+    const origin = customToolDefs[name]?.mcpOrigin
+    if (origin) return origin
+    if (!name.includes(MCP_TOOL_SEPARATOR)) return undefined
+    const [server, ...rest] = name.split(MCP_TOOL_SEPARATOR)
+    return { server, tool: rest.join(MCP_TOOL_SEPARATOR) }
+  }
   const toolCall: CustomToolCall | ToolCallError = parseRawCustomToolCall({
-    customToolDefs: await getMCPToolData({
-      ...params,
-      toolNames: agentTemplate.toolNames,
-      mcpServers: agentTemplate.mcpServers,
-      writeTo: cloneDeep(fileContext.customToolDefinitions),
-    }),
+    customToolDefs,
     rawToolCall: {
       toolName,
       toolCallId: toolCallId ?? generateCompactId(),
@@ -694,10 +706,7 @@ export async function executeCustomToolCall(
     toolCall.toolName &&
     !(agentTemplate.toolNames as string[]).includes(toolCall.toolName) &&
     !fromHandleSteps &&
-    !(
-      toolCall.toolName.includes(MCP_TOOL_SEPARATOR) &&
-      toolCall.toolName.split(MCP_TOOL_SEPARATOR)[0] in agentTemplate.mcpServers
-    )
+    !((mcpTarget(toolCall.toolName)?.server ?? '') in agentTemplate.mcpServers)
   ) {
     // Emit an error event instead of tool call/result pair
     // The stream parser will convert this to a user message for proper API compliance
@@ -744,21 +753,12 @@ export async function executeCustomToolCall(
         return null
       }
 
-      const toolName = toolCall.toolName.includes(MCP_TOOL_SEPARATOR)
-        ? toolCall.toolName
-            .split(MCP_TOOL_SEPARATOR)
-            .slice(1)
-            .join(MCP_TOOL_SEPARATOR)
-        : toolCall.toolName
+      const target = mcpTarget(toolCall.toolName)
       const clientToolResult = await requestToolCall({
         userInputId,
-        toolName,
+        toolName: target ? target.tool : toolCall.toolName,
         input: toolCall.input,
-        mcpConfig: toolCall.toolName.includes(MCP_TOOL_SEPARATOR)
-          ? agentTemplate.mcpServers[
-              toolCall.toolName.split(MCP_TOOL_SEPARATOR)[0]
-            ]
-          : undefined,
+        mcpConfig: target ? agentTemplate.mcpServers[target.server] : undefined,
       })
       return clientToolResult.output satisfies ToolResultOutput[]
     })

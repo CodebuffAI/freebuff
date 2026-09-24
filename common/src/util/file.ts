@@ -49,6 +49,10 @@ export const customToolDefinitionsSchema = z
       endsAgentStep: z.boolean().optional().default(false),
       description: z.string().optional(),
       exampleInputs: z.record(z.string(), z.any()).array().optional(),
+      /** Set only when an MCP tool's exposed name had to be sanitized: the
+       *  server key and tool name to call, which can no longer be recovered
+       *  by splitting the exposed name. */
+      mcpOrigin: z.object({ server: z.string(), tool: z.string() }).optional(),
     }),
   )
   .default(() => ({}))
