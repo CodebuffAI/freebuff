@@ -24,7 +24,19 @@
  * `onUnrecognised` so an operator's typo does not look like a working switch.
  */
 
-import type { SponsoredExecutionSurface } from './sponsored-capability'
+import {
+  readSponsoredOsPolicy,
+  SPONSORED_OS_ON,
+  SPONSORED_OS_SWITCHES,
+  sponsoredOsExecutionCapable,
+  sponsoredOsSwitchState,
+  type SponsoredOsPolicy,
+} from './sponsored-os-policy'
+
+// The switch machinery is shared by every switched OS (COD-655 generalised it
+// out of this module); these names are Windows' view of it, kept so no
+// caller and no behaviour changes.
+export { throttledUnrecognisedSwitchReporter } from './sponsored-os-policy'
 
 export type SponsoredWindowsEnv = {
   FREEBUFF_SPONSORED_WINDOWS?: string
@@ -36,16 +48,14 @@ export type SponsoredWindowsEnv = {
  * 2026-09-24). Kept as a value rather than a boolean so a caller cannot
  * confuse "the switch" with "this request is Windows".
  */
-export type SponsoredWindowsPolicy = Readonly<{ switch: 'on' }>
+export type SponsoredWindowsPolicy = SponsoredOsPolicy
 
 /** The only policy there is: the switch, on. */
-export const SPONSORED_WINDOWS_ON: SponsoredWindowsPolicy = Object.freeze({
-  switch: 'on',
-})
+export const SPONSORED_WINDOWS_ON: SponsoredWindowsPolicy = SPONSORED_OS_ON
 
 /** The execution surface a Windows Desktop client reports and is granted. */
 export const SPONSORED_WINDOWS_EXECUTION_SURFACE =
-  'desktop_windows' as const satisfies SponsoredExecutionSurface
+  SPONSORED_OS_SWITCHES.windows.surface
 
 /**
  * What stands between a Windows run and the user's machine: the floor, not a
@@ -62,44 +72,14 @@ export type SponsoredExecutionContainment = typeof SPONSORED_WINDOWS_CONTAINMENT
  * `on` is exactly `on`; anything else (`ON`, ` on `, `true`, a typo) is
  * `unrecognised`, which is CLOSED and worth a log line.
  */
-export function sponsoredWindowsSwitchState(
-  raw: string | undefined,
-): 'on' | 'off' | 'unrecognised' {
-  if (raw === undefined || raw === '' || raw === 'off') return 'off'
-  return raw === 'on' ? 'on' : 'unrecognised'
-}
+export const sponsoredWindowsSwitchState = sponsoredOsSwitchState
 
 /** Server configuration only. Anything but the exact value `on` admits nothing. */
 export function readSponsoredWindowsPolicy(
   env: SponsoredWindowsEnv,
   options: { onUnrecognised?: (value: string) => void } = {},
 ): SponsoredWindowsPolicy | null {
-  const raw = env.FREEBUFF_SPONSORED_WINDOWS
-  const state = sponsoredWindowsSwitchState(raw)
-  if (state === 'unrecognised' && raw !== undefined)
-    options.onUnrecognised?.(raw)
-  return state === 'on' ? SPONSORED_WINDOWS_ON : null
-}
-
-/**
- * A reporter for `onUnrecognised` that says so ONCE per value per interval
- * (default ten minutes) instead of on every request. Each runtime owns one
- * (module scope), and passes its own logger. The value is bounded and
- * JSON-quoted before it reaches the log, so whitespace is visible.
- */
-export function throttledUnrecognisedSwitchReporter(
-  report: (quotedValue: string) => void,
-  options: { intervalMs?: number; now?: () => number } = {},
-): (value: string) => void {
-  const intervalMs = options.intervalMs ?? 10 * 60_000
-  const now = options.now ?? Date.now
-  let last: { value: string; at: number } | null = null
-  return (value) => {
-    const at = now()
-    if (last && last.value === value && at - last.at < intervalMs) return
-    last = { value, at }
-    report(JSON.stringify(value.slice(0, 32)))
-  }
+  return readSponsoredOsPolicy('windows', env, options)
 }
 
 /** The containment a run on this execution surface gets, when it is not an OS sandbox. */
@@ -163,20 +143,7 @@ export function sponsoredDesktopSurfaceMatchesOs(
  * without this a paid offer would reach a client whose Accept can only fail.
  */
 export function sponsoredWindowsExecutionCapable(
-  capability:
-    | {
-        execution: {
-          surface: string
-          status: string
-          reason?: string | undefined
-        }
-      }
-    | null
-    | undefined,
+  capability: Parameters<typeof sponsoredOsExecutionCapable>[1],
 ): boolean {
-  return (
-    capability?.execution.surface === SPONSORED_WINDOWS_EXECUTION_SURFACE &&
-    capability.execution.status === 'available' &&
-    capability.execution.reason === undefined
-  )
+  return sponsoredOsExecutionCapable('windows', capability)
 }
