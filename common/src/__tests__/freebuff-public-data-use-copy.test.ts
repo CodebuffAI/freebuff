@@ -37,6 +37,7 @@ describe('public Freebuff data-use copy', () => {
       version: '2026-09-02',
       effectiveDate: 'September 2, 2026',
       lastUpdated: '09/02/2026',
+      privacyPolicyLastUpdated: '09/24/2026',
     })
     expect(FREEBUFF_AI_TRAINING_NOTICE).toBe('May use data for AI training')
     expect(FREEBUFF_PUBLIC_DATA_USE_COPY.storageAnswer).not.toContain(

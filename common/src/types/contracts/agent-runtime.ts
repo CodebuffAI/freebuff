@@ -15,7 +15,9 @@ import type {
   DatabaseAgentCache,
   FetchAgentFromDatabaseFn,
   FinishAgentRunFn,
+  GetProjectProfileFn,
   GetUserInfoFromApiKeyFn,
+  ReportProjectProfileFn,
   StartAgentRunFn,
 } from './database'
 import type { ClientEnv, CiEnv } from './env'
@@ -39,6 +41,8 @@ export type AgentRuntimeDeps = {
   startAgentRun: StartAgentRunFn
   finishAgentRun: FinishAgentRunFn
   addAgentStep: AddAgentStepFn
+  getProjectProfile?: GetProjectProfileFn
+  reportProjectProfile?: ReportProjectProfileFn
 
   // Billing
   consumeCreditsWithFallback: ConsumeCreditsWithFallbackFn

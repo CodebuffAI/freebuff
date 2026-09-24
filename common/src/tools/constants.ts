@@ -20,6 +20,7 @@ export const TOOLS_WHICH_WONT_FORCE_NEXT_STEP = [
   'suggest_followups',
   'suggest_prompts',
   'task_completed',
+  'report_project_profile',
 ]
 
 // List of all available tools
@@ -45,6 +46,7 @@ export const toolNames = [
   'read_subtree',
   'read_url',
   'render_ui',
+  'report_project_profile',
   'run_file_change_hooks',
   'run_terminal_command',
   'set_messages',

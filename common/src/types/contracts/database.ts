@@ -1,3 +1,7 @@
+import type {
+  ProjectProfile,
+  ProjectProfileReport,
+} from '@codebuff/common/constants/project-profile'
 import type { AgentTemplate } from '@codebuff/common/types/agent-template'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 
@@ -112,5 +116,16 @@ export type AddAgentStepFn = (params: {
   startTime: Date
   logger: Logger
 }) => Promise<string | null>
+
+export type GetProjectProfileFn = (params: {
+  logger: Logger
+  signal?: AbortSignal
+}) => Promise<{ due: boolean; profile: ProjectProfile | null } | null>
+
+export type ReportProjectProfileFn = (params: {
+  report: ProjectProfileReport
+  logger: Logger
+  signal?: AbortSignal
+}) => Promise<boolean>
 
 export type DatabaseAgentCache = Map<string, AgentTemplate | null>

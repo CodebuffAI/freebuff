@@ -23,6 +23,7 @@ import { readFilesParams } from './params/tool/read-files'
 import { readSubtreeParams } from './params/tool/read-subtree'
 import { readUrlParams } from './params/tool/read-url'
 import { renderUIParams } from './params/tool/render-ui'
+import { reportProjectProfileParams } from './params/tool/report-project-profile'
 import { runFileChangeHooksParams } from './params/tool/run-file-change-hooks'
 import { runTerminalCommandParams } from './params/tool/run-terminal-command'
 import { setMessagesParams } from './params/tool/set-messages'
@@ -65,6 +66,7 @@ export const toolParams = {
   read_subtree: readSubtreeParams,
   read_url: readUrlParams,
   render_ui: renderUIParams,
+  report_project_profile: reportProjectProfileParams,
   run_file_change_hooks: runFileChangeHooksParams,
   run_terminal_command: runTerminalCommandParams,
   set_messages: setMessagesParams,

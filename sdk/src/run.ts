@@ -40,6 +40,11 @@ import { byokModelLimits } from './byok'
 import type { ResolvedByokConnection } from './byok'
 import { getErrorStatusCode } from './error-utils'
 import { getAgentRuntimeImpl } from './impl/agent-runtime'
+import {
+  createProjectProfileClient,
+  projectProfileSurface,
+  resolveProjectKey,
+} from './project-profile'
 import { getUserInfoFromApiKey } from './impl/database'
 import { initialSessionState, applyOverridesToSessionState } from './run-state'
 import type { ComputedProjectIndex } from './run-state'
@@ -282,6 +287,9 @@ export type RunOptions = {
    * writes commands for the shell that will run them. Unset keeps the default.
    */
   terminalShell?: 'bash' | 'powershell'
+  /** Stable id of the project this run works on. Defaults to a hash of the
+   *  repository root resolved from `cwd`. */
+  projectKey?: string
 }
 
 /**
@@ -534,6 +542,7 @@ async function runOnce({
   onUsageIncomplete,
   onCompaction,
   terminalShell,
+  projectKey,
 }: RunExecutionOptions): Promise<RunState> {
   const fsSourceValue = typeof fsSource === 'function' ? fsSource() : fsSource
   const fs = await fsSourceValue
@@ -980,8 +989,24 @@ async function runOnce({
 
   const repoSnapshot = toRepoSnapshot(sessionState.fileContext?.gitChanges)
 
+  const resolvedProjectKey = byok
+    ? undefined
+    : await resolveProjectKey({
+        projectKey,
+        cwd,
+        readFile: (filePath) => fs.readFile(filePath, 'utf8'),
+      })
+
   callMainPrompt({
     ...agentRuntimeImpl,
+    ...(resolvedProjectKey
+      ? createProjectProfileClient({
+          apiKey,
+          userId: requestedUserId,
+          projectKey: resolvedProjectKey,
+          surface: projectProfileSurface(extraCodebuffMetadata),
+        })
+      : {}),
     promptId,
     action: {
       type: 'prompt',

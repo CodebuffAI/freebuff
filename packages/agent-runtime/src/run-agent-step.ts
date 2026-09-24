@@ -4,6 +4,7 @@ import {
   supportsAssistantPrefill,
   supportsCacheControl,
 } from '@codebuff/common/old-constants'
+import { PROJECT_PROFILE_TOOL_NAME } from '@codebuff/common/constants/project-profile'
 import { TOOLS_WHICH_WONT_FORCE_NEXT_STEP } from '@codebuff/common/tools/constants'
 import { buildArray } from '@codebuff/common/util/array'
 import {
@@ -30,6 +31,10 @@ import { evaluateCompactionTrigger } from './compact-history'
 import { compactWithModelOrFallback, compactionTools } from './model-compaction'
 import { CACHE_DEBUG_FULL_LOGGING } from './constants'
 import { getMCPToolData } from './mcp'
+import {
+  runProjectProfileReport,
+  shouldOfferProjectProfileTool,
+} from './project-profile'
 import { getAgentStreamFromTemplate } from './prompt-agent-stream'
 import { isThinkOnlyResponse } from './util/think-tags'
 import {
@@ -894,6 +899,20 @@ export async function loopAgentSteps(
     ciEnv,
   } = params
 
+  const offersProjectProfile = shouldOfferProjectProfileTool({
+    costMode: params.costMode,
+    isRoot: !initialAgentState.parentId,
+    toolNames: agentTemplate.toolNames,
+    getProjectProfile: params.getProjectProfile,
+    reportProjectProfile: params.reportProjectProfile,
+  })
+  if (offersProjectProfile) {
+    agentTemplate = {
+      ...agentTemplate,
+      toolNames: [...agentTemplate.toolNames, PROJECT_PROFILE_TOOL_NAME],
+    }
+  }
+
   if (signal.aborted) {
     return {
       agentState: initialAgentState,
@@ -1402,6 +1421,36 @@ export async function loopAgentSteps(
       }
     }
 
+    const projectProfileReport =
+      offersProjectProfile &&
+      !manualCompaction &&
+      params.getProjectProfile &&
+      params.reportProjectProfile
+        ? runProjectProfileReport({
+            history: dropUnansweredToolCalls(currentAgentState.messageHistory),
+            getProjectProfile: params.getProjectProfile,
+            reportProjectProfile: params.reportProjectProfile,
+            stream: (messages, reportSignal) =>
+              getAgentStreamFromTemplate({
+                ...params,
+                agentId: undefined,
+                template: agentTemplate,
+                runId,
+                messages: [systemMessage(system), ...messages],
+                tools,
+                toolChoice: 'required',
+                includeCacheControl: supportsCacheControl(agentTemplate.model),
+                signal: reportSignal,
+                extraCodebuffMetadata: {
+                  ...(params.extraCodebuffMetadata ?? {}),
+                  llm_step_number: String(llmStepNumber + 1),
+                },
+                onCostCalculated: async () => {},
+              }),
+            logger,
+          })
+        : undefined
+
     if (clearUserPromptMessagesAfterResponse) {
       currentAgentState.messageHistory = expireMessages(
         currentAgentState.messageHistory,
@@ -1411,14 +1460,20 @@ export async function loopAgentSteps(
 
     recountContextTokensForTurnEnd()
 
-    await finishAgentRun({
-      ...params,
-      runId,
-      status: 'completed',
-      totalSteps,
-      directCredits: currentAgentState.directCreditsUsed,
-      totalCredits: currentAgentState.creditsUsed,
-    })
+    const finishCompletedRun = () =>
+      finishAgentRun({
+        ...params,
+        runId,
+        status: 'completed',
+        totalSteps,
+        directCredits: currentAgentState.directCreditsUsed,
+        totalCredits: currentAgentState.creditsUsed,
+      })
+    if (projectProfileReport) {
+      void projectProfileReport.then(finishCompletedRun)
+    } else {
+      await finishCompletedRun()
+    }
 
     return {
       agentState: currentAgentState,

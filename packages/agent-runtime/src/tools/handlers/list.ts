@@ -25,6 +25,7 @@ import { handleReadFiles } from './tool/read-files'
 import { handleReadSubtree } from './tool/read-subtree'
 import { handleReadUrl } from './tool/read-url'
 import { handleRenderUI } from './tool/render-ui'
+import { handleReportProjectProfile } from './tool/report-project-profile'
 import { handleRunFileChangeHooks } from './tool/run-file-change-hooks'
 import { handleRunTerminalCommand } from './tool/run-terminal-command'
 import { handleSetMessages } from './tool/set-messages'
@@ -81,6 +82,7 @@ export const codebuffToolHandlers: {
   read_subtree: handleReadSubtree,
   read_url: handleReadUrl,
   render_ui: handleRenderUI,
+  report_project_profile: handleReportProjectProfile,
   run_file_change_hooks: handleRunFileChangeHooks,
   run_terminal_command: handleRunTerminalCommand,
   set_messages: handleSetMessages,
