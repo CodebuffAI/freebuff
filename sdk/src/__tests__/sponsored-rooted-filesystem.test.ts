@@ -6,8 +6,10 @@ import path from 'node:path'
 
 import {
   createSponsoredRootedFileSystem,
+  probeSponsoredFileLayer,
   sponsoredDirectoryPinning,
 } from '../tools/sponsored-rooted-filesystem'
+import { sponsoredWindowsSegmentRefusal } from '../tools/sponsored-windows-paths'
 
 import type { TerminalCommandBroker } from '../tools/run-terminal-command'
 
@@ -268,15 +270,19 @@ describe('sponsored rooted filesystem: writes outside the worktree are refused',
     // The sandboxed shell cannot make this link (seatbelt refuses `ln` of an
     // outside file; bubblewrap never mounts one). But the file layer is NOT
     // sandboxed any more, so it must not be the thing that writes through
-    // one if it ever exists.
+    // one if it ever exists. It never opens the target at all: the write is
+    // staged beside it and renamed over the NAME, so the other name keeps the
+    // bytes it had.
     fs.linkSync(path.join(outside, 'secret.txt'), path.join(root, 'hard.txt'))
     const rooted = createSponsoredRootedFileSystem({ workspaceRoot: root })
-    await expect(
-      rooted.writeFile(path.join(root, 'hard.txt'), 'overwritten'),
-    ).rejects.toMatchObject({ code: 'EMLINK' })
+    await rooted.writeFile(path.join(root, 'hard.txt'), 'replaced')
     expect(fs.readFileSync(path.join(outside, 'secret.txt'), 'utf8')).toBe(
       'outside-secret',
     )
+    expect(fs.readFileSync(path.join(root, 'hard.txt'), 'utf8')).toBe(
+      'replaced',
+    )
+    expect(fs.statSync(path.join(root, 'hard.txt')).nlink).toBe(1)
   })
 
   test('to the classes the surface refuses, including through an alias', async () => {
@@ -610,5 +616,228 @@ describe('sponsored rooted filesystem: what it will not open', () => {
     await expect(
       rooted.writeFile(path.join(root, 'a.txt'), 'x', { flag: 'a' }),
     ).rejects.toThrow(/only support replacing/)
+  })
+})
+
+/** Anything a write staged and failed to clean up, anywhere in the worktree. */
+function stagedLeftovers(directory: string): string[] {
+  const found: string[] = []
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name)
+    if (entry.name.startsWith('.sponsored-write-')) found.push(full)
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      found.push(...stagedLeftovers(full))
+    }
+  }
+  return found
+}
+
+describe('sponsored rooted filesystem: writes are atomic', () => {
+  test('a write replaces the file and leaves nothing staged', async () => {
+    const rooted = createSponsoredRootedFileSystem({ workspaceRoot: root })
+    const target = path.join(root, 'src', 'a.ts')
+    await rooted.writeFile(target, 'first\n')
+    await rooted.writeFile(target, 'second, and longer than the first\n')
+    await rooted.writeFile(target, 'third\n')
+    expect(fs.readFileSync(target, 'utf8')).toBe('third\n')
+    expect(stagedLeftovers(root)).toEqual([])
+  })
+
+  test('a refused write leaves nothing staged', async () => {
+    fs.mkdirSync(path.join(root, 'dir'))
+    const rooted = createSponsoredRootedFileSystem({ workspaceRoot: root })
+    await expect(
+      rooted.writeFile(path.join(root, 'dir'), 'x'),
+    ).rejects.toMatchObject({ code: 'EISDIR' })
+    expect(stagedLeftovers(root)).toEqual([])
+  })
+
+  test.skipIf(isWindows)(
+    'a replaced file is a new inode that keeps its permission bits',
+    async () => {
+      const target = path.join(root, 'run.sh')
+      fs.writeFileSync(target, '#!/bin/sh\necho old\n')
+      fs.chmodSync(target, 0o755)
+      const before = fs.statSync(target).ino
+      const rooted = createSponsoredRootedFileSystem({ workspaceRoot: root })
+      await rooted.writeFile(target, '#!/bin/sh\necho new\n')
+      const after = fs.statSync(target)
+      expect(after.ino).not.toBe(before)
+      expect(after.mode & 0o777).toBe(0o755)
+      expect(fs.readFileSync(target, 'utf8')).toContain('echo new')
+    },
+  )
+
+  test.skipIf(isWindows)(
+    'a FIFO is refused as a write target, not opened',
+    async () => {
+      const fifo = path.join(root, 'pipe')
+      if (spawnSync('mkfifo', [fifo]).status !== 0) return
+      const rooted = createSponsoredRootedFileSystem({ workspaceRoot: root })
+      await expect(rooted.writeFile(fifo, 'x')).rejects.toThrow(/regular files/)
+      expect(fs.lstatSync(fifo).isFIFO()).toBe(true)
+    },
+  )
+})
+
+describe('sponsored rooted filesystem: Windows spellings', () => {
+  test('refuses every component Win32 would reinterpret, and nothing else', () => {
+    for (const reinterpreted of [
+      '.npmrc.',
+      '.npmrc ',
+      '.github.',
+      '.github ',
+      '.npmrc::$DATA',
+      'package.json:hidden',
+      'GITHUB~1',
+      'PROGRA~12.TXT',
+      '.HUSKY~1',
+    ]) {
+      expect(
+        sponsoredWindowsSegmentRefusal(reinterpreted),
+        reinterpreted,
+      ).not.toBeNull()
+    }
+    for (const plain of [
+      '.github',
+      '.npmrc',
+      'src',
+      'a.b.c',
+      'backup~',
+      '~$report.docx',
+      'file with spaces.ts',
+    ]) {
+      expect(sponsoredWindowsSegmentRefusal(plain), plain).toBeNull()
+    }
+  })
+
+  test.skipIf(!isWindows)(
+    'a spelling Windows would land on a refused class is refused before anything is written',
+    async () => {
+      fs.mkdirSync(path.join(root, '.github', 'workflows'), {
+        recursive: true,
+      })
+      const rooted = createSponsoredRootedFileSystem({ workspaceRoot: root })
+      for (const requested of [
+        path.join(root, '.npmrc::$DATA'),
+        path.join(root, '.npmrc.'),
+        path.join(root, '.npmrc '),
+        path.join(root, '.github.', 'workflows', 'ci.yml'),
+        path.join(root, '.github ', 'workflows', 'ci.yml'),
+        path.join(root, 'GITHUB~1', 'workflows', 'ci.yml'),
+        path.join(root, '.husky.', 'pre-commit'),
+      ]) {
+        await expect(
+          rooted.writeFile(requested, 'registry=https://evil.example\n'),
+          requested,
+        ).rejects.toThrow(/Windows|dot or a space/)
+      }
+      await expect(
+        rooted.readFile(path.join(root, '.npmrc::$DATA'), 'utf8'),
+      ).rejects.toThrow(/stream/)
+      expect(fs.existsSync(path.join(root, '.npmrc'))).toBe(false)
+      expect(fs.existsSync(path.join(root, '.husky'))).toBe(false)
+      expect(fs.readdirSync(path.join(root, '.github', 'workflows'))).toEqual(
+        [],
+      )
+    },
+  )
+
+  /**
+   * A reparse point Node's `lstat` does NOT report as a link: a junction onto
+   * a volume GUID path. libuv only reads a junction as a link when its target
+   * is a drive-letter path, so this one looks like an ordinary directory while
+   * the kernel follows it. Built with `mklink /J`; where the runner cannot
+   * build one that both hides from `lstat` and reaches outside, the test says
+   * so and asserts nothing, rather than passing on a fixture that proves
+   * nothing.
+   */
+  test.skipIf(!isWindows)(
+    'a reparse point lstat does not report as a link is still refused',
+    async () => {
+      const drive = path.parse(outside).root
+      const volume = (
+        spawnSync('mountvol', [drive, '/L'], { encoding: 'utf8' }).stdout ?? ''
+      ).trim()
+      if (!/^\\\\\?\\Volume\{[0-9a-fA-F-]+\}\\$/.test(volume)) {
+        console.log(`PRECONDITION NOT MET: no volume GUID for ${drive}`)
+        return
+      }
+      const link = path.join(root, 'mounted')
+      const target = volume + outside.slice(drive.length)
+      const made = spawnSync(
+        'cmd.exe',
+        ['/d', '/c', 'mklink', '/J', link, target],
+        { encoding: 'utf8' },
+      )
+      try {
+        if (made.status !== 0) {
+          console.log(
+            `PRECONDITION NOT MET: mklink /J to ${target}: ${made.stdout}${made.stderr}`,
+          )
+          return
+        }
+        if (
+          fs.lstatSync(link).isSymbolicLink() ||
+          !fs.existsSync(path.join(link, 'secret.txt'))
+        ) {
+          console.log(
+            'PRECONDITION NOT MET: the junction is visible to lstat or does not reach outside',
+          )
+          return
+        }
+        console.log(
+          'PRECONDITION MET: lstat reports a directory, the kernel reaches outside',
+        )
+        const rooted = createSponsoredRootedFileSystem({ workspaceRoot: root })
+        // The REDIRECT refusal, not the plain symlink one: lstat saw nothing,
+        // so only the native final-path check can have refused this.
+        const refusal = /symlink, junction or mount point/
+        await expect(
+          rooted.readFile(path.join(link, 'secret.txt'), 'utf8'),
+        ).rejects.toThrow(refusal)
+        await expect(rooted.readdir(link)).rejects.toThrow(refusal)
+        await expect(
+          rooted.writeFile(path.join(link, 'secret.txt'), 'overwritten'),
+        ).rejects.toThrow(refusal)
+        await expect(
+          rooted.writeFile(path.join(link, 'new.txt'), 'created'),
+        ).rejects.toThrow(refusal)
+        await expect(
+          rooted.unlink(path.join(link, 'secret.txt')),
+        ).rejects.toThrow(refusal)
+        expect(fs.readdirSync(outside)).toEqual(['secret.txt'])
+        expect(fs.readFileSync(path.join(outside, 'secret.txt'), 'utf8')).toBe(
+          'outside-secret',
+        )
+      } finally {
+        // Remove the junction itself, never what it points at.
+        try {
+          fs.rmdirSync(link)
+        } catch {
+          spawnSync('cmd.exe', ['/d', '/c', 'rmdir', link])
+        }
+      }
+    },
+  )
+})
+
+describe('sponsored rooted filesystem: availability probe', () => {
+  test('says yes here, by proving the pin names the worktree', () => {
+    expect(probeSponsoredFileLayer(root)).toEqual({
+      available: true,
+      pinning: sponsoredDirectoryPinning(process.platform)!,
+    })
+  })
+
+  test('says no where there is no mechanism, or no worktree', () => {
+    expect(probeSponsoredFileLayer(root, 'freebsd')).toEqual({
+      available: false,
+      reason: 'no-pin-mechanism',
+    })
+    expect(probeSponsoredFileLayer(path.join(root, 'missing'))).toEqual({
+      available: false,
+      reason: 'worktree-unreadable',
+    })
   })
 })

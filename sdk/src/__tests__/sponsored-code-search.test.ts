@@ -8,6 +8,7 @@ import {
   sponsoredRipgrepArgs,
 } from '../tools/sponsored-sandbox'
 import { codeSearch } from '../tools/code-search'
+import { getBundledRgPath } from '../native/ripgrep'
 
 /**
  * Sponsored `code_search` with FIXED ripgrep arguments, spawned directly
@@ -100,6 +101,47 @@ describe('sponsored code search: fixed arguments, no shell', () => {
           root,
         ).slice(-2),
       ).toEqual(['x', '.'])
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('checks the working directory before it reads anything under it', () => {
+    // `sponsoredRipgrepArgs` lstats the hidden search roots under the cwd, so
+    // the cwd has to be judged first. The argv here is ALSO refusable (`--pre`)
+    // so the order is observable: the cwd refusal must be the one that lands.
+    const { root, runtime, parent } = workspace()
+    const outside = path.join(parent, 'outside')
+    fs.mkdirSync(path.join(outside, '.github'), { recursive: true })
+    const rgPath = getBundledRgPath(import.meta.url)
+    try {
+      for (const platform of [process.platform, 'win32' as const]) {
+        const broker = createSponsoredCodeSearchBroker({
+          workspaceRoot: root,
+          runtimeDir: runtime,
+          platform,
+        })
+        expect(
+          () =>
+            broker.start({
+              executable: rgPath,
+              args: [
+                '--no-config',
+                '-n',
+                '--json',
+                '--pre',
+                'cat',
+                '--',
+                'x',
+                '.',
+                '.github',
+              ],
+              cwd: outside,
+              env: {},
+            }),
+          platform,
+        ).toThrow(/inside its own worktree/)
+      }
     } finally {
       fs.rmSync(parent, { recursive: true, force: true })
     }

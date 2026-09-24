@@ -1,9 +1,16 @@
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
 import { evaluateSponsoredWritePath } from '@codebuff/common/ads/sponsored-capabilities'
 
 import { containSponsoredPath } from './sponsored-sandbox'
+import {
+  sameWindowsPath,
+  sponsoredWindowsSegmentRefusal,
+  windowsNativePath,
+  windowsNativeRelative,
+} from './sponsored-windows-paths'
 
 import type { TerminalCommandBroker } from './run-terminal-command'
 import type { CodebuffFileSystem } from '@codebuff/common/types/filesystem'
@@ -30,9 +37,14 @@ const READ_LIMIT_BYTES = 16 * 1024 * 1024
  *    (measured: exFAT answers `ENOENT`) is REFUSED by name, never walked by
  *    pathname instead.
  *  - `lstat` (Windows): Node exposes no handle-relative open there, so each
- *    component is `lstat`ed and refused if it is a symlink or a junction.
- *    READ `docs/freebuff-sponsored-local-execution.md`, "The file layer
- *    without a shell (COD-642)", before giving Windows an OS sandbox.
+ *    component is `lstat`ed and refused if it is a symlink or a junction, AND
+ *    refused unless Windows' own final path for it (`realpathSync.native`) is
+ *    the path the walk expects — `lstat` reports only some reparse points as
+ *    links and silently follows the rest. Spellings Win32 would reinterpret
+ *    (trailing dot or space, `:`, an 8.3 short name) are refused before any
+ *    of that; see `sponsored-windows-paths.ts`. READ
+ *    `docs/freebuff-sponsored-local-execution.md`, "The file layer without a
+ *    shell (COD-642)", before giving Windows an OS sandbox.
  *
  * Every other platform is refused: there is no mechanism, so there is no run.
  */
@@ -68,6 +80,22 @@ function symlinkRefusal(verb: SponsoredFsVerb): NodeJS.ErrnoException {
     'ELOOP',
     `A sponsored run may not ${verb} through a symlink in its worktree.`,
   )
+}
+
+/** A Windows reparse point `lstat` did not report as a link, or any redirect. */
+function redirectRefusal(verb: SponsoredFsVerb): NodeJS.ErrnoException {
+  return fsError(
+    'ELOOP',
+    `A sponsored run may not ${verb} through a symlink, junction or mount point in its worktree.`,
+  )
+}
+
+/**
+ * The name a write is staged under, beside its target, before it is renamed
+ * over it. Unguessable, so it cannot already exist, and created exclusively.
+ */
+function stagingName(): string {
+  return `.sponsored-write-${randomUUID()}.tmp`
 }
 
 function rootedPath(
@@ -107,12 +135,93 @@ interface DirectoryAnchor {
   readonly self: string
   /** A path naming `name` inside THIS directory through the pin. */
   child(name: string): string
+  /**
+   * Windows only: where Windows itself resolves this directory, which every
+   * step below it must extend by exactly one name.
+   */
+  readonly native?: string
   close(): Promise<void>
 }
 
 interface Identity {
   dev: bigint
   ino: bigint
+}
+
+/** The path that names an open directory through the pin, never by its pathname. */
+function pinPath(
+  pinning: 'proc-fd' | 'volfs',
+  fd: number,
+  identity: Identity,
+): string {
+  return pinning === 'proc-fd'
+    ? `/proc/self/fd/${fd}`
+    : `/.vol/${identity.dev}/${identity.ino}`
+}
+
+export type SponsoredFileLayerSupport =
+  | { available: true; pinning: SponsoredDirectoryPinning }
+  | {
+      available: false
+      reason: 'no-pin-mechanism' | 'volume-cannot-pin' | 'worktree-unreadable'
+    }
+
+/**
+ * Whether the sponsored file tools can work in `workspaceRoot` on THIS host,
+ * asked the way they will ask: open the worktree, and prove the pin names the
+ * directory that was opened.
+ *
+ * For a surface to call BEFORE Accept. Without it, a macOS project on a volume
+ * with no `/.vol` (exFAT, and very likely FAT, SMB or NFS) is accepted and then
+ * refused at its first file operation. `platform` exists so a test can name a
+ * platform with no mechanism; the probe itself only means anything for the
+ * platform it runs on.
+ */
+export function probeSponsoredFileLayer(
+  workspaceRoot: string,
+  platform: NodeJS.Platform = process.platform,
+): SponsoredFileLayerSupport {
+  const pinning = sponsoredDirectoryPinning(platform)
+  if (!pinning) return { available: false, reason: 'no-pin-mechanism' }
+  let root: string
+  try {
+    root = fs.realpathSync(path.resolve(workspaceRoot))
+  } catch {
+    return { available: false, reason: 'worktree-unreadable' }
+  }
+  if (pinning === 'lstat') {
+    try {
+      windowsNativePath(root)
+      return { available: true, pinning }
+    } catch {
+      return { available: false, reason: 'worktree-unreadable' }
+    }
+  }
+  let fd: number
+  try {
+    fd = fs.openSync(
+      root,
+      fs.constants.O_RDONLY |
+        fs.constants.O_DIRECTORY |
+        fs.constants.O_NOFOLLOW,
+    )
+  } catch {
+    return { available: false, reason: 'worktree-unreadable' }
+  }
+  try {
+    const opened = fs.fstatSync(fd, { bigint: true })
+    const named = fs.statSync(pinPath(pinning, fd, opened), {
+      bigint: true,
+      throwIfNoEntry: false,
+    })
+    return named && named.dev === opened.dev && named.ino === opened.ino
+      ? { available: true, pinning }
+      : { available: false, reason: 'volume-cannot-pin' }
+  } catch {
+    return { available: false, reason: 'volume-cannot-pin' }
+  } finally {
+    fs.closeSync(fd)
+  }
 }
 
 /**
@@ -141,12 +250,13 @@ interface Identity {
  *     moved after it was pinned can only have been moved by the sandbox, and
  *     so only to somewhere the sandbox may already write.
  *
- * Writes also refuse, on the RESOLVED path, every class
- * `evaluateSponsoredWritePath` refuses, so a symlink inside the worktree that
- * aliases `.git` cannot carry a write the surface guard approved by spelling.
- * And a write refuses a file with more than one hard link: this process is
- * not sandboxed, so it must not write through a name inside the worktree into
- * an inode that also lives outside it.
+ * Writes also refuse every class `evaluateSponsoredWritePath` refuses, asked
+ * of the path as it resolves AT CHECK TIME, so a symlink inside the worktree
+ * that aliases `.git` cannot carry a write the surface guard approved by
+ * spelling. And a write never opens its target: the content goes to a fresh
+ * file created exclusively beside it and is renamed over it through the pin,
+ * so a hard-linked name is replaced rather than written through (this process
+ * is not sandboxed, and the other name may be outside the worktree).
  *
  * Directory enumeration reads the pinned directory, never the pathname.
  *
@@ -192,6 +302,10 @@ export function createSponsoredRootedFileSystem(options: {
     throw new Error('A sponsored run requires a worktree directory.')
   }
   const rootIdentity: Identity = { dev: rootStat.dev, ino: rootStat.ino }
+  // Windows: where Windows itself puts the worktree. Every walk re-derives it
+  // and every component must extend it by exactly its own name.
+  const nativeRoot =
+    pinning === 'lstat' ? windowsNativePath(canonicalRoot) : undefined
 
   const posix = pinning !== 'lstat'
   const O_NOFOLLOW = posix ? fs.constants.O_NOFOLLOW : 0
@@ -266,10 +380,7 @@ export function createSponsoredRootedFileSystem(options: {
       if (expected && !sameIdentity(opened, expected)) {
         throw new Error('A sponsored run’s worktree was replaced while it ran.')
       }
-      const self =
-        pinning === 'proc-fd'
-          ? `/proc/self/fd/${handle.fd}`
-          : `/.vol/${opened.dev}/${opened.ino}`
+      const self = pinPath(pinning as 'proc-fd' | 'volfs', handle.fd, opened)
       // The pin must name the very directory the handle holds. Where it does
       // not (no /proc, a volume without volfs), every operation below would
       // be resolving something else, so refuse rather than walk by pathname.
@@ -293,12 +404,35 @@ export function createSponsoredRootedFileSystem(options: {
     }
   }
 
-  const pathAnchor = (directory: string): DirectoryAnchor => ({
+  const pathAnchor = (directory: string, native: string): DirectoryAnchor => ({
     logical: directory,
     self: directory,
     child: (name) => path.join(directory, name),
+    native,
     close: async () => {},
   })
+
+  /**
+   * Windows: refuse `target` unless Windows resolves it to exactly `expected`.
+   * `lstat` reports a symlink and a drive-letter junction as links, but not a
+   * junction onto a volume GUID path, a mount point, or a reparse tag it does
+   * not know — those it FOLLOWS. The final path of an open handle follows all
+   * of them, so a difference is a redirect, whatever kind it is.
+   */
+  const assertWindowsInPlace = (
+    target: string,
+    expected: string,
+    verb: SponsoredFsVerb,
+    logical: string,
+  ): void => {
+    let actual: string
+    try {
+      actual = windowsNativePath(target)
+    } catch (error) {
+      throw logicalError(error, verb, logical)
+    }
+    if (!sameWindowsPath(actual, expected)) throw redirectRefusal(verb)
+  }
 
   const openRoot = async (verb: SponsoredFsVerb): Promise<DirectoryAnchor> => {
     if (pinning === 'lstat') {
@@ -307,7 +441,8 @@ export function createSponsoredRootedFileSystem(options: {
       if (!sameIdentity(stat, rootIdentity)) {
         throw new Error('A sponsored run’s worktree was replaced while it ran.')
       }
-      return pathAnchor(canonicalRoot)
+      assertWindowsInPlace(canonicalRoot, nativeRoot!, verb, canonicalRoot)
+      return pathAnchor(canonicalRoot, nativeRoot!)
     }
     const handle = await fs.promises
       .open(canonicalRoot, DIRECTORY_FLAGS)
@@ -346,7 +481,9 @@ export function createSponsoredRootedFileSystem(options: {
       if (!stat.isDirectory()) {
         throw fsError('ENOTDIR', `ENOTDIR: '${logical}' is not a directory`)
       }
-      return pathAnchor(target)
+      const expected = path.join(parent.native!, name)
+      assertWindowsInPlace(target, expected, verb, logical)
+      return pathAnchor(target, expected)
     }
     let handle: FileHandle
     try {
@@ -396,6 +533,14 @@ export function createSponsoredRootedFileSystem(options: {
     if (pinning === 'lstat') {
       const stat = await fs.promises.lstat(anchor.child(leaf)).catch(() => null)
       if (stat?.isSymbolicLink()) throw symlinkRefusal(verb)
+      if (stat) {
+        assertWindowsInPlace(
+          anchor.child(leaf),
+          path.join(anchor.native!, leaf),
+          verb,
+          logical,
+        )
+      }
     }
     try {
       return await fs.promises.open(
@@ -405,6 +550,36 @@ export function createSponsoredRootedFileSystem(options: {
       )
     } catch (error) {
       throw logicalError(error, verb, logical)
+    }
+  }
+
+  /**
+   * Rename `from` over `to`, both inside the pinned directory. `rename` never
+   * follows its destination, so a `to` swapped for a symlink is replaced, not
+   * written through. Windows refuses to replace a file another process has
+   * open (an editor, an indexer, antivirus), briefly and for no reason of
+   * ours, so it gets a few short retries there and nowhere else.
+   */
+  const renameInDirectory = async (
+    anchor: DirectoryAnchor,
+    from: string,
+    to: string,
+    logical: string,
+  ): Promise<void> => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await fs.promises.rename(anchor.child(from), anchor.child(to))
+        return
+      } catch (error) {
+        const code = errorCode(error)
+        const transient =
+          pinning === 'lstat' &&
+          (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY')
+        if (!transient || attempt >= 4) {
+          throw logicalError(error, 'write', logical)
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)))
+      }
     }
   }
 
@@ -419,18 +594,55 @@ export function createSponsoredRootedFileSystem(options: {
         throw logicalError(error, verb, path.join(anchor.logical, leaf))
       })
     if (stat.isSymbolicLink()) throw symlinkRefusal(verb)
+    if (pinning === 'lstat') {
+      assertWindowsInPlace(
+        anchor.child(leaf),
+        path.join(anchor.native!, leaf),
+        verb,
+        path.join(anchor.logical, leaf),
+      )
+    }
     return stat
   }
 
-  /** The surface's path-CLASS refusals, applied to where the write really lands. */
+  /**
+   * The surface's path-CLASS refusals, applied to the path the write resolves
+   * to AT CHECK TIME. What resolves later is the walk's business, not this
+   * check's: a swap after it is refused by the pin, not by the class table.
+   *
+   * On Windows the table is asked twice: of the spelling, and of where Windows
+   * itself resolves that spelling, so a name the table does not recognise
+   * cannot land on one it would refuse.
+   */
   const assertWritableClass = (resolved: string) => {
     const relative = path.relative(canonicalRoot, resolved)
     if (!relative) return
-    const decision = evaluateSponsoredWritePath(
-      relative.split(path.sep).join('/'),
-      { workspaceRoot: canonicalRoot },
-    )
-    if (!decision.allowed) throw fsError('EACCES', decision.message)
+    const candidates = [relative]
+    if (pinning === 'lstat') {
+      const native = windowsNativeRelative(nativeRoot!, resolved)
+      // The spelled path already passed containment, so landing outside can
+      // only mean something on the way redirects: say that, not "outside".
+      if (native === null) throw redirectRefusal('write')
+      if (native) candidates.push(native)
+    }
+    for (const candidate of candidates) {
+      const decision = evaluateSponsoredWritePath(
+        candidate.split(path.sep).join('/'),
+        { workspaceRoot: canonicalRoot },
+      )
+      if (!decision.allowed) throw fsError('EACCES', decision.message)
+    }
+  }
+
+  /** Windows: refuse a spelling Win32 would open as something else. */
+  const assertWindowsSpelling = (target: string) => {
+    const relative = path.relative(canonicalRoot, target)
+    // Outside the root lexically: the containment check says so, by name.
+    if (relative.startsWith('..') || path.isAbsolute(relative)) return
+    for (const part of relative.split(path.sep).filter(Boolean)) {
+      const refusal = sponsoredWindowsSegmentRefusal(part)
+      if (refusal) throw fsError('EINVAL', refusal)
+    }
   }
 
   const checked = async (
@@ -438,7 +650,13 @@ export function createSponsoredRootedFileSystem(options: {
     verb: SponsoredFsVerb,
     allowMissing: boolean,
   ): Promise<string> => {
+    // Windows: the spelling is judged BEFORE anything is looked up by it, or
+    // `name::$DATA` would be resolved (to `name`) before it was refused.
+    if (pinning === 'lstat' && typeof requested === 'string') {
+      assertWindowsSpelling(path.resolve(canonicalRoot, requested))
+    }
     const resolved = rootedPath(workspaceRoot, requested, verb, allowMissing)
+    if (pinning === 'lstat') assertWindowsSpelling(resolved)
     await raceWindow?.('checked', resolved)
     return resolved
   }
@@ -630,43 +848,61 @@ export function createSponsoredRootedFileSystem(options: {
         throw new Error('A sponsored run cannot replace its worktree root.')
       }
       await withDirectory(parts, true, 'write', async (anchor) => {
-        // No O_TRUNC: nothing is changed until the opened object is known to
-        // be a regular file with one name, and then it is truncated through
-        // the handle that was checked.
+        // ATOMIC: the content is written to a fresh file beside the target,
+        // created exclusively and without following links, and then RENAMED
+        // over the target through the same pin. The target's inode is never
+        // opened for writing, so a hard-linked name is replaced rather than
+        // written through, and no reader ever sees half a file.
+        const existing = await lstatLeaf(anchor, leaf, 'write').catch(
+          (error: unknown) => {
+            if (errorCode(error) === 'ENOENT') return null
+            throw error
+          },
+        )
+        if (existing?.isDirectory()) {
+          throw fsError('EISDIR', `EISDIR: '${resolved}' is a directory`)
+        }
+        if (existing && !existing.isFile()) {
+          throw fsError(
+            'EINVAL',
+            'A sponsored run may only write regular files in its worktree.',
+          )
+        }
+        // A replaced file keeps its permission bits (an executable script
+        // stays executable); a new one gets the usual 0666 less the umask.
+        const mode = existing ? existing.mode & 0o777 : 0o666
+        const staged = stagingName()
         const handle = await openLeaf(
           anchor,
-          leaf,
-          fs.constants.O_WRONLY | fs.constants.O_CREAT,
+          staged,
+          fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL,
           'write',
-          0o666,
+          mode,
         )
+        let renamed = false
         try {
-          const stat = await handle.stat()
-          if (!stat.isFile()) {
-            throw fsError(
-              'EINVAL',
-              'A sponsored run may only write regular files in its worktree.',
-            )
+          try {
+            // The umask narrowed the create; the replacement must not.
+            if (posix && existing) await handle.chmod(mode)
+            let offset = 0
+            while (offset < content.length) {
+              const { bytesWritten } = await handle.write(
+                content,
+                offset,
+                content.length - offset,
+                offset,
+              )
+              offset += bytesWritten
+            }
+          } finally {
+            await handle.close()
           }
-          if (stat.nlink > 1) {
-            throw fsError(
-              'EMLINK',
-              'A sponsored run may not write a file that has another hard link, because that link can lead outside its worktree.',
-            )
-          }
-          await handle.truncate(0)
-          let offset = 0
-          while (offset < content.length) {
-            const { bytesWritten } = await handle.write(
-              content,
-              offset,
-              content.length - offset,
-              offset,
-            )
-            offset += bytesWritten
-          }
+          await renameInDirectory(anchor, staged, leaf, resolved)
+          renamed = true
         } finally {
-          await handle.close()
+          if (!renamed) {
+            await fs.promises.unlink(anchor.child(staged)).catch(() => {})
+          }
         }
       })
     },

@@ -54,6 +54,11 @@ import {
 
 import { getBundledRgPath } from '../native/ripgrep'
 import { INCLUDED_HIDDEN_DIRS, parseCodeSearchFlags } from './code-search'
+import {
+  sameWindowsPath,
+  windowsNativePath,
+  windowsNativeRelative,
+} from './sponsored-windows-paths'
 
 import type {
   TerminalCommandBroker,
@@ -530,11 +535,17 @@ const SPONSORED_RIPGREP_FIXED = [
  *
  * An included hidden directory that is a SYMLINK is dropped: ripgrep follows a
  * search path named on its command line even without `--follow`, so `.github`
- * linked out of the worktree would otherwise be searched through the link.
+ * linked out of the worktree would otherwise be searched through the link. On
+ * Windows it is also dropped unless Windows itself resolves it to `<cwd>\<name>`:
+ * `lstat` does not report every reparse point as a link.
+ *
+ * `cwd` must already have been checked against the worktree; this reads
+ * metadata under it.
  */
 export function sponsoredRipgrepArgs(
   args: readonly string[],
   cwd: string,
+  platform: NodeJS.Platform = process.platform,
 ): string[] {
   const refuse = (): never => {
     throw new Error(
@@ -558,10 +569,19 @@ export function sponsoredRipgrepArgs(
     }
     if (!INCLUDED_HIDDEN_DIRS.includes(searchPath)) refuse()
     try {
-      const stat = fs.lstatSync(path.join(cwd, searchPath))
-      if (stat.isDirectory() && !stat.isSymbolicLink()) {
-        searchPaths.push(searchPath)
+      const target = path.join(cwd, searchPath)
+      const stat = fs.lstatSync(target)
+      if (!stat.isDirectory() || stat.isSymbolicLink()) continue
+      if (
+        platform === 'win32' &&
+        !sameWindowsPath(
+          windowsNativePath(target),
+          path.join(windowsNativePath(cwd), searchPath),
+        )
+      ) {
+        continue
       }
+      searchPaths.push(searchPath)
     } catch {
       // Gone since codeSearch looked: nothing to search there.
     }
@@ -657,15 +677,40 @@ export function createSponsoredCodeSearchBroker(
   const isRipgrep = (request: TerminalCommandSpawnRequest) =>
     path.resolve(request.executable) === path.resolve(rgPath)
 
+  /**
+   * The search's working directory, checked against the worktree BEFORE
+   * anything reads under it — `sponsoredRipgrepArgs` lstats the hidden roots
+   * there. On Windows the check is also asked of where Windows itself
+   * resolves it, since the lexical and `lstat`-based check cannot see every
+   * reparse point.
+   */
+  const checkedSearchCwd = (cwd: string): string => {
+    containSponsoredPath(workspaceRoot, cwd, 'read files')
+    if (platform === 'win32') {
+      let nativeRoot: string
+      try {
+        nativeRoot = windowsNativePath(workspaceRoot)
+      } catch {
+        nativeRoot = ''
+      }
+      if (!nativeRoot || windowsNativeRelative(nativeRoot, cwd) === null) {
+        throw new Error(
+          'A sponsored run may only read files inside its own worktree.',
+        )
+      }
+    }
+    return cwd
+  }
+
   if (platform === 'win32') {
     return {
       start(request) {
         if (!isRipgrep(request)) return broker.start(request)
-        containSponsoredPath(workspaceRoot, request.cwd, 'read files')
+        const cwd = checkedSearchCwd(request.cwd)
         return spawnSponsoredRipgrepDirectly(
           rgPath,
-          sponsoredRipgrepArgs(request.args, request.cwd),
-          request.cwd,
+          sponsoredRipgrepArgs(request.args, cwd, platform),
+          cwd,
           request.env,
         )
       },
@@ -692,10 +737,11 @@ export function createSponsoredCodeSearchBroker(
       // `bwrap` exec it directly, with each argument its own argv entry. It
       // used to be exec'd through `/bin/sh -c 'exec "$@"'`; measured on macOS
       // 26.5, seatbelt runs the staged copy directly just the same.
+      const cwd = checkedSearchCwd(request.cwd)
       return broker.start({
         ...request,
         executable: stagedRg,
-        args: sponsoredRipgrepArgs(request.args, request.cwd),
+        args: sponsoredRipgrepArgs(request.args, cwd, platform),
       })
     },
   }

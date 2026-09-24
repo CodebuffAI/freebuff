@@ -159,7 +159,11 @@ export {
   sponsoredMacProfile,
 } from './tools/sponsored-sandbox'
 export type { SponsoredSandboxOptions } from './tools/sponsored-sandbox'
-export { createSponsoredRootedFileSystem } from './tools/sponsored-rooted-filesystem'
+export {
+  createSponsoredRootedFileSystem,
+  probeSponsoredFileLayer,
+} from './tools/sponsored-rooted-filesystem'
+export type { SponsoredFileLayerSupport } from './tools/sponsored-rooted-filesystem'
 export {
   promptAiSdk,
   promptAiSdkStream,
