@@ -108,7 +108,7 @@ function splitObject(params: {
           const candidateChunkLength =
             currentChunk.length +
             itemWithKey.length -
-            (currentChunk.length === 2 ? 2 : 3)
+            (currentChunk.length === 2 ? 2 : 1)
           if (candidateChunkLength <= maxSize) {
             currentChunk.data[key] = item.data
             currentChunk.length = candidateChunkLength
@@ -134,7 +134,7 @@ function splitObject(params: {
     const candidateChunkLength =
       currentChunk.length +
       standaloneEntry.length -
-      (currentChunk.length === 2 ? 2 : 3)
+      (currentChunk.length === 2 ? 2 : 1)
 
     if (candidateChunkLength <= maxSize) {
       currentChunk.data[key] = value
