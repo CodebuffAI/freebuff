@@ -186,6 +186,32 @@ describe('the write guard', () => {
   test('admits an ordinary source edit', () => {
     expect(sponsoredWriteGuard(WORKTREE, 'src/deploy.ts')).toBeNull()
   })
+
+  // A Supabase procedure declares its variables in `.env.example`; refusing
+  // the template failed a correct run. Real env files stay refused.
+  test('admits an env template and still refuses every real env file', () => {
+    for (const path of [
+      '.env.example',
+      '.env.sample',
+      '.env.template',
+      join(WORKTREE, 'apps', 'web', '.env.example'),
+    ]) {
+      expect(sponsoredWriteGuard(WORKTREE, path), path).toBeNull()
+    }
+    for (const path of [
+      '.env',
+      '.env.local',
+      '.env.local.example',
+      '.env.production',
+      '.env.example.local',
+      '.env.local.',
+      '.env::$DATA',
+    ]) {
+      expect(sponsoredWriteGuard(WORKTREE, path), path).toContain(
+        'may not write environment files',
+      )
+    }
+  })
 })
 
 describe('the real rooted filesystem passed to SDK tools', () => {

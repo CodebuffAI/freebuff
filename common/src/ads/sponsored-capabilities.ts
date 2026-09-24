@@ -18,8 +18,11 @@
  * that this map was ever read.
  *
  * Deliberately dependency-free: it is imported by a Convex module, by the
- * Desktop orchestrator, and by the SDK.
+ * Desktop orchestrator, and by the SDK. The one import is a pure sibling in
+ * `common`, so the env-file rule is the same one the read policy uses.
  */
+
+import { isSensitiveEnvFilePath } from '../util/env-file-path'
 
 /**
  * The named authorities a run can hold.
@@ -290,11 +293,6 @@ const CREDENTIAL_BASENAMES: ReadonlySet<string> = new Set([
 
 const CREDENTIAL_SUFFIXES = Object.freeze(['.pem', '.key', '.p12', '.pfx'])
 
-/** Mirrors `isEnvFilePath`'s intent without importing the harness. */
-function isEnvFile(basename: string): boolean {
-  return basename === '.env' || basename.startsWith('.env.')
-}
-
 /**
  * May this sponsored run write this path?
  *
@@ -393,16 +391,28 @@ export function evaluateSponsoredWritePath(
     }
   }
 
-  const basename = lower.split('/').at(-1) ?? lower
+  // Env templates (`ENV_TEMPLATE_FILE_PATTERNS`) are writable; every other
+  // env-family name is a credential file. The rule is `isSensitiveEnvFilePath`,
+  // the one the read policy uses, so the two cannot drift. Reasoning: §9.
+  if (isSensitiveEnvFilePath(relative)) {
+    return {
+      allowed: false,
+      code: 'credential_file',
+      message: `Refusing \`${path}\`: sponsored runs may not write environment files, which hold real values. Declare new variable names with placeholder values in \`.env.example\` instead.`,
+    }
+  }
+
+  // Either separator, like `isSensitiveEnvFilePath` above: `keys\id_rsa` is
+  // `id_rsa` on Windows.
+  const basename = lower.split(/[\\/]/).at(-1) ?? lower
   if (
-    isEnvFile(basename) ||
     CREDENTIAL_BASENAMES.has(basename) ||
     CREDENTIAL_SUFFIXES.some((suffix) => basename.endsWith(suffix))
   ) {
     return {
       allowed: false,
       code: 'credential_file',
-      message: `Refusing \`${path}\`: sponsored runs may not write credential or environment files.`,
+      message: `Refusing \`${path}\`: sponsored runs may not write credential files.`,
     }
   }
 

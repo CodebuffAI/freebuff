@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
-  ENV_EXAMPLE_FILE_NAMES,
   MCP_CONFIG_FILE_PATHS,
   SPONSORED_DIFF_FILE_TEXT_CAP,
   SPONSORED_OUTCOME_FILES_CAP,
@@ -240,8 +239,11 @@ describe('api_key_issued rule', () => {
     expect(detectOutcomes([CLIENT_SOURCE], ['api_key_issued'])).toEqual([])
   })
 
-  test('accepts every env example basename, in any directory', () => {
-    for (const name of ENV_EXAMPLE_FILE_NAMES) {
+  // The same names the sponsored write policy lets a run write
+  // (`ENV_TEMPLATE_FILE_PATTERNS`): a template a run may write is a template
+  // it is credited for.
+  test('accepts every env template name, in any directory', () => {
+    for (const name of ['.env.example', '.env.sample', '.env.template']) {
       expect(
         detectOutcomes(
           [{ ...ENV_EXAMPLE, path: `apps/web/${name}` }, CLIENT_SOURCE],
@@ -252,18 +254,19 @@ describe('api_key_issued rule', () => {
   })
 
   test('does not read `.env` itself as evidence — a run never writes a secret', () => {
-    expect(
-      detectOutcomes(
-        [{ ...ENV_EXAMPLE, path: '.env' }, CLIENT_SOURCE],
-        ['api_key_issued'],
-      ),
-    ).toEqual([])
-    expect(
-      detectOutcomes(
-        [{ ...ENV_EXAMPLE, path: '.env.local' }, CLIENT_SOURCE],
-        ['api_key_issued'],
-      ),
-    ).toEqual([])
+    for (const path of [
+      '.env',
+      '.env.local',
+      '.env.production',
+      '.env.example.local',
+    ]) {
+      expect(
+        detectOutcomes(
+          [{ ...ENV_EXAMPLE, path }, CLIENT_SOURCE],
+          ['api_key_issued'],
+        ),
+      ).toEqual([])
+    }
   })
 
   test('the service-role variable name counts as the key half', () => {

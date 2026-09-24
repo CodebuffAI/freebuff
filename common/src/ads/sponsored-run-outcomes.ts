@@ -19,7 +19,8 @@
  *
  * Dependency-free on purpose: it runs in three runtimes (the Next state route,
  * a Convex `'use node'` action against a Daytona worktree, and Desktop against
- * a local worktree) and none of them may pull the others' imports. Nothing here
+ * a local worktree) and none of them may pull the others' imports; the one
+ * import is the pure env-template path predicate in `common`. Nothing here
  * reads a file, runs git, or sees a secret — callers hand it the diff, and it
  * hands back outcome names and file PATHS. Contents never leave the caller.
  *
@@ -27,6 +28,14 @@
  * the sponsored agent nothing and changes no refusal in
  * `docs/freebuff-sponsored-local-execution.md`.
  */
+
+// Where a project declares the variables it expects: an env TEMPLATE
+// (`.env.example`, `.env.sample`, `.env.template`). `api_key_issued` reads
+// these and NOT `.env` itself -- a sponsored run never writes a real env file
+// (`evaluateSponsoredWritePath`), so the template is the only file it can
+// honestly touch -- and it is the same matcher the write policy exempts.
+// Only ever a path test; never a content test.
+import { isEnvTemplateFilePath } from '../util/env-file-path'
 
 export const SPONSORED_RUN_OUTCOMES = [
   'api_key_issued',
@@ -184,19 +193,6 @@ export function parseAddedLines(unifiedDiff: string): SponsoredDiffFile[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Where a project declares the variables it expects, by basename. The rule
- * for `api_key_issued` reads these and NOT `.env` itself: a sponsored run
- * never writes a secret (the credential-file refusal in
- * `sponsoredCapabilityPolicy.ts` stays), so the only file it can honestly
- * touch is the one that documents the variable NAMES.
- */
-export const ENV_EXAMPLE_FILE_NAMES = [
-  '.env.example',
-  '.env.sample',
-  '.env.template',
-] as const
-
-/**
  * The variable names the Supabase procedures wire. Substring matches, so the
  * framework-prefixed forms (`NEXT_PUBLIC_SUPABASE_URL`, `VITE_SUPABASE_URL`,
  * `EXPO_PUBLIC_SUPABASE_ANON_KEY`) count without being enumerated.
@@ -241,16 +237,6 @@ export const MCP_CONFIG_FILE_PATHS = [
 const SUPABASE_MCP_SERVER =
   /@supabase\/mcp-server-supabase|mcp\.supabase\.com|supabase-mcp/i
 
-/** Only ever a subpath test; never a content test. */
-function basename(path: string): string {
-  const index = path.lastIndexOf('/')
-  return index === -1 ? path : path.slice(index + 1)
-}
-
-function isEnvExampleFile(path: string): boolean {
-  return (ENV_EXAMPLE_FILE_NAMES as readonly string[]).includes(basename(path))
-}
-
 function isMcpConfigFile(path: string): boolean {
   return (MCP_CONFIG_FILE_PATHS as readonly string[]).some(
     (config) => path === config || path.endsWith(`/${config}`),
@@ -275,12 +261,12 @@ function wiresSupabaseVariables(text: string): boolean {
 function apiKeyIssuedFiles(diff: readonly SponsoredDiffFile[]): string[] {
   const envFiles = diff.filter(
     (file) =>
-      isEnvExampleFile(file.path) && wiresSupabaseVariables(file.addedText),
+      isEnvTemplateFilePath(file.path) && wiresSupabaseVariables(file.addedText),
   )
   if (envFiles.length === 0) return []
   const sourceFiles = diff.filter(
     (file) =>
-      !isEnvExampleFile(file.path) &&
+      !isEnvTemplateFilePath(file.path) &&
       !isMcpConfigFile(file.path) &&
       SUPABASE_IMPORT.test(file.addedText) &&
       SUPABASE_CLIENT_INIT.test(file.addedText) &&
