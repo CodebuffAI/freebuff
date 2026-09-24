@@ -108,6 +108,7 @@ import {
 import { createPasteHandler } from './utils/strings'
 import { setTerminalTitle } from './utils/terminal-title'
 import { computeInputLayoutMetrics } from './utils/text-layout'
+import { wheelScrollAcceleration } from './utils/wheel-scroll-acceleration'
 
 import type { CommandResult } from './commands/command-registry'
 import type { MultilineInputHandle } from './components/multiline-input'
@@ -1822,6 +1823,7 @@ export const Chat = ({
         stickyScroll
         stickyStart="bottom"
         scrollX={false}
+        scrollAcceleration={wheelScrollAcceleration}
         scrollbarOptions={{ visible: false }}
         verticalScrollbarOptions={{
           visible: !isStreaming && !isWaitingForResponse && hasOverflow,
