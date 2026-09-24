@@ -97,6 +97,61 @@ async function request(
   return { body, url }
 }
 
+const toolLoopPrompt: LanguageModelV2CallOptions['prompt'] = [
+  { role: 'user', content: [{ type: 'text', text: 'Read a file.' }] },
+  {
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool-call',
+        toolCallId: 'call-1',
+        toolName: 'read_files',
+        input: { paths: ['a.ts'] },
+      },
+    ],
+  },
+  {
+    role: 'tool',
+    content: [
+      {
+        type: 'tool-result',
+        toolCallId: 'call-1',
+        toolName: 'read_files',
+        output: { type: 'text', value: 'contents' },
+      },
+    ],
+  },
+]
+
+describe('BYOK DeepSeek thinking-mode replay', () => {
+  // Real report (2026-09-24): direct DeepSeek BYOK answered the first request,
+  // then every follow-up after a tool call failed with HTTP 400 because the
+  // assistant tool-call message carried no `reasoning_content`.
+  for (const mode of ['stream', 'generate'] as const) {
+    test(`${mode}: a direct DeepSeek connection backfills reasoning_content on the tool-call message`, async () => {
+      const { body } = await request(
+        mode,
+        {
+          baseUrl: 'https://api.deepseek.com/v1',
+          model: 'deepseek-v4-flash',
+        },
+        { prompt: toolLoopPrompt },
+      )
+      const messages = body.messages as Array<Record<string, unknown>>
+      const assistant = messages.find((m) => m.role === 'assistant')
+      expect(assistant?.tool_calls).toBeDefined()
+      expect(assistant?.reasoning_content).toBe('')
+    })
+  }
+
+  test('non-DeepSeek connections are untouched', async () => {
+    const { body } = await request('generate', {}, { prompt: toolLoopPrompt })
+    const messages = body.messages as Array<Record<string, unknown>>
+    const assistant = messages.find((m) => m.role === 'assistant')
+    expect('reasoning_content' in (assistant ?? {})).toBe(false)
+  })
+})
+
 describe('BYOK provider compatibility', () => {
   for (const mode of ['stream', 'generate'] as const) {
     test(`${mode}: direct Luna uses completion tokens and omits unsupported stop`, async () => {
