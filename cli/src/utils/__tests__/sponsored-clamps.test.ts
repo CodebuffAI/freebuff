@@ -215,7 +215,10 @@ describe('the write guard', () => {
 })
 
 describe('the real rooted filesystem passed to SDK tools', () => {
-  test('reads inside the worktree only when OS containment is available', async () => {
+  // Since COD-642 the file layer runs no shell and needs no broker, so these
+  // work with or without an OS sandbox on the host. They used to answer
+  // `[FILE_READ_ERROR]` wherever no sandbox could start.
+  test('reads inside the worktree without a shell or OS containment', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'sponsored-cli-fs-'))
     const root = join(parent, 'worktree')
     mkdirSync(join(root, 'src'), { recursive: true })
@@ -224,71 +227,60 @@ describe('the real rooted filesystem passed to SDK tools', () => {
       const tools = sponsoredOverrideTools(isolatedContext(root, parent))
 
       const read = await tools.read_files({ filePaths: ['src/inside.ts'] })
-      if (containmentUsable()) {
-        expect(read['src/inside.ts']).toContain('export const before = 1')
-      } else {
-        expect(read['src/inside.ts']).toBe('[FILE_READ_ERROR]')
-        expect(read['src/inside.ts']).not.toContain('export const before = 1')
-      }
+      expect(read['src/inside.ts']).toContain('export const before = 1')
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }
   })
 
-  test.skipIf(!containmentUsable())(
-    'lists and globs inside the worktree through OS containment',
-    async () => {
-      const parent = mkdtempSync(join(tmpdir(), 'sponsored-cli-list-'))
-      const root = join(parent, 'worktree')
-      mkdirSync(join(root, 'src'), { recursive: true })
-      writeFileSync(join(root, 'src', 'inside.ts'), 'export const before = 1\n')
-      try {
-        const tools = sponsoredOverrideTools(isolatedContext(root, parent))
-        const listed = await tools.list_directory({ path: 'src' })
-        expect(JSON.stringify(listed)).toContain('inside.ts')
+  test('lists and globs inside the worktree without a shell', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'sponsored-cli-list-'))
+    const root = join(parent, 'worktree')
+    mkdirSync(join(root, 'src'), { recursive: true })
+    writeFileSync(join(root, 'src', 'inside.ts'), 'export const before = 1\n')
+    try {
+      const tools = sponsoredOverrideTools(isolatedContext(root, parent))
+      const listed = await tools.list_directory({ path: 'src' })
+      expect(JSON.stringify(listed)).toContain('inside.ts')
 
-        const globbed = await tools.glob({ pattern: '**/*.ts' })
-        expect(JSON.stringify(globbed)).toContain('src/inside.ts')
-      } finally {
-        rmSync(parent, { recursive: true, force: true })
-      }
-    },
-  )
+      const globbed = await tools.glob({ pattern: '**/*.ts' })
+      expect(JSON.stringify(globbed)).toContain('src/inside.ts')
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
 
-  test.skipIf(!containmentUsable())(
-    'writes and patches inside the worktree through OS containment',
-    async () => {
-      const parent = mkdtempSync(join(tmpdir(), 'sponsored-cli-write-'))
-      const root = join(parent, 'worktree')
-      mkdirSync(join(root, 'src'), { recursive: true })
-      try {
-        const tools = sponsoredOverrideTools(isolatedContext(root, parent))
-        const written = await tools.write_file({
-          type: 'file',
-          path: 'src/written.ts',
-          content: 'export const written = true\n',
-        })
-        expect(JSON.stringify(written)).toContain('Created file successfully')
+  test('writes and patches inside the worktree without a shell', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'sponsored-cli-write-'))
+    const root = join(parent, 'worktree')
+    mkdirSync(join(root, 'src'), { recursive: true })
+    try {
+      const tools = sponsoredOverrideTools(isolatedContext(root, parent))
+      const written = await tools.write_file({
+        type: 'file',
+        path: 'src/written.ts',
+        content: 'export const written = true\n',
+      })
+      expect(JSON.stringify(written)).toContain('Created file successfully')
 
-        const patched = await tools.apply_patch({
-          operation: {
-            type: 'create_file',
-            path: 'src/patched.ts',
-            diff: '@@ -0,0 +1 @@\n+export const patched = true\n',
-          },
-        })
-        expect(JSON.stringify(patched)).toContain('Applied 1 patch operation')
-        expect(readFileSync(join(root, 'src', 'written.ts'), 'utf8')).toContain(
-          'written = true',
-        )
-        expect(readFileSync(join(root, 'src', 'patched.ts'), 'utf8')).toContain(
-          'patched = true',
-        )
-      } finally {
-        rmSync(parent, { recursive: true, force: true })
-      }
-    },
-  )
+      const patched = await tools.apply_patch({
+        operation: {
+          type: 'create_file',
+          path: 'src/patched.ts',
+          diff: '@@ -0,0 +1 @@\n+export const patched = true\n',
+        },
+      })
+      expect(JSON.stringify(patched)).toContain('Applied 1 patch operation')
+      expect(readFileSync(join(root, 'src', 'written.ts'), 'utf8')).toContain(
+        'written = true',
+      )
+      expect(readFileSync(join(root, 'src', 'patched.ts'), 'utf8')).toContain(
+        'patched = true',
+      )
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
 
   test('refuses dangling links and a link introduced after the surface guard', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'sponsored-cli-links-'))

@@ -53,7 +53,7 @@ import {
 } from '@codebuff/common/ads/sponsored-local-execution'
 
 import { getBundledRgPath } from '../native/ripgrep'
-import { parseCodeSearchFlags } from './code-search'
+import { INCLUDED_HIDDEN_DIRS, parseCodeSearchFlags } from './code-search'
 
 import type {
   TerminalCommandBroker,
@@ -470,6 +470,13 @@ export function sponsoredCodeSearchFlagsRefusal(
   const tokens = parseCodeSearchFlags(flags)
   if (!tokens)
     return 'Sponsored code search flags contain an unterminated quote.'
+  return sponsoredCodeSearchFlagTokensRefusal(tokens)
+}
+
+/** The same allowlist, over flags already split into argv entries. */
+function sponsoredCodeSearchFlagTokensRefusal(
+  tokens: readonly string[],
+): string | null {
   for (let index = 0; index < tokens.length; index++) {
     const flag = tokens[index]!
     if (SPONSORED_SEARCH_BOOLEAN_FLAGS.has(flag)) continue
@@ -496,12 +503,149 @@ export function sponsoredCodeSearchFlagsRefusal(
   return null
 }
 
-/** The same scrubbed OS process boundary used by sponsored shell commands. */
+/** What `codeSearch` puts ahead of the caller's flags, in this order. */
+const SPONSORED_RIPGREP_HEAD = ['--no-config', '-n', '--json'] as const
+
+/**
+ * Appended AFTER the caller's flags, so ripgrep's last-flag-wins parsing makes
+ * them unconditional. None changes a result under the OS sandbox, which could
+ * not read a parent's ignore file, a global one, or a link's target anyway;
+ * they make the unsandboxed Windows search answer the same way.
+ */
+const SPONSORED_RIPGREP_FIXED = [
+  '--no-follow',
+  '--no-ignore-parent',
+  '--no-ignore-global',
+] as const
+
+/**
+ * The exact ripgrep argv a sponsored search may run, rebuilt from the request.
+ *
+ * FIXED ARGUMENTS (COD-642): the broker does not pass through whatever argv it
+ * is handed. It accepts only the shape `codeSearch` builds — the fixed head,
+ * flags from the same allowlist the surface applies, `--`, one pattern, and
+ * search paths drawn from `.` plus `INCLUDED_HIDDEN_DIRS` — and refuses
+ * anything else by name. So a caller that skipped the surface's flag check
+ * still cannot reach `--pre`, `--follow` or `--ignore-file`.
+ *
+ * An included hidden directory that is a SYMLINK is dropped: ripgrep follows a
+ * search path named on its command line even without `--follow`, so `.github`
+ * linked out of the worktree would otherwise be searched through the link.
+ */
+export function sponsoredRipgrepArgs(
+  args: readonly string[],
+  cwd: string,
+): string[] {
+  const refuse = (): never => {
+    throw new Error(
+      'Sponsored code search only runs ripgrep with the arguments it builds itself.',
+    )
+  }
+  if (!SPONSORED_RIPGREP_HEAD.every((flag, index) => args[index] === flag)) {
+    refuse()
+  }
+  const separator = args.indexOf('--', SPONSORED_RIPGREP_HEAD.length)
+  if (separator === -1 || separator + 1 >= args.length) refuse()
+  const flags = args.slice(SPONSORED_RIPGREP_HEAD.length, separator)
+  const refusal = sponsoredCodeSearchFlagTokensRefusal(flags)
+  if (refusal) throw new Error(refusal)
+  const pattern = args[separator + 1]!
+  const searchPaths: string[] = []
+  for (const searchPath of args.slice(separator + 2)) {
+    if (searchPath === '.') {
+      searchPaths.push(searchPath)
+      continue
+    }
+    if (!INCLUDED_HIDDEN_DIRS.includes(searchPath)) refuse()
+    try {
+      const stat = fs.lstatSync(path.join(cwd, searchPath))
+      if (stat.isDirectory() && !stat.isSymbolicLink()) {
+        searchPaths.push(searchPath)
+      }
+    } catch {
+      // Gone since codeSearch looked: nothing to search there.
+    }
+  }
+  if (searchPaths.length === 0) refuse()
+  return [
+    ...SPONSORED_RIPGREP_HEAD,
+    ...flags,
+    ...SPONSORED_RIPGREP_FIXED,
+    '--',
+    pattern,
+    ...searchPaths,
+  ]
+}
+
+/**
+ * ripgrep started directly, with no shell and no OS sandbox. Windows only.
+ *
+ * The environment is EMPTY but for `SystemRoot`, taken from the one the caller
+ * handed the broker, which a Windows process may need to load system
+ * libraries: ripgrep reads no variable a search needs once `--no-config` and
+ * `--no-ignore-global` are on its command line, and every variable not passed
+ * is one that cannot leak into a search it runs.
+ */
+function spawnSponsoredRipgrepDirectly(
+  rgPath: string,
+  args: string[],
+  cwd: string,
+  sourceEnv: NodeJS.ProcessEnv,
+): TerminalCommandProcess {
+  const systemRoot = sourceEnv.SystemRoot ?? sourceEnv.SYSTEMROOT
+  const child = spawn(rgPath, args, {
+    cwd,
+    env: (systemRoot ? { SystemRoot: systemRoot } : {}) as NodeJS.ProcessEnv,
+    shell: false,
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  return {
+    pid: child.pid,
+    stdout: child.stdout!,
+    stderr: child.stderr!,
+    completion: new Promise<number | null>((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', (code) => resolve(code))
+    }),
+    kill: (signal) => {
+      try {
+        child.kill(signal)
+      } catch {
+        // already gone
+      }
+    },
+    isAlive: () => child.exitCode === null && child.signalCode === null,
+  }
+}
+
+/**
+ * The process boundary a sponsored `code_search` runs ripgrep through.
+ *
+ * ripgrep is spawned DIRECTLY, never through a shell, with the fixed argv from
+ * {@link sponsoredRipgrepArgs}. What it is spawned under depends on the OS:
+ *
+ *  - macOS and Linux: the same OS sandbox as sponsored shell commands, from a
+ *    copy staged in the run's runtime directory. It STAYS sandboxed even
+ *    though the file tools no longer are: ripgrep walks the tree and opens
+ *    each file by pathname, and the directory pinning that bounds the file
+ *    tools (`sponsored-rooted-filesystem.ts`) cannot reach inside another
+ *    program, so the kernel still bounds what ripgrep can open.
+ *  - Windows: the bundled binary where it is installed, with an empty
+ *    environment and the working directory re-checked against the worktree.
+ *    See `docs/freebuff-sponsored-local-execution.md`, "The file layer
+ *    without a shell (COD-642)".
+ *
+ * Every other executable goes to {@link createSponsoredTerminalBroker}
+ * unchanged.
+ */
 export function createSponsoredCodeSearchBroker(
   options: SponsoredSandboxOptions,
 ): TerminalCommandBroker {
   const rgPath = getBundledRgPath(import.meta.url)
   const broker = createSponsoredTerminalBroker(options)
+  const workspaceRoot = path.resolve(options.workspaceRoot)
+  const platform = options.platform ?? process.platform
   const requestedRuntimeDir = path.resolve(options.runtimeDir)
   fs.mkdirSync(requestedRuntimeDir, { recursive: true })
   const runtimeStat = fs.lstatSync(requestedRuntimeDir)
@@ -510,30 +654,48 @@ export function createSponsoredCodeSearchBroker(
       'A sponsored run requires a private runtime directory that is not a symlink.',
     )
   }
+  const isRipgrep = (request: TerminalCommandSpawnRequest) =>
+    path.resolve(request.executable) === path.resolve(rgPath)
+
+  if (platform === 'win32') {
+    return {
+      start(request) {
+        if (!isRipgrep(request)) return broker.start(request)
+        containSponsoredPath(workspaceRoot, request.cwd, 'read files')
+        return spawnSponsoredRipgrepDirectly(
+          rgPath,
+          sponsoredRipgrepArgs(request.args, request.cwd),
+          request.cwd,
+          request.env,
+        )
+      },
+    }
+  }
+
   const runtimeDir = fs.realpathSync(requestedRuntimeDir)
   // Stage once while the broker is being assembled, before advertiser-authored
   // code can modify the runtime tree. Performing mkdir/copy in start() would
   // let an earlier tool call replace `tools` with a symlink and turn this host
   // copy into an out-of-bound write before the process sandbox existed.
+  //
+  // Staged at all so the binary sits inside a root the sandbox already grants:
+  // granting the SDK's installation directory would expose its sibling
+  // package contents to the run.
   const stagedDir = fs.mkdtempSync(path.join(runtimeDir, 'rg-'))
   const stagedRg = path.join(stagedDir, 'rg')
   fs.copyFileSync(rgPath, stagedRg)
   fs.chmodSync(stagedRg, 0o755)
   return {
     start(request) {
-      if (path.resolve(request.executable) !== path.resolve(rgPath)) {
-        return broker.start(request)
-      }
-      // Keep the helper inside an existing broker root. Granting the SDK's
-      // installation directory would unnecessarily expose sibling package
-      // contents, and nested Seatbelt profiles can reject such added roots.
-      // Seatbelt applies the profile to its immediate child. Use the system
-      // shell as that stable launcher, then exec the staged helper without
-      // interpolation; each argument remains a distinct argv entry.
+      if (!isRipgrep(request)) return broker.start(request)
+      // The staged binary IS the sandboxed executable: `sandbox-exec` and
+      // `bwrap` exec it directly, with each argument its own argv entry. It
+      // used to be exec'd through `/bin/sh -c 'exec "$@"'`; measured on macOS
+      // 26.5, seatbelt runs the staged copy directly just the same.
       return broker.start({
         ...request,
-        executable: '/bin/sh',
-        args: ['-c', 'exec "$@"', 'sponsored-rg', stagedRg, ...request.args],
+        executable: stagedRg,
+        args: sponsoredRipgrepArgs(request.args, request.cwd),
       })
     },
   }

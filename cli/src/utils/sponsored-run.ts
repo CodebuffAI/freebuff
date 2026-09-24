@@ -1457,11 +1457,8 @@ export function sponsoredOverrideTools(
     runtimeDir: context.runtimeDir,
     linkedWorktree: context.worktree.linked,
   })
-  const rootedFs = createSponsoredRootedFileSystem({
-    workspaceRoot,
-    runtimeDir: context.runtimeDir,
-    processBroker,
-  })
+  // No broker: the file layer pins directories itself (COD-642).
+  const rootedFs = createSponsoredRootedFileSystem({ workspaceRoot })
   return {
     read_files: async (input: {
       filePaths: string[]

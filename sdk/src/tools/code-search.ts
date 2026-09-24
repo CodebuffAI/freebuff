@@ -15,7 +15,8 @@ import type {
 
 // Hidden directories to include in code search by default.
 // These are searched in addition to '.' to ensure important config/workflow files are discoverable.
-const INCLUDED_HIDDEN_DIRS = [
+// Exported so the sponsored broker can admit exactly these search paths and no others.
+export const INCLUDED_HIDDEN_DIRS: readonly string[] = [
   '.agents', // Codebuff agent definitions
   '.claude', // Claude settings
   '.github', // GitHub Actions, workflows, issue templates
