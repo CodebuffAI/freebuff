@@ -198,7 +198,15 @@ export async function sendGravityFirstMessageConversion(params: {
   if (!result?.status) {
     throw new Error('Gravity CAPI returned no result for FirstMessage')
   }
-  if (!['ok', 'duplicate', 'test_ok', 'skipped'].includes(result.status)) {
+  // `accepted` is what production actually answers for a live FirstMessage
+  // (HTTP 200): queued for processing, not refused. Treating it as a failure
+  // made every first message send twice (the missing status code reads as
+  // retryable) and log ~5-10k false "Failed to track" errors a day.
+  if (
+    !['ok', 'accepted', 'duplicate', 'test_ok', 'skipped'].includes(
+      result.status,
+    )
+  ) {
     throw new Error(
       `Gravity CAPI failed FirstMessage with status ${result.status}`,
     )

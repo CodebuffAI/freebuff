@@ -138,6 +138,32 @@ describe('Gravity first-message CAPI', () => {
     })
   })
 
+  test('treats an accepted response as delivered', async () => {
+    // The live CAPI's answer for a new FirstMessage.
+    let calls = 0
+    const result = await sendGravityFirstMessageConversion({
+      apiKey: 'secret',
+      userId: 'user-123',
+      surface: 'cli',
+      fetchImpl: (async () => {
+        calls++
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                event_id: 'freebuff-first-message-user-123',
+                status: 'accepted',
+              },
+            ],
+          }),
+          { status: 200 },
+        )
+      }) as unknown as typeof fetch,
+    })
+    expect(result.status).toBe('accepted')
+    expect(calls).toBe(1)
+  })
+
   test('throws on an event-level error so the claim remains retryable', async () => {
     await expect(
       sendGravityFirstMessageConversion({
