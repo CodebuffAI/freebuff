@@ -374,6 +374,17 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   first_party_entrypoint: 'string',
   /** Whether the COD-358 house leg could run on this request (not whether it did). */
   first_party_house_leg: 'boolean',
+  /**
+   * COD-654, present only when the CPM leg was evaluated (never under `off`).
+   * `first_party_cpm_outcome` is its verdict: `fill`, `no_fill`,
+   * `shadow_would_fill`, `shadow_no_fill`, `not_tier1`, `gravity_not_no_fill`
+   * or `error`. Phase 1's capacity readout is `shadow_would_fill` grouped by
+   * day; `first_party_cpm_campaign_id` names the CPM campaign it would have
+   * (or did) serve.
+   */
+  first_party_cpm_outcome: 'string',
+  first_party_cpm_mode: 'string',
+  first_party_cpm_campaign_id: 'string',
   /** CPC geo-pricing state. These names predate inventory geo routing and are
    * kept separate from `first_party_inventory_geo_tier`. */
   first_party_geo_tier: 'string',
