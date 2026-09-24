@@ -12,6 +12,7 @@ import type {
 import type { ChildProcess } from 'child_process'
 
 import { getCliEnv, getSystemProcessEnv } from './env'
+import { trackHelperProcess } from './helper-process-telemetry'
 import { reportWindowsTerminalFailure } from './windows-terminal-health'
 
 export const TERMINAL_COMMAND_BROKER_FLAG = '--terminal-command-broker'
@@ -403,6 +404,7 @@ export function createTerminalCommandBroker({
       // error asynchronously. Always observe it, including the synchronous
       // validation-failure path below, so a missing helper cannot crash the CLI.
       child.once('error', () => {})
+      trackHelperProcess('terminal_command', child)
       if (!child.stdin || !child.stdout || !child.stderr) {
         terminate(child, 'SIGKILL')
         removeProtocolFile(protocolPath)

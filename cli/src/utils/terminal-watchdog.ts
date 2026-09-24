@@ -33,12 +33,29 @@
  *   that uses Start-Process -NoNewWindow to spawn the real watchdog outside
  *   the job, attached to our console.
  * - The pipe/EOF trick can't cross the bootstrap hop, so the watchdog
- *   detects our death with `Wait-Process -Id <our pid>` instead, then writes
+ *   detects our death by waiting on our process handle instead, then writes
  *   the reset sequences to its console stdout (ConPTY forwards the disable
  *   sequences to the hosting terminal).
+ * - A pid is NOT an identity on Windows. The grandchild starts hundreds of ms
+ *   (on a loaded machine, tens of seconds — `arming/timeout` fired ~3.9k times
+ *   in the week to 2026-09-23) after we asked for it, and a CLI can die inside
+ *   that window: the npm launcher TerminateProcess'es the running binary to
+ *   apply an update seconds after launch. A watchdog that then waited on "our"
+ *   pid waited on whatever process Windows handed that pid to next, for as
+ *   long as THAT process lived. So the bootstrap — a member of our
+ *   kill-on-close job, so it only runs while we are provably alive — reads our
+ *   creation time and hands it to the grandchild, which waits only on a
+ *   process with that pid AND that creation time. Anything else means we are
+ *   already gone.
+ * - Each watchdog keeps `<disarm path>.pid` (`<its pid> <our pid>`) for
+ *   exactly as long as it runs. The next launch reads those files: a watchdog
+ *   still running after its owner died is reported as
+ *   `cli.helper_outlived_parent`, and a machine already carrying
+ *   MAX_CONCURRENT_WINDOWS_WATCHDOGS of them gets no new one — a cap on the
+ *   one long-lived PowerShell this CLI owns.
  * - We hold no handle to the grandchild, so clean shutdown can't kill it.
  *   After a confirmed synchronous reset, stopTerminalWatchdog() drops a disarm
- *   file; the watchdog checks it after Wait-Process and exits silently.
+ *   file; the watchdog checks it after its wait and exits silently.
  * - Windows PowerShell 5.1 always exists and is invoked by absolute path.
  *   Scripts are passed as plain -Command text so the command lines stay
  *   human-readable in process listings (encoded PowerShell spawned by a CLI
@@ -49,7 +66,16 @@
  *   window fall back to the pre-existing behavior (npm wrapper or nothing).
  */
 import { spawn } from 'child_process'
-import { closeSync, existsSync, openSync, rmSync, writeFileSync } from 'fs'
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'fs'
 import os from 'os'
 import path from 'path'
 
@@ -57,7 +83,11 @@ import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 
 import { TERMINAL_RESET_SEQUENCES } from './terminal-reset-sequences'
 import { getCliEnv } from './env'
-import { reportWindowsTerminalFailure } from './windows-terminal-health'
+import { trackHelperProcess } from './helper-process-telemetry'
+import {
+  reportCliProcessHealth,
+  reportWindowsTerminalFailure,
+} from './windows-terminal-health'
 
 import type { ChildProcess } from 'child_process'
 
@@ -144,12 +174,46 @@ function psQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
 }
 
-function spawnWindowsWatchdog(options: {
+/**
+ * Placeholder the bootstrap replaces with the owner's creation time (a Windows
+ * FILETIME) before launching the grandchild. Only digits ever replace it.
+ */
+const OWNER_START_TOKEN = '__FREEBUFF_OWNER_START__'
+
+/** Two reads of one creation time agree exactly; 1ms of slack absorbs rounding. */
+const OWNER_START_TOLERANCE_TICKS = 10_000
+
+export function windowsPowerShellPath(): string {
+  // Windows PowerShell 5.1 ships with every supported Windows; use the
+  // absolute path so a broken PATH can't take out the safety net.
+  return path.join(
+    getCliEnv().SystemRoot ?? 'C:\\Windows',
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe',
+  )
+}
+
+/**
+ * The two Windows scripts, pure so their invariants are testable on any OS:
+ * the watchdog script contains no `"` (see the quoting note below), waits only
+ * on a process whose pid AND creation time match its owner, and records both
+ * pids in a pid file that lives exactly as long as it does.
+ */
+export function buildWindowsWatchdogScripts(options: {
+  ownerPid: number
   ttyPath?: string
   disarmPath: string
   armedPath: string
-  powershellPath?: string
-}): ChildProcess {
+  powershell: string
+  /**
+   * Test-only: hand the grandchild this creation time instead of the owner's
+   * real one — exactly what a reused pid looks like from the watchdog's side.
+   */
+  ownerStartOverride?: string
+}): { bootstrapScript: string; watchdogScript: string } {
+  const { ownerPid } = options
   // The payload rides as a numeric byte array, which keeps the script free of
   // double quotes and string interpolation (the no-`"` invariant the quoting
   // below relies on) and avoids any Console.Out encoding translation, so the
@@ -163,30 +227,28 @@ function spawnWindowsWatchdog(options: {
   const writeResets = options.ttyPath
     ? `[System.IO.File]::WriteAllBytes(${psQuote(options.ttyPath)}, $b)`
     : '$s=[Console]::OpenStandardOutput(); $s.Write($b, 0, $b.Length); $s.Flush()'
-  // The marker lets tests wait out the bootstrap hop and lets production
-  // report a bounded arming timeout without inspecting PowerShell output.
-  const armedMarker = `[System.IO.File]::WriteAllText(${psQuote(options.armedPath)}, 'armed'); `
+  // Resolve the owner BEFORE announcing "armed", so the marker means "waiting
+  // on the right process, or already sure it is gone" — never "about to wait
+  // on whatever holds this pid now". The armed marker lets tests wait out the
+  // bootstrap hop and production report a bounded arming timeout (the owner
+  // deletes it once it has looked). The pid file is the watchdog's alone: it
+  // lives exactly as long as the watchdog, so the next launch can recognise
+  // one that outlived its owner.
+  const pidPath = windowsWatchdogPidPath(options.disarmPath)
   const watchdogScript =
-    armedMarker +
-    `try { Wait-Process -Id ${process.pid} -ErrorAction Stop } catch {}; ` +
+    `$w = $null; ` +
+    `try { $o = Get-Process -Id ${ownerPid} -ErrorAction Stop; ` +
+    `if ([Math]::Abs($o.StartTime.ToFileTimeUtc() - ${OWNER_START_TOKEN}) -le ${OWNER_START_TOLERANCE_TICKS}) { $w = $o } } catch {}; ` +
+    `[System.IO.File]::WriteAllText(${psQuote(pidPath)}, [string]$PID + ' ${ownerPid}'); ` +
+    `[System.IO.File]::WriteAllText(${psQuote(options.armedPath)}, 'armed'); ` +
+    `if ($w) { try { $w.WaitForExit() } catch {} }; ` +
     `if (Test-Path -LiteralPath ${psQuote(options.disarmPath)}) { ` +
     `Remove-Item -LiteralPath ${psQuote(options.disarmPath)} -Force -ErrorAction SilentlyContinue ` +
     `} else { ` +
     `$b=[byte[]](${payloadBytes}); ` +
     `${writeResets} }; ` +
-    `Remove-Item -LiteralPath ${psQuote(options.armedPath)} -Force -ErrorAction SilentlyContinue`
-
-  // Windows PowerShell 5.1 ships with every supported Windows; use the
-  // absolute path so a broken PATH can't take out the safety net.
-  const powershell =
-    options.powershellPath ??
-    path.join(
-      getCliEnv().SystemRoot ?? 'C:\\Windows',
-      'System32',
-      'WindowsPowerShell',
-      'v1.0',
-      'powershell.exe',
-    )
+    `Remove-Item -LiteralPath ${psQuote(options.armedPath)} -Force -ErrorAction SilentlyContinue; ` +
+    `Remove-Item -LiteralPath ${psQuote(pidPath)} -Force -ErrorAction SilentlyContinue`
 
   // Plain -Command (not -EncodedCommand) so the command lines are auditable
   // in process listings — encoded PowerShell trips EDR/AV heuristics. This is
@@ -197,9 +259,36 @@ function spawnWindowsWatchdog(options: {
   // the bootstrap's own command line those `"` are escaped as \" by spawn,
   // which powershell.exe's argv tokenizer unescapes.
   const watchdogArgs = `-NoProfile -NonInteractive -Command "${watchdogScript}"`
+  // The bootstrap is a member of our kill-on-close job, so while it runs we
+  // are alive and this read names US. If we are already gone it throws, the
+  // bootstrap exits non-zero, and no grandchild is started at all.
+  const ownerStart =
+    options.ownerStartOverride !== undefined
+      ? String(Math.trunc(Number(options.ownerStartOverride)) || 0)
+      : `(Get-Process -Id ${ownerPid} -ErrorAction Stop).StartTime.ToFileTimeUtc()`
   const bootstrapScript =
-    `Start-Process -FilePath ${psQuote(powershell)} ` +
-    `-ArgumentList ${psQuote(watchdogArgs)} -NoNewWindow`
+    `$t = ${ownerStart}; ` +
+    `Start-Process -FilePath ${psQuote(options.powershell)} ` +
+    `-ArgumentList (${psQuote(watchdogArgs)}.Replace('${OWNER_START_TOKEN}', [string]$t)) -NoNewWindow`
+  return { bootstrapScript, watchdogScript }
+}
+
+function spawnWindowsWatchdog(options: {
+  ttyPath?: string
+  disarmPath: string
+  armedPath: string
+  powershellPath?: string
+  ownerStartOverride?: string
+}): ChildProcess {
+  const powershell = options.powershellPath ?? windowsPowerShellPath()
+  const { bootstrapScript } = buildWindowsWatchdogScripts({
+    ownerPid: process.pid,
+    ttyPath: options.ttyPath,
+    disarmPath: options.disarmPath,
+    armedPath: options.armedPath,
+    powershell,
+    ownerStartOverride: options.ownerStartOverride,
+  })
 
   return spawn(
     powershell,
@@ -208,6 +297,194 @@ function spawnWindowsWatchdog(options: {
       stdio: ['ignore', 'ignore', 'ignore'],
     },
   )
+}
+
+// ------------------------------------------------ leaked-watchdog inspection
+
+const WATCHDOG_FILE_PREFIX = 'codebuff-watchdog-disarm-'
+const PID_FILE_PATTERN = /^codebuff-watchdog-disarm-(\d+)-[a-z0-9]+\.pid$/
+const ARMED_MARKER_PATTERN = /^codebuff-watchdog-disarm-(\d+)-[a-z0-9]+\.armed$/
+const DISARM_FILE_PATTERN = /^codebuff-watchdog-disarm-(\d+)-[a-z0-9]+$/
+
+/** The file a watchdog keeps for exactly as long as it runs. */
+export function windowsWatchdogPidPath(disarmPath: string): string {
+  return `${disarmPath}.pid`
+}
+
+/**
+ * More watchdogs than this on one machine means they are not being reaped —
+ * nobody runs this many CLI sessions at once — so a new launch adds none.
+ */
+export const MAX_CONCURRENT_WINDOWS_WATCHDOGS = 8
+
+/** A leftover disarm file is only swept once it is clearly not in flight. */
+const STALE_DISARM_AGE_MS = 60 * 60 * 1000
+
+export type WindowsWatchdogInspection = {
+  /** Watchdogs whose owner is still running (concurrent CLI sessions). */
+  active: number
+  /** Watchdogs still running after their owner died. */
+  orphaned: number
+  /**
+   * Armed markers left by a watchdog that predates the pid file, whose owner
+   * died before its own 10s arming check could delete the marker — the exact
+   * window a reused pid could strand that watchdog. It may be leaked or may
+   * have been killed; nothing here can tell which, so these are reported
+   * separately and never counted as orphans.
+   */
+  legacyStale: number
+  /** Leftover files this inspection deleted. */
+  swept: number
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * Classify every watchdog file in the temp directory. A watchdog deletes its
+ * pid file when it exits, so a pid file whose owner is dead but whose watchdog
+ * pid is alive is a watchdog that outlived its parent. Files whose watchdog is
+ * provably gone, and disarm files nothing will ever consume, are swept. Every
+ * dependency is injectable so this runs in tests on any OS.
+ */
+export function inspectWindowsWatchdogMarkers(
+  deps: {
+    dir?: string
+    listDir?: (dir: string) => string[]
+    readFile?: (file: string) => string
+    ageMs?: (file: string) => number
+    remove?: (file: string) => void
+    isAlive?: (pid: number) => boolean
+    selfPid?: number
+  } = {},
+): WindowsWatchdogInspection {
+  const dir = deps.dir ?? os.tmpdir()
+  const listDir = deps.listDir ?? ((d: string) => readdirSync(d))
+  const readFile = deps.readFile ?? ((f: string) => readFileSync(f, 'utf8'))
+  const ageMs = deps.ageMs ?? ((f: string) => Date.now() - statSync(f).mtimeMs)
+  const remove = deps.remove ?? ((f: string) => rmSync(f, { force: true }))
+  const isAlive = deps.isAlive ?? processIsAlive
+  const selfPid = deps.selfPid ?? process.pid
+  const result: WindowsWatchdogInspection = {
+    active: 0,
+    orphaned: 0,
+    legacyStale: 0,
+    swept: 0,
+  }
+
+  let names: string[]
+  try {
+    names = listDir(dir).filter((name) => name.startsWith(WATCHDOG_FILE_PREFIX))
+  } catch {
+    return result
+  }
+  const present = new Set(names)
+  const sweep = (file: string) => {
+    try {
+      remove(file)
+      result.swept++
+    } catch {
+      // A file another process still holds is simply left for next time.
+    }
+  }
+  const sweepIfOlder = (file: string, minAgeMs: number) => {
+    try {
+      if (ageMs(file) > minAgeMs) sweep(file)
+    } catch {
+      // Unreadable age: leave it for the next launch.
+    }
+  }
+
+  for (const name of names) {
+    const file = path.join(dir, name)
+
+    const pidFile = PID_FILE_PATTERN.exec(name)
+    if (pidFile) {
+      const ownerPid = Number(pidFile[1])
+      if (ownerPid === selfPid) continue
+      if (isAlive(ownerPid)) {
+        result.active++
+        continue
+      }
+      let watchdogPid = NaN
+      try {
+        watchdogPid = Number(/^(\d+) /.exec(readFile(file).trim())?.[1])
+      } catch {
+        continue
+      }
+      if (Number.isInteger(watchdogPid) && isAlive(watchdogPid)) {
+        result.orphaned++
+      } else {
+        sweep(file)
+        const armedFile = file.replace(/\.pid$/, '.armed')
+        if (present.has(path.basename(armedFile))) sweep(armedFile)
+      }
+      continue
+    }
+
+    const armed = ARMED_MARKER_PATTERN.exec(name)
+    if (armed) {
+      const ownerPid = Number(armed[1])
+      if (ownerPid === selfPid || isAlive(ownerPid)) continue
+      // A current watchdog's marker is judged through its pid file above.
+      if (present.has(name.replace(/\.armed$/, '.pid'))) continue
+      // Counted once, then removed: the report is the whole value of it, and a
+      // still-running watchdog's own final Remove-Item tolerates it missing.
+      result.legacyStale++
+      sweep(file)
+      continue
+    }
+
+    const disarm = DISARM_FILE_PATTERN.exec(name)
+    if (disarm) {
+      // Written at a clean exit for a watchdog to consume. One still here an
+      // hour after its owner died belongs to a watchdog that never ran.
+      const ownerPid = Number(disarm[1])
+      if (ownerPid === selfPid || isAlive(ownerPid)) continue
+      sweepIfOlder(file, STALE_DISARM_AGE_MS)
+    }
+  }
+  return result
+}
+
+/**
+ * Inspect before arming: report leaked watchdogs, and refuse to add another
+ * when the machine already carries too many. Returns whether to arm.
+ */
+export function admitWindowsWatchdog(
+  inspect: () => WindowsWatchdogInspection = inspectWindowsWatchdogMarkers,
+  report: typeof reportCliProcessHealth = reportCliProcessHealth,
+): boolean {
+  let inspection: WindowsWatchdogInspection
+  try {
+    inspection = inspect()
+  } catch {
+    return true
+  }
+  if (inspection.orphaned > 0 || inspection.legacyStale > 0) {
+    report(AnalyticsEvent.CLI_HELPER_OUTLIVED_PARENT, {
+      kind: 'terminal_watchdog',
+      count: inspection.orphaned,
+      legacyStale: inspection.legacyStale,
+      active: inspection.active,
+    })
+  }
+  const live = inspection.active + inspection.orphaned
+  if (live < MAX_CONCURRENT_WINDOWS_WATCHDOGS) return true
+  report(AnalyticsEvent.CLI_HELPER_PROCESS_FLOOD, {
+    kind: 'terminal_watchdog',
+    scope: 'machine',
+    live,
+    threshold: MAX_CONCURRENT_WINDOWS_WATCHDOGS,
+    skipped: true,
+  })
+  return false
 }
 
 const isTruthy = (value: string | undefined): boolean =>
@@ -232,6 +509,14 @@ export function startTerminalWatchdog(options?: {
   reportFailure?: (failure: TerminalWatchdogFailure) => void
   /** Test-only override for exercising Windows spawn failures. */
   windowsPowerShellPath?: string
+  /** Test-only: see buildWindowsWatchdogScripts. */
+  windowsOwnerStartOverride?: string
+  /**
+   * Test-only: replaces the temp-dir marker inspection. Without it, runs with
+   * an injected ttyPath skip the inspection (their markers live beside the
+   * tty file, not in the temp dir it reads).
+   */
+  inspectWindowsWatchdogs?: () => WindowsWatchdogInspection
 }): void {
   if (watchdog) return
   const env = getCliEnv()
@@ -243,6 +528,10 @@ export function startTerminalWatchdog(options?: {
   try {
     let child: ChildProcess
     if (process.platform === 'win32') {
+      const inspect =
+        options?.inspectWindowsWatchdogs ??
+        (options?.ttyPath ? undefined : inspectWindowsWatchdogMarkers)
+      if (inspect && !admitWindowsWatchdog(inspect)) return
       const disarmPath = path.join(
         os.tmpdir(),
         `codebuff-watchdog-disarm-${process.pid}-${Math.random().toString(36).slice(2)}`,
@@ -255,6 +544,7 @@ export function startTerminalWatchdog(options?: {
         disarmPath,
         armedPath,
         powershellPath: options?.windowsPowerShellPath,
+        ownerStartOverride: options?.windowsOwnerStartOverride,
       })
       disarmFilePath = disarmPath
       if (!options?.ttyPath) {
@@ -298,6 +588,10 @@ export function startTerminalWatchdog(options?: {
     // loop open — the CLI must still be able to exit naturally. stdin is a
     // Socket at runtime; its unref isn't in the Writable type.
     child.unref()
+    // POSIX: the watchdog itself, alive for our whole life. Windows: only the
+    // short-lived bootstrap. Either way more than a couple live at once is a
+    // leak, and the census reports it.
+    trackHelperProcess('terminal_watchdog', child)
     child.stdin?.on('error', () => {})
     ;(child.stdin as { unref?: () => void } | null)?.unref?.()
     watchdog = child

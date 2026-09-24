@@ -46,6 +46,18 @@ export enum AnalyticsEvent {
   TERMINAL_BROKER_SPAWN_FAILED = 'cli.terminal_broker_spawn_failed',
   TERMINAL_WATCHDOG_FAILED = 'cli.terminal_watchdog_failed',
   TERMINAL_COMMAND_COMPLETED = 'cli.terminal_command_completed',
+  // Client-side process floods, which nothing server-side can see (the
+  // 2026-09-23 "conhost and powershell flood" report). HELPER_PROCESS_FLOOD
+  // fires when the live count of one KIND of helper crosses its threshold —
+  // `scope: 'owned'` counts children this process spawned and still holds;
+  // `scope: 'machine'` is a Windows-only count of powershell/conhost/bash
+  // processes on the whole machine, the symptom users actually see.
+  // HELPER_OUTLIVED_PARENT fires when a helper is found still running after the
+  // process that spawned it is gone (a leaked terminal watchdog). Counts only —
+  // never command lines, paths or process names beyond a fixed allowlist.
+  // Rate-limited per kind at the emit site; see common/src/util/helper-process-census.ts.
+  CLI_HELPER_PROCESS_FLOOD = 'cli.helper_process_flood',
+  CLI_HELPER_OUTLIVED_PARENT = 'cli.helper_outlived_parent',
   UPDATE_CODEBUFF_FAILED = 'cli.update_codebuff_failed',
   FEEDBACK_BUTTON_HOVERED = 'cli.feedback_button_hovered',
   FOLLOWUP_CLICKED = 'cli.followup_clicked',
@@ -496,6 +508,8 @@ export enum AnalyticsEvent {
   // emit only on transitions, so periodic scans do not create cardinality or volume churn.
   DESKTOP_THREADS_AUTO_ARCHIVED = 'desktop.threads_auto_archived',
   DESKTOP_DELIVERY_CONFLICT_CHANGED = 'desktop.delivery_conflict_changed',
+  // Desktop sibling of CLI_HELPER_PROCESS_FLOOD (same payload, same census).
+  DESKTOP_HELPER_PROCESS_FLOOD = 'desktop.helper_process_flood',
 
   // Common
   FLUSH_FAILED = 'common.flush_failed',

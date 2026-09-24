@@ -53,6 +53,7 @@ import {
   exitCliWithFatalError,
   installProcessCleanupHandlers,
 } from './utils/renderer-cleanup'
+import { startWindowsMachineProcessCensus } from './utils/helper-process-telemetry'
 import { startTerminalWatchdog } from './utils/terminal-watchdog'
 import { installTerminalProtocolController } from './utils/terminal-protocol-controller'
 import { initializeSkillRegistry } from './utils/skill-registry'
@@ -440,6 +441,10 @@ async function main(): Promise<void> {
   // process disappears. Started before the renderer begins enabling terminal
   // modes; the clean-shutdown path (renderer-cleanup) disarms it.
   startTerminalWatchdog()
+  // Windows only: count powershell/conhost/bash/cmd machine-wide every ten
+  // minutes and report a flood (cli.helper_process_flood) — the symptom users
+  // see in Task Manager, which nothing server-side can observe.
+  startWindowsMachineProcessCensus()
 
   const renderer = await createCliRenderer({
     backgroundColor: 'transparent',

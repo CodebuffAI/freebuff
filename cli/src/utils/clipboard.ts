@@ -4,6 +4,7 @@ import { closeSync, openSync, writeSync } from 'fs'
 import type { ChildProcess } from 'child_process'
 
 import { getCliEnv } from './env'
+import { trackHelperProcess } from './helper-process-telemetry'
 import { logger } from './logger'
 
 // Global renderer reference for clipboard operations.
@@ -262,6 +263,7 @@ function writeToClipboardTool(
       child = spawn(command, args, {
         stdio: ['pipe', 'ignore', 'ignore'],
       })
+      trackHelperProcess('clipboard', child)
     } catch {
       resolve(false)
       return

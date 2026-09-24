@@ -4,6 +4,7 @@ import { resetTerminalTitle } from './terminal-title'
 import { stopActiveRun } from './active-run'
 import { getCliEnv } from './env'
 import { exitCliCleanly, registerExitCleanup } from './exit-cleanly'
+import { trackHelperProcess } from './helper-process-telemetry'
 import { flushLiveChatState } from './run-state-storage'
 import { reportFatalErrorSync, writeTerminalControlSync } from './terminal-io'
 import { TERMINAL_RESET_SEQUENCES } from './terminal-reset-sequences'
@@ -17,10 +18,12 @@ let cleanupStarted = false
 
 function isProcessRunning(pid: number, onResult: (running: boolean) => void) {
   if (process.platform === 'win32') {
-    execFile(
+    const probe = execFile(
       'tasklist',
       ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'],
-      { windowsHide: true },
+      // Bounded: a probe hung on a saturated machine would otherwise stall the
+      // (non-overlapping) monitor forever, silently ending launcher watching.
+      { windowsHide: true, timeout: 15_000 },
       (error, stdout) => {
         // A failed probe should never terminate a healthy CLI.
         if (error) {
@@ -30,6 +33,7 @@ function isProcessRunning(pid: number, onResult: (running: boolean) => void) {
         onResult(new RegExp(`(?:^|\\D)${pid}(?:\\D|$)`).test(stdout))
       },
     )
+    trackHelperProcess('launcher_probe', probe)
     return
   }
 

@@ -5,6 +5,10 @@
  * - mode "hang":  start the watchdog and stay alive until killed by the test.
  * - mode "clean": start the watchdog, then stop it and exit (clean shutdown).
  * - mode "spawn-failure": report a watchdog startup failure and exit.
+ * - mode "reused-pid" (Windows): start the watchdog with a creation time that
+ *   does not match this process — what a reused pid looks like from the
+ *   watchdog's side — and exit 0 only once it has fired WHILE this process is
+ *   still alive, i.e. it refused to wait on a process that is not its owner.
  *
  * Prints "ready" once the watchdog is armed. On Windows, arming is asynchronous
  * (a PowerShell bootstrap has to launch the real watchdog outside Bun's
@@ -12,7 +16,7 @@
  * printing "ready" — killing earlier would take the bootstrap down before the
  * watchdog exists.
  */
-import { existsSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 
 import {
   getTerminalWatchdogDiagnostics,
@@ -24,7 +28,7 @@ const [mode, ttyPath] = process.argv.slice(2)
 
 if (!mode || !ttyPath) {
   console.error(
-    'usage: terminal-watchdog-fixture.ts <hang|clean|spawn-failure> <ttyPath>',
+    'usage: terminal-watchdog-fixture.ts <hang|clean|spawn-failure|reused-pid> <ttyPath>',
   )
   process.exit(2)
 }
@@ -59,6 +63,27 @@ if (mode === 'spawn-failure') {
   })
   writeFileSync(ttyPath, JSON.stringify(failure))
   process.exit(0)
+}
+
+if (mode === 'reused-pid') {
+  startTerminalWatchdog({ ttyPath, windowsOwnerStartOverride: '1' })
+  await waitForArmed()
+  const deadline = Date.now() + 40_000
+  while (Date.now() < deadline) {
+    let written = ''
+    try {
+      written = readFileSync(ttyPath, 'utf8')
+    } catch {
+      // Not written yet.
+    }
+    if (written) {
+      console.log('ready')
+      process.exit(0)
+    }
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  console.error('watchdog kept waiting on a process that is not its owner')
+  process.exit(5)
 }
 
 startTerminalWatchdog({ ttyPath })

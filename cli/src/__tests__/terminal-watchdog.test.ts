@@ -42,7 +42,7 @@ const SETUP_TIMEOUT_MS = IS_WINDOWS ? 150_000 : 60_000
 
 type Scenario = {
   key: string
-  mode: 'hang' | 'clean' | 'spawn-failure'
+  mode: 'hang' | 'clean' | 'spawn-failure' | 'reused-pid'
   env?: Record<string, string>
   /** "hang" fixtures wait to be SIGKILLed; the others exit on their own. */
   kill: boolean
@@ -53,7 +53,8 @@ type Scenario = {
 const OPT_OUT_VALUES = ['1', 'true', 'TRUE']
 
 // POSIX uses a detached sh blocking on pipe EOF. Windows uses a PowerShell
-// grandchild (outside Bun's kill-on-close job object) blocking on Wait-Process.
+// grandchild (outside Bun's kill-on-close job object) blocking on its owner's
+// process handle (identity-checked by creation time).
 // Both then write the reset sequences to ttyPath.
 const SCENARIOS: Scenario[] = [
   { key: 'unclean', mode: 'hang', kill: true, expectWrite: true },
@@ -84,6 +85,15 @@ const SCENARIOS: Scenario[] = [
           mode: 'spawn-failure' as const,
           kill: false,
           expectWrite: false,
+        },
+        // The pid-reuse leak: a watchdog armed after its owner died used to
+        // wait on whichever process inherited the pid, for as long as that
+        // process lived. It must now fire at once instead.
+        {
+          key: 'reused-pid',
+          mode: 'reused-pid' as const,
+          kill: false,
+          expectWrite: true,
         },
       ]
     : []),
@@ -372,6 +382,17 @@ describe('terminal watchdog (fixture processes)', () => {
     // exits must not litter the temp dir.
     expect(run.disarmFiles).toEqual([])
   })
+
+  test.skipIf(!IS_WINDOWS)(
+    'never waits on a process whose creation time is not its owner',
+    () => {
+      const run = runFor('reused-pid')
+      // The fixture exits 0 only after seeing the reset while it was alive.
+      expect(run.exitCode).toBe(0)
+      expect(run.content).toBe(TERMINAL_RESET_SEQUENCES)
+      expect(run.disarmFiles).toEqual([])
+    },
+  )
 
   test.skipIf(!IS_WINDOWS)(
     'reports a bounded failure when PowerShell cannot spawn',

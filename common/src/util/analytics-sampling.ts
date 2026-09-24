@@ -62,6 +62,11 @@ const ALWAYS_TRACK_EVENTS = new Set<AnalyticsEvent>([
   AnalyticsEvent.TERMINAL_BROKER_SPAWN_FAILED,
   AnalyticsEvent.TERMINAL_WATCHDOG_FAILED,
   AnalyticsEvent.TERMINAL_COMMAND_COMPLETED,
+  // Rare by construction (rate-limited per kind per install) and only useful
+  // if every affected install is counted.
+  AnalyticsEvent.CLI_HELPER_PROCESS_FLOOD,
+  AnalyticsEvent.CLI_HELPER_OUTLIVED_PARENT,
+  AnalyticsEvent.DESKTOP_HELPER_PROCESS_FLOOD,
   AnalyticsEvent.UPDATE_CODEBUFF_FAILED,
 ])
 
