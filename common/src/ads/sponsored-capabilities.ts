@@ -89,6 +89,9 @@ export const SPONSORED_CAPABILITY_BY_TOOL: Readonly<
   update_subgoal: 'agent_control',
   create_plan: 'agent_control',
   cloud_plan_ready: 'agent_control',
+  // Reports the project's stack to our own profile dashboard (#3943); it
+  // reads and writes nothing in the workspace and reaches no third party.
+  report_project_profile: 'agent_control',
 
   // run_commands — anything that executes or watches a program run.
   // `browser_logs` sits here rather than with the read tools because what it
