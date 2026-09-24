@@ -43,8 +43,9 @@ export const sponsoredLocalTargetSchema = z.discriminatedUnion('kind', [
  * surface with NO OS sandbox: its protection is campaign review plus the
  * portable floor (`SPONSORED_WINDOWS_CONTAINMENT` in `./sponsored-windows`).
  * A Windows value on the wire admits nothing by itself — the server serves it
- * only behind `FREEBUFF_SPONSORED_WINDOWS` and a per-campaign opt-in, and the
- * Supabase format never serves it at all.
+ * only behind `FREEBUFF_SPONSORED_WINDOWS` (every agentic campaign alike when
+ * on), and the LEGACY Supabase format paths never serve it (Supabase reaches
+ * Windows only as a generic candidate under the one funnel).
  */
 export const sponsoredExecutionSurfaceSchema = z.enum([
   'desktop_macos',
@@ -153,9 +154,11 @@ export function supabaseFoundationStackEligible(
   const mode = supabaseFoundationMode(rawMode)
   if (!mode || !supabaseFoundationFrameworkRunnable(stack.framework))
     return false
-  // The Supabase format stays macOS/Linux (COD-642 scope: generic campaigns
-  // only). Refused by name because the waves below test prefixes, and a
-  // `desktop_` prefix alone would otherwise admit Windows to every wave.
+  // The LEGACY Supabase format stays macOS/Linux until COD-649 retires it;
+  // Supabase reaches Windows only as a generic candidate under the one
+  // funnel (COD-642, 2026-09-24). Refused by name because the waves below
+  // test prefixes, and a `desktop_` prefix alone would otherwise admit
+  // Windows to every wave.
   if (stack.surface === 'desktop_windows') return false
   if (mode === 'foundation-mac')
     return stack.surface === 'desktop_macos' && stack.framework === 'nextjs'

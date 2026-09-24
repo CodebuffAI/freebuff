@@ -118,16 +118,17 @@ export const SUPABASE_FORMAT_CPC_ARM_REACH = Object.freeze({
   display: {
     geoTiers: ['tier1'],
     // desktop_windows is deliberately absent. The capability schema accepts
-    // it since COD-642, but that issue serves Windows to GENERIC campaigns
-    // only: adding it to either arm mid-test changes the comparable
-    // population, so it is an explicit decision (Owen) for both arms at once.
+    // it since COD-642, but this LEGACY CPC path stays macOS/Linux until
+    // COD-649 retires it: adding Windows to either arm mid-test changes the
+    // comparable population. Supabase reaches Windows only as a generic
+    // candidate under FREEBUFF_AGENTIC_ONE_FUNNEL=on (Owen, 2026-09-24).
     executionSurfaces: SUPABASE_FORMAT_CPC_EXECUTION_SURFACES,
   },
   agentic: {
     geoTiers: ['tier1'],
-    // Windows runs under the floor, not an OS sandbox (COD-642), and only for
-    // generic campaigns opted in by review; the Supabase agentic arm stays
-    // Mac/Linux for the same population reason as the display arm.
+    // Windows runs under the floor, not an OS sandbox (COD-642), and reaches
+    // Supabase only through the one funnel's generic path; this legacy arm
+    // stays Mac/Linux for the same population reason as the display arm.
     executionSurfaces: SUPABASE_FORMAT_CPC_EXECUTION_SURFACES,
   },
 } satisfies Record<

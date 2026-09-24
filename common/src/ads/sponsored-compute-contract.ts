@@ -1,9 +1,57 @@
 import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from '../constants/freebuff-model-ids'
 
 import type {
+  SponsoredExecutionSurface,
+  SponsoredLocalTarget,
+} from './sponsored-capability'
+import type {
   SPONSORED_WINDOWS_EXECUTION_SURFACE,
   SponsoredExecutionContainment,
 } from './sponsored-windows'
+
+/**
+ * The funded Accept request, `POST /api/v1/ads/proposal/{id}/accept`, as the
+ * accepting surface sends it and the route reads it.
+ */
+export type SponsoredAcceptRequest = {
+  /** Which kind of client accepts: `desktop` or `cli`. */
+  surface: 'desktop' | 'cli'
+  /** The run id the surface minted before consent. */
+  runId: string
+  /** The hash of the exact procedure the user consented to. */
+  procedureSha256: string
+  target?: SponsoredLocalTarget
+  /**
+   * The ACCEPTING CLIENT's own execution surface (COD-642): `desktop_windows`
+   * from Windows Desktop, `desktop_macos` / `desktop_linux` otherwise. The
+   * row's `execution_surface` says which machine the offer was minted for;
+   * this says which machine is about to run it, so the two can be paired and
+   * a client is never charged for a run it cannot execute (a Windows client
+   * accepting a `desktop_macos` row, or the reverse). Optional on the wire
+   * because an older client does not send it.
+   */
+  clientExecutionSurface?: SponsoredExecutionSurface
+}
+
+/**
+ * The same fact on the read-only preview (`GET .../accept`), which has no
+ * body: a query parameter named like the body field.
+ */
+export const SPONSORED_ACCEPT_EXECUTION_SURFACE_PARAM =
+  'clientExecutionSurface' as const satisfies keyof SponsoredAcceptRequest
+
+/**
+ * Whether a client on `clientSurface` may accept a row minted for
+ * `rowSurface`. A row with no recorded surface (older rows, Cloud) is not a
+ * mismatch; a recorded one must be exactly the client's own.
+ */
+export function sponsoredAcceptSurfaceMatchesRow(
+  clientSurface: string | null | undefined,
+  rowSurface: string | null | undefined,
+): boolean {
+  if (rowSurface === undefined || rowSurface === null) return true
+  return clientSurface === rowSurface
+}
 
 /** Public response shape. The bearer belongs in host memory, never a thread. */
 export type SponsoredComputeGrant = Readonly<{

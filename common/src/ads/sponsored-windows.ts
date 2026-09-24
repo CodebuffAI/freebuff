@@ -1,5 +1,5 @@
 /**
- * Windows Desktop serving for GENERIC agentic campaigns (COD-642).
+ * Windows Desktop serving for agentic campaigns (COD-642).
  *
  * Windows has no OS sandbox under a sponsored run. Its protection is human
  * review of each campaign's procedure (against intent) plus the portable floor
@@ -8,35 +8,40 @@
  * `docs/freebuff-sponsored-local-execution.md` records the decision (Owen,
  * 2026-09-23) and the risk it accepts.
  *
- * Because review is per campaign, serving is gated twice and both gates are
- * read here, so every consumer (Next serving, the funded Accept route, the
- * Convex reservation and Accept contracts) applies the same rule:
+ * ONE SWITCH, NO PER-CAMPAIGN LIST (Owen, 2026-09-24). With
+ * `FREEBUFF_SPONSORED_WINDOWS=on`, EVERY agentic campaign that can serve on
+ * macOS can serve on Windows, under exactly the same rules as every other
+ * campaign — review, funding, servability, the classifier, the roster.
+ * Campaign review already happens once per campaign; a second, Windows-only
+ * list of reviewed ids was a second place to forget one. Supabase included:
+ * under `FREEBUFF_AGENTIC_ONE_FUNNEL=on` it is an ordinary generic candidate
+ * and reaches Windows like everyone else.
  *
- *   - `FREEBUFF_SPONSORED_WINDOWS` — `on` or not. Only the exact value `on`
- *     opens; unset, `off`, a typo or any other value is closed.
- *   - `FREEBUFF_SPONSORED_WINDOWS_CAMPAIGN_IDS` — a comma-separated list of
- *     campaign UUIDs whose procedure was reviewed for Windows. There is no
- *     `*`: a wildcard would skip exactly the review the list records. One
- *     malformed entry closes the whole list rather than dropping that entry.
- *
- * Either gate closed means NO Windows offer, invitation or roster class, and
- * no fresh Windows Accept. The Supabase format never serves Windows whatever
- * these say.
+ * The switch is read here, so every consumer (Next serving, the funded Accept
+ * route, the Convex reservation and Accept contracts) applies the same rule.
+ * Only the EXACT value `on` opens it. Unset, `off`, `ON`, ` on `, a typo:
+ * closed. A present value that is neither `on` nor `off` is reported through
+ * `onUnrecognised` so an operator's typo does not look like a working switch.
  */
-
-import { SUPABASE_FORMAT_DATABASE_PAIR } from './supabase-format-experiment'
 
 import type { SponsoredExecutionSurface } from './sponsored-capability'
 
 export type SponsoredWindowsEnv = {
   FREEBUFF_SPONSORED_WINDOWS?: string
-  FREEBUFF_SPONSORED_WINDOWS_CAMPAIGN_IDS?: string
 }
 
-/** Non-null only when the switch is `on` AND at least one campaign opted in. */
-export type SponsoredWindowsPolicy = Readonly<{
-  campaignIds: ReadonlySet<string>
-}>
+/**
+ * Non-null only when the switch is exactly `on`. Carries no campaign list:
+ * with the switch on, Windows serves every agentic campaign (COD-642,
+ * 2026-09-24). Kept as a value rather than a boolean so a caller cannot
+ * confuse "the switch" with "this request is Windows".
+ */
+export type SponsoredWindowsPolicy = Readonly<{ switch: 'on' }>
+
+/** The only policy there is: the switch, on. */
+export const SPONSORED_WINDOWS_ON: SponsoredWindowsPolicy = Object.freeze({
+  switch: 'on',
+})
 
 /** The execution surface a Windows Desktop client reports and is granted. */
 export const SPONSORED_WINDOWS_EXECUTION_SURFACE =
@@ -52,70 +57,49 @@ export const SPONSORED_WINDOWS_EXECUTION_SURFACE =
 export const SPONSORED_WINDOWS_CONTAINMENT = 'floor' as const
 export type SponsoredExecutionContainment = typeof SPONSORED_WINDOWS_CONTAINMENT
 
-const MAX_WINDOWS_CAMPAIGNS = 100
+/**
+ * How the raw switch value reads. `off` is unset, empty, or exactly `off`;
+ * `on` is exactly `on`; anything else (`ON`, ` on `, `true`, a typo) is
+ * `unrecognised`, which is CLOSED and worth a log line.
+ */
+export function sponsoredWindowsSwitchState(
+  raw: string | undefined,
+): 'on' | 'off' | 'unrecognised' {
+  if (raw === undefined || raw === '' || raw === 'off') return 'off'
+  return raw === 'on' ? 'on' : 'unrecognised'
+}
 
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-function parseCampaignIds(raw: string | undefined): ReadonlySet<string> | null {
-  const trimmed = raw?.trim()
-  if (!trimmed) return null
-  const ids = trimmed.split(',').map((id) => id.trim())
-  // `*`, an empty entry (`a,,b`, a trailing comma) or any non-UUID closes the
-  // list: a typo must close Windows serving, never widen it.
-  if (ids.length > MAX_WINDOWS_CAMPAIGNS || ids.some((id) => !UUID.test(id)))
-    return null
-  return Object.freeze(new Set(ids.map((id) => id.toLowerCase())))
+/** Server configuration only. Anything but the exact value `on` admits nothing. */
+export function readSponsoredWindowsPolicy(
+  env: SponsoredWindowsEnv,
+  options: { onUnrecognised?: (value: string) => void } = {},
+): SponsoredWindowsPolicy | null {
+  const raw = env.FREEBUFF_SPONSORED_WINDOWS
+  const state = sponsoredWindowsSwitchState(raw)
+  if (state === 'unrecognised' && raw !== undefined)
+    options.onUnrecognised?.(raw)
+  return state === 'on' ? SPONSORED_WINDOWS_ON : null
 }
 
 /**
- * Supabase stays macOS/Linux (COD-642 scope boundary), and since COD-649 its
- * agentic campaign can be an ORDINARY generic candidate under
- * `FREEBUFF_AGENTIC_ONE_FUNNEL=on` -- so list membership alone would let an
- * operator who opted a Supabase id in serve, reserve and accept it on
- * Windows. The fixed database pair is refused here, by name, on every
- * runtime; the env-configured pairs (Auth) are passed in by each side, which
- * is the only place that can read them.
+ * A reporter for `onUnrecognised` that says so ONCE per value per interval
+ * (default ten minutes) instead of on every request. Each runtime owns one
+ * (module scope), and passes its own logger. The value is bounded and
+ * JSON-quoted before it reaches the log, so whitespace is visible.
  */
-const SUPABASE_FIXED_CAMPAIGN_IDS: ReadonlySet<string> = new Set(
-  [
-    SUPABASE_FORMAT_DATABASE_PAIR.displayCampaignId,
-    SUPABASE_FORMAT_DATABASE_PAIR.agenticCampaignId,
-  ].map((id) => id.toLowerCase()),
-)
-
-/** Server configuration only. Absent, off, garbage or an empty list admits nothing. */
-export function readSponsoredWindowsPolicy(
-  env: SponsoredWindowsEnv,
-  options: { excludedCampaignIds?: Iterable<string> } = {},
-): SponsoredWindowsPolicy | null {
-  if (env.FREEBUFF_SPONSORED_WINDOWS?.trim() !== 'on') return null
-  const campaignIds = parseCampaignIds(
-    env.FREEBUFF_SPONSORED_WINDOWS_CAMPAIGN_IDS,
-  )
-  if (!campaignIds) return null
-  const excluded = new Set(SUPABASE_FIXED_CAMPAIGN_IDS)
-  for (const id of options.excludedCampaignIds ?? [])
-    excluded.add(id.toLowerCase())
-  // A Supabase id on the list is DROPPED, not fatal: it narrows what Windows
-  // serves, which is the safe direction for an operator's mistake.
-  const admitted = [...campaignIds].filter((id) => !excluded.has(id))
-  if (admitted.length === 0) return null
-  return Object.freeze({ campaignIds: Object.freeze(new Set(admitted)) })
-}
-
-/** Whether this campaign may be offered, invited or accepted on Windows. */
-export function sponsoredWindowsAdmitsCampaign(
-  policy: SponsoredWindowsPolicy | null | undefined,
-  campaignId: string | null | undefined,
-): boolean {
-  return Boolean(
-    policy &&
-    campaignId &&
-    UUID.test(campaignId) &&
-    !SUPABASE_FIXED_CAMPAIGN_IDS.has(campaignId.toLowerCase()) &&
-    policy.campaignIds.has(campaignId.toLowerCase()),
-  )
+export function throttledUnrecognisedSwitchReporter(
+  report: (quotedValue: string) => void,
+  options: { intervalMs?: number; now?: () => number } = {},
+): (value: string) => void {
+  const intervalMs = options.intervalMs ?? 10 * 60_000
+  const now = options.now ?? Date.now
+  let last: { value: string; at: number } | null = null
+  return (value) => {
+    const at = now()
+    if (last && last.value === value && at - last.at < intervalMs) return
+    last = { value, at }
+    report(JSON.stringify(value.slice(0, 32)))
+  }
 }
 
 /** The containment a run on this execution surface gets, when it is not an OS sandbox. */
@@ -128,11 +112,34 @@ export function sponsoredExecutionContainment(
 }
 
 /**
+ * The `accepted` funnel row's metadata for a floor-contained run, or null for
+ * every other run (whose row keeps its exact pre-COD-642 shape). ONE builder
+ * for both producers of that row — the funded Accept route and the settle
+ * endpoint Convex calls — because the row is insert-once per
+ * (campaign, `accept_<proposalId>`) and whichever producer wins the race is
+ * the row analytics reads. Keyed on the acceptance record's `containment`,
+ * the immutable fact, never on a surface re-derived later.
+ */
+export function sponsoredContainmentFunnelMetadata(
+  containment: string | null | undefined,
+): {
+  execution_surface: typeof SPONSORED_WINDOWS_EXECUTION_SURFACE
+  containment: SponsoredExecutionContainment
+} | null {
+  return containment === SPONSORED_WINDOWS_CONTAINMENT
+    ? {
+        execution_surface: SPONSORED_WINDOWS_EXECUTION_SURFACE,
+        containment: SPONSORED_WINDOWS_CONTAINMENT,
+      }
+    : null
+}
+
+/**
  * The OS pairing every serving gate applies: a reported OS may only claim its
  * own Desktop surface. Windows claiming a macOS/Linux surface, or the reverse,
  * is refused. `windows` says whether THIS consumer serves Windows at all — the
- * Supabase paths pass `false`, the generic paths pass whether the Windows
- * policy admits the campaign in question.
+ * legacy Supabase paths pass `false`, the generic paths pass whether the
+ * Windows switch is on.
  */
 export function sponsoredDesktopSurfaceMatchesOs(
   surface: string | null | undefined,
@@ -145,5 +152,31 @@ export function sponsoredDesktopSurfaceMatchesOs(
     (options.windows &&
       reportedOs === 'windows' &&
       surface === SPONSORED_WINDOWS_EXECUTION_SURFACE)
+  )
+}
+
+/**
+ * Whether a Windows request carries the proof that its client can RUN a paid
+ * sponsored procedure (COD-642 review, finding 1): a v2 `sponsoredCapability`
+ * that names `desktop_windows` and reports execution `available`. Released
+ * Windows builds send only `device.os`, the UA and `localCapability`, so
+ * without this a paid offer would reach a client whose Accept can only fail.
+ */
+export function sponsoredWindowsExecutionCapable(
+  capability:
+    | {
+        execution: {
+          surface: string
+          status: string
+          reason?: string | undefined
+        }
+      }
+    | null
+    | undefined,
+): boolean {
+  return (
+    capability?.execution.surface === SPONSORED_WINDOWS_EXECUTION_SURFACE &&
+    capability.execution.status === 'available' &&
+    capability.execution.reason === undefined
   )
 }

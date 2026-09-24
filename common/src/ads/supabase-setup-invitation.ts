@@ -5,9 +5,10 @@ import { SUPABASE_FORMAT_CPC_EXPERIMENT_VERSION } from './supabase-format-cpc-ex
  * The Desktop surface an invitation capability may report. `desktop_windows`
  * (COD-642) is accepted on the wire so a Windows client can be paired with its
  * own OS; it admits nothing by itself. Only the generic invitation path serves
- * it, behind `FREEBUFF_SPONSORED_WINDOWS` and a per-campaign opt-in — every
- * Supabase consumer still pairs macOS/Linux only, and the Supabase invitation
- * RESPONSE schemas below deliberately keep their two-surface enum.
+ * it, behind `FREEBUFF_SPONSORED_WINDOWS` (every campaign alike when on) —
+ * every LEGACY Supabase consumer still pairs macOS/Linux only until COD-649
+ * retires it, and the Supabase invitation RESPONSE schemas below deliberately
+ * keep their two-surface enum.
  */
 export const invitationCapabilitySurfaceSchema = z.enum([
   'desktop_macos',

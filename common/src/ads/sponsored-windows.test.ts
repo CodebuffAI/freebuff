@@ -3,24 +3,31 @@ import { describe, expect, test } from 'bun:test'
 import {
   SPONSORED_WINDOWS_CONTAINMENT,
   SPONSORED_WINDOWS_EXECUTION_SURFACE,
+  SPONSORED_WINDOWS_ON,
   readSponsoredWindowsPolicy,
+  sponsoredContainmentFunnelMetadata,
   sponsoredDesktopSurfaceMatchesOs,
   sponsoredExecutionContainment,
-  sponsoredWindowsAdmitsCampaign,
+  sponsoredWindowsExecutionCapable,
+  sponsoredWindowsSwitchState,
+  throttledUnrecognisedSwitchReporter,
 } from './sponsored-windows'
-import { SUPABASE_FORMAT_DATABASE_PAIR } from './supabase-format-experiment'
 
-const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-
-describe('FREEBUFF_SPONSORED_WINDOWS (COD-642)', () => {
+describe('FREEBUFF_SPONSORED_WINDOWS (COD-642), switch-only', () => {
   test('absent is the shipped position: closed', () => {
     expect(readSponsoredWindowsPolicy({})).toBeNull()
     expect(
-      readSponsoredWindowsPolicy({
-        FREEBUFF_SPONSORED_WINDOWS_CAMPAIGN_IDS: A,
-      }),
+      readSponsoredWindowsPolicy({ FREEBUFF_SPONSORED_WINDOWS: undefined }),
     ).toBeNull()
+  })
+
+  test('the exact value `on` opens it, with no campaign list to go with it', () => {
+    const policy = readSponsoredWindowsPolicy({
+      FREEBUFF_SPONSORED_WINDOWS: 'on',
+    })
+    expect(policy).toBe(SPONSORED_WINDOWS_ON)
+    expect(policy).toEqual({ switch: 'on' })
+    expect(Object.isFrozen(policy)).toBe(true)
   })
 
   test('only the exact value `on` opens; every other value fails closed', () => {
@@ -35,78 +42,74 @@ describe('FREEBUFF_SPONSORED_WINDOWS (COD-642)', () => {
       'on,off',
       '',
       '   ',
+      // Review nit on #3863: surrounding whitespace used to be trimmed, so
+      // ` on ` opened Windows. It no longer does -- `on` means `on`.
+      ' on ',
+      'on ',
+      ' on',
+      '\ton',
     ]) {
       expect(
-        readSponsoredWindowsPolicy({
-          FREEBUFF_SPONSORED_WINDOWS: value,
-          FREEBUFF_SPONSORED_WINDOWS_CAMPAIGN_IDS: A,
-        }),
+        readSponsoredWindowsPolicy({ FREEBUFF_SPONSORED_WINDOWS: value }),
       ).toBeNull()
     }
-    // Surrounding whitespace from a dashboard paste is not a different value.
+  })
+
+  test('off, empty and unset read as off; anything else is unrecognised', () => {
+    expect(sponsoredWindowsSwitchState(undefined)).toBe('off')
+    expect(sponsoredWindowsSwitchState('')).toBe('off')
+    expect(sponsoredWindowsSwitchState('off')).toBe('off')
+    expect(sponsoredWindowsSwitchState('on')).toBe('on')
+    for (const value of [' on ', 'ON', 'true', 'of', '  '])
+      expect(sponsoredWindowsSwitchState(value)).toBe('unrecognised')
+  })
+
+  test('an unrecognised value is reported; on, off and unset are not', () => {
+    const reported: string[] = []
+    const onUnrecognised = (value: string) => reported.push(value)
+    for (const value of [undefined, '', 'off', 'on'])
+      readSponsoredWindowsPolicy(
+        { FREEBUFF_SPONSORED_WINDOWS: value },
+        { onUnrecognised },
+      )
+    expect(reported).toEqual([])
     expect(
-      readSponsoredWindowsPolicy({
-        FREEBUFF_SPONSORED_WINDOWS: ' on ',
-        FREEBUFF_SPONSORED_WINDOWS_CAMPAIGN_IDS: A,
-      }),
-    ).not.toBeNull()
+      readSponsoredWindowsPolicy(
+        { FREEBUFF_SPONSORED_WINDOWS: ' on ' },
+        { onUnrecognised },
+      ),
+    ).toBeNull()
+    expect(reported).toEqual([' on '])
+  })
+})
+
+describe('throttledUnrecognisedSwitchReporter', () => {
+  test('reports a value once per interval, and again when it changes', () => {
+    let now = 0
+    const lines: string[] = []
+    const report = throttledUnrecognisedSwitchReporter(
+      (quoted) => lines.push(quoted),
+      { intervalMs: 1_000, now: () => now },
+    )
+    report('ON')
+    report('ON')
+    now = 999
+    report('ON')
+    expect(lines).toEqual(['"ON"'])
+    report(' on ')
+    expect(lines).toEqual(['"ON"', '" on "'])
+    now = 2_500
+    report(' on ')
+    expect(lines).toEqual(['"ON"', '" on "', '" on "'])
   })
 
-  test('on without an opt-in list serves nothing', () => {
-    for (const list of [undefined, '', '  ']) {
-      expect(
-        readSponsoredWindowsPolicy({
-          FREEBUFF_SPONSORED_WINDOWS: 'on',
-          FREEBUFF_SPONSORED_WINDOWS_CAMPAIGN_IDS: list,
-        }),
-      ).toBeNull()
-    }
-  })
-
-  test('a malformed list closes Windows rather than widening it', () => {
-    for (const list of [
-      '*',
-      `*,${A}`,
-      `${A},*`,
-      `${A},`,
-      `${A},,${B}`,
-      'not-a-uuid',
-      `${A},not-a-uuid`,
-      // Version nibble 0 is not a UUID this repo mints.
-      'aaaaaaaa-aaaa-0aaa-8aaa-aaaaaaaaaaaa',
-      Array.from(
-        { length: 101 },
-        (_, index) =>
-          `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
-      ).join(','),
-    ]) {
-      expect(
-        readSponsoredWindowsPolicy({
-          FREEBUFF_SPONSORED_WINDOWS: 'on',
-          FREEBUFF_SPONSORED_WINDOWS_CAMPAIGN_IDS: list,
-        }),
-      ).toBeNull()
-    }
-  })
-
-  test('on with a list admits exactly the listed campaigns, case-insensitively', () => {
-    const policy = readSponsoredWindowsPolicy({
-      FREEBUFF_SPONSORED_WINDOWS: 'on',
-      FREEBUFF_SPONSORED_WINDOWS_CAMPAIGN_IDS: ` ${A.toUpperCase()} , ${A} `,
-    })
-    expect(policy).not.toBeNull()
-    expect([...policy!.campaignIds]).toEqual([A])
-    expect(sponsoredWindowsAdmitsCampaign(policy, A)).toBe(true)
-    expect(sponsoredWindowsAdmitsCampaign(policy, A.toUpperCase())).toBe(true)
-    expect(sponsoredWindowsAdmitsCampaign(policy, B)).toBe(false)
-    expect(sponsoredWindowsAdmitsCampaign(policy, '')).toBe(false)
-    expect(sponsoredWindowsAdmitsCampaign(policy, undefined)).toBe(false)
-    expect(Object.isFrozen(policy)).toBe(true)
-  })
-
-  test('no policy admits nothing', () => {
-    for (const policy of [null, undefined])
-      expect(sponsoredWindowsAdmitsCampaign(policy, A)).toBe(false)
+  test('quotes and bounds the value, so whitespace is visible and nothing long is logged', () => {
+    const lines: string[] = []
+    const report = throttledUnrecognisedSwitchReporter((quoted) =>
+      lines.push(quoted),
+    )
+    report(`x${'y'.repeat(100)}`)
+    expect(lines[0]).toBe(JSON.stringify(`x${'y'.repeat(31)}`))
   })
 })
 
@@ -156,6 +159,42 @@ describe('Desktop OS pairing', () => {
   })
 })
 
+describe('Windows execution capability (review finding 1)', () => {
+  const capability = (execution: {
+    surface: string
+    status: string
+    reason?: string
+  }) => ({ execution })
+
+  test('only a desktop_windows capability reporting available proves it', () => {
+    expect(
+      sponsoredWindowsExecutionCapable(
+        capability({ surface: 'desktop_windows', status: 'available' }),
+      ),
+    ).toBe(true)
+  })
+
+  test('released Windows builds send none, and nothing else stands in for it', () => {
+    for (const value of [
+      null,
+      undefined,
+      capability({
+        surface: 'desktop_windows',
+        status: 'unavailable',
+        reason: 'windows_no_containment',
+      }),
+      capability({
+        surface: 'desktop_windows',
+        status: 'available',
+        reason: 'inspection_failed',
+      }),
+      capability({ surface: 'desktop_macos', status: 'available' }),
+      capability({ surface: 'desktop_linux', status: 'available' }),
+    ])
+      expect(sponsoredWindowsExecutionCapable(value)).toBe(false)
+  })
+})
+
 describe('containment', () => {
   test('Windows is the floor; every sandboxed or Cloud surface records none', () => {
     expect(SPONSORED_WINDOWS_EXECUTION_SURFACE).toBe('desktop_windows')
@@ -174,58 +213,13 @@ describe('containment', () => {
     ])
       expect(sponsoredExecutionContainment(surface)).toBeNull()
   })
-})
 
-describe('Supabase never reaches Windows (COD-642 x COD-649)', () => {
-  const OPT_IN = '11111111-1111-4111-8111-111111111111'
-  const AUTH_AGENTIC = '22222222-2222-4222-8222-222222222222'
-  const env = (ids: string[]) => ({
-    FREEBUFF_SPONSORED_WINDOWS: 'on',
-    FREEBUFF_SPONSORED_WINDOWS_CAMPAIGN_IDS: ids.join(','),
-  })
-
-  test('the fixed database pair is dropped from the list, and the rest still serve', () => {
-    const policy = readSponsoredWindowsPolicy(
-      env([SUPABASE_FORMAT_DATABASE_PAIR.agenticCampaignId, OPT_IN]),
-    )
-    expect(policy).not.toBeNull()
-    expect(
-      sponsoredWindowsAdmitsCampaign(
-        policy,
-        SUPABASE_FORMAT_DATABASE_PAIR.agenticCampaignId,
-      ),
-    ).toBe(false)
-    expect(sponsoredWindowsAdmitsCampaign(policy, OPT_IN)).toBe(true)
-  })
-
-  test('a list of only Supabase ids opens nothing', () => {
-    expect(
-      readSponsoredWindowsPolicy(
-        env([
-          SUPABASE_FORMAT_DATABASE_PAIR.agenticCampaignId,
-          SUPABASE_FORMAT_DATABASE_PAIR.displayCampaignId,
-        ]),
-      ),
-    ).toBeNull()
-  })
-
-  test('env-configured pairs passed by the runtime are dropped too', () => {
-    const policy = readSponsoredWindowsPolicy(env([AUTH_AGENTIC, OPT_IN]), {
-      excludedCampaignIds: [AUTH_AGENTIC.toUpperCase()],
+  test('the accepted funnel row metadata is one shape for both producers (review finding 3)', () => {
+    expect(sponsoredContainmentFunnelMetadata('floor')).toEqual({
+      execution_surface: 'desktop_windows',
+      containment: 'floor',
     })
-    expect(sponsoredWindowsAdmitsCampaign(policy, AUTH_AGENTIC)).toBe(false)
-    expect(sponsoredWindowsAdmitsCampaign(policy, OPT_IN)).toBe(true)
-  })
-
-  test('a hand-built policy still cannot admit the fixed database pair', () => {
-    const policy = Object.freeze({
-      campaignIds: new Set([SUPABASE_FORMAT_DATABASE_PAIR.agenticCampaignId]),
-    })
-    expect(
-      sponsoredWindowsAdmitsCampaign(
-        policy,
-        SUPABASE_FORMAT_DATABASE_PAIR.agenticCampaignId,
-      ),
-    ).toBe(false)
+    for (const value of [null, undefined, '', 'sandbox', 'FLOOR'])
+      expect(sponsoredContainmentFunnelMetadata(value)).toBeNull()
   })
 })

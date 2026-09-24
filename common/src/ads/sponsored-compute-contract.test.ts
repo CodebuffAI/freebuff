@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  SPONSORED_ACCEPT_EXECUTION_SURFACE_PARAM,
   readSponsoredComputePolicy,
+  sponsoredAcceptSurfaceMatchesRow,
   sponsoredComputeAdmitsCampaign,
+  type SponsoredAcceptRequest,
 } from './sponsored-compute-contract'
 import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from '../constants/freebuff-model-ids'
 
@@ -119,5 +122,45 @@ describe('sponsored compute admission policy', () => {
         false,
       )
     }
+  })
+})
+
+describe('the funded Accept request pairs the client with the row (COD-642)', () => {
+  test('the client surface and its query parameter share one name', () => {
+    expect(SPONSORED_ACCEPT_EXECUTION_SURFACE_PARAM).toBe('clientExecutionSurface')
+    const request: SponsoredAcceptRequest = {
+      surface: 'desktop',
+      runId: '32f72345-38e9-4c53-b66d-8898c3ea7d8d',
+      procedureSha256: 'a'.repeat(64),
+      clientExecutionSurface: 'desktop_windows',
+    }
+    expect(Object.keys(request)).toContain(
+      SPONSORED_ACCEPT_EXECUTION_SURFACE_PARAM,
+    )
+  })
+
+  test('a row minted for another machine is refused; an unrecorded one is not', () => {
+    expect(
+      sponsoredAcceptSurfaceMatchesRow('desktop_windows', 'desktop_windows'),
+    ).toBe(true)
+    // The case the pairing exists for: a Windows client charged for a run
+    // minted for a Mac, which it cannot execute, and the reverse.
+    expect(
+      sponsoredAcceptSurfaceMatchesRow('desktop_windows', 'desktop_macos'),
+    ).toBe(false)
+    expect(
+      sponsoredAcceptSurfaceMatchesRow('desktop_macos', 'desktop_windows'),
+    ).toBe(false)
+    expect(sponsoredAcceptSurfaceMatchesRow('desktop_linux', 'cli_linux')).toBe(
+      false,
+    )
+    // A row from before the surface was recorded, or from Cloud, has nothing
+    // to pair; the server is where that is decided.
+    expect(sponsoredAcceptSurfaceMatchesRow('desktop_windows', undefined)).toBe(
+      true,
+    )
+    expect(sponsoredAcceptSurfaceMatchesRow('desktop_windows', null)).toBe(true)
+    // A client that cannot name its own surface matches nothing recorded.
+    expect(sponsoredAcceptSurfaceMatchesRow(null, 'desktop_macos')).toBe(false)
   })
 })
