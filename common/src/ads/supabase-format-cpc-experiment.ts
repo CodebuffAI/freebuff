@@ -117,15 +117,17 @@ export function resolveSupabaseCpcDeliverySurfaces(input: {
 export const SUPABASE_FORMAT_CPC_ARM_REACH = Object.freeze({
   display: {
     geoTiers: ['tier1'],
-    // desktop_windows is deliberately absent: the capability schema and the
-    // Desktop client both stop at Mac/Linux, so adding it here alone would
-    // widen nothing. It needs a client release, not a server constant.
+    // desktop_windows is deliberately absent. The capability schema accepts
+    // it since COD-642, but that issue serves Windows to GENERIC campaigns
+    // only: adding it to either arm mid-test changes the comparable
+    // population, so it is an explicit decision (Owen) for both arms at once.
     executionSurfaces: SUPABASE_FORMAT_CPC_EXECUTION_SURFACES,
   },
   agentic: {
     geoTiers: ['tier1'],
-    // Windows has no local containment (`windows-no-containment`), so the
-    // agentic arm may never offer sponsored execution there.
+    // Windows runs under the floor, not an OS sandbox (COD-642), and only for
+    // generic campaigns opted in by review; the Supabase agentic arm stays
+    // Mac/Linux for the same population reason as the display arm.
     executionSurfaces: SUPABASE_FORMAT_CPC_EXECUTION_SURFACES,
   },
 } satisfies Record<

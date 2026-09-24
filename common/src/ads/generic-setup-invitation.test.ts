@@ -23,6 +23,19 @@ describe('generic setup invitation contract', () => {
     expect(genericSetupInvitationSchema.safeParse(invitation).success).toBe(true)
   })
 
+  test('carries desktop_windows, the one surface only a Windows opt-in serves (COD-642)', () => {
+    expect(
+      genericSetupInvitationSchema.safeParse({
+        ...invitation,
+        surface: 'desktop_windows',
+      }).success,
+    ).toBe(true)
+    expect(
+      genericSetupInvitationSchema.safeParse({ ...invitation, surface: 'windows' })
+        .success,
+    ).toBe(false)
+  })
+
   test('refuses Supabase semantics, paths, and missing campaign identity', () => {
     expect(
       genericSetupInvitationSchema.safeParse({

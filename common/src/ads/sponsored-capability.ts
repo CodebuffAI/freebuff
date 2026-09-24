@@ -38,13 +38,34 @@ export const sponsoredLocalTargetSchema = z.discriminatedUnion('kind', [
     .object({ kind: z.literal('workspace'), workspaceId: z.string().uuid() })
     .strict(),
 ])
+/**
+ * Where a local sponsored run executes. `desktop_windows` (COD-642) is the one
+ * surface with NO OS sandbox: its protection is campaign review plus the
+ * portable floor (`SPONSORED_WINDOWS_CONTAINMENT` in `./sponsored-windows`).
+ * A Windows value on the wire admits nothing by itself — the server serves it
+ * only behind `FREEBUFF_SPONSORED_WINDOWS` and a per-campaign opt-in, and the
+ * Supabase format never serves it at all.
+ */
 export const sponsoredExecutionSurfaceSchema = z.enum([
   'desktop_macos',
   'desktop_linux',
+  'desktop_windows',
   'cli_macos',
   'cli_linux',
   'cli_wsl',
 ])
+export type SponsoredExecutionSurface = z.infer<
+  typeof sponsoredExecutionSurfaceSchema
+>
+
+/** The Desktop execution surfaces, one per OS a Desktop client reports. */
+export const SPONSORED_DESKTOP_EXECUTION_SURFACES = [
+  'desktop_macos',
+  'desktop_linux',
+  'desktop_windows',
+] as const satisfies readonly SponsoredExecutionSurface[]
+export type SponsoredDesktopExecutionSurface =
+  (typeof SPONSORED_DESKTOP_EXECUTION_SURFACES)[number]
 export const sponsoredCapabilitySchema = z
   .object({
     schemaVersion: z.literal(2),
@@ -132,6 +153,10 @@ export function supabaseFoundationStackEligible(
   const mode = supabaseFoundationMode(rawMode)
   if (!mode || !supabaseFoundationFrameworkRunnable(stack.framework))
     return false
+  // The Supabase format stays macOS/Linux (COD-642 scope: generic campaigns
+  // only). Refused by name because the waves below test prefixes, and a
+  // `desktop_` prefix alone would otherwise admit Windows to every wave.
+  if (stack.surface === 'desktop_windows') return false
   if (mode === 'foundation-mac')
     return stack.surface === 'desktop_macos' && stack.framework === 'nextjs'
   if (mode === 'foundation-desktop' || mode === 'foundation-backend-desktop')

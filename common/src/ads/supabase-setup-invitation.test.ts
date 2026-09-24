@@ -89,6 +89,68 @@ describe('Supabase setup invitation contracts', () => {
     ).toBe(false)
   })
 
+  test('a Windows client may REPORT desktop_windows, but no Supabase response carries it (COD-642)', () => {
+    for (const request of [
+      {
+        schemaVersion: 3,
+        target: { kind: 'workspace', workspaceId },
+        framework: 'unknown',
+        execution: { surface: 'desktop_windows', status: 'unchecked' },
+        setupReason: 'compatibility_check_required',
+        providerEvidence: { database: 'unknown', auth: 'unknown', storage: 'unknown' },
+      },
+      {
+        schemaVersion: 2,
+        target: { kind: 'workspace', workspaceId },
+        framework: 'nextjs',
+        execution: { surface: 'desktop_windows', status: 'available' },
+        setupReason: 'no_git_repository',
+        providerEvidence: { database: 'missing', auth: 'unknown', storage: 'unknown' },
+      },
+    ])
+      expect(
+        supabaseSetupInvitationCapabilitySchema.safeParse(request).success,
+      ).toBe(true)
+    // The Supabase format stays macOS/Linux: every response version refuses it.
+    for (const response of [
+      {
+        schemaVersion: 1,
+        kind: 'supabase_setup',
+        invitationId: '00000000-0000-4000-8000-000000000002',
+        framework: 'nextjs',
+        surface: 'desktop_windows',
+        angle: 'database',
+        setupReason: 'no_git_repository',
+        expiresAt: 1,
+      },
+      {
+        schemaVersion: 2,
+        kind: 'supabase_setup',
+        invitationId: '00000000-0000-4000-8000-000000000002',
+        framework: 'unknown',
+        surface: 'desktop_windows',
+        angle: 'database',
+        setupReason: 'compatibility_check_required',
+        expiresAt: 1,
+      },
+      {
+        schemaVersion: 3,
+        kind: 'supabase_setup',
+        invitationId: '00000000-0000-4000-8000-000000000002',
+        framework: 'nextjs',
+        surface: 'desktop_windows',
+        angle: 'database',
+        setupReason: 'compatibility_check_required',
+        expiresAt: 1,
+        billingToken: 'opaque-token',
+        experimentVersion: 'supabase_format_cpc_v1',
+      },
+    ])
+      expect(supabaseSetupInvitationSchema.safeParse(response).success).toBe(
+        false,
+      )
+  })
+
   test('accepts the v2 discovery response and bounded inspection reasons', () => {
     const response = {
       schemaVersion: 2,

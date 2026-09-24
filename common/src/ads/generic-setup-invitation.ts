@@ -22,7 +22,9 @@ export const genericSetupInvitationSchema = z
       'unknown',
       'unsupported',
     ]),
-    surface: z.enum(['desktop_macos', 'desktop_linux']),
+    // `desktop_windows` only ever leaves the server behind
+    // `FREEBUFF_SPONSORED_WINDOWS` and the campaign's Windows opt-in (COD-642).
+    surface: z.enum(['desktop_macos', 'desktop_linux', 'desktop_windows']),
     setupReason: z.enum([
       'no_git_repository',
       'no_committed_head',

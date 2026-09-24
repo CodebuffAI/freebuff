@@ -1,5 +1,10 @@
 import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from '../constants/freebuff-model-ids'
 
+import type {
+  SPONSORED_WINDOWS_EXECUTION_SURFACE,
+  SponsoredExecutionContainment,
+} from './sponsored-windows'
+
 /** Public response shape. The bearer belongs in host memory, never a thread. */
 export type SponsoredComputeGrant = Readonly<{
   token: string
@@ -9,6 +14,15 @@ export type SponsoredComputeGrant = Readonly<{
   modelId: string
   expiresAtMs: number
   allowanceUsdMicros: number
+  /**
+   * Present ONLY on a grant for a Windows offer (COD-642), and then both are:
+   * the surface the server granted and the containment that applies — the
+   * floor, not an OS sandbox. A client selects its floor-only broker only
+   * when it runs on Windows AND this grant names `desktop_windows`; never as
+   * a fallback. Absent means the client's own OS sandbox (macOS/Linux).
+   */
+  executionSurface?: typeof SPONSORED_WINDOWS_EXECUTION_SURFACE
+  containment?: SponsoredExecutionContainment
 }>
 
 /**

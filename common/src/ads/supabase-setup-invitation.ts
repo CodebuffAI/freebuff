@@ -2,6 +2,20 @@ import { z } from 'zod'
 import { SUPABASE_FORMAT_CPC_EXPERIMENT_VERSION } from './supabase-format-cpc-experiment'
 
 /**
+ * The Desktop surface an invitation capability may report. `desktop_windows`
+ * (COD-642) is accepted on the wire so a Windows client can be paired with its
+ * own OS; it admits nothing by itself. Only the generic invitation path serves
+ * it, behind `FREEBUFF_SPONSORED_WINDOWS` and a per-campaign opt-in — every
+ * Supabase consumer still pairs macOS/Linux only, and the Supabase invitation
+ * RESPONSE schemas below deliberately keep their two-surface enum.
+ */
+export const invitationCapabilitySurfaceSchema = z.enum([
+  'desktop_macos',
+  'desktop_linux',
+  'desktop_windows',
+])
+
+/**
  * Read-only Desktop facts used to decide whether a setup invitation may be
  * returned. This is deliberately not a sponsored-execution capability: it
  * proves neither a committed checkout nor a runnable paid task.
@@ -17,7 +31,7 @@ export const supabaseSetupInvitationCapabilityV2Schema = z
     framework: z.enum(['nextjs', 'react-vite', 'nodejs']),
     execution: z
       .object({
-        surface: z.enum(['desktop_macos', 'desktop_linux']),
+        surface: invitationCapabilitySurfaceSchema,
         status: z.literal('available'),
       })
       .strict(),
@@ -59,7 +73,7 @@ export const supabaseSetupInvitationCapabilityV3Schema = z
     ]),
     execution: z
       .object({
-        surface: z.enum(['desktop_macos', 'desktop_linux']),
+        surface: invitationCapabilitySurfaceSchema,
         status: z.literal('unchecked'),
       })
       .strict(),

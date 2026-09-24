@@ -120,9 +120,36 @@ describe('foundation execution admission', () => {
       }).success,
     ).toBe(false)
   })
+  test('the wire carries desktop_windows (COD-642), but no Supabase wave admits it', () => {
+    const windows = {
+      ...capability,
+      execution: {
+        surface: 'desktop_windows' as const,
+        status: 'available' as const,
+      },
+    }
+    expect(sponsoredCapabilitySchema.safeParse(windows).success).toBe(true)
+    // The Supabase format stays macOS/Linux: a `desktop_` prefix test would
+    // otherwise have admitted Windows to every desktop wave.
+    for (const mode of [...SUPABASE_FOUNDATION_MODES, 'on', undefined]) {
+      expect(supabaseFoundationCapabilityEligible(windows, mode)).toBe(false)
+      for (const framework of SUPABASE_FOUNDATION_RUNNABLE_FRAMEWORKS)
+        expect(
+          supabaseFoundationStackEligible(
+            { framework, surface: 'desktop_windows' },
+            mode,
+          ),
+        ).toBe(false)
+    }
+  })
   test('the stack half is the serve gate: it agrees with full admission on every wave, framework and surface', () => {
     const frameworks = sponsoredCapabilitySchema.shape.framework.options
-    const surfaces = ['desktop_macos', 'desktop_linux', 'cli_wsl'] as const
+    const surfaces = [
+      'desktop_macos',
+      'desktop_linux',
+      'desktop_windows',
+      'cli_wsl',
+    ] as const
     for (const mode of [...SUPABASE_FOUNDATION_MODES, 'on', undefined]) {
       for (const framework of frameworks) {
         for (const surface of surfaces) {

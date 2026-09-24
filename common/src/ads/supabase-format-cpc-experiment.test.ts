@@ -104,7 +104,10 @@ describe('Supabase CPC format experiment policy', () => {
     expect(served).toEqual(new Set(['display', 'agentic']))
   })
 
-  test('refuses Windows for both arms until a client can report it', () => {
+  // Pinned since before COD-642. A client CAN now report desktop_windows, but
+  // that issue serves Windows to generic campaigns only: widening either arm
+  // mid-test changes the comparable population, so both still refuse it.
+  test('refuses Windows for both arms even though a client can now report it (COD-642)', () => {
     for (const userId of ['reach-user-0', 'reach-user-1', 'reach-user-2']) {
       expect(
         evaluateSupabaseFormatCpcEligibility({
