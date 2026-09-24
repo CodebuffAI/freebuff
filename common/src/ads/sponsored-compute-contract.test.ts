@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   SPONSORED_ACCEPT_EXECUTION_SURFACE_PARAM,
+  acceptClientSurfacePairsWithRow,
   readSponsoredComputePolicy,
   sponsoredAcceptSurfaceMatchesRow,
   sponsoredComputeAdmitsCampaign,
@@ -162,5 +163,35 @@ describe('the funded Accept request pairs the client with the row (COD-642)', ()
     expect(sponsoredAcceptSurfaceMatchesRow('desktop_windows', null)).toBe(true)
     // A client that cannot name its own surface matches nothing recorded.
     expect(sponsoredAcceptSurfaceMatchesRow(null, 'desktop_macos')).toBe(false)
+  })
+
+  test('the Accept pairing: Windows only ever takes a Windows row, and a Windows row only a Windows client', () => {
+    // One rule, applied by the server route and by Desktop before consent.
+    expect(
+      acceptClientSurfacePairsWithRow('desktop_windows', 'desktop_windows'),
+    ).toBe(true)
+    // Stricter than the plain match: an unrecorded row is never Windows.
+    expect(acceptClientSurfacePairsWithRow('desktop_windows', undefined)).toBe(
+      false,
+    )
+    expect(acceptClientSurfacePairsWithRow('desktop_windows', null)).toBe(false)
+    expect(
+      acceptClientSurfacePairsWithRow('desktop_windows', 'desktop_macos'),
+    ).toBe(false)
+    // A client that sends nothing (older builds, the CLI) keeps its old rows
+    // and never reaches a Windows one.
+    expect(acceptClientSurfacePairsWithRow(undefined, 'desktop_macos')).toBe(
+      true,
+    )
+    expect(acceptClientSurfacePairsWithRow(undefined, undefined)).toBe(true)
+    expect(acceptClientSurfacePairsWithRow(undefined, 'desktop_windows')).toBe(
+      false,
+    )
+    expect(acceptClientSurfacePairsWithRow('desktop_macos', undefined)).toBe(
+      true,
+    )
+    expect(
+      acceptClientSurfacePairsWithRow('desktop_macos', 'desktop_windows'),
+    ).toBe(false)
   })
 })

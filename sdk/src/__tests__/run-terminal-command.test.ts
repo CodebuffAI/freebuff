@@ -175,6 +175,75 @@ describe('terminal command process diagnostics', () => {
     expect('exitCode' in value ? value.exitCode : null).toBe(0)
   })
 
+  test('a broker that owns its shell gets the command text, with no bash lookup or rewrite', async () => {
+    // The sponsored Windows floor runs PowerShell (COD-642). It must be handed
+    // the command as written -- not a bash invocation, and not with a
+    // cmd-style `> nul` rewritten to a `/dev/null` PowerShell cannot open.
+    const requests: Array<Record<string, unknown>> = []
+    const [{ value }] = await runTerminalCommand({
+      command: 'Write-Output brokered > nul',
+      process_type: 'SYNC',
+      cwd: process.cwd(),
+      timeout_seconds: 5,
+      terminalCommandBroker: {
+        ownsShell: true,
+        start: (request) => {
+          requests.push({ ...request })
+          const stdout = new PassThrough()
+          const stderr = new PassThrough()
+          queueMicrotask(() => {
+            stdout.end('brokered')
+            stderr.end()
+          })
+          return {
+            pid: 999_998,
+            stdout,
+            stderr,
+            completion: Promise.resolve(0),
+            kill: () => {},
+            isAlive: () => false,
+          }
+        },
+      },
+    })
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.command).toBe('Write-Output brokered > nul')
+    expect(requests[0]!.executable).toBe('')
+    expect(requests[0]!.args).toEqual([])
+    expect('stdout' in value ? value.stdout : '').toBe('brokered')
+  })
+
+  test('a broker that does not own its shell gets the bash request, unchanged', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    await runTerminalCommand({
+      command: `printf 'x'`,
+      process_type: 'SYNC',
+      cwd: process.cwd(),
+      timeout_seconds: 5,
+      terminalCommandBroker: {
+        start: (request) => {
+          requests.push({ ...request })
+          const stdout = new PassThrough()
+          const stderr = new PassThrough()
+          queueMicrotask(() => {
+            stdout.end()
+            stderr.end()
+          })
+          return {
+            pid: 999_997,
+            stdout,
+            stderr,
+            completion: Promise.resolve(0),
+            kill: () => {},
+            isAlive: () => false,
+          }
+        },
+      },
+    })
+    expect('command' in requests[0]!).toBe(false)
+    expect(requests[0]!.args).toEqual(['-c', `printf 'x'`])
+  })
+
   test('bounds direct cleanup while reaping a stubborn background descendant', async () => {
     if (process.platform === 'win32') return
 

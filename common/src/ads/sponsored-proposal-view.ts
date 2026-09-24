@@ -171,6 +171,12 @@ export type SponsoredProposalRow = {
    */
   advertiser_cta_url?: string
   /**
+   * The execution surface the offer was minted for (`desktop_macos`,
+   * `desktop_windows`, ...). A surface refuses to accept a row minted for a
+   * different machine than its own (COD-642). Absent on older projections.
+   */
+  execution_surface?: string
+  /**
    * Latest COD-597 verification pointer. Absent on legacy rows and when the
    * gate is off. Never redefines `verified_outcomes`.
    */

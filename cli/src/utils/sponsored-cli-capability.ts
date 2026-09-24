@@ -5,7 +5,10 @@ import {
   type SponsoredCapabilityReason,
 } from '@codebuff/common/ads/sponsored-capability'
 import { repoFullNameFromRemote } from '@codebuff/common/ads/sponsored-proposal-target'
-import type { SponsoredLocalContainment } from '@codebuff/common/ads/sponsored-local-execution'
+import {
+  sponsoredLocalContainmentIsFloor,
+  type SponsoredLocalContainment,
+} from '@codebuff/common/ads/sponsored-local-execution'
 import { existsSync, readFileSync } from 'fs'
 import { release } from 'node:os'
 import { join } from 'path'
@@ -112,6 +115,11 @@ function execution(
   if (platform !== 'darwin' && platform !== 'linux')
     return 'unsupported_platform'
   const contained = containment(platform)
+  // The Windows floor (COD-642) is Desktop's arm, answered only for win32,
+  // which returned above. A probe that claims it here is not believed, and
+  // the CLI never offers the floor at all.
+  if (sponsoredLocalContainmentIsFloor(contained))
+    return 'containment_probe_failed'
   if (!contained.available)
     return contained.reason === 'bubblewrap-missing'
       ? 'bubblewrap_missing'

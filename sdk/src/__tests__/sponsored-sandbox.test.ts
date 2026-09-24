@@ -271,10 +271,11 @@ describe('sponsored write containment (COD-336 acceptance 3)', () => {
 
 describe('containment availability', () => {
   it('refuses rather than downgrading where there is no mechanism', () => {
-    expect(sponsoredLocalContainment('win32')).toEqual({
-      available: false,
-      reason: 'windows-no-containment',
-    })
+    // COD-642: Windows is no longer a refusal here. It is the FLOOR arm, which
+    // carries no `available: true` -- it is not a sandbox, and nothing that
+    // reads `available` may take it for one. Linux without bubblewrap below
+    // still refuses: the floor is never what a sandboxable OS falls back to.
+    expect(sponsoredLocalContainment('win32')).toEqual({ containment: 'floor' })
     expect(sponsoredLocalContainment('freebsd')).toEqual({
       available: false,
       reason: 'unsupported-platform',
@@ -295,6 +296,10 @@ describe('containment availability', () => {
   })
 
   it('never starts a command on a platform it cannot contain', () => {
+    // COD-642 kept this refusal and narrowed what reaches it: Windows WITHOUT
+    // a server grant naming the floor still throws here, on every host. With
+    // the grant, the floor is selected only on a real Windows host
+    // (`sponsored-windows-floor.test.ts`), never by the `platform` option.
     const { root, runtime, parent } = workspace()
     try {
       expect(() =>

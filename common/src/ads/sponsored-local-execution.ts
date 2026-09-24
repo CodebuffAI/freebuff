@@ -32,8 +32,13 @@
  *     `GIT_TERMINAL_PROMPT=0`, and cwd plus every write path bound to the
  *     worktree with symlink resolution;
  *   - macOS and Linux: an OS sandbox under that (`sandbox-exec`, bubblewrap);
- *   - Windows: nothing comparable exists, so `run_commands` is DENIED and the
- *     card says so.
+ *   - Windows (COD-642): the floor ONLY, with no OS sandbox, when the server
+ *     serves Windows at all. It is its own arm
+ *     ({@link SponsoredLocalFloorContainment}) with its own grant
+ *     ({@link SPONSORED_LOCAL_FLOOR_GRANT}) and its own environment
+ *     ({@link scrubSponsoredWindowsEnv}), so nothing can mistake it for a
+ *     sandbox. `docs/freebuff-sponsored-local-execution.md` records the
+ *     decision and what it accepts.
  *
  * {@link sponsoredLocalGrant} is therefore a function of the containment that
  * is actually available, never a bare constant read off the module.
@@ -46,6 +51,11 @@ import {
   type SponsoredCapability,
   type SponsoredToolDecision,
 } from './sponsored-capabilities'
+import {
+  SPONSORED_WINDOWS_CONTAINMENT,
+  SPONSORED_WINDOWS_EXECUTION_SURFACE,
+  type SponsoredExecutionContainment,
+} from './sponsored-windows'
 
 // --------------------------------------------------------------- containment
 
@@ -63,10 +73,48 @@ export type SponsoredLocalUnavailableReason =
   | 'unsupported-platform'
   | 'no-consent-bridge'
   | 'containment-probe-failed'
+  /** The offer was minted for another operating system than this one (COD-642). */
+  | 'offered-for-another-os'
+
+/** An OS sandbox under the floor: macOS seatbelt, Linux bubblewrap. */
+export type SponsoredLocalSandboxContainment = {
+  available: true
+  mechanism: 'sandbox-exec' | 'bubblewrap'
+}
+
+/**
+ * Windows (COD-642): the floor and NO OS sandbox.
+ *
+ * Deliberately not `available: true`. The floor is not a sandbox, and every
+ * caller that reads `available` was written when `true` meant one; a floor
+ * that answered `true` there would be admitted as containment by code that
+ * never heard of it. This arm has no `available` at all, so such a reader
+ * gets `undefined` and refuses, and the type makes each caller that can offer
+ * the floor say so through {@link sponsoredLocalContainmentIsFloor}.
+ */
+export type SponsoredLocalFloorContainment = {
+  containment: SponsoredExecutionContainment
+}
+
+export type SponsoredLocalUnavailableContainment = {
+  available: false
+  reason: SponsoredLocalUnavailableReason
+}
 
 export type SponsoredLocalContainment =
-  | { available: true; mechanism: 'sandbox-exec' | 'bubblewrap' }
-  | { available: false; reason: SponsoredLocalUnavailableReason }
+  | SponsoredLocalSandboxContainment
+  | SponsoredLocalFloorContainment
+  | SponsoredLocalUnavailableContainment
+
+/** Whether this is the Windows floor arm rather than a sandbox or a refusal. */
+export function sponsoredLocalContainmentIsFloor(
+  containment: SponsoredLocalContainment,
+): containment is SponsoredLocalFloorContainment {
+  return (
+    'containment' in containment &&
+    containment.containment === SPONSORED_WINDOWS_CONTAINMENT
+  )
+}
 
 /**
  * What the user is told, per reason.
@@ -82,6 +130,9 @@ export const SPONSORED_LOCAL_UNAVAILABLE_COPY: Record<
 > = Object.freeze({
   'containment-probe-failed':
     'Sponsored tasks cannot start because the workspace sandbox is not working on this machine. No paid task has started.',
+  // Kept for the surfaces that do not offer the Windows floor (the CLI) and
+  // for an orchestrator older than COD-642. Freebuff Desktop no longer
+  // produces it: Windows there runs under the floor instead.
   'windows-no-containment':
     'Sponsored tasks can’t run on Windows yet: Freebuff has no way to keep an advertiser’s commands inside the workspace on this operating system.',
   'bubblewrap-missing':
@@ -99,6 +150,9 @@ export const SPONSORED_LOCAL_UNAVAILABLE_COPY: Record<
   // app.
   'no-consent-bridge':
     'Sponsored tasks need the Freebuff desktop app, which is what asks you to approve the task before it runs. Open this project in the app to accept.',
+  // About THIS offer, not the machine: another offer can still run here.
+  'offered-for-another-os':
+    'This sponsored task was offered for a different kind of computer, so it can’t run on this one.',
 })
 
 /**
@@ -110,7 +164,9 @@ export const SPONSORED_LOCAL_UNAVAILABLE_COPY: Record<
  * **Absent bubblewrap REFUSES rather than falling back to the floor** — open
  * question 3, decided. A fallback would mean the same product on the same OS
  * silently contains or does not contain depending on a package the user has
- * never heard of, and nothing anywhere would say which they got.
+ * never heard of, and nothing anywhere would say which they got. The floor is
+ * the Windows arm and only the Windows arm: it is chosen by the operating
+ * system, never by what a sandboxable one happens to be missing.
  */
 export function sponsoredLocalContainment(
   platform: NodeJS.Platform | string,
@@ -122,9 +178,7 @@ export function sponsoredLocalContainment(
       ? { available: true, mechanism: 'bubblewrap' }
       : { available: false, reason: 'bubblewrap-missing' }
   }
-  if (platform === 'win32') {
-    return { available: false, reason: 'windows-no-containment' }
-  }
+  if (platform === 'win32') return { containment: SPONSORED_WINDOWS_CONTAINMENT }
   return { available: false, reason: 'unsupported-platform' }
 }
 
@@ -140,9 +194,22 @@ export type SponsoredLocalAvailability =
   | 'available'
   | `unavailable:${SponsoredLocalUnavailableReason}`
 
+/**
+ * `offersFloor` is the SURFACE's declaration that it carries the Windows floor
+ * broker and the Windows consent (Freebuff Desktop, COD-642). Without it the
+ * floor arm reads as the refusal it was before COD-642, so a surface that was
+ * never taught the floor (the CLI) keeps refusing Windows rather than offering
+ * an Accept it cannot contain.
+ */
 export function sponsoredLocalAvailability(
   containment: SponsoredLocalContainment,
+  options: { offersFloor?: boolean } = {},
 ): SponsoredLocalAvailability {
+  if (sponsoredLocalContainmentIsFloor(containment)) {
+    return options.offersFloor
+      ? 'available'
+      : 'unavailable:windows-no-containment'
+  }
   return containment.available ? 'available' : `unavailable:${containment.reason}`
 }
 
@@ -241,10 +308,12 @@ export const SPONSORED_LOCAL_V1_GRANT: ReadonlySet<SponsoredCapability> =
   )
 
 /**
- * The Windows arm, and the arm for any machine whose containment we cannot
- * stand up: option A from the doc, kept as the explicit fallback rather than
- * as an absence. A run holding this can still edit files through the three
- * write tools, which is where the path refusals are load-bearing again.
+ * The arm for any machine whose containment we cannot stand up: option A from
+ * the doc, kept as the explicit fallback rather than as an absence. A run
+ * holding this can still edit files through the three write tools, which is
+ * where the path refusals are load-bearing again. (Windows used to be this arm
+ * too; since COD-642 it is {@link SPONSORED_LOCAL_FLOOR_GRANT}, and only when
+ * the server's compute grant names the floor.)
  *
  * `network` GOES TOO, not only `run_commands`. Dropping the shell alone left
  * exactly the shape Cloud's own rationale excludes — a run that can read the
@@ -271,21 +340,103 @@ export const SPONSORED_LOCAL_UNCONTAINED_GRANT: ReadonlySet<SponsoredCapability>
   )
 
 /**
+ * The Windows floor's grant (COD-642): the full five, with NO OS sandbox
+ * under it.
+ *
+ * The same membership as {@link SPONSORED_LOCAL_V1_GRANT} today, and a
+ * separate constant for the reason that one is separate from Cloud's: the two
+ * are held to different evidence. A contained run's grant is justified by the
+ * sandbox the machine proved; this one by a human review of the campaign's
+ * procedure for Windows plus the portable floor. Named, rather than reached by
+ * treating the floor as `available`, so the difference is in the code and in
+ * every log that names the grant, and so either can move without the other.
+ * Spelled out member by member rather than copied from the contained grant, so
+ * widening that one never silently widens this one.
+ *
+ * Handed out only by {@link sponsoredLocalGrant}, and only when the machine is
+ * on the floor arm AND the server's compute grant names the floor.
+ */
+export const SPONSORED_LOCAL_FLOOR_GRANT: ReadonlySet<SponsoredCapability> =
+  Object.freeze(
+    new Set<SponsoredCapability>([
+      'read_workspace',
+      'write_workspace',
+      'agent_control',
+      'run_commands',
+      'network',
+    ]),
+  )
+
+/** The two facts of a server compute grant that name the Windows floor. */
+export type SponsoredFloorGrantFacts = {
+  executionSurface?: string | null
+  containment?: string | null
+}
+
+/**
+ * Whether the SERVER granted this run the Windows floor: `desktop_windows`
+ * with `containment: 'floor'`, both, exactly. Absent on every macOS/Linux
+ * grant, where the containment is the client's own OS sandbox.
+ */
+export function sponsoredComputeGrantNamesFloor(
+  grant: SponsoredFloorGrantFacts | null | undefined,
+): boolean {
+  return (
+    grant?.executionSurface === SPONSORED_WINDOWS_EXECUTION_SURFACE &&
+    grant.containment === SPONSORED_WINDOWS_CONTAINMENT
+  )
+}
+
+/**
+ * Whether this machine's containment and the server's grant describe the
+ * same run: the floor arm with a floor grant, or anything else with a grant
+ * that does not name the floor. A mismatch is refused by the caller rather
+ * than resolved: a floor grant on a sandboxable machine, or a Windows machine
+ * holding a grant minted for a sandbox, are both a run nobody approved.
+ */
+export function sponsoredLocalContainmentMatchesGrant(
+  containment: SponsoredLocalContainment,
+  grant: SponsoredFloorGrantFacts | null | undefined,
+): boolean {
+  return (
+    sponsoredLocalContainmentIsFloor(containment) ===
+    sponsoredComputeGrantNamesFloor(grant)
+  )
+}
+
+/**
  * The grant this machine actually hands out.
  *
- * Note that today no uncontained run is ever STARTED — the surface refuses at
- * the Accept, which is the honest thing to do rather than offering a run that
- * cannot execute a command and therefore cannot verify its own change. The
- * uncontained grant exists so that the refusal is a decision expressed in one
- * place, and so that a surface which later chooses to offer the degraded run
- * has a grant to give it rather than inventing one.
+ *  - a sandbox: {@link SPONSORED_LOCAL_V1_GRANT};
+ *  - the Windows floor: {@link SPONSORED_LOCAL_FLOOR_GRANT}, and ONLY when
+ *    `computeGrant` names the floor too. The floor arm with any other grant
+ *    gets the uncontained grant, never the shell;
+ *  - anything else: {@link SPONSORED_LOCAL_UNCONTAINED_GRANT}. No surface
+ *    starts such a run today (it refuses at the Accept); the grant exists so
+ *    the refusal is a decision expressed in one place.
  */
 export function sponsoredLocalGrant(
   containment: SponsoredLocalContainment,
+  computeGrant?: SponsoredFloorGrantFacts | null,
 ): ReadonlySet<SponsoredCapability> {
+  if (sponsoredLocalContainmentIsFloor(containment)) {
+    return sponsoredComputeGrantNamesFloor(computeGrant)
+      ? SPONSORED_LOCAL_FLOOR_GRANT
+      : SPONSORED_LOCAL_UNCONTAINED_GRANT
+  }
   return containment.available
     ? SPONSORED_LOCAL_V1_GRANT
     : SPONSORED_LOCAL_UNCONTAINED_GRANT
+}
+
+/** The name a log line uses for the grant a run holds. */
+export function sponsoredLocalGrantName(
+  grant: ReadonlySet<SponsoredCapability>,
+): 'contained' | 'floor' | 'uncontained' | 'custom' {
+  if (grant === SPONSORED_LOCAL_V1_GRANT) return 'contained'
+  if (grant === SPONSORED_LOCAL_FLOOR_GRANT) return 'floor'
+  if (grant === SPONSORED_LOCAL_UNCONTAINED_GRANT) return 'uncontained'
+  return 'custom'
 }
 
 export function evaluateSponsoredLocalToolCall(
@@ -402,6 +553,135 @@ export function scrubSponsoredLocalEnv(
     if (looksLikeCredentialEnvVar(key)) {
       throw new Error(
         `Sponsored local env would have carried \`${key}\`, which is credential-shaped. Narrow SPONSORED_LOCAL_ENV_ALLOWLIST.`,
+      )
+    }
+  }
+  return env
+}
+
+/**
+ * The variables a Windows floor run inherits (COD-642), on top of
+ * {@link SPONSORED_LOCAL_ENV_ALLOWLIST}.
+ *
+ * The same rule as the POSIX list — an allowlist, never a denylist — widened
+ * only by what Windows itself needs for a program to start and find its
+ * toolchain: the system and program-files roots, command resolution, and the
+ * machine's processor facts. None of them names the user; every per-user
+ * location is SET by {@link scrubSponsoredWindowsEnv} instead of inherited.
+ * Matched case-insensitively, as Windows matches them (`Path` is `PATH`).
+ */
+export const SPONSORED_WINDOWS_ENV_ALLOWLIST: readonly string[] = Object.freeze(
+  [
+    ...SPONSORED_LOCAL_ENV_ALLOWLIST,
+    'PATHEXT',
+    'SystemRoot',
+    'SystemDrive',
+    'windir',
+    'ComSpec',
+    'OS',
+    'NUMBER_OF_PROCESSORS',
+    'PROCESSOR_ARCHITECTURE',
+    'ProgramData',
+    'ProgramFiles',
+    'ProgramFiles(x86)',
+    'ProgramW6432',
+    'CommonProgramFiles',
+    'CommonProgramFiles(x86)',
+    'CommonProgramW6432',
+    'ALLUSERSPROFILE',
+  ],
+)
+
+/** The per-run directories a Windows floor run is pointed at. */
+export type SponsoredWindowsRunPaths = {
+  /** `HOME` and `USERPROFILE`, and `HOMEDRIVE`/`HOMEPATH` spelled from it. */
+  home: string
+  /** `TEMP`, `TMP` and `TMPDIR`. */
+  tmp: string
+  /** `APPDATA`. */
+  appData: string
+  /** `LOCALAPPDATA`. */
+  localAppData: string
+}
+
+/**
+ * The complete environment a Windows floor command runs with (COD-642).
+ *
+ * PURE, like {@link scrubSponsoredLocalEnv}: the caller (the SDK's Windows
+ * broker) creates the directories. What it does:
+ *
+ *  - carries {@link SPONSORED_WINDOWS_ENV_ALLOWLIST} and nothing else;
+ *  - points every per-user location at the run's own directory: `HOME`,
+ *    `USERPROFILE`, `HOMEDRIVE` + `HOMEPATH`, `APPDATA`, `LOCALAPPDATA`,
+ *    `TEMP`/`TMP`/`TMPDIR`;
+ *  - makes git non-interactive and hook-free: `GIT_TERMINAL_PROMPT=0`,
+ *    `GIT_ASKPASS=echo`, `GCM_INTERACTIVE=never`, ssh in batch mode with no
+ *    agent, and, through git's own config-in-environment protocol,
+ *    `core.hooksPath` at a directory nothing creates plus an EMPTY
+ *    `credential.helper`. The empty value resets git's helper list, so a
+ *    helper configured system-wide (Git for Windows ships one) is not asked.
+ *
+ * The same credential-shape assertion as the POSIX scrub runs over the
+ * output, so widening the allowlist cannot quietly carry a secret.
+ */
+export function scrubSponsoredWindowsEnv(
+  source: Record<string, string | undefined>,
+  paths: SponsoredWindowsRunPaths,
+): Record<string, string> {
+  // Two spellings of one name (`Path` and `PATH`): the LAST wins, as it does
+  // when the same object is spread into a child environment.
+  const byName = new Map<string, string>()
+  for (const [key, value] of Object.entries(source)) {
+    const name = key.toLowerCase()
+    if (value === undefined || value === '') byName.delete(name)
+    else byName.set(name, value)
+  }
+  const env: Record<string, string> = {}
+  for (const key of SPONSORED_WINDOWS_ENV_ALLOWLIST) {
+    const value = byName.get(key.toLowerCase())
+    if (value !== undefined) env[key] = value
+  }
+  env.HOME = paths.home
+  env.USERPROFILE = paths.home
+  // Windows PowerShell 5.1 builds `$HOME` (and so `~`) from these two rather
+  // than from USERPROFILE. Always set, for a drive letter or a UNC share:
+  // the process-spawning layer (libuv) fills in the USER's own values for
+  // either of the pair a child's environment leaves out.
+  const drive = /^(?:[A-Za-z]:|\\\\[^\\/]+[\\/][^\\/]+)/.exec(paths.home)?.[0]
+  env.HOMEDRIVE = drive ?? paths.home
+  env.HOMEPATH = drive ? paths.home.slice(drive.length) || '\\' : '\\'
+  env.APPDATA = paths.appData
+  env.LOCALAPPDATA = paths.localAppData
+  // PowerShell's module analysis cache stays where the user's PowerShell
+  // keeps it. It is an index of module commands, not a credential, and under
+  // the per-run LOCALAPPDATA above it would be rebuilt from nothing on every
+  // command that uses a cmdlet: measured 19-41s each on a Windows runner.
+  const analysisCache =
+    byName.get('psmoduleanalysiscachepath') ??
+    (byName.get('localappdata')
+      ? `${byName.get('localappdata')!.replace(/[\\/]+$/, '')}\\Microsoft\\Windows\\PowerShell\\ModuleAnalysisCache`
+      : undefined)
+  if (analysisCache) env.PSModuleAnalysisCachePath = analysisCache
+  env.TMPDIR = paths.tmp
+  env.TEMP = paths.tmp
+  env.TMP = paths.tmp
+  env.GIT_TERMINAL_PROMPT = '0'
+  env.GIT_ASKPASS = 'echo'
+  env.GCM_INTERACTIVE = 'never'
+  // cmd.exe (npm runs every script through it) searches the CURRENT directory
+  // before PATH for a bare command name; the current directory is the
+  // repository being edited. Set, it looks in PATH only.
+  env.NoDefaultCurrentDirectoryInExePath = '1'
+  env.GIT_SSH_COMMAND = 'ssh -o BatchMode=yes -o IdentityAgent=none'
+  env.GIT_CONFIG_COUNT = '2'
+  env.GIT_CONFIG_KEY_0 = 'core.hooksPath'
+  env.GIT_CONFIG_VALUE_0 = `${paths.home.replace(/[\\/]+$/, '')}\\no-hooks`
+  env.GIT_CONFIG_KEY_1 = 'credential.helper'
+  env.GIT_CONFIG_VALUE_1 = ''
+  for (const key of Object.keys(env)) {
+    if (looksLikeCredentialEnvVar(key)) {
+      throw new Error(
+        `Sponsored Windows env would have carried \`${key}\`, which is credential-shaped. Narrow SPONSORED_WINDOWS_ENV_ALLOWLIST.`,
       )
     }
   }

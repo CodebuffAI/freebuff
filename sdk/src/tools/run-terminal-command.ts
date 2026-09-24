@@ -31,6 +31,13 @@ export type TerminalCommandSpawnRequest = {
   args: string[]
   cwd: string
   env: NodeJS.ProcessEnv
+  /**
+   * The command text, exactly as the tool received it. Present ONLY for a
+   * broker that {@link TerminalCommandBroker.ownsShell}: that broker runs this
+   * through its own shell, and `executable`/`args` are then empty. Absent for
+   * every other broker, whose request is unchanged.
+   */
+  command?: string
 }
 
 /** A command process whose complete descendant tree has one owner. */
@@ -53,6 +60,14 @@ export interface TerminalCommandProcess {
  */
 export interface TerminalCommandBroker {
   start(request: TerminalCommandSpawnRequest): TerminalCommandProcess
+  /**
+   * Set by a broker that runs {@link TerminalCommandSpawnRequest.command}
+   * through a shell of its own choosing (the sponsored Windows floor uses
+   * PowerShell). The SDK then neither looks for Git Bash nor rewrites the
+   * command for bash, and hands the broker the command text instead of a
+   * bash invocation. Unset, the request is the bash one, as always.
+   */
+  readonly ownsShell?: boolean
 }
 
 /**
@@ -359,8 +374,15 @@ export function runTerminalCommand({
 
     let shell: string
     let shellArgs: string[]
+    const brokerOwnsShell = terminalCommandBroker?.ownsShell === true
 
-    if (isWindows) {
+    if (brokerOwnsShell) {
+      // The broker picks the shell and gets the command text itself. Nothing
+      // here may run: an empty executable is what a broker that forgot it
+      // owns the shell would try to spawn, and that fails rather than runs.
+      shell = ''
+      shellArgs = []
+    } else if (isWindows) {
       command = rewriteWindowsNulRedirects(command)
       const bashPath = findWindowsBash(processEnv)
       if (!bashPath) {
@@ -379,12 +401,20 @@ export function runTerminalCommand({
 
     let childProcess: TerminalCommandProcess
     try {
-      const request: TerminalCommandSpawnRequest = {
-        executable: shell,
-        args: [...shellArgs, command],
-        cwd: resolvedCwd,
-        env: processEnv,
-      }
+      const request: TerminalCommandSpawnRequest = brokerOwnsShell
+        ? {
+            executable: shell,
+            args: [],
+            cwd: resolvedCwd,
+            env: processEnv,
+            command,
+          }
+        : {
+            executable: shell,
+            args: [...shellArgs, command],
+            cwd: resolvedCwd,
+            env: processEnv,
+          }
       childProcess = terminalCommandBroker
         ? terminalCommandBroker.start(request)
         : spawnDirectTerminalCommand(request)

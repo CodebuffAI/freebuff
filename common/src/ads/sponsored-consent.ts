@@ -25,6 +25,15 @@ export const SPONSORED_CONSENT_SENTENCE =
   ' wants to integrate itself into this project, on its own branch. Nothing is pushed until you review it.'
 
 /**
+ * The second sentence, shown ONLY where the run has no OS sandbox: Windows (COD-642). Plain words
+ * for the three things a user is agreeing to there -- their own permissions, no sandbox, and
+ * credentials that are kept out of the run's way rather than locked away. Product-owned and fixed:
+ * a surface decides from its own platform whether to show it, never from anything it was sent.
+ */
+export const SPONSORED_CONSENT_WINDOWS_FLOOR_SENTENCE =
+  'On Windows there is no sandbox. This task runs with your own Windows permissions, and your credentials are hidden from it but not locked away.'
+
+/**
  * What a surface shows when it cannot name who is asking. Blank is not a legal render: a sentence
  * about nobody asks a human to consent to nothing, so the surfaces refuse instead of asking.
  */

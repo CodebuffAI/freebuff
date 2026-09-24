@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   sponsoredCapabilitySchema,
+  sponsoredDesktopExecutionSurfaceForPlatform,
   SUPABASE_FOUNDATION_MODES,
   SUPABASE_FOUNDATION_RUNNABLE_FRAMEWORKS,
   supabaseFoundationCapabilityEligible,
@@ -184,5 +185,20 @@ describe('foundation execution admission', () => {
         ),
       ).toBe(false)
     }
+  })
+})
+
+describe('the Desktop surface a process reports (COD-642)', () => {
+  test('each OS names its own surface, and no other', () => {
+    expect(sponsoredDesktopExecutionSurfaceForPlatform('darwin')).toBe(
+      'desktop_macos',
+    )
+    expect(sponsoredDesktopExecutionSurfaceForPlatform('linux')).toBe(
+      'desktop_linux',
+    )
+    expect(sponsoredDesktopExecutionSurfaceForPlatform('win32')).toBe(
+      'desktop_windows',
+    )
+    expect(sponsoredDesktopExecutionSurfaceForPlatform('freebsd')).toBeNull()
   })
 })

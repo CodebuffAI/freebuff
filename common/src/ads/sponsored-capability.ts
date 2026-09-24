@@ -15,6 +15,8 @@ export const sponsoredCapabilityReasonSchema = z.enum([
   'unreadable_package_manifest',
   'no_consent_bridge',
   'containment_probe_failed',
+  // COD-642: the sponsored file tools cannot hold this project's volume.
+  'file_layer_unavailable',
 ])
 export const capabilityInspectionSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('available') }).strict(),
@@ -67,6 +69,20 @@ export const SPONSORED_DESKTOP_EXECUTION_SURFACES = [
 ] as const satisfies readonly SponsoredExecutionSurface[]
 export type SponsoredDesktopExecutionSurface =
   (typeof SPONSORED_DESKTOP_EXECUTION_SURFACES)[number]
+
+/**
+ * The Desktop execution surface of the OS a Desktop process runs on, or null
+ * for an OS Desktop does not run sponsored work on. What the client reports,
+ * never what it is granted: the server decides whether that surface is served.
+ */
+export function sponsoredDesktopExecutionSurfaceForPlatform(
+  platform: string,
+): SponsoredDesktopExecutionSurface | null {
+  if (platform === 'darwin') return 'desktop_macos'
+  if (platform === 'linux') return 'desktop_linux'
+  if (platform === 'win32') return 'desktop_windows'
+  return null
+}
 export const sponsoredCapabilitySchema = z
   .object({
     schemaVersion: z.literal(2),

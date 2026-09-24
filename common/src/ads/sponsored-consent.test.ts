@@ -6,6 +6,7 @@ import {
   SPONSORED_CONSENT_MAX_NAME_CHARS,
   SPONSORED_CONSENT_NO_NAME,
   SPONSORED_CONSENT_SENTENCE,
+  SPONSORED_CONSENT_WINDOWS_FLOOR_SENTENCE,
   sponsoredConsentName,
   sponsoredConsentSentence,
 } from './sponsored-consent'
@@ -55,6 +56,23 @@ describe('every surface asks the same question', () => {
     ['freebuff-desktop/electron/consent-window.html'],
   ])('%s carries the same sentence, verbatim', (rel) => {
     expect(read(rel)).toContain(SPONSORED_CONSENT_SENTENCE.trim())
+  })
+
+  test.each([
+    ['freebuff-desktop/electron/mcp-consent-bridge.cjs'],
+    ['freebuff-desktop/electron/consent-window.html'],
+  ])('%s carries the same Windows no-sandbox sentence, verbatim (COD-642)', (rel) => {
+    expect(read(rel)).toContain(SPONSORED_CONSENT_WINDOWS_FLOOR_SENTENCE)
+  })
+
+  test('the Windows sentence says the three things, in plain words', () => {
+    expect(SPONSORED_CONSENT_WINDOWS_FLOOR_SENTENCE).toContain('no sandbox')
+    expect(SPONSORED_CONSENT_WINDOWS_FLOOR_SENTENCE).toContain(
+      'your own Windows permissions',
+    )
+    expect(SPONSORED_CONSENT_WINDOWS_FLOOR_SENTENCE).toContain(
+      'hidden from it but not locked away',
+    )
   })
 
   test('the desktop window says the same thing when it cannot name who is asking', () => {

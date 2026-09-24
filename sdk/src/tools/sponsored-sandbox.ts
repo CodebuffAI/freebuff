@@ -40,6 +40,15 @@
  * than one that is honestly absent, because nothing anywhere says which you
  * got. The surface asks {@link sponsoredContainment} FIRST and never offers
  * the run at all where the answer is no.
+ *
+ * ## Windows: the floor, and only on Windows (COD-642)
+ *
+ * Windows has no OS sandbox here. A run there gets the floor alone — the
+ * scrubbed environment, redirected profile directories, non-interactive git
+ * without hooks, and a cwd bound to the worktree — through PowerShell. That
+ * arm is selected by {@link sponsoredBrokerArm} only when this process IS on
+ * Windows and the server's compute grant names `desktop_windows` with
+ * `containment: 'floor'`. It is never what a macOS or Linux failure becomes.
  */
 
 import { spawn, spawnSync } from 'child_process'
@@ -48,10 +57,16 @@ import path from 'path'
 
 import {
   scrubSponsoredLocalEnv,
+  scrubSponsoredWindowsEnv,
+  sponsoredComputeGrantNamesFloor,
   sponsoredLocalContainment,
+  sponsoredLocalContainmentIsFloor,
+  type SponsoredFloorGrantFacts,
   type SponsoredLocalContainment,
+  type SponsoredWindowsRunPaths,
 } from '@codebuff/common/ads/sponsored-local-execution'
 
+import { getSystemProcessEnv } from '../env'
 import { getBundledRgPath } from '../native/ripgrep'
 import { INCLUDED_HIDDEN_DIRS, parseCodeSearchFlags } from './code-search'
 import {
@@ -91,6 +106,14 @@ export function probeSponsoredContainment(
   const containment = sponsoredLocalContainment(platform, {
     bwrapAvailable: Boolean(bwrap),
   })
+  if (sponsoredLocalContainmentIsFloor(containment)) {
+    // No kernel boundary to exercise: on Windows the floor IS the broker, so
+    // nothing is executed to probe it. What it needs in order to start at all
+    // is Windows PowerShell at its fixed system path.
+    return dependencies.exists(windowsPowerShellPath())
+      ? containment
+      : { available: false, reason: 'containment-probe-failed' }
+  }
   if (!containment.available) return containment
   // Exercise the kernel boundary, not merely the presence of an executable.
   // In particular WSL/Linux may disable user namespaces even with bwrap installed.
@@ -232,6 +255,13 @@ export interface SponsoredSandboxOptions {
     paths: { home: string; tmp: string },
   ) => Record<string, string>
   platform?: NodeJS.Platform
+  /**
+   * What the SERVER granted this run: its compute grant, of which only
+   * `executionSurface` and `containment` are read, and only to admit the
+   * Windows floor (see {@link sponsoredBrokerArm}). Ignored on macOS and
+   * Linux, whose arm is their OS sandbox whatever a grant says.
+   */
+  serverGrant?: SponsoredFloorGrantFacts | null
 }
 
 /**
@@ -704,6 +734,11 @@ export function createSponsoredCodeSearchBroker(
 
   if (platform === 'win32') {
     return {
+      // Carried through from the Windows floor broker (COD-642), so the SDK
+      // hands shell commands to the floor's own shell, PowerShell, instead of
+      // a bash invocation. Absent when the floor was not granted, and then
+      // every non-ripgrep start is refused by that broker as before.
+      ...(broker.ownsShell ? { ownsShell: true } : {}),
       start(request) {
         if (!isRipgrep(request)) return broker.start(request)
         const cwd = checkedSearchCwd(request.cwd)
@@ -1726,6 +1761,252 @@ function spawnLinux(
   )
 }
 
+// ------------------------------------------------------ the Windows floor
+
+/**
+ * Which broker arm a sponsored run gets, or null for a refusal.
+ *
+ * macOS and Linux are their OS sandbox, full stop: a grant naming the floor
+ * does not move them off it, and a sandbox that cannot start throws where it
+ * stands rather than landing here. The floor is reachable only when BOTH are
+ * true:
+ *
+ *  - `hostPlatform` (the platform this process is ACTUALLY running on, never
+ *    an option a caller can set) is `win32`, and so is `platform`;
+ *  - the server's grant names `desktop_windows` with `containment: 'floor'`.
+ *
+ * Everything else, Windows without that grant included, is null, and the
+ * broker refuses to start a command.
+ */
+export type SponsoredBrokerArm = 'sandbox-exec' | 'bubblewrap' | 'floor'
+
+export function sponsoredBrokerArm(input: {
+  hostPlatform: NodeJS.Platform
+  platform: NodeJS.Platform
+  serverGrant?: SponsoredFloorGrantFacts | null
+}): SponsoredBrokerArm | null {
+  if (input.platform === 'darwin') return 'sandbox-exec'
+  if (input.platform === 'linux') return 'bubblewrap'
+  if (
+    input.hostPlatform === 'win32' &&
+    input.platform === 'win32' &&
+    sponsoredComputeGrantNamesFloor(input.serverGrant)
+  ) {
+    return 'floor'
+  }
+  return null
+}
+
+/**
+ * Windows PowerShell 5.1, by its fixed absolute path under the system root.
+ *
+ * THE SHELL DECISION (COD-642), and why this one:
+ *
+ *  - `powershell.exe` ships with every Windows 10 and 11 install, at this
+ *    path. `pwsh` (PowerShell 7) is an optional install in no fixed place.
+ *  - It is resolved by ABSOLUTE path, never looked up. Windows process
+ *    creation searches the working directory before `PATH`, and the working
+ *    directory here is a repository the advertiser's procedure is editing: a
+ *    bare `powershell.exe` or `pwsh.exe` would run whatever the repository
+ *    put there. `pwsh` has no fixed path to pin, which is the deciding reason.
+ *  - One dialect, so a run on any Windows machine gets exactly the shell the
+ *    model was told about (`RunOptions.terminalShell`).
+ *
+ * `cmd.exe` was not chosen: its quoting cannot carry an arbitrary command
+ * safely through one argument. Git Bash (what an ordinary Desktop turn uses)
+ * was not chosen either: it is an optional install, and a sponsored run must
+ * not depend on the user having it. Commands are not translated here: the
+ * model is told it is writing for Windows PowerShell 5.1.
+ *
+ * The system root comes from THIS process's environment, which is the user's
+ * own, never from a run's.
+ */
+export function windowsPowerShellPath(
+  env: Record<string, string | undefined> = getSystemProcessEnv(),
+): string {
+  const root = [env.SystemRoot, env.SYSTEMROOT, env.windir, env.WINDIR].find(
+    (value): value is string =>
+      typeof value === 'string' && /^[A-Za-z]:[\\/]/.test(value),
+  )
+  return path.win32.join(
+    root ?? 'C:\\Windows',
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe',
+  )
+}
+
+/** `taskkill.exe`, by absolute path for the same reason as PowerShell. */
+function windowsTaskkillPath(): string {
+  // <root>\System32\WindowsPowerShell\v1.0\powershell.exe -> <root>\System32
+  const system32 = path.win32.dirname(
+    path.win32.dirname(path.win32.dirname(windowsPowerShellPath())),
+  )
+  return path.win32.join(system32, 'taskkill.exe')
+}
+
+/**
+ * The PowerShell switches every floor command runs with.
+ *
+ *  - `-NoProfile`: the user's profile scripts are not run. They are the user's
+ *    code, can load modules and credentials, and are exactly the ambient state
+ *    the floor exists to keep out of the run.
+ *  - `-NonInteractive`: anything that would prompt fails instead of waiting on
+ *    a console nobody can see.
+ *  - `-ExecutionPolicy RemoteSigned`, for this process only: Node's own
+ *    `npm.ps1`/`npx.ps1` shims are local scripts, and under the Windows client
+ *    default (`Restricted`) `npm pkg get name` would fail before npm started.
+ *    A policy set by Group Policy still wins over this switch. Why this is
+ *    acceptable is in `docs/freebuff-sponsored-local-execution.md`, "The
+ *    Desktop half (COD-642, 2026-09-24)".
+ *  - `-Command`, then the command as ONE argument.
+ */
+export const SPONSORED_POWERSHELL_ARGS: readonly string[] = Object.freeze([
+  '-NoLogo',
+  '-NoProfile',
+  '-NonInteractive',
+  '-ExecutionPolicy',
+  'RemoteSigned',
+  '-Command',
+])
+
+/**
+ * Fixed, product-owned lines ahead of every floor command; never advertiser
+ * text. Output as UTF-8, so what a command prints reaches the run intact (the
+ * SDK decodes UTF-8, and PowerShell 5.1 otherwise writes the console code
+ * page), and no progress records, which PowerShell 5.1 otherwise serializes
+ * onto stderr as XML when its output is redirected.
+ */
+export const SPONSORED_POWERSHELL_PREAMBLE = [
+  "$ProgressPreference = 'SilentlyContinue'",
+  'try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch {}',
+  '$OutputEncoding = [System.Text.UTF8Encoding]::new($false)',
+].join('; ')
+
+/** The per-run directories the floor points a Windows run at. */
+export function sponsoredWindowsRunPaths(
+  runtimeDir: string,
+): SponsoredWindowsRunPaths {
+  const home = path.join(runtimeDir, 'home')
+  return {
+    home,
+    tmp: path.join(runtimeDir, 'tmp'),
+    appData: path.join(home, 'AppData', 'Roaming'),
+    localAppData: path.join(home, 'AppData', 'Local'),
+  }
+}
+
+/**
+ * What the floor spawns for one request. PURE, so the choice is testable on
+ * any OS.
+ *
+ *  - A shell command (`request.command`, sent by `runTerminalCommand` because
+ *    this broker owns its shell): PowerShell by absolute path, with the fixed
+ *    switches, the preamble, and the command as a single argument.
+ *  - Anything else (ripgrep for `code_search`): that executable directly, with
+ *    no shell, and only by ABSOLUTE path, for the working-directory lookup
+ *    reason given at {@link windowsPowerShellPath}.
+ */
+export function sponsoredWindowsFloorLaunch(
+  request: TerminalCommandSpawnRequest,
+  powershell: string = windowsPowerShellPath(),
+): { file: string; args: string[] } {
+  if (typeof request.command === 'string') {
+    return {
+      file: powershell,
+      args: [
+        ...SPONSORED_POWERSHELL_ARGS,
+        `${SPONSORED_POWERSHELL_PREAMBLE}\n${request.command}`,
+      ],
+    }
+  }
+  if (!path.win32.isAbsolute(request.executable)) {
+    throw new Error(
+      'A sponsored run on Windows starts a program outside its shell only by absolute path.',
+    )
+  }
+  return { file: request.executable, args: [...request.args] }
+}
+
+/**
+ * A Windows process handle. No process groups here: a kill takes the whole
+ * tree with `taskkill /T /F`, as the SDK's own Windows runner does. And, like
+ * that runner, nothing is reaped after the command reports done: a descendant
+ * the command started in the background and left running outlives it, because
+ * once its parent has exited Windows can no longer name the tree.
+ */
+function windowsFloorProcessHandle(
+  child: ReturnType<typeof spawn>,
+): TerminalCommandProcess {
+  const completion = new Promise<number | null>((resolve, reject) => {
+    child.once('error', reject)
+    child.once('close', (code) => resolve(code))
+  })
+  const isAlive = () =>
+    Boolean(child.pid) && child.exitCode === null && child.signalCode === null
+  return {
+    pid: child.pid,
+    stdout: child.stdout!,
+    stderr: child.stderr!,
+    completion,
+    kill: (signal) => {
+      if (child.pid && isAlive()) {
+        const result = spawnSync(
+          windowsTaskkillPath(),
+          ['/pid', String(child.pid), '/t', '/f'],
+          { stdio: 'ignore', windowsHide: true, timeout: 5_000 },
+        )
+        if (!result.error && result.status === 0) return
+      }
+      try {
+        child.kill(signal)
+      } catch {
+        // already gone
+      }
+    },
+    isAlive,
+  }
+}
+
+/**
+ * The Windows floor broker: no OS wrapper, the floor only. Built by
+ * {@link createSponsoredTerminalBroker} for the `floor` arm and nothing else.
+ */
+function createWindowsFloorBroker(
+  workspaceRoot: string,
+  runtimeDir: string,
+): TerminalCommandBroker {
+  const paths = sponsoredWindowsRunPaths(runtimeDir)
+  return {
+    ownsShell: true,
+    start(request) {
+      assertSponsoredCommandCwd(workspaceRoot, request.cwd)
+      for (const dir of [
+        paths.home,
+        paths.tmp,
+        paths.appData,
+        paths.localAppData,
+      ]) {
+        fs.mkdirSync(dir, { recursive: true })
+      }
+      const env = scrubSponsoredWindowsEnv(request.env, paths)
+      const launch = sponsoredWindowsFloorLaunch(request)
+      return windowsFloorProcessHandle(
+        spawn(launch.file, launch.args, {
+          cwd: request.cwd,
+          env: env as NodeJS.ProcessEnv,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          // Hidden and NOT detached: with every stdio piped, a hidden child
+          // gets a console with no window, and whatever it starts inherits
+          // that console instead of opening a visible one of its own.
+          windowsHide: true,
+        }),
+      )
+    },
+  }
+}
+
 /**
  * The broker a sponsored local run passes to `runTerminalCommand`.
  *
@@ -1735,6 +2016,9 @@ function spawnLinux(
  * would still hand the child the user's whole environment. Scrubbing here, at
  * the last point before the spawn, is what makes that impossible to get wrong
  * from the outside.
+ *
+ * On Windows it is the floor broker, and only when {@link sponsoredBrokerArm}
+ * says so; otherwise a Windows start throws exactly as it did before COD-642.
  */
 export function createSponsoredTerminalBroker(
   options: SponsoredSandboxOptions,
@@ -1745,6 +2029,15 @@ export function createSponsoredTerminalBroker(
     path.resolve(item),
   )
   const platform = options.platform ?? process.platform
+  if (
+    sponsoredBrokerArm({
+      hostPlatform: process.platform,
+      platform,
+      serverGrant: options.serverGrant,
+    }) === 'floor'
+  ) {
+    return createWindowsFloorBroker(workspaceRoot, runtimeDir)
+  }
   const linkedWorktree = options.linkedWorktree
   const scrubEnv = options.scrubEnv ?? scrubSponsoredLocalEnv
   const home = path.join(runtimeDir, 'home')

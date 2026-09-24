@@ -185,16 +185,36 @@ Note: terminal commands run in bash on Windows too, not cmd.exe or PowerShell.
 Use POSIX syntax — \`ls\`, \`mv\`, \`rm\`, \`cp\`, \`grep\` — and never \`dir\`, \`move\`, \`del\`, \`copy\`, \`findstr\` or PowerShell cmdlets. Write paths with forward slashes: bash treats \`\\\` as an escape, so \`C:\\Users\\me\` becomes \`C:Usersme\`.
 `.trim()
 
+/**
+ * A host whose terminal broker runs Windows PowerShell 5.1 says so with
+ * `systemInfo.shell: 'powershell'` (the sponsored Windows floor, COD-642). It
+ * replaces the bash note: telling the model "bash" there turns `a && b`,
+ * `rm -rf` and `2>/dev/null` into errors on every command.
+ */
+export const powershellNote = `
+Note: terminal commands run in Windows PowerShell 5.1, not bash or cmd.exe.
+- \`&&\` and \`||\` do not exist here. Chain with \`;\` and check the last native command with \`if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\`.
+- Environment variables are \`$env:NAME\` (\`$env:NODE_ENV = 'test'\`), not \`NAME=value cmd\` or \`export\`.
+- Remove with \`Remove-Item -Recurse -Force path\`, not \`rm -rf\`. Discard output with \`> $null\` or \`2> $null\`, never \`/dev/null\`.
+- Native tools (\`git\`, \`node\`, \`npm\`, \`npx\`) work as usual; quote arguments with single quotes.
+`.trim()
+
 export const getSystemInfoPrompt = (fileContext: ProjectFileContext) => {
   const { fileTree, shellConfigFiles, systemInfo } = fileContext
   const flattenedNodes = flattenTree(fileTree)
   const lastReadFilePaths = getLastReadFilePaths(flattenedNodes, 20)
+  const shellNote =
+    systemInfo.shell === 'powershell'
+      ? powershellNote + '\n'
+      : systemInfo.platform === 'win32'
+        ? windowsNote + '\n'
+        : ''
 
   return `
 # System Info
 
 Operating System: ${systemInfo.platform}
-${systemInfo.platform === 'win32' ? windowsNote + '\n' : ''}
+${shellNote}
 Shell: ${systemInfo.shell}
 Chrome: ${systemInfo.chromeAvailable ? 'installed' : 'not found'}
 

@@ -53,6 +53,35 @@ export function sponsoredAcceptSurfaceMatchesRow(
   return clientSurface === rowSurface
 }
 
+/**
+ * The pairing the funded Accept applies, on the server and on Desktop alike
+ * (COD-642). The row's `execution_surface` says which machine the offer was
+ * minted for; `clientExecutionSurface` says which machine is about to run it.
+ *
+ *  - Absent (a client older than the field, and the CLI, which never sends
+ *    it): any row it could accept before COD-642, and NEVER a
+ *    `desktop_windows` row, whose only legitimate client sends it.
+ *  - `desktop_windows`: only a `desktop_windows` row. An unrecorded row is
+ *    never one, so it is refused too.
+ *  - Anything else: exactly the row's own surface when the row recorded one
+ *    ({@link sponsoredAcceptSurfaceMatchesRow}).
+ *
+ * Linux (COD-655) needs no arm of its own: it follows macOS. `desktop_linux`
+ * pairs only with a `desktop_linux` row, a macOS or Windows client is refused
+ * on one, and an absent field is admitted exactly as it is on a macOS row,
+ * since released Linux builds already run sponsored work under bubblewrap.
+ */
+export function acceptClientSurfacePairsWithRow(
+  clientSurface: SponsoredExecutionSurface | null | undefined,
+  rowSurface: string | null | undefined,
+): boolean {
+  const windows = 'desktop_windows' satisfies SponsoredExecutionSurface
+  if (clientSurface === undefined || clientSurface === null)
+    return rowSurface !== windows
+  if (clientSurface === windows && rowSurface !== windows) return false
+  return sponsoredAcceptSurfaceMatchesRow(clientSurface, rowSurface)
+}
+
 /** Public response shape. The bearer belongs in host memory, never a thread. */
 export type SponsoredComputeGrant = Readonly<{
   token: string

@@ -45,10 +45,36 @@ describe('sponsored runtime capability probe', () => {
       available: false,
       reason: 'bubblewrap-missing',
     })
+    // COD-642: Windows is the floor arm now, and it is still never probed by
+    // EXECUTING anything -- there is no kernel boundary to exercise. With no
+    // Windows PowerShell at its system path the floor cannot start, and says
+    // so rather than reporting a capability it cannot honour.
     expect(probeSponsoredContainment('win32', dependencies)).toEqual({
       available: false,
-      reason: 'windows-no-containment',
+      reason: 'containment-probe-failed',
     })
     expect(executions).toBe(0)
+  })
+
+  test('native Windows reports the floor when PowerShell is at its system path', () => {
+    const asked: string[] = []
+    let executions = 0
+    expect(
+      probeSponsoredContainment('win32', {
+        exists: (pathname) => {
+          asked.push(pathname)
+          return true
+        },
+        execute: () => {
+          executions++
+          return true
+        },
+      }),
+    ).toEqual({ containment: 'floor' })
+    expect(executions).toBe(0)
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.toLowerCase()).toEndWith(
+      '\\system32\\windowspowershell\\v1.0\\powershell.exe',
+    )
   })
 })

@@ -21,6 +21,8 @@
  */
 import { spawnSync } from 'node:child_process'
 
+import { sponsoredLocalAvailability } from '@codebuff/common/ads/sponsored-local-execution'
+
 import { sponsoredContainment } from '../src/tools/sponsored-sandbox'
 
 export function sponsoredContainmentUsable(): boolean {
@@ -33,7 +35,8 @@ export function sponsoredContainmentUsable(): boolean {
       ]).status === 0
     )
   }
-  if (process.platform === 'linux') return sponsoredContainment().available
+  if (process.platform === 'linux')
+    return sponsoredLocalAvailability(sponsoredContainment()) === 'available'
   return false
 }
 

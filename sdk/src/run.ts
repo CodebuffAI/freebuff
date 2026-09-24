@@ -275,6 +275,29 @@ export type RunOptions = {
   onUsageIncomplete?: () => void
   /** Successful model-generated compaction, including the exact saved summary. */
   onCompaction?: (data: ContextCompactionData) => void
+  /**
+   * The shell this run's terminal commands actually execute in, when the host's
+   * broker picks one other than the default (the sponsored Windows floor runs
+   * Windows PowerShell 5.1). Reported to the model as `systemInfo.shell`, so it
+   * writes commands for the shell that will run them. Unset keeps the default.
+   */
+  terminalShell?: 'bash' | 'powershell'
+}
+
+/**
+ * Report the host broker's shell to the model (`RunOptions.terminalShell`).
+ * Applied on every run, previous state or not: the shell is a fact about THIS
+ * host's broker, and a resumed state must not carry another one's answer.
+ */
+export function applyTerminalShell(
+  sessionState: SessionState,
+  terminalShell: RunOptions['terminalShell'],
+): void {
+  if (!terminalShell) return
+  sessionState.fileContext.systemInfo = {
+    ...sessionState.fileContext.systemInfo,
+    shell: terminalShell,
+  }
 }
 
 /** How often onStateSnapshot fires while a run is in flight. */
@@ -510,6 +533,7 @@ async function runOnce({
   onUsage,
   onUsageIncomplete,
   onCompaction,
+  terminalShell,
 }: RunExecutionOptions): Promise<RunState> {
   const fsSourceValue = typeof fsSource === 'function' ? fsSource() : fsSource
   const fs = await fsSourceValue
@@ -568,6 +592,7 @@ async function runOnce({
     })
   }
   const traceSessionId = previousRun?.traceSessionId ?? crypto.randomUUID()
+  applyTerminalShell(sessionState, terminalShell)
 
   if (byok) {
     // The selected connection is a run snapshot. Apply its model to every
