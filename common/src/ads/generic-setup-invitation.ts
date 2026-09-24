@@ -36,6 +36,24 @@ export const genericSetupInvitationSchema = z
   })
   .strict()
 
-export type GenericSetupInvitation = z.infer<typeof genericSetupInvitationSchema>
+export type GenericSetupInvitation = z.infer<
+  typeof genericSetupInvitationSchema
+>
 
 export const GENERIC_SETUP_INVITATION_RECHECK_LABEL = 'Check compatibility'
+
+/**
+ * The first Desktop release whose parser knows `generic_setup` (0.0.124,
+ * COD-598). An older build parses only the Supabase schema and drops a
+ * generic invitation without a trace, so the server must not answer one.
+ */
+export const GENERIC_SETUP_INVITATION_MIN_DESKTOP_VERSION = [0, 0, 124] as const
+
+/**
+ * Request field `invitationReadyDiscoveryVersion`. `1` = this Desktop draws a
+ * generic invitation on a READY-project discovery request too (the request
+ * that names the Supabase campaign with no `invitationId`). Every release
+ * before it accepts only a Supabase invitation there and drops a generic one,
+ * so the server withholds it from them and the slot gets an ordinary ad.
+ */
+export const GENERIC_INVITATION_READY_DISCOVERY_VERSION = 1
