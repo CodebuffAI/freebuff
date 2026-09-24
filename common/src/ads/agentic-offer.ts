@@ -16,14 +16,14 @@
  * is. The response objects are not `.strict()`, so the server may add fields
  * without a version bump and an older client simply drops them.
  *
- * CUTOVER. One server knob decides which path serves: `FREEBUFF_AGENTIC_POOL`
- * gains a third value, `route`. Under `route` (with the generic selector and
- * the one funnel `on`; the server's predicate) this endpoint serves and
- * `/api/ads` skips agentic discovery for a client that sends
- * `agenticOfferRoute: 1`; under anything else this endpoint answers
- * `none/disabled` and `/api/ads` ignores the flag. So an updated Desktop sends
- * both and is correct on either side of the flip, and the flip is reversible
- * without a client release.
+ * CUTOVER. There is no server knob: the Desktop release that sends
+ * `agenticOfferRoute: 1` is the cutover. For such a client this endpoint
+ * serves and `/api/ads` skips agentic discovery, wherever the channel's kill
+ * switch (`FREEBUFF_AGENTIC_ADS`) admits the caller. Where it does not, this
+ * endpoint answers `none/disabled` and `/api/ads` ignores the flag -- one
+ * predicate on the server, so exactly one path serves. `FREEBUFF_AGENTIC_ADS=off`
+ * therefore stops agentic on BOTH paths; there is no position that sends an
+ * updated Desktop back to the old one.
  */
 
 import { z } from 'zod'
@@ -95,7 +95,10 @@ export type AgenticOfferRequest = z.infer<typeof agenticOfferRequestSchema>
 
 /** Why nothing was offered. Closed, so a dashboard can group by it. */
 export const AGENTIC_OFFER_NONE_REASONS = [
-  /** `FREEBUFF_AGENTIC_POOL` is not `route`, or the generic selector is off. */
+  /**
+   * `FREEBUFF_AGENTIC_ADS` does not admit this caller (`off`, or a `god`/`beta`
+   * audience without them); `/api/ads` asks their agentic question as before.
+   */
   'disabled',
   /** Not a Desktop bearer, product UA or OS pairing this route serves. */
   'ineligible_client',
