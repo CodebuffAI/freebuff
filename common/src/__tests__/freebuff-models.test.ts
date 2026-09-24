@@ -470,8 +470,10 @@ describe('freebuff model availability', () => {
     // reward: a limited-tier caller may name it so a bounty grant is redeemable
     // from any region, and the POOL refuses them if they hold none. It is
     // asserted in its own test above rather than dropped silently. V4 Flash
-    // left on 2026-09-02, when it rejoined the limited catalog.
-    for (const id of [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]) {
+    // left on 2026-09-02, when it rejoined the limited catalog. GPT-5.6 Luna
+    // left on 2026-09-24, when it was withdrawn (refused at every tier, like V4
+    // Pro above); GPT-6 Luna is the Luna row now.
+    for (const id of [FREEBUFF_GPT_6_LUNA_MODEL_ID]) {
       expect(isFreebuffSessionModelAllowedForAccessTier(id, 'limited')).toBe(
         false,
       )
@@ -1263,7 +1265,7 @@ describe('freebuff model availability', () => {
     )
   })
 
-  test('GPT-6 Luna is the premium Luna row, and 5.6 is retired', () => {
+  test('GPT-6 Luna is the premium Luna row, and 5.6 is withdrawn', () => {
     // The wire id must stay OpenRouter's own slug: getChatCompletionsProvider
     // has no Luna branch, so it only reaches OpenRouter by falling through to
     // the default route with the slug intact.
@@ -1308,8 +1310,10 @@ describe('freebuff model availability', () => {
       false,
     )
 
-    // 5.6 is out of every picker but still RECOGNISED: draining sessions and
-    // server-side machinery outside this package both depend on that.
+    // 5.6 is out of every picker, PAUSED (2026-09-24), and still RECOGNISED:
+    // the released binaries holding it get the withdrawn answer, never an
+    // unknown-model refusal. The full withdrawal is pinned in
+    // gpt-5-6-luna-withdrawal.test.ts.
     expect(FREEBUFF_MODELS.map((model) => model.id)).not.toContain(
       FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
     )
@@ -1317,6 +1321,11 @@ describe('freebuff model availability', () => {
       FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
     )
     expect(isFreebuffPausedFreeModelId(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)).toBe(
+      true,
+    )
+    // GPT-6 Luna is not caught by 5.6's pause: the pause matches dated
+    // snapshots only, never a different version.
+    expect(isFreebuffPausedFreeModelId(FREEBUFF_GPT_6_LUNA_MODEL_ID)).toBe(
       false,
     )
   })

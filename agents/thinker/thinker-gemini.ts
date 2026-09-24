@@ -1,4 +1,4 @@
-import { FREEBUFF_GPT_5_6_LUNA_MODEL_ID } from '@codebuff/common/constants/freebuff-models'
+import { FREEBUFF_GPT_6_LUNA_MODEL_ID } from '@codebuff/common/constants/freebuff-models'
 
 import thinker from './thinker'
 
@@ -7,7 +7,9 @@ import type { SecretAgentDefinition } from '../types/secret-agent-definition'
 /**
  * The freebuff.com/chat thinker child, spawned by base-chat.
  *
- * Uses GPT-5.6 Luna with extra-high reasoning for Chat deliberation.
+ * Uses GPT-6 Luna with extra-high reasoning for Chat deliberation. It ran
+ * GPT-5.6 Luna until 2026-09-24, when 5.6 was withdrawn from free mode; GPT-6
+ * Luna is its successor and the cheaper of the two on its flex lane.
  *
  * The id stays `thinker-gemini`: chat/agent.ts registers it by import, the
  * hidden-agent list and FREEBUFF_GEMINI_PRO_AGENT_IDS name it, and base-chat's
@@ -17,7 +19,7 @@ const definition: SecretAgentDefinition = {
   ...thinker,
   id: 'thinker-gemini',
   displayName: 'Thinker',
-  model: FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  model: FREEBUFF_GPT_6_LUNA_MODEL_ID,
   providerOptions: undefined,
   reasoningOptions: {
     enabled: true,

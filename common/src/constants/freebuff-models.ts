@@ -370,8 +370,9 @@ export const FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT = 'high' as const
  * 2026-09-22.
  *
  * Its own wire id, not a swap under 5.6's: this is a different model on a
- * different rate card, and 5.6 keeps serving the sessions already admitted on
- * it (see FREEBUFF_GPT_5_6_LUNA_MODEL_ID).
+ * different rate card. 5.6 kept serving the sessions already admitted on it
+ * until it was withdrawn from free mode on 2026-09-24
+ * (FREEBUFF_PAUSED_FREE_MODEL_IDS).
  *
  * NOTE the lane change that comes with it. 5.6 runs Cheaper Inference ->
  * Novita -> OpenRouter; NEITHER of the cheap lanes carries a gpt-6 slug
@@ -2290,6 +2291,11 @@ const GPT_5_6_LUNA_MODEL = {
   // OpenRouter's model metadata advertises all five enabled effort levels.
   efforts: EFFORTS_THROUGH_MAX,
   defaultEffort: FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT,
+  // WITHDRAWN 2026-09-24 (FREEBUFF_PAUSED_FREE_MODEL_IDS), two days after
+  // GPT-6 Luna replaced it in every picker. The row is kept, not deleted, so
+  // the id stays recognised for the binaries that still hold it. The notes
+  // below record what was true while it was offered.
+  //
   // Luna led the browser surfaces from 2026-08-04 until Pro's 08/13 GA build
   // took the recommendation on 2026-08-12. It stays fully selectable, and stays
   // the one premium row with no AI-training notice and native image input —
@@ -2788,9 +2794,10 @@ export const SUPPORTED_FREEBUFF_MODELS = [
   SPACE_BUNNY_ALPHA_MODEL,
   DEEPSEEK_V4_PRO_MODEL,
   MINIMAX_M3_MODEL,
-  // 5.6 stays SUPPORTED after its 2026-09-22 retirement so the server still
-  // recognises the id: sessions admitted before the swap drain on it, and the
-  // released binaries that still hold it get a coercion instead of a refusal.
+  // 5.6 stays SUPPORTED after its 2026-09-22 retirement and 2026-09-24
+  // withdrawal (FREEBUFF_PAUSED_FREE_MODEL_IDS) so the server still recognises
+  // the id: the released binaries that still hold it get the withdrawn answer
+  // or a coercion, never an unknown-model refusal.
   GPT_5_6_LUNA_MODEL,
   GPT_6_LUNA_MODEL,
   // Solar Pro 4 stays SUPPORTED after its 2026-09-23 retirement for the same
@@ -2882,7 +2889,7 @@ export const FREEBUFF_MODELS = [
   DEEPSEEK_V4_FLASH_MODEL,
   // GPT-6 LUNA TAKES 5.6'S SLOT (2026-09-22). Same position, same tagline,
   // half the price on the flex lane; 5.6 left this list in the same change and
-  // is paused (FREEBUFF_PAUSED_FREE_MODEL_IDS).
+  // was paused on 2026-09-24 (FREEBUFF_PAUSED_FREE_MODEL_IDS).
   GPT_6_LUNA_MODEL,
   ...(FREEBUFF_ENABLE_MIMO_MODELS_IN_UI
     ? [MIMO_V25_MODEL, MIMO_V26_PRO_MODEL]
@@ -3021,19 +3028,29 @@ export function getFreebuffPerModelSessionSpendCap(
  * clients that need it are the ones already installed.
  */
 export const FREEBUFF_PAUSED_FREE_MODEL_IDS: readonly string[] = [
-  // GPT-5.6 Luna is NOT here, and that is deliberate. It was retired from
-  // every picker on 2026-09-22 (it left FREEBUFF_MODELS) and replaced by
-  // GPT-6 Luna, but it stays ADMISSIBLE:
+  // GPT-5.6 Luna, withdrawn from free mode entirely on 2026-09-24 — stage two
+  // of the retirement that took it out of every picker on 2026-09-22, when
+  // GPT-6 Luna took its slot. The server-side prerequisite that kept it
+  // admissible after the picker change no longer holds, so nothing needs it
+  // admitted any more, and two days after the swap released CLI and Desktop
+  // binaries were still opening sessions on it.
   //
-  //  - Sessions admitted before the swap drain on it, and its agents stay
-  //    bundled for them.
-  //  - Server-side machinery outside this package still resolves the id and
-  //    needs admission to succeed for it. Pausing it would turn those requests
-  //    into refusals; the reasoning is in web/ and in the internal docs, which
-  //    are not exported.
+  // PAUSED rather than deleted, for the reason every entry here gives: those
+  // binaries hold the id in their compiled-in catalog and keep sending it. A
+  // full-access pick is refused with the non-session-ending withdrawn
+  // `model_unavailable`, which names GLM 5.3 Flash (the default) as the
+  // replacement; a limited pick is coerced to the limited default.
   //
-  // This is the picker-only first stage of a retirement. Pausing is stage two
-  // and has a prerequisite recorded with that machinery, not here.
+  // NOT substituted with GPT-6 Luna, deliberately: GPT-6 Luna is open only to
+  // US or paid accounts (FREEBUFF_US_OR_PAID_MODEL_IDS), so a silent
+  // substitution would either hand the gated row to everyone holding an old
+  // binary or refuse them for a model they never picked. That is the same
+  // reason the row carries no `supersededBy`.
+  //
+  // Its roots (base2-free-luna, base3-free-luna, code-reviewer-luna) and their
+  // FREE_MODE_AGENT_MODELS entries stay until nothing live can still be bound
+  // to it. The row stays in SUPPORTED_FREEBUFF_MODELS for good.
+  FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
   // Muse Spark 1.3, withdrawn 2026-09-07: `404 model_not_found` on every key,
   // every attempt. Paused rather than deleted for the reason the whole list
   // exists — an id the server does not recognise can only be refused, and a
