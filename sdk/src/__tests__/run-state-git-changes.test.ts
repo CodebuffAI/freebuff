@@ -49,6 +49,35 @@ function makeSpawn(outputs: Record<string, string>): CodebuffSpawn {
 }
 
 describe('getGitChanges', () => {
+  it('survives a spawn that throws synchronously (Windows .cmd git shim)', async () => {
+    // Real failing input from a Windows Desktop user whose git is a .cmd shim:
+    // spawn refuses the `%` in --format before any process exists.
+    const outputs: Record<string, string> = {
+      'git rev-parse --abbrev-ref HEAD': 'main\n',
+      'git rev-list --count HEAD': '3\n',
+    }
+    const spawn = ((command: string, args?: readonly string[]) => {
+      const arg = (args ?? []).find((a) => /[%^&|<>]/.test(a))
+      if (arg !== undefined) {
+        const error = new TypeError(
+          `The argument 'args[3]' contains a cmd.exe special character and cannot be safely passed to a .bat/.cmd file. Received "${arg}"`,
+        ) as TypeError & { code?: string }
+        error.code = 'ERR_INVALID_ARG_VALUE'
+        throw error
+      }
+      if (command === 'gh') throw new Error('spawn gh ENOENT')
+      return fakeProc(outputs[[command, ...(args ?? [])].join(' ')] ?? '')
+    }) as CodebuffSpawn
+
+    const result = await getGitChanges({
+      cwd: '/repo',
+      spawn,
+      logger: makeLogger([]),
+    })
+    expect(result.gitAvailable).toBe(true)
+    expect(result.branch).toBe('main')
+  })
+
   it('summarizes repository scale and all kinds of changed paths', async () => {
     const events: Array<{ data: unknown; msg?: string }> = []
     const result = await getGitChanges({

@@ -548,12 +548,34 @@ export async function getGitChanges(params: {
       return stdout
     }
 
+  // spawn can THROW rather than emit 'error': on Windows, when `git` resolves
+  // to a .cmd/.bat shim, any argument carrying a cmd.exe special character
+  // (the `%` in the history --format) is refused synchronously. That throw
+  // skipped every .catch below and failed the whole turn, on every prompt.
+  // The error listener must attach in the same tick as spawn (hence the
+  // callback, not a promise of the child): a child that fails to start emits
+  // 'error' on the next tick, and with no listener yet that is an unhandled
+  // error event.
+  const spawnSafely = <T>(
+    command: string,
+    args: string[],
+    consume: (child: ReturnType<typeof spawn>) => Promise<T>,
+  ): Promise<T> => {
+    try {
+      return consume(spawn(command, args, { cwd }))
+    } catch (error) {
+      return Promise.reject(error)
+    }
+  }
+
   const gitOutput = (
     args: string[],
     label: string,
     maxOutputChars = MAX_SUBPROCESS_OUTPUT_CHARS,
   ) =>
-    childProcessToPromise(spawn('git', args, { cwd }), maxOutputChars)
+    spawnSafely('git', args, (child) =>
+      childProcessToPromise(child, maxOutputChars),
+    )
       .then((result) => ({
         stdout: stdoutOf(label)(result),
         truncated: result.truncated,
@@ -591,14 +613,11 @@ export async function getGitChanges(params: {
     ['rev-parse', '--is-shallow-repository'],
     'git shallow status',
   )
-  const visibility = childProcessToPromise(
-    spawn(
-      'gh',
-      ['repo', 'view', '--json', 'visibility', '--jq', '.visibility'],
-      { cwd },
-    ),
-    1_000,
-    REPOSITORY_VISIBILITY_TIMEOUT_MS,
+  const visibility = spawnSafely(
+    'gh',
+    ['repo', 'view', '--json', 'visibility', '--jq', '.visibility'],
+    (child) =>
+      childProcessToPromise(child, 1_000, REPOSITORY_VISIBILITY_TIMEOUT_MS),
   ).catch((error) => {
     logger.debug?.({ error }, 'Failed to get repository visibility')
     return undefined
