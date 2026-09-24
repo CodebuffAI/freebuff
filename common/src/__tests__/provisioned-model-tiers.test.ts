@@ -24,26 +24,62 @@ import {
   isFreeModeAllowedAgentModel,
 } from '../constants/free-agents'
 import {
+  FREEBUFF_MIMO_V25_MODEL_ID,
+  FREEBUFF_CLAUDE_OPUS_4_8_MODEL_ID,
+  FREEBUFF_CLAUDE_OPUS_5_5_MODEL_ID,
+  FREEBUFF_CLAUDE_OPUS_5_MODEL_ID,
+  FREEBUFF_CLAUDE_SONNET_4_6_MODEL_ID,
+  FREEBUFF_CLAUDE_SONNET_5_MODEL_ID,
+  FREEBUFF_CODESTRAL_2508_MODEL_ID,
   FREEBUFF_DEEPSEEK_V41_FLASH_MODEL_ID,
-  FREEBUFF_DEEPSEEK_V41_PRO_MODEL_ID,
-  FREEBUFF_FABLE_5_1_TEST_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   FREEBUFF_FABLE_5_1_MODEL_ID,
+  FREEBUFF_GEMINI_3_5_FLASH_MODEL_ID,
+  FREEBUFF_GEMINI_3_6_FLASH_MODEL_ID,
+  FREEBUFF_GEMINI_3_7_FLASH_MODEL_ID,
+  FREEBUFF_GLM_5_3_FLASHX_MODEL_ID,
+  FREEBUFF_GLM_5_3_PRIME_MODEL_ID,
+  FREEBUFF_GLM_5_TURBO_MODEL_ID,
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_GLM_V53_MODEL_ID,
-  FREEBUFF_GPT_6_ASTRA_DISCOUNT_TEST_MODEL_ID,
-  FREEBUFF_DEEPSEEK_V4_FLASH_MAX_MODEL_ID,
-  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  FREEBUFF_DEEPSEEK_V4_PRO_MAX_MODEL_ID,
-  FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
-  FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID,
+  FREEBUFF_GPT_5_4_PRO_MODEL_ID,
+  FREEBUFF_GPT_5_5_MODEL_ID,
+  FREEBUFF_GPT_5_5_PRO_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
-  FREEBUFF_INTERNAL_EVAL_MODELS,
+  FREEBUFF_GPT_5_6_LUNA_PRO_MODEL_ID,
+  FREEBUFF_GPT_5_6_SOL_MODEL_ID,
+  FREEBUFF_GPT_5_6_SOL_PRO_MODEL_ID,
+  FREEBUFF_GPT_5_6_TERRA_MODEL_ID,
+  FREEBUFF_GPT_5_6_TERRA_PRO_MODEL_ID,
+  FREEBUFF_GPT_6_ASTRA_MODEL_ID,
+  FREEBUFF_GPT_6_ASTRA_PRO_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_PRO_MODEL_ID,
+  FREEBUFF_GPT_6_SOL_MODEL_ID,
+  FREEBUFF_GPT_6_SOL_PRO_MODEL_ID,
+  FREEBUFF_GROK_4_20_MODEL_ID,
+  FREEBUFF_GROK_4_5_MODEL_ID,
+  FREEBUFF_GROK_4_6_MODEL_ID,
+  FREEBUFF_GROK_4_7_MODEL_ID,
+  FREEBUFF_KIMI_K3_MODEL_ID,
+  FREEBUFF_LLAMA_4_MAVERICK_MODEL_ID,
+  FREEBUFF_MISTRAL_LARGE_MODEL_ID,
   FREEBUFF_MODELS,
+  FREEBUFF_O3_PRO_MODEL_ID,
   FREEBUFF_PROVISIONED_MODELS,
+  FREEBUFF_QWEN3_6_MAX_PREVIEW_MODEL_ID,
+  FREEBUFF_QWEN3_6_PLUS_MODEL_ID,
+  FREEBUFF_QWEN3_7_MAX_MODEL_ID,
+  FREEBUFF_QWEN3_7_PLUS_MODEL_ID,
+  FREEBUFF_QWEN3_8_27B_MODEL_ID,
+  FREEBUFF_QWEN3_8_FLASH_MODEL_ID,
+  FREEBUFF_QWEN3_8_MAX_0902_MODEL_ID,
+  FREEBUFF_QWEN3_8_MAX_PRIME_MODEL_ID,
+  FREEBUFF_SOLAR_MINI_4_MODEL_ID,
+  FREEBUFF_STANDARD_MODEL_IDS,
   FREEBUFF_WEB_ALL_MODELS,
   FREEBUFF_WEB_MODELS,
   FREEBUFF_WEB_PREMIUM_MODEL_IDS,
-  FREEBUFF_STANDARD_MODEL_IDS,
   SUPPORTED_FREEBUFF_MODELS,
   resolveSupportedFreebuffModel,
 } from '../constants/freebuff-models'
@@ -51,29 +87,9 @@ import {
 /** tier -> the root that runs it, and the base model it extends. */
 const TIERS: Array<{ id: string; root: string; base: string }> = [
   {
-    id: FREEBUFF_DEEPSEEK_V4_PRO_MAX_MODEL_ID,
-    root: 'base2-free-deepseek-pro-max',
-    base: FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
-  },
-  {
-    id: FREEBUFF_DEEPSEEK_V4_FLASH_MAX_MODEL_ID,
-    root: 'base2-free-deepseek-flash-max',
-    base: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  },
-  {
-    id: FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID,
-    root: 'base2-free-luna-max',
-    base: FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
-  },
-  {
     id: FREEBUFF_DEEPSEEK_V41_FLASH_MODEL_ID,
     root: 'base2-free-deepseek-v4-1-flash',
     base: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  },
-  {
-    id: FREEBUFF_DEEPSEEK_V41_PRO_MODEL_ID,
-    root: 'base2-free-deepseek-v4-1-pro',
-    base: FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   },
   {
     id: FREEBUFF_GLM_V53_MODEL_ID,
@@ -81,27 +97,217 @@ const TIERS: Array<{ id: string; root: string; base: string }> = [
     base: FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   },
   {
-    id: FREEBUFF_GPT_6_ASTRA_DISCOUNT_TEST_MODEL_ID,
-    root: 'base2-free-astra-discount-test',
-    base: FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+    id: FREEBUFF_GPT_6_SOL_MODEL_ID,
+    root: 'base2-free-gpt-6-sol',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
   },
   {
-    id: FREEBUFF_FABLE_5_1_TEST_MODEL_ID,
-    root: 'base2-free-fable-test',
-    base: FREEBUFF_FABLE_5_1_MODEL_ID,
+    id: FREEBUFF_GPT_6_SOL_PRO_MODEL_ID,
+    root: 'base2-free-gpt-6-sol-pro',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GPT_6_LUNA_PRO_MODEL_ID,
+    root: 'base2-free-gpt-6-luna-pro',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GPT_6_ASTRA_MODEL_ID,
+    root: 'base2-free-gpt-6-astra',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GPT_6_ASTRA_PRO_MODEL_ID,
+    root: 'base2-free-gpt-6-astra-pro',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GPT_5_6_SOL_MODEL_ID,
+    root: 'base2-free-gpt-5-6-sol',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GPT_5_6_SOL_PRO_MODEL_ID,
+    root: 'base2-free-gpt-5-6-sol-pro',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GPT_5_6_TERRA_MODEL_ID,
+    root: 'base2-free-gpt-5-6-terra',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GPT_5_6_TERRA_PRO_MODEL_ID,
+    root: 'base2-free-gpt-5-6-terra-pro',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GPT_5_6_LUNA_PRO_MODEL_ID,
+    root: 'base2-free-gpt-5-6-luna-pro',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GPT_5_5_MODEL_ID,
+    root: 'base2-free-gpt-5-5',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GPT_5_5_PRO_MODEL_ID,
+    root: 'base2-free-gpt-5-5-pro',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GPT_5_4_PRO_MODEL_ID,
+    root: 'base2-free-gpt-5-4-pro',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_O3_PRO_MODEL_ID,
+    root: 'base2-free-o3-pro',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_CLAUDE_OPUS_5_5_MODEL_ID,
+    root: 'base2-free-claude-opus-5-5',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_CLAUDE_OPUS_5_MODEL_ID,
+    root: 'base2-free-claude-opus-5',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_CLAUDE_SONNET_5_MODEL_ID,
+    root: 'base2-free-claude-sonnet-5',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_CLAUDE_OPUS_4_8_MODEL_ID,
+    root: 'base2-free-claude-opus-4-8',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_CLAUDE_SONNET_4_6_MODEL_ID,
+    root: 'base2-free-claude-sonnet-4-6',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_QWEN3_8_MAX_PRIME_MODEL_ID,
+    root: 'base2-free-qwen3-8-max-prime',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_QWEN3_8_MAX_0902_MODEL_ID,
+    root: 'base2-free-qwen3-8-max-0902',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_QWEN3_8_FLASH_MODEL_ID,
+    root: 'base2-free-qwen3-8-flash',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_QWEN3_8_27B_MODEL_ID,
+    root: 'base2-free-qwen3-8-27b',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_QWEN3_7_MAX_MODEL_ID,
+    root: 'base2-free-qwen3-7-max',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_QWEN3_7_PLUS_MODEL_ID,
+    root: 'base2-free-qwen3-7-plus',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_QWEN3_6_MAX_PREVIEW_MODEL_ID,
+    root: 'base2-free-qwen3-6-max-preview',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_QWEN3_6_PLUS_MODEL_ID,
+    root: 'base2-free-qwen3-6-plus',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GROK_4_7_MODEL_ID,
+    root: 'base2-free-grok-4-7',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GROK_4_6_MODEL_ID,
+    root: 'base2-free-grok-4-6',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GROK_4_5_MODEL_ID,
+    root: 'base2-free-grok-4-5',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GROK_4_20_MODEL_ID,
+    root: 'base2-free-grok-4-20',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GEMINI_3_7_FLASH_MODEL_ID,
+    root: 'base2-free-gemini-3-7-flash',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GEMINI_3_6_FLASH_MODEL_ID,
+    root: 'base2-free-gemini-3-6-flash',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GEMINI_3_5_FLASH_MODEL_ID,
+    root: 'base2-free-gemini-3-5-flash',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_KIMI_K3_MODEL_ID,
+    root: 'base2-free-kimi-k3',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GLM_5_3_PRIME_MODEL_ID,
+    root: 'base2-free-glm-5-3-prime',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GLM_5_3_FLASHX_MODEL_ID,
+    root: 'base2-free-glm-5-3-flashx',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_GLM_5_TURBO_MODEL_ID,
+    root: 'base2-free-glm-5-turbo',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_MISTRAL_LARGE_MODEL_ID,
+    root: 'base2-free-mistral-large',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_CODESTRAL_2508_MODEL_ID,
+    root: 'base2-free-codestral-2508',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
+  },
+  {
+    id: FREEBUFF_LLAMA_4_MAVERICK_MODEL_ID,
+    root: 'base2-free-llama-4-maverick',
+    base: FREEBUFF_MIMO_V25_MODEL_ID,
   },
 ]
 
 describe('provisioned tiers are never offered from a catalog', () => {
   test('the tier list is not empty', () => {
     // Floor: an empty list makes every case below vacuous.
-    expect(
-      FREEBUFF_PROVISIONED_MODELS.length + FREEBUFF_INTERNAL_EVAL_MODELS.length,
-    ).toBe(TIERS.length)
-    const rowIds = [
-      ...FREEBUFF_PROVISIONED_MODELS,
-      ...FREEBUFF_INTERNAL_EVAL_MODELS,
-    ].map((m) => m.id)
+    expect(FREEBUFF_PROVISIONED_MODELS.length).toBe(TIERS.length)
+    const rowIds = [...FREEBUFF_PROVISIONED_MODELS].map((m) => m.id)
     for (const tier of TIERS) expect(rowIds).toContain(tier.id)
   })
 

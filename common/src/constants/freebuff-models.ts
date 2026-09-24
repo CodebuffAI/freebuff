@@ -559,48 +559,62 @@ export const FREEBUFF_GEMINI_38_FLASH_MAX_PRICE = {
  */
 export const FREEBUFF_KIMI_K3_ECO_MODEL_ID = 'crof/kimi-k3-eco'
 /**
- * Extended-context tiers for the DeepSeek V4 and Luna routes.
- *
- * Wire ids only. These are provisioned per-account rather than offered from a
- * client catalog, so they are deliberately absent from FREEBUFF_MODELS and
- * from every quota list — a client that rendered one would offer a row most
- * accounts cannot run. Requests carry the id directly on any free-mode root.
- *
- * Pricing and context windows track their base tier; the suffix names the
- * provisioned variant, not a different model family, so nothing here needs a
- * second entry in the price tables.
- */
-export const FREEBUFF_DEEPSEEK_V4_PRO_MAX_MODEL_ID =
-  'deepseek/deepseek-v4-pro-max'
-export const FREEBUFF_DEEPSEEK_V4_FLASH_MAX_MODEL_ID =
-  'deepseek/deepseek-v4-flash-max'
-export const FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID = 'openai/gpt-5.6-luna-max'
-/**
- * Early-access tiers, provisioned per-account on the same terms as the
- * extended-context tiers above: wire ids only, absent from FREEBUFF_MODELS and
- * every quota list, and carried directly on the request by accounts that hold
- * the grant. Sessions are admitted against the base route each one is built
- * on, so none of them needs its own quota or price entry.
+ * Early-access tiers, provisioned per-account: wire ids only, absent from
+ * FREEBUFF_MODELS and every quota list, and carried directly on the request by
+ * accounts that hold the grant. Sessions are admitted against the base route
+ * each one is built on, so none of them needs its own quota or price entry.
  */
 export const FREEBUFF_DEEPSEEK_V41_FLASH_MODEL_ID =
   'deepseek/deepseek-v4.1-flash'
-export const FREEBUFF_DEEPSEEK_V41_PRO_MODEL_ID = 'deepseek/deepseek-v4.1-pro'
 export const FREEBUFF_GLM_V53_MODEL_ID = 'z-ai/glm-5.3'
 
 /**
- * Internal evaluation routes. NOT released, and not to be surfaced.
- *
- * Staff-only wire ids for two things still under evaluation: an unreleased
- * Fable 5.1 build, and a discounted Astra lane on pricing we have not
- * announced. Access is enabled per account, so neither is in FREEBUFF_MODELS,
- * FREEBUFF_WEB_MODELS or any quota list, and neither may appear in a picker,
- * the changelog or release notes until a decision is made on each. See
- * FREEBUFF_INTERNAL_EVAL_MODELS for the rows.
+ * Further provisioned routes, on the same terms as the early-access tiers
+ * above: granted per account, absent from FREEBUFF_MODELS and every quota
+ * list, carried directly on the request by accounts that hold the grant. See
+ * FREEBUFF_PROVISIONED_MODELS for the rows.
  */
-export const FREEBUFF_FABLE_5_1_TEST_MODEL_ID =
-  'anthropic/claude-fable-5.1-test'
-export const FREEBUFF_GPT_6_ASTRA_DISCOUNT_TEST_MODEL_ID =
-  'openai/gpt-6-astra-discount-test'
+export const FREEBUFF_GPT_6_SOL_MODEL_ID = 'openai/gpt-6-sol'
+export const FREEBUFF_GPT_6_SOL_PRO_MODEL_ID = 'openai/gpt-6-sol-pro'
+export const FREEBUFF_GPT_6_LUNA_PRO_MODEL_ID = 'openai/gpt-6-luna-pro'
+export const FREEBUFF_GPT_6_ASTRA_MODEL_ID = 'openai/gpt-6-astra'
+export const FREEBUFF_GPT_6_ASTRA_PRO_MODEL_ID = 'openai/gpt-6-astra-pro'
+export const FREEBUFF_GPT_5_6_SOL_MODEL_ID = 'openai/gpt-5.6-sol'
+export const FREEBUFF_GPT_5_6_SOL_PRO_MODEL_ID = 'openai/gpt-5.6-sol-pro'
+export const FREEBUFF_GPT_5_6_TERRA_MODEL_ID = 'openai/gpt-5.6-terra'
+export const FREEBUFF_GPT_5_6_TERRA_PRO_MODEL_ID = 'openai/gpt-5.6-terra-pro'
+export const FREEBUFF_GPT_5_6_LUNA_PRO_MODEL_ID = 'openai/gpt-5.6-luna-pro'
+export const FREEBUFF_GPT_5_5_MODEL_ID = 'openai/gpt-5.5'
+export const FREEBUFF_GPT_5_5_PRO_MODEL_ID = 'openai/gpt-5.5-pro'
+export const FREEBUFF_GPT_5_4_PRO_MODEL_ID = 'openai/gpt-5.4-pro'
+export const FREEBUFF_O3_PRO_MODEL_ID = 'openai/o3-pro'
+export const FREEBUFF_CLAUDE_OPUS_5_5_MODEL_ID = 'anthropic/claude-opus-5.5'
+export const FREEBUFF_CLAUDE_OPUS_5_MODEL_ID = 'anthropic/claude-opus-5'
+export const FREEBUFF_CLAUDE_SONNET_5_MODEL_ID = 'anthropic/claude-sonnet-5'
+export const FREEBUFF_CLAUDE_OPUS_4_8_MODEL_ID = 'anthropic/claude-opus-4.8'
+export const FREEBUFF_CLAUDE_SONNET_4_6_MODEL_ID = 'anthropic/claude-sonnet-4.6'
+export const FREEBUFF_QWEN3_8_MAX_PRIME_MODEL_ID = 'qwen/qwen3.8-max-prime'
+export const FREEBUFF_QWEN3_8_MAX_0902_MODEL_ID = 'qwen/qwen3.8-max-0902'
+export const FREEBUFF_QWEN3_8_FLASH_MODEL_ID = 'qwen/qwen3.8-flash'
+export const FREEBUFF_QWEN3_8_27B_MODEL_ID = 'qwen/qwen3.8-27b'
+export const FREEBUFF_QWEN3_7_MAX_MODEL_ID = 'qwen/qwen3.7-max'
+export const FREEBUFF_QWEN3_7_PLUS_MODEL_ID = 'qwen/qwen3.7-plus'
+export const FREEBUFF_QWEN3_6_MAX_PREVIEW_MODEL_ID = 'qwen/qwen3.6-max-preview'
+export const FREEBUFF_QWEN3_6_PLUS_MODEL_ID = 'qwen/qwen3.6-plus'
+export const FREEBUFF_GROK_4_7_MODEL_ID = 'x-ai/grok-4.7'
+export const FREEBUFF_GROK_4_6_MODEL_ID = 'x-ai/grok-4.6'
+export const FREEBUFF_GROK_4_5_MODEL_ID = 'x-ai/grok-4.5'
+export const FREEBUFF_GROK_4_20_MODEL_ID = 'x-ai/grok-4.20'
+export const FREEBUFF_GEMINI_3_7_FLASH_MODEL_ID = 'google/gemini-3.7-flash'
+export const FREEBUFF_GEMINI_3_6_FLASH_MODEL_ID = 'google/gemini-3.6-flash'
+export const FREEBUFF_GEMINI_3_5_FLASH_MODEL_ID = 'google/gemini-3.5-flash'
+export const FREEBUFF_KIMI_K3_MODEL_ID = 'moonshotai/kimi-k3'
+export const FREEBUFF_GLM_5_3_PRIME_MODEL_ID = 'z-ai/glm-5.3-prime'
+export const FREEBUFF_GLM_5_3_FLASHX_MODEL_ID = 'z-ai/glm-5.3-flashx'
+export const FREEBUFF_GLM_5_TURBO_MODEL_ID = 'z-ai/glm-5-turbo'
+export const FREEBUFF_MISTRAL_LARGE_MODEL_ID = 'mistralai/mistral-large'
+export const FREEBUFF_CODESTRAL_2508_MODEL_ID = 'mistralai/codestral-2508'
+export const FREEBUFF_LLAMA_4_MAVERICK_MODEL_ID = 'meta-llama/llama-4-maverick'
 
 /**
  * Claude Fable 5.1 — Anthropic's frontier model, offered to free CLI users as a
@@ -1638,59 +1652,9 @@ const DEEPSEEK_V4_FLASH_MODEL = {
  * Reasoning defaults, pricing and context tracking their base tier is the
  * point of the suffix — it names the provisioned variant, not a new family.
  */
-const DEEPSEEK_V4_PRO_MAX_MODEL = {
-  id: FREEBUFF_DEEPSEEK_V4_PRO_MAX_MODEL_ID,
-  displayName: 'DeepSeek V4 Pro (Max context)',
-  tagline: 'Extended context',
-  availability: 'always',
-  warning: FREEBUFF_AI_TRAINING_NOTICE,
-  dataUse: 'training',
-  premium: false,
-  multimodal: false,
-  reasoningEffort: 'high',
-  defaultEffort: 'high',
-} as const satisfies FreebuffModelOption
-
-const DEEPSEEK_V4_FLASH_MAX_MODEL = {
-  id: FREEBUFF_DEEPSEEK_V4_FLASH_MAX_MODEL_ID,
-  displayName: 'DeepSeek V4 Flash (Max context)',
-  tagline: 'Extended context',
-  availability: 'always',
-  warning: FREEBUFF_AI_TRAINING_NOTICE,
-  dataUse: 'training',
-  premium: false,
-  multimodal: false,
-  reasoningEffort: 'high',
-  defaultEffort: 'high',
-} as const satisfies FreebuffModelOption
-
-const GPT_5_6_LUNA_MAX_MODEL = {
-  id: FREEBUFF_GPT_5_6_LUNA_MAX_MODEL_ID,
-  displayName: 'GPT-5.6 Luna (Max context)',
-  tagline: 'Extended context',
-  availability: 'always',
-  dataUse: 'service',
-  premium: true,
-  multimodal: false,
-  reasoningEffort: FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT,
-} as const satisfies FreebuffModelOption
-
 const DEEPSEEK_V41_FLASH_MODEL = {
   id: FREEBUFF_DEEPSEEK_V41_FLASH_MODEL_ID,
   displayName: 'DeepSeek V4.1 Flash',
-  tagline: 'Early access',
-  availability: 'always',
-  warning: FREEBUFF_AI_TRAINING_NOTICE,
-  dataUse: 'training',
-  premium: false,
-  multimodal: false,
-  reasoningEffort: 'high',
-  defaultEffort: 'high',
-} as const satisfies FreebuffModelOption
-
-const DEEPSEEK_V41_PRO_MODEL = {
-  id: FREEBUFF_DEEPSEEK_V41_PRO_MODEL_ID,
-  displayName: 'DeepSeek V4.1 Pro',
   tagline: 'Early access',
   availability: 'always',
   warning: FREEBUFF_AI_TRAINING_NOTICE,
@@ -1713,53 +1677,572 @@ const GLM_V53_MODEL = {
   defaultEffort: 'high',
 } as const satisfies FreebuffModelOption
 
+const GPT_6_SOL_MODEL = {
+  id: FREEBUFF_GPT_6_SOL_MODEL_ID,
+  displayName: 'GPT-6 Sol',
+  tagline: 'Most capable',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_6_SOL_PRO_MODEL = {
+  id: FREEBUFF_GPT_6_SOL_PRO_MODEL_ID,
+  displayName: 'GPT-6 Sol Pro',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_6_LUNA_PRO_MODEL = {
+  id: FREEBUFF_GPT_6_LUNA_PRO_MODEL_ID,
+  displayName: 'GPT-6 Luna Pro',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_6_ASTRA_MODEL = {
+  id: FREEBUFF_GPT_6_ASTRA_MODEL_ID,
+  displayName: 'GPT-6 Astra',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_6_ASTRA_PRO_MODEL = {
+  id: FREEBUFF_GPT_6_ASTRA_PRO_MODEL_ID,
+  displayName: 'GPT-6 Astra Pro',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_5_6_SOL_MODEL = {
+  id: FREEBUFF_GPT_5_6_SOL_MODEL_ID,
+  displayName: 'GPT-5.6 Sol',
+  tagline: 'Most capable',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_5_6_SOL_PRO_MODEL = {
+  id: FREEBUFF_GPT_5_6_SOL_PRO_MODEL_ID,
+  displayName: 'GPT-5.6 Sol Pro',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_5_6_TERRA_MODEL = {
+  id: FREEBUFF_GPT_5_6_TERRA_MODEL_ID,
+  displayName: 'GPT-5.6 Terra',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_5_6_TERRA_PRO_MODEL = {
+  id: FREEBUFF_GPT_5_6_TERRA_PRO_MODEL_ID,
+  displayName: 'GPT-5.6 Terra Pro',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_5_6_LUNA_PRO_MODEL = {
+  id: FREEBUFF_GPT_5_6_LUNA_PRO_MODEL_ID,
+  displayName: 'GPT-5.6 Luna Pro',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_5_5_MODEL = {
+  id: FREEBUFF_GPT_5_5_MODEL_ID,
+  displayName: 'GPT-5.5',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_5_5_PRO_MODEL = {
+  id: FREEBUFF_GPT_5_5_PRO_MODEL_ID,
+  displayName: 'GPT-5.5 Pro',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GPT_5_4_PRO_MODEL = {
+  id: FREEBUFF_GPT_5_4_PRO_MODEL_ID,
+  displayName: 'GPT-5.4 Pro',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const O3_PRO_MODEL = {
+  id: FREEBUFF_O3_PRO_MODEL_ID,
+  displayName: 'o3 Pro',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const CLAUDE_OPUS_5_5_MODEL = {
+  id: FREEBUFF_CLAUDE_OPUS_5_5_MODEL_ID,
+  displayName: 'Claude Opus 5.5',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const CLAUDE_OPUS_5_MODEL = {
+  id: FREEBUFF_CLAUDE_OPUS_5_MODEL_ID,
+  displayName: 'Claude Opus 5',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const CLAUDE_SONNET_5_MODEL = {
+  id: FREEBUFF_CLAUDE_SONNET_5_MODEL_ID,
+  displayName: 'Claude Sonnet 5',
+  tagline: 'Balanced',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const CLAUDE_OPUS_4_8_MODEL = {
+  id: FREEBUFF_CLAUDE_OPUS_4_8_MODEL_ID,
+  displayName: 'Claude Opus 4.8',
+  tagline: 'Deep reasoning',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const CLAUDE_SONNET_4_6_MODEL = {
+  id: FREEBUFF_CLAUDE_SONNET_4_6_MODEL_ID,
+  displayName: 'Claude Sonnet 4.6',
+  tagline: 'Balanced',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const QWEN3_8_MAX_PRIME_MODEL = {
+  id: FREEBUFF_QWEN3_8_MAX_PRIME_MODEL_ID,
+  displayName: 'Qwen3.8 Max Prime',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const QWEN3_8_MAX_0902_MODEL = {
+  id: FREEBUFF_QWEN3_8_MAX_0902_MODEL_ID,
+  displayName: 'Qwen3.8 Max',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const QWEN3_8_FLASH_MODEL = {
+  id: FREEBUFF_QWEN3_8_FLASH_MODEL_ID,
+  displayName: 'Qwen3.8 Flash',
+  tagline: 'Fast',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const QWEN3_8_27B_MODEL = {
+  id: FREEBUFF_QWEN3_8_27B_MODEL_ID,
+  displayName: 'Qwen3.8 27B',
+  tagline: 'Fast',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const QWEN3_7_MAX_MODEL = {
+  id: FREEBUFF_QWEN3_7_MAX_MODEL_ID,
+  displayName: 'Qwen3.7 Max',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const QWEN3_7_PLUS_MODEL = {
+  id: FREEBUFF_QWEN3_7_PLUS_MODEL_ID,
+  displayName: 'Qwen3.7 Plus',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const QWEN3_6_MAX_PREVIEW_MODEL = {
+  id: FREEBUFF_QWEN3_6_MAX_PREVIEW_MODEL_ID,
+  displayName: 'Qwen3.6 Max',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const QWEN3_6_PLUS_MODEL = {
+  id: FREEBUFF_QWEN3_6_PLUS_MODEL_ID,
+  displayName: 'Qwen3.6 Plus',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GROK_4_7_MODEL = {
+  id: FREEBUFF_GROK_4_7_MODEL_ID,
+  displayName: 'Grok 4.7',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GROK_4_6_MODEL = {
+  id: FREEBUFF_GROK_4_6_MODEL_ID,
+  displayName: 'Grok 4.6',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GROK_4_5_MODEL = {
+  id: FREEBUFF_GROK_4_5_MODEL_ID,
+  displayName: 'Grok 4.5',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GROK_4_20_MODEL = {
+  id: FREEBUFF_GROK_4_20_MODEL_ID,
+  displayName: 'Grok 4.20',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GEMINI_3_7_FLASH_MODEL = {
+  id: FREEBUFF_GEMINI_3_7_FLASH_MODEL_ID,
+  displayName: 'Gemini 3.7 Flash',
+  tagline: 'Fast',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GEMINI_3_6_FLASH_MODEL = {
+  id: FREEBUFF_GEMINI_3_6_FLASH_MODEL_ID,
+  displayName: 'Gemini 3.6 Flash',
+  tagline: 'Fast',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GEMINI_3_5_FLASH_MODEL = {
+  id: FREEBUFF_GEMINI_3_5_FLASH_MODEL_ID,
+  displayName: 'Gemini 3.5 Flash',
+  tagline: 'Fast',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const KIMI_K3_MODEL = {
+  id: FREEBUFF_KIMI_K3_MODEL_ID,
+  displayName: 'Kimi K3',
+  tagline: 'Agentic coding',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GLM_5_3_PRIME_MODEL = {
+  id: FREEBUFF_GLM_5_3_PRIME_MODEL_ID,
+  displayName: 'GLM 5.3 Prime',
+  tagline: 'Strong all-around',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GLM_5_3_FLASHX_MODEL = {
+  id: FREEBUFF_GLM_5_3_FLASHX_MODEL_ID,
+  displayName: 'GLM 5.3 FlashX',
+  tagline: 'Fast',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const GLM_5_TURBO_MODEL = {
+  id: FREEBUFF_GLM_5_TURBO_MODEL_ID,
+  displayName: 'GLM 5 Turbo',
+  tagline: 'Fast',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const MISTRAL_LARGE_MODEL = {
+  id: FREEBUFF_MISTRAL_LARGE_MODEL_ID,
+  displayName: 'Mistral Large',
+  tagline: 'Balanced',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const CODESTRAL_2508_MODEL = {
+  id: FREEBUFF_CODESTRAL_2508_MODEL_ID,
+  displayName: 'Codestral',
+  tagline: 'Code-focused',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: false,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
+const LLAMA_4_MAVERICK_MODEL = {
+  id: FREEBUFF_LLAMA_4_MAVERICK_MODEL_ID,
+  displayName: 'Llama 4 Maverick',
+  tagline: 'Balanced',
+  availability: 'always',
+  dataUse: 'service',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
+} as const satisfies FreebuffModelOption
+
 /**
  * The provisioned tiers, as rows. Exported for the provisioning tooling and
  * for support lookups; NOT spread into any catalog, for the reason above.
  */
 export const FREEBUFF_PROVISIONED_MODELS = [
-  DEEPSEEK_V4_PRO_MAX_MODEL,
-  DEEPSEEK_V4_FLASH_MAX_MODEL,
-  GPT_5_6_LUNA_MAX_MODEL,
   DEEPSEEK_V41_FLASH_MODEL,
-  DEEPSEEK_V41_PRO_MODEL,
   GLM_V53_MODEL,
-] as const satisfies readonly FreebuffModelOption[]
-
-const FABLE_5_1_TEST_MODEL = {
-  id: FREEBUFF_FABLE_5_1_TEST_MODEL_ID,
-  displayName: 'Claude Fable 5.1 (hidden test)',
-  tagline: 'Internal evaluation only',
-  availability: 'always',
-  warning: FREEBUFF_AI_TRAINING_NOTICE,
-  dataUse: 'training',
-  premium: true,
-  multimodal: true,
-  efforts: EFFORTS_THROUGH_MAX,
-  defaultEffort: 'high',
-} as const satisfies FreebuffModelOption
-
-const GPT_6_ASTRA_DISCOUNT_TEST_MODEL = {
-  id: FREEBUFF_GPT_6_ASTRA_DISCOUNT_TEST_MODEL_ID,
-  displayName: 'GPT-6 Astra (discount test)',
-  tagline: 'Discount route — evaluation only',
-  availability: 'always',
-  dataUse: 'service',
-  // TRUE so it can never fall into FREEBUFF_STANDARD_MODEL_IDS if it is ever
-  // added to a catalog by mistake: that set is derived from `!premium`.
-  premium: true,
-  multimodal: false,
-  reasoningEffort: FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT,
-} as const satisfies FreebuffModelOption
-
-/**
- * The internal evaluation routes, as rows, for support lookups and the usage
- * ledger's display names. NOT spread into any catalog: see
- * FREEBUFF_FABLE_5_1_TEST_MODEL_ID.
- */
-export const FREEBUFF_INTERNAL_EVAL_MODELS = [
-  FABLE_5_1_TEST_MODEL,
-  GPT_6_ASTRA_DISCOUNT_TEST_MODEL,
+  GPT_6_SOL_MODEL,
+  GPT_6_SOL_PRO_MODEL,
+  GPT_6_LUNA_PRO_MODEL,
+  GPT_6_ASTRA_MODEL,
+  GPT_6_ASTRA_PRO_MODEL,
+  GPT_5_6_SOL_MODEL,
+  GPT_5_6_SOL_PRO_MODEL,
+  GPT_5_6_TERRA_MODEL,
+  GPT_5_6_TERRA_PRO_MODEL,
+  GPT_5_6_LUNA_PRO_MODEL,
+  GPT_5_5_MODEL,
+  GPT_5_5_PRO_MODEL,
+  GPT_5_4_PRO_MODEL,
+  O3_PRO_MODEL,
+  CLAUDE_OPUS_5_5_MODEL,
+  CLAUDE_OPUS_5_MODEL,
+  CLAUDE_SONNET_5_MODEL,
+  CLAUDE_OPUS_4_8_MODEL,
+  CLAUDE_SONNET_4_6_MODEL,
+  QWEN3_8_MAX_PRIME_MODEL,
+  QWEN3_8_MAX_0902_MODEL,
+  QWEN3_8_FLASH_MODEL,
+  QWEN3_8_27B_MODEL,
+  QWEN3_7_MAX_MODEL,
+  QWEN3_7_PLUS_MODEL,
+  QWEN3_6_MAX_PREVIEW_MODEL,
+  QWEN3_6_PLUS_MODEL,
+  GROK_4_7_MODEL,
+  GROK_4_6_MODEL,
+  GROK_4_5_MODEL,
+  GROK_4_20_MODEL,
+  GEMINI_3_7_FLASH_MODEL,
+  GEMINI_3_6_FLASH_MODEL,
+  GEMINI_3_5_FLASH_MODEL,
+  KIMI_K3_MODEL,
+  GLM_5_3_PRIME_MODEL,
+  GLM_5_3_FLASHX_MODEL,
+  GLM_5_TURBO_MODEL,
+  MISTRAL_LARGE_MODEL,
+  CODESTRAL_2508_MODEL,
+  LLAMA_4_MAVERICK_MODEL,
 ] as const satisfies readonly FreebuffModelOption[]
 
 const MINIMAX_M3_MODEL = {
@@ -2580,11 +3063,6 @@ export const FREEBUFF_PAUSED_FREE_MODEL_IDS: readonly string[] = [
   // The row stays in SUPPORTED_FREEBUFF_MODELS and its agent entries stay in
   // FREE_MODE_AGENT_MODELS so sessions admitted before the deploy drain instead
   // of failing mid-turn — the door is shut in front of them, not under them.
-  //
-  // NOT withdrawn with it: FREEBUFF_DEEPSEEK_V4_PRO_MAX_MODEL_ID, the
-  // provisioned extended-context tier. That is granted per account rather than
-  // picked, so it is not part of what free mode hands out, and pausing it would
-  // break the accounts it was granted to without any of them asking.
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   // Withdrawn from free mode entirely on 2026-08-27: the anonymous host ended
   // the free promotion, so the row is no longer served to us at all. This is

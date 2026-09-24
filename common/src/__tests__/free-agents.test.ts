@@ -380,9 +380,7 @@ describe('free mode agent model allowlist', () => {
     // and Web covers three the CLI cannot select. Checking only one map would
     // read the other's ids as stale.
     const roots = new Set<string>(FREEBUFF_ROOT_AGENT_IDS)
-    const missing = [...FREEBUFF_BASE3_AGENT_IDS].filter(
-      (id) => !roots.has(id),
-    )
+    const missing = [...FREEBUFF_BASE3_AGENT_IDS].filter((id) => !roots.has(id))
     expect(missing).toEqual([])
 
     const stale = FREEBUFF_ROOT_AGENT_IDS.filter(
@@ -527,7 +525,6 @@ describe('free mode agent model allowlist', () => {
       ),
     ).toBe(false)
   })
-
 })
 
 describe('isLimitedTierSubstitutedModel', () => {
@@ -541,12 +538,12 @@ describe('isLimitedTierSubstitutedModel', () => {
   test('admits the limited model on roots pinned to something else', () => {
     for (const agentId of OUT_OF_TIER_PINNED_ROOTS) {
       // The premise: without this, billing would call the substituted turn metered.
-      expect(isFreeModeAllowedAgentModel(agentId, LIMITED_FREEBUFF_MODEL_ID)).toBe(
-        false,
-      )
-      expect(isLimitedTierSubstitutedModel(agentId, LIMITED_FREEBUFF_MODEL_ID)).toBe(
-        true,
-      )
+      expect(
+        isFreeModeAllowedAgentModel(agentId, LIMITED_FREEBUFF_MODEL_ID),
+      ).toBe(false)
+      expect(
+        isLimitedTierSubstitutedModel(agentId, LIMITED_FREEBUFF_MODEL_ID),
+      ).toBe(true)
       // The published, versioned form is how ids actually arrive.
       expect(
         isLimitedTierSubstitutedModel(
@@ -716,14 +713,49 @@ describe('every freebuff root agent declares a prompt opening', () => {
     'base2-free-fable': BASE2,
     // Provisioned-tier and internal-evaluation roots; createBase2('free', …)
     // like their siblings.
-    'base2-free-deepseek-pro-max': BASE2,
-    'base2-free-deepseek-flash-max': BASE2,
-    'base2-free-luna-max': BASE2,
     'base2-free-deepseek-v4-1-flash': BASE2,
-    'base2-free-deepseek-v4-1-pro': BASE2,
     'base2-free-glm-5-3': BASE2,
-    'base2-free-astra-discount-test': BASE2,
-    'base2-free-fable-test': BASE2,
+    'base2-free-gpt-6-sol': BASE2,
+    'base2-free-gpt-6-sol-pro': BASE2,
+    'base2-free-gpt-6-luna-pro': BASE2,
+    'base2-free-gpt-6-astra': BASE2,
+    'base2-free-gpt-6-astra-pro': BASE2,
+    'base2-free-gpt-5-6-sol': BASE2,
+    'base2-free-gpt-5-6-sol-pro': BASE2,
+    'base2-free-gpt-5-6-terra': BASE2,
+    'base2-free-gpt-5-6-terra-pro': BASE2,
+    'base2-free-gpt-5-6-luna-pro': BASE2,
+    'base2-free-gpt-5-5': BASE2,
+    'base2-free-gpt-5-5-pro': BASE2,
+    'base2-free-gpt-5-4-pro': BASE2,
+    'base2-free-o3-pro': BASE2,
+    'base2-free-claude-opus-5-5': BASE2,
+    'base2-free-claude-opus-5': BASE2,
+    'base2-free-claude-sonnet-5': BASE2,
+    'base2-free-claude-opus-4-8': BASE2,
+    'base2-free-claude-sonnet-4-6': BASE2,
+    'base2-free-qwen3-8-max-prime': BASE2,
+    'base2-free-qwen3-8-max-0902': BASE2,
+    'base2-free-qwen3-8-flash': BASE2,
+    'base2-free-qwen3-8-27b': BASE2,
+    'base2-free-qwen3-7-max': BASE2,
+    'base2-free-qwen3-7-plus': BASE2,
+    'base2-free-qwen3-6-max-preview': BASE2,
+    'base2-free-qwen3-6-plus': BASE2,
+    'base2-free-grok-4-7': BASE2,
+    'base2-free-grok-4-6': BASE2,
+    'base2-free-grok-4-5': BASE2,
+    'base2-free-grok-4-20': BASE2,
+    'base2-free-gemini-3-7-flash': BASE2,
+    'base2-free-gemini-3-6-flash': BASE2,
+    'base2-free-gemini-3-5-flash': BASE2,
+    'base2-free-kimi-k3': BASE2,
+    'base2-free-glm-5-3-prime': BASE2,
+    'base2-free-glm-5-3-flashx': BASE2,
+    'base2-free-glm-5-turbo': BASE2,
+    'base2-free-mistral-large': BASE2,
+    'base2-free-codestral-2508': BASE2,
+    'base2-free-llama-4-maverick': BASE2,
     // Muse Spark roots (1.2 draining, 1.3 live); createBase2('free', …) like
     // their siblings.
     'base2-free-muse-spark': BASE2,
@@ -742,7 +774,9 @@ describe('every freebuff root agent declares a prompt opening', () => {
     // Web/Cloud base3 roots do the same: createWebBase3Root appends the Web
     // appendix after base3's prompt, never before it. So do the CLI roots —
     // createBase3CliRoot appends its own appendix the same way.
-    ...Object.fromEntries([...FREEBUFF_BASE3_AGENT_IDS].map((id) => [id, BASE3])),
+    ...Object.fromEntries(
+      [...FREEBUFF_BASE3_AGENT_IDS].map((id) => [id, BASE3]),
+    ),
     // The Desktop auto-run decider writes its own prompt rather than composing
     // onto base3's: base3 tells the model it is the coding agent, and this one
     // exists to say it is not.
