@@ -67,7 +67,10 @@ if (mode === 'spawn-failure') {
 
 if (mode === 'reused-pid') {
   startTerminalWatchdog({ ttyPath, windowsOwnerStartOverride: '1' })
-  await waitForArmed()
+  // NOT waitForArmed(): a watchdog that finds no matching owner does not wait,
+  // so it writes `.armed`, fires, and deletes `.armed` again within
+  // milliseconds — a 50ms poll can miss the marker entirely (exit 3 on the
+  // release pipeline's Windows smoke). The tty write below is the proof.
   const deadline = Date.now() + 40_000
   while (Date.now() < deadline) {
     let written = ''
