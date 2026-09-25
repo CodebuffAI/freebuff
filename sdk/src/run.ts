@@ -290,6 +290,10 @@ export type RunOptions = {
   /** Stable id of the project this run works on. Defaults to a hash of the
    *  repository root resolved from `cwd`. */
   projectKey?: string
+  /** Trace session id for a run with no `previousRun` (a UUID). Lets a host
+   *  know a new conversation's trace session before its first run returns.
+   *  Ignored when `previousRun` carries one. Unset mints a random UUID. */
+  traceSessionId?: string
 }
 
 /**
@@ -441,7 +445,9 @@ export async function run(options: RunExecutionOptions): Promise<RunState> {
   if (options.previousRun && !previousInference && options.byok && !options.allowInferenceSourceChange) {
     return {
       sessionState: options.previousRun.sessionState,
-      traceSessionId: options.previousRun.traceSessionId ?? crypto.randomUUID(),
+      traceSessionId: options.previousRun.traceSessionId ??
+        options.traceSessionId ??
+        crypto.randomUUID(),
       inference: undefined,
       output: { type: 'error', message: 'This session has no inference source pin; start a new BYOK task.' },
     }
@@ -461,7 +467,9 @@ export async function run(options: RunExecutionOptions): Promise<RunState> {
   ) {
     return {
       sessionState: options.previousRun?.sessionState,
-      traceSessionId: options.previousRun?.traceSessionId ?? crypto.randomUUID(),
+      traceSessionId: options.previousRun?.traceSessionId ??
+        options.traceSessionId ??
+        crypto.randomUUID(),
       inference: previousInference,
       output: { type: 'error', message: 'This session is bound to a different inference connection; start a new task.' },
     }
@@ -473,7 +481,9 @@ export async function run(options: RunExecutionOptions): Promise<RunState> {
     return {
       sessionState: options.previousRun?.sessionState,
       traceSessionId:
-        options.previousRun?.traceSessionId ?? crypto.randomUUID(),
+        options.previousRun?.traceSessionId ??
+        options.traceSessionId ??
+        crypto.randomUUID(),
       inference: requestedInference,
       output: {
         type: 'error',
@@ -543,6 +553,7 @@ async function runOnce({
   onCompaction,
   terminalShell,
   projectKey,
+  traceSessionId: traceSessionIdOption,
 }: RunExecutionOptions): Promise<RunState> {
   const fsSourceValue = typeof fsSource === 'function' ? fsSource() : fsSource
   const fs = await fsSourceValue
@@ -600,7 +611,8 @@ async function runOnce({
       logger,
     })
   }
-  const traceSessionId = previousRun?.traceSessionId ?? crypto.randomUUID()
+  const traceSessionId =
+    previousRun?.traceSessionId ?? traceSessionIdOption ?? crypto.randomUUID()
   applyTerminalShell(sessionState, terminalShell)
 
   if (byok) {

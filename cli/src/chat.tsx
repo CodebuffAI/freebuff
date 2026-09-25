@@ -36,6 +36,7 @@ import {
   DOCK_PANEL_MAX_WIDTH,
   getDockPanelLayout,
 } from '@codebuff/common/ads/inline-ad-layout'
+import { adTraceContextFromRunState } from '@codebuff/common/ads/trace-context'
 import { ChatInputBar } from './components/chat-input-bar'
 import { ChatHeader } from './components/chat-header'
 import { FreebuffActiveSessionSummary } from './components/freebuff-active-session-summary'
@@ -593,10 +594,14 @@ export const Chat = ({
     if (hasSelectedByokConnection || !getAdsEnabled()) return
     const projectRoot = tryGetProjectRoot()
     if (!projectRoot) return
+    const { chatSessionId, runState } = useChatStore.getState()
     void askAgenticOffer({
       projectRoot,
-      conversationId: useChatStore.getState().chatSessionId,
+      conversationId: chatSessionId,
       messages: messagesRef.current,
+      // Ids only: the last completed run's trace. A conversation's first
+      // turn has no run state yet, so it carries none.
+      traceContext: adTraceContextFromRunState(runState),
     }).then((offered) => {
       if (offered) refreshSponsoredProposalNow()
     })

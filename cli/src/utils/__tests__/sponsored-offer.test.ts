@@ -65,6 +65,27 @@ describe('the request body', () => {
     expect(body!.conversationId).toBe('chat-1')
   })
 
+  test('carries the trace pointers when given, and nothing when not', () => {
+    const traceContext = {
+      traceSessionId: '11111111-2222-4333-8444-555555555555',
+      previousRunId: '66666666-7777-4888-9999-aaaaaaaaaaaa',
+    }
+    const base = {
+      conversationId: 'chat-1',
+      messages: CONVERSATION,
+      capability: CAPABILITY,
+      device: { os: 'macos' as const, timezone: 'UTC', locale: 'en-US' },
+    }
+    const body = buildAgenticOfferRequest({ ...base, traceContext })!
+    expect(agenticOfferRequestSchema.safeParse(body).success).toBe(true)
+    expect(body.traceContext).toEqual(traceContext)
+    for (const none of [undefined, null]) {
+      expect(
+        buildAgenticOfferRequest({ ...base, traceContext: none }),
+      ).not.toHaveProperty('traceContext')
+    }
+  })
+
   test('never asks for a setup invitation: the terminal cannot draw one', () => {
     const body = buildAgenticOfferRequest({
       conversationId: 'chat-1',

@@ -135,6 +135,12 @@ export const agenticOfferRequestSchema = z.object({
    * be offered; absent is the worktree flow every released build runs.
    */
   inPlaceExecutionVersion: sponsoredInPlaceVersionSchema.optional(),
+  /**
+   * Pointer ids to the conversation's trace, never its text
+   * (`trace-context.ts`). Unknown here and read with `parseAdTraceContext`, so
+   * a malformed value is dropped instead of failing the request.
+   */
+  traceContext: z.unknown().optional(),
 })
 
 export type AgenticOfferRequest = z.infer<typeof agenticOfferRequestSchema>

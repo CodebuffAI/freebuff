@@ -46,6 +46,7 @@ import { sponsoredWorkspaceId } from './sponsored-proposal-target'
 import type { SponsoredCliCapabilityResult } from './sponsored-cli-capability'
 import type { AdDeviceInfo } from './ad-client-identity'
 import type { SponsoredCapability } from '@codebuff/common/ads/sponsored-capability'
+import type { AdTraceContext } from '@codebuff/common/ads/trace-context'
 import type { ChatMessage } from '../types/chat'
 
 /** The turns the route is shown. Desktop's figure, and the route's cap is 20. */
@@ -138,6 +139,8 @@ export function buildAgenticOfferRequest(input: {
   workspaceId?: string | null
   /** The local harness's forced campaign; never set outside it. */
   localTestCampaignId?: string | null
+  /** Pointer ids to this conversation's trace, never its text. */
+  traceContext?: AdTraceContext | null
 }): AgenticOfferRequest | null {
   const sponsored = input.capability.sponsoredCapability
   // No capability, no offer: the route would refuse an in-place CLI request
@@ -161,6 +164,7 @@ export function buildAgenticOfferRequest(input: {
       ? { localTestCampaignId: input.localTestCampaignId }
       : {}),
     inPlaceExecutionVersion: SPONSORED_IN_PLACE_VERSION,
+    ...(input.traceContext ? { traceContext: input.traceContext } : {}),
   }
 }
 
@@ -212,6 +216,7 @@ export async function askAgenticOffer(
     projectRoot: string
     conversationId: string
     messages: readonly ChatMessage[]
+    traceContext?: AdTraceContext | null
   },
   deps: AgenticOfferDeps = defaultDeps,
 ): Promise<boolean> {
@@ -225,6 +230,7 @@ export async function askAgenticOffer(
       device: deps.device(),
       workspaceId: deps.workspaceId(input.projectRoot),
       localTestCampaignId: deps.localTestCampaign?.() ?? null,
+      traceContext: input.traceContext ?? null,
     })
     if (!body) return false
     const response = await deps.request(body, authToken, deps.userAgent())
