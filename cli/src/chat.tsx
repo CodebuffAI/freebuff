@@ -1620,6 +1620,7 @@ export const Chat = ({
   // to prevent message loss during rapid streaming (race condition fix)
   useLayoutEffect(() => {
     setMessageBlockContext({
+      readOnly: false,
       theme,
       markdownPalette,
       messageTree,

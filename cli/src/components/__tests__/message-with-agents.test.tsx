@@ -106,6 +106,7 @@ const initializeStore = (overrides: {
 } = {}) => {
   useMessageBlockStore.setState({
     context: {
+      readOnly: false,
       theme,
       markdownPalette: basePalette,
       messageTree: overrides.messageTree ?? new Map<string, ChatMessage[]>(),

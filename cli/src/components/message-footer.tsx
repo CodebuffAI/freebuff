@@ -13,6 +13,7 @@ import {
   isCoveredBySubscription,
 } from '../utils/subscription'
 import { useTheme } from '../hooks/use-theme'
+import { useMessageBlockStore } from '../state/message-block-store'
 import {
   useFeedbackStore,
   selectIsFeedbackOpenForMessage,
@@ -48,6 +49,7 @@ export const MessageFooter: React.FC<MessageFooterProps> = ({
   onCloseFeedback,
 }) => {
   const theme = useTheme()
+  const readOnly = useMessageBlockStore((state) => state.context.readOnly)
 
   // Memoize selectors to prevent new function references on every render
   const selectIsFeedbackOpenMemo = useMemo(
@@ -78,6 +80,7 @@ export const MessageFooter: React.FC<MessageFooterProps> = ({
   const shouldShowSubmittedFeedbackState =
     shouldShowCompletionFooter && hasSubmittedFeedback && isGoodOrBadSelection
   const shouldRenderFeedbackButton =
+    !readOnly &&
     Boolean(onFeedback) &&
     (canRequestFeedback || shouldShowSubmittedFeedbackState)
 

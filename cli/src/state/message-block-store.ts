@@ -24,6 +24,8 @@ enableMapSet()
  * message rendering components (MessageWithAgents, AgentMessage, etc).
  */
 export interface MessageBlockContext {
+  /** Hide actions that submit work while browsing a saved transcript. */
+  readOnly: boolean
   /** Active chat theme (colors, etc). */
   theme: ChatTheme | null
   /** Palette for markdown rendering. Null until Chat component initializes it. */
@@ -126,6 +128,7 @@ const noop = () => {}
 const noopFeedback: MessageBlockCallbacks['onFeedback'] = () => {}
 
 const initialContext: MessageBlockContext = {
+  readOnly: false,
   theme: null,
   markdownPalette: null,
   messageTree: null,

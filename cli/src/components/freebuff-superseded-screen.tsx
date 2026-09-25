@@ -1,5 +1,6 @@
 import { TextAttributes } from '@opentui/core'
 import React from 'react'
+import { HistoryShortcut } from './history-shortcut'
 
 import { useFreebuffCtrlCExit } from '../hooks/use-freebuff-ctrl-c-exit'
 import { useLogo } from '../hooks/use-logo'
@@ -56,6 +57,7 @@ export const FreebuffSupersededScreen: React.FC = () => {
           Press <span fg={theme.primary}>Ctrl+C</span> to exit.
         </text>
       </box>
+      <HistoryShortcut />
     </box>
   )
 }

@@ -11,6 +11,7 @@ import {
   freebucksPriceLabel,
 } from '../utils/freebucks'
 import { Button } from './button'
+import { HistoryShortcut, HISTORY_SHORTCUT_LABEL } from './history-shortcut'
 import { ChoiceAdBanner, AD_CARD_HEIGHT } from './ad-banner'
 import { visibleWaitingRoomPlacementIds } from '@codebuff/common/ads/waiting-room-placements'
 import { FreebucksIntroCard, useFreebucksIntro } from './freebucks-intro-card'
@@ -660,7 +661,9 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
     : 0
   const belowPickerRows =
     streakRows + noticeRows + streakBonusRows + byokOfferRows
-  const reservedChrome = 2 + adRows + 1 /* main paddingBottom */ + logoBlockRows
+  const reservedChrome =
+    2 + adRows + 1 /* main paddingBottom */ + logoBlockRows +
+    wrappedRows(HISTORY_SHORTCUT_LABEL)
   const landingTextRows =
     wrappedRows(LANDING_HEADING) + textMarginBottom + belowPickerRows
   // Floor = one whole recommended card: 2 border rows + its 2 text lines (name
@@ -1054,6 +1057,10 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
             </>
           )}
         </box>
+      </box>
+
+      <box style={{ flexShrink: 0, alignItems: 'center' }}>
+        <HistoryShortcut disabled={freebucksIntro.visible} />
       </box>
 
       {/* Reserve the ad banner slot before the async ad fetch resolves so the
