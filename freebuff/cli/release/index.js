@@ -29,6 +29,7 @@ const launcher = createLauncher({
   wrapperVersion: packageJson.version,
   binaryChecksums: packageJson.binaryChecksums ?? null,
   telemetryEvent: 'cli.update_freebuff_failed',
+  deferUpdatesUntilExit: true,
 })
 
 module.exports = launcher

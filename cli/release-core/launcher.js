@@ -139,6 +139,9 @@ function createLauncher(productConfig) {
     startupBanner = [],
     telemetryEvent = 'cli.update_codebuff_failed',
     telemetryProperties = {},
+    // Freebuff sessions remain open between turns. The launcher cannot know
+    // when a restart is safe, so keep the process alive until the user exits.
+    deferUpdatesUntilExit = false,
     tempDownloadDirName = `.${packageName}-download-temp`,
     // Tests only. os.homedir() ignores $HOME under `bun test`, so pointing HOME
     // at a temp dir is not enough to keep a test off the real ~/.config.
@@ -267,7 +270,14 @@ function createLauncher(productConfig) {
       binaryName,
       binaryPath: path.join(configDir, binaryName),
       metadataPath: path.join(configDir, `${packageName}-metadata.json`),
-      tempDownloadDir: path.join(configDir, tempDownloadDirName),
+      // A deferred download may wait here for an hour. Another invocation
+      // must not replace its staged binary (or delete it while downloading).
+      tempDownloadDir: path.join(
+        configDir,
+        deferUpdatesUntilExit
+          ? `${tempDownloadDirName}-${process.pid}`
+          : tempDownloadDirName,
+      ),
       userAgent: `${packageName}-cli`,
       requestTimeout: 20000,
       downloadRequestTimeout: 120000,
@@ -276,6 +286,7 @@ function createLauncher(productConfig) {
   }
 
   const CONFIG = createConfig(packageName)
+  const pendingUpdates = new WeakMap()
   const { downloadFile, httpGet, withRetries } = createReleaseHttpClient({
     env: process.env,
     userAgent: CONFIG.userAgent,
@@ -1085,7 +1096,10 @@ function createLauncher(productConfig) {
     }
   }
 
-  function installStagedBinary({ tempBinaryPath, version, targetKey }) {
+  function installStagedBinary(
+    { tempBinaryPath, version, targetKey },
+    { quiet = false } = {},
+  ) {
     const replacements = []
     const metadataTempPath = `${CONFIG.metadataPath}.new.${process.pid}`
 
@@ -1133,8 +1147,10 @@ function createLauncher(productConfig) {
       }
     }
 
-    term.clearLine()
-    console.log(`Download complete! Starting ${displayName}...`)
+    if (!quiet) {
+      term.clearLine()
+      console.log(`Download complete! Starting ${displayName}...`)
+    }
   }
 
   async function downloadBinary(
@@ -1240,7 +1256,11 @@ function createLauncher(productConfig) {
     })
   }
 
-  async function checkForUpdates(runningProcess, exitListener) {
+  async function checkForUpdates(
+    runningProcess,
+    exitListener,
+    fetchLatestRelease = getLatestRelease,
+  ) {
     // main() schedules this 100ms after launch, so the binary it was handed can
     // already be dead — a startup crash that handed off to the baseline
     // fallback, most of all. Updating around a corpse would race that
@@ -1259,9 +1279,14 @@ function createLauncher(productConfig) {
     try {
       const currentVersion = getCurrentVersion()
 
-      const latestRelease = await getLatestRelease()
+      const latestRelease = await fetchLatestRelease()
       const latestVersion = latestRelease?.version ?? null
       if (!latestVersion) return
+      if (
+        runningProcess.exitCode !== null ||
+        runningProcess.signalCode !== null
+      )
+        return
 
       if (
         // Download new version if current version is unknown or outdated.
@@ -1273,6 +1298,19 @@ function createLauncher(productConfig) {
           getDownloadTargetKey(),
           { quiet: true, binaryChecksums: latestRelease.binaryChecksums },
         )
+
+        if (deferUpdatesUntilExit) {
+          // No signals, terminal output, or binary/WASM replacement while the
+          // CLI owns the session. Even an idle model picker can admit a session
+          // while the download is in flight. A download that loses the race
+          // with exit must not install into a fallback child's running files.
+          if (
+            runningProcess.exitCode === null &&
+            runningProcess.signalCode === null
+          )
+            pendingUpdates.set(runningProcess, stagedBinary)
+          return
+        }
 
         term.clearLine()
 
@@ -1310,6 +1348,33 @@ function createLauncher(productConfig) {
         // Best effort after a failed background update.
       }
       // A staging failure leaves the current process and binary untouched.
+    }
+  }
+
+  function installPendingUpdate(child) {
+    const staged = pendingUpdates.get(child)
+    pendingUpdates.delete(child)
+    if (!staged) return
+
+    try {
+      // A second launcher may have installed a newer release while this
+      // session was open. Never roll its installation back on our exit.
+      const currentVersion = getCurrentVersion()
+      if (
+        currentVersion &&
+        compareVersions(currentVersion, staged.version) >= 0
+      ) {
+        fs.rmSync(CONFIG.tempDownloadDir, { recursive: true, force: true })
+        return
+      }
+      installStagedBinary(staged, { quiet: true })
+      console.log(
+        `Updated ${displayName} to ${staged.version}. Ready for your next launch.`,
+      )
+    } catch (error) {
+      // Installation rolls back on failure. Updating must not change the
+      // user's exit code or resurrect a CLI they just closed.
+      console.error(`Could not install ${displayName} update: ${error.message}`)
     }
   }
 
@@ -1693,6 +1758,7 @@ function createLauncher(productConfig) {
         exitAlternateScreen: shouldExitAlternateScreen(code, signal),
       })
       printCrashDiagnostics(code, signal, { msAlive, stderrTail })
+      installPendingUpdate(child)
       process.exit(signal ? 1 : code || 0)
     }
 

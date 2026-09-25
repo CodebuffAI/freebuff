@@ -147,21 +147,67 @@ async function main() {
 
   console.log(`Launching ${fromVersion} and waiting for ${toVersion}...`)
   const launcherPath = join(packageDir, 'index.js')
-  const launcher = spawn(nodeCommand, [launcherPath], {
-    cwd: projectDir,
-    env: testEnv,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+  // For deferred wrappers, drive the same lifecycle as main() but await the
+  // background check so we know the download is ready before requesting exit.
+  // Historical wrappers still exercise their immediate-relaunch path.
+  const launcher = spawn(
+    nodeCommand,
+    [
+      '-e',
+      `
+    const fs = require('fs')
+    const path = require('path')
+    const launcher = require(process.argv[1])
+    async function run() {
+      if (!launcher.config.deferUpdatesUntilExit) return launcher.main()
+      const t = launcher.__testing
+      await t.ensureBinaryReady()
+      const child = t.spawnInstalledBinary()
+      const exitListener = t.attachExitHandler(child)
+      process.on('message', (message) => {
+        if (message === 'finish-session') child.kill('SIGTERM')
+      })
+      await t.checkForUpdates(child, exitListener)
+      if (!fs.existsSync(path.join(t.CONFIG.tempDownloadDir, t.CONFIG.binaryName))) {
+        throw new Error('No verified update was staged')
+      }
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error('The running CLI exited during its update download')
+      }
+      process.send({ type: 'update-staged' })
+    }
+    run().catch((error) => { console.error(error); process.exit(1) })
+  `,
+      launcherPath,
+    ],
+    {
+      cwd: projectDir,
+      env: testEnv,
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    },
+  )
   launcherProcess = launcher
+  let deferredUpdateReady = false
+  launcher.on('message', (message) => {
+    if ((message as { type?: string })?.type === 'update-staged')
+      deferredUpdateReady = true
+  })
+  const launcherExited = new Promise<number | null>((resolve) =>
+    launcher.once('close', resolve),
+  )
   let output = ''
   const append = (chunk: Buffer) => {
     output = (output + chunk.toString('utf8')).slice(-2_000_000)
   }
-  launcher.stdout.on('data', append)
-  launcher.stderr.on('data', append)
+  launcher.stdout!.on('data', append)
+  launcher.stderr!.on('data', append)
 
   const deadline = Date.now() + 6 * 60_000
-  while (Date.now() < deadline && readInstalledVersion() !== toVersion) {
+  while (
+    Date.now() < deadline &&
+    readInstalledVersion() !== toVersion &&
+    !deferredUpdateReady
+  ) {
     if (launcher.exitCode !== null) {
       throw new Error(
         `Launcher exited before updating (code ${launcher.exitCode})\n${output.slice(-16_000)}`,
@@ -170,23 +216,68 @@ async function main() {
     await Bun.sleep(1_000)
   }
 
+  if (deferredUpdateReady) {
+    if (readInstalledVersion() !== fromVersion) {
+      throw new Error(
+        'Update replaced the installed binary before the session exited',
+      )
+    }
+    console.log(
+      'Update staged; ending the CLI session to allow installation...',
+    )
+    launcher.send('finish-session')
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const exitCode = await Promise.race([
+        launcherExited,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(new Error('CLI did not exit after the deferred update')),
+            15_000,
+          )
+        }),
+      ])
+      // Windows terminates the child directly for SIGTERM; POSIX runs the
+      // CLI's clean-exit handler. Both must retain the original exit result.
+      const expectedExitCode = process.platform === 'win32' ? 1 : 0
+      if (exitCode !== expectedExitCode)
+        throw new Error(`CLI exited with ${exitCode}\n${output.slice(-16_000)}`)
+    } finally {
+      clearTimeout(timer)
+    }
+    if (
+      !output.includes(
+        `Updated Freebuff to ${toVersion}. Ready for your next launch.`,
+      )
+    ) {
+      throw new Error(
+        `Missing deferred-install message\n${output.slice(-16_000)}`,
+      )
+    }
+  }
+
   if (readInstalledVersion() !== toVersion) {
     throw new Error(`Timed out waiting for self-update to ${toVersion}`)
   }
 
-  await Bun.sleep(3_000)
-  if (launcher.exitCode !== null) {
-    throw new Error(
-      `Launcher exited after installing ${toVersion} (code ${launcher.exitCode})\n${output.slice(-16_000)}`,
-    )
-  }
-  if (!output.includes('Update available:')) {
-    throw new Error(`Missing update handoff message\n${output.slice(-16_000)}`)
-  }
-  if (!output.includes('Download complete! Starting Freebuff')) {
-    throw new Error(
-      `Missing successful relaunch message\n${output.slice(-16_000)}`,
-    )
+  if (!deferredUpdateReady) {
+    await Bun.sleep(3_000)
+    if (launcher.exitCode !== null) {
+      throw new Error(
+        `Launcher exited after installing ${toVersion} (code ${launcher.exitCode})\n${output.slice(-16_000)}`,
+      )
+    }
+    if (!output.includes('Update available:')) {
+      throw new Error(
+        `Missing update handoff message\n${output.slice(-16_000)}`,
+      )
+    }
+    if (!output.includes('Download complete! Starting Freebuff')) {
+      throw new Error(
+        `Missing successful relaunch message\n${output.slice(-16_000)}`,
+      )
+    }
   }
 
   const newVersionOutput = run(binaryPath, ['--version'])
@@ -201,8 +292,10 @@ async function main() {
   console.log(
     `Self-update OK: npm launcher ${fromVersion}, ${target} binary ${fromVersion} -> ${toVersion}`,
   )
-  stopProcessTree(launcher.pid!)
-  await Bun.sleep(1_000)
+  if (launcher.exitCode === null) {
+    stopProcessTree(launcher.pid!)
+    await Bun.sleep(1_000)
+  }
 }
 
 main()
