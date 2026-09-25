@@ -852,6 +852,12 @@ export const useSendMessage = ({
           // Drop any queued/in-flight async checkpoint first so a stale write
           // can't land after this authoritative final save.
           await settleCheckpointSave()
+        } else if (!sponsored && runChatIsCurrent()) {
+          // An interrupted run is not adopted, but the server already created
+          // its root run: move the ad trace pointer past it, or the next
+          // prompt's offer and display requests would name it as the run
+          // carrying that prompt.
+          useChatStore.getState().noteFinishedRunForAdTrace(runState)
         }
         handleRunCompletion({
           runState,
@@ -921,6 +927,14 @@ export const useSendMessage = ({
             )
           }
         } else {
+          // Same as an interrupted run that returned: point past it, using
+          // the last snapshot it reached (which carries its run id once the
+          // runtime had started it).
+          if (!sponsored && runChatIsCurrent()) {
+            useChatStore
+              .getState()
+              .noteFinishedRunForAdTrace(latestRunStateSnapshot)
+          }
           logger.debug({ error }, '[send-message] Ignoring error after abort')
         }
       } finally {

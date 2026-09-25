@@ -10,6 +10,8 @@ import type { ChatMessage, ContentBlock } from '../types/chat'
 import type { AgentMode } from '../utils/constants'
 import type { InputMode } from '../utils/input-modes'
 import type { RunState } from '@codebuff/sdk'
+import type { AdTraceContext } from '@codebuff/common/ads/trace-context'
+import { adTraceContextFromRunState } from '@codebuff/common/ads/trace-context'
 
 // Import types from the types/store module to avoid circular dependencies
 import type {
@@ -73,6 +75,14 @@ export type ChatStoreState = {
   lastMessageMode: AgentMode | null
   sessionCreditsUsed: number
   runState: RunState | null
+  /**
+   * The ad trace pointer (ids only) for the conversation's LAST FINISHED run,
+   * completed or interrupted. Kept apart from `runState` because an
+   * interrupted run is never adopted there, yet it did create a root run on
+   * the server: pointing past it is what keeps the next prompt's lookup from
+   * selecting the interrupted run instead.
+   */
+  adTraceContext: AdTraceContext | null
   /** The currently active top banner, or null if none */
   activeTopBanner: TopBannerType
   inputMode: InputMode
@@ -150,6 +160,8 @@ type ChatStoreActions = {
   setLastMessageMode: (mode: AgentMode | null) => void
   addSessionCredits: (credits: number) => void
   setRunState: (runState: RunState | null) => void
+  /** Advance `adTraceContext` past a run that finished without being adopted. */
+  noteFinishedRunForAdTrace: (runState: RunState) => void
   setActiveTopBanner: (banner: TopBannerType) => void
   closeTopBanner: () => void
   setInputMode: (mode: InputMode) => void
@@ -210,6 +222,7 @@ const initialState: ChatStoreState = {
   lastMessageMode: null,
   sessionCreditsUsed: 0,
   runState: null,
+  adTraceContext: null,
   activeTopBanner: null,
   inputMode: 'default' as InputMode,
   pendingSkillName: null as string | null,
@@ -326,6 +339,13 @@ export const useChatStore = create<ChatStore>()(
     setRunState: (runState) =>
       set((state) => {
         state.runState = runState ? castDraft(runState) : null
+        state.adTraceContext = adTraceContextFromRunState(runState)
+      }),
+
+    noteFinishedRunForAdTrace: (runState) =>
+      set((state) => {
+        state.adTraceContext =
+          adTraceContextFromRunState(runState) ?? state.adTraceContext
       }),
 
     setActiveTopBanner: (banner) =>
@@ -553,6 +573,7 @@ export const useChatStore = create<ChatStore>()(
         state.runState = initialState.runState
           ? castDraft(initialState.runState)
           : null
+        state.adTraceContext = initialState.adTraceContext
         state.activeTopBanner = initialState.activeTopBanner
         state.inputMode = initialState.inputMode
         state.pendingSkillName = initialState.pendingSkillName

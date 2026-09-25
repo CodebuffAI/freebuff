@@ -502,7 +502,8 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     }
 
     // Get message history from runState (populated after LLM responds)
-    const currentRunState = useChatStore.getState().runState
+    const { runState: currentRunState, adTraceContext } =
+      useChatStore.getState()
     const messageHistory =
       currentRunState?.sessionState?.mainAgentState?.messageHistory ?? []
     const adMessages = convertToAdMessages(messageHistory)
@@ -551,6 +552,9 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
             messages: adMessages,
             sessionId: useChatStore.getState().chatSessionId,
             device: getAdDeviceInfo(),
+            // Pointer ids to the last finished run's trace, never its text,
+            // so a served ad can later be joined to the prompt behind it.
+            ...(adTraceContext ? { traceContext: adTraceContext } : {}),
             ...(capability?.sponsoredCapability
               ? { sponsoredCapability: capability.sponsoredCapability }
               : {}),
