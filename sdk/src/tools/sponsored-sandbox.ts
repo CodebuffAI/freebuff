@@ -65,6 +65,12 @@ import {
   type SponsoredLocalContainment,
   type SponsoredWindowsRunPaths,
 } from '@codebuff/common/ads/sponsored-local-execution'
+import {
+  CREDENTIAL_BASENAMES,
+  CREDENTIAL_SUFFIXES,
+  evaluateSponsoredReadPath,
+} from '@codebuff/common/ads/sponsored-capabilities'
+import { ENV_TEMPLATE_FILE_PATTERNS } from '@codebuff/common/util/env-file-path'
 
 import { getSystemProcessEnv } from '../env'
 import { getBundledRgPath } from '../native/ripgrep'
@@ -1452,6 +1458,148 @@ export const SPONSORED_GIT_FORBIDDEN_WRITES: readonly string[] = [
   'packed-refs',
 ]
 
+// --------------------------------------------- secrets inside the workspace
+
+/**
+ * THE SHELL REFUSES WHAT THE FILE TOOLS REFUSE. An in-place run's workspace is
+ * the user's real folder, so it holds real secrets -- `.env.local`, a key, an
+ * `.npmrc` -- which `evaluateSponsoredReadPath` keeps from `read_files`. A
+ * sandbox that grants the whole workspace readable hands the same files to
+ * `cat` in one command, so both arms take them back here, from the same
+ * lists: the `.env` family except the exact template names, the credential
+ * basenames and the credential suffixes.
+ */
+const ENV_TEMPLATE_BASENAMES = ENV_TEMPLATE_FILE_PATTERNS.filter(
+  (pattern) => !pattern.includes('*'),
+)
+
+/**
+ * A seatbelt regex fragment matching `text` literally: every metacharacter
+ * escaped, and, when `foldCase`, every letter as a two-case class. File NAMES
+ * are folded because the default macOS volume is case-insensitive, so
+ * `.ENV.LOCAL` opens `.env.local`; the root is canonical and kept exact.
+ */
+function sbplLiteral(text: string, foldCase: boolean): string {
+  let out = ''
+  for (const ch of text) {
+    if (foldCase && /[a-z]/i.test(ch)) {
+      out += `[${ch.toLowerCase()}${ch.toUpperCase()}]`
+    } else if (/[.*+?^${}()|[\]\\]/.test(ch)) {
+      out += `\\${ch}`
+    } else {
+      out += ch
+    }
+  }
+  return out
+}
+
+/**
+ * The macOS half: a deny on the secret classes under the workspace, emitted
+ * AFTER every allow (seatbelt takes the last match), then the templates
+ * granted back. Patterns rather than a list of files, so a secret created
+ * after the run starts is refused too.
+ */
+export function sponsoredMacSecretReadRules(workspaceRoot: string): string[] {
+  const root = canonicalRoot(workspaceRoot)
+  if (/["\r\n]/.test(root)) {
+    throw new Error(
+      'A sponsored workspace path may not contain a quote or a line break.',
+    )
+  }
+  const under = `^${sbplLiteral(root, false)}/(.*/)?`
+  const fold = (text: string) => sbplLiteral(text, true)
+  const credentialNames = [...CREDENTIAL_BASENAMES].map(fold).join('|')
+  const credentialSuffixes = CREDENTIAL_SUFFIXES.map(fold).join('|')
+  // WRITES TOO, not only reads: a rename is a write on the source path, and
+  // `mv .env.local x && cat x` read the secret -- and took the user's file
+  // away -- while only reads were denied (measured). The file tools refuse to
+  // write these as well, so nothing legitimate is lost.
+  return [
+    `(deny file-read* file-write* ${[
+      `(regex #"${under}${fold('.env')}(\\.[^/]*)?$")`,
+      `(regex #"${under}(${credentialNames})$")`,
+      `(regex #"${under}[^/]*(${credentialSuffixes})$")`,
+    ].join(' ')})`,
+    `(allow file-read* file-write* ${ENV_TEMPLATE_BASENAMES.map(
+      (name) => `(regex #"${under}${fold(name)}$")`,
+    ).join(' ')})`,
+  ]
+}
+
+/**
+ * Directories the Linux scan does not walk, and why each is safe to leave:
+ *
+ *  - `node_modules`: third-party PACKAGE content, public on the registry, not
+ *    the user's secrets -- a certificate there is a test fixture. Walking it
+ *    would cost every command a scan of often hundreds of thousands of
+ *    entries, and trip the bound in most JavaScript repositories. The file
+ *    tools still refuse those names; macOS's pattern covers them too. This
+ *    is the one place the Linux arm is knowingly narrower.
+ *  - `.git/objects`: compressed history, never a secret by NAME. What was
+ *    committed is readable through `git show` on every arm alike; that is the
+ *    repository's content, not a file this rule could mask.
+ *
+ * The rest of `.git` IS walked: a key dropped there is the user's own.
+ */
+function secretScanSkips(parent: string, name: string): boolean {
+  return (
+    name === 'node_modules' ||
+    (name === 'objects' && path.basename(parent) === '.git')
+  )
+}
+
+/**
+ * How many directory entries the Linux scan will visit before refusing. A
+ * bound, not a sample: a scan that stopped early would leave the rest of the
+ * workspace's secrets readable, so past it the run is refused outright --
+ * the same "refuse, never downgrade" as a missing `bwrap`.
+ */
+export const SPONSORED_SECRET_SCAN_LIMIT = 200_000
+
+/**
+ * The Linux half: every file under the workspace the read policy refuses, so
+ * `spawnLinux` can mask each with `/dev/null`. bubblewrap has no pattern rule,
+ * so these are the files that exist at spawn; one the run writes itself is
+ * its own content, not the user's.
+ */
+export function sponsoredSecretFiles(
+  workspaceRoot: string,
+  limit: number = SPONSORED_SECRET_SCAN_LIMIT,
+): string[] {
+  const root = path.resolve(workspaceRoot)
+  const found: string[] = []
+  const pending = [root]
+  let visited = 0
+  while (pending.length > 0) {
+    const dir = pending.pop()!
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      visited += 1
+      if (visited > limit) {
+        throw new Error(
+          'This workspace is too large to scan for secret files, so a sponsored run will not be started in it.',
+        )
+      }
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (!secretScanSkips(dir, entry.name)) pending.push(full)
+        continue
+      }
+      // Files AND symlinks: a bind over a link masks what it points at.
+      const decision = evaluateSponsoredReadPath(full, { workspaceRoot: root })
+      if (!decision.allowed && decision.code === 'credential_file') {
+        found.push(full)
+      }
+    }
+  }
+  return found.sort()
+}
+
 export function sponsoredMacProfile(
   writeRoots: string[],
   additionalReadRoots: string[],
@@ -1464,6 +1612,8 @@ export function sponsoredMacProfile(
    * the `file-write*` allow that covers the workspace.
    */
   denyWriteSubpaths: string[] = [],
+  /** Workspaces whose secret files are unreadable; see `sponsoredMacSecretReadRules`. */
+  secretReadRoots: string[] = [],
 ): string {
   const q = JSON.stringify
   const writable = writeRoots.map(canonicalRoot)
@@ -1564,6 +1714,8 @@ export function sponsoredMacProfile(
             .join(' ')})`,
         ]
       : []),
+    // LAST, after every file-read allow above, for the same reason.
+    ...secretReadRoots.flatMap(sponsoredMacSecretReadRules),
   ].join('\n')
 }
 
@@ -1575,6 +1727,7 @@ function spawnMac(
   writeLiterals: string[],
   /** Carved back out of the write roots; see `sponsoredMacProfile`. */
   denyWriteSubpaths: string[] = [],
+  secretReadRoots: string[] = [],
 ): TerminalCommandProcess {
   return processHandle(
     spawn(
@@ -1586,6 +1739,7 @@ function spawnMac(
           additionalReadRoots,
           writeLiterals,
           denyWriteSubpaths,
+          secretReadRoots,
         ),
         request.executable,
         ...request.args,
@@ -1710,6 +1864,8 @@ function spawnLinux(
   linkedWorktree: SponsoredLinkedWorktree | undefined,
   /** Read-only rebinds over the write roots; see the loop at the bottom. */
   denyWriteSubpaths: string[] = [],
+  /** Files masked with `/dev/null`; see `sponsoredSecretFiles`. */
+  secretFiles: string[] = [],
 ): TerminalCommandProcess {
   const bwrap = findBubblewrap()
   if (!bwrap) {
@@ -1788,6 +1944,11 @@ function spawnLinux(
   // be able to edit, so the tree is granted and this takes it back.
   for (const dir of denyWriteSubpaths) {
     if (fs.existsSync(dir)) args.push('--ro-bind', dir, dir)
+  }
+  // LAST of the mounts, over the writable workspace: each secret file reads
+  // as empty and discards writes, which is what the file tools refuse.
+  for (const file of secretFiles) {
+    if (fs.existsSync(file)) args.push('--ro-bind', '/dev/null', file)
   }
   args.push('--chdir', request.cwd, '--clearenv')
   for (const [key, value] of Object.entries(env)) {
@@ -2136,6 +2297,8 @@ export function createSponsoredTerminalBroker(
       const denyWriteSubpaths = options.readOnlyGitDir
         ? [path.join(workspaceRoot, '.git')]
         : []
+      // The workspace's secret files are unreadable to every command, on both
+      // arms, whatever the run: the file tools already refuse them.
       if (platform === 'darwin') {
         return spawnMac(
           request,
@@ -2144,6 +2307,7 @@ export function createSponsoredTerminalBroker(
           readRoots,
           git.writeLiterals,
           denyWriteSubpaths,
+          [workspaceRoot],
         )
       }
       if (platform === 'linux') {
@@ -2154,6 +2318,7 @@ export function createSponsoredTerminalBroker(
           readRoots,
           linkedWorktree,
           denyWriteSubpaths,
+          sponsoredSecretFiles(workspaceRoot),
         )
       }
       throw new Error(

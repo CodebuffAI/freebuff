@@ -95,6 +95,8 @@ const defaultCallbacks = {
   onSponsoredProposalDisclose: () => {},
   onSponsoredProposalAccept: () => {},
   onSponsoredProposalConsent: () => {},
+  onSponsoredProposalProcedure: () => {},
+  onSponsoredProposalUndo: () => {},
   onSponsoredProposalControl: () => {},
 }
 
@@ -218,6 +220,8 @@ describe('MessageBlockStore', () => {
   onSponsoredProposalDisclose: () => {},
   onSponsoredProposalAccept: () => {},
   onSponsoredProposalConsent: () => {},
+  onSponsoredProposalProcedure: () => {},
+  onSponsoredProposalUndo: () => {},
   onSponsoredProposalControl: () => {},
       })
 
@@ -278,6 +282,8 @@ describe('MessageBlockStore', () => {
         onSponsoredProposalDisclose: mockFn,
         onSponsoredProposalAccept: mockFn,
         onSponsoredProposalConsent: mockFn,
+        onSponsoredProposalProcedure: mockFn,
+        onSponsoredProposalUndo: mockFn,
         onSponsoredProposalControl: mockFn,
       })
 

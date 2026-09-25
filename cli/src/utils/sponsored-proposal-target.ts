@@ -1,11 +1,11 @@
 /**
- * What a sponsored proposal in this terminal is ABOUT (COD-339).
+ * What a sponsored proposal in this terminal is ABOUT (COD-339, #3989).
  *
- * `owner/name`, read from the project root's `origin` remote through the
- * shared normalizer, so the same repository sees the same offer whether it is
- * opened here, on Desktop, or on Freebuff Web. A folder with no GitHub remote
- * gets no card at all — that is the design, not a gap: without a stable name
- * there is nothing to key an offer, a decline or a frequency cap to.
+ * The folder's opaque id (`.freebuff/project-id`) when it has one, because an
+ * in-place offer is keyed to the checkout it will edit; otherwise `owner/name`
+ * from the `origin` remote through the shared normalizer. A folder with
+ * neither gets no card at all — without a stable key there is nothing to hang
+ * an offer, a decline or a frequency cap on.
  *
  * RESOLVED ONCE PER PROCESS. The CLI's project root is fixed at launch, so the
  * answer cannot change under a running process the way it can under Desktop's
@@ -102,10 +102,19 @@ async function resolve(
   // simply "no card this tick".
   const root = tryGetProjectRoot()
   if (!root) return null
+  // THE FOLDER FIRST (#3989). This build runs an accepted offer IN PLACE, and
+  // the server keys every in-place offer to the folder's opaque id -- so a
+  // repository with both an id and a GitHub remote is polled, previewed and
+  // accepted by the id, or its in-place rows are never found. `owner/repo`
+  // remains the key only where no id could be written.
+  const workspaceId = sponsoredWorkspaceId(root)
+  if (workspaceId) return { kind: 'workspace', workspaceId }
   const repo = repoFullNameFromRemote(await read(root))
-  if (repo) return { kind: 'repo', repoFullName: repo }
-  // The v2 ad request already trusts only this persistent opaque UUID. Reuse
-  // it here so a local project can poll the same offer it was eligible to see.
+  return repo ? { kind: 'repo', repoFullName: repo } : null
+}
+
+/** `.freebuff/project-id`, when it holds a well-formed id. Read, never written. */
+export function sponsoredWorkspaceId(root: string): string | null {
   try {
     const workspaceId = readFileSync(
       join(root, '.freebuff', 'project-id'),
@@ -114,7 +123,7 @@ async function resolve(
       .trim()
       .toLowerCase()
     return WORKSPACE_TARGET.test(`workspace:${workspaceId}`)
-      ? { kind: 'workspace', workspaceId }
+      ? workspaceId
       : null
   } catch {
     return null

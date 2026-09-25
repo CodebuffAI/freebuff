@@ -166,23 +166,29 @@ export type SponsoredProposalContentBlock = {
    * The consent screen, open, with everything it names.
    *
    * The whole of it is known BEFORE the accept, which is what lets a refusal
-   * write nothing at all: the advertiser, the headline and the body are already
-   * on the card, and the folder and the branch come from this checkout. It
-   * cannot show the reviewed procedure TEXT, because the accept response is the
-   * only place that exists -- the same trade Desktop's dialog makes, for the
-   * same ordering reason (`utils/sponsored-run.ts`).
+   * write nothing at all. The procedure is the exact reviewed text the preview
+   * route returned, whose SHA-256 the Accept binds -- so what the user can read
+   * here is what runs. There is no branch: an in-place run edits `folder`.
    */
   consent?: {
     advertiserName: string
     headline: string
     body: string
     folder: string
-    branch: string
-    /** The id the branch above was minted with. Carried into the accept. */
+    procedure: string
+    /** Minted for this review and carried into the accept. */
     runId: string
   }
   /** Which consent choice the caret is on. Reset every time it opens. */
   consentIndex?: number
+  /** The consent's reviewed procedure is expanded ("View steps"). */
+  procedureOpen?: boolean
+  /**
+   * The run behind this card has a verdict and the user has moved on: the
+   * dock goes back to display ads. The card stays in history, and
+   * `/ads:undo` still works.
+   */
+  dockReleased?: boolean
   /**
    * A local run was started from THIS card.
    *

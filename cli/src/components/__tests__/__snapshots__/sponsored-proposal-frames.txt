@@ -2,11 +2,11 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Sponsored offer  │
 │ Add one-click    │
 │ dep…             │
-│ Code/setup/check │
-│ /ads:proposal    │
+│ [ Set it up ]    │
+│ Not now          │
+│ ⌃O details       │
 └──────────────────┘
 
 
@@ -27,14 +27,14 @@
 === offered @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Sponsored offer                              │
 │ Add one-click deploys to this project        │
-│ A sponsored agent can wire Acme Deploys      │
-│ into your repo on its own branch.            │
-│ Code → account setup → verify                │
-│ It runs here, in its own worktree.           │
-│ /ads:accept-proposal · /ads:dismiss-proposal │
+│ [ Set it up ]  Not now                       │
+│ ⌃O details · /ads:accept-proposal            │
 └──────────────────────────────────────────────┘
+
+
+
+
 
 
 
@@ -53,14 +53,14 @@
 === offered @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Sponsored offer                                          │
 │ Add one-click deploys to this project                    │
-│ A sponsored agent can wire Acme Deploys into your repo   │
-│ on its own branch.                                       │
-│ Code → account setup → verify                            │
-│ It runs here, in its own worktree.                       │
-│ /ads:accept-proposal · /ads:dismiss-proposal             │
+│ [ Set it up ]  Not now                                   │
+│ ⌃O details · /ads:accept-proposal                        │
 └──────────────────────────────────────────────────────────┘
+
+
+
+
 
 
 
@@ -80,11 +80,11 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Getting started… │
 │ Add one-click    │
 │ dep…             │
-│ /ads:proposal    │
+│ ⌃O details       │
 └──────────────────┘
+
 
 
 
@@ -105,10 +105,10 @@
 === accepted @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Getting started…                             │
 │ Add one-click deploys to this project        │
-│ /ads:proposal · /ads:dismiss-proposal        │
+│ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
+
 
 
 
@@ -131,10 +131,10 @@
 === accepted @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Getting started…                                         │
 │ Add one-click deploys to this project                    │
-│ /ads:proposal · /ads:dismiss-proposal                    │
+│ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
+
 
 
 
@@ -158,15 +158,15 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Setting it up…   │
 │ Add one-click    │
 │ dep…             │
 │ 1/3              │
 │ Done  Install th │
 │ In progress  Wir │
 │ Pending  Open a  │
-│ /ads:proposal    │
+│ ⌃O details       │
 └──────────────────┘
+
 
 
 
@@ -183,14 +183,14 @@
 === running @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Setting it up…                               │
 │ Add one-click deploys to this project        │
 │ 1/3                                          │
 │ Done  Install the SDK                        │
 │ In progress  Wire the deploy hook            │
 │ Pending  Open a pull request                 │
-│ /ads:proposal · /ads:dismiss-proposal        │
+│ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
+
 
 
 
@@ -209,14 +209,14 @@
 === running @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Setting it up…                                           │
 │ Add one-click deploys to this project                    │
 │ 1/3                                                      │
 │ Done  Install the SDK                                    │
 │ In progress  Wire the deploy hook                        │
 │ Pending  Open a pull request                             │
-│ /ads:proposal · /ads:dismiss-proposal                    │
+│ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
+
 
 
 
@@ -236,7 +236,6 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Done — committed │
 │ Add one-click    │
 │ dep…             │
 │ Committed to     │
@@ -245,32 +244,33 @@
 │ Nothing was      │
 │ pushed to your   │
 │ repository.      │
-│ Open a pull      │
-│ request with /   │
-│ ads:pull-        │
-│ request, or      │
-│ discard the      │
-│ workspace with / │
-│ ads:remove-      │
-│ worktree.        │
-│ Setup → verify   │
-│ /ads:proposal    │
+│ ⌃O details       │
 └──────────────────┘
+
+
+
+
+
+
+
+
+
+
 
 
 === committed @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Done — committed to its own branch           │
 │ Add one-click deploys to this project        │
 │ Committed to sponsored/acme-deploys.         │
 │ Nothing was pushed to your repository.       │
-│ Open a pull request with /ads:pull-request,  │
-│ or discard the workspace with /ads:remove-   │
-│ worktree.                                    │
-│ Setup → verify                               │
-│ /ads:proposal · /ads:dismiss-proposal        │
+│ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
+
+
+
+
+
 
 
 
@@ -287,15 +287,15 @@
 === committed @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Done — committed to its own branch                       │
 │ Add one-click deploys to this project                    │
 │ Committed to sponsored/acme-deploys. Nothing was pushed  │
 │ to your repository.                                      │
-│ Open a pull request with /ads:pull-request, or discard   │
-│ the workspace with /ads:remove-worktree.                 │
-│ Setup → verify                                           │
-│ /ads:proposal · /ads:dismiss-proposal                    │
+│ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
+
+
+
+
 
 
 
@@ -314,12 +314,12 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Done — the chang │
-│ Add one-click    │
-│ dep…             │
-│ Setup → verify   │
-│ /ads:proposal    │
+│ Sponsored        │
+│ changes…         │
+│ ⌃O details       │
 └──────────────────┘
+
+
 
 
 
@@ -339,11 +339,11 @@
 === delivered @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Done — the changes are in your files         │
-│ Add one-click deploys to this project        │
-│ Setup → verify                               │
-│ /ads:proposal · /ads:dismiss-proposal        │
+│ Sponsored changes applied to your files      │
+│ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
+
+
 
 
 
@@ -365,11 +365,11 @@
 === delivered @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Done — the changes are in your files                     │
-│ Add one-click deploys to this project                    │
-│ Setup → verify                                           │
-│ /ads:proposal · /ads:dismiss-proposal                    │
+│ Sponsored changes applied to your files                  │
+│ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
+
+
 
 
 
@@ -392,13 +392,13 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Done — pull requ │
 │ Add one-click    │
 │ dep…             │
 │ Review the pull  │
-│ Setup → verify   │
-│ /ads:proposal    │
+│ ⌃O details       │
 └──────────────────┘
+
+
 
 
 
@@ -417,12 +417,12 @@
 === landed @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Done — pull request opened                   │
 │ Add one-click deploys to this project        │
 │ Review the pull request: https://github.com/ │
-│ Setup → verify                               │
-│ /ads:proposal · /ads:dismiss-proposal        │
+│ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
+
+
 
 
 
@@ -443,12 +443,12 @@
 === landed @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Done — pull request opened                               │
 │ Add one-click deploys to this project                    │
 │ Review the pull request: https://github.com/x/y/pull/7   │
-│ Setup → verify                                           │
-│ /ads:proposal · /ads:dismiss-proposal                    │
+│ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
+
+
 
 
 
@@ -470,12 +470,12 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Couldn’t finish  │
 │ Add one-click    │
 │ dep…             │
 │ Budget exceeded  │
-│ /ads:proposal    │
+│ ⌃O details       │
 └──────────────────┘
+
 
 
 
@@ -495,11 +495,11 @@
 === failed @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Couldn’t finish the setup                    │
 │ Add one-click deploys to this project        │
 │ Budget exceeded                              │
-│ /ads:proposal · /ads:dismiss-proposal        │
+│ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
+
 
 
 
@@ -521,11 +521,11 @@
 === failed @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Couldn’t finish the setup                                │
 │ Add one-click deploys to this project                    │
 │ Budget exceeded                                          │
-│ /ads:proposal · /ads:dismiss-proposal                    │
+│ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
+
 
 
 
@@ -548,13 +548,13 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Done — pull requ │
 │ Add one-click    │
 │ dep…             │
 │ view on GitHub:  │
-│ Setup → verify   │
-│ /ads:proposal    │
+│ ⌃O details       │
 └──────────────────┘
+
+
 
 
 
@@ -573,12 +573,12 @@
 === merged @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Done — pull request merged                   │
 │ Add one-click deploys to this project        │
 │ view on GitHub: https://github.com/x/y/pull/ │
-│ Setup → verify                               │
-│ /ads:proposal · /ads:dismiss-proposal        │
+│ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
+
+
 
 
 
@@ -599,12 +599,12 @@
 === merged @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Done — pull request merged                               │
 │ Add one-click deploys to this project                    │
 │ view on GitHub: https://github.com/x/y/pull/7            │
-│ Setup → verify                                           │
-│ /ads:proposal · /ads:dismiss-proposal                    │
+│ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
+
+
 
 
 
@@ -626,44 +626,44 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Sponsored offer  │
 │ Add one-click    │
 │ dep…             │
-│ Code/setup/check │
-│ Acme Deploys     │
-│ wants to         │
-│ integrate        │
-│ itself into      │
-│ this project,    │
-│ on its own       │
-│ branch. Nothing  │
-│ is pushed until  │
-│ you review it.   │
+│ Acme Deploys is  │
+│ sponsoring this  │
+│ agent run, so    │
+│ it’s free for    │
+│ you. Freebuff’s  │
+│ agent edits the  │
+│ files in the     │
+│ folder below     │
+│ and commits      │
+│ nothing. You     │
+│ can stop it      │
+│ anytime and      │
+│ undo it after.   │
+│ Folder: /home/de │
 │ > No             │
 │   Yes            │
 │ enter · esc      │
 └──────────────────┘
 
 
-
-
-
 === consent @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Sponsored offer                              │
 │ Add one-click deploys to this project        │
-│ A sponsored agent can wire Acme Deploys      │
-│ into your repo on its own branch.            │
-│ Code → account setup → verify                │
-│ It runs here, in its own worktree.           │
-│ Acme Deploys wants to integrate itself into  │
-│ this project, on its own branch. Nothing is  │
-│ pushed until you review it.                  │
+│ Acme Deploys is sponsoring this agent run,   │
+│ so it’s free for you. Freebuff’s agent       │
+│ edits the files in the folder below and      │
+│ commits nothing. You can stop it anytime     │
+│ and undo it after.                           │
+│ Folder: /home/dev/app                        │
 │ > No                                         │
 │   Yes                                        │
-│ ↑↓ move · enter choose · esc cancel          │
+│ ↑↓ · enter choose · v steps · esc cancel     │
 └──────────────────────────────────────────────┘
+
+
 
 
 
@@ -677,19 +677,19 @@
 === consent @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Sponsored offer                                          │
 │ Add one-click deploys to this project                    │
-│ A sponsored agent can wire Acme Deploys into your repo   │
-│ on its own branch.                                       │
-│ Code → account setup → verify                            │
-│ It runs here, in its own worktree.                       │
-│ Acme Deploys wants to integrate itself into this         │
-│ project, on its own branch. Nothing is pushed until you  │
-│ review it.                                               │
+│ Acme Deploys is sponsoring this agent run, so it’s free  │
+│ for you. Freebuff’s agent edits the files in the folder  │
+│ below and commits nothing. You can stop it anytime and   │
+│ undo it after.                                           │
+│ Folder: /home/dev/app                                    │
 │ > No                                                     │
 │   Yes                                                    │
-│ ↑↓ move · enter choose · esc cancel                      │
+│ ↑↓ · enter choose · v steps · esc cancel                 │
 └──────────────────────────────────────────────────────────┘
+
+
+
 
 
 
@@ -704,10 +704,8 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Sponsored offer  │
 │ Add one-click    │
 │ dep…             │
-│ Code/setup/check │
 │ Sponsored tasks  │
 │ can’t run on     │
 │ Windows yet:     │
@@ -719,8 +717,10 @@
 │ on this          │
 │ operating        │
 │ system.          │
-│ /ads:proposal    │
+│ Not now          │
+│ ⌃O details       │
 └──────────────────┘
+
 
 
 
@@ -729,17 +729,17 @@
 === offered-windows @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Sponsored offer                              │
 │ Add one-click deploys to this project        │
-│ A sponsored agent can wire Acme Deploys      │
-│ into your repo on its own branch.            │
-│ Code → account setup → verify                │
 │ Sponsored tasks can’t run on Windows yet:    │
 │ Freebuff has no way to keep an advertiser’s  │
 │ commands inside the workspace on this        │
 │ operating system.                            │
-│ /ads:proposal · /ads:dismiss-proposal        │
+│ Not now                                      │
+│ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
+
+
+
 
 
 
@@ -755,16 +755,16 @@
 === offered-windows @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Sponsored offer                                          │
 │ Add one-click deploys to this project                    │
-│ A sponsored agent can wire Acme Deploys into your repo   │
-│ on its own branch.                                       │
-│ Code → account setup → verify                            │
 │ Sponsored tasks can’t run on Windows yet: Freebuff has   │
 │ no way to keep an advertiser’s commands inside the       │
 │ workspace on this operating system.                      │
-│ /ads:proposal · /ads:dismiss-proposal                    │
+│ Not now                                                  │
+│ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
+
+
+
 
 
 

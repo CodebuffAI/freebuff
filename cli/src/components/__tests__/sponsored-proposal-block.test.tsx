@@ -189,15 +189,32 @@ describe('every state, at every width', () => {
       blockFor(SPONSORED_ROW_FIXTURES.offered, { consent: CONSENT }),
       60,
     )
-    // One sentence and two choices (COD-410): who is asking, that it stays on
-    // its own branch, and that nothing is pushed. The field list this used to
-    // be -- folder, branch, a paragraph of assurances -- is gone on purpose.
-    expect(consented).toContain('Acme Deploys wants to integrate itself into')
-    expect(consented).toContain('Nothing is pushed until you')
-    expect(consented).not.toContain(CONSENT.branch)
-    expect(consented).not.toContain(CONSENT.folder)
+    // Two choices (COD-410) under the IN-PLACE words Desktop shows (#3989):
+    // who sponsors it, that it costs the user nothing, that it edits the
+    // files in this folder, that nothing is committed, and that it can be
+    // stopped and undone. The folder is named because it is now the whole of
+    // what changes; there is no branch to name.
+    // Read across the box's wrapped lines: borders and breaks are layout.
+    const flat = consented.replace(/[│\s]+/g, ' ')
+    expect(flat).toContain('Acme Deploys is sponsoring this agent run')
+    expect(flat).toContain('free for you')
+    expect(flat).toContain('edits the files in the folder below')
+    expect(flat).toContain('commits nothing')
+    expect(flat).toContain('stop it anytime and undo it after')
+    expect(consented).toContain(CONSENT.folder)
+    expect(consented).not.toContain('its own branch')
     expect(consented).toContain('> No')
     expect(consented).toContain('  Yes')
+    // The procedure is one key away, not on the screen by default.
+    expect(consented).not.toContain(CONSENT.procedure)
+    const withSteps = await render(
+      blockFor(SPONSORED_ROW_FIXTURES.offered, {
+        consent: CONSENT,
+        procedureOpen: true,
+      }),
+      60,
+    )
+    expect(withSteps).toContain(CONSENT.procedure)
   })
 
   test('a hostile advertiser name cannot restyle the sentence or move the choices', async () => {
@@ -214,7 +231,7 @@ describe('every state, at every width', () => {
     )
     expect(out).not.toContain('\u202e')
     expect(out).toContain('\\u202e')
-    expect(out).toContain('wants to integrate itself into')
+    expect(out).toContain('is sponsoring this agent run')
     expect(out).toContain('> No')
     expect(out).toContain('  Yes')
   })
@@ -235,13 +252,53 @@ describe('every state, at every width', () => {
   })
 
   test('R-2 every state offers the same one decline, and names it', async () => {
-    // The decline is a COMMAND, not a key. The card used to say "esc dismiss",
-    // and `useKeyboard` is a global listener -- so that Esc reached the card at
-    // the same time as whatever the user was actually cancelling.
+    // Never a bare key: `useKeyboard` is a global listener, so an Esc decline
+    // reached the card at the same time as whatever the user was actually
+    // cancelling. On an offer it is the `Not now` BUTTON beside `Set it up`;
+    // everywhere else it is the command.
+    expect(
+      await render(blockFor(SPONSORED_ROW_FIXTURES.offered), 60),
+    ).toContain('Not now')
     for (const state of SPONSORED_FIXTURE_STATES) {
+      if (state === 'offered') continue
       expect(
         await render(blockFor(SPONSORED_ROW_FIXTURES[state]), 60),
       ).toContain('/ads:dismiss-proposal')
+    }
+  })
+
+  test('the offer has a real button, and the chord is named beside it', async () => {
+    const frame = await render(blockFor(SPONSORED_ROW_FIXTURES.offered), 60)
+    expect(frame).toContain('[ Set it up ]')
+    expect(frame).toContain('⌃O details')
+  })
+
+  test('a delivered run offers the undo, and says nothing was committed', async () => {
+    const setup = await createTestRenderer({ width: 60, height: 24 })
+    const root = createRoot(setup.renderer)
+    flushSync(() => {
+      root.render(
+        <SponsoredProposalBlock
+          block={blockFor(SPONSORED_ROW_FIXTURES.offered, { runStarted: true })}
+          availableWidth={60}
+          run={{
+            phase: 'delivered',
+            changedFiles: ['src/db.ts', '.env.example'],
+            undone: false,
+          }}
+        />,
+      )
+    })
+    try {
+      await setup.renderOnce()
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain('Sponsored changes applied to your files')
+      expect(frame).toContain('Changed 2 files. Nothing was committed.')
+      expect(frame).toContain('Undo')
+      expect(frame).not.toContain('[ Set it up ]')
+    } finally {
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
     }
   })
 })
@@ -452,7 +509,7 @@ describe('the block itself', () => {
     // A hint with nothing open may not name a bare key, because the card binds
     // none -- and a hint naming a key that does nothing is worse than no hint.
     const closed = hintFor('closed')
-    expect(closed).toContain('/ads:proposal')
+    expect(closed).toContain('⌃O details')
     expect(closed).toContain('/ads:dismiss-proposal')
     // Two columns of padding the card's own `inner` does not account for, so
     // the widest line it may emit is narrower than `inner` suggests.
@@ -480,11 +537,10 @@ describe('the block itself', () => {
     // A truncated `/ads:dismiss-propos` teaches a command that does not exist,
     // and `/ads:accept-proposa` is the same failure on the new command.
     const REAL = [
+      '⌃O details',
       '/ads:proposal',
       '/ads:dismiss-proposal',
       '/ads:accept-proposal',
-      '/ads:pull-request',
-      '/ads:remove-worktree',
     ]
     for (const mode of ['closed', 'acceptable'] as const) {
       for (const width of [0, 1, 5, 13, 17, 20, 30, 36, 37, 40, 44]) {
@@ -520,7 +576,7 @@ const CONSENT = {
   headline: 'Add one-click deploys',
   body: 'A sponsored agent can wire Acme Deploys into your repo.',
   folder: '/home/dev/app',
-  branch: 'freebuff/sponsored-acme-deploys-run-1',
+  procedure: 'Add the Acme deploy hook to package.json.',
   runId: 'run-1',
 }
 
@@ -561,6 +617,9 @@ describe('the card claims no bare keys while its menu is closed', () => {
         calls.push(['consent', target, approved]),
       onSponsoredProposalControl: (target, control) =>
         calls.push(['control', target, control]),
+      onSponsoredProposalProcedure: (target, open) =>
+        calls.push(['procedure', target, open]),
+      onSponsoredProposalUndo: () => calls.push(['undo']),
     })
     const setup = await createTestRenderer({
       width: 60,
@@ -596,16 +655,47 @@ describe('the card claims no bare keys while its menu is closed', () => {
         act()
         await settle()
       },
+      /** Click the first cell of `label` wherever it is drawn. */
+      async click(label: string) {
+        const lines = setup.captureCharFrame().split('\n')
+        const y = lines.findIndex((line) => line.includes(label))
+        if (y < 0) throw new Error(`"${label}" is not on screen`)
+        const x = lines[y]!.indexOf(label) + 1
+        await setup.mockMouse.click(x, y)
+        await settle()
+      },
     }
   }
 
-  test('m, esc, enter and the arrows all do nothing on a closed card', async () => {
+  test('m, v, esc, enter and the arrows all do nothing on a closed card', async () => {
     const card = await mount(blockFor(SPONSORED_ROW_FIXTURES.offered))
     await card.press(() => card.input.pressKey('m'))
+    await card.press(() => card.input.pressKey('v'))
     await card.press(() => card.input.pressEscape())
     await card.press(() => card.input.pressEnter())
     await card.press(() => card.input.pressArrow('down'))
     expect(card.calls).toEqual([])
+  })
+
+  test('clicking Set it up OPENS the consent; clicking Not now declines', async () => {
+    // The mouse is the terminal's button. It reaches the same two callbacks
+    // the keyboard does -- and `Set it up` reaches the SCREEN, never a run.
+    const card = await mount(blockFor(SPONSORED_ROW_FIXTURES.offered))
+    await card.click('[ Set it up ]')
+    expect(card.calls).toEqual([['accept', 'acme/deploys']])
+    await card.click('Not now')
+    expect(card.calls).toEqual([
+      ['accept', 'acme/deploys'],
+      ['control', 'acme/deploys', 'dismiss'],
+    ])
+  })
+
+  test('v shows the reviewed procedure while the consent is open', async () => {
+    const card = await mount(
+      blockFor(SPONSORED_ROW_FIXTURES.offered, { consent: CONSENT }),
+    )
+    await card.press(() => card.input.pressKey('v'))
+    expect(card.calls).toEqual([['procedure', 'acme/deploys', true]])
   })
 
   test('enter does not open a pull request either, even when the row has one', async () => {

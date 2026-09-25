@@ -25,6 +25,18 @@ export const SPONSORED_CONSENT_SENTENCE =
   ' wants to integrate itself into this project, on its own branch. Nothing is pushed until you review it.'
 
 /**
+ * The same question for an IN-PLACE run (#3989), which is a DIFFERENT decision.
+ *
+ * The branch and the review-before-push are the whole reassurance in the sentence above, and an
+ * in-place run has neither: it edits the files in the user's folder, right now. Saying so is the
+ * point -- the undo is what makes that acceptable, and it is named here because this is the last
+ * place before the edits happen. Desktop's bridge carries the same words
+ * (`SPONSORED_IN_PLACE_SENTENCE` in `mcp-consent-bridge.cjs`).
+ */
+export const SPONSORED_CONSENT_IN_PLACE_SENTENCE =
+  ' is sponsoring this agent run, so it’s free for you. Freebuff’s agent edits the files in the folder below and commits nothing. You can stop it anytime and undo it after.'
+
+/**
  * The second sentence, shown ONLY where the run has no OS sandbox: Windows (COD-642). Plain words
  * for the three things a user is agreeing to there -- their own permissions, no sandbox, and
  * credentials that are kept out of the run's way rather than locked away. Product-owned and fixed:

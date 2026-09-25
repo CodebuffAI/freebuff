@@ -71,6 +71,71 @@ export type SponsoredDesktopExecutionSurface =
   (typeof SPONSORED_DESKTOP_EXECUTION_SURFACES)[number]
 
 /**
+ * The CLI execution surfaces. macOS runs under the Seatbelt sandbox, Linux and
+ * WSL under bubblewrap; the CLI never runs sponsored work on native Windows
+ * (its capability reports `windows_no_containment`), so there is no
+ * `cli_windows`.
+ */
+export const SPONSORED_CLI_EXECUTION_SURFACES = [
+  'cli_macos',
+  'cli_linux',
+  'cli_wsl',
+] as const satisfies readonly SponsoredExecutionSurface[]
+export type SponsoredCliExecutionSurface =
+  (typeof SPONSORED_CLI_EXECUTION_SURFACES)[number]
+
+/** Whether a recorded or reported execution surface is one of the CLI's. */
+export function isSponsoredCliExecutionSurface(
+  surface: string | null | undefined,
+): surface is SponsoredCliExecutionSurface {
+  return (SPONSORED_CLI_EXECUTION_SURFACES as readonly string[]).includes(
+    surface ?? '',
+  )
+}
+
+/**
+ * The CLI execution surface a request PROVES it can run a paid sponsored
+ * procedure on, or null. The proof is the request's own v2 capability: it must
+ * name a CLI surface that belongs to the reported OS (`cli_macos` on macOS,
+ * `cli_linux` or `cli_wsl` on Linux -- WSL reports `linux`) with execution
+ * `available` and no reason. The CLI reports `available` only when its
+ * containment probe passed, so a Linux CLI without `bwrap` proves nothing and
+ * is never offered a task whose Accept could only fail.
+ *
+ * The same OS pairing `/api/ads` applies to a CLI capability
+ * (`sponsoredCapabilityMatchesRequest`), and the answer is also what tells
+ * `cli_linux` from `cli_wsl`: the reported OS cannot.
+ */
+export function sponsoredCliExecutionSurfaceForRequest(
+  reportedOs: string | null | undefined,
+  capability:
+    | {
+        execution: {
+          surface: string
+          status: string
+          reason?: string | undefined
+        }
+      }
+    | null
+    | undefined,
+): SponsoredCliExecutionSurface | null {
+  const execution = capability?.execution
+  if (
+    !execution ||
+    execution.status !== 'available' ||
+    execution.reason !== undefined
+  )
+    return null
+  if (reportedOs === 'macos')
+    return execution.surface === 'cli_macos' ? 'cli_macos' : null
+  if (reportedOs === 'linux')
+    return execution.surface === 'cli_linux' || execution.surface === 'cli_wsl'
+      ? execution.surface
+      : null
+  return null
+}
+
+/**
  * The Desktop execution surface of the OS a Desktop process runs on, or null
  * for an OS Desktop does not run sponsored work on. What the client reports,
  * never what it is granted: the server decides whether that surface is served.

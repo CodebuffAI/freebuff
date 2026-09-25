@@ -1,6 +1,6 @@
 import {
+  SPONSORED_CONSENT_IN_PLACE_SENTENCE,
   SPONSORED_CONSENT_NO_NAME,
-  SPONSORED_CONSENT_SENTENCE,
   sponsoredConsentName,
 } from '@codebuff/common/ads/sponsored-consent'
 import {
@@ -13,8 +13,10 @@ import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
 import React, { useCallback, useEffect, useState } from 'react'
 
+import { Button } from '../button'
 import { useMessageBlockStore } from '../../state/message-block-store'
 import { getAuthToken } from '../../utils/auth'
+import { safeOpen } from '../../utils/open-url'
 import { acknowledgeSponsoredProposalDisplay } from '../../utils/sponsored-proposal-api'
 import { isPlainEnterKey } from '../../utils/terminal-enter-detection'
 import {
@@ -28,55 +30,54 @@ import type { SponsoredProposalMenuKey } from '@codebuff/common/ads/sponsored-pr
 import type { KeyEvent } from '@opentui/core'
 
 /**
- * The sponsored proposal card, in a terminal (COD-376).
+ * The sponsored proposal, in the terminal's SPONSOR DOCK (#3989's flow, ported).
  *
  * Every string here comes from the shared view model, so this is the SAME state
- * machine the web panel and the desktop card run — a card that reads
+ * machine the web panel and the desktop card run -- a card that reads
  * differently here is a bug rather than a port.
  *
- * ACCEPT EXISTS NOW (COD-339) and runs LOCALLY, in a git worktree on this
- * machine, under the COD-336 boundary. It is not a primary on this surface --
- * at twenty columns there is no room for one -- so it is the first item of the
- * menu and the `/ads:accept-proposal` command, and it is drawn only when this
- * machine can actually contain a run. On Windows the card says why instead
- * (COD-336 item 3: worse product on Windows is the honest trade).
+ * ## Where it lives, and what the "button" is
  *
- * Accepting opens the CONSENT panel below rather than starting anything. That
- * panel is the terminal's stand-in for Desktop's main-process dialog, and the
- * reasoning for the substitution is in `utils/sponsored-run.ts` -- it is an
- * adaptation of COD-336 item 4, not a re-opening of it.
+ * In the dock above the composer, in place of the display ad: one slot, one ad,
+ * exactly as Desktop's card replaces its banner. It used to be a block in the
+ * transcript, reachable only by typing `/ads:accept-proposal`, and it scrolled
+ * away with the conversation. Now it stays put, and it has real controls:
  *
- * AND WHILE THE MENU IS CLOSED THERE ARE NO KEY BINDINGS AT ALL. `useKeyboard`
- * is a GLOBAL listener, not a focus-scoped one, so the bare `m`, `esc` and
- * `enter` this card used to claim ran ALONGSIDE the composer's own global
- * handler rather than instead of it: typing the letter `m` into a prompt also
- * opened an ad's menu, and Esc reached the card as a decline while it was
- * cancelling something else entirely. A transcript block cannot own a bare key
- * on a surface whose input is always live.
+ *  - `[ Set it up ]` and `Not now` are mouse-clickable `Button`s (the display
+ *    ad's CTA already is one);
+ *  - Ctrl+O opens the details, where the arrows and Enter reach the same two
+ *    answers plus the standing controls;
+ *  - the `/ads:*` commands still work, for a terminal with no mouse.
  *
- * The controls are slash commands instead -- `/ads:proposal` opens this menu,
- * `/ads:dismiss-proposal` declines, and the three standing ones
- * (`/ads:report-proposal`, `/ads:never-advertiser`, `/ads:proposals-off`)
- * already existed. Once the menu IS open the card takes arrows, Enter and Esc,
- * and chat's keyboard is disabled for exactly that span, the same way
- * `askUser` does it -- so those keys reach one handler rather than two.
+ * `Set it up` OPENS THE CONSENT and never accepts. The consent is the decision
+ * (COD-336 item 4, adapted in `utils/sponsored-run.ts`); a click is a gesture.
  *
- * A pull request URL is therefore printed and never opened by a keypress. That
- * is the R-15 waiver read honestly: this surface renders sanitized text the
- * user may copy, not a link and not a primary.
+ * ## No bare keys while it is closed
  *
- * Two things a terminal does differently from the other two surfaces, and both
- * are declared waivers rather than omissions:
- *   - the advertiser LOGO is never fetched (R-16/R-17): a token is not rendered
- *     as an image and no request is minted for one, so the advertiser's name is
- *     the whole of the attribution.
- *   - a pull request URL is printed as sanitized TEXT rather than a link
- *     (R-15). The sanitizing still holds: `pullRequestHref` is null for anything
- *     that is not absolute https, and nothing else is ever printed.
+ * `useKeyboard` is a GLOBAL listener, not a focus-scoped one, so a bare `m`,
+ * `esc` or `enter` bound here would reach the composer's handler as well: a
+ * letter typed into a prompt would open an ad's menu, and an Esc aimed at
+ * something else would be read as a decline. So while nothing is open this
+ * component binds nothing; Ctrl+O is chat's, verified unclaimed
+ * (`keyboard-actions.ts`). Once the details or the consent ARE open, chat's
+ * keyboard is disabled for exactly that span (the same `disabled` askUser
+ * uses), and the arrows, Enter, Esc -- and `v` for the consent's steps -- have
+ * one owner.
+ *
+ * Two terminal-specific declared waivers remain: the advertiser LOGO is never
+ * fetched (R-16/R-17), and a pull request URL from an older run is printed as
+ * sanitized text (R-15). The advertiser's own setup link is now OPENABLE by a
+ * click, through the same `safeOpen` the display ad uses -- after the same
+ * destination gate (`advertiserCtaHref` is null for anything that is not
+ * absolute https) -- and is printed beside the button for a terminal with no
+ * mouse.
  */
 
 /** The narrowest width the card is designed for; below it, body copy goes first. */
 export const PROPOSAL_MIN_BODY_WIDTH = 40
+
+/** How many lines of the reviewed procedure the consent shows when expanded. */
+export const CONSENT_PROCEDURE_MAX_LINES = 12
 
 const DISCLOSURE = 'SPONSORED'
 
@@ -90,6 +91,12 @@ const DISCLOSURE = 'SPONSORED'
  */
 const MIN_INLINE_NAME_WIDTH = 12
 
+/** `[ Set it up ]` + two columns + `Not now`, with room to spare. */
+const BUTTON_ROW_MIN_WIDTH = 24
+
+/** The chord that opens the details, as the dock prints it. */
+export const PROPOSAL_DOCK_CHORD = '⌃O details'
+
 /** Clip to the available columns without wrapping — a terminal has no ellipsis box. */
 function clip(text: string, width: number): string {
   if (width <= 1) return ''
@@ -98,10 +105,19 @@ function clip(text: string, width: number): string {
     : `${text.slice(0, Math.max(0, width - 1))}…`
 }
 
+/** The in-place run's progress and verdict, as the dock needs it. */
+export type SponsoredDockRun = {
+  phase: 'accepting' | 'queued' | 'running' | 'delivered' | 'failed'
+  changedFiles: readonly string[]
+  undone: boolean
+}
+
 export const SponsoredProposalBlock: React.FC<{
   block: SponsoredProposalContentBlock
   availableWidth: number
-}> = ({ block, availableWidth }) => {
+  /** This machine's run for this proposal, when there is one. */
+  run?: SponsoredDockRun | null
+}> = ({ block, availableWidth, run = null }) => {
   const theme = useTheme()
   const callbacks = useMessageBlockStore((s) => s.callbacks)
   const [menuIndex, setMenuIndex] = useState(0)
@@ -125,8 +141,15 @@ export const SponsoredProposalBlock: React.FC<{
   // beside it saying why -- which is what `unavailable` renders instead.
   const canRun = sponsoredCliCanRun()
   const refreshUnavailable = block.refreshUnavailable === true
+  // No Accept once this machine has a run for the offer: the row can still
+  // read `offered` for a poll after the Accept, and a second Accept there is
+  // an answer to a question already answered.
   const acceptable =
-    accept !== null && canRun && !answeredOrBusy(block) && !refreshUnavailable
+    accept !== null &&
+    canRun &&
+    !answeredOrBusy(block) &&
+    !refreshUnavailable &&
+    !run
   const menu = sponsoredProposalMenu(view.advertiserName, {
     ...(acceptable && accept ? { acceptLabel: accept.label } : {}),
   })
@@ -149,6 +172,13 @@ export const SponsoredProposalBlock: React.FC<{
   // would be answering a question nobody asked.
   const unavailable =
     view.state === 'offered' && !canRun ? sponsoredCliUnavailableCopy() : null
+  // The run's verdict arrives HERE before the row catches up: the local
+  // snapshot is `delivered` the moment the receipts are read, and the poll
+  // follows on its own cadence.
+  const delivered = run?.phase === 'delivered' || view.state === 'delivered'
+  const runPhase = run?.phase ?? null
+  const inFlight =
+    runPhase === 'accepting' || runPhase === 'queued' || runPhase === 'running'
 
   const onMenuKey = useCallback(
     (key: SponsoredProposalMenuKey) => {
@@ -165,14 +195,8 @@ export const SponsoredProposalBlock: React.FC<{
     [block.target, block.whyOpen, callbacks],
   )
 
-  // ONLY WHILE THE MENU IS OPEN. `useKeyboard` registers a GLOBAL listener, so
-  // anything bound here fires whatever the user is actually doing -- and chat's
-  // composer has a global handler of its own, which does not stop firing
-  // because a card exists. The bare bindings this replaced therefore reached
-  // BOTH: `m` typed into a prompt also opened an ad menu, and Esc was read as a
-  // decline while it was cancelling something else. An open menu is different
-  // in kind: chat's keyboard is disabled for exactly that span (see `chat.tsx`,
-  // the same `disabled` askUser uses), so these keys have one owner.
+  // ONLY WHILE THE MENU OR THE CONSENT IS OPEN. See the header: a bare key
+  // bound while closed would reach the composer too.
   useKeyboard(
     useCallback(
       (key: KeyEvent) => {
@@ -189,8 +213,7 @@ export const SponsoredProposalBlock: React.FC<{
 
         // THE CONSENT OWNS THE KEYBOARD WHILE IT IS OPEN, and it is checked
         // before the menu because opening it closes the menu -- so the two are
-        // never both live, and an ordering that let them be would put two
-        // handlers on one Enter.
+        // never both live.
         //
         // Esc is REFUSE, and refusing writes nothing at all: the accept has not
         // happened yet, which is the whole reason the consent comes first. The
@@ -199,6 +222,17 @@ export const SponsoredProposalBlock: React.FC<{
           if (key.name === 'escape') {
             preventDefault()
             callbacks.onSponsoredProposalConsent(block.target, false)
+            return
+          }
+          // `v` shows or hides the reviewed procedure -- the exact text whose
+          // SHA-256 the Accept binds. Reading it is optional; being able to is
+          // not.
+          if (key.name === 'v' && !key.ctrl && !key.meta) {
+            preventDefault()
+            callbacks.onSponsoredProposalProcedure(
+              block.target,
+              !block.procedureOpen,
+            )
             return
           }
           if (key.name === 'up' || key.name === 'down') {
@@ -211,9 +245,9 @@ export const SponsoredProposalBlock: React.FC<{
           }
           if (isPlainEnterKey(key)) {
             preventDefault()
-            // INDEX 0 IS "NO". The destructive-looking choice is not the
-            // default: a consent screen whose caret starts on "run it" is a
-            // consent screen that an impatient Enter answers yes.
+            // INDEX 0 IS "NO". The consequential choice is not the default: a
+            // consent screen whose caret starts on "run it" is a consent screen
+            // that an impatient Enter answers yes.
             callbacks.onSponsoredProposalConsent(
               block.target,
               consentChoices.length > 1 && consentIndex === 1,
@@ -222,12 +256,8 @@ export const SponsoredProposalBlock: React.FC<{
           return
         }
 
-        // Esc closes the MENU and answers nothing. It used to dismiss, which
-        // made the ordinary "I opened this by accident" gesture record a
-        // decline the user never chose -- and, because the binding was global,
-        // could do so from an Esc aimed at something else. Ctrl+C stays
-        // unbound for the same reason it always was: in a terminal that is
-        // "stop", not an answer to an ad.
+        // Esc closes the MENU and answers nothing. Ctrl+C stays unbound: in a
+        // terminal that is "stop", not an answer to an ad.
         if (key.name === 'escape') {
           preventDefault()
           callbacks.onSponsoredProposalMenu(block.target, false)
@@ -258,6 +288,7 @@ export const SponsoredProposalBlock: React.FC<{
         answered,
         busy,
         block.menuOpen,
+        block.procedureOpen,
         block.target,
         callbacks,
         consent,
@@ -272,14 +303,8 @@ export const SponsoredProposalBlock: React.FC<{
   )
 
   // The menu opens on its first item every time it is OPENED -- and only then.
-  // `/ads:proposal` does not remount the card, so without this a second open
-  // would put the caret wherever the last one left it, on a different control
-  // than the list visibly starts on. Tracked as a transition rather than
-  // "reset whenever it is open", because the latter also fires after mount and
-  // would undo a selection the user had already moved.
-  // Same rule for the consent, and it matters more here: the caret must start
-  // on "Not now" every single time it opens, because a caret left on "run it"
-  // by a previous open is a screen an Enter answers yes without being read.
+  // Same rule for the consent, and it matters more there: the caret must start
+  // on "No" every single time it opens.
   const wasConsentOpen = React.useRef(consent !== null)
   React.useEffect(() => {
     const open = consent !== null
@@ -295,17 +320,18 @@ export const SponsoredProposalBlock: React.FC<{
   }, [block.menuOpen])
 
   const inner = Math.max(1, width - 2)
+  const expanded = block.menuOpen === true && !refreshUnavailable
   // At the narrowest widths the disclosure and the advertiser must both survive;
   // the body is what goes first and the headline is what goes last.
-  const showBody = view.state === 'offered' && inner >= PROPOSAL_MIN_BODY_WIDTH
+  const showBody =
+    view.state === 'offered' && expanded && inner >= PROPOSAL_MIN_BODY_WIDTH
   const nameRoom = inner - DISCLOSURE.length - 1
-  // STACKED, not squeezed. Sharing one row costs the advertiser's name a
-  // character for every character of "SPONSORED", and at 20 columns that turned
-  // `Acme Deploys` into `Acme De` butted straight against the marker with no
-  // space between them -- which reads as one word and identifies nobody. Two
-  // rows is the honest trade: the card is a line taller and both halves of the
-  // disclosure are intact.
+  // STACKED, not squeezed: at 20 columns sharing one row turned `Acme Deploys`
+  // into `Acme De` butted against the marker, which identifies nobody.
   const stackHeader = nameRoom < MIN_INLINE_NAME_WIDTH
+  const procedureLines = consent
+    ? consent.procedure.split('\n').slice(0, CONSENT_PROCEDURE_MAX_LINES)
+    : []
 
   return (
     <box
@@ -352,33 +378,62 @@ export const SponsoredProposalBlock: React.FC<{
         </box>
       )}
 
-      <text style={{ fg: theme.muted, wrapMode: 'none' }}>
-        {clip(view.title, inner)}
+      <text style={{ fg: theme.foreground }}>
+        {clip(
+          delivered
+            ? 'Sponsored changes applied to your files'
+            : inFlight && runPhase !== 'running'
+              ? 'Starting in this conversation…'
+              : view.headline,
+          inner,
+        )}
       </text>
-      <text style={{ fg: theme.foreground }}>{clip(view.headline, inner)}</text>
       {showBody && <text style={{ fg: theme.muted }}>{view.body}</text>}
-      {view.state === 'offered' && (
-        <text style={{ fg: theme.muted, wrapMode: 'none' }}>
-          {inner < 30 ? 'Code/setup/check' : 'Code → account setup → verify'}
+      {showBody && canRun && (
+        <text style={{ fg: theme.muted }}>
+          It edits files in this folder. Nothing is committed, and /ads:undo
+          puts them back.
         </text>
       )}
 
-      {view.state === 'running' && view.steps.length > 0 && (
-        <box style={{ width: '100%', flexDirection: 'column' }}>
-          <text style={{ fg: theme.muted, wrapMode: 'none' }}>
-            {`${view.doneStepCount}/${view.steps.length}`}
-          </text>
-          {view.steps.map((step) => (
-            <text key={step.text} style={{ fg: theme.muted, wrapMode: 'none' }}>
-              {clip(
-                `${SPONSORED_STEP_STATE_LABEL[step.state]}  ${step.text}`,
-                inner,
-              )}
+      {(runPhase === 'running' || view.state === 'running') &&
+        view.steps.length > 0 && (
+          <box style={{ width: '100%', flexDirection: 'column' }}>
+            <text style={{ fg: theme.muted, wrapMode: 'none' }}>
+              {`${view.doneStepCount}/${view.steps.length}`}
             </text>
-          ))}
-        </box>
+            {view.steps.map((step) => (
+              <text
+                key={step.text}
+                style={{ fg: theme.muted, wrapMode: 'none' }}
+              >
+                {clip(
+                  `${SPONSORED_STEP_STATE_LABEL[step.state]}  ${step.text}`,
+                  inner,
+                )}
+              </text>
+            ))}
+          </box>
+        )}
+      {runPhase === 'running' && (
+        <text style={{ fg: theme.muted, wrapMode: 'none' }}>
+          {clip('Running in this conversation. Esc stops it.', inner)}
+        </text>
       )}
 
+      {delivered && run && !run.undone && (
+        <text style={{ fg: theme.muted }}>
+          {`Changed ${run.changedFiles.length === 1 ? '1 file' : `${run.changedFiles.length} files`}. Nothing was committed.`}
+        </text>
+      )}
+      {delivered && run?.undone && (
+        <text style={{ fg: theme.muted }}>These changes were undone.</text>
+      )}
+      {view.state === 'failed' && (
+        <text style={{ fg: theme.muted }}>{view.failureReason}</text>
+      )}
+      {/* A row from a build that still ran the worktree flow. Nothing here
+          produces one any more, but a card must not misdescribe it. */}
       {view.state === 'committed' && (
         <text style={{ fg: theme.muted }}>
           {view.branch
@@ -386,53 +441,48 @@ export const SponsoredProposalBlock: React.FC<{
             : 'Committed to its own branch. Nothing was pushed to your repository.'}
         </text>
       )}
-      {/* DELIVERY IS NAMED HERE RATHER THAN IN THE HINT. The hint line has room
-          for two commands and R-2 spends one of them on the decline, which is
-          the one control every state owes the user. So the two commands that
-          only exist once there is a branch are named beside the branch. */}
-      {view.state === 'committed' && (
-        <text style={{ fg: theme.muted }}>
-          Open a pull request with /ads:pull-request, or discard the workspace
-          with /ads:remove-worktree.
-        </text>
-      )}
-      {view.state === 'failed' && (
-        <text style={{ fg: theme.muted }}>{view.failureReason}</text>
-      )}
 
-      {/* SANITIZED TEXT, not a link (R-15 is waived on this surface for exactly
-          this reason). `pullRequestHref` is null for anything that is not
-          absolute https, so nothing else ever reaches this line. */}
+      {/* SANITIZED TEXT, not a link (R-15): an older worktree run's PR.
+          `pullRequestHref` is null for anything that is not absolute https. */}
       {openPullRequest?.href && (
         <text style={{ fg: theme.muted, wrapMode: 'none' }}>
           {clip(`${openPullRequest.label}: ${openPullRequest.href}`, inner)}
         </text>
       )}
 
-      {view.setupGuide && (
-        <box style={{ width: '100%', flexDirection: 'column' }}>
-          <text style={{ fg: theme.foreground, wrapMode: 'none' }}>
-            {clip('Setup → verify', inner)}
-          </text>
-          {openAdvertiser?.href && (
-            <text style={{ fg: theme.muted, wrapMode: 'none' }}>
-              {clip(`${openAdvertiser.label}: ${openAdvertiser.href}`, inner)}
-            </text>
-          )}
-        </box>
-      )}
-
-      {/* Owen, 2026-09-03: the offer names the worktree and nothing about
-          cost. A local sponsored run still spends the user's own session and
-          credits (COD-119's advertiser-pays metering has no server-side
-          reader); the card just does not say so, and neither does Desktop. Do
-          not put a "free" claim here until the server meters it to the
-          advertiser. */}
-      {view.state === 'offered' && canRun && showBody && (
-        <text style={{ fg: theme.muted }}>
-          It runs here, in its own worktree.
+      {/* THE ANSWERS ONCE THERE IS A DIFF: the advertiser's setup (the next
+          step of the prepare-code -> account-setup -> verify format) and the
+          undo. The destination is ALSO printed, gated, so a terminal with no
+          mouse can still copy it. */}
+      {openAdvertiser?.href && !refreshUnavailable && (
+        <text style={{ fg: theme.muted, wrapMode: 'none' }}>
+          {clip(`${openAdvertiser.label}: ${openAdvertiser.href}`, inner)}
         </text>
       )}
+      {!refreshUnavailable &&
+        (openAdvertiser?.href || (delivered && run && !run.undone)) && (
+          <box style={{ width: '100%', flexDirection: 'row', gap: 2 }}>
+            {openAdvertiser?.href && (
+              <Button
+                onClick={() => {
+                  if (openAdvertiser.href) safeOpen(openAdvertiser.href)
+                }}
+              >
+                <text
+                  style={{ fg: theme.primary, wrapMode: 'none' }}
+                  attributes={TextAttributes.BOLD}
+                >
+                  [ Open setup ]
+                </text>
+              </Button>
+            )}
+            {delivered && run && !run.undone && (
+              <Button onClick={() => callbacks.onSponsoredProposalUndo()}>
+                <text style={{ fg: theme.muted, wrapMode: 'none' }}>Undo</text>
+              </Button>
+            )}
+          </box>
+        )}
 
       {unavailable && <text style={{ fg: theme.muted }}>{unavailable}</text>}
       {refreshUnavailable && (
@@ -444,35 +494,34 @@ export const SponsoredProposalBlock: React.FC<{
 
       {block.whyOpen && <text style={{ fg: theme.muted }}>{view.whyThis}</text>}
 
-      {/* THE CONSENT: one sentence and two choices (COD-410), the same words
-          Desktop's main-process dialog says. It used to be a field list --
-          headline, body, folder, branch, a paragraph of assurances -- and a
-          list nobody reads is not informed consent however much it contains.
-          The folder is the one this CLI is running in and the branch is
-          covered by "its own branch"; a fact that does not change the
-          decision is not on the screen. Refusable, and a refusal writes
-          nothing at all -- nothing has been accepted yet. It cannot show the
-          reviewed procedure TEXT because the accept response is the only place
-          that exists; see `utils/sponsored-run.ts` for why that ordering is
-          the one that keeps a Decline honest. */}
+      {/* THE CONSENT: one sentence and two choices (COD-410), in the in-place
+          words Desktop's dialog uses (#3989): it names the folder, says nothing
+          is committed, and names the undo. The procedure is one keypress away
+          and is the exact text the Accept binds. */}
       {consent && (
         <box style={{ width: '100%', flexDirection: 'column' }}>
-          {/* The name is the advertiser's and the sentence is ours, so they are two spans and
-              never one string. `sponsoredConsentName` is the SAME clamp the desktop bridge
-              applies: control characters and bidi overrides escaped rather than dropped, and the
-              length capped at 80 -- unclamped, a 4,000-character name is a wall of text above the
-              choices on a card that is otherwise all clipped single lines. Blank is not a legal
-              render, so a nameless consent states a refusal and offers only the refusal. */}
           {consentName ? (
             <text style={{ fg: theme.foreground }}>
               <span attributes={TextAttributes.BOLD}>{consentName}</span>
-              {SPONSORED_CONSENT_SENTENCE}
+              {SPONSORED_CONSENT_IN_PLACE_SENTENCE}
             </text>
           ) : (
             <text style={{ fg: theme.foreground }}>
               {SPONSORED_CONSENT_NO_NAME}
             </text>
           )}
+          <text style={{ fg: theme.muted, wrapMode: 'none' }}>
+            {clip(`Folder: ${consent.folder}`, inner)}
+          </text>
+          {block.procedureOpen &&
+            procedureLines.map((line, index) => (
+              <text
+                key={`procedure-${index}`}
+                style={{ fg: theme.muted, wrapMode: 'none' }}
+              >
+                {clip(line, inner)}
+              </text>
+            ))}
           {consentChoices.map((label, index) => (
             <text
               key={label}
@@ -487,7 +536,7 @@ export const SponsoredProposalBlock: React.FC<{
         </box>
       )}
 
-      {block.menuOpen && !refreshUnavailable && (
+      {expanded && !consent && (
         <box style={{ width: '100%', flexDirection: 'column' }}>
           {menu.map((item, index) => (
             <text
@@ -502,6 +551,53 @@ export const SponsoredProposalBlock: React.FC<{
           ))}
         </box>
       )}
+
+      {/* THE BUTTONS: the offer's two answers, clickable, on the collapsed
+          dock. `Set it up` opens the consent; `Not now` is the decline R-2
+          owes every state. */}
+      {view.state === 'offered' &&
+        !answered &&
+        !refreshUnavailable &&
+        !consent &&
+        !expanded &&
+        !run && (
+          // STACKED below 24 columns: side by side, `[ Set it up ]  Not now`
+          // clipped to `[ Set it u Not n` at the 20-column floor, which is two
+          // buttons nobody can read.
+          <box
+            style={{
+              width: '100%',
+              flexDirection: inner >= BUTTON_ROW_MIN_WIDTH ? 'row' : 'column',
+              gap: inner >= BUTTON_ROW_MIN_WIDTH ? 2 : 0,
+            }}
+          >
+            {acceptable && (
+              <Button
+                onClick={() =>
+                  callbacks.onSponsoredProposalAccept(block.target)
+                }
+              >
+                <text
+                  style={{ fg: theme.primary, wrapMode: 'none' }}
+                  attributes={TextAttributes.BOLD}
+                >
+                  [ Set it up ]
+                </text>
+              </Button>
+            )}
+            {!busy && (
+              <Button
+                onClick={() =>
+                  callbacks.onSponsoredProposalControl(block.target, 'dismiss')
+                }
+              >
+                <text style={{ fg: theme.muted, wrapMode: 'none' }}>
+                  Not now
+                </text>
+              </Button>
+            )}
+          </box>
+        )}
 
       {!answered && !refreshUnavailable && (
         <text style={{ fg: theme.muted, wrapMode: 'none' }}>
@@ -528,16 +624,7 @@ function answeredOrBusy(block: SponsoredProposalContentBlock): boolean {
 
 export type ProposalHintMode = 'closed' | 'acceptable' | 'menu' | 'consent'
 
-/**
- * Which hint the card is owed, given what is open and what is on offer.
- *
- * THERE IS NO `committed` MODE, and that is a decision rather than an omission:
- * R-2 requires every state to name its one decline, and a hint that named
- * `/ads:pull-request` instead would have taken the decline off the card for
- * exactly the state where the user has most reason to want it. Delivery is in
- * the MENU, beside the Accept, for the same reason the Accept is: this surface
- * has no room for a primary, so the list of answers is where an answer lives.
- */
+/** Which hint the dock is owed, given what is open and what is on offer. */
 export function hintMode(
   block: SponsoredProposalContentBlock,
   acceptable: boolean,
@@ -548,25 +635,19 @@ export function hintMode(
 }
 
 /**
- * The hint line, and the reason it names COMMANDS rather than keys.
+ * The hint line.
  *
- * While nothing is open this card holds no key bindings at all, because a
- * transcript block sharing a terminal with a live composer cannot own a bare
- * letter. So the hint names the slash commands that reach it. An open menu or
- * an open consent is the span where the card does own the keyboard, and the
- * hint says so.
+ * While nothing is open the dock binds no bare key, so the hint names the
+ * CHORD (and, where there is no Accept, the decline command). An open menu or
+ * consent is the span where the dock owns the keyboard, and the hint says so.
  *
- * IT MAY NAME ACCEPT NOW, and only when there is one: `acceptable` is false on
- * a machine that cannot contain a run, so a Windows card still never says the
- * word. Naming a control that is not there is how a card starts looking like it
- * can run something it cannot.
+ * IT NAMES ACCEPT only where there is one: `acceptable` is false on a machine
+ * that cannot contain a run, so a Windows card never says the word.
  */
 export function hintFor(mode: ProposalHintMode, width = Infinity): string {
-  // KEPT SHORT ON PURPOSE. `inner` is the card's content width less its
-  // border, but the box also has a column of padding on each side, so a line
-  // of exactly `inner` characters loses its last two to the frame. A hint
-  // naming two commands is long enough to hit that, and
-  // `/ads:dismiss-proposa` teaches a command that does not exist.
+  // KEPT SHORT ON PURPOSE. `inner` is the content width less the border, but
+  // the box also has a column of padding on each side, so a line of exactly
+  // `inner` characters loses its last two to the frame.
   const full = HINT_FULL[mode]
   if (full.length <= width) return full
   // Clipping mid-token teaches the user a command that does not exist, which is
@@ -576,27 +657,19 @@ export function hintFor(mode: ProposalHintMode, width = Infinity): string {
 }
 
 const HINT_FULL: Record<ProposalHintMode, string> = {
-  closed: '/ads:proposal · /ads:dismiss-proposal',
-  // The Accept REPLACES `/ads:proposal` here rather than the decline: R-2 says
-  // every state names its one decline, and this is the state where accepting
-  // and declining are the two answers on offer.
-  acceptable: '/ads:accept-proposal · /ads:dismiss-proposal',
+  closed: `${PROPOSAL_DOCK_CHORD} · /ads:dismiss-proposal`,
+  acceptable: `${PROPOSAL_DOCK_CHORD} · /ads:accept-proposal`,
   menu: '↑↓ move · enter choose · esc close',
-  consent: '↑↓ move · enter choose · esc cancel',
+  consent: '↑↓ · enter choose · v steps · esc cancel',
 }
 
 /**
  * The last thing that still fits. Every entry is a WHOLE command or a whole
  * key name — never a prefix of one.
- *
- * `acceptable` falls back to `/ads:proposal` rather than to a truncated
- * `/ads:accept-…`, and that is not a loss: the menu that command opens now
- * carries the Accept as its first item, so the narrowest card still has a
- * route to it.
  */
 const HINT_COMPACT: Record<ProposalHintMode, string> = {
-  closed: '/ads:proposal',
-  acceptable: '/ads:proposal',
+  closed: PROPOSAL_DOCK_CHORD,
+  acceptable: PROPOSAL_DOCK_CHORD,
   menu: 'enter · esc',
   consent: 'enter · esc',
 }

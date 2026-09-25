@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync, statSync } from 'fs'
 import path from 'path'
 
 import { getConfigDir } from './utils/auth'
+import { IS_FREEBUFF } from './utils/constants'
 import { ensureSponsoredProjectIdentity } from './utils/sponsored-project-identity'
 
 let projectRoot: string | undefined
@@ -13,9 +14,11 @@ function ensureChatDirectory(dir: string) {
 
 export function setProjectRoot(dir: string) {
   projectRoot = dir
-  // Project selection is the normal lifecycle owner for a remote-less
-  // workspace identity. Sponsored polling only ever reads this marker.
-  ensureSponsoredProjectIdentity(dir)
+  // Project selection is the normal lifecycle owner for the workspace
+  // identity. Sponsored polling only ever reads this marker. Freebuff writes
+  // it in every Git project, because an in-place sponsored offer is keyed to
+  // the folder rather than to `owner/repo` (#3989).
+  ensureSponsoredProjectIdentity(dir, { everyRepository: IS_FREEBUFF })
   return projectRoot
 }
 

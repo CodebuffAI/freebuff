@@ -24,6 +24,15 @@
  * predicate on the server, so exactly one path serves. `FREEBUFF_AGENTIC_ADS=off`
  * therefore stops agentic on BOTH paths; there is no position that sends an
  * updated Desktop back to the old one.
+ *
+ * THE CLI (`Freebuff-CLI/` UA) is served here too, under the same
+ * `FREEBUFF_AGENTIC_ADS` audience as Desktop; it has no switch of its own. A
+ * CLI request must also carry `inPlaceExecutionVersion: 1` and report macOS
+ * or Linux; a CLI request without the in-place flag, or from Windows, is
+ * `ineligible_client`, so the CLI's old worktree flow is never served. The CLI reads offers from the `CLI-Chat-Inline` book,
+ * mints rows with `surface: 'cli'`, and is never answered an invitation (it
+ * cannot draw one). There is no `/api/ads` fallback for the CLI: it has never
+ * been asked the agentic question there.
  */
 
 import { z } from 'zod'
@@ -137,7 +146,10 @@ export const AGENTIC_OFFER_NONE_REASONS = [
    * audience without them); `/api/ads` asks their agentic question as before.
    */
   'disabled',
-  /** Not a Desktop bearer, product UA or OS pairing this route serves. */
+  /**
+   * Not a bearer, product UA or OS pairing this route serves: a Desktop, or a
+   * CLI that sends `inPlaceExecutionVersion: 1` and reports macOS or Linux.
+   */
   'ineligible_client',
   /**
    * No price tier for this request's geo. Named for its original meaning

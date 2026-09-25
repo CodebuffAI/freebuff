@@ -1,15 +1,13 @@
 /**
- * The two prompt bullets are a MIRROR, and this is what stops it drifting.
+ * The in-place rules are a MIRROR of Desktop's, and this is what stops it
+ * drifting.
  *
- * `SPONSORED_REPO_GIT_GUIDANCE` lives in a Convex module
- * (`freebuff/web/convex/coding_agent/cli_agent/system_prompt.ts`), and importing
- * it here would drag the Convex generated API into the CLI's typecheck program.
- * So the two lines are copied — and read back out of the production file as
- * TEXT, so a copy that stops matching fails here rather than in a run whose
- * commit went somewhere nobody expected.
- *
- * The same technique Desktop's `sponsored-run.test.ts` uses, for the same
- * reason.
+ * `DESKTOP_IN_PLACE_SPONSORED_GUIDANCE` lives in the Desktop orchestrator
+ * (`freebuff-desktop/src/server/services/sponsored-run.ts`), and importing it
+ * here would drag the orchestrator's graph into the CLI's typecheck program. So
+ * the bullets are copied -- and read back out of the production file as TEXT,
+ * so a copy that stops matching fails here rather than in a run the two
+ * surfaces told different things.
  */
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -20,45 +18,67 @@ import { ensureCliTestEnv } from '../../__tests__/test-utils'
 ensureCliTestEnv()
 
 const {
-  SPONSORED_COMMIT_BULLET,
-  SPONSORED_NO_PUSH_BULLET,
+  SPONSORED_IN_PLACE_BULLETS,
+  SPONSORED_CONTEXT_HEADING,
+  SPONSORED_TASK_FRAMING,
   buildSponsoredPrompt,
 } = await import('../sponsored-agent')
 
-const PRODUCTION_PROMPT = join(
+const DESKTOP_RUN = join(
   import.meta.dir,
   '..',
   '..',
   '..',
   '..',
-  'freebuff',
-  'web',
-  'convex',
-  'coding_agent',
-  'cli_agent',
-  'system_prompt.ts',
+  'freebuff-desktop',
+  'src',
+  'server',
+  'services',
+  'sponsored-run.ts',
 )
 
-describe('the mirrored git guidance', () => {
-  test('both bullets are still byte-identical to the production prompt', () => {
-    const source = readFileSync(PRODUCTION_PROMPT, 'utf8')
-    expect(source).toContain(SPONSORED_COMMIT_BULLET)
-    expect(source).toContain(SPONSORED_NO_PUSH_BULLET)
+describe('the mirrored in-place guidance', () => {
+  test('every bullet is still byte-identical to Desktop’s', () => {
+    const source = readFileSync(DESKTOP_RUN, 'utf8')
+    for (const bullet of SPONSORED_IN_PLACE_BULLETS) {
+      expect(source, bullet).toContain(bullet)
+    }
   })
 
-  test('the run’s prompt is the procedure UNDER the guidance', () => {
-    // Under, not over: the guidance is ours and the procedure is the
-    // advertiser's, and a procedure that arrived first would be a procedure
-    // that could argue with the rules above it.
-    const prompt = buildSponsoredPrompt('Wire up the Acme deploy hook.')
-    expect(prompt.indexOf(SPONSORED_COMMIT_BULLET)).toBeLessThan(
-      prompt.indexOf('Wire up the Acme deploy hook.'),
+  test('the framing and the context heading are byte-identical to Desktop’s', () => {
+    const source = readFileSync(DESKTOP_RUN, 'utf8')
+    for (const text of [SPONSORED_TASK_FRAMING, SPONSORED_CONTEXT_HEADING])
+      for (const line of text.split('\n')) expect(source, line).toContain(line)
+  })
+
+  test('Desktop’s order: the authorisation, the procedure, the context, the rules', () => {
+    // The task is stated before the procedure and the rules come after both:
+    // a prompt that opens with prohibitions and never says what to do leaves
+    // the model to read the task off section labels.
+    const prompt = buildSponsoredPrompt('Wire up the Acme deploy hook.', [
+      'What database should I use?',
+    ])
+    const at = (text: string) => prompt.indexOf(text)
+    expect(prompt.startsWith('The user was shown the procedure below')).toBe(
+      true,
     )
-    expect(prompt).toContain(SPONSORED_NO_PUSH_BULLET)
-    // Every refusal the prompt restates is one the code ENFORCES, so the model
-    // is told about a boundary rather than asked to keep one.
-    expect(prompt).toContain('--no-verify')
+    expect(at('Wire up the Acme deploy hook.')).toBeLessThan(
+      at('User message 1:\nWhat database should I use?'),
+    )
+    expect(at('User message 1:')).toBeLessThan(at('UNCOMMITTED'))
     expect(prompt).toContain('Do NOT install dependencies')
-    expect(prompt).toContain('nobody watching')
+    expect(prompt.endsWith('decide and proceed, or stop.')).toBe(true)
+  })
+
+  test('the context is carried whole, in order', () => {
+    // The run starts with fresh memory, so without the user's own words the
+    // procedure runs against a project it knows nothing about.
+    const prompt = buildSponsoredPrompt('Procedure.', [
+      'first message',
+      'second message',
+    ])
+    expect(prompt).toContain(
+      'User message 1:\nfirst message\n\nUser message 2:\nsecond message',
+    )
   })
 })

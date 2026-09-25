@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  isSponsoredCliExecutionSurface,
   sponsoredCapabilitySchema,
+  sponsoredCliExecutionSurfaceForRequest,
   sponsoredDesktopExecutionSurfaceForPlatform,
   SUPABASE_FOUNDATION_MODES,
   SUPABASE_FOUNDATION_RUNNABLE_FRAMEWORKS,
@@ -200,5 +202,65 @@ describe('the Desktop surface a process reports (COD-642)', () => {
       'desktop_windows',
     )
     expect(sponsoredDesktopExecutionSurfaceForPlatform('freebsd')).toBeNull()
+  })
+})
+
+describe('the CLI execution surface a request proves', () => {
+  const execution = (
+    surface: string,
+    status = 'available',
+    reason?: string,
+  ) => ({ execution: { surface, status, ...(reason ? { reason } : {}) } })
+
+  test('macOS proves cli_macos; Linux proves cli_linux or cli_wsl', () => {
+    expect(
+      sponsoredCliExecutionSurfaceForRequest('macos', execution('cli_macos')),
+    ).toBe('cli_macos')
+    expect(
+      sponsoredCliExecutionSurfaceForRequest('linux', execution('cli_linux')),
+    ).toBe('cli_linux')
+    // WSL reports `linux`; only the capability can tell it apart.
+    expect(
+      sponsoredCliExecutionSurfaceForRequest('linux', execution('cli_wsl')),
+    ).toBe('cli_wsl')
+  })
+
+  test('nothing is proven by a mismatched OS, a Desktop surface, an unavailable run or no capability', () => {
+    expect(
+      sponsoredCliExecutionSurfaceForRequest('linux', execution('cli_macos')),
+    ).toBeNull()
+    expect(
+      sponsoredCliExecutionSurfaceForRequest('macos', execution('cli_linux')),
+    ).toBeNull()
+    expect(
+      sponsoredCliExecutionSurfaceForRequest(
+        'macos',
+        execution('desktop_macos'),
+      ),
+    ).toBeNull()
+    expect(
+      sponsoredCliExecutionSurfaceForRequest(
+        'linux',
+        execution('cli_linux', 'unavailable', 'bubblewrap_missing'),
+      ),
+    ).toBeNull()
+    expect(
+      sponsoredCliExecutionSurfaceForRequest(
+        'linux',
+        execution('cli_linux', 'available', 'bubblewrap_missing'),
+      ),
+    ).toBeNull()
+    expect(
+      sponsoredCliExecutionSurfaceForRequest('windows', execution('cli_wsl')),
+    ).toBeNull()
+    expect(sponsoredCliExecutionSurfaceForRequest('macos', null)).toBeNull()
+    expect(sponsoredCliExecutionSurfaceForRequest(null, undefined)).toBeNull()
+  })
+
+  test('the CLI surfaces are exactly the schema’s cli_ members', () => {
+    for (const surface of ['cli_macos', 'cli_linux', 'cli_wsl'])
+      expect(isSponsoredCliExecutionSurface(surface)).toBe(true)
+    for (const surface of ['desktop_macos', 'cli_chat', 'cli_windows', '', null])
+      expect(isSponsoredCliExecutionSurface(surface)).toBe(false)
   })
 })

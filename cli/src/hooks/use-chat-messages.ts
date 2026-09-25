@@ -5,7 +5,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { setAllBlocksCollapsedState, hasAnyExpandedBlocks } from '../utils/collapse-helpers'
+import {
+  setAllBlocksCollapsedState,
+  hasAnyExpandedBlocks,
+} from '../utils/collapse-helpers'
 import { buildMessageTree } from '../utils/message-tree-utils'
 
 import type { ChatMessage, ContentBlock } from '../types/chat'
@@ -119,7 +122,9 @@ export function useChatMessages({
                 const isExpanded = block.thinkingCollapseState === 'expanded'
                 return {
                   ...block,
-                  thinkingCollapseState: isExpanded ? 'preview' as const : 'expanded' as const,
+                  thinkingCollapseState: isExpanded
+                    ? ('preview' as const)
+                    : ('expanded' as const),
                   userOpened: !isExpanded, // Mark as user-opened if expanding
                 }
               }
@@ -224,9 +229,24 @@ export function useChatMessages({
     }, 0)
   }, [setMessages])
 
-  // Build message tree from flat messages array
+  // Build message tree from flat messages array. A row that exists only to
+  // HOLD a sponsored proposal's state is not drawn: the proposal renders in
+  // the dock above the composer, one slot for one ad, and a second copy in the
+  // transcript would be an ad scrolling past twice.
   const { tree: messageTree, topLevelMessages } = useMemo(
-    () => buildMessageTree(messages),
+    () =>
+      buildMessageTree(
+        messages.filter(
+          (message) =>
+            !(
+              message.content === '' &&
+              message.blocks?.length &&
+              message.blocks.every(
+                (block) => block.type === 'sponsored-proposal',
+              )
+            ),
+        ),
+      ),
     [messages],
   )
 

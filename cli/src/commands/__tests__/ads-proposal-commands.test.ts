@@ -5,8 +5,7 @@ import {
   handleProposalAccept,
   handleProposalDismiss,
   handleProposalMenu,
-  handleProposalPullRequest,
-  handleProposalRemoveWorktree,
+  handleProposalUndo,
   liveSponsoredProposal,
 } from '../ads'
 import { setSponsoredCliAvailability } from '../../utils/sponsored-availability'
@@ -202,15 +201,18 @@ describe('the Phase 2 commands', () => {
     setSponsoredCliAvailability(null)
   })
 
-  test('the delivery commands are honest when no run has happened', async () => {
-    // Reachable by typing, at any time, with no card and no run. Neither may
-    // throw, and neither may imply something is in flight.
-    expect(await handleProposalPullRequest()).toContain(
-      'No sponsored task has run',
-    )
-    expect(await handleProposalRemoveWorktree()).toContain(
-      'No sponsored task has run',
-    )
+  test('/ads:undo goes through the same callback as the dock’s Undo', () => {
+    // One implementation of the undo, so the transcript line and the brief to
+    // the conversation's agent cannot differ by how the user asked.
+    let undos = 0
+    useMessageBlockStore.getState().setCallbacks({
+      ...useMessageBlockStore.getState().callbacks,
+      onSponsoredProposalUndo: () => {
+        undos += 1
+      },
+    })
+    handleProposalUndo()
+    expect(undos).toBe(1)
   })
 })
 
@@ -226,21 +228,25 @@ function recordAcceptCalls() {
 }
 
 describe('the commands are reachable by typing them', () => {
-  test('all six sponsored-proposal commands resolve through the registry', async () => {
-    // The card owns no bare keys, so a command that is not in the registry is a
-    // control the user cannot reach at all — and at twenty columns the hint
-    // line has room for two of these names, so the rest are discovered by
-    // typing `/ads:` and reading the menu.
+  test('every sponsored-proposal command resolves through the registry', async () => {
+    // The dock owns no bare keys, so for a terminal with no mouse a command
+    // that is not in the registry is a control the user cannot reach at all.
     const { findCommand } = await import('../command-registry')
     for (const name of [
       'ads:proposal',
       'ads:dismiss-proposal',
       'ads:accept-proposal',
-      'ads:pull-request',
-      'ads:remove-worktree',
+      'ads:undo',
       'ads:proposals-off',
     ]) {
       expect(findCommand(name)?.name, name).toBe(name)
     }
+  })
+
+  test('the worktree delivery commands are gone with the worktree', async () => {
+    // An in-place run commits nothing and pushes nothing (#3989).
+    const { findCommand } = await import('../command-registry')
+    expect(findCommand('ads:pull-request')).toBeUndefined()
+    expect(findCommand('ads:remove-worktree')).toBeUndefined()
   })
 })

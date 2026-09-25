@@ -22,9 +22,19 @@ import {
 } from '../hooks/use-subscription-query'
 import { useChatStore } from '../state/chat-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
+import {
+  sponsoredTurnHoldsQueue,
+  useSponsoredRunStore,
+} from '../state/sponsored-run-store'
 import { useByokSelectionStore } from '../utils/byok'
 import { IS_FREEBUFF } from '../utils/constants'
 import { logger } from '../utils/logger'
+import { getSystemMessage } from '../utils/message-history'
+import { setPendingSponsoredBrief } from '../utils/sponsored-brief'
+import {
+  currentSponsoredRun,
+  sponsoredVerdictNotice,
+} from '../utils/sponsored-run'
 import {
   applyActiveRunQueuePolicy,
   registerActiveRunStopHandler,
@@ -118,19 +128,25 @@ export const ChatRuntimeProvider = ({
   const hasSelectedByokConnection = useByokSelectionStore(
     (state) => state.selected !== undefined,
   )
-  const sendBlocked =
+  const freebuffSessionOver =
     IS_FREEBUFF &&
     !hasSelectedByokConnection &&
     !holdsLiveFreebuffSlot(freebuffSession)
+  // An accepted sponsored task runs NEXT, ahead of anything the user queued
+  // after approving it, and nothing they type steers it: it has no steering
+  // mailbox, so their messages land in this queue and wait for its verdict.
+  const sponsoredSnapshot = useSponsoredRunStore((state) => state.snapshot)
+  const sponsoredHold = sponsoredTurnHoldsQueue(sponsoredSnapshot)
+  const sendBlocked = freebuffSessionOver || sponsoredHold
 
   useEffect(() => {
-    if (sendBlocked) {
+    if (freebuffSessionOver) {
       logger.info(
         {},
         '[chat-runtime] Freebuff session over; holding queued messages until rejoin',
       )
     }
-  }, [sendBlocked])
+  }, [freebuffSessionOver])
 
   const queue = useMessageQueue(
     (message) =>
@@ -202,6 +218,52 @@ export const ChatRuntimeProvider = ({
   })
 
   sendMessageRef.current = sendMessage
+
+  // START THE ACCEPTED SPONSORED TURN once the conversation is free. It is a
+  // turn IN this conversation (#3989): it streams into the transcript through
+  // the ordinary send path, which is what holds the chain -- and so the queue
+  // -- until it has a verdict. `starting` guards the await between reading the
+  // plan and the send taking the chain, which a re-render could otherwise
+  // enter twice.
+  const sponsoredStarting = useRef(false)
+  useEffect(() => {
+    if (sponsoredSnapshot?.phase !== 'queued') return
+    if (isChainInProgress || queue.streamStatus !== 'idle') return
+    if (sponsoredStarting.current) return
+    const run = currentSponsoredRun()
+    if (!run) return
+    sponsoredStarting.current = true
+    void (async () => {
+      try {
+        const plan = await run.startTurn()
+        if (!plan) return
+        await sendMessageRef.current?.({
+          content: '',
+          agentMode,
+          sponsored: {
+            plan,
+            anchor: getSystemMessage(
+              `SPONSORED · ${plan.advertiserName} is working in this folder. Messages you send now will wait until it finishes.`,
+            ),
+            onSettled: (result) => {
+              void run.settleTurn(result).then((brief) => {
+                setPendingSponsoredBrief(brief)
+                const snapshot = run.state
+                useChatStore
+                  .getState()
+                  .setMessages((prev) => [
+                    ...prev,
+                    getSystemMessage(sponsoredVerdictNotice(snapshot)),
+                  ])
+              })
+            },
+          },
+        })
+      } finally {
+        sponsoredStarting.current = false
+      }
+    })()
+  }, [sponsoredSnapshot, isChainInProgress, queue.streamStatus, agentMode])
 
   const value: ChatRuntime = {
     mainAgentTimer,

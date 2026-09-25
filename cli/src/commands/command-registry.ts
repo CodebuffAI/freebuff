@@ -6,9 +6,8 @@ import {
   handleProposalAccept,
   handleProposalDismiss,
   handleProposalMenu,
-  handleProposalPullRequest,
-  handleProposalRemoveWorktree,
   handleProposalNeverAdvertiser,
+  handleProposalUndo,
   handleProposalReport,
   handleProposalsOff,
 } from './ads'
@@ -271,19 +270,9 @@ const ALL_COMMANDS: CommandDefinition[] = [
     },
   }),
   defineCommand({
-    name: 'ads:pull-request',
-    handler: async (params) => {
-      const message = await handleProposalPullRequest()
-      params.setMessages((prev) => [...prev, getSystemMessage(message)])
-      params.saveToHistory(params.inputValue.trim())
-      clearInput(params)
-    },
-  }),
-  defineCommand({
-    name: 'ads:remove-worktree',
-    handler: async (params) => {
-      const message = await handleProposalRemoveWorktree()
-      params.setMessages((prev) => [...prev, getSystemMessage(message)])
+    name: 'ads:undo',
+    handler: (params) => {
+      handleProposalUndo()
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
     },

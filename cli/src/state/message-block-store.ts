@@ -91,6 +91,10 @@ export interface MessageBlockCallbacks {
   onSponsoredProposalAccept: (target: string) => void
   /** The consent's answer. `false` refuses and leaves the row `offered`. */
   onSponsoredProposalConsent: (target: string, approved: boolean) => void
+  /** Expand or collapse the consent's reviewed procedure ("View steps"). */
+  onSponsoredProposalProcedure: (target: string, open: boolean) => void
+  /** Put back the files the run changed (`/ads:undo`, and the dock's Undo). */
+  onSponsoredProposalUndo: () => void
   /** Dismiss, report, never-this-advertiser, or the channel opt-out. */
   onSponsoredProposalControl: (
     target: string,
@@ -152,6 +156,8 @@ const initialCallbacks: MessageBlockCallbacks = {
   onSponsoredProposalDisclose: noop,
   onSponsoredProposalAccept: noop,
   onSponsoredProposalConsent: noop,
+  onSponsoredProposalProcedure: noop,
+  onSponsoredProposalUndo: noop,
   onSponsoredProposalControl: noop,
 }
 

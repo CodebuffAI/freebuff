@@ -92,6 +92,8 @@ export type ChatKeyboardHandlers = {
   // Sponsor dock (COD-457)
   onToggleDockPanel: () => void
   onCloseDockPanel: () => void
+  /** Ctrl+O while a sponsored proposal holds the dock: open its details. */
+  onToggleSponsoredDock?: () => void
 }
 
 /**
@@ -269,6 +271,9 @@ function dispatchAction(
       return true
     case 'close-dock-panel':
       handlers.onCloseDockPanel()
+      return true
+    case 'toggle-sponsored-dock':
+      handlers.onToggleSponsoredDock?.()
       return true
     case 'none':
       return false

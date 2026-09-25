@@ -20,6 +20,8 @@ import {
   sponsoredCodeSearchFlagsRefusal,
   sponsoredMacGitPath,
   sponsoredMacProfile,
+  sponsoredMacSecretReadRules,
+  sponsoredSecretFiles,
 } from '../tools/sponsored-sandbox'
 import { codeSearch, parseCodeSearchFlags } from '../tools/code-search'
 import { sponsoredContainmentTestGate } from '../../test/sponsored-containment-gate'
@@ -640,6 +642,100 @@ describe('sponsored read containment (F1)', () => {
       expect(() => assertSponsoredCommandCwd(root, 'escape')).toThrow(/symlink/)
       expect(() => assertSponsoredWritePath(root, 'escape/x')).toThrow(
         /symlink/,
+      )
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('secrets inside the workspace: the shell refuses what the file tools refuse', () => {
+  const SECRETS: Record<string, string> = {
+    '.env': 'REAL_VALUE_ENV',
+    '.env.local': 'REAL_VALUE_LOCAL',
+    'apps/web/.env.production': 'REAL_VALUE_NESTED',
+    '.npmrc': 'REAL_VALUE_NPMRC',
+    id_rsa: 'REAL_VALUE_KEY',
+    'certs/server.pem': 'REAL_VALUE_PEM',
+    '.envrc': 'REAL_VALUE_DIRENV',
+    // Inside the repository's own directory, which the Linux scan must walk.
+    '.git/deploy.key': 'REAL_VALUE_GIT',
+  }
+  function withSecrets(root: string): void {
+    for (const [file, body] of Object.entries(SECRETS)) {
+      fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true })
+      fs.writeFileSync(path.join(root, file), `${body}\n`)
+    }
+    fs.writeFileSync(path.join(root, '.env.example'), 'TEMPLATE_NAME=\n')
+    fs.mkdirSync(path.join(root, 'src'), { recursive: true })
+    fs.writeFileSync(path.join(root, 'src', 'app.ts'), 'ORDINARY_CODE\n')
+  }
+
+  containedIt(
+    'a contained shell reads no secret, and still reads templates and code',
+    async () => {
+      const { root, runtime, parent } = workspace()
+      withSecrets(root)
+      try {
+        const reads = [...Object.keys(SECRETS), '.env.example', 'src/app.ts']
+          .map((file) => `cat ${JSON.stringify(file)} 2>/dev/null`)
+          .join('; ')
+        // And by renaming it first: a rename is a write on the source path,
+        // and a read-only deny let `mv` hand the value to an innocent name.
+        const { out } = await runInSandbox(
+          { workspaceRoot: root, runtimeDir: runtime, readOnlyGitDir: true },
+          root,
+          `${reads}; mv .env.local moved 2>/dev/null && cat moved 2>/dev/null; true`,
+        )
+        expect(out).not.toContain('REAL_VALUE')
+        expect(out).toContain('TEMPLATE_NAME=')
+        expect(out).toContain('ORDINARY_CODE')
+        expect(fs.readFileSync(path.join(root, '.env.local'), 'utf8')).toBe(
+          'REAL_VALUE_LOCAL\n',
+        )
+      } finally {
+        fs.rmSync(parent, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it('the Linux scan finds exactly the files the read policy refuses', () => {
+    const { root, parent } = workspace()
+    withSecrets(root)
+    // Not walked: dependencies (public package content) and the object store.
+    fs.mkdirSync(path.join(root, 'node_modules', 'pkg'), { recursive: true })
+    fs.writeFileSync(path.join(root, 'node_modules', 'pkg', '.env'), 'x')
+    fs.mkdirSync(path.join(root, '.git', 'objects'), { recursive: true })
+    fs.writeFileSync(path.join(root, '.git', 'objects', 'x.key'), 'x')
+    try {
+      expect(
+        sponsoredSecretFiles(root).map((file) => path.relative(root, file)),
+      ).toEqual(Object.keys(SECRETS).sort())
+      // A bound, and past it a refusal rather than a partial mask.
+      expect(() => sponsoredSecretFiles(root, 3)).toThrow(/too large/)
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('the macOS rules deny after allowing, escape the root, and fold case', () => {
+    const { root, runtime, parent } = workspace()
+    try {
+      const profile = sponsoredMacProfile([root, runtime], [], [], [], [root])
+      const lines = profile.split('\n')
+      const denyAt = lines.findIndex((line) =>
+        line.startsWith('(deny file-read*'),
+      )
+      expect(denyAt).toBeGreaterThan(
+        lines.findIndex((line) => line.startsWith('(allow file-read*')),
+      )
+      // The templates are granted back AFTER the deny.
+      expect(lines[denyAt + 1]).toContain('[eE][xX][aA][mM][pP][lL][eE]')
+      const rules = sponsoredMacSecretReadRules('/tmp/a.b(c)+d').join('\n')
+      expect(rules).toContain('^/tmp/a\\.b\\(c\\)\\+d/')
+      expect(rules).toContain('\\.[eE][nN][vV]')
+      expect(() => sponsoredMacSecretReadRules('/tmp/"quote')).toThrow(
+        /quote/,
       )
     } finally {
       fs.rmSync(parent, { recursive: true, force: true })

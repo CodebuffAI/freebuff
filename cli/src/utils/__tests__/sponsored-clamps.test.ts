@@ -37,8 +37,13 @@ const { SPONSORED_LOCAL_V1_GRANT } =
 const { sponsoredCapabilityForTool } =
   await import('@codebuff/common/ads/sponsored-capabilities')
 
-import type { SponsoredTurnContext } from '../sponsored-run'
+const { SponsoredEditRecorder } = await import('../sponsored-receipts')
 
+import type { SponsoredToolContext } from '../sponsored-run'
+import type { SponsoredReceiptStore } from '../sponsored-receipts'
+
+// An in-place run's workspace IS the user's project folder (#3989); the
+// constant keeps its old name only because every assertion below reads it.
 const FIXTURE_PARENT = mkdtempSync(join(tmpdir(), 'sponsored-cli-guards-'))
 const WORKTREE = join(FIXTURE_PARENT, 'worktree')
 mkdirSync(WORKTREE, { recursive: true })
@@ -49,52 +54,36 @@ afterAll(() => rmSync(FIXTURE_PARENT, { recursive: true, force: true }))
 const CONTAINMENT_USABLE = sponsoredContainmentTestGate()
 const containmentUsable = () => CONTAINMENT_USABLE
 
-const context = (): SponsoredTurnContext => ({
-  prompt: 'do the thing',
-  proposalId: 'proposal-1',
-  procedureSha256:
-    'e0398edf7222298cb1af685870a496350db33a54d32e766b8d94523f4848e304',
-  computeGrant: {
-    token: `scg_1_${'a'.repeat(43)}`,
-    proposalId: 'proposal-1',
-    runId: '00000000-0000-4000-8000-000000000001',
-    procedureSha256:
-      'e0398edf7222298cb1af685870a496350db33a54d32e766b8d94523f4848e304',
-    modelId: 'test-sponsored-model',
-    expiresAtMs: Date.now() + 60_000,
-    allowanceUsdMicros: 1,
-  },
-  runtimeDir: join(FIXTURE_PARENT, 'runtime'),
-  signal: new AbortController().signal,
-  worktree: {
-    path: WORKTREE,
-    branch: 'freebuff/sponsored-acme-run-1',
-    baseRef: 'base',
-    sourceBranch: 'main',
-    linked: {
-      commonDir: join(FIXTURE_PARENT, '.git'),
-      gitDir: join(FIXTURE_PARENT, '.git', 'worktrees', 'run-1'),
-      branchNamespace: 'freebuff',
-    },
-  },
-})
-
-function isolatedContext(root: string, parent: string): SponsoredTurnContext {
-  const base = context()
+function memoryReceipts(): SponsoredReceiptStore & {
+  entries: Map<string, string>
+} {
+  const entries = new Map<string, string>()
   return {
-    ...base,
-    runtimeDir: join(parent, 'runtime'),
-    worktree: {
-      ...base.worktree,
-      path: root,
-      linked: {
-        commonDir: join(parent, '.git'),
-        gitDir: join(parent, '.git', 'worktrees', 'run-1'),
-        branchNamespace: 'freebuff',
-      },
-    },
+    entries,
+    read: (runId) => entries.get(runId) ?? null,
+    write: (runId, value) => void entries.set(runId, value),
   }
 }
+
+function isolatedContext(root: string, parent: string): SponsoredToolContext {
+  return {
+    workspaceRoot: root,
+    runtimeDir: join(parent, 'runtime'),
+    signal: new AbortController().signal,
+    recorder: new SponsoredEditRecorder(
+      {
+        runId: '00000000-0000-4000-8000-000000000001',
+        proposalId: 'proposal-1',
+        advertiserName: 'Acme Deploys',
+        projectRoot: root,
+      },
+      memoryReceipts(),
+    ),
+  }
+}
+
+const context = (): SponsoredToolContext =>
+  isolatedContext(WORKTREE, FIXTURE_PARENT)
 
 /** Paths a procedure would reach for if the clamp were not there. */
 const OUTSIDE = [
@@ -377,6 +366,107 @@ describe('the shell', () => {
       expect(JSON.stringify(result), command).toContain('Refusing to install')
     }
   })
+
+  test('git that moves history or config is refused; reading it is not', async () => {
+    // An in-place run delivers UNCOMMITTED edits and the undo reverse-applies
+    // them; a commit, a checkout or a config change would move work out from
+    // under both (#3989). The sandbox also denies `.git` writes outright.
+    const tools = sponsoredOverrideTools(context())
+    for (const command of [
+      'git commit -am "x"',
+      'git -C . checkout -- .',
+      'git stash',
+      'git config core.hooksPath /tmp',
+      'echo hi && git push origin main',
+    ]) {
+      const result = await tools.run_terminal_command({ command })
+      expect(JSON.stringify(result), command).toContain('Refusing `git')
+    }
+  })
+})
+
+describe('in place: the user’s real folder', () => {
+  test('secret-bearing files are unreadable; env templates are readable', () => {
+    // A worktree cut from a commit could never contain `.env.local`; the
+    // user's own folder does, and macOS egress is allowed.
+    for (const path of [
+      '.env',
+      '.env.local',
+      'apps/web/.env.production',
+      '.npmrc',
+    ]) {
+      expect(sponsoredReadGuard(WORKTREE, path), path).not.toBeNull()
+    }
+    for (const path of ['.env.example', 'src/index.ts', 'package.json']) {
+      expect(sponsoredReadGuard(WORKTREE, path), path).toBeNull()
+    }
+  })
+
+  test('read_files names the refusal for a secret file instead of its content', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'sponsored-cli-secret-'))
+    const root = join(parent, 'project')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(join(root, '.env.local'), 'SUPABASE_KEY=real-secret\n')
+    try {
+      const tools = sponsoredOverrideTools(isolatedContext(root, parent))
+      const out = await tools.read_files({ filePaths: ['.env.local'] })
+      expect(out['.env.local']).not.toContain('real-secret')
+      expect(out['.env.local']).toContain('may not read environment files')
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  test('every file-tool write is receipted with its before-image', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'sponsored-cli-receipts-'))
+    const root = join(parent, 'project')
+    mkdirSync(join(root, 'src'), { recursive: true })
+    writeFileSync(join(root, 'src', 'existing.ts'), 'export const a = 1\n')
+    try {
+      const context = isolatedContext(root, parent)
+      const tools = sponsoredOverrideTools(context)
+      await tools.write_file({
+        type: 'file',
+        path: 'src/existing.ts',
+        content: 'export const a = 2\n',
+      })
+      await tools.write_file({
+        type: 'file',
+        path: 'src/new.ts',
+        content: 'export const b = 1\n',
+      })
+      const changed = context.recorder.changed()
+      expect(changed.map((receipt) => receipt.path).sort()).toEqual([
+        'src/existing.ts',
+        'src/new.ts',
+      ])
+      const created = changed.find((receipt) => receipt.path === 'src/new.ts')
+      expect(created?.before).toBeNull()
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  test('a write the undo could not reverse is refused, not performed', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'sponsored-cli-big-'))
+    const root = join(parent, 'project')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(join(root, 'huge.json'), 'x'.repeat(5 * 1024 * 1024 + 1))
+    try {
+      const tools = sponsoredOverrideTools(isolatedContext(root, parent))
+      const result = await tools.write_file({
+        type: 'file',
+        path: 'huge.json',
+        content: '{}',
+      })
+      expect(JSON.stringify(result)).toContain('larger than 5 MB')
+      expect(readFileSync(join(root, 'huge.json'), 'utf8').length).toBe(
+        5 * 1024 * 1024 + 1,
+      )
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('the toolset the run is actually offered', () => {
@@ -425,7 +515,7 @@ describe('the toolset the run is actually offered', () => {
       isFreebuff: true,
     })
     expect(plain.systemPrompt?.startsWith('You are Buffy')).toBe(true)
-    expect(plain.systemPrompt).toContain('Do NOT push')
+    expect(plain.systemPrompt).toContain('UNCOMMITTED')
   })
 
   test('it keeps the id it was given, so free mode can still admit it', () => {

@@ -5,8 +5,20 @@ import { safeOpen } from './utils/open-url'
 import { getAuthToken } from './utils/auth'
 import { isSponsoredProposalBlock } from './types/chat'
 import { runSponsoredProposalControl } from './utils/sponsored-proposal-control'
-import { sponsoredRunFor, sponsoredTaskEvidence } from './utils/sponsored-run'
-import { useSponsoredProposal } from './hooks/use-sponsored-proposal'
+import {
+  replaySponsoredTerminalReports,
+  sponsoredRunFor,
+  sponsoredTaskEvidence,
+} from './utils/sponsored-run'
+import type { SponsoredRun } from './utils/sponsored-run'
+import {
+  refreshSponsoredProposalNow,
+  useSponsoredProposal,
+} from './hooks/use-sponsored-proposal'
+import { askAgenticOffer } from './utils/sponsored-offer'
+import { SponsoredProposalBlock } from './components/blocks/sponsored-proposal-block'
+import { setPendingSponsoredBrief } from './utils/sponsored-brief'
+import { useSponsoredRunStore } from './state/sponsored-run-store'
 import {
   useCallback,
   useEffect,
@@ -19,10 +31,7 @@ import { useShallow } from 'zustand/react/shallow'
 
 import { getAdsEnabled } from './commands/ads'
 import { routeUserPrompt, addBashMessageToHistory } from './commands/router'
-import {
-  SingleAdBanner,
-  dockPanelRowBudget,
-} from './components/ad-banner'
+import { SingleAdBanner, dockPanelRowBudget } from './components/ad-banner'
 import {
   DOCK_PANEL_MAX_WIDTH,
   getDockPanelLayout,
@@ -66,7 +75,7 @@ import { usePublishMutation } from './hooks/use-publish-mutation'
 import { useSuggestionEngine } from './hooks/use-suggestion-engine'
 import { useUsageMonitor } from './hooks/use-usage-monitor'
 import { WEBSITE_URL } from './login/constants'
-import { getProjectRoot } from './project-files'
+import { getProjectRoot, tryGetProjectRoot } from './project-files'
 import { useChatHistoryStore } from './state/chat-history-store'
 import { useChatStore } from './state/chat-store'
 import { useQueuePanelStore } from './state/queue-panel-store'
@@ -203,6 +212,25 @@ export const Chat = ({
     (state) => state.selected !== undefined,
   )
 
+  // THE PROPOSAL THAT HOLDS THE DOCK, if any: an unanswered offer, or the one
+  // whose run is in flight or has just finished. It replaces the display ad
+  // for as long as it holds the slot -- one slot, one ad -- and gives it back
+  // once the user has moved on from a verdict (`dockReleased`).
+  const sponsoredRunSnapshot = useSponsoredRunStore((state) => state.snapshot)
+  const dockProposal = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      for (const block of messages[i]!.blocks ?? []) {
+        if (!isSponsoredProposalBlock(block) || block.dockReleased) continue
+        const runs =
+          sponsoredRunSnapshot?.proposalId === block.proposal._id &&
+          sponsoredRunSnapshot.phase !== 'idle'
+        if (runs) return block
+        if (!block.answered && block.proposal.state === 'offered') return block
+      }
+    }
+    return null
+  }, [messages, sponsoredRunSnapshot])
+
   const {
     ads,
     responseAds,
@@ -218,8 +246,12 @@ export const Chat = ({
     inlinePlacementId: 'CLI-Chat-Inline',
     // Keep the rotating above-input slot separate for reporting continuity.
     slotPlacementId: 'Single-Ad-Unit-1',
+    // The dock holds that slot while a proposal does: an ad fetched for it
+    // then would be served and never rendered.
+    slotPaused: dockProposal !== null,
   })
-  const showInlineAds = !hasSelectedByokConnection && (IS_FREEBUFF || getAdsEnabled())
+  const showInlineAds =
+    !hasSelectedByokConnection && (IS_FREEBUFF || getAdsEnabled())
 
   // Stable identities so the message-block callbacks (set once) always call
   // the latest recorder from the hook.
@@ -298,11 +330,24 @@ export const Chat = ({
     [messages],
   )
 
-  const handleSponsoredProposalMenu = useEvent((target: string, open: boolean) =>
-    patchProposalBlock(target, { menuOpen: open }),
+  const dockRun =
+    dockProposal &&
+    sponsoredRunSnapshot?.proposalId === dockProposal.proposal._id &&
+    sponsoredRunSnapshot.phase !== 'idle'
+      ? {
+          phase: sponsoredRunSnapshot.phase,
+          changedFiles: sponsoredRunSnapshot.changedFiles,
+          undone: sponsoredRunSnapshot.undone,
+        }
+      : null
+
+  const handleSponsoredProposalMenu = useEvent(
+    (target: string, open: boolean) =>
+      patchProposalBlock(target, { menuOpen: open }),
   )
   const handleSponsoredProposalDisclose = useEvent(
-    (target: string, open: boolean) => patchProposalBlock(target, { whyOpen: open }),
+    (target: string, open: boolean) =>
+      patchProposalBlock(target, { whyOpen: open }),
   )
 
   const handleSponsoredProposalControl = useEvent(
@@ -316,9 +361,13 @@ export const Chat = ({
       // press is synchronous, and a guard on the far side of a promise arrives
       // too late to stop the second call.
       if (
-        !block || block.busy || block.answered ||
-        block.refreshUnavailable || !authToken
-      ) return
+        !block ||
+        block.busy ||
+        block.answered ||
+        block.refreshUnavailable ||
+        !authToken
+      )
+        return
       patchProposalBlock(target, { busy: true, menuOpen: false })
       const proposalId = block.proposal._id
       const advertiserId = block.proposal.advertiser_id
@@ -366,32 +415,56 @@ export const Chat = ({
   /**
    * Accept, in two halves (COD-339, COD-336 item 4).
    *
-   * The first half OPENS the consent and writes nothing anywhere -- not
-   * upstream, not on disk. Everything the screen names is known before the
-   * accept, which is exactly what makes a refusal free: there is nothing to
-   * undo. The branch is minted here with the run id it will be created under,
-   * so the branch the screen names is the branch that is cut.
+   * The first half OPENS the consent and writes nothing upstream: it reads the
+   * exact reviewed procedure through the preview route and mints the run id
+   * the Accept will carry. A refusal is therefore free -- there is nothing to
+   * undo.
    */
   const handleSponsoredProposalAccept = useEvent((target: string) => {
     const block = findProposalBlock(target)
     if (
-      !block || block.busy || block.answered ||
-      block.refreshUnavailable || block.consent
-    ) return
+      !block ||
+      block.busy ||
+      block.answered ||
+      block.refreshUnavailable ||
+      block.consent
+    )
+      return
+    patchProposalBlock(target, { busy: true, menuOpen: false })
     void (async () => {
-      const run = sponsoredRunFor(getProjectRoot())
-      const consent = await run.consentFor(
-        block.proposal,
-        sponsoredTaskEvidence(messages),
-      )
+      // Anything that THROWS (the project folder gone, its identity
+      // unreadable) must still hand the card back, or it stays busy with
+      // both of its buttons dead until the CLI restarts.
+      let consent: Awaited<ReturnType<SponsoredRun['consentFor']>>
+      try {
+        consent = await sponsoredRunFor(getProjectRoot()).consentFor(
+          block.proposal,
+          sponsoredTaskEvidence(messagesRef.current),
+        )
+      } catch (error) {
+        logger.debug({ error }, '[sponsored-run] consent failed')
+        consent = {
+          ok: false,
+          message: 'Could not review this sponsored task. Try again.',
+        }
+      }
       if (!consent.ok) {
+        patchProposalBlock(target, { busy: false })
         setMessages((prev) => [...prev, getSystemMessage(consent.message)])
         return
       }
       patchProposalBlock(target, {
-        menuOpen: false,
-        consent: { ...consent.consent, runId: consent.runId },
+        busy: false,
+        consent: {
+          advertiserName: consent.consent.advertiserName,
+          headline: consent.consent.headline,
+          body: consent.consent.body,
+          folder: consent.consent.folder,
+          procedure: consent.consent.procedure,
+          runId: consent.runId,
+        },
         consentIndex: 0,
+        procedureOpen: false,
       })
     })()
   })
@@ -413,12 +486,22 @@ export const Chat = ({
       if (!approved) return
       patchProposalBlock(target, { busy: true })
       void (async () => {
-        const run = sponsoredRunFor(getProjectRoot())
-        const outcome = await run.accept(
-          block.proposal,
-          consent.runId,
-          sponsoredTaskEvidence(messages),
-        )
+        // As at the consent: a throw must hand the card back, not leave it
+        // busy with both answers dead.
+        let outcome: Awaited<ReturnType<SponsoredRun['accept']>>
+        try {
+          outcome = await sponsoredRunFor(getProjectRoot()).accept(
+            block.proposal,
+            consent.runId,
+            sponsoredTaskEvidence(messagesRef.current),
+          )
+        } catch (error) {
+          logger.debug({ error }, '[sponsored-run] accept failed')
+          outcome = {
+            ok: false,
+            message: 'Could not start this sponsored task. Try again.',
+          }
+        }
         // `runStarted` is what makes the poller watch: the row upstream still
         // reads `offered` until the first poll after the accept, and keying the
         // cadence on the state alone would slow it down at exactly the moment
@@ -427,23 +510,119 @@ export const Chat = ({
           busy: false,
           ...(outcome.ok ? { runStarted: true } : {}),
         })
+        // THE TURN IS NOT STARTED HERE. The chat runtime starts it once the
+        // conversation is free, and holds the user's queue behind it.
+        if (outcome.ok) return
         setMessages((prev) => [
           ...prev,
           getSystemMessage(
-            outcome.ok
-              ? `Started ${consent.advertiserName}'s sponsored task on ${consent.branch}. Nothing will be pushed.`
-              : 'message' in outcome
-                ? outcome.message
-                : 'The sponsored task was not started.',
+            'message' in outcome
+              ? outcome.message
+              : 'The sponsored task was not started.',
           ),
         ])
+        // The procedure changed after review: show the new one rather than
+        // leaving a refusal on a card whose Accept would meet it again.
+        if ('reviewAgain' in outcome && outcome.reviewAgain) {
+          handleSponsoredProposalAccept(target)
+        }
       })()
     },
   )
 
+  const handleSponsoredProposalProcedure = useEvent(
+    (target: string, open: boolean) =>
+      patchProposalBlock(target, { procedureOpen: open }),
+  )
+
+  /**
+   * Undo, from the dock or `/ads:undo`. The run service reads its receipts
+   * from disk and restores what it can without clobbering later work; the
+   * conversation's agent is told on its next turn that the files moved back.
+   */
+  const handleSponsoredProposalUndo = useEvent(() => {
+    const outcome = sponsoredRunFor(getProjectRoot()).undo()
+    if (outcome.brief) setPendingSponsoredBrief(outcome.brief)
+    setMessages((prev) => [...prev, getSystemMessage(outcome.message)])
+  })
+
+  // ONE OFFER QUESTION PER USER TURN (#3989's flow). Keyed on the user's own
+  // newest message, so it fires once when they send one and never for the
+  // CLI's notices or a sponsored turn's rows. A proposal it mints is read at
+  // once rather than a poll interval later.
+  const newestUserMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]!.variant === 'user') return messages[i]!.id
+    }
+    return null
+  }, [messages])
+  // A TURN IS A USER MESSAGE WRITTEN SINCE THIS CHAT MOUNTED. Everything else
+  // in the transcript is history: a resume from /history or `--continue`
+  // loads it all at once -- after this component mounted with an empty
+  // transcript -- and must not ask for an offer on its own. A user message's
+  // id is its creation time (`getUserMessage`), so that is the test, and each
+  // message is asked about once.
+  const chatMountedAt = useRef(Date.now())
+  const askedForMessage = useRef<string | null>(null)
+  useEffect(() => {
+    if (!newestUserMessageId || newestUserMessageId === askedForMessage.current)
+      return
+    askedForMessage.current = newestUserMessageId
+    const createdAt = Number(/^user-(\d+)$/.exec(newestUserMessageId)?.[1])
+    if (!Number.isFinite(createdAt) || createdAt < chatMountedAt.current) return
+    // The user has moved on from a finished sponsored run: its card gives the
+    // dock back to display ads. It stays in history, and `/ads:undo` still
+    // works from any later turn.
+    const finished = useSponsoredRunStore.getState().snapshot
+    if (
+      finished?.proposalId &&
+      (finished.phase === 'delivered' || finished.phase === 'failed')
+    ) {
+      for (const message of messagesRef.current) {
+        for (const block of message.blocks ?? []) {
+          if (
+            isSponsoredProposalBlock(block) &&
+            block.proposal._id === finished.proposalId &&
+            !block.dockReleased
+          ) {
+            patchProposalBlock(block.target, { dockReleased: true })
+          }
+        }
+      }
+    }
+    if (hasSelectedByokConnection || !getAdsEnabled()) return
+    const projectRoot = tryGetProjectRoot()
+    if (!projectRoot) return
+    void askAgenticOffer({
+      projectRoot,
+      conversationId: useChatStore.getState().chatSessionId,
+      messages: messagesRef.current,
+    }).then((offered) => {
+      if (offered) refreshSponsoredProposalNow()
+    })
+  }, [newestUserMessageId, hasSelectedByokConnection])
+
   // Mounted here rather than inside the card, because the card does not exist
   // until this hook puts it there (COD-339: nothing polled before it).
   useSponsoredProposal({ enabled: !hasSelectedByokConnection })
+
+  // A terminal report an earlier process could not deliver is still owed:
+  // until it lands the row sits on `running` and its compute grant stays live.
+  // Replayed on every signed-in mount -- chat only mounts with a session, so
+  // this covers both a launch and a sign-in -- rather than waiting for the
+  // next Accept in this folder to construct the run. Keyed on the project root
+  // too: switching to the git root re-renders chat without remounting it, and
+  // the new folder's outbox is owed the same replay.
+  const currentProjectRoot = tryGetProjectRoot()
+  useEffect(() => {
+    if (!currentProjectRoot) return
+    if (hasSelectedByokConnection || !getAuthToken()) return
+    try {
+      replaySponsoredTerminalReports(currentProjectRoot)
+    } catch (error) {
+      logger.debug({ error }, '[sponsored-run] outbox replay failed')
+    }
+  }, [hasSelectedByokConnection, currentProjectRoot])
 
   // Set initial mode from CLI flag on mount
   useEffect(() => {
@@ -1060,7 +1239,8 @@ export const Chat = ({
         // The panel closes itself once the queue drains, so opening an empty
         // one would just flash. Say so instead.
         if (queuedCount > 0) useQueuePanelStore.getState().openQueuePanel()
-        else setMessages((prev) => [...prev, getSystemMessage('Nothing queued.')])
+        else
+          setMessages((prev) => [...prev, getSystemMessage('Nothing queued.')])
       }
     },
     [
@@ -1310,6 +1490,7 @@ export const Chat = ({
       queuedCount,
       dockExpandable: dockPanel.expandable,
       dockPanelOpen: dockPanel.expanded,
+      sponsoredDockActive: dockProposal !== null,
     }),
     [
       inputMode,
@@ -1334,6 +1515,7 @@ export const Chat = ({
       queuedCount,
       dockPanel.expandable,
       dockPanel.expanded,
+      dockProposal,
     ],
   )
 
@@ -1552,9 +1734,15 @@ export const Chat = ({
       },
       onToggleDockPanel: () => dockPanel.toggle('key'),
       onCloseDockPanel: () => dockPanel.collapse('esc'),
+      onToggleSponsoredDock: () => {
+        if (!dockProposal) return
+        handleSponsoredProposalMenu(dockProposal.target, !dockProposal.menuOpen)
+      },
     }),
     [
       dockPanel,
+      dockProposal,
+      handleSponsoredProposalMenu,
       setInputMode,
       handleCloseFeedback,
       setFeedbackText,
@@ -1657,6 +1845,8 @@ export const Chat = ({
       onSponsoredProposalDisclose: handleSponsoredProposalDisclose,
       onSponsoredProposalAccept: handleSponsoredProposalAccept,
       onSponsoredProposalConsent: handleSponsoredProposalConsent,
+      onSponsoredProposalProcedure: handleSponsoredProposalProcedure,
+      onSponsoredProposalUndo: handleSponsoredProposalUndo,
       onSponsoredProposalControl: handleSponsoredProposalControl,
     })
   }, [
@@ -1772,10 +1962,12 @@ export const Chat = ({
 
   const hasActiveFreebuffSession =
     !hasSelectedByokConnection &&
-    IS_FREEBUFF && freebuffSession?.status === 'active'
+    IS_FREEBUFF &&
+    freebuffSession?.status === 'active'
   const isFreebuffSessionOver =
     !hasSelectedByokConnection &&
-    IS_FREEBUFF && freebuffSession?.status === 'ended'
+    IS_FREEBUFF &&
+    freebuffSession?.status === 'ended'
 
   // A takeover screen owns both the keyboard and the rows above the composer.
   // Rather than teach the panel to arbitrate with four other Escape handlers,
@@ -1925,7 +2117,18 @@ export const Chat = ({
           />
         )}
 
-        {ads?.[0] && showInlineAds && (
+        {/* ONE SLOT, ONE AD: a sponsored proposal replaces the display ad for
+            as long as it holds the dock (`dockProposal`). */}
+        {dockProposal && (
+          <SponsoredProposalBlock
+            key={`sponsored-dock-${dockProposal.target}`}
+            block={dockProposal}
+            availableWidth={separatorWidth}
+            run={dockRun}
+          />
+        )}
+
+        {!dockProposal && ads?.[0] && showInlineAds && (
           <SingleAdBanner
             ad={ads[0]}
             onClick={recordClick}

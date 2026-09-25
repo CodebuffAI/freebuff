@@ -302,12 +302,16 @@ export const SPONSORED_CONFORMANCE_ACCEPTED_WAIVERS: Record<
     'V-4': 'no view pointer on this surface',
     'V-5': 'no watched thread header; the card carries the disclosure instead',
     'V-6': 'no view pointer on this surface',
+    // IN PLACE since #3989's port: the run streams into the conversation
+    // itself, under a SPONSORED anchor row, so there is no second view to
+    // open -- the transcript IS the view.
     'R-6':
-      'no read-only view: the run’s transcript is not interleaved with the user’s own',
-    'R-9': 'no read-only view',
-    // A terminal cannot make a link; it can only print a destination the user
-    // may copy. The sanitizing is the part that still has to hold.
-    'R-15': 'renders sanitized text, not a link',
+      'no separate read-only view: the run streams into the conversation under a sponsored anchor',
+    'R-9': 'no separate read-only view',
+    // A terminal cannot make a link; it prints a pull request's destination
+    // as sanitized text the user may copy. The advertiser's SETUP link is now
+    // openable, by click, through the display ad's own `safeOpen`.
+    'R-15': 'renders a pull request as sanitized text, not a link',
     // THE E ROWS ARE NOT MEASURED, and the reason has changed from Phase 1's.
     // A producer polls, an Accept exists and a run executes — but none of it
     // has been driven against a seeded row on a real backend from this branch,
@@ -321,9 +325,9 @@ export const SPONSORED_CONFORMANCE_ACCEPTED_WAIVERS: Record<
     'E-6': 'not driven against a seeded row on a real backend (COD-408)',
     'E-7': 'not driven against a seeded row on a real backend (COD-408)',
     // B-1 holds by CONSTRUCTION rather than by measurement: nothing on this
-    // path writes `freebuff_daily_usage`, and the turn takes the ordinary
-    // billed path deliberately (Owen, 2026-09-03 — a local sponsored run spends
-    // the user's own session and credits, which is what the card says). Waived
+    // path writes `freebuff_daily_usage`. Since the funded Accept (COD-442) the
+    // turn rides the sponsor's compute grant with no Freebuff session id beside
+    // it, and chat adds none of its cost to the user's session credits. Waived
     // until it is observed across a real run rather than argued from the code.
     'B-1': 'unchanged by construction; not observed across a real run yet',
   },

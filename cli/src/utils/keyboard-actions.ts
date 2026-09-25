@@ -56,6 +56,15 @@ export type ChatKeyboardState = {
    */
   dockExpandable: boolean
   dockPanelOpen: boolean
+  /**
+   * A sponsored PROPOSAL holds the dock (#3989's flow on the CLI). Ctrl+O then
+   * opens the proposal's details instead of the display ad's panel -- the
+   * dock holds one ad at a time, so the chord has one meaning at a time -- and
+   * it does so in both COD-457 arms, because a proposal is not part of that
+   * experiment. Escape is not claimed here: an open proposal disables chat's
+   * keyboard outright and owns its own Escape.
+   */
+  sponsoredDockActive?: boolean
 }
 
 /**
@@ -124,6 +133,7 @@ export type ChatKeyboardAction =
   // Sponsor dock (COD-457)
   | { type: 'toggle-dock-panel' }
   | { type: 'close-dock-panel' }
+  | { type: 'toggle-sponsored-dock' }
 
   // No action needed
   | { type: 'none' }
@@ -197,6 +207,9 @@ export function resolveChatKeyboardAction(
   // both branches fall through to `none`, so the chord does nothing at all.
   const isDockChord =
     key.ctrl && key.name === 'o' && !key.meta && !key.option && !key.shift
+  if (state.sponsoredDockActive && isDockChord) {
+    return { type: 'toggle-sponsored-dock' }
+  }
   if (state.dockExpandable) {
     if (isEscape && state.dockPanelOpen) {
       return { type: 'close-dock-panel' }

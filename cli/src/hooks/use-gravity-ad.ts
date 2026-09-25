@@ -17,11 +17,14 @@ import { isUserActive, subscribeToActivity } from '../utils/activity-tracker'
 import { getAuthToken } from '../utils/auth'
 import { FREEBUFF_WEB_URL } from '../login/constants'
 import { IS_FREEBUFF } from '../utils/constants'
-import { getCliEnv } from '../utils/env'
 import { logger } from '../utils/logger'
 import { enqueueClientLog } from '../utils/log-shipper'
 import { AI_MESSAGE_ID_PREFIX } from '../utils/ai-message-id'
 import { trackEvent } from '../utils/analytics'
+import {
+  getAdDeviceInfo,
+  getCliAdRequestUserAgent,
+} from '../utils/ad-client-identity'
 import { tryGetProjectRoot } from '../project-files'
 import { sponsoredCliCapability } from '../utils/sponsored-cli-capability'
 import {
@@ -205,6 +208,12 @@ type GravityAdOptionsBase = {
   surface?: AdSurface
   /** Explicit provider placement id for the rotating `ads[0]` slot. */
   slotPlacementId?: string
+  /**
+   * Stop rotating `ads[0]` while something else holds its slot (the sponsor
+   * dock). An ad fetched then would be served and never rendered, which is
+   * the render-ratio signal abuse detection reads. Inline ads are unaffected.
+   */
+  slotPaused?: boolean
   placementIds?: string[]
 }
 
@@ -235,6 +244,9 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   const inline = options?.inline ?? false
   const inlinePlacementId = options?.inlinePlacementId
   const slotPlacementId = options?.slotPlacementId
+  // Read by the tick through a ref, so pausing needs no timer restart.
+  const slotPausedRef = useRef(false)
+  slotPausedRef.current = options?.slotPaused ?? false
   const placementIds = options?.placementIds
   const [ads, setAds] = useState<AdResponse[] | null>(null)
   const [responseAds, setResponseAds] = useState<Record<string, AdResponse[]>>(
@@ -318,7 +330,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
               impUrl,
               mode: agentMode,
               userAgent: getAdUserAgent(),
-              os: getDeviceInfo().os,
+              os: getAdDeviceInfo().os,
             }),
           },
           surface: surface ?? 'cli_chat',
@@ -362,7 +374,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
           // browser — one impression describing two different clients, on the
           // field Gravity uses for bot filtering.
           userAgent: getAdUserAgent(),
-          os: getDeviceInfo().os,
+          os: getAdDeviceInfo().os,
           clientEventId,
           ...(renderDelayMs !== undefined ? { renderDelayMs } : {}),
         }),
@@ -538,7 +550,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
             provider,
             messages: adMessages,
             sessionId: useChatStore.getState().chatSessionId,
-            device: getDeviceInfo(),
+            device: getAdDeviceInfo(),
             ...(capability?.sponsoredCapability
               ? { sponsoredCapability: capability.sponsoredCapability }
               : {}),
@@ -607,7 +619,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       ctrl.tickInFlight = true
 
       try {
-        if (!getAdsEnabled()) return
+        if (!getAdsEnabled() || slotPausedRef.current) return
 
         // Derive "can fetch new ads" from counter and activity (no separate paused ref needed)
         const canFetchNew =
@@ -652,8 +664,12 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
 
     setIsLoading(true)
 
-    // Fetch first ad immediately
+    // Fetch first ad immediately, unless the dock already holds the slot.
     void (async () => {
+      if (slotPausedRef.current) {
+        setIsLoading(false)
+        return
+      }
       const result = await fetchAd({
         placementId: slotPlacementId,
         placementIds,
@@ -788,34 +804,3 @@ const convertToAdMessages = (messages: Message[]): AdMessage[] => {
   return adMessages
 }
 
-/** Device info sent to the ads API for targeting */
-type DeviceInfo = {
-  os: 'macos' | 'windows' | 'linux'
-  timezone: string
-  locale: string
-}
-
-/** Get device info for ads API */
-function getDeviceInfo(): DeviceInfo {
-  // Map Node.js platform to Gravity API os values
-  const platformToOs: Record<string, 'macos' | 'windows' | 'linux'> = {
-    darwin: 'macos',
-    win32: 'windows',
-    linux: 'linux',
-  }
-  const os = platformToOs[process.platform] ?? 'linux'
-
-  // Get IANA timezone (e.g., "America/New_York")
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-
-  // Get locale (e.g., "en-US")
-  const locale = Intl.DateTimeFormat().resolvedOptions().locale
-
-  return { os, timezone, locale }
-}
-
-function getCliAdRequestUserAgent(): string {
-  const product = IS_FREEBUFF ? 'Freebuff-CLI' : 'Codebuff-CLI'
-  const version = getCliEnv().CODEBUFF_CLI_VERSION ?? 'dev'
-  return `${product}/${version}`
-}

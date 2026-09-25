@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { sponsoredCliCapability } from '../sponsored-cli-capability'
 
-import type { GitRunner } from '../sponsored-worktree'
+import type { GitRunner } from '../sponsored-git'
 import type { SponsoredLocalContainment } from '@codebuff/common/ads/sponsored-local-execution'
 
 const roots: string[] = []

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import {
+  SPONSORED_CONSENT_IN_PLACE_SENTENCE,
   SPONSORED_CONSENT_MAX_NAME_CHARS,
   SPONSORED_CONSENT_NO_NAME,
   SPONSORED_CONSENT_SENTENCE,
@@ -58,12 +59,23 @@ describe('every surface asks the same question', () => {
     expect(read(rel)).toContain(SPONSORED_CONSENT_SENTENCE.trim())
   })
 
+  // The IN-PLACE question (#3989) is asked by Desktop's bridge and by the CLI's
+  // dock from this constant; the two must be the same words.
+  test('the bridge carries the same in-place sentence, verbatim', () => {
+    expect(read('freebuff-desktop/electron/mcp-consent-bridge.cjs')).toContain(
+      SPONSORED_CONSENT_IN_PLACE_SENTENCE.trim(),
+    )
+  })
+
   test.each([
     ['freebuff-desktop/electron/mcp-consent-bridge.cjs'],
     ['freebuff-desktop/electron/consent-window.html'],
-  ])('%s carries the same Windows no-sandbox sentence, verbatim (COD-642)', (rel) => {
-    expect(read(rel)).toContain(SPONSORED_CONSENT_WINDOWS_FLOOR_SENTENCE)
-  })
+  ])(
+    '%s carries the same Windows no-sandbox sentence, verbatim (COD-642)',
+    (rel) => {
+      expect(read(rel)).toContain(SPONSORED_CONSENT_WINDOWS_FLOOR_SENTENCE)
+    },
+  )
 
   test('the Windows sentence says the three things, in plain words', () => {
     expect(SPONSORED_CONSENT_WINDOWS_FLOOR_SENTENCE).toContain('no sandbox')
@@ -88,6 +100,8 @@ describe('every surface asks the same question', () => {
     // Both of them, because the bridge clamps before it sends AND the page clamps what it is
     // given: the page is the last thing between an advertiser's name and a human's eyes, and one
     // U+202E there reverses our own sentence.
-    expect(read(rel)).toContain(`MAX_NAME_CHARS = ${SPONSORED_CONSENT_MAX_NAME_CHARS}`)
+    expect(read(rel)).toContain(
+      `MAX_NAME_CHARS = ${SPONSORED_CONSENT_MAX_NAME_CHARS}`,
+    )
   })
 })

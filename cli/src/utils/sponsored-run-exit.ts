@@ -19,11 +19,11 @@
  *  - the proposal stuck on `running` forever. Upstream has no sweep for a
  *    locally-executed row -- the whole point of COD-396 is that the executing
  *    surface is the only writer -- so if this process does not report a
- *    terminal state, nothing ever will.
- *  - a directory the user cannot account for. The worktree is KEPT, always: it
- *    is the user's checkout on the user's disk, and a process ending is not a
- *    reason to delete work. So the notice names the path, the branch, and the
- *    command that removes it.
+ *    terminal state, nothing ever will. The report goes to the outbox before
+ *    it is sent, so the next launch delivers it if this one cannot.
+ *  - edits the user cannot account for. An in-place run (#3989) writes the
+ *    working copy directly, so the notice says how many files it had already
+ *    changed and names `/ads:undo`, whose receipts are on disk.
  *
  * ## Why every signal converges here
  *

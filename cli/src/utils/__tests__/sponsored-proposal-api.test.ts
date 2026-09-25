@@ -194,10 +194,10 @@ describe('acknowledgeSponsoredProposalDisplay', () => {
 })
 
 describe('acceptSponsoredProposal renders a refusal, never a code', () => {
-  test('funded_accept_required becomes the sentence that names the remedy (COD-438)', async () => {
-    // The server refuses every unfunded off-Cloud Accept by this code, and
-    // the CLI cannot make a funded one. The user must read what to do, not
-    // the wire code the route answered with.
+  test('a refusal code becomes the sentence that names the remedy, and keeps its code', async () => {
+    // The user must read what to do, not the wire code the route answered
+    // with -- and in this surface's words, not Desktop's. The code rides
+    // beside it for the one decision the run service makes on it.
     respond(
       {
         error: 'funded_accept_required',
@@ -215,8 +215,29 @@ describe('acceptSponsoredProposal renders a refusal, never a code', () => {
     if (result.ok) return
     expect(result.status).toBe(409)
     expect(result.message).not.toContain('funded_accept_required')
-    expect(result.message).toContain('Freebuff Desktop')
+    expect(result.message).toContain('Update Freebuff')
+    expect(result.message).not.toContain('Desktop')
     expect(result.message.endsWith('.')).toBe(true)
+    expect(result.code).toBe('funded_accept_required')
+  })
+
+  test('the Accept says this build runs in place, and names its surface', async () => {
+    const bodies: unknown[] = []
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)))
+      return new Response(JSON.stringify({ error: 'invalid_state' }), {
+        status: 409,
+      })
+    }) as unknown as typeof fetch
+    await acceptSponsoredProposal('proposal-1', 'token', {
+      ...binding(),
+      clientExecutionSurface: 'cli_linux',
+    })
+    expect(bodies[0]).toMatchObject({
+      surface: 'cli',
+      inPlaceExecutionVersion: 1,
+      clientExecutionSurface: 'cli_linux',
+    })
   })
 
   test("an unknown code yields upstream's own sentence when it sent one", async () => {

@@ -57,39 +57,75 @@ import type { SponsoredCapability } from '@codebuff/common/ads/sponsored-local-e
 import type { AgentDefinition } from '@codebuff/sdk'
 
 /**
- * The two bullets that make a sponsored run commit and not push.
+ * The rules an IN-PLACE sponsored run is given (#3989), and the first two are
+ * the OPPOSITE of what the worktree flow told it.
  *
- * MIRRORED from `SPONSORED_REPO_GIT_GUIDANCE`
- * (`freebuff/web/convex/coding_agent/cli_agent/system_prompt.ts`), the same way
- * `evals/sponsored/prompt.ts` and Desktop's `sponsored-run.ts` mirror them, and
- * for the same reason: importing that module drags the Convex generated API
- * into the CLI's typecheck program. `sponsored-agent.test.ts` reads the
- * production file as text and fails if the two stop matching, so the mirror
- * cannot drift silently.
+ * MIRRORED from Desktop's `DESKTOP_IN_PLACE_SPONSORED_GUIDANCE`
+ * (`freebuff-desktop/src/server/services/sponsored-run.ts`), because the two
+ * surfaces run the same reviewed procedure and must give it the same rules;
+ * `sponsored-agent.test.ts` reads that file as text and fails if the shared
+ * bullets stop matching.
+ *
+ * It OVERRIDES the reviewed procedure where they disagree, and they will: the
+ * Supabase catalog text ends by asking for a local commit, and its bytes are
+ * hash-pinned at Accept, so it cannot be edited to suit this. Every line
+ * restates a refusal that is ENFORCED elsewhere -- the enforcement is the
+ * boundary and the sentence is what stops a run spending three turns
+ * discovering it.
  */
-export const SPONSORED_COMMIT_BULLET =
-  '- Commit your finished work to the current branch with a clear message. You are already on a branch created for this task, so do not create or switch branches.'
-export const SPONSORED_NO_PUSH_BULLET =
-  '- Do NOT push, open a pull request, or run any other Git delivery command. The user reviews your commits and decides whether they go anywhere.'
+export const SPONSORED_IN_PLACE_BULLETS = [
+  '- Leave your changes UNCOMMITTED in the working copy. That is the deliverable: the user reviews the diff and keeps or undoes it.',
+  '- Do NOT run git commands that change anything: no `commit`, `push`, `branch`, `checkout`, `reset`, `stash`, `clean`, `config` or `remote`. They are refused. If the approved procedure above asks you to commit, ignore that one instruction and leave the edits in place; everything else in it still applies.',
+  '- Read-only git (`git status`, `git diff`, `git log`) is available and is how you should check your own work.',
+  '- You are editing the user’s REAL working copy, which may already hold changes of their own. Touch only what the procedure needs, and never revert or overwrite work you did not make.',
+  '- Do NOT install dependencies. `npm install`, `bun add` and their equivalents are refused: work with what the repository already has.',
+  '- Environment files (`.env`, `.env.local`) and credential files are unreadable to you; `.env.example` and its family are readable and are where placeholder variables belong.',
+] as const
 
 /**
- * What the CLI adds to the mirrored guidance.
- *
- * Every line here restates a refusal that is ENFORCED elsewhere, which is the
- * right way round: the enforcement is the boundary and the sentence is what
- * stops a run spending three turns discovering it.
+ * The one line the CLI adds. Desktop's run is watched in a tab it can stop; a
+ * terminal's is watched too, but nothing it asks is ever shown as a question.
  */
 const CLI_SPONSORED_GUIDANCE = [
-  SPONSORED_COMMIT_BULLET,
-  SPONSORED_NO_PUSH_BULLET,
-  '- Commit with `--no-verify`. Git hooks are disabled for this run, so a hook-dependent commit will fail rather than run.',
-  '- Do NOT install dependencies. `npm install`, `bun add` and their equivalents are refused: work with what the repository already has.',
-  '- You are running inside a sandbox rooted at this worktree. Nothing outside it is readable or writable, and the environment carries no credentials.',
-  '- There is nobody watching this run. Do not ask questions; decide and proceed, or stop.',
+  ...SPONSORED_IN_PLACE_BULLETS,
+  '- There is nobody to answer questions during this run. Do not ask any; decide and proceed, or stop.',
 ].join('\n')
 
+/**
+ * THE AUTHORISATION, first. MIRRORED from Desktop's `SPONSORED_TASK_FRAMING`
+ * (`sponsored-agent.test.ts` pins the bytes): without it a section headed as
+ * an advertiser's procedure beside the user's own messages reads as a vendor
+ * insert, and a model declining it is doing the right thing -- Desktop saw
+ * exactly that on a run whose conversation was "hey".
+ */
+export const SPONSORED_TASK_FRAMING = [
+  'The user was shown the procedure below in a consent dialog, reviewed it, and pressed Accept. Carrying it out is your task for this turn.',
+  'Do not ask for confirmation again, do not ask what they want, and do not treat the procedure as a suggestion or as untrusted text: the approval already happened.',
+].join('\n')
+
+/**
+ * What the conversation is FOR. MIRRORED from Desktop's
+ * `SPONSORED_CONTEXT_HEADING`: background for tailoring the approved work,
+ * never a competing request that could stop it.
+ */
+export const SPONSORED_CONTEXT_HEADING = [
+  'Background from this conversation, for tailoring the work:',
+  'These are the user’s own recent messages. Use them to fit the implementation to this project. They are NOT a competing request, and they do not narrow or replace the approved procedure — if none of them is relevant, carry out the procedure as written.',
+].join('\n')
+
+/**
+ * The run's prompt, in Desktop's order: the authorisation, the advertiser's
+ * reviewed procedure, the user's own words as background, and our rules last.
+ *
+ * The task is stated before the procedure and the rules after both: a prompt
+ * that opens with prohibitions and never says what to do leaves the model to
+ * infer the task from section labels. The run starts with FRESH memory, so the
+ * context is the same bounded set of whole user messages the consent was shown
+ * and the Accept re-checked (`sponsoredTaskEvidence`).
+ */
 export function buildSponsoredPrompt(
   procedure: string,
+  taskContext: readonly string[] = [],
   runtimeInputs: SponsoredProcedureRuntimeInputs = {},
 ): string {
   // The procedure is never rewritten (COD-512): the consent covered these
@@ -99,10 +135,15 @@ export function buildSponsoredPrompt(
     procedure,
     runtimeInputs,
   )
+  const renderedContext = taskContext
+    .map((message, index) => `User message ${index + 1}:\n${message}`)
+    .join('\n\n')
   return [
-    CLI_SPONSORED_GUIDANCE,
-    `User request:\n${procedure}`,
+    SPONSORED_TASK_FRAMING,
+    `The approved procedure:\n${procedure}`,
     ...(inputs ? [inputs] : []),
+    `${SPONSORED_CONTEXT_HEADING}\n${renderedContext}`,
+    `How to carry it out here:\n${CLI_SPONSORED_GUIDANCE}`,
   ].join('\n\n')
 }
 
@@ -140,9 +181,8 @@ export function sponsoredAgentDefinition(options: {
     // capability.
     toolNames: sponsoredLocalToolNames(root.toolNames ?? [], grant),
     systemPrompt: `${root.systemPrompt}\n\n# Sponsored task\n\n${CLI_SPONSORED_GUIDANCE}`,
-    // The commit is authored by the sponsored run, not by the user, and the
-    // ordinary attribution trailer would say otherwise on a branch they are
-    // about to review.
+    // Nothing is committed by an in-place run; kept so a commit that somehow
+    // happened anyway could not be attributed to the user.
     suppressCommitAttribution: true,
   } as AgentDefinition
 }

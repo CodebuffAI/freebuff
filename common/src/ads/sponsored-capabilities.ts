@@ -286,15 +286,18 @@ const CI_PATHS = Object.freeze([
   '.vscode/tasks.json',
 ])
 
-const CREDENTIAL_BASENAMES: ReadonlySet<string> = new Set([
+/** Also read by the SDK sandbox, so the shell and the file tools refuse one list. */
+export const CREDENTIAL_BASENAMES: ReadonlySet<string> = new Set([
   '.npmrc',
   '.netrc',
   '.pypirc',
   'id_rsa',
   'id_ed25519',
+  // direnv's file: `export` lines with real values, loaded into the shell.
+  '.envrc',
 ])
 
-const CREDENTIAL_SUFFIXES = Object.freeze(['.pem', '.key', '.p12', '.pfx'])
+export const CREDENTIAL_SUFFIXES = Object.freeze(['.pem', '.key', '.p12', '.pfx'])
 
 /**
  * May this sponsored run write this path?
