@@ -34,7 +34,13 @@ import {
   recordFreebuffInstanceOwner,
 } from '../utils/freebuff-instance-owner'
 import { logger } from '../utils/logger'
-import { consumeFreebuffSessionRelaunch } from '../utils/freebuff-session-relaunch'
+import {
+  consumeCrashedFreebuffSession,
+  consumeFreebuffSessionRelaunch,
+  forgetCrashRecordsFor,
+  forgetLiveFreebuffSession,
+  recordLiveFreebuffSession,
+} from '../utils/freebuff-session-relaunch'
 import {
   freebuffCliAttemptId,
   newFreebuffCliInstanceId,
@@ -546,7 +552,17 @@ export function useFreebuffSession({
     let needsFullActivePoll = false
     let restartGeneration = 0
     let consecutiveFailures = 0
-    const relaunch = consumeFreebuffSessionRelaunch(token)
+    // An update restart hands its claim over explicitly; a crash leaves only
+    // the dead process's record. Either way the hour already bought resumes.
+    const updateHandoff = consumeFreebuffSessionRelaunch(token)
+    if (updateHandoff) forgetCrashRecordsFor(updateHandoff.instanceId)
+    const relaunch = updateHandoff ?? consumeCrashedFreebuffSession(token)
+    if (relaunch) {
+      logger.info(
+        { model: relaunch.model, via: updateHandoff ? 'update' : 'crash' },
+        '[freebuff-session] resuming the hour a previous CLI left behind',
+      )
+    }
     if (relaunch)
       useFreebuffModelStore.getState().setSelectedModel(relaunch.model)
     let claimId = relaunch?.instanceId ?? newFreebuffCliInstanceId()
@@ -570,6 +586,11 @@ export function useFreebuffSession({
       }
       if (next.status === 'active' && !freebuffCliAttemptId(next.instanceId)) {
         recordFreebuffInstanceOwner(next.instanceId)
+      }
+      if (next.status === 'active' && freebuffCliAttemptId(next.instanceId)) {
+        recordLiveFreebuffSession(next, token)
+      } else {
+        forgetLiveFreebuffSession()
       }
       // A refusal carries no `freebucks` block of its own, and the landing
       // decides its wording by that block: without the carry, the monthly

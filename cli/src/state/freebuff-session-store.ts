@@ -2,7 +2,10 @@ import { create } from 'zustand'
 
 import { getAuthTokenDetails } from '../utils/auth'
 import { freebuffCliAttemptId } from '../utils/freebuff-session-identity'
-import { saveFreebuffSessionForRelaunch } from '../utils/freebuff-session-relaunch'
+import {
+  forgetLiveFreebuffSession,
+  saveFreebuffSessionForRelaunch,
+} from '../utils/freebuff-session-relaunch'
 import {
   callFreebuffSession,
   holdsLiveFreebuffSlot,
@@ -137,6 +140,8 @@ export const useFreebuffSessionStore = create<FreebuffSessionStore>(
       },
       releaseSlot: (target = get().session ?? undefined, signal) => {
         if (get().slotKeptForRelaunch) return Promise.resolve()
+        // Released on purpose: nothing is left for a later launch to resume.
+        forgetLiveFreebuffSession()
         const pending = get().pendingAdmission
         const instanceId = holdsLiveFreebuffSlot(target ?? null)
           ? instanceOf(target)

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createTestRenderer } from '@opentui/core/testing'
@@ -243,6 +249,60 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
       if (previousPid === undefined) delete process.env.CODEBUFF_LAUNCHER_PID
       else process.env.CODEBUFF_LAUNCHER_PID = previousPid
     }
+  })
+
+  // Discord 2026-09-25: "the CLI crashed ... when manually opened again the
+  // freebucks are deducted even though the session was only running for 2
+  // minutes". A crash skips every release and every update handoff; the only
+  // trace is the dead process's live record.
+  test('a relaunch after a crash resumes the unexpired hour instead of buying another', async () => {
+    rows.set('desktop-sibling', active('desktop-sibling'))
+    await mount()
+    await cli.startFreebuffSession(FREEBUFF_MIMO_V25_MODEL_ID)
+    const original = cli.getFreebuffInstanceId()!
+    const ownRecord = join(configDir, `freebuff-live-${process.pid}.json`)
+    await until(() => existsSync(ownRecord))
+    expect(JSON.parse(readFileSync(ownRecord, 'utf8')).instanceId).toBe(
+      original,
+    )
+
+    // The crash: no DELETE, and the record now names a process that is gone.
+    const deadPid = Bun.spawnSync(['true']).pid
+    const record = JSON.parse(readFileSync(ownRecord, 'utf8'))
+    writeFileSync(
+      join(configDir, `freebuff-live-${deadPid}.json`),
+      JSON.stringify({ ...record, ownerPid: deadPid }),
+    )
+    rmSync(ownRecord)
+    useFreebuffSessionStore.setState({ slotKeptForRelaunch: true })
+    close!()
+    close = undefined
+    expect(requests.filter((r) => r.method === 'DELETE')).toHaveLength(0)
+
+    try {
+      useFreebuffSessionStore.getState().setSession(null)
+      useFreebuffSessionStore.setState({ slotKeptForRelaunch: false })
+      await mount('active')
+      expect(cli.getFreebuffInstanceId()).toBe(original)
+      expect(purchases).toBe(1)
+      expect(rows.has('desktop-sibling')).toBe(true)
+      // Resumed exactly once: the dead record is gone, this process holds it now.
+      expect(existsSync(join(configDir, `freebuff-live-${deadPid}.json`))).toBe(
+        false,
+      )
+      await until(() => existsSync(ownRecord))
+    } finally {
+      useFreebuffSessionStore.setState({ slotKeptForRelaunch: false })
+    }
+  })
+
+  test('an explicit end leaves nothing for a later launch to resume', async () => {
+    await mount()
+    await cli.startFreebuffSession(FREEBUFF_MIMO_V25_MODEL_ID)
+    const ownRecord = join(configDir, `freebuff-live-${process.pid}.json`)
+    await until(() => existsSync(ownRecord))
+    await cli.returnToFreebuffLanding()
+    expect(existsSync(ownRecord)).toBe(false)
   })
 
   test('an ambiguous POST retries the same purchase identity', async () => {
