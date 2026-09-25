@@ -948,7 +948,9 @@ describe('FreebuffModelSelector plan line', () => {
         monthResetAt: new Date(FIXED_NOW_MS + 20 * 24 * 3600_000).toISOString(),
       },
     } as never)
-    const frame = (await renderSelector()).captureCharFrame()
+    // 48 rows: Solar Pro 4's return (2026-09-25) made the full catalog taller
+    // than a 40-row frame holds with the plan line above it.
+    const frame = (await renderSelector(48)).captureCharFrame()
     expect(frame).toContain(
       'FREE · today 1 of 4 · week 3 of 14 · month 9 of 40',
     )
@@ -1536,7 +1538,8 @@ test.each([
     useFreebuffModelStore
       .getState()
       .setSelectedModel(SOLAR)
-    const setup = await renderSelector(40, async (model) => {
+    // 48 rows: the expanded catalog outgrew 40 when Solar Pro 4 returned.
+    const setup = await renderSelector(48, async (model) => {
       requested.push(model)
     })
     expect(setup.captureCharFrame()).toContain(solarOfferAt(cutoff - 137).tagline)

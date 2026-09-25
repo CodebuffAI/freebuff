@@ -13,7 +13,7 @@ import {
   isDeepSeekExpensiveWindow,
 } from './freebuff-peak-hours'
 import { mimoModels } from './model-config'
-import { SOLAR_REGULAR_OFFER } from './freebuff-solar-promo'
+import { SOLAR_PRO_4_OFFER } from './freebuff-solar-promo'
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
@@ -26,6 +26,7 @@ import {
 import {
   FREEBUFF_SOLAR_MINI_4_ENTITLEMENT,
   FREEBUFF_SOLAR_MINI_4_MODEL_ID,
+  FREEBUFF_SOLAR_PRO_4_ENTITLEMENT,
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
   type FreebuffAccessTier,
 } from './freebuff-model-entitlements'
@@ -2343,30 +2344,24 @@ const GPT_6_LUNA_MODEL = {
 } as const satisfies FreebuffModelOption
 
 /**
- * RETIRED FROM EVERY PICKER on 2026-09-23, replaced by Solar Mini 4 on the
- * same Upstage lane. Like GPT-5.6 Luna, this is the picker-only first stage:
- * the row stays in SUPPORTED_FREEBUFF_MODELS and admissible, so sessions
- * admitted before the swap drain on it and the released binaries that still
- * list it keep working at its own price.
+ * Solar Pro 4 (Upstage). Retired from every picker on 2026-09-23 when Solar
+ * Mini 4 took its slot, and RETURNED beside Mini 4 on 2026-09-25 at 10
+ * Freebucks (SOLAR_PRO_4_OFFER), by product decision. The two share the
+ * pinned Upstage lane; Mini is the cheap row, Pro the stronger one.
+ *
+ * The `supersededBy` pointer to Mini 4 went with the return: it would keep
+ * rewriting saved Pro 4 picks onto Mini 4 on every load.
  */
 const SOLAR_PRO_4_MODEL = {
   id: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
   displayName: 'Solar Pro 4',
-  tagline: SOLAR_REGULAR_OFFER.tagline,
+  tagline: SOLAR_PRO_4_OFFER.tagline,
   availability: 'always',
   // Provider-side debugging logs are allowed; this is not a ZDR promise or
   // permission for AI training. Keep our own training traces disabled.
   dataUse: 'service',
-  premium: false,
+  premium: FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.fullAccess.premium,
   multimodal: false,
-  // The one live use of the pointer: the row is in no picker, so the notice
-  // renders nowhere, but migrateSupersededFreebuffModelPreference moves a
-  // SAVED Pro 4 pick onto Solar Mini 4 the next time a surface reads it.
-  supersededBy: {
-    modelId: FREEBUFF_SOLAR_MINI_4_MODEL_ID,
-    notice: 'Solar Mini 4 replaces Solar Pro 4',
-    actionLabel: 'Switch to Solar Mini 4',
-  },
 } as const satisfies FreebuffModelOption
 
 /**
@@ -2902,10 +2897,12 @@ export const FREEBUFF_MODELS = [
   // stays in SUPPORTED_FREEBUFF_MODELS so the id remains recognisable and
   // coercible for the installed binaries that still hold it.
   //
-  // SOLAR MINI 4 TAKES SOLAR PRO 4'S SLOT (2026-09-23): same Upstage lane, at
-  // half Pro 4's Freebucks price. Pro 4 left this list in the same change and
-  // stays admissible for the binaries that still hold it.
+  // SOLAR MINI 4 TOOK SOLAR PRO 4'S SLOT on 2026-09-23 (same Upstage lane, at
+  // half Pro 4's Freebucks price), and PRO 4 RETURNED beside it on 2026-09-25.
+  // Their order here only matters off the meter: every picker sorts its rows
+  // cheapest first once prices arrive.
   SOLAR_MINI_4_MODEL,
+  SOLAR_PRO_4_MODEL,
   // SPACE BUNNY ALPHA (2026-09-23), a BETA stealth row. Placed after the
   // named-vendor rows: a row carrying the stealth caveat should not outrank
   // ones without it.
@@ -3766,6 +3763,9 @@ export const LIMITED_FREEBUFF_MODEL_IDS = [
   FREEBUFF_MIMO_V25_MODEL_ID,
   ...(FREEBUFF_SOLAR_MINI_4_ENTITLEMENT.limitedAccess
     ? [FREEBUFF_SOLAR_MINI_4_ENTITLEMENT.modelId]
+    : []),
+  ...(FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.limitedAccess
+    ? [FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.modelId]
     : []),
 ] as const
 export const LIMITED_FREEBUFF_MODELS = LIMITED_FREEBUFF_MODEL_IDS.map(

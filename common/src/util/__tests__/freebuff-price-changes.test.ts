@@ -17,6 +17,7 @@ const end = Date.parse('2026-09-08T07:00:00Z')
 const restored = Date.parse('2026-09-09T15:49:00Z')
 const metered = Date.parse('2026-09-13T05:00:00Z')
 const increased = Date.parse('2026-09-14T03:46:00Z')
+const returned = Date.parse('2026-09-25T19:00:00Z')
 const quoteBeforeStart = () => ({
   ...freebucksFixture(0, { [solar]: SOLAR_REGULAR_OFFER.price }),
   priceNotices: { [solar]: SOLAR_REGULAR_OFFER.tagline },
@@ -49,13 +50,18 @@ describe('announced Freebucks price changes', () => {
     expect(applyFreebucksPriceChanges(meteredAgain, increased - 1)).toBe(
       meteredAgain,
     )
-    expect(applyFreebucksPriceChanges(meteredAgain, increased)).toEqual({
-      ...meteredAgain,
-      prices: { ...meteredAgain.prices, [solar]: 10 },
+    const increasedQuote = applyFreebucksPriceChanges(meteredAgain, increased)
+    expect(increasedQuote.prices[solar]).toBe(10)
+    expect(increasedQuote.priceNotices[solar]).toBe('Limited-time trial')
+    expect(nextFreebucksPriceChange(increasedQuote)).toBe(returned)
+    // The return to the pickers keeps the price and replaces only the copy.
+    expect(applyFreebucksPriceChanges(increasedQuote, returned)).toEqual({
+      ...increasedQuote,
+      priceNotices: { ...increasedQuote.priceNotices, [solar]: 'Upstage flagship' },
       priceChanges: [],
     })
     expect(quote.prices[solar]).toBe(5)
-    expect(quote.priceChanges).toHaveLength(5)
+    expect(quote.priceChanges).toHaveLength(6)
   })
 
   it('catches up across all transitions, even when a delayed response lists them out of order', () => {
