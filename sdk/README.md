@@ -273,6 +273,20 @@ The `RunState` object contains:
 - `sessionState`: Internal state to be passed to the next run
 - `output`: The agent's output (text, error, or other types)
 
+## Example 3: Telegram bridge
+
+Run a Telegram bot that talks to an agent in a project directory, so you can
+prompt it remotely from your phone (no website needed). Each chat keeps its
+own session; `/new` starts a fresh one. Self-hosted: the bot polls Telegram
+and runs the agent wherever you start it.
+
+```bash
+TELEGRAM_BOT_TOKEN=... CODEBUFF_API_KEY=... bun sdk/examples/telegram-bot.ts
+```
+
+Optional env: `FREEBUFF_AGENT` (agent id, default `codebuff/base@0.0.16`) and
+`FREEBUFF_WORKDIR` (directory the agent operates on, default `process.cwd()`).
+
 ## License
 
 MIT
