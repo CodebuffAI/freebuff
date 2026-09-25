@@ -1,8 +1,9 @@
 import path from 'path'
 
 import { getBundledRgPath } from '@codebuff/sdk'
-import { spawnSync } from 'bun'
 
+import { extractRipgrep } from './ripgrep-extraction'
+import { getConfigDir } from '../utils/config-dir'
 import { getCliEnv } from '../utils/env'
 import { logger } from '../utils/logger'
 
@@ -29,7 +30,7 @@ const getRipgrepPath = async (): Promise<string> => {
     // Use require() with literal paths to ensure the binary gets bundled into the compiled CLI
     // This is necessary for Bun's binary compilation to include the ripgrep binary
     let embeddedRgPath: string
-    
+
     if (process.platform === 'darwin' && process.arch === 'arm64') {
       embeddedRgPath = require('../../../sdk/dist/vendor/ripgrep/arm64-darwin/rg')
     } else if (process.platform === 'darwin' && process.arch === 'x64') {
@@ -41,19 +42,18 @@ const getRipgrepPath = async (): Promise<string> => {
     } else if (process.platform === 'win32' && process.arch === 'x64') {
       embeddedRgPath = require('../../../sdk/dist/vendor/ripgrep/x64-win32/rg.exe')
     } else {
-      throw new Error(`Unsupported platform: ${process.platform}-${process.arch}`)
+      throw new Error(
+        `Unsupported platform: ${process.platform}-${process.arch}`,
+      )
     }
 
-    // Copy SDK's bundled binary to binary directory for portability
+    // Prefer the binary directory; protected installs use the user's cache.
     const embeddedBuffer = await Bun.file(embeddedRgPath).arrayBuffer()
-    await Bun.write(outPath, embeddedBuffer)
-
-    // Make executable on Unix systems
-    if (process.platform !== 'win32') {
-      spawnSync(['chmod', '+x', outPath])
-    }
-
-    return outPath
+    return await extractRipgrep({
+      outPath,
+      bytes: new Uint8Array(embeddedBuffer),
+      getCacheDir: () => path.join(getConfigDir(), 'cache', 'ripgrep'),
+    })
   } catch (error) {
     logger.error({ error }, 'Failed to extract ripgrep binary')
     // Fallback to SDK's bundled ripgrep if extraction fails
