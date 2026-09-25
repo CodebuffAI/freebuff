@@ -422,6 +422,32 @@ describe('the turn', () => {
     expect(f.service.state.phase).toBe('failed')
   })
 
+  test('a grant with a start deadline still starts after a long wait (COD-665)', async () => {
+    // What the server issues now: 24h to start, an hour once running. The
+    // conversation was busy for three hours; the run still gets its turn.
+    const f = fakes({
+      accept: async (proposalId, token, binding) => {
+        const result = await fakes().deps.accept(proposalId, token, binding)
+        if (!result.ok || !result.accept.computeGrant) return result
+        const grant = result.accept.computeGrant
+        return {
+          ...result,
+          accept: {
+            ...result.accept,
+            computeGrant: {
+              ...grant,
+              expiresAtMs: grant.expiresAtMs + 23 * 3_600_000,
+            },
+          },
+        }
+      },
+    })
+    await acceptThrough(f)
+    f.advance(3 * 3_600_000)
+    expect(await f.service.startTurn()).not.toBeNull()
+    expect(f.service.state.phase).toBe('running')
+  })
+
   test('nothing to start when nothing was accepted', async () => {
     const f = fakes()
     expect(await f.service.startTurn()).toBeNull()

@@ -1,12 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import {
   SPONSORED_ACCEPT_EXECUTION_SURFACE_PARAM,
+  SPONSORED_COMPUTE_RUN_WINDOW_MS,
+  SPONSORED_COMPUTE_START_DEADLINE_MS,
   acceptClientSurfacePairsWithRow,
   readSponsoredComputePolicy,
   sponsoredAcceptSurfaceMatchesRow,
   sponsoredComputeAdmitsCampaign,
+  sponsoredComputeRunDeadlineMs,
   type SponsoredAcceptRequest,
 } from './sponsored-compute-contract'
+import { SPONSORED_RUN_TOKEN_TTL_MS } from './sponsored-run-token'
 import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from '../constants/freebuff-model-ids'
 
 const enabled = {
@@ -15,6 +19,47 @@ const enabled = {
     '32f72345-38e9-4c53-b66d-8898c3ea7d8d',
   FREEBUFF_SPONSORED_COMPUTE_MODEL_ID: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
 }
+
+describe('the run window opens when the run starts (COD-665)', () => {
+  const HOUR = 3_600_000
+  const acceptedAt = 1_000_000
+
+  test('the policy hour is the run window, and the start deadline is the run token', () => {
+    expect(readSponsoredComputePolicy(enabled)!.ttlMs).toBe(
+      SPONSORED_COMPUTE_RUN_WINDOW_MS,
+    )
+    expect(SPONSORED_COMPUTE_RUN_WINDOW_MS).toBe(HOUR)
+    expect(SPONSORED_COMPUTE_START_DEADLINE_MS).toBe(SPONSORED_RUN_TOKEN_TTL_MS)
+  })
+
+  test('a late start gets its full hour from the start', () => {
+    const startDeadline = acceptedAt + SPONSORED_COMPUTE_START_DEADLINE_MS
+    expect(
+      sponsoredComputeRunDeadlineMs(startDeadline, acceptedAt + 3 * HOUR),
+    ).toBe(acceptedAt + 4 * HOUR)
+  })
+
+  test('never past the grant: a start near the deadline, or an Accept-anchored grant', () => {
+    const startDeadline = acceptedAt + SPONSORED_COMPUTE_START_DEADLINE_MS
+    expect(
+      sponsoredComputeRunDeadlineMs(startDeadline, startDeadline - 60_000),
+    ).toBe(startDeadline)
+    const legacy = acceptedAt + HOUR
+    expect(
+      sponsoredComputeRunDeadlineMs(legacy, acceptedAt + 10 * 60_000),
+    ).toBe(legacy)
+  })
+
+  test('applying it again later never extends it', () => {
+    const first = sponsoredComputeRunDeadlineMs(
+      acceptedAt + SPONSORED_COMPUTE_START_DEADLINE_MS,
+      acceptedAt + HOUR,
+    )
+    expect(
+      sponsoredComputeRunDeadlineMs(first, acceptedAt + HOUR + 50 * 60_000),
+    ).toBe(first)
+  })
+})
 
 describe('sponsored compute admission policy', () => {
   test('missing configuration never enables sponsored execution', () => {
@@ -128,7 +173,9 @@ describe('sponsored compute admission policy', () => {
 
 describe('the funded Accept request pairs the client with the row (COD-642)', () => {
   test('the client surface and its query parameter share one name', () => {
-    expect(SPONSORED_ACCEPT_EXECUTION_SURFACE_PARAM).toBe('clientExecutionSurface')
+    expect(SPONSORED_ACCEPT_EXECUTION_SURFACE_PARAM).toBe(
+      'clientExecutionSurface',
+    )
     const request: SponsoredAcceptRequest = {
       surface: 'desktop',
       runId: '32f72345-38e9-4c53-b66d-8898c3ea7d8d',

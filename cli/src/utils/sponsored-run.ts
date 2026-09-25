@@ -138,6 +138,7 @@ import type {
   SponsoredStateUpdate,
 } from './sponsored-proposal-api'
 import type { SponsoredReceiptStore } from './sponsored-receipts'
+import { sponsoredComputeRunDeadlineMs } from '@codebuff/common/ads/sponsored-compute-contract'
 import type { SponsoredComputeGrant } from '@codebuff/common/ads/sponsored-compute-contract'
 import type { SponsoredLocalTarget } from '@codebuff/common/ads/sponsored-capability'
 import type {
@@ -858,9 +859,17 @@ export class SponsoredRun {
     if (authToken) await this.report(authToken, { state: 'running' })
     // The grant stops paying at its expiry, and a run that outlives it would
     // be billed to nobody. Aborted rather than left to fail request by request.
+    // Its HOUR starts now, not at Accept (COD-665): the grant arrives with only
+    // its start deadline, and the server brings it in to an hour from this
+    // turn's first call -- a moment after this, so the local cutoff is never
+    // the later of the two.
+    const runDeadlineMs = sponsoredComputeRunDeadlineMs(
+      grant.expiresAtMs,
+      this.deps.now(),
+    )
     active.expiryTimer = setTimeout(
       () => active.abort.abort('grant-expired'),
-      Math.max(0, grant.expiresAtMs - this.deps.now()),
+      Math.max(0, runDeadlineMs - this.deps.now()),
     )
     active.expiryTimer.unref?.()
     const context: SponsoredToolContext = {

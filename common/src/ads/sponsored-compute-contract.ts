@@ -1,4 +1,5 @@
 import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from '../constants/freebuff-model-ids'
+import { SPONSORED_RUN_TOKEN_TTL_MS } from './sponsored-run-token'
 
 import type {
   SponsoredExecutionSurface,
@@ -92,6 +93,50 @@ export function acceptClientSurfacePairsWithRow(
   return sponsoredAcceptSurfaceMatchesRow(clientSurface, rowSurface)
 }
 
+/**
+ * How long a grant keeps spending once its run has STARTED (COD-665).
+ *
+ * The window opens at the run's first reserved call on the server, and at the
+ * turn taking the grant on Desktop -- never at Accept. An in-place run is a
+ * turn queued BEHIND whatever the user already had running, and a clock that
+ * started at Accept spent the wait: of 150 traced runs, 10 never started (the
+ * grant was dead by the time their turn came up), 2 were cut off mid-run, and
+ * ~30% of the runs that did finish had waited more than ten minutes first.
+ * Accept is still the one charge; only the compute window moved.
+ */
+export const SPONSORED_COMPUTE_RUN_WINDOW_MS = 60 * 60_000
+
+/**
+ * How long an accepted grant may wait for its run to start: the hard end of
+ * every grant, measured from Accept, so one whose turn never comes still dies.
+ *
+ * The run token's lifetime, on purpose. A run that starts later than this
+ * could not report its own verdict, so a grant that outlived the token would
+ * fund work nobody can close out.
+ */
+export const SPONSORED_COMPUTE_START_DEADLINE_MS = SPONSORED_RUN_TOKEN_TTL_MS
+
+/**
+ * The deadline a grant has once its run starts at `startedAtMs`: the run
+ * window from then, never past the grant's own expiry.
+ *
+ * A minimum, so it is safe to apply on EVERY call and not only the first: a
+ * later start can never push the deadline out, and the first one fixes it.
+ * The same rule on both sides, which is what keeps Desktop's local cutoff at
+ * or before the server's -- Desktop applies it when the turn takes the grant,
+ * a moment before that turn's first call reaches the server. A grant issued
+ * before COD-665 already expires an hour after Accept, and this leaves it so.
+ */
+export function sponsoredComputeRunDeadlineMs(
+  grantExpiresAtMs: number,
+  startedAtMs: number,
+): number {
+  return Math.min(
+    grantExpiresAtMs,
+    startedAtMs + SPONSORED_COMPUTE_RUN_WINDOW_MS,
+  )
+}
+
 /** Public response shape. The bearer belongs in host memory, never a thread. */
 export type SponsoredComputeGrant = Readonly<{
   token: string
@@ -99,6 +144,13 @@ export type SponsoredComputeGrant = Readonly<{
   runId: string
   procedureSha256: string
   modelId: string
+  /**
+   * When the grant stops spending. Issued as Accept +
+   * {@link SPONSORED_COMPUTE_START_DEADLINE_MS}, and brought in to the run's
+   * start + {@link SPONSORED_COMPUTE_RUN_WINDOW_MS} once it starts (see
+   * {@link sponsoredComputeRunDeadlineMs}). A replayed Accept after the start
+   * answers the brought-in value.
+   */
   expiresAtMs: number
   allowanceUsdMicros: number
   /**
@@ -126,6 +178,10 @@ export type SponsoredComputePolicy = Readonly<{
   campaigns: SponsoredComputeCampaigns
   allowanceUsdMicros: number
   acceptancePriceCents: number
+  /**
+   * The grant's life once its run has started
+   * ({@link SPONSORED_COMPUTE_RUN_WINDOW_MS}); not measured from Accept.
+   */
   ttlMs: number
 }>
 
@@ -208,6 +264,6 @@ export function readSponsoredComputePolicy(
     // internal, bounded cost of fulfilling that offer, capped here at $0.50.
     allowanceUsdMicros: 500_000,
     acceptancePriceCents,
-    ttlMs: 60 * 60_000,
+    ttlMs: SPONSORED_COMPUTE_RUN_WINDOW_MS,
   })
 }
