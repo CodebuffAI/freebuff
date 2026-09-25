@@ -683,9 +683,9 @@ export const MultilineInput = forwardRef<
         return true
       }
 
-      // Alt+Backspace or Ctrl+W: Delete word backward
+      // Alt/Ctrl+Backspace or Ctrl+W: Delete word backward
       if (
-        (key.name === 'backspace' && isAltLikeModifier) ||
+        (key.name === 'backspace' && (isAltLikeModifier || key.ctrl)) ||
         (key.ctrl && lowerKeyName === 'w')
       ) {
         preventKeyDefault(key)
