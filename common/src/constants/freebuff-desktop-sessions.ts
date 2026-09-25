@@ -82,8 +82,8 @@ export const FREEBUFF_DESKTOP_ADMITTED_AT_HEADER =
 /** Client-persisted identity for a possibly unacknowledged Desktop POST. */
 export const FREEBUFF_DESKTOP_ATTEMPT_HEADER = 'x-freebuff-desktop-attempt-id'
 
-/** Renew this tab's live paid hour in place: charge its price again, restart
- *  its hour and pacing counter. The value is a client UUID that makes retries
+/** Renew this tab's live paid hour in place: charge its price again and
+ *  restart its hour. The value is a client UUID that makes retries
  *  charge once. */
 export const FREEBUFF_SESSION_RENEWAL_HEADER = 'x-freebuff-session-renewal-id'
 

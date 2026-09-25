@@ -11,10 +11,6 @@ import {
   FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
 } from '@codebuff/common/constants/freebuff-errors'
 import { FREEBUFF_ACTING_USER_HEADER } from '@codebuff/common/constants/freebuff-models'
-import {
-  parseSessionSlowedNotice,
-  type FreebuffSessionSlowed,
-} from '@codebuff/common/util/freebuff-session-slowed'
 import { isTransientNetworkError } from '@codebuff/common/util/error'
 import {
   OpenAICompatibleChatLanguageModel,
@@ -93,66 +89,6 @@ function notifyCapacityDeferralFromResponse(response: Response): void {
       })
     })
     .catch(() => {})
-}
-
-/**
- * A free-mode session the backend is pacing past its target, announced at the
- * end of a step (freebuff-session-slowed.ts) so hosts can label the next pause
- * and offer a renewal. `instanceId` names the session (a Desktop tab), since the
- * listener is process-wide. `sentAt` (epoch ms) lets a host ignore a step sent
- * before it renewed that session, which was paced on the old counter.
- */
-export type FreeModeSessionSlowed = FreebuffSessionSlowed & { sentAt: number }
-
-let freeModeSessionSlowedListener:
-  | ((slowed: FreeModeSessionSlowed) => void)
-  | null = null
-
-export function setFreeModeSessionSlowedListener(
-  listener: ((slowed: FreeModeSessionSlowed) => void) | null,
-): void {
-  freeModeSessionSlowedListener = listener
-}
-
-/** Reports the slowed notice an SSE body carries, returning the response with
- * its body observed. Untouched unless a host is listening. */
-function observeSessionSlowed(response: Response, sentAt: number): Response {
-  const listener = freeModeSessionSlowedListener
-  if (
-    !listener ||
-    !response.ok ||
-    !response.body ||
-    !response.headers.get('content-type')?.includes('text/event-stream')
-  )
-    return response
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let partial = ''
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      const { done, value } = await reader.read()
-      if (done) return controller.close()
-      controller.enqueue(value)
-      const lines = (partial + decoder.decode(value, { stream: true })).split(
-        '\n',
-      )
-      partial = lines.pop() ?? ''
-      for (const line of lines) {
-        const slowed = parseSessionSlowedNotice(line)
-        try {
-          if (slowed) listener({ ...slowed, sentAt })
-        } catch {
-          // A throwing listener must never break the stream it observes.
-        }
-      }
-    },
-    cancel: (reason) => reader.cancel(reason),
-  })
-  return new Response(body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
-  })
 }
 
 function requestUrlOf(input: Parameters<typeof globalThis.fetch>[0]): string {
@@ -330,12 +266,11 @@ function fetchWithRetryableNetworkErrors(
   ...args: Parameters<typeof globalThis.fetch>
 ): ReturnType<typeof globalThis.fetch> {
   const url = requestUrlOf(args[0])
-  const sentAt = Date.now()
   return globalThis.fetch(...args).then(
     async (response) => {
       notifyCapacityDeferralFromResponse(response)
       await throwIfTurnSpendCapped(response, url)
-      return observeSessionSlowed(response, sentAt)
+      return response
     },
     (error: unknown) => {
       if (isTransientNetworkError(error)) {

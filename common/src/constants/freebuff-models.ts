@@ -501,8 +501,7 @@ export const SOLAR_PRO_4_OPENROUTER_ENDPOINT = 'upstage'
  *    drift onto Vertex shows up as a doubled $/msg on /web/admin/spend rather
  *    than as free traffic.
  *
- * The row is PREMIUM and carries a per-session pacing target
- * (FREEBUFF_PER_MODEL_SESSION_SPEND_CAPS). At the flex rate and the cache
+ * The row is PREMIUM. At the flex rate and the cache
  * rates the browser surfaces actually get, it prices out at roughly 4x DeepSeek
  * V4 Flash and 9x GLM 5.3 Flash per message; the cache-read rate is the dearest
  * in the catalog and cache reads are ~96% of an agent turn's tokens. Figures
@@ -2407,7 +2406,7 @@ const SOLAR_MINI_4_MODEL = {
 /**
  * Gemini 3.8 Flash. Premium, and unlike most premium rows it is priced premium
  * as well as badged it — see FREEBUFF_GEMINI_38_FLASH_MODEL_ID for the tier
- * table and FREEBUFF_PER_MODEL_SESSION_SPEND_CAPS for its pacing target.
+ * table.
  */
 const GEMINI_38_FLASH_MODEL = {
   id: FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
@@ -2981,26 +2980,6 @@ export function isFreebuffExperimentalModel(
   // literals and only some carry the optional flag, so a direct access does not
   // typecheck against the members that omit it.
   return row !== undefined && 'experimental' in row && row.experimental === true
-}
-
-/**
- * Historical per-model ceilings, retained as soft session pacing targets.
- * Crossing a target adds a pause; it never refuses a prompt or model call.
- */
-export const FREEBUFF_PER_MODEL_SESSION_SPEND_CAPS: Readonly<
-  Record<string, number>
-> = {
-  // Gemini 3.8 Flash, $0.50 a session from the day it shipped (2026-09-03).
-  // Revisit after its implicit-cache hit rate has been measured in production.
-  [FREEBUFF_GEMINI_38_FLASH_MODEL_ID]: 0.5,
-}
-
-/** Optional model-specific pacing target; the legacy name is retained. */
-export function getFreebuffPerModelSessionSpendCap(
-  model: string | null | undefined,
-): number | undefined {
-  if (!model) return undefined
-  return FREEBUFF_PER_MODEL_SESSION_SPEND_CAPS[model]
 }
 
 /**
@@ -3892,7 +3871,7 @@ export const FREEBUFF_CLOUD_PLANNER_TURN_LIMIT = 12
  * afford a session was also the one barred from the cheap one.
  *
  * Freebucks meters access through session prices and a daily pool, while
- * session length and per-session pacing govern usage within an hour.
+ * session length governs usage within an hour.
  *
  * Luna is the deliberate full-access exception: it stays plan-gated only at
  * the limited tier

@@ -1,5 +1,5 @@
 /** Older servers can still return a final turn_spend_limit refusal. The SDK
- * must preserve its copy and avoid retrying it. Current servers use pacing. */
+ * must preserve its copy and avoid retrying it. Current servers do not. */
 import {
   FREEBUFF_TURN_SPEND_LIMIT_ERROR_CODE,
   FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,

@@ -87,7 +87,6 @@ export type { ValidationResult, ValidateAgentsOptions } from './validate-agents'
 // Free-mode capacity deferral notifications (server-side tier shedding)
 export {
   setFreeModeCapacityDeferralListener,
-  setFreeModeSessionSlowedListener,
 } from './impl/model-provider'
 export type { FreeModeCapacityDeferral } from './impl/model-provider'
 

@@ -7,7 +7,7 @@ export const FREEBUFF_PROVIDER_USAGE_MESSAGE =
   'Freebuff ran out of provider usage and needs a refill. This is on us, not your account.'
 
 /** Legacy older-server refusal, retained by SDK/CLI/Web recovery handlers.
- * Current servers use session pacing and no longer emit this spend cutoff. */
+ * Current servers no longer emit this spend cutoff. */
 export const FREEBUFF_TURN_SPEND_LIMIT_ERROR_CODE = 'turn_spend_limit'
 
 export const FREEBUFF_TURN_SPEND_LIMIT_MESSAGE =
