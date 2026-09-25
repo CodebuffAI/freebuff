@@ -34,6 +34,11 @@ import {
   recordFreebuffInstanceOwner,
 } from '../utils/freebuff-instance-owner'
 import { logger } from '../utils/logger'
+import { consumeFreebuffSessionRelaunch } from '../utils/freebuff-session-relaunch'
+import {
+  freebuffCliAttemptId,
+  newFreebuffCliInstanceId,
+} from '../utils/freebuff-session-identity'
 import { getSystemMessage } from '../utils/message-history'
 import {
   clearReferralCache,
@@ -126,7 +131,7 @@ type RestartMode = 'rejoin' | 'landing'
 
 interface PollController {
   /** Cancel the in-flight tick + timer and start a fresh one in `mode`. */
-  restart: (mode: RestartMode) => Promise<void>
+  restart: (mode: RestartMode, rotateClaim?: boolean) => Promise<void>
   apply: (next: FreebuffSessionResponse) => void
   abort: () => void
 }
@@ -231,7 +236,7 @@ async function restartFreebuffSession(
   if (!IS_FREEBUFF) return
   // A reset changes chat ownership. Stop and checkpoint the old run before
   // resetting its store so late deltas cannot land in the next session.
-  if (opts.resetChat) {
+  if (opts.resetChat || opts.releaseSlot) {
     stopActiveRun('session-transition')
   }
   // Halt the running poll loop before we touch local stores or DELETE the
@@ -242,6 +247,7 @@ async function restartFreebuffSession(
   const currentController = controller
   const currentToken = getAuthTokenDetails().token
   const currentSession = useFreebuffSessionStore.getState().session
+  const currentAttempt = useFreebuffSessionStore.getState().pendingAdmission
   const stillCurrent = () =>
     controller === currentController &&
     getAuthTokenDetails().token === currentToken &&
@@ -272,7 +278,13 @@ async function restartFreebuffSession(
     // directory instead of overwriting this conversation in /history.
     startNewChat()
   }
-  await currentController?.restart(mode)
+  await currentController?.restart(
+    mode,
+    Boolean(
+      opts.releaseSlot &&
+      (holdsLiveFreebuffSlot(currentSession) || currentAttempt),
+    ),
+  )
 }
 
 /**
@@ -283,7 +295,10 @@ async function restartFreebuffSession(
 export function refreshFreebuffSession(
   opts: { resetChat?: boolean } = {},
 ): Promise<void> {
-  return restartFreebuffSession('rejoin', { resetChat: opts.resetChat })
+  return restartFreebuffSession('rejoin', {
+    resetChat: opts.resetChat,
+    releaseSlot: useFreebuffSessionStore.getState().session?.status === 'ended',
+  })
 }
 
 /**
@@ -381,7 +396,9 @@ export function startFreebuffSession(
   pendingExplicitPickModel = resolved
   useFreebuffModelStore.getState().setSelectedModel(resolved)
   saveFreebuffModelPreference(resolved)
-  return restartFreebuffSession('rejoin')
+  return restartFreebuffSession('rejoin', {
+    releaseSlot: current?.status === 'active' && current.model !== resolved,
+  })
 }
 
 let takeoverInFlight: Promise<void> | null = null
@@ -461,18 +478,17 @@ interface UseFreebuffSessionResult {
  * Manages the freebuff session lifecycle:
  *   - GET on mount to probe state (no auto-join; the user picks a model in
  *     the landing screen, which calls startFreebuffSession)
- *   - if the probe sees an existing seat, auto-takes-over when the prior
- *     local owner process is gone; otherwise asks before POSTing to rotate
- *     the instance id so any other CLI on the same account is superseded
+ *   - ordinary sessions use a private multi-session claim, sharing Desktop's
+ *     account capacity; limited-offer campaigns retain their single-session path
  *   - polls GET while active to keep state fresh
  *   - re-POSTs on explicit refresh (chat gate rejected us, user switched
  *     models, user rejoined after ending)
  *   - DELETE on unmount so the slot frees up for the next user
  *   - plays a bell on admission to an active session
  */
-export function useFreebuffSession(
-  { enabled = true }: { enabled?: boolean } = {},
-): UseFreebuffSessionResult {
+export function useFreebuffSession({
+  enabled = true,
+}: { enabled?: boolean } = {}): UseFreebuffSessionResult {
   const session = useFreebuffSessionStore((s) => s.session)
   const failure = useFreebuffSessionStore((s) => s.failure)
   const lastRefund = useFreebuffSessionStore((s) => s.lastRefund)
@@ -530,6 +546,12 @@ export function useFreebuffSession(
     let needsFullActivePoll = false
     let restartGeneration = 0
     let consecutiveFailures = 0
+    const relaunch = consumeFreebuffSessionRelaunch(token)
+    if (relaunch)
+      useFreebuffModelStore.getState().setSelectedModel(relaunch.model)
+    let claimId = relaunch?.instanceId ?? newFreebuffCliInstanceId()
+    let attemptedModel: string | undefined = relaunch?.model
+    let claimRetired = false
     // Method for the NEXT tick. GET is read-only; POST claims/rotates a seat.
     // Startup is GET (probe before committing). After any POST completes we
     // flip back to GET. refresh() sets it to 'POST' for explicit join/rejoin;
@@ -546,7 +568,7 @@ export function useFreebuffSession(
       if (resolvedModel !== selectedModel) {
         useFreebuffModelStore.getState().setSelectedModel(resolvedModel)
       }
-      if (next.status === 'active') {
+      if (next.status === 'active' && !freebuffCliAttemptId(next.instanceId)) {
         recordFreebuffInstanceOwner(next.instanceId)
       }
       // A refusal carries no `freebucks` block of its own, and the landing
@@ -587,8 +609,14 @@ export function useFreebuffSession(
     const tick = async () => {
       if (cancelled) return
       const method = nextMethod
-      const instanceId = getFreebuffInstanceId()
       const model = getSelectedFreebuffModel()
+      const multiSession = !isFreebuffLimitedOfferModelId(model)
+      const instanceId = multiSession ? claimId : getFreebuffInstanceId()
+      const currentSession = useFreebuffSessionStore.getState().session
+      const takeoverInstanceId =
+        currentSession?.status === 'takeover_prompt'
+          ? currentSession.currentInstanceId
+          : undefined
       const compact =
         method === 'GET' && previousStatus === 'active' && !needsFullActivePoll
       const fetchController = abortController
@@ -602,9 +630,17 @@ export function useFreebuffSession(
                 token,
               )
             : selectedPrice.expectation
+        if (method === 'POST' && multiSession) {
+          attemptedModel = model
+          useFreebuffSessionStore
+            .getState()
+            .setPendingAdmission({ instanceId: claimId, token })
+        }
         const next = await callFreebuffSession(method, token, {
           signal: fetchController.signal,
           instanceId,
+          multiSession,
+          takeoverInstanceId,
           model,
           compact,
           firstTabDiscount: price?.firstTabDiscount,
@@ -623,6 +659,51 @@ export function useFreebuffSession(
           return
         }
         consecutiveFailures = 0
+        if (
+          method === 'GET' &&
+          previousStatus === null &&
+          relaunch &&
+          next.status === 'none'
+        ) {
+          // The preserved claim was released/expired while updating. A fresh
+          // user selection must use a fresh single-use identity.
+          claimRetired = true
+        }
+        if (
+          next.status === 'premium_slot_taken' ||
+          next.status === 'purchase_in_use' ||
+          next.status === 'purchase_capacity'
+        ) {
+          apply({
+            status: 'takeover_prompt',
+            model: next.requestedModel,
+            currentInstanceId: next.currentInstanceId,
+            message:
+              next.status === 'purchase_in_use'
+                ? 'Your paid session is in use elsewhere. Take over to move it here and stop its current instance.'
+                : next.status === 'purchase_capacity' &&
+                    next.slotLimit === 1 &&
+                    next.accessTier === 'limited'
+                  ? 'Limited access without a subscription allows one session across CLI and Desktop. Take over to stop the other session and use it here.'
+                  : 'Your concurrent-session limit across CLI and Desktop is reached. Take over to stop another session and use its slot here.',
+          })
+          nextMethod = 'GET'
+          return
+        }
+        if (next.status === 'purchase_claim_released') {
+          // A released claim is single-use. Wait for an explicit selection;
+          // never turn a remote takeover into an automatic purchase loop.
+          claimRetired = true
+          apply(toLandingSession(currentSession))
+          setFailure({
+            type: 'other',
+            message:
+              'This session was released. Choose a model to start a new session.',
+            retry: null,
+            outcomeUnknown: false,
+          })
+          return
+        }
         if (method === 'POST' && next.status === 'active')
           selectedPrice.purchased(price)
         if (method === 'POST' && next.status !== 'model_locked')
@@ -681,6 +762,8 @@ export function useFreebuffSession(
             try {
               const held = await callFreebuffSession('GET', token, {
                 signal: fetchController.signal,
+                instanceId,
+                multiSession,
               })
               if (
                 !cancelled &&
@@ -706,6 +789,10 @@ export function useFreebuffSession(
               return
             }
             if (released) {
+              if (multiSession) {
+                claimId = newFreebuffCliInstanceId()
+                attemptedModel = undefined
+              }
               useChatStore
                 .getState()
                 .setMessages((prev) => [
@@ -732,6 +819,16 @@ export function useFreebuffSession(
           return
         }
         if (next.status === 'model_unavailable') {
+          if (next.updateRequired || next.purchasesPaused) {
+            apply(toLandingSession(currentSession))
+            setFailure({
+              type: 'other',
+              message: next.availableHours,
+              retry: null,
+              outcomeUnknown: false,
+            })
+            return
+          }
           // Server says the requested model isn't available right now. Flip
           // to the always-available fallback for this run. In-memory only —
           // `setSelectedModel` doesn't persist, so the user's saved preference
@@ -789,6 +886,7 @@ export function useFreebuffSession(
         // an explicit takeover preserves our queue position instead of
         // switching queues.
         if (
+          !multiSession &&
           method === 'GET' &&
           previousStatus === null &&
           next.status === 'active'
@@ -925,12 +1023,52 @@ export function useFreebuffSession(
     }
 
     controller = {
-      restart: async (mode) => {
+      restart: async (mode, rotateClaim = false) => {
         const generation = ++restartGeneration
         clearTimer()
         // Abort any in-flight fetch so it can't race us and overwrite state.
         abortController.abort()
         abortController = new AbortController()
+        // Cancel the exact prior attempt before replacing its identity, even
+        // if its POST response was lost. The server tombstones this attempt so
+        // a delayed admission cannot buy an orphaned hour after the DELETE.
+        if (
+          !rotateClaim &&
+          attemptedModel &&
+          (mode === 'landing' ||
+            useFreebuffSessionStore.getState().session?.status === 'ended' ||
+            attemptedModel !== getSelectedFreebuffModel())
+        ) {
+          try {
+            const ended = await callFreebuffSession('DELETE', token, {
+              instanceId: claimId,
+              signal: abortController.signal,
+            })
+            if (ended.status !== 'ended')
+              throw new Error('Could not confirm the previous session ended.')
+          } catch (error) {
+            if (cancelled || generation !== restartGeneration) return
+            setFailure({
+              type: 'other',
+              message: error instanceof Error ? error.message : String(error),
+              retry: null,
+              outcomeUnknown: true,
+            })
+            return
+          }
+          if (cancelled || generation !== restartGeneration) return
+          rotateClaim = true
+        }
+        if (rotateClaim || claimRetired) {
+          if (
+            useFreebuffSessionStore.getState().pendingAdmission?.instanceId ===
+            claimId
+          )
+            useFreebuffSessionStore.getState().setPendingAdmission(null)
+          claimId = newFreebuffCliInstanceId()
+          attemptedModel = undefined
+          claimRetired = false
+        }
         // Reset previousStatus so the admission bell still fires after
         // a forced restart, and so the active|ended → none synthesis below
         // doesn't bounce a 'landing' restart straight back to 'ended'.
@@ -955,6 +1093,8 @@ export function useFreebuffSession(
           const fetchController = abortController
           callFreebuffSession('GET', token, {
             signal: fetchController.signal,
+            instanceId: claimId,
+            multiSession: true,
           })
             .then((response) => {
               if (
@@ -1009,13 +1149,19 @@ export function useFreebuffSession(
       controller = null
       clearReferralCache()
 
-      // Fire-and-forget DELETE. Only release if we actually held a slot so
-      // we don't generate spurious DELETEs (e.g. HMR before POST completes).
+      // Release a confirmed session or cancel an unacknowledged POST. A probe
+      // alone owns nothing and must never end another process's session.
+      if (useFreebuffSessionStore.getState().slotKeptForRelaunch) return
       if (holdsLiveFreebuffSlot(current)) {
         useFreebuffSessionStore
           .getState()
           .releaseSlot()
           .catch(() => {})
+      } else if (attemptedModel) {
+        // Covers a POST that committed after unmount/Stop but lost its reply.
+        void callFreebuffSession('DELETE', token, {
+          instanceId: claimId,
+        }).catch(() => {})
       }
       setSession(null)
       setFailure(null)

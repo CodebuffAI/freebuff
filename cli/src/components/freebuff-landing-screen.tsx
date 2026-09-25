@@ -18,6 +18,7 @@ import { FreebuffModelSelector } from './freebuff-model-selector'
 import { ShimmerText } from './shimmer-text'
 import {
   refreshFreebuffLandingMetadata,
+  returnToFreebuffLanding,
   takeOverFreebuffSession,
 } from '../hooks/use-freebuff-session'
 import { useFreebuffCtrlCExit } from '../hooks/use-freebuff-ctrl-c-exit'
@@ -178,7 +179,9 @@ function getTakeoverErrorMessage(failure: FreebuffSessionFailure): string {
 export const TakeoverPrompt: React.FC<{
   failure: FreebuffSessionFailure | null
   onTakeOver?: () => Promise<void>
-}> = ({ failure, onTakeOver = takeOverFreebuffSession }) => {
+  message?: string
+  onBack?: () => Promise<void>
+}> = ({ failure, onTakeOver = takeOverFreebuffSession, message, onBack }) => {
   const theme = useTheme()
   const [pending, setPending] = useState(false)
   const [focusedIndex, setFocusedIndex] = useState(0) // 0 = Take over, 1 = Exit
@@ -222,7 +225,7 @@ export const TakeoverPrompt: React.FC<{
 
         if (isExit) {
           key.preventDefault?.()
-          void exitCliCleanly()
+          void (onBack ? onBack() : exitCliCleanly())
           return
         }
 
@@ -231,7 +234,7 @@ export const TakeoverPrompt: React.FC<{
           if (focusedIndex === 0) {
             void handleTakeover()
           } else {
-            void exitCliCleanly()
+            void (onBack ? onBack() : exitCliCleanly())
           }
           return
         }
@@ -248,7 +251,7 @@ export const TakeoverPrompt: React.FC<{
           return
         }
       },
-      [focusedIndex, handleTakeover],
+      [focusedIndex, handleTakeover, onBack],
     ),
   )
 
@@ -277,11 +280,11 @@ export const TakeoverPrompt: React.FC<{
       }}
     >
       <text style={{ fg: theme.foreground }} attributes={TextAttributes.BOLD}>
-        Freebuff is already running
+        {message ? 'Session already in use' : 'Freebuff is already running'}
       </text>
 
-      <text style={{ fg: theme.muted }}>
-        Only one freebuff instance is allowed at a time.
+      <text style={{ fg: theme.muted, wrapMode: 'word' }}>
+        {message ?? 'This trial allows one instance at a time.'}
       </text>
 
       {displayError && (
@@ -320,7 +323,7 @@ export const TakeoverPrompt: React.FC<{
           </text>
         </Button>
         <Button
-          onClick={() => exitCliCleanly()}
+          onClick={() => (onBack ? onBack() : exitCliCleanly())}
           onMouseOver={() => setFocusedIndex(1)}
           style={{ paddingLeft: 1, paddingRight: 1 }}
           border={['top', 'bottom', 'left', 'right']}
@@ -333,7 +336,7 @@ export const TakeoverPrompt: React.FC<{
               isExitFocused ? TextAttributes.BOLD : TextAttributes.NONE
             }
           >
-            Exit
+            {onBack ? 'Choose model' : 'Exit'}
           </text>
         </Button>
       </box>
@@ -833,7 +836,15 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
           )}
 
           {session?.status === 'takeover_prompt' && (
-            <TakeoverPrompt failure={failure} />
+            <TakeoverPrompt
+              failure={failure}
+              message={session.message}
+              onBack={() =>
+                returnToFreebuffLanding().catch(() => {
+                  // releaseSlot stores the failure; keep the prompt retryable.
+                })
+              }
+            />
           )}
 
           {/* Country outside the free-mode allowlist. Terminal — polling has
@@ -936,9 +947,10 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
                   <span fg={theme.foreground}>
                     {formatRetryAfter(session.retryAfterMs)}
                   </span>
-                  , or pick a cheaper model. Turn on auto top-up to keep
-                  going:{' '}
-                  <span fg={theme.foreground}>https://freebuff.com/freebucks</span>
+                  , or pick a cheaper model. Turn on auto top-up to keep going:{' '}
+                  <span fg={theme.foreground}>
+                    https://freebuff.com/freebucks
+                  </span>
                   . Press Ctrl+C to exit.
                 </text>
               ) : metered && session.period === 'pacific_month' ? (
@@ -963,7 +975,9 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
                   <span fg={theme.foreground}>
                     {formatSessionUnits(session.recentCount)} of {session.limit}
                   </span>{' '}
-                  {session.period === 'pacific_month' ? 'this month' : 'sessions'}{' '}
+                  {session.period === 'pacific_month'
+                    ? 'this month'
+                    : 'sessions'}{' '}
                   {session.period === 'pacific_month'
                     ? ''
                     : session.period === 'pacific_week'
@@ -996,7 +1010,9 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
           {session?.status === 'spend_limited' && (
             <>
               <text style={{ fg: theme.secondary, marginBottom: 1 }}>
-                {metered ? '☕ Daily usage cap reached' : '☕ Daily Freebuff limit reached'}
+                {metered
+                  ? '☕ Daily usage cap reached'
+                  : '☕ Daily Freebuff limit reached'}
               </text>
               <text style={{ fg: theme.muted, wrapMode: 'word' }}>
                 {session.message} It resets in{' '}

@@ -8,9 +8,8 @@ import { useTheme } from '../hooks/use-theme'
 import { getLogoAccentColor, getLogoBlockColor } from '../utils/theme-system'
 
 /**
- * Terminal state shown after a 409 session_superseded response. Another CLI on
- * the same account rotated our instance id and we've stopped polling — the
- * user needs to close the other instance and restart.
+ * Terminal state after a 409 session_superseded response. This execution claim
+ * was released or taken over; never automatically fight its new owner.
  */
 export const FreebuffSupersededScreen: React.FC = () => {
   const theme = useTheme()
@@ -44,13 +43,13 @@ export const FreebuffSupersededScreen: React.FC = () => {
         style={{ fg: theme.foreground, marginBottom: 1 }}
         attributes={TextAttributes.BOLD}
       >
-        Another freebuff instance took over this account.
+        This Freebuff session is no longer active here.
       </text>
       <text style={{ fg: theme.muted, wrapMode: 'word' }}>
-        Only one CLI per account can be active at a time.
+        The session was released or taken over by another instance.
       </text>
       <text style={{ fg: theme.muted, wrapMode: 'word' }}>
-        Close the other instance, then restart freebuff here.
+        Restart Freebuff to choose a model and start another session.
       </text>
       <box style={{ marginTop: 1 }}>
         <text style={{ fg: theme.muted }}>

@@ -372,7 +372,7 @@ const AuthedSurfaceRoutes = ({
   //   'rate_limited' → hit shared session quota; terminal for this run
   //   'spend_limited' → daily provider-spend budget; return after reset
   //   'ip_capped' → too many distinct users active on this egress IP
-  //   'takeover_prompt' → another local CLI already holds this account
+  //   'takeover_prompt' → capacity is occupied; ask before taking a holder's slot
   //
   // 'ended' deliberately falls through to <Chat>: the agent may still be
   // finishing work under the server-side grace period, and the chat surface

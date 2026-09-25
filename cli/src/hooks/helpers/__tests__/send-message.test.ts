@@ -2009,7 +2009,7 @@ describe('freebuff gate errors', () => {
       updateChainInProgress: () => {},
     })
     updater.flush()
-    expect(messages[0].userError).toContain('Another freebuff CLI took over')
+    expect(messages[0].userError).toContain('released or taken over by another instance')
   })
 
   test('handleRunError suppresses the inline error for 410 session_expired (ended banner takes over)', () => {

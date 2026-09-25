@@ -619,7 +619,7 @@ function handleFreebuffGateError(
       return
     case 'session_superseded':
       updater.setError(
-        'Another freebuff CLI took over this account. Close the other instance, then restart.',
+        'This Freebuff session was released or taken over by another instance. Restart Freebuff to start another session.',
       )
       // Terminal state: stop polling and flip UI to a "please restart" screen
       // so we don't silently fight the other instance for the seat.

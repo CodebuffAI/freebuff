@@ -2,6 +2,7 @@ import { freebucksFixture } from '@codebuff/common/testing/freebuff'
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import {
   FREEBUFF_REWARD_MODEL_ID,
+  FREEBUFF_FABLE_5_1_MODEL_ID,
   resolveFreebuffModelForAccessTier,
 } from '@codebuff/common/constants/freebuff-models'
 
@@ -14,6 +15,10 @@ import {
   isFreebuffSessionNetworkError,
   mergeCompactActiveSession,
 } from '../freebuff-session-api'
+import {
+  newFreebuffCliInstanceId,
+  freebuffSessionMetadata,
+} from '../freebuff-session-identity'
 
 let fetchSpy: ReturnType<typeof spyOn> | undefined
 
@@ -59,6 +64,43 @@ test('compact GET sends the compact-session header', async () => {
   expect(new Headers(init?.headers).get('x-freebuff-compact-session')).toBe('1')
 })
 
+test('multi-session polling beats only its own claim and retains compact polling', async () => {
+  const instanceId = newFreebuffCliInstanceId()
+  fetchSpy = spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(Response.json({ status: 'none' }))
+    .mockResolvedValueOnce(Response.json({ status: 'none' }))
+  await callFreebuffSession('GET', 'test-token', { instanceId, compact: true })
+  const headers = new Headers(fetchSpy.mock.calls[0]![1]?.headers)
+  expect(headers.get('x-freebuff-instance-id')).toBe(instanceId)
+  expect(headers.get('x-freebuff-multi-session')).toBe('1')
+  expect(headers.get('x-freebuff-heartbeat')).toBe('1')
+  expect(headers.get('x-freebuff-compact-session')).toBe('1')
+  expect(headers.get('x-freebuff-include-unused-rate-limits')).toBeNull()
+  await callFreebuffSession('GET', 'test-token', { instanceId })
+  expect(
+    new Headers(fetchSpy.mock.calls[1]![1]?.headers).get(
+      'x-freebuff-include-unused-rate-limits',
+    ),
+  ).toBe('1')
+})
+
+test('limited-offer admission retains the globally capped single-session protocol', async () => {
+  fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
+    Response.json({ status: 'none' }),
+  )
+  await callFreebuffSession('POST', 'test-token', {
+    model: FREEBUFF_FABLE_5_1_MODEL_ID,
+    multiSession: false,
+  })
+  const headers = new Headers(fetchSpy.mock.calls[0]![1]?.headers)
+  expect(headers.get('x-freebuff-multi-session')).toBeNull()
+  expect(headers.get('x-freebuff-purchase-continuity')).toBeNull()
+  expect(headers.get('x-freebuff-desktop-attempt-id')).toBeNull()
+  expect(freebuffSessionMetadata('legacy-trial-id')).toEqual({
+    freebuff_instance_id: 'legacy-trial-id',
+  })
+})
+
 test('compact active state retains the admission quota and Freebucks snapshots', () => {
   const freebucks = freebucksFixture(5)
   const rateLimit = {
@@ -96,9 +138,14 @@ test('compact active state retains the admission quota and Freebucks snapshots',
 
   expect(merged).toMatchObject({ remainingMs: 500, rateLimit, freebucks })
   if (merged?.status !== 'active') throw new Error('expected active session')
-  const unavailable = mergeCompactActiveSession(merged, { ...merged, freebucks: null })
+  const unavailable = mergeCompactActiveSession(merged, {
+    ...merged,
+    freebucks: null,
+  })
   expect(unavailable).toMatchObject({ freebucks: null })
-  expect(mergeCompactActiveSession(unavailable, { ...merged, freebucks })).toMatchObject({ freebucks })
+  expect(
+    mergeCompactActiveSession(unavailable, { ...merged, freebucks }),
+  ).toMatchObject({ freebucks })
 })
 
 test('compact state requests a full refresh instead of carrying quota across models', () => {
@@ -154,11 +201,13 @@ test('retries POST responses that cannot represent a committed takeover', async 
     ),
   )
 
-  await expect(callFreebuffSession('POST', 'test-token')).rejects.toMatchObject({
-    statusCode: 503,
-    retryAfterMs: 10_000,
-    errorCode: 'service_overloaded',
-  })
+  await expect(callFreebuffSession('POST', 'test-token')).rejects.toMatchObject(
+    {
+      statusCode: 503,
+      retryAfterMs: 10_000,
+      errorCode: 'service_overloaded',
+    },
+  )
 
   expect(
     classifyFreebuffSessionRequestFailure(
@@ -295,12 +344,24 @@ test('a request that got no answer is a network error, a refused one is not', ()
   expect(isFreebuffSessionNetworkError(timeout)).toBe(true)
   expect(isFreebuffSessionNetworkError(new Error('fetch failed'))).toBe(true)
   const withCause = new Error('fetch failed')
-  ;(withCause as Error & { cause: Error }).cause = new Error('connect ECONNREFUSED 216.24.57.16:443')
+  ;(withCause as Error & { cause: Error }).cause = new Error(
+    'connect ECONNREFUSED 216.24.57.16:443',
+  )
   expect(isFreebuffSessionNetworkError(withCause)).toBe(true)
-  expect(isFreebuffSessionNetworkError(new Error('getaddrinfo ENOTFOUND codebuff.com'))).toBe(true)
+  expect(
+    isFreebuffSessionNetworkError(
+      new Error('getaddrinfo ENOTFOUND codebuff.com'),
+    ),
+  ).toBe(true)
 
-  expect(isFreebuffSessionNetworkError(new FreebuffSessionRequestError('slow down', 429))).toBe(false)
-  expect(isFreebuffSessionNetworkError(new Error('Unexpected token < in JSON'))).toBe(false)
+  expect(
+    isFreebuffSessionNetworkError(
+      new FreebuffSessionRequestError('slow down', 429),
+    ),
+  ).toBe(false)
+  expect(
+    isFreebuffSessionNetworkError(new Error('Unexpected token < in JSON')),
+  ).toBe(false)
   expect(isFreebuffSessionNetworkError('fetch failed')).toBe(false)
 })
 

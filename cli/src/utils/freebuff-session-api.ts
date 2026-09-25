@@ -3,9 +3,18 @@ import type { FreebuffWalletSpendLimit } from '@codebuff/common/types/freebuff-s
 import { freebucksTimeZoneHeaders } from '@codebuff/common/util/freebucks-timezone'
 import { env } from '@codebuff/common/env'
 import {
+  FREEBUFF_DESKTOP_ATTEMPT_HEADER,
+  FREEBUFF_PURCHASE_CONTINUITY_HEADER,
+} from '@codebuff/common/constants/freebuff-desktop-sessions'
+import { freebuffCliAttemptId } from './freebuff-session-identity'
+import {
   FREEBUFF_COMPACT_SESSION_HEADER,
+  FREEBUFF_HEARTBEAT_HEADER,
+  FREEBUFF_INCLUDE_UNUSED_RATE_LIMITS_HEADER,
   FREEBUFF_INSTANCE_HEADER,
   FREEBUFF_MODEL_HEADER,
+  FREEBUFF_MULTI_SESSION_HEADER,
+  FREEBUFF_TAKEOVER_INSTANCE_HEADER,
   FREEBUFF_WALLET_SPEND_LIMIT_HEADER,
   FREEBUFF_SESSION_ADMISSION_PATH,
   FREEBUFF_SESSION_UNSUPPORTED_MESSAGE,
@@ -153,6 +162,8 @@ export async function callFreebuffSession(
   token: string,
   opts: {
     instanceId?: string
+    multiSession?: boolean
+    takeoverInstanceId?: string
     model?: string
     walletSpendLimit?: FreebuffWalletSpendLimit
     firstTabDiscount?: boolean
@@ -165,20 +176,42 @@ export async function callFreebuffSession(
     ...freebucksTimeZoneHeaders(),
     [FIRST_TAB_DISCOUNT_HEADER]: opts.firstTabDiscount ? '1' : '0',
   }
-  if ((method === 'GET' || method === 'DELETE') && opts.instanceId) {
+  const attemptId = freebuffCliAttemptId(opts.instanceId)
+  const multiSession = opts.multiSession ?? Boolean(attemptId)
+  if (multiSession) {
+    headers[FREEBUFF_MULTI_SESSION_HEADER] = '1'
+    headers[FREEBUFF_PURCHASE_CONTINUITY_HEADER] = '1'
+    if (attemptId && method !== 'GET') {
+      headers[FREEBUFF_DESKTOP_ATTEMPT_HEADER] = attemptId
+    }
+    if (method === 'GET' && opts.instanceId) {
+      headers[FREEBUFF_HEARTBEAT_HEADER] = '1'
+      // A bare heartbeat omits balances and quotas. Rich refreshes (including
+      // expiry and identity changes) must explicitly ask for that snapshot.
+      if (!opts.compact)
+        headers[FREEBUFF_INCLUDE_UNUSED_RATE_LIMITS_HEADER] = '1'
+    }
+  }
+  if ((multiSession || method !== 'POST') && opts.instanceId) {
     headers[FREEBUFF_INSTANCE_HEADER] = opts.instanceId
   }
   if (method === 'GET' && opts.compact) {
     headers[FREEBUFF_COMPACT_SESSION_HEADER] = '1'
   }
   if (method === 'POST') {
+    if (opts.takeoverInstanceId)
+      headers[FREEBUFF_TAKEOVER_INSTANCE_HEADER] = opts.takeoverInstanceId
     if (opts.model) headers[FREEBUFF_MODEL_HEADER] = opts.model
     headers[FREEBUFF_WALLET_SPEND_LIMIT_HEADER] = String(
       opts.walletSpendLimit ?? 0,
     )
   }
 
-  const response = await fetch(sessionEndpoint(method), {
+  const endpoint =
+    method === 'DELETE' && attemptId
+      ? `${sessionEndpoint(method)}/attempt`
+      : sessionEndpoint(method)
+  const response = await fetch(endpoint, {
     method,
     headers,
     signal: sessionFetchSignal(opts.signal),
@@ -217,6 +250,10 @@ export async function callFreebuffSession(
       body &&
       (body.status === 'model_locked' ||
         body.status === 'model_unavailable' ||
+        body.status === 'premium_slot_taken' ||
+        body.status === 'purchase_claim_released' ||
+        body.status === 'purchase_in_use' ||
+        body.status === 'purchase_capacity' ||
         body.status === 'first_tab_discount_changed' ||
         body.status === 'consent_required')
     ) {
@@ -283,10 +320,10 @@ export function mergeCompactActiveSession(
     // Same carry, and it matters MORE here: the Freebucks header is the whole
     // meter for a metered account, so losing it mid-session would drop the
     // picker back to session rings that no longer gate anything. The balance
-    // cannot change during a session anyway — a session is charged once, at
-    // admission — so the carried block is not merely a placeholder, it is
-    // still correct.
-    freebucks: next.freebucks !== undefined ? next.freebucks : current.freebucks,
+    // is refreshed on a full poll/admission. Other instances can spend from
+    // it meanwhile; admission rechecks both the balance and wallet consent.
+    freebucks:
+      next.freebucks !== undefined ? next.freebucks : current.freebucks,
   }
 }
 

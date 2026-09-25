@@ -4,14 +4,17 @@ import type { FreebuffSessionServerResponse } from '@codebuff/common/types/freeb
 
 /**
  * CLI session shape. Most states are wire-level `/api/v1/freebuff/session`
- * responses; `takeover_prompt` is local-only so startup can ask before POSTing
- * and rotating another running CLI's instance id.
+ * responses; `takeover_prompt` asks before displacing a server-named holder
+ * at capacity (or taking over the legacy single-session trial).
  */
 export type FreebuffSessionResponse =
   | FreebuffSessionServerResponse
   | {
       status: 'takeover_prompt'
       model: string
+      /** Only this server-named holder may be displaced on confirmation. */
+      currentInstanceId?: string
+      message?: string
     }
 
 export type FreebuffSessionStatus = FreebuffSessionResponse['status']

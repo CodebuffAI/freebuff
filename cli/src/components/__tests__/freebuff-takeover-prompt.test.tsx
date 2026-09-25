@@ -22,6 +22,8 @@ afterEach(() => {
 const mountPrompt = async ({
   failure = null,
   onTakeOver = async () => {},
+  message,
+  onBack,
 }: Partial<React.ComponentProps<typeof TakeoverPrompt>> = {}) => {
   const setup = await createTestRenderer({ width: 90, height: 12 })
   const root = createRoot(setup.renderer)
@@ -30,7 +32,14 @@ const mountPrompt = async ({
     setup.renderer.destroy()
   }
   flushSync(() =>
-    root.render(<TakeoverPrompt failure={failure} onTakeOver={onTakeOver} />),
+    root.render(
+      <TakeoverPrompt
+        failure={failure}
+        onTakeOver={onTakeOver}
+        message={message}
+        onBack={onBack}
+      />,
+    ),
   )
   await setup.renderOnce()
   return Object.assign(setup, {
@@ -44,6 +53,29 @@ const mountPrompt = async ({
 }
 
 describe('TakeoverPrompt', () => {
+  test('capacity copy offers a model choice without displacing the holder', async () => {
+    let backs = 0
+    let takeovers = 0
+    const setup = await mountPrompt({
+      message:
+        'Your concurrent-session limit across CLI and Desktop is reached.',
+      onBack: async () => {
+        backs++
+      },
+      onTakeOver: async () => {
+        takeovers++
+      },
+    })
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain('CLI and Desktop')
+    expect(frame).toContain('Choose model')
+    expect(frame).not.toContain('Only one freebuff instance')
+    setup.mockInput.pressEscape()
+    // A lone ESC waits for the terminal parser's sequence timeout.
+    await Bun.sleep(50)
+    expect(backs).toBe(1)
+    expect(takeovers).toBe(0)
+  })
   test('shows retry status for a retryable timeout', async () => {
     const setup = await mountPrompt({
       failure: {

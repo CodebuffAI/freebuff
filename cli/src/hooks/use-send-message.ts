@@ -20,6 +20,7 @@ import { AGENT_MODE_TO_COST_MODE, IS_FREEBUFF } from '../utils/constants'
 import { createEventHandlerState } from '../utils/create-event-handler-state'
 import { createRunConfig } from '../utils/create-run-config'
 import { getAgentIdForMode } from '../utils/freebuff-agent-selection'
+import { freebuffSessionMetadata } from '../utils/freebuff-session-identity'
 import { loadAgentDefinitions } from '../utils/local-agent-registry'
 import { logger } from '../utils/logger'
 import { clearActiveRun, registerActiveRun } from '../utils/active-run'
@@ -670,7 +671,7 @@ export const useSendMessage = ({
           extraCodebuffMetadata:
             IS_FREEBUFF && !byok && freebuffInstanceId
               ? {
-                  freebuff_instance_id: freebuffInstanceId,
+                  ...freebuffSessionMetadata(freebuffInstanceId),
                   ...(freebuffReasoningEffort
                     ? { freebuff_reasoning_effort: freebuffReasoningEffort }
                     : {}),
