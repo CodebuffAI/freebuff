@@ -587,3 +587,31 @@ cd freebuff-desktop && bun test \
   --preload ../test/setup-scm-loader.ts --preload ../sdk/test/setup-env.ts --preload /tmp/leak.ts \
   src/ui/shell/Tab.rename.test.tsx src/ui/agent/QuotaBadge.test.tsx
 ```
+
+**An eighth shape, and one where the wait is fast and the CHECK is slow: a
+failing matcher handed a mounted DOM node.** `expect(node).toBe(other)` and
+`expect(node).toBeNull()` build their failure message by pretty-printing the
+node, and bun's formatter does not stop at the element — it follows React's
+`__reactFiber$…` expando through the whole fiber tree into jsdom's `Window`.
+Measured on the Composer: one failed `expect(document.activeElement).toBe(input)`
+built a **322 MB** message in ~1.7s of synchronous CPU. A passing matcher formats
+nothing, so this costs nothing until a check fails, and **`waitFor` exists to
+run checks that fail**: it calls its callback once synchronously before
+yielding, so any condition that only becomes true after a frame or a fetch pays
+that price on every run, with the event loop blocked the whole time (not even
+`waitFor`'s own 1000ms timeout can fire).
+
+That was `Composer.skill-submit` › "the Skills picker lets the user add
+arguments before Send" (2026-09-24, #3835 and #3927): `placeInComposer` moves
+focus in a `requestAnimationFrame` that fires in 17ms, and the test spent 1.7s
+of its 5s budget on a laptop formatting the one failed check that preceded it —
+and the whole budget on a loaded runner. The same pattern cost
+`ProjectSidebar`'s archive/restore case 1.5s. Neither looks slow in the source,
+and raising the timeout would only have hidden it.
+
+The rule: **inside `waitFor` (or any retry), never pass a DOM node to a matcher
+that can fail.** Use `expectFocused(el)` / `expectAbsent(query, what)` from
+`freebuff-desktop/test/support/dom-expect.ts`, which compare identity themselves
+and throw a one-line error. To spot the shape, time the case with
+`bun test --reporter=junit --reporter-outfile=…`: a mounted-React case taking
+over a second with no real I/O is almost always this.
