@@ -28,6 +28,8 @@ import {
   freebucksRefillPending,
 } from '@codebuff/common/util/freebucks-reset'
 
+import { freebuffCliAttemptId } from './freebuff-session-identity'
+
 import type {
   FreebuffFreebucksInfo,
   FreebuffSessionServerResponse,
@@ -49,10 +51,14 @@ export function freebucksOf(
   session: { status: string } | null | undefined,
 ): FreebuffFreebucksInfo | null | undefined {
   const state = session as FreebuffSessionServerResponse | null | undefined
+  // Ordinary CLI claims use the Desktop purchase store; legacy trial sessions
+  // still use the single-session store. Match the holder's accounting surface.
   return firstTabQuoteForSession(
     getFreebucksInfo(state),
     state?.status === 'active' ? state : undefined,
-    'single',
+    state?.status === 'active' && freebuffCliAttemptId(state.instanceId)
+      ? 'desktop'
+      : 'single',
   )
 }
 
