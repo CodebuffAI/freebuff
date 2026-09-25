@@ -102,7 +102,12 @@ export const AGENTIC_OFFER_NONE_REASONS = [
   'disabled',
   /** Not a Desktop bearer, product UA or OS pairing this route serves. */
   'ineligible_client',
-  /** Outside Tier 1 geo, where agentic is not funded. */
+  /**
+   * No price tier for this request's geo. Named for its original meaning
+   * (outside Tier 1); since COD-665 (2026-09-25) Tier 2 is served at $1, so
+   * this now answers only an UNRESOLVED country. Kept, not renamed: the enum
+   * is closed and dashboards group by it.
+   */
   'not_tier1',
   /** Classification ran and nothing matched or was invitable. */
   'no_match',
