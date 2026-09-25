@@ -53,6 +53,21 @@ interface FreebuffSessionStore {
     session?: FreebuffSessionResponse,
     signal?: AbortSignal,
   ) => Promise<void>
+  /**
+   * This process is being replaced by the launcher's update restart: keep the
+   * held slot instead of ending it on the way out. Every later `releaseSlot`
+   * is a no-op, which covers both exit paths — `exitCliCleanly` and the
+   * session hook's unmount cleanup that renderer teardown triggers.
+   *
+   * The relaunched binary's startup GET then finds the row still active and
+   * owned by a dead local process, and silently takes it over (a rotate, not
+   * an admission), so the user keeps the hour they just bought and never sees
+   * the model picker again. Ending it instead dropped them on the picker with
+   * the full price showing: the hour was still reusable server-side, but
+   * nothing said so, and some bought a different model or left.
+   */
+  keepSlotForRelaunch: () => void
+  slotKeptForRelaunch: boolean
   failure: FreebuffSessionFailure | null
 
   setSession: (session: FreebuffSessionResponse | null) => void
@@ -87,7 +102,10 @@ export const useFreebuffSessionStore = create<FreebuffSessionStore>(
         if (receipt.status === 'ended' && !receipt.freebucksRefundPending)
           set({ lastRefund: receipt.freebucksRefund ?? 0, pendingRefund: null })
       },
+      slotKeptForRelaunch: false,
+      keepSlotForRelaunch: () => set({ slotKeptForRelaunch: true }),
       releaseSlot: (target = get().session ?? undefined, signal) => {
+        if (get().slotKeptForRelaunch) return Promise.resolve()
         if (!holdsLiveFreebuffSlot(target ?? null)) return Promise.resolve()
         const instanceId = instanceOf(target)
         const { token } = getAuthTokenDetails()

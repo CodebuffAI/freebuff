@@ -2,19 +2,33 @@ import { execFile } from 'child_process'
 
 import { resetTerminalTitle } from './terminal-title'
 import { stopActiveRun } from './active-run'
+import { IS_FREEBUFF } from './constants'
 import { getCliEnv } from './env'
 import { exitCliCleanly, registerExitCleanup } from './exit-cleanly'
+import { holdsLiveFreebuffSlot } from './freebuff-session-api'
+import { isLauncherUpdateTermination } from './launcher-update-restart'
+import { logger } from './logger'
 import { trackHelperProcess } from './helper-process-telemetry'
 import { flushLiveChatState } from './run-state-storage'
 import { reportFatalErrorSync, writeTerminalControlSync } from './terminal-io'
 import { TERMINAL_RESET_SEQUENCES } from './terminal-reset-sequences'
 import { stopTerminalWatchdog } from './terminal-watchdog'
+import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 
 import type { CliRenderer } from '@opentui/core'
 
 let renderer: CliRenderer | null = null
 let handlersInstalled = false
 let cleanupStarted = false
+
+function isProcessRunningSync(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
 
 function isProcessRunning(pid: number, onResult: (running: boolean) => void) {
   if (process.platform === 'win32') {
@@ -201,8 +215,33 @@ export function installProcessCleanupHandlers(cliRenderer: CliRenderer): void {
     launcherMonitor.unref()
   }
 
-  // SIGTERM - Default kill signal (e.g., `kill <pid>`)
-  process.on('SIGTERM', handleExitRequest)
+  // SIGTERM - Default kill signal (e.g., `kill <pid>`), and the launcher's
+  // update restart. For the latter, keep the Freebuff session the user may
+  // have just paid for so the relaunched binary resumes it.
+  process.on('SIGTERM', () => {
+    if (
+      IS_FREEBUFF &&
+      process.platform !== 'win32' &&
+      isLauncherUpdateTermination({
+        launcherPid,
+        parentPid: process.ppid,
+        isProcessRunning: isProcessRunningSync,
+      })
+    ) {
+      const { session } = useFreebuffSessionStore.getState()
+      useFreebuffSessionStore.getState().keepSlotForRelaunch()
+      if (holdsLiveFreebuffSlot(session)) {
+        logger.info(
+          {
+            metric: 'freebuff_session_kept_for_update_restart',
+            model: session && 'model' in session ? session.model : undefined,
+          },
+          '[freebuff-session] launcher update restart; keeping the session for the relaunch',
+        )
+      }
+    }
+    handleExitRequest()
+  })
 
   // SIGHUP - Terminal hangup (e.g., closing the terminal window)
   process.on('SIGHUP', handleExitRequest)

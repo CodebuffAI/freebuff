@@ -60,6 +60,22 @@ test('failed release is retryable and never invents a receipt', async () => {
   expect(useFreebuffSessionStore.getState().lastRefund).toBeNull()
 })
 
+test('an update restart keeps the held slot on every exit path', async () => {
+  useFreebuffSessionStore.getState().setFailure(null)
+  try {
+    useFreebuffSessionStore.getState().keepSlotForRelaunch()
+    // exitCliCleanly and the hook's unmount cleanup both land here; neither
+    // may end the hour the relaunched binary is about to take over.
+    await useFreebuffSessionStore.getState().releaseSlot()
+    await useFreebuffSessionStore.getState().releaseSlot(activeSession)
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(useFreebuffSessionStore.getState().session).toEqual(activeSession)
+    expect(useFreebuffSessionStore.getState().failure).toBeNull()
+  } finally {
+    useFreebuffSessionStore.setState({ slotKeptForRelaunch: false })
+  }
+})
+
 test('release does nothing without a held slot or authentication', async () => {
   authSpy.mockReturnValue({ source: null })
   await expect(
