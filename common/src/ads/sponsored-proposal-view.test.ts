@@ -66,7 +66,7 @@ describe('state copy', () => {
   // here may read as though a pull request is pending.
   test('VM-2 committed names the outcome, not a next step', () => {
     expect(view({ state: 'committed' }).title).toBe(
-      'Sponsored thread committed its work',
+      'Done — committed to its own branch',
     )
     expect(view({ state: 'committed' }).title).not.toContain('running')
   })
@@ -233,7 +233,7 @@ describe('steps', () => {
 describe('actions', () => {
   test('VM-6 offered leads with accept', () => {
     const accept = sponsoredProposalAction(view({}), 'accept')
-    expect(accept?.label).toBe('Start sponsored thread')
+    expect(accept?.label).toBe('Set it up for me')
     expect(accept?.primary).toBe(true)
   })
 
@@ -473,11 +473,11 @@ describe('sponsoredProposalMenu and the optional Accept', () => {
 
   test('VM-26 puts the Accept first, and changes nothing else', () => {
     const menu = sponsoredProposalMenu('Acme', {
-      acceptLabel: 'Start sponsored thread',
+      acceptLabel: 'Set it up for me',
     })
     expect(menu[0]).toMatchObject({
       key: 'accept',
-      label: 'Start sponsored thread',
+      label: 'Set it up for me',
     })
     expect(menu.slice(1)).toEqual(sponsoredProposalMenu('Acme'))
   })

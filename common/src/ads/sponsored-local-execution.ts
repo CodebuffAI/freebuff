@@ -712,3 +712,101 @@ export function commandInstallsDependencies(command: string): boolean {
 
 export const SPONSORED_LOCAL_INSTALL_REFUSAL =
   'Refusing to install dependencies: a sponsored run may not add packages, because a postinstall script runs outside everything the user reviews. Work with what the repository already has.'
+
+// -------------------------------------------------------------- git history
+
+/**
+ * The git subcommands an IN-PLACE run may not use
+ * (`docs/freebuff-sponsored-local-execution.md`, 2026-09-24).
+ *
+ * Such a run delivers EDITS IN THE WORKING COPY, and the user's undo is the
+ * rewind over the turn's own receipts. Anything that moves history moves work
+ * out from under that: a commit takes the edits off the diff the user is
+ * reviewing, a `checkout`/`restore`/`clean`/`reset` can destroy their
+ * uncommitted work outright, and a `config` or `remote` change is executed
+ * later by the orchestrator's own unsandboxed `git -C`.
+ *
+ * A DENY-LIST, and unusually so -- everywhere else here the refusals are
+ * allow-lists. It can be, because it is not the boundary: on macOS and Linux
+ * the sandbox denies `.git` outright, so this is the sentence the MODEL reads
+ * instead of an opaque permission error, and on the Windows floor it is one
+ * of two layers (the file tools refuse `.git` paths as well). Read-only git
+ * is deliberately absent from it: `status`, `diff`, `log`, `show`,
+ * `rev-parse` and `ls-files` are how a procedure understands the repository,
+ * and reading the index is not writing it.
+ */
+const SPONSORED_REFUSED_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  'commit',
+  'push',
+  'reset',
+  'checkout',
+  'switch',
+  'restore',
+  'clean',
+  'stash',
+  'branch',
+  'tag',
+  'merge',
+  'rebase',
+  'cherry-pick',
+  'revert',
+  'apply',
+  'am',
+  'worktree',
+  'update-ref',
+  'gc',
+  'remote',
+  'config',
+  'init',
+  'clone',
+  'fetch',
+  'pull',
+  'submodule',
+  'filter-branch',
+])
+
+/**
+ * The first subcommand of each `git` invocation in a command line, lowercased.
+ *
+ * Splits on the shell's own separators and skips `git`'s global options
+ * (`-C <dir>`, `-c k=v`, `--git-dir=…`), because the subcommand is what the
+ * refusal is about and `git -C x commit` is a commit.
+ */
+export function sponsoredGitSubcommands(command: string): string[] {
+  const found: string[] = []
+  for (const segment of command.split(/[;&|\n]+/)) {
+    const tokens = segment.trim().split(/\s+/).filter(Boolean)
+    const start = tokens.findIndex((token) => /(^|\/)git$/i.test(token))
+    if (start < 0) continue
+    let index = start + 1
+    while (index < tokens.length) {
+      const token = tokens[index]!
+      // `-C dir` and `-c k=v` take a following value; `--opt=value` does not.
+      if (token === '-C' || token === '-c') {
+        index += 2
+        continue
+      }
+      if (token.startsWith('-')) {
+        index += 1
+        continue
+      }
+      break
+    }
+    const subcommand = tokens[index]
+    if (subcommand) found.push(subcommand.toLowerCase())
+  }
+  return found
+}
+
+/** The refused subcommand this command line runs, or null. */
+export function sponsoredRefusedGitSubcommand(command: string): string | null {
+  return (
+    sponsoredGitSubcommands(command).find((subcommand) =>
+      SPONSORED_REFUSED_GIT_SUBCOMMANDS.has(subcommand),
+    ) ?? null
+  )
+}
+
+export function sponsoredGitRefusal(subcommand: string): string {
+  return `Refusing \`git ${subcommand}\`: this sponsored task delivers its changes in the working copy, so it may not change the repository's history or configuration. Leave the edits uncommitted; the user reviews them and decides.`
+}

@@ -2,7 +2,7 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Sponsored propos │
+│ Sponsored offer  │
 │ Add one-click    │
 │ dep…             │
 │ Code/setup/check │
@@ -27,7 +27,7 @@
 === offered @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Sponsored proposal                           │
+│ Sponsored offer                              │
 │ Add one-click deploys to this project        │
 │ A sponsored agent can wire Acme Deploys      │
 │ into your repo on its own branch.            │
@@ -53,7 +53,7 @@
 === offered @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Sponsored proposal                                       │
+│ Sponsored offer                                          │
 │ Add one-click deploys to this project                    │
 │ A sponsored agent can wire Acme Deploys into your repo   │
 │ on its own branch.                                       │
@@ -80,7 +80,7 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Starting sponsor │
+│ Getting started… │
 │ Add one-click    │
 │ dep…             │
 │ /ads:proposal    │
@@ -105,7 +105,7 @@
 === accepted @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Starting sponsored thread…                   │
+│ Getting started…                             │
 │ Add one-click deploys to this project        │
 │ /ads:proposal · /ads:dismiss-proposal        │
 └──────────────────────────────────────────────┘
@@ -131,7 +131,7 @@
 === accepted @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Starting sponsored thread…                               │
+│ Getting started…                                         │
 │ Add one-click deploys to this project                    │
 │ /ads:proposal · /ads:dismiss-proposal                    │
 └──────────────────────────────────────────────────────────┘
@@ -158,7 +158,7 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Sponsored thread │
+│ Setting it up…   │
 │ Add one-click    │
 │ dep…             │
 │ 1/3              │
@@ -183,7 +183,7 @@
 === running @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Sponsored thread running                     │
+│ Setting it up…                               │
 │ Add one-click deploys to this project        │
 │ 1/3                                          │
 │ Done  Install the SDK                        │
@@ -209,7 +209,7 @@
 === running @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Sponsored thread running                                 │
+│ Setting it up…                                           │
 │ Add one-click deploys to this project                    │
 │ 1/3                                                      │
 │ Done  Install the SDK                                    │
@@ -236,7 +236,7 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Sponsored thread │
+│ Done — committed │
 │ Add one-click    │
 │ dep…             │
 │ Committed to     │
@@ -261,7 +261,7 @@
 === committed @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Sponsored thread committed its work          │
+│ Done — committed to its own branch           │
 │ Add one-click deploys to this project        │
 │ Committed to sponsored/acme-deploys.         │
 │ Nothing was pushed to your repository.       │
@@ -287,7 +287,7 @@
 === committed @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Sponsored thread committed its work                      │
+│ Done — committed to its own branch                       │
 │ Add one-click deploys to this project                    │
 │ Committed to sponsored/acme-deploys. Nothing was pushed  │
 │ to your repository.                                      │
@@ -310,11 +310,89 @@
 
 
 
+=== delivered @ 20 ===
+┌──────────────────┐
+│ SPONSORED        │
+│ Acme Deploys     │
+│ Done — the chang │
+│ Add one-click    │
+│ dep…             │
+│ Setup → verify   │
+│ /ads:proposal    │
+└──────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+=== delivered @ 48 ===
+┌──────────────────────────────────────────────┐
+│ Acme Deploys                       SPONSORED │
+│ Done — the changes are in your files         │
+│ Add one-click deploys to this project        │
+│ Setup → verify                               │
+│ /ads:proposal · /ads:dismiss-proposal        │
+└──────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+=== delivered @ 60 ===
+┌──────────────────────────────────────────────────────────┐
+│ Acme Deploys                                   SPONSORED │
+│ Done — the changes are in your files                     │
+│ Add one-click deploys to this project                    │
+│ Setup → verify                                           │
+│ /ads:proposal · /ads:dismiss-proposal                    │
+└──────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 === landed @ 20 ===
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Sponsored thread │
+│ Done — pull requ │
 │ Add one-click    │
 │ dep…             │
 │ Review the pull  │
@@ -339,7 +417,7 @@
 === landed @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Sponsored thread landed a PR                 │
+│ Done — pull request opened                   │
 │ Add one-click deploys to this project        │
 │ Review the pull request: https://github.com/ │
 │ Setup → verify                               │
@@ -365,7 +443,7 @@
 === landed @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Sponsored thread landed a PR                             │
+│ Done — pull request opened                               │
 │ Add one-click deploys to this project                    │
 │ Review the pull request: https://github.com/x/y/pull/7   │
 │ Setup → verify                                           │
@@ -392,7 +470,7 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Sponsored thread │
+│ Couldn’t finish  │
 │ Add one-click    │
 │ dep…             │
 │ Budget exceeded  │
@@ -417,7 +495,7 @@
 === failed @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Sponsored thread failed                      │
+│ Couldn’t finish the setup                    │
 │ Add one-click deploys to this project        │
 │ Budget exceeded                              │
 │ /ads:proposal · /ads:dismiss-proposal        │
@@ -443,7 +521,7 @@
 === failed @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Sponsored thread failed                                  │
+│ Couldn’t finish the setup                                │
 │ Add one-click deploys to this project                    │
 │ Budget exceeded                                          │
 │ /ads:proposal · /ads:dismiss-proposal                    │
@@ -470,7 +548,7 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Sponsored PR mer │
+│ Done — pull requ │
 │ Add one-click    │
 │ dep…             │
 │ view on GitHub:  │
@@ -495,7 +573,7 @@
 === merged @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Sponsored PR merged                          │
+│ Done — pull request merged                   │
 │ Add one-click deploys to this project        │
 │ view on GitHub: https://github.com/x/y/pull/ │
 │ Setup → verify                               │
@@ -521,7 +599,7 @@
 === merged @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Sponsored PR merged                                      │
+│ Done — pull request merged                               │
 │ Add one-click deploys to this project                    │
 │ view on GitHub: https://github.com/x/y/pull/7            │
 │ Setup → verify                                           │
@@ -548,7 +626,7 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Sponsored propos │
+│ Sponsored offer  │
 │ Add one-click    │
 │ dep…             │
 │ Code/setup/check │
@@ -573,7 +651,7 @@
 === consent @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Sponsored proposal                           │
+│ Sponsored offer                              │
 │ Add one-click deploys to this project        │
 │ A sponsored agent can wire Acme Deploys      │
 │ into your repo on its own branch.            │
@@ -599,7 +677,7 @@
 === consent @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Sponsored proposal                                       │
+│ Sponsored offer                                          │
 │ Add one-click deploys to this project                    │
 │ A sponsored agent can wire Acme Deploys into your repo   │
 │ on its own branch.                                       │
@@ -626,7 +704,7 @@
 ┌──────────────────┐
 │ SPONSORED        │
 │ Acme Deploys     │
-│ Sponsored propos │
+│ Sponsored offer  │
 │ Add one-click    │
 │ dep…             │
 │ Code/setup/check │
@@ -651,7 +729,7 @@
 === offered-windows @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
-│ Sponsored proposal                           │
+│ Sponsored offer                              │
 │ Add one-click deploys to this project        │
 │ A sponsored agent can wire Acme Deploys      │
 │ into your repo on its own branch.            │
@@ -677,7 +755,7 @@
 === offered-windows @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
-│ Sponsored proposal                                       │
+│ Sponsored offer                                          │
 │ Add one-click deploys to this project                    │
 │ A sponsored agent can wire Acme Deploys into your repo   │
 │ on its own branch.                                       │

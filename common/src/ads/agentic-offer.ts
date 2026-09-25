@@ -33,22 +33,46 @@ import {
   sponsoredCapabilitySchema,
 } from './sponsored-capability'
 import { genericSetupInvitationSchema } from './generic-setup-invitation'
+import { sponsoredInPlaceVersionSchema } from './sponsored-in-place'
 
 /** `agenticOfferRoute` on an `/api/ads` request, and `v` on this route's wire. */
 export const AGENTIC_OFFER_ROUTE_VERSION = 1
 
 export const AGENTIC_OFFER_PATH = '/api/v1/ads/agentic/offer'
 
-/** Mirrors `localCapabilitySchema` in `freebuff/web/src/app/api/ads/route.ts`. */
+/**
+ * Was a mirror of `localCapabilitySchema` in
+ * `freebuff/web/src/app/api/ads/route.ts`, and DELIBERATELY IS NOT ANY MORE
+ * in two fields: `repoFullName` accepts `''` here, and `workspaceId` exists
+ * only here.
+ *
+ * Do not restore the symmetry by loosening the display route. `/api/ads`
+ * serves every display request on every surface, and a validation rule
+ * relaxed there is relaxed for all of them to buy something only an agentic
+ * client needs. In-place clients ask on THIS route, which is where the
+ * workspace keying belongs; the display route keeps its `.min(3)`.
+ */
 export const agenticOfferLocalCapabilitySchema = z
   .object({
     schemaVersion: z.literal(1),
-    repoFullName: z.string().min(3).max(199),
+    /**
+     * `''` from an IN-PLACE client whose folder has no GitHub remote
+     * (`sponsored-in-place.ts`); `owner/repo` otherwise. The eligibility
+     * check refuses an empty value unless the request is in-place, so a
+     * worktree client sending one is refused on `repo` exactly as before.
+     */
+    repoFullName: z.string().max(199),
     framework: z.enum(['nextjs', 'unsupported', 'unknown']),
     packageManager: z.enum(['bun', 'npm', 'pnpm', 'yarn', 'unknown']),
     hasSupabaseBoundary: z.boolean(),
     hasCommittedDatabaseBoundary: z.boolean(),
     hasGitRepository: z.boolean(),
+    /**
+     * The folder's durable opaque id (`.freebuff/project-id`), which keys an
+     * in-place offer where `owner/repo` keys a worktree one. A path is never
+     * sent.
+     */
+    workspaceId: z.string().uuid().optional(),
   })
   .strict()
 
@@ -89,6 +113,19 @@ export const agenticOfferRequestSchema = z.object({
     })
     .strict()
     .optional(),
+  /**
+   * `TEST_AGENTIC_ADS_CAMPAIGN` from an isolated local Desktop
+   * (`local-agentic-test.ts`). Honored only by a backend whose own
+   * environment names the same campaign; never grants production authority.
+   */
+  localTestCampaignId: z.string().uuid().optional(),
+  /**
+   * `1`: this client runs an accepted offer IN PLACE, in the accepting
+   * conversation, with no worktree or commit (`sponsored-in-place.ts`). Such a
+   * client needs no Git repository to be eligible, so this decides what may
+   * be offered; absent is the worktree flow every released build runs.
+   */
+  inPlaceExecutionVersion: sponsoredInPlaceVersionSchema.optional(),
 })
 
 export type AgenticOfferRequest = z.infer<typeof agenticOfferRequestSchema>

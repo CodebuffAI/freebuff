@@ -422,3 +422,89 @@ export function evaluateSponsoredWritePath(
   return { allowed: true, path: relative }
 }
 
+/**
+ * May this IN-PLACE sponsored run READ this path?
+ *
+ * Only for a run editing the user's working copy
+ * (`docs/freebuff-sponsored-local-execution.md`, 2026-09-24). A worktree run
+ * needs none of this: its checkout was cut from a commit, so it contains no
+ * untracked file and `.env.local`, `id_rsa` and `.npmrc` are absent by
+ * construction. The user's own folder has them, and macOS egress is allowed
+ * -- so the same names the WRITE policy refuses become read refusals too,
+ * and the two share one rule (`isSensitiveEnvFilePath`) rather than two
+ * lists that can drift.
+ *
+ * `.env.example` and its family stay readable: writing a placeholder into one
+ * is the entire deliverable of the Supabase procedure, and a procedure that
+ * cannot read the file it is meant to extend would have to guess at it.
+ *
+ * WHAT THIS IS NOT. The boundary itself is still `containSponsoredPath` in
+ * the SDK, which refuses everything outside the workspace; this narrows what
+ * is refused INSIDE it. And it is a file-tool rule: on macOS and Linux the OS
+ * sandbox denies the same paths to the shell, and on the Windows floor
+ * (COD-642, no sandbox) the tools and the command broker are the whole of it.
+ */
+export function evaluateSponsoredReadPath(
+  rawPath: unknown,
+  policy: { workspaceRoot: string },
+): SponsoredPathDecision {
+  if (typeof rawPath !== 'string' || rawPath.trim() === '') {
+    return {
+      allowed: false,
+      code: 'empty',
+      message: 'Sponsored runs must name the path they are reading.',
+    }
+  }
+  const trimmed = rawPath.trim()
+  if (trimmed.includes('\0') || trimmed.split('/').includes('..')) {
+    return {
+      allowed: false,
+      code: 'traversal',
+      message: `Refusing \`${trimmed}\`: sponsored runs may not use \`..\` to leave their workspace.`,
+    }
+  }
+  const path = normalisePath(trimmed)
+  const root = policy.workspaceRoot.replace(/\/+$/, '')
+  if (root === '') {
+    return {
+      allowed: false,
+      code: 'outside_workspace',
+      message: `Refusing \`${path}\`: this sponsored run has no workspace boundary.`,
+    }
+  }
+  const relative = path.startsWith(`${root}/`)
+    ? path.slice(root.length + 1)
+    : path === root
+      ? ''
+      : path.startsWith('/')
+        ? null
+        : path
+  if (relative === null) {
+    return {
+      allowed: false,
+      code: 'outside_workspace',
+      message: `Refusing \`${path}\`: sponsored runs may only read inside their workspace.`,
+    }
+  }
+  const lower = relative.toLowerCase()
+  if (isSensitiveEnvFilePath(relative)) {
+    return {
+      allowed: false,
+      code: 'credential_file',
+      message: `Refusing \`${path}\`: sponsored runs may not read environment files, which hold real values. \`.env.example\` and its family are readable.`,
+    }
+  }
+  const basename = lower.split(/[\\/]/).at(-1) ?? lower
+  if (
+    CREDENTIAL_BASENAMES.has(basename) ||
+    CREDENTIAL_SUFFIXES.some((suffix) => basename.endsWith(suffix))
+  ) {
+    return {
+      allowed: false,
+      code: 'credential_file',
+      message: `Refusing \`${path}\`: sponsored runs may not read credential files.`,
+    }
+  }
+  return { allowed: true, path: relative }
+}
+

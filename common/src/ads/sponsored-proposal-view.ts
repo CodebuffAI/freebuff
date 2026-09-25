@@ -42,21 +42,33 @@ export type SponsoredProposalState =
   // own branch and stopped. `landed` still means a pull request EXISTS, and
   // only the user's own "Create pull request" moves a row there.
   | 'committed'
+  // Terminal, and the ordinary success of an IN-PLACE run (the 2026-09-24
+  // amendment in `docs/freebuff-sponsored-local-execution.md`): the edits are
+  // in the user's working copy. There is no branch, so nothing reaches
+  // `landed` or `merged` from here, and the review is the changes panel.
+  | 'delivered'
   | 'landed'
   | 'failed'
   | 'merged'
 
+// Plain words for what is happening to the user's project, never our name for
+// the mechanism. The "Sponsored" disclosure belongs to each surface's own
+// chrome, so the titles do not repeat it.
 export const SPONSORED_STATE_TITLE: Record<SponsoredProposalState, string> = {
-  offered: 'Sponsored proposal',
-  accepted: 'Starting sponsored thread…',
-  running: 'Sponsored thread running',
+  offered: 'Sponsored offer',
+  accepted: 'Getting started…',
+  running: 'Setting it up…',
   // Names the OUTCOME, not a next step. The run is finished and the commits
   // are on a branch; whether that becomes a pull request is the user's call,
   // so the copy must not read as though something is still pending.
-  committed: 'Sponsored thread committed its work',
-  landed: 'Sponsored thread landed a PR',
-  failed: 'Sponsored thread failed',
-  merged: 'Sponsored PR merged',
+  committed: 'Done — committed to its own branch',
+  // Says WHERE the work is, because that is the one thing a user needs to
+  // know here and it is different from every other terminal: the files in
+  // front of them have already changed.
+  delivered: 'Done — the changes are in your files',
+  landed: 'Done — pull request opened',
+  failed: 'Couldn’t finish the setup',
+  merged: 'Done — pull request merged',
 }
 
 /**
@@ -76,6 +88,7 @@ export const SPONSORED_STATE_IS_TERMINAL: Record<
   accepted: false,
   running: false,
   committed: true,
+  delivered: true,
   landed: true,
   failed: true,
   merged: true,
@@ -98,7 +111,7 @@ export const SPONSORED_STATE_IS_TERMINAL: Record<
  * row still reads `offered` while a run is very much in flight. Keying purely
  * on the state would therefore stop watching at exactly the moment watching
  * starts to matter, which is the bug this exists to close: a run that failed
- * left the card showing `offered` with a live "Start sponsored thread" button
+ * left the card showing `offered` with a live Accept button
  * on it, and a second Accept aimed at a proposal that was already dead.
  */
 export function sponsoredProposalAwaitsVerdict(
@@ -207,6 +220,11 @@ export type SponsoredProposalActionKind =
   | 'create-pull-request'
   | 'view-run'
   | 'open-pull-request'
+  // The two answers to a `delivered` card, and the reason it needs neither of
+  // the PR actions: the work is already in the user's files, so reviewing it
+  // is reading the diff and rejecting it is putting the files back.
+  | 'review-changes'
+  | 'undo-changes'
   // The advertiser's own next step, once there is a diff to take it with
   // (COD-512). Carries the conversion token the advertiser's postback
   // verifies; the label is neutral by design, the advertiser's name is the
@@ -375,7 +393,7 @@ export function sponsoredLogoSrc(token: string | undefined): string | null {
 const DEFAULT_WHY_THIS =
   'Matched to what you are building in this project. Sponsored proposals never read your code without your go-ahead.'
 const DEFAULT_FAILURE_REASON =
-  'The sponsored thread could not finish. Nothing was changed in your project.'
+  'The setup couldn’t finish. Nothing was changed in your project.'
 
 /** Guidance, not activation evidence. A finished run proves only local work;
  * neither a signup link nor a merged PR proves the service works. Keep this
@@ -451,12 +469,18 @@ export function sponsoredProposalViewModel(
   const steps = row.steps ?? []
   const pullRequestHref = sponsoredPullRequestHref(row.pr_url)
   const logoToken = sponsoredLogoToken(row.advertiser_logo_token)
-  // Only once there is a committed diff to go with it: the CTA is the
-  // advertiser's "now set up your account" and before `committed` there is
-  // nothing to set it up for. `landed` and `merged` are the same finished run
-  // further on. Never on `failed` -- the settlement may have charged, but the
-  // card is telling the user nothing changed and must not sell beside that.
-  const ctaStates: SponsoredProposalState[] = ['committed', 'landed', 'merged']
+  // Only once there is a diff to go with it: the CTA is the advertiser's "now
+  // set up your account" and before the work exists there is nothing to set it
+  // up for. `landed` and `merged` are the same finished run further on, and
+  // `delivered` is the same finished run without a commit. Never on `failed`
+  // -- the settlement may have charged, but the card is telling the user
+  // nothing changed and must not sell beside that.
+  const ctaStates: SponsoredProposalState[] = [
+    'committed',
+    'delivered',
+    'landed',
+    'merged',
+  ]
   const advertiserCtaHref = ctaStates.includes(row.state)
     ? sponsoredAdvertiserCtaHref(row.advertiser_cta_url)
     : null
@@ -522,10 +546,10 @@ export function sponsoredProposalViewModel(
 
   const stateActions: SponsoredProposalAction[] = (() => {
     switch (row.state) {
+      // No cost claim here: whether the run is free to the user differs by
+      // surface, so each surface's own copy says that.
       case 'offered':
-        return [
-          { kind: 'accept', label: 'Start sponsored thread', primary: true },
-        ]
+        return [{ kind: 'accept', label: 'Set it up for me', primary: true }]
       case 'running':
         return viewRun('Watch this run')
       case 'committed':
@@ -536,6 +560,20 @@ export function sponsoredProposalViewModel(
             primary: true,
           },
           ...viewRun('View what it did'),
+          ...openAdvertiser(),
+          ...verifyAgain(),
+        ]
+      // REVIEW LEADS, and it is the diff rather than a run transcript: the
+      // files in front of the user have changed, so the first thing offered is
+      // seeing exactly what changed. Undo is beside it and NOT destructive in
+      // the menu sense -- it puts the user's files back, which is the opposite
+      // of a control that turns something off for good. No `view-run`: the run
+      // happened in this very conversation, so the transcript is already on
+      // screen and a link to it would point at itself.
+      case 'delivered':
+        return [
+          { kind: 'review-changes', label: 'Review the changes', primary: true },
+          { kind: 'undo-changes', label: 'Undo these changes' },
           ...openAdvertiser(),
           ...verifyAgain(),
         ]
@@ -582,7 +620,14 @@ export function sponsoredProposalViewModel(
     setupGuide: ctaStates.includes(row.state)
       ? {
           title: 'Finish setup and verify',
-          eyebrow: row.state === 'merged' ? 'Finish setup' : 'Before you merge',
+          eyebrow:
+            row.state === 'merged'
+              ? 'Finish setup'
+              : // Nothing is merged on an in-place run, so "Before you merge"
+                // would name a step that does not exist here.
+                row.state === 'delivered'
+                ? 'Before you keep it'
+                : 'Before you merge',
           heading: `Connect ${row.advertiser_name}`,
           description:
             'Your code is ready. Create an account or sign in, then add your project settings.',

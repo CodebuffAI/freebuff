@@ -122,7 +122,7 @@ describe('every state, at every width', () => {
       blockFor(SPONSORED_ROW_FIXTURES.offered, { menuOpen: true }),
       60,
     )
-    expect(acceptable).toContain('Start sponsored thread')
+    expect(acceptable).toContain('Set it up for me')
 
     // COD-336 item 3, as rendered: on Windows the card SAYS why instead of
     // offering an Accept that cannot work. The reason is the shared copy, so a
@@ -132,7 +132,7 @@ describe('every state, at every width', () => {
       blockFor(SPONSORED_ROW_FIXTURES.offered, { menuOpen: true }),
       60,
     )
-    expect(refused).not.toContain('Start sponsored thread')
+    expect(refused).not.toContain('Set it up for me')
     expect(refused).toContain('Windows')
 
     // And no state but `offered` offers one, on either machine.
@@ -149,7 +149,7 @@ describe('every state, at every width', () => {
             width,
           )
           expect(frame, `${state} at ${width}`).not.toContain(
-            'Start sponsored thread',
+            'Set it up for me',
           )
         }
       }
@@ -167,7 +167,7 @@ describe('every state, at every width', () => {
       60,
     )
     expect(frame).toContain('Could not refresh this proposal')
-    expect(frame).not.toContain('Start sponsored thread')
+    expect(frame).not.toContain('Set it up for me')
     expect(frame).not.toContain('/ads:accept-proposal')
     expect(frame).not.toContain('> No')
   })
@@ -175,7 +175,7 @@ describe('every state, at every width', () => {
   test('the run never starts from the Accept: it opens a consent that can refuse', async () => {
     // COD-336 item 4, adapted for a surface with no second process to draw a
     // dialog from. The property that has to hold is that the control which
-    // says "Start sponsored thread" reaches a SCREEN, and only the screen can
+    // says "Set it up for me" reaches a SCREEN, and only the screen can
     // approve — so a single keypress can never run an advertiser's procedure.
     setSponsoredCliAvailability('available')
     const calls: string[] = []

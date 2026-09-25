@@ -96,3 +96,6 @@ ads-pilot-launch.local.json
 
 # Short-lived GitHub OIDC credentials for the bounded IntentBuff runner.
 gha-creds-*.json
+
+# Isolated Desktop campaign development data and credentials
+.local-agentic-ads/

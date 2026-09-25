@@ -12,7 +12,7 @@
  *
  * The bug these exist for: on the COD-397 local walk a sponsored run failed, the
  * row was `failed` server-side for several minutes, and the card went on
- * rendering `offered` with a live "Start sponsored thread" button until the
+ * rendering `offered` with a live Accept button until the
  * renderer was reloaded. Pressing that button aims an Accept at a proposal that
  * is already dead.
  */
@@ -31,6 +31,10 @@ const ALL_STATES: SponsoredProposalState[] = [
   'accepted',
   'running',
   'committed',
+  // An in-place run's terminal success: no commit, no branch, nothing to
+  // push. Beside `committed` rather than replacing it, since a row an older
+  // build accepted still reaches that one.
+  'delivered',
   'landed',
   'failed',
   'merged',

@@ -249,6 +249,18 @@ export interface SponsoredSandboxOptions {
    * the reasoning and the test.
    */
   linkedWorktree?: SponsoredLinkedWorktree
+  /**
+   * The run edits the user's working copy IN PLACE and delivers no commit
+   * (`docs/freebuff-sponsored-local-execution.md`, 2026-09-24), so
+   * `<workspaceRoot>/.git` is carved out of the write root and left readable.
+   *
+   * The INVERSE of `linkedWorktree`: that one exists so a sandboxed run CAN
+   * commit into the user's repository, this one so it cannot touch history at
+   * all. They are never both set. Like that one, it is a FACT rather than a
+   * path list, for the same reason -- a caller that could name the paths
+   * could name the wrong ones.
+   */
+  readOnlyGitDir?: boolean
   /** Injected by the eval, which keeps its own (wider) allowlist. */
   scrubEnv?: (
     source: Record<string, string | undefined>,
@@ -1444,6 +1456,14 @@ export function sponsoredMacProfile(
   writeRoots: string[],
   additionalReadRoots: string[],
   writeLiterals: string[] = [],
+  /**
+   * Carved OUT of the write roots above, for an in-place run
+   * (`docs/freebuff-sponsored-local-execution.md`, 2026-09-24): the
+   * workspace's own `.git`, which such a run may read and must not write.
+   * Seatbelt takes the LAST matching rule, so these denies are emitted after
+   * the `file-write*` allow that covers the workspace.
+   */
+  denyWriteSubpaths: string[] = [],
 ): string {
   const q = JSON.stringify
   const writable = writeRoots.map(canonicalRoot)
@@ -1533,6 +1553,17 @@ export function sponsoredMacProfile(
       ...SPONSORED_DEVICE_WRITE_LITERALS.map((item) => `(literal ${q(item)})`),
       ...SPONSORED_DEVICE_WRITE_SUBPATHS.map((item) => `(subpath ${q(item)})`),
     ].join(' ')})`,
+    // AFTER the allow, and that order IS the rule: seatbelt takes the last
+    // match. An in-place run's `.git` lives inside the write root it must
+    // otherwise be able to edit, so the only way to hold the line is to grant
+    // the tree and take this back.
+    ...(denyWriteSubpaths.length > 0
+      ? [
+          `(deny file-write* ${denyWriteSubpaths
+            .map((item) => `(subpath ${q(canonicalRoot(item))})`)
+            .join(' ')})`,
+        ]
+      : []),
   ].join('\n')
 }
 
@@ -1542,13 +1573,20 @@ function spawnMac(
   env: NodeJS.ProcessEnv,
   additionalReadRoots: string[],
   writeLiterals: string[],
+  /** Carved back out of the write roots; see `sponsoredMacProfile`. */
+  denyWriteSubpaths: string[] = [],
 ): TerminalCommandProcess {
   return processHandle(
     spawn(
       '/usr/bin/sandbox-exec',
       [
         '-p',
-        sponsoredMacProfile(writeRoots, additionalReadRoots, writeLiterals),
+        sponsoredMacProfile(
+          writeRoots,
+          additionalReadRoots,
+          writeLiterals,
+          denyWriteSubpaths,
+        ),
         request.executable,
         ...request.args,
       ],
@@ -1670,6 +1708,8 @@ function spawnLinux(
   env: NodeJS.ProcessEnv,
   additionalReadRoots: string[],
   linkedWorktree: SponsoredLinkedWorktree | undefined,
+  /** Read-only rebinds over the write roots; see the loop at the bottom. */
+  denyWriteSubpaths: string[] = [],
 ): TerminalCommandProcess {
   const bwrap = findBubblewrap()
   if (!bwrap) {
@@ -1741,6 +1781,13 @@ function spawnLinux(
   if (linkedWorktree) prepareLinkedWorktreeForLinux(linkedWorktree)
   for (const dir of writeRoots) {
     if (fs.existsSync(dir)) args.push('--bind', dir, dir)
+  }
+  // AFTER the writable binds, and that order IS the rule: bubblewrap applies
+  // mounts in order, so a read-only bind here covers the writable one under
+  // it. An in-place run's `.git` sits inside the workspace it must otherwise
+  // be able to edit, so the tree is granted and this takes it back.
+  for (const dir of denyWriteSubpaths) {
+    if (fs.existsSync(dir)) args.push('--ro-bind', dir, dir)
   }
   args.push('--chdir', request.cwd, '--clearenv')
   for (const [key, value] of Object.entries(env)) {
@@ -2081,11 +2128,33 @@ export function createSponsoredTerminalBroker(
         : { readSubpaths: [], writeSubpaths: [], writeLiterals: [] }
       const writeRoots = [workspaceRoot, runtimeDir, ...git.writeSubpaths]
       const readRoots = [...additionalReadRoots, ...git.readSubpaths]
+      // An in-place run may READ the repository (`git status`, `git diff` and
+      // `git log` are how a procedure understands the project) and may write
+      // no part of it: no commit, no ref, and above all no `hooks/` or
+      // `config`, which the orchestrator's own unsandboxed `git -C` would
+      // then execute as the user.
+      const denyWriteSubpaths = options.readOnlyGitDir
+        ? [path.join(workspaceRoot, '.git')]
+        : []
       if (platform === 'darwin') {
-        return spawnMac(request, writeRoots, env, readRoots, git.writeLiterals)
+        return spawnMac(
+          request,
+          writeRoots,
+          env,
+          readRoots,
+          git.writeLiterals,
+          denyWriteSubpaths,
+        )
       }
       if (platform === 'linux') {
-        return spawnLinux(request, writeRoots, env, readRoots, linkedWorktree)
+        return spawnLinux(
+          request,
+          writeRoots,
+          env,
+          readRoots,
+          linkedWorktree,
+          denyWriteSubpaths,
+        )
       }
       throw new Error(
         `A sponsored run cannot be contained on ${platform}, so it will not be started.`,

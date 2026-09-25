@@ -95,6 +95,16 @@ export const AGENTIC_FUNNEL_EVENT_TYPES = [
    * It is telemetry only and is never a billing trigger.
    */
   'proposal_displayed',
+  /**
+   * An IN-PLACE run left its work in the user's working copy and stopped
+   * there (the 2026-09-24 amendment in
+   * `freebuff-sponsored-local-execution.md`). The same buying stage as
+   * `run_committed` -- the work was done -- on a surface where there is no
+   * branch to commit it to, so it is a SEPARATE stage rather than a reuse:
+   * `run_committed` is read as "a commit exists that a pull request could be
+   * opened from", and for one of these rows no such commit does.
+   */
+  'run_delivered',
 ] as const
 
 export type AgenticFunnelEventType = (typeof AGENTIC_FUNNEL_EVENT_TYPES)[number]

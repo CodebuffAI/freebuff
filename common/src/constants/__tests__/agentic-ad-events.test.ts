@@ -34,6 +34,9 @@ describe('agentic funnel vocabulary', () => {
       'run_failed',
       'run_committed',
       'proposal_displayed',
+      // Appended, never inserted: the enum is append-only in Postgres, so
+      // position here is the migration's order and not a preference.
+      'run_delivered',
     ])
   })
 

@@ -8,6 +8,7 @@ import type {
   SPONSORED_WINDOWS_EXECUTION_SURFACE,
   SponsoredExecutionContainment,
 } from './sponsored-windows'
+import type { SPONSORED_IN_PLACE_VERSION } from './sponsored-in-place'
 
 /**
  * The funded Accept request, `POST /api/v1/ads/proposal/{id}/accept`, as the
@@ -31,6 +32,15 @@ export type SponsoredAcceptRequest = {
    * because an older client does not send it.
    */
   clientExecutionSurface?: SponsoredExecutionSurface
+  /**
+   * `1`: this client runs the accepted work IN PLACE, in the accepting
+   * conversation, and its terminal state is `delivered`
+   * (`./sponsored-in-place.ts`). Sent again here rather than inferred from
+   * the offer, because an offer can outlive the build that was shown it: the
+   * server records it on the row at Accept and binds the run's deliverable to
+   * it from then on.
+   */
+  inPlaceExecutionVersion?: typeof SPONSORED_IN_PLACE_VERSION
 }
 
 /**

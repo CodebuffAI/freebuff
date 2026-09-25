@@ -105,6 +105,12 @@ export const SPONSORED_ROW_FIXTURES: Record<
     thread_ref: FIXTURE_THREAD_REF,
     branch: FIXTURE_BRANCH,
   },
+  // An IN-PLACE run, so deliberately carrying NEITHER `branch` NOR
+  // `thread_ref`: there is no branch, and the run happened in the
+  // conversation the card is already on rather than in a thread of its own.
+  // A row copied from `committed` with the state swapped would let a surface
+  // keep offering "View what it did" and pass vacuously.
+  delivered: { ...BASE, state: 'delivered' },
   landed: {
     ...BASE,
     state: 'landed',
