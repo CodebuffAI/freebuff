@@ -46,10 +46,12 @@ import { initializeAgentRegistry } from './utils/local-agent-registry'
 import { trimOversizedChatLogs } from './utils/chat-history'
 import { clearLogFile, logger } from './utils/logger'
 import { drainClientLogs } from './utils/log-shipper'
+import { takePreviousFatalCrash } from './utils/fatal-crash-report'
 import { shouldShowProjectPicker } from './utils/project-picker'
 import { saveRecentProject } from './utils/recent-projects'
 import { startEngagementTracking } from './utils/engagement'
 import {
+  CLI_RENDERER_EXIT_SIGNALS,
   exitCliWithFatalError,
   installProcessCleanupHandlers,
 } from './utils/renderer-cleanup'
@@ -266,6 +268,17 @@ async function main(): Promise<void> {
     initialMode: initialMode ?? 'DEFAULT',
     isFreeBuff: IS_FREEBUFF,
   })
+  // The previous launch died on a fatal error and could only leave a local
+  // report on its way out; ship it now (fatal-crash-report.ts).
+  const previousCrash = takePreviousFatalCrash()
+  if (previousCrash) {
+    try {
+      trackEvent(AnalyticsEvent.CLI_FATAL_CRASH, previousCrash)
+      void drainClientLogs()
+    } catch {
+      // Crash telemetry must never block a launch.
+    }
+  }
   // Start shipping the launch row now, well before the Windows watchdog is
   // armed. If endpoint security terminates this process during that spawn, the
   // next --continue launch still has a prior row for the health dashboard's
@@ -449,6 +462,7 @@ async function main(): Promise<void> {
   const renderer = await createCliRenderer({
     backgroundColor: 'transparent',
     exitOnCtrlC: false,
+    exitSignals: CLI_RENDERER_EXIT_SIGNALS,
     screenMode: 'alternate-screen',
   })
 

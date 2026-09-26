@@ -68,6 +68,8 @@ const ALWAYS_TRACK_EVENTS = new Set<AnalyticsEvent>([
   AnalyticsEvent.CLI_HELPER_OUTLIVED_PARENT,
   AnalyticsEvent.DESKTOP_HELPER_PROCESS_FLOOD,
   AnalyticsEvent.UPDATE_CODEBUFF_FAILED,
+  // Crash counts per version must be whole to be comparable.
+  AnalyticsEvent.CLI_FATAL_CRASH,
 ])
 
 type AnalyticsProperties = Record<string, unknown> | undefined

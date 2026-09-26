@@ -5,7 +5,9 @@ import {
   dispatchFirstPartyViewAcknowledgement,
   isAnswerMessage,
   isInlineAdEligibleAnswer,
+  NO_RESPONSE_ADS,
   renderDelaySinceReceipt,
+  visibleResponseAds,
 } from '../use-gravity-ad'
 
 import type { ChatMessage } from '../../types/chat'
@@ -158,5 +160,23 @@ describe('dispatchFirstPartyViewAcknowledgement', () => {
     expect(claimAdImpression(fired, 'opaque-imp-url')).toBe(true)
     expect(claimAdImpression(fired, 'opaque-imp-url')).toBe(false)
     expect(calls).toBe(0)
+  })
+})
+
+describe('visibleResponseAds', () => {
+  // Chat's layout effect depends on this value and writes it to the
+  // message-block store. A fresh `{}` per render re-ran the effect after every
+  // commit while ads were hidden, feeding React's nested-update limit (#185).
+  test('hidden ads are one stable value across renders', () => {
+    const first = visibleResponseAds(false, { 'ai-1': [] })
+    const second = visibleResponseAds(false, {})
+    expect(first).toBe(NO_RESPONSE_ADS)
+    expect(second).toBe(first)
+    expect(Object.keys(first)).toEqual([])
+  })
+
+  test('visible ads pass through unchanged', () => {
+    const ads = { 'ai-1': [] }
+    expect(visibleResponseAds(true, ads)).toBe(ads)
   })
 })

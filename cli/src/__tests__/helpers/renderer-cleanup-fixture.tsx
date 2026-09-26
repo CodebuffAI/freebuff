@@ -4,7 +4,10 @@ import { writeFileSync } from 'fs'
 import React from 'react'
 
 import { exitCliCleanly } from '../../utils/exit-cleanly'
-import { installProcessCleanupHandlers } from '../../utils/renderer-cleanup'
+import {
+  CLI_RENDERER_EXIT_SIGNALS,
+  installProcessCleanupHandlers,
+} from '../../utils/renderer-cleanup'
 import { writeFileDescriptorSync } from '../../utils/terminal-io'
 
 const mode = process.argv[2]
@@ -18,21 +21,26 @@ if (
   mode !== 'launcher-disconnect' &&
   mode !== 'sigint' &&
   mode !== 'sigterm' &&
-  mode !== 'sighup'
+  mode !== 'sighup' &&
+  mode !== 'sigquit' &&
+  mode !== 'sigpipe'
 ) {
   console.error(
-    'usage: renderer-cleanup-fixture.tsx <clean|fatal|rejection|unprintable-rejection|launcher-disconnect|sigint|sigterm|sighup>',
+    'usage: renderer-cleanup-fixture.tsx <clean|fatal|rejection|unprintable-rejection|launcher-disconnect|sigint|sigterm|sighup|sigquit|sigpipe>',
   )
   process.exit(2)
 }
 
 const renderer = await createCliRenderer({
   exitOnCtrlC: false,
+  exitSignals: CLI_RENDERER_EXIT_SIGNALS,
   screenMode: 'alternate-screen',
 })
 installProcessCleanupHandlers(renderer)
 
 let exitScheduled = false
+// Written after the alternate screen is gone, so the test can read it.
+let sigpipeVerdict = ''
 renderer.setFrameCallback(async () => {
   if (exitScheduled) return
   exitScheduled = true
@@ -54,11 +62,32 @@ renderer.setFrameCallback(async () => {
       }
       return
     }
+    if (mode === 'sigpipe') {
+      // A write to a pipe whose reader is gone. It must not tear the UI down
+      // (nor, a moment later, kill the process with no cleanup).
+      process.kill(process.pid, 'SIGPIPE')
+      setTimeout(() => {
+        process.kill(process.pid, 'SIGPIPE')
+        setTimeout(() => {
+          sigpipeVerdict = renderer.isDestroyed
+            ? 'RENDERER_DESTROYED_BY_SIGPIPE\n'
+            : 'RENDERER_SURVIVED_SIGPIPE\n'
+          void exitCliCleanly()
+        }, 100)
+      }, 100)
+      return
+    }
     if (mode === 'clean') {
       void exitCliCleanly()
     } else {
       const signal =
-        mode === 'sigint' ? 'SIGINT' : mode === 'sigterm' ? 'SIGTERM' : 'SIGHUP'
+        mode === 'sigint'
+          ? 'SIGINT'
+          : mode === 'sigterm'
+            ? 'SIGTERM'
+            : mode === 'sigquit'
+              ? 'SIGQUIT'
+              : 'SIGHUP'
       process.kill(process.pid, signal)
     }
   }, 10)
@@ -79,7 +108,10 @@ if (
         writeFileSync(cleanExitMarkerPath, 'CLEAN_EXIT_VISIBLE')
       } catch {}
     } else {
-      writeFileDescriptorSync(process.stdout.fd, 'CLEAN_EXIT_VISIBLE\n')
+      writeFileDescriptorSync(
+        process.stdout.fd,
+        `${sigpipeVerdict}CLEAN_EXIT_VISIBLE\n`,
+      )
     }
   })
 }

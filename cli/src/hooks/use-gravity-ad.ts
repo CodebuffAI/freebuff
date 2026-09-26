@@ -75,6 +75,26 @@ export type AdResponse = {
 }
 
 /**
+ * The one "no inline ads" value. It MUST keep its identity across renders:
+ * Chat's layout effect lists `responseAds` as a dependency and writes it into
+ * the message-block store, so a fresh `{}` per render (every render whenever
+ * ads are hidden) re-ran that effect after every commit, scheduling another
+ * store write and a synchronous re-render of every message block. During fast
+ * streaming that is the chain of commits-with-pending-updates that React counts
+ * toward "Maximum update depth exceeded" (#185).
+ */
+export const NO_RESPONSE_ADS: Record<string, AdResponse[]> = Object.freeze(
+  {},
+) as Record<string, AdResponse[]>
+
+export function visibleResponseAds(
+  visible: boolean,
+  responseAds: Record<string, AdResponse[]>,
+): Record<string, AdResponse[]> {
+  return visible ? responseAds : NO_RESPONSE_ADS
+}
+
+/**
  * Milliseconds from auction-response receipt to now, or undefined when the ad
  * carries no receipt time. Never negative: a clock that moved backwards is a
  * zero, not a rejection, mirroring the server's clamp.
@@ -771,7 +791,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   const visible = shouldStart && !shouldHideAds
   return {
     ads: visible ? ads : null,
-    responseAds: visible ? responseAds : {},
+    responseAds: visibleResponseAds(visible, responseAds),
     requestResponseAds,
     isLoading,
     recordClick,
@@ -807,4 +827,3 @@ const convertToAdMessages = (messages: Message[]): AdMessage[] => {
 
   return adMessages
 }
-

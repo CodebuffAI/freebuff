@@ -59,6 +59,12 @@ export enum AnalyticsEvent {
   CLI_HELPER_PROCESS_FLOOD = 'cli.helper_process_flood',
   CLI_HELPER_OUTLIVED_PARENT = 'cli.helper_outlived_parent',
   UPDATE_CODEBUFF_FAILED = 'cli.update_codebuff_failed',
+  // A fatal exit (uncaught exception / unhandled rejection) of the PREVIOUS
+  // launch, shipped by the next one: the crashing process can only write a
+  // local report before process.exit. Bounded payload: label, error name,
+  // truncated message and top stack frames, crashed version, platform,
+  // uptime, and whether a Freebuff hour was held (resumable).
+  CLI_FATAL_CRASH = 'cli.fatal_crash',
   FEEDBACK_BUTTON_HOVERED = 'cli.feedback_button_hovered',
   FOLLOWUP_CLICKED = 'cli.followup_clicked',
   SUGGESTED_PROMPT_SHOWN = 'cli.suggested_prompt_shown',

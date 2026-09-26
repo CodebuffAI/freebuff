@@ -510,62 +510,140 @@ const handleStreamError = (state: EventHandlerState, event: PrintModeError) => {
   state.setIsRetrying(true)
 }
 
-export const createStreamChunkHandler =
-  (state: EventHandlerState) => (event: StreamChunkEvent) => {
-    if (state.isActive?.() === false) return
-    const destination = destinationFromChunkEvent(event)
-    let text: string | undefined
-    if (typeof event === 'string') {
-      text = event
-    } else {
-      text = event.chunk
+// ---------------------------------------------------------------- UI isolation
+//
+// These handlers only project SDK events onto the chat UI, but they run INSIDE
+// the SDK's stream callback chain (sdk run.ts -> agent-runtime tool executor ->
+// stream parser). A throw from a UI state update therefore escaped as an
+// unhandled rejection, and the process-level handler turned it into a fatal
+// exit: the agent run, the chat and the Freebuff session all died with it.
+// Reported on Arch after 29 hours of uptime: React's "Maximum update depth
+// exceeded" (#185), raised by the store notification inside
+// `setStreamingAgents` (updateStreamingAgents <- handleToolCall).
+//
+// React raises #185 AFTER the store has taken the new value and resets its
+// nested-update counter before throwing, so dropping one render notification is
+// harmless: the next update renders the latest state. A missed repaint is
+// always better than killing the run, so a failing UI update is logged (with
+// its stack, to Axiom) and the run continues.
+
+const MAX_UI_HANDLER_FAILURE_LOGS_PER_RUN = 3
+const uiHandlerFailures = new WeakMap<EventHandlerState, number>()
+
+const describeHandlerError = (error: unknown) => {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message.slice(0, 500),
+      stack: error.stack?.split('\n').slice(0, 20).join('\n'),
     }
+  }
+  return { message: String(error).slice(0, 500) }
+}
 
-    if (!destination) {
-      state.logger.warn({ event }, 'Unhandled stream chunk event')
-      return
-    }
-
-    if (!text) {
-      return
-    }
-
-    ensureStreaming(state)
-    // Content is flowing (again) — clear any stream-interrupted retry status.
-    // Terminal paths (run completion, error, abort) already reset it in
-    // use-send-message/send-message, so the indicator can't outlive its run.
-    // (No-op when already false: the immer store returns the same state.)
-    state.setIsRetrying(false)
-
-    if (destination.type === 'root') {
-      if (destination.textType === 'text') {
-        state.streaming.streamRefs.setters.appendRootStreamBuffer(text)
+const isolateUiHandler =
+  <E>(
+    state: EventHandlerState,
+    handler: string,
+    describe: (event: E) => string,
+    handle: (event: E) => void,
+  ) =>
+  (event: E): void => {
+    try {
+      handle(event)
+    } catch (error) {
+      const failures = (uiHandlerFailures.get(state) ?? 0) + 1
+      uiHandlerFailures.set(state, failures)
+      if (failures > MAX_UI_HANDLER_FAILURE_LOGS_PER_RUN) return
+      try {
+        state.logger.error(
+          {
+            handler,
+            sdkEvent: describe(event),
+            failures,
+            error: describeHandlerError(error),
+          },
+          'SDK event handler failed; the run continues',
+        )
+      } catch {
+        // Reporting must never turn a UI failure back into a crash.
       }
-      state.streaming.streamRefs.setters.setRootStreamSeen(true)
-      appendRootChunk(state, { type: destination.textType, text })
-      return
     }
-
-    state.message.updater.updateAiMessageBlocks((blocks) =>
-      processTextChunk(blocks, destination, text),
-    )
   }
 
-export const createEventHandler =
-  (state: EventHandlerState) => (event: SDKEvent) => {
-    // A cancelled run may still report its final billed cost. Keep that
-    // accounting event, but reject every callback that could mutate the chat
-    // or shared streaming UI after ownership has moved to another run.
-    if (state.isActive?.() === false) {
-      if (event.type === 'finish') handleFinish(state, event)
-      return
-    }
-    return match(event)
-      .with({ type: 'subagent_start' }, (e) => handleSubagentStart(state, e))
-      .with({ type: 'subagent_finish' }, (e) => handleSubagentFinish(state, e))
-      .with({ type: 'tool_call' }, (e) => handleToolCall(state, e))
-      .with({ type: 'tool_result' }, (e) => handleToolResult(state, e))
-      .with({ type: 'finish' }, (e) => handleFinish(state, e))
-      .with({ type: 'error' }, (e) => handleStreamError(state, e))
-      .otherwise(() => undefined)
+export const createStreamChunkHandler = (state: EventHandlerState) =>
+  isolateUiHandler<StreamChunkEvent>(
+    state,
+    'stream_chunk',
+    (event) => (typeof event === 'string' ? 'text' : event.type),
+    (event) => handleStreamChunk(state, event),
+  )
+
+const handleStreamChunk = (
+  state: EventHandlerState,
+  event: StreamChunkEvent,
+): void => {
+  if (state.isActive?.() === false) return
+  const destination = destinationFromChunkEvent(event)
+  let text: string | undefined
+  if (typeof event === 'string') {
+    text = event
+  } else {
+    text = event.chunk
   }
+
+  if (!destination) {
+    state.logger.warn({ event }, 'Unhandled stream chunk event')
+    return
+  }
+
+  if (!text) {
+    return
+  }
+
+  ensureStreaming(state)
+  // Content is flowing (again) — clear any stream-interrupted retry status.
+  // Terminal paths (run completion, error, abort) already reset it in
+  // use-send-message/send-message, so the indicator can't outlive its run.
+  // (No-op when already false: the immer store returns the same state.)
+  state.setIsRetrying(false)
+
+  if (destination.type === 'root') {
+    if (destination.textType === 'text') {
+      state.streaming.streamRefs.setters.appendRootStreamBuffer(text)
+    }
+    state.streaming.streamRefs.setters.setRootStreamSeen(true)
+    appendRootChunk(state, { type: destination.textType, text })
+    return
+  }
+
+  state.message.updater.updateAiMessageBlocks((blocks) =>
+    processTextChunk(blocks, destination, text),
+  )
+}
+
+export const createEventHandler = (state: EventHandlerState) =>
+  isolateUiHandler<SDKEvent>(
+    state,
+    'event',
+    (event) => event.type,
+    (event) => handleSdkEvent(state, event),
+  )
+
+const handleSdkEvent = (state: EventHandlerState, event: SDKEvent): void => {
+  // A cancelled run may still report its final billed cost. Keep that
+  // accounting event, but reject every callback that could mutate the chat
+  // or shared streaming UI after ownership has moved to another run.
+  if (state.isActive?.() === false) {
+    if (event.type === 'finish') handleFinish(state, event)
+    return
+  }
+  return match(event)
+    .with({ type: 'subagent_start' }, (e) => handleSubagentStart(state, e))
+    .with({ type: 'subagent_finish' }, (e) => handleSubagentFinish(state, e))
+    .with({ type: 'tool_call' }, (e) => handleToolCall(state, e))
+    .with({ type: 'tool_result' }, (e) => handleToolResult(state, e))
+    .with({ type: 'finish' }, (e) => handleFinish(state, e))
+    .with({ type: 'error' }, (e) => handleStreamError(state, e))
+    .otherwise(() => undefined)
+}

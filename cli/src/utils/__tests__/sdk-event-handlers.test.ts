@@ -194,6 +194,61 @@ describe('sdk-event-handlers', () => {
     expect(totalCost).toBe(7)
   })
 
+  test('a failing UI update is logged and never escapes into the SDK run', () => {
+    // The Arch crash: React's "Maximum update depth exceeded" (#185) thrown
+    // by the store notification inside setStreamingAgents on a tool_call. It
+    // escaped the SDK's stream callback as an unhandled rejection and the
+    // process-level handler exited the CLI, ending the run and the session.
+    const { ctx, getMessages } = createTestContext()
+    const errors: Array<{ data: any; msg: string }> = []
+    ctx.logger = {
+      ...ctx.logger,
+      error: (data: any, msg: string) => {
+        errors.push({ data, msg })
+      },
+    } as Logger
+    ctx.streaming.setStreamingAgents = () => {
+      throw new Error(
+        'Minified React error #185; visit https://react.dev/errors/185',
+      )
+    }
+    const handleEvent = createEventHandler(ctx)
+    const toolCall = (id: string) =>
+      handleEvent({
+        type: 'tool_call',
+        toolCallId: id,
+        toolName: 'read_files',
+        input: { paths: ['a.ts'] },
+        agentId: 'main-agent',
+        parentAgentId: undefined,
+      } as any)
+
+    for (let i = 0; i < 5; i++) {
+      expect(() => toolCall(`tool-${i}`)).not.toThrow()
+    }
+
+    // The chat still shows the tool calls and later events keep flowing.
+    expect(
+      (getMessages()[0].blocks ?? []).filter((b) => b.type === 'tool'),
+    ).toHaveLength(5)
+    createStreamChunkHandler(ctx)('still streaming')
+    expect(
+      (getMessages()[0].blocks ?? []).some(
+        (b) => b.type === 'text' && b.content === 'still streaming',
+      ),
+    ).toBe(true)
+
+    // Reported with the stack, but bounded per run.
+    expect(errors).toHaveLength(3)
+    expect(errors[0]!.msg).toBe('SDK event handler failed; the run continues')
+    expect(errors[0]!.data).toMatchObject({
+      handler: 'event',
+      sdkEvent: 'tool_call',
+      error: { name: 'Error', message: expect.stringContaining('#185') },
+    })
+    expect(errors[0]!.data.error.stack).toContain('sdk-event-handlers')
+  })
+
   test('extracts plan content from root stream', () => {
     const { ctx, getMessages, getHasPlanResponse } = createTestContext('PLAN')
     const handleChunk = createStreamChunkHandler(ctx)

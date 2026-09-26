@@ -67,7 +67,7 @@ import { useChatStreaming } from './hooks/use-chat-streaming'
 import { useChatUI } from './hooks/use-chat-ui'
 import { useClipboard } from './hooks/use-clipboard'
 import { useEvent } from './hooks/use-event'
-import { useGravityAd } from './hooks/use-gravity-ad'
+import { useGravityAd, visibleResponseAds } from './hooks/use-gravity-ad'
 import { useByokSelectionStore } from './utils/byok'
 import { DOCK_CHORD_HINT, useDockPanel } from './hooks/use-dock-panel'
 import { useInputHistory } from './hooks/use-input-history'
@@ -1819,7 +1819,7 @@ export const Chat = ({
       isWaitingForResponse,
       timerStartTime,
       availableWidth: messageAvailableWidth,
-      responseAds: showInlineAds ? responseAds : {},
+      responseAds: visibleResponseAds(showInlineAds, responseAds),
     })
   }, [
     theme,

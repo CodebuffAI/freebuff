@@ -5,6 +5,7 @@ import { stopActiveRun } from './active-run'
 import { IS_FREEBUFF } from './constants'
 import { getCliEnv } from './env'
 import { exitCliCleanly, registerExitCleanup } from './exit-cleanly'
+import { recordFatalCrashSync } from './fatal-crash-report'
 import { holdsLiveFreebuffSlot } from './freebuff-session-api'
 import { isLauncherUpdateTermination } from './launcher-update-restart'
 import { logger } from './logger'
@@ -16,6 +17,26 @@ import { stopTerminalWatchdog } from './terminal-watchdog'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 
 import type { CliRenderer } from '@opentui/core'
+
+/**
+ * Signals on which OpenTUI itself destroys the renderer: its defaults WITHOUT
+ * SIGPIPE. OpenTUI's handler only calls destroy(), so a SIGPIPE — a write to a
+ * pipe whose reader is gone, which Bun otherwise ignores and reports as EPIPE —
+ * tore the whole UI down and left the process running behind a dead screen.
+ * Worse, destroy() removes the listener, and with no listener left Bun falls
+ * back to the default action: the next broken-pipe write killed the CLI on the
+ * spot (exit 141) with no cleanup. SIGPIPE is ignored explicitly below; every
+ * other signal here also runs our exit path (installProcessCleanupHandlers).
+ */
+export const CLI_RENDERER_EXIT_SIGNALS: NodeJS.Signals[] = [
+  'SIGINT',
+  'SIGTERM',
+  'SIGQUIT',
+  'SIGABRT',
+  'SIGHUP',
+  'SIGBREAK',
+  'SIGBUS',
+]
 
 let renderer: CliRenderer | null = null
 let handlersInstalled = false
@@ -160,6 +181,15 @@ function cleanup(): boolean {
 
 /** Restore the terminal, report a fatal error synchronously, and exit. */
 export function exitCliWithFatalError(label: string, error: unknown): never {
+  // Before teardown, while the store still says whether an hour is live. The
+  // next launch ships this as `cli.fatal_crash` (see fatal-crash-report.ts).
+  let heldFreebuffSession = false
+  try {
+    heldFreebuffSession =
+      IS_FREEBUFF &&
+      holdsLiveFreebuffSlot(useFreebuffSessionStore.getState().session)
+  } catch {}
+  recordFatalCrashSync(label, error, { heldFreebuffSession })
   const resetCompletedSynchronously = cleanup() || resetTerminalState()
   if (resetCompletedSynchronously) {
     stopTerminalWatchdog()
@@ -192,6 +222,27 @@ export function installProcessCleanupHandlers(cliRenderer: CliRenderer): void {
     void exitCliCleanly()
   }
 
+  // A signal from OUTSIDE the app — the terminal window closed (SIGHUP), a
+  // kill/shutdown (SIGTERM), the npm launcher gone — is not the user choosing
+  // to end their Freebuff hour. It is usually how they get out of a CLI that
+  // froze or went blank. Ending the hour there was a pure loss: no early-end
+  // refund settles, and a multi-session (`cli:`) relaunch is never covered by
+  // the earlier debit, so the next launch bought the same hour again ("the CLI
+  // crashed ... when manually opened again the Freebucks are deducted"). Keep
+  // the hour exactly as a crash does: the live record survives, and the next
+  // launch resumes it (consumeCrashedFreebuffSession). Quitting from inside
+  // the app (Ctrl+C, /exit) still ends it.
+  const handleExternalExit = () => {
+    if (IS_FREEBUFF) {
+      try {
+        useFreebuffSessionStore.getState().keepSlotForResume()
+      } catch {
+        // Never let session bookkeeping block the exit.
+      }
+    }
+    handleExitRequest()
+  }
+
   // A broad `taskkill node.exe` can kill the package's Node launcher without
   // killing its Bun child. Polling avoids Bun's Windows behavior of terminating
   // before JavaScript can handle a broken IPC channel or inherited pipe.
@@ -209,7 +260,7 @@ export function installProcessCleanupHandlers(cliRenderer: CliRenderer): void {
         launcherCheckInFlight = false
         if (running) return
         clearInterval(launcherMonitor)
-        handleExitRequest()
+        handleExternalExit()
       })
     }, 500)
     launcherMonitor.unref()
@@ -240,14 +291,26 @@ export function installProcessCleanupHandlers(cliRenderer: CliRenderer): void {
         )
       }
     }
-    handleExitRequest()
+    handleExternalExit()
   })
 
   // SIGHUP - Terminal hangup (e.g., closing the terminal window)
-  process.on('SIGHUP', handleExitRequest)
+  process.on('SIGHUP', handleExternalExit)
 
   // SIGINT - Ctrl+C
   process.on('SIGINT', handleExitRequest)
+
+  // The rest of OpenTUI's exit signals. Its own handler only destroys the
+  // renderer, which without an exit left a live process behind a dead screen.
+  for (const signal of ['SIGQUIT', 'SIGABRT', 'SIGBUS'] as const) {
+    process.on(signal, handleExternalExit)
+  }
+  if (process.platform === 'win32') process.on('SIGBREAK', handleExternalExit)
+
+  // A broken pipe is a write error (EPIPE), not a request to quit. Keep a
+  // listener for the life of the process: with none, Bun restores the default
+  // action and a single SIGPIPE terminates the CLI.
+  process.on('SIGPIPE', () => {})
 
   // beforeExit - Called when the event loop is empty and about to exit
   process.on('beforeExit', () => {

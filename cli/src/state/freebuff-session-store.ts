@@ -77,6 +77,14 @@ interface FreebuffSessionStore {
    * nothing said so, and some bought a different model or left.
    */
   keepSlotForRelaunch: () => void
+  /**
+   * The process is exiting for a reason outside the app (terminal closed,
+   * killed, launcher gone): keep an ACTIVE hour the way a crash does, so the
+   * next launch resumes it from the live record (multi-session) or the dead
+   * legacy owner record, instead of ending it. Anything not active (ended,
+   * nothing held, an admission still in flight) is released as before.
+   */
+  keepSlotForResume: () => void
   slotKeptForRelaunch: boolean
   failure: FreebuffSessionFailure | null
 
@@ -136,6 +144,10 @@ export const useFreebuffSessionStore = create<FreebuffSessionStore>(
           )
             return
         }
+        set({ slotKeptForRelaunch: true })
+      },
+      keepSlotForResume: () => {
+        if (get().session?.status !== 'active') return
         set({ slotKeptForRelaunch: true })
       },
       releaseSlot: (target = get().session ?? undefined, signal) => {
