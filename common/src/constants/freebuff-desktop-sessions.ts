@@ -90,3 +90,14 @@ export const FREEBUFF_SESSION_RENEWAL_HEADER = 'x-freebuff-session-renewal-id'
 /** Versioned opt-in: instance ids become single-use execution claims. */
 export const FREEBUFF_PURCHASE_CONTINUITY_HEADER =
   'x-freebuff-purchase-continuity'
+
+/** Every claim a 0.0.197+ CLI mints on the purchase protocol starts with this.
+ *  The server reads it to tell the CLI's claims from Desktop tabs: only a CLI
+ *  claim can be the successor of a legacy single-session CLI hour. */
+export const FREEBUFF_CLI_CLAIM_PREFIX = 'cli:'
+
+export function isFreebuffCliClaim(
+  instanceId: string | null | undefined,
+): boolean {
+  return !!instanceId?.startsWith(FREEBUFF_CLI_CLAIM_PREFIX)
+}

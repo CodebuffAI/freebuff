@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto'
 
+import { FREEBUFF_CLI_CLAIM_PREFIX } from '@codebuff/common/constants/freebuff-desktop-sessions'
+
 // A new identity for each CLI purchase, never shared through settings or cwd.
 // The prefix also lets delayed DELETE/refund requests retain their protocol
-// after the picker has switched models (limited offers use the legacy path).
-const CLI_MULTI_SESSION_PREFIX = 'cli:'
+// after the picker has switched models (limited offers use the legacy path),
+// and tells the server this claim may resume a legacy CLI hour.
+const CLI_MULTI_SESSION_PREFIX = FREEBUFF_CLI_CLAIM_PREFIX
 
 export function newFreebuffCliInstanceId(): string {
   return `${CLI_MULTI_SESSION_PREFIX}${randomUUID()}`
