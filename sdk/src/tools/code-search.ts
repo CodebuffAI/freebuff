@@ -1,7 +1,9 @@
 import { getSystemProcessEnv } from '../env'
+import { isUtf8 } from 'buffer'
 import { spawn } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
+import { StringDecoder } from 'string_decoder'
 
 import { formatCodeSearchOutput } from '../../../common/src/util/format-code-search'
 import { getBundledRgPath } from '../native/ripgrep'
@@ -62,6 +64,45 @@ export function parseCodeSearchFlags(flags: string | undefined): string[] | null
   return tokens
 }
 
+// Skip operands so globs such as -g*.html or --glob -l aren't output flags.
+const RIPGREP_VALUE_FLAGS = new Set(
+  `
+  regexp file pre pre-glob dfa-size-limit encoding engine max-count
+  regex-size-limit threads glob iglob ignore-file max-depth max-filesize
+  type type-not type-add type-clear after-context before-context color colors
+  context context-separator field-context-separator field-match-separator
+  hostname-bin hyperlink-format max-columns path-separator replace sort sortr generate
+  `.trim().split(/\s+/),
+)
+
+function hasFilenameOutput(flags: string[]): boolean {
+  let filenamesOnly = false
+  for (let i = 0; i < flags.length; i++) {
+    const flag = flags[i]
+    if (flag === '--') break
+    if (flag === '--files-with-matches') {
+      filenamesOnly = true
+    } else if (
+      /^--(json|count|count-matches|files-without-match|files|quiet)$/.test(flag)
+    ) {
+      filenamesOnly = false
+    } else if (flag.startsWith('--')) {
+      if (RIPGREP_VALUE_FLAGS.has(flag.slice(2))) i++
+    } else if (flag.startsWith('-')) {
+      for (let j = 1; j < flag.length; j++) {
+        const option = flag[j]
+        if ('efEmjgdtTABCMr'.includes(option)) {
+          if (j === flag.length - 1) i++
+          break
+        }
+        if (option === 'l') filenamesOnly = true
+        else if (option === 'c' || option === 'q') filenamesOnly = false
+      }
+    }
+  }
+  return filenamesOnly
+}
+
 export function codeSearch({
   projectPath,
   pattern,
@@ -109,6 +150,7 @@ export function codeSearch({
         },
       ])
     }
+    const filenamesOnly = hasFilenameOutput(flagsArray)
 
     // Use JSON output for robust parsing and early stopping
     // --no-config prevents user/system .ripgreprc from interfering
@@ -130,6 +172,7 @@ export function codeSearch({
       '-n',
       '--json',
       ...flagsArray,
+      ...(filenamesOnly ? ['--null'] : []),
       '--',
       pattern,
       ...searchPaths,
@@ -193,6 +236,16 @@ export function codeSearch({
     }
 
     let jsonRemainder = ''
+    const stdoutDecoder = new StringDecoder('utf8')
+    // -l overrides --json; adapt each NUL-delimited path to the match pipeline.
+    const parseOutputRecord = (record: string) => {
+      if (!filenamesOnly) return JSON.parse(record)
+      const bytes = Buffer.from(record, 'latin1')
+      const filePath = isUtf8(bytes)
+        ? { text: bytes.toString('utf8') }
+        : { bytes: bytes.toString('base64') }
+      return { type: 'match', data: { path: filePath } }
+    }
     let stderrBuf = ''
     // Track matches by file for grouping and limiting
     const fileGroups = new Map<string, string[]>()
@@ -239,9 +292,9 @@ export function codeSearch({
     }
 
     const formatCollectedOutput = (rawOutput: string) =>
-      formatCodeSearchOutput(rawOutput, {
-        matchCount: matchesGlobal,
-      })
+      filenamesOnly
+        ? `Found ${matchesGlobal} matches${rawOutput ? '\n' + rawOutput : ''}`
+        : formatCodeSearchOutput(rawOutput, { matchCount: matchesGlobal })
 
     const truncateOutput = (output: string, maxLength: number) =>
       output.length > maxLength
@@ -292,22 +345,26 @@ export function codeSearch({
       })
     }, timeoutSeconds * 1000)
 
-    // Parse ripgrep JSON for early stopping
+    // Parse ripgrep output for early stopping.
     childProcess.stdout.on('data', (chunk: Buffer | string) => {
       if (isResolved) return
-      const chunkStr =
-        typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+      // Preserve filename bytes until a complete NUL-delimited record is available.
+      const chunkStr = filenamesOnly
+        ? (typeof chunk === 'string' ? Buffer.from(chunk) : chunk).toString('latin1')
+        : typeof chunk === 'string'
+          ? chunk
+          : stdoutDecoder.write(chunk)
       jsonRemainder += chunkStr
 
-      // Split by lines; last line might be partial
-      const lines = jsonRemainder.split('\n')
+      // The last JSON line or filename may be split across chunks.
+      const lines = jsonRemainder.split(filenamesOnly ? '\0' : '\n')
       jsonRemainder = lines.pop() || ''
 
       for (const line of lines) {
         if (!line) continue
         let evt: any
         try {
-          evt = JSON.parse(line)
+          evt = parseOutputRecord(line)
         } catch {
           continue
         }
@@ -316,13 +373,16 @@ export function codeSearch({
         if (evt.type === 'match' || evt.type === 'context') {
           // Handle both text and bytes for non-UTF8 paths
           const filePath = evt.data.path?.text ?? evt.data.path?.bytes ?? ''
+          if (filenamesOnly && fileGroups.has(filePath)) continue
           const lineNumber = evt.data.line_number ?? 0
           // Strip trailing newlines to prevent blank lines in output
           const rawText = evt.data.lines?.text ?? ''
           const lineText = rawText.replace(/\r?\n$/, '')
 
           // Format as ripgrep output: filename:line_number:content
-          const formattedLine = `${filePath}:${lineNumber}:${lineText}`
+          const formattedLine = filenamesOnly
+            ? filePath
+            : `${filePath}:${lineNumber}:${lineText}`
 
           // Group by file
           if (!fileGroups.has(filePath)) {
@@ -403,10 +463,11 @@ export function codeSearch({
     childProcess.completion
       .then((code) => {
         if (isResolved) return
+        jsonRemainder += stdoutDecoder.end()
 
         // Flush any remaining JSON - handle multiple complete lines
         try {
-          if (jsonRemainder) {
+          if (jsonRemainder && !filenamesOnly) {
             // Ensure we have a trailing newline for split to work correctly
             const maybeMany = jsonRemainder.endsWith('\n')
               ? jsonRemainder
