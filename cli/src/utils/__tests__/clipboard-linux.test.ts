@@ -8,6 +8,7 @@ import {
   clearClipboardMessage,
   copyTextToClipboard,
   LINUX_CLIPBOARD_ERROR_MESSAGE,
+  LINUX_OSC52_ONLY_HINT,
   registerClipboardRenderer,
   subscribeClipboardMessages,
   unregisterClipboardRenderer,
@@ -207,6 +208,35 @@ describe('copyTextToClipboard - Linux platform tools', () => {
     expect(rendererCalls).toEqual(['hello'])
   })
 
+  // Support email 2026-09-26: on a Chromebook "it says copied but never
+  // copies". Its Linux terminal has no wl-copy/xclip, so only OSC 52 ran, and
+  // nothing can confirm the terminal honoured it.
+  test('a copy that only reached the terminal says so and how to fix it', async () => {
+    process.env.WAYLAND_DISPLAY = 'wayland-0'
+    process.env.TERM = 'xterm-256color'
+    mockBackends(() => 1) // no native tool works
+    registerClipboardRenderer({ copyToClipboardOSC52: () => true })
+    const messages: (string | null)[] = []
+    const unsubscribe = subscribeClipboardMessages((m) => messages.push(m))
+
+    await copyTextToClipboard('hello')
+
+    expect(messages.at(-1)).toBe(`Copied: "hello" ${LINUX_OSC52_ONLY_HINT}`)
+    unsubscribe()
+  })
+
+  test('a native tool copy keeps the plain message', async () => {
+    process.env.WAYLAND_DISPLAY = 'wayland-0'
+    mockBackends(() => 0)
+    const messages: (string | null)[] = []
+    const unsubscribe = subscribeClipboardMessages((m) => messages.push(m))
+
+    await copyTextToClipboard('hello')
+
+    expect(messages.at(-1)).toBe('Copied: "hello"')
+    unsubscribe()
+  })
+
   test('aborting a hanging backend kills it without running stale fallbacks', async () => {
     process.env.WAYLAND_DISPLAY = 'wayland-0'
     process.env.TERM = 'xterm-256color'
@@ -336,8 +366,9 @@ describe('copyTextToClipboard - Linux platform tools', () => {
     })
 
     expect(rendererCalls).toEqual(['bounded text'])
-    expect(messages).toContain('Copied bounded text')
-    expect(messages).not.toContain('Copied full text')
+    // Only OSC 52 ran, so the Linux hint rides along (it cannot be verified).
+    expect(messages).toContain(`Copied bounded text ${LINUX_OSC52_ONLY_HINT}`)
+    expect(messages.some((m) => m?.startsWith('Copied full text'))).toBe(false)
     unsubscribe()
   })
 

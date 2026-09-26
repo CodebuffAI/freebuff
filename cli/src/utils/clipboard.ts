@@ -150,8 +150,15 @@ export async function copyTextToClipboard(
     ) {
       copiedCandidate = primary
     }
+    // A local session that reaches this OSC 52 fallback had no working native
+    // tool. OSC 52 is fire-and-forget: we cannot tell whether the terminal
+    // honoured it, so on Linux (a Chromebook's Linux terminal ships with no
+    // wl-copy or xclip) "Copied" alone can be a false claim — say how to fix it.
+    let unverifiedLocalOsc52 = false
     if (!copiedCandidate && !remoteSession) {
       copiedCandidate = tryCandidateViaOsc52(primary) ?? tryFallbackViaOsc52()
+      unverifiedLocalOsc52 =
+        copiedCandidate !== null && process.platform === 'linux'
     }
 
     if (!copiedCandidate) {
@@ -164,7 +171,15 @@ export async function copyTextToClipboard(
           ? copiedCandidate.successMessage
           : getDefaultSuccessMessage(copiedCandidate.text)
       if (message) {
-        showClipboardMessage(message, { durationMs })
+        showClipboardMessage(
+          unverifiedLocalOsc52
+            ? `${message} ${LINUX_OSC52_ONLY_HINT}`
+            : message,
+          {
+            durationMs:
+              durationMs ?? (unverifiedLocalOsc52 ? 6000 : undefined),
+          },
+        )
       }
     }
   } catch (error) {
@@ -219,6 +234,10 @@ export function isRemoteSession(): boolean {
 
 export const OSC52_BLOCKED_MESSAGE =
   'Copy is blocked by this terminal — hold Shift and drag to select, then copy normally'
+
+/** Appended to a Linux "Copied" that only reached the terminal (OSC 52). */
+export const LINUX_OSC52_ONLY_HINT =
+  '(via terminal — if paste is empty, install wl-clipboard or xclip)'
 
 export const LINUX_CLIPBOARD_ERROR_MESSAGE =
   'Clipboard unavailable — install wl-clipboard (Wayland) or xclip (X11)'
