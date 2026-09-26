@@ -1,4 +1,5 @@
 import {
+  CODEBUFF_OWN_CREDITS_ERROR_PATTERN,
   FREEBUFF_PROVIDER_USAGE_ERROR_PATTERN,
   FREEBUFF_TURN_SPEND_LIMIT_ERROR_CODE,
   FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
@@ -164,6 +165,9 @@ export const getFreebuffRateLimitErrorMessage = (
 export const isFreebuffProviderUsageError = (error: unknown): boolean => {
   const details = getCliApiErrorDetails(error)
   const message = details.message ?? extractErrorMessage(error, '')
+  // The user's own Codebuff balance, not our provider: leave it to the
+  // out-of-credits flow.
+  if (CODEBUFF_OWN_CREDITS_ERROR_PATTERN.test(message)) return false
   return (
     details.statusCode === 402 ||
     FREEBUFF_PROVIDER_USAGE_ERROR_PATTERN.test(message)
