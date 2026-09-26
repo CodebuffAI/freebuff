@@ -1,10 +1,13 @@
 const POLICY_EFFECTIVE_DATE = 'September 2, 2026'
+// Codebase Evaluation narrowed to connected GitHub repositories only.
+const CODEBASE_EVALUATION_NARROWED_DATE = 'September 25, 2026'
 
 export const FREEBUFF_POLICY_METADATA = {
   version: '2026-09-02',
   effectiveDate: POLICY_EFFECTIVE_DATE,
-  lastUpdated: '09/02/2026',
-  privacyPolicyLastUpdated: '09/24/2026',
+  codebaseEvaluationNarrowedDate: CODEBASE_EVALUATION_NARROWED_DATE,
+  lastUpdated: '09/25/2026',
+  privacyPolicyLastUpdated: '09/25/2026',
 } as const
 
 export const FREEBUFF_PRIVACY_POLICY_URL = 'https://freebuff.com/privacy-policy'
@@ -27,9 +30,9 @@ export const FREEBUFF_PUBLIC_DATA_USE_COPY = {
   trainingAnswer:
     'Only when a model or feature says data may be used for AI training. Freebuff or the provider may then keep submissions to develop, train, test, evaluate, fine-tune, and improve AI models or products.',
   storageQuestion: 'How is my data used and stored?',
-  storageAnswer: `We use prompts, messages, agent traces, code, files, and repository data to provide Freebuff. We may analyze prompts and messages to personalize ads. We do not give separately uploaded files or connected repositories to advertising providers. Restricted partners may evaluate connected Cloud repositories or code used with models labeled “${FREEBUFF_AI_TRAINING_NOTICE},” but cannot otherwise use, broadly share, or train on it. See the Privacy Policy for retention, eligibility, and advertising choices.`,
+  storageAnswer: `We use prompts, messages, agent traces, code, files, and repository data to provide Freebuff. We may analyze prompts and messages to personalize ads. We do not give separately uploaded files or connected repositories to advertising providers. Restricted partners may evaluate connected Cloud repositories, but cannot otherwise use, broadly share, or train on them. See the Privacy Policy for retention, eligibility, and advertising choices.`,
   compactTrainingSummary: `Models or features labeled “${FREEBUFF_AI_TRAINING_NOTICE}” may keep submissions to develop, train, test, evaluate, fine-tune, and improve AI models or products.`,
-  compactPrivacySummary: `Prompts and messages may be analyzed to personalize ads. Separate uploads and connected repositories are not provided to advertising providers. Restricted partners may evaluate eligible codebases, but cannot otherwise use, broadly share, or train on them. Models or features labeled “${FREEBUFF_AI_TRAINING_NOTICE}” may separately use submissions for AI training.`,
+  compactPrivacySummary: `Prompts and messages may be analyzed to personalize ads. Separate uploads and connected repositories are not provided to advertising providers. Restricted partners may evaluate connected Cloud repositories, but cannot otherwise use, broadly share, or train on them. Models or features labeled “${FREEBUFF_AI_TRAINING_NOTICE}” may separately use submissions for AI training.`,
   localExecutionSummary:
     'Freebuff edits files locally but sends relevant prompts, code, files, and repository context to its servers and model providers. See the Privacy Policy for details.',
   compactLocalExecutionSummary:
