@@ -16,6 +16,7 @@ import {
   PLACEMENTS_CONSOLE_ENABLED,
   PLACEMENT_METRIC_LABELS,
   PLACEMENT_PREVIEW_WIDTHS,
+  PARTNER_PLACEMENT_IDS,
   PLACEMENT_FORMATS,
   PLACEMENT_SLOTS,
   SPONSOR_BREAK_CREATIVE_LIMITS,
@@ -23,6 +24,8 @@ import {
   INTERRUPTING_BREAK_FORMATS,
   isInterruptingBreakFormat,
   isInterruptingBreakPlacement,
+  isPartnerFormat,
+  isPartnerPlacement,
   isSponsorBreakFormat,
   SPONSOR_BREAK_HERO_SPEC,
   TRACKED_LINK_PLACEMENT_ID,
@@ -217,7 +220,15 @@ describe('copy and configuration', () => {
       expect([slot.id, surfaceNames.has(slot.id)]).toEqual([slot.id, false])
     }
 
-    expect(PLACEMENT_SLOTS.every((slot) => slot.available)).toBe(true)
+    // Every slot is sellable except the partner ones, whose whole point is
+    // that they are not: one advertiser is in each by agreement, and an
+    // `available` partner slot would appear in the self-serve picker.
+    for (const slot of PLACEMENT_SLOTS) {
+      expect([slot.id, slot.available]).toEqual([
+        slot.id,
+        slot.format !== 'partner',
+      ])
+    }
     expect(new Set(PLACEMENT_SLOTS.map((slot) => slot.id)).size).toBe(
       PLACEMENT_SLOTS.length,
     )
@@ -232,10 +243,11 @@ describe('copy and configuration', () => {
     // eight `CLI-Chat-Inline-N` ids:
     // no shipping client requests those, so selling them would be selling a
     // decaying legacy path.
-    // Plus the three sponsor breaks, which are deliberately the same surface:
-    // a break is a different RENDERER on Desktop chat, not a new surface, and
-    // adding one costs a house creative and a pinned rollup row.
-    expect(bySurface('cli_chat')).toBe(7)
+    // Plus the three sponsor breaks and the two partner slots, which are
+    // deliberately the same surface: each is a different RENDERER on Desktop
+    // chat, not a new surface, and adding a surface costs a house creative
+    // and a pinned rollup row.
+    expect(bySurface('cli_chat')).toBe(9)
     expect(bySurface('waiting_room')).toBe(4)
     expect(bySurface('freebuff_web_chat')).toBe(2)
     expect(bySurface('chat_assistant')).toBe(1)
@@ -273,6 +285,42 @@ describe('copy and configuration', () => {
       'spotlight',
       'intermission',
     ])
+  })
+
+  it('names the partner slots and keeps them out of the break family', () => {
+    // The exclusion spelling of SPONSOR_BREAK_FORMATS ("everything but
+    // inline") would have made `partner` a break by default, which would
+    // require it to carry a hero image, refuse the text house floor and
+    // accept break-length copy -- three rules nobody wrote down for it.
+    expect(PARTNER_PLACEMENT_IDS).toEqual([
+      'Desktop-Partner-Skill-Picker',
+      'Desktop-Partner-Composer-PR',
+    ])
+    for (const id of PARTNER_PLACEMENT_IDS) {
+      expect([id, placementFormat(id)]).toEqual([id, 'partner'])
+      expect([id, isPartnerPlacement(id)]).toEqual([id, true])
+      expect([id, isSponsorBreakPlacement(id)]).toEqual([id, false])
+      expect([id, isInterruptingBreakPlacement(id)]).toEqual([id, false])
+      expect([id, placementSurface(id)]).toEqual([id, 'cli_chat'])
+    }
+    expect(isPartnerFormat('inline')).toBe(false)
+    expect(isSponsorBreakFormat('partner')).toBe(false)
+    // Conservative for an id the registry does not describe, in the same
+    // direction as the break predicate: an unknown id is an ordinary card,
+    // never a piece of somebody's branded chrome.
+    expect(isPartnerPlacement('some-future-grain')).toBe(false)
+  })
+
+  it('labels a partner slot by where it appears, not by its id', () => {
+    // The hyphen splitter would answer "Desktop Partner Skill Picker", which
+    // names the id. An advertiser reading a delivery breakdown wants the
+    // place in the app they were shown.
+    expect(placementSlotLabel('Desktop-Partner-Skill-Picker')).toBe(
+      'Desktop — Skill picker',
+    )
+    expect(placementSlotLabel('Desktop-Partner-Composer-PR')).toBe(
+      'Desktop — Composer (PR intent)',
+    )
   })
 
   it('caps the two INTERRUPTING breaks and never Showcase (COD-455)', () => {

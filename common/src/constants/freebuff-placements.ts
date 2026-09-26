@@ -110,15 +110,56 @@ export const PLACEMENT_FORMATS = [
   'showcase',
   'spotlight',
   'intermission',
+  'partner',
 ] as const
 export type PlacementFormat = (typeof PLACEMENT_FORMATS)[number]
 
-/** The formats that are a sponsor break -- everything except `inline`. */
-export const SPONSOR_BREAK_FORMATS: readonly PlacementFormat[] =
-  PLACEMENT_FORMATS.filter((format) => format !== 'inline')
+/**
+ * The formats that are a sponsor break.
+ *
+ * NAMED, not derived as "everything except `inline`". The exclusion spelling
+ * was correct while the only alternative to inline was a break, and it made
+ * the next format added to the list a break by default -- `partner` would
+ * have inherited the hero requirement, the text-house refusal and the
+ * break-shaped copy limits without anybody writing a line saying so.
+ */
+export const SPONSOR_BREAK_FORMATS = [
+  'showcase',
+  'spotlight',
+  'intermission',
+] as const satisfies readonly PlacementFormat[]
+
+/**
+ * A format that IS a break, as a type.
+ *
+ * Was `Exclude<PlacementFormat, 'inline'>`, which is the exclusion spelling
+ * again and had the same failure: `partner` became a `SponsorBreakFormat` the
+ * moment it was added, so the console's break preview and its label map were
+ * asked for a partner entry they have no business having.
+ */
+export type SponsorBreakFormat = (typeof SPONSOR_BREAK_FORMATS)[number]
 
 export function isSponsorBreakFormat(format: PlacementFormat): boolean {
-  return format !== 'inline'
+  return (SPONSOR_BREAK_FORMATS as readonly PlacementFormat[]).includes(format)
+}
+
+/**
+ * PARTNER PLACEMENTS: a slot whose chrome belongs to one advertiser.
+ *
+ * Every other format draws OUR card with THEIR copy in it. A partner slot
+ * draws as a piece of the product -- a row in the skill picker, a pill above
+ * the composer -- in the advertiser's own colour, next to the feature it is
+ * about. That only reads as honest when exactly one advertiser can ever
+ * appear there, so the format carries an exclusivity fence the other four do
+ * not need: a partner placement is served by the first-party CPM leg alone,
+ * never by a paid network, never by the house floor, and never by a CPC
+ * backfill (`dropForeignPartnerFills`, and the rails' partner-only path).
+ *
+ * `available: false` on the slots keeps them out of self-serve targeting, so
+ * the deal that put an advertiser there is the only way in.
+ */
+export function isPartnerFormat(format: PlacementFormat): boolean {
+  return format === 'partner'
 }
 
 /**
@@ -267,6 +308,21 @@ export const PLACEMENT_SLOTS = [
     available: true,
     format: 'intermission',
   },
+  // The two partner slots. `available: false` is the exclusivity: the
+  // campaign-builder picker reads that flag, so neither can be targeted from
+  // the console -- an operator puts a campaign on one, by agreement.
+  {
+    id: 'Desktop-Partner-Skill-Picker',
+    surface: 'cli_chat',
+    available: false,
+    format: 'partner',
+  },
+  {
+    id: 'Desktop-Partner-Composer-PR',
+    surface: 'cli_chat',
+    available: false,
+    format: 'partner',
+  },
   {
     id: 'Web-Chat-After-User-Message',
     surface: 'freebuff_web_chat',
@@ -350,6 +406,24 @@ export function isSponsorBreakPlacement(placementId: string): boolean {
 export function isInterruptingBreakPlacement(placementId: string): boolean {
   return isInterruptingBreakFormat(placementFormat(placementId))
 }
+
+/**
+ * Whether this placement id is one advertiser's own chrome. See
+ * {@link isPartnerFormat} for what that buys and what it costs.
+ *
+ * Reads the STATIC registry, so it is the right question at a request
+ * boundary and the wrong one for a slot an operator promoted in the Convex
+ * catalog. The serving fence resolves the catalog first
+ * (`resolveCatalogPlacementFormat`) and asks {@link isPartnerFormat}.
+ */
+export function isPartnerPlacement(placementId: string): boolean {
+  return isPartnerFormat(placementFormat(placementId))
+}
+
+/** Every partner slot in the registry, in catalog order. */
+export const PARTNER_PLACEMENT_IDS: readonly string[] = PLACEMENT_SLOTS.filter(
+  (slot) => slot.format === 'partner',
+).map((slot) => slot.id)
 
 /**
  * What a creative must look like to fill a SPONSOR BREAK.
@@ -456,6 +530,11 @@ const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
   'Desktop-Showcase': 'Desktop — Showcase',
   'Desktop-Intermission': 'Desktop — Intermission',
   'Single-Ad-Unit-1': 'CLI — Dock',
+  // The splitter would render these "Desktop Partner Skill Picker", which
+  // names the id rather than the slot. An advertiser reading a breakdown row
+  // wants to know WHERE in the app they appeared.
+  'Desktop-Partner-Skill-Picker': 'Desktop — Skill picker',
+  'Desktop-Partner-Composer-PR': 'Desktop — Composer (PR intent)',
 }
 
 export function placementSlotLabel(placementId: string): string {
