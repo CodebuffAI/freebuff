@@ -87,7 +87,7 @@ export const SessionEndedBanner: React.FC<SessionEndedBannerProps> = ({
     isFreebuffPremiumModelId(selectedModel)
   const fallbackModel: FreebuffModelOption | undefined =
     SUPPORTED_FREEBUFF_MODELS.find((m) => m.id === FALLBACK_FREEBUFF_MODEL_ID)
-  const fallbackModelName = fallbackModel?.displayName ?? 'DeepSeek V4 Flash'
+  const fallbackModelName = fallbackModel?.displayName ?? 'DeepSeek V4.1 Flash'
   // Remind the user of the fallback's data-collection policy before they
   // continue on it — the landing picker shows this caveat on the model row,
   // but this banner is a one-keypress continue, so surface it here too.
