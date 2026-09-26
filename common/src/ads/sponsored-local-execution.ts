@@ -810,3 +810,17 @@ export function sponsoredRefusedGitSubcommand(command: string): string | null {
 export function sponsoredGitRefusal(subcommand: string): string {
   return `Refusing \`git ${subcommand}\`: this sponsored task delivers its changes in the working copy, so it may not change the repository's history or configuration. Leave the edits uncommitted; the user reviews them and decides.`
 }
+
+// --------------------------------------------------------- refused commands
+
+// WSL, destructive database commands and container lifecycle commands
+// (COD-665). Re-exported so every surface that runs a sponsored shell imports
+// its refusals from one module.
+export {
+  sponsoredCommandRefusal,
+  sponsoredRefusedCommand,
+} from './sponsored-command-refusals'
+export type {
+  SponsoredCommandRefusalKind,
+  SponsoredRefusedCommand,
+} from './sponsored-command-refusals'

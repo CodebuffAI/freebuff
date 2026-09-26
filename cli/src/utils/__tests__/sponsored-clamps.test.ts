@@ -383,6 +383,20 @@ describe('the shell', () => {
       expect(JSON.stringify(result), command).toContain('Refusing `git')
     }
   })
+
+  test('WSL, destructive database and container commands are refused (COD-665)', async () => {
+    const tools = sponsoredOverrideTools(context())
+    for (const command of [
+      'wsl ls ~',
+      'npx prisma migrate reset --force',
+      'docker compose up -d',
+    ]) {
+      const result = await tools.run_terminal_command({ command })
+      expect(JSON.stringify(result), command).toContain(
+        'Stop here and tell the user',
+      )
+    }
+  })
 })
 
 describe('in place: the user’s real folder', () => {

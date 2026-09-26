@@ -65,8 +65,10 @@ import {
   SPONSORED_LOCAL_V1_GRANT,
   commandInstallsDependencies,
   evaluateSponsoredLocalToolCall,
+  sponsoredCommandRefusal,
   sponsoredGitRefusal,
   sponsoredLocalAvailability,
+  sponsoredRefusedCommand,
   sponsoredRefusedGitSubcommand,
 } from '@codebuff/common/ads/sponsored-local-execution'
 import {
@@ -1523,6 +1525,14 @@ export function sponsoredOverrideTools(
       // the sandbox also denies `.git` outright.
       const refusedGit = sponsoredRefusedGitSubcommand(input.command)
       if (refusedGit) return refusal(sponsoredGitRefusal(refusedGit))
+      // WSL, destructive database commands and container lifecycle commands
+      // reach state outside the worktree that no sandbox covers (COD-665).
+      const refusedCommand = sponsoredRefusedCommand(
+        input.command,
+        process.platform,
+      )
+      if (refusedCommand)
+        return refusal(sponsoredCommandRefusal(refusedCommand))
       context.recorder.noteShellCommand()
       return runTerminalCommand({
         command: input.command,
