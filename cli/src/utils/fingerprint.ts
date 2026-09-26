@@ -33,6 +33,49 @@ async function getMachineId(): Promise<string> {
   return id
 }
 
+async function getCpuInfoSafe(): Promise<{
+  manufacturer: string
+  brand: string
+  cores: number
+  physicalCores: number
+}> {
+  try {
+    // Bun's os.cpus() can throw synchronously on ARM Linux with CPU hotplug
+    // skew (/proc vs /sys disagreement). Probe first; if it throws, skip
+    // si.cpu() entirely and fall back to empty values so the process stays up.
+    // See #1374.
+    cpus()
+  } catch {
+    logger.warn(
+      { fingerprintType: 'cpu_pre_check_failed' },
+      'os.cpus() unavailable, skipping CPU fingerprinting — see #1374',
+    )
+    return { manufacturer: '', brand: '', cores: 0, physicalCores: 0 }
+  }
+
+  try {
+    if (!systeminformationModule) {
+      systeminformationModule = await import('systeminformation')
+    }
+    const info = await systeminformationModule.cpu()
+    return {
+      manufacturer: info.manufacturer,
+      brand: info.brand,
+      cores: info.cores,
+      physicalCores: info.physicalCores,
+    }
+  } catch (err) {
+    logger.warn(
+      {
+        fingerprintType: 'cpu_info_failed',
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'systeminformation.cpu() failed, using empty CPU fingerprint — see #1374',
+    )
+    return { manufacturer: '', brand: '', cores: 0, physicalCores: 0 }
+  }
+}
+
 async function getSystemInfo(): Promise<{
   system: { manufacturer: string; model: string; serial: string; uuid: string }
   cpu: { manufacturer: string; brand: string; cores: number; physicalCores: number }
@@ -44,7 +87,7 @@ async function getSystemInfo(): Promise<{
     }
     const [systemInfo, cpuInfo, osInfo] = await Promise.all([
       systeminformationModule.system(),
-      systeminformationModule.cpu(),
+      getCpuInfoSafe(),
       systeminformationModule.osInfo(),
     ])
     return {
