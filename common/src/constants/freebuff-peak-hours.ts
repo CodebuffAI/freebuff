@@ -13,8 +13,8 @@
 /**
  * Peak hours, from api-docs.deepseek.com/quick_start/pricing (read 2026-08-16):
  * "Peak hours are 01:00 - 04:00 and 06:00 - 10:00 UTC (all other hours are
- * off-peak)." These windows apply Monday-Friday Beijing time; weekends are
- * always off-peak.
+ * off-peak)." These windows apply Monday-Friday Beijing time; from
+ * `DEEPSEEK_WEEKEND_OFFPEAK_EFFECTIVE_AT_UTC` onward, weekends are off-peak.
  *
  * Half-open [start, end): 04:00:00 UTC itself is already off-peak. TWO
  * disjoint windows, not one — the 04:00-06:00 gap between them is exactly what
@@ -29,9 +29,38 @@ export const DEEPSEEK_PEAK_HOUR_RANGES_UTC: ReadonlyArray<
 
 export type DeepSeekPricingWindow = 'peak' | 'off-peak'
 
-function isBeijingWeekend(at: Date): boolean {
+/**
+ * DeepSeek announced on its Models & Pricing page that weekend off-peak billing
+ * would become effective at 00:00 Beijing time on 2026-08-23. Issue #1090
+ * records that vendor notice and its UTC conversion; the current vendor page
+ * documents the resulting Monday-Friday peak rule:
+ * https://api-docs.deepseek.com/quick_start/pricing/
+ *
+ * Keep this as an instant rather than a local date so historical billing and
+ * availability checks use the same boundary in every runtime timezone.
+ */
+export const DEEPSEEK_WEEKEND_OFFPEAK_EFFECTIVE_AT_UTC = Date.parse(
+  '2026-08-22T16:00:00Z',
+)
+
+/**
+ * Whether `at` falls on Saturday or Sunday in Beijing time.
+ *
+ * China has not observed daylight saving time since 1991, so Beijing's fixed
+ * UTC+8 offset is intentional here. Do not generalize this arithmetic to zones
+ * whose UTC offset changes seasonally.
+ */
+export function isBeijingWeekend(at: Date): boolean {
   const beijingDay = new Date(at.getTime() + 8 * 60 * 60 * 1000).getUTCDay()
   return beijingDay === 0 || beijingDay === 6
+}
+
+/** Whether the all-weekend off-peak rule is active for this instant. */
+function isWeekendOffPeakEligible(at: Date): boolean {
+  return (
+    at.getTime() >= DEEPSEEK_WEEKEND_OFFPEAK_EFFECTIVE_AT_UTC &&
+    isBeijingWeekend(at)
+  )
 }
 
 /**
@@ -42,7 +71,9 @@ function isBeijingWeekend(at: Date): boolean {
  * ceiling), and a hidden `new Date()` would make both untestable.
  */
 export function deepseekPricingWindow(at: Date): DeepSeekPricingWindow {
-  if (isBeijingWeekend(at)) return 'off-peak'
+  if (isWeekendOffPeakEligible(at)) {
+    return 'off-peak'
+  }
   const hour = at.getUTCHours()
   const peak = DEEPSEEK_PEAK_HOUR_RANGES_UTC.some(
     ([startHour, endHour]) => hour >= startHour && hour < endHour,
@@ -86,7 +117,9 @@ export const DEEPSEEK_EXPENSIVE_WINDOW_UTC: readonly [number, number] = [
 /** Whether `at` falls in the window above. Half-open like the peak check, so
  *  the closing hour is already outside it. */
 export function isDeepSeekExpensiveWindow(at: Date): boolean {
-  if (isBeijingWeekend(at)) return false
+  if (isWeekendOffPeakEligible(at)) {
+    return false
+  }
   const [start, end] = DEEPSEEK_EXPENSIVE_WINDOW_UTC
   const hour = at.getUTCHours()
   return hour >= start && hour < end
