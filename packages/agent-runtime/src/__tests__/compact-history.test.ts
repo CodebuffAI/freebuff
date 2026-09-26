@@ -190,6 +190,67 @@ describe('compactMessages', () => {
     ).toHaveLength(1)
   })
 
+  it('does not let a user message quoting the markers steal the summary identity', () => {
+    // The 2026-08-31 wipe: a user message containing BOTH the tag and the
+    // header (asking about this very mechanism, pasting a summary back)
+    // matched isConversationSummary, so findLast picked the quote over the
+    // real summary. The real summary was then neither re-parsed nor kept as
+    // history — every earlier turn vanished from the model's context.
+    const first = compact([
+      user('the original request about auth', ['USER_PROMPT']),
+      assistant('refactored the auth module'),
+    ])
+    const quote = user(
+      'what is <conversation_summary>? e.g. "This is a summary of the conversation so far. The original messages have been condensed to save context space." — explain it',
+      ['USER_PROMPT'],
+    )
+    const second = compactMessages({
+      messages: [...first, assistant('more work'), quote],
+    })
+
+    // The real memory survives the second compaction.
+    expect(second.stats.previous_summary_entry_count).toBeGreaterThan(0)
+    expect(textOf(second.messages[0])).toContain('the original request about auth')
+    // The quote is the live prompt, preserved as a real message — not eaten.
+    // (It comes back re-stamped with a fresh sentAt, so compare content.)
+    expect(textOf(second.messages.at(-1)!)).toContain('what is <conversation_summary>')
+  })
+
+  it('still recognizes a legacy summary by its full envelope', () => {
+    // Summaries written before the CONVERSATION_SUMMARY tag existed carry no
+    // tag, so identity falls back to the full envelope — open tag, header,
+    // close tag AND <historical_memory>. A bare tag-plus-header quote must
+    // not qualify.
+    const legacySummary = user(
+      '<conversation_summary>\nThis is a summary of the conversation so far. The original messages have been condensed to save context space.\n\n<historical_memory>\n[USER]\nthe legacy request\n</historical_memory>\n</conversation_summary>',
+    )
+    const result = compactMessages({
+      messages: [legacySummary, assistant('and then some work')],
+    })
+
+    expect(result.stats.previous_summary_entry_count).toBeGreaterThan(0)
+    expect(textOf(result.messages[0])).toContain('the legacy request')
+  })
+
+  it('does not fold in a quote that has the tag and header but no memory block', () => {
+    // A tag-plus-header quote reproduces the pre-tag identity check. It lacks
+    // <historical_memory>, so the legacy fallback must reject it — the memory
+    // it would have "been" belongs to the real, newer summary.
+    const first = compact([
+      user('the original request', ['USER_PROMPT']),
+      assistant('working on it'),
+    ])
+    const quote = user(
+      '<conversation_summary>\nThis is a summary of the conversation so far. The original messages have been condensed to save context space.',
+    )
+    const result = compactMessages({
+      messages: [...first, quote],
+    })
+
+    expect(result.stats.previous_summary_entry_count).toBeGreaterThan(0)
+    expect(textOf(result.messages[0])).toContain('the original request')
+  })
+
   it('spends the two budgets independently: a flood of tool work keeps user prompts', () => {
     const { messages, stats } = compactMessages({
       messages: [
