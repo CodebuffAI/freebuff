@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -123,5 +123,76 @@ describe('writeFileAtomicAsync', () => {
       fs.readFileSync(target, 'utf8'),
     )
     expect(fs.readdirSync(tempDir)).toEqual(['out.json'])
+  })
+
+  test('retries a transient Windows rename lock and succeeds', async () => {
+    const target = path.join(tempDir, 'out.json')
+    let attempts = 0
+    const realRename = fs.promises.rename.bind(fs.promises)
+    const spy = spyOn(fs.promises, 'rename').mockImplementation(
+      async (from, to) => {
+        attempts++
+        if (attempts <= 2) {
+          throw Object.assign(new Error('locked'), { code: 'EPERM' })
+        }
+        return realRename(from, to)
+      },
+    )
+    try {
+      await writeFileAtomicAsync(target, 'recovered')
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(attempts).toBe(3)
+    expect(fs.readFileSync(target, 'utf8')).toBe('recovered')
+  })
+
+  test('rethrows a non-transient rename error immediately', async () => {
+    const target = path.join(tempDir, 'out.json')
+    let attempts = 0
+    const spy = spyOn(fs.promises, 'rename').mockImplementation(async () => {
+      attempts++
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' })
+    })
+    try {
+      await expect(writeFileAtomicAsync(target, 'data')).rejects.toThrow()
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(attempts).toBe(1)
+  })
+})
+
+describe('writeFileAtomic durability ordering', () => {
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuff-atomic-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  test('fsyncs the temp before the rename goes live', () => {
+    const target = path.join(tempDir, 'out.json')
+    const order: string[] = []
+    const fsyncSpy = spyOn(fs, 'fsyncSync').mockImplementation(() => {
+      order.push('fsync')
+    })
+    const realRename = fs.renameSync.bind(fs)
+    const renameSpy = spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      order.push('rename')
+      return realRename(from, to)
+    })
+    try {
+      writeFileAtomic(target, '{"a":1}')
+    } finally {
+      fsyncSpy.mockRestore()
+      renameSpy.mockRestore()
+    }
+
+    expect(order).toEqual(['fsync', 'rename'])
+    expect(fs.readFileSync(target, 'utf8')).toBe('{"a":1}')
   })
 })
