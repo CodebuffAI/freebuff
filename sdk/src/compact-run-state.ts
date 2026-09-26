@@ -124,32 +124,76 @@ export function compactRunState(params: {
  *
  * `keepUserTurns: 0` also answers null: nothing survives, which is the
  * clearing case and not something to express as an empty history.
+ *
+ * ## What counts as a user turn
+ *
+ * Only messages tagged `USER_PROMPT` — what the runtime records for a prompt
+ * or a steering message, one per row a host shows. Counting every
+ * `role: 'user'` message (as this did until 2026-09-26) also counted what the
+ * runtime and SDK append in that role: the "Run cancelled by user." note every
+ * Stop leaves, the instructions prompt, compaction summaries. Each one moved
+ * the cut a whole turn too early, so a user who stops often lost most of the
+ * conversation to one edit.
+ *
+ * ## Counting from the end (`totalUserTurns`)
+ *
+ * Compaction folds old prompts into a summary message, so a long thread holds
+ * far fewer prompts than its transcript has rows, and counting from the start
+ * answered null (clear everything) for every edit in it — exactly the threads
+ * where forgetting costs the most. The turns an edit REMOVES are the newest
+ * ones, and those are still verbatim after a compaction, so a host that knows
+ * how many user rows its transcript holds passes `totalUserTurns` and the cut
+ * is placed `totalUserTurns - keepUserTurns` prompts back from the end.
  */
 export function truncateRunStateAtUserTurn(params: {
   runState: RunState
   keepUserTurns: number
+  /** The host's user-row count before the edit; places the cut from the end. */
+  totalUserTurns?: number
 }): RunState | null {
-  const { runState, keepUserTurns } = params
+  const { runState, keepUserTurns, totalUserTurns } = params
   if (!Number.isInteger(keepUserTurns) || keepUserTurns <= 0) return null
+  if (
+    totalUserTurns !== undefined &&
+    (!Number.isInteger(totalUserTurns) || totalUserTurns <= keepUserTurns)
+  )
+    return null
   const sessionState = runState.sessionState
   const agentState = sessionState?.mainAgentState
   if (!sessionState || !agentState) return null
   const history = agentState.messageHistory
   if (!history?.length) return null
 
+  const isPrompt = (i: number) =>
+    history[i]?.role === 'user' &&
+    history[i]?.tags?.includes('USER_PROMPT') === true
   let seen = 0
   let cutAt = -1
-  for (let i = 0; i < history.length; i++) {
-    if (history[i]?.role !== 'user') continue
-    seen++
-    if (seen === keepUserTurns + 1) {
-      cutAt = i
-      break
+  if (totalUserTurns === undefined) {
+    for (let i = 0; i < history.length; i++) {
+      if (!isPrompt(i)) continue
+      seen++
+      if (seen === keepUserTurns + 1) {
+        cutAt = i
+        break
+      }
+    }
+  } else {
+    const dropUserTurns = totalUserTurns - keepUserTurns
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (!isPrompt(i)) continue
+      seen++
+      if (seen === dropUserTurns) {
+        cutAt = i
+        break
+      }
     }
   }
-  // Fewer user messages than the transcript claims: the two representations
-  // are not aligned, so there is no boundary this can honestly place.
-  if (cutAt === -1) return null
+  // Fewer prompts than the transcript claims: the two representations are not
+  // aligned (or the edit reaches into compacted history), so there is no
+  // boundary this can honestly place. Nothing left before the cut is the
+  // clearing case too.
+  if (cutAt <= 0) return null
 
   const next = cloneSessionState(sessionState)
   next.mainAgentState.messageHistory = history.slice(0, cutAt)

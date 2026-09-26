@@ -96,6 +96,126 @@ describe('truncateRunStateAtUserTurn', () => {
     ).toBeNull()
   })
 
+  // What the SDK appends at every Stop (buildCancelledSessionState): a
+  // system-tagged user message with no USER_PROMPT tag.
+  const stopNote = (): Message => ({
+    role: 'user',
+    content: [{ type: 'text', text: '<system>Run cancelled by user.</system>' }],
+  })
+
+  test('the note every Stop leaves is not a user turn', () => {
+    // A user who stops to redirect the agent leaves one of these per Stop.
+    // Counted as turns, each moved the cut a turn earlier: here, editing the
+    // third message used to keep only the first turn.
+    const history = [
+      user('one'),
+      assistant('partial one'),
+      stopNote(),
+      user('two'),
+      stopNote(),
+      user('three'),
+      assistant('answered three'),
+    ]
+    const next = truncateRunStateAtUserTurn({
+      runState: runStateWith(history),
+      keepUserTurns: 2,
+    })
+    expect(texts(next)).toEqual([
+      'one',
+      'partial one',
+      '<system>Run cancelled by user.</system>',
+      'two',
+      '<system>Run cancelled by user.</system>',
+    ])
+  })
+
+  /** A long thread after compaction: old prompts live only in the summary. */
+  const compacted = () => [
+    {
+      role: 'user' as const,
+      tags: ['MODEL_COMPACTION'],
+      content: [
+        {
+          type: 'text' as const,
+          text: '<conversation_summary>turns one to eight</conversation_summary>',
+        },
+      ],
+    },
+    user('nine'),
+    assistant('answered nine'),
+    stopNote(),
+    user('ten'),
+    stopNote(),
+  ]
+
+  test('a compacted thread keeps its memory when a recent message is edited', () => {
+    // The transcript still shows ten user rows; the history holds two prompts.
+    // Counting from the start could not place turn ten and answered null, so
+    // the edit cleared the whole conversation.
+    const next = truncateRunStateAtUserTurn({
+      runState: runStateWith(compacted()),
+      keepUserTurns: 9,
+      totalUserTurns: 10,
+    })
+    expect(texts(next)).toEqual([
+      '<conversation_summary>turns one to eight</conversation_summary>',
+      'nine',
+      'answered nine',
+      '<system>Run cancelled by user.</system>',
+    ])
+    expect(
+      truncateRunStateAtUserTurn({
+        runState: runStateWith(compacted()),
+        keepUserTurns: 8,
+        totalUserTurns: 10,
+      }),
+    ).not.toBeNull()
+  })
+
+  test('an edit reaching into the compacted summary still answers null', () => {
+    // Turn five exists only inside the summary; no cut can remove it.
+    expect(
+      truncateRunStateAtUserTurn({
+        runState: runStateWith(compacted()),
+        keepUserTurns: 4,
+        totalUserTurns: 10,
+      }),
+    ).toBeNull()
+  })
+
+  test('counting from the end agrees with counting from the start on an aligned history', () => {
+    for (const keep of [1, 2]) {
+      expect(
+        texts(
+          truncateRunStateAtUserTurn({
+            runState: runStateWith(threeTurns()),
+            keepUserTurns: keep,
+            totalUserTurns: 3,
+          }),
+        ),
+      ).toEqual(
+        texts(
+          truncateRunStateAtUserTurn({
+            runState: runStateWith(threeTurns()),
+            keepUserTurns: keep,
+          }),
+        ),
+      )
+    }
+  })
+
+  test('a total that does not exceed the kept turns answers null', () => {
+    for (const totalUserTurns of [1, 2, 2.5]) {
+      expect(
+        truncateRunStateAtUserTurn({
+          runState: runStateWith(threeTurns()),
+          keepUserTurns: 2,
+          totalUserTurns,
+        }),
+      ).toBeNull()
+    }
+  })
+
   test('leaves the original state untouched', () => {
     const original = threeTurns()
     const state = runStateWith(original)

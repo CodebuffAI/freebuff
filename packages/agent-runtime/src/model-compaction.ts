@@ -68,6 +68,30 @@ export function parseCompactionSummary(input: unknown): string | undefined {
   return parsed.data.summary.trim() || undefined
 }
 
+function omittedBinary(mediaType: string | undefined): string {
+  return `[${mediaType || 'binary'} omitted from this summary request]`
+}
+
+/** Shorter strings are left alone: no text worth summarizing is this long AND this alphabet. */
+const MIN_ELIDED_BINARY_CHARS = 4_096
+const DATA_URL = /^data:([^;,]*)(?:;[^,]*)?;base64,/
+const BASE64 = /^[A-Za-z0-9+/_-]+={0,2}$/
+
+/**
+ * A `JSON.stringify` replacer that names base64 payloads instead of copying
+ * them: a data URL or a long unbroken base64 run inside a tool's JSON result
+ * (an MCP content block, a screenshot a tool returned as JSON). Prose and code
+ * always contain whitespace or punctuation outside the base64 alphabet, so
+ * they are never elided.
+ */
+function elideBinaryStrings(_key: string, value: unknown): unknown {
+  if (typeof value !== 'string' || value.length < MIN_ELIDED_BINARY_CHARS)
+    return value
+  const dataUrl = value.match(DATA_URL)
+  if (dataUrl) return omittedBinary(dataUrl[1])
+  return BASE64.test(value) ? omittedBinary(undefined) : value
+}
+
 export function hasCompactableHistory(messages: Message[]): boolean {
   return messages.some(
     (message) => message.role === 'assistant' || message.role === 'tool',
@@ -132,6 +156,18 @@ export async function compactWithModel(params: {
 
   // Full tool payloads reach the summarizer. Serialization makes even a split
   // tool result a valid request, without orphan tool calls or fake tool replies.
+  //
+  // Binary payloads are the exception: they are named, never serialized. A
+  // tool result's `media` part (a Desktop browser/preview screenshot, an MCP
+  // image) carries its pixels as base64, and `JSON.stringify` wrote that
+  // straight into the history text. The local estimate charges it at three
+  // characters a token, a provider tokenizer at roughly half that, so a
+  // screenshot-heavy thread became millions of tokens of base64: tens of
+  // sequential ~800k-token summarizer calls, 1-3 minutes each, streaming
+  // nothing the user can see. A Stop discards the unfinished pass, so every
+  // later turn restarted it and the thread never answered again (Desktop,
+  // 2026-09-24..26: >500k-token Desktop requests went from 0 to ~350 an hour,
+  // ~90% of them these calls).
   const attachments: Array<ImagePart | FilePart> = []
   const history = params.messages
     .filter((m) => !m.tags?.includes('STEP_PROMPT'))
@@ -144,7 +180,8 @@ export async function compactWithModel(params: {
           }
           if (part.type === 'reasoning') return []
           if (part.type === 'text') return [part.text]
-          return [JSON.stringify(part)]
+          if (part.type === 'media') return [omittedBinary(part.mediaType)]
+          return [JSON.stringify(part, elideBinaryStrings)]
         })
         .join('\n')
       return `[${m.role}${m.role === 'tool' ? `: ${m.toolName}` : ''}]\n${content}`

@@ -144,6 +144,102 @@ test('oversized history is read in bounded sections, with findings carried betwe
   expect(result?.summary).toBe(summary)
 })
 
+test('screenshot pixels are named, not serialized, so the summary is one call and not dozens', async () => {
+  // The shape Freebuff Desktop's screenshot tool returns (thread-agent.ts):
+  // the pixels ride a `media` part, the note a `json` part. A 3D-app thread
+  // with a few of these, compacted under GLM's 400k budget, sent 806,223-token
+  // summarizer requests one after another for minutes, then restarted on
+  // every later turn because a Stop threw the unfinished pass away.
+  const screenshot = 'iVBORw0KGgoAAAANSUhEUgAA'.repeat(20_000) // ~480 KB of base64
+  const withScreenshots: Message[] = [
+    user('Why does the reveal wash the scene out white?'),
+    ...[1, 2, 3].flatMap((n): Message[] => [
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool-call',
+            toolCallId: `s${n}`,
+            toolName: 'browser_screenshot',
+            input: {},
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        toolName: 'browser_screenshot',
+        toolCallId: `s${n}`,
+        content: [
+          { type: 'media', data: screenshot, mediaType: 'image/png' },
+          { type: 'json', value: { ok: true, note: `SHOT_${n}_NOTE` } },
+        ],
+      },
+    ]),
+    {
+      role: 'tool',
+      toolName: 'mcp_capture',
+      toolCallId: 'm1',
+      content: [
+        {
+          type: 'json',
+          value: {
+            data: `data:image/jpeg;base64,${screenshot}`,
+            raw: screenshot,
+            caption: 'MCP_CAPTION',
+          },
+        },
+      ],
+    },
+  ]
+  const requests: string[] = []
+  const result = await run(
+    (request) => {
+      requests.push(JSON.stringify(request))
+      return emit()
+    },
+    { messages: withScreenshots, maxContextLength: 16_384 },
+  )
+  // One section: before this, ~2 MB of base64 at 3 chars/token was ~640k
+  // estimated tokens, split into ~40 sequential summarizer calls.
+  expect(requests).toHaveLength(1)
+  expect(requests[0]).not.toContain('iVBORw0KGgo')
+  expect(requests[0]).toContain('[image/png omitted from this summary request]')
+  expect(requests[0]).toContain('[image/jpeg omitted from this summary request]')
+  // Everything that is not pixels still reaches the summarizer.
+  for (const kept of ['SHOT_1_NOTE', 'SHOT_3_NOTE', 'MCP_CAPTION'])
+    expect(requests[0]).toContain(kept)
+  expect(result?.summary).toBe(summary)
+  // The source history is never mutated; the pixels are still there for the model.
+  expect(JSON.stringify(withScreenshots)).toContain('iVBORw0KGgo')
+})
+
+test('prose and code in a tool result are never mistaken for base64', async () => {
+  const longCode = 'const timeoutMs = 5000;\n'.repeat(400)
+  const longWord = 'A'.repeat(2_000)
+  const requests: string[] = []
+  await run(
+    (request) => {
+      requests.push(JSON.stringify(request))
+      return emit()
+    },
+    {
+      messages: [
+        user('Read these.'),
+        {
+          role: 'tool',
+          toolName: 'read_files',
+          toolCallId: 'r',
+          content: [{ type: 'json', value: { code: longCode, word: longWord } }],
+        },
+      ],
+      maxContextLength: 32_768,
+    },
+  )
+  expect(requests.join('')).toContain('const timeoutMs = 5000;')
+  expect(requests.join('')).toContain(longWord)
+  expect(requests.join('')).not.toContain('omitted from this summary request')
+})
+
 test('invalid, missing, unexpected and interrupted tool outputs preserve source history', async () => {
   const before = structuredClone(messages)
   const streams: Array<() => ReturnType<PromptAiSdkStreamFn>> = [
