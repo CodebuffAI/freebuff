@@ -10,7 +10,7 @@ export const IS_FREEBUFF = getCliEnv().FREEBUFF_MODE === 'true'
 
 /** Message shown when the user ends a freebuff session early. */
 export const END_SESSION_MESSAGE =
-  'Ending session and returning to the model picker…'
+  'Ending session. Your next message starts a new one; /model changes the model.'
 
 // Agent IDs that should not be rendered in the CLI UI. Matched as substrings
 // so both bundled ids ('context-pruner') and publisher-qualified ids

@@ -1,3 +1,15 @@
+import { freebucksFixture } from '@codebuff/common/testing/freebuff'
+import {
+  useFreebuffChatStore,
+  selectFreebuffChatModel,
+  requestFreebuffChatAdmission,
+  freebuffChatNeedsAdmission,
+} from '../../state/freebuff-chat-store'
+import {
+  beginFreebuffChatAdmission,
+  useFreebuffChatAdmission,
+} from '../use-freebuff-chat-admission'
+import { registerActiveRunStopHandler } from '../../utils/active-run'
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import {
   existsSync,
@@ -67,6 +79,8 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
   let losePostResponse = false
   let loseDeleteResponse = false
   let tier: 'full' | 'limited' = 'full'
+  let meter: ReturnType<typeof freebucksFixture> | undefined
+  let rejectAdmission = false
 
   async function until(condition: () => boolean) {
     const deadline = performance.now() + 3_000
@@ -77,6 +91,13 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
   }
 
   beforeEach(() => {
+    useFreebuffChatStore.setState({
+      admission: null,
+      nextModel: null,
+      pickerOpen: false,
+    })
+    meter = undefined
+    rejectAdmission = false
     rows.clear()
     requests.length = 0
     purchases = 0
@@ -109,7 +130,11 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
       expect(id).toStartWith('cli:')
       if (method === 'GET')
         return Response.json(
-          rows.get(id) ?? { status: 'none', accessTier: tier },
+          rows.get(id) ?? {
+            status: 'none',
+            accessTier: tier,
+            freebucks: meter,
+          },
         )
       expect(headers.get('x-freebuff-desktop-attempt-id')).toBe(id.slice(4))
       if (method === 'DELETE') {
@@ -121,6 +146,8 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
         }
         return Response.json({ status: 'ended', freebucksRefund: 0 })
       }
+      if (rejectAdmission)
+        return Response.json({ error: 'test refusal' }, { status: 403 })
       const model = headers.get('x-freebuff-model')!
       const holder = [...rows.keys()].find((key) => key !== id)
       if (!rows.has(id) && rows.size >= capacity && holder) {
@@ -174,6 +201,7 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
       admittedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       remainingMs: 3_600_000,
+      ...(meter ? { freebucks: meter } : {}),
     }
   }
 
@@ -182,6 +210,7 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
     const root = createRoot(setup.renderer)
     function Controller() {
       cli.useFreebuffSession()
+      useFreebuffChatAdmission(true)
       return null
     }
     close = () => {
@@ -217,6 +246,116 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
     await cli.startFreebuffSession(FREEBUFF_MIMO_V25_MODEL_ID)
     expect(cli.getFreebuffInstanceId()).not.toBe(second)
     expect(purchases).toBe(3)
+  })
+
+  test('choosing a model never buys a session; the first send admits once', async () => {
+    await mount()
+    selectFreebuffChatModel(FREEBUFF_MIMO_V25_MODEL_ID)
+    expect(purchases).toBe(0)
+    expect(requests.every((r) => r.method === 'GET')).toBe(true)
+    expect(freebuffChatNeedsAdmission()).toBe(true)
+    requestFreebuffChatAdmission()
+    requestFreebuffChatAdmission()
+    await until(
+      () =>
+        purchases === 1 && useFreebuffChatStore.getState().admission === null,
+    )
+    expect(freebuffChatNeedsAdmission()).toBe(false)
+    expect(requests.filter((r) => r.method === 'POST')).toHaveLength(1)
+  })
+
+  test('switching models waits for send and confirmation and preserves the queued prompt', async () => {
+    await mount()
+    await cli.startFreebuffSession(FREEBUFF_MIMO_V25_MODEL_ID)
+    let queueCleared = false
+    const unregister = registerActiveRunStopHandler(() => {
+      queueCleared = true
+    })
+    try {
+      selectFreebuffChatModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+      expect(purchases).toBe(1)
+      expect(cli.getFreebuffInstanceId()).toBeDefined()
+      requestFreebuffChatAdmission()
+      await until(
+        () => useFreebuffChatStore.getState().admission?.phase === 'confirm',
+      )
+      expect(purchases).toBe(1)
+      await beginFreebuffChatAdmission(
+        useFreebuffChatStore.getState().admission!,
+      )
+      await until(() => useFreebuffChatStore.getState().admission === null)
+      expect(purchases).toBe(2)
+      expect(queueCleared).toBe(false)
+      expect(rows.size).toBe(1)
+      expect(freebuffChatNeedsAdmission()).toBe(false)
+    } finally {
+      unregister()
+    }
+  })
+
+  test('wallet consent is requested on send and bounded to the quoted spend', async () => {
+    meter = {
+      ...freebucksFixture(0, { [FREEBUFF_MIMO_V25_MODEL_ID]: 5 }),
+      balance: 10,
+      wallet: { balance: 10, monthlyBonus: 0 },
+    }
+    await mount()
+    selectFreebuffChatModel(FREEBUFF_MIMO_V25_MODEL_ID)
+    expect(purchases).toBe(0)
+    requestFreebuffChatAdmission()
+    await until(
+      () => useFreebuffChatStore.getState().admission?.phase === 'confirm',
+    )
+    expect(purchases).toBe(0)
+    expect(useFreebuffChatStore.getState().admission?.message).toContain(
+      '5 from your wallet',
+    )
+    await beginFreebuffChatAdmission(useFreebuffChatStore.getState().admission!)
+    await until(() => useFreebuffChatStore.getState().admission === null)
+    expect(purchases).toBe(1)
+    expect(
+      requests
+        .find((r) => r.method === 'POST')
+        ?.headers.get('x-freebuff-wallet-spend-limit'),
+    ).toBe('5')
+  })
+
+  test('a lost model-switch reply can cancel the new claim without orphaning a purchase', async () => {
+    await mount()
+    await cli.startFreebuffSession(FREEBUFF_MIMO_V25_MODEL_ID)
+    selectFreebuffChatModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+    requestFreebuffChatAdmission()
+    await until(() => useFreebuffChatStore.getState().admission?.phase === 'confirm')
+    losePostResponse = true
+    await beginFreebuffChatAdmission(useFreebuffChatStore.getState().admission!)
+    await until(() => useFreebuffChatStore.getState().admission?.phase === 'failed')
+    expect(rows.size).toBe(1)
+    expect(cli.getFreebuffInstanceId()).toBeUndefined()
+    await cli.returnToFreebuffLanding({ preserveQueue: true })
+    expect(rows.size).toBe(0)
+  })
+
+  test('first send refreshes an idle balance before deciding it cannot afford a session', async () => {
+    meter = freebucksFixture(0, { [FREEBUFF_MIMO_V25_MODEL_ID]: 5 })
+    await mount()
+    meter = freebucksFixture(25, { [FREEBUFF_MIMO_V25_MODEL_ID]: 5 })
+    requestFreebuffChatAdmission()
+    await until(() => purchases === 1 && useFreebuffChatStore.getState().admission === null)
+    expect(purchases).toBe(1)
+  })
+
+  test('failed admission stays held until the user retries', async () => {
+    await mount()
+    rejectAdmission = true
+    requestFreebuffChatAdmission()
+    await until(
+      () => useFreebuffChatStore.getState().admission?.phase === 'failed',
+    )
+    expect(purchases).toBe(0)
+    rejectAdmission = false
+    requestFreebuffChatAdmission()
+    await until(() => useFreebuffChatStore.getState().admission === null)
+    expect(purchases).toBe(1)
   })
 
   test('an update relaunch resumes only its own launcher-scoped purchase', async () => {

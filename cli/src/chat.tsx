@@ -1,3 +1,9 @@
+import { HelpBanner } from './components/help-banner'
+import { FreebuffChatFooter } from './components/freebuff-chat-footer'
+import { FreebuffChatHeader } from './components/freebuff-chat-header'
+import { FreebuffChatControls } from './components/freebuff-chat-controls'
+import { useFreebuffChatStore } from './state/freebuff-chat-store'
+import { freebuffAdmissionNotice } from './hooks/use-freebuff-chat-admission'
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 import type { FeedbackCategory } from '@codebuff/common/constants/feedback'
 import { setFreeModeCapacityDeferralListener } from '@codebuff/sdk'
@@ -45,7 +51,6 @@ import { ReviewScreen } from './components/review-screen'
 import { MessageWithAgents } from './components/message-with-agents'
 import { areCreditsRestored } from './components/out-of-credits-banner'
 import { PendingBashMessage } from './components/pending-bash-message'
-import { SessionEndedBanner } from './components/session-ended-banner'
 import { StatusBar } from './components/status-bar'
 import {
   SuggestedPrompts,
@@ -207,6 +212,10 @@ export const Chat = ({
     removeQueuedMessage,
     moveQueuedMessage,
   } = useChatRuntime()
+  const freebuffPickerOpen = useFreebuffChatStore((s) => s.pickerOpen)
+  const freebuffAdmission = useFreebuffChatStore((s) => s.admission)
+  const freebuffControlsOpen =
+    IS_FREEBUFF && (freebuffPickerOpen || freebuffAdmission !== null)
   const hasSubscription = subscriptionData?.hasSubscription ?? false
   const hasSelectedByokConnection = useByokSelectionStore(
     (state) => state.selected !== undefined,
@@ -242,6 +251,7 @@ export const Chat = ({
     provider: 'gravity',
     inline: true,
     surface: 'cli_chat',
+    forceStart: IS_FREEBUFF,
     // Lazily fill a four-ad pool, then repeat it for later transcript slots.
     inlinePlacementId: 'CLI-Chat-Inline',
     // Keep the rotating above-input slot separate for reporting continuity.
@@ -1666,6 +1676,8 @@ export const Chat = ({
         }
         return false
       },
+      onShowHelp: () => useChatStore.getState().setInputMode('help'),
+      onOpenChatHistory: () => useChatHistoryStore.getState().openChatHistory(),
       onHistoryUp: navigateUp,
       onHistoryDown: navigateDown,
       onToggleAgentMode: toggleAgentMode,
@@ -1797,7 +1809,8 @@ export const Chat = ({
       askUserState !== null ||
       reviewMode ||
       queuePanelOpen ||
-      sponsoredProposalMenuOpen,
+      sponsoredProposalMenuOpen ||
+      freebuffControlsOpen,
   })
 
   // Sync message block context to zustand store for child components
@@ -1982,7 +1995,8 @@ export const Chat = ({
     reviewMode ||
     queuePanelOpen ||
     sponsoredProposalMenuOpen ||
-    isFreebuffSessionOver
+    isFreebuffSessionOver ||
+    freebuffControlsOpen
   useEffect(() => {
     if (dockTakeoverActive) dockPanel.collapse('outside')
   }, [dockTakeoverActive, dockPanel])
@@ -2046,7 +2060,7 @@ export const Chat = ({
             flexDirection: 'column',
             gap: 0,
             shouldFill: true,
-            justifyContent: 'flex-end',
+            justifyContent: IS_FREEBUFF ? 'flex-start' : 'flex-end',
             backgroundColor: 'transparent',
             paddingLeft: 1,
             paddingRight: 2,
@@ -2059,10 +2073,17 @@ export const Chat = ({
           ref={headerRef as React.Ref<BoxRenderable>}
           style={{ flexDirection: 'column' }}
         >
-          <ChatHeader
-            projectRoot={getProjectRoot()}
-            animationEnabled={isHeaderVisible && inputFocused}
-          />
+          {IS_FREEBUFF && !hasSelectedByokConnection ? (
+            <FreebuffChatHeader
+              projectRoot={getProjectRoot()}
+              session={freebuffSession}
+            />
+          ) : (
+            <ChatHeader
+              projectRoot={getProjectRoot()}
+              animationEnabled={isHeaderVisible && inputFocused}
+            />
+          )}
         </box>
         {IS_FREEBUFF && (
           <FreebuffActiveSessionSummary session={freebuffSession} />
@@ -2096,28 +2117,10 @@ export const Chat = ({
           backgroundColor: 'transparent',
         }}
       >
-        {showOnboardingPrompts && !reviewMode && !isFreebuffSessionOver && (
+        {showOnboardingPrompts && !reviewMode && !freebuffControlsOpen && (
           <SuggestedPrompts
             onSelect={handleSelectSuggestedPrompt}
             maxItems={isCompactHeight ? 2 : undefined}
-          />
-        )}
-
-        {shouldShowStatusLine && (
-          <StatusBar
-            timerStartTime={timerStartTime}
-            isAtBottom={isAtBottom}
-            scrollToLatest={scrollToLatest}
-            statusIndicatorState={statusIndicatorState}
-            onStop={chatKeyboardHandlers.onInterruptStream}
-            onEndSession={() => {
-              setMessages((prev) => [
-                ...prev,
-                getSystemMessage(END_SESSION_MESSAGE),
-              ])
-              returnToFreebuffLanding({ resetChat: true }).catch(() => {})
-            }}
-            freebuffSession={freebuffSession}
           />
         )}
 
@@ -2155,7 +2158,36 @@ export const Chat = ({
           />
         )}
 
-        {reviewMode ? (
+        {IS_FREEBUFF &&
+          !freebuffControlsOpen &&
+          freebuffAdmissionNotice(freebuffSession) && (
+            <text style={{ fg: theme.secondary, wrapMode: 'word' }}>
+              {freebuffAdmissionNotice(freebuffSession)}
+            </text>
+          )}
+        {inputMode === 'help' && !freebuffControlsOpen && <HelpBanner />}
+
+        {shouldShowStatusLine && (
+          <StatusBar
+            timerStartTime={timerStartTime}
+            isAtBottom={isAtBottom}
+            scrollToLatest={scrollToLatest}
+            statusIndicatorState={statusIndicatorState}
+            onStop={chatKeyboardHandlers.onInterruptStream}
+            onEndSession={() => {
+              setMessages((prev) => [
+                ...prev,
+                getSystemMessage(END_SESSION_MESSAGE),
+              ])
+              returnToFreebuffLanding().catch(() => {})
+            }}
+            freebuffSession={freebuffSession}
+          />
+        )}
+
+        {freebuffControlsOpen && !askUserState ? (
+          <FreebuffChatControls />
+        ) : reviewMode ? (
           // Review and ask_user take precedence over the session-ended banner:
           // during the grace window the agent may still be asking to run tools
           // or asking the user a question, and those approvals/answers must be
@@ -2175,10 +2207,6 @@ export const Chat = ({
             onClose={handleCloseQueuePanel}
             width={separatorWidth}
             maxVisibleRows={isCompactHeight ? 4 : 8}
-          />
-        ) : isFreebuffSessionOver && !askUserState ? (
-          <SessionEndedBanner
-            isStreaming={isStreaming || isWaitingForResponse}
           />
         ) : (
           <>
@@ -2245,6 +2273,7 @@ export const Chat = ({
             />
           </>
         )}
+        {IS_FREEBUFF && !hasSelectedByokConnection && <FreebuffChatFooter projectRoot={getProjectRoot()} />}
       </box>
     </box>
   )

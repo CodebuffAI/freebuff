@@ -1,129 +1,136 @@
 import React from 'react'
+import { TextAttributes } from '@opentui/core'
 
-import { BottomBanner } from './bottom-banner'
-import { useSubscriptionQuery } from '../hooks/use-subscription-query'
 import { useTheme } from '../hooks/use-theme'
+import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
 import { IS_FREEBUFF } from '../utils/constants'
-import { useChatStore } from '../state/chat-store'
 
-const HELP_TIMEOUT = 60 * 1000 // 60 seconds
+const SECTIONS = [
+  {
+    title: 'Compose',
+    rows: [
+      ['/', 'Commands'],
+      ['@files', 'Mention files'],
+      ['@agents', 'Use an agent'],
+      ['Ctrl+J', 'New line'],
+      ['Opt+Enter', 'New line'],
+      ['/bash', 'Shell command'],
+    ],
+  },
+  {
+    title: 'Chat',
+    rows: [
+      ['?', 'Help (empty input)'],
+      ['←', 'History (empty input)'],
+      ['↑ / ↓', 'Prompts (empty input)'],
+      ['/new', 'New chat'],
+      ['/model', 'Model / reasoning'],
+      ['Ctrl+Q', 'Edit queued messages'],
+    ],
+  },
+  {
+    title: 'Conversation',
+    rows: [
+      ['Esc', 'Close help / stop'],
+      ['Ctrl+C', 'Clear / stop / quit'],
+      ['Ctrl+T', 'Expand / collapse agents'],
+      ['/copy', 'Copy chat'],
+      ['/export', 'Export chat'],
+      ['Drag', 'Select and copy text'],
+    ],
+  },
+] as const
 
-/** Section header component for consistent styling */
-const SectionHeader = ({ children }: { children: React.ReactNode }) => {
-  const theme = useTheme()
-  return <text style={{ fg: theme.muted }}>{children}</text>
-}
-
-/** Keyboard shortcut item */
-const Shortcut = ({
-  keys,
-  action,
-}: {
-  keys: string
-  action: string
-}) => {
-  const theme = useTheme()
-  return (
-    <box style={{ flexDirection: 'row', gap: 1 }}>
-      <text style={{ fg: theme.foreground }}>{keys}</text>
-      <text style={{ fg: theme.muted }}>{action}</text>
-    </box>
-  )
-}
-
-/** Help banner showing keyboard shortcuts and tips in an organized layout. */
+/** Aligned shortcut columns; wrap whole columns on smaller terminals. */
 export const HelpBanner = () => {
-  const setInputMode = useChatStore((state) => state.setInputMode)
   const theme = useTheme()
-  const { data: subscriptionData } = useSubscriptionQuery()
-  const hasSubscription = subscriptionData?.hasSubscription ?? false
-
-  // Auto-hide after timeout
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setInputMode('default')
-    }, HELP_TIMEOUT)
-    return () => clearTimeout(timer)
-  }, [setInputMode])
-
+  const { terminalWidth, terminalHeight } = useTerminalDimensions()
+  const width = Math.max(16, terminalWidth - 4)
+  const columnWidth = Math.min(37, width)
+  const columns = Math.max(1, Math.floor((width + 2) / (columnWidth + 2)))
+  const contentRows = Math.ceil(SECTIONS.length / columns) * 8 - 1 + (IS_FREEBUFF ? 0 : 2)
   return (
-    <BottomBanner
-      borderColorKey="info"
-      onClose={() => setInputMode('default')}
+    <box
+      style={{
+        flexDirection: 'column',
+        paddingLeft: 1,
+        paddingRight: 1,
+        marginBottom: 1,
+        flexShrink: 0,
+      }}
     >
-      <box style={{ flexDirection: 'column', gap: 1, flexGrow: 1 }}>
-        {/* Shortcuts Section */}
-        <box style={{ flexDirection: 'column', gap: 0 }}>
-          <SectionHeader>Shortcuts</SectionHeader>
-          <box style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 2, paddingLeft: 2 }}>
-            <Shortcut keys="Ctrl+C / Esc" action="stop" />
-            <Shortcut keys="Ctrl+J / Opt+Enter" action="newline" />
-            <Shortcut keys="↑↓" action="history" />
-            <Shortcut keys="Ctrl+T" action="collapse/expand agents" />
-            <Shortcut keys="Ctrl+Q" action="edit queued messages" />
-          </box>
-        </box>
-
-        {/* Features Section */}
-        <box style={{ flexDirection: 'column', gap: 0 }}>
-          <SectionHeader>Features</SectionHeader>
-          <box style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 2, paddingLeft: 2 }}>
-            <Shortcut keys="/" action="commands" />
-            <Shortcut keys="@files" action="mention" />
-            <Shortcut keys="@agents" action="use agent" />
-            <Shortcut keys="!bash" action="run command" />
-            <Shortcut keys="/copy" action="copy chat" />
-            <Shortcut keys="/export" action="save chat to file" />
-          </box>
-        </box>
-
-        {/* Tips Section */}
-        <box style={{ flexDirection: 'column', gap: 0 }}>
-          <SectionHeader>Tips</SectionHeader>
-          <box style={{ flexDirection: 'column', paddingLeft: 2 }}>
-            {IS_FREEBUFF && (
-              <text style={{ fg: theme.muted }}>
-                Try workflow: /interview → /plan → implement → /review
+      <text
+        style={{
+          fg: theme.foreground,
+          attributes: TextAttributes.BOLD,
+          marginBottom: 1,
+        }}
+      >
+        Keyboard shortcuts
+      </text>
+      <scrollbox
+        style={{
+          height: Math.min(contentRows, Math.max(5, Math.floor(terminalHeight / 2))),
+          width: '100%',
+        }}
+        scrollX={false}
+      >
+        <box
+          style={{
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            columnGap: 2,
+            rowGap: 1,
+          }}
+        >
+          {SECTIONS.map((section) => (
+            <box
+              key={section.title}
+              style={{
+                flexDirection: 'column',
+                width: columnWidth,
+                flexShrink: 0,
+              }}
+            >
+              <text
+                style={{
+                  fg: theme.foreground,
+                  attributes: TextAttributes.BOLD,
+                }}
+              >
+                {section.title}
               </text>
-            )}
-            <text style={{ fg: theme.muted }}>
-              Use @ to reference agents to spawn or files to read
-            </text>
-            <text style={{ fg: theme.muted }}>
-              Drag to select text — it copies automatically (or click ⎘ on a
-              message)
-            </text>
-            <text style={{ fg: theme.muted }}>
-              Esc to cancel the current response
-            </text>
-          </box>
-        </box>
-
-        {/* Credits Section — hidden in Freebuff */}
-        {!IS_FREEBUFF && (
-          <box style={{ flexDirection: 'column', gap: 0 }}>
-            <SectionHeader>Credits</SectionHeader>
-            <box style={{ flexDirection: 'column', paddingLeft: 2 }}>
-              <box style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 1 }}>
-                <text style={{ fg: theme.foreground }}>1 credit = 1 cent</text>
-                <text style={{ fg: theme.muted }}>·</text>
-                <text style={{ fg: theme.foreground }}>/subscribe</text>
-                <text style={{ fg: theme.muted }}>·</text>
-                <text style={{ fg: theme.foreground }}>/usage</text>
-                {!hasSubscription && (
-                  <>
-                    <text style={{ fg: theme.muted }}>·</text>
-                    <text style={{ fg: theme.foreground }}>/ads:enable</text>
-                  </>
-                )}
-              </box>
-              <text style={{ fg: theme.muted }}>
-                Subscribe for the best credit rates — /subscribe
-              </text>
+              {section.rows
+                .filter(([key]) => IS_FREEBUFF || key !== '/model')
+                .map(([key, description]) => (
+                  <box key={key} style={{ flexDirection: 'row' }}>
+                    <text
+                      style={{ fg: theme.primary, width: 11, flexShrink: 0 }}
+                    >
+                      {key}
+                    </text>
+                    <text
+                      style={{
+                        fg: theme.muted,
+                        flexShrink: 1,
+                        flexGrow: 1,
+                        flexBasis: 0,
+                        wrapMode: 'word',
+                      }}
+                    >
+                      {description}
+                    </text>
+                  </box>
+                ))}
             </box>
-          </box>
+          ))}
+        </box>
+        {!IS_FREEBUFF && (
+          <text style={{ fg: theme.muted, marginTop: 1 }}>
+            /subscribe · /usage · 1 credit = 1 cent
+          </text>
         )}
-      </box>
-    </BottomBanner>
+      </scrollbox>
+    </box>
   )
 }

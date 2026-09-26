@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 describe('freebuff command aliases', () => {
-  test('/model aliases /end-session in freebuff', () => {
+  test('/model opens its own picker command in freebuff', () => {
     const slashCommandsUrl = new URL(
       '../../data/slash-commands.ts',
       import.meta.url,
@@ -21,14 +21,17 @@ describe('freebuff command aliases', () => {
 
           const endSession = SLASH_COMMANDS.find((cmd) => cmd.id === 'end-session')
           if (!endSession) throw new Error('end-session slash command missing')
-          if (!endSession.aliases?.includes('model')) {
-            throw new Error('end-session slash command is missing model alias')
+          if (endSession.aliases?.includes('model')) {
+            throw new Error('model must not end the session')
           }
 
+          for (const name of ['reasoning', 'effort', 'think']) {
+            if (findCommand(name)) throw new Error(name + ' command should be removed')
+          }
           const modelCommand = findCommand('model')
           if (!modelCommand) throw new Error('model command alias missing')
-          if (modelCommand.name !== 'end-session') {
-            throw new Error('model alias did not resolve to end-session')
+          if (modelCommand.name !== 'model') {
+            throw new Error('model must resolve to its own command')
           }
         `,
       ],

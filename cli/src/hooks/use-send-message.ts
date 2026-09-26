@@ -1,3 +1,8 @@
+import {
+  freebuffChatNeedsAdmission,
+  requestFreebuffChatAdmission,
+} from '../state/freebuff-chat-store'
+import { capturePendingAttachments } from '../utils/pending-attachments'
 import { randomUUID } from 'node:crypto'
 
 import { useCallback, useEffect, useRef } from 'react'
@@ -5,10 +10,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { setCurrentChatId } from '../project-files'
 import { createStreamController } from './stream-state'
 import { useChatStore } from '../state/chat-store'
-import {
-  getFreebuffInstanceId,
-  markFreebuffSessionEnded,
-} from './use-freebuff-session'
+import { getFreebuffInstanceId } from './use-freebuff-session'
 import { getSelectedFreebuffReasoningEffort } from '../state/freebuff-model-store'
 import { getCodebuffClient } from '../utils/codebuff-client'
 import {
@@ -314,22 +316,21 @@ export const useSendMessage = ({
         IS_FREEBUFF && !sponsored ? selectedByokConnection() : undefined
       const shouldUseByok = selectedByok !== undefined
 
-      // Freebuff run-start guard: without a live session slot the server
-      // rejects the request outright, consuming the message. Hold it at the
-      // head of the queue instead; it resumes when the user rejoins from the
-      // session-ended banner. Catches sends that bypass the queue's
-      // sendBlocked hold (direct review-screen answers) and the dequeue race
-      // where the slot expires between the queue's check and this call.
+      // Preserve the submitted text and attachments until send-time admission
+      // (and any wallet/model-switch consent) finishes. The persistent runtime
+      // holds the queue until this model has a live session.
       if (
         IS_FREEBUFF &&
         !shouldUseByok &&
         !sponsored &&
-        !getFreebuffInstanceId()
+        freebuffChatNeedsAdmission()
       ) {
-        // During BYOK setup there is no session to end; marking it would swap
-        // the setup chat for the session-ended banner.
-        if (!isByokSetupOpen()) markFreebuffSessionEnded()
-        requeueMessageAtFront?.({ content, attachments: attachments ?? [] })
+        // BYOK setup must never purchase a Freebuff session.
+        if (!isByokSetupOpen()) requestFreebuffChatAdmission()
+        requeueMessageAtFront?.({
+          content,
+          attachments: attachments ?? capturePendingAttachments(),
+        })
         resetEarlyReturnState({
           setCanProcessQueue,
           updateChainInProgress,
@@ -679,7 +680,7 @@ export const useSendMessage = ({
         })
 
         const freebuffInstanceId = getFreebuffInstanceId()
-        // The user's `/reasoning` pick, when they made one. Read HERE rather
+        // The user's reasoning picker choice, when they made one. Read HERE rather
         // than captured earlier so a mid-session change lands on the very next
         // message without restarting the session. Null means "send nothing",
         // which is what makes the server fall back to the catalog default —

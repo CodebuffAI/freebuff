@@ -1,3 +1,9 @@
+import { useFreebuffChatAdmission } from '../hooks/use-freebuff-chat-admission'
+import {
+  useFreebuffChatStore,
+  freebuffChatNeedsAdmission,
+  requestFreebuffChatAdmission,
+} from '../state/freebuff-chat-store'
 import {
   createContext,
   useCallback,
@@ -128,10 +134,18 @@ export const ChatRuntimeProvider = ({
   const hasSelectedByokConnection = useByokSelectionStore(
     (state) => state.selected !== undefined,
   )
+  const chatAdmission = useFreebuffChatStore((s) => s.admission)
+  const nextModel = useFreebuffChatStore((s) => s.nextModel)
+  const pickerOpen = useFreebuffChatStore((s) => s.pickerOpen)
   const freebuffSessionOver =
     IS_FREEBUFF &&
     !hasSelectedByokConnection &&
-    !holdsLiveFreebuffSlot(freebuffSession)
+    (!holdsLiveFreebuffSlot(freebuffSession) ||
+      chatAdmission !== null ||
+      pickerOpen ||
+      (freebuffSession?.status === 'active' &&
+        nextModel !== null &&
+        nextModel !== freebuffSession.model))
   // An accepted sponsored task runs NEXT, ahead of anything the user queued
   // after approving it, and nothing they type steers it: it has no steering
   // mailbox, so their messages land in this queue and wait for its verdict.
@@ -175,6 +189,14 @@ export const ChatRuntimeProvider = ({
     () =>
       registerActiveRunStopHandler((reason) => {
         applyActiveRunQueuePolicy(reason, queueControlRef.current)
+        if (
+          reason === 'new-chat' ||
+          reason === 'history-resume' ||
+          reason === 'logout' ||
+          reason === 'session-transition'
+        ) {
+          useFreebuffChatStore.setState({ admission: null, pickerOpen: false })
+        }
       }),
     [],
   )
@@ -216,6 +238,14 @@ export const ChatRuntimeProvider = ({
     continueChatId,
     subscriptionData,
   })
+
+  useFreebuffChatAdmission(
+    IS_FREEBUFF &&
+      !hasSelectedByokConnection &&
+      !isChainInProgress &&
+      queue.streamStatus === 'idle' &&
+      queue.queuedMessages.length > 0,
+  )
 
   sendMessageRef.current = sendMessage
 
@@ -275,7 +305,15 @@ export const ChatRuntimeProvider = ({
     queuedMessages: queue.queuedMessages,
     queuePaused: queue.queuePaused,
     streamMessageIdRef: queue.streamMessageIdRef,
-    addToQueue: queue.addToQueue,
+    addToQueue: (content, attachments) => {
+      queue.addToQueue(content, attachments)
+      if (
+        IS_FREEBUFF &&
+        !hasSelectedByokConnection &&
+        freebuffChatNeedsAdmission()
+      )
+        requestFreebuffChatAdmission()
+    },
     addToQueueFront: queue.addToQueueFront,
     editQueuedMessage: queue.editQueuedMessage,
     removeQueuedMessage: queue.removeQueuedMessage,

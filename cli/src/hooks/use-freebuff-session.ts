@@ -139,6 +139,7 @@ function nextDelayMs(next: FreebuffSessionResponse): number | null {
 type RestartMode = 'rejoin' | 'landing'
 
 interface PollController {
+  refreshMetadata: () => Promise<void>
   /** Cancel the in-flight tick + timer and start a fresh one in `mode`. */
   restart: (mode: RestartMode, rotateClaim?: boolean) => Promise<void>
   apply: (next: FreebuffSessionResponse) => void
@@ -233,6 +234,8 @@ export function toLandingSession(
 }
 
 interface RestartOpts {
+  /** Send-time admission owns a queued prompt and has already waited for the run to finish. */
+  preserveQueue?: boolean
   resetChat?: boolean
   /** DELETE the held slot before restarting so the next POST starts clean. */
   releaseSlot?: boolean
@@ -245,7 +248,7 @@ async function restartFreebuffSession(
   if (!IS_FREEBUFF) return
   // A reset changes chat ownership. Stop and checkpoint the old run before
   // resetting its store so late deltas cannot land in the next session.
-  if (opts.resetChat || opts.releaseSlot) {
+  if (opts.resetChat || (opts.releaseSlot && !opts.preserveQueue)) {
     stopActiveRun('session-transition')
   }
   // Halt the running poll loop before we touch local stores or DELETE the
@@ -281,6 +284,10 @@ async function restartFreebuffSession(
     }
   }
   if (!stillCurrent()) return
+  // DELETE confirmed that the old slot is gone. Do not leave it looking live
+  // while the replacement POST runs: if that reply is lost, cancellation must
+  // target the NEW pending attempt, not the already-released old instance.
+  if (opts.releaseSlot) currentController?.apply(toLandingSession(currentSession))
   if (opts.resetChat) {
     useChatStore.getState().reset()
     // Rotate the chat id like /new does, so the next session saves to its own
@@ -317,10 +324,11 @@ export function refreshFreebuffSession(
  * silently re-queued for whatever model they last used.
  */
 export function returnToFreebuffLanding(
-  opts: { resetChat?: boolean } = {},
+  opts: { resetChat?: boolean; preserveQueue?: boolean } = {},
 ): Promise<void> {
   return restartFreebuffSession('landing', {
     resetChat: opts.resetChat,
+    preserveQueue: opts.preserveQueue,
     releaseSlot: true,
   })
 }
@@ -330,6 +338,11 @@ export function returnToFreebuffLanding(
  * passes while the landing screen is open. */
 export function refreshFreebuffLandingMetadata(): Promise<void> {
   return restartFreebuffSession('landing')
+}
+
+/** Read-only refresh for the chat picker and first-send pricing check. */
+export function refreshFreebuffSessionMetadata(): Promise<void> {
+  return controller?.refreshMetadata() ?? Promise.resolve()
 }
 
 /** Resolve the model an explicit picker action will send to session admission. */
@@ -364,26 +377,18 @@ export function resolveFreebuffModelSelectionForSession(
 }
 
 /**
- * Start a session on `model` (admitted immediately server-side). Dual-purpose:
- *   - First start: called from the pre-chat landing picker. The session starts
- *     at `none` (GET-only); this is the user's explicit commitment to enter.
- *   - Switch: called when the user picks a different model from the landing
- *     screen. The server admits them on the new model right away.
- *
- * If the server has already admitted them on a different model, it responds
- * with `model_locked`; because this is a deliberate pick, the tick loop ends
- * that session and re-claims on the requested model (see the model_locked
- * branch). Background rejoins hitting the same lock revert silently instead.
+ * Admit the requested model. Chat calls this on send after any spending/switch
+ * confirmation; legacy picker callers may still admit directly. A deliberate
+ * model_locked response is handled by the poll controller below.
  */
 export function startFreebuffSession(
   model: string,
   walletSpendLimit?: FreebuffWalletSpendLimit,
+  opts: { preserveQueue?: boolean; persistSelection?: boolean } = {},
 ): Promise<void> {
   if (!IS_FREEBUFF) return Promise.resolve()
-  // This is the only explicit user-pick path (called from the picker on
-  // click / Enter), so persistence belongs here — and ONLY here. Server-
-  // driven flips (`model_locked`, `model_unavailable`, takeover) go
-  // through `setSelectedModel` directly, which never writes to disk.
+  // Chat already persists explicit picker choices. Its send path opts out of
+  // persistence so an automatic access-tier fallback cannot replace that choice.
   const current = useFreebuffSessionStore.getState().session
   const resolved = resolveFreebuffModelPickForSession(model, current)
   // Remember that the next POST is a deliberate pick, so a `model_locked`
@@ -404,8 +409,9 @@ export function startFreebuffSession(
         }
   pendingExplicitPickModel = resolved
   useFreebuffModelStore.getState().setSelectedModel(resolved)
-  saveFreebuffModelPreference(resolved)
+  if (opts.persistSelection !== false) saveFreebuffModelPreference(resolved)
   return restartFreebuffSession('rejoin', {
+    preserveQueue: opts.preserveQueue,
     releaseSlot: current?.status === 'active' && current.model !== resolved,
   })
 }
@@ -485,8 +491,7 @@ interface UseFreebuffSessionResult {
 
 /**
  * Manages the freebuff session lifecycle:
- *   - GET on mount to probe state (no auto-join; the user picks a model in
- *     the landing screen, which calls startFreebuffSession)
+ *   - GET on mount to probe state; chat admits only when the user sends
  *   - ordinary sessions use a private multi-session claim, sharing Desktop's
  *     account capacity; limited-offer campaigns retain their single-session path
  *   - polls GET while active to keep state fresh
@@ -1120,6 +1125,26 @@ export function useFreebuffSession({
     }
 
     controller = {
+      refreshMetadata: async () => {
+        const current = useFreebuffSessionStore.getState().session
+        const generation = restartGeneration
+        const signal = abortController.signal
+        const response = await callFreebuffSession('GET', token, {
+          signal,
+          instanceId: getFreebuffInstanceId() ?? claimId,
+          multiSession: !legacyHour && !isFreebuffLimitedOfferModelId(getSelectedFreebuffModel()),
+        })
+        if (cancelled || signal.aborted || generation !== restartGeneration ||
+            useFreebuffSessionStore.getState().session !== current) return
+        // Refresh an idle catalog without adopting a different process's slot.
+        if (!holdsLiveFreebuffSlot(current) && response.status === 'active') {
+          apply(toLandingSession(response))
+        } else if (holdsLiveFreebuffSlot(current) && response.status === 'none') {
+          apply({ ...toLandingSession(response), status: 'ended' })
+        } else {
+          apply(response)
+        }
+      },
       restart: async (mode, rotateClaim = false) => {
         const generation = ++restartGeneration
         // An end, a switch or a rejoin after expiry leaves the adopted legacy

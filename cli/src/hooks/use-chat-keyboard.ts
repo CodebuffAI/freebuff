@@ -3,6 +3,7 @@ import { statSync } from 'fs'
 import { useKeyboard } from '@opentui/react'
 import { useCallback, useRef } from 'react'
 
+import { useChatStore } from '../state/chat-store'
 import { getProjectRoot } from '../project-files'
 import { reportActivity } from '../utils/activity-tracker'
 import { hasClipboardImage, readClipboardText, readClipboardFilePath, getImageFilePathFromText } from '../utils/clipboard-image'
@@ -52,6 +53,9 @@ export type ChatKeyboardHandlers = {
 
   // File menu handler
   onOpenFileMenuWithTab: () => boolean // Returns true if menu was opened
+
+  onShowHelp: () => void
+  onOpenChatHistory: () => void
 
   // History handlers
   onHistoryUp: () => void
@@ -120,6 +124,12 @@ function dispatchAction(
   handlers: ChatKeyboardHandlers,
 ): boolean {
   switch (action.type) {
+    case 'show-help':
+      handlers.onShowHelp()
+      return true
+    case 'open-chat-history':
+      handlers.onOpenChatHistory()
+      return true
     case 'exit-input-mode':
       handlers.onExitInputMode()
       return true
@@ -318,7 +328,14 @@ export function useChatKeyboard({
 
         markReturnKeySeenForKey(key)
 
-        const action = resolveChatKeyboardAction(key, state)
+        // Multiple key events can arrive before React commits a render.
+        const draft = useChatStore.getState()
+        const action = resolveChatKeyboardAction(key, {
+          ...state,
+          inputValue: draft.inputValue,
+          cursorPosition: draft.cursorPosition,
+          inputMode: draft.inputMode,
+        })
         const handled = dispatchAction(action, handlers)
 
         // Prevent default for handled actions

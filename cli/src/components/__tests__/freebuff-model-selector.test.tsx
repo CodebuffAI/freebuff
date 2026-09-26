@@ -82,6 +82,7 @@ const renderSelector = async (
   startSession?: (model: string, limit?: number | 'session') => Promise<void>,
   width = 100,
   nowMs = FIXED_NOW_MS,
+  onSelectModel?: (model: string) => void,
 ) => {
   // Tear down any selector this test already rendered. Only the LAST one was
   // reachable from afterEach, so a test that renders twice used to leave the
@@ -90,7 +91,7 @@ const renderSelector = async (
   // test ran next.
   cleanupRenderer?.()
   cleanupRenderer = undefined
-  const setup = await createTestRenderer({ width, height: Math.max(40, maxHeight) })
+  const setup = await createTestRenderer({ width, height: Math.max(40, maxHeight), kittyKeyboard: true })
   const root = createRoot(setup.renderer)
   cleanupRenderer = () => {
     flushSync(() => root.unmount())
@@ -102,6 +103,7 @@ const renderSelector = async (
         maxHeight={maxHeight}
         nowMs={nowMs}
         startSession={startSession}
+        onSelectModel={onSelectModel}
       />,
     ),
   )
@@ -642,10 +644,10 @@ describe('FreebuffModelSelector tier layout', () => {
       frame.split('\n').find((line) => line.includes(tagline)) ?? ''
     const frame = (await renderSelector()).captureCharFrame()
 
-    expect(rowOf(frame, 'Smart & Fast')).toContain('Reasoning: high')
+    expect(rowOf(frame, 'Smart & Fast')).toContain('• high')
     const lunaRow = rowOf(frame, 'GPT-6 Luna')
     expect(lunaRow).toContain('Strong all-around')
-    expect(lunaRow).toContain('Reasoning: high')
+    expect(lunaRow).toContain('• high')
     expect(rowOf(frame, 'MiniMax M3')).not.toContain('Reasoning')
   })
 
@@ -1817,3 +1819,54 @@ test.each(['full', 'limited'] as const)(
     expect(picked).toEqual([id])
   },
 )
+
+
+test('chat picker selects without admitting or asking to spend wallet funds', async () => {
+  const model = FREEBUFF_MIMO_V25_MODEL_ID
+  useFreebuffSessionStore.getState().setSession({
+    status: 'none', accessTier: 'full',
+    freebucks: { ...freebucksFixture(0, { [model]: 5 }), balance: 10, wallet: { balance: 10, monthlyBonus: 0 } },
+  })
+  useFreebuffModelStore.getState().setSelectedModel(model)
+  const selected: string[] = []
+  const admitted: string[] = []
+  const setup = await renderSelector(40, async (id) => { admitted.push(id) }, 100, FIXED_NOW_MS, (id) => { selected.push(id) })
+  flushSync(() => setup.mockInput.pressEnter())
+  expect(selected).toEqual([model])
+  expect(admitted).toEqual([])
+  expect(setup.captureCharFrame()).not.toContain('Enter uses')
+})
+
+test('Tab edits the highlighted model reasoning and Escape returns without selecting', async () => {
+  const model = FREEBUFF_GLM_V53_FLASH_MODEL_ID
+  const previous = useFreebuffModelStore.getState().reasoningEffortByModel
+  useFreebuffSessionStore.getState().setSession({ status: 'none', accessTier: 'full' })
+  useFreebuffModelStore.setState({ selectedModel: model, reasoningEffortByModel: {} })
+  const selected: string[] = []
+  const setup = await renderSelector(40, undefined, 120, FIXED_NOW_MS, (id) => selected.push(id))
+  const persist = spyOn(useFreebuffModelStore.getState(), 'setReasoningEffort').mockImplementation((id, effort) => {
+    useFreebuffModelStore.setState({ reasoningEffortByModel: effort ? { [id]: effort } : {} })
+  })
+  try {
+    flushSync(() => setup.mockInput.pressKey('TAB'))
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain('GLM 5.3 Flash • Reasoning')
+    flushSync(() => setup.mockInput.pressKey('ESCAPE'))
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).not.toContain('↑↓ choose · Enter save')
+    expect(selected).toEqual([])
+    flushSync(() => setup.mockInput.pressKey('TAB'))
+    await setup.renderOnce()
+    flushSync(() => setup.mockInput.pressKey('ARROW_UP'))
+    await setup.renderOnce()
+    flushSync(() => setup.mockInput.pressEnter())
+    await setup.renderOnce()
+    expect(persist).toHaveBeenCalledTimes(1)
+    expect(selected).toEqual([])
+    flushSync(() => setup.mockInput.pressEnter())
+    expect(selected).toEqual([model])
+  } finally {
+    persist.mockRestore()
+    useFreebuffModelStore.setState({ reasoningEffortByModel: previous })
+  }
+})

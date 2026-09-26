@@ -658,3 +658,24 @@ describe('resolveChatKeyboardAction', () => {
     })
   })
 })
+
+describe('empty composer shortcuts', () => {
+  test('question mark opens help and left arrow opens chat history', () => {
+    expect(resolveChatKeyboardAction(createKey({ name: '?', sequence: '?', shift: true }), defaultState)).toEqual({ type: 'show-help' })
+    expect(resolveChatKeyboardAction(createKey({ name: 'left' }), defaultState)).toEqual({ type: 'open-chat-history' })
+  })
+  test.each(['?', 'left', 'right', 'up', 'down'])('%s stays in a nonempty composer, including at its edges', (name) => {
+    for (const inputValue of ['draft', ' ']) {
+      expect(resolveChatKeyboardAction(createKey({ name, sequence: name === '?' ? '?' : '' }), {
+        ...defaultState, inputValue, cursorPosition: 0, historyNavUpEnabled: true, historyNavDownEnabled: true,
+      })).toEqual({ type: 'none' })
+    }
+  })
+  test.each(['a', '!', 'h', '/'])('%s is ordinary input in an empty composer', (name) => {
+    expect(resolveChatKeyboardAction(createKey({ name, sequence: name }), defaultState)).toEqual({ type: 'none' })
+  })
+  test('does not steal keys from another input mode or modified arrows', () => {
+    expect(resolveChatKeyboardAction(createKey({ name: '?' }), { ...defaultState, inputMode: 'bash' })).toEqual({ type: 'none' })
+    expect(resolveChatKeyboardAction(createKey({ name: 'left', shift: true }), defaultState)).toEqual({ type: 'none' })
+  })
+})

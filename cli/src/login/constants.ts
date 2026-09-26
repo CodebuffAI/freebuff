@@ -2,6 +2,7 @@ import { FREEBUFF_WEB_URL_PROD } from '@codebuff/common/constants/hosts'
 import { env, IS_DEV } from '@codebuff/common/env'
 
 import { IS_FREEBUFF } from '../utils/constants'
+import { FREEBUFF_WORDMARK, FREEBUFF_WORDMARK_COMPACT } from '../utils/freebuff-wordmark'
 
 // Get the website URL from environment or use default
 export const WEBSITE_URL = env.NEXT_PUBLIC_CODEBUFF_APP_URL
@@ -42,27 +43,8 @@ const LOGO_SMALL_CODEBUFF = `
   ╚═════╝ ╚═════╝
 `
 
-// Freebuff ASCII Logo
-const LOGO_FREEBUFF = `
- ███████╗██████╗ ███████╗███████╗██████╗ ██╗   ██╗███████╗███████╗
- ██╔════╝██╔══██╗██╔════╝██╔════╝██╔══██╗██║   ██║██╔════╝██╔════╝
- █████╗  ██████╔╝█████╗  █████╗  ██████╔╝██║   ██║█████╗  █████╗
- ██╔══╝  ██╔══██╗██╔══╝  ██╔══╝  ██╔══██╗██║   ██║██╔══╝  ██╔══╝
- ██║     ██║  ██║███████╗███████╗██████╔╝╚██████╔╝██║     ██║
- ╚═╝     ╚═╝  ╚═╝╚══════╝╚══════╝╚═════╝  ╚═════╝ ╚═╝     ╚═╝
-`
-
-const LOGO_SMALL_FREEBUFF = `
- ███████╗██████╗
- ██╔════╝██╔══██╗
- █████╗  ██████╔╝
- ██╔══╝  ██╔══██╗
- ██║     ██████╔╝
- ╚═╝     ╚═════╝
-`
-
-export const LOGO = IS_FREEBUFF ? LOGO_FREEBUFF : LOGO_CODEBUFF
-export const LOGO_SMALL = IS_FREEBUFF ? LOGO_SMALL_FREEBUFF : LOGO_SMALL_CODEBUFF
+export const LOGO = IS_FREEBUFF ? FREEBUFF_WORDMARK : LOGO_CODEBUFF
+export const LOGO_SMALL = IS_FREEBUFF ? FREEBUFF_WORDMARK_COMPACT : LOGO_SMALL_CODEBUFF
 
 // Shadow/border characters that receive the sheen animation effect
 export const SHADOW_CHARS = new Set([

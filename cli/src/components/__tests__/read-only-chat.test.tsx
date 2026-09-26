@@ -1,3 +1,7 @@
+import { setProjectRoot, tryGetProjectRoot } from '../../project-files'
+import { ChatRuntimeProvider } from '../../contexts/chat-runtime-context'
+import { useFreebuffSessionStore } from '../../state/freebuff-session-store'
+import { useFreebuffChatStore } from '../../state/freebuff-chat-store'
 import {
   afterAll,
   afterEach,
@@ -29,10 +33,12 @@ import type { FreebuffSessionResponse } from '../../types/freebuff-session'
 
 let constantsMock: MockResult
 let cleanup: (() => void) | undefined
+const originalProjectRoot = tryGetProjectRoot() ?? process.cwd()
 const originalByok = useByokSelectionStore.getState()
 
 beforeAll(async () => {
   initializeThemeStore()
+  setProjectRoot(process.cwd())
   constantsMock = await mockModule(
     new URL('../../utils/constants.ts', import.meta.url).pathname,
     () => ({ IS_FREEBUFF: true }),
@@ -42,11 +48,20 @@ afterEach(() => {
   cleanup?.()
   cleanup = undefined
   useChatStore.getState().reset()
+  useFreebuffSessionStore.getState().setSession(null)
+  useFreebuffChatStore.setState({
+    pickerOpen: false,
+    nextModel: null,
+    admission: null,
+  })
   useChatHistoryStore.getState().reset()
   useMessageBlockStore.getState().reset()
   useByokSelectionStore.setState(originalByok)
 })
-afterAll(() => constantsMock.clear())
+afterAll(() => {
+  constantsMock.clear()
+  setProjectRoot(originalProjectRoot)
+})
 
 async function mount(node: React.ReactNode, height = 24) {
   cleanup?.()
@@ -142,15 +157,21 @@ describe('history without a model session', () => {
         onCancelChatHistory: () => {},
         onNewChat: () => {},
         session,
-        sessionFailure: null,
       }
-      const setup = await mount(<AuthedSurfaceRoutes {...props} />)
+      useFreebuffSessionStore.getState().setSession(session)
+      const setup = await mount(
+        <ChatRuntimeProvider inputRef={props.inputRef} continueChat={false}>
+          <AuthedSurfaceRoutes {...props} />
+        </ChatRuntimeProvider>,
+        42,
+      )
+
       const frame = setup.captureCharFrame()
       expect(frame).toContain('Saved answer available with zero Freebucks')
-      expect(frame).toContain('M · Choose model')
+      expect(frame).toContain('/model')
       expect(frame).not.toContain('Start coding for free')
       expect(frame).toContain('A saved implementation plan')
-      expect(frame).not.toContain('Build DEFAULT')
+      expect(frame).toContain('Enter a coding task')
       const history = await mount(
         <AuthedSurfaceRoutes {...props} continueChat={false} showChatHistory />,
       )

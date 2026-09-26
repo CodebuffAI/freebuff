@@ -1,7 +1,6 @@
 import {
   FREEBUFF_DEFAULT_CONTEXT_WINDOW,
   FREEBUFF_MODEL_CONTEXT_WINDOWS,
-  getFreebuffModel,
 } from '@codebuff/common/constants/freebuff-models'
 import { TextAttributes } from '@opentui/core'
 import React, { useEffect, useState } from 'react'
@@ -211,13 +210,9 @@ export const StatusBar = ({
         if (sessionProgress !== null) {
           const isUrgent =
             sessionProgress.remainingMs < FREEBUFF_COUNTDOWN_VISIBLE_MS
-          const modelName =
-            freebuffSession?.status === 'active'
-              ? getFreebuffModel(freebuffSession.model).displayName
-              : null
           // One template string on purpose: conditional text-node children
           // inside a <span> trip OpenTUI's reconciler (see knowledge.md).
-          const idleLabel = `${modelName ? `${modelName} · ` : ''}${
+          const idleLabel = `${
             isUnlimited
               ? 'unlimited'
               : formatFreebuffSessionRemaining(sessionProgress.remainingMs)
@@ -260,7 +255,9 @@ export const StatusBar = ({
   return (
     <box
       style={{
+        // Same full-width parent as the composer's bordered box.
         width: '100%',
+        flexShrink: 0,
         flexDirection: 'row',
         alignItems: 'center',
         paddingLeft: 1,
@@ -273,18 +270,23 @@ export const StatusBar = ({
         <box
           style={{
             position: 'absolute',
+            zIndex: 0,
             left: 0,
             top: 0,
             bottom: 0,
             // Fill anchors left and shrinks as time passes — the draining
             // bar is the countdown; no separate numeric readout needed.
             width: `${sessionProgress.fraction * 100}%`,
-            backgroundColor: theme.surfaceHover,
+            // A green tint keeps the countdown distinct from its gray track
+            // while preserving contrast for the status text in either theme.
+            backgroundColor: theme.name === 'light' ? '#c7e8b5' : '#28452a',
           }}
         />
       )}
       <box
         style={{
+          // Keep text above the fill even when it mounts after these columns.
+          zIndex: 1,
           flexGrow: 1,
           flexShrink: 1,
           flexBasis: 0,
@@ -293,12 +295,13 @@ export const StatusBar = ({
         <text style={{ wrapMode: 'none' }}>{statusIndicatorContent}</text>
       </box>
 
-      <box style={{ flexShrink: 0 }}>
+      <box style={{ flexShrink: 0, zIndex: 1 }}>
         {!isAtBottom && <ScrollToBottomButton onClick={scrollToLatest} />}
       </box>
 
       <box
         style={{
+          zIndex: 1,
           flexGrow: 1,
           flexShrink: 1,
           flexBasis: 0,

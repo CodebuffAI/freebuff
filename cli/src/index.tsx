@@ -31,6 +31,7 @@ import { runPlainLogin } from './login/plain-login'
 import { initializeApp } from './init/init-app'
 import { getProjectRoot, setProjectRoot } from './project-files'
 import { trackEvent } from './utils/analytics'
+import { installAiSdkWarningLogger } from './utils/ai-sdk-warnings'
 import {
   getTrustStorePath,
   isTruthyOptIn,
@@ -459,12 +460,18 @@ async function main(): Promise<void> {
   // see in Task Manager, which nothing server-side can observe.
   startWindowsMachineProcessCensus()
 
+  // The SDK defaults to process.emitWarning(), which bypasses OpenTUI's
+  // console capture and overwrites whichever terminal rows were last drawn.
+  const restoreAiSdkWarnings = installAiSdkWarningLogger((warnings) =>
+    logger.warn(warnings, 'AI SDK warning'),
+  )
   const renderer = await createCliRenderer({
     backgroundColor: 'transparent',
     exitOnCtrlC: false,
     exitSignals: CLI_RENDERER_EXIT_SIGNALS,
     screenMode: 'alternate-screen',
   })
+  renderer.once('destroy', restoreAiSdkWarnings)
 
   // Install the renderer-aware handlers before removing the startup safety net
   // so an installation failure still restores the terminal and reports itself.

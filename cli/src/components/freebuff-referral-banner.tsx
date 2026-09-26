@@ -52,9 +52,8 @@ function referralLink(code: string, referrerName: string | null): string {
  */
 const EARN_URL = `${LOGIN_WEBSITE_URL}${FREEBUFF_EARN_PATH}`
 const DASHBOARD_LABEL = `${FREEBUFF_EARN_PROMPT_SHORT} ↵`
-/** On the meter Trust buys nothing a metered account is short of, so the
- *  link just names the page. */
-const METERED_DASHBOARD_LABEL = 'Open Earn ↵'
+/** Link to details about earning Freebucks. */
+const METERED_DASHBOARD_LABEL = 'Learn More ↵'
 // Two columns of leading space separate the label from the copy control beside
 // it (the row itself has no gap), and they stay put in every state so keyboard
 // navigation never shifts the rest of the action row.
@@ -291,6 +290,8 @@ const CopyInviteLinkButton: React.FC<{
  * pre-referral-code users never see it.
  */
 interface FreebuffReferralBannerProps {
+  onSelectModel?: (model: string) => void
+
   width: number
   referral: FreebuffReferralInfo
   /** A live GLM promo, or undefined. Undefined is the ordinary state. */
@@ -305,6 +306,7 @@ interface FreebuffReferralBannerProps {
 
 export const FreebuffReferralBanner: React.FC<FreebuffReferralBannerProps> = ({
   width,
+  onSelectModel,
   referral,
   glmPromo,
   accessTier,
@@ -322,6 +324,10 @@ export const FreebuffReferralBanner: React.FC<FreebuffReferralBannerProps> = ({
   const dashboardFocused = focusedId === DASHBOARD_FOCUS_ID
 
   const useGlm = useCallback(() => {
+    if (onSelectModel) {
+      onSelectModel(FREEBUFF_REWARD_MODEL_ID)
+      return
+    }
     if (joiningRef.current) return
     joiningRef.current = true
     setJoining(true)
@@ -329,7 +335,7 @@ export const FreebuffReferralBanner: React.FC<FreebuffReferralBannerProps> = ({
       joiningRef.current = false
       setJoining(false)
     })
-  }, [])
+  }, [onSelectModel])
 
   const link = referralLink(referral.code, referral.referrerName)
   const { isCopied, copy } = useCopyToClipboard(link)

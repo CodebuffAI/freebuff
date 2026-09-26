@@ -214,7 +214,9 @@ export const ChatHistoryScreen: React.FC<ChatHistoryScreenProps> = ({
         setFocusedIndex((prev) => Math.min(maxIndex, prev + 1))
         return true
       }
-      if (isPlainEnterKey(key)) {
+      const isPlainRightArrow =
+        key.name === 'right' && !key.ctrl && !key.meta && !key.option && !key.shift
+      if (isPlainEnterKey(key) || isPlainRightArrow) {
         const focused = filteredItems[focusedIndex]
         if (focused) {
           selectChat(focused.id)
@@ -363,7 +365,7 @@ export const ChatHistoryScreen: React.FC<ChatHistoryScreenProps> = ({
           {/* Help text */}
           <box style={{ flexGrow: 1, flexShrink: 1 }}>
             <text style={{ fg: theme.muted }}>
-              ↑↓ navigate · Enter select · Click [×] to remove · Esc cancel
+              ↑↓ navigate · → / Enter open chat · Click [×] to remove · Esc cancel
             </text>
             {statusMessage && (
               <text style={{ fg: theme.muted }}>

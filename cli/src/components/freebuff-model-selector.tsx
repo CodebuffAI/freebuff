@@ -41,6 +41,8 @@ import {
   getFreebuffDeploymentAvailabilityLabel,
   getFreebuffModelUnavailableLabel,
   getFreebuffModel,
+  getFreebuffModelEfforts,
+  getFreebuffModelDefaultEffort,
   getFreebuffModelSupersededBy,
   getFreebuffModelsForAccessTier,
   getRecommendedFreebuffModelId,
@@ -175,6 +177,11 @@ const detailText = (detail: RowDetail): string => detail.text
  * keeps the focused control scrolled into view.
  */
 interface FreebuffModelSelectorProps {
+  /** Selection only; admission and any spending consent happen on send. */
+  onSelectModel?: (model: string) => void
+  onCancel?: () => void
+  selectedModelOverride?: string
+
   /** Session admission boundary; defaults to the CLI session controller. */
   startSession?: (model: string) => Promise<void>
   /** Max vertical rows the picker may occupy. When the rendered rows exceed
@@ -233,6 +240,9 @@ export function freebuffCliOfferedModelIds(
 
 export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   maxHeight,
+  onSelectModel,
+  onCancel,
+  selectedModelOverride,
   onExpandedChange,
   belowToggle,
   nowMs,
@@ -240,14 +250,17 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   startSession = startFreebuffSession,
 }) => {
   const theme = useTheme()
+  const [reasoningModel, setReasoningModel] = useState<string | null>(null)
+  const [reasoningIndex, setReasoningIndex] = useState(0)
   // contentMaxWidth (not terminalWidth) is the real budget — the parent
   // landing screen wraps this picker in a `maxWidth: contentMaxWidth`
   // box (capped at 80 cols), so a wide terminal doesn't actually let us
   // sprawl the buttons across it.
   const { contentMaxWidth } = useTerminalDimensions()
-  const selectedModel = useFreebuffModelStore((s) => s.selectedModel)
+  const storedModel = useFreebuffModelStore((s) => s.selectedModel)
+  const selectedModel = selectedModelOverride ?? storedModel
   const setSelectedModel = useFreebuffModelStore((s) => s.setSelectedModel)
-  // Subscribed, not read imperatively: `/reasoning` can change a row's effort
+  // Subscribed, not read imperatively: the reasoning submenu can change a row's effort
   // while the picker is unmounted, and the width maths below memoizes on this
   // value. Reading the store outside React would leave the memo stale and
   // truncate the row it just widened.
@@ -754,6 +767,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   const isLanding = session?.status === 'none' || !session
   const [expanded, setExpanded] = useState(
     () =>
+      Boolean(onSelectModel) ||
       !canCollapse ||
       !isLanding ||
       (selectedModel !== recommendedModel.id && isJoinable(selectedModel)),
@@ -914,7 +928,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       (renderedModelIds.includes(selectedModel) ||
         isFreebuffRewardModelId(selectedModel)) &&
       isJoinable(selectedModel)
-    if (isLanding && !selectionIsStartable) {
+    if (!onSelectModel && isLanding && !selectionIsStartable) {
       setSelectedModel(recommendedModel.id)
       // The cursor moves too: the focus effect above only rescues an
       // out-of-RANGE focus, and the row we just refused is still in range.
@@ -922,6 +936,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     }
   }, [
     renderedModelIds,
+    onSelectModel,
     isLanding,
     isJoinable,
     recommendedModel.id,
@@ -929,30 +944,17 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     setSelectedModel,
   ])
 
-  // What the row advertises as this model's reasoning: the user's `/reasoning`
-  // pick when they made one, otherwise the effort the server pins from the
-  // catalog. ONE function for both the width maths and the render — they were
-  // separate strings before the picker gained an override, and a row whose
-  // suffix outgrows what the width maths budgeted for is a truncated row.
-  //
-  // A model with a LADDER but no pinned `reasoningEffort` (Fable 5.1) still shows
-  // nothing until the user picks: its default is the provider's own, and
-  // spending row width to restate it pushed the "see all models" toggle off a
-  // short terminal. The suffix appears the moment it carries information the
-  // user did not already have.
+  // Share the suffix between width calculations and rendering.
   const reasoningSuffixFor = useCallback(
     (model: FreebuffModelOption): string => {
       const chosen = reasoningEffortByModel[model.id]
       if (chosen && model.efforts?.includes(chosen)) {
-        // The '*' marks a rung the USER chose, so a pick is distinguishable
-        // from the catalog default without a second line.
-        return ` · Reasoning: ${chosen}*`
+        return ` • ${chosen}`
       }
-      return model.reasoningEffort
-        ? ` · Reasoning: ${model.reasoningEffort}`
-        : ''
+      const effort = (onSelectModel ? getFreebuffModelDefaultEffort(model.id) : null) ?? model.reasoningEffort
+      return effort ? ` • ${effort}` : ''
     },
-    [reasoningEffortByModel],
+    [reasoningEffortByModel, onSelectModel],
   )
 
   const BUTTON_CHROME = 4 // 2 border + 2 padding
@@ -1187,10 +1189,14 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     if (focusedId === extraTargetIds.at(-1)) {
       sb.scrollTop = Math.max(0, sb.scrollHeight - sb.viewport.height)
     }
-  }, [focusedId, contentHeight, needsScroll, extraTargetIds])
+  }, [focusedId, contentHeight, needsScroll, extraTargetIds, reasoningModel])
 
   const pick = useCallback(
     (modelId: string) => {
+      if (onSelectModel) {
+        onSelectModel(modelId)
+        return
+      }
       if (admissionPending.current) return
       if (modelId === committedModelId) return
       // Priced-out rows fall through on purpose: the branches below raise the
@@ -1227,7 +1233,14 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         setPending(null)
       })
     },
-    [committedModelId, isPressable, startSession, rowIntent, pendingAsk],
+    [
+      committedModelId,
+      isPressable,
+      startSession,
+      rowIntent,
+      pendingAsk,
+      onSelectModel,
+    ],
   )
 
   const toggleExpanded = useCallback(() => {
@@ -1250,6 +1263,37 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         if (keyboardSuspended) return
         if (pending) return
         const name = key.name ?? ''
+        if (reasoningModel) {
+          key.preventDefault?.()
+          key.stopPropagation?.()
+          const efforts = getFreebuffModelEfforts(reasoningModel) ?? []
+          if (name === 'escape') setReasoningModel(null)
+          else if (name === 'up' || name === 'down') {
+            const delta = name === 'up' ? -1 : 1
+            setReasoningIndex((i) => (i + delta + efforts.length) % efforts.length)
+          } else if (isPlainEnterKey(key) && efforts[reasoningIndex]) {
+            useFreebuffModelStore.getState().setReasoningEffort(reasoningModel, efforts[reasoningIndex])
+            setReasoningModel(null)
+          }
+          return
+        }
+        if (onCancel && name === 'escape') {
+          key.preventDefault?.()
+          key.stopPropagation?.()
+          onCancel()
+          return
+        }
+        if (onSelectModel && name === 'tab') {
+          key.preventDefault?.()
+          key.stopPropagation?.()
+          const efforts = getFreebuffModelEfforts(focusedId)
+          if (efforts?.length) {
+            const current = reasoningEffortByModel[focusedId] ?? getFreebuffModelDefaultEffort(focusedId)
+            setReasoningIndex(Math.max(0, efforts.indexOf(current!)))
+            setReasoningModel(focusedId)
+          }
+          return
+        }
         const direction = freebuffModelNavigationDirectionForKey(key)
         // Use the shared Enter detector so the keypad Enter and the niche
         // Linux terminals that send \n (linefeed) for Enter also commit; a
@@ -1293,6 +1337,11 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       },
       [
         keyboardSuspended,
+        reasoningModel,
+        reasoningIndex,
+        reasoningEffortByModel,
+        onSelectModel,
+        onCancel,
         pending,
         pick,
         toggleExpanded,
@@ -1427,15 +1476,15 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
             fg={fgColor}
             attributes={isFocused ? TextAttributes.BOLD : TextAttributes.NONE}
           >
-            {model.displayName}
+            {model.displayName + reasoningSuffix}
           </span>
           {compactNames ? (
             <span fg={mutedColor}>
-              {' · ' + taglineFor(model) + reasoningSuffix + imagesSuffix}
+              {' · ' + taglineFor(model) + imagesSuffix}
             </span>
           ) : (
             <span fg={mutedColor}>
-              {namePadding + taglineFor(model) + reasoningSuffix + imagesSuffix}
+              {namePadding + taglineFor(model) + imagesSuffix}
             </span>
           )}
           {model.isNew && (
@@ -1589,6 +1638,27 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     </Button>
   ) : null
 
+  if (reasoningModel) {
+    const model = getFreebuffModel(reasoningModel)
+    const efforts = getFreebuffModelEfforts(reasoningModel) ?? []
+    return (
+      <box style={{ flexDirection: 'column', paddingLeft: 1 }}>
+        <text style={{ fg: theme.foreground }}>{`${model.displayName} • Reasoning`}</text>
+        <text style={{ fg: theme.muted }}>↑↓ choose · Enter save · Esc back</text>
+        {efforts.map((effort, index) => (
+          <Button key={effort} onClick={() => {
+            useFreebuffModelStore.getState().setReasoningEffort(reasoningModel, effort)
+            setReasoningModel(null)
+          }}>
+            <text style={{ fg: index === reasoningIndex ? theme.primary : theme.foreground }}>
+              {`${index === reasoningIndex ? '›' : ' '} ${effort}${effort === getFreebuffModelDefaultEffort(reasoningModel) ? ' (default)' : ''}`}
+            </text>
+          </Button>
+        ))}
+      </box>
+    )
+  }
+
   // Scrollbox clamped to the rows the parent can spare. When everything fits
   // it shrinks to the content height and no scrollbar shows, so tall
   // terminals look exactly like a plain column.
@@ -1701,7 +1771,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         )}
         {toggleContent}
         {belowToggle}
-        {referral && (
+        {referral && !onSelectModel && (
           <FreebuffReferralBanner
             width={buttonOuterWidth}
             referral={referral}

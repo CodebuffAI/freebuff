@@ -136,6 +136,8 @@ export type ChatKeyboardAction =
   | { type: 'toggle-sponsored-dock' }
 
   // No action needed
+  | { type: 'show-help' }
+  | { type: 'open-chat-history' }
   | { type: 'none' }
 
 const hasModifier = (key: KeyEvent) =>
@@ -225,6 +227,15 @@ export function resolveChatKeyboardAction(
   const modeConfig = getInputModeConfig(state.inputMode)
   if (isEscape && state.inputMode !== 'default' && !modeConfig.blockKeyboardExit) {
     return { type: 'exit-input-mode' }
+  }
+
+  if ((state.inputMode === 'default' || state.inputMode === 'help') && state.inputValue.length === 0 && !hasModifier(key)) {
+    if (key.sequence === '?' || key.name === '?') return { type: 'show-help' }
+    if (key.name === 'left' && !key.shift) return { type: 'open-chat-history' }
+  }
+
+  if (state.inputValue.length > 0 && ['left', 'right', 'up', 'down'].includes(key.name) && !hasModifier(key)) {
+    return { type: 'none' }
   }
 
   // Priority 2.5: Open the queue editor (Ctrl+Q). Ahead of the ctrl-c rules
@@ -339,19 +350,19 @@ export function resolveChatKeyboardAction(
 
   // Priority 10: Bash history navigation (when in bash mode)
   if (state.inputMode === 'bash') {
-    if (isUp && state.historyNavUpEnabled) {
+    if (isUp && state.inputValue.length === 0 && state.historyNavUpEnabled) {
       return { type: 'bash-history-up' }
     }
-    if (isDown && state.historyNavDownEnabled) {
+    if (isDown && state.inputValue.length === 0 && state.historyNavDownEnabled) {
       return { type: 'bash-history-down' }
     }
   }
 
   // Priority 10.5: Regular history navigation (when at edges and enabled)
-  if (isUp && state.historyNavUpEnabled) {
+  if (isUp && state.inputValue.length === 0 && state.historyNavUpEnabled) {
     return { type: 'history-up' }
   }
-  if (isDown && state.historyNavDownEnabled) {
+  if (isDown && state.inputValue.length === 0 && state.historyNavDownEnabled) {
     return { type: 'history-down' }
   }
 

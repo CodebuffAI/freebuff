@@ -10,6 +10,7 @@ type ChatInputKey = {
 }
 
 type ChatInputKeyInterceptState = {
+  inputMode?: string
   hasSlashSuggestions: boolean
   hasMentionSuggestions: boolean
   lastEditDueToNav: boolean
@@ -21,6 +22,10 @@ export function shouldInterceptChatInputKey(
   key: ChatInputKey,
   state: ChatInputKeyInterceptState,
 ): boolean {
+  if (state.inputLength === 0 && (!state.inputMode || state.inputMode === 'default' || state.inputMode === 'help') && !key.ctrl && !key.meta && !key.option) {
+    if (key.sequence === '?' || key.name === '?' || (key.name === 'left' && !key.shift)) return true
+  }
+  if (state.inputLength > 0 && ['left', 'right', 'up', 'down'].includes(key.name ?? '') && !key.ctrl && !key.meta && !key.option) return false
   const isPlainEnter = isPlainEnterKey(key)
   const isTab = key.name === 'tab' && !key.ctrl && !key.meta && !key.option
   const isUp = key.name === 'up' && !key.ctrl && !key.meta && !key.option
@@ -41,10 +46,10 @@ export function shouldInterceptChatInputKey(
   const historyUpEnabled = state.lastEditDueToNav || state.cursorPosition === 0
   const historyDownEnabled =
     state.lastEditDueToNav || state.cursorPosition === state.inputLength
-  if (isUp && historyUpEnabled) {
+  if (isUp && state.inputLength === 0 && historyUpEnabled) {
     return true
   }
-  if (isDown && historyDownEnabled) {
+  if (isDown && state.inputLength === 0 && historyDownEnabled) {
     return true
   }
 

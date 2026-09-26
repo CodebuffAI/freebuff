@@ -21,7 +21,8 @@ import type { ReasoningEffort } from '@codebuff/common/constants/reasoning-effor
  * last picked.
  *
  * `setSelectedModel` is in-memory only — it does NOT persist. Persistence
- * happens exclusively in `startFreebuffSession` (the explicit-pick path), so
+ * happens on an explicit model pick (`selectFreebuffChatModel`, or the legacy
+ * `startFreebuffSession` picker path), so
  * server-driven auto-flips (`model_locked`, `model_unavailable`, takeover)
  * can update the in-memory selection without overwriting the user's saved
  * preference. The latter previously caused users to get permanently flipped
@@ -31,7 +32,7 @@ import type { ReasoningEffort } from '@codebuff/common/constants/reasoning-effor
  * the model picker; the session hook reads it to decide which model to start.
  *
  * Reasoning effort is the opposite: `setReasoningEffort` DOES persist, because
- * every write to it is an explicit user act (`/reasoning`). There is no
+ * every write to it is an explicit user act (the model picker). There is no
  * server-driven effort flip to protect against — the server clamps rather than
  * telling the client what it chose.
  */

@@ -1,0 +1,157 @@
+import { IS_FREEBUFF } from '../../utils/constants'
+import { useByokSelectionStore } from '../../utils/byok'
+import { afterEach, beforeAll, expect, test } from 'bun:test'
+import { createTestRenderer } from '@opentui/core/testing'
+import { createRoot, flushSync } from '@opentui/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+import { FreebuffChatControls } from '../freebuff-chat-controls'
+import {
+  ChatRuntimeProvider,
+  useChatRuntime,
+} from '../../contexts/chat-runtime-context'
+import { useFreebuffChatStore } from '../../state/freebuff-chat-store'
+import { useFreebuffSessionStore } from '../../state/freebuff-session-store'
+import { useChatStore } from '../../state/chat-store'
+import { initializeThemeStore } from '../../hooks/use-theme'
+import { DEFAULT_FREEBUFF_MODEL_ID } from '@codebuff/common/constants/freebuff-models'
+import type { PendingAttachment } from '../../types/store'
+
+if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
+  test('chat admission controls (isolated Freebuff build)', async () => {
+    const child = Bun.spawn([process.execPath, 'test', import.meta.path], {
+      env: {
+        ...process.env,
+        FREEBUFF_MODE: 'true',
+        FREEBUFF_CHAT_CONTROLS_TEST: '1',
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    expect({ code, output: code ? stdout + stderr : '' }).toEqual({
+      code: 0,
+      output: '',
+    })
+  }, 15_000)
+} else {
+  let cleanup: (() => void) | undefined
+  beforeAll(initializeThemeStore)
+  afterEach(() => {
+    cleanup?.()
+    cleanup = undefined
+    useChatStore.getState().reset()
+    useFreebuffChatStore.setState({
+      admission: null,
+      pickerOpen: false,
+      nextModel: null,
+    })
+    useFreebuffSessionStore.getState().setSession(null)
+  })
+
+  const attachment: PendingAttachment = {
+    id: 'attached-text',
+    kind: 'text',
+    content: 'Keep this document',
+    preview: 'Keep this document',
+    charCount: 18,
+  }
+
+  async function mount() {
+    expect(IS_FREEBUFF).toBe(true)
+    useByokSelectionStore.setState({ selected: undefined, setupOpen: false })
+    const setup = await createTestRenderer({
+      width: 90,
+      height: 25,
+      kittyKeyboard: true,
+    })
+    const root = createRoot(setup.renderer)
+    const queries = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    let runtime: ReturnType<typeof useChatRuntime> | undefined
+    function Seed() {
+      runtime = useChatRuntime()
+      return <FreebuffChatControls />
+    }
+    cleanup = () => {
+      flushSync(() => root.unmount())
+      queries.clear()
+      setup.renderer.destroy()
+    }
+    flushSync(() =>
+      root.render(
+        <QueryClientProvider client={queries}>
+          <ChatRuntimeProvider
+            inputRef={{ current: null }}
+            continueChat={false}
+          >
+            <Seed />
+          </ChatRuntimeProvider>
+        </QueryClientProvider>,
+      ),
+    )
+    flushSync(() =>
+      runtime!.addToQueueFront({
+        content: 'Keep this first message',
+        attachments: [attachment],
+      }),
+    )
+    await setup.renderOnce()
+    const deadline = performance.now() + 1000
+    while (runtime!.queuedMessages.length === 0 && performance.now() < deadline)
+      await Bun.sleep(5)
+    expect(runtime!.queuedMessages).toHaveLength(1)
+    return setup
+  }
+
+  test('cancelling consent restores the first message and attachments to the draft', async () => {
+    useFreebuffChatStore.setState({
+      admission: {
+        phase: 'confirm',
+        model: DEFAULT_FREEBUFF_MODEL_ID,
+        message: 'Spend 5 from your wallet?',
+      },
+    })
+    const setup = await mount()
+    expect(setup.captureCharFrame()).toContain('Spend 5 from your wallet?')
+    await setup.mockInput.pressKey('ESCAPE')
+    expect(useFreebuffChatStore.getState().admission).toBeNull()
+    expect(useChatStore.getState().inputValue).toBe('Keep this first message')
+    expect(useChatStore.getState().pendingAttachments).toEqual([attachment])
+  })
+
+  test('cancelling a model-switch question leaves the existing paid session intact', async () => {
+    const session = {
+      status: 'active' as const,
+      accessTier: 'full' as const,
+      model: DEFAULT_FREEBUFF_MODEL_ID,
+      instanceId: 'cli:held',
+      admittedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      remainingMs: 3_600_000,
+    }
+    useFreebuffSessionStore.getState().setSession(session)
+    // Successful admissions retain this cancellation identity too.
+    useFreebuffSessionStore
+      .getState()
+      .setPendingAdmission({ instanceId: session.instanceId, token: 'fixture' })
+    useFreebuffChatStore.setState({
+      admission: {
+        phase: 'confirm',
+        model: 'mimo/mimo-v2.5',
+        previousSession: session,
+        message: 'End the current model session?',
+      },
+    })
+    const setup = await mount()
+    await setup.mockInput.pressKey('ESCAPE')
+    expect(useFreebuffSessionStore.getState().session).toBe(session)
+    expect(useChatStore.getState().inputValue).toBe('Keep this first message')
+    expect(useFreebuffChatStore.getState().admission).toBeNull()
+  })
+}

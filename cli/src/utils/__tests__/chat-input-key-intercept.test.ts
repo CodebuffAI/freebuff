@@ -38,3 +38,14 @@ describe('shouldInterceptChatInputKey', () => {
     ).toBe(false)
   })
 })
+
+test('reserves empty composer shortcuts but leaves text editing alone', () => {
+  for (const key of [{ name: '?', sequence: '?' }, { name: 'left' }]) {
+    expect(shouldInterceptChatInputKey(key, { ...baseState, inputLength: 0 })).toBe(true)
+    expect(shouldInterceptChatInputKey(key, baseState)).toBe(false)
+    expect(shouldInterceptChatInputKey(key, { ...baseState, inputLength: 0, inputMode: 'bash' })).toBe(false)
+  }
+  for (const name of ['up', 'down']) {
+    expect(shouldInterceptChatInputKey({ name }, { ...baseState, cursorPosition: 0, lastEditDueToNav: true })).toBe(false)
+  }
+})

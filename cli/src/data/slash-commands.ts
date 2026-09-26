@@ -45,8 +45,8 @@ const FREEBUFF_ONLY_COMMAND_IDS = new Set([
   'byok',
   'plan',
   'end-session',
+  'model',
   'dashboard',
-  'reasoning',
 ])
 
 const ALL_SLASH_COMMANDS: SlashCommand[] = [
@@ -194,16 +194,14 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     aliases: ['provider'],
   },
   {
-    id: 'reasoning',
-    label: 'reasoning',
-    description: 'Set how hard the current model thinks (low / high / max)',
-    aliases: ['effort', 'think'],
+    id: 'model',
+    label: 'model',
+    description: 'Choose the model for your next message',
   },
   {
     id: 'end-session',
     label: 'end-session',
     description: 'End your current session',
-    aliases: ['model'],
   },
   {
     id: 'dashboard',
@@ -231,9 +229,7 @@ export const SLASH_COMMANDS = IS_FREEBUFF
   ? ALL_SLASH_COMMANDS.filter(
       (cmd) => !FREEBUFF_REMOVED_COMMAND_IDS.has(cmd.id),
     )
-  : ALL_SLASH_COMMANDS.filter(
-      (cmd) => !FREEBUFF_ONLY_COMMAND_IDS.has(cmd.id),
-    )
+  : ALL_SLASH_COMMANDS.filter((cmd) => !FREEBUFF_ONLY_COMMAND_IDS.has(cmd.id))
 
 export const SLASHLESS_COMMAND_IDS = new Set(
   SLASH_COMMANDS.filter((cmd) => cmd.implicitCommand).map((cmd) =>

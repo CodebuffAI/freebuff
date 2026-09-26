@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from 'bun:test'
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from '@codebuff/common/constants/freebuff-model-ids'
 import { createTestRenderer } from '@opentui/core/testing'
 import { createRoot, flushSync } from '@opentui/react'
@@ -8,6 +8,7 @@ import { StatusBar } from '../status-bar'
 import { initializeThemeStore } from '../../hooks/use-theme'
 import { useChatStore } from '../../state/chat-store'
 import { IS_FREEBUFF } from '../../utils/constants'
+import { useByokSelectionStore } from '../../utils/byok'
 import { getStatusIndicatorState } from '../../utils/status-indicator-state'
 
 import type { FreebuffSessionResponse } from '../../types/freebuff-session'
@@ -16,6 +17,13 @@ import type { RunState } from '@codebuff/sdk'
 beforeAll(() => {
   initializeThemeStore()
 })
+
+let previousByok: ReturnType<typeof useByokSelectionStore.getState>['selected']
+beforeEach(() => {
+  previousByok = useByokSelectionStore.getState().selected
+  useByokSelectionStore.setState({ selected: undefined })
+})
+afterEach(() => useByokSelectionStore.setState({ selected: previousByok }))
 
 describe('StatusBar', () => {
   test('renders working for the streaming phase', async () => {
@@ -86,16 +94,35 @@ describe('StatusBar', () => {
             isAtBottom
             scrollToLatest={() => {}}
             statusIndicatorState={statusIndicatorState}
+            freebuffSession={null}
+            onEndSession={() => {}}
+          />,
+        )
+      })
+      await setup.renderOnce()
+      flushSync(() => {
+        root.render(
+          <StatusBar
+            timerStartTime={null}
+            isAtBottom
+            scrollToLatest={() => {}}
+            statusIndicatorState={statusIndicatorState}
             freebuffSession={session}
+            onEndSession={() => {}}
           />,
         )
       })
 
       try {
         await setup.renderOnce()
+        // Exercise repainting after the progress background is mounted.
+        await setup.renderOnce()
         const frame = setup.captureCharFrame()
         // 142,310 of DeepSeek V4 Flash's 1,048,576-token window → 14%.
         expect(frame).toContain('unlimited · 142.3K (14%)')
+        expect(frame).not.toContain('DeepSeek')
+        expect(frame).not.toContain(' • ')
+        expect(frame).toContain('✕ End session')
       } finally {
         flushSync(() => root.unmount())
         setup.renderer.destroy()

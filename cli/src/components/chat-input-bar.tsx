@@ -122,7 +122,6 @@ export const ChatInputBar = ({
   onInterruptStream,
 }: ChatInputBarProps) => {
   const inputMode = useChatStore((state) => state.inputMode)
-  const setInputMode = useChatStore((state) => state.setInputMode)
   const pendingSkillName = useChatStore((state) => state.pendingSkillName)
 
   const baseModeConfig = getInputModeConfig(inputMode)
@@ -166,12 +165,14 @@ export const ChatInputBar = ({
       meta?: boolean
       option?: boolean
     }) => {
+      const draft = useChatStore.getState()
       return shouldInterceptChatInputKey(key, {
+        inputMode: draft.inputMode,
         hasSlashSuggestions,
         hasMentionSuggestions,
-        lastEditDueToNav,
-        cursorPosition,
-        inputLength: inputValue.length,
+        lastEditDueToNav: draft.lastEditDueToNav,
+        cursorPosition: draft.cursorPosition,
+        inputLength: draft.inputValue.length,
       })
     },
   )
@@ -205,24 +206,6 @@ export const ChatInputBar = ({
   // Subscription limit mode: show only the limit banner (no input box)
   if (inputMode === 'subscriptionLimit') {
     return <InputModeBanner />
-  }
-
-  // Handle input changes with special mode entry detection
-  const handleInputChange = (value: InputValue) => {
-    // Detect entering bash mode: user typed exactly '!' when in default mode
-    if (inputMode === 'default' && value.text === '!') {
-      // Enter bash mode and clear input
-      setInputMode('bash')
-      setInputValue({
-        text: '',
-        cursorPosition: 0,
-        lastEditDueToNav: value.lastEditDueToNav,
-      })
-      return
-    }
-
-    // Normal input handling
-    setInputValue(value)
   }
 
   const handleFormSubmit = (
@@ -405,7 +388,7 @@ export const ChatInputBar = ({
           )}
           <MultilineInput
             value={inputValue}
-            onChange={handleInputChange}
+            onChange={setInputValue}
             onSubmit={handleSubmit}
             onPaste={onPaste}
             onKeyIntercept={handleKeyIntercept}
@@ -501,7 +484,7 @@ export const ChatInputBar = ({
             <box style={{ flexGrow: 1, minWidth: 0 }}>
               <MultilineInput
                 value={inputValue}
-                onChange={handleInputChange}
+                onChange={setInputValue}
                 onSubmit={handleSubmit}
                 onPaste={onPaste}
                 onKeyIntercept={handleKeyIntercept}
