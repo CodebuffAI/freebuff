@@ -49,6 +49,10 @@ process.env.FREEBUFF_GOD_QUOTA_EXEMPT = 'on'
 delete process.env.FREEBUFF_ADS_SLACK_WEBHOOK_URL
 // Submission fixtures must never update real Loops contacts or enroll leads.
 process.env.FREEBUFF_ADS_LEAD_NURTURE = 'off'
+// The CPM leg defaults ON in production (COD-677: un-pausing an invoiced CPM
+// campaign is the only switch). Route tests written before that assume it
+// absent; the ones that exercise it set the knob themselves.
+process.env.FREEBUFF_FIRST_PARTY_CPM_LEG ??= 'off'
 
 for (const [key, value] of Object.entries(testDefaults)) {
   if (!process.env[key]) {
