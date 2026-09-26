@@ -18,6 +18,7 @@ import {
   findXcodeDeveloperGit,
   linkDeveloperShims,
   sponsoredCodeSearchFlagsRefusal,
+  sponsoredLinuxEnvArgs,
   sponsoredMacGitPath,
   sponsoredMacProfile,
   sponsoredMacSecretReadRules,
@@ -159,6 +160,110 @@ describe('sponsored local environment (COD-336 acceptance 4)', () => {
       }
     },
   )
+})
+
+describe('connected run credentials (COD-665)', () => {
+  const KEY = 'sk_test_connect_1234567890'
+
+  containedIt(
+    'a real shell sees exactly the declared variable, with the connected value, and no host credential',
+    async () => {
+      const { root, runtime, parent } = workspace()
+      try {
+        const handle = createSponsoredTerminalBroker({
+          workspaceRoot: root,
+          runtimeDir: runtime,
+          credentialEnv: { SIEVE_API_KEY: KEY },
+        }).start({
+          executable: 'bash',
+          args: [
+            '-c',
+            'echo "SIEVE=${SIEVE_API_KEY:-absent}"; echo "GH=${GITHUB_TOKEN:-absent}"; echo "HOME=$HOME"',
+          ],
+          cwd: root,
+          // The host's OWN value of the same name is not what the run gets.
+          env: {
+            ...POLLUTED_ENV,
+            SIEVE_API_KEY: 'from-the-host-shell',
+          } as NodeJS.ProcessEnv,
+        })
+        const stdout = drain(handle.stdout)
+        await handle.completion
+        const output = await stdout
+        expect(output).toContain(`SIEVE=${KEY}`)
+        expect(output).not.toContain('from-the-host-shell')
+        expect(output).toContain('GH=absent')
+        expect(output).toContain(`HOME=${path.join(runtime, 'home')}`)
+      } finally {
+        fs.rmSync(parent, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it('refuses to start a command with an undeclarable credential name', () => {
+    const { root, runtime, parent } = workspace()
+    try {
+      const broker = createSponsoredTerminalBroker({
+        workspaceRoot: root,
+        runtimeDir: runtime,
+        // Linux or macOS both build the env before choosing a sandbox, so
+        // the refusal is the same whichever this host is.
+        platform: process.platform === 'linux' ? 'linux' : 'darwin',
+        credentialEnv: { NODE_OPTIONS: '--require=/tmp/evil.js' },
+      })
+      expect(() =>
+        broker.start({
+          executable: 'bash',
+          args: ['-c', 'true'],
+          cwd: root,
+          env: POLLUTED_ENV as NodeJS.ProcessEnv,
+        }),
+      ).toThrow(/not a declarable credential name/)
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  it('bubblewrap never carries a credential value in its argv', () => {
+    const env = {
+      PATH: '/usr/bin',
+      HOME: '/run/home',
+      SIEVE_API_KEY: KEY,
+    }
+    const { args, spawnEnv } = sponsoredLinuxEnvArgs(
+      env,
+      new Set(['SIEVE_API_KEY']),
+    )
+    // /proc/<pid>/cmdline is world-readable; /proc/<pid>/environ is not.
+    expect(args.join('\0')).not.toContain(KEY)
+    expect(args).not.toContain('--clearenv')
+    expect(spawnEnv).toEqual({ PATH: '/usr/bin', SIEVE_API_KEY: KEY })
+    // Everything else is still a --setenv, which overrides bwrap's own env.
+    expect(args).toEqual([
+      '--setenv',
+      'PATH',
+      '/usr/bin',
+      '--setenv',
+      'HOME',
+      '/run/home',
+    ])
+  })
+
+  it('with no credentials the bubblewrap env argv is exactly what it always was', () => {
+    const env = { PATH: '/usr/bin', HOME: '/run/home', UNSET: undefined }
+    expect(sponsoredLinuxEnvArgs(env)).toEqual({
+      args: [
+        '--clearenv',
+        '--setenv',
+        'PATH',
+        '/usr/bin',
+        '--setenv',
+        'HOME',
+        '/run/home',
+      ],
+      spawnEnv: { PATH: '/usr/bin' },
+    })
+  })
 })
 
 describe('sponsored write containment (COD-336 acceptance 3)', () => {

@@ -70,6 +70,7 @@ import {
   CREDENTIAL_SUFFIXES,
   evaluateSponsoredReadPath,
 } from '@codebuff/common/ads/sponsored-capabilities'
+import { withSponsoredRunCredentialEnv } from '@codebuff/common/ads/sponsored-run-credentials'
 import { ENV_TEMPLATE_FILE_PATTERNS } from '@codebuff/common/util/env-file-path'
 
 import { getSystemProcessEnv } from '../env'
@@ -267,6 +268,18 @@ export interface SponsoredSandboxOptions {
    * could name the wrong ones.
    */
   readOnlyGitDir?: boolean
+  /**
+   * The credentials the user connected for THIS run (COD-665), keyed by the
+   * variable the reviewed procedure declared (`requires-credential:`).
+   *
+   * Added AFTER the scrub, on both arms, by `withSponsoredRunCredentialEnv`:
+   * the scrub and its credential-shape assertion run exactly as before, and
+   * the one exception to that assertion is exactly these names. Never read
+   * from the host environment -- a user's own `SIEVE_API_KEY` in their shell
+   * is still scrubbed. Absent or empty, the environment is byte-identical to
+   * what it was before this option existed.
+   */
+  credentialEnv?: Readonly<Record<string, string>>
   /** Injected by the eval, which keeps its own (wider) allowlist. */
   scrubEnv?: (
     source: Record<string, string | undefined>,
@@ -1866,6 +1879,8 @@ function spawnLinux(
   denyWriteSubpaths: string[] = [],
   /** Files masked with `/dev/null`; see `sponsoredSecretFiles`. */
   secretFiles: string[] = [],
+  /** Names in `env` that are the run's connected credentials (COD-665). */
+  credentialNames: ReadonlySet<string> = new Set(),
 ): TerminalCommandProcess {
   const bwrap = findBubblewrap()
   if (!bwrap) {
@@ -1950,23 +1965,60 @@ function spawnLinux(
   for (const file of secretFiles) {
     if (fs.existsSync(file)) args.push('--ro-bind', '/dev/null', file)
   }
-  args.push('--chdir', request.cwd, '--clearenv')
-  for (const [key, value] of Object.entries(env)) {
-    if (value !== undefined) args.push('--setenv', key, value)
-  }
+  args.push('--chdir', request.cwd)
+  const envArgs = sponsoredLinuxEnvArgs(env, credentialNames)
+  args.push(...envArgs.args)
   args.push(request.executable, ...request.args)
   return processHandle(
     spawn(bwrap, args, {
       cwd: request.cwd,
       // `bwrap` itself only needs a PATH; `--clearenv` plus the `--setenv`
-      // pairs above are what the CHILD sees. Cast because some consumers
-      // declare a required-key ProcessEnv, and inheriting keys to satisfy a
-      // type would defeat the point of the scrub.
-      env: { PATH: env.PATH } as unknown as NodeJS.ProcessEnv,
+      // pairs above are what the CHILD sees -- and, for a run with connected
+      // credentials, those credentials, which ride bwrap's own environment
+      // rather than its argv (see `sponsoredLinuxEnvArgs`). Cast because some
+      // consumers declare a required-key ProcessEnv, and inheriting keys to
+      // satisfy a type would defeat the point of the scrub.
+      env: envArgs.spawnEnv as unknown as NodeJS.ProcessEnv,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     }),
   )
+}
+
+/**
+ * How the Linux arm hands the run its environment. PURE, so the argv can be
+ * asserted on any OS.
+ *
+ * Every variable used to go through `--clearenv` plus `--setenv KEY VALUE`,
+ * which puts each value in bwrap's ARGV -- and `/proc/<pid>/cmdline` is
+ * readable by every user on the machine. That is harmless for `PATH` and
+ * `HOME`, and it is not for a key the user just typed (COD-665). So a
+ * connected credential travels in bwrap's own process environment instead
+ * (`/proc/<pid>/environ` is readable only by its owner), which bwrap passes
+ * through to the child; everything else is still a `--setenv`, which overrides
+ * it. `--clearenv` is dropped ONLY then, because it would clear the
+ * credentials too, and it has nothing else to clear: bwrap's environment is
+ * exactly `{ PATH, ...credentials }`, set here.
+ *
+ * With no credentials the argv and spawn environment are exactly what they
+ * were before this function existed.
+ */
+export function sponsoredLinuxEnvArgs(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+  credentialNames: ReadonlySet<string> = new Set(),
+): { args: string[]; spawnEnv: Record<string, string | undefined> } {
+  const args: string[] = []
+  const spawnEnv: Record<string, string | undefined> = { PATH: env.PATH }
+  const carriesCredentials = [...credentialNames].some(
+    (name) => env[name] !== undefined,
+  )
+  if (!carriesCredentials) args.push('--clearenv')
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) continue
+    if (credentialNames.has(key)) spawnEnv[key] = value
+    else args.push('--setenv', key, value)
+  }
+  return { args, spawnEnv }
 }
 
 // ------------------------------------------------------ the Windows floor
@@ -2184,6 +2236,7 @@ function windowsFloorProcessHandle(
 function createWindowsFloorBroker(
   workspaceRoot: string,
   runtimeDir: string,
+  credentialEnv?: Readonly<Record<string, string>>,
 ): TerminalCommandBroker {
   const paths = sponsoredWindowsRunPaths(runtimeDir)
   return {
@@ -2198,7 +2251,10 @@ function createWindowsFloorBroker(
       ]) {
         fs.mkdirSync(dir, { recursive: true })
       }
-      const env = scrubSponsoredWindowsEnv(request.env, paths)
+      const env = withSponsoredRunCredentialEnv(
+        scrubSponsoredWindowsEnv(request.env, paths),
+        credentialEnv,
+      )
       const launch = sponsoredWindowsFloorLaunch(request)
       return windowsFloorProcessHandle(
         spawn(launch.file, launch.args, {
@@ -2244,7 +2300,11 @@ export function createSponsoredTerminalBroker(
       serverGrant: options.serverGrant,
     }) === 'floor'
   ) {
-    return createWindowsFloorBroker(workspaceRoot, runtimeDir)
+    return createWindowsFloorBroker(
+      workspaceRoot,
+      runtimeDir,
+      options.credentialEnv,
+    )
   }
   const linkedWorktree = options.linkedWorktree
   const scrubEnv = options.scrubEnv ?? scrubSponsoredLocalEnv
@@ -2275,7 +2335,10 @@ export function createSponsoredTerminalBroker(
       assertSponsoredCommandCwd(workspaceRoot, request.cwd)
       fs.mkdirSync(home, { recursive: true })
       fs.mkdirSync(tmp, { recursive: true })
-      const env = scrubEnv(request.env, { home, tmp }) as NodeJS.ProcessEnv
+      const env = withSponsoredRunCredentialEnv(
+        scrubEnv(request.env, { home, tmp }),
+        options.credentialEnv,
+      ) as NodeJS.ProcessEnv
       if (platform === 'darwin' && env.PATH !== undefined) {
         env.PATH = macRunPath(env.PATH)
       }
@@ -2319,6 +2382,7 @@ export function createSponsoredTerminalBroker(
           linkedWorktree,
           denyWriteSubpaths,
           sponsoredSecretFiles(workspaceRoot),
+          new Set(Object.keys(options.credentialEnv ?? {})),
         )
       }
       throw new Error(
