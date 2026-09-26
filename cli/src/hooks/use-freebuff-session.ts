@@ -8,6 +8,7 @@ import {
   freebuffWithdrawnModelMessage,
   getFreebuffModel,
   isFreebuffLimitedOfferModelId,
+  isFreebuffModelId,
   resolveFreebuffModelForAccessTier,
 } from '@codebuff/common/constants/freebuff-models'
 import {
@@ -30,6 +31,8 @@ import { getAuthTokenDetails } from '../utils/auth'
 import { stopActiveRun } from '../utils/active-run'
 import { IS_FREEBUFF } from '../utils/constants'
 import {
+  deadLegacyFreebuffOwner,
+  forgetFreebuffInstanceOwner,
   isFreebuffInstanceOwnedByDeadLocalProcess,
   recordFreebuffInstanceOwner,
 } from '../utils/freebuff-instance-owner'
@@ -568,6 +571,18 @@ export function useFreebuffSession({
     let claimId = relaunch?.instanceId ?? newFreebuffCliInstanceId()
     let attemptedModel: string | undefined = relaunch?.model
     let claimRetired = false
+    // Cross-protocol update restart: an old launcher replaced a pre-multi-
+    // session binary (0.0.196 and earlier), which kept its LEGACY hour for the
+    // relaunch but could leave no `cli:` handoff. The first tick probes that
+    // instance with a legacy GET; if this account holds it, active, the
+    // startup takeover below rotates it on the same expiry (no purchase) and
+    // the session stays legacy until a restart (end, rejoin, model switch)
+    // returns this process to ordinary `cli:` claims. Anything else falls back
+    // to the fresh-claim startup.
+    let legacyProbe: string | undefined = relaunch
+      ? undefined
+      : deadLegacyFreebuffOwner(token)
+    let legacyHour = false
     // Method for the NEXT tick. GET is read-only; POST claims/rotates a seat.
     // Startup is GET (probe before committing). After any POST completes we
     // flip back to GET. refresh() sets it to 'POST' for explicit join/rejoin;
@@ -585,7 +600,7 @@ export function useFreebuffSession({
         useFreebuffModelStore.getState().setSelectedModel(resolvedModel)
       }
       if (next.status === 'active' && !freebuffCliAttemptId(next.instanceId)) {
-        recordFreebuffInstanceOwner(next.instanceId)
+        recordFreebuffInstanceOwner(next.instanceId, token)
       }
       if (next.status === 'active' && freebuffCliAttemptId(next.instanceId)) {
         recordLiveFreebuffSession(next, token)
@@ -631,8 +646,14 @@ export function useFreebuffSession({
       if (cancelled) return
       const method = nextMethod
       const model = getSelectedFreebuffModel()
-      const multiSession = !isFreebuffLimitedOfferModelId(model)
-      const instanceId = multiSession ? claimId : getFreebuffInstanceId()
+      const probingLegacy = legacyProbe
+      const multiSession =
+        probingLegacy === undefined &&
+        !legacyHour &&
+        !isFreebuffLimitedOfferModelId(model)
+      const instanceId = multiSession
+        ? claimId
+        : (probingLegacy ?? getFreebuffInstanceId())
       const currentSession = useFreebuffSessionStore.getState().session
       const takeoverInstanceId =
         currentSession?.status === 'takeover_prompt'
@@ -680,6 +701,42 @@ export function useFreebuffSession({
           return
         }
         consecutiveFailures = 0
+        if (probingLegacy !== undefined) {
+          legacyProbe = undefined
+          const adoptable =
+            next.status === 'active' &&
+            next.instanceId === probingLegacy &&
+            isFreebuffModelId(next.model) &&
+            !isFreebuffLimitedOfferModelId(next.model)
+          if (!adoptable) {
+            // Not this account's live hour (ended, expired, superseded, or a
+            // trial the legacy path already owns): never show that verdict,
+            // just start the way this binary always has.
+            if (next.status !== 'active')
+              forgetFreebuffInstanceOwner(probingLegacy)
+            nextMethod = 'GET'
+            schedule(0)
+            return
+          }
+          logger.info(
+            { model: next.model },
+            '[freebuff-session] resuming the legacy hour a pre-multi-session CLI left behind',
+          )
+          legacyHour = true
+          // Falls through to the startup takeover branch below.
+        } else if (
+          legacyHour &&
+          method === 'POST' &&
+          previousStatus === null &&
+          next.status !== 'active'
+        ) {
+          // The adoption itself was refused. Never let a follow-up branch turn
+          // that into a purchase nobody picked: land on the picker instead.
+          legacyHour = false
+          nextMethod = 'GET'
+          schedule(0)
+          return
+        }
         if (
           method === 'GET' &&
           previousStatus === null &&
@@ -921,6 +978,14 @@ export function useFreebuffSession({
             schedule(0)
             return
           }
+          if (legacyHour) {
+            // The owner came back to life between the probe and here: never
+            // offer to take a live process's hour. Start fresh instead.
+            legacyHour = false
+            nextMethod = 'GET'
+            schedule(0)
+            return
+          }
           apply({ status: 'takeover_prompt', model: next.model })
           return
         }
@@ -996,6 +1061,17 @@ export function useFreebuffSession({
         ) {
           return
         }
+        if (
+          probingLegacy !== undefined ||
+          (legacyHour && previousStatus === null)
+        ) {
+          // An unanswered adoption is ambiguous: fall back to a fresh claim.
+          legacyProbe = undefined
+          legacyHour = false
+          nextMethod = 'GET'
+          schedule(0)
+          return
+        }
         const msg = err instanceof Error ? err.message : String(err)
         consecutiveFailures++
         const disposition = classifyFreebuffSessionRequestFailure(method, err)
@@ -1046,6 +1122,16 @@ export function useFreebuffSession({
     controller = {
       restart: async (mode, rotateClaim = false) => {
         const generation = ++restartGeneration
+        // An end, a switch or a rejoin after expiry leaves the adopted legacy
+        // hour behind (the caller released it if it was live), so the next
+        // admission is an ordinary `cli:` claim. Only a plain re-sync of the
+        // hour still held stays legacy: a `cli:` POST there would buy one.
+        legacyProbe = undefined
+        legacyHour =
+          legacyHour &&
+          mode === 'rejoin' &&
+          !rotateClaim &&
+          holdsLiveFreebuffSlot(useFreebuffSessionStore.getState().session)
         clearTimer()
         // Abort any in-flight fetch so it can't race us and overwrite state.
         abortController.abort()
