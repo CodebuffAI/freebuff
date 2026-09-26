@@ -377,8 +377,8 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   /**
    * COD-654, present only when the CPM leg was evaluated (never under `off`).
    * `first_party_cpm_outcome` is its verdict: `fill`, `no_fill`,
-   * `shadow_would_fill`, `shadow_no_fill`, `not_tier1`, `gravity_not_no_fill`
-   * or `error`. Phase 1's capacity readout is `shadow_would_fill` grouped by
+   * `shadow_would_fill`, `shadow_no_fill`, `geo_unknown` (`not_tier1` before
+   * COD-673 opened tier 2), `gravity_not_no_fill` or `error`. Phase 1's capacity readout is `shadow_would_fill` grouped by
    * day; `first_party_cpm_campaign_id` names the CPM campaign it would have
    * (or did) serve.
    */

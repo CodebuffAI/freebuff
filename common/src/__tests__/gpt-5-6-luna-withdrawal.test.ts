@@ -28,7 +28,7 @@ import {
   FREEBUFF_PAUSED_FREE_MODEL_IDS,
   FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS,
   FREEBUFF_STANDARD_MODEL_IDS,
-  FREEBUFF_US_OR_PAID_MODEL_IDS,
+  FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS,
   FREEBUFF_WEB_ALL_MODELS,
   FREEBUFF_WEB_LIMITED_MODEL_IDS,
   FREEBUFF_WEB_MODELS,
@@ -133,13 +133,13 @@ describe('GPT-5.6 Luna is withdrawn', () => {
       (model) => model.id === DEFAULT_FREEBUFF_MODEL_ID,
     )!
     expect(message).toContain(replacement.displayName)
-    expect(FREEBUFF_US_OR_PAID_MODEL_IDS).not.toContain(
+    expect(FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS).not.toContain(
       DEFAULT_FREEBUFF_MODEL_ID,
     )
   })
 
-  it('is not silently moved onto GPT-6 Luna, which is US-or-paid', () => {
-    expect(FREEBUFF_US_OR_PAID_MODEL_IDS).toContain(
+  it('is not silently moved onto GPT-6 Luna, which is plan-only at limited access', () => {
+    expect(FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS).toContain(
       FREEBUFF_GPT_6_LUNA_MODEL_ID,
     )
     const all = SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)

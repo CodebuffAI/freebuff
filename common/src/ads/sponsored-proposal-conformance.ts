@@ -120,6 +120,9 @@ const VM_CHECKS = check('VM', [
   'frozen criteria expose verify-again and keep setup guidance unclaimed',
   'a run with no rubric shows no verdict, even with a stored no-contract result',
   "an inconclusive check against a frozen contract still says Couldn't verify",
+  // VM-40: a card closed after Accept (COD-665). The X hides it without
+  // touching the run, and a live run is minimized rather than concealed.
+  'only a hidden card with a run in flight is drawn minimized',
 ])
 
 const R_CHECKS = check('R', [
@@ -174,7 +177,7 @@ const V_CHECKS = check('V', [
 const B_CHECKS = check('B', [
   'freebuff_daily_usage for the user is unchanged across offer, accept and the terminal state',
   'the proposal row carries surface equal to the surface under test',
-  'dismiss on a running row is refused with the "still running" message; report on running records without dismissing',
+  'dismiss on an accepted or running row hides it (drawn minimized) without changing its state; report on running records without dismissing',
   'a seeded row has no impression_token and no creative_id',
 ])
 

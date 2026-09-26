@@ -365,7 +365,7 @@ describe('getAxiomOnlyLogEvent', () => {
         first_party_geo_source: 'cloudflare',
         first_party_country_code: 'US',
         first_party_tier2_bonus_percent: 2,
-        first_party_billing_mode: 'cpa',
+        first_party_billing_mode: 'cpc',
         external_settlement_enabled: false,
         first_party_primary_cohort: 'pilot-a',
         first_party_primary_cohort_percent: 1,
@@ -474,7 +474,7 @@ describe('getAxiomOnlyLogEvent', () => {
         first_party_geo_source: 'cloudflare',
         first_party_country_code: 'US',
         first_party_tier2_bonus_percent: 2,
-        first_party_billing_mode: 'cpa',
+        first_party_billing_mode: 'cpc',
         external_settlement_enabled: false,
         first_party_primary_cohort: 'pilot-a',
         first_party_primary_cohort_percent: 1,
@@ -656,7 +656,7 @@ describe('getAxiomOnlyLogEvent', () => {
     expect(
       getAxiomOnlyLogEvent(
         {
-          billing_model: 'cpa',
+          billing_model: 'cpc',
           settlement_status: 'charged',
           amount_cents: 75,
           balance_cents: 925,
@@ -672,7 +672,7 @@ describe('getAxiomOnlyLogEvent', () => {
     ).toEqual({
       event: ADS_FIRST_PARTY_SETTLEMENT_EVENT,
       data: {
-        billing_model: 'cpa',
+        billing_model: 'cpc',
         settlement_status: 'charged',
         amount_cents: 75,
         balance_cents: 925,

@@ -354,10 +354,12 @@ export const FREEBUFF_SUBSCRIPTION_FIVE_DAY_WINDOW_DAYS = 7
  *
  * Enforced on Freebuff Web by default (FREEBUFF_PRO_ENFORCED_SURFACES), and on
  * the CLI and Desktop too for every row in
- * FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS — which since 2026-09-21 is both
- * current rows, Gemini 3.8 Flash and MiMo 2.6 Pro, because both sit in the
- * CLI/Desktop catalog. Those pickers list them LOCKED to an account without a
- * plan (`freebuffPlanRequired`). Gemini was Web-only until then, and the
+ * FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS — Gemini 3.8 Flash, the one current
+ * row, because it sits in the CLI/Desktop catalog. Those pickers list it
+ * LOCKED to an account without a plan (`freebuffPlanRequired`). MiMo 2.6 Pro
+ * and GPT-6 Luna left this set on 2026-09-25: open to every full-access
+ * account, plan-only at limited access
+ * (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS). Gemini was Web-only until then, and the
  * Web-only gate leaked: released CLI binaries that still held the id opened it
  * with no plan.
  *
@@ -373,8 +375,7 @@ export const FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS: readonly string[] =
  * Where a Pro row is enforced BY DEFAULT: Freebuff Web.
  *
  * A row in FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS is enforced on the CLI
- * and Desktop too, which is every current row (Gemini 3.8 Flash and MiMo 2.6
- * Pro, since 2026-09-21). A future Pro row that is Web-only needs nothing
+ * and Desktop too, which is every current row (Gemini 3.8 Flash). A future Pro row that is Web-only needs nothing
  * more; one added to the shared CLI/Desktop catalog must join that list, or it
  * is served free on those surfaces.
  *

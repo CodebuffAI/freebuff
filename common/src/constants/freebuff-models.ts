@@ -1506,9 +1506,11 @@ const MIMO_V26_PRO_MODEL = {
   // Same host and terms as the MiMo row: Xiaomi's API, reached through
   // OpenRouter's `xiaomi/fp8` endpoint with Xiaomi direct as the backup lane.
   dataUse: 'service',
-  // Premium, like Gemini 3.8 Flash: a paid-only row must not be read as a
-  // STANDARD (free, unmetered) model — FREEBUFF_STANDARD_MODEL_IDS is derived
-  // from `!premium`. Freebucks is still the meter that prices it.
+  // Premium, like GPT-6 Luna: not a STANDARD (free, unmetered) model —
+  // FREEBUFF_STANDARD_MODEL_IDS is derived from `!premium`. Open to every
+  // full-access account without a plan since 2026-09-25 (paid-only before,
+  // US-exempt from 09-22); plan-only at limited access. Freebucks is the
+  // meter that prices it.
   premium: true,
   // OpenRouter lists text + image (+ audio, video) input; verified with a real
   // image against both lanes before shipping.
@@ -2934,7 +2936,7 @@ export const FREEBUFF_MODELS = [
   // GEMINI 3.8 FLASH IS BACK IN THIS LIST since 2026-09-21, on every surface,
   // and still a PAID-ONLY row (FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS). What kept
   // it Web-only was that its paywall ran on Web alone; it is now in
-  // FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS beside MiMo 2.6 Pro, so listing
+  // FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS, so listing
   // it here no longer hands the dearest row out free. The CLI and Desktop pickers draw it LOCKED
   // for an account without a plan (`freebuffPlanRequired`): no price, a "paid
   // plan" note, and a press that opens the plans page.
@@ -3017,10 +3019,11 @@ export const FREEBUFF_PAUSED_FREE_MODEL_IDS: readonly string[] = [
   // `model_unavailable`, which names GLM 5.3 Flash (the default) as the
   // replacement; a limited pick is coerced to the limited default.
   //
-  // NOT substituted with GPT-6 Luna, deliberately: GPT-6 Luna is open only to
-  // US or paid accounts (FREEBUFF_US_OR_PAID_MODEL_IDS), so a silent
-  // substitution would either hand the gated row to everyone holding an old
-  // binary or refuse them for a model they never picked. That is the same
+  // NOT substituted with GPT-6 Luna, deliberately: GPT-6 Luna was open only
+  // to US or paid accounts when this was written (every full-access account
+  // since 2026-09-25, but still plan-only at limited access), so a silent
+  // substitution would either hand the gated row to limited accounts holding
+  // an old binary or refuse them for a model they never picked. That is the same
   // reason the row carries no `supersededBy`.
   //
   // Its roots (base2-free-luna, base3-free-luna, code-reviewer-luna) and their
@@ -3908,71 +3911,30 @@ export const FREEBUFF_CLOUD_PLANNER_TURN_LIMIT = 12
 export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
   Object.freeze([
     FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
-    // MiMo 2.6 Pro, paid-only from 2026-09-21. Both rows are paid-only on
-    // EVERY surface since that day (FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS).
-    //
-    // MiMo 2.6 Pro and GPT-6 Luna carry a US EXEMPTION from 2026-09-22: a
-    // viewer in the US opens them with no plan. They stay listed here because
-    // for everyone else the paywall is exactly this one — see
-    // FREEBUFF_US_OR_PAID_MODEL_IDS, which is the exemption, not a second gate.
-    FREEBUFF_MIMO_V26_PRO_MODEL_ID,
-    FREEBUFF_GPT_6_LUNA_MODEL_ID,
+    // MiMo 2.6 Pro and GPT-6 Luna LEFT this list on 2026-09-25, by product
+    // decision: every FULL-ACCESS account opens them with no plan (metered in
+    // Freebucks at their own prices). They were paid-only from 2026-09-21, and
+    // open to US viewers without a plan from 2026-09-22 (the retired
+    // FREEBUFF_US_OR_PAID_MODEL_IDS exemption). At LIMITED access they are
+    // still plan-only — FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS below.
   ])
-
-/**
- * Rows a viewer opens when they are IN THE US **or** hold a live plan.
- * Everyone else sees them listed and locked, and admission refuses the start.
- *
- * The country half is resolved SERVER-SIDE from the authenticated request
- * (`countryAccess.countryCode`, the same resolution the access tier uses), and
- * never from anything a client sends — a client-chosen country is one an
- * abusive client rotates. US is FREE_MODE_TIER_ONE_COUNTRIES.
- *
- * It fails CLOSED: a viewer whose country cannot be resolved is treated as
- * non-US and sees the paywall, the direction every narrowing control here
- * takes.
- *
- * No client can see the country this turns on, so the server ships the
- * VERDICT per viewer on the session response
- * (`FreebuffFreebucksInfo.planRequiredModelIds`) and the pickers draw their
- * existing lock from it. Same shape as the first-tab discount, which also
- * sends the decision rather than the geography.
- */
-export const FREEBUFF_US_OR_PAID_MODEL_IDS: readonly string[] = Object.freeze([
-  FREEBUFF_GPT_6_LUNA_MODEL_ID,
-  FREEBUFF_MIMO_V26_PRO_MODEL_ID,
-])
-
-export function isFreebuffUsOrPaidModelId(
-  id: string | null | undefined,
-): boolean {
-  return (
-    !!id &&
-    FREEBUFF_US_OR_PAID_MODEL_IDS.some((gated) =>
-      freebuffModelIdMatches(id, gated),
-    )
-  )
-}
 
 /**
  * Pro-only rows whose paywall is enforced on CLI and Desktop too, not only on
  * Freebuff Web (FREEBUFF_PRO_ENFORCED_SURFACES).
  *
- * Both are in the CLI/Desktop catalog (FREEBUFF_MODELS): MiMo 2.6 Pro since it
- * shipped, Gemini 3.8 Flash since 2026-09-21 (it was Web-only before, which is
- * what kept it paid there). Two things carry the gate on those surfaces:
- * session admission refuses a non-paying account (`checkProOnlyModel` in
+ * Gemini 3.8 Flash has been in the CLI/Desktop catalog (FREEBUFF_MODELS) since
+ * 2026-09-21. Two things carry the gate on those surfaces: session admission
+ * refuses a non-paying account (`checkProOnlyModel` in
  * web/src/server/free-session/public-api.ts), and the CLI and Desktop pickers
  * draw the row LOCKED for an account without a live plan
  * (`freebuffPlanRequired`): listed, with no price, and a press opens the plans
  * page instead of starting a session. The first is the gate; the second only
- * stops the picker offering what admission would refuse.
+ * stops the picker offering what admission would refuse. (MiMo 2.6 Pro was
+ * here too until it opened to full access on 2026-09-25.)
  */
 export const FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS: readonly string[] =
-  Object.freeze([
-    FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
-    FREEBUFF_MIMO_V26_PRO_MODEL_ID,
-  ])
+  Object.freeze([FREEBUFF_GEMINI_38_FLASH_MODEL_ID])
 
 export function isFreebuffProOnlyEverySurfaceModelId(
   id: string | null | undefined,
@@ -3995,17 +3957,16 @@ export function isFreebuffProOnlyCatalogModelId(id: string): boolean {
 /**
  * Rows an unpaid LIMITED-tier account cannot open.
  *
- * Every globally Pro-only row belongs here, plus Luna: Luna is part of the
- * ordinary full-access premium pool, but a paid plan is still what unlocks it
- * at limited access. Keeping this distinction explicit prevents the global Pro
- * gate from accidentally paywalling full-access users just to preserve the
- * limited-tier catalog boundary.
+ * Every globally Pro-only row belongs here, plus GPT-6 Luna and MiMo 2.6 Pro:
+ * both are open to every full-access account since 2026-09-25, but a paid plan
+ * is still what unlocks them at limited access. Keeping this distinction
+ * explicit prevents the global Pro gate from paywalling full-access users just
+ * to preserve the limited-tier catalog boundary.
  */
 export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
   Object.freeze([
     FREEBUFF_GPT_6_LUNA_MODEL_ID,
-    // MiMo 2.6 Pro arrives through the spread below: it is paid-only at every
-    // tier, which includes this one.
+    FREEBUFF_MIMO_V26_PRO_MODEL_ID,
     ...FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
   ])
 

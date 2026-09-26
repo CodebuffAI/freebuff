@@ -204,6 +204,32 @@ export type SponsoredProposalRow = {
     missing?: string[]
   }
   acceptance_criteria_sha256?: string
+  /**
+   * The user closed this card after accepting it, and its run is still in
+   * flight (COD-665). Set only by the server projection, which drops a
+   * hidden row once its run has ended; see `sponsoredProposalMinimized`.
+   */
+  hidden?: true
+}
+
+/**
+ * Whether a surface draws this card MINIMIZED instead of in full (COD-665).
+ *
+ * The X on an accepted card HIDES it and never touches the run: the run
+ * state is the executor's and the reporting surface's from Accept onwards.
+ * But a live run is not concealed either -- the card is the one place that
+ * says something is working on the user's code -- so while the row is
+ * `accepted` or `running` a hidden card shrinks to a line the user can
+ * reopen, and it leaves the panel only when the server stops returning it
+ * (its run ended). A hidden row in any other state is not expected here;
+ * it is drawn in full rather than guessed at.
+ */
+export function sponsoredProposalMinimized(
+  row: Pick<SponsoredProposalRow, 'state' | 'hidden'>,
+): boolean {
+  return (
+    row.hidden === true && (row.state === 'accepted' || row.state === 'running')
+  )
 }
 
 /**

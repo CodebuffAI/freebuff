@@ -296,9 +296,10 @@ export interface FreebuffFreebucksInfo {
    * Rows THIS viewer must buy a plan to open, decided by the server.
    *
    * On the wire for the reason `upgrade` is: the decision turns on the
-   * viewer's resolved COUNTRY (FREEBUFF_US_OR_PAID_MODEL_IDS — US or paid),
-   * and no client is told its country on a full-access session. A client
-   * deciding this for itself would be reading its own belief.
+   * access tier this request resolved to (limited access also locks
+   * FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS; until 2026-09-25 it turned on
+   * the COUNTRY, US or paid). A client deciding this for itself would be
+   * reading its own belief.
    *
    * Absent (an older server, or a viewer no row is gated for) means "fall back
    * to the static paid-only list", which is what every client did before

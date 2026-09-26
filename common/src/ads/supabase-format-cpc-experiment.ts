@@ -180,7 +180,8 @@ export type SupabaseFormatCpcCampaignCandidate = Readonly<{
   status: string
   /** Caller derives this from the existing reviewed campaign/procedure state. */
   reviewed: boolean
-  billingModel: 'cpc' | 'cpa' | string | null | undefined
+  /** Anything but `cpc` is refused as `billing_model_invalid`. */
+  billingModel: 'cpc' | 'cpm' | string | null | undefined
   cpcCents: number
   dailyCapCents: number
   /** Null is the required no-lifetime-cap configuration. */

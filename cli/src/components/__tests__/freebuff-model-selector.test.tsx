@@ -566,9 +566,10 @@ describe('FreebuffModelSelector tier layout', () => {
     expect(frame).not.toContain('UNLIMITED')
   })
 
-  test('lists both paid-only rows to a free account, locked', async () => {
-    // Listed rather than hidden since 2026-09-21: MiMo 2.6 Pro and Gemini 3.8
-    // Flash each say "Paid plan" on their detail line instead of a price.
+  test('lists the paid-only row to a free account, locked', async () => {
+    // Listed rather than hidden since 2026-09-21: Gemini 3.8 Flash says "Paid
+    // plan" on its detail line instead of a price. MiMo 2.6 Pro and GPT-6 Luna
+    // are open to every full-access account since 2026-09-25, so neither is.
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'full',
@@ -576,11 +577,14 @@ describe('FreebuffModelSelector tier layout', () => {
     useFreebuffModelStore
       .getState()
       .setSelectedModel(FREEBUFF_MINIMAX_M3_MODEL_ID)
-    const lines = (await renderSelector()).captureCharFrame().split('\n')
-    for (const name of ['MiMo 2.6 Pro', 'Gemini 3.8 Flash']) {
+    const lines = (await renderSelector(48)).captureCharFrame().split('\n')
+    const gemini = lines.findIndex((line) => line.includes('Gemini 3.8 Flash'))
+    expect(gemini).toBeGreaterThanOrEqual(0)
+    expect(lines[gemini + 1]).toContain('Paid plan')
+    for (const name of ['MiMo 2.6 Pro', 'GPT-6 Luna']) {
       const row = lines.findIndex((line) => line.includes(name))
       expect(row).toBeGreaterThanOrEqual(0)
-      expect(lines[row + 1]).toContain('Paid plan')
+      expect(lines[row + 1] ?? '').not.toContain('Paid plan')
     }
     expect(lines.some((line) => line.includes('MiMo 2.6 Flash'))).toBe(true)
   })

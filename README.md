@@ -36,9 +36,9 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 | --------------------------- | ----------------------- | ----------------------------------------------------------------- |
 | **GLM 5.3 Flash**           | Full and limited access | The default everywhere; deepest reasoning, unmetered              |
 | **DeepSeek V4.1 Flash** | Full and limited access | Fast coding and tool use, unmetered                               |
-| **GPT-6 Luna**              | US or paid plans        | Strong all-around with native images; runs on OpenAI flex capacity |
+| **GPT-6 Luna**              | Full access             | Strong all-around with native images; runs on OpenAI flex capacity |
 | **MiMo 2.6 Flash**          | Full and limited access | Balanced performance with image support                           |
-| **MiMo 2.6 Pro**            | Paid plans              | Xiaomi's stronger reasoning model, with image support |
+| **MiMo 2.6 Pro**            | Full access             | Xiaomi's stronger reasoning model, with image support |
 | **Solar Mini 4**            | Full and limited access | Upstage's fast, compact model; 524K context, text only |
 | **Solar Pro 4**             | Full and limited access | Upstage's larger, stronger model; 524K context, text only |
 | **Space Bunny Alpha**       | Full access             | Beta. A stealth model from an anonymous provider that retains prompts; 1M context, images |

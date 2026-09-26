@@ -28,3 +28,12 @@ export const AGENTIC_POOL_PLACEMENT_ID = 'Desktop-Agentic'
  * today's behaviour for it whatever `FREEBUFF_AGENTIC_POOL` says.
  */
 export const AGENTIC_POOL_CLIENT_VERSION = 1
+
+/**
+ * What an agentic Accept from a TIER 2 request bills at most, in cents
+ * (COD-665): `min(campaign cpc, this)`. Applied, frozen and charged only by
+ * the agentic offer route (`freebuff/web/src/server/ads/agentic-pool.ts`,
+ * which documents the rule); here so the advertiser console can name the
+ * same figure when it explains why an effective CPC sits below the list CPC.
+ */
+export const AGENTIC_TIER2_ACCEPT_PRICE_CENTS = 100

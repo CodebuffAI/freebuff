@@ -22,8 +22,8 @@ export function freebuffPlanRequired(
   hasPaidSubscription: boolean,
   /** The session response's Freebucks block, when the caller has it. Its
    *  `planRequiredModelIds` is the SERVER's per-viewer verdict and wins over
-   *  the static list: a US viewer opens FREEBUFF_US_OR_PAID_MODEL_IDS rows
-   *  with no plan, which no client can work out for itself. */
+   *  the static list: it also locks the rows a plan unlocks at LIMITED
+   *  access (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS) for a viewer there. */
   freebucks?: Pick<FreebuffFreebucksInfo, 'planRequiredModelIds'> | null,
 ): boolean {
   if (hasPaidSubscription) return false

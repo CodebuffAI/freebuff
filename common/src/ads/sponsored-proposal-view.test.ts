@@ -23,6 +23,7 @@ import {
   SPONSORED_STEP_STATE_LABEL,
   sponsoredProposalAction,
   sponsoredProposalMenu,
+  sponsoredProposalMinimized,
   sponsoredProposalViewModel,
   type SponsoredProposalRow,
   type SponsoredProposalState,
@@ -560,4 +561,34 @@ describe('the advertiser CTA (COD-512)', () => {
       )
     })
   }
+})
+
+// COD-665: the X on an accepted card hides it without touching the run, and a
+// live run is minimized rather than concealed.
+describe('sponsoredProposalMinimized', () => {
+  test('VM-40 only a hidden card with a run in flight is drawn minimized', () => {
+    for (const state of ['accepted', 'running'] as const) {
+      expect(sponsoredProposalMinimized(row({ state, hidden: true }))).toBe(
+        true,
+      )
+    }
+    // An unhidden card never is.
+    for (const state of ALL_STATES) {
+      expect(sponsoredProposalMinimized(row({ state }))).toBe(false)
+    }
+    // A hidden card whose run ended is drawn in full, not guessed at: the
+    // server stops returning it, so this is only ever a stale row.
+    for (const state of [
+      'offered',
+      'committed',
+      'delivered',
+      'landed',
+      'failed',
+      'merged',
+    ] as const) {
+      expect(sponsoredProposalMinimized(row({ state, hidden: true }))).toBe(
+        false,
+      )
+    }
+  })
 })
