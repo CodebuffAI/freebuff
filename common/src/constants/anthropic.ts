@@ -36,7 +36,9 @@ const OPENROUTER_TO_ANTHROPIC_MODEL_MAP: Record<string, string> = {
   // Claude 5.x models
   'anthropic/claude-fable-5': 'claude-fable-5',
   'anthropic/claude-fable-5.1': 'claude-fable-5-1',
+  'anthropic/claude-opus-5.5': 'claude-opus-5-5',
   'anthropic/claude-opus-5': 'claude-opus-5',
+  'anthropic/claude-sonnet-5': 'claude-sonnet-5',
 
   // Claude 4.x Opus models
   'anthropic/claude-opus-4.8': 'claude-opus-4-8',
@@ -67,8 +69,11 @@ export function toAnthropicModelId(openrouterModel: string): string {
     )
   }
 
+  // Unmapped: Anthropic ids spell versions with hyphens where OpenRouter uses
+  // dots. Stripping only the prefix sent `claude-opus-5.5`, which Anthropic
+  // 404s: every Opus 5.5 token count failed from 2026-09-23 to 09-27.
   return (
     OPENROUTER_TO_ANTHROPIC_MODEL_MAP[openrouterModel] ??
-    openrouterModel.replace('anthropic/', '')
+    openrouterModel.replace('anthropic/', '').replaceAll('.', '-')
   )
 }
