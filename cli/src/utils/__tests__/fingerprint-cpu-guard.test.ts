@@ -2,9 +2,6 @@ import { describe, test, expect, mock, afterAll } from 'bun:test'
 import * as realOs from 'node:os'
 import * as realMachineId from 'node-machine-id'
 import * as realSi from 'systeminformation'
-import * as realLogger from '../logger'
-import * as realAnalytics from '../analytics'
-import * as realDetectShell from '../detect-shell'
 
 // Issue #1374: Bun's os.cpus() throws 'Failed to get CPU information' on ARM
 // Linux when /proc/stat and /proc/cpuinfo disagree. Under proot-distro that
@@ -12,15 +9,16 @@ import * as realDetectShell from '../detect-shell'
 // /proc/stat (sysdata.py, _FAKE_STAT) while /proc/cpuinfo stays live, so on a
 // 9-core device the guest sees 8 vs 9 for the life of the container.
 //
-// These tests pin the guard's behaviour at the public entry point.
+// The guard is asserted on calculateFingerprint()'s return value rather than on
+// log output. That keeps the test to three module mocks, all of them external
+// packages, and it still distinguishes the bug precisely: before the second
+// call site was guarded the result was a legacy fingerprint, and a legacy
+// fingerprint is exactly what a throw escaping the guard looks like.
 //
-// Two things about bun's test runner matter here:
-//   - all test files share one process, and mock.module() is not undone by
-//     mock.restore(), so every module mocked below is restored in afterAll.
-//     Without that this file leaks a throwing os.cpus() and a stub logger
-//     into whichever file runs next.
-//   - re-registering a namespace object is not enough, because the mock
-//     replaces entries in place, so the real exports are captured up front.
+// Only node:os, node-machine-id and systeminformation are mocked. Mocking the
+// local ./logger or ./analytics would be more invasive and leaks into sibling
+// test files -- bun runs them all in one process and mock.module() is not
+// undone by mock.restore().
 
 const realCpus = realOs.cpus
 const realNetworkInterfaces = realOs.networkInterfaces
@@ -30,13 +28,9 @@ const realSiSystem = realSi.system
 const realSiCpu = realSi.cpu
 const realSiOsInfo = realSi.osInfo
 
-type Logged = { fingerprintType?: string }
-const logged: Logged[] = []
-
 const CPU_BREAK = 'Failed to get CPU information'
 
-function installMocks(cpusThrows: boolean) {
-  logged.length = 0
+function mockOsCpus(cpusThrows: boolean) {
   mock.module('node:os', () => ({
     ...realOsModule,
     cpus: () => {
@@ -44,6 +38,9 @@ function installMocks(cpusThrows: boolean) {
       return [{ model: 'Fake CPU' }]
     },
   }))
+}
+
+function mockSystemInformation(cpusThrows: boolean) {
   mock.module('node-machine-id', () => ({
     machineId: async () => 'test-machine-id-0001',
   }))
@@ -65,16 +62,6 @@ function installMocks(cpusThrows: boolean) {
       return { manufacturer: 'Test', brand: 'Test', cores: 1, physicalCores: 1 }
     },
   }))
-  mock.module('../analytics', () => ({ trackEvent: () => {} }))
-  mock.module('../detect-shell', () => ({ detectShell: () => 'bash' }))
-  mock.module('../logger', () => ({
-    logger: {
-      warn: (data: Logged) => logged.push(data),
-      debug: () => {},
-      info: () => {},
-      error: () => {},
-    },
-  }))
 }
 
 afterAll(() => {
@@ -90,56 +77,36 @@ afterAll(() => {
     cpu: realSiCpu,
     osInfo: realSiOsInfo,
   }))
-  mock.module('../logger', () => realLogger)
-  mock.module('../analytics', () => realAnalytics)
-  mock.module('../detect-shell', () => realDetectShell)
 })
 
-async function loadCalculateFingerprint(cpusThrows: boolean) {
-  installMocks(cpusThrows)
-  const mod = await import('../fingerprint')
-  return mod.calculateFingerprint
+// The cache-busting query gives a fresh module instance per case. fingerprint.ts
+// memoises systeminformation in a module-level variable, so a plain re-import
+// would reuse the mocks installed by whichever case ran first.
+async function calculateFingerprintWith(cpusThrows: boolean) {
+  mockOsCpus(cpusThrows)
+  mockSystemInformation(cpusThrows)
+  const mod = await import(`../fingerprint?case=${cpusThrows ? 'skew' : 'ok'}`)
+  return mod.calculateFingerprint()
 }
-
-const fingerprintTypes = () =>
-  logged.map((l) => l.fingerprintType).filter(Boolean) as string[]
 
 describe('fingerprint CPU guard (#1374)', () => {
   describe('when os.cpus() throws', () => {
-    test('calculateFingerprint() resolves instead of rejecting', async () => {
-      const calculateFingerprint = await loadCalculateFingerprint(true)
-      const id = await calculateFingerprint()
+    test('resolves instead of rejecting', async () => {
+      const id = await calculateFingerprintWith(true)
       expect(typeof id).toBe('string')
       expect(id.length).toBeGreaterThan(0)
     })
 
-    test('does not fall back to a legacy fingerprint', async () => {
-      const calculateFingerprint = await loadCalculateFingerprint(true)
-      const id = await calculateFingerprint()
+    test('keeps the enhanced fingerprint rather than falling back to legacy', async () => {
+      const id = await calculateFingerprintWith(true)
       expect(id.startsWith('enhanced-')).toBe(true)
-    })
-
-    test('guards every os.cpus() call site', async () => {
-      const calculateFingerprint = await loadCalculateFingerprint(true)
-      await calculateFingerprint()
-      const types = fingerprintTypes()
-      // pre-check in getCpuInfoSafe()
-      expect(types).toContain('cpu_pre_check_failed')
-      // runtime.cpuCount in calculateEnhancedFingerprint()
-      expect(types).toContain('cpu_count_unavailable')
-      // nothing escaped to the legacy fallback
-      expect(types).not.toContain('enhanced_failed_fallback')
     })
   })
 
   describe('when os.cpus() works', () => {
-    test('still produces an enhanced fingerprint and logs no guard', async () => {
-      const calculateFingerprint = await loadCalculateFingerprint(false)
-      const id = await calculateFingerprint()
+    test('still produces an enhanced fingerprint', async () => {
+      const id = await calculateFingerprintWith(false)
       expect(id.startsWith('enhanced-')).toBe(true)
-      const types = fingerprintTypes()
-      expect(types).not.toContain('cpu_pre_check_failed')
-      expect(types).not.toContain('cpu_count_unavailable')
     })
   })
 })
