@@ -1,5 +1,8 @@
 import { FREEBUFF_WEB_URL_PROD } from './hosts'
-import { FREEBUFF_SUBSCRIPTION_TIERS } from './freebuff-subscriptions'
+import {
+  FREEBUFF_FREE_TIER_ALLOWANCE,
+  FREEBUFF_SUBSCRIPTION_TIERS,
+} from './freebuff-subscriptions'
 
 /**
  * Copy for the Freebuff subscription promotion.
@@ -100,6 +103,41 @@ const PRICE = `$${ENTRY_TIER?.priceUsd ?? 8}/mo`
 const SESSIONS_PER_DAY = ENTRY_TIER?.dailySessions ?? 3
 const SESSIONS_PER_MONTH = ENTRY_TIER?.monthlySessions ?? 50
 
+/**
+ * THE TIER'S OWN NAME, because the copy used to get it wrong.
+ *
+ * Every line here read "Freebuff Pro" while `PRICE` and `SESSIONS_PER_DAY`
+ * interpolated `FREEBUFF_SUBSCRIPTION_TIERS[0]` -- Starter, $8, 3 sessions.
+ * `Pro` is a REAL and DIFFERENT tier at $60 with 11, so the promotion sold Pro
+ * at Starter's price and Starter's allowance, and `/plans` contradicted it the
+ * moment the reader arrived. Read from the catalog for the same reason the
+ * price is: a name typed here drifts from the thing being sold.
+ *
+ * Most titles now say plain `Freebuff` -- the tier is named in the body where
+ * there is room for it, and the title's job at 12 columns is to say who is
+ * talking.
+ */
+const TIER_NAME = ENTRY_TIER?.displayName ?? 'Starter'
+
+/**
+ * The TOTAL a buyer ends up with per day: free pool plus plan.
+ *
+ * This is `/plans`' own arithmetic -- its cards render
+ * `tier.dailySessions + FREE_TIER_ALLOWANCE.dailySessions` and its subtitle
+ * calls the result the "total allowance".
+ *
+ * USED ONLY ON THE DISPLAY CARD, which has room to show the working
+ * ("3 more hours a day ... 7 a day in total"). It is deliberately absent from
+ * the inline set, where a bare `7 hours/day` would have to stand alone: a
+ * LIMITED-ACCESS reader holds no free premium allowance at all
+ * (`includeFreeAllowance` in `PlanOptionList`), so 7 is a number they will
+ * never see, and no serve path here knows which reader it has. Stating the
+ * increment beside it is what keeps the display line honest for both readers;
+ * inline there is no room to, so inline stays on the increment.
+ */
+const FREE_PER_DAY = FREEBUFF_FREE_TIER_ALLOWANCE.dailySessions
+const TOTAL_PER_DAY = SESSIONS_PER_DAY + FREE_PER_DAY
+
 export interface HouseAdCreative {
   title: string
   adText: string
@@ -171,8 +209,27 @@ const inline = (title: string, adText: string): HouseAdCreative => ({
  * campaign offers it, and a campaign with one creative gives it nothing to
  * choose between -- the promotion would then be exactly as good as whichever
  * line happened to be written first. These deliberately argue different things
- * (the price, the queue, the model list, the ads themselves) so the measurement
+ * (the increment, the month, the model lineup, the totals) so the measurement
  * is between ANGLES rather than between synonyms.
+ *
+ * FOUR IS A CEILING, NOT A FLOOR -- ADDING A FIFTH MAKES THE PROMOTION WORSE.
+ * `selectCreative` (`packages/internal/src/ad-serving/first-party-selection.ts`)
+ * only leaves uniform rotation when `creatives.every(isMatureCtrEvidence)`:
+ * EVERY creative needs 200 viewed impressions AND 20 clicks, and only then must
+ * the leader beat the runner-up by 25% to be served 60% of the time. The gate is
+ * all-or-nothing, so ONE cold creative pins the whole campaign at baseline
+ * no matter how good the others are. At a plausible 0.5% CTR, 20 clicks is
+ * ~4,000 viewed impressions per creative -- four is already ~16k before a winner
+ * can exist. And `scripts/seed-house-subscription-campaign.ts` ADDS creatives on
+ * re-run without deactivating the old ones, so shipping new copy means
+ * deactivating the superseded rows in the console, or the gate re-arms and the
+ * measurement never finishes.
+ *
+ * SAY THE UNIT. `freebuffPlanHrs` exists because "3/day" left people guessing at
+ * the unit -- 3 what? -- and `/plans` therefore says "7 hours a day". This copy
+ * said "3 more a day" on the surface where the reader has the LEAST context, so
+ * every line now carries `hours`/`hrs`. Where the abbreviation appears it is the
+ * width budget talking, not a style choice.
  *
  * Variation 0 is the safest of each set and is what the floor serves: it makes
  * the plainest claim, so it is the one that stays true if the others age.
@@ -187,30 +244,52 @@ export const HOUSE_AD_VARIATIONS: Readonly<
   // The transcript. Width-constrained and read mid-task, so the claim has to
   // land in one glance.
   cli_chat: Object.freeze([
-    inline('Freebuff Pro', `${SESSIONS_PER_DAY} more a day. ${PRICE}`),
-    inline('Freebuff Pro', `${SESSIONS_PER_MONTH} more a month. ${PRICE}`),
-    inline('Freebuff Pro', `Every model, +${SESSIONS_PER_DAY} a day.`),
-    inline('Need more?', `Pro starts at ${PRICE}.`),
+    inline('Freebuff', `+${SESSIONS_PER_DAY} hours a day. ${PRICE}`),
+    // The BENEFIT, not the count. Every other line here leads with a number,
+    // which quietly invites the reader to decide whether that number is
+    // enough -- a question an ad cannot win mid-task, and one `/plans` is the
+    // right place to answer. This one leads with what they get and lets the
+    // price close.
+    inline('Freebuff', `Get more usage. ${PRICE}.`),
+    inline('Freebuff', `Every model. +${SESSIONS_PER_DAY} hrs a day.`),
+    inline('Freebuff', `+${SESSIONS_PER_MONTH} hours a month. ${PRICE}`),
   ]),
   // The CLI landing screen -- where somebody is choosing a model, and where
-  // running out of sessions is the thing actually on their mind.
+  // running out of sessions is the thing actually on their mind. So this is
+  // the one surface whose second variation names the TRIGGER STATE rather than
+  // the offer. "Out of runs?" said it in a word the product uses nowhere;
+  // an hour is the unit the allowance is actually counted in.
   waiting_room: Object.freeze([
-    inline('Freebuff Pro', `${SESSIONS_PER_DAY} more a day. ${PRICE}`),
-    inline('Out of runs?', `Pro adds ${SESSIONS_PER_DAY} a day. ${PRICE}`),
-    inline('Freebuff Pro', `+${SESSIONS_PER_MONTH} a month, every model.`),
-    inline('Need more?', `Pro starts at ${PRICE}.`),
+    inline('Freebuff', `+${SESSIONS_PER_DAY} hours a day. ${PRICE}`),
+    inline('Out of time?', `${TIER_NAME} adds ${SESSIONS_PER_DAY} hrs a day.`),
+    // The one claim on this surface that is about the SHAPE of an hour rather
+    // than the count of them -- `/plans` promises "unlimited usage inside each
+    // hour" and no ad has ever said it, though it is the first thing somebody
+    // staring at a session counter wants to know.
+    inline('Freebuff', `Unlimited use in each hour.`),
+    inline('Need more?', `Get more usage. ${PRICE}.`),
   ]),
   freebuff_web_chat: Object.freeze([
-    inline('Freebuff Pro', `${SESSIONS_PER_DAY} more a day. ${PRICE}`),
-    inline('Freebuff Pro', `${SESSIONS_PER_MONTH} more a month. ${PRICE}`),
-    inline('Freebuff Pro', `Every model, +${SESSIONS_PER_DAY} a day.`),
-    inline('Need more?', `Pro starts at ${PRICE}.`),
+    inline('Freebuff', `+${SESSIONS_PER_DAY} hours a day. ${PRICE}`),
+    // The BENEFIT, not the count. Every other line here leads with a number,
+    // which quietly invites the reader to decide whether that number is
+    // enough -- a question an ad cannot win mid-task, and one `/plans` is the
+    // right place to answer. This one leads with what they get and lets the
+    // price close.
+    inline('Freebuff', `Get more usage. ${PRICE}.`),
+    inline('Freebuff', `Every model. +${SESSIONS_PER_DAY} hrs a day.`),
+    inline('Freebuff', `+${SESSIONS_PER_MONTH} hours a month. ${PRICE}`),
   ]),
   chat_assistant: Object.freeze([
-    inline('Freebuff Pro', `${SESSIONS_PER_DAY} more a day. ${PRICE}`),
-    inline('Freebuff Pro', `${SESSIONS_PER_MONTH} more a month. ${PRICE}`),
-    inline('Freebuff Pro', `Every model, +${SESSIONS_PER_DAY} a day.`),
-    inline('Need more?', `Pro starts at ${PRICE}.`),
+    inline('Freebuff', `+${SESSIONS_PER_DAY} hours a day. ${PRICE}`),
+    // The BENEFIT, not the count. Every other line here leads with a number,
+    // which quietly invites the reader to decide whether that number is
+    // enough -- a question an ad cannot win mid-task, and one `/plans` is the
+    // right place to answer. This one leads with what they get and lets the
+    // price close.
+    inline('Freebuff', `Get more usage. ${PRICE}.`),
+    inline('Freebuff', `Every model. +${SESSIONS_PER_DAY} hrs a day.`),
+    inline('Freebuff', `+${SESSIONS_PER_MONTH} hours a month. ${PRICE}`),
   ]),
   // DRAFT (COD-407). The server-rendered-ads experiment arm of
   // `chat_assistant`: the SAME slot above the composer under a distinct
@@ -340,24 +419,24 @@ export const HOUSE_BREAK_AD_VARIATIONS: Readonly<
 export const HOUSE_AD_DISPLAY_VARIATIONS: readonly HouseAdCreative[] =
   Object.freeze([
     {
-      title: 'Freebuff Pro',
-      adText: `${SESSIONS_PER_DAY} more sessions a day, on every model, from ${PRICE}.`,
+      title: `Freebuff ${TIER_NAME}`,
+      adText: `${SESSIONS_PER_DAY} more hours a day on every model — ${TOTAL_PER_DAY} a day in total, from ${PRICE}.`,
       cta: 'See plans',
       url: HOUSE_AD_DESTINATION_URL,
       favicon: FAVICON,
       imageUrl: `${FREEBUFF_WEB_URL_PROD}/opengraph-image.png`,
     },
     {
-      title: 'Out of sessions?',
-      adText: `Freebuff Pro adds ${SESSIONS_PER_DAY} a day, from ${PRICE}.`,
+      title: 'Out of time today?',
+      adText: `${TIER_NAME} adds ${SESSIONS_PER_DAY} hours a day, with unlimited usage inside each hour. From ${PRICE}.`,
       cta: 'See plans',
       url: HOUSE_AD_DESTINATION_URL,
       favicon: FAVICON,
       imageUrl: `${FREEBUFF_WEB_URL_PROD}/opengraph-image.png`,
     },
     {
-      title: 'More runs, every model',
-      adText: `${SESSIONS_PER_MONTH} more sessions a month, from ${PRICE}.`,
+      title: 'Every model, everywhere',
+      adText: `${SESSIONS_PER_MONTH} more hours a month across Web, Desktop and the CLI — one allowance, from ${PRICE}.`,
       cta: 'See plans',
       url: HOUSE_AD_DESTINATION_URL,
       favicon: FAVICON,
