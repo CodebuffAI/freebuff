@@ -5,7 +5,10 @@
  * both session-shaped and both defined next to the pools they feed:
  *
  *   - FULL access tier: +1 daily GLM 5.2 session per qualified referral,
- *     uncapped (glmWeeklySessionsFromStats in packages/billing).
+ *     the whole earned pool capped at FREEBUFF_REWARD_MAX_DAILY_SESSIONS
+ *     since 2026-08-25 (glmWeeklySessionsFromStats in packages/billing). On
+ *     the Freebucks meter each one is also a once-ever, uncapped cash-out
+ *     (FREEBUCKS_PER_EARNED_SESSION).
  *   - LIMITED access tier: +1 daily free session per qualified referral,
  *     capped at REFERRAL_CLI_DAILY_SESSION_BONUS_CAP (GLM is geo-gated).
  *
@@ -15,8 +18,17 @@
  * deploy watermark is globally disabled (prod_branding_injection_enabled =
  * false), so both perks were marketing for things users didn't get. What
  * remains in this file is the qualification machinery: GitHub account-age
- * bars, attribution windows, and the web/CLI anti-farming ceilings. The unified
- * referral_v2 program has no per-referrer attribution cap.
+ * bars and attribution windows.
+ *
+ * There is NO per-referrer cap on how many referrals are recorded or counted.
+ * The legacy per-program ceilings (the web program's 20 and the CLI program's
+ * `user.referral_limit`) went with the 2026-07-16 referral_v2 cutover, and
+ * referral_v2's own 100-row signup limit was removed on 2026-09-23 (#3800).
+ * Refusals under that limit are replayed by scripts/referral-cap-backfill.ts.
+ * What still bounds a referral farm is qualification (above), burn-once per
+ * GitHub identity, full-access-only Freebucks cash-out, the reward ceiling
+ * FREEBUFF_REWARD_MAX_DAILY_SESSIONS on the session reward, and the
+ * referral-abuse detector (docs/freebuff-abuse-referral-farming.md).
  */
 
 /** Referred users must have a GitHub account at least this old for the
@@ -43,14 +55,6 @@ export const MIN_GITHUB_ACCOUNT_AGE_MONTHS_REFERRAL = 4
  * GLM sessions, which are uncapped.
  */
 export const REFERRAL_CLI_DAILY_SESSION_BONUS_CAP = 3
-
-/**
- * Max attributed web signups (pending + completed) per referrer. The shared
- * `user.referral_limit` column (default 5) governs the CLI program; the web
- * program needs its own headroom — generous enough for unqualified signups,
- * small enough to bound farming.
- */
-export const FREEBUFF_WEB_REFERRAL_LIMIT = 20
 
 /**
  * A referral can only be attributed within this many days of the referred
