@@ -694,6 +694,200 @@ describe('recovering from the reported crash', () => {
   }, 20000)
 })
 
+/**
+ * The Sept 27 report: Windows 11, i3-2100 (AVX, no AVX2), Bun 1.3.14. Bun's
+ * crash handler catches the illegal instruction itself and leaves through
+ * Zig's abort(), which on Windows is ExitProcess(3). So the process exits with
+ * plain code 3, neither exit code the fallback knew, and the only trace of
+ * the cause is Bun's report on stderr.
+ */
+const REPORTED_BUN_CRASH = [
+  '============================================================',
+  'Bun v1.3.14 (0d9b296a) Windows x64',
+  'Windows v.win11_dt',
+  'CPU: sse42 avx',
+  'Args: ',
+  'Features: no_avx2',
+  '',
+  'panic: Illegal instruction at address 0x7FF61902F82C',
+  'panicked during a panic. Aborting.',
+].join('\n')
+
+/** A POSIX shell line that prints `text` to stderr verbatim. */
+function printToStderr(text: string) {
+  return `printf '%s\\n' '${text.replace(/'/g, `'\\''`)}' >&2`
+}
+
+/** Install a win32 `target` whose binary prints `stderr` and exits 3. */
+function installExit3Binary(
+  t: ReturnType<typeof makeLauncher>,
+  target: string,
+  stderr: string,
+) {
+  writeFileSync(
+    t.CONFIG.binaryPath,
+    `#!/bin/sh\n${printToStderr(stderr)}\nexit 3\n`,
+    { mode: 0o755 },
+  )
+  writeFileSync(
+    t.CONFIG.metadataPath,
+    JSON.stringify({ version: '1.2.3', target }),
+  )
+}
+
+/** Launch the installed binary for real and wait for the launcher's exit. */
+async function launchToExit(t: ReturnType<typeof makeLauncher>) {
+  const child = t.spawnInstalledBinary()
+  t.attachExitHandler(child)
+  await waitFor(() => launcher.exitCodes.length > 0)
+}
+
+describe("Bun's crash report on stderr", () => {
+  test('reads the reported crash as a missing CPU feature', () => {
+    const t = makeLauncher()
+    expect(t.stderrReportsMissingCpuFeature(3, null, REPORTED_BUN_CRASH)).toBe(
+      true,
+    )
+  })
+
+  test('either line alone is enough', () => {
+    const t = makeLauncher()
+    // The report can be cut short: a panic while printing the header, or a
+    // tail that only kept the end of a chatty startup.
+    expect(
+      t.stderrReportsMissingCpuFeature(3, null, 'Features: jsc no_avx2 spawn'),
+    ).toBe(true)
+    expect(
+      t.stderrReportsMissingCpuFeature(
+        3,
+        null,
+        'panic(main thread): Illegal instruction at address 0x7FF61902F82C',
+      ),
+    ).toBe(true)
+  })
+
+  test('sees through colors and CRLF line endings', () => {
+    const t = makeLauncher()
+    const colored =
+      '\x1b[0m\x1b[2mBun v1.3.14 (0d9b296a) Windows x64\r\n' +
+      'Features: no_avx2\r\n' +
+      '\x1b[31mpanic\x1b[0m: Illegal instruction at address 0x7FF61902F82C\r\n'
+    expect(t.stderrReportsMissingCpuFeature(3, null, colored)).toBe(true)
+  })
+
+  test('an ordinary Bun panic on an AVX2 machine is not this', () => {
+    const t = makeLauncher()
+    // A false positive permanently pins a capable machine to the slower build.
+    const ordinary = [
+      'Bun v1.3.14 (0d9b296a) Windows x64',
+      'CPU: sse42 popcnt avx avx2',
+      'Features: jsc spawn',
+      'panic(main thread): attempt to use null value',
+    ].join('\n')
+    expect(t.stderrReportsMissingCpuFeature(3, null, ordinary)).toBe(false)
+  })
+
+  test("only Bun's own line formats count, not text that quotes them", () => {
+    const t = makeLauncher()
+    expect(
+      t.stderrReportsMissingCpuFeature(
+        1,
+        null,
+        'error: pasted log says "Features: no_avx2" and "panic: Illegal instruction at address 0x1"',
+      ),
+    ).toBe(false)
+  })
+
+  test('a clean exit never counts, whatever it printed', () => {
+    const t = makeLauncher()
+    expect(t.stderrReportsMissingCpuFeature(0, null, REPORTED_BUN_CRASH)).toBe(
+      false,
+    )
+    expect(t.stderrReportsMissingCpuFeature(3, null, '')).toBe(false)
+  })
+
+  test('code 3 with the report is a confirmed verdict, recorded before the download', async () => {
+    const t = makeLauncher()
+    writeFileSync(
+      t.CONFIG.metadataPath,
+      JSON.stringify({ version: '1.2.3', target: 'win32-x64' }),
+    )
+    writeFileSync(t.CONFIG.binaryPath, 'pretend binary')
+
+    // The download 404s here; the verdict must survive that.
+    expect(await t.tryFallbackToBaseline(3, null, 40, REPORTED_BUN_CRASH)).toBe(
+      false,
+    )
+    expect(t.readCachedAvx2()).toBe(false)
+    expect(makeLauncher().getDefaultTargetKey()).toBe('win32-x64-baseline')
+  })
+
+  test('code 3 without the report does nothing', async () => {
+    const t = makeLauncher()
+    writeFileSync(
+      t.CONFIG.metadataPath,
+      JSON.stringify({ version: '1.2.3', target: 'win32-x64' }),
+    )
+    expect(
+      await t.tryFallbackToBaseline(3, null, 40, 'error: bad flag --foo'),
+    ).toBe(false)
+    expect(t.readCachedAvx2()).toBe(null)
+  })
+
+  test('the reported crash, exiting 3 for real, lands the user on baseline', async () => {
+    const t = makeLauncher()
+    const ranMarker = join(tempConfigDir, 'baseline-ran')
+    serveBaselineTarball(`echo ran > ${ranMarker}`)
+    // A real exit code 3 through a real stderr pipe: nothing synthetic on the
+    // path the user took.
+    installExit3Binary(t, 'win32-x64', REPORTED_BUN_CRASH)
+
+    await launchToExit(t)
+
+    // Before the fix the launcher passed code 3 straight through, with no
+    // fallback and no report.
+    expect(launcher.exitCodes).toEqual([0])
+    expect(existsSync(ranMarker)).toBe(true)
+    expect(
+      JSON.parse(readFileSync(t.CONFIG.metadataPath, 'utf8')),
+    ).toMatchObject({ target: 'win32-x64-baseline' })
+    const next = makeLauncher()
+    expect(next.readCachedAvx2()).toBe(false)
+    expect(next.getDefaultTargetKey()).toBe('win32-x64-baseline')
+    expect(next.isTargetAllowedForThisMachine('win32-x64')).toBe(false)
+  }, 20000)
+
+  test('an ordinary exit 3 passes through untouched', async () => {
+    const t = makeLauncher()
+    installExit3Binary(t, 'win32-x64', 'error: unknown option --foo')
+
+    await launchToExit(t)
+
+    expect(launcher.exitCodes).toEqual([3])
+    expect(t.readCachedAvx2()).toBe(null)
+    expect(
+      JSON.parse(readFileSync(t.CONFIG.metadataPath, 'utf8')),
+    ).toMatchObject({ target: 'win32-x64' })
+    expect(launcher.lines.join('\n')).not.toContain('exited immediately')
+  }, 20000)
+
+  test('on baseline already, it reports instead of looping', async () => {
+    const t = makeLauncher()
+    installExit3Binary(t, 'win32-x64-baseline', REPORTED_BUN_CRASH)
+
+    await launchToExit(t)
+
+    expect(launcher.exitCodes).toEqual([3])
+    const output = launcher.lines.join('\n')
+    expect(output).toContain('exited immediately (code 3)')
+    expect(output).toContain('already the older-CPU (baseline) build')
+    expect(output).toContain(
+      'panic: Illegal instruction at address 0x7FF61902F82C',
+    )
+    expect(output).not.toContain('FREEBUFF_BINARY_TARGET=')
+  }, 20000)
+})
+
 describe('the background update check', () => {
   test('stands down when the process it watches is already gone', async () => {
     const t = makeLauncher()

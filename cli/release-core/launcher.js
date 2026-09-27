@@ -257,6 +257,39 @@ function createLauncher(productConfig) {
     )
   }
 
+  /**
+   * Bun's own crash report saying this CPU cannot run the optimized build.
+   *
+   * On Windows the exit code does not carry that. Bun's crash handler catches
+   * EXCEPTION_ILLEGAL_INSTRUCTION itself, prints a report, then leaves through
+   * Zig's std.posix.abort(), which on Windows is ExitProcess(3). So an AVX2
+   * build on a CPU without AVX2 exits with plain code 3, neither
+   * 0xC000001D nor 0xC0000409, and both checks above miss it. The Sept 27
+   * report (i3-2100, Bun 1.3.14) is exactly this:
+   *
+   *   CPU: sse42 avx
+   *   Features: no_avx2
+   *   panic: Illegal instruction at address 0x7FF61902F82C
+   *   panicked during a panic. Aborting.
+   *
+   * The report is in the stderr tail watchLaunch() keeps on Windows. Either line
+   * is proof, not a guess. `Features: no_avx2` is Bun's own CPUID answer, and a
+   * Bun "Illegal instruction" panic is the same Windows exception
+   * 0xC000001D reports, intercepted before it became the exit code. Only Bun's
+   * exact formats count, so ordinary output that mentions them does not.
+   */
+  const BUN_NO_AVX2_FEATURE = /^Features:[^\n]*\bno_avx2\b/m
+  const BUN_ILLEGAL_INSTRUCTION_PANIC =
+    /^panic(?:\([^)\n]*\))?: Illegal instruction at address 0x[0-9a-f]+/im
+
+  function stderrReportsMissingCpuFeature(code, signal, stderrTail) {
+    if (!stderrTail || (code === 0 && !signal)) return false
+    const text = sanitizeForReplay(stderrTail)
+    return (
+      BUN_NO_AVX2_FEATURE.test(text) || BUN_ILLEGAL_INSTRUCTION_PANIC.test(text)
+    )
+  }
+
   function createConfig(packageName) {
     const homeDir = os.homedir()
     const configDir =
@@ -1406,7 +1439,9 @@ function createLauncher(productConfig) {
     const { msAlive = null, stderrTail = '' } = context
     // Windows NTSTATUS codes (unsigned DWORD)
     const unsignedCode = getUnsignedExitCode(code)
-    const isIllegalInstruction = isIllegalInstructionExit(code, signal)
+    const isIllegalInstruction =
+      isIllegalInstructionExit(code, signal) ||
+      stderrReportsMissingCpuFeature(code, signal, stderrTail)
     const isAccessViolation =
       signal === 'SIGSEGV' ||
       (process.platform === 'win32' && unsignedCode === 0xc0000005)
@@ -1429,7 +1464,15 @@ function createLauncher(productConfig) {
       )
       console.error('This typically affects CPUs from before 2013.')
       console.error('')
-      printBaselineOverrideHint()
+      if (getCurrentMetadata()?.target === getBaselineFallbackTargetKey()) {
+        console.error(
+          'This is already the older-CPU (baseline) build — please include the',
+        )
+        console.error('output below in your report.')
+        console.error('')
+      } else {
+        printBaselineOverrideHint()
+      }
     } else if (isAccessViolation) {
       console.error('The binary crashed with an access violation.')
       console.error('')
@@ -1664,11 +1707,15 @@ function createLauncher(productConfig) {
     }
   }
 
-  async function tryFallbackToBaseline(code, signal, msAlive) {
-    // Two spellings of one failure, at two levels of certainty. SIGILL /
-    // STATUS_ILLEGAL_INSTRUCTION is proof this CPU cannot run this build; a
-    // Windows startup abort is a strong suspicion (see isStartupCpuFeatureCrash).
-    const confirmed = isIllegalInstructionExit(code, signal)
+  async function tryFallbackToBaseline(code, signal, msAlive, stderrTail = '') {
+    // Three spellings of one failure, at two levels of certainty. SIGILL /
+    // STATUS_ILLEGAL_INSTRUCTION, or Bun's crash report naming the missing
+    // feature (see stderrReportsMissingCpuFeature), is proof this CPU cannot
+    // run this build; a Windows startup abort is a strong suspicion (see
+    // isStartupCpuFeatureCrash).
+    const confirmed =
+      isIllegalInstructionExit(code, signal) ||
+      stderrReportsMissingCpuFeature(code, signal, stderrTail)
     if (!confirmed && !isStartupCpuFeatureCrash(code, signal, msAlive)) {
       return false
     }
@@ -1741,15 +1788,18 @@ function createLauncher(productConfig) {
       // as a startup crash and trigger a download.
       const msAlive = child.launch ? child.launch.msAlive() : Infinity
 
+      // Any failed exit, not only a native crash code: a Bun crash on Windows
+      // usually exits with plain code 3, and the reason is only in its stderr
+      // (see stderrReportsMissingCpuFeature). Clean exits skip the wait.
       let stderrTail = ''
-      if (child.launch && (isWindowsNativeCrashCode(code) || signal)) {
+      if (child.launch && (code !== 0 || signal)) {
         await child.launch.drained()
         stderrTail = child.launch.stderrTail()
       }
 
       if (
         allowBaselineFallback &&
-        (await tryFallbackToBaseline(code, signal, msAlive))
+        (await tryFallbackToBaseline(code, signal, msAlive, stderrTail))
       ) {
         return
       }
@@ -1795,6 +1845,7 @@ function createLauncher(productConfig) {
       readCachedAvx2,
       isIllegalInstructionExit,
       isStartupCpuFeatureCrash,
+      stderrReportsMissingCpuFeature,
       tryFallbackToBaseline,
       printCrashDiagnostics,
       checkForUpdates,
