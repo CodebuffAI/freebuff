@@ -1,5 +1,10 @@
-import { describe, test, expect, mock } from 'bun:test'
+import { describe, test, expect, mock, afterAll } from 'bun:test'
 import * as realOs from 'node:os'
+import * as realMachineId from 'node-machine-id'
+import * as realSi from 'systeminformation'
+import * as realLogger from '../logger'
+import * as realAnalytics from '../analytics'
+import * as realDetectShell from '../detect-shell'
 
 // Issue #1374: Bun's os.cpus() throws 'Failed to get CPU information' on ARM
 // Linux when /proc/stat and /proc/cpuinfo disagree. Under proot-distro that
@@ -7,18 +12,35 @@ import * as realOs from 'node:os'
 // /proc/stat (sysdata.py, _FAKE_STAT) while /proc/cpuinfo stays live, so on a
 // 9-core device the guest sees 8 vs 9 for the life of the container.
 //
-// These tests pin the guard behaviour at the public entry point. Everything the
-// fingerprint module reaches for is mocked so the test is hermetic and does not
-// depend on the host's machine id, shell, or analytics transport.
+// These tests pin the guard's behaviour at the public entry point.
+//
+// Two things about bun's test runner matter here:
+//   - all test files share one process, and mock.module() is not undone by
+//     mock.restore(), so every module mocked below is restored in afterAll.
+//     Without that this file leaks a throwing os.cpus() and a stub logger
+//     into whichever file runs next.
+//   - re-registering a namespace object is not enough, because the mock
+//     replaces entries in place, so the real exports are captured up front.
+
+const realCpus = realOs.cpus
+const realNetworkInterfaces = realOs.networkInterfaces
+const realOsModule = { ...realOs }
+const realMachineIdFn = realMachineId.machineId
+const realSiSystem = realSi.system
+const realSiCpu = realSi.cpu
+const realSiOsInfo = realSi.osInfo
 
 type Logged = { fingerprintType?: string }
 const logged: Logged[] = []
 
+const CPU_BREAK = 'Failed to get CPU information'
+
 function installMocks(cpusThrows: boolean) {
+  logged.length = 0
   mock.module('node:os', () => ({
-    ...realOs,
+    ...realOsModule,
     cpus: () => {
-      if (cpusThrows) throw new Error('Failed to get CPU information')
+      if (cpusThrows) throw new Error(CPU_BREAK)
       return [{ model: 'Fake CPU' }]
     },
   }))
@@ -39,9 +61,7 @@ function installMocks(cpusThrows: boolean) {
       hostname: 'test',
     }),
     cpu: async () => {
-      if (cpusThrows) {
-        throw new Error('Failed to get CPU information')
-      }
+      if (cpusThrows) throw new Error(CPU_BREAK)
       return { manufacturer: 'Test', brand: 'Test', cores: 1, physicalCores: 1 }
     },
   }))
@@ -57,8 +77,25 @@ function installMocks(cpusThrows: boolean) {
   }))
 }
 
+afterAll(() => {
+  mock.module('node:os', () => ({
+    ...realOsModule,
+    cpus: realCpus,
+    networkInterfaces: realNetworkInterfaces,
+  }))
+  mock.module('node-machine-id', () => ({ ...realMachineId, machineId: realMachineIdFn }))
+  mock.module('systeminformation', () => ({
+    ...realSi,
+    system: realSiSystem,
+    cpu: realSiCpu,
+    osInfo: realSiOsInfo,
+  }))
+  mock.module('../logger', () => realLogger)
+  mock.module('../analytics', () => realAnalytics)
+  mock.module('../detect-shell', () => realDetectShell)
+})
+
 async function loadCalculateFingerprint(cpusThrows: boolean) {
-  logged.length = 0
   installMocks(cpusThrows)
   const mod = await import('../fingerprint')
   return mod.calculateFingerprint
