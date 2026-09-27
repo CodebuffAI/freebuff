@@ -147,9 +147,11 @@ export function isSponsorBreakFormat(format: PlacementFormat): boolean {
  * PARTNER PLACEMENTS: a slot whose chrome belongs to one advertiser.
  *
  * Every other format draws OUR card with THEIR copy in it. A partner slot
- * draws as a piece of the product -- a row in the skill picker, a pill above
- * the composer -- in the advertiser's own colour, next to the feature it is
- * about. That only reads as honest when exactly one advertiser can ever
+ * draws as a piece of the product -- a row in Desktop's skill picker, a pill
+ * above its composer, a single coloured line above the CLI's input or under
+ * its `/review` command -- in the advertiser's own colour, next to the
+ * feature it is about. That only reads as honest when exactly one advertiser
+ * can ever
  * appear there, so the format carries an exclusivity fence the other four do
  * not need: a partner placement is served by the first-party CPM leg alone,
  * never by a paid network, never by the house floor, and never by a CPC
@@ -308,9 +310,10 @@ export const PLACEMENT_SLOTS = [
     available: true,
     format: 'intermission',
   },
-  // The two partner slots. `available: false` is the exclusivity: the
-  // campaign-builder picker reads that flag, so neither can be targeted from
-  // the console -- an operator puts a campaign on one, by agreement.
+  // The partner slots -- two in Desktop, two in the CLI. `available: false`
+  // is the exclusivity: the campaign-builder picker reads that flag, so none
+  // can be targeted from the console -- an operator puts a campaign on one,
+  // by agreement.
   {
     id: 'Desktop-Partner-Skill-Picker',
     surface: 'cli_chat',
@@ -319,6 +322,21 @@ export const PLACEMENT_SLOTS = [
   },
   {
     id: 'Desktop-Partner-Composer-PR',
+    surface: 'cli_chat',
+    available: false,
+    format: 'partner',
+  },
+  // The CLI's two, drawn as a single branded ROW rather than a pill: a
+  // terminal has no images and no rounded corners, so the same deal renders
+  // as one line of the advertiser's colour across the width it is given.
+  {
+    id: 'CLI-Partner-Composer-PR',
+    surface: 'cli_chat',
+    available: false,
+    format: 'partner',
+  },
+  {
+    id: 'CLI-Partner-Slash-Review',
     surface: 'cli_chat',
     available: false,
     format: 'partner',
@@ -535,6 +553,8 @@ const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
   // wants to know WHERE in the app they appeared.
   'Desktop-Partner-Skill-Picker': 'Desktop — Skill picker',
   'Desktop-Partner-Composer-PR': 'Desktop — Composer (PR intent)',
+  'CLI-Partner-Composer-PR': 'CLI — Composer (PR intent)',
+  'CLI-Partner-Slash-Review': 'CLI — Slash menu (/review)',
 }
 
 export function placementSlotLabel(placementId: string): string {

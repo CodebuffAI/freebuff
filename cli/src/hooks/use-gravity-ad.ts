@@ -9,13 +9,12 @@ import {
 import { createFirstPartyViewAckTelemetry } from '@codebuff/common/util/axiom-only-log'
 import { useEffect, useRef, useState } from 'react'
 
-import { getSessionDockArm } from './use-dock-panel'
 import { useTerminalLayout } from './use-terminal-layout'
+import { buildAdAuctionRequest } from '../ads/ad-request'
 import { getAdsEnabled } from '../commands/ads'
 import { useChatStore } from '../state/chat-store'
 import { isUserActive, subscribeToActivity } from '../utils/activity-tracker'
 import { getAuthToken } from '../utils/auth'
-import { FREEBUFF_WEB_URL } from '../login/constants'
 import { IS_FREEBUFF } from '../utils/constants'
 import { logger } from '../utils/logger'
 import { enqueueClientLog } from '../utils/log-shipper'
@@ -25,15 +24,12 @@ import {
   getAdDeviceInfo,
   getCliAdRequestUserAgent,
 } from '../utils/ad-client-identity'
-import { tryGetProjectRoot } from '../project-files'
-import { sponsoredCliCapability } from '../utils/sponsored-cli-capability'
 import {
   createLazyResponseAdQueue,
   MAX_RESPONSE_AD_POOL_SIZE,
   requestLazyResponseAds,
 } from '../utils/lazy-response-ads'
 
-import type { Message } from '@codebuff/sdk'
 import type { ChatMessage } from '../types/chat'
 import type { DockClickContext } from './use-dock-panel'
 
@@ -72,6 +68,13 @@ export type AdResponse = {
   expandedBody?: string
   bullets?: string[]
   diagram?: string
+  /**
+   * A PARTNER creative's fill and ink, `#rrggbb`. Only a partner placement's
+   * fill carries them, and only the partner row reads them — every other slot
+   * in the CLI draws in the terminal theme's own colours.
+   */
+  brandColor?: string
+  brandInk?: string
 }
 
 /**
@@ -203,6 +206,63 @@ export function dispatchFirstPartyViewAcknowledgement(
   if (provider !== 'first_party') return false
   void acknowledge({ ...request, onAttempt })
   return true
+}
+
+/**
+ * Report a click on any CLI ad.
+ *
+ * Module-level rather than a closure inside the hook because the PARTNER rows
+ * are not the hook's ads and still settle through the same endpoint: one
+ * click path means an advertiser's click is counted the same way wherever it
+ * was drawn. Never awaited by a caller — a click that waited on our own
+ * telemetry before opening the link would be slower than the ad is worth.
+ */
+export function recordAdClick(
+  ad: Pick<AdResponse, 'impUrl'>,
+  options?: { surface?: AdSurface; dock?: DockClickContext },
+): void {
+  const authToken = getAuthToken()
+  if (!authToken) {
+    logger.warn('[ads] No auth token, skipping ad click recording')
+    return
+  }
+
+  // One id per logical click (COD-365); a repeat POST of the same ad is a
+  // new gesture and a new id, and the server answers `alreadyRecorded`.
+  const clientEventId = crypto.randomUUID()
+  const dock = options?.dock
+  void fetch(`${WEBSITE_URL}/api/v1/ads/click`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+      'User-Agent': getCliAdRequestUserAgent(),
+      [FREEBUFF_EVENT_ID_HEADER]: clientEventId,
+    },
+    body: JSON.stringify({
+      impUrl: ad.impUrl,
+      clientEventId,
+      ...(options?.surface ? { surface: options.surface } : {}),
+      // The dock's own fields ride the ACK (COD-457), so the canonical
+      // server-side `ads.clicked` carries them and one click stays one
+      // event. Emitting a second client-side click here double-counted.
+      ...(dock
+        ? {
+            dockFrom: dock.from,
+            dockDwellMs: dock.dwellMs,
+            dockAccidentalClick: dock.accidental,
+          }
+        : {}),
+    }),
+  })
+    .then((res) => {
+      if (!res.ok) {
+        logger.debug({ status: res.status }, '[ads] Failed to record ad click')
+      }
+    })
+    .catch((err) => {
+      logger.debug({ err }, '[ads] Failed to record ad click')
+    })
 }
 
 function trackInlineAdEvent(
@@ -458,50 +518,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   }
 
   const recordClick = (ad: AdResponse, dock?: DockClickContext): void => {
-    const authToken = getAuthToken()
-    if (!authToken) {
-      logger.warn('[ads] No auth token, skipping ad click recording')
-      return
-    }
-
-    // One id per logical click (COD-365); a repeat POST of the same ad is a
-    // new gesture and a new id, and the server answers `alreadyRecorded`.
-    const clientEventId = crypto.randomUUID()
-    void fetch(`${WEBSITE_URL}/api/v1/ads/click`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
-        'User-Agent': getCliAdRequestUserAgent(),
-        [FREEBUFF_EVENT_ID_HEADER]: clientEventId,
-      },
-      body: JSON.stringify({
-        impUrl: ad.impUrl,
-        clientEventId,
-        ...(surface ? { surface } : {}),
-        // The dock's own fields ride the ACK (COD-457), so the canonical
-        // server-side `ads.clicked` carries them and one click stays one
-        // event. Emitting a second client-side click here double-counted.
-        ...(dock
-          ? {
-              dockFrom: dock.from,
-              dockDwellMs: dock.dwellMs,
-              dockAccidentalClick: dock.accidental,
-            }
-          : {}),
-      }),
-    })
-      .then((res) => {
-        if (!res.ok) {
-          logger.debug(
-            { status: res.status },
-            '[ads] Failed to record ad click',
-          )
-        }
-      })
-      .catch((err) => {
-        logger.debug({ err }, '[ads] Failed to record ad click')
-      })
+    recordAdClick(ad, { ...(surface ? { surface } : {}), ...(dock ? { dock } : {}) })
   }
 
   type FetchAdResult = { ads: AdResponse[] } | null
@@ -515,87 +532,19 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     if (shouldHideAdsRef.current) return null
     if (!getAdsEnabled()) return null
 
-    const authToken = getAuthToken()
-    if (!authToken) {
-      logger.warn('[ads] No auth token available')
-      return null
-    }
+    const request = await buildAdAuctionRequest({
+      provider,
+      ...(surface ? { surface } : {}),
+      ...(params?.placementId ? { placementId: params.placementId } : {}),
+      ...(params?.placementIds?.length
+        ? { placementIds: params.placementIds }
+        : {}),
+      allowSponsoredRoute: true,
+    })
+    if (!request) return null
 
-    // Get message history from runState (populated after LLM responds)
-    const { runState: currentRunState, adTraceContext } =
-      useChatStore.getState()
-    const messageHistory =
-      currentRunState?.sessionState?.mainAgentState?.messageHistory ?? []
-    const adMessages = convertToAdMessages(messageHistory)
-
-    // Also check UI messages for the latest user message
-    // (UI messages update immediately, runState.messageHistory updates after LLM responds)
-    const uiMessages = useChatStore.getState().messages
-    const lastUIMessage = [...uiMessages]
-      .reverse()
-      .find((msg) => msg.variant === 'user')
-
-    // If the latest UI user message isn't in our converted history, append it
-    // This ensures we always include the most recent user message even before LLM responds
-    if (lastUIMessage?.content) {
-      const lastAdUserMessage = [...adMessages]
-        .reverse()
-        .find((m) => m.role === 'user')
-      if (
-        !lastAdUserMessage ||
-        !lastAdUserMessage.content.includes(lastUIMessage.content)
-      ) {
-        adMessages.push({
-          role: 'user',
-          content: `<user_message>${lastUIMessage.content}</user_message>`,
-        })
-      }
-    }
-
-    const projectRoot = tryGetProjectRoot()
-    const capability = projectRoot
-      ? await sponsoredCliCapability(projectRoot)
-      : null
-    const capabilityRoute = capability !== null
     try {
-      const response = await fetch(
-        `${capabilityRoute ? FREEBUFF_WEB_URL : WEBSITE_URL}${capabilityRoute ? '/api/ads' : '/api/v1/ads'}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`,
-            'User-Agent': getCliAdRequestUserAgent(),
-          },
-          body: JSON.stringify({
-            provider,
-            messages: adMessages,
-            sessionId: useChatStore.getState().chatSessionId,
-            device: getAdDeviceInfo(),
-            // Pointer ids to the last finished run's trace, never its text,
-            // so a served ad can later be joined to the prompt behind it.
-            ...(adTraceContext ? { traceContext: adTraceContext } : {}),
-            ...(capability?.sponsoredCapability
-              ? { sponsoredCapability: capability.sponsoredCapability }
-              : {}),
-            ...(capability
-              ? { capabilityInspection: capability.capabilityInspection }
-              : {}),
-            ...(surface ? { surface } : {}),
-            ...(params?.placementId ? { placementId: params.placementId } : {}),
-            ...(params?.placementIds?.length
-              ? { placementIds: params.placementIds }
-              : {}),
-            // Native runtime UAs look bot-like to ad networks. Send the shared
-            // browser-like UA so every provider sees a usable targeting signal.
-            userAgent: getAdUserAgent(),
-            // The dock arm THIS session cached (COD-457). Omitted until the
-            // policy resolves, so the server falls back to its own assignment
-            // rather than being handed a guess.
-            ...(getSessionDockArm() ? { cliDockArm: getSessionDockArm() } : {}),
-          }),
-        },
-      )
+      const response = await fetch(request.url, request.init)
 
       if (!response.ok) {
         let responseBody: unknown
@@ -799,31 +748,3 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   }
 }
 
-type AdMessage = { role: 'user' | 'assistant'; content: string }
-
-/**
- * Convert LLM message history to ad API format.
- * Includes only user and assistant messages.
- */
-const convertToAdMessages = (messages: Message[]): AdMessage[] => {
-  const adMessages: AdMessage[] = messages
-    .filter(
-      (message) => message.role === 'assistant' || message.role === 'user',
-    )
-    .filter(
-      (message) =>
-        !message.tags || !message.tags.includes('INSTRUCTIONS_PROMPT'),
-    )
-    .map((message) => ({
-      role: message.role,
-      content: message.content
-        .filter((c) => c.type === 'text')
-        .map((c) => c.text.trim())
-        .filter((c) => c !== '')
-        .join('\n\n')
-        .trim(),
-    }))
-    .filter((message) => message.content !== '')
-
-  return adMessages
-}

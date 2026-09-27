@@ -55,9 +55,63 @@ export function getSessionDockArm(): CliDockArm | null {
   return sessionDockArm
 }
 
-/** Test-only reset; production resolves this exactly once per process. */
-export function resetSessionDockArm(): void {
+/**
+ * The PARTNER placements this session was told it may request, or `null`
+ * while the policy is unresolved.
+ *
+ * Null and empty are different answers and the partner rows read both: null
+ * means "ask the policy", `[]` means "this deal is not live for this
+ * session, draw nothing". Collapsing them would make a client that had not
+ * yet fetched the policy behave like one that had been refused, and it would
+ * never recover -- the rows mount long before the dock's first rotation.
+ */
+let sessionPartnerPlacementIds: readonly string[] | null = null
+
+export function getSessionPartnerPlacementIds(): readonly string[] | null {
+  return sessionPartnerPlacementIds
+}
+
+/** The one in-flight policy fetch, so concurrent askers share an answer. */
+let policyRequest: Promise<CliDockArm> | null = null
+
+/**
+ * Resolve the ad policy once per process, for whoever asks first.
+ *
+ * The dock hook used to be the only caller and could simply fetch in an
+ * effect. The partner rows need the same body (they cannot request a slot the
+ * policy has not named) and mount on a keystroke, so the fetch is shared
+ * here rather than raced: two fetches would be two assignments of a sticky
+ * arm, which is the one thing a sticky assignment must not do.
+ */
+export function resolveAdPolicy(): Promise<CliDockArm> {
+  if (policyRequest) return policyRequest
+  const request = fetchDockArm().then((arm) => {
+    // Recorded before any render so the very next ad request reports the arm
+    // this session will actually draw.
+    sessionDockArm = arm
+    return arm
+  })
+  // A policy resolved with no credentials is not this session's policy: it is
+  // the answer for a logged-out process, which asks for nothing and is told
+  // nothing. Memoizing it would pin the session to it through the login that
+  // usually follows.
+  if (getAuthToken()) policyRequest = request
+  return request
+}
+
+/**
+ * Forget this session's policy.
+ *
+ * Called on an account change (the partner rows notice one, since they hold
+ * ads per account) and by tests. Production otherwise resolves the policy
+ * exactly once per process: a second fetch could hand the same user a
+ * different arm mid-session, which is the one thing a sticky assignment must
+ * not do.
+ */
+export function resetAdPolicySession(): void {
   sessionDockArm = null
+  sessionPartnerPlacementIds = null
+  policyRequest = null
 }
 
 /**
@@ -65,6 +119,10 @@ export function resetSessionDockArm(): void {
  * policy route must still show ads, so every failure — network, non-200,
  * unparseable body, an arm string we do not recognise — lands on control. An
  * experiment that fails open into its own treatment arm is not an experiment.
+ *
+ * The partner list fails the same way, to nothing at all: an older server, an
+ * unreachable one and a deal that is not live must all leave this client
+ * drawing no partner row rather than requesting a slot it was never offered.
  */
 export async function fetchDockArm(
   fetchImpl: typeof fetch = fetch,
@@ -78,10 +136,19 @@ export async function fetchDockArm(
       headers: { Authorization: `Bearer ${authToken}` },
     })
     if (!response.ok) return 'control'
-    const data = (await response.json()) as { dockArm?: unknown }
+    const data = (await response.json()) as {
+      dockArm?: unknown
+      partnerPlacementIds?: unknown
+    }
+    sessionPartnerPlacementIds = Array.isArray(data?.partnerPlacementIds)
+      ? data.partnerPlacementIds.filter(
+          (id): id is string => typeof id === 'string' && id.length > 0,
+        )
+      : []
     return data?.dockArm === 'expandable' ? 'expandable' : 'control'
   } catch (err) {
     logger.debug({ err }, '[ads] Failed to fetch dock policy')
+    sessionPartnerPlacementIds = []
     return 'control'
   }
 }
@@ -186,10 +253,11 @@ export function useDockPanel(options: {
     if (!enabled) return
     let cancelled = false
     void (async () => {
-      const resolved = await (fetchArmRef.current?.() ?? fetchDockArm())
+      const resolved = await (fetchArmRef.current?.() ?? resolveAdPolicy())
       if (cancelled) return
       // Recorded before the render so the very next ad request reports the
-      // arm this session will actually draw.
+      // arm this session will actually draw. `resolveAdPolicy` already did
+      // this for itself; an INJECTED arm has nobody else to do it.
       sessionDockArm = resolved
       setArm(resolved)
     })()

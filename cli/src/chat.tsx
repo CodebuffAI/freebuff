@@ -38,10 +38,13 @@ import { useShallow } from 'zustand/react/shallow'
 import { getAdsEnabled } from './commands/ads'
 import { routeUserPrompt, addBashMessageToHistory } from './commands/router'
 import { SingleAdBanner, dockPanelRowBudget } from './components/ad-banner'
+import { PartnerAdLine } from './components/partner-ad-line'
+import { CLI_PARTNER_PLACEMENT_IDS } from './ads/partner-ads'
 import {
   DOCK_PANEL_MAX_WIDTH,
   getDockPanelLayout,
 } from '@codebuff/common/ads/inline-ad-layout'
+import { mentionsPrKeyword } from '@codebuff/common/ads/partner-triggers'
 import { ChatInputBar } from './components/chat-input-bar'
 import { ChatHeader } from './components/chat-header'
 import { FreebuffActiveSessionSummary } from './components/freebuff-active-session-summary'
@@ -1890,6 +1893,25 @@ export const Chat = ({
     (agentSuggestionItems.length > 0 || fileSuggestionItems.length > 0)
   const hasSuggestionMenu = hasSlashSuggestions || hasMentionSuggestions
 
+  /**
+   * The PARTNER row above the input, shown only while the draft is about pull
+   * requests and nothing else owns the space.
+   *
+   * Every exclusion here is a moment the user is in the middle of something
+   * the row would be interrupting rather than offering: a menu is open over
+   * this slot, a form or a review screen owns the keyboard, or the input is
+   * not a draft at all. `showInlineAds` is the same gate the rotating card
+   * above it reads, so a session with ads off never asks for this slot.
+   */
+  const showComposerPartnerAd =
+    showInlineAds &&
+    !hasSuggestionMenu &&
+    !feedbackMode &&
+    !publishMode &&
+    !reviewMode &&
+    askUserState === null &&
+    mentionsPrKeyword(inputValue)
+
   // Show first-time onboarding starter prompts only on a pristine, idle,
   // empty-input default-mode chat — and never while a menu/overlay is up.
   const showOnboardingPrompts =
@@ -2158,6 +2180,20 @@ export const Chat = ({
           />
         )}
 
+        {/* The partner row sits BELOW the rotating card and above the input,
+            in the advertiser's own colour — it is a piece of our chrome next
+            to the feature it is about, not a second banner, so it does not
+            take the card's slot. Renders nothing unless the deal is live and
+            the slot filled. Aligned to the card's margins above it. */}
+        {showComposerPartnerAd && (
+          <box style={{ marginLeft: 1, marginRight: 1 }}>
+            <PartnerAdLine
+              placementId={CLI_PARTNER_PLACEMENT_IDS.composer}
+              width={separatorWidth}
+            />
+          </box>
+        )}
+
         {IS_FREEBUFF &&
           !freebuffControlsOpen &&
           freebuffAdmissionNotice(freebuffSession) && (
@@ -2231,6 +2267,7 @@ export const Chat = ({
               agentSelectedIndex={agentSelectedIndex}
               onSlashItemClick={handleSlashItemClick}
               onMentionItemClick={handleMentionItemClick}
+              showSlashPartnerAd={showInlineAds}
               theme={theme}
               terminalHeight={terminalHeight}
               separatorWidth={separatorWidth}

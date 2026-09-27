@@ -21,6 +21,19 @@ interface SuggestionMenuProps {
   onItemClick?: (index: number) => void
   /** Muted hint line rendered below the suggestions */
   footer?: string
+  /**
+   * An extra row drawn directly under one item, when that item is visible.
+   *
+   * NOT AN ITEM. It takes no index, so `selectedIndex`, the scroll window and
+   * every keyboard action stay a function of `items` alone — the row cannot
+   * be selected with the arrow keys and Enter never lands on it. Only a click
+   * reaches it.
+   *
+   * It exists for the partner placement under `/review`, which is the
+   * advertiser's own chrome next to the command it is about. A menu entry
+   * would have been a command that is not a command.
+   */
+  afterItem?: { id: string; node: React.ReactNode }
 }
 
 export const SuggestionMenu = ({
@@ -30,6 +43,7 @@ export const SuggestionMenu = ({
   prefix = '/',
   onItemClick,
   footer,
+  afterItem,
 }: SuggestionMenuProps) => {
   const theme = useTheme()
   const { terminalWidth } = useTerminalDimensions()
@@ -204,7 +218,16 @@ export const SuggestionMenu = ({
       }}
       onMouseOut={() => setHoveredIndex(null)}
     >
-      {visibleItems.map(renderSuggestionItem)}
+      {visibleItems.map((item, idx) =>
+        afterItem && item.id === afterItem.id ? (
+          <React.Fragment key={item.id}>
+            {renderSuggestionItem(item, idx)}
+            {afterItem.node}
+          </React.Fragment>
+        ) : (
+          renderSuggestionItem(item, idx)
+        ),
+      )}
       {footer ? (
         <box style={{ paddingLeft: 1, paddingRight: 1 }}>
           <text style={{ fg: theme.muted, wrapMode: 'word' }}>{footer}</text>

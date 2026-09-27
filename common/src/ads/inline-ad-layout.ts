@@ -462,3 +462,99 @@ export function getDockPanelLayout(
     dropped,
   }
 }
+
+/* ------------------------------------------------------------------------- *
+ * Partner line
+ *
+ * The CLI's rendering of a PARTNER placement: one row of the advertiser's
+ * colour, above the input or under `/review`. Desktop draws the same deal as
+ * a pill with their logo in it; a terminal has no images, so the row carries
+ * the title, the destination and the disclosure and nothing else.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * The disclosure on a partner row, and the reason this is a separate constant
+ * from {@link INLINE_AD_DISCLOSURE} despite being the same word: the inline
+ * one is drawn in the muted foreground against our surface, and this one is
+ * drawn in the ADVERTISER's ink against their fill. The two are free to
+ * diverge in casing or spacing without one silently restyling the other.
+ */
+export const PARTNER_LINE_DISCLOSURE = 'Ad'
+/** Columns between the title and the destination label. */
+export const PARTNER_LINE_GAP = 2
+/**
+ * Below this the row drops the destination entirely and keeps the title.
+ *
+ * The same trade {@link MIN_INLINE_WIDTH_WITH_DESTINATION} makes, at a lower
+ * width: this is ONE row with no border and no CTA box, so it still reads at
+ * widths where the inline card has already given up. What it may never drop
+ * is the disclosure -- an unlabelled line of somebody's brand colour inside
+ * our chrome is the one state this format must not have.
+ */
+export const MIN_PARTNER_WIDTH_WITH_DESTINATION = 44
+
+export interface PartnerLineLayout {
+  title: string
+  /** The advertiser's domain, or '' when the row is too narrow for it. */
+  label: string
+  disclosure: string
+}
+
+/**
+ * Fit a partner row into `width` columns.
+ *
+ * Pure and in `common` for the reason every other function in this file is:
+ * the CLI draws this row and the advertiser console previews it, and a CSS
+ * approximation of a character grid is a confident lie. The console imports
+ * this and renders the answer in `ch`.
+ */
+export function getPartnerLineLayout(
+  ad: Pick<InlineAdLayoutInput, 'title' | 'url'>,
+  width: number,
+): PartnerLineLayout {
+  // One cell of padding each side, which is what the CLI's row draws with.
+  const interior = Math.max(0, width - 2)
+  const displayLabel = getAdDisplayLabel({
+    title: ad.title ?? '',
+    url: ad.url ?? '',
+  })
+  const disclosureWidth = PARTNER_LINE_GAP + PARTNER_LINE_DISCLOSURE.length
+  // The label is the advertiser's domain only. Falling back to the title
+  // here, as the inline card does, would print the title twice on one row.
+  const destination =
+    width >= MIN_PARTNER_WIDTH_WITH_DESTINATION &&
+    displayLabel.variant === 'domain'
+      ? displayLabel.text
+      : ''
+  // A third of the row, as the inline card budgets its own label: the title
+  // is the subject and the domain is the attribution, and at the breakpoint
+  // above a third is exactly enough for a real domain.
+  const labelBudget = Math.max(0, Math.min(24, Math.floor(interior / 3)))
+  const label = truncateToWidth(destination, labelBudget)
+  const titleWidth = Math.max(
+    0,
+    interior -
+      disclosureWidth -
+      (label ? label.length + PARTNER_LINE_GAP : 0),
+  )
+  return {
+    title: truncateToWidth((ad.title ?? '').trim(), titleWidth),
+    label,
+    disclosure: PARTNER_LINE_DISCLOSURE,
+  }
+}
+
+/**
+ * `#rrggbb`, the only brand colour a partner creative may state.
+ *
+ * Shared by the console's write validation and both clients' render paths,
+ * and checked at every one of them even though `ck_ad_placement_creative_
+ * brand_hex` already constrains the column: these two fields are the only
+ * creative values a client interpolates into a STYLE rather than rendering as
+ * text, and the cost of the check is one regex.
+ */
+const BRAND_HEX = /^#[0-9a-f]{6}$/i
+
+export function isValidBrandHex(value: string | null | undefined): boolean {
+  return typeof value === 'string' && BRAND_HEX.test(value)
+}

@@ -2,9 +2,13 @@ import { describe, expect, it } from 'bun:test'
 
 import {
   MIN_INLINE_WIDTH_WITH_DESTINATION,
+  MIN_PARTNER_WIDTH_WITH_DESTINATION,
+  PARTNER_LINE_DISCLOSURE,
   extractDomain,
   getAdDisplayLabel,
   getInlineAdLayout,
+  getPartnerLineLayout,
+  isValidBrandHex,
   truncateToWidth,
 } from '../ads/inline-ad-layout'
 
@@ -108,5 +112,95 @@ describe('display label', () => {
 
   it('returns unparseable input unchanged rather than throwing', () => {
     expect(extractDomain('not a url')).toBe('not a url')
+  })
+})
+
+/**
+ * The PARTNER row: one line of an advertiser's colour in the CLI, previewed
+ * in the console from this same function.
+ */
+describe('getPartnerLineLayout', () => {
+  const PARTNER = { title: 'Review PR with Greptile', url: 'https://greptile.com' }
+
+  it('keeps the title and the domain on a standard terminal', () => {
+    const layout = getPartnerLineLayout(PARTNER, 80)
+    expect(layout.title).toBe(PARTNER.title)
+    expect(layout.label).toBe('greptile.com')
+    expect(layout.disclosure).toBe(PARTNER_LINE_DISCLOSURE)
+  })
+
+  it('drops the domain below its own breakpoint, not the inline card’s', () => {
+    // A single row with no border and no CTA box still reads at widths where
+    // the inline card has already given up, so this breakpoint is lower.
+    expect(getPartnerLineLayout(PARTNER, 44).label).toBe('greptile.com')
+    expect(getPartnerLineLayout(PARTNER, 43).label).toBe('')
+    expect(MIN_PARTNER_WIDTH_WITH_DESTINATION).toBe(44)
+    expect(MIN_PARTNER_WIDTH_WITH_DESTINATION).toBeLessThan(
+      MIN_INLINE_WIDTH_WITH_DESTINATION,
+    )
+  })
+
+  it('never drops the disclosure, however narrow the row', () => {
+    // An unlabelled line of somebody's brand colour inside our own chrome is
+    // the one state this format may not have. The title goes first.
+    for (const width of [0, 6, 12, 20, 43, 80]) {
+      const layout = getPartnerLineLayout(PARTNER, width)
+      expect([width, layout.disclosure]).toEqual([
+        width,
+        PARTNER_LINE_DISCLOSURE,
+      ])
+    }
+    expect(getPartnerLineLayout(PARTNER, 6).title).toBe('')
+  })
+
+  it('fits inside the row it was given, at every width', () => {
+    for (const width of [20, 44, 66, 80, 120]) {
+      const layout = getPartnerLineLayout(PARTNER, width)
+      const used =
+        layout.title.length +
+        (layout.label ? layout.label.length + 2 : 0) +
+        layout.disclosure.length +
+        2
+      expect([width, used <= width]).toEqual([width, true])
+    }
+  })
+
+  it('never prints the title twice when the ad has no URL', () => {
+    // The inline card falls back to the title for its destination label.
+    // Doing that here would put the same words at both ends of one row.
+    const layout = getPartnerLineLayout({ title: 'A headline', url: '' }, 80)
+    expect(layout.title).toBe('A headline')
+    expect(layout.label).toBe('')
+  })
+
+  it('survives a missing title without throwing', () => {
+    const layout = getPartnerLineLayout(
+      { title: '', url: 'https://greptile.com' },
+      80,
+    )
+    expect(layout.title).toBe('')
+    expect(layout.label).toBe('greptile.com')
+  })
+})
+
+describe('isValidBrandHex', () => {
+  it('accepts six-digit hex in either case, and nothing else', () => {
+    expect(isValidBrandHex('#20d6a0')).toBe(true)
+    expect(isValidBrandHex('#20D6A0')).toBe(true)
+    // Everything a creative might carry instead. Each of these reaches a
+    // STYLE rather than a text node, which is why the check exists at all.
+    for (const value of [
+      '#20d6a',
+      '20d6a0',
+      '#20d6a0;',
+      'red',
+      'var(--x)',
+      '#fff',
+      '',
+      null,
+      undefined,
+    ]) {
+      expect([value, isValidBrandHex(value)]).toEqual([value, false])
+    }
   })
 })

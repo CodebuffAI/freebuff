@@ -243,11 +243,11 @@ describe('copy and configuration', () => {
     // eight `CLI-Chat-Inline-N` ids:
     // no shipping client requests those, so selling them would be selling a
     // decaying legacy path.
-    // Plus the three sponsor breaks and the two partner slots, which are
-    // deliberately the same surface: each is a different RENDERER on Desktop
-    // chat, not a new surface, and adding a surface costs a house creative
-    // and a pinned rollup row.
-    expect(bySurface('cli_chat')).toBe(9)
+    // Plus the three sponsor breaks and the four partner slots, which are
+    // deliberately the same surface: each is a different RENDERER on the same
+    // chat surface, not a new surface, and adding a surface costs a house
+    // creative and a pinned rollup row.
+    expect(bySurface('cli_chat')).toBe(11)
     expect(bySurface('waiting_room')).toBe(4)
     expect(bySurface('freebuff_web_chat')).toBe(2)
     expect(bySurface('chat_assistant')).toBe(1)
@@ -295,6 +295,8 @@ describe('copy and configuration', () => {
     expect(PARTNER_PLACEMENT_IDS).toEqual([
       'Desktop-Partner-Skill-Picker',
       'Desktop-Partner-Composer-PR',
+      'CLI-Partner-Composer-PR',
+      'CLI-Partner-Slash-Review',
     ])
     for (const id of PARTNER_PLACEMENT_IDS) {
       expect([id, placementFormat(id)]).toEqual([id, 'partner'])
@@ -320,6 +322,15 @@ describe('copy and configuration', () => {
     )
     expect(placementSlotLabel('Desktop-Partner-Composer-PR')).toBe(
       'Desktop — Composer (PR intent)',
+    )
+    // The CLI's two say which app as well, because the same deal runs in
+    // both and a breakdown listing "Composer (PR intent)" twice names
+    // neither.
+    expect(placementSlotLabel('CLI-Partner-Composer-PR')).toBe(
+      'CLI — Composer (PR intent)',
+    )
+    expect(placementSlotLabel('CLI-Partner-Slash-Review')).toBe(
+      'CLI — Slash menu (/review)',
     )
   })
 
