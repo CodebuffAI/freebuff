@@ -537,7 +537,7 @@ export const AD_PRICING_ENABLED = true
  * That is the thing to weigh before leaving it off for long. The campaign
  * review is what catches an approved advertiser promoting something different
  * from what they were approved for, and there is no automated substitute for
- * it — `/web/admin/advertisers` lists every campaign, and while this is false
+ * it — `/web/admin/ads/advertisers-legacy` lists every campaign, and while this is false
  * that list is a place to spot-check rather than a queue that blocks.
  */
 export const AD_CAMPAIGN_REVIEW_ENABLED = false
