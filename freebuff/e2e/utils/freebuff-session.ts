@@ -4,9 +4,17 @@ import path from 'path'
 
 import { tmuxCapture, tmuxSend, tmuxSendKey, tmuxStart, tmuxStop } from './tmux-helpers'
 
+/** The chat header's line while no session is admitted: on launch, and again once
+ *  `/end-session` has released the slot. Chat-first since #4170. */
+export const FREEBUFF_CHAT_READY_TEXT = 'Your first message starts the session.'
+
 /** Static strings that prove the CLI reached a post-init boot screen. */
 export const FREEBUFF_BOOT_SIGNALS = [
   '█████╗  ██████╔╝', // ASCII logo (full or small variant)
+  // Chat-first startup (#4170): Freebuff opens straight into chat, whose header
+  // box says the first send admits a session and whose footer names the model.
+  FREEBUFF_CHAT_READY_TEXT,
+  '/model to change',
   'Start coding for free',
   'Enter a coding task',
   'Pick a model to start',
@@ -180,9 +188,9 @@ export class FreebuffSession {
 
   /**
    * Poll until the terminal shows any known boot-screen marker.
-   * More reliable than waiting for a single ASCII logo line — CI runners
-   * often land on the model picker wordmark ("Start coding for free") instead
-   * of the full ASCII art.
+   * More reliable than waiting for a single ASCII logo line: the screen a run
+   * lands on depends on auth and on the build (chat header, login prompt, or
+   * the older landing picker).
    */
   async waitForBootSignal(timeoutMs = 30_000): Promise<string> {
     const start = Date.now()
@@ -215,6 +223,28 @@ export class FreebuffSession {
     const finalOutput = await this.capture()
     throw new Error(
       `Timed out after ${timeoutMs}ms waiting for "${pattern}".\n` +
+        `Last output:\n${finalOutput}`,
+    )
+  }
+
+  /**
+   * Poll until the terminal output contains any of `patterns`; returns the one
+   * that matched (first in `patterns` order) with the output it matched in.
+   */
+  async waitForAnyText<const P extends string>(
+    patterns: readonly P[],
+    timeoutMs = 30_000,
+  ): Promise<{ match: P; output: string }> {
+    const start = Date.now()
+    while (Date.now() - start < timeoutMs) {
+      const output = await this.capture()
+      const match = patterns.find((pattern) => output.includes(pattern))
+      if (match !== undefined) return { match, output }
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+    const finalOutput = await this.capture()
+    throw new Error(
+      `Timed out after ${timeoutMs}ms waiting for any of ${JSON.stringify(patterns)}.\n` +
         `Last output:\n${finalOutput}`,
     )
   }
