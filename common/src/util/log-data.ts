@@ -21,6 +21,30 @@ export const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
   fatal: 50,
 }
 
+/** Stack traces cost ingest on every error row; the top frames carry it. */
+const MAX_ERROR_STACK_CHARS = 2_000
+
+/**
+ * An Error as plain JSON. `name`, `message` and `stack` are non-enumerable, so
+ * `JSON.stringify(error)` is `{}`: every `logger.error({ error }, ...)` whose
+ * error reached this serializer arrived in Axiom with no reason attached (on
+ * 2026-09-27, 119 error/warn rows a day on freebuff-web alone, and the
+ * Imprezia ingest's refusals for nine days). Enumerable fields a library adds
+ * (`code`, `status`, a driver's `query`) are kept, and `cause` is walked by the
+ * same replacer.
+ */
+function errorToJson(error: Error): Record<string, unknown> {
+  return {
+    ...error,
+    name: error.name,
+    message: error.message,
+    ...(error.stack
+      ? { stack: error.stack.slice(0, MAX_ERROR_STACK_CHARS) }
+      : {}),
+    ...(error.cause !== undefined ? { cause: error.cause } : {}),
+  }
+}
+
 /**
  * Serialize a log payload to a single string field, tolerating circular refs
  * and capping size. The cap applies to ALL sources so a large `data` payload
@@ -39,6 +63,7 @@ export function serializeLogData(data: unknown): string | null {
         if (typeof v === 'object' && v !== null) {
           if (seen.has(v)) return '[Circular]'
           seen.add(v)
+          if (v instanceof Error) return errorToJson(v)
         }
         return v
       })
