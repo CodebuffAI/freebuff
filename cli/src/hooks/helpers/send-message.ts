@@ -589,22 +589,22 @@ function handleFreebuffGateError(
       // Our seat is gone mid-chat. Finalize the AI message so its streaming
       // indicator stops — otherwise `isComplete` stays false and the message
       // keeps rendering a blinking cursor forever, making the user think the
-      // agent is still working even though the SessionEndedBanner is visible
-      // and actionable. Also disposes the batched-updater flush interval.
+      // agent is still working. Also disposes the batched-updater flush
+      // interval.
       updater.markComplete()
-      // Rejected before producing anything (the run-start guard missed
-      // because only the server knew the slot was gone): the prompt won't be
-      // processed and isn't re-queued, so say so instead of leaving it
-      // looking sent. Runs that got partway keep the quieter banner-only UX.
-      if (opts.messageWasDropped) {
-        updater.setError(
-          'Your free session ended before this message was processed. Send it again after starting a new session.',
-        )
-      }
-      // Flip to `ended` instead of auto re-queuing: the Chat surface stays
-      // mounted so any in-flight agent work can finish under the server-side
-      // grace period, and the session-ended banner prompts the user to press
-      // Enter when they're ready to rejoin.
+      // Always say why the turn stopped. Chat-first Freebuff has no
+      // session-ended banner, so a run that got partway (say, right after the
+      // user answered an ask_user question) otherwise just stops, and the
+      // next send's admission prompt reads as the CLI refusing it. A prompt
+      // rejected before producing anything is not re-queued, so say that too.
+      updater.setError(
+        opts.messageWasDropped
+          ? 'Your free session ended before this message was processed. Send it again after starting a new session.'
+          : 'Your free session ended, so the agent stopped here. Send a message to start a new session and continue.',
+      )
+      // Flip to `ended` instead of auto re-queuing: in-flight agent work can
+      // finish under the server-side grace period, and the next send admits a
+      // new session (use-freebuff-chat-admission.ts).
       markFreebuffSessionEnded()
       return
     case 'waiting_room_queued':

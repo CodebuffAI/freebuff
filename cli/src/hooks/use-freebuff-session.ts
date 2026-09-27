@@ -1267,7 +1267,12 @@ export function useFreebuffSession({
       apply,
       abort: () => {
         clearTimer()
+        // Cancel in-flight fetches (each captured its own controller), then
+        // arm a fresh one: the next send's metadata refresh and admission run
+        // on this controller, and a spent signal refuses every request made
+        // with it -- "The operation was aborted." on each retry until restart.
         abortController.abort()
+        abortController = new AbortController()
       },
     }
 

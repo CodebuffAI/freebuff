@@ -28,9 +28,12 @@ export const useMessageQueue = (
      *  requests would be rejected). Queued messages are kept, not dropped;
      *  processing resumes automatically when this flips back to false. */
     sendBlocked?: boolean
+    /** Test seam for the stuck-lock watchdog. */
+    watchdogTimeoutMs?: number
   } = {},
 ) => {
   const sendBlocked = opts.sendBlocked ?? false
+  const watchdogTimeoutMs = opts.watchdogTimeoutMs ?? QUEUE_WATCHDOG_TIMEOUT_MS
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
   const [streamStatus, setStreamStatus] = useState<StreamStatus>('idle')
   const [canProcessQueue, setCanProcessQueue] = useState<boolean>(true)
@@ -167,20 +170,36 @@ export const useMessageQueue = (
     if (watchdogTimeoutRef.current) {
       clearTimeout(watchdogTimeoutRef.current)
     }
-    watchdogTimeoutRef.current = setTimeout(() => {
-      if (queueProcessingOwnerRef.current !== processingOwner) return
-      if (isProcessingQueueRef.current) {
-        logger.warn(
-          { stuckDurationMs: QUEUE_WATCHDOG_TIMEOUT_MS },
-          '[message-queue] Watchdog: isProcessingQueueRef stuck for too long, forcing reset',
-        )
-        // Also reset canProcessQueue to allow queue to resume (unless user-paused)
-        setCanProcessQueue(!isQueuePausedRef.current)
-      }
-      queueProcessingOwnerRef.current = null
-      isProcessingQueueRef.current = false
-      watchdogTimeoutRef.current = null
-    }, QUEUE_WATCHDOG_TIMEOUT_MS)
+    const armWatchdog = (stuckDurationMs: number) => {
+      watchdogTimeoutRef.current = setTimeout(() => {
+        if (queueProcessingOwnerRef.current !== processingOwner) return
+        // The lock is held for the whole run it dispatched (released by the
+        // run's completion), and a run legitimately outlives the timeout --
+        // an agent turn, or one waiting on an ask_user answer. That is not a
+        // stuck lock: keep watching instead of resetting the queue under the
+        // live run. Since chat-first Freebuff sends every session's first
+        // prompt through the queue, this misfired on most long first turns.
+        if (
+          isProcessingQueueRef.current &&
+          (isChainInProgressRef.current || activeAgentStreamsRef.current > 0)
+        ) {
+          armWatchdog(stuckDurationMs + watchdogTimeoutMs)
+          return
+        }
+        if (isProcessingQueueRef.current) {
+          logger.warn(
+            { stuckDurationMs },
+            '[message-queue] Watchdog: isProcessingQueueRef stuck for too long, forcing reset',
+          )
+          // Also reset canProcessQueue to allow queue to resume (unless user-paused)
+          setCanProcessQueue(!isQueuePausedRef.current)
+        }
+        queueProcessingOwnerRef.current = null
+        isProcessingQueueRef.current = false
+        watchdogTimeoutRef.current = null
+      }, watchdogTimeoutMs)
+    }
+    armWatchdog(watchdogTimeoutMs)
 
     // Read the message to process from the synchronous queue source.
     const messageToProcess = queuedMessagesRef.current[0]
@@ -227,6 +246,7 @@ export const useMessageQueue = (
     isChainInProgressRef,
     activeAgentStreamsRef,
     writeQueue,
+    watchdogTimeoutMs,
   ])
 
   useEffect(() => {

@@ -2012,7 +2012,7 @@ describe('freebuff gate errors', () => {
     expect(messages[0].userError).toContain('released or taken over by another instance')
   })
 
-  test('handleRunError suppresses the inline error for 410 session_expired (ended banner takes over)', () => {
+  test('handleRunError explains a 410 session_expired that stops a run partway', () => {
     const messages = baseMessage()
     const updater = makeUpdater(messages)
     handleRunError({
@@ -2025,13 +2025,14 @@ describe('freebuff gate errors', () => {
       updateChainInProgress: () => {},
     })
     updater.flush()
-    // New contract: the gate handler flips the session store into `ended`
-    // and the session-ended banner is the user-facing signal, so we do NOT
-    // also surface an inline userError inside the chat transcript.
-    expect(messages[0].userError).toBeUndefined()
+    // Chat-first Freebuff has no session-ended banner: without this line the
+    // turn (e.g. one resumed by an ask_user answer) just stopped silently.
+    expect(messages[0].userError).toBe(
+      'Your free session ended, so the agent stopped here. Send a message to start a new session and continue.',
+    )
   })
 
-  test('handleRunError suppresses the inline error for 428 waiting_room_required (ended banner takes over)', () => {
+  test('handleRunError explains a 428 waiting_room_required that stops a run partway', () => {
     const messages = baseMessage()
     const updater = makeUpdater(messages)
     handleRunError({
@@ -2042,9 +2043,11 @@ describe('freebuff gate errors', () => {
       setStreamStatus: () => {},
       setCanProcessQueue: () => {},
       updateChainInProgress: () => {},
+      hasReceivedContent: true,
     })
     updater.flush()
-    expect(messages[0].userError).toBeUndefined()
+    expect(messages[0].userError).toContain('Your free session ended')
+    expect(messages[0].userError).toContain('Send a message to start a new session')
   })
 
   test('handleRunError maps 429 waiting_room_queued to the session-pending message', () => {
@@ -2114,10 +2117,9 @@ describe('freebuff gate errors', () => {
       setHasReceivedPlanResponse: () => {},
     })
     updater.flush()
-    // 410 is now handled by the ended banner, not an inline error. The
-    // assertion here just confirms routing happened via the gate handler
-    // (which swallows the userError) rather than the generic error path
-    // (which would set a userError from the message).
-    expect(messages[0].userError).toBeUndefined()
+    // Routed via the gate handler (its own copy) rather than the generic
+    // error path (which would set a userError from the message).
+    expect(messages[0].userError).toContain('Your free session ended')
+    expect(messages[0].userError).not.toContain('server said so')
   })
 })

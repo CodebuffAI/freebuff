@@ -119,6 +119,10 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
       input: RequestInfo | URL,
       init?: RequestInit,
     ) => {
+      // Like the real transport: an already-aborted signal never reaches the
+      // network. Without this, a request made on a dead controller passes.
+      if (init?.signal?.aborted)
+        throw new DOMException('The operation was aborted.', 'AbortError')
       const headers = new Headers(init?.headers)
       const method = init?.method ?? 'GET'
       const path = new URL(String(input)).pathname
@@ -535,6 +539,30 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
     cli.markFreebuffSessionEnded()
     await cli.refreshFreebuffSession()
     expect(cli.getFreebuffInstanceId()).not.toBe(first)
+    expect(rows.size).toBe(1)
+    expect(purchases).toBe(2)
+  })
+
+  // Chat completions rejected mid-run with a session-ending gate code (428
+  // waiting_room_required, 410 session_expired): the CLI marks the session
+  // ended from outside the poll loop. The next send must still be admitted --
+  // it used to fail its metadata refresh on the poll's already-aborted signal,
+  // every retry failing the same way until the CLI was restarted.
+  test('the send after a session ended mid-run is admitted, not refused', async () => {
+    await mount()
+    await cli.startFreebuffSession(FREEBUFF_MIMO_V25_MODEL_ID)
+    const first = cli.getFreebuffInstanceId()!
+    rows.delete(first)
+    cli.markFreebuffSessionEnded()
+    expect(freebuffChatNeedsAdmission()).toBe(true)
+    requestFreebuffChatAdmission()
+    await until(() => {
+      const admission = useFreebuffChatStore.getState().admission
+      return admission === null || admission.phase === 'failed'
+    })
+    expect(useFreebuffChatStore.getState().admission).toBeNull()
+    expect(useFreebuffSessionStore.getState().session?.status).toBe('active')
+    expect(freebuffChatNeedsAdmission()).toBe(false)
     expect(rows.size).toBe(1)
     expect(purchases).toBe(2)
   })
