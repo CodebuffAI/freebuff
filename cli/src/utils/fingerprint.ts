@@ -33,6 +33,18 @@ async function getMachineId(): Promise<string> {
   return id
 }
 
+function safeCpuCount(): number {
+  try {
+    return cpus().length
+  } catch (err) {
+    logger.warn(
+      { fingerprintType: 'cpu_count_unavailable' },
+      `os.cpus() unavailable, reporting cpuCount 0 — see #1374 (${String(err)})`,
+    )
+    return 0
+  }
+}
+
 async function getCpuInfoSafe(): Promise<{
   manufacturer: string
   brand: string
@@ -40,10 +52,11 @@ async function getCpuInfoSafe(): Promise<{
   physicalCores: number
 }> {
   try {
-    // Bun's os.cpus() can throw synchronously on ARM Linux with CPU hotplug
-    // skew (/proc vs /sys disagreement). Probe first; if it throws, skip
-    // si.cpu() entirely and fall back to empty values so the process stays up.
-    // See #1374.
+    // Bun's os.cpus() can throw synchronously on ARM Linux when /proc/stat
+    // and /proc/cpuinfo disagree — under proot-distro, which binds a
+    // hardcoded 8-core /proc/stat over the real one while /proc/cpuinfo stays
+    // live. See #1374. Probe first; if it throws, skip si.cpu() entirely and
+    // fall back to empty values so the process stays up.
     cpus()
   } catch {
     logger.warn(
@@ -153,7 +166,7 @@ async function calculateEnhancedFingerprint(): Promise<string> {
       platform: process.platform,
       arch: process.arch,
       shell,
-      cpuCount: cpus().length,
+      cpuCount: safeCpuCount(),
     },
     network: {
       macAddresses,
