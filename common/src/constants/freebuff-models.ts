@@ -4586,13 +4586,7 @@ export function isFreebuffGpt6LunaModelId(
 // FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID) REQUIRES removing it from here
 // in the same change, and the reverse: as long as the row is browser-only, a
 // missing entry here means the catalogs are the only gate, and they are not
-// one. The remaining defences without it are narrower:
-//
-//   - the tool-schema check (docs/freebuff-abuse-detection.md), which downgrades
-//     third-party clients on every model, but not a caller who has faithfully
-//     reproduced our toolset
-//   - FREEBUFF_PAUSED_FREE_MODEL_IDS, which is the rollback lever rather than a
-//     standing gate
+// one.
 //
 // Withdrawing a model entirely is still `FREEBUFF_PAUSED_FREE_MODEL_IDS`, not
 // this list: pausing stops admissions on every surface in one deploy, while
