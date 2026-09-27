@@ -8,13 +8,15 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto'
-import { cpus, networkInterfaces } from 'node:os'
+import { availableParallelism, cpus, networkInterfaces } from 'node:os'
 
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 
 import { trackEvent } from './analytics'
 import { detectShell } from './detect-shell'
 import { logger } from './logger'
+
+import type { CpuInfo } from 'node:os'
 
 // Lazy imports for optional dependencies
 let machineIdModule: typeof import('node-machine-id') | null = null
@@ -33,19 +35,86 @@ async function getMachineId(): Promise<string> {
   return id
 }
 
-async function getSystemInfo(): Promise<{
+type SystemInformation = Pick<
+  typeof import('systeminformation'),
+  'system' | 'cpu' | 'osInfo'
+>
+
+async function loadSystemInformation(): Promise<SystemInformation> {
+  if (!systeminformationModule) {
+    systeminformationModule = await import('systeminformation')
+  }
+  return systeminformationModule
+}
+
+/**
+ * Whether per-CPU details (model, speed, times) can be read without throwing.
+ *
+ * Bun's `os.cpus()` is lazy: it returns `hostCpuCount` placeholder objects and
+ * only runs the native read on first access to `.model`/`.speed`/`.times`. On
+ * Linux that native read throws `Failed to get CPU information` when
+ * /proc/stat and /proc/cpuinfo list different CPU counts. proot-distro (Termux)
+ * binds a hardcoded 8-core /proc/stat over the real one, so on a 9-core phone
+ * the mismatch is permanent (CodebuffAI/freebuff#1374).
+ *
+ * systeminformation's `cpu()` reads `os.cpus()[0].model` inside a
+ * `process.nextTick` callback, where no caller try/catch can reach it: the
+ * throw escapes to the process-level handler and kills the CLI. So probe the
+ * same read synchronously here, and skip `cpu()` when it throws.
+ */
+export function canReadCpuDetails(readCpus: () => CpuInfo[] = cpus): boolean {
+  try {
+    void readCpus()[0]?.model
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Logical CPU count that never throws; 0 when no source works. */
+function safeCpuCount(readCpus: () => CpuInfo[]): number {
+  try {
+    return readCpus().length
+  } catch {
+    try {
+      return availableParallelism()
+    } catch {
+      return 0
+    }
+  }
+}
+
+export async function getSystemInfo({
+  load = loadSystemInformation,
+  readCpus = cpus,
+}: {
+  load?: () => Promise<SystemInformation>
+  readCpus?: () => CpuInfo[]
+} = {}): Promise<{
   system: { manufacturer: string; model: string; serial: string; uuid: string }
   cpu: { manufacturer: string; brand: string; cores: number; physicalCores: number }
   os: { platform: string; distro: string; arch: string; hostname: string }
 }> {
   try {
-    if (!systeminformationModule) {
-      systeminformationModule = await import('systeminformation')
+    const si = await load()
+    const cpuReadable = canReadCpuDetails(readCpus)
+    if (!cpuReadable) {
+      logger.warn(
+        { fingerprintType: 'cpu_info_unavailable' },
+        'CPU details unreadable (os.cpus() throws); fingerprinting without them',
+      )
     }
     const [systemInfo, cpuInfo, osInfo] = await Promise.all([
-      systeminformationModule.system(),
-      systeminformationModule.cpu(),
-      systeminformationModule.osInfo(),
+      si.system(),
+      cpuReadable
+        ? si.cpu()
+        : Promise.resolve({
+            manufacturer: '',
+            brand: '',
+            cores: safeCpuCount(readCpus),
+            physicalCores: 0,
+          }),
+      si.osInfo(),
     ])
     return {
       system: {
@@ -110,7 +179,7 @@ async function calculateEnhancedFingerprint(): Promise<string> {
       platform: process.platform,
       arch: process.arch,
       shell,
-      cpuCount: cpus().length,
+      cpuCount: safeCpuCount(cpus),
     },
     network: {
       macAddresses,
