@@ -2,6 +2,7 @@ import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 import { useCallback, useEffect, useState } from 'react'
 
 import { useAuthQuery, useLogoutMutation } from './use-auth-query'
+import { useChatStore } from '../state/chat-store'
 import { useLoginStore } from '../state/login-store'
 import { identifyUser, trackEvent } from '../utils/analytics'
 import { getUserCredentials } from '../utils/auth'
@@ -116,6 +117,9 @@ export const useAuthState = ({
       // Reset the SDK client to pick up new credentials
       resetCodebuffClient()
       resetChatStore()
+      // After the reset, which clears banners: a fresh sign-in is the moment
+      // to invite someone to the community. Restored sessions never get here.
+      if (IS_FREEBUFF) useChatStore.getState().setActiveTopBanner('discord')
       resetLoginState()
       setInputFocused(true)
       setUser(loggedInUser)

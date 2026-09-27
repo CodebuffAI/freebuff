@@ -1,5 +1,5 @@
 /** Types of banners that can appear at the top of the chat */
-export type TopBannerType = 'homeDir' | 'gitRoot' | null
+export type TopBannerType = 'homeDir' | 'gitRoot' | 'discord' | null
 
 export type InputValue = {
   text: string

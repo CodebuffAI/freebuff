@@ -3,9 +3,14 @@ import React from 'react'
 import { Button } from './button'
 import { TerminalLink } from './terminal-link'
 import { useTheme } from '../hooks/use-theme'
+import {
+  DISCORD_AFTER_LOGIN_TEXT,
+  FREEBUFF_DISCORD_INVITE_URL,
+} from '../login/discord-invite'
 import { useChatStore } from '../state/chat-store'
 import { IS_FREEBUFF } from '../utils/constants'
 import type { TopBannerType } from '../types/store'
+import { safeOpen } from '../utils/open-url'
 import { formatCwd } from '../utils/path-helpers'
 import { BORDER_CHARS } from '../utils/ui-constants'
 
@@ -70,6 +75,26 @@ const TOP_BANNER_REGISTRY: Record<NonNullable<TopBannerType>, BannerConfig> = {
         </>
       )
     },
+  },
+  // Raised once, by a fresh sign-in in the login modal (`use-auth-state.ts`).
+  discord: {
+    borderColorKey: 'info',
+    textColorKey: 'foreground',
+    layout: 'custom',
+    content: ({ textColor }) => (
+      <>
+        <text style={{ wrapMode: 'word', fg: textColor }}>
+          {DISCORD_AFTER_LOGIN_TEXT}
+        </text>
+        <TerminalLink
+          text={FREEBUFF_DISCORD_INVITE_URL}
+          onActivate={() => safeOpen(FREEBUFF_DISCORD_INVITE_URL)}
+          underlineOnHover={true}
+          lineWrap={true}
+          containerStyle={{ alignItems: 'flex-start' }}
+        />
+      </>
+    ),
   },
 }
 
