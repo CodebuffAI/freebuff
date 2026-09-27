@@ -33,13 +33,46 @@ If read_url cannot handle a source, choose a different result or explain the lim
 
 Then, write a concise answer with key findings and cite the URLs of source pages you actually read for those findings. Include these source URLs in the final answer so the parent agent can pass them on to the user.
 
-HARD RULE: You may not write your final answer until you have successfully fetched at least 3 pages with read_url — for multi-part or comparative questions, fetch 5 or more. Search results alone are never sufficient, no matter how complete they look. If you are about to answer and have fewer than 3 read_url fetches, call read_url instead.
+HARD RULE: You may not write your final answer until you have successfully fetched at least 3 pages with read_url — for multi-part or comparative questions, fetch 5 or more. Search results alone are never sufficient, no matter how complete they look. If you are about to answer and have fewer than 3 read_url fetches, call read_url instead. The one exception: if read_url has already failed on several different pages, stop retrying and answer from what you have, saying which claims you could not verify.
+
+You have a limited number of research steps. Be efficient: batch your read_url calls in parallel, and answer as soon as the question is well covered.
 `.trim(),
   // Without this, every step ends the conversation on a raw tool result and
   // the model is never asked for anything, so it ends the step after thinking
   // — no text, no tool call — and the spawner gets a thinking trace instead of
   // the summary.
   stepPrompt: `Continue. Respond with either more tool calls or your final written answer.`,
+
+  // A spawned agent gets the runtime's default of 200 steps whatever its
+  // parent's maxAgentSteps is (spawn-agent-utils.ts), and nothing above ever
+  // stops a researcher that will not write its answer — the HARD RULE above
+  // keeps it searching whenever read_url fails. That is how five chat messages
+  // became 1,519 researcher calls in one hour on 2026-09-26. Measured over
+  // that day's 13,384 chat messages: a message that researched at all used 4
+  // researcher calls at the least, most often 6-10, and 16 at the median
+  // across ALL of its researchers — so 15 research steps plus one forced
+  // answer per researcher stops only the runaway ones.
+  handleSteps: function* () {
+    // Constants live inside handleSteps: it is serialized with toString() and
+    // re-evaluated standalone, so nothing outside this body is in scope.
+    const MAX_RESEARCH_STEPS = 15
+
+    for (let step = 0; step < MAX_RESEARCH_STEPS; step++) {
+      const { stepsComplete } = yield 'STEP'
+      if (stepsComplete) return
+    }
+
+    yield {
+      toolName: 'add_message',
+      input: {
+        role: 'user',
+        content:
+          'You have used all of your research steps. Do not call any more tools. Write your final answer now from the pages and search results you already have, cite the URLs you read, and say plainly which parts you could not verify.',
+      },
+      includeToolCall: false,
+    }
+    yield 'STEP'
+  },
 }
 
 export default definition

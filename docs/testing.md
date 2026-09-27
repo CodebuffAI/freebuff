@@ -421,6 +421,21 @@ A fourth pattern worth naming: a test that races two real timers against each
 other (a 20ms cadence against a 40ms window) has a 2x margin that starvation
 erases. Inject the clock and advance it explicitly rather than sleeping.
 
+A variant of the second that no deadline fixes: **a wait that samples the
+middle of the work.** `engines.test.ts` polled for an idle tab's
+`node_modules` to vanish, then asserted that the tab's bootstrap marker was
+gone. The strip removes the marker in the continuation *after* its async
+`rm` resolves, though, so a 5ms poll that woke in the ~0.1ms between the two
+failed the test: 1.7% of runs on an idle laptop, 3.4% under load, and red on
+CI on 2026-09-26. Whatever you wait on has to be the last thing the work
+does. For backgrounded work, await the work itself; `EngineRegistry` exposes
+`backgroundSettled()` for exactly this.
+
+A flake that rare will not show up in a six-run full-suite hunt; this one
+never did. Narrow it to the test and multiply the samples instead:
+`bun test <file> -t '<name>' --rerun-each 300` reproduced it 5/300 in about
+a minute, and passing the same command as flake-hunt's `--cmd` adds the load.
+
 One shape worth calling out separately, because no amount of isolating the test
 fixes it: **a test whose subject is machine-global.** `orphan-reaper` kills any
 process on the box stamped with a dead orchestrator — that is the feature — so
