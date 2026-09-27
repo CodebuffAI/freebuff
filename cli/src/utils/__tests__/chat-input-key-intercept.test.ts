@@ -49,3 +49,27 @@ test('reserves empty composer shortcuts but leaves text editing alone', () => {
     expect(shouldInterceptChatInputKey({ name }, { ...baseState, cursorPosition: 0, lastEditDueToNav: true })).toBe(false)
   }
 })
+
+test('an open menu owns Up/Down in the draft that opened it', () => {
+  for (const name of ['up', 'down']) {
+    for (const menu of [
+      { hasSlashSuggestions: true },
+      { hasMentionSuggestions: true },
+    ]) {
+      expect(
+        shouldInterceptChatInputKey(
+          { name },
+          { ...baseState, ...menu, inputLength: 1, cursorPosition: 1 },
+        ),
+      ).toBe(true)
+    }
+  }
+  for (const name of ['left', 'right']) {
+    expect(
+      shouldInterceptChatInputKey(
+        { name },
+        { ...baseState, hasSlashSuggestions: true },
+      ),
+    ).toBe(false)
+  }
+})

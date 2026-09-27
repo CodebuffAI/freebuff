@@ -234,10 +234,6 @@ export function resolveChatKeyboardAction(
     if (key.name === 'left' && !key.shift) return { type: 'open-chat-history' }
   }
 
-  if (state.inputValue.length > 0 && ['left', 'right', 'up', 'down'].includes(key.name) && !hasModifier(key)) {
-    return { type: 'none' }
-  }
-
   // Priority 2.5: Open the queue editor (Ctrl+Q). Ahead of the ctrl-c rules
   // below so it works with a half-typed message still in the composer; raw
   // mode disables XON/XOFF, so ctrl-q is ours to use.
@@ -329,6 +325,19 @@ export function resolveChatKeyboardAction(
     if (isEnter) {
       return { type: 'mention-menu-select' }
     }
+  }
+
+  // Priority 7.5: In a non-empty draft, bare arrows edit the text (the
+  // composer moves the cursor) rather than triggering any chat action. This
+  // sits BELOW the slash and mention menus on purpose: typing "/" or "@" makes
+  // the draft non-empty, so a guard above them swallowed every Up/Down meant
+  // for an open menu and the command list could not be scrolled.
+  if (
+    state.inputValue.length > 0 &&
+    ['left', 'right', 'up', 'down'].includes(key.name) &&
+    !hasModifier(key)
+  ) {
+    return { type: 'none' }
   }
 
   // Priority 8: Tab to open file menu (when not in a menu, not shift-tab, and suggestions enabled)

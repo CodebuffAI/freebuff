@@ -25,13 +25,15 @@ export function shouldInterceptChatInputKey(
   if (state.inputLength === 0 && (!state.inputMode || state.inputMode === 'default' || state.inputMode === 'help') && !key.ctrl && !key.meta && !key.option) {
     if (key.sequence === '?' || key.name === '?' || (key.name === 'left' && !key.shift)) return true
   }
-  if (state.inputLength > 0 && ['left', 'right', 'up', 'down'].includes(key.name ?? '') && !key.ctrl && !key.meta && !key.option) return false
   const isPlainEnter = isPlainEnterKey(key)
   const isTab = key.name === 'tab' && !key.ctrl && !key.meta && !key.option
   const isUp = key.name === 'up' && !key.ctrl && !key.meta && !key.option
   const isDown = key.name === 'down' && !key.ctrl && !key.meta && !key.option
   const isUpDown = isUp || isDown
 
+  // An open menu owns Up/Down even though its "/" or "@" makes the draft
+  // non-empty; in a non-empty draft with no menu, arrows fall through to the
+  // composer's cursor movement (the history checks below need an empty draft).
   const hasSuggestions =
     state.hasSlashSuggestions || state.hasMentionSuggestions
   if (hasSuggestions) {

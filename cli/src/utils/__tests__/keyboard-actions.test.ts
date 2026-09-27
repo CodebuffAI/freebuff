@@ -3,6 +3,7 @@ import { describe, test, expect } from 'bun:test'
 import {
   resolveChatKeyboardAction,
   createDefaultChatKeyboardState,
+  type ChatKeyboardAction,
   type ChatKeyboardState,
 } from '../keyboard-actions'
 
@@ -677,5 +678,59 @@ describe('empty composer shortcuts', () => {
   test('does not steal keys from another input mode or modified arrows', () => {
     expect(resolveChatKeyboardAction(createKey({ name: '?' }), { ...defaultState, inputMode: 'bash' })).toEqual({ type: 'none' })
     expect(resolveChatKeyboardAction(createKey({ name: 'left', shift: true }), defaultState)).toEqual({ type: 'none' })
+  })
+})
+
+// Regression: an open menu always means a non-empty draft ("/" or "@" was
+// typed), so the non-empty-draft arrow guard must not sit above the menus.
+describe('menu arrows in the draft that opened the menu', () => {
+  test.each<[string, string, ChatKeyboardAction['type']]>([
+    ['/', 'down', 'slash-menu-down'],
+    ['/', 'up', 'slash-menu-up'],
+    ['/re', 'down', 'slash-menu-down'],
+  ])('%s + %s navigates the slash menu', (inputValue, name, type) => {
+    const state: ChatKeyboardState = {
+      ...defaultState,
+      inputValue,
+      cursorPosition: inputValue.length,
+      slashMenuActive: true,
+      slashMatchesLength: 5,
+      slashSelectedIndex: 2,
+    }
+    expect(resolveChatKeyboardAction(createKey({ name }), state).type).toBe(
+      type,
+    )
+  })
+
+  test.each<[string, ChatKeyboardAction['type']]>([
+    ['down', 'mention-menu-down'],
+    ['up', 'mention-menu-up'],
+  ])('@ + %s navigates the mention menu', (name, type) => {
+    const state: ChatKeyboardState = {
+      ...defaultState,
+      inputValue: '@',
+      cursorPosition: 1,
+      mentionMenuActive: true,
+      totalMentionMatches: 5,
+      agentSelectedIndex: 2,
+    }
+    expect(resolveChatKeyboardAction(createKey({ name }), state).type).toBe(
+      type,
+    )
+  })
+
+  test('left and right still edit a draft with an open menu', () => {
+    const state: ChatKeyboardState = {
+      ...defaultState,
+      inputValue: '/re',
+      cursorPosition: 2,
+      slashMenuActive: true,
+      slashMatchesLength: 5,
+    }
+    for (const name of ['left', 'right']) {
+      expect(resolveChatKeyboardAction(createKey({ name }), state)).toEqual({
+        type: 'none',
+      })
+    }
   })
 })
