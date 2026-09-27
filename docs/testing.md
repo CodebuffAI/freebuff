@@ -422,6 +422,19 @@ defect found by this harness on its first outing:
    19 failures scattered across unrelated assertions; alone it passes 49/49.
    Spawn servers on port 0 and read back the port they actually got.
 
+   Then check that the server honours 0. Vite's `server.listen()` reads
+   `port: 0` as unset and binds 5173, and the repo config's `strictPort` makes
+   it exit before listening if anything is already there: an overlapping run,
+   or another project's dev server on Vite's default port. `terminal.test.ts`
+   passed `port: 0` and still lost one of three overlapping suite runs in every
+   hunted round, and 10 of 15 runs when only that file overlapped. It now calls
+   `server.httpServer.listen(0)` itself and gives Vite a per-run `cacheDir`,
+   because the deps optimizer otherwise commits into the package's shared
+   `node_modules/.vite`. That failure also read `Vite exited before listening:`
+   with nothing after the colon, because the child's stderr was piped and never
+   read. A test that reports a child's death should carry its stderr and exit
+   status.
+
 2. **Waits that sample instead of listening.** A fixed count of 10ms polls is a
    budget with no relationship to how long the work takes, and it pays a full
    tick even when the work already finished. Await the signal the system already
