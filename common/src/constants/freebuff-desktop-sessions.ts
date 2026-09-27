@@ -79,6 +79,14 @@ export const FREEBUFF_DESKTOP_IDLE_RELEASE_MS = 15 * 60 * 1000
 export const FREEBUFF_DESKTOP_ADMITTED_AT_HEADER =
   'x-freebuff-desktop-admitted-at'
 
+/**
+ * Names the app making a session call. Freebuff Desktop sends `desktop`:
+ * current CLI builds share Desktop's multi-session header and table, so
+ * nothing else on the wire tells the two apart.
+ */
+export const FREEBUFF_CLIENT_HEADER = 'x-freebuff-client'
+export const FREEBUFF_CLIENT_DESKTOP = 'desktop'
+
 /** Client-persisted identity for a possibly unacknowledged Desktop POST. */
 export const FREEBUFF_DESKTOP_ATTEMPT_HEADER = 'x-freebuff-desktop-attempt-id'
 
