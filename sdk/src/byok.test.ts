@@ -9,6 +9,13 @@ import {
   normalizeByokBaseUrl,
   byokModelLimits,
   byokCompletionUrl,
+  BYOK_DEFAULT_CONTEXT_WINDOW,
+  BYOK_DISCOVERED_CONTEXT_WINDOW_CAP,
+  BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW,
+  clearByokContextWindowCache,
+  contextWindowFromModelList,
+  withEffectiveByokLimits,
+  type ResolvedByokConnection,
   type ByokConnection,
   type ByokSecretStore,
 } from './byok'
@@ -273,6 +280,139 @@ test('custom model limits reserve output and reject impossible capacities', () =
     byokModelLimits({ contextWindow: 8192, maxOutputTokens: 8192 }),
   ).toThrow()
   expect(() => byokModelLimits({ contextWindow: NaN })).toThrow()
+})
+
+describe('effective BYOK limits for a run', () => {
+  afterEach(() => clearByokContextWindowCache())
+  function resolved(
+    overrides: Partial<ByokConnection> = {},
+  ): ResolvedByokConnection {
+    const connection = {
+      id: '11111111-1111-4111-8111-111111111111',
+      revision: 1,
+      name: 'Fixture',
+      provider: 'openai-compatible' as const,
+      baseUrl: 'https://llm.example.com/v1',
+      model: 'acme/coder',
+      contextWindow: 32_768,
+      maxOutputTokens: 4_096,
+      credentialRef: 'connection:11111111-1111-4111-8111-111111111111:1',
+      createdAt: '2026-09-27T00:00:00.000Z',
+      updatedAt: '2026-09-27T00:00:00.000Z',
+      ...overrides,
+    }
+    const assertCurrent = async () => {}
+    Object.defineProperty(connection, 'apiKey', {
+      value: 'listing-secret',
+      enumerable: false,
+    })
+    Object.defineProperty(connection, 'assertCurrent', {
+      value: assertCurrent,
+      enumerable: false,
+    })
+    return Object.freeze(connection) as ResolvedByokConnection
+  }
+  function listing(body: unknown, status = 200) {
+    const calls: Array<{ url: string; auth: string | null }> = []
+    const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        auth: new Headers(init?.headers).get('authorization'),
+      })
+      return Response.json(body, { status })
+    }) as unknown as typeof fetch
+    return { calls, fetchImpl }
+  }
+
+  test('limits a user typed are kept and never trigger a lookup', async () => {
+    const { calls, fetchImpl } = listing({ data: [] })
+    const typed = resolved({ contextWindow: 102_400, maxOutputTokens: 8_192 })
+    expect(await withEffectiveByokLimits(typed, { fetch: fetchImpl })).toBe(typed)
+    // The window alone at the default still counts as a choice when the output limit moved.
+    const tuned = resolved({ maxOutputTokens: 2_048 })
+    expect(await withEffectiveByokLimits(tuned, { fetch: fetchImpl })).toBe(tuned)
+    expect(calls).toEqual([])
+  })
+
+  test('an untouched default takes the window the provider lists, keeping the credential hidden', async () => {
+    const { calls, fetchImpl } = listing({
+      data: [{ id: 'acme/coder', max_model_len: 65_536 }],
+    })
+    const connection = resolved()
+    const effective = await withEffectiveByokLimits(connection, { fetch: fetchImpl })
+    expect(effective).toMatchObject({ contextWindow: 65_536, maxOutputTokens: 4_096 })
+    expect(effective.apiKey).toBe('listing-secret')
+    expect(effective.assertCurrent).toBe(connection.assertCurrent)
+    expect(Object.keys(effective)).not.toContain('apiKey')
+    expect(JSON.stringify(effective)).not.toContain('listing-secret')
+    expect(Object.isFrozen(effective)).toBe(true)
+    expect(byokModelLimits(effective).maxContextLength).toBe(
+      Math.floor((65_536 - 4_096) * 0.9),
+    )
+    expect(calls).toEqual([
+      { url: 'https://llm.example.com/v1/models', auth: 'Bearer listing-secret' },
+    ])
+    // One listing per endpoint and model, not one per turn.
+    await withEffectiveByokLimits(connection, { fetch: fetchImpl })
+    expect(calls).toHaveLength(1)
+  })
+
+  test('OpenRouter is asked without the key, and a huge window is capped', async () => {
+    const { calls, fetchImpl } = listing({
+      data: [
+        { id: 'vendor/giant', context_length: 1_048_576 },
+        { id: 'vendor/small', context_length: 40_960 },
+      ],
+    })
+    const giant = await withEffectiveByokLimits(
+      resolved({ provider: 'openrouter', baseUrl: undefined, model: 'vendor/giant' }),
+      { fetch: fetchImpl },
+    )
+    expect(giant.contextWindow).toBe(BYOK_DISCOVERED_CONTEXT_WINDOW_CAP)
+    const free = await withEffectiveByokLimits(
+      resolved({ provider: 'openrouter', baseUrl: undefined, model: 'vendor/small:free' }),
+      { fetch: fetchImpl },
+    )
+    expect(free.contextWindow).toBe(40_960)
+    expect(calls[0]).toEqual({ url: 'https://openrouter.ai/api/v1/models', auth: null })
+  })
+
+  test('an unlisted remote model gets 128k; a local server keeps its configured default', async () => {
+    const miss = listing({ data: [{ id: 'someone/else', context_length: 8_192 }] })
+    expect(
+      (await withEffectiveByokLimits(resolved(), { fetch: miss.fetchImpl })).contextWindow,
+    ).toBe(BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW)
+    const local = resolved({ baseUrl: 'http://127.0.0.1:1234/v1' })
+    expect(await withEffectiveByokLimits(local, { fetch: miss.fetchImpl })).toBe(local)
+    expect(local.contextWindow).toBe(BYOK_DEFAULT_CONTEXT_WINDOW)
+  })
+
+  test('a failing or unreachable listing never fails the run', async () => {
+    const failed = listing({ error: 'nope' }, 500)
+    expect(
+      (await withEffectiveByokLimits(resolved(), { fetch: failed.fetchImpl })).contextWindow,
+    ).toBe(BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW)
+    clearByokContextWindowCache()
+    const offline = (async () => {
+      throw new TypeError('fetch failed')
+    }) as unknown as typeof fetch
+    expect(
+      (await withEffectiveByokLimits(resolved(), { fetch: offline })).contextWindow,
+    ).toBe(BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW)
+  })
+
+  test('reads the window fields common OpenAI-compatible listings use', () => {
+    expect(contextWindowFromModelList({ data: [{ id: 'm', context_window: 131_072 }] }, 'm')).toBe(131_072)
+    expect(contextWindowFromModelList([{ id: 'm', loaded_context_length: '16384' }], 'm')).toBe(16_384)
+    expect(
+      contextWindowFromModelList(
+        { data: [{ id: 'x', canonical_slug: 'm', top_provider: { context_length: 200_000 } }] },
+        'm',
+      ),
+    ).toBe(200_000)
+    expect(contextWindowFromModelList({ data: [{ id: 'm' }] }, 'm')).toBeUndefined()
+    expect(contextWindowFromModelList('not a listing', 'm')).toBeUndefined()
+  })
 })
 
 test('failed key rotation leaves the old revision recoverable', async () => {

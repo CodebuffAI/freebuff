@@ -144,13 +144,30 @@ function parseConnections(value: unknown): ByokConnection[] {
   }
   return parsed.data
 }
+/**
+ * The limits a connection gets when nobody chose any. The Desktop settings
+ * form pre-fills exactly this pair, and the store persists it, so a stored
+ * 32,768 / 4,096 almost always means "not configured" rather than a decision.
+ */
+export const BYOK_DEFAULT_CONTEXT_WINDOW = 32_768
+export const BYOK_DEFAULT_MAX_OUTPUT_TOKENS = 4_096
+/** A remote endpoint that does not report its model's window. */
+export const BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW = 131_072
+/**
+ * The most an automatically-chosen window may be: the hosted budget's order of
+ * magnitude, since every token of a BYOK request is billed to the user's key.
+ * A user who wants more types it into the connection.
+ */
+export const BYOK_DISCOVERED_CONTEXT_WINDOW_CAP = 400_000
+
 export function byokModelLimits(connection: {
   contextWindow?: number
   maxOutputTokens?: number
 }) {
-  const contextWindow = connection.contextWindow ?? 32768
+  const contextWindow = connection.contextWindow ?? BYOK_DEFAULT_CONTEXT_WINDOW
   const maxOutputTokens =
-    connection.maxOutputTokens ?? Math.min(4096, Math.floor(contextWindow / 4))
+    connection.maxOutputTokens ??
+    Math.min(BYOK_DEFAULT_MAX_OUTPUT_TOKENS, Math.floor(contextWindow / 4))
   if (
     !Number.isInteger(contextWindow) ||
     contextWindow < 4096 ||
@@ -168,6 +185,203 @@ export function byokModelLimits(connection: {
     maxOutputTokens,
     maxContextLength: Math.floor((contextWindow - maxOutputTokens) * 0.9),
   }
+}
+
+/** True when the connection carries the untouched default limits (see above). */
+export function hasDefaultByokLimits(connection: {
+  contextWindow?: number
+  maxOutputTokens?: number
+}): boolean {
+  return (
+    (connection.contextWindow ?? BYOK_DEFAULT_CONTEXT_WINDOW) ===
+      BYOK_DEFAULT_CONTEXT_WINDOW &&
+    (connection.maxOutputTokens ?? BYOK_DEFAULT_MAX_OUTPUT_TOKENS) ===
+      BYOK_DEFAULT_MAX_OUTPUT_TOKENS
+  )
+}
+
+function isLoopbackByokEndpoint(
+  connection: Pick<ByokConnection, 'provider' | 'baseUrl'>,
+): boolean {
+  if (connection.provider !== 'openai-compatible') return false
+  try {
+    const { hostname } = new URL(
+      normalizeByokBaseUrl(connection.provider, connection.baseUrl),
+    )
+    return ['localhost', '127.0.0.1', '[::1]'].includes(hostname)
+  } catch {
+    return false
+  }
+}
+
+/** Fields OpenAI-compatible `/models` listings use for a model's window:
+ *  OpenRouter/Together (`context_length`), Groq (`context_window`), vLLM
+ *  (`max_model_len`), LM Studio (`loaded_context_length`), and others. */
+const CONTEXT_WINDOW_FIELDS = [
+  'context_length',
+  'context_window',
+  'max_model_len',
+  'max_context_length',
+  'loaded_context_length',
+] as const
+
+function positiveInteger(value: unknown): number | undefined {
+  const number = typeof value === 'string' ? Number(value) : value
+  return typeof number === 'number' && Number.isInteger(number) && number > 0
+    ? number
+    : undefined
+}
+
+/** The window a `/models` listing reports for `model`, or undefined. */
+export function contextWindowFromModelList(
+  body: unknown,
+  model: string,
+): number | undefined {
+  const list = Array.isArray(body)
+    ? body
+    : body && typeof body === 'object' && Array.isArray((body as any).data)
+      ? ((body as any).data as unknown[])
+      : []
+  const entries = list.filter(
+    (entry): entry is Record<string, unknown> =>
+      !!entry && typeof entry === 'object',
+  )
+  // OpenRouter variants (`vendor/model:free`) fall back to the base model.
+  const candidates = [model, model.replace(/:[^/:]+$/, '')]
+  for (const id of candidates) {
+    const entry = entries.find(
+      (item) => item.id === id || item.canonical_slug === id,
+    )
+    if (!entry) continue
+    const topProvider =
+      entry.top_provider && typeof entry.top_provider === 'object'
+        ? (entry.top_provider as Record<string, unknown>)
+        : {}
+    for (const value of [
+      ...CONTEXT_WINDOW_FIELDS.map((field) => entry[field]),
+      topProvider.context_length,
+    ]) {
+      const window = positiveInteger(value)
+      if (window !== undefined) return window
+    }
+  }
+  return undefined
+}
+
+const discoveredWindows = new Map<
+  string,
+  { expiresAt: number; window: Promise<number | undefined> }
+>()
+const DISCOVERY_HIT_TTL_MS = 6 * 60 * 60 * 1000
+const DISCOVERY_MISS_TTL_MS = 10 * 60 * 1000
+const DISCOVERY_TIMEOUT_MS = 4_000
+
+/** Test seam: forget every cached discovery. */
+export function clearByokContextWindowCache(): void {
+  discoveredWindows.clear()
+}
+
+/**
+ * Ask the provider's `/models` listing how large this model's window is.
+ * Best effort: never throws, and a miss is remembered briefly so a provider
+ * without the field is not asked on every turn. The listing is what the
+ * connection check already calls; OpenRouter's is public, so the key is sent
+ * only to an OpenAI-compatible endpoint that needs it.
+ */
+export async function discoverByokContextWindow(
+  connection: Pick<
+    ResolvedByokConnection,
+    'provider' | 'baseUrl' | 'model' | 'apiKey'
+  >,
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+): Promise<number | undefined> {
+  let base: string
+  try {
+    base = normalizeByokBaseUrl(connection.provider, connection.baseUrl)
+  } catch {
+    return undefined
+  }
+  const key = `${base}\n${connection.model}`
+  const now = Date.now()
+  const cached = discoveredWindows.get(key)
+  if (cached && cached.expiresAt > now) return cached.window
+  const window = (async () => {
+    try {
+      const response = await fetchImpl(`${base}/models`, {
+        headers:
+          connection.provider === 'openrouter'
+            ? {}
+            : { Authorization: `Bearer ${connection.apiKey}` },
+        redirect: 'error',
+        signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS),
+      })
+      if (!response.ok) {
+        await response.body?.cancel()
+        return undefined
+      }
+      return contextWindowFromModelList(await response.json(), connection.model)
+    } catch {
+      return undefined
+    }
+  })()
+  discoveredWindows.set(key, { expiresAt: now + DISCOVERY_HIT_TTL_MS, window })
+  const result = await window
+  if (result === undefined)
+    discoveredWindows.set(key, {
+      expiresAt: now + DISCOVERY_MISS_TTL_MS,
+      window,
+    })
+  return result
+}
+
+/**
+ * The connection a run should use: identical, unless its limits are the
+ * untouched defaults. Those are a 32,768-token guess, and for a coding agent
+ * whose tool schemas and prompt alone are ~15-20k tokens, compacting at 80% of
+ * 90% of (32,768 - 4,096) leaves a few thousand tokens of conversation: every
+ * few tool calls the run compacted, and the summary itself sat above the line
+ * (Desktop feedback 2026-09-24 and 09-27, "compacts every 3-5 turns").
+ *
+ * The provider's own number wins when its `/models` listing reports one
+ * (capped at BYOK_DISCOVERED_CONTEXT_WINDOW_CAP). Otherwise a remote endpoint
+ * gets 128k, which nearly every hosted coding model supports, and a loopback
+ * server keeps the configured default, because a local server's window is
+ * whatever it was launched with. Limits a user actually typed are never
+ * replaced. The credential stays non-enumerable on the copy.
+ */
+export async function withEffectiveByokLimits(
+  connection: ResolvedByokConnection,
+  options: { fetch?: typeof globalThis.fetch } = {},
+): Promise<ResolvedByokConnection> {
+  if (!hasDefaultByokLimits(connection)) return connection
+  const discovered = await discoverByokContextWindow(connection, options.fetch)
+  const contextWindow =
+    // A window must exceed the output limit (byokModelLimits' own rule).
+    discovered !== undefined && discovered > BYOK_DEFAULT_MAX_OUTPUT_TOKENS
+      ? Math.min(discovered, BYOK_DISCOVERED_CONTEXT_WINDOW_CAP)
+      : isLoopbackByokEndpoint(connection)
+        ? BYOK_DEFAULT_CONTEXT_WINDOW
+        : BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW
+  if (
+    contextWindow === (connection.contextWindow ?? BYOK_DEFAULT_CONTEXT_WINDOW)
+  )
+    return connection
+  const effective = {
+    ...connection,
+    contextWindow,
+    maxOutputTokens:
+      connection.maxOutputTokens ?? BYOK_DEFAULT_MAX_OUTPUT_TOKENS,
+  } as ResolvedByokConnection
+  Object.defineProperty(effective, 'apiKey', {
+    value: connection.apiKey,
+    enumerable: false,
+  })
+  if (connection.assertCurrent)
+    Object.defineProperty(effective, 'assertCurrent', {
+      value: connection.assertCurrent,
+      enumerable: false,
+    })
+  return Object.freeze(effective)
 }
 
 function cleanInput(input: ByokConnectionInput) {

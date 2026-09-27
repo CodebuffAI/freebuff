@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
+  automaticCompactionIsWorthwhile,
+  compactedContextCeiling,
   compactWithModel,
   compactWithModelOrFallback,
   COMPACTION_TAG,
@@ -421,4 +423,58 @@ test('compactWithModelOrFallback still propagates cancellation', async () => {
       },
     }),
   ).rejects.toThrow()
+})
+
+// Desktop BYOK, 2026-09-24..27: a connection on the untouched 32k default
+// compacts at 80% of 90% of (32,768 - 4,096) = 20,643 tokens, and the Desktop
+// agent's prompt and tool catalog alone are ~15-20k. The best any compaction
+// can do there lands back near the threshold, so firing at it compacted every
+// few tool calls, each pass summarizing the previous summary.
+test('an automatic compaction that cannot clear its own threshold is not worthwhile', () => {
+  const byokDefault = { maxContextLength: 25_804, thresholdTokens: 20_643 }
+  expect(
+    automaticCompactionIsWorthwhile({ messages, ...byokDefault, fixedTokenCount: 16_000 }),
+  ).toBe(false)
+  // The same window with a small fixed prompt has room to work after a pass.
+  expect(
+    automaticCompactionIsWorthwhile({ messages, ...byokDefault, fixedTokenCount: 3_000 }),
+  ).toBe(true)
+  // Hosted budgets are unaffected: 400k budget, 320k threshold.
+  expect(
+    automaticCompactionIsWorthwhile({
+      messages,
+      maxContextLength: 400_000,
+      thresholdTokens: 320_000,
+      fixedTokenCount: 20_000,
+    }),
+  ).toBe(true)
+  // The ceiling is the fixed prefix, the verbatim live request and the summary budget.
+  const ceiling = compactedContextCeiling({ messages, maxContextLength: 400_000, fixedTokenCount: 20_000 })
+  expect(ceiling).toBe(20_000 + countTokensMessages([messages[0]]) + 6_000)
+})
+
+test('an automatic fallback aims below the trigger instead of refilling the whole budget', async () => {
+  const failing = async function* (): ReturnType<PromptAiSdkStreamFn> {
+    throw new Error('connection reset')
+  }
+  const params = {
+    messages,
+    system: 'You are a coding agent.',
+    maxContextLength: 16_384,
+    fixedTokenCount: 500,
+    signal: new AbortController().signal,
+    stream: failing,
+    logger: noopLogger,
+  }
+  const whole = await compactWithModelOrFallback(params)
+  const aimed = await compactWithModelOrFallback({ ...params, fallbackTargetTokens: 1_500 })
+  expect(whole?.fallback).toBe(true)
+  expect(aimed?.fallback).toBe(true)
+  expect(aimed!.postTokens).toBeLessThanOrEqual(1_500)
+  expect(aimed!.postTokens).toBeLessThan(whole!.postTokens)
+  expect(JSON.stringify(aimed!.messages)).toContain('Compare the time units in a.ts and b.ts.')
+  // A target that cannot hold the live request falls back to the whole budget
+  // rather than leaving the history uncompacted.
+  const tooSmall = await compactWithModelOrFallback({ ...params, fallbackTargetTokens: 400 })
+  expect(tooSmall?.postTokens).toBe(whole!.postTokens)
 })

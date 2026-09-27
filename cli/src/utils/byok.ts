@@ -1,5 +1,6 @@
 import {
   createBunByokConnectionStore,
+  withEffectiveByokLimits,
 } from '@codebuff/sdk'
 import { create } from 'zustand'
 
@@ -113,11 +114,13 @@ export function saveSelectedByokConnection(
   )
 }
 
-/** Resolve only at run start so the secret never reaches chat state or logs. */
+/** Resolve only at run start so the secret never reaches chat state or logs.
+ *  Untouched default limits become the provider-reported window (see
+ *  withEffectiveByokLimits), so a run does not compact every few tool calls. */
 export async function resolveByokConnection(
   selected: SelectedByokConnection,
 ): Promise<ResolvedByokConnection> {
-  return getCliByokStore().resolve(selected)
+  return withEffectiveByokLimits(await getCliByokStore().resolve(selected))
 }
 
 export function describeByokConnection(connection: Pick<ByokConnection, 'name' | 'provider' | 'model'>): string {

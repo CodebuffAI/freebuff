@@ -475,6 +475,70 @@ describe('compactContext in loopAgentSteps', () => {
     ).toBe(false)
   })
 
+  // Desktop BYOK, 2026-09-24..27 ("compacts every 3-5 turns"): a 32k-default
+  // connection's budget is 25,804 tokens and its threshold 20,643, while the
+  // prompt and tool catalog take ~15k. Compacting at the threshold landed
+  // right back under it, so the next read or two compacted again.
+  describe('a small window under a large fixed prompt', () => {
+    const smallWindow = {
+      ...baseTemplate,
+      systemPrompt: 'Follow the project conventions carefully. '.repeat(1_100),
+      compactContext: { maxContextLength: 25_804, cacheExpiryMs: null },
+    } as AgentTemplate
+    const withReads = (count: number): Message[] => {
+      const history: Message[] = [
+        { ...userMessage('review the files'), tags: ['USER_PROMPT'] },
+      ]
+      for (let i = 0; i < count; i++) {
+        history.push(
+          {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool-call',
+                toolCallId: `read-${i}`,
+                toolName: 'read_files',
+                input: { paths: [`file${i}.ts`] },
+              },
+            ],
+          },
+          {
+            role: 'tool',
+            toolName: 'read_files',
+            toolCallId: `read-${i}`,
+            content: [
+              {
+                type: 'json',
+                value: [
+                  { path: `file${i}.ts`, content: `READ ${i} BODY `.repeat(400) },
+                ],
+              },
+            ],
+          },
+        )
+      }
+      return history
+    }
+
+    it('keeps working past the threshold instead of compacting futilely', async () => {
+      // ~15k fixed + ~6k of reads: over the 20,643 threshold, under the budget.
+      const result = await runLoop(smallWindow, withReads(4))
+      expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(1)
+      const sent = JSON.stringify(seenMessages[0])
+      expect(sent.includes('<conversation_summary>')).toBe(false)
+      expect(sent.includes('READ 0 BODY')).toBe(true)
+      expect(result.output.type).not.toBe('error')
+    })
+
+    it('still compacts at the hard budget', async () => {
+      const result = await runLoop(smallWindow, withReads(8))
+      const sent = JSON.stringify(seenMessages[0])
+      expect(sent.includes('<conversation_summary>')).toBe(true)
+      expect(sent.includes('review the files')).toBe(true)
+      expect(result.output.type).not.toBe('error')
+    })
+  })
+
   it('a null TTL opts out of the opportunistic trigger', async () => {
     await runLoop(
       { ...baseTemplate, compactContext: { cacheExpiryMs: null } },

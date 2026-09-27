@@ -28,7 +28,13 @@ import { cloneDeep, mapValues } from 'lodash'
 import z from 'zod/v4'
 
 import { evaluateCompactionTrigger } from './compact-history'
-import { compactWithModelOrFallback, compactionTools } from './model-compaction'
+import type { CompactionTrigger } from './compact-history'
+import {
+  automaticCompactionIsWorthwhile,
+  COMPACTION_LOW_WATER,
+  compactWithModelOrFallback,
+  compactionTools,
+} from './model-compaction'
 import { CACHE_DEBUG_FULL_LOGGING } from './constants'
 import { getMCPToolData } from './mcp'
 import {
@@ -1181,7 +1187,7 @@ export async function loopAgentSteps(
           policy.maxContextLength ??
           contextPrunerBudgetForModel(agentTemplate.model)
         const thresholdTokens = modelCompactionThreshold(maxContextLength)
-        const trigger = manualCompaction
+        let trigger: CompactionTrigger | 'manual' | null = manualCompaction
           ? 'manual'
           : evaluateCompactionTrigger({
               ...policy,
@@ -1189,6 +1195,42 @@ export async function loopAgentSteps(
               contextTokenCount: currentAgentState.contextTokenCount,
               maxContextLength: thresholdTokens,
             }).trigger
+        const fixedTokenCount = trigger
+          ? countTokens(system) +
+            countTokensJson(toolsForTokenCount) +
+            (stepPrompt
+              ? countTokensMessages([userMessage({ content: stepPrompt })])
+              : 0)
+          : 0
+        // The threshold is a convenience, the budget is not. When even a
+        // perfect compaction would land back near the threshold (a small
+        // BYOK window under a large fixed prompt and tool catalog), firing
+        // there compacts every few steps, each pass summarizing the last
+        // summary. Keep working until the hard budget instead.
+        if (
+          trigger &&
+          trigger !== 'manual' &&
+          currentAgentState.contextTokenCount <= maxContextLength &&
+          !automaticCompactionIsWorthwhile({
+            messages: currentAgentState.messageHistory,
+            maxContextLength,
+            thresholdTokens,
+            fixedTokenCount,
+          })
+        ) {
+          logger.debug(
+            {
+              agentType,
+              runId,
+              contextTokenCount: currentAgentState.contextTokenCount,
+              thresholdTokens,
+              maxContextLength,
+              fixedTokenCount,
+            },
+            'Deferred compaction to the hard budget: it could not clear the threshold',
+          )
+          trigger = null
+        }
         if (trigger) {
           const before = currentAgentState.directCreditsUsed
           const started = Date.now()
@@ -1198,12 +1240,16 @@ export async function loopAgentSteps(
             messages: currentAgentState.messageHistory,
             system,
             maxContextLength,
-            fixedTokenCount:
-              countTokens(system) +
-              countTokensJson(toolsForTokenCount) +
-              (stepPrompt
-                ? countTokensMessages([userMessage({ content: stepPrompt })])
-                : 0),
+            fixedTokenCount,
+            // An automatic pass must leave the run under its own trigger, or
+            // the next step fires it again on the fallback's output.
+            ...(trigger === 'manual'
+              ? {}
+              : {
+                  fallbackTargetTokens: Math.floor(
+                    thresholdTokens * COMPACTION_LOW_WATER,
+                  ),
+                }),
             signal,
             logger,
             runId,
@@ -1264,7 +1310,7 @@ export async function loopAgentSteps(
             currentAgentState.contextTokenCount > maxContextLength
           ) {
             throw new Error(
-              'Compaction did not reduce the context enough. History has been preserved.',
+              `Compaction could not bring this conversation under the model's ${maxContextLength.toLocaleString('en-US')}-token context budget. History has been preserved. Start a new thread, or give a BYOK connection a larger context window if its model supports one.`,
             )
           }
           totalSteps++

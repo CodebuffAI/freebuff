@@ -98,6 +98,87 @@ export function hasCompactableHistory(messages: Message[]): boolean {
   )
 }
 
+/** The messages a model compaction keeps verbatim after its summary: the
+ *  latest instructions and the live user request (with its steering). */
+function compactionSuffix(messages: Message[]): Message[] {
+  const lastPrompt = messages.findLastIndex((m) =>
+    m.tags?.includes('USER_PROMPT'),
+  )
+  let promptStart = lastPrompt
+  while (
+    promptStart > 0 &&
+    messages[promptStart - 1].tags?.includes('USER_PROMPT')
+  )
+    promptStart--
+  const live =
+    promptStart < 0
+      ? []
+      : messages
+          .slice(promptStart)
+          .filter((m) => m.tags?.includes('USER_PROMPT'))
+  const instructions = messages.findLast((m) =>
+    m.tags?.includes('INSTRUCTIONS_PROMPT'),
+  )
+  return [...(instructions ? [instructions] : []), ...live]
+}
+
+function compactionSummaryBudget(params: {
+  maxContextLength: number
+  fixedTokenCount: number
+  suffixTokens: number
+}): number {
+  return Math.min(
+    SUMMARY_LIMIT,
+    Math.floor(
+      (params.maxContextLength - params.fixedTokenCount - params.suffixTokens) /
+        3,
+    ),
+  )
+}
+
+/**
+ * The share of the trigger threshold a compaction's result may occupy for the
+ * automatic trigger to be worth firing. Above it, the next tool result or two
+ * crosses the threshold again and the run compacts its own summary.
+ */
+export const COMPACTION_LOW_WATER = 0.85
+
+/**
+ * The largest context a model compaction can leave behind: the fixed prefix
+ * (system prompt, tool schemas), the live request it keeps verbatim, and the
+ * summary budget it asks for. None of it is compactable, so when this is not
+ * comfortably under the threshold, compacting at the threshold only buys a
+ * few thousand tokens before the next one: a 32k BYOK window with ~16k of
+ * Desktop tool schemas compacted every few tool calls, each pass summarizing
+ * the last summary.
+ */
+export function compactedContextCeiling(params: {
+  messages: Message[]
+  maxContextLength: number
+  fixedTokenCount: number
+}): number {
+  const suffixTokens = countTokensMessages(compactionSuffix(params.messages))
+  const summaryBudget = compactionSummaryBudget({ ...params, suffixTokens })
+  return params.fixedTokenCount + suffixTokens + Math.max(0, summaryBudget)
+}
+
+/**
+ * Whether an automatic compaction at `thresholdTokens` leaves real room to
+ * work in. When it cannot, the run keeps its history until the hard budget,
+ * where compaction is no longer optional.
+ */
+export function automaticCompactionIsWorthwhile(params: {
+  messages: Message[]
+  maxContextLength: number
+  thresholdTokens: number
+  fixedTokenCount: number
+}): boolean {
+  return (
+    compactedContextCeiling(params) <=
+    Math.floor(params.thresholdTokens * COMPACTION_LOW_WATER)
+  )
+}
+
 /** A model handoff, not a mechanical reduction of tool results. Nothing mutates
  * the source history until every section has a valid, bounded result. */
 export async function compactWithModel(params: {
@@ -121,34 +202,12 @@ export async function compactWithModel(params: {
     countTokensMessages(params.messages) + params.fixedTokenCount
   // A compact-only request never enters the history. Keep the actual current
   // user request verbatim, including steering and attachments.
-  const lastPrompt = params.messages.findLastIndex((m) =>
-    m.tags?.includes('USER_PROMPT'),
-  )
-  let promptStart = lastPrompt
-  while (
-    promptStart > 0 &&
-    params.messages[promptStart - 1].tags?.includes('USER_PROMPT')
-  )
-    promptStart--
-  const live =
-    promptStart < 0
-      ? []
-      : params.messages
-          .slice(promptStart)
-          .filter((m) => m.tags?.includes('USER_PROMPT'))
-  const instructions = params.messages.findLast((m) =>
-    m.tags?.includes('INSTRUCTIONS_PROMPT'),
-  )
-  const suffix = [...(instructions ? [instructions] : []), ...live]
-  const summaryBudget = Math.min(
-    SUMMARY_LIMIT,
-    Math.floor(
-      (params.maxContextLength -
-        params.fixedTokenCount -
-        countTokensMessages(suffix)) /
-        3,
-    ),
-  )
+  const suffix = compactionSuffix(params.messages)
+  const summaryBudget = compactionSummaryBudget({
+    maxContextLength: params.maxContextLength,
+    fixedTokenCount: params.fixedTokenCount,
+    suffixTokens: countTokensMessages(suffix),
+  })
   if (summaryBudget < 256)
     throw new Error(
       'The current request and instructions leave too little room to compact. Shorten the request or configure a larger context window.',
@@ -319,6 +378,14 @@ export async function compactWithModelOrFallback(
     runId?: string
     model?: string
     trigger?: string
+    /**
+     * Where the mechanical fallback should aim, below `maxContextLength`. That
+     * pass fills whatever budget it is given, so aimed at the hard budget it
+     * lands above an automatic trigger's threshold and the very next step
+     * compacts again. Falls back to `maxContextLength` when the target is too
+     * small to hold the live request.
+     */
+    fallbackTargetTokens?: number
   },
 ): Promise<{
   messages: Message[]
@@ -327,7 +394,14 @@ export async function compactWithModelOrFallback(
   postTokens: number
   fallback?: true
 } | null> {
-  const { logger, runId, model, trigger, ...modelParams } = params
+  const {
+    logger,
+    runId,
+    model,
+    trigger,
+    fallbackTargetTokens,
+    ...modelParams
+  } = params
   try {
     return await compactWithModel(modelParams)
   } catch (error) {
@@ -335,14 +409,26 @@ export async function compactWithModelOrFallback(
     const errorMessage = error instanceof Error ? error.message : String(error)
     let fallback: ReturnType<typeof compactHistoryNow> = null
     let fallbackError: string | undefined
-    try {
-      fallback = compactHistoryNow({
+    const mechanical = (maxContextLength: number) =>
+      compactHistoryNow({
         messages: params.messages,
-        maxContextLength: params.maxContextLength,
+        maxContextLength,
         fixedTokenCount: params.fixedTokenCount,
         logger,
         runId,
       })
+    try {
+      if (
+        fallbackTargetTokens !== undefined &&
+        fallbackTargetTokens < params.maxContextLength
+      ) {
+        try {
+          fallback = mechanical(fallbackTargetTokens)
+        } catch {
+          // The live request does not fit the target; use the whole budget.
+        }
+      }
+      fallback ??= mechanical(params.maxContextLength)
     } catch (mechanicalError) {
       fallbackError =
         mechanicalError instanceof Error
