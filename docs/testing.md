@@ -454,10 +454,11 @@ erases. Inject the clock and advance it explicitly rather than sleeping.
 A variant of the second that no deadline fixes: **a wait that samples the
 middle of the work.** `engines.test.ts` polled for an idle tab's
 `node_modules` to vanish, then asserted that the tab's bootstrap marker was
-gone. The strip removes the marker in the continuation *after* its async
-`rm` resolves, though, so a 5ms poll that woke in the ~0.1ms between the two
-failed the test: 1.7% of runs on an idle laptop, 3.4% under load, and red on
-CI on 2026-09-26. Whatever you wait on has to be the last thing the work
+gone. The strip removed the marker in the continuation *after* its async
+`rm` resolved, though (the marker now goes first, which fixes a crash window,
+not this), so a 5ms poll that woke in the ~0.1ms between the two failed the
+test: 1.7% of runs on an idle laptop, 3.4% under load, and red on CI on
+2026-09-26. Whatever you wait on has to be the last thing the work
 does. For backgrounded work, await the work itself; `EngineRegistry` exposes
 `backgroundSettled()` for exactly this.
 
