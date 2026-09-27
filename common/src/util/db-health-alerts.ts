@@ -11,8 +11,19 @@
  *     roughly a year of runway at today's growth, and is the standard
  *     conservative wraparound bar.
  *   - backend_xmin: the 2026-08-03 incident's long-lived snapshots were
- *     1,137,687 transactions behind (normal is ~1); DEFAULT_BACKEND_XMIN_XID
- *     (1M) sits just under that severity while far above any ordinary backend.
+ *     1,137,687 transactions behind (normal is ~1). DEFAULT_BACKEND_XMIN_XID
+ *     was 1M, just under that — but the bar is measured in TRANSACTIONS and
+ *     the fleet now commits ~5,300 a second (measured 2026-09-26), so 1M is
+ *     about three minutes: every scheduled day-grain scan crossed it as a
+ *     matter of course and paged "oldest snapshot" several times a day. The
+ *     tier rollup's day transaction (24 chunk inserts plus one aggregation)
+ *     runs 7-10 minutes on a normal day and its scheduled runs measured 3-25
+ *     minutes end to end on 2026-09-26/27, so 5M (~16 min) would still page
+ *     on the slow tail. 10M is ~30 minutes at that rate: above any scheduled
+ *     unit of work, and still an order of magnitude under a script left
+ *     holding a snapshot for an afternoon, which is what the incident was.
+ *     (A bar in seconds would not drift with the commit rate; that needs
+ *     the probe to report the holder's xact_start, a separate change.)
  *   - Invalid index: the incident's `CREATE INDEX CONCURRENTLY` was stuck for
  *     72 minutes; DEFAULT_STUCK_BUILD_MINUTES (30) is far above any normal
  *     build while catching a stuck one.
@@ -29,7 +40,7 @@
 
 export const WRAPAROUND_BUDGET = 2 ** 31
 export const DEFAULT_WRAPAROUND_PCT = 0.5
-export const DEFAULT_BACKEND_XMIN_XID = 1_000_000
+export const DEFAULT_BACKEND_XMIN_XID = 10_000_000
 export const DEFAULT_STUCK_BUILD_MINUTES = 30
 export const DEFAULT_BUSY_BACKENDS = 4
 export const DEFAULT_SAMPLE_SECONDS = 60

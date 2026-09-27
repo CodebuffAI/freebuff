@@ -64,7 +64,9 @@ describe('evaluateStatCoverage', () => {
     expect(noStatements.statementsBlind).toBe(true)
     expect(noStatements.activityBlind).toBe(false)
 
-    const noBackends = evaluateStatCoverage(coverageRow({ activity_visible: 0 }))
+    const noBackends = evaluateStatCoverage(
+      coverageRow({ activity_visible: 0 }),
+    )
     expect(noBackends.activityBlind).toBe(true)
     expect(noBackends.statementsBlind).toBe(false)
   })
@@ -117,8 +119,9 @@ const xminRow = (over: Partial<BackendXminRow> = {}): BackendXminRow => ({
 describe('evaluateBackendXmin', () => {
   it('breaches at the threshold, inclusive', () => {
     expect(
-      evaluateBackendXmin(xminRow({ oldest_xmin_age: DEFAULT_BACKEND_XMIN_XID }))
-        .breach,
+      evaluateBackendXmin(
+        xminRow({ oldest_xmin_age: DEFAULT_BACKEND_XMIN_XID }),
+      ).breach,
     ).toBe(true)
     expect(
       evaluateBackendXmin(
@@ -128,9 +131,9 @@ describe('evaluateBackendXmin', () => {
   })
 
   it('never breaches with no snapshot held', () => {
-    expect(
-      evaluateBackendXmin(xminRow({ oldest_xmin_age: null })).breach,
-    ).toBe(false)
+    expect(evaluateBackendXmin(xminRow({ oldest_xmin_age: null })).breach).toBe(
+      false,
+    )
     expect(evaluateBackendXmin(null).breach).toBe(false)
   })
 
@@ -143,11 +146,14 @@ describe('evaluateBackendXmin', () => {
     )
     expect(blind.text).toContain('14 backend(s) opaque')
 
+    // The incident's 1,137,687 is under today's default: at ~5,300
+    // transactions a second it is three minutes, which every scheduled
+    // day-grain scan holds. A snapshot an afternoon old still pages.
     const breaching = evaluateBackendXmin(
-      xminRow({ oldest_xmin_age: 1_137_687 }),
+      xminRow({ oldest_xmin_age: 21_137_687 }),
     )
     expect(breaching.breach).toBe(true)
-    expect(breaching.text).toContain('1137687 transactions behind')
+    expect(breaching.text).toContain('21137687 transactions behind')
     expect(breaching.text).toContain('14 backend(s) opaque')
   })
 
@@ -306,7 +312,12 @@ describe('opaque statement buckets', () => {
 
   it('skips a bucket it has never seen, rather than ranking its whole history', () => {
     const after: StatementSnapshotRow[] = [
-      { queryid: 'opaque:16385', calls: 9_999, total_exec_time: 1_089_687_000, query: '<first sighting>' },
+      {
+        queryid: 'opaque:16385',
+        calls: 9_999,
+        total_exec_time: 1_089_687_000,
+        query: '<first sighting>',
+      },
     ]
     // Absent from `before`: treated as cumulative zero, this would rank ~36,000
     // busy backends off one 30s window and page immediately.
@@ -315,11 +326,23 @@ describe('opaque statement buckets', () => {
 
   it('ranks a bucket by its delta, alongside identifiable queries', () => {
     const before: StatementSnapshotRow[] = [
-      { queryid: 'opaque:16385', calls: 1_000, total_exec_time: 500_000, query: '<2307 statement(s) of role manicode_user, not readable as manicode_app>' },
+      {
+        queryid: 'opaque:16385',
+        calls: 1_000,
+        total_exec_time: 500_000,
+        query:
+          '<2307 statement(s) of role manicode_user, not readable as manicode_app>',
+      },
       { queryid: '42', calls: 10, total_exec_time: 1_000, query: 'SELECT 1' },
     ]
     const after: StatementSnapshotRow[] = [
-      { queryid: 'opaque:16385', calls: 1_600, total_exec_time: 800_000, query: '<2307 statement(s) of role manicode_user, not readable as manicode_app>' },
+      {
+        queryid: 'opaque:16385',
+        calls: 1_600,
+        total_exec_time: 800_000,
+        query:
+          '<2307 statement(s) of role manicode_user, not readable as manicode_app>',
+      },
       { queryid: '42', calls: 20, total_exec_time: 3_000, query: 'SELECT 1' },
     ]
     const rank = computeBusyBackendRank(before, after, 60)
@@ -335,9 +358,16 @@ describe('opaque statement buckets', () => {
   // buckets held 1,089,687 exec-seconds of frozen history and moved nothing.
   it('ignores a large bucket that is not currently accruing', () => {
     const row = (t: number): StatementSnapshotRow[] => [
-      { queryid: 'opaque:16385', calls: 5, total_exec_time: t, query: '<frozen>' },
+      {
+        queryid: 'opaque:16385',
+        calls: 5,
+        total_exec_time: t,
+        query: '<frozen>',
+      },
     ]
-    expect(computeBusyBackendRank(row(1_089_687_000), row(1_089_687_000), 30)).toEqual([])
+    expect(
+      computeBusyBackendRank(row(1_089_687_000), row(1_089_687_000), 30),
+    ).toEqual([])
   })
 })
 
