@@ -119,23 +119,52 @@ export function deepSeekExpensiveWindowEndsAt(at: Date): Date {
 export const FALLBACK_WINDOW_TIME_ZONE = 'UTC'
 
 /**
+ * Whether this runtime's `Intl` will format in `timeZone` at all.
+ *
+ * A runtime does not always accept the name it reports itself. When ICU cannot
+ * read the device's zone it answers `Etc/Unknown`, and `Intl.DateTimeFormat`
+ * then throws a RangeError when handed that same name back — V8 says "Invalid
+ * time zone specified: Etc/Unknown", JavaScriptCore "invalid time zone:
+ * Etc/Unknown". The Web model picker builds its row labels during render, so
+ * that throw took the whole Cloud page down to its error boundary: 25 crashes
+ * in the week to 2026-09-26, from a PlayStation 5 browser and a Windows Chrome.
+ */
+export function isSupportedTimeZone(timeZone: string): boolean {
+  try {
+    // Constructing is the test: an unsupported zone throws RangeError here.
+    new Intl.DateTimeFormat('en-US', { timeZone })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * The zone these formatters actually render in.
  *
  * An explicit `timeZone` wins. Otherwise the RUNTIME's zone, which is the
  * reader's own in a browser or a desktop process — the case every picker label
- * depends on — and only falls through to UTC where the runtime has no zone to
- * report at all.
+ * depends on. Either falls through to UTC when this runtime cannot format in
+ * it: no zone at all, or a name it reports but rejects (see
+ * isSupportedTimeZone). A device that cannot read its own zone formats
+ * `timeZone: undefined` in ICU's unknown zone, which sits at UTC+0, so a "UTC"
+ * label still matches the digits beside it.
+ *
+ * Display only. The zone a browser sends as a country-verification hint is
+ * read separately and deliberately left unvalidated
+ * (`freebuff/web/lib/client-hint-headers.ts`): what an unknown zone means
+ * there is the server's decision, not this formatter's.
  */
 export function resolveWindowTimeZone(timeZone?: string): string {
-  if (timeZone) return timeZone
-  try {
-    return (
-      Intl.DateTimeFormat().resolvedOptions().timeZone ??
-      FALLBACK_WINDOW_TIME_ZONE
-    )
-  } catch {
-    return FALLBACK_WINDOW_TIME_ZONE
+  let zone = timeZone
+  if (!zone) {
+    try {
+      zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    } catch {
+      return FALLBACK_WINDOW_TIME_ZONE
+    }
   }
+  return zone && isSupportedTimeZone(zone) ? zone : FALLBACK_WINDOW_TIME_ZONE
 }
 
 /**

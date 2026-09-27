@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { freebucksOffPeakCopy } from '../freebuff-off-peak-price'
 
 const quote = {
@@ -56,6 +56,36 @@ test('does not invent an offer on older servers or unpriced models', () => {
   ).toBeUndefined()
   expect(freebucksOffPeakCopy(quote, 'other')).toBeUndefined()
   expect(freebucksOffPeakCopy(null, 'flash')).toBeUndefined()
+})
+
+test('quotes UTC hours, rather than throwing, on a device that cannot name its zone', () => {
+  // The exact production crash: the Web picker calls this with no zone while
+  // rendering each row, the runtime reported `Etc/Unknown`, and
+  // `new Intl.DateTimeFormat(undefined, { timeZone: 'Etc/Unknown' })` threw.
+  const original = Intl.DateTimeFormat.prototype.resolvedOptions
+  const spy = spyOn(
+    Intl.DateTimeFormat.prototype,
+    'resolvedOptions',
+  ).mockImplementation(function (this: Intl.DateTimeFormat) {
+    return { ...original.call(this), timeZone: 'Etc/Unknown' }
+  })
+  try {
+    const copy = freebucksOffPeakCopy(quote, 'flash', {
+      now: Date.parse('2026-09-17T23:00:00Z'),
+    })!
+    expect(copy.tooltip).toBe(
+      'Off-peak: 10 Freebucks/hour, daily 10:00 PM–6:00 AM UTC.',
+    )
+  } finally {
+    spy.mockRestore()
+  }
+  // Same answer for a caller that passes the unusable name itself.
+  expect(
+    freebucksOffPeakCopy(quote, 'flash', {
+      now: Date.parse('2026-09-17T23:00:00Z'),
+      timeZone: 'Etc/Unknown',
+    })!.tooltip,
+  ).toBe('Off-peak: 10 Freebucks/hour, daily 10:00 PM–6:00 AM UTC.')
 })
 
 test('does not label a stale regular-price quote as discounted', () => {

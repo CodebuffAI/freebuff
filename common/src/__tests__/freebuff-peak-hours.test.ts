@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 
 import {
   DEEPSEEK_EXPENSIVE_WINDOW_UTC,
@@ -7,8 +7,32 @@ import {
   formatDeepSeekExpensiveWindowLocal,
   formatDeepSeekExpensiveWindowReturn,
   formatDeepSeekOffPeakWindowLocal,
+  formatWindowTimeZoneLabel,
   isDeepSeekExpensiveWindow,
+  isSupportedTimeZone,
+  resolveWindowTimeZone,
 } from '../constants/freebuff-peak-hours'
+
+/**
+ * Runs `body` in a runtime that reports `zone` as its own, the way a device
+ * whose ICU cannot read the system zone reports `Etc/Unknown`. Only the
+ * reported name changes: constructing a formatter with that name still meets
+ * the engine's real validation.
+ */
+function withRuntimeTimeZone<T>(zone: string, body: () => T): T {
+  const original = Intl.DateTimeFormat.prototype.resolvedOptions
+  const spy = spyOn(
+    Intl.DateTimeFormat.prototype,
+    'resolvedOptions',
+  ).mockImplementation(function (this: Intl.DateTimeFormat) {
+    return { ...original.call(this), timeZone: zone }
+  })
+  try {
+    return body()
+  } finally {
+    spy.mockRestore()
+  }
+}
 
 /** A UTC instant on the given hour, on an ordinary day. */
 const at = (hour: number, minute = 0) =>
@@ -124,5 +148,58 @@ describe('every window names the clock it is quoted in', () => {
     expect(formatDeepSeekExpensiveWindowReturn(insideWindow, 'UTC')).toBe(
       formatDeepSeekExpensiveWindowReturn(insideWindow, 'Etc/UTC'),
     )
+  })
+})
+
+/**
+ * A device whose ICU cannot read the system zone reports `Etc/Unknown` and
+ * then refuses that very name with a RangeError. These labels are built during
+ * render, so the throw used to take the whole Cloud page down with it.
+ */
+describe('a zone the runtime cannot format falls back to UTC instead of throwing', () => {
+  const insideWindow = at(8)
+
+  test('the engine really does reject the names this guards against', () => {
+    // Pins the premise: if an engine ever starts accepting these, the fallback
+    // below is dead weight rather than a fix.
+    for (const zone of ['Etc/Unknown', 'America/California', 'Factory']) {
+      expect(
+        () => new Intl.DateTimeFormat('en-US', { timeZone: zone }),
+      ).toThrow(RangeError)
+      expect(isSupportedTimeZone(zone)).toBe(false)
+    }
+    expect(isSupportedTimeZone('UTC')).toBe(true)
+    expect(isSupportedTimeZone('Europe/Berlin')).toBe(true)
+  })
+
+  test('a supported zone, explicit or reported, is kept as it is', () => {
+    expect(resolveWindowTimeZone('Europe/Berlin')).toBe('Europe/Berlin')
+    expect(
+      withRuntimeTimeZone('Asia/Tokyo', () => resolveWindowTimeZone()),
+    ).toBe('Asia/Tokyo')
+  })
+
+  test('an explicit zone the runtime rejects renders in UTC', () => {
+    expect(resolveWindowTimeZone('Etc/Unknown')).toBe('UTC')
+    expect(formatDeepSeekOffPeakWindowLocal(insideWindow, 'Etc/Unknown')).toBe(
+      '10:00 AM – 12:00 AM UTC',
+    )
+    expect(
+      formatDeepSeekExpensiveWindowReturn(insideWindow, 'Etc/Unknown'),
+    ).toBe('again at 10:00 AM UTC')
+  })
+
+  test('a runtime that reports Etc/Unknown for itself renders in UTC', () => {
+    withRuntimeTimeZone('Etc/Unknown', () => {
+      expect(resolveWindowTimeZone()).toBe('UTC')
+      // The picker's calls: no explicit zone, so the reported one is used.
+      expect(formatDeepSeekOffPeakWindowLocal(insideWindow)).toBe(
+        '10:00 AM – 12:00 AM UTC',
+      )
+      expect(formatDeepSeekExpensiveWindowLocal(insideWindow)).toBe(
+        '12:00 AM – 10:00 AM UTC',
+      )
+      expect(formatWindowTimeZoneLabel(insideWindow)).toBe('UTC')
+    })
   })
 })
