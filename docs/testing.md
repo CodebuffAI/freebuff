@@ -338,20 +338,37 @@ each running the suite several times *simultaneously* while CPU busy-loops
 compete for the cores — and names every test that fails.
 
 ```bash
-# The default hunt: 3 rounds x 2 overlapping runs of the desktop suite.
-bun scripts/flake-hunt.ts
+# The default hunt: 3 rounds x 2 overlapping runs of the desktop suite, on the
+# Bun that suite is tested on (see below).
+bunx bun@$(cat freebuff-desktop/.bun-version) scripts/flake-hunt.ts
 
 # Harder, and on a different package.
 bun scripts/flake-hunt.ts --dir cli --rounds 5 --concurrency 3 --hogs 8
 
 # Interrogate one suspect file: cheap enough to run 10 times.
-bun scripts/flake-hunt.ts --cmd "bun test src/app/server.test.ts" --rounds 10
+bunx bun@$(cat freebuff-desktop/.bun-version) scripts/flake-hunt.ts \
+  --cmd "bun test src/app/server.test.ts" --rounds 10
 ```
 
 It exits non-zero if any run reported a failing test, prints the load average
 per round, and writes each run's full output to a log it names for you. If your
 shell lacks the repo env (a worktree without direnv), pass it through the
 command: `--cmd "bun --env-file=../.env.local test"`.
+
+**freebuff-desktop is hunted on its own Bun.** CI tests it on the Bun the app
+ships with (`freebuff-desktop/.bun-version`), not on the monorepo toolchain
+(`.bun-version`) that `bun` on your PATH is, and the two are not
+interchangeable. On 2026-09-26 a desktop hunt on the toolchain Bun (1.3.14)
+failed `mcp-consent-bridge.test.ts` › "an asker that gives up closes its
+dialog, so the next approval is not refused busy" on every run, loaded or solo,
+while the pin (1.4.2) passed it every time: 1.3.14's `node:http` never emits
+`close` on a response whose client hung up. It was a deterministic runtime
+difference, and it read as a flake. So `flake-hunt.ts` now refuses a desktop
+hunt when the `bun` its runs would get is not the pin, and says how to get it.
+`bunx bun@<pin>` is the one-liner because it puts the pin first on PATH for
+everything the hunt starts, and the suite spawns its orchestrator as `bun`
+from PATH. Pass `--any-bun` to compare versions on purpose. The weekly workflow
+and ci.yml's retry-flake annotation both follow the pin.
 
 ### When the hunter cannot reproduce it
 
@@ -497,8 +514,9 @@ it. And a test of the form "sleep 20ms, then assert nothing has happened yet"
 can only pass *vacuously* under load, so this harness will never flag it; those
 need rewriting to assert ordering rather than absence.
 
-The weekly `flake-hunt.yml` workflow runs this against `freebuff-desktop` and
-reports failures without blocking any PR.
+The weekly `flake-hunt.yml` workflow runs this against `freebuff-desktop` — on
+its pin, over the package's own `test:files` as ci.yml runs it — and reports
+failures without blocking any PR.
 
 **A sixth shape, and the only one the hunt cannot reproduce: the budget bun
 applies to a HOOK.** `beforeEach`/`afterEach` are charged against the same
