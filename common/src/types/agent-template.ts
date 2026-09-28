@@ -139,6 +139,8 @@ export type AgentTemplate<
     | boolean
     | {
         maxContextLength?: number
+        /** The model's output cap; model compaction sizes its summary to fit. */
+        maxOutputTokens?: number
         cacheExpiryMs?: number | null
         cacheExpiryMinTokens?: number | null
       }

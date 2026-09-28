@@ -99,6 +99,9 @@ export type PromptAiSdkStreamFn = (
     onUsageReceived?: (usage: ModelUsageData) => void
     /** The request ended without an exact final provider usage receipt. */
     onUsageIncomplete?: () => void
+    /** The finish reason the stream's final part reported ('stop', 'length',
+     *  'tool-calls', ...). Not called when the stream ends without one. */
+    onFinishReason?: (finishReason: string) => void
     includeCacheControl?: boolean
     cacheDebugCorrelation?: string
     agentProviderOptions?: OpenRouterProviderRoutingOptions

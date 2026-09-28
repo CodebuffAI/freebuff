@@ -221,6 +221,9 @@ export interface AgentDefinition {
     | {
         /** Explicit input budget for a custom model, after reserving output tokens. */
         maxContextLength?: number
+        /** The model's output token cap, when it is below 16,384. Model
+         * compaction asks for a summary that fits in it. */
+        maxOutputTokens?: number
         cacheExpiryMs?: number | null
         cacheExpiryMinTokens?: number | null
       }

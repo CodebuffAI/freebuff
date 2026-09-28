@@ -204,7 +204,11 @@ function emitCacheDebugUsage(params: {
 export async function* promptAiSdkStream(
   params: ParamsOf<PromptAiSdkStreamFn> & { byok?: ResolvedByokConnection },
 ): ReturnType<PromptAiSdkStreamFn> {
-  const { providerOptions: originalProviderOptions, ...streamParams } = params
+  const {
+    providerOptions: originalProviderOptions,
+    onFinishReason,
+    ...streamParams
+  } = params
 
   const { logger } = params
   const agentChunkMetadata =
@@ -475,6 +479,7 @@ export async function* promptAiSdkStream(
       )
       if (finishInfo.hasUsage) reportUsage(chunkValue.totalUsage)
       await reportCost(finishProviderMetadata)
+      onFinishReason?.(finishInfo.finishReason)
     }
     if (chunkValue.type !== 'text-delta') {
       const flushed = stopSequenceHandler.flush()

@@ -1217,6 +1217,7 @@ export async function loopAgentSteps(
             maxContextLength,
             thresholdTokens,
             fixedTokenCount,
+            maxOutputTokens: policy.maxOutputTokens,
           })
         ) {
           logger.debug(
@@ -1242,6 +1243,7 @@ export async function loopAgentSteps(
             system,
             maxContextLength,
             fixedTokenCount,
+            maxOutputTokens: policy.maxOutputTokens,
             // An automatic pass must leave the run under its own trigger, or
             // the next step fires it again on the fallback's output.
             ...(trigger === 'manual'
@@ -1256,7 +1258,7 @@ export async function loopAgentSteps(
             runId,
             model: agentTemplate.model,
             trigger,
-            stream: (messages, maxOutputTokens) =>
+            stream: (messages, maxOutputTokens, onFinishReason) =>
               getAgentStreamFromTemplate({
                 ...params,
                 agentId: agentType,
@@ -1266,6 +1268,7 @@ export async function loopAgentSteps(
                 tools: compactionTools,
                 toolChoice: 'required',
                 maxOutputTokens,
+                onFinishReason,
                 onCostCalculated: async (credits) => {
                   currentAgentState.creditsUsed += credits
                   currentAgentState.directCreditsUsed += credits

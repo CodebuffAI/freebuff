@@ -634,6 +634,9 @@ async function runOnce({
             ? byokTemplate.compactContext
             : {}),
           maxContextLength: limits.maxContextLength,
+          // The summarizer request is clamped to this cap like any other
+          // BYOK request, so compaction must ask for a summary that fits it.
+          maxOutputTokens: limits.maxOutputTokens,
         }
       }
     }

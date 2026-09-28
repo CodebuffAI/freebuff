@@ -17,6 +17,21 @@ import type {
 
 export const COMPACTION_TAG = 'MODEL_COMPACTION'
 const SUMMARY_LIMIT = 6_000
+/**
+ * The output cap a summarizer request asks for. A model's own, lower cap
+ * (`compactContext.maxOutputTokens`, which BYOK sets from its connection)
+ * replaces it: a provider clamps the request to that cap either way.
+ */
+export const COMPACTION_MAX_OUTPUT_TOKENS = 16_384
+/**
+ * The share of the output cap a summary may be asked to fill. The rest covers
+ * what the same output budget also pays for: the tool-call JSON around the
+ * summary (every newline and quote escaped), the reasoning a thinking model
+ * spends before it writes, and the gap between the three-characters-a-token
+ * estimate and the provider's tokenizer. Asked for 6,000 tokens against a
+ * 4,096-token BYOK cap, the summarizer ran out of output mid-summary.
+ */
+export const SUMMARY_OUTPUT_SHARE = 0.5
 const summarySchema = z
   .object({ summary: z.string().trim().min(1).max(60_000) })
   .strict()
@@ -122,16 +137,32 @@ function compactionSuffix(messages: Message[]): Message[] {
   return [...(instructions ? [instructions] : []), ...live]
 }
 
-function compactionSummaryBudget(params: {
+/** The `max_tokens` a summarizer request asks for: never above the model's cap. */
+export function compactionOutputTokens(maxOutputTokens?: number): number {
+  return maxOutputTokens !== undefined && maxOutputTokens > 0
+    ? Math.min(COMPACTION_MAX_OUTPUT_TOKENS, Math.floor(maxOutputTokens))
+    : COMPACTION_MAX_OUTPUT_TOKENS
+}
+
+/**
+ * How long a summary may be asked to be: bounded by the fixed limit, by a
+ * third of the context the summary must fit back into, and by the share of
+ * the request's output cap that is left for the summary itself.
+ */
+export function compactionSummaryBudget(params: {
   maxContextLength: number
   fixedTokenCount: number
   suffixTokens: number
+  maxOutputTokens?: number
 }): number {
   return Math.min(
     SUMMARY_LIMIT,
     Math.floor(
       (params.maxContextLength - params.fixedTokenCount - params.suffixTokens) /
         3,
+    ),
+    Math.floor(
+      compactionOutputTokens(params.maxOutputTokens) * SUMMARY_OUTPUT_SHARE,
     ),
   )
 }
@@ -156,6 +187,7 @@ export function compactedContextCeiling(params: {
   messages: Message[]
   maxContextLength: number
   fixedTokenCount: number
+  maxOutputTokens?: number
 }): number {
   const suffixTokens = countTokensMessages(compactionSuffix(params.messages))
   const summaryBudget = compactionSummaryBudget({ ...params, suffixTokens })
@@ -172,6 +204,7 @@ export function automaticCompactionIsWorthwhile(params: {
   maxContextLength: number
   thresholdTokens: number
   fixedTokenCount: number
+  maxOutputTokens?: number
 }): boolean {
   return (
     compactedContextCeiling(params) <=
@@ -186,10 +219,14 @@ export async function compactWithModel(params: {
   system: string
   maxContextLength: number
   fixedTokenCount: number
+  /** The model's output cap, when it is below COMPACTION_MAX_OUTPUT_TOKENS. */
+  maxOutputTokens?: number
   signal: AbortSignal
   stream: (
     messages: Message[],
     maxOutputTokens: number,
+    /** Called with the request's finish reason once the model stops. */
+    onFinishReason: (finishReason: string) => void,
   ) => ReturnType<PromptAiSdkStreamFn>
 }): Promise<{
   messages: Message[]
@@ -207,6 +244,7 @@ export async function compactWithModel(params: {
     maxContextLength: params.maxContextLength,
     fixedTokenCount: params.fixedTokenCount,
     suffixTokens: countTokensMessages(suffix),
+    maxOutputTokens: params.maxOutputTokens,
   })
   if (summaryBudget < 256)
     throw new Error(
@@ -294,7 +332,14 @@ export async function compactWithModel(params: {
       throw new Error(
         'No room for conversation history in the compaction request.',
       )
-    const stream = params.stream(request(remaining.slice(0, end)), 16_384)
+    let finishReason: string | undefined
+    const stream = params.stream(
+      request(remaining.slice(0, end)),
+      compactionOutputTokens(params.maxOutputTokens),
+      (reason) => {
+        finishReason = reason
+      },
+    )
     let candidate: string | undefined
     for (;;) {
       const next = await stream.next()
@@ -313,6 +358,15 @@ export async function compactWithModel(params: {
       candidate = parseCompactionSummary(chunk.input) ?? ''
     }
     params.signal.throwIfAborted()
+    // A summary cut off by the output cap can still arrive as a well-formed
+    // call: prose written straight into the argument slot, or arguments a
+    // provider closed for us. It ends mid-sentence and silently drops the
+    // rest of the handoff, so it is never installed.
+    if (finishReason === 'length') {
+      throw new Error(
+        'The compaction summary hit the output token limit before it finished. History has been preserved.',
+      )
+    }
     if (!candidate || countTokens(candidate) > summaryBudget) {
       throw new Error(
         'The model did not return a valid, concise compaction summary. History has been preserved; try again.',
@@ -353,6 +407,7 @@ function compactionErrorKind(error: unknown): string {
   if (message.includes('valid, concise compaction summary'))
     return 'invalid_summary'
   if (message.includes('unexpected tool call')) return 'unexpected_tool_call'
+  if (message.includes('output token limit')) return 'output_limit'
   if (
     message.includes('too little room') ||
     message.includes('compaction context budget') ||

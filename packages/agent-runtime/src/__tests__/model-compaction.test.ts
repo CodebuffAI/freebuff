@@ -2,6 +2,8 @@ import { expect, test } from 'bun:test'
 import {
   automaticCompactionIsWorthwhile,
   compactedContextCeiling,
+  compactionOutputTokens,
+  compactionSummaryBudget,
   compactWithModel,
   compactWithModelOrFallback,
   COMPACTION_TAG,
@@ -477,4 +479,108 @@ test('an automatic fallback aims below the trigger instead of refilling the whol
   // rather than leaving the history uncompacted.
   const tooSmall = await compactWithModelOrFallback({ ...params, fallbackTargetTokens: 400 })
   expect(tooSmall?.postTokens).toBe(whole!.postTokens)
+})
+
+// BYOK compaction truncation: the instruction asked for "approximately 6000
+// tokens" of summary, but every BYOK request is clamped to the connection's
+// output cap, 4,096 on an unconfigured connection (`byokModelLimits`). The
+// summarizer ran out of output mid-summary.
+test('the requested summary fits the output cap the request is clamped to', () => {
+  const roomy = { maxContextLength: 111_513, fixedTokenCount: 18_000, suffixTokens: 200 }
+  // Hosted: no model cap, unchanged 16,384 / 6,000.
+  expect(compactionOutputTokens()).toBe(16_384)
+  expect(compactionSummaryBudget(roomy)).toBe(6_000)
+  // An unconfigured BYOK connection: at most half the cap is asked for as summary.
+  expect(compactionOutputTokens(4_096)).toBe(4_096)
+  expect(compactionSummaryBudget({ ...roomy, maxOutputTokens: 4_096 })).toBe(2_048)
+  // A cap above the request's own never raises it.
+  expect(compactionOutputTokens(65_536)).toBe(16_384)
+  expect(compactionSummaryBudget({ ...roomy, maxOutputTokens: 65_536 })).toBe(6_000)
+  // The context bound still wins when it is tighter.
+  expect(
+    compactionSummaryBudget({ maxContextLength: 6_000, fixedTokenCount: 1_000, suffixTokens: 200, maxOutputTokens: 4_096 }),
+  ).toBe(1_600)
+  // Every budget leaves the other half of the cap for tool-call JSON and reasoning.
+  for (const cap of [512, 1_000, 2_048, 4_096, 8_192, 12_000])
+    expect(compactionSummaryBudget({ ...roomy, maxOutputTokens: cap }) * 2).toBeLessThanOrEqual(
+      compactionOutputTokens(cap),
+    )
+  // A smaller summary lowers the context a compaction can leave behind.
+  expect(
+    compactedContextCeiling({ messages, maxContextLength: 400_000, fixedTokenCount: 20_000, maxOutputTokens: 4_096 }),
+  ).toBe(20_000 + countTokensMessages([messages[0]]) + 2_048)
+})
+
+test('a capped summarizer request asks for a summary that fits its max_tokens', async () => {
+  const seen: Array<{ maxOutputTokens: number; instruction: string }> = []
+  const capture: Parameters<typeof compactWithModel>[0]['stream'] = (request, maxOutputTokens) => {
+    seen.push({ maxOutputTokens, instruction: JSON.stringify(request.at(-1)) })
+    return emit()
+  }
+  await run(capture, { maxContextLength: 111_513, maxOutputTokens: 4_096 })
+  await run(capture, { maxContextLength: 111_513 })
+  expect(seen[0].maxOutputTokens).toBe(4_096)
+  expect(seen[0].instruction).toContain('under approximately 2048 tokens')
+  expect(seen[1].maxOutputTokens).toBe(16_384)
+  expect(seen[1].instruction).toContain('under approximately 6000 tokens')
+})
+
+// What a summary cut off at the cap looks like when it still arrives as a
+// well-formed call: prose in the argument slot (taken as the summary), or
+// arguments the provider closed. Only the finish reason tells.
+const truncated =
+  '## Objective\n- Fix the retry loop in uploader.ts.\n## Important Details\n- The backoff multiplies by'
+const cutOff = (input: unknown) =>
+  (async function* (
+    _request: Message[],
+    _maxOutputTokens: number,
+    onFinishReason: (finishReason: string) => void,
+  ): ReturnType<PromptAiSdkStreamFn> {
+    yield {
+      type: 'tool-call',
+      toolCallId: 'summary',
+      toolName: 'complete_compaction',
+      input: input as Record<string, unknown>,
+    }
+    onFinishReason('length')
+    return promptSuccess('compaction-id')
+  })
+
+test('a summary that stopped on the output limit is never installed', async () => {
+  const before = structuredClone(messages)
+  for (const input of [truncated, { summary: truncated }]) {
+    // Without the finish reason, both shapes parse as a complete summary.
+    expect(parseCompactionSummary(input)).toBe(truncated)
+    await expect(
+      run((request, maxOutputTokens, onFinishReason) =>
+        cutOff(input)(request, maxOutputTokens, onFinishReason),
+      ),
+    ).rejects.toThrow('output token limit')
+  }
+  expect(messages).toEqual(before)
+  // A normal stop with the same shape is accepted.
+  const complete = await run(async function* (_r, _m, onFinishReason) {
+    yield { type: 'tool-call', toolCallId: 's', toolName: 'complete_compaction', input: { summary } }
+    onFinishReason('tool-calls')
+    return promptSuccess('compaction-id')
+  })
+  expect(complete?.summary).toBe(summary)
+})
+
+test('a truncated summary falls back to mechanical compaction and is reported as output_limit', async () => {
+  const warnings: unknown[] = []
+  const result = await compactWithModelOrFallback({
+    messages,
+    system: 'You are a coding agent.',
+    maxContextLength: 16_384,
+    fixedTokenCount: 500,
+    maxOutputTokens: 4_096,
+    signal: new AbortController().signal,
+    stream: (request, maxOutputTokens, onFinishReason) =>
+      cutOff({ summary: truncated })(request, maxOutputTokens, onFinishReason),
+    logger: { ...noopLogger, warn: (data: unknown) => warnings.push(data) },
+  })
+  expect(result?.fallback).toBe(true)
+  expect(result?.summary).not.toContain('The backoff multiplies by')
+  expect(warnings).toMatchObject([{ error_kind: 'output_limit', fallback_applied: true }])
 })

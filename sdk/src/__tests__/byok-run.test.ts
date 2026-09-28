@@ -77,6 +77,39 @@ describe('direct BYOK SDK runs', () => {
     expect(requests.at(-1).tools.some((t: any) => t.function.name === 'complete_compaction')).toBe(false)
   })
 
+  // An unconfigured connection caps every request at 4,096 output tokens, and
+  // the summarizer used to be asked for ~6,000. A summary cut off by the cap
+  // (finish_reason "length") must never replace the history.
+  test('compaction asks for a summary that fits the connection output cap and refuses one cut off by it', async () => {
+    const cutOff = '## Objective\n- Document retry behavior.\n## Important Details\n- The backoff multiplies by'
+    for (const args of [JSON.stringify({ summary: cutOff }), cutOff, JSON.stringify({ summary: cutOff }).slice(0, -2)]) {
+      const compactions: any[] = []
+      let calls = 0
+      globalThis.fetch = (async (_input, init) => {
+        const body = JSON.parse(String(init?.body))
+        if (body.tools?.some((t: any) => t.function.name === 'complete_compaction')) {
+          compactions.push(body)
+          return sse({ id: 'summary', object: 'chat.completion.chunk', created: 1, model: body.model,
+            choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'compact', type: 'function', function: { name: 'complete_compaction', arguments: args } }] }, finish_reason: 'length' }] })
+        }
+        return sse({ id: 'work', object: 'chat.completion.chunk', created: 1, model: body.model,
+          choices: [{ index: 0, delta: { content: calls++ === 0 ? 'READ_FINDING: timeout uses milliseconds. '.repeat(1000) : 'Documented.' }, finish_reason: 'stop' }] })
+      }) as typeof fetch
+      const client = new CodebuffClient({ byok: connection({ contextWindow: 32_768, maxOutputTokens: 4096 }), agentDefinitions: [agent] })
+      const original = await client.run({ agent: agent.id, prompt: 'Document retry behavior.' })
+      const receipts: Array<{ summary?: string }> = []
+      const compacted = await client.run({ agent: agent.id, prompt: '/compact', previousRun: original, onCompaction: (receipt) => receipts.push(receipt) })
+      expect(compacted.output.type).not.toBe('error')
+      expect(compactions).toHaveLength(1)
+      expect(compactions[0].max_tokens).toBe(4096)
+      expect(JSON.stringify(compactions[0].messages)).toContain('under approximately 2048 tokens')
+      // The mechanical pass replaced the model's cut-off handoff.
+      expect(receipts).toHaveLength(1)
+      expect(receipts[0].summary).not.toContain('The backoff multiplies by')
+      expect(JSON.stringify(compacted.sessionState)).not.toContain('The backoff multiplies by')
+    }
+  })
+
   test('runs a real local write-file tool loop without any Codebuff request', async () => {
     const cwd = await mkdtemp(path.join(tmpdir(), 'freebuff-byok-'))
     await writeFile(path.join(cwd, 'input.txt'), 'source value')
