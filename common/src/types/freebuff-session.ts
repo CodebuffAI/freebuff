@@ -791,8 +791,6 @@ export type FreebuffPrivacyDecision =
   /** Spur named the tunnel, or placed an ipinfo-named anonymizer in a
    *  datacenter, and Scamalytics did not flag it. */
   | 'spur_suspicious_limited'
-  /** ipinfo flagged the IP and the device clock places the user in another
-   *  country; no provider saw a direct line. */
   | 'client_hints_limited'
   | 'ipinfo_failed_limited'
   | 'limited_other'

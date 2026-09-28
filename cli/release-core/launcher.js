@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { spawn } = require('child_process')
+const { execFileSync, spawn } = require('child_process')
 const crypto = require('crypto')
 const fs = require('fs')
 const http = require('http')
@@ -146,6 +146,9 @@ function createLauncher(productConfig) {
     // Tests only. os.homedir() ignores $HOME under `bun test`, so pointing HOME
     // at a temp dir is not enough to keep a test off the real ~/.config.
     configDir: configDirOverride = null,
+    // Tests only: stands in for the OS AVX2 probe (/proc/cpuinfo, sysctl),
+    // returning true, false, or null for "could not tell".
+    cpuAvx2Probe: cpuAvx2ProbeOverride = null,
   } = productConfig
 
   /**
@@ -281,6 +284,19 @@ function createLauncher(productConfig) {
   const BUN_NO_AVX2_FEATURE = /^Features:[^\n]*\bno_avx2\b/m
   const BUN_ILLEGAL_INSTRUCTION_PANIC =
     /^panic(?:\([^)\n]*\))?: Illegal instruction at address 0x[0-9a-f]+/im
+
+  /**
+   * Bun's `CPU:` header line lists the features it detected (`CPU: sse42
+   * popcnt avx avx2`). avx2 in that list is Bun's own CPUID saying the CPU has
+   * it, so an illegal instruction on such a machine is not a missing AVX2.
+   */
+  const BUN_CPU_LINE = /^CPU:([^\n]*)$/m
+
+  function stderrReportsAvx2Present(stderrTail) {
+    if (!stderrTail) return false
+    const match = BUN_CPU_LINE.exec(sanitizeForReplay(stderrTail))
+    return Boolean(match && /(?:^|\s)avx2(?:\s|$)/i.test(match[1]))
+  }
 
   function stderrReportsMissingCpuFeature(code, signal, stderrTail) {
     if (!stderrTail || (code === 0 && !signal)) return false
@@ -442,12 +458,75 @@ function createLauncher(productConfig) {
     return null
   }
 
-  function linuxCpuHasAvx2() {
-    try {
-      return /\bavx2\b/i.test(fs.readFileSync('/proc/cpuinfo', 'utf8'))
-    } catch {
-      return true
+  /**
+   * `/proc/cpuinfo` answers for the kernel's view of the CPU: true or false
+   * from its `flags` lines, null when it has none to read.
+   */
+  function parseCpuinfoAvx2(text) {
+    if (typeof text !== 'string' || !/^flags\s*:/m.test(text)) return null
+    return /^flags\s*:.*\bavx2\b/m.test(text)
+  }
+
+  /** `sysctl -n hw.optional.avx2_0` prints 1 or 0 on an Intel Mac. */
+  function parseSysctlAvx2(output) {
+    const value = typeof output === 'string' ? output.trim() : ''
+    if (value === '1') return true
+    if (value === '0') return false
+    return null
+  }
+
+  // Where probeCpuAvx2() gets its answer, recorded as the evidence for a pin.
+  function cpuProbeSource() {
+    if (process.platform === 'linux') return 'cpuinfo'
+    if (process.platform === 'darwin') return 'sysctl'
+    return 'probe'
+  }
+
+  let _cpuProbeCache
+
+  /**
+   * Ask the OS whether this CPU has AVX2: true, false, or null for "could not
+   * tell". Linux reads /proc/cpuinfo. macOS asks sysctl, which costs a
+   * subprocess, so this runs only on the crash path, when re-checking an old
+   * pin, and when picking a download target for a baseline install, never on
+   * an ordinary launch. Windows has no probe: the one we had tripped Defender
+   * (see detectMachineHasAvx2), so there Bun's crash report is the evidence.
+   */
+  function probeCpuAvx2() {
+    if (_cpuProbeCache === undefined) {
+      _cpuProbeCache = cpuAvx2ProbeOverride
+        ? cpuAvx2ProbeOverride()
+        : probeCpuAvx2FromOs()
     }
+    return _cpuProbeCache
+  }
+
+  function probeCpuAvx2FromOs() {
+    if (process.arch !== 'x64') return null
+    if (process.platform === 'linux') {
+      try {
+        return parseCpuinfoAvx2(fs.readFileSync('/proc/cpuinfo', 'utf8'))
+      } catch {
+        return null
+      }
+    }
+    if (process.platform === 'darwin') {
+      // x64 node on Apple Silicon runs under Rosetta, and sysctl (arm64 only)
+      // then describes the host, not what Rosetta emulates. No answer there.
+      if (/\bApple\b/.test(os.cpus()[0]?.model || '')) return null
+      try {
+        return parseSysctlAvx2(
+          execFileSync('/usr/sbin/sysctl', ['-n', 'hw.optional.avx2_0'], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+            timeout: 2000,
+          }),
+        )
+      } catch {
+        return null
+      }
+    }
+    return null
   }
 
   let _hasAvx2Cache
@@ -464,17 +543,33 @@ function createLauncher(productConfig) {
       return true
     }
 
-    // A recorded illegal-instruction crash outranks everything below it: the
-    // binary actually failed on this machine, which beats any inference we
-    // could make about the CPU.
-    const recorded = readCachedAvx2()
-    if (recorded !== null) {
-      return recorded
+    // A recorded verdict outranks everything below it. Every record now names
+    // its evidence: Bun's crash report, the OS probe, or 'crash' for an
+    // illegal instruction nothing could explain.
+    //
+    // A record WITHOUT evidence was written by an older launcher, which pinned
+    // baseline on any SIGILL, including a bug on a CPU that has AVX2. Re-check
+    // those against the OS once: a CPU with AVX2 gets its record dropped and
+    // the optimized build back on the next update (see getDownloadTargetKey).
+    const record = readCpuFeatureRecord()
+    if (record && (record.avx2 || record.evidence)) {
+      return record.avx2
+    }
+    if (record) {
+      const probed = probeCpuAvx2()
+      if (probed !== true) {
+        writeCpuFeatureRecord(
+          false,
+          probed === false ? cpuProbeSource() : 'crash',
+        )
+        return false
+      }
+      clearCpuFeatureRecord()
     }
 
     // Linux can just ask, and a file read is cheap enough not to cache.
     if (process.platform === 'linux') {
-      return linuxCpuHasAvx2()
+      return probeCpuAvx2() ?? true
     }
 
     // Everything else assumes AVX2 — true of every x64 CPU since ~2013.
@@ -492,39 +587,74 @@ function createLauncher(productConfig) {
     return true
   }
 
-  // Called from the illegal-instruction fallback. Persisting here is what keeps
-  // the optimistic assumption above from costing more than a single crash — and
-  // it is deliberately separate from the metadata target, so a lost or rewritten
-  // metadata file can't resurrect the AVX2 build on a CPU that can't run it.
-  function recordMachineLacksAvx2() {
+  /**
+   * Positive evidence that this CPU runs the optimized build: a recorded
+   * verdict with evidence, or the OS probe. The optimistic default does not
+   * count. This is what lets a baseline install move back to the optimized
+   * build; without evidence, baseline stays put.
+   */
+  function knownToHaveAvx2() {
+    if (!machineHasAvx2()) return false
+    const record = readCpuFeatureRecord()
+    if (record?.avx2 === true && record.evidence) return true
+    return probeCpuAvx2() === true
+  }
+
+  // Called from the illegal-instruction fallback, only when the CPU is shown
+  // to lack AVX2 or nothing can say either way (see tryFallbackToBaseline).
+  // Persisting here is what keeps the optimistic assumption above from costing
+  // more than a single crash — and it is deliberately separate from the
+  // metadata target, so a lost or rewritten metadata file can't resurrect the
+  // AVX2 build on a CPU that can't run it.
+  function recordMachineLacksAvx2(evidence = 'crash') {
     _hasAvx2Cache = false
-    writeCachedAvx2(false)
+    writeCpuFeatureRecord(false, evidence)
   }
 
   function getCpuFeatureCachePath() {
     return path.join(CONFIG.configDir, 'cpu-features.json')
   }
 
-  function readCachedAvx2() {
+  /** `{ avx2, evidence }`; evidence is null on a record from an older launcher. */
+  function readCpuFeatureRecord() {
     try {
       const cache = JSON.parse(
         fs.readFileSync(getCpuFeatureCachePath(), 'utf8'),
       )
-      return typeof cache.avx2 === 'boolean' ? cache.avx2 : null
+      if (typeof cache.avx2 !== 'boolean') return null
+      return {
+        avx2: cache.avx2,
+        evidence:
+          typeof cache.evidence === 'string' && cache.evidence
+            ? cache.evidence
+            : null,
+      }
     } catch {
       return null
     }
   }
 
-  function writeCachedAvx2(value) {
+  function readCachedAvx2() {
+    return readCpuFeatureRecord()?.avx2 ?? null
+  }
+
+  function writeCpuFeatureRecord(value, evidence) {
     try {
       fs.mkdirSync(CONFIG.configDir, { recursive: true })
       fs.writeFileSync(
         getCpuFeatureCachePath(),
-        JSON.stringify({ avx2: value }),
+        JSON.stringify({ avx2: value, evidence }),
       )
     } catch {
       // Best effort; we'll just re-probe next launch.
+    }
+  }
+
+  function clearCpuFeatureRecord() {
+    try {
+      fs.unlinkSync(getCpuFeatureCachePath())
+    } catch {
+      // Already gone, or unwritable; either way nothing pins baseline now.
     }
   }
 
@@ -580,6 +710,17 @@ function createLauncher(productConfig) {
 
     const metadata = getCurrentMetadata()
     if (metadata?.target && isTargetAllowedForThisMachine(metadata.target)) {
+      // An installed baseline keeps running (isTargetAllowedForThisMachine
+      // always allows it), but it is not a life sentence: once there is
+      // evidence the CPU has AVX2, the next download goes back to the optimized
+      // build. That is how a machine sent to baseline by a crash that was not a
+      // missing AVX2 re-probes on the next version.
+      if (
+        metadata.target === getBaselineFallbackTargetKey() &&
+        knownToHaveAvx2()
+      ) {
+        return getDefaultTargetKey()
+      }
       return metadata.target
     }
 
@@ -1713,7 +1854,7 @@ function createLauncher(productConfig) {
     // feature (see stderrReportsMissingCpuFeature), is proof this CPU cannot
     // run this build; a Windows startup abort is a strong suspicion (see
     // isStartupCpuFeatureCrash).
-    const confirmed =
+    let confirmed =
       isIllegalInstructionExit(code, signal) ||
       stderrReportsMissingCpuFeature(code, signal, stderrTail)
     if (!confirmed && !isStartupCpuFeatureCrash(code, signal, msAlive)) {
@@ -1736,16 +1877,35 @@ function createLauncher(productConfig) {
       return false
     }
 
-    // Only a confirmed illegal instruction gets written down. Persisting it
-    // before the download is what caps the cost at one crash: even if the
-    // download or the relaunch fails, we never optimistically pick the AVX2
-    // build again. A suspected crash records nothing — installing the baseline
-    // already keeps this machine on it, so a guess that turns out to be wrong
-    // costs the slower build instead of leaving cpu-features.json asserting a
-    // CPU limitation we never observed.
-    if (confirmed) {
-      recordMachineLacksAvx2()
+    // An illegal instruction proves the binary used an instruction this
+    // machine refused, not that the instruction was AVX2: a Bun or JIT bug
+    // raises SIGILL too. So ask for evidence before pinning baseline, which
+    // otherwise sticks for good.
+    //
+    // - The CPU lacks AVX2 (Bun's `Features: no_avx2`, or the OS probe):
+    //   record it. Persisting before the download is what caps the cost at
+    //   one crash: even if the download or the relaunch fails, we never
+    //   optimistically pick the AVX2 build again.
+    // - The CPU has AVX2 (the OS probe, or avx2 in Bun's `CPU:` line): this
+    //   crash is something else. Run baseline for now, since it may still
+    //   start, and record the evidence so the next update goes back to the
+    //   optimized build (getDownloadTargetKey). At worst one crash per release.
+    // - No evidence either way (Windows without Bun's report, an unreadable
+    //   /proc/cpuinfo, Rosetta): a confirmed crash is pinned as before.
+    // A suspected crash records nothing: installing the baseline already keeps
+    // this machine on it, and cpu-features.json should not assert a CPU
+    // limitation we never observed.
+    const verdict = crashAvx2Verdict(code, signal, stderrTail)
+    if (verdict.avx2 === true) {
+      writeCpuFeatureRecord(true, verdict.evidence)
+      confirmed = false
+    } else if (verdict.avx2 === false) {
+      recordMachineLacksAvx2(verdict.evidence)
+      confirmed = true
+    } else if (confirmed) {
+      recordMachineLacksAvx2('crash')
     }
+    const cpuHasAvx2 = verdict.avx2 === true
 
     let version = metadata?.version || null
     let binaryChecksums = null
@@ -1763,9 +1923,11 @@ function createLauncher(productConfig) {
     })
     console.error('')
     console.error(
-      confirmed
-        ? `${packageName} is switching to the older-CPU binary for this machine.`
-        : `${packageName} crashed on startup; trying the older-CPU binary.`,
+      cpuHasAvx2
+        ? `${packageName} crashed, but this CPU supports AVX2; using the older-CPU binary until the next update.`
+        : confirmed
+          ? `${packageName} is switching to the older-CPU binary for this machine.`
+          : `${packageName} crashed on startup; trying the older-CPU binary.`,
     )
 
     try {
@@ -1779,6 +1941,27 @@ function createLauncher(productConfig) {
     const child = spawnInstalledBinary({ detached: false })
     attachExitHandler(child, false)
     return true
+  }
+
+  /**
+   * What the evidence says about AVX2 after a crash: `{ avx2, evidence }`,
+   * avx2 null when nothing can tell. Bun's own verdict that AVX2 is missing
+   * wins, then the OS probe, then avx2 in Bun's `CPU:` line.
+   */
+  function crashAvx2Verdict(code, signal, stderrTail) {
+    if (
+      stderrTail &&
+      !(code === 0 && !signal) &&
+      BUN_NO_AVX2_FEATURE.test(sanitizeForReplay(stderrTail))
+    ) {
+      return { avx2: false, evidence: 'bun-report' }
+    }
+    const probed = probeCpuAvx2()
+    if (probed !== null) return { avx2: probed, evidence: cpuProbeSource() }
+    if (stderrReportsAvx2Present(stderrTail)) {
+      return { avx2: true, evidence: 'bun-report' }
+    }
+    return { avx2: null, evidence: null }
   }
 
   function attachExitHandler(child, allowBaselineFallback = true) {
@@ -1843,6 +2026,11 @@ function createLauncher(productConfig) {
       detectMachineHasAvx2,
       recordMachineLacksAvx2,
       readCachedAvx2,
+      readCpuFeatureRecord,
+      parseCpuinfoAvx2,
+      parseSysctlAvx2,
+      stderrReportsAvx2Present,
+      getDownloadTargetKey,
       isIllegalInstructionExit,
       isStartupCpuFeatureCrash,
       stderrReportsMissingCpuFeature,

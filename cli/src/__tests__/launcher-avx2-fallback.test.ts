@@ -60,6 +60,9 @@ let originalArch: PropertyDescriptor | undefined
 function makeLauncher(
   platform: NodeJS.Platform = 'win32',
   arch: string = 'x64',
+  // What the OS says about AVX2 (/proc/cpuinfo, sysctl). "Could not tell" by
+  // default, so no test depends on the CPU of the machine running it.
+  cpuAvx2Probe: () => boolean | null = () => null,
 ) {
   Object.defineProperty(process, 'platform', {
     value: platform,
@@ -74,6 +77,7 @@ function makeLauncher(
     // never from a registry lookup.
     wrapperVersion: '1.2.3',
     binaryChecksums: releaseChecksums,
+    cpuAvx2Probe,
   }).__testing
 }
 
@@ -155,7 +159,7 @@ let restoreReleaseEnv = () => {}
 
 beforeAll(async () => {
   releaseServer = createServer((request, response) => {
-    const wantsBaseline = ['win32', 'darwin'].some((platform) =>
+    const wantsBaseline = ['win32', 'darwin', 'linux'].some((platform) =>
       request.url?.endsWith(`freebuff-${platform}-x64-baseline.tar.gz`),
     )
     if (releaseTarball && wantsBaseline) {
@@ -231,7 +235,7 @@ describe('windows AVX2 detection', () => {
     expect(t.readCachedAvx2()).toBe(false)
     expect(
       JSON.parse(readFileSync(t.getCpuFeatureCachePath(), 'utf8')),
-    ).toEqual({ avx2: false })
+    ).toEqual({ avx2: false, evidence: 'crash' })
   })
 
   test('a recorded failure selects baseline up front on the NEXT launch', () => {
@@ -903,4 +907,250 @@ describe('the background update check', () => {
     ])
     expect(settled).toBe('stood down')
   })
+})
+
+/**
+ * A SIGILL proves an instruction was refused, not that it was AVX2: a Bun or
+ * JIT bug raises it too. Pinning baseline on any SIGILL stranded capable
+ * machines on the slower build for good, so a pin now needs evidence, and an
+ * old evidence-less pin is re-checked.
+ */
+describe('pinning baseline only on evidence', () => {
+  function installBinary(t: ReturnType<typeof makeLauncher>, target: string) {
+    writeFileSync(
+      t.CONFIG.metadataPath,
+      JSON.stringify({ version: '1.2.3', target }),
+    )
+    writeFileSync(t.CONFIG.binaryPath, 'pretend binary')
+  }
+
+  function writeRecord(t: ReturnType<typeof makeLauncher>, record: object) {
+    const cachePath = t.getCpuFeatureCachePath()
+    mkdirSync(dirname(cachePath), { recursive: true })
+    writeFileSync(cachePath, JSON.stringify(record))
+  }
+
+  test('reads avx2 from the flags lines of /proc/cpuinfo', () => {
+    const t = makeLauncher('linux')
+    const haswell =
+      'processor\t: 0\nflags\t\t: fpu sse4_2 avx avx2 bmi2\nbugs\t\t: spectre_v1\n'
+    const sandyBridge =
+      'processor\t: 0\nflags\t\t: fpu sse4_2 avx\nbugs\t\t: avx2_mentioned_elsewhere\n'
+    expect(t.parseCpuinfoAvx2(haswell)).toBe(true)
+    expect(t.parseCpuinfoAvx2(sandyBridge)).toBe(false)
+    // No flags line at all (a stripped container, a non-x86 kernel): unknown,
+    // not "no".
+    expect(t.parseCpuinfoAvx2('processor\t: 0\n')).toBe(null)
+    expect(t.parseCpuinfoAvx2('')).toBe(null)
+  })
+
+  test('reads hw.optional.avx2_0 from sysctl', () => {
+    const t = makeLauncher('darwin')
+    expect(t.parseSysctlAvx2('1\n')).toBe(true)
+    expect(t.parseSysctlAvx2('0\n')).toBe(false)
+    // Apple Silicon prints nothing for this oid.
+    expect(t.parseSysctlAvx2('')).toBe(null)
+    expect(t.parseSysctlAvx2('unknown oid')).toBe(null)
+  })
+
+  test('linux SIGILL on a CPU with avx2 does not pin baseline', async () => {
+    const t = makeLauncher('linux', 'x64', () => true)
+    installBinary(t, 'linux-x64')
+
+    // The download 404s; what matters is what was written on the way.
+    expect(await t.tryFallbackToBaseline(null, 'SIGILL', 40)).toBe(false)
+    expect(t.readCpuFeatureRecord()).toEqual({
+      avx2: true,
+      evidence: 'cpuinfo',
+    })
+    const next = makeLauncher('linux', 'x64', () => true)
+    expect(next.getDefaultTargetKey()).toBe('linux-x64')
+    expect(next.isTargetAllowedForThisMachine('linux-x64')).toBe(true)
+  })
+
+  test('linux SIGILL on a CPU without avx2 pins baseline, naming cpuinfo', async () => {
+    const t = makeLauncher('linux', 'x64', () => false)
+    installBinary(t, 'linux-x64')
+
+    expect(await t.tryFallbackToBaseline(null, 'SIGILL', 40)).toBe(false)
+    expect(t.readCpuFeatureRecord()).toEqual({
+      avx2: false,
+      evidence: 'cpuinfo',
+    })
+    expect(makeLauncher('linux').getDefaultTargetKey()).toBe(
+      'linux-x64-baseline',
+    )
+  })
+
+  test('macOS SIGILL on an Intel Mac with avx2 does not pin baseline', async () => {
+    const t = makeLauncher('darwin', 'x64', () => true)
+    installBinary(t, 'darwin-x64')
+
+    expect(await t.tryFallbackToBaseline(null, 'SIGILL', 40)).toBe(false)
+    expect(t.readCpuFeatureRecord()).toEqual({ avx2: true, evidence: 'sysctl' })
+    expect(makeLauncher('darwin').getDefaultTargetKey()).toBe('darwin-x64')
+  })
+
+  test('macOS SIGILL on an Intel Mac without avx2 pins baseline, naming sysctl', async () => {
+    const t = makeLauncher('darwin', 'x64', () => false)
+    installBinary(t, 'darwin-x64')
+
+    expect(await t.tryFallbackToBaseline(null, 'SIGILL', 40)).toBe(false)
+    expect(t.readCpuFeatureRecord()).toEqual({
+      avx2: false,
+      evidence: 'sysctl',
+    })
+    expect(makeLauncher('darwin').getDefaultTargetKey()).toBe(
+      'darwin-x64-baseline',
+    )
+  })
+
+  test('Apple Silicon never pins, whatever a probe would say', async () => {
+    const t = makeLauncher('darwin', 'arm64', () => false)
+    expect(await t.tryFallbackToBaseline(null, 'SIGILL', 40)).toBe(false)
+    expect(t.readCpuFeatureRecord()).toBe(null)
+    expect(t.detectMachineHasAvx2()).toBe(true)
+    expect(t.getDefaultTargetKey()).toBe('darwin-arm64')
+  })
+
+  test("Bun's no_avx2 outranks a probe that says avx2", async () => {
+    const t = makeLauncher('win32', 'x64', () => true)
+    installBinary(t, 'win32-x64')
+
+    expect(await t.tryFallbackToBaseline(3, null, 40, REPORTED_BUN_CRASH)).toBe(
+      false,
+    )
+    expect(t.readCpuFeatureRecord()).toEqual({
+      avx2: false,
+      evidence: 'bun-report',
+    })
+  })
+
+  test("windows illegal-instruction panic with avx2 in Bun's CPU line does not pin", async () => {
+    const t = makeLauncher()
+    installBinary(t, 'win32-x64')
+    const bugOnAvx2Cpu = [
+      'Bun v1.3.14 (0d9b296a) Windows x64',
+      'Windows v.win11_dt',
+      'CPU: sse42 popcnt avx avx2',
+      'Features: jsc spawn',
+      '',
+      'panic: Illegal instruction at address 0x7FF61902F82C',
+    ].join('\n')
+
+    expect(t.stderrReportsAvx2Present(bugOnAvx2Cpu)).toBe(true)
+    expect(t.stderrReportsAvx2Present(REPORTED_BUN_CRASH)).toBe(false)
+    expect(await t.tryFallbackToBaseline(3, null, 40, bugOnAvx2Cpu)).toBe(false)
+    expect(t.readCpuFeatureRecord()).toEqual({
+      avx2: true,
+      evidence: 'bun-report',
+    })
+    expect(makeLauncher().getDefaultTargetKey()).toBe('win32-x64')
+  })
+
+  test('with no evidence either way, a confirmed crash still pins', async () => {
+    // Windows without Bun's report, an unreadable /proc/cpuinfo, Rosetta.
+    const t = makeLauncher('linux', 'x64', () => null)
+    installBinary(t, 'linux-x64')
+
+    expect(await t.tryFallbackToBaseline(null, 'SIGILL', 40)).toBe(false)
+    expect(t.readCpuFeatureRecord()).toEqual({ avx2: false, evidence: 'crash' })
+  })
+
+  test('an old evidence-less pin on a CPU with avx2 is dropped', () => {
+    const t = makeLauncher('linux', 'x64', () => true)
+    // What every launcher before this fix wrote on any SIGILL.
+    writeRecord(t, { avx2: false })
+
+    expect(t.detectMachineHasAvx2()).toBe(true)
+    expect(t.readCpuFeatureRecord()).toBe(null)
+    expect(t.getDefaultTargetKey()).toBe('linux-x64')
+  })
+
+  test('an old evidence-less pin is kept, with evidence, when the probe agrees', () => {
+    const t = makeLauncher('darwin', 'x64', () => false)
+    writeRecord(t, { avx2: false })
+
+    expect(t.detectMachineHasAvx2()).toBe(false)
+    expect(t.readCpuFeatureRecord()).toEqual({
+      avx2: false,
+      evidence: 'sysctl',
+    })
+  })
+
+  test('an old evidence-less pin is kept when nothing can tell', () => {
+    const t = makeLauncher()
+    writeRecord(t, { avx2: false })
+
+    expect(t.detectMachineHasAvx2()).toBe(false)
+    // Rewritten so the next launch does not ask again.
+    expect(t.readCpuFeatureRecord()).toEqual({ avx2: false, evidence: 'crash' })
+    expect(t.getDefaultTargetKey()).toBe('win32-x64-baseline')
+  })
+
+  test('a pin with evidence is trusted without asking the OS again', () => {
+    let probes = 0
+    const t = makeLauncher('darwin', 'x64', () => {
+      probes++
+      return true
+    })
+    writeRecord(t, { avx2: false, evidence: 'bun-report' })
+
+    expect(t.detectMachineHasAvx2()).toBe(false)
+    expect(probes).toBe(0)
+  })
+
+  test('an installed baseline keeps running, and the next update is the AVX2 build', () => {
+    const t = makeLauncher('darwin', 'x64', () => true)
+    // A Mac an old launcher pinned after an unrelated SIGILL.
+    writeRecord(t, { avx2: false })
+    installBinary(t, 'darwin-x64-baseline')
+
+    // Not re-downloaded at launch: the baseline binary works, and a failed
+    // download here would leave the user with nothing to run.
+    expect(t.getCurrentVersion()).toBe('1.2.3')
+    // The next download (a release update) goes back to the optimized build.
+    expect(t.getDownloadTargetKey()).toBe('darwin-x64')
+  })
+
+  test('an installed baseline stays baseline without evidence of avx2', () => {
+    const t = makeLauncher('darwin', 'x64', () => null)
+    installBinary(t, 'darwin-x64-baseline')
+    // No record, no probe answer: the optimistic default is not evidence.
+    expect(t.getDownloadTargetKey()).toBe('darwin-x64-baseline')
+
+    const pinned = makeLauncher('linux', 'x64', () => true)
+    writeRecord(pinned, { avx2: false, evidence: 'bun-report' })
+    installBinary(pinned, 'linux-x64-baseline')
+    expect(pinned.getDownloadTargetKey()).toBe('linux-x64-baseline')
+  })
+
+  test('end to end: SIGILL on a CPU with avx2 runs baseline once, then updates back', async () => {
+    const t = makeLauncher('linux', 'x64', () => true)
+    const ranMarker = join(tempConfigDir, 'baseline-ran')
+    serveBaselineTarball(`echo ran > ${ranMarker}`, 'linux')
+    writeFileSync(t.CONFIG.binaryPath, '#!/bin/sh\nexit 3\n', { mode: 0o755 })
+    writeFileSync(
+      t.CONFIG.metadataPath,
+      JSON.stringify({ version: '1.2.3', target: 'linux-x64' }),
+    )
+
+    const child = t.spawnInstalledBinary()
+    await new Promise((resolve) => child.once('close', resolve))
+    await t.attachExitHandler(child)(null, 'SIGILL')
+    await waitFor(() => launcher.exitCodes.length > 0)
+
+    // Baseline got its one run.
+    expect(launcher.exitCodes).toEqual([0])
+    expect(existsSync(ranMarker)).toBe(true)
+    expect(launcher.lines.join('\n')).toContain(
+      'this CPU supports AVX2; using the older-CPU binary until the next update',
+    )
+    // But nothing pins it.
+    const next = makeLauncher('linux', 'x64', () => true)
+    expect(next.readCachedAvx2()).toBe(true)
+    expect(next.getDefaultTargetKey()).toBe('linux-x64')
+    expect(next.getCurrentVersion()).toBe('1.2.3')
+    expect(next.getDownloadTargetKey()).toBe('linux-x64')
+  }, 20000)
 })
