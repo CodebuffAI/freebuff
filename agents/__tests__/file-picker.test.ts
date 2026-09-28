@@ -249,17 +249,7 @@ describe('file-picker agent', () => {
               {
                 agentName: 'File Lister',
                 agentType: 'file-lister',
-                value: {
-                  type: 'lastMessage',
-                  value: [
-                    {
-                      role: 'assistant',
-                      content: [
-                        { type: 'text', text: 'src/auth.ts\nsrc/login.ts' },
-                      ],
-                    },
-                  ],
-                },
+                value: 'src/auth.ts\nsrc/login.ts',
               },
             ],
           },
@@ -303,17 +293,7 @@ describe('file-picker agent', () => {
               {
                 agentName: 'File Lister',
                 agentType: 'file-lister',
-                value: {
-                  type: 'lastMessage',
-                  value: [
-                    {
-                      role: 'assistant',
-                      content: [
-                        { type: 'text', text: 'src/file.ts\nsrc/file.ts\nsrc/other.ts' },
-                      ],
-                    },
-                  ],
-                },
+                value: 'src/file.ts\nsrc/file.ts\nsrc/other.ts',
               },
             ],
           },
@@ -358,15 +338,7 @@ describe('file-picker agent', () => {
               {
                 agentName: 'File Lister',
                 agentType: 'file-lister',
-                value: {
-                  type: 'lastMessage',
-                  value: [
-                    {
-                      role: 'assistant',
-                      content: [{ type: 'text', text: 'src/file.ts' }],
-                    },
-                  ],
-                },
+                value: 'src/file.ts',
               },
             ],
           },
@@ -485,17 +457,7 @@ describe('file-picker agent', () => {
               {
                 agentName: 'File Lister',
                 agentType: 'file-lister-max',
-                value: {
-                  type: 'lastMessage',
-                  value: [
-                    {
-                      role: 'assistant',
-                      content: [
-                        { type: 'text', text: 'src/auth.ts\nsrc/login.ts\nsrc/user.ts' },
-                      ],
-                    },
-                  ],
-                },
+                value: 'src/auth.ts\nsrc/login.ts\nsrc/user.ts',
               },
             ],
           },

@@ -720,10 +720,14 @@ const definition: AgentDefinition = {
               const agentResults = part.value as Array<{
                 agentName?: string
                 agentType?: string
-                value?: {
-                  type?: string
-                  value?: unknown
-                }
+                // Plain text, or an AgentOutput (structured output, older
+                // histories).
+                value?:
+                  | string
+                  | {
+                      type?: string
+                      value?: unknown
+                    }
               }>
               const includedResults = agentResults.filter(
                 (r) =>
@@ -732,12 +736,14 @@ const definition: AgentDefinition = {
               )
               if (includedResults.length > 0) {
                 const resultSummaries = includedResults.map((r) => {
+                  const output =
+                    typeof r.value === 'string' ? r.value : r.value?.value
                   let outputStr = ''
-                  if (r.value?.value !== undefined && r.value?.value !== null) {
-                    if (typeof r.value.value === 'string') {
-                      outputStr = r.value.value
+                  if (output !== undefined && output !== null) {
+                    if (typeof output === 'string') {
+                      outputStr = output
                     } else {
-                      outputStr = JSON.stringify(r.value.value)
+                      outputStr = JSON.stringify(output)
                     }
                     outputStr = outputStr
                       .replace(/<think>[\s\S]*?<\/think>/g, '')

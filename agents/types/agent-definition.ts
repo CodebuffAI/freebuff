@@ -154,7 +154,7 @@ export interface AgentDefinition {
 
   /** How the agent should output a response to its parent (defaults to 'last_message')
    *
-   * last_message: The last message from the agent, typically after using tools.
+   * last_message: The text of the agent's last turn, without reasoning. A parent receives it as a plain string in the spawn result's `value` (or an error, 'No response from agent', if that turn had no text).
    *
    * all_messages: All messages from the agent, including tool calls and results.
    *

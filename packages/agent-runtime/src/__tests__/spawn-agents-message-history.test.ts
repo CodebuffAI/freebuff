@@ -365,4 +365,62 @@ describe('Spawn Agents Message History', () => {
     ])
     expect(capturedSubAgentPrompt).toBe('Review the changes')
   })
+
+  /** Spawns a child whose last turn is `lastTurn`; returns what the parent receives. */
+  const spawnReturning = async (
+    lastTurn: ReturnType<typeof assistantMessage>[],
+  ) => {
+    mockLoopAgentSteps.mockImplementation(async (options: any) => ({
+      agentState: options.agentState,
+      output: { type: 'lastMessage', value: lastTurn },
+    }))
+    const { output } = await handleSpawnAgents({
+      ...handleSpawnAgentsBaseParams,
+      agentState: getInitialSessionState(mockFileContext).mainAgentState,
+      agentTemplate: createMockAgent('parent'),
+      localAgentTemplates: { 'child-agent': createMockAgent('child-agent') },
+      toolCall: createSpawnToolCall('child-agent'),
+    })
+    return (output[0] as any).value[0].value
+  }
+
+  it("hands the parent the child's answer as plain text", async () => {
+    const received = await spawnReturning([
+      assistantMessage({
+        type: 'reasoning',
+        text: 'Weighing the sources.',
+        providerOptions: {
+          codebuff: { reasoning_details: [{ type: 'reasoning.encrypted' }] },
+        },
+      }),
+      assistantMessage([
+        { type: 'reasoning', text: 'One more check.' },
+        { type: 'text', text: '<think>Scaffolding.</think>The answer.' },
+      ]),
+    ])
+
+    expect(received).toBe('The answer.')
+  })
+
+  it('reports a last turn of only reasoning as no response', async () => {
+    const received = await spawnReturning([
+      assistantMessage({
+        type: 'reasoning',
+        text: 'Thinking, never answering.',
+      }),
+    ])
+
+    expect(received).toEqual({
+      type: 'error',
+      message: 'No response from agent',
+    })
+  })
+
+  it('reads an answer that set_messages stored as a bare string', async () => {
+    const received = await spawnReturning([
+      { role: 'assistant', content: 'The answer.' } as any,
+    ])
+
+    expect(received).toBe('The answer.')
+  })
 })

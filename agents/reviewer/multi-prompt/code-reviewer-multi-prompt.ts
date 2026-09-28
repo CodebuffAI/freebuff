@@ -104,22 +104,9 @@ function* handleStepsMultiPrompt({
 
   const spawnedReviews = extractSpawnResults(reviewerResults)
 
-  // Extract text content from each review's message content blocks
-  const reviewTexts: string[] = []
-  for (const review of spawnedReviews) {
-    if ('errorMessage' in review) {
-      reviewTexts.push(`Error: ${review.errorMessage}`)
-    } else {
-      // Each review is an array of messages
-      for (const message of review) {
-        for (const block of message.content) {
-          if (block.type === 'text' && block.text) {
-            reviewTexts.push(block.text)
-          }
-        }
-      }
-    }
-  }
+  const reviewTexts = spawnedReviews.map((review) =>
+    typeof review === 'string' ? review : `Error: ${review.errorMessage}`,
+  )
 
   // Set output with the simplified reviews (array of strings)
   yield {
@@ -130,17 +117,13 @@ function* handleStepsMultiPrompt({
     includeToolCall: false,
   } satisfies ToolCall<'set_output'>
 
-  type ContentBlock = { type: string; text?: string }
-  type ReviewMessage = { role: string; content: ContentBlock[]; sentAt?: number }
-  type ReviewResult = ReviewMessage[]
-
   /**
-   * Extracts the array of subagent results from spawn_agents tool output.
-   * For code-reviewer agents with outputMode: 'last_message', the value is an array of messages.
+   * Extracts each code-reviewer's plain-text answer, or its error, from the
+   * spawn_agents tool output.
    */
   function extractSpawnResults(
     results: { type: string; value?: unknown }[] | undefined,
-  ): (ReviewResult | { errorMessage: string })[] {
+  ): (string | { errorMessage: string })[] {
     if (!results || results.length === 0) return []
 
     const jsonResult = results.find((r) => r.type === 'json')
@@ -150,23 +133,17 @@ function* handleStepsMultiPrompt({
       ? jsonResult.value
       : [jsonResult.value]
 
-    const extracted: (ReviewResult | { errorMessage: string })[] = []
+    const extracted: (string | { errorMessage: string })[] = []
     for (const result of spawnedResults) {
       const innerValue = result?.value
-      if (
-        innerValue &&
-        typeof innerValue === 'object' &&
-        'value' in innerValue
-      ) {
-        extracted.push(innerValue.value as ReviewResult)
-      } else if (
-        innerValue &&
-        typeof innerValue === 'object' &&
-        'errorMessage' in innerValue
-      ) {
-        extracted.push({ errorMessage: String(innerValue.errorMessage) })
+      if (typeof innerValue === 'string') {
+        extracted.push(innerValue)
       } else if (innerValue != null) {
-        extracted.push(innerValue as ReviewResult)
+        // A failed spawn ({ errorMessage }) or a reviewer that wrote no
+        // answer ({ type: 'error', message }).
+        extracted.push({
+          errorMessage: String(innerValue.errorMessage ?? innerValue.message),
+        })
       }
     }
     return extracted

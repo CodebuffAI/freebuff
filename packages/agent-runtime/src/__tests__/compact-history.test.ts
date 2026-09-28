@@ -97,6 +97,27 @@ describe('compactMessages', () => {
     expect(summary).toContain('Command failed with exit code: 1')
   })
 
+  it('keeps subagent results, plain-text answers and structured output alike', () => {
+    const summary = textOf(
+      compact([
+        user('think it through', ['USER_PROMPT']),
+        assistantToolCall('spawn_agents', {
+          agents: [{ agent_type: 'thinker-gemini' }, { agent_type: 'planner' }],
+        }),
+        toolResult('spawn_agents', [
+          { agentType: 'thinker-gemini', value: 'The ball costs $0.05.' },
+          {
+            agentType: 'planner',
+            value: { type: 'structuredOutput', value: { steps: 2 } },
+          },
+        ]),
+      ])[0],
+    )
+
+    expect(summary).toContain('- thinker-gemini: The ball costs $0.05.')
+    expect(summary).toContain('- planner: {"steps":2}')
+  })
+
   it('appends a continuation prompt on a mid-turn prune', () => {
     const result = compact([
       user('the live question', ['USER_PROMPT']),

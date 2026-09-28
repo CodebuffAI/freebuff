@@ -1,3 +1,7 @@
+import { assistantContent } from '@codebuff/common/util/messages'
+
+import { stripThinkScaffolding } from './think-tag-stream'
+
 import type { AgentTemplate } from '@codebuff/common/types/agent-template'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 import type {
@@ -60,6 +64,11 @@ function getLastAssistantTurnMessages(messageHistory: Message[]): Message[] {
   return result.filter((m) => !isExcludedFromOutput(m))
 }
 
+const noResponse = (): AgentOutput => ({
+  type: 'error',
+  message: 'No response from agent',
+})
+
 export function getAgentOutput(
   agentState: AgentState,
   agentTemplate: AgentTemplate,
@@ -75,10 +84,7 @@ export function getAgentOutput(
       agentState.messageHistory,
     )
     if (lastTurnMessages.length === 0) {
-      return {
-        type: 'error',
-        message: 'No response from agent',
-      }
+      return noResponse()
     }
     return {
       type: 'lastMessage',
@@ -99,4 +105,26 @@ export function getAgentOutput(
   throw new Error(
     `Unknown output mode: ${'outputMode' in agentTemplate ? agentTemplate.outputMode : 'undefined'}`,
   )
+}
+
+/** A spawned agent's output as its parent receives it: a `last_message`
+ *  agent's answer as plain text, or an error if it wrote none. */
+export function outputForParent(output: AgentOutput): AgentOutput | string {
+  if (output.type !== 'lastMessage') return output
+  return answerText(output.value as Message[]) || noResponse()
+}
+
+/** The text of a turn's assistant messages, without reasoning or think tags. */
+function answerText(messages: Message[]): string {
+  return messages
+    .flatMap((message) =>
+      // set_messages stores messages as given, so content can be a bare string.
+      message.role === 'assistant' ? assistantContent(message.content) : [],
+    )
+    .map((part) =>
+      part.type === 'text' ? stripThinkScaffolding(part.text) : '',
+    )
+    .filter((text) => text.trim())
+    .join('\n')
+    .trim()
 }

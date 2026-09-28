@@ -393,6 +393,28 @@ describe('context-pruner handleSteps', () => {
     expect(content).toContain('- commander')
   })
 
+  test('keeps subagent results, plain-text answers and structured output alike', () => {
+    const messages = [
+      createMessage('user', 'Think it through'),
+      createToolCallMessage('call-1', 'spawn_agents', {
+        agents: [{ agent_type: 'thinker-gemini' }, { agent_type: 'planner' }],
+      }),
+      createToolResultMessage('call-1', 'spawn_agents', [
+        { agentType: 'thinker-gemini', value: 'The ball costs $0.05.' },
+        {
+          agentType: 'planner',
+          value: { type: 'structuredOutput', value: { steps: 2 } },
+        },
+      ]),
+    ]
+
+    const results = runHandleSteps(messages, 50000, 10000)
+    const content = results[0].input.messages[0].content[0].text
+
+    expect(content).toContain('- thinker-gemini: The ball costs $0.05.')
+    expect(content).toContain('- planner: {"steps":2}')
+  })
+
   test('includes tool errors in summary', () => {
     const messages = [
       createMessage('user', 'Try to read a file'),

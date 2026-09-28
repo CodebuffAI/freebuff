@@ -591,7 +591,8 @@ function summarizeToolResult(toolMessage: ToolMessage): string[] {
         const agentResults = part.value as Array<{
           agentName?: string
           agentType?: string
-          value?: { type?: string; value?: unknown }
+          // Plain text, or an AgentOutput (structured output, older histories).
+          value?: string | { type?: string; value?: unknown }
         }>
         const includedResults = agentResults.filter(
           (r) =>
@@ -599,12 +600,12 @@ function summarizeToolResult(toolMessage: ToolMessage): string[] {
         )
         if (includedResults.length > 0) {
           const resultSummaries = includedResults.map((r) => {
+            const output =
+              typeof r.value === 'string' ? r.value : r.value?.value
             let outputStr = ''
-            if (r.value?.value !== undefined && r.value?.value !== null) {
+            if (output !== undefined && output !== null) {
               outputStr =
-                typeof r.value.value === 'string'
-                  ? r.value.value
-                  : JSON.stringify(r.value.value)
+                typeof output === 'string' ? output : JSON.stringify(output)
               outputStr = outputStr
                 .replace(/<think>[\s\S]*?<\/think>/g, '')
                 .trim()

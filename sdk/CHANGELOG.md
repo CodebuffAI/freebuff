@@ -4,6 +4,8 @@ All notable changes to the @codebuff/sdk package will be documented in this file
 
 ## [Unreleased]
 
+- `spawn_agents` results from `last_message` agents now arrive as plain text. Each result's `value` is the child's final answer (the text of its last turn, without reasoning or think tags) instead of `{ type: 'lastMessage', value: Message[] }`, and a child whose last turn has no text reports `{ type: 'error', message: 'No response from agent' }`. `handleSteps` code that walked the `lastMessage` message array must read the string instead. Structured-output results and the `output` returned by `run()` are unchanged.
+
 - `run()` now returns promptly when its `signal` aborts during the user lookup or agent-run registration that precede the first model request. Those requests had no signal and retried through a backoff, so a socket that never answered held the run for the whole retry budget; they now end on abort and the run resolves with `Run cancelled by user.`
 
 - Dropped `knowledge.md` from the knowledge-file priority list; the SDK now picks up `AGENTS.md` then `CLAUDE.md` (per directory, and `~/.AGENTS.md`/`~/.CLAUDE.md` in the home directory). Existing `knowledge.md` files are no longer read. The `PRIMARY_KNOWLEDGE_FILE_NAME` export was removed with it; use `KNOWLEDGE_FILE_NAMES[0]`.

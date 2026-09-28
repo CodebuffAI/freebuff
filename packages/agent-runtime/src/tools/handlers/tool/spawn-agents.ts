@@ -1,5 +1,6 @@
 import { jsonToolResult } from '@codebuff/common/util/messages'
 
+import { outputForParent } from '../../../util/agent-output'
 import {
   validateAndGetAgentTemplate,
   validateAgentInput,
@@ -202,7 +203,7 @@ export const handleSpawnAgents = (async (
         return {
           agentName,
           agentType,
-          value: output,
+          value: outputForParent(output),
         }
       } else {
         const agentTypeStr = agents[index].agent_type

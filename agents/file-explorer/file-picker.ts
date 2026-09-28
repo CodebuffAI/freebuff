@@ -91,7 +91,7 @@ const handleStepsDefault: SecretAgentDefinition['handleSteps'] = function* ({
   let hasAnyResults = false
 
   for (const result of spawnResults) {
-    const fileListText = extractLastMessageText(result)
+    const fileListText = typeof result === 'string' ? result : null
     if (fileListText) {
       hasAnyResults = true
       const paths = fileListText.split('\n').filter(Boolean)
@@ -132,26 +132,6 @@ const handleStepsDefault: SecretAgentDefinition['handleSteps'] = function* ({
       ? jsonResult.value
       : [jsonResult.value]
     return spawnedResults.map((result: any) => result?.value).filter(Boolean)
-  }
-
-  function extractLastMessageText(agentOutput: any): string | null {
-    if (!agentOutput) return null
-    if (
-      agentOutput.type === 'lastMessage' &&
-      Array.isArray(agentOutput.value)
-    ) {
-      for (let i = agentOutput.value.length - 1; i >= 0; i--) {
-        const message = agentOutput.value[i]
-        if (message.role === 'assistant' && Array.isArray(message.content)) {
-          for (const part of message.content) {
-            if (part.type === 'text' && typeof part.text === 'string') {
-              return part.text
-            }
-          }
-        }
-      }
-    }
-    return null
   }
 
   function extractErrorMessage(agentOutput: any): string | null {
@@ -188,7 +168,7 @@ const handleStepsMax: SecretAgentDefinition['handleSteps'] = function* ({
   let hasAnyResults = false
 
   for (const result of spawnResults) {
-    const fileListText = extractLastMessageText(result)
+    const fileListText = typeof result === 'string' ? result : null
     if (fileListText) {
       hasAnyResults = true
       const paths = fileListText.split('\n').filter(Boolean)
@@ -229,26 +209,6 @@ const handleStepsMax: SecretAgentDefinition['handleSteps'] = function* ({
       ? jsonResult.value
       : [jsonResult.value]
     return spawnedResults.map((result: any) => result?.value).filter(Boolean)
-  }
-
-  function extractLastMessageText(agentOutput: any): string | null {
-    if (!agentOutput) return null
-    if (
-      agentOutput.type === 'lastMessage' &&
-      Array.isArray(agentOutput.value)
-    ) {
-      for (let i = agentOutput.value.length - 1; i >= 0; i--) {
-        const message = agentOutput.value[i]
-        if (message.role === 'assistant' && Array.isArray(message.content)) {
-          for (const part of message.content) {
-            if (part.type === 'text' && typeof part.text === 'string') {
-              return part.text
-            }
-          }
-        }
-      }
-    }
-    return null
   }
 
   function extractErrorMessage(agentOutput: any): string | null {
