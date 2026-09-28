@@ -1578,6 +1578,42 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
   })
 
   describe('steering (drainSteeringMessages)', () => {
+    it('awaits image-bearing steering and sends each message with its own images on the next model call', async () => {
+      const images = [
+        { type: 'image' as const, image: 'Zmlyc3Q=', mediaType: 'image/png' },
+        { type: 'image' as const, image: 'c2Vjb25k', mediaType: 'image/jpeg' },
+      ]
+      const seen: unknown[][] = []
+      let drained = false
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        drainSteeringMessages: async () => {
+          await Promise.resolve()
+          if (drained) return []
+          drained = true
+          return ['Text correction', { prompt: 'Compare both images', content: images }, { prompt: '', content: [images[1]] }]
+        },
+        promptAiSdkStream: async function* ({ messages }) {
+          seen.push(structuredClone(messages))
+          yield createToolCallChunk('end_turn', {})
+          return promptSuccess(`step-${seen.length}`)
+        },
+      })
+      const expected = [
+        [{ type: 'text', text: 'Text correction' }],
+        [{ type: 'text', text: 'Compare both images' }, ...images],
+        [images[1]],
+      ]
+      expect(seen).toHaveLength(2)
+      for (const content of expected) {
+        expect(seen[0]).not.toContainEqual(expect.objectContaining({ role: 'user', content }))
+        expect(seen[1]).toContainEqual(expect.objectContaining({ role: 'user', content }))
+        expect(result.agentState.messageHistory).toContainEqual(expect.objectContaining({
+          role: 'user', content, tags: ['USER_PROMPT'], keepDuringTruncation: true,
+        }))
+      }
+    })
+
     it('appends a steering message at the step boundary and continues the turn', async () => {
       // The mock LLM ends the turn after one step. A steering message that arrives
       // during that step should be appended to history and keep the turn going, so

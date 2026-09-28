@@ -73,6 +73,7 @@ import type {
   ContextCompactionData,
 } from '@codebuff/common/types/contracts/llm'
 import type { TraceWriter } from '@codebuff/common/types/contracts/trace'
+import type { DrainSteeringMessages } from '@codebuff/common/types/contracts/steering'
 import type { CodebuffFileSystem } from '@codebuff/common/types/filesystem'
 import type {
   Message,
@@ -256,11 +257,12 @@ export type RunOptions = {
   extraToolResults?: ToolMessage[]
   signal?: AbortSignal
   /** Optional steering hook. Drained at each agent step boundary during the run;
-   * any returned texts are appended to the conversation as user prompts (and keep
+   * any returned messages are appended to the conversation as user prompts (and keep
    * the turn going) before the next LLM call. Lets a host inject messages into a
    * running agent without aborting — i.e. "steer" it, as opposed to queuing a new
-   * prompt for after the turn finishes. */
-  drainSteeringMessages?: () => string[]
+   * prompt for after the turn finishes. Supports plain strings or { prompt, content }
+   * messages with images, and async attachment loading. */
+  drainSteeringMessages?: DrainSteeringMessages
   costMode?: string
   /** Extra key/values merged into each LLM request's `codebuff_metadata`.
    *  Used by hosts (e.g. the CLI) to forward client-scoped identifiers like
