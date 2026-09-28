@@ -34,6 +34,13 @@ import type { FreebuffSessionResponse } from '../types/freebuff-session'
 
 const ignoreFocusTargets = () => {}
 
+const wordmarkVariants = [FREEBUFF_WORDMARK, FREEBUFF_WORDMARK_COMPACT].map(
+  (text) => ({
+    text,
+    width: Math.max(...text.split('\n').map((line) => line.length)),
+  }),
+)
+
 export function FreebuffChatHeader({
   session,
 }: {
@@ -52,6 +59,9 @@ export function FreebuffChatHeader({
     enabled: FREEBUFF_ENABLE_STREAK_IN_UI,
   })
   const width = Math.max(16, Math.min(68, terminalWidth - 5))
+  // Use the panel's padded width budget so the wordmark stays whole on resize.
+  const wordmark =
+    wordmarkVariants.find((variant) => variant.width <= width)?.text ?? 'Freebuff'
   const tier =
     session && 'accessTier' in session ? (session.accessTier ?? 'full') : 'full'
   const referral = getReferralInfo(session)
@@ -78,7 +88,7 @@ export function FreebuffChatHeader({
       }}
     >
       <text style={{ fg: theme.foreground, wrapMode: 'none', marginBottom: 1 }}>
-        {terminalWidth >= 69 ? FREEBUFF_WORDMARK : FREEBUFF_WORDMARK_COMPACT}
+        {wordmark}
       </text>
       <box
         style={{

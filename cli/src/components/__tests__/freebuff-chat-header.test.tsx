@@ -62,7 +62,9 @@ test.each([130, 42])(
     expect(frame).toContain('25/25 Freebucks remaining')
     expect(frame).not.toContain('/history')
     expect(frame).not.toContain('/dashboard')
-    expect(frame.split('\n')[0]!.trimStart()).toStartWith('███████')
+    expect(frame.split('\n')[0]!.trim()).toStartWith(
+      width === 130 ? '███████' : 'Freebuff',
+    )
     expect(frame).not.toContain('─ Freebuff ')
     rememberReferral({
       status: 'none',
