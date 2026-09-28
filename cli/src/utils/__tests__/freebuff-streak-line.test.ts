@@ -5,6 +5,7 @@ import {
   fitsFreebuffStreakOnHeadingRow,
   getFreebuffStreakBonusNote,
   getFreebuffStreakBonusNoteForLayout,
+  getFreebuffStreakBonusStatusForLayout,
   getFreebuffStreakInlineWidth,
   getFreebuffStreakLine,
 } from '../freebuff-streak-line'
@@ -175,21 +176,23 @@ describe('getFreebuffStreakBonusNote', () => {
         accessTier: 'full',
         freebucksDailyBonus: 15,
       }),
-    ).toBe('🎁 Streak perk: +15 Freebucks every Pacific day')
+    ).toBe('🎁 Streak perk: +15 Freebucks with your first message each day')
     expect(
       getFreebuffStreakBonusNote({
         streak: 14,
         accessTier: 'limited',
         freebucksDailyBonus: 15,
       }),
-    ).toBe('🎁 Streak perk: +15 Freebucks every Pacific day')
+    ).toBe('🎁 Streak perk: +15 Freebucks with your first message each day')
     expect(
       getFreebuffStreakBonusNote({
         streak: 3,
         accessTier: 'full',
         freebucksDailyBonus: 15,
       }),
-    ).toBe('🎁 4 more days to unlock +15 Freebucks every Pacific day')
+    ).toBe(
+      '🎁 4 more days to unlock +15 Freebucks with your first message each day',
+    )
     // An older server sends no field; null keeps the session copy.
     expect(
       getFreebuffStreakBonusNote({
@@ -246,6 +249,44 @@ describe('getFreebuffStreakBonusNoteForLayout', () => {
         terminalHeight: 30,
         availableWidth: note.length - 1,
       }),
+    ).toBeNull()
+  })
+})
+
+describe('getFreebuffStreakBonusStatusForLayout', () => {
+  const streak = {
+    streak: 9,
+    todayUsed: true,
+    lastUsageDate: '2026-09-27',
+    timeZone: 'America/Los_Angeles',
+    freebucksDailyBonus: 15,
+    nextResetAt: '2026-09-28T07:00:00.000Z',
+    todayCredited: true,
+  }
+  const layout = {
+    note: '🎁 Streak perk: +15 Freebucks with your first message each day',
+    streak,
+    availableWidth: 80,
+    // 09:00 in Singapore, still the 27th in Pacific.
+    now: new Date('2026-09-28T01:00:00.000Z'),
+    timeZone: 'Asia/Singapore',
+  }
+
+  test('shows the credit and the local reset under the perk note', () => {
+    expect(getFreebuffStreakBonusStatusForLayout(layout)).toBe(
+      "Today's +15 is in your wallet · next after 3:00 PM",
+    )
+  })
+
+  test('never without the note it explains, nor wider than a row', () => {
+    expect(
+      getFreebuffStreakBonusStatusForLayout({ ...layout, note: null }),
+    ).toBeNull()
+    expect(
+      getFreebuffStreakBonusStatusForLayout({ ...layout, streak: undefined }),
+    ).toBeNull()
+    expect(
+      getFreebuffStreakBonusStatusForLayout({ ...layout, availableWidth: 20 }),
     ).toBeNull()
   })
 })

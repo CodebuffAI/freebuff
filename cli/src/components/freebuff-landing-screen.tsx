@@ -40,6 +40,7 @@ import {
   FREEBUFF_STREAK_LABEL_GAP,
   fitsFreebuffStreakOnHeadingRow,
   getFreebuffStreakBonusNoteForLayout,
+  getFreebuffStreakBonusStatusForLayout,
   getFreebuffStreakLine,
 } from '../utils/freebuff-streak-line'
 import { formatSessionUnits } from '../utils/format-session-units'
@@ -550,6 +551,13 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
         availableWidth: contentMaxWidth,
       })
     : null
+  // Under the perk: whether today's Freebucks landed and when the streak day
+  // rolls over, in this terminal's clock (the day itself is Pacific).
+  const streakBonusStatus = getFreebuffStreakBonusStatusForLayout({
+    note: streakBonusNote,
+    streak: streakQuery.data,
+    availableWidth: contentMaxWidth,
+  })
   // On the landing screen the streak rides on the heading row, a fixed gap
   // after the title. Measured against the real strings (the label grows with
   // the day count), so
@@ -644,7 +652,9 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   )
   // Earned streak perk note: one marginTop row + wrap.
   const streakBonusRows = streakBonusNote
-    ? 1 /* marginTop */ + wrappedRows(streakBonusNote)
+    ? 1 /* marginTop */ +
+      wrappedRows(streakBonusNote) +
+      (streakBonusStatus ? wrappedRows(streakBonusStatus) : 0)
     : 0
   // The referral/GLM card and the session counter both live inside the model
   // selector's scrollbox now (the counter rides `belowToggle`, between the
@@ -832,6 +842,11 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
                   style={{ fg: theme.primary, wrapMode: 'word', marginTop: 1 }}
                 >
                   {streakBonusNote}
+                </text>
+              )}
+              {streakBonusStatus && (
+                <text style={{ fg: theme.muted, wrapMode: 'word' }}>
+                  {streakBonusStatus}
                 </text>
               )}
               {showByokOffer && <ByokWallOffer />}

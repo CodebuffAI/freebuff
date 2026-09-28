@@ -3,6 +3,7 @@ import {
   getFreebuffStreakGlmWeeklyUnits,
   isFreebuffStreakGlmBonusActive,
 } from './freebuff-streak'
+import { getZonedParts, getZonedYmd } from './zoned-time'
 
 /** Days in a streak "week" — the milestone the progress dots fill toward. */
 export const FREEBUFF_STREAK_WEEK = 7
@@ -71,11 +72,12 @@ function getFreebuffStreakPerk(params: {
   freebucksDailyBonus?: number | null
 }): string {
   if (params.freebucksDailyBonus != null && params.freebucksDailyBonus > 0) {
-    // Streak days are Pacific (`FREEBUFF_STREAK_TIME_ZONE`), while the daily
-    // pool the user watches resets on THEIR clock. East of Pacific one local
-    // day spans a Pacific midnight, so two credits can land the same local
-    // day and read as a double pay; naming the clock is the whole fix.
-    return `+${params.freebucksDailyBonus} Freebucks every Pacific day`
+    // Says WHEN it lands: the credit rides the first message of a streak day,
+    // not sign-in. WHICH day is the status line's job
+    // (`getFreebuffStreakBonusStatus`), in the reader's own clock — "every
+    // Pacific day" named the zone but still left Asia and Europe expecting it
+    // at their midnight (2026-09-27/28 "streak bonus not credited" reports).
+    return `+${params.freebucksDailyBonus} Freebucks with your first message each day`
   }
   // Only advertise GLM when the recurring full-access streak entitlement is
   // active, so the copy never promises a perk the gate won't honor.
@@ -126,4 +128,85 @@ export function getFreebuffStreakBonusNote(params: {
     return `🎁 ${remaining} more ${remaining === 1 ? 'day' : 'days'} to unlock ${perk}`
   }
   return `🎁 Streak perk: ${perk}`
+}
+
+/**
+ * When a streak day ends, as copy in the reader's clock: "midnight",
+ * "3:00 PM", or "3:00 PM tomorrow" once that time of day has already passed
+ * locally. `resetAt` is the server's `nextResetAt` (the next Pacific
+ * midnight), always less than a day ahead, so a date is never needed.
+ *
+ * `timeZone` defaults to the runtime's own zone — the user's, on the CLI, the
+ * Desktop orchestrator and a browser. A server must pass one.
+ */
+export function formatFreebuffStreakResetTime(params: {
+  resetAt: Date
+  now: Date
+  timeZone?: string
+}): string {
+  const timeZone =
+    params.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  const { hour, minute } = getZonedParts(params.resetAt, timeZone)
+  // Pacific readers (and anyone on its offset): the day ends tonight.
+  if (hour === 0 && minute === 0) return 'midnight'
+  const time = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+    .format(params.resetAt)
+    // Newer ICU puts a narrow no-break space before AM/PM; a terminal may not
+    // draw it, and it throws off width math that counts columns.
+    .replace(/\s/g, ' ')
+  return getZonedYmd(params.resetAt, timeZone) ===
+    getZonedYmd(params.now, timeZone)
+    ? time
+    : `${time} tomorrow`
+}
+
+/**
+ * Where today's Freebucks streak bonus stands, for a 7+ day streak on the
+ * meter: already in the wallet, still to come with a message, or next due
+ * after the reset — with the reset in the reader's own clock. Null off the
+ * meter, below the milestone, or without a server `nextResetAt` (an older
+ * server), so a client never guesses the boundary.
+ *
+ * The rules it states are the award's (`awardFreebuffDailyStreakReward` +
+ * `creditFreebucksStreakBonus`): one credit per Pacific day, written by the
+ * first free-mode message of that day. Nothing here changes them.
+ */
+export function getFreebuffStreakBonusStatus(params: {
+  streak: number
+  todayUsed: boolean
+  /** The streak response's `todayCredited`; null/undefined = unknown. */
+  todayCredited?: boolean | null
+  freebucksDailyBonus?: number | null
+  nextResetAt?: string | null
+  now?: Date
+  /** Render zone; the runtime's own when omitted. */
+  timeZone?: string
+}): string | null {
+  if (!FREEBUFF_STREAK_REWARDS_ENABLED) return null
+  const bonus = params.freebucksDailyBonus
+  if (bonus == null || !(bonus > 0)) return null
+  if (params.streak < FREEBUFF_STREAK_WEEK) return null
+  if (!params.nextResetAt) return null
+  const resetAt = new Date(params.nextResetAt)
+  const now = params.now ?? new Date()
+  // A payload held past its own reset describes a day that is already over.
+  if (!Number.isFinite(resetAt.getTime()) || resetAt <= now) return null
+  const when = formatFreebuffStreakResetTime({
+    resetAt,
+    now,
+    timeZone: params.timeZone,
+  })
+  if (params.todayCredited === true) {
+    return `Today's +${bonus} is in your wallet · next after ${when}`
+  }
+  // Today already counted, so its first message has been sent: whatever
+  // became of that credit, the next one belongs to the next day.
+  if (params.todayUsed) {
+    return `Next +${bonus} with your first message after ${when}`
+  }
+  return `Send a message before ${when} for today's +${bonus}`
 }

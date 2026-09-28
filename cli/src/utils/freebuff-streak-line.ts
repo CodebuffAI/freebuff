@@ -4,14 +4,18 @@
 export {
   FREEBUFF_STREAK_WEEK,
   getFreebuffStreakBonusNote,
+  getFreebuffStreakBonusStatus,
 } from '@codebuff/common/util/freebuff-streak-line'
 export type { FreebuffStreakLine } from '@codebuff/common/util/freebuff-streak-line'
 
 import {
   FREEBUFF_STREAK_WEEK,
   getFreebuffStreakBonusNote,
+  getFreebuffStreakBonusStatus,
   getFreebuffStreakLine as getSharedFreebuffStreakLine,
 } from '@codebuff/common/util/freebuff-streak-line'
+
+import type { FreebuffStreakResponse } from '@codebuff/common/types/freebuff-streak'
 
 import type { FreebuffStreakLine } from '@codebuff/common/util/freebuff-streak-line'
 
@@ -93,4 +97,32 @@ export function getFreebuffStreakBonusNoteForLayout(params: {
   if (!note || note.length > params.availableWidth) return null
 
   return note
+}
+
+/**
+ * The line under the earned perk note: whether today's Freebucks bonus has
+ * landed and when the next streak day starts, in the terminal's local time.
+ * Drawn only beneath a note that is itself on screen (pass that note), and
+ * only when it fits one row, like the note.
+ */
+export function getFreebuffStreakBonusStatusForLayout(params: {
+  /** The note this line sits under; null hides the status too. */
+  note: string | null
+  streak: FreebuffStreakResponse | undefined
+  availableWidth: number
+  now?: Date
+  timeZone?: string
+}): string | null {
+  if (!params.note || !params.streak) return null
+  const status = getFreebuffStreakBonusStatus({
+    streak: params.streak.streak,
+    todayUsed: params.streak.todayUsed,
+    todayCredited: params.streak.todayCredited,
+    freebucksDailyBonus: params.streak.freebucksDailyBonus,
+    nextResetAt: params.streak.nextResetAt,
+    now: params.now,
+    timeZone: params.timeZone,
+  })
+  if (!status || status.length > params.availableWidth) return null
+  return status
 }
