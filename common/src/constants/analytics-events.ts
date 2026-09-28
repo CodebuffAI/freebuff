@@ -387,6 +387,12 @@ export enum AnalyticsEvent {
   FREEBUFF_HOME_INSTALL_GUIDE_EXPANDED = 'freebuff.home_install_guide_expanded',
   FREEBUFF_HOME_FAQ_OPENED = 'freebuff.home_faq_opened',
 
+  // Freebuff - Home hero: the visitor committed to a product (`tab`, `surface`,
+  // `action`; see HeroTabs.tsx). A hero Desktop download is instead
+  // FREEBUFF_DESKTOP_DOWNLOAD_CLICKED at HOME_HERO_DOWNLOAD_LOCATION.
+  // Report: `bun scripts/home-hero-funnel.ts`.
+  FREEBUFF_HOME_HERO_SURFACE_CHOSEN = 'freebuff.home_hero_surface_chosen',
+
   // Freebuff - Home savings calculator CTA. Fires alongside
   // FREEBUFF_DESKTOP_DOWNLOAD_CLICKED (location: savings_calculator) but adds
   // what the visitor had configured at the moment they converted: `savings`
@@ -520,3 +526,5 @@ export enum AnalyticsEvent {
   // Common
   FLUSH_FAILED = 'common.flush_failed',
 }
+
+export const HOME_HERO_DOWNLOAD_LOCATION = 'home_hero'
