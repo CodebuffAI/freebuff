@@ -77,6 +77,8 @@ import {
   isFreebuffModelId,
   isFreebuffMultimodalModelId,
   isFreebuffPausedFreeModelId,
+  isFreebuffProOnlyEverySurfaceModelId,
+  isFreebuffProOnlyCatalogModelId,
   isFreebuffPremiumModelId,
   isFreebuffSessionModelAllowedForAccessTier,
   isFreebuffSessionModelAvailable,
@@ -1993,22 +1995,19 @@ describe('limited-offer models (Claude Fable 5.1)', () => {
 describe('Meta Muse Spark 1.3 Contributor', () => {
   const ID = FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID
 
-  test('is withdrawn: recognised, paused, and in no picker', () => {
-    // Withdrawn 2026-09-07, three days after it was listed. Not busy and not
-    // flapping — GONE: probed that day, all four Meta keys answered `404
-    // model_not_found` on 5 of 5 attempts each, while 1.2 answered 5 of 5 on
-    // the same keys in the same minute. 2,838 sessions a day were still being
-    // admitted on it and every one was served on DeepSeek V4 Flash by the
-    // fallback, which is a promise broken on every turn however well the
-    // fallback works.
-    expect(isFreebuffPausedFreeModelId(ID)).toBe(true)
-    expect(FREEBUFF_MODELS.map((model) => model.id)).not.toContain(ID)
-    expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).not.toContain(ID)
-    // RECOGNISED, though: every released CLI and Desktop holds this id and
-    // will keep sending it. An id the server does not know can only be
-    // refused, and a refusal is the retry loop of #1801; listed in
-    // SUPPORTED_FREEBUFF_MODELS it is coerced instead.
-    expect(SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)).toContain(ID)
+  test('is the offered Muse Spark row, paid-only on every surface', () => {
+    // Paused 2026-09-07 (`404 model_not_found` on every key), back on
+    // 2026-09-28 on a new key as a paid-only row, paywalled like Gemini 3.8
+    // Flash: listed everywhere, locked without a plan.
+    expect(isFreebuffPausedFreeModelId(ID)).toBe(false)
+    expect(FREEBUFF_MODELS.map((model) => model.id)).toContain(ID)
+    expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).toContain(ID)
+    expect(isFreebuffWebSelectableModelId(ID)).toBe(true)
+    expect(isFreebuffSessionModelId(ID)).toBe(true)
+    expect(isFreebuffProOnlyCatalogModelId(ID)).toBe(true)
+    expect(isFreebuffProOnlyEverySurfaceModelId(ID)).toBe(true)
+    expect(isFreebuffWebPremiumModelId(ID)).toBe(true)
+    expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(ID)
     expect(isSupportedFreebuffModelId(ID)).toBe(true)
   })
 })
@@ -2016,36 +2015,26 @@ describe('Meta Muse Spark 1.3 Contributor', () => {
 describe('Meta Muse Spark 1.2 Contributor', () => {
   const ID = FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID
 
-  test('is the offered Muse Spark row, everywhere', () => {
-    // It was retired to a draining row on 2026-09-02 in favour of 1.3, and it
-    // came back on 2026-09-07 when 1.3 turned out to be gone at Meta — `404
-    // model_not_found` on all four keys, 5 of 5 each, while this one answered
-    // 5 of 5 on the same keys in the same minute.
-    expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).toContain(ID)
+  test('leaves every picker but stays admissible, paid-only, for released binaries', () => {
+    expect(FREEBUFF_MODELS.map((model) => model.id)).not.toContain(ID)
+    expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).not.toContain(ID)
+    expect(isFreebuffPausedFreeModelId(ID)).toBe(false)
     expect(isFreebuffSessionModelId(ID)).toBe(true)
-    expect(isFreebuffWebPremiumModelId(ID)).toBe(true)
-    expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(ID)
-    // Offered by every picker now, not hidden behind the retirement list.
-    expect(isFreebuffWebSelectableModelId(ID)).toBe(true)
-    expect(FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS).not.toContain(ID)
-    expect(FREEBUFF_MODELS.map((model) => model.id)).toContain(ID)
-    expect(SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)).toContain(ID)
     expect(isSupportedFreebuffModelId(ID)).toBe(true)
+    // Not the free way into the same Meta budget 1.3 is paywalled on.
+    expect(isFreebuffProOnlyCatalogModelId(ID)).toBe(true)
+    expect(isFreebuffProOnlyEverySurfaceModelId(ID)).toBe(true)
+    // Still metered by a pool, although no picker derives it any more.
+    expect(isFreebuffWebPremiumModelId(ID)).toBe(true)
   })
 
-  test('a saved 1.2 pick is no longer pushed anywhere', () => {
-    // It used to point at 1.3, which was the only route from a browser that
-    // remembered 1.2 to the row that replaced it. 1.3 was withdrawn on
-    // 2026-09-07 (`404 model_not_found` on every key), so the arrow went with
-    // it: superseding a pick onto a model that cannot answer is worse than
-    // leaving it where it is.
+  test('a saved 1.2 pick moves to 1.3 wherever 1.3 is offered', () => {
     const webSelectable = FREEBUFF_WEB_MODELS.map((model) => model.id).filter(
       (id) => isFreebuffWebSelectableModelId(id),
     )
-    expect(
-      migrateSupersededFreebuffModelPreference(ID, webSelectable),
-    ).toBeNull()
-    expect(getFreebuffModelSupersededBy(ID, webSelectable)).toBeUndefined()
+    expect(migrateSupersededFreebuffModelPreference(ID, webSelectable)).toBe(
+      FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+    )
     // A surface that cannot show 1.3 is not told to switch to it.
     expect(
       migrateSupersededFreebuffModelPreference(ID, [
@@ -2081,8 +2070,8 @@ describe('Muse Spark rate-limit fallback', () => {
         FREEBUFF_STANDARD_MODEL_IDS.includes(MUSE_SPARK_FALLBACK_MODEL_ID),
     ).toBe(true)
     // Only the ids still OFFERED have to be metered by a pool: a withdrawn
-    // row (1.3 since 2026-09-07) is served to nobody, so it belongs to no
-    // pool and asserting otherwise would pin the wrong invariant.
+    // row is served to nobody, so it belongs to no pool. (Both Muse Spark
+    // versions are offered, paid-only, since 2026-09-28.)
     for (const id of FREEBUFF_MUSE_SPARK_MODEL_IDS) {
       if (isFreebuffPausedFreeModelId(id)) continue
       expect(isFreebuffWebPremiumModelId(id)).toBe(true)

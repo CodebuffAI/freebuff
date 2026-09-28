@@ -160,8 +160,9 @@ describe('paid plans at limited access', () => {
     // Pinned so that adding a row to a plan is a decision somebody states
     // here, not a diff that passes quietly.
     // MiMo 2.6 Pro joined on 2026-09-21, on Luna's terms (plan-only at
-    // limited access, Freebucks at full).
-    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(6)
+    // limited access, Freebucks at full). Muse Spark 1.3 joined on
+    // 2026-09-28, paid-only on every surface.
+    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(7)
   })
 
   test('a limited-tier plan-only row is never free at limited access', () => {

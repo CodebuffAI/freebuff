@@ -2620,11 +2620,10 @@ const FABLE_5_1_MODEL = {
 } as const satisfies FreebuffModelOption
 
 /**
- * Meta Muse Spark 1.2 Contributor — RETIRED from the picker on 2026-09-02 and
- * kept only so live Web sessions drain (FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS
- * hides it; see FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID for the removal
- * order). Every field except `supersededBy` is as it shipped, so a session
- * still on it behaves exactly as it did.
+ * Meta Muse Spark 1.2 Contributor. Out of every picker since 2026-09-28, when
+ * 1.3 took its slot as a paid-only row; 1.2 is paid-only too (released CLI and
+ * Desktop binaries still list it, and serve it to subscribers until they
+ * update). `supersededBy` moves a saved 1.2 pick onto 1.3 on newer clients.
  */
 const MUSE_SPARK_12_CONTRIBUTOR_MODEL = {
   id: FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
@@ -2641,21 +2640,23 @@ const MUSE_SPARK_12_CONTRIBUTOR_MODEL = {
   reasoningEffort: FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
   efforts: EFFORTS_THROUGH_XHIGH,
   defaultEffort: FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
-  // The one supersedes pointer in the catalog, and a strict version bump
-  // rather than a steer: identical price, identical terms, identical pool, a
-  // better model. migrateSupersededFreebuffModelPreference rewrites a saved
-  // 1.2 pick to 1.3 on load, which is the only way a browser that remembered
-  // this row ever reaches the new one — the retired row itself is not offered.
+  // A strict version bump rather than a steer: identical price, terms, pool
+  // and paywall, a better model. migrateSupersededFreebuffModelPreference
+  // rewrites a saved 1.2 pick to 1.3 on load.
+  supersededBy: {
+    modelId: FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+    notice: 'Muse Spark 1.3 replaces Muse Spark 1.2',
+    actionLabel: 'Switch to Muse Spark 1.3',
+  },
 } as const satisfies FreebuffModelOption
 
 /**
- * Meta Muse Spark 1.3 Contributor. Premium on Web and Cloud, and unusual in
- * WHY: every other premium row is priced premium, while this one is cheaper
- * per token than DeepSeek V4 Flash. What is scarce is the team-wide rate
- * limit, so the daily premium session pool is doing double duty here as a way
- * to bound how many people are inside that limit at once. See
- * FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID for why it stays off the CLI and
- * Desktop for now, and what widening it takes.
+ * Meta Muse Spark 1.3 Contributor. PAID-ONLY on every surface since
+ * 2026-09-28 (FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS): listed to everyone,
+ * drawn locked without a plan, and a press opens the plans page — the Gemini
+ * 3.8 Flash treatment. Cheaper per token than DeepSeek V4 Flash; what is
+ * scarce is Meta's team-wide rate limit (150 RPM / 3M TPM on the 2026-09-28
+ * key), and a request that meets it is answered by DeepSeek V4.1 Flash.
  */
 const MUSE_SPARK_13_CONTRIBUTOR_MODEL = {
   id: FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
@@ -2941,10 +2942,15 @@ export const FREEBUFF_MODELS = [
   // for an account without a plan (`freebuffPlanRequired`): no price, a "paid
   // plan" note, and a press that opens the plans page.
   GEMINI_38_FLASH_MODEL,
-  // Last in the list on purpose, as 1.3 was: this is still the one row that
-  // may answer as another model when Meta's team-wide ceiling is full, and a
-  // row carrying that caveat should not outrank one without it.
-  MUSE_SPARK_12_CONTRIBUTOR_MODEL,
+  // MUSE SPARK 1.3 CONTRIBUTOR REPLACES 1.2 (2026-09-28), as a PAID-ONLY row
+  // on every surface, paywalled exactly like Gemini 3.8 Flash
+  // (FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS + ..._EVERY_SURFACE_...). It came
+  // back because a new Meta key serves it cleanly: 30/30 answered on
+  // 2026-09-28 against the 16-49% `404 model_not_found` that paused it on
+  // 09-07. A rate limit still falls back to DeepSeek V4.1 Flash in the
+  // completions route. Last in the list on purpose: it may answer as another
+  // model when Meta's team-wide ceiling is full.
+  MUSE_SPARK_13_CONTRIBUTOR_MODEL,
 ] as const satisfies readonly FreebuffModelOption[]
 
 /** Public full-access models metered by the shared premium pool. The catalog
@@ -3030,12 +3036,9 @@ export const FREEBUFF_PAUSED_FREE_MODEL_IDS: readonly string[] = [
   // FREE_MODE_AGENT_MODELS entries stay until nothing live can still be bound
   // to it. The row stays in SUPPORTED_FREEBUFF_MODELS for good.
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
-  // Muse Spark 1.3, withdrawn 2026-09-07: `404 model_not_found` on every key,
-  // every attempt. Paused rather than deleted for the reason the whole list
-  // exists — an id the server does not recognise can only be refused, and a
-  // refusal is the retry loop that cost the limited tier 2.5x its admissions
-  // in #1801. See its row in FREEBUFF_MODELS for the measurement.
-  FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+  // (Muse Spark 1.3 sat here from 2026-09-07, when every key answered
+  // `404 model_not_found`, until 2026-09-28, when it returned as a paid-only
+  // row on a new key.)
   // Withdrawn from free mode entirely on 2026-08-20. Its hourly burn became
   // the largest single line on the bill — and is not worth that at any tier.
   //
@@ -3347,6 +3350,10 @@ export const FREEBUFF_WEB_PREMIUM_MODEL_IDS = Object.freeze([
       model.premium &&
       !FREEBUFF_MODELS.some((publicModel) => publicModel.id === model.id),
   ).map((model) => model.id),
+  // Muse Spark 1.2 left every picker on 2026-09-28 but stays admissible
+  // (paid-only) for the released CLI and Desktop binaries that list it, so it
+  // still needs a pool: nothing derived from the catalog names it any more.
+  FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
 ])
 
 /**
@@ -3911,6 +3918,11 @@ export const FREEBUFF_CLOUD_PLANNER_TURN_LIMIT = 12
 export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
   Object.freeze([
     FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
+    // Muse Spark 1.3 Contributor, paid-only on every surface from 2026-09-28,
+    // and 1.2 with it: released CLI and Desktop binaries still list 1.2, and
+    // it must not stay the free way into the same Meta budget.
+    FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+    FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
     // MiMo 2.6 Pro and GPT-6 Luna LEFT this list on 2026-09-25, by product
     // decision: every FULL-ACCESS account opens them with no plan (metered in
     // Freebucks at their own prices). They were paid-only from 2026-09-21, and
@@ -3934,7 +3946,14 @@ export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
  * here too until it opened to full access on 2026-09-25.)
  */
 export const FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS: readonly string[] =
-  Object.freeze([FREEBUFF_GEMINI_38_FLASH_MODEL_ID])
+  Object.freeze([
+    FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
+    // Both Muse Spark versions sit in the CLI/Desktop catalogs (1.3 in this
+    // build's FREEBUFF_MODELS, 1.2 in released binaries), so the surface is
+    // not what keeps them paid.
+    FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+    FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
+  ])
 
 export function isFreebuffProOnlyEverySurfaceModelId(
   id: string | null | undefined,
@@ -3967,7 +3986,11 @@ export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
   Object.freeze([
     FREEBUFF_GPT_6_LUNA_MODEL_ID,
     FREEBUFF_MIMO_V26_PRO_MODEL_ID,
-    ...FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
+    // Muse Spark 1.2 is excluded: it is not offered at limited access at all
+    // (not even with a plan), only kept for released binaries at full access.
+    ...FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS.filter(
+      (id) => id !== FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
+    ),
   ])
 
 export function isFreebuffLimitedTierPlanOnlyModelId(id: string): boolean {
@@ -4245,6 +4268,11 @@ export const FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS: readonly string[] =
     // With Luna: this list is what widens the limited tier for a subscriber,
     // so a plan-only row missing here would be offered and then coerced away.
     FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+    // Muse Spark 1.3 (2026-09-28): the plans page promises every plan model in
+    // every country, so a limited-region subscriber must be able to open it.
+    // (1.2 is deliberately absent: it survives only for released binaries at
+    // full access, and is not offered at limited access at all.)
+    FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
   ])
 
 /**
