@@ -136,6 +136,13 @@ export interface FreebuffModelOption {
    *  habit on a number that may move. Distinct from `warning` (data use) and
    *  `experimental` (reliability): a row can be dependable and still repriced. */
   priceWarning?: string
+  /** A standing special price that will end on a known date. Rendered as an
+   *  "Ending soon" badge whose tooltip is `tooltip`. Distinct from
+   *  `priceWarning` (a price that MIGHT move) — this one WILL end, and the
+   *  text should say when and what the row costs afterward. Clear it once the
+   *  deal actually ends (or update the copy if it is extended). `short` is
+   *  the CLI's form, which has no tooltip and little width. */
+  dealEndingSoon?: { tooltip: string; short: string }
   /** Tooltip attached to the tagline, for a tagline that names a behavior the
    *  word alone cannot explain (e.g. "Queue"). Rendered with the same
    *  dotted-underline affordance as the data-use "Data" label, so a row can
@@ -2539,6 +2546,13 @@ const GLM_V53_FLASH_MODEL = {
   // anyone anywhere, and a notice here would rewrite saved picks on every load
   // (see migrateSupersededFreebuffModelPreference).
   isNew: true,
+  // Notice only: nothing here changes the price. The switch to 15/hr is a
+  // separate change on the day.
+  dealEndingSoon: {
+    tooltip:
+      'This special deal ends September 30. After that, GLM 5.3 Flash will cost 15 Freebucks an hour.',
+    short: 'Deal ends Sep 30 · 15/hr after',
+  },
 } as const satisfies FreebuffModelOption
 
 /**

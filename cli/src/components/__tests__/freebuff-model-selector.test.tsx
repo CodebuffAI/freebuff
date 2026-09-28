@@ -934,7 +934,8 @@ describe('FreebuffModelSelector plan line', () => {
         blockedBy: 'daily',
       },
     } as never)
-    const frame = (await renderSelector()).captureCharFrame()
+    // The blocking line sits under the whole catalog; 40 rows no longer reach it.
+    const frame = (await renderSelector(48)).captureCharFrame()
     expect(frame).toContain("today's plan sessions are used")
     expect(frame).toContain('resets in 3h')
   })
