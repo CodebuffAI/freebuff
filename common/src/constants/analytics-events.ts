@@ -365,15 +365,6 @@ export enum AnalyticsEvent {
   FREEBUFF_WEB_TOUR_STEP = 'freebuff.web_tour_step',
   FREEBUFF_WEB_TOUR_FINISHED = 'freebuff.web_tour_finished',
 
-  // The bookmark gate: a blocking card shown once per browser, right after the
-  // user's first prompt in a Web or Cloud workspace, asking them to bookmark
-  // the page before continuing. `surface` is web | cloud and `variant` is
-  // pointer | touch (the two illustrations). `_SHOWN` minus `_CONFIRMED` is the
-  // abandon rate — the number to watch, since the card has no other exit and a
-  // gap between the two means people are closing the tab instead.
-  FREEBUFF_BOOKMARK_GATE_SHOWN = 'freebuff.bookmark_gate_shown',
-  FREEBUFF_BOOKMARK_GATE_CONFIRMED = 'freebuff.bookmark_gate_confirmed',
-
   // Freebuff - Cloud landing page (/cloud). Fired when a logged-out visitor
   // clicks a "Continue with GitHub" / "Connect your repo" CTA; `location`
   // distinguishes hero vs the migration/lovable section vs the final CTA. Best
