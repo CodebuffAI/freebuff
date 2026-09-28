@@ -196,6 +196,9 @@ export const runAgentStep = async (
     onAgentUsageReceived?: (usage: AgentUsageData) => void
     onAgentUsageIncomplete?: () => void
     onCompaction?: (data: ContextCompactionData) => void
+    /** A root-agent compaction pass began; `onCompactionEnd` follows whatever its outcome. */
+    onCompactionStart?: (data: Pick<ContextCompactionData, 'trigger'>) => void
+    onCompactionEnd?: () => void
   } & ParamsExcluding<
     typeof processStream,
     | 'agentContext'
@@ -1202,76 +1205,85 @@ export async function loopAgentSteps(
         if (trigger) {
           const before = currentAgentState.directCreditsUsed
           const started = Date.now()
-          // A compaction failure must never fail the turn: a summarizer error
-          // or malformed handoff falls back to the mechanical pass.
-          const compacted = await compactWithModelOrFallback({
-            messages: currentAgentState.messageHistory,
-            system,
-            maxContextLength,
-            fixedTokenCount,
-            maxOutputTokens: policy.maxOutputTokens,
-            // An automatic pass must leave the run under its own trigger, or
-            // the next step fires it again on the fallback's output.
-            ...(trigger === 'manual'
-              ? {}
-              : {
-                  fallbackTargetTokens: Math.floor(
-                    thresholdTokens * COMPACTION_LOW_WATER,
-                  ),
-                }),
-            signal,
-            logger,
-            runId,
-            model: agentTemplate.model,
-            trigger,
-            stream: (messages, maxOutputTokens, onFinishReason) =>
-              getAgentStreamFromTemplate({
-                ...params,
-                agentId: agentType,
-                template: agentTemplate,
-                runId,
-                messages,
-                tools: compactionTools,
-                toolChoice: 'required',
-                maxOutputTokens,
-                onFinishReason,
-                onCostCalculated: async (credits) => {
-                  currentAgentState.creditsUsed += credits
-                  currentAgentState.directCreditsUsed += credits
-                },
-                // Compaction usage is spend, not the next root request's context.
-                onUsageReceived: (usage) =>
-                  params.onAgentUsageReceived?.({
-                    ...usage,
-                    isRoot: false,
-                    agentId: currentAgentState.agentId,
+          const isRoot = !initialAgentState.parentId
+          if (isRoot) params.onCompactionStart?.({ trigger })
+          let compacted: Awaited<ReturnType<typeof compactWithModelOrFallback>>
+          // Ends after the receipt, so a host never sees a gap between the
+          // pass it is showing and the handoff that replaces it.
+          try {
+            // A compaction failure must never fail the turn: a summarizer error
+            // or malformed handoff falls back to the mechanical pass.
+            compacted = await compactWithModelOrFallback({
+              messages: currentAgentState.messageHistory,
+              system,
+              maxContextLength,
+              fixedTokenCount,
+              maxOutputTokens: policy.maxOutputTokens,
+              // An automatic pass must leave the run under its own trigger, or
+              // the next step fires it again on the fallback's output.
+              ...(trigger === 'manual'
+                ? {}
+                : {
+                    fallbackTargetTokens: Math.floor(
+                      thresholdTokens * COMPACTION_LOW_WATER,
+                    ),
                   }),
-                onUsageIncomplete: params.onAgentUsageIncomplete,
-              }),
-          })
-          await addAgentStep({
-            ...params,
-            agentRunId: runId,
-            stepNumber: totalSteps,
-            credits: currentAgentState.directCreditsUsed - before,
-            childRunIds: [],
-            messageId: null,
-            status: 'completed',
-            startTime,
-          })
-          if (compacted) {
-            currentAgentState.messageHistory = compacted.messages
-            currentAgentState.contextTokenBaseline = undefined
-            currentAgentState.contextTokenCount = compacted.postTokens
-            if (!initialAgentState.parentId)
-              params.onCompaction?.({
-                trigger,
-                thresholdTokens,
-                summary: compacted.summary,
-                preTokens: compacted.preTokens,
-                postTokens: compacted.postTokens,
-                durationMs: Date.now() - started,
-              })
+              signal,
+              logger,
+              runId,
+              model: agentTemplate.model,
+              trigger,
+              stream: (messages, maxOutputTokens, onFinishReason) =>
+                getAgentStreamFromTemplate({
+                  ...params,
+                  agentId: agentType,
+                  template: agentTemplate,
+                  runId,
+                  messages,
+                  tools: compactionTools,
+                  toolChoice: 'required',
+                  maxOutputTokens,
+                  onFinishReason,
+                  onCostCalculated: async (credits) => {
+                    currentAgentState.creditsUsed += credits
+                    currentAgentState.directCreditsUsed += credits
+                  },
+                  // Compaction usage is spend, not the next root request's context.
+                  onUsageReceived: (usage) =>
+                    params.onAgentUsageReceived?.({
+                      ...usage,
+                      isRoot: false,
+                      agentId: currentAgentState.agentId,
+                    }),
+                  onUsageIncomplete: params.onAgentUsageIncomplete,
+                }),
+            })
+            await addAgentStep({
+              ...params,
+              agentRunId: runId,
+              stepNumber: totalSteps,
+              credits: currentAgentState.directCreditsUsed - before,
+              childRunIds: [],
+              messageId: null,
+              status: 'completed',
+              startTime,
+            })
+            if (compacted) {
+              currentAgentState.messageHistory = compacted.messages
+              currentAgentState.contextTokenBaseline = undefined
+              currentAgentState.contextTokenCount = compacted.postTokens
+              if (isRoot)
+                params.onCompaction?.({
+                  trigger,
+                  thresholdTokens,
+                  summary: compacted.summary,
+                  preTokens: compacted.preTokens,
+                  postTokens: compacted.postTokens,
+                  durationMs: Date.now() - started,
+                })
+            }
+          } finally {
+            if (isRoot) params.onCompactionEnd?.()
           }
           // A manual request is a maintenance operation, never a coding turn.
           if (manualCompaction) break

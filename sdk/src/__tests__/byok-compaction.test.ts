@@ -121,12 +121,18 @@ async function longTask(byok: ResolvedByokConnection, fetchImpl: typeof fetch) {
   globalThis.fetch = fetchImpl
   const client = new CodebuffClient({ cwd, agentDefinitions: [agent], byok })
   const passes: Array<{ trigger: string }> = []
+  const lifecycle: string[] = []
   const result = await client.run({
     agent: agent.id,
     prompt: `Review file1.ts through file${FILES}.ts.`,
-    onCompaction: (receipt) => passes.push(receipt),
+    onCompaction: (receipt) => {
+      passes.push(receipt)
+      lifecycle.push('receipt')
+    },
+    onCompactionStart: ({ trigger }) => lifecycle.push(`start:${trigger}`),
+    onCompactionEnd: () => lifecycle.push('end'),
   })
-  return { result, passes }
+  return { result, passes, lifecycle }
 }
 
 describe('BYOK compaction on an unlisted model', () => {
@@ -136,11 +142,16 @@ describe('BYOK compaction on an unlisted model', () => {
 
   test('the untouched 32k default compacts over and over (the reported bug)', async () => {
     const { counts, fetchImpl } = scriptedProvider({ data: [] })
-    const { result, passes } = await longTask(await savedWithFormDefaults(), fetchImpl)
+    const { result, passes, lifecycle } = await longTask(await savedWithFormDefaults(), fetchImpl)
     // Pinned so the next test is known to exercise the real failure: twelve
     // ordinary reads cost repeated compactions on the stored default (four
     // before the runtime deferred futile threshold compactions, two after).
     expect(passes.length).toBeGreaterThanOrEqual(2)
+    // Each pass is bracketed, and ends only after its receipt: a host showing
+    // "Compacting…" never drops it before the handoff arrives.
+    expect(lifecycle).toEqual(
+      passes.flatMap(() => ['start:context_limit', 'receipt', 'end']),
+    )
     expect(passes.every((pass) => pass.trigger === 'context_limit')).toBe(true)
     expect(counts.compactionRequests).toBeGreaterThanOrEqual(passes.length)
     expect(result.output.type).not.toBe('error')
@@ -154,8 +165,9 @@ describe('BYOK compaction on an unlisted model', () => {
     expect(Object.keys(effective)).not.toContain('apiKey')
     expect(counts.modelListings).toBe(1)
 
-    const { result, passes } = await longTask(effective, fetchImpl)
+    const { result, passes, lifecycle } = await longTask(effective, fetchImpl)
     expect(passes).toEqual([])
+    expect(lifecycle).toEqual([])
     expect(counts.compactionRequests).toBe(0)
     expect(counts.work).toBe(FILES + 1)
     expect(result.output.type).not.toBe('error')

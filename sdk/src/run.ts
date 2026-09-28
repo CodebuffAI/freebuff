@@ -282,6 +282,9 @@ export type RunOptions = {
   onUsageIncomplete?: () => void
   /** Successful model-generated compaction, including the exact saved summary. */
   onCompaction?: (data: ContextCompactionData) => void
+  /** A compaction pass began. `onCompactionEnd` always follows, after any `onCompaction`. */
+  onCompactionStart?: (data: Pick<ContextCompactionData, 'trigger'>) => void
+  onCompactionEnd?: () => void
   /**
    * The shell this run's terminal commands actually execute in, when the host's
    * broker picks one other than the default (the sponsored Windows floor runs
@@ -553,6 +556,8 @@ async function runOnce({
   onUsage,
   onUsageIncomplete,
   onCompaction,
+  onCompactionStart,
+  onCompactionEnd,
   terminalShell,
   projectKey,
   traceSessionId: traceSessionIdOption,
@@ -1054,6 +1059,8 @@ async function runOnce({
     onAgentUsageReceived: report(onUsage),
     onAgentUsageIncomplete: reportSignal(onUsageIncomplete),
     onCompaction: report(onCompaction),
+    onCompactionStart: report(onCompactionStart),
+    onCompactionEnd: reportSignal(onCompactionEnd),
   }).catch((error) => {
     let errorMessage = isFetchIdleTimeoutError(error)
       ? FETCH_IDLE_TIMEOUT_USER_MESSAGE
