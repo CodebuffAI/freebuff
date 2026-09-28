@@ -115,9 +115,9 @@ describe('isFetchIdleTimeoutError', () => {
   it('detects a timeout nested inside an AI SDK RetryError wrapper', () => {
     const timeoutError = new Error('The operation timed out.')
     timeoutError.name = 'TimeoutError'
-    const retryError = new Error(
-      'Failed after 3 attempts.',
-    ) as Error & { errors: unknown[] }
+    const retryError = new Error('Failed after 3 attempts.') as Error & {
+      errors: unknown[]
+    }
     retryError.errors = [timeoutError]
     expect(isFetchIdleTimeoutError(retryError)).toBe(true)
   })
@@ -189,6 +189,30 @@ describe('isTransientNetworkError', () => {
     const outer = new Error('Cannot connect to API')
     ;(outer as Error & { cause: unknown }).cause = inner
     expect(isTransientNetworkError(outer)).toBe(true)
+  })
+
+  it("detects undici's body-read failure on a closed socket", () => {
+    // The exact shape Node's fetch throws when the peer closes the socket
+    // mid-body (reproduced against node:http + socket.destroy()).
+    const socketError = Object.assign(new Error('other side closed'), {
+      name: 'SocketError',
+      code: 'UND_ERR_SOCKET',
+    })
+    expect(
+      isTransientNetworkError(
+        new TypeError('terminated', { cause: socketError }),
+      ),
+    ).toBe(true)
+    // The same error after the cause was lost (serialized, rewrapped).
+    expect(isTransientNetworkError(new TypeError('terminated'))).toBe(true)
+    expect(isTransientNetworkError(socketError)).toBe(true)
+  })
+
+  it('does not treat other "terminated" messages as a dropped connection', () => {
+    expect(isTransientNetworkError(new Error('terminated'))).toBe(false)
+    expect(
+      isTransientNetworkError(new TypeError('process terminated unexpectedly')),
+    ).toBe(false)
   })
 
   it('returns false for unrelated errors', () => {

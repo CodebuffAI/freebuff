@@ -33,6 +33,32 @@ const serveSse = async (body: string) => {
   return { server, port: (server.address() as { port: number }).port }
 }
 
+/** Serves SSE headers and one event, destroys the socket, and reads the body
+ *  with Node's fetch; prints the thrown error's shape as JSON. */
+const NODE_BODY_CUT_SCRIPT = `
+const http = require('node:http')
+const server = http.createServer((_req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+  res.write('data: {}\\n\\n')
+  setTimeout(() => res.socket.destroy(), 20)
+})
+server.listen(0, '127.0.0.1', async () => {
+  try {
+    const res = await fetch('http://127.0.0.1:' + server.address().port)
+    const reader = res.body.getReader()
+    while (!(await reader.read()).done) {}
+    console.log('null')
+  } catch (e) {
+    console.log(JSON.stringify({
+      isTypeError: e instanceof TypeError,
+      message: e.message,
+      cause: e.cause && { name: e.cause.name, message: e.cause.message, code: e.cause.code },
+    }))
+  }
+  server.close()
+})
+`
+
 const consume = async (port: number) => {
   const result = streamText({
     model: new OpenAICompatibleChatLanguageModel('m', {
@@ -108,6 +134,36 @@ describe('late failure delivered in band', () => {
       classifyThrownStreamRecovery({ aborted: false, error: cut }),
     ).not.toBeNull()
   })
+
+  // The runner service runs the SDK on Node, where a body cut after the
+  // headers is undici's `TypeError: terminated` (cause UND_ERR_SOCKET), not
+  // Bun's message above. Until it was classified, every such cut ended the
+  // runner's turn in "Agent run error: terminated". Bun resolves `undici` to
+  // its own fetch, so the socket is cut under real Node and the error's shape
+  // rebuilt here.
+  it.skipIf(!Bun.which('node'))(
+    'recovers a connection cut read through Node fetch (undici)',
+    () => {
+      const run = Bun.spawnSync(['node', '-e', NODE_BODY_CUT_SCRIPT])
+      const shape = JSON.parse(run.stdout.toString().trim()) as {
+        isTypeError: boolean
+        message: string
+        cause?: { name: string; message: string; code: string }
+      }
+      expect(shape.isTypeError).toBe(true)
+      expect(shape.message).toBe('terminated')
+      expect(shape.cause?.code).toBe('UND_ERR_SOCKET')
+
+      const cause = Object.assign(new Error(shape.cause!.message), shape.cause)
+      const error = new TypeError(shape.message, { cause })
+      expect(isTransientNetworkError(error)).toBe(true)
+      expect(
+        classifyThrownStreamRecovery({ aborted: false, error })?.source,
+      ).toBe('stream-interrupted')
+      // A user cancel is still never a recovery.
+      expect(classifyThrownStreamRecovery({ aborted: true, error })).toBeNull()
+    },
+  )
 
   it('needs the object form — a bare string fails the response schema', async () => {
     // Guards the shape choice: `{error: "..."}` parses as a validation failure

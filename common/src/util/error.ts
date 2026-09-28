@@ -421,7 +421,26 @@ const TRANSIENT_NETWORK_ERROR_CODES = new Set([
   'ConnectionClosed',
   'ConnectionRefused',
   'FailedToOpenSocket',
+  // undici (Node's fetch): the peer closed the socket. It rides as the cause
+  // of the body-read TypeError below.
+  'UND_ERR_SOCKET',
 ])
+
+/**
+ * undici's error when a response body is cut after the headers arrived:
+ * `TypeError: terminated`, cause `SocketError: other side closed`
+ * (UND_ERR_SOCKET). Bun reports the same cut as "The socket connection was
+ * closed unexpectedly". Matched on the exact message and type, because
+ * "terminated" alone is too common a word. Without this, an SDK host running
+ * on Node ended the turn in an error on a dropped model stream, where a Bun
+ * host gets the stream-interrupted continuation step.
+ */
+function isUndiciBodyTerminated(candidate: object): boolean {
+  return (
+    candidate instanceof TypeError &&
+    (candidate as { message?: unknown }).message === 'terminated'
+  )
+}
 
 /**
  * Detects transient connection-level failures (socket closed/reset, connection
@@ -433,6 +452,7 @@ const TRANSIENT_NETWORK_ERROR_CODES = new Set([
 export function isTransientNetworkError(error: unknown): boolean {
   for (const candidate of getApiErrorCandidates(error)) {
     if (!candidate || typeof candidate !== 'object') continue
+    if (isUndiciBodyTerminated(candidate)) return true
     const { message, code } = candidate as {
       message?: unknown
       code?: unknown
