@@ -652,6 +652,32 @@ describe('getAxiomOnlyLogEvent', () => {
     })
   })
 
+  test('keeps the ranker counters and drops its campaign ids', () => {
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: ADS_FIRST_PARTY_DECISION_EVENT,
+        outcome: 'fill',
+        ranker_mode: 'shadow',
+        ranker_version: 'l2v0_2026_09',
+        ranker_evidence: 'ready',
+        ranker_scored_placements: 2,
+        ranker_disagreements: 1,
+        ranker_lead_campaign_id: 'campaign-123',
+        rankedLeadCampaignId: 'campaign-123',
+      }),
+    ).toEqual({
+      event: ADS_FIRST_PARTY_DECISION_EVENT,
+      data: {
+        outcome: 'fill',
+        ranker_mode: 'shadow',
+        ranker_version: 'l2v0_2026_09',
+        ranker_evidence: 'ready',
+        ranker_scored_placements: 2,
+        ranker_disagreements: 1,
+      },
+    })
+  })
+
   test('names and sanitizes first-party settlement telemetry', () => {
     expect(
       getAxiomOnlyLogEvent(

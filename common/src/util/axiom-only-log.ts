@@ -694,6 +694,21 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   frequency_reservation_ms: 'number',
   frequency_max_reservation_ms: 'number',
   duration_ms: 'number',
+  /**
+   * The L2 v0 ranker, present only while `FREEBUFF_FIRST_PARTY_RANKER` is not
+   * `off`: its mode and model version, the state of its evidence -- `ready`
+   * (scoring produced scores), `unscored` (evidence, but nothing scorable),
+   * `uncovered` (the newest window is not covered and nothing was retained)
+   * or `unavailable` (not loaded yet, loads failing, or aged out) -- and per
+   * request the placements it scored and those whose ranked pick differs
+   * from today's rotation pick -- the shadow disagreement rate. Counts only;
+   * the two picks' campaign ids stay in-process.
+   */
+  ranker_mode: 'string',
+  ranker_version: 'string',
+  ranker_evidence: 'string',
+  ranker_scored_placements: 'number',
+  ranker_disagreements: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 /** Settlement telemetry deliberately excludes impression, campaign, and
