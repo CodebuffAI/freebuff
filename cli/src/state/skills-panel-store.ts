@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { immer } from 'zustand/middleware/immer'
 
 interface SkillsPanelState {
   /** The skills panel takes the composer's place while open, the way the
@@ -10,18 +9,8 @@ interface SkillsPanelState {
   closeSkillsPanel: () => void
 }
 
-export const useSkillsPanelStore = create<SkillsPanelState>()(
-  immer((set) => ({
-    skillsPanelOpen: false,
-    openSkillsPanel: () => {
-      set((state) => {
-        state.skillsPanelOpen = true
-      })
-    },
-    closeSkillsPanel: () => {
-      set((state) => {
-        state.skillsPanelOpen = false
-      })
-    },
-  })),
-)
+export const useSkillsPanelStore = create<SkillsPanelState>()((set) => ({
+  skillsPanelOpen: false,
+  openSkillsPanel: () => set({ skillsPanelOpen: true }),
+  closeSkillsPanel: () => set({ skillsPanelOpen: false }),
+}))

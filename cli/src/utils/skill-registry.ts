@@ -154,28 +154,6 @@ export function getSkillCount(): number {
 }
 
 // ============================================================================
-// UI/Display utilities
-// ============================================================================
-
-/**
- * Get a message describing loaded skills for display.
- */
-export function getLoadedSkillsMessage(): string | null {
-  const skills = Object.values(skillsCache)
-
-  if (skills.length === 0) {
-    return null
-  }
-
-  const header = `Loaded ${skills.length} skill${skills.length === 1 ? '' : 's'}`
-  const skillList = skills
-    .map((skill) => `  - ${skill.name}: ${skill.description.slice(0, 60)}${skill.description.length > 60 ? '...' : ''}`)
-    .join('\n')
-
-  return `${header}\n${skillList}`
-}
-
-// ============================================================================
 // Testing utilities
 // ============================================================================
 
