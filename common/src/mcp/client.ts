@@ -4,14 +4,13 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 import { getErrorObject } from '../util/error'
+import { mcpContentToToolResultOutputs } from './content-mapping'
 
 import type { MCPConfig } from '../types/mcp'
 import type { ToolResultOutput } from '../types/messages/content-part'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type {
-  BlobResourceContents,
   CallToolResult,
-  TextResourceContents,
 } from '@modelcontextprotocol/sdk/types.js'
 
 // Cap on how much of a failed stdio server's stderr we retain for the error
@@ -173,14 +172,6 @@ export function listMCPTools(
   return listToolsCache[clientId]
 }
 
-function getResourceData(
-  resource: TextResourceContents | BlobResourceContents,
-): string {
-  if ('text' in resource) return resource.text as string
-  if ('blob' in resource) return resource.blob as string
-  return ''
-}
-
 export async function callMCPTool(
   clientId: string,
   ...args: Parameters<typeof Client.prototype.callTool>
@@ -193,41 +184,5 @@ export async function callMCPTool(
   const result = callResult as CallToolResult
   const content = result.content
 
-  return content.map((c: (typeof content)[number]) => {
-    if (c.type === 'text') {
-      return {
-        type: 'json',
-        value: c.text,
-      } satisfies ToolResultOutput
-    }
-    if (c.type === 'audio') {
-      return {
-        type: 'media',
-        data: c.data,
-        mediaType: c.mimeType,
-      } satisfies ToolResultOutput
-    }
-    if (c.type === 'image') {
-      return {
-        type: 'media',
-        data: c.data,
-        mediaType: c.mimeType,
-      } satisfies ToolResultOutput
-    }
-    if (c.type === 'resource') {
-      return {
-        type: 'media',
-        data: getResourceData(c.resource),
-        mediaType: c.resource.mimeType ?? 'text/plain',
-      } satisfies ToolResultOutput
-    }
-    const fallbackValue =
-      'uri' in c && typeof (c as { uri: unknown }).uri === 'string'
-        ? (c as { uri: string }).uri
-        : JSON.stringify(c)
-    return {
-      type: 'json',
-      value: fallbackValue,
-    } satisfies ToolResultOutput
-  })
+  return mcpContentToToolResultOutputs(content)
 }

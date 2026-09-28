@@ -1,5 +1,7 @@
 import { mapValues } from 'lodash'
 
+import { toTokenCountInputSchema } from '../../../util/to-json-schema'
+
 import {
   validateAndGetAgentTemplate,
   validateAgentInput,
@@ -111,10 +113,12 @@ export const handleSpawnAgentInline = (async (
       },
     ),
     systemPrompt: system,
+    // Subagent tool definitions also live in agent state (persisted,
+    // snapshotted), so inputSchemas must be plain JSON Schema here too.
     toolDefinitions: mapValues(parentTools, (tool) => ({
       description:
         typeof tool.description === 'string' ? tool.description : undefined,
-      inputSchema: tool.inputSchema as {},
+      inputSchema: toTokenCountInputSchema(tool.inputSchema) ?? {},
     })),
   }
 
