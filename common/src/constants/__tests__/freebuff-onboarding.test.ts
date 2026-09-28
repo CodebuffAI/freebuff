@@ -360,6 +360,7 @@ describe('parseOnboardingSurface', () => {
   it('accepts a known surface and falls back to web for anything else', () => {
     expect(parseOnboardingSurface('cli_login')).toBe('cli_login')
     expect(parseOnboardingSurface('web')).toBe('web')
+    expect(parseOnboardingSurface('desktop')).toBe('desktop')
     expect(parseOnboardingSurface(undefined)).toBe('web')
     expect(parseOnboardingSurface('desktop; drop table')).toBe('web')
   })

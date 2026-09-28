@@ -310,9 +310,11 @@ export const ONBOARDING_OTHER_TEXT_MAX = 200
  * Where a submission was made. Stored on the row for segmentation. `web` is
  * the dashboard dialog; `cli_login` is the browser landing page every CLI and
  * Desktop sign-in ends on (the two are indistinguishable there — both redeem
- * the same auth code).
+ * the same auth code); `desktop` is the app's own dialog, asked after sign-in
+ * because the app takes focus back from that landing page before most people
+ * reach its questions.
  */
-export const ONBOARDING_SURFACES = ['web', 'cli_login'] as const
+export const ONBOARDING_SURFACES = ['web', 'cli_login', 'desktop'] as const
 export type OnboardingSurface = (typeof ONBOARDING_SURFACES)[number]
 
 /** A client-supplied surface, or `web` for anything unknown: an older form
