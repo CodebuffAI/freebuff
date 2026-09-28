@@ -75,6 +75,12 @@ describe('classifyOnboardingOtherText — write-ins folded into real options', (
     }
   })
 
+  it('counts every Facebook spelling as the same option', () => {
+    for (const text of ['facebook', 'Facebook group', 'face book', 'FB ads']) {
+      expect(classifyOnboardingOtherText('referral_source', text)).toBe('tiktok')
+    }
+  })
+
   it('counts AI assistants as the Google / AI search option', () => {
     for (const text of ['ChatGPT', 'chat gpt', 'AI', 'gemini', 'perplexity']) {
       expect(classifyOnboardingOtherText('referral_source', text)).toBe('search')
@@ -85,13 +91,16 @@ describe('classifyOnboardingOtherText — write-ins folded into real options', (
     expect(classifyOnboardingOtherText('referral_source', 'instagram AI page')).toBe(
       'tiktok',
     )
+    expect(classifyOnboardingOtherText('referral_source', 'facebook AI group')).toBe(
+      'tiktok',
+    )
   })
 
   it('leaves genuinely other answers alone', () => {
     // The AI rule is the dangerous one: a substring match would swallow
     // "email", "said", "chair" and quietly inflate a channel that never
     // referred anyone.
-    for (const text of ['forums', 'my brother', 'email newsletter', 'a fair']) {
+    for (const text of ['forums', 'my brother', 'email newsletter', 'a fair', 'fbi']) {
       expect(classifyOnboardingOtherText('referral_source', text)).toBeNull()
     }
   })
@@ -342,6 +351,13 @@ describe('question set (2026-09-16 edit)', () => {
   it('keeps the build and subscriptions questions multi-select', () => {
     expect(byId.intended_use.multi).toBe(true)
     expect(byId.subscriptions.multi).toBe(true)
+  })
+  it('offers Facebook on the Instagram / TikTok chip, keeping its id', () => {
+    // A new id would restart the count from zero; Facebook is the same audience.
+    const ids = byId.referral_source.options.map((o) => o.id)
+    expect(ids).not.toContain('facebook')
+    const social = byId.referral_source.options.find((o) => o.id === 'tiktok')
+    expect(social?.label).toBe('Instagram / TikTok / Facebook')
   })
   it('shuffles only the referral question', () => {
     expect(

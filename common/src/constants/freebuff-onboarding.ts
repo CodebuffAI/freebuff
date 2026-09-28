@@ -65,12 +65,12 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
     // mouth, which is where most of it actually comes from.
     //
     // Instagram leads because it was the single largest write-in by a distance,
-    // and it shares an audience with TikTok closely enough that splitting them
-    // would buy two thin numbers instead of one usable one.
+    // and it shares an audience with TikTok — and Facebook with both — closely
+    // enough that splitting them would buy thin numbers instead of one usable one.
     options: [
       // Keeps the `tiktok` id: those answers are the same audience, and a new
       // id would restart the count from zero for the sake of a tidier string.
-      { id: 'tiktok', label: 'Instagram / TikTok' },
+      { id: 'tiktok', label: 'Instagram / TikTok / Facebook' },
       { id: 'youtube', label: 'YouTube' },
       { id: 'x_twitter', label: 'X / Twitter' },
       { id: 'search', label: 'Google / AI search' },
@@ -191,7 +191,10 @@ export const ONBOARDING_OTHER_TEXT_RULES: Partial<
   Record<OnboardingQuestionId, { optionId: string; pattern: RegExp }[]>
 > = {
   referral_source: [
-    { optionId: 'tiktok', pattern: /insta|\btiktok\b|\btik tok\b|\big\b/i },
+    {
+      optionId: 'tiktok',
+      pattern: /insta|\btiktok\b|\btik tok\b|\big\b|face\s?book|\bfb\b/i,
+    },
     {
       optionId: 'search',
       pattern:
@@ -237,7 +240,7 @@ export type StoredOnboardingAnswer = {
  * built under, and a mismatch is what triggers a full rebuild — so forgetting
  * this bump leaves the admin bars counting history under the old rules.
  */
-export const ONBOARDING_TALLY_VERSION = 3
+export const ONBOARDING_TALLY_VERSION = 4
 
 /** Every current option at zero, so a question nobody has answered still
  *  renders its full bar list rather than vanishing. */
