@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { useTerminalLayout } from './use-terminal-layout'
 import { buildAdAuctionRequest } from '../ads/ad-request'
+import { trackAdClickAck, watchAdClickReturn } from '../ads/click-return'
 import { getAdsEnabled } from '../commands/ads'
 import { useChatStore } from '../state/chat-store'
 import { isUserActive, subscribeToActivity } from '../utils/activity-tracker'
@@ -228,11 +229,14 @@ export function recordAdClick(
     return
   }
 
+  // COD-694: watch for the user's next prompt, the CLI's "came back" signal.
+  watchAdClickReturn(ad.impUrl)
+
   // One id per logical click (COD-365); a repeat POST of the same ad is a
   // new gesture and a new id, and the server answers `alreadyRecorded`.
   const clientEventId = crypto.randomUUID()
   const dock = options?.dock
-  void fetch(`${WEBSITE_URL}/api/v1/ads/click`, {
+  const ack = fetch(`${WEBSITE_URL}/api/v1/ads/click`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -264,6 +268,8 @@ export function recordAdClick(
     .catch((err) => {
       logger.debug({ err }, '[ads] Failed to record ad click')
     })
+  // The return report for this click waits for it to be recorded (COD-694).
+  trackAdClickAck(ad.impUrl, ack)
 }
 
 function trackInlineAdEvent(

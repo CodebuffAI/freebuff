@@ -15,6 +15,7 @@ import {
   buildPlanPrompt,
   buildReviewPrompt,
 } from './prompt-builders'
+import { noteUserTurnForAdClickReturn } from '../ads/click-return'
 import { getProjectRoot } from '../project-files'
 import { useChatStore } from '../state/chat-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
@@ -283,6 +284,9 @@ export async function routeUserPrompt(
   // Skill mode also accepts an empty submit: it means "run the skill as-is".
   const hasAttachments = pendingAttachments.length > 0
   if (!trimmed && !hasAttachments && inputMode !== 'skill') return
+
+  // COD-694: a submitted prompt is the CLI's "came back after an ad click".
+  noteUserTurnForAdClickReturn()
 
   // DAU signal: one un-sampled event per user-submitted prompt. The CLI's
   // distinct id resolves to the canonical codebuff user id (anonymous id is
