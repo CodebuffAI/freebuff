@@ -918,6 +918,19 @@ export const SUPABASE_FORMAT_AUTH_PROCEDURE = Object.freeze({
 >)
 
 /**
+ * Every catalog-pinned procedure hash, over the TRIMMED procedure text as
+ * readiness computes it. A writer that rewrites stored procedure text (the
+ * UTM tagging in `ad-link-utm.ts`) must leave these bytes alone: readiness
+ * refuses a pair whose stored procedure hashes to anything else.
+ */
+export const SUPABASE_PINNED_PROCEDURE_SHA256S: ReadonlySet<string> = new Set([
+  SUPABASE_FORMAT_DATABASE_PAIR.procedureSha256,
+  SUPABASE_FORMAT_FOUNDATION_PAIR.procedureSha256,
+  SUPABASE_FORMAT_BACKEND_FOUNDATION_PAIR.procedureSha256,
+  SUPABASE_FORMAT_AUTH_PROCEDURE.procedureSha256,
+])
+
+/**
  * `"<displayCampaignId>,<agenticCampaignId>"`. Unset means no Auth pair.
  * Read from `process.env` by every consumer (Next through the env schema or
  * directly, Convex directly, the way `FREEBUFF_SUPABASE_FORMAT_AUDIENCE` is)
