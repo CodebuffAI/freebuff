@@ -635,6 +635,15 @@ export interface PlacementTotals {
    * the price actually charged.
    */
   deliverySpendCents: number
+  /**
+   * Delivery value of invoiced CPM impressions (COD-677): counted impressions
+   * at their frozen CPM. The IO is billed outside the product, so this is in
+   * neither figure above -- the ledger never sees it and the reconciliation
+   * between them must not either -- but it is what the advertiser used, so
+   * the console adds it to both when it shows spend and prices results.
+   * Absent means zero.
+   */
+  invoicedValueCents?: number
 }
 
 /**
