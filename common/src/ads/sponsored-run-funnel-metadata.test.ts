@@ -10,6 +10,7 @@ import {
   isSponsoredRunOutcomeFunnelEvent,
   scrubSponsoredDiagnostic,
   sponsoredRunFailureCode,
+  sponsoredRunFunnelMetadataReceiverSchema,
   sponsoredRunFunnelMetadataSchema,
 } from './sponsored-run-funnel-metadata'
 
@@ -315,6 +316,38 @@ describe('the schema', () => {
     ).toBe(false)
   })
 
+  test('carries a pattern-checked client_version', () => {
+    expect(
+      sponsoredRunFunnelMetadataSchema.safeParse({
+        execution_mode: 'in_place',
+        client_version: 'desktop/0.0.152',
+      }).success,
+    ).toBe(true)
+    for (const client_version of ['desktop/', 'phone/1.0', 'cli/1 2', '']) {
+      expect(
+        sponsoredRunFunnelMetadataSchema.safeParse({
+          execution_mode: 'in_place',
+          client_version,
+        }).success,
+      ).toBe(false)
+    }
+  })
+
+  test('names the never-started, partial-edits and funding codes', () => {
+    for (const code of [
+      'never_started_dismissed',
+      'never_started_queue_expired',
+      'never_started_connect_dismissed',
+      'never_started_app_quit',
+      'never_started_inputs_dropped',
+      'never_started_other',
+      'partial_edits',
+      'funding_refused',
+    ]) {
+      expect(SPONSORED_RUN_FAILURE_CODES).toContain(code as never)
+    }
+  })
+
   test('belongs to exactly the three run outcomes', () => {
     expect(isSponsoredRunOutcomeFunnelEvent('run_failed')).toBe(true)
     expect(isSponsoredRunOutcomeFunnelEvent('run_committed')).toBe(true)
@@ -330,5 +363,54 @@ test('telemetry only: the module imports nothing that can bill', () => {
     'utf8',
   )
   const imports = source.match(/from '[^']+'/g) ?? []
-  expect(imports).toEqual(["from 'zod'", "from './sponsored-capability'"])
+  expect(imports).toEqual([
+    "from 'zod'",
+    "from './sponsored-capability'",
+    "from './sponsored-client-version'",
+  ])
+  // The client-version module is pure string handling and imports nothing,
+  // so admitting it widens nothing this test guards.
+  const clientVersion = readFileSync(
+    join(import.meta.dir, 'sponsored-client-version.ts'),
+    'utf8',
+  )
+  expect(clientVersion.match(/from '[^']+'/g)).toBeNull()
+})
+
+describe('the receiver schema', () => {
+  test('records an unknown failure code as other and keeps every other fact', () => {
+    const parsed = sponsoredRunFunnelMetadataReceiverSchema.safeParse({
+      execution_mode: 'in_place',
+      os: 'windows',
+      failure_code: 'code_from_the_future',
+    })
+    expect(parsed.success && parsed.data).toEqual({
+      execution_mode: 'in_place',
+      os: 'windows',
+      failure_code: 'other',
+    })
+  })
+
+  test('passes a known code through unchanged', () => {
+    const parsed = sponsoredRunFunnelMetadataReceiverSchema.safeParse({
+      execution_mode: 'cloud',
+      failure_code: 'timed_out',
+    })
+    expect(parsed.success && parsed.data.failure_code).toBe('timed_out')
+  })
+
+  test('still refuses an unknown key and every other out-of-shape value', () => {
+    for (const value of [
+      { execution_mode: 'in_place', prompt: 'user text' },
+      { execution_mode: 'laptop' },
+      { execution_mode: 'in_place', os: 'amiga' },
+      { execution_mode: 'in_place', failure_code: 7 },
+      null,
+      'in_place',
+    ]) {
+      expect(
+        sponsoredRunFunnelMetadataReceiverSchema.safeParse(value).success,
+      ).toBe(false)
+    }
+  })
 })

@@ -31,6 +31,7 @@
 import { z } from 'zod'
 
 import { sponsoredExecutionSurfaceSchema } from './sponsored-capability'
+import { SPONSORED_CLIENT_VERSION_PATTERN } from './sponsored-client-version'
 
 /** Where the run executed. */
 export const SPONSORED_RUN_EXECUTION_MODES = [
@@ -87,6 +88,18 @@ export const SPONSORED_RUN_FAILURE_CODES = [
   'no_commit',
   'turn_error',
   'unclassified',
+  // A run that never started (`never-started: <reason>: …`), a turn that
+  // ended early with partial edits, and an Accept the sponsor could not fund.
+  // Added ahead of any producer (COD-665): receivers learn a code before
+  // anything emits it, because Convex deploys before Render.
+  'never_started_dismissed',
+  'never_started_queue_expired',
+  'never_started_connect_dismissed',
+  'never_started_app_quit',
+  'never_started_inputs_dropped',
+  'never_started_other',
+  'partial_edits',
+  'funding_refused',
   // Cloud executor refusals (`SponsoredExecutionRefusal` + the sweep).
   'timed_out',
   'workspace_prepare_failed',
@@ -143,12 +156,43 @@ export const sponsoredRunFunnelMetadataSchema = z
       .max(SPONSORED_FUNNEL_DIAGNOSTIC_MAX)
       .optional(),
     llm_called: z.boolean().optional(),
+    /** `desktop/<v>` or `cli/<v>` of the build that accepted (`sponsored-client-version.ts`). */
+    client_version: z
+      .string()
+      .regex(SPONSORED_CLIENT_VERSION_PATTERN)
+      .optional(),
   })
   .strict()
 
 export type SponsoredRunFunnelMetadata = z.infer<
   typeof sponsoredRunFunnelMetadataSchema
 >
+
+/**
+ * The schema a RECEIVER validates with: the same closed shape, except that a
+ * `failure_code` this build does not know is recorded as `other` instead of
+ * refusing the whole row.
+ *
+ * Convex deploys before Render, and a rollback reverts Next before Convex, so
+ * for a window every deploy a newer producer talks to an older receiver. A
+ * strict enum there turns each new code into a 400 on the bridge and a null
+ * on the state route -- the outcome recorded, the reason lost. Only the
+ * failure code is widened: an unknown KEY is still refused, so the bridge
+ * cannot become a channel for text this module never named.
+ */
+export const sponsoredRunFunnelMetadataReceiverSchema = z.preprocess(
+  (value) =>
+    value !== null &&
+    typeof value === 'object' &&
+    'failure_code' in value &&
+    typeof value.failure_code === 'string' &&
+    !(SPONSORED_RUN_FAILURE_CODES as readonly string[]).includes(
+      value.failure_code,
+    )
+      ? { ...value, failure_code: 'other' }
+      : value,
+  sponsoredRunFunnelMetadataSchema,
+)
 
 /** The three outcome events this metadata belongs to. */
 export const SPONSORED_RUN_OUTCOME_FUNNEL_EVENTS = [
