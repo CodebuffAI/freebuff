@@ -8,9 +8,10 @@ import {
   compactWithModelOrFallback,
   COMPACTION_TAG,
   parseCompactionSummary,
+  SUMMARY_OVERRUN_TOLERANCE,
 } from '../model-compaction'
 import { promptSuccess } from '@codebuff/common/util/error'
-import { countTokensMessages } from '../util/token-counter'
+import { countTokens, countTokensMessages } from '../util/token-counter'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 import type { PromptAiSdkStreamFn } from '@codebuff/common/types/contracts/llm'
 
@@ -583,4 +584,238 @@ test('a truncated summary falls back to mechanical compaction and is reported as
   expect(result?.fallback).toBe(true)
   expect(result?.summary).not.toContain('The backoff multiplies by')
   expect(warnings).toMatchObject([{ error_kind: 'output_limit', fallback_applied: true }])
+})
+
+// Prod, 2026-09-23..29: ~2-3k model handoffs a day on the CLI and ~0.5-1k on
+// the runner were thrown away as `invalid_summary` and replaced by the
+// mechanical pass. Joined to the ledger (2026-09-28 sample), 84% of them were
+// a real complete_compaction call of 3k-9k output tokens (DeepSeek V4 Flash
+// median ~5,800) against a 6,000-token request, and 15% wrote the handoff as
+// reply text instead of calling the tool. The shapes below are those replies.
+const handoff = [
+  '## Objective',
+  '- Keep the uploader retrying on 429s without hammering the API.',
+  '',
+  '## Important Details',
+  "- The user's config lives in C:\\Users\\dev\\uploader\\config.json; retries read `maxRetries` from it.",
+  '- `backoff()` in src/retry.ts multiplies by 2 and caps at 30s.',
+  '',
+  '## Work State',
+  '### Completed',
+  '- Added jitter to backoff(); unit tests pass.',
+  '### Active',
+  '- Wiring Retry-After into the 429 path.',
+  '### Blocked',
+  '- (none)',
+  '',
+  '## Next Move',
+  '1. Read Retry-After in src/upload.ts and pass it to backoff().',
+  '',
+  '## Relevant Files',
+  '- src/retry.ts: backoff policy.',
+  '- src/upload.ts: the 429 handler.',
+].join('\n')
+
+const bigMessages: Message[] = [
+  user('Make the uploader back off properly on 429s.'),
+  {
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool-call',
+        toolCallId: 'r',
+        toolName: 'read_files',
+        input: { paths: ['src/upload.ts'] },
+      },
+    ],
+  },
+  {
+    role: 'tool',
+    toolName: 'read_files',
+    toolCallId: 'r',
+    content: [
+      {
+        type: 'json',
+        value: [
+          {
+            path: 'src/upload.ts',
+            content: 'export const retries = 3; // upload\n'.repeat(9_000),
+          },
+        ],
+      },
+    ],
+  },
+]
+const hosted = {
+  messages: bigMessages,
+  maxContextLength: 400_000,
+  fixedTokenCount: 20_000,
+}
+// ~7,000 estimated tokens against the 6,000 hosted request: the shape of the
+// median rejected DeepSeek handoff.
+const longHandoff = `${handoff}\n\n${'- Checked src/retry.ts: backoff doubles each attempt up to the cap.\n'.repeat(310)}`
+
+const replying = (text: string, finishReason = 'stop') =>
+  async function* (
+    _request: Message[],
+    _maxOutputTokens: number,
+    onFinishReason: (finishReason: string) => void,
+  ): ReturnType<PromptAiSdkStreamFn> {
+    // Streamed in pieces, the way a provider delivers it.
+    for (let i = 0; i < text.length; i += 700)
+      yield { type: 'text', text: text.slice(i, i + 700) }
+    onFinishReason(finishReason)
+    return promptSuccess('compaction-id')
+  }
+
+test('a handoff somewhat longer than requested is installed, not thrown away', async () => {
+  expect(countTokens(longHandoff)).toBeGreaterThan(6_000)
+  expect(countTokens(longHandoff)).toBeLessThan(6_000 * SUMMARY_OVERRUN_TOLERANCE)
+  const result = await run(() => emit(longHandoff), hosted)
+  expect(result?.summary).toBe(longHandoff.trim())
+  expect(result).toMatchObject({
+    summarySource: 'tool_call',
+    summaryBudget: 6_000,
+    sections: 1,
+  })
+  expect(result!.postTokens).toBeLessThan(result!.preTokens)
+})
+
+test('a handoff far past the requested length, or one that would leave the run over its target, is refused', async () => {
+  const runaway = `${handoff}\n${'- detail\n'.repeat(4_500)}`
+  expect(countTokens(runaway)).toBeGreaterThan(
+    6_000 * SUMMARY_OVERRUN_TOLERANCE,
+  )
+  await expect(run(() => emit(runaway), hosted)).rejects.toThrow(
+    'far longer than requested',
+  )
+  // Over the requested length AND above where an automatic pass must land.
+  await expect(
+    run(() => emit(longHandoff), { ...hosted, targetTokens: 22_000 }),
+  ).rejects.toThrow('far longer than requested')
+  // Within the requested length, the target does not apply (as before).
+  expect(
+    (await run(() => emit(handoff), { ...hosted, targetTokens: 22_000 }))
+      ?.summary,
+  ).toBe(handoff)
+
+  const warnings: unknown[] = []
+  const result = await compactWithModelOrFallback({
+    ...hosted,
+    system: 'You are a coding agent.',
+    signal: new AbortController().signal,
+    stream: () => emit(runaway),
+    logger: { ...noopLogger, warn: (data: unknown) => warnings.push(data) },
+  })
+  // The mechanical pass has nothing to shrink in a history this far under
+  // budget, so the history is left as it was.
+  expect(result).toBeNull()
+  expect(warnings).toMatchObject([{ error_kind: 'summary_too_long' }])
+})
+
+test('complete_compaction arguments with hand-written escaping are repaired, not rejected', () => {
+  // A literal newline inside the string, `\'` (GLM), and an unescaped Windows
+  // path: all invalid JSON, so the AI SDK hands the call over as raw text.
+  const raw =
+    '{"summary": "## Objective\n- Keep the user\\\'s retries.\n## Next Move\n- Config: C:\\Users\\dev\\config.json"}'
+  expect(() => JSON.parse(raw)).toThrow()
+  expect(parseCompactionSummary(raw)).toBe(
+    "## Objective\n- Keep the user's retries.\n## Next Move\n- Config: C:\\Users\\dev\\config.json",
+  )
+  // Repair never invents structure: arguments cut off mid-string still fail.
+  expect(
+    parseCompactionSummary('{"summary": "## Objective\n- cut off'),
+  ).toBeUndefined()
+  // Valid escapes are untouched.
+  expect(parseCompactionSummary(JSON.stringify({ summary: handoff }))).toBe(
+    handoff,
+  )
+})
+
+test('a handoff written as reply text instead of a tool call is recovered', async () => {
+  const json = JSON.stringify({ summary: handoff })
+  const replies = [
+    // The Markdown itself (GLM 5.3 Flash, Space Bunny, MiMo, DeepSeek).
+    handoff,
+    '```markdown\n' + handoff + '\n```',
+    '<think>The user wants a summary.</think>\n' + handoff,
+    // The call spelled out as JSON: the way the summarized history serializes
+    // tool calls, OpenAI's shape, and its arguments-as-a-string variant.
+    `{"toolName":"complete_compaction","input":${json}}`,
+    `{"name": "complete_compaction", "arguments": ${json}}`,
+    `{"name": "complete_compaction", "arguments": ${JSON.stringify(json)}}`,
+    `<tool>\n{"name": "complete_compaction", "arguments": ${json}}`,
+    json,
+    // Hand-escaped JSON as text (GLM's `\'`).
+    json.replace("user's", "user\\'s"),
+    // XML templates.
+    `<complete_compaction>\n<summary>\n${handoff}\n</summary>\n</complete_compaction>`,
+    `<complete_compaction>\n<parameter name="summary">${handoff}</parameter>\n</complete_compaction>`,
+    `<function=complete_compaction><parameter=summary>${handoff}</parameter></function>`,
+  ]
+  for (const reply of replies) {
+    const result = await run(replying(reply), hosted)
+    expect(result?.summary).toBe(handoff)
+    expect(result?.summarySource).toBe('text')
+  }
+})
+
+test('reply text that is not the handoff is still refused', async () => {
+  const before = structuredClone(bigMessages)
+  for (const reply of [
+    // An answer to the user's task.
+    'I updated src/upload.ts to honor Retry-After. Want me to run the tests?',
+    // One heading is not the handoff.
+    '## Objective\nFix the uploader.',
+    // A text-form call to a different tool.
+    `{"toolName":"write_file","input":{"path":"NOTES.md","content":${JSON.stringify(handoff)}}}`,
+    // Structured sections instead of the Markdown summary.
+    '{"summary":{"objective":"Fix the uploader","next":"Read Retry-After"}}',
+  ])
+    await expect(run(replying(reply), hosted)).rejects.toThrow(
+      'valid compaction summary',
+    )
+  // A reply cut off by the output cap is never installed, whatever it holds.
+  await expect(run(replying(handoff, 'length'), hosted)).rejects.toThrow(
+    'output token limit',
+  )
+  expect(bigMessages).toEqual(before)
+})
+
+test('an installed handoff reports its source, size and budget; a fallback does not', async () => {
+  const infos: unknown[] = []
+  const params = {
+    ...hosted,
+    system: 'You are a coding agent.',
+    signal: new AbortController().signal,
+    logger: { ...noopLogger, info: (data: unknown) => infos.push(data) },
+    runId: 'run-1',
+    model: 'deepseek/deepseek-v4-flash',
+    trigger: 'cache_expiry',
+  }
+  await compactWithModelOrFallback({ ...params, stream: replying(handoff) })
+  expect(infos).toMatchObject([
+    {
+      axiomEvent: 'model_compaction.completed',
+      agent_run_id: 'run-1',
+      model: 'deepseek/deepseek-v4-flash',
+      trigger_reason: 'cache_expiry',
+      summary_source: 'text',
+      summary_tokens: countTokens(handoff),
+      summary_budget: 6_000,
+      sections: 1,
+    },
+  ])
+  infos.length = 0
+  await compactWithModelOrFallback({
+    ...params,
+    stream: replying('Sure, what next?'),
+  })
+  expect(
+    infos.some(
+      (i) =>
+        (i as { axiomEvent?: string }).axiomEvent ===
+        'model_compaction.completed',
+    ),
+  ).toBe(false)
 })

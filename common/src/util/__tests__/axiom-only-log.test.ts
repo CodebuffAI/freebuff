@@ -18,6 +18,7 @@ import {
   CONTEXT_PRUNING_COMPLETED_EVENT,
   getAxiomOnlyLogEvent,
   STREAM_RECOVERY_EVENT,
+  MODEL_COMPACTION_COMPLETED_EVENT,
   MODEL_COMPACTION_FALLBACK_EVENT,
   ADS_CLIENT_EVENT_HYGIENE_FIELDS,
   ADS_FIRST_PARTY_TRACKING_FIELD_NAMES,
@@ -310,6 +311,38 @@ describe('getAxiomOnlyLogEvent', () => {
         error_name: 'ZodError',
         fallback_applied: true,
         fallback_failed: false,
+      },
+    })
+  })
+
+  test('model-compaction completion ships sizes and labels, never the summary', () => {
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: MODEL_COMPACTION_COMPLETED_EVENT,
+        agent_run_id: 'run-1',
+        model: 'deepseek/deepseek-v4-flash',
+        trigger_reason: 'cache_expiry',
+        summary_source: 'text',
+        summary_tokens: 7_400,
+        summary_budget: 6_000,
+        sections: 1,
+        pre_tokens: 212_000,
+        post_tokens: 31_000,
+        // Not in the allowlist: user content.
+        summary: '## Objective\n- secret',
+      }),
+    ).toEqual({
+      event: MODEL_COMPACTION_COMPLETED_EVENT,
+      data: {
+        agent_run_id: 'run-1',
+        model: 'deepseek/deepseek-v4-flash',
+        trigger_reason: 'cache_expiry',
+        summary_source: 'text',
+        summary_tokens: 7_400,
+        summary_budget: 6_000,
+        sections: 1,
+        pre_tokens: 212_000,
+        post_tokens: 31_000,
       },
     })
   })

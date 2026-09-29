@@ -1,6 +1,9 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod/v4'
-import { MODEL_COMPACTION_FALLBACK_EVENT } from '@codebuff/common/util/axiom-only-log'
+import {
+  MODEL_COMPACTION_COMPLETED_EVENT,
+  MODEL_COMPACTION_FALLBACK_EVENT,
+} from '@codebuff/common/util/axiom-only-log'
 import { AbortError, isAbortError } from '@codebuff/common/util/error'
 
 import { compactHistoryNow } from './compact-history'
@@ -43,11 +46,82 @@ export const compactionTools: ToolSet = {
   }),
 }
 
+/**
+ * How far past the requested length a summary may run and still be installed.
+ *
+ * The instruction asks for "approximately" `summaryBudget` tokens, and the
+ * check measures with the local three-characters-a-token estimate, which
+ * reads a Markdown handoff at ~1.1x a provider's count (and a CJK one at ~2x).
+ * Held to exactly the requested number, about half of all model handoffs were
+ * thrown away for running a few hundred tokens long: DeepSeek V4 Flash wrote
+ * its median failed handoff in ~5,800 output tokens against a 6,000 budget
+ * (prod, 2026-09-28). The summary must still leave the compacted context under
+ * its target; see `compactWithModel`.
+ */
+export const SUMMARY_OVERRUN_TOLERANCE = 2
+
 const lenientSummarySchema = z.object({ summary: z.string() })
 
 function stripCodeFence(text: string): string {
   const fenced = text.match(/^```[A-Za-z0-9_-]*\s*\n?([\s\S]*?)\n?```$/)
   return fenced ? fenced[1].trim() : text
+}
+
+const VALID_JSON_ESCAPES = new Set(['"', '\\', '/', 'b', 'f', 'n', 'r', 't'])
+
+/**
+ * JSON a model wrote by hand, made parseable without changing what it says:
+ * raw control characters inside a string (a literal newline in a Markdown
+ * summary) are escaped, and a backslash that starts no valid escape (`\'`, a
+ * Windows path's `C:\Users`, a regex's `\d`) is kept as a literal backslash,
+ * except before a quote-like `'` where the model meant the character itself.
+ * Structure is never invented: a string or object cut off mid-way still fails
+ * to parse.
+ */
+function repairJsonText(text: string): string {
+  let out = ''
+  let inString = false
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (!inString) {
+      if (char === '"') inString = true
+      out += char
+      continue
+    }
+    if (char === '"') {
+      inString = false
+      out += char
+    } else if (char === '\\') {
+      const next = text[i + 1]
+      if (next !== undefined && VALID_JSON_ESCAPES.has(next)) {
+        out += char + next
+        i++
+      } else if (next === 'u' && /^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) {
+        out += text.slice(i, i + 6)
+        i += 5
+      } else if (next === "'") {
+        out += "'"
+        i++
+      } else {
+        out += '\\\\'
+      }
+    } else if (char === '\n') out += '\\n'
+    else if (char === '\r') out += '\\r'
+    else if (char === '\t') out += '\\t'
+    else if (char < ' ') out += `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
+    else out += char
+  }
+  return out
+}
+
+function parseJsonLeniently(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch (error) {
+    const repaired = repairJsonText(text)
+    if (repaired === text) throw error
+    return JSON.parse(repaired)
+  }
 }
 
 /**
@@ -63,16 +137,19 @@ function stripCodeFence(text: string): string {
  * Decode like the tool executor does (`parseStringifiedToolInput`): unwrap up
  * to three layers of string encoding, tolerate a Markdown fence, and ignore
  * unknown keys. Prose that is not JSON at all is the model writing the handoff
- * directly into the argument slot, and is taken as the summary; anything that
- * looks like JSON but does not parse (typically arguments cut off by the
- * output cap) is rejected rather than installed half-written.
+ * directly into the argument slot, and is taken as the summary. Arguments
+ * that are JSON apart from hand-written escaping (a raw newline inside the
+ * string, `\'`, an unescaped `C:\Users`) are repaired, since the AI SDK hands
+ * those over as raw text too. Anything that looks like JSON but still does not
+ * parse (typically arguments cut off by the output cap) is rejected rather
+ * than installed half-written.
  */
 export function parseCompactionSummary(input: unknown): string | undefined {
   let value = input
   for (let depth = 0; depth < 3 && typeof value === 'string'; depth++) {
     const text = stripCodeFence(value.trim())
     try {
-      value = JSON.parse(text)
+      value = parseJsonLeniently(text)
     } catch {
       if (depth > 0 || /^[{["]/.test(text)) return undefined
       return text || undefined
@@ -81,6 +158,88 @@ export function parseCompactionSummary(input: unknown): string | undefined {
   const parsed = lenientSummarySchema.safeParse(value)
   if (!parsed.success) return undefined
   return parsed.data.summary.trim() || undefined
+}
+
+/** The prompt's section headings, as the summary writes them in any language. */
+const HANDOFF_HEADINGS = [
+  /^#{1,3}\s*Important Details\b/m,
+  /^#{1,3}\s*Work State\b/m,
+  /^#{1,3}\s*Next Move\b/m,
+  /^#{1,3}\s*Relevant Files\b/m,
+]
+
+/**
+ * Whether text is the handoff the prompt asks for rather than an answer to
+ * the user's task: its Objective heading and at least two of the others. Used
+ * only for text the model wrote OUTSIDE a `complete_compaction` call, where
+ * an ordinary reply must not be mistaken for a summary.
+ */
+function isHandoffSummary(text: string): boolean {
+  if (!/^#{1,3}\s*Objective\b/m.test(text)) return false
+  return HANDOFF_HEADINGS.filter((heading) => heading.test(text)).length >= 2
+}
+
+/** The first string anywhere in a parsed value that reads as the handoff. */
+function findHandoffString(value: unknown, depth = 0): string | undefined {
+  if (depth > 4) return undefined
+  if (typeof value === 'string') {
+    if (isHandoffSummary(value)) return value.trim()
+    // `"arguments": "{\"summary\": …}"`: arguments encoded as a string.
+    if (!value.trimStart().startsWith('{')) return undefined
+    try {
+      return findHandoffString(parseJsonLeniently(value.trim()), depth + 1)
+    } catch {
+      return undefined
+    }
+  }
+  if (!value || typeof value !== 'object') return undefined
+  const record = value as Record<string, unknown>
+  // A text-form call to some other tool is not a handoff.
+  for (const key of ['toolName', 'name', 'tool'])
+    if (typeof record[key] === 'string' && record[key] !== 'complete_compaction')
+      return undefined
+  for (const child of Object.values(record)) {
+    const found = findHandoffString(child, depth + 1)
+    if (found) return found
+  }
+  return undefined
+}
+
+/**
+ * The handoff from a summarizer reply that has no `complete_compaction` call.
+ *
+ * Asked for the tool call, a share of models write the handoff as their reply
+ * instead (prod, 2026-09-28, ~15% of rejected handoffs; GLM 5.3 Flash, MiMo,
+ * Space Bunny, some DeepSeek): the Markdown itself, or the call spelled out as
+ * text, either as JSON the way the summarized history serializes tool calls
+ * (`{"toolName":"complete_compaction","input":{"summary":…}}`,
+ * `{"name":…,"arguments":…}`, bare `{"summary":…}`) or in a model's XML
+ * template (`<complete_compaction><summary>…`, `<parameter=summary>…`).
+ * Whatever the wrapper, the recovered text must carry the handoff's headings.
+ */
+export function summaryFromReplyText(reply: string): string | undefined {
+  const text = stripCodeFence(
+    reply.replace(/^\s*<think>[\s\S]*?<\/think>/, '').trim(),
+  )
+  if (!text) return undefined
+  if (!/^[{<]/.test(text) && isHandoffSummary(text)) return text
+  const open = text.indexOf('{')
+  const close = text.lastIndexOf('}')
+  if (open >= 0 && close > open) {
+    try {
+      const found = findHandoffString(
+        parseJsonLeniently(text.slice(open, close + 1)),
+      )
+      if (found) return found
+    } catch {
+      // Not JSON; try the XML templates.
+    }
+  }
+  const tagged = text.match(
+    /<(?:parameter(?:=|\s+name=["']?)summary["']?|summary)>\s*([\s\S]*?)\s*(?:<\/(?:parameter|summary)>|$)/,
+  )
+  const inner = tagged?.[1].replace(/(?:\s*<\/[\w-]+>)+\s*$/, '').trim()
+  return inner && isHandoffSummary(inner) ? inner : undefined
 }
 
 function omittedBinary(mediaType: string | undefined): string {
@@ -221,6 +380,13 @@ export async function compactWithModel(params: {
   fixedTokenCount: number
   /** The model's output cap, when it is below COMPACTION_MAX_OUTPUT_TOKENS. */
   maxOutputTokens?: number
+  /**
+   * The context a summary longer than requested must still leave the run
+   * under (an automatic trigger's low-water mark). Defaults to
+   * `maxContextLength`. A summary within the requested length is held only
+   * to `maxContextLength`, as before.
+   */
+  targetTokens?: number
   signal: AbortSignal
   stream: (
     messages: Message[],
@@ -233,6 +399,12 @@ export async function compactWithModel(params: {
   summary: string
   preTokens: number
   postTokens: number
+  /** Where the installed handoff came from: the tool call, or reply text. */
+  summarySource: 'tool_call' | 'text'
+  summaryTokens: number
+  summaryBudget: number
+  /** Summarizer calls it took; more than one when history was split. */
+  sections: number
 } | null> {
   if (!hasCompactableHistory(params.messages)) return null
   const preTokens =
@@ -288,6 +460,8 @@ export async function compactWithModel(params: {
   let remaining = history
   let summary = ''
   let first = true
+  let sections = 0
+  let summarySource: 'tool_call' | 'text' = 'tool_call'
   while (remaining.length || first) {
     params.signal.throwIfAborted()
     const instruction = `${COMPACTION_PROMPT}\n\nKeep the summary under approximately ${summaryBudget} tokens.${summary ? `\n\nPrevious anchored summary:\n${summary}` : ''}`
@@ -341,6 +515,7 @@ export async function compactWithModel(params: {
       },
     )
     let candidate: string | undefined
+    let replyText = ''
     for (;;) {
       const next = await stream.next()
       if (next.done) {
@@ -349,6 +524,10 @@ export async function compactWithModel(params: {
       }
       const chunk = next.value
       if (chunk.type === 'error') throw new Error(chunk.message)
+      if (chunk.type === 'text') {
+        replyText += chunk.text
+        continue
+      }
       if (chunk.type !== 'tool-call') continue
       if (chunk.toolName !== 'complete_compaction' || candidate !== undefined) {
         throw new Error(
@@ -358,6 +537,13 @@ export async function compactWithModel(params: {
       candidate = parseCompactionSummary(chunk.input) ?? ''
     }
     params.signal.throwIfAborted()
+    if (!candidate) {
+      const fromText = summaryFromReplyText(replyText)
+      if (fromText) {
+        candidate = fromText
+        summarySource = 'text'
+      }
+    }
     // A summary cut off by the output cap can still arrive as a well-formed
     // call: prose written straight into the argument slot, or arguments a
     // provider closed for us. It ends mid-sentence and silently drops the
@@ -367,14 +553,20 @@ export async function compactWithModel(params: {
         'The compaction summary hit the output token limit before it finished. History has been preserved.',
       )
     }
-    if (!candidate || countTokens(candidate) > summaryBudget) {
+    if (!candidate) {
       throw new Error(
-        'The model did not return a valid, concise compaction summary. History has been preserved; try again.',
+        'The model did not return a valid compaction summary. History has been preserved; try again.',
+      )
+    }
+    if (countTokens(candidate) > summaryBudget * SUMMARY_OVERRUN_TOLERANCE) {
+      throw new Error(
+        'The compaction summary was far longer than requested. History has been preserved; try again.',
       )
     }
     summary = candidate
     remaining = remaining.slice(end)
     first = false
+    sections++
   }
   const messages: Message[] = [
     {
@@ -396,7 +588,27 @@ export async function compactWithModel(params: {
     throw new Error(
       'The compaction summary does not fit the context window. History has been preserved.',
     )
-  return { messages, summary, preTokens, postTokens }
+  const summaryTokens = countTokens(summary)
+  // Past the requested length, a summary is only worth installing when the
+  // run still ends up under its trigger; otherwise the next step compacts the
+  // summary again.
+  if (
+    summaryTokens > summaryBudget &&
+    postTokens > (params.targetTokens ?? params.maxContextLength)
+  )
+    throw new Error(
+      'The compaction summary was far longer than requested. History has been preserved; try again.',
+    )
+  return {
+    messages,
+    summary,
+    preTokens,
+    postTokens,
+    summarySource,
+    summaryTokens,
+    summaryBudget,
+    sections,
+  }
 }
 
 /** A fixed, content-free label for why the model handoff failed. */
@@ -404,8 +616,8 @@ function compactionErrorKind(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   if (error instanceof Error && error.name === 'ZodError')
     return 'invalid_summary'
-  if (message.includes('valid, concise compaction summary'))
-    return 'invalid_summary'
+  if (message.includes('valid compaction summary')) return 'invalid_summary'
+  if (message.includes('longer than requested')) return 'summary_too_long'
   if (message.includes('unexpected tool call')) return 'unexpected_tool_call'
   if (message.includes('output token limit')) return 'output_limit'
   if (
@@ -458,7 +670,32 @@ export async function compactWithModelOrFallback(
     ...modelParams
   } = params
   try {
-    return await compactWithModel(modelParams)
+    const result = await compactWithModel({
+      targetTokens: fallbackTargetTokens,
+      ...modelParams,
+    })
+    if (result) {
+      try {
+        logger.info(
+          {
+            axiomEvent: MODEL_COMPACTION_COMPLETED_EVENT,
+            agent_run_id: runId,
+            model,
+            trigger_reason: trigger,
+            summary_source: result.summarySource,
+            summary_tokens: result.summaryTokens,
+            summary_budget: result.summaryBudget,
+            sections: result.sections,
+            pre_tokens: result.preTokens,
+            post_tokens: result.postTokens,
+          },
+          'Model compaction completed',
+        )
+      } catch {
+        // Logging must never turn a finished compaction into a failed run.
+      }
+    }
+    return result
   } catch (error) {
     if (params.signal.aborted || isAbortError(error)) throw error
     const errorMessage = error instanceof Error ? error.message : String(error)
