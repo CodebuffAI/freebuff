@@ -79,8 +79,29 @@ describe('getFreebuffStreakBonusStatus', () => {
 
   test('a landed credit says so, and when the next one opens', () => {
     expect(getFreebuffStreakBonusStatus({ ...base, todayCredited: true })).toBe(
-      "Today's +15 is in your wallet · next after 3:00 PM",
+      '+15 credited · next +15 with your first message after 3:00 PM',
     )
+  })
+
+  // The 2026-09-29 Desktop report, as the ledger recorded it: a 17-day streak
+  // in India, credited at 07:00Z every day (12:30 PM IST). At 11:15 AM IST
+  // their local day and daily pool had rolled over, but the Pacific streak day
+  // had not — its +15 had landed at 12:30 PM the previous LOCAL day, and was
+  // already spent. "Today's +15 is in your wallet" was wrong on both counts.
+  test('east of Pacific after local midnight, it never calls the credit "today\'s"', () => {
+    const status = getFreebuffStreakBonusStatus({
+      streak: 17,
+      todayUsed: true,
+      todayCredited: true,
+      freebucksDailyBonus: 15,
+      nextResetAt: '2026-09-29T07:00:00.000Z',
+      now: new Date('2026-09-29T05:45:20.426Z'),
+      timeZone: 'Asia/Kolkata',
+    })
+    expect(status).toBe(
+      '+15 credited · next +15 with your first message after 12:30 PM',
+    )
+    expect(status).not.toMatch(/today|wallet/i)
   })
 
   test('a used day without a confirmed credit promises only the next one', () => {
@@ -98,7 +119,7 @@ describe('getFreebuffStreakBonusStatus', () => {
         todayUsed: false,
         todayCredited: false,
       }),
-    ).toBe("Send a message before 3:00 PM for today's +15")
+    ).toBe('Send a message before 3:00 PM to earn +15')
   })
 
   test('hidden off the meter, below the milestone, or without a reset', () => {

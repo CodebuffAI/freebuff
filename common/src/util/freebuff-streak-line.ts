@@ -166,7 +166,7 @@ export function formatFreebuffStreakResetTime(params: {
 
 /**
  * Where today's Freebucks streak bonus stands, for a 7+ day streak on the
- * meter: already in the wallet, still to come with a message, or next due
+ * meter: already credited, still to come with a message, or next due
  * after the reset — with the reset in the reader's own clock. Null off the
  * meter, below the milestone, or without a server `nextResetAt` (an older
  * server), so a client never guesses the boundary.
@@ -201,12 +201,18 @@ export function getFreebuffStreakBonusStatus(params: {
     timeZone: params.timeZone,
   })
   if (params.todayCredited === true) {
-    return `Today's +${bonus} is in your wallet · next after ${when}`
+    // Not "today's": east of Pacific, between local midnight and the Pacific
+    // reset, the credit landed on the reader's YESTERDAY while their daily
+    // pool has already refilled — "Today's +15" then reads as a missing
+    // bonus (2026-09-29 report, 17-day streak in India, credited every
+    // Pacific day). Nor "in your wallet": the wallet is spent once the daily
+    // pool runs out, so a credit can be gone by the time this is read.
+    return `+${bonus} credited · next +${bonus} with your first message after ${when}`
   }
   // Today already counted, so its first message has been sent: whatever
   // became of that credit, the next one belongs to the next day.
   if (params.todayUsed) {
     return `Next +${bonus} with your first message after ${when}`
   }
-  return `Send a message before ${when} for today's +${bonus}`
+  return `Send a message before ${when} to earn +${bonus}`
 }

@@ -274,7 +274,7 @@ describe('getFreebuffStreakBonusStatusForLayout', () => {
 
   test('shows the credit and the local reset under the perk note', () => {
     expect(getFreebuffStreakBonusStatusForLayout(layout)).toBe(
-      "Today's +15 is in your wallet · next after 3:00 PM",
+      '+15 credited · next +15 with your first message after 3:00 PM',
     )
   })
 
