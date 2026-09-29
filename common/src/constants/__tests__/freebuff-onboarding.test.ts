@@ -8,8 +8,10 @@ import {
   isOnboardingComplete,
   ONBOARDING_LEGACY_OPTION_IDS,
   ONBOARDING_OTHER_TEXT_MAX,
+  onboardingSourceProperties,
   OTHER_OPTION_ID,
   parseOnboardingSurface,
+  resumableOnboardingAnswers,
   type OnboardingAnswer,
   validateOnboardingSubmission,
 } from '../freebuff-onboarding'
@@ -69,15 +71,15 @@ describe('the question set itself', () => {
 })
 
 describe('classifyOnboardingOtherText — write-ins folded into real options', () => {
-  it('counts every Instagram spelling as the Instagram / TikTok option', () => {
-    for (const text of ['insta', 'Instagram', 'instagram ads', 'IG', 'tik tok']) {
-      expect(classifyOnboardingOtherText('referral_source', text)).toBe('tiktok')
+  it('counts every Instagram, TikTok and Facebook spelling as its own option', () => {
+    for (const text of ['insta', 'Instagram', 'instagram ads', 'IG']) {
+      expect(classifyOnboardingOtherText('referral_source', text)).toBe('instagram')
     }
-  })
-
-  it('counts every Facebook spelling as the same option', () => {
+    for (const text of ['tiktok', 'TikTok ad', 'tik tok']) {
+      expect(classifyOnboardingOtherText('referral_source', text)).toBe('tiktok_only')
+    }
     for (const text of ['facebook', 'Facebook group', 'face book', 'FB ads']) {
-      expect(classifyOnboardingOtherText('referral_source', text)).toBe('tiktok')
+      expect(classifyOnboardingOtherText('referral_source', text)).toBe('facebook')
     }
   })
 
@@ -89,10 +91,10 @@ describe('classifyOnboardingOtherText — write-ins folded into real options', (
 
   it('prefers the more specific rule when a write-in matches both', () => {
     expect(classifyOnboardingOtherText('referral_source', 'instagram AI page')).toBe(
-      'tiktok',
+      'instagram',
     )
     expect(classifyOnboardingOtherText('referral_source', 'facebook AI group')).toBe(
-      'tiktok',
+      'facebook',
     )
   })
 
@@ -311,7 +313,7 @@ describe('applyOnboardingAnswersToTally', () => {
         otherText: 'lighthouse keeper',
       },
     ])
-    expect(tally.referral_source.tiktok).toBe(1)
+    expect(tally.referral_source.instagram).toBe(1)
     expect(tally.referral_source[OTHER_OPTION_ID]).toBe(0)
     expect(tally.role[OTHER_OPTION_ID]).toBe(1)
     expect(others).toEqual({ role: ['lighthouse keeper'] })
@@ -332,9 +334,18 @@ describe('applyOnboardingAnswersToTally', () => {
     const tally = emptyOnboardingTally()
     for (const q of FREEBUFF_ONBOARDING_QUESTIONS) {
       expect(Object.keys(tally[q.id]).sort()).toEqual(
-        q.options.map((o) => o.id).sort(),
+        [...q.options, ...(q.retiredOptions ?? [])].map((o) => o.id).sort(),
       )
     }
+  })
+
+  it('still counts the combined social chip from before the split', () => {
+    const tally = emptyOnboardingTally()
+    applyOnboardingAnswersToTally(tally, [
+      { questionId: 'referral_source', optionIds: ['tiktok'] },
+    ])
+    expect(tally.referral_source.tiktok).toBe(1)
+    expect(tally.referral_source.tiktok_only).toBe(0)
   })
 })
 
@@ -352,12 +363,16 @@ describe('question set (2026-09-16 edit)', () => {
     expect(byId.intended_use.multi).toBe(true)
     expect(byId.subscriptions.multi).toBe(true)
   })
-  it('offers Facebook on the Instagram / TikTok chip, keeping its id', () => {
-    // A new id would restart the count from zero; Facebook is the same audience.
+  it('offers Instagram, TikTok and Facebook separately (2026-09-28 split)', () => {
     const ids = byId.referral_source.options.map((o) => o.id)
-    expect(ids).not.toContain('facebook')
-    const social = byId.referral_source.options.find((o) => o.id === 'tiktok')
-    expect(social?.label).toBe('Instagram / TikTok / Facebook')
+    expect(ids).toEqual(expect.arrayContaining(['instagram', 'tiktok_only', 'facebook']))
+    // The combined chip's id is retired, not reused: its answers mean all three.
+    expect(ids).not.toContain('tiktok')
+    expect(byId.referral_source.retiredOptions?.map((o) => o.id)).toEqual(['tiktok'])
+    const result = validateOnboardingSubmission({
+      answers: [{ questionId: 'referral_source', optionIds: ['tiktok'] }],
+    })
+    expect(result.ok).toBe(false)
   })
   it('shuffles only the referral question', () => {
     expect(
@@ -379,5 +394,96 @@ describe('parseOnboardingSurface', () => {
     expect(parseOnboardingSurface('desktop')).toBe('desktop')
     expect(parseOnboardingSurface(undefined)).toBe('web')
     expect(parseOnboardingSurface('desktop; drop table')).toBe('web')
+  })
+})
+
+describe('onboardingSourceProperties', () => {
+  const source = (optionId: string, otherText?: string) =>
+    onboardingSourceProperties([
+      { questionId: 'referral_source', optionIds: [optionId], otherText },
+    ])
+  const group = (optionId: string, otherText?: string) =>
+    source(optionId, otherText)?.onboarding_source
+  const detail = (optionId: string, otherText?: string) =>
+    source(optionId, otherText)?.onboarding_source_detail
+
+  it('groups the social platforms and keeps each one as the detail', () => {
+    const social = ['instagram', 'tiktok_only', 'facebook', 'youtube', 'x_twitter']
+    for (const id of social) expect(group(id)).toBe('Social media')
+    expect(detail('instagram')).toBe('Instagram')
+    expect(detail('tiktok_only')).toBe('TikTok')
+    expect(detail('facebook')).toBe('Facebook')
+    expect(detail('youtube')).toBe('YouTube')
+    expect(detail('x_twitter')).toBe('X / Twitter')
+    expect(source('search')).toEqual({
+      onboarding_source: 'Google / AI search',
+      onboarding_source_detail: 'Google / AI search',
+    })
+    expect(group('friend')).toBe('A friend')
+  })
+
+  it('keeps the combined chip from before the split as social media', () => {
+    expect(source('tiktok')).toEqual({
+      onboarding_source: 'Social media',
+      onboarding_source_detail: 'Instagram / TikTok / Facebook (before split)',
+    })
+  })
+
+  it('has a value for every option the form offers or used to', () => {
+    const question = FREEBUFF_ONBOARDING_QUESTIONS.find(
+      (q) => q.id === 'referral_source',
+    )!
+    for (const o of [...question.options, ...(question.retiredOptions ?? [])]) {
+      expect(source(o.id, 'x')).not.toBeNull()
+    }
+  })
+
+  it('counts write-ins and retired ids the way the tally does', () => {
+    expect(detail(OTHER_OPTION_ID, 'instagram reel')).toBe('Instagram')
+    expect(group(OTHER_OPTION_ID, 'asked chatgpt')).toBe('Google / AI search')
+    expect(group(OTHER_OPTION_ID, 'my boss')).toBe('Somewhere else')
+    expect(group('reddit')).toBe('Somewhere else')
+  })
+
+  it('is null when the question was not answered', () => {
+    expect(onboardingSourceProperties(null)).toBeNull()
+    expect(
+      onboardingSourceProperties([
+        { questionId: 'role', optionIds: ['student'] },
+      ]),
+    ).toBeNull()
+  })
+})
+
+describe('resumableOnboardingAnswers', () => {
+  it('drops options the form no longer offers, so the question is asked again', () => {
+    const resumed = resumableOnboardingAnswers([
+      { questionId: 'referral_source', optionIds: ['tiktok'] },
+      { questionId: 'role', optionIds: ['student'] },
+      { questionId: 'subscriptions', optionIds: ['copilot', 'cursor'] },
+    ])
+    expect(resumed).toEqual([
+      { questionId: 'role', optionIds: ['student'] },
+      { questionId: 'subscriptions', optionIds: ['cursor'] },
+    ])
+    expect(validateOnboardingSubmission({ answers: resumed }).ok).toBe(true)
+  })
+
+  it('keeps write-in text only while "other" is still chosen', () => {
+    expect(
+      resumableOnboardingAnswers([
+        {
+          questionId: 'role',
+          optionIds: [OTHER_OPTION_ID],
+          otherText: 'lighthouse keeper',
+        },
+      ]),
+    ).toEqual([
+      {
+        questionId: 'role',
+        optionIds: [OTHER_OPTION_ID],
+        otherText: 'lighthouse keeper',
+      },
+    ])
   })
 })

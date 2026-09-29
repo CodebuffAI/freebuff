@@ -50,6 +50,10 @@ export type OnboardingQuestion = {
    *  first chip wins on position alone; shuffling spreads that bias evenly
    *  instead of handing it to whichever channel happens to be listed first. */
   shuffleOptions?: boolean
+  /** Options no longer on the form whose past answers have no single
+   *  successor. Not offered and not accepted, but still counted and shown in
+   *  the admin view, so retiring one does not erase its history. */
+  retiredOptions?: OnboardingOption[]
 }
 
 /** Every question offers this. The accompanying free text is stored separately
@@ -64,13 +68,15 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
     // headers are stripped, and self-report is the only signal for word of
     // mouth, which is where most of it actually comes from.
     //
-    // Instagram leads because it was the single largest write-in by a distance,
-    // and it shares an audience with TikTok — and Facebook with both — closely
-    // enough that splitting them would buy thin numbers instead of one usable one.
+    // Instagram, TikTok and Facebook were one chip until 2026-09-28. They are
+    // split so cost per activation can be read per platform; answers from
+    // before the split stay counted under the retired combined id below.
     options: [
-      // Keeps the `tiktok` id: those answers are the same audience, and a new
-      // id would restart the count from zero for the sake of a tidier string.
-      { id: 'tiktok', label: 'Instagram / TikTok / Facebook' },
+      { id: 'instagram', label: 'Instagram' },
+      // New id: `tiktok` is the retired combined chip, so reusing it would
+      // mix TikTok-only answers into three platforms' worth of history.
+      { id: 'tiktok_only', label: 'TikTok' },
+      { id: 'facebook', label: 'Facebook' },
       { id: 'youtube', label: 'YouTube' },
       { id: 'x_twitter', label: 'X / Twitter' },
       { id: 'search', label: 'Google / AI search' },
@@ -79,6 +85,9 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
     ],
     multi: false,
     shuffleOptions: true,
+    retiredOptions: [
+      { id: 'tiktok', label: 'Instagram / TikTok / Facebook (before split)' },
+    ],
   },
   {
     id: 'role',
@@ -191,10 +200,9 @@ export const ONBOARDING_OTHER_TEXT_RULES: Partial<
   Record<OnboardingQuestionId, { optionId: string; pattern: RegExp }[]>
 > = {
   referral_source: [
-    {
-      optionId: 'tiktok',
-      pattern: /insta|\btiktok\b|\btik tok\b|\big\b|face\s?book|\bfb\b/i,
-    },
+    { optionId: 'instagram', pattern: /insta|\big\b/i },
+    { optionId: 'tiktok_only', pattern: /\btiktok\b|\btik tok\b/i },
+    { optionId: 'facebook', pattern: /face\s?book|\bfb\b/i },
     {
       optionId: 'search',
       pattern:
@@ -222,6 +230,64 @@ export function classifyOnboardingOtherText(
   return null
 }
 
+/** The referral answer as PostHog person properties. */
+export type OnboardingSourceProperties = {
+  /** The social channels share one value, so they can be read as a whole. */
+  onboarding_source: string
+  /** Each channel the form offers on its own. */
+  onboarding_source_detail: string
+}
+
+function sourceProperties(
+  source: string,
+  detail: string = source,
+): OnboardingSourceProperties {
+  return { onboarding_source: source, onboarding_source_detail: detail }
+}
+
+/** `referral_source` option id → its person properties. Spelled out rather
+ *  than read from the option labels, which are copy and get reworded — a
+ *  PostHog value that changes splits its history in two. */
+const ONBOARDING_SOURCE_PROPERTIES: Record<string, OnboardingSourceProperties> =
+  {
+    // The combined chip from before the split: social media, platform unknown.
+    tiktok: sourceProperties(
+      'Social media',
+      'Instagram / TikTok / Facebook (before split)',
+    ),
+    instagram: sourceProperties('Social media', 'Instagram'),
+    tiktok_only: sourceProperties('Social media', 'TikTok'),
+    facebook: sourceProperties('Social media', 'Facebook'),
+    youtube: sourceProperties('Social media', 'YouTube'),
+    x_twitter: sourceProperties('Social media', 'X / Twitter'),
+    search: sourceProperties('Google / AI search'),
+    friend: sourceProperties('A friend'),
+    [OTHER_OPTION_ID]: sourceProperties('Somewhere else'),
+  }
+
+/**
+ * The "Where did you hear about Freebuff?" answer as PostHog person
+ * properties, or null when it was not answered. Retired ids and write-ins are
+ * counted the way the admin tally counts them.
+ */
+export function onboardingSourceProperties(
+  answers: readonly StoredOnboardingAnswer[] | null | undefined,
+): OnboardingSourceProperties | null {
+  const answer = answers?.find((a) => a.questionId === 'referral_source')
+  const rawId = answer?.optionIds[0]
+  if (!rawId) return null
+  const text = answer.otherText?.trim()
+  const reclassified =
+    rawId === OTHER_OPTION_ID && text
+      ? classifyOnboardingOtherText('referral_source', text)
+      : null
+  const id =
+    reclassified ??
+    ONBOARDING_LEGACY_OPTION_IDS.referral_source?.[rawId] ??
+    rawId
+  return ONBOARDING_SOURCE_PROPERTIES[id] ?? null
+}
+
 /** Per question, per current option id: how many respondents it counts. */
 export type OnboardingTally = Record<string, Record<string, number>>
 
@@ -240,17 +306,20 @@ export type StoredOnboardingAnswer = {
  * built under, and a mismatch is what triggers a full rebuild — so forgetting
  * this bump leaves the admin bars counting history under the old rules.
  */
-export const ONBOARDING_TALLY_VERSION = 4
+export const ONBOARDING_TALLY_VERSION = 5
 
 /** Every current option at zero, so a question nobody has answered still
- *  renders its full bar list rather than vanishing. */
+ *  renders its full bar list rather than vanishing. Retired options without a
+ *  successor are included: their past answers still count. */
 export function emptyOnboardingTally(
   questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_QUESTIONS,
 ): OnboardingTally {
   return Object.fromEntries(
     questions.map((q) => [
       q.id,
-      Object.fromEntries(q.options.map((o) => [o.id, 0])),
+      Object.fromEntries(
+        [...q.options, ...(q.retiredOptions ?? [])].map((o) => [o.id, 0]),
+      ),
     ]),
   )
 }
@@ -427,4 +496,35 @@ export function isOnboardingComplete(
     answers.filter((a) => a.optionIds.length > 0).map((a) => a.questionId),
   )
   return questions.every((q) => answered.has(q.id))
+}
+
+/**
+ * Stored answers minus options the form no longer offers, for resuming it.
+ *
+ * The form sends every restored answer back with its next save, and the
+ * server rejects a retired id — so without this, someone who picked a since
+ * retired option and left halfway could never save again. Dropping it asks
+ * that question again instead. Only for resuming: the stored row keeps what
+ * the person picked.
+ */
+export function resumableOnboardingAnswers(
+  answers: readonly OnboardingAnswer[] | null | undefined,
+  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_QUESTIONS,
+): OnboardingAnswer[] {
+  const out: OnboardingAnswer[] = []
+  for (const answer of answers ?? []) {
+    const question = questions.find((q) => q.id === answer.questionId)
+    if (!question) continue
+    const live = new Set(question.options.map((o) => o.id))
+    const optionIds = answer.optionIds.filter((id) => live.has(id))
+    if (optionIds.length === 0) continue
+    out.push({
+      questionId: answer.questionId,
+      optionIds,
+      ...(optionIds.includes(OTHER_OPTION_ID) && answer.otherText
+        ? { otherText: answer.otherText }
+        : {}),
+    })
+  }
+  return out
 }

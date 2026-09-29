@@ -358,6 +358,9 @@ export enum AnalyticsEvent {
   // people bail on. `_FINISHED` carries `answered` (0-4) and `sent`.
   FREEBUFF_WEB_ONBOARDING_STEP = 'freebuff.web_onboarding_step',
   FREEBUFF_WEB_ONBOARDING_FINISHED = 'freebuff.web_onboarding_finished',
+  // PostHog's own person-update event: carries only `$set`, so it updates the
+  // person (here `onboarding_source`) without adding a custom event.
+  PERSON_PROPERTIES_SET = '$set',
 
   // The workspace spotlight tour that follows the first build. `_STEP` fires
   // per pane shown (preview/database/logs/publish/chat); `_FINISHED` records
