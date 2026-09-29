@@ -159,6 +159,10 @@ export async function processStream(
     /** Cancels this step's model request (not the run). Called when the
      *  response is cut short by the follow-up suggestion cap. */
     stopStream?: () => void
+    /** The finish reason the model's stream reported, once it has ended
+     *  (undefined when it never reported one). Tells the think-tag split
+     *  whether a still-open `<think>` was cut off or was the answer. */
+    streamFinishReason?: () => string | undefined
   } & Omit<
     ExecuteToolCallParams<any>,
     | 'currentAssistantMessages'
@@ -194,6 +198,7 @@ export async function processStream(
     runId,
     signal,
     stopStream,
+    streamFinishReason,
     userId,
   } = params
   const fullResponseChunks: string[] = [fullResponse]
@@ -235,6 +240,7 @@ export async function processStream(
   const claimedByInlineAgent = new Set<Message>()
   let hadToolCallError = false
   let sawStreamRecovery = false
+  let sawToolCall = false
   let followupSuggestionCalls = 0
   let followupSuggestionLimitHit = false
   const errorMessages: Message[] = []
@@ -281,6 +287,7 @@ export async function processStream(
     return {
       onTagStart: () => { },
       onTagEnd: async (_: string, input: Record<string, string>) => {
+        sawToolCall = true
         if (signal.aborted || followupSuggestionLimitHit) {
           return
         }
@@ -621,7 +628,24 @@ export async function processStream(
     // before the tool-completion await below, so a released head keeps its
     // place ahead of this step's tool events. `flush` is idempotent, so the
     // safety-net call in `finally` is a no-op on this path.
-    emitThinkSegments(thinkTagStream.flush())
+    //
+    // A `<think>` still open here was the reply if the model ended the step
+    // itself with nothing else to show, and a truncated thought if the step
+    // was cut off. A `length` finish after visible content raises no
+    // recovery, so it is checked here. A step that called a tool is not
+    // replying yet, so its open block stays a thought.
+    const finishReason = streamFinishReason?.()
+    emitThinkSegments(
+      thinkTagStream.flush({
+        stepCompleted:
+          !signal.aborted &&
+          !sawStreamRecovery &&
+          !sawToolCall &&
+          !followupSuggestionLimitHit &&
+          finishReason !== undefined &&
+          finishReason !== 'length',
+      }),
+    )
 
     // Retry-outcome signal: this step streamed to completion (no new
     // recovery, no user abort) while the history tail still carries a

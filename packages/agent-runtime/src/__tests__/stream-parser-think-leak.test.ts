@@ -54,6 +54,7 @@ describe('processStream — leaked think tags', () => {
   async function render(
     chunks: StreamChunk[],
     priorHistory: Message[] = [],
+    finishReason: string | undefined = 'stop',
   ): Promise<Rendered> {
     async function* stream(): AsyncGenerator<
       StreamChunk,
@@ -92,6 +93,7 @@ describe('processStream — leaked think tags', () => {
       tools: {},
       userId: 'test-user',
       userInputId: 'test-input-id',
+      streamFinishReason: () => finishReason,
       onCostCalculated: async () => {},
       onResponseChunk: (chunk: string | PrintModeEvent) => {
         if (typeof chunk === 'string') {
@@ -168,5 +170,43 @@ describe('processStream — leaked think tags', () => {
     // ending the turn; historyLeaksThinkTags reads the history to arm the next.
     const { fullResponse } = await render(textChunks('thought', '</think>done'))
     expect(fullResponse).toBe('thought</think>done')
+  })
+
+  // CodebuffAI/freebuff#1155
+  it('shows an unclosed head block as the reply when the model ended the step', async () => {
+    const { text, reasoning, fullResponse } = await render(
+      textChunks('<think>', 'Here is the answer.'),
+    )
+    expect(reasoning).toBe('Here is the answer.')
+    expect(text).toBe('Here is the answer.')
+    expect(fullResponse).toBe('<think>Here is the answer.')
+  })
+
+  it('keeps an unclosed head block as a thought when the output limit cut it', async () => {
+    const { text, reasoning } = await render(
+      textChunks('<think>', 'still weighing the'),
+      [],
+      'length',
+    )
+    expect(reasoning).toBe('still weighing the')
+    expect(text).toBe('')
+  })
+
+  it('keeps an unclosed head block as a thought when the step called a tool', async () => {
+    // Not replying yet: the thought led to a tool call, and the turn goes on.
+    const { text, reasoning } = await render([
+      ...textChunks('<think>', 'end the turn now'),
+      { type: 'tool-call', toolCallId: 'c1', toolName: 'end_turn', input: {} },
+    ])
+    expect(reasoning).toBe('end the turn now')
+    expect(text).toBe('')
+  })
+
+  it('keeps a <think> quoted mid-answer in the reply', async () => {
+    const { text, reasoning } = await render(
+      textChunks('Wrap it in a ', '<think>', ' tag, then summarize.'),
+    )
+    expect(text).toBe('Wrap it in a <think> tag, then summarize.')
+    expect(reasoning).toBe('')
   })
 })

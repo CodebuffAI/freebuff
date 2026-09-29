@@ -527,6 +527,7 @@ export const runAgentStep = async (
     countTokens(system) +
     countTokensJson(contextTools)
   let contextUsage: ModelUsageData | undefined
+  let finishReason: string | undefined
 
   // Raw stream from AI SDK
   const stream = getAgentStreamFromTemplate({
@@ -550,6 +551,9 @@ export const runAgentStep = async (
       })
     },
     onUsageIncomplete: params.onAgentUsageIncomplete,
+    onFinishReason: (reason) => {
+      finishReason = reason
+    },
     template: agentTemplate,
     onCostCalculated,
   })
@@ -572,6 +576,7 @@ export const runAgentStep = async (
     stream,
     onCostCalculated,
     stopStream: () => streamStop.abort(),
+    streamFinishReason: () => finishReason,
   }).finally(() => {
     // Inline agents can replace history (set_messages). A receipt for the old
     // request is not a baseline for a replacement summary.
