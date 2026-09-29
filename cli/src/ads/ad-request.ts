@@ -27,13 +27,32 @@ import { sponsoredCliCapability } from '../utils/sponsored-cli-capability'
 import type { Message } from '@codebuff/sdk'
 import type { AdProvider, AdSurface } from '../hooks/use-gravity-ad'
 
-type AdMessage = { role: 'user' | 'assistant'; content: string }
+type AdMessage = {
+  role: 'user' | 'assistant'
+  content: string
+  /**
+   * The runtime's source tags on a USER-role message (COD-692), so the server
+   * can tell what the developer typed (`USER_PROMPT`) from the user-role
+   * messages the runtime injects itself (`STEP_PROMPT`, `TOOL_CALL_ERROR`).
+   * Only these three are forwarded, and only the tag names: never more text.
+   * The ad routes' schemas strip unknown keys, so an older server ignores it.
+   */
+  tags?: AdMessageTag[]
+}
+
+export const AD_MESSAGE_TAGS = [
+  'USER_PROMPT',
+  'STEP_PROMPT',
+  'TOOL_CALL_ERROR',
+] as const
+type AdMessageTag = (typeof AD_MESSAGE_TAGS)[number]
+const AD_MESSAGE_TAG_SET: ReadonlySet<string> = new Set(AD_MESSAGE_TAGS)
 
 /**
  * Convert LLM message history to ad API format.
  * Includes only user and assistant messages.
  */
-const convertToAdMessages = (messages: Message[]): AdMessage[] => {
+export const convertToAdMessages = (messages: Message[]): AdMessage[] => {
   const adMessages: AdMessage[] = messages
     .filter(
       (message) => message.role === 'assistant' || message.role === 'user',
@@ -42,15 +61,24 @@ const convertToAdMessages = (messages: Message[]): AdMessage[] => {
       (message) =>
         !message.tags || !message.tags.includes('INSTRUCTIONS_PROMPT'),
     )
-    .map((message) => ({
-      role: message.role,
-      content: message.content
-        .filter((c) => c.type === 'text')
-        .map((c) => c.text.trim())
-        .filter((c) => c !== '')
-        .join('\n\n')
-        .trim(),
-    }))
+    .map((message) => {
+      const tags =
+        message.role === 'user'
+          ? (message.tags ?? []).filter((tag): tag is AdMessageTag =>
+              AD_MESSAGE_TAG_SET.has(tag),
+            )
+          : []
+      return {
+        role: message.role,
+        content: message.content
+          .filter((c) => c.type === 'text')
+          .map((c) => c.text.trim())
+          .filter((c) => c !== '')
+          .join('\n\n')
+          .trim(),
+        ...(tags.length > 0 ? { tags } : {}),
+      }
+    })
     .filter((message) => message.content !== '')
 
   return adMessages
@@ -84,6 +112,8 @@ function adMessagesForRequest(): AdMessage[] {
       adMessages.push({
         role: 'user',
         content: `<user_message>${lastUIMessage.content}</user_message>`,
+        // Typed in the UI this turn; the run has not recorded it yet.
+        tags: ['USER_PROMPT'],
       })
     }
   }
