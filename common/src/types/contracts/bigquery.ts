@@ -27,6 +27,9 @@ export type ChatCompletionEvidence = {
   finish_reason: string | null
   /** Includes provider error frames and capture data-frame parse failures. */
   transport_status: 'complete' | 'error'
+  /** Token usage as the client received it, minus `cost`/`cost_details`
+   *  (our billed credits, not the provider's price). */
+  usage?: Record<string, unknown>
 }
 
 export type ChatCompletionTraceRow = {
