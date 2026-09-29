@@ -46,9 +46,11 @@ import type { ProjectFileContext } from '@codebuff/common/util/file'
  *  mid-response, or the model ended after reasoning without an answer. */
 export const STREAM_INTERRUPTED_TAG = 'STREAM_INTERRUPTED'
 export const OUTPUT_LIMIT_TAG = 'OUTPUT_LIMIT'
+/** The provider reported a retryable failure (5xx, 429) mid-stream. */
+export const PROVIDER_ERROR_TAG = 'PROVIDER_ERROR'
 
 /** How many back-to-back recovery retries (nothing but the model's partial
- *  output between them, interruption and reasoning-only combined) run before
+ *  output between them, every recovery kind combined) run before
  *  the turn fails loudly. One covers the deploy/network blip or one-off
  *  thinking overrun this retry exists for; a run of them means every attempt
  *  is failing the same way. */
@@ -59,6 +61,9 @@ export const REPEATED_STREAM_INTERRUPTIONS_MESSAGE =
 
 export const REPEATED_OUTPUT_LIMIT_MESSAGE =
   'The model kept ending after reasoning without producing a response. Try a simpler request or a different model.'
+
+export const REPEATED_PROVIDER_ERRORS_MESSAGE =
+  'The model provider kept returning errors mid-response after several retries. Try again in a moment, or switch to a different model.'
 
 /**
  * Follow-up suggestion tools render a clickable card per call and do nothing
@@ -89,6 +94,10 @@ const RECOVERY_BY_SOURCE: Record<
   'output-limit': {
     tag: OUTPUT_LIMIT_TAG,
     giveUpMessage: REPEATED_OUTPUT_LIMIT_MESSAGE,
+  },
+  'provider-error': {
+    tag: PROVIDER_ERROR_TAG,
+    giveUpMessage: REPEATED_PROVIDER_ERRORS_MESSAGE,
   },
 }
 
@@ -579,7 +588,13 @@ export async function processStream(
               },
               'Giving up after repeated stream recoveries',
             )
-            throw new Error(recovery.giveUpMessage)
+            // The last failure's own words, when there are any: "the provider
+            // kept failing" alone hides the 502/429 support needs to see.
+            throw new Error(
+              chunk.detail
+                ? `${recovery.giveUpMessage}\n\nLast error: ${chunk.detail}`
+                : recovery.giveUpMessage,
+            )
           }
           // Setting hadToolCallError makes run-agent-step force another step
           // instead of ending the turn — that next step IS the retry: the

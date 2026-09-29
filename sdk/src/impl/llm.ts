@@ -25,6 +25,7 @@ import { getModelForRequest } from './model-provider'
 import { byokModelLimits } from '../byok'
 import type { ResolvedByokConnection } from '../byok'
 import {
+  classifyProviderErrorRecovery,
   classifyStreamEndRecovery,
   classifyThrownStreamRecovery,
   streamFinishInfoOf,
@@ -45,6 +46,20 @@ import type {
 import type { ParamsOf } from '@codebuff/common/types/function-params'
 import type { ProviderMetadata } from '@codebuff/common/types/messages/provider-metadata'
 import type { LanguageModel } from 'ai'
+
+/** Resolves after `ms`, or as soon as `signal` aborts. Never rejects. */
+function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    signal.addEventListener('abort', done, { once: true })
+  })
+}
 
 // Provider routing documentation: https://openrouter.ai/docs/features/provider-routing
 const providerOrder = {
@@ -432,11 +447,16 @@ export async function* promptAiSdkStream(
   let finishInfo: StreamFinishInfo | undefined
   // Bun/undici can throw when a response body is severed instead of ending the
   // iterator cleanly. Feed that through the same capped continuation path as a
-  // clean end without a finish marker.
+  // clean end without a finish marker. A retryable provider error reported in
+  // band (5xx/429 error chunk) takes the same path: see
+  // classifyProviderErrorRecovery.
   let thrownStreamRecovery: StreamEndRecovery | undefined
   const streamIterator = response.stream[Symbol.asyncIterator]()
-  const recoverThrownStream = (error: unknown): StreamEndRecovery | null => {
-    const recovery = classifyThrownStreamRecovery({
+  const recoverThrownStream = (
+    error: unknown,
+    classify: typeof classifyThrownStreamRecovery = classifyThrownStreamRecovery,
+  ): StreamEndRecovery | null => {
+    const recovery = classify({
       aborted: params.signal.aborted,
       error,
     })
@@ -534,7 +554,11 @@ export async function* promptAiSdkStream(
 
       // A transport error can also arrive as an AI SDK error chunk instead of
       // making iterator.next() reject. Recover both runtime shapes identically.
-      const recovery = recoverThrownStream(chunkValue.error)
+      // So does a provider that reported a retryable failure (5xx/429) in
+      // band: the same outage, just announced instead of a cut body.
+      const recovery =
+        recoverThrownStream(chunkValue.error) ??
+        recoverThrownStream(chunkValue.error, classifyProviderErrorRecovery)
       if (recovery) {
         thrownStreamRecovery = recovery
         break
@@ -655,13 +679,24 @@ export async function* promptAiSdkStream(
         finishReason: finishInfo?.finishReason,
         hasYieldedContent,
         hasReceivedReasoning,
+        ...(recovery.statusCode !== undefined && {
+          statusCode: recovery.statusCode,
+        }),
       },
       'Completion stream ended without a usable response; forcing a retry step',
     )
+    // A provider that just failed or rate-limited us gets a short, bounded
+    // pause before the forced retry step asks it again. A cancel during the
+    // pause ends the stream as a cancel, not a retry.
+    if (recovery.delayMs) {
+      await sleepUnlessAborted(recovery.delayMs, params.signal)
+      if (params.signal.aborted) return promptAborted('User cancelled input')
+    }
     yield {
       type: 'error',
       source: recovery.source,
       message: recovery.message,
+      ...(recovery.detail !== undefined && { detail: recovery.detail }),
     }
   }
 

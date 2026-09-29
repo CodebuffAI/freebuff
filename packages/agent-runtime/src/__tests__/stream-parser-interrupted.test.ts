@@ -9,7 +9,9 @@ import {
   MAX_CONSECUTIVE_STREAM_RECOVERIES,
   OUTPUT_LIMIT_TAG,
   processStream,
+  PROVIDER_ERROR_TAG,
   REPEATED_OUTPUT_LIMIT_MESSAGE,
+  REPEATED_PROVIDER_ERRORS_MESSAGE,
   REPEATED_STREAM_INTERRUPTIONS_MESSAGE,
   STREAM_INTERRUPTED_TAG,
   trailingStreamRecoveryStreak,
@@ -201,6 +203,75 @@ describe('stream parser interrupted streams', () => {
 
     await expect(runStream(outputLimitStream(), priorNotes)).rejects.toThrow(
       REPEATED_OUTPUT_LIMIT_MESSAGE,
+    )
+  })
+
+  it('retries a mid-stream provider error with its own tag', async () => {
+    // What promptAiSdkStream yields for an in-band 502 (see
+    // classifyProviderErrorRecovery in sdk/src/impl/stream-interruption.ts).
+    async function* providerErrorStream(): AsyncGenerator<
+      StreamChunk,
+      PromptResult<string | null>
+    > {
+      yield { type: 'text' as const, text: 'Looking at the handler, ' }
+      yield {
+        type: 'error' as const,
+        source: 'provider-error' as const,
+        message:
+          'The model provider reported an error while the response was streaming (Upstream provider error (502): Bad gateway).',
+        detail: 'Upstream provider error (502): Bad gateway',
+      }
+      return { aborted: false, value: 'msg-id' }
+    }
+
+    const { result, messageHistory } = await runStream(providerErrorStream())
+
+    expect(result.hadToolCallError).toBe(true)
+    const notes = messageHistory.filter(
+      (m) => m.role === 'user' && m.tags?.includes(PROVIDER_ERROR_TAG),
+    )
+    expect(notes).toHaveLength(1)
+    expect(JSON.stringify(notes[0]!.content)).toContain(
+      'Upstream provider error (502)',
+    )
+    expect(JSON.stringify(notes[0]!.content)).not.toContain(
+      'Error during tool call',
+    )
+    expect(trailingStreamRecoveryStreak(messageHistory)).toEqual({
+      count: 1,
+      lastSource: 'provider-error',
+    })
+  })
+
+  it('gives up on repeated provider errors with the provider message and the last error', async () => {
+    async function* providerErrorStream(): AsyncGenerator<
+      StreamChunk,
+      PromptResult<string | null>
+    > {
+      yield {
+        type: 'error' as const,
+        source: 'provider-error' as const,
+        message: 'The model provider reported an error.',
+        detail: 'Upstream provider error (429): Model is at capacity.',
+      }
+      return { aborted: false, value: 'msg-id' }
+    }
+
+    // Shares the one cap with the other kinds.
+    const priorNotes = [
+      userMessage({ content: 'n1', tags: [PROVIDER_ERROR_TAG] }),
+      userMessage({ content: 'n2', tags: [STREAM_INTERRUPTED_TAG] }),
+      userMessage({ content: 'n3', tags: [PROVIDER_ERROR_TAG] }),
+    ]
+
+    const failure = runStream(providerErrorStream(), priorNotes)
+    await expect(failure).rejects.toThrow(REPEATED_PROVIDER_ERRORS_MESSAGE)
+    await expect(failure).rejects.toThrow(
+      'Last error: Upstream provider error (429): Model is at capacity.',
+    )
+    // Not the network copy: the user's connection was fine.
+    await expect(failure).rejects.not.toThrow(
+      REPEATED_STREAM_INTERRUPTIONS_MESSAGE,
     )
   })
 

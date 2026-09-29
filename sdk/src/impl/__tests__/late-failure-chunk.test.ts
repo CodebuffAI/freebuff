@@ -17,7 +17,10 @@ import { OpenAICompatibleChatLanguageModel } from '@codebuff/llm-providers/opena
 import { streamText } from 'ai'
 import { describe, expect, it } from 'bun:test'
 
-import { classifyThrownStreamRecovery } from '../stream-interruption'
+import {
+  classifyProviderErrorRecovery,
+  classifyThrownStreamRecovery,
+} from '../stream-interruption'
 
 /** Serves SSE headers, then `body`, then ends — the post-grace-flush shape. */
 const serveSse = async (body: string) => {
@@ -103,17 +106,22 @@ describe('late failure delivered in band', () => {
         type: 'upstream_error',
       }),
       (error) => {
-        // llm.ts rethrows the error part as fatal; run-agent-step then shows
-        // this to the user, so it has to read as the provider's own message.
+        // The provider's own words survive, for the retry note and for the
+        // error shown if the retries run out.
         expect(String(error)).toContain(
           'Upstream provider error (429): Model is at capacity.',
         )
-        // Crucially not a "transient network" error: that classification makes
-        // classifyThrownStreamRecovery retry the step silently instead.
+        // Not a "transient network" error: the user's connection is fine, and
+        // the network copy would send them chasing their VPN.
         expect(isTransientNetworkError(error)).toBe(false)
         expect(
           classifyThrownStreamRecovery({ aborted: false, error }),
         ).toBeNull()
+        // It is a provider failure, retried on the same capped path with a
+        // backoff (CodebuffAI/freebuff#1155).
+        expect(
+          classifyProviderErrorRecovery({ aborted: false, error }),
+        ).toMatchObject({ source: 'provider-error', statusCode: 429 })
       },
     )
   })

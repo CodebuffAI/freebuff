@@ -220,6 +220,8 @@ const STREAM_RECOVERY_FIELDS = {
   finishReason: 'string',
   hasYieldedContent: 'boolean',
   consecutive: 'number',
+  /** A 'provider-error' recovery's HTTP status (502, 429, ...). */
+  statusCode: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 const MODEL_COMPACTION_FALLBACK_FIELDS = {

@@ -17,8 +17,13 @@ import type z from 'zod/v4'
  *  - 'stream-interrupted': the stream ended without a finish marker
  *    (connection cut mid-response — a server deploy or network drop).
  *  - 'output-limit': the stream produced only reasoning and no usable answer,
- *    either by reaching its output limit or by reporting a normal stop. */
-export type StreamRecoverySource = 'stream-interrupted' | 'output-limit'
+ *    either by reaching its output limit or by reporting a normal stop.
+ *  - 'provider-error': the provider reported a retryable failure (5xx, 429)
+ *    in band, mid-stream. */
+export type StreamRecoverySource =
+  | 'stream-interrupted'
+  | 'output-limit'
+  | 'provider-error'
 
 export type StreamChunk =
   | {
@@ -47,6 +52,9 @@ export type StreamChunk =
        *  continue, instead of wrapping the message as a tool-call failure and
        *  instead of the turn silently ending. */
       source?: StreamRecoverySource
+      /** For a recovery: a user-facing summary of what failed, carried into
+       *  the error raised if the retries run out. */
+      detail?: string
     }
 
 export type CacheDebugUsageData = {
