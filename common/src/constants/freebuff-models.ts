@@ -736,6 +736,32 @@ export const FREEBUFF_MUSE_SPARK_MODEL_IDS = [
 export const MUSE_SPARK_CONTRIBUTOR_RPM = 150
 export const MUSE_SPARK_CONTRIBUTOR_TPM = 3_000_000
 /**
+ * Muse Spark's OpenRouter lane (FREEBUFF_MUSE_SPARK_LANE=openrouter, the
+ * default since 2026-09-29): the endpoint it is pinned to and the ceiling that
+ * keeps it there.
+ *
+ * OpenRouter lists exactly one endpoint for each Contributor id — `meta`, at
+ * Meta's own card ($0.10 input, $0.002 cached, $0.20 output per M; the same
+ * price as our direct key) — so the pin changes nothing today. It is there so
+ * that a second host appearing under the same id cannot take the traffic
+ * unannounced; `max_price` makes a repriced one unroutable rather than billed.
+ *
+ * The lane exists because the direct key was `user_blocked` by Meta ("repeated
+ * policy violations") about fourteen minutes after 1.3 went paid-only on
+ * 2026-09-28, which sent every pick to the DeepSeek fallback. OpenRouter is a
+ * different account at Meta, with its own rate limit rather than our 150 RPM
+ * team bucket.
+ */
+export const MUSE_SPARK_OPENROUTER_UPSTREAM_ORDER = ['meta'] as const
+/** Strictly ABOVE the $0.10/$0.20 card on both terms — a ceiling equal to
+ *  list 404s every request (measured on GPT-5.6 Luna, see
+ *  FREEBUFF_GPT_5_6_LUNA_MAX_PRICE) — and far below Standard Muse Spark's
+ *  $1.25/$4.25, the band a mislabelled or repriced host would sit in. */
+export const MUSE_SPARK_OPENROUTER_MAX_PRICE = {
+  prompt: 0.15,
+  completion: 0.3,
+} as const
+/**
  * Reasoning effort sent with every Muse Spark request.
  *
  * Muse Spark ALWAYS reasons — `reasoning_effort: "none"` is a hard 400 — so
