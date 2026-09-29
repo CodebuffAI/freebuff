@@ -107,6 +107,13 @@ export type OverrideToolHandlers = {
      *  on hosted surfaces window the content themselves (they hold the file
      *  before their own read budget truncates it). */
     fileWindows?: Record<string, FileReadWindow[]>
+    /** Set only when the SDK reads a file to compute an edit (str_replace,
+     *  write_file), never from a model's read_files call. The override must
+     *  then return the whole file, skipping its read budget: an edit computed
+     *  from a truncated read cannot match anything past the cut, and the patch
+     *  it produces carries the truncation notice, so it fails to apply to the
+     *  real file. An override that ignores it keeps that old behaviour. */
+    fullContent?: true
   }) => Promise<Record<string, string | null>>
 }
 
@@ -1140,6 +1147,11 @@ async function readFiles({
       return await override({
         filePaths,
         ...(fileWindows ? { fileWindows } : {}),
+        // `limitContent: false` is the edit path's read (requestOptionalFile).
+        // Without forwarding it, the override applied the model-facing read
+        // budget (~20k estimated tokens, roughly 65k characters) and every
+        // str_replace past that offset was "not found".
+        ...(limitContent === false ? { fullContent: true as const } : {}),
       })
     }
 
@@ -1157,6 +1169,7 @@ async function readFiles({
       const loadedFiles = await override({
         filePaths: readablePaths,
         ...(fileWindows ? { fileWindows } : {}),
+        ...(limitContent === false ? { fullContent: true as const } : {}),
       })
       if (
         !loadedFiles ||

@@ -509,4 +509,30 @@ function test3() {
     const successResult = result as { content: string }
     expect(successResult.content).toBe('line 1\nhello $$world!\nline 2\n')
   })
+
+  // Freebuff Cloud report (2026-09-29): "str_replace treats oldString as a
+  // regex (parens become groups)" and "only searches the first ~65K chars".
+  // Neither is true of this function; the truncation was the hosted read
+  // override (see the SDK's `fullContent`). Pin the literal semantics here.
+  it('matches regex metacharacters literally and inserts $ patterns verbatim, past 65,536 chars', async () => {
+    const filler = 'const pad = 0; // filler line\n'.repeat(3_000)
+    const target = 'if (foo(bar) && [a-z]+.test(x)) { return $1 }\n'
+    const initialContent = `${filler}${target}tail()\n`
+    expect(initialContent.indexOf(target)).toBeGreaterThan(65_536)
+    const newStr = "if (foo(bar)) { return x.replace(/(a)/, '$1-$&-$$') }\n"
+
+    const result = await processStrReplace({
+      path: 'big.ts',
+      replacements: [
+        { oldString: target, newString: newStr, allowMultiple: false },
+      ],
+      initialContentPromise: Promise.resolve(initialContent),
+      logger,
+    })
+
+    expect('content' in result).toBe(true)
+    const { content, patch } = result as { content: string; patch: string }
+    expect(content).toBe(`${filler}${newStr}tail()\n`)
+    expect(applyPatch(initialContent, patch)).toBe(content)
+  })
 })
