@@ -29,7 +29,9 @@ import {
  * serve path -- the campaign's candidate filter and all four checked-in floors
  * -- asks `resolveHouseSuppressedForUser` first. That is the ONLY thing a
  * serve path reads about a subscription; the claims below are unaffected, and
- * in particular a subscription still does not remove ads.
+ * in particular a subscription still does not remove ads. The one house
+ * campaign a subscriber still sees is the Discord join campaign (COD-702,
+ * `SUBSCRIBER_VISIBLE_HOUSE_GOALS`); it does not sell the subscription.
  *
  * **This file is published.** `common` ships wholesale to the public mirror
  * (docs/public-repo-sync.md). That is fine here -- it is marketing copy and a
