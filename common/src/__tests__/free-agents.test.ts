@@ -698,6 +698,7 @@ describe('every freebuff root agent declares a prompt opening', () => {
     'base2-free-minimax-m3': BASE2,
     'base2-free-luna': BASE2,
     'base2-free-luna-6': BASE2,
+    'base2-free-gpt-6-1-sol': BASE2,
     'base2-free-solar-pro4': BASE2,
     'base2-free-solar-mini4': BASE2,
     'base2-free-space-bunny-alpha': BASE2,

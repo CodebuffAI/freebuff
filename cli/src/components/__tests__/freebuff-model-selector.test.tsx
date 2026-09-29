@@ -238,7 +238,7 @@ test('the Freebucks picker waits after an expired reset and displays a confirmed
     }))
   }
   publish(0, FIXED_NOW_MS + 60_000)
-  const setup = await renderSelector()
+  const setup = await renderSelector(48)
   expect(setup.captureCharFrame()).toContain('0/100 Freebucks daily · resets in 1m')
   for (const resetAt of [FIXED_NOW_MS, FIXED_NOW_MS - 60_000]) {
     publish(0, resetAt)
@@ -293,7 +293,8 @@ describe('FreebuffModelSelector tier layout', () => {
     // 48 rows since 2026-09-23: Solar Mini 4 and Space Bunny Alpha made the
     // full catalog one row taller than a 40-row frame holds with the referral
     // actions beneath it.
-    const frame = (await renderSelector(48)).captureCharFrame()
+    // 52 rows: GPT-6.1 Sol (2026-09-29) made the catalog one row taller again.
+    const frame = (await renderSelector(52)).captureCharFrame()
     const actionRow =
       frame.split('\n').find((line) => line.includes('Copy invite link')) ?? ''
 
@@ -918,7 +919,7 @@ describe('FreebuffModelSelector plan line', () => {
 
   test('a subscriber sees their plan windows under the catalog', async () => {
     useFreebuffSessionStore.getState().setSession(PLAN_SESSION)
-    const frame = (await renderSelector()).captureCharFrame()
+    const frame = (await renderSelector(48)).captureCharFrame()
     expect(frame).toContain('STARTER PLAN')
     expect(frame).toContain('today 1.3 of 2')
     expect(frame).toContain('week 3 of 6')

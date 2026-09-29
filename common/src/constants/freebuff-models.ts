@@ -14,6 +14,7 @@ import {
 } from './freebuff-peak-hours'
 import { mimoModels } from './model-config'
 import { SOLAR_PRO_4_OFFER } from './freebuff-solar-promo'
+import { GPT_61_SOL_PROMOTIONAL } from './freebuff-sol-promo'
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
@@ -143,6 +144,12 @@ export interface FreebuffModelOption {
    *  deal actually ends (or update the copy if it is extended). `short` is
    *  the CLI's form, which has no tooltip and little width. */
   dealEndingSoon?: { tooltip: string; short: string }
+  /** A TEMPORARY promotional price with no announced end: rendered as a
+   *  "Promotional" badge whose tooltip is `tooltip` (the CLI, which has no
+   *  tooltips, prints `short`). Distinct from `dealEndingSoon`, which names a
+   *  date — this says the price is a promotion and will not last, without
+   *  promising when it stops. Clear it when the promotion ends. */
+  promotional?: { tooltip: string; short: string }
   /** Tooltip attached to the tagline, for a tagline that names a behavior the
    *  word alone cannot explain (e.g. "Queue"). Rendered with the same
    *  dotted-underline affordance as the data-use "Data" label, so a row can
@@ -428,6 +435,53 @@ export const FREEBUFF_GPT_6_LUNA_MAX_PRICE = {
 } as const
 /** Reasoning effort every GPT-6 Luna turn runs at, as on 5.6. */
 export const FREEBUFF_GPT_6_LUNA_REASONING_EFFORT = 'high' as const
+/**
+ * GPT-6.1 Sol (OpenAI), served through OpenRouter, on every surface from
+ * 2026-09-29: FREE TO US VIEWERS and paywalled for everyone else
+ * (FREEBUFF_US_OR_PAID_MODEL_IDS over the paid-only lists), at a PROMOTIONAL
+ * 100 Freebucks — the most expensive row we have offered outside the Fable
+ * campaign.
+ *
+ * Its own wire id. The `gpt-6-sol` ids elsewhere in this file are a different
+ * model and are not served to anyone; nothing here aliases them.
+ *
+ * COST, measured 2026-09-29 on OpenRouter's flex endpoint with an agent-sized
+ * prompt: flex is $1.00 in / $0.05 cached / $5.00 out per M — exactly 20x
+ * GPT-6 Luna flex on fresh input and output, 10x on cached input — and billed
+ * cost matched that card. It reasons far less than Luna (117-402 reasoning
+ * tokens against Luna's 1,037-2,402 on the same tasks) and wrote ~0.68x
+ * Luna's output, finishing turns in about half the time. Projected onto
+ * production's Luna message shape (~145k input at ~93.5% cached, ~1.3k out)
+ * that is ~$0.025 a message, ~13x Luna and ~25x DeepSeek V4 Flash: a mean
+ * unpaced hour of ~$3 and a p90 near $8. Priced at a promotional 100 Freebucks
+ * by product decision, far BELOW that p90 on purpose; the session pacer
+ * (target = price, so $1.00 an hour) is what holds a heavy hour near it.
+ */
+export const FREEBUFF_GPT_61_SOL_MODEL_ID = 'openai/gpt-6.1-sol'
+/**
+ * Endpoint order for GPT-6.1 Sol: OpenAI flex first, standard behind it — the
+ * GPT-6 Luna arrangement (FREEBUFF_GPT_6_LUNA_UPSTREAM_ORDER), for the same
+ * reasons. Standard is 2x flex on every term, so a sustained rise in its share
+ * doubles this row's bill; it is there so a flex capacity refusal is not a
+ * dead turn.
+ */
+export const FREEBUFF_GPT_61_SOL_UPSTREAM_ORDER = [
+  'openai/flex',
+  'openai',
+] as const
+/**
+ * Price ceiling for GPT-6.1 Sol, USD per million: above standard ($2/$10) and
+ * Azure US ($2.20/$11), which stay reachable, and below OpenAI's `fast` tier
+ * ($4/$20), which is the band this fences out.
+ */
+export const FREEBUFF_GPT_61_SOL_MAX_PRICE = {
+  prompt: 2.5,
+  completion: 12.5,
+} as const
+/** Reasoning effort a GPT-6.1 Sol turn runs at unless the user picks one.
+ *  `medium`, not Luna's `high`: reasoning bills as output at $5/M here, and
+ *  the cost measurement above was taken at the model's default. */
+export const FREEBUFF_GPT_61_SOL_REASONING_EFFORT = 'medium' as const
 /** Solar Pro 4 (Upstage), served through OpenRouter and constrained to Upstage
  *  by `applyOpenRouterProviderRouting`. Context 524,288, text in / text out,
  *  using Upstage's non-ZDR endpoint for provider-side debugging.
@@ -1090,7 +1144,7 @@ export const MUSE_SPARK_FALLBACK_AFTER_MS = 15_000
  *  MUSE_SPARK_FALLBACK_MODEL_ID actually points at; a catalog invariant test
  *  checks the two agree. */
 export const MUSE_SPARK_FALLBACK_NOTICE =
-  'Rate limited and shared by all users: queues when busy, then answers on DeepSeek V4.1 Flash.'
+  "Meta's agentic coding model, 1M context. When it is busy or unavailable, your request is answered on DeepSeek V4.1 Flash instead."
 
 /** UI-only rollout switch. Backend support and free-mode allowlists remain
  *  wired even when these models are hidden from the Freebuff picker. */
@@ -2378,6 +2432,29 @@ const GPT_6_LUNA_MODEL = {
     'Runs on OpenAI flex capacity: half the token price, the same speed in our measurements, and a standard-tier backup when flex is busy.',
 } as const satisfies FreebuffModelOption
 
+const GPT_61_SOL_MODEL = {
+  id: FREEBUFF_GPT_61_SOL_MODEL_ID,
+  displayName: 'GPT-6.1 Sol',
+  tagline: 'OpenAI flagship',
+  availability: 'always',
+  // OpenAI's API does not train on request data: no AI-training notice and
+  // no trace storage, as on GPT-6 Luna.
+  dataUse: 'service',
+  premium: true,
+  // OpenRouter reports text + image + file input.
+  multimodal: true,
+  reasoningEffort: FREEBUFF_GPT_61_SOL_REASONING_EFFORT,
+  efforts: EFFORTS_THROUGH_MAX,
+  defaultEffort: FREEBUFF_GPT_61_SOL_REASONING_EFFORT,
+  isNew: true,
+  // PROMOTIONAL, by product decision (2026-09-29): 100 Freebucks is a
+  // temporary price well under what the row costs us (FREEBUFF_GPT_61_SOL_MODEL_ID),
+  // and the label says so rather than letting a user build a habit on it.
+  promotional: GPT_61_SOL_PROMOTIONAL,
+  taglineTooltip:
+    "OpenAI's flagship, on flex capacity with a standard-tier backup when flex is busy.",
+} as const satisfies FreebuffModelOption
+
 /**
  * Solar Pro 4 (Upstage). Retired from every picker on 2026-09-23 when Solar
  * Mini 4 took its slot, and RETURNED beside Mini 4 on 2026-09-25 at 10
@@ -2710,7 +2787,12 @@ const MUSE_SPARK_13_CONTRIBUTOR_MODEL = {
   //
   // It read 'Falls back when busy' while the row was Web-only, which stated the
   // third fact and left the first two to be discovered.
-  tagline: 'Queues, then falls back',
+  //
+  // It reads that again from 2026-09-29, because it is true again: on the
+  // OpenRouter lane (FREEBUFF_MUSE_SPARK_LANE) there is no silent-retry window
+  // and no queue — a request Meta will not take is answered on the fallback at
+  // once — so "Queues" would describe a lane the row no longer runs on.
+  tagline: 'Falls back when busy',
   taglineTooltip: MUSE_SPARK_FALLBACK_NOTICE,
   availability: 'always',
   // Load-bearing pair (a catalog invariant test enforces it): the Contributor
@@ -2837,6 +2919,7 @@ export const SUPPORTED_FREEBUFF_MODELS = [
   // or a coercion, never an unknown-model refusal.
   GPT_5_6_LUNA_MODEL,
   GPT_6_LUNA_MODEL,
+  GPT_61_SOL_MODEL,
   // Solar Pro 4 stays SUPPORTED after its 2026-09-23 retirement for the same
   // reason 5.6 does.
   SOLAR_PRO_4_MODEL,
@@ -2991,6 +3074,10 @@ export const FREEBUFF_MODELS = [
   // completions route. Last in the list on purpose: it may answer as another
   // model when Meta's team-wide ceiling is full.
   MUSE_SPARK_13_CONTRIBUTOR_MODEL,
+  // GPT-6.1 Sol (2026-09-29): free in the US, paid-only elsewhere, at a
+  // promotional 100 Freebucks — the dearest row, so last in a cheapest-first
+  // list.
+  GPT_61_SOL_MODEL,
 ] as const satisfies readonly FreebuffModelOption[]
 
 /** Public full-access models metered by the shared premium pool. The catalog
@@ -3963,6 +4050,9 @@ export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
     // it must not stay the free way into the same Meta budget.
     FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
     FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
+    // GPT-6.1 Sol (2026-09-29): paid-only on every surface OUTSIDE THE US —
+    // FREEBUFF_US_OR_PAID_MODEL_IDS is the exemption.
+    FREEBUFF_GPT_61_SOL_MODEL_ID,
     // MiMo 2.6 Pro and GPT-6 Luna LEFT this list on 2026-09-25, by product
     // decision: every FULL-ACCESS account opens them with no plan (metered in
     // Freebucks at their own prices). They were paid-only from 2026-09-21, and
@@ -3993,7 +4083,47 @@ export const FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS: readonly string[] =
     // not what keeps them paid.
     FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
     FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
+    // GPT-6.1 Sol is in FREEBUFF_MODELS, so the CLI and Desktop list it.
+    FREEBUFF_GPT_61_SOL_MODEL_ID,
   ])
+
+/**
+ * Rows a viewer opens when they are IN THE US **or** hold a live plan.
+ * Everyone else sees them listed and locked, and admission refuses the start.
+ * An EXEMPTION from the paywall lists above, not a second gate: every id here
+ * is also in FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS.
+ *
+ * The country half is resolved SERVER-SIDE from the authenticated request (the
+ * same resolution the access tier uses), never from anything a client sends —
+ * a client-chosen country is one an abusive client rotates. US is `tier1`,
+ * which also implies full access: a limited viewer resolves to tier 4 even
+ * inside the US, and stays paywalled.
+ *
+ * It fails CLOSED: a viewer whose country cannot be resolved is treated as
+ * non-US and sees the paywall.
+ *
+ * No client can see the country this turns on, so the server ships the
+ * VERDICT per viewer (`FreebuffFreebucksInfo.planRequiredModelIds`) and the
+ * pickers draw their existing lock from it.
+ *
+ * GPT-6 Luna and MiMo 2.6 Pro held this exemption 2026-09-22 → 09-25, when
+ * they opened to every full-access account and the list was removed; GPT-6.1
+ * Sol brings it back (2026-09-29, by product decision).
+ */
+export const FREEBUFF_US_OR_PAID_MODEL_IDS: readonly string[] = Object.freeze([
+  FREEBUFF_GPT_61_SOL_MODEL_ID,
+])
+
+export function isFreebuffUsOrPaidModelId(
+  id: string | null | undefined,
+): boolean {
+  return (
+    !!id &&
+    FREEBUFF_US_OR_PAID_MODEL_IDS.some((gated) =>
+      freebuffModelIdMatches(id, gated),
+    )
+  )
+}
 
 export function isFreebuffProOnlyEverySurfaceModelId(
   id: string | null | undefined,
@@ -4313,6 +4443,9 @@ export const FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS: readonly string[] =
     // (1.2 is deliberately absent: it survives only for released binaries at
     // full access, and is not offered at limited access at all.)
     FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+    // GPT-6.1 Sol (2026-09-29): available to EVERY paid account, limited
+    // region included.
+    FREEBUFF_GPT_61_SOL_MODEL_ID,
   ])
 
 /**
@@ -4600,6 +4733,14 @@ export function isFreebuffGpt56LunaModelId(
  *  `openai/gpt-`: 5.6 routes through the Cheaper Inference -> Novita cascade,
  *  which cannot serve a gpt-6 slug at all, so one shared predicate would send
  *  this row to a lane that 404s it. */
+/** Whether the requested model is GPT-6.1 Sol, tolerating a dated snapshot. */
+export function isFreebuffGpt61SolModelId(
+  id: string | null | undefined,
+): boolean {
+  if (!id) return false
+  return freebuffModelIdMatches(id, FREEBUFF_GPT_61_SOL_MODEL_ID)
+}
+
 export function isFreebuffGpt6LunaModelId(
   id: string | null | undefined,
 ): boolean {

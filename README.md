@@ -43,7 +43,8 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 | **Solar Pro 4**             | Full and limited access | Upstage's larger, stronger model; 524K context, text only |
 | **Space Bunny Alpha**       | Full access             | Beta. A stealth model from an anonymous provider that retains prompts; 1M context, images |
 | **Gemini 3.8 Flash**        | Paid plans              | 1M context, and the only model that accepts audio, video and PDF |
-| **Muse Spark 1.3**          | Paid plans              | Meta's agentic coding model; 1M context. Rate limited and shared by every user, so it queues when busy and answers on DeepSeek V4.1 Flash rather than making you wait |
+| **Muse Spark 1.3**          | Paid plans              | Meta's agentic coding model; 1M context. When it is busy or unavailable, it answers on DeepSeek V4.1 Flash rather than making you wait |
+| **GPT-6.1 Sol**             | US, or paid plans elsewhere | OpenAI's flagship at a temporary promotional price; 1M context, images |
 
 Most models draw on your normal daily sessions rather than a separate limit. GLM 5.3 Flash, DeepSeek V4.1 Flash, MiMo 2.6 Flash, Solar Mini 4 and Solar Pro 4 are unmetered at full access and cost no session at all. Models may still serve from a quantized (Q8_0) build.
 

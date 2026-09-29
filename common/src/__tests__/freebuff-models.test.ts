@@ -23,6 +23,7 @@ import {
   FREEBUFF_GPT_5_6_LUNA_MAX_PRICE,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
   FREEBUFF_GPT_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_61_SOL_MODEL_ID,
   isFreebuffGpt6LunaModelId,
   FREEBUFF_GPT_5_6_LUNA_PROVIDER_ROUTE,
   FREEBUFF_GPT_5_6_LUNA_REASONING_EFFORT,
@@ -576,7 +577,6 @@ describe('freebuff model availability', () => {
       FREEBUFF_SOLAR_PRO_4_MODEL_ID,
     )
   })
-
 
   test('MiMo 2.5 remains supported and follows the UI rollout flag', () => {
     expect(SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)).toContain(
@@ -1700,6 +1700,8 @@ describe('freebuff model availability', () => {
       FREEBUFF_MIMO_V26_PRO_MODEL_ID,
       // GPT-6 Luna arrived 2026-09-22; its wire id names the version.
       FREEBUFF_GPT_6_LUNA_MODEL_ID,
+      // GPT-6.1 Sol arrived 2026-09-29; its wire id names the version.
+      FREEBUFF_GPT_61_SOL_MODEL_ID,
       // Solar Mini 4 and Space Bunny Alpha arrived 2026-09-23; neither has a
       // build date to disambiguate.
       FREEBUFF_SOLAR_MINI_4_MODEL_ID,
@@ -2095,10 +2097,11 @@ describe('Muse Spark rate-limit fallback', () => {
       (candidate) =>
         candidate.id === FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
     )!
-    // The tagline carries all three facts on its own — rate limited, queues,
-    // can answer as another model — because the CLI and Desktop pickers render
-    // NO tooltip.
-    expect(model.tagline).toBe('Queues, then falls back')
+    // The tagline carries the fact that matters on its own — it can answer as
+    // another model — because the CLI and Desktop pickers render NO tooltip.
+    // (It said "Queues, then falls back" until the OpenRouter lane, which has
+    // no queue, became the default on 2026-09-29.)
+    expect(model.tagline).toBe('Falls back when busy')
     expect(model.taglineTooltip).toBe(MUSE_SPARK_FALLBACK_NOTICE)
     // The copy must NAME the model the server actually reroutes to — pinning it
     // to the catalog rather than to a literal is what catches a fallback that

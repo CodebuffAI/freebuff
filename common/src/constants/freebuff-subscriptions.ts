@@ -4,6 +4,7 @@ import {
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
   FREEBUFF_GPT_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_61_SOL_MODEL_ID,
   FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS,
   FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
   getFreebuffWebModel,
@@ -67,6 +68,8 @@ export const FREEBUFF_SUBSCRIPTION_PREMIUM_MODEL_IDS: readonly string[] =
     // without the cap, a subscriber spending every daily session here would
     // have to be priced for, and the allowance would shrink for everyone.
     FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
+    // GPT-6.1 Sol (2026-09-29) is dearer still, for the same reason.
+    FREEBUFF_GPT_61_SOL_MODEL_ID,
   ])
 
 export function isFreebuffSubscriptionPremiumModelId(modelId: string): boolean {

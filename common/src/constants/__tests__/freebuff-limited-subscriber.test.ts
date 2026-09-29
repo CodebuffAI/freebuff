@@ -161,8 +161,9 @@ describe('paid plans at limited access', () => {
     // here, not a diff that passes quietly.
     // MiMo 2.6 Pro joined on 2026-09-21, on Luna's terms (plan-only at
     // limited access, Freebucks at full). Muse Spark 1.3 joined on
-    // 2026-09-28, paid-only on every surface.
-    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(7)
+    // 2026-09-28, paid-only on every surface, and GPT-6.1 Sol on 2026-09-29
+    // on the same terms.
+    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(8)
   })
 
   test('a limited-tier plan-only row is never free at limited access', () => {

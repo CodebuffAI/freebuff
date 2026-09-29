@@ -33,7 +33,7 @@ and keep the extracted `freebuff` binary and `tree-sitter.wasm` together.
 
 ## Why Freebuff?
 
-**Choice of leading models** — The regular CLI picker includes GLM 5.3 Flash, DeepSeek, GPT-6 Luna, MiMo 2.6 Flash, MiMo 2.6 Pro, Solar Mini 4, Solar Pro 4, Space Bunny Alpha, Gemini 3.8 Flash, and Muse Spark 1.3, with GLM 5.3 Flash selected by default.
+**Choice of leading models** — The regular CLI picker includes GLM 5.3 Flash, DeepSeek, GPT-6 Luna, MiMo 2.6 Flash, MiMo 2.6 Pro, Solar Mini 4, Solar Pro 4, Space Bunny Alpha, Gemini 3.8 Flash, Muse Spark 1.3, and GPT-6.1 Sol, with GLM 5.3 Flash selected by default.
 
 **Fast** — 5–10× speed up. 3–5× tokens per second compared to Claude, plus context gathering in seconds.
 
@@ -43,7 +43,7 @@ and keep the extracted `freebuff` binary and `tree-sitter.wasm` together.
 
 **How can it be free?** Freebuff is supported by text ads.
 
-**What models do you use?** In full mode, the regular picker includes GLM 5.3 Flash, DeepSeek V4.1 Flash, GPT-6 Luna, MiMo 2.6 Flash, MiMo 2.6 Pro, Solar Mini 4, Solar Pro 4, Space Bunny Alpha, Gemini 3.8 Flash, and Muse Spark 1.3. Space Bunny Alpha is a beta stealth model from an anonymous provider that retains prompts. Gemini 3.8 Flash and Muse Spark 1.3 require a paid plan: without one they are listed but locked, and selecting one opens the plans page. GPT-6 Luna and MiMo 2.6 Pro are open to every full-access account. Muse Spark 1.3 has a 1M-token context and is rate limited across all users, so at busy times it queues and then answers on DeepSeek V4 Flash instead of leaving you waiting. GLM 5.3 Flash is the CLI default and the cheapest model to run. Limited mode uses GLM 5.3 Flash, DeepSeek V4.1 Flash, MiMo 2.6 Flash, Solar Mini 4, and Solar Pro 4. Every model is paid for in Freebucks, one price per one-hour session, shown in the model picker. Models may still serve from a quantized (Q8_0) build.
+**What models do you use?** In full mode, the regular picker includes GLM 5.3 Flash, DeepSeek V4.1 Flash, GPT-6 Luna, MiMo 2.6 Flash, MiMo 2.6 Pro, Solar Mini 4, Solar Pro 4, Space Bunny Alpha, Gemini 3.8 Flash, Muse Spark 1.3, and GPT-6.1 Sol. Space Bunny Alpha is a beta stealth model from an anonymous provider that retains prompts. Gemini 3.8 Flash and Muse Spark 1.3 require a paid plan: without one they are listed but locked, and selecting one opens the plans page. GPT-6.1 Sol is free in the US and needs a paid plan elsewhere; its price is a temporary promotion. GPT-6 Luna and MiMo 2.6 Pro are open to every full-access account. Muse Spark 1.3 has a 1M-token context, and when it is busy or unavailable it answers on DeepSeek V4.1 Flash instead of leaving you waiting. GLM 5.3 Flash is the CLI default and the cheapest model to run. Limited mode uses GLM 5.3 Flash, DeepSeek V4.1 Flash, MiMo 2.6 Flash, Solar Mini 4, and Solar Pro 4. Every model is paid for in Freebucks, one price per one-hour session, shown in the model picker. Models may still serve from a quantized (Q8_0) build.
 
 **Which countries is Freebuff available in?** All countries. Freebuff runs in "full" mode in the US, Canada, UK, EU, and other select countries, and in "limited" mode everywhere else (or while using a VPN). See [freebuff.com](https://freebuff.com) for the full list.
 
