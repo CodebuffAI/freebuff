@@ -19,13 +19,6 @@ import type {
   FreebuffLimitedModeReason,
 } from '../types/freebuff-session'
 
-/**
- * A short release note shared by CLI and Desktop. Current policy belongs in
- * the catalog; this is only the user-facing explanation of the change.
- */
-export const FREEBUFF_TIER_CHANGE_NOTICE =
-  'Solar Mini 4 is now unmetered at full access and available with limited access. GPT-6 Luna still uses your shared premium allowance, charging partial time rounded up to a tenth. —❤️ Freebuff Team'
-
 const PRIVACY_SIGNAL_LABELS: Partial<Record<FreebuffIpPrivacySignal, string>> =
   {
     anonymous: 'anonymized network',

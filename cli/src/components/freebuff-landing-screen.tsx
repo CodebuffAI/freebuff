@@ -61,10 +61,7 @@ import {
   getRateLimitsByModel,
   getReferralInfo,
 } from '@codebuff/common/types/freebuff-session'
-import {
-  FREEBUFF_TIER_CHANGE_NOTICE,
-  getFreebuffModelAvailabilityNotice,
-} from '@codebuff/common/util/freebuff-model-availability'
+import { getFreebuffModelAvailabilityNotice } from '@codebuff/common/util/freebuff-model-availability'
 import { formatFreebuffHardBlockedPrivacySignals } from '@codebuff/common/util/freebuff-privacy'
 
 import { enterByokSetup } from '../commands/byok'
@@ -514,7 +511,7 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
       ? []
       : accessTier === 'limited'
         ? [getLimitedModeNotice(session)]
-        : [FREEBUFF_TIER_CHANGE_NOTICE]
+        : []
   // 'none' = user hasn't started a session yet. We're in the pre-chat landing
   // state: show the picker with a prompt. Picking a model triggers
   // startFreebuffSession, which POSTs and transitions straight to 'active' (chat).

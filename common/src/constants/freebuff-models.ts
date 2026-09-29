@@ -1621,7 +1621,7 @@ const DEEPSEEK_V4_FLASH_MODEL = {
   //    onto a model that is shut ten hours a day.
   //
   // Reverting is this flag plus the FREEBUFF_PREMIUM_MODEL_IDS entry, which
-  // move together, and the FREEBUFF_TIER_CHANGE_NOTICE copy.
+  // move together.
   premium: false,
   // TRUE since 2026-09-10, when the undated `deepseek-v4-flash` wire id began
   // resolving to V4.1 Flash, which is natively multimodal. Verified against the

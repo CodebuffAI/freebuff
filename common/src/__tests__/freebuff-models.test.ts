@@ -1,4 +1,3 @@
-import { FREEBUFF_TIER_CHANGE_NOTICE } from '../util/freebuff-model-availability'
 import { describe, expect, test } from 'bun:test'
 
 import { isFreeModeAllowedAgentModel } from '../constants/free-agents'
@@ -578,14 +577,6 @@ describe('freebuff model availability', () => {
     )
   })
 
-  test('the tier notice states the Solar entitlement directly', () => {
-    expect(FREEBUFF_TIER_CHANGE_NOTICE).toContain(
-      'Solar Mini 4 is now unmetered at full access',
-    )
-    expect(FREEBUFF_TIER_CHANGE_NOTICE).toContain(
-      'available with limited access',
-    )
-  })
 
   test('MiMo 2.5 remains supported and follows the UI rollout flag', () => {
     expect(SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)).toContain(
