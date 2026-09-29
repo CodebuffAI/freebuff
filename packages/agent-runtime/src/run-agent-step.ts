@@ -76,6 +76,7 @@ import {
   withSystemTags as withSystemTags,
   buildUserMessageContent,
   expireMessages,
+  frameSteeringContent,
 } from './util/messages'
 import {
   estimateContextTokens,
@@ -1428,15 +1429,18 @@ export async function loopAgentSteps(
       // Steering: if the host fed user messages while this step ran, append them
       // now (the step's LLM call + tools have completed, so history is in a clean
       // state) and keep the turn going so the agent responds to them next step,
-      // rather than waiting for the whole turn to finish.
+      // rather than waiting for the whole turn to finish. Each message is
+      // framed as sent mid-turn: bare, the model read it as the whole new
+      // request and dropped the one it was working on.
       const steered = await params.drainSteeringMessages?.()
       if (steered?.length) {
         const messages = steered.map((message) =>
           userMessage({
-            content:
+            content: frameSteeringContent(
               typeof message === 'string'
                 ? buildUserMessageContent(message, undefined)
                 : buildUserMessageContent(message.prompt, undefined, message.content),
+            ),
             tags: ['USER_PROMPT'],
             keepDuringTruncation: true,
           }),

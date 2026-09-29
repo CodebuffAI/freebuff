@@ -19,6 +19,10 @@ import {
   messagesWithSystem,
   getPreviouslyReadFiles,
   buildUserMessageContent,
+  frameSteeringContent,
+  frameSteeringText,
+  STEERING_NOTE,
+  unwrapSteeringText,
 } from '../../util/messages'
 import * as tokenCounter from '../token-counter'
 
@@ -731,5 +735,40 @@ describe('getPreviouslyReadFiles', () => {
 
     const result = getPreviouslyReadFiles({ messages, logger })
     expect(result).toEqual([])
+  })
+})
+
+describe('steering framing', () => {
+  it('wraps the text with the mid-turn note', () => {
+    const framed = frameSteeringText('also add tests')
+    expect(framed).toBe(
+      `<user_message_sent_while_working>\nalso add tests\n</user_message_sent_while_working>\n\n${STEERING_NOTE}`,
+    )
+  })
+
+  it('never double-wraps', () => {
+    const once = frameSteeringText('also add tests')
+    expect(frameSteeringText(once)).toBe(once)
+  })
+
+  it('unwraps back to exactly what the user typed', () => {
+    const text = 'line one\n\nline two'
+    expect(unwrapSteeringText(frameSteeringText(text))).toBe(text)
+    expect(unwrapSteeringText('plain prompt')).toBe('plain prompt')
+  })
+
+  it('frames the first text part and keeps images', () => {
+    const image = {
+      type: 'image' as const,
+      image: 'Zmlyc3Q=',
+      mediaType: 'image/png',
+    }
+    expect(
+      frameSteeringContent([{ type: 'text', text: 'look' }, image]),
+    ).toEqual([{ type: 'text', text: frameSteeringText('look') }, image])
+    expect(frameSteeringContent([image])).toEqual([
+      { type: 'text', text: frameSteeringText('') },
+      image,
+    ])
   })
 })

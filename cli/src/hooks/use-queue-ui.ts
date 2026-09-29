@@ -11,6 +11,8 @@ interface UseQueueUiParams {
   queuedMessages: QueuedMessage[]
   separatorWidth: number
   terminalWidth: number
+  /** A run the user's next plain message will be added to (steering). */
+  steersRun?: boolean
 }
 
 /** Below this the title has no room for a second segment, so the expand hint
@@ -22,6 +24,7 @@ export const useQueueUi = ({
   queuedMessages,
   separatorWidth,
   terminalWidth,
+  steersRun = false,
 }: UseQueueUiParams) => {
   const queuedCount = queuedMessages.length
   const shouldShowQueuePreview = queuedCount > 0 && !queuePaused
@@ -62,8 +65,18 @@ export const useQueueUi = ({
       return 'Ctrl-C to cancel queued messages'
     }
 
+    // Mid-run, Enter adds the message to the running task rather than
+    // queueing a new one (the router's steering path). Say so: users expected
+    // a queue and read the agent answering it as their first task skipped.
+    // With messages already queued, a submit queues too, so no hint then.
+    if (steersRun && queuedCount === 0) {
+      return terminalWidth < 65
+        ? 'Add to the current task'
+        : 'Add to the current task (/ for commands)'
+    }
+
     return base
-  }, [queuePaused, queuedCount, terminalWidth])
+  }, [queuePaused, queuedCount, terminalWidth, steersRun])
 
   return {
     queuedCount,

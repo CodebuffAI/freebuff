@@ -67,6 +67,45 @@ export function buildUserMessageContent(
   ]
 }
 
+const STEERING_TAG = 'user_message_sent_while_working'
+const STEERING_OPEN = `<${STEERING_TAG}>`
+const STEERING_CLOSE = closeXml(STEERING_TAG)
+export const STEERING_NOTE =
+  'The user sent this while you were working. Continue the earlier request too, unless this message changes or cancels it.'
+
+/**
+ * Frame a message the user sent mid-turn (steering). Delivered bare, it reads
+ * as the whole new request, and models dropped the task they were doing to
+ * answer it. Idempotent: already-framed text is returned unchanged.
+ */
+export function frameSteeringText(text: string): string {
+  if (text.startsWith(STEERING_OPEN)) return text
+  return `${STEERING_OPEN}\n${text}\n${STEERING_CLOSE}\n\n${STEERING_NOTE}`
+}
+
+/** The user's own words from a framed steering message; other text unchanged. */
+export function unwrapSteeringText(text: string): string {
+  if (!text.startsWith(STEERING_OPEN)) return text
+  const end = text.lastIndexOf(STEERING_CLOSE)
+  if (end === -1) return text
+  return text.slice(STEERING_OPEN.length, end).replace(/^\n|\n$/g, '')
+}
+
+/** Frame the text of a steering message's content, keeping its images. */
+export function frameSteeringContent(
+  content: Array<TextPart | ImagePart>,
+): Array<TextPart | ImagePart> {
+  const index = content.findIndex((part) => part.type === 'text')
+  if (index === -1) {
+    return [{ type: 'text', text: frameSteeringText('') }, ...content]
+  }
+  return content.map((part, i) =>
+    i === index && part.type === 'text'
+      ? { ...part, text: frameSteeringText(part.text) }
+      : part,
+  )
+}
+
 export function parseUserMessage(str: string): string | undefined {
   const match = str.match(/<user_message>(.*?)<\/user_message>/s)
   return match ? match[1] : undefined

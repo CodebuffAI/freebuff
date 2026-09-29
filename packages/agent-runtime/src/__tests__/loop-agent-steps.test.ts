@@ -25,6 +25,7 @@ import { APICallError, RetryError } from 'ai'
 import { z } from 'zod/v4'
 
 import { loopAgentSteps } from '../run-agent-step'
+import { frameSteeringText, STEERING_NOTE } from '../util/messages'
 import { clearAgentGeneratorCache } from '../run-programmatic-step'
 import {
   MAX_CONSECUTIVE_STREAM_RECOVERIES,
@@ -1600,9 +1601,9 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
         },
       })
       const expected = [
-        [{ type: 'text', text: 'Text correction' }],
-        [{ type: 'text', text: 'Compare both images' }, ...images],
-        [images[1]],
+        [{ type: 'text', text: frameSteeringText('Text correction') }],
+        [{ type: 'text', text: frameSteeringText('Compare both images') }, ...images],
+        [{ type: 'text', text: frameSteeringText('') }, images[1]],
       ]
       expect(seen).toHaveLength(2)
       for (const content of expected) {
@@ -1641,6 +1642,46 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       )
       expect(steered).toBeDefined()
       expect((steered as { tags?: string[] }).tags).toContain('USER_PROMPT')
+    })
+
+    it('frames a steered message exactly once, as sent mid-turn, so the earlier request is kept', async () => {
+      const steerText = 'also add a README'
+      const seen: unknown[][] = []
+      let drained = false
+      await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        prompt: 'build the login page',
+        drainSteeringMessages: () => {
+          if (drained) return []
+          drained = true
+          // The second is already framed (a host re-delivering it): not re-wrapped.
+          return [steerText, frameSteeringText('and a footer')]
+        },
+        promptAiSdkStream: async function* ({ messages }) {
+          seen.push(structuredClone(messages))
+          yield createToolCallChunk('end_turn', {})
+          return promptSuccess(`step-${seen.length}`)
+        },
+      })
+
+      expect(seen).toHaveLength(2)
+      const request = JSON.stringify(seen[1])
+      // The original request is still there, unframed.
+      expect(request).toContain('build the login page')
+      expect(request).not.toContain(
+        JSON.stringify(frameSteeringText('build the login page')).slice(1, -1),
+      )
+      for (const text of [steerText, 'and a footer']) {
+        expect(seen[1]).toContainEqual(
+          expect.objectContaining({
+            role: 'user',
+            content: [{ type: 'text', text: frameSteeringText(text) }],
+          }),
+        )
+      }
+      // One note per steered message, never a nested frame.
+      expect(request.split(STEERING_NOTE).length - 1).toBe(2)
+      expect(request.split('<user_message_sent_while_working>').length - 1).toBe(2)
     })
 
     it('does not extend the turn when no steering messages arrive', async () => {

@@ -81,3 +81,68 @@ describe('useQueueUi inputBoxTitle', () => {
     expect(title).toContain('click to expand')
   })
 })
+
+/** Renders the hook's composer placeholder for the given run/queue state. */
+const placeholderFor = async (params: {
+  queuePaused?: boolean
+  queuedMessages?: QueuedMessage[]
+  terminalWidth?: number
+  steersRun?: boolean
+}) => {
+  let placeholder: string | undefined
+  const terminalWidth = params.terminalWidth ?? 100
+  const Harness = () => {
+    placeholder = useQueueUi({
+      queuePaused: params.queuePaused ?? false,
+      queuedMessages: params.queuedMessages ?? [],
+      separatorWidth: terminalWidth,
+      terminalWidth,
+      steersRun: params.steersRun,
+    }).inputPlaceholder
+    return <text>x</text>
+  }
+
+  const setup = await createTestRenderer({ width: 20, height: 2 })
+  const root = createRoot(setup.renderer)
+  flushSync(() => root.render(<Harness />))
+  await setup.renderOnce()
+  flushSync(() => root.unmount())
+  setup.renderer.destroy()
+  return placeholder
+}
+
+describe('useQueueUi inputPlaceholder', () => {
+  test('idle: the ordinary prompt', async () => {
+    expect(await placeholderFor({})).toBe(
+      'Enter a coding task or / for commands',
+    )
+  })
+
+  test('mid-run: says Enter adds to the current task', async () => {
+    expect(await placeholderFor({ steersRun: true })).toBe(
+      'Add to the current task (/ for commands)',
+    )
+    expect(await placeholderFor({ steersRun: true, terminalWidth: 50 })).toBe(
+      'Add to the current task',
+    )
+  })
+
+  test('mid-run with messages queued: no hint, since the next one queues too', async () => {
+    expect(
+      await placeholderFor({
+        steersRun: true,
+        queuedMessages: [message('first task')],
+      }),
+    ).toBe('Enter a coding task or / for commands')
+  })
+
+  test('a paused queue keeps its cancel hint', async () => {
+    expect(
+      await placeholderFor({
+        steersRun: true,
+        queuePaused: true,
+        queuedMessages: [message('first task')],
+      }),
+    ).toBe('Ctrl-C to cancel queued messages')
+  })
+})

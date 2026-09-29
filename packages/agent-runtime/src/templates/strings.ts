@@ -10,7 +10,7 @@ import {
   getProjectFileTreePrompt,
   getSystemInfoPrompt,
 } from '../system-prompt/prompts'
-import { parseUserMessage } from '../util/messages'
+import { parseUserMessage, unwrapSteeringText } from '../util/messages'
 
 import type { AgentTemplate, PlaceholderValue } from './types'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
@@ -80,7 +80,7 @@ export async function formatPrompt(
   const lastUserMessage = messageHistory.findLast(isUserInputMessage)
   const lastUserInput = lastUserMessage
     ? (parseUserMessage(lastUserMessage.content[0].text) ??
-      lastUserMessage.content[0].text)
+      unwrapSteeringText(lastUserMessage.content[0].text))
     : undefined
 
   const agentTemplate = agentState.agentType
