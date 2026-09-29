@@ -167,6 +167,10 @@ export interface FreebuffFreebucksWindow {
   /** ISO instant the pool refills. */
   resetAt: string
   resetTimeZone?: string
+  /** Why the pool is this size, when the user can do something about it —
+   *  today only the smaller free pool on a VPN or proxy. Server-resolved
+   *  copy; absent means nothing to explain. */
+  note?: string
 }
 
 /**

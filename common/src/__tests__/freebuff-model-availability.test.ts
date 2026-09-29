@@ -37,7 +37,9 @@ describe('the availability notice', () => {
         countryBlockReason: 'anonymous_network',
         ipPrivacySignals: ['vpn'],
       }),
-    ).toBe('Using a VPN? More models are available on a direct connection')
+    ).toBe(
+      'Using a VPN? We lose money on every VPN user, so more models and Freebucks are available on a direct connection',
+    )
   })
 
   test('an inconclusive check reads as ours to explain, not as the user doing something wrong', () => {
