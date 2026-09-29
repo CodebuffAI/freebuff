@@ -711,6 +711,39 @@ describe('getAxiomOnlyLogEvent', () => {
     })
   })
 
+  test("keeps F's fatigue aggregates and drops anything per campaign or user", () => {
+    const fatigue = {
+      ranker_fatigue_status: 'ready',
+      ranker_fatigue_read_ms: 3,
+      ranker_fatigue_history_len: 17,
+      ranker_fatigue_normalization: 'none',
+      ranker_fatigue_fatigued_candidates: 2,
+      ranker_fatigue_min_ppm: 400_000,
+      ranker_fatigue_mean_ppm: 700_000,
+      ranker_fatigue_disagreements: 1,
+    }
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: ADS_FIRST_PARTY_DECISION_EVENT,
+        outcome: 'fill',
+        ranker_mode: 'shadow',
+        ranker_version: 'l2v0f_2026_09',
+        ...fatigue,
+        ranker_fatigue_campaign_id: 'campaign-123',
+        ranker_fatigue_user_id: 'user-123',
+        exposureByCampaign: { 'campaign-123': 2.86 },
+      }),
+    ).toEqual({
+      event: ADS_FIRST_PARTY_DECISION_EVENT,
+      data: {
+        outcome: 'fill',
+        ranker_mode: 'shadow',
+        ranker_version: 'l2v0f_2026_09',
+        ...fatigue,
+      },
+    })
+  })
+
   test('names and sanitizes first-party settlement telemetry', () => {
     expect(
       getAxiomOnlyLogEvent(

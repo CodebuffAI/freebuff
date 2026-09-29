@@ -728,6 +728,24 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   ranker_evidence: 'string',
   ranker_scored_placements: 'number',
   ranker_disagreements: 'number',
+  /**
+   * F, the fatigue layer (`docs/ads/targeting/26-fatigue-layer.md` §8), with
+   * the ranker. Aggregates only, never a campaign or user id: the history
+   * read's status (`ready`, `no_history`, `opted_out`, `timeout`,
+   * `unavailable`, `skipped`), its time and length (200 is the cap binding),
+   * the evidence's W normalization (`ready`, `partial`, `none`), and over the
+   * request's scored candidates how many were fatigued (f < 1), f's min and
+   * mean in ppm, and the placements whose F lead differs from the v0 lead.
+   * `ranker_version` is `l2v0f_*` only when F entered the scores.
+   */
+  ranker_fatigue_status: 'string',
+  ranker_fatigue_read_ms: 'number',
+  ranker_fatigue_history_len: 'number',
+  ranker_fatigue_normalization: 'string',
+  ranker_fatigue_fatigued_candidates: 'number',
+  ranker_fatigue_min_ppm: 'number',
+  ranker_fatigue_mean_ppm: 'number',
+  ranker_fatigue_disagreements: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 /** Settlement telemetry deliberately excludes impression, campaign, and
