@@ -186,6 +186,12 @@ export const SponsoredProposalBlock: React.FC<{
   // follows on its own cadence.
   const delivered = run?.phase === 'delivered' || view.state === 'delivered'
   const runPhase = run?.phase ?? null
+  // THE EDITS, WHATEVER THE VERDICT. A run that changed files and then was
+  // interrupted or errored is `failed` as partial edits (R7) -- and its files
+  // are just as changed, so the count and the Undo are shown for it too.
+  const changedCount = run?.changedFiles.length ?? 0
+  const undoable = run !== null && changedCount > 0 && !run.undone
+  const undone = run?.undone === true && (delivered || changedCount > 0)
   const inFlight =
     runPhase === 'accepting' || runPhase === 'queued' || runPhase === 'running'
 
@@ -432,12 +438,12 @@ export const SponsoredProposalBlock: React.FC<{
         </text>
       )}
 
-      {delivered && run && !run.undone && (
+      {undoable && (
         <text style={{ fg: theme.muted }}>
-          {`Changed ${run.changedFiles.length === 1 ? '1 file' : `${run.changedFiles.length} files`}. Nothing was committed.`}
+          {`Changed ${changedCount === 1 ? '1 file' : `${changedCount} files`}. Nothing was committed.`}
         </text>
       )}
-      {delivered && run?.undone && (
+      {undone && (
         <text style={{ fg: theme.muted }}>These changes were undone.</text>
       )}
       {view.state === 'failed' && (
@@ -470,30 +476,29 @@ export const SponsoredProposalBlock: React.FC<{
           {clip(`${openAdvertiser.label}: ${openAdvertiser.href}`, inner)}
         </text>
       )}
-      {!refreshUnavailable &&
-        (openAdvertiser?.href || (delivered && run && !run.undone)) && (
-          <box style={{ width: '100%', flexDirection: 'row', gap: 2 }}>
-            {openAdvertiser?.href && (
-              <Button
-                onClick={() => {
-                  if (openAdvertiser.href) safeOpen(openAdvertiser.href)
-                }}
+      {!refreshUnavailable && (openAdvertiser?.href || undoable) && (
+        <box style={{ width: '100%', flexDirection: 'row', gap: 2 }}>
+          {openAdvertiser?.href && (
+            <Button
+              onClick={() => {
+                if (openAdvertiser.href) safeOpen(openAdvertiser.href)
+              }}
+            >
+              <text
+                style={{ fg: theme.primary, wrapMode: 'none' }}
+                attributes={TextAttributes.BOLD}
               >
-                <text
-                  style={{ fg: theme.primary, wrapMode: 'none' }}
-                  attributes={TextAttributes.BOLD}
-                >
-                  [ Open setup ]
-                </text>
-              </Button>
-            )}
-            {delivered && run && !run.undone && (
-              <Button onClick={() => callbacks.onSponsoredProposalUndo()}>
-                <text style={{ fg: theme.muted, wrapMode: 'none' }}>Undo</text>
-              </Button>
-            )}
-          </box>
-        )}
+                [ Open setup ]
+              </text>
+            </Button>
+          )}
+          {undoable && (
+            <Button onClick={() => callbacks.onSponsoredProposalUndo()}>
+              <text style={{ fg: theme.muted, wrapMode: 'none' }}>Undo</text>
+            </Button>
+          )}
+        </box>
+      )}
 
       {unavailable && <text style={{ fg: theme.muted }}>{unavailable}</text>}
       {refreshUnavailable && (

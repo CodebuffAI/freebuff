@@ -303,6 +303,71 @@ describe('every state, at every width', () => {
   })
 })
 
+describe('a run that failed after changing files (R7 partial edits)', () => {
+  const renderWithRun = async (
+    row: SponsoredProposalRow,
+    run: React.ComponentProps<typeof SponsoredProposalBlock>['run'],
+  ): Promise<string> => {
+    const setup = await createTestRenderer({ width: 60, height: 24 })
+    const root = createRoot(setup.renderer)
+    flushSync(() => {
+      root.render(
+        <SponsoredProposalBlock
+          block={blockFor(row, { runStarted: true })}
+          availableWidth={60}
+          run={run}
+        />,
+      )
+    })
+    try {
+      await setup.renderOnce()
+      return setup.captureCharFrame()
+    } finally {
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  }
+
+  test('still names the changed files and offers the undo', async () => {
+    // Before the row catches up, and after: the files moved either way.
+    for (const row of [
+      SPONSORED_ROW_FIXTURES.offered,
+      SPONSORED_ROW_FIXTURES.failed,
+    ]) {
+      const frame = await renderWithRun(row, {
+        phase: 'failed',
+        changedFiles: ['src/db.ts'],
+        undone: false,
+      })
+      expect(frame).toContain('Changed 1 file. Nothing was committed.')
+      expect(frame).toContain('Undo')
+      expect(frame).not.toContain('Sponsored changes applied to your files')
+    }
+  })
+
+  test('once undone, says so and offers no second undo', async () => {
+    const frame = await renderWithRun(SPONSORED_ROW_FIXTURES.failed, {
+      phase: 'failed',
+      changedFiles: ['src/db.ts', 'src/new.ts'],
+      undone: true,
+    })
+    expect(frame).toContain('These changes were undone.')
+    expect(frame).not.toContain('Changed 2 files')
+    expect(frame).not.toContain('Undo')
+  })
+
+  test('a failed run that changed nothing offers no undo', async () => {
+    const frame = await renderWithRun(SPONSORED_ROW_FIXTURES.failed, {
+      phase: 'failed',
+      changedFiles: [],
+      undone: false,
+    })
+    expect(frame).not.toContain('Changed')
+    expect(frame).not.toContain('Undo')
+    expect(frame).not.toContain('undone')
+  })
+})
+
 describe('states that carry more than a headline', () => {
   test('R-5 running renders the todo-dock vocabulary and the count', async () => {
     const frame = await render(blockFor(SPONSORED_ROW_FIXTURES.running), 60)

@@ -3,11 +3,13 @@ import {
   SPONSORED_ACCEPT_EXECUTION_SURFACE_PARAM,
   SPONSORED_COMPUTE_RUN_WINDOW_MS,
   SPONSORED_COMPUTE_START_DEADLINE_MS,
+  SPONSORED_RUNNING_SWEEP_GRACE_MS,
   acceptClientSurfacePairsWithRow,
   readSponsoredComputePolicy,
   sponsoredAcceptSurfaceMatchesRow,
   sponsoredComputeAdmitsCampaign,
   sponsoredComputeRunDeadlineMs,
+  sponsoredRunningSweepDeadlineMs,
   type SponsoredAcceptRequest,
 } from './sponsored-compute-contract'
 import { SPONSORED_RUN_TOKEN_TTL_MS } from './sponsored-run-token'
@@ -240,5 +242,31 @@ describe('the funded Accept request pairs the client with the row (COD-642)', ()
     expect(
       acceptClientSurfacePairsWithRow('desktop_macos', 'desktop_windows'),
     ).toBe(false)
+  })
+})
+
+describe('the running sweep deadline (off Cloud)', () => {
+  const HOUR = 3_600_000
+
+  test('is the spend window plus the grace from running_at', () => {
+    const acceptedAt = 1_000_000
+    const runningAt = acceptedAt + 5 * 60_000
+    expect(SPONSORED_RUNNING_SWEEP_GRACE_MS).toBe(30 * 60_000)
+    expect(sponsoredRunningSweepDeadlineMs(runningAt, acceptedAt)).toBe(
+      runningAt +
+        SPONSORED_COMPUTE_RUN_WINDOW_MS +
+        SPONSORED_RUNNING_SWEEP_GRACE_MS,
+    )
+    expect(sponsoredRunningSweepDeadlineMs(runningAt, acceptedAt)).toBe(
+      runningAt + 1.5 * HOUR,
+    )
+  })
+
+  test('is never after the run token expires, measured from Accept', () => {
+    const acceptedAt = 1_000_000
+    const lateStart = acceptedAt + SPONSORED_RUN_TOKEN_TTL_MS - 10 * 60_000
+    expect(sponsoredRunningSweepDeadlineMs(lateStart, acceptedAt)).toBe(
+      acceptedAt + SPONSORED_RUN_TOKEN_TTL_MS,
+    )
   })
 })

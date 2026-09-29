@@ -137,6 +137,33 @@ export function sponsoredComputeRunDeadlineMs(
   )
 }
 
+/**
+ * How long past a running off-Cloud run's spend window the server waits
+ * before its stale sweep fails the row (`running_window` in
+ * `sponsoredExecution.ts`). A turn's last calls can land a little after its
+ * grant closes, and the client's terminal report after that; half an hour
+ * covers both without leaving a dead run on the card for a day.
+ */
+export const SPONSORED_RUNNING_SWEEP_GRACE_MS = 30 * 60_000
+
+/**
+ * When the stale sweep may fail an off-Cloud row that reported `running` at
+ * `runningAtMs`: the spend window from then plus the grace, never past the
+ * run token's own expiry (measured from Accept), because a report after that
+ * could not be authenticated anyway.
+ */
+export function sponsoredRunningSweepDeadlineMs(
+  runningAtMs: number,
+  acceptedAtMs: number,
+): number {
+  return Math.min(
+    runningAtMs +
+      SPONSORED_COMPUTE_RUN_WINDOW_MS +
+      SPONSORED_RUNNING_SWEEP_GRACE_MS,
+    acceptedAtMs + SPONSORED_RUN_TOKEN_TTL_MS,
+  )
+}
+
 /** Public response shape. The bearer belongs in host memory, never a thread. */
 export type SponsoredComputeGrant = Readonly<{
   token: string

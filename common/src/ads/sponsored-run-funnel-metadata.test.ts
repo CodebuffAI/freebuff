@@ -4,9 +4,21 @@ import { join } from 'node:path'
 import { describe, expect, test } from 'bun:test'
 
 import {
+  SPONSORED_PARTIAL_EDITS_COPY,
+  sponsoredPartialEditsDiagnostic,
+} from './sponsored-in-place'
+import {
+  SPONSORED_FUNDING_REFUSED_PREFIX,
   SPONSORED_FUNNEL_DIAGNOSTIC_MAX,
+  SPONSORED_NEVER_STARTED_FAILURE_CODES,
+  SPONSORED_NEVER_STARTED_PREFIX,
+  SPONSORED_NEVER_STARTED_REASONS,
   SPONSORED_RUN_FAILURE_CODES,
   buildSponsoredRunFunnelMetadata,
+  isSponsoredNeverStartedFailure,
+  sponsoredFundingRefusedDiagnostic,
+  sponsoredNeverStartedDiagnostic,
+  type SponsoredNeverStartedReason,
   isSponsoredRunOutcomeFunnelEvent,
   scrubSponsoredDiagnostic,
   sponsoredRunFailureCode,
@@ -272,11 +284,25 @@ describe('scrubSponsoredDiagnostic', () => {
   })
 
   test('keeps `/dev/null`, a model id, and an apostrophe that is not a quote', () => {
+    // The model id keeps its shape; its digits go with every other number.
     expect(
       scrubSponsoredDiagnostic(
         "git can't open /dev/null; model deepseek/deepseek-v4-flash",
       ),
-    ).toBe("git can't open /dev/null; model deepseek/deepseek-v4-flash")
+    ).toBe("git can't open /dev/null; model deepseek/deepseek-vN-flash")
+  })
+
+  test('numbers collapse to N, after hex still collapses to <hex>', () => {
+    expect(
+      scrubSponsoredDiagnostic(
+        'never-started: queue_wait_expired: its turn was still queued after 95 minutes',
+      ),
+    ).toBe(
+      'never-started: queue_wait_expired: its turn was still queued after N minutes',
+    )
+    expect(
+      scrubSponsoredDiagnostic('turn error: sha 0123456789abcdef0123 at 500'),
+    ).toBe('turn error: sha <hex> at N')
   })
 
   test('is capped, and absent input stays absent', () => {
@@ -367,7 +393,14 @@ test('telemetry only: the module imports nothing that can bill', () => {
     "from 'zod'",
     "from './sponsored-capability'",
     "from './sponsored-client-version'",
+    "from './sponsored-in-place'",
   ])
+  // The in-place module is the shared verdict contract and imports only zod.
+  const inPlace = readFileSync(
+    join(import.meta.dir, 'sponsored-in-place.ts'),
+    'utf8',
+  )
+  expect(inPlace.match(/from '[^']+'/g)).toEqual(["from 'zod'"])
   // The client-version module is pure string handling and imports nothing,
   // so admitting it widens nothing this test guards.
   const clientVersion = readFileSync(
@@ -411,6 +444,210 @@ describe('the receiver schema', () => {
       expect(
         sponsoredRunFunnelMetadataReceiverSchema.safeParse(value).success,
       ).toBe(false)
+    }
+  })
+})
+
+describe('every diagnostic authored on main is classified', () => {
+  const cases: Array<[string, string]> = [
+    // Desktop's three reason strings.
+    [
+      'never-started: dismissed_while_queued: the card was closed while its turn was still queued behind the conversation',
+      'never_started_dismissed',
+    ],
+    [
+      "never-started: queue_wait_expired: its turn was still queued behind the conversation after 1440 minutes, the grant's start deadline",
+      'never_started_queue_expired',
+    ],
+    [
+      'never-started: dismissed_during_connect: the card was closed at the account step, before its turn was queued',
+      'never_started_connect_dismissed',
+    ],
+    // Both shutdown / boot quits of a run still queued.
+    [
+      'never-started: app-quit: the run never reported a verdict and the thread was not resumed at boot; its turn was still queued behind the conversation and never started',
+      'never_started_app_quit',
+    ],
+    [
+      'never-started: app-quit: reported from the shutdown handler while the run was unsettled; its turn was still queued behind the conversation and never started',
+      'never_started_app_quit',
+    ],
+    // The rewind / close / delete paths.
+    [
+      'never-started: the conversation was rewound before its turn started',
+      'never_started_inputs_dropped',
+    ],
+    [
+      'never-started: the conversation was closed from its queue before its turn started',
+      'never_started_inputs_dropped',
+    ],
+    [
+      'never-started: the conversation was deleted before its turn started',
+      'never_started_inputs_dropped',
+    ],
+    ['never-started: something new', 'never_started_other'],
+    ['never-started', 'never_started_other'],
+    // Partial edits, whatever ended the turn.
+    [
+      'turn stopped; the turn ended early, so its partial changes (2 files) were left in the workspace and not reported as delivered',
+      'partial_edits',
+    ],
+    [
+      'turn error: x; the turn ended early, so its partial changes (1 file) were left in the workspace and not reported as delivered',
+      'partial_edits',
+    ],
+    [
+      'turn closed: app-quit: reported from the shutdown handler while the run was unsettled; the turn ended early, so its partial changes (3 files) were left in the workspace and not reported as delivered',
+      'partial_edits',
+    ],
+    [
+      'turn grant-expired; the turn ended early, so its partial changes (3 files) were left in the workspace and not reported as delivered',
+      'partial_edits',
+    ],
+    ['turn completed; the turn recorded no file edits of its own', 'no_edits'],
+    [
+      'turn error; the model never ran (no response, tool call or tool edit)',
+      'turn_error',
+    ],
+    ['accept-failed: Freebuff returned 500', 'accept_failed'],
+    [
+      'accept-identity-changed: the accepted advertiser differs',
+      'accept_identity_changed',
+    ],
+    [
+      'containment-mismatch: this machine is on the floor',
+      'containment_mismatch',
+    ],
+    ['resume-declined: approved before Freebuff closed', 'resume_declined'],
+    ['app-quit: resumed at boot without a compute grant', 'app_quit'],
+    ['stale-sweep: no report for 1440 minutes', 'timed_out'],
+    [
+      'app-quit: the CLI exited without reporting a verdict (found at launch)',
+      'app_quit',
+    ],
+    [
+      sponsoredFundingRefusedDiagnostic('insufficient_balance'),
+      'funding_refused',
+    ],
+    [sponsoredPartialEditsDiagnostic('turn interrupted', 2), 'partial_edits'],
+  ]
+  for (const reason of Object.keys(
+    SPONSORED_NEVER_STARTED_REASONS,
+  ) as SponsoredNeverStartedReason[]) {
+    const code =
+      reason === 'dismissed'
+        ? 'never_started_dismissed'
+        : reason === 'queueExpired'
+          ? 'never_started_queue_expired'
+          : reason === 'connectDismissed'
+            ? 'never_started_connect_dismissed'
+            : reason === 'appQuit'
+              ? 'never_started_app_quit'
+              : 'never_started_inputs_dropped'
+    cases.push([sponsoredNeverStartedDiagnostic(reason, 'detail'), code])
+  }
+
+  for (const [diagnostic, code] of cases) {
+    test(`${JSON.stringify(diagnostic.slice(0, 48))} is ${code}`, () => {
+      const got = sponsoredRunFailureCode({ diagnosticReason: diagnostic })
+      expect(got).toBe(code as never)
+      expect(got).not.toBe('unclassified')
+      expect(SPONSORED_RUN_FAILURE_CODES).toContain(got)
+    })
+  }
+})
+
+describe('the never-started and funding-refused contracts', () => {
+  test('the diagnostic builder leads with the prefix and the reason token', () => {
+    expect(sponsoredNeverStartedDiagnostic('appQuit', 'the app quit')).toBe(
+      `${SPONSORED_NEVER_STARTED_PREFIX}: app_quit: the app quit`,
+    )
+    expect(sponsoredFundingRefusedDiagnostic('daily_cap')).toBe(
+      `${SPONSORED_FUNDING_REFUSED_PREFIX}: daily_cap`,
+    )
+  })
+
+  test('the never-started set is exactly the six never_started codes', () => {
+    expect([...SPONSORED_NEVER_STARTED_FAILURE_CODES].sort()).toEqual(
+      SPONSORED_RUN_FAILURE_CODES.filter((code) =>
+        code.startsWith('never_started_'),
+      ).sort(),
+    )
+    for (const code of SPONSORED_NEVER_STARTED_FAILURE_CODES) {
+      expect(isSponsoredNeverStartedFailure(code)).toBe(true)
+    }
+    for (const code of [
+      'funding_refused',
+      'partial_edits',
+      'app_quit',
+      'timed_out',
+      '',
+      null,
+      undefined,
+    ]) {
+      expect(isSponsoredNeverStartedFailure(code)).toBe(false)
+    }
+  })
+
+  test('never-started and funding-refused called no model; partial edits did', () => {
+    const diagnostics = [
+      ...(
+        Object.keys(
+          SPONSORED_NEVER_STARTED_REASONS,
+        ) as SponsoredNeverStartedReason[]
+      ).map((reason) => sponsoredNeverStartedDiagnostic(reason, 'x')),
+      'never-started: whatever',
+      sponsoredFundingRefusedDiagnostic('total_cap'),
+    ]
+    for (const diagnostic of diagnostics) {
+      const metadata = buildSponsoredRunFunnelMetadata({
+        eventType: 'run_failed',
+        row: { in_place_execution: true, diagnostic_reason: diagnostic },
+        fromState: 'accepted',
+      })
+      expect(metadata.llm_called).toBe(false)
+    }
+    const partial = buildSponsoredRunFunnelMetadata({
+      eventType: 'run_failed',
+      row: {
+        in_place_execution: true,
+        diagnostic_reason: sponsoredPartialEditsDiagnostic('turn stopped', 2),
+      },
+      fromState: 'running',
+    })
+    expect(partial.failure_code).toBe('partial_edits')
+    expect(partial.llm_called).toBe(true)
+    expect(SPONSORED_PARTIAL_EDITS_COPY.failed.length).toBeGreaterThan(0)
+  })
+})
+
+describe('client_version on the built metadata', () => {
+  test('is carried from the acceptance when it matches the pattern', () => {
+    const metadata = buildSponsoredRunFunnelMetadata({
+      eventType: 'run_delivered',
+      row: {
+        in_place_execution: true,
+        acceptance: { surface: 'desktop', client_version: 'desktop/0.0.152' },
+      },
+      fromState: 'running',
+    })
+    expect(metadata.client_version).toBe('desktop/0.0.152')
+    expect(sponsoredRunFunnelMetadataSchema.safeParse(metadata).success).toBe(
+      true,
+    )
+  })
+
+  test('an invalid client_version is dropped', () => {
+    for (const client_version of ['phone/1.0', 'desktop/', 'cli/1 2', null]) {
+      const metadata = buildSponsoredRunFunnelMetadata({
+        eventType: 'run_failed',
+        row: {
+          in_place_execution: true,
+          acceptance: { surface: 'cli', client_version },
+          diagnostic_reason: 'turn completed; HEAD is still the base commit',
+        },
+      })
+      expect('client_version' in metadata).toBe(false)
     }
   })
 })

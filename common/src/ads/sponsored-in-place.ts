@@ -69,3 +69,80 @@ export function sponsoredRowOfferedInPlace(row: {
 }): boolean {
   return row.deliveryKind === 'generic' && row.target?.kind === 'workspace'
 }
+
+/**
+ * How an in-place sponsored turn ended, as the client observed it. `closed`
+ * includes a quit that cut the turn off; `grant_expired` a turn stopped by
+ * its compute grant's deadline.
+ */
+export type SponsoredTurnEnding =
+  | 'completed'
+  | 'stopped'
+  | 'closed'
+  | 'interrupted'
+  | 'error'
+  | 'grant_expired'
+
+/**
+ * The verdict an in-place turn earns (R7), shared by Desktop and the CLI so
+ * the two cannot drift:
+ *
+ * - `delivered`: the turn COMPLETED and left edits of its own.
+ * - `partial_edits`: it left edits but ended any other way. Half a procedure
+ *   is not the procedure, so this is `failed` -- with copy that says the
+ *   partial changes are still in the user's files.
+ * - `model_never_ran`: nothing of the model's ran, so no swept file change can
+ *   be credited to it.
+ * - `no_edits`: the model ran and edited nothing.
+ *
+ * `modelRan` is optional: a client whose receipts are the run's own tool edits
+ * (the CLI) cannot see a model-less turn and leaves it out.
+ */
+export type SponsoredInPlaceVerdict =
+  | 'delivered'
+  | 'partial_edits'
+  | 'no_edits'
+  | 'model_never_ran'
+
+export function sponsoredInPlaceVerdict(input: {
+  ending: SponsoredTurnEnding
+  editedFileCount: number
+  modelRan?: boolean
+}): SponsoredInPlaceVerdict {
+  if (input.editedFileCount > 0 && input.modelRan !== false) {
+    return input.ending === 'completed' ? 'delivered' : 'partial_edits'
+  }
+  return input.modelRan === false ? 'model_never_ran' : 'no_edits'
+}
+
+/**
+ * The phrase every partial-edits diagnostic carries. The funnel classifier
+ * keys on it (`partial_edits`), which also reclassifies the diagnostics that
+ * Desktop builds shipped before this helper existed.
+ */
+export const SPONSORED_PARTIAL_EDITS_MARKER = 'partial changes'
+
+/**
+ * The `diagnostic_reason` of a turn that ended early with edits, byte-for-byte
+ * what Desktop has written since 2026-09-25: `how` is the turn's own clause
+ * (`turn stopped`, `turn error: <cause>`).
+ */
+export function sponsoredPartialEditsDiagnostic(
+  how: string,
+  fileCount: number,
+): string {
+  return `${how}; the turn ended early, so its partial changes (${fileCount} file${
+    fileCount === 1 ? '' : 's'
+  }) were left in the workspace and not reported as delivered`
+}
+
+/** The user-facing `failure_reason` of a partial-edits run, by how it ended. */
+export const SPONSORED_PARTIAL_EDITS_COPY: {
+  readonly interrupted: string
+  readonly failed: string
+} = {
+  interrupted:
+    'The sponsored task was interrupted before it finished. The changes it made before it stopped are still in your files: review them, or undo them from the conversation above.',
+  failed:
+    'The sponsored task failed before it finished. The changes it made before it stopped are still in your files: review them, or undo them from the conversation above.',
+}

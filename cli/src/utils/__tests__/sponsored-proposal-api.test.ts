@@ -9,8 +9,10 @@ const {
   acknowledgeSponsoredProposalDisplay,
   fetchSponsoredProposal,
   previewSponsoredProposal,
+  reportSponsoredRunState,
   sponsoredProcedureSha256,
 } = await import('../sponsored-proposal-api')
+const { getCliAdRequestUserAgent } = await import('../ad-client-identity')
 
 const originalFetch = globalThis.fetch
 
@@ -281,5 +283,61 @@ describe('acceptSponsoredProposal renders a refusal, never a code', () => {
       status: 404,
       message: 'Proposal not found',
     })
+  })
+})
+
+describe('every proposal request names this CLI build (I3)', () => {
+  test('call, callDetailed, getDetailed and the proposal read all send the product User-Agent', async () => {
+    const seen: Array<{ url: string; userAgent: string | null }> = []
+    globalThis.fetch = mock(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        seen.push({
+          url: String(input),
+          userAgent: new Headers(init?.headers).get('user-agent'),
+        })
+        return new Response(JSON.stringify({ proposal: null }), {
+          status: 200,
+        })
+      },
+    ) as unknown as typeof fetch
+    // `fetchSponsoredProposal`
+    await fetchSponsoredProposal('acme/deploys', 'token')
+    // `call`
+    await acknowledgeSponsoredProposalDisplay('proposal-1', 'token')
+    // `getDetailed`
+    await previewSponsoredProposal('proposal-1', 'token')
+    // `callDetailed`, through both of its callers
+    await acceptSponsoredProposal('proposal-1', 'token', binding())
+    await reportSponsoredRunState(
+      'proposal-1',
+      'run-token',
+      { state: 'running', runId: binding().runId },
+      'token',
+    )
+    expect(seen).toHaveLength(5)
+    const userAgent = getCliAdRequestUserAgent()
+    expect(userAgent).toMatch(/^(Freebuff|Codebuff)-CLI\//)
+    for (const request of seen) expect(request.userAgent).toBe(userAgent)
+  })
+})
+
+describe('the Accept refusals added with COD-665', () => {
+  test.each([
+    ['sponsor_funding_refused', 'The sponsor could not fund this task'],
+    ['accept_expired', 'too much time has passed since it was accepted'],
+  ])('%s becomes a sentence, and keeps its code', async (code, sentence) => {
+    respond({ error: code }, 409)
+    const result = await acceptSponsoredProposal(
+      'proposal-1',
+      'token',
+      binding(),
+    )
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(409)
+    expect(result.code).toBe(code)
+    expect(result.message).toContain(sentence)
+    expect(result.message).not.toContain(code)
+    expect(result.message).toContain('Nothing in your project changed.')
   })
 })

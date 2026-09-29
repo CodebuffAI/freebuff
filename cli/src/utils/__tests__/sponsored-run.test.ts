@@ -26,17 +26,25 @@ import { ensureCliTestEnv } from '../../__tests__/test-utils'
 
 ensureCliTestEnv()
 
+const { SPONSORED_PARTIAL_EDITS_COPY, sponsoredPartialEditsDiagnostic } =
+  await import('@codebuff/common/ads/sponsored-in-place')
+const { sponsoredRunFailureCode } =
+  await import('@codebuff/common/ads/sponsored-run-funnel-metadata')
 const {
   ACCEPT_RETRY_DELAYS_MS,
   SponsoredRun,
   cliExecutionSurface,
   diagnosticCause,
+  isSponsoredModelChunk,
+  isSponsoredModelEvent,
   replayForeignOutboxes,
   setSponsoredRunInstance,
   sponsoredRunFor,
   sponsoredTaskEvidence,
   sponsoredVerdictNotice,
+  withSponsoredModelEventTap,
 } = await import('../sponsored-run')
+const { sponsoredInflightKeyStore } = await import('../sponsored-run-inflight')
 
 import type {
   SponsoredOverrideTools,
@@ -44,6 +52,9 @@ import type {
   SponsoredToolContext,
 } from '../sponsored-run'
 import type { SponsoredProposal } from '../sponsored-proposal-api'
+import type { SponsoredInflightRecord } from '../sponsored-run-inflight'
+import type { StreamChunkEvent } from '../sdk-event-handlers'
+import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
 
 const PARENT = mkdtempSync(join(tmpdir(), 'sponsored-cli-run-'))
 afterAll(() => rmSync(PARENT, { recursive: true, force: true }))
@@ -90,6 +101,7 @@ function fakes(over: Partial<SponsoredRunDeps> = {}) {
   const receipts = new Map<string, string>()
   let lastRun: string | null = null
   let now = Date.now()
+  let inflight: SponsoredInflightRecord[] = []
 
   const deps: SponsoredRunDeps = {
     preview: async (proposalId, _token, target, surface) => {
@@ -159,6 +171,20 @@ function fakes(over: Partial<SponsoredRunDeps> = {}) {
         lastRun = runId
       },
     },
+    inflight: {
+      list: () => [...inflight],
+      put: (record) => {
+        inflight = [
+          ...inflight.filter((existing) => existing.runId !== record.runId),
+          record,
+        ]
+      },
+      remove: (runId) => {
+        inflight = inflight.filter((existing) => existing.runId !== runId)
+      },
+      pid: 4242,
+      isAlive: (pid) => pid === 4242,
+    },
     target: async () => ({ kind: 'repo', repoFullName: 'acme/app' }),
     agentId: () => 'base3-free-test',
     // The real overrides would start an OS sandbox; the context they are built
@@ -187,8 +213,14 @@ function fakes(over: Partial<SponsoredRunDeps> = {}) {
     setTerminalReports: (value: string) => {
       terminalReports = value
     },
+    inflight: () => inflight,
   }
 }
+
+/** One of the turn's tools, as the SDK would call it. */
+const TOOL_STUBS = {
+  read_files: async () => ({}),
+} as unknown as SponsoredOverrideTools
 
 function reviewedTask() {
   const task = sponsoredTaskEvidence([
@@ -396,12 +428,17 @@ describe('the turn', () => {
     expect(f.contexts[0]!.workspaceRoot).toBe(f.root)
   })
 
-  test('running is reported when the turn starts, with the funded identity', async () => {
-    const f = fakes()
+  test('running is reported on the turn’s first tool call, with the funded identity', async () => {
+    const f = fakes({ overrideTools: () => TOOL_STUBS })
     const { consent } = await acceptThrough(f)
     if (!consent.ok) throw new Error('refused')
     expect(f.reported).toHaveLength(0)
-    await f.service.startTurn()
+    const plan = await f.service.startTurn()
+    if (!plan) throw new Error('expected a plan')
+    await plan.overrideTools.read_files({ filePaths: [] })
+    await plan.overrideTools.read_files({ filePaths: [] })
+    await settle()
+    // Once, however many tools the turn calls.
     expect(f.reported).toEqual([
       {
         state: 'running',
@@ -410,6 +447,88 @@ describe('the turn', () => {
       },
     ])
     expect(f.service.state.phase).toBe('running')
+  })
+
+  test('running is NOT reported before the run is claimed and its compute starts (V5)', async () => {
+    // Upstream stamps `running_at` on the first `running` and sweeps the row
+    // an hour and a half later: announcing it while the run waited for the
+    // conversation, or for a model call that was then refused, starts that
+    // clock on compute that never happened.
+    const f = fakes({ overrideTools: () => TOOL_STUBS })
+    const { consent } = await acceptThrough(f)
+    if (!consent.ok) throw new Error('refused')
+    await settle()
+    expect(f.reported).toHaveLength(0)
+    const plan = await f.service.startTurn()
+    if (!plan) throw new Error('expected a plan')
+    await settle()
+    // Claimed -- the card no longer says queued -- but nothing announced, and
+    // no in-flight record for a launch sweep to find.
+    expect(f.service.state.phase).toBe('running')
+    expect(f.reported).toHaveLength(0)
+    expect(f.inflight()).toEqual([])
+    await plan.overrideTools.read_files({ filePaths: [] })
+    await settle()
+    expect(f.reported.map((r) => r.state)).toEqual(['running'])
+    expect(f.inflight()).toMatchObject([
+      {
+        version: 1,
+        proposalId: 'proposal-1',
+        runId: consent.runId,
+        runToken: 'token-1',
+        pid: 4242,
+      },
+    ])
+  })
+
+  test('a text-only turn reports running on its first model event, then its verdict', async () => {
+    // No tool call at all: the model only answered in text. It still spent
+    // the sponsor's compute, so the row gets its `running_at` (V5 gap).
+    const f = fakes({ overrideTools: () => TOOL_STUBS })
+    const { consent } = await acceptThrough(f)
+    if (!consent.ok) throw new Error('refused')
+    const plan = await f.service.startTurn()
+    if (!plan) throw new Error('expected a plan')
+    await settle()
+    expect(f.reported).toEqual([])
+    // What the tapped handlers do on the first streamed text.
+    const seen: string[] = []
+    const tapped = withSponsoredModelEventTap(
+      {
+        handleEvent: (event: PrintModeEvent) => void seen.push(event.type),
+        handleStreamChunk: (_chunk: StreamChunkEvent) =>
+          void seen.push('chunk'),
+      },
+      plan.onModelEvent,
+    )
+    tapped.handleEvent({ type: 'start', messageHistoryLength: 0 })
+    await settle()
+    expect(f.reported).toEqual([])
+    tapped.handleStreamChunk('I looked, and ')
+    tapped.handleEvent({ type: 'text', text: 'there is nothing to wire up.' })
+    tapped.handleStreamChunk('more')
+    await settle()
+    expect(f.inflight()).toHaveLength(1)
+    await f.service.settleTurn({ errorText: null, aborted: false })
+    await settle()
+    expect(f.reported.map((r) => r.state)).toEqual(['running', 'failed'])
+    expect(f.reported[0]).toEqual({
+      state: 'running',
+      reportId: `running:${consent.runId}`,
+      runId: consent.runId,
+    })
+    // The transcript still got every event.
+    expect(seen).toEqual(['start', 'chunk', 'text', 'chunk'])
+    expect(f.inflight()).toEqual([])
+  })
+
+  test('a turn with no model event at all reports only its verdict', async () => {
+    const f = fakes()
+    await runThrough(f)
+    await f.service.settleTurn({ errorText: 'model refused', aborted: false })
+    await settle()
+    expect(f.reported.map((r) => r.state)).toEqual(['failed'])
+    expect(f.inflight()).toEqual([])
   })
 
   test('an expired grant starts nothing and fails the run', async () => {
@@ -485,7 +604,99 @@ describe('the turn', () => {
   })
 })
 
+describe('what counts as the model at work (V5)', () => {
+  test('text, reasoning, tool calls and results, and a subagent starting', () => {
+    const model: PrintModeEvent[] = [
+      { type: 'text', text: 'hello' },
+      {
+        type: 'reasoning_delta',
+        text: 'thinking',
+        ancestorRunIds: [],
+        runId: 'r',
+        agentId: 'a',
+      },
+      { type: 'tool_call', toolCallId: 't', toolName: 'read_files', input: {} },
+      {
+        type: 'tool_result',
+        toolCallId: 't',
+        toolName: 'read_files',
+        output: [],
+      },
+      {
+        type: 'subagent_start',
+        agentId: 'a',
+        agentType: 'x',
+        displayName: 'X',
+        onlyChild: true,
+      },
+    ]
+    for (const event of model) expect(isSponsoredModelEvent(event)).toBe(true)
+    const notModel: PrintModeEvent[] = [
+      { type: 'start', messageHistoryLength: 0 },
+      { type: 'text', text: '' },
+      { type: 'error', message: 'refused' },
+      { type: 'finish', totalCost: 0 },
+      { type: 'download', version: '1', status: 'complete' },
+    ]
+    for (const event of notModel)
+      expect(isSponsoredModelEvent(event)).toBe(false)
+    expect(isSponsoredModelChunk('x')).toBe(true)
+    expect(isSponsoredModelChunk('')).toBe(false)
+    expect(
+      isSponsoredModelChunk({
+        type: 'reasoning_chunk',
+        agentId: 'a',
+        ancestorRunIds: [],
+        chunk: 'hm',
+      }),
+    ).toBe(true)
+    expect(
+      isSponsoredModelChunk({
+        type: 'subagent_chunk',
+        agentId: 'a',
+        agentType: 'x',
+        chunk: '',
+      }),
+    ).toBe(false)
+  })
+
+  test('the first model event before the claim reports nothing', async () => {
+    // A plan exists only once chat claimed the run; a settled run ignores it.
+    const f = fakes()
+    const { plan } = await runThrough(f)
+    await f.service.settleTurn({ errorText: 'refused', aborted: false })
+    await settle()
+    plan.onModelEvent()
+    await settle()
+    expect(f.reported.map((r) => r.state)).toEqual(['failed'])
+    expect(f.inflight()).toEqual([])
+  })
+})
+
 describe('the verdict is read off the run’s own edits', () => {
+  test('a run that finishes while signed out keeps its verdict in the outbox, not the in-flight sweep', async () => {
+    let token: string | null = 'session-token'
+    const f = fakes({ getToken: () => token })
+    await runThrough(f, async (context) => {
+      await context.recorder.around('src/app.ts', async () => {
+        writeFileSync(join(f.root, 'src', 'app.ts'), 'export const app = 2\n')
+      })
+    })
+    token = null
+    await f.service.settleTurn({ errorText: null, aborted: false })
+    await settle()
+    // Persisted, not sent: the session is gone, and the flush waits for one.
+    expect(f.service.state.phase).toBe('delivered')
+    expect(f.terminalReports()).toContain('"state":"delivered"')
+    expect(f.inflight()).toEqual([])
+    expect(f.reported).toEqual([])
+    token = 'session-token'
+    f.service.flushPendingReports()
+    await settle()
+    // Upstream takes an identified success on an `accepted` row as having run.
+    expect(f.reported.map((r) => r.state)).toEqual(['delivered'])
+  })
+
   test('a run that changed files is DELIVERED, and the conversation is briefed', async () => {
     const f = fakes()
     await runThrough(f, async (context) => {
@@ -527,7 +738,7 @@ describe('the verdict is read off the run’s own edits', () => {
     expect(failed.diagnosticReason).toContain('no file edits')
   })
 
-  test('an interrupted run that wrote something is still DELIVERED', async () => {
+  test('an interrupted run that wrote something FAILS as partial edits (R7)', async () => {
     const f = fakes()
     await runThrough(f, async (context) => {
       await context.recorder.around('src/app.ts', async () => {
@@ -538,11 +749,97 @@ describe('the verdict is read off the run’s own edits', () => {
     await settle()
     expect(outcome.interrupted).toBe(true)
     expect(outcome.notice).toContain('/ads:undo')
+    // `running` first, even with no tool call to announce it: an edit is
+    // proof of compute, and upstream moves a row to `failed` from either.
+    expect(f.reported.map((r) => r.state)).toEqual(['running', 'failed'])
+    const last = f.reported.at(-1)!
+    expect(last.diagnosticReason).toBe(
+      sponsoredPartialEditsDiagnostic('turn interrupted', 1),
+    )
+    expect(sponsoredRunFailureCode(last)).toBe('partial_edits')
+    expect(last.failureReason).toBe(
+      `${SPONSORED_PARTIAL_EDITS_COPY.interrupted} Run /ads:undo to revert them.`,
+    )
+    expect(last.outcomes).toBeUndefined()
+    expect(f.service.state.phase).toBe('failed')
+    expect(f.service.state.changedFiles).toEqual(['src/app.ts'])
+    expect(sponsoredVerdictNotice(f.service.state)).toContain('/ads:undo')
+  })
+
+  test('an errored run that wrote something FAILS as partial edits, and still briefs the agent', async () => {
+    const f = fakes()
+    await runThrough(f, async (context) => {
+      await context.recorder.around('src/app.ts', async () => {
+        writeFileSync(join(f.root, 'src', 'app.ts'), 'half\n')
+      })
+      await context.recorder.around('src/new.ts', async () => {
+        writeFileSync(join(f.root, 'src', 'new.ts'), 'created\n')
+      })
+    })
+    const brief = await f.service.settleTurn({
+      errorText: 'provider went away\nstack',
+      aborted: false,
+    })
+    await settle()
+    const last = f.reported.at(-1)!
+    expect(last.state).toBe('failed')
+    expect(last.diagnosticReason).toBe(
+      sponsoredPartialEditsDiagnostic('turn error: provider went away', 2),
+    )
+    expect(sponsoredRunFailureCode(last)).toBe('partial_edits')
+    expect(last.failureReason).toBe(
+      `${SPONSORED_PARTIAL_EDITS_COPY.failed} Run /ads:undo to revert them.`,
+    )
+    // The files moved either way, so the conversation's agent is told.
+    expect(brief).toContain('<sponsored_changes>')
+    expect(brief).toContain('src/new.ts')
+    // And the undo still has them: /ads:undo works on a FAILED run too, and
+    // the card's Undo goes with it.
+    expect(f.service.state.phase).toBe('failed')
+    expect(f.service.undo().ok).toBe(true)
+    expect(f.service.state.undone).toBe(true)
+    expect(existsSync(join(f.root, 'src', 'new.ts'))).toBe(false)
+    expect(readFileSync(join(f.root, 'src', 'app.ts'), 'utf8')).toBe(
+      'export const app = 1\n',
+    )
+  })
+
+  test('a completed run that wrote something is DELIVERED, with no diagnostic', async () => {
+    const f = fakes()
+    await runThrough(f, async (context) => {
+      await context.recorder.around('src/app.ts', async () => {
+        writeFileSync(join(f.root, 'src', 'app.ts'), 'done\n')
+      })
+    })
+    await f.service.settleTurn({ errorText: null, aborted: false })
+    await settle()
     const last = f.reported.at(-1)!
     expect(last.state).toBe('delivered')
-    expect(last.diagnosticReason).toContain(
-      'changes were left in the workspace',
-    )
+    expect(last.diagnosticReason).toBeUndefined()
+  })
+
+  test('the in-flight record is released once the verdict is in the outbox', async () => {
+    const f = fakes({ overrideTools: () => TOOL_STUBS })
+    await acceptThrough(f)
+    const plan = await f.service.startTurn()
+    if (!plan) throw new Error('expected a plan')
+    await plan.overrideTools.read_files({ filePaths: [] })
+    expect(f.inflight()).toHaveLength(1)
+    let persisted = 0
+    f.deps.terminalReports.write = ((write) => (value: string) => {
+      persisted = JSON.parse(value).length
+      write(value)
+    })(f.deps.terminalReports.write)
+    const released: number[] = []
+    f.deps.inflight!.remove = ((remove) => (runId: string) => {
+      released.push(persisted)
+      remove(runId)
+    })(f.deps.inflight!.remove)
+    await f.service.settleTurn({ errorText: null, aborted: false })
+    await settle()
+    expect(f.inflight()).toEqual([])
+    // Released only AFTER the terminal report was written to the outbox.
+    expect(released).toEqual([1])
   })
 
   test('the verdict is reported once, however many times the turn ends', async () => {
@@ -867,6 +1164,83 @@ describe('other folders’ outboxes', () => {
       ).toHaveLength(1)
     } finally {
       rmSync(directory, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('other folders’ in-flight records', () => {
+  test('are swept too, each into its OWN folder’s outbox', async () => {
+    // A run killed in folder B, which is never reopened: its record sits
+    // under B's key, and the next launch in folder A reports it through B's
+    // outbox -- whether a pid is alive does not depend on the folder.
+    const outboxes = mkdtempSync(join(tmpdir(), 'sponsored-cli-outboxes-'))
+    const inflightBase = mkdtempSync(join(tmpdir(), 'sponsored-cli-inflight-'))
+    const own = 'a'.repeat(64)
+    const foreign = 'b'.repeat(64)
+    const alive = 'c'.repeat(64)
+    const dead = (runId: string): SponsoredInflightRecord => ({
+      version: 1,
+      proposalId: `p-${runId}`,
+      runId,
+      runToken: `t-${runId}`,
+      pid: 999_999,
+      startedAtMs: Date.now() - 60_000,
+    })
+    const ownRun = '00000000-0000-4000-8000-00000000000a'
+    const foreignRun = '00000000-0000-4000-8000-00000000000b'
+    const aliveRun = '00000000-0000-4000-8000-00000000000c'
+    sponsoredInflightKeyStore(inflightBase, own).put(dead(ownRun))
+    sponsoredInflightKeyStore(inflightBase, foreign).put(dead(foreignRun))
+    sponsoredInflightKeyStore(inflightBase, alive).put({
+      ...dead(aliveRun),
+      pid: 5151,
+    })
+    const sent: Array<{ proposalId: string; state: string; runId?: string }> =
+      []
+    try {
+      const f = fakes()
+      replayForeignOutboxes(
+        outboxes,
+        own,
+        (terminalReports) => ({
+          ...f.deps,
+          terminalReports,
+          reportState: async (proposalId, _token, update) => {
+            sent.push({ proposalId, state: update.state, runId: update.runId })
+            return { ok: true, status: 200 }
+          },
+        }),
+        {
+          keys: [own, foreign, alive, 'not-a-key'],
+          port: (key) => ({
+            ...sponsoredInflightKeyStore(inflightBase, key),
+            pid: 4242,
+            isAlive: (pid) => pid === 5151,
+          }),
+        },
+      )
+      await settle()
+      expect(sent).toEqual([
+        { proposalId: `p-${foreignRun}`, state: 'failed', runId: foreignRun },
+      ])
+      // Written to B's own outbox (and drained from it), record released.
+      expect(
+        JSON.parse(readFileSync(join(outboxes, `${foreign}.json`), 'utf8')),
+      ).toEqual([])
+      expect(sponsoredInflightKeyStore(inflightBase, foreign).list()).toEqual(
+        [],
+      )
+      // This folder's record is its own run's to sweep; a live pid is left.
+      expect(sponsoredInflightKeyStore(inflightBase, own).list()).toHaveLength(
+        1,
+      )
+      expect(
+        sponsoredInflightKeyStore(inflightBase, alive).list(),
+      ).toHaveLength(1)
+      expect(existsSync(join(outboxes, `${own}.json`))).toBe(false)
+    } finally {
+      rmSync(outboxes, { recursive: true, force: true })
+      rmSync(inflightBase, { recursive: true, force: true })
     }
   })
 })

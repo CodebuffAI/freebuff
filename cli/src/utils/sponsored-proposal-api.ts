@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto'
 
 import { FREEBUFF_WEB_URL } from '../login/constants'
 
+import { getCliAdRequestUserAgent } from './ad-client-identity'
 import { logger } from './logger'
 
 import type { SponsoredProposalRow } from '@codebuff/common/ads/sponsored-proposal-view'
@@ -170,6 +171,17 @@ function baseUrl(): string {
   return FREEBUFF_WEB_URL.replace(/\/+$/, '')
 }
 
+/**
+ * The product User-Agent, on EVERY proposal request (COD-665 I3), the same one
+ * the agentic offer and the display auction send. The Accept route records
+ * the client version from it (`acceptance.client_version`), which is how a
+ * run's funnel row says which build ran it; without it a CLI run was
+ * indistinguishable from any other caller.
+ */
+function productHeaders(): { 'user-agent': string } {
+  return { 'user-agent': getCliAdRequestUserAgent() }
+}
+
 async function call<T>(
   method: string,
   path: string,
@@ -181,6 +193,7 @@ async function call<T>(
       method,
       headers: {
         authorization: `Bearer ${authToken}`,
+        ...productHeaders(),
         ...(payload === undefined
           ? {}
           : { 'content-type': 'application/json' }),
@@ -224,7 +237,7 @@ export async function fetchSponsoredProposal(
   try {
     const response = await fetch(`${baseUrl()}${path}`, {
       method: 'GET',
-      headers: { authorization: `Bearer ${authToken}` },
+      headers: { authorization: `Bearer ${authToken}`, ...productHeaders() },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     if (!response.ok) return { status: 'unavailable' }
@@ -365,6 +378,7 @@ async function callDetailed<T>(
       headers: {
         authorization: `Bearer ${authToken}`,
         'content-type': 'application/json',
+        ...productHeaders(),
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(timeoutMs),
@@ -412,7 +426,7 @@ async function getDetailed<T>(
   try {
     response = await fetch(`${baseUrl()}${path}`, {
       method: 'GET',
-      headers: { authorization: `Bearer ${authToken}` },
+      headers: { authorization: `Bearer ${authToken}`, ...productHeaders() },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
   } catch (error) {
@@ -551,6 +565,11 @@ const PROPOSAL_ERROR_SENTENCES: Record<string, string> = {
     'Freebuff could not finish starting this sponsored task. Try again in a moment.',
   sponsor_funding_unavailable:
     'Freebuff could not finish starting this sponsored task. Try again in a moment.',
+  // Both permanent: the Accept is refused, and asking again changes nothing.
+  sponsor_funding_refused:
+    'The sponsor could not fund this task, so it was not started. Nothing in your project changed.',
+  accept_expired:
+    'This sponsored task can no longer be started: too much time has passed since it was accepted. Nothing in your project changed.',
   compute_grant_persistence_failed:
     'Freebuff could not finish starting this sponsored task. Try again in a moment.',
 }

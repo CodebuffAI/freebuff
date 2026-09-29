@@ -55,10 +55,13 @@
  *
  * ## Reporting
  *
- * `running` is advisory and swallowed. A TERMINAL report is persisted to a
- * private outbox before it is sent and retried until it is delivered or
- * refused outright: until it lands the row sits on `running` and its compute
- * grant stays live.
+ * `running` is advisory and swallowed, and sent on the turn's first MODEL
+ * EVENT -- text, reasoning, a tool call -- which is proof that its compute
+ * started, rather than when the turn is queued up. A TERMINAL report is persisted to a private outbox before it is sent and
+ * retried until it is delivered or refused outright: until it lands the row
+ * sits on `running` and its compute grant stays live. A run whose process
+ * died before writing one is found by the next launch through its in-flight
+ * record (`sponsored-run-inflight.ts`) and reported `failed` from there.
  */
 import {
   SPONSORED_LOCAL_INSTALL_REFUSAL,
@@ -79,15 +82,12 @@ import type { SponsoredProcedureRuntimeInputs } from '@codebuff/common/ads/spons
 import { sponsoredAdvertiserCtaHref } from '@codebuff/common/ads/sponsored-proposal-view'
 import { sanitizeTerminalText } from '@codebuff/common/util/terminal-safe-text'
 import {
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from 'fs'
-import { createHash, randomUUID } from 'node:crypto'
+  sponsoredInPlaceVerdict,
+  sponsoredPartialEditsDiagnostic,
+} from '@codebuff/common/ads/sponsored-in-place'
+import type { SponsoredTurnEnding } from '@codebuff/common/ads/sponsored-in-place'
+import { readdirSync, readFileSync } from 'fs'
+import { randomUUID } from 'node:crypto'
 import { release } from 'node:os'
 import path from 'path'
 
@@ -112,6 +112,7 @@ import { getConfigDir } from './config-dir'
 import { IS_FREEBUFF } from './constants'
 import { getAgentIdForMode } from './freebuff-agent-selection'
 import { logger } from './logger'
+import { atomicPrivateWrite, privateStateFile } from './private-state'
 import {
   buildSponsoredPrompt,
   sponsoredAgentDefinition,
@@ -124,6 +125,15 @@ import {
   sponsoredProcedureSha256,
 } from './sponsored-proposal-api'
 import { sponsoredProposalLocalTarget } from './sponsored-proposal-target'
+import {
+  sponsoredCliPartialEditsFailureReason,
+  sponsoredInflightBaseDirectory,
+  sponsoredInflightKeys,
+  sponsoredInflightKeyStore,
+  sponsoredInflightPort,
+  sponsoredInflightPortFor,
+  sweepSponsoredInflightRuns,
+} from './sponsored-run-inflight'
 import {
   SponsoredEditRecorder,
   SponsoredReceiptRefusal,
@@ -141,6 +151,9 @@ import type {
   SponsoredStateUpdate,
 } from './sponsored-proposal-api'
 import type { SponsoredReceiptStore } from './sponsored-receipts'
+import type { StreamChunkEvent } from './sdk-event-handlers'
+import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
+import type { SponsoredInflightPort } from './sponsored-run-inflight'
 import { sponsoredComputeRunDeadlineMs } from '@codebuff/common/ads/sponsored-compute-contract'
 import type { SponsoredComputeGrant } from '@codebuff/common/ads/sponsored-compute-contract'
 import type { SponsoredLocalTarget } from '@codebuff/common/ads/sponsored-capability'
@@ -244,6 +257,12 @@ export type SponsoredTurnPlan = {
   /** Aborted by an interrupt or by the grant expiring. Chat links its own to it. */
   signal: AbortSignal
   cwd: string
+  /**
+   * Chat calls this on the turn's model events (`withSponsoredModelEventTap`):
+   * the first one is proof the turn is spending the sponsor's compute, and
+   * reports `running`. Idempotent and cheap; never throws.
+   */
+  onModelEvent: () => void
 }
 
 /** How chat says the turn ended. */
@@ -269,6 +288,15 @@ export type SponsoredRunDeps = {
     write: (value: string) => void
   }
   receipts: SponsoredReceiptStore
+  /**
+   * This project's in-flight records (`sponsored-run-inflight.ts`): written
+   * once the run is spending compute, removed once its terminal report is in
+   * the outbox, and swept at launch for a run whose process died without one.
+   * An outbox flusher for ANOTHER folder (`replayForeignOutboxes`) gets THAT
+   * folder's records, so the sweep reaches every folder. Absent means no
+   * record and no sweep.
+   */
+  inflight?: SponsoredInflightPort
   /** The last run in this project, so `/ads:undo` survives a restart. */
   lastRun: {
     read: () => string | null
@@ -484,6 +512,12 @@ export class SponsoredRun {
     expiryTimer: ReturnType<typeof setTimeout> | null
     /** True once a terminal state has been reported. Interrupts read it. */
     settled: boolean
+    /**
+     * The `running` report, once the turn is known to be spending compute
+     * (`computeStarted`). Null until then; the outbox waits on it so upstream
+     * never sees a verdict before the run it ends.
+     */
+    running: Promise<void> | null
   } | null = null
 
   private accepting = false
@@ -501,7 +535,7 @@ export class SponsoredRun {
     private readonly projectRoot: string,
     private readonly deps: SponsoredRunDeps,
   ) {
-    void this.flushTerminalReports(false)
+    void this.flushTerminalReports(false, true)
   }
 
   /**
@@ -514,9 +548,13 @@ export class SponsoredRun {
    * and again after a sign-in, since the chat surface only mounts once there
    * is a session. Due-time respecting, so a mount inside a backoff window
    * sends nothing early.
+   *
+   * Both also SWEEP the in-flight records first (`sponsored-run-inflight.ts`):
+   * a run whose process died before it could write any terminal report is
+   * given one here, in the same outbox, so it is sent in the same pass.
    */
   flushPendingReports(): void {
-    void this.flushTerminalReports(false)
+    void this.flushTerminalReports(false, true)
   }
 
   /** The project this run was built for. */
@@ -812,6 +850,7 @@ export class SponsoredRun {
         abort: new AbortController(),
         expiryTimer: null,
         settled: false,
+        running: null,
       }
       this.deps.lastRun.write(runId)
       this.prepared = null
@@ -830,11 +869,16 @@ export class SponsoredRun {
   }
 
   /**
-   * The plan for the turn, and the moment `running` becomes true.
+   * The plan for the turn.
    *
-   * Called by chat once the conversation is free. Null when there is nothing
-   * queued, or when the grant can no longer pay for a run -- in which case the
-   * run is failed here, since no turn will ever settle it.
+   * Called by chat once the conversation is free, which is the moment chat
+   * CLAIMS the run: the local phase becomes `running` here, so the card stops
+   * saying "queued" and nothing starts the turn twice. The `running` REPORT
+   * waits for proof of compute (`computeStarted`).
+   *
+   * Null when there is nothing queued, or when the grant can no longer pay for
+   * a run -- in which case the run is failed here, since no turn will ever
+   * settle it.
    */
   async startTurn(): Promise<SponsoredTurnPlan | null> {
     const active = this.active
@@ -856,12 +900,12 @@ export class SponsoredRun {
       })
       return null
     }
-    const authToken = this.deps.getToken()
     this.set({ phase: 'running' })
-    // `running` is reported when the TURN is about to start, not at the
-    // accept: between the two sits the wait for the conversation, and a card
-    // that said "running" through that wait is a card that lied.
-    if (authToken) await this.report(authToken, { state: 'running' })
+    // NO `running` REPORT YET (COD-665 V5). Upstream stamps `running_at` on
+    // the first one and its stale sweep fails the row an hour and a half
+    // after it, so it has to mark the start of the compute hour -- not the
+    // wait for the conversation before it, nor a turn whose first model call
+    // is refused. It is sent on the turn's first model event, below.
     // The grant stops paying at its expiry, and a run that outlives it would
     // be billed to nobody. Aborted rather than left to fail request by request.
     // Its HOUR starts now, not at Accept (COD-665): the grant arrives with only
@@ -898,8 +942,11 @@ export class SponsoredRun {
         model: grant.modelId,
         isFreebuff: IS_FREEBUFF,
       }),
-      overrideTools: (this.deps.overrideTools ?? sponsoredOverrideTools)(
-        context,
+      overrideTools: beforeFirstToolCall(
+        (this.deps.overrideTools ?? sponsoredOverrideTools)(context),
+        () => {
+          if (!active.settled) this.computeStarted(active)
+        },
       ),
       // A signed one-run grant is the only route through sponsored metering.
       // No Freebuff session id rides beside it: the run is not the user's to
@@ -913,16 +960,23 @@ export class SponsoredRun {
       },
       signal: active.abort.signal,
       cwd: this.projectRoot,
+      onModelEvent: () => {
+        if (!active.settled) this.computeStarted(active)
+      },
     }
   }
 
   /**
-   * The verdict, read off the run's own edit receipts.
+   * The verdict, read off the run's own edit receipts
+   * (`sponsoredInPlaceVerdict`, shared with Desktop so the two cannot drift):
    *
-   * `delivered` when at least one file changed, `failed` when none did -- and
-   * an INTERRUPTED turn that still wrote something is delivered too: the files
-   * are in the user's project either way, and calling that a failure would tell
-   * them nothing changed while their editor says otherwise.
+   * - a turn that COMPLETED and changed files is `delivered`;
+   * - a turn that changed files and ended any other way -- interrupted, an
+   *   error, the grant expiring -- is `failed` as `partial_edits`. Half a
+   *   procedure is not the procedure, so it is not delivered; the copy says
+   *   the partial changes are still in the user's files and names
+   *   `/ads:undo`, and the conversation's own agent is still briefed on them;
+   * - a turn that changed nothing is `failed`, and says nothing changed.
    *
    * Returns the brief for the conversation's own agent, or null.
    */
@@ -938,6 +992,13 @@ export class SponsoredRun {
     const changed = active.recorder.changed()
     const files = changed.map((receipt) => receipt.path)
     const expired = active.abort.signal.reason === 'grant-expired'
+    const ending: SponsoredTurnEnding = expired
+      ? 'grant_expired'
+      : result.aborted
+        ? 'interrupted'
+        : result.errorText
+          ? 'error'
+          : 'completed'
     const how = `turn ${
       expired
         ? 'grant-expired'
@@ -947,19 +1008,36 @@ export class SponsoredRun {
             ? 'error'
             : 'completed'
     }${diagnosticCause(result.errorText)}`
-    const authToken = this.deps.getToken()
-    if (files.length > 0) {
+    // No `modelRan`: every receipt here is one of the run's own tool edits, so
+    // a model-less turn cannot have left one.
+    const verdict = sponsoredInPlaceVerdict({
+      ending,
+      editedFileCount: files.length,
+    })
+    // An edit is proof the turn spent compute, so `running` goes first even
+    // if no tool call announced it: `delivered` is only legal from `running`.
+    if (files.length > 0) this.computeStarted(active)
+    // A terminal report is PERSISTED to the outbox whether or not a session
+    // token exists right now: the flush waits for one. Gating it on the token
+    // dropped a signed-out run's verdict, and its in-flight record would then
+    // be swept at the next launch as a failure it was not.
+    const authToken = this.deps.getToken() ?? ''
+    if (verdict === 'delivered') {
       const outcomes = sponsoredOutcomesFromReceipts(active.procedure, changed)
       this.set({ phase: 'delivered', changedFiles: files })
-      if (authToken) {
-        await this.report(authToken, {
-          state: 'delivered',
-          ...outcomes,
-          ...(result.aborted || result.errorText
-            ? { diagnosticReason: `${how}; changes were left in the workspace` }
-            : {}),
-        })
-      }
+      await this.report(authToken, { state: 'delivered', ...outcomes })
+      return sponsoredChangesBrief(active.advertiserName, files)
+    }
+    if (verdict === 'partial_edits') {
+      const failureReason = sponsoredCliPartialEditsFailureReason(
+        ending === 'error' ? 'failed' : 'interrupted',
+      )
+      this.set({ phase: 'failed', changedFiles: files, failureReason })
+      await this.report(authToken, {
+        state: 'failed',
+        failureReason,
+        diagnosticReason: sponsoredPartialEditsDiagnostic(how, files.length),
+      })
       return sponsoredChangesBrief(active.advertiserName, files)
     }
     const failureReason = result.aborted
@@ -968,14 +1046,66 @@ export class SponsoredRun {
         ? 'The sponsored task failed before it changed anything. Nothing was changed in your project.'
         : 'The sponsored task finished without changing anything in your project.'
     this.set({ phase: 'failed', failureReason })
-    if (authToken) {
-      await this.report(authToken, {
-        state: 'failed',
-        failureReason,
-        diagnosticReason: `${how}; the turn recorded no file edits of its own`,
-      })
-    }
+    await this.report(authToken, {
+      state: 'failed',
+      failureReason,
+      diagnosticReason: `${how}; the turn recorded no file edits of its own`,
+    })
     return null
+  }
+
+  /**
+   * The turn is spending the sponsor's compute: record that this process owns
+   * the run, and report `running`. Once per run, never throws.
+   *
+   * CALLED ON THE TURN'S FIRST MODEL EVENT (COD-665 V5), of any kind: text,
+   * reasoning, a tool call or its result, a subagent starting -- what Desktop
+   * reports on too. A model event is the first thing this process can see that
+   * only happens after chat claimed the run AND the server reserved compute
+   * for its first model call and answered it: a turn refused at that
+   * reservation streams nothing. A turn that only writes text still counts,
+   * so its row gets its `running_at`. The first tool call calls it too, as a
+   * backstop, and `settle` calls it for a run that left edits without
+   * announcing itself.
+   *
+   * The in-flight record is written BEFORE the report is sent, so a process
+   * killed mid-request still leaves the next launch something to sweep.
+   */
+  private computeStarted(active: NonNullable<SponsoredRun['active']>): void {
+    if (active.running) return
+    const inflight = this.deps.inflight
+    try {
+      inflight?.put({
+        version: 1,
+        proposalId: active.proposalId,
+        runId: active.runId,
+        runToken: active.runToken,
+        pid: inflight.pid,
+        startedAtMs: this.deps.now(),
+      })
+    } catch (error) {
+      logger.debug({ error }, '[sponsored-run] in-flight record failed')
+    }
+    const authToken = this.deps.getToken()
+    active.running = authToken
+      ? this.reportWith(
+          active.proposalId,
+          active.runToken,
+          authToken,
+          { state: 'running' },
+          active.runId,
+        ).then(
+          () => undefined,
+          () => undefined,
+        )
+      : Promise.resolve()
+    // Every later outbox flush waits for it, so no terminal report reaches
+    // upstream ahead of the `running` it ends -- while the terminal report is
+    // still PERSISTED at once, since a quit may not wait out this request.
+    const running = active.running
+    this.terminalReportFlushChain = this.terminalReportFlushChain.then(
+      () => running,
+    )
   }
 
   /**
@@ -1134,6 +1264,7 @@ export class SponsoredRun {
       pending.update.runId === runId &&
       terminalReportPayload(pending.update) === terminalReportPayload(update)
     ) {
+      this.releaseInflight(runId)
       return this.flushTerminalReports(true)
     }
     reports.push({
@@ -1147,7 +1278,58 @@ export class SponsoredRun {
     })
     // Persist the terminal intent before waiting on any earlier HTTP request.
     this.writeTerminalReports(reports)
+    // Durable now: the outbox owns delivering it, so the boot sweep must not.
+    this.releaseInflight(runId)
     return this.flushTerminalReports(true)
+  }
+
+  private releaseInflight(runId: string): void {
+    try {
+      this.deps.inflight?.remove(runId)
+    } catch (error) {
+      logger.debug({ error }, '[sponsored-run] in-flight release failed')
+    }
+  }
+
+  /**
+   * Give every run a dead process left without a verdict a `failed` report,
+   * in this outbox (`sweepSponsoredInflightRuns`). Runs inside the serialized
+   * flush, so the append cannot race another write to the outbox.
+   */
+  private sweepInflightRuns(): void {
+    const inflight = this.deps.inflight
+    if (!inflight) return
+    try {
+      sweepSponsoredInflightRuns({
+        inflight,
+        receipts: this.deps.receipts,
+        hasOutboxReport: (runId) =>
+          this.readTerminalReports().some(
+            (report) => report.update.runId === runId,
+          ),
+        tokenAvailable: Boolean(this.deps.getToken()),
+        now: this.deps.now(),
+        enqueue: (record, update) => {
+          const reports = this.readTerminalReports()
+          reports.push({
+            proposalId: record.proposalId,
+            runToken: record.runToken,
+            update: {
+              ...update,
+              reportId: randomUUID(),
+              runId: record.runId,
+            },
+            attempts: 0,
+            nextDueAt: this.deps.now(),
+            lastError: null,
+            disposition: 'pending',
+          })
+          this.writeTerminalReports(reports)
+        },
+      })
+    } catch (error) {
+      logger.debug({ error }, '[sponsored-run] in-flight sweep failed')
+    }
   }
 
   private readTerminalReports(): DurableTerminalReport[] {
@@ -1165,10 +1347,11 @@ export class SponsoredRun {
     this.deps.terminalReports.write(JSON.stringify(reports))
   }
 
-  private flushTerminalReports(force: boolean) {
-    const result = this.terminalReportFlushChain.then(() =>
-      this.flushTerminalReportsSerial(force),
-    )
+  private flushTerminalReports(force: boolean, sweep = false) {
+    const result = this.terminalReportFlushChain.then(() => {
+      if (sweep) this.sweepInflightRuns()
+      return this.flushTerminalReportsSerial(force)
+    })
     this.terminalReportFlushChain = result.then(
       () => undefined,
       (error) => {
@@ -1555,6 +1738,76 @@ export function sponsoredOverrideTools(
   }
 }
 
+/**
+ * Whether an SDK event is the MODEL at work (COD-665 V5), matching what
+ * Desktop reports `running` on: non-empty text, reasoning, a tool call or its
+ * result, a subagent starting. `start` is the client's own announcement,
+ * before any request; `error`, `finish` and `download` say nothing about
+ * compute having been reserved.
+ */
+export function isSponsoredModelEvent(event: PrintModeEvent): boolean {
+  switch (event.type) {
+    case 'text':
+      return event.text.length > 0
+    case 'reasoning_delta':
+    case 'tool_call':
+    case 'tool_result':
+    case 'subagent_start':
+      return true
+    default:
+      return false
+  }
+}
+
+/** The same test for a streamed chunk: any non-empty text, reasoning included. */
+export function isSponsoredModelChunk(chunk: StreamChunkEvent): boolean {
+  return typeof chunk === 'string' ? chunk.length > 0 : chunk.chunk.length > 0
+}
+
+/**
+ * `config` with its event and chunk handlers tapped: every model event calls
+ * `onModelEvent` first (the plan's, which reports `running` once). A tap, not
+ * a replacement -- the transcript renders exactly what it did before.
+ */
+export function withSponsoredModelEventTap<
+  T extends {
+    handleEvent: (event: PrintModeEvent) => void
+    handleStreamChunk: (chunk: StreamChunkEvent) => void
+  },
+>(config: T, onModelEvent: () => void): T {
+  const { handleEvent, handleStreamChunk } = config
+  return {
+    ...config,
+    handleEvent: (event: PrintModeEvent) => {
+      if (isSponsoredModelEvent(event)) onModelEvent()
+      handleEvent(event)
+    },
+    handleStreamChunk: (chunk: StreamChunkEvent) => {
+      if (isSponsoredModelChunk(chunk)) onModelEvent()
+      handleStreamChunk(chunk)
+    },
+  }
+}
+
+/**
+ * `tools`, each of which first calls `first` -- the turn's first tool call is
+ * the CLI's proof that its compute started (`computeStarted`). `first` must
+ * not throw and is not awaited: the report it starts must never slow a tool.
+ */
+function beforeFirstToolCall<T extends object>(tools: T, first: () => void): T {
+  const wrapped: Record<string, unknown> = {}
+  for (const [name, handler] of Object.entries(tools)) {
+    wrapped[name] =
+      typeof handler === 'function'
+        ? (...args: unknown[]) => {
+            first()
+            return (handler as (...args: unknown[]) => unknown)(...args)
+          }
+        : handler
+  }
+  return wrapped as T
+}
+
 function fileToolPath(input: unknown): string | null {
   if (!input || typeof input !== 'object') return null
   const value = input as { path?: unknown; operation?: { path?: unknown } }
@@ -1570,42 +1823,6 @@ export function cliExecutionSurface(
   if (platform === 'darwin') return 'cli_macos'
   if (platform !== 'linux') return null
   return osRelease.toLowerCase().includes('microsoft') ? 'cli_wsl' : 'cli_linux'
-}
-
-function privateStateFile(
-  directory: string,
-  projectRoot: string,
-): { directory: string; key: string; target: string } {
-  const canonicalRoot = realpathSync(projectRoot)
-  const key = createHash('sha256').update(canonicalRoot).digest('hex')
-  return {
-    directory,
-    key,
-    target: path.join(directory, `${key}.json`),
-  }
-}
-
-function atomicPrivateWrite(
-  directory: string,
-  key: string,
-  target: string,
-  value: string,
-): void {
-  mkdirSync(directory, { recursive: true, mode: 0o700 })
-  const temporary = path.join(directory, `.${key}.${randomUUID()}.tmp`)
-  try {
-    writeFileSync(temporary, value, {
-      encoding: 'utf8',
-      flag: 'wx',
-      mode: 0o600,
-    })
-    renameSync(temporary, target)
-  } catch (error) {
-    try {
-      unlinkSync(temporary)
-    } catch {}
-    throw error
-  }
 }
 
 function terminalReportStore(
@@ -1672,6 +1889,7 @@ export const defaultSponsoredRunDeps = (
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   terminalReports: terminalReportStore(projectRoot),
   receipts: sponsoredReceiptStore(),
+  inflight: sponsoredInflightPort(projectRoot),
   lastRun: lastRunStore(projectRoot),
 })
 
@@ -1717,10 +1935,22 @@ export function replaySponsoredTerminalReports(projectRoot: string): void {
       path.join(getConfigDir(), 'sponsored-terminal-reports'),
       projectRoot,
     )
-    replayForeignOutboxes(directory, key, (terminalReports) => ({
-      ...defaultSponsoredRunDeps(projectRoot),
-      terminalReports,
-    }))
+    const inflightBase = sponsoredInflightBaseDirectory()
+    replayForeignOutboxes(
+      directory,
+      key,
+      (terminalReports) => ({
+        ...defaultSponsoredRunDeps(projectRoot),
+        terminalReports,
+      }),
+      {
+        keys: sponsoredInflightKeys(inflightBase),
+        port: (folderKey) =>
+          sponsoredInflightPortFor(
+            sponsoredInflightKeyStore(inflightBase, folderKey),
+          ),
+      },
+    )
   } catch (error) {
     logger.debug({ error }, '[sponsored-run] foreign outbox replay failed')
   }
@@ -1730,13 +1960,19 @@ export function replaySponsoredTerminalReports(projectRoot: string): void {
 let foreignOutboxesReplayed = false
 
 /**
- * Replay every OTHER project's outbox too.
+ * Replay every OTHER project's outbox too, and sweep its in-flight records.
  *
  * The outbox is keyed per project root, so a report stranded by a crash in
  * folder A used to wait until the CLI was next opened in A -- which may never
  * happen, leaving that row on `running` with its grant live. Every entry
  * carries its own proposal id and run token, so any folder's CLI can deliver
  * it. Each file gets its own flusher, which exists only to drain that file.
+ *
+ * The same goes for a run KILLED in folder A before it wrote any report: its
+ * in-flight record sits under A's key, and whether its pid is alive does not
+ * depend on which folder asks. So every folder with in-flight records gets a
+ * flusher too -- even one with no outbox file yet -- and its sweep enqueues
+ * the `failed` report into A's own outbox, which that flusher then drains.
  */
 export function replayForeignOutboxes(
   directory: string,
@@ -1744,21 +1980,30 @@ export function replayForeignOutboxes(
   depsFor: (
     terminalReports: SponsoredRunDeps['terminalReports'],
   ) => SponsoredRunDeps,
+  inflight?: {
+    /** The folder keys that have in-flight records. */
+    keys: readonly string[]
+    port: (key: string) => SponsoredInflightPort
+  },
 ): void {
-  let names: string[]
+  const keys = new Set<string>()
   try {
-    names = readdirSync(directory)
-  } catch {
-    return
+    for (const name of readdirSync(directory)) {
+      const key = /^([0-9a-f]{64})\.json$/.exec(name)?.[1]
+      if (key) keys.add(key)
+    }
+  } catch {}
+  for (const key of inflight?.keys ?? []) {
+    if (/^[0-9a-f]{64}$/.test(key)) keys.add(key)
   }
-  for (const name of names) {
-    const key = /^([0-9a-f]{64})\.json$/.exec(name)?.[1]
-    if (!key || key === ownKey) continue
-    // The constructor drains the file; nothing else is ever asked of it.
-    new SponsoredRun(
-      directory,
-      depsFor(terminalReportFileStore(directory, key)),
-    )
+  keys.delete(ownKey)
+  for (const key of keys) {
+    // The constructor sweeps that folder's records into that folder's outbox
+    // and drains it; nothing else is ever asked of it.
+    new SponsoredRun(directory, {
+      ...depsFor(terminalReportFileStore(directory, key)),
+      inflight: inflight?.port(key),
+    })
   }
 }
 

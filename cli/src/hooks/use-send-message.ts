@@ -44,6 +44,7 @@ import {
 } from '../utils/send-message-helpers'
 import { createSendMessageTimerController } from '../utils/send-message-timer'
 import { takePendingSponsoredBrief } from '../utils/sponsored-brief'
+import { withSponsoredModelEventTap } from '../utils/sponsored-run'
 import {
   activateSteering,
   deactivateSteering,
@@ -710,20 +711,24 @@ export const useSendMessage = ({
           : !byok
         const runConfig = sponsored
           ? {
-              ...createRunConfig({
-                logger,
-                agent: resolvedAgent,
-                prompt: effectivePrompt,
-                content: undefined,
-                // FRESH MEMORY. The sponsored run never sees the user's
-                // conversation beyond the task context in its prompt, and its
-                // own history is never written back (see below).
-                previousRunState: null,
-                agentDefinitions,
-                eventHandlerState,
-                signal: abortController.signal,
-                extraCodebuffMetadata: sponsored.plan.extraCodebuffMetadata,
-              }),
+              // The turn's first model event reports `running` (COD-665 V5).
+              ...withSponsoredModelEventTap(
+                createRunConfig({
+                  logger,
+                  agent: resolvedAgent,
+                  prompt: effectivePrompt,
+                  content: undefined,
+                  // FRESH MEMORY. The sponsored run never sees the user's
+                  // conversation beyond the task context in its prompt, and its
+                  // own history is never written back (see below).
+                  previousRunState: null,
+                  agentDefinitions,
+                  eventHandlerState,
+                  signal: abortController.signal,
+                  extraCodebuffMetadata: sponsored.plan.extraCodebuffMetadata,
+                }),
+                sponsored.plan.onModelEvent,
+              ),
               cwd: sponsored.plan.cwd,
               // BOTH empty, and neither is redundant: stripping a custom tool
               // from `toolNames` only stops it being OFFERED -- the SDK

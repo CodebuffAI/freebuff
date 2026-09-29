@@ -11,7 +11,10 @@
  *
  * TELEMETRY, NEVER MONEY. Nothing reads this to bill, refund or settle: the
  * `accepted` row is the one billable stage and it has its own producer. A
- * test asserts this module imports nothing from billing.
+ * test asserts this module imports nothing from billing. The never-started
+ * refund path (`sponsored-never-started-refund.ts`) does not read the stored
+ * metadata either: it re-derives the code from the report itself, with
+ * `sponsoredRunFailureCode`, and proves the spend from Postgres.
  *
  * CLOSED AND BOUNDED ON PURPOSE. Every key but `diagnostic_reason` is an enum
  * or a boolean, and `diagnostic_reason` is SCRUBBED (`scrubSponsoredDiagnostic`)
@@ -32,6 +35,7 @@ import { z } from 'zod'
 
 import { sponsoredExecutionSurfaceSchema } from './sponsored-capability'
 import { SPONSORED_CLIENT_VERSION_PATTERN } from './sponsored-client-version'
+import { SPONSORED_PARTIAL_EDITS_MARKER } from './sponsored-in-place'
 
 /** Where the run executed. */
 export const SPONSORED_RUN_EXECUTION_MODES = [
@@ -132,6 +136,68 @@ export const SPONSORED_RUN_FAILURE_CODES = [
 export type SponsoredRunFailureCode =
   (typeof SPONSORED_RUN_FAILURE_CODES)[number]
 
+/**
+ * The leading clause of every never-started diagnostic: an accepted run whose
+ * turn never began, so no model was called and nothing in the project moved.
+ * The reason token after it is one of {@link SPONSORED_NEVER_STARTED_REASONS}.
+ */
+export const SPONSORED_NEVER_STARTED_PREFIX = 'never-started'
+
+/**
+ * The machine reason a never-started diagnostic carries after the prefix. The
+ * first three are the strings Desktop has written since COD-665; the funnel
+ * maps each to its own `never_started_*` code.
+ */
+export const SPONSORED_NEVER_STARTED_REASONS = {
+  dismissed: 'dismissed_while_queued',
+  queueExpired: 'queue_wait_expired',
+  connectDismissed: 'dismissed_during_connect',
+  appQuit: 'app_quit',
+  inputsDropped: 'inputs_dropped',
+} as const
+export type SponsoredNeverStartedReason =
+  keyof typeof SPONSORED_NEVER_STARTED_REASONS
+
+/** `never-started: <reason token>: <detail>`, the one way to author one. */
+export function sponsoredNeverStartedDiagnostic(
+  reason: SponsoredNeverStartedReason,
+  detail: string,
+): string {
+  return `${SPONSORED_NEVER_STARTED_PREFIX}: ${SPONSORED_NEVER_STARTED_REASONS[reason]}: ${detail}`
+}
+
+/**
+ * The leading clause of an Accept the sponsor could not fund: the row went
+ * `failed` before anything ran, and nothing was charged.
+ */
+export const SPONSORED_FUNDING_REFUSED_PREFIX = 'funding-refused'
+
+/** `funding-refused: <reason>`, `reason` being the settlement's refusal. */
+export function sponsoredFundingRefusedDiagnostic(reason: string): string {
+  return `${SPONSORED_FUNDING_REFUSED_PREFIX}: ${reason}`
+}
+
+/** The six codes of a run that was accepted and never started. */
+export const SPONSORED_NEVER_STARTED_FAILURE_CODES: ReadonlySet<SponsoredRunFailureCode> =
+  new Set<SponsoredRunFailureCode>([
+    'never_started_dismissed',
+    'never_started_queue_expired',
+    'never_started_connect_dismissed',
+    'never_started_app_quit',
+    'never_started_inputs_dropped',
+    'never_started_other',
+  ])
+
+/** Whether a failure code (from any source, unvalidated) names a never-started run. */
+export function isSponsoredNeverStartedFailure(
+  code: string | null | undefined,
+): boolean {
+  return (
+    typeof code === 'string' &&
+    (SPONSORED_NEVER_STARTED_FAILURE_CODES as ReadonlySet<string>).has(code)
+  )
+}
+
 /** Cap on the scrubbed diagnostic. The Convex copy keeps up to 500. */
 export const SPONSORED_FUNNEL_DIAGNOSTIC_MAX = 200
 
@@ -220,7 +286,12 @@ export interface SponsoredRunFunnelRowFacts {
   in_place_execution?: true
   execution_surface?: string | null
   surface?: string | null
-  acceptance?: { surface?: string | null; containment?: string | null } | null
+  acceptance?: {
+    surface?: string | null
+    containment?: string | null
+    /** `desktop/<v>` or `cli/<v>`, written once at Accept. */
+    client_version?: string | null
+  } | null
   diagnostic_reason?: string | null
 }
 
@@ -254,6 +325,12 @@ export function sponsoredRunFailureCode(args: {
   }
   const text = (args.diagnosticReason ?? '').trim().toLowerCase()
   if (!text) return 'unclassified'
+  if (text.startsWith(SPONSORED_NEVER_STARTED_PREFIX)) {
+    return neverStartedCode(text)
+  }
+  if (text.startsWith(SPONSORED_FUNDING_REFUSED_PREFIX)) {
+    return 'funding_refused'
+  }
   if (text.startsWith('accept-identity-changed'))
     return 'accept_identity_changed'
   if (text.startsWith('accept-failed')) return 'accept_failed'
@@ -266,6 +343,10 @@ export function sponsoredRunFailureCode(args: {
     return 'verdict_undecided'
   }
   if (text.includes('commit follow-up')) return 'commit_follow_up_failed'
+  // Before every `turn …` branch: a turn that ended early with edits is its
+  // own outcome whatever ended it -- which also reclassifies the diagnostics
+  // shipped Desktop builds already write.
+  if (text.includes(SPONSORED_PARTIAL_EDITS_MARKER)) return 'partial_edits'
   if (text.startsWith('turn grant-expired')) return 'grant_expired'
   if (
     text.startsWith('turn interrupted') ||
@@ -281,6 +362,31 @@ export function sponsoredRunFailureCode(args: {
     return text.includes('recorded no file edits') ? 'no_edits' : 'no_commit'
   }
   return 'unclassified'
+}
+
+const NEVER_STARTED_CODE_BY_REASON: Record<string, SponsoredRunFailureCode> = {
+  [SPONSORED_NEVER_STARTED_REASONS.dismissed]: 'never_started_dismissed',
+  [SPONSORED_NEVER_STARTED_REASONS.queueExpired]: 'never_started_queue_expired',
+  [SPONSORED_NEVER_STARTED_REASONS.connectDismissed]:
+    'never_started_connect_dismissed',
+  [SPONSORED_NEVER_STARTED_REASONS.appQuit]: 'never_started_app_quit',
+  // Desktop's shutdown and boot paths wrote the quit as `app-quit: …`.
+  'app-quit': 'never_started_app_quit',
+  [SPONSORED_NEVER_STARTED_REASONS.inputsDropped]:
+    'never_started_inputs_dropped',
+}
+
+/** The code of a (lower-cased) `never-started: <token>…` diagnostic. */
+function neverStartedCode(text: string): SponsoredRunFailureCode {
+  const rest = text.slice(SPONSORED_NEVER_STARTED_PREFIX.length)
+  if (!rest.startsWith(': ')) return 'never_started_other'
+  const body = rest.slice(2)
+  // Desktop's rewind / close / delete paths wrote a sentence, not a token.
+  if (body.startsWith('the conversation was')) {
+    return 'never_started_inputs_dropped'
+  }
+  const token = body.split(/[:;\s]/, 1)[0] ?? ''
+  return NEVER_STARTED_CODE_BY_REASON[token] ?? 'never_started_other'
 }
 
 /**
@@ -314,6 +420,8 @@ const NO_TURN_CODES: ReadonlySet<SponsoredRunFailureCode> = new Set([
   'user_missing',
   'gate_refused',
   'empty_procedure',
+  ...SPONSORED_NEVER_STARTED_FAILURE_CODES,
+  'funding_refused',
 ])
 
 /** Each of these is a turn that COMPLETED, which a model call is part of. */
@@ -322,6 +430,8 @@ const TURN_RAN_CODES: ReadonlySet<SponsoredRunFailureCode> = new Set([
   'no_edits',
   'no_commit',
   'commit_follow_up_failed',
+  // Edits of the run's own are a model's work.
+  'partial_edits',
 ])
 
 /**
@@ -369,6 +479,9 @@ export function scrubSponsoredDiagnostic(
     // Long opaque tokens: hashes, keys, ids.
     .replace(/\b[a-f0-9]{16,}\b/gi, '<hex>')
     .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '<token>')
+    // Last: every remaining number, so `95 minutes` and `96 minutes` count as
+    // one shape. After the hex and token passes, which need the digits.
+    .replace(/\d+/g, 'N')
     .replace(/\s+/g, ' ')
     .trim()
   if (!text) return null
@@ -418,6 +531,12 @@ export function buildSponsoredRunFunnelMetadata(args: {
     ? (args.fromState as (typeof SPONSORED_RUN_FROM_STATES)[number])
     : undefined
   const diagnostic = scrubSponsoredDiagnostic(row.diagnostic_reason)
+  const clientVersion = row.acceptance?.client_version
+  const validClientVersion =
+    typeof clientVersion === 'string' &&
+    SPONSORED_CLIENT_VERSION_PATTERN.test(clientVersion)
+      ? clientVersion
+      : undefined
 
   let failureCode: SponsoredRunFailureCode | undefined
   let llmCalled: boolean | undefined
@@ -455,5 +574,6 @@ export function buildSponsoredRunFunnelMetadata(args: {
     ...(failureCode ? { failure_code: failureCode } : {}),
     ...(diagnostic ? { diagnostic_reason: diagnostic } : {}),
     ...(llmCalled !== undefined ? { llm_called: llmCalled } : {}),
+    ...(validClientVersion ? { client_version: validClientVersion } : {}),
   }
 }
