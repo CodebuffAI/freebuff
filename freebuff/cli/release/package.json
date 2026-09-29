@@ -36,6 +36,9 @@
     "url": "git+https://github.com/CodebuffAI/freebuff-private.git"
   },
   "homepage": "https://freebuff.com",
+  "bugs": {
+    "url": "https://github.com/CodebuffAI/freebuff/issues"
+  },
   "publishConfig": {
     "access": "public",
     "provenance": false
