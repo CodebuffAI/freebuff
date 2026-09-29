@@ -150,6 +150,11 @@ export interface FreebuffModelOption {
    *  date — this says the price is a promotion and will not last, without
    *  promising when it stops. Clear it when the promotion ends. */
   promotional?: { tooltip: string; short: string }
+  /** A "New" pill on the Desktop and Web pickers, whose tooltip is `tooltip`.
+   *  Deliberately NOT derived from `isNew`, which most of the catalog carries
+   *  and which the CLI already prints: this marks the one or two rows a
+   *  release is announcing. Clear it once the announcement is old news. */
+  newBadge?: { tooltip: string }
   /** Tooltip attached to the tagline, for a tagline that names a behavior the
    *  word alone cannot explain (e.g. "Queue"). Rendered with the same
    *  dotted-underline affordance as the data-use "Data" label, so a row can
@@ -2793,6 +2798,12 @@ const MUSE_SPARK_13_CONTRIBUTOR_MODEL = {
   // and no queue — a request Meta will not take is answered on the fallback at
   // once — so "Queues" would describe a lane the row no longer runs on.
   tagline: 'Falls back when busy',
+  // Announced as new in the Desktop release that shipped it to the picker
+  // (2026-09-29), beside GPT-6.1 Sol.
+  newBadge: {
+    tooltip:
+      "New: Meta's Muse Spark 1.3, 1M context, on every paid plan.",
+  },
   taglineTooltip: MUSE_SPARK_FALLBACK_NOTICE,
   availability: 'always',
   // Load-bearing pair (a catalog invariant test enforces it): the Contributor
