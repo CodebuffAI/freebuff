@@ -120,6 +120,7 @@ export function getFreebuffStreakBonusStatusForLayout(params: {
     todayCredited: params.streak.todayCredited,
     freebucksDailyBonus: params.streak.freebucksDailyBonus,
     nextResetAt: params.streak.nextResetAt,
+    bonusExpiresAt: params.streak.bonusExpiresAt,
     now: params.now,
     timeZone: params.timeZone,
   })

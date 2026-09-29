@@ -64,20 +64,21 @@ export function getFreebuffStreakLine(
   }
 }
 
-/** The perk a 7+ day streak pays, as copy: Freebucks on the meter (every
- *  day, into the wallet), sessions off it. */
+/** The perk a 7+ day streak pays, as copy: Freebucks on the meter (added to
+ *  each day's allowance, gone at its reset), sessions off it. */
 function getFreebuffStreakPerk(params: {
   streak: number
   accessTier: 'full' | 'limited'
   freebucksDailyBonus?: number | null
 }): string {
   if (params.freebucksDailyBonus != null && params.freebucksDailyBonus > 0) {
-    // Says WHEN it lands: the credit rides the first message of a streak day,
-    // not sign-in. WHICH day is the status line's job
-    // (`getFreebuffStreakBonusStatus`), in the reader's own clock — "every
+    // Says WHERE it goes and WHEN it lands: into the daily allowance (never
+    // the wallet, so it does not pile up), with the first message of a streak
+    // day, not sign-in. WHICH day, and when it expires, is the status line's
+    // job (`getFreebuffStreakBonusStatus`), in the reader's own clock — "every
     // Pacific day" named the zone but still left Asia and Europe expecting it
     // at their midnight (2026-09-27/28 "streak bonus not credited" reports).
-    return `+${params.freebucksDailyBonus} Freebucks with your first message each day`
+    return `+${params.freebucksDailyBonus} to your daily allowance with each day's first message`
   }
   // Only advertise GLM when the recurring full-access streak entitlement is
   // active, so the copy never promises a perk the gate won't honor.
@@ -106,10 +107,11 @@ function getFreebuffStreakPerk(params: {
  * lives in the referral banner; this line is the motivational why. GLM is
  * full-access only, so limited users get the daily session bonus alone.
  *
- * On the Freebucks meter none of that buys anything, and the streak pays
- * `freebucksDailyBonus` Freebucks a day instead (both tiers); the server says
- * which applies through the streak response, so the copy never promises a
- * currency the ledger will not credit.
+ * On the Freebucks meter none of that buys anything, and the streak adds
+ * `freebucksDailyBonus` Freebucks to each streak day's allowance instead (both
+ * tiers; it expires with the allowance, never reaching the wallet); the server
+ * says which applies through the streak response, so the copy never promises
+ * a currency the meter will not grant.
  */
 export function getFreebuffStreakBonusNote(params: {
   streak: number
@@ -166,14 +168,16 @@ export function formatFreebuffStreakResetTime(params: {
 
 /**
  * Where today's Freebucks streak bonus stands, for a 7+ day streak on the
- * meter: already credited, still to come with a message, or next due
- * after the reset — with the reset in the reader's own clock. Null off the
- * meter, below the milestone, or without a server `nextResetAt` (an older
- * server), so a client never guesses the boundary.
+ * meter: added to today's allowance (and until when), already expired with
+ * the allowance, still to come with a message, or next due after the streak
+ * day's reset — every time in the reader's own clock. Null off the meter,
+ * below the milestone, or without a server `nextResetAt` (an older server),
+ * so a client never guesses the boundary.
  *
- * The rules it states are the award's (`awardFreebuffDailyStreakReward` +
- * `creditFreebucksStreakBonus`): one credit per Pacific day, written by the
- * first free-mode message of that day. Nothing here changes them.
+ * The rules it states are the award's (`awardFreebuffDailyStreakReward`): one
+ * grant per Pacific day, made by the first free-mode message of that day,
+ * which raises the daily allowance until the allowance's own reset
+ * (`bonusExpiresAt`). Nothing here changes them.
  */
 export function getFreebuffStreakBonusStatus(params: {
   streak: number
@@ -182,6 +186,9 @@ export function getFreebuffStreakBonusStatus(params: {
   todayCredited?: boolean | null
   freebucksDailyBonus?: number | null
   nextResetAt?: string | null
+  /** The streak response's `bonusExpiresAt`: when today's granted bonus
+   *  leaves the allowance; null once it has. Undefined = not reported. */
+  bonusExpiresAt?: string | null
   now?: Date
   /** Render zone; the runtime's own when omitted. */
   timeZone?: string
@@ -201,12 +208,31 @@ export function getFreebuffStreakBonusStatus(params: {
     timeZone: params.timeZone,
   })
   if (params.todayCredited === true) {
-    // Not "today's": east of Pacific, between local midnight and the Pacific
-    // reset, the credit landed on the reader's YESTERDAY while their daily
-    // pool has already refilled — "Today's +15" then reads as a missing
-    // bonus (2026-09-29 report, 17-day streak in India, credited every
-    // Pacific day). Nor "in your wallet": the wallet is spent once the daily
-    // pool runs out, so a credit can be gone by the time this is read.
+    // The bonus lives in the DAILY allowance and leaves with it at the
+    // allowance's reset (local midnight in the account's reset zone), which is
+    // not the streak day's Pacific reset. Say both, in the reader's clock.
+    const expiresAt =
+      typeof params.bonusExpiresAt === 'string'
+        ? new Date(params.bonusExpiresAt)
+        : null
+    if (expiresAt && Number.isFinite(expiresAt.getTime()) && expiresAt > now) {
+      const until = formatFreebuffStreakResetTime({
+        resetAt: expiresAt,
+        now,
+        timeZone: params.timeZone,
+      })
+      // One reset for both (a Pacific reader): say it once.
+      if (expiresAt.getTime() === resetAt.getTime()) {
+        return `+${bonus} added to today's allowance until ${until} · next +${bonus} with your first message after that`
+      }
+      return `+${bonus} added to today's allowance until ${until} · next +${bonus} after ${when}`
+    }
+    // Granted, but the allowance it raised has since reset: east of Pacific,
+    // between local midnight and the Pacific reset, the grant belongs to the
+    // reader's YESTERDAY (2026-09-29 report, 17-day streak in India).
+    if (params.bonusExpiresAt === null || expiresAt) {
+      return `+${bonus} expired at your daily reset · next +${bonus} with your first message after ${when}`
+    }
     return `+${bonus} credited · next +${bonus} with your first message after ${when}`
   }
   // Today already counted, so its first message has been sent: whatever

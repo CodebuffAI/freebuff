@@ -168,22 +168,23 @@ describe('getFreebuffStreakBonusNote', () => {
   })
 
   // On the Freebucks meter a session bonus buys nothing, so the perk is the
-  // wallet credit the server reports — for both tiers, and in the countdown.
-  test('on the meter the perk is the daily Freebucks credit', () => {
+  // daily-allowance bonus the server reports — for both tiers, and in the
+  // countdown. It never promises the wallet.
+  test('on the meter the perk is the daily allowance bonus', () => {
     expect(
       getFreebuffStreakBonusNote({
         streak: 14,
         accessTier: 'full',
         freebucksDailyBonus: 15,
       }),
-    ).toBe('🎁 Streak perk: +15 Freebucks with your first message each day')
+    ).toBe("🎁 Streak perk: +15 to your daily allowance with each day's first message")
     expect(
       getFreebuffStreakBonusNote({
         streak: 14,
         accessTier: 'limited',
         freebucksDailyBonus: 15,
       }),
-    ).toBe('🎁 Streak perk: +15 Freebucks with your first message each day')
+    ).toBe("🎁 Streak perk: +15 to your daily allowance with each day's first message")
     expect(
       getFreebuffStreakBonusNote({
         streak: 3,
@@ -191,7 +192,7 @@ describe('getFreebuffStreakBonusNote', () => {
         freebucksDailyBonus: 15,
       }),
     ).toBe(
-      '🎁 4 more days to unlock +15 Freebucks with your first message each day',
+      "🎁 4 more days to unlock +15 to your daily allowance with each day's first message",
     )
     // An older server sends no field; null keeps the session copy.
     expect(
@@ -262,9 +263,11 @@ describe('getFreebuffStreakBonusStatusForLayout', () => {
     freebucksDailyBonus: 15,
     nextResetAt: '2026-09-28T07:00:00.000Z',
     todayCredited: true,
+    // Singapore midnight: the allowance the bonus went to resets then.
+    bonusExpiresAt: '2026-09-28T16:00:00.000Z',
   }
   const layout = {
-    note: '🎁 Streak perk: +15 Freebucks with your first message each day',
+    note: "🎁 Streak perk: +15 to your daily allowance with each day's first message",
     streak,
     availableWidth: 80,
     // 09:00 in Singapore, still the 27th in Pacific.
@@ -272,9 +275,9 @@ describe('getFreebuffStreakBonusStatusForLayout', () => {
     timeZone: 'Asia/Singapore',
   }
 
-  test('shows the credit and the local reset under the perk note', () => {
+  test('shows the allowance bonus and both local resets under the perk note', () => {
     expect(getFreebuffStreakBonusStatusForLayout(layout)).toBe(
-      '+15 credited · next +15 with your first message after 3:00 PM',
+      "+15 added to today's allowance until midnight · next +15 after 3:00 PM",
     )
   })
 

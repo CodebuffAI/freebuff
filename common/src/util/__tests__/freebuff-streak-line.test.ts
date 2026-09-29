@@ -77,7 +77,49 @@ describe('getFreebuffStreakBonusStatus', () => {
     timeZone: 'Asia/Singapore',
   }
 
-  test('a landed credit says so, and when the next one opens', () => {
+  // The bonus is part of the DAILY allowance, never the wallet: the line says
+  // it went to today's allowance and when that allowance resets and takes it
+  // away (Singapore midnight, 16:00Z), apart from when the next streak day
+  // opens (Pacific midnight, 3:00 PM there).
+  test('a granted bonus names today\'s allowance and when it expires', () => {
+    expect(
+      getFreebuffStreakBonusStatus({
+        ...base,
+        todayCredited: true,
+        bonusExpiresAt: '2026-09-28T16:00:00.000Z',
+      }),
+    ).toBe('+15 added to today\'s allowance until midnight · next +15 after 3:00 PM')
+  })
+
+  test('one reset for both reads once (a Pacific reader)', () => {
+    expect(
+      getFreebuffStreakBonusStatus({
+        ...base,
+        todayCredited: true,
+        bonusExpiresAt: RESET_AT.toISOString(),
+        now: new Date('2026-09-27T20:00:00.000Z'),
+        timeZone: 'America/Los_Angeles',
+      }),
+    ).toBe(
+      '+15 added to today\'s allowance until midnight · next +15 with your first message after that',
+    )
+  })
+
+  test('a bonus whose allowance already reset says it expired', () => {
+    for (const bonusExpiresAt of [null, '2026-09-27T16:00:00.000Z']) {
+      expect(
+        getFreebuffStreakBonusStatus({
+          ...base,
+          todayCredited: true,
+          bonusExpiresAt,
+        }),
+      ).toBe(
+        '+15 expired at your daily reset · next +15 with your first message after 3:00 PM',
+      )
+    }
+  })
+
+  test('without an expiry (older server) it only says credited', () => {
     expect(getFreebuffStreakBonusStatus({ ...base, todayCredited: true })).toBe(
       '+15 credited · next +15 with your first message after 3:00 PM',
     )
@@ -86,20 +128,21 @@ describe('getFreebuffStreakBonusStatus', () => {
   // The 2026-09-29 Desktop report, as the ledger recorded it: a 17-day streak
   // in India, credited at 07:00Z every day (12:30 PM IST). At 11:15 AM IST
   // their local day and daily pool had rolled over, but the Pacific streak day
-  // had not — its +15 had landed at 12:30 PM the previous LOCAL day, and was
-  // already spent. "Today's +15 is in your wallet" was wrong on both counts.
+  // had not — its +15 had landed at 12:30 PM the previous LOCAL day. Now that
+  // bonus lived in that local day's allowance and left with its reset.
   test('east of Pacific after local midnight, it never calls the credit "today\'s"', () => {
     const status = getFreebuffStreakBonusStatus({
       streak: 17,
       todayUsed: true,
       todayCredited: true,
+      bonusExpiresAt: null,
       freebucksDailyBonus: 15,
       nextResetAt: '2026-09-29T07:00:00.000Z',
       now: new Date('2026-09-29T05:45:20.426Z'),
       timeZone: 'Asia/Kolkata',
     })
     expect(status).toBe(
-      '+15 credited · next +15 with your first message after 12:30 PM',
+      '+15 expired at your daily reset · next +15 with your first message after 12:30 PM',
     )
     expect(status).not.toMatch(/today|wallet/i)
   })

@@ -158,8 +158,13 @@ export interface FreebuffSubscriptionUsage {
 export interface FreebuffFreebucksWindow {
   /** Freebucks granted for the account's day: the access tier's free pool, or
    *  the plan's daily pool for a subscriber (the plan REPLACES the free
-   *  figure rather than stacking on it). */
+   *  figure rather than stacking on it), plus `streakBonus`. */
   limit: number
+  /** The part of `limit` today's streak added (15 per streak day granted in
+   *  this interval). Expires with the pool at `resetAt`; never in the wallet.
+   *  Absent when zero or from an older server. `limit - streakBonus` is the
+   *  plan's own daily figure. */
+  streakBonus?: number
   /** Freebucks already spent from the daily pool today. */
   spent: number
   /** `limit - spent`, floored at zero so a lowered allowance reads as 0. */
