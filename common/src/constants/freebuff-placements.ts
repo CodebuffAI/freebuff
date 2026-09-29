@@ -341,6 +341,23 @@ export const PLACEMENT_SLOTS = [
     available: false,
     format: 'partner',
   },
+  // LAUNCH intent (`mentionsLaunchKeyword`): the composer pill in Desktop and
+  // the composer row in the CLI, for a partner whose product is what comes
+  // after the code ships -- the launch video, deck, site and posts. A second
+  // pair rather than a second advertiser on the PR pair, because a partner
+  // slot is one advertiser's chrome by construction.
+  {
+    id: 'Desktop-Partner-Composer-Launch',
+    surface: 'cli_chat',
+    available: false,
+    format: 'partner',
+  },
+  {
+    id: 'CLI-Partner-Composer-Launch',
+    surface: 'cli_chat',
+    available: false,
+    format: 'partner',
+  },
   {
     id: 'Web-Chat-After-User-Message',
     surface: 'freebuff_web_chat',
@@ -555,6 +572,8 @@ const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
   'Desktop-Partner-Composer-PR': 'Desktop — Composer (PR intent)',
   'CLI-Partner-Composer-PR': 'CLI — Composer (PR intent)',
   'CLI-Partner-Slash-Review': 'CLI — Slash menu (/review)',
+  'Desktop-Partner-Composer-Launch': 'Desktop — Composer (launch intent)',
+  'CLI-Partner-Composer-Launch': 'CLI — Composer (launch intent)',
 }
 
 export function placementSlotLabel(placementId: string): string {

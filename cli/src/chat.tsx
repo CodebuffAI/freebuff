@@ -44,7 +44,10 @@ import {
   DOCK_PANEL_MAX_WIDTH,
   getDockPanelLayout,
 } from '@codebuff/common/ads/inline-ad-layout'
-import { mentionsPrKeyword } from '@codebuff/common/ads/partner-triggers'
+import {
+  mentionsLaunchKeyword,
+  mentionsPrKeyword,
+} from '@codebuff/common/ads/partner-triggers'
 import { ChatInputBar } from './components/chat-input-bar'
 import { ChatHeader } from './components/chat-header'
 import { FreebuffActiveSessionSummary } from './components/freebuff-active-session-summary'
@@ -1903,14 +1906,23 @@ export const Chat = ({
    * not a draft at all. `showInlineAds` is the same gate the rotating card
    * above it reads, so a session with ads off never asks for this slot.
    */
-  const showComposerPartnerAd =
+  const composerPartnerRowAllowed =
     showInlineAds &&
     !hasSuggestionMenu &&
     !feedbackMode &&
     !publishMode &&
     !reviewMode &&
-    askUserState === null &&
-    mentionsPrKeyword(inputValue)
+    askUserState === null
+  // One row at a time: a PR draft is the PR slot's, and only a draft that is
+  // not about a PR can show the LAUNCH slot (`CLI-Partner-Composer-Launch`).
+  const composerPartnerPlacementId = !composerPartnerRowAllowed
+    ? null
+    : mentionsPrKeyword(inputValue)
+      ? CLI_PARTNER_PLACEMENT_IDS.composer
+      : mentionsLaunchKeyword(inputValue)
+        ? CLI_PARTNER_PLACEMENT_IDS.composerLaunch
+        : null
+  const showComposerPartnerAd = composerPartnerPlacementId !== null
 
   // Show first-time onboarding starter prompts only on a pristine, idle,
   // empty-input default-mode chat — and never while a menu/overlay is up.
@@ -2187,8 +2199,12 @@ export const Chat = ({
             the slot filled. Aligned to the card's margins above it. */}
         {showComposerPartnerAd && (
           <box style={{ marginLeft: 1, marginRight: 1 }}>
+            {/* Keyed by slot: switching from the PR row to the launch row
+                must not keep drawing (or clicking) the other deal's fill
+                while the new slot's answer is in flight. */}
             <PartnerAdLine
-              placementId={CLI_PARTNER_PLACEMENT_IDS.composer}
+              key={composerPartnerPlacementId}
+              placementId={composerPartnerPlacementId}
               width={separatorWidth}
             />
           </box>

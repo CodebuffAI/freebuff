@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test'
 
-import { mentionsPrKeyword, PR_INTENT_KEYWORDS } from './partner-triggers'
+import {
+  LAUNCH_INTENT_KEYWORDS,
+  mentionsLaunchKeyword,
+  mentionsPrKeyword,
+  PR_INTENT_KEYWORDS,
+} from './partner-triggers'
 
 /**
  * The trigger for a partner slot above the composer, tested on its own
@@ -84,5 +89,45 @@ describe('mentionsPrKeyword', () => {
     // `pull` is the knowingly loose one: it is how "pull request" spelled in
     // full matches at all, and it also catches `git pull`.
     expect(mentionsPrKeyword('git pull')).toBe(true)
+  })
+})
+
+/**
+ * The LAUNCH trigger, for the composer slots whose subject is what happens
+ * after the code ships. Same whole-word rule as the PR one.
+ */
+describe('mentionsLaunchKeyword', () => {
+  it('fires on launching, deploying, shipping and showing off the work', () => {
+    for (const prompt of [
+      'deploy this to vercel',
+      'we are launching tomorrow, write the post',
+      'ship it',
+      'make a demo video of the new flow',
+      'build a pitch deck from the README',
+      'draft the Product Hunt announcement',
+      'update the landing page hero',
+      'Deploying: fix the build first',
+    ]) {
+      expect([prompt, mentionsLaunchKeyword(prompt)]).toEqual([prompt, true])
+    }
+  })
+
+  it('stays quiet on ordinary coding requests and substring accidents', () => {
+    for (const prompt of [
+      'fix the failing test',
+      'relaunchable is not a word we use', // substring, not a whole word
+      'shipment tracking api', // `shipment` is not `ship`
+      'add a release build config',
+      'post the form data to the api',
+      '',
+    ]) {
+      expect([prompt, mentionsLaunchKeyword(prompt)]).toEqual([prompt, false])
+    }
+  })
+
+  it('shares no keyword with the PR trigger, so one draft picks one slot', () => {
+    for (const word of LAUNCH_INTENT_KEYWORDS) {
+      expect([word, PR_INTENT_KEYWORDS.has(word)]).toEqual([word, false])
+    }
   })
 })

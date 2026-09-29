@@ -53,6 +53,7 @@ import type { AdResponse } from '../hooks/use-gravity-ad'
 /** The placement id each CLI partner row auctions. Mirrors `PLACEMENT_SLOTS`. */
 export const CLI_PARTNER_PLACEMENT_IDS = {
   composer: 'CLI-Partner-Composer-PR',
+  composerLaunch: 'CLI-Partner-Composer-Launch',
   slashReview: 'CLI-Partner-Slash-Review',
 } as const
 

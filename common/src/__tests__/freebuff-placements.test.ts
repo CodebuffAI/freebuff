@@ -243,11 +243,11 @@ describe('copy and configuration', () => {
     // eight `CLI-Chat-Inline-N` ids:
     // no shipping client requests those, so selling them would be selling a
     // decaying legacy path.
-    // Plus the three sponsor breaks and the four partner slots, which are
+    // Plus the three sponsor breaks and the six partner slots, which are
     // deliberately the same surface: each is a different RENDERER on the same
     // chat surface, not a new surface, and adding a surface costs a house
     // creative and a pinned rollup row.
-    expect(bySurface('cli_chat')).toBe(11)
+    expect(bySurface('cli_chat')).toBe(13)
     expect(bySurface('waiting_room')).toBe(4)
     expect(bySurface('freebuff_web_chat')).toBe(2)
     expect(bySurface('chat_assistant')).toBe(1)
@@ -297,6 +297,8 @@ describe('copy and configuration', () => {
       'Desktop-Partner-Composer-PR',
       'CLI-Partner-Composer-PR',
       'CLI-Partner-Slash-Review',
+      'Desktop-Partner-Composer-Launch',
+      'CLI-Partner-Composer-Launch',
     ])
     for (const id of PARTNER_PLACEMENT_IDS) {
       expect([id, placementFormat(id)]).toEqual([id, 'partner'])
