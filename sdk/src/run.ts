@@ -1506,7 +1506,9 @@ async function handlePromptResponse({
 
     const statusCode = extractStatusCodeFromMessage(action.message)
     resolve({
-      sessionState: initialSessionState,
+      // A snapshot, not the object the runtime was handed: the host keeps and
+      // resends this state, so it must not alias anything still in flight.
+      sessionState: cloneSessionState(initialSessionState),
       traceSessionId,
       output: {
         type: 'error',

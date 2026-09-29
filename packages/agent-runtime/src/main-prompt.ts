@@ -171,13 +171,21 @@ export async function callMainPrompt(
     assembleLocalAgentTemplates({ fileContext, logger })
 
   if (validationErrors.length > 0) {
+    const message = `Invalid agent config: ${validationErrors.map((err) => err.message).join('\n')}`
     sendAction({
       action: {
         type: 'prompt-error',
-        message: `Invalid agent config: ${validationErrors.map((err) => err.message).join('\n')}`,
+        message,
         userInputId: promptId,
       },
     })
+    // prompt-error is terminal: the host settles the run on it. Running on
+    // would orphan the turn, burning credits, executing tools and streaming
+    // chunks after the host already reported the error.
+    return {
+      sessionState: action.sessionState,
+      output: { type: 'error' as const, message },
+    }
   }
 
   sendAction({
