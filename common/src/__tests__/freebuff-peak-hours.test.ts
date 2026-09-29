@@ -8,6 +8,7 @@ import {
   formatDeepSeekExpensiveWindowReturn,
   formatDeepSeekOffPeakWindowLocal,
   formatWindowTimeZoneLabel,
+  isBeijingWeekend,
   isDeepSeekExpensiveWindow,
   isSupportedTimeZone,
   resolveWindowTimeZone,
@@ -99,6 +100,24 @@ test.each(['2026-08-29T02:00:00Z', '2026-08-30T02:00:00Z'])(
     expect(isDeepSeekExpensiveWindow(date)).toBe(false)
   },
 )
+
+/**
+ * The Beijing weekend runs Fri 16:00Z to Sun 16:00Z. The 02:00Z cases above
+ * fall on a UTC weekend too, so they cannot tell the +8h shift from a plain
+ * getUTCDay(); these four instants sit on the edges where the two disagree.
+ */
+describe('the Beijing weekend boundaries', () => {
+  test.each([
+    ['2026-08-28T15:00:00Z', false], // Fri 23:00 Beijing
+    ['2026-08-28T16:00:00Z', true], // Sat 00:00 Beijing
+    ['2026-08-30T15:00:00Z', true], // Sun 23:00 Beijing
+    ['2026-08-30T16:00:00Z', false], // Mon 00:00 Beijing
+  ])('%s weekend=%p', (instant, weekend) => {
+    expect(isBeijingWeekend(new Date(instant as string))).toBe(
+      weekend as boolean,
+    )
+  })
+})
 
 /**
  * The 2026-08-26 report: a user in Germany was told V4 Flash was back "again at

@@ -29,7 +29,17 @@ export const DEEPSEEK_PEAK_HOUR_RANGES_UTC: ReadonlyArray<
 
 export type DeepSeekPricingWindow = 'peak' | 'off-peak'
 
-function isBeijingWeekend(at: Date): boolean {
+/**
+ * Saturday or Sunday in Beijing (UTC+8): Fri 16:00Z to Sun 16:00Z.
+ *
+ * Assumes `at` is on or after 2026-08-22T16:00Z, when DeepSeek's weekend rule
+ * took effect; earlier instants are not gated.
+ *
+ * Exported for its boundary tests: every peak and expensive hour sits in
+ * 00:00-10:00Z, where the UTC and Beijing days agree, so the +8h shift is not
+ * observable through the functions below until those hours move.
+ */
+export function isBeijingWeekend(at: Date): boolean {
   const beijingDay = new Date(at.getTime() + 8 * 60 * 60 * 1000).getUTCDay()
   return beijingDay === 0 || beijingDay === 6
 }
