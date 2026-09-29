@@ -42,6 +42,18 @@ describe('the availability notice', () => {
     )
   })
 
+  test('a line listed only as a residential proxy names the likely cause, not a VPN', () => {
+    expect(
+      getFreebuffModelAvailabilityNotice({
+        countryCode: 'GB',
+        countryBlockReason: 'anonymous_network',
+        ipPrivacySignals: ['res_proxy', 'anonymous'],
+      }),
+    ).toBe(
+      "This network is listed as a residential proxy, often because of a bandwidth-sharing app on a device here, so some models aren't available on it",
+    )
+  })
+
   test('an inconclusive check reads as ours to explain, not as the user doing something wrong', () => {
     for (const reason of [
       'anonymized_or_unknown_country',

@@ -38,6 +38,15 @@ const PRIVACY_SIGNAL_LABELS: Partial<Record<FreebuffIpPrivacySignal, string>> =
     service: 'privacy service',
   }
 
+function isResidentialProxyOnly(
+  signals: readonly FreebuffIpPrivacySignal[] | null | undefined,
+): boolean {
+  return (
+    !!signals?.includes('res_proxy') &&
+    signals.every((signal) => signal === 'res_proxy' || signal === 'anonymous')
+  )
+}
+
 export function formatFreebuffPrivacySignalList(
   signals: readonly FreebuffIpPrivacySignal[] | null | undefined,
 ): string {
@@ -94,6 +103,13 @@ export function getFreebuffModelAvailabilityNotice(
     // free Freebucks pool than the rest of limited access, and the honest
     // reason for both is the one the user can weigh.
     case 'anonymous_network':
+      // A household line listed as a residential proxy is usually the user's
+      // own connection, enrolled by a bandwidth-sharing app, not a VPN they
+      // chose — so "try a direct connection" would be advice they cannot
+      // take. Name the likely cause instead.
+      if (isResidentialProxyOnly(reason.ipPrivacySignals)) {
+        return "This network is listed as a residential proxy, often because of a bandwidth-sharing app on a device here, so some models aren't available on it"
+      }
       return `Using a ${formatFreebuffPrivacySignalList(
         reason.ipPrivacySignals,
       )}? We lose money on every VPN user, so more models and Freebucks are available on a direct connection`
