@@ -1,6 +1,10 @@
 import { FIRST_TAB_DISCOUNT_HEADER } from '@codebuff/common/util/freebuff-first-tab-discount'
 import type { FreebuffWalletSpendLimit } from '@codebuff/common/types/freebuff-session'
 import { freebucksTimeZoneHeaders } from '@codebuff/common/util/freebucks-timezone'
+import {
+  sanitizeTerminalStrings,
+  sanitizeTerminalText,
+} from '@codebuff/common/util/terminal-safe-text'
 import { env } from '@codebuff/common/env'
 import {
   FREEBUFF_DESKTOP_ATTEMPT_HEADER,
@@ -237,7 +241,7 @@ export async function callFreebuffSession(
       body &&
       (body.status === 'country_blocked' || body.status === 'banned')
     ) {
-      return body
+      return sanitizeTerminalStrings(body)
     }
   }
 
@@ -257,7 +261,7 @@ export async function callFreebuffSession(
         body.status === 'first_tab_discount_changed' ||
         body.status === 'consent_required')
     ) {
-      return body
+      return sanitizeTerminalStrings(body)
     }
   }
 
@@ -271,7 +275,7 @@ export async function callFreebuffSession(
         body.status === 'spend_limited' ||
         body.status === 'ip_capped')
     ) {
-      return body
+      return sanitizeTerminalStrings(body)
     }
   }
 
@@ -285,14 +289,18 @@ export async function callFreebuffSession(
       // Non-JSON errors have no machine-readable code.
     }
     throw new FreebuffSessionRequestError(
-      `freebuff session ${method} failed: ${response.status} ${text.slice(0, 200)}`,
+      `freebuff session ${method} failed: ${response.status} ${sanitizeTerminalText(text.slice(0, 200))}`,
       response.status,
       parseRetryAfterMs(response.headers.get('retry-after')),
       errorCode,
     )
   }
 
-  return (await response.json()) as FreebuffSessionServerResponse
+  // Server-written copy (messages, upgrade hints, Freebucks CTAs) is drawn in
+  // the terminal: every string is stripped of escape sequences here.
+  return sanitizeTerminalStrings(
+    (await response.json()) as FreebuffSessionServerResponse,
+  )
 }
 
 /** A compact poll omits quota fields that were already returned by admission.

@@ -18,6 +18,7 @@
   "sideEffects": false,
   "files": [
     "dist",
+    "!dist/**/*.map",
     "README.md",
     "CHANGELOG.md"
   ],

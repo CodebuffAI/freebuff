@@ -77,6 +77,7 @@ import {
 } from '@codebuff/common/ads/sponsored-capabilities'
 import type { SponsoredProcedureRuntimeInputs } from '@codebuff/common/ads/sponsored-procedure-inputs'
 import { sponsoredAdvertiserCtaHref } from '@codebuff/common/ads/sponsored-proposal-view'
+import { sanitizeTerminalText } from '@codebuff/common/util/terminal-safe-text'
 import {
   mkdirSync,
   readdirSync,
@@ -781,8 +782,10 @@ export class SponsoredRun {
         }
       }
 
-      const advertiserName =
-        accepted.accept.advertiserName || proposal.advertiser_name
+      // Repeated into terminal messages and the model's context below.
+      const advertiserName = sanitizeTerminalText(
+        accepted.accept.advertiserName || proposal.advertiser_name,
+      )
       this.active = {
         proposalId: proposal._id,
         runId,

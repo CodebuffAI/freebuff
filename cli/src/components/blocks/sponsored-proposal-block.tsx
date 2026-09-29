@@ -9,6 +9,10 @@ import {
   sponsoredProposalMenu,
   sponsoredProposalViewModel,
 } from '@codebuff/common/ads/sponsored-proposal-view'
+import {
+  sanitizeTerminalStrings,
+  sanitizeTerminalText,
+} from '@codebuff/common/util/terminal-safe-text'
 import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
 import React, { useCallback, useEffect, useState } from 'react'
@@ -133,7 +137,12 @@ export const SponsoredProposalBlock: React.FC<{
     void acknowledgeSponsoredProposalDisplay(block.proposal._id, token)
   }, [block.proposal._id, block.proposal.state])
 
-  const view = sponsoredProposalViewModel(block.proposal)
+  // Every advertiser-written field on the row (name, headline, body, steps,
+  // why-this, failure reason) is drawn below: no escape sequence reaches the
+  // terminal. The URLs are separately held to absolute https by the view model.
+  const view = sponsoredProposalViewModel(
+    sanitizeTerminalStrings(block.proposal),
+  )
   const width = Math.max(20, availableWidth)
   const accept = sponsoredProposalAction(view, 'accept')
   // The Accept is offered only when this machine can contain a run. An Accept
@@ -330,7 +339,9 @@ export const SponsoredProposalBlock: React.FC<{
   // into `Acme De` butted against the marker, which identifies nobody.
   const stackHeader = nameRoom < MIN_INLINE_NAME_WIDTH
   const procedureLines = consent
-    ? consent.procedure.split('\n').slice(0, CONSENT_PROCEDURE_MAX_LINES)
+    ? sanitizeTerminalText(consent.procedure)
+        .split('\n')
+        .slice(0, CONSENT_PROCEDURE_MAX_LINES)
     : []
 
   return (
@@ -511,7 +522,7 @@ export const SponsoredProposalBlock: React.FC<{
             </text>
           )}
           <text style={{ fg: theme.muted, wrapMode: 'none' }}>
-            {clip(`Folder: ${consent.folder}`, inner)}
+            {clip(`Folder: ${sanitizeTerminalText(consent.folder)}`, inner)}
           </text>
           {block.procedureOpen &&
             procedureLines.map((line, index) => (

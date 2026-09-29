@@ -40,6 +40,30 @@ describe('UserErrorBanner', () => {
     expect(markup).toContain('Connection refused')
   })
 
+  test('strips escape sequences from a server-written error', () => {
+    const markup = renderToStaticMarkup(
+      <UserErrorBanner
+        error={
+          'Quota exceeded\x1b]52;c;ZWNobyBwd25lZA==\x07\x1b[2J\x1b[H, retry later'
+        }
+        title={'Upstream\x1b]0;pwned\x07'}
+      />,
+    )
+
+    expect(markup).toContain('Quota exceeded, retry later')
+    expect(markup).toContain('Upstream')
+    expect(markup).not.toContain('\x1b')
+    expect(markup).not.toContain('\x07')
+    expect(markup).not.toContain('pwned')
+  })
+
+  test('renders nothing for an error that is only escape sequences', () => {
+    const markup = renderToStaticMarkup(
+      <UserErrorBanner error={'\x1b[2J\x1b]52;c;eA==\x07'} />,
+    )
+    expect(markup).toBe('')
+  })
+
   test('returns null for empty error message', () => {
     const markup = renderToStaticMarkup(<UserErrorBanner error="" />)
 
@@ -83,9 +107,7 @@ describe('UserErrorBanner', () => {
   test('renders with long error message', () => {
     const longError = 'A'.repeat(500)
 
-    const markup = renderToStaticMarkup(
-      <UserErrorBanner error={longError} />,
-    )
+    const markup = renderToStaticMarkup(<UserErrorBanner error={longError} />)
 
     expect(markup).toContain('Error')
     expect(markup).toContain(longError)

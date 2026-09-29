@@ -34,7 +34,10 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, resolve as resolvePath } from 'path'
 
-import { RUNTIME_APP_URL_ENV_VARS } from '@codebuff/common/util/runtime-app-url'
+import {
+  ALLOW_CUSTOM_APP_URL_ENV_VAR,
+  RUNTIME_APP_URL_ENV_VARS,
+} from '@codebuff/common/util/runtime-app-url'
 
 // Any one of these strings appearing in stdout/stderr proves the binary
 // reached its post-init UI: React tree mounted, OpenTUI rendered, async
@@ -213,10 +216,14 @@ async function probeApiUrl(
   binary: string,
   cwd: string,
   override?: string,
+  { allowCustomHost = false }: { allowCustomHost?: boolean } = {},
 ): Promise<string> {
   const env: NodeJS.ProcessEnv = { ...process.env }
   for (const key of RUNTIME_APP_URL_ENV_VARS) delete env[key]
+  delete env[ALLOW_CUSTOM_APP_URL_ENV_VAR]
   if (override !== undefined) env.NEXT_PUBLIC_CODEBUFF_APP_URL = override
+  // The SDK honours a non-first-party host only with this explicit opt-in.
+  if (allowCustomHost) env[ALLOW_CUSTOM_APP_URL_ENV_VAR] = '1'
 
   const { captured, exitCode, timedOut } = await spawnAndCapture(
     binary,
@@ -243,9 +250,13 @@ async function runDotenvIsolationSmoke(binary: string): Promise<void> {
   const cleanDir = mkdtempSync(join(tmpdir(), 'smoke-binary-clean-'))
   const steerDir = mkdtempSync(join(tmpdir(), 'smoke-binary-dotenv-'))
   try {
-    const steer = RUNTIME_APP_URL_ENV_VARS.map(
-      (key) => `${key}=${DOTENV_STEER_URL}\n`,
-    ).join('')
+    // The files also carry the custom-host opt-in, so a binary that read
+    // them would honour the steer. Without it the SDK's host allowlist alone
+    // would reject `.invalid`, and this probe would pass for the wrong reason.
+    const steer =
+      RUNTIME_APP_URL_ENV_VARS.map(
+        (key) => `${key}=${DOTENV_STEER_URL}\n`,
+      ).join('') + `${ALLOW_CUSTOM_APP_URL_ENV_VAR}=1\n`
     for (const name of DOTENV_FILENAMES)
       writeFileSync(join(steerDir, name), steer)
 
@@ -259,14 +270,29 @@ async function runDotenvIsolationSmoke(binary: string): Promise<void> {
       )
     }
 
-    // Positive control: a real environment variable must still be honoured,
-    // so the equality above is evidence of isolation rather than of a probe
-    // that ignores env.
-    const overridden = await probeApiUrl(binary, cleanDir, ENV_OVERRIDE_URL)
+    // Positive control: a real environment variable, with the documented
+    // CODEBUFF_ALLOW_CUSTOM_APP_URL=1 opt-in for a non-first-party host, must
+    // still be honoured, so the equality above is evidence of isolation
+    // rather than of a probe that ignores env.
+    const overridden = await probeApiUrl(binary, cleanDir, ENV_OVERRIDE_URL, {
+      allowCustomHost: true,
+    })
     if (overridden !== ENV_OVERRIDE_URL) {
       throw new SmokeFailure(
         `NEXT_PUBLIC_CODEBUFF_APP_URL in the environment was not honoured: ` +
           `printed ${overridden}, expected ${ENV_OVERRIDE_URL}.`,
+      )
+    }
+
+    // Host allowlist: the same override WITHOUT the opt-in is ignored, and the
+    // bundled URL (the baseline) is used. This is what stops anything that can
+    // set one variable from sending the bearer token to its own https host.
+    const refused = await probeApiUrl(binary, cleanDir, ENV_OVERRIDE_URL)
+    if (refused !== baseline) {
+      throw new SmokeFailure(
+        `A non-first-party NEXT_PUBLIC_CODEBUFF_APP_URL was honoured without ` +
+          `${ALLOW_CUSTOM_APP_URL_ENV_VAR}=1: printed ${refused}, expected ` +
+          `the bundled ${baseline}.`,
       )
     }
   } finally {

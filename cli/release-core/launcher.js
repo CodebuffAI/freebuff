@@ -36,14 +36,50 @@ const PLATFORM_TARGET_KEYS = [
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
 
 /**
+ * Registrable domains that serve release downloads. An https override must
+ * name one of these or a subdomain of one.
+ */
+const RELEASE_ORIGIN_DOMAINS = ['codebuff.com', 'freebuff.com']
+
+function isReleaseOriginHost(hostname) {
+  const host = hostname.toLowerCase()
+  return RELEASE_ORIGIN_DOMAINS.some(
+    (domain) => host === domain || host.endsWith(`.${domain}`),
+  )
+}
+
+/**
+ * A release version the launcher will put into a download URL or a file
+ * name: strict `MAJOR.MINOR.PATCH` with an optional dot-separated
+ * alphanumeric prerelease, and nothing else — no build metadata, no
+ * leading `v`, no whitespace, `/`, `..`, `%` or `?`. The version reaches
+ * `/api/releases/download/<version>/<file>` and the partial-archive path
+ * from the npm registry document or the local metadata file, and neither
+ * is a place that should be able to rewrite a URL path or escape a
+ * directory.
+ */
+const STRICT_RELEASE_VERSION =
+  /^(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})(?:-(?:0|[1-9]\d{0,8}|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d{0,8}|\d*[A-Za-z-][0-9A-Za-z-]*))*)?$/
+
+function isStrictReleaseVersion(version) {
+  return (
+    typeof version === 'string' &&
+    version.length <= 64 &&
+    STRICT_RELEASE_VERSION.test(version)
+  )
+}
+
+/**
  * Decide where release archives are downloaded from.
  *
  * NEXT_PUBLIC_CODEBUFF_APP_URL is read at runtime, so anyone able to set an
- * environment variable could point the launcher at a plain-http origin and
- * let a network attacker substitute the archive. The override is honoured
- * only over https, or over http on a loopback host (local release servers in
- * development and tests). Anything else is ignored with a warning and the
- * default origin is used.
+ * environment variable could point the launcher at another origin. The
+ * archive's sha256 comes from npm, not from that origin, so a substituted
+ * archive is refused either way; the origin is still held to the hosts that
+ * actually serve releases. The override is honoured only over https to a
+ * codebuff.com / freebuff.com host, or over http/https on a loopback host
+ * (local release servers in development and tests). Anything else is
+ * ignored with a warning and the default origin is used.
  */
 function resolveDownloadOrigin(configuredOrigin, { warn = () => {} } = {}) {
   if (typeof configuredOrigin !== 'string' || configuredOrigin.trim() === '') {
@@ -62,15 +98,25 @@ function resolveDownloadOrigin(configuredOrigin, { warn = () => {} } = {}) {
   }
 
   const isLocal = LOCAL_HOSTNAMES.has(parsed.hostname.toLowerCase())
+  const isHttp = parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  // Only an origin: credentials or a query would ride along on every request.
+  const isBareOrigin =
+    !parsed.username && !parsed.password && !parsed.search && !parsed.hash
+  if (isHttp && isLocal && isBareOrigin) {
+    return trimmed
+  }
   if (
-    parsed.protocol === 'https:' ||
-    (parsed.protocol === 'http:' && isLocal)
+    parsed.protocol === 'https:' &&
+    isReleaseOriginHost(parsed.hostname) &&
+    isBareOrigin
   ) {
     return trimmed
   }
 
   warn(
-    `Ignoring NEXT_PUBLIC_CODEBUFF_APP_URL=${configuredOrigin}: release downloads must use https (http is allowed only for localhost). Downloading from ${DEFAULT_DOWNLOAD_ORIGIN}.`,
+    parsed.protocol === 'https:'
+      ? `Ignoring NEXT_PUBLIC_CODEBUFF_APP_URL=${parsed.protocol}//${parsed.host}: release downloads come only from codebuff.com or freebuff.com (or localhost). Downloading from ${DEFAULT_DOWNLOAD_ORIGIN}.`
+      : `Ignoring NEXT_PUBLIC_CODEBUFF_APP_URL=${parsed.protocol}//${parsed.host}: release downloads must use https (http is allowed only for localhost). Downloading from ${DEFAULT_DOWNLOAD_ORIGIN}.`,
   )
   return DEFAULT_DOWNLOAD_ORIGIN
 }
@@ -747,7 +793,7 @@ function createLauncher(productConfig) {
 
       const body = await streamToString(res)
       const packageData = JSON.parse(body)
-      if (typeof packageData.version !== 'string' || !packageData.version) {
+      if (!isStrictReleaseVersion(packageData.version)) {
         return null
       }
 
@@ -936,6 +982,9 @@ function createLauncher(productConfig) {
   }
 
   function getPartialArchivePath(version, targetKey) {
+    if (!isStrictReleaseVersion(version)) {
+      throw new Error(`Invalid release version for an archive path: ${version}`)
+    }
     return path.join(
       CONFIG.configDir,
       `.${packageName}-${version}-${targetKey}.tar.gz.part`,
@@ -1167,6 +1216,21 @@ function createLauncher(productConfig) {
     options = {},
   ) {
     const fileName = PLATFORM_TARGETS[targetKey]
+
+    // Before anything is built from it: the version becomes a URL path
+    // segment and part of a file name below.
+    if (!isStrictReleaseVersion(version)) {
+      const error = new Error(
+        `Refusing to download ${packageName}: ${JSON.stringify(String(version)).slice(0, 80)} is not a release version.`,
+      )
+      error.code = 'EBADVERSION'
+      error.retryable = false
+      trackUpdateFailed(error.message, 'invalid', {
+        stage: 'version_check',
+        target: targetKey,
+      })
+      throw error
+    }
 
     if (!fileName) {
       const error = new Error(

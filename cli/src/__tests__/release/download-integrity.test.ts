@@ -52,13 +52,37 @@ describe('download origin', () => {
     expect(resolveDownloadOrigin('   ')).toBe(DEFAULT_DOWNLOAD_ORIGIN)
   })
 
-  test('honours an https override, without a trailing slash', () => {
+  test('honours an https override to a release host, without a trailing slash', () => {
     expect(resolveDownloadOrigin('https://staging.codebuff.com/')).toBe(
       'https://staging.codebuff.com',
     )
-    expect(resolveDownloadOrigin('https://example.internal:8443')).toBe(
-      'https://example.internal:8443',
+    expect(resolveDownloadOrigin('https://www.freebuff.com')).toBe(
+      'https://www.freebuff.com',
     )
+    expect(resolveDownloadOrigin('https://localhost:8443')).toBe(
+      'https://localhost:8443',
+    )
+  })
+
+  test('ignores an https override to any other host, or one carrying credentials', () => {
+    const warnings: string[] = []
+    const warn = (message: string) => warnings.push(message)
+    for (const origin of [
+      'https://example.internal:8443',
+      'https://evil.example.com',
+      'https://codebuff.com.evil.example',
+      'https://evilcodebuff.com',
+      'https://user:secret@codebuff.com',
+      'https://codebuff.com/?x=1',
+    ]) {
+      expect(resolveDownloadOrigin(origin, { warn })).toBe(
+        DEFAULT_DOWNLOAD_ORIGIN,
+      )
+    }
+    expect(warnings).toHaveLength(6)
+    expect(warnings[0]).toContain('codebuff.com or freebuff.com')
+    // The rejected value is echoed as protocol//host only.
+    expect(warnings.join('\n')).not.toContain('secret')
   })
 
   test('allows plain http only on loopback hosts', () => {
@@ -742,6 +766,69 @@ describe('the launcher end to end', () => {
         isAllowedArchiveEntry(f.CONFIG.binaryName, { type: 'SymbolicLink' }),
       ).toBe(false)
       expect(isAllowedArchiveEntry('evil.sh', file)).toBe(false)
+    } finally {
+      restore()
+      f.cleanup()
+    }
+  })
+
+  test('refuses a version that is not strict semver before any request or path is built', async () => {
+    const f = await fixture('integ-version', { 'integ-version': 'binary' })
+    const restore = silence()
+    try {
+      await withReleaseServer(
+        { [f.archiveName]: f.archive },
+        async (requestedPaths) => {
+          for (const version of [
+            '../../evil',
+            '2.0.0/../../x',
+            '2.0.0?x=1',
+            '2.0.0#x',
+            'v2.0.0',
+            '2.0.0+build.1',
+            '2.0.0 ',
+            '2.0',
+            '02.0.0',
+            '2.0.0-%2e%2e',
+            '',
+            null,
+          ]) {
+            await expect(
+              f.launcher.__testing.stageBinary(version, target, {
+                binaryChecksums: { [target]: sha256(f.archive) },
+              }),
+            ).rejects.toMatchObject({ code: 'EBADVERSION', retryable: false })
+          }
+          expect(requestedPaths).toHaveLength(0)
+          expect(
+            readdirSync(f.CONFIG.configDir).filter((n) => n.endsWith('.part')),
+          ).toEqual([])
+        },
+      )
+    } finally {
+      restore()
+      f.cleanup()
+    }
+  })
+
+  test('accepts a prerelease version', async () => {
+    const f = await fixture('integ-pre', { 'integ-pre': 'pre binary' })
+    const restore = silence()
+    try {
+      await withReleaseServer(
+        { [f.archiveName]: f.archive },
+        async (requestedPaths) => {
+          const staged = await f.launcher.__testing.stageBinary(
+            '2.1.0-beta.3',
+            target,
+            { binaryChecksums: { [target]: sha256(f.archive) } },
+          )
+          expect(readFileSync(staged.tempBinaryPath, 'utf8')).toBe('pre binary')
+          expect(requestedPaths[0]).toBe(
+            `/api/releases/download/2.1.0-beta.3/${f.archiveName}`,
+          )
+        },
+      )
     } finally {
       restore()
       f.cleanup()

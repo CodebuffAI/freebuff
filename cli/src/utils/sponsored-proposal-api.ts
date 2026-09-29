@@ -3,6 +3,7 @@ import {
   agenticOfferResponseSchema,
 } from '@codebuff/common/ads/agentic-offer'
 import { SPONSORED_IN_PLACE_VERSION } from '@codebuff/common/ads/sponsored-in-place'
+import { sanitizeTerminalStrings } from '@codebuff/common/util/terminal-safe-text'
 import { normalizeRepoFullName } from '@codebuff/common/ads/sponsored-proposal-target'
 import type {
   AgenticOfferRequest,
@@ -227,7 +228,11 @@ export async function fetchSponsoredProposal(
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     if (!response.ok) return { status: 'unavailable' }
-    const result = (await response.json()) as { proposal?: unknown }
+    // The row's advertiser-written text is drawn in the terminal and repeated
+    // into run messages: strip escape sequences at the source.
+    const result = sanitizeTerminalStrings(await response.json()) as {
+      proposal?: unknown
+    }
     if (result?.proposal === null) return { status: 'absent' }
     if (!isSponsoredProposal(result?.proposal)) {
       return { status: 'unavailable' }
@@ -457,7 +462,8 @@ async function upstreamRefusal(
 ): Promise<{ code: string | null; message: string }> {
   let code: string | null = null
   try {
-    const body = (await response.json()) as {
+    // The message is shown in the terminal verbatim: no escape sequences.
+    const body = sanitizeTerminalStrings(await response.json()) as {
       error?: unknown
       message?: unknown
     }

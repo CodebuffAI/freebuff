@@ -1,4 +1,8 @@
 import { WEBSITE_URL } from '@codebuff/sdk'
+import {
+  sanitizeTerminalStrings,
+  sanitizeTerminalText,
+} from '@codebuff/common/util/terminal-safe-text'
 import type {
   PublishAgentsResponse,
 } from '@codebuff/common/types/api/agents/publish'
@@ -407,13 +411,15 @@ export function createCodebuffApiClient(
         let errorMessage: string | undefined
         let errorData: unknown
         try {
-          const errorBody = await response.json()
+          // Error text is shown to the user as-is by several callers: no
+          // escape sequences from a response body reach the terminal.
+          const errorBody = sanitizeTerminalStrings(await response.json())
           errorData = errorBody
           errorMessage =
             errorBody?.error || errorBody?.message || response.statusText
         } catch {
           try {
-            errorMessage = await response.text()
+            errorMessage = sanitizeTerminalText(await response.text())
           } catch {
             errorMessage = response.statusText
           }

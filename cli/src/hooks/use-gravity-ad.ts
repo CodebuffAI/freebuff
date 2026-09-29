@@ -7,6 +7,7 @@ import {
   type FirstPartyViewAckRequest,
 } from '@codebuff/common/ads/first-party-view-ack'
 import { createFirstPartyViewAckTelemetry } from '@codebuff/common/util/axiom-only-log'
+import { sanitizeTerminalStrings } from '@codebuff/common/util/terminal-safe-text'
 import { useEffect, useRef, useState } from 'react'
 
 import { useTerminalLayout } from './use-terminal-layout'
@@ -518,7 +519,10 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   }
 
   const recordClick = (ad: AdResponse, dock?: DockClickContext): void => {
-    recordAdClick(ad, { ...(surface ? { surface } : {}), ...(dock ? { dock } : {}) })
+    recordAdClick(ad, {
+      ...(surface ? { surface } : {}),
+      ...(dock ? { dock } : {}),
+    })
   }
 
   type FetchAdResult = { ads: AdResponse[] } | null
@@ -570,7 +574,10 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
         // hand, the card is not yet on screen.
         const receivedAtMs = Date.now()
         return {
-          ads: (data.ads as AdResponse[]).map((ad) => ({
+          // Every string an ad network or advertiser wrote is drawn in the
+          // terminal: strip escape sequences and controls here, once, so an
+          // OSC 52 / OSC 8 / CSI in a title or body never reaches the screen.
+          ads: sanitizeTerminalStrings(data.ads as AdResponse[]).map((ad) => ({
             ...ad,
             provider: data.provider ?? provider,
             receivedAtMs,
@@ -747,4 +754,3 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     recordImpression: recordImpressionOnce,
   }
 }
-

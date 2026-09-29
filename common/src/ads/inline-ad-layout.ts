@@ -16,6 +16,8 @@
  * preview must reproduce what the terminal does, including where it is wrong.
  */
 
+import { sanitizeTerminalText } from '../util/terminal-safe-text'
+
 /** Widths where inline ad layout actually changes behaviour. */
 export const MIN_INLINE_WIDTH_WITH_DESTINATION = 48
 /**
@@ -65,7 +67,8 @@ export const extractDomain = (url: string): string => {
     const parsed = new URL(url)
     return parsed.hostname.replace(/^www\./, '')
   } catch {
-    return url
+    // An unparseable value is shown as-is, so it must at least be inert.
+    return sanitizeTerminalText(url)
   }
 }
 
@@ -533,9 +536,7 @@ export function getPartnerLineLayout(
   const label = truncateToWidth(destination, labelBudget)
   const titleWidth = Math.max(
     0,
-    interior -
-      disclosureWidth -
-      (label ? label.length + PARTNER_LINE_GAP : 0),
+    interior - disclosureWidth - (label ? label.length + PARTNER_LINE_GAP : 0),
   )
   return {
     title: truncateToWidth((ad.title ?? '').trim(), titleWidth),

@@ -23,6 +23,7 @@
 import { getPartnerLineLayout } from '@codebuff/common/ads/inline-ad-layout'
 import { getAdUserAgent } from '@codebuff/common/util/ad-user-agent'
 import { createFirstPartyViewAckTelemetry } from '@codebuff/common/util/axiom-only-log'
+import { sanitizeTerminalStrings } from '@codebuff/common/util/terminal-safe-text'
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 import { WEBSITE_URL } from '@codebuff/sdk'
 
@@ -238,7 +239,8 @@ export async function getPartnerAd(
     const announced = await deps.announcedPlacements()
     if (!announced.includes(placementId)) return null
     const data = await deps.fetchAuction(placementId)
-    const ad = data?.ads?.[0]
+    // Advertiser-written text is drawn in the terminal: no escape sequences.
+    const ad = data?.ads?.[0] ? sanitizeTerminalStrings(data.ads[0]) : undefined
     if (!ad?.impUrl) return null
     const provider = data?.provider ?? ad.provider
     if (provider !== 'first_party') return null

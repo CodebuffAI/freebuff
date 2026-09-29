@@ -3,9 +3,11 @@
 
 import { mkdir, cp, readFile, writeFile, rm } from 'fs/promises'
 import Module from 'module'
-import { delimiter, join } from 'path'
+import { delimiter, dirname, join, relative, resolve } from 'path'
 
 import { generateDtsBundle } from 'dts-bundle-generator'
+
+import { findWithheldSources, parseExportManifest } from './bundle-source-guard'
 
 const workspaceNodeModules = join(import.meta.dir, '..', 'node_modules')
 const existingNodePath = process.env.NODE_PATH ?? ''
@@ -59,7 +61,10 @@ async function build() {
     target: 'node',
     format: 'esm',
     minify: false,
-    sourcemap: 'linked',
+    // External, not linked: the maps exist only for assertBundleSourcesArePublic
+    // below and are deleted before packing (no sourceMappingURL comment is
+    // left pointing at a missing file).
+    sourcemap: 'external',
     external,
     naming: '[dir]/index.mjs',
     env: 'NEXT_PUBLIC_*',
@@ -91,7 +96,10 @@ async function build() {
     target: 'node',
     format: 'cjs',
     minify: false,
-    sourcemap: 'linked',
+    // External, not linked: the maps exist only for assertBundleSourcesArePublic
+    // below and are deleted before packing (no sourceMappingURL comment is
+    // left pointing at a missing file).
+    sourcemap: 'external',
     external,
     naming: '[dir]/index.cjs',
     define: {
@@ -112,11 +120,21 @@ async function build() {
     'require("./vendor/ai.cjs")',
   )
   if (cjsWithAiShim === cjs) {
-    throw new Error('CJS build did not contain the expected external AI SDK import')
+    throw new Error(
+      'CJS build did not contain the expected external AI SDK import',
+    )
   }
   await writeFile(cjsPath, cjsWithAiShim)
 
-  console.log('🩹 Patching broken export aliases (Bun bundler dedup workaround)...')
+  console.log('🔒 Checking bundled sources against the public export...')
+  await assertBundleSourcesArePublic([
+    'dist/index.mjs.map',
+    'dist/index.cjs.map',
+  ])
+
+  console.log(
+    '🩹 Patching broken export aliases (Bun bundler dedup workaround)...',
+  )
   await fixBrokenExportAliases('dist/index.mjs')
   await fixBrokenExportAliases('dist/index.cjs')
 
@@ -164,6 +182,60 @@ async function build() {
   console.log('  📄 dist/index.mjs (ESM)')
   console.log('  📄 dist/index.cjs (CJS)')
   console.log('  📄 dist/index.d.ts (Types)')
+}
+
+/**
+ * Fail the build if the bundle inlines a workspace file that the public repo
+ * export withholds, then delete the maps so none are published.
+ *
+ * The published package used to carry `sourcemap: 'linked'` maps with full
+ * `sourcesContent` — every inlined workspace module verbatim, comments
+ * included — and an external report found a file withheld from the public
+ * export among them. `package.json` `files` also excludes `*.map`, so a map
+ * that survives here still cannot reach npm.
+ */
+async function assertBundleSourcesArePublic(mapPaths: string[]) {
+  const repoRoot = resolve(import.meta.dir, '..', '..')
+  let manifestText: string | null = null
+  try {
+    manifestText = await readFile(
+      join(repoRoot, 'scripts', 'public-export-manifest.txt'),
+      'utf8',
+    )
+  } catch {
+    // The public repository has no manifest (it is not exported): everything
+    // there is public by definition. The maps are still dropped.
+  }
+  const manifest =
+    manifestText === null ? null : parseExportManifest(manifestText)
+  const withheld = new Set<string>()
+  for (const mapPath of mapPaths) {
+    if (!manifest) {
+      await rm(mapPath, { force: true })
+      continue
+    }
+    const map = JSON.parse(await readFile(mapPath, 'utf8')) as {
+      sources?: string[]
+    }
+    const mapDir = dirname(resolve(mapPath))
+    const sources = (map.sources ?? []).map((source) =>
+      relative(repoRoot, resolve(mapDir, source)),
+    )
+    for (const path of findWithheldSources(sources, manifest)) {
+      withheld.add(path)
+    }
+    await rm(mapPath, { force: true })
+  }
+  if (withheld.size > 0) {
+    throw new Error(
+      `The SDK bundle inlines ${withheld.size} file(s) that scripts/public-export-manifest.txt withholds from the public export; publishing would leak them:\n  ${[...withheld].join('\n  ')}`,
+    )
+  }
+  console.log(
+    manifest
+      ? '  ✓ Every bundled workspace source is part of the public export; sourcemaps removed'
+      : '  ✓ No export manifest here (public checkout); sourcemaps removed',
+  )
 }
 
 /**

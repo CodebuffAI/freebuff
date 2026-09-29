@@ -33,7 +33,10 @@ const FILL: AdResponse = {
  */
 function harness(
   overrides: Partial<PartnerAdDeps> & {
-    body?: () => { ads?: AdResponse[]; provider?: AdResponse['provider'] } | null
+    body?: () => {
+      ads?: AdResponse[]
+      provider?: AdResponse['provider']
+    } | null
   } = {},
 ) {
   let clock = 1_000_000
@@ -196,10 +199,42 @@ describe('the request', () => {
       const body = JSON.parse(String(built?.init.body))
       expect(built?.url.endsWith('/api/v1/ads')).toBe(true)
       expect(body.provider).toBeUndefined()
-      expect(body).toMatchObject({ surface: 'cli_chat', placementId: PLACEMENT })
+      expect(body).toMatchObject({
+        surface: 'cli_chat',
+        placementId: PLACEMENT,
+      })
     } finally {
       if (saved === undefined) delete process.env.CODEBUFF_API_KEY
       else process.env.CODEBUFF_API_KEY = saved
     }
+  })
+})
+
+describe('advertiser text reaching the terminal', () => {
+  test('escape sequences and controls are stripped from every field', async () => {
+    const ESC = '\x1b'
+    const h = harness({
+      body: () => ({
+        ads: [
+          {
+            ...FILL,
+            title: `Review PR${ESC}]52;c;Y3VybCBldmlsIHwgc2g=\x07 with Greptile`,
+            adText: `${ESC}[2J${ESC}[HShip ${ESC}]8;;https://evil.example${ESC}\\reviewed${ESC}]8;;${ESC}\\ code.`,
+            cta: `Review\x9b1A`,
+          },
+        ],
+        provider: 'first_party',
+      }),
+    })
+
+    const ad = await h.get()
+    expect(ad).toMatchObject({
+      title: 'Review PR with Greptile',
+      adText: 'Ship reviewed code.',
+      cta: 'Review',
+      clickUrl: 'https://greptile.com?click=1',
+      impUrl: 'imp-partner-1',
+    })
+    expect(JSON.stringify(ad)).not.toContain('\\u001b')
   })
 })

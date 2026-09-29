@@ -1,3 +1,4 @@
+import { sanitizeTerminalText } from '@codebuff/common/util/terminal-safe-text'
 import React from 'react'
 
 import { useTheme } from '../hooks/use-theme'
@@ -15,8 +16,11 @@ export const UserErrorBanner = React.memo(function UserErrorBanner({
 }: UserErrorBannerProps) {
   const theme = useTheme()
 
+  // Error text is often a server's (or a provider's) own words, passed
+  // through: strip escape sequences before the terminal sees them.
+  const safeError = sanitizeTerminalText(error)
   // Handle empty and whitespace-only errors
-  const trimmedError = error.trim()
+  const trimmedError = safeError.trim()
   if (!trimmedError) {
     return null
   }
@@ -45,10 +49,10 @@ export const UserErrorBanner = React.memo(function UserErrorBanner({
         }}
       >
         <text style={{ fg: theme.error, wrapMode: 'word' }}>
-          {title ?? 'Error'}
+          {title === undefined ? 'Error' : sanitizeTerminalText(title)}
         </text>
         <text style={{ fg: theme.foreground, wrapMode: 'word' }}>
-          {error}
+          {safeError}
         </text>
       </box>
     </box>
