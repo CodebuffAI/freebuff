@@ -235,6 +235,98 @@ Each `LoadedAgentDefinition` extends `AgentDefinition` with:
 
 Files ending in `.d.ts` or `.test.ts` are excluded.
 
+### `client.stream(options)`
+
+Starts an agent run and returns a `RunStream` that you can consume with `for await`.
+It accepts the same options as `client.run()`, plus `maxBufferedEvents`.
+
+```typescript
+import { CodebuffClient } from '@codebuff/sdk'
+
+const client = new CodebuffClient({ apiKey: process.env.CODEBUFF_API_KEY })
+const stream = client.stream({
+  agent: 'base',
+  prompt: 'Add unit tests for the calculator',
+})
+
+for await (const item of stream) {
+  if (item.type === 'chunk') {
+    if (typeof item.chunk === 'string') {
+      // Main agent text deltas.
+      process.stdout.write(item.chunk)
+    } else {
+      // Subagent and reasoning deltas include their agent ID.
+      console.log(item.chunk.type, item.chunk.agentId, item.chunk.chunk)
+    }
+  } else {
+    // Start/finish, tool calls/results, subagent lifecycle, and error events.
+    console.log(item.event)
+  }
+}
+
+const result = await stream.result
+if (result.output.type === 'error') {
+  console.error(result.output.message)
+} else {
+  // Continue with either run() or stream().
+  await client.run({
+    agent: 'base',
+    prompt: 'Review the tests',
+    previousRun: result,
+  })
+}
+```
+
+`RunStreamEvent` distinguishes `{ type: 'event', event: PrintModeEvent }` from
+`{ type: 'chunk', chunk: StreamChunk }`. Chunks include main agent text strings,
+`subagent_chunk` objects, and `reasoning_chunk` objects. Events are yielded in
+the order received from the runtime. Explicit `handleEvent` and
+`handleStreamChunk` callbacks still run alongside iteration; per-call callbacks
+replace client callbacks, as they do for `run()`.
+
+#### Cancellation and completion
+
+The run starts immediately, and the stream supports one consumer. Breaking out
+of the loop, calling `stream.abort(reason?)`, or aborting the supplied `signal`
+cancels the underlying run, discards unread events, and ends iteration.
+`stream.result` waits for the runtime to settle and returns its final `RunState`,
+including any partial progress retained by the runtime. A normally completed
+stream drains its buffered events before iteration ends.
+
+```typescript
+const controller = new AbortController()
+const stream = client.stream({
+  agent: 'base',
+  prompt: 'Review the codebase',
+  signal: controller.signal,
+})
+
+for await (const item of stream) {
+  if (item.type === 'event' && item.event.type === 'tool_call') {
+    // Stop before collecting more progress. This also cancels the run.
+    break
+  }
+}
+
+const partialRun = await stream.result
+// Alternatively, call controller.abort() or stream.abort() from your UI.
+```
+
+#### Buffer limits and errors
+
+Consume the stream while the run is active. It buffers at most **1,024 unread
+events/chunks** by default; set `maxBufferedEvents` to a positive safe integer to
+change that limit. If the buffer fills, the run is cancelled and both iteration
+and `stream.result` reject with `RunStreamBufferOverflowError`. Events are never
+silently dropped to make room.
+
+Unexpected execution exceptions and explicit callback failures also reject
+iteration and `stream.result`. Runtime error events remain event data, and an
+agent failure can resolve `stream.result` with `output.type === 'error'`, just
+like `run()`. Streaming skips the client's default throwing error-event handler;
+explicit handlers retain their behavior. Await `stream.result` even when you
+leave iteration early to wait for runtime cleanup.
+
 ### `client.run(options)`
 
 Runs a Codebuff agent with the specified options.
