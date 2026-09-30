@@ -103,19 +103,50 @@ describe('per-model effort ladders', () => {
     }
   })
 
-  test('Muse Spark and Luna expose their complete native ladders', () => {
-    expect(getFreebuffModelEfforts(FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID)).toEqual(
-      EFFORTS_THROUGH_XHIGH,
-    )
+  test('GPT-5.6 Luna keeps its complete native ladder', () => {
     expect(getFreebuffModelEfforts(FREEBUFF_GPT_5_6_LUNA_MODEL_ID)).toEqual(
       EFFORTS_THROUGH_MAX,
     )
     expect(
-      resolveFreebuffReasoningEffort(FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID, undefined),
-    ).toBe('xhigh')
-    expect(
       resolveFreebuffReasoningEffort(FREEBUFF_GPT_5_6_LUNA_MODEL_ID, undefined),
     ).toBe('high')
+  })
+
+  // Product caps (2026-09-29): the ladder is a CEILING, so a higher request
+  // clamps down to it rather than reaching the provider.
+  test('caps GPT-6.1 Sol and Muse Spark at high, GPT-6 Luna at xhigh, and fixes Gemini 3.8 Flash at high', () => {
+    for (const id of [
+      'openai/gpt-6.1-sol',
+      FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
+      'meta/muse-spark-1.3-contributor',
+    ]) {
+      expect(getFreebuffModelEfforts(id)).toEqual(['low', 'medium', 'high'])
+      expect(resolveFreebuffReasoningEffort(id, 'xhigh')).toBe('high')
+      expect(resolveFreebuffReasoningEffort(id, 'max')).toBe('high')
+    }
+    expect(
+      resolveFreebuffReasoningEffort(
+        FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
+        undefined,
+      ),
+    ).toBe('high')
+    expect(getFreebuffModelEfforts('openai/gpt-6-luna')).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ])
+    expect(resolveFreebuffReasoningEffort('openai/gpt-6-luna', 'max')).toBe(
+      'xhigh',
+    )
+    expect(getFreebuffModelEfforts('google/gemini-3.8-flash')).toEqual([
+      'high',
+    ])
+    for (const requested of ['low', 'medium', 'xhigh', 'max'] as const) {
+      expect(
+        resolveFreebuffReasoningEffort('google/gemini-3.8-flash', requested),
+      ).toBe('high')
+    }
   })
 
   test('Claude Fable 5.1 exposes every enabled effort', () => {

@@ -843,7 +843,11 @@ export const MUSE_SPARK_OPENROUTER_MAX_PRICE = {
  * fast. Cost barely enters into it: 500k output tokens across 347 prod
  * requests came to roughly $0.10.
  */
-export const FREEBUFF_MUSE_SPARK_REASONING_EFFORT = 'xhigh' as const
+// CAPPED AT `high` since 2026-09-29 by product decision — the ladder is
+// low/medium/high and this default moved down from `xhigh` with it. Per the
+// measurement above, the top rung bought ~8% more reasoning for ~26% more
+// latency.
+export const FREEBUFF_MUSE_SPARK_REASONING_EFFORT = 'high' as const
 
 /**
  * Ox Alpha — an anonymous ("stealth") frontier coding model, served through
@@ -964,6 +968,17 @@ export const EFFORTS_THROUGH_XHIGH = [
   'high',
   'xhigh',
 ] as const
+/** Through `xhigh` with no `max` — GPT-6 Luna's ladder since 2026-09-29. */
+export const EFFORTS_LOW_THROUGH_XHIGH = [
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+] as const
+/** One rung: the row runs at `high` and nothing else (Gemini 3.8 Flash since
+ *  2026-09-29). A ladder rather than no ladder so the server's clamp holds it
+ *  there against any effort a client or agent sends. */
+export const EFFORTS_HIGH_ONLY = ['high'] as const
 export const EFFORTS_THROUGH_MAX = [
   'low',
   'medium',
@@ -2419,7 +2434,8 @@ const GPT_6_LUNA_MODEL = {
   // OpenRouter reports text + image + file input.
   multimodal: true,
   reasoningEffort: FREEBUFF_GPT_6_LUNA_REASONING_EFFORT,
-  efforts: EFFORTS_THROUGH_MAX,
+  // No `max` (2026-09-29, by product decision).
+  efforts: EFFORTS_LOW_THROUGH_XHIGH,
   defaultEffort: FREEBUFF_GPT_6_LUNA_REASONING_EFFORT,
   // NEW because the row is new to every surface on 2026-09-22, and because a
   // returning user needs to notice that the Luna they knew is a different
@@ -2449,7 +2465,9 @@ const GPT_61_SOL_MODEL = {
   // OpenRouter reports text + image + file input.
   multimodal: true,
   reasoningEffort: FREEBUFF_GPT_61_SOL_REASONING_EFFORT,
-  efforts: EFFORTS_THROUGH_MAX,
+  // Capped at `high` by product decision (2026-09-29): the dearest row, and
+  // reasoning bills as output at $5/M.
+  efforts: EFFORTS_THROUGH_HIGH,
   defaultEffort: FREEBUFF_GPT_61_SOL_REASONING_EFFORT,
   isNew: true,
   // PROMOTIONAL, by product decision (2026-09-29): 100 Freebucks is a
@@ -2550,7 +2568,10 @@ const GEMINI_38_FLASH_MODEL = {
   // two-token "Say hi" spent 111-126 reasoning tokens in probing — and
   // reasoning bills as output at $1.875/M, so the effort control is a real
   // cost lever here rather than a latency one.
-  efforts: EFFORTS_THROUGH_MAX,
+  // FIXED at `high` since 2026-09-29, by product decision: one rung, so the
+  // server clamps any other effort to it, and pinned so every turn sends it.
+  reasoningEffort: 'high',
+  efforts: EFFORTS_HIGH_ONLY,
   defaultEffort: 'high',
   isNew: true,
 } as const satisfies FreebuffModelOption
@@ -2760,7 +2781,8 @@ const MUSE_SPARK_12_CONTRIBUTOR_MODEL = {
   premium: true,
   multimodal: false,
   reasoningEffort: FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
-  efforts: EFFORTS_THROUGH_XHIGH,
+  // Up to `high` only (2026-09-29, by product decision).
+  efforts: EFFORTS_THROUGH_HIGH,
   defaultEffort: FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
   // A strict version bump rather than a steer: identical price, terms, pool
   // and paywall, a better model. migrateSupersededFreebuffModelPreference
@@ -2817,7 +2839,8 @@ const MUSE_SPARK_13_CONTRIBUTOR_MODEL = {
   // fallback and not a capability worth badging (same call as 1.2).
   multimodal: false,
   reasoningEffort: FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
-  efforts: EFFORTS_THROUGH_XHIGH,
+  // Up to `high` only (2026-09-29, by product decision).
+  efforts: EFFORTS_THROUGH_HIGH,
   defaultEffort: FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
   isNew: true,
 } as const satisfies FreebuffModelOption
