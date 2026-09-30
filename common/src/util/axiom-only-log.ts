@@ -422,6 +422,12 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   first_party_cpm_outcome: 'string',
   first_party_cpm_mode: 'string',
   first_party_cpm_campaign_id: 'string',
+  /**
+   * COD-713, present only when the Tier-2 per-conversion leg ran: `fill`,
+   * `no_fill` or `error`. That leg offers a Tier-2 Gravity no-fill to
+   * campaigns that bill per conversion, and only to them.
+   */
+  first_party_tier2_per_conversion_outcome: 'string',
   /** CPC geo-pricing state. These names predate inventory geo routing and are
    * kept separate from `first_party_inventory_geo_tier`. */
   first_party_geo_tier: 'string',
