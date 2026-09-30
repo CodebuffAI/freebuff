@@ -37,3 +37,18 @@ export const FREEBUFF_PROVIDER_CONTENT_FILTER_ERROR_PATTERN =
  *  will be refused again, so the only way forward is a different model. */
 export const FREEBUFF_PROVIDER_CONTENT_FILTER_MESSAGE =
   "DeepSeek's provider declined this request (content filter). Retrying on DeepSeek will be declined again, since the whole conversation is re-sent. Try again with another model, e.g. GLM 5.3 Flash or MiMo."
+
+/**
+ * OpenAI's cybersecurity safeguard: 403 "This content was flagged for possible
+ * cybersecurity risk. If this seems wrong, try rephrasing your request. …
+ * apply for Daybreak access …". Seen on GPT-6.1 Sol (2026-09-30). Applied to
+ * the request's content, so the same conversation is refused again on retry.
+ */
+export const FREEBUFF_PROVIDER_CYBER_RISK_ERROR_PATTERN =
+  /flagged for possible cybersecurity risk/i
+
+/** Says what happened and what to DO. OpenAI's own text points at an
+ *  organization-access form a Freebuff user cannot use, and after a fallback
+ *  it used to surface as an unrelated "organization" 401 instead. */
+export const FREEBUFF_PROVIDER_CYBER_RISK_MESSAGE =
+  "OpenAI declined this request: it was flagged as a possible cybersecurity risk. The same conversation will be declined again, so rephrase the request (for example, say what you are securing and why), or continue with another model such as DeepSeek V4.1 Flash or GLM 5.3 Flash."
