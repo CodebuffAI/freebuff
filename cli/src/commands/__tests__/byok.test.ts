@@ -1,6 +1,12 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 
 import { enterByokSetup, handleByokCommand } from '../byok'
+import * as auth from '../../utils/auth'
+import { loadSettings } from '../../utils/settings'
 import { useChatStore } from '../../state/chat-store'
 import {
   isByokSetupOpen,
@@ -169,5 +175,34 @@ describe('/byok', () => {
 
     expect(messages.join('\n')).toContain('unmatched quote')
     expect(list).not.toHaveBeenCalled()
+  })
+})
+
+describe('/byok effort', () => {
+  test('persists a BYOK rung, reports it, and default clears it', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'freebuff-byok-effort-'))
+    const configDir = spyOn(auth, 'getConfigDir').mockReturnValue(dir)
+    try {
+      const high = createParams('/byok effort high')
+      await handleByokCommand(high.params, 'effort high')
+      expect(loadSettings().byokReasoningEffort).toBe('high')
+      expect(high.messages.join('\n')).toContain('high reasoning effort')
+
+      const shown = createParams('/byok effort')
+      await handleByokCommand(shown.params, 'effort')
+      expect(shown.messages.join('\n')).toContain('BYOK reasoning effort: high')
+
+      const bogus = createParams('/byok effort max')
+      await handleByokCommand(bogus.params, 'effort max')
+      expect(bogus.messages.join('\n')).toContain('Unknown effort: max')
+      expect(loadSettings().byokReasoningEffort).toBe('high')
+
+      const reset = createParams('/byok effort default')
+      await handleByokCommand(reset.params, 'effort default')
+      expect(loadSettings().byokReasoningEffort).toBeUndefined()
+    } finally {
+      configDir.mockRestore()
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

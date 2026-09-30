@@ -18,7 +18,7 @@ import {
 } from '@codebuff/llm-providers/openai-compatible'
 import { APICallError } from 'ai'
 
-import { byokRequestTransform } from './byok-request'
+import { byokReasoningRetryBody, byokRequestTransform } from './byok-request'
 import { getWebsiteUrl } from '../constants'
 import { getByokOpenrouterApiKeyFromEnv } from '../env'
 import { byokCompletionUrl } from '../byok'
@@ -312,16 +312,34 @@ export function getModelForRequest({
       fetch: (async (...args: Parameters<typeof globalThis.fetch>) => {
         try {
           await byok.assertCurrent?.()
-          const response = await globalThis.fetch(
-            args[0],
-            { ...(args[1] ?? {}), redirect: 'error' },
-          )
+          const send = (init: RequestInit | undefined) =>
+            globalThis.fetch(args[0], { ...(init ?? {}), redirect: 'error' })
+          let response = await send(args[1])
+          let errorText: string | undefined
+          if (response.status === 400 || response.status === 422) {
+            errorText = await response.text().catch(() => '')
+            // A provider or model that refuses the picked reasoning effort
+            // still answers the task: once, without the field, remembered
+            // for the connection so later steps do not ask again.
+            const retryBody = byokReasoningRetryBody(
+              byok,
+              args[1]?.body,
+              response.status,
+              errorText,
+            )
+            if (retryBody !== undefined) {
+              response = await send({ ...(args[1] ?? {}), body: retryBody })
+              errorText = undefined
+            }
+          }
           if (!response.ok) {
             const modelRejected =
               response.status === 400 ||
               response.status === 404 ||
               response.status === 422
-                ? isByokModelIdRejection(await response.text().catch(() => ''))
+                ? isByokModelIdRejection(
+                    errorText ?? (await response.text().catch(() => '')),
+                  )
                 : false
             return new Response(
               JSON.stringify({

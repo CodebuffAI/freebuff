@@ -1,5 +1,6 @@
 import {
   createBunByokConnectionStore,
+  withByokReasoningEffort,
   withEffectiveByokLimits,
 } from '@codebuff/sdk'
 import { create } from 'zustand'
@@ -116,11 +117,15 @@ export function saveSelectedByokConnection(
 
 /** Resolve only at run start so the secret never reaches chat state or logs.
  *  Untouched default limits become the provider-reported window (see
- *  withEffectiveByokLimits), so a run does not compact every few tool calls. */
+ *  withEffectiveByokLimits), so a run does not compact every few tool calls.
+ *  The `/byok effort` pick rides along; none sends no reasoning field. */
 export async function resolveByokConnection(
   selected: SelectedByokConnection,
 ): Promise<ResolvedByokConnection> {
-  return withEffectiveByokLimits(await getCliByokStore().resolve(selected))
+  return withByokReasoningEffort(
+    await withEffectiveByokLimits(await getCliByokStore().resolve(selected)),
+    loadSettings().byokReasoningEffort,
+  )
 }
 
 export function describeByokConnection(connection: Pick<ByokConnection, 'name' | 'provider' | 'model'>): string {

@@ -77,3 +77,23 @@ export function clampReasoningEffort(
       : lowest,
   )
 }
+
+/**
+ * The rungs a BYOK (the user's own API key) connection can be asked for.
+ *
+ * Three, because they are the only words every provider shape BYOK reaches
+ * understands: OpenAI-compatible `reasoning_effort`, OpenRouter's
+ * `reasoning.effort`, Gemini's OpenAI-compatible `reasoning_effort`, and an
+ * Anthropic thinking budget per rung. There is deliberately no "default" rung
+ * here: a BYOK thread with no pick sends nothing, so the provider's own default
+ * applies — exactly the request BYOK sent before this setting existed.
+ */
+export const BYOK_REASONING_EFFORTS = ['low', 'medium', 'high'] as const
+
+export type ByokReasoningEffort = (typeof BYOK_REASONING_EFFORTS)[number]
+
+export function isByokReasoningEffort(
+  value: unknown,
+): value is ByokReasoningEffort {
+  return BYOK_REASONING_EFFORTS.includes(value as ByokReasoningEffort)
+}

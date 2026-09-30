@@ -9,7 +9,10 @@ import {
   isFreebuffModelId,
   migrateSupersededFreebuffModelPreference,
 } from '@codebuff/common/constants/freebuff-models'
-import { isReasoningEffort } from '@codebuff/common/constants/reasoning-effort'
+import {
+  isByokReasoningEffort,
+  isReasoningEffort,
+} from '@codebuff/common/constants/reasoning-effort'
 import {
   migrateSavedDefaultModel,
   type SavedModelStore,
@@ -20,7 +23,10 @@ import { AGENT_MODES } from './constants'
 import { logger } from './logger'
 
 import type { AgentMode } from './constants'
-import type { ReasoningEffort } from '@codebuff/common/constants/reasoning-effort'
+import type {
+  ByokReasoningEffort,
+  ReasoningEffort,
+} from '@codebuff/common/constants/reasoning-effort'
 
 const DEFAULT_SETTINGS: Settings = {
   mode: 'DEFAULT' as const,
@@ -57,6 +63,9 @@ export interface Settings {
     provider?: 'openrouter' | 'openai-compatible'
     model?: string
   }
+  /** Reasoning effort for BYOK runs (`/byok effort`). Absent sends no
+   *  reasoning field, so the provider's own default applies. */
+  byokReasoningEffort?: ByokReasoningEffort
   /** @deprecated Use server-side fallbackToALaCarte setting instead */
   alwaysUseALaCarte?: boolean
   /** @deprecated Use server-side fallbackToALaCarte setting instead */
@@ -203,6 +212,10 @@ const validateSettings = (parsed: unknown): Settings => {
         ? { model: byokConnection.model }
         : {}),
     }
+  }
+
+  if (isByokReasoningEffort(obj.byokReasoningEffort)) {
+    settings.byokReasoningEffort = obj.byokReasoningEffort
   }
 
   // Validate alwaysUseALaCarte (legacy)

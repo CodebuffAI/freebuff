@@ -13,6 +13,12 @@ import {
   selectedByokConnection,
 } from '../utils/byok'
 
+import {
+  BYOK_REASONING_EFFORTS,
+  isByokReasoningEffort,
+} from '@codebuff/common/constants/reasoning-effort'
+import { loadSettings, saveSettings } from '../utils/settings'
+
 import type { ByokConnection, ByokProvider } from '@codebuff/sdk'
 import type { RouterParams } from './command-registry'
 
@@ -25,6 +31,7 @@ export const BYOK_USAGE = [
   '`/byok update <name> <model> [base-url] [--context-window=N] [--max-output-tokens=N]`',
   '`/byok validate <name>`',
   '`/byok select <name>`',
+  '`/byok effort <default|low|medium|high>`',
   '`/byok remove <name>`',
   '`/byok off`',
 ].join('\n')
@@ -339,6 +346,31 @@ export async function handleByokCommand(
         resetTranscriptForSourceChange(params)
       }
       post(params, `Removed ${connection.name}.`)
+      return
+    }
+
+    if (action === 'effort') {
+      const [value] = args
+      if (!value) {
+        const current = loadSettings().byokReasoningEffort
+        post(
+          params,
+          `BYOK reasoning effort: ${current ?? 'default (the provider decides)'}. Change it with /byok effort <default|${BYOK_REASONING_EFFORTS.join('|')}>.`,
+        )
+        return
+      }
+      if (value !== 'default' && !isByokReasoningEffort(value)) {
+        post(params, `Unknown effort: ${value}. Use default, ${BYOK_REASONING_EFFORTS.join(', ')}.`)
+        return
+      }
+      const effort = value === 'default' ? undefined : value
+      saveSettings({ byokReasoningEffort: effort })
+      post(
+        params,
+        effort
+          ? `BYOK runs now ask for ${effort} reasoning effort. A provider that rejects it is retried without it.`
+          : 'BYOK runs use the provider default reasoning effort.',
+      )
       return
     }
 

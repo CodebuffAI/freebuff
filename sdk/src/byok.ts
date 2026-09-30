@@ -3,6 +3,8 @@ import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { z } from 'zod/v4'
+import { isByokReasoningEffort } from '@codebuff/common/constants/reasoning-effort'
+import type { ByokReasoningEffort } from '@codebuff/common/constants/reasoning-effort'
 import { getSystemProcessEnv } from './env'
 
 export const BYOK_SECRET_SERVICE = 'com.freebuff.byok.v1'
@@ -35,6 +37,12 @@ export type ResolvedByokConnection = ByokConnection & {
   apiKey: string
   /** Recheck revocation before every provider request; never serialized. */
   assertCurrent?: () => Promise<void>
+  /**
+   * The run's reasoning effort, a per-task choice rather than connection
+   * metadata (so never stored). Absent sends no reasoning field at all, which
+   * is the provider's own default. See `withByokReasoningEffort`.
+   */
+  reasoningEffort?: ByokReasoningEffort
 }
 export type ByokSecretStore = {
   get(reference: string): Promise<string | undefined>
@@ -332,6 +340,45 @@ export async function discoverByokContextWindow(
       window,
     })
   return result
+}
+
+/**
+ * The connection with a run's reasoning effort attached, or the connection
+ * itself when there is none to attach (anything that is not a BYOK rung means
+ * "the provider's default"). A copy, never a mutation: the resolved connection
+ * is frozen and shared. The credential and revocation check stay
+ * non-enumerable on the copy, exactly as the resolver made them.
+ */
+export function withByokReasoningEffort(
+  connection: ResolvedByokConnection,
+  effort: unknown,
+): ResolvedByokConnection {
+  if (!isByokReasoningEffort(effort)) {
+    if (connection.reasoningEffort === undefined) return connection
+    const { reasoningEffort: _dropped, ...rest } = connection
+    return copyRuntimeFields(rest as ResolvedByokConnection, connection)
+  }
+  if (connection.reasoningEffort === effort) return connection
+  return copyRuntimeFields(
+    { ...connection, reasoningEffort: effort } as ResolvedByokConnection,
+    connection,
+  )
+}
+
+function copyRuntimeFields(
+  target: ResolvedByokConnection,
+  source: ResolvedByokConnection,
+): ResolvedByokConnection {
+  Object.defineProperty(target, 'apiKey', {
+    value: source.apiKey,
+    enumerable: false,
+  })
+  if (source.assertCurrent)
+    Object.defineProperty(target, 'assertCurrent', {
+      value: source.assertCurrent,
+      enumerable: false,
+    })
+  return target
 }
 
 /**
