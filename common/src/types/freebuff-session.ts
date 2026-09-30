@@ -1169,6 +1169,17 @@ export type FreebuffSessionAdmissionResponse = (
 ) & {
   /** Current country verification; does not grant full access. Sent on GET. */
   countryVerified?: boolean
+  /** Whether a country verification could change this account's access
+   *  right now. False for a limited-access region (verifying one grants
+   *  nothing) and for an account whose region is set; clients hide the
+   *  "verify country" prompt then. Absent from an older server: show it. */
+  verificationCanChangeAccess?: boolean
+  /** Why `verificationCanChangeAccess` is what it is. */
+  verificationReason?: FreebuffCountryVerificationReason
+  /** Present only when verifying cannot help (`limited_region` /
+   *  `region_locked`) and a paid plan above the account's own exists: the
+   *  "unlock more with a plan" offer, numbers from the server's catalog. */
+  countryUpsell?: FreebuffPlanUpsell
   /** Unexpired Desktop purchases, including occupied hours. Picker metadata;
    * admission still checks ownership, liveness, and capacity atomically. */
   desktopPurchases?: FreebuffDesktopPurchaseInfo[]
@@ -1176,6 +1187,51 @@ export type FreebuffSessionAdmissionResponse = (
   /** Multi-session Desktop responses only. Counts live, unexpired rows across
    * all Desktop processes for this user. */
   desktopSessionCounts?: FreebuffDesktopSessionCounts
+}
+
+/**
+ * Why a country verification can or cannot change an account's access
+ * (docs/freebuff-access-floor.md § Declare first):
+ * - `limited_region`: the account is in (or declared) a limited-access
+ *   country; verifying it grants nothing.
+ * - `region_locked`: the account's region is set to limited access, and no
+ *   self-serve verification changes it (only a region review).
+ * - `eligible`: verifying from a direct connection in a full-access country
+ *   can change it.
+ */
+export type FreebuffCountryVerificationReason =
+  | 'limited_region'
+  | 'region_locked'
+  | 'eligible'
+
+/**
+ * A paid-plan offer for a limited-access account, built on the server from
+ * the plan catalog (`freebuffLimitedAccessUpsell`) so every surface renders
+ * the same figures. Daily Freebucks are at LIMITED access, which is what the
+ * account would actually get.
+ */
+export type FreebuffPlanUpsell = {
+  /** The plan the headline names: the best plan for an account without one,
+   *  the next plan up for a subscriber. */
+  planId: string
+  planName: string
+  /** Daily Freebucks on `planId` at limited access. */
+  dailyFreebucks: number
+  /** Daily Freebucks the account gets now (its plan, or the free pool). */
+  currentDailyFreebucks: number
+  /** Every plan above the account's own, cheapest first. */
+  plans: Array<{
+    planId: string
+    planName: string
+    dailyFreebucks: number
+    priceUsd: number
+  }>
+  /** e.g. "Unlock up to 350 Freebucks a day with Freebuff Pro". */
+  headline: string
+  /** The positioning line under the headline. */
+  tagline: string
+  /** The plans page, tagged `source=country_limited` for attribution. */
+  plansUrl: string
 }
 
 export type FreebuffSessionServerResponse =
