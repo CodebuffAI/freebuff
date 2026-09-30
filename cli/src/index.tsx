@@ -38,7 +38,11 @@ import {
   promptForAgentDirTrust,
   resolveTrustedAgentDirs,
 } from './utils/agent-dir-trust'
-import { getAuthToken, getAuthTokenDetails } from './utils/auth'
+import {
+  getAuthToken,
+  getAuthTokenDetails,
+  loadStoredAuthToken,
+} from './utils/auth'
 import { resetCodebuffClient } from './utils/codebuff-client'
 import { setApiClientAuthToken } from './utils/codebuff-api'
 import { IS_FREEBUFF } from './utils/constants'
@@ -229,6 +233,10 @@ async function main(): Promise<void> {
       // Silently ignore OSC detection failures
     }
   }
+
+  // The Freebuff auth token lives in the OS keychain (auth-token-store.ts):
+  // load it before anything reads the credentials. Bounded and never throws.
+  await loadStoredAuthToken()
 
   const {
     initialPrompt,

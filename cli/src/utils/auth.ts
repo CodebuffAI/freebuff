@@ -4,8 +4,14 @@ import path from 'path'
 import { getCiEnv } from '@codebuff/common/env-ci'
 import { z } from 'zod'
 
+import {
+  getCachedKeychainToken,
+  resolveSecretStore,
+  setCachedKeychainToken,
+} from './auth-token-store'
 import { getApiClient, setApiClientAuthToken } from './codebuff-api'
 import { getConfigDir as getConfigDirBase } from './config-dir'
+import { IS_FREEBUFF } from './constants'
 import { logger } from './logger'
 
 import type { CiEnv } from '@codebuff/common/types/contracts/env'
@@ -30,11 +36,16 @@ const userSchema = z.object({
 
 export type User = z.infer<typeof userSchema>
 
-const credentialsSchema = z
-  .object({
-    default: userSchema.optional(),
-  })
-  .catchall(z.unknown())
+/** What the file may hold: the token itself, or a pointer to the keychain
+ *  (auth-token-store.ts). */
+const storedUserSchema = userSchema.extend({
+  authToken: z.string().optional(),
+  tokenStore: z.literal('keychain').optional(),
+})
+
+// Each profile is validated on its own (`storedUserSchema` in userFromJson):
+// a keychain-pointer profile has no `authToken`, which `userSchema` requires.
+const credentialsSchema = z.object({}).catchall(z.unknown())
 
 // Get the config directory path.
 // Re-exported as a wrapper (rather than a bare `export ... from`) so existing
@@ -87,8 +98,15 @@ const userFromJson = (
     const allCredentials = credentialsSchema.parse(JSON.parse(json))
     const profile = allCredentials[profileName]
     // Validate that the profile matches the user schema
-    const parsed = userSchema.safeParse(profile)
-    return parsed.success ? parsed.data : undefined
+    const parsed = storedUserSchema.safeParse(profile)
+    if (!parsed.success) return undefined
+    const { tokenStore, ...stored } = parsed.data
+    // A keychain pointer resolves to the token loaded at startup; with none
+    // loaded (keychain unavailable this run) the user reads as signed out.
+    const authToken =
+      stored.authToken ??
+      (tokenStore === 'keychain' ? getCachedKeychainToken() : undefined)
+    return authToken ? { ...stored, authToken } : undefined
   } catch (error) {
     logger.error(
       {
@@ -218,6 +236,9 @@ export const saveUserCredentials = (user: User): void => {
       mode: CREDENTIALS_FILE_MODE,
     })
     tightenCredentialsFileMode(credentialsPath)
+    // The file holds the token until the keychain has it (never throws).
+    setCachedKeychainToken(normalizedUser.authToken)
+    void moveTokenToKeychain()
   } catch (error) {
     logger.error(
       {
@@ -240,6 +261,19 @@ export const clearUserCredentials = (): void => {
     if (!fs.existsSync(credentialsPath)) return
 
     const { default: _, ...rest } = readCredentialsFile()
+    setCachedKeychainToken(null)
+    const store = resolveSecretStore({
+      isFreebuff: IS_FREEBUFF,
+      credentialsPath,
+    })
+    if (store) {
+      void store.delete().catch((error) => {
+        logger.debug(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Could not remove the keychain token',
+        )
+      })
+    }
 
     if (Object.keys(rest).length === 0) {
       fs.unlinkSync(credentialsPath)
@@ -257,6 +291,73 @@ export const clearUserCredentials = (): void => {
       'Error clearing credentials',
     )
     throw error
+  }
+}
+
+/**
+ * Move the file's token into the keychain, once the keychain has proved it
+ * can hand it back. Leaves the file alone on any failure, and when the file
+ * changed meanwhile (a concurrent login). Never throws.
+ */
+export async function moveTokenToKeychain(): Promise<boolean> {
+  const credentialsPath = getCredentialsPath()
+  const store = resolveSecretStore({ isFreebuff: IS_FREEBUFF, credentialsPath })
+  if (!store) return false
+  try {
+    const before = readCredentialsFile()
+    const profile = storedUserSchema.safeParse(before.default)
+    const token = profile.success ? profile.data.authToken : undefined
+    if (!token) return false
+    await store.set(token)
+    if ((await store.get()) !== token) return false
+    const now = readCredentialsFile()
+    const current = storedUserSchema.safeParse(now.default)
+    if (!current.success || current.data.authToken !== token) return false
+    const { authToken: _moved, ...profileOnly } = current.data
+    fs.writeFileSync(
+      credentialsPath,
+      JSON.stringify(
+        { ...now, default: { ...profileOnly, tokenStore: 'keychain' } },
+        null,
+        2,
+      ),
+      { mode: CREDENTIALS_FILE_MODE },
+    )
+    tightenCredentialsFileMode(credentialsPath)
+    setCachedKeychainToken(token)
+    return true
+  } catch (error) {
+    logger.debug(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Auth token stays in the credentials file (keychain unavailable)',
+    )
+    return false
+  }
+}
+
+/**
+ * Startup: load a keychain token into memory so the synchronous readers see
+ * it, or move a file token into the keychain. Must run before anything reads
+ * the credentials. Never throws.
+ */
+export async function loadStoredAuthToken(): Promise<void> {
+  const credentialsPath = getCredentialsPath()
+  const store = resolveSecretStore({ isFreebuff: IS_FREEBUFF, credentialsPath })
+  if (!store) return
+  const profile = storedUserSchema.safeParse(readCredentialsFile().default)
+  if (!profile.success) return
+  if (profile.data.authToken) {
+    await moveTokenToKeychain()
+    return
+  }
+  if (profile.data.tokenStore !== 'keychain') return
+  try {
+    setCachedKeychainToken((await store.get()) ?? null)
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Could not read the auth token from the keychain',
+    )
   }
 }
 
