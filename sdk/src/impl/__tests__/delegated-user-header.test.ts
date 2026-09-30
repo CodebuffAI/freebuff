@@ -136,6 +136,9 @@ describe('SDK delegated user headers', () => {
       '{"error":{"message":"foo/bar is not a valid model ID","code":400}}',
       '{"error":{"code":404,"message":"models/gemini-9 is not found for API version v1beta, or is not supported for generateContent."}}',
       '{"message":"Invalid model: mistral-hyper"}',
+      '{"error":{"message":"Model not found"}}',
+      '{"error":{"message":"The model \\"acme/fake-1\\" is not supported."}}',
+      '{"error":{"message":"model \'gpt-9\' was not found"}}',
     ]
     for (const body of rejections) expect(isByokModelIdRejection(body)).toBe(true)
 
@@ -144,6 +147,10 @@ describe('SDK delegated user headers', () => {
       '{"error":{"message":"max_tokens is too large for this model. Tool calls not found in history."}}',
       '<html><body>404 page not found</body></html>',
       '',
+      // A capability refusal on a VALID model id is not a bad id.
+      '{"error":{"message":"model gpt-4o-mini: image input is not supported","type":"invalid_request_error"}}',
+      '{"error":{"message":"The model `deepseek-v4-flash` with tool_choice required is not supported."}}',
+      '{"error":{"message":"For model deepseek-chat, audio content is not supported"}}',
     ]
     for (const body of others) expect(isByokModelIdRejection(body)).toBe(false)
   })

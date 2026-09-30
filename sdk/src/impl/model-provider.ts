@@ -167,8 +167,13 @@ export function isByokModelIdRejection(body: string): boolean {
  *  mentions a model elsewhere in its body is not reclassified. */
 const BYOK_MODEL_REJECTION_PATTERNS: readonly RegExp[] = [
   /"code"\s*:\s*"model_not_found"/i,
-  // Same sentence only (a dot inside a model id like `gpt-5.6` is fine).
-  /\bmodels?\b(?:(?![.!?]\s)[^\n]){0,80}?\b(?:does not exist|not exist|not found|is not supported|not supported)/i,
+  // The model — optionally followed by ONE id token (bare, quoted or
+  // `models/…`) — is itself the subject: "The model `x` does not exist",
+  // "models/gemini-9 is not found", "Model not found". Anything between the id
+  // and the verdict means something else is what failed: "model x: image
+  // input is not supported" is a capability refusal on a valid id, and
+  // calling it a bad id would send the user to fix the wrong thing.
+  /\bmodels?\b\s*[:=]?\s*(?:`[^`\n]{1,120}`|'[^'\n]{1,120}'|\\?"[^"\n]{1,120}?\\?"|[\w./:@+-]{1,120})?\s+(?:is\s+|was\s+)?(?:does not exist|not exist|not found|not supported)\b/i,
   /\b(?:invalid|unknown|no such|not a valid|unable to access) model\b/i,
   /\bsupported (?:api )?model(?: name)?s? (?:are|is)\b/i,
 ]
