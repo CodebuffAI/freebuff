@@ -902,7 +902,13 @@ export function useFreebuffSession({
           return
         }
         if (next.status === 'model_unavailable') {
-          if (next.updateRequired || next.purchasesPaused) {
+          // A spent daily limit is a stop, never a fallback: the user was
+          // quoted THIS model's price (see dailyLimitReached).
+          if (
+            next.updateRequired ||
+            next.purchasesPaused ||
+            next.dailyLimitReached
+          ) {
             apply(toLandingSession(currentSession))
             setFailure({
               type: 'other',
