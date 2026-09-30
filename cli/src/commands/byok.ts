@@ -19,6 +19,8 @@ import {
 } from '@codebuff/common/constants/reasoning-effort'
 import { loadSettings, saveSettings } from '../utils/settings'
 
+import { normalizeByokBaseUrl } from '@codebuff/sdk'
+
 import type {
   ByokConnection,
   ByokProvider,
@@ -32,7 +34,7 @@ export const BYOK_USAGE = [
   'Usage:',
   '`/byok list`',
   '`/byok add <name> <openrouter|openai-compatible> <model> <ENV_VAR> [base-url] [--context-window=N] [--max-output-tokens=N]`',
-  '`/byok update <name> <model> [base-url] [--context-window=N] [--max-output-tokens=N]`',
+  '`/byok update <name> <model> [base-url [ENV_VAR]] [--context-window=N] [--max-output-tokens=N]`',
   '`/byok validate <name>`',
   '`/byok select <name>`',
   '`/byok effort <default|low|medium|high>`',
@@ -76,6 +78,18 @@ function post(params: RouterParams, message: string): void {
         : input,
   )
   params.setInputValue({ text: '', cursorPosition: 0, lastEditDueToNav: false })
+}
+
+/** Whether `baseUrl` is the connection's current endpoint; undefined when it cannot be normalized. */
+function sameEndpoint(connection: ByokConnection, baseUrl: string): boolean | undefined {
+  try {
+    return (
+      normalizeByokBaseUrl(connection.provider, baseUrl) ===
+      normalizeByokBaseUrl(connection.provider, connection.baseUrl)
+    )
+  } catch {
+    return undefined
+  }
 }
 
 /** How many listed ids a message shows; the rest are counted. */
@@ -219,7 +233,10 @@ function parseByokCommand(rawArgs: string): ParsedByokCommand | { error: string 
 /** Positional arguments an action accepts at most; undefined = a free-form name. */
 function maxPositionalArguments(action: string | undefined, args: string[]): number | undefined {
   if (action === 'add') return args[1] === 'openrouter' ? 4 : 5
-  if (action === 'update') return 3
+  // `update <name> <model> [base-url [ENV_VAR]]`: the fourth word counts only
+  // when it is a variable name, so a split URL's tail ("http://localhost:⏎
+  // 20128/v1") is still an extra word to join rather than a bad ENV_VAR.
+  if (action === 'update') return args[3] !== undefined && isByokEnvironmentVariableName(args[3]) ? 4 : 3
   if (action === 'effort') return 1
   if (action === 'list' || action === 'off' || action === 'help') return 0
   return undefined
@@ -292,7 +309,10 @@ export async function handleByokCommand(
       post(params, parsedArgs.error)
       return
     }
-    const maxArgs = maxPositionalArguments(action, args)
+    // For update, a fourth word that is not a variable name is not joinable
+    // paste debris (that was tried above); the ENV_VAR check below names it.
+    const maxArgs =
+      action === 'update' && args.length === 4 ? 4 : maxPositionalArguments(action, args)
     if (maxArgs !== undefined && args.length > maxArgs) {
       // Extra words used to be dropped silently: a URL split as
       // "http://localhost:20128/⏎v1" saved the endpoint without /v1.
@@ -382,9 +402,9 @@ export async function handleByokCommand(
     }
 
     if (action === 'update') {
-      const [name, model, baseUrl] = args
+      const [name, model, baseUrl, environmentVariable] = args
       if (!name || !model) {
-        post(params, incompleteCommandMessage('/byok update <name> <model> [base-url]', [!name && '<name>', '<model>'].filter((item): item is string => Boolean(item))))
+        post(params, incompleteCommandMessage('/byok update <name> <model> [base-url [ENV_VAR]]', [!name && '<name>', '<model>'].filter((item): item is string => Boolean(item))))
         return
       }
       const connection = connectionByName(await byokStore.list(), name)
@@ -404,12 +424,36 @@ export async function handleByokCommand(
           return
         }
       }
+      if (environmentVariable && !isByokEnvironmentVariableName(environmentVariable)) {
+        post(params, 'The key reference must be an environment-variable name such as OMNIROUTE_API_KEY.')
+        return
+      }
+      // A new endpoint receives the key, so the store refuses to carry the
+      // credential over implicitly. The CLI never offered a way to supply it,
+      // so fixing a base URL (e.g. adding a missing /v1) always failed with
+      // "requires explicitly supplying the credential again". Naming the
+      // environment variable in the command is that explicit supply.
+      const endpointChanges =
+        baseUrl !== undefined && sameEndpoint(connection, baseUrl) === false
+      if (endpointChanges && !environmentVariable) {
+        const current = connection.credentialRef.startsWith('env:')
+          ? connection.credentialRef.slice(4)
+          : undefined
+        post(
+          params,
+          current
+            ? `Changing the base URL sends ${current} to a new endpoint. Name the variable to confirm:\n\`/byok update ${connection.name} ${model} ${baseUrl} ${current}\``
+            : `Changing the base URL sends this connection's saved key to a new endpoint. Name an environment variable holding the key to use there:\n\`/byok update ${connection.name} ${model} ${baseUrl} <ENV_VAR>\``,
+        )
+        return
+      }
       const updated = await byokStore.update({
         id: connection.id,
         revision: connection.revision,
         patch: {
           model,
           ...(baseUrl ? { baseUrl } : {}),
+          ...(environmentVariable ? { credentialRef: `env:${environmentVariable}` } : {}),
           ...(parsedArgs.contextWindow !== undefined ? { contextWindow: parsedArgs.contextWindow } : {}),
           ...(parsedArgs.maxOutputTokens !== undefined ? { maxOutputTokens: parsedArgs.maxOutputTokens } : {}),
         },

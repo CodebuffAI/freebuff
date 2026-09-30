@@ -114,7 +114,7 @@ describe('/byok split by a pasted line break', () => {
     expect(await run('add omniroute openai-compatible mistral/codestral-latest OMNIROUTE_API_KEY http://localhost:20128/ v1')).toContain(
       'Unexpected extra argument for /byok add: v1',
     )
-    expect(await run('update omniroute mistral/codestral-latest http://localhost:20128/v1 extra')).toContain(
+    expect(await run('update omniroute mistral/codestral-latest http://localhost:20128/v1 OMNIROUTE_API_KEY extra')).toContain(
       'Unexpected extra argument for /byok update: extra',
     )
     expect(create).not.toHaveBeenCalled()
