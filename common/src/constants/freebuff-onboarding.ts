@@ -100,6 +100,7 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
       { id: OTHER_OPTION_ID, label: 'Something else' },
     ],
     multi: false,
+    shuffleOptions: true,
   },
   {
     id: 'proficiency',
@@ -128,6 +129,7 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
       { id: OTHER_OPTION_ID, label: 'Something else' },
     ],
     multi: true,
+    shuffleOptions: true,
   },
   {
     id: 'subscriptions',
@@ -148,6 +150,7 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
       { id: OTHER_OPTION_ID, label: 'Something else' },
     ],
     multi: true,
+    shuffleOptions: true,
   },
 ] as const
 

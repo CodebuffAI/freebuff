@@ -374,10 +374,10 @@ describe('question set (2026-09-16 edit)', () => {
     })
     expect(result.ok).toBe(false)
   })
-  it('shuffles only the referral question', () => {
+  it('shuffles every choice question while preserving the proficiency scale', () => {
     expect(
       FREEBUFF_ONBOARDING_QUESTIONS.filter((q) => q.shuffleOptions).map((q) => q.id),
-    ).toEqual(['referral_source'])
+    ).toEqual(['referral_source', 'role', 'intended_use', 'subscriptions'])
   })
   it('still validates a retired id as unknown rather than silently storing it', () => {
     const result = validateOnboardingSubmission({
