@@ -1,16 +1,21 @@
 import { FREEBUFF_PREMIUM_SESSION_RESET_TIMEZONE } from '@codebuff/common/constants/freebuff-models'
 import { getZonedDayBounds } from '@codebuff/common/util/zoned-time'
 
-import type { FreebuffSessionRateLimitByModel } from '@codebuff/common/types/freebuff-session'
+import type { FreebuffSessionRateLimit } from '@codebuff/common/types/freebuff-session'
 
+/**
+ * Takes the RESOLVED quota row rather than the whole `rateLimitsByModel` map.
+ * It used to read `Object.values(...)[0]` itself, which meant the countdown
+ * could come from a different pool than the "N of M used" printed beside it —
+ * the caller had already picked a pool properly and this quietly picked
+ * another.
+ */
 export function getFreebuffPremiumResetAt(params: {
-  rateLimitsByModel?: FreebuffSessionRateLimitByModel
+  quota?: FreebuffSessionRateLimit
   nowMs: number
 }): Date {
-  const { rateLimitsByModel, nowMs } = params
-  const serverResetAt = rateLimitsByModel
-    ? Object.values(rateLimitsByModel)[0]?.resetAt
-    : undefined
+  const { quota, nowMs } = params
+  const serverResetAt = quota?.resetAt
   const parsedServerResetAt = serverResetAt ? new Date(serverResetAt) : null
 
   if (

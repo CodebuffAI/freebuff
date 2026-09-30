@@ -56,12 +56,14 @@ import {
   FREEBUFF_ENABLE_STREAK_IN_UI,
   FREEBUFF_LIMITED_SESSION_LIMIT,
   FREEBUFF_PREMIUM_SESSION_LIMIT,
+  isFreebuffPremiumModelId,
 } from '@codebuff/common/constants/freebuff-models'
 import {
   getRateLimitsByModel,
   getReferralInfo,
 } from '@codebuff/common/types/freebuff-session'
 import { getFreebuffModelAvailabilityNotice } from '@codebuff/common/util/freebuff-model-availability'
+import { getFreebuffSharedPoolQuota } from '@codebuff/common/util/freebuff-session-pools'
 import { formatFreebuffHardBlockedPrivacySignals } from '@codebuff/common/util/freebuff-privacy'
 
 import { enterByokSetup } from '../commands/byok'
@@ -573,14 +575,19 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   // stays fresh.
   const now = useNow(60_000, isLanding)
 
-  // Free-session quota counter for the title line. All free models share one
-  // pool; the server replicates the same snapshot under each free model
-  // id, so any entry has the right count. Renders amber when exhausted so
-  // the limit reads as "you've hit it" rather than just another count.
+  // Free-session quota counter for the title line. Renders amber when
+  // exhausted so the limit reads as "you've hit it" rather than just another
+  // count.
+  //
+  // Reading any single entry was only right while one pool covered the whole
+  // payload. It no longer does — a per-model ceiling or a subscription-backed
+  // row publishes its own allowance — so the pool is resolved the same way the
+  // pickers resolve theirs.
   const rateLimitsByModel = getRateLimitsByModel(session)
-  const sessionRateLimit = rateLimitsByModel
-    ? Object.values(rateLimitsByModel)[0]
-    : undefined
+  const sessionRateLimit = getFreebuffSharedPoolQuota(
+    rateLimitsByModel,
+    isFreebuffPremiumModelId,
+  )
   const sharedSessionUsed = sessionRateLimit?.recentCount ?? 0
   // Hide the "0 of N … used" line entirely for a fresh user — a zeroed counter
   // is noise on the landing screen. It appears once any session is consumed.
@@ -608,7 +615,7 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
     accessTier === 'limited' ? 'sessions' : 'premium sessions'
   const formattedSharedSessionUsed = formatSessionUnits(sharedSessionUsed)
   const sessionResetAt = getFreebuffPremiumResetAt({
-    rateLimitsByModel,
+    quota: sessionRateLimit,
     nowMs: now,
   })
   const sessionResetAtMs = sessionResetAt.getTime()

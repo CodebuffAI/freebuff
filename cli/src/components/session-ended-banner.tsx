@@ -5,6 +5,7 @@ import {
   type FreebuffModelOption,
 } from '@codebuff/common/constants/freebuff-models'
 import { getRateLimitsByModel } from '@codebuff/common/types/freebuff-session'
+import { getFreebuffSharedPoolQuota } from '@codebuff/common/util/freebuff-session-pools'
 import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
 import React, { useCallback, useState } from 'react'
@@ -48,11 +49,17 @@ export const SessionEndedBanner: React.FC<SessionEndedBannerProps> = ({
     'landing' | 'same-chat' | null
   >(null)
 
-  // All premium models share one daily pool; the server replicates the same
-  // snapshot under each premium model id, so the first entry has the right
-  // count.
+  // The premium pool this banner is reporting on. Reading the first entry
+  // assumed one pool covered every row, which stopped being true once a model
+  // could carry its own ceiling or a subscription-backed allowance — the
+  // banner would then announce a count the user cannot spend on the model
+  // they were just using.
   const premiumQuota = useFreebuffSessionStore(
-    (s) => Object.values(getRateLimitsByModel(s.session) ?? {})[0] ?? null,
+    (s) =>
+      getFreebuffSharedPoolQuota(
+        getRateLimitsByModel(s.session),
+        isFreebuffPremiumModelId,
+      ) ?? null,
   )
   const isQuotaExhausted = premiumQuota
     ? premiumQuota.recentCount >= premiumQuota.limit

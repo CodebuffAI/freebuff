@@ -10,16 +10,14 @@ describe('freebuff premium reset helpers', () => {
     const nowMs = Date.parse('2026-05-11T20:00:00.000Z')
     const resetAt = getFreebuffPremiumResetAt({
       nowMs,
-      rateLimitsByModel: {
-        'test/model': {
-          model: 'test/model',
-          limit: 5,
-          period: 'pacific_day',
-          resetTimeZone: 'America/Los_Angeles',
-          resetAt: '2026-05-12T07:00:00.000Z',
-          windowHours: 24,
-          recentCount: 2,
-        },
+      quota: {
+        model: 'test/model',
+        limit: 5,
+        period: 'pacific_day',
+        resetTimeZone: 'America/Los_Angeles',
+        resetAt: '2026-05-12T07:00:00.000Z',
+        windowHours: 24,
+        recentCount: 2,
       },
     })
 
@@ -38,21 +36,40 @@ describe('freebuff premium reset helpers', () => {
     const nowMs = Date.parse('2026-05-12T07:05:00.000Z')
     const resetAt = getFreebuffPremiumResetAt({
       nowMs,
-      rateLimitsByModel: {
-        'test/model': {
-          model: 'test/model',
-          limit: 5,
-          period: 'pacific_day',
-          resetTimeZone: 'America/Los_Angeles',
-          resetAt: '2026-05-12T07:00:00.000Z',
-          windowHours: 24,
-          recentCount: 5,
-        },
+      quota: {
+        model: 'test/model',
+        limit: 5,
+        period: 'pacific_day',
+        resetTimeZone: 'America/Los_Angeles',
+        resetAt: '2026-05-12T07:00:00.000Z',
+        windowHours: 24,
+        recentCount: 5,
       },
     })
 
     expect(resetAt.toISOString()).toBe('2026-05-12T07:00:00.000Z')
     expect(formatFreebuffPremiumResetCountdown(resetAt, nowMs)).toBe('now')
+  })
+
+  test('reports the reset of the pool it was handed, not another one', () => {
+    // The caller resolves which pool the count belongs to; this helper must
+    // not reach past that and pick a different row's reset.
+    const nowMs = Date.parse('2026-05-11T20:00:00.000Z')
+    const resetAt = getFreebuffPremiumResetAt({
+      nowMs,
+      quota: {
+        model: 'premium/model',
+        pool: 'premium',
+        limit: 4,
+        period: 'pacific_day',
+        resetTimeZone: 'America/Los_Angeles',
+        resetAt: '2026-05-13T07:00:00.000Z',
+        windowHours: 24,
+        recentCount: 1,
+      },
+    })
+
+    expect(resetAt.toISOString()).toBe('2026-05-13T07:00:00.000Z')
   })
 
   test('handles Pacific daylight saving time boundaries', () => {

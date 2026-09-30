@@ -24,6 +24,7 @@ import { applyFreebucksPriceChanges } from './freebuff-price-changes'
 import type {
   FreebuffFreebucksInfo,
   FreebuffSessionRateLimit,
+  FreebuffSessionRateLimitByModel,
 } from '../types/freebuff-session'
 
 export interface FreebuffSectionQuotas {
@@ -59,26 +60,68 @@ export function getFreebuffSectionQuotas(
   // — so a new client against an old server is no worse than before.
   const poolOf = (quota: FreebuffSessionRateLimit) => quota.pool ?? ''
 
+  // A subscription-backed row is a PRIVATE allowance: `subscription` is the
+  // whole of that row's `limit`, replacing the shared pool rather than adding
+  // to it. Letting one speak for the section header prices everyone else's
+  // rows off a number only the subscribed model can spend, so such rows are
+  // never header candidates — they carry their own chip instead. Falls back to
+  // the full set when every row is subscription-backed, where there is no
+  // shared pool left for a header to describe.
+  const candidates = rows.filter(
+    (quota) => quota.entitlementBreakdown?.subscription === undefined,
+  )
+  const headerRows = candidates.length > 0 ? candidates : rows
+
   const counts = new Map<string, number>()
-  for (const quota of rows) {
+  for (const quota of headerRows) {
     counts.set(poolOf(quota), (counts.get(poolOf(quota)) ?? 0) + 1)
   }
 
   // Most rows wins; ties break toward the earlier row, so the answer follows
   // display order rather than Map iteration order.
-  let headerPool = poolOf(rows[0]!)
-  for (const quota of rows) {
+  let headerPool = poolOf(headerRows[0]!)
+  for (const quota of headerRows) {
     if ((counts.get(poolOf(quota)) ?? 0) > (counts.get(headerPool) ?? 0)) {
       headerPool = poolOf(quota)
     }
   }
 
-  const header = rows.find((quota) => poolOf(quota) === headerPool)
+  const header = headerRows.find((quota) => poolOf(quota) === headerPool)
   const perModel: Record<string, FreebuffSessionRateLimit> = {}
   for (const quota of rows) {
-    if (poolOf(quota) !== headerPool) perModel[quota.model] = quota
+    if (quota === header) continue
+    // Second clause covers an older server that sends no `pool` at all: the
+    // subscription row would otherwise group with the free rows and vanish,
+    // taking the subscriber's actual allowance off the screen.
+    if (
+      poolOf(quota) !== headerPool ||
+      quota.entitlementBreakdown?.subscription !== undefined
+    ) {
+      perModel[quota.model] = quota
+    }
   }
   return { header, perModel }
+}
+
+/**
+ * The row that speaks for a surface's pool when the caller has only the
+ * payload and no display-ordered model list — the CLI landing counter and the
+ * session-ended banner, which both used `Object.values(...)[0]` and so read
+ * whichever pool the server happened to serialize first.
+ *
+ * `prefer` narrows to a section's models (premium, say) and is ignored when it
+ * matches nothing, which is what keeps the limited tier — no premium rows at
+ * all — showing its own pool rather than nothing.
+ */
+export function getFreebuffSharedPoolQuota(
+  quotas: FreebuffSessionRateLimitByModel | undefined,
+  prefer?: (modelId: string) => boolean,
+): FreebuffSessionRateLimit | undefined {
+  if (!quotas) return undefined
+  const all = Object.keys(quotas)
+  const preferred = prefer ? all.filter(prefer) : all
+  return getFreebuffSectionQuotas(preferred.length > 0 ? preferred : all, quotas)
+    .header
 }
 
 /**

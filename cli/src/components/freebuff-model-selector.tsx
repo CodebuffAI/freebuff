@@ -441,7 +441,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // the same reason as the count above: no pool, nothing to reset.
   const premiumResetCountdown = sharedRateLimit
     ? formatFreebuffPremiumResetCountdown(
-        getFreebuffPremiumResetAt({ rateLimitsByModel, nowMs: now }),
+        getFreebuffPremiumResetAt({ quota: sharedRateLimit, nowMs: now }),
         now,
       )
     : null
