@@ -36,6 +36,22 @@ export const SkillFrontmatterSchema = z.object({
     .transform((d) => d.slice(0, SKILL_DESCRIPTION_MAX_LENGTH)),
   license: z.string().optional(),
   'disable-model-invocation': z.boolean().optional(),
+  // Claude Code compatibility: `user-invocable: false` marks a skill the
+  // model may invoke but the user cannot (hidden from / menu). Absent =
+  // invocable by both, matching Claude Code's default.
+  'user-invocable': z.boolean().optional(),
+  // Claude Code compatibility: hint shown during autocomplete, e.g.
+  // "[issue-number]". Freebuff does not substitute arguments yet, but the
+  // field is accepted so a Claude Code skill does not fail validation.
+  // Claude Code's own docs write the value unquoted, which YAML parses as a
+  // single-element array — coerce that back to the display string.
+  'argument-hint': z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .transform((v) => (Array.isArray(v) ? v.join(' ') : v)),
+  // Claude Code compatibility: extra trigger context appended to the
+  // description in listings. Accepted and surfaced; never rejected.
+  'when_to_use': z.string().optional(),
   metadata: SkillMetadataSchema.optional(),
 })
 
@@ -53,6 +69,12 @@ export const SkillDefinitionSchema = z.object({
   license: z.string().optional(),
   /** Whether only the user may invoke this skill. */
   disableModelInvocation: z.boolean().optional(),
+  /** Whether only the model may invoke this skill (hidden from the / menu). */
+  userInvocable: z.boolean().optional(),
+  /** Autocomplete hint for expected arguments, e.g. "[issue-number]". */
+  argumentHint: z.string().optional(),
+  /** Extra trigger context appended to the description in listings. */
+  whenToUse: z.string().optional(),
   /** Optional key-value metadata */
   metadata: SkillMetadataSchema.optional(),
   /** Full SKILL.md content (including frontmatter) */
@@ -74,6 +96,9 @@ export function createSkillDefinition(params: {
     description: frontmatter.description,
     license: frontmatter.license,
     disableModelInvocation: frontmatter['disable-model-invocation'],
+    userInvocable: frontmatter['user-invocable'],
+    argumentHint: frontmatter['argument-hint'],
+    whenToUse: frontmatter['when_to_use'],
     metadata: frontmatter.metadata,
     content,
     filePath,
