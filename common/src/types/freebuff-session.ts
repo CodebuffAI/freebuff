@@ -1158,6 +1158,8 @@ export type FreebuffSessionAdmissionResponse = (
       currentInstanceId: string
     }
 ) & {
+  /** Current country verification; does not grant full access. Sent on GET. */
+  countryVerified?: boolean
   /** Unexpired Desktop purchases, including occupied hours. Picker metadata;
    * admission still checks ownership, liveness, and capacity atomically. */
   desktopPurchases?: FreebuffDesktopPurchaseInfo[]
