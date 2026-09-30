@@ -1541,6 +1541,41 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       }
     })
 
+    it("reports a caller's deadline as a cancellation, not as the 5-minute idle timeout", async () => {
+      const llmOnlyTemplate = {
+        ...mockTemplate,
+        handleSteps: undefined,
+      }
+
+      const localAgentTemplates = {
+        'test-agent': llmOnlyTemplate,
+      }
+
+      // `AbortSignal.timeout` fires with a DOMException named TimeoutError —
+      // the same name Bun's fetch idle timeout uses — and the stream rejects
+      // with that reason.
+      const controller = new AbortController()
+      loopAgentStepsBaseParams.promptAiSdkStream = async function* () {
+        const timeoutError = new Error('The operation timed out.')
+        timeoutError.name = 'TimeoutError'
+        controller.abort(timeoutError)
+        throw timeoutError
+      }
+
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        agentType: 'test-agent',
+        localAgentTemplates,
+        signal: controller.signal,
+      })
+
+      expect(result.output.type).toBe('error')
+      if (result.output.type === 'error') {
+        expect(result.output.message).toBe('Run cancelled by user')
+        expect(result.output.message).not.toContain('5 minutes')
+      }
+    })
+
     it('should explain dropped socket connections instead of showing the raw runtime message', async () => {
       const llmOnlyTemplate = {
         ...mockTemplate,

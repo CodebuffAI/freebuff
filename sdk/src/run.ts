@@ -1069,13 +1069,18 @@ async function runOnce({
     onCompactionStart: report(onCompactionStart),
     onCompactionEnd: reportSignal(onCompactionEnd),
   }).catch((error) => {
-    let errorMessage = isFetchIdleTimeoutError(error)
-      ? FETCH_IDLE_TIMEOUT_USER_MESSAGE
-      : isTransientNetworkError(error)
-        ? TRANSIENT_NETWORK_ERROR_USER_MESSAGE
-        : error instanceof Error
-          ? error.message
-          : String(error ?? '')
+    // A caller's own deadline (`AbortSignal.timeout`) rejects with a
+    // `TimeoutError`, the same name Bun's 5-minute fetch idle timeout uses, so
+    // the idle copy is only honest when the caller did NOT abort.
+    let errorMessage = signal?.aborted
+      ? createAbortError(signal).message
+      : isFetchIdleTimeoutError(error)
+        ? FETCH_IDLE_TIMEOUT_USER_MESSAGE
+        : isTransientNetworkError(error)
+          ? TRANSIENT_NETWORK_ERROR_USER_MESSAGE
+          : error instanceof Error
+            ? error.message
+            : String(error ?? '')
     const apiErrorDetails = extractApiErrorDetails(error)
     const statusCode = apiErrorDetails.statusCode ?? getErrorStatusCode(error)
     const {

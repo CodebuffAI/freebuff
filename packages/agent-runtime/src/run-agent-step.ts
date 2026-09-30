@@ -1520,8 +1520,16 @@ export async function loopAgentSteps(
         : getAgentOutput(currentAgentState, agentTemplate),
     }
   } catch (error) {
-    // Handle user-initiated aborts separately - don't log as errors
-    if (isAbortError(error)) {
+    // Handle user-initiated aborts separately - don't log as errors.
+    //
+    // `signal.aborted` catches the aborts `isAbortError` cannot see: a caller
+    // deadline (`AbortSignal.timeout`) rejects the fetch with a DOMException
+    // named `TimeoutError`, not `AbortError`, and that name is exactly what
+    // `isFetchIdleTimeoutError` matches below. Without this, a 20-second title
+    // deadline was reported as "no data was received from the server for 5
+    // minutes". Once the caller's own signal has fired, whatever the stream
+    // threw is the consequence of that cancellation.
+    if (isAbortError(error) || signal.aborted) {
       if (clearUserPromptMessagesAfterResponse) {
         currentAgentState.messageHistory = expireMessages(
           currentAgentState.messageHistory,
