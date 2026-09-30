@@ -121,6 +121,54 @@ describe('OpenAICompatibleChatLanguageModel doStream', () => {
     expect(finish.usage.totalTokens ?? undefined).toBeUndefined()
   })
 
+  // Some OpenAI-compatible servers and proxies omit `index` on streamed
+  // tool_call deltas. The chunk used to fail the schema, the call was lost and
+  // a BYOK turn ended after "Writing the file." with no tool call at all.
+  it('assembles tool calls whose deltas carry no index', async () => {
+    const readArgs = JSON.stringify({ paths: ['a.ts'] })
+    const writeArgs = JSON.stringify({ path: 'hello.txt', content: 'hi' })
+    const parts = await streamParts(
+      sseResponse([
+        chunk({ role: 'assistant', content: 'Working.' }),
+        chunk({ tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_files', arguments: readArgs.slice(0, 5) } }] }),
+        chunk({ tool_calls: [{ function: { arguments: readArgs.slice(5) } }] }),
+        chunk({ tool_calls: [{ id: 'call_2', type: 'function', function: { name: 'write_file', arguments: '' } }] }),
+        chunk({ tool_calls: [{ id: 'call_2', function: { arguments: writeArgs.slice(0, 7) } }] }),
+        chunk({ tool_calls: [{ function: { arguments: writeArgs.slice(7) } }] }),
+        chunk({}, { finish_reason: 'tool_calls' }),
+        '[DONE]',
+      ]),
+    )
+
+    expect(parts.some((part) => part.type === 'error')).toBe(false)
+    const calls = parts.filter((part) => part.type === 'tool-call')
+    expect(calls).toEqual([
+      { type: 'tool-call', toolCallId: 'call_1', toolName: 'read_files', input: readArgs },
+      { type: 'tool-call', toolCallId: 'call_2', toolName: 'write_file', input: writeArgs },
+    ])
+    expect(finishPartOf(parts).finishReason).toBe('tool-calls')
+  })
+
+  it('keeps honoring an explicit index', async () => {
+    const parts = await streamParts(
+      sseResponse([
+        chunk({ tool_calls: [
+          { index: 0, id: 'a', type: 'function', function: { name: 'read_files', arguments: '{"paths":' } },
+          { index: 1, id: 'b', type: 'function', function: { name: 'glob', arguments: '{"pattern":' } },
+        ] }),
+        chunk({ tool_calls: [{ index: 1, function: { arguments: '"*.ts"}' } }] }),
+        chunk({ tool_calls: [{ index: 0, function: { arguments: '["x"]}' } }] }),
+        chunk({}, { finish_reason: 'tool_calls' }),
+        '[DONE]',
+      ]),
+    )
+    const calls = parts.filter((part) => part.type === 'tool-call')
+    expect(calls.map((call) => call.type === 'tool-call' && [call.toolCallId, call.input])).toEqual([
+      ['b', '{"pattern":"*.ts"}'],
+      ['a', '{"paths":["x"]}'],
+    ])
+  })
+
   it('surfaces a provider error chunk that also carries empty choices', async () => {
     // Verbatim shape OpenRouter streams when the upstream provider refuses:
     // an `error` object alongside an EMPTY `choices` array, HTTP 200. That

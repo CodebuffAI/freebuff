@@ -578,7 +578,9 @@ export class OpenAICompatibleChatLanguageModel implements LanguageModelV2 {
 
             if (delta.tool_calls != null) {
               for (const toolCallDelta of delta.tool_calls) {
-                const index = toolCallDelta.index
+                const index =
+                  toolCallDelta.index ??
+                  inferToolCallIndex(toolCalls, toolCallDelta)
 
                 if (toolCalls[index] == null) {
                   if (toolCallDelta.function?.name == null) {
@@ -771,6 +773,39 @@ export class OpenAICompatibleChatLanguageModel implements LanguageModelV2 {
   }
 }
 
+/**
+ * The slot of a streamed tool-call delta that carries no `index`. OpenAI
+ * always sends one, but several OpenAI-compatible servers and proxies do not
+ * (seen with local routers in front of other providers), and a chunk that
+ * failed the schema dropped the call: the turn ended with "Writing the
+ * file." and no write. Without an index:
+ * - an `id` names its call: an existing one continues, a new one opens a slot;
+ * - a delta with no `id` continues the call still being streamed, unless it
+ *   names a different function (then it is a new call);
+ * - anything else opens a new slot.
+ */
+export function inferToolCallIndex(
+  toolCalls: ReadonlyArray<
+    | { id: string; function: { name: string }; hasFinished: boolean }
+    | undefined
+  >,
+  delta: { id?: string | null; function: { name?: string | null } },
+): number {
+  if (delta.id != null) {
+    const existing = toolCalls.findIndex((call) => call?.id === delta.id)
+    return existing === -1 ? toolCalls.length : existing
+  }
+  const lastIndex = toolCalls.length - 1
+  const last = toolCalls[lastIndex]
+  if (
+    last &&
+    !last.hasFinished &&
+    (delta.function.name == null || delta.function.name === last.function.name)
+  )
+    return lastIndex
+  return delta.function.name == null && last ? lastIndex : toolCalls.length
+}
+
 const openaiCompatibleTokenUsageSchema = z
   .object({
     prompt_tokens: z.number().nullish(),
@@ -865,7 +900,10 @@ const createOpenAICompatibleChatChunkSchema = <
               tool_calls: z
                 .array(
                   z.object({
-                    index: z.number(),
+                    // Optional: some OpenAI-compatible servers and proxies
+                    // omit it (see inferToolCallIndex). Requiring it failed
+                    // the whole chunk, so the tool call was silently lost.
+                    index: z.number().nullish(),
                     id: z.string().nullish(),
                     function: z.object({
                       name: z.string().nullish(),
