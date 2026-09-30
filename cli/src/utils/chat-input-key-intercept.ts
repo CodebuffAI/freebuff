@@ -33,7 +33,8 @@ export function shouldInterceptChatInputKey(
 
   // An open menu owns Up/Down even though its "/" or "@" makes the draft
   // non-empty; in a non-empty draft with no menu, arrows fall through to the
-  // composer's cursor movement (the history checks below need an empty draft).
+  // composer's cursor movement (the history checks below need an empty draft
+  // or an unedited recalled entry).
   const hasSuggestions =
     state.hasSlashSuggestions || state.hasMentionSuggestions
   if (hasSuggestions) {
@@ -48,10 +49,13 @@ export function shouldInterceptChatInputKey(
   const historyUpEnabled = state.lastEditDueToNav || state.cursorPosition === 0
   const historyDownEnabled =
     state.lastEditDueToNav || state.cursorPosition === state.inputLength
-  if (isUp && state.inputLength === 0 && historyUpEnabled) {
+  // History pages from an empty draft or from the entry it last recalled; a
+  // typed draft keeps its arrows for cursor movement.
+  const inHistoryDraft = state.inputLength === 0 || state.lastEditDueToNav
+  if (isUp && inHistoryDraft && historyUpEnabled) {
     return true
   }
-  if (isDown && state.inputLength === 0 && historyDownEnabled) {
+  if (isDown && inHistoryDraft && historyDownEnabled) {
     return true
   }
 

@@ -46,7 +46,18 @@ test('reserves empty composer shortcuts but leaves text editing alone', () => {
     expect(shouldInterceptChatInputKey(key, { ...baseState, inputLength: 0, inputMode: 'bash' })).toBe(false)
   }
   for (const name of ['up', 'down']) {
-    expect(shouldInterceptChatInputKey({ name }, { ...baseState, cursorPosition: 0, lastEditDueToNav: true })).toBe(false)
+    expect(shouldInterceptChatInputKey({ name }, { ...baseState, cursorPosition: 0 })).toBe(false)
+  }
+})
+
+// Regression (#4170 → 2026-09-30 report): Up recalled the newest prompt and
+// then stopped, because the recalled text made the draft non-empty.
+test('Up/Down keep paging history from an unedited recalled entry', () => {
+  for (const name of ['up', 'down']) {
+    expect(shouldInterceptChatInputKey({ name }, { ...baseState, lastEditDueToNav: true })).toBe(true)
+  }
+  for (const name of ['left', 'right']) {
+    expect(shouldInterceptChatInputKey({ name }, { ...baseState, lastEditDueToNav: true })).toBe(false)
   }
 })
 

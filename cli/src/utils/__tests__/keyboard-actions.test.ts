@@ -301,6 +301,40 @@ describe('resolveChatKeyboardAction', () => {
       })
     })
 
+    // Regression (#4170 → 2026-09-30 report): the recalled entry made the
+    // draft non-empty, so every Up after the first resolved to `none`.
+    test.each<[string, ChatKeyboardAction['type'], ChatKeyboardAction['type']]>([
+      ['up', 'history-up', 'bash-history-up'],
+      ['down', 'history-down', 'bash-history-down'],
+    ])('%s keeps paging history from an unedited recalled entry', (name, type, bashType) => {
+      const state: ChatKeyboardState = {
+        ...defaultState,
+        inputValue: 'recalled prompt',
+        cursorPosition: 'recalled prompt'.length,
+        lastEditDueToNav: true,
+        historyNavUpEnabled: true,
+        historyNavDownEnabled: true,
+      }
+      expect(resolveChatKeyboardAction(createKey({ name }), state).type).toBe(type)
+      expect(
+        resolveChatKeyboardAction(createKey({ name }), { ...state, inputMode: 'bash' }).type,
+      ).toBe(bashType)
+    })
+
+    test('left/right in a recalled entry still edit the text', () => {
+      const state: ChatKeyboardState = {
+        ...defaultState,
+        inputValue: 'recalled prompt',
+        cursorPosition: 'recalled prompt'.length,
+        lastEditDueToNav: true,
+        historyNavUpEnabled: true,
+        historyNavDownEnabled: true,
+      }
+      for (const name of ['left', 'right']) {
+        expect(resolveChatKeyboardAction(createKey({ name }), state)).toEqual({ type: 'none' })
+      }
+    })
+
     test('up arrow disabled when not enabled', () => {
       const state: ChatKeyboardState = {
         ...defaultState,

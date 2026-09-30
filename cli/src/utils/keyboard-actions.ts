@@ -39,6 +39,12 @@ export type ChatKeyboardState = {
   // History navigation state
   historyNavUpEnabled: boolean
   historyNavDownEnabled: boolean
+  /**
+   * The draft is a recalled history entry the user has not edited or moved
+   * the cursor in. Up/Down keep paging history from it, as they do from an
+   * empty draft; in any other non-empty draft they move the cursor.
+   */
+  lastEditDueToNav: boolean
 
   // Exit handler state
   nextCtrlCWillExit: boolean
@@ -163,6 +169,9 @@ export function resolveChatKeyboardAction(
   const isEnter = isPlainEnterKey(key)
   const isPageUp = key.name === 'pageup' && !hasModifier(key)
   const isPageDown = key.name === 'pagedown' && !hasModifier(key)
+  // History pages from an empty draft or from the entry it last recalled.
+  const inHistoryDraft =
+    state.inputValue.length === 0 || state.lastEditDueToNav
 
   // Priority 0: Out of credits mode - Enter opens buy credits page
   if (state.inputMode === 'outOfCredits') {
@@ -332,10 +341,13 @@ export function resolveChatKeyboardAction(
   // sits BELOW the slash and mention menus on purpose: typing "/" or "@" makes
   // the draft non-empty, so a guard above them swallowed every Up/Down meant
   // for an open menu and the command list could not be scrolled.
+  // A recalled history entry is the exception for Up/Down: they keep paging
+  // history (priority 10.5), or only the newest entry could ever be reached.
   if (
     state.inputValue.length > 0 &&
     ['left', 'right', 'up', 'down'].includes(key.name) &&
-    !hasModifier(key)
+    !hasModifier(key) &&
+    !(state.lastEditDueToNav && (isUp || isDown))
   ) {
     return { type: 'none' }
   }
@@ -359,19 +371,19 @@ export function resolveChatKeyboardAction(
 
   // Priority 10: Bash history navigation (when in bash mode)
   if (state.inputMode === 'bash') {
-    if (isUp && state.inputValue.length === 0 && state.historyNavUpEnabled) {
+    if (isUp && inHistoryDraft && state.historyNavUpEnabled) {
       return { type: 'bash-history-up' }
     }
-    if (isDown && state.inputValue.length === 0 && state.historyNavDownEnabled) {
+    if (isDown && inHistoryDraft && state.historyNavDownEnabled) {
       return { type: 'bash-history-down' }
     }
   }
 
   // Priority 10.5: Regular history navigation (when at edges and enabled)
-  if (isUp && state.inputValue.length === 0 && state.historyNavUpEnabled) {
+  if (isUp && inHistoryDraft && state.historyNavUpEnabled) {
     return { type: 'history-up' }
   }
-  if (isDown && state.inputValue.length === 0 && state.historyNavDownEnabled) {
+  if (isDown && inHistoryDraft && state.historyNavDownEnabled) {
     return { type: 'history-down' }
   }
 
@@ -443,6 +455,7 @@ export function createDefaultChatKeyboardState(): ChatKeyboardState {
     queuedCount: 0,
     historyNavUpEnabled: false,
     historyNavDownEnabled: false,
+    lastEditDueToNav: false,
     nextCtrlCWillExit: false,
     dockExpandable: false,
     dockPanelOpen: false,

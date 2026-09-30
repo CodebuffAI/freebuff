@@ -335,6 +335,7 @@ export function useChatKeyboard({
           inputValue: draft.inputValue,
           cursorPosition: draft.cursorPosition,
           inputMode: draft.inputMode,
+          lastEditDueToNav: draft.lastEditDueToNav,
         })
         const handled = dispatchAction(action, handlers)
 
