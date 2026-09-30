@@ -38,10 +38,36 @@ const metered = (
 })
 
 describe('first-tab replacement quotes', () => {
-  test.each([
-    { instanceId: 'cli:owner', surface: 'desktop' as const },
-    { instanceId: 'legacy-owner', surface: 'single' as const },
-  ])(
+  test('a CLI model switch quotes full price while its old purchase holds the discount', () => {
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString()
+    const glm = 'z-ai/glm-5.3-flash'
+    const luna = 'openai/gpt-6-luna'
+    const info = metered({
+      prices: { [glm]: 5, [luna]: 20 },
+      listPrices: { [glm]: 5, [luna]: 20 },
+      daily: { limit: 75, spent: 75, remaining: 0, resetAt: expiresAt },
+      firstTabDiscount: {
+        amount: 10,
+        available: false,
+        holder: { instanceId: 'cli:owner', surface: 'desktop', expiresAt },
+      },
+    })
+    const session = {
+      status: 'active',
+      instanceId: 'cli:owner',
+      expiresAt,
+      freebucks: info,
+    }
+    const quote = freebucksOf(session)
+    expect(quote?.firstTabDiscount?.available).toBe(false)
+    expect(freebucksRowIntent(quote, luna, glm)).toMatchObject({
+      kind: 'confirm',
+      price: 20,
+      walletSpend: 20,
+    })
+  })
+
+  test.each([{ instanceId: 'legacy-owner', surface: 'single' as const }])(
     'only the live owner can reuse its $surface discount',
     ({ instanceId, surface }) => {
       const expiresAt = new Date(Date.now() + 3_600_000).toISOString()
@@ -69,8 +95,16 @@ describe('first-tab replacement quotes', () => {
       })
       const sibling = { ...session, instanceId: `${instanceId}-sibling` }
       const expired = { ...session, expiresAt: new Date(0).toISOString() }
-      expect(freebucksOf(sibling)?.prices).toEqual({ glm: 5, mimo: 10, flash: 15 })
-      expect(freebucksOf(expired)?.prices).toEqual({ glm: 5, mimo: 10, flash: 15 })
+      expect(freebucksOf(sibling)?.prices).toEqual({
+        glm: 5,
+        mimo: 10,
+        flash: 15,
+      })
+      expect(freebucksOf(expired)?.prices).toEqual({
+        glm: 5,
+        mimo: 10,
+        flash: 15,
+      })
       expect(session.freebucks.firstTabDiscount?.available).toBe(false)
     },
   )
@@ -260,10 +294,18 @@ describe('the header line', () => {
 
   test('the countdown reads hours and minutes, then days, then "now"', () => {
     const reset = '2026-09-05T07:00:00Z'
-    expect(freebucksResetCountdown(reset, Date.parse('2026-09-05T06:22:00Z'))).toBe('38m')
-    expect(freebucksResetCountdown(reset, Date.parse('2026-09-05T02:48:00Z'))).toBe('4h 12m')
-    expect(freebucksResetCountdown(reset, Date.parse('2026-09-03T01:00:00Z'))).toBe('2d 6h')
-    expect(freebucksResetCountdown(reset, Date.parse('2026-09-05T07:00:01Z'))).toBe('now')
+    expect(
+      freebucksResetCountdown(reset, Date.parse('2026-09-05T06:22:00Z')),
+    ).toBe('38m')
+    expect(
+      freebucksResetCountdown(reset, Date.parse('2026-09-05T02:48:00Z')),
+    ).toBe('4h 12m')
+    expect(
+      freebucksResetCountdown(reset, Date.parse('2026-09-03T01:00:00Z')),
+    ).toBe('2d 6h')
+    expect(
+      freebucksResetCountdown(reset, Date.parse('2026-09-05T07:00:01Z')),
+    ).toBe('now')
   })
 
   test('hides an empty wallet, as Web and Desktop do', () => {
@@ -271,7 +313,6 @@ describe('the header line', () => {
       freebucksHeaderLine(metered({ wallet: { balance: 0, monthlyBonus: 0 } })),
     ).toBe('30/75 Freebucks daily')
   })
-
 })
 
 describe('the price label', () => {

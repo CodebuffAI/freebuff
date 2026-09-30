@@ -5,6 +5,7 @@ import { createTestRenderer } from '@opentui/core/testing'
 import { createRoot, flushSync } from '@opentui/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
+import { useFreebuffChatAdmission } from '../../hooks/use-freebuff-chat-admission'
 import { FreebuffChatControls } from '../freebuff-chat-controls'
 import {
   ChatRuntimeProvider,
@@ -75,6 +76,7 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     })
     let runtime: ReturnType<typeof useChatRuntime> | undefined
     function Seed() {
+      useFreebuffChatAdmission(true)
       runtime = useChatRuntime()
       return <FreebuffChatControls />
     }
@@ -108,6 +110,56 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     expect(runtime!.queuedMessages).toHaveLength(1)
     return setup
   }
+
+  test('GLM to Luna asks for 20 Freebucks while GLM retains the first-tab discount', async () => {
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString()
+    const glm = 'z-ai/glm-5.3-flash'
+    const luna = 'openai/gpt-6-luna'
+    useFreebuffSessionStore.getState().setSession({
+      status: 'active',
+      accessTier: 'full',
+      model: glm,
+      instanceId: 'cli:held',
+      admittedAt: new Date().toISOString(),
+      expiresAt,
+      remainingMs: 3_600_000,
+      freebucks: {
+        balance: 90,
+        daily: { limit: 100, spent: 10, remaining: 90, resetAt: expiresAt },
+        wallet: { balance: 0, monthlyBonus: 0 },
+        spend: { limitUsd: 1.5, resetAt: expiresAt },
+        monthly: {
+          limitUsd: 25,
+          spentUsd: 0,
+          remainingUsd: 25,
+          resetAt: expiresAt,
+        },
+        planId: null,
+        prices: { [glm]: 5, [luna]: 20 },
+        listPrices: { [glm]: 5, [luna]: 20 },
+        firstTabDiscount: {
+          amount: 10,
+          available: false,
+          holder: { instanceId: 'cli:held', surface: 'desktop', expiresAt },
+        },
+      },
+    })
+    useFreebuffChatStore.setState({
+      admission: { phase: 'requested', model: luna, metadataChecked: true },
+    })
+    const setup = await mount()
+    expect(useFreebuffChatStore.getState().admission?.phase).toBe('confirm')
+    expect(setup.captureCharFrame()).toContain('20')
+    expect(useFreebuffChatStore.getState().admission?.message).toContain(
+      'costs 20',
+    )
+    expect(useFreebuffChatStore.getState().admission?.message).not.toContain(
+      'costs 10',
+    )
+    await setup.mockInput.pressKey('ESCAPE')
+    expect(useFreebuffSessionStore.getState().session?.status).toBe('active')
+    expect(useChatStore.getState().inputValue).toBe('Keep this first message')
+  })
 
   test('cancelling consent restores the first message and attachments to the draft', async () => {
     useFreebuffChatStore.setState({
