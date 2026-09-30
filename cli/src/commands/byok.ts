@@ -169,18 +169,76 @@ function splitLimitFlags(args: string[]): {
   return result
 }
 
+type ParsedByokCommand = {
+  action: string | undefined
+  parsedArgs: ReturnType<typeof splitLimitFlags>
+}
+
+function parseByokCommand(rawArgs: string): ParsedByokCommand | { error: string } {
+  const parsedTokens = tokenizeByokArguments(rawArgs)
+  if ('error' in parsedTokens) return parsedTokens
+  const tokens = parsedTokens.tokens
+  const action = tokens.shift()
+  return { action, parsedArgs: splitLimitFlags(tokens) }
+}
+
+/** Positional arguments an action accepts at most; undefined = a free-form name. */
+function maxPositionalArguments(action: string | undefined, args: string[]): number | undefined {
+  if (action === 'add') return args[1] === 'openrouter' ? 4 : 5
+  if (action === 'update') return 3
+  if (action === 'effort') return 1
+  if (action === 'list' || action === 'off' || action === 'help') return 0
+  return undefined
+}
+
+/**
+ * A line break with no whitespace on either side: where a terminal or a
+ * document wrapped a long command mid-word ("http://localhost:20128/⏎v1").
+ * A break that replaced a space already tokenizes correctly.
+ */
+const BARE_LINE_BREAK = /(?<=\S)\r?\n(?=\S)/g
+
+/**
+ * The command with its pasted mid-word line breaks joined, when that is the
+ * ONLY reading that fits: the command has more arguments than its action
+ * takes, and there are exactly as many bare breaks as extra arguments, so
+ * every one of them must be a split word. Anything
+ * else (a break that may have been a space, too few breaks) stays as typed and
+ * is reported, never guessed.
+ */
+function joinSplitPaste(rawArgs: string, parsed: ParsedByokCommand): ParsedByokCommand | undefined {
+  const breaks = rawArgs.match(BARE_LINE_BREAK)?.length ?? 0
+  if (breaks === 0) return undefined
+  const joined = parseByokCommand(rawArgs.replace(BARE_LINE_BREAK, ''))
+  if ('error' in joined || joined.parsedArgs.error) return undefined
+  const max = maxPositionalArguments(joined.action, joined.parsedArgs.positional)
+  const before = parsed.parsedArgs.positional.length
+  const after = joined.parsedArgs.positional.length
+  if (max === undefined || before <= max) return undefined
+  return breaks === before - max && after === max ? joined : undefined
+}
+
+const PASTE_HINT =
+  'If you pasted this command, a line break may have split it: paste it again as one line.'
+
+function incompleteCommandMessage(usage: string, missing: string[]): string {
+  // Placeholders go in code spans: the chat renders Markdown, where a bare
+  // `<base-url>` reads as an HTML tag and disappears.
+  return `\`${usage}\` is missing ${missing.map((item) => `\`${item}\``).join(', ')}.\n${PASTE_HINT}`
+}
+
 export async function handleByokCommand(
   params: RouterParams,
   rawArgs: string,
 ): Promise<void> {
-  const parsedTokens = tokenizeByokArguments(rawArgs)
-  if ('error' in parsedTokens) {
-    post(params, parsedTokens.error)
+  let parsed = parseByokCommand(rawArgs)
+  if ('error' in parsed) {
+    post(params, parsed.error)
     return
   }
-  const tokens = parsedTokens.tokens
-  const action = tokens.shift()
-  const parsedArgs = splitLimitFlags(tokens)
+  const repaired = joinSplitPaste(rawArgs, parsed)
+  if (repaired) parsed = repaired
+  const { action, parsedArgs } = parsed
   const args = parsedArgs.positional
   const byokStore = getCliByokStore()
 
@@ -198,6 +256,16 @@ export async function handleByokCommand(
     }
     if (parsedArgs.error) {
       post(params, parsedArgs.error)
+      return
+    }
+    const maxArgs = maxPositionalArguments(action, args)
+    if (maxArgs !== undefined && args.length > maxArgs) {
+      // Extra words used to be dropped silently: a URL split as
+      // "http://localhost:20128/⏎v1" saved the endpoint without /v1.
+      post(
+        params,
+        `Unexpected extra argument${args.length - maxArgs === 1 ? '' : 's'} for /byok ${action}: ${args.slice(maxArgs).join(' ')}\n${PASTE_HINT}`,
+      )
       return
     }
 
@@ -218,8 +286,19 @@ export async function handleByokCommand(
     if (action === 'add') {
       const [name, providerValue, model, environmentVariable, baseUrl] = args
       const provider = providerValue && parseProvider(providerValue)
+      if (providerValue && !provider) {
+        post(params, `Unknown BYOK provider type: ${providerValue}. Use openrouter or openai-compatible.\n\n${BYOK_USAGE}`)
+        return
+      }
       if (!name || !provider || !model || !environmentVariable) {
-        post(params, BYOK_USAGE)
+        const missing = [
+          !name && '<name>',
+          !provider && '<openrouter|openai-compatible>',
+          !model && '<model>',
+          !environmentVariable && '<ENV_VAR>',
+          provider === 'openai-compatible' && '<base-url>',
+        ].filter((item): item is string => Boolean(item))
+        post(params, incompleteCommandMessage('/byok add <name> <openrouter|openai-compatible> <model> <ENV_VAR> [base-url]', missing))
         return
       }
       if (!isByokEnvironmentVariableName(environmentVariable)) {
@@ -227,7 +306,7 @@ export async function handleByokCommand(
         return
       }
       if (provider === 'openai-compatible' && !baseUrl) {
-        post(params, 'An OpenAI-compatible connection requires a base URL.\n\n' + BYOK_USAGE)
+        post(params, `An OpenAI-compatible connection requires a base URL, e.g. http://localhost:20128/v1.\n${PASTE_HINT}`)
         return
       }
       if (provider === 'openrouter' && baseUrl) {
@@ -238,7 +317,7 @@ export async function handleByokCommand(
         try {
           new URL(baseUrl)
         } catch {
-          post(params, 'The OpenAI-compatible base URL is invalid.')
+          post(params, `The OpenAI-compatible base URL is invalid: ${baseUrl}${/[\r\n]/.test(rawArgs) ? `\n${PASTE_HINT}` : ''}`)
           return
         }
       }
@@ -271,7 +350,7 @@ export async function handleByokCommand(
     if (action === 'update') {
       const [name, model, baseUrl] = args
       if (!name || !model) {
-        post(params, BYOK_USAGE)
+        post(params, incompleteCommandMessage('/byok update <name> <model> [base-url]', [!name && '<name>', '<model>'].filter((item): item is string => Boolean(item))))
         return
       }
       const connection = connectionByName(await byokStore.list(), name)
@@ -287,7 +366,7 @@ export async function handleByokCommand(
         try {
           new URL(baseUrl)
         } catch {
-          post(params, 'The OpenAI-compatible base URL is invalid.')
+          post(params, `The OpenAI-compatible base URL is invalid: ${baseUrl}${/[\r\n]/.test(rawArgs) ? `\n${PASTE_HINT}` : ''}`)
           return
         }
       }
