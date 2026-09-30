@@ -1,3 +1,5 @@
+import type { FreebuffSubscriptionBillingInterval } from '../constants/freebuff-subscriptions'
+
 /** Cost measures for one currently paid subscriber or an aggregate thereof. */
 export interface SubscriptionCostMetrics {
   /** Net provider dollars funded by Freebuff, including paid overage. */
@@ -75,3 +77,17 @@ export interface SubscriptionCostSnapshot {
   refreshStatus: 'idle' | 'running' | 'cooldown' | 'failed' | 'unavailable'
   nextRefreshAt: string | null
 }
+
+/** Paying subscribers split by billing cadence, for /web/admin/subscriptions. */
+export type SubscriptionBillingIntervals = Record<
+  FreebuffSubscriptionBillingInterval,
+  {
+    activePaid: number
+    /** A yearly plan counts a twelfth of its annual price. */
+    mrrUsd: number
+    /** Years paid once up front: they end at period end rather than renew. */
+    prepaid: number
+    /** `activePaid` per catalog tier id. */
+    byTier: Record<string, number>
+  }
+>

@@ -269,6 +269,36 @@ export function freebuffSubscriptionTier(
   return id ? TIERS_BY_ID.get(id as FreebuffSubscriptionTierId) : undefined
 }
 
+/**
+ * The cadence a stored `billing_interval` bills at. The column is free text:
+ * anything but `yearly` is monthly, its default for every row written before
+ * annual billing, so an unknown value is never a crash or a year.
+ */
+export function freebuffSubscriptionBillingInterval(
+  value: string,
+): FreebuffSubscriptionBillingInterval {
+  return value === 'yearly' ? 'yearly' : 'monthly'
+}
+
+/**
+ * What one subscription adds to MRR at list price, the unit every MRR figure
+ * sums: a yearly plan is a twelfth of its annual charge. A grant is never
+ * revenue, and a tier the catalog no longer carries prices at 0 rather than a
+ * guess.
+ */
+export function freebuffSubscriptionMrrUsd(subscription: {
+  tier: string
+  billingInterval: string
+  source: string
+}): number {
+  const tier = freebuffSubscriptionTier(subscription.tier)
+  if (!tier || subscription.source === 'grant') return 0
+  const interval = freebuffSubscriptionBillingInterval(
+    subscription.billingInterval,
+  )
+  return interval === 'yearly' ? tier.yearlyPriceUsd / 12 : tier.priceUsd
+}
+
 /** The next tier up, or undefined at the top. Drives every upgrade CTA. */
 export function nextFreebuffSubscriptionTier(
   id: string | null | undefined,
