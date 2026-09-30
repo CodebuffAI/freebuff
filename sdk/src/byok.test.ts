@@ -165,6 +165,113 @@ describe('BYOK connection lifecycle', () => {
       input.apiKey,
     )
   })
+  // A local OmniRoute-style proxy (user writeup, 2026-09-30): the check used
+  // to say only "reachable" or "failed (HTTP n)", so a wrong model id, a base
+  // URL without /v1 and a stopped proxy all surfaced later, as run failures.
+  describe('endpoint check diagnostics', () => {
+    const proxy = {
+      ...input,
+      baseUrl: 'http://localhost:20128/v1',
+      model: 'mistral/codestral-latest',
+    }
+    const listing = (ids: string[]) =>
+      (async () =>
+        Response.json({
+          object: 'list',
+          data: ids.map((id) => ({ id, object: 'model' })),
+        })) as unknown as typeof fetch
+
+    test('reports the status and whether the model is listed', async () => {
+      const { store } = fixture(
+        listing(['mistral/codestral-latest', 'openai/gpt-4o-mini']),
+      )
+      const added = await store.create(proxy)
+      expect(await store.validate(added)).toMatchObject({
+        ok: true,
+        statusCode: 200,
+        modelListed: true,
+      })
+    })
+
+    test('an unlisted model lists what the endpoint offers, filtered, never the key', async () => {
+      const { store } = fixture(
+        listing([
+          'codestral-latest',
+          'openai/gpt-4o-mini',
+          `leak-${input.apiKey}`,
+          'bad id with spaces',
+          'x'.repeat(201),
+        ]),
+      )
+      const added = await store.create(proxy)
+      const result = await store.validate(added)
+      expect(result).toMatchObject({
+        ok: true,
+        modelListed: false,
+        availableModels: ['codestral-latest', 'openai/gpt-4o-mini'],
+      })
+      expect(JSON.stringify(result)).not.toContain(input.apiKey)
+    })
+
+    test('a listing without ids makes no claim about the model', async () => {
+      const { store } = fixture(
+        (async () => new Response('ok')) as unknown as typeof fetch,
+      )
+      const added = await store.create(proxy)
+      const result = await store.validate(added)
+      expect(result.ok).toBe(true)
+      expect('modelListed' in result).toBe(false)
+    })
+
+    test('a 404 at a base URL without /v1 suggests adding it', async () => {
+      const { store } = fixture(
+        (async () =>
+          new Response('Not found', { status: 404 })) as unknown as typeof fetch,
+      )
+      const added = await store.create({
+        ...proxy,
+        baseUrl: 'http://localhost:20128',
+      })
+      const result = await store.validate(added)
+      expect(result).toMatchObject({ ok: false, statusCode: 404 })
+      expect(result.ok ? '' : result.message).toBe(
+        'Provider connection check failed (HTTP 404 from http://localhost:20128/models). OpenAI-compatible base URLs usually end in /v1; try http://localhost:20128/v1.',
+      )
+    })
+
+    test('a web page at /models is a wrong base URL, not a reachable endpoint', async () => {
+      const { store } = fixture(
+        (async () =>
+          new Response('<!doctype html><html>dashboard</html>', {
+            headers: { 'content-type': 'text/html' },
+          })) as unknown as typeof fetch,
+      )
+      const added = await store.create({
+        ...proxy,
+        baseUrl: 'http://localhost:20128',
+      })
+      const result = await store.validate(added)
+      expect(result.ok).toBe(false)
+      expect(result.ok ? '' : result.message).toContain(
+        'answered with a web page, not an OpenAI-compatible model list (HTTP 200). OpenAI-compatible base URLs usually end in /v1; try http://localhost:20128/v1.',
+      )
+    })
+
+    test('a stopped proxy is named as connection refused at its origin', async () => {
+      const server = Bun.serve({ port: 0, fetch: () => new Response('') })
+      const port = server.port
+      server.stop(true)
+      const { store } = fixture(globalThis.fetch)
+      const added = await store.create({
+        ...proxy,
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+      })
+      const result = await store.validate(added)
+      expect(result.ok ? '' : result.message).toBe(
+        `Nothing is accepting connections at http://127.0.0.1:${port} (connection refused). Start the provider or proxy, or check the host and port.`,
+      )
+    })
+  })
   test('rolls back stored credential if metadata write fails', async () => {
     const secret = secrets()
     const store = createByokConnectionStore({

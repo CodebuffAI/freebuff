@@ -19,7 +19,11 @@ import {
 } from '@codebuff/common/constants/reasoning-effort'
 import { loadSettings, saveSettings } from '../utils/settings'
 
-import type { ByokConnection, ByokProvider } from '@codebuff/sdk'
+import type {
+  ByokConnection,
+  ByokProvider,
+  ByokValidationResult,
+} from '@codebuff/sdk'
 import type { RouterParams } from './command-registry'
 
 export const BYOK_USAGE = [
@@ -72,6 +76,36 @@ function post(params: RouterParams, message: string): void {
         : input,
   )
   params.setInputValue({ text: '', cursorPosition: 0, lastEditDueToNav: false })
+}
+
+/** How many listed ids a message shows; the rest are counted. */
+const AVAILABLE_MODELS_SHOWN = 20
+
+function statusSuffix(validation: ByokValidationResult): string {
+  return validation.statusCode ? ` (HTTP ${validation.statusCode})` : ''
+}
+
+/**
+ * A reachable endpoint whose `/models` does not list the configured id: the
+ * usual "model not found" on the first run. Named here, with what it does
+ * list, rather than at the first failed turn. Not a refusal: a proxy may
+ * route ids it does not list.
+ */
+function modelListNote(
+  connection: Pick<ByokConnection, 'name' | 'model'>,
+  validation: ByokValidationResult,
+): string {
+  if (!validation.ok || validation.modelListed !== false) return ''
+  const available = validation.availableModels ?? []
+  const shown = available.slice(0, AVAILABLE_MODELS_SHOWN)
+  const more =
+    available.length > shown.length
+      ? ` and ${available.length - shown.length} more`
+      : ''
+  const listing = shown.length
+    ? ` It lists: ${shown.map((id) => `\`${id}\``).join(', ')}${more}.`
+    : ''
+  return `\n\nWarning: \`${connection.model}\` is not in this endpoint's model list.${listing} Change it with \`/byok update ${connection.name} <model>\`, unless this proxy routes model ids it does not list.`
 }
 
 function connectionByName(connections: ByokConnection[], name: string): ByokConnection | undefined {
@@ -341,7 +375,7 @@ export async function handleByokCommand(
         validation.ok
           ? connection.provider === 'openrouter'
             ? `Saved and authenticated ${describeByokConnection(connection)}. Select it with /byok select ${connection.name}.`
-            : `Saved ${describeByokConnection(connection)}. The endpoint is reachable; this model is unqualified until it completes a coding run. Select it with /byok select ${connection.name}.`
+            : `Saved ${describeByokConnection(connection)}. The endpoint is reachable${statusSuffix(validation)}; this model is unqualified until it completes a coding run. Select it with /byok select ${connection.name}.${modelListNote(connection, validation)}`
           : `Saved ${describeByokConnection(connection)}, but it could not be validated: ${validation.message}\nThen run /byok validate ${connection.name}.`,
       )
       return
@@ -404,7 +438,7 @@ export async function handleByokCommand(
         post(params, validation.ok
           ? connection.provider === 'openrouter'
             ? `${describeByokConnection(connection)} has a verified credential. Model coding support remains unverified.`
-            : `${describeByokConnection(connection)} is reachable. Its model remains unqualified until it completes a coding run.`
+            : `${describeByokConnection(connection)} is reachable${statusSuffix(validation)}. Its model remains unqualified until it completes a coding run.${modelListNote(connection, validation)}`
           : `${describeByokConnection(connection)} is unavailable: ${validation.message}`)
         return
       }
@@ -416,7 +450,7 @@ export async function handleByokCommand(
         }
         saveSelectedByokConnection(connection)
         resetTranscriptForSourceChange(params)
-        post(params, `Using ${describeByokConnection(connection)} for new runs. Inference is direct, ad-free, and billed by your provider.`)
+        post(params, `Using ${describeByokConnection(connection)} for new runs. Inference is direct, ad-free, and billed by your provider.${modelListNote(connection, validation)}`)
         return
       }
       await byokStore.remove(connection)

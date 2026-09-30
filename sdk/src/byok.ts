@@ -68,7 +68,20 @@ export type ByokConnectionInput = {
 }
 export type ByokConnectionPatch = Partial<ByokConnectionInput>
 export type ByokValidationResult =
-  | { ok: true; connection: ByokConnection }
+  | {
+      ok: true
+      connection: ByokConnection
+      /** The endpoint check's HTTP status. */
+      statusCode?: number
+      /**
+       * OpenAI-compatible only, when `/models` returned a list: whether the
+       * connection's model id is in it. A proxy may route ids it does not
+       * list, so false is a warning, not a failed check.
+       */
+      modelListed?: boolean
+      /** When the model is not listed: the ids the endpoint does list (capped). */
+      availableModels?: string[]
+    }
   | {
       ok: false
       connection: ByokConnection
@@ -510,6 +523,103 @@ function cleanInput(input: ByokConnectionInput) {
     baseUrl,
   }
 }
+/** At most this many listed ids are returned when the model is not among them. */
+export const BYOK_AVAILABLE_MODELS_LIMIT = 50
+
+/** The ids of an OpenAI-compatible `/models` listing (`{data: [...]}` or a bare array). */
+function modelIdsFromListing(body: unknown): string[] {
+  const list = Array.isArray(body)
+    ? body
+    : body && typeof body === 'object' && Array.isArray((body as any).data)
+      ? ((body as any).data as unknown[])
+      : []
+  return list
+    .map((entry) =>
+      entry && typeof entry === 'object'
+        ? (entry as Record<string, unknown>).id
+        : undefined,
+    )
+    .filter((id): id is string => typeof id === 'string')
+}
+
+/**
+ * What a successful `/models` answer says about this connection. A web page
+ * (an SPA or dashboard answering every path) means the base URL is wrong —
+ * typically a proxy's root instead of its `/v1`. Ids echoed back are printable,
+ * bounded, and never contain the key.
+ */
+async function readModelListing(
+  response: Response,
+  connection: Pick<ResolvedByokConnection, 'provider' | 'model' | 'apiKey'>,
+): Promise<
+  | { webPage: true }
+  | { webPage: false; modelListed?: boolean; availableModels?: string[] }
+> {
+  if (connection.provider !== 'openai-compatible') {
+    await response.body?.cancel()
+    return { webPage: false }
+  }
+  let text: string
+  try {
+    text = await response.text()
+  } catch {
+    return { webPage: false }
+  }
+  if (
+    /text\/html/i.test(response.headers.get('content-type') ?? '') ||
+    /^\s*<(?:!doctype|html)/i.test(text)
+  )
+    return { webPage: true }
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch {
+    return { webPage: false }
+  }
+  const ids = modelIdsFromListing(body)
+  if (ids.length === 0) return { webPage: false }
+  if (ids.includes(connection.model)) return { webPage: false, modelListed: true }
+  const shown = ids.filter(
+    (id) =>
+      id.length <= 200 &&
+      /^[\x21-\x7e]+$/.test(id) &&
+      !id.includes(connection.apiKey),
+  )
+  return {
+    webPage: false,
+    modelListed: false,
+    availableModels: shown.slice(0, BYOK_AVAILABLE_MODELS_LIMIT),
+  }
+}
+
+/** The fix for a base URL that answered 404 or a web page at `/models`. */
+function baseUrlHint(base: string): string {
+  const { pathname } = new URL(base)
+  return /\/v\d+[a-z0-9]*(?:\/|$)/i.test(pathname)
+    ? 'Check the base URL.'
+    : `OpenAI-compatible base URLs usually end in /v1; try ${base}/v1.`
+}
+
+/**
+ * A transport failure, classified by its code. Only the endpoint's origin is
+ * shown — the thrown error itself can echo request details.
+ */
+function unreachableProviderMessage(
+  error: unknown,
+  base: string | undefined,
+): string {
+  const origin = base ? new URL(base).origin : 'the provider'
+  const code = [
+    (error as { code?: unknown } | null)?.code,
+    ((error as { cause?: { code?: unknown } } | null)?.cause ?? {}).code,
+  ].find((value): value is string => typeof value === 'string')
+  if (code === 'ConnectionRefused' || code === 'ECONNREFUSED')
+    return `Nothing is accepting connections at ${origin} (connection refused). Start the provider or proxy, or check the host and port.`
+  if ((error as { name?: unknown } | null)?.name === 'TimeoutError')
+    return `${origin} did not answer within 10 seconds. Check that the provider or proxy is running and reachable.`
+  return 'Could not reach the provider securely. Check its URL, connection and credentials.'
+}
+
 const queues = new WeakMap<ByokMetadataStore, Promise<unknown>>()
 export function createByokConnectionStore(params: {
   metadataStore: ByokMetadataStore
@@ -730,19 +840,31 @@ export function createByokConnectionStore(params: {
         return { ok: false, connection: { ...saved }, message: error.message }
       }
       const connection = { ...resolved }
+      let base: string | undefined
       try {
         await resolved.assertCurrent?.()
+        base = normalizeByokBaseUrl(resolved.provider, resolved.baseUrl)
         const response = await fetchImpl(
-          normalizeByokBaseUrl(resolved.provider, resolved.baseUrl) +
-            (resolved.provider === 'openrouter' ? '/key' : '/models'),
+          base + (resolved.provider === 'openrouter' ? '/key' : '/models'),
           {
             headers: { Authorization: `Bearer ${resolved.apiKey}` },
             redirect: 'error',
             signal: AbortSignal.timeout(10_000),
           },
         )
-        // No provider-controlled error body is logged or returned; it may echo headers.
-        await response.body?.cancel()
+        // No provider-controlled error body is logged or returned; it may echo
+        // headers. Only a successful model list is read, and only model ids
+        // (filtered, never the key) leave it.
+        const listing = response.ok
+          ? await readModelListing(response, resolved)
+          : (await response.body?.cancel(), undefined)
+        if (response.status === 404 && resolved.provider === 'openai-compatible')
+          return {
+            ok: false,
+            connection,
+            message: `Provider connection check failed (HTTP 404 from ${base}/models). ${baseUrlHint(base)}`,
+            statusCode: response.status,
+          }
         if (!response.ok)
           return {
             ok: false,
@@ -753,13 +875,29 @@ export function createByokConnectionStore(params: {
                 : `Provider connection check failed (HTTP ${response.status})`,
             statusCode: response.status,
           }
-        return { ok: true, connection }
-      } catch {
+        if (listing?.webPage)
+          return {
+            ok: false,
+            connection,
+            message: `${base}/models answered with a web page, not an OpenAI-compatible model list (HTTP ${response.status}). ${baseUrlHint(base)}`,
+            statusCode: response.status,
+          }
+        return {
+          ok: true,
+          connection,
+          statusCode: response.status,
+          ...(listing?.modelListed !== undefined
+            ? { modelListed: listing.modelListed }
+            : {}),
+          ...(listing?.availableModels
+            ? { availableModels: listing.availableModels }
+            : {}),
+        }
+      } catch (error) {
         return {
           ok: false,
           connection,
-          message:
-            'Could not reach the provider securely. Check its URL, connection and credentials.',
+          message: unreachableProviderMessage(error, base),
         }
       }
     },
