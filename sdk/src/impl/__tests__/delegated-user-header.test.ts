@@ -195,6 +195,29 @@ describe('SDK delegated user headers', () => {
     expect(message).not.toContain('key-canary')
   })
 
+  test('a 401 on an environment-variable key names the variable, never the key', async () => {
+    const key = 'synthetic-omniroute-key-canary'
+    globalThis.fetch = mock(async () => new Response(
+      JSON.stringify({ error: { message: `Invalid API key ${key}` } }),
+      { status: 401, headers: { 'content-type': 'application/json' } },
+    )) as unknown as typeof fetch
+    const result = streamText({
+      model: getModelForRequest({
+        apiKey: 'ignored', model: 'ignored',
+        byok: { id: 'conn', revision: 1, name: 'omniroute', provider: 'openai-compatible', baseUrl: 'http://localhost:20128/v1', model: 'mistral/codestral-latest', credentialRef: 'env:OMNIROUTE_API_KEY', createdAt: 'x', updatedAt: 'x', apiKey: key },
+      }),
+      messages: [{ role: 'user', content: 'hello' }],
+      maxRetries: 0,
+    })
+    let message = ''
+    for await (const part of result.stream) {
+      if (part.type === 'error') message = String(part.error)
+    }
+    expect(message).toContain('rejected the API key in OMNIROUTE_API_KEY (HTTP 401)')
+    expect(message).toContain('is set in this Freebuff process')
+    expect(message).not.toContain(key)
+  })
+
   test('sends userId on model requests', async () => {
     const model = getModelForRequest({
       apiKey: 'service-key',

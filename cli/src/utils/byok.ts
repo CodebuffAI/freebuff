@@ -1,4 +1,5 @@
 import {
+  ByokCredentialError,
   createBunByokConnectionStore,
   withByokReasoningEffort,
   withEffectiveByokLimits,
@@ -126,6 +127,19 @@ export async function resolveByokConnection(
     await withEffectiveByokLimits(await getCliByokStore().resolve(selected)),
     loadSettings().byokReasoningEffort,
   )
+}
+
+/**
+ * What a run start shows when the selected connection cannot be loaded. A
+ * credential failure says exactly what is wrong (e.g. which environment
+ * variable is unset in this process); its text is the store's own and never
+ * carries a key. Anything else keeps the generic line.
+ */
+export function byokLoadFailureMessage(error: unknown): string {
+  return error instanceof ByokCredentialError ||
+    (error instanceof Error && error.name === 'ByokCredentialError')
+    ? `⚠️ Unable to load the selected BYOK connection: ${error.message}`
+    : '⚠️ Unable to load the selected BYOK connection. Check its credential and select it again.'
 }
 
 export function describeByokConnection(connection: Pick<ByokConnection, 'name' | 'provider' | 'model'>): string {

@@ -94,6 +94,48 @@ export type ByokConnectionStore = {
   }): Promise<ByokValidationResult>
 }
 
+/**
+ * The connection's credential could not be read. Its message is ours, names
+ * at most an environment-variable NAME, and never carries a key value, so a
+ * caller may show it as is.
+ */
+export class ByokCredentialError extends Error {
+  override name = 'ByokCredentialError'
+}
+
+/** The environment variable a connection reads its key from, if any. */
+export function byokCredentialVariable(
+  connection: Pick<ByokConnection, 'credentialRef'>,
+): string | undefined {
+  return envReference.test(connection.credentialRef)
+    ? connection.credentialRef.slice(4)
+    : undefined
+}
+
+/**
+ * Unset (or empty) in THIS process. The usual cause is starting Freebuff
+ * before exporting the variable, or from another terminal: a running process
+ * never sees a later `export`, so saying "restart" is the actual fix.
+ */
+export function missingEnvironmentCredentialMessage(variable: string): string {
+  return `${variable} is not set in this Freebuff process. Set it and restart Freebuff from that terminal.`
+}
+
+/**
+ * The provider refused the key (401/403). For an environment reference the
+ * variable IS set (an unset one never reaches the provider), so name it and
+ * point at its value rather than at its presence.
+ */
+export function rejectedByokCredentialMessage(
+  connection: Pick<ByokConnection, 'credentialRef'>,
+  status: number,
+): string {
+  const variable = byokCredentialVariable(connection)
+  return variable
+    ? `The provider rejected the key in ${variable} (HTTP ${status}). ${variable} is set in this Freebuff process; check that it holds the key this endpoint expects, then restart Freebuff from that terminal.`
+    : `The provider rejected the saved API key (HTTP ${status}). Check or replace the key.`
+}
+
 /** Validate before either storing a connection or attaching credentials to a request. */
 export function normalizeByokBaseUrl(
   provider: ByokProvider,
@@ -513,11 +555,27 @@ export function createByokConnectionStore(params: {
     try {
       key = await secretStore.get(reference)
     } catch {
-      throw new Error('Could not unlock the BYOK credential store')
+      throw new ByokCredentialError('Could not unlock the BYOK credential store')
     }
-    if (!key?.trim() || /[\r\n]/.test(key))
-      throw new Error('BYOK credential is unavailable or invalid')
-    return key.trim()
+    // Surrounding whitespace is not part of a key: a CRLF `.env` file leaves
+    // a trailing "\r" on the value, which used to reject a correct key.
+    const trimmed = key?.trim()
+    const variable = envReference.test(reference)
+      ? reference.slice(4)
+      : undefined
+    if (!trimmed)
+      throw new ByokCredentialError(
+        variable
+          ? missingEnvironmentCredentialMessage(variable)
+          : 'BYOK credential is unavailable or invalid',
+      )
+    if (/[\r\n]/.test(trimmed))
+      throw new ByokCredentialError(
+        variable
+          ? `${variable} contains a line break. Set it to the key alone and restart Freebuff from that terminal.`
+          : 'BYOK credential is unavailable or invalid',
+      )
+    return trimmed
   }
   async function writeSecret(reference: string, key: string) {
     try {
@@ -657,7 +715,20 @@ export function createByokConnectionStore(params: {
         return Object.freeze(result)
       }),
     async validate(selection) {
-      const resolved = await store.resolve(selection)
+      let resolved: ResolvedByokConnection
+      try {
+        resolved = await store.resolve(selection)
+      } catch (error) {
+        // A missing key is a failed check of an existing connection, not a
+        // failed command: `/byok add` has already saved it by now.
+        if (!(error instanceof ByokCredentialError)) throw error
+        const saved = (await read()).find(
+          (item) =>
+            item.id === selection.id && item.revision === selection.revision,
+        )
+        if (!saved) throw error
+        return { ok: false, connection: { ...saved }, message: error.message }
+      }
       const connection = { ...resolved }
       try {
         await resolved.assertCurrent?.()
@@ -676,7 +747,10 @@ export function createByokConnectionStore(params: {
           return {
             ok: false,
             connection,
-            message: `Provider connection check failed (HTTP ${response.status})`,
+            message:
+              response.status === 401
+                ? rejectedByokCredentialMessage(resolved, response.status)
+                : `Provider connection check failed (HTTP ${response.status})`,
             statusCode: response.status,
           }
         return { ok: true, connection }

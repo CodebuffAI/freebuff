@@ -21,7 +21,7 @@ import { APICallError } from 'ai'
 import { byokReasoningRetryBody, byokRequestTransform } from './byok-request'
 import { getWebsiteUrl } from '../constants'
 import { getByokOpenrouterApiKeyFromEnv } from '../env'
-import { byokCompletionUrl } from '../byok'
+import { byokCompletionUrl, byokCredentialVariable } from '../byok'
 import type { ResolvedByokConnection } from '../byok'
 
 import type { LanguageModel } from 'ai'
@@ -186,7 +186,12 @@ const MAX_MODEL_ID_IN_MESSAGE = 120
  * and `model` is the connection's own configured id — both ours to show. */
 export function getByokProviderErrorMessage(
   status: number,
-  detail: { model?: string; modelRejected?: boolean } = {},
+  detail: {
+    model?: string
+    modelRejected?: boolean
+    /** The environment variable the key came from, a NAME and never a value. */
+    credentialVariable?: string
+  } = {},
 ): string {
   if (
     detail.modelRejected &&
@@ -197,7 +202,9 @@ export function getByokProviderErrorMessage(
     return `BYOK provider does not recognise the model ID${named} (HTTP ${status}). Use the exact model name from the provider's API model list and retry.`
   }
   if (status === 401)
-    return 'BYOK provider rejected the API key (HTTP 401). Check or replace the key.'
+    return detail.credentialVariable
+      ? `BYOK provider rejected the API key in ${detail.credentialVariable} (HTTP 401). ${detail.credentialVariable} is set in this Freebuff process; check that it holds the key this endpoint expects, then restart Freebuff from that terminal.`
+      : 'BYOK provider rejected the API key (HTTP 401). Check or replace the key.'
   if (status === 403)
     return 'BYOK API key cannot access this model or account (HTTP 403). Choose an allowed model or use another key.'
   if (status === 402)
@@ -352,6 +359,7 @@ export function getModelForRequest({
                   message: getByokProviderErrorMessage(response.status, {
                     model: byok.model,
                     modelRejected,
+                    credentialVariable: byokCredentialVariable(byok),
                   }),
                 },
               }),

@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
+  ByokCredentialError,
   createByokConnectionStore,
   createBunByokConnectionStore,
   createBunByokMetadataStore,
@@ -216,6 +217,100 @@ describe('shared persistent BYOK store', () => {
     await store.remove(added)
     expect(environment.FIXTURE_KEY).toBe(input.apiKey)
     expect(await store.list()).toEqual([])
+  })
+  // A user writeup (2026-09-30): OmniRoute on http://localhost:20128/v1 with
+  // OMNIROUTE_API_KEY. Freebuff was started before the variable existed, and
+  // every command answered "BYOK credential is unavailable or invalid" — the
+  // `add` even threw after saving, so a retry said "already exists".
+  describe('environment credential diagnostics', () => {
+    const omniroute = {
+      name: 'omniroute',
+      provider: 'openai-compatible' as const,
+      model: 'mistral/codestral-latest',
+      baseUrl: 'http://localhost:20128/v1',
+      credentialRef: 'env:OMNIROUTE_API_KEY',
+    }
+    const syntheticKey = 'synthetic-omniroute-key-canary'
+
+    test('an unset variable fails validation (not the command) and names the variable', async () => {
+      const directory = await temporaryDirectory()
+      const environment: Record<string, string | undefined> = {}
+      let fetched = 0
+      const store = createBunByokConnectionStore({
+        directory,
+        environment,
+        fetch: (async () => {
+          fetched++
+          return new Response('{}')
+        }) as unknown as typeof fetch,
+      })
+      const added = await store.create(omniroute)
+      const result = await store.validate(added)
+      expect(result).toMatchObject({
+        ok: false,
+        connection: { id: added.id, name: 'omniroute' },
+        message:
+          'OMNIROUTE_API_KEY is not set in this Freebuff process. Set it and restart Freebuff from that terminal.',
+      })
+      expect(fetched).toBe(0)
+      // A run start sees the same precise reason, as a typed credential error.
+      const failure = await store.resolve(added).catch((error) => error)
+      expect(failure).toBeInstanceOf(ByokCredentialError)
+      expect(failure.message).toContain('OMNIROUTE_API_KEY is not set')
+      environment.OMNIROUTE_API_KEY = '   '
+      expect((await store.validate(added)).ok).toBe(false)
+    })
+
+    test('a set variable the provider refuses says 401, names the variable, never the key', async () => {
+      const directory = await temporaryDirectory()
+      const store = createBunByokConnectionStore({
+        directory,
+        environment: { OMNIROUTE_API_KEY: syntheticKey },
+        fetch: (async () =>
+          new Response(`bad key ${syntheticKey}`, {
+            status: 401,
+          })) as unknown as typeof fetch,
+      })
+      const added = await store.create(omniroute)
+      const result = await store.validate(added)
+      expect(result.ok).toBe(false)
+      expect(result.ok ? '' : result.message).toBe(
+        'The provider rejected the key in OMNIROUTE_API_KEY (HTTP 401). OMNIROUTE_API_KEY is set in this Freebuff process; check that it holds the key this endpoint expects, then restart Freebuff from that terminal.',
+      )
+      expect(JSON.stringify(result)).not.toContain(syntheticKey)
+    })
+
+    test('a CRLF .env value is the key, not an invalid credential', async () => {
+      const directory = await temporaryDirectory()
+      const store = createBunByokConnectionStore({
+        directory,
+        environment: { OMNIROUTE_API_KEY: `${syntheticKey}\r` },
+      })
+      const added = await store.create(omniroute)
+      expect((await store.resolve(added)).apiKey).toBe(syntheticKey)
+    })
+
+    test('a line break inside the value is refused by name', async () => {
+      const directory = await temporaryDirectory()
+      const store = createBunByokConnectionStore({
+        directory,
+        environment: { OMNIROUTE_API_KEY: `${syntheticKey}\nsecond-line` },
+      })
+      const added = await store.create(omniroute)
+      const result = await store.validate(added)
+      expect(result.ok ? '' : result.message).toContain(
+        'OMNIROUTE_API_KEY contains a line break',
+      )
+      expect(JSON.stringify(result)).not.toContain(syntheticKey)
+    })
+
+    test('a removed connection still fails loudly rather than as a check', async () => {
+      const directory = await temporaryDirectory()
+      const store = createBunByokConnectionStore({ directory, environment: {} })
+      const added = await store.create(omniroute)
+      await store.remove(added)
+      await expect(store.validate(added)).rejects.toThrow('removed')
+    })
   })
   test('fails closed on corrupt or secret-bearing metadata', async () => {
     const directory = await temporaryDirectory()

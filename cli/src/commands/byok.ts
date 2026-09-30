@@ -263,7 +263,7 @@ export async function handleByokCommand(
           ? connection.provider === 'openrouter'
             ? `Saved and authenticated ${describeByokConnection(connection)}. Select it with /byok select ${connection.name}.`
             : `Saved ${describeByokConnection(connection)}. The endpoint is reachable; this model is unqualified until it completes a coding run. Select it with /byok select ${connection.name}.`
-          : `Saved ${describeByokConnection(connection)}, but validation failed: ${validation.message}\nCheck that ${environmentVariable} is exported, then run /byok validate ${connection.name}.`,
+          : `Saved ${describeByokConnection(connection)}, but it could not be validated: ${validation.message}\nThen run /byok validate ${connection.name}.`,
       )
       return
     }

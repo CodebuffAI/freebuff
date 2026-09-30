@@ -14,6 +14,7 @@ import { getFreebuffInstanceId } from './use-freebuff-session'
 import { getSelectedFreebuffReasoningEffort } from '../state/freebuff-model-store'
 import { getCodebuffClient } from '../utils/codebuff-client'
 import {
+  byokLoadFailureMessage,
   isByokSetupOpen,
   resolveByokConnection,
   selectedByokConnection,
@@ -565,7 +566,7 @@ export const useSendMessage = ({
           ...prev,
           createErrorChatMessage(
             shouldUseByok
-              ? '⚠️ Unable to load the selected BYOK connection. Check its credential and select it again.'
+              ? byokLoadFailureMessage(error)
               : '⚠️ Unable to create the client. Please check your authentication and try again.',
           ),
         ])
