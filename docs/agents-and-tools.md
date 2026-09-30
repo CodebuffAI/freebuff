@@ -77,6 +77,29 @@ base-lite "fix this bug"
 
 - Tool definitions live in `common/src/tools` and are executed via the SDK helpers + agent-runtime.
 
+### Cut-off file edits are refused, never repaired
+
+`packages/agent-runtime/src/util/truncated-write-guard.ts` stops two shapes of
+a file edit that was cut off mid-generation:
+
+- **Arguments that never closed.** When a response hits the output limit (or
+  loses its connection) inside a tool call, the OpenAI-compatible provider
+  still flushes the call with whatever argument text arrived, and OpenRouter
+  reports the step as `finish_reason: "tool_calls"` (the real reason is only in
+  `native_finish_reason: "max_output_tokens"`). `parseRawToolCall` recognises
+  a truncated JSON prefix and answers with an explicit "nothing was written"
+  error instead of the generic re-issue hint, and does not echo the partial
+  content back. Do not add a JSON-repair step for mutating tools: completing a
+  cut-off `content` string is exactly how a file gets truncated on disk.
+- **A cut-off copy of an existing file.** `processFileBlock` refuses a
+  `write_file` that is under 60% of an existing file of 30+ lines AND leaves
+  brackets open where the current file balances them. Both refusals log
+  `axiomEvent: file_write_guard` (`metric` says which).
+
+The finish reason is deliberately not the signal: complete arguments in a
+length-cut step are a complete call, and the OpenRouter shape above hides the
+length cut anyway.
+
 ### Console-free terminal command broker
 
 `run_terminal_command` separates process ownership from terminal UI ownership:

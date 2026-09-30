@@ -1,5 +1,6 @@
 import { endsAgentStepParam, toolNames } from '@codebuff/common/tools/constants'
 import { toolParams } from '@codebuff/common/tools/list'
+import { FILE_WRITE_GUARD_EVENT } from '@codebuff/common/util/axiom-only-log'
 import { generateCompactId } from '@codebuff/common/util/string'
 import { cloneDeepKeepingZod } from '../util/zod-safe-clone'
 
@@ -14,6 +15,11 @@ import { repairStringEncodedUnionMembers } from '../util/repair-string-encoded-u
 import { resolveGravityIndexLink } from './gravity-index-cta'
 import { ensureZodSchema } from './prompts'
 import { boundToolResult } from '../util/context-size-guard'
+import {
+  extractPathFromPartialArguments,
+  isTruncatedJsonPrefix,
+  truncatedToolCallMessage,
+} from '../util/truncated-write-guard'
 
 import type { AgentTemplate } from '../templates/types'
 import type { CodebuffToolHandlerFunction } from './handlers/handler-function-type'
@@ -56,6 +62,9 @@ export type ToolCallError = {
   toolName?: string
   input: unknown
   error: string
+  /** The arguments were cut off mid-generation (see
+   *  util/truncated-write-guard.ts). The partial input is not echoed back. */
+  truncated?: true
 } & Pick<CodebuffToolCall, 'toolCallId'>
 
 const bareStringFieldRepairAllowlist: Partial<
@@ -212,6 +221,24 @@ export function parseRawToolCall<T extends ToolName = ToolName>(params: {
   const paramsSchema = toolParams[toolName].inputSchema
 
   if (typeof processedParameters.input === 'string') {
+    // Arguments that stop mid-string or mid-object were cut off, not
+    // mistyped: say so, rather than inviting the model to resend the same
+    // oversized call. Never repaired into something executable.
+    if (
+      processedParameters.parseError !== undefined &&
+      isTruncatedJsonPrefix(processedParameters.input)
+    ) {
+      return {
+        toolName,
+        toolCallId: rawToolCall.toolCallId,
+        input: {},
+        truncated: true,
+        error: truncatedToolCallMessage(
+          toolName,
+          extractPathFromPartialArguments(processedParameters.input),
+        ),
+      }
+    }
     return stringInputError(
       toolName,
       rawToolCall.toolCallId,
@@ -339,6 +366,29 @@ export async function executeToolCall<T extends ToolName>(
       type: 'error',
       message: `Tool \`${toolName}\` is not currently available. Make sure to only use tools provided at the start of the conversation AND that you most recently have permission to use.`,
     })
+    return previousToolCallFinished
+  }
+
+  if ('error' in toolCall && toolCall.truncated) {
+    // No "Original tool call input" echo: for a file write that is the head of
+    // the file's content, which reads to the model like the file itself.
+    onResponseChunk({ type: 'error', message: toolCall.error })
+    logger.warn(
+      {
+        axiomEvent: FILE_WRITE_GUARD_EVENT,
+        metric: 'truncated_tool_call_refused',
+        toolName,
+        model: agentTemplate.model,
+        agentId: agentTemplate.id,
+        runId: params.runId,
+        // Typed as an object, but a cut-off call arrives as its raw text.
+        receivedChars:
+          typeof (input as unknown) === 'string'
+            ? (input as unknown as string).length
+            : undefined,
+      },
+      'Refused a tool call whose arguments were cut off mid-generation',
+    )
     return previousToolCallFinished
   }
 

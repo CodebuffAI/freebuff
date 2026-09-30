@@ -46,6 +46,12 @@ export const CONTEXT_PRUNING_COMPLETED_EVENT =
  *  allowlisted event — `_gave_up` logs at error level, which already ships
  *  raw and doesn't need the allowlist. */
 export const STREAM_RECOVERY_EVENT = 'stream_recovery' as const
+/** A file edit was refused because it looked cut off mid-generation
+ *  (packages/agent-runtime/src/util/truncated-write-guard.ts). `metric`
+ *  distinguishes truncated tool-call arguments from a write_file that would
+ *  replace a file with a cut-off copy of itself. Content-free: sizes, tool and
+ *  model names only, never a path or file content. */
+export const FILE_WRITE_GUARD_EVENT = 'file_write_guard' as const
 /** Model-based context compaction failed and the runtime fell back to the
  *  mechanical pass (packages/agent-runtime/src/model-compaction.ts). The SDK
  *  is otherwise silent in the Web/Cloud runner, so without an allowlisted
@@ -222,6 +228,18 @@ const STREAM_RECOVERY_FIELDS = {
   consecutive: 'number',
   /** A 'provider-error' recovery's HTTP status (502, 429, ...). */
   statusCode: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const FILE_WRITE_GUARD_FIELDS = {
+  metric: 'string',
+  toolName: 'string',
+  model: 'string',
+  agentId: 'string',
+  runId: 'string',
+  receivedChars: 'number',
+  oldLines: 'number',
+  newLines: 'number',
+  openBrackets: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 const MODEL_COMPACTION_FALLBACK_FIELDS = {
@@ -1070,6 +1088,7 @@ export type AxiomOnlyLogEvent = {
   event:
     | typeof CONTEXT_PRUNING_COMPLETED_EVENT
     | typeof STREAM_RECOVERY_EVENT
+    | typeof FILE_WRITE_GUARD_EVENT
     | typeof MODEL_COMPACTION_FALLBACK_EVENT
     | typeof MODEL_COMPACTION_COMPLETED_EVENT
     | typeof ADS_FETCH_COMPLETED_EVENT
@@ -1143,6 +1162,12 @@ export function getAxiomOnlyLogEvent(
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(record, STREAM_RECOVERY_FIELDS),
+    }
+  }
+  if (eventName === FILE_WRITE_GUARD_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, FILE_WRITE_GUARD_FIELDS),
     }
   }
   if (eventName === MODEL_COMPACTION_FALLBACK_EVENT) {

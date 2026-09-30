@@ -269,7 +269,7 @@ describe('tool validation error handling', () => {
     }
   })
 
-  it('should include JSON parse details for incomplete stringified input', () => {
+  it('should tell the model a cut-off write was not applied', () => {
     const result = parseRawToolCall({
       rawToolCall: {
         toolName: 'write_file',
@@ -281,6 +281,29 @@ describe('tool validation error handling', () => {
 
     expect('error' in result).toBe(true)
     if ('error' in result) {
+      expect(result.truncated).toBe(true)
+      expect(result.error).toContain(
+        'Your write_file call was cut off before its arguments were complete',
+      )
+      expect(result.error).toContain(
+        'nothing was written, and `.agents/deep-thinkers/meta-coordinator.ts` is unchanged on disk',
+      )
+      expect(result.error).toContain('str_replace')
+    }
+  })
+
+  it('should include JSON parse details for malformed (not cut-off) input', () => {
+    const result = parseRawToolCall({
+      rawToolCall: {
+        toolName: 'write_file',
+        toolCallId: 'malformed-stringified-tool-call-id',
+        input: '{"path": "a.ts", "content": "x"]',
+      },
+    })
+
+    expect('error' in result).toBe(true)
+    if ('error' in result) {
+      expect(result.truncated).toBeUndefined()
       expect(result.error).toContain(
         'expected the tool arguments to be an object, but received a string',
       )
@@ -597,7 +620,7 @@ describe('tool validation error handling', () => {
     expect(errorEvents.length).toBe(0)
   })
 
-  it('should emit a clear error when tool input is an unparseable string', async () => {
+  it('should emit a clear error when tool input is a cut-off string', async () => {
     const agentWithReadFiles: AgentTemplate = {
       ...testAgentTemplate,
       toolNames: ['read_files', 'end_turn'],
@@ -655,10 +678,9 @@ describe('tool validation error handling', () => {
     )
     expect(errorEvents.length).toBe(1)
     expect(errorEvents[0].message).toContain(
-      'expected the tool arguments to be an object, but received a string',
+      'Your read_files call was cut off before its arguments were complete',
     )
-    expect(errorEvents[0].message).toContain('Parsing as JSON failed:')
-    expect(errorEvents[0].message).toContain('Original tool call input:')
+    expect(errorEvents[0].message).not.toContain('Original tool call input:')
 
     expect(result.hadToolCallError).toBe(true)
 

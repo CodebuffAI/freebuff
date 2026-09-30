@@ -3,7 +3,13 @@ import {
   type PromptResult,
 } from '@codebuff/common/util/error'
 import { cleanMarkdownCodeBlock } from '@codebuff/common/util/file'
+import { FILE_WRITE_GUARD_EVENT } from '@codebuff/common/util/axiom-only-log'
 import { createPatch } from 'diff'
+
+import {
+  detectTruncatedRewrite,
+  truncatedRewriteMessage,
+} from './util/truncated-write-guard'
 
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 
@@ -78,6 +84,31 @@ export async function processFileBlock(
   const normalizeLineEndings = (str: string) => str.replace(/\r\n/g, '\n')
   const normalizedInitialContent = normalizeLineEndings(initialContent)
   const normalizedNewContent = normalizeLineEndings(newContent)
+
+  // A much shorter copy of the file that stops mid-expression is a cut-off
+  // write, not a rewrite: refuse it rather than replace the file with it.
+  const truncatedRewrite = detectTruncatedRewrite(
+    normalizedInitialContent,
+    normalizedNewContent,
+  )
+  if (truncatedRewrite) {
+    logger.warn(
+      {
+        axiomEvent: FILE_WRITE_GUARD_EVENT,
+        metric: 'truncated_rewrite_refused',
+        toolName: 'write_file',
+        oldLines: truncatedRewrite.oldLines,
+        newLines: truncatedRewrite.newLines,
+        openBrackets: truncatedRewrite.openBrackets,
+      },
+      'Refused a write_file that would replace a file with a cut-off copy',
+    )
+    return promptSuccess({
+      tool: 'write_file' as const,
+      path,
+      error: truncatedRewriteMessage(path, truncatedRewrite),
+    })
+  }
 
   let patch = createPatch(path, normalizedInitialContent, normalizedNewContent)
   const lines = patch.split('\n')
