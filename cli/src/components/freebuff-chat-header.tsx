@@ -1,7 +1,4 @@
-import {
-  getFreebuffModel,
-  FREEBUFF_ENABLE_STREAK_IN_UI,
-} from '@codebuff/common/constants/freebuff-models'
+import { FREEBUFF_ENABLE_STREAK_IN_UI } from '@codebuff/common/constants/freebuff-models'
 import {
   getReferralInfo,
   getGlmPromo,
@@ -22,6 +19,7 @@ import {
 import { useTheme } from '../hooks/use-theme'
 import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
 import { useFreebuffStreakQuery } from '../hooks/use-freebuff-streak-query'
+import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { useFreebuffModelStore } from '../state/freebuff-model-store'
 import {
   useFreebuffChatStore,
@@ -54,7 +52,8 @@ export function FreebuffChatHeader({
   const { terminalWidth, terminalHeight } = useTerminalDimensions()
   const selected = useFreebuffModelStore((s) => s.selectedModel)
   const nextModel = useFreebuffChatStore((s) => s.nextModel)
-  const model = getFreebuffModel(nextModel ?? selected)
+  const directory = useFreebuffModelDirectory()
+  const model = directory.get(nextModel ?? selected)
   const freebucks = freebucksOf(session)
   const plan = freebuffPlanSummary(getSubscriptionInfo(session))
   const windows = freebuffFreeWindowsSummary(getFreeWindowsInfo(session))
@@ -117,7 +116,7 @@ export function FreebuffChatHeader({
           {session?.status === 'active'
             ? session.model === model.id
               ? 'Session active'
-              : `Next message switches from ${getFreebuffModel(session.model).displayName}.`
+              : `Next message switches from ${directory.get(session.model).displayName}.`
             : 'Your first message starts the session.'}
         </text>
         {freebucks && (

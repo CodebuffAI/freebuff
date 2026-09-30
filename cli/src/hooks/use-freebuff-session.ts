@@ -4,14 +4,6 @@ import { freebucksOf } from '../utils/freebucks'
 import type { FreebuffWalletSpendLimit } from '@codebuff/common/types/freebuff-session'
 import { nextFreebucksPriceChange } from '@codebuff/common/util/freebuff-price-changes'
 import {
-  FALLBACK_FREEBUFF_MODEL_ID,
-  freebuffWithdrawnModelMessage,
-  getFreebuffModel,
-  isFreebuffLimitedOfferModelId,
-  isFreebuffModelId,
-  resolveFreebuffModelForAccessTier,
-} from '@codebuff/common/constants/freebuff-models'
-import {
   getLimitedModelOffers,
   getRateLimitsByModel,
   getReferralInfo,
@@ -22,7 +14,12 @@ import { useEffect } from 'react'
 
 import { startNewChat } from '../project-files'
 import {
+  getFreebuffModelDirectory,
+  useFreebuffCatalogStore,
+} from '../state/freebuff-catalog-store'
+import {
   getSelectedFreebuffModel,
+  persistFreebuffModelPick,
   useFreebuffModelStore,
 } from '../state/freebuff-model-store'
 import { useChatStore } from '../state/chat-store'
@@ -63,10 +60,13 @@ import {
   mergeCompactActiveSession,
 } from '../utils/freebuff-session-api'
 import {
+  freebuffModelCatalogInitialLoad,
+  noteFreebuffCatalogViewer,
+} from '../utils/freebuff-model-catalog'
+import {
   failedPollDelayMs,
   jitterPollIntervalMs,
 } from '../utils/polling-backoff'
-import { saveFreebuffModelPreference } from '../utils/settings'
 
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
 import type {
@@ -357,7 +357,9 @@ export function resolveFreebuffModelPickForSession(
   // the explicit-pick path must preserve those models instead of coercing them
   // back to MiMo before the session POST.
   const hasPaidSubscription = Boolean(getSubscriptionInfo(session)?.tierId)
-  return resolveFreebuffModelForAccessTier(
+  // In catalog mode the rows are already this viewer's, so this only maps a
+  // stray id onto its row (or the recommendation).
+  return getFreebuffModelDirectory().resolveForAccessTier(
     model,
     accessTier,
     hasPaidSubscription,
@@ -409,7 +411,7 @@ export function startFreebuffSession(
         }
   pendingExplicitPickModel = resolved
   useFreebuffModelStore.getState().setSelectedModel(resolved)
-  if (opts.persistSelection !== false) saveFreebuffModelPreference(resolved)
+  if (opts.persistSelection !== false) persistFreebuffModelPick(resolved)
   return restartFreebuffSession('rejoin', {
     preserveQueue: opts.preserveQueue,
     releaseSlot: current?.status === 'active' && current.model !== resolved,
@@ -560,6 +562,7 @@ export function useFreebuffSession({
     let needsFullActivePoll = false
     let restartGeneration = 0
     let consecutiveFailures = 0
+    let protocolRefreshPending = false
     // An update restart hands its claim over explicitly; a crash leaves only
     // the dead process's record. Either way the hour already bought resumes.
     const updateHandoff = consumeFreebuffSessionRelaunch(token)
@@ -571,11 +574,33 @@ export function useFreebuffSession({
         '[freebuff-session] resuming the hour a previous CLI left behind',
       )
     }
-    if (relaunch)
-      useFreebuffModelStore.getState().setSelectedModel(relaunch.model)
+    // The first request waits (bounded) for the first catalog, so it goes out
+    // in the protocol this process will keep speaking and the relaunch record
+    // (a key or an id, whichever mode wrote it) resolves in the right one.
+    // Null when there is nothing to wait for, which keeps this synchronous.
+    const catalogLoad = freebuffModelCatalogInitialLoad()
+    const afterCatalog = (run: () => void) => {
+      if (!catalogLoad) {
+        run()
+        return
+      }
+      void catalogLoad.then(() => {
+        if (!cancelled) run()
+      })
+    }
     let claimId = relaunch?.instanceId ?? newFreebuffCliInstanceId()
     let attemptedModel: string | undefined = relaunch?.model
     let claimRetired = false
+    if (relaunch)
+      afterCatalog(() => {
+        useFreebuffModelStore.getState().setSelectedModel(relaunch.model)
+        // A record written before the catalog names its model by id; the
+        // claim's model is that id's row now, or a rejoin of the same model
+        // would read as a switch and end the hour being resumed.
+        const directory = getFreebuffModelDirectory()
+        if (directory.catalog)
+          attemptedModel = directory.row(relaunch.model)?.key ?? relaunch.model
+      })
     // Cross-protocol update restart: an old launcher replaced a pre-multi-
     // session binary (0.0.196 and earlier), which kept its LEGACY hour for the
     // relaunch but could leave no `cli:` handoff. The first tick probes that
@@ -596,6 +621,8 @@ export function useFreebuffSession({
 
     const apply = (next: FreebuffSessionResponse) => {
       rememberReferral(next)
+      // A new access tier or plan changes which rows the catalog lists.
+      noteFreebuffCatalogViewer(next)
       const selectedModel = getSelectedFreebuffModel()
       const resolvedModel = resolveFreebuffModelSelectionForSession(
         selectedModel,
@@ -632,6 +659,12 @@ export function useFreebuffSession({
       }
       setFailure(null)
       previousStatus = next.status
+      if (protocolRefreshPending) {
+        protocolRefreshPending = false
+        setTimeout(() => {
+          if (!cancelled) refreshForProtocol()
+        }, 0)
+      }
     }
 
     const clearTimer = () => {
@@ -655,7 +688,7 @@ export function useFreebuffSession({
       const multiSession =
         probingLegacy === undefined &&
         !legacyHour &&
-        !isFreebuffLimitedOfferModelId(model)
+        !getFreebuffModelDirectory().isLimitedOffer(model)
       const instanceId = multiSession
         ? claimId
         : (probingLegacy ?? getFreebuffInstanceId())
@@ -711,8 +744,8 @@ export function useFreebuffSession({
           const adoptable =
             next.status === 'active' &&
             next.instanceId === probingLegacy &&
-            isFreebuffModelId(next.model) &&
-            !isFreebuffLimitedOfferModelId(next.model)
+            getFreebuffModelDirectory().isPickerModel(next.model) &&
+            !getFreebuffModelDirectory().isLimitedOffer(next.model)
           if (!adoptable) {
             // Not this account's live hour (ended, expired, superseded, or a
             // trial the legacy path already owns): never show that verdict,
@@ -839,8 +872,9 @@ export function useFreebuffSession({
         //     constantly pick a model while a row is still active.
         if (next.status === 'model_locked') {
           if (explicitPickModel && explicitPickModel !== next.currentModel) {
-            const current = getFreebuffModel(next.currentModel).displayName
-            const requested = getFreebuffModel(explicitPickModel).displayName
+            const directory = getFreebuffModelDirectory()
+            const current = directory.get(next.currentModel).displayName
+            const requested = directory.get(explicitPickModel).displayName
             let released = false
             try {
               const held = await callFreebuffSession('GET', token, {
@@ -939,11 +973,17 @@ export function useFreebuffSession({
               .setMessages((prev) => [
                 ...prev,
                 getSystemMessage(
-                  freebuffWithdrawnModelMessage(next.requestedModel),
+                  getFreebuffModelDirectory().withdrawnMessage(
+                    next.requestedModel,
+                  ),
                 ),
               ])
-          } else if (isFreebuffLimitedOfferModelId(next.requestedModel)) {
-            const requested = getFreebuffModel(next.requestedModel).displayName
+          } else if (
+            getFreebuffModelDirectory().isLimitedOffer(next.requestedModel)
+          ) {
+            const requested = getFreebuffModelDirectory().get(
+              next.requestedModel,
+            ).displayName
             useChatStore
               .getState()
               .setMessages((prev) => [
@@ -957,7 +997,7 @@ export function useFreebuffSession({
           }
           useFreebuffModelStore
             .getState()
-            .setSelectedModel(FALLBACK_FREEBUFF_MODEL_ID)
+            .setSelectedModel(getFreebuffModelDirectory().fallbackModelId)
           // The unavailable response came from a POST attempt. Re-POST with
           // the fallback model; a GET would only redisplay the old ended row
           // and leave the restart banner stuck in its pending state.
@@ -1138,7 +1178,11 @@ export function useFreebuffSession({
         const response = await callFreebuffSession('GET', token, {
           signal,
           instanceId: getFreebuffInstanceId() ?? claimId,
-          multiSession: !legacyHour && !isFreebuffLimitedOfferModelId(getSelectedFreebuffModel()),
+          multiSession:
+            !legacyHour &&
+            !getFreebuffModelDirectory().isLimitedOffer(
+              getSelectedFreebuffModel(),
+            ),
         })
         if (cancelled || signal.aborted || generation !== restartGeneration ||
             useFreebuffSessionStore.getState().session !== current) return
@@ -1282,9 +1326,37 @@ export function useFreebuffSession({
       },
     }
 
-    tick()
+    // Entering or leaving catalog mode after the first request went out (a
+    // late or failed catalog) changes what the session's model fields mean:
+    // keys in one protocol, ids in the other. Re-read the session in the new
+    // protocol instead of leaving the other kind in the store, which the
+    // landing screen would otherwise keep until the user acts (it does not
+    // poll). A flip before the first response is replayed after it. Only
+    // the states `refreshMetadata` is built for are re-read; the others are
+    // one-shot prompts that the user's next action replaces.
+    let unsubscribeCatalog: (() => void) | undefined
+    const refreshForProtocol = () => {
+      const status = useFreebuffSessionStore.getState().session?.status
+      if (status !== 'none' && status !== 'active' && status !== 'ended')
+        return
+      controller?.refreshMetadata().catch(() => {})
+    }
+    afterCatalog(() => {
+      unsubscribeCatalog = useFreebuffCatalogStore.subscribe(
+        (state, previous) => {
+          if ((state.catalog === null) === (previous.catalog === null)) return
+          if (previousStatus === null) {
+            protocolRefreshPending = true
+            return
+          }
+          refreshForProtocol()
+        },
+      )
+      void tick()
+    })
 
     return () => {
+      unsubscribeCatalog?.()
       cancelled = true
       abortController.abort()
       clearTimer()

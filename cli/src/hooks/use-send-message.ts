@@ -28,6 +28,7 @@ import {
   freebuffSessionMetadata,
 } from '../utils/freebuff-session-identity'
 import { loadAgentDefinitions } from '../utils/local-agent-registry'
+import { runWithFreebuffCatalogStaleRetry } from '../utils/freebuff-model-catalog'
 import { logger } from '../utils/logger'
 import { clearActiveRun, registerActiveRun } from '../utils/active-run'
 import {
@@ -642,8 +643,8 @@ export const useSendMessage = ({
         // A sponsored turn loads NO local agent definitions: a `.agents/`
         // definition is repository-authored content a sponsored run has no
         // business loading, and its agent is the pinned sponsored one.
-        const agentDefinitions = sponsored ? [] : loadAgentDefinitions()
-        const resolvedAgent = sponsored
+        let agentDefinitions = sponsored ? [] : loadAgentDefinitions()
+        let resolvedAgent = sponsored
           ? sponsored.plan.agent
           : resolveAgent(agentMode, agentId, agentDefinitions)
 
@@ -713,7 +714,13 @@ export const useSendMessage = ({
               priorByok.revision === selectedByok.revision,
             )
           : !byok
-        const runConfig = sponsored
+        // Read once: a stale-handle retry below must resume from the same
+        // state as the refused attempt, whose own snapshots may have landed
+        // in the ref by then.
+        const previousRunStateForTurn = canResumePreviousRun
+          ? previousRunStateRef.current
+          : null
+        const buildRunConfig = () => sponsored
           ? {
               // The turn's first model event reports `running` (COD-665 V5).
               ...withSponsoredModelEventTap(
@@ -748,9 +755,7 @@ export const useSendMessage = ({
               content: messageContent,
               // A persisted run has a non-secret source pin. Never resume its
               // transcript after switching to Freebuff or another BYOK revision.
-              previousRunState: canResumePreviousRun
-                ? previousRunStateRef.current
-                : null,
+              previousRunState: previousRunStateForTurn,
               agentDefinitions,
               eventHandlerState,
               signal: abortController.signal,
@@ -804,6 +809,8 @@ export const useSendMessage = ({
               },
             })
 
+        let runConfig = buildRunConfig()
+
         // Log a summary only: the full run config contains the entire
         // conversation history and attachments, which bloats log.jsonl.
         logger.info(
@@ -834,7 +841,29 @@ export const useSendMessage = ({
         // sponsor's run, so with no mailbox open it waits in the queue.
         if (!sponsored) activateSteering(runOwnerId)
         const runState = pinByokConnection(
-          await client.run(runConfig as Parameters<typeof client.run>[0]),
+          await runWithFreebuffCatalogStaleRetry({
+            run: (attempt) => {
+              if (attempt > 0) {
+                // The catalog was refetched: rebuild the root so the same
+                // row goes out under its new handle.
+                agentDefinitions = loadAgentDefinitions()
+                resolvedAgent = resolveAgent(
+                  agentMode,
+                  agentId,
+                  agentDefinitions,
+                )
+                runConfig = buildRunConfig()
+              }
+              return client.run(runConfig as Parameters<typeof client.run>[0])
+            },
+            canRetry: () =>
+              IS_FREEBUFF &&
+              !sponsored &&
+              !byok &&
+              !abortController.signal.aborted &&
+              !hasReceivedContentRef.current &&
+              runChatIsCurrent(),
+          }),
           selectedByok,
         )
         if (sponsored && runState.output?.type === 'error') {

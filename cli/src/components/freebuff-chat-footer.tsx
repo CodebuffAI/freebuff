@@ -1,8 +1,7 @@
-import { getFreebuffModel } from '@codebuff/common/constants/freebuff-models'
-
 import { Button } from './button'
 import { useTheme } from '../hooks/use-theme'
 import { useChatStore } from '../state/chat-store'
+import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import {
   useFreebuffChatStore,
   openFreebuffModelPicker,
@@ -19,7 +18,8 @@ export function FreebuffChatFooter({ projectRoot }: { projectRoot: string }) {
   const selected = useFreebuffModelStore((s) => s.selectedModel)
   useFreebuffModelStore((s) => s.reasoningEffortByModel)
   const nextModel = useFreebuffChatStore((s) => s.nextModel)
-  const model = getFreebuffModel(nextModel ?? selected)
+  const directory = useFreebuffModelDirectory()
+  const model = directory.get(nextModel ?? selected)
   const effort = getEffectiveFreebuffReasoningEffort(model.id)
   const name = useChatStore((s) => getFirstUserPrompt(s.messages))
   return (

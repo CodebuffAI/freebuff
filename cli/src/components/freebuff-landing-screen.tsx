@@ -30,6 +30,7 @@ import { useNow } from '../hooks/use-now'
 import { useSheenAnimation } from '../hooks/use-sheen-animation'
 import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
 import { useTheme } from '../hooks/use-theme'
+import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { exitCliCleanly } from '../utils/exit-cleanly'
 import {
   formatFreebuffPremiumResetCountdown,
@@ -56,7 +57,6 @@ import {
   FREEBUFF_ENABLE_STREAK_IN_UI,
   FREEBUFF_LIMITED_SESSION_LIMIT,
   FREEBUFF_PREMIUM_SESSION_LIMIT,
-  isFreebuffPremiumModelId,
 } from '@codebuff/common/constants/freebuff-models'
 import {
   getRateLimitsByModel,
@@ -583,10 +583,11 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   // payload. It no longer does — a per-model ceiling or a subscription-backed
   // row publishes its own allowance — so the pool is resolved the same way the
   // pickers resolve theirs.
+  const modelDirectory = useFreebuffModelDirectory()
   const rateLimitsByModel = getRateLimitsByModel(session)
   const sessionRateLimit = getFreebuffSharedPoolQuota(
     rateLimitsByModel,
-    isFreebuffPremiumModelId,
+    modelDirectory.isPremium,
   )
   const sharedSessionUsed = sessionRateLimit?.recentCount ?? 0
   // Hide the "0 of N … used" line entirely for a fresh user — a zeroed counter

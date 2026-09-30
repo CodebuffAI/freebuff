@@ -64,6 +64,9 @@ export const SPEND_PROVIDER_IDS = [
   'openrouter',
   'runinfra',
   'siliconflow',
+  // Vercel AI Gateway: serves server-catalog models (docs/freebuff-model-
+  // catalog.md). Like Merge, a gateway that bills for every vendor it fronts.
+  'vercel',
   'xiaomi',
 ] as const
 

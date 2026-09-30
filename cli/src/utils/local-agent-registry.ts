@@ -10,10 +10,12 @@ import {
 
 import type { MCPConfig } from '@codebuff/common/types/mcp'
 
+import { getFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { getSelectedFreebuffModel } from '../state/freebuff-model-store'
 import { getProjectRoot } from '../project-files'
 import { IS_FREEBUFF, type AgentMode } from './constants'
 import { getAgentIdForMode } from './freebuff-agent-selection'
+import { freebuffCatalogRootAgent } from './freebuff-catalog-agent'
 import { logger } from './logger'
 import * as bundledAgentsModule from '../agents/bundled-agents.generated'
 
@@ -325,6 +327,14 @@ export const loadAgentDefinitions = (): AgentDefinition[] => {
   )
   const bundledIds = new Set(Object.keys(bundledAgents))
 
+  // The catalog root (docs/freebuff-model-catalog.md) is not bundled: it is
+  // built from the selected catalog row, whose handle rotates, so it is
+  // rebuilt on every load and only exists while a catalog row is selected.
+  // Added before the merges below so it gets the same MCP servers and user
+  // agents as every bundled root.
+  const catalogRoot = IS_FREEBUFF ? selectedFreebuffCatalogRoot() : undefined
+  if (catalogRoot) definitions.push(catalogRoot)
+
   // Get user agents from the SDK-loaded cache
   const userAgentDefs = getUserAgentDefinitions()
   const userAgentIds = userAgentDefs.map((def) => def.id)
@@ -378,6 +388,14 @@ export const loadAgentDefinitions = (): AgentDefinition[] => {
   }
 
   return definitions
+}
+
+/** The runtime root for the selected catalog row, when one is selected. */
+const selectedFreebuffCatalogRoot = (): AgentDefinition | undefined => {
+  const selection = getSelectedFreebuffModel()
+  const row = getFreebuffModelDirectory().row(selection)
+  if (!row || row.key !== selection) return undefined
+  return freebuffCatalogRootAgent(row) as unknown as AgentDefinition
 }
 
 // ============================================================================

@@ -110,7 +110,11 @@ import { useSponsoredRunStore } from '../state/sponsored-run-store'
 import { getAuthToken } from './auth'
 import { getConfigDir } from './config-dir'
 import { IS_FREEBUFF } from './constants'
-import { getAgentIdForMode } from './freebuff-agent-selection'
+import {
+  getAgentIdForMode,
+  getFreebuffCliAgentIdForModel,
+} from './freebuff-agent-selection'
+import { isFreebuffCatalogMode } from '../state/freebuff-catalog-store'
 import { logger } from './logger'
 import { atomicPrivateWrite, privateStateFile } from './private-state'
 import {
@@ -927,7 +931,15 @@ export class SponsoredRun {
       signal: active.abort.signal,
       recorder: active.recorder,
     }
-    const agentId = (this.deps.agentId ?? (() => getAgentIdForMode('LITE')))()
+    // A sponsored grant names a plain model id, which the catalog root does
+    // not admit, so a catalog-mode CLI runs it on that model's compiled root.
+    const agentId = (
+      this.deps.agentId ??
+      (() =>
+        isFreebuffCatalogMode()
+          ? getFreebuffCliAgentIdForModel(grant.modelId)
+          : getAgentIdForMode('LITE'))
+    )()
     return {
       runId: active.runId,
       proposalId: active.proposalId,

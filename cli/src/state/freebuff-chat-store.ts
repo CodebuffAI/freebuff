@@ -1,8 +1,10 @@
 import { create } from 'zustand'
 
-import { getSelectedFreebuffModel } from './freebuff-model-store'
+import {
+  getSelectedFreebuffModel,
+  persistFreebuffModelPick,
+} from './freebuff-model-store'
 import { useFreebuffSessionStore } from './freebuff-session-store'
-import { saveFreebuffModelPreference } from '../utils/settings'
 
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
 import type { FreebuffWalletSpendLimit } from '@codebuff/common/types/freebuff-session'
@@ -30,7 +32,7 @@ export function openFreebuffModelPicker() {
 
 export function selectFreebuffChatModel(model: string) {
   if (useFreebuffChatStore.getState().admission) return
-  saveFreebuffModelPreference(model)
+  persistFreebuffModelPick(model)
   useFreebuffChatStore.setState({ nextModel: model, pickerOpen: false })
 }
 

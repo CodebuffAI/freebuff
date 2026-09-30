@@ -1,4 +1,7 @@
-import { compactionPolicyForModel } from '@codebuff/common/constants/compaction-policy'
+import {
+  compactionPolicyForModel,
+  type CompactionPolicy,
+} from '@codebuff/common/constants/compaction-policy'
 
 import {
   FOLLOWUP_STYLE_GUIDANCE,
@@ -14,6 +17,13 @@ import {
 
 export function createBase3(
   model: SecretAgentDefinition['model'] = OPUS_MODEL,
+  options: {
+    /** Overrides the per-model policy. A server-catalog row supplies it,
+     *  because its `model` is an opaque handle the lookup cannot key on; its
+     *  `maxContextLength` replaces the runtime's per-model budget lookup for
+     *  the same reason. */
+    compaction?: CompactionPolicy & { maxContextLength?: number }
+  } = {},
 ): Omit<SecretAgentDefinition, 'id'> {
   return {
     publisher,
@@ -36,7 +46,7 @@ export function createBase3(
     // Per-model idle gap and token floor (common/src/constants/
     // compaction-policy.ts). Explicit, not `true`: a bare `true` would take
     // the runtime default instead of the model's.
-    compactContext: compactionPolicyForModel(model),
+    compactContext: options.compaction ?? compactionPolicyForModel(model),
     toolNames: [
       'read_files',
       'str_replace',
@@ -93,10 +103,16 @@ export function createBase3CliRoot(
     /** Drop the tools that address a human. For the eval harness, where an
      *  ask_user call would stall the run rather than gather anything. */
     noAskUser?: boolean
+    /** The model's human name, for the meta-information line. A server
+     *  catalog root's `model` is an opaque handle, which must not be what the
+     *  prompt tells the model it is running on. */
+    modelLabel?: string
+    /** See createBase3. */
+    compaction?: CompactionPolicy & { maxContextLength?: number }
   } = {},
 ): Omit<SecretAgentDefinition, 'id'> {
   const { model = OPUS_MODEL, isFreebuff = false, noAskUser = false } = options
-  const base3 = createBase3(model)
+  const base3 = createBase3(model, { compaction: options.compaction })
 
   const root: Omit<SecretAgentDefinition, 'id'> = {
     ...base3,
@@ -128,7 +144,11 @@ export function createBase3CliRoot(
       'skill',
     ],
     systemPrompt: `${base3.systemPrompt}
-${buildCliAppendix({ isFreebuff, model, noAskUser })}`,
+${buildCliAppendix({
+  isFreebuff,
+  model: options.modelLabel ?? model,
+  noAskUser,
+})}`,
   }
 
   if (!noAskUser) return root
@@ -150,7 +170,8 @@ function buildCliAppendix({
   noAskUser = false,
 }: {
   isFreebuff: boolean
-  model: SecretAgentDefinition['model']
+  /** The model id, or its human name when the id is an opaque handle. */
+  model: string
   noAskUser?: boolean
 }): string {
   return `

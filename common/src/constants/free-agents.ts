@@ -234,10 +234,20 @@ export const FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID]: 'base3-free-muse-spark-1-3',
 }
 
+/**
+ * The CLI's catalog root: the one base3 root a catalog-aware CLI runs for
+ * EVERY model, whose definition it builds at runtime from the server catalog
+ * row (createBase3CliRoot with the row's handle as the model). Its request
+ * `model` is always a catalog handle, which the server resolves; it admits no
+ * plain model id at all (FREE_MODE_AGENT_MODELS lists none for it).
+ */
+export const FREEBUFF_CLI_CATALOG_ROOT_AGENT_ID = 'base3-free-catalog'
+
 /** Every base3 root id, whichever surface registered it. */
 export const FREEBUFF_BASE3_AGENT_IDS: ReadonlySet<string> = new Set([
   ...Object.values(FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL),
   ...Object.values(FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL),
+  FREEBUFF_CLI_CATALOG_ROOT_AGENT_ID,
 ])
 
 /**
@@ -508,6 +518,10 @@ export const FREEBUFF_ROOT_AGENT_IDS = [
   'base3-free-muse-spark-1-3',
   'base3-free-ox-alpha',
   'base3-free-gemini-3-8-flash',
+  // The CLI's catalog root (FREEBUFF_CLI_CATALOG_ROOT_AGENT_ID): ONE root for
+  // every model the server catalog offers, built at runtime from the catalog
+  // row, so a new model needs no new root and no release.
+  'base3-free-catalog',
   ...FREEBUFF_DESKTOP_THREAD_AGENT_IDS,
   // The Desktop auto-run decider. Spawns nothing, but the hierarchy gate reads
   // this list for the ROOT itself, and a decision has no parent run to hang off.
@@ -886,6 +900,9 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // caps premium-bucket models (incl. MiniMax M3) to one active
   // session per user (premium_slot_taken), so "one premium model at a time" in
   // full access holds regardless of this allowlist.
+  // No plain id is admissible on the catalog root: its requests carry a
+  // catalog handle, which the completions route resolves and admits there.
+  [FREEBUFF_CLI_CATALOG_ROOT_AGENT_ID]: new Set<string>(),
   [FREEBUFF_DESKTOP_THREAD_AGENT_ID]: FREEBUFF_DESKTOP_MODELS,
   [getFreebuffDesktopThreadAgentId('local')]: FREEBUFF_DESKTOP_MODELS,
   [getFreebuffDesktopThreadAgentId('worktree')]: FREEBUFF_DESKTOP_MODELS,

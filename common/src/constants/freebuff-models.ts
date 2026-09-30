@@ -31,6 +31,7 @@ import {
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
   type FreebuffAccessTier,
 } from './freebuff-model-entitlements'
+import { getFreebuffModelPolicyOverlay } from './freebuff-model-policy-overlay'
 import { clampReasoningEffort, type ReasoningEffort } from './reasoning-effort'
 
 export {
@@ -1466,6 +1467,14 @@ export const FREEBUFF_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   [FREEBUFF_SOLAR_MINI_4_MODEL_ID]: 500_000,
   // OpenRouter publishes 1,000,000 for Space Bunny Alpha's one endpoint.
   [FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID]: 1_000_000,
+  // The three below were already 1_000_000 in base-chat's mirror and missing
+  // here, so Desktop's context meter (and the server catalog's default rows)
+  // drew them at the 131_072 default. GPT-6.1 Sol publishes 1,050,000 on every
+  // OpenRouter endpoint (verified 2026-09-30), Muse Spark 1.3 the 1,048,576
+  // above, and Gemini 3.8 Flash 1,048,576; all entered low like their peers.
+  [FREEBUFF_GPT_61_SOL_MODEL_ID]: 1_000_000,
+  [FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID]: 1_000_000,
+  [FREEBUFF_GEMINI_38_FLASH_MODEL_ID]: 1_000_000,
 }
 
 /** Window assumed for any model missing from FREEBUFF_MODEL_CONTEXT_WINDOWS.
@@ -4416,6 +4425,18 @@ export function isFreebuffSessionModelAllowedForAccessTier(
   // (see FREEBUFF_PAUSED_FREE_MODEL_IDS), so every other branch here would
   // happily admit it.
   if (isFreebuffPausedFreeModelId(model)) return false
+  // The server catalog's tier access, when it sets one. `locked` is a PAYWALL,
+  // not a tier refusal, at full access (checkProOnlyModel refuses a planless
+  // start); at limited access it is what a paid plan unlocks, exactly like the
+  // compiled plan rows below.
+  const catalogAccess = getFreebuffModelPolicyOverlay()?.tierAccess?.(
+    model,
+    accessTier === 'limited' ? 'limited' : 'full',
+  )
+  if (catalogAccess === 'hidden') return false
+  if (catalogAccess === 'open') return true
+  if (catalogAccess === 'locked')
+    return accessTier !== 'limited' || hasPaidSubscription
   if (accessTier !== 'limited') return isFreebuffSessionModelId(model)
   // See isRewardModelRedeemableAtLimitedTier: GLM's limited-tier gate is the quota
   // pool (bounty grants only), not this allowlist.
@@ -4626,7 +4647,12 @@ export function isSupportedFreebuffModelId(
   id: string | null | undefined,
 ): id is SupportedFreebuffModelId {
   if (!id) return false
-  return SUPPORTED_FREEBUFF_MODELS.some((m) => m.id === id)
+  return (
+    SUPPORTED_FREEBUFF_MODELS.some((m) => m.id === id) ||
+    // A catalog-only model (server catalog) is a supported session model on
+    // the server that registered it, and unknown everywhere else.
+    getFreebuffModelPolicyOverlay()?.model?.(id) !== undefined
+  )
 }
 
 /**
@@ -4900,7 +4926,8 @@ function findFreebuffModelOption(
 ): FreebuffModelOption | undefined {
   return (
     SUPPORTED_FREEBUFF_MODELS.find((m) => freebuffModelIdMatches(id, m.id)) ??
-    FREEBUFF_WEB_ALL_MODELS.find((m) => freebuffModelIdMatches(id, m.id))
+    FREEBUFF_WEB_ALL_MODELS.find((m) => freebuffModelIdMatches(id, m.id)) ??
+    (id ? getFreebuffModelPolicyOverlay()?.model?.(id) : undefined)
   )
 }
 
@@ -4909,6 +4936,8 @@ function findFreebuffModelOption(
 export function getFreebuffModelEfforts(
   id: string | null | undefined,
 ): readonly ReasoningEffort[] | null {
+  const override = id ? getFreebuffModelPolicyOverlay()?.efforts?.(id) : undefined
+  if (override) return override.efforts.length > 0 ? override.efforts : null
   const efforts = findFreebuffModelOption(id)?.efforts
   return efforts && efforts.length > 0 ? efforts : null
 }
@@ -4917,6 +4946,13 @@ export function getFreebuffModelEfforts(
 export function getFreebuffModelDefaultEffort(
   id: string | null | undefined,
 ): ReasoningEffort | null {
+  const override = id ? getFreebuffModelPolicyOverlay()?.efforts?.(id) : undefined
+  if (override) {
+    if (override.efforts.length === 0) return null
+    return (
+      override.defaultEffort ?? override.efforts[override.efforts.length - 1]!
+    )
+  }
   const entry = findFreebuffModelOption(id)
   if (!entry?.efforts?.length) return null
   return entry.defaultEffort ?? entry.efforts[entry.efforts.length - 1]!
@@ -5100,6 +5136,7 @@ export function resolveSupportedFreebuffModel(
 export function getFreebuffModel(id: string): FreebuffModelOption {
   return (
     SUPPORTED_FREEBUFF_MODELS.find((m) => m.id === id) ??
+    getFreebuffModelPolicyOverlay()?.model?.(id) ??
     FREEBUFF_MODELS.find((m) => m.id === FALLBACK_FREEBUFF_MODEL_ID)!
   )
 }

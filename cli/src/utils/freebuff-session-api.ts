@@ -25,7 +25,17 @@ import {
   FREEBUFF_SESSION_UNSUPPORTED_MESSAGE,
 } from '@codebuff/common/constants/freebuff-models'
 
+import {
+  FREEBUFF_CATALOG_PROTOCOL_HEADER,
+  FREEBUFF_CATALOG_PROTOCOL_VERSION,
+  FREEBUFF_CATALOG_STALE_ERROR,
+} from '@codebuff/common/types/freebuff-model-catalog'
+
+import { useFreebuffCatalogStore } from '../state/freebuff-catalog-store'
+import { freebuffCatalogHandleFor } from './freebuff-model-directory'
+
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
+import type { FreebuffModelCatalog } from '@codebuff/common/types/freebuff-model-catalog'
 import type { FreebuffSessionServerResponse } from '@codebuff/common/types/freebuff-session'
 
 const SESSION_FETCH_TIMEOUT_MS = 20_000
@@ -109,6 +119,11 @@ export function sessionFetchSignal(
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
 
+/** The web API origin the session and catalog endpoints live on. */
+export function freebuffApiBaseUrl(): string {
+  return sessionBaseUrl()
+}
+
 function sessionBaseUrl(): string {
   return (env.NEXT_PUBLIC_CODEBUFF_APP_URL || 'https://codebuff.com').replace(
     /\/$/,
@@ -162,19 +177,65 @@ export function freebuffSessionUnreachableMessage(host: string): string {
   )
 }
 
+type FreebuffSessionCallOptions = {
+  instanceId?: string
+  multiSession?: boolean
+  takeoverInstanceId?: string
+  model?: string
+  walletSpendLimit?: FreebuffWalletSpendLimit
+  firstTabDiscount?: boolean
+  signal?: AbortSignal
+  compact?: boolean
+}
+
+/**
+ * One session request, in whichever protocol this process is speaking.
+ *
+ * In catalog mode (docs/freebuff-model-catalog.md) every call carries the
+ * catalog protocol header, so the server answers with catalog keys, and an
+ * admission's `model` is a KEY that goes out as the row's HANDLE. A handle the
+ * server no longer accepts comes back as 409 `freebuff_catalog_stale`: the
+ * catalog is refetched once and the request retried once with the new handle
+ * for the same key. A second refusal is surfaced like any other failure.
+ *
+ * In fallback mode none of that applies and the request is byte-for-byte the
+ * pre-catalog one.
+ */
 export async function callFreebuffSession(
   method: FreebuffSessionMethod,
   token: string,
-  opts: {
-    instanceId?: string
-    multiSession?: boolean
-    takeoverInstanceId?: string
-    model?: string
-    walletSpendLimit?: FreebuffWalletSpendLimit
-    firstTabDiscount?: boolean
-    signal?: AbortSignal
-    compact?: boolean
-  } = {},
+  opts: FreebuffSessionCallOptions = {},
+): Promise<FreebuffSessionServerResponse> {
+  const catalog = useFreebuffCatalogStore.getState().catalog
+  try {
+    return await requestFreebuffSession(method, token, opts, catalog)
+  } catch (error) {
+    const refreshAfterStale =
+      useFreebuffCatalogStore.getState().refreshAfterStale
+    if (
+      !catalog ||
+      !(error instanceof FreebuffSessionRequestError) ||
+      error.errorCode !== FREEBUFF_CATALOG_STALE_ERROR ||
+      !refreshAfterStale ||
+      opts.signal?.aborted
+    ) {
+      throw error
+    }
+    if (!(await refreshAfterStale())) throw error
+    return requestFreebuffSession(
+      method,
+      token,
+      opts,
+      useFreebuffCatalogStore.getState().catalog,
+    )
+  }
+}
+
+async function requestFreebuffSession(
+  method: FreebuffSessionMethod,
+  token: string,
+  opts: FreebuffSessionCallOptions,
+  catalog: FreebuffModelCatalog | null,
 ): Promise<FreebuffSessionServerResponse> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -198,6 +259,9 @@ export async function callFreebuffSession(
         headers[FREEBUFF_INCLUDE_UNUSED_RATE_LIMITS_HEADER] = '1'
     }
   }
+  if (catalog) {
+    headers[FREEBUFF_CATALOG_PROTOCOL_HEADER] = FREEBUFF_CATALOG_PROTOCOL_VERSION
+  }
   if ((multiSession || method !== 'POST') && opts.instanceId) {
     headers[FREEBUFF_INSTANCE_HEADER] = opts.instanceId
   }
@@ -207,7 +271,13 @@ export async function callFreebuffSession(
   if (method === 'POST') {
     if (opts.takeoverInstanceId)
       headers[FREEBUFF_TAKEOVER_INSTANCE_HEADER] = opts.takeoverInstanceId
-    if (opts.model) headers[FREEBUFF_MODEL_HEADER] = opts.model
+    if (opts.model) {
+      // A key the catalog has no row for goes out as-is: the server answers
+      // it stale, which refetches the catalog.
+      headers[FREEBUFF_MODEL_HEADER] = catalog
+        ? (freebuffCatalogHandleFor(catalog, opts.model) ?? opts.model)
+        : opts.model
+    }
     headers[FREEBUFF_WALLET_SPEND_LIMIT_HEADER] = String(
       opts.walletSpendLimit ?? 0,
     )

@@ -7,10 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Button } from './button'
 import { useCopyToClipboard } from './copy-button'
-import {
-  FREEBUFF_REWARD_MODEL_DISPLAY_NAME,
-  FREEBUFF_REWARD_MODEL_ID,
-} from '@codebuff/common/constants/freebuff-models'
+import { FREEBUFF_REWARD_MODEL_DISPLAY_NAME } from '@codebuff/common/constants/freebuff-models'
 import { FREEBUFF_REWARD_MAX_DAILY_SESSIONS } from '@codebuff/common/constants/freebuff-models'
 import { REFERRAL_CLI_DAILY_SESSION_BONUS_CAP } from '@codebuff/common/constants/freebuff-referral-tiers'
 import { pluralize } from '@codebuff/common/util/string'
@@ -18,6 +15,7 @@ import { pluralize } from '@codebuff/common/util/string'
 import { startFreebuffSession } from '../hooks/use-freebuff-session'
 import { useNow } from '../hooks/use-now'
 import { useTheme } from '../hooks/use-theme'
+import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { LOGIN_WEBSITE_URL } from '../login/constants'
 import { formatFreebuffPremiumResetCountdown } from '../utils/freebuff-premium-reset'
 import { safeOpen } from '../utils/open-url'
@@ -323,19 +321,21 @@ export const FreebuffReferralBanner: React.FC<FreebuffReferralBannerProps> = ({
   const glmFocused = focusedId === GLM_FOCUS_ID
   const dashboardFocused = focusedId === DASHBOARD_FOCUS_ID
 
+  // The reward model's catalog key in catalog mode, its id otherwise.
+  const rewardModelId = useFreebuffModelDirectory().rewardModelId
   const useGlm = useCallback(() => {
     if (onSelectModel) {
-      onSelectModel(FREEBUFF_REWARD_MODEL_ID)
+      onSelectModel(rewardModelId)
       return
     }
     if (joiningRef.current) return
     joiningRef.current = true
     setJoining(true)
-    startFreebuffSession(FREEBUFF_REWARD_MODEL_ID).finally(() => {
+    startFreebuffSession(rewardModelId).finally(() => {
       joiningRef.current = false
       setJoining(false)
     })
-  }, [onSelectModel])
+  }, [onSelectModel, rewardModelId])
 
   const link = referralLink(referral.code, referral.referrerName)
   const { isCopied, copy } = useCopyToClipboard(link)

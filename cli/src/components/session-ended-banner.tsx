@@ -1,9 +1,4 @@
-import {
-  FALLBACK_FREEBUFF_MODEL_ID,
-  isFreebuffPremiumModelId,
-  SUPPORTED_FREEBUFF_MODELS,
-  type FreebuffModelOption,
-} from '@codebuff/common/constants/freebuff-models'
+import type { FreebuffModelOption } from '@codebuff/common/constants/freebuff-models'
 import { getRateLimitsByModel } from '@codebuff/common/types/freebuff-session'
 import { getFreebuffSharedPoolQuota } from '@codebuff/common/util/freebuff-session-pools'
 import { TextAttributes } from '@opentui/core'
@@ -16,6 +11,7 @@ import {
   returnToFreebuffLanding,
 } from '../hooks/use-freebuff-session'
 import { useTheme } from '../hooks/use-theme'
+import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { useFreebuffModelStore } from '../state/freebuff-model-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import {
@@ -54,11 +50,12 @@ export const SessionEndedBanner: React.FC<SessionEndedBannerProps> = ({
   // could carry its own ceiling or a subscription-backed allowance — the
   // banner would then announce a count the user cannot spend on the model
   // they were just using.
+  const directory = useFreebuffModelDirectory()
   const premiumQuota = useFreebuffSessionStore(
     (s) =>
       getFreebuffSharedPoolQuota(
         getRateLimitsByModel(s.session),
-        isFreebuffPremiumModelId,
+        directory.isPremium,
       ) ?? null,
   )
   const isQuotaExhausted = premiumQuota
@@ -91,9 +88,10 @@ export const SessionEndedBanner: React.FC<SessionEndedBannerProps> = ({
   const continueOnFallback =
     isQuotaExhausted &&
     accessTier !== 'limited' &&
-    isFreebuffPremiumModelId(selectedModel)
-  const fallbackModel: FreebuffModelOption | undefined =
-    SUPPORTED_FREEBUFF_MODELS.find((m) => m.id === FALLBACK_FREEBUFF_MODEL_ID)
+    directory.isPremium(selectedModel)
+  const fallbackModel: FreebuffModelOption | undefined = directory.get(
+    directory.fallbackModelId,
+  )
   const fallbackModelName = fallbackModel?.displayName ?? 'DeepSeek V4.1 Flash'
   // Remind the user of the fallback's data-collection policy before they
   // continue on it — the landing picker shows this caveat on the model row,
@@ -127,12 +125,12 @@ export const SessionEndedBanner: React.FC<SessionEndedBannerProps> = ({
       // rejoin POST reads the store at tick time, so it picks this up.
       useFreebuffModelStore
         .getState()
-        .setSelectedModel(FALLBACK_FREEBUFF_MODEL_ID)
+        .setSelectedModel(directory.fallbackModelId)
     }
     // Re-POST with the currently selected model and keep the chat/run state
     // intact so the next prompt continues the same conversation.
     refreshFreebuffSession().catch(() => setPendingAction(null))
-  }, [canRestart, continueOnFallback])
+  }, [canRestart, continueOnFallback, directory])
 
   useKeyboard(
     useCallback(

@@ -1,7 +1,4 @@
-import {
-  FREEBUFF_DEFAULT_CONTEXT_WINDOW,
-  FREEBUFF_MODEL_CONTEXT_WINDOWS,
-} from '@codebuff/common/constants/freebuff-models'
+import { FREEBUFF_DEFAULT_CONTEXT_WINDOW } from '@codebuff/common/constants/freebuff-models'
 import { TextAttributes } from '@opentui/core'
 import React, { useEffect, useState } from 'react'
 
@@ -12,6 +9,7 @@ import { ShimmerText } from './shimmer-text'
 import { useFreebuffSessionProgress } from '../hooks/use-freebuff-session-progress'
 import { useTheme } from '../hooks/use-theme'
 import { useChatStore } from '../state/chat-store'
+import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { useByokSelectionStore } from '../utils/byok'
 import { freebucksOf } from '../utils/freebucks'
 import { formatElapsedTime } from '../utils/format-elapsed-time'
@@ -115,6 +113,7 @@ export const StatusBar = ({
   }, [timerStartTime, shouldShowTimer, statusIndicatorState?.kind])
 
   const sessionProgress = useFreebuffSessionProgress(freebuffSession)
+  const modelDirectory = useFreebuffModelDirectory()
   // A metered session is NOT unlimited, and the absence of `rateLimit` is no
   // longer evidence that it is: a Freebucks row carries no pool row at all, so
   // the old test reported "unlimited" for the one kind of session that was
@@ -138,8 +137,7 @@ export const StatusBar = ({
   )
   const contextWindow =
     freebuffSession?.status === 'active'
-      ? (FREEBUFF_MODEL_CONTEXT_WINDOWS[freebuffSession.model] ??
-        FREEBUFF_DEFAULT_CONTEXT_WINDOW)
+      ? modelDirectory.contextWindow(freebuffSession.model)
       : FREEBUFF_DEFAULT_CONTEXT_WINDOW
   const contextUsage =
     contextTokenCount !== undefined

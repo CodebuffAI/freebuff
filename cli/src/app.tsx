@@ -9,6 +9,7 @@ import { LoginModal } from './components/login-modal'
 import { ProjectPickerScreen } from './components/project-picker-screen'
 import { useAuthQuery } from './hooks/use-auth-query'
 import { useAuthState } from './hooks/use-auth-state'
+import { useFreebuffModelCatalog } from './hooks/use-freebuff-model-catalog'
 import { useFreebuffSession } from './hooks/use-freebuff-session'
 import { useTerminalFocus } from './hooks/use-terminal-focus'
 import { getProjectRoot, startNewChat } from './project-files'
@@ -305,6 +306,8 @@ const AuthedSurface = (props: AuthedSurfaceProps) => {
   const hasSelectedByokConnection = useByokSelectionStore(
     (state) => state.selected !== undefined,
   )
+  // Before the session: its first request waits for the first catalog.
+  useFreebuffModelCatalog({ enabled: !hasSelectedByokConnection })
   const { session } = useFreebuffSession({
     enabled: !hasSelectedByokConnection,
   })

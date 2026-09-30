@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
 import { formatFreebuffHardBlockedPrivacySignals } from '@codebuff/common/util/freebuff-privacy'
-import { getFreebuffModel } from '@codebuff/common/constants/freebuff-models'
 
 import {
   resolveFreebuffModelPickForSession,
@@ -11,6 +10,7 @@ import {
   useFreebuffChatStore,
   type ChatAdmission,
 } from '../state/freebuff-chat-store'
+import { getFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import {
   freebucksOf,
@@ -182,7 +182,7 @@ export function useFreebuffChatAdmission(enabled: boolean) {
         admission: {
           ...resolved,
           phase: 'failed',
-          message: `Not enough Freebucks for ${getFreebuffModel(model).displayName} (${freebucksPriceLabel(intent.price)}). Choose another model with /model or visit https://freebuff.com/plans.`,
+          message: `Not enough Freebucks for ${getFreebuffModelDirectory().get(model).displayName} (${freebucksPriceLabel(intent.price)}). Choose another model with /model or visit https://freebuff.com/plans.`,
         },
       })
     } else if (
@@ -208,7 +208,7 @@ export function useFreebuffChatAdmission(enabled: boolean) {
             intent.kind === 'confirm'
               ? (intent.walletSpend ?? 'session')
               : undefined,
-          message: `${getFreebuffModel(model).displayName} ${cost}.${wallet}${session.status === 'active' ? ' This ends your current model session; your conversation is kept.' : ''}${intent.kind === 'confirm' && 'claimEarned' in intent && intent.claimEarned ? ' Earned Freebucks will be claimed on admission.' : ''}`,
+          message: `${getFreebuffModelDirectory().get(model).displayName} ${cost}.${wallet}${session.status === 'active' ? ' This ends your current model session; your conversation is kept.' : ''}${intent.kind === 'confirm' && 'claimEarned' in intent && intent.claimEarned ? ' Earned Freebucks will be claimed on admission.' : ''}`,
         },
       })
     } else {
