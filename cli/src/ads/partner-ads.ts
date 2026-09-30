@@ -44,6 +44,7 @@ import {
   getAdDeviceInfo,
   getCliAdRequestUserAgent,
 } from '../utils/ad-client-identity'
+import { clientEnvironmentHeaders } from '../utils/client-environment'
 import { getAuthToken } from '../utils/auth'
 import { logger } from '../utils/logger'
 import { enqueueClientLog } from '../utils/log-shipper'
@@ -298,6 +299,7 @@ export function recordPartnerImpression(ad: AdResponse): void {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
           'User-Agent': getCliAdRequestUserAgent(),
+          ...clientEnvironmentHeaders(),
         },
         body: JSON.stringify({
           impUrl: ad.impUrl,

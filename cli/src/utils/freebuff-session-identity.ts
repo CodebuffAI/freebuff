@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto'
 
+import {
+  FREEBUFF_CLIENT_ENV_METADATA_KEY,
+  FREEBUFF_INPUT_PROFILE_METADATA_KEY,
+} from '@codebuff/common/constants/freebuff-client-descriptor'
 import { FREEBUFF_CLI_CLAIM_PREFIX } from '@codebuff/common/constants/freebuff-desktop-sessions'
+
+import { getClientEnvironmentDescriptor } from './client-environment'
+import { takeInputProfile } from './input-profile'
 
 // A new identity for each CLI purchase, never shared through settings or cwd.
 // The prefix also lets delayed DELETE/refund requests retain their protocol
@@ -25,6 +32,22 @@ export function freebuffSessionMetadata(instanceId: string) {
     // The surface distinguishes native clients now that both use this store.
     ...(freebuffCliAttemptId(instanceId)
       ? { freebuff_multi_session: '1', surface: 'cli' }
+      : {}),
+  }
+}
+
+/**
+ * The client descriptors for a run: this process's environment summary and,
+ * when the prompt came from the composer, its input counts.
+ */
+export function clientDescriptorMetadata(
+  promptText: string,
+): Record<string, string> {
+  const inputProfile = takeInputProfile(promptText)
+  return {
+    [FREEBUFF_CLIENT_ENV_METADATA_KEY]: getClientEnvironmentDescriptor(),
+    ...(inputProfile
+      ? { [FREEBUFF_INPUT_PROFILE_METADATA_KEY]: inputProfile }
       : {}),
   }
 }

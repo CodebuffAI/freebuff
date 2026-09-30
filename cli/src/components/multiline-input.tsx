@@ -184,6 +184,8 @@ interface MultilineInputProps {
   onSubmit: () => void
   onKeyIntercept?: (key: KeyEvent) => boolean
   onPaste: (fallbackText?: string) => void
+  /** Called with the text each key event inserts (not pastes). */
+  onTypedText?: (text: string) => void
   placeholder?: string
   focused?: boolean
   shouldBlinkCursor?: boolean
@@ -207,6 +209,7 @@ export const MultilineInput = forwardRef<
     onChange,
     onSubmit,
     onPaste,
+    onTypedText,
     placeholder = '',
     focused = true,
     shouldBlinkCursor,
@@ -1037,12 +1040,13 @@ export const MultilineInput = forwardRef<
       if (textToInsert !== null) {
         preventKeyDefault(key)
         insertTextAtCursor(textToInsert)
+        onTypedText?.(textToInsert)
         return true
       }
 
       return false
     },
-    [insertTextAtCursor],
+    [insertTextAtCursor, onTypedText],
   )
 
   // Increase StdinParser timeout from default 10ms to 100ms.

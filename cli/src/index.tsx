@@ -61,6 +61,10 @@ import { startTerminalWatchdog } from './utils/terminal-watchdog'
 import { installTerminalProtocolController } from './utils/terminal-protocol-controller'
 import { initializeSkillRegistry } from './utils/skill-registry'
 import { detectTerminalTheme } from './utils/terminal-color-detection'
+import {
+  noteTerminalColorReply,
+  startClientEnvironmentProbe,
+} from './utils/client-environment'
 import { setOscDetectedTheme } from './utils/theme-system'
 
 import type { FileTreeNode } from '@codebuff/common/util/file'
@@ -217,6 +221,7 @@ async function main(): Promise<void> {
   if (process.stdin.isTTY && process.platform !== 'win32') {
     try {
       const oscTheme = await detectTerminalTheme()
+      noteTerminalColorReply(oscTheme !== null)
       if (oscTheme) {
         setOscDetectedTheme(oscTheme)
       }
@@ -459,6 +464,8 @@ async function main(): Promise<void> {
   // minutes and report a flood (cli.helper_process_flood) — the symptom users
   // see in Task Manager, which nothing server-side can observe.
   startWindowsMachineProcessCensus()
+  // Background, one-time; the descriptor reads `unknown` until it resolves.
+  if (IS_FREEBUFF) void startClientEnvironmentProbe()
 
   // The SDK defaults to process.emitWarning(), which bypasses OpenTUI's
   // console capture and overwrites whichever terminal rows were last drawn.

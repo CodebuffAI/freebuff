@@ -22,6 +22,7 @@ import { tryGetProjectRoot } from '../project-files'
 import { useChatStore } from '../state/chat-store'
 import { shouldInterceptChatInputKey } from '../utils/chat-input-key-intercept'
 import { getInputModeConfig } from '../utils/input-modes'
+import { recordTypedInput } from '../utils/input-profile'
 import { BORDER_CHARS } from '../utils/ui-constants'
 
 import type { useTheme } from '../hooks/use-theme'
@@ -426,6 +427,7 @@ export const ChatInputBar = ({
             onChange={setInputValue}
             onSubmit={handleSubmit}
             onPaste={onPaste}
+            onTypedText={recordTypedInput}
             onKeyIntercept={handleKeyIntercept}
             placeholder={effectivePlaceholder}
             focused={inputFocused && !feedbackMode}
@@ -523,6 +525,7 @@ export const ChatInputBar = ({
                 onChange={setInputValue}
                 onSubmit={handleSubmit}
                 onPaste={onPaste}
+                onTypedText={recordTypedInput}
                 onKeyIntercept={handleKeyIntercept}
                 placeholder={effectivePlaceholder}
                 focused={inputFocused && !feedbackMode}

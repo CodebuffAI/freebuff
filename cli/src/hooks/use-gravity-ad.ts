@@ -26,6 +26,7 @@ import {
   getAdDeviceInfo,
   getCliAdRequestUserAgent,
 } from '../utils/ad-client-identity'
+import { clientEnvironmentHeaders } from '../utils/client-environment'
 import {
   createLazyResponseAdQueue,
   MAX_RESPONSE_AD_POOL_SIZE,
@@ -242,6 +243,7 @@ export function recordAdClick(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${authToken}`,
       'User-Agent': getCliAdRequestUserAgent(),
+      ...clientEnvironmentHeaders(),
       [FREEBUFF_EVENT_ID_HEADER]: clientEventId,
     },
     body: JSON.stringify({
@@ -412,6 +414,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${authToken}`,
               'User-Agent': getCliAdRequestUserAgent(),
+              ...clientEnvironmentHeaders(),
             },
             body: JSON.stringify({
               impUrl,
@@ -450,6 +453,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
           'User-Agent': getCliAdRequestUserAgent(),
+          ...clientEnvironmentHeaders(),
           [FREEBUFF_EVENT_ID_HEADER]: clientEventId,
         },
         body: JSON.stringify({

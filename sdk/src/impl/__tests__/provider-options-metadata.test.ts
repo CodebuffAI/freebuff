@@ -53,6 +53,24 @@ describe('getProviderOptions — codebuff_metadata', () => {
     })
   })
 
+  it('client descriptors pass through without displacing reserved keys', () => {
+    const opts = getProviderOptions({
+      ...baseParams,
+      costMode: 'free',
+      extraCodebuffMetadata: {
+        freebuff_client_env: 'v1;in=1',
+        freebuff_input_profile: 'v1;tc=3',
+        client_id: 'evil-client',
+        cost_mode: 'normal',
+      },
+    })
+    const meta = (opts.codebuff as any).codebuff_metadata
+    expect(meta.freebuff_client_env).toBe('v1;in=1')
+    expect(meta.freebuff_input_profile).toBe('v1;tc=3')
+    expect(meta.client_id).toBe('session-1')
+    expect(meta.cost_mode).toBe('free')
+  })
+
   it('extraCodebuffMetadata does not overwrite reserved keys', () => {
     const opts = getProviderOptions({
       ...baseParams,

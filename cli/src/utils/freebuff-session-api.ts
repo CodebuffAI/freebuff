@@ -10,6 +10,7 @@ import {
   FREEBUFF_DESKTOP_ATTEMPT_HEADER,
   FREEBUFF_PURCHASE_CONTINUITY_HEADER,
 } from '@codebuff/common/constants/freebuff-desktop-sessions'
+import { clientEnvironmentHeaders } from './client-environment'
 import { freebuffCliAttemptId } from './freebuff-session-identity'
 import {
   FREEBUFF_COMPACT_SESSION_HEADER,
@@ -179,6 +180,7 @@ export async function callFreebuffSession(
     Authorization: `Bearer ${token}`,
     ...freebucksTimeZoneHeaders(),
     [FIRST_TAB_DISCOUNT_HEADER]: opts.firstTabDiscount ? '1' : '0',
+    ...clientEnvironmentHeaders(),
   }
   const attemptId = freebuffCliAttemptId(opts.instanceId)
   const multiSession = opts.multiSession ?? Boolean(attemptId)

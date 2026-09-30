@@ -20,6 +20,7 @@ import {
   getAdDeviceInfo,
   getCliAdRequestUserAgent,
 } from '../utils/ad-client-identity'
+import { clientEnvironmentHeaders } from '../utils/client-environment'
 import { getAuthToken } from '../utils/auth'
 import { logger } from '../utils/logger'
 import { sponsoredCliCapability } from '../utils/sponsored-cli-capability'
@@ -176,6 +177,7 @@ export async function buildAdAuctionRequest(params: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${authToken}`,
         'User-Agent': getCliAdRequestUserAgent(),
+        ...clientEnvironmentHeaders(),
       },
       body: JSON.stringify({
         ...(params.provider ? { provider: params.provider } : {}),

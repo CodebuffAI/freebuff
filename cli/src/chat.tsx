@@ -103,6 +103,7 @@ import { returnToFreebuffLanding } from './hooks/use-freebuff-session'
 import { END_SESSION_MESSAGE, IS_FREEBUFF } from './utils/constants'
 import { getSystemMessage } from './utils/message-history'
 import { getInputModeConfig } from './utils/input-modes'
+import { sealInputProfile, withPasteCount } from './utils/input-profile'
 import {
   hasSubmittedFirstPrompt,
   markFirstPromptSubmitted,
@@ -1464,6 +1465,7 @@ export const Chat = ({
     if (inputValue.trim()) {
       setTerminalTitle(inputValue)
     }
+    sealInputProfile(inputValue)
     const result = await onSubmitPrompt(inputValue, agentMode)
     handleCommandResult(result)
   }, [onSubmitPrompt, inputValue, agentMode, handleCommandResult, dockPanel])
@@ -2298,7 +2300,7 @@ export const Chat = ({
               handleExitPublish={handleExitPublish}
               handlePublish={handlePublish}
               handleSubmit={handleSubmit}
-              onPaste={createPasteHandler({
+              onPaste={withPasteCount(createPasteHandler({
                 text: inputValue,
                 cursorPosition,
                 onChange: setInputValue,
@@ -2321,7 +2323,7 @@ export const Chat = ({
                   )
                 },
                 cwd: getProjectRoot() ?? process.cwd(),
-              })}
+              }))}
               onInterruptStream={chatKeyboardHandlers.onInterruptStream}
             />
           </>
