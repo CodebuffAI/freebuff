@@ -91,6 +91,16 @@ export const getCliEnv = (): CliEnv => ({
   // campaign (`common/src/ads/local-agentic-test.ts`).
   TEST_AGENTIC_ADS: process.env.TEST_AGENTIC_ADS,
   TEST_AGENTIC_ADS_CAMPAIGN: process.env.TEST_AGENTIC_ADS_CAMPAIGN,
+
+  TZ: process.env.TZ,
+  HTTPS_PROXY: process.env.HTTPS_PROXY,
+  https_proxy: process.env.https_proxy,
+  HTTP_PROXY: process.env.HTTP_PROXY,
+  http_proxy: process.env.http_proxy,
+  ALL_PROXY: process.env.ALL_PROXY,
+  all_proxy: process.env.all_proxy,
+  NODE_TLS_REJECT_UNAUTHORIZED: process.env.NODE_TLS_REJECT_UNAUTHORIZED,
+  NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS,
 })
 
 /**

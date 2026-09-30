@@ -93,6 +93,18 @@ export type CliEnv = BaseEnv & {
   /** Local agentic-ads harness only (`scripts/local-agentic-ads`). */
   TEST_AGENTIC_ADS?: string
   TEST_AGENTIC_ADS_CAMPAIGN?: string
+
+  // Read only for presence/shape by the client environment descriptor
+  // (utils/client-environment.ts); never sent raw.
+  TZ?: string
+  HTTPS_PROXY?: string
+  https_proxy?: string
+  HTTP_PROXY?: string
+  http_proxy?: string
+  ALL_PROXY?: string
+  all_proxy?: string
+  NODE_TLS_REJECT_UNAUTHORIZED?: string
+  NODE_EXTRA_CA_CERTS?: string
 }
 
 /**

@@ -7,10 +7,15 @@
  * need I/O (ancestor process kinds, whether the terminal answered the colour
  * query) are filled in when they resolve and never block startup.
  *
- *   v1;in=1;out=1;tp=iterm;term=1;ct=1;sz=120x40;ci=0;ssh=0;l=1;p=shell;g=terminal;osc=1
+ *   v1;in=1;out=1;tp=iterm;term=1;ct=1;sz=120x40;ci=0;ssh=0;l=1;p=shell;g=terminal;osc=1;tzo=0;px=none;tls=1;ca=0
+ *
+ * The one exception to "no raw value" is `stz`, the operating system's own
+ * IANA zone, sent only when `TZ` overrides it: the zone is already sent on
+ * every request as `x-fb-timezone`, and `stz` is what that header would have
+ * said without the override.
  */
 import { execFile } from 'child_process'
-import { readFile } from 'fs/promises'
+import { readFile, readlink } from 'fs/promises'
 
 import {
   FREEBUFF_CLIENT_DESCRIPTOR_VERSION,
@@ -143,7 +148,10 @@ export function bucketProcessName(
   let name = rawName.trim()
   const slash = name.lastIndexOf('/')
   if (slash >= 0) name = name.slice(slash + 1)
-  name = name.replace(/^-+/, '').replace(/\.exe$/i, '').toLowerCase()
+  name = name
+    .replace(/^-+/, '')
+    .replace(/\.exe$/i, '')
+    .toLowerCase()
   if (!name) return 'unknown'
   if (SHELLS.has(name)) return 'shell'
   if (MULTIPLEXERS.has(name) || name.startsWith('tmux')) return 'mux'
@@ -258,6 +266,72 @@ export async function lookupProcessAncestry(params: {
   }
 }
 
+/** Where the proxy environment variables point. `loopback` = a proxy on this
+ *  machine (127.0.0.0/8, ::1, localhost). */
+export type ProxyBucket = 'none' | 'loopback' | 'remote'
+
+const LOOPBACK_HOST = /^(localhost|127(?:\.\d{1,3}){3}|\[?::1\]?|0\.0\.0\.0)$/i
+
+/** Reduce a proxy URL to where it points; never passes the URL through. */
+export function bucketProxy(value: string | undefined): ProxyBucket {
+  const raw = value?.trim()
+  if (!raw) return 'none'
+  try {
+    const url = new URL(raw.includes('://') ? raw : `http://${raw}`)
+    return LOOPBACK_HOST.test(url.hostname) ? 'loopback' : 'remote'
+  } catch {
+    return 'remote'
+  }
+}
+
+function proxyBucketOf(env: CliEnv): ProxyBucket {
+  const buckets = [
+    env.HTTPS_PROXY,
+    env.https_proxy,
+    env.HTTP_PROXY,
+    env.http_proxy,
+    env.ALL_PROXY,
+    env.all_proxy,
+  ].map(bucketProxy)
+  if (buckets.includes('loopback')) return 'loopback'
+  if (buckets.includes('remote')) return 'remote'
+  return 'none'
+}
+
+const ZONE_NAME = /^[A-Za-z]+(?:\/[A-Za-z0-9_+-]+){1,2}$/
+
+/** An IANA zone name from a zoneinfo path (`/var/db/timezone/zoneinfo/Asia/Kolkata`)
+ *  or `/etc/timezone` contents; null for anything else. */
+export function zoneFromZoneinfo(value: string | undefined): string | null {
+  const raw = value?.trim()
+  if (!raw) return null
+  const marker = raw.lastIndexOf('zoneinfo/')
+  const zone = marker >= 0 ? raw.slice(marker + 'zoneinfo/'.length) : raw
+  return ZONE_NAME.test(zone) && zone.length <= 64 ? zone : null
+}
+
+export type ReadSystemTimeZone = () => Promise<string | null>
+
+/**
+ * The zone the operating system is set to, independent of `TZ`: the
+ * `/etc/localtime` link target, else `/etc/timezone`. Null on Windows (no
+ * file to read) and on any failure.
+ */
+export const readSystemTimeZone: ReadSystemTimeZone = async () => {
+  if (process.platform === 'win32') return null
+  try {
+    const zone = zoneFromZoneinfo(await readlink('/etc/localtime'))
+    if (zone) return zone
+  } catch {
+    // not a link (copied file) or missing
+  }
+  try {
+    return zoneFromZoneinfo(await readFile('/etc/timezone', 'utf8'))
+  } catch {
+    return null
+  }
+}
+
 export type ClientEnvironmentInputs = {
   env: CliEnv
   ciEnv: CiEnv
@@ -281,8 +355,10 @@ export function formatClientEnvironment(
   inputs: ClientEnvironmentInputs,
   ancestry: ProcessAncestry,
   colorReply: TerminalColorReply,
+  systemZone: string | null = null,
 ): string {
   const { env, ciEnv } = inputs
+  const tzOverride = Boolean(env.TZ?.trim())
   const ci =
     ciEnv.CI === 'true' || ciEnv.CI === '1' || ciEnv.GITHUB_ACTIONS === 'true'
   const fields: Array<[string, string]> = [
@@ -291,17 +367,20 @@ export function formatClientEnvironment(
     ['tp', bucketTerminalProgram(env.TERM_PROGRAM)],
     ['term', flag(env.TERM)],
     ['ct', flag(env.COLORTERM)],
-    [
-      'sz',
-      `${clampDimension(inputs.columns)}x${clampDimension(inputs.rows)}`,
-    ],
+    ['sz', `${clampDimension(inputs.columns)}x${clampDimension(inputs.rows)}`],
     ['ci', flag(ci)],
     ['ssh', flag(env.SSH_TTY || env.SSH_CONNECTION)],
     ['l', flag(ancestry.launcher)],
     ['p', ancestry.parent],
     ['g', ancestry.grandparent],
     ['osc', colorReply === 'yes' ? '1' : colorReply === 'no' ? '0' : 'na'],
+    ['tzo', flag(tzOverride)],
+    ['px', proxyBucketOf(env)],
+    ['tls', env.NODE_TLS_REJECT_UNAUTHORIZED?.trim() === '0' ? '0' : '1'],
+    ['ca', flag(env.NODE_EXTRA_CA_CERTS?.trim())],
   ]
+  const zone = tzOverride ? zoneFromZoneinfo(systemZone ?? undefined) : null
+  if (zone) fields.push(['stz', zone])
   return [
     FREEBUFF_CLIENT_DESCRIPTOR_VERSION,
     ...fields.map(([k, v]) => `${k}=${v}`),
@@ -311,6 +390,7 @@ export function formatClientEnvironment(
 let inputs: ClientEnvironmentInputs | null = null
 let ancestry: ProcessAncestry = UNKNOWN_ANCESTRY
 let colorReply: TerminalColorReply = 'na'
+let systemZone: string | null = null
 let cached: string | null = null
 let probe: Promise<void> | null = null
 
@@ -331,18 +411,28 @@ function readInputs(): ClientEnvironmentInputs {
  */
 export function startClientEnvironmentProbe(
   read: ReadProcessInfo = readProcessInfo,
+  readZone: ReadSystemTimeZone = readSystemTimeZone,
 ): Promise<void> {
   if (probe) return probe
-  probe = lookupProcessAncestry({
+  const env = getCliEnv()
+  const ancestryLookup = lookupProcessAncestry({
     ppid: process.ppid,
-    launcherPid: getCliEnv().CODEBUFF_LAUNCHER_PID,
+    launcherPid: env.CODEBUFF_LAUNCHER_PID,
     platform: process.platform,
     read,
+  }).then((result) => {
+    ancestry = result
+    cached = null
   })
-    .then((result) => {
-      ancestry = result
-      cached = null
-    })
+  // Only when TZ overrides the system zone; otherwise the two are the same.
+  const zoneLookup = env.TZ?.trim()
+    ? readZone().then((zone) => {
+        systemZone = zone
+        cached = null
+      })
+    : Promise.resolve()
+  probe = Promise.all([ancestryLookup, zoneLookup])
+    .then(() => {})
     .catch(() => {})
   return probe
 }
@@ -358,7 +448,7 @@ export function getClientEnvironmentDescriptor(): string {
   if (cached) return cached
   try {
     inputs ??= readInputs()
-    cached = formatClientEnvironment(inputs, ancestry, colorReply)
+    cached = formatClientEnvironment(inputs, ancestry, colorReply, systemZone)
   } catch {
     cached = `${FREEBUFF_CLIENT_DESCRIPTOR_VERSION};err=1`
   }
@@ -377,6 +467,7 @@ export function resetClientEnvironmentForTest(): void {
   inputs = null
   ancestry = UNKNOWN_ANCESTRY
   colorReply = 'na'
+  systemZone = null
   cached = null
   probe = null
 }

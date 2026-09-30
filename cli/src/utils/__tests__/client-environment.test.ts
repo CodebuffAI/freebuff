@@ -3,11 +3,13 @@ import { describe, expect, test } from 'bun:test'
 import { createTestCliEnv } from '../../testing/env'
 import {
   bucketProcessName,
+  bucketProxy,
   bucketTerminalProgram,
   formatClientEnvironment,
   lookupProcessAncestry,
   type ProcessInfo,
   readProcessInfo,
+  zoneFromZoneinfo,
 } from '../client-environment'
 
 import type { CiEnv } from '@codebuff/common/types/contracts/env'
@@ -186,7 +188,7 @@ describe('formatClientEnvironment', () => {
       'yes',
     )
     expect(out).toBe(
-      'v1;in=1;out=1;tp=iterm;term=1;ct=1;sz=120x40;ci=0;ssh=0;l=1;p=shell;g=terminal;osc=1',
+      'v1;in=1;out=1;tp=iterm;term=1;ct=1;sz=120x40;ci=0;ssh=0;l=1;p=shell;g=terminal;osc=1;tzo=0;px=none;tls=1;ca=0',
     )
     // No raw environment value survives.
     expect(out).not.toContain('xterm')
@@ -212,8 +214,78 @@ describe('formatClientEnvironment', () => {
       'na',
     )
     expect(out).toBe(
-      'v1;in=0;out=0;tp=none;term=0;ct=0;sz=0x0;ci=1;ssh=1;l=0;p=unknown;g=unknown;osc=na',
+      'v1;in=0;out=0;tp=none;term=0;ct=0;sz=0x0;ci=1;ssh=1;l=0;p=unknown;g=unknown;osc=na;tzo=0;px=none;tls=1;ca=0',
     )
     expect(out).not.toContain('1.2.3.4')
+  })
+
+  test('a MITM sidecar: TZ forced, loopback proxy, TLS off, extra CA', () => {
+    const inputs = {
+      env: createTestCliEnv({
+        TZ: 'America/New_York',
+        HTTPS_PROXY: 'http://127.0.0.1:7860',
+        NODE_TLS_REJECT_UNAUTHORIZED: '0',
+        NODE_EXTRA_CA_CERTS: '/home/u/freebuff/proxy/certs/cert.pem',
+      }),
+      ciEnv: noCi,
+      stdinIsTTY: true,
+      stdoutIsTTY: true,
+      columns: 80,
+      rows: 24,
+    }
+    const ancestry = {
+      launcher: true,
+      parent: 'shell',
+      grandparent: 'terminal',
+    } as const
+    const out = formatClientEnvironment(inputs, ancestry, 'yes', 'Asia/Kolkata')
+    expect(out.endsWith(';tzo=1;px=loopback;tls=0;ca=1;stz=Asia/Kolkata')).toBe(
+      true,
+    )
+    expect(out).not.toContain('7860')
+    expect(out).not.toContain('cert.pem')
+    // The zone only rides along when TZ overrides it.
+    const plain = formatClientEnvironment(
+      { ...inputs, env: createTestCliEnv({ TZ: undefined }) },
+      ancestry,
+      'yes',
+      'Asia/Kolkata',
+    )
+    expect(plain).not.toContain('stz=')
+  })
+})
+
+describe('bucketProxy', () => {
+  test.each([
+    [undefined, 'none'],
+    ['', 'none'],
+    ['http://127.0.0.1:7860', 'loopback'],
+    ['127.0.0.1:8080', 'loopback'],
+    ['http://localhost:3128', 'loopback'],
+    ['http://[::1]:8080', 'loopback'],
+    ['socks5://user:pw@127.0.0.2:1080', 'loopback'],
+    ['http://proxy.corp.example:3128', 'remote'],
+    ['http://10.0.0.5:3128', 'remote'],
+    ['not a url at all', 'remote'],
+  ] as const)('%p -> %p', (value, bucket) => {
+    expect(bucketProxy(value)).toBe(bucket)
+  })
+})
+
+describe('zoneFromZoneinfo', () => {
+  test.each([
+    ['/var/db/timezone/zoneinfo/Asia/Kolkata', 'Asia/Kolkata'],
+    [
+      '/usr/share/zoneinfo/America/Argentina/Buenos_Aires',
+      'America/Argentina/Buenos_Aires',
+    ],
+    ['../usr/share/zoneinfo/Etc/GMT+5', 'Etc/GMT+5'],
+    ['Europe/Berlin\n', 'Europe/Berlin'],
+    ['UTC', null],
+    ['/usr/share/zoneinfo/../../etc/passwd', null],
+    ['Asia/Kolkata;x=1', null],
+    [undefined, null],
+  ] as const)('%p -> %p', (value, zone) => {
+    expect(zoneFromZoneinfo(value)).toBe(zone)
   })
 })
