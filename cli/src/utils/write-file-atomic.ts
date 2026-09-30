@@ -34,15 +34,28 @@ export function writeFileAtomic(filePath: string, data: string): void {
  * Async counterpart to writeFileAtomic. Used by the in-flight checkpoint writer
  * so serializing + flushing a multi-MB transcript doesn't block the CLI's
  * render/input thread. Same tmp-then-rename atomicity guarantee.
+ * When shouldCommit is supplied, a superseded write discards its temp file;
+ * the final check and rename are synchronous to prevent a stale commit.
  */
 export async function writeFileAtomicAsync(
   filePath: string,
   data: string,
+  shouldCommit?: () => boolean,
 ): Promise<void> {
   const tmpPath = tempPathFor(filePath)
   try {
     await fs.promises.writeFile(tmpPath, data)
-    await fs.promises.rename(tmpPath, filePath)
+    if (shouldCommit) {
+      // The check and rename must share a tick: an awaited rename could still
+      // land after a newer synchronous save invalidated this write.
+      if (!shouldCommit()) {
+        await fs.promises.unlink(tmpPath)
+        return
+      }
+      fs.renameSync(tmpPath, filePath)
+    } else {
+      await fs.promises.rename(tmpPath, filePath)
+    }
   } catch (error) {
     try {
       await fs.promises.unlink(tmpPath)

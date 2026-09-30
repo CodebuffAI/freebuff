@@ -318,6 +318,10 @@ function logSaveWriteFailure(
   )
 }
 
+// A synchronous final save supersedes any older checkpoint for this chat.
+// Tokens stay only while a write is in flight, so this does not retain chats.
+const activeCheckpointWrites = new Map<string, object>()
+
 /**
  * Save both the RunState and ChatMessage[] to disk.
  *
@@ -336,6 +340,11 @@ export function saveChatState(
   if (!serialized.runStateJson && !serialized.messagesJson) {
     return
   }
+  // Cancel both queued and in-flight checkpoints before committing the final
+  // state. Exit cleanup cannot await them, and they may finish while remote
+  // cleanup keeps the event loop alive.
+  pendingCheckpoints.delete(chatDir)
+  activeCheckpointWrites.delete(chatDir)
   try {
     // The dir existed when the save was captured, but may have been removed
     // since (e.g. the chat deleted from /history mid-run).
@@ -374,19 +383,26 @@ async function saveChatStateAsync(
   if (!serialized.runStateJson && !serialized.messagesJson) {
     return
   }
+  const writeToken = {}
+  activeCheckpointWrites.set(chatDir, writeToken)
+  const isCurrent = () => activeCheckpointWrites.get(chatDir) === writeToken
   try {
     await fs.promises.mkdir(chatDir, { recursive: true })
     if (serialized.runStateJson) {
       await writeFileAtomicAsync(
         path.join(chatDir, RUN_STATE_FILENAME),
         serialized.runStateJson,
+        isCurrent,
       )
     }
+    if (!isCurrent()) return
     if (serialized.messagesJson) {
       await writeFileAtomicAsync(
         path.join(chatDir, CHAT_MESSAGES_FILENAME),
         serialized.messagesJson,
+        isCurrent,
       )
+      if (!isCurrent()) return
       // Sidecar summary so /history can list this chat without parsing the
       // (unbounded) chat-messages.json. Written after the messages file: it
       // records that file's size/mtime to detect staleness. The meta write is
@@ -395,6 +411,8 @@ async function saveChatStateAsync(
     }
   } catch (error) {
     logSaveWriteFailure(error, chatDir, 'Failed to save chat state (async)')
+  } finally {
+    if (isCurrent()) activeCheckpointWrites.delete(chatDir)
   }
 }
 
