@@ -90,6 +90,10 @@ export const FREEBUFF_DESKTOP_ADMITTED_AT_HEADER =
 export const FREEBUFF_CLIENT_HEADER = 'x-freebuff-client'
 export const FREEBUFF_CLIENT_DESKTOP = 'desktop'
 
+/** A random id Freebuff Desktop mints once per install and keeps across
+ *  sign-ins. Not a credential. */
+export const FREEBUFF_INSTALL_ID_HEADER = 'x-freebuff-install-id'
+
 /** Client-persisted identity for a possibly unacknowledged Desktop POST. */
 export const FREEBUFF_DESKTOP_ATTEMPT_HEADER = 'x-freebuff-desktop-attempt-id'
 
