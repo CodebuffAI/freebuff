@@ -172,6 +172,26 @@ export function buildPaidSocialRequest(
       : config.activationEventId,
   )
   if (!eventId) throw new Error('Invalid X conversion event configuration')
+  return buildXConversionRequest({ ...params, config, xEventId: eventId })
+}
+
+/** Direct X event transport, also used by the separate advertiser funnel. */
+export type SendXConversionParams = Omit<
+  SendPaidSocialConversionParams,
+  'config' | 'eventName'
+> & {
+  config: { platform: 'x'; pixelId: string } & (
+    | { pixelToken: string }
+    | (XOAuthCredentials & { pixelToken?: never })
+  )
+  xEventId: string
+}
+
+export function buildXConversionRequest(params: SendXConversionParams) {
+  const { config } = params
+  const eventId = xEventId(config.pixelId, params.xEventId)
+  const attribution = normalizePaidSocialAttribution('x', params.attribution)
+  if (!eventId || !attribution) throw new Error('Invalid X conversion')
   const url = `https://ads-api.x.com/12/measurement/conversions/${config.pixelId}`
   return {
     url,
@@ -214,8 +234,26 @@ export function buildPaidSocialRequest(
 }
 
 /** Bounded retries retain one immutable occurrence ID. No upstream body/token logs. */
-export async function sendPaidSocialConversion(
+export function sendPaidSocialConversion(
   params: SendPaidSocialConversionParams,
+) {
+  return sendConversion(params, () => buildPaidSocialRequest(params))
+}
+
+export function sendXConversion(params: SendXConversionParams) {
+  return sendConversion(params, () => buildXConversionRequest(params))
+}
+
+async function sendConversion(
+  params: Pick<
+    SendPaidSocialConversionParams,
+    'fetchImpl' | 'sleepImpl' | 'canSend'
+  > & { config: { platform: PaidSocialPlatform } },
+  buildRequest: () => {
+    url: string
+    headers: Record<string, string>
+    body: Record<string, unknown>
+  },
 ): Promise<'sent' | 'suppressed'> {
   const sleep =
     params.sleepImpl ??
@@ -223,7 +261,7 @@ export async function sendPaidSocialConversion(
   for (let attempt = 0; attempt < 2; attempt++) {
     if (params.canSend && !(await params.canSend())) return 'suppressed'
     // OAuth nonce/timestamp must be fresh for every attempt.
-    const request = buildPaidSocialRequest(params)
+    const request = buildRequest()
     let retryable = true
     try {
       const response = await (params.fetchImpl ?? fetch)(request.url, {
