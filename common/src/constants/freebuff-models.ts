@@ -2630,13 +2630,8 @@ const GLM_V53_FLASH_MODEL = {
   // anyone anywhere, and a notice here would rewrite saved picks on every load
   // (see migrateSupersededFreebuffModelPreference).
   isNew: true,
-  // Notice only: nothing here changes the price. The switch to 15/hr is a
-  // separate change on the day.
-  dealEndingSoon: {
-    tooltip:
-      'This special deal ends September 30. After that, GLM 5.3 Flash will cost 15 Freebucks an hour.',
-    short: 'Deal ends Sep 30 · 15/hr after',
-  },
+  // The Sep 30 "deal ends" notice came off on 2026-10-01: the deal ended and
+  // the price moved (15, then a temporary 25 peak through the catalog).
 } as const satisfies FreebuffModelOption
 
 /**
