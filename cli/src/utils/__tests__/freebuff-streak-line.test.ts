@@ -276,9 +276,17 @@ describe('getFreebuffStreakBonusStatusForLayout', () => {
   }
 
   test('shows the allowance bonus and both local resets under the perk note', () => {
-    expect(getFreebuffStreakBonusStatusForLayout(layout)).toBe(
-      "+15 added to today's allowance until midnight · next +15 after 3:00 PM",
+    expect(
+      getFreebuffStreakBonusStatusForLayout({ ...layout, availableWidth: 100 }),
+    ).toBe(
+      "+15 added to today's allowance until midnight · next +15 after 3:00 PM (your time)",
     )
+  })
+
+  test('a narrow row drops the "(your time)" label before the line', () => {
+    expect(
+      getFreebuffStreakBonusStatusForLayout(layout),
+    ).toBe("+15 added to today's allowance until midnight · next +15 after 3:00 PM")
   })
 
   test('never without the note it explains, nor wider than a row', () => {

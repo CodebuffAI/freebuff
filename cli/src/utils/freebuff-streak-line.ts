@@ -114,16 +114,25 @@ export function getFreebuffStreakBonusStatusForLayout(params: {
   timeZone?: string
 }): string | null {
   if (!params.note || !params.streak) return null
-  const status = getFreebuffStreakBonusStatus({
-    streak: params.streak.streak,
-    todayUsed: params.streak.todayUsed,
-    todayCredited: params.streak.todayCredited,
-    freebucksDailyBonus: params.streak.freebucksDailyBonus,
-    nextResetAt: params.streak.nextResetAt,
-    bonusExpiresAt: params.streak.bonusExpiresAt,
-    now: params.now,
-    timeZone: params.timeZone,
-  })
-  if (!status || status.length > params.availableWidth) return null
-  return status
+  const streak = params.streak
+  const statusFor = (compact: boolean) =>
+    getFreebuffStreakBonusStatus({
+      streak: streak.streak,
+      todayUsed: streak.todayUsed,
+      todayCredited: streak.todayCredited,
+      freebucksDailyBonus: streak.freebucksDailyBonus,
+      nextResetAt: streak.nextResetAt,
+      bonusExpiresAt: streak.bonusExpiresAt,
+      now: params.now,
+      timeZone: params.timeZone,
+      compact,
+    })
+  // Prefer the line that labels its clock times "(your time)"; a narrow
+  // terminal keeps the unlabelled one rather than losing the line.
+  for (const compact of [false, true]) {
+    const status = statusFor(compact)
+    if (!status) return null
+    if (status.length <= params.availableWidth) return status
+  }
+  return null
 }

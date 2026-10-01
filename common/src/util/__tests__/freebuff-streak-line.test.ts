@@ -55,6 +55,25 @@ describe('formatFreebuffStreakResetTime', () => {
     ).toBe('9:00 AM tomorrow')
   })
 
+  test('labels a clock time as the reader\'s on request, never midnight', () => {
+    expect(
+      formatFreebuffStreakResetTime({
+        resetAt: RESET_AT,
+        now: new Date('2026-09-27T20:00:00.000Z'),
+        timeZone: 'Europe/Berlin',
+        labelReaderClock: true,
+      }),
+    ).toBe('9:00 AM tomorrow (your time)')
+    expect(
+      formatFreebuffStreakResetTime({
+        resetAt: RESET_AT,
+        now: new Date('2026-09-27T20:00:00.000Z'),
+        timeZone: 'America/Los_Angeles',
+        labelReaderClock: true,
+      }),
+    ).toBe('midnight')
+  })
+
   test('half-hour offsets keep their minutes', () => {
     expect(
       formatFreebuffStreakResetTime({
@@ -88,7 +107,9 @@ describe('getFreebuffStreakBonusStatus', () => {
         todayCredited: true,
         bonusExpiresAt: '2026-09-28T16:00:00.000Z',
       }),
-    ).toBe('+15 added to today\'s allowance until midnight · next +15 after 3:00 PM')
+    ).toBe(
+      '+15 added to today\'s allowance until midnight · next +15 after 3:00 PM (your time)',
+    )
   })
 
   test('one reset for both reads once (a Pacific reader)', () => {
@@ -114,14 +135,14 @@ describe('getFreebuffStreakBonusStatus', () => {
           bonusExpiresAt,
         }),
       ).toBe(
-        '+15 expired at your daily reset · next +15 with your first message after 3:00 PM',
+        '+15 expired at your daily reset · next +15 with your first message after 3:00 PM (your time)',
       )
     }
   })
 
   test('without an expiry (older server) it only says credited', () => {
     expect(getFreebuffStreakBonusStatus({ ...base, todayCredited: true })).toBe(
-      '+15 credited · next +15 with your first message after 3:00 PM',
+      '+15 credited · next +15 with your first message after 3:00 PM (your time)',
     )
   })
 
@@ -142,7 +163,7 @@ describe('getFreebuffStreakBonusStatus', () => {
       timeZone: 'Asia/Kolkata',
     })
     expect(status).toBe(
-      '+15 expired at your daily reset · next +15 with your first message after 12:30 PM',
+      '+15 expired at your daily reset · next +15 with your first message after 12:30 PM (your time)',
     )
     expect(status).not.toMatch(/today|wallet/i)
   })
@@ -150,7 +171,7 @@ describe('getFreebuffStreakBonusStatus', () => {
   test('a used day without a confirmed credit promises only the next one', () => {
     for (const todayCredited of [false, null, undefined]) {
       expect(getFreebuffStreakBonusStatus({ ...base, todayCredited })).toBe(
-        'Next +15 with your first message after 3:00 PM',
+        'Next +15 with your first message after 3:00 PM (your time)',
       )
     }
   })
@@ -162,7 +183,43 @@ describe('getFreebuffStreakBonusStatus', () => {
         todayUsed: false,
         todayCredited: false,
       }),
+    ).toBe('Send a message before 3:00 PM (your time) to earn +15')
+  })
+
+  // The 2026-10-01 Desktop report from Dubai (8-day streak): granted at
+  // 07:01Z on 09-30 (11:01 AM there), expired at Dubai midnight, and at
+  // 9:46 AM on 10-01 the Pacific day had not turned over. The grant was
+  // right; the bare "after 11:00 AM" left them asking whether it meant server
+  // time or their PC's.
+  test('names the reader\'s clock, so an odd hour is not read as server time', () => {
+    expect(
+      getFreebuffStreakBonusStatus({
+        streak: 8,
+        todayUsed: true,
+        todayCredited: true,
+        bonusExpiresAt: null,
+        freebucksDailyBonus: 15,
+        nextResetAt: '2026-10-01T07:00:00.000Z',
+        now: new Date('2026-10-01T05:46:05.697Z'),
+        timeZone: 'Asia/Dubai',
+      }),
+    ).toBe(
+      '+15 expired at your daily reset · next +15 with your first message after 11:00 AM (your time)',
+    )
+  })
+
+  test('compact drops the clock label, and a Pacific midnight never had one', () => {
+    expect(
+      getFreebuffStreakBonusStatus({ ...base, todayUsed: false, compact: true }),
     ).toBe('Send a message before 3:00 PM to earn +15')
+    expect(
+      getFreebuffStreakBonusStatus({
+        ...base,
+        todayUsed: false,
+        now: new Date('2026-09-27T20:00:00.000Z'),
+        timeZone: 'America/Los_Angeles',
+      }),
+    ).toBe('Send a message before midnight to earn +15')
   })
 
   test('hidden off the meter, below the milestone, or without a reset', () => {

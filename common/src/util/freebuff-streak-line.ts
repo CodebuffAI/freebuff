@@ -140,11 +140,17 @@ export function getFreebuffStreakBonusNote(params: {
  *
  * `timeZone` defaults to the runtime's own zone — the user's, on the CLI, the
  * Desktop orchestrator and a browser. A server must pass one.
+ *
+ * `labelReaderClock` marks a clock time as the reader's: "11:00 AM (your
+ * time)". East of Pacific the streak day turns over at an odd hour, and a bare
+ * "11:00 AM" had a Dubai reader asking whether it meant server time or their
+ * PC's (2026-10-01). "midnight" is left bare: it is the reader's own.
  */
 export function formatFreebuffStreakResetTime(params: {
   resetAt: Date
   now: Date
   timeZone?: string
+  labelReaderClock?: boolean
 }): string {
   const timeZone =
     params.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -160,10 +166,11 @@ export function formatFreebuffStreakResetTime(params: {
     // Newer ICU puts a narrow no-break space before AM/PM; a terminal may not
     // draw it, and it throws off width math that counts columns.
     .replace(/\s/g, ' ')
-  return getZonedYmd(params.resetAt, timeZone) ===
-    getZonedYmd(params.now, timeZone)
-    ? time
-    : `${time} tomorrow`
+  const when =
+    getZonedYmd(params.resetAt, timeZone) === getZonedYmd(params.now, timeZone)
+      ? time
+      : `${time} tomorrow`
+  return params.labelReaderClock ? `${when} (your time)` : when
 }
 
 /**
@@ -192,6 +199,10 @@ export function getFreebuffStreakBonusStatus(params: {
   now?: Date
   /** Render zone; the runtime's own when omitted. */
   timeZone?: string
+  /** Drop the "(your time)" label on the next streak day's clock time, for a
+   *  surface too narrow for it (the CLI falls back to this before hiding the
+   *  line). */
+  compact?: boolean
 }): string | null {
   if (!FREEBUFF_STREAK_REWARDS_ENABLED) return null
   const bonus = params.freebucksDailyBonus
@@ -202,10 +213,14 @@ export function getFreebuffStreakBonusStatus(params: {
   const now = params.now ?? new Date()
   // A payload held past its own reset describes a day that is already over.
   if (!Number.isFinite(resetAt.getTime()) || resetAt <= now) return null
+  // East of Pacific the next streak day starts at an odd hour of the reader's
+  // clock, which they misread as server time; label it. "midnight" (the
+  // allowance's reset for a reader at home) stays bare.
   const when = formatFreebuffStreakResetTime({
     resetAt,
     now,
     timeZone: params.timeZone,
+    labelReaderClock: !params.compact,
   })
   if (params.todayCredited === true) {
     // The bonus lives in the DAILY allowance and leaves with it at the
@@ -220,6 +235,7 @@ export function getFreebuffStreakBonusStatus(params: {
         resetAt: expiresAt,
         now,
         timeZone: params.timeZone,
+        labelReaderClock: !params.compact,
       })
       // One reset for both (a Pacific reader): say it once.
       if (expiresAt.getTime() === resetAt.getTime()) {
