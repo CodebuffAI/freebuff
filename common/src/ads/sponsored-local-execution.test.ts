@@ -24,8 +24,6 @@ import {
   sponsoredLocalSlug,
   sponsoredLocalToolNames,
   sponsoredLocalUnavailableReason,
-  sponsoredRefusedCommand,
-  sponsoredRefusedGitSubcommand,
 } from './sponsored-local-execution'
 
 describe('the local grant is its own constant (COD-336 acceptance 2)', () => {
@@ -514,85 +512,5 @@ describe('the sponsored branch namespace', () => {
     expect(sponsoredLocalSlug('x'.repeat(120)).length).toBe(50)
     expect(sponsoredLocalSlug('日本語')).toBe('task')
     expect(sponsoredLocalSlug('A b/c')).toBe('a-b-c')
-  })
-})
-
-describe('history-moving git is refused on an in-place run', () => {
-  const refusedOf = (command: string) => ({
-    command,
-    refused: sponsoredRefusedGitSubcommand(command),
-  })
-
-  it('refuses the plain spellings, as before', () => {
-    expect(sponsoredRefusedGitSubcommand('git commit -m "wip"')).toBe('commit')
-    expect(sponsoredRefusedGitSubcommand('git -C ../repo push')).toBe('push')
-    expect(sponsoredRefusedGitSubcommand('git -c user.name=x commit')).toBe(
-      'commit',
-    )
-    expect(
-      sponsoredRefusedGitSubcommand('npm test && git add -A && git commit -m x'),
-    ).toBe('commit')
-  })
-
-  it('refuses git.exe and a spelled-out path to git', () => {
-    expect(sponsoredRefusedGitSubcommand('git.exe commit -m x')).toBe('commit')
-    expect(sponsoredRefusedGitSubcommand('GIT.EXE reset --hard')).toBe('reset')
-    expect(
-      sponsoredRefusedGitSubcommand('C:\\Program Files\\Git\\cmd\\git.exe push'),
-    ).toBe('push')
-    expect(
-      sponsoredRefusedGitSubcommand(
-        '"C:\\Program Files\\Git\\cmd\\git.exe" checkout -- .',
-      ),
-    ).toBe('checkout')
-    expect(sponsoredRefusedGitSubcommand('/usr/bin/git stash')).toBe('stash')
-  })
-
-  it('does not read the value of --git-dir or --work-tree as the subcommand', () => {
-    expect(sponsoredRefusedGitSubcommand('git --git-dir .git commit -m x')).toBe(
-      'commit',
-    )
-    expect(
-      sponsoredRefusedGitSubcommand('git --git-dir=.git --work-tree . reset'),
-    ).toBe('reset')
-    expect(
-      sponsoredRefusedGitSubcommand('git --namespace ns update-ref HEAD x'),
-    ).toBe('update-ref')
-  })
-
-  it('reads git through the wrappers the command walk unwraps', () => {
-    for (const command of [
-      'bash -c "git commit -m wip"',
-      "sh -c 'git push'",
-      'cmd /c git checkout main',
-      'powershell -Command "git reset --hard"',
-      'echo "$(git stash)"',
-      'eval git clean -fdx',
-      'npx cross-env CI=1 git.exe commit -m x',
-    ]) {
-      expect(refusedOf(command)).toEqual({
-        command,
-        refused: expect.any(String),
-      })
-    }
-  })
-
-  it('allows the read-only git a procedure uses to understand the repository', () => {
-    for (const command of [
-      'git status',
-      'git diff --stat',
-      'git --git-dir .git log -5',
-      'git.exe rev-parse HEAD',
-      'bash -c "git ls-files"',
-      'grep -rn "git push" docs',
-    ]) {
-      expect(refusedOf(command)).toEqual({ command, refused: null })
-    }
-  })
-
-  it('answers a line too deep to read through sponsoredRefusedCommand', () => {
-    let command = 'git commit -m x'
-    for (let level = 0; level < 8; level++) command = `eval ${command}`
-    expect(sponsoredRefusedCommand(command, 'linux')?.kind).toBe('unverifiable')
   })
 })

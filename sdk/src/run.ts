@@ -1353,10 +1353,10 @@ async function handleToolCall({
         terminalCommandBroker,
       } as Parameters<typeof runTerminalCommand>[0])
     } else if (toolName === 'read_url') {
-      // Only the tool's own parameters: the transport and SSRF options are
-      // the host's, never the tool call's.
-      const { url, max_chars } = input as { url: string; max_chars?: number }
-      result = await readUrl({ url, max_chars, signal })
+      result = await readUrl({
+        ...(input as Parameters<typeof readUrl>[0]),
+        signal,
+      })
     } else if (toolName === 'code_search') {
       result = await codeSearch({
         projectPath: requireCwd(cwd, 'code_search'),

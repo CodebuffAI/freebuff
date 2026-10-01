@@ -101,25 +101,6 @@ export function visibleResponseAds(
 }
 
 /**
- * Whether the hook neither fetches nor acknowledges. A hidden hook makes no
- * auction, so nothing is served that the screen cannot draw.
- *
- * That matters beyond cost: the ad-signal detector reads `viewed / served`
- * per account (docs/freebuff-ad-signal-detection.md), so an ad fetched for a
- * slot that is not on screen counts against the user. Freebuff ignores the
- * compact-height rule because its chat slot always draws; a caller whose
- * slot can be hidden passes `enabled: false` for exactly as long as it is.
- */
-export function shouldHideGravityAds(params: {
-  enabled: boolean
-  terminalHeight: number
-  isFreeMode: boolean
-}): boolean {
-  const isVeryCompactHeight = params.terminalHeight <= 17
-  return !params.enabled || (isVeryCompactHeight && !params.isFreeMode)
-}
-
-/**
  * Milliseconds from auction-response receipt to now, or undefined when the ad
  * carries no receipt time. Never negative: a clock that moved backwards is a
  * zero, not a rejection, mirroring the server's clamp.
@@ -362,12 +343,16 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   )
   const [isLoading, setIsLoading] = useState(false)
 
+  // Check if terminal height is too small to show ads
   const { terminalHeight } = useTerminalLayout()
-  const shouldHideAds = shouldHideGravityAds({
-    enabled,
-    terminalHeight,
-    isFreeMode: IS_FREEBUFF,
-  })
+  const isVeryCompactHeight = terminalHeight <= 17
+
+  // Freebuff always shows ads even on compact screens (ads are mandatory there).
+  const isFreeMode = IS_FREEBUFF
+
+  // Skip ads on very compact screens unless we're in Freebuff (where ads are mandatory)
+  // Also skip if explicitly disabled (e.g. user has a subscription)
+  const shouldHideAds = !enabled || (isVeryCompactHeight && !isFreeMode)
 
   // Use Zustand selector instead of manual subscription - only rerenders when value changes
   const hasUserMessagedStore = useChatStore((s) =>

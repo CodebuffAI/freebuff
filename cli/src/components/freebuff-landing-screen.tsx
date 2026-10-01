@@ -113,32 +113,6 @@ interface FreebuffLandingScreenProps {
  *  the two from drifting. */
 const LANDING_HEADING = 'Start coding for free'
 const COLLAPSED_LOGO_MIN_HEIGHT = 26
-/** Below this many rows the banner is dropped to give the picker its rows. */
-const LANDING_AD_MIN_HEIGHT = 18
-
-/** Whether the landing screen draws its ad banner at this terminal height.
- *  Also what enables the ad hook, so an ad is fetched only when it can be
- *  drawn. */
-export function landingScreenDrawsAds(terminalHeight: number): boolean {
-  return terminalHeight >= LANDING_AD_MIN_HEIGHT
-}
-
-/** The landing screen's ad hook options. `enabled` follows the banner, so a
- *  short terminal makes no auction it could not draw. */
-export function landingAdOptions(params: {
-  terminalHeight: number
-  placementIds: string[]
-}) {
-  return {
-    enabled: landingScreenDrawsAds(params.terminalHeight),
-    forceStart: true,
-    provider: 'gravity' as const,
-    // Legacy wire name for this surface — the ads API maps it to placements,
-    // so it must not change with the component rename.
-    surface: 'waiting_room' as const,
-    placementIds: params.placementIds,
-  }
-}
 
 /** "in ~3h 20m" / "in ~45 min" / "in under a minute". Used on the
  *  rate-limited screen so users know when they can try again. */
@@ -475,7 +449,7 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
       !hasReferralMenu &&
       terminalHeight >= COLLAPSED_LOGO_MIN_HEIGHT)
   const compact = terminalHeight < 22
-  const showAds = landingScreenDrawsAds(terminalHeight)
+  const showAds = terminalHeight >= 18
   const textMarginBottom = 1
 
   const [sheenPosition, setSheenPosition] = useState(0)
@@ -499,21 +473,20 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   // not fit horizontally. This landing screen intentionally hides that label.
   const showFullLogo = logoHeightFits && logoTextBlock.length > 0
 
-  // Ads run on the landing screen whenever the banner can be drawn.
+  // Always enable ads on the landing screen — this is where monetization lives.
   // forceStart bypasses the "wait for first user message" gate inside the hook,
   // which would otherwise block ads here since no conversation exists yet.
-  //
-  // `enabled` follows `showAds`: below the banner's height floor the slot is
-  // not drawn, and an ad fetched for it would be served and never
-  // acknowledged. Those rows count against the user's render ratio in the
-  // ad-signal detector (docs/freebuff-ad-signal-detection.md).
+  // The server tries Gravity first, then falls back to ZeroClick and Carbon.
   const waitingRoomPlacementIds = visibleWaitingRoomPlacementIds(terminalWidth)
-  const { ads, recordClick, recordImpression } = useGravityAd(
-    landingAdOptions({
-      terminalHeight,
-      placementIds: waitingRoomPlacementIds,
-    }),
-  )
+  const { ads, recordClick, recordImpression } = useGravityAd({
+    enabled: true,
+    forceStart: true,
+    provider: 'gravity',
+    // Legacy wire name for this surface — the ads API maps it to placements,
+    // so it must not change with the component rename.
+    surface: 'waiting_room',
+    placementIds: waitingRoomPlacementIds,
+  })
 
   useFreebuffCtrlCExit()
 

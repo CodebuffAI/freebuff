@@ -144,19 +144,6 @@ export const getSystemProcessEnv = (): NodeJS.ProcessEnv => {
   return process.env
 }
 
-const PROXY_ENV_VARS = [
-  'HTTPS_PROXY',
-  'https_proxy',
-  'HTTP_PROXY',
-  'http_proxy',
-  'ALL_PROXY',
-  'all_proxy',
-] as const
-
-/** Whether an outbound HTTP proxy is configured for this process. */
-export const isHttpProxyConfiguredFromEnv = (): boolean =>
-  PROXY_ENV_VARS.some((name) => !!process.env[name])
-
 export const getByokOpenrouterApiKeyFromEnv = (): string | undefined => {
   return process.env[BYOK_OPENROUTER_ENV_VAR]
 }
