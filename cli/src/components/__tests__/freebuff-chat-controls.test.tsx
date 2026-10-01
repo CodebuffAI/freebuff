@@ -111,7 +111,7 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     return setup
   }
 
-  test('GLM to Luna asks for 20 Freebucks while GLM retains the first-tab discount', async () => {
+  test('GLM to Luna asks for 10 Freebucks: ending GLM releases its first-tab discount', async () => {
     const expiresAt = new Date(Date.now() + 3_600_000).toISOString()
     const glm = 'z-ai/glm-5.3-flash'
     const luna = 'openai/gpt-6-luna'
@@ -149,12 +149,12 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     })
     const setup = await mount()
     expect(useFreebuffChatStore.getState().admission?.phase).toBe('confirm')
-    expect(setup.captureCharFrame()).toContain('20')
+    expect(setup.captureCharFrame()).toContain('10')
     expect(useFreebuffChatStore.getState().admission?.message).toContain(
-      'costs 20',
+      'costs 10',
     )
     expect(useFreebuffChatStore.getState().admission?.message).not.toContain(
-      'costs 10',
+      'costs 20',
     )
     await setup.mockInput.pressKey('ESCAPE')
     expect(useFreebuffSessionStore.getState().session?.status).toBe('active')

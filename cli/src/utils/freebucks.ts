@@ -51,17 +51,17 @@ export function freebucksOf(
   session: { status: string } | null | undefined,
 ): FreebuffFreebucksInfo | null | undefined {
   const state = session as FreebuffSessionServerResponse | null | undefined
-  // Multi-session CLI purchases keep their hour and discount reservation on
-  // end. Use the server quote for a replacement instead of promising that
-  // the current purchase's discount will transfer to another model.
-  const info = getFreebucksInfo(state)
-  if (state?.status === 'active' && freebuffCliAttemptId(state.instanceId))
-    return info
-  // Legacy single-session ends do release their discount reservation.
+  // A model switch ends the current purchase first, and that end releases its
+  // first-tab discount reservation (the server does this for `cli:` claims
+  // too since 2026-09-30), so the replacement is quoted with the discount.
+  // Ordinary CLI claims use the Desktop purchase store; legacy trial sessions
+  // still use the single-session store. Match the holder's accounting surface.
   return firstTabQuoteForSession(
-    info,
+    getFreebucksInfo(state),
     state?.status === 'active' ? state : undefined,
-    'single',
+    state?.status === 'active' && freebuffCliAttemptId(state.instanceId)
+      ? 'desktop'
+      : 'single',
   )
 }
 

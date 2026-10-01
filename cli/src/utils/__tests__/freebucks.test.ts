@@ -38,7 +38,7 @@ const metered = (
 })
 
 describe('first-tab replacement quotes', () => {
-  test('a CLI model switch quotes full price while its old purchase holds the discount', () => {
+  test('a CLI model switch quotes the discount its own purchase releases on end', () => {
     const expiresAt = new Date(Date.now() + 3_600_000).toISOString()
     const glm = 'z-ai/glm-5.3-flash'
     const luna = 'openai/gpt-6-luna'
@@ -59,15 +59,21 @@ describe('first-tab replacement quotes', () => {
       freebucks: info,
     }
     const quote = freebucksOf(session)
-    expect(quote?.firstTabDiscount?.available).toBe(false)
+    expect(quote?.firstTabDiscount?.available).toBe(true)
     expect(freebucksRowIntent(quote, luna, glm)).toMatchObject({
       kind: 'confirm',
-      price: 20,
-      walletSpend: 20,
+      price: 10,
+      walletSpend: 10,
     })
+    // Another CLI process does not own the reservation: full price.
+    const sibling = { ...session, instanceId: 'cli:other' }
+    expect(freebucksOf(sibling)?.prices[luna]).toBe(20)
   })
 
-  test.each([{ instanceId: 'legacy-owner', surface: 'single' as const }])(
+  test.each([
+    { instanceId: 'cli:owner', surface: 'desktop' as const },
+    { instanceId: 'legacy-owner', surface: 'single' as const },
+  ])(
     'only the live owner can reuse its $surface discount',
     ({ instanceId, surface }) => {
       const expiresAt = new Date(Date.now() + 3_600_000).toISOString()
