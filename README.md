@@ -28,6 +28,8 @@ freebuff
 
 Then describe what you want. Freebuff finds the relevant files, makes changes, and runs the checks that matter for your project.
 
+See [CLI chat history](./docs/cli-chat-history.md) for project storage and recovering chats saved by older versions.
+
 ## Models
 
 Freebuff includes a curated model catalog. The regular picker currently offers:

@@ -1,5 +1,6 @@
 import { mkdirSync, readdirSync, statSync } from 'fs'
 import path from 'path'
+import { createHash } from 'node:crypto'
 
 import { getConfigDir } from './utils/auth'
 import { IS_FREEBUFF } from './utils/constants'
@@ -57,10 +58,13 @@ export function getProjectDataDir(): string {
     throw new Error('Project root not set')
   }
 
-  const baseName = path.basename(root)
-  const baseDir = path.join(getConfigDir(), 'projects', baseName)
-
-  return baseDir
+  // Folder names are not project identities: unrelated checkouts named
+  // "app" must not share transcripts or resumed agent state. Keep a separate
+  // namespace so new keys cannot collide with legacy basename directories.
+  const projectKey = createHash('sha256')
+    .update(path.resolve(root))
+    .digest('hex')
+  return path.join(getConfigDir(), 'projects', 'by-path', projectKey)
 }
 
 /**
