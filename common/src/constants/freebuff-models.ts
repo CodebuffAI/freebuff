@@ -4433,7 +4433,10 @@ export const FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS: readonly string[] =
     // and 5.6 is out of every picker.
     FREEBUFF_GPT_6_LUNA_MODEL_ID,
     FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-    FREEBUFF_KIMI_K3_ECO_MODEL_ID,
+    // Kimi K3 (CrofAI) LEFT on 2026-10-01, for the reason 5.6 did above: its
+    // provider is retired and no picker on any surface lists it, so no plan
+    // can sell it. Listing it here also widened limited-tier admission and
+    // the plan's usage rows to a model no subscriber can select.
     FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
     // With Luna: this list is what widens the limited tier for a subscriber,
     // so a plan-only row missing here would be offered and then coerced away.

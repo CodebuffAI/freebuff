@@ -161,8 +161,9 @@ describe('paid plans at limited access', () => {
     // MiMo 2.6 Pro joined on 2026-09-21, on Luna's terms (plan-only at
     // limited access, Freebucks at full). Muse Spark 1.3 joined on
     // 2026-09-28, paid-only on every surface, and GPT-6.1 Sol on 2026-09-29
-    // on the same terms.
-    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(8)
+    // on the same terms. Kimi K3 (CrofAI) left on 2026-10-01: its provider is
+    // retired and no picker lists it.
+    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(7)
   })
 
   test('a limited-tier plan-only row is never free at limited access', () => {
