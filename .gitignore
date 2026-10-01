@@ -99,3 +99,7 @@ gha-creds-*.json
 
 # Isolated Desktop campaign development data and credentials
 .local-agentic-ads/
+
+# Billboard asset storage credentials and the local R2 emulator's data
+.freebuff-ad-assets.json
+web/.ad-assets-r2/

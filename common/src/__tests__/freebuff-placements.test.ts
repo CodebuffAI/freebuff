@@ -222,11 +222,12 @@ describe('copy and configuration', () => {
 
     // Every slot is sellable except the partner ones, whose whole point is
     // that they are not: one advertiser is in each by agreement, and an
-    // `available` partner slot would appear in the self-serve picker.
+    // `available` partner slot would appear in the self-serve picker. The
+    // billboards are operator-placed until the console can upload their art.
     for (const slot of PLACEMENT_SLOTS) {
       expect([slot.id, slot.available]).toEqual([
         slot.id,
-        slot.format !== 'partner',
+        slot.format !== 'partner' && slot.format !== 'billboard',
       ])
     }
     expect(new Set(PLACEMENT_SLOTS.map((slot) => slot.id)).size).toBe(
@@ -243,11 +244,11 @@ describe('copy and configuration', () => {
     // eight `CLI-Chat-Inline-N` ids:
     // no shipping client requests those, so selling them would be selling a
     // decaying legacy path.
-    // Plus the three sponsor breaks and the six partner slots, which are
-    // deliberately the same surface: each is a different RENDERER on the same
-    // chat surface, not a new surface, and adding a surface costs a house
-    // creative and a pinned rollup row.
-    expect(bySurface('cli_chat')).toBe(13)
+    // Plus the three sponsor breaks, the six partner slots and the two
+    // billboards, which are deliberately the same surface: each is a different
+    // RENDERER on the same chat surface, not a new surface, and adding a
+    // surface costs a house creative and a pinned rollup row.
+    expect(bySurface('cli_chat')).toBe(15)
     expect(bySurface('waiting_room')).toBe(4)
     expect(bySurface('freebuff_web_chat')).toBe(2)
     expect(bySurface('chat_assistant')).toBe(1)

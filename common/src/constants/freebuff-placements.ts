@@ -111,6 +111,7 @@ export const PLACEMENT_FORMATS = [
   'spotlight',
   'intermission',
   'partner',
+  'billboard',
 ] as const
 export type PlacementFormat = (typeof PLACEMENT_FORMATS)[number]
 
@@ -162,6 +163,29 @@ export function isSponsorBreakFormat(format: PlacementFormat): boolean {
  */
 export function isPartnerFormat(format: PlacementFormat): boolean {
   return format === 'partner'
+}
+
+/**
+ * BILLBOARD PLACEMENTS: Desktop's full-bleed image units, the floating card
+ * over the project sidebar and the right panel's Ad tab.
+ *
+ * Competitive like a display ad, not one advertiser's chrome: any approved
+ * first-party campaign whose creative carries the slot's artwork may win it
+ * (`ad_placement_creative_asset`, shapes in `common/src/ads/billboard.ts`).
+ * But no paid network or text creative can draw one, so a billboard request
+ * shares the partner request's ROUTE -- the CPM leg alone, admitting
+ * per-conversion campaigns -- without sharing its exclusivity or its knob.
+ */
+export function isBillboardFormat(format: PlacementFormat): boolean {
+  return format === 'billboard'
+}
+
+/**
+ * Formats no paid network, CPC backfill or house floor may fill, served by
+ * the first-party CPM leg alone.
+ */
+export function isFirstPartyOnlyFormat(format: PlacementFormat): boolean {
+  return isPartnerFormat(format) || isBillboardFormat(format)
 }
 
 /**
@@ -357,6 +381,20 @@ export const PLACEMENT_SLOTS = [
     available: false,
     format: 'partner',
   },
+  // Desktop's two billboards. `available: false` keeps them operator-placed
+  // until the console can upload billboard artwork.
+  {
+    id: 'Desktop-Billboard-Sidebar',
+    surface: 'cli_chat',
+    available: false,
+    format: 'billboard',
+  },
+  {
+    id: 'Desktop-Billboard-Panel',
+    surface: 'cli_chat',
+    available: false,
+    format: 'billboard',
+  },
   {
     id: 'Web-Chat-After-User-Message',
     surface: 'freebuff_web_chat',
@@ -457,6 +495,11 @@ export function isPartnerPlacement(placementId: string): boolean {
 /** Every partner slot in the registry, in catalog order. */
 export const PARTNER_PLACEMENT_IDS: readonly string[] = PLACEMENT_SLOTS.filter(
   (slot) => slot.format === 'partner',
+).map((slot) => slot.id)
+
+/** Every billboard slot in the registry, in catalog order. */
+export const BILLBOARD_PLACEMENT_IDS: readonly string[] = PLACEMENT_SLOTS.filter(
+  (slot) => slot.format === 'billboard',
 ).map((slot) => slot.id)
 
 /**
@@ -573,6 +616,8 @@ const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
   'CLI-Partner-Slash-Review': 'CLI — Slash menu (/review)',
   'Desktop-Partner-Composer-Launch': 'Desktop — Composer (launch intent)',
   'CLI-Partner-Composer-Launch': 'CLI — Composer (launch intent)',
+  'Desktop-Billboard-Sidebar': 'Desktop — Sidebar billboard',
+  'Desktop-Billboard-Panel': 'Desktop — Right panel billboard',
 }
 
 export function placementSlotLabel(placementId: string): string {
