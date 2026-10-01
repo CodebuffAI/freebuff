@@ -109,6 +109,7 @@ import {
   resolveRememberedFreebuffWebModel,
 } from '../constants/freebuff-models'
 import type { FreebuffModelOption } from '../constants/freebuff-models'
+import { setFreebuffModelPolicyOverlay } from '../constants/freebuff-model-policy-overlay'
 import { minimaxModels } from '../constants/model-config'
 
 const FREEBUFF_KIMI_MODEL_ID = 'moonshotai/kimi-k2.7-code'
@@ -702,6 +703,32 @@ describe('freebuff model availability', () => {
     for (const model of FREEBUFF_WEB_ALL_MODELS) {
       expect(isFreebuffWebMultimodalModelId(model.id)).toBe(model.multimodal)
     }
+  })
+
+  test('reports image support for a model only the server catalog knows', () => {
+    // The server's catalog registers models through the overlay; a text-only
+    // one must answer false (describe/strip images), not undefined (send the
+    // pixels), or its upstream refuses the whole request.
+    const option = (id: string, multimodal: boolean) =>
+      ({ id, displayName: id, multimodal }) as unknown as FreebuffModelOption
+    setFreebuffModelPolicyOverlay({
+      model: (id) =>
+        id === 'catalog/text-only'
+          ? option(id, false)
+          : id === 'catalog/vision'
+            ? option(id, true)
+            : undefined,
+    })
+    try {
+      expect(getFreebuffModelImageSupport('catalog/text-only')).toBe(false)
+      expect(getFreebuffModelImageSupport('catalog/vision')).toBe(true)
+      expect(getFreebuffModelImageSupport('catalog/unknown')).toBeUndefined()
+      // A compiled model keeps its compiled answer whatever the overlay says.
+      expect(getFreebuffModelImageSupport(MINIMAX_M3_MODEL_ID)).toBe(true)
+    } finally {
+      setFreebuffModelPolicyOverlay(null)
+    }
+    expect(getFreebuffModelImageSupport('catalog/text-only')).toBeUndefined()
   })
 
   test('Kimi K2.7 Code is fully removed from Freebuff', () => {

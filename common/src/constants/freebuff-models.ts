@@ -5119,13 +5119,25 @@ export function getFreebuffModelImageSupport(
     return false
   }
 
+  // Why the overlay (2026-10-01): a model only the server's catalog knows
+  // declares `multimodal` in its catalog row, and the compiled lists cannot
+  // see it. Reading them alone answered `undefined` ("unknown, keep the
+  // images") for every such model, so a text-only one received raw pixels
+  // and its upstream refused the whole turn: 104 failed requests in the first
+  // 50 minutes of traffic (03:24-04:13Z), 83 of them a bare "Bad Request" and
+  // 21 "does not support multimodal inputs", every one carrying images, from
+  // 6 accounts over 30 runs, because a thread replays its screenshots on
+  // every later step and so fails every step after the first image.
+  // With the row's own answer, a text-only catalog model gets the describe
+  // pipeline every compiled text-only model already gets.
   const model =
     SUPPORTED_FREEBUFF_MODELS.find((option) =>
       freebuffModelIdMatches(id, option.id),
     ) ??
     FREEBUFF_WEB_ALL_MODELS.find((option) =>
       freebuffModelIdMatches(id, option.id),
-    )
+    ) ??
+    getFreebuffModelPolicyOverlay()?.model?.(id)
   return model?.multimodal
 }
 
