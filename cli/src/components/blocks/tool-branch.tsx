@@ -1,3 +1,4 @@
+import { sanitizeTerminalOutput } from '@codebuff/common/util/terminal-safe-text'
 import { memo, useCallback } from 'react'
 
 import { ContentWithMarkdown } from './content-with-markdown'
@@ -76,7 +77,7 @@ export const ToolBranch = memo(
       typeof toolBlock.input === 'object' &&
       'command' in toolBlock.input &&
       typeof toolBlock.input.command === 'string'
-        ? `$ ${toolBlock.input.command.trim()}`
+        ? `$ ${sanitizeTerminalOutput(toolBlock.input.command.trim())}`
         : null
 
     const streamingPreview = isStreaming

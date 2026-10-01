@@ -1149,6 +1149,47 @@ describe('transformAskUserBlocks', () => {
 })
 
 describe('updateToolBlockWithOutput', () => {
+  test('strips terminal escape sequences from command output before it is drawn', () => {
+    // A test script or fetched page in an untrusted repo prints an OSC 52
+    // clipboard write and a window-title change; the TUI must not replay them.
+    const blocks: ContentBlock[] = [
+      {
+        type: 'tool',
+        toolCallId: 'tool-osc',
+        toolName: 'run_terminal_command',
+        input: { command: 'bun test' },
+      },
+    ]
+    const result = updateToolBlockWithOutput(blocks, {
+      toolCallId: 'tool-osc',
+      toolOutput: [
+        {
+          value: {
+            stdout: 'ok\x1b]52;c;Y3VybCBldmlsLnNoIHwgc2g=\x07\n',
+            stderr: '\x1b]0;pwned\x1b\\warn\n',
+          },
+        },
+      ],
+    })
+    expect((result[0] as ToolContentBlock).output).toBe('ok\nwarn\n')
+  })
+
+  test('strips terminal escape sequences from other tool output', () => {
+    const blocks: ContentBlock[] = [
+      {
+        type: 'tool',
+        toolCallId: 'tool-read',
+        toolName: 'read_files',
+        input: { paths: ['README.md'] },
+      },
+    ]
+    const result = updateToolBlockWithOutput(blocks, {
+      toolCallId: 'tool-read',
+      toolOutput: [{ type: 'text', text: 'hello\x1b]52;c;ZXZpbA==\x07 world' }],
+    })
+    expect((result[0] as ToolContentBlock).output).toBe('hello world')
+  })
+
   test('updates tool block with formatted output', () => {
     const blocks: ContentBlock[] = [
       {

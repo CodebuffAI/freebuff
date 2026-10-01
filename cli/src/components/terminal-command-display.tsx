@@ -1,3 +1,4 @@
+import { sanitizeTerminalOutput } from '@codebuff/common/util/terminal-safe-text'
 import { TextAttributes } from '@opentui/core'
 import { useState } from 'react'
 
@@ -29,8 +30,8 @@ interface TerminalCommandDisplayProps {
  * Used in both the ghost message (pending bash) and message history.
  */
 export const TerminalCommandDisplay = ({
-  command,
-  output,
+  command: rawCommand,
+  output: rawOutput,
   expandable = true,
   maxVisibleLines,
   isRunning = false,
@@ -40,6 +41,11 @@ export const TerminalCommandDisplay = ({
   const theme = useTheme()
   const { separatorWidth } = useTerminalDimensions()
   const [isExpanded, setIsExpanded] = useState(false)
+  // Both are drawn as raw bytes: the command comes from the model and the
+  // output from the process (a pending `!` command's output never passes
+  // through the tool-block path that already sanitizes it).
+  const command = sanitizeTerminalOutput(rawCommand)
+  const output = rawOutput === null ? null : sanitizeTerminalOutput(rawOutput)
 
   // Default max lines depends on whether expandable
   const defaultMaxLines = expandable ? 5 : 10

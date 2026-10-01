@@ -1,3 +1,4 @@
+import { sanitizeTerminalOutput } from '@codebuff/common/util/terminal-safe-text'
 import { isEqual } from 'lodash'
 
 import { formatToolOutput } from './codebuff-client'
@@ -662,15 +663,22 @@ export const updateToolBlockWithOutput = (
 
   return blocks.map((block) => {
     if (block.type === 'tool' && block.toolCallId === toolCallId) {
+      // Tool output is whatever a command, file or fetched page contained.
+      // The TUI writes it to the terminal as bytes, so escape sequences in it
+      // (OSC 52 clipboard writes, window titles, cursor moves) are stripped
+      // here, before any renderer sees it.
       if (block.toolName !== 'run_terminal_command') {
-        return { ...block, output: formatToolOutput(toolOutput) }
+        return {
+          ...block,
+          output: sanitizeTerminalOutput(formatToolOutput(toolOutput)),
+        }
       }
       const parsed = (toolOutput?.[0] as any)?.value
       const output =
         parsed?.stdout || parsed?.stderr
           ? (parsed.stdout || '') + (parsed.stderr || '')
           : formatToolOutput(toolOutput)
-      return { ...block, output }
+      return { ...block, output: sanitizeTerminalOutput(output) }
     }
     if (block.type === 'agent' && block.blocks) {
       const updatedBlocks = updateToolBlockWithOutput(block.blocks, options)
