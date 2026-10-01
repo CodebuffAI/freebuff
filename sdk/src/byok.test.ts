@@ -91,6 +91,102 @@ describe('BYOK endpoint boundary', () => {
   })
 })
 describe('BYOK connection lifecycle', () => {
+  test('adding models reuses the endpoint and key with independent limits and lifetimes', async () => {
+    const { store, rows } = fixture()
+    const original = await store.create({
+      ...input,
+      contextWindow: 64000,
+      maxOutputTokens: 8192,
+    })
+    const added = await store.addModel({
+      ...original,
+      model: {
+        name: 'Second model',
+        model: 'second-model',
+        contextWindow: 128000,
+        maxOutputTokens: 16000,
+      },
+    })
+    expect(added).toMatchObject({
+      provider: original.provider,
+      baseUrl: original.baseUrl,
+      model: 'second-model',
+      contextWindow: 128000,
+      maxOutputTokens: 16000,
+      revision: 1,
+    })
+    expect(added.id).not.toBe(original.id)
+    expect(added.credentialRef).not.toBe(original.credentialRef)
+    expect(await store.resolve(original)).toMatchObject({
+      revision: 1,
+      contextWindow: 64000,
+    })
+    expect((await store.resolve(added)).apiKey).toBe(input.apiKey)
+    expect(JSON.stringify(rows())).not.toContain(input.apiKey)
+    const changed = await store.update({
+      ...original,
+      patch: { apiKey: 'replacement' },
+    })
+    expect((await store.resolve(added)).apiKey).toBe(input.apiKey)
+    await expect(
+      store.addModel({ ...original, model: { name: 'Stale', model: 'stale' } }),
+    ).rejects.toThrow('changed')
+    await store.remove(changed)
+    expect((await store.resolve(added)).apiKey).toBe(input.apiKey)
+    await expect(
+      store.addModel({
+        ...changed,
+        model: { name: 'Missing', model: 'missing' },
+      }),
+    ).rejects.toThrow('removed')
+    await store.remove(added)
+    expect(await store.list()).toEqual([])
+  })
+  test('adding an environment-backed model preserves the reference and starts with its own default limits', async () => {
+    const { store, secret } = fixture()
+    const original = await store.create({
+      ...input,
+      apiKey: undefined,
+      credentialRef: 'env:PROVIDER_KEY',
+      contextWindow: 64000,
+    })
+    const added = await store.addModel({
+      ...original,
+      model: { name: 'Second', model: 'second' },
+    })
+    expect(added.credentialRef).toBe('env:PROVIDER_KEY')
+    expect(added.contextWindow).toBe(BYOK_DEFAULT_CONTEXT_WINDOW)
+    expect(secret.values.size).toBe(0)
+    secret.values.set('env:PROVIDER_KEY', 'environment-canary')
+    await store.remove(original)
+    expect((await store.resolve(added)).apiKey).toBe('environment-canary')
+  })
+  test('a failed model save cleans up its copied key and keeps the source usable', async () => {
+    let rows: ByokConnection[] = []
+    let failSave = false
+    const secret = secrets()
+    const store = createByokConnectionStore({
+      secretStore: secret.store,
+      metadataStore: {
+        get: async () => rows,
+        set: async (value) => {
+          if (failSave) throw new Error('disk full')
+          rows = value
+        },
+      },
+    })
+    const original = await store.create(input)
+    failSave = true
+    await expect(
+      store.addModel({
+        ...original,
+        model: { name: 'Second', model: 'second' },
+      }),
+    ).rejects.toThrow('disk full')
+    expect(await store.list()).toEqual([original])
+    expect([...secret.values.keys()]).toEqual([original.credentialRef])
+    expect((await store.resolve(original)).apiKey).toBe(input.apiKey)
+  })
   test('keeps keys out of metadata and serialized resolved connections', async () => {
     const { store, rows } = fixture()
     const added = await store.create(input)

@@ -90,6 +90,14 @@ export type ByokValidationResult =
     }
 export type ByokConnectionStore = {
   create(input: ByokConnectionInput): Promise<ByokConnection>
+  addModel(input: {
+    id: string
+    revision: number
+    model: Pick<
+      ByokConnectionInput,
+      'name' | 'model' | 'contextWindow' | 'maxOutputTokens'
+    >
+  }): Promise<ByokConnection>
   list(): Promise<ByokConnection[]>
   update(input: {
     id: string
@@ -704,34 +712,52 @@ export function createByokConnectionStore(params: {
       )
     }
   }
+  // Called only under the metadata lock, including when copying a saved provider.
+  async function create(input: ByokConnectionInput) {
+    const fields = cleanInput(input)
+    if (!input.apiKey && !input.credentialRef)
+      throw new Error('An API key or environment reference is required')
+    const connections = await read()
+    const id = crypto.randomUUID(),
+      now = new Date().toISOString()
+    const credentialRef = input.credentialRef ?? `connection:${id}:1`
+    const connection = {
+      ...fields,
+      id,
+      revision: 1,
+      credentialRef,
+      createdAt: now,
+      updatedAt: now,
+    }
+    if (input.apiKey !== undefined)
+      await writeSecret(credentialRef, input.apiKey)
+    try {
+      await metadataStore.set([...connections, connection])
+    } catch (error) {
+      if (input.apiKey !== undefined)
+        await secretStore.delete(credentialRef).catch(() => {})
+      throw error
+    }
+    return { ...connection }
+  }
   const store: ByokConnectionStore = {
-    create: (input) =>
+    create: (input) => exclusive(() => create(input)),
+    addModel: ({ id, revision, model }) =>
       exclusive(async () => {
-        const fields = cleanInput(input)
-        if (!input.apiKey && !input.credentialRef)
-          throw new Error('An API key or environment reference is required')
-        const connections = await read()
-        const id = crypto.randomUUID(),
-          now = new Date().toISOString()
-        const credentialRef = input.credentialRef ?? `connection:${id}:1`
-        const connection = {
-          ...fields,
-          id,
-          revision: 1,
-          credentialRef,
-          createdAt: now,
-          updatedAt: now,
-        }
-        if (input.apiKey !== undefined)
-          await writeSecret(credentialRef, input.apiKey)
-        try {
-          await metadataStore.set([...connections, connection])
-        } catch (error) {
-          if (input.apiKey !== undefined)
-            await secretStore.delete(credentialRef).catch(() => {})
-          throw error
-        }
-        return { ...connection }
+        const { connection } = await lookup(id, revision)
+        return create({
+          name: model.name,
+          model: model.model,
+          contextWindow: model.contextWindow,
+          maxOutputTokens: model.maxOutputTokens,
+          provider: connection.provider,
+          baseUrl: connection.baseUrl,
+          // Each saved model owns its key, so rotation/removal cannot break siblings.
+          // Environment references remain references, never copied key values.
+          ...(envReference.test(connection.credentialRef)
+            ? { credentialRef: connection.credentialRef }
+            : { apiKey: await getSecret(connection.credentialRef) }),
+        })
       }),
     list: read,
     update: ({ id, revision, patch }) =>
