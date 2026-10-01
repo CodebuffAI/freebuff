@@ -21,6 +21,7 @@
  * below. If the currency is ever renamed, this is the second place to change.
  */
 
+import { compareByFreebucksPrice } from '@codebuff/common/util/freebuff-price-order'
 import { firstTabQuoteForSession } from '@codebuff/common/util/freebuff-first-tab-discount'
 import { getFreebucksInfo } from '@codebuff/common/types/freebuff-session'
 import {
@@ -118,13 +119,9 @@ export function sortModelsByPrice<
   freebucks: FreebuffFreebucksInfo | null | undefined,
 ): readonly T[] {
   if (!freebucks) return models
-  const priceOf = (id: string) =>
-    freebucksPriceFor(freebucks, id) ?? Number.POSITIVE_INFINITY
-  return [...models].sort(
-    (a, b) =>
-      priceOf(a.id) - priceOf(b.id) ||
-      a.displayName.localeCompare(b.displayName),
-  )
+  // Ties (a discount floors several rows at 0) break on the regular price,
+  // then the name — shared with Desktop and Web.
+  return [...models].sort((a, b) => compareByFreebucksPrice(freebucks, a, b))
 }
 
 /**
