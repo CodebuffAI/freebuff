@@ -44,6 +44,10 @@ import {
 import { getAgentStreamFromTemplate } from './prompt-agent-stream'
 import { isThinkOnlyResponse } from './util/think-tags'
 import {
+  decideFollowupTodoNudge,
+  FOLLOWUP_TODO_NUDGE_TAG,
+} from './util/followup-todo-nudge'
+import {
   hasFileEditTool,
   TODO_LOOP_RECOVERY_TAG,
   TODO_LOOP_RECOVERY_THRESHOLD,
@@ -687,6 +691,45 @@ export const runAgentStep = async (
     shouldEndTurn =
       !hadToolCallError &&
       (hasTaskCompleted || (hasNoToolResults && !isThinkOnly))
+  }
+
+  // Ending on followup cards while the agent's own to-do list is part done
+  // stops a task the user asked to have finished (CodebuffAI/freebuff#1434).
+  // Bounded per user prompt; see util/followup-todo-nudge.ts. An explicit
+  // task_completed/end_turn is left alone.
+  if (
+    shouldEndTurn &&
+    !hasTaskCompleted &&
+    toolCalls.some((call) => call.toolName === 'suggest_followups')
+  ) {
+    const decision = decideFollowupTodoNudge(agentState.messageHistory)
+    if (decision) {
+      logger.info(
+        {
+          metric: 'followups_with_open_todos',
+          action: decision.action,
+          reason: decision.action === 'end' ? decision.reason : undefined,
+          openTodos: decision.openTodos.length,
+          nudgesSoFar: decision.nudgesSoFar,
+          model: agentTemplate.model,
+          agentId: agentTemplate.id,
+          userId,
+          runId: agentState.runId,
+        },
+        decision.action === 'nudge'
+          ? 'Turn ended on followups with unfinished to-dos; continuing'
+          : 'Turn ended on followups with unfinished to-dos; nudge limit reached',
+      )
+      if (decision.action === 'nudge') {
+        agentState.messageHistory.push(
+          userMessage({
+            content: withSystemTags(decision.message),
+            tags: [FOLLOWUP_TODO_NUDGE_TAG],
+          }),
+        )
+        shouldEndTurn = false
+      }
+    }
   }
 
   agentState = {

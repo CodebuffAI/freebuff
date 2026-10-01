@@ -40,6 +40,10 @@ import {
   TODO_LOOP_STOP_MESSAGE,
   WRITE_TODOS_UNCHANGED_MESSAGE,
 } from '../util/todo-loop'
+import {
+  FOLLOWUP_TODO_NUDGE_TAG,
+  MAX_FOLLOWUP_TODO_NUDGES,
+} from '../util/followup-todo-nudge'
 import { createToolCallChunk, mockFileContext } from './test-utils'
 
 import type { AgentTemplate } from '../templates/types'
@@ -275,6 +279,154 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
     expect(JSON.stringify(result.agentState.messageHistory)).not.toContain(
       TODO_LOOP_RECOVERY_MESSAGE,
     )
+  })
+
+  describe('followup cards with unfinished to-dos', () => {
+    const followups = () =>
+      createToolCallChunk('suggest_followups', {
+        followups: [
+          { prompt: 'Continue with the next step', label: 'Continue' },
+        ],
+      })
+    const list = (doneCount: number, total = 3) =>
+      createToolCallChunk('write_todos', {
+        todos: Array.from({ length: total }, (_, i) => ({
+          task: `Step ${i + 1}`,
+          completed: i < doneCount,
+        })),
+      })
+    const nudges = (state: AgentState) =>
+      state.messageHistory.filter((m) =>
+        m.tags?.includes(FOLLOWUP_TODO_NUDGE_TAG),
+      ).length
+
+    beforeEach(() => {
+      mockTemplate.toolNames.push('write_todos', 'suggest_followups')
+    })
+
+    it('continues a turn that stopped mid-list, then ends with cards once the list is done', async () => {
+      let calls = 0
+      const seenPrompts: string[] = []
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* ({ messages }) {
+          calls++
+          seenPrompts.push(JSON.stringify(messages))
+          if (calls === 1) {
+            yield list(1)
+          } else if (calls === 2) {
+            // The reported behaviour: step 1 of 3 done, then stop on cards.
+            yield { type: 'text', text: 'Step 1 is done.' }
+            yield followups()
+          } else if (calls === 3) {
+            yield list(3)
+          } else {
+            yield { type: 'text', text: 'All three steps are done.' }
+            yield followups()
+          }
+          return promptSuccess(`followups-${calls}`)
+        },
+      })
+
+      expect(calls).toBe(4)
+      expect(result.output.type).not.toBe('error')
+      expect(seenPrompts[1]).not.toContain('to-do list still has')
+      expect(seenPrompts[2]).toContain(
+        JSON.stringify(
+          'to-do list still has 2 unfinished items: "Step 2", "Step 3"',
+        ).slice(1, -1),
+      )
+      expect(nudges(result.agentState)).toBe(1)
+    })
+
+    it('ends on cards when every to-do is done', async () => {
+      let calls = 0
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* () {
+          yield ++calls === 1 ? list(3) : followups()
+          return promptSuccess(`done-${calls}`)
+        },
+      })
+      expect(calls).toBe(2)
+      expect(nudges(result.agentState)).toBe(0)
+    })
+
+    it('lets the model stop after one nudge when it makes no progress', async () => {
+      let calls = 0
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* () {
+          if (++calls === 1) {
+            yield list(1)
+          } else {
+            yield {
+              type: 'text',
+              text: 'I need you to install git before I can continue.',
+            }
+            yield followups()
+          }
+          return promptSuccess(`blocked-${calls}`)
+        },
+      })
+      expect(calls).toBe(3)
+      expect(nudges(result.agentState)).toBe(1)
+    })
+
+    it(`stops nudging after ${MAX_FOLLOWUP_TODO_NUDGES} times in one prompt`, async () => {
+      mockAgentState.stepsRemaining = 50
+      let calls = 0
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* () {
+          calls++
+          // Progress every cycle (one more item, one more done) but never the
+          // whole list.
+          yield calls % 2 === 1
+            ? list((calls + 1) / 2, (calls + 1) / 2 + 1)
+            : followups()
+          return promptSuccess(`cap-${calls}`)
+        },
+      })
+      expect(nudges(result.agentState)).toBe(MAX_FOLLOWUP_TODO_NUDGES)
+      expect(calls).toBe(2 * (MAX_FOLLOWUP_TODO_NUDGES + 1))
+    })
+
+    it('ignores a part-done list from an earlier prompt', async () => {
+      mockAgentState.messageHistory = [
+        userMessage({ content: 'Build it', tags: ['USER_PROMPT'] }),
+        assistantMessage({
+          type: 'tool-call',
+          toolCallId: 'old',
+          toolName: 'write_todos',
+          input: {
+            todos: [
+              { task: 'Step 1', completed: true },
+              { task: 'Step 2', completed: false },
+            ],
+          },
+        }),
+        {
+          role: 'tool',
+          toolCallId: 'old',
+          toolName: 'write_todos',
+          content: [],
+        },
+      ]
+      let calls = 0
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        prompt: 'What does this file do?',
+        promptAiSdkStream: async function* () {
+          calls++
+          yield { type: 'text', text: 'It parses the config.' }
+          yield followups()
+          return promptSuccess(`question-${calls}`)
+        },
+      })
+      expect(calls).toBe(1)
+      expect(nudges(result.agentState)).toBe(0)
+    })
   })
 
   describe('unchanged write_todos results', () => {
