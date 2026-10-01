@@ -79,6 +79,8 @@ export type CliEnv = BaseEnv & {
   CODEBUFF_PERF_TEST?: string
   CODEBUFF_TRACE?: string
   CODEBUFF_LAUNCHER_PID?: string
+  // npm wrapper version that spawned this binary (cli/release-core/launcher.js)
+  CODEBUFF_LAUNCHER_VERSION?: string
   // Toggle for mirroring CLI logs to the server's /api/logs sink (Axiom).
   CODEBUFF_SHIP_LOGS?: string
   // Set to 1/true to suppress the terminal-reset watchdog on machines where

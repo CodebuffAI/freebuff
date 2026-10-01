@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import {
@@ -6,6 +7,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -45,6 +48,8 @@ async function withFixture(
     errors: string[]
     setInstalled: (version: string) => void
     pauseDownload: () => { started: Promise<void>; resume: () => void }
+    adopt: () => Promise<string | null>
+    configDir: string
   }) => Promise<void>,
 ) {
   const root = mkdtempSync(join(tmpdir(), 'freebuff-deferred-update-'))
@@ -136,6 +141,8 @@ async function withFixture(
         })
         return { started, resume }
       },
+      adopt: () => launcher.adoptOrphanedStagedUpdates(),
+      configDir,
     })
   } finally {
     console.log = originals.log
@@ -252,7 +259,172 @@ describe('Freebuff updates wait for exit', () => {
         expect(child.signals).toEqual([])
         expect(readFileSync(config.binaryPath, 'utf8')).toBe('binary 1.0.0')
         expect(exits).toEqual([0])
+        // Nor marked ready for the next launch: the process that would have
+        // installed it had already exited.
+        expect(existsSync(join(config.tempDownloadDir, 'staged.json'))).toBe(
+          false,
+        )
       },
     )
+  })
+})
+
+/** A pid that belonged to a process which has since exited. */
+function deadPid(): number {
+  const { pid } = spawnSync(process.execPath, ['-e', ''])
+  if (!pid) throw new Error('could not spawn a short-lived process')
+  return pid
+}
+
+describe('an update the terminal closed on is installed on the next launch', () => {
+  // The launcher dying with its terminal (SIGHUP / CTRL_CLOSE_EVENT) is
+  // modelled by never calling finish() and moving the staged directory under
+  // the pid of a process that is gone.
+  function orphan(config: { tempDownloadDir: string }, pid = deadPid()) {
+    const dir = config.tempDownloadDir.replace(/-\d+$/, `-${pid}`)
+    renameSync(config.tempDownloadDir, dir)
+    return dir
+  }
+
+  test('a completed download from a killed launcher is installed before the binary starts', async () => {
+    await withFixture(async ({ check, config, adopt, child, output }) => {
+      await check()
+      expect(child.signals).toEqual([])
+      const dir = orphan(config)
+
+      expect(await adopt()).toBe('2.0.0')
+      expect(readFileSync(config.binaryPath, 'utf8')).toBe('new binary')
+      expect(
+        readFileSync(join(config.binaryPath, '..', 'tree-sitter.wasm'), 'utf8'),
+      ).toBe('new wasm')
+      expect(
+        JSON.parse(readFileSync(config.metadataPath, 'utf8')).version,
+      ).toBe('2.0.0')
+      expect(existsSync(dir)).toBe(false)
+      expect(existsSync(`${config.tempDownloadDir}.adopting`)).toBe(false)
+      // Quiet: stdout may be piped (`freebuff --help | …`).
+      expect(output).toEqual([])
+    })
+  })
+
+  test('a download cut short (no manifest) is deleted, never installed', async () => {
+    await withFixture(async ({ check, config, adopt }) => {
+      await check()
+      rmSync(join(config.tempDownloadDir, 'staged.json'))
+      const dir = orphan(config)
+
+      expect(await adopt()).toBeNull()
+      expect(readFileSync(config.binaryPath, 'utf8')).toBe('binary 1.0.0')
+      expect(existsSync(dir)).toBe(false)
+    })
+  })
+
+  test('a staged binary changed on disk since staging is not installed', async () => {
+    await withFixture(async ({ check, config, adopt }) => {
+      await check()
+      const binaryName =
+        process.platform === 'win32' ? 'freebuff.exe' : 'freebuff'
+      writeFileSync(join(config.tempDownloadDir, binaryName), 'truncat')
+      const dir = orphan(config)
+
+      expect(await adopt()).toBeNull()
+      expect(readFileSync(config.binaryPath, 'utf8')).toBe('binary 1.0.0')
+      expect(existsSync(dir)).toBe(false)
+    })
+  })
+
+  test('an unlisted file in the staged directory blocks the install', async () => {
+    await withFixture(async ({ check, config, adopt }) => {
+      await check()
+      writeFileSync(join(config.tempDownloadDir, 'extra.dll'), 'x')
+      orphan(config)
+
+      expect(await adopt()).toBeNull()
+      expect(readFileSync(config.binaryPath, 'utf8')).toBe('binary 1.0.0')
+    })
+  })
+
+  test('never downgrades a newer installed release; the leftover is deleted', async () => {
+    await withFixture(async ({ check, config, adopt, setInstalled }) => {
+      await check()
+      const dir = orphan(config)
+      setInstalled('3.0.0')
+
+      expect(await adopt()).toBeNull()
+      expect(readFileSync(config.binaryPath, 'utf8')).toBe('binary 3.0.0')
+      expect(existsSync(dir)).toBe(false)
+    })
+  })
+
+  test("leaves a live session's staged update for its own exit", async () => {
+    await withFixture(async ({ check, config, adopt }) => {
+      await check()
+      // The test runner's parent is certainly still running.
+      const dir = orphan(config, process.ppid)
+
+      expect(await adopt()).toBeNull()
+      expect(readFileSync(config.binaryPath, 'utf8')).toBe('binary 1.0.0')
+      expect(existsSync(join(dir, 'staged.json'))).toBe(true)
+    })
+  })
+
+  test('deletes every dead leftover, installing only the newest', async () => {
+    await withFixture(async ({ check, config, adopt, configDir }) => {
+      await check()
+      orphan(config)
+      // Older leftovers: one complete, one cut short.
+      const older = join(configDir, `.freebuff-download-temp-${deadPid()}`)
+      mkdirSync(older)
+      writeFileSync(
+        join(older, 'staged.json'),
+        JSON.stringify({ version: '1.5.0', target: 'linux-x64', files: {} }),
+      )
+      mkdirSync(join(configDir, `.freebuff-download-temp-${deadPid()}`))
+
+      expect(await adopt()).toBe('2.0.0')
+      expect(readFileSync(config.binaryPath, 'utf8')).toBe('new binary')
+      expect(
+        readdirSync(configDir).filter((name) =>
+          name.startsWith('.freebuff-download-temp-'),
+        ),
+      ).toEqual([])
+    })
+  })
+
+  test('an exit-time install that fails is retried by the next launch', async () => {
+    await withFixture(
+      async ({ check, config, adopt, finish, errors, exits }) => {
+        await check()
+        // Something holds a path the install needs (antivirus, on Windows).
+        const blocker = `${config.metadataPath}.new.${process.pid}`
+        mkdirSync(blocker)
+        try {
+          await finish()
+        } finally {
+          rmSync(blocker, { recursive: true, force: true })
+        }
+        expect(exits).toEqual([0])
+        expect(errors.join('\n')).toContain('Could not install Freebuff update')
+        expect(readFileSync(config.binaryPath, 'utf8')).toBe('binary 1.0.0')
+        expect(existsSync(join(config.tempDownloadDir, 'staged.json'))).toBe(
+          true,
+        )
+
+        // That launcher has exited; the next one installs what it left.
+        orphan(config)
+        expect(await adopt()).toBe('2.0.0')
+        expect(readFileSync(config.binaryPath, 'utf8')).toBe('new binary')
+      },
+    )
+  })
+
+  test('after an adoption the background check has nothing to stage', async () => {
+    await withFixture(async ({ check, config, adopt }) => {
+      await check()
+      orphan(config)
+      await adopt()
+      await check()
+      expect(existsSync(config.tempDownloadDir)).toBe(false)
+    })
   })
 })

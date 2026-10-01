@@ -1336,10 +1336,17 @@ function createLauncher(productConfig) {
 
   function installStagedBinary(
     { tempBinaryPath, version, targetKey },
-    { quiet = false } = {},
+    // keepStagingOnFailure: leave a staged update that could not be moved
+    // into place (a file locked by antivirus or another session on Windows)
+    // for the next launch to adopt, instead of downloading it all again.
+    { quiet = false, keepStagingOnFailure = false } = {},
   ) {
     const replacements = []
+    let installed = false
     const metadataTempPath = `${CONFIG.metadataPath}.new.${process.pid}`
+    // The directory the binary was staged in: this launcher's own, or one
+    // adopted from a launcher that died before it could install it.
+    const stagingDir = path.dirname(tempBinaryPath)
 
     try {
       fs.writeFileSync(
@@ -1356,10 +1363,7 @@ function createLauncher(productConfig) {
       // pre-date this change won't have the wasm and will still install —
       // they'll just hit the same crash they had before, which is fine.
       if (includeTreeSitterWasm) {
-        const tempWasmPath = path.join(
-          CONFIG.tempDownloadDir,
-          'tree-sitter.wasm',
-        )
+        const tempWasmPath = path.join(stagingDir, 'tree-sitter.wasm')
         if (fs.existsSync(tempWasmPath)) {
           const targetWasmPath = path.join(
             path.dirname(CONFIG.binaryPath),
@@ -1375,13 +1379,14 @@ function createLauncher(productConfig) {
         replacements,
       )
       commitReplacements(replacements)
+      installed = true
     } catch (error) {
       rollbackReplacements(replacements)
       throw error
     } finally {
       removeFileIfPresent(metadataTempPath)
-      if (fs.existsSync(CONFIG.tempDownloadDir)) {
-        fs.rmSync(CONFIG.tempDownloadDir, { recursive: true })
+      if ((installed || !keepStagingOnFailure) && fs.existsSync(stagingDir)) {
+        fs.rmSync(stagingDir, { recursive: true })
       }
     }
 
@@ -1545,8 +1550,15 @@ function createLauncher(productConfig) {
           if (
             runningProcess.exitCode === null &&
             runningProcess.signalCode === null
-          )
+          ) {
             pendingUpdates.set(runningProcess, stagedBinary)
+            // Closing the terminal window kills this launcher too (SIGHUP, or
+            // CTRL_CLOSE_EVENT on Windows) before the exit handler can
+            // install. Mark the staged update ready so the next launch adopts
+            // it instead of a user who never quits from inside the CLI
+            // staying on this build forever.
+            await writeStagedManifest(stagedBinary)
+          }
           return
         }
 
@@ -1605,7 +1617,7 @@ function createLauncher(productConfig) {
         fs.rmSync(CONFIG.tempDownloadDir, { recursive: true, force: true })
         return
       }
-      installStagedBinary(staged, { quiet: true })
+      installStagedBinary(staged, { quiet: true, keepStagingOnFailure: true })
       console.log(
         `Updated ${displayName} to ${staged.version}. Ready for your next launch.`,
       )
@@ -1613,6 +1625,202 @@ function createLauncher(productConfig) {
       // Installation rolls back on failure. Updating must not change the
       // user's exit code or resurrect a CLI they just closed.
       console.error(`Could not install ${displayName} update: ${error.message}`)
+    }
+  }
+
+  /**
+   * Deferred staging directories are `<tempDownloadDirName>-<pid>`, plus
+   * `<…>-<pid>.adopting` while a later launcher installs one it adopted. The
+   * pid is the launcher that owns the directory.
+   */
+  const STAGED_MANIFEST_NAME = 'staged.json'
+
+  function parseStagingDirOwner(name) {
+    const prefix = `${tempDownloadDirName}-`
+    if (!name.startsWith(prefix)) return null
+    const match = /^(\d{1,10})(?:\.adopting)?$/.exec(name.slice(prefix.length))
+    return match ? Number(match[1]) : null
+  }
+
+  function isProcessAlive(pid) {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch (error) {
+      // EPERM: it exists, it just is not ours to signal.
+      return error?.code === 'EPERM'
+    }
+  }
+
+  /**
+   * Record that a staged update is complete: the version, target and sha256 of
+   * every file installStagedBinary() will move. Written last and renamed into
+   * place, so a launcher killed mid-download or mid-extraction leaves a
+   * directory without one, which is only ever deleted. Best effort: a failure
+   * here leaves the exit-time install exactly as it was.
+   *
+   * The hashes are this launcher's own record, checked again before adoption
+   * so a file truncated or altered on disk since is never installed. They are
+   * not a second trust root: the archive was verified against npm's sha256 at
+   * download, and anything able to write this directory can already write the
+   * installed binary next to it.
+   */
+  async function writeStagedManifest({ tempBinaryPath, version, targetKey }) {
+    const stagingDir = path.dirname(tempBinaryPath)
+    const manifestPath = path.join(stagingDir, STAGED_MANIFEST_NAME)
+    const tempManifestPath = `${manifestPath}.tmp`
+    try {
+      const files = {
+        [CONFIG.binaryName]: await computeFileSha256(tempBinaryPath),
+      }
+      const wasmPath = path.join(stagingDir, 'tree-sitter.wasm')
+      if (includeTreeSitterWasm && fs.existsSync(wasmPath)) {
+        files['tree-sitter.wasm'] = await computeFileSha256(wasmPath)
+      }
+      fs.writeFileSync(
+        tempManifestPath,
+        JSON.stringify({ version, target: targetKey, files }),
+      )
+      fs.renameSync(tempManifestPath, manifestPath)
+    } catch {
+      try {
+        removeFileIfPresent(tempManifestPath)
+      } catch {
+        // The directory may already be gone: installed at exit, or removed.
+      }
+    }
+  }
+
+  function readStagedManifest(stagingDir) {
+    try {
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(stagingDir, STAGED_MANIFEST_NAME), 'utf8'),
+      )
+      const files = manifest?.files
+      if (
+        !isStrictReleaseVersion(manifest?.version) ||
+        !PLATFORM_TARGETS[manifest?.target] ||
+        !files ||
+        typeof files !== 'object' ||
+        !isSha256Hex(files[CONFIG.binaryName]) ||
+        Object.entries(files).some(
+          ([name, digest]) =>
+            !isAllowedArchiveEntry(name, null) || !isSha256Hex(digest),
+        )
+      ) {
+        return null
+      }
+      return { version: manifest.version, targetKey: manifest.target, files }
+    } catch {
+      return null
+    }
+  }
+
+  async function stagedFilesMatch(stagingDir, files) {
+    for (const [name, digest] of Object.entries(files)) {
+      const filePath = path.join(stagingDir, name)
+      if (!fs.existsSync(filePath)) return false
+      const verification = await verifyFileSha256(filePath, digest)
+      if (!verification.ok) return false
+    }
+    // Nothing unlisted may ride along into the install (the wasm is moved
+    // whenever it is present).
+    return fs
+      .readdirSync(stagingDir)
+      .every((name) => name === STAGED_MANIFEST_NAME || name in files)
+  }
+
+  /**
+   * Install an update a previous launcher downloaded but never installed, and
+   * delete what dead launchers left behind.
+   *
+   * A deferred update is installed by the launcher's exit handler, which runs
+   * only when the CLI exits on its own. Closing the terminal window or tab
+   * (SIGHUP; CTRL_CLOSE_EVENT on Windows) kills the launcher first, so a user
+   * who always leaves that way never updated: each launch downloaded the same
+   * release again and left another full copy of the binary in a
+   * `<tempDownloadDirName>-<pid>` directory.
+   *
+   * Runs before the binary starts, so nothing of ours holds the files. A
+   * directory whose owner is still running belongs to a live session that
+   * will install it on exit and is left alone. Claiming by rename means two
+   * launchers starting together never install the same directory twice.
+   * Never throws: a failure here must not stop the CLI from starting.
+   */
+  function removeDirQuietly(dir) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true })
+    } catch {
+      // Locked (Windows) or already gone; the next launch tries again.
+    }
+  }
+
+  async function adoptOrphanedStagedUpdates() {
+    if (!deferUpdatesUntilExit) return null
+    try {
+      const orphans = []
+      for (const name of fs.readdirSync(CONFIG.configDir)) {
+        const owner = parseStagingDirOwner(name)
+        if (owner === null) continue
+        // Our own pid was just assigned to us, so a directory under it is a
+        // leftover from an earlier process that had the same pid.
+        if (owner !== process.pid && isProcessAlive(owner)) continue
+        const dir = path.join(CONFIG.configDir, name)
+        orphans.push({ dir, staged: readStagedManifest(dir) })
+      }
+      if (orphans.length === 0) return null
+
+      orphans.sort((a, b) =>
+        a.staged && b.staged
+          ? compareVersions(b.staged.version, a.staged.version)
+          : a.staged
+            ? -1
+            : b.staged
+              ? 1
+              : 0,
+      )
+
+      const installedVersion = getCurrentVersion()
+      let adoptedVersion = null
+      for (const { dir, staged } of orphans) {
+        if (
+          adoptedVersion === null &&
+          staged &&
+          (installedVersion === null ||
+            compareVersions(installedVersion, staged.version) < 0) &&
+          isTargetAllowedForThisMachine(staged.targetKey)
+        ) {
+          const claimedDir = `${CONFIG.tempDownloadDir}.adopting`
+          try {
+            fs.renameSync(dir, claimedDir)
+          } catch {
+            continue // Another launcher claimed it first.
+          }
+          try {
+            if (await stagedFilesMatch(claimedDir, staged.files)) {
+              installStagedBinary(
+                {
+                  tempBinaryPath: path.join(claimedDir, CONFIG.binaryName),
+                  version: staged.version,
+                  targetKey: staged.targetKey,
+                },
+                { quiet: true, keepStagingOnFailure: true },
+              )
+              adoptedVersion = staged.version
+            } else {
+              removeDirQuietly(claimedDir)
+            }
+          } catch {
+            // Rolled back by installStagedBinary, which kept the directory.
+            // It is ours until we exit, then any later launch retries it.
+          }
+          continue
+        }
+        removeDirQuietly(dir)
+      }
+      return adoptedVersion
+    } catch {
+      return null
     }
   }
 
@@ -1845,6 +2053,12 @@ function createLauncher(productConfig) {
           ...process.env,
           ...optionEnv,
           CODEBUFF_LAUNCHER_PID: String(process.pid),
+          // Which npm wrapper started this binary. The wrapper never updates
+          // itself, so this is how launch telemetry tells an install that
+          // cannot install deferred updates from one that can.
+          ...(wrapperVersion
+            ? { CODEBUFF_LAUNCHER_VERSION: String(wrapperVersion) }
+            : {}),
         },
       })
     } catch (err) {
@@ -2069,6 +2283,7 @@ function createLauncher(productConfig) {
     }
     if (startupBanner.length > 0) console.log('')
 
+    await adoptOrphanedStagedUpdates()
     await ensureBinaryReady()
 
     const child = spawnInstalledBinary()
@@ -2099,6 +2314,7 @@ function createLauncher(productConfig) {
       isStartupCpuFeatureCrash,
       stderrReportsMissingCpuFeature,
       tryFallbackToBaseline,
+      adoptOrphanedStagedUpdates,
       printCrashDiagnostics,
       checkForUpdates,
       spawnInstalledBinary,

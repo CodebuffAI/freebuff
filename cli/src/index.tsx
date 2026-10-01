@@ -281,6 +281,11 @@ async function main(): Promise<void> {
     continueChat,
     initialMode: initialMode ?? 'DEFAULT',
     isFreeBuff: IS_FREEBUFF,
+    // The npm wrapper's version, null when not started by one. Wrappers never
+    // update themselves, and only newer ones adopt an update the terminal
+    // closed on, so this splits "pinned build" by install path.
+    launcherVersion:
+      getCliEnv().CODEBUFF_LAUNCHER_VERSION?.slice(0, 32) ?? null,
   })
   // The previous launch died on a fatal error and could only leave a local
   // report on its way out; ship it now (fatal-crash-report.ts).
