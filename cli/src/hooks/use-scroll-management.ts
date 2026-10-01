@@ -45,15 +45,33 @@ export const useChatScrollbox = (
     }
   }, [])
 
+  // OpenTUI emits scroll changes synchronously, and emits nothing for a no-op
+  // assignment. Keep the guard scoped to the write so it cannot swallow the
+  // user's next wheel event when we were already at the bottom.
+  const setScrollTop = useCallback(
+    (scrollbox: ScrollBoxRenderable, top: number) => {
+      programmaticScrollRef.current = true
+      try {
+        scrollbox.scrollTop = top
+      } finally {
+        programmaticScrollRef.current = false
+      }
+    },
+    [],
+  )
+
   const animateScrollTo = useCallback(
-    (targetScroll: number, duration = DEFAULT_SCROLL_ANIMATION_DURATION_MS) => {
+    (
+      targetScroll: number | 'latest',
+      duration = DEFAULT_SCROLL_ANIMATION_DURATION_MS,
+    ) => {
       const scrollbox = scrollRef.current
       if (!scrollbox) return
 
       cancelAnimation()
+      autoScrollEnabledRef.current = false
 
       const startScroll = scrollbox.scrollTop
-      const distance = targetScroll - startScroll
       const startTime = Date.now()
       const frameInterval = ANIMATION_FRAME_INTERVAL_MS
 
@@ -61,32 +79,41 @@ export const useChatScrollbox = (
         const elapsed = Date.now() - startTime
         const progress = Math.min(elapsed / duration, 1)
         const easedProgress = easeOutCubic(progress)
+        const target =
+          targetScroll === 'latest'
+            ? Math.max(0, scrollbox.scrollHeight - scrollbox.viewport.height)
+            : targetScroll
+        const distance = target - startScroll
         const newScroll = startScroll + distance * easedProgress
 
-        programmaticScrollRef.current = true
-        scrollbox.scrollTop = newScroll
+        setScrollTop(scrollbox, newScroll)
 
         if (progress < 1) {
           animationFrameRef.current = setTimeout(animate, frameInterval) as any
         } else {
           animationFrameRef.current = null
+          const maxScroll = Math.max(
+            0,
+            scrollbox.scrollHeight - scrollbox.viewport.height,
+          )
+          const isNearBottom =
+            Math.abs(maxScroll - scrollbox.scrollTop) <=
+            SCROLL_NEAR_BOTTOM_THRESHOLD
+          autoScrollEnabledRef.current = isNearBottom
+          setIsAtBottom(isNearBottom)
         }
       }
 
       animate()
     },
-    [scrollRef, cancelAnimation],
+    [scrollRef, cancelAnimation, setScrollTop],
   )
 
   const scrollToLatest = useCallback((): void => {
     const scrollbox = scrollRef.current
     if (!scrollbox) return
 
-    const maxScroll = Math.max(
-      0,
-      scrollbox.scrollHeight - scrollbox.viewport.height,
-    )
-    animateScrollTo(maxScroll)
+    animateScrollTo('latest')
   }, [scrollRef, animateScrollTo])
 
   const scrollUp = useCallback((): void => {
@@ -104,13 +131,10 @@ export const useChatScrollbox = (
     if (!scrollbox) return
 
     const viewportHeight = scrollbox.viewport.height
-    const maxScroll = Math.max(
-      0,
-      scrollbox.scrollHeight - viewportHeight,
-    )
+    const maxScroll = Math.max(0, scrollbox.scrollHeight - viewportHeight)
     const scrollAmount = Math.floor(viewportHeight * PAGE_SCROLL_FRACTION)
     const targetScroll = Math.min(maxScroll, scrollbox.scrollTop + scrollAmount)
-    animateScrollTo(targetScroll)
+    animateScrollTo(targetScroll === maxScroll ? 'latest' : targetScroll)
   }, [scrollRef, animateScrollTo])
 
   useEffect(() => {
@@ -126,15 +150,11 @@ export const useChatScrollbox = (
       const isNearBottom =
         Math.abs(maxScroll - current) <= SCROLL_NEAR_BOTTOM_THRESHOLD
 
-      if (programmaticScrollRef.current) {
-        programmaticScrollRef.current = false
-        autoScrollEnabledRef.current = true
-        setIsAtBottom(true)
-        return
+      if (!programmaticScrollRef.current) {
+        cancelAnimation()
+        autoScrollEnabledRef.current = isNearBottom
       }
 
-      cancelAnimation()
-      autoScrollEnabledRef.current = isNearBottom
       setIsAtBottom((prev) => (prev === isNearBottom ? prev : isNearBottom))
     }
 
@@ -155,18 +175,20 @@ export const useChatScrollbox = (
         )
 
         if (scrollbox.scrollTop > maxScroll) {
-          programmaticScrollRef.current = true
-          scrollbox.scrollTop = maxScroll
-        } else if (autoScrollEnabledRef.current && !isUserCollapsing()) {
-          programmaticScrollRef.current = true
-          scrollbox.scrollTop = maxScroll
+          setScrollTop(scrollbox, maxScroll)
+        } else if (
+          animationFrameRef.current === null &&
+          autoScrollEnabledRef.current &&
+          !isUserCollapsing()
+        ) {
+          setScrollTop(scrollbox, maxScroll)
         }
       }, AUTO_SCROLL_DELAY_MS)
 
       return () => clearTimeout(timeoutId)
     }
     return undefined
-  }, [messages, scrollToLatest, scrollRef, isUserCollapsing])
+  }, [messages, scrollRef, isUserCollapsing, setScrollTop])
 
   useEffect(() => {
     return () => {
