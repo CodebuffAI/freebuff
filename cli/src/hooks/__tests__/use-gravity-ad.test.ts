@@ -7,6 +7,7 @@ import {
   isInlineAdEligibleAnswer,
   NO_RESPONSE_ADS,
   renderDelaySinceReceipt,
+  shouldHideGravityAds,
   visibleResponseAds,
 } from '../use-gravity-ad'
 
@@ -178,5 +179,43 @@ describe('visibleResponseAds', () => {
   test('visible ads pass through unchanged', () => {
     const ads = { 'ai-1': [] }
     expect(visibleResponseAds(true, ads)).toBe(ads)
+  })
+})
+
+describe('shouldHideGravityAds', () => {
+  test('a disabled hook is hidden at every height, Freebuff included', () => {
+    // The landing screen relies on this to stop fetching for a slot it does
+    // not draw: Freebuff ignores the compact-height rule, `enabled` does not.
+    for (const isFreeMode of [true, false]) {
+      for (const terminalHeight of [10, 17, 18, 60]) {
+        expect(
+          shouldHideGravityAds({ enabled: false, terminalHeight, isFreeMode }),
+        ).toBe(true)
+      }
+    }
+  })
+
+  test('Freebuff keeps ads on compact terminals; Codebuff drops them', () => {
+    expect(
+      shouldHideGravityAds({
+        enabled: true,
+        terminalHeight: 17,
+        isFreeMode: true,
+      }),
+    ).toBe(false)
+    expect(
+      shouldHideGravityAds({
+        enabled: true,
+        terminalHeight: 17,
+        isFreeMode: false,
+      }),
+    ).toBe(true)
+    expect(
+      shouldHideGravityAds({
+        enabled: true,
+        terminalHeight: 18,
+        isFreeMode: false,
+      }),
+    ).toBe(false)
   })
 })
