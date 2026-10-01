@@ -248,7 +248,7 @@ describe('a plan model survives resolution, not just the allowlist', () => {
     }
   })
 
-  test('the CLI/Desktop tier catalog gains the plan rows and keeps the free ones', () => {
+  test('the CLI/Desktop tier catalog lists the plan rows to everyone and keeps the free ones first', () => {
     const free = getFreebuffModelsForAccessTier('limited').map((m) => m.id)
     const paid = getFreebuffModelsForAccessTier('limited', true).map(
       (m) => m.id,
@@ -257,8 +257,11 @@ describe('a plan model survives resolution, not just the allowlist', () => {
     // what the account can still run for free has to stay on offer.
     for (const id of free) expect(paid).toContain(id)
     expect(paid.slice(0, free.length)).toEqual(free)
-    // And it gained at least one row it could not pick before.
-    expect(paid.length).toBeGreaterThan(free.length)
+    // The plan rows are LISTED whether or not there is a plan (2026-09-30):
+    // a plan decides whether they are locked (`freebuffPlanRequired`), not
+    // whether they are drawn, so the upgrade has a row to point at.
+    expect(paid).toEqual(free)
+    expect(free.length).toBeGreaterThan(LIMITED_FREEBUFF_MODEL_IDS.length)
     for (const id of paid) {
       expect(
         isFreebuffSessionModelAllowedForAccessTier(id, 'limited', true),

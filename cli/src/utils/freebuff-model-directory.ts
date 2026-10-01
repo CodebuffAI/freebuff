@@ -102,6 +102,9 @@ export interface FreebuffModelDirectory {
     id: string,
     hasPaidSubscription: boolean,
     freebucks: FreebuffFreebucksInfo | null | undefined,
+    /** Fallback mode only: the resolved access tier, read when the server
+     *  sent no verdict (see `freebuffPlanRequired`). */
+    accessTier?: FreebuffAccessTier | null,
   ): boolean
   /** The pill set a row carries. Fallback mode draws its compiled flags
    *  itself and gets none here. */
@@ -140,8 +143,8 @@ export const compiledFreebuffModelDirectory: FreebuffModelDirectory = {
   recommendedModelId: (accessTier, options) =>
     getRecommendedFreebuffModelId(accessTier, options),
   supersededBy: (id, visibleIds) => getFreebuffModelSupersededBy(id, visibleIds),
-  planRequired: (id, hasPaidSubscription, freebucks) =>
-    freebuffPlanRequired(id, hasPaidSubscription, freebucks),
+  planRequired: (id, hasPaidSubscription, freebucks, accessTier) =>
+    freebuffPlanRequired(id, hasPaidSubscription, freebucks, accessTier),
   badges: () => [],
   contextWindow: (id) =>
     (id ? FREEBUFF_MODEL_CONTEXT_WINDOWS[id] : undefined) ??

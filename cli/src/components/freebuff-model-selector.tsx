@@ -315,11 +315,13 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // `freebucks` carries the server's per-viewer verdict
   // (`planRequiredModelIds`), which is what makes the US-or-paid rows lockable
   // here at all: the CLI is never told its country. Declared after the
-  // balance it reads.
+  // balance it reads. The tier is the fallback when no verdict arrived: the
+  // limited catalog lists its plan rows to a planless account (2026-09-30),
+  // and they must stay locked when the balance is unavailable too.
   const planRequired = useCallback(
     (modelId: string) =>
-      directory.planRequired(modelId, hasPaidSubscription, freebucks),
-    [directory, hasPaidSubscription, freebucks],
+      directory.planRequired(modelId, hasPaidSubscription, freebucks, accessTier),
+    [directory, hasPaidSubscription, freebucks, accessTier],
   )
   const balanceUnavailable = freebucks === null
   // The plan the daily pool was sized from. `planId` is the server's own

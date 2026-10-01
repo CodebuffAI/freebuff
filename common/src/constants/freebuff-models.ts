@@ -3045,18 +3045,18 @@ export const FREEBUFF_MODELS = [
   // IS the recommendation; a returning user who chose another row keeps it.
   // A test pins the first row to DEFAULT_FREEBUFF_MODEL_ID.
   //
-  // GLM 5.3 FLASH LEADS AGAIN as of 2026-09-05, retaking the position it held
-  // from 08-30 to 09-02. This moved because the DEFAULT moved, which is the
-  // only reason this line ever moves.
+  // MIMO 2.6 FLASH LEADS as of 2026-09-30, because the DEFAULT moved to it —
+  // the only reason this line ever moves. GLM 5.3 Flash led 2026-09-05 to then.
+  // The Flash row now sits outside the MiMo UI flag, since the default must be
+  // listed; FREEBUFF_ENABLE_MIMO_MODELS_IN_UI gates the Pro row only.
+  MIMO_V25_MODEL,
   GLM_V53_FLASH_MODEL,
   DEEPSEEK_V4_FLASH_MODEL,
   // GPT-6 LUNA TAKES 5.6'S SLOT (2026-09-22). Same position, same tagline,
   // half the price on the flex lane; 5.6 left this list in the same change and
   // was paused on 2026-09-24 (FREEBUFF_PAUSED_FREE_MODEL_IDS).
   GPT_6_LUNA_MODEL,
-  ...(FREEBUFF_ENABLE_MIMO_MODELS_IN_UI
-    ? [MIMO_V25_MODEL, MIMO_V26_PRO_MODEL]
-    : []),
+  ...(FREEBUFF_ENABLE_MIMO_MODELS_IN_UI ? [MIMO_V26_PRO_MODEL] : []),
   // OX ALPHA LEFT THIS LIST on 2026-08-27, when its anonymous host ended the
   // free promotion the row existed for. MiMo is the sole UNMETERED row again.
   //
@@ -3764,8 +3764,15 @@ export type FreebuffWebModelId = (typeof FREEBUFF_WEB_ALL_MODELS)[number]['id']
  *  AI-training notice (`dataUse: 'service'`), so the disclosure a first-time
  *  user sees changes — pickers still render `warning`, there is simply no
  *  longer one to render on the default row. */
+//
+// MiMo 2.6 Flash since 2026-09-30 (product call), on every surface and tier:
+// DEFAULT_FREEBUFF_WEB_MODEL_ID and LIMITED_FREEBUFF_HERO_MODEL_ID moved with
+// it. Only the RECOMMENDATION moved. PREVIOUS_DEFAULT_FREEBUFF_MODEL_ID and
+// FREEBUFF_DEFAULT_MODEL_MIGRATION_ID were deliberately NOT bumped, so no saved
+// GLM pick is rewritten: MiMo is 10 Freebucks an hour to GLM's 5, and moving
+// an inherited GLM pick onto it would silently halve that user's hours.
 export const DEFAULT_FREEBUFF_MODEL_ID: FreebuffModelId =
-  FREEBUFF_GLM_V53_FLASH_MODEL_ID
+  FREEBUFF_MIMO_V25_MODEL_ID
 
 /** The default this one replaced, and the stamp of the one-time move of saved
  *  picks off it (util/freebuff-default-model-migration.ts). Every surface
@@ -3804,8 +3811,9 @@ export const FREEBUFF_DEFAULT_MODEL_MIGRATION_ID = 'glm-5.3-flash-2026-09-05'
  *  Kept as its own constant from DEFAULT_FREEBUFF_MODEL_ID (CLI/Desktop) so the
  *  browser surfaces can steer independently. They name the same model today and
  *  diverged as recently as 2026-08-04 -> 2026-08-12. */
+// MiMo 2.6 Flash since 2026-09-30, with DEFAULT_FREEBUFF_MODEL_ID.
 export const DEFAULT_FREEBUFF_WEB_MODEL_ID: FreebuffWebModelId =
-  FREEBUFF_GLM_V53_FLASH_MODEL_ID
+  FREEBUFF_MIMO_V25_MODEL_ID
 
 /** Premium models the Web/Cloud picker renders small and muted: they are
  *  materially more expensive per token than the recommended default without
@@ -3908,8 +3916,9 @@ export const LIMITED_FREEBUFF_MODEL_ID: FreebuffModelId =
  *  meter is ever rolled back, every picker already repairs a locked hero onto
  *  the next joinable row (the CLI's grid repair, Desktop's `canStart` filter),
  *  and the server coerces onto LIMITED_FREEBUFF_MODEL_ID, never onto this. */
+// MiMo 2.6 Flash since 2026-09-30, with DEFAULT_FREEBUFF_MODEL_ID.
 export const LIMITED_FREEBUFF_HERO_MODEL_ID: FreebuffModelId =
-  FREEBUFF_GLM_V53_FLASH_MODEL_ID
+  FREEBUFF_MIMO_V25_MODEL_ID
 /**
  * The limited tier's catalog, hero first — the ONE owner of which models are
  * limited-tier: the web geo-exempt list, the quota pool, and chat's list all
@@ -3935,12 +3944,12 @@ export const LIMITED_FREEBUFF_HERO_MODEL_ID: FreebuffModelId =
 // regional pool, so this widens the catalog without making that tier unmetered.
 // Solar Mini 4 took its place on 2026-09-23, as it did in every picker.
 export const LIMITED_FREEBUFF_MODEL_IDS = [
-  // Hero first (LIMITED_FREEBUFF_HERO_MODEL_ID). GLM 5.3 Flash since
-  // 2026-09-07 — see LIMITED_FREEBUFF_MODEL_ID for why the coercion target
-  // is a different row.
+  // Hero first (LIMITED_FREEBUFF_HERO_MODEL_ID). MiMo 2.6 Flash since
+  // 2026-09-30 (GLM 5.3 Flash 2026-09-07 to then) — see
+  // LIMITED_FREEBUFF_MODEL_ID for why the coercion target is a different row.
+  FREEBUFF_MIMO_V25_MODEL_ID,
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  FREEBUFF_MIMO_V25_MODEL_ID,
   ...(FREEBUFF_SOLAR_MINI_4_ENTITLEMENT.limitedAccess
     ? [FREEBUFF_SOLAR_MINI_4_ENTITLEMENT.modelId]
     : []),
@@ -4293,7 +4302,16 @@ export function getFreebuffModelsForAccessTier(
   // between the user and the row is a plan we sell. Admission refuses a
   // planless start regardless (FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS).
   if (accessTier !== 'limited') return FREEBUFF_MODELS
-  if (!hasPaidSubscription) return LIMITED_FREEBUFF_MODELS
+  // The same holds at LIMITED access (product call, 2026-09-30): the rows a
+  // plan unlocks there are listed to every limited account, and drawn locked
+  // for one without a plan — the server's `planRequiredModelIds` for a
+  // limited viewer is FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS, which is
+  // every row appended below. They were hidden until then, which gave the
+  // plans page nothing to point at from the CLI and Desktop pickers (the Web
+  // picker already listed them, LIMITED_TIER_PLAN_LOCKED_MODELS).
+  // `hasPaidSubscription` no longer changes WHICH rows are listed, only
+  // whether they are locked; it stays in the signature for its callers.
+  void hasPaidSubscription
   // Plan rows are appended rather than merged in catalog order: the limited
   // rows are what this account can still run for free once the plan's windows
   // are spent, so they stay first and keep their picker position.

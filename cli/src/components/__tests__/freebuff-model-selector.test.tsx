@@ -34,8 +34,10 @@ import {
   FREEBUFF_MODELS,
   getFreebuffModelSupersededBy,
   isFreebuffModelId,
+  FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS,
+  getFreebuffModel,
+  LIMITED_FREEBUFF_HERO_MODEL_ID,
   LIMITED_FREEBUFF_MODELS,
-  LIMITED_FREEBUFF_MODEL_ID,
 } from '@codebuff/common/constants/freebuff-models'
 
 import { initializeThemeStore } from '../../hooks/use-theme'
@@ -260,15 +262,15 @@ describe('FreebuffModelSelector referral selection', () => {
 
   test('still repairs a locked reward selection to a visible grid model', async () => {
     await renderSelectorWithGlmRemaining(0)
-    // The LIMITED hero, which is no longer the full-access default: GLM 5.3
-    // Flash became that on 2026-09-05 and is earned-metered at this tier, so
-    // repairing onto it would move the user from one locked row to another.
-    expect(getSelectedFreebuffModel()).toBe(LIMITED_FREEBUFF_MODEL_ID)
+    // The LIMITED hero: MiMo 2.6 Flash since 2026-09-30, an always-open row.
+    // GLM 5.3 Flash (the reward) is earned-metered at this tier, so repairing
+    // onto it would move the user from one locked row to another.
+    expect(getSelectedFreebuffModel()).toBe(LIMITED_FREEBUFF_HERO_MODEL_ID)
   })
 
   test('treats an omitted reward balance as locked', async () => {
     await renderSelectorWithGlmRemaining()
-    expect(getSelectedFreebuffModel()).toBe(LIMITED_FREEBUFF_MODEL_ID)
+    expect(getSelectedFreebuffModel()).toBe(LIMITED_FREEBUFF_HERO_MODEL_ID)
   })
 })
 
@@ -490,7 +492,9 @@ describe('FreebuffModelSelector tier layout', () => {
     expect(getSelectedFreebuffModel()).toBe(DEFAULT_FREEBUFF_MODEL_ID)
     const frame = setup.captureCharFrame()
     // `›` is the cursor: it has to be on the row Enter now commits.
-    expect(frame).toContain('› GLM 5.3 Flash')
+    expect(frame).toContain(
+      `› ${getFreebuffModel(DEFAULT_FREEBUFF_MODEL_ID).displayName}`,
+    )
     // …and that row is the whole screen, exactly as for a user who is already
     // on the recommendation. The spent rows live behind the toggle.
     expect(frame).toContain('See all')
@@ -525,7 +529,9 @@ describe('FreebuffModelSelector tier layout', () => {
     // premium; an unmetered default is always joinable, so an invalid selection
     // now lands on the row the picker leads with.
     expect(getSelectedFreebuffModel()).toBe(DEFAULT_FREEBUFF_MODEL_ID)
-    expect(setup.captureCharFrame()).toContain('› GLM 5.3 Flash')
+    expect(setup.captureCharFrame()).toContain(
+      `› ${getFreebuffModel(DEFAULT_FREEBUFF_MODEL_ID).displayName}`,
+    )
   })
 
   test('shows every limited-tier model when the access tier arrives after mount', async () => {
@@ -544,7 +550,8 @@ describe('FreebuffModelSelector tier layout', () => {
     useFreebuffModelStore
       .getState()
       .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
-    const setup = await renderSelector()
+    // Tall enough for the whole limited list, plan rows included (2026-09-30).
+    const setup = await renderSelector(80)
 
     flushSync(() => {
       useFreebuffSessionStore.getState().setSession({
@@ -562,9 +569,25 @@ describe('FreebuffModelSelector tier layout', () => {
     for (const model of LIMITED_FREEBUFF_MODELS) {
       expect(frame).toContain(model.displayName)
     }
-    // The pre-transition pick was a full-access model, so this is the path
-    // where a full-access-only row would linger.
-    expect(frame).not.toContain('GPT-6 Luna')
+    // The rows a plan unlocks at limited access are LISTED to a planless
+    // account since 2026-09-30, drawn locked exactly like a full-access
+    // paid-only row: "Paid plan" on the detail line, no price. No plan-lock
+    // list arrived with this session, so the tier's own fallback decides.
+    const lines = frame.split('\n')
+    const planRows = FREEBUFF_MODELS.filter((m) =>
+      FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.includes(m.id),
+    )
+    expect(planRows.length).toBeGreaterThan(0)
+    for (const model of planRows) {
+      const row = lines.findIndex((line) => line.includes(model.displayName))
+      expect(row).toBeGreaterThanOrEqual(0)
+      expect(lines[row + 1] ?? '').toContain('Paid plan')
+    }
+    // No limited row is locked.
+    for (const model of LIMITED_FREEBUFF_MODELS) {
+      const row = lines.findIndex((line) => line.includes(model.displayName))
+      expect(lines[row + 1] ?? '').not.toContain('Paid plan')
+    }
     expect(frame).not.toContain('PREMIUM')
     expect(frame).not.toContain('UNLIMITED')
   })
@@ -998,13 +1021,12 @@ describe('GLM selection uses the applicable meter', () => {
         .setSelectedModel(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
       const setup = await renderSelector()
       await setup.renderOnce()
-      // The LIMITED hero when the balance cannot cover GLM. It stopped being
-      // the full-access default on 2026-09-05: GLM became that, and repairing
-      // an unaffordable GLM onto GLM would be a no-op.
+      // The LIMITED hero (MiMo 2.6 Flash since 2026-09-30) when the balance
+      // cannot cover GLM.
       expect(getSelectedFreebuffModel()).toBe(
         balance >= 5
           ? FREEBUFF_GLM_V53_FLASH_MODEL_ID
-          : LIMITED_FREEBUFF_MODEL_ID,
+          : LIMITED_FREEBUFF_HERO_MODEL_ID,
       )
       if (balance >= 5)
         // The price reads `5/hr`; the balance lives in the header line.
@@ -1066,7 +1088,7 @@ describe('GLM selection uses the applicable meter', () => {
     await setup.renderOnce()
     await setup.renderOnce()
     // The LIMITED hero — see the note in the case above.
-    expect(getSelectedFreebuffModel()).toBe(LIMITED_FREEBUFF_MODEL_ID)
+    expect(getSelectedFreebuffModel()).toBe(LIMITED_FREEBUFF_HERO_MODEL_ID)
     setBalance(5)
     useFreebuffModelStore
       .getState()
@@ -1077,7 +1099,7 @@ describe('GLM selection uses the applicable meter', () => {
     setBalance()
     await setup.renderOnce()
     await setup.renderOnce()
-    expect(getSelectedFreebuffModel()).toBe(LIMITED_FREEBUFF_MODEL_ID)
+    expect(getSelectedFreebuffModel()).toBe(LIMITED_FREEBUFF_HERO_MODEL_ID)
   })
 })
 
@@ -1147,9 +1169,11 @@ test.each([
         ? {}
         : { freebucks: freebucksFixture(balance) }),
     })
+    // A non-hero pick, so the picker opens expanded with GLM on screen. MiMo
+    // 2.6 Flash was that pick until it became the limited hero (2026-09-30).
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
+      .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     const requested: string[] = []
     const setup = await renderSelector(40, async (model) => {
       requested.push(model)
@@ -1162,7 +1186,7 @@ test.each([
     await setup.mockMouse.click(15, y)
     await setup.renderOnce()
     expect(requested).toEqual([])
-    expect(getSelectedFreebuffModel()).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    expect(getSelectedFreebuffModel()).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
   },
 )
 
@@ -1212,13 +1236,15 @@ describe('a paid-only row on an account without a plan', () => {
       accessTier: 'full',
       freebucks: freebucksFixture(1_000, {
         [FREEBUFF_GEMINI_38_FLASH_MODEL_ID]: 80,
-        [FREEBUFF_MIMO_V25_MODEL_ID]: 10,
+        [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 10,
       }),
       ...(withPlan ? { subscription: STARTER_PLAN } : {}),
     } as never)
+    // A non-default pick, so the picker opens expanded (MiMo 2.6 Flash, the
+    // pick here until 2026-09-30, is the default now and opens collapsed).
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
+      .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     const requested: string[] = []
     const setup = await renderSelector(40, async (model) => {
       requested.push(model)
@@ -1266,7 +1292,9 @@ describe('a paid-only row on an account without a plan', () => {
       await setup.renderOnce()
       expect(openSpy).toHaveBeenCalledWith('https://freebuff.com/plans')
       expect(requested).toEqual([])
-      expect(getSelectedFreebuffModel()).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+      expect(getSelectedFreebuffModel()).toBe(
+        FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+      )
     } finally {
       openSpy.mockRestore()
     }
@@ -1301,13 +1329,14 @@ describe('a row the balance cannot cover', () => {
         planRequiredModelIds: [],
         ...freebucksFixture(10, {
           [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 20,
-          [FREEBUFF_MIMO_V25_MODEL_ID]: 10,
+          [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 10,
         }),
       },
     })
+    // A non-default pick, so the picker opens expanded.
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
+      .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     const requested: string[] = []
     const setup = await renderSelector(40, async (model) => {
       requested.push(model)
@@ -1343,7 +1372,9 @@ describe('a row the balance cannot cover', () => {
       await setup.renderOnce()
       expect(openSpy).toHaveBeenCalledWith('https://freebuff.com/plans')
       expect(requested).toEqual([])
-      expect(getSelectedFreebuffModel()).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+      expect(getSelectedFreebuffModel()).toBe(
+        FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+      )
     } finally {
       openSpy.mockRestore()
     }
@@ -1365,7 +1396,7 @@ describe('a row the balance cannot cover', () => {
         ...applyFirstTabDiscount(
           freebucksFixture(25, {
             [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 20,
-            [FREEBUFF_MIMO_V25_MODEL_ID]: 10,
+            [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 10,
           }),
           { amount: 10, available: true },
         ),
@@ -1419,13 +1450,15 @@ test.each([false, true])(
       .setSelectedModel(FREEBUFF_GPT_6_LUNA_MODEL_ID)
     const setup = await renderSelector()
     await setup.renderOnce()
-    // Unpaid at limited access repairs onto the LIMITED hero, which since
-    // 2026-09-05 is not the full-access default.
+    // Unpaid at limited access repairs onto the LIMITED hero: Luna is listed
+    // there since 2026-09-30, but LOCKED (no plan-lock list arrived here, so
+    // the tier's own fallback, FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS,
+    // decides), and a locked row is never a selection the picker keeps.
     expect(getSelectedFreebuffModel()).toBe(
-      paid ? FREEBUFF_GPT_6_LUNA_MODEL_ID : LIMITED_FREEBUFF_MODEL_ID,
+      paid ? FREEBUFF_GPT_6_LUNA_MODEL_ID : LIMITED_FREEBUFF_HERO_MODEL_ID,
     )
     if (paid) expect(setup.captureCharFrame()).toContain('GPT-6 Luna')
-    else expect(setup.captureCharFrame()).not.toContain('GPT-6 Luna')
+    else expect(setup.captureCharFrame()).not.toContain('› GPT-6 Luna')
   },
 )
 
@@ -1684,7 +1717,10 @@ describe('unavailable balances in the mounted CLI picker', () => {
       useFreebuffModelStore.getState().setSelectedModel(id)
       const requests: string[] = []
       const limits: (number | 'session' | undefined)[] = []
-      const setup = await renderSelector(40, async (model, limit) => {
+      // Tall enough for the expanded list: GLM is no longer the default
+      // (2026-09-30), so the picker opens expanded on it and the balance line
+      // sits below every row.
+      const setup = await renderSelector(80, async (model, limit) => {
         limits.push(limit)
         requests.push(
           resolveFreebuffModelPickForSession(

@@ -338,8 +338,9 @@ describe('applyFreebuffCatalog', () => {
   })
 
   test('an id no row replaces lands on the recommendation', () => {
-    // The compiled default: a real selection that CATALOG has no row for.
-    useFreebuffModelStore.getState().setSelectedModel(DEFAULT_FREEBUFF_MODEL_ID)
+    // A real selection that CATALOG has no row for. (Not the compiled
+    // default: that is MiMo 2.6 Flash, which a CATALOG row replaces.)
+    useFreebuffModelStore.getState().setSelectedModel(FREEBUFF_MIMO_V26_PRO_MODEL_ID)
     applyFreebuffCatalog(CATALOG)
     expect(getSelectedFreebuffModel()).toBe('m-only-here')
   })

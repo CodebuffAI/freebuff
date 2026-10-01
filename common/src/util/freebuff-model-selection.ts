@@ -1,4 +1,6 @@
+import { isFreebuffLimitedTierPlanOnlyModelId } from '../constants/freebuff-models'
 import { isFreebuffSubscriptionProModelId } from '../constants/freebuff-subscriptions'
+import type { FreebuffAccessTier } from '../constants/freebuff-models'
 import type { FreebuffFreebucksInfo } from '../types/freebuff-session'
 import { getFreebuffModelMeter } from './freebuff-session-pools'
 
@@ -25,10 +27,21 @@ export function freebuffPlanRequired(
    *  the static list: it also locks the rows a plan unlocks at LIMITED
    *  access (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS) for a viewer there. */
   freebucks?: Pick<FreebuffFreebucksInfo, 'planRequiredModelIds'> | null,
+  /** The access tier the session response resolved to. Only read when the
+   *  server sent no verdict (no Freebucks block, a balance that is
+   *  unavailable, an older server): at LIMITED access the fallback is then
+   *  the same list the server would have sent there,
+   *  FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS. Since 2026-09-30 the limited
+   *  catalog LISTS those rows to an account without a plan, so falling back
+   *  to the full-access paid-only list would draw GPT-6 Luna and MiMo 2.6 Pro
+   *  as ordinary, startable rows that admission then refuses. */
+  accessTier?: FreebuffAccessTier | null,
 ): boolean {
   if (hasPaidSubscription) return false
   const serverVerdict = freebucks?.planRequiredModelIds
   if (serverVerdict) return serverVerdict.includes(modelId)
+  if (accessTier === 'limited' && isFreebuffLimitedTierPlanOnlyModelId(modelId))
+    return true
   return isFreebuffSubscriptionProModelId(modelId)
 }
 

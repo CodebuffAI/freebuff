@@ -572,11 +572,14 @@ describe('isLimitedTierSubstitutedModel', () => {
     expect(
       isLimitedTierSubstitutedModel('base2-free', FALLBACK_FREEBUFF_MODEL_ID),
     ).toBe(true)
-    // The FULL-ACCESS default is not a door. It diverged from the limited hero
-    // on 2026-09-05, and this is what keeps the substitution from quietly
-    // widening to whatever the default happens to be.
+    // Only those two are doors. The full-access DEFAULT is one again since
+    // 2026-09-30 only because it IS the fallback (MiMo 2.6 Flash); a row that
+    // is neither — GLM 5.3 Flash, the default before that — must stay shut,
+    // or the substitution quietly widens to whatever the default happens to
+    // be.
+    expect(DEFAULT_FREEBUFF_MODEL_ID).toBe(FALLBACK_FREEBUFF_MODEL_ID)
     expect(
-      isLimitedTierSubstitutedModel('base2-free', DEFAULT_FREEBUFF_MODEL_ID),
+      isLimitedTierSubstitutedModel('base2-free', 'z-ai/glm-5.3-flash'),
     ).toBe(false)
   })
 
