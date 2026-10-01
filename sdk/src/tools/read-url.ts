@@ -1,4 +1,8 @@
-import { assertUrlAllowed, type HostLookup } from './ssrf'
+import { isHttpProxyConfiguredFromEnv } from '../env'
+import { pinnedFetch } from './pinned-fetch'
+import { assertUrlAllowed } from './ssrf'
+
+import type { AddressPolicy, HostLookup } from './ssrf'
 
 import type { CodebuffToolOutput } from '../../../common/src/tools/list'
 
@@ -322,28 +326,60 @@ function truncateText(
   }
 }
 
+/**
+ * The transport used when the caller supplies no `fetch`.
+ *
+ * Normally {@link pinnedFetch}: the connection goes only to addresses that
+ * were validated in the same resolution. Under Bun with a proxy configured,
+ * Bun's own `fetch` instead, because it honours the proxy variables and
+ * `node:http` there does not; the proxy, not this process, resolves the name.
+ */
+function defaultTransport(opts: {
+  lookupHost?: HostLookup
+  isBlocked?: AddressPolicy
+}): FetchLike {
+  const isBun = typeof process !== 'undefined' && !!process.versions?.bun
+  if (isBun && isHttpProxyConfiguredFromEnv()) {
+    return globalThis.fetch
+  }
+  return async (input, init) =>
+    pinnedFetch(String(input), {
+      headers: init?.headers as Record<string, string> | undefined,
+      signal: init?.signal ?? undefined,
+      ...opts,
+    })
+}
+
 export async function readUrl({
   url,
   max_chars = DEFAULT_MAX_CHARS,
-  fetch: fetchImpl = globalThis.fetch,
+  fetch: customFetch,
   lookupHost,
-  resolveDns = fetchImpl === globalThis.fetch,
+  isBlocked,
+  resolveDns = customFetch === undefined,
   signal,
 }: {
   url: string
   max_chars?: number
+  /**
+   * A replacement transport (tests). Without one, every connection is pinned
+   * to addresses validated at connect time (`pinned-fetch.ts`).
+   */
   fetch?: FetchLike
   /** Override hostname resolution (defaults to node:dns). */
   lookupHost?: HostLookup
+  /** Override which addresses are refused (defaults to `isBlockedAddress`). */
+  isBlocked?: AddressPolicy
   /**
-   * Whether to DNS-resolve hostnames for SSRF checks. Defaults to true only
-   * when using the real global fetch; a caller-supplied fetch (e.g. a test
-   * stub) skips resolution but IP-literal hosts are still rejected.
+   * Whether to DNS-resolve hostnames for SSRF checks before each hop.
+   * Defaults to true unless the caller supplies its own fetch (e.g. a test
+   * stub); IP-literal hosts are rejected either way.
    */
   resolveDns?: boolean
   /** External abort (e.g. user interrupt); cancels the fetch mid-flight. */
   signal?: AbortSignal
 }): Promise<ReadUrlOutput> {
+  const fetchImpl = customFetch ?? defaultTransport({ lookupHost, isBlocked })
   if (signal?.aborted) {
     return errorResult(url, 'Cancelled: the run was aborted by the user.')
   }
@@ -368,8 +404,14 @@ export async function readUrl({
     for (let redirects = 0; ; redirects++) {
       try {
         // Refuses non-http(s) schemes and private/reserved addresses, literal
-        // or resolved from the hostname, before each hop.
-        await assertUrlAllowed(currentUrl, { lookupHost, resolveDns })
+        // or resolved from the hostname, before each hop. The default
+        // transport validates again when it connects, against the addresses
+        // it actually connects to.
+        await assertUrlAllowed(currentUrl, {
+          lookupHost,
+          resolveDns,
+          isBlocked,
+        })
       } catch (error) {
         return errorResult(
           url,
@@ -396,6 +438,8 @@ export async function readUrl({
       if (!location) {
         break
       }
+      // The redirect's own body is never read; release its connection.
+      await response.body?.cancel().catch(() => {})
       if (redirects >= MAX_REDIRECTS) {
         return errorResult(url, `Too many redirects (>${MAX_REDIRECTS})`)
       }
