@@ -3306,6 +3306,41 @@ export function freebuffPurchasesPausedAvailabilityLabel(): string {
   return 'purchased sessions are paused right now — the model itself is fine; try again shortly'
 }
 
+/**
+ * Models we no longer serve on Freebuff's own agents, with no compatibility
+ * path left for them: still recognised (so an old client gets a clear answer
+ * instead of an unknown-model error), in no picker, admitted at no tier. The
+ * completions route answers them with `freebuffRetiredModelMessage`
+ * (2026-10-01: an old CLI was still running MiniMax M3 on `base2-free`,
+ * ~2,300 requests a day, because only session admission refused it).
+ *
+ * DeepSeek V4 Pro and GPT-5.6 Luna are paused too but NOT here: V4 Pro is
+ * still served as V4 Flash to the clients that name it, and GPT-5.6 Luna is
+ * shared with paid lite mode. Retiring either is a separate decision.
+ */
+export const FREEBUFF_RETIRED_MODEL_IDS: readonly string[] = [
+  FREEBUFF_MINIMAX_M3_MODEL_ID,
+  FREEBUFF_GLM_V52_MODEL_ID,
+  FREEBUFF_OX_ALPHA_MODEL_ID,
+]
+
+export function isFreebuffRetiredModelId(
+  id: string | null | undefined,
+): boolean {
+  if (!id) return false
+  return FREEBUFF_RETIRED_MODEL_IDS.some((modelId) =>
+    freebuffModelIdMatches(id, modelId),
+  )
+}
+
+/** What a retired model's request is told, in words every client renders. */
+export function freebuffRetiredModelMessage(id: string): string {
+  const name =
+    SUPPORTED_FREEBUFF_MODELS.find((m) => freebuffModelIdMatches(id, m.id))
+      ?.displayName ?? id
+  return `${name} is no longer available in Freebuff. Update to the latest version to keep coding: run \`npm install -g freebuff@latest\` for the CLI, or restart Freebuff Desktop to update it.`
+}
+
 /** Suffix-tolerant like the other model predicates, so a dated provider
  *  snapshot of a paused model cannot slip past the pause. */
 export function isFreebuffPausedFreeModelId(
@@ -3885,6 +3920,11 @@ export const LIMITED_FREEBUFF_MODEL_IDS = [
   ...(FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.limitedAccess
     ? [FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.modelId]
     : []),
+  // Space Bunny Alpha (2026-10-01): admission already admitted it at limited
+  // access and Web/Cloud already listed it there; only the CLI and Desktop
+  // pickers left it out, which limited users (many newly region-locked)
+  // reported as the model disappearing. Free to serve.
+  FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID,
 ] as const
 export const LIMITED_FREEBUFF_MODELS = LIMITED_FREEBUFF_MODEL_IDS.map(
   (modelId) => SUPPORTED_FREEBUFF_MODELS.find((model) => model.id === modelId)!,

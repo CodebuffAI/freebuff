@@ -1383,6 +1383,8 @@ describe('freebuff model availability', () => {
       FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
       FREEBUFF_SOLAR_MINI_4_MODEL_ID,
       FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+      // Listed at limited access since 2026-10-01; admission already allowed it.
+      'stealth/space-bunny-alpha',
     ])
     // The tier's own rows first, then every row a plan unlocks there — LISTED
     // to every limited account (2026-09-30) and drawn locked without a plan.
@@ -1459,7 +1461,7 @@ describe('freebuff model availability', () => {
       ),
     ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     expect(LIMITED_FREEBUFF_MODEL_MISMATCH_MESSAGE).toBe(
-      'Limited free access is only available with MiMo 2.6 Flash or GLM 5.3 Flash or DeepSeek V4.1 Flash or Solar Mini 4 or Solar Pro 4.',
+      'Limited free access is only available with MiMo 2.6 Flash or GLM 5.3 Flash or DeepSeek V4.1 Flash or Solar Mini 4 or Solar Pro 4 or Space Bunny Alpha.',
     )
     // No row in the tier supersedes another, so no picker may offer a switch
     // that admission would coerce straight back.
