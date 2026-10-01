@@ -3,11 +3,10 @@
  *
  * The rotating dock, the lazy inline slots and the partner rows all ask the
  * same route for an ad and differ only in which placement they name. They
- * used to differ in more than that by accident: every field the server reads
- * to target, price and bot-filter a request -- the browser-like user agent,
- * the device info, the message history, the dock arm -- lived inside
- * `useGravityAd`'s closure, so a second caller was a second body, free to
- * omit one of them and be quietly mistargeted or quietly filtered.
+ * used to differ in more than that by accident: the shared request fields --
+ * the ad user agent, the device info, the message history, the dock arm --
+ * lived inside `useGravityAd`'s closure, so a second caller was a second body,
+ * free to omit one of them and be quietly mistargeted.
  */
 import { WEBSITE_URL } from '@codebuff/sdk'
 import { getAdUserAgent } from '@codebuff/common/util/ad-user-agent'
@@ -198,8 +197,7 @@ export async function buildAdAuctionRequest(params: {
         ...(params.placementIds?.length
           ? { placementIds: params.placementIds }
           : {}),
-        // Native runtime UAs look bot-like to ad networks. Send the shared
-        // browser-like UA so every provider sees a usable targeting signal.
+        // The ad request carries the shared ad user agent (getAdUserAgent).
         userAgent: getAdUserAgent(),
         // The dock arm THIS session cached (COD-457). Omitted until the
         // policy resolves, so the server falls back to its own assignment

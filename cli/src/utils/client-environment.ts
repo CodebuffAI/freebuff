@@ -10,9 +10,7 @@
  *   v1;in=1;out=1;tp=iterm;term=1;ct=1;sz=120x40;ci=0;ssh=0;l=1;p=shell;g=terminal;osc=1;tzo=0;px=none;tls=1;ca=0
  *
  * The one exception to "no raw value" is `stz`, the operating system's own
- * IANA zone, sent only when `TZ` overrides it: the zone is already sent on
- * every request as `x-fb-timezone`, and `stz` is what that header would have
- * said without the override.
+ * IANA zone, sent only when `TZ` overrides it.
  */
 import { execFile } from 'child_process'
 import { readFile, readlink } from 'fs/promises'

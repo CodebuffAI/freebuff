@@ -41,7 +41,7 @@ export const FREEBUFF_TRUST_MIN_LEVEL: FreebuffTrustLevel = 'new'
  * throttle the entire product to a fifth of its capacity, and it would look
  * exactly like an outage nobody could attribute. Failing to the level that
  * reproduces roughly today's flat limits means a broken resolver costs us the
- * enforcement, never the users. Same reasoning as the signup gate's fail-open.
+ * enforcement, never the users.
  */
 export const FREEBUFF_TRUST_FALLBACK_LEVEL: FreebuffTrustLevel = 'established'
 

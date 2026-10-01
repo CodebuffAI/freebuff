@@ -42,16 +42,11 @@ export const FREEBUFF_SUBSCRIPTION_MODEL_IDS: readonly string[] =
 /**
  * The expensive half of the pool, sub-capped within each day.
  *
- * Measured 2026-08-21: Luna and DeepSeek V4 Pro each cost roughly 4-5x Flash
- * per hour-session (dollar figures live in the internal cost notes, not in
- * this exported file). Without a sub-cap a subscriber
- * spending every daily session on Luna costs 5x one spending them on Flash, at
- * the same price, so the daily allowance would have to be priced for the worst
- * case and would be small for everyone.
- *
- * Kimi K3 Eco is deliberately NOT here. It is a god-only test model whose
- * measured cost describes short evaluation sessions rather than real use, so
- * it cannot be priced against yet.
+ * These rows cost several times Flash per hour-session (figures live in the
+ * internal cost notes, not in this exported file). Without a sub-cap a
+ * subscriber spending every daily session on them would cost several times
+ * one spending them on Flash, at the same price, so the daily allowance would
+ * have to be priced for the worst case and would be small for everyone.
  */
 export const FREEBUFF_SUBSCRIPTION_PREMIUM_MODEL_IDS: readonly string[] =
   Object.freeze([
@@ -331,7 +326,7 @@ export function freebuffSubscriptionTierDisclaimers(
     // sentence would describe a restriction that does not exist.
     ...(tier.dailyPremiumSessions < tier.dailySessions
       ? [
-          `${tier.dailyPremiumSessions} of your ${tier.dailySessions} daily sessions can be GPT-6 Luna or GLM 5.3 Flash; the rest use DeepSeek V4.1 Flash or Kimi K3 Eco`,
+          `${tier.dailyPremiumSessions} of your ${tier.dailySessions} daily sessions can be GPT-6 Luna or GLM 5.3 Flash; the rest use the standard models`,
         ]
       : []),
     // Says "weekly" and takes the length from the constant: the window widened
@@ -393,9 +388,7 @@ export const FREEBUFF_SUBSCRIPTION_FIVE_DAY_WINDOW_DAYS = 7
  * LOCKED to an account without a plan (`freebuffPlanRequired`). MiMo 2.6 Pro
  * and GPT-6 Luna left this set on 2026-09-25: open to every full-access
  * account, plan-only at limited access
- * (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS). Gemini was Web-only until then, and the
- * Web-only gate leaked: released CLI binaries that still held the id opened it
- * with no plan.
+ * (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS). Gemini was Web-only until then.
  *
  * Withdrawn history: V4 Pro was the one entry for a few hours (#2254) and left
  * on 2026-08-26 with its withdrawal from free mode — a row nothing may admit

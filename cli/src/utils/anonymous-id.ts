@@ -18,8 +18,8 @@ import { getConfigDir } from './config-dir'
  * collapse to a single person that aliases cleanly into their account.
  *
  * Deliberately a per-install random UUID, NOT the hardware fingerprint from
- * `fingerprint.ts`: the fingerprint is intentionally deterministic across
- * reinstalls (for anti-abuse), so reusing it here would alias a fresh install
+ * `fingerprint.ts`: the fingerprint is stable across reinstalls, so reusing it
+ * here would alias a fresh install
  * into a previous user's PostHog person — cross-account identity bleed. Keep
  * the two identities separate.
  */

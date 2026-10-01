@@ -7,24 +7,21 @@
  *
  * ## Why this is a SEPARATE constant from the Cloud grant
  *
- * `freebuff/web/convex/ads/sponsoredCapabilityPolicy.ts` holds
- * `SPONSORED_V1_GRANT`, which is Cloud's. It stays exactly as it is. This file
- * holds the local grant, and COD-336 acceptance 2 asks for precisely that
- * separation — "one constant per environment, not one shared constant with a
- * comment" — because the two environments differ in a way a comment cannot
- * express: Cloud's blast radius is a disposable Daytona sandbox holding one
- * clone, local's is a developer's laptop, and the local grant is not even
- * constant across operating systems. A shared constant makes the Windows
+ * Cloud's grant, `SPONSORED_V1_GRANT`, lives server-side and stays exactly as
+ * it is. This file holds the local grant, and COD-336 acceptance 2 asks for
+ * precisely that separation — "one constant per environment, not one shared
+ * constant with a comment" — because the two environments differ in a way a
+ * comment cannot express: Cloud runs in a disposable sandbox holding one
+ * clone, local runs on a developer's own machine, and the local grant is not
+ * even constant across operating systems. A shared constant makes the Windows
  * refusal below either reach Cloud (where it is wrong) or fail to reach local
  * (where it is the whole point).
  *
  * ## What actually bounds a local run
  *
- * A capability map bounds the TOOLS. It does not bound a shell. So the grant
- * here is the smaller half of the boundary; the larger half is the process
- * broker in
- * `sdk/src/tools/sponsored-sandbox.ts`, which is what makes `run_commands`
- * grantable at all:
+ * A capability map governs the TOOLS; the process broker in
+ * `sdk/src/tools/sponsored-sandbox.ts` governs the commands, and it is what
+ * makes `run_commands` grantable at all:
  *
  *   - the floor, every OS: the environment scrubbed to
  *     {@link SPONSORED_LOCAL_ENV_ALLOWLIST}, `HOME`/`USERPROFILE` and `TMPDIR`
@@ -32,13 +29,11 @@
  *     `GIT_TERMINAL_PROMPT=0`, and cwd plus every write path bound to the
  *     worktree with symlink resolution;
  *   - macOS and Linux: an OS sandbox under that (`sandbox-exec`, bubblewrap);
- *   - Windows (COD-642): the floor ONLY, with no OS sandbox, when the server
- *     serves Windows at all. It is its own arm
- *     ({@link SponsoredLocalFloorContainment}) with its own grant
- *     ({@link SPONSORED_LOCAL_FLOOR_GRANT}) and its own environment
- *     ({@link scrubSponsoredWindowsEnv}), so nothing can mistake it for a
- *     sandbox. `docs/freebuff-sponsored-local-execution.md` records the
- *     decision and what it accepts.
+ *   - Windows (COD-642): the floor, when the server serves Windows at all.
+ *     It is its own arm ({@link SponsoredLocalFloorContainment}) with its own
+ *     grant ({@link SPONSORED_LOCAL_FLOOR_GRANT}) and its own environment
+ *     ({@link scrubSponsoredWindowsEnv}), so no caller confuses it with the
+ *     sandboxed arm.
  *
  * {@link sponsoredLocalGrant} is therefore a function of the containment that
  * is actually available, never a bare constant read off the module.
@@ -83,12 +78,11 @@ export type SponsoredLocalSandboxContainment = {
 }
 
 /**
- * Windows (COD-642): the floor and NO OS sandbox.
+ * Windows (COD-642): the floor arm.
  *
- * Deliberately not `available: true`. The floor is not a sandbox, and every
- * caller that reads `available` was written when `true` meant one; a floor
- * that answered `true` there would be admitted as containment by code that
- * never heard of it. This arm has no `available` at all, so such a reader
+ * Deliberately not `available: true`. Every caller that reads `available` was
+ * written when `true` meant an OS sandbox; a floor that answered `true` there
+ * would be admitted as that by code that never heard of it. This arm has no `available` at all, so such a reader
  * gets `undefined` and refuses, and the type makes each caller that can offer
  * the floor say so through {@link sponsoredLocalContainmentIsFloor}.
  */
@@ -292,9 +286,8 @@ export function sponsoredLocalBranchName(
  *    Desktop the thread is never a send target (COD-397 requirement 2), so an
  *    `ask_user` there is a question nobody is shown and the run stalls until
  *    the turn limit rather than pausing.
- *  - no `delegate`: nothing propagates a per-run restriction into a spawned
- *    agent's template, so a gate a subagent does not inherit is a bypass with
- *    extra steps.
+ *  - no `delegate`: per-run restrictions are applied to this run's own tool
+ *    calls, so a sponsored run does not spawn agents.
  */
 export const SPONSORED_LOCAL_V1_GRANT: ReadonlySet<SponsoredCapability> =
   Object.freeze(
@@ -315,14 +308,9 @@ export const SPONSORED_LOCAL_V1_GRANT: ReadonlySet<SponsoredCapability> =
  * too; since COD-642 it is {@link SPONSORED_LOCAL_FLOOR_GRANT}, and only when
  * the server's compute grant names the floor.)
  *
- * `network` GOES TOO, not only `run_commands`. Dropping the shell alone left
- * exactly the shape Cloud's own rationale excludes — a run that can read the
- * whole checkout and reach any host, with no OS boundary under it and nothing
- * between the two but a tool name. Whatever the argument for accepting egress
- * from a CONTAINED run, it does not survive removing the containment: this is
- * the grant for a machine where a boundary could not be established, and the
- * one capability that turns a read into a disclosure is not one to hand out
- * there.
+ * `network` goes too, not only `run_commands`: this is the grant for a
+ * machine where containment could not be established, and it is kept to
+ * reading and editing the workspace.
  *
  * Nothing starts a run with this today — the surface refuses at the Accept.
  * It exists so the refusal is a decision expressed in one place, and so a
@@ -340,8 +328,7 @@ export const SPONSORED_LOCAL_UNCONTAINED_GRANT: ReadonlySet<SponsoredCapability>
   )
 
 /**
- * The Windows floor's grant (COD-642): the full five, with NO OS sandbox
- * under it.
+ * The Windows floor's grant (COD-642): the full five, on the floor arm.
  *
  * The same membership as {@link SPONSORED_LOCAL_V1_GRANT} today, and a
  * separate constant for the reason that one is separate from Cloud's: the two
@@ -511,11 +498,10 @@ export function looksLikeCredentialEnvVar(name: string): boolean {
  * on directly (COD-336 acceptance 4). The caller — the SDK broker — is the one
  * that makes `home` and `tmp` exist.
  *
- * `HOME` moving is the single cheapest large win in the whole boundary: with
- * it moved, `~/.ssh`, `~/.gitconfig`, `~/.aws`, `~/.npmrc` and the `gh` token
- * store are all simply not where the run looks, and `GIT_ASKPASS`/
- * `GIT_TERMINAL_PROMPT` stop git asking a human for the credential it can no
- * longer find. `USERPROFILE` is set alongside it because on Windows that is
+ * `HOME` points at the run's own private directory, so tools that read
+ * per-user configuration from `HOME` start from an empty one, and
+ * `GIT_ASKPASS`/`GIT_TERMINAL_PROMPT` keep git from prompting for a
+ * credential. `USERPROFILE` is set alongside it because on Windows that is
  * the variable that means `HOME`, and the floor is meant to hold there too.
  */
 export function scrubSponsoredLocalEnv(
@@ -542,9 +528,9 @@ export function scrubSponsoredLocalEnv(
   // about, and it points at a directory under the run's private HOME that we
   // never create -- git finding no hooks directory is exactly the outcome.
   //
-  // Both directions of Hole 4 close with this: the user's `pre-commit` does
-  // not run against advertiser-authored content, and a hook the run writes
-  // does not run against the user here either.
+  // This applies in both directions: the user's `pre-commit` does not run
+  // against advertiser-authored content, and a hook the run writes does not
+  // run here either.
   env.GIT_CONFIG_COUNT = '1'
   env.GIT_CONFIG_KEY_0 = 'core.hooksPath'
   env.GIT_CONFIG_VALUE_0 = `${paths.home}/no-hooks`
@@ -698,10 +684,8 @@ export function scrubSponsoredWindowsEnv(
  * installs is a procedure whose diff the user cannot review, and review of the
  * diff is this channel's actual safety mechanism.
  *
- * What this pattern is and is not — and what it deliberately does not reach
- * — is in `docs/freebuff-sponsored-local-execution.md` §9, which is private.
- * `common` ships to the public repository with its comments, and an account of
- * a matcher's limits belongs where the people maintaining it read it.
+ * Matches the package-manager install spellings below and answers with
+ * {@link SPONSORED_LOCAL_INSTALL_REFUSAL}, a sentence the model reads.
  */
 const INSTALL_COMMAND =
   /(^|[;&|]\s*)(npm|pnpm|yarn|bun|npx|pip|pip3|poetry|uv|cargo|gem|go|brew|apt|apt-get|dnf|yum|pacman|apk)\s+(?:(?:-\S+|--\S+)\s+)*(install|add|i|ci|get|sync|fetch)\b/i
@@ -723,14 +707,12 @@ export const SPONSORED_LOCAL_INSTALL_REFUSAL =
  * rewind over the turn's own receipts. Anything that moves history moves work
  * out from under that: a commit takes the edits off the diff the user is
  * reviewing, a `checkout`/`restore`/`clean`/`reset` can destroy their
- * uncommitted work outright, and a `config` or `remote` change is executed
- * later by the orchestrator's own unsandboxed `git -C`.
+ * uncommitted work outright, and a `config` or `remote` change alters the
+ * repository the user keeps working in.
  *
  * A DENY-LIST, and unusually so -- everywhere else here the refusals are
- * allow-lists. It can be, because it is not the boundary: on macOS and Linux
- * the sandbox denies `.git` outright, so this is the sentence the MODEL reads
- * instead of an opaque permission error, and on the Windows floor it is one
- * of two layers (the file tools refuse `.git` paths as well). Read-only git
+ * allow-lists. The list is the sentence the MODEL reads instead of an opaque
+ * permission error; the file tools refuse `.git` paths as well. Read-only git
  * is deliberately absent from it: `status`, `diff`, `log`, `show`,
  * `rev-parse` and `ls-files` are how a procedure understands the repository,
  * and reading the index is not writing it.

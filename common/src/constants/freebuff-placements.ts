@@ -215,9 +215,8 @@ export function isInterruptingBreakFormat(format: PlacementFormat): boolean {
  *    `CLI_CHAT_BATCH_PLACEMENT_IDS`. `getPlacementIds` prefers an explicit
  *    `placementId` over the surface, and every shipping client sends one, so
  *    the batch list is reached only by CLI builds predating the lazy per-slot
- *    auction. Measured: ~395 impressions/day across all eight and falling,
- *    against ~99k/day for `CLI-Chat-Inline`. Do not sell a decaying legacy
- *    path.
+ *    auction, a small and decaying share of `CLI-Chat-Inline`'s volume. Do
+ *    not sell a decaying legacy path.
  *
  * Keep this in step with `getPlacementIds` in the ads route AND with what
  * clients send. The three disagreeing is a campaign that silently never

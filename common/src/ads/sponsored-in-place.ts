@@ -54,11 +54,10 @@ export function clientRunsSponsoredInPlace(value: unknown): boolean {
  *
  * A generic offer is keyed to the FOLDER exactly when its request was
  * in-place, and to the repository otherwise: that is the one rule every serve
- * path applies (`genericAgenticTargetForRequest` in freebuff-web). So a
- * generic row with a workspace target was minted for an in-place client, and
- * a worktree build that accepted it would run the wrong flow in a folder that
- * may have no git at all. `in_place_execution` cannot answer this: it is
- * written AT Accept, from the accepting client's own claim.
+ * path applies. So a generic row with a workspace target was minted for an
+ * in-place client, and a worktree build that accepted it would run the wrong
+ * flow in a folder that may have no git at all. `in_place_execution` cannot
+ * answer this: it is written AT Accept.
  *
  * Non-generic rows (the legacy Supabase format, which keys a remote-less
  * folder by workspace for its own worktree flow) are never in-place offers.

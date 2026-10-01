@@ -205,8 +205,7 @@ type FreebuffSessionCallOptions = {
  * catalog is refetched once and the request retried once with the new handle
  * for the same key. A second refusal is surfaced like any other failure.
  *
- * In fallback mode none of that applies and the request is byte-for-byte the
- * pre-catalog one.
+ * In fallback mode the catalog headers are omitted.
  */
 export async function callFreebuffSession(
   method: FreebuffSessionMethod,

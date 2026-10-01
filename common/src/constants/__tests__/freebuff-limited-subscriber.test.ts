@@ -86,8 +86,7 @@ describe('paid plans at limited access', () => {
   })
 
   test('paying does not unlock anything the plan does not cover', () => {
-    // The god-only ids are the case that matters: a plan must never be a
-    // way into a model nobody sells.
+    // A plan unlocks only the rows it covers.
     expect(
       isFreebuffSessionModelAllowedForAccessTier(
         'openai/gpt-5.6-luna-es',

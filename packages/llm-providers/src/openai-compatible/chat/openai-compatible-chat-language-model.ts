@@ -875,9 +875,8 @@ const createOpenAICompatibleChatChunkSchema = <
     // ever see it: the stream ended with no content, no usage and no error,
     // which the silent-stop detector read as a severed connection. Users got
     // "check your network connection" after four pointless retries while the
-    // provider had plainly said why it refused (prod, 2026-08-16: OpenAI
-    // returned "Policy Violation: this user has been blocked" for every
-    // Luna request).
+    // provider had plainly said why it refused (e.g. a provider policy
+    // refusal).
     errorSchema,
     z.object({
       id: z.string().nullish(),

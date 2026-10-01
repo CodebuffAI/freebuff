@@ -136,7 +136,7 @@ export interface FreebuffSubscriptionUsage {
    * free pool is spent the free figures are simply not on the wire, and a
    * client trying to add "free + plan" from it double-counts the plan row.
    *
-   * Reported for quota-exempt accounts (god/admin) too: their free pool is not
+   * Reported for quota-exempt accounts too: their free pool is not
    * ENFORCED, but the entitlement is still the honest free half of the combined
    * figure. Absent entirely from servers older than this field.
    *
@@ -206,8 +206,7 @@ export interface FreebuffFreebucksWallet {
 /**
  * The hard daily dollar ceiling behind the Freebucks meter.
  *
- * NOT SHOWN ANYWHERE, and that is the point: it is an abuse backstop sized to
- * catch only the heaviest days, while the meter a user plans against is their
+ * Not shown in the clients: the meter a user plans against is their
  * Freebucks. Rendering a second, smaller-looking limit beside the pool invited
  * the reading that the dollars run out first. It stays on the wire because a
  * refusal names it and an operator surface may want it, and it deliberately
@@ -435,9 +434,8 @@ export interface FreebuffSubscriptionInfo {
  * has always drawn, base + level + referral bonus. `week` and `month` are the
  * MARKETED free allowance (`FREEBUFF_FREE_TIER_ALLOWANCE`) with the account's
  * real usage against them, so free users see the same three rings a
- * subscriber sees. DISPLAY-ONLY for now: nothing refuses on the week or month
- * yet (operator decision — enforcement is a later change), so `weekUsed` can
- * legitimately exceed `weekLimit` until it lands.
+ * subscriber sees. `weekUsed` can exceed `weekLimit`; clients must render
+ * that without assuming the two are clamped.
  *
  * Absent for quota-exempt accounts (they hold no pools), for limited access
  * (whose one regional pool is already the picker's ring), and from servers
@@ -583,7 +581,7 @@ export interface FreebuffReferralInfo {
    *  so this is the same instant at either tier. */
   resetAt?: string
   /** Whether the current user has a GitHub account linked. Referrals only
-   *  qualify with a connected, sufficiently-old GitHub, so the CLI prompts
+   *  qualify with a connected GitHub account, so the CLI prompts
    *  Google-only users to connect one. */
   githubLinked: boolean
 }
@@ -756,65 +754,6 @@ export type FreebuffIpPrivacySignal =
   | 'res_proxy'
   | 'hosting'
   | 'service'
-
-export type FreebuffSpurStatus =
-  | 'not_checked'
-  | 'clean'
-  | 'suspicious'
-  | 'failed'
-  /**
-   * Deliberately not consulted: the provider is switched off, or its balance
-   * is exhausted and the breaker is open.
-   *
-   * Distinct from `failed` on purpose. `failed` means "we asked and got
-   * nothing", which is a signal about the IP's luck and is worth a risk-score
-   * floor. `skipped` means "we chose not to ask", which says nothing about the
-   * IP at all — scoring it would penalise every request in the world the
-   * moment we turn a vendor off. What it does instead is leave the escalation
-   * UNRESOLVED when no other provider answered, which the spend ceiling reads
-   * as `unverified_egress`.
-   */
-  | 'skipped'
-
-export type FreebuffScamalyticsStatus =
-  | 'not_checked'
-  | 'clean'
-  | 'suspicious'
-  | 'failed'
-  /** Deliberately not consulted — switched off, or balance exhausted and the
-   *  breaker is open. Same meaning and same reasoning as the Spur variant. */
-  | 'skipped'
-
-export type FreebuffPrivacyDecision =
-  | 'allowed_clean'
-  | 'ipinfo_suspicious_spur_clean'
-  | 'corroborated_block'
-  | 'cloudflare_tor_block'
-  | 'spur_failed_limited'
-  /** ipinfo flagged the egress and no second opinion was obtainable at all —
-   *  every provider disabled, exhausted, or erroring. Carries the restricted
-   *  spend ceiling so a vendor outage cannot widen anyone's budget. */
-  | 'unverified_egress_limited'
-  | 'scamalytics_failed_limited'
-  | 'scamalytics_suspicious_limited'
-  /** Spur named the tunnel, or placed an ipinfo-named anonymizer in a
-   *  datacenter, and Scamalytics did not flag it. */
-  | 'spur_suspicious_limited'
-  | 'client_hints_limited'
-  | 'ipinfo_failed_limited'
-  | 'limited_other'
-
-export type FreebuffPrivacyProviderDecision =
-  | 'not_checked'
-  | 'cloudflare_tor'
-  | 'ipinfo_clean'
-  | 'ipinfo_failed'
-  | 'ipinfo_only'
-  | 'spur_failed'
-  | 'scamalytics_failed'
-  | 'scamalytics_only'
-  | 'corroborated_soft'
-  | 'corroborated_hard'
 
 export interface FreebuffLimitedModeReason {
   /** Present for limited access so the model picker can explain why the
@@ -1313,8 +1252,7 @@ export const FREEBUFF_GATE_CODES = {
    * A withdrawn model is one every released binary still has in its
    * compiled-in catalog, so the client asks again on the next send no matter
    * what we answer. `endsTheSession: true` would make each of those a fresh
-   * admission — the loop that cost the limited tier 2.5x its admissions and put
-   * 91% of its sessions on the 0.1-unit floor (#1801). False, the client keeps
+   * admission — a re-admission loop (#1801). False, the client keeps
    * its window, shows the message, and the user picks another model.
    *
    * 410 rather than 409: the resource is gone rather than in conflict, and it

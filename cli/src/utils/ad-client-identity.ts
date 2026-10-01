@@ -7,9 +7,7 @@ import { getCliEnv } from './env'
  *
  * One module because two rails now send them -- the display auction
  * (`use-gravity-ad.ts`) and the per-turn agentic offer
- * (`sponsored-offer.ts`) -- and the server pairs them. A capability claimed by
- * `cli_macos` is believed only beside a `Freebuff-CLI/` UA and a `macos`
- * device, so the two rails must not be able to disagree about either.
+ * (`sponsored-offer.ts`) -- and they must not be able to disagree about either.
  */
 
 /** Device info sent to the ads API for targeting */

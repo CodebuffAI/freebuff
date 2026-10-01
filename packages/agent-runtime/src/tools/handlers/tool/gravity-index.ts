@@ -25,15 +25,12 @@ const omitUndefined = (value: Record<string, JSONValue | undefined>) => {
 const isJSONObject = (value: JSONValue | undefined): value is JSONObject =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 
-/** Gravity attribution surface, so clicks/conversions are attributable to the
- *  product the request came from rather than all reading as CLI traffic. */
+/** Surface label sent with the Gravity Index request, derived from the agent
+ *  template. */
 const gravitySurface = (agentTemplate: { id: string }): string => {
   if (agentTemplate.id === 'base-chat') return 'freebuff_chat'
   // Freebuff Web project agents are the `base2-free*` and `base3-free*`
-  // families. Both prefixes, because the harness swap changed the root ids: a
-  // base3 root falling through to `codebuff_cli` would attribute Web clicks
-  // and conversions to the CLI, and would also skip the per-end-user id below
-  // that keeps a shared service account from collapsing every user into one.
+  // families (both prefixes: the harness swap changed the root ids).
   if (
     agentTemplate.id.startsWith('base2-free') ||
     agentTemplate.id.startsWith('base3-free')
@@ -43,9 +40,8 @@ const gravitySurface = (agentTemplate: { id: string }): string => {
   return 'codebuff_cli'
 }
 
-/** Surfaces that run under a shared service-account API key. For these we must
- *  send a per-end-user identifier so Gravity attributes conversions to the real
- *  user instead of collapsing every request onto the service account. */
+/** Surfaces that run under a shared service-account API key; these send a
+ *  per-end-user identifier with the request. */
 const isServiceAccountSurface = (surface: string): boolean =>
   surface === 'freebuff_chat' || surface === 'freebuff_web'
 
@@ -123,12 +119,9 @@ export const handleGravityIndex = (async (params: {
     const input = {
       ...existingInput,
       external_session_id: clientSessionId,
-      // Shared service-account surfaces (Freebuff Web) authenticate the web API
-      // with one account key, so the API-key owner can't identify the end user.
-      // `fingerprintId` is the stable per-end-user/per-project signal there
-      // (e.g. `freebuff-chat-<userId>` or the project id), so forward it as the
-      // external user id; the web API hashes it before sending to Gravity. CLI
-      // traffic omits it and falls back to the real API-key owner server-side.
+      // On service-account surfaces, `fingerprintId` (e.g.
+      // `freebuff-chat-<userId>` or the project id) is sent as the external
+      // user id. Other surfaces omit it.
       ...(isServiceAccountSurface(surface)
         ? { external_user_id: fingerprintId }
         : {}),

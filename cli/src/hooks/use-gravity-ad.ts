@@ -299,8 +299,8 @@ type GravityAdOptionsBase = {
   slotPlacementId?: string
   /**
    * Stop rotating `ads[0]` while something else holds its slot (the sponsor
-   * dock). An ad fetched then would be served and never rendered, which is
-   * the render-ratio signal abuse detection reads. Inline ads are unaffected.
+   * dock). An ad fetched then would be served and never rendered; ads are
+   * fetched only when they can be rendered. Inline ads are unaffected.
    */
   slotPaused?: boolean
   placementIds?: string[]
@@ -459,11 +459,9 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
         body: JSON.stringify({
           impUrl,
           mode: agentMode,
-          // The same browser-like UA and OS this ad was auctioned with. The
-          // server fires Gravity's pixel for us, and without these it fired it
-          // as `Freebuff-CLI/<version>` while the auction had claimed a
-          // browser — one impression describing two different clients, on the
-          // field Gravity uses for bot filtering.
+          // The same shared ad user agent (getAdUserAgent) and OS this ad was
+          // auctioned with, so the impression the server records for us
+          // matches the auction request.
           userAgent: getAdUserAgent(),
           os: getAdDeviceInfo().os,
           clientEventId,

@@ -48,7 +48,7 @@ const ALWAYS_TRACK_EVENTS = new Set<AnalyticsEvent>([
   // useful if every one is counted.
   AnalyticsEvent.DESKTOP_TURN_BACKGROUND_WAIT,
   // Feature adoption is measured as UNIQUE USERS per feature. At desktop's
-  // ~1-2k DAU a 1% sample would leave a feature used by 2% of users with
+  // scale a 1% sample would leave a feature used by 2% of users with
   // roughly zero sampled users — the number is unrecoverable from a sample, so
   // this one is never sampled. Volume is controlled at the emit site instead
   // (intent-only actions + per-session dedupe), not by throwing away users.

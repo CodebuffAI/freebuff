@@ -219,13 +219,13 @@ describe('formatClientEnvironment', () => {
     expect(out).not.toContain('1.2.3.4')
   })
 
-  test('a MITM sidecar: TZ forced, loopback proxy, TLS off, extra CA', () => {
+  test('records TZ, loopback proxy and TLS overrides', () => {
     const inputs = {
       env: createTestCliEnv({
         TZ: 'America/New_York',
-        HTTPS_PROXY: 'http://127.0.0.1:7860',
+        HTTPS_PROXY: 'http://127.0.0.1:18080',
         NODE_TLS_REJECT_UNAUTHORIZED: '0',
-        NODE_EXTRA_CA_CERTS: '/home/u/freebuff/proxy/certs/cert.pem',
+        NODE_EXTRA_CA_CERTS: '/home/u/certs/extra-ca.pem',
       }),
       ciEnv: noCi,
       stdinIsTTY: true,
@@ -242,8 +242,8 @@ describe('formatClientEnvironment', () => {
     expect(out.endsWith(';tzo=1;px=loopback;tls=0;ca=1;stz=Asia/Kolkata')).toBe(
       true,
     )
-    expect(out).not.toContain('7860')
-    expect(out).not.toContain('cert.pem')
+    expect(out).not.toContain('18080')
+    expect(out).not.toContain('extra-ca.pem')
     // The zone only rides along when TZ overrides it.
     const plain = formatClientEnvironment(
       { ...inputs, env: createTestCliEnv({ TZ: undefined }) },
@@ -259,7 +259,7 @@ describe('bucketProxy', () => {
   test.each([
     [undefined, 'none'],
     ['', 'none'],
-    ['http://127.0.0.1:7860', 'loopback'],
+    ['http://127.0.0.1:18080', 'loopback'],
     ['127.0.0.1:8080', 'loopback'],
     ['http://localhost:3128', 'loopback'],
     ['http://[::1]:8080', 'loopback'],

@@ -28,10 +28,8 @@
  * Also stops: reaching the machine the run is on. Both profiles deny loopback,
  * because the orchestrator's own API listens there.
  *
- * What it does NOT stop is written down in
- * `docs/freebuff-sponsored-local-execution.md` §9, which is private. This file
- * ships to the public repository, and an inventory of a boundary's gaps is
- * worth more to somebody probing it than to anybody maintaining it.
+ * Known limits are tracked privately
+ * (`docs/freebuff-sponsored-local-execution.md` §9).
  *
  * ## Refuse, never downgrade
  *
@@ -473,13 +471,10 @@ export function assertSponsoredWritePath(
 /**
  * Refuse a READ outside the worktree, by the same rule as a write.
  *
- * Why this exists at all is the whole of finding F1: the broker below covers
- * exactly ONE tool. `read_files`, `code_search` and `list_directory` execute
- * in the orchestrator's own process, as the user, and each resolves an
- * absolute path deliberately — so a procedure containing no shell command at
- * all could read the user's private keys and hand them to the granted
- * `read_url`. The clamp is applied by the surface, per tool, before the tool
- * runs; this is the shared rule it applies.
+ * The broker below covers only the terminal tool. `read_files`, `code_search`
+ * and `list_directory` execute in the orchestrator's own process, so the
+ * surface applies this clamp per tool, before the tool runs; this is the
+ * shared rule it applies.
  */
 export function assertSponsoredReadPath(
   workspaceRoot: string,
@@ -990,12 +985,8 @@ function traversableAncestors(targets: string[]): string[] {
  *    /dev/stderr` are ordinary shell-script spellings; a build that uses one
  *    should not die inside a sponsored run.
  *
- *    It does not widen the boundary. `/dev/fd/N` names the process's OWN
- *    descriptors, and re-opening one is evaluated by seatbelt against the
- *    UNDERLYING file — measured: with this grant in place, `exec 3<
- *    outside.txt; echo PWNED > /dev/fd/3` is refused with the error naming
- *    `outside.txt` rather than `/dev/fd/3`, and the file is unchanged. Same
- *    for `/etc/hosts`, which answers `Permission denied`.
+ *    `/dev/fd/N` names the process's OWN descriptors, and seatbelt evaluates
+ *    a re-open against the underlying file, so the grant adds no file access.
  *  - `/dev/tty` — NOT granted. The broker spawns `detached` with pipes for
  *    stdio, so the run has no controlling terminal: measured, reading
  *    `/dev/tty` answers "Device not configured" whether or not the write is
@@ -1009,13 +1000,8 @@ function traversableAncestors(targets: string[]): string[] {
  *    ablation needed them, and `/dev/stdin` is a `/dev/fd/0` symlink already
  *    covered above.
  *
- * KNOWN, AND NOT A DEVICE PROBLEM: BSD `diff <(…)` still fails with
- * `/dev/fd/63: Operation not permitted`. Measured, that is fixed by neither
- * `(subpath "/dev")`, nor `file-ioctl`, nor granting the confstr temp
- * directory — only a blanket `(allow file*)` clears it — so it is a file
- * operation on the anonymous pipe with no path to name. `cat`, `grep`,
- * `source` and bash's `<<<` all work with process substitution. Left alone
- * rather than bought with a blanket grant.
+ * BSD `diff <(…)` does not work inside the run; supporting it would need a
+ * blanket file grant, so it is left alone.
  */
 const SPONSORED_DEVICE_WRITE_LITERALS: readonly string[] = ['/dev/null']
 const SPONSORED_DEVICE_WRITE_SUBPATHS: readonly string[] = ['/dev/fd']
@@ -1024,14 +1010,8 @@ const SPONSORED_DEVICE_WRITE_SUBPATHS: readonly string[] = ['/dev/fd']
  * `readlink("/var")`, which is the whole of what the system resolver needs.
  *
  * Without it `getaddrinfo` answers `ENOTFOUND` for every name, so `curl
- * https://example.com` and `git ls-remote https://…` fail. Egress is accepted
- * by COD-336 decision item 8, and this made the granted capability work only
- * for a caller who already knew an address — a silent failure for an honest
- * procedure, and no boundary at all. It closes a hole in the STATED
- * capability rather than in the containment; the measurements behind that
- * claim are in `docs/freebuff-sponsored-local-execution.md` §9, which is
- * private, because an account of what a boundary does not stop is worth more
- * to somebody probing it than to anybody maintaining it.
+ * https://example.com` and `git ls-remote https://…` fail. See
+ * `docs/freebuff-sponsored-local-execution.md` §9.
  *
  * Bisected to this one literal on macOS 26.5: the resolver reads the `/var`
  * SYMLINK, and the profile's ancestor grants only ever cover `/private/var`
@@ -1187,9 +1167,8 @@ function underSystemReadRoot(target: string): boolean {
  *     neither the shim nor an unreadable entry can win inside the run.
  *
  * The profile is unchanged by this: no read grant, no write grant, no new
- * environment variable. PATH is not a boundary — the run can already exec
- * any binary the profile reads — so choosing which one `git` names moves
- * nothing the sandbox decides. A grant on the data link was measured and
+ * environment variable, so choosing which binary `git` names changes nothing
+ * the sandbox decides. A grant on the data link was measured and
  * rejected; `docs/freebuff-sponsored-local-execution.md` §9 has why.
  *
  * What else moves, measured on the Command Line Tools: the stand-ins re-resolve
@@ -1385,8 +1364,7 @@ const SPONSORED_MAC_GIT_HOST: SponsoredMacGitDependencies = {
  *    `index.lock`, `COMMIT_EDITMSG`, `logs/HEAD`. REQUIRED; it is where the
  *    commit is actually assembled. Scoped to THIS worktree's directory, not to
  *    `worktrees/`, so one sponsored run cannot reach another's index.
- *  - `objects` — the new commit, tree and blob objects. REQUIRED, and the one
- *    grant here that is genuinely wide; see the honest limit below.
+ *  - `objects` — the new commit, tree and blob objects. REQUIRED.
  *  - `refs/heads/<branchNamespace>` — the branch tip. Scoped to the app's own
  *    namespace, so `refs/heads/main` is NOT writable: measured, `echo x >
  *    .git/refs/heads/main` is `Operation not permitted` with this grant in
@@ -1415,25 +1393,8 @@ const SPONSORED_MAC_GIT_HOST: SponsoredMacGitDependencies = {
  * the point: the branch has to land in the user's own repository for the pull
  * request to be openable from it.
  *
- * ## The honest limits
- *
- * **`objects` is a real write grant on the user's repository.** A run can
- * create objects freely (that is what committing is) and can also overwrite an
- * existing loose object, which corrupts the repository. It cannot be narrowed
- * — the commit has to land where the user's git will find it, and seatbelt
- * cannot express "create but do not overwrite". It is vandalism rather than
- * privilege escalation, `git fsck` names it, and nothing about it executes
- * code; that is the whole of why it is accepted.
- *
- * **READ of `<project>/.git/config` cannot be avoided.** git opens it on every
- * command, so a repository whose remote URL carries an embedded token exposes
- * that token to the run. Measured: denying read of it makes git fail outright
- * (`fatal: unable to access '.git/config'`) on `status`, `add` and `commit`
- * alike, so there is no version of this where git works and that file is
- * unreadable. Written down rather than left to be discovered; the alternative
- * designs that avoid it are recorded in
- * `docs/freebuff-sponsored-local-execution.md` §9 along with why they cost
- * more than they save.
+ * Known limits are tracked privately
+ * (`docs/freebuff-sponsored-local-execution.md` §9).
  */
 export function sponsoredLinkedWorktreeGrants(
   linked: SponsoredLinkedWorktree,
@@ -1677,13 +1638,10 @@ export function sponsoredMacProfile(
     // `node` and `/bin/date` working.
     '(allow sysctl-read)',
     '(allow mach-lookup)',
-    // EGRESS IS ALLOWED, LOOPBACK IS NOT, and the second half is not a detail.
-    // Egress off the machine is accepted by decision (COD-336 item 8) and was
-    // never bounded on Cloud either. Egress to THIS machine is a different
-    // thing entirely: the Desktop orchestrator listens on 127.0.0.1:8787 and
-    // its API can push a branch, open a pull request with the user's own
-    // credentials, and drive the user's own unsandboxed agent. A sandbox that
-    // reaches its own supervisor over loopback contains nothing.
+    // LOOPBACK IS DENIED. The Desktop orchestrator listens on loopback and its
+    // API acts with the user's own credentials, so the run must not reach it.
+    // Network policy beyond that: `docs/freebuff-sponsored-local-execution.md`
+    // §9.
     //
     // The `deny` has to come AFTER the `allow`: seatbelt takes the LAST
     // matching rule, so the order here is the rule.
@@ -1903,9 +1861,8 @@ function spawnLinux(
   //     capability — execute in the orchestrator's process, not in here, and
   //     dependency installs are refused outright (COD-336 item 5).
   //
-  // So this diverges from the macOS arm, which keeps external egress, and the
-  // divergence is deliberate: on Linux the choice is between blocking
-  // loopback and keeping a capability nothing uses.
+  // So this diverges from the macOS arm, deliberately: on Linux the choice is
+  // between blocking loopback and keeping a capability nothing uses.
   const args = ['--die-with-parent', '--unshare-all', '--new-session']
   for (const dir of [
     '/usr',

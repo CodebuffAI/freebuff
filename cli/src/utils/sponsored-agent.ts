@@ -33,14 +33,13 @@
  *
  * ## Why this keeps the CLI's own root id and model
  *
- * Free mode gates on the (agent id, model) pair (`FREE_MODE_AGENT_MODELS`), so
- * a sponsored run started under an invented id is a run that cannot be admitted
- * at all. The definition is the CLI's own root with a narrower toolset — the
- * same shape Desktop sends — never a different agent.
+ * The definition is the CLI's own root (same id and model, see
+ * `FREE_MODE_AGENT_MODELS`) with a narrower toolset — the same shape Desktop
+ * sends — never a different agent.
  *
- * And the system prompt is APPENDED to, never prepended:
- * `hasFreebuffRootSystemPromptOpening` requires the canonical opening at byte 0
- * and 403s every free-mode turn without it (`docs/freebuff-base3-harness.md`).
+ * And the system prompt is APPENDED to, never prepended: the canonical opening
+ * must stay first (see `FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS` and
+ * `docs/freebuff-base3-harness.md`).
  */
 import { createBase3CliRoot } from '../../../agents/base3'
 import {

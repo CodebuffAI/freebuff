@@ -207,7 +207,7 @@ describe('classifyProviderErrorRecovery on real wire shapes', () => {
     ],
     [
       'OpenRouter policy block (403)',
-      openRouterError(403, 'Policy Violation: this user has been blocked'),
+      openRouterError(403, 'Request refused under the provider usage policy'),
     ],
     [
       'Responses invalid prompt',

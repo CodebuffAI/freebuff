@@ -50,28 +50,6 @@ export function sanitizeTerminalText(input: string): string {
 }
 
 /**
- * {@link sanitizeTerminalText} for captured process output (a tool's stdout,
- * a file the agent read) before a terminal UI draws it. That output is as
- * untrusted as any server string: a repo's test script, a fetched page or a
- * file can print OSC 52 and rewrite the user's clipboard.
- *
- * One difference: a bare `\r` is a progress bar redrawing its line, not a
- * line break, so only the text after the last `\r` on each line is kept —
- * what a real terminal would show — instead of one line per redraw.
- */
-export function sanitizeTerminalOutput(input: string): string {
-  if (!input) return input
-  const collapsed = input.includes('\r')
-    ? input
-        .replace(/\r+\n/g, '\n')
-        .split('\n')
-        .map((line) => line.slice(line.lastIndexOf('\r') + 1))
-        .join('\n')
-    : input
-  return sanitizeTerminalText(collapsed)
-}
-
-/**
  * {@link sanitizeTerminalText} applied to every string inside a parsed JSON
  * value (object keys excluded), returning a copy of the same shape. For a
  * response body whose free-text fields are drawn in the terminal: sanitizing

@@ -397,7 +397,7 @@ describe('the environment a local run gets', () => {
         PATH: '/usr/bin',
         LANG: 'en_US.UTF-8',
         SOME_FUTURE_VENDOR_CREDENTIAL: 'value',
-        HOME: '/Users/owen',
+        HOME: '/Users/example',
       },
       { home: '/run/home', tmp: '/run/tmp' },
     )

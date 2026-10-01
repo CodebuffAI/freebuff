@@ -41,13 +41,11 @@ export const sponsoredLocalTargetSchema = z.discriminatedUnion('kind', [
     .strict(),
 ])
 /**
- * Where a local sponsored run executes. `desktop_windows` (COD-642) is the one
- * surface with NO OS sandbox: its protection is campaign review plus the
- * portable floor (`SPONSORED_WINDOWS_CONTAINMENT` in `./sponsored-windows`).
- * A Windows value on the wire admits nothing by itself — the server serves it
- * only behind `FREEBUFF_SPONSORED_WINDOWS` (every agentic campaign alike when
- * on), and the LEGACY Supabase format paths never serve it (Supabase reaches
- * Windows only as a generic candidate under the one funnel).
+ * Where a local sponsored run executes. `desktop_windows` (COD-642) runs on
+ * the portable floor (`SPONSORED_WINDOWS_CONTAINMENT` in
+ * `./sponsored-windows`). A Windows value on the wire admits nothing by
+ * itself — the server serves it only behind its server-side switch, every
+ * agentic campaign alike when on.
  */
 export const sponsoredExecutionSurfaceSchema = z.enum([
   'desktop_macos',
@@ -99,8 +97,8 @@ export function isSponsoredCliExecutionSurface(
  * name a CLI surface that belongs to the reported OS (`cli_macos` on macOS,
  * `cli_linux` or `cli_wsl` on Linux -- WSL reports `linux`) with execution
  * `available` and no reason. The CLI reports `available` only when its
- * containment probe passed, so a Linux CLI without `bwrap` proves nothing and
- * is never offered a task whose Accept could only fail.
+ * containment probe passed, so a Linux CLI without `bwrap` is never offered a
+ * task whose Accept could only fail.
  *
  * The same OS pairing `/api/ads` applies to a CLI capability
  * (`sponsoredCapabilityMatchesRequest`), and the answer is also what tells

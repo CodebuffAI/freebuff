@@ -1,21 +1,17 @@
 /**
  * Windows Desktop serving for agentic campaigns (COD-642).
  *
- * Windows has no OS sandbox under a sponsored run. Its protection is human
- * review of each campaign's procedure (against intent) plus the portable floor
- * (against accidents): scrubbed environment, redirected profile directories,
- * non-interactive git with hooks disabled, and cwd bound to the worktree.
- * `docs/freebuff-sponsored-local-execution.md` records the decision (Owen,
- * 2026-09-23) and the risk it accepts.
+ * A Windows run is contained by the portable floor: scrubbed environment,
+ * redirected profile directories, non-interactive git with hooks disabled,
+ * and cwd bound to the worktree, on top of review of each campaign's
+ * procedure.
  *
- * ONE SWITCH, NO PER-CAMPAIGN LIST (Owen, 2026-09-24). With
- * `FREEBUFF_SPONSORED_WINDOWS=on`, EVERY agentic campaign that can serve on
- * macOS can serve on Windows, under exactly the same rules as every other
- * campaign — review, funding, servability, the classifier, the roster.
- * Campaign review already happens once per campaign; a second, Windows-only
- * list of reviewed ids was a second place to forget one. Supabase included:
- * under `FREEBUFF_AGENTIC_ONE_FUNNEL=on` it is an ordinary generic candidate
- * and reaches Windows like everyone else.
+ * ONE SWITCH, NO PER-CAMPAIGN LIST (2026-09-24). With the switch on, EVERY
+ * agentic campaign that can serve on macOS can serve on Windows, under
+ * exactly the same rules as every other campaign — review, funding,
+ * servability, the classifier, the roster. Campaign review already happens
+ * once per campaign; a second, Windows-only list of reviewed ids was a second
+ * place to forget one.
  *
  * The switch is read here, so every consumer (Next serving, the funded Accept
  * route, the Convex reservation and Accept contracts) applies the same rule.
@@ -58,8 +54,7 @@ export const SPONSORED_WINDOWS_EXECUTION_SURFACE =
   SPONSORED_OS_SWITCHES.windows.surface
 
 /**
- * What stands between a Windows run and the user's machine: the floor, not a
- * sandbox. Recorded on the compute grant, the acceptance record, the funnel
+ * The containment a Windows run has: the floor. Recorded on the compute grant, the acceptance record, the funnel
  * rows and the serving logs so analytics can separate floor-contained runs
  * from sandboxed ones. macOS/Linux rows omit it (their containment is the OS
  * sandbox the client proved before reporting a capability).

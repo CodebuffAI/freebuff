@@ -118,10 +118,8 @@ export const DOCK_CLICK_ORIGINS = ['dock', 'panel'] as const
 export type DockClickOrigin = (typeof DOCK_CLICK_ORIGINS)[number]
 
 /**
- * Under this, a click is flagged `accidental_click` rather than dropped. It is
- * a LABEL and not a filter: suppressing the click would silently under-report
- * an advertiser's delivery, and the settlement path is not this module's to
- * change.
+ * Under this, a click is flagged `accidental_click`: a LABEL for reporting.
+ * Settlement is not this module's concern.
  */
 export const DOCK_ACCIDENTAL_CLICK_MS = 300
 

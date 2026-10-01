@@ -5,11 +5,10 @@
  * `@codebuff/sdk` inlines every workspace module it imports (common/,
  * packages/*) into dist/index.{mjs,cjs}. The public export
  * (scripts/public-export-manifest.txt) deliberately leaves some of those
- * modules out, so an SDK import of one would publish it on npm anyway. An
- * external report found exactly that: a withheld constants file shipped inside
- * the published sourcemap's `sourcesContent`. The build now drops sourcemaps
- * from the package; this guard runs on the maps before they are deleted and
- * fails the build if any bundled source is not part of the public export.
+ * modules out, so an SDK import of one would publish it on npm anyway. This
+ * guards that the bundle's sourcemap contains only public sources: it runs on
+ * the maps before the build deletes them and fails the build if any bundled
+ * source is not part of the public export.
  *
  * Pure (no fs), so it can be unit-tested.
  */

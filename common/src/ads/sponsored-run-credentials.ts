@@ -357,11 +357,7 @@ function base64Bytes(bytes: Uint8Array): string {
  * The base64 characters that depend ONLY on the value's bytes when the value
  * sits `offset` bytes into a larger encoded string -- which is how a key
  * usually appears in base64: `Authorization: Basic base64("user:" + key)`.
- * Base64 works in 3-byte groups, so the encoding of the value alone
- * (`offset` 0) matches only when the value starts on a group boundary and
- * ends the string; these three cores cover every alignment. The few
- * characters at either end that mix in neighbouring bytes are left, and
- * carry at most a couple of bits of the value.
+ * Base64 works in 3-byte groups, so one core per alignment.
  */
 function alignedBase64Cores(bytes: Uint8Array): string[] {
   const cores: string[] = []
@@ -382,10 +378,8 @@ const toBase64Url = (value: string) =>
   value.replace(/\+/g, '-').replace(/\//g, '_')
 
 /**
- * Every spelling of a value that a command commonly prints: the raw value,
- * URL-encoded (query strings, `curl -v`), and base64 / base64url at every
- * byte alignment (Basic auth, JWT-style tooling). Longest first, so a longer
- * spelling is replaced before a shorter one that it contains.
+ * The spellings of a value that commands commonly print. Longest first, so a
+ * longer spelling is replaced before a shorter one that it contains.
  */
 function spellings(value: string): string[] {
   const bytes = new TextEncoder().encode(value)

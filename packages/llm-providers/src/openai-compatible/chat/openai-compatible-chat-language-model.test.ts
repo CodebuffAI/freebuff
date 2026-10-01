@@ -176,20 +176,19 @@ describe('OpenAICompatibleChatLanguageModel doStream', () => {
     // while the error branch came second the whole `error` key was stripped
     // and the failure vanished — the stream looked like a connection cut, and
     // the agent loop told users to check their network while retrying a
-    // refusal that could never succeed (prod, 2026-08-16).
+    // refusal that could never succeed.
     const parts = await streamParts(
       sseResponse([
         JSON.stringify({
           id: 'gen-1',
           object: 'chat.completion.chunk',
           created: 1,
-          model: 'openai/gpt-5.6-luna',
-          provider: 'OpenAI',
+          model: 'example/model',
+          provider: 'ExampleProvider',
           choices: [],
           error: {
             code: 502,
-            message:
-              'Policy Violation: this user has been blocked for a previous policy violation.',
+            message: 'Request refused by the provider usage policy.',
             metadata: { error_type: 'provider_unavailable' },
           },
         }),
@@ -200,7 +199,7 @@ describe('OpenAICompatibleChatLanguageModel doStream', () => {
     if (!error || error.type !== 'error') {
       throw new Error('stream swallowed the provider error')
     }
-    expect(String(error.error)).toContain('Policy Violation')
+    expect(String(error.error)).toContain('usage policy')
 
     // And it must NOT masquerade as a severed connection, or the silent-stop
     // detector would retry it as a network blip instead of failing loudly.

@@ -122,8 +122,8 @@ describe('base3 CLI roots', () => {
   })
 
   test('opens with a prompt the free-mode gate accepts', () => {
-    // The appendix is appended, never prepended: the chat-completions gate
-    // requires a canonical opening at byte 0, so prepending 403s every turn.
+    // The appendix is appended, never prepended: the canonical opening must
+    // stay first.
     for (const agent of CLI_ROOTS) {
       expect(hasFreebuffRootSystemPromptOpening(agent.systemPrompt!)).toBe(true)
       expect(
@@ -137,8 +137,7 @@ describe('base3 CLI roots', () => {
     for (const [model, agentId] of Object.entries(
       FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL,
     )) {
-      // A root whose model disagrees with the allowlist 403s with
-      // free_mode_invalid_agent_model on every request.
+      // A root whose model disagrees with the allowlist cannot run.
       expect(byId.get(agentId)?.model).toBe(model)
     }
   })

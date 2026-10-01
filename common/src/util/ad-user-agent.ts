@@ -1,18 +1,8 @@
 /**
- * Browser-like user agent passed to ad providers for targeting and fraud
- * screening. Keep this shared by every native client so one surface cannot
- * accidentally fall back to a runtime UA such as `Bun/<version>`.
- *
- * Gravity is explicit that the user agent drives "device-type classification
- * and bot filtering" (https://docs.trygravity.ai/ai-platforms/tracking-proxy),
- * which makes a stale version an active liability rather than cosmetic debt:
- * a browser two years out of date is itself a bot fingerprint.
- *
- * This sat at `124.0.0.0` — Chrome's April 2024 release — until 2026-08-18,
- * roughly 27 stable versions behind, while the comment claimed a recent bump.
- * The comment was tracking when someone edited the file, not what the constant
- * said. Compare the number against the current stable Chrome, not the date
- * below.
+ * The shared user agent passed to ad providers for device-type classification.
+ * Keep this shared by every native client so one surface cannot accidentally
+ * fall back to a runtime UA such as `Bun/<version>`. Compare the number
+ * against the current stable Chrome, not the date below.
  *
  * Last bumped: 2026-08-18 (Chrome 151, then current stable). Revisit roughly
  * every six months.
@@ -55,12 +45,9 @@ export function isBrowserLikeAdUserAgent(
  * The single rule for what user agent we present to an ad provider, shared by
  * the auction and the impression pixel.
  *
- * It exists because those two disagreed. The auction declared a browser
- * (clients send `getAdUserAgent()` in the body) while the impression pixel was
- * fired server-side with whatever the client put in its HTTP header —
- * `Freebuff-CLI/<version>`. One impression, two different clients, on a signal
- * the provider documents as feeding bot filtering. Routing both call sites
- * through here is what makes them agree by construction.
+ * It exists because those two disagreed: the auction and the impression
+ * pixel described the same impression with different user agents. Routing
+ * both call sites through here makes them agree by construction.
  *
  * Preference order is submitted → request header → synthesized, and anything
  * that is not browser-like is replaced rather than passed through, so builds
@@ -69,11 +56,10 @@ export function isBrowserLikeAdUserAgent(
  */
 /**
  * The user agent Gravity sees, on the auction and on its impression pixel.
- * Gravity is the exception to the browser-like rule below: they asked for the
- * real client (2026-09-04) — `Codebuff-CLI/<v>` is served fine, and the Chrome
- * UA had ~74% of our traffic reported to advertisers as Chrome desktop. The
- * header wins whenever it has content (including `Bun/<v>` from old builds,
- * few and shrinking); a missing or blank one falls back to the browser-like UA.
+ * Gravity is the exception to the browser-like rule below: at their request
+ * (2026-09-04) they receive the real client UA (`Codebuff-CLI/<v>`). The
+ * header wins whenever it has content (including `Bun/<v>` from old builds);
+ * a missing or blank one falls back to the browser-like UA.
  */
 export function resolveGravityUserAgent(params: {
   requestHeader?: string | null

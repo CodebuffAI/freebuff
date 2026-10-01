@@ -23,7 +23,7 @@ describe('free-mode country groups', () => {
   it('pins who has full access', () => {
     // This list IS model access. Changing it moves accounts between the full
     // and limited catalogs, so it has to be a decision somebody states here.
-    // SG and IL were removed on 2026-09-15 (ads fill 8-25% of their requests).
+    // SG and IL were removed on 2026-09-15 (advertiser value).
     expect([...FREE_MODE_ALLOWED_COUNTRIES].sort()).toEqual(
       [
         'US', 'CA', 'GB', 'AU', 'NZ', 'NO', 'SE', 'NL', 'DK', 'DE', 'FR', 'IT',

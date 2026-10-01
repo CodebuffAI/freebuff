@@ -3,9 +3,7 @@
  * bounded string: `desktop/<version>` or `cli/<version>`.
  *
  * Without it the funnel cannot tell whether a failure came from a build that
- * already carries a fix or from one that predates it (the 2026-09-28 review
- * could not say whether the rising "closed while queued" count was old
- * Desktops or new ones). It is derived from the user agent each client
+ * already carries a fix or from one that predates it. It is derived from the user agent each client
  * already sends -- `Freebuff-Desktop/<v>` and `Freebuff-CLI/<v>` -- rather
  * than a new body field, so nothing a client types reaches the funnel
  * verbatim.

@@ -12,7 +12,7 @@ import {
 } from '../input-profile'
 
 describe('InputProfileCounter', () => {
-  test('human-paced typing', () => {
+  test('counts steady typing', () => {
     const counter = new InputProfileCounter()
     // 40 characters, one every 150ms (~6.7 cps).
     for (let i = 0; i < 40; i++) counter.recordTyped('a', 1_000 + i * 150)
@@ -38,7 +38,7 @@ describe('InputProfileCounter', () => {
     expect(profile.composeMs).toBe(200)
   })
 
-  test('a machine-speed write reads as a burst', () => {
+  test('counts a fast write', () => {
     const counter = new InputProfileCounter()
     // 500 characters as individual key events in the same millisecond.
     for (let i = 0; i < 500; i++) counter.recordTyped('x', 5_000)

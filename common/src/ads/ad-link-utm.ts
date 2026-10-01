@@ -6,8 +6,8 @@
  * integrated for postbacks, but most campaigns carry `internal` conversion
  * authority, which mints no token at all, and a visitor from a sponsored run
  * reaches the advertiser through URLs the agent relays from the procedure
- * rather than through our redirect. Infisical (2026-09-29) reported every one
- * of those visits arriving untagged.
+ * rather than through our redirect, so without default tags those visits
+ * arrive untagged.
  *
  * ## The rules
  *
@@ -19,7 +19,7 @@
  * An untagged link gains the ADVERTISER'S tags when it has any: the
  * `utm_source`, `utm_medium` and `utm_campaign` it put on its campaign landing
  * URL, which is how its own reports already group Freebuff traffic
- * (Infisical: `utm_campaign=secrets_management`; Boot.dev: `utm_medium=cpc`).
+ * (e.g. `utm_campaign=spring_launch`, `utm_medium=cpc`).
  * `utm_content`/`utm_term` are not copied: they name the display creative the
  * landing URL was written for, not the link being tagged. Only a campaign that
  * set no `utm_source` gets ours:
@@ -135,8 +135,8 @@ function registrableDomain(hostname: string): string {
 
 /**
  * The advertiser's own domains, from its campaign landing URL, creative URLs
- * and profile website. `get.infisical.com` and `infisical.com` both yield
- * `infisical.com`, so `app.infisical.com` in a procedure is recognised.
+ * and profile website. `get.example.com` and `example.com` both yield
+ * `example.com`, so `app.example.com` in a procedure is recognised.
  */
 export function advertiserLinkDomains(
   urls: ReadonlyArray<string | null | undefined>,

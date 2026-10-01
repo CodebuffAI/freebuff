@@ -148,8 +148,8 @@ export type AgenticOfferRequest = z.infer<typeof agenticOfferRequestSchema>
 /** Why nothing was offered. Closed, so a dashboard can group by it. */
 export const AGENTIC_OFFER_NONE_REASONS = [
   /**
-   * `FREEBUFF_AGENTIC_ADS` does not admit this caller (`off`, or a `god`/`beta`
-   * audience without them); `/api/ads` asks their agentic question as before.
+   * `FREEBUFF_AGENTIC_ADS` does not admit this caller; `/api/ads` asks their
+   * agentic question as before.
    */
   'disabled',
   /**

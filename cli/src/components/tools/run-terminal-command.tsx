@@ -1,5 +1,3 @@
-import { sanitizeTerminalOutput } from '@codebuff/common/util/terminal-safe-text'
-
 import { defineToolComponent } from './types'
 import { TerminalCommandDisplay } from '../terminal-command-display'
 
@@ -54,10 +52,7 @@ export const RunTerminalCommandComponent = defineToolComponent({
   render(toolBlock, _theme, options): ToolRenderConfig {
     // Extract command and timeout from input
     const input = toolBlock.input as { command?: string; timeout_seconds?: number } | undefined
-    const command =
-      typeof input?.command === 'string'
-        ? sanitizeTerminalOutput(input.command.trim())
-        : ''
+    const command = typeof input?.command === 'string' ? input.command.trim() : ''
     const timeoutSeconds = typeof input?.timeout_seconds === 'number' ? input.timeout_seconds : undefined
 
     // Extract output and startingCwd from tool result

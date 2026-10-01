@@ -52,10 +52,8 @@ import { sanitizeAdUrl } from '../util/ad-creative-safety'
  * dot-separated url-safe base64 parts. Accept's `spct_<hex>` placeholder has no
  * dots and the wrong prefix, so it cannot match.
  *
- * A SHAPE test, not a signature check: the signing secret does not exist in the
- * Convex runtime that projects the row, and a token this projection mis-judged
- * would fail at the postback anyway — the cost of a wrong "yes" here is one dead
- * link, never a false conversion.
+ * A SHAPE test for projecting the row; the signature itself is verified where
+ * the token is redeemed, so this decides only which link to show.
  */
 const SIGNED_CONVERSION_TOKEN =
   /^bfc_(?:test_)?1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/

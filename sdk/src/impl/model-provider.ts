@@ -49,9 +49,8 @@ export interface ModelRequestParams {
  * the provider is asked again for every retry. Never consulted for a BYOK run,
  * whose requests go to the user's own provider.
  *
- * Returning nothing (or throwing) sends the request exactly as it would have
- * gone without the hook. Freebuff's catalog clients use it for the catalog
- * fetch id and the device signature (docs/freebuff-model-catalog.md).
+ * Returning nothing (or throwing) adds no headers. Freebuff's catalog clients
+ * use it for their catalog headers (docs/freebuff-model-catalog.md).
  */
 export type CodebuffRequestHeadersProvider = (request: {
   method: string

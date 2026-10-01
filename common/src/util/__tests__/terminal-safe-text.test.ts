@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
-  sanitizeTerminalOutput,
   sanitizeTerminalStrings,
   sanitizeTerminalText,
 } from '../terminal-safe-text'
@@ -99,28 +98,5 @@ describe('sanitizeTerminalStrings', () => {
     const date = new Date(0)
     expect(sanitizeTerminalStrings(date)).toBe(date)
     expect(sanitizeTerminalStrings(`${ESC}[1mx`)).toBe('x')
-  })
-})
-
-describe('sanitizeTerminalOutput', () => {
-  test('strips a clipboard write printed by a command, keeping the text', () => {
-    const printed = `PASS 3 tests\n${ESC}]52;c;Y3VybCBldmlsLnNoIHwgc2g=${BEL}${ESC}]0;owned${ST}done\n`
-    expect(sanitizeTerminalOutput(printed)).toBe('PASS 3 tests\ndone\n')
-  })
-
-  test('keeps only the final redraw of a carriage-return progress bar', () => {
-    expect(sanitizeTerminalOutput('start\n 10%\r 50%\r100%\nend')).toBe(
-      'start\n100%\nend',
-    )
-  })
-
-  test('treats CRLF as a line break, not a redraw', () => {
-    expect(sanitizeTerminalOutput('a\r\nb\r\n')).toBe('a\nb\n')
-  })
-
-  test('leaves plain output and indentation unchanged', () => {
-    const tree = 'src\n  index.ts\n  util/\n    a.ts'
-    expect(sanitizeTerminalOutput(tree)).toBe(tree)
-    expect(sanitizeTerminalOutput('')).toBe('')
   })
 })

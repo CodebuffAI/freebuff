@@ -367,12 +367,8 @@ export async function readUrl({
     let response: Response
     for (let redirects = 0; ; redirects++) {
       try {
-        // NOTE: this resolves the hostname for validation; `fetch` resolves it
-        // again independently, so a short-TTL attacker domain could rebind
-        // between the two (DNS-rebinding TOCTOU). Fully closing that needs
-        // IP-pinning (an undici dispatcher), which Bun's fetch ignores, so it's
-        // an accepted residual gap — the common literal/internal-host vectors
-        // are still blocked.
+        // Refuses non-http(s) schemes and private/reserved addresses, literal
+        // or resolved from the hostname, before each hop.
         await assertUrlAllowed(currentUrl, { lookupHost, resolveDns })
       } catch (error) {
         return errorResult(

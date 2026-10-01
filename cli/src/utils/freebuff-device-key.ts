@@ -10,12 +10,8 @@
  * is a credential for anything but this install's own signatures.
  *
  * What is signed: the catalog GET, and every session and completions request
- * while a catalog is held (catalog mode). Fallback session and completions
- * requests are the pre-catalog ones, byte for byte. The key is registered
- * only once this process holds a catalog, so a server that predates the
- * protocol never sees a registration; until a key is registered for this
- * account and host, the catalog GET goes out unsigned. Signing is best-effort
- * throughout: any failure sends the request unsigned.
+ * while a catalog is held (catalog mode). The key is registered only once this
+ * process holds a catalog. Signing errors never throw into the request path.
  */
 import fs from 'fs'
 import path from 'path'

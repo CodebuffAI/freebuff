@@ -5,7 +5,7 @@
  * the catalog's `refreshAt`, whenever the session reports a different access
  * tier or plan, and once after the server answers `freebuff_catalog_stale`.
  * A valid answer puts the process in catalog mode; anything else keeps (or
- * returns) it in fallback mode, the compiled catalog with plain ids, silently.
+ * returns) it in fallback mode, the compiled catalog.
  *
  * Two kinds of failure, deliberately treated differently:
  *
@@ -89,8 +89,7 @@ export async function fetchFreebuffModelCatalog(
     baseUrl?: string
     signal?: AbortSignal
     timeoutMs?: number
-    /** The device headers for this GET (freebuff-device-key.ts); `{}` sends
-     *  it unsigned. */
+    /** The device headers for this GET (freebuff-device-key.ts). */
     deviceHeaders?: typeof freebuffDeviceHeaders
   } = {},
 ): Promise<FreebuffCatalogFetchResult> {
@@ -101,9 +100,8 @@ export async function fetchFreebuffModelCatalog(
     deviceHeaders = freebuffDeviceHeaders,
   } = opts
   const url = `${baseUrl}${FREEBUFF_MODEL_CATALOG_PATH}`
-  // Registration waits until this process has seen the server speak the
-  // catalog, so a server that predates it sees exactly the old traffic; a key
-  // registered earlier signs this GET in either mode.
+  // Registration waits until this process holds a catalog; a key registered
+  // earlier signs this GET in either mode.
   const signature = await deviceHeaders(
     token,
     { method: 'GET', url },

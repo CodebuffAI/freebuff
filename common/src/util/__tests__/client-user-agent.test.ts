@@ -28,9 +28,7 @@ describe('normalizeClientUserAgent', () => {
       product: 'bun',
       version: '1.3.11',
     })
-    // The UA a published Freebuff proxy sends. The second segment is not a
-    // version, so it is dropped — `ai-sdk` alone still separates it from
-    // `freebuff-cli`, which is the whole point.
+    // The second segment is not a version, so it is dropped.
     expect(
       normalizeClientUserAgent('ai-sdk/openai-compatible/1.0.25/codebuff'),
     ).toEqual({ product: 'ai-sdk' })

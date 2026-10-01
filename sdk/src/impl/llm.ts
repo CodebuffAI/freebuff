@@ -129,7 +129,7 @@ export function getProviderOptions(params: {
       // All values here get appended to the request body
       codebuff_metadata: {
         // Caller-supplied keys go first so they can't override reserved
-        // identifiers like run_id/client_id/cost_mode that the server trusts.
+        // identifiers the SDK sets, like run_id/client_id/cost_mode.
         ...(extraCodebuffMetadata ?? {}),
         run_id: runId,
         client_id: clientSessionId,

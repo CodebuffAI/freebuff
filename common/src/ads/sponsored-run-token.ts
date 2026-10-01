@@ -14,10 +14,10 @@
  * token still verifies against a row the sweep has already given up on, and
  * the honest report would be answered 409.
  *
- * Deliberately NOT the Cloud executor's `SPONSORED_EXECUTION_TIMEOUT_MS`
- * (~45 minutes). That one bounds work OUR infrastructure is doing and can
- * observe; this one bounds work on a machine we cannot see, which legitimately
- * pauses for as long as the person using it does.
+ * Deliberately NOT the Cloud executor's `SPONSORED_EXECUTION_TIMEOUT_MS`.
+ * That one bounds work OUR infrastructure is doing; this one bounds work on
+ * the user's own machine, which legitimately pauses for as long as the person
+ * using it does.
  */
 export const SPONSORED_RUN_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 

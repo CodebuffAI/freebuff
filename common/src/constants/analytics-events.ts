@@ -291,11 +291,9 @@ export enum AnalyticsEvent {
   // support case is undiagnosable — the guards otherwise return silently.
   FREEBUFF_REFERRAL_REDEEM_FAILED = 'freebuff.referral.redeem_failed',
   // Attribution went through and the referred user redeemed from an IP or
-  // browser the REFERRER was recently seen on. Evidence, NOT a verdict: this
-  // is also exactly what a genuine in-person referral looks like ("try it,
-  // here's my laptop" — a sibling on the family computer shares both). Only
-  // suspicious when corroborated by real farm signals (dormant GitHub, burst
-  // velocity, no product use); the sweep + scripts do that weighing.
+  // browser the REFERRER was recently seen on. Informational only: this is
+  // also exactly what a genuine in-person referral looks like ("try it,
+  // here's my laptop").
   FREEBUFF_REFERRAL_SOCK_SIGNAL = 'freebuff.referral.sock_signal',
   // Freebuff - Get Started Page (referral onboarding funnel, in order:
   //   viewed → sign_in_clicked → signed_in → eligibility_resolved →

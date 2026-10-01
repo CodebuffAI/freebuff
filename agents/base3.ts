@@ -89,8 +89,8 @@ ${PLACEHOLDER.GIT_CHANGES_PROMPT}
  * Two things are load-bearing, both for the same reason they are on the Web
  * roots (docs/freebuff-base3-harness.md):
  *
- * - The appendix is APPENDED. `hasFreebuffRootSystemPromptOpening` requires a
- *   canonical opening at byte 0, so prepending 403s every free-mode turn.
+ * - The appendix is APPENDED. The root prompt must keep its canonical
+ *   opening first (`hasFreebuffRootSystemPromptOpening`).
  * - No `instructionsPrompt`. base2 carries one and it is re-injected after
  *   every user message, which breaks the prompt cache this harness exists to
  *   keep warm.
@@ -116,11 +116,9 @@ export function createBase3CliRoot(
 
   const root: Omit<SecretAgentDefinition, 'id'> = {
     ...base3,
-    // Written out rather than spread from `base3.toolNames`, because
-    // `foreign-client-shipped-agents.test.ts` scans source for literal
-    // toolNames arrays and asserts none of ours reads as a third-party
-    // harness — a toolset assembled at runtime is invisible to that scan,
-    // which is how `freebuff-desktop-autorun` shipped flagged.
+    // Written out rather than spread from `base3.toolNames`: a test scans
+    // source for literal toolNames arrays, and a toolset assembled at runtime
+    // is invisible to that scan.
     //
     // The first eight are base3's own. `web_search`/`read_url` replace the
     // researcher subagents base2 spawned. The last five are CLI product

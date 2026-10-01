@@ -1,16 +1,10 @@
 /**
  * Normalize an HTTP `User-Agent` into a bounded token for analytics.
  *
- * Which client made a request is otherwise unanswerable server-side. The only
- * client-identifying field we store is `session.fingerprint_id`, which the
- * client picks for itself — reading it as client identity produced a
- * 659-account false-positive ban on 2026-08-03. The request user agent is a
- * second, independent signal: the official CLI sends `Freebuff-CLI/<version>`
- * (`getCliAdRequestUserAgent` in cli/src/hooks/use-gravity-ad.ts), so anything
- * else is at least worth a look.
- *
- * It is **not** proof either: a user agent is equally client-supplied, and
- * published Freebuff proxies already spoof ours. Treat the output as a lead.
+ * Records which client product made a request, for analytics. The official
+ * CLI sends `Freebuff-CLI/<version>` (`getCliAdRequestUserAgent` in
+ * cli/src/hooks/use-gravity-ad.ts). A user agent is client-supplied, so the
+ * output describes a request; it is never treated as proof of anything.
  *
  * Two properties make this safe to attach to a high-volume event:
  *

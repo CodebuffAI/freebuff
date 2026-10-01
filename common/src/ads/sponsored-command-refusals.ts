@@ -12,8 +12,7 @@
  *   and images, which may be the user's running services.
  *
  * Like the install refusal, these are sentences the MODEL reads, answered
- * before the command reaches a shell. What they cover and what they do not is
- * in `docs/freebuff-sponsored-local-execution.md` §9.
+ * before the command reaches a shell.
  */
 
 export type SponsoredCommandRefusalKind = 'wsl' | 'database' | 'container'
@@ -39,7 +38,6 @@ const MAX_DEPTH = 6
  *
  * `;`, `&`, `|`, parentheses, braces, backticks, `$(` and newlines end a
  * command outside quotes; `&` inside a redirection (`2>&1`, `&>`) does not.
- * Backslashes are literal, because Windows paths are the common case here.
  */
 function lexCommandLine(command: string): Token[][] {
   const segments: Token[][] = []
@@ -349,7 +347,6 @@ const DB_SCRIPT_VERB =
 /**
  * A `package.json` script name that states a destructive database action
  * (`db:reset`, `db:push`, `prisma:reset`), or a seed forced past its guard.
- * Script BODIES are not read; see the doc.
  */
 function refusedDatabaseScript(script: string, args: Token[]): boolean {
   const name = script.toLowerCase()
@@ -1099,7 +1096,7 @@ function linePassesDestructiveSql(
   if (DESTRUCTIVE_SQL.test(joined.join('\n'))) return true
   // An unbounded DELETE is judged per quoted argument, and on the raw line
   // with its newlines flattened so a heredoc's `WHERE` on the next line still
-  // bounds it. The raw line is used only when nothing on it merely searches.
+  // bounds it.
   return [
     ...sent.flatMap((segment) =>
       segment.filter((t) => t.quoted).map((t) => t.text),

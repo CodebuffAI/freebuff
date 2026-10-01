@@ -10,8 +10,8 @@
  * through the web portal. There is deliberately no cutover date any more. One
  * existed when the form was a blocking gate, to keep existing users from being
  * locked out of a product they already used — with nothing to lock them out of,
- * a cutover only means never learning anything about the 200,000 accounts we
- * already have. The Skip button and the seen-cookie are what protect them now,
+ * a cutover only means never learning anything about the accounts we already
+ * have. The Skip button and the seen-cookie are what protect them now,
  * and they cost a single dismissible screen instead of an exemption.
  *
  * The polarity is deliberate: **an unset or `off` switch shows it to NOBODY.**

@@ -25,20 +25,16 @@
  * `user.referral_limit`) went with the 2026-07-16 referral_v2 cutover, and
  * referral_v2's own 100-row signup limit was removed on 2026-09-23 (#3800).
  * Refusals under that limit are replayed by scripts/referral-cap-backfill.ts.
- * What still bounds a referral farm is qualification (above), burn-once per
- * GitHub identity, full-access-only Freebucks cash-out, the reward ceiling
- * FREEBUFF_REWARD_MAX_DAILY_SESSIONS on the session reward, and the
- * referral-abuse detector (docs/freebuff-abuse-referral-farming.md).
  */
 
 /** Referred users must have a GitHub account at least this old for the
  *  referral to count. Younger accounts can still sign up normally — the
- *  referrer just gets no credit (anti-farming). */
+ *  referrer just gets no credit. */
 export const MIN_GITHUB_ACCOUNT_AGE_MONTHS = 4
 
 /** GLM 5.2 referral program uses a stricter account-age bar than the web
  *  program (no public-repo requirement, but the account must be a full year
- *  old) since the reward — paid GLM serverless time — costs more to abuse. */
+ *  old). */
 export const MIN_GITHUB_ACCOUNT_AGE_MONTHS_GLM = 12
 
 /**

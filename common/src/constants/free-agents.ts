@@ -259,9 +259,8 @@ export const FREEBUFF_BASE3_AGENT_IDS: ReadonlySet<string> = new Set([
  * 2026-08-18. The planner followed DeepSeek V4 Flash onto the premium pool for
  * a few hours and was moved straight off it, because being OUT of that pool is
  * the property this agent is designed around: a planner turn never touches a
- * sandbox, so a premium-pooled planner is both the cheapest abuse route into
- * the premium pool and a way for an ordinary user to spend their day's sessions
- * without building anything. It tracks FALLBACK_FREEBUFF_MODEL_ID rather than
+ * sandbox, so a premium-pooled planner would let an ordinary user spend their
+ * day's sessions without building anything. It tracks FALLBACK_FREEBUFF_MODEL_ID rather than
  * naming a model, so it cannot drift back in the next time a model is
  * re-tiered.
  *
@@ -717,38 +716,32 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // Kimi K2.7 Code was removed from free mode entirely on 2026-07-31. It had
   // been hidden from every client picker in 75fb0ade6 (2026-07-30) while
   // deliberately staying valid here and in session admission, so released
-  // clients weren't broken mid-session. That tail kept costing real spend
-  // (a double-digit share of free-mode cost) because CLI builds older than 75fb0ade6
-  // never drop a saved Kimi preference, and nothing forces those users to
-  // upgrade. Every remaining free-mode Kimi request now 403s with
+  // clients weren't broken mid-session. That tail persisted because CLI
+  // builds older than 75fb0ade6 never drop a saved Kimi preference. Every
+  // remaining free-mode Kimi request now 403s with
   // 'free_mode_invalid_agent_model'. Paid/BYOK Kimi is unaffected: the
   // base2-kimi-2-7-code agent and llm-api provider routing never consult this
   // gate.
   //
   // MiMo 2.5 Pro ('base2-free-mimo-pro', 'code-reviewer-mimo-pro') was removed
   // the same way on 2026-08-04, after its 2026-07-31 picker retirement decayed
-  // the tail from ~170 to ~33 daily users. Paid/BYOK MiMo Pro and its llm-api
+  // the tail. Paid/BYOK MiMo Pro and its llm-api
   // routing are untouched.
   //
   // HY3 ('base2-free-hy3', 'base2-free-hy3-atlas') went on 2026-08-04 as well.
-  // It had been picker-retired since the initial web rollout, which stopped
-  // nothing that talks to the API directly. Its paid/BYOK `tencent/hy3` routing
+  // It had been picker-retired since the initial web rollout. Its paid/BYOK `tencent/hy3` routing
   // outlived that removal and was itself deleted on 2026-08-07, together with
   // the Atlas Cloud adapter that served as its paid lane — HY3 was the only
   // model Atlas Cloud carried, so the provider went with it.
   //
   // Ling 3.0 Flash ('base2-free-ling-3-flash') and Greg 2 Ultra/Super
   // ('base2-free-greg-2-ultra', 'base2-free-greg-2-super') were removed on
-  // 2026-08-07. All three were god-only test rows, so there was no user-facing
-  // tail to decay and nothing to stage: no shipped client ever offered them.
+  // 2026-08-07. No shipped client offered them, so there was no user-facing
+  // tail to decay and nothing to stage.
   //
   // The CrofAI GLM 5.2 route ('base2-free-glm-crof') was removed on 2026-08-04
-  // for a different reason: it was never a decaying tail. It reached the same
-  // CrofAI upstream as 'base2-free-glm' but its model id sat in the daily
-  // PREMIUM pool instead of the earned GLM pool, so anyone posting the agent id
-  // by hand got the referral reward for free. No shipped client ever bundled it,
-  // so every request it saw was hand-written. Keep GLM to exactly one agent and
-  // one model id.
+  // too: it reached the same upstream as 'base2-free-glm' but was metered by a
+  // different pool. Keep GLM to exactly one agent and one model id.
   'base2-free-deepseek': new Set([FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]),
   'base2-free-deepseek-flash': new Set([FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]),
   'base2-free-mimo': new Set([FREEBUFF_MIMO_V25_MODEL_ID]),
@@ -780,10 +773,9 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // 'base2-free-glm-crof' turned out to be.
   'base2-free-glm-5-3-flash': new Set([FREEBUFF_GLM_V53_FLASH_MODEL_ID]),
   'base2-free-kimi-k3-eco': new Set([FREEBUFF_KIMI_K3_ECO_MODEL_ID]),
-  // Novita's `-es` route. Pinned to the one model like every other root. It is
-  // a Codex session rather than Luna (see web/src/llm-api/novita.ts), so it is
-  // deliberately NOT reachable from `base2-free-luna` — the two must never
-  // share a root, or a Luna request could land on Codex.
+  // The `-es` route. Pinned to the one model like every other root, and
+  // deliberately NOT reachable from `base2-free-luna`: the two are separate
+  // entitlements and must never share a root.
   'base2-free-luna-es': new Set([FREEBUFF_GPT_5_6_LUNA_ES_MODEL_ID]),
   'base3-free-luna-es': new Set([FREEBUFF_GPT_5_6_LUNA_ES_MODEL_ID]),
   // Provisioned-tier roots, pinned one model each like every
@@ -864,9 +856,8 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // picker session.
   'base2-free-gemini-3-8-flash': new Set([FREEBUFF_GEMINI_38_FLASH_MODEL_ID]),
   // Ox Alpha's root, pinned to its one model like every other. The pinning
-  // matters even now that the model is withdrawn: an agent id is the handle a
-  // hand-written caller reaches for, and a root allowed more than one model is
-  // a door onto everything else it allows.
+  // matters even now that the model is withdrawn: a root allowed more than one
+  // model grants everything it allows.
   //
   // WITHDRAWN 2026-08-27 (FREEBUFF_PAUSED_FREE_MODEL_IDS), and this entry stays
   // for the same reason M3's above does. Withdrawal is enforced at ADMISSION;

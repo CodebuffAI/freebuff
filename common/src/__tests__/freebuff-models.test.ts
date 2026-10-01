@@ -333,10 +333,9 @@ describe('freebuff model availability', () => {
    *
    * The hazard was never "these two must not be the same row". It was that they
    * share a family name and a `z-ai/` prefix, and a predicate written as a
-   * PREFIX MATCH would silently merge two entitlements. That produced the worst
-   * quota bug this file records: `crof/glm-5.2` was a second wire id for the
-   * earned model sitting in the daily premium pool, and hand-written callers
-   * collected it with zero referrals for five days.
+   * PREFIX MATCH would silently merge two entitlements (the retired
+   * `crof/glm-5.2` was a second wire id for the earned model, metered by a
+   * different pool).
    *
    * So what this pins is that every GLM predicate is still an EXPLICIT ID LIST
    * — including now, when the two happen to name the same model, because the
@@ -388,10 +387,9 @@ describe('freebuff model availability', () => {
 
   test('GLM 5.3 Flash is unmetered at full access', () => {
     // Unmetered on 2026-08-28, matching DeepSeek V4 Flash and MiMo. It was
-    // premium-pooled while its cost was unknown; measured prod spend settled
-    // that as the cheapest row we serve, 8.9x under the already-unmetered
-    // V4 Flash. Capping the cheapest model while the dearer ones run uncapped
-    // inverts the reason caps exist.
+    // premium-pooled while its cost was unknown; it turned out to be the
+    // cheapest row we serve. Capping the cheapest model while the dearer ones
+    // run uncapped inverts the reason caps exist.
     expect(isFreebuffPremiumModelId(FREEBUFF_GLM_V53_FLASH_MODEL_ID)).toBe(
       false,
     )
@@ -665,7 +663,7 @@ describe('freebuff model availability', () => {
 
   test('MiMo 2.5 Pro is fully removed from Freebuff', () => {
     // Retired from the client pickers 2026-07-31, server half removed
-    // 2026-08-04 once the tail had decayed from ~170 to ~33 daily users. Same
+    // 2026-08-04 once the tail had decayed. Same
     // two-stage shape Kimi K2.7 Code went through. Paid/BYOK MiMo Pro is
     // unaffected; it never resolves through these helpers.
     expect(SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)).not.toContain(
@@ -733,8 +731,8 @@ describe('freebuff model availability', () => {
 
   test('Kimi K2.7 Code is fully removed from Freebuff', () => {
     // Removed 2026-07-31 (client pickers went first, on 2026-07-30). The server
-    // half is gone too, so a stale client selection is no longer admitted —
-    // that tail was still a material daily spend. Paid/BYOK Kimi is unaffected;
+    // half is gone too, so a stale client selection is no longer admitted.
+    // Paid/BYOK Kimi is unaffected;
     // it never resolves through these helpers.
     expect(SUPPORTED_FREEBUFF_MODELS.map((model) => model.id)).not.toContain(
       FREEBUFF_KIMI_MODEL_ID,
@@ -783,10 +781,8 @@ describe('freebuff model availability', () => {
 
   test('both HY3 routes are fully removed from Freebuff', () => {
     // HY3 was withdrawn from the Web picker during the initial rollout and left
-    // in FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS, which is a client-side filter
-    // and therefore not a gate at all — the same mistake that let the CrofAI
-    // GLM route be farmed. Removed outright 2026-08-04, along with the
-    // god-only paid OpenRouter route.
+    // in FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS. Removed outright 2026-08-04,
+    // along with its paid OpenRouter route.
     //
     // As of 2026-08-07 the wire-id CONSTANTS are gone too: hy3-fallback.ts and
     // the Atlas Cloud adapter that was its paid lane have been deleted, so
@@ -825,10 +821,9 @@ describe('freebuff model availability', () => {
   })
 
   test('the picker-retirement list holds only ids that are harmless to reach', () => {
-    // Both long-term former occupants (HY3, CrofAI GLM 5.2) were farmed or left
-    // publicly advertised precisely because a picker-only retirement is a UI
-    // change, not a gate. So every entry here has to pass the bar the list's
-    // own doc sets: reachable by a direct API caller AND harmless while it is.
+    // A picker-only retirement is a UI change; withdrawal is the pause list's
+    // job. So every entry here has to pass the bar the list's own doc sets:
+    // harmless to reach.
     //
     // Muse Spark 1.2 passes it (parked 2026-09-02 while its Web sessions
     // drain): it costs exactly what its replacement costs, is metered by the
@@ -894,12 +889,8 @@ describe('freebuff model availability', () => {
   })
 
   test('the CrofAI GLM 5.2 wire id is fully removed', () => {
-    // Retired from the pickers 2026-07-30 and deleted 2026-08-04. The picker
-    // retirement was client-side only, so hand-written API callers kept
-    // admitting sessions on this id and drawing GLM 5.2 from the free daily
-    // PREMIUM pool instead of the earned GLM pool — 12-49 distinct accounts a
-    // day, five days after it was supposedly unreachable. No shipped client
-    // ever bundled it, so deleting it breaks nothing.
+    // Retired from the pickers 2026-07-30 and deleted 2026-08-04. No shipped
+    // client ever bundled it, so deleting it breaks nothing.
     //
     // The invariant this guards: GLM 5.2 must have exactly ONE wire id. The
     // quota pool is chosen by model id, so a second id is a second entitlement.
@@ -1235,8 +1226,8 @@ describe('freebuff model availability', () => {
   })
 
   test('MiniMax M3 is withdrawn: recognised, refused, served to nobody', () => {
-    // Withdrawn from free mode entirely on 2026-08-20 after its hourly burn
-    // became the largest single line on the bill. Out of every picker and pool...
+    // Withdrawn from free mode entirely on 2026-08-20. Out of every picker and
+    // pool...
     expect(FREEBUFF_MODELS.map((model) => model.id)).not.toContain(
       MINIMAX_M3_MODEL_ID,
     )

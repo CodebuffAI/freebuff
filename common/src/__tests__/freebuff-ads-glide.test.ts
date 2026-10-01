@@ -20,7 +20,7 @@ import {
   type BudgetGlide,
 } from '../constants/freebuff-ads'
 
-/** Weave's taper: 1,200/day down to 300/day over three weeks, ±10%. */
+/** An example taper: $600/day down to $150/day over three weeks, ±10%. */
 const GLIDE: BudgetGlide = {
   startCents: 60_000,
   targetCents: 15_000,

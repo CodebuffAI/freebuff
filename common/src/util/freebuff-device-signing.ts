@@ -10,10 +10,9 @@
  * client makes then carries the key id, a timestamp and a signature over the
  * exact body bytes it sends.
  *
- * Signing is best-effort by design: no WebCrypto Ed25519, no stored key, a
- * registration that failed or has not answered yet — the request simply goes
- * out unsigned. Nothing here ever throws at a caller or holds a request for
- * longer than `waitMs`.
+ * Nothing here ever throws at a caller or holds a request for longer than
+ * `waitMs`; how the server treats a request without a signature is its own
+ * policy.
  *
  * Where the key lives is the host's business (`FreebuffDeviceKeyStore`): the
  * CLI keeps an owner-only file in its config dir, Desktop keeps it encrypted

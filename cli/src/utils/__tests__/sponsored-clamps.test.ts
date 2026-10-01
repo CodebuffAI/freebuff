@@ -402,7 +402,7 @@ describe('the shell', () => {
 describe('in place: the user’s real folder', () => {
   test('secret-bearing files are unreadable; env templates are readable', () => {
     // A worktree cut from a commit could never contain `.env.local`; the
-    // user's own folder does, and macOS egress is allowed.
+    // user's own folder does.
     for (const path of [
       '.env',
       '.env.local',
@@ -521,9 +521,8 @@ describe('the toolset the run is actually offered', () => {
   })
 
   test('the system prompt is APPENDED to, never prepended', () => {
-    // `hasFreebuffRootSystemPromptOpening` requires the canonical opening at
-    // byte 0 and 403s every free-mode turn without it
-    // (docs/freebuff-base3-harness.md).
+    // The canonical opening must stay first (see
+    // FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS and docs/freebuff-base3-harness.md).
     const plain = sponsoredAgentDefinition({
       agentId: 'base3',
       isFreebuff: true,
@@ -532,9 +531,9 @@ describe('the toolset the run is actually offered', () => {
     expect(plain.systemPrompt).toContain('UNCOMMITTED')
   })
 
-  test('it keeps the id it was given, so free mode can still admit it', () => {
-    // Free mode gates on the (agent id, model) pair, so a run started under an
-    // invented id is a run that cannot be admitted at all.
+  test('it keeps the agent id it was given', () => {
+    // The sponsored definition is the caller's own root, never a new agent id
+    // (see FREE_MODE_AGENT_MODELS).
     expect(
       sponsoredAgentDefinition({ agentId: 'base3-free-mimo', isFreebuff: true })
         .id,

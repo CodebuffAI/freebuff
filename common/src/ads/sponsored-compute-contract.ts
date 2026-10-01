@@ -99,10 +99,9 @@ export function acceptClientSurfacePairsWithRow(
  * The window opens at the run's first reserved call on the server, and at the
  * turn taking the grant on Desktop -- never at Accept. An in-place run is a
  * turn queued BEHIND whatever the user already had running, and a clock that
- * started at Accept spent the wait: of 150 traced runs, 10 never started (the
- * grant was dead by the time their turn came up), 2 were cut off mid-run, and
- * ~30% of the runs that did finish had waited more than ten minutes first.
- * Accept is still the one charge; only the compute window moved.
+ * started at Accept spent the wait: some grants expired before their turn
+ * came up, and others were cut off mid-run. Accept is still the one charge;
+ * only the compute window moved.
  */
 export const SPONSORED_COMPUTE_RUN_WINDOW_MS = 60 * 60_000
 
@@ -288,7 +287,7 @@ export function readSponsoredComputePolicy(
     modelId,
     campaigns,
     // The configured acceptance fee is the only commercial charge. Compute is an
-    // internal, bounded cost of fulfilling that offer, capped here at $0.50.
+    // internal, bounded cost of fulfilling that offer, capped here.
     allowanceUsdMicros: 500_000,
     acceptancePriceCents,
     ttlMs: SPONSORED_COMPUTE_RUN_WINDOW_MS,

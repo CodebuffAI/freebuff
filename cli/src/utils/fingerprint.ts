@@ -1,10 +1,8 @@
 /**
  * Enhanced fingerprinting for CLI authentication.
  *
- * Uses hardware-based identifiers to create deterministic fingerprints,
- * making it harder for users to game the system by creating multiple accounts.
- *
- * Falls back to legacy random fingerprints if enhanced fingerprinting fails.
+ * Derives a stable fingerprint from hardware identifiers. Falls back to a
+ * random id when the machine id is unavailable.
  */
 
 import { createHash, randomBytes } from 'node:crypto'

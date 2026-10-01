@@ -188,11 +188,10 @@ async function build() {
  * Fail the build if the bundle inlines a workspace file that the public repo
  * export withholds, then delete the maps so none are published.
  *
- * The published package used to carry `sourcemap: 'linked'` maps with full
- * `sourcesContent` — every inlined workspace module verbatim, comments
- * included — and an external report found a file withheld from the public
- * export among them. `package.json` `files` also excludes `*.map`, so a map
- * that survives here still cannot reach npm.
+ * Guards that the bundle's sourcemap contains only public sources; the maps'
+ * `sourcesContent` carries every inlined workspace module verbatim.
+ * `package.json` `files` also excludes `*.map`, so a map that survives here
+ * still cannot reach npm.
  */
 async function assertBundleSourcesArePublic(mapPaths: string[]) {
   const repoRoot = resolve(import.meta.dir, '..', '..')

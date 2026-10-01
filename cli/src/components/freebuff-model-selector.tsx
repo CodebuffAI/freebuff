@@ -700,8 +700,8 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
    */
   const upgradeOfferFor = useCallback(
     (model: FreebuffModelOption) => {
-      // OFF THE WIRE, never derived here. The copy is built from Freebucks
-      // constants the CLI cannot hold (they are export-excluded), and who is
+      // OFF THE WIRE, never derived here. The copy is built from
+      // server-provided Freebucks values, and who is
       // offered what is the server's verdict — tier, plan, plans audience —
       // so `freebucks.upgrade` is absent for everyone it does not apply to.
       const upgrade = freebucks?.upgrade

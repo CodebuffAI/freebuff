@@ -126,12 +126,9 @@ export const SPONSOR_BREAK_DWELL_MAX_MS = 3_600_000
  * Below this, a click is presumed ACCIDENTAL: the card appeared under a cursor
  * that was already moving.
  *
- * A REPORTING threshold and never a serving one. Nothing in this repo drops a
- * click for being fast -- the ledger settles it and the advertiser is billed,
- * because a rule that silently unbills clicks is a rule an advertiser cannot
- * audit. What this constant does is let a dashboard say how many of the clicks
- * on a format were plausibly accidental, which is the number that decides
- * whether the format is honest.
+ * A REPORTING threshold: it lets a dashboard say how many of the clicks on a
+ * format were plausibly accidental, which is the number that decides whether
+ * the format is honest.
  */
 export const SPONSOR_BREAK_ACCIDENTAL_CLICK_MS = 300
 

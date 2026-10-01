@@ -167,11 +167,10 @@ export type SponsoredToolDecision =
  * May a run holding `grant` call this tool?
  *
  * `unknown_tool` IS THE POINT OF THIS FUNCTION. The runtime's own gates do the
- * opposite: `getToolSet` silently drops a name it does not recognise, and an
- * unrecognised name reaching a gate that only knows how to subtract is a name
- * that was never subtracted. Custom tools, MCP tools and anything added
- * upstream all arrive here as strings this map has never seen, and every one
- * of them is refused.
+ * opposite: `getToolSet` silently drops a name it does not recognise. Here
+ * the map is an allowlist: custom tools, MCP tools and anything added
+ * upstream arrive as strings this map has never seen, and every one of them
+ * is refused.
  *
  * The grant is REQUIRED here, with no default. The default used to be the
  * Cloud grant, which is exactly the shape of mistake COD-336 asked to be made
@@ -258,13 +257,8 @@ const GIT_SEGMENT = /(^|\/)\.git(\/|$)/
 
 /**
  * Paths whose CONTENT executes somewhere the pull-request diff is not the
- * decision point.
- *
- * WHY EACH CLASS IS REFUSED is in `docs/freebuff-sponsored-local-execution.md`
- * §9, not here. This module ships to the public repository (it is inside
- * `common`, which is one include line in the export manifest), and reasoning
- * that reads as "here is what this list is for and here is what it misses" is
- * more useful to somebody working around it than to anybody reading it.
+ * decision point: CI configuration, hook directories tracked in the
+ * repository, and editor tasks.
  */
 const CI_PATHS = Object.freeze([
   '.github/workflows/',
@@ -306,14 +300,10 @@ export const CREDENTIAL_SUFFIXES = Object.freeze(['.pem', '.key', '.p12', '.pfx'
  * it one of the classes refused even inside it. The order decides the message
  * the model reads.
  *
- * THE REASONING IS NOT HERE. Why each class is refused, what a path check
- * cannot see, and how the boundary is shaped on each environment are in
- * `docs/freebuff-sponsored-local-execution.md` §9 — a private file, because
- * `common` is published and that reasoning is worth more to somebody working
- * around this than to anybody maintaining it. Change one and change the other.
+ * Refused inside the boundary: `.git`, the CI and hook paths, and credential
+ * files. Env templates (`.env.example` and family) are written, not refused.
  *
- * `..` is refused outright rather than normalised, matching `assertProjectPath`
- * (freebuff/web/src/server/agent-runner/harness.ts): a normaliser is a thing
+ * `..` is refused outright rather than normalised: a normaliser is a thing
  * that can be wrong and a rejection is not.
  */
 export function evaluateSponsoredWritePath(
@@ -340,8 +330,7 @@ export function evaluateSponsoredWritePath(
   // NORMALISED BEFORE ANY MATCHING. The write lands through `path.join`, which
   // collapses `.` and duplicate slashes -- so `./.github/workflows/x.yml` and
   // `.github//workflows/x.yml` both resolve to the path the refusals below are
-  // written to catch, while matching the RAW string let them straight through.
-  // One character of prefix defeated the CI refusal entirely.
+  // written to catch, and are matched in that form.
   //
   // `..` is already rejected above, so this only has to drop `.` segments and
   // squeeze separators; it can never resolve upward.
@@ -432,20 +421,17 @@ export function evaluateSponsoredWritePath(
  * (`docs/freebuff-sponsored-local-execution.md`, 2026-09-24). A worktree run
  * needs none of this: its checkout was cut from a commit, so it contains no
  * untracked file and `.env.local`, `id_rsa` and `.npmrc` are absent by
- * construction. The user's own folder has them, and macOS egress is allowed
- * -- so the same names the WRITE policy refuses become read refusals too,
- * and the two share one rule (`isSensitiveEnvFilePath`) rather than two
- * lists that can drift.
+ * construction. The user's own folder has them, so the same names the WRITE
+ * policy refuses become read refusals too, and the two share one rule
+ * (`isSensitiveEnvFilePath`) rather than two lists that can drift.
  *
  * `.env.example` and its family stay readable: writing a placeholder into one
  * is the entire deliverable of the Supabase procedure, and a procedure that
  * cannot read the file it is meant to extend would have to guess at it.
  *
- * WHAT THIS IS NOT. The boundary itself is still `containSponsoredPath` in
- * the SDK, which refuses everything outside the workspace; this narrows what
- * is refused INSIDE it. And it is a file-tool rule: on macOS and Linux the OS
- * sandbox denies the same paths to the shell, and on the Windows floor
- * (COD-642, no sandbox) the tools and the command broker are the whole of it.
+ * `containSponsoredPath` in the SDK refuses everything outside the
+ * workspace; this narrows what is refused INSIDE it, for the file tools. On
+ * macOS and Linux the OS sandbox denies the same paths to the shell.
  */
 export function evaluateSponsoredReadPath(
   rawPath: unknown,

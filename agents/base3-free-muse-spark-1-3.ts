@@ -5,10 +5,8 @@ import { createBase3CliRoot } from './base3'
 /**
  * Muse Spark 1.3 Contributor on the CLI, and by the shared root id on Desktop.
  *
- * The single-loop harness suits this row twice over: Meta meters the
- * Contributor tier per TEAM, so every subagent or reviewer pass would spend
- * requests from budgets shared with every other Freebuff user. No
- * `reasoningOptions`, like every Freebuff root — the catalog owns the ladder
+ * Uses the single-loop harness, which keeps the provider request count per
+ * turn low. No `reasoningOptions`, like every Freebuff root — the catalog owns the ladder
  * (`xhigh` is a rung the shared AgentDefinition enum cannot express) and the
  * server fills it in, so the picker and the wire cannot drift.
  */

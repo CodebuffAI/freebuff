@@ -5,16 +5,14 @@
  * Before this those rows had `metadata = null`, and the only record of WHY a
  * run failed was `failure_reason` / `diagnostic_reason` on the Convex
  * proposal row -- so the Postgres funnel could count failures and say nothing
- * about them, and every "why did 38 runs fail" question was a Convex export
- * joined by hand. This is the smallest closed shape that answers it from
+ * about them, and every "why did these runs fail" question was a Convex
+ * export joined by hand. This is the smallest closed shape that answers it from
  * Postgres alone.
  *
  * TELEMETRY, NEVER MONEY. Nothing reads this to bill, refund or settle: the
  * `accepted` row is the one billable stage and it has its own producer. A
- * test asserts this module imports nothing from billing. The never-started
- * refund path (`sponsored-never-started-refund.ts`) does not read the stored
- * metadata either: it re-derives the code from the report itself, with
- * `sponsoredRunFailureCode`, and proves the spend from Postgres.
+ * test asserts this module imports nothing from billing, and the
+ * never-started refund path does not read the stored metadata either.
  *
  * CLOSED AND BOUNDED ON PURPOSE. Every key but `diagnostic_reason` is an enum
  * or a boolean, and `diagnostic_reason` is SCRUBBED (`scrubSponsoredDiagnostic`)

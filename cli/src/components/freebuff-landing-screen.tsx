@@ -916,8 +916,8 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
             </>
           )}
 
-          {/* Account banned. Terminal — polling has stopped. Blocking here
-              stops banned bots from re-entering free mode. */}
+          {/* Account banned. Terminal — polling has stopped. Shows the
+              server's ban verdict. */}
           {session?.status === 'banned' && (
             <>
               <text style={{ fg: theme.secondary, marginBottom: 1 }}>

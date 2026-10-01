@@ -160,10 +160,8 @@ export function isSupportedTimeZone(timeZone: string): boolean {
  * `timeZone: undefined` in ICU's unknown zone, which sits at UTC+0, so a "UTC"
  * label still matches the digits beside it.
  *
- * Display only. The zone a browser sends as a country-verification hint is
- * read separately and deliberately left unvalidated
- * (`freebuff/web/lib/client-hint-headers.ts`): what an unknown zone means
- * there is the server's decision, not this formatter's.
+ * Display only. Any other use of a client's zone is the server's business,
+ * not this formatter's.
  */
 export function resolveWindowTimeZone(timeZone?: string): string {
   let zone = timeZone

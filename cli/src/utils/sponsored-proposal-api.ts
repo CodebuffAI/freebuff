@@ -766,9 +766,8 @@ export async function reportSponsoredRunState(
  * Every failure -- transport, a non-2xx, a body the contract does not accept --
  * is null, which the caller treats exactly as `none`.
  *
- * The product User-Agent is load-bearing rather than cosmetic: the route admits
- * a CLI caller only beside a `Freebuff-CLI/` UA, the same pairing the display
- * auction applies to a `cli_*` capability.
+ * Sends the same product User-Agent as the display auction
+ * (`ad-client-identity.ts`).
  */
 export async function requestAgenticOffer(
   body: AgenticOfferRequest,
