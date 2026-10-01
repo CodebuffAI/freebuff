@@ -44,6 +44,47 @@ export function isFreebuffModelHandle(value: string | null | undefined) {
   return !!value && value.startsWith(FREEBUFF_MODEL_HANDLE_PREFIX)
 }
 
+/**
+ * Sent on every session and completions request a catalog client makes: the
+ * `fetchId` of the catalog response its handles came from. It ties each
+ * request to the fetch (account, install, time) that produced its handle.
+ */
+export const FREEBUFF_CATALOG_FETCH_HEADER = 'x-freebuff-catalog-fetch'
+
+/**
+ * Device-bound request signing. A client generates one Ed25519 key pair per
+ * install, registers the public key once per account
+ * (`POST FREEBUFF_DEVICE_KEYS_PATH`), and signs every catalog, session and
+ * completions request with the private key, which never leaves the install.
+ */
+export const FREEBUFF_DEVICE_KEYS_PATH = '/api/v1/freebuff/device-keys'
+export const FREEBUFF_DEVICE_KEY_HEADER = 'x-freebuff-device-key'
+export const FREEBUFF_DEVICE_TIMESTAMP_HEADER = 'x-freebuff-device-ts'
+export const FREEBUFF_DEVICE_SIGNATURE_HEADER = 'x-freebuff-device-sig'
+
+/**
+ * The exact string a device signs (UTF-8), and the server verifies. Fields are
+ * newline-joined in this order; `bodySha256` is the lowercase hex SHA-256 of
+ * the request body bytes as sent (of the empty string for a body-less
+ * request); `path` is the URL path without query. The signature is base64url.
+ */
+export function freebuffDeviceSignaturePayload(params: {
+  method: string
+  path: string
+  timestampMs: number
+  bodySha256: string
+  fetchId: string | null | undefined
+}): string {
+  return [
+    'freebuff-device-v1',
+    params.method.toUpperCase(),
+    params.path,
+    String(params.timestampMs),
+    params.bodySha256,
+    params.fetchId ?? '',
+  ].join('\n')
+}
+
 /** The error code the server answers a stale, expired or unknown handle with.
  *  A client that sees it refetches the catalog once and retries with the new
  *  handle for the same `key`. */
@@ -104,6 +145,11 @@ export const freebuffCatalogRowSchema = z.object({
   /** Sort position; ascending. Clients that sort by price may ignore it. */
   sortOrder: z.number(),
   /**
+   * A row that opens in the future (ms epoch). Clients do NOT list, select or
+   * send such a row until `opensAt` has passed.
+   */
+  opensAt: z.number().optional(),
+  /**
    * Opaque digests of the legacy model ids this row replaces, so a client can
    * move a pick saved before the catalog existed onto its row without the
    * catalog naming the id: `freebuffLegacyModelDigest(savedId)`.
@@ -128,6 +174,9 @@ export const freebuffModelCatalogSchema = z.object({
   fallbackKey: z.string().optional(),
   /** Where a locked row's press goes. */
   plansUrl: z.string(),
+  /** This fetch's id; sent back as FREEBUFF_CATALOG_FETCH_HEADER on every
+   *  session and completions request made with these handles. */
+  fetchId: z.string().optional(),
 })
 export type FreebuffModelCatalog = z.infer<typeof freebuffModelCatalogSchema>
 
@@ -148,6 +197,22 @@ export function freebuffLegacyModelDigest(modelId: string): string {
     h2 = Math.imul(h2 ^ c, 0x5bd1e995) >>> 0
   }
   return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0')
+}
+
+/**
+ * Rows a client may list: everything already open when the catalog was issued.
+ * Judged against the catalog's own `issuedAt` (server time) whenever it has
+ * one, never the device clock, so a clock set weeks ahead cannot open a row
+ * early; `now` only covers a catalog without it.
+ */
+export function listableFreebuffCatalogRows(
+  catalog: Pick<FreebuffModelCatalog, 'rows'> & { issuedAt?: number },
+  now: number = Date.now(),
+): FreebuffCatalogRow[] {
+  const at = catalog.issuedAt ?? now
+  return catalog.rows.filter(
+    (row) => row.opensAt === undefined || row.opensAt <= at,
+  )
 }
 
 /** The row a legacy saved model id maps to, if the catalog carries one. */

@@ -1,3 +1,4 @@
+import { listableFreebuffCatalogRows } from '@codebuff/common/types/freebuff-model-catalog'
 import { create } from 'zustand'
 
 import {
@@ -41,14 +42,29 @@ export const useFreebuffCatalogStore = create<FreebuffCatalogStore>(() => ({
 }))
 
 /** Replace the held catalog (null returns to fallback mode). Only the fetch
- *  controller and tests call this; it does not reconcile any selection. */
+ *  controller and tests call this; it does not reconcile any selection.
+ *
+ *  Rows that have not opened yet (scheduled launches) are dropped here, before
+ *  anything can read them, so the held catalog only ever has rows this client
+ *  may list, select and send. A row that opens later appears with the next
+ *  fetch (the server schedules one by `refreshAt`). */
 export function setFreebuffCatalog(catalog: FreebuffModelCatalog | null): void {
+  const now = Date.now()
+  const held = catalog ? withoutUnopenedRows(catalog, now) : null
   useFreebuffCatalogStore.setState({
-    catalog,
-    directory: catalog
-      ? catalogFreebuffModelDirectory(catalog)
+    catalog: held,
+    directory: held
+      ? catalogFreebuffModelDirectory(held, now)
       : compiledFreebuffModelDirectory,
   })
+}
+
+function withoutUnopenedRows(
+  catalog: FreebuffModelCatalog,
+  now: number,
+): FreebuffModelCatalog {
+  const rows = listableFreebuffCatalogRows(catalog, now)
+  return rows.length === catalog.rows.length ? catalog : { ...catalog, rows }
 }
 
 export function getFreebuffCatalog(): FreebuffModelCatalog | null {

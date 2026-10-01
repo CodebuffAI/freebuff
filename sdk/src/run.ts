@@ -60,6 +60,7 @@ import { runTerminalCommand } from './tools/run-terminal-command'
 import type { TerminalCommandBroker } from './tools/run-terminal-command'
 
 import type { CustomToolDefinition } from './custom-tool'
+import type { CodebuffRequestHeadersProvider } from './impl/model-provider'
 import type { RunState } from './run-state'
 import type { FileFilter } from './tools/read-files'
 import type { ServerAction } from '@codebuff/common/actions'
@@ -168,6 +169,13 @@ export type CodebuffClientOptions = {
    * from a publisher account into the host process for no benefit.
    */
   disableAgentRegistry?: boolean
+  /**
+   * Extra headers for every request this client makes to the Codebuff
+   * backend's completions endpoint, computed per request from its final body
+   * (so a host can sign it). Not used by BYOK runs. Omitted: requests are
+   * unchanged. See `CodebuffRequestHeadersProvider`.
+   */
+  requestHeaders?: CodebuffRequestHeadersProvider
 
   cwd?: string
   /** Optional directory path to load skills from. Skills found here will be available to the `skill` tool. */
@@ -523,6 +531,7 @@ async function runOnce({
   byok,
   trustedAgentPublishers,
   disableAgentRegistry,
+  requestHeaders,
 
   cwd,
   skillsDir,
@@ -783,6 +792,7 @@ async function runOnce({
     byok,
     trustedAgentPublishers,
     disableAgentRegistry,
+    requestHeaders,
     handleStepsLogChunk: () => {
       // Does nothing for now
     },

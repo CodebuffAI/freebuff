@@ -38,7 +38,29 @@ export interface ModelRequestParams {
   userId?: string
   /** Direct, run-scoped credential. Never stored on the model or in metadata. */
   byok?: ResolvedByokConnection
+  /** Host-supplied headers per backend request; see CodebuffRequestHeadersProvider. */
+  requestHeaders?: CodebuffRequestHeadersProvider
 }
+
+/**
+ * Extra headers for one request to the Codebuff backend's completions
+ * endpoint, computed as the request is about to go out. `body` is the exact
+ * string the AI SDK serialized (what goes on the wire), so a host can sign it;
+ * the provider is asked again for every retry. Never consulted for a BYOK run,
+ * whose requests go to the user's own provider.
+ *
+ * Returning nothing (or throwing) sends the request exactly as it would have
+ * gone without the hook. Freebuff's catalog clients use it for the catalog
+ * fetch id and the device signature (docs/freebuff-model-catalog.md).
+ */
+export type CodebuffRequestHeadersProvider = (request: {
+  method: string
+  url: string
+  body: string | Uint8Array | undefined
+}) =>
+  | Record<string, string>
+  | undefined
+  | Promise<Record<string, string> | undefined>
 
 // Usage accounting type for OpenRouter/Codebuff backend responses
 type OpenRouterUsageAccounting = {
@@ -299,6 +321,48 @@ function fetchWithRetryableNetworkErrors(
   )
 }
 
+function plainHeaders(headers: HeadersInit | undefined): Record<string, string> {
+  if (!headers) return {}
+  if (headers instanceof Headers) {
+    const out: Record<string, string> = {}
+    headers.forEach((value, key) => {
+      out[key] = value
+    })
+    return out
+  }
+  if (Array.isArray(headers)) return Object.fromEntries(headers)
+  return { ...(headers as Record<string, string>) }
+}
+
+/** `send`, with the host's extra headers merged in per request. */
+export function withCodebuffRequestHeaders(
+  provider: CodebuffRequestHeadersProvider,
+  send: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>,
+): (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch> {
+  return async (input, init) => {
+    const raw = init?.body
+    // Only a body whose exact bytes can be handed over; anything else (a
+    // stream) goes out without extra headers rather than with wrong ones.
+    if (raw != null && typeof raw !== 'string' && !(raw instanceof Uint8Array))
+      return send(input, init)
+    let extra: Record<string, string> | undefined
+    try {
+      extra = await provider({
+        method: (init?.method ?? 'GET').toUpperCase(),
+        url: requestUrlOf(input),
+        body: raw ?? undefined,
+      })
+    } catch {
+      extra = undefined
+    }
+    if (!extra || Object.keys(extra).length === 0) return send(input, init)
+    return send(input, {
+      ...init,
+      headers: { ...plainHeaders(init?.headers), ...extra },
+    })
+  }
+}
+
 /**
  * Get the model for a request: one that routes through the Codebuff backend,
  * which forwards to OpenRouter.
@@ -308,6 +372,7 @@ export function getModelForRequest({
   model,
   userId,
   byok,
+  requestHeaders,
 }: ModelRequestParams): LanguageModel {
   if (byok) {
     return new OpenAICompatibleChatLanguageModel(byok.model, {
@@ -441,7 +506,12 @@ export function getModelForRequest({
     },
     // Cast: Bun's fetch type also declares a `preconnect` helper, but the AI
     // SDK only ever invokes fetch as a plain function.
-    fetch: fetchWithRetryableNetworkErrors as typeof globalThis.fetch,
+    fetch: (requestHeaders
+      ? withCodebuffRequestHeaders(
+          requestHeaders,
+          fetchWithRetryableNetworkErrors,
+        )
+      : fetchWithRetryableNetworkErrors) as typeof globalThis.fetch,
     includeUsage: undefined,
     supportsStructuredOutputs: true,
   })

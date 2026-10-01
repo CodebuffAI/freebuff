@@ -22,6 +22,7 @@ import {
 } from 'ai'
 
 import { getModelForRequest } from './model-provider'
+import type { CodebuffRequestHeadersProvider } from './model-provider'
 import { byokModelLimits } from '../byok'
 import type { ResolvedByokConnection } from '../byok'
 import {
@@ -217,7 +218,10 @@ function emitCacheDebugUsage(params: {
 }
 
 export async function* promptAiSdkStream(
-  params: ParamsOf<PromptAiSdkStreamFn> & { byok?: ResolvedByokConnection },
+  params: ParamsOf<PromptAiSdkStreamFn> & {
+    byok?: ResolvedByokConnection
+    requestHeaders?: CodebuffRequestHeadersProvider
+  },
 ): ReturnType<PromptAiSdkStreamFn> {
   const {
     providerOptions: originalProviderOptions,
@@ -245,6 +249,7 @@ export async function* promptAiSdkStream(
     model: params.model,
     userId: params.userId,
     byok: params.byok,
+    requestHeaders: params.requestHeaders,
   })
 
   const response = streamText({
@@ -726,7 +731,10 @@ export async function* promptAiSdkStream(
 }
 
 export async function promptAiSdk(
-  params: ParamsOf<PromptAiSdkFn> & { byok?: ResolvedByokConnection },
+  params: ParamsOf<PromptAiSdkFn> & {
+    byok?: ResolvedByokConnection
+    requestHeaders?: CodebuffRequestHeadersProvider
+  },
 ): ReturnType<PromptAiSdkFn> {
   const { logger } = params
 
@@ -746,6 +754,7 @@ export async function promptAiSdk(
     model: params.model,
     userId: params.userId,
     byok: params.byok,
+    requestHeaders: params.requestHeaders,
   })
 
   const response = await generateText({
@@ -805,7 +814,10 @@ export async function promptAiSdk(
 }
 
 export async function promptAiSdkStructured<T>(
-  params: PromptAiSdkStructuredInput<T> & { byok?: ResolvedByokConnection },
+  params: PromptAiSdkStructuredInput<T> & {
+    byok?: ResolvedByokConnection
+    requestHeaders?: CodebuffRequestHeadersProvider
+  },
 ): PromptAiSdkStructuredOutput<T> {
   const { logger } = params
 
@@ -824,6 +836,7 @@ export async function promptAiSdkStructured<T>(
     model: params.model,
     userId: params.userId,
     byok: params.byok,
+    requestHeaders: params.requestHeaders,
   })
 
   const response = await generateText({

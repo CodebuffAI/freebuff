@@ -43,7 +43,10 @@ import {
   resolveFreebuffModelForAccessTier,
   resolveSupportedFreebuffModel,
 } from '@codebuff/common/constants/freebuff-models'
-import { findFreebuffCatalogRowForLegacyId } from '@codebuff/common/types/freebuff-model-catalog'
+import {
+  findFreebuffCatalogRowForLegacyId,
+  listableFreebuffCatalogRows,
+} from '@codebuff/common/types/freebuff-model-catalog'
 import { freebuffPlanRequired } from '@codebuff/common/util/freebuff-model-selection'
 
 import type {
@@ -187,24 +190,30 @@ export function freebuffCatalogRowModelOption(
 
 export function catalogFreebuffModelDirectory(
   catalog: FreebuffModelCatalog,
+  now: number = Date.now(),
 ): FreebuffModelDirectory {
-  const rowsByKey = new Map(catalog.rows.map((row) => [row.key, row]))
+  // A row scheduled to open later does not exist for this client until it
+  // opens: it
+  // is never listed, selected, mapped onto, or sent. Every lookup below reads
+  // these rows only, so no path through the directory can reach one.
+  const listable = { rows: listableFreebuffCatalogRows(catalog, now) }
+  const rowsByKey = new Map(listable.rows.map((row) => [row.key, row]))
   const options = new Map(
-    catalog.rows.map((row) => [row.key, freebuffCatalogRowModelOption(row)]),
+    listable.rows.map((row) => [row.key, freebuffCatalogRowModelOption(row)]),
   )
   /** The row an id or key names: a key directly, a legacy id by digest. */
   const rowFor = (id: string | null | undefined) =>
     id
-      ? (rowsByKey.get(id) ?? findFreebuffCatalogRowForLegacyId(catalog, id))
+      ? (rowsByKey.get(id) ?? findFreebuffCatalogRowForLegacyId(listable, id))
       : undefined
   const keyForLegacy = (legacyId: string) =>
-    findFreebuffCatalogRowForLegacyId(catalog, legacyId)?.key
+    findFreebuffCatalogRowForLegacyId(listable, legacyId)?.key
   const recommendedKey = (() => {
     if (catalog.recommendedKey && rowsByKey.has(catalog.recommendedKey))
       return catalog.recommendedKey
     return (
-      catalog.rows.find((row) => row.access === 'open')?.key ??
-      catalog.rows[0]?.key ??
+      listable.rows.find((row) => row.access === 'open')?.key ??
+      listable.rows[0]?.key ??
       FALLBACK_FREEBUFF_MODEL_ID
     )
   })()
@@ -275,10 +284,14 @@ export function catalogFreebuffModelDirectory(
   }
 }
 
-/** The handle a key is sent as, from the catalog held right now. */
+/** The handle a key is sent as, from the catalog held right now. A row that
+ *  has not opened yet has no handle this client will send. */
 export function freebuffCatalogHandleFor(
   catalog: FreebuffModelCatalog | null,
   key: string,
+  now: number = Date.now(),
 ): string | undefined {
-  return catalog?.rows.find((row) => row.key === key)?.handle
+  if (!catalog) return undefined
+  return listableFreebuffCatalogRows(catalog, now).find((row) => row.key === key)
+    ?.handle
 }

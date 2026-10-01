@@ -6,6 +6,7 @@ import { success } from '@codebuff/common/util/error'
 
 import { getWebsiteUrl } from '../constants'
 import type { ResolvedByokConnection } from '../byok'
+import type { CodebuffRequestHeadersProvider } from './model-provider'
 
 import {
   addAgentStep,
@@ -59,6 +60,8 @@ export function getAgentRuntimeImpl(
     trustedAgentPublishers?: readonly string[]
     /** Never fetch from the agent registry; see `CodebuffClientOptions.disableAgentRegistry`. */
     disableAgentRegistry?: boolean
+    /** Extra headers per backend completions request; see `CodebuffClientOptions.requestHeaders`. */
+    requestHeaders?: CodebuffRequestHeadersProvider
   } & Pick<
     AgentRuntimeScopedDeps,
     | 'handleStepsLogChunk'
@@ -78,6 +81,7 @@ export function getAgentRuntimeImpl(
     byok,
     trustedAgentPublishers,
     disableAgentRegistry,
+    requestHeaders,
     clientEnv: clientEnvInput,
     handleStepsLogChunk,
     requestToolCall,
@@ -136,16 +140,23 @@ export function getAgentRuntimeImpl(
         chargedToOrganization: false,
       }),
 
-    // LLM
+    // LLM. A BYOK run talks to the user's own provider, so the host's backend
+    // request headers never apply to it.
     promptAiSdkStream: byok
       ? ((params) => promptAiSdkStream({ ...params, byok } as any))
-      : promptAiSdkStream,
+      : requestHeaders
+        ? ((params) => promptAiSdkStream({ ...params, requestHeaders }))
+        : promptAiSdkStream,
     promptAiSdk: byok
       ? ((params) => promptAiSdk({ ...params, byok } as any))
-      : promptAiSdk,
+      : requestHeaders
+        ? ((params) => promptAiSdk({ ...params, requestHeaders }))
+        : promptAiSdk,
     promptAiSdkStructured: byok
       ? ((params) => promptAiSdkStructured({ ...params, byok } as any))
-      : promptAiSdkStructured,
+      : requestHeaders
+        ? ((params) => promptAiSdkStructured({ ...params, requestHeaders }) as any)
+        : promptAiSdkStructured,
 
     // Mutable State
     databaseAgentCache: byok ? new Map() : databaseAgentCache,

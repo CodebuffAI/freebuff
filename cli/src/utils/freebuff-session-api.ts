@@ -26,12 +26,17 @@ import {
 } from '@codebuff/common/constants/freebuff-models'
 
 import {
+  FREEBUFF_CATALOG_FETCH_HEADER,
   FREEBUFF_CATALOG_PROTOCOL_HEADER,
   FREEBUFF_CATALOG_PROTOCOL_VERSION,
   FREEBUFF_CATALOG_STALE_ERROR,
 } from '@codebuff/common/types/freebuff-model-catalog'
 
 import { useFreebuffCatalogStore } from '../state/freebuff-catalog-store'
+import {
+  freebuffDeviceHeaders,
+  noteFreebuffDeviceKeyError,
+} from './freebuff-device-key'
 import { freebuffCatalogHandleFor } from './freebuff-model-directory'
 
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
@@ -193,7 +198,9 @@ type FreebuffSessionCallOptions = {
  *
  * In catalog mode (docs/freebuff-model-catalog.md) every call carries the
  * catalog protocol header, so the server answers with catalog keys, and an
- * admission's `model` is a KEY that goes out as the row's HANDLE. A handle the
+ * admission's `model` is a KEY that goes out as the row's HANDLE. Every call
+ * also carries the held catalog's fetch id and this install's device
+ * signature (freebuff-device-key.ts), when there is one. A handle the
  * server no longer accepts comes back as 409 `freebuff_catalog_stale`: the
  * catalog is refetched once and the request retried once with the new handle
  * for the same key. A second refusal is surfaced like any other failure.
@@ -261,6 +268,7 @@ async function requestFreebuffSession(
   }
   if (catalog) {
     headers[FREEBUFF_CATALOG_PROTOCOL_HEADER] = FREEBUFF_CATALOG_PROTOCOL_VERSION
+    if (catalog.fetchId) headers[FREEBUFF_CATALOG_FETCH_HEADER] = catalog.fetchId
   }
   if ((multiSession || method !== 'POST') && opts.instanceId) {
     headers[FREEBUFF_INSTANCE_HEADER] = opts.instanceId
@@ -287,6 +295,17 @@ async function requestFreebuffSession(
     method === 'DELETE' && attemptId
       ? `${sessionEndpoint(method)}/attempt`
       : sessionEndpoint(method)
+  if (catalog) {
+    // Session calls send no body; the signature covers the empty one.
+    Object.assign(
+      headers,
+      await freebuffDeviceHeaders(token, {
+        method,
+        url: endpoint,
+        fetchId: catalog.fetchId,
+      }),
+    )
+  }
   const response = await fetch(endpoint, {
     method,
     headers,
@@ -360,6 +379,7 @@ async function requestFreebuffSession(
     } catch {
       // Non-JSON errors have no machine-readable code.
     }
+    if (catalog) noteFreebuffDeviceKeyError(token, endpoint, errorCode)
     throw new FreebuffSessionRequestError(
       `freebuff session ${method} failed: ${response.status} ${sanitizeTerminalText(text.slice(0, 200))}`,
       response.status,

@@ -29,6 +29,7 @@ import {
   FREEBUFF_CATALOG_PROTOCOL_VERSION,
   FREEBUFF_CATALOG_STALE_ERROR,
   FREEBUFF_MODEL_CATALOG_PATH,
+  listableFreebuffCatalogRows,
   parseFreebuffModelCatalog,
 } from '@codebuff/common/types/freebuff-model-catalog'
 import {
@@ -45,6 +46,10 @@ import {
 } from '../state/freebuff-catalog-store'
 import { useFreebuffChatStore } from '../state/freebuff-chat-store'
 import { useFreebuffModelStore } from '../state/freebuff-model-store'
+import {
+  freebuffDeviceHeaders,
+  noteFreebuffDeviceKeyError,
+} from './freebuff-device-key'
 import { freebuffApiBaseUrl } from './freebuff-session-api'
 import { logger } from './logger'
 import {
@@ -84,22 +89,36 @@ export async function fetchFreebuffModelCatalog(
     baseUrl?: string
     signal?: AbortSignal
     timeoutMs?: number
+    /** The device headers for this GET (freebuff-device-key.ts); `{}` sends
+     *  it unsigned. */
+    deviceHeaders?: typeof freebuffDeviceHeaders
   } = {},
 ): Promise<FreebuffCatalogFetchResult> {
   const {
     fetchImpl = fetch,
     baseUrl = freebuffApiBaseUrl(),
     timeoutMs = CATALOG_FETCH_TIMEOUT_MS,
+    deviceHeaders = freebuffDeviceHeaders,
   } = opts
+  const url = `${baseUrl}${FREEBUFF_MODEL_CATALOG_PATH}`
+  // Registration waits until this process has seen the server speak the
+  // catalog, so a server that predates it sees exactly the old traffic; a key
+  // registered earlier signs this GET in either mode.
+  const signature = await deviceHeaders(
+    token,
+    { method: 'GET', url },
+    { register: getFreebuffCatalog() !== null },
+  )
   const timeout = AbortSignal.timeout(timeoutMs)
   let response: Response
   try {
-    response = await fetchImpl(`${baseUrl}${FREEBUFF_MODEL_CATALOG_PATH}`, {
+    response = await fetchImpl(url, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
         [FREEBUFF_CATALOG_PROTOCOL_HEADER]: FREEBUFF_CATALOG_PROTOCOL_VERSION,
         [FREEBUFF_CLIENT_HEADER]: FREEBUFF_CATALOG_CLIENT_CLI,
+        ...signature,
       },
       signal: opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout,
     })
@@ -116,14 +135,22 @@ export async function fetchFreebuffModelCatalog(
   ) {
     return { kind: 'error', status: response.status }
   }
-  if (!response.ok) return { kind: 'unsupported', status: response.status }
+  if (!response.ok) {
+    const failure = (await response.json().catch(() => null)) as {
+      error?: unknown
+    } | null
+    if (typeof failure?.error === 'string')
+      noteFreebuffDeviceKeyError(token, url, failure.error)
+    return { kind: 'unsupported', status: response.status }
+  }
   const body = await response.json().catch(() => undefined)
   // Every string in a row is drawn in the terminal, so escape sequences are
   // stripped before anything reads it — the same rule as session responses.
   const catalog = parseFreebuffModelCatalog(sanitizeTerminalStrings(body))
-  // A catalog with no rows leaves the picker nothing to draw; the compiled
-  // one is the better answer, and the server refuses what it must anyway.
-  return catalog && catalog.rows.length > 0
+  // A catalog with no rows it may list leaves the picker nothing to draw;
+  // the compiled one is the better answer, and the server refuses what it
+  // must anyway. (Rows that have not opened are dropped when it is held.)
+  return catalog && listableFreebuffCatalogRows(catalog).length > 0
     ? { kind: 'ok', catalog }
     : { kind: 'unsupported', status: response.status }
 }
@@ -185,9 +212,15 @@ export function applyFreebuffCatalog(next: FreebuffModelCatalog | null): void {
     const selected = modelStore.selectedModel
     if (directory.row(selected)?.key !== selected) {
       const savedKey = loadFreebuffModelKeyPreference()
+      // A saved key is the newest pick (a compiled pick clears it), so when it
+      // names no row this client may list — retired, or a row that has not
+      // opened — the older compiled selection does not get a say either: the
+      // recommendation does.
       modelStore.setSelectedModel(
-        savedKey && directory.row(savedKey)?.key === savedKey
-          ? savedKey
+        savedKey
+          ? directory.row(savedKey)?.key === savedKey
+            ? savedKey
+            : directory.recommendedModelId('full')
           : (directory.row(selected)?.key ??
               directory.recommendedModelId('full')),
       )

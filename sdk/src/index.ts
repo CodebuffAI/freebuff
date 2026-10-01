@@ -88,7 +88,10 @@ export type { ValidationResult, ValidateAgentsOptions } from './validate-agents'
 export {
   setFreeModeCapacityDeferralListener,
 } from './impl/model-provider'
-export type { FreeModeCapacityDeferral } from './impl/model-provider'
+export type {
+  CodebuffRequestHeadersProvider,
+  FreeModeCapacityDeferral,
+} from './impl/model-provider'
 
 // Error utilities
 export {

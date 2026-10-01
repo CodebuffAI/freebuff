@@ -4,6 +4,7 @@ import { CodebuffClient } from '@codebuff/sdk'
 
 import { getAuthTokenDetails } from './auth'
 import { getCliEnv, getSystemProcessEnv } from './env'
+import { freebuffCatalogCompletionHeaders } from './freebuff-device-key'
 import { loadAgentDefinitions } from './local-agent-registry'
 import { logger } from './logger'
 import { createTraceWriter } from './trace-writer'
@@ -85,6 +86,15 @@ export async function getCodebuffClient(
       clientInstance = new CodebuffClient({
         ...(apiKey ? { apiKey } : {}),
         ...(options.byok ? { byok: options.byok } : {}),
+        // Catalog mode only: the fetch id and device signature on every
+        // completions request (docs/freebuff-model-catalog.md). Fallback mode
+        // adds nothing, and BYOK requests never consult it.
+        ...(apiKey
+          ? {
+              requestHeaders: (request) =>
+                freebuffCatalogCompletionHeaders(apiKey, request),
+            }
+          : {}),
         cwd: projectRoot,
         // Keeps the model's skill list identical to the one the registry shows
         // (utils/skill-registry.ts). The SDK default is project-only so that a
