@@ -6,7 +6,7 @@ export const FREEBUFF_POLICY_METADATA = {
   version: '2026-09-02',
   effectiveDate: POLICY_EFFECTIVE_DATE,
   codebaseEvaluationNarrowedDate: CODEBASE_EVALUATION_NARROWED_DATE,
-  lastUpdated: '09/25/2026',
+  lastUpdated: '10/01/2026',
   privacyPolicyLastUpdated: '10/01/2026',
 } as const
 
