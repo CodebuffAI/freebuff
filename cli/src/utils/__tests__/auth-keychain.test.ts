@@ -15,6 +15,7 @@ import {
   saveUserCredentials,
 } from '../auth'
 import { setSecretStoreForTests, type SecretStore } from '../auth-token-store'
+import { logger } from '../logger'
 
 import type { User } from '../auth'
 
@@ -128,6 +129,81 @@ describe('Freebuff auth token in the OS keychain', () => {
     setSecretStoreForTests(memoryStore({ failGet: true }).store)
     await loadStoredAuthToken()
     expect(getUserCredentials()).toBeNull()
+  })
+
+  describe('the file 0.2.4 writes, read on every render', () => {
+    // Byte-for-byte the shape `moveTokenToKeychain` leaves on disk: the
+    // profile with `tokenStore: 'keychain'` and no `authToken`. Pre-0.2.4
+    // builds required `default.authToken` and threw a ZodError at
+    // ["default","authToken"] on every read of this file (2026-10-01).
+    const KEYCHAIN_FILE = JSON.stringify(
+      {
+        default: {
+          id: TEST_USER.id,
+          name: TEST_USER.name,
+          email: TEST_USER.email,
+          fingerprintId: 'enhanced-cli-fp',
+          fingerprintHash: 'fp-hash',
+          tokenStore: 'keychain',
+        },
+      },
+      null,
+      2,
+    )
+
+    const writeFile = (content: string) => {
+      fs.mkdirSync(path.dirname(credentialsPath), { recursive: true })
+      fs.writeFileSync(credentialsPath, content, { mode: 0o600 })
+    }
+
+    let errorSpy: ReturnType<typeof spyOn>
+
+    beforeEach(() => {
+      authModule.resetCredentialsFailureLogForTests()
+      errorSpy = spyOn(logger, 'error').mockImplementation(() => {})
+    })
+
+    afterEach(() => {
+      errorSpy.mockRestore()
+    })
+
+    test('signed in with the keychain token, for every token reader', async () => {
+      writeFile(KEYCHAIN_FILE)
+      const { store } = memoryStore()
+      await store.set(TEST_USER.authToken)
+      setSecretStoreForTests(store)
+      await loadStoredAuthToken()
+
+      for (let i = 0; i < 50; i++) {
+        expect(getUserCredentials()?.authToken).toBe(TEST_USER.authToken)
+        expect(getAuthToken()).toBe(TEST_USER.authToken)
+      }
+      expect(getUserCredentials()?.email).toBe(TEST_USER.email)
+      // Loading must not rewrite the pointer file.
+      expect(fs.readFileSync(credentialsPath, 'utf8')).toBe(KEYCHAIN_FILE)
+      expect(errorSpy).not.toHaveBeenCalled()
+    })
+
+    test('no keychain token this run: signed out quietly, nothing logged', () => {
+      writeFile(KEYCHAIN_FILE)
+      setSecretStoreForTests(null)
+
+      for (let i = 0; i < 50; i++) expect(getUserCredentials()).toBeNull()
+      expect(errorSpy).not.toHaveBeenCalled()
+    })
+
+    test('an unreadable file logs once per distinct failure, not once per read', () => {
+      setSecretStoreForTests(null)
+      writeFile('{"default": {"email": ')
+      for (let i = 0; i < 100; i++) expect(getUserCredentials()).toBeNull()
+      expect(errorSpy).toHaveBeenCalledTimes(1)
+      expect(errorSpy.mock.calls[0]?.[1]).toBe('Error parsing user JSON')
+
+      // A different failure is new information and is logged.
+      writeFile('not json at all')
+      for (let i = 0; i < 100; i++) expect(getUserCredentials()).toBeNull()
+      expect(errorSpy).toHaveBeenCalledTimes(2)
+    })
   })
 
   test('logout removes the keychain item too', async () => {

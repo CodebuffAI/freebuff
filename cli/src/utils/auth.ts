@@ -88,6 +88,37 @@ const tightenCredentialsFileMode = (credentialsPath: string): void => {
 }
 
 /**
+ * Distinct credentials read/parse failures already logged by this process.
+ *
+ * The credentials file is re-read on every render of the app shell
+ * (`useAuthQuery` / `useAuthState` call `getUserCredentials()` in the render
+ * body), so a file this process cannot parse used to log an error on every
+ * frame. On 2026-10-01 a pre-0.2.4 CLI left running beside a 0.2.4 one (which
+ * moved the token to the keychain) logged "Error parsing user JSON" ~11 times
+ * a second per user, 35k lines per 20 minutes. One line per distinct failure
+ * says everything; the rest is ingest cost. Bounded so a file that changes
+ * shape forever cannot grow it without limit.
+ */
+const loggedCredentialsFailures = new Set<string>()
+const MAX_LOGGED_CREDENTIALS_FAILURES = 20
+
+const logCredentialsFailureOnce = (
+  key: string,
+  data: Record<string, unknown>,
+  message: string,
+): void => {
+  if (loggedCredentialsFailures.has(key)) return
+  if (loggedCredentialsFailures.size >= MAX_LOGGED_CREDENTIALS_FAILURES) return
+  loggedCredentialsFailures.add(key)
+  logger.error(data, message)
+}
+
+/** Test-only: forget which credentials failures were already logged. */
+export const resetCredentialsFailureLogForTests = (): void => {
+  loggedCredentialsFailures.clear()
+}
+
+/**
  * Parse user from JSON string
  */
 const userFromJson = (
@@ -108,9 +139,11 @@ const userFromJson = (
       (tokenStore === 'keychain' ? getCachedKeychainToken() : undefined)
     return authToken ? { ...stored, authToken } : undefined
   } catch (error) {
-    logger.error(
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    logCredentialsFailureOnce(
+      `parse:${profileName}:${errorMessage}`,
       {
-        errorMessage: error instanceof Error ? error.message : String(error),
+        errorMessage,
         errorStack: error instanceof Error ? error.stack : undefined,
         profileName,
       },
@@ -138,10 +171,10 @@ export const getUserCredentials = (): User | null => {
     const user = userFromJson(credentialsFile)
     return user || null
   } catch (error) {
-    logger.error(
-      {
-        error: error instanceof Error ? error.message : String(error),
-      },
+    const message = error instanceof Error ? error.message : String(error)
+    logCredentialsFailureOnce(
+      `read:${message}`,
+      { error: message },
       'Error reading credentials',
     )
     return null
