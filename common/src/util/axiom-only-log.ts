@@ -322,6 +322,23 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    */
   first_party_arm_bucket: 'number',
   /**
+   * The model-routed first-party leg (`firstPartyModelArmForRequest` in
+   * `ad-experiment.ts`). `first_party_model_arm` is the arm (`off` whenever the
+   * percent knob is 0) and `_arm_bucket` its sticky 0-9999 bucket, present only
+   * once the arm hashed. The rest describe the leg on a `routed` request: the
+   * active model's id and version, its `first_party_model_outcome`
+   * (`served_by_model` or a `fallback_*`), how many candidates it scored and
+   * how long scoring took. Never a bare `model` key -- that name is an LLM id on
+   * every other stream in this dataset.
+   */
+  first_party_model_arm: 'string',
+  first_party_model_arm_bucket: 'number',
+  first_party_model_id: 'string',
+  first_party_model_version: 'string',
+  first_party_model_outcome: 'string',
+  first_party_model_scored_count: 'number',
+  first_party_model_score_ms: 'number',
+  /**
    * The eligibility census: two counts and two producer-encoded histogram
    * strings. `eligible_campaign_labels` comma-joins opaque allocation labels
    * (`unlabeled` for a campaign carrying none) and `exclusion_reasons` is
@@ -770,6 +787,21 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   ranker_fatigue_min_ppm: 'number',
   ranker_fatigue_mean_ppm: 'number',
   ranker_fatigue_disagreements: 'number',
+  /**
+   * The model-routed leg's decision (present only on that leg): the active
+   * model's id and version, the leg's `first_party_model_outcome`, how many
+   * candidates it scored, how long scoring took, and the top and runner-up
+   * scores in ppm. The full per-campaign score vector is keyed by campaign id,
+   * so -- like the ranker's picks above -- it stays OFF this stream and rides
+   * the ad-eval decision record instead (`firstPartyModel.scores`).
+   */
+  first_party_model_id: 'string',
+  first_party_model_version: 'string',
+  first_party_model_outcome: 'string',
+  first_party_model_scored_count: 'number',
+  first_party_model_score_ms: 'number',
+  first_party_model_top_score_ppm: 'number',
+  first_party_model_second_score_ppm: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 /** Settlement telemetry deliberately excludes impression, campaign, and

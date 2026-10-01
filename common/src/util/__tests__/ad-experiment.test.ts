@@ -8,6 +8,14 @@ import {
   firstPartyAdRouteForGeoRequest,
   firstPartyArmKey,
   FIRST_PARTY_ARM_SALT,
+  DEFAULT_FIRST_PARTY_MODEL_PERCENT,
+  FIRST_PARTY_MODEL_AD_ROUTE,
+  FIRST_PARTY_MODEL_ARM_SALT,
+  FIRST_PARTY_MODEL_OUTCOMES,
+  firstPartyModelArmBucket,
+  firstPartyModelArmForRequest,
+  firstPartyModelArmKey,
+  isFirstPartyModelOutcome,
   fnv1a,
   firstPartyPrimaryBucket,
   firstPartyPrimaryBasisPoints,
@@ -330,5 +338,98 @@ describe('sticky first-party arm (logged, not routed on)', () => {
     expect(firstPartyPrimaryBucket(rotated)).not.toBe(
       firstPartyPrimaryBucket(firstPartyArmKey('user-a')),
     )
+  })
+})
+
+describe('model-routed first-party arm', () => {
+  const tier1 = {
+    geoTier: 'tier1' as const,
+    excluded: false,
+    placementCount: 1,
+  }
+
+  test('defaults dark and owns a dated salt distinct from the logged arm', () => {
+    expect(DEFAULT_FIRST_PARTY_MODEL_PERCENT).toBe(0)
+    expect(FIRST_PARTY_MODEL_ARM_SALT).toBe('ads_first_party_model_arm_2026_10')
+    expect(FIRST_PARTY_MODEL_ARM_SALT).not.toBe(FIRST_PARTY_ARM_SALT)
+    expect(FIRST_PARTY_MODEL_AD_ROUTE).toBe('first_party_model')
+    expect(firstPartyModelArmKey('u1')).toMatch(/^fpm_/)
+    expect(firstPartyModelArmKey('u1')).not.toBe(firstPartyArmKey('u1'))
+  })
+
+  test('percent 0 is off before anything else, including a missing user', () => {
+    expect(firstPartyModelArmForRequest('u1', 0, tier1)).toBe('off')
+    expect(firstPartyModelArmForRequest(null, 0, tier1)).toBe('off')
+    expect(firstPartyModelArmForRequest('u1', Number.NaN, tier1)).toBe('off')
+    expect(firstPartyModelArmForRequest('u1', -5, tier1)).toBe('off')
+  })
+
+  test('applies the documented precedence', () => {
+    expect(firstPartyModelArmForRequest(undefined, 100, tier1)).toBe('no_user')
+    expect(
+      firstPartyModelArmForRequest('u1', 100, {
+        geoTier: 'tier2',
+        excluded: true,
+        placementCount: 3,
+      }),
+    ).toBe('excluded')
+    expect(
+      firstPartyModelArmForRequest('u1', 100, {
+        geoTier: 'unknown',
+        excluded: false,
+        placementCount: 2,
+      }),
+    ).toBe('multi_placement')
+    for (const geoTier of ['tier2', 'unknown'] as const) {
+      expect(
+        firstPartyModelArmForRequest('u1', 100, {
+          geoTier,
+          excluded: false,
+          placementCount: 1,
+        }),
+      ).toBe('geo_ineligible')
+    }
+    expect(firstPartyModelArmForRequest('u1', 100, tier1)).toBe('routed')
+  })
+
+  test('is sticky per user and samples close to the configured share', () => {
+    const N = 20_000
+    let routed = 0
+    for (let index = 0; index < N; index++) {
+      const userId = `user-${index}`
+      const arm = firstPartyModelArmForRequest(userId, 10, tier1)
+      expect(firstPartyModelArmForRequest(userId, 10, tier1)).toBe(arm)
+      expect(['routed', 'not_sampled']).toContain(arm)
+      if (arm === 'routed') {
+        routed++
+        expect(firstPartyModelArmBucket(userId)).toBeLessThan(1_000)
+      } else {
+        expect(firstPartyModelArmBucket(userId)).toBeGreaterThanOrEqual(1_000)
+      }
+    }
+    expect((routed / N) * 100).toBeGreaterThan(9)
+    expect((routed / N) * 100).toBeLessThan(11)
+  })
+
+  test('the bucket is the shared first-party bucket of the model arm key', () => {
+    expect(firstPartyModelArmBucket('u1')).toBe(
+      firstPartyPrimaryBucket(firstPartyModelArmKey('u1')),
+    )
+  })
+
+  test('a routed user stays routed as the share ramps up', () => {
+    for (let index = 0; index < 2_000; index++) {
+      const userId = `ramp-${index}`
+      if (firstPartyModelArmForRequest(userId, 5, tier1) === 'routed') {
+        expect(firstPartyModelArmForRequest(userId, 20, tier1)).toBe('routed')
+      }
+    }
+  })
+
+  test('outcome vocabulary is closed', () => {
+    expect(FIRST_PARTY_MODEL_OUTCOMES).toContain('served_by_model')
+    expect(isFirstPartyModelOutcome('fallback_no_scores')).toBe(true)
+    expect(isFirstPartyModelOutcome('model')).toBe(false)
+    expect(isFirstPartyModelOutcome(undefined)).toBe(false)
   })
 })
