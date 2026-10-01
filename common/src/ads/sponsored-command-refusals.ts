@@ -11,11 +11,25 @@
  * - `container`: building, starting, stopping, removing or pushing containers
  *   and images, which may be the user's running services.
  *
+ * The same walk answers two more kinds:
+ *
+ * - `git`: a git subcommand that moves history or configuration, judged only
+ *   when the caller asks for it (`sponsoredRefusedGitSubcommand`, in-place
+ *   runs);
+ * - `unverifiable`: a command line the walk could not finish reading —
+ *   wrappers nested deeper than it follows, or a form it does not read. It
+ *   FAILS CLOSED: what the walk did not read is what it cannot vouch for.
+ *
  * Like the install refusal, these are sentences the MODEL reads, answered
  * before the command reaches a shell.
  */
 
-export type SponsoredCommandRefusalKind = 'wsl' | 'database' | 'container'
+export type SponsoredCommandRefusalKind =
+  | 'wsl'
+  | 'database'
+  | 'container'
+  | 'git'
+  | 'unverifiable'
 
 export type SponsoredRefusedCommand = {
   kind: SponsoredCommandRefusalKind
@@ -29,7 +43,21 @@ export type SponsoredRefusedCommand = {
  */
 type Token = { text: string; quoted: boolean; literal: boolean }
 
+/** How many wrappers deep the walk reads before it refuses the line. */
 const MAX_DEPTH = 6
+
+/** What the walk judges besides the three COD-665 classes. */
+type Judge = {
+  /** Git subcommands to refuse; null when git is not being judged. */
+  git: ReadonlySet<string> | null
+}
+
+const COMMAND_CLASSES_ONLY: Judge = { git: null }
+
+const TOO_DEEP: SponsoredRefusedCommand = {
+  kind: 'unverifiable',
+  invocation: `a command line with wrappers nested more than ${MAX_DEPTH} deep`,
+}
 
 // ------------------------------------------------------------------- lexing
 
@@ -762,12 +790,15 @@ function analyzeRest(
   rest: Token[],
   platform: string,
   depth: number,
+  judge: Judge,
 ): SponsoredRefusedCommand | null {
   // `sh -c -- "…"`: the `--` ends the shell's options.
   if (rest[0]?.text === '--' && !rest[0].quoted) rest = rest.slice(1)
   if (rest.length === 0) return null
-  if (rest[0]!.quoted) return analyzeCommandLine(rest[0]!.text, platform, depth)
-  return analyzeSegment(rest, platform, depth)
+  if (rest[0]!.quoted) {
+    return analyzeCommandLine(rest[0]!.text, platform, depth, judge)
+  }
+  return analyzeSegment(rest, platform, depth, judge)
 }
 
 /**
@@ -841,8 +872,11 @@ function analyzeSegment(
   tokens: Token[],
   platform: string,
   depth: number,
+  judge: Judge,
 ): SponsoredRefusedCommand | null {
-  if (depth > MAX_DEPTH) return null
+  // Fails closed: a wrapper chain deeper than the walk reads is refused, not
+  // waved through unread.
+  if (depth > MAX_DEPTH) return tokens.length > 0 ? TOO_DEEP : null
 
   // A double-quoted argument still runs `$(…)` and backticks inside it; a
   // single-quoted one (`echo 'run \`docker compose up\`' >> README.md`) does
@@ -855,9 +889,15 @@ function analyzeSegment(
         token.text.slice(nested.index + nested[0].length),
         platform,
         depth + 1,
+        judge,
       )
       if (found) return found
     }
+  }
+
+  if (judge.git) {
+    const found = refusedGitInvocation(tokens, judge.git)
+    if (found) return found
   }
 
   const index = commandStart(tokens)
@@ -870,7 +910,7 @@ function analyzeSegment(
   // `npm exec -c "…"`, `& "docker compose up"`. A quoted path with a space in
   // it (`"C:\Program Files\…\bash.exe"`) re-lexes to nothing and falls through.
   if (headToken.quoted && /\s/.test(headToken.text.trim())) {
-    const found = analyzeCommandLine(headToken.text, platform, depth + 1)
+    const found = analyzeCommandLine(headToken.text, platform, depth + 1, judge)
     if (found) return found
   }
 
@@ -892,7 +932,7 @@ function analyzeSegment(
     )
     return flagIndex < 0
       ? null
-      : analyzeRest(args.slice(flagIndex + 1), platform, depth + 1)
+      : analyzeRest(args.slice(flagIndex + 1), platform, depth + 1, judge)
   }
   if (head === 'cmd') {
     const flagIndex = args.findIndex((token) => /^\/[ck]/i.test(token.text))
@@ -904,8 +944,9 @@ function analyzeSegment(
           [attached, ...args.slice(flagIndex + 1).map((t) => t.text)].join(' '),
           platform,
           depth + 1,
+          judge,
         )
-      : analyzeRest(args.slice(flagIndex + 1), platform, depth + 1)
+      : analyzeRest(args.slice(flagIndex + 1), platform, depth + 1, judge)
   }
   if (POWERSHELLS.has(head)) {
     let flagIndex = 0
@@ -913,11 +954,16 @@ function analyzeSegment(
       const text = args[flagIndex]!.text
       // Windows PowerShell reads its first plain argument as the command.
       if (!/^[-/]/.test(text) || args[flagIndex]!.quoted) {
-        return analyzeRest(args.slice(flagIndex), platform, depth + 1)
+        return analyzeRest(args.slice(flagIndex), platform, depth + 1, judge)
       }
       const option = text.slice(1).toLowerCase()
       if (option.length > 0 && 'command'.startsWith(option)) {
-        return analyzeRest(args.slice(flagIndex + 1), platform, depth + 1)
+        return analyzeRest(
+          args.slice(flagIndex + 1),
+          platform,
+          depth + 1,
+          judge,
+        )
       }
       if (
         option === 'ec' ||
@@ -925,10 +971,13 @@ function analyzeSegment(
       ) {
         const decoded = decodePowerShellCommand(args[flagIndex + 1]?.text ?? '')
         return decoded === null
-          ? null
-          : analyzeCommandLine(decoded, platform, depth + 1)
+          ? { kind: 'unverifiable', invocation: `${head} -EncodedCommand` }
+          : analyzeCommandLine(decoded, platform, depth + 1, judge)
       }
-      if (option.length > 0 && 'file'.startsWith(option)) return null
+      // The commands a script file runs are not on the line to read.
+      if (option.length > 0 && 'file'.startsWith(option)) {
+        return { kind: 'unverifiable', invocation: `${head} -File` }
+      }
       flagIndex += POWERSHELL_VALUE_OPTIONS.has(option) ? 2 : 1
     }
     return null
@@ -938,6 +987,7 @@ function analyzeSegment(
       args.map((token) => token.text).join(' '),
       platform,
       depth + 1,
+      judge,
     )
   }
   if (head === 'start' || head === 'start-process' || head === 'saps') {
@@ -948,7 +998,7 @@ function analyzeSegment(
           token.text,
         ),
     )
-    return analyzeSegment(rest, platform, depth + 1)
+    return analyzeSegment(rest, platform, depth + 1, judge)
   }
   if (COMMAND_LIST_RUNNERS.has(head)) {
     for (const token of args) {
@@ -956,7 +1006,7 @@ function analyzeSegment(
       const found = shorthand
         ? refusedScript(`${shorthand[1]!.toLowerCase()} run`, shorthand[2]!, [])
         : token.quoted
-          ? analyzeCommandLine(token.text, platform, depth + 1)
+          ? analyzeCommandLine(token.text, platform, depth + 1, judge)
           : null
       if (found) return found
     }
@@ -979,7 +1029,7 @@ function analyzeSegment(
     while (start < args.length && isFlag(args[start]!.text)) {
       start += /^(-p|--package)$/.test(args[start]!.text) ? 2 : 1
     }
-    return analyzeSegment(args.slice(start), platform, depth + 1)
+    return analyzeSegment(args.slice(start), platform, depth + 1, judge)
   }
   if (SCRIPT_RUNNERS.has(head)) {
     let start = nextWord(args, 0, SCRIPT_RUNNER_VALUE_OPTIONS)
@@ -1002,7 +1052,7 @@ function analyzeSegment(
     const found = refusedScript(`${head} run`, target.text, targetArgs)
     if (found) return found
     // `yarn prisma migrate reset`, `bun run drizzle-kit push`.
-    return analyzeSegment([target, ...targetArgs], platform, depth + 1)
+    return analyzeSegment([target, ...targetArgs], platform, depth + 1, judge)
   }
 
   // ---- database
@@ -1105,18 +1155,69 @@ function linePassesDestructiveSql(
   ].some((text) => UNBOUNDED_DELETE.test(text))
 }
 
+// ---------------------------------------------------------------------- git
+
+/**
+ * Git's global options that take their value as the NEXT word
+ * (`git --git-dir <dir> commit`); the `--opt=value` spelling is one word.
+ */
+export const GIT_VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  '-c',
+  '-C',
+  '--git-dir',
+  '--work-tree',
+  '--namespace',
+  '--super-prefix',
+  '--attr-source',
+  '--config-env',
+])
+
+/**
+ * The first refused subcommand of any `git` in this segment, wherever it sits
+ * in it (`time git commit`, `GIT_DIR=x git commit`), under any spelling of
+ * the executable (`git.exe`, `C:\Program Files\Git\cmd\git.exe`,
+ * `/usr/bin/git`) and past git's global options and their values.
+ */
+function refusedGitInvocation(
+  tokens: Token[],
+  refused: ReadonlySet<string>,
+): SponsoredRefusedCommand | null {
+  for (let start = 0; start < tokens.length; start++) {
+    if (commandName(tokens[start]!.text) !== 'git') continue
+    let index = start + 1
+    while (index < tokens.length) {
+      const text = tokens[index]!.text
+      if (GIT_VALUE_OPTIONS.has(text)) {
+        index += 2
+      } else if (text.startsWith('-')) {
+        index += 1
+      } else {
+        break
+      }
+    }
+    const subcommand = tokens[index]?.text.toLowerCase()
+    if (subcommand && refused.has(subcommand)) {
+      return { kind: 'git', invocation: `git ${subcommand}` }
+    }
+  }
+  return null
+}
+
+// ------------------------------------------------------------------ the walk
+
 function analyzeCommandLine(
   command: string,
   platform: string,
   depth: number,
+  judge: Judge,
 ): SponsoredRefusedCommand | null {
-  if (depth > MAX_DEPTH) return null
+  if (depth > MAX_DEPTH) return command.trim() ? TOO_DEEP : null
   if (WSL_SHARE.test(command)) {
     return { kind: 'wsl', invocation: '\\\\wsl$' }
   }
   const segments = lexCommandLine(command)
   for (const segment of segments) {
-    const found = analyzeSegment(segment, platform, depth)
+    const found = analyzeSegment(segment, platform, depth, judge)
     if (found) return found
   }
   // `echo "docker compose up" | bash`, `bash <<< "…"`, `"wsl ls" | iex`: the
@@ -1134,7 +1235,7 @@ function analyzeCommandLine(
           .map((t) => t.text.replace(/^<<</, '')),
       ]
       for (const text of texts) {
-        const found = analyzeCommandLine(text, platform, depth + 1)
+        const found = analyzeCommandLine(text, platform, depth + 1, judge)
         if (found) return found
       }
     }
@@ -1160,11 +1261,33 @@ export function sponsoredRefusedCommand(
   command: string,
   platform: string,
 ): SponsoredRefusedCommand | null {
-  return analyzeCommandLine(command, platform, 0)
+  return analyzeCommandLine(command, platform, 0, COMMAND_CLASSES_ONLY)
+}
+
+/**
+ * The first subcommand in `refused` that a `git` anywhere on this command line
+ * runs, read through the same wrappers as {@link sponsoredRefusedCommand}
+ * (`bash -c "git commit"`, `cmd /c git commit`, `$(git commit)` …), or null.
+ *
+ * A line the walk cannot finish is NOT answered here: it comes back from
+ * `sponsoredRefusedCommand` as `unverifiable`, and every caller asks both.
+ * Judged as on Linux, so a bare `bash -c "…"` is unwrapped rather than
+ * answered as WSL (which `sponsoredRefusedCommand` refuses on Windows anyway).
+ */
+export function sponsoredRefusedGitInvocation(
+  command: string,
+  refused: ReadonlySet<string>,
+): string | null {
+  const found = analyzeCommandLine(command, 'linux', 0, { git: refused })
+  return found?.kind === 'git' ? found.invocation.slice('git '.length) : null
 }
 
 const STOP_AND_REPORT =
   'Do not try to reach the same result another way — not with a different command, script, shell, wrapper or path. Stop here and tell the user what the procedure needed this for, so they can decide whether to run it themselves.'
+
+export function sponsoredGitRefusal(subcommand: string): string {
+  return `Refusing \`git ${subcommand}\`: this sponsored task delivers its changes in the working copy, so it may not change the repository's history or configuration. Leave the edits uncommitted; the user reviews them and decides.`
+}
 
 export function sponsoredCommandRefusal(
   refused: SponsoredRefusedCommand,
@@ -1176,5 +1299,13 @@ export function sponsoredCommandRefusal(
       return `Refusing \`${refused.invocation}\`: a sponsored task may not drop, reset, wipe, roll back or force-seed a database. The database this project points at may be one the user's other checkouts, or production, rely on. ${STOP_AND_REPORT}`
     case 'container':
       return `Refusing \`${refused.invocation}\`: a sponsored task may not build, start, stop, restart, remove or push containers or images; they may be the user's running services, including production. Read-only commands such as \`docker ps\`, \`docker logs\` and \`docker compose config\` are allowed. ${STOP_AND_REPORT}`
+    case 'git':
+      return sponsoredGitRefusal(refused.invocation.replace(/^git /, ''))
+    case 'unverifiable':
+      return `Refusing ${
+        refused.invocation === TOO_DEEP.invocation
+          ? refused.invocation
+          : `\`${refused.invocation}\``
+      }: a sponsored task may only run commands that can be checked before they run, and this one cannot be. Run the commands it contains directly, one level deep, without the wrapper or script file. If the procedure cannot work that way, stop here and tell the user what it needed, so they can decide whether to run it themselves.`
   }
 }

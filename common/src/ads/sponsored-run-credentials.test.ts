@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import { scrubSponsoredLocalEnv } from './sponsored-local-execution'
 import {
+  SPONSORED_CREDENTIAL_TOO_DEEP,
   SPONSORED_OUTPUT_TRUNCATION_TEXT,
   SPONSORED_RUN_CREDENTIAL_MAX,
   declaredRunCredentials,
@@ -411,5 +412,32 @@ describe('redaction', () => {
     ])
     // Not mutated.
     expect(result[0]!.value.stdout).toContain(secret.value)
+  })
+
+  test('deep redaction does not stop silently past its depth limit', () => {
+    for (const levels of [33, 40, 200]) {
+      let nested: unknown = { stdout: `token=${secret.value}` }
+      for (let level = 0; level < levels; level++) {
+        nested = level % 2 === 0 ? [nested] : { inner: nested }
+      }
+      const serialized = JSON.stringify(
+        redactSponsoredCredentialDeep(nested, [secret]),
+      )
+      expect({ levels, leaked: serialized.includes(secret.value) }).toEqual({
+        levels,
+        leaked: false,
+      })
+      expect(serialized).toContain(SPONSORED_CREDENTIAL_TOO_DEEP)
+    }
+  })
+
+  test('a result within the depth limit is redacted in place, not replaced', () => {
+    let nested: unknown = `token=${secret.value}`
+    for (let level = 0; level < 30; level++) nested = [nested]
+    const serialized = JSON.stringify(
+      redactSponsoredCredentialDeep(nested, [secret]),
+    )
+    expect(serialized).toContain('token=[redacted:SIEVE_API_KEY]')
+    expect(serialized).not.toContain(SPONSORED_CREDENTIAL_TOO_DEEP)
   })
 })

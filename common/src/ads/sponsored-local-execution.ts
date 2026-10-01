@@ -47,6 +47,10 @@ import {
   type SponsoredToolDecision,
 } from './sponsored-capabilities'
 import {
+  GIT_VALUE_OPTIONS,
+  sponsoredRefusedGitInvocation,
+} from './sponsored-command-refusals'
+import {
   SPONSORED_WINDOWS_CONTAINMENT,
   SPONSORED_WINDOWS_EXECUTION_SURFACE,
   type SponsoredExecutionContainment,
@@ -748,23 +752,30 @@ const SPONSORED_REFUSED_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * `git`, `git.exe`, `/usr/bin/git`, `C:\Program Files\Git\cmd\git.exe`.
+ */
+const GIT_EXECUTABLE = /(^|[\\/])git(\.(exe|cmd|bat|com))?$/i
+
+/**
  * The first subcommand of each `git` invocation in a command line, lowercased.
  *
- * Splits on the shell's own separators and skips `git`'s global options
- * (`-C <dir>`, `-c k=v`, `--git-dir=…`), because the subcommand is what the
- * refusal is about and `git -C x commit` is a commit.
+ * Splits on the shell's own separators and skips `git`'s global options and
+ * their values (`-C <dir>`, `-c k=v`, `--git-dir <dir>`, `--git-dir=…`),
+ * because the subcommand is what the refusal is about and `git -C x commit` is
+ * a commit. A flat scan: wrappers are read by the walk in
+ * `sponsored-command-refusals.ts`, and {@link sponsoredRefusedGitSubcommand}
+ * asks both.
  */
 export function sponsoredGitSubcommands(command: string): string[] {
   const found: string[] = []
   for (const segment of command.split(/[;&|\n]+/)) {
     const tokens = segment.trim().split(/\s+/).filter(Boolean)
-    const start = tokens.findIndex((token) => /(^|\/)git$/i.test(token))
+    const start = tokens.findIndex((token) => GIT_EXECUTABLE.test(token))
     if (start < 0) continue
     let index = start + 1
     while (index < tokens.length) {
       const token = tokens[index]!
-      // `-C dir` and `-c k=v` take a following value; `--opt=value` does not.
-      if (token === '-C' || token === '-c') {
+      if (GIT_VALUE_OPTIONS.has(token)) {
         index += 2
         continue
       }
@@ -780,17 +791,20 @@ export function sponsoredGitSubcommands(command: string): string[] {
   return found
 }
 
-/** The refused subcommand this command line runs, or null. */
+/**
+ * The refused subcommand this command line runs, or null: the flat scan above,
+ * or a `git` reached through a wrapper (`bash -c "git commit"`,
+ * `cmd /c git commit`, `$(git commit)` …). A line too deeply nested to read
+ * is refused by `sponsoredRefusedCommand` as `unverifiable`, which every
+ * caller of this asks as well.
+ */
 export function sponsoredRefusedGitSubcommand(command: string): string | null {
   return (
     sponsoredGitSubcommands(command).find((subcommand) =>
       SPONSORED_REFUSED_GIT_SUBCOMMANDS.has(subcommand),
-    ) ?? null
+    ) ??
+    sponsoredRefusedGitInvocation(command, SPONSORED_REFUSED_GIT_SUBCOMMANDS)
   )
-}
-
-export function sponsoredGitRefusal(subcommand: string): string {
-  return `Refusing \`git ${subcommand}\`: this sponsored task delivers its changes in the working copy, so it may not change the repository's history or configuration. Leave the edits uncommitted; the user reviews them and decides.`
 }
 
 // --------------------------------------------------------- refused commands
@@ -800,6 +814,7 @@ export function sponsoredGitRefusal(subcommand: string): string {
 // its refusals from one module.
 export {
   sponsoredCommandRefusal,
+  sponsoredGitRefusal,
   sponsoredRefusedCommand,
 } from './sponsored-command-refusals'
 export type {
