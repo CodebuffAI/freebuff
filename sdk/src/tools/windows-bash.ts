@@ -206,6 +206,74 @@ export function findWindowsBash(
   return candidate && pathExists(candidate) ? candidate : null
 }
 
+function listDirectory(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir)
+  } catch {
+    return []
+  }
+}
+
+/** `app-3.4.10` before `app-3.4.9`: numeric per segment, newest first. */
+function compareAppVersionsDescending(a: string, b: string): number {
+  const parts = (name: string) => name.slice('app-'.length).split('.').map((n) => Number(n) || 0)
+  const [left, right] = [parts(a), parts(b)]
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const diff = (right[i] ?? 0) - (left[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+/**
+ * Every place a Git for Windows `git.exe` could be when PATH has none, in the order we would rather
+ * find it. Same roots as bash, for the same reason: a GUI app launched from the Start menu carries
+ * the PATH from when Explorer started, so a Git installed since is on disk but not on our PATH.
+ *
+ * GitHub Desktop is last. It bundles a complete Git it never puts on PATH, and it is how plenty of
+ * people who have never typed `git` came to have a cloned folder at all — the exact user who opens
+ * that folder in Freebuff and is told git is missing. Newest bundled version first.
+ */
+export function windowsGitCandidates(
+  env: NodeJS.ProcessEnv,
+  readDir: (dir: string) => string[] = listDirectory,
+): string[] {
+  const githubDesktop = env.LOCALAPPDATA
+    ? path.join(env.LOCALAPPDATA, 'GitHubDesktop')
+    : null
+  const bundled = githubDesktop
+    ? readDir(githubDesktop)
+        .filter((name) => /^app-\d/.test(name))
+        .sort(compareAppVersionsDescending)
+        .map((name) =>
+          path.join(githubDesktop, name, 'resources', 'app', 'git', 'cmd', 'git.exe'),
+        )
+    : []
+  return [
+    ...new Set([
+      ...gitRoots(env).map((root) => path.join(root, 'cmd', 'git.exe')),
+      ...bundled,
+    ]),
+  ]
+}
+
+/**
+ * The git.exe a Windows machine has outside PATH, or null. Like `findWindowsBash`, the filesystem
+ * is searched first and the registry only when it missed, and only for this machine's own env.
+ */
+export function findWindowsGit(
+  env: NodeJS.ProcessEnv,
+  registryRoot?: () => string | null,
+): string | null {
+  const found = windowsGitCandidates(env).find(pathExists)
+  if (found) return found
+  const read =
+    registryRoot ?? (env === getSystemProcessEnv() ? gitRootFromRegistry : () => null)
+  const root = read()
+  const candidate = root ? path.join(root, 'cmd', 'git.exe') : null
+  return candidate && pathExists(candidate) ? candidate : null
+}
+
 type CygpathSpawnResult = {
   status: number | null
   stdout: string
