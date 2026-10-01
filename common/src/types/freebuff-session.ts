@@ -1132,6 +1132,11 @@ export type FreebuffSessionAdmissionResponse = (
       retryAfterMs: number
       /** The way out of this refusal, when there is one to sell. */
       upgrade?: FreebuffUpgradeHint
+      /** Not a budget: the account must verify its identity first (the
+       *  account hub's Country tab, `upgrade.url`). Rides on `spend_limited`
+       *  because every shipped client already renders that shape; clients
+       *  that know the flag say so instead of "resets at midnight". */
+      verificationRequired?: true
     }
   | {
       /** Retired single-use Desktop claim; persist a new id before retrying. */

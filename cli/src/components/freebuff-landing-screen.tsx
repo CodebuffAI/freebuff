@@ -1027,10 +1027,25 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
             </>
           )}
 
+          {/* Identity verification required (docs/freebuff-id-verification.md):
+              not a budget, so no reset time. The message carries the link. */}
+          {session?.status === 'spend_limited' &&
+            session.verificationRequired && (
+              <>
+                <text style={{ fg: theme.secondary, marginBottom: 1 }}>
+                  🪪 ID verification required
+                </text>
+                <text style={{ fg: theme.muted, wrapMode: 'word' }}>
+                  {session.message} Press Ctrl+C to exit.
+                </text>
+              </>
+            )}
+
           {/* Daily provider-spend admission budget reached. Existing sessions
               are never interrupted; this screen only follows a rejected fresh
               admission and gives the user a friendly, concrete return time. */}
-          {session?.status === 'spend_limited' && (
+          {session?.status === 'spend_limited' &&
+            !session.verificationRequired && (
             <>
               <text style={{ fg: theme.secondary, marginBottom: 1 }}>
                 {metered
