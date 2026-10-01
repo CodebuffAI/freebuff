@@ -63,6 +63,7 @@ import {
   DEFAULT_SUGGESTED_PROMPTS,
   type SuggestedPromptSelection,
 } from './components/suggested-prompts'
+import { TodoPanel } from './components/todo-panel'
 import { TopBanner } from './components/top-banner'
 import { useChatRuntime } from './contexts/chat-runtime-context'
 import { getSlashCommandsWithSkills } from './data/slash-commands'
@@ -170,6 +171,9 @@ export const Chat = ({
   const [forceFileOnlyMentions, setForceFileOnlyMentions] = useState(false)
   const headerRef = useRef<BoxRenderable | null>(null)
   const [isHeaderVisible, setIsHeaderVisible] = useState(true)
+  const [todoPanelOpen, setTodoPanelOpen] = useState(false)
+  const chatSessionId = useChatStore((state) => state.chatSessionId)
+  useEffect(() => setTodoPanelOpen(false), [chatSessionId])
 
   // First-time onboarding: show clickable starter prompts until the user
   // submits their first prompt ever (persisted in settings). Freebuff only.
@@ -1220,6 +1224,26 @@ export const Chat = ({
   // open onto a panel for a queue that no longer exists.
   useEffect(() => () => useQueuePanelStore.getState().closeQueuePanel(), [])
 
+  // An approval, question or another panel takes priority over this read-only
+  // view. Close it rather than leave its global keyboard listener active.
+  useEffect(() => {
+    if (
+      reviewMode ||
+      askUserState !== null ||
+      queuePanelOpen ||
+      freebuffControlsOpen ||
+      sponsoredProposalMenuOpen
+    ) {
+      setTodoPanelOpen(false)
+    }
+  }, [
+    reviewMode,
+    askUserState,
+    queuePanelOpen,
+    freebuffControlsOpen,
+    sponsoredProposalMenuOpen,
+  ])
+
   const publishMutation = usePublishMutation()
 
   const handleCommandResult = useCallback(
@@ -1263,6 +1287,8 @@ export const Chat = ({
         else
           setMessages((prev) => [...prev, getSystemMessage('Nothing queued.')])
       }
+
+      if (result.openTodoPanel) setTodoPanelOpen(true)
     },
     [
       saveCurrentInput,
@@ -1431,6 +1457,12 @@ export const Chat = ({
     setInputFocused(true)
     inputRef.current?.focus()
   }, [closeQueuePanel, setInputFocused, inputRef])
+
+  const handleCloseTodoPanel = useCallback(() => {
+    setTodoPanelOpen(false)
+    setInputFocused(true)
+    inputRef.current?.focus()
+  }, [setInputFocused, inputRef])
 
   const handleReviewCustom = useCallback(() => {
     closeReviewScreen()
@@ -1817,6 +1849,7 @@ export const Chat = ({
       askUserState !== null ||
       reviewMode ||
       queuePanelOpen ||
+      todoPanelOpen ||
       sponsoredProposalMenuOpen ||
       freebuffControlsOpen,
   })
@@ -2030,6 +2063,7 @@ export const Chat = ({
     askUserState !== null ||
     reviewMode ||
     queuePanelOpen ||
+    todoPanelOpen ||
     sponsoredProposalMenuOpen ||
     isFreebuffSessionOver ||
     freebuffControlsOpen
@@ -2260,6 +2294,12 @@ export const Chat = ({
             onMove={moveQueuedMessage}
             onClose={handleCloseQueuePanel}
             width={separatorWidth}
+            maxVisibleRows={isCompactHeight ? 4 : 8}
+          />
+        ) : todoPanelOpen && !askUserState && !sponsoredProposalMenuOpen ? (
+          <TodoPanel
+            messages={messages}
+            onClose={handleCloseTodoPanel}
             maxVisibleRows={isCompactHeight ? 4 : 8}
           />
         ) : (

@@ -10,7 +10,9 @@ import { routeUserPrompt } from '../router'
 
 import type { RouterParams } from '../command-registry'
 
-const createMockParams = (overrides: Partial<RouterParams> = {}): RouterParams =>
+const createMockParams = (
+  overrides: Partial<RouterParams> = {},
+): RouterParams =>
   ({
     agentMode: 'DEFAULT',
     inputRef: { current: null },
@@ -44,6 +46,31 @@ afterEach(() => {
 })
 
 describe('mid-turn routing', () => {
+  test.each(['/todo', '/todos'])(
+    '%s opens locally during a run without queuing or steering',
+    async (command) => {
+      activateSteering('run-1')
+      const params = createMockParams({
+        inputValue: command,
+        isStreaming: true,
+        isChainInProgressRef: { current: true },
+        streamMessageIdRef: { current: 'running-message' },
+      })
+      const result = await routeUserPrompt(params)
+      expect(result).toEqual({ openTodoPanel: true })
+      expect(params.addToQueue).not.toHaveBeenCalled()
+      expect(params.sendMessage).not.toHaveBeenCalled()
+      expect(params.setMessages).not.toHaveBeenCalled()
+      expect(params.scrollToLatest).not.toHaveBeenCalled()
+      expect(drainSteeringMessages('run-1')).toEqual([])
+      expect(params.setInputValue).toHaveBeenCalledWith({
+        text: '',
+        cursorPosition: 0,
+        lastEditDueToNav: false,
+      })
+    },
+  )
+
   test('plain text steers the active run and echoes a bubble immediately', async () => {
     activateSteering('run-1')
     const params = createMockParams({

@@ -90,6 +90,7 @@ export type CommandResult = {
   openChatHistory?: boolean
   openReviewScreen?: boolean
   openQueuePanel?: boolean
+  openTodoPanel?: boolean
   preSelectAgents?: string[]
 } | void
 
@@ -735,6 +736,15 @@ const ALL_COMMANDS: CommandDefinition[] = [
         getSystemMessage(`Switched to ${newTheme} theme.`),
       ])
       clearInput(params)
+    },
+  }),
+  defineCommand({
+    name: 'todo',
+    aliases: ['todos'],
+    handler: (params) => {
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+      return { openTodoPanel: true }
     },
   }),
   defineCommandWithArgs({

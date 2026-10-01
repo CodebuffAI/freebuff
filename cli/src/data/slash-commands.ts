@@ -123,6 +123,12 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     aliases: ['queued'],
   },
   {
+    id: 'todo',
+    label: 'todo',
+    description: 'View the current checklist and progress',
+    aliases: ['todos'],
+  },
+  {
     id: 'new',
     label: 'new',
     description: 'Clear the conversation history and start a new chat',

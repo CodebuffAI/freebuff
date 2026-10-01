@@ -2,30 +2,40 @@ import { TextAttributes } from '@opentui/core'
 
 import { defineToolComponent } from './types'
 import { useTheme } from '../../hooks/use-theme'
+import { parseTodos } from '../../utils/todos'
 
 import type { ToolRenderConfig } from './types'
+import type { TodoItem } from '../../utils/todos'
 
 interface WriteTodosItemProps {
-  todos: Array<{ task: string; completed: boolean }>
+  todos: TodoItem[]
+  showHeader?: boolean
 }
 
-const WriteTodosItem = ({ todos }: WriteTodosItemProps) => {
+export const WriteTodosItem = ({
+  todos,
+  showHeader = true,
+}: WriteTodosItemProps) => {
   const theme = useTheme()
   const bulletChar = '• '
 
   return (
-    <box style={{ flexDirection: 'column', gap: 0, width: '100%' }}>
+    <box
+      style={{ flexDirection: 'column', flexShrink: 0, gap: 0, width: '100%' }}
+    >
       {/* Header line */}
-      <box
-        style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}
-      >
-        <text style={{ wrapMode: 'word' }}>
-          <span fg={theme.foreground}>{bulletChar}</span>
-          <span fg={theme.foreground} attributes={TextAttributes.BOLD}>
-            TODOs
-          </span>
-        </text>
-      </box>
+      {showHeader && (
+        <box
+          style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}
+        >
+          <text style={{ wrapMode: 'word' }}>
+            <span fg={theme.foreground}>{bulletChar}</span>
+            <span fg={theme.foreground} attributes={TextAttributes.BOLD}>
+              TODOs
+            </span>
+          </text>
+        </box>
+      )}
 
       {/* Todo items */}
       {todos.map((todo, index) => (
@@ -35,13 +45,14 @@ const WriteTodosItem = ({ todos }: WriteTodosItemProps) => {
             flexDirection: 'row',
             alignItems: 'center',
             width: '100%',
+            flexShrink: 0,
             paddingLeft: 2,
           }}
         >
-          <text style={{ wrapMode: 'word' }}>
+          <text style={{ wrapMode: 'word', width: '100%', flexShrink: 0 }}>
             {todo.completed ? (
               <>
-                <span fg={theme.success}>✓  </span>
+                <span fg={theme.success}>{'✓  '}</span>
                 <span
                   fg={theme.muted}
                   attributes={TextAttributes.STRIKETHROUGH}
@@ -51,7 +62,7 @@ const WriteTodosItem = ({ todos }: WriteTodosItemProps) => {
               </>
             ) : (
               <>
-                <span fg={theme.foreground}>☐  </span>
+                <span fg={theme.foreground}>{'☐  '}</span>
                 <span fg={theme.foreground}>{todo.task}</span>
               </>
             )}
@@ -72,17 +83,7 @@ export const WriteTodosComponent = defineToolComponent({
   render(toolBlock): ToolRenderConfig {
     const { input } = toolBlock
 
-    // Extract todos from input
-    let todos: Array<{ task: string; completed: boolean }> = []
-
-    if (Array.isArray(input?.todos)) {
-      todos = input.todos.filter(
-        (todo: any) =>
-          typeof todo === 'object' &&
-          typeof todo.task === 'string' &&
-          typeof todo.completed === 'boolean',
-      )
-    }
+    const todos = parseTodos(input) ?? []
 
     if (todos.length === 0) {
       return { content: null }
