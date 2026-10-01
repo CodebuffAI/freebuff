@@ -6,11 +6,21 @@ SHA-256 hash of the full absolute project path, resolved with Node's
 `path.resolve`. Different checkouts have separate histories even when their
 folder names match. Selecting the same path again restores its history.
 
+`path.resolve` normalizes relative paths and `..`, but does not resolve symlinks.
+Opening the same project through a different symlink path can therefore use a
+separate history directory. The key follows the path supplied to the CLI;
+it does not merge filesystem aliases.
+
 The production config directory defaults to `~/.config/manicode` on all
 platforms. `FREEBUFF_CONFIG_DIR` overrides it with an absolute path;
 development and test builds use `manicode-dev` and `manicode-test` respectively.
 
 ## Recovering history saved by older versions
+
+**Upgrade behavior:** Previously saved chats will not appear in `/history` or
+be available for continuation until you recover them. They have not been deleted.
+This behavior change should also be included in the release notes when the fix
+is shipped.
 
 Older versions stored chats under `<config-dir>/projects/<folder-name>/chats/`.
 That directory could contain chats from several unrelated projects with the
@@ -53,3 +63,5 @@ fs.cpSync(source, target, { recursive: true, force: false, errorOnExist: true })
 
 Restart the CLI in that project. The copied chat is now available in `/history`.
 Copy individual verified chats rather than the whole legacy history directory.
+If copying reports an error, check the source chat ID and paths. An existing
+target file is deliberately not overwritten; the original chat remains intact.
