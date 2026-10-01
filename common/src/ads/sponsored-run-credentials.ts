@@ -521,11 +521,22 @@ export function redactSponsoredCredentialText(
     .join('')
 }
 
+/** How deep {@link redactSponsoredCredentialDeep} walks before it gives up. */
+const REDACT_MAX_DEPTH = 32
+
+/**
+ * What stands in for anything nested deeper than the walk reads. The walk
+ * does not stop silently there: an unread subtree could hold the value.
+ */
+export const SPONSORED_CREDENTIAL_TOO_DEEP =
+  '[redacted: nested too deeply to check]'
+
 /**
  * Every string inside a tool result (arrays, plain objects, nested) redacted.
  * Object KEYS are redacted too: a JSON map keyed by an output line is still
- * output. Anything that is not a string, array or plain object is returned as
- * it is.
+ * output. An array or object nested deeper than the walk reads is replaced by
+ * {@link SPONSORED_CREDENTIAL_TOO_DEEP} whole. Anything else that is not a
+ * string, array or plain object is returned as it is.
  */
 export function redactSponsoredCredentialDeep<T>(
   value: T,
@@ -534,7 +545,8 @@ export function redactSponsoredCredentialDeep<T>(
   if (secrets.length === 0) return value
   const walk = (node: unknown, depth: number): unknown => {
     if (typeof node === 'string') return redactSponsoredCredentialText(node, secrets)
-    if (depth > 32 || node === null || typeof node !== 'object') return node
+    if (node === null || typeof node !== 'object') return node
+    if (depth > REDACT_MAX_DEPTH) return SPONSORED_CREDENTIAL_TOO_DEEP
     if (Array.isArray(node)) return node.map((item) => walk(item, depth + 1))
     const proto = Object.getPrototypeOf(node)
     if (proto !== Object.prototype && proto !== null) return node
