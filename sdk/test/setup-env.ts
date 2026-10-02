@@ -49,6 +49,9 @@ process.env.FREEBUFF_GOD_QUOTA_EXEMPT = 'on'
 delete process.env.FREEBUFF_ADS_SLACK_WEBHOOK_URL
 // Submission fixtures must never update real Loops contacts or enroll leads.
 process.env.FREEBUFF_ADS_LEAD_NURTURE = 'off'
+// Fixture users, prompts and signups must never reach Vectoral's real feed
+// with the production key. Vectoral's own tests inject `apiKey` and `fetch`.
+delete process.env.VECTORAL_API_KEY
 // The CPM leg defaults ON in production (COD-677: un-pausing an invoiced CPM
 // campaign is the only switch). Route tests written before that assume it
 // absent; the ones that exercise it set the knob themselves.
