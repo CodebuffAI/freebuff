@@ -981,8 +981,8 @@ const OX_ALPHA_REASONING_EFFORTS = ['low', 'high', 'max'] as const
  * The Merge Gateway DECLARES three values for this model
  * (`effort_values: ["low","high","max"]`), which is also a subset of
  * OpenRouter's enum and passes through CrofAI verbatim, so all three rungs of
- * the cascade mean the same thing and a divert cannot silently change depth
- * (see MERGE_VENDOR_ORDER for how often diverts happen). `max` is therefore
+ * the cascade mean the same thing and a divert cannot silently change depth.
+ * `max` is therefore
  * available on every lane; it is withheld here as a PRODUCT decision, not a
  * capability one.
  *
