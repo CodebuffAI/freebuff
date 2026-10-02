@@ -359,6 +359,18 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   ad_score_decode_ms: 'number',
   ad_score_ranked: 'boolean',
   /**
+   * The online feature store's SHADOW read (COD-755), on every request:
+   * `ad_features_lookup` is `not_read` (no leg asked: no user or no loaded
+   * book), `opted_out` (GPC; nothing read), `unconfigured` (no
+   * `AD_SERVING_REDIS_URL`), `disabled` (the rollout gate is off),
+   * `gate_unavailable` (the gate could not be read and was never read),
+   * `ready`, `unavailable` or `timeout`. `ad_features_ms` is the read's wall time,
+   * connect included, present only when a read was attempted. Nothing ranks
+   * on the read; the served vector rides the decision, never this line.
+   */
+  ad_features_lookup: 'string',
+  ad_features_ms: 'number',
+  /**
    * The eligibility census: two counts and two producer-encoded histogram
    * strings. `eligible_campaign_labels` comma-joins opaque allocation labels
    * (`unlabeled` for a campaign carrying none) and `exclusion_reasons` is
