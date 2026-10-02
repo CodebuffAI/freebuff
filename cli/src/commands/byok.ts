@@ -29,9 +29,28 @@ import type {
 import type { RouterParams } from './command-registry'
 
 export const BYOK_USAGE = [
-  'BYOK uses your provider account directly. Keys are read from an environment variable and never stored in Freebuff.',
-  'Use the environment-variable NAME only, for example OPENROUTER_API_KEY. Never paste an API key into this command.',
-  'Usage:',
+  'Use your own AI provider with BYOK. Freebuff saves the key variable name, not the key.',
+  '',
+  '**1. Set your API key in the terminal.**',
+  'Close Freebuff first. Use one command below. Replace `<your-provider-api-key>` with your key.',
+  "Bash / Zsh: `export PROVIDER_API_KEY='<your-provider-api-key>'`",
+  "Fish: `set -gx PROVIDER_API_KEY '<your-provider-api-key>'`",
+  "PowerShell: `$env:PROVIDER_API_KEY = '<your-provider-api-key>'`",
+  '',
+  '**2. Add your provider.**',
+  'Run `freebuff` in the same terminal. Then enter the command for your provider:',
+  'OpenRouter: `/byok add my-provider openrouter openai/gpt-oss-120b PROVIDER_API_KEY`',
+  'Ollama Cloud: `/byok add my-provider openai-compatible gpt-oss:120b PROVIDER_API_KEY https://ollama.com/v1`',
+  'Use `PROVIDER_API_KEY` as shown. Do not put your key in `/byok` commands.',
+  '',
+  '**3. Check the connection.**',
+  '`/byok validate my-provider`',
+  'Read the result before you continue. This check does not test whether the model can code.',
+  '',
+  '**4. Start a new chat with your provider.**',
+  '`/byok select my-provider`',
+  '',
+  '**Command reference**',
   '`/byok list`',
   '`/byok add <name> <openrouter|openai-compatible> <model> <ENV_VAR> [base-url] [--context-window=N] [--max-output-tokens=N]`',
   '`/byok update <name> <model> [base-url [ENV_VAR]] [--context-window=N] [--max-output-tokens=N]`',
@@ -275,8 +294,11 @@ const PASTE_HINT =
 function incompleteCommandMessage(usage: string, missing: string[]): string {
   // Placeholders go in code spans: the chat renders Markdown, where a bare
   // `<base-url>` reads as an HTML tag and disappears.
-  return `\`${usage}\` is missing ${missing.map((item) => `\`${item}\``).join(', ')}.\n${PASTE_HINT}`
+  return `\`${usage}\` is missing ${missing.map((item) => `\`${item}\``).join(', ')}.\n${PASTE_HINT}\nRun \`/byok help\` for terminal setup and complete examples.`
 }
+
+const KEY_REFERENCE_HELP =
+  'The key reference must be an environment-variable name such as PROVIDER_API_KEY. Use the NAME only, without `$`, `${...}`, `$env:`, `env:` or `=value`. Correct the name and retry; if it was already exported before Freebuff started, no restart is needed. Run `/byok help` for shell setup examples.'
 
 export async function handleByokCommand(
   params: RouterParams,
@@ -297,7 +319,7 @@ export async function handleByokCommand(
     if (looksLikeCredential(rawArgs)) {
       post(
         params,
-        'BYOK keys cannot be entered into the CLI. Export the key, then pass only its environment-variable name such as OPENROUTER_API_KEY.',
+        'BYOK keys cannot be entered into the CLI. Export the key, then pass only its environment-variable name such as OPENROUTER_API_KEY. Run `/byok help` for shell setup examples.',
       )
       return
     }
@@ -356,7 +378,7 @@ export async function handleByokCommand(
         return
       }
       if (!isByokEnvironmentVariableName(environmentVariable)) {
-        post(params, 'The key reference must be an environment-variable name such as OPENROUTER_API_KEY.')
+        post(params, KEY_REFERENCE_HELP)
         return
       }
       if (provider === 'openai-compatible' && !baseUrl) {
@@ -425,7 +447,7 @@ export async function handleByokCommand(
         }
       }
       if (environmentVariable && !isByokEnvironmentVariableName(environmentVariable)) {
-        post(params, 'The key reference must be an environment-variable name such as OMNIROUTE_API_KEY.')
+        post(params, KEY_REFERENCE_HELP)
         return
       }
       // A new endpoint receives the key, so the store refuses to carry the
