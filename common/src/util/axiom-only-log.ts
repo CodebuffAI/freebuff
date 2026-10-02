@@ -385,6 +385,12 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   // of Axiom so operational events remain scalar-only.
   attempted_provider_chain: 'string',
   experiment_arm: 'string',
+  /**
+   * Which ad Redis held this user's per-user ad state ('shared' |
+   * 'dedicated'); under FREEBUFF_AD_SERVING_REDIS=split it is the store A/B
+   * arm, the same value the request's `ad_impression.ad_redis_store` carries.
+   */
+  ad_redis_store: 'string',
   first_party_route: 'string',
   first_party_primary_percent: 'number',
   first_party_backfill_enabled: 'boolean',
