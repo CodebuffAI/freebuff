@@ -14,6 +14,17 @@ export type MessageRow = {
   upstream_inference_cost?: number | null
   input_tokens?: number | null
   cache_read_input_tokens?: number | null
+  /**
+   * Lookup columns (COD-753): what the admin trace viewer and the scripts
+   * filter on, so they can read the text from BigQuery once Postgres stops
+   * holding it. Added by scripts/migrate-bigquery-message-lookup-columns.ts.
+   */
+  client_request_id?: string | null
+  client_id?: string | null
+  agent_id?: string | null
+  model?: string | null
+  surface?: string | null
+  provider?: string | null
 }
 
 export type InsertMessageBigqueryFn = (params: {
