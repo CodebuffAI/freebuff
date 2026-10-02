@@ -239,6 +239,11 @@ export async function getUserInfoFromApiKey<T extends UserColumn>(
   ) as Awaited<GetUserInfoFromApiKeyOutput<T>>
 }
 
+/** Publisher and agent ids as the registry assigns them (`common/src/types/publisher.ts`, `dynamic-agent-template.ts`). */
+const PUBLISHED_ID_SEGMENT = /^[a-z0-9-]+$/
+/** Published versions are always `major.minor.patch` (`stringifyVersion`). */
+const PUBLISHED_VERSION = /^(latest|\d+\.\d+\.\d+)$/
+
 /**
  * Fetch a template from the public agent registry.
  *
@@ -265,9 +270,26 @@ export async function fetchAgentFromDatabase(
     readTrustedAgentPublishersEnv = getTrustedAgentPublishersFromEnv,
   } = params
   const { publisherId, agentId, version } = parsedAgentId
+  const requestedVersion = version ? version : 'latest'
+
+  // The trust gate below judges the REQUESTED publisher, so the URL must not be
+  // able to name another one: `codebuff/x@..\..\evil\payload\latest` resolves
+  // (WHATWG treats `\` as `/`) to evil's agent while the gate sees `codebuff`.
+  // Each segment is held to the shape the registry assigns.
+  if (
+    !PUBLISHED_ID_SEGMENT.test(publisherId) ||
+    !PUBLISHED_ID_SEGMENT.test(agentId) ||
+    !PUBLISHED_VERSION.test(requestedVersion)
+  ) {
+    logger.error(
+      { publisherId, agentId, version },
+      'fetchAgentFromDatabase: refused malformed published agent id',
+    )
+    return null
+  }
 
   const url = new URL(
-    `/api/v1/agents/${publisherId}/${agentId}/${version ? version : 'latest'}`,
+    `/api/v1/agents/${publisherId}/${agentId}/${requestedVersion}`,
     getWebsiteUrl(),
   )
 

@@ -142,6 +142,53 @@ describe('fetchAgentFromDatabase publisher trust', () => {
     expect(template!.handleSteps).toBeUndefined()
   })
 
+  test('untrusted publisher + mcpServers is refused: a stdio server spawns its command here', async () => {
+    serveRegistry(
+      '1.2.0',
+      makeRegistryTemplate({
+        mcpServers: {
+          helper: { type: 'stdio', command: 'sh', args: ['-c', 'echo pwned'] },
+        },
+      }),
+    )
+    await expect(fetchAs('acme')).rejects.toBeInstanceOf(
+      UntrustedAgentPublisherError,
+    )
+
+    serveRegistry(
+      '1.2.0',
+      makeRegistryTemplate({
+        mcpServers: { helper: { type: 'stdio', command: 'sh', args: [] } },
+      }),
+    )
+    const trusted = await fetchAs('acme', { trustedAgentPublishers: ['acme'] })
+    expect(Object.keys(trusted!.mcpServers)).toEqual(['helper'])
+  })
+
+  test('an id that would rewrite the registry path is refused before any request', async () => {
+    let fetched = 0
+    globalThis.fetch = (async () => {
+      fetched++
+      throw new Error('registry must not be reached')
+    }) as unknown as typeof fetch
+    for (const parsedAgentId of [
+      { publisherId: 'codebuff', agentId: 'x', version: '..\\..\\evil\\payload\\latest' },
+      { publisherId: 'codebuff', agentId: 'x', version: '../../evil/payload/latest' },
+      { publisherId: 'codebuff', agentId: 'x', version: '1.0.0?x=1' },
+      { publisherId: 'codebuff', agentId: '..', version: '1.0.0' },
+      { publisherId: '..\\evil', agentId: 'x', version: undefined },
+    ]) {
+      const template = await fetchAgentFromDatabase({
+        apiKey: 'test-api-key',
+        parsedAgentId,
+        logger: createLogger(),
+        readTrustedAgentPublishersEnv: () => undefined,
+      })
+      expect(template).toBeNull()
+    }
+    expect(fetched).toBe(0)
+  })
+
   test('trusted via CODEBUFF_TRUSTED_AGENT_PUBLISHERS (the real env read) loads', async () => {
     serveRegistry(
       '1.2.0',

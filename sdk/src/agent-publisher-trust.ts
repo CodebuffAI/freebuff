@@ -77,6 +77,23 @@ export function hasExecutableHandleSteps(
 }
 
 /**
+ * `mcpServers` is executable too: the runtime connects to every server a
+ * template lists on its first step, which for a stdio server means spawning
+ * its `command` on this machine, and for http/sse filling `$VAR` header
+ * placeholders from this process's environment and sending them to the
+ * template's URL.
+ */
+export function hasExecutableContent(
+  template: Pick<AgentTemplate, 'handleSteps'> &
+    Partial<Pick<AgentTemplate, 'mcpServers'>>,
+): boolean {
+  return (
+    hasExecutableHandleSteps(template) ||
+    Object.keys(template.mcpServers ?? {}).length > 0
+  )
+}
+
+/**
  * Thrown by the SDK's `fetchAgentFromDatabase` instead of returning the
  * template. It propagates through `getAgentTemplate` to whoever asked for the
  * agent: for the main agent that is the run's error output, which every host
@@ -97,9 +114,9 @@ export class UntrustedAgentPublisherError extends Error {
     const { publisherId, agentId, version } = params
     super(
       `Agent ${publisherId}/${agentId}@${version} contains executable handleSteps ` +
-        `from an untrusted publisher and was not loaded. Registry agents run their ` +
-        `handleSteps as code on this machine, so a publisher must be trusted ` +
-        `before its programmatic agents can run. To run it, set ` +
+        `or MCP servers from an untrusted publisher and was not loaded. Registry ` +
+        `agents run their handleSteps as code and start their MCP servers on this ` +
+        `machine, so a publisher must be trusted before such agents can run. To run it, set ` +
         `${TRUSTED_AGENT_PUBLISHERS_ENV_VAR}=${publisherId} (comma-separated for ` +
         `more than one) or pass trustedAgentPublishers: ['${publisherId}'] to ` +
         `the SDK client.`,
@@ -126,14 +143,15 @@ export function isUntrustedAgentPublisherError(
  * Returns `null` when it may, or the error to raise when it may not.
  */
 export function checkRemoteAgentTemplateTrust(params: {
-  template: Pick<AgentTemplate, 'handleSteps'>
+  template: Pick<AgentTemplate, 'handleSteps'> &
+    Partial<Pick<AgentTemplate, 'mcpServers'>>
   publisherId: string
   agentId: string
   version: string
   trustedPublishers: ReadonlySet<string>
 }): UntrustedAgentPublisherError | null {
   const { template, publisherId, agentId, version, trustedPublishers } = params
-  if (!hasExecutableHandleSteps(template)) return null
+  if (!hasExecutableContent(template)) return null
   if (trustedPublishers.has(publisherId)) return null
   return new UntrustedAgentPublisherError({ publisherId, agentId, version })
 }
