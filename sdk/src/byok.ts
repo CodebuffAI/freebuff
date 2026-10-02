@@ -6,6 +6,7 @@ import { z } from 'zod/v4'
 import { isByokReasoningEffort } from '@codebuff/common/constants/reasoning-effort'
 import type { ByokReasoningEffort } from '@codebuff/common/constants/reasoning-effort'
 import { getSystemProcessEnv } from './env'
+import { recoverByokLock } from './impl/byok-lock'
 
 export const BYOK_SECRET_SERVICE = 'com.freebuff.byok.v1'
 const envReference = /^env:[A-Za-z_][A-Za-z0-9_]*$/
@@ -1003,25 +1004,40 @@ export function createBunByokMetadataStore(
     async withLock(operation) {
       await fs.mkdir(directory, { recursive: true, mode: 0o700 })
       const started = Date.now()
-      let handle
-      while (!handle) {
-        try {
-          handle = await fs.open(lock, 'wx', 0o600)
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-          if (Date.now() - started >= 5000)
-            throw new Error(
-              'BYOK settings are locked. Close other Freebuff processes; if a process crashed, remove connections.lock from the BYOK configuration directory and retry.',
-            )
-          await new Promise((resolve) => setTimeout(resolve, 25))
-        }
-      }
+      const candidate = path.join(
+        directory,
+        `connections-lock-${crypto.randomUUID()}.tmp`,
+      )
+      let acquired = false
       try {
-        await handle.writeFile(String(process.pid))
+        // Publish an already-complete PID atomically. Creating an empty lock and
+        // then writing its owner leaves an unrecoverable lock if killed between.
+        await fs.writeFile(candidate, String(process.pid), {
+          flag: 'wx',
+          mode: 0o600,
+        })
+        while (!acquired) {
+          try {
+            await fs.link(candidate, lock)
+            acquired = true
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+            await recoverByokLock(lock)
+            if (Date.now() - started >= 5000)
+              throw new Error(
+                'BYOK settings are locked. Close other Freebuff processes and retry. If the problem persists, close all Freebuff processes before removing connections.lock from the BYOK configuration directory.',
+              )
+            await new Promise((resolve) => setTimeout(resolve, 25))
+          }
+        }
+        await fs.unlink(candidate)
         return await operation()
       } finally {
-        await handle.close()
-        await fs.unlink(lock)
+        try {
+          if (acquired) await fs.unlink(lock)
+        } finally {
+          await fs.unlink(candidate).catch(() => {})
+        }
       }
     },
   }
