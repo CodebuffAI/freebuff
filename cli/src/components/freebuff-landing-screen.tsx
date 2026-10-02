@@ -578,7 +578,8 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
       })
     : null
   // Under the perk: whether today's Freebucks landed and when the streak day
-  // rolls over, in this terminal's clock (the day itself is Pacific).
+  // rolls over, in this terminal's clock (the day is the account's own day
+  // since 2026-10-01, so normally "midnight").
   const streakBonusStatus = getFreebuffStreakBonusStatusForLayout({
     note: streakBonusNote,
     streak: streakQuery.data,

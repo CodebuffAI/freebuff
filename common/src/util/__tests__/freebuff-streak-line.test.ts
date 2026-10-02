@@ -247,3 +247,68 @@ describe('getFreebuffStreakBonusStatus', () => {
     ).toBeNull()
   })
 })
+
+// Since 2026-10-01 the streak day IS the account's allowance day, so the
+// server's `nextResetAt` (and `bonusExpiresAt`) is the account's own midnight.
+// A Dubai account, 8-day streak: the day ends at 20:00Z, Dubai midnight.
+describe('the streak day is the account day', () => {
+  const DUBAI_MIDNIGHT = '2026-10-01T20:00:00.000Z'
+  const dubai = {
+    streak: 8,
+    freebucksDailyBonus: 15,
+    nextResetAt: DUBAI_MIDNIGHT,
+    // 09:46 in Dubai on 2026-10-01: the report that started this.
+    now: new Date('2026-10-01T05:46:00.000Z'),
+    timeZone: 'Asia/Dubai',
+  }
+
+  test('a reader at home sees midnight, with the bonus lasting until it', () => {
+    expect(
+      getFreebuffStreakBonusStatus({
+        ...dubai,
+        todayUsed: true,
+        todayCredited: true,
+        bonusExpiresAt: DUBAI_MIDNIGHT,
+      }),
+    ).toBe(
+      "+15 added to today's allowance until midnight · next +15 with your first message after that",
+    )
+    expect(getFreebuffStreakBonusStatus({ ...dubai, todayUsed: true })).toBe(
+      'Next +15 with your first message after midnight',
+    )
+    expect(getFreebuffStreakBonusStatus({ ...dubai, todayUsed: false })).toBe(
+      'Send a message before midnight to earn +15',
+    )
+  })
+
+  test('a reader away from the account timezone gets a labelled clock time', () => {
+    expect(
+      getFreebuffStreakBonusStatus({
+        ...dubai,
+        todayUsed: true,
+        timeZone: 'Europe/London',
+      }),
+    ).toBe('Next +15 with your first message after 9:00 PM (your time)')
+  })
+
+  // The one interval after a timezone change runs past a day (UTC to Tokyo:
+  // from 00:00Z on the 15th to the Tokyo midnight that starts the 17th), so
+  // the copy names the weekday instead of a wrong "tomorrow" or "midnight".
+  test('a reset more than a day out names its weekday', () => {
+    const resetAt = new Date('2026-09-16T15:00:00.000Z')
+    expect(
+      formatFreebuffStreakResetTime({
+        resetAt,
+        now: new Date('2026-09-15T01:00:00.000Z'),
+        timeZone: 'Asia/Tokyo',
+      }),
+    ).toBe('12:00 AM Thursday')
+    expect(
+      formatFreebuffStreakResetTime({
+        resetAt,
+        now: new Date('2026-09-15T16:00:00.000Z'),
+        timeZone: 'Asia/Tokyo',
+      }),
+    ).toBe('midnight')
+  })
+})

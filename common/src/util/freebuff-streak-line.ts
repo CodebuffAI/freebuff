@@ -132,19 +132,33 @@ export function getFreebuffStreakBonusNote(params: {
   return `🎁 Streak perk: ${perk}`
 }
 
+/** Whole calendar days from `from` to `to` (both `YYYY-MM-DD`). */
+function calendarDaysBetween(from: string, to: string): number {
+  return Math.round(
+    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
+      86_400_000,
+  )
+}
+
 /**
- * When a streak day ends, as copy in the reader's clock: "midnight",
- * "3:00 PM", or "3:00 PM tomorrow" once that time of day has already passed
- * locally. `resetAt` is the server's `nextResetAt` (the next Pacific
- * midnight), always less than a day ahead, so a date is never needed.
+ * When a streak day ends, as copy in the reader's clock: "midnight" (the
+ * coming one), "3:00 PM", "3:00 PM tomorrow" once that time of day has
+ * already passed locally, or "3:00 PM Thursday" further out.
+ *
+ * `resetAt` is the server's `nextResetAt`. Since 2026-10-01 that is the daily
+ * allowance's reset, the account's own midnight, so a reader at home sees
+ * "midnight". Another clock time means the reader is away from the account's
+ * timezone (a remote CLI, travel) or talking to an older server whose streak
+ * day was Pacific. Only the one interval after a timezone change runs past a
+ * day (up to about two), which is what the weekday is for.
  *
  * `timeZone` defaults to the runtime's own zone — the user's, on the CLI, the
  * Desktop orchestrator and a browser. A server must pass one.
  *
  * `labelReaderClock` marks a clock time as the reader's: "11:00 AM (your
- * time)". East of Pacific the streak day turns over at an odd hour, and a bare
- * "11:00 AM" had a Dubai reader asking whether it meant server time or their
- * PC's (2026-10-01). "midnight" is left bare: it is the reader's own.
+ * time)". A bare "11:00 AM" had a Dubai reader asking whether it meant server
+ * time or their PC's (2026-10-01). "midnight" is left bare: it is the
+ * reader's own.
  */
 export function formatFreebuffStreakResetTime(params: {
   resetAt: Date
@@ -155,8 +169,12 @@ export function formatFreebuffStreakResetTime(params: {
   const timeZone =
     params.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
   const { hour, minute } = getZonedParts(params.resetAt, timeZone)
-  // Pacific readers (and anyone on its offset): the day ends tonight.
-  if (hour === 0 && minute === 0) return 'midnight'
+  const days = calendarDaysBetween(
+    getZonedYmd(params.now, timeZone),
+    getZonedYmd(params.resetAt, timeZone),
+  )
+  // The coming midnight: the day ends tonight.
+  if (hour === 0 && minute === 0 && days <= 1) return 'midnight'
   const time = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hour: 'numeric',
@@ -167,9 +185,14 @@ export function formatFreebuffStreakResetTime(params: {
     // draw it, and it throws off width math that counts columns.
     .replace(/\s/g, ' ')
   const when =
-    getZonedYmd(params.resetAt, timeZone) === getZonedYmd(params.now, timeZone)
+    days <= 0
       ? time
-      : `${time} tomorrow`
+      : days === 1
+        ? `${time} tomorrow`
+        : `${time} ${new Intl.DateTimeFormat('en-US', {
+            timeZone,
+            weekday: 'long',
+          }).format(params.resetAt)}`
   return params.labelReaderClock ? `${when} (your time)` : when
 }
 
@@ -182,9 +205,14 @@ export function formatFreebuffStreakResetTime(params: {
  * so a client never guesses the boundary.
  *
  * The rules it states are the award's (`awardFreebuffDailyStreakReward`): one
- * grant per Pacific day, made by the first free-mode message of that day,
- * which raises the daily allowance until the allowance's own reset
- * (`bonusExpiresAt`). Nothing here changes them.
+ * grant per account day — the daily allowance's own day, midnight to midnight
+ * in the account's timezone since 2026-10-01 — made by the first free-mode
+ * message of that day, which raises the allowance until its reset
+ * (`bonusExpiresAt`, the same instant as `nextResetAt`). A reader at home
+ * therefore sees "+15 added to today's allowance until midnight · next +15
+ * with your first message after that". Nothing here changes the rules. The
+ * branches for a bonus that expires before the streak day ends serve servers
+ * from before 2026-10-01, whose streak day was Pacific.
  */
 export function getFreebuffStreakBonusStatus(params: {
   streak: number
@@ -213,9 +241,9 @@ export function getFreebuffStreakBonusStatus(params: {
   const now = params.now ?? new Date()
   // A payload held past its own reset describes a day that is already over.
   if (!Number.isFinite(resetAt.getTime()) || resetAt <= now) return null
-  // East of Pacific the next streak day starts at an odd hour of the reader's
-  // clock, which they misread as server time; label it. "midnight" (the
-  // allowance's reset for a reader at home) stays bare.
+  // A next streak day that starts at an odd hour of the reader's clock (away
+  // from the account's timezone, or an older Pacific-day server) was misread
+  // as server time; label it. "midnight" (the reader at home) stays bare.
   const when = formatFreebuffStreakResetTime({
     resetAt,
     now,
@@ -224,8 +252,9 @@ export function getFreebuffStreakBonusStatus(params: {
   })
   if (params.todayCredited === true) {
     // The bonus lives in the DAILY allowance and leaves with it at the
-    // allowance's reset (local midnight in the account's reset zone), which is
-    // not the streak day's Pacific reset. Say both, in the reader's clock.
+    // allowance's reset. Since 2026-10-01 that is also when the streak day
+    // ends (one sentence below); an older server's Pacific streak day ended
+    // at another time, so say both, in the reader's clock.
     const expiresAt =
       typeof params.bonusExpiresAt === 'string'
         ? new Date(params.bonusExpiresAt)
@@ -243,9 +272,10 @@ export function getFreebuffStreakBonusStatus(params: {
       }
       return `+${bonus} added to today's allowance until ${until} · next +${bonus} after ${when}`
     }
-    // Granted, but the allowance it raised has since reset: east of Pacific,
-    // between local midnight and the Pacific reset, the grant belongs to the
-    // reader's YESTERDAY (2026-09-29 report, 17-day streak in India).
+    // Granted, but the allowance it raised has since reset: only an older
+    // server's Pacific streak day can do this — east of Pacific, between local
+    // midnight and the Pacific reset, the grant belonged to the reader's
+    // YESTERDAY (2026-09-29 report, 17-day streak in India).
     if (params.bonusExpiresAt === null || expiresAt) {
       return `+${bonus} expired at your daily reset · next +${bonus} with your first message after ${when}`
     }

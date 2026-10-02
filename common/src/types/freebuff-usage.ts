@@ -9,12 +9,22 @@
  */
 
 export interface FreebuffUsageStreakSummary {
-  /** Days in the current run. Survives today being unused until tomorrow. */
+  /** Days in the current run. Survives today being unused until tomorrow.
+   *  Counted on the account's own days (the daily allowance's interval), the
+   *  same streak the CLI and Desktop show and the +15 is paid on; the
+   *  activity map and `longest` stay on Pacific dates. */
   current: number
-  /** Longest run in recorded history. */
+  /** Longest run in recorded history (never below `current`). */
   longest: number
   todayUsed: boolean
   lastUsageDate: string | null
+  /**
+   * When the current streak day ends, as an ISO instant: the account's daily
+   * reset (its own midnight). Absent from older servers, and when the account
+   * day could not be read (the streak above is then the Pacific one, ending
+   * at the next midnight in `timeZone`).
+   */
+  nextResetAt?: string
 }
 
 /**
