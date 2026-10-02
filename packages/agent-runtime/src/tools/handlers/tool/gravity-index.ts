@@ -1,3 +1,4 @@
+import { FREEBUFF_DESKTOP_THREAD_AGENT_ID } from '@codebuff/common/constants/free-agents'
 import { jsonToolResult } from '@codebuff/common/util/messages'
 
 import { callGravityIndexAPI } from '../../../llm-api/codebuff-web-api'
@@ -29,6 +30,12 @@ const isJSONObject = (value: JSONValue | undefined): value is JSONObject =>
  *  template. */
 const gravitySurface = (agentTemplate: { id: string }): string => {
   if (agentTemplate.id === 'base-chat') return 'freebuff_chat'
+  // Freebuff Desktop's thread agents (`freebuff-desktop-thread-{local,worktree}[-v3]`). Desktop runs
+  // on the signed-in user's own key, so it attributes like the CLI (no external_user_id) and only
+  // needs its own label so its clicks and conversions are not counted as CLI traffic.
+  if (agentTemplate.id.startsWith(FREEBUFF_DESKTOP_THREAD_AGENT_ID)) {
+    return 'freebuff_desktop'
+  }
   // Freebuff Web project agents are the `base2-free*` and `base3-free*`
   // families (both prefixes: the harness swap changed the root ids).
   if (

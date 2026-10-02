@@ -207,6 +207,62 @@ describe('gravity_index tool', () => {
     )
   })
 
+  // Freebuff Desktop's thread agents run on the user's own key, so they attribute like the CLI (no
+  // external_user_id) but under their own label, not as CLI traffic.
+  test.each([
+    'freebuff-desktop-thread-local-v3',
+    'freebuff-desktop-thread-worktree',
+  ])(
+    'tags %s traffic with the freebuff_desktop surface and no external_user_id',
+    async (rootAgentId) => {
+      const spy = spyOn(webApi, 'callGravityIndexAPI').mockResolvedValue({
+        result: { search_id: 'search-1' },
+      })
+
+      mockAgentStream([
+        createToolCallChunk('gravity_index', {
+          action: 'search',
+          query: 'transactional email for Next.js',
+        }),
+        createToolCallChunk('end_turn', {}),
+      ])
+
+      const fileContext = {
+        ...mockFileContext,
+        agentTemplates: {
+          [rootAgentId]: {
+            ...gravityTestAgent,
+            id: rootAgentId,
+            displayName: 'Freebuff',
+          },
+        },
+      }
+      const sessionState = getInitialSessionState(fileContext)
+      const agentState = {
+        ...sessionState.mainAgentState,
+        agentType: rootAgentId,
+      }
+      const { agentTemplates } = assembleLocalAgentTemplates({
+        ...agentRuntimeImpl,
+        fileContext,
+      })
+
+      await runAgentStep({
+        ...runAgentStepBaseParams,
+        agentType: rootAgentId,
+        fileContext,
+        localAgentTemplates: agentTemplates,
+        agentTemplate: agentTemplates[rootAgentId],
+        agentState,
+        prompt: 'Find an email provider',
+      })
+
+      const input = spy.mock.calls[0]?.[0]?.input
+      expect(input).toMatchObject({ metadata: { surface: 'freebuff_desktop' } })
+      expect(input).not.toHaveProperty('external_user_id')
+    },
+  )
+
   // Both freebuff Web root families, because the harness swap changed the id
   // prefix: a base3 root that fell through to `codebuff_cli` would attribute
   // Web clicks to the CLI and would stop forwarding the per-end-user id that
