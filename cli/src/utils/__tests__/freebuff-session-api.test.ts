@@ -5,6 +5,10 @@ import {
   FREEBUFF_FABLE_5_1_MODEL_ID,
   resolveFreebuffModelForAccessTier,
 } from '@codebuff/common/constants/freebuff-models'
+import {
+  FREEBUCKS_TIMEZONE_HEADER,
+  freebucksTimeZoneHeaders,
+} from '@codebuff/common/util/freebucks-timezone'
 
 import {
   callFreebuffSession,
@@ -42,8 +46,9 @@ test('the reward model reaches the session POST header unchanged', async () => {
 
   expect(fetchSpy).toHaveBeenCalledTimes(1)
   const [, init] = fetchSpy.mock.calls[0]!
-  expect(new Headers(init?.headers).get('x-fb-timezone')).toBe(
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  // The device zone, or no header where it is unknown (a remote host's UTC).
+  expect(new Headers(init?.headers).get(FREEBUCKS_TIMEZONE_HEADER)).toBe(
+    freebucksTimeZoneHeaders()[FREEBUCKS_TIMEZONE_HEADER] ?? null,
   )
   expect(new Headers(init?.headers).get('x-freebuff-model')).toBe(
     FREEBUFF_REWARD_MODEL_ID,
