@@ -8,6 +8,7 @@ export function convertCreditsToUsdCents(
   credits: number,
   centsPerCredit: number,
 ): number {
+  if (centsPerCredit <= 0) return 0
   return Math.ceil(credits * centsPerCredit)
 }
 
@@ -21,5 +22,6 @@ export function convertStripeGrantAmountToCredits(
   amountInCents: number,
   centsPerCredit: number,
 ): number {
+  if (centsPerCredit <= 0) return 0
   return Math.floor(amountInCents / centsPerCredit)
 }
