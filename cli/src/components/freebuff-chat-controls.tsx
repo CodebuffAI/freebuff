@@ -26,6 +26,7 @@ export function FreebuffChatControls() {
   const theme = useTheme()
   const { terminalHeight } = useTerminalDimensions()
   const pickerOpen = useFreebuffChatStore((s) => s.pickerOpen)
+  const pickerInitialView = useFreebuffChatStore((s) => s.pickerInitialView)
   const admission = useFreebuffChatStore((s) => s.admission)
   const nextModel = useFreebuffChatStore((s) => s.nextModel)
   const model = useFreebuffModelStore((s) => s.selectedModel)
@@ -112,6 +113,7 @@ export function FreebuffChatControls() {
         <FreebuffModelSelector
           maxHeight={Math.max(4, Math.floor(terminalHeight * 0.65) - 2)}
           selectedModelOverride={nextModel ?? model}
+          initialView={pickerInitialView}
           onSelectModel={selectFreebuffChatModel}
           onCancel={() => useFreebuffChatStore.setState({ pickerOpen: false })}
         />

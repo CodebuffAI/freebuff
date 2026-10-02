@@ -1,4 +1,9 @@
-import { openFreebuffModelPicker } from '../state/freebuff-chat-store'
+import {
+  freebuffChatModel,
+  openFreebuffModelPicker,
+  openFreebuffReasoningPicker,
+} from '../state/freebuff-chat-store'
+import { getFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { safeOpen } from '../utils/open-url'
 
 import {
@@ -215,6 +220,7 @@ const FREEBUFF_ONLY_COMMANDS = new Set([
   // the metadata it sets is honored only for free-mode traffic
   // (isFreebuffOriginatedRequest). On Codebuff the command would take a value
   // and silently drop it.
+  'reasoning',
 ])
 
 const ALL_COMMANDS: CommandDefinition[] = [
@@ -758,6 +764,26 @@ const ALL_COMMANDS: CommandDefinition[] = [
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
       openFreebuffModelPicker()
+    },
+  }),
+  defineCommand({
+    name: 'reasoning',
+    aliases: ['effort', 'think'],
+    handler: (params) => {
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+      const model = freebuffChatModel()
+      const directory = getFreebuffModelDirectory()
+      if (!directory.efforts(model)?.length) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage(
+            `${directory.get(model).displayName} does not offer adjustable reasoning. Use /model to choose another model.`,
+          ),
+        ])
+        return
+      }
+      openFreebuffReasoningPicker()
     },
   }),
   defineCommand({

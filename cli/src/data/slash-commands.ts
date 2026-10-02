@@ -46,6 +46,7 @@ const FREEBUFF_ONLY_COMMAND_IDS = new Set([
   'plan',
   'end-session',
   'model',
+  'reasoning',
   'dashboard',
 ])
 
@@ -203,6 +204,12 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     id: 'model',
     label: 'model',
     description: 'Choose the model for your next message',
+  },
+  {
+    id: 'reasoning',
+    label: 'reasoning',
+    description: 'Choose reasoning effort for your next message model',
+    aliases: ['effort', 'think'],
   },
   {
     id: 'end-session',

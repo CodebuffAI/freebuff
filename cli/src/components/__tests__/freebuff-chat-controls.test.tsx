@@ -11,7 +11,11 @@ import {
   ChatRuntimeProvider,
   useChatRuntime,
 } from '../../contexts/chat-runtime-context'
-import { useFreebuffChatStore } from '../../state/freebuff-chat-store'
+import {
+  openFreebuffReasoningPicker,
+  useFreebuffChatStore,
+} from '../../state/freebuff-chat-store'
+import { useFreebuffModelStore } from '../../state/freebuff-model-store'
 import { useFreebuffSessionStore } from '../../state/freebuff-session-store'
 import { useChatStore } from '../../state/chat-store'
 import { initializeThemeStore } from '../../hooks/use-theme'
@@ -49,6 +53,7 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     useFreebuffChatStore.setState({
       admission: null,
       pickerOpen: false,
+      pickerInitialView: 'model',
       nextModel: null,
     })
     useFreebuffSessionStore.getState().setSession(null)
@@ -110,6 +115,36 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     expect(runtime!.queuedMessages).toHaveLength(1)
     return setup
   }
+
+  test('reasoning shortcut opens the next model at its saved effort and cancels without admission', async () => {
+    const previous = useFreebuffModelStore.getState()
+    const model = 'z-ai/glm-5.3-flash'
+    useFreebuffModelStore.setState({
+      selectedModel: 'mimo/mimo-v2.5',
+      reasoningEffortByModel: { [model]: 'low' },
+    })
+    useFreebuffChatStore.setState({ nextModel: model })
+    openFreebuffReasoningPicker()
+    try {
+      const setup = await mount()
+      expect(setup.captureCharFrame()).toContain('GLM 5.3 Flash • Reasoning')
+      expect(setup.captureCharFrame()).toContain('› low')
+      flushSync(() => setup.mockInput.pressKey('ESCAPE'))
+      await setup.renderOnce()
+      expect(setup.captureCharFrame()).not.toContain('Enter save')
+      flushSync(() => setup.mockInput.pressKey('ESCAPE'))
+      expect(useFreebuffChatStore.getState().pickerOpen).toBe(false)
+      expect(useFreebuffChatStore.getState().admission).toBeNull()
+      expect(useFreebuffChatStore.getState().nextModel).toBe(model)
+      expect(useFreebuffModelStore.getState().selectedModel).toBe('mimo/mimo-v2.5')
+      expect(useFreebuffModelStore.getState().reasoningEffortByModel).toEqual({
+        [model]: 'low',
+      })
+      expect(useFreebuffSessionStore.getState().session).toBeNull()
+    } finally {
+      useFreebuffModelStore.setState(previous)
+    }
+  })
 
   test('GLM to Luna asks for 10 Freebucks: ending GLM releases its first-tab discount', async () => {
     const expiresAt = new Date(Date.now() + 3_600_000).toISOString()

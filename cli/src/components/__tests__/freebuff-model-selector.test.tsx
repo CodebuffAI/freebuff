@@ -85,6 +85,7 @@ const renderSelector = async (
   width = 100,
   nowMs = FIXED_NOW_MS,
   onSelectModel?: (model: string) => void,
+  initialView: 'model' | 'reasoning' = 'model',
 ) => {
   // Tear down any selector this test already rendered. Only the LAST one was
   // reachable from afterEach, so a test that renders twice used to leave the
@@ -106,6 +107,7 @@ const renderSelector = async (
         nowMs={nowMs}
         startSession={startSession}
         onSelectModel={onSelectModel}
+        initialView={initialView}
       />,
     ),
   )
@@ -1875,18 +1877,18 @@ test('chat picker selects without admitting or asking to spend wallet funds', as
   expect(setup.captureCharFrame()).not.toContain('Enter uses')
 })
 
-test('Tab edits the highlighted model reasoning and Escape returns without selecting', async () => {
+test.each(['model', 'reasoning'] as const)('%s entry edits reasoning and Escape returns without selecting', async (initialView) => {
   const model = FREEBUFF_GLM_V53_FLASH_MODEL_ID
   const previous = useFreebuffModelStore.getState().reasoningEffortByModel
   useFreebuffSessionStore.getState().setSession({ status: 'none', accessTier: 'full' })
   useFreebuffModelStore.setState({ selectedModel: model, reasoningEffortByModel: {} })
   const selected: string[] = []
-  const setup = await renderSelector(40, undefined, 120, FIXED_NOW_MS, (id) => selected.push(id))
+  const setup = await renderSelector(40, undefined, 120, FIXED_NOW_MS, (id) => selected.push(id), initialView)
   const persist = spyOn(useFreebuffModelStore.getState(), 'setReasoningEffort').mockImplementation((id, effort) => {
     useFreebuffModelStore.setState({ reasoningEffortByModel: effort ? { [id]: effort } : {} })
   })
   try {
-    flushSync(() => setup.mockInput.pressKey('TAB'))
+    if (initialView === 'model') flushSync(() => setup.mockInput.pressKey('TAB'))
     await setup.renderOnce()
     expect(setup.captureCharFrame()).toContain('GLM 5.3 Flash • Reasoning')
     flushSync(() => setup.mockInput.pressKey('ESCAPE'))

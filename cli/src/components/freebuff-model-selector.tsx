@@ -176,6 +176,7 @@ interface FreebuffModelSelectorProps {
   onSelectModel?: (model: string) => void
   onCancel?: () => void
   selectedModelOverride?: string
+  initialView?: 'model' | 'reasoning'
 
   /** Session admission boundary; defaults to the CLI session controller. */
   startSession?: (model: string) => Promise<void>
@@ -238,6 +239,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   onSelectModel,
   onCancel,
   selectedModelOverride,
+  initialView = 'model',
   onExpandedChange,
   belowToggle,
   nowMs,
@@ -251,8 +253,6 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // docs/freebuff-model-catalog.md
   const directory = useFreebuffModelDirectory()
   const catalog = directory.catalog
-  const [reasoningModel, setReasoningModel] = useState<string | null>(null)
-  const [reasoningIndex, setReasoningIndex] = useState(0)
   // contentMaxWidth (not terminalWidth) is the real budget — the parent
   // landing screen wraps this picker in a `maxWidth: contentMaxWidth`
   // box (capped at 80 cols), so a wide terminal doesn't actually let us
@@ -268,6 +268,16 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   const reasoningEffortByModel = useFreebuffModelStore(
     (s) => s.reasoningEffortByModel,
   )
+  const [reasoningModel, setReasoningModel] = useState<string | null>(() =>
+    initialView === 'reasoning' && directory.efforts(selectedModel)?.length
+      ? selectedModel
+      : null,
+  )
+  const [reasoningIndex, setReasoningIndex] = useState(() => {
+    const current =
+      reasoningEffortByModel[selectedModel] ?? directory.defaultEffort(selectedModel)
+    return Math.max(0, directory.efforts(selectedModel)?.indexOf(current!) ?? 0)
+  })
   const session = useFreebuffSessionStore((s) => s.session)
   const accessTier =
     (session && 'accessTier' in session ? session.accessTier : undefined) ??

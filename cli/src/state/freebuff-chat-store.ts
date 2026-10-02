@@ -21,13 +21,30 @@ export type ChatAdmission = {
 /** Choosing a model is a preference. Only submitting a message admits it. */
 export const useFreebuffChatStore = create<{
   pickerOpen: boolean
+  pickerInitialView: 'model' | 'reasoning'
   nextModel: string | null
   admission: ChatAdmission | null
-}>(() => ({ pickerOpen: false, nextModel: null, admission: null }))
+}>(() => ({
+  pickerOpen: false,
+  pickerInitialView: 'model',
+  nextModel: null,
+  admission: null,
+}))
+
+function openFreebuffPicker(initialView: 'model' | 'reasoning') {
+  if (useFreebuffChatStore.getState().admission) return
+  useFreebuffChatStore.setState({
+    pickerOpen: true,
+    pickerInitialView: initialView,
+  })
+}
 
 export function openFreebuffModelPicker() {
-  if (useFreebuffChatStore.getState().admission) return
-  useFreebuffChatStore.setState({ pickerOpen: true })
+  openFreebuffPicker('model')
+}
+
+export function openFreebuffReasoningPicker() {
+  openFreebuffPicker('reasoning')
 }
 
 export function selectFreebuffChatModel(model: string) {
