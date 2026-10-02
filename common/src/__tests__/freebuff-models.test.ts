@@ -501,8 +501,8 @@ describe('freebuff model availability', () => {
    *
    * Which one closes has flipped three times in two days, each time following
    * the LANE — a row is shut at peak only while served by a provider that
-   * doubles there. Pinning the assertion to a particular row made it a
-   * tripwire for every lane move; pinning it to the pair keeps the property
+   * doubles there. Pinning the assertion to a particular row made it fail
+   * on every lane move; pinning it to the pair keeps the property
    * that actually protects users, which is that the catalog's two strongest
    * models are never dark together.
    *

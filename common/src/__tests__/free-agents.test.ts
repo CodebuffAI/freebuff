@@ -668,7 +668,7 @@ describe('hasFreebuffRootSystemPromptOpening', () => {
  * If one fails: update the constant and the prompt together in the same change.
  */
 /**
- * Tripwire. The chat-completions gate 403s any free-mode ROOT request whose
+ * Guard. The chat-completions gate 403s any free-mode ROOT request whose
  * first system message does not open with a string in
  * FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS. Adding a root agent whose prompt opens
  * some other way therefore takes that agent down in production the moment it
