@@ -339,6 +339,26 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   first_party_model_scored_count: 'number',
   first_party_model_score_ms: 'number',
   /**
+   * The precomputed-score arm (`adScoreArmForUser` in `ad-experiment.ts`), on
+   * every request: `ad_score_arm` is `control` or `treatment`, intent to
+   * treat. `ad_score_lookup` is `not_read` (control, or no ranking leg ran),
+   * `hit`, or the miss that left a treatment request ranked as control:
+   * `no_run`, `no_user`, `opted_out` (GPC; nothing read), `timeout`, `error`.
+   * `ad_score_run_id` is the live snapshot's `manifest_id` and
+   * `ad_score_as_of` its scoring cutoff, when a valid pointer was read;
+   * `ad_score_payload_bytes` the user's compressed score vector and
+   * `ad_score_decode_ms` the pointer parse (cold reads) plus payload decode;
+   * `ad_score_ranked` whether a served first-party campaign was ordered by
+   * its score.
+   */
+  ad_score_arm: 'string',
+  ad_score_lookup: 'string',
+  ad_score_run_id: 'string',
+  ad_score_as_of: 'string',
+  ad_score_payload_bytes: 'number',
+  ad_score_decode_ms: 'number',
+  ad_score_ranked: 'boolean',
+  /**
    * The eligibility census: two counts and two producer-encoded histogram
    * strings. `eligible_campaign_labels` comma-joins opaque allocation labels
    * (`unlabeled` for a campaign carrying none) and `exclusion_reasons` is
@@ -1217,7 +1237,10 @@ export function getAxiomOnlyLogEvent(
   if (eventName === MODEL_COMPACTION_COMPLETED_EVENT) {
     return {
       event: eventName,
-      data: sanitizeAllowlistedFields(record, MODEL_COMPACTION_COMPLETED_FIELDS),
+      data: sanitizeAllowlistedFields(
+        record,
+        MODEL_COMPACTION_COMPLETED_FIELDS,
+      ),
     }
   }
   if (eventName === ADS_FETCH_COMPLETED_EVENT) {

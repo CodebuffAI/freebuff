@@ -756,3 +756,55 @@ export function firstPartyModelArmForRequest(
   if (firstPartyModelArmBucket(userId) >= basisPoints) return 'not_sampled'
   return 'routed'
 }
+
+/**
+ * ============================================================================
+ * PRECOMPUTED AD SCORES (adscore treatment arm)
+ * ============================================================================
+ *
+ * A sticky 50/50 per-user split. `treatment` orders the ALREADY-ELIGIBLE
+ * first-party candidates by the user's precomputed per-creative scores
+ * (`packages/internal/src/ad-serving/ad-score-arm.ts`); `control` is today's
+ * ranking and never reads a score.
+ *
+ * NO KNOB. The experiment is gated on DATA: with no live snapshot
+ * (`user_ad_scored_candidates:v1:current` unset) a treatment request ranks
+ * exactly as control does, so the arm deploys inert and turns on when the
+ * candidate publisher commits its first snapshot. Pulling it is deleting the
+ * pointer, not an env edit.
+ *
+ * Its own dated salt, never a reuse: sharing one with the model arm or the
+ * first-party arm would correlate the assignments and leave neither readout
+ * clean. Rotating it reshuffles every user, which is a new experiment.
+ */
+export const AD_SCORE_ARM_SALT = 'ads_precomputed_score_arm_2026_10'
+
+/**
+ * The experiment id the decision record carries for both arms, so a readout
+ * selects one id and splits on `experimentArm`.
+ */
+export const AD_SCORE_EXPERIMENT_ID = 'ads_precomputed_score_2026_10'
+
+/** Treatment share in the shared 10,000-bucket space: a straight 50/50. */
+export const AD_SCORE_TREATMENT_BASIS_POINTS = 5_000
+
+export const AD_SCORE_ARMS = ['control', 'treatment'] as const
+export type AdScoreArm = (typeof AD_SCORE_ARMS)[number]
+
+/** 0..9999, sticky per user, independent of every other salt here. */
+export function adScoreArmBucket(userId: string | null | undefined): number {
+  return fnv1a(`${AD_SCORE_ARM_SALT}:${userId ?? ''}`) % 10_000
+}
+
+/**
+ * The user's sticky arm. No user parks in `control`: both rails reject
+ * unauthenticated callers, so this is defensive rather than a supported path.
+ */
+export function adScoreArmForUser(
+  userId: string | null | undefined,
+): AdScoreArm {
+  if (!userId) return 'control'
+  return adScoreArmBucket(userId) < AD_SCORE_TREATMENT_BASIS_POINTS
+    ? 'treatment'
+    : 'control'
+}
