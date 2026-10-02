@@ -23,6 +23,23 @@ export const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
 
 /** Stack traces cost ingest on every error row; the top frames carry it. */
 const MAX_ERROR_STACK_CHARS = 2_000
+/** An error message or SQL statement longer than this is a payload, not a reason. */
+const MAX_ERROR_MESSAGE_CHARS = 2_000
+const MAX_ERROR_QUERY_CHARS = 500
+
+function safeLength(value: unknown): number {
+  try {
+    return JSON.stringify(value)?.length ?? 0
+  } catch {
+    return Number.POSITIVE_INFINITY
+  }
+}
+
+function clip(text: string, max: number): string {
+  return text.length > max
+    ? `${text.slice(0, max)}… [${text.length - max} chars omitted]`
+    : text
+}
 
 /**
  * An Error as plain JSON. `name`, `message` and `stack` are non-enumerable, so
@@ -34,10 +51,27 @@ const MAX_ERROR_STACK_CHARS = 2_000
  * same replacer.
  */
 function errorToJson(error: Error): Record<string, unknown> {
+  const fields: Record<string, unknown> = { ...error }
+  // A drizzle `DrizzleQueryError` carries the whole statement as `query`, every
+  // bound value as `params`, and both again in `message`. For a bulk insert
+  // that is hundreds of KB: the ad-revenue rollup's 2026-10-02 failure logged
+  // 522 KB, the row was cut at MAX_LOG_DATA_BYTES, and the `cause` holding the
+  // Postgres reason came after the cut, so it never reached Axiom. Keep the
+  // head of the statement, replace a long param list with its count, and keep
+  // the cause.
+  if (typeof fields.query === 'string') {
+    fields.query = clip(fields.query, MAX_ERROR_QUERY_CHARS)
+  }
+  if (
+    Array.isArray(fields.params) &&
+    safeLength(fields.params) > MAX_ERROR_QUERY_CHARS
+  ) {
+    fields.params = `[${fields.params.length} params omitted]`
+  }
   return {
-    ...error,
+    ...fields,
     name: error.name,
-    message: error.message,
+    message: clip(error.message, MAX_ERROR_MESSAGE_CHARS),
     ...(error.stack
       ? { stack: error.stack.slice(0, MAX_ERROR_STACK_CHARS) }
       : {}),
