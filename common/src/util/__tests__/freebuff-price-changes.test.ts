@@ -21,7 +21,7 @@ const returned = Date.parse('2026-09-25T19:00:00Z')
 const quoteBeforeStart = () => ({
   ...freebucksFixture(0, { [solar]: SOLAR_REGULAR_OFFER.price }),
   priceNotices: { [solar]: SOLAR_REGULAR_OFFER.tagline },
-  priceChanges: [...SOLAR_PRICE_CHANGES],
+  priceChanges: SOLAR_PRICE_CHANGES.filter((c) => c.modelId === solar),
 })
 
 describe('announced Freebucks price changes', () => {
@@ -62,6 +62,24 @@ describe('announced Freebucks price changes', () => {
     })
     expect(quote.prices[solar]).toBe(5)
     expect(quote.priceChanges).toHaveLength(6)
+  })
+
+  it("applies Solar Mini 4's promotion to Mini's row only", () => {
+    const mini = 'upstage/solar-mini4'
+    const quote = {
+      ...freebucksFixture(0, { [solar]: 10, [mini]: 5 }),
+      priceNotices: { [solar]: 'Upstage flagship', [mini]: 'Fast and light' },
+      priceChanges: SOLAR_PRICE_CHANGES.filter((c) => c.modelId === mini),
+    }
+    const free = applyFreebucksPriceChanges(quote, Date.parse('2026-10-02T18:00:00Z'))
+    expect(free.prices).toEqual({ [solar]: 10, [mini]: 0 })
+    expect(free.priceNotices[mini]).toBe('Free through Sunday, Oct 4 PT')
+    const ended = Date.parse('2026-10-05T07:00:00Z')
+    expect(nextFreebucksPriceChange(free)).toBe(ended)
+    const back = applyFreebucksPriceChanges(free, ended)
+    expect(back.prices).toEqual({ [solar]: 10, [mini]: 5 })
+    expect(back.priceNotices[mini]).toBe('Fast and light')
+    expect(back.priceChanges).toEqual([])
   })
 
   it('catches up across all transitions, even when a delayed response lists them out of order', () => {

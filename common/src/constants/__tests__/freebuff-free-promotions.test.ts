@@ -5,7 +5,10 @@ import {
   isFreePromotionSpendAt,
 } from '../freebuff-free-promotions'
 import { SOLAR_PRICE_CHANGES } from '../freebuff-solar-promo'
-import { FREEBUFF_SOLAR_PRO_4_MODEL_ID } from '../freebuff-model-entitlements'
+import {
+  FREEBUFF_SOLAR_MINI_4_MODEL_ID,
+  FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+} from '../freebuff-model-entitlements'
 
 describe('free-promotion spend windows', () => {
   it('matches the offer it is derived from, to the boundary', () => {
@@ -27,6 +30,11 @@ describe('free-promotion spend windows', () => {
         modelId: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
         from: '2026-09-09T15:49:00.000Z',
         to: '2026-09-13T05:00:00.000Z',
+      },
+      {
+        modelId: FREEBUFF_SOLAR_MINI_4_MODEL_ID,
+        from: '2026-10-02T18:00:00.000Z',
+        to: '2026-10-05T07:00:00.000Z',
       },
     ])
   })
