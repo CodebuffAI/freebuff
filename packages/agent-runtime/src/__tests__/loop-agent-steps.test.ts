@@ -651,6 +651,32 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
     expect(llmCallCount).toBe(0)
   })
 
+  it('skips run tracking for the context-pruner by name, not by substring', async () => {
+    mockTemplate.handleSteps = function* () {
+      yield 'STEP'
+    }
+    const runIdFor = async (id: string) => {
+      const template = { ...mockTemplate, id }
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        agentType: id,
+        agentTemplate: template,
+        localAgentTemplates: { [id]: template },
+        agentState: { ...mockAgentState, messageHistory: [] },
+        startAgentRun: async () => 'ledger-run',
+      })
+      return result.agentState.runId
+    }
+
+    expect(await runIdFor('context-pruner')).toStartWith('untracked-')
+    expect(await runIdFor('codebuff/context-pruner@1.0.0')).toStartWith(
+      'untracked-',
+    )
+    // The web API refuses untracked ids, so a model-calling agent whose id
+    // merely contains the name must keep its ledger run.
+    expect(await runIdFor('context-pruner-test-agent')).toBe('ledger-run')
+  })
+
   it('should verify correct STEP behavior - LLM called once after STEP', async () => {
     // This test verifies that when a programmatic agent yields STEP,
     // the LLM should be called once in the next iteration

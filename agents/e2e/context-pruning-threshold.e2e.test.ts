@@ -490,22 +490,35 @@ describe('Context Pruning Threshold E2E', () => {
         return
       }
 
-      // This test verifies that the token counting API returns accurate counts
-      // for Anthropic models without a 30% buffer or local fallback overcounting.
+      // This test verifies that, once the provider has reported usage, the
+      // context size the pruner sees is anchored to that receipt rather than
+      // inflated by a 30% buffer or by the local length estimate.
       //
-      // Strategy: Run TWO agent calls with the same message history:
+      // Strategy: Run TWO agent calls over the same message history:
       //   1. Calibration run with 200k limit (no pruning) → measure TRUE token count
-      //   2. Test run with 100k limit → check if pruning triggers
+      //   2. Test run with 100k limit, CONTINUING the calibration run → check if
+      //      pruning triggers
       //
-      // If true tokens < 100k but pruning triggered in the 100k run, that proves
-      // the token counting API is over-reporting (30% buffer or fallback bug).
+      // Step 2 must continue from step 1. Since #3790 a history the provider
+      // has never seen is sized by the cheap three-chars-per-token estimate in
+      // agent-runtime's token-counter.ts, which overcounts this
+      // ~4-chars-per-token fixture by about a third: a FRESH 88k history reads
+      // as ~129k, so pruning it at a 100k limit says nothing about a real
+      // conversation. Each response's usage then anchors the agent's count
+      // (contextTokenBaseline), which is what a conversation runs on from its
+      // second turn. Continuing the calibration run gives the 100k run that
+      // receipt.
+      //
+      // If true tokens < 100k but pruning triggered in the 100k run, the
+      // pruner decided on an over-reported count even though a receipt
+      // existed (a 30% buffer, or the unanchored estimate).
       //
       // We target ~95k estimated tokens of content, which should produce ~95-100k
       // actual tokens — close to the 100k limit but safely under with accurate counting.
       //
-      // Accurate counting:  ~90k < 100k → no pruning in either run ✓
-      // 30% buffer:         ~90k reported as ~117k → premature pruning in 100k run ✗
-      // Local fallback:     ~90k reported as ~135k+ → premature pruning in 100k run ✗
+      // Anchored counting:   ~90k < 100k → no pruning in either run ✓
+      // 30% buffer:          ~90k reported as ~117k → premature pruning in 100k run ✗
+      // Unanchored estimate: ~90k reported as ~120k+ → premature pruning in 100k run ✗
 
       // Create a large history targeting ~95k estimated tokens of message content
       const TARGET_ESTIMATED_TOKENS = 95_000
@@ -569,25 +582,15 @@ describe('Context Pruning Threshold E2E', () => {
       expect(trueTokenCount).toBeGreaterThan(50_000)
 
       // =========================================================================
-      // Step 2: TEST RUN — same content with 100k limit
+      // Step 2: TEST RUN — continue the calibration run with a 100k limit
       // =========================================================================
-      const sessionState = await initialSessionState({})
-      const runStateWithMessages = withMessageHistory({
-        runState: {
-          traceSessionId: 'test-trace-session',
-          sessionState,
-          output: { type: 'error', message: '' },
-        },
-        messages,
-      })
-
       const MAX_CONTEXT_LENGTH = 100_000
 
       console.log('  [accuracy] Running test with 100k limit...')
       const run = await client.run({
         agent: testAgent.id,
         prompt: 'Say "ACK" and nothing else.',
-        previousRun: runStateWithMessages,
+        previousRun: calRun,
         params: { maxContextLength: MAX_CONTEXT_LENGTH },
         handleEvent: (event) => {
           if (event.type === 'text') {
@@ -634,7 +637,7 @@ describe('Context Pruning Threshold E2E', () => {
       if (trueTokenCount < MAX_CONTEXT_LENGTH && pruningResult.wasPruned) {
         console.error(
           `  ❌ BUG DETECTED: True tokens (${trueTokenCount}) < limit (${MAX_CONTEXT_LENGTH}), ` +
-            `but pruning was triggered! The token counting API is over-reporting.`,
+            `but pruning was triggered! The count the pruner saw is over-reporting despite a provider receipt.`,
         )
       } else if (
         trueTokenCount < MAX_CONTEXT_LENGTH &&

@@ -95,6 +95,10 @@ export interface User {
         apiKey,
         cwd: '/tmp/test-project',
         projectFiles,
+        // The repo's file-lister. Without it 'file-lister' resolves to the
+        // published codebuff/file-lister, whose model (x-ai/grok-4-fast) is
+        // retired upstream.
+        agentDefinitions: [fileListerDefinition],
       })
 
       const events: PrintModeEvent[] = []
@@ -158,6 +162,10 @@ export interface User {
         apiKey,
         cwd: '/tmp/test-project',
         projectFiles,
+        // The repo's file-lister. Without it 'file-lister' resolves to the
+        // published codebuff/file-lister, whose model (x-ai/grok-4-fast) is
+        // retired upstream.
+        agentDefinitions: [fileListerDefinition],
       })
 
       const events: PrintModeEvent[] = []
@@ -210,6 +218,10 @@ export interface User {
         apiKey,
         cwd: '/tmp/test-project',
         projectFiles,
+        // The repo's file-lister. Without it 'file-lister' resolves to the
+        // published codebuff/file-lister, whose model (x-ai/grok-4-fast) is
+        // retired upstream.
+        agentDefinitions: [fileListerDefinition],
       })
 
       // Run file-lister with directories parameter to limit to frontend only

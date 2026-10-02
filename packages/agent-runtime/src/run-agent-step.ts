@@ -6,6 +6,7 @@ import {
 } from '@codebuff/common/old-constants'
 import { PROJECT_PROFILE_TOOL_NAME } from '@codebuff/common/constants/project-profile'
 import { TOOLS_WHICH_WONT_FORCE_NEXT_STEP } from '@codebuff/common/tools/constants'
+import { parseAgentId } from '@codebuff/common/util/agent-id-parsing'
 import { buildArray } from '@codebuff/common/util/array'
 import {
   AbortError,
@@ -887,8 +888,12 @@ export async function loopAgentSteps(
   // every main-agent step. Recording its runs in the ledger cost three awaited
   // web-API round trips (start/step/finish) per main-agent step, so it mints a
   // local run id and skips run tracking entirely. Matches bundled and
-  // publisher-qualified ids ('context-pruner', 'codebuff/context-pruner@1.0.0').
-  if (agentTemplate.id.includes('context-pruner')) {
+  // publisher-qualified ids ('context-pruner', 'codebuff/context-pruner@1.0.0')
+  // by agent name, never by substring: an untracked id is refused by the web
+  // API, so any model-calling agent whose id merely CONTAINED the name (e.g.
+  // 'context-pruner-test-agent') failed its first LLM call with
+  // "runId Not Found".
+  if (parseAgentId(agentTemplate.id).agentId === 'context-pruner') {
     params = {
       ...params,
       startAgentRun: async () =>

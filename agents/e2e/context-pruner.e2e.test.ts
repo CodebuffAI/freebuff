@@ -10,6 +10,7 @@ import {
 } from '@codebuff/sdk'
 import { describe, expect, it } from 'bun:test'
 
+import contextPruner from '../context-pruner'
 
 import type { ToolCallPart } from '@codebuff/common/types/messages/content-part'
 
@@ -145,7 +146,9 @@ Do not do anything else. Just spawn context-pruner and then report the result.`,
 
       const client = new CodebuffClient({
         apiKey,
-        agentDefinitions: [testAgent],
+        // Pass the repo's context-pruner. Without it 'context-pruner' resolves
+        // to the published codebuff/context-pruner, which is not this code.
+        agentDefinitions: [testAgent, contextPruner],
       })
 
       // Create initial session state with the large message history
@@ -276,7 +279,9 @@ Do not do anything else. Just spawn context-pruner and then report the result.`,
 
       const client = new CodebuffClient({
         apiKey,
-        agentDefinitions: [testAgent],
+        // Pass the repo's context-pruner. Without it 'context-pruner' resolves
+        // to the published codebuff/context-pruner, which is not this code.
+        agentDefinitions: [testAgent, contextPruner],
       })
 
       const sessionState = await initialSessionState({})
