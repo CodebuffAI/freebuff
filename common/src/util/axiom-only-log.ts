@@ -470,7 +470,7 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    * COD-654, present only when the CPM leg was evaluated (never under `off`).
    * `first_party_cpm_outcome` is its verdict: `fill`, `no_fill`,
    * `shadow_would_fill`, `shadow_no_fill`, `geo_unknown` (`not_tier1` before
-   * COD-673 opened tier 2), `gravity_not_no_fill` or `error`. Phase 1's capacity readout is `shadow_would_fill` grouped by
+   * COD-673 opened tier 2), `gravity_not_no_fill`, `gravity_not_released` or `error`. Phase 1's capacity readout is `shadow_would_fill` grouped by
    * day; `first_party_cpm_campaign_id` names the CPM campaign it would have
    * (or did) serve.
    */
@@ -514,6 +514,9 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    * failed. This makes recovered no-fill inventory observable without logging
    * any campaign or creative identity. */
   gravity_outcome: 'string',
+  /** A Gravity no-fill that was a 205 release, which opens our paid first-party
+   * legs. False on a 204 no-fill, which leaves the slot to house ads only. */
+  gravity_no_fill_released: 'boolean',
   selection_reason: 'string',
   ad_count: 'number',
   surface: 'string',
