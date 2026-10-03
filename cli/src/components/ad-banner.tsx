@@ -20,6 +20,9 @@ import { visibleWaitingRoomPlacementIds } from '@codebuff/common/ads/waiting-roo
 import { safeOpen } from '../utils/open-url'
 import React, { useState, useMemo, useEffect } from 'react'
 
+import { layoutTruncated } from '../ads/ad-engagement'
+import { useAdEngagement } from '../ads/use-ad-engagement'
+
 import { Button } from './button'
 import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
 import { useTheme } from '../hooks/use-theme'
@@ -135,18 +138,51 @@ export const AdCard: React.FC<{
     onImpression?.(ad)
   }, [ad, onImpression])
 
+  // Laid out before the early return below, so the engagement hook can judge
+  // truncation from exactly what is drawn.
+  const inlineLayout =
+    variant === 'inline' ? getInlineAdLayout(ad, width) : null
+  const card = variant === 'inline' ? null : getCardAdLayout(ad, width)
+  // An inline card scrolls with the transcript and is measured; the dock and
+  // the landing screen's columns sit outside any scrollbox.
+  const engagement = useAdEngagement(ad.impUrl, {
+    placement: variant === 'inline' ? 'measured' : 'pinned',
+    truncated: inlineLayout
+      ? layoutTruncated([
+          [
+            (ad.title ?? '').trim() ||
+              getAdDisplayLabel({ title: '', url: ad.url ?? '' }).text,
+            inlineLayout.title,
+          ],
+          [ad.adText, inlineLayout.description],
+        ])
+      : card
+        ? layoutTruncated([
+            [ad.title, card.headline],
+            [ad.adText, card.description],
+          ])
+        : undefined,
+  })
+
   const buttonProps = {
-    onClick: () => {
+    ref: engagement.ref,
+    onClick: (event?: unknown) => {
       if (!ad.clickUrl) return
+      engagement.onClick(event)
       onClick?.(ad)
       safeOpen(ad.clickUrl)
     },
-    onMouseOver: () => setIsHovered(true),
-    onMouseOut: () => setIsHovered(false),
+    onMouseOver: () => {
+      setIsHovered(true)
+      engagement.onHover(true)
+    },
+    onMouseOut: () => {
+      setIsHovered(false)
+      engagement.onHover(false)
+    },
   }
 
-  if (variant === 'inline') {
-    const inlineLayout = getInlineAdLayout(ad, width)
+  if (inlineLayout) {
     const accentColor = isHovered ? theme.primary : theme.muted
     return (
       <Button
@@ -216,7 +252,7 @@ export const AdCard: React.FC<{
     )
   }
 
-  const card = getCardAdLayout(ad, width)
+  if (!card) return null
 
   return (
     <Button
@@ -356,6 +392,27 @@ export const DockAdCard: React.FC<{
     onImpression?.(ad)
   }, [ad, onImpression, layout.mode])
 
+  // The narrow fallback renders `AdCard`, which tracks itself.
+  const engagement = useAdEngagement(ad.impUrl, {
+    placement: 'pinned',
+    enabled: layout.mode === 'dock',
+    truncated:
+      layout.mode === 'dock'
+        ? layoutTruncated([
+            [ad.title, layout.headline],
+            [ad.adText, layout.description],
+            [(ad.cta ?? '').trim() || 'Learn more', layout.ctaText],
+          ])
+        : undefined,
+  })
+
+  // Hover is read from the tint state: the children's over/out bubble to the
+  // box and React batches an out-then-over into no change at all.
+  const { onHover: reportHover } = engagement
+  useEffect(() => {
+    reportHover(isHovered)
+  }, [isHovered, reportHover])
+
   if (layout.mode === 'card') {
     // The narrow fallback keeps today's card AND today's click semantics: the
     // whole card opens the landing page, and the dock's toggle is reached from
@@ -458,8 +515,9 @@ export const DockAdCard: React.FC<{
       {/* A SIBLING of the toggle, never a child: the CTA opens the landing
           page and must not also expand the panel. */}
       <Button
-        onClick={() => {
+        onClick={(event?: unknown) => {
           if (!ad.clickUrl) return
+          engagement.onClick(event, 'cta')
           onClick?.(ad, 'dock')
           safeOpen(ad.clickUrl)
         }}
@@ -517,12 +575,21 @@ export const DockDetailPanel: React.FC<{
     [ad, width, availableRows],
   )
 
+  // A second drawn copy of the dock's impression: hovering or clicking the
+  // panel is engagement with the same ad, on the same record.
+  const engagement = useAdEngagement(ad.impUrl, {
+    placement: 'pinned',
+    enabled: panel.fits,
+  })
+
   if (!panel.fits) return null
 
   const interiorWidth = Math.max(0, panel.width - 4)
 
   return (
     <box
+      onMouseOver={() => engagement.onHover(true)}
+      onMouseOut={() => engagement.onHover(false)}
       style={{
         width: panel.width,
         height: panel.height,
@@ -595,8 +662,9 @@ export const DockDetailPanel: React.FC<{
       <box style={{ height: 1 }} />
       <box style={{ height: 3, flexDirection: 'row', overflow: 'hidden' }}>
         <Button
-          onClick={() => {
+          onClick={(event?: unknown) => {
             if (!ad.clickUrl) return
+            engagement.onClick(event, 'cta')
             onClick?.(ad, 'panel')
             safeOpen(ad.clickUrl)
           }}

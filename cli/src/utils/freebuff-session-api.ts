@@ -11,6 +11,7 @@ import {
   FREEBUFF_PURCHASE_CONTINUITY_HEADER,
 } from '@codebuff/common/constants/freebuff-desktop-sessions'
 import { clientEnvironmentHeaders } from './client-environment'
+import { timedApiCall } from '../ads/ad-signals'
 import { freebuffCliAttemptId } from './freebuff-session-identity'
 import {
   FREEBUFF_COMPACT_SESSION_HEADER,
@@ -305,11 +306,16 @@ async function requestFreebuffSession(
       }),
     )
   }
-  const response = await fetch(endpoint, {
-    method,
-    headers,
-    signal: sessionFetchSignal(opts.signal),
-  })
+  const fetchSession = () =>
+    fetch(endpoint, {
+      method,
+      headers,
+      signal: sessionFetchSignal(opts.signal),
+    })
+  // The polled GET is the CLI's steadiest call to our API: its round trip is
+  // the ad client context's `net.rtt` sample (COD-757).
+  const response =
+    method === 'GET' ? await timedApiCall(fetchSession) : await fetchSession()
 
   if (method === 'POST' && [404, 405].includes(response.status)) {
     throw new FreebuffSessionRequestError(

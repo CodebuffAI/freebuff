@@ -80,6 +80,10 @@ import { useChatUI } from './hooks/use-chat-ui'
 import { useClipboard } from './hooks/use-clipboard'
 import { useEvent } from './hooks/use-event'
 import { useGravityAd, visibleResponseAds } from './hooks/use-gravity-ad'
+import {
+  registerAdTranscriptViewport,
+  setAdTranscriptScrolledUp,
+} from './ads/ad-signals'
 import { useByokSelectionStore } from './utils/byok'
 import { DOCK_CHORD_HINT, useDockPanel } from './hooks/use-dock-panel'
 import { useInputHistory } from './hooks/use-input-history'
@@ -689,6 +693,24 @@ export const Chat = ({
   useEffect(
     () => registerScrollToLatest(scrollToLatest),
     [registerScrollToLatest, scrollToLatest],
+  )
+
+  // COD-757: the ad client context's `attn.scrolledUp`, and the viewport an
+  // inline ad card tests itself against for its engagement record.
+  useEffect(() => {
+    setAdTranscriptScrolledUp(!isAtBottom)
+  }, [isAtBottom])
+  useEffect(
+    () =>
+      registerAdTranscriptViewport(() => {
+        const viewport = scrollRef.current?.viewport
+        if (!viewport) return null
+        return {
+          top: viewport.screenY,
+          bottom: viewport.screenY + viewport.height,
+        }
+      }),
+    [scrollRef],
   )
 
   // The sponsor dock's detail panel (COD-457). `enabled` is the surface gate,

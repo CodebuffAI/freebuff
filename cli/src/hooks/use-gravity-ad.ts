@@ -8,10 +8,19 @@ import {
 } from '@codebuff/common/ads/first-party-view-ack'
 import { createFirstPartyViewAckTelemetry } from '@codebuff/common/util/axiom-only-log'
 import { sanitizeTerminalStrings } from '@codebuff/common/util/terminal-safe-text'
+import { useRenderer } from '@opentui/react'
 import { useEffect, useRef, useState } from 'react'
 
 import { useTerminalLayout } from './use-terminal-layout'
 import { buildAdAuctionRequest } from '../ads/ad-request'
+import {
+  noteAdClicked,
+  noteAdTurnState,
+  noteAdsServed,
+  registerAdRenderer,
+  timedApiCall,
+} from '../ads/ad-signals'
+import { adEngagementRegistry } from '../ads/use-ad-engagement'
 import { trackAdClickAck, watchAdClickReturn } from '../ads/click-return'
 import { getAdsEnabled } from '../commands/ads'
 import { useChatStore } from '../state/chat-store'
@@ -251,36 +260,39 @@ export function recordAdClick(
 
   // COD-694: watch for the user's next prompt, the CLI's "came back" signal.
   watchAdClickReturn(ad.impUrl)
+  noteAdClicked()
 
   // One id per logical click (COD-365); a repeat POST of the same ad is a
   // new gesture and a new id, and the server answers `alreadyRecorded`.
   const clientEventId = crypto.randomUUID()
   const dock = options?.dock
-  const ack = fetch(`${WEBSITE_URL}/api/v1/ads/click`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${authToken}`,
-      'User-Agent': getCliAdRequestUserAgent(),
-      ...clientEnvironmentHeaders(),
-      [FREEBUFF_EVENT_ID_HEADER]: clientEventId,
-    },
-    body: JSON.stringify({
-      impUrl: ad.impUrl,
-      clientEventId,
-      ...(options?.surface ? { surface: options.surface } : {}),
-      // The dock's own fields ride the ACK (COD-457), so the canonical
-      // server-side `ads.clicked` carries them and one click stays one
-      // event. Emitting a second client-side click here double-counted.
-      ...(dock
-        ? {
-            dockFrom: dock.from,
-            dockDwellMs: dock.dwellMs,
-            dockAccidentalClick: dock.accidental,
-          }
-        : {}),
+  const ack = timedApiCall(() =>
+    fetch(`${WEBSITE_URL}/api/v1/ads/click`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+        'User-Agent': getCliAdRequestUserAgent(),
+        ...clientEnvironmentHeaders(),
+        [FREEBUFF_EVENT_ID_HEADER]: clientEventId,
+      },
+      body: JSON.stringify({
+        impUrl: ad.impUrl,
+        clientEventId,
+        ...(options?.surface ? { surface: options.surface } : {}),
+        // The dock's own fields ride the ACK (COD-457), so the canonical
+        // server-side `ads.clicked` carries them and one click stays one
+        // event. Emitting a second client-side click here double-counted.
+        ...(dock
+          ? {
+              dockFrom: dock.from,
+              dockDwellMs: dock.dwellMs,
+              dockAccidentalClick: dock.accidental,
+            }
+          : {}),
+      }),
     }),
-  })
+  )
     .then((res) => {
       if (!res.ok) {
         logger.debug({ status: res.status }, '[ads] Failed to record ad click')
@@ -356,13 +368,52 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   const slotPausedRef = useRef(false)
   slotPausedRef.current = options?.slotPaused ?? false
   const placementIds = options?.placementIds
-  const [ads, setAds] = useState<AdResponse[] | null>(null)
+  const [ads, setAdsState] = useState<AdResponse[] | null>(null)
+  // The rotating slot's creatives as last set, so a swap can be told to the
+  // engagement registry (COD-757) before React unmounts the old cards: their
+  // records then end as `rotation`, not `unmount`.
+  const adsRef = useRef<AdResponse[] | null>(null)
+  const setAds = (
+    next:
+      | AdResponse[]
+      | null
+      | ((cur: AdResponse[] | null) => AdResponse[] | null),
+  ): void => {
+    const resolved = typeof next === 'function' ? next(adsRef.current) : next
+    try {
+      adEngagementRegistry().noteSlotSwap(
+        (adsRef.current ?? []).map((ad) => ad.impUrl),
+        (resolved ?? []).map((ad) => ad.impUrl),
+      )
+    } catch {
+      // engagement must never break rotation
+    }
+    adsRef.current = resolved
+    setAdsState(resolved)
+  }
   const [responseAds, setResponseAds] = useState<Record<string, AdResponse[]>>(
     {},
   )
   const [isLoading, setIsLoading] = useState(false)
 
   const { terminalHeight } = useTerminalLayout()
+
+  // The live facts the ad client context reads (COD-757).
+  const renderer = useRenderer()
+  useEffect(() => {
+    if (!renderer) return
+    return registerAdRenderer(() => ({
+      useMouse: renderer.useMouse,
+      width: renderer.width,
+    }))
+  }, [renderer])
+  useEffect(
+    () =>
+      useChatStore.subscribe((state, prev) =>
+        noteAdTurnState(state.isChainInProgress, prev.isChainInProgress),
+      ),
+    [],
+  )
   const shouldHideAds = shouldHideGravityAds({
     enabled,
     terminalHeight,
@@ -462,27 +513,29 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       // One id per logical event (COD-365). This path has no retry, so one
       // mint per call is one per event; the header is what the server reads.
       const clientEventId = crypto.randomUUID()
-      const res = await fetch(`${WEBSITE_URL}/api/v1/ads/impression`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-          'User-Agent': getCliAdRequestUserAgent(),
-          ...clientEnvironmentHeaders(),
-          [FREEBUFF_EVENT_ID_HEADER]: clientEventId,
-        },
-        body: JSON.stringify({
-          impUrl,
-          mode: agentMode,
-          // The same shared ad user agent (getAdUserAgent) and OS this ad was
-          // auctioned with, so the impression the server records for us
-          // matches the auction request.
-          userAgent: getAdUserAgent(),
-          os: getAdDeviceInfo().os,
-          clientEventId,
-          ...(renderDelayMs !== undefined ? { renderDelayMs } : {}),
+      const res = await timedApiCall(() =>
+        fetch(`${WEBSITE_URL}/api/v1/ads/impression`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+            'User-Agent': getCliAdRequestUserAgent(),
+            ...clientEnvironmentHeaders(),
+            [FREEBUFF_EVENT_ID_HEADER]: clientEventId,
+          },
+          body: JSON.stringify({
+            impUrl,
+            mode: agentMode,
+            // The same shared ad user agent (getAdUserAgent) and OS this ad was
+            // auctioned with, so the impression the server records for us
+            // matches the auction request.
+            userAgent: getAdUserAgent(),
+            os: getAdDeviceInfo().os,
+            clientEventId,
+            ...(renderDelayMs !== undefined ? { renderDelayMs } : {}),
+          }),
         }),
-      })
+      )
 
       if (!res.ok) {
         logger.debug(
@@ -596,6 +649,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
         // Receipt stamp for `renderDelayMs` (COD-365): the response is in
         // hand, the card is not yet on screen.
         const receivedAtMs = Date.now()
+        noteAdsServed(data.ads.length, receivedAtMs)
         return {
           // Every string an ad network or advertiser wrote is drawn in the
           // terminal: strip escape sequences and controls here, once, so an

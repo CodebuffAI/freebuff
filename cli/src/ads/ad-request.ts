@@ -11,6 +11,7 @@
 import { WEBSITE_URL } from '@codebuff/sdk'
 import { getAdUserAgent } from '@codebuff/common/util/ad-user-agent'
 
+import { collectCliAdClientContext } from './ad-client-context'
 import { getSessionDockArm } from '../hooks/use-dock-panel'
 import { FREEBUFF_WEB_URL } from '../login/constants'
 import { tryGetProjectRoot } from '../project-files'
@@ -167,6 +168,7 @@ export async function buildAdAuctionRequest(params: {
     : null
   const capabilityRoute = capability !== null
   const dockArm = getSessionDockArm()
+  const clientContext = collectCliAdClientContext()
 
   return {
     url: `${capabilityRoute ? FREEBUFF_WEB_URL : WEBSITE_URL}${capabilityRoute ? '/api/ads' : '/api/v1/ads'}`,
@@ -203,6 +205,9 @@ export async function buildAdAuctionRequest(params: {
         // policy resolves, so the server falls back to its own assignment
         // rather than being handed a guess.
         ...(dockArm ? { cliDockArm: dockArm } : {}),
+        // Bucketed terminal/attention/session facts (COD-757), training
+        // features only. Synchronous and total: `undefined` drops the key.
+        ...(clientContext ? { clientContext } : {}),
       }),
     },
   }

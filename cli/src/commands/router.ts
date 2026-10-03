@@ -16,6 +16,7 @@ import {
   buildReviewPrompt,
 } from './prompt-builders'
 import { noteUserTurnForAdClickReturn } from '../ads/click-return'
+import { noteAdUserSend } from '../ads/ad-signals'
 import { getProjectRoot } from '../project-files'
 import { useChatStore } from '../state/chat-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
@@ -287,6 +288,8 @@ export async function routeUserPrompt(
 
   // COD-694: a submitted prompt is the CLI's "came back after an ad click".
   noteUserTurnForAdClickReturn()
+  // COD-757: `attn.sinceSend` and the engagement records' send flags.
+  noteAdUserSend()
 
   // DAU signal: one un-sampled event per user-submitted prompt. The CLI's
   // distinct id resolves to the canonical codebuff user id (anonymous id is
