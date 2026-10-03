@@ -668,16 +668,17 @@ describe('error-handling', () => {
       expect(result.content).toContain('Access denied')
     })
 
-    test('handles not found error (404)', () => {
+    test('handles not found error (404) with auth hint', () => {
       const notFoundError = {
         statusCode: 404,
-        message: 'Resource not found',
+        message: 'Request failed (404)',
       }
 
       expect(isOutOfCreditsError(notFoundError)).toBe(false)
 
       const result = createErrorMessage(notFoundError, 'msg-404')
-      expect(result.content).toContain('Resource not found')
+      expect(result.content).toContain('Request failed (404)')
+      expect(result.content).toContain('Hint: You may not be logged in. Run `freebuff login`')
     })
 
     test('handles conflict error (409)', () => {
