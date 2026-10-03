@@ -271,6 +271,9 @@ export type RunOptions = {
   allowInferenceSourceChange?: boolean
   extraToolResults?: ToolMessage[]
   signal?: AbortSignal
+  /** Optional wall-clock deadline (Unix milliseconds), used for budget reminders.
+   * The host remains responsible for enforcing its timeout via signal. */
+  deadlineAt?: number
   /** Optional steering hook. Drained at each agent step boundary during the run;
    * any returned messages are appended to the conversation as user prompts (and keep
    * the turn going) before the next LLM call. Lets a host inject messages into a
@@ -565,6 +568,7 @@ async function runOnce({
   previousRun,
   extraToolResults,
   signal,
+  deadlineAt,
   drainSteeringMessages,
   costMode,
   extraCodebuffMetadata,
@@ -1060,6 +1064,7 @@ async function runOnce({
       agentId,
     },
     drainSteeringMessages,
+    deadlineAt,
     repoUrl: undefined,
     repoId: undefined,
     clientSessionId: promptId,

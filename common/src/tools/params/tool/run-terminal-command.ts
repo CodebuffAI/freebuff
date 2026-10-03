@@ -40,6 +40,14 @@ export function clampTerminalTimeoutSeconds(
 export const terminalCommandOutputSchema = z.union([
   z.object({
     command: z.string(),
+    processId: z.number(),
+    backgroundProcessStatus: z.enum(['running', 'completed', 'error']),
+    stdoutPath: z.string().optional(),
+    stderrPath: z.string().optional(),
+    message: z.string().optional(),
+  }),
+  z.object({
+    command: z.string(),
     startingCwd: z.string().optional(),
     message: z.string().optional(),
     stderr: z.string().optional(),
@@ -54,11 +62,7 @@ export const terminalCommandOutputSchema = z.union([
     stdoutOmittedForLength: z.literal(true),
     exitCode: z.number().optional(),
   }),
-  z.object({
-    command: z.string(),
-    processId: z.number(),
-    backgroundProcessStatus: z.enum(['running', 'completed', 'error']),
-  }),
+
   z.object({
     command: z.string(),
     errorMessage: z.string(),
@@ -81,8 +85,8 @@ export const terminalCommandOutputSchema = z.union([
  * to a concrete example is the ordinary failure here. The variant removes the
  * footer step and the example both.
  *
- * The default is byte-identical to what shipped before, so a normal user run is
- * unchanged.
+ * Both variants share the same task-authorization guidance. This option only
+ * changes commit attribution.
  */
 export function buildGitCommitGuidePrompt(options: {
   attribution: boolean
@@ -150,14 +154,14 @@ const GIT_COMMIT_GUIDE_TAIL = `
 **Important details**
 
 - When feasible, use a single \`git commit -am\` command to add and commit together, but do not accidentally stage unrelated files.
-- Never alter the git config.
-- Do not push to the remote repository.
+- Change git configuration only when the task requires it; prefer repository-local settings.
+- Push to the remote repository only when the user has authorized pushing.
 - Avoid using interactive flags (e.g., \`-i\`) that require unsupported interactive input.
 - Do not create an empty commit if there are no changes.
 - Make sure your commit message is concise yet descriptive, focusing on the intention behind the changes rather than merely describing them.
 `
 
-/** The default guidance. Byte-identical to what shipped before it was split. */
+/** The default commit guidance, including attribution. */
 export const gitCommitGuidePrompt = buildGitCommitGuidePrompt({
   attribution: true,
 })
@@ -197,31 +201,23 @@ const inputSchema = z
   .describe(
     `Execute a CLI command from the **project root** (different from the user's cwd).`,
   )
-const buildDescription = (options: { attribution: boolean }) => `
-Stick to these use cases:
-1. Typechecking the project or running build (e.g., "npm run build"). Reading the output can help you edit code to fix build errors. If possible, use an option that performs checks but doesn't emit files, e.g. \`tsc --noEmit\`.
-2. Running tests (e.g., "npm test"). Reading the output can help you edit code to fix failing tests. Or, you could write new unit tests and then run them.
-3. Moving, renaming, or deleting files and directories. These actions can be vital for refactoring requests. Use \`mv\` or \`rm\` (commands run in bash on every OS, including Windows — do not use \`move\`/\`del\`).
+const buildDescription = (options: { attribution: boolean }) =>
+  `
+Execute commands needed to complete the user's task, including inspecting the environment, running scripts, installing task dependencies, building, testing, generating requested artifacts, and starting required services.
 
-Most likely, you should ask for permission for any other type of command you want to run. If asking for permission, show the user the command you want to run using \`\`\` tags and *do not* use the tool call format, e.g.:
-\`\`\`bash
-git branch -D foo
-\`\`\`
+Authorization:
+- The user's request authorizes the ordinary steps reasonably necessary to complete it. Carry that authorization through the task; do not ask again just because a step uses a script, creates a virtual environment, installs local dependencies, or starts a task-required process.
+- Work on the paths and environment specified by the task. An explicitly requested output path can be outside the project root; do not treat that alone as a reason to stop or ask permission. Keep unrelated files and systems untouched, and prefer project-local dependencies and configuration.
+- Ask only when a necessary action goes beyond the authorized scope or has significant destructive, external, or hard-to-undo effects that the user has not authorized. A coding request alone does not authorize publishing, pushing, deploying, modifying production data, deleting unrelated data, or changing system-wide settings. Honor authorization already given for a specific action.
+- Follow explicit user restrictions and host execution limits. If a tool refuses an action, respect the refusal; do not bypass it. In unattended runs, complete the authorized work without inventing a permission exchange. If genuinely blocked on authorization, report the blocker without claiming success.
 
-DO NOT do any of the following:
-1. Run commands that can modify files outside of the project directory, install packages globally, install virtual environments, or have significant side effects outside of the project directory, unless you have explicit permission from the user. Treat anything outside of the project directory as read-only.
-2. Run \`git push\` because it can break production (!) if the user was not expecting it. Don't run \`git commit\`, \`git rebase\`, or related commands unless you get explicit permission. If a user asks to commit changes, you can do so, but you should not invoke any further git commands beyond the git commit command.
-3. Run scripts without asking. Especially don't run scripts that could run against the production environment or have permanent effects without explicit permission from the user.
-4. Be careful with any command that has big or irreversible effects. Anything that touches a production environment, servers, the database, or other systems that could be affected by a command should be run with explicit permission from the user.
-5. Use the run_terminal_command tool to create or edit files. Do not use \`cat\` or \`echo\` to create or edit files. You should instead use other tools for creating or editing files.
-6. Use the wrong package manager for the project. For example, if the project uses \`pnpm\` or \`bun\` or \`yarn\`, you should not use \`npm\`. Similarly not everyone uses \`pip\` for python, etc.
-
-Do:
-- If there's an opportunity to use "-y" or "--yes" flags, use them. Any command that prompts for confirmation will hang if you don't use the flags.
-
-Notes:
-- If the user references a specific file, it could be either from their cwd or from the project root. You **must** determine which they are referring to (either infer or ask). Then, you must specify the path relative to the project root (or use the cwd parameter)
-- Commands can succeed without giving any output, e.g. if no type errors were found.
+Execution:
+- Inspect unfamiliar scripts or commands enough to understand their effects before running them. Use the project's package manager and the narrowest command that accomplishes the task.
+- Prefer the file-editing tools for source changes. Running a script or build that generates the requested artifacts is allowed.
+- Use non-interactive flags such as --yes when appropriate for an already-authorized operation; they do not expand its authorization.
+- Use bash syntax on every OS (Git Bash on Windows), including mv/rm and /dev/null.
+- Resolve user-provided paths against the intended working directory; set cwd when needed. Commands default to the project root, which can differ from the user's cwd.
+- Commands can succeed without producing output. Check exit status and the requested artifacts or behavior before claiming completion.
 
 ${buildGitCommitGuidePrompt(options)}
 

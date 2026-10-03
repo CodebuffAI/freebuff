@@ -23,6 +23,11 @@ import {
 } from 'bun:test'
 import { APICallError, RetryError } from 'ai'
 import { z } from 'zod/v4'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { applyPatch } from 'diff'
 
 import { loopAgentSteps } from '../run-agent-step'
 import { frameSteeringText, STEERING_NOTE } from '../util/messages'
@@ -167,6 +172,500 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
 
   afterAll(() => {
     clearMockedModules()
+  })
+
+  it('offers one completion check after edits, then allows a repair and finishes', async () => {
+    mockTemplate.completionCheck = true
+    let calls = 0
+    const prompts: string[] = []
+    await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      promptAiSdkStream: async function* ({ messages }) {
+        calls++
+        prompts.push(JSON.stringify(messages))
+        if (calls === 1 || calls === 3) {
+          yield createToolCallChunk('write_file', {
+            path: 'output.txt',
+            instructions: 'Write result',
+            content: 'verified',
+          })
+        } else {
+          yield { type: 'text' as const, text: 'Done' }
+        }
+        return promptSuccess('completion-test')
+      },
+    })
+    expect(calls).toBe(4)
+    expect(prompts[1]).not.toContain('Final completion check:')
+    expect(prompts[2]).toContain('Final completion check:')
+    expect(prompts[3].split('Final completion check:')).toHaveLength(2)
+  })
+
+  it('does not add a completion check to a plain answer or exceed the step budget', async () => {
+    mockTemplate.completionCheck = true
+    await loopAgentSteps(loopAgentStepsBaseParams)
+    expect(llmCallCount).toBe(1)
+    mockAgentState.stepsRemaining = 1
+    let calls = 0
+    await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      promptAiSdkStream: async function* () {
+        calls++
+        yield createToolCallChunk('write_file', {
+          path: 'output.txt',
+          instructions: 'Write result',
+          content: 'test',
+        })
+        return promptSuccess('limited-test')
+      },
+    })
+    expect(calls).toBe(1)
+  })
+
+  describe('completion check failure boundaries', () => {
+    const capacityError = () =>
+      new APICallError({
+        message: 'Model capacity unavailable',
+        url: 'https://example.com/responses',
+        requestBodyValues: {},
+        statusCode: 200,
+        responseBody: JSON.stringify({ error: { code: 'flex_unavailable' } }),
+        isRetryable: false,
+      })
+
+    beforeEach(() => {
+      mockTemplate.completionCheck = true
+      mockTemplate.outputMode = 'last_message'
+    })
+
+    for (const remainingMs of [-1, 39_000, 55_000, 119_999, 120_000]) {
+      it(`reserves time before starting a check (${remainingMs}ms left)`, async () => {
+        const now = 1_000_000
+        spyOn(Date, 'now').mockReturnValue(now)
+        const prompts: string[] = []
+        await loopAgentSteps({
+          ...loopAgentStepsBaseParams,
+          deadlineAt: now + remainingMs,
+          promptAiSdkStream: async function* ({ messages }) {
+            prompts.push(JSON.stringify(messages))
+            if (prompts.length === 1) {
+              yield createToolCallChunk('write_file', {
+                path: 'output.txt',
+                content: 'done',
+                instructions: 'Write result',
+              })
+            } else yield { type: 'text', text: 'Done' }
+            return promptSuccess('deadline')
+          },
+        })
+        expect(prompts).toHaveLength(remainingMs >= 120_000 ? 3 : 2)
+        expect(prompts.at(-1)!.includes('Final completion check:')).toBe(
+          remainingMs >= 120_000,
+        )
+      })
+    }
+
+    for (const failure of [
+      'capacity',
+      'network',
+      'server',
+      'text',
+      'tool',
+      'xml-tool',
+      'after-tool',
+      'abort',
+      'forbidden',
+      'spend-limit',
+      'no-answer',
+      'bug',
+    ] as const) {
+      it(`handles ${failure} during optional verification without hiding work or errors`, async () => {
+        let calls = 0
+        const controller = new AbortController()
+        const emitted: unknown[] = []
+        const writes: string[] = []
+        const result = await loopAgentSteps({
+          ...loopAgentStepsBaseParams,
+          signal: controller.signal,
+          onResponseChunk: (chunk) => emitted.push(chunk),
+          requestToolCall: async ({ toolName, input }) => {
+            if (toolName === 'write_file') writes.push(input.content)
+            return { output: [{ type: 'json', value: { message: 'written' } }] }
+          },
+          promptAiSdkStream: async function* () {
+            calls++
+            if (calls === 1) {
+              yield createToolCallChunk('write_file', {
+                path: 'output.txt',
+                content: 'original',
+                instructions: 'Write result',
+              })
+            } else if (calls === 2) {
+              if (failure === 'no-answer')
+                yield createToolCallChunk('end_turn', {})
+              else
+                yield {
+                  type: 'text',
+                  text: 'Completed result; initial tests passed.',
+                }
+            } else {
+              yield { type: 'reasoning', text: 'Checking the result.' }
+              if (failure === 'text')
+                yield { type: 'text', text: 'I found a failing check.' }
+              if (failure === 'xml-tool') {
+                yield {
+                  type: 'text',
+                  text:
+                    '<codebuff_tool_call>' +
+                    JSON.stringify({
+                      cb_tool_name: 'write_file',
+                      path: 'repair.txt',
+                      content: 'repair',
+                      instructions: 'Repair result',
+                    }) +
+                    '</codebuff_tool_call>',
+                }
+              }
+              if (
+                (failure === 'tool' || failure === 'after-tool') &&
+                calls === 3
+              ) {
+                yield createToolCallChunk('write_file', {
+                  path: 'repair.txt',
+                  content: 'repair',
+                  instructions: 'Repair result',
+                })
+                if (failure === 'after-tool') return promptSuccess('repair')
+              }
+              if (failure === 'abort') controller.abort()
+              if (failure === 'bug') throw new Error('Unexpected internal bug')
+              if (failure === 'network')
+                throw Object.assign(new Error('connection reset'), {
+                  code: 'ECONNRESET',
+                })
+              if (
+                failure === 'forbidden' ||
+                failure === 'server' ||
+                failure === 'spend-limit'
+              ) {
+                throw new APICallError({
+                  message: failure,
+                  url: 'https://example.com/responses',
+                  requestBodyValues: {},
+                  statusCode:
+                    failure === 'forbidden'
+                      ? 403
+                      : failure === 'spend-limit'
+                        ? 429
+                        : 503,
+                  responseBody:
+                    failure === 'spend-limit'
+                      ? JSON.stringify({
+                          error: 'turn_spend_limit',
+                          message: FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
+                        })
+                      : undefined,
+                })
+              }
+              throw capacityError()
+            }
+            return promptSuccess('check')
+          },
+        })
+        const recovered = ['capacity', 'network', 'server'].includes(failure)
+        expect(result.output.type).toBe(recovered ? 'lastMessage' : 'error')
+        expect(calls).toBe(failure === 'after-tool' ? 4 : 3)
+        if (recovered) {
+          expect(JSON.stringify(result.output)).toContain(
+            'Completed result; initial tests passed.',
+          )
+          expect(JSON.stringify(result.output)).toContain(
+            'no additional verification was completed',
+          )
+          expect(
+            JSON.stringify(result.agentState.messageHistory),
+          ).not.toContain('Final completion check:')
+          expect(JSON.stringify(emitted)).toContain(
+            'no additional verification was completed',
+          )
+          expect(result.agentState.stepsRemaining).toBe(7)
+        } else {
+          expect(JSON.stringify(result.output)).not.toContain(
+            'preceding result is preserved',
+          )
+        }
+        // Native calls wait for a complete stream; XML calls can execute
+        // before the provider fails. Neither may be treated as a clean check.
+        expect(writes).toEqual(
+          failure === 'xml-tool' || failure === 'after-tool'
+            ? ['original', 'repair']
+            : ['original'],
+        )
+      })
+    }
+
+    it('handles steering that arrives during a failed optional check', async () => {
+      let calls = 0
+      let delivered = false
+      const prompts: string[] = []
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        drainSteeringMessages: async () => {
+          if (calls === 3 && !delivered) {
+            delivered = true
+            return ['Also explain how to run it.']
+          }
+          return []
+        },
+        promptAiSdkStream: async function* ({ messages }) {
+          calls++
+          prompts.push(JSON.stringify(messages))
+          if (calls === 1)
+            yield createToolCallChunk('write_file', {
+              path: 'output.txt',
+              content: 'done',
+              instructions: 'Write result',
+            })
+          else if (calls === 3) throw capacityError()
+          else
+            yield {
+              type: 'text',
+              text: calls === 2 ? 'Done' : 'Run with bun output.txt',
+            }
+          return promptSuccess('steering')
+        },
+      })
+      expect(calls).toBe(4)
+      expect(prompts[3]).toContain('Also explain how to run it.')
+      expect(JSON.stringify(result.output)).toContain('Run with bun output.txt')
+    })
+  })
+
+  describe('completion verification with real artifacts', () => {
+    const good = 'module.exports = 42;\n'
+    const wrong = 'module.exports = 0;\n'
+    const check =
+      "require('node:assert/strict').equal(require('./answer.cjs'), 42); console.log('verified 42');\n"
+    const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+    const verify = `${quote(process.execPath)} check.cjs`
+    const filtered = `${verify} 2>&1 | tail -n 5`
+    const checkedPipeline = `set -o pipefail; ${filtered}`
+    const write = (path: string, content: string) =>
+      createToolCallChunk('write_file', {
+        path,
+        content,
+        instructions: 'Update the verification fixture',
+      })
+    const run = (command: string) =>
+      createToolCallChunk('run_terminal_command', { command })
+
+    // Script only the model boundary. The loop, file handlers, patches and
+    // shell checks execute for real. These cases prove repair/verification can
+    // complete after a premature answer, not that a live model obeys the prompt.
+    const scenarios = [
+      {
+        name: 'repairs invalid syntax before verifying the final file',
+        before: () => [write('answer.cjs', 'module.exports = ;\n')],
+        repair: () => [run(verify), write('answer.cjs', good), run(verify)],
+        initialStatuses: [],
+        repairedStatuses: [1, 0],
+      },
+      {
+        name: 'reruns verification after an edit invalidates a previous pass',
+        before: () => [
+          write('answer.cjs', good),
+          run(verify),
+          write('answer.cjs', wrong),
+        ],
+        repair: () => [run(verify), write('answer.cjs', good), run(verify)],
+        initialStatuses: [0],
+        repairedStatuses: [0, 1, 0],
+      },
+      {
+        name: 'exposes a failure hidden by a successful output filter',
+        before: () => [write('answer.cjs', wrong), run(filtered)],
+        repair: () => [
+          run(checkedPipeline),
+          write('answer.cjs', good),
+          run(checkedPipeline),
+        ],
+        initialStatuses: [0],
+        repairedStatuses: [0, 1, 0],
+      },
+      {
+        name: 'restores a silenced assertion and fixes the implementation',
+        before: () => [
+          write('answer.cjs', wrong),
+          write('check.cjs', '// Assertion removed to make the check pass.\n'),
+          run(verify),
+        ],
+        repair: () => [
+          write('check.cjs', check),
+          run(verify),
+          write('answer.cjs', good),
+          run(verify),
+        ],
+        initialStatuses: [0],
+        repairedStatuses: [0, 1, 0],
+      },
+    ]
+
+    for (const scenario of scenarios) {
+      for (const enabled of [false, true]) {
+        it(`${scenario.name} (completion check ${enabled ? 'on' : 'off'})`, async () => {
+          const directory = mkdtempSync(
+            join(tmpdir(), 'completion-verification-'),
+          )
+          try {
+            writeFileSync(join(directory, 'check.cjs'), check)
+            writeFileSync(join(directory, 'oracle.cjs'), check)
+            mockTemplate.toolNames.push('run_terminal_command')
+            mockTemplate.completionCheck = enabled
+            const before = scenario.before()
+            const repair = scenario.repair()
+            const statuses: number[] = []
+            const output: string[] = []
+            let calls = 0
+            let completionPrompts = 0
+            const result = await loopAgentSteps({
+              ...loopAgentStepsBaseParams,
+              prompt:
+                'Make answer.cjs export 42 and verify it without weakening the assertion.',
+              requestOptionalFile: async ({ filePath }) => {
+                try {
+                  return readFileSync(join(directory, filePath), 'utf8')
+                } catch (error) {
+                  if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+                    return null
+                  throw error
+                }
+              },
+              requestToolCall: async ({ toolName, input }) => {
+                if (toolName === 'write_file') {
+                  if (!['answer.cjs', 'check.cjs'].includes(input.path))
+                    throw new Error('Unexpected file')
+                  const target = join(directory, input.path)
+                  const content =
+                    input.type === 'patch'
+                      ? applyPatch(readFileSync(target, 'utf8'), input.content)
+                      : input.content
+                  if (typeof content !== 'string')
+                    throw new Error('Patch failed')
+                  writeFileSync(target, content)
+                  return {
+                    output: [
+                      {
+                        type: 'json',
+                        value: { file: input.path, message: 'File written' },
+                      },
+                    ],
+                  }
+                }
+                if (
+                  toolName !== 'run_terminal_command' ||
+                  ![verify, filtered, checkedPipeline].includes(input.command)
+                ) {
+                  throw new Error('Unexpected command')
+                }
+                const child = spawnSync('bash', ['-c', input.command], {
+                  cwd: directory,
+                  encoding: 'utf8',
+                  timeout: 2000,
+                })
+                if (child.error) throw child.error
+                statuses.push(child.status ?? -1)
+                output.push(child.stdout + child.stderr)
+                return {
+                  output: [
+                    {
+                      type: 'json',
+                      value: {
+                        command: input.command,
+                        exitCode: child.status,
+                        stdout: child.stdout,
+                        stderr: child.stderr,
+                      },
+                    },
+                  ],
+                }
+              },
+              promptAiSdkStream: async function* ({ messages }) {
+                const index = calls++
+                if (index < before.length) yield before[index]!
+                else if (index === before.length)
+                  yield { type: 'text', text: 'Done; everything passes.' }
+                else {
+                  // Repairs are reachable only if the real loop resumes after
+                  // the premature answer and supplies the completion check.
+                  completionPrompts = (
+                    JSON.stringify(messages).match(
+                      /Final completion check:/g,
+                    ) ?? []
+                  ).length
+                  if (completionPrompts !== 1)
+                    throw new Error('Expected exactly one completion check')
+                  const next = repair[index - before.length - 1]
+                  if (next) yield next
+                  else
+                    yield {
+                      type: 'text',
+                      text: 'Verified the final file exports 42 with the original assertion.',
+                    }
+                }
+                return promptSuccess(`verification-${calls}`)
+              },
+            })
+            expect(result.output.type).not.toBe('error')
+            expect(calls).toBe(
+              before.length + 1 + (enabled ? repair.length + 1 : 0),
+            )
+            expect(completionPrompts).toBe(enabled ? 1 : 0)
+            expect(statuses).toEqual(
+              enabled ? scenario.repairedStatuses : scenario.initialStatuses,
+            )
+            // Independent oracle: even deleting check.cjs cannot manufacture a pass.
+            const oracle = spawnSync(process.execPath, ['oracle.cjs'], {
+              cwd: directory,
+              encoding: 'utf8',
+              timeout: 2000,
+            })
+            if (oracle.error) throw oracle.error
+            expect(oracle.status).toBe(enabled ? 0 : 1)
+            if (enabled) {
+              expect(readFileSync(join(directory, 'check.cjs'), 'utf8')).toBe(
+                check,
+              )
+              expect(output.at(-1)).toContain('verified 42')
+            }
+          } finally {
+            rmSync(directory, { recursive: true, force: true })
+          }
+        })
+      }
+    }
+  })
+
+  it('adds deadline reminders only when entering a new urgency threshold', async () => {
+    let now = 1000000
+    spyOn(Date, 'now').mockImplementation(() => now)
+    const prompts: string[] = []
+    await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      deadlineAt: now + 600000,
+      promptAiSdkStream: async function* ({ messages }) {
+        prompts.push(JSON.stringify(messages))
+        if (prompts.length < 4) {
+          yield createToolCallChunk('read_files', { paths: ['file1.txt'] })
+          if (prompts.length === 2) now += 400000
+          if (prompts.length === 3) now += 150000
+        } else yield { type: 'text' as const, text: 'Done' }
+        return promptSuccess('deadline-test')
+      },
+    })
+    expect(prompts[0]).toContain('600 seconds remain')
+    expect(prompts[1].split('Time budget:')).toHaveLength(2)
+    expect(prompts[2]).toContain('200 seconds remain')
+    expect(prompts[3]).toContain('50 seconds remain')
   })
 
   it('stops an unchanged to-do loop after recovery attempts and can resume on a new prompt', async () => {

@@ -137,6 +137,7 @@ export type { FileTokenData, TokenCallerMap } from '@codebuff/code-map'
 
 export {
   getActiveTerminalCommandProcesses,
+  releaseBackgroundTerminalCommands,
   runTerminalCommand,
 } from './tools/run-terminal-command'
 export type {

@@ -23,6 +23,8 @@ export function createBase3(
      *  `maxContextLength` replaces the runtime's per-model budget lookup for
      *  the same reason. */
     compaction?: CompactionPolicy & { maxContextLength?: number }
+    /** Web/Cloud owns persistent processes through managed sessions. */
+    supportsBackgroundCommands?: boolean
   } = {},
 ): Omit<SecretAgentDefinition, 'id'> {
   return {
@@ -43,6 +45,7 @@ export function createBase3(
     outputMode: 'last_message',
     includeMessageHistory: true,
     windowedFileReads: true,
+    completionCheck: true,
     // Per-model idle gap and token floor (common/src/constants/
     // compaction-policy.ts). Explicit, not `true`: a bare `true` would take
     // the runtime default instead of the model's.
@@ -65,6 +68,12 @@ Current date: ${PLACEHOLDER.CURRENT_DATE}.
 - Match the project's existing conventions. Verify a library is already used in the project before employing it.
 - Prefer editing existing files over creating new ones. Make the fewest changes that address the request.
 - Verify non-trivial changes by running the project's typecheck and relevant tests.
+- Extract the acceptance criteria before implementing: exact output paths, file names, interfaces, schemas, formats, and any performance or resource constraints. Check the actual artifacts against those criteria before finishing.
+- Test the delivered artifact through the interface the user will use. A successful build or exit code alone does not prove the requested behavior. For performance work, measure correctness and timing on representative inputs; do not claim a speedup without a measurement.
+- Verify the final edited files: after a repair, rerun the affected checks; earlier passing results do not cover later changes. When filtering test or build output through a pipeline, preserve the tested command's exit status (for example, Bash pipefail or explicit status capture), and inspect the failure output.
+- Fix the cause of a failing check. Do not skip tests, weaken assertions, swallow errors, or add type/lint suppressions just to make verification pass. If such a change is required by the requested behavior, explain why and verify that behavior. Report checks that failed or could not run as limitations, never as passes.
+- For long-running work, produce a minimal working result early and save usable checkpoints. ${options.supportsBackgroundCommands === false ? 'Terminal commands support only SYNC on this host. Use the host-managed preview controls for persistent services; do not request BACKGROUND or use shell backgrounding. Split other long jobs into bounded commands.' : 'Use BACKGROUND for persistent services or long jobs, inspect their logs and readiness, and verify they are still running when required. Do not assume shell backgrounding inside a SYNC command survives tool cleanup.'}
+- When given a deadline, reserve time to verify and save final artifacts. Reduce scope of optional exploration as time runs low; never invent a deadline or claim unfinished work is complete.
 - Use write_todos to plan and track multi-step tasks.
 - Your responses are displayed in a terminal. Keep them short and concise.
 - Don't run destructive or hard-to-undo commands (git push, resets, deploys) unless the user asks for them.

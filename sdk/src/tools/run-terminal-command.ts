@@ -1,4 +1,6 @@
 import { spawn, spawnSync } from 'child_process'
+import { closeSync, mkdtempSync, openSync, writeFileSync } from 'fs'
+import { Readable as NodeReadable } from 'stream'
 import * as os from 'os'
 import * as path from 'path'
 
@@ -10,10 +12,7 @@ import type { Readable } from 'stream'
 
 import { stripColors } from '../../../common/src/util/string'
 import { getSystemProcessEnv } from '../env'
-import {
-  createWindowsBashNotFoundError,
-  findWindowsBash,
-} from './windows-bash'
+import { createWindowsBashNotFoundError, findWindowsBash } from './windows-bash'
 
 import type { CodebuffToolOutput } from '../../../common/src/tools/list'
 
@@ -331,10 +330,6 @@ export function runTerminalCommand({
   signal?: AbortSignal
   terminalCommandBroker?: TerminalCommandBroker
 }): Promise<CodebuffToolOutput<'run_terminal_command'>> {
-  if (process_type === 'BACKGROUND') {
-    throw new Error('BACKGROUND process_type not implemented')
-  }
-
   return new Promise((resolve, reject) => {
     const isWindows = os.platform() === 'win32'
     const processEnv = {
@@ -343,7 +338,10 @@ export function runTerminalCommand({
     } as NodeJS.ProcessEnv
     for (const key of scrubEnvironmentKeys ?? []) delete processEnv[key]
     for (const [key, value] of Object.entries(processEnv)) {
-      if (value !== undefined && scrubEnvironmentValues?.some((secret) => value.trim() === secret.trim())) {
+      if (
+        value !== undefined &&
+        scrubEnvironmentValues?.some((secret) => value.trim() === secret.trim())
+      ) {
         delete processEnv[key]
       }
     }
@@ -415,6 +413,15 @@ export function runTerminalCommand({
             cwd: resolvedCwd,
             env: processEnv,
           }
+      if (process_type === 'BACKGROUND') {
+        startBackgroundCommand(
+          request,
+          command,
+          signal,
+          terminalCommandBroker,
+        ).then(resolve, reject)
+        return
+      }
       childProcess = terminalCommandBroker
         ? terminalCommandBroker.start(request)
         : spawnDirectTerminalCommand(request)
@@ -582,4 +589,154 @@ export function runTerminalCommand({
         )
       })
   })
+}
+
+const backgroundCommands = new Map<
+  TerminalCommandProcess,
+  {
+    signal?: AbortSignal
+    onAbort: () => void
+    transferable: boolean
+  }
+>()
+
+/** Transfer direct background processes to an isolated environment's owner.
+ * Use only after a successful run when that owner guarantees later teardown.
+ * Broker-owned processes cannot outlive their broker. Other runs are untouched.
+ */
+export function releaseBackgroundTerminalCommands(signal: AbortSignal): void {
+  for (const [child, entry] of backgroundCommands) {
+    if (entry.signal !== signal || !entry.transferable) continue
+    signal.removeEventListener('abort', entry.onAbort)
+    liveChildren.delete(child)
+    backgroundCommands.delete(child)
+  }
+}
+
+async function startBackgroundCommand(
+  request: TerminalCommandSpawnRequest,
+  command: string,
+  signal?: AbortSignal,
+  broker?: TerminalCommandBroker,
+): Promise<CodebuffToolOutput<'run_terminal_command'>> {
+  const logDirectory = mkdtempSync(path.join(os.tmpdir(), 'codebuff-process-'))
+  const stdoutPath = path.join(logDirectory, 'stdout.log')
+  const stderrPath = path.join(logDirectory, 'stderr.log')
+  let child: TerminalCommandProcess
+  if (broker) {
+    // Keep the host's execution boundary, including sponsored-run guards.
+    writeFileSync(stdoutPath, '', { mode: 0o600 })
+    writeFileSync(stderrPath, '', { mode: 0o600 })
+    child = broker.start(request)
+    for (const [stream, file] of [
+      [child.stdout, stdoutPath],
+      [child.stderr, stderrPath],
+    ] as const) {
+      const output = new BoundedOutputBuffer(COMMAND_OUTPUT_LIMIT)
+      stream.on('data', (data: Buffer) => {
+        output.append(data.toString())
+        try {
+          writeFileSync(file, output.format())
+        } catch {
+          /* disk unavailable */
+        }
+      })
+    }
+  } else {
+    // Real files rather than pipes allow a sandbox owner to retain the service
+    // after the SDK exits. Logs are private and remain available for inspection.
+    const out = openSync(stdoutPath, 'w', 0o600)
+    let err: number | undefined
+    let process: ChildProcess
+    try {
+      err = openSync(stderrPath, 'w', 0o600)
+      process = spawn(request.executable, request.args, {
+        cwd: request.cwd,
+        env: request.env,
+        stdio: ['ignore', out, err],
+        detached: true,
+        windowsHide: true,
+      })
+    } finally {
+      closeSync(out)
+      if (err !== undefined) closeSync(err)
+    }
+    const completion = new Promise<number | null>((resolve, reject) => {
+      process.once('error', reject)
+      process.once('close', resolve)
+    })
+    // Install the rejection handler before awaiting spawn success.
+    completion.catch(() => {})
+    await new Promise<void>((resolve, reject) => {
+      process.once('spawn', resolve)
+      process.once('error', reject)
+    })
+    process.unref()
+    child = {
+      pid: process.pid,
+      stdout: NodeReadable.from([]),
+      stderr: NodeReadable.from([]),
+      completion,
+      kill: (signal) => killProcessGroup(process, signal),
+      isAlive: () => isProcessGroupAlive(process),
+    }
+  }
+  if (!child.pid) {
+    child.completion.catch(() => {})
+    child.kill('SIGKILL')
+    throw new Error('Background command started without a process ID')
+  }
+  const onAbort = () => {
+    try {
+      child.kill('SIGKILL')
+    } catch {
+      /* already exited */
+    }
+    liveChildren.delete(child)
+    backgroundCommands.delete(child)
+  }
+  liveChildren.add(child)
+  installExitSweep()
+  backgroundCommands.set(child, { signal, onAbort, transferable: !broker })
+  signal?.addEventListener('abort', onAbort, { once: true })
+  if (signal?.aborted) onAbort()
+  const finish = (exitCode: number | null, error?: unknown) => {
+    try {
+      writeFileSync(
+        path.join(logDirectory, 'exit.json'),
+        JSON.stringify({
+          exitCode,
+          ...(error ? { error: String(error) } : {}),
+        }),
+        { mode: 0o600 },
+      )
+    } catch {
+      /* diagnostic only */
+    }
+    // A shell can exit before descendants. Keep ownership until abort/exit.
+    if (!child.isAlive()) {
+      signal?.removeEventListener('abort', onAbort)
+      liveChildren.delete(child)
+      backgroundCommands.delete(child)
+    }
+  }
+  child.completion.then(
+    (code) => finish(code),
+    (error) => finish(null, error),
+  )
+  return [
+    {
+      type: 'json',
+      value: {
+        command,
+        processId: child.pid!,
+        backgroundProcessStatus: signal?.aborted ? 'error' : 'running',
+        stdoutPath,
+        stderrPath,
+        message: signal?.aborted
+          ? 'Background command cancelled: the run was aborted.'
+          : `Started background command. Check readiness and logs at ${stdoutPath} and ${stderrPath}; starting is not proof of success. Use subsequent terminal calls to inspect or stop PID ${child.pid}.`,
+      },
+    },
+  ]
 }

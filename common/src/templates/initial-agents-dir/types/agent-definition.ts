@@ -195,6 +195,8 @@ export interface AgentDefinition {
    * style. Defaults to false, which keeps the legacy read behavior.
    */
   windowedFileReads?: boolean
+  /** One final verification opportunity after tool work, within the existing step budget. */
+  completionCheck?: boolean
 
   /** Drop the agent-attribution trailer from the run_terminal_command commit
    * guidance, so a commit this agent makes carries no `Co-Authored-By` or

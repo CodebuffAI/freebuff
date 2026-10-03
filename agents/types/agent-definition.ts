@@ -195,6 +195,8 @@ export interface AgentDefinition {
    * style. Defaults to false, which keeps the legacy read behavior.
    */
   windowedFileReads?: boolean
+  /** One final verification opportunity after tool work, within the existing step budget. */
+  completionCheck?: boolean
 
   /** Opt in to mechanical context compaction: the runtime rewrites old history
    * into a condensed summary before the next step. Defaults to false.

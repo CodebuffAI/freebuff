@@ -20,6 +20,7 @@ import {
 } from '@codebuff/common/util/error'
 import { serializeCacheDebugCorrelation } from '@codebuff/common/util/cache-debug'
 import {
+  assistantMessage,
   dropUnansweredToolCalls,
   systemMessage,
   userMessage,
@@ -70,7 +71,7 @@ import { buildAgentToolSet } from './templates/prompts'
 import { getAgentPrompt } from './templates/strings'
 import { getToolSet } from './tools/prompts'
 import { processStream } from './tools/stream-parser'
-import { getAgentOutput } from './util/agent-output'
+import { getAgentOutput, outputForParent } from './util/agent-output'
 import {
   createCacheDebugSnapshot,
   enrichCacheDebugSnapshotWithProviderRequest,
@@ -245,6 +246,7 @@ export const runAgentStep = async (
   shouldEndTurn: boolean
   messageId: string | null
   nResponses?: string[]
+  usedWorkTools?: boolean
 }> => {
   const {
     agentType,
@@ -775,6 +777,11 @@ export const runAgentStep = async (
     shouldEndTurn,
     messageId,
     nResponses: undefined,
+    usedWorkTools: toolCalls.some((call) =>
+      ['run_terminal_command', 'write_file', 'str_replace'].includes(
+        call.toolName,
+      ),
+    ),
   }
 }
 
@@ -806,6 +813,8 @@ export async function loopAgentSteps(
     parentTools?: ToolSet
     prompt: string | undefined
     signal: AbortSignal
+    /** Host-enforced wall-clock deadline in Unix milliseconds. */
+    deadlineAt?: number
     /** Optional steering hook. Drained at each step boundary (after a step's LLM
      * call + tools complete, before the next one). Any returned messages are appended
      * to the message history as user prompts and keep the turn going, letting a
@@ -1143,6 +1152,12 @@ export async function loopAgentSteps(
 
   let shouldEndTurn = false
   let hasRetriedOutputSchema = false
+  let hasCheckedCompletion = false
+  // Only the first optional check may fall back to a completed answer. Once
+  // it produces text or invokes ANY tool, its findings/effects must be kept.
+  let completionCheckpoint: Message[] | undefined
+  let usedWorkTools = false
+  let deadlineReminderLevel = 0
   let currentPrompt = prompt
   let currentParams = spawnParams
   let totalSteps = 0
@@ -1425,9 +1440,63 @@ export async function loopAgentSteps(
         shouldEndTurn = false
       }
 
+      // One opportunity per invocation, only after concrete work. Keep normal
+      // step, spend, abort and deadline limits; never override a programmatic end.
+      if (
+        shouldEndTurn &&
+        agentTemplate.completionCheck &&
+        !agentTemplate.handleSteps &&
+        usedWorkTools &&
+        !hasCheckedCompletion &&
+        currentAgentState.stepsRemaining > 0 &&
+        (params.deadlineAt === undefined ||
+          !Number.isFinite(params.deadlineAt) ||
+          params.deadlineAt - Date.now() >= 120_000)
+      ) {
+        hasCheckedCompletion = true
+        // Require an actual answer, not just reasoning or end_turn.
+        if (
+          agentTemplate.outputMode === 'last_message' &&
+          typeof outputForParent(
+            getAgentOutput(currentAgentState, agentTemplate),
+          ) === 'string'
+        ) {
+          completionCheckpoint = [...currentAgentState.messageHistory]
+        }
+        currentAgentState.messageHistory.push(
+          userMessage({
+            content: withSystemTags(
+              'Final completion check: compare the actual deliverables with the user request: exact paths, interfaces, formats, correctness, and any performance requirements. If a necessary check or repair is missing, use the available tools to finish it within the remaining budget. Verify the final edited files; rerun affected checks after repairs, but do not repeat passing checks when the relevant files have not changed. Preserve the tested command\'s exit status when filtering output (for example, Bash pipefail or explicit status capture); a successful output filter is not a passing test. Fix causes rather than skipping tests, weakening assertions, swallowing errors, or adding type/lint suppressions just to pass. If changing a check is required by the requested behavior, explain why and verify that behavior. Respect permission boundaries, refusals, and requests to stop; if awaiting user input or genuinely blocked, report that and end. Otherwise give a concise final answer stating what was verified, which checks failed or could not run, and any remaining limitations.',
+            ),
+          }),
+        )
+        shouldEndTurn = false
+      }
+
       // End turn if programmatic step ended turn, or if the previous runAgentStep ended turn
       if (shouldEndTurn) {
         break
+      }
+
+      if (
+        params.deadlineAt !== undefined &&
+        Number.isFinite(params.deadlineAt)
+      ) {
+        const seconds = Math.max(
+          0,
+          Math.ceil((params.deadlineAt - Date.now()) / 1000),
+        )
+        const level = seconds <= 60 ? 3 : seconds <= 300 ? 2 : 1
+        if (level > deadlineReminderLevel) {
+          deadlineReminderLevel = level
+          currentAgentState.messageHistory.push(
+            userMessage({
+              content: withSystemTags(
+                `Time budget: approximately ${seconds} seconds remain before the host deadline. Prioritize saving usable deliverables and checking the required contract. Avoid optional exploration or starting work that cannot finish in time.`,
+              ),
+            }),
+          )
+        }
       }
 
       const creditsBefore = currentAgentState.directCreditsUsed
@@ -1436,6 +1505,7 @@ export async function loopAgentSteps(
       const {
         agentState: newAgentState,
         shouldEndTurn: llmShouldEndTurn,
+        usedWorkTools: stepUsedWorkTools,
         messageId,
         nResponses: generatedResponses,
       } = await runAgentStep({
@@ -1454,7 +1524,67 @@ export async function loopAgentSteps(
         system,
         tools,
         additionalToolDefinitions: additionalToolDefinitionsWithCache,
+        onResponseChunk: (chunk) => {
+          // tool_call is emitted before execution, including custom tools.
+          // Conservatively refuse fallback even for a read-only tool or an
+          // error event: either may have uncovered a failed verification.
+          if (
+            typeof chunk === 'string'
+              ? chunk.trim().length > 0
+              : chunk.type !== 'reasoning_delta' && chunk.type !== 'start'
+          ) {
+            completionCheckpoint = undefined
+          }
+          params.onResponseChunk(chunk)
+        },
+      }).catch((error: unknown) => {
+        const { statusCode, errorCode } = extractApiErrorDetails(error)
+        const transient =
+          statusCode === 408 ||
+          (statusCode !== undefined && statusCode >= 500 && statusCode < 600) ||
+          ((statusCode === undefined || statusCode === 200) &&
+            (errorCode === 'flex_unavailable' ||
+              errorCode === 'resource_unavailable' ||
+              isTransientNetworkError(error) ||
+              isFetchIdleTimeoutError(error)))
+        // In particular, 429 can be the final per-turn spend limit, not a
+        // provider outage. Leave quota/payment/access refusals to the caller.
+        if (
+          !completionCheckpoint ||
+          !transient ||
+          signal.aborted ||
+          isAbortError(error)
+        ) {
+          throw error
+        }
+
+        const notice =
+          '\n\nThe additional completion check could not finish because the model request failed. The preceding result is preserved; no additional verification was completed.'
+        currentAgentState.messageHistory = [
+          ...completionCheckpoint,
+          assistantMessage(notice),
+        ]
+        currentAgentState.stepsRemaining--
+        logger.warn(
+          {
+            metric: 'completion_check_unavailable',
+            agentId: currentAgentState.agentId,
+            runId,
+            statusCode,
+            errorCode,
+          },
+          'Preserving completed answer after optional verification transport failure',
+        )
+        params.onResponseChunk(notice)
+        return {
+          agentState: currentAgentState,
+          shouldEndTurn: true,
+          usedWorkTools: false,
+          messageId: null,
+          nResponses: undefined,
+        }
       })
+      completionCheckpoint = undefined
 
       if (newAgentState.runId) {
         await addAgentStep({
@@ -1474,6 +1604,7 @@ export async function loopAgentSteps(
       Object.assign(initialAgentState, newAgentState)
       currentAgentState = initialAgentState
       shouldEndTurn = llmShouldEndTurn
+      usedWorkTools ||= stepUsedWorkTools ?? false
       nResponses = generatedResponses
 
       currentPrompt = undefined

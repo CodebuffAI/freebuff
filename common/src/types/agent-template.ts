@@ -134,6 +134,8 @@ export type AgentTemplate<
   includeMessageHistory: boolean
   inheritParentSystemPrompt: boolean
   windowedFileReads?: boolean
+  /** One final verification opportunity after tool work, within the existing step budget. */
+  completionCheck?: boolean
   suppressCommitAttribution?: boolean
   compactContext?:
     | boolean

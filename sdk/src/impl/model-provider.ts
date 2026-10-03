@@ -11,7 +11,7 @@ import {
   FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
 } from '@codebuff/common/constants/freebuff-errors'
 import { FREEBUFF_ACTING_USER_HEADER } from '@codebuff/common/constants/freebuff-models'
-import { isTransientNetworkError } from '@codebuff/common/util/error'
+import { isAbortError, isFetchIdleTimeoutError, isTransientNetworkError } from '@codebuff/common/util/error'
 import {
   OpenAICompatibleChatLanguageModel,
   VERSION,
@@ -120,6 +120,18 @@ function requestUrlOf(input: Parameters<typeof globalThis.fetch>[0]): string {
       : input.url
 }
 
+/** Retain recovery classification, never provider messages, URLs or raw causes. */
+export function sanitizeByokTransportError(error: unknown): Error {
+  if (isAbortError(error)) return new DOMException('BYOK request aborted', 'AbortError')
+  const safe = new Error('BYOK provider stream failed')
+  if (isFetchIdleTimeoutError(error)) {
+    Object.assign(safe, { code: 'ETIMEDOUT' })
+  } else if (isTransientNetworkError(error)) {
+    Object.assign(safe, { code: 'ECONNRESET' })
+  }
+  return safe
+}
+
 /** Preserve streaming while removing a credential even when it crosses chunks. */
 export function redactProviderStream(
   body: ReadableStream<Uint8Array> | null,
@@ -157,8 +169,8 @@ export function redactProviderStream(
         const next = await reader.read()
         if (next.done) controller.close()
         else controller.enqueue(next.value)
-      } catch {
-        controller.error(new Error('BYOK provider stream failed'))
+      } catch (error) {
+        controller.error(sanitizeByokTransportError(error))
       }
     },
     cancel() { return reader.cancel().catch(() => {}) },
@@ -386,8 +398,13 @@ export function getModelForRequest({
       // invokes this again on retries and later tool-loop steps, so removing
       // or replacing a connection stops subsequent inference immediately.
       fetch: (async (...args: Parameters<typeof globalThis.fetch>) => {
+        // Revocation is a durable policy decision, never a transport retry.
         try {
           await byok.assertCurrent?.()
+        } catch {
+          throw new Error(BYOK_CONNECTION_FAILURE_MESSAGE)
+        }
+        try {
           const send = (init: RequestInit | undefined) =>
             globalThis.fetch(args[0], { ...(init ?? {}), redirect: 'error' })
           let response = await send(args[1])
@@ -417,6 +434,12 @@ export function getModelForRequest({
                     errorText ?? (await response.text().catch(() => '')),
                   )
                 : false
+            const headers = new Headers({ 'content-type': 'application/json' })
+            // Keep scheduling hints, but never copy arbitrary provider headers.
+            for (const name of ['retry-after', 'retry-after-ms']) {
+              const value = response.headers.get(name)
+              if (value && /^\d+(?:\.\d+)?$/.test(value)) headers.set(name, value)
+            }
             return new Response(
               JSON.stringify({
                 error: {
@@ -427,7 +450,7 @@ export function getModelForRequest({
                   }),
                 },
               }),
-              { status: response.status, headers: { 'content-type': 'application/json' } },
+              { status: response.status, headers },
             )
           }
           return new Response(redactProviderStream(response.body, byok.apiKey), {
@@ -436,8 +459,18 @@ export function getModelForRequest({
               'content-type': response.headers.get('content-type') ?? 'text/event-stream',
             },
           })
-        } catch {
-          throw new Error(BYOK_CONNECTION_FAILURE_MESSAGE)
+        } catch (error) {
+          const safe = sanitizeByokTransportError(error)
+          if (args[1]?.signal?.aborted || isAbortError(safe)) {
+            throw new DOMException('BYOK request aborted', 'AbortError')
+          }
+          throw new APICallError({
+            message: BYOK_CONNECTION_FAILURE_MESSAGE,
+            url: 'byok-provider',
+            requestBodyValues: {},
+            cause: safe,
+            isRetryable: isTransientNetworkError(safe),
+          })
         }
       }) as typeof globalThis.fetch,
       includeUsage: true,

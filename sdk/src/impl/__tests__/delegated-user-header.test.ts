@@ -1,3 +1,4 @@
+import { isAbortError, isTransientNetworkError } from '@codebuff/common/util/error'
 import { FREEBUFF_ACTING_USER_HEADER } from '@codebuff/common/constants/freebuff-models'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 
@@ -8,6 +9,7 @@ import {
   getModelForRequest,
   isByokModelIdRejection,
   redactProviderStream,
+  sanitizeByokTransportError,
 } from '../model-provider'
 import { streamText } from 'ai'
 
@@ -295,5 +297,49 @@ describe('SDK delegated user headers', () => {
     })
 
     expect(headers).not.toHaveProperty(FREEBUFF_ACTING_USER_HEADER)
+  })
+})
+
+
+describe('BYOK transport recovery classification', () => {
+  test('preserves transient classification without raw provider data', async () => {
+    for (const original of [
+      Object.assign(new Error('secret URL or credential'), { code: 'ECONNRESET' }),
+      new Error('fetch failed', { cause: new Error('secret') }),
+      new DOMException('secret', 'TimeoutError'),
+    ]) {
+      const safe = sanitizeByokTransportError(original)
+      expect(isTransientNetworkError(safe)).toBe(true)
+      expect(String(safe)).not.toContain('secret')
+      expect(safe.cause).toBeUndefined()
+      const stream = new ReadableStream<Uint8Array>({ start(c) { c.error(original) } })
+      let caught: unknown
+      await new Response(redactProviderStream(stream, 'key')).text().catch(e => { caught = e })
+      expect(isTransientNetworkError(caught)).toBe(true)
+    }
+    expect(isTransientNetworkError(sanitizeByokTransportError(new Error('unauthorized')))).toBe(false)
+    const abort = sanitizeByokTransportError(new DOMException('secret', 'AbortError'))
+    expect(isAbortError(abort)).toBe(true)
+    expect(isTransientNetworkError(abort)).toBe(false)
+  })
+
+  test('AI SDK retries a transient BYOK connection failure', async () => {
+    let calls = 0
+    globalThis.fetch = mock(async () => {
+      if (++calls === 1) throw Object.assign(new Error('credential-canary'), { code: 'ECONNRESET' })
+      return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', {
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof fetch
+    const result = streamText({
+      model: getModelForRequest({ apiKey: '', model: '', byok: {
+        id: 'conn', revision: 1, name: 'local', provider: 'openai-compatible',
+        baseUrl: 'http://127.0.0.1:9876/v1', model: 'selected/model',
+        credentialRef: 'connection:conn', createdAt: 'x', updatedAt: 'x', apiKey: 'key',
+      } }),
+      messages: [{ role: 'user', content: 'hello' }], maxRetries: 1,
+    })
+    expect(await result.text).toBe('ok')
+    expect(calls).toBe(2)
   })
 })

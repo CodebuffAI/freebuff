@@ -196,6 +196,7 @@ export const DynamicAgentDefinitionSchema = z.object({
   inputSchema: InputSchemaObjectSchema,
   includeMessageHistory: z.boolean().default(false),
   inheritParentSystemPrompt: z.boolean().default(false),
+  completionCheck: z.boolean().optional(),
   windowedFileReads: z.boolean().optional(),
   suppressCommitAttribution: z.boolean().optional(),
   compactContext: z
