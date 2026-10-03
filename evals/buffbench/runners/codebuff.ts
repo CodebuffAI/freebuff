@@ -35,7 +35,12 @@ export class CodebuffRunner implements Runner {
     collectDiff?: boolean
   }) {
     this.cwd = options.cwd
-    this.env = options.env
+    // Eval JSON can contain numeric or boolean values despite its TS type.
+    this.env =
+      options.env &&
+      Object.fromEntries(
+        Object.entries(options.env).map(([key, value]) => [key, String(value)]),
+      )
     this.client = options.client
     this.agentId = options.agentId
     this.localAgentDefinitions = options.localAgentDefinitions
