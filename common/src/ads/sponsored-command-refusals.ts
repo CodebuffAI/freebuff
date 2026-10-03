@@ -2,10 +2,8 @@
  * Shell commands a sponsored run may not use, whatever the procedure says
  * (COD-665, interim).
  *
- * Three classes, each drawn from a run that went past the intended boundary:
+ * Two classes, each drawn from a run that went past the intended boundary:
  *
- * - `wsl`: entering the Windows Subsystem for Linux, which is the user's own
- *   Linux environment with its own home directory and credentials;
  * - `database`: dropping, resetting, wiping, rolling back or force-seeding a
  *   database, which may be one the user's main checkout (or production) uses;
  * - `container`: building, starting, stopping, removing or pushing containers
@@ -25,7 +23,6 @@
  */
 
 export type SponsoredCommandRefusalKind =
-  | 'wsl'
   | 'database'
   | 'container'
   | 'git'
@@ -46,7 +43,7 @@ type Token = { text: string; quoted: boolean; literal: boolean }
 /** How many wrappers deep the walk reads before it refuses the line. */
 const MAX_DEPTH = 6
 
-/** What the walk judges besides the three COD-665 classes. */
+/** What the walk judges besides the database and container classes. */
 type Judge = {
   /** Git subcommands to refuse; null when git is not being judged. */
   git: ReadonlySet<string> | null
@@ -178,30 +175,46 @@ function flags(tokens: Token[]): string[] {
 
 // ---------------------------------------------------------------------- wsl
 
-const WSL_COMMANDS: ReadonlySet<string> = new Set(['wsl', 'wslg', 'wslconfig'])
-
-/**
- * Distribution launchers from the Store run the same Linux user as `wsl`.
- * Windows only: on Linux `alpine` and `debian` name other programs.
- */
+/** Windows Store distribution launchers; on Linux these can name other tools. */
 const WSL_DISTRO_LAUNCHER =
   /^(ubuntu[\d.]*|debian|kali|opensuse[-\w.]*|sles[-\w.]*|oraclelinux[\w.]*|almalinux[\w.]*|fedoraremix|alpine)$/
 
-/**
- * `\\wsl$\Ubuntu\home\…` and `\\wsl.localhost\…` reach the same files, as do
- * the long-path spellings `\\?\UNC\wsl$\…` and `\\.\UNC\wsl.localhost\…`.
- */
-const WSL_SHARE = /(?:\\\\|\/\/|\bunc[\\/])wsl(?:\$|\.localhost)(?:[\\/]|$)/i
-
-/**
- * On Windows a bare `bash` is `System32\bash.exe` — the WSL launcher — unless
- * something earlier on PATH shadows it, so it is refused. A spelled-out path
- * elsewhere (Git Bash's own `bash.exe`) is not WSL and is not refused.
- */
-function isWindowsWslBash(token: string, platform: string): boolean {
-  if (platform !== 'win32' || commandName(token) !== 'bash') return false
-  if (!/[\\/]/.test(token)) return true
-  return /[\\/](system32|sysnative)[\\/]/i.test(token)
+/** WSL entry is allowed; inspect its command for the remaining refusals. */
+function wslCommand(
+  head: string,
+  args: Token[],
+  platform: string,
+): Token[] | null {
+  if (head === 'wsl') {
+    let index = 0
+    while (index < args.length) {
+      const option = args[index]!.text
+      if (option === '--' || option === '-e' || option === '--exec') {
+        return args.slice(index + 1)
+      }
+      if (
+        [
+          '-d',
+          '--distribution',
+          '-u',
+          '--user',
+          '--cd',
+          '--shell-type',
+        ].includes(option)
+      ) {
+        index += 2
+      } else if (option.startsWith('-')) {
+        index++
+      } else {
+        break
+      }
+    }
+    return args.slice(index)
+  }
+  if (platform === 'win32' && WSL_DISTRO_LAUNCHER.test(head)) {
+    return args[0]?.text === 'run' ? args.slice(1) : []
+  }
+  return null
 }
 
 // ----------------------------------------------------------------- database
@@ -848,12 +861,18 @@ function commandStart(tokens: Token[]): number {
  * Whether this segment runs an interpreter that reads its commands from
  * stdin: `… | bash`, `bash <<< "…"`, `… | powershell -`, `… | iex`.
  */
-function readsCommandsFromStdin(tokens: Token[]): boolean {
+function readsCommandsFromStdin(tokens: Token[], platform: string): boolean {
   const start = commandStart(tokens)
   const headToken = tokens[start]
   if (!headToken) return false
   const head = commandName(headToken.text)
   const args = tokens.slice(start + 1)
+  const linuxCommand = wslCommand(head, args, platform)
+  if (linuxCommand !== null) {
+    return (
+      linuxCommand.length === 0 || readsCommandsFromStdin(linuxCommand, 'linux')
+    )
+  }
   if (POSIX_SHELLS.has(head)) {
     if (args.some((t) => t.text === '-s' || t.text === '-')) return true
     if (args.some((t) => /^-[A-Za-z]*c[A-Za-z]*$/.test(t.text))) return false
@@ -914,13 +933,9 @@ function analyzeSegment(
     if (found) return found
   }
 
-  // ---- wsl
-  if (
-    WSL_COMMANDS.has(head) ||
-    (platform === 'win32' && WSL_DISTRO_LAUNCHER.test(head)) ||
-    isWindowsWslBash(headToken.text, platform)
-  ) {
-    return { kind: 'wsl', invocation: head }
+  const linuxCommand = wslCommand(head, args, platform)
+  if (linuxCommand !== null) {
+    return analyzeRest(linuxCommand, 'linux', depth + 1, judge)
   }
 
   // ---- wrappers that run a command string
@@ -1212,9 +1227,6 @@ function analyzeCommandLine(
   judge: Judge,
 ): SponsoredRefusedCommand | null {
   if (depth > MAX_DEPTH) return command.trim() ? TOO_DEEP : null
-  if (WSL_SHARE.test(command)) {
-    return { kind: 'wsl', invocation: '\\\\wsl$' }
-  }
   const segments = lexCommandLine(command)
   for (const segment of segments) {
     const found = analyzeSegment(segment, platform, depth, judge)
@@ -1222,7 +1234,7 @@ function analyzeCommandLine(
   }
   // `echo "docker compose up" | bash`, `bash <<< "…"`, `"wsl ls" | iex`: the
   // text piped into an interpreter is a command line too.
-  if (segments.some(readsCommandsFromStdin)) {
+  if (segments.some((segment) => readsCommandsFromStdin(segment, platform))) {
     for (const segment of segments) {
       const start = commandStart(segment)
       const texts = [
@@ -1255,7 +1267,7 @@ function analyzeCommandLine(
  * The refused command this command line runs, or null.
  *
  * `platform` is `process.platform` of the machine the command will run on;
- * only the `bash` spelling of WSL depends on it.
+ * only recognition of Windows Store distribution launchers depends on it.
  */
 export function sponsoredRefusedCommand(
   command: string,
@@ -1271,14 +1283,14 @@ export function sponsoredRefusedCommand(
  *
  * A line the walk cannot finish is NOT answered here: it comes back from
  * `sponsoredRefusedCommand` as `unverifiable`, and every caller asks both.
- * Judged as on Linux, so a bare `bash -c "…"` is unwrapped rather than
- * answered as WSL (which `sponsoredRefusedCommand` refuses on Windows anyway).
+ * Judged as on Windows to also unwrap Store distribution launchers. Their
+ * inner commands are analyzed as Linux commands.
  */
 export function sponsoredRefusedGitInvocation(
   command: string,
   refused: ReadonlySet<string>,
 ): string | null {
-  const found = analyzeCommandLine(command, 'linux', 0, { git: refused })
+  const found = analyzeCommandLine(command, 'win32', 0, { git: refused })
   return found?.kind === 'git' ? found.invocation.slice('git '.length) : null
 }
 
@@ -1293,8 +1305,6 @@ export function sponsoredCommandRefusal(
   refused: SponsoredRefusedCommand,
 ): string {
   switch (refused.kind) {
-    case 'wsl':
-      return `Refusing \`${refused.invocation}\`: a sponsored task may not enter the Windows Subsystem for Linux. WSL is the user's own Linux environment, with its own home directory and credentials, outside this project. ${STOP_AND_REPORT}`
     case 'database':
       return `Refusing \`${refused.invocation}\`: a sponsored task may not drop, reset, wipe, roll back or force-seed a database. The database this project points at may be one the user's other checkouts, or production, rely on. ${STOP_AND_REPORT}`
     case 'container':

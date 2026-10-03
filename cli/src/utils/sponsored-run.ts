@@ -1723,7 +1723,7 @@ export function sponsoredOverrideTools(
       // the sandbox also denies `.git` outright.
       const refusedGit = sponsoredRefusedGitSubcommand(input.command)
       if (refusedGit) return refusal(sponsoredGitRefusal(refusedGit))
-      // WSL, destructive database commands and container lifecycle commands
+      // Destructive database commands and container lifecycle commands
       // reach state outside the worktree that no sandbox covers (COD-665).
       const refusedCommand = sponsoredRefusedCommand(
         input.command,

@@ -36,13 +36,12 @@ function expectAllowed(commands: string[], platform = 'linux') {
   }
 }
 
-describe('WSL is refused', () => {
-  it('refuses wsl and its launchers on every spelling', () => {
-    expectRefused(
-      'wsl',
+describe('WSL entry is allowed', () => {
+  it('allows wsl and its launchers on every spelling', () => {
+    expectAllowed(
       [
         'wsl',
-        'wsl.exe -e bash -c "cat ~/.config/gh/hosts.yml"',
+        'wsl.exe -e bash -c "specific --version"',
         'wsl --list',
         'C:\\Windows\\System32\\wsl.exe ls ~',
         '"C:\\Windows\\System32\\wsl.exe" -d Ubuntu',
@@ -56,27 +55,25 @@ describe('WSL is refused', () => {
         'pwsh -c "& wsl ls"',
         'sh -c "wsl ls"',
         'Start-Process wsl -ArgumentList "ls"',
-        'cd project && wsl cat ~/.ssh/id_rsa',
+        'cd project && wsl specific --version',
       ],
       'win32',
     )
   })
 
-  it('refuses the \\\\wsl$ and \\\\wsl.localhost shares', () => {
-    expectRefused(
-      'wsl',
+  it('allows the \\\\wsl$ and \\\\wsl.localhost shares', () => {
+    expectAllowed(
       [
-        'type \\\\wsl$\\Ubuntu\\home\\me\\.ssh\\id_rsa',
+        'type \\\\wsl$\\Ubuntu\\home\\me\\project\\README.md',
         'dir \\\\wsl.localhost\\Ubuntu\\home',
-        'Get-Content //wsl$/Ubuntu/home/me/.netrc',
+        'Get-Content //wsl$/Ubuntu/home/me/project/README.md',
       ],
       'win32',
     )
   })
 
-  it('refuses the WSL bash launcher on Windows only', () => {
-    expectRefused(
-      'wsl',
+  it('allows the WSL bash launcher on Windows', () => {
+    expectAllowed(
       [
         'bash -c "ls ~"',
         'bash.exe',
@@ -103,12 +100,11 @@ describe('WSL is refused', () => {
     )
   })
 
-  it('refuses the long-path share spellings and cmd /c with the command attached', () => {
-    expectRefused(
-      'wsl',
+  it('allows the long-path share spellings and cmd /c with the command attached', () => {
+    expectAllowed(
       [
         'dir \\\\?\\UNC\\wsl$\\Ubuntu\\home',
-        'type \\\\.\\UNC\\wsl.localhost\\Ubuntu\\home\\me\\.netrc',
+        'type \\\\.\\UNC\\wsl.localhost\\Ubuntu\\home\\me\\project\\README.md',
         'cmd /C"wsl ls ~"',
         '"wsl ls ~" | iex',
         '"wsl ls ~" | powershell -',
@@ -117,16 +113,50 @@ describe('WSL is refused', () => {
     )
   })
 
-  it('treats distro launcher names as WSL on Windows only', () => {
-    expect(kindOf('ubuntu run ls', 'win32')).toBe('wsl')
+  it('allows distro launchers without reserving their names on other platforms', () => {
+    expect(kindOf('ubuntu run ls', 'win32')).toBeNull()
     expectAllowed(['alpine --version', 'debian run ls'], 'linux')
     expectAllowed(['ubuntu run ls'], 'darwin')
   })
 
   it('decodes -EncodedCommand before judging it', () => {
     const encoded = btoa(Array.from('wsl ls ~', (ch) => ch + '\u0000').join(''))
-    expect(kindOf(`powershell -EncodedCommand ${encoded}`, 'win32')).toBe('wsl')
-    expect(kindOf(`powershell -ec ${encoded}`, 'win32')).toBe('wsl')
+    expect(kindOf(`powershell -EncodedCommand ${encoded}`, 'win32')).toBeNull()
+    expect(kindOf(`powershell -ec ${encoded}`, 'win32')).toBeNull()
+  })
+})
+
+describe('WSL preserves the other command restrictions', () => {
+  it('inspects Linux commands after WSL options and shell wrappers', () => {
+    expectRefused(
+      'database',
+      [
+        'wsl dropdb app',
+        'wsl.exe -d Ubuntu -u dev --cd /project --exec dropdb app',
+        'wsl --distribution=Ubuntu -- bash -lc "prisma migrate reset --force"',
+        'ubuntu2204.exe run dropdb app',
+        'bash -c "dropdb app"',
+      ],
+      'win32',
+    )
+    expectRefused(
+      'container',
+      [
+        'wsl -e docker compose up -d',
+        'wsl --shell-type login bash -c "docker compose up -d"',
+        'powershell -Command "wsl docker compose up -d"',
+        '"docker compose up -d" | wsl bash',
+      ],
+      'win32',
+    )
+    expectAllowed(
+      [
+        'wsl -d Ubuntu --cd /project -- bash -lc "specific login --agent"',
+        'wsl specific deploy --project example',
+        'wsl docker ps',
+      ],
+      'win32',
+    )
   })
 })
 
@@ -368,7 +398,6 @@ describe('container lifecycle commands are refused', () => {
 describe('the refusal tells the model to stop, not to route around it', () => {
   it('names the invocation and asks for a report', () => {
     for (const command of [
-      'wsl ls',
       'npx prisma migrate reset',
       'docker compose up -d',
     ]) {

@@ -563,6 +563,8 @@ describe('history-moving git is refused on an in-place run', () => {
   it('reads git through the wrappers the command walk unwraps', () => {
     for (const command of [
       'bash -c "git commit -m wip"',
+      'wsl -d Ubuntu -- bash -c "git commit -m wip"',
+      'ubuntu2204.exe run sh -c "git push"',
       "sh -c 'git push'",
       'cmd /c git checkout main',
       'powershell -Command "git reset --hard"',

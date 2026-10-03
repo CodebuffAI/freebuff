@@ -384,10 +384,11 @@ describe('the shell', () => {
     }
   })
 
-  test('WSL, destructive database and container commands are refused (COD-665)', async () => {
+  test('Destructive database and container commands are refused (COD-665)', async () => {
     const tools = sponsoredOverrideTools(context())
     for (const command of [
-      'wsl ls ~',
+      'wsl dropdb app',
+      'wsl docker compose up -d',
       'npx prisma migrate reset --force',
       'docker compose up -d',
     ]) {

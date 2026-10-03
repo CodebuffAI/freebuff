@@ -809,7 +809,7 @@ export function sponsoredRefusedGitSubcommand(command: string): string | null {
 
 // --------------------------------------------------------- refused commands
 
-// WSL, destructive database commands and container lifecycle commands
+// Destructive database commands and container lifecycle commands
 // (COD-665). Re-exported so every surface that runs a sponsored shell imports
 // its refusals from one module.
 export {
