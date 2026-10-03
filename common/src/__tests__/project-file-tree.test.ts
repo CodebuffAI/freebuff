@@ -88,6 +88,28 @@ describe('getProjectFileTree', () => {
     expect(filePaths).toEqual(['app/src/main/Inventory.kt'])
   })
 
+  it('does not stat ignore files when none exist in directory entries', async () => {
+    const root = '/repo'
+    const fs = createFsWithFiles(root, ['src/index.ts', 'src/util.ts'])
+    const statCalls: string[] = []
+    const originalStat = fs.stat
+    ;(fs as any).stat = async (p: any, ...args: any[]) => {
+      statCalls.push(String(p))
+      return (originalStat as any)(p, ...args)
+    }
+
+    await getProjectFileTree({ projectRoot: root, fs })
+
+    // None of the stat calls should be for ignore files
+    const ignoreStatCalls = statCalls.filter(
+      (p) =>
+        p.endsWith('.gitignore') ||
+        p.endsWith('.codebuffignore') ||
+        p.endsWith('.manicodeignore'),
+    )
+    expect(ignoreStatCalls).toHaveLength(0)
+  })
+
   it('prunes directories ignored by a rule in a nested .gitignore', async () => {
     const root = '/repo'
     const fs = createFsWithFiles(root, [
