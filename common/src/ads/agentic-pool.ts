@@ -29,6 +29,9 @@ export const AGENTIC_POOL_PLACEMENT_ID = 'Desktop-Agentic'
  */
 export const AGENTIC_POOL_CLIENT_VERSION = 1
 
+/** Starting price for new agentic campaigns. */
+export const DEFAULT_AGENTIC_CPC_CENTS = 300
+
 /**
  * What an agentic Accept from a TIER 2 request bills at most, in cents
  * (COD-665): `min(campaign cpc, this)`. Applied, frozen and charged only by
@@ -36,4 +39,4 @@ export const AGENTIC_POOL_CLIENT_VERSION = 1
  * which documents the rule); here so the advertiser console can name the
  * same figure when it explains why an effective CPC sits below the list CPC.
  */
-export const AGENTIC_TIER2_ACCEPT_PRICE_CENTS = 100
+export const AGENTIC_TIER2_ACCEPT_PRICE_CENTS = DEFAULT_AGENTIC_CPC_CENTS
