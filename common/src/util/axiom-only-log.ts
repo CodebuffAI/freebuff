@@ -641,15 +641,47 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    */
   sponsor_break_cap_status: 'string',
   /**
-   * Why a no-fill was a no-fill, when the rails know a reason ahead of the
-   * provider chain. `break_capped` is the only value today.
+   * Why a response carried zero ads (COD-760; COD-453 introduced it for
+   * `break_capped` alone). Set on EVERY response with zero ads, on both
+   * rails, naming the PAID leg that decided it -- never the house floor:
    *
-   * Deliberately NOT folded into `outcome`: every dashboard built on this
-   * stream partitions on `outcome`, and adding a fifth value to it would
-   * silently drop capped requests out of every no-fill count that already
-   * exists.
+   * - a refusal ahead of the chain: `break_capped` (unchanged; it also
+   *   drives `exclusion_reasons: 'break_capped:1'`), `setup_invitation`,
+   *   `invitation_recheck`, `partner_unfilled`, `no_visible_slot`;
+   * - Gravity, when it was the last paid leg asked: `gravity_released`,
+   *   `gravity_no_fill`, `gravity_timeout`, `gravity_provider_error`,
+   *   `gravity_not_configured`, `gravity_fill_fenced` (a fill every placement
+   *   fence dropped), `gravity_fill_unpersisted` (a native fill withheld
+   *   because its row could not be proven);
+   * - our book, when it was: `first_party_` + `first_party_outcome` below
+   *   (`first_party_all_ineligible`, `first_party_paced_out`, ...), or
+   *   `first_party_error` for a fill that failed after its rows were durable.
+   *
+   * Absent on a response that carried ads. Deliberately NOT folded into
+   * `outcome`: every dashboard built on this stream partitions on `outcome`,
+   * and adding a value to it would silently drop requests out of every
+   * no-fill count that already exists.
    */
   no_fill_reason: 'string',
+  /**
+   * COD-760. What our PAID first-party book answered on this request, on
+   * every completion event: `fill`, `not_asked` (never consulted), `error`,
+   * the decision's terminal reason (`holdout`, `no_campaigns`,
+   * `all_ineligible`, `all_frequency_capped`, `all_repeat_click_suppressed`,
+   * `paced_out`, `frequency_unavailable`, `primary_allocation_unassigned`,
+   * `primary_allocation_invalid`), or `fill_dropped` (the book picked a
+   * campaign and the rail did not serve it). The CPM leg keeps its own
+   * `first_party_cpm_outcome`; a CPM fill still reads `fill` here.
+   */
+  first_party_outcome: 'string',
+  /**
+   * COD-760. What the house ad answered, on every completion event: `fill`,
+   * `not_asked` (a paid fill won, or the request never reached it), the
+   * floor's refusals `floor_off` / `subscriber` / `no_slot`, or the house
+   * campaign leg's `leg_no_fill` / `error`. When both the leg and the floor
+   * ran, the floor's answer (the last one) is reported.
+   */
+  house_outcome: 'string',
 } as const satisfies AxiomOnlyFieldSchema
 
 /**

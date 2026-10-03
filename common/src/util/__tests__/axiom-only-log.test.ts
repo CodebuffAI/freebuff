@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   ADS_FETCH_COMPLETED_EVENT,
+  ADS_FETCH_COMPLETED_FIELD_NAMES,
   ADS_FIRST_PARTY_DECISION_EVENT,
   ADS_FIRST_PARTY_CLICK_RECORDED_EVENT,
   ADS_FIRST_PARTY_IMPRESSION_RECORDED_EVENT,
@@ -792,6 +793,29 @@ describe('getAxiomOnlyLogEvent', () => {
       ...arm,
       model: 'deepseek/deepseek-v4-flash',
     })
+  })
+
+  test('keeps the COD-760 leg verdicts on fetch completion', () => {
+    const verdicts = {
+      no_fill_reason: 'first_party_all_ineligible',
+      first_party_outcome: 'all_ineligible',
+      house_outcome: 'subscriber',
+    }
+    const event = getAxiomOnlyLogEvent({
+      axiomEvent: ADS_FETCH_COMPLETED_EVENT,
+      outcome: 'no_fill',
+      ...verdicts,
+      // The training log carries the per-leg detail; it never rides here.
+      candidate_legs: { gravity: { outcome: 'no_fill' } },
+    })
+    expect(event?.data).toEqual({ outcome: 'no_fill', ...verdicts })
+    expect(ADS_FETCH_COMPLETED_FIELD_NAMES).toEqual(
+      expect.arrayContaining([
+        'no_fill_reason',
+        'first_party_outcome',
+        'house_outcome',
+      ]),
+    )
   })
 
   test('names and sanitizes first-party settlement telemetry', () => {
