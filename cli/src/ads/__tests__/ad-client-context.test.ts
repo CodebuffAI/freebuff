@@ -4,9 +4,13 @@ import { parseAdClientContext } from '@codebuff/common/types/ad-client-context'
 
 import {
   buildCliAdClientContext,
+  createLazyAsyncValue,
   detectStaticTermFacts,
+  installMethodOf,
+  localeLanguagesOf,
   median,
   osMajorOf,
+  releaseChannelOf,
   type AdTermEnv,
   type AdTermHost,
   type CliAdContextSources,
@@ -43,6 +47,7 @@ describe('static terminal facts', () => {
       colors: 'truecolor',
       images: 'none',
       shell: 'zsh',
+      proxy: false,
     })
   })
 
@@ -240,6 +245,7 @@ describe('static terminal facts', () => {
       multiplexer: 'none',
       remote: 'none',
       images: 'none',
+      proxy: false,
     })
   })
 
@@ -353,7 +359,7 @@ describe('buildCliAdClientContext', () => {
         effort: 'default',
       },
       sys: { osMajor: '26', arch: 'arm64', ram: '32+' },
-      net: { rtt: '50-150' },
+      net: { rtt: '50-150', jitter: '150+' },
     })
     expect(parseAdClientContext(context)).toEqual(context!)
   })
@@ -448,5 +454,346 @@ describe('buildCliAdClientContext', () => {
 
   test('no sources at all is a bare, valid context', () => {
     expect(buildCliAdClientContext({ now: () => NOW })).toEqual({ v: 1 })
+  })
+})
+
+// ------------------------------------------------------------------ wave 2
+
+describe('wave 2: terminal locale and proxy', () => {
+  test('utf8 from the locale, proxy from presence only', () => {
+    const result = facts({
+      TERM_PROGRAM: 'ghostty',
+      LANG: 'en_US.UTF-8',
+      HTTPS_PROXY: 'http://alice:hunter2@corp-proxy.internal:8080',
+    })
+    expect(result).toMatchObject({ utf8: true, proxy: true })
+    expect(JSON.stringify(result)).not.toContain('corp-proxy')
+    expect(JSON.stringify(result)).not.toContain('hunter2')
+  })
+
+  test('lower-case proxy variables count; no locale is unknown utf8', () => {
+    const result = facts({ all_proxy: 'socks5://127.0.0.1:1080' })
+    expect(result.proxy).toBe(true)
+    expect(result.utf8).toBeUndefined()
+    expect(facts({ LC_ALL: 'C' }).utf8).toBe(false)
+    expect(facts({ HTTP_PROXY: '' }).proxy).toBe(false)
+  })
+
+  test('shell rides through the shared shellOf', () => {
+    expect(facts({ SHELL: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' }).shell).toBe(
+      'pwsh',
+    )
+    expect(facts({ SHELL: '/opt/homebrew/bin/fish' }).shell).toBe('fish')
+  })
+})
+
+describe('wave 2: pure derivations', () => {
+  test('localeLanguagesOf keeps only the ISO 639 code', () => {
+    expect(localeLanguagesOf({ LANG: 'de_DE.UTF-8' })).toEqual({
+      language: 'de',
+      languageCount: 1,
+    })
+    expect(
+      localeLanguagesOf({ LANGUAGE: 'pt_BR:pt:en_US', LANG: 'fr_FR.UTF-8' }),
+    ).toEqual({ language: 'pt', languageCount: 2 })
+    expect(localeLanguagesOf({ LC_ALL: 'ja_JP.UTF-8', LANG: 'en_US' })).toEqual(
+      { language: 'ja', languageCount: 1 },
+    )
+    expect(localeLanguagesOf({ LANG: 'C.UTF-8' })).toEqual({})
+    expect(localeLanguagesOf({ LANG: 'POSIX' })).toEqual({})
+    expect(localeLanguagesOf({})).toEqual({})
+  })
+
+  test('releaseChannelOf maps the build environment', () => {
+    expect(releaseChannelOf('prod')).toBe('stable')
+    expect(releaseChannelOf('dev')).toBe('dev')
+    expect(releaseChannelOf('test')).toBe('other')
+    expect(releaseChannelOf(undefined)).toBe('other')
+  })
+
+  test('installMethodOf: the launching package manager wins', () => {
+    const binary = { isBinary: true }
+    expect(
+      installMethodOf(
+        { npm_config_user_agent: 'npm/10.8.2 node/v22.9.0 darwin arm64', npm_command: 'exec' },
+        binary,
+      ),
+    ).toBe('npx')
+    expect(
+      installMethodOf({ npm_config_user_agent: 'npm/10.8.2 node/v22' }, binary),
+    ).toBe('npm')
+    expect(installMethodOf({ npm_config_user_agent: 'bun/1.3.2' }, binary)).toBe(
+      'bun',
+    )
+    expect(
+      installMethodOf({ npm_config_user_agent: 'pnpm/9.1.0 npm/? node/v20' }, binary),
+    ).toBe('pnpm')
+    expect(installMethodOf({ npm_config_user_agent: 'yarn/1.22.19' }, binary)).toBe(
+      'yarn',
+    )
+  })
+
+  test('installMethodOf: the npm wrapper, then a bare binary', () => {
+    const launched = (invoked: string) =>
+      installMethodOf(
+        { CODEBUFF_LAUNCHER_PID: '123', _: invoked },
+        { isBinary: true },
+      )
+    expect(launched('/Users/a/.bun/bin/freebuff')).toBe('bun')
+    expect(launched('/Users/a/Library/pnpm/freebuff')).toBe('pnpm')
+    expect(launched('/Users/a/.nvm/versions/node/v22/bin/freebuff')).toBe('npm')
+    expect(launched('/opt/homebrew/Cellar/freebuff/1.0/bin/freebuff')).toBe('brew')
+    expect(launched('/somewhere/else/freebuff')).toBe('other')
+    expect(installMethodOf({}, { isBinary: true })).toBe('binary')
+    expect(installMethodOf({}, { isBinary: false })).toBe('other')
+  })
+
+  test('createLazyAsyncValue is never awaited and re-reads only after its ttl', async () => {
+    let t = 0
+    let loads = 0
+    let result: number | undefined = 42
+    const value = createLazyAsyncValue(
+      async () => {
+        loads++
+        return result
+      },
+      1_000,
+      () => t,
+    )
+    expect(value.get()).toBeUndefined()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(value.get()).toBe(42)
+    expect(loads).toBe(1)
+    t = 999
+    value.get()
+    expect(loads).toBe(1)
+    t = 2_000
+    result = 7
+    expect(value.get()).toBe(42)
+    expect(loads).toBe(2)
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(value.get()).toBe(7)
+  })
+
+  test('createLazyAsyncValue: a failed read is unknown, a throwing loader too', async () => {
+    const failing = createLazyAsyncValue<number>(
+      () => Promise.reject(new Error('EPERM')),
+      1_000,
+    )
+    expect(failing.get()).toBeUndefined()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(failing.get()).toBeUndefined()
+    const throwing = createLazyAsyncValue<number>(() => {
+      throw new Error('sync')
+    }, 1_000)
+    expect(throwing.get()).toBeUndefined()
+  })
+})
+
+const GIB = 1024 ** 3
+
+function waveTwoSources(
+  overrides: Partial<CliAdContextSources> = {},
+): CliAdContextSources {
+  return sources({
+    term: () => ({
+      terminal: 'ghostty',
+      multiplexer: 'none',
+      remote: 'none',
+      images: 'none',
+      shell: 'zsh',
+      utf8: true,
+      proxy: true,
+    }),
+    rows: () => 50,
+    system: () => ({
+      platform: 'darwin',
+      release: '25.0.0',
+      arch: 'arm64',
+      totalmem: 36 * GIB,
+      uptimeSec: 3 * 86_400,
+      load1: 6,
+      freemem: 4 * GIB,
+      cores: 12,
+      cpuModel: 'Apple M4 Pro',
+      diskFreeBytes: 120e9,
+    }),
+    session: () => ({
+      adsServed: 5,
+      lastAdAt: NOW - 61_000,
+      lastClickAt: null,
+      lastSendAt: NOW - 45_000,
+      rttSamplesMs: [80, 90, 85, 100],
+      failedRequests: 3,
+      lastTtftMs: 2_400,
+      lastAdFetchMs: 420,
+    }),
+    app: () => ({
+      uptimeMs: 2 * 3_600_000,
+      installAgeMs: 45 * 86_400_000,
+      channel: 'stable',
+      installMethod: 'npm',
+      runtime: 'bun-1.3',
+    }),
+    localeEnv: () => ({ LANG: 'en_US.UTF-8', LANGUAGE: 'en_US:fr' }),
+    work: () => ({
+      queued: 2,
+      tool: 'shell',
+      lastError: 'module-not-found',
+      turnFailuresLastHour: 1,
+      skills: 4,
+    }),
+    typing: () => ({
+      typingSpeed: 'medium',
+      typingRhythm: 'bursty',
+      editRatio: '5-15%',
+    }),
+    ...overrides,
+  })
+}
+
+describe('buildCliAdClientContext: wave 2', () => {
+  test('buckets every new field and parses', () => {
+    const context = buildCliAdClientContext(waveTwoSources())!
+    expect(context.sys).toEqual({
+      osMajor: '26',
+      arch: 'arm64',
+      ram: '32+',
+      uptime: '1-7d',
+      load: 'medium',
+      freeMemory: '10-25%',
+      cores: '9-12',
+      cpu: 'apple_m4',
+      diskFree: '50-200',
+    })
+    expect(context.app).toEqual({
+      uptime: '1-8h',
+      installAge: '30-90d',
+      channel: 'stable',
+      installMethod: 'npm',
+      runtime: 'bun-1.3',
+    })
+    expect(context.ui).toEqual({ language: 'en', languageCount: '2' })
+    expect(context.work).toEqual({
+      queued: '2-5',
+      tool: 'shell',
+      lastError: 'module-not-found',
+      turnFailures: '1',
+      skills: '2-5',
+    })
+    expect(context.net).toEqual({
+      rtt: '50-150',
+      jitter: '10-50',
+      failedRequests: '2-5',
+      ttft: '1-3s',
+      adFetch: '300-1000',
+    })
+    expect(context.term).toMatchObject({
+      rows: '40-59',
+      utf8: true,
+      proxy: true,
+    })
+    expect(context.attn).toMatchObject({
+      typingSpeed: 'medium',
+      typingRhythm: 'bursty',
+      editRatio: '5-15%',
+    })
+    expect(parseAdClientContext(context)).toEqual(context)
+  })
+
+  test('no raw value reaches the serialized context', () => {
+    const raw = JSON.stringify(
+      buildCliAdClientContext(
+        waveTwoSources({
+          localeEnv: () => ({ LANG: 'en_US.UTF-8', LANGUAGE: 'en_US:fr_CA' }),
+        }),
+      ),
+    )
+    for (const leak of ['Apple M4 Pro', 'en_US', 'UTF-8', 'fr_CA', '120000000000'])
+      expect(raw).not.toContain(leak)
+  })
+
+  test('Windows has no load average; unknowns are absent, not zero', () => {
+    const context = buildCliAdClientContext(
+      waveTwoSources({
+        system: () => ({
+          platform: 'win32',
+          release: '10.0.26100',
+          arch: 'x64',
+          totalmem: 16 * GIB,
+          load1: 0,
+          cores: 8,
+          cpuModel: 'Some Future Chip',
+        }),
+        app: () => ({ channel: 'dev' }),
+        localeEnv: () => ({}),
+        work: () => ({
+          queued: null,
+          tool: null,
+          lastError: 'none',
+          turnFailuresLastHour: 0,
+          skills: null,
+        }),
+        typing: () => null,
+        rows: () => null,
+        session: () => ({
+          adsServed: 0,
+          lastAdAt: null,
+          lastClickAt: null,
+          lastSendAt: null,
+          rttSamplesMs: [120],
+          failedRequests: 0,
+          lastTtftMs: null,
+          lastAdFetchMs: null,
+        }),
+      }),
+    )!
+    expect(context.sys).toEqual({
+      osMajor: '10',
+      arch: 'x64',
+      ram: '16-32',
+      cores: '5-8',
+      cpu: 'other',
+    })
+    expect(context.app).toEqual({ channel: 'dev' })
+    expect(context.ui).toBeUndefined()
+    // no tool call seen yet is a known `none`; unloaded skills are unknown
+    expect(context.work).toEqual({
+      tool: 'none',
+      lastError: 'none',
+      turnFailures: '0',
+    })
+    expect(context.attn!.typingSpeed).toBeUndefined()
+    expect(context.term!.rows).toBeUndefined()
+    // one RTT sample has no jitter; no turn and no ad yet have no timings
+    expect(context.net).toEqual({ rtt: '50-150', failedRequests: '0' })
+    expect(parseAdClientContext(context)).toEqual(context)
+  })
+
+  test('a throwing wave-2 source costs only its own section', () => {
+    const boom = () => {
+      throw new Error('boom')
+    }
+    const context = buildCliAdClientContext(
+      waveTwoSources({ app: boom, work: boom, localeEnv: boom, typing: boom }),
+    )!
+    expect(context.app).toBeUndefined()
+    expect(context.work).toBeUndefined()
+    expect(context.ui).toBeUndefined()
+    expect(context.sys?.cpu).toBe('apple_m4')
+  })
+
+  test('a malformed runtime label costs only its own field, never rides raw', () => {
+    const context = buildCliAdClientContext(
+      waveTwoSources({
+        app: () => ({ runtime: 'Bun 1.3.2 (macOS)', channel: 'stable' }),
+      }),
+    )!
+    expect(context.app).toEqual({ channel: 'stable' })
+    expect(JSON.stringify(context)).not.toContain('macOS')
   })
 })

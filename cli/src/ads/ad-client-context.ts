@@ -15,26 +15,48 @@
  * and does no I/O after the first call (the static terminal facts are read
  * once and cached), so it cannot delay the auction.
  */
-import { existsSync } from 'fs'
+import { existsSync, promises as fsPromises } from 'fs'
 import os from 'os'
 
+import { env as buildEnv } from '@codebuff/common/env'
 import {
   AD_CLIENT_CONTEXT_VERSION,
   bucketAdsThisSession,
   bucketArch,
+  bucketCores,
+  bucketCount,
+  bucketDiskFree,
+  bucketFreeMemory,
+  bucketInstallAge,
+  bucketJitter,
+  bucketLanguageCount,
+  bucketLatency,
+  bucketLoad,
   bucketRam,
   bucketRtt,
   bucketSince,
   bucketTerminalColumns,
+  bucketTerminalRows,
+  bucketTtft,
   bucketTurnIndex,
+  bucketUptime,
+  cpuFamilyOf,
+  jitterOf,
   parseAdClientContext,
+  primaryLanguageOf,
+  runtimeLabelOf,
+  shellOf,
+  utf8LocaleOf,
   type AdClientContext,
   type COLOR_DEPTHS,
   type IMAGE_PROTOCOLS,
+  type INSTALL_METHODS,
   type MULTIPLEXERS,
+  type RELEASE_CHANNELS,
   type REMOTE_KINDS,
   type SHELLS,
   type TERMINALS,
+  type TypingSummary,
 } from '@codebuff/common/types/ad-client-context'
 
 import {
@@ -44,15 +66,20 @@ import {
   getAdTerminalFocus,
   getAdTranscriptScrolledUp,
   getAdTurnStartedAt,
+  getAdTypingSummary,
+  getAdWorkSnapshot,
   type AdSessionSnapshot,
+  type AdWorkSnapshot,
 } from './ad-signals'
 import { freebuffChatModel } from '../state/freebuff-chat-store'
 import { getEffectiveFreebuffReasoningEffort } from '../state/freebuff-model-store'
 import { useChatStore } from '../state/chat-store'
 import { getIdleTime } from '../utils/activity-tracker'
+import { getConfigDir } from '../utils/config-dir'
 import { IS_FREEBUFF } from '../utils/constants'
 import { getSystemProcessEnv } from '../utils/env'
 import { getAgentIdForMode } from '../utils/freebuff-agent-selection'
+import { getSkillCount, isSkillRegistryLoaded } from '../utils/skill-registry'
 
 type Terminal = (typeof TERMINALS)[number]
 type Multiplexer = (typeof MULTIPLEXERS)[number]
@@ -60,6 +87,8 @@ type RemoteKind = (typeof REMOTE_KINDS)[number]
 type ColorDepth = (typeof COLOR_DEPTHS)[number]
 type ImageProtocol = (typeof IMAGE_PROTOCOLS)[number]
 type Shell = (typeof SHELLS)[number]
+type ReleaseChannel = (typeof RELEASE_CHANNELS)[number]
+type InstallMethod = (typeof INSTALL_METHODS)[number]
 
 /** Env is read for presence and fixed-list matches only; no value is sent. */
 export type AdTermEnv = Readonly<Record<string, string | undefined>>
@@ -80,6 +109,10 @@ export type StaticTermFacts = {
   colors?: ColorDepth
   images: ImageProtocol
   shell?: Shell
+  /** The locale says UTF-8; absent when no locale variable is set. */
+  utf8?: boolean
+  /** A proxy variable is set: presence only, never its value. */
+  proxy?: boolean
 }
 
 const set = (value: string | undefined): boolean =>
@@ -242,25 +275,21 @@ export function detectImages(
 }
 
 export function detectShell(env: AdTermEnv): Shell | undefined {
-  const raw = env.SHELL
-  if (!set(raw)) return undefined
-  const name = raw!
-    .split(/[\\/]/)
-    .pop()!
-    .toLowerCase()
-    .replace(/\.exe$/, '')
-  switch (name) {
-    case 'zsh':
-    case 'bash':
-    case 'fish':
-    case 'nu':
-    case 'pwsh':
-      return name
-    case 'powershell':
-      return 'pwsh'
-    default:
-      return 'other'
-  }
+  return shellOf(env.SHELL)
+}
+
+const PROXY_VARS = [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'all_proxy',
+] as const
+
+/** Any proxy variable is set, in either case. Only presence is read. */
+export function detectProxy(env: AdTermEnv): boolean {
+  return PROXY_VARS.some((name) => set(env[name]))
 }
 
 export function detectStaticTermFacts(
@@ -281,6 +310,9 @@ export function detectStaticTermFacts(
   if (colors) facts.colors = colors
   const shell = detectShell(env)
   if (shell) facts.shell = shell
+  const utf8 = utf8LocaleOf(env)
+  if (utf8 !== undefined) facts.utf8 = utf8
+  facts.proxy = detectProxy(env)
   return facts
 }
 
@@ -329,6 +361,115 @@ export function median(values: readonly number[]): number | undefined {
     : (sorted[mid - 1]! + sorted[mid]!) / 2
 }
 
+/**
+ * The user's primary UI language and how many they listed, from the POSIX
+ * locale variables in gettext's order (`LANGUAGE` is a colon list). Only the
+ * ISO 639 code leaves; `C`/`POSIX` and anything unparseable are unknown.
+ */
+export function localeLanguagesOf(env: AdTermEnv): {
+  language?: string
+  languageCount?: number
+} {
+  const list = (env.LANGUAGE ?? '')
+    .split(':')
+    .map((entry) => primaryLanguageOf(entry))
+    .filter((code): code is string => code !== undefined)
+  const fallback = primaryLanguageOf(
+    env.LC_ALL || env.LC_MESSAGES || env.LANG || undefined,
+  )
+  const language = list[0] ?? fallback
+  if (!language) return {}
+  const distinct = new Set(list.length > 0 ? list : [language])
+  return { language, languageCount: distinct.size }
+}
+
+/** The build's environment as a release channel. */
+export function releaseChannelOf(
+  environment: string | undefined,
+): ReleaseChannel {
+  if (environment === 'prod') return 'stable'
+  if (environment === 'dev') return 'dev'
+  return 'other'
+}
+
+/**
+ * How this CLI was installed, from the package manager that launched it
+ * (`npm_config_user_agent`, set by npm/npx/bunx/pnpm/yarn exec), else the
+ * path the shell ran (`_`), read only against fixed patterns. The npm
+ * wrapper marks its child with `CODEBUFF_LAUNCHER_PID`; a compiled binary
+ * started without it was run directly.
+ */
+export function installMethodOf(
+  env: AdTermEnv,
+  host: { isBinary: boolean },
+): InstallMethod {
+  const agent = (env.npm_config_user_agent ?? '').toLowerCase()
+  if (agent.startsWith('npm/'))
+    return env.npm_command === 'exec' ? 'npx' : 'npm'
+  if (agent.startsWith('bun/')) return 'bun'
+  if (agent.startsWith('pnpm/')) return 'pnpm'
+  if (agent.startsWith('yarn/')) return 'yarn'
+  if (set(env.CODEBUFF_LAUNCHER_PID)) {
+    const invoked = (env._ ?? '').toLowerCase()
+    if (/[\\/]\.bun[\\/]/.test(invoked)) return 'bun'
+    if (/pnpm/.test(invoked)) return 'pnpm'
+    if (/yarn/.test(invoked)) return 'yarn'
+    if (/[\\/]cellar[\\/]/.test(invoked)) return 'brew'
+    if (/node_modules|[\\/]npm[\\/]|nvm|fnm|volta|[\\/]node[\\/]/.test(invoked))
+      return 'npm'
+    return 'other'
+  }
+  return host.isBinary ? 'binary' : 'other'
+}
+
+/**
+ * A value read asynchronously, at most once per `ttlMs`, and NEVER awaited by
+ * a reader: `get()` answers from the cache (undefined until the first read
+ * lands) and kicks a refresh when the value is missing or stale. A failed
+ * read is cached as unknown for the same ttl, so a broken source is not
+ * retried on every ad request.
+ */
+export function createLazyAsyncValue<T>(
+  load: () => Promise<T | undefined>,
+  ttlMs: number,
+  now: () => number = Date.now,
+): { get: () => T | undefined } {
+  let value: T | undefined
+  let readAt: number | null = null
+  let inFlight = false
+  return {
+    get() {
+      const t = now()
+      if (!inFlight && (readAt === null || t - readAt >= ttlMs)) {
+        inFlight = true
+        let started: Promise<T | undefined>
+        try {
+          started = load()
+        } catch {
+          started = Promise.resolve(undefined)
+        }
+        void started
+          .then(
+            (next) => {
+              value = next
+            },
+            () => {
+              value = undefined
+            },
+          )
+          .finally(() => {
+            readAt = now()
+            inFlight = false
+          })
+      }
+      return value
+    },
+  }
+}
+
+/** Free disk is re-read at most this often. */
+export const AD_DISK_FREE_TTL_MS = 10 * 60_000
+
 /** Turn counting stops here: the top bucket is `21+`. */
 export const AD_TURN_INDEX_READ_CAP = 21
 const AGENT_LABEL_MAX = 64
@@ -338,6 +479,30 @@ export type AdContextSystem = {
   release: string
   arch: string
   totalmem: number
+  /** `os.uptime()`, seconds */
+  uptimeSec?: number
+  /** `os.loadavg()[0]` */
+  load1?: number
+  freemem?: number
+  cores?: number
+  /** `os.cpus()[0].model`: reduced to a family, never sent */
+  cpuModel?: string
+  /** from the lazy cache; absent until the first read lands */
+  diskFreeBytes?: number
+}
+
+export type AdContextApp = {
+  uptimeMs?: number
+  installAgeMs?: number
+  channel?: ReleaseChannel
+  installMethod?: InstallMethod
+  /** e.g. `bun-1.3` */
+  runtime?: string
+}
+
+export type AdContextWork = AdWorkSnapshot & {
+  /** Loaded skills; null while the registry has not loaded. */
+  skills?: number | null
 }
 
 export type AdContextAgent = {
@@ -366,6 +531,14 @@ export interface CliAdContextSources {
   session?: () => AdSessionSnapshot | null
   agent?: () => AdContextAgent | null
   system?: () => AdContextSystem | null
+  /** The renderer's height in rows. */
+  rows?: () => number | null
+  app?: () => AdContextApp | null
+  /** The POSIX locale variables; reduced to an ISO 639 code and a count. */
+  localeEnv?: () => AdTermEnv | null
+  work?: () => AdContextWork | null
+  /** null until the composer has seen a keystroke. */
+  typing?: () => TypingSummary | null
 }
 
 const read = <T>(
@@ -402,6 +575,83 @@ const bool = (value: unknown): boolean | undefined =>
 const finite = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined
 
+const positive = (value: unknown): number | undefined => {
+  const n = finite(value)
+  return n !== undefined && n > 0 ? n : undefined
+}
+
+function typingFields(
+  typing: TypingSummary | undefined,
+): Partial<TypingSummary> {
+  if (!typing) return {}
+  return {
+    typingSpeed: typing.typingSpeed,
+    typingRhythm: typing.typingRhythm,
+    editRatio: typing.editRatio,
+  }
+}
+
+function systemSection(system: AdContextSystem) {
+  const cores = positive(system.cores)
+  const load1 = finite(system.load1)
+  const total = positive(system.totalmem)
+  const free = finite(system.freemem)
+  const uptime = finite(system.uptimeSec)
+  const disk = finite(system.diskFreeBytes)
+  return section({
+    osMajor: osMajorOf(system.platform, system.release),
+    arch: bucketArch(system.arch),
+    ram: total !== undefined ? bucketRam(total) : undefined,
+    uptime: uptime !== undefined && uptime >= 0 ? bucketUptime(uptime * 1000) : undefined,
+    // Windows has no load average: os.loadavg() is always [0, 0, 0] there.
+    load:
+      system.platform !== 'win32' && load1 !== undefined && load1 >= 0 && cores
+        ? bucketLoad(load1, cores)
+        : undefined,
+    freeMemory:
+      free !== undefined && free >= 0 && total !== undefined
+        ? bucketFreeMemory(free, total)
+        : undefined,
+    cores: cores !== undefined ? bucketCores(cores) : undefined,
+    cpu: system.cpuModel ? cpuFamilyOf(system.cpuModel) : undefined,
+    diskFree: disk !== undefined && disk >= 0 ? bucketDiskFree(disk) : undefined,
+  })
+}
+
+const RUNTIME_LABEL = /^[a-z]+-\d{1,3}\.\d{1,3}$/
+
+function appSection(app: AdContextApp) {
+  const uptime = finite(app.uptimeMs)
+  const installAge = finite(app.installAgeMs)
+  return section({
+    uptime: uptime !== undefined && uptime >= 0 ? bucketUptime(uptime) : undefined,
+    installAge:
+      installAge !== undefined && installAge >= 0
+        ? bucketInstallAge(installAge)
+        : undefined,
+    channel: app.channel,
+    installMethod: app.installMethod,
+    // re-checked so one malformed label costs its field, not the context
+    runtime:
+      app.runtime && RUNTIME_LABEL.test(app.runtime) ? app.runtime : undefined,
+  })
+}
+
+function workSection(work: AdContextWork) {
+  const queued = finite(work.queued)
+  const failures = finite(work.turnFailuresLastHour)
+  const skills = finite(work.skills)
+  return section({
+    queued: queued !== undefined ? bucketCount(queued) : undefined,
+    // Every tool call this process runs passes the event handler, so none
+    // seen yet is a known `none`.
+    tool: work.tool ?? 'none',
+    lastError: work.lastError,
+    turnFailures: failures !== undefined ? bucketCount(failures) : undefined,
+    skills: skills !== undefined ? bucketCount(skills) : undefined,
+  })
+}
+
 /** Never throws; `undefined` when nothing parses. */
 export function buildCliAdClientContext(
   sources: CliAdContextSources,
@@ -410,12 +660,14 @@ export function buildCliAdClientContext(
     const now = sources.now()
     const term = read(sources.term)
     const cols = finite(read(sources.cols))
+    const rows = finite(read(sources.rows))
     const termSection = section({
       ...(term ?? {}),
       cols:
         cols !== undefined && cols > 0
           ? bucketTerminalColumns(cols)
           : undefined,
+      rows: rows !== undefined && rows > 0 ? bucketTerminalRows(rows) : undefined,
       mouse: bool(read(sources.mouse)),
       focused: bool(read(sources.focused)),
     })
@@ -437,6 +689,7 @@ export function buildCliAdClientContext(
         startedAt !== undefined ? bucketSince(now - startedAt) : undefined,
       pendingPrompt: bool(read(sources.pendingPrompt)),
       scrolledUp: bool(read(sources.scrolledUp)),
+      ...typingFields(read(sources.typing)),
     })
 
     const turns = finite(read(sources.userTurnCount))
@@ -468,18 +721,42 @@ export function buildCliAdClientContext(
       : undefined
 
     const system = read(sources.system)
-    const sys = system
-      ? section({
-          osMajor: osMajorOf(system.platform, system.release),
-          arch: bucketArch(system.arch),
-          ram:
-            Number.isFinite(system.totalmem) && system.totalmem > 0
-              ? bucketRam(system.totalmem)
-              : undefined,
-        })
-      : undefined
+    const sys = system ? systemSection(system) : undefined
 
     const rtt = session ? median(session.rttSamplesMs) : undefined
+    const jitter = session ? jitterOf(session.rttSamplesMs) : undefined
+    const failed = finite(session?.failedRequests)
+    const ttft = finite(session?.lastTtftMs)
+    const adFetch = finite(session?.lastAdFetchMs)
+    const net = section({
+      rtt: rtt !== undefined ? bucketRtt(rtt) : undefined,
+      jitter:
+        jitter !== undefined && Number.isFinite(jitter)
+          ? bucketJitter(jitter)
+          : undefined,
+      failedRequests: failed !== undefined ? bucketCount(failed) : undefined,
+      ttft: ttft !== undefined && ttft >= 0 ? bucketTtft(ttft) : undefined,
+      adFetch:
+        adFetch !== undefined && adFetch >= 0
+          ? bucketLatency(adFetch)
+          : undefined,
+    })
+
+    const appFacts = read(sources.app)
+    const app = appFacts ? appSection(appFacts) : undefined
+
+    const locale = read(sources.localeEnv)
+    const languages = locale ? localeLanguagesOf(locale) : {}
+    const ui = section({
+      language: languages.language,
+      languageCount:
+        languages.languageCount !== undefined
+          ? bucketLanguageCount(languages.languageCount)
+          : undefined,
+    })
+
+    const workFacts = read(sources.work)
+    const work = workFacts ? workSection(workFacts) : undefined
 
     const out: Record<string, unknown> = { v: AD_CLIENT_CONTEXT_VERSION }
     if (termSection) out.term = termSection
@@ -487,7 +764,10 @@ export function buildCliAdClientContext(
     if (sess) out.sess = sess
     if (agent) out.agent = agent
     if (sys) out.sys = sys
-    if (rtt !== undefined) out.net = { rtt: bucketRtt(rtt) }
+    if (net) out.net = net
+    if (app) out.app = app
+    if (ui) out.ui = ui
+    if (work) out.work = work
     return parseAdClientContext(out)
   } catch {
     return undefined
@@ -524,6 +804,89 @@ function liveAgent(): AdContextAgent {
   return agent
 }
 
+type StaticSystemFacts = { cores?: number; cpuModel?: string }
+let cachedSystemFacts: StaticSystemFacts | null = null
+
+/** Core count and CPU model cannot change while the process runs. */
+function staticSystemFacts(): StaticSystemFacts {
+  if (cachedSystemFacts) return cachedSystemFacts
+  const facts: StaticSystemFacts = {}
+  try {
+    const cpus = os.cpus()
+    if (cpus.length > 0) facts.cores = cpus.length
+    const model = cpus[0]?.model
+    if (typeof model === 'string' && model) facts.cpuModel = model
+  } catch {
+    // unknown
+  }
+  cachedSystemFacts = facts
+  return facts
+}
+
+const diskFree = createLazyAsyncValue<number>(async () => {
+  if (typeof fsPromises.statfs !== 'function') return undefined
+  const stats = await fsPromises.statfs(os.homedir())
+  const bytes = Number(stats.bavail) * Number(stats.bsize)
+  return Number.isFinite(bytes) && bytes >= 0 ? bytes : undefined
+}, AD_DISK_FREE_TTL_MS)
+
+/**
+ * When the CLI's config directory was created: the first launch of any
+ * Codebuff/Freebuff CLI on this account. Read once; a filesystem without
+ * birth times (some Linux mounts report 0) is unknown.
+ */
+const configDirBirth = createLazyAsyncValue<number>(async () => {
+  const stats = await fsPromises.stat(getConfigDir())
+  return stats.birthtimeMs > 0 ? stats.birthtimeMs : undefined
+}, Number.POSITIVE_INFINITY)
+
+function liveSystem(): AdContextSystem {
+  const system: AdContextSystem = {
+    platform: process.platform,
+    release: os.release(),
+    arch: process.arch,
+    totalmem: os.totalmem(),
+    ...staticSystemFacts(),
+  }
+  try {
+    system.uptimeSec = os.uptime()
+    system.freemem = os.freemem()
+    if (process.platform !== 'win32') system.load1 = os.loadavg()[0]
+  } catch {
+    // unknown
+  }
+  const disk = diskFree.get()
+  if (disk !== undefined) system.diskFreeBytes = disk
+  return system
+}
+
+let cachedInstallMethod: InstallMethod | null = null
+
+function liveApp(): AdContextApp {
+  cachedInstallMethod ??= installMethodOf(getSystemProcessEnv(), {
+    isBinary: Boolean(getSystemProcessEnv().CODEBUFF_IS_BINARY),
+  })
+  const app: AdContextApp = {
+    uptimeMs: process.uptime() * 1000,
+    channel: releaseChannelOf(buildEnv.NEXT_PUBLIC_CB_ENVIRONMENT),
+    installMethod: cachedInstallMethod,
+  }
+  const runtime = process.versions.bun
+    ? runtimeLabelOf('bun', process.versions.bun)
+    : runtimeLabelOf('node', process.versions.node)
+  if (runtime) app.runtime = runtime
+  const born = configDirBirth.get()
+  if (born !== undefined) app.installAgeMs = Date.now() - born
+  return app
+}
+
+function liveWork(): AdContextWork {
+  return {
+    ...getAdWorkSnapshot(),
+    skills: isSkillRegistryLoaded() ? getSkillCount() : null,
+  }
+}
+
 /** The live sources this process reads. */
 export function liveCliAdContextSources(): CliAdContextSources {
   ensureAdTerminalFocusWatch()
@@ -541,12 +904,12 @@ export function liveCliAdContextSources(): CliAdContextSources {
     userTurnCount: countUserTurns,
     session: getAdSessionSnapshot,
     agent: liveAgent,
-    system: () => ({
-      platform: process.platform,
-      release: os.release(),
-      arch: process.arch,
-      totalmem: os.totalmem(),
-    }),
+    system: liveSystem,
+    rows: () => getAdRendererFacts()?.height ?? process.stdout.rows ?? null,
+    app: liveApp,
+    localeEnv: getSystemProcessEnv,
+    work: liveWork,
+    typing: getAdTypingSummary,
   }
 }
 

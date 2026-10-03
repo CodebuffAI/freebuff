@@ -14,6 +14,7 @@ import {
 } from 'react'
 
 import { InputCursor } from './input-cursor'
+import { noteAdKeystroke } from '../ads/ad-signals'
 import { useTheme } from '../hooks/use-theme'
 import { useChatStore } from '../state/chat-store'
 import {
@@ -1112,9 +1113,17 @@ export const MultilineInput = forwardRef<
 
         // Delegate to specialized handlers
         if (handleEnterKeys(key)) return
-        if (handleDeletionKeys(key)) return
+        // COD-757: THAT a key edited the draft, and whether it deleted; never
+        // which key. Navigation and Enter are not typing.
+        if (handleDeletionKeys(key)) {
+          noteAdKeystroke(true)
+          return
+        }
         if (handleNavigationKeys(key)) return
-        if (handleCharacterInput(key)) return
+        if (handleCharacterInput(key)) {
+          noteAdKeystroke(false)
+          return
+        }
       },
       [
         focused,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { noteAdQueuedCount } from '../ads/ad-signals'
 import { logger } from '../utils/logger'
 
 import type { PendingAttachment } from '../types/store'
@@ -62,6 +63,8 @@ export const useMessageQueue = (
    *  dequeue) sees the same queue the user just acted on. */
   const writeQueue = useCallback((next: QueuedMessage[]) => {
     queuedMessagesRef.current = next
+    // COD-757: the queue length rides the ad client context as a bucket.
+    noteAdQueuedCount(next.length)
     setQueuedMessages(next)
   }, [])
 

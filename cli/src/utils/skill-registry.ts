@@ -10,6 +10,8 @@ import type { SkillDefinition, SkillsMap } from '@codebuff/common/types/skill'
 // ============================================================================
 
 let skillsCache: SkillsMap = {}
+/** Set once a load succeeded, so a count of 0 can be told from "not loaded yet". */
+let skillsLoaded = false
 
 /**
  * Initialize the skill registry by loading skills via the SDK.
@@ -35,6 +37,7 @@ export async function initializeSkillRegistry(): Promise<void> {
       verbose: false,
       includeHomeSkills: true,
     })
+    skillsLoaded = true
   } catch (error) {
     logger.warn({ error }, 'Failed to load skills')
     skillsCache = {}
@@ -57,6 +60,11 @@ export function getLoadedSkills(): SkillsMap {
  */
 export function getSkillByName(name: string): SkillDefinition | undefined {
   return skillsCache[name]
+}
+
+/** Whether a skill load has succeeded this process. */
+export function isSkillRegistryLoaded(): boolean {
+  return skillsLoaded
 }
 
 /**
@@ -97,6 +105,7 @@ export function getLoadedSkillsMessage(): string | null {
  */
 export function __resetSkillRegistryForTests(): void {
   skillsCache = {}
+  skillsLoaded = false
 }
 
 /**

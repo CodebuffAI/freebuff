@@ -7,6 +7,7 @@ import { WEBSITE_URL } from '@codebuff/sdk'
 import { IS_TEST } from '@codebuff/common/env'
 import { useCallback, useEffect, useRef } from 'react'
 
+import { createAdoptionWatcher, type AdoptionWatcher } from './ad-adoption'
 import {
   createEngagementRegistry,
   rowsIntersect,
@@ -19,10 +20,13 @@ import {
   ensureAdTerminalFocusWatch,
   getAdTerminalFocusState,
   getAdTranscriptViewport,
+  subscribeAdAgentCommand,
+  subscribeAdKeystroke,
   subscribeAdTerminalFocus,
   subscribeAdUserSend,
   timedApiCall,
 } from './ad-signals'
+import { getIdleTime, subscribeToActivity } from '../utils/activity-tracker'
 import { getCliAdRequestUserAgent } from '../utils/ad-client-identity'
 import { getAuthToken } from '../utils/auth'
 import { clientEnvironmentHeaders } from '../utils/client-environment'
@@ -74,10 +78,15 @@ export function adEngagementRegistry(): EngagementRegistry {
     now: () => performance.now(),
     send: postAdEngagement,
     focus: getAdTerminalFocusState,
+    idleMs: getIdleTime,
+    countsKeys: true,
+    onFlushed: (impUrl) => adoption?.mainRecordSent(impUrl),
   })
   ensureAdTerminalFocusWatch()
   subscribeAdTerminalFocus((focused) => created.terminalFocus(focused))
   subscribeAdUserSend(() => created.messageSent())
+  subscribeToActivity(() => created.userInput())
+  subscribeAdKeystroke(() => created.keystroke())
   registry = created
   return created
 }
@@ -87,6 +96,38 @@ export function setAdEngagementRegistryForTests(
   next: EngagementRegistry | null,
 ): void {
   registry = next
+}
+
+let adoption: AdoptionWatcher | null = null
+
+/** Created on the first click: until then there is nothing to watch for. */
+function adAdoptionWatcher(): AdoptionWatcher {
+  if (adoption) return adoption
+  const created = createAdoptionWatcher({
+    now: () => performance.now(),
+    send: postAdEngagement,
+    status: (impUrl) => adEngagementRegistry().status(impUrl),
+  })
+  subscribeAdAgentCommand((command) => created.agentCommand(command))
+  adoption = created
+  return created
+}
+
+/**
+ * A click on any CLI ad: watch for the agent adopting the clicked vendor
+ * (`postClick.packageInstalled`). A landing page outside the tracked vendors
+ * arms nothing. Never throws.
+ */
+export function armAdAdoptionWatch(
+  impUrl: string | undefined,
+  landingUrl: string | undefined,
+): void {
+  try {
+    if (!impUrl) return
+    adAdoptionWatcher().armClick(impUrl, landingUrl)
+  } catch {
+    // never break a click
+  }
 }
 
 /** Mouse modifiers as OpenTUI reports them on the click's mouse-up. */

@@ -18,9 +18,13 @@ import {
   noteAdTurnState,
   noteAdsServed,
   registerAdRenderer,
+  timedAdFetch,
   timedApiCall,
 } from '../ads/ad-signals'
-import { adEngagementRegistry } from '../ads/use-ad-engagement'
+import {
+  adEngagementRegistry,
+  armAdAdoptionWatch,
+} from '../ads/use-ad-engagement'
 import { trackAdClickAck, watchAdClickReturn } from '../ads/click-return'
 import { getAdsEnabled } from '../commands/ads'
 import { useChatStore } from '../state/chat-store'
@@ -249,7 +253,7 @@ export function dispatchFirstPartyViewAcknowledgement(
  * telemetry before opening the link would be slower than the ad is worth.
  */
 export function recordAdClick(
-  ad: Pick<AdResponse, 'impUrl'>,
+  ad: Pick<AdResponse, 'impUrl'> & { url?: string },
   options?: { surface?: AdSurface; dock?: DockClickContext },
 ): void {
   const authToken = getAuthToken()
@@ -261,6 +265,8 @@ export function recordAdClick(
   // COD-694: watch for the user's next prompt, the CLI's "came back" signal.
   watchAdClickReturn(ad.impUrl)
   noteAdClicked()
+  // COD-757: watch for the agent installing the clicked vendor's package.
+  armAdAdoptionWatch(ad.impUrl, ad.url)
 
   // One id per logical click (COD-365); a repeat POST of the same ad is a
   // new gesture and a new id, and the server answers `alreadyRecorded`.
@@ -405,6 +411,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     return registerAdRenderer(() => ({
       useMouse: renderer.useMouse,
       width: renderer.width,
+      height: renderer.height,
     }))
   }, [renderer])
   useEffect(
@@ -624,7 +631,9 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     if (!request) return null
 
     try {
-      const response = await fetch(request.url, request.init)
+      const response = await timedAdFetch(() =>
+        fetch(request.url, request.init),
+      )
 
       if (!response.ok) {
         let responseBody: unknown

@@ -28,6 +28,7 @@ import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 import { WEBSITE_URL } from '@codebuff/sdk'
 
 import { buildAdAuctionRequest } from './ad-request'
+import { timedAdFetch } from './ad-signals'
 import { getAdsEnabled } from '../commands/ads'
 import {
   getSessionPartnerPlacementIds,
@@ -182,7 +183,7 @@ async function requestPartnerAuction(
 ): Promise<PartnerAuctionBody | null> {
   const built = await buildAdAuctionRequest(partnerAuctionParams(placementId))
   if (!built) return null
-  const response = await fetch(built.url, built.init)
+  const response = await timedAdFetch(() => fetch(built.url, built.init))
   if (!response.ok) {
     logger.debug(
       { status: response.status, placementId },

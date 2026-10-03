@@ -22,6 +22,15 @@
  *   them `focusedVisibleMs`, `click.windowFocused` and `postClick` are omitted:
  *   an unknown focus is never reported as "unfocused".
  * - A click has no `isTrusted` and no DOM region; the CTA buttons say `cta`.
+ * - Idle and keystrokes (wave 2) come from the CLI's activity tracker and the
+ *   composer's keypress count. `idleVisibleMs` needs a known last-input time,
+ *   `keysDuringExposure` needs the composer wired; without either, absent.
+ *   A keystroke is counted, never identified. `reentries` counts a
+ *   transcript card measured back inside the viewport after it left it; a
+ *   pinned card has no viewport to leave, so its count is always 0.
+ * - Pixel/DOM concepts (`cardWidth`/`cardHeight`, `closestPointer`,
+ *   `imageLoadMs`, `copied`) have no terminal equivalent and are never set,
+ *   and a CLI ad cannot be dismissed, so `dismissMs` is never set either.
  *
  * Two layers, so the timing rules are tested with a fake clock and no TUI:
  * `createEngagementTracker` (one impression's state machine, possibly drawn
@@ -32,6 +41,7 @@
 import {
   AD_ENGAGEMENT_VERSION,
   AD_MS_CAP,
+  bucketCount,
   clampMs,
   parseAdEngagement,
   type AdEngagement,
@@ -49,6 +59,8 @@ export const POST_CLICK_WATCH_MS = AD_MS_CAP
 export const ENGAGEMENT_RELEASE_GRACE_MS = 1_000
 /** An unmount this soon after a send is attributed to the send. */
 export const NEW_MESSAGE_EXIT_WINDOW_MS = 1_000
+/** No input for this long is idle (the activity tracker's own threshold). */
+export const ENGAGEMENT_IDLE_AFTER_MS = 30_000
 
 const MAX_COUNT = 10_000
 /** Bounds the rotation memos: a slot that rotates for a week must not grow them. */
@@ -93,6 +105,10 @@ export interface EngagementTrackerOptions extends EngagementTimers {
   focus: FocusState
   /** When the slot swapped to this creative, on the `now` clock. */
   rotatedAt?: number
+  /** ms since the user's last input when the tracker starts; absent = unknown. */
+  idleMsAtMount?: number
+  /** The composer's keystrokes reach `keystroke()`, so a count is meaningful. */
+  countsKeys?: boolean
   /** Receives every record that parses. Fire-and-forget; a throw is swallowed. */
   send: (record: AdEngagement) => void
   /** Called once the tracker has nothing left to send. */
@@ -111,6 +127,10 @@ export interface EngagementTracker {
   click(detail?: EngagementClick): void
   terminalFocus(focused: boolean): void
   messageSent(): void
+  /** The user did something (key, mouse, paste): idle time restarts. */
+  userInput(): void
+  /** One composer keystroke; counted only while the card is on screen. */
+  keystroke(): void
   /** The first measurement wins. */
   truncated(value: boolean): void
   /** Ends the impression and sends its record. Idempotent. */
@@ -173,6 +193,18 @@ export function createEngagementTracker(
   let sentMessage = false
   let truncated: boolean | undefined
 
+  // wave 2: idle exposure, re-entries, keystrokes on screen
+  let lastInputAt: number | undefined =
+    options.idleMsAtMount !== undefined &&
+    Number.isFinite(options.idleMsAtMount) &&
+    options.idleMsAtMount >= 0
+      ? mountAt - options.idleMsAtMount
+      : undefined
+  let idleVisibleMs = 0
+  let reentries = 0
+  let leftAt: number | undefined
+  let keysVisible = 0
+
   let click: Omit<NonNullable<AdEngagement['click']>, 'count'> | undefined
   let clickCount = 0
 
@@ -206,6 +238,13 @@ export function createEngagementTracker(
     if (wasVisible) {
       visibleMs += dt
       if (focused === true) focusedVisibleMs += dt
+      if (lastInputAt !== undefined) {
+        const idleFrom = Math.max(
+          lastAt,
+          lastInputAt + ENGAGEMENT_IDLE_AFTER_MS,
+        )
+        if (t > idleFrom) idleVisibleMs += t - idleFrom
+      }
     }
     if (wasHovering) hoverMs += dt
     if (t > lastAt) lastAt = t
@@ -217,6 +256,7 @@ export function createEngagementTracker(
       if (owner.placement === 'pinned' || owner.visible !== undefined)
         visibilityKnown = true
     const visible = isVisible()
+    if (!visible && wasVisible) leftAt = t
     if (visible && visibleAt === undefined) visibleAt = t
     wasVisible = visible
     const hovering = isHovering()
@@ -334,6 +374,15 @@ export function createEngagementTracker(
       sentMessageDuringExposure: sentMessage,
       exit,
       truncated,
+      idleVisibleMs:
+        visibilityKnown && lastInputAt !== undefined
+          ? clampMs(idleVisibleMs)
+          : undefined,
+      reentries: visibilityKnown ? count(reentries) : undefined,
+      keysDuringExposure:
+        visibilityKnown && options.countsKeys
+          ? bucketCount(keysVisible)
+          : undefined,
       click: click
         ? defined({ ...click, count: count(clickCount) })
         : undefined,
@@ -371,8 +420,13 @@ export function createEngagementTracker(
         state.visible === visible
       )
         return
-      update(() => {
+      const before = isVisible()
+      update((t) => {
         state.visible = visible
+        // Only a MEASUREMENT brings a card back: a pinned card remounting
+        // inside the release grace is a redraw, not a re-entry.
+        if (!before && visible === true && leftAt !== undefined && t > leftAt)
+          reentries += 1
       })
     },
     hover(owner, hovering) {
@@ -419,6 +473,16 @@ export function createEngagementTracker(
       if (flushed || owners.size === 0) return
       sentMessage = true
     },
+    userInput() {
+      if (flushed) return
+      update((t) => {
+        lastInputAt = t
+      })
+    },
+    keystroke() {
+      if (flushed || !isVisible()) return
+      keysVisible = Math.min(MAX_COUNT, keysVisible + 1)
+    },
     truncated(value) {
       if (flushed || truncated !== undefined) return
       truncated = value
@@ -436,12 +500,19 @@ export function createEngagementTracker(
       maybeDone()
     },
     snapshot(exit) {
-      const saved = { visibleMs, focusedVisibleMs, hoverMs, lastAt }
+      const saved = {
+        visibleMs,
+        focusedVisibleMs,
+        hoverMs,
+        idleVisibleMs,
+        lastAt,
+      }
       if (!flushed) advance(now())
       const record = build(exit)
       visibleMs = saved.visibleMs
       focusedVisibleMs = saved.focusedVisibleMs
       hoverMs = saved.hoverMs
+      idleVisibleMs = saved.idleVisibleMs
       lastAt = saved.lastAt
       return parseAdEngagement(record)
     },
@@ -456,7 +527,16 @@ export interface EngagementRegistryEnv extends EngagementTimers {
   send: (record: AdEngagement) => void
   focus: () => FocusState
   releaseGraceMs?: number
+  /** ms since the user's last input; null/undefined = unknown. */
+  idleMs?: () => number | null | undefined
+  /** The composer's keystrokes are forwarded through `keystroke()`. */
+  countsKeys?: boolean
+  /** An impression's main record went out (its flush). */
+  onFlushed?: (impUrl: string) => void
 }
+
+/** `flushed`: the main record is out. `unknown`: never tracked this process. */
+export type EngagementStatus = 'unknown' | 'live' | 'flushed'
 
 export interface EngagementHandle {
   readonly impUrl: string
@@ -481,6 +561,9 @@ export interface EngagementRegistry {
   noteSlotSwap(from: readonly string[], to: readonly string[]): void
   terminalFocus(focused: boolean): void
   messageSent(): void
+  userInput(): void
+  keystroke(): void
+  status(impUrl: string): EngagementStatus
   /** Test seam. */
   reset(): void
   readonly size: number
@@ -547,6 +630,7 @@ export function createEngagementRegistry(
     finished.add(impUrl)
     rotatedAway.delete(impUrl)
     safely(() => entry.tracker.flush(exit))
+    safely(() => env.onFlushed?.(impUrl))
     if (entry.tracker.done && entries.get(impUrl) === entry)
       entries.delete(impUrl)
   }
@@ -563,11 +647,19 @@ export function createEngagementRegistry(
         const rotatedAt = swappedInAt.get(impUrl)
         swappedInAt.delete(impUrl)
         const created: Entry = { tracker: undefined as never, timer: null }
+        let idleMsAtMount: number | undefined
+        try {
+          idleMsAtMount = env.idleMs?.() ?? undefined
+        } catch {
+          idleMsAtMount = undefined
+        }
         created.tracker = createEngagementTracker({
           impUrl,
           now: env.now,
           focus: env.focus(),
           rotatedAt,
+          idleMsAtMount,
+          countsKeys: env.countsKeys,
           setTimer,
           clearTimer,
           send: env.send,
@@ -625,6 +717,18 @@ export function createEngagementRegistry(
       lastMessageAt = env.now()
       for (const entry of entries.values())
         safely(() => entry.tracker.messageSent())
+    },
+    userInput() {
+      for (const entry of entries.values())
+        safely(() => entry.tracker.userInput())
+    },
+    keystroke() {
+      for (const entry of entries.values())
+        safely(() => entry.tracker.keystroke())
+    },
+    status(impUrl) {
+      if (finished.has(impUrl)) return 'flushed'
+      return entries.has(impUrl) ? 'live' : 'unknown'
     },
     reset() {
       for (const entry of entries.values())

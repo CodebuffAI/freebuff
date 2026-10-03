@@ -1,6 +1,12 @@
 import { match } from 'ts-pattern'
 
 import {
+  noteAdStreamChunk,
+  noteAdToolCall,
+  noteAdToolResult,
+} from '../ads/ad-signals'
+
+import {
   appendTextToRootStream,
   appendToolToAgentBlock,
   closeNativeReasoningBlock,
@@ -602,6 +608,8 @@ const handleStreamChunk = (
   }
 
   ensureStreaming(state)
+  // COD-757: the turn's time to first token (one null check after the first).
+  noteAdStreamChunk()
   // Content is flowing (again) — clear any stream-interrupted retry status.
   // Terminal paths (run completion, error, abort) already reset it in
   // use-send-message/send-message, so the indicator can't outlive its run.
@@ -641,8 +649,23 @@ const handleSdkEvent = (state: EventHandlerState, event: SDKEvent): void => {
   return match(event)
     .with({ type: 'subagent_start' }, (e) => handleSubagentStart(state, e))
     .with({ type: 'subagent_finish' }, (e) => handleSubagentFinish(state, e))
-    .with({ type: 'tool_call' }, (e) => handleToolCall(state, e))
-    .with({ type: 'tool_result' }, (e) => handleToolResult(state, e))
+    .with({ type: 'tool_call' }, (e) => {
+      // COD-757: the tool's category, and an agent shell command for the
+      // post-click adoption watch. In memory only; never throws.
+      noteAdToolCall(
+        e.toolName,
+        e.toolName === 'run_terminal_command' &&
+          typeof e.input?.command === 'string'
+          ? e.input.command
+          : undefined,
+      )
+      return handleToolCall(state, e)
+    })
+    .with({ type: 'tool_result' }, (e) => {
+      // COD-757: a failed result's error CLASS only, never its text.
+      noteAdToolResult(e.output)
+      return handleToolResult(state, e)
+    })
     .with({ type: 'finish' }, (e) => handleFinish(state, e))
     .with({ type: 'error' }, (e) => handleStreamError(state, e))
     .otherwise(() => undefined)

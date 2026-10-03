@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import { AD_MS_CAP } from '@codebuff/common/types/ad-client-context'
 
 import {
+  ENGAGEMENT_IDLE_AFTER_MS,
   ENGAGEMENT_RELEASE_GRACE_MS,
   POST_CLICK_LEAVE_GRACE_MS,
   createEngagementRegistry,
@@ -494,5 +495,144 @@ describe('helpers', () => {
       }),
     ).toBe(true)
     expect(clickModifier({ button: 1 })).toBe(true)
+  })
+})
+
+// ------------------------------------------------------------------ wave 2
+
+function waveTwoTracker(options: { idleMsAtMount?: number; countsKeys?: boolean }) {
+  const c = clock()
+  const sent: AdEngagement[] = []
+  const tracker = createEngagementTracker({
+    impUrl: 'imp-2',
+    now: c.now,
+    focus: NO_FOCUS,
+    setTimer: c.setTimer,
+    clearTimer: c.clearTimer,
+    send: (record) => sent.push(record),
+    ...options,
+  })
+  return { c, sent, tracker }
+}
+
+describe('engagement tracker: wave 2', () => {
+  test('idleVisibleMs counts visible time after 30s without input', () => {
+    const { c, sent, tracker } = waveTwoTracker({ idleMsAtMount: 10_000 })
+    tracker.attach({}, 'pinned')
+    // idle from mount + 20s
+    c.advance(50_000)
+    tracker.userInput()
+    c.advance(10_000)
+    tracker.flush('unmount')
+    expect(sent[0]).toMatchObject({ visibleMs: 60_000, idleVisibleMs: 30_000 })
+  })
+
+  test('idle while invisible is not counted', () => {
+    const { c, sent, tracker } = waveTwoTracker({ idleMsAtMount: 0 })
+    const owner = {}
+    tracker.attach(owner, 'measured')
+    tracker.setVisible(owner, false)
+    c.advance(ENGAGEMENT_IDLE_AFTER_MS + 20_000)
+    tracker.setVisible(owner, true)
+    c.advance(5_000)
+    tracker.flush('unmount')
+    expect(sent[0]).toMatchObject({ visibleMs: 5_000, idleVisibleMs: 5_000 })
+  })
+
+  test('without a known last input idleVisibleMs is absent, not zero', () => {
+    const { c, sent, tracker } = waveTwoTracker({})
+    tracker.attach({}, 'pinned')
+    c.advance(120_000)
+    tracker.flush('unmount')
+    expect(sent[0]!.idleVisibleMs).toBeUndefined()
+  })
+
+  test('reentries count measured returns to the viewport only', () => {
+    const { c, sent, tracker } = waveTwoTracker({})
+    const owner = {}
+    tracker.attach(owner, 'measured')
+    tracker.setVisible(owner, true)
+    c.advance(1_000)
+    tracker.setVisible(owner, false)
+    c.advance(1_000)
+    tracker.setVisible(owner, true)
+    c.advance(1_000)
+    tracker.setVisible(owner, false)
+    c.advance(1_000)
+    tracker.setVisible(owner, true)
+    tracker.flush('unmount')
+    expect(sent[0]!.reentries).toBe(2)
+  })
+
+  test('a pinned card has no re-entries; unknown visibility has none either', () => {
+    const pinned = waveTwoTracker({})
+    pinned.tracker.attach({}, 'pinned')
+    pinned.c.advance(1_000)
+    pinned.tracker.flush('unmount')
+    expect(pinned.sent[0]!.reentries).toBe(0)
+
+    const unknown = waveTwoTracker({})
+    unknown.tracker.attach({}, 'measured')
+    unknown.tracker.flush('unmount')
+    expect(unknown.sent[0]!.reentries).toBeUndefined()
+  })
+
+  test('keysDuringExposure counts only keystrokes while on screen, bucketed', () => {
+    const { c, sent, tracker } = waveTwoTracker({ countsKeys: true })
+    const owner = {}
+    tracker.attach(owner, 'measured')
+    tracker.setVisible(owner, false)
+    for (let i = 0; i < 50; i++) tracker.keystroke()
+    tracker.setVisible(owner, true)
+    for (let i = 0; i < 4; i++) tracker.keystroke()
+    c.advance(1_000)
+    tracker.flush('unmount')
+    expect(sent[0]!.keysDuringExposure).toBe('2-5')
+    expect(typeof sent[0]!.keysDuringExposure).toBe('string')
+  })
+
+  test('without the composer wired keysDuringExposure is absent', () => {
+    const { sent, tracker } = waveTwoTracker({})
+    tracker.attach({}, 'pinned')
+    tracker.keystroke()
+    tracker.flush('unmount')
+    expect(sent[0]!.keysDuringExposure).toBeUndefined()
+    expect(sent[0]!.dismissMs).toBeUndefined()
+    expect(sent[0]!.cardWidth).toBeUndefined()
+  })
+})
+
+describe('engagement registry: wave 2', () => {
+  test('forwards input and keystrokes, reports status and flushes', () => {
+    const c = clock()
+    const sent: AdEngagement[] = []
+    const flushed: string[] = []
+    const registry = createEngagementRegistry({
+      now: c.now,
+      send: (record) => sent.push(record),
+      focus: () => NO_FOCUS,
+      setTimer: c.setTimer,
+      clearTimer: c.clearTimer,
+      idleMs: () => 0,
+      countsKeys: true,
+      onFlushed: (impUrl) => flushed.push(impUrl),
+    })
+    expect(registry.status('a')).toBe('unknown')
+    const a = registry.mount('a', 'pinned')!
+    expect(registry.status('a')).toBe('live')
+    registry.keystroke()
+    registry.keystroke()
+    c.advance(ENGAGEMENT_IDLE_AFTER_MS + 10_000)
+    registry.userInput()
+    c.advance(1_000)
+    registry.unmount(a)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    expect(registry.status('a')).toBe('flushed')
+    expect(flushed).toEqual(['a'])
+    expect(sent[0]).toMatchObject({
+      keysDuringExposure: '2-5',
+      idleVisibleMs: 10_000,
+      reentries: 0,
+    })
   })
 })

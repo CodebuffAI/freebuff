@@ -98,6 +98,161 @@ export const ENGAGEMENT_EXITS = [
 ] as const
 export const CLICK_REGIONS = ['title', 'body', 'cta', 'logo', 'other'] as const
 
+// ---- context v1 additions (COD-757 wave 2). Additive and optional, so `v` stays 1. ----
+
+// Machine (Desktop, CLI). Every value is coarse on purpose: these describe the kind of machine and how loaded it is,
+// never which machine it is. Raw GPU strings, exact screen sizes, exact battery levels, fonts and similar
+// fingerprint-grade values are deliberately absent.
+export const THERMAL_STATES = ['nominal', 'fair', 'serious', 'critical'] as const
+export const UPTIME_BUCKETS = ['<1h', '1-8h', '8-24h', '1-7d', '7d+'] as const
+/** 1-minute load average divided by core count */
+export const LOAD_BUCKETS = ['low', 'medium', 'high'] as const
+/** free memory as a share of total */
+export const FREE_MEMORY_BUCKETS = ['<10%', '10-25%', '25-50%', '50%+'] as const
+export const CORE_BUCKETS = ['<=4', '5-8', '9-12', '13+'] as const
+export const CPU_FAMILIES = [
+  'apple_m1',
+  'apple_m2',
+  'apple_m3',
+  'apple_m4',
+  'apple_m5',
+  'apple_other',
+  'intel',
+  'amd',
+  'qualcomm',
+  'other',
+] as const
+export const GPU_VENDORS = ['apple', 'nvidia', 'amd', 'intel', 'qualcomm', 'software', 'other'] as const
+/** free disk on the volume holding the user's home directory, in GB */
+export const DISK_FREE_BUCKETS = ['<10', '10-50', '50-200', '200+'] as const
+export const DISPLAY_SCALE_BUCKETS = ['1', '1.25-1.75', '2', '2.5+'] as const
+/** page / window zoom in percent */
+export const ZOOM_BUCKETS = ['<90', '90-110', '110-150', '150+'] as const
+
+// App install and preferences (Desktop, CLI).
+export const INSTALL_AGE_BUCKETS = ['<1d', '1-7d', '7-30d', '30-90d', '90d+'] as const
+export const RELEASE_CHANNELS = ['stable', 'beta', 'staging', 'dev', 'other'] as const
+export const INSTALL_METHODS = [
+  'npx',
+  'npm',
+  'bun',
+  'pnpm',
+  'yarn',
+  'brew',
+  'binary',
+  'dmg',
+  'exe',
+  'appimage',
+  'deb',
+  'other',
+] as const
+export const THEME_SOURCES = ['system', 'light', 'dark'] as const
+export const LANGUAGE_COUNT_BUCKETS = ['1', '2', '3+'] as const
+
+// Workload (what the agent and the app are busy with).
+export const COUNT_BUCKETS = ['0', '1', '2-5', '6-20', '21+'] as const
+export const TOOL_CATEGORIES = ['none', 'read', 'edit', 'shell', 'search', 'web', 'mcp', 'agent', 'other'] as const
+/** infobuff's error classes (`infobuff/src/facts/extractors.ts`), plus `none` and `other` */
+export const ERROR_CLASSES = [
+  'none',
+  'module-not-found',
+  'file-not-found',
+  'oom',
+  'type-error',
+  'timeout',
+  'permission-denied',
+  'auth-failed',
+  'connection-refused',
+  'null-reference',
+  'syntax-error',
+  'rate-limited',
+  'assertion-failed',
+  'segfault',
+  'disk-full',
+  'certificate',
+  'port-in-use',
+  'version-conflict',
+  'not-found',
+  'other',
+] as const
+
+// Network.
+export const TTFT_BUCKETS = ['<1s', '1-3s', '3-10s', '10s+'] as const
+/** request latency in ms (ad fetch, image load) */
+export const LATENCY_BUCKETS = ['<100', '100-300', '300-1000', '1000+'] as const
+export const JITTER_BUCKETS = ['<10', '10-50', '50-150', '150+'] as const
+
+// Terminal (CLI).
+export const TERMINAL_ROW_BUCKETS = ['<24', '24-39', '40-59', '60+'] as const
+
+// Web.
+export const REFERRER_CLASSES = ['none', 'search', 'social', 'github', 'community', 'internal', 'other'] as const
+export const UTM_SOURCES = [
+  'none',
+  'google',
+  'reddit',
+  'twitter',
+  'hn',
+  'github',
+  'youtube',
+  'newsletter',
+  'discord',
+  'linkedin',
+  'other',
+] as const
+
+// Pointer and typing. Coarse buckets only: no raw keystroke timings or pointer paths ever leave the machine, so none
+// of this can act as a behavioural-biometric identifier.
+export const POINTER_SPEEDS = ['still', 'slow', 'fast'] as const
+/** pixels */
+export const DISTANCE_BUCKETS = ['<50', '50-200', '200-500', '500+'] as const
+/** words per minute over the recent typing window */
+export const TYPING_SPEEDS = ['none', 'slow', 'medium', 'fast'] as const
+export const TYPING_RHYTHMS = ['steady', 'bursty'] as const
+/** deletions as a share of keystrokes */
+export const EDIT_RATIO_BUCKETS = ['<5%', '5-15%', '15-30%', '30%+'] as const
+
+/** rendered ad card size, CSS pixels */
+export const CARD_DIMENSION_BUCKETS = ['<120', '120-300', '300-600', '600+'] as const
+
+/**
+ * Developer-tool vendors whose adoption after a click is recorded (`postClick.packageInstalled` / `mcpAdded`). A
+ * package or MCP server outside this list is never reported, only whether it matched the clicked ad's vendor.
+ */
+export const AD_VENDORS = [
+  'supabase',
+  'stripe',
+  'vercel',
+  'netlify',
+  'cloudflare',
+  'sentry',
+  'clerk',
+  'auth0',
+  'resend',
+  'posthog',
+  'neon',
+  'planetscale',
+  'prisma',
+  'convex',
+  'upstash',
+  'mongodb',
+  'firebase',
+  'openai',
+  'anthropic',
+  'datadog',
+  'railway',
+  'render',
+  'fly',
+  'algolia',
+  'twilio',
+  'linear',
+  'github',
+  'greptile',
+  'coderabbit',
+  'infisical',
+] as const
+export type AdVendor = (typeof AD_VENDORS)[number]
+
 const since = z.enum(SINCE_BUCKETS)
 const label = z.string().min(1).max(64)
 const ms = z.number().int().min(0).max(AD_MS_CAP)
@@ -114,6 +269,9 @@ export const adClientContextSchema = z.object({
       size: z.enum(WINDOW_SIZE_BUCKETS),
       displays: z.enum(DISPLAY_COUNT_BUCKETS),
       onPrimary: z.boolean(),
+      minimized: z.boolean(),
+      scale: z.enum(DISPLAY_SCALE_BUCKETS),
+      zoom: z.enum(ZOOM_BUCKETS),
     })
     .partial()
     .optional(),
@@ -125,6 +283,17 @@ export const adClientContextSchema = z.object({
       osMajor: z.string().min(1).max(16),
       arch: z.enum(ARCHES),
       ram: z.enum(RAM_BUCKETS),
+      thermal: z.enum(THERMAL_STATES),
+      uptime: z.enum(UPTIME_BUCKETS),
+      load: z.enum(LOAD_BUCKETS),
+      freeMemory: z.enum(FREE_MEMORY_BUCKETS),
+      cores: z.enum(CORE_BUCKETS),
+      cpu: z.enum(CPU_FAMILIES),
+      /** vendor class only, never the renderer string */
+      gpu: z.enum(GPU_VENDORS),
+      diskFree: z.enum(DISK_FREE_BUCKETS),
+      /** the user's login shell (Desktop); the CLI reports its own under term.shell */
+      shell: z.enum(SHELLS),
     })
     .partial()
     .optional(),
@@ -139,6 +308,15 @@ export const adClientContextSchema = z.object({
       slotInViewport: z.boolean(),
       /** the transcript is scrolled away from the bottom, where the CLI and web chat draw their slot */
       scrolledUp: z.boolean(),
+      /** pointer speed over the last ~2s */
+      pointerSpeed: z.enum(POINTER_SPEEDS),
+      /** the pointer's recent movement heads toward the ad slot */
+      pointerTowardSlot: z.boolean(),
+      /** pointer distance to the ad slot when the request is made */
+      pointerDistance: z.enum(DISTANCE_BUCKETS),
+      typingSpeed: z.enum(TYPING_SPEEDS),
+      typingRhythm: z.enum(TYPING_RHYTHMS),
+      editRatio: z.enum(EDIT_RATIO_BUCKETS),
     })
     .partial()
     .optional(),
@@ -169,6 +347,56 @@ export const adClientContextSchema = z.object({
       connection: z.enum(CONNECTION_TYPES),
       effectiveType: z.enum(EFFECTIVE_TYPES),
       saveData: z.boolean(),
+      jitter: z.enum(JITTER_BUCKETS),
+      offlineFlaps: z.enum(COUNT_BUCKETS),
+      failedRequests: z.enum(COUNT_BUCKETS),
+      /** the current (or last) agent turn's time to first token */
+      ttft: z.enum(TTFT_BUCKETS),
+      /** how long the previous ad request on this surface took */
+      adFetch: z.enum(LATENCY_BUCKETS),
+    })
+    .partial()
+    .optional(),
+  /** Desktop and CLI */
+  app: z
+    .object({
+      uptime: z.enum(UPTIME_BUCKETS),
+      installAge: z.enum(INSTALL_AGE_BUCKETS),
+      channel: z.enum(RELEASE_CHANNELS),
+      launchAtLogin: z.boolean(),
+      /** lives in the tray / menu bar rather than the dock */
+      tray: z.boolean(),
+      sinceResume: since,
+      installMethod: z.enum(INSTALL_METHODS),
+      /** runtime major.minor, e.g. `bun-1.3` */
+      runtime: z.string().regex(/^[a-z]+-\d{1,3}\.\d{1,3}$/),
+    })
+    .partial()
+    .optional(),
+  /** Desktop, web and CLI */
+  ui: z
+    .object({
+      theme: z.enum(THEME_SOURCES),
+      reducedMotion: z.boolean(),
+      highContrast: z.boolean(),
+      /** primary language only (ISO 639 code), never the full preference list */
+      language: z.string().regex(/^[a-z]{2,3}$/),
+      languageCount: z.enum(LANGUAGE_COUNT_BUCKETS),
+    })
+    .partial()
+    .optional(),
+  /** Desktop and CLI */
+  work: z
+    .object({
+      projects: z.enum(COUNT_BUCKETS),
+      threads: z.enum(COUNT_BUCKETS),
+      queued: z.enum(COUNT_BUCKETS),
+      missionRunning: z.boolean(),
+      tool: z.enum(TOOL_CATEGORIES),
+      lastError: z.enum(ERROR_CLASSES),
+      /** failed turns in the last hour */
+      turnFailures: z.enum(COUNT_BUCKETS),
+      skills: z.enum(COUNT_BUCKETS),
     })
     .partial()
     .optional(),
@@ -189,6 +417,10 @@ export const adClientContextSchema = z.object({
       shell: z.enum(SHELLS),
       /** terminal focus reporting (DEC 1004) has told us the terminal is focused; absent when unsupported */
       focused: z.boolean(),
+      rows: z.enum(TERMINAL_ROW_BUCKETS),
+      utf8: z.boolean(),
+      /** an HTTP(S)_PROXY is configured: corporate network or a sandbox */
+      proxy: z.boolean(),
     })
     .partial()
     .optional(),
@@ -201,6 +433,16 @@ export const adClientContextSchema = z.object({
       mobile: z.boolean(),
       dark: z.boolean(),
       reducedMotion: z.boolean(),
+      /** installed as an app (display-mode standalone) */
+      standalone: z.boolean(),
+      /** the session's entry referrer, classified; never the URL */
+      referrer: z.enum(REFERRER_CLASSES),
+      utm: z.enum(UTM_SOURCES),
+      cookies: z.boolean(),
+      /** navigator.webdriver: an automated browser */
+      webdriver: z.boolean(),
+      doNotTrack: z.boolean(),
+      zoom: z.enum(ZOOM_BUCKETS),
     })
     .partial()
     .optional(),
@@ -225,6 +467,24 @@ export const adEngagementSchema = z.object({
   exit: z.enum(ENGAGEMENT_EXITS).optional(),
   truncated: z.boolean().optional(),
   imageFailed: z.boolean().optional(),
+  imageLoadMs: ms.optional(),
+  /** visible time while the user was idle (no input for 30s+): seen-but-unattended exposure */
+  idleVisibleMs: ms.optional(),
+  /** times the ad re-entered the viewport after leaving it */
+  reentries: count.optional(),
+  /**
+   * keystrokes while the ad was visible, BUCKETED: an exact count beside the exposure's own `visibleMs` would be a
+   * typing-rate measurement finer than `attn.typingSpeed`, so only the coarse bucket is accepted
+   */
+  keysDuringExposure: z.enum(COUNT_BUCKETS).optional(),
+  /** closest the pointer came to the ad without being over it */
+  closestPointer: z.enum(DISTANCE_BUCKETS).optional(),
+  cardWidth: z.enum(CARD_DIMENSION_BUCKETS).optional(),
+  cardHeight: z.enum(CARD_DIMENSION_BUCKETS).optional(),
+  /** ms from first visible to the user dismissing the ad, when they did */
+  dismissMs: ms.optional(),
+  /** the user copied text from the ad */
+  copied: z.boolean().optional(),
   click: z
     .object({
       msSinceMount: ms,
@@ -246,6 +506,12 @@ export const adEngagementSchema = z.object({
       browserOpened: z.boolean(),
       /** ms from the click until the window regained focus */
       returnMs: ms,
+      /** within the adoption window after the click, the agent installed a package of the clicked ad's vendor */
+      packageInstalled: z.boolean(),
+      /** within the adoption window after the click, the user added an MCP server of the clicked ad's vendor */
+      mcpAdded: z.boolean(),
+      /** ms from the click to the first adoption signal */
+      adoptedAtMs: ms,
     })
     .partial()
     .optional(),
@@ -374,4 +640,619 @@ export function mcpVendorOf(identifier: string): McpVendor {
 /** Dedupes and sorts so the same set of servers always serializes identically. */
 export function mcpVendorsOf(identifiers: readonly string[]): McpVendor[] {
   return [...new Set(identifiers.map(mcpVendorOf))].sort()
+}
+
+// ---- wave 2 helpers: one place for every bucket edge, so Desktop, CLI and web can never disagree ----
+
+const HOUR_MS = 3_600_000
+const DAY_MS = 24 * HOUR_MS
+
+export function bucketUptime(ms: number): (typeof UPTIME_BUCKETS)[number] {
+  if (ms < HOUR_MS) return '<1h'
+  if (ms < 8 * HOUR_MS) return '1-8h'
+  if (ms < DAY_MS) return '8-24h'
+  if (ms < 7 * DAY_MS) return '1-7d'
+  return '7d+'
+}
+
+/** `load1` is the 1-minute load average; normalised by core count so a 16-core machine at load 8 is "medium". */
+export function bucketLoad(load1: number, cores: number): (typeof LOAD_BUCKETS)[number] {
+  const perCore = load1 / Math.max(1, cores)
+  if (perCore < 0.5) return 'low'
+  if (perCore < 1) return 'medium'
+  return 'high'
+}
+
+export function bucketFreeMemory(freeBytes: number, totalBytes: number): (typeof FREE_MEMORY_BUCKETS)[number] {
+  const share = totalBytes > 0 ? freeBytes / totalBytes : 0
+  if (share < 0.1) return '<10%'
+  if (share < 0.25) return '10-25%'
+  if (share < 0.5) return '25-50%'
+  return '50%+'
+}
+
+export function bucketCores(cores: number): (typeof CORE_BUCKETS)[number] {
+  if (cores <= 4) return '<=4'
+  if (cores <= 8) return '5-8'
+  if (cores <= 12) return '9-12'
+  return '13+'
+}
+
+/** Maps an `os.cpus()[0].model` string to a family; the string itself never leaves the machine. */
+export function cpuFamilyOf(model: string): (typeof CPU_FAMILIES)[number] {
+  const m = model.toLowerCase()
+  const apple = /apple\s+m(\d)/.exec(m)
+  if (apple) {
+    const generation = `apple_m${apple[1]}`
+    return (CPU_FAMILIES as readonly string[]).includes(generation)
+      ? (generation as (typeof CPU_FAMILIES)[number])
+      : 'apple_other'
+  }
+  if (m.includes('apple')) return 'apple_other'
+  if (m.includes('intel')) return 'intel'
+  if (m.includes('amd') || m.includes('ryzen') || m.includes('epyc')) return 'amd'
+  if (m.includes('snapdragon') || m.includes('qualcomm') || m.includes('oryon')) return 'qualcomm'
+  return 'other'
+}
+
+/** Maps a GPU vendor or renderer string to a vendor class; the string itself never leaves the machine. */
+export function gpuVendorOf(identifier: string): (typeof GPU_VENDORS)[number] {
+  const g = identifier.toLowerCase()
+  if (/swiftshader|llvmpipe|software|basic render|microsoft basic/.test(g)) return 'software'
+  // PCI vendor ids as Electron's `getGPUInfo('basic')` reports them: 0x106b Apple, 0x5143 Qualcomm
+  if (g.includes('apple') || g.includes('0x106b')) return 'apple'
+  if (g.includes('nvidia') || g.includes('geforce') || g.includes('quadro') || g.includes('0x10de')) return 'nvidia'
+  if (g.includes('amd') || g.includes('radeon') || g.includes('0x1002')) return 'amd'
+  if (g.includes('intel') || g.includes('0x8086')) return 'intel'
+  if (g.includes('qualcomm') || g.includes('adreno') || g.includes('0x5143')) return 'qualcomm'
+  return 'other'
+}
+
+export function bucketDiskFree(freeBytes: number): (typeof DISK_FREE_BUCKETS)[number] {
+  const gb = freeBytes / 1e9
+  if (gb < 10) return '<10'
+  if (gb < 50) return '10-50'
+  if (gb < 200) return '50-200'
+  return '200+'
+}
+
+export function bucketDisplayScale(scaleFactor: number): (typeof DISPLAY_SCALE_BUCKETS)[number] {
+  if (scaleFactor < 1.125) return '1'
+  if (scaleFactor < 1.875) return '1.25-1.75'
+  if (scaleFactor < 2.25) return '2'
+  return '2.5+'
+}
+
+export function bucketZoom(percent: number): (typeof ZOOM_BUCKETS)[number] {
+  if (percent < 90) return '<90'
+  if (percent <= 110) return '90-110'
+  if (percent <= 150) return '110-150'
+  return '150+'
+}
+
+export function bucketInstallAge(ms: number): (typeof INSTALL_AGE_BUCKETS)[number] {
+  if (ms < DAY_MS) return '<1d'
+  if (ms < 7 * DAY_MS) return '1-7d'
+  if (ms < 30 * DAY_MS) return '7-30d'
+  if (ms < 90 * DAY_MS) return '30-90d'
+  return '90d+'
+}
+
+export function bucketCount(n: number): (typeof COUNT_BUCKETS)[number] {
+  if (n <= 0) return '0'
+  if (n === 1) return '1'
+  if (n <= 5) return '2-5'
+  if (n <= 20) return '6-20'
+  return '21+'
+}
+
+export function bucketTtft(ms: number): (typeof TTFT_BUCKETS)[number] {
+  if (ms < 1_000) return '<1s'
+  if (ms < 3_000) return '1-3s'
+  if (ms < 10_000) return '3-10s'
+  return '10s+'
+}
+
+export function bucketLatency(ms: number): (typeof LATENCY_BUCKETS)[number] {
+  if (ms < 100) return '<100'
+  if (ms < 300) return '100-300'
+  if (ms < 1_000) return '300-1000'
+  return '1000+'
+}
+
+/** Jitter as the mean absolute difference between consecutive RTT samples, in ms. */
+export function bucketJitter(ms: number): (typeof JITTER_BUCKETS)[number] {
+  if (ms < 10) return '<10'
+  if (ms < 50) return '10-50'
+  if (ms < 150) return '50-150'
+  return '150+'
+}
+
+export function jitterOf(rttSamplesMs: readonly number[]): number | undefined {
+  if (rttSamplesMs.length < 2) return undefined
+  let sum = 0
+  for (let i = 1; i < rttSamplesMs.length; i++) sum += Math.abs(rttSamplesMs[i]! - rttSamplesMs[i - 1]!)
+  return sum / (rttSamplesMs.length - 1)
+}
+
+export function bucketTerminalRows(rows: number): (typeof TERMINAL_ROW_BUCKETS)[number] {
+  if (rows < 24) return '<24'
+  if (rows < 40) return '24-39'
+  if (rows < 60) return '40-59'
+  return '60+'
+}
+
+export function bucketDistance(px: number): (typeof DISTANCE_BUCKETS)[number] {
+  if (px < 50) return '<50'
+  if (px < 200) return '50-200'
+  if (px < 500) return '200-500'
+  return '500+'
+}
+
+/** Pointer speed in px/s over the recent window. */
+export function bucketPointerSpeed(pxPerSecond: number): (typeof POINTER_SPEEDS)[number] {
+  if (pxPerSecond < 20) return 'still'
+  if (pxPerSecond < 600) return 'slow'
+  return 'fast'
+}
+
+export function bucketTypingSpeed(wordsPerMinute: number | undefined): (typeof TYPING_SPEEDS)[number] {
+  if (wordsPerMinute === undefined || wordsPerMinute <= 0) return 'none'
+  if (wordsPerMinute < 20) return 'slow'
+  if (wordsPerMinute < 50) return 'medium'
+  return 'fast'
+}
+
+/**
+ * Burstiness from inter-key gaps: bursty when the gaps vary a lot relative to their mean (coefficient of variation
+ * above 1). Only the bucket leaves the machine, never the gaps.
+ */
+export function typingRhythmOf(interKeyGapsMs: readonly number[]): (typeof TYPING_RHYTHMS)[number] | undefined {
+  if (interKeyGapsMs.length < 5) return undefined
+  const mean = interKeyGapsMs.reduce((a, b) => a + b, 0) / interKeyGapsMs.length
+  if (mean <= 0) return undefined
+  const variance = interKeyGapsMs.reduce((a, b) => a + (b - mean) ** 2, 0) / interKeyGapsMs.length
+  return Math.sqrt(variance) / mean > 1 ? 'bursty' : 'steady'
+}
+
+export function bucketEditRatio(deletions: number, keystrokes: number): (typeof EDIT_RATIO_BUCKETS)[number] {
+  const share = keystrokes > 0 ? deletions / keystrokes : 0
+  if (share < 0.05) return '<5%'
+  if (share < 0.15) return '5-15%'
+  if (share < 0.3) return '15-30%'
+  return '30%+'
+}
+
+export function bucketCardDimension(px: number): (typeof CARD_DIMENSION_BUCKETS)[number] {
+  if (px < 120) return '<120'
+  if (px < 300) return '120-300'
+  if (px < 600) return '300-600'
+  return '600+'
+}
+
+export function bucketLanguageCount(n: number): (typeof LANGUAGE_COUNT_BUCKETS)[number] {
+  if (n <= 1) return '1'
+  if (n === 2) return '2'
+  return '3+'
+}
+
+/** `en-US` / `en_US.UTF-8` / `pt-BR` → `en` / `en` / `pt`; anything else → undefined. */
+export function primaryLanguageOf(locale: string | undefined): string | undefined {
+  const match = /^([a-zA-Z]{2,3})(?:[-_.@]|$)/.exec(locale ?? '')
+  return match ? match[1]!.toLowerCase() : undefined
+}
+
+const SEARCH_DOMAINS = [
+  'google.com',
+  'bing.com',
+  'duckduckgo.com',
+  'yahoo.com',
+  'baidu.com',
+  'yandex.com',
+  'yandex.ru',
+  'ecosia.org',
+  'search.brave.com',
+  'kagi.com',
+  'perplexity.ai',
+]
+const SOCIAL_DOMAINS = [
+  'twitter.com',
+  'x.com',
+  't.co',
+  'facebook.com',
+  'instagram.com',
+  'linkedin.com',
+  'lnkd.in',
+  'reddit.com',
+  'youtube.com',
+  'threads.net',
+  'bsky.app',
+  'tiktok.com',
+]
+const COMMUNITY_DOMAINS = [
+  'news.ycombinator.com',
+  'producthunt.com',
+  'discord.com',
+  'discord.gg',
+  'dev.to',
+  'hashnode.com',
+  'medium.com',
+  'substack.com',
+  'stackoverflow.com',
+  'lobste.rs',
+]
+
+function hostMatches(host: string, domains: readonly string[]): boolean {
+  return domains.some((d) => host === d || host.endsWith(`.${d}`))
+}
+
+/** Classifies a referrer URL; the URL itself never leaves the browser. */
+export function referrerClassOf(
+  referrer: string | undefined,
+  ownHost: string,
+): (typeof REFERRER_CLASSES)[number] {
+  if (!referrer) return 'none'
+  let host: string
+  try {
+    host = new URL(referrer).hostname.toLowerCase().replace(/^www\./, '')
+  } catch {
+    return 'other'
+  }
+  const own = ownHost.toLowerCase().replace(/^www\./, '')
+  if (host === own || host.endsWith(`.${own}`)) return 'internal'
+  if (hostMatches(host, ['github.com', 'github.io'])) return 'github'
+  // google.co.uk, google.de, ...: any google.<tld>
+  if (hostMatches(host, SEARCH_DOMAINS) || /(^|\.)google\.[a-z.]+$/.test(host)) return 'search'
+  if (hostMatches(host, SOCIAL_DOMAINS)) return 'social'
+  if (hostMatches(host, COMMUNITY_DOMAINS)) return 'community'
+  return 'other'
+}
+
+/** Classifies a raw `utm_source`; the raw value never leaves the browser. */
+export function utmSourceOf(raw: string | null | undefined): (typeof UTM_SOURCES)[number] {
+  const s = (raw ?? '').toLowerCase().trim()
+  if (!s) return 'none'
+  if (s.includes('google')) return 'google'
+  if (s.includes('reddit')) return 'reddit'
+  if (s === 'x' || s.includes('twitter')) return 'twitter'
+  if (s === 'hn' || s.includes('hackernews') || s.includes('ycombinator')) return 'hn'
+  if (s.includes('github')) return 'github'
+  if (s.includes('youtube')) return 'youtube'
+  if (s.includes('newsletter') || s.includes('email')) return 'newsletter'
+  if (s.includes('discord')) return 'discord'
+  if (s.includes('linkedin')) return 'linkedin'
+  return 'other'
+}
+
+/** Maps a tool name or tool call kind to a coarse category. */
+export function toolCategoryOf(toolName: string | undefined): (typeof TOOL_CATEGORIES)[number] {
+  const t = (toolName ?? '').toLowerCase()
+  if (!t) return 'none'
+  if (/(^|_)(read|view|cat|list|ls|glob|open)/.test(t)) return 'read'
+  if (/(write|edit|patch|replace|create|str_replace|apply)/.test(t)) return 'edit'
+  if (/(shell|bash|terminal|run_|exec|command)/.test(t)) return 'shell'
+  if (/(web|fetch|browse|http|url)/.test(t)) return 'web'
+  if (/(grep|search|find|code_search)/.test(t)) return 'search'
+  if (t.startsWith('mcp') || t.includes('__')) return 'mcp'
+  if (/(spawn|agent|task|subagent)/.test(t)) return 'agent'
+  return 'other'
+}
+
+const VENDOR_DOMAINS: Readonly<Record<AdVendor, readonly string[]>> = {
+  supabase: ['supabase.com', 'supabase.co'],
+  stripe: ['stripe.com'],
+  vercel: ['vercel.com'],
+  netlify: ['netlify.com'],
+  cloudflare: ['cloudflare.com'],
+  sentry: ['sentry.io'],
+  clerk: ['clerk.com', 'clerk.dev'],
+  auth0: ['auth0.com'],
+  resend: ['resend.com'],
+  posthog: ['posthog.com'],
+  neon: ['neon.tech', 'neon.com'],
+  planetscale: ['planetscale.com'],
+  prisma: ['prisma.io'],
+  convex: ['convex.dev'],
+  upstash: ['upstash.com'],
+  mongodb: ['mongodb.com'],
+  firebase: ['firebase.google.com', 'firebase.com'],
+  openai: ['openai.com'],
+  anthropic: ['anthropic.com', 'claude.com'],
+  datadog: ['datadoghq.com'],
+  railway: ['railway.app', 'railway.com'],
+  render: ['render.com'],
+  fly: ['fly.io'],
+  algolia: ['algolia.com'],
+  twilio: ['twilio.com'],
+  linear: ['linear.app'],
+  github: ['github.com'],
+  greptile: ['greptile.com'],
+  coderabbit: ['coderabbit.ai'],
+  infisical: ['infisical.com'],
+}
+
+const VENDOR_PACKAGES: Readonly<Record<AdVendor, RegExp>> = {
+  supabase: /^@supabase\/|^supabase$/,
+  stripe: /^stripe$|^@stripe\//,
+  vercel: /^vercel$|^@vercel\//,
+  netlify: /^netlify(-cli)?$|^@netlify\//,
+  cloudflare: /^wrangler$|^@cloudflare\//,
+  sentry: /^@sentry\//,
+  clerk: /^@clerk\//,
+  auth0: /^auth0$|^@auth0\//,
+  resend: /^resend$/,
+  posthog: /^posthog-(js|node)$/,
+  neon: /^@neondatabase\//,
+  planetscale: /^@planetscale\//,
+  prisma: /^prisma$|^@prisma\//,
+  convex: /^convex$/,
+  upstash: /^@upstash\//,
+  mongodb: /^mongodb$|^mongoose$/,
+  firebase: /^firebase(-admin|-tools)?$/,
+  openai: /^openai$|^@openai\//,
+  anthropic: /^@anthropic-ai\//,
+  datadog: /^dd-trace$|^@datadog\//,
+  railway: /^@railway\//,
+  render: /^@render\//,
+  fly: /^@flydotio\//,
+  algolia: /^algoliasearch$|^@algolia\//,
+  twilio: /^twilio$/,
+  linear: /^@linear\//,
+  github: /^@octokit\//,
+  greptile: /^greptile$|^@greptile\//,
+  coderabbit: /^coderabbit$|^@coderabbit\//,
+  infisical: /^@infisical\//,
+}
+
+/** The vendor behind an ad's landing domain, if it is one we track adoption for. */
+export function adVendorOfDomain(url: string | undefined): AdVendor | undefined {
+  let host: string
+  try {
+    host = new URL(url ?? '').hostname.toLowerCase().replace(/^www\./, '')
+  } catch {
+    return undefined
+  }
+  for (const vendor of AD_VENDORS) {
+    if (VENDOR_DOMAINS[vendor].some((d) => host === d || host.endsWith(`.${d}`))) return vendor
+  }
+  return undefined
+}
+
+/** The vendor behind an npm package name, if it is one we track adoption for. */
+export function adVendorOfPackage(name: string): AdVendor | undefined {
+  const n = name.trim().toLowerCase().replace(/@[^/@]+$/, '')
+  for (const vendor of AD_VENDORS) if (VENDOR_PACKAGES[vendor].test(n)) return vendor
+  return undefined
+}
+
+/** The vendor behind an MCP server name, URL or command, if it is one we track adoption for. */
+export function adVendorOfMcp(identifier: string): AdVendor | undefined {
+  const s = identifier.toLowerCase()
+  for (const vendor of AD_VENDORS) {
+    if (s.includes(vendor) || VENDOR_DOMAINS[vendor].some((d) => s.includes(d))) return vendor
+  }
+  return undefined
+}
+
+// ---- wave 2 collector helpers: shared by Desktop, CLI and web so every surface reduces raw input the same way ----
+
+/** A login shell path or name (`/bin/zsh`, `pwsh.exe`) to the closed shell vocabulary; the path never leaves. */
+export function shellOf(pathOrName: string | undefined): (typeof SHELLS)[number] | undefined {
+  if (!pathOrName || !pathOrName.trim()) return undefined
+  const name = pathOrName
+    .trim()
+    .split(/[\\/]/)
+    .pop()!
+    .toLowerCase()
+    .replace(/\.exe$/, '')
+  switch (name) {
+    case 'zsh':
+    case 'bash':
+    case 'fish':
+    case 'nu':
+    case 'pwsh':
+      return name
+    case 'powershell':
+      return 'pwsh'
+    default:
+      return 'other'
+  }
+}
+
+const RUNTIME_LABEL = /^[a-z]+-\d{1,3}\.\d{1,3}$/
+
+/** `('bun', '1.3.2')` → `bun-1.3`; anything that would not fit `app.runtime` → undefined. */
+export function runtimeLabelOf(name: string, version: string | undefined): string | undefined {
+  const match = /^v?(\d{1,3})\.(\d{1,3})/.exec(version ?? '')
+  if (!match) return undefined
+  const label = `${name.toLowerCase()}-${match[1]}.${match[2]}`
+  return RUNTIME_LABEL.test(label) ? label : undefined
+}
+
+/** `LANG` / `LC_ALL` / `LC_CTYPE` say UTF-8; undefined when none is set (unknown, e.g. Windows). */
+export function utf8LocaleOf(env: Readonly<Record<string, string | undefined>>): boolean | undefined {
+  const locale = env.LC_ALL || env.LC_CTYPE || env.LANG
+  if (!locale) return undefined
+  return /utf-?8/i.test(locale)
+}
+
+/**
+ * Error identifiers and phrases, a compact mirror of infobuff's `ERROR_PATTERNS`
+ * (`infobuff/src/facts/extractors.ts`), first match wins. Like infobuff, the bare word "error" is deliberately absent.
+ */
+const ERROR_CLASS_PATTERNS: readonly [(typeof ERROR_CLASSES)[number], RegExp][] = [
+  ['module-not-found', /\bModuleNotFoundError\b|\bERR_MODULE_NOT_FOUND\b|\bMODULE_NOT_FOUND\b|\bImportError\b|\bCannot find module\b|\bNo module named\b|\bcannot find package\b|\berror TS2307\b/i],
+  ['file-not-found', /\bENOENT\b|\bFileNotFoundError\b|\bNo such file or directory\b/i],
+  ['oom', /\bOutOfMemoryError\b|\bMemoryError\b|\bOOMKilled\b|\bstd::bad_alloc\b|JavaScript heap out of memory|\bCannot allocate memory\b|\bexit code 137\b/i],
+  ['type-error', /\bTypeError\b|\bClassCastException\b|\bis not assignable to type\b|\bmismatched types\b/],
+  ['timeout', /\bETIMEDOUT\b|\bTimeoutError\b|\bSocketTimeoutException\b|\bdeadline exceeded\b|\btimed out\b|\b504 Gateway Time-?out\b/i],
+  ['permission-denied', /\bEACCES\b|\bEPERM\b|\bAccessDenied(?:Exception)?\b|\bPermission denied\b|\b403 Forbidden\b|\boperation not permitted\b/i],
+  ['auth-failed', /\bAuthenticationError\b|\bUNAUTHENTICATED\b|\b401 Unauthorized\b|\b(?:invalid|incorrect) api key\b|\bauthentication failed\b/i],
+  ['connection-refused', /\bECONNREFUSED\b|\bConnectionRefusedError\b|\bConnection refused\b|\bcould not connect to server\b/i],
+  ['null-reference', /\bNullPointerException\b|Cannot read propert(?:y|ies) of (?:null|undefined)|\bNoneType\b|\bnil pointer dereference\b/i],
+  ['syntax-error', /\bSyntaxError\b|\bIndentationError\b|\bParseError\b|\bUnexpected token\b|\bunexpected end of (?:file|input|JSON input)\b/i],
+  ['rate-limited', /\bRateLimitError\b|\bThrottlingException\b|\b429 Too Many Requests\b|\brate limit (?:exceeded|reached)\b/i],
+  ['assertion-failed', /\bAssertionError\b|\bassertion failed\b/i],
+  ['segfault', /\bSIGSEGV\b|\bSegmentation fault\b/i],
+  ['disk-full', /\bENOSPC\b|\bNo space left on device\b/i],
+  ['certificate', /\bCERT_HAS_EXPIRED\b|\bCERTIFICATE_VERIFY_FAILED\b|\bUNABLE_TO_VERIFY_LEAF_SIGNATURE\b|\bSSLCertVerificationError\b|\bx509: certificate\b/],
+  ['port-in-use', /\bEADDRINUSE\b|\baddress already in use\b|\bport \d+ is already (?:in use|allocated)\b/i],
+  ['version-conflict', /\bERESOLVE\b|\bconflicting peer dependenc(?:y|ies)\b|\bcould not find a version that satisfies\b|\bversion solving failed\b/i],
+  ['not-found', /\bNoSuchKey\b|\b(?:HTTP )?404 Not Found\b/i],
+]
+
+/** Only this much of an error's text is scanned, so classifying a huge tool output stays bounded. */
+export const ERROR_CLASS_SCAN_CHARS = 4_096
+
+/**
+ * Classifies an error message or failed tool output. Runs on the client; only the class leaves the machine, never
+ * the text. Empty input is `none`; text that names no known class is `other`.
+ */
+export function errorClassOf(text: string | undefined | null): (typeof ERROR_CLASSES)[number] {
+  if (!text) return 'none'
+  const scanned = text.length > ERROR_CLASS_SCAN_CHARS ? text.slice(0, ERROR_CLASS_SCAN_CHARS) : text
+  for (const [cls, pattern] of ERROR_CLASS_PATTERNS) if (pattern.test(scanned)) return cls
+  return 'other'
+}
+
+/** Typing is summarised over this trailing window. */
+export const TYPING_WINDOW_MS = 60_000
+/** Inter-key gaps longer than this are a pause, not part of the rhythm. */
+const TYPING_GAP_CAP_MS = 10_000
+const TYPING_MAX_SAMPLES = 512
+
+export type TypingSummary = {
+  typingSpeed: (typeof TYPING_SPEEDS)[number]
+  typingRhythm?: (typeof TYPING_RHYTHMS)[number]
+  editRatio?: (typeof EDIT_RATIO_BUCKETS)[number]
+}
+
+export interface TypingTracker {
+  /** One keystroke. Records WHEN and whether it deleted, never WHICH key. */
+  note(deletion: boolean): void
+  summary(): TypingSummary
+  /** Keystrokes since `sinceMs` (epoch), for `keysDuringExposure`. */
+  countSince(sinceMs: number): number
+}
+
+/**
+ * A bounded in-memory window of keystroke timestamps. Nothing in it leaves the process: callers read `summary()`
+ * (three buckets) and `countSince()` (bucketed by the caller with `bucketCount`). Holds at most 512 samples, so a
+ * stuck key cannot grow it, and every read is O(window).
+ */
+export function createTypingTracker(now: () => number = Date.now): TypingTracker {
+  const at: number[] = []
+  const deleted: boolean[] = []
+  const prune = (t: number) => {
+    let drop = 0
+    while (drop < at.length && t - at[drop]! > TYPING_WINDOW_MS) drop++
+    if (at.length - drop > TYPING_MAX_SAMPLES) drop = at.length - TYPING_MAX_SAMPLES
+    if (drop > 0) {
+      at.splice(0, drop)
+      deleted.splice(0, drop)
+    }
+  }
+  return {
+    note(deletion) {
+      const t = now()
+      if (!Number.isFinite(t)) return
+      at.push(t)
+      deleted.push(deletion)
+      prune(t)
+    },
+    summary() {
+      prune(now())
+      if (at.length === 0) return { typingSpeed: 'none' }
+      const inserted = deleted.filter((d) => !d).length
+      // words per minute over the fixed window: five characters a word
+      const wpm = inserted / 5 / (TYPING_WINDOW_MS / 60_000)
+      const gaps: number[] = []
+      for (let i = 1; i < at.length; i++) {
+        const gap = at[i]! - at[i - 1]!
+        if (gap >= 0 && gap <= TYPING_GAP_CAP_MS) gaps.push(gap)
+      }
+      const rhythm = typingRhythmOf(gaps)
+      return {
+        typingSpeed: bucketTypingSpeed(wpm),
+        ...(rhythm ? { typingRhythm: rhythm } : {}),
+        editRatio: bucketEditRatio(at.length - inserted, at.length),
+      }
+    },
+    countSince(sinceMs) {
+      let n = 0
+      for (let i = at.length - 1; i >= 0 && at[i]! >= sinceMs; i--) n++
+      return n
+    },
+  }
+}
+
+export type RectLike = { left: number; top: number; right: number; bottom: number }
+
+/** Distance from a point to a rectangle's nearest edge; 0 inside it. */
+export function distanceToRect(x: number, y: number, rect: RectLike): number {
+  const dx = Math.max(rect.left - x, 0, x - rect.right)
+  const dy = Math.max(rect.top - y, 0, y - rect.bottom)
+  return Math.hypot(dx, dy)
+}
+
+/** Pointer movement is summarised over this trailing window. */
+export const POINTER_WINDOW_MS = 2_000
+const POINTER_MAX_SAMPLES = 64
+/** The pointer must close at least this much distance on the slot to count as heading toward it. */
+const POINTER_TOWARD_MIN_PX = 20
+
+export type PointerSummary = {
+  pointerSpeed: (typeof POINTER_SPEEDS)[number]
+  pointerTowardSlot?: boolean
+  pointerDistance?: (typeof DISTANCE_BUCKETS)[number]
+}
+
+export interface PointerTracker {
+  /** One (already throttled) pointer position, in viewport CSS pixels. */
+  note(x: number, y: number): void
+  /** Buckets only; undefined until the pointer has moved at all. `slot` absent: only the speed is known. */
+  summary(slot?: RectLike): PointerSummary | undefined
+}
+
+/**
+ * A bounded window of the last ~2s of pointer positions, held in memory and never sent: `summary()` reduces it to a
+ * speed bucket, a heading-toward-the-slot boolean and a distance bucket. No path, coordinate or timing leaves.
+ */
+export function createPointerTracker(now: () => number = Date.now): PointerTracker {
+  const samples: { x: number; y: number; t: number }[] = []
+  let everMoved = false
+  const prune = (t: number) => {
+    let drop = 0
+    while (drop < samples.length && t - samples[drop]!.t > POINTER_WINDOW_MS) drop++
+    if (samples.length - drop > POINTER_MAX_SAMPLES) drop = samples.length - POINTER_MAX_SAMPLES
+    if (drop > 0) samples.splice(0, drop)
+  }
+  return {
+    note(x, y) {
+      const t = now()
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(t)) return
+      everMoved = true
+      samples.push({ x, y, t })
+      prune(t)
+    },
+    summary(slot) {
+      const t = now()
+      // a pointer never seen (no mouse, or not yet moved) is unknown, not "still"
+      if (!everMoved || !Number.isFinite(t)) return undefined
+      prune(t)
+      let path = 0
+      for (let i = 1; i < samples.length; i++)
+        path += Math.hypot(samples[i]!.x - samples[i - 1]!.x, samples[i]!.y - samples[i - 1]!.y)
+      // speed over the whole window, so a pointer that stopped a second ago reads slower than one still moving
+      const out: PointerSummary = { pointerSpeed: bucketPointerSpeed(path / (POINTER_WINDOW_MS / 1000)) }
+      const last = samples[samples.length - 1]
+      const first = samples[0]
+      if (slot && last && first) {
+        const end = distanceToRect(last.x, last.y, slot)
+        out.pointerDistance = bucketDistance(end)
+        out.pointerTowardSlot = distanceToRect(first.x, first.y, slot) - end >= POINTER_TOWARD_MIN_PX
+      }
+      return out
+    },
+  }
 }

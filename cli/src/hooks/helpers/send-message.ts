@@ -7,6 +7,7 @@ import {
   markFreebuffSessionSuperseded,
   refreshFreebuffSession,
 } from '../use-freebuff-session'
+import { noteAdTurnFailure } from '../../ads/ad-signals'
 import { getProjectRoot } from '../../project-files'
 import { useChatStore } from '../../state/chat-store'
 import { IS_FREEBUFF } from '../../utils/constants'
@@ -401,6 +402,8 @@ export const handleRunCompletion = (params: {
   }
 
   if (output.type === 'error') {
+    // COD-757: the failure's class and time only, never its text.
+    noteAdTurnFailure(output.message)
     if (IS_FREEBUFF && !isByokRun && isFreebuffProviderUsageError(output)) {
       updater.setError(FREEBUFF_PROVIDER_USAGE_MESSAGE)
       finalizeAfterError()
@@ -517,6 +520,10 @@ export const handleRunError = (params: {
   const errorInfo = getErrorObject(error, { includeRawError: true })
 
   logger.error({ error: errorInfo }, 'SDK client.run() failed')
+  // COD-757: the failure's class and time only, never its text.
+  noteAdTurnFailure(
+    typeof errorInfo?.message === 'string' ? errorInfo.message : undefined,
+  )
   setIsRetrying(false)
   finalizeQueueState({
     setStreamStatus,
