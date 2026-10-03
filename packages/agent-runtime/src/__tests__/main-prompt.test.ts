@@ -445,4 +445,101 @@ describe('mainPrompt', () => {
 
     expect(output.type).toBeDefined() // Output should exist even for empty response
   })
+
+  it('does not replace the history with an empty summary on /compact', async () => {
+    // A silent empty stop yields no recovery chunk, so an unguarded /compact
+    // replacement would collapse the whole history into one summary message
+    // carrying nothing — every earlier turn gone from the model's context.
+    mockAgentStream([])
+
+    const sessionState = getInitialSessionState(mockFileContext)
+    sessionState.mainAgentState.messageHistory = [
+      {
+        role: 'user' as const,
+        content: [{ type: 'text' as const, text: 'earlier turn: fix the login bug' }],
+        sentAt: 1,
+      },
+      {
+        role: 'assistant' as const,
+        content: [{ type: 'text' as const, text: 'fixed it' }],
+        sentAt: 2,
+      },
+    ]
+    const action = {
+      type: 'prompt' as const,
+      prompt: '/compact',
+      sessionState,
+      fingerprintId: 'test',
+      costMode: 'normal' as const,
+      promptId: 'test',
+      toolResults: [],
+    }
+
+    const { sessionState: newSessionState } = await mainPrompt({
+      ...mainPromptBaseParams,
+      action,
+      localAgentTemplates: mockLocalAgentTemplates,
+    })
+
+    // The history survives: no empty summary message, earlier turns intact.
+    const history = newSessionState.mainAgentState.messageHistory
+    expect(
+      history.some((m) => textOfHistoryMessage(m).includes('The following is a summary')),
+    ).toBe(false)
+    expect(
+      history.some((m) => textOfHistoryMessage(m).includes('earlier turn: fix the login bug')),
+    ).toBe(true)
+  })
+
+  it('still replaces the history on /compact when the model produced a summary', async () => {
+    mockAgentStream([{ type: 'text', text: 'Summary: the user asked to fix the login bug, which was fixed.' }])
+
+    const sessionState = getInitialSessionState(mockFileContext)
+    sessionState.mainAgentState.messageHistory = [
+      {
+        role: 'user' as const,
+        content: [{ type: 'text' as const, text: 'earlier turn: fix the login bug' }],
+        sentAt: 1,
+      },
+      {
+        role: 'assistant' as const,
+        content: [{ type: 'text' as const, text: 'fixed it' }],
+        sentAt: 2,
+      },
+    ]
+    const action = {
+      type: 'prompt' as const,
+      prompt: '/compact',
+      sessionState,
+      fingerprintId: 'test',
+      costMode: 'normal' as const,
+      promptId: 'test',
+      toolResults: [],
+    }
+
+    const { sessionState: newSessionState } = await mainPrompt({
+      ...mainPromptBaseParams,
+      action,
+      localAgentTemplates: mockLocalAgentTemplates,
+    })
+
+    const history = newSessionState.mainAgentState.messageHistory
+    expect(history).toHaveLength(1)
+    expect(textOfHistoryMessage(history[0])).toContain(
+      'Summary: the user asked to fix the login bug',
+    )
+  })
 })
+
+function textOfHistoryMessage(message: { content: unknown }): string {
+  const content = message.content as unknown
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((part: { type?: string; text?: string }) =>
+        part.type === 'text' && typeof part.text === 'string' ? part.text : '',
+      )
+      .join('\n')
+  }
+  return ''
+}

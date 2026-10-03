@@ -392,14 +392,16 @@ describe('context-pruner parity', () => {
   })
 
   /**
-   * Deliberate divergence #2. The pruner treats any user message containing
-   * `<conversation_summary>` as a memory artifact — dropping it from the
-   * history and re-parsing it as entries — which silently eats a user message
-   * that merely mentions the tag. The runtime additionally requires the header
-   * its own envelope always carries. This matters more here because the
-   * cache-expiry trigger compacts on ordinary idle turns.
+   * Former divergence #2, closed. The pruner used to treat any user message
+   * containing `<conversation_summary>` as a memory artifact — dropping it
+   * from the history and re-parsing it as entries, which silently ate a user
+   * message that merely mentions the tag, and (as findLast picks the LAST
+   * match) let a quoting message steal the real summary's identity and erase
+   * the older memory. Both implementations now recognize summaries by the
+   * CONVERSATION_SUMMARY tag they stamp, with a legacy full-envelope fallback
+   * that a bare tag mention does not satisfy.
    */
-  it('keeps a user message that only mentions the tag, where the pruner eats it', () => {
+  it('keeps a user message that only mentions the tag, in both implementations', () => {
     const history: Message[] = [
       user('why does it emit <conversation_summary> around the memory?'),
       assistant('because the model needs a delimiter'),
@@ -412,7 +414,7 @@ describe('context-pruner parity', () => {
     const prunerMemory = textOfFirst(runPruner(history))
 
     expect(runtimeMemory).toContain('why does it emit')
-    expect(prunerMemory).not.toContain('why does it emit')
+    expect(prunerMemory).toContain('why does it emit')
   })
 
   it('matches the pruner when a budget evicts old entries', () => {
