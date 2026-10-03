@@ -424,9 +424,15 @@ export async function* promptAiSdkStream(
     const openrouterUsage = providerMetadata?.codebuff?.usage as
       | OpenRouterUsageAccounting
       | undefined
+    // usage.cost is the total charged and already contains the upstream
+    // portion reported separately in cost_details.upstream_inference_cost
+    // (see the Solar Pro 4 BYOK note in common/src/constants/freebuff-models.ts,
+    // where cost is 0 and upstream carries the real spend): max, never sum.
     const costOverrideDollars = openrouterUsage
-      ? (openrouterUsage.cost ?? 0) +
-        (openrouterUsage.costDetails?.upstreamInferenceCost ?? 0)
+      ? Math.max(
+          openrouterUsage.cost ?? 0,
+          openrouterUsage.costDetails?.upstreamInferenceCost ?? 0,
+        )
       : undefined
     if (!params.onCostCalculated || !costOverrideDollars) return
     costReported = true
@@ -797,9 +803,10 @@ export async function promptAiSdk(
       const openrouterUsage = providerMetadata.codebuff
         .usage as OpenRouterUsageAccounting
 
-      costOverrideDollars =
-        (openrouterUsage.cost ?? 0) +
-        (openrouterUsage.costDetails?.upstreamInferenceCost ?? 0)
+      costOverrideDollars = Math.max(
+        openrouterUsage.cost ?? 0,
+        openrouterUsage.costDetails?.upstreamInferenceCost ?? 0,
+      )
     }
   }
 
@@ -879,9 +886,10 @@ export async function promptAiSdkStructured<T>(
       const openrouterUsage = providerMetadata.codebuff
         .usage as OpenRouterUsageAccounting
 
-      costOverrideDollars =
-        (openrouterUsage.cost ?? 0) +
-        (openrouterUsage.costDetails?.upstreamInferenceCost ?? 0)
+      costOverrideDollars = Math.max(
+        openrouterUsage.cost ?? 0,
+        openrouterUsage.costDetails?.upstreamInferenceCost ?? 0,
+      )
     }
   }
 
