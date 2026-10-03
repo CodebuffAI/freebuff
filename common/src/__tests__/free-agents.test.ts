@@ -1,6 +1,6 @@
 import { isFreebuffLimitedOfferModelId } from '@codebuff/common/constants/freebuff-models'
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
@@ -809,6 +809,42 @@ describe('canonical root prompt openings match their source definitions', () => 
   const read = (...parts: string[]) =>
     readFileSync(join(repoRoot, ...parts), 'utf8')
 
+  /**
+   * Whether this tree carries the file at `parts`.
+   *
+   * This repository is an export of the private source tree, and the export
+   * ships neither the web app (`freebuff/web/`, which `pr-hygiene.yml` lists as
+   * not part of this repository) nor `freebuff-desktop/`. A case that reads one
+   * of those paths is asserting against files that were never exported, so it
+   * fails here with ENOENT instead of skipping. Skipping on presence keeps the
+   * check running in the private tree, where those sources do exist, and
+   * reactivates it here by itself if the export ever includes them.
+   */
+  const isInThisTree = (...parts: string[]) =>
+    existsSync(join(repoRoot, ...parts))
+
+  const PLANNER_SOURCE = [
+    'freebuff',
+    'web',
+    'convex',
+    'coding_agent',
+    'cli_agent',
+    'freebuff_bundled_agents.ts',
+  ] as const
+  const THREAD_AGENT_SOURCE = [
+    'freebuff-desktop',
+    'src',
+    'server',
+    'harness',
+    'thread-agent.ts',
+  ] as const
+  const MISSION_PROMPT_SOURCE = [
+    'freebuff-desktop',
+    'src',
+    'shared',
+    'mission-prompt.ts',
+  ] as const
+
   test('base2 createBase2 free-mode prompt (base2-free-* + desktop roots)', () => {
     const source = read('agents', 'base2', 'base2.ts')
     // The literal is interpolated, so pin the static head of the sentence.
@@ -820,63 +856,59 @@ describe('canonical root prompt openings match their source definitions', () => 
     )
   })
 
-  test('freebuff cloud planner prompt (planner roots)', () => {
-    const source = read(
-      'freebuff',
-      'web',
-      'convex',
-      'coding_agent',
-      'cli_agent',
-      'freebuff_bundled_agents.ts',
-    )
-    const opening = 'You are Buffy, the Freebuff Cloud project planner.'
-    // The literal opens with a newline that `.trim()` strips at build time.
-    expect(source).toContain(`\`\n${opening}`)
-    expect(FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS).toContain(opening)
+  test.skipIf(!isInThisTree(...PLANNER_SOURCE))(
+    'freebuff cloud planner prompt (planner roots)',
+    () => {
+      const source = read(...PLANNER_SOURCE)
+      const opening = 'You are Buffy, the Freebuff Cloud project planner.'
+      // The literal opens with a newline that `.trim()` strips at build time.
+      expect(source).toContain(`\`\n${opening}`)
+      expect(FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS).toContain(opening)
 
-    // The lean Web-trial prompt ('You are Buffy, a coding agent inside a
-    // Freebuff Web project.') was deleted with the HY3 roots on 2026-08-04, its
-    // only users. It must not linger in the gate's allowlist: that list decides
-    // which prompts a free-mode ROOT request may open with, so an entry nothing
-    // sends is just a wider accepted surface.
-    expect(source).not.toContain('a coding agent inside a Freebuff Web project')
-    expect(FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS).not.toContain(
-      'You are Buffy, a coding agent inside a Freebuff Web project.',
-    )
-  })
+      // The lean Web-trial prompt ('You are Buffy, a coding agent inside a
+      // Freebuff Web project.') was deleted with the HY3 roots on 2026-08-04, its
+      // only users. It must not linger in the gate's allowlist: that list decides
+      // which prompts a free-mode ROOT request may open with, so an entry nothing
+      // sends is just a wider accepted surface.
+      expect(source).not.toContain(
+        'a coding agent inside a Freebuff Web project',
+      )
+      expect(FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS).not.toContain(
+        'You are Buffy, a coding agent inside a Freebuff Web project.',
+      )
+    },
+  )
 
-  test('desktop thread agent composes onto the base3 prompt head', () => {
-    const source = read(
-      'freebuff-desktop',
-      'src',
-      'server',
-      'harness',
-      'thread-agent.ts',
-    )
-    // Position 0 of the desktop prompt must stay the base3 prompt, or the
-    // desktop roots stop matching any canonical opening. Since #1444 the
-    // prompt is composed as an array join with base3.systemPrompt first.
-    expect(source).toMatch(/const systemPrompt = \[\s*base3\.systemPrompt,/)
-  })
+  test.skipIf(!isInThisTree(...THREAD_AGENT_SOURCE))(
+    'desktop thread agent composes onto the base3 prompt head',
+    () => {
+      const source = read(...THREAD_AGENT_SOURCE)
+      // Position 0 of the desktop prompt must stay the base3 prompt, or the
+      // desktop roots stop matching any canonical opening. Since #1444 the
+      // prompt is composed as an array join with base3.systemPrompt first.
+      expect(source).toMatch(/const systemPrompt = \[\s*base3\.systemPrompt,/)
+    },
+  )
 
-  test('every desktop mission prompt variant opens with the canonical line', () => {
-    // Both shipped renderers must keep the free-mode root signature at position zero.
-    const source = read(
-      'freebuff-desktop',
-      'src',
-      'shared',
-      'mission-prompt.ts',
-    )
-    const opening = 'You are Buffy, the auto-run agent behind Freebuff Desktop.'
-    // The decision is a free-mode ROOT request, so this sentence has to sit at
-    // position 0 of the first system message or the gate 403s every tab on Auto
-    // — which is a silent failure, since a tab that cannot decide just stops.
-    const renders =
-      source.match(/export function renderMission\w+Prompt\(/g) ?? []
-    expect(renders.length).toBeGreaterThan(0)
-    expect(source.split(`return \`${opening}`).length - 1).toBe(renders.length)
-    expect(FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS).toContain(opening)
-  })
+  test.skipIf(!isInThisTree(...MISSION_PROMPT_SOURCE))(
+    'every desktop mission prompt variant opens with the canonical line',
+    () => {
+      // Both shipped renderers must keep the free-mode root signature at position zero.
+      const source = read(...MISSION_PROMPT_SOURCE)
+      const opening =
+        'You are Buffy, the auto-run agent behind Freebuff Desktop.'
+      // The decision is a free-mode ROOT request, so this sentence has to sit at
+      // position 0 of the first system message or the gate 403s every tab on Auto
+      // — which is a silent failure, since a tab that cannot decide just stops.
+      const renders =
+        source.match(/export function renderMission\w+Prompt\(/g) ?? []
+      expect(renders.length).toBeGreaterThan(0)
+      expect(source.split(`return \`${opening}`).length - 1).toBe(
+        renders.length,
+      )
+      expect(FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS).toContain(opening)
+    },
+  )
 
   test('base3 createBase3 prompt (desktop thread roots)', () => {
     const source = read('agents', 'base3.ts')
