@@ -121,23 +121,30 @@ function loadCliEnv(): Record<string, string> {
 
   try {
     ensureCliEnvDefaults()
-    // NOTE: Inline require() is used for lazy loading - the env module depends on
-    // Infisical secrets which may not be available at module load time in test environments
-    const { env } = require('../../../packages/internal/src/env') as {
-      env: Record<string, unknown>
+    try {
+      const { env } = require('../../../packages/internal/src/env') as {
+        env: Record<string, unknown>
+      }
+
+      cachedEnv = Object.entries(env).reduce<Record<string, string>>(
+        (acc, [key, value]) => {
+          if (value !== undefined && value !== null) {
+            acc[key] = String(value)
+          }
+          return acc
+        },
+        {},
+      )
+
+      return cachedEnv
+    } catch {
+      // Fallback for public mirror where packages/internal is not present
+      cachedEnv = {
+        ...TEST_CLIENT_ENV_DEFAULTS,
+        ...TEST_SERVER_ENV_DEFAULTS,
+      }
+      return cachedEnv
     }
-
-    cachedEnv = Object.entries(env).reduce<Record<string, string>>(
-      (acc, [key, value]) => {
-        if (value !== undefined && value !== null) {
-          acc[key] = String(value)
-        }
-        return acc
-      },
-      {},
-    )
-
-    return cachedEnv
   } catch (error) {
     const message =
       error instanceof Error
