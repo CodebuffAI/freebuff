@@ -287,3 +287,31 @@ describe('splitData - nested object splitting', () => {
     ])
   })
 })
+
+describe('splitData - object size boundaries', () => {
+  it('counts commas when combining object properties', () => {
+    const chunks = splitData({
+      data: { a: 1, b: 2, c: 3 },
+      maxChunkSize: 12,
+    })
+
+    expect(chunks).toEqual([{ a: 1 }, { b: 2 }, { c: 3 }])
+    expect(chunks.every((chunk) => JSON.stringify(chunk).length <= 12)).toBe(true)
+  })
+
+  it('keeps properties together when the object exactly fits', () => {
+    const data = { a: 1, b: 2 }
+
+    expect(splitData({ data, maxChunkSize: 13 })).toEqual([data])
+  })
+
+  it('counts commas when combining a recursively split property', () => {
+    const chunks = splitData({
+      data: { a: 1, b: { x: 1, long: 2 } },
+      maxChunkSize: 18,
+    })
+
+    expect(chunks).toEqual([{ a: 1 }, { b: { x: 1 } }, { b: { long: 2 } }])
+    expect(chunks.every((chunk) => JSON.stringify(chunk).length <= 18)).toBe(true)
+  })
+})
