@@ -5,6 +5,7 @@ import {
   DEFAULT_FREEBUFF_MODEL_ID,
   DEFAULT_FREEBUFF_WEB_MODEL_ID,
   FALLBACK_FREEBUFF_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_SOLAR_MINI_4_MODEL_ID,
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
@@ -311,12 +312,8 @@ describe('freebuff model availability', () => {
 
     // The properties that make it admissible as a default, asserted rather than
     // trusted — each one is a way the first Enter press could fail.
-    expect(isFreebuffPremiumModelId(FREEBUFF_MIMO_V25_MODEL_ID)).toBe(
-      false,
-    )
-    expect(isFreebuffPausedFreeModelId(FREEBUFF_MIMO_V25_MODEL_ID)).toBe(
-      false,
-    )
+    expect(isFreebuffPremiumModelId(FREEBUFF_MIMO_V25_MODEL_ID)).toBe(false)
+    expect(isFreebuffPausedFreeModelId(FREEBUFF_MIMO_V25_MODEL_ID)).toBe(false)
     // STILL NOTHING IS BADGED. Leading the list is the whole recommendation:
     // no ' RECOMMENDED ' badge and no supersedes notice, because a
     // `supersededBy` would rewrite SAVED picks on every load
@@ -1402,9 +1399,7 @@ describe('freebuff model availability', () => {
     ])
     expect(
       getFreebuffModelsForAccessTier('limited', false).map((m) => m.id),
-    ).toEqual(
-      getFreebuffModelsForAccessTier('limited', true).map((m) => m.id),
-    )
+    ).toEqual(getFreebuffModelsForAccessTier('limited', true).map((m) => m.id))
     // Withdrawn rather than merely unlisted: the pause is what reaches the
     // released CLI and Desktop binaries that still draw the row.
     expect(
@@ -1702,11 +1697,19 @@ describe('freebuff model availability', () => {
     // DeepSeek moved the id onto V4.1 Flash, and a version number is what the
     // date was always standing in for. The invariant is unchanged — the name
     // must still say which build this is — only its spelling moved.
-    const dated = [[FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'V4.1']] as const
+    const dated = [
+      [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'V4.1'],
+      // Fast mode (2026-09-26) is the same V4.1 build on its own row; the
+      // version travels with the name.
+      [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID, 'V4.1'],
+    ] as const
     // Widened to the interface: the const-asserted tuple's union type only
     // exposes optional fields set on EVERY member, so `isNew` is unreachable
     // through it unless the find() narrows to a single literal id.
-    const catalog: readonly FreebuffModelOption[] = FREEBUFF_MODELS
+    // SUPPORTED, not FREEBUFF_MODELS: fast mode sits behind
+    // FREEBUFF_ENABLE_FAST_MODE_IN_UI, and its row keeps the invariant whether
+    // or not a picker lists it.
+    const catalog: readonly FreebuffModelOption[] = SUPPORTED_FREEBUFF_MODELS
     for (const [id, date] of dated) {
       const model = catalog.find((candidate) => candidate.id === id)!
       expect(model.isNew).toBe(true)
@@ -1743,9 +1746,11 @@ describe('freebuff model availability', () => {
       FREEBUFF_SOLAR_MINI_4_MODEL_ID,
       FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID,
     ]
+    const listed: readonly FreebuffModelOption[] = FREEBUFF_MODELS
+    const listedIds = new Set(listed.map((model) => model.id))
     expect(
-      catalog.filter((model) => model.isNew && !undatedNew.includes(model.id)),
-    ).toHaveLength(dated.length)
+      listed.filter((model) => model.isNew && !undatedNew.includes(model.id)),
+    ).toHaveLength(dated.filter(([id]) => listedIds.has(id)).length)
   })
 
   test('migrates no saved pick anywhere, now that nothing supersedes', () => {

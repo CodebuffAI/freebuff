@@ -16,6 +16,7 @@ import { mimoModels } from './model-config'
 import { SOLAR_PRO_4_OFFER } from './freebuff-solar-promo'
 import { GPT_61_SOL_PROMOTIONAL } from './freebuff-sol-promo'
 import {
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   FREEBUFF_MINIMAX_M3_MODEL_ID,
@@ -35,6 +36,7 @@ import { getFreebuffModelPolicyOverlay } from './freebuff-model-policy-overlay'
 import { clampReasoningEffort, type ReasoningEffort } from './reasoning-effort'
 
 export {
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   FREEBUFF_MINIMAX_M3_MODEL_ID,
@@ -1134,6 +1136,15 @@ export const MUSE_SPARK_FALLBACK_NOTICE =
 /** UI-only rollout switch. Backend support and free-mode allowlists remain
  *  wired even when these models are hidden from the Freebuff picker. */
 export const FREEBUFF_ENABLE_MIMO_MODELS_IN_UI = true
+/** UI-only rollout switch for the DeepSeek Flash FAST MODE row
+ *  (`deepseek/deepseek-v4-flash-fast`). Off: no picker on any surface lists
+ *  the row (the CLI, Web and Desktop pickers read FREEBUFF_MODELS; the iOS and
+ *  Android catalogs carry the same switch by hand), while everything behind it
+ *  stays wired — the id is SUPPORTED and admitted, priced at 3x Flash, routed
+ *  to DeepSeek direct alone, and runs the base3-fast harness — so a client
+ *  that sends the id gets the real thing. Flip to true to ship the row; the
+ *  tests that count picker rows follow this switch. */
+export const FREEBUFF_ENABLE_FAST_MODE_IN_UI = false
 /** UI-only rollout switch for the streak indicator in the waiting room. */
 export const FREEBUFF_ENABLE_STREAK_IN_UI = true
 /** Local/debug switch: force the localhost free-mode country bypass into
@@ -1379,6 +1390,9 @@ export function canFreebuffModelSpawnGeminiThinker(modelId: string): boolean {
 export const FREEBUFF_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   [FREEBUFF_MINIMAX_M3_MODEL_ID]: 524_288,
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 1_048_576,
+  // Fast mode is the same upstream model on DeepSeek's own API, so the
+  // rejection above is its rejection too.
+  [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]: 1_048_576,
   // Read off the rejection above on 2026-08-12 — the same window as Flash, and
   // the entry Pro had been missing since it shipped. Absent, base-chat gave a
   // million-token model FREEBUFF_DEFAULT_CONTEXT_WINDOW's 131_072 and summarized
@@ -1709,6 +1723,53 @@ const DEEPSEEK_V4_FLASH_MODEL = {
   // still collapses onto low|high|max, which remains VALID — the wider enum is
   // an opportunity to stop collapsing, not a break. Measured n=3/level: minimal
   // ~6.9k reasoning tokens, max ~30.7k, so the parameter is finally real.
+  efforts: DEEPSEEK_V4_REASONING_EFFORTS,
+  defaultEffort: 'high',
+  isNew: true,
+} as const satisfies FreebuffModelOption
+
+/**
+ * DeepSeek V4.1 Flash in FAST MODE (2026-09-26).
+ *
+ * The same model as the row above, sold as a separate row because it is a
+ * different entitlement in two ways at once:
+ *
+ *  - It runs the `base3-fast` harness (agents/base3-fast.ts) instead of the
+ *    single-loop base3: the root fans context gathering out to parallel
+ *    file-pickers, splits the implementation across
+ *    parallel worker subagents that share its prompt cache, and verifies the
+ *    combined result itself. Several requests in flight at once is the whole
+ *    point, which is why it cannot ride the Flash row.
+ *  - It is served ONLY by DeepSeek's own API. The Flash row's granted sessions
+ *    lead on the rationed Luminal lane, whose per-session cap and bimodal
+ *    decode speed are the wrong fit for a fan-out; the fast row is excluded
+ *    from that grant at admission and runs a single direct lane in the router
+ *    (web/src/llm-api/deepseek-router.ts).
+ *
+ * Priced at THREE TIMES the Flash row, on the same off-peak schedule
+ * (freebuff-freebucks.ts): the parallel workers each re-send the shared
+ * prefix, and DeepSeek direct bills more per token than Luminal.
+ *
+ * Everything else tracks the Flash row on purpose — the same DeepSeek data-use
+ * terms, the same effort ladder, and `multimodal: true` because the direct
+ * lane is the one lane that reads images. Premium and plan-only at limited
+ * access, on MiMo 2.6 Pro's terms: open to every full-access account, metered
+ * in Freebucks at its own price.
+ */
+const DEEPSEEK_V4_FLASH_FAST_MODEL = {
+  id: FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+  displayName: 'DeepSeek V4.1 Flash Fast',
+  tagline: 'Parallel agents',
+  taglineTooltip:
+    'Fast mode: Buffy splits the work across parallel DeepSeek Flash subagents on DeepSeek’s own API, then verifies the combined result. Three times the Flash price.',
+  availability: 'always',
+  // Inert while `always`; names the row this one is a variant of.
+  unavailableFallback: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  warning: FREEBUFF_AI_TRAINING_NOTICE,
+  dataUse: 'training',
+  premium: true,
+  multimodal: true,
+  reasoningEffort: 'high',
   efforts: DEEPSEEK_V4_REASONING_EFFORTS,
   defaultEffort: 'high',
   isNew: true,
@@ -2773,8 +2834,7 @@ const MUSE_SPARK_13_CONTRIBUTOR_MODEL = {
   // Announced as new in the Desktop release that shipped it to the picker
   // (2026-09-29), beside GPT-6.1 Sol.
   newBadge: {
-    tooltip:
-      "New: Meta's Muse Spark 1.3, 1M context, on every paid plan.",
+    tooltip: "New: Meta's Muse Spark 1.3, 1M context, on every paid plan.",
   },
   taglineTooltip: MUSE_SPARK_FALLBACK_NOTICE,
   availability: 'always',
@@ -2914,6 +2974,7 @@ export const SUPPORTED_FREEBUFF_MODELS = [
   GLM_V52_MODEL,
   GLM_V53_FLASH_MODEL,
   DEEPSEEK_V4_FLASH_MODEL,
+  DEEPSEEK_V4_FLASH_FAST_MODEL,
   MIMO_V25_MODEL,
   MIMO_V26_PRO_MODEL,
   FABLE_5_1_MODEL,
@@ -2993,6 +3054,11 @@ export const FREEBUFF_MODELS = [
   MIMO_V25_MODEL,
   GLM_V53_FLASH_MODEL,
   DEEPSEEK_V4_FLASH_MODEL,
+  // FAST MODE beside the row it is a variant of (2026-09-26), behind
+  // FREEBUFF_ENABLE_FAST_MODE_IN_UI until it ships. Order here only matters
+  // off the meter: every picker sorts its rows cheapest first once prices
+  // arrive, and at three times Flash this lands among the premium rows.
+  ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? [DEEPSEEK_V4_FLASH_FAST_MODEL] : []),
   // GPT-6 LUNA TAKES 5.6'S SLOT (2026-09-22). Same position, same tagline,
   // half the price on the flex lane; 5.6 left this list in the same change and
   // was paused on 2026-09-24 (FREEBUFF_PAUSED_FREE_MODEL_IDS).
@@ -4172,6 +4238,12 @@ export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
   Object.freeze([
     FREEBUFF_GPT_6_LUNA_MODEL_ID,
     FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+    // Flash FAST MODE (2026-09-26), on MiMo 2.6 Pro's terms: three times the
+    // Flash price, so plan-only where the free pool is 25 a day. Behind the
+    // UI switch with the picker row: a plan cannot sell what no picker lists.
+    ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI
+      ? [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]
+      : []),
     // Muse Spark 1.2 is excluded: it is not offered at limited access at all
     // (not even with a plan), only kept for released binaries at full access.
     ...FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS.filter(
@@ -4476,6 +4548,12 @@ export const FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS: readonly string[] =
     // With Luna: this list is what widens the limited tier for a subscriber,
     // so a plan-only row missing here would be offered and then coerced away.
     FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+    // Flash fast mode (2026-09-26), for the same reason as MiMo 2.6 Pro —
+    // and, like the picker row, only once FREEBUFF_ENABLE_FAST_MODE_IN_UI is
+    // on: a plan can only cover a model a picker offers.
+    ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI
+      ? [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]
+      : []),
     // Muse Spark 1.3 (2026-09-28): the plans page promises every plan model in
     // every country, so a limited-region subscriber must be able to open it.
     // (1.2 is deliberately absent: it survives only for released binaries at
@@ -4869,7 +4947,9 @@ function findFreebuffModelOption(
 export function getFreebuffModelEfforts(
   id: string | null | undefined,
 ): readonly ReasoningEffort[] | null {
-  const override = id ? getFreebuffModelPolicyOverlay()?.efforts?.(id) : undefined
+  const override = id
+    ? getFreebuffModelPolicyOverlay()?.efforts?.(id)
+    : undefined
   if (override) return override.efforts.length > 0 ? override.efforts : null
   const efforts = findFreebuffModelOption(id)?.efforts
   return efforts && efforts.length > 0 ? efforts : null
@@ -4879,7 +4959,9 @@ export function getFreebuffModelEfforts(
 export function getFreebuffModelDefaultEffort(
   id: string | null | undefined,
 ): ReasoningEffort | null {
-  const override = id ? getFreebuffModelPolicyOverlay()?.efforts?.(id) : undefined
+  const override = id
+    ? getFreebuffModelPolicyOverlay()?.efforts?.(id)
+    : undefined
   if (override) {
     if (override.efforts.length === 0) return null
     return (
@@ -4930,6 +5012,10 @@ export function resolveFreebuffReasoningEffort(
   if (
     requested === 'medium' &&
     (freebuffModelIdMatches(modelId, FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID) ||
+      freebuffModelIdMatches(
+        modelId,
+        FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+      ) ||
       freebuffModelIdMatches(modelId, FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID))
   ) {
     return 'high'

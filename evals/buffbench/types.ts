@@ -68,7 +68,10 @@ export interface EvalRun {
   diff: string
   judging: JudgingResult
   cost: number
+  /** Whole task, clone and final checks included. */
   durationMs: number
+  /** The agent's own run alone (see agent-runner.ts). */
+  agentDurationMs?: number
   error?: string
   finalCheckOutputs?: FinalCheckOutput[]
 }

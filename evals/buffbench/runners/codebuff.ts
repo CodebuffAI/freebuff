@@ -5,7 +5,6 @@ import path from 'path'
 import type { Runner, RunnerResult, AgentStep } from './runner'
 import type { CodebuffClient, TerminalCommandBroker } from '@codebuff/sdk'
 
-
 const DEBUG_ERROR = true
 
 export class CodebuffRunner implements Runner {
@@ -51,7 +50,12 @@ export class CodebuffRunner implements Runner {
     const steps: AgentStep[] = []
     let totalCostUsd = 0
 
-    const maxAgentSteps = 40
+    // 500, not 40 (raised 2026-09-28). At 40 the single-loop base3 arm ran out
+    // of steps before its first edit in 1-5 of 10 tasks per run and scored 0
+    // with an empty diff, while the fan-out arm never came near the cap; the
+    // cap was deciding the comparison. 500 is a runaway guard only; the 60-min
+    // agent timeout in agent-runner.ts is the real bound.
+    const maxAgentSteps = 500
     const result = await this.client.run({
       agent: this.agentId,
       prompt,

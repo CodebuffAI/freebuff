@@ -112,6 +112,10 @@ export function createBase3CliRoot(
     /** Drop the tools that address a human. For the eval harness, where an
      *  ask_user call would stall the run rather than gather anything. */
     noAskUser?: boolean
+    /** Harness guidance that belongs BETWEEN base3's prompt and the CLI
+     *  appendix (base3-fast's fan-out section). Appended, never prepended,
+     *  for the reason the appendix is: the canonical opening stays at byte 0. */
+    extraSystemPrompt?: string
     /** The model's human name, for the meta-information line. A server
      *  catalog root's `model` is an opaque handle, which must not be what the
      *  prompt tells the model it is running on. */
@@ -120,7 +124,12 @@ export function createBase3CliRoot(
     compaction?: CompactionPolicy & { maxContextLength?: number }
   } = {},
 ): Omit<SecretAgentDefinition, 'id'> {
-  const { model = OPUS_MODEL, isFreebuff = false, noAskUser = false } = options
+  const {
+    model = OPUS_MODEL,
+    isFreebuff = false,
+    noAskUser = false,
+    extraSystemPrompt,
+  } = options
   const base3 = createBase3(model, { compaction: options.compaction })
 
   const root: Omit<SecretAgentDefinition, 'id'> = {
@@ -151,11 +160,11 @@ export function createBase3CliRoot(
       'skill',
     ],
     systemPrompt: `${base3.systemPrompt}
-${buildCliAppendix({
-  isFreebuff,
-  model: options.modelLabel ?? model,
-  noAskUser,
-})}`,
+${extraSystemPrompt ? `${extraSystemPrompt}\n` : ''}${buildCliAppendix({
+      isFreebuff,
+      model: options.modelLabel ?? model,
+      noAskUser,
+    })}`,
   }
 
   if (!noAskUser) return root

@@ -9,6 +9,7 @@ import { describe, test, expect } from 'bun:test'
 
 import base3, { createBase3, createBase3CliRoot } from '../base3'
 import base3Evals from '../base3-evals'
+import base3FastFreeDeepseekFlash from '../base3-fast-free-deepseek-flash'
 import base3FreeDeepseek from '../base3-free-deepseek'
 import base3FreeDeepseekFlash from '../base3-free-deepseek-flash'
 import base3FreeDeepseekFlashEvals from '../base3-free-deepseek-flash-evals'
@@ -69,6 +70,14 @@ const CLI_ROOTS = [
   base3FreeMuseSpark,
   base3FreeMuseSpark13,
 ]
+
+/**
+ * Every root the CLI map names, including the one that is NOT a single loop:
+ * the base3-FAST root (agents/base3-fast.ts) fans out to parallel workers by
+ * design and is pinned by agents/__tests__/base3-fast.test.ts. It joins the
+ * registration checks below and stays out of the no-subagents loop.
+ */
+const ALL_CLI_ROOTS = [...CLI_ROOTS, base3FastFreeDeepseekFlash]
 
 describe('base3 CLI roots', () => {
   test('keeps the efficiency flags the runtime reads', () => {
@@ -133,7 +142,7 @@ describe('base3 CLI roots', () => {
   })
 
   test('every Freebuff root is pinned to the model its id is registered under', () => {
-    const byId = new Map(CLI_ROOTS.map((a) => [a.id, a]))
+    const byId = new Map(ALL_CLI_ROOTS.map((a) => [a.id, a]))
     for (const [model, agentId] of Object.entries(
       FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL,
     )) {
@@ -147,7 +156,7 @@ describe('base3 CLI roots', () => {
       if (isFreebuffLimitedOfferModelId(model.id)) continue
       const agentId = FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL[model.id]
       expect(agentId).toBeDefined()
-      expect(CLI_ROOTS.some((a) => a.id === agentId)).toBe(true)
+      expect(ALL_CLI_ROOTS.some((a) => a.id === agentId)).toBe(true)
     }
   })
 

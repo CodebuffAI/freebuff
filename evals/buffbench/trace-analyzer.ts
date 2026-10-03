@@ -19,6 +19,8 @@ export interface AgentTraceData {
   judgeResult: JudgingResult
   cost: number
   durationMs: number
+  /** The agent's own run alone; see agent-runner.ts. */
+  agentDurationMs?: number
   error?: string
   timestamp: string
   finalCheckOutputs?: FinalCheckOutput[]

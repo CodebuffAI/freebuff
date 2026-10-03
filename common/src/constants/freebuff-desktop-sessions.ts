@@ -3,6 +3,7 @@ import {
   type FreebuffDesktopConcurrency,
 } from './freebuff-model-entitlements'
 import {
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
   FREEBUFF_GPT_6_LUNA_MODEL_ID,
@@ -24,6 +25,9 @@ const FREEBUFF_DESKTOP_SLOT_BOUND_MODEL_IDS = [
   FREEBUFF_GPT_61_SOL_MODEL_ID,
   // MiMo 2.6 Pro, the dearest row after Gemini and paid-only.
   FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+  // DeepSeek Flash fast mode (2026-09-26): premium and metered like the rows
+  // above, and a fan-out besides — one tab of it is already several requests.
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   // Muse Spark, from the day it reached Desktop (2026-09-04). Metered like the
   // rows above it, so the same rule applies — and it earns the slot twice over:
   // its scarce resource is requests per minute against ceilings Meta meters per

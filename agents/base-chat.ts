@@ -57,6 +57,7 @@ End every response by calling the suggest_followups tool with exactly 3 followup
     const CONTEXT_WINDOWS: Record<string, number> = {
       'minimax/minimax-m3': 524_288,
       'deepseek/deepseek-v4-flash': 1_048_576,
+      'deepseek/deepseek-v4-flash-fast': 1_048_576,
       'deepseek/deepseek-v4-pro': 1_048_576,
       // 1_050_000 per OpenRouter's endpoints API; entered low, so the 0.4
       // budget below lands on exactly 400k. Without this Luna took

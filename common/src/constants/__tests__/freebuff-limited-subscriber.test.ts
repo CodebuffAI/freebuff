@@ -17,6 +17,7 @@ import {
   resolveFreebuffWebModelForLimitedTier,
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_MIMO_V26_PRO_MODEL_ID,
+  FREEBUFF_ENABLE_FAST_MODE_IN_UI,
 } from '../freebuff-models'
 import {
   FREEBUFF_SUBSCRIPTION_MODEL_IDS,
@@ -72,9 +73,9 @@ describe('paid plans at limited access', () => {
       'z-ai/glm-5.3-flash',
       'deepseek/deepseek-v4-flash',
     ])
-    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS.filter(freeAtLimitedTier)).not.toContain(
-      'openai/gpt-5.6-luna',
-    )
+    expect(
+      FREEBUFF_SUBSCRIPTION_MODEL_IDS.filter(freeAtLimitedTier),
+    ).not.toContain('openai/gpt-5.6-luna')
   })
 
   test('a paid plan unlocks exactly the models it meters', () => {
@@ -159,11 +160,15 @@ describe('paid plans at limited access', () => {
     // Pinned so that adding a row to a plan is a decision somebody states
     // here, not a diff that passes quietly.
     // MiMo 2.6 Pro joined on 2026-09-21, on Luna's terms (plan-only at
-    // limited access, Freebucks at full). Muse Spark 1.3 joined on
-    // 2026-09-28, paid-only on every surface, and GPT-6.1 Sol on 2026-09-29
-    // on the same terms. Kimi K3 (CrofAI) left on 2026-10-01: its provider is
-    // retired and no picker lists it.
-    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(7)
+    // limited access, Freebucks at full). DeepSeek Flash fast mode joined on
+    // 2026-09-26 on the same terms; Muse Spark 1.3 joined on 2026-09-28,
+    // paid-only on every surface, and GPT-6.1 Sol on 2026-09-29 on the same
+    // terms. Kimi K3 (CrofAI) left on 2026-10-01: its provider is retired and
+    // no picker lists it.
+    // The fast row joins the plan with its picker row, behind the UI switch.
+    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(
+      FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 8 : 7,
+    )
   })
 
   test('a limited-tier plan-only row is never free at limited access', () => {

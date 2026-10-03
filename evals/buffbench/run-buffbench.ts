@@ -153,6 +153,7 @@ async function runTask(options: {
       judging: judgeResult,
       cost: agentResult.cost,
       durationMs: agentResult.durationMs,
+      agentDurationMs: agentResult.agentDurationMs,
       error: agentResult.error,
       finalCheckOutputs: agentResult.finalCheckOutputs,
     }
@@ -174,6 +175,7 @@ async function runTask(options: {
       judgeResult,
       cost: agentResult.cost,
       durationMs: agentResult.durationMs,
+      agentDurationMs: agentResult.agentDurationMs,
       error: agentResult.error,
       timestamp: new Date().toISOString(),
       finalCheckOutputs: agentResult.finalCheckOutputs,
@@ -226,6 +228,7 @@ async function runTask(options: {
       ...t.judgeResult,
       cost: t.cost,
       durationMs: t.durationMs,
+      agentDurationMs: t.agentDurationMs,
       error: t.error,
     })),
     prompt: commit.prompt,

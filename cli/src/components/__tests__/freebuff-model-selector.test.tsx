@@ -38,6 +38,7 @@ import {
   getFreebuffModel,
   LIMITED_FREEBUFF_HERO_MODEL_ID,
   LIMITED_FREEBUFF_MODELS,
+  FREEBUFF_ENABLE_FAST_MODE_IN_UI,
 } from '@codebuff/common/constants/freebuff-models'
 
 import { initializeThemeStore } from '../../hooks/use-theme'
@@ -298,7 +299,8 @@ describe('FreebuffModelSelector tier layout', () => {
     // full catalog one row taller than a 40-row frame holds with the referral
     // actions beneath it.
     // 52 rows: GPT-6.1 Sol (2026-09-29) made the catalog one row taller again.
-    const frame = (await renderSelector(52)).captureCharFrame()
+    // 53 rows once FREEBUFF_ENABLE_FAST_MODE_IN_UI lists DeepSeek V4.1 Flash Fast.
+    const frame = (await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 53 : 52)).captureCharFrame()
     const actionRow =
       frame.split('\n').find((line) => line.includes('Copy invite link')) ?? ''
 
@@ -1582,7 +1584,9 @@ test.each([
       .getState()
       .setSelectedModel(SOLAR)
     // 48 rows: the expanded catalog outgrew 40 when Solar Pro 4 returned.
-    const setup = await renderSelector(48, async (model) => {
+    // 50 rows once FREEBUFF_ENABLE_FAST_MODE_IN_UI lists DeepSeek V4.1 Flash
+    // Fast: that row makes the expanded catalog two lines taller.
+    const setup = await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 50 : 48, async (model) => {
       requested.push(model)
     })
     expect(setup.captureCharFrame()).toContain(solarOfferAt(cutoff - 137).tagline)

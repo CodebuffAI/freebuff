@@ -6,6 +6,7 @@ import {
 } from './freebuff-gemini-thinker'
 import {
   FALLBACK_FREEBUFF_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   FREEBUFF_FABLE_5_1_MODEL_ID,
@@ -148,6 +149,20 @@ export const FREEBUFF_DESKTOP_THREAD_AGENT_IDS = [
 ] as const
 
 /**
+ * The base3-fast root and its worker subagent (agents/base3-fast.ts), one pair
+ * for the one model that runs fast mode today. The root is a base3 root with
+ * a fan-out: it spawns file-pickers in parallel, then
+ * splits the implementation across parallel workers that inherit its system
+ * prompt and history (so their requests are prompt-cache hits), and verifies
+ * the combined result itself. The worker is pinned to the same model as the
+ * root — it must be, or the session gate answers session_model_mismatch — and
+ * is allowlisted below like every other free-mode subagent.
+ */
+export const FREEBUFF_BASE3_FAST_AGENT_ID = 'base3-fast-free-deepseek-flash'
+export const FREEBUFF_BASE3_FAST_WORKER_AGENT_ID =
+  'base3-fast-worker-deepseek-flash'
+
+/**
  * The Freebuff Web and Cloud roots that run the base3 single-loop harness
  * (agents/base3.ts): no subagents, no reviewer, windowed file reads, mechanical
  * compaction instead of a context-pruner spawn. One per selectable model,
@@ -169,6 +184,13 @@ export const FREEBUFF_DESKTOP_THREAD_AGENT_IDS = [
 export const FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]: 'base3-free-deepseek',
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 'base3-free-deepseek-flash',
+  // Fast mode runs the base3-FAST harness (agents/base3-fast.ts): base3's
+  // loop plus parallel file-pickers and prompt-cached worker
+  // subagents. Registered in the base3 maps because it is the base3 family's
+  // rollout shape (windowed reads, mechanical compaction, no instructions
+  // prompt) with a fan-out on top; the no-subagents assertions on this map
+  // exempt exactly this id, on purpose.
+  [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]: FREEBUFF_BASE3_FAST_AGENT_ID,
   [FREEBUFF_MIMO_V25_MODEL_ID]: 'base3-free-mimo',
   [FREEBUFF_MIMO_V26_PRO_MODEL_ID]: 'base3-free-mimo-2-6-pro',
   [FREEBUFF_MINIMAX_M3_MODEL_ID]: 'base3-free-minimax-m3',
@@ -211,6 +233,8 @@ export const FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
 export const FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]: 'base3-free-deepseek',
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 'base3-free-deepseek-flash',
+  // Fast mode: the same base3-fast root id on both surfaces (see the Web map).
+  [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]: FREEBUFF_BASE3_FAST_AGENT_ID,
   [FREEBUFF_MIMO_V25_MODEL_ID]: 'base3-free-mimo',
   [FREEBUFF_MIMO_V26_PRO_MODEL_ID]: 'base3-free-mimo-2-6-pro',
   [FREEBUFF_MINIMAX_M3_MODEL_ID]: 'base3-free-minimax-m3',
@@ -393,6 +417,7 @@ export const FREEBUFF_ROOT_AGENT_IDS = [
   'base2-free',
   'base2-free-deepseek',
   'base2-free-deepseek-flash',
+  'base2-free-deepseek-flash-fast',
   'base2-free-mimo',
   // MiMo 2.6 Pro (2026-09-21). NEW ids rather than the retired
   // `base2-free-mimo-pro`: released builds from before 2026-08-04 still bundle
@@ -500,6 +525,7 @@ export const FREEBUFF_ROOT_AGENT_IDS = [
   // for the ROOT too, so an omission 403s the root itself.
   'base3-free-deepseek',
   'base3-free-deepseek-flash',
+  FREEBUFF_BASE3_FAST_AGENT_ID,
   'base3-free-mimo',
   'base3-free-mimo-2-6-pro',
   'base3-free-minimax-m3',
@@ -542,6 +568,10 @@ export const FREEBUFF_ROOT_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID]: 'base2-free-space-bunny-alpha',
   [FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]: 'base2-free-deepseek',
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 'base2-free-deepseek-flash',
+  // Fast mode's base2 twin exists for the base3 kill switch and the
+  // base2-first CLI fallback, like every other model's; nothing routes here
+  // while base3 is on.
+  [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]: 'base2-free-deepseek-flash-fast',
   [FREEBUFF_GLM_V52_MODEL_ID]: 'base2-free-glm',
   [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 'base2-free-glm-5-3-flash',
   [FREEBUFF_KIMI_K3_ECO_MODEL_ID]: 'base2-free-kimi-k3-eco',
@@ -624,6 +654,11 @@ export const FREEBUFF_REVIEWER_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID]: 'code-reviewer-space-bunny-alpha',
   [FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]: 'code-reviewer-deepseek',
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 'code-reviewer-deepseek-flash',
+  // Fast mode's base2 twin sets `noReview`, so nothing spawns this today; the
+  // entry is what stops a base2 rollback falling through to the Flash reviewer
+  // and 403ing (a Flash-pinned reviewer cannot run the fast model's session).
+  [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]:
+    'code-reviewer-deepseek-flash-fast',
   [FREEBUFF_GLM_V52_MODEL_ID]: 'code-reviewer-glm',
   [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 'code-reviewer-glm-5-3-flash',
   [FREEBUFF_FABLE_5_1_MODEL_ID]: 'code-reviewer-fable',
@@ -652,6 +687,7 @@ const FREEBUFF_DESKTOP_MODELS = new Set([
   FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   FREEBUFF_MIMO_V25_MODEL_ID,
   FREEBUFF_MIMO_V26_PRO_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
@@ -744,6 +780,16 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // different pool. Keep GLM to exactly one agent and one model id.
   'base2-free-deepseek': new Set([FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]),
   'base2-free-deepseek-flash': new Set([FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]),
+  // Fast mode's base2 twin and its worker, each pinned to the fast row alone.
+  // The worker is the one free-mode subagent that EDITS: it inherits the fast
+  // root's prompt and history, so its allowlist entry is what lets the fan-out
+  // bill as the session it belongs to instead of metering as a stray request.
+  'base2-free-deepseek-flash-fast': new Set([
+    FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+  ]),
+  [FREEBUFF_BASE3_FAST_WORKER_AGENT_ID]: new Set([
+    FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+  ]),
   'base2-free-mimo': new Set([FREEBUFF_MIMO_V25_MODEL_ID]),
   // Pinned to its one model like every root: a root that allowed both MiMo
   // ids would sell the 30-Freebuck Pro through the 10-Freebuck Flash session.
@@ -936,6 +982,9 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   'code-reviewer-deepseek': new Set([FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]),
   'code-reviewer-deepseek-flash': new Set([
     FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  ]),
+  'code-reviewer-deepseek-flash-fast': new Set([
+    FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   ]),
   'code-reviewer-mimo': new Set([FREEBUFF_MIMO_V25_MODEL_ID]),
   'code-reviewer-mimo-2-6-pro': new Set([FREEBUFF_MIMO_V26_PRO_MODEL_ID]),

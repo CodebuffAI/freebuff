@@ -140,6 +140,11 @@ const judgeAgents: Record<string, AgentDefinition> = {
     model: 'openai/gpt-5.4',
     ...judgeAgentBase,
   },
+  'judge-gpt-6-sol': {
+    id: 'judge-gpt-6-sol',
+    model: 'openai/gpt-6-sol',
+    ...judgeAgentBase,
+  },
   'judge-gemini': {
     id: 'judge-gemini',
     model: 'google/gemini-3.1-pro-preview',
@@ -160,8 +165,12 @@ const judgeAgents: Record<string, AgentDefinition> = {
  * every task. It failed silently for a long time — failures are dropped and the
  * remaining judge still reports a confident number — which meant scores billed
  * as a median were really one model's opinion.
+ *
+ * judge-gpt-6-sol replaced judge-gpt (gpt-5.4) on 2026-09-26: the stronger
+ * judge, and gpt-5.4 had failed every task of that day's runs on OpenAI
+ * credits, leaving sonnet alone. judge-gpt stays defined for old logs.
  */
-const ACTIVE_JUDGE_IDS = ['judge-gpt', 'judge-sonnet'] as const
+const ACTIVE_JUDGE_IDS = ['judge-gpt-6-sol', 'judge-sonnet'] as const
 
 interface JudgeCommitResultInput {
   client: CodebuffClient
