@@ -1,6 +1,10 @@
 import { describe, test, expect } from 'bun:test'
 
-import { isInsideStringDelimiters, parseAtInLine } from '../use-suggestion-engine'
+import {
+  filterFileMatches,
+  isInsideStringDelimiters,
+  parseAtInLine,
+} from '../use-suggestion-engine'
 
 describe('@ mention edge cases - quote detection', () => {
   test('isInsideStringDelimiters detects position inside double quotes', () => {
@@ -358,4 +362,30 @@ describe('single quote handling - apostrophes should NOT suppress @ menu', () =>
       expect(result.query).toBe(expectedQuery)
     },
   )
+})
+
+describe('filterFileMatches - bounding and ranking', () => {
+  test('caps results to top 100 matches when exceeding threshold', () => {
+    const manyFiles = Array.from({ length: 250 }, (_, i) => ({
+      path: `src/components/item-${i}.tsx`,
+      isDirectory: false,
+    }))
+
+    const results = filterFileMatches(manyFiles, 'item')
+    expect(results.length).toBe(100)
+    // Check that results are properly sorted (lowest score first)
+    for (let i = 1; i < results.length; i++) {
+      expect((results[i].matchScore ?? 0) >= (results[i - 1].matchScore ?? 0)).toBe(true)
+    }
+  })
+
+  test('returns all matches when count is within 100 limit', () => {
+    const files = Array.from({ length: 25 }, (_, i) => ({
+      path: `src/components/item-${i}.tsx`,
+      isDirectory: false,
+    }))
+
+    const results = filterFileMatches(files, 'item')
+    expect(results.length).toBe(25)
+  })
 })
