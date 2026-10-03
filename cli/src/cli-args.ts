@@ -68,8 +68,12 @@ export function parseArgs({
         "Load this repository's .agents files and mcp.json without asking (for CI)",
       )
       .addArgument(
-        new Argument('[command]', 'Command to run').choices(['login']),
+        new Argument('[command]', 'Command to run').choices([
+          'login',
+          'plugin',
+        ]),
       )
+      .allowExcessArguments(true)
       .helpOption('-h, --help', 'Show this help message')
   } else {
     // Codebuff: full CLI with all options

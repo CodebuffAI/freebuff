@@ -7,6 +7,7 @@ import {
   createEventHandler,
   createStreamChunkHandler,
 } from './sdk-event-handlers'
+import { getLoadedSkills } from './skill-registry'
 
 import type { EventHandlerState } from './sdk-event-handlers'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
@@ -115,6 +116,11 @@ export const createRunConfig = (params: CreateRunConfigParams) => {
     content,
     previousRun: previousRunState ?? undefined,
     agentDefinitions,
+    // The SDK's own loader reads only project/home skill dirs. The registry
+    // cache is the CLI's single merged source (project + home + installed
+    // plugins), so handing it to the run keeps the model's skill list
+    // identical to the slash-command list built from the same cache.
+    skillsLoader: async () => getLoadedSkills(),
     maxAgentSteps: MAX_AGENT_STEPS_DEFAULT,
     handleStreamChunk: createStreamChunkHandler(eventHandlerState),
     handleEvent: createEventHandler(eventHandlerState),

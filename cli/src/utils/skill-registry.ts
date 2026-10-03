@@ -1,6 +1,7 @@
 import { loadSkills as sdkLoadSkills } from '@codebuff/sdk'
 
 import { getProjectRoot } from '../project-files'
+import { pluginSkills } from './plugin-discovery'
 import { logger } from './logger'
 
 import type { SkillDefinition, SkillsMap } from '@codebuff/common/types/skill'
@@ -14,10 +15,12 @@ let skillsCache: SkillsMap = {}
 /**
  * Initialize the skill registry by loading skills via the SDK.
  * This must be called at CLI startup.
- * 
+ *
  * Skills are loaded from:
  * - ~/.agents/skills/ (global)
  * - {projectRoot}/.agents/skills/ (project, overrides global)
+ * - {pluginsRoot}/<plugin>/skills/ for every installed plugin (see
+ *   ./plugin-discovery, which owns the plugin half of this merge)
  */
 export async function initializeSkillRegistry(): Promise<void> {
   const cwd = getProjectRoot() || process.cwd()
@@ -39,6 +42,7 @@ export async function initializeSkillRegistry(): Promise<void> {
     logger.warn({ error }, 'Failed to load skills')
     skillsCache = {}
   }
+  Object.assign(skillsCache, pluginSkills())
 }
 
 // ============================================================================
@@ -82,7 +86,10 @@ export function getLoadedSkillsMessage(): string | null {
 
   const header = `Loaded ${skills.length} skill${skills.length === 1 ? '' : 's'}`
   const skillList = skills
-    .map((skill) => `  - ${skill.name}: ${skill.description.slice(0, 60)}${skill.description.length > 60 ? '...' : ''}`)
+    .map(
+      (skill) =>
+        `  - ${skill.name}: ${skill.description.slice(0, 60)}${skill.description.length > 60 ? '...' : ''}`,
+    )
     .join('\n')
 
   return `${header}\n${skillList}`
