@@ -401,8 +401,15 @@ export interface FreebuffSubscriptionInfo {
   renewsAt?: string
   /** Present only while subscribed. */
   usage?: FreebuffSubscriptionUsage
-  /** Raw Stripe status, so a client can surface a failed payment. */
+  /** Raw Stripe status of the live plan. */
   status?: string
+  /**
+   * The plan paused because its renewal payment failed. While set, `tierId` is
+   * null (the account is metered as free) and paying the open invoice restores
+   * the plan; clients send the user to the account page's Pay button. Absent
+   * otherwise, and from servers older than this field.
+   */
+  paymentFailedTierId?: string
   /** True when the subscription lapses at period end. */
   cancelAtPeriodEnd?: boolean
   /** Tier this drops to at the next renewal, when a downgrade is scheduled.
