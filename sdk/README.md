@@ -180,6 +180,13 @@ gitignore. This built-in policy is scoped to
 SDK-mediated agent file reads (including `read_files`); it does not add
 terminal-command or internal-edit restrictions.
 
+Ignore-rule blocks on `read_files` return `[BLOCKED]` followed by a trailing
+reason. `.codebuffignore` — a project-level ignore file with `.gitignore`
+syntax, checked alongside `.gitignore` — is the escape hatch: adjust or
+negate the matching rule there to allow tool reads of a specific file (a
+file-level negation cannot re-include a path whose parent directory is itself
+excluded).
+
 Custom `overrideTools.read_files` implementations must preserve project
 gitignore behavior for env templates. The built-in CLI, Desktop, Web, and Cloud
 bridges already do this.
