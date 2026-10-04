@@ -14,6 +14,7 @@ import {
 } from './freebuff-peak-hours'
 import { mimoModels } from './model-config'
 import { SOLAR_PRO_4_OFFER } from './freebuff-solar-promo'
+import { GLM_V53_FLASH_PROMOTIONAL } from './freebuff-glm-promo'
 import { GPT_61_SOL_PROMOTIONAL } from './freebuff-sol-promo'
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
@@ -2693,6 +2694,10 @@ const GLM_V53_FLASH_MODEL = {
   isNew: true,
   // The Sep 30 "deal ends" notice came off on 2026-10-01: the deal ended and
   // the price moved (15, then a temporary 25 peak through the catalog).
+  // PROMOTIONAL, by product decision (2026-10-03): 10 Freebucks is a
+  // temporary price, and the label says so rather than letting a user build a
+  // habit on it.
+  promotional: GLM_V53_FLASH_PROMOTIONAL,
 } as const satisfies FreebuffModelOption
 
 /**
