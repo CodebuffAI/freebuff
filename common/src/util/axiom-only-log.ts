@@ -643,19 +643,24 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   /**
    * Why a response carried zero ads (COD-760; COD-453 introduced it for
    * `break_capped` alone). Set on EVERY response with zero ads, on both
-   * rails, naming the PAID leg that decided it -- never the house floor:
+   * rails, naming the PAID stage that decided it -- never the house floor.
+   * Plain-English codes; the glossary is `docs/ads/ad-training-log.md`:
    *
    * - a refusal ahead of the chain: `break_capped` (unchanged; it also
    *   drives `exclusion_reasons: 'break_capped:1'`), `setup_invitation`,
-   *   `invitation_recheck`, `partner_unfilled`, `no_visible_slot`;
-   * - Gravity, when it was the last paid leg asked: `gravity_released`,
-   *   `gravity_no_fill`, `gravity_timeout`, `gravity_provider_error`,
-   *   `gravity_not_configured`, `gravity_fill_fenced` (a fill every placement
-   *   fence dropped), `gravity_fill_unpersisted` (a native fill withheld
-   *   because its row could not be proven);
-   * - our book, when it was: `first_party_` + `first_party_outcome` below
-   *   (`first_party_all_ineligible`, `first_party_paced_out`, ...), or
-   *   `first_party_error` for a fill that failed after its rows were durable.
+   *   `invitation_recheck`, `partner_slot_empty`, `billboard_slot_empty`,
+   *   `no_visible_slot`, `global_load`, `no_placements`;
+   * - Gravity, when it was the last paid stage asked:
+   *   `gravity_passed_to_us` (a 205), `gravity_kept_slot_empty` (a 204),
+   *   `gravity_timeout`, `gravity_error`, `gravity_no_api_key`,
+   *   `gravity_missing_client_info`, `gravity_ads_rejected_by_slot` (a fill
+   *   every placement fence dropped), `gravity_ads_not_recorded` (a native
+   *   fill withheld because its row could not be saved);
+   * - our direct book, when it was: `direct_` + `direct_result` below
+   *   (`direct_all_filtered`, `direct_all_ahead_of_daily_pace`, ...), or
+   *   `direct_error_after_save` for a fill that failed after its rows were
+   *   durable;
+   * - `timed_out` (the chain ran out of time), `no_paid_source_asked`.
    *
    * Absent on a response that carried ads. Deliberately NOT folded into
    * `outcome`: every dashboard built on this stream partitions on `outcome`,
@@ -664,24 +669,26 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    */
   no_fill_reason: 'string',
   /**
-   * COD-760. What our PAID first-party book answered on this request, on
-   * every completion event: `fill`, `not_asked` (never consulted), `error`,
-   * the decision's terminal reason (`holdout`, `no_campaigns`,
-   * `all_ineligible`, `all_frequency_capped`, `all_repeat_click_suppressed`,
-   * `paced_out`, `frequency_unavailable`, `primary_allocation_unassigned`,
-   * `primary_allocation_invalid`), or `fill_dropped` (the book picked a
-   * campaign and the rail did not serve it). The CPM leg keeps its own
-   * `first_party_cpm_outcome`; a CPM fill still reads `fill` here.
+   * COD-760. What our PAID direct (first-party) book answered on this
+   * request, on every completion event: `served`, `skipped` (never
+   * consulted), `error`, `no_campaign_for_slot`, `all_filtered`,
+   * `all_frequency_capped`, `all_ahead_of_daily_pace`, `holdout`,
+   * `traffic_slice_unsold`, `traffic_slice_misconfigured`,
+   * `frequency_store_down`, or `picked_not_served` (the book picked a
+   * campaign and the rail did not serve it). One mapping on both rails
+   * (`directResultFor`). The CPM stage keeps its own
+   * `first_party_cpm_outcome`; a CPM fill still reads `served` here.
    */
-  first_party_outcome: 'string',
+  direct_result: 'string',
   /**
-   * COD-760. What the house ad answered, on every completion event: `fill`,
-   * `not_asked` (a paid fill won, or the request never reached it), the
-   * floor's refusals `floor_off` / `subscriber` / `no_slot`, or the house
-   * campaign leg's `leg_no_fill` / `error`. When both the leg and the floor
-   * ran, the floor's answer (the last one) is reported.
+   * COD-760. What the house ad answered, on every completion event:
+   * `served`, `skipped` (a paid ad won, or the request never reached it),
+   * the floor's refusals `promo_disabled` / `user_subscribed` / `no_slot`,
+   * or the house campaign stage's `house_campaign_empty` / `error`. When
+   * both the stage and the floor ran, the floor's answer (the last one) is
+   * reported.
    */
-  house_outcome: 'string',
+  house_result: 'string',
 } as const satisfies AxiomOnlyFieldSchema
 
 /**

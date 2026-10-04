@@ -795,27 +795,32 @@ describe('getAxiomOnlyLogEvent', () => {
     })
   })
 
-  test('keeps the COD-760 leg verdicts on fetch completion', () => {
+  test('keeps the COD-760 stage verdicts on fetch completion', () => {
     const verdicts = {
-      no_fill_reason: 'first_party_all_ineligible',
-      first_party_outcome: 'all_ineligible',
-      house_outcome: 'subscriber',
+      no_fill_reason: 'direct_all_filtered',
+      direct_result: 'all_filtered',
+      house_result: 'user_subscribed',
     }
     const event = getAxiomOnlyLogEvent({
       axiomEvent: ADS_FETCH_COMPLETED_EVENT,
       outcome: 'no_fill',
       ...verdicts,
       // The training log carries the per-leg detail; it never rides here.
-      candidate_legs: { gravity: { outcome: 'no_fill' } },
+      candidate_legs: { gravity: { outcome: 'empty' } },
+      // The pre-rename names shipped for ~2h and are no longer allowlisted.
+      first_party_outcome: 'all_ineligible',
+      house_outcome: 'subscriber',
     })
     expect(event?.data).toEqual({ outcome: 'no_fill', ...verdicts })
     expect(ADS_FETCH_COMPLETED_FIELD_NAMES).toEqual(
       expect.arrayContaining([
         'no_fill_reason',
-        'first_party_outcome',
-        'house_outcome',
+        'direct_result',
+        'house_result',
       ]),
     )
+    expect(ADS_FETCH_COMPLETED_FIELD_NAMES).not.toContain('first_party_outcome')
+    expect(ADS_FETCH_COMPLETED_FIELD_NAMES).not.toContain('house_outcome')
   })
 
   test('names and sanitizes first-party settlement telemetry', () => {
