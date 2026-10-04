@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'child_process'
-import { readFileSync, rmSync, writeFileSync } from 'fs'
+import { readFileSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
 
@@ -24,6 +24,15 @@ const MAX_REQUEST_BYTES = 4 * 1024 * 1024
 const MAX_PROTOCOL_BYTES = 64 * 1024
 const PROTOCOL_FILE_PREFIX = 'freebuff-terminal-command-broker-'
 const TERMINAL_COMMAND_BROKER_RECOVERY = 'Restart Freebuff and try again.'
+const PROTOCOL_READ_RETRY_MS = 50
+const PROTOCOL_READ_ATTEMPTS = 5
+const MAX_BROKER_STDERR_TAIL_BYTES = 4 * 1024
+// Cross-process contract: the detached broker emits this marker on stderr
+// before reaping itself so the parent can surface the write failure reason.
+const BROKER_STDERR_MARKER = '[freebuff-broker] protocol write failed:'
+// The marker must be flushed before the broker SIGKILLs its own process group,
+// but never at the cost of holding the shell tree open indefinitely.
+const BROKER_STDERR_FLUSH_TIMEOUT_MS = 200
 
 export type TerminalBrokerFailureStage = 'spawn' | 'stdio' | 'completion'
 export type TerminalBrokerFailureCode =
@@ -34,6 +43,7 @@ export type TerminalBrokerFailureCode =
   | 'epipe'
   | 'invalid_response'
   | 'protocol_missing'
+  | 'protocol_write_failed'
   | 'response_too_large'
   | 'unknown'
 
@@ -65,6 +75,7 @@ export function classifyTerminalBrokerFailure(
   const message = errorMessage(error).toLowerCase()
   if (message.includes('failed to connect')) return 'failed_to_connect'
   if (message.includes('invalid response')) return 'invalid_response'
+  if (message.includes(BROKER_STDERR_MARKER)) return 'protocol_write_failed'
   if (message.includes('protocol response was missing')) {
     return 'protocol_missing'
   }
@@ -121,6 +132,22 @@ function isSpawnRequest(value: unknown): value is TerminalCommandSpawnRequest {
   )
 }
 
+/**
+ * Compare the protocol directory after resolving symlinks and Windows casing:
+ * a raw string compare rejects the parent's own path when the temp dir is
+ * reached through a link (macOS `/var` -> `/private/var`) or a differently
+ * cased spelling.
+ */
+function normalizeProtocolDirectory(directory: string): string {
+  let resolved = path.resolve(directory)
+  try {
+    resolved = realpathSync.native(resolved)
+  } catch {
+    // The directory may not exist yet; the raw resolution stays comparable.
+  }
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
+
 export function protocolPathFromEnv(
   env: NodeJS.ProcessEnv = getSystemProcessEnv(),
 ): string {
@@ -131,7 +158,8 @@ export function protocolPathFromEnv(
 
   const resolvedProtocolPath = path.resolve(protocolPath)
   if (
-    path.dirname(resolvedProtocolPath) !== path.resolve(os.tmpdir()) ||
+    normalizeProtocolDirectory(path.dirname(resolvedProtocolPath)) !==
+      normalizeProtocolDirectory(os.tmpdir()) ||
     !path.basename(resolvedProtocolPath).startsWith(PROTOCOL_FILE_PREFIX)
   ) {
     throw new Error('terminal command broker protocol path was invalid')
@@ -162,6 +190,9 @@ function writeProtocol(message: BrokerProtocol): void {
   }
   // A constrained one-shot file avoids Bun's unreliable custom stdio pipes on
   // Windows. `wx` ensures even an accidentally reused path is never replaced.
+  // Only the validated path is written: an unvalidated fallback would let a
+  // corrupted environment place the protocol file outside the temp directory,
+  // and a rejected path now surfaces on stderr instead of losing the response.
   writeFileSync(protocolPathFromEnv(), payload, {
     encoding: 'utf8',
     flag: 'wx',
@@ -235,6 +266,35 @@ async function readRequest(): Promise<TerminalCommandSpawnRequest> {
   return value
 }
 
+/**
+ * Deliver the write-failure marker before the detached broker kills its own
+ * process group. `process.stderr` is an asynchronous pipe on POSIX, so without
+ * waiting for the write callback the reason can be lost with the process; the
+ * wait is bounded so shell-tree containment never stalls behind it.
+ */
+function flushBrokerStderrMarker(error: unknown): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = () => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      resolve()
+    }
+    timer = setTimeout(finish, BROKER_STDERR_FLUSH_TIMEOUT_MS)
+    try {
+      process.stderr.write(
+        `\n${BROKER_STDERR_MARKER} ${errorMessage(error)}\n`,
+        finish,
+      )
+    } catch {
+      // The pipe may already be gone; the parent still sees the missing file.
+      finish()
+    }
+  })
+}
+
 /** Run inside the detached helper process. It never initializes OpenTUI. */
 export async function serveTerminalCommandBroker(): Promise<void> {
   const parentDisconnected = waitForParentDisconnect()
@@ -268,10 +328,13 @@ export async function serveTerminalCommandBroker(): Promise<void> {
 
   try {
     writeProtocol(outcome.message)
-  } catch {
-    // Without a protocol response, the parent reports an actionable broker
-    // failure. Keep the shell tree contained even when the temp write fails.
-    await reapOwnProcessGroup()
+  } catch (error) {
+    // Never vanish silently: relay the write failure on stderr so the parent
+    // can explain the missing protocol instead of a generic ENOENT message.
+    await flushBrokerStderrMarker(error)
+    // Reap here explicitly: a failed write must not leave the detached shell
+    // tree alive any longer than a successful one.
+    return reapOwnProcessGroup()
   }
 
   // Normal cleanup belongs to this detached process. In particular, Windows
@@ -419,28 +482,50 @@ export function createTerminalCommandBroker({
       child.stdin.on('error', () => {})
       child.stdin.end(JSON.stringify(request))
 
+      // The broker writes the one-shot file immediately before its own exit,
+      // but close can still edge ahead on some filesystems (tmpfs, AV). ENOENT
+      // is retried, and a bounded stderr tail explains an unrecoverable miss.
+      let brokerStderrTail = ''
+      child.stderr.on('data', (chunk: Buffer) => {
+        const next = brokerStderrTail + chunk.toString('utf8')
+        brokerStderrTail =
+          next.length > MAX_BROKER_STDERR_TAIL_BYTES
+            ? next.slice(next.length - MAX_BROKER_STDERR_TAIL_BYTES)
+            : next
+      })
+
       const closed = new Promise<void>((resolve, reject) => {
         child.once('error', reject)
         child.once('close', () => resolve())
       })
-      const completion = closed
-        .then(() => {
-          let payload: Buffer
+
+      const readProtocol = async (): Promise<BrokerProtocol> => {
+        for (let attempt = 0; attempt < PROTOCOL_READ_ATTEMPTS; attempt++) {
           try {
-            payload = readFileSync(protocolPath)
+            const payload = readFileSync(protocolPath)
+            if (payload.byteLength > MAX_PROTOCOL_BYTES) {
+              throw new Error('terminal command broker response was too large')
+            }
+            return parseProtocol(payload.toString('utf8').trim())
           } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-              throw new Error(
-                'terminal command broker protocol response was missing',
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+            if (attempt < PROTOCOL_READ_ATTEMPTS - 1) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, PROTOCOL_READ_RETRY_MS),
               )
             }
-            throw error
           }
-          if (payload.byteLength > MAX_PROTOCOL_BYTES) {
-            throw new Error('terminal command broker response was too large')
-          }
-          return parseProtocol(payload.toString('utf8').trim())
-        })
+        }
+        const tail = brokerStderrTail.trim()
+        throw new Error(
+          tail
+            ? `terminal command broker protocol response was missing\nBroker stderr: ${tail}`
+            : 'terminal command broker protocol response was missing',
+        )
+      }
+
+      const completion = closed
+        .then(readProtocol)
         .catch((error) => {
           if (!terminationRequested) report('completion', error)
           throw brokerFailure(error)

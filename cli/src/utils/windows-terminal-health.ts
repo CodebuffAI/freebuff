@@ -23,6 +23,7 @@ export type WindowsTerminalFailure = {
     | 'epipe'
     | 'invalid_response'
     | 'protocol_missing'
+    | 'protocol_write_failed'
     | 'response_too_large'
     | 'exit_nonzero'
     | 'terminated'
