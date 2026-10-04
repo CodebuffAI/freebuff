@@ -316,8 +316,8 @@ export const loadLocalAgents = (
  * User agents can override bundled agents with the same ID.
  *
  * Additionally, all user agent IDs are automatically added to the spawnableAgents
- * of any base agent (agents with IDs starting with 'base'), so users can spawn
- * their custom agents without needing to modify the base agent definition.
+ * of base agents that support spawning, so users can spawn their custom agents
+ * without needing to modify the base agent definition.
  */
 export const loadAgentDefinitions = (): AgentDefinition[] => {
   // Start with bundled agents - these are the default Codebuff agents
@@ -356,8 +356,14 @@ export const loadAgentDefinitions = (): AgentDefinition[] => {
   // explicitly add them to the base agent's spawnableAgents list
   if (userAgentIds.length > 0) {
     for (const def of definitions) {
-      // Consider any agent with an ID starting with 'base' as a base agent
-      if (def.id.startsWith('base') && def.spawnableAgents) {
+      // Non-spawning workers also start with 'base'; keep their child list empty.
+      if (
+        def.id.startsWith('base') &&
+        def.spawnableAgents &&
+        (def.toolNames?.includes('spawn_agents') ||
+          def.toolNames?.includes('spawn_agent_inline') ||
+          def.handleSteps)
+      ) {
         const existingSpawnable = new Set(def.spawnableAgents)
         for (const userAgentId of userAgentIds) {
           if (!existingSpawnable.has(userAgentId)) {
