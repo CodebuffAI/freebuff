@@ -10,3 +10,9 @@
  */
 export const FREEBUFF_DISCORD_INVITE_URL = 'https://discord.gg/yXG3w7wxfs'
 export const FREEBUFF_DISCORD_MEMBERS_LABEL = '7,000+'
+
+/** Where a user who cannot resolve something themselves opens a support
+ *  ticket (a Discord forum), and the pinned post on how to write one. */
+export const FREEBUFF_DISCORD_HELP_FORUM_URL = 'https://discord.gg/yTqzB5Bt'
+export const FREEBUFF_DISCORD_TICKET_GUIDELINES_URL =
+  'https://discord.com/channels/1272267565254840401/1551694705706934312/1551694705706934312'
