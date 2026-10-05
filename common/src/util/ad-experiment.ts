@@ -638,127 +638,6 @@ export function showcaseArmForUser(
 
 /**
  * ============================================================================
- * MODEL-ROUTED FIRST-PARTY LEG
- * ============================================================================
- *
- * A sticky per-user share of Tier-1 ad requests is served by an in-process
- * model that picks which FIRST-PARTY ad to show, in a leg that runs BEFORE the
- * provider chain. Anything that leg cannot serve falls through to the route
- * drawn exactly as today.
- *
- * Deliberately NOT a {@link FirstPartyAdRoute}: the model arm is orthogonal to
- * the per-request route draw (which still runs, and is what a fallback uses),
- * and `=== 'first_party_primary'` is matched in too many places for a new route
- * value to be safe.
- */
-
-/**
- * Salt for the sticky model arm. Its own, never a reuse of
- * {@link FIRST_PARTY_ARM_SALT}: the two would otherwise correlate, and the
- * model arm's readout would inherit whatever COD-362 later routes on. Dated
- * because rotating it reshuffles every user, which is a new experiment.
- */
-export const FIRST_PARTY_MODEL_ARM_SALT = 'ads_first_party_model_arm_2026_10'
-
-/** An absent knob is a dark deploy: nobody is routed to the model leg. */
-export const DEFAULT_FIRST_PARTY_MODEL_PERCENT = 0
-
-/**
- * The `first_party_route` a model-served ad reports. A label on the fill and
- * the log row, not a {@link FirstPartyAdRoute}.
- */
-export const FIRST_PARTY_MODEL_AD_ROUTE = 'first_party_model'
-
-/** The arm vocabulary, in the precedence order the arm function applies. */
-export const FIRST_PARTY_MODEL_ARMS = [
-  'off',
-  'no_user',
-  'excluded',
-  'multi_placement',
-  'geo_ineligible',
-  'not_sampled',
-  'routed',
-] as const
-export type FirstPartyModelArm = (typeof FIRST_PARTY_MODEL_ARMS)[number]
-
-/**
- * What the model leg did on a `routed` request. Every `fallback_*` continues
- * the request on the drawn route unchanged.
- */
-export const FIRST_PARTY_MODEL_OUTCOMES = [
-  'served_by_model',
-  'fallback_no_candidates',
-  'fallback_no_admissible',
-  'fallback_no_scores',
-  'fallback_model_error',
-  'fallback_model_timeout',
-  'fallback_leg_timeout',
-  'fallback_frequency_unavailable',
-  'fallback_holdout',
-  'fallback_persist_error',
-  'fallback_dropped_after_commit',
-] as const
-export type FirstPartyModelOutcome = (typeof FIRST_PARTY_MODEL_OUTCOMES)[number]
-
-export function isFirstPartyModelOutcome(
-  value: unknown,
-): value is FirstPartyModelOutcome {
-  return (
-    typeof value === 'string' &&
-    (FIRST_PARTY_MODEL_OUTCOMES as readonly string[]).includes(value)
-  )
-}
-
-/**
- * The sticky sample key for one user's model arm. Prefixed so it cannot be
- * mistaken for {@link firstPartyArmKey}'s output at a call site.
- */
-export function firstPartyModelArmKey(
-  userId: string | null | undefined,
-): string {
-  return `fpm_${fnv1a(`${FIRST_PARTY_MODEL_ARM_SALT}:${userId ?? ''}`).toString(36)}`
-}
-
-/** 0..9999 in the shared first-party bucket space. Sticky per user. */
-export function firstPartyModelArmBucket(
-  userId: string | null | undefined,
-): number {
-  return firstPartyPrimaryBucket(firstPartyModelArmKey(userId))
-}
-
-/**
- * The model arm for one request.
- *
- * `off` is decided BEFORE any hashing, so percent 0 is byte-identical to a
- * build without the arm. Precedence (first match wins): `off`, `no_user`,
- * `excluded`, `multi_placement`, `geo_ineligible`, `not_sampled`, `routed`.
- *
- * `geoTier` must be the value routing acts on (`firstPartyGeo.geoTier`), never
- * the observation-only request geo. Only `routed` may run the model leg.
- */
-export function firstPartyModelArmForRequest(
-  userId: string | null | undefined,
-  percent: number,
-  context: {
-    geoTier: FirstPartyAdGeoTier
-    excluded: boolean
-    placementCount: number
-  },
-): FirstPartyModelArm {
-  const basisPoints = firstPartyPrimaryBasisPoints(
-    Number.isFinite(percent) ? percent : DEFAULT_FIRST_PARTY_MODEL_PERCENT,
-  )
-  if (basisPoints <= 0) return 'off'
-  if (!userId) return 'no_user'
-  if (context.excluded) return 'excluded'
-  if (context.placementCount > 1) return 'multi_placement'
-  if (context.geoTier !== 'tier1') return 'geo_ineligible'
-  if (firstPartyModelArmBucket(userId) >= basisPoints) return 'not_sampled'
-  return 'routed'
-}
-
-/**
- * ============================================================================
  * PRECOMPUTED AD SCORES (adscore treatment arm)
  * ============================================================================
  *
@@ -773,9 +652,8 @@ export function firstPartyModelArmForRequest(
  * candidate publisher commits its first snapshot. Pulling it is deleting the
  * pointer, not an env edit.
  *
- * Its own dated salt, never a reuse: sharing one with the model arm or the
- * first-party arm would correlate the assignments and leave neither readout
- * clean. Rotating it reshuffles every user, which is a new experiment.
+ * Its own dated salt, never a reuse: sharing one with the first-party arm
+ * would correlate the assignments and leave neither readout clean. Rotating it reshuffles every user, which is a new experiment.
  */
 export const AD_SCORE_ARM_SALT = 'ads_precomputed_score_arm_2026_10'
 

@@ -693,56 +693,6 @@ describe('getAxiomOnlyLogEvent', () => {
     })
   })
 
-  test('keeps the model leg aggregates and drops its per-campaign score vector', () => {
-    const model = {
-      first_party_model_id: 'l2v0_ev',
-      first_party_model_version: 'l2v0_2026_09',
-      first_party_model_outcome: 'served_by_model',
-      first_party_model_scored_count: 3,
-      first_party_model_score_ms: 0.4,
-      first_party_model_top_score_ppm: 120,
-      first_party_model_second_score_ppm: 80,
-    }
-    expect(
-      getAxiomOnlyLogEvent({
-        axiomEvent: ADS_FIRST_PARTY_DECISION_EVENT,
-        outcome: 'fill',
-        ...model,
-        model: 'l2v0_ev',
-        first_party_model_scores: { 'campaign-123': 0.5 },
-        first_party_model_campaign_id: 'campaign-123',
-      }),
-    ).toEqual({
-      event: ADS_FIRST_PARTY_DECISION_EVENT,
-      data: { outcome: 'fill', ...model },
-    })
-  })
-
-  test('keeps the model arm on fetch completion beside, never over, the LLM model', () => {
-    const arm = {
-      first_party_model_arm: 'routed',
-      first_party_model_arm_bucket: 42,
-      first_party_model_id: 'l2v0_ev',
-      first_party_model_version: 'l2v0_2026_09',
-      first_party_model_outcome: 'fallback_no_scores',
-      first_party_model_scored_count: 0,
-      first_party_model_score_ms: 0,
-    }
-    const event = getAxiomOnlyLogEvent({
-      axiomEvent: ADS_FETCH_COMPLETED_EVENT,
-      outcome: 'no_fill',
-      ...arm,
-      // `model` on this stream is the caller's LLM id; the ad model never
-      // takes that key.
-      model: 'deepseek/deepseek-v4-flash',
-    })
-    expect(event?.data).toMatchObject({
-      outcome: 'no_fill',
-      ...arm,
-      model: 'deepseek/deepseek-v4-flash',
-    })
-  })
-
   test('keeps the COD-760 stage verdicts on fetch completion', () => {
     const verdicts = {
       no_fill_reason: 'direct_all_filtered',
