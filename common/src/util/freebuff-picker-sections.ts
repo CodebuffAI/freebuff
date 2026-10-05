@@ -58,6 +58,8 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
       order: 10,
       recommended: true,
     },
+    // Solar Pro 4 (2026-10-05): free as a promotion, moved from Optimized.
+    'upstage/solar-pro4': { section: 'unlimited', order: 15 },
     'upstage/solar-mini4': { section: 'unlimited', order: 20 },
     'm-916b95b337': { section: 'unlimited', order: 30, more: true }, // Ling 3.1 Flash
     'm-a273b5e513': { section: 'unlimited', order: 40, more: true }, // Laguna S 2.1
@@ -65,7 +67,6 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     'mimo/mimo-v2.5': { section: 'optimized', order: 10, recommended: true }, // MiMo 2.6 Flash
     'z-ai/glm-5.3-flash': { section: 'optimized', order: 20 },
     'deepseek/deepseek-v4-flash': { section: 'optimized', order: 30 }, // V4.1 Flash
-    'upstage/solar-pro4': { section: 'optimized', order: 40, more: true },
     // Powerful
     // DeepSeek V4.1 Flash Fast (2026-10-04): the section's pick, first.
     'deepseek/deepseek-v4-flash-fast': {

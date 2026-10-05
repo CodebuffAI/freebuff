@@ -1566,8 +1566,9 @@ test.each([
     // 48 rows: the expanded catalog outgrew 40 when Solar Pro 4 returned.
     // 50 rows once FREEBUFF_ENABLE_FAST_MODE_IN_UI lists DeepSeek V4.1 Flash
     // Fast: that row makes the expanded catalog two lines taller.
-    // Five more for the three section headers and the gaps between them.
-    const setup = await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 55 : 53, async (model) => {
+    // Five more for the three section headers and the gaps between them, and
+    // one for Solar Pro 4's "Promotional" line (2026-10-05).
+    const setup = await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 56 : 54, async (model) => {
       requested.push(model)
     })
     expect(setup.captureCharFrame()).toContain(solarOfferAt(cutoff - 137).tagline)

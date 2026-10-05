@@ -13,7 +13,10 @@ import {
   isDeepSeekExpensiveWindow,
 } from './freebuff-peak-hours'
 import { mimoModels } from './model-config'
-import { SOLAR_PRO_4_OFFER } from './freebuff-solar-promo'
+import {
+  SOLAR_PRO_4_OFFER,
+  SOLAR_PRO_4_PROMOTIONAL,
+} from './freebuff-solar-promo'
 import { GLM_V53_FLASH_PROMOTIONAL } from './freebuff-glm-promo'
 import { GPT_61_SOL_PROMOTIONAL } from './freebuff-sol-promo'
 import {
@@ -2522,6 +2525,9 @@ const GPT_61_SOL_MODEL = {
  *
  * The `supersededBy` pointer to Mini 4 went with the return: it would keep
  * rewriting saved Pro 4 picks onto Mini 4 on every load.
+ *
+ * FREE AS A PROMOTION from 2026-10-05 (SOLAR_PRICE_CHANGES), open-ended, and
+ * listed in the pickers' Unlimited section.
  */
 const SOLAR_PRO_4_MODEL = {
   id: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
@@ -2533,6 +2539,9 @@ const SOLAR_PRO_4_MODEL = {
   dataUse: 'service',
   premium: FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.fullAccess.premium,
   multimodal: false,
+  // PROMOTIONAL, by product decision (2026-10-05): 0 Freebucks is a temporary
+  // price. Clear it with the schedule entry that ends the promotion.
+  promotional: SOLAR_PRO_4_PROMOTIONAL,
 } as const satisfies FreebuffModelOption
 
 /**

@@ -17,6 +17,7 @@ const restored = Date.parse('2026-09-09T15:49:00Z')
 const metered = Date.parse('2026-09-13T05:00:00Z')
 const increased = Date.parse('2026-09-14T03:46:00Z')
 const returned = Date.parse('2026-09-25T19:00:00Z')
+const promoted = Date.parse('2026-10-05T07:15:00Z')
 const quoteBeforeStart = () => ({
   ...freebucksFixture(0, { [solar]: SOLAR_REGULAR_OFFER.price }),
   priceNotices: { [solar]: SOLAR_REGULAR_OFFER.tagline },
@@ -54,13 +55,19 @@ describe('announced Freebucks price changes', () => {
     expect(increasedQuote.priceNotices[solar]).toBe('Limited-time trial')
     expect(nextFreebucksPriceChange(increasedQuote)).toBe(returned)
     // The return to the pickers keeps the price and replaces only the copy.
-    expect(applyFreebucksPriceChanges(increasedQuote, returned)).toEqual({
+    const returnedQuote = applyFreebucksPriceChanges(increasedQuote, returned)
+    expect(returnedQuote).toEqual({
       ...increasedQuote,
       priceNotices: { ...increasedQuote.priceNotices, [solar]: 'Upstage flagship' },
-      priceChanges: [],
+      priceChanges: [expect.objectContaining({ at: '2026-10-05T07:15:00Z' })],
     })
+    expect(nextFreebucksPriceChange(returnedQuote)).toBe(promoted)
+    const promotedQuote = applyFreebucksPriceChanges(returnedQuote, promoted)
+    expect(promotedQuote.prices[solar]).toBe(0)
+    expect(promotedQuote.priceNotices[solar]).toBe('Promotional')
+    expect(promotedQuote.priceChanges).toEqual([])
     expect(quote.prices[solar]).toBe(5)
-    expect(quote.priceChanges).toHaveLength(6)
+    expect(quote.priceChanges).toHaveLength(7)
   })
 
   it("applies Solar Mini 4's promotion to Mini's row only", () => {

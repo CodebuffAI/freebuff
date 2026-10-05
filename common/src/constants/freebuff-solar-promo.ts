@@ -21,6 +21,15 @@ const SOLAR_MINI_4_OFFER = {
   tagline: 'Fast and light',
 } as const
 
+// Solar Pro 4's promotion (2026-10-05): free, open-ended, labelled temporary
+// by product decision. The catalog row's `promotional` field, and the price
+// notice released CLI and Desktop builds render in place of the tagline.
+export const SOLAR_PRO_4_PROMOTIONAL = {
+  short: 'Promotional',
+  tooltip:
+    'Temporary promotional price: 0 Freebucks an hour. The price will go up when the promotion ends.',
+} as const
+
 // These transitions travel with the server quote so idle clients can update
 // even during a slow refresh. Preserve past prices for historical accounting.
 export const SOLAR_PRICE_CHANGES = [
@@ -76,6 +85,15 @@ export const SOLAR_PRICE_CHANGES = [
     at: '2026-10-05T00:00:00-07:00',
     modelId: FREEBUFF_SOLAR_MINI_4_MODEL_ID,
     ...SOLAR_MINI_4_OFFER,
+  },
+  {
+    // A promotion with no end date yet. End it by appending a transition back
+    // to SOLAR_PRO_4_OFFER and dropping the catalog row's `promotional`; the
+    // free window closes at that transition.
+    at: '2026-10-05T07:15:00Z',
+    modelId: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+    price: 0,
+    tagline: SOLAR_PRO_4_PROMOTIONAL.short,
   },
 ] as const
 
