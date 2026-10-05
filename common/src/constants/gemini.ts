@@ -4,7 +4,8 @@
 export const GEMINI_3_1_FLASH_LITE_MODEL_ID = 'google/gemini-3.1-flash-lite'
 
 /** Current model for the lightweight Gemini helper subagents: basher,
- *  browser-use, file-lister(-max), file-picker-max, and the researchers.
+ *  browser-use and the researchers. (The file pickers and listers moved to
+ *  GPT-6 Luna on 2026-10-05.)
  *  Pricier than 3.1 flash-lite ($0.30/$2.50 per M tokens vs $0.25/$1.50), and
  *  those agents run millions of calls a month, so moving an agent onto it is a
  *  real cost decision — not a free upgrade. */

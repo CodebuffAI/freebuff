@@ -711,6 +711,38 @@ const GEMINI_HELPER_MODELS = new Set([
   GEMINI_3_1_FLASH_LITE_MODEL_ID,
 ])
 
+/**
+ * Helper subagents that run on GPT-6 Luna, with reasoning off, since
+ * 2026-10-05. Luna is also a pickable session model, so a request from one
+ * of these on Luna is helper traffic inside whatever session spawned it, not
+ * a Luna session: see isFreebuffHelperOnSessionModel.
+ */
+const FREEBUFF_LUNA_HELPER_AGENT_IDS: ReadonlySet<string> = new Set([
+  'file-picker',
+  'file-lister',
+])
+
+/**
+ * Whether a free-mode request is a helper subagent running a model that is
+ * also a session model. The session gate binds every session-model request to
+ * the session's own model, the limited tier refuses premium models, and
+ * premium models draw on the premium rate budget; none of that is meant for a
+ * file-picker spawned inside, say, a DeepSeek Flash session. Such a request is
+ * treated like the Gemini helpers always were: it needs a live session, but
+ * not a session on its model.
+ */
+export function isFreebuffHelperOnSessionModel(
+  fullAgentId: string,
+  model: string,
+): boolean {
+  const { publisherId, agentId } = parseAgentId(fullAgentId)
+  if (!agentId || (publisherId && publisherId !== 'codebuff')) return false
+  return (
+    FREEBUFF_LUNA_HELPER_AGENT_IDS.has(agentId) &&
+    model === FREEBUFF_GPT_6_LUNA_MODEL_ID
+  )
+}
+
 export function getFreebuffRootAgentIdForModel(model: string): string {
   return FREEBUFF_ROOT_AGENT_ID_BY_MODEL[model] ?? 'base2-free'
 }
@@ -951,10 +983,18 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // Pinning it to a single model instead would 403 every tab on any other one.
   [FREEBUFF_DESKTOP_AUTORUN_AGENT_ID]: FREEBUFF_DESKTOP_MODELS,
 
-  // File exploration agents
-  'file-picker': new Set(['google/gemini-2.5-flash-lite']),
+  // File exploration agents. file-picker and file-lister run GPT-6 Luna since
+  // 2026-10-05; their Gemini models stay for released clients, which ship
+  // their own agent definitions.
+  'file-picker': new Set([
+    'google/gemini-2.5-flash-lite',
+    FREEBUFF_GPT_6_LUNA_MODEL_ID,
+  ]),
   'file-picker-max': GEMINI_HELPER_MODELS,
-  'file-lister': GEMINI_HELPER_MODELS,
+  'file-lister': new Set([
+    ...GEMINI_HELPER_MODELS,
+    FREEBUFF_GPT_6_LUNA_MODEL_ID,
+  ]),
 
   // Research agents
   'researcher-web': GEMINI_HELPER_MODELS,

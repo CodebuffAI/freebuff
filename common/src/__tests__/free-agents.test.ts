@@ -15,6 +15,7 @@ import {
   FREEBUFF_GEMINI_PRO_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_KIMI_K3_ECO_MODEL_ID,
   FREEBUFF_MIMO_V25_MODEL_ID,
   FALLBACK_FREEBUFF_MODEL_ID,
@@ -35,6 +36,7 @@ import {
   getFreebuffRootAgentIdForModel,
   hasFreebuffRootSystemPromptOpening,
   isFreebuffGeminiThinkerAgent,
+  isFreebuffHelperOnSessionModel,
   isFreebuffRootAgent,
   isFreeModeAllowedAgentModel,
   isLimitedTierSubstitutedModel,
@@ -466,6 +468,63 @@ describe('free mode agent model allowlist', () => {
         isFreeModeAllowedAgentModel(agentId, GEMINI_3_5_FLASH_LITE_MODEL_ID),
       ).toBe(true)
     }
+  })
+
+  test('allows file-picker and file-lister on GPT-6 Luna beside their Gemini models', () => {
+    expect(
+      isFreeModeAllowedAgentModel('file-picker', FREEBUFF_GPT_6_LUNA_MODEL_ID),
+    ).toBe(true)
+    expect(
+      isFreeModeAllowedAgentModel('file-lister', FREEBUFF_GPT_6_LUNA_MODEL_ID),
+    ).toBe(true)
+    // Released clients still send the Gemini models.
+    expect(
+      isFreeModeAllowedAgentModel(
+        'file-picker',
+        'google/gemini-2.5-flash-lite',
+      ),
+    ).toBe(true)
+    // Only those two moved.
+    expect(
+      isFreeModeAllowedAgentModel(
+        'researcher-web',
+        FREEBUFF_GPT_6_LUNA_MODEL_ID,
+      ),
+    ).toBe(false)
+  })
+
+  test('marks only the Luna helpers as helper traffic on a session model', () => {
+    for (const agentId of ['file-picker', 'codebuff/file-lister@0.0.31']) {
+      expect(
+        isFreebuffHelperOnSessionModel(agentId, FREEBUFF_GPT_6_LUNA_MODEL_ID),
+      ).toBe(true)
+    }
+    // Luna's own root and reviewer ARE Luna sessions.
+    expect(
+      isFreebuffHelperOnSessionModel(
+        'base3-free-luna-6',
+        FREEBUFF_GPT_6_LUNA_MODEL_ID,
+      ),
+    ).toBe(false)
+    expect(
+      isFreebuffHelperOnSessionModel(
+        'code-reviewer-luna-6',
+        FREEBUFF_GPT_6_LUNA_MODEL_ID,
+      ),
+    ).toBe(false)
+    // Another session model, and another publisher's agent of the same name.
+    expect(
+      isFreebuffHelperOnSessionModel(
+        'file-picker',
+        FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+      ),
+    ).toBe(false)
+    expect(
+      isFreebuffHelperOnSessionModel(
+        'someone/file-picker',
+        FREEBUFF_GPT_6_LUNA_MODEL_ID,
+      ),
+    ).toBe(false)
   })
 
   test('allows the tmux-cli subagent with its bundled model', () => {

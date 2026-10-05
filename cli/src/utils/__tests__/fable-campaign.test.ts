@@ -3,7 +3,10 @@ import {
   FREEBUFF_FABLE_5_1_MODEL_ID,
   isFreebuffSessionModelId,
 } from '@codebuff/common/constants/freebuff-models'
-import { isFreeModeAllowedAgentModel } from '@codebuff/common/constants/free-agents'
+import {
+  isFreebuffHelperOnSessionModel,
+  isFreeModeAllowedAgentModel,
+} from '@codebuff/common/constants/free-agents'
 
 import { bundledAgents } from '../../agents/bundled-agents.generated'
 import { getFreebuffCliAgentIdForModel } from '../freebuff-agent-selection'
@@ -49,7 +52,12 @@ describe('bundled Fable training campaign', () => {
         isFreeModeAllowedAgentModel(id, agent.model),
         `${id}: ${agent.model}`,
       ).toBe(true)
-      if (isFreebuffSessionModelId(agent.model)) {
+      // A helper the server treats as helper traffic (file-picker and
+      // file-lister on GPT-6 Luna) is not bound to the session's model.
+      if (
+        isFreebuffSessionModelId(agent.model) &&
+        !isFreebuffHelperOnSessionModel(id, agent.model)
+      ) {
         expect(agent.model, `${id} would fail the session-model gate`).toBe(
           root.model,
         )

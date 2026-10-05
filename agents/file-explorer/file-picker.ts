@@ -1,4 +1,4 @@
-import { GEMINI_3_5_FLASH_LITE_MODEL_ID } from '@codebuff/common/constants/gemini'
+import { FREEBUFF_GPT_6_LUNA_MODEL_ID } from '@codebuff/common/constants/freebuff-models'
 
 import { publisher } from '../constants'
 import {
@@ -14,18 +14,14 @@ export const createFilePicker = (
   mode: FilePickerMode,
 ): Omit<SecretAgentDefinition, 'id'> => {
   const isMax = mode === 'max'
-  const model = isMax
-    ? GEMINI_3_5_FLASH_LITE_MODEL_ID
-    : 'google/gemini-2.5-flash-lite'
 
   return {
     displayName: 'Fletcher the File Fetcher',
     publisher,
-    model,
+    model: FREEBUFF_GPT_6_LUNA_MODEL_ID,
     reasoningOptions: {
-      enabled: false,
-      effort: 'low',
-      exclude: false,
+      effort: 'none',
+      exclude: true,
     },
     spawnerPrompt: `Spawn to find relevant files in a codebase related to the prompt. Outputs up to ${isMax ? 20 : 12} file paths with short summaries for each file. Cannot do string searches on the codebase, but does a fuzzy search. Unless you know which directories are relevant, omit the directories parameter. This agent is extremely effective at finding files in the codebase that could be relevant to the prompt.`,
     inputSchema: {
