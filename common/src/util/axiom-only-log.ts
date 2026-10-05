@@ -849,7 +849,7 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   ranker_scored_placements: 'number',
   ranker_disagreements: 'number',
   /**
-   * F, the fatigue layer (`docs/ads/targeting/26-fatigue-layer.md` §8), with
+   * F, the fatigue layer (`docs/ads/fatigue-layer.md` §8), with
    * the ranker. Aggregates only, never a campaign or user id: the history
    * read's status (`ready`, `no_history`, `opted_out`, `timeout`,
    * `unavailable`, `skipped`), its time and length (200 is the cap binding),
