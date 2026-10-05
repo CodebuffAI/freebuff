@@ -3,7 +3,7 @@ import { escapeString } from '@codebuff/common/util/string'
 import { z } from 'zod/v4'
 
 import { getAgentTemplate } from './agent-registry'
-import { buildFullSpawnableAgentsSpec } from './prompts'
+import { buildFullSpawnableAgentsSpec, modelSpawnableAgents } from './prompts'
 import { PLACEHOLDER, placeholderValues } from './types'
 import {
   getGitChangesPrompt,
@@ -217,7 +217,7 @@ export async function getAgentPrompt<T extends StringField>(
         })
         addendum += `\n\n${spawnableAgentsSpec}`
       }
-    } else if (spawnableAgents.length > 0) {
+    } else if (modelSpawnableAgents(agentTemplate).length > 0) {
       // For non-inherited tools, agents are already defined as tools with full schemas,
       // so we add the spawnerPrompt for each agent
       const agentDescriptions = await Promise.all(

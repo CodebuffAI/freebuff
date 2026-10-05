@@ -1373,6 +1373,39 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
     expect(result.agentState).toBeDefined()
   })
 
+  it('offers spawnable agents as tools only to an agent with spawn_agents', async () => {
+    const toolsOffered: string[][] = []
+    loopAgentStepsBaseParams.promptAiSdkStream = async function* ({ tools }) {
+      toolsOffered.push(Object.keys(tools ?? {}))
+      yield createToolCallChunk('end_turn', {})
+      return promptSuccess('mock-message-id')
+    }
+    const helper = { ...mockTemplate, id: 'helper', spawnerPrompt: 'Helps' }
+    const toolNameSets: AgentTemplate['toolNames'][] = [
+      ['end_turn'],
+      ['spawn_agents', 'end_turn'],
+    ]
+
+    for (const toolNames of toolNameSets) {
+      await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        localAgentTemplates: {
+          'test-agent': {
+            ...mockTemplate,
+            toolNames,
+            spawnableAgents: ['helper'],
+          },
+          helper,
+        },
+      })
+    }
+
+    expect(toolsOffered).toEqual([
+      ['end_turn'],
+      ['spawn_agents', 'end_turn', 'helper'],
+    ])
+  })
+
   it('should pass the full message history to the traceWriter when provided', async () => {
     const recordedSteps: Array<{ agentId: string; messages: unknown[] }> = []
     const traceWriter = {

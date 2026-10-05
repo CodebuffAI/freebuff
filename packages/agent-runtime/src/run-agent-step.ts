@@ -67,7 +67,7 @@ import {
   isCompactCommandPrompt,
 } from './system-prompt/prompts'
 import { getAgentTemplate } from './templates/agent-registry'
-import { buildAgentToolSet } from './templates/prompts'
+import { buildAgentToolSet, modelSpawnableAgents } from './templates/prompts'
 import { getAgentPrompt } from './templates/strings'
 import { getToolSet } from './tools/prompts'
 import { processStream } from './tools/stream-parser'
@@ -1034,7 +1034,7 @@ export async function loopAgentSteps(
     ? {}
     : await buildAgentToolSet({
         ...params,
-        spawnableAgents: agentTemplate.spawnableAgents,
+        spawnableAgents: modelSpawnableAgents(agentTemplate),
         agentTemplates: localAgentTemplates,
       })
 

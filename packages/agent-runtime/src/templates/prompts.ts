@@ -67,6 +67,16 @@ export function buildAgentToolInputSchema(
     )
 }
 
+// A direct agent call runs as spawn_agents, so an agent without that tool (one
+// that spawns only from handleSteps) must not offer its agents to the model.
+export function modelSpawnableAgents(
+  agentTemplate: Pick<AgentTemplate, 'toolNames' | 'spawnableAgents'>,
+): AgentTemplateType[] {
+  return agentTemplate.toolNames.includes('spawn_agents')
+    ? agentTemplate.spawnableAgents
+    : []
+}
+
 /**
  * Builds AI SDK tool definitions for spawnable agents.
  * These tools allow the model to call agents directly as tool calls.

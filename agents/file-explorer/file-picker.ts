@@ -45,7 +45,9 @@ export const createFilePicker = (
     },
     outputMode: 'last_message',
     includeMessageHistory: false,
-    toolNames: ['spawn_agents'],
+    // handleSteps spawns the lister, so the report step gets no tools: offered
+    // spawn_agents, the model spawned its example code-searcher instead.
+    toolNames: [],
     spawnableAgents: isMax
       ? ['file-lister-max']
       : ['file-lister'],

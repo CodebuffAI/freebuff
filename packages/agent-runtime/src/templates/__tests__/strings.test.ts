@@ -247,6 +247,7 @@ describe('getAgentPrompt', () => {
       const mainAgentTemplate = createMockAgentTemplate({
         id: 'main-agent',
         displayName: 'Main Agent',
+        toolNames: ['spawn_agents'],
         spawnableAgents: ['file-picker', 'code-searcher'],
         instructionsPrompt: 'Main agent instructions.',
       })
@@ -290,6 +291,7 @@ describe('getAgentPrompt', () => {
       const mainAgentTemplate = createMockAgentTemplate({
         id: 'main-agent',
         displayName: 'Main Agent',
+        toolNames: ['spawn_agents'],
         spawnableAgents: ['no-prompt-agent'],
         instructionsPrompt: 'Main agent instructions.',
       })
@@ -335,6 +337,7 @@ describe('getAgentPrompt', () => {
       const mainAgentTemplate = createMockAgentTemplate({
         id: 'main-agent',
         displayName: 'Main Agent',
+        toolNames: ['spawn_agents'],
         spawnableAgents: ['with-prompt', 'without-prompt'],
         instructionsPrompt: 'Main agent instructions.',
       })
@@ -391,6 +394,39 @@ describe('getAgentPrompt', () => {
 
       expect(result).toBeDefined()
       expect(result).not.toContain('You can spawn the following agents:')
+    })
+
+    test('does not list agents the model has no spawn tool for', async () => {
+      const mainAgentTemplate = createMockAgentTemplate({
+        id: 'main-agent',
+        displayName: 'Main Agent',
+        toolNames: [],
+        spawnableAgents: ['file-lister'],
+        instructionsPrompt: 'Main agent instructions.',
+      })
+
+      const result = await getAgentPrompt({
+        agentTemplate: mainAgentTemplate,
+        promptType: { type: 'instructionsPrompt' },
+        fileContext: createMockFileContext(),
+        agentState: createMockAgentState('main-agent'),
+        agentTemplates: {
+          'main-agent': mainAgentTemplate,
+          'file-lister': createMockAgentTemplate({
+            id: 'file-lister',
+            spawnerPrompt: 'Lists files',
+          }),
+        },
+        additionalToolDefinitions: async () => ({}),
+        logger: createMockLogger(),
+        apiKey: TEST_AGENT_RUNTIME_IMPL.apiKey,
+        databaseAgentCache: TEST_AGENT_RUNTIME_IMPL.databaseAgentCache,
+        fetchAgentFromDatabase: TEST_AGENT_RUNTIME_IMPL.fetchAgentFromDatabase,
+      })
+
+      expect(result).toBeDefined()
+      expect(result).not.toContain('You can spawn the following agents:')
+      expect(result).not.toContain('file-lister')
     })
 
     test('does not include spawnable agents for non-instructionsPrompt types', async () => {

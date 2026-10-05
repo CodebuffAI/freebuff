@@ -39,8 +39,9 @@ describe('file-picker agent', () => {
       expect(filePicker.includeMessageHistory).toBe(false)
     })
 
-    test('has spawn_agents tool', () => {
-      expect(filePicker.toolNames).toContain('spawn_agents')
+    test('offers its report step no tools', () => {
+      expect(filePicker.toolNames).toEqual([])
+      expect(createFilePicker('max').toolNames).toEqual([])
     })
 
     test('can spawn file-lister agent', () => {
