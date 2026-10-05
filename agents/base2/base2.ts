@@ -72,6 +72,8 @@ export function createBase2(
     noReview?: boolean
     noGravityIndex?: boolean
     model?: SecretAgentDefinition['model']
+    /** Human model name for the prompt when the wire id is a legacy alias. */
+    modelLabel?: string
     providerOptions?: SecretAgentDefinition['providerOptions']
   },
 ): Omit<SecretAgentDefinition, 'id'> {
@@ -334,7 +336,7 @@ Use the spawn_agents tool to spawn specialized agents to help you complete the u
 
 # ${isFreebuff ? 'Freebuff' : 'Codebuff'} Meta-information
 
-You are running on the ${model} model.
+You are running on the ${options?.modelLabel ?? model} model.
 
 ${
   isFreebuff
