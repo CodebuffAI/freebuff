@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
 
 import { CodebuffClient } from '../client'
-import { createByokConnectionStore, type ByokConnection } from '../byok'
+import { ByokConnectionStateError, createByokConnectionStore, type ByokConnection } from '../byok'
 import { getWebsiteUrl } from '../constants'
 import type { RunState } from '../run-state'
 
@@ -319,21 +319,58 @@ describe('direct BYOK SDK runs', () => {
     expect(requests.every((url) => url === 'http://127.0.0.1:9876/v1/chat/completions')).toBe(true)
   }, 30_000)
 
-  test('stops before provider dispatch when a saved connection was replaced or removed', async () => {
+  test.each([
+    ['changed', 'BYOK connection changed; select its current revision to continue'],
+    ['removed', 'BYOK connection was removed; select another provider or a Freebuff model to continue'],
+    ['corrupt', 'BYOK connection metadata is corrupt; restore it before continuing'],
+    ['locked', 'BYOK settings are locked. Close other Freebuff processes and retry.'],
+    ['unknown', 'Could not verify the saved BYOK connection. Reselect the provider and retry.'],
+  ])('reports a %s local connection failure without provider dispatch', async (failure, expected) => {
     let requests = 0
     globalThis.fetch = (async () => {
       requests += 1
       return sse({ id: 'unexpected', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [] })
     }) as unknown as typeof fetch
+    let records: ByokConnection[] = []
+    let failCheck = false
+    const store = createByokConnectionStore({
+      metadataStore: {
+        async get() { return records },
+        async set(next) { records = next },
+        async withLock(operation) {
+          if (failCheck && failure === 'locked')
+            throw new ByokConnectionStateError(expected)
+          if (failCheck && failure === 'unknown')
+            throw new Error('provider-key-canary must not leak')
+          return operation()
+        },
+      },
+      secretStore: {
+        async get() { return 'provider-key-canary' },
+        async set() {},
+        async delete() {},
+      },
+    })
+    const saved = await store.create({
+      name: 'Local failure test', provider: 'openrouter', model: 'scripted/model',
+      credentialRef: 'env:PROVIDER_KEY',
+    })
+    const resolved = await store.resolve(saved)
+    if (failure === 'changed') await store.update({ ...saved, patch: { model: 'new/model' } })
+    if (failure === 'removed') await store.remove(saved)
+    if (failure === 'corrupt') records = [{ ...saved, model: '' }]
+    failCheck = true
     const client = new CodebuffClient({
       agentDefinitions: [agent],
-      byok: connection({ assertCurrent: async () => { throw new Error('connection revision no longer current') } }),
+      byok: resolved,
     })
 
-    const result = await client.run({ agent: agent.id, prompt: 'Do not use the replaced connection.' })
+    const result = await client.run({ agent: agent.id, prompt: 'Do not use the unavailable connection.' })
     expect(result.output.type).toBe('error')
     if (result.output.type !== 'error') throw new Error('expected BYOK connection error')
-    expect(result.output.message).toContain('Could not connect to the BYOK provider')
+    expect(result.output.message).toContain(expected)
+    expect(result.output.message).not.toContain('provider-key-canary')
+    expect(result.output.message).not.toContain('network connection')
     expect(requests).toBe(0)
   }, 30_000)
 

@@ -21,7 +21,7 @@ import { APICallError } from 'ai'
 import { byokReasoningRetryBody, byokRequestTransform } from './byok-request'
 import { getWebsiteUrl } from '../constants'
 import { getByokOpenrouterApiKeyFromEnv } from '../env'
-import { byokCompletionUrl, byokCredentialVariable } from '../byok'
+import { ByokConnectionStateError, byokCompletionUrl, byokCredentialVariable } from '../byok'
 import type { ResolvedByokConnection } from '../byok'
 
 import type { LanguageModel } from 'ai'
@@ -401,8 +401,14 @@ export function getModelForRequest({
         // Revocation is a durable policy decision, never a transport retry.
         try {
           await byok.assertCurrent?.()
-        } catch {
-          throw new Error(BYOK_CONNECTION_FAILURE_MESSAGE)
+        } catch (error) {
+          // Only our typed state errors carry display-safe messages. Custom
+          // resolvers and filesystem errors may contain credentials or paths.
+          throw new Error(
+            error instanceof ByokConnectionStateError
+              ? error.message
+              : 'Could not verify the saved BYOK connection. Reselect the provider and retry. If the problem persists, fully quit and restart Freebuff.',
+          )
         }
         try {
           const send = (init: RequestInit | undefined) =>

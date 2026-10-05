@@ -125,6 +125,11 @@ export class ByokCredentialError extends Error {
   override name = 'ByokCredentialError'
 }
 
+/** A local connection-state failure with a safe, SDK-authored message. */
+export class ByokConnectionStateError extends Error {
+  override name = 'ByokConnectionStateError'
+}
+
 /** The environment variable a connection reads its key from, if any. */
 export function byokCredentialVariable(
   connection: Pick<ByokConnection, 'credentialRef'>,
@@ -196,11 +201,11 @@ export function byokCompletionUrl(
 function parseConnections(value: unknown): ByokConnection[] {
   const parsed = z.array(connectionSchema).safeParse(value)
   if (!parsed.success)
-    throw new Error(
+    throw new ByokConnectionStateError(
       'BYOK connection metadata is corrupt; restore it before continuing',
     )
   if (new Set(parsed.data.map((item) => item.id)).size !== parsed.data.length) {
-    throw new Error('BYOK connection metadata contains duplicate connections')
+    throw new ByokConnectionStateError('BYOK connection metadata contains duplicate connections')
   }
   for (const item of parsed.data) {
     byokModelLimits(item)
@@ -209,7 +214,7 @@ function parseConnections(value: unknown): ByokConnection[] {
       !envReference.test(item.credentialRef) &&
       !item.credentialRef.startsWith(`connection:${item.id}:`)
     ) {
-      throw new Error(
+      throw new ByokConnectionStateError(
         'BYOK credential reference belongs to a different connection',
       )
     }
@@ -660,11 +665,11 @@ export function createByokConnectionStore(params: {
     const connections = await read()
     const connection = connections.find((item) => item.id === id)
     if (!connection)
-      throw new Error(
+      throw new ByokConnectionStateError(
         'BYOK connection was removed; select another provider or a Freebuff model to continue',
       )
     if (connection.revision !== revision)
-      throw new Error(
+      throw new ByokConnectionStateError(
         'BYOK connection changed; select its current revision to continue',
       )
     return { connection, connections }
@@ -979,7 +984,7 @@ export function createBunByokMetadataStore(
         return parseConnections(JSON.parse(await fs.readFile(file, 'utf8')))
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-        throw new Error(
+        throw new ByokConnectionStateError(
           'Cannot read BYOK connection metadata; restore the configuration before continuing',
         )
       }
@@ -1024,7 +1029,7 @@ export function createBunByokMetadataStore(
             if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
             await recoverByokLock(lock)
             if (Date.now() - started >= 5000)
-              throw new Error(
+              throw new ByokConnectionStateError(
                 'BYOK settings are locked. Close other Freebuff processes and retry. If the problem persists, close all Freebuff processes before removing connections.lock from the BYOK configuration directory.',
               )
             await new Promise((resolve) => setTimeout(resolve, 25))
