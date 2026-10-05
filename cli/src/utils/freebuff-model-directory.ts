@@ -42,9 +42,11 @@ import {
   isSupportedFreebuffModelId,
   resolveFreebuffModelForAccessTier,
   resolveSupportedFreebuffModel,
+  SUPPORTED_FREEBUFF_MODELS,
 } from '@codebuff/common/constants/freebuff-models'
 import {
   findFreebuffCatalogRowForLegacyId,
+  freebuffLegacyModelDigest,
   listableFreebuffCatalogRows,
 } from '@codebuff/common/types/freebuff-model-catalog'
 import { freebuffPlanRequired } from '@codebuff/common/util/freebuff-model-selection'
@@ -165,6 +167,25 @@ export const compiledFreebuffModelDirectory: FreebuffModelDirectory = {
  * no client release. Availability is always `always`: a row the server does
  * not want joined is one it does not list, or lists `locked`.
  */
+const COMPILED_ID_BY_DIGEST = new Map(
+  SUPPORTED_FREEBUFF_MODELS.map((model) => [
+    freebuffLegacyModelDigest(model.id),
+    model.id,
+  ]),
+)
+
+/** The compiled model id a catalog row replaces, by its legacy digests;
+ *  undefined for a catalog-only row. */
+export function compiledFreebuffModelIdOfRow(
+  row: FreebuffCatalogRow,
+): string | undefined {
+  for (const digest of row.legacyDigests ?? []) {
+    const id = COMPILED_ID_BY_DIGEST.get(digest)
+    if (id) return id
+  }
+  return undefined
+}
+
 export function freebuffCatalogRowModelOption(
   row: FreebuffCatalogRow,
 ): FreebuffModelOption {

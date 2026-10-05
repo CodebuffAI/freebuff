@@ -300,7 +300,8 @@ describe('FreebuffModelSelector tier layout', () => {
     // actions beneath it.
     // 52 rows: GPT-6.1 Sol (2026-09-29) made the catalog one row taller again.
     // 53 rows once FREEBUFF_ENABLE_FAST_MODE_IN_UI lists DeepSeek V4.1 Flash Fast.
-    const frame = (await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 53 : 52)).captureCharFrame()
+    // Five more for the three section headers and the gaps between them.
+    const frame = (await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 58 : 57)).captureCharFrame()
     const actionRow =
       frame.split('\n').find((line) => line.includes('Copy invite link')) ?? ''
 
@@ -582,18 +583,55 @@ describe('FreebuffModelSelector tier layout', () => {
       FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.includes(m.id),
     )
     expect(planRows.length).toBeGreaterThan(0)
+    // The card's own line: a section hint may name a model too.
+    const cardLine = (name: string) =>
+      lines.findIndex((line) => line.includes('│') && line.includes(name))
     for (const model of planRows) {
-      const row = lines.findIndex((line) => line.includes(model.displayName))
+      const row = cardLine(model.displayName)
       expect(row).toBeGreaterThanOrEqual(0)
       expect(lines[row + 1] ?? '').toContain('Paid plan')
     }
     // No limited row is locked.
     for (const model of LIMITED_FREEBUFF_MODELS) {
-      const row = lines.findIndex((line) => line.includes(model.displayName))
+      const row = cardLine(model.displayName)
       expect(lines[row + 1] ?? '').not.toContain('Paid plan')
     }
+    // No pool header: the rows sit in Desktop's sections, as at full access.
     expect(frame).not.toContain('PREMIUM')
-    expect(frame).not.toContain('UNLIMITED')
+    expect(frame).toContain('UNLIMITED · Experimental models')
+  })
+
+  test("on the meter, rows sit in Desktop's sections, each section's pick marked Recommended", async () => {
+    useFreebuffSessionStore.getState().setSession({
+      status: 'none',
+      accessTier: 'full',
+      freebucks: freebucksFixture(100),
+    })
+    // Not the hero, so the picker opens expanded.
+    useFreebuffModelStore.getState().setSelectedModel(FREEBUFF_GPT_6_LUNA_MODEL_ID)
+    const frame = (await renderSelector(100)).captureCharFrame()
+    const lines = frame.split('\n')
+    const cardLine = (name: string) =>
+      lines.findIndex((line) => line.includes('│') && line.includes(name))
+    const order = [
+      lines.findIndex((line) => line.startsWith('UNLIMITED · Experimental models')),
+      cardLine('Space Bunny Alpha'),
+      lines.findIndex((line) => line.startsWith('OPTIMIZED · Strongest')),
+      cardLine('MiMo 2.6 Flash'),
+      lines.findIndex((line) => line.startsWith('POWERFUL · Frontier')),
+      ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? [cardLine('DeepSeek V4.1 Flash Fast')] : []),
+      cardLine('GPT-6 Luna'),
+    ]
+    expect(order.every((at) => at >= 0)).toBe(true)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    for (const name of [
+      'Space Bunny Alpha',
+      'MiMo 2.6 Flash',
+      ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? ['DeepSeek V4.1 Flash Fast'] : []),
+    ]) {
+      expect(lines[cardLine(name) + 1]).toContain('Recommended')
+    }
+    expect(lines[cardLine('GPT-6 Luna') + 1]).not.toContain('Recommended')
   })
 
   test('lists the paid-only row to a free account, locked', async () => {
@@ -1548,7 +1586,8 @@ test.each([
     // 48 rows: the expanded catalog outgrew 40 when Solar Pro 4 returned.
     // 50 rows once FREEBUFF_ENABLE_FAST_MODE_IN_UI lists DeepSeek V4.1 Flash
     // Fast: that row makes the expanded catalog two lines taller.
-    const setup = await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 50 : 48, async (model) => {
+    // Five more for the three section headers and the gaps between them.
+    const setup = await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 55 : 53, async (model) => {
       requested.push(model)
     })
     expect(setup.captureCharFrame()).toContain(solarOfferAt(cutoff - 137).tagline)

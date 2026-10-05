@@ -47,6 +47,11 @@ import {
   getFreebuffModelMeter,
 } from '@codebuff/common/util/freebuff-session-pools'
 import {
+  freebuffPickerPlacement,
+  freebuffPickerSections,
+  type FreebuffPickerSectionId,
+} from '@codebuff/common/util/freebuff-picker-sections'
+import {
   getLimitedModelOffers,
   getRateLimitsByModel,
   getGlmPromo,
@@ -64,6 +69,7 @@ import {
 import { startFreebuffSession } from '../hooks/use-freebuff-session'
 import { useNow } from '../hooks/use-now'
 import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
+import { compiledFreebuffModelIdOfRow } from '../utils/freebuff-model-directory'
 import { useFreebuffModelStore } from '../state/freebuff-model-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
@@ -115,12 +121,14 @@ import type {
 // annotation. Empty sections are filtered so a model set with no premium (or no
 // unlimited) entries doesn't render an orphan header.
 //
-// `label` may be empty: limited-tier users only see the constrained model set,
-// so the "LIMITED" header would just leak the internal tier name without
-// organizing anything. Renderer treats an empty label as "no header row".
+// Renderer treats an empty label as "no header row".
+//
+// On the meter and at limited access the sections are Desktop's
+// (freebuff-picker-sections.ts), each with its purpose as `hint`.
 type Section = {
-  key: 'premium' | 'unlimited' | 'limited' | 'offer' | 'metered'
+  key: 'premium' | 'unlimited' | 'offer' | FreebuffPickerSectionId
   label: string
+  hint?: string
   models: readonly FreebuffModelOption[]
 }
 
@@ -362,6 +370,22 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     },
     [directory, catalog, session, accessTier, hasPaidSubscription, freebucks],
   )
+  // Desktop's sections. A catalog row's id is its key; placements name the
+  // compiled model it replaces.
+  const placementOf = useCallback(
+    (model: FreebuffModelOption) => {
+      const row = directory.row(model.id)
+      return freebuffPickerPlacement(
+        [row ? compiledFreebuffModelIdOfRow(row) : undefined, model.id],
+        {
+          premium: directory.isPremium(model.id),
+          locked: planRequired(model.id),
+          price: freebucks?.prices[model.id],
+        },
+      )
+    },
+    [directory, planRequired, freebucks],
+  )
   // Capacity-limited models the SERVER decided to offer on this response. The
   // client has no catalog of its own for these on purpose: when the wave's pool
   // empties (or the offer is switched off) the payload stops arriving and every
@@ -527,6 +551,10 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           })
         }
       }
+      // A section's own pick.
+      if (placementOf(model).recommended) {
+        details.push({ text: 'Recommended', warn: false, highlight: true })
+      }
       // Beside the price it qualifies, in the warning colour. The terminal has
       // no tooltip to hold the catalog's full sentence, so the row carries its
       // short form; line 2 is sized from these details, so it cannot truncate.
@@ -580,6 +608,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       freebucks,
       planRequired,
       directory,
+      placementOf,
     ],
   )
   const rowDetailsText = useCallback(
@@ -829,11 +858,8 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       !isLanding ||
       (selectedModel !== recommendedModel.id && isJoinable(selectedModel)),
   )
-  // Limited mode has no labeled tier section, so moving its recommendation
-  // inside that section would only move the existing inter-card spacing above
-  // the entire list. Keep its original standalone recommendation; full-access
-  // expanded views put every row beneath a quota-bearing section header.
-  const showStandaloneRecommended = !expanded || accessTier === 'limited'
+  // Expanded, every row sits beneath a section header, the hero included.
+  const showStandaloneRecommended = !expanded
   // The session snapshot arrives asynchronously. If it changes the picker
   // from full access (collapsible) to limited access (only two rows), force
   // the list open before notifying the parent; otherwise the toggle disappears
@@ -903,25 +929,19 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   }, [])
   // The standing catalog's tier sections. Expanded-only; the offer section
   // below is added on top and is visible in both states.
-  const catalogSections = useMemo(() => {
-    if (!expanded) return [] as readonly Section[]
-    if (accessTier === 'limited') {
-      return [
-        { key: 'limited', label: '', models: otherModels },
-      ] satisfies readonly Section[]
-    }
-    // ONE FLAT LIST on the meter, like Web and Desktop.
-    //
-    // PREMIUM / UNLIMITED name which POOL metered a row, and on Freebucks
-    // there is one meter and every row carries a price. Keeping the split puts
-    // a "0 of 4 used" pool header above rows that are charged to something
-    // else entirely — two meters for one account, which is the arrangement
-    // that lies outright. Ordering is by price now, so the list is already
-    // sorted by the only thing those headers were standing in for.
-    if (freebucks) {
-      return [
-        { key: 'metered', label: '', models: availableModels },
-      ] satisfies readonly Section[]
+  const catalogSections = useMemo((): readonly Section[] => {
+    if (!expanded) return []
+    // On the meter (every account) and at limited access. PREMIUM /
+    // UNLIMITED name the pool that meters a row, which Freebucks replaced.
+    if (freebucks !== undefined || accessTier === 'limited') {
+      return freebuffPickerSections(availableModels, placementOf).map(
+        ({ section, models }): Section => ({
+          key: section.id,
+          label: section.label.toUpperCase(),
+          hint: section.tooltip,
+          models,
+        }),
+      )
     }
     return (
       [
@@ -937,14 +957,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         },
       ] satisfies readonly Section[]
     ).filter((section) => section.models.length > 0)
-  }, [
-    expanded,
-    accessTier,
-    availableModels,
-    otherModels,
-    freebucks,
-    directory,
-  ])
+  }, [expanded, accessTier, availableModels, freebucks, directory, placementOf])
 
   // Every section that gets drawn, in draw order. THE single source for the
   // render, the navigation order and the height estimate — those three must
@@ -1569,11 +1582,8 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       <Button
         key={model.id}
         id={model.id}
-        // NO ' RECOMMENDED ' title as of 2026-08-21. The collapsed view still
-        // opens on one card so a new user can start with a single Enter, but
-        // that card is a STARTING POSITION rather than an endorsement — the
-        // catalog no longer names a recommended model, and ordering is the only
-        // steer left. Re-adding a title here re-adds the recommendation.
+        // NO ' RECOMMENDED ' border title (removed 2026-08-21). A section's
+        // own pick says Recommended on line 2 instead (2026-10-04).
         titleAlignment={undefined}
         onClick={() => {
           setFocusedId(model.id)
@@ -1726,6 +1736,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       {section.label && (
         <text style={{ fg: theme.muted, wrapMode: 'none' }}>
           {section.label}
+          {section.hint && <span fg={theme.muted}> · {section.hint}</span>}
           {section.key === 'premium' && premiumLimit !== null && (
             <span fg={premiumExhausted ? theme.secondary : theme.muted}>
               {' '}

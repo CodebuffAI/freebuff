@@ -20,6 +20,7 @@ import {
 import {
   FREEBUFF_PICKER_PLACED_IDS,
   freebuffPickerPlacement,
+  freebuffPickerSections,
 } from '../freebuff-picker-sections'
 
 const none = { premium: false, locked: false, price: undefined }
@@ -42,7 +43,7 @@ describe('freebuffPickerPlacement', () => {
       expect(at(id)).toEqual({ section: 'powerful', order: expect.any(Number) })
     }
     expect(at(FREEBUFF_GEMINI_38_FLASH_MODEL_ID)).toMatchObject({ section: 'powerful', more: true })
-    expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)).toMatchObject({ section: 'powerful', more: true })
+    expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)).toEqual({ section: 'powerful', order: 5, recommended: true })
   })
 
   test('every listed compiled model has an explicit place', () => {
@@ -61,5 +62,35 @@ describe('freebuffPickerPlacement', () => {
     expect(freebuffPickerPlacement(['x'], { ...none, locked: true }).section).toBe('powerful')
     expect(freebuffPickerPlacement(['x'], { ...none, price: 0 })).toMatchObject({ section: 'unlimited', more: true })
     expect(freebuffPickerPlacement(['x'], { ...none, price: 10 }).section).toBe('optimized')
+  })
+})
+
+describe('freebuffPickerSections', () => {
+  test('groups in section order by placement order, More rows last, empty sections dropped', () => {
+    const rows = [
+      FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
+      'unplaced-cheap',
+      FREEBUFF_GPT_6_LUNA_MODEL_ID,
+      FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+      FREEBUFF_GLM_V53_FLASH_MODEL_ID,
+      FREEBUFF_MIMO_V25_MODEL_ID,
+    ]
+    const sections = freebuffPickerSections(rows, (id) =>
+      freebuffPickerPlacement([id], { ...none, price: 10 }),
+    )
+    expect(sections.map(({ section, models }) => [section.id, models])).toEqual([
+      [
+        'optimized',
+        [FREEBUFF_MIMO_V25_MODEL_ID, FREEBUFF_GLM_V53_FLASH_MODEL_ID, 'unplaced-cheap'],
+      ],
+      [
+        'powerful',
+        [
+          FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+          FREEBUFF_GPT_6_LUNA_MODEL_ID,
+          FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
+        ],
+      ],
+    ])
   })
 })

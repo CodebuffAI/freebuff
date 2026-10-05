@@ -67,18 +67,17 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     'deepseek/deepseek-v4-flash': { section: 'optimized', order: 30 }, // V4.1 Flash
     'upstage/solar-pro4': { section: 'optimized', order: 40, more: true },
     // Powerful
+    // DeepSeek V4.1 Flash Fast (2026-10-04): the section's pick, first.
+    'deepseek/deepseek-v4-flash-fast': {
+      section: 'powerful',
+      order: 5,
+      recommended: true,
+    },
     'meta/muse-spark-1.3-contributor': { section: 'powerful', order: 10 },
     'openai/gpt-6-luna': { section: 'powerful', order: 20 },
     'mimo/mimo-v2.6-pro': { section: 'powerful', order: 30 },
     'openai/gpt-6.1-sol': { section: 'powerful', order: 40 },
     'google/gemini-3.8-flash': { section: 'powerful', order: 50, more: true },
-    // DeepSeek V4.1 Flash Fast (2026-10-04): not in the product list; premium,
-    // so collapsed under Powerful until product places it.
-    'deepseek/deepseek-v4-flash-fast': {
-      section: 'powerful',
-      order: 60,
-      more: true,
-    },
   })
 
 /**
@@ -107,6 +106,25 @@ export function freebuffPickerPlacement(
     order: Number.POSITIVE_INFINITY,
     more: true,
   }
+}
+
+/**
+ * Each section's rows, in display order, for the pickers that list every row
+ * (CLI, Web). Rows go by placement order, so a section's "More" rows come last,
+ * then unplaced rows in the order they arrived. Empty sections are dropped.
+ */
+export function freebuffPickerSections<T>(
+  rows: readonly T[],
+  placementOf: (row: T) => FreebuffPickerPlacement,
+): { section: FreebuffPickerSection; models: T[] }[] {
+  const placed = rows.map((row) => ({ row, placement: placementOf(row) }))
+  return FREEBUFF_PICKER_SECTIONS.map((section) => ({
+    section,
+    models: placed
+      .filter(({ placement }) => placement.section === section.id)
+      .sort((a, b) => a.placement.order - b.placement.order || 0)
+      .map(({ row }) => row),
+  })).filter(({ models }) => models.length > 0)
 }
 
 /** Tests only: every placed id. */
