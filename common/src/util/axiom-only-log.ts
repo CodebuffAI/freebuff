@@ -268,9 +268,8 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   outcome: 'string',
   /**
    * The REQUEST-grain correlation handle (`adr_`, COD-406): one per HTTP ad
-   * request on both rails, and the key of the decision outbox batch the same
-   * request appends (`ad_decision_outbox_batch.request_id`). Opaque and
-   * server-minted: never derived from the prompt, the IP, or the session.
+   * request on both rails. Opaque and server-minted: never derived from the
+   * prompt, the IP, or the session.
    */
   request_id: 'string',
   /**
@@ -278,8 +277,7 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    * one per resolved placement; this event is request-grain, so it carries
    * the FIRST placement's -- exact for the single-placement request that is
    * the overwhelming case, and the same coarsest-honest answer it always gave
-   * for a batch. Every placement's own id is on its `ad_impression` row and
-   * in the outbox payload under `request_id` above.
+   * for a batch. Every placement's own id is on its `ad_impression` row.
    *
    * Every join the first-party chain needs already hangs off
    * `ad_impression.id`, so this is what connects an auction -- including the
@@ -508,56 +506,6 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   client_ua_version: 'string',
   /** Each asked provider and its outcome, `gravity:no_fill>first_party:fill`. */
   yield_actual_attempt_chain: 'string',
-  /**
-   * COD-361. What the decision-outbox producer did with this opportunity:
-   * `scheduled | saturated | cooling_down | schedule_failed | disabled |
-   * not_sampled`. On both rails, so a producer that stops writing is visible
-   * as a change of STATUS rather than as an absence of rows -- an absence is
-   * indistinguishable from the knob being off, which is the missingness this
-   * field exists to make analysable.
-   *
-   * `decision_outbox_sample_rate_ppm` is the rate that ACTUALLY applied, so a
-   * contested auction written by the >=2-admitted override reports certainty
-   * rather than the configured sample. Zero on every unwritten opportunity.
-   */
-  decision_outbox_status: 'string',
-  /**
-   * DEPRECATED ALIAS of `inclusion_probability_ppm` (COD-367), kept for one
-   * release so existing dashboards and the exporter keep resolving. Producers
-   * emit both and they are pinned equal.
-   *
-   * NOT THE SAME FIELD AS `sample_rate` above, and the two must never be
-   * merged. `sample_rate` is the EVENT-STREAM sampler -- the divisor for
-   * counting `ads.fetch_completed` rows, hardcoded 1 on both rails because
-   * nothing samples the stream. This is the DECISION-OUTBOX sampler: whether
-   * the durable evidence row was written at all. An opportunity is always in
-   * the event stream and usually not in the outbox, so one field cannot carry
-   * both, and a query dividing by the wrong one is off by the sample percent.
-   */
-  decision_outbox_sample_rate_ppm: 'number',
-  /**
-   * COD-367. The probability this opportunity had of entering the decision
-   * record, and WHY it did.
-   *
-   * The reason is what makes the probability readable: a value of 1,000,000
-   * means "certain", and there are three different ways to be certain -- a
-   * contested auction kept by the >=2-admitted override, a direct-sold serve,
-   * and a 100%-sampled deployment -- which bias the sample three different
-   * ways. Only `random_baseline` rows are an unbiased draw from the
-   * opportunity population. Closed enum, owned by `AD_INCLUSION_REASONS`.
-   */
-  inclusion_probability_ppm: 'number',
-  inclusion_reason: 'string',
-  /**
-   * COD-367. WHICH keying secret produced the `usr_` handle in the durable
-   * decision payload, as `<label>_<fingerprint>`.
-   *
-   * Never the handle itself -- no user key enters this event. It is here so a
-   * secret rotation is visible on the OPERATIONAL stream at the moment it
-   * happens, rather than being discovered months later as an unexplained
-   * discontinuity in a per-user aggregate built from the warehouse.
-   */
-  user_key_version: 'string',
   /**
    * COD-453. The sticky sponsor-break arm this request's viewer is in
    * (`control` | `reduced` | `reduced_spotlight` | `reduced_intermission`),
