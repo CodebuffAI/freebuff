@@ -99,18 +99,33 @@ Settings. That runtime setting is what makes a custom worker — or a local
 3. Subscribe the worker to exactly two events:
 
    - `transaction.completed` — grant Pro for that `txn_…` id
-   - `adjustment.created` — revoke when the payload's `action` is `refund` or
-     `chargeback`
+   - `adjustment.created` and `adjustment.updated` — change a license when the
+     adjustment is final
 
 Anything else is acknowledged with `handled: false` and ignored.
 
-`adjustment.created` is Paddle Billing's only refund/chargeback signal — there
-are no `transaction.refunded` or `transaction.chargeback` events. It is
-deliberately an allowlist (`refund`, `chargeback`), so a goodwill credit note
-or a `chargeback_warning` never costs a paying customer their license. The
-known gap: a `chargeback_reverse` (a dispute Paddle won) does not re-activate
-the license — reconciling that needs a nightly job reading the Paddle API,
-which needs an API key this worker does not have.
+These two adjustments are Paddle Billing's only refund/chargeback signal —
+there are no `transaction.refunded` or `transaction.chargeback` events. Three
+rules decide what happens:
+
+| Condition                                                     | Result      |
+| ------------------------------------------------------------- | ----------- |
+| `action` ∈ {refund, chargeback} and `status=approved`         | **revoke**  |
+| `action` ∈ {refund, chargeback} and `status=pending_approval` | nothing     |
+| `status=rejected`                                             | **restore** |
+| anything else (credit, chargeback_warning, reversals)         | nothing     |
+
+Both the action and the status are allowlists. A refund starts at
+`pending_approval`, so revoking on `created` alone would strip Pro from a
+paying customer while Paddle still has the refund under review — and if Paddle
+then rejects it, nothing would put the license back. `restore` flips an
+existing revoked record back to active but never creates one, so a rejected
+adjustment cannot mint a license.
+
+Known gap: a `chargeback_reverse` (a dispute Paddle won) carries status
+`approved` with an action outside the allowlist, so it does not re-activate.
+Reconciling that needs a nightly job reading the Paddle API, which needs an
+API key this worker does not have.
 
 4. For the checkout overlay, set the Paddle client token and price id in the
    app build (see [`../.env.example`](../.env.example)). The app activates from

@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import {
   SIGNATURE_TOLERANCE_SECONDS,
   actionForEvent,
+  adjustmentRestores,
   adjustmentRevokes,
   expectedSignature,
   idsFromEvent,
+  isAdjustmentEvent,
   isTransactionId,
   licenseCodeFromEvent,
   parseSignatureHeader,
@@ -96,9 +98,17 @@ describe('actionForEvent', () => {
   })
 
   test('revokes on adjustments', () => {
-    // Refunds and chargebacks both arrive as `adjustment.created`; the
-    // `action` field decides, see `adjustmentRevokes`.
+    // Refunds and chargebacks arrive as adjustments; `status` decides, see
+    // `adjustmentRevokes`.
     expect(actionForEvent('adjustment.created')).toBe('revoke')
+    expect(actionForEvent('adjustment.updated')).toBe('revoke')
+  })
+
+  test('recognises adjustment events', () => {
+    expect(isAdjustmentEvent('adjustment.created')).toBe(true)
+    expect(isAdjustmentEvent('adjustment.updated')).toBe(true)
+    expect(isAdjustmentEvent('transaction.completed')).toBe(false)
+    expect(isAdjustmentEvent('')).toBe(false)
   })
 
   test('ignores unrelated events', () => {
@@ -115,9 +125,15 @@ describe('actionForEvent', () => {
 })
 
 describe('adjustmentRevokes', () => {
-  test('revokes on refund and chargeback', () => {
-    expect(adjustmentRevokes('refund')).toBe(true)
-    expect(adjustmentRevokes('chargeback')).toBe(true)
+  test('revokes a refund or chargeback only once Paddle approves it', () => {
+    expect(adjustmentRevokes('refund', 'approved')).toBe(true)
+    expect(adjustmentRevokes('chargeback', 'approved')).toBe(true)
+  })
+
+  test('does not revoke while an adjustment is pending approval', () => {
+    // Revoking here would strip Pro from a paying customer under review.
+    expect(adjustmentRevokes('refund', 'pending_approval')).toBe(false)
+    expect(adjustmentRevokes('chargeback', 'pending_approval')).toBe(false)
   })
 
   test('does not revoke on credits, warnings or reversals', () => {
@@ -128,16 +144,26 @@ describe('adjustmentRevokes', () => {
       'chargeback_warning_reverse',
       'chargeback_reverse',
     ]) {
-      expect(adjustmentRevokes(action)).toBe(false)
+      expect(adjustmentRevokes(action, 'approved')).toBe(false)
     }
   })
 
-  test('fails safe on an unknown or missing action', () => {
-    // An action we do not understand must never revoke a live license.
-    expect(adjustmentRevokes(undefined)).toBe(false)
-    expect(adjustmentRevokes('')).toBe(false)
-    expect(adjustmentRevokes('some_future_action')).toBe(false)
-    expect(adjustmentRevokes(42)).toBe(false)
+  test('fails safe on an unknown action or status', () => {
+    // Anything we do not understand must never revoke a live license.
+    expect(adjustmentRevokes('refund', undefined)).toBe(false)
+    expect(adjustmentRevokes('refund', 'approved_rejected')).toBe(false)
+    expect(adjustmentRevokes('some_future_action', 'approved')).toBe(false)
+    expect(adjustmentRevokes(undefined, 'approved')).toBe(false)
+    expect(adjustmentRevokes(42, 'approved')).toBe(false)
+  })
+})
+
+describe('adjustmentRestores', () => {
+  test('restores only when Paddle rejects the adjustment', () => {
+    expect(adjustmentRestores('rejected')).toBe(true)
+    for (const status of ['pending_approval', 'approved', undefined, '']) {
+      expect(adjustmentRestores(status)).toBe(false)
+    }
   })
 })
 

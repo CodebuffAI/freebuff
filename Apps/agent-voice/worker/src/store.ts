@@ -84,6 +84,27 @@ export async function activateLicense(
   return record
 }
 
+/**
+ * Put a revoked license back in service after a refund or chargeback was
+ * rejected. Nothing is created here — a license that never existed stays
+ * unknown, and devices are *not* resurrected: the customer re-activates.
+ */
+export async function restoreLicense(
+  kv: KVLike,
+  code: string,
+  nowSeconds: number,
+): Promise<LicenseRecord | null> {
+  const existing = await getLicense(kv, code)
+  if (!existing || existing.status === 'active') return existing
+  const record: LicenseRecord = {
+    ...existing,
+    status: 'active',
+    updatedAt: nowSeconds,
+  }
+  await putLicense(kv, code, record)
+  return record
+}
+
 /** Revoke a license and forget its devices (refund or chargeback). */
 export async function revokeLicense(
   kv: KVLike,

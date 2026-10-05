@@ -272,6 +272,7 @@ describe('webhook', () => {
     const res = await signedWebhook('adjustment.created', {
       id: 'adj_01m45q62gzqns1n98dwp38038q',
       action: 'refund',
+      status: 'approved',
       transaction_id: TXN,
     })
     expect((await json(res)).action).toBe('revoke')
@@ -280,11 +281,61 @@ describe('webhook', () => {
     expect(JSON.parse((await kv.get(`license:${TXN}`))!).devices).toEqual([])
   })
 
+  test('a pending refund does not touch the license', async () => {
+    await activateLicense(kv, TXN, 1)
+    await activate(TXN, 'device-1')
+
+    const res = await signedWebhook('adjustment.created', {
+      id: 'adj_1',
+      action: 'refund',
+      status: 'pending_approval',
+      transaction_id: TXN,
+    })
+    expect(await json(res)).toEqual({
+      ok: true,
+      action: 'ignore',
+      handled: false,
+    })
+    expect((await activate(TXN, 'device-2')).status).toBe(200)
+  })
+
+  test('a rejected refund puts a revoked license back', async () => {
+    await activateLicense(kv, TXN, 1)
+    await revokeLicense(kv, TXN, 2)
+    expect((await activate(TXN, 'device-1')).status).toBe(410)
+
+    const res = await signedWebhook('adjustment.updated', {
+      id: 'adj_1',
+      action: 'refund',
+      status: 'rejected',
+      transaction_id: TXN,
+    })
+    expect(await json(res)).toEqual({
+      ok: true,
+      action: 'restore',
+      handled: true,
+    })
+    expect((await activate(TXN, 'device-1')).status).toBe(200)
+  })
+
+  test('a rejected adjustment does not create a license that never existed', async () => {
+    const res = await signedWebhook('adjustment.updated', {
+      id: 'adj_1',
+      action: 'refund',
+      status: 'rejected',
+      transaction_id: TXN_UNKNOWN,
+    })
+    expect((await json(res)).handled).toBe(true)
+    expect(await kv.get(`license:${TXN_UNKNOWN}`)).toBeNull()
+    expect((await activate(TXN_UNKNOWN, 'device-1')).status).toBe(404)
+  })
+
   test('a chargeback adjustment revokes too', async () => {
     await activateLicense(kv, TXN, 1)
     const res = await signedWebhook('adjustment.created', {
       id: 'adj_1',
       action: 'chargeback',
+      status: 'approved',
       transaction_id: TXN,
     })
     expect((await json(res)).handled).toBe(true)
@@ -297,11 +348,12 @@ describe('webhook', () => {
       const res = await signedWebhook('adjustment.created', {
         id: 'adj_1',
         action,
+        status: 'approved',
         transaction_id: TXN,
       })
       expect(await json(res)).toEqual({
         ok: true,
-        action: 'revoke',
+        action: 'ignore',
         handled: false,
       })
       expect((await activate(TXN, 'device-1')).status).toBe(200)

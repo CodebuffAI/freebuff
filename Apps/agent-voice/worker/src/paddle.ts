@@ -92,19 +92,28 @@ export function timestampIsFresh(
 
 export type LicenseAction = 'activate' | 'revoke' | 'ignore'
 
+/** Is this event an adjustment (refund / credit / chargeback) notification? */
+export function isAdjustmentEvent(eventType: string): boolean {
+  return (
+    eventType === 'adjustment.created' || eventType === 'adjustment.updated'
+  )
+}
+
 /**
  * Paddle Billing has no license keys — the license *is* the paid transaction,
  * so the transaction id (`txn_…`) is the code the customer holds and the key
  * every record is filed under.
  *
- * Refunds and chargebacks do not have their own events either: Paddle emits a
- * single `adjustment.created` whose `action` distinguishes them.
+ * Refunds and chargebacks do not have their own events either: Paddle emits
+ * `adjustment.created` / `adjustment.updated` whose `action` distinguishes
+ * them and whose `status` says whether the decision is final.
  */
 export function actionForEvent(eventType: string): LicenseAction {
   switch (eventType) {
     case 'transaction.completed':
       return 'activate'
     case 'adjustment.created':
+    case 'adjustment.updated':
       return 'revoke'
     default:
       return 'ignore'
@@ -112,19 +121,41 @@ export function actionForEvent(eventType: string): LicenseAction {
 }
 
 /**
- * `adjustment.created` actions that actually take the money back.
+ * `adjustment` actions that actually take the money back.
  *
  * Deliberately an allowlist: Paddle also emits credits, reversals and
  * chargeback *warnings*, and an action we do not recognise must never cost a
  * paying customer their license. `chargeback_reverse` (a dispute we won) is
- * the one reversal that should re-activate, and reconciliation via the Paddle
- * API is the path for that rather than guessing here.
+ * the one reversal that should re-activate, which is handled by
+ * [`adjustmentRestores`] rather than guessed at here.
  */
 const REVOKING_ADJUSTMENTS = new Set(['refund', 'chargeback'])
 
-/** Does this adjustment action mean the customer no longer paid? */
-export function adjustmentRevokes(action: unknown): boolean {
-  return typeof action === 'string' && REVOKING_ADJUSTMENTS.has(action)
+/** Paddle only considers a refund final once it is approved. */
+const APPROVED = 'approved'
+
+/**
+ * Does this adjustment mean the customer no longer paid?
+ *
+ * A refund starts at `pending_approval`, so revoking on `created` alone would
+ * strip Pro from a paying customer while Paddle still had the refund under
+ * review — and if Paddle then *rejects* it, nothing would put the license
+ * back. Only a final `approved` status revokes.
+ */
+export function adjustmentRevokes(action: unknown, status: unknown): boolean {
+  return (
+    typeof action === 'string' &&
+    REVOKING_ADJUSTMENTS.has(action) &&
+    status === APPROVED
+  )
+}
+
+/**
+ * A previously-pending refund or chargeback was `rejected`, so no money moved
+ * and a license revoked in the meantime should come back.
+ */
+export function adjustmentRestores(status: unknown): boolean {
+  return status === 'rejected'
 }
 
 /** Paddle transaction ids are `txn_` + 26 lowercase base32 characters. */
@@ -138,8 +169,10 @@ export interface PaddleWebhookPayload {
   event_type?: string
   data?: {
     id?: string
-    /** `adjustment.created` only. */
+    /** `adjustment.*` only. */
     action?: string
+    /** `pending_approval` | `approved` | `rejected`. */
+    status?: string
     transaction_id?: string
     custom_data?: Record<string, string>
   }

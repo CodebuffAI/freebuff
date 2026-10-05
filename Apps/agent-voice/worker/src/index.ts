@@ -14,9 +14,11 @@
 
 import {
   actionForEvent,
+  adjustmentRestores,
   adjustmentRevokes,
   expectedSignature,
   idsFromEvent,
+  isAdjustmentEvent,
   isTransactionId,
   licenseCodeFromEvent,
   parseSignatureHeader,
@@ -30,6 +32,7 @@ import {
   getLicense,
   isRateLimited,
   releaseDevice,
+  restoreLicense,
   revokeLicense,
   type KVLike,
 } from './store'
@@ -223,25 +226,34 @@ async function webhook(request: Request, env: Env): Promise<Response> {
   const eventType = payload.event_type ?? ''
   if (!eventType) return fail('missing event_type', 400)
 
-  const action = actionForEvent(eventType)
-  if (action === 'ignore') return json({ ok: true, action, handled: false })
-
-  // `adjustment.created` covers refunds, chargebacks *and* harmless credits, so
-  // the action decides whether the license actually goes away.
-  if (action === 'revoke' && !adjustmentRevokes(payload.data?.action)) {
-    return json({ ok: true, action, handled: false })
+  // Classify. An adjustment only becomes final once Paddle approves it, and a
+  // rejected one puts a license back rather than taking it away.
+  let decision: 'activate' | 'revoke' | 'restore' | 'ignore' = 'ignore'
+  if (isAdjustmentEvent(eventType)) {
+    const status = payload.data?.status
+    if (adjustmentRestores(status)) {
+      decision = 'restore'
+    } else if (adjustmentRevokes(payload.data?.action, status)) {
+      decision = 'revoke'
+    }
+  } else if (actionForEvent(eventType) === 'activate') {
+    decision = 'activate'
   }
+  if (decision === 'ignore')
+    return json({ ok: true, action: decision, handled: false })
 
   const licenseCode = licenseCodeFromEvent(payload)
-  if (!licenseCode) return json({ ok: true, action, handled: false })
+  if (!licenseCode) return json({ ok: true, action: decision, handled: false })
 
   const ids = idsFromEvent(payload)
-  if (action === 'activate') {
+  if (decision === 'activate') {
     await activateLicense(env.LICENSES, licenseCode, nowSeconds, ids)
-  } else {
+  } else if (decision === 'revoke') {
     await revokeLicense(env.LICENSES, licenseCode, nowSeconds)
+  } else {
+    await restoreLicense(env.LICENSES, licenseCode, nowSeconds)
   }
-  return json({ ok: true, action, handled: true })
+  return json({ ok: true, action: decision, handled: true })
 }
 
 export default {
