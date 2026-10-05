@@ -78,11 +78,7 @@ import {
   freebuffModelNavigationDirectionForKey,
   nextFreebuffModelId,
 } from '../utils/freebuff-model-navigation'
-import { formatSessionUnits } from '../utils/format-session-units'
-import {
-  formatFreebuffPremiumResetCountdown,
-  getFreebuffPremiumResetAt,
-} from '../utils/freebuff-premium-reset'
+import { formatFreebuffPremiumResetCountdown } from '../utils/freebuff-premium-reset'
 import { isPlainEnterKey } from '../utils/terminal-enter-detection'
 
 import type {
@@ -97,36 +93,13 @@ import type {
   ScrollBoxRenderable,
 } from '@opentui/core'
 
-// The picker opens collapsed to a single hero card so a new user can start with
-// one Enter press without reading six boxes. The hero is the DEFAULT pick, not
-// a recommendation — the ' RECOMMENDED ' badge and every supersedes nudge were
-// removed on 2026-08-21, leaving list ORDER as the only steer. The "see all models"
-// toggle reveals the rest, grouped into the same product/availability tiers.
-//
-// Section grouping (expanded view): every model row, including the recommended
-// one, keeps its tier so it is obvious which quota it consumes. The premium
-// models share one daily session quota while the unlimited ones have none.
-// Putting the tier on a section header lets each row drop its redundant
-// "Premium"/"Unlimited" chip. The PREMIUM header carries the shared quota
-// inline — "N of M used · resets in …" — once any session is spent (turning
-// amber when exhausted, the moment its rows grey out). When collapsed there's
-// no PREMIUM header, so the parent keeps a below-picker counter for the
-// collapsed state (and for the limited tier, which has no premium section).
-// The full-access hero is DeepSeek V4 Pro (DEFAULT_FREEBUFF_MODEL_ID) as of
-// 2026-08-21, so it draws on the premium pool and flips to the unlimited MiMo
-// once that empties — the hero must always be joinable. Pro is also the only
-// premium row open at every hour, which is why it holds this slot: V4 Flash now
-// closes for the ten-hour peak window. The limited tier's hero is MiMo 2.5,
-// with DeepSeek V4 Flash as its one other row. UNLIMITED needs no
-// annotation. Empty sections are filtered so a model set with no premium (or no
-// unlimited) entries doesn't render an orphan header.
-//
-// Renderer treats an empty label as "no header row".
-//
-// On the meter and at limited access the sections are Desktop's
-// (freebuff-picker-sections.ts), each with its purpose as `hint`.
+// The picker opens collapsed to a single hero card (the default pick) so a new
+// user can start with one Enter press. "See all models" reveals every row in
+// Desktop's sections (freebuff-picker-sections.ts), each header followed by the
+// section's purpose as `hint`. A time-boxed offer section, when the server
+// sends one, leads in both views.
 type Section = {
-  key: 'premium' | 'unlimited' | 'offer' | FreebuffPickerSectionId
+  key: 'offer' | FreebuffPickerSectionId
   label: string
   hint?: string
   models: readonly FreebuffModelOption[]
@@ -479,15 +452,6 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // "unlimited". No snapshot means no pool, so no counter.
   const premiumLimit = sharedRateLimit?.limit ?? null
   const premiumExhausted = premiumLimit !== null && premiumUsed >= premiumLimit
-  // The pool resets daily on a Pacific-day boundary regardless of usage, so the
-  // countdown is meaningful even at zero used. Gated on the pool existing for
-  // the same reason as the count above: no pool, nothing to reset.
-  const premiumResetCountdown = sharedRateLimit
-    ? formatFreebuffPremiumResetCountdown(
-        getFreebuffPremiumResetAt({ quota: sharedRateLimit, nowMs: now }),
-        now,
-      )
-    : null
 
   /**
    * THE contents of a row's second line, in draw order — the one place that
@@ -931,33 +895,15 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // below is added on top and is visible in both states.
   const catalogSections = useMemo((): readonly Section[] => {
     if (!expanded) return []
-    // On the meter (every account) and at limited access. PREMIUM /
-    // UNLIMITED name the pool that meters a row, which Freebucks replaced.
-    if (freebucks !== undefined || accessTier === 'limited') {
-      return freebuffPickerSections(availableModels, placementOf).map(
-        ({ section, models }): Section => ({
-          key: section.id,
-          label: section.label.toUpperCase(),
-          hint: section.tooltip,
-          models,
-        }),
-      )
-    }
-    return (
-      [
-        {
-          key: 'premium',
-          label: 'PREMIUM',
-          models: availableModels.filter((m) => directory.isPremium(m.id)),
-        },
-        {
-          key: 'unlimited',
-          label: 'UNLIMITED',
-          models: availableModels.filter((m) => !directory.isPremium(m.id)),
-        },
-      ] satisfies readonly Section[]
-    ).filter((section) => section.models.length > 0)
-  }, [expanded, accessTier, availableModels, freebucks, directory, placementOf])
+    return freebuffPickerSections(availableModels, placementOf).map(
+      ({ section, models }): Section => ({
+        key: section.id,
+        label: section.label.toUpperCase(),
+        hint: section.tooltip,
+        models,
+      }),
+    )
+  }, [expanded, availableModels, placementOf])
 
   // Every section that gets drawn, in draw order. THE single source for the
   // render, the navigation order and the height estimate — those three must
@@ -1737,15 +1683,6 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         <text style={{ fg: theme.muted, wrapMode: 'none' }}>
           {section.label}
           {section.hint && <span fg={theme.muted}> · {section.hint}</span>}
-          {section.key === 'premium' && premiumLimit !== null && (
-            <span fg={premiumExhausted ? theme.secondary : theme.muted}>
-              {' '}
-              · {formatSessionUnits(premiumUsed)} of {premiumLimit} used
-            </span>
-          )}
-          {section.key === 'premium' && premiumResetCountdown && (
-            <span fg={theme.muted}> · resets in {premiumResetCountdown}</span>
-          )}
           {section.key === 'offer' && offerUserExhausted && (
             <span fg={theme.secondary}> · trial used</span>
           )}

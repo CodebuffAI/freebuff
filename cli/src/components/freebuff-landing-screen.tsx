@@ -620,16 +620,8 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
   const sharedSessionUsed = sessionRateLimit?.recentCount ?? 0
   // Hide the "0 of N … used" line entirely for a fresh user — a zeroed counter
   // is noise on the landing screen. It appears once any session is consumed.
-  //
-  // For the regular tiers the PREMIUM section header inside the expanded
-  // picker carries this quota inline, so the below-picker line survives for
-  // the limited tier (which has no premium section to host it) and for the
-  // collapsed picker. When the collapsed recommended hero is a premium model
-  // (getRecommendedFreebuffModelId, while the pool has sessions left) the count
-  // is exactly what Enter is about to spend.
+  // Off the meter only: the picker has no pool header to carry it.
   const showSessionCounter = sharedSessionUsed > 0 && !metered
-  const showBelowPickerCounter =
-    showSessionCounter && (accessTier === 'limited' || !selectorExpanded)
   // Prefer the server-sent limit (base + streak/referral bonuses) so the
   // counter and its amber exhausted cue match what admission will enforce;
   // the static constants only cover the pre-snapshot fallback.
@@ -840,7 +832,7 @@ export const FreebuffLandingScreen: React.FC<FreebuffLandingScreenProps> = ({
                 // any key" must not also commit the focused row.
                 keyboardSuspended={freebucksIntro.visible}
                 belowToggle={
-                  showBelowPickerCounter ? (
+                  showSessionCounter ? (
                     <text
                       style={{
                         fg: theme.muted,

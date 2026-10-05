@@ -315,32 +315,18 @@ describe('FreebuffModelSelector tier layout', () => {
     expect(frame).not.toContain('for small tasks')
   })
 
-  test('orders the premium row above UNLIMITED, saved unlimited model focused', async () => {
+  test('focuses the saved pick, not the hero', async () => {
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'full',
     })
-    // Solar (Mini 4 since 2026-09-23) sits in UNLIMITED. Keeping it as the
-    // saved pick exercises both section ordering and focus without relying on
-    // a second premium row that no longer exists.
     useFreebuffModelStore
       .getState()
       .setSelectedModel(FREEBUFF_SOLAR_MINI_4_MODEL_ID)
 
-    const setup = await renderSelector()
-    const frame = setup.captureCharFrame()
-    const premiumHeaderIndex = frame.indexOf('PREMIUM')
-    const recommendedModelIndex = frame.indexOf('GPT-6 Luna')
-    const selectedModelIndex = frame.indexOf('Solar Mini 4')
-    const unlimitedHeaderIndex = frame.indexOf('UNLIMITED')
-
-    expect(premiumHeaderIndex).toBeGreaterThanOrEqual(0)
-    expect(recommendedModelIndex).toBeGreaterThan(premiumHeaderIndex)
-    expect(unlimitedHeaderIndex).toBeGreaterThan(recommendedModelIndex)
-    expect(selectedModelIndex).toBeGreaterThan(unlimitedHeaderIndex)
-    // The cursor sits on the SAVED pick, not on the recommendation.
+    const frame = (await renderSelector()).captureCharFrame()
     expect(frame).toContain('› Solar Mini 4')
-    expect(frame).not.toContain('› GPT-6 Luna')
+    expect(frame).not.toContain('› MiMo 2.6 Flash')
   })
 
   /**
@@ -645,7 +631,7 @@ describe('FreebuffModelSelector tier layout', () => {
     useFreebuffModelStore
       .getState()
       .setSelectedModel(FREEBUFF_MINIMAX_M3_MODEL_ID)
-    const lines = (await renderSelector(48)).captureCharFrame().split('\n')
+    const lines = (await renderSelector(100)).captureCharFrame().split('\n')
     const gemini = lines.findIndex((line) => line.includes('Gemini 3.8 Flash'))
     expect(gemini).toBeGreaterThanOrEqual(0)
     expect(lines[gemini + 1]).toContain('Paid plan')
@@ -666,7 +652,7 @@ describe('FreebuffModelSelector tier layout', () => {
     useFreebuffModelStore
       .getState()
       .setSelectedModel(FREEBUFF_MINIMAX_M3_MODEL_ID)
-    const frame = (await renderSelector()).captureCharFrame()
+    const frame = (await renderSelector(100)).captureCharFrame()
     expect(frame).toContain('MiMo 2.6 Pro')
     expect(frame).not.toContain('Price subject to change')
   })
@@ -717,27 +703,21 @@ describe('FreebuffModelSelector tier layout', () => {
     expect(rowOf(frame, 'MiniMax M3')).not.toContain('Reasoning')
   })
 
-  test('says nothing about a premium quota the account does not have', async () => {
-    // Quota-exempt accounts (god/admin) draw on no free pool, so no snapshot
-    // arrives. The header used to fall back to the static limit and render
-    // "0 of 4 used · resets in 11h 43m" for an account with neither.
+  test('off the meter, the rows still sit in the sections, with no pool counts', async () => {
+    // No Freebucks block: a quota-exempt account, or a local server whose
+    // FREEBUFF_FREEBUCKS_AUDIENCE leaves this account off the meter.
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'full',
     })
-    // A row that isn't the hero, so the picker opens expanded and the PREMIUM
-    // header is actually drawn. The assertion is the ABSENCE of numbers on
-    // that header, so which unmetered row is selected changes nothing here —
-    // only that it is not the recommendation. It was GLM 5.3 Flash until
-    // 2026-09-05, when GLM became the default and this quietly started
-    // asserting against a COLLAPSED picker that draws no section at all.
+    // Not the hero, so the picker opens expanded.
     useFreebuffModelStore
       .getState()
       .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
 
     const frame = (await renderSelector()).captureCharFrame()
-    // The section still groups the rows; only the invented numbers are gone.
-    expect(frame).toContain('PREMIUM')
+    expect(frame).toContain('UNLIMITED · Experimental models')
+    expect(frame).not.toContain('PREMIUM')
     expect(frame).not.toContain('used')
     expect(frame).not.toContain('resets in')
   })
