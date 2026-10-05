@@ -1,20 +1,24 @@
 /** Cloudflare Worker: the license backend.
  *
  * Routes:
- *   POST /activate    {licenseKey, deviceId} → {token}   — claim a device slot
- *   POST /deactivate  {licenseKey, deviceId} → {ok}     — release a device slot
+ *   POST /activate    {licenseCode, deviceId} → {token}   — claim a device slot
+ *   POST /deactivate  {licenseCode, deviceId} → {ok}     — release a device slot
  *   POST /webhook     (Paddle, HMAC verified)  → {ok}     — activate/revoke on events
  *   GET  /health                               → {ok}     — liveness probe
  *
- * Entitlements are only ever granted after Paddle says a license key is active.
- * The response token is signed with Ed25519 so the app can verify Pro offline.
+ * Paddle Billing issues no license keys, so the license code *is* the paid
+ * transaction id (`txn_…`). Entitlements are only ever granted after Paddle
+ * reports `transaction.completed`. The response token is signed with Ed25519 so
+ * the app can verify Pro offline.
  */
 
 import {
   actionForEvent,
+  adjustmentRevokes,
   expectedSignature,
   idsFromEvent,
-  licenseKeyFromEvent,
+  isTransactionId,
+  licenseCodeFromEvent,
   parseSignatureHeader,
   type PaddleWebhookPayload,
 } from './paddle'
@@ -60,8 +64,21 @@ function clientId(request: Request, env: Env): string {
   )
 }
 
-function normalizeKey(value: unknown): string {
+function normalizeCode(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * Read the license code from a request body. `licenseKey` is accepted so an
+ * older build of the app keeps activating after an upgrade.
+ */
+function licenseCodeFromBody(body: Record<string, unknown>): string {
+  return normalizeCode(
+    body.licenseCode ??
+      body.license_code ??
+      body.licenseKey ??
+      body.license_key,
+  )
 }
 
 export async function handleRequest(
@@ -109,24 +126,35 @@ async function activate(request: Request, env: Env): Promise<Response> {
   }
   const body = await readBody(request)
   if (!body) return fail('invalid JSON body', 400)
-  const licenseKey = normalizeKey(body.licenseKey ?? body.license_key)
-  const deviceId = normalizeKey(body.deviceId ?? body.device_id)
-  if (!licenseKey || !deviceId)
-    return fail('licenseKey and deviceId are required', 400)
+  const licenseCode = licenseCodeFromBody(body)
+  const deviceId = normalizeCode(body.deviceId ?? body.device_id)
+  if (!licenseCode || !deviceId)
+    return fail('licenseCode and deviceId are required', 400)
 
-  // A device id is a UUID minted by the app; refuse junk so KV is not abused
-  // as a free datastore.
+  // A license code is a Paddle transaction id and a device id is a UUID minted
+  // by the app; refusing anything else keeps KV from becoming a free datastore.
+  if (!isTransactionId(licenseCode)) return fail('invalid license code', 400)
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(deviceId)) {
     return fail('invalid deviceId', 400)
   }
 
-  const record = await getLicense(env.LICENSES, licenseKey)
-  if (!record) return fail('unknown license key', 404)
+  const record = await getLicense(env.LICENSES, licenseCode)
+  if (!record)
+    return fail(
+      'no purchase found for that code — check the txn_… id in your receipt',
+      404,
+    )
   if (record.status !== 'active') {
     return fail('this license has been revoked (refund or chargeback)', 410)
   }
   if (
-    !(await claimDevice(env.LICENSES, licenseKey, record, deviceId, nowSeconds))
+    !(await claimDevice(
+      env.LICENSES,
+      licenseCode,
+      record,
+      deviceId,
+      nowSeconds,
+    ))
   ) {
     return fail(
       'this license is already active on the maximum number of devices',
@@ -134,7 +162,7 @@ async function activate(request: Request, env: Env): Promise<Response> {
     )
   }
 
-  const claims = await buildClaims({ licenseKey, deviceId, nowSeconds })
+  const claims = await buildClaims({ licenseCode, deviceId, nowSeconds })
   const token = await mintToken(claims, env.SIGNING_KEY)
   return json({ ok: true, token, expiresAt: claims.exp }, 200)
 }
@@ -143,13 +171,13 @@ async function deactivate(request: Request, env: Env): Promise<Response> {
   const nowSeconds = Math.floor(Date.now() / 1000)
   const body = await readBody(request)
   if (!body) return fail('invalid JSON body', 400)
-  const licenseKey = normalizeKey(body.licenseKey ?? body.license_key)
-  const deviceId = normalizeKey(body.deviceId ?? body.device_id)
-  if (!licenseKey || !deviceId)
-    return fail('licenseKey and deviceId are required', 400)
+  const licenseCode = licenseCodeFromBody(body)
+  const deviceId = normalizeCode(body.deviceId ?? body.device_id)
+  if (!licenseCode || !deviceId)
+    return fail('licenseCode and deviceId are required', 400)
   const released = await releaseDevice(
     env.LICENSES,
-    licenseKey,
+    licenseCode,
     deviceId,
     nowSeconds,
   )
@@ -180,15 +208,21 @@ async function webhook(request: Request, env: Env): Promise<Response> {
   if (action === 'ignore') return json({ ok: true, action, handled: false })
 
   const payload = (JSON.parse(body) as PaddleWebhookPayload) ?? {}
-  const licenseKey = licenseKeyFromEvent(payload)
-  if (!licenseKey) return json({ ok: true, action, handled: false })
+  // `adjustment.created` covers refunds, chargebacks *and* harmless credits, so
+  // the action decides whether the license actually goes away.
+  if (action === 'revoke' && !adjustmentRevokes(payload.data?.action)) {
+    return json({ ok: true, action, handled: false })
+  }
+
+  const licenseCode = licenseCodeFromEvent(payload)
+  if (!licenseCode) return json({ ok: true, action, handled: false })
 
   const nowSeconds = Math.floor(Date.now() / 1000)
   const ids = idsFromEvent(payload)
   if (action === 'activate') {
-    await activateLicense(env.LICENSES, licenseKey, nowSeconds, ids)
+    await activateLicense(env.LICENSES, licenseCode, nowSeconds, ids)
   } else {
-    await revokeLicense(env.LICENSES, licenseKey, nowSeconds)
+    await revokeLicense(env.LICENSES, licenseCode, nowSeconds)
   }
   return json({ ok: true, action, handled: true })
 }

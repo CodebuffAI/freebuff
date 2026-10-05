@@ -8,8 +8,8 @@ export const getState = () => invoke<StateView>('get_state')
 export const saveSettings = (settings: Settings) =>
   invoke<StateView>('save_settings', { settings })
 
-export const activateLicense = (key: string) =>
-  invoke<StateView>('activate_license', { key })
+export const activateLicense = (licenseCode: string) =>
+  invoke<StateView>('activate_license', { licenseCode })
 
 export const revalidateLicense = () => invoke<StateView>('revalidate_license')
 

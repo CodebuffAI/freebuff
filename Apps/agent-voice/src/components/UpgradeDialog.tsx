@@ -52,12 +52,12 @@ export default function UpgradeDialog() {
               disabled={busy}
               onClick={() => {
                 setBusy(true)
-                openCheckout(config, (licenseKey) => {
+                openCheckout(config, (code) => {
                   closeCheckout()
                   setUpgrading(false)
-                  // Paddle hands us the key directly; the deep link is the
-                  // fallback path when the browser swallows the event.
-                  void activate(licenseKey)
+                  // Paddle hands us the transaction id directly; the deep link
+                  // is the fallback path when the browser swallows the event.
+                  void activate(code)
                 })
                   .then(() => refresh())
                   .catch((e: unknown) => {
@@ -74,8 +74,8 @@ export default function UpgradeDialog() {
             <p className="muted">
               Checkout is not configured in this build. Set{' '}
               <code>VITE_PADDLE_TOKEN</code> and{' '}
-              <code>VITE_PADDLE_PRICE_ID</code>, or activate a key you already
-              bought.
+              <code>VITE_PADDLE_PRICE_ID</code>, or activate a license you
+              already bought.
             </p>
             <div className="row end">
               <button onClick={() => setUpgrading(false)}>Close</button>

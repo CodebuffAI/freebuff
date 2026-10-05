@@ -17,9 +17,12 @@ pub fn now_unix() -> i64 {
 
 /// Default worker base URL; override at build time with
 /// `AGENT_VOICE_WORKER_URL` or at runtime via settings (`worker_url`).
+///
+/// The compiled-in default is this project's own deployment. Forks and
+/// self-hosters must override it — see `worker/README.md`.
 pub const DEFAULT_WORKER_URL: &str = match option_env!("AGENT_VOICE_WORKER_URL") {
     Some(url) => url,
-    None => "https://agent-voice.example.workers.dev",
+    None => "https://agentvoice.mellowpilot.com",
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -104,13 +107,16 @@ impl Settings {
 }
 
 /// Locally persisted activation state. The token itself carries the tier; the
-/// raw license key is kept so the user can deactivate the device.
+/// license code (the Paddle transaction id) is kept so the user can deactivate
+/// the device or move the license to another machine.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EntitlementFile {
     #[serde(default)]
     pub token: String,
-    #[serde(default)]
-    pub license_key: String,
+    /// `license_key` is the pre-transaction-id field name, still read so an
+    /// upgrade keeps an existing activation.
+    #[serde(default, alias = "license_key")]
+    pub license_code: String,
     #[serde(default)]
     pub device_id: String,
     #[serde(default)]
@@ -285,6 +291,15 @@ mod tests {
         };
         assert_eq!(ent.tier(), "free");
         assert!(ent.claims().is_none());
+    }
+
+    #[test]
+    fn legacy_license_key_field_still_loads() {
+        // Written by builds from before the license code became a transaction
+        // id; an upgrade must not silently drop an activation.
+        let raw = r#"{"token":"t","license_key":"txn_01abc","device_id":"d"}"#;
+        let ent: EntitlementFile = serde_json::from_str(raw).unwrap();
+        assert_eq!(ent.license_code, "txn_01abc");
     }
 
     #[test]

@@ -15,7 +15,12 @@ declare global {
 }
 
 interface PaddleEventData {
-  license_key?: string
+  /**
+   * Paddle Billing issues no license keys — the purchase transaction id is the
+   * license code. It is `undefined` until payment has actually been taken, so
+   * callers must treat a missing value as "not finished yet".
+   */
+  transaction_id?: string
 }
 
 interface PaddleCheckoutOptions {
@@ -92,18 +97,27 @@ export function loadPaddle(): Promise<PaddleGlobal> {
   return scriptPromise
 }
 
-/** Open the checkout overlay, wiring the deep-link return + license key event. */
+/**
+ * Open the checkout overlay and hand back the license code.
+ *
+ * `onLicenseCode` fires once, when Paddle reports the checkout completed; the
+ * deep link (`agentvoice://activate?code=…`) is the fallback path for when the
+ * browser swallows the event.
+ */
 export async function openCheckout(
   config: PaddleConfig,
-  onLicenseKey: (key: string) => void,
+  onLicenseCode: (code: string) => void,
 ): Promise<void> {
   const paddle = await loadPaddle()
   paddle.Environment?.set(config.environment)
+  let handedOver = false
   paddle.Initialize({
     token: config.token,
     eventCallback: (event) => {
-      if (event.name === 'checkout.completed' && event.data?.license_key) {
-        onLicenseKey(event.data.license_key)
+      const code = event.data?.transaction_id
+      if (event.name === 'checkout.completed' && code && !handedOver) {
+        handedOver = true
+        onLicenseCode(code)
       }
     },
   })

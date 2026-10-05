@@ -22,7 +22,7 @@ The signature covers the **raw claims JSON bytes**, not the base64 form.
 ```jsonc
 {
   "v": 1, // token format version
-  "sub": "23bf4aa5949f17c7a84f00c0ffaaf9a1", // first 16 bytes of sha256(licenseKey), hex
+  "sub": "23bf4aa5949f17c7a84f00c0ffaaf9a1", // first 16 bytes of sha256(licenseCode), hex
   "dev": "9f1c…", // device id this token is bound to
   "ent": ["pro"], // entitlements
   "iat": 1760000000, // issued at (unix seconds)
@@ -47,9 +47,26 @@ The tier is read **only** from a verified token. `tier()` in `state.rs` never
 reads a serialized `tier` field, so editing `entitlement.json` by hand does
 nothing.
 
-The client additionally requires `sub` to equal `license_subject(key)` for the
-key the user typed, so a token minted for someone else's license cannot be
+The client additionally requires `sub` to equal `license_subject(code)` for the
+code the user typed, so a token minted for someone else's purchase cannot be
 pasted into a different activation.
+
+## What a license code is
+
+The license code is a Paddle **transaction id** — `txn_` plus 26 lowercase
+base32 characters. Paddle Billing issues no license keys; license keys are a
+Paddle Classic (PaddlePay) feature, and Billing's `checkout.completed` event
+carries `transaction_id` rather than a key. Billing also has no
+`transaction.refunded` / `transaction.chargeback` webhooks: refunds and
+chargebacks arrive as a single `adjustment.created` event whose `action` is
+`refund`, `chargeback`, `chargeback_warning`, or a credit.
+
+So the flow is: `transaction.completed` mints an active record for that `txn_…`
+id, and the app presents the same id to `/activate` on this device. The app
+also accepts a pasted `txn_…` id from the customer's receipt for reinstalls,
+which is why it shows the code in Settings with a copy button.
+
+## Verifying a token by hand
 
 ## Keys
 

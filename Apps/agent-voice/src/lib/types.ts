@@ -60,7 +60,10 @@ export interface ModelView {
 export interface EntitlementView {
   tier: Tier
   activated: boolean
-  key_masked: string | null
+  /** Masked license code, e.g. `txn_01m4…038q`. */
+  code_masked: string | null
+  /** Full license code (Paddle transaction id) for moving to another machine. */
+  license_code: string | null
   expires_at: number | null
 }
 

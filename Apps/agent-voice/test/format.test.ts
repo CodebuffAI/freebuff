@@ -28,7 +28,8 @@ function state(overrides: Partial<StateView> = {}): StateView {
     entitlement: {
       tier: 'free',
       activated: false,
-      key_masked: null,
+      code_masked: null,
+      license_code: null,
       expires_at: null,
     },
     usage: { used_seconds: 0, limit_seconds: 1800, day: '2026-10-05' },
@@ -76,7 +77,8 @@ describe('quota helpers', () => {
       entitlement: {
         tier: 'pro',
         activated: true,
-        key_masked: 'PA-1…7890',
+        code_masked: 'txn_01m4…038q',
+        license_code: 'txn_01m45q62gzqns1n98dwp38038q',
         expires_at: null,
       },
       usage: { used_seconds: 9000, limit_seconds: null, day: 'x' },

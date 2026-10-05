@@ -1,18 +1,18 @@
 /** KV-backed license store and rate limiting.
  *
- * Everything is keyed off the Paddle license key, which Paddle itself mints and
- * hands back on the webhook — the worker never has to trust a client-supplied
- * entitlement.
+ * Everything is keyed off the Paddle transaction id: Paddle mints it, hands it
+ * back on the `transaction.completed` webhook, and it is the only thing a client
+ * can present that the worker did not mint itself.
  */
 
 export interface LicenseRecord {
   /** `active` grants Pro; `revoked` (refund/chargeback) does not. */
   status: 'active' | 'revoked'
-  /** Device ids currently allowed to use this key. */
+  /** Device ids currently allowed to use this code. */
   devices: string[]
-  /** Paddle transaction/license ids, kept for support and audit. */
-  paddleLicenseId?: string
+  /** Paddle ids, kept for support and audit. */
   paddleTransactionId?: string
+  paddleAdjustmentId?: string
   createdAt: number
   updatedAt: number
 }
@@ -37,15 +37,16 @@ export interface KVLike {
 
 const LICENSE_PREFIX = 'license:'
 
-export function licenseKey(licenseKey: string): string {
-  return `${LICENSE_PREFIX}${licenseKey}`
+/** KV key for a license code (a Paddle transaction id). */
+export function licenseRecordKey(code: string): string {
+  return `${LICENSE_PREFIX}${code}`
 }
 
 export async function getLicense(
   kv: KVLike,
-  key: string,
+  code: string,
 ): Promise<LicenseRecord | null> {
-  const raw = await kv.get(licenseKey(key))
+  const raw = await kv.get(licenseRecordKey(code))
   if (!raw) return null
   try {
     return JSON.parse(raw) as LicenseRecord
@@ -56,40 +57,40 @@ export async function getLicense(
 
 export async function putLicense(
   kv: KVLike,
-  key: string,
+  code: string,
   record: LicenseRecord,
 ): Promise<void> {
-  await kv.put(licenseKey(key), JSON.stringify(record))
+  await kv.put(licenseRecordKey(code), JSON.stringify(record))
 }
 
-/** Record a Paddle activation for a license key (idempotent). */
+/** Record a paid transaction as an active license (idempotent). */
 export async function activateLicense(
   kv: KVLike,
-  key: string,
+  code: string,
   nowSeconds: number,
-  paddle: { licenseId?: string; transactionId?: string } = {},
+  paddle: { adjustmentId?: string; transactionId?: string } = {},
 ): Promise<LicenseRecord> {
-  const existing = await getLicense(kv, key)
+  const existing = await getLicense(kv, code)
   const record: LicenseRecord = {
     status: 'active',
     // Refunds clear the device list, so a re-purchase starts clean.
     devices: existing?.status === 'active' ? existing.devices : [],
-    paddleLicenseId: paddle.licenseId ?? existing?.paddleLicenseId,
     paddleTransactionId: paddle.transactionId ?? existing?.paddleTransactionId,
+    paddleAdjustmentId: paddle.adjustmentId ?? existing?.paddleAdjustmentId,
     createdAt: existing?.createdAt ?? nowSeconds,
     updatedAt: nowSeconds,
   }
-  await putLicense(kv, key, record)
+  await putLicense(kv, code, record)
   return record
 }
 
 /** Revoke a license and forget its devices (refund or chargeback). */
 export async function revokeLicense(
   kv: KVLike,
-  key: string,
+  code: string,
   nowSeconds: number,
 ): Promise<LicenseRecord | null> {
-  const existing = await getLicense(kv, key)
+  const existing = await getLicense(kv, code)
   if (!existing) return null
   const record: LicenseRecord = {
     ...existing,
@@ -97,20 +98,20 @@ export async function revokeLicense(
     devices: [],
     updatedAt: nowSeconds,
   }
-  await putLicense(kv, key, record)
+  await putLicense(kv, code, record)
   return record
 }
 
-/** Release one device slot. Unknown keys and devices are a no-op. */
+/** Release one device slot. Unknown codes and devices are a no-op. */
 export async function releaseDevice(
   kv: KVLike,
-  key: string,
+  code: string,
   deviceId: string,
   nowSeconds: number,
 ): Promise<boolean> {
-  const existing = await getLicense(kv, key)
+  const existing = await getLicense(kv, code)
   if (!existing || !existing.devices.includes(deviceId)) return false
-  await putLicense(kv, key, {
+  await putLicense(kv, code, {
     ...existing,
     devices: existing.devices.filter((d) => d !== deviceId),
     updatedAt: nowSeconds,
@@ -126,14 +127,14 @@ export async function releaseDevice(
  */
 export async function claimDevice(
   kv: KVLike,
-  key: string,
+  code: string,
   record: LicenseRecord,
   deviceId: string,
   nowSeconds: number,
 ): Promise<boolean> {
   if (record.devices.includes(deviceId)) return true
   if (record.devices.length >= MAX_DEVICES_PER_LICENSE) return false
-  await putLicense(kv, key, {
+  await putLicense(kv, code, {
     ...record,
     devices: [...record.devices, deviceId],
     updatedAt: nowSeconds,

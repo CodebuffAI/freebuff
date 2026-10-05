@@ -26,7 +26,11 @@ pub struct ModelView {
 pub struct EntitlementView {
     pub tier: String,
     pub activated: bool,
-    pub key_masked: Option<String>,
+    /// Masked for casual display: `txn_01m4…038q`.
+    pub code_masked: Option<String>,
+    /// The full license code, so the customer can move the license to another
+    /// machine without digging out the receipt.
+    pub license_code: Option<String>,
     pub expires_at: Option<u64>,
 }
 
@@ -40,16 +44,16 @@ pub struct StateView {
     pub bridge_port: u16,
 }
 
-/// Mask a license key for display: `PA-1234-…-7890`.
-pub fn mask_key(key: &str) -> Option<String> {
-    let key = key.trim();
-    if key.is_empty() {
+/// Mask a license code for display: `txn_01m4…038q`.
+pub fn mask_code(code: &str) -> Option<String> {
+    let code = code.trim();
+    if code.is_empty() {
         return None;
     }
-    if key.len() <= 8 {
-        return Some("*".repeat(key.len()));
+    if code.len() <= 8 {
+        return Some("*".repeat(code.len()));
     }
-    Some(format!("{}…{}", &key[..4], &key[key.len() - 4..]))
+    Some(format!("{}…{}", &code[..8], &code[code.len() - 4..]))
 }
 
 pub fn snapshot(state: &AppState) -> StateView {
@@ -86,7 +90,8 @@ pub fn snapshot(state: &AppState) -> StateView {
         entitlement: EntitlementView {
             tier,
             activated: !ent.token.is_empty(),
-            key_masked: mask_key(&ent.license_key),
+            code_masked: mask_code(&ent.license_code),
+            license_code: Some(ent.license_code.clone()).filter(|c| !c.trim().is_empty()),
             expires_at: ent.claims().map(|c| c.exp),
         },
         usage,
@@ -123,18 +128,18 @@ fn license_error(e: LicenseError) -> String {
 #[tauri::command]
 pub async fn activate_license(
     state: State<'_, AppState>,
-    key: String,
+    license_code: String,
 ) -> Result<StateView, String> {
     let worker = state.settings.read().unwrap().worker_url().to_string();
     let device = crate::state::device_id();
-    let token = license::activate(&worker, &key, &device)
+    let token = license::activate(&worker, &license_code, &device)
         .await
         .map_err(license_error)?;
     {
         let mut ent = state.entitlement.write().unwrap();
         *ent = EntitlementFile {
             token,
-            license_key: key.trim().to_string(),
+            license_code: license_code.trim().to_string(),
             device_id: device,
             activated_at: crate::state::now_unix() as u64,
         };
@@ -155,18 +160,18 @@ pub async fn revalidate_license(
 }
 
 pub async fn revalidate_inner(app: &AppHandle, state: &AppState) {
-    let (worker, key, device) = {
+    let (worker, code, device) = {
         let ent = state.entitlement.read().unwrap();
-        if ent.token.is_empty() || ent.license_key.is_empty() {
+        if ent.token.is_empty() || ent.license_code.is_empty() {
             return;
         }
         (
             state.settings.read().unwrap().worker_url().to_string(),
-            ent.license_key.clone(),
+            ent.license_code.clone(),
             ent.device_id.clone(),
         )
     };
-    match license::activate(&worker, &key, &device).await {
+    match license::activate(&worker, &code, &device).await {
         Ok(token) => {
             let mut ent = state.entitlement.write().unwrap();
             if ent.token != token {
@@ -199,11 +204,11 @@ pub async fn revalidate_inner(app: &AppHandle, state: &AppState) {
 
 #[tauri::command]
 pub async fn deactivate_license(state: State<'_, AppState>) -> Result<StateView, String> {
-    let (worker, key, device, had_token) = {
+    let (worker, code, device, had_token) = {
         let ent = state.entitlement.read().unwrap();
         (
             state.settings.read().unwrap().worker_url().to_string(),
-            ent.license_key.clone(),
+            ent.license_code.clone(),
             ent.device_id.clone(),
             !ent.token.is_empty(),
         )
@@ -211,7 +216,7 @@ pub async fn deactivate_license(state: State<'_, AppState>) -> Result<StateView,
     if had_token {
         // Clear locally even if the server call fails — deactivating is a
         // user decision, and the worker keeps its own device bookkeeping.
-        if let Err(e) = license::deactivate(&worker, &key, &device).await {
+        if let Err(e) = license::deactivate(&worker, &code, &device).await {
             eprintln!("deactivate: server call failed ({e}); clearing local state anyway");
         }
         *state.entitlement.write().unwrap() = EntitlementFile::default();
@@ -281,10 +286,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mask_key_shapes() {
-        assert_eq!(mask_key(""), None);
-        assert_eq!(mask_key("   "), None);
-        assert_eq!(mask_key("short").as_deref(), Some("*****"));
-        assert_eq!(mask_key("PA-1234-5678").as_deref(), Some("PA-1…5678"));
+    fn mask_code_shapes() {
+        assert_eq!(mask_code(""), None);
+        assert_eq!(mask_code("   "), None);
+        assert_eq!(mask_code("short").as_deref(), Some("*****"));
+        assert_eq!(
+            mask_code("txn_01m45q62gzqns1n98dwp38038q").as_deref(),
+            Some("txn_01m4…038q")
+        );
     }
 }

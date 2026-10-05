@@ -33,10 +33,10 @@ function toHex(buffer: ArrayBuffer): string {
 }
 
 /** Stable, non-reversible license identity — mirrors `license_subject` in Rust. */
-export async function licenseSubject(licenseKey: string): Promise<string> {
+export async function licenseSubject(licenseCode: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     'SHA-256',
-    new TextEncoder().encode(licenseKey),
+    new TextEncoder().encode(licenseCode),
   )
   return toHex(digest).slice(0, 32)
 }
@@ -64,11 +64,11 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 export function buildClaims(args: {
-  licenseKey: string
+  licenseCode: string
   deviceId: string
   nowSeconds: number
 }): Promise<Claims> {
-  return licenseSubject(args.licenseKey).then((sub) => ({
+  return licenseSubject(args.licenseCode).then((sub) => ({
     v: TOKEN_VERSION,
     sub,
     dev: args.deviceId,

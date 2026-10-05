@@ -9,6 +9,10 @@ const PRIVATE_KEY =
   'MC4CAQAwBQYDK2VwBCIEIOoHCq5N2gp01ShDliYEDZj5BjchLFHfkvI2CD3jpzvu'
 const PUBLIC_KEY = 'ouHWrlcY5+OOry5d0fMknb4il4mIIHb4n+lOhP61+K8='
 const WEBHOOK_SECRET = 'whsec_test'
+/** Realistic Paddle transaction ids — a license code *is* a transaction id. */
+const TXN = 'txn_01m45q62gzqns1n98dwp38038q'
+const TXN_OTHER = 'txn_01m45q62gzqns1n98dwp38038z'
+const TXN_REFUNDED = 'txn_01m45q62gzqns1n98dwp38039y'
 
 let kv: MemoryKV
 let env: Env
@@ -39,8 +43,8 @@ const post = (path: string, body: unknown) =>
     env,
   )
 
-const activate = (licenseKey: string, deviceId: string) =>
-  post('/activate', { licenseKey, deviceId })
+const activate = (licenseCode: string, deviceId: string) =>
+  post('/activate', { licenseCode, deviceId })
 
 async function signedWebhook(
   eventType: string,
@@ -87,15 +91,15 @@ describe('routing', () => {
 
 describe('activate', () => {
   test('rejects an unknown license', async () => {
-    const res = await activate('PA-UNKNOWN', 'device-1')
+    const res = await activate(TXN_OTHER, 'device-1')
     expect(res.status).toBe(404)
-    expect((await json(res)).error).toContain('unknown license')
+    expect((await json(res)).error).toContain('no purchase found')
   })
 
   test('validates the request body', async () => {
     expect((await post('/activate', { deviceId: 'device-1' })).status).toBe(400)
-    expect((await post('/activate', { licenseKey: 'PA-1' })).status).toBe(400)
-    expect((await activate('PA-1', 'short')).status).toBe(400)
+    expect((await post('/activate', { licenseCode: TXN })).status).toBe(400)
+    expect((await activate(TXN, 'short')).status).toBe(400)
     const res = await handleRequest(
       new Request('https://license.test/activate', {
         method: 'POST',
@@ -106,9 +110,24 @@ describe('activate', () => {
     expect(res.status).toBe(400)
   })
 
+  test('refuses anything that is not a paddle transaction id', async () => {
+    const res = await activate('PA-ABCD-1234', 'device-1')
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toContain('invalid license code')
+  })
+
+  test('still accepts the legacy licenseKey field', async () => {
+    await activateLicense(kv, TXN, 1)
+    const res = await post('/activate', {
+      licenseKey: TXN,
+      deviceId: 'device-1',
+    })
+    expect(res.status).toBe(200)
+  })
+
   test('mints a token the app can verify for that device', async () => {
-    await activateLicense(kv, 'PA-GOOD', 1)
-    const res = await activate('PA-GOOD', 'device-1')
+    await activateLicense(kv, TXN, 1)
+    const res = await activate(TXN, 'device-1')
     expect(res.status).toBe(200)
     const issued = await json(res)
     expect(issued.expiresAt).toBeGreaterThan(Date.now() / 1000)
@@ -123,35 +142,35 @@ describe('activate', () => {
     expect(claims.dev).toBe('device-1')
 
     // The device slot is remembered so a refresh re-issues without a new slot.
-    const stored = await kv.get('license:PA-GOOD')
+    const stored = await kv.get(`license:${TXN}`)
     expect(JSON.parse(stored!).devices).toEqual(['device-1'])
-    const again = await activate('PA-GOOD', 'device-1')
+    const again = await activate(TXN, 'device-1')
     expect(again.status).toBe(200)
-    expect(JSON.parse((await kv.get('license:PA-GOOD'))!).devices).toEqual([
+    expect(JSON.parse((await kv.get(`license:${TXN}`))!).devices).toEqual([
       'device-1',
     ])
   })
 
   test('caps a license at three devices', async () => {
-    await activateLicense(kv, 'PA-GOOD', 1)
+    await activateLicense(kv, TXN, 1)
     for (const device of ['device-1', 'device-2', 'device-3']) {
-      expect((await activate('PA-GOOD', device)).status).toBe(200)
+      expect((await activate(TXN, device)).status).toBe(200)
     }
-    const rejected = await activate('PA-GOOD', 'device-4')
+    const rejected = await activate(TXN, 'device-4')
     expect(rejected.status).toBe(409)
     expect((await json(rejected)).error).toContain('maximum number of devices')
   })
 
   test('refuses a revoked license', async () => {
-    await activateLicense(kv, 'PA-REFUNDED', 1)
-    await revokeLicense(kv, 'PA-REFUNDED', 2)
-    const res = await activate('PA-REFUNDED', 'device-1')
+    await activateLicense(kv, TXN_REFUNDED, 1)
+    await revokeLicense(kv, TXN_REFUNDED, 2)
+    const res = await activate(TXN_REFUNDED, 'device-1')
     expect(res.status).toBe(410)
     expect((await json(res)).error).toContain('revoked')
   })
 
   test('rate limits by client ip', async () => {
-    await activateLicense(kv, 'PA-GOOD', 1)
+    await activateLicense(kv, TXN, 1)
     const req = () =>
       handleRequest(
         new Request('https://license.test/activate', {
@@ -160,7 +179,7 @@ describe('activate', () => {
             'content-type': 'application/json',
             'CF-Connecting-IP': '1.2.3.4',
           },
-          body: JSON.stringify({ licenseKey: 'PA-GOOD', deviceId: 'device-1' }),
+          body: JSON.stringify({ licenseCode: TXN, deviceId: 'device-1' }),
         }),
         env,
       )
@@ -179,40 +198,38 @@ describe('activate', () => {
 
 describe('deactivate', () => {
   test('frees the device slot', async () => {
-    await activateLicense(kv, 'PA-GOOD', 1)
+    await activateLicense(kv, TXN, 1)
     for (const device of ['device-1', 'device-2', 'device-3']) {
-      expect((await activate('PA-GOOD', device)).status).toBe(200)
+      expect((await activate(TXN, device)).status).toBe(200)
     }
-    expect((await activate('PA-GOOD', 'device-4')).status).toBe(409)
+    expect((await activate(TXN, 'device-4')).status).toBe(409)
 
     const res = await post('/deactivate', {
-      licenseKey: 'PA-GOOD',
+      licenseCode: TXN,
       deviceId: 'device-2',
     })
     expect(res.status).toBe(200)
     expect((await json(res)).released).toBe(true)
-    expect((await activate('PA-GOOD', 'device-4')).status).toBe(200)
+    expect((await activate(TXN, 'device-4')).status).toBe(200)
 
     // Releasing an unknown slot is a no-op, not an error.
     const repeat = await post('/deactivate', {
-      licenseKey: 'PA-GOOD',
+      licenseCode: TXN,
       deviceId: 'device-2',
     })
     expect((await json(repeat)).released).toBe(false)
   })
 
   test('validates the body', async () => {
-    expect((await post('/deactivate', { licenseKey: 'PA-GOOD' })).status).toBe(
-      400,
-    )
+    expect((await post('/deactivate', { licenseCode: TXN })).status).toBe(400)
   })
 })
 
 describe('webhook', () => {
-  test('activates a license key on issuance', async () => {
-    const res = await signedWebhook('license_key_created', {
-      event_type: 'license_key_created',
-      data: { id: 'txn_1', license_key: { id: 'lic_1', key: 'PA-NEW' } },
+  test('activates a license on a completed transaction', async () => {
+    const res = await signedWebhook('transaction.completed', {
+      event_type: 'transaction.completed',
+      data: { id: TXN, status: 'completed' },
     })
     expect(res.status).toBe(200)
     expect(await json(res)).toEqual({
@@ -220,45 +237,81 @@ describe('webhook', () => {
       action: 'activate',
       handled: true,
     })
-    expect((await activate('PA-NEW', 'device-1')).status).toBe(200)
+    expect((await activate(TXN, 'device-1')).status).toBe(200)
+    // The transaction id is kept for support.
+    expect(
+      JSON.parse((await kv.get(`license:${TXN}`))!).paddleTransactionId,
+    ).toBe(TXN)
   })
 
-  test('a refund revokes the license and frees every device', async () => {
-    await activateLicense(kv, 'PA-NEW', 1)
-    await activate('PA-NEW', 'device-1')
-    await activate('PA-NEW', 'device-2')
+  test('a refund adjustment revokes the license and frees every device', async () => {
+    await activateLicense(kv, TXN, 1)
+    await activate(TXN, 'device-1')
+    await activate(TXN, 'device-2')
 
-    const res = await signedWebhook('transaction.refunded', {
-      event_type: 'transaction.refunded',
-      data: { license_key: { key: 'PA-NEW' } },
+    const res = await signedWebhook('adjustment.created', {
+      event_type: 'adjustment.created',
+      data: {
+        id: 'adj_01m45q62gzqns1n98dwp38038q',
+        action: 'refund',
+        transaction_id: TXN,
+      },
     })
     expect((await json(res)).action).toBe('revoke')
-    const revoked = await activate('PA-NEW', 'device-3')
+    const revoked = await activate(TXN, 'device-3')
     expect(revoked.status).toBe(410)
-    expect(JSON.parse((await kv.get('license:PA-NEW'))!).devices).toEqual([])
+    expect(JSON.parse((await kv.get(`license:${TXN}`))!).devices).toEqual([])
   })
 
-  test('ignores events with no license key or no interest', async () => {
-    const noKey = await signedWebhook('subscription.created', {
+  test('a chargeback adjustment revokes too', async () => {
+    await activateLicense(kv, TXN, 1)
+    const res = await signedWebhook('adjustment.created', {
+      event_type: 'adjustment.created',
+      data: { id: 'adj_1', action: 'chargeback', transaction_id: TXN },
+    })
+    expect((await json(res)).handled).toBe(true)
+    expect((await activate(TXN, 'device-1')).status).toBe(410)
+  })
+
+  test('a credit note or dispute warning keeps the license', async () => {
+    for (const action of ['credit', 'chargeback_warning']) {
+      await activateLicense(kv, TXN, 1)
+      const res = await signedWebhook('adjustment.created', {
+        event_type: 'adjustment.created',
+        data: { id: 'adj_1', action, transaction_id: TXN },
+      })
+      expect(await json(res)).toEqual({
+        ok: true,
+        action: 'revoke',
+        handled: false,
+      })
+      expect((await activate(TXN, 'device-1')).status).toBe(200)
+    }
+  })
+
+  test('ignores events with no transaction or no interest', async () => {
+    const noData = await signedWebhook('subscription.created', {
       event_type: 'subscription.created',
       data: {},
     })
-    expect(await json(noKey)).toEqual({
+    expect(await json(noData)).toEqual({
       ok: true,
       action: 'ignore',
       handled: false,
     })
-    const unrelated = await signedWebhook('license_key_activated', {
-      event_type: 'license_key_activated',
-      data: {},
+    // An activation with a non-transaction id must not mint a license.
+    const junk = await signedWebhook('transaction.completed', {
+      event_type: 'transaction.completed',
+      data: { id: 'che_01m45q62gzqns1n98dwp38038q' },
     })
-    expect((await json(unrelated)).handled).toBe(false)
+    expect((await json(junk)).handled).toBe(false)
+    expect(await kv.get('license:che_01m45q62gzqns1n98dwp38038q')).toBeNull()
   })
 
   test('rejects a forged or mismatched signature', async () => {
     const forged = await signedWebhook(
-      'license_key_created',
-      { data: { license_key: { key: 'PA-NEW' } } },
+      'transaction.completed',
+      { data: { id: TXN } },
       'whsec_wrong',
     )
     expect(forged.status).toBe(401)
@@ -267,7 +320,7 @@ describe('webhook', () => {
     const unsigned = await handleRequest(
       new Request('https://license.test/webhook', {
         method: 'POST',
-        headers: { 'Paddle-Event-Type': 'license_key_created' },
+        headers: { 'Paddle-Event-Type': 'transaction.completed' },
         body: '{}',
       }),
       env,
@@ -276,9 +329,9 @@ describe('webhook', () => {
   })
 
   test('rejects a body edited after signing', async () => {
-    const body = JSON.stringify({ data: { license_key: { key: 'PA-A' } } })
+    const body = JSON.stringify({ data: { id: TXN } })
     const h1 = await expectedSignature(
-      'license_key_created',
+      'transaction.completed',
       body,
       WEBHOOK_SECRET,
     )
@@ -286,10 +339,12 @@ describe('webhook', () => {
       new Request('https://license.test/webhook', {
         method: 'POST',
         headers: {
-          'Paddle-Event-Type': 'license_key_created',
+          'Paddle-Event-Type': 'transaction.completed',
           'Paddle-Signature': `ts=1;h1=${h1}`,
         },
-        body: JSON.stringify({ data: { license_key: { key: 'PA-B' } } }),
+        body: JSON.stringify({
+          data: { id: 'txn_01m45q62gzqns1n98dwp38038z' },
+        }),
       }),
       env,
     )
@@ -302,7 +357,7 @@ describe('webhook', () => {
       new Request('https://license.test/webhook', {
         method: 'POST',
         headers: {
-          'Paddle-Event-Type': 'license_key_created',
+          'Paddle-Event-Type': 'transaction.completed',
           'Paddle-Signature': 'ts=1;h1=deadbeef',
         },
         body: '{}',

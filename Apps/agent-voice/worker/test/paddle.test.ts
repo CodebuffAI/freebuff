@@ -1,14 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import {
   actionForEvent,
+  adjustmentRevokes,
   expectedSignature,
   idsFromEvent,
-  licenseKeyFromEvent,
+  isTransactionId,
+  licenseCodeFromEvent,
   parseSignatureHeader,
   type PaddleWebhookPayload,
 } from '../src/paddle'
 
 const SECRET = 'whsec_test'
+/** Shape of a real Paddle transaction id: `txn_` + 26 base32 chars. */
+const TXN = 'txn_01m45q62gzqns1n98dwp38038q'
 
 describe('parseSignatureHeader', () => {
   test('reads ts and h1', () => {
@@ -28,27 +32,27 @@ describe('parseSignatureHeader', () => {
 describe('expectedSignature', () => {
   test('is deterministic and body/event dependent', async () => {
     const a = await expectedSignature(
-      'license_key_activated',
+      'transaction.completed',
       '{"a":1}',
       SECRET,
     )
     const b = await expectedSignature(
-      'license_key_activated',
+      'transaction.completed',
       '{"a":1}',
       SECRET,
     )
     const otherEvent = await expectedSignature(
-      'license_key_refunded',
+      'adjustment.created',
       '{"a":1}',
       SECRET,
     )
     const otherBody = await expectedSignature(
-      'license_key_activated',
+      'transaction.completed',
       '{"a":2}',
       SECRET,
     )
     const otherSecret = await expectedSignature(
-      'license_key_activated',
+      'transaction.completed',
       '{"a":1}',
       'other',
     )
@@ -61,51 +65,113 @@ describe('expectedSignature', () => {
 })
 
 describe('actionForEvent', () => {
-  test('activates on license issuance', () => {
-    expect(actionForEvent('license_key_created')).toBe('activate')
-    expect(actionForEvent('license_key_activated')).toBe('activate')
+  test('activates on a completed transaction', () => {
+    expect(actionForEvent('transaction.completed')).toBe('activate')
   })
 
-  test('revokes on refund, chargeback and dispute', () => {
-    for (const event of [
-      'license_key_revoked',
-      'license_key_refunded',
-      'transaction.refunded',
-      'transaction.chargeback',
-      'transaction.dispute.created',
-    ]) {
-      expect(actionForEvent(event)).toBe('revoke')
-    }
+  test('revokes on adjustments', () => {
+    // Refunds and chargebacks both arrive as `adjustment.created`; the
+    // `action` field decides, see `adjustmentRevokes`.
+    expect(actionForEvent('adjustment.created')).toBe('revoke')
   })
 
   test('ignores unrelated events', () => {
-    expect(actionForEvent('subscription.created')).toBe('ignore')
-    expect(actionForEvent('')).toBe('ignore')
+    for (const event of [
+      'subscription.created',
+      'transaction.created',
+      'transaction.paid',
+      'transaction.updated',
+      '',
+    ]) {
+      expect(actionForEvent(event)).toBe('ignore')
+    }
+  })
+})
+
+describe('adjustmentRevokes', () => {
+  test('revokes on refund and chargeback', () => {
+    expect(adjustmentRevokes('refund')).toBe(true)
+    expect(adjustmentRevokes('chargeback')).toBe(true)
+  })
+
+  test('does not revoke on credits, warnings or reversals', () => {
+    for (const action of [
+      'credit',
+      'credit_reverse',
+      'chargeback_warning',
+      'chargeback_warning_reverse',
+      'chargeback_reverse',
+    ]) {
+      expect(adjustmentRevokes(action)).toBe(false)
+    }
+  })
+
+  test('fails safe on an unknown or missing action', () => {
+    // An action we do not understand must never revoke a live license.
+    expect(adjustmentRevokes(undefined)).toBe(false)
+    expect(adjustmentRevokes('')).toBe(false)
+    expect(adjustmentRevokes('some_future_action')).toBe(false)
+    expect(adjustmentRevokes(42)).toBe(false)
+  })
+})
+
+describe('isTransactionId', () => {
+  test('accepts only the Paddle transaction id shape', () => {
+    expect(isTransactionId(TXN)).toBe(true)
+    for (const bad of [
+      'txn_short',
+      'PA-1234-ABCD',
+      'pri_01m45q62gzqns1n98dwp38038q',
+      'txn_01M45Q62GZQNS1N98DWP38038Q',
+      '',
+      null,
+      undefined,
+    ]) {
+      expect(isTransactionId(bad)).toBe(false)
+    }
   })
 })
 
 describe('payload parsing', () => {
-  const payload: PaddleWebhookPayload = {
-    event_type: 'license_key_created',
+  const transaction: PaddleWebhookPayload = {
+    event_type: 'transaction.completed',
+    data: { id: TXN, custom_data: { device_id: 'device-1' } },
+  }
+  const adjustment: PaddleWebhookPayload = {
+    event_type: 'adjustment.created',
     data: {
-      id: 'txn_123',
-      license_key: { id: 'lic_123', key: '  PA-ABCD-1234  ' },
-      transaction_id: 'txn_123',
+      id: 'adj_01m45q62gzqns1n98dwp38038q',
+      action: 'refund',
+      transaction_id: TXN,
     },
   }
 
-  test('extracts and trims the license key', () => {
-    expect(licenseKeyFromEvent(payload)).toBe('PA-ABCD-1234')
+  test('reads the license code off a transaction event', () => {
+    expect(licenseCodeFromEvent(transaction)).toBe(TXN)
+  })
+
+  test('reads the license code off an adjustment', () => {
+    expect(licenseCodeFromEvent(adjustment)).toBe(TXN)
+  })
+
+  test('refuses ids that are not transactions', () => {
     expect(
-      licenseKeyFromEvent({ data: { license_key: { key: '   ' } } }),
+      licenseCodeFromEvent({ data: { id: 'adj_01m45q62gzqns1n98dwp38038q' } }),
     ).toBeNull()
-    expect(licenseKeyFromEvent({})).toBeNull()
+    expect(licenseCodeFromEvent({ data: { id: 'PA-ABCD-1234' } })).toBeNull()
+    expect(licenseCodeFromEvent({})).toBeNull()
   })
 
   test('extracts paddle ids', () => {
-    expect(idsFromEvent(payload)).toEqual({
-      licenseId: 'lic_123',
-      transactionId: 'txn_123',
+    expect(idsFromEvent(transaction)).toEqual({
+      eventId: TXN,
+      adjustmentId: undefined,
+      transactionId: TXN,
+    })
+    expect(idsFromEvent(adjustment)).toEqual({
+      eventId: 'adj_01m45q62gzqns1n98dwp38038q',
+      adjustmentId: 'adj_01m45q62gzqns1n98dwp38038q',
+      transactionId: TXN,
     })
   })
 })

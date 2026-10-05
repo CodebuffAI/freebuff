@@ -18,7 +18,7 @@ interface AppStore {
   refresh: () => Promise<void>
   setDraft: (patch: Partial<Settings>) => void
   save: () => Promise<void>
-  activate: (key: string) => Promise<void>
+  activate: (licenseCode: string) => Promise<void>
   deactivate: () => Promise<void>
   revalidate: () => Promise<void>
   download: (id: string) => Promise<void>
@@ -66,9 +66,9 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  activate: async (key) => {
+  activate: async (licenseCode) => {
     try {
-      const state = await api.activateLicense(key)
+      const state = await api.activateLicense(licenseCode)
       set({ ...adopt(state), error: null })
     } catch (e) {
       set({ error: api.errorMessage(e) })

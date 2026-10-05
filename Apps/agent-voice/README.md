@@ -98,7 +98,7 @@ Audio is captured only while the hotkey is held, written nowhere, and
 transcribed in-process. The only network traffic the app generates is:
 
 - downloading a model the first time you select it (from Hugging Face),
-- `POST /activate` when you enter a license key,
+- `POST /activate` when you enter a license code,
 - checking the update feed.
 
 Telemetry is not collected.
@@ -107,7 +107,7 @@ Telemetry is not collected.
 
 ```bash
 bun run typecheck        # app + worker
-bun test                 # frontend helpers + worker (45 tests)
+bun test                 # frontend helpers + worker (57 tests)
 bun run build            # frontend bundle
 cd src-tauri && cargo test   # Rust unit tests
 ```

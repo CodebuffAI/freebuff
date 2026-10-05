@@ -36,7 +36,7 @@ pub fn decode_public_key(b64: &str) -> Option<[u8; 32]> {
 pub struct Claims {
     /// Token format version.
     pub v: u32,
-    /// Stable license identity: first 32 hex chars of sha256(license key).
+    /// Stable license identity: first 32 hex chars of sha256(license code).
     pub sub: String,
     /// Device this token was minted for.
     pub dev: String,
@@ -104,8 +104,8 @@ pub fn is_pro(claims: &Claims) -> bool {
 }
 
 /// Stable, non-reversible license identity used as the token subject.
-pub fn license_subject(license_key: &str) -> String {
-    let digest = Sha256::digest(license_key.as_bytes());
+pub fn license_subject(license_code: &str) -> String {
+    let digest = Sha256::digest(license_code.as_bytes());
     hex_encode(&digest)[..32].to_string()
 }
 
@@ -142,7 +142,7 @@ mod tests {
     fn sample_claims(now: u64) -> Claims {
         Claims {
             v: TOKEN_VERSION,
-            sub: license_subject("PA-1234-TEST"),
+            sub: license_subject("txn_01aaaaaabbbbbbccccccddddd"),
             dev: "device-1".into(),
             ent: vec![PRO_ENTITLEMENT.into()],
             iat: now,
@@ -254,7 +254,7 @@ mod tests {
     /// (`worker/src/tokens.ts`) with the dev signing key. If either side
     /// changes the token format, one of the two tests named in the comment
     /// fails and the mismatch is impossible to miss.
-    pub const WORKER_VECTOR: &str = "eyJ2IjoxLCJzdWIiOiI4MjBhZDk0YjQ5NjBjOGNhMjM5NmI3ZWFhNTVjZWE3NiIsImRldiI6ImRldmljZS0xIiwiZW50IjpbInBybyJdLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6NDEwMjQ0NDgwMH0.pOBV77Bjtc-PPKGDXowLaSxE9L_hbLLbJ5C36xtb9bPiYUnufJVZ99yy7cBuD9XS7iHa5XJsprgk68zQtOh5Ag";
+    pub const WORKER_VECTOR: &str = "eyJ2IjoxLCJzdWIiOiJjMDdiMWYzN2I5MGU4MmJhOTU5Mzg1NDVhMDIzNTFhYiIsImRldiI6ImRldmljZS0xIiwiZW50IjpbInBybyJdLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6NDEwMjQ0NDgwMH0.BxbtMOe73PIdz74DJNhzVCA1ovovbWHa9HQKMPOmlzbCdeLKmjEdQkHKZZzoPOTlrVMnMIYFx-pS_n6PEJ0BCg";
 
     #[test]
     fn worker_minted_token_verifies_offline() {
@@ -265,7 +265,10 @@ mod tests {
             &public_key_bytes(),
         )
         .expect("a token minted by the worker must verify in the app");
-        assert_eq!(claims.sub, license_subject("PA-VECTOR-0001"));
+        assert_eq!(
+            claims.sub,
+            license_subject("txn_01vect0rvect0rvect0rvect01")
+        );
         assert_eq!(claims.dev, "device-1");
         assert_eq!(claims.iat, 1_700_000_000);
         assert_eq!(claims.exp, 4_102_444_800);
@@ -293,12 +296,15 @@ mod tests {
 
     #[test]
     fn subject_is_stable_and_hashed() {
-        let a = license_subject("PA-AAAA-1111");
-        let b = license_subject("PA-AAAA-1111");
-        let c = license_subject("PA-BBBB-2222");
+        let a = license_subject("txn_01aaaaaabbbbbbccccccddddd");
+        let b = license_subject("txn_01aaaaaabbbbbbccccccddddd");
+        let c = license_subject("txn_01eeeeeeffffffgggggghhhhh");
         assert_eq!(a, b);
         assert_ne!(a, c);
         assert_eq!(a.len(), 32);
-        assert!(!a.contains("PA-AAAA"), "subject must not leak the raw key");
+        assert!(
+            !a.contains("txn_"),
+            "subject must not leak the raw license code"
+        );
     }
 }

@@ -21,20 +21,20 @@ const DEV_PUBLIC = 'ouHWrlcY5+OOry5d0fMknb4il4mIIHb4n+lOhP61+K8='
 const NOW = 1_700_000_000
 
 describe('licenseSubject', () => {
-  test('is stable, 32 hex chars, and does not leak the key', async () => {
-    const a = await licenseSubject('PA-1234-ABCD')
-    const b = await licenseSubject('PA-1234-ABCD')
+  test('is stable, 32 hex chars, and does not leak the code', async () => {
+    const a = await licenseSubject('txn_01aaaaaabbbbbbccccccddddd')
+    const b = await licenseSubject('txn_01aaaaaabbbbbbccccccddddd')
     expect(a).toBe(b)
     expect(a).toHaveLength(32)
-    expect(await licenseSubject('PA-9999-ZZZZ')).not.toBe(a)
-    expect(a).not.toContain('PA-')
+    expect(await licenseSubject('txn_01eeeeeeffffffgggggghhhhh')).not.toBe(a)
+    expect(a).not.toContain('txn_')
   })
 })
 
 describe('token round trip', () => {
   test('mints a token the public key verifies', async () => {
     const claims = await buildClaims({
-      licenseKey: 'PA-1',
+      licenseCode: 'txn_01m45q62gzqns1n98dwp38038q',
       deviceId: 'device-1',
       nowSeconds: NOW,
     })
@@ -50,7 +50,7 @@ describe('token round trip', () => {
 
   test('rejects a tampered payload', async () => {
     const claims = await buildClaims({
-      licenseKey: 'PA-1',
+      licenseCode: 'txn_01m45q62gzqns1n98dwp38038q',
       deviceId: 'd1',
       nowSeconds: NOW,
     })
@@ -66,7 +66,7 @@ describe('token round trip', () => {
 
   test('rejects expiry, wrong device, bad version and garbage', async () => {
     const claims = await buildClaims({
-      licenseKey: 'PA-1',
+      licenseCode: 'txn_01m45q62gzqns1n98dwp38038q',
       deviceId: 'd1',
       nowSeconds: NOW,
     })
@@ -95,19 +95,19 @@ describe('golden vector parity', () => {
   /** The same token, pinned on both sides of the language boundary. See the
    *  Rust test `worker_minted_token_verifies_offline`. */
   const WORKER_VECTOR =
-    'eyJ2IjoxLCJzdWIiOiI4MjBhZDk0YjQ5NjBjOGNhMjM5NmI3ZWFhNTVjZWE3NiIsImRldiI6ImRldmljZS0xIiwiZW50IjpbInBybyJdLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6NDEwMjQ0NDgwMH0.pOBV77Bjtc-PPKGDXowLaSxE9L_hbLLbJ5C36xtb9bPiYUnufJVZ99yy7cBuD9XS7iHa5XJsprgk68zQtOh5Ag'
+    'eyJ2IjoxLCJzdWIiOiJjMDdiMWYzN2I5MGU4MmJhOTU5Mzg1NDVhMDIzNTFhYiIsImRldiI6ImRldmljZS0xIiwiZW50IjpbInBybyJdLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6NDEwMjQ0NDgwMH0.BxbtMOe73PIdz74DJNhzVCA1ovovbWHa9HQKMPOmlzbCdeLKmjEdQkHKZZzoPOTlrVMnMIYFx-pS_n6PEJ0BCg'
 
   test('minting the documented claims reproduces the shared token', async () => {
     const claims: Claims = {
       v: TOKEN_VERSION,
-      sub: await licenseSubject('PA-VECTOR-0001'),
+      sub: await licenseSubject('txn_01vect0rvect0rvect0rvect01'),
       dev: 'device-1',
       ent: ['pro'],
       iat: 1_700_000_000,
       exp: 4_102_444_800,
     }
     expect(await mintToken(claims, DEV_PRIVATE_PKCS8)).toBe(WORKER_VECTOR)
-    expect(claims.sub).toBe('820ad94b4960c8ca2396b7eaa55cea76')
+    expect(claims.sub).toBe('c07b1f37b90e82ba95938545a02351ab')
   })
 })
 

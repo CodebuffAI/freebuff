@@ -2,52 +2,63 @@ import { describe, expect, test } from 'bun:test'
 import { parseActivationUrl } from '../src/lib/entitlement'
 import { paddleConfigFromEnv } from '../src/lib/paddle'
 
+const TXN = 'txn_01m45q62gzqns1n98dwp38038q'
+
 describe('parseActivationUrl', () => {
   test('accepts the host form Paddle redirects to', () => {
-    expect(
-      parseActivationUrl('agentvoice://activate?key=PA-1234-5678'),
-    ).toEqual({
+    expect(parseActivationUrl(`agentvoice://activate?code=${TXN}`)).toEqual({
       ok: true,
-      key: 'PA-1234-5678',
+      code: TXN,
     })
   })
 
   test('accepts the triple-slash form some platforms deliver', () => {
-    expect(parseActivationUrl('agentvoice:///activate?key=PA-1234')).toEqual({
-      ok: true,
-      key: 'PA-1234',
-    })
-  })
-
-  test('trims the key', () => {
-    expect(parseActivationUrl('agentvoice://activate?key=%20PA-9%20')).toEqual({
-      ok: true,
-      key: 'PA-9',
-    })
-  })
-
-  test('rejects foreign schemes, other actions and missing keys', () => {
-    expect(parseActivationUrl('https://example.com/activate?key=PA-1')).toEqual(
+    expect(parseActivationUrl('agentvoice:///activate?code=txn_01abc')).toEqual(
       {
-        ok: false,
-        reason: 'malformed',
+        ok: true,
+        code: 'txn_01abc',
       },
     )
+  })
+
+  test('trims the code', () => {
+    expect(
+      parseActivationUrl('agentvoice://activate?code=%20txn_9%20'),
+    ).toEqual({
+      ok: true,
+      code: 'txn_9',
+    })
+  })
+
+  test('still accepts the legacy key parameter', () => {
+    expect(parseActivationUrl(`agentvoice://activate?key=${TXN}`)).toEqual({
+      ok: true,
+      code: TXN,
+    })
+  })
+
+  test('rejects foreign schemes, other actions and missing codes', () => {
+    expect(
+      parseActivationUrl(`https://example.com/activate?code=${TXN}`),
+    ).toEqual({
+      ok: false,
+      reason: 'malformed',
+    })
     expect(parseActivationUrl('not a url')).toEqual({
       ok: false,
       reason: 'malformed',
     })
-    expect(parseActivationUrl('agentvoice://settings?key=PA-1')).toEqual({
+    expect(parseActivationUrl(`agentvoice://settings?code=${TXN}`)).toEqual({
       ok: false,
       reason: 'not-an-activation',
     })
     expect(parseActivationUrl('agentvoice://activate')).toEqual({
       ok: false,
-      reason: 'missing-key',
+      reason: 'missing-code',
     })
-    expect(parseActivationUrl('agentvoice://activate?key=')).toEqual({
+    expect(parseActivationUrl('agentvoice://activate?code=')).toEqual({
       ok: false,
-      reason: 'missing-key',
+      reason: 'missing-code',
     })
   })
 })
