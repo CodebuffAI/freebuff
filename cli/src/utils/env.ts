@@ -34,6 +34,9 @@ export const getCliEnv = (): CliEnv => ({
   SSH_CONNECTION: process.env.SSH_CONNECTION,
   CODESPACES: process.env.CODESPACES,
 
+  // Where Bun extracts embedded native libraries (the terminal renderer)
+  BUN_TMPDIR: process.env.BUN_TMPDIR,
+
   // Terminal detection
   KITTY_WINDOW_ID: process.env.KITTY_WINDOW_ID,
   SIXEL_SUPPORT: process.env.SIXEL_SUPPORT,

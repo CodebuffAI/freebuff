@@ -27,6 +27,9 @@ export type CliEnv = BaseEnv & {
   SSH_CONNECTION?: string
   CODESPACES?: string
 
+  // Where Bun extracts embedded native libraries (the terminal renderer)
+  BUN_TMPDIR?: string
+
   // Display server detection (Linux headless check)
   DISPLAY?: string
   WAYLAND_DISPLAY?: string

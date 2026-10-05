@@ -14,7 +14,11 @@ import path from 'path'
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 import { getProjectFileTree } from '@codebuff/common/project-file-tree'
 import { getDefaultAgentDirs, getWebsiteUrl } from '@codebuff/sdk'
-import { createCliRenderer } from '@opentui/core'
+import {
+  createCliRenderer,
+  resolveRenderLib,
+  setRenderLibPath,
+} from '@opentui/core'
 import { createRoot } from '@opentui/react'
 import {
   QueryClient,
@@ -47,6 +51,14 @@ import { resetCodebuffClient } from './utils/codebuff-client'
 import { setApiClientAuthToken } from './utils/codebuff-api'
 import { IS_FREEBUFF } from './utils/constants'
 import { getCliEnv } from './utils/env'
+import { getConfigDir } from './utils/config-dir'
+import {
+  bunExtractionTempDir,
+  defaultRenderLibraryCacheDir,
+  ensureRenderLibrary,
+  findEmbeddedRenderLibrary,
+  sweepLeakedRenderLibraryCopies,
+} from './utils/opentui-native-library'
 import { initializeAgentRegistry } from './utils/local-agent-registry'
 import { trimOversizedChatLogs } from './utils/chat-history'
 import { clearLogFile, logger } from './utils/logger'
@@ -485,6 +497,41 @@ async function main(): Promise<void> {
   const restoreAiSdkWarnings = installAiSdkWarningLogger((warnings) =>
     logger.warn(warnings, 'AI SDK warning'),
   )
+  // Load the native renderer up front, so a temp directory that is full,
+  // read-only or noexec gets a fallback copy and, failing that, an actionable
+  // message instead of "Failed to initialize OpenTUI render library".
+  const renderLibrarySource = await ensureRenderLibrary({
+    resolve: resolveRenderLib,
+    setPath: setRenderLibPath,
+    embeddedFiles: () => Bun.embeddedFiles,
+    cacheDir: () => defaultRenderLibraryCacheDir(getConfigDir()),
+    tempDir: () => bunExtractionTempDir(),
+  })
+  if (renderLibrarySource === 'cache') {
+    logger.warn(
+      { tempDir: bunExtractionTempDir() },
+      'Loaded the terminal renderer from the config directory: the temp directory copy failed',
+    )
+  }
+  // Bun leaves a full copy of the renderer library in the temp directory on
+  // every launch; reclaim older ones off the startup path.
+  setTimeout(() => {
+    const library = findEmbeddedRenderLibrary(Bun.embeddedFiles)
+    if (!library) return
+    void sweepLeakedRenderLibraryCopies({
+      library,
+      tempDir: bunExtractionTempDir(),
+    })
+      .then(({ removed, bytes }) => {
+        if (removed > 0) {
+          logger.info(
+            { removed, bytes },
+            'Removed stale renderer library copies from the temp directory',
+          )
+        }
+      })
+      .catch(() => {})
+  }, 0)
   const renderer = await createCliRenderer({
     backgroundColor: 'transparent',
     exitOnCtrlC: false,
