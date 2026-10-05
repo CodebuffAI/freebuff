@@ -73,6 +73,13 @@ export interface StateView {
   bridge_port: number
 }
 
+/** Result of `check_for_update` (see `src-tauri/src/updates.rs`). */
+export interface UpdateView {
+  available: boolean
+  version: string
+  notes: string | null
+}
+
 /** `dictation` event payload emitted by `hotkey.rs`. */
 export type DictationPhase =
   'listening' | 'processing' | 'done' | 'error' | 'blocked'

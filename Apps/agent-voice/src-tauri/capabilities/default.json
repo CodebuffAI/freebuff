@@ -16,6 +16,8 @@
     "global-shortcut:default",
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text",
-    "deep-link:default"
+    "deep-link:default",
+    "updater:default",
+    "process:allow-restart"
   ]
-}
+}

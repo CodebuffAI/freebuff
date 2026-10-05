@@ -1,7 +1,7 @@
 /** Thin typed wrappers over the Rust command surface. */
 
 import { invoke } from '@tauri-apps/api/core'
-import type { Settings, StateView } from './types'
+import type { Settings, StateView, UpdateView } from './types'
 
 export const getState = () => invoke<StateView>('get_state')
 
@@ -22,6 +22,10 @@ export const deleteModel = (id: string) =>
   invoke<StateView>('delete_model', { id })
 
 export const getAudioLevel = () => invoke<number>('get_audio_level')
+
+export const checkForUpdate = () => invoke<UpdateView>('check_for_update')
+
+export const installUpdate = () => invoke<void>('install_update')
 
 /** Normalize the stringified rejections Rust commands return as `Err`. */
 export function errorMessage(e: unknown): string {

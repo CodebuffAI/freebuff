@@ -15,6 +15,7 @@ mod paste;
 mod paths;
 mod state;
 mod text;
+mod updates;
 mod usage;
 
 use tauri::Manager;
@@ -25,6 +26,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(hotkey::handle_event)
@@ -40,6 +43,8 @@ pub fn run() {
             commands::download_model,
             commands::delete_model,
             commands::get_audio_level,
+            updates::check_for_update,
+            updates::install_update,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

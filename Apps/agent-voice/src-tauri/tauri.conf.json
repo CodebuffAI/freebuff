@@ -47,12 +47,18 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "plugins": {
-      "deep-link": {
-        "desktop": {
-          "schemes": ["agentvoice"]
-        }
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "RWTokuqdLACh2KLh1q5XGOfjjq8uXdHzJJ2+IpeJiCB2+J/pToT+tfiv",
+      "endpoints": [
+        "https://releases.agentvoice.app/updates/{{target}}/{{arch}}/{{current_version}}"
+      ]
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["agentvoice"]
       }
     }
   }

@@ -9,6 +9,7 @@ import {
   usageFraction,
 } from '../lib/format'
 import LicenseForm from './LicenseForm'
+import Updates from './Updates'
 import ProFeatures from './ProFeatures'
 
 const LANGUAGES = [
@@ -170,6 +171,8 @@ export default function Settings() {
       <ProFeatures visible={pro} />
 
       <LicenseForm />
+
+      <Updates />
 
       {pro && (
         <div className="row end">

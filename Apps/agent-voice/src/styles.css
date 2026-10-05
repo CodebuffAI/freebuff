@@ -299,3 +299,13 @@ body:has(.overlay) {
   color: var(--muted);
   font-size: 12px;
 }
+
+.notes {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
