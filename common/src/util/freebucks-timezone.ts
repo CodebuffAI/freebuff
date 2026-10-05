@@ -51,6 +51,18 @@ function isUtcZone(zone: string): boolean {
 const ETC_OFFSET_ZONE = /^Etc\/GMT[+-]\d{1,2}$/
 
 /**
+ * A zone that names no place: UTC by any spelling, or any `Etc/` zone
+ * (`Etc/GMT±N`, `Etc/Unknown`). The server never lets one replace a named
+ * zone on an existing schedule (`observeFreebucksDay`): released clients
+ * that predate `freebucksDeviceTimeZone`, and every browser (which has no
+ * `process` to tell a remote host or Windows from anything else), still
+ * report them next to the user's real zone.
+ */
+export function isNonGeographicFreebucksTimeZone(zone: string): boolean {
+  return isUtcZone(zone) || zone.startsWith('Etc/')
+}
+
+/**
  * The process runs on a host the user reaches remotely: an SSH session or a
  * cloud/dev container. Such a host's UTC is the image default, not the
  * user's day.

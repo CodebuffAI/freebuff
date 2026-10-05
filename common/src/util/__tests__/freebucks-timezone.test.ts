@@ -4,6 +4,7 @@ import {
   FREEBUCKS_TIMEZONE_HEADER,
   freebucksDeviceTimeZone,
   freebucksTimeZoneHeaders,
+  isNonGeographicFreebucksTimeZone,
 } from '../freebucks-timezone'
 
 const local = { platform: 'darwin', env: {} }
@@ -134,4 +135,27 @@ describe('freebucksTimeZoneHeaders', () => {
       expect(header).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
     }
   })
+})
+
+describe('isNonGeographicFreebucksTimeZone', () => {
+  test.each([
+    'UTC',
+    'Etc/UTC',
+    'GMT',
+    'Zulu',
+    'Etc/GMT-1',
+    'Etc/GMT+12',
+    'Etc/Unknown',
+  ])('%s names no place', (zone) =>
+    expect(isNonGeographicFreebucksTimeZone(zone)).toBe(true),
+  )
+
+  test.each([
+    'Europe/London',
+    'Africa/Abidjan',
+    'Asia/Tehran',
+    'America/New_York',
+  ])('%s names a place, even at UTC+0', (zone) =>
+    expect(isNonGeographicFreebucksTimeZone(zone)).toBe(false),
+  )
 })
