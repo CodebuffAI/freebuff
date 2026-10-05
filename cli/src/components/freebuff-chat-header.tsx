@@ -11,6 +11,7 @@ import {
   formatPlanWindows,
 } from '@codebuff/common/util/freebuff-plan-summary'
 
+import { FreebuffPausedPlanNotice } from './freebuff-paused-plan-notice'
 import { FreebuffReferralBanner } from './freebuff-referral-banner'
 import {
   FREEBUFF_WORDMARK,
@@ -107,6 +108,7 @@ export function FreebuffChatHeader({
           flexDirection: 'column',
         }}
       >
+        <FreebuffPausedPlanNotice session={session} />
         {model.warning && (
           <text style={{ fg: theme.secondary, wrapMode: 'word' }}>
             {model.warning}
