@@ -18,7 +18,7 @@ export function freebucksOffPeakCopy(
   const offer = info?.offPeak?.[modelId]
   if (!offer || info?.prices[modelId] === undefined) return undefined
 
-  const { start, end } = offPeakPriceAt(offer, now)
+  const { start, end, nextChangeAt, price } = offPeakPriceAt(offer, now)
   const zone = resolveWindowTimeZone(timeZone)
   const fmt = new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',
@@ -33,11 +33,33 @@ export function freebucksOffPeakCopy(
     : ''
   // The resolved quote owns the badge too; do not run a second pricing clock.
   const active = info.prices[modelId] === offer.price
+  // At peak, when the off-peak price is back, so a reader can choose to wait.
+  // Only when the policy agrees it is peak: a stale quote must not promise a
+  // drop at what is really the END of the off-peak window.
+  const resumes =
+    !active && price !== offer.price
+      ? { price: offer.price, at: formatResumeAt(nextChangeAt, now, zone) }
+      : undefined
   return {
     active,
     badge: 'Off-peak',
-    tooltip: `Off-peak: ${offer.price} Freebucks/hour, daily ${hours}${weekend}.`,
+    resumes,
+    tooltip: `${resumes ? `Back to ${resumes.price} Freebucks/hour at ${resumes.at}. ` : ''}Off-peak: ${offer.price} Freebucks/hour, daily ${hours}${weekend}.`,
   }
+}
+
+/** "3:00 AM PDT" when `at` falls on the reader's today, "Mon 3:00 AM PDT"
+ *  otherwise: a peak ending after local midnight must not read as tonight. */
+function formatResumeAt(at: number, now: number, zone: string) {
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: zone })
+  const today = day.format(at) === day.format(now)
+  const time = new Intl.DateTimeFormat(undefined, {
+    ...(today ? {} : { weekday: 'short' as const }),
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: zone,
+  }).format(at)
+  return `${time} ${formatWindowTimeZoneLabel(new Date(at), zone)}`
 }
 
 /** The weekend a policy with `weekendsOffPeak` means — Friday 16:00 to Sunday

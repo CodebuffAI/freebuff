@@ -17,7 +17,8 @@ import {
   resolveFreebuffWebModelForLimitedTier,
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_MIMO_V26_PRO_MODEL_ID,
-  FREEBUFF_ENABLE_FAST_MODE_IN_UI,
+  FREEBUFF_FULL_ACCESS_ONLY_MODEL_IDS,
+  isFreebuffModelAllowedForAccessTier,
 } from '../freebuff-models'
 import {
   FREEBUFF_SUBSCRIPTION_MODEL_IDS,
@@ -160,15 +161,12 @@ describe('paid plans at limited access', () => {
     // Pinned so that adding a row to a plan is a decision somebody states
     // here, not a diff that passes quietly.
     // MiMo 2.6 Pro joined on 2026-09-21, on Luna's terms (plan-only at
-    // limited access, Freebucks at full). DeepSeek Flash fast mode joined on
-    // 2026-09-26 on the same terms; Muse Spark 1.3 joined on 2026-09-28,
+    // limited access, Freebucks at full). Muse Spark 1.3 joined on 2026-09-28,
     // paid-only on every surface, and GPT-6.1 Sol on 2026-09-29 on the same
     // terms. Kimi K3 (CrofAI) left on 2026-10-01: its provider is retired and
-    // no picker lists it.
-    // The fast row joins the plan with its picker row, behind the UI switch.
-    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(
-      FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 8 : 7,
-    )
+    // no picker lists it. DeepSeek Flash fast mode is NOT a plan model: it is
+    // full access only (see the test below).
+    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(7)
   })
 
   test('a limited-tier plan-only row is never free at limited access', () => {
@@ -186,6 +184,42 @@ describe('paid plans at limited access', () => {
       ).toBe(true)
     }
     expect(FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.length).toBeGreaterThan(0)
+  })
+
+  test('a full-access-only row is open at full access and absent at limited access, plan or not', () => {
+    expect(FREEBUFF_FULL_ACCESS_ONLY_MODEL_IDS.length).toBeGreaterThan(0)
+    for (const model of FREEBUFF_FULL_ACCESS_ONLY_MODEL_IDS) {
+      for (const paid of [false, true]) {
+        expect(
+          isFreebuffSessionModelAllowedForAccessTier(model, 'full', paid),
+        ).toBe(true)
+        expect(isFreebuffModelAllowedForAccessTier(model, 'full', paid)).toBe(
+          true,
+        )
+        expect(
+          getFreebuffModelsForAccessTier('full', paid).map((m) => m.id),
+        ).toContain(model)
+
+        expect(
+          isFreebuffSessionModelAllowedForAccessTier(model, 'limited', paid),
+        ).toBe(false)
+        expect(
+          isFreebuffModelAllowedForAccessTier(model, 'limited', paid),
+        ).toBe(false)
+        expect(isFreebuffWebModelAllowedForLimitedTier(model, paid)).toBe(false)
+        expect(
+          resolveFreebuffSessionModelForAccessTier(model, 'limited', {
+            hasPaidSubscription: paid,
+          }),
+        ).toBe(LIMITED_FREEBUFF_MODEL_ID)
+        expect(
+          getFreebuffModelsForAccessTier('limited', paid).map((m) => m.id),
+        ).not.toContain(model)
+      }
+      // Not listed locked at limited access either: a plan cannot unlock it.
+      expect(FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS).not.toContain(model)
+      expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).not.toContain(model)
+    }
   })
 
   test('every plan model resolves in the Web catalog', () => {

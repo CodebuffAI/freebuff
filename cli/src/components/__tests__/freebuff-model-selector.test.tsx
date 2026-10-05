@@ -141,6 +141,8 @@ test.each([
     useFreebuffModelStore.getState().setSelectedModel(id)
     const setup = await renderSelector(40, undefined, 100, now)
     expect(setup.captureCharFrame()).toMatch(new RegExp(`│ +${before} Freebucks/hr`))
+    // At peak, line 2 says when the off-peak price is back.
+    expect(setup.captureCharFrame().includes('10 Freebucks/hr from')).toBe(before === 15)
     expect(setup.captureCharFrame()).not.toContain('Off-peak')
     expect(setup.captureCharFrame()).not.toContain('normally 15/hr')
     expect(setup.captureCharFrame()).not.toContain('Server fallback price notice')
@@ -151,6 +153,7 @@ test.each([
     })
     await setup.renderOnce()
     expect(setup.captureCharFrame()).toMatch(new RegExp(`│ +${after} Freebucks/hr`))
+    expect(setup.captureCharFrame().includes('10 Freebucks/hr from')).toBe(after === 15)
     expect(setup.captureCharFrame()).not.toContain('Off-peak')
     expect(setup.captureCharFrame()).not.toContain('normally 15/hr')
   } finally {

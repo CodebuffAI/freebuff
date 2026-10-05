@@ -1,3 +1,4 @@
+import { freebucksOffPeakCopy } from '@codebuff/common/util/freebuff-off-peak-price'
 import { isFreebucksPeakModel } from '@codebuff/common/util/freebuff-peak-price'
 import { watchFreebucksPriceChanges } from '@codebuff/common/util/freebuff-price-changes'
 import { freebucksListPriceFor } from '@codebuff/common/util/freebuff-price-order'
@@ -516,6 +517,15 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           warn: (freebucks?.balance ?? 0) < rowPrice,
           highlight: freebucksListPriceFor(freebucks, model.id) !== undefined,
         })
+        // At peak, when the off-peak price is back, so a user can wait for it.
+        // On the clock `freebucks` was resolved with, not `now`, which can lag.
+        const resumes = freebucksOffPeakCopy(freebucks, model.id)?.resumes
+        if (resumes) {
+          details.push({
+            text: `${freebucksPriceLabel(resumes.price)} from ${resumes.at}`,
+            warn: false,
+          })
+        }
       }
       // Beside the price it qualifies, in the warning colour. The terminal has
       // no tooltip to hold the catalog's full sentence, so the row carries its

@@ -1138,14 +1138,14 @@ export const MUSE_SPARK_FALLBACK_NOTICE =
  *  wired even when these models are hidden from the Freebuff picker. */
 export const FREEBUFF_ENABLE_MIMO_MODELS_IN_UI = true
 /** UI-only rollout switch for the DeepSeek Flash FAST MODE row
- *  (`deepseek/deepseek-v4-flash-fast`). Off: no picker on any surface lists
- *  the row (the CLI, Web and Desktop pickers read FREEBUFF_MODELS; the iOS and
- *  Android catalogs carry the same switch by hand), while everything behind it
- *  stays wired — the id is SUPPORTED and admitted, priced on DeepSeek's clock, routed
- *  to DeepSeek direct alone, and runs the base3-fast harness — so a client
- *  that sends the id gets the real thing. Flip to true to ship the row; the
- *  tests that count picker rows follow this switch. */
-export const FREEBUFF_ENABLE_FAST_MODE_IN_UI = false
+ *  (`deepseek/deepseek-v4-flash-fast`). On since 2026-10-04, for full access
+ *  only (FREEBUFF_FULL_ACCESS_ONLY_MODEL_IDS). Off: no picker on any surface
+ *  lists the row (the CLI, Web and Desktop pickers read FREEBUFF_MODELS; the
+ *  iOS and Android catalogs list it by hand), while everything behind it stays
+ *  wired — the id is SUPPORTED and admitted at full access, priced on
+ *  DeepSeek's clock, routed to DeepSeek direct alone, and runs the base3-fast
+ *  harness. The tests that count picker rows follow this switch. */
+export const FREEBUFF_ENABLE_FAST_MODE_IN_UI = true
 /** UI-only rollout switch for the streak indicator in the waiting room. */
 export const FREEBUFF_ENABLE_STREAK_IN_UI = true
 /** Local/debug switch: force the localhost free-mode country bypass into
@@ -1747,16 +1747,17 @@ const DEEPSEEK_V4_FLASH_MODEL = {
  *    from that grant at admission and runs a single direct lane in the router
  *    (web/src/llm-api/deepseek-router.ts).
  *
- * Priced on DeepSeek's own clock (freebuff-freebucks.ts): 45 Freebucks in
+ * Priced on DeepSeek's own clock (freebuff-freebucks.ts): 50 Freebucks in
  * the weekday window where DeepSeek direct doubles, 25 the rest of the time.
  * The harness spends about 1.3x base3 per task, and DeepSeek direct bills
  * 1.7x Luminal off-peak and 3.4x at peak on the same tokens.
  *
  * Everything else tracks the Flash row on purpose — the same DeepSeek data-use
  * terms, the same effort ladder, and `multimodal: true` because the direct
- * lane is the one lane that reads images. Premium and plan-only at limited
- * access, on MiMo 2.6 Pro's terms: open to every full-access account, metered
- * in Freebucks at its own price.
+ * lane is the one lane that reads images. Full access only
+ * (FREEBUFF_FULL_ACCESS_ONLY_MODEL_IDS): open to every full-access account on
+ * any plan, metered in Freebucks at its own price, and not offered at limited
+ * access even with a plan.
  */
 const DEEPSEEK_V4_FLASH_FAST_MODEL = {
   id: FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
@@ -3061,9 +3062,9 @@ export const FREEBUFF_MODELS = [
   GLM_V53_FLASH_MODEL,
   DEEPSEEK_V4_FLASH_MODEL,
   // FAST MODE beside the row it is a variant of (2026-09-26), behind
-  // FREEBUFF_ENABLE_FAST_MODE_IN_UI until it ships. Order here only matters
+  // FREEBUFF_ENABLE_FAST_MODE_IN_UI. Order here only matters
   // off the meter: every picker sorts its rows cheapest first once prices
-  // arrive, and at 25-45 Freebucks this lands among the premium rows.
+  // arrive, and at 25-50 Freebucks this lands among the premium rows.
   ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? [DEEPSEEK_V4_FLASH_FAST_MODEL] : []),
   // GPT-6 LUNA TAKES 5.6'S SLOT (2026-09-22). Same position, same tagline,
   // half the price on the flex lane; 5.6 left this list in the same change and
@@ -4247,12 +4248,8 @@ export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
   Object.freeze([
     FREEBUFF_GPT_6_LUNA_MODEL_ID,
     FREEBUFF_MIMO_V26_PRO_MODEL_ID,
-    // Flash FAST MODE (2026-09-26), on MiMo 2.6 Pro's terms: three times the
-    // Flash price, so plan-only where the free pool is 25 a day. Behind the
-    // UI switch with the picker row: a plan cannot sell what no picker lists.
-    ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI
-      ? [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]
-      : []),
+    // Flash fast mode is not here: it is not offered at limited access at all
+    // (FREEBUFF_FULL_ACCESS_ONLY_MODEL_IDS).
     // Muse Spark 1.2 is excluded: it is not offered at limited access at all
     // (not even with a plan), only kept for released binaries at full access.
     ...FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS.filter(
@@ -4262,6 +4259,22 @@ export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
 
 export function isFreebuffLimitedTierPlanOnlyModelId(id: string): boolean {
   return FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.includes(id)
+}
+
+/**
+ * Rows offered at FULL access only, on any plan or none. A limited-tier
+ * account does not see them, locked or otherwise, and a plan does not unlock
+ * them there, so they stay out of the geo-exempt set, the limited plan-only
+ * set and the plan-metered set alike.
+ *
+ * Flash fast mode (2026-10-04): a fan-out on DeepSeek direct at 25-50
+ * Freebucks an hour, which the limited tier's pool cannot carry.
+ */
+export const FREEBUFF_FULL_ACCESS_ONLY_MODEL_IDS: readonly string[] =
+  Object.freeze([FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID])
+
+export function isFreebuffFullAccessOnlyModelId(id: string): boolean {
+  return FREEBUFF_FULL_ACCESS_ONLY_MODEL_IDS.includes(id)
 }
 
 export const FREEBUFF_WEB_GEO_EXEMPT_MODEL_IDS: readonly string[] = [
@@ -4274,7 +4287,8 @@ export const FREEBUFF_WEB_GEO_EXEMPT_MODEL_IDS: readonly string[] = [
         // This is deliberately broader than the global Pro set. Luna is free
         // from the premium pool at full access but still plan-locked here;
         // Gemini 3.8 Flash is plan-only at every tier.
-        !isFreebuffLimitedTierPlanOnlyModelId(model.id),
+        !isFreebuffLimitedTierPlanOnlyModelId(model.id) &&
+        !isFreebuffFullAccessOnlyModelId(model.id),
     ).map((model) => model.id),
   ]),
 ]
@@ -4557,12 +4571,10 @@ export const FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS: readonly string[] =
     // With Luna: this list is what widens the limited tier for a subscriber,
     // so a plan-only row missing here would be offered and then coerced away.
     FREEBUFF_MIMO_V26_PRO_MODEL_ID,
-    // Flash fast mode (2026-09-26), for the same reason as MiMo 2.6 Pro —
-    // and, like the picker row, only once FREEBUFF_ENABLE_FAST_MODE_IN_UI is
-    // on: a plan can only cover a model a picker offers.
-    ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI
-      ? [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]
-      : []),
+    // Flash fast mode is not here: this list is what widens the limited tier
+    // for a subscriber, and fast mode is full access only
+    // (FREEBUFF_FULL_ACCESS_ONLY_MODEL_IDS). A full-access subscriber pays for
+    // it in Freebucks like everyone else at full access.
     // Muse Spark 1.3 (2026-09-28): the plans page promises every plan model in
     // every country, so a limited-region subscriber must be able to open it.
     // (1.2 is deliberately absent: it survives only for released binaries at

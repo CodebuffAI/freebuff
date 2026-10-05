@@ -81,4 +81,50 @@ test('does not label a stale regular-price quote as discounted', () => {
   )!
   expect(copy.active).toBe(false)
   expect(copy.tooltip).toContain('10 Freebucks/hour')
+  // The policy says off-peak, so the next change is the window's END: no
+  // promise of a drop then.
+  expect(copy.resumes).toBeUndefined()
+})
+
+test('at peak, says when the off-peak price is back, with the weekday when it is not today', () => {
+  // DeepSeek's clock: off-peak 10:00-00:00 UTC daily and all Beijing weekend.
+  const fast = {
+    prices: { fast: 50 },
+    offPeak: {
+      fast: {
+        startHourUtc: 10,
+        endHourUtc: 0,
+        weekendsOffPeak: true,
+        price: 25,
+        regularPrice: 50,
+      },
+    },
+  }
+  // Monday 01:00 UTC is Sunday 6 PM in Los Angeles; the drop is Monday there.
+  const sunday = freebucksOffPeakCopy(fast, 'fast', {
+    now: Date.parse('2026-10-05T01:00:00Z'),
+    timeZone: 'America/Los_Angeles',
+  })!
+  expect(sunday.resumes).toEqual({ price: 25, at: 'Mon 3:00 AM PDT' })
+  expect(sunday.tooltip).toStartWith(
+    'Back to 25 Freebucks/hour at Mon 3:00 AM PDT. Off-peak: 25 Freebucks/hour, daily',
+  )
+  // Same local day: the time alone.
+  expect(
+    freebucksOffPeakCopy(fast, 'fast', {
+      now: Date.parse('2026-10-05T08:00:00Z'),
+      timeZone: 'America/Los_Angeles',
+    })!.resumes,
+  ).toEqual({ price: 25, at: '3:00 AM PDT' })
+  // Off-peak: nothing to wait for.
+  const offPeak = freebucksOffPeakCopy(
+    { ...fast, prices: { fast: 25 } },
+    'fast',
+    {
+      now: Date.parse('2026-10-05T12:00:00Z'),
+      timeZone: 'America/Los_Angeles',
+    },
+  )!
+  expect(offPeak.resumes).toBeUndefined()
+  expect(offPeak.tooltip).toStartWith('Off-peak:')
 })
