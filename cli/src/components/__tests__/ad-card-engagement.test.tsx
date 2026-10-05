@@ -94,12 +94,15 @@ describe('AdCard engagement', () => {
     flushSync(() => rerender())
     flushSync(() => root.unmount())
     setup.renderer.destroy()
-    expect(fake.sent).toHaveLength(0)
+    // the click sent the record so far at once, with no exit
+    expect(fake.sent).toHaveLength(1)
+    expect(fake.sent[0]).toMatchObject({ visibleMs: 1_400, click: { count: 1 } })
+    expect(fake.sent[0]!.exit).toBeUndefined()
     fake.runTimers()
 
     expect(clicked).toEqual(['imp-card-1'])
-    expect(fake.sent).toHaveLength(1)
-    const record = fake.sent[0]!
+    expect(fake.sent).toHaveLength(2)
+    const record = fake.sent[1]!
     expect(record).toMatchObject({
       v: 1,
       impUrl: 'imp-card-1',
@@ -132,5 +135,49 @@ describe('AdCard engagement', () => {
     setup.renderer.destroy()
     fake.runTimers()
     expect(fake.sent[0]).toMatchObject({ truncated: false, hoverCount: 0 })
+  })
+})
+
+describe('AdCard engagement on a redraw', () => {
+  test('a click on a creative drawn again after its record went out still reports the click', async () => {
+    const fake = fakeRegistry()
+    const width = 40
+    const mount = async () => {
+      const setup = await createTestRenderer({ width, height: AD_CARD_HEIGHT })
+      const root = createRoot(setup.renderer)
+      flushSync(() => {
+        root.render(<AdCard ad={ad} width={width} onClick={() => {}} />)
+      })
+      await setup.renderOnce()
+      return {
+        setup,
+        close: () => {
+          flushSync(() => root.unmount())
+          setup.renderer.destroy()
+        },
+      }
+    }
+
+    // first exposure: never clicked, rotated out, record flushed
+    const first = await mount()
+    fake.advance(60_000)
+    first.close()
+    fake.runTimers()
+    expect(fake.sent).toHaveLength(1)
+    expect(fake.sent[0]!.click).toBeUndefined()
+
+    // the cache draws the same impUrl again, and this time it is clicked
+    const again = await mount()
+    fake.advance(2_500)
+    await again.setup.mockMouse.click(5, 2)
+    again.close()
+    fake.runTimers()
+
+    expect(fake.sent).toHaveLength(2)
+    expect(fake.sent[1]).toEqual({
+      v: 1,
+      impUrl: 'imp-card-1',
+      click: expect.objectContaining({ msSinceMount: 2_500, count: 1 }),
+    })
   })
 })

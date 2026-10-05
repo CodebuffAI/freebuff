@@ -19,6 +19,9 @@ describe('createExitCliCleanly', () => {
       drainClientLogs: async () => {
         events.push('flush-logs')
       },
+      flushAdEngagement: async () => {
+        events.push('flush-ad-engagement')
+      },
       endFreebuffSession: async () => {
         events.push('end-session')
       },
@@ -41,6 +44,7 @@ describe('createExitCliCleanly', () => {
       'wait-start',
       'flush-analytics',
       'flush-logs',
+      'flush-ad-engagement',
       'wait-finish',
       'exit-7',
     ])
@@ -57,6 +61,9 @@ describe('createExitCliCleanly', () => {
       },
       drainClientLogs: async () => {
         events.push('flush-logs')
+      },
+      flushAdEngagement: async () => {
+        events.push('flush-ad-engagement')
       },
       endFreebuffSession: async () => {
         events.push('end-session')
@@ -76,6 +83,7 @@ describe('createExitCliCleanly', () => {
       'stop-engagement',
       'flush-analytics',
       'flush-logs',
+      'flush-ad-engagement',
       'end-session',
     ])
   })
@@ -90,6 +98,7 @@ describe('createExitCliCleanly', () => {
       stopEngagementTracking: () => {},
       flushAnalytics: async () => {},
       drainClientLogs: async () => {},
+      flushAdEngagement: async () => {},
       endFreebuffSession: async () => {},
       settleSponsoredRun: async () => null,
       writeNotice: () => {},

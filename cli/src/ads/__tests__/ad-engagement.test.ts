@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 
-import { AD_MS_CAP } from '@codebuff/common/types/ad-client-context'
+import {
+  AD_MS_CAP,
+  parseAdEngagement,
+} from '@codebuff/common/types/ad-client-context'
 
 import {
+  ENGAGEMENT_CHECKPOINT_MS,
   ENGAGEMENT_IDLE_AFTER_MS,
   ENGAGEMENT_RELEASE_GRACE_MS,
   POST_CLICK_LEAVE_GRACE_MS,
@@ -12,9 +16,13 @@ import {
   layoutTruncated,
   rowsIntersect,
 } from '../ad-engagement'
-import { clickModifier } from '../use-ad-engagement'
+import {
+  clickModifier,
+  createAdEngagementPoster,
+  flushAdEngagementOnExit,
+} from '../use-ad-engagement'
 
-import type { FocusState } from '../ad-engagement'
+import type { EngagementTrackerOptions, FocusState } from '../ad-engagement'
 import type { AdEngagement } from '@codebuff/common/types/ad-client-context'
 
 function clock() {
@@ -50,7 +58,10 @@ function clock() {
 const NO_FOCUS: FocusState = { supported: false, focused: null }
 const FOCUSED: FocusState = { supported: true, focused: true }
 
-function trackerHarness(focus: FocusState = NO_FOCUS) {
+function trackerHarness(
+  focus: FocusState = NO_FOCUS,
+  extra: Partial<EngagementTrackerOptions> = {},
+) {
   const c = clock()
   const sent: AdEngagement[] = []
   let done = 0
@@ -62,6 +73,7 @@ function trackerHarness(focus: FocusState = NO_FOCUS) {
     clearTimer: c.clearTimer,
     send: (record) => sent.push(record),
     onDone: () => done++,
+    ...extra,
   })
   return { c, sent, tracker, done: () => done }
 }
@@ -382,8 +394,15 @@ describe('engagement registry', () => {
     const a = registry.mount('a', 'pinned')!
     registry.unmount(a)
     c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
-    expect(registry.mount('a', 'pinned')).toBeNull()
+    // the redraw gets a click-only handle: unclicked, it sends nothing
+    const again = registry.mount('a', 'pinned')!
+    expect(again.tracker).not.toBe(a.tracker)
+    c.advance(30_000)
+    registry.unmount(again)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
     expect(sent).toHaveLength(1)
+    expect(registry.status('a')).toBe('flushed')
+    expect(registry.size).toBe(0)
   })
 
   test('an ad drawn in two transcript slots flushes once, when the last goes', () => {
@@ -421,14 +440,16 @@ describe('engagement registry', () => {
     const { c, sent, registry } = registryHarness(FOCUSED)
     const a = registry.mount('a', 'pinned')!
     a.tracker.click()
+    // the click checkpoint
+    expect(sent).toHaveLength(1)
     registry.unmount(a)
     c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
-    expect(sent).toHaveLength(1)
+    expect(sent).toHaveLength(2)
     registry.terminalFocus(false)
     c.advance(4_000)
     registry.terminalFocus(true)
-    expect(sent).toHaveLength(2)
-    expect(sent[1]!.postClick).toEqual({
+    expect(sent).toHaveLength(3)
+    expect(sent[2]!.postClick).toEqual({
       browserOpened: true,
       returnMs: ENGAGEMENT_RELEASE_GRACE_MS + 4_000,
     })
@@ -634,5 +655,413 @@ describe('engagement registry: wave 2', () => {
       idleVisibleMs: 10_000,
       reentries: 0,
     })
+  })
+})
+
+/**
+ * `upsertAdEngagement`'s conflict branch
+ * (packages/internal/src/ad-serving/ad-engagement.ts), in JS: the stored
+ * payload is the record minus `v` and `impUrl`, merged shallowly with the
+ * later write winning, except `postClick`, which merges one level deeper.
+ */
+function serverMerge(
+  existing: Record<string, unknown> | undefined,
+  record: AdEngagement,
+): Record<string, unknown> {
+  const parsed = parseAdEngagement(record)
+  if (!parsed) throw new Error('the route would 400 this record')
+  const { v: _v, impUrl: _impUrl, ...payload } = parsed
+  if (!existing) return payload
+  const merged: Record<string, unknown> = { ...existing, ...payload }
+  if (
+    typeof existing.postClick === 'object' &&
+    typeof payload.postClick === 'object'
+  )
+    merged.postClick = { ...existing.postClick, ...payload.postClick }
+  return merged
+}
+
+describe('late clicks: a redraw of an already-flushed impression (bug 1)', () => {
+  test('a click on a creative rotated back after its record went out reaches the record', () => {
+    const { c, sent, registry } = registryHarness()
+    registry.noteSlotSwap([], ['a'])
+    const a = registry.mount('a', 'pinned')!
+    c.advance(60_000)
+    registry.noteSlotSwap(['a'], ['b'])
+    registry.unmount(a)
+    const b = registry.mount('b', 'pinned')!
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ impUrl: 'a', exit: 'rotation' })
+    expect(sent[0]!.click).toBeUndefined()
+
+    // an hour later the cache rotates `a` back in under the same impUrl
+    c.advance(3_600_000)
+    registry.noteSlotSwap(['b'], ['a'])
+    registry.unmount(b)
+    c.advance(300)
+    const redraw = registry.mount('a', 'pinned')!
+    expect(redraw).not.toBeNull()
+    c.advance(700)
+    redraw.tracker.hover(redraw.token, true)
+    redraw.tracker.click({ region: 'cta' })
+
+    const late = sent.find((r) => r.impUrl === 'a' && r !== sent[0])!
+    // ONLY the click: the exposure record is closed and must not be touched
+    expect(late).toEqual({
+      v: 1,
+      impUrl: 'a',
+      click: {
+        msSinceMount: 700,
+        msSinceVisible: 700,
+        msSinceRotation: 1_000,
+        pointerMovedOver: true,
+        region: 'cta',
+        count: 1,
+      },
+    })
+
+    // merged into the stored exposure record, every exposure key survives
+    const row = serverMerge(serverMerge(undefined, sent[0]!), late)
+    expect(row).toMatchObject({
+      exit: 'rotation',
+      visibleMs: 60_000,
+      click: { msSinceRotation: 1_000, count: 1 },
+    })
+
+    // the redraw's own unmount sends nothing more
+    const before = sent.length
+    registry.unmount(redraw)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    expect(sent).toHaveLength(before)
+    expect(registry.status('a')).toBe('flushed')
+  })
+
+  test('a late click on an already-clicked impression keeps the first click and counts', () => {
+    const { c, sent, registry } = registryHarness()
+    const a = registry.mount('a', 'pinned')!
+    c.advance(2_000)
+    a.tracker.click({ region: 'cta' })
+    registry.unmount(a)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    const final = sent.at(-1)!
+    expect(final).toMatchObject({ exit: 'unmount', click: { count: 1 } })
+    let row = serverMerge(undefined, sent[0]!)
+    row = serverMerge(row, final)
+
+    for (const expected of [2, 3]) {
+      c.advance(120_000)
+      const redraw = registry.mount('a', 'pinned')!
+      c.advance(50)
+      redraw.tracker.click()
+      const late = sent.at(-1)!
+      expect(late.click).toEqual({ ...final.click, count: expected })
+      expect(Object.keys(late).sort()).toEqual(['click', 'impUrl', 'v'])
+      row = serverMerge(row, late)
+      registry.unmount(redraw)
+      c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    }
+    expect(row).toMatchObject({
+      exit: 'unmount',
+      visibleMs: 2_000,
+      click: { ...final.click, count: 3 },
+    })
+  })
+
+  test('repeat clicks on one redraw ride its flush; an unclicked redraw sends nothing', () => {
+    const { sent, tracker, done } = trackerHarness(NO_FOCUS, {
+      clickOnly: {},
+    })
+    tracker.attach({}, 'pinned')
+    tracker.click()
+    tracker.click()
+    tracker.click()
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.click).toMatchObject({ count: 1 })
+    tracker.flush('unmount')
+    expect(sent).toHaveLength(2)
+    expect(sent[1]).toEqual({ v: 1, impUrl: 'imp-1', click: sent[1]!.click })
+    expect(sent[1]!.click).toMatchObject({ count: 3 })
+    expect(done()).toBe(1)
+
+    const idle = trackerHarness(NO_FOCUS, { clickOnly: {} })
+    idle.tracker.attach({}, 'pinned')
+    idle.tracker.flush('unmount')
+    expect(idle.sent).toHaveLength(0)
+    expect(idle.done()).toBe(1)
+  })
+
+  test('a late click arms the post-click watch and reports it as a merge', () => {
+    const { c, sent, registry } = registryHarness(FOCUSED)
+    const a = registry.mount('a', 'pinned')!
+    registry.unmount(a)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    const redraw = registry.mount('a', 'pinned')!
+    redraw.tracker.click()
+    expect(sent.at(-1)!.click).toMatchObject({ windowFocused: true })
+    registry.terminalFocus(false)
+    c.advance(9_000)
+    registry.terminalFocus(true)
+    expect(sent.at(-1)).toEqual({
+      v: 1,
+      impUrl: 'a',
+      postClick: { browserOpened: true, returnMs: 9_000 },
+    })
+  })
+})
+
+describe('checkpoints: records that do not wait for an unmount (bug 2)', () => {
+  test('a transcript card scrolled out after being seen sends its record once, then the final', () => {
+    const { c, sent, tracker } = trackerHarness(NO_FOCUS, {
+      checkpoints: true,
+    })
+    const owner = {}
+    tracker.attach(owner, 'measured')
+    tracker.setVisible(owner, true)
+    c.advance(2_000)
+    tracker.setVisible(owner, false)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ visibleMs: 2_000, reentries: 0 })
+    expect(sent[0]!.exit).toBeUndefined()
+
+    c.advance(5_000)
+    tracker.setVisible(owner, true)
+    c.advance(1_000)
+    tracker.setVisible(owner, false)
+    expect(sent).toHaveLength(1)
+    tracker.flush('window_close')
+    expect(sent).toHaveLength(2)
+    expect(sent[1]).toMatchObject({
+      exit: 'window_close',
+      visibleMs: 3_000,
+      reentries: 1,
+    })
+  })
+
+  test('a card never seen does not checkpoint on a measurement', () => {
+    const { sent, tracker } = trackerHarness(NO_FOCUS, { checkpoints: true })
+    const owner = {}
+    tracker.attach(owner, 'measured')
+    tracker.setVisible(owner, false)
+    tracker.setVisible(owner, undefined)
+    expect(sent).toHaveLength(0)
+  })
+
+  test('the first click sends the record so far; later clicks ride the final', () => {
+    const { c, sent, tracker } = trackerHarness(NO_FOCUS, {
+      checkpoints: true,
+    })
+    tracker.attach({}, 'pinned')
+    c.advance(1_000)
+    tracker.click()
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ visibleMs: 1_000, click: { count: 1 } })
+    expect(sent[0]!.exit).toBeUndefined()
+    tracker.click()
+    expect(sent).toHaveLength(1)
+    tracker.flush('rotation')
+    expect(sent[1]).toMatchObject({ exit: 'rotation', click: { count: 2 } })
+  })
+
+  test('post-click goes out once the click checkpoint has, not at the flush', () => {
+    const { c, sent, tracker } = trackerHarness(FOCUSED, {
+      checkpoints: true,
+    })
+    tracker.attach({}, 'measured')
+    tracker.click()
+    tracker.terminalFocus(false)
+    c.advance(6_000)
+    tracker.terminalFocus(true)
+    expect(sent).toHaveLength(2)
+    expect(sent[1]).toEqual({
+      v: 1,
+      impUrl: 'imp-1',
+      postClick: { browserOpened: true, returnMs: 6_000 },
+    })
+    expect(tracker.flushed).toBe(false)
+  })
+
+  test('checkpoints are off unless asked for', () => {
+    const { c, sent, tracker } = trackerHarness()
+    const owner = {}
+    tracker.attach(owner, 'measured')
+    tracker.setVisible(owner, true)
+    c.advance(1_000)
+    tracker.setVisible(owner, false)
+    tracker.click()
+    tracker.checkpoint()
+    expect(sent).toHaveLength(0)
+  })
+
+  test('a card that never unmounts checkpoints after the bounded exposure', () => {
+    const { c, sent, registry } = registryHarness()
+    const a = registry.mount('a', 'measured')!
+    a.tracker.setVisible(a.token, true)
+    c.advance(ENGAGEMENT_CHECKPOINT_MS - 1)
+    expect(sent).toHaveLength(0)
+    c.advance(1)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ visibleMs: ENGAGEMENT_CHECKPOINT_MS })
+    expect(sent[0]!.exit).toBeUndefined()
+    c.advance(ENGAGEMENT_CHECKPOINT_MS * 5)
+    expect(sent).toHaveLength(1)
+  })
+
+  test('a dock that rotates on time never pays for a checkpoint', () => {
+    const { c, sent, registry } = registryHarness()
+    for (const impUrl of ['a', 'b', 'c']) {
+      const handle = registry.mount(impUrl, 'pinned')!
+      c.advance(60_000)
+      registry.noteSlotSwap([impUrl], ['next'])
+      registry.unmount(handle)
+      c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    }
+    c.advance(ENGAGEMENT_CHECKPOINT_MS)
+    expect(sent.map((r) => r.exit)).toEqual(['rotation', 'rotation', 'rotation'])
+  })
+
+  test('`checkpointAfterMs: null` turns every checkpoint off', () => {
+    const c = clock()
+    const sent: AdEngagement[] = []
+    const registry = createEngagementRegistry({
+      now: c.now,
+      send: (record) => sent.push(record),
+      focus: () => NO_FOCUS,
+      setTimer: c.setTimer,
+      clearTimer: c.clearTimer,
+      checkpointAfterMs: null,
+    })
+    const a = registry.mount('a', 'measured')!
+    a.tracker.setVisible(a.token, true)
+    a.tracker.click()
+    c.advance(ENGAGEMENT_CHECKPOINT_MS * 2)
+    expect(sent).toHaveLength(0)
+  })
+})
+
+describe('closeAll: the CLI quitting (bug 2)', () => {
+  test('flushes live cards as window_close and keeps an exit already decided', () => {
+    const { c, sent, registry } = registryHarness()
+    const live = registry.mount('live', 'measured')!
+    live.tracker.setVisible(live.token, true)
+    const leaving = registry.mount('leaving', 'pinned')!
+    c.advance(4_000)
+    registry.noteSlotSwap(['leaving'], ['next'])
+    registry.unmount(leaving)
+    c.advance(200)
+
+    registry.closeAll()
+    expect(sent.map((r) => [r.impUrl, r.exit])).toEqual([
+      ['live', 'window_close'],
+      ['leaving', 'rotation'],
+    ])
+    expect(sent[0]!.visibleMs).toBe(4_200)
+    expect(registry.size).toBe(0)
+
+    // nothing left armed: no grace, no checkpoint, no second record
+    c.advance(ENGAGEMENT_CHECKPOINT_MS * 2)
+    registry.closeAll()
+    expect(sent).toHaveLength(2)
+  })
+
+  test('settles a post-click watch with what is known', () => {
+    const { c, sent, registry } = registryHarness(FOCUSED)
+    const left = registry.mount('left', 'pinned')!
+    left.tracker.click()
+    registry.terminalFocus(false)
+    const stayed = registry.mount('stayed', 'pinned')!
+    registry.terminalFocus(true)
+    // `left` came back: settled. Click `stayed`, then lose focus and quit.
+    stayed.tracker.click()
+    c.advance(100)
+    registry.terminalFocus(false)
+    registry.closeAll()
+    const postClicks = sent.filter((r) => r.postClick)
+    expect(postClicks.map((r) => [r.impUrl, r.postClick])).toEqual([
+      ['left', { browserOpened: true, returnMs: 0 }],
+      ['stayed', { browserOpened: true }],
+    ])
+    expect(registry.size).toBe(0)
+  })
+
+  test('a quit inside the click grace leaves post-click unknown, not "not opened"', () => {
+    const { sent, registry } = registryHarness(FOCUSED)
+    const a = registry.mount('a', 'pinned')!
+    a.tracker.click()
+    registry.closeAll()
+    expect(sent.some((r) => r.postClick)).toBe(false)
+    expect(sent.at(-1)).toMatchObject({ exit: 'window_close' })
+  })
+
+  test('flushAdEngagementOnExit closes the registry, then waits for what is in flight', async () => {
+    const { sent, registry } = registryHarness()
+    registry.mount('a', 'pinned')
+    const order: string[] = []
+    await flushAdEngagementOnExit({
+      registry,
+      settle: async () => {
+        order.push(`settle after ${sent.length}`)
+      },
+    })
+    expect(sent[0]).toMatchObject({ impUrl: 'a', exit: 'window_close' })
+    expect(order).toEqual(['settle after 1'])
+
+    // a session that never drew an ad has nothing to close
+    let settled = false
+    await flushAdEngagementOnExit({
+      registry: null,
+      settle: async () => {
+        settled = true
+      },
+    })
+    expect(settled).toBe(true)
+  })
+})
+
+describe('the engagement poster', () => {
+  test('one impression\'s records go out in order; others do not wait', async () => {
+    const started: string[] = []
+    const release = new Map<string, () => void>()
+    const poster = createAdEngagementPoster(
+      (record) =>
+        new Promise<void>((resolve) => {
+          const key = `${record.impUrl}:${record.exit ?? 'checkpoint'}`
+          started.push(key)
+          release.set(key, resolve)
+        }),
+    )
+    void poster.post({ v: 1, impUrl: 'a' })
+    void poster.post({ v: 1, impUrl: 'a', exit: 'window_close' })
+    void poster.post({ v: 1, impUrl: 'b', exit: 'unmount' })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(started).toEqual(['a:checkpoint', 'b:unmount'])
+    expect(poster.pending).toBe(2)
+
+    let settled = false
+    const settle = poster.settle().then(() => {
+      settled = true
+    })
+    release.get('a:checkpoint')!()
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    expect(started).toEqual(['a:checkpoint', 'b:unmount', 'a:window_close'])
+    expect(settled).toBe(false)
+    release.get('a:window_close')!()
+    release.get('b:unmount')!()
+    await settle
+    expect(settled).toBe(true)
+    for (let i = 0; i < 5; i++) await Promise.resolve()
+    expect(poster.pending).toBe(0)
+  })
+
+  test('a transport that throws is a missing row, never a stuck queue', async () => {
+    const seen: string[] = []
+    const poster = createAdEngagementPoster(async (record) => {
+      seen.push(record.exit ?? 'checkpoint')
+      if (!record.exit) throw new Error('offline')
+    })
+    await poster.post({ v: 1, impUrl: 'a' })
+    await poster.post({ v: 1, impUrl: 'a', exit: 'unmount' })
+    expect(seen).toEqual(['checkpoint', 'unmount'])
   })
 })

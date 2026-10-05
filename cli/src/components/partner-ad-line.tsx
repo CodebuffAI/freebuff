@@ -30,11 +30,13 @@ import React, { useEffect, useState } from 'react'
 import { Button } from './button'
 import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
 import { useTheme } from '../hooks/use-theme'
+import { layoutTruncated } from '../ads/ad-engagement'
 import {
   getPartnerAd,
   recordPartnerClick,
   recordPartnerImpression,
 } from '../ads/partner-ads'
+import { useAdEngagement } from '../ads/use-ad-engagement'
 import { safeOpen } from '../utils/open-url'
 import { supportsTruecolor } from '../utils/theme-system'
 
@@ -94,8 +96,10 @@ export const PartnerAdLineView: React.FC<{
    * short of the highlight above it.
    */
   width: number
-  onClick?: () => void
-}> = ({ ad, width, onClick }) => {
+  /** The mouse-up event, when there was one (modifiers for engagement). */
+  onClick?: (event?: unknown) => void
+  onHover?: (hovering: boolean) => void
+}> = ({ ad, width, onClick, onHover }) => {
   const theme = useTheme()
   const layout = getPartnerLineLayout(ad, width)
   // A hex fill is drawn only where a hex fill is a colour. Everywhere else
@@ -112,6 +116,8 @@ export const PartnerAdLineView: React.FC<{
   return (
     <Button
       onClick={onClick}
+      onMouseOver={onHover ? () => onHover(true) : undefined}
+      onMouseOut={onHover ? () => onHover(false) : undefined}
       style={{
         width: '100%',
         height: 1,
@@ -136,6 +142,47 @@ export const PartnerAdLineView: React.FC<{
         {layout.disclosure}
       </text>
     </Button>
+  )
+}
+
+/**
+ * A served partner fill, drawn and measured.
+ *
+ * COD-757 engagement, like every other CLI ad. Both partner rows sit outside
+ * the transcript (above the composer, inside the slash menu), so they are on
+ * screen for exactly as long as they are mounted. The row remounts against
+ * the same held fill on every menu open: the registry keeps one record per
+ * impression, and a click on a later redraw still reaches it as a click-only
+ * merge record.
+ */
+export const PartnerAdRow: React.FC<{
+  ad: AdResponse
+  width: number
+  /** Test seams; production reports through the one CLI click path. */
+  reportClick?: (ad: AdResponse) => void
+  open?: (url: string) => void
+}> = ({ ad, width, reportClick = recordPartnerClick, open = safeOpen }) => {
+  const engagement = useAdEngagement(ad.impUrl, {
+    placement: 'pinned',
+    truncated: layoutTruncated([
+      [ad.title, getPartnerLineLayout(ad, width).title],
+    ]),
+  })
+  return (
+    <PartnerAdLineView
+      ad={ad}
+      width={width}
+      onHover={engagement.onHover}
+      onClick={(event) => {
+        if (!ad.clickUrl) return
+        engagement.onClick(event)
+        // The report beside the link, never awaited: a click that waited on
+        // our own telemetry before opening the browser would be slower than
+        // the ad is worth.
+        reportClick(ad)
+        open(ad.clickUrl)
+      }}
+    />
   )
 }
 
@@ -165,17 +212,6 @@ export const PartnerAdLine: React.FC<{
   const ad = usePartnerAd(placementId, enabled)
   if (!ad) return null
   return (
-    <PartnerAdLineView
-      ad={ad}
-      width={width ?? Math.max(10, terminalWidth - 2)}
-      onClick={() => {
-        if (!ad.clickUrl) return
-        // The report beside the link, never awaited: a click that waited on
-        // our own telemetry before opening the browser would be slower than
-        // the ad is worth.
-        recordPartnerClick(ad)
-        safeOpen(ad.clickUrl)
-      }}
-    />
+    <PartnerAdRow ad={ad} width={width ?? Math.max(10, terminalWidth - 2)} />
   )
 }

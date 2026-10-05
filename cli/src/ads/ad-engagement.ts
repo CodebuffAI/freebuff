@@ -37,6 +37,28 @@
  * in several places at once: the inline pool repeats an ad across slots) and
  * `createEngagementRegistry` (ownership by `impUrl`, the release grace that
  * lets a remount resume the same record, exactly one flush per impression).
+ *
+ * WHEN A RECORD LEAVES. The final record goes out when the last drawn copy
+ * unmounts (after the grace) or when the CLI quits (`closeAll`). Neither is
+ * enough on its own in a terminal: a transcript card stays mounted for the
+ * whole session, and a quit is not guaranteed. So a live impression also
+ * sends CHECKPOINTS -- the record so far, with no `exit` -- which the server
+ * merges key by key and the final record later overwrites:
+ *
+ * - once, the first time a transcript card leaves the viewport after being
+ *   seen, or after {@link ENGAGEMENT_CHECKPOINT_MS} of exposure, whichever
+ *   comes first;
+ * - once, at the first click, because the click is the label the record
+ *   exists for.
+ *
+ * LATE CLICKS. The dock redraws a cached creative under its original
+ * `impUrl` long after that impression's record went out, and the server
+ * still bills the click. A mount of an already-flushed `impUrl` therefore
+ * gets a CLICK-ONLY tracker: it measures nothing about the exposure (that
+ * record is closed) and sends only `{ v, impUrl, click }` -- plus `postClick`
+ * -- as a merge record. When the impression was already clicked, the first
+ * click's features are kept and only the count grows, so a late click never
+ * overwrites the click it follows.
  */
 import {
   AD_ENGAGEMENT_VERSION,
@@ -61,10 +83,20 @@ export const ENGAGEMENT_RELEASE_GRACE_MS = 1_000
 export const NEW_MESSAGE_EXIT_WINDOW_MS = 1_000
 /** No input for this long is idle (the activity tracker's own threshold). */
 export const ENGAGEMENT_IDLE_AFTER_MS = 30_000
+/**
+ * A live impression sends its record so far after this long, once. Longer
+ * than the dock's 60s rotation, so a dock that rotates normally never pays
+ * for a checkpoint; a transcript card that never unmounts always does.
+ */
+export const ENGAGEMENT_CHECKPOINT_MS = 120_000
 
 const MAX_COUNT = 10_000
 /** Bounds the rotation memos: a slot that rotates for a week must not grow them. */
 const MAX_SWAP_MEMO = 64
+/** Bounds the clicked-impression memo a late click merges into. */
+const MAX_CLICK_MEMO = 256
+
+export type EngagementClickBlock = NonNullable<AdEngagement['click']>
 
 type TimerHandle = unknown
 
@@ -109,6 +141,19 @@ export interface EngagementTrackerOptions extends EngagementTimers {
   idleMsAtMount?: number
   /** The composer's keystrokes reach `keystroke()`, so a count is meaningful. */
   countsKeys?: boolean
+  /**
+   * Send a checkpoint (the record so far, no `exit`) the first time a
+   * measured card leaves the viewport after being seen, on `checkpoint()`,
+   * and at the first click. Off by default; the registry turns it on.
+   */
+  checkpoints?: boolean
+  /**
+   * A redraw of an impression whose record already went out: send only the
+   * click (and post-click) as merge records. `priorClick` is the click block
+   * the server already holds for it, which a late click extends rather than
+   * replaces.
+   */
+  clickOnly?: { priorClick?: EngagementClickBlock }
   /** Receives every record that parses. Fire-and-forget; a throw is swallowed. */
   send: (record: AdEngagement) => void
   /** Called once the tracker has nothing left to send. */
@@ -133,9 +178,22 @@ export interface EngagementTracker {
   keystroke(): void
   /** The first measurement wins. */
   truncated(value: boolean): void
+  /**
+   * The bounded-exposure checkpoint: send the record so far and keep
+   * tracking. At most once, shared with the leave-the-viewport checkpoint;
+   * a no-op unless `checkpoints` is on.
+   */
+  checkpoint(): void
   /** Ends the impression and sends its record. Idempotent. */
   flush(exit: EngagementExit): void
+  /**
+   * The process is going away: settle a post-click watch now, with what is
+   * already known (`browserOpened` when focus was lost, otherwise unknown).
+   */
+  closePostClick(): void
   snapshot(exit?: EngagementExit): AdEngagement | undefined
+  /** The click block this impression has reported (or would), if clicked. */
+  readonly clickBlock: EngagementClickBlock | undefined
   readonly flushed: boolean
   readonly done: boolean
 }
@@ -163,6 +221,9 @@ export function createEngagementTracker(
   const { impUrl, now } = options
   const setTimer = options.setTimer ?? defaultSetTimer
   const clearTimer = options.clearTimer ?? defaultClearTimer
+  const clickOnly = options.clickOnly !== undefined
+  const priorClick = options.clickOnly?.priorClick
+  const checkpoints = !clickOnly && options.checkpoints === true
 
   const mountAt = now()
   const rotatedAt =
@@ -216,6 +277,14 @@ export function createEngagementTracker(
   let postClick: NonNullable<AdEngagement['postClick']> | undefined
   let postClickSent = false
   let doneReported = false
+
+  // A record (checkpoint, final or click-only) has gone out, so the server
+  // has a row for the post-click record to merge into.
+  let recordOut = false
+  let exposureCheckpointed = false
+  let clickCheckpointed = false
+  // click-only: the click count the last late-click record carried
+  let emittedClickCount = 0
 
   const isVisible = () => {
     if (flushed) return false
@@ -295,9 +364,9 @@ export function createEngagementTracker(
   }
 
   const maybeSendPostClick = () => {
-    // Held until the main record is out, so the server always sees the row it
-    // is asked to merge into first.
-    if (!flushed || !postClick || postClickSent) return
+    // Held until a record carrying this impression is out, so the server
+    // always sees the row it is asked to merge into first.
+    if (!recordOut || !postClick || postClickSent) return
     postClickSent = true
     emit({ v: AD_ENGAGEMENT_VERSION, impUrl, postClick })
   }
@@ -383,10 +452,48 @@ export function createEngagementTracker(
         visibilityKnown && options.countsKeys
           ? bucketCount(keysVisible)
           : undefined,
-      click: click
-        ? defined({ ...click, count: count(clickCount) })
-        : undefined,
+      click: currentClick(),
     }) as AdEngagement
+
+  /**
+   * The click block to report. A late click on an impression the server
+   * already holds a click for keeps that first click's features and adds to
+   * its count: the record describes the FIRST click and counts the rest.
+   */
+  function currentClick(): EngagementClickBlock | undefined {
+    if (clickOnly && priorClick) {
+      if (clickCount === 0) return priorClick
+      return defined({
+        ...priorClick,
+        count: count((priorClick.count ?? 1) + clickCount),
+      })
+    }
+    return click ? defined({ ...click, count: count(clickCount) }) : undefined
+  }
+
+  /** The record so far, with no `exit`; tracking continues. */
+  const sendCheckpoint = () => {
+    if (flushed) return
+    advance(now())
+    emit(build(undefined))
+    recordOut = true
+    maybeSendPostClick()
+  }
+
+  const exposureCheckpoint = () => {
+    if (!checkpoints || flushed || exposureCheckpointed) return
+    exposureCheckpointed = true
+    sendCheckpoint()
+  }
+
+  /** click-only: `{ v, impUrl, click }`, when the count moved since the last. */
+  const sendLateClick = () => {
+    if (clickCount === 0 || clickCount === emittedClickCount) return
+    emittedClickCount = clickCount
+    emit({ v: AD_ENGAGEMENT_VERSION, impUrl, click: currentClick() })
+    recordOut = true
+    maybeSendPostClick()
+  }
 
   const tracker: EngagementTracker = {
     impUrl,
@@ -398,6 +505,9 @@ export function createEngagementTracker(
     },
     get done() {
       return flushed && postClickSettled
+    },
+    get clickBlock() {
+      return currentClick()
     },
     attach(owner, placement) {
       if (flushed || owners.has(owner)) return
@@ -428,6 +538,10 @@ export function createEngagementTracker(
         if (!before && visible === true && leftAt !== undefined && t > leftAt)
           reentries += 1
       })
+      // Scrolled out of the transcript viewport after being seen: the
+      // exposure that matters most has happened, and a transcript card may
+      // never unmount, so its record goes out now.
+      if (before && !isVisible()) exposureCheckpoint()
     },
     hover(owner, hovering) {
       const state = owners.get(owner)
@@ -457,6 +571,13 @@ export function createEngagementTracker(
         })
         armPostClick(t)
       })
+      if (clickOnly) {
+        // the first late click goes out now; later ones ride the flush
+        if (clickCount === 1) sendLateClick()
+      } else if (checkpoints && !clickCheckpointed) {
+        clickCheckpointed = true
+        sendCheckpoint()
+      }
     },
     terminalFocus(next) {
       if (flushed) {
@@ -487,8 +608,21 @@ export function createEngagementTracker(
       if (flushed || truncated !== undefined) return
       truncated = value
     },
+    checkpoint() {
+      exposureCheckpoint()
+    },
     flush(exit) {
       if (flushed) return
+      if (clickOnly) {
+        flushed = true
+        owners.clear()
+        wasVisible = false
+        wasHovering = false
+        sendLateClick()
+        maybeSendPostClick()
+        maybeDone()
+        return
+      }
       advance(now())
       const record = build(exit)
       flushed = true
@@ -496,10 +630,21 @@ export function createEngagementTracker(
       wasVisible = false
       wasHovering = false
       emit(record)
+      recordOut = true
       maybeSendPostClick()
       maybeDone()
     },
+    closePostClick() {
+      if (postClickSettled) return
+      settlePostClick(postClickLeft ? { browserOpened: true } : undefined)
+    },
     snapshot(exit) {
+      if (clickOnly)
+        return parseAdEngagement({
+          v: AD_ENGAGEMENT_VERSION,
+          impUrl,
+          click: currentClick(),
+        })
       const saved = {
         visibleMs,
         focusedVisibleMs,
@@ -527,6 +672,12 @@ export interface EngagementRegistryEnv extends EngagementTimers {
   send: (record: AdEngagement) => void
   focus: () => FocusState
   releaseGraceMs?: number
+  /**
+   * Exposure before a live impression sends its checkpoint; defaults to
+   * {@link ENGAGEMENT_CHECKPOINT_MS}. `null` turns every checkpoint off
+   * (the leave-the-viewport and first-click ones too).
+   */
+  checkpointAfterMs?: number | null
   /** ms since the user's last input; null/undefined = unknown. */
   idleMs?: () => number | null | undefined
   /** The composer's keystrokes are forwarded through `keystroke()`. */
@@ -547,9 +698,11 @@ export interface EngagementHandle {
 
 export interface EngagementRegistry {
   /**
-   * Start (or join, or resume) the record for `impUrl`. `null` when there is
-   * nothing to track: no impUrl, or the impression already flushed this
-   * process (a creative rotated back into the slot is not a new impression).
+   * Start (or join, or resume) the record for `impUrl`. A redraw of an
+   * impression whose record already went out (a creative rotated back into
+   * the slot) is not a new impression: it gets a click-only handle, so a
+   * click on it still reaches that impression's record. `null` only when
+   * there is no impUrl.
    */
   mount(
     impUrl: string | undefined,
@@ -564,6 +717,12 @@ export interface EngagementRegistry {
   userInput(): void
   keystroke(): void
   status(impUrl: string): EngagementStatus
+  /**
+   * The CLI is quitting: flush every live record now, as `exit` for a card
+   * still on screen (a card inside its release grace keeps the exit it was
+   * given), and settle every post-click watch. Idempotent.
+   */
+  closeAll(exit?: EngagementExit): void
   /** Test seam. */
   reset(): void
   readonly size: number
@@ -571,7 +730,14 @@ export interface EngagementRegistry {
 
 interface Entry {
   tracker: EngagementTracker
+  /** the release grace after the last owner left */
   timer: TimerHandle | null
+  /** the exit decided when the last owner left, while the grace runs */
+  pendingExit: EngagementExit | null
+  /** the bounded-exposure checkpoint */
+  checkpointTimer: TimerHandle | null
+  /** a click-only redraw of an already-flushed impression */
+  late: boolean
 }
 
 export function decideExit(input: {
@@ -594,11 +760,22 @@ export function createEngagementRegistry(
   const setTimer = env.setTimer ?? defaultSetTimer
   const clearTimer = env.clearTimer ?? defaultClearTimer
   const grace = env.releaseGraceMs ?? ENGAGEMENT_RELEASE_GRACE_MS
+  const checkpointAfterMs =
+    env.checkpointAfterMs === null
+      ? null
+      : (env.checkpointAfterMs ?? ENGAGEMENT_CHECKPOINT_MS)
 
   const entries = new Map<string, Entry>()
+  // Click-only redraws of impressions in `finished`, keyed the same way.
+  const lateEntries = new Map<string, Entry>()
   const finished = new Set<string>()
   const rotatedAway = new Set<string>()
   const swappedInAt = new Map<string, number>()
+  // The click block each clicked impression has reported, for late clicks.
+  const clicks = new Map<string, EngagementClickBlock>()
+  // Flushed click-only trackers displaced by a newer redraw of the same
+  // impression while their post-click watch still waits for focus.
+  const settling = new Set<EngagementTracker>()
   let lastMessageAt: number | undefined
 
   const safely = (fn: () => void) => {
@@ -613,8 +790,11 @@ export function createEngagementRegistry(
     memo: Set<string> | Map<string, T>,
     key: string,
     value?: T,
+    max = MAX_SWAP_MEMO,
   ) => {
-    if (memo.size >= MAX_SWAP_MEMO) {
+    // re-inserting moves the key to the newest end
+    memo.delete(key)
+    if (memo.size >= max) {
       const oldest = memo.keys().next().value
       if (oldest !== undefined) memo.delete(oldest)
     }
@@ -622,67 +802,125 @@ export function createEngagementRegistry(
     else memo.add(key)
   }
 
-  const finish = (impUrl: string, entry: Entry, exit: EngagementExit) => {
+  const clearTimers = (entry: Entry) => {
     if (entry.timer !== null) {
       clearTimer(entry.timer)
       entry.timer = null
     }
-    finished.add(impUrl)
-    rotatedAway.delete(impUrl)
+    if (entry.checkpointTimer !== null) {
+      clearTimer(entry.checkpointTimer)
+      entry.checkpointTimer = null
+    }
+  }
+
+  /** Every tracker that can still use a broadcast. */
+  const trackers = (): EngagementTracker[] => [
+    ...[...entries.values()].map((entry) => entry.tracker),
+    ...[...lateEntries.values()].map((entry) => entry.tracker),
+    ...settling,
+  ]
+
+  const finish = (impUrl: string, entry: Entry, exit: EngagementExit) => {
+    clearTimers(entry)
+    entry.pendingExit = null
+    const map = entry.late ? lateEntries : entries
+    if (!entry.late) {
+      finished.add(impUrl)
+      rotatedAway.delete(impUrl)
+    }
     safely(() => entry.tracker.flush(exit))
-    safely(() => env.onFlushed?.(impUrl))
-    if (entry.tracker.done && entries.get(impUrl) === entry)
-      entries.delete(impUrl)
+    safely(() => {
+      const click = entry.tracker.clickBlock
+      if (click) remember(clicks, impUrl, click, MAX_CLICK_MEMO)
+    })
+    if (!entry.late) safely(() => env.onFlushed?.(impUrl))
+    if (entry.tracker.done && map.get(impUrl) === entry) map.delete(impUrl)
+  }
+
+  const create = (
+    impUrl: string,
+    late: boolean,
+    map: Map<string, Entry>,
+  ): Entry => {
+    const rotatedAt = swappedInAt.get(impUrl)
+    swappedInAt.delete(impUrl)
+    const created: Entry = {
+      tracker: undefined as never,
+      timer: null,
+      pendingExit: null,
+      checkpointTimer: null,
+      late,
+    }
+    let idleMsAtMount: number | undefined
+    try {
+      idleMsAtMount = env.idleMs?.() ?? undefined
+    } catch {
+      idleMsAtMount = undefined
+    }
+    created.tracker = createEngagementTracker({
+      impUrl,
+      now: env.now,
+      focus: env.focus(),
+      rotatedAt,
+      idleMsAtMount,
+      countsKeys: env.countsKeys,
+      checkpoints: !late && checkpointAfterMs !== null,
+      ...(late ? { clickOnly: { priorClick: clicks.get(impUrl) } } : {}),
+      setTimer,
+      clearTimer,
+      send: env.send,
+      onDone: () => {
+        settling.delete(created.tracker)
+        if (map.get(impUrl) === created && created.timer === null)
+          map.delete(impUrl)
+      },
+    })
+    if (!late && checkpointAfterMs !== null)
+      created.checkpointTimer = setTimer(() => {
+        created.checkpointTimer = null
+        // inside the release grace the final record is a second away
+        if (created.timer !== null) return
+        safely(() => created.tracker.checkpoint())
+      }, checkpointAfterMs)
+    map.set(impUrl, created)
+    return created
   }
 
   return {
     get size() {
-      return entries.size
+      return entries.size + lateEntries.size
     },
     mount(impUrl, placement) {
-      if (!impUrl || finished.has(impUrl)) return null
+      if (!impUrl) return null
+      const late = finished.has(impUrl)
+      const map = late ? lateEntries : entries
       const token = {}
-      let entry = entries.get(impUrl)
+      let entry = map.get(impUrl)
+      if (entry && entry.tracker.flushed) {
+        // a click-only redraw whose own record went out, still watching for
+        // focus to come back: it keeps hearing focus, and this fresh redraw
+        // gets a fresh click-only tracker
+        settling.add(entry.tracker)
+        entry = undefined
+      }
       if (!entry) {
-        const rotatedAt = swappedInAt.get(impUrl)
-        swappedInAt.delete(impUrl)
-        const created: Entry = { tracker: undefined as never, timer: null }
-        let idleMsAtMount: number | undefined
-        try {
-          idleMsAtMount = env.idleMs?.() ?? undefined
-        } catch {
-          idleMsAtMount = undefined
-        }
-        created.tracker = createEngagementTracker({
-          impUrl,
-          now: env.now,
-          focus: env.focus(),
-          rotatedAt,
-          idleMsAtMount,
-          countsKeys: env.countsKeys,
-          setTimer,
-          clearTimer,
-          send: env.send,
-          onDone: () => {
-            if (entries.get(impUrl) === created && created.timer === null)
-              entries.delete(impUrl)
-          },
-        })
-        entries.set(impUrl, created)
-        entry = created
+        entry = create(impUrl, late, map)
       } else if (entry.timer !== null) {
         // a remount inside the grace resumes the same record
         clearTimer(entry.timer)
         entry.timer = null
+        entry.pendingExit = null
       }
       const tracker = entry.tracker
       safely(() => tracker.attach(token, placement))
       return { impUrl, tracker, token }
     },
     unmount(handle) {
-      const entry = entries.get(handle.impUrl)
-      if (!entry || entry.tracker !== handle.tracker || entry.tracker.flushed)
-        return
+      const entry = [
+        entries.get(handle.impUrl),
+        lateEntries.get(handle.impUrl),
+      ].find((candidate) => candidate?.tracker === handle.tracker)
+      if (!entry || entry.tracker.flushed) return
       safely(() => entry.tracker.detach(handle.token))
       if (entry.tracker.owners > 0 || entry.timer !== null) return
       // The exit is decided NOW, from what is known at the moment the last
@@ -692,6 +930,7 @@ export function createEngagementRegistry(
         msSinceMessageSent:
           lastMessageAt === undefined ? undefined : env.now() - lastMessageAt,
       })
+      entry.pendingExit = exit
       entry.timer = setTimer(() => {
         entry.timer = null
         finish(handle.impUrl, entry, exit)
@@ -704,39 +943,58 @@ export function createEngagementRegistry(
           remember(rotatedAway, impUrl)
       const outgoing = new Set(from)
       for (const impUrl of to) {
-        if (!impUrl || outgoing.has(impUrl) || finished.has(impUrl)) continue
+        if (!impUrl || outgoing.has(impUrl)) continue
         rotatedAway.delete(impUrl)
+        // a flushed impression rotating back in is remembered too: a late
+        // click on it is timed from this swap
         remember(swappedInAt, impUrl, env.now())
       }
     },
     terminalFocus(focused) {
-      for (const entry of entries.values())
-        safely(() => entry.tracker.terminalFocus(focused))
+      for (const tracker of trackers())
+        safely(() => tracker.terminalFocus(focused))
     },
     messageSent() {
       lastMessageAt = env.now()
-      for (const entry of entries.values())
-        safely(() => entry.tracker.messageSent())
+      for (const tracker of trackers()) safely(() => tracker.messageSent())
     },
     userInput() {
-      for (const entry of entries.values())
-        safely(() => entry.tracker.userInput())
+      for (const tracker of trackers()) safely(() => tracker.userInput())
     },
     keystroke() {
-      for (const entry of entries.values())
-        safely(() => entry.tracker.keystroke())
+      for (const tracker of trackers()) safely(() => tracker.keystroke())
     },
     status(impUrl) {
       if (finished.has(impUrl)) return 'flushed'
       return entries.has(impUrl) ? 'live' : 'unknown'
     },
+    closeAll(exit = 'window_close') {
+      for (const map of [entries, lateEntries])
+        for (const [impUrl, entry] of [...map]) {
+          if (!entry.tracker.flushed)
+            finish(
+              impUrl,
+              entry,
+              entry.tracker.owners > 0 ? exit : (entry.pendingExit ?? exit),
+            )
+          clearTimers(entry)
+          safely(() => entry.tracker.closePostClick())
+          map.delete(impUrl)
+        }
+      for (const tracker of [...settling])
+        safely(() => tracker.closePostClick())
+      settling.clear()
+    },
     reset() {
-      for (const entry of entries.values())
-        if (entry.timer !== null) clearTimer(entry.timer)
+      for (const entry of [...entries.values(), ...lateEntries.values()])
+        clearTimers(entry)
       entries.clear()
+      lateEntries.clear()
       finished.clear()
       rotatedAway.clear()
       swappedInAt.clear()
+      clicks.clear()
+      settling.clear()
       lastMessageAt = undefined
     },
   }

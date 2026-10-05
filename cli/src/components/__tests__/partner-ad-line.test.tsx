@@ -1,14 +1,22 @@
-import { beforeAll, describe, expect, test } from 'bun:test'
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { createTestRenderer } from '@opentui/core/testing'
 import { createRoot, flushSync } from '@opentui/react'
 import React from 'react'
 
-import { PartnerAdLineView } from '../partner-ad-line'
+import { createEngagementRegistry } from '../../ads/ad-engagement'
+import { setAdEngagementRegistryForTests } from '../../ads/use-ad-engagement'
+import { PartnerAdLineView, PartnerAdRow } from '../partner-ad-line'
 import { SuggestionMenu } from '../suggestion-menu'
 import { initializeThemeStore } from '../../hooks/use-theme'
 
+import type { AdEngagement } from '@codebuff/common/types/ad-client-context'
+
 beforeAll(() => {
   initializeThemeStore()
+})
+
+afterEach(() => {
+  setAdEngagementRegistryForTests(null)
 })
 
 const AD = {
@@ -155,5 +163,79 @@ describe('the slash menu’s extra row', () => {
     )
 
     expect(frame).not.toContain('Review PR with Greptile')
+  })
+})
+
+describe('PartnerAdRow engagement (COD-757)', () => {
+  const FILL = {
+    ...AD,
+    adText: '',
+    cta: '',
+    favicon: '',
+    // Not http(s): even the default opener would refuse it.
+    clickUrl: 'test-only:partner-click',
+    impUrl: 'imp-partner-1',
+    provider: 'first_party' as const,
+    placementId: 'CLI-Partner-Slash-Review',
+  }
+
+  test('a served partner row reports its exposure, hover and click', async () => {
+    let now = 0
+    const sent: AdEngagement[] = []
+    const pending: Array<() => void> = []
+    setAdEngagementRegistryForTests(
+      createEngagementRegistry({
+        now: () => now,
+        send: (record) => sent.push(record),
+        focus: () => ({ supported: false, focused: null }),
+        setTimer: (fn) => {
+          pending.push(fn)
+          return pending.length
+        },
+        clearTimer: () => {},
+      }),
+    )
+    const reported: string[] = []
+    const opened: string[] = []
+    const width = 60
+    const setup = await createTestRenderer({ width, height: 1 })
+    const root = createRoot(setup.renderer)
+    flushSync(() => {
+      root.render(
+        <PartnerAdRow
+          ad={FILL}
+          width={width}
+          reportClick={(ad) => reported.push(ad.impUrl)}
+          open={(url) => opened.push(url)}
+        />,
+      )
+    })
+    await setup.renderOnce()
+
+    now += 800
+    await setup.mockMouse.moveTo(4, 0)
+    now += 200
+    await setup.mockMouse.click(4, 0)
+    await setup.mockMouse.moveTo(4, 5)
+    await Promise.resolve()
+    now += 1_000
+    flushSync(() => root.unmount())
+    setup.renderer.destroy()
+    for (const fn of pending.splice(0)) fn()
+
+    expect(reported).toEqual(['imp-partner-1'])
+    expect(opened).toEqual(['test-only:partner-click'])
+    const final = sent.at(-1)!
+    expect(final).toMatchObject({
+      v: 1,
+      impUrl: 'imp-partner-1',
+      exit: 'unmount',
+      visibleAtMs: 0,
+      visibleMs: 2_000,
+      hoverCount: 1,
+      firstHoverMs: 800,
+      truncated: false,
+      click: { msSinceMount: 1_000, pointerMovedOver: true, count: 1 },
+    })
   })
 })

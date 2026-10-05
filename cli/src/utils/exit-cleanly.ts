@@ -1,3 +1,4 @@
+import { flushAdEngagementOnExit } from '../ads/use-ad-engagement'
 import { flushAnalytics } from './analytics'
 import { IS_FREEBUFF } from './constants'
 import { stopEngagementTracking } from './engagement'
@@ -14,6 +15,12 @@ type ExitCliDependencies = {
   stopEngagementTracking: () => void
   flushAnalytics: () => Promise<void>
   drainClientLogs: () => Promise<void>
+  /**
+   * Send every live ad engagement record (COD-757) as `window_close`. A
+   * transcript ad stays mounted all session, so without this its record
+   * depended on a checkpoint having already gone out.
+   */
+  flushAdEngagement: () => Promise<void>
   endFreebuffSession: () => Promise<void>
   /**
    * Bring a sponsored run to a TERMINAL state, and say what it left behind.
@@ -74,6 +81,7 @@ export function createExitCliCleanly(deps: ExitCliDependencies) {
       const remoteTasks = [
         Promise.resolve().then(deps.flushAnalytics),
         Promise.resolve().then(deps.drainClientLogs),
+        Promise.resolve().then(deps.flushAdEngagement),
         sponsored.then((notice) => {
           if (notice) deps.writeNotice(notice)
         }),
@@ -99,6 +107,7 @@ export const exitCliCleanly = createExitCliCleanly({
   stopEngagementTracking,
   flushAnalytics,
   drainClientLogs,
+  flushAdEngagement: () => flushAdEngagementOnExit(),
   endFreebuffSession: () => useFreebuffSessionStore.getState().releaseSlot(),
   settleSponsoredRun: settleInterruptedSponsoredRun,
   // `process.stdout.write`, not the logger and not the renderer: the renderer is

@@ -37,13 +37,13 @@ import type { AdEngagement } from '@codebuff/common/types/ad-client-context'
 /** How often a transcript card re-measures whether it is inside the viewport. */
 export const TRANSCRIPT_VISIBILITY_POLL_MS = 500
 
-/** Fire-and-forget; never retried, never thrown. */
-export function postAdEngagement(record: AdEngagement): void {
+/** One POST to `/api/v1/ads/engagement`. Resolves either way; never throws. */
+async function sendAdEngagement(record: AdEngagement): Promise<void> {
   if (IS_TEST) return
   try {
     const authToken = getAuthToken()
     if (!authToken) return
-    void timedApiCall(() =>
+    const res = await timedApiCall(() =>
       fetch(`${WEBSITE_URL}/api/v1/ads/engagement`, {
         method: 'POST',
         headers: {
@@ -55,19 +55,79 @@ export function postAdEngagement(record: AdEngagement): void {
         body: JSON.stringify(record),
       }),
     )
-      .then((res) => {
-        if (!res.ok)
-          logger.debug(
-            { status: res.status },
-            '[ads] Failed to record ad engagement',
-          )
-      })
-      .catch((err) => {
-        logger.debug({ err }, '[ads] Failed to record ad engagement')
-      })
+    if (!res.ok)
+      logger.debug({ status: res.status }, '[ads] Failed to record ad engagement')
   } catch (err) {
     logger.debug({ err }, '[ads] Failed to record ad engagement')
   }
+}
+
+export interface AdEngagementPoster {
+  /** Queue a record behind any still in flight for the same impression. */
+  post(record: AdEngagement): Promise<void>
+  /** Resolves once everything queued so far has settled. */
+  settle(): Promise<void>
+  readonly pending: number
+}
+
+/**
+ * Records for one impression go out IN ORDER. A checkpoint and the final
+ * record can leave a second apart, and the server merges key by key with the
+ * later write winning: a reordered pair would leave the checkpoint's older
+ * values on the row. Different impressions never wait on each other.
+ */
+export function createAdEngagementPoster(
+  transport: (record: AdEngagement) => Promise<void>,
+): AdEngagementPoster {
+  const tails = new Map<string, Promise<void>>()
+  return {
+    post(record) {
+      const key = record.impUrl
+      const next = (tails.get(key) ?? Promise.resolve())
+        .then(() => transport(record))
+        .catch(() => {
+          // fire-and-forget: a failed report is a missing row
+        })
+      tails.set(key, next)
+      void next.then(() => {
+        if (tails.get(key) === next) tails.delete(key)
+      })
+      return next
+    },
+    async settle() {
+      await Promise.allSettled([...tails.values()])
+    },
+    get pending() {
+      return tails.size
+    },
+  }
+}
+
+const poster = createAdEngagementPoster(sendAdEngagement)
+
+/** Fire-and-forget; never retried, never thrown. */
+export function postAdEngagement(record: AdEngagement): void {
+  void poster.post(record)
+}
+
+/**
+ * The CLI is quitting: send every live record now (`exit: 'window_close'`)
+ * and wait for what is in flight. Bounded by the caller's own exit timeout;
+ * a session that never drew an ad starts nothing.
+ */
+export async function flushAdEngagementOnExit(
+  deps: {
+    registry?: EngagementRegistry | null
+    settle?: () => Promise<void>
+  } = {},
+): Promise<void> {
+  const live = deps.registry === undefined ? registry : deps.registry
+  try {
+    live?.closeAll('window_close')
+  } catch {
+    // never block an exit
+  }
+  await (deps.settle ?? (() => poster.settle()))()
 }
 
 let registry: EngagementRegistry | null = null
