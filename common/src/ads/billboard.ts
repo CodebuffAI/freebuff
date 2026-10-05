@@ -51,6 +51,20 @@ export const BILLBOARD_DISMISS_LOCK_MS = 10_000
 /** A pause in typing/clicking that may open a closed panel for its billboard. */
 export const BILLBOARD_PANEL_IDLE_MS = 3_000
 
+/**
+ * The frequency cap on a billboard serve: per user, per campaign, per slot
+ * (sidebar and panel each), over a rolling day. It REPLACES the campaign's
+ * own cap and the hourly ad and advertiser caps for these serves, which count
+ * serves rather than screen time: a billboard stays up for up to
+ * {@link BILLBOARD_REFRESH_MS}, so an hourly cap still let one campaign hold
+ * the sidebar all day. Billboard serves therefore do not spend the
+ * campaign's hourly cap on its other placements either.
+ */
+export const BILLBOARD_DAILY_FREQUENCY_CAP = {
+  maxImpressions: 5,
+  windowMs: 24 * 60 * 60_000,
+} as const
+
 export type BillboardAsset = { url: string; width: number; height: number }
 export type BillboardAssets = Partial<Record<BillboardShape, BillboardAsset>>
 
