@@ -1149,13 +1149,13 @@ export const FREEBUFF_ENABLE_MIMO_MODELS_IN_UI = true
  *  DeepSeek's clock, routed to DeepSeek direct alone, and runs the base3-fast
  *  harness. The tests that count picker rows follow this switch. */
 export const FREEBUFF_ENABLE_FAST_MODE_IN_UI = true
-/** SERVER hold on the fast mode row (2026-10-05), until the CLI and Desktop
- *  releases that carry it ship. Off: the server's model catalog (what CLI and
- *  Desktop list), the Freebucks pricing payload and the Web picker all leave
- *  the row out, while client builds keep it compiled in
+/** SERVER switch for the fast mode row: held on 2026-10-05 until the CLI and
+ *  Desktop releases that carry it, served since. Off: the server's model
+ *  catalog (what CLI and Desktop list), the Freebucks pricing payload and the
+ *  Web picker all leave the row out, while client builds keep it compiled in
  *  (FREEBUFF_ENABLE_FAST_MODE_IN_UI) and admission still accepts the id at
- *  full access. Flip to true, and deploy web and freebuff-web, to go live. */
-export const FREEBUFF_SERVE_FAST_MODE = false
+ *  full access. Takes effect when web and freebuff-web deploy. */
+export const FREEBUFF_SERVE_FAST_MODE = true
 /** UI-only rollout switch for the streak indicator in the waiting room. */
 export const FREEBUFF_ENABLE_STREAK_IN_UI = true
 /** Local/debug switch: force the localhost free-mode country bypass into
