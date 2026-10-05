@@ -611,13 +611,13 @@ describe('FreebuffModelSelector tier layout', () => {
     expect(order.every((at) => at >= 0)).toBe(true)
     expect(order).toEqual([...order].sort((a, b) => a - b))
     for (const name of [
-      'Space Bunny Alpha',
       'MiMo 2.6 Flash',
       ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? ['DeepSeek V4.1 Flash Fast'] : []),
     ]) {
       expect(lines[cardLine(name) + 1]).toContain('Recommended')
     }
     expect(lines[cardLine('GPT-6 Luna') + 1]).not.toContain('Recommended')
+    expect(lines[cardLine('Space Bunny Alpha') + 1]).not.toContain('Recommended')
   })
 
   test('lists the paid-only row to a free account, locked', async () => {

@@ -53,11 +53,9 @@ export interface FreebuffPickerPlacement {
 const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
   Object.freeze({
     // Unlimited
-    'stealth/space-bunny-alpha': {
-      section: 'unlimited',
-      order: 10,
-      recommended: true,
-    },
+    // Space Bunny Alpha lost its Recommended badge on 2026-10-05, when
+    // OpenRouter withdrew it and it moved to OpenCode Zen's free lane.
+    'stealth/space-bunny-alpha': { section: 'unlimited', order: 10 },
     // Solar Pro 4 (2026-10-05): free as a promotion, moved from Optimized.
     'upstage/solar-pro4': { section: 'unlimited', order: 15 },
     'upstage/solar-mini4': { section: 'unlimited', order: 20 },
