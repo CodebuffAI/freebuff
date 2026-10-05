@@ -523,39 +523,8 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   duration_ms: 'number',
   client_ua_product: 'string',
   client_ua_version: 'string',
-  /**
-   * CPC yield-shadow telemetry is a bounded operational comparison, never a
-   * decision ledger. Values are producer-encoded buckets and provider states;
-   * no raw priors, currency values, identifiers, or arrays are permitted.
-   */
-  yield_shadow_sampled: 'boolean',
-  yield_shadow_policy_version: 'string',
-  yield_shadow_scope: 'string',
-  yield_shadow_exclusion_reason: 'string',
-  yield_shadow_current_provider: 'string',
-  yield_shadow_recommended_provider: 'string',
-  yield_shadow_disagrees: 'boolean',
-  yield_shadow_first_party_state: 'string',
-  yield_shadow_first_party_value_bucket: 'string',
-  yield_shadow_gravity_state: 'string',
-  yield_shadow_gravity_value_bucket: 'string',
-  yield_shadow_imprezia_state: 'string',
-  yield_shadow_imprezia_value_bucket: 'string',
+  /** Each asked provider and its outcome, `gravity:no_fill>first_party:fill`. */
   yield_actual_attempt_chain: 'string',
-  yield_requested_placement_count_bucket: 'string',
-  yield_returned_ad_count_bucket: 'string',
-  /** Live routing is represented only by bounded configuration and outcome
-   * labels. Exact scores and decision identifiers stay in the durable ledger. */
-  yield_live_mode: 'string',
-  yield_live_activated: 'boolean',
-  yield_live_reason: 'string',
-  yield_live_arm: 'string',
-  yield_live_policy_version: 'string',
-  yield_live_estimate_version: 'string',
-  yield_live_effective_treatment_bps: 'number',
-  yield_live_planned_chain: 'string',
-  yield_live_evidence_reservation_status: 'string',
-  yield_live_evidence_status: 'string',
   /**
    * COD-361. What the decision-outbox producer did with this opportunity:
    * `scheduled | saturated | cooling_down | schedule_failed | disabled |
