@@ -2,8 +2,8 @@
  * UTC day-string helpers shared by the rollup jobs and the dashboards that
  * read them.
  *
- * These used to be copied into each consumer (scripts/rollup-ad-revenue.ts,
- * scripts/rollup-freebuff-spend.ts, web/src/db/ad-revenue.ts and
+ * These used to be copied into each consumer (the
+ * ad-revenue rollup and its dashboard, scripts/rollup-freebuff-spend.ts and
  * freebuff/web/src/lib/admin-spend.ts each carried a `shiftUtcDay`). The
  * window-boundary math is the sensitive part — a half-open `[start, end)` bound
  * or a trailing-window off-by-one silently drops or double-counts a day — so it
