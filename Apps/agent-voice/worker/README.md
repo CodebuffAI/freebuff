@@ -96,11 +96,15 @@ Settings. That runtime setting is what makes a custom worker — or a local
    at `https://<worker>/webhook` and copy its secret into the worker secret
    above. For the upstream deployment that is
    `https://agentvoice.mellowpilot.com/webhook`.
-3. Subscribe the worker to exactly two events:
+3. Subscribe the worker to exactly three events — each one is selected
+   individually, so adding `adjustment.created` does **not** bring
+   `adjustment.updated` along with it (the destination's event list is
+   authoritative; an unsubscribed event is simply never delivered):
 
    - `transaction.completed` — grant Pro for that `txn_…` id
-   - `adjustment.created` and `adjustment.updated` — change a license when the
-     adjustment is final
+   - `adjustment.created` — start of a refund/chargeback decision
+   - `adjustment.updated` — the decision became final; without it a rejected
+     refund could never restore a license the pending state had left alone
 
 Anything else is acknowledged with `handled: false` and ignored.
 
