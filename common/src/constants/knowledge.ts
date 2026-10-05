@@ -5,6 +5,12 @@ export const KNOWLEDGE_FILE_NAMES = [
   'CLAUDE.md',
 ] as const
 
+/** Opens the KNOWLEDGE_FILES_CONTENTS section of our agents' system prompt.
+ *  The foreign-client detector keys on it verbatim to skip the user's own
+ *  instructions files, so both sides import this one string. */
+export const PROJECT_INSTRUCTIONS_HEADER =
+  'Project instructions:\nEach fenced block below is one instructions file, labeled with its path. Follow them for the rest of the session.'
+
 /**
  * Pre-computed lowercase knowledge file names for efficient matching.
  */

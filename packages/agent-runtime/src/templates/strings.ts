@@ -1,4 +1,7 @@
-import { KNOWLEDGE_FILE_NAMES_LOWERCASE } from '@codebuff/common/constants/knowledge'
+import {
+  KNOWLEDGE_FILE_NAMES_LOWERCASE,
+  PROJECT_INSTRUCTIONS_HEADER,
+} from '@codebuff/common/constants/knowledge'
 import { escapeString } from '@codebuff/common/util/string'
 import { z } from 'zod/v4'
 
@@ -140,8 +143,7 @@ export async function formatPrompt(
         return `\`\`\`${path}\n${content.trim()}\n\`\`\``
       })
       if (blocks.length === 0) return ''
-      return `Project instructions:
-Each fenced block below is one instructions file, labeled with its path. Follow them for the rest of the session.
+      return `${PROJECT_INSTRUCTIONS_HEADER}
 
 ${blocks.join('\n\n')}`
     },
