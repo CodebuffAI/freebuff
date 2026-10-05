@@ -295,15 +295,6 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    */
   sample_rate: 'number',
   /**
-   * The 0-9999 bucket of the sticky per-user first-party arm, LOGGED AND NOT
-   * ROUTED ON (COD-369). One person lands in the same bucket on every request
-   * and every surface, which is what an incrementality read needs -- but the
-   * route draw still reads a fresh per-request UUID, so today this field SIZES
-   * the contrast a per-user arm would create rather than reporting one.
-   * COD-362 moves delivery onto it.
-   */
-  first_party_arm_bucket: 'number',
-  /**
    * The precomputed-score arm (`adScoreArmForUser` in `ad-experiment.ts`), on
    * every request: `ad_score_arm` is `control` or `treatment`, intent to
    * treat. `ad_score_lookup` is `not_read` (control, or no ranking leg ran),
@@ -369,7 +360,6 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    */
   ad_redis_store: 'string',
   first_party_route: 'string',
-  first_party_primary_percent: 'number',
   first_party_backfill_enabled: 'boolean',
   /** Geo-aware inventory controls and the bounded request classification used
    * by the routing policy. Country is an ISO-style two-letter code or absent;
@@ -395,38 +385,9 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   /** Effective runtime money gates, emitted as bounded configuration state.
    * These are not campaign pricing or advertiser identifiers. */
   first_party_billing_mode: 'string',
-  /**
-   * Exact primary allocation is intentionally represented by an opaque,
-   * operator-chosen cohort label rather than a campaign or advertiser id.
-   * Producers emit `none` / 0 when the request is not assigned to a primary
-   * cohort, so an absent field is distinguishable from a deliberate control.
-   */
-  first_party_primary_cohort: 'string',
-  first_party_primary_cohort_percent: 'number',
-  /**
-   * v1 request-grain primary-allocation telemetry. `route_admitted` records
-   * the route before selection; `admitted` deliberately excludes an intent
-   * preference that selected first-party inventory without consuming the
-   * sampled allocation draw. The per-placement counts are never request
-   * counts, and make a partial multi-placement result explicit.
-   */
-  first_party_metrics_schema_version: 'string',
-  first_party_primary_routing_eligible: 'boolean',
-  first_party_primary_routing_reason: 'string',
-  first_party_primary_route_admitted: 'boolean',
-  first_party_primary_admitted: 'boolean',
-  first_party_primary_entrypoint: 'string',
-  first_party_primary_outcome: 'string',
-  first_party_primary_terminal_reason: 'string',
-  first_party_primary_requested_placement_count: 'number',
-  first_party_primary_filled_placement_count: 'number',
-  first_party_primary_frequency_capped_placement_count: 'number',
-  first_party_primary_frequency_unavailable_placement_count: 'number',
-  first_party_primary_candidate_cap_rejection_count: 'number',
-  first_party_primary_partial_fill: 'boolean',
   /** The opaque cohort that actually produced a first-party fill, or `none`. */
   first_party_served_cohort: 'string',
-  /** `primary`, `gravity_no_fill_backfill`, `house_leg`, ..., or `none`. */
+  /** `gravity_no_fill_backfill`, `house_leg`, ..., or `none`. */
   first_party_entrypoint: 'string',
   /** Whether the COD-358 house leg could run on this request (not whether it did). */
   first_party_house_leg: 'boolean',

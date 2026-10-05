@@ -1,31 +1,14 @@
 /**
- * Stable salt for request sampling. The sample key rotates per ad request, but
- * the hash must stay shared by the route gate and campaign allocator.
+ * Stable salt for request sampling: the per-request draw that admits a Tier-2
+ * request to non-billable bonus inventory (`firstPartyAdRouteForGeoRequest`).
  */
 export const FIRST_PARTY_ROUTING_EXPERIMENT =
   'ads_first_party_before_paid_networks_2026_08'
 
 /**
- * Salt for the sticky per-user first-party arm (COD-369).
- *
- * NOTHING ROUTES ON THIS TODAY. The arm is a LOGGED FIELD
- * (`first_party_arm_bucket` on `ads.fetch_completed`) and not an input to the
- * route draw, which stays on a fresh per-request `randomUUID()` exactly as it
- * was. A per-user draw would move which inventory a person gets, and that is a
- * delivery change that has to be costed on its own -- COD-362 flips routing
- * onto this once the logged buckets have produced a measured number.
- *
- * Dated, like every salt in this module, and for a stronger reason than the
- * others: once routing does read it, rotating it is the ONLY way to reshuffle
- * the arm, so a rotation is a new experiment and has to look like one.
+ * An absent runtime knob is a dark deploy: a missing Infisical value must not
+ * open first-party inventory.
  */
-export const FIRST_PARTY_ARM_SALT = 'ads_first_party_arm_2026_09'
-
-/**
- * An absent runtime knob is a dark deploy. Allocation is deliberately opt-in:
- * a missing Infisical value must not take paid-network inventory.
- */
-export const DEFAULT_FIRST_PARTY_PRIMARY_PERCENT = 0
 export const DEFAULT_FIRST_PARTY_BACKFILL = false
 export const DEFAULT_FIRST_PARTY_GEO_ROUTING = false
 export const DEFAULT_FIRST_PARTY_TIER2_BONUS_PERCENT = 0
@@ -42,16 +25,18 @@ export const DEFAULT_FIRST_PARTY_HOUSE_LEG = false
  */
 export type FirstPartyAdGeoTier = 'tier1' | 'tier2' | 'unknown'
 
+/**
+ * Gravity sees every ordinary request first (the exclusivity contract,
+ * `common/src/util/ad-provider-policy.ts`), so no route puts our book ahead of
+ * it. `first_party_primary` survives only in historical rows and DB checks.
+ */
 export type FirstPartyAdRoute =
   | 'paid_network_only'
-  | 'first_party_primary'
   | 'gravity_then_first_party'
   | 'paid_networks_then_first_party_bonus'
 
 export interface FirstPartyRoutingConfig {
-  /** Request share, 0..100, that tries our book before paid networks. */
-  primaryPercent: number
-  /** Whether the remaining paid-network cohort uses our book as backfill. */
+  /** Whether a released Gravity no-fill is backfilled from our book. */
   backfill: boolean
 }
 
@@ -63,42 +48,20 @@ export interface FirstPartyGeoRoutingConfig extends FirstPartyRoutingConfig {
 }
 
 /**
- * Normalize the percentage knob to the 10,000-bucket precision used by both
- * request routing and campaign allocation. Keeping this conversion shared
- * prevents decimal environment values from opening a route that the campaign
- * selector later rejects (or vice versa).
+ * Normalize a percentage knob to the 10,000-bucket precision of
+ * {@link firstPartyPrimaryBucket}. A non-finite value reads as 0.
  */
 export function firstPartyPrimaryBasisPoints(primaryPercent: number): number {
-  const configuredPercent = Number.isFinite(primaryPercent)
-    ? primaryPercent
-    : DEFAULT_FIRST_PARTY_PRIMARY_PERCENT
+  const configuredPercent = Number.isFinite(primaryPercent) ? primaryPercent : 0
   return Math.round(Math.min(100, Math.max(0, configuredPercent)) * 100)
 }
 
 /**
- * Map one server-minted request sample to the allocator's 10,000-bucket space.
- * Both routing and campaign selection use this exact function so a request
- * admitted to first-party inventory cannot land in a different campaign slice.
+ * Map one server-minted request sample to the 10,000-bucket space the Tier-2
+ * bonus share is drawn in.
  */
 export function firstPartyPrimaryBucket(sampleId: string): number {
   return fnv1a(`${FIRST_PARTY_ROUTING_EXPERIMENT}:${sampleId}`) % 10_000
-}
-
-/**
- * The sticky sample key for one user's first-party arm.
- *
- * OBSERVATIONAL ONLY. Both rails feed it to {@link firstPartyPrimaryBucket}
- * and report the result as `first_party_arm_bucket`; neither feeds it to the
- * route draw or to campaign allocation, which keep reading the per-request
- * sample. Pointing routing at this is COD-362's job and changes delivery.
- *
- * Both rails always have a user id -- the browser route 401s without a
- * session and the v1 route is API-key authenticated -- so the empty-id case
- * is defensive rather than a supported path; it parks every anonymous caller
- * on one bucket.
- */
-export function firstPartyArmKey(userId: string | null | undefined): string {
-  return `fpa_${fnv1a(`${FIRST_PARTY_ARM_SALT}:${userId ?? ''}`).toString(36)}`
 }
 
 /**
@@ -236,24 +199,14 @@ export function houseSubscriptionBillingArmForUser(
 }
 
 /**
- * Choose the request's routing policy.
- *
- * Production callers pass a fresh server-minted `sampleId` for each ad request
- * so a percentage applies to requests, not a permanently pinned set of users.
- * The fallback to `userId` preserves deterministic behavior for old callers
- * and tests. The function clamps direct callers defensively; the runtime env
- * schema rejects out-of-range values.
+ * Choose the request's routing policy: Gravity, then (when backfill is on) our
+ * book on a released no-fill. Our book never goes first.
  */
 export function firstPartyAdRouteForUser(
   userId: string | null | undefined,
   config: FirstPartyRoutingConfig,
-  sampleId?: string,
 ): FirstPartyAdRoute {
   if (!userId) return 'paid_network_only'
-  const bucket = firstPartyPrimaryBucket(sampleId || userId)
-  if (bucket < firstPartyPrimaryBasisPoints(config.primaryPercent)) {
-    return 'first_party_primary'
-  }
   return config.backfill ? 'gravity_then_first_party' : 'paid_network_only'
 }
 
@@ -284,9 +237,9 @@ export function houseLegOpen(
 }
 
 /**
- * Apply the geo-aware policy without changing the legacy gate's semantics.
+ * Apply the geo-aware policy.
  *
- * - Tier 1 keeps the configured primary/backfill policy.
+ * - Tier 1 keeps the configured backfill policy.
  * - Tier 2 never preempts a paid provider. Once the caller proves that every
  *   paid provider available on that surface has declined, a sampled request
  *   may receive explicitly non-billable bonus inventory.
@@ -302,11 +255,11 @@ export function firstPartyAdRouteForGeoRequest(
   sampleId?: string,
 ): FirstPartyAdRoute {
   if (!config.geoRouting) {
-    return firstPartyAdRouteForUser(userId, config, sampleId)
+    return firstPartyAdRouteForUser(userId, config)
   }
   if (!userId) return 'paid_network_only'
   if (context.geoTier === 'tier1') {
-    return firstPartyAdRouteForUser(userId, config, sampleId)
+    return firstPartyAdRouteForUser(userId, config)
   }
   if (
     context.geoTier === 'tier2' &&
@@ -503,9 +456,8 @@ export function clampSponsorBreakDismissLockMs(value: unknown): number {
 }
 
 /**
- * The sticky sample key for one user's sponsor-break arm. Shaped like
- * {@link firstPartyArmKey} so the two read the same at a call site, with its
- * own prefix so one cannot be passed to the other's bucket function unnoticed.
+ * The sticky sample key for one user's sponsor-break arm, with its own prefix
+ * so it cannot be passed to another arm's bucket function unnoticed.
  */
 export function sponsorBreakArmKey(userId: string | null | undefined): string {
   return `sbk_${fnv1a(`${SPONSOR_BREAK_ARM_SALT}:${userId ?? ''}`).toString(36)}`
