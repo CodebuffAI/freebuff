@@ -13,6 +13,8 @@ const WEBHOOK_SECRET = 'whsec_test'
 const TXN = 'txn_01m45q62gzqns1n98dwp38038q'
 const TXN_OTHER = 'txn_01m45q62gzqns1n98dwp38038z'
 const TXN_REFUNDED = 'txn_01m45q62gzqns1n98dwp38039y'
+/** A transaction the worker has never seen, used to prove a webhook mints it. */
+const TXN_UNKNOWN = 'txn_01m45q62gzqns1n98dwp38037r'
 
 let kv: MemoryKV
 let env: Env
@@ -48,18 +50,20 @@ const activate = (licenseCode: string, deviceId: string) =>
 
 async function signedWebhook(
   eventType: string,
-  payload: unknown,
+  data: unknown,
   secret = WEBHOOK_SECRET,
+  options: { timestamp?: number } = {},
 ): Promise<Response> {
-  const body = JSON.stringify(payload)
-  const h1 = await expectedSignature(eventType, body, secret)
+  const body = JSON.stringify({ event_type: eventType, data })
+  const ts = options.timestamp ?? Math.floor(Date.now() / 1000)
+  const h1 = await expectedSignature(String(ts), body, secret)
   return handleRequest(
     new Request('https://license.test/webhook', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'Paddle-Event-Type': eventType,
-        'Paddle-Signature': `ts=1700000000;h1=${h1}`,
+        // Paddle sends no event-type header — the event type is in the body.
+        'Paddle-Signature': `ts=${ts};h1=${h1}`,
       },
       body,
     }),
@@ -228,8 +232,8 @@ describe('deactivate', () => {
 describe('webhook', () => {
   test('activates a license on a completed transaction', async () => {
     const res = await signedWebhook('transaction.completed', {
-      event_type: 'transaction.completed',
-      data: { id: TXN, status: 'completed' },
+      id: TXN,
+      status: 'completed',
     })
     expect(res.status).toBe(200)
     expect(await json(res)).toEqual({
@@ -244,18 +248,31 @@ describe('webhook', () => {
     ).toBe(TXN)
   })
 
+  test('reads the event type from the payload, not a header', async () => {
+    // Paddle sends no Paddle-Event-Type header; this request must not send one
+    // either, and it still has to be routed correctly.
+    expect((await activate(TXN_UNKNOWN, 'device-1')).status).toBe(404)
+    const res = await signedWebhook('transaction.completed', {
+      id: TXN_UNKNOWN,
+      status: 'completed',
+    })
+    expect(await json(res)).toEqual({
+      ok: true,
+      action: 'activate',
+      handled: true,
+    })
+    expect((await activate(TXN_UNKNOWN, 'device-1')).status).toBe(200)
+  })
+
   test('a refund adjustment revokes the license and frees every device', async () => {
     await activateLicense(kv, TXN, 1)
     await activate(TXN, 'device-1')
     await activate(TXN, 'device-2')
 
     const res = await signedWebhook('adjustment.created', {
-      event_type: 'adjustment.created',
-      data: {
-        id: 'adj_01m45q62gzqns1n98dwp38038q',
-        action: 'refund',
-        transaction_id: TXN,
-      },
+      id: 'adj_01m45q62gzqns1n98dwp38038q',
+      action: 'refund',
+      transaction_id: TXN,
     })
     expect((await json(res)).action).toBe('revoke')
     const revoked = await activate(TXN, 'device-3')
@@ -266,8 +283,9 @@ describe('webhook', () => {
   test('a chargeback adjustment revokes too', async () => {
     await activateLicense(kv, TXN, 1)
     const res = await signedWebhook('adjustment.created', {
-      event_type: 'adjustment.created',
-      data: { id: 'adj_1', action: 'chargeback', transaction_id: TXN },
+      id: 'adj_1',
+      action: 'chargeback',
+      transaction_id: TXN,
     })
     expect((await json(res)).handled).toBe(true)
     expect((await activate(TXN, 'device-1')).status).toBe(410)
@@ -277,8 +295,9 @@ describe('webhook', () => {
     for (const action of ['credit', 'chargeback_warning']) {
       await activateLicense(kv, TXN, 1)
       const res = await signedWebhook('adjustment.created', {
-        event_type: 'adjustment.created',
-        data: { id: 'adj_1', action, transaction_id: TXN },
+        id: 'adj_1',
+        action,
+        transaction_id: TXN,
       })
       expect(await json(res)).toEqual({
         ok: true,
@@ -290,10 +309,7 @@ describe('webhook', () => {
   })
 
   test('ignores events with no transaction or no interest', async () => {
-    const noData = await signedWebhook('subscription.created', {
-      event_type: 'subscription.created',
-      data: {},
-    })
+    const noData = await signedWebhook('subscription.created', {})
     expect(await json(noData)).toEqual({
       ok: true,
       action: 'ignore',
@@ -301,8 +317,7 @@ describe('webhook', () => {
     })
     // An activation with a non-transaction id must not mint a license.
     const junk = await signedWebhook('transaction.completed', {
-      event_type: 'transaction.completed',
-      data: { id: 'che_01m45q62gzqns1n98dwp38038q' },
+      id: 'che_01m45q62gzqns1n98dwp38038q',
     })
     expect((await json(junk)).handled).toBe(false)
     expect(await kv.get('license:che_01m45q62gzqns1n98dwp38038q')).toBeNull()
@@ -311,7 +326,7 @@ describe('webhook', () => {
   test('rejects a forged or mismatched signature', async () => {
     const forged = await signedWebhook(
       'transaction.completed',
-      { data: { id: TXN } },
+      { id: TXN },
       'whsec_wrong',
     )
     expect(forged.status).toBe(401)
@@ -320,7 +335,6 @@ describe('webhook', () => {
     const unsigned = await handleRequest(
       new Request('https://license.test/webhook', {
         method: 'POST',
-        headers: { 'Paddle-Event-Type': 'transaction.completed' },
         body: '{}',
       }),
       env,
@@ -329,37 +343,82 @@ describe('webhook', () => {
   })
 
   test('rejects a body edited after signing', async () => {
-    const body = JSON.stringify({ data: { id: TXN } })
-    const h1 = await expectedSignature(
-      'transaction.completed',
-      body,
-      WEBHOOK_SECRET,
-    )
+    const ts = Math.floor(Date.now() / 1000)
+    const original = JSON.stringify({
+      event_type: 'transaction.completed',
+      data: { id: TXN },
+    })
+    const h1 = await expectedSignature(String(ts), original, WEBHOOK_SECRET)
     const res = await handleRequest(
       new Request('https://license.test/webhook', {
         method: 'POST',
-        headers: {
-          'Paddle-Event-Type': 'transaction.completed',
-          'Paddle-Signature': `ts=1;h1=${h1}`,
-        },
+        headers: { 'Paddle-Signature': `ts=${ts};h1=${h1}` },
         body: JSON.stringify({
-          data: { id: 'txn_01m45q62gzqns1n98dwp38038z' },
+          event_type: 'transaction.completed',
+          data: { id: TXN_UNKNOWN },
         }),
       }),
       env,
     )
     expect(res.status).toBe(401)
+    expect((await json(res)).error).toContain('signature mismatch')
+  })
+
+  test('rejects a stale timestamp to blunt replay', async () => {
+    const stale = Math.floor(Date.now() / 1000) - 4000
+    const res = await signedWebhook(
+      'transaction.completed',
+      { id: TXN },
+      WEBHOOK_SECRET,
+      { timestamp: stale },
+    )
+    expect(res.status).toBe(401)
+    expect((await json(res)).error).toContain('timestamp')
+    expect(await kv.get(`license:${TXN}`)).toBeNull()
+  })
+
+  test('rejects a timestamp that is not a number', async () => {
+    const body = JSON.stringify({
+      event_type: 'transaction.completed',
+      data: { id: TXN },
+    })
+    const h1 = await expectedSignature('nope', body, WEBHOOK_SECRET)
+    const res = await handleRequest(
+      new Request('https://license.test/webhook', {
+        method: 'POST',
+        headers: { 'Paddle-Signature': `ts=nope;h1=${h1}` },
+        body,
+      }),
+      env,
+    )
+    expect(res.status).toBe(401)
+    expect((await json(res)).error).toContain('timestamp')
+  })
+
+  test('rejects a payload with no event type', async () => {
+    const ts = Math.floor(Date.now() / 1000)
+    const body = JSON.stringify({ data: { id: TXN } })
+    const h1 = await expectedSignature(String(ts), body, WEBHOOK_SECRET)
+    const res = await handleRequest(
+      new Request('https://license.test/webhook', {
+        method: 'POST',
+        headers: { 'Paddle-Signature': `ts=${ts};h1=${h1}` },
+        body,
+      }),
+      env,
+    )
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toContain('event_type')
+    expect(await kv.get(`license:${TXN}`)).toBeNull()
   })
 
   test('fails closed when no webhook secret is configured', async () => {
     const noSecretEnv = { ...env, PADDLE_WEBHOOK_SECRET: '' }
+    const ts = Math.floor(Date.now() / 1000)
     const res = await handleRequest(
       new Request('https://license.test/webhook', {
         method: 'POST',
-        headers: {
-          'Paddle-Event-Type': 'transaction.completed',
-          'Paddle-Signature': 'ts=1;h1=deadbeef',
-        },
+        headers: { 'Paddle-Signature': `ts=${ts};h1=deadbeef` },
         body: '{}',
       }),
       noSecretEnv,

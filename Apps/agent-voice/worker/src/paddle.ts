@@ -1,7 +1,13 @@
 /** Paddle webhook verification and event handling.
  *
  * Paddle signs each webhook with HMAC-SHA256 over
- * `"<Paddle-Event-Type>:<body>"` and sends the digest in `Paddle-Signature`.
+ * `"<unix timestamp>:<raw request body>"` and sends
+ * `Paddle-Signature: ts=<unix>;h1=<hex digest>`. The raw body must be
+ * verified *before* parsing it, and any whitespace change breaks the
+ * signature. See https://developer.paddle.com/webhooks/signature-verification
+ *
+ * Paddle does not send an event-type header: the event type is a field inside
+ * the payload (`event_type`), so it can only be read after the body verifies.
  */
 
 export interface PaddleSignatureHeader {
@@ -26,8 +32,13 @@ function toHex(buffer: ArrayBuffer): string {
     .join('')
 }
 
+/** The exact bytes Paddle signs: `<timestamp>:<raw body>`. */
+export function signingPayload(timestamp: string, body: string): string {
+  return `${timestamp}:${body}`
+}
+
 export async function expectedSignature(
-  eventType: string,
+  timestamp: string,
   body: string,
   secret: string,
 ): Promise<string> {
@@ -41,9 +52,42 @@ export async function expectedSignature(
   const mac = await crypto.subtle.sign(
     'HMAC',
     key,
-    new TextEncoder().encode(`${eventType}:${body}`) as BufferSource,
+    new TextEncoder().encode(signingPayload(timestamp, body)) as BufferSource,
   )
   return toHex(mac)
+}
+
+/**
+ * Timing-safe equality for two hex digests. `crypto.subtle.verify` would be
+ * the usual choice, but it needs the algorithm and key again here; a fixed
+ * comparison of equal-length hex is sufficient and avoids leaking early.
+ */
+export function signaturesMatch(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i += 1) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return diff === 0
+}
+
+/**
+ * Reject a signature whose timestamp is too far from now.
+ *
+ * Paddle's own SDKs use five seconds. Deliveries are retried with a fresh
+ * timestamp and every action here is idempotent, so this is a replay
+ * *guard* rather than a correctness guarantee — hence a generous window.
+ */
+export const SIGNATURE_TOLERANCE_SECONDS = 300
+
+export function timestampIsFresh(
+  timestamp: string,
+  nowSeconds: number,
+  toleranceSeconds = SIGNATURE_TOLERANCE_SECONDS,
+): boolean {
+  const parsed = Number.parseInt(timestamp, 10)
+  if (!Number.isFinite(parsed)) return false
+  return Math.abs(nowSeconds - parsed) <= toleranceSeconds
 }
 
 export type LicenseAction = 'activate' | 'revoke' | 'ignore'

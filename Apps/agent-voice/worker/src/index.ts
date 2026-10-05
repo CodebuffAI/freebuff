@@ -20,6 +20,8 @@ import {
   isTransactionId,
   licenseCodeFromEvent,
   parseSignatureHeader,
+  signaturesMatch,
+  timestampIsFresh,
   type PaddleWebhookPayload,
 } from './paddle'
 import {
@@ -187,27 +189,43 @@ async function deactivate(request: Request, env: Env): Promise<Response> {
 }
 
 async function webhook(request: Request, env: Env): Promise<Response> {
+  // Signature verification runs over the *raw* bytes, before any parsing.
   const body = await request.text()
-  const eventType = request.headers.get('Paddle-Event-Type') ?? ''
   const signature = request.headers.get('Paddle-Signature') ?? ''
   const parsed = parseSignatureHeader(signature)
 
-  if (!eventType) return fail('missing Paddle-Event-Type', 400)
   if (!parsed) return fail('missing or malformed Paddle-Signature', 401)
   if (!env.PADDLE_WEBHOOK_SECRET) {
     return fail('webhook secret is not configured', 500)
   }
+
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  if (!timestampIsFresh(parsed.ts, nowSeconds)) {
+    return fail('signature timestamp outside the accepted window', 401)
+  }
   const expected = await expectedSignature(
-    eventType,
+    parsed.ts,
     body,
     env.PADDLE_WEBHOOK_SECRET,
   )
-  if (expected !== parsed.h1) return fail('signature mismatch', 401)
+  if (!signaturesMatch(expected, parsed.h1)) {
+    return fail('signature mismatch', 401)
+  }
+
+  // Verified — only now is the payload safe to parse.
+  let payload: PaddleWebhookPayload
+  try {
+    payload = (JSON.parse(body) as PaddleWebhookPayload) ?? {}
+  } catch {
+    return fail('invalid JSON body', 400)
+  }
+  // Paddle sends no event-type header; `event_type` is a payload field.
+  const eventType = payload.event_type ?? ''
+  if (!eventType) return fail('missing event_type', 400)
 
   const action = actionForEvent(eventType)
   if (action === 'ignore') return json({ ok: true, action, handled: false })
 
-  const payload = (JSON.parse(body) as PaddleWebhookPayload) ?? {}
   // `adjustment.created` covers refunds, chargebacks *and* harmless credits, so
   // the action decides whether the license actually goes away.
   if (action === 'revoke' && !adjustmentRevokes(payload.data?.action)) {
@@ -217,7 +235,6 @@ async function webhook(request: Request, env: Env): Promise<Response> {
   const licenseCode = licenseCodeFromEvent(payload)
   if (!licenseCode) return json({ ok: true, action, handled: false })
 
-  const nowSeconds = Math.floor(Date.now() / 1000)
   const ids = idsFromEvent(payload)
   if (action === 'activate') {
     await activateLicense(env.LICENSES, licenseCode, nowSeconds, ids)

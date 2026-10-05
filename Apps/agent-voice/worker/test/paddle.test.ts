@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  SIGNATURE_TOLERANCE_SECONDS,
   actionForEvent,
   adjustmentRevokes,
   expectedSignature,
@@ -7,6 +8,9 @@ import {
   isTransactionId,
   licenseCodeFromEvent,
   parseSignatureHeader,
+  signaturesMatch,
+  signingPayload,
+  timestampIsFresh,
   type PaddleWebhookPayload,
 } from '../src/paddle'
 
@@ -30,37 +34,59 @@ describe('parseSignatureHeader', () => {
 })
 
 describe('expectedSignature', () => {
-  test('is deterministic and body/event dependent', async () => {
-    const a = await expectedSignature(
-      'transaction.completed',
-      '{"a":1}',
-      SECRET,
-    )
-    const b = await expectedSignature(
-      'transaction.completed',
-      '{"a":1}',
-      SECRET,
-    )
-    const otherEvent = await expectedSignature(
-      'adjustment.created',
-      '{"a":1}',
-      SECRET,
-    )
-    const otherBody = await expectedSignature(
-      'transaction.completed',
-      '{"a":2}',
-      SECRET,
-    )
+  test('signs `<timestamp>:<raw body>` exactly as Paddle documents', async () => {
+    const a = await expectedSignature('1700000000', '{"a":1}', SECRET)
+    const b = await expectedSignature('1700000000', '{"a":1}', SECRET)
+    const otherTs = await expectedSignature('1700000001', '{"a":1}', SECRET)
+    const otherBody = await expectedSignature('1700000000', '{"a":2}', SECRET)
     const otherSecret = await expectedSignature(
-      'transaction.completed',
+      '1700000000',
       '{"a":1}',
       'other',
     )
     expect(a).toBe(b)
-    expect(a).not.toBe(otherEvent)
+    expect(a).not.toBe(otherTs)
     expect(a).not.toBe(otherBody)
     expect(a).not.toBe(otherSecret)
     expect(a).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  test('the signed payload is the timestamp, a colon and the raw body', () => {
+    expect(signingPayload('1700000000', '{"a":1}')).toBe('1700000000:{"a":1}')
+    // Any whitespace change must therefore change the signature.
+    expect(signingPayload('1', '{ "a": 1 }')).not.toBe(
+      signingPayload('1', '{"a":1}'),
+    )
+  })
+})
+
+describe('signaturesMatch', () => {
+  test('compares equal-length digests without leaking length', () => {
+    expect(signaturesMatch('abc123', 'abc123')).toBe(true)
+    expect(signaturesMatch('abc123', 'abc124')).toBe(false)
+    expect(signaturesMatch('abc', 'abcd')).toBe(false)
+    expect(signaturesMatch('', '')).toBe(true)
+  })
+})
+
+describe('timestampIsFresh', () => {
+  test('accepts a timestamp inside the tolerance', () => {
+    const now = 1_700_000_000
+    expect(timestampIsFresh('1700000000', now)).toBe(true)
+    expect(timestampIsFresh('1700000299', now)).toBe(true)
+    expect(timestampIsFresh('1699999701', now)).toBe(true)
+    expect(timestampIsFresh('1700000301', now)).toBe(false)
+    expect(timestampIsFresh('1699999699', now)).toBe(false)
+  })
+
+  test('rejects garbage', () => {
+    expect(timestampIsFresh('', 1_700_000_000)).toBe(false)
+    expect(timestampIsFresh('nope', 1_700_000_000)).toBe(false)
+    expect(timestampIsFresh('1700000000', 1_700_000_000, 0)).toBe(true)
+  })
+
+  test('tolerance is a documented non-zero window', () => {
+    expect(SIGNATURE_TOLERANCE_SECONDS).toBeGreaterThan(0)
   })
 })
 

@@ -23,6 +23,34 @@ machine the customer pastes the same `txn_…` id.
 Status codes the app understands: `400` malformed code, `403/404` unknown
 purchase, `409` device cap, `410` revoked, `429` rate limited.
 
+## Signature verification
+
+Paddle sends only two relevant headers, and the contract is easy to get wrong:
+
+```
+Paddle-Signature: ts=<unix seconds>;h1=<hex digest>
+
+h1 = HMAC-SHA256(secret, `<ts>:` + <raw request body>)
+```
+
+Consequences the worker honours:
+
+- The **timestamp** is part of the signed bytes, not just the body — signing
+  the body alone, or the event type plus the body, produces a digest Paddle
+  never sends.
+- There is **no event-type header**. `event_type` is a field in the payload, so
+  it can only be read _after_ the signature verifies.
+- The body must be read as raw bytes and verified before any parsing or
+  re-serialising; whitespace changes the digest.
+- `h1` is compared in constant time, and `ts` must be within
+  `SIGNATURE_TOLERANCE_SECONDS` (5 minutes) of now to blunt replay. Paddle's
+  own SDKs use 5 seconds; the wider window buys delivery headroom because every
+  action here is idempotent.
+
+Reference: <https://developer.paddle.com/webhooks/signature-verification>.
+Verified against Paddle's own webhook simulator, which is how the original
+`eventType:body` implementation was caught.
+
 ## Deploy
 
 ```bash
