@@ -249,7 +249,8 @@ export function classifyProviderErrorRecovery(params: {
   const { aborted, error } = params
   if (aborted || !APICallError.isInstance(error)) return null
   // An error built with a status carries an explicit retry verdict
-  // (throwIfTurnSpendCapped marks its 429 non-retryable); respect it.
+  // (FINAL_REFUSALS in model-provider.ts: the spend breaker's 429, a
+  // refunded or superseded start's 409); respect it.
   if (error.statusCode !== undefined && !error.isRetryable) return null
 
   const body = parseErrorBody(error.responseBody)

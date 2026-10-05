@@ -11,6 +11,7 @@ import {
   FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
 } from '@codebuff/common/constants/freebuff-errors'
 import { FREEBUFF_ACTING_USER_HEADER } from '@codebuff/common/constants/freebuff-models'
+import { FREEBUFF_GATE_CODES } from '@codebuff/common/types/freebuff-session'
 import { isAbortError, isFetchIdleTimeoutError, isTransientNetworkError } from '@codebuff/common/util/error'
 import {
   OpenAICompatibleChatLanguageModel,
@@ -255,22 +256,52 @@ export const BYOK_CONNECTION_FAILURE_MESSAGE =
   'Could not connect to the BYOK provider. Check the provider URL and network connection, then retry.'
 
 /**
- * The per-turn spend breaker (HTTP 429, body `{ error: 'turn_spend_limit',
- * message }`) is final for THIS turn: its spend only grows, so the same run
- * id is refused again on every retry. Left to the AI SDK, which treats every
- * 429 as retryable, a capped turn asked four times over ~14s and then failed
- * as "Failed after 4 attempts. Last error: Too Many Requests" — which every
- * client read as an ordinary rate limit and answered with "wait a moment or
- * switch models", neither of which helps. Throwing a NON-retryable
- * APICallError stops the retry loop on the first refusal, and carrying the
- * body lets the runtime's error parser hand the server's own copy (and the
- * `turn_spend_limit` code) to the client unchanged.
+ * Refusals the server makes on purpose and repeats IDENTICALLY on a retry,
+ * each identified by its status AND its `error` code — never the status alone,
+ * since 409 and 429 are also ordinary, retryable answers.
+ *
+ * Left to the AI SDK, which treats every 409 and 429 as retryable, each of
+ * these was asked four times with backoff (~14s) and then failed as "Failed
+ * after 4 attempts. Last error: …". Throwing a NON-retryable APICallError
+ * stops the retry loop on the first refusal, and carrying the body lets the
+ * runtime's error parser hand the server's own copy and code to the client
+ * unchanged.
+ *
+ * - `turn_spend_limit` (429): the per-turn spend breaker is final for THIS
+ *   turn — its spend only grows, so the same run id is refused every time.
+ *   Clients read the retried failure as an ordinary rate limit and answered
+ *   it with "wait a moment or switch models", neither of which helps.
+ * - `session_superseded` (409): the start was refunded (the Desktop purchase
+ *   claim, or a refund that closed admission) or the session was taken over
+ *   by another instance. The row is gone, so every retry gets the same 409;
+ *   the user waited ~14s for the card that tells them to start a new session
+ *   (5,392 runs / 2,230 users in the 72h to 2026-10-05).
  */
-async function throwIfTurnSpendCapped(
+const FINAL_REFUSALS: readonly {
+  status: number
+  error: string
+  /** Used only when the body carries no `message` of its own. */
+  fallbackMessage: string
+}[] = [
+  {
+    status: 429,
+    error: FREEBUFF_TURN_SPEND_LIMIT_ERROR_CODE,
+    fallbackMessage: FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
+  },
+  {
+    status: FREEBUFF_GATE_CODES.session_superseded.status,
+    error: 'session_superseded',
+    fallbackMessage:
+      'This Freebuff session has ended. Start a new session to try again.',
+  },
+]
+
+async function throwIfFinalRefusal(
   response: Response,
   url: string,
 ): Promise<void> {
-  if (response.status !== 429) return
+  // Only a status some refusal uses is worth reading the body for.
+  if (!FINAL_REFUSALS.some((r) => r.status === response.status)) return
   const text = await response
     .clone()
     .text()
@@ -281,12 +312,15 @@ async function throwIfTurnSpendCapped(
   } catch {
     return
   }
-  if (body?.error !== FREEBUFF_TURN_SPEND_LIMIT_ERROR_CODE) return
+  const refusal = FINAL_REFUSALS.find(
+    (r) => r.status === response.status && r.error === body?.error,
+  )
+  if (!refusal) return
   throw new APICallError({
     message:
-      typeof body.message === 'string' && body.message
+      typeof body?.message === 'string' && body.message
         ? body.message
-        : FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
+        : refusal.fallbackMessage,
     url,
     requestBodyValues: {},
     statusCode: response.status,
@@ -297,8 +331,8 @@ async function throwIfTurnSpendCapped(
 
 /**
  * Wrap global fetch so transient connection failures (socket closed/reset,
- * connection refused) are rethrown as retryable APICallErrors, and a capped
- * turn's 429 as a non-retryable one (see throwIfTurnSpendCapped).
+ * connection refused) are rethrown as retryable APICallErrors, and the
+ * server's final refusals as non-retryable ones (see FINAL_REFUSALS).
  *
  * Bun's fetch throws these as plain Errors ("The socket connection was closed
  * unexpectedly...", code ECONNRESET/ConnectionClosed), which the AI SDK does
@@ -314,7 +348,7 @@ function fetchWithRetryableNetworkErrors(
   return globalThis.fetch(...args).then(
     async (response) => {
       notifyCapacityDeferralFromResponse(response)
-      await throwIfTurnSpendCapped(response, url)
+      await throwIfFinalRefusal(response, url)
       return response
     },
     (error: unknown) => {

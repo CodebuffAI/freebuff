@@ -240,7 +240,7 @@ describe('classifyProviderErrorRecovery on constructed errors', () => {
     })
 
   it('respects an explicit non-retryable verdict (the turn spend breaker)', () => {
-    // model-provider.ts throwIfTurnSpendCapped: a 429 that retrying cannot fix.
+    // model-provider.ts FINAL_REFUSALS: a 429 that retrying cannot fix.
     const error = apiError({
       statusCode: 429,
       isRetryable: false,
