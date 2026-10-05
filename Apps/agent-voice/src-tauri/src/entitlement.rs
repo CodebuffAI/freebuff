@@ -250,6 +250,47 @@ mod tests {
         assert_eq!(STANDARD.encode(bytes), DEV_PUBLIC_KEY_B64);
     }
 
+    /// Golden vector: minted by the license worker's TypeScript implementation
+    /// (`worker/src/tokens.ts`) with the dev signing key. If either side
+    /// changes the token format, one of the two tests named in the comment
+    /// fails and the mismatch is impossible to miss.
+    pub const WORKER_VECTOR: &str = "eyJ2IjoxLCJzdWIiOiI4MjBhZDk0YjQ5NjBjOGNhMjM5NmI3ZWFhNTVjZWE3NiIsImRldiI6ImRldmljZS0xIiwiZW50IjpbInBybyJdLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6NDEwMjQ0NDgwMH0.pOBV77Bjtc-PPKGDXowLaSxE9L_hbLLbJ5C36xtb9bPiYUnufJVZ99yy7cBuD9XS7iHa5XJsprgk68zQtOh5Ag";
+
+    #[test]
+    fn worker_minted_token_verifies_offline() {
+        let claims = verify_with_key(
+            WORKER_VECTOR,
+            1_700_000_001,
+            Some("device-1"),
+            &public_key_bytes(),
+        )
+        .expect("a token minted by the worker must verify in the app");
+        assert_eq!(claims.sub, license_subject("PA-VECTOR-0001"));
+        assert_eq!(claims.dev, "device-1");
+        assert_eq!(claims.iat, 1_700_000_000);
+        assert_eq!(claims.exp, 4_102_444_800);
+        assert!(is_pro(&claims));
+        // Still rejected for a different device and after expiry.
+        assert_eq!(
+            verify_with_key(
+                WORKER_VECTOR,
+                1_700_000_001,
+                Some("device-2"),
+                &public_key_bytes()
+            ),
+            Err(VerifyError::WrongDevice)
+        );
+        assert_eq!(
+            verify_with_key(
+                WORKER_VECTOR,
+                4_102_444_801,
+                Some("device-1"),
+                &public_key_bytes()
+            ),
+            Err(VerifyError::Expired)
+        );
+    }
+
     #[test]
     fn subject_is_stable_and_hashed() {
         let a = license_subject("PA-AAAA-1111");

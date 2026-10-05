@@ -91,6 +91,26 @@ describe('token round trip', () => {
   })
 })
 
+describe('golden vector parity', () => {
+  /** The same token, pinned on both sides of the language boundary. See the
+   *  Rust test `worker_minted_token_verifies_offline`. */
+  const WORKER_VECTOR =
+    'eyJ2IjoxLCJzdWIiOiI4MjBhZDk0YjQ5NjBjOGNhMjM5NmI3ZWFhNTVjZWE3NiIsImRldiI6ImRldmljZS0xIiwiZW50IjpbInBybyJdLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6NDEwMjQ0NDgwMH0.pOBV77Bjtc-PPKGDXowLaSxE9L_hbLLbJ5C36xtb9bPiYUnufJVZ99yy7cBuD9XS7iHa5XJsprgk68zQtOh5Ag'
+
+  test('minting the documented claims reproduces the shared token', async () => {
+    const claims: Claims = {
+      v: TOKEN_VERSION,
+      sub: await licenseSubject('PA-VECTOR-0001'),
+      dev: 'device-1',
+      ent: ['pro'],
+      iat: 1_700_000_000,
+      exp: 4_102_444_800,
+    }
+    expect(await mintToken(claims, DEV_PRIVATE_PKCS8)).toBe(WORKER_VECTOR)
+    expect(claims.sub).toBe('820ad94b4960c8ca2396b7eaa55cea76')
+  })
+})
+
 describe('rust/python parity', () => {
   test('the Rust app embeds this exact public key', () => {
     const rust = readFileSync(
