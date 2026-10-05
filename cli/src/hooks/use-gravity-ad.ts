@@ -53,7 +53,6 @@ const AD_ROTATION_INTERVAL_MS = 60 * 1000 // 60 seconds per ad
 const MAX_ADS_AFTER_ACTIVITY = 3 // Show up to 3 ads after last activity, then pause fetching new ads
 const ACTIVITY_THRESHOLD_MS = 30_000 // 30 seconds idle threshold for fetching new ads
 const MAX_AD_CACHE_SIZE = 50 // Maximum number of ads to keep in cache
-const ZEROCLICK_IMPRESSIONS_URL = 'https://zeroclick.dev/api/v2/impressions'
 
 // Ad response type (normalized shape across providers; credits added after impression)
 export type AdResponse = {
@@ -66,7 +65,6 @@ export type AdResponse = {
   impUrl: string
   placementId?: string
   provider?: AdProvider
-  impressionIds?: string[]
   credits?: number // Set after impression is recorded (in cents)
   /**
    * `Date.now()` when the auction RESPONSE was received (COD-365). The origin
@@ -78,7 +76,7 @@ export type AdResponse = {
   receivedAtMs?: number
   /**
    * Optional expanded creative for the dock's detail panel (COD-457). Only
-   * first-party creatives carry these; a Gravity, Carbon or house ad arrives
+   * first-party creatives carry these; a Gravity or house ad arrives
    * without them and the panel falls back to `adText`, no bullets, no diagram.
    */
   expandedBody?: string
@@ -150,7 +148,7 @@ export function renderDelaySinceReceipt(
  * Which upstream ad network to query. The server maps each provider onto the
  * same normalized response shape, so the rest of the hook is provider-agnostic.
  */
-export type AdProvider = 'gravity' | 'carbon' | 'zeroclick' | 'first_party'
+export type AdProvider = 'gravity' | 'first_party'
 // Product surfaces the ads API maps to Gravity placements. 'waiting_room' is the
 // legacy wire name for the freebuff landing screen; 'cli_chat' is the inline
 // transcript ad in the coding-agent chat. Values must match the server's
@@ -184,10 +182,6 @@ type GravityController = {
 
 // Pure helper: add an ad set to the cache
 function addToChoiceCache(ctrl: GravityController, ads: AdResponse[]): void {
-  // ZeroClick offer responses must not be stored for later display. Keep them
-  // out of the rotation cache and only render them for the live request.
-  if (ads.some((ad) => ad.provider === 'zeroclick')) return
-
   // Deduplicate by checking if any set has the same first impUrl
   const key = ads[0]?.impUrl
   if (key && ctrl.choiceCache.some((set) => set[0]?.impUrl === key)) return
@@ -568,34 +562,6 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       }
     }
 
-    if (ad.provider === 'zeroclick' && ad.impressionIds?.length) {
-      void (async () => {
-        try {
-          const res = await fetch(ZEROCLICK_IMPRESSIONS_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: ad.impressionIds }),
-          })
-
-          if (!res.ok) {
-            logger.debug(
-              { status: res.status },
-              '[ads] Failed to record ZeroClick impression',
-            )
-            return
-          }
-        } catch (err) {
-          logger.debug({ err }, '[ads] Failed to record ZeroClick impression')
-          return
-        }
-
-        recordLocalImpression().catch((err) => {
-          logger.debug({ err }, '[ads] Failed to record local ad impression')
-        })
-      })()
-      return
-    }
-
     recordLocalImpression().catch((err) => {
       logger.debug({ err }, '[ads] Failed to record ad impression')
     })
@@ -706,8 +672,6 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
           if (cachedSet) {
             ctrl.adsShownSinceActivity += 1
             setAds(cachedSet)
-          } else {
-            setAds((cur) => (cur?.[0]?.provider === 'zeroclick' ? null : cur))
           }
         }
       } finally {

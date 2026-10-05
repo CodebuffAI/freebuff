@@ -137,8 +137,8 @@ describe('card ad layout', () => {
   test('survives a provider that omits fields the type says are required', () => {
     // `AdResponse` types these as required strings, but the Gravity provider
     // casts `response.json()` instead of parsing it and copies `cta: raw.cta`
-    // with no default — while Carbon beside it writes `?? 'Learn more'`. A
-    // throw here is a throw inside AdCard's render on the landing screen.
+    // with no default. A throw here is a throw inside AdCard's render on the
+    // landing screen.
     const layout = getCardAdLayout(
       {} as Parameters<typeof getCardAdLayout>[0],
       78,
@@ -344,7 +344,7 @@ describe('inline ad layout', () => {
     const layout = getInlineAdLayout(
       {
         adText:
-          'A Carbon ad whose tracked destination is intentionally hidden.',
+          'A network ad whose tracked destination is intentionally hidden.',
         title: 'Example Sponsor',
         url: '',
       },

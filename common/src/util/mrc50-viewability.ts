@@ -7,11 +7,10 @@
  * backgrounding the tab, restarts the clock from zero rather than pausing it —
  * so this is a small state machine rather than an accumulator.
  *
- * This lives in `common` because two surfaces measure it and their answers are
- * billed against the same publisher account: the web chat renderer and the
- * Desktop renderer (Electron is Chromium, so it has a real viewport, layout
- * and page-visibility state). If the two ever disagreed about what "viewable"
- * means, the advertiser's delivery numbers would depend on which app the user
+ * This lives in `common` because two surfaces measure it: the web chat
+ * renderer and the Desktop renderer (Electron is Chromium, so it has a real
+ * viewport, layout and page-visibility state). If the two ever disagreed about
+ * what "viewable" means, engagement numbers would depend on which app the user
  * happened to open. The CLI is deliberately NOT a caller — a terminal has no
  * viewport to measure against, so it reports insertion only.
  *

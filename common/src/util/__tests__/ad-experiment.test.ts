@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test'
 import {
   DEFAULT_FIRST_PARTY_BACKFILL,
   DEFAULT_FIRST_PARTY_PRIMARY_PERCENT,
-  adExperimentArmForUser,
   firstPartyAdRouteForUser,
   firstPartyAdRouteForGeoRequest,
   firstPartyArmKey,
@@ -13,7 +12,6 @@ import {
   firstPartyPrimaryBasisPoints,
   houseLegOpen,
   houseSubscriptionBillingArmForUser,
-  isImpreziaAudienceEmail,
   parseHouseSubscriptionBillingExperimentMode,
 } from '../ad-experiment'
 
@@ -37,28 +35,6 @@ describe('house subscription billing experiment', () => {
     const monthlyPercent = (monthly / N) * 100
     expect(monthlyPercent).toBeGreaterThan(48.5)
     expect(monthlyPercent).toBeLessThan(51.5)
-  })
-})
-
-describe('imprezia experiment arm', () => {
-  test('keeps ordinary, signed-out, and former preview users in control', () => {
-    for (const id of [null, undefined, '', 'user-42']) {
-      expect(adExperimentArmForUser(id)).toBe('control')
-    }
-    for (const email of ['dev@Imprezia.AI', 'jahooma@gmail.com']) {
-      expect(adExperimentArmForUser('user', email)).toBe('control')
-    }
-  })
-
-  test('removes the personal account from the legacy preview audience', () => {
-    expect(isImpreziaAudienceEmail('dev@Imprezia.AI')).toBe(true)
-    for (const email of [
-      'jahooma@gmail.com',
-      ' JAHOOMA@gmail.com ',
-      'dev@imprezia.ai.evil.com',
-    ]) {
-      expect(isImpreziaAudienceEmail(email)).toBe(false)
-    }
   })
 })
 

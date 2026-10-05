@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { observeMrc50 } from '../imprezia-viewability'
+import { observeMrc50 } from '../mrc50-viewability'
 
 /**
  * The DOM binding, not the timing rules (those are covered against

@@ -147,10 +147,8 @@ describe('the refusals', () => {
   test('refuses a fill from anyone but our own CPM leg', async () => {
     // The client-side echo of `dropForeignPartnerFills`. Somebody else's ad
     // in this advertiser's colours is the one thing this format may not draw.
-    for (const provider of ['gravity', 'carbon', 'zeroclick'] as const) {
-      const h = harness({ body: () => ({ ads: [FILL], provider }) })
-      expect([provider, await h.get()]).toEqual([provider, null])
-    }
+    const h = harness({ body: () => ({ ads: [FILL], provider: 'gravity' }) })
+    expect(await h.get()).toBeNull()
   })
 
   test('an auction that throws is an ad that is not there', async () => {

@@ -73,9 +73,8 @@ export const extractDomain = (url: string): string => {
 }
 
 /**
- * What the ad shows as its destination. Carbon exposes no destination URL, so
- * those ads fall back to their title — which is why a Carbon ad renders a
- * headline where a Gravity ad renders `neon.tech`.
+ * What the ad shows as its destination. An ad with no destination URL falls
+ * back to its title — a headline where a Gravity ad renders `neon.tech`.
  */
 export function getAdDisplayLabel(
   ad: Pick<InlineAdLayoutInput, 'title' | 'url'>,
@@ -162,7 +161,7 @@ export const DOCK_DIAGRAM_MAX_LENGTH = 40
 
 /**
  * The optional expanded creative. Every field is nullable because only
- * first-party creatives can carry them: a Gravity, Carbon or house ad reaches
+ * first-party creatives can carry them: a Gravity or house ad reaches
  * the panel with nothing but its `adText`, and must still render a full panel.
  */
 export interface DockAdInput extends InlineAdLayoutInput {

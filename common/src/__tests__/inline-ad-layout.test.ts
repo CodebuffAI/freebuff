@@ -95,8 +95,8 @@ describe('display label', () => {
   })
 
   it('falls back to the title when the ad carries no URL', () => {
-    // Carbon exposes no destination URL, which is why one of its ads renders a
-    // headline where a Gravity ad renders a domain.
+    // An ad with no destination URL renders a headline where a Gravity ad
+    // renders a domain.
     expect(getAdDisplayLabel({ title: 'A headline', url: '' })).toEqual({
       text: 'A headline',
       variant: 'title',

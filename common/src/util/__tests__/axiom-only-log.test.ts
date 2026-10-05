@@ -14,7 +14,6 @@ import {
   ADS_ADVERTISER_REPORTING_READ_EVENT,
   ADS_MCP_TOOL_CALL_EVENT,
   PAID_API_REQUEST_EVENT,
-  ADS_IMPREZIA_FETCH_COMPLETED_EVENT,
   ADS_SHOWCASE_PRESENTED_EVENT,
   CONTEXT_PRUNING_COMPLETED_EVENT,
   getAxiomOnlyLogEvent,
@@ -431,7 +430,7 @@ describe('getAxiomOnlyLogEvent', () => {
         client_ua_version: '1.2.3',
         yield_actual_attempt_chain: 'gravity>first_party',
         // Arrays must be producer-encoded as attempted_provider_chain.
-        attempted_providers: ['gravity', 'carbon'],
+        attempted_providers: ['gravity', 'first_party'],
         // High-cardinality identifiers and content do not reach Axiom.
         userId: 'user-123',
         advertiser_id: 'advertiser-123',
@@ -515,81 +514,6 @@ describe('getAxiomOnlyLogEvent', () => {
         yield_actual_attempt_chain: 'gravity>first_party',
       },
     })
-  })
-
-  test('keeps only server-shaped Imprezia correlation handles', () => {
-    expect(
-      getAxiomOnlyLogEvent({
-        axiomEvent: ADS_IMPREZIA_FETCH_COMPLETED_EVENT,
-        outcome: 'provider_error',
-        request_id: 'adr_0123456789abcdef0123456789abcdef',
-        opportunity_id: 'opp_0123456789abcdef0123456789abcdef',
-        selection_reason: 'fallback',
-        experiment_arm: 'control',
-        surface: 'freebuff_web_chat',
-        ad_count: 0,
-        duration_ms: 42,
-        test_mode: false,
-        failure_class: 'provider_failure',
-        userId: 'user-private',
-        sessionId: 'session-private',
-        requestId: 'request-private',
-        request: 'private prompt',
-        response: 'private response',
-        ad: { title: 'private creative' },
-        clickUrl: 'https://private.example/click',
-        error: new Error('private raw provider error'),
-      }),
-    ).toEqual({
-      event: ADS_IMPREZIA_FETCH_COMPLETED_EVENT,
-      data: {
-        outcome: 'provider_error',
-        request_id: 'adr_0123456789abcdef0123456789abcdef',
-        opportunity_id: 'opp_0123456789abcdef0123456789abcdef',
-        selection_reason: 'fallback',
-        experiment_arm: 'control',
-        surface: 'freebuff_web_chat',
-        ad_count: 0,
-        duration_ms: 42,
-        test_mode: false,
-        failure_class: 'provider_failure',
-      },
-    })
-  })
-
-  test('rejects unbounded or incomplete Imprezia completion dimensions', () => {
-    const valid = {
-      axiomEvent: ADS_IMPREZIA_FETCH_COMPLETED_EVENT,
-      outcome: 'no_fill',
-      request_id: 'adr_0123456789abcdef0123456789abcdef',
-      opportunity_id: 'opp_0123456789abcdef0123456789abcdef',
-      selection_reason: 'primary',
-      experiment_arm: 'imprezia_first',
-      surface: 'freebuff_web_chat',
-      ad_count: 0,
-      duration_ms: 42,
-      test_mode: false,
-    }
-    for (const invalid of [
-      { ...valid, outcome: 'private raw error' },
-      { ...valid, selection_reason: 'campaign-123' },
-      { ...valid, experiment_arm: 'user-123' },
-      { ...valid, surface: 'https://private.example' },
-      { ...valid, ad_count: 2 },
-      { ...valid, outcome: 'fill', ad_count: 0 },
-      { ...valid, duration_ms: -1 },
-      { ...valid, duration_ms: 60_001 },
-      { ...valid, failure_class: 'raw upstream stack trace' },
-      { ...valid, request_id: 'request-private' },
-      { ...valid, opportunity_id: 'opp_private' },
-      { ...valid, request_id: undefined },
-      { ...valid, opportunity_id: undefined },
-      { ...valid, test_mode: 'false' },
-      // Every dimension except failure_class is required.
-      { ...valid, experiment_arm: undefined },
-    ]) {
-      expect(getAxiomOnlyLogEvent(invalid)).toBeNull()
-    }
   })
 
   test('names and sanitizes first-party selection telemetry', () => {

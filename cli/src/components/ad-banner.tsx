@@ -69,9 +69,8 @@ export function getCardAdLayout(
   // Every field is defaulted before it is read. `AdResponse` types these as
   // required strings, but nothing enforces that at runtime: the Gravity
   // provider casts `response.json()` rather than parsing it and `normalize()`
-  // copies `cta: raw.cta` with no default, while the Carbon provider beside it
-  // writes `cta: raw.callToAction ?? 'Learn more'` — so a missing field is a
-  // case this codebase already expects from a network. A throw here is a throw
+  // copies `cta: raw.cta` with no default — so a missing field is a case this
+  // codebase already expects from a network. A throw here is a throw
   // inside AdCard's render on the landing screen, and `error-boundary.tsx` is a
   // passthrough that does not catch render errors.
   const title = (ad.title ?? '').trim()

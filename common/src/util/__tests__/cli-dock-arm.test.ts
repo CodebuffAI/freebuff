@@ -10,7 +10,6 @@ import {
   CLI_DOCK_EXPERIMENT_SALT,
   DEFAULT_CLI_DOCK_EXPERIMENT,
   FIRST_PARTY_ARM_SALT,
-  IMPREZIA_EXPERIMENT,
   cliDockArmForUser,
   cliDockArmServed,
 } from '../ad-experiment'
@@ -60,7 +59,8 @@ describe('cliDockArmForUser', () => {
     // Sharing a first-party salt would correlate a presentation arm with an
     // inventory arm and make either result unreadable.
     expect(CLI_DOCK_EXPERIMENT_SALT).not.toBe(FIRST_PARTY_ARM_SALT)
-    expect(CLI_DOCK_EXPERIMENT_SALT).not.toBe(IMPREZIA_EXPERIMENT)
+    // The retired 2026-08 Imprezia cohort salt; never reuse it.
+    expect(CLI_DOCK_EXPERIMENT_SALT).not.toBe('ads_imprezia_primary_2026_08')
   })
 })
 

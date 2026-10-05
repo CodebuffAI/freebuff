@@ -115,11 +115,6 @@ export const ADS_MCP_TOOL_CALL_EVENT = 'ads.mcp_tool_call' as const
  * fields. Money is integer micro-dollars. See docs/paid-api-axiom-dashboard.md.
  */
 export const PAID_API_REQUEST_EVENT = 'paid_api_request' as const
-/** Browser-side Imprezia decisions. The route deliberately reports only
- * bounded serving dimensions: request/content/creative identifiers, URLs, and
- * raw provider errors never enter this event. */
-export const ADS_IMPREZIA_FETCH_COMPLETED_EVENT =
-  'ads.imprezia_fetch_completed' as const
 /**
  * Ad routes refusing a request (COD-372) — rate limits and capability
  * failures on both rails, one event per refusal.
@@ -374,7 +369,7 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   requested_provider: 'string',
   served_provider: 'string',
   // This is a producer-encoded, bounded string such as
-  // "gravity>first_party>carbon". Keep the raw attempted_providers array out
+  // "gravity>first_party". Keep the raw attempted_providers array out
   // of Axiom so operational events remain scalar-only.
   attempted_provider_chain: 'string',
   experiment_arm: 'string',
@@ -605,112 +600,6 @@ const ADS_FETCH_COMPLETED_FIELDS = {
 export const ADS_FETCH_COMPLETED_FIELD_NAMES: readonly string[] = Object.keys(
   ADS_FETCH_COMPLETED_FIELDS,
 )
-
-const ADS_IMPREZIA_FETCH_COMPLETED_FIELDS = {
-  outcome: 'string',
-  /**
-   * Server-minted correlation handles for this route's single placement.
-   * These are the same request/opportunity identities written by the route;
-   * client, session, prompt, and provider request identifiers stay excluded.
-   */
-  request_id: 'string',
-  opportunity_id: 'string',
-  selection_reason: 'string',
-  experiment_arm: 'string',
-  surface: 'string',
-  ad_count: 'number',
-  duration_ms: 'number',
-  test_mode: 'boolean',
-  failure_class: 'string',
-} as const satisfies AxiomOnlyFieldSchema
-
-const ADS_IMPREZIA_FETCH_OUTCOMES = [
-  'fill',
-  'no_fill',
-  'timeout',
-  'provider_error',
-  'not_configured',
-  'not_eligible',
-  /**
-   * Our book took the slot before Imprezia was asked (COD-338). Its own
-   * outcome rather than a `not_eligible` failure class: the request was
-   * perfectly eligible, we chose not to ask, and every eligibility-rate and
-   * fill-collapse query grouped on `outcome` must keep meaning what it did.
-   */
-  'preempted',
-] as const
-const ADS_IMPREZIA_SELECTION_REASONS = ['primary', 'fallback'] as const
-const ADS_IMPREZIA_EXPERIMENT_ARMS = [
-  'imprezia_forced',
-  'imprezia_first',
-  'control',
-] as const
-const ADS_IMPREZIA_BROWSER_SURFACES = [
-  'freebuff_web_chat',
-  'chat_assistant',
-] as const
-const ADS_IMPREZIA_FAILURE_CLASSES = [
-  'missing_api_key',
-  'missing_user_agent',
-  'invalid_source_url',
-  'provider_timeout',
-  'provider_failure',
-  'client_exception',
-] as const
-const ADS_IMPREZIA_MAX_DURATION_MS = 60_000
-const AD_REQUEST_GRAIN_ID_RE = /^adr_[0-9a-f]{32}$/
-const AD_OPPORTUNITY_ID_RE = /^opp_[0-9a-f]{32}$/
-
-function sanitizeImpreziaFetchCompletedFields(
-  record: Record<string, unknown>,
-): AxiomOnlyLogEvent['data'] | null {
-  const data = sanitizeAllowlistedFields(
-    record,
-    ADS_IMPREZIA_FETCH_COMPLETED_FIELDS,
-  )
-  const outcome = data.outcome
-  const requestId = data.request_id
-  const opportunityId = data.opportunity_id
-  const selectionReason = data.selection_reason
-  const experimentArm = data.experiment_arm
-  const surface = data.surface
-  const adCount = data.ad_count
-  const durationMs = data.duration_ms
-  const testMode = data.test_mode
-  const failureClass = data.failure_class
-
-  if (
-    !ADS_IMPREZIA_FETCH_OUTCOMES.includes(
-      outcome as (typeof ADS_IMPREZIA_FETCH_OUTCOMES)[number],
-    ) ||
-    typeof requestId !== 'string' ||
-    !AD_REQUEST_GRAIN_ID_RE.test(requestId) ||
-    typeof opportunityId !== 'string' ||
-    !AD_OPPORTUNITY_ID_RE.test(opportunityId) ||
-    !ADS_IMPREZIA_SELECTION_REASONS.includes(
-      selectionReason as (typeof ADS_IMPREZIA_SELECTION_REASONS)[number],
-    ) ||
-    !ADS_IMPREZIA_EXPERIMENT_ARMS.includes(
-      experimentArm as (typeof ADS_IMPREZIA_EXPERIMENT_ARMS)[number],
-    ) ||
-    !ADS_IMPREZIA_BROWSER_SURFACES.includes(
-      surface as (typeof ADS_IMPREZIA_BROWSER_SURFACES)[number],
-    ) ||
-    (adCount !== 0 && adCount !== 1) ||
-    (outcome === 'fill' ? adCount !== 1 : adCount !== 0) ||
-    typeof durationMs !== 'number' ||
-    durationMs < 0 ||
-    durationMs > ADS_IMPREZIA_MAX_DURATION_MS ||
-    typeof testMode !== 'boolean' ||
-    (failureClass !== undefined &&
-      !ADS_IMPREZIA_FAILURE_CLASSES.includes(
-        failureClass as (typeof ADS_IMPREZIA_FAILURE_CLASSES)[number],
-      ))
-  ) {
-    return null
-  }
-  return data
-}
 
 /**
  * First-party inventory selection is operational telemetry only. In
@@ -1104,7 +993,6 @@ export type AxiomOnlyLogEvent = {
     | typeof ADS_ADVERTISER_REPORTING_READ_EVENT
     | typeof ADS_MCP_TOOL_CALL_EVENT
     | typeof PAID_API_REQUEST_EVENT
-    | typeof ADS_IMPREZIA_FETCH_COMPLETED_EVENT
     | typeof ADS_REQUEST_REJECTED_EVENT
     | typeof ADS_SHOWCASE_PRESENTED_EVENT
     | SponsorBreakEvent
@@ -1192,10 +1080,6 @@ export function getAxiomOnlyLogEvent(
       event: eventName,
       data: sanitizeAllowlistedFields(record, ADS_FETCH_COMPLETED_FIELDS),
     }
-  }
-  if (eventName === ADS_IMPREZIA_FETCH_COMPLETED_EVENT) {
-    const data = sanitizeImpreziaFetchCompletedFields(record)
-    return data ? { event: eventName, data } : null
   }
   if (eventName === ADS_FIRST_PARTY_DECISION_EVENT) {
     return {

@@ -1,6 +1,3 @@
-/** Historical Imprezia experiment id, retained for reporting. */
-export const IMPREZIA_EXPERIMENT = 'ads_imprezia_primary_2026_08'
-
 /**
  * Stable salt for request sampling. The sample key rotates per ad request, but
  * the hash must stay shared by the route gate and campaign allocator.
@@ -192,15 +189,13 @@ export function cliDockArmServed(
   return mode === 'on' ? arm : 'control'
 }
 
-export type AdExperimentArm = 'imprezia_forced' | 'imprezia_first' | 'control'
-
-export function isImpreziaAudienceEmail(
-  email: string | null | undefined,
-): boolean {
-  if (!email) return false
-  const normalized = email.trim().toLowerCase()
-  return normalized.endsWith('@imprezia.ai')
-}
+/**
+ * The value every serve writes to `ad_impression.experiment_arm`. The column
+ * outlived the 2026-08 Imprezia experiment whose cohorts (`imprezia_forced`,
+ * `imprezia_first`) it recorded; Gravity exclusivity retired them and every
+ * serve since is `control`. Historical rows keep their old values.
+ */
+export type AdExperimentArm = 'control'
 
 /** FNV-1a 32-bit: tiny, dependency-free, stable across runtimes. */
 export function fnv1a(input: string): number {
@@ -238,14 +233,6 @@ export function houseSubscriptionBillingArmForUser(
   return fnv1a(`${HOUSE_SUBSCRIPTION_BILLING_EXPERIMENT}:${userId}`) % 100 < 50
     ? 'monthly'
     : 'yearly'
-}
-
-/** Gravity exclusivity retires the Imprezia cohorts. */
-export function adExperimentArmForUser(
-  _userId: string | null | undefined,
-  _userEmail?: string | null,
-): AdExperimentArm {
-  return 'control'
 }
 
 /**
