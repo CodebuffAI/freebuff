@@ -107,6 +107,7 @@ export async function runAgentOnCommit({
           const agentStart = Date.now()
           const result = await runner.run(commit.prompt)
           agentDurationMs = Date.now() - agentStart
+          if (result.error) error = result.error
           trace.push(...result.steps)
           cost = result.totalCostUsd
           diff = result.diff

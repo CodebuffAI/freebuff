@@ -158,6 +158,7 @@ export class CodebuffRunner implements Runner {
       steps,
       totalCostUsd,
       diff,
+      error: result.output.type === 'error' ? result.output.message : undefined,
     }
   }
 }

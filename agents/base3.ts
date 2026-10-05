@@ -112,6 +112,11 @@ export function createBase3CliRoot(
     /** Drop the tools that address a human. For the eval harness, where an
      *  ask_user call would stall the run rather than gather anything. */
     noAskUser?: boolean
+    /** Drop web_search and read_url. For the eval harness: the evaluated
+     *  repositories are public, and a search result that quotes their
+     *  current code is the answer key (36% of base3's search results in the
+     *  2026-10-04 runs cited the repository under evaluation). */
+    noWeb?: boolean
     /** Harness guidance that belongs BETWEEN base3's prompt and the CLI
      *  appendix (base3-fast's fan-out section). Appended, never prepended,
      *  for the reason the appendix is: the canonical opening stays at byte 0. */
@@ -128,29 +133,20 @@ export function createBase3CliRoot(
     model = OPUS_MODEL,
     isFreebuff = false,
     noAskUser = false,
+    noWeb = false,
     extraSystemPrompt,
   } = options
   const base3 = createBase3(model, { compaction: options.compaction })
 
   const root: Omit<SecretAgentDefinition, 'id'> = {
     ...base3,
-    // Written out rather than spread from `base3.toolNames`: a test scans
-    // source for literal toolNames arrays, and a toolset assembled at runtime
-    // is invisible to that scan.
-    //
-    // The first eight are base3's own. `web_search`/`read_url` replace the
-    // researcher subagents base2 spawned. The last five are CLI product
-    // surface, not harness: they drive the ask-user panel, the followup
-    // cards, service discovery, rendered UI, and skills.
+    // base3's own eight, then the CLI surface: `web_search`/`read_url`
+    // replace the researcher subagents base2 spawned; the last five drive the
+    // ask-user panel, the followup cards, service discovery, rendered UI and
+    // skills. (The shipped-agents CI guard checks this toolset by importing
+    // the definitions, so it may be assembled rather than restated.)
     toolNames: [
-      'read_files',
-      'str_replace',
-      'write_file',
-      'run_terminal_command',
-      'code_search',
-      'glob',
-      'list_directory',
-      'write_todos',
+      ...base3.toolNames!,
       'web_search',
       'read_url',
       'ask_user',
@@ -167,12 +163,19 @@ ${extraSystemPrompt ? `${extraSystemPrompt}\n` : ''}${buildCliAppendix({
     })}`,
   }
 
-  if (!noAskUser) return root
+  const withheld = new Set<string>([
+    ...(noAskUser ? HUMAN_TOOL_NAMES : []),
+    ...(noWeb ? WEB_TOOL_NAMES : []),
+  ])
+  if (withheld.size === 0) return root
   return {
     ...root,
-    toolNames: root.toolNames?.filter((name) => !HUMAN_TOOL_NAMES.has(name)),
+    toolNames: root.toolNames?.filter((name) => !withheld.has(name)),
   }
 }
+
+/** The web, which the eval harness withholds from both arms (see `noWeb`). */
+const WEB_TOOL_NAMES: ReadonlySet<string> = new Set(['web_search', 'read_url'])
 
 /** Offered only when there is a human on the other end. */
 const HUMAN_TOOL_NAMES: ReadonlySet<string> = new Set([

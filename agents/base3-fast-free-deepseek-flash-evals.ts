@@ -14,6 +14,7 @@ import { createBase3FastCliRoot } from './base3-fast'
 const definition = {
   ...createBase3FastCliRoot(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, {
     noAskUser: true,
+    noWeb: true,
     workerAgentId: 'base3-fast-worker-deepseek-flash-evals',
   }),
   id: 'base3-fast-free-deepseek-flash-evals',

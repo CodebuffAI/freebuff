@@ -176,6 +176,23 @@ describe('base3 CLI roots', () => {
     ])
   })
 
+  test('noWeb drops web_search and read_url and nothing else', () => {
+    // The eval harness withholds the web from BOTH arms: the evaluated
+    // repositories are public, and a search result quoting their current
+    // code is the answer key (2026-10-04: 36% of base3's search results in
+    // the bench cited the repository under evaluation).
+    const withWeb = createBase3CliRoot({ noAskUser: true })
+    const withoutWeb = createBase3CliRoot({ noAskUser: true, noWeb: true })
+    expect(withWeb.toolNames).toContain('web_search')
+    expect(withWeb.toolNames).toContain('read_url')
+    expect(withoutWeb.toolNames).toEqual(
+      withWeb.toolNames!.filter(
+        (name) => name !== 'web_search' && name !== 'read_url',
+      ),
+    )
+    expect(withoutWeb.systemPrompt).toBe(withWeb.systemPrompt)
+  })
+
   test('noAskUser drops the human tools from the prompt as well as the toolset', () => {
     // The two have to move together. A prompt telling the model to call
     // ask_user when the tool is absent is a wasted step every eval run.

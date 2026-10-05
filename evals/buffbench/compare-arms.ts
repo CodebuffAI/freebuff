@@ -11,7 +11,7 @@ import path from 'path'
  * FINAL_RESULTS.json, so it also works on a run that is still in progress or
  * that died before writing the summary.
  *
- *   bun run buffbench/compare-arms.ts <logsDir> [agentA] [agentB]
+ *   bun run buffbench/compare-arms.ts <logsDir>[,<logsDir>] [agentA] [agentB]
  */
 
 interface TaskRow {
@@ -87,7 +87,19 @@ function traceShape(trace: any[]): TraceShape {
   return shape
 }
 
-function readRows(logsDir: string): TaskRow[] {
+/** One or several logs directories (a run plus its --resume continuations),
+ *  given comma-separated; a task present in more than one keeps its last. */
+function readRows(logsDirs: string): TaskRow[] {
+  const rows: TaskRow[] = []
+  for (const logsDir of logsDirs.split(',').filter(Boolean)) {
+    rows.push(...readRowsFrom(logsDir))
+  }
+  const byKey = new Map<string, TaskRow>()
+  for (const row of rows) byKey.set(`${row.task}|${row.agentId}`, row)
+  return [...byKey.values()]
+}
+
+function readRowsFrom(logsDir: string): TaskRow[] {
   const rows: TaskRow[] = []
   for (const file of fs.readdirSync(logsDir)) {
     if (!file.endsWith('.json') || file.includes('-ANALYSIS-')) continue

@@ -11,9 +11,9 @@ export const FREEBUFF_MINIMAX_M3_MODEL_ID = 'minimax/minimax-m3'
 /** DeepSeek V4.1 Flash in FAST MODE: the same model as
  *  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, served ONLY by DeepSeek's own API
  *  (never the rationed Luminal lane) and run on the `base3-fast` harness,
- *  which fans work out to parallel worker subagents. Its own wire id because
+ *  which gathers context with parallel subagents. Its own wire id because
  *  it is its own entitlement: one wire id per price is the rule, and this
- *  row is priced at three times Flash. */
+ *  row is priced on DeepSeek's own peak and off-peak hours. */
 export const FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID =
   'deepseek/deepseek-v4-flash-fast'
 

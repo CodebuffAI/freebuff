@@ -14,6 +14,10 @@ const definition = {
     model: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
     isFreebuff: true,
     noAskUser: true,
+    // Neither arm may read the public repository under evaluation off the web:
+    // read_url is refused by the bench, and a search result quoting its current
+    // code is the answer key. Both arms lose the two tools together.
+    noWeb: true,
   }),
   id: 'base3-free-deepseek-flash-evals',
   displayName: 'Buffy on DeepSeek Flash (evals)',

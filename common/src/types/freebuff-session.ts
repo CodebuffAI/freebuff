@@ -368,6 +368,10 @@ export interface FreebuffOffPeakPrice {
   /** UTC hours, daily [start, end); end may be on the next day. */
   startHourUtc: number
   endHourUtc: number
+  /** When true, Saturday and Sunday in Beijing (Friday 16:00 to Sunday
+   *  16:00 UTC) are off-peak all day as well, as on DeepSeek's own rate card.
+   *  Absent means the daily window alone. */
+  weekendsOffPeak?: boolean
   price: number
   regularPrice: number
 }

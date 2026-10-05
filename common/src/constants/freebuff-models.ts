@@ -1141,7 +1141,7 @@ export const FREEBUFF_ENABLE_MIMO_MODELS_IN_UI = true
  *  (`deepseek/deepseek-v4-flash-fast`). Off: no picker on any surface lists
  *  the row (the CLI, Web and Desktop pickers read FREEBUFF_MODELS; the iOS and
  *  Android catalogs carry the same switch by hand), while everything behind it
- *  stays wired — the id is SUPPORTED and admitted, priced at 3x Flash, routed
+ *  stays wired — the id is SUPPORTED and admitted, priced on DeepSeek's clock, routed
  *  to DeepSeek direct alone, and runs the base3-fast harness — so a client
  *  that sends the id gets the real thing. Flip to true to ship the row; the
  *  tests that count picker rows follow this switch. */
@@ -1747,9 +1747,10 @@ const DEEPSEEK_V4_FLASH_MODEL = {
  *    from that grant at admission and runs a single direct lane in the router
  *    (web/src/llm-api/deepseek-router.ts).
  *
- * Priced at THREE TIMES the Flash row, on the same off-peak schedule
- * (freebuff-freebucks.ts): the parallel workers each re-send the shared
- * prefix, and DeepSeek direct bills more per token than Luminal.
+ * Priced on DeepSeek's own clock (freebuff-freebucks.ts): 45 Freebucks in
+ * the weekday window where DeepSeek direct doubles, 25 the rest of the time.
+ * The harness spends about 1.3x base3 per task, and DeepSeek direct bills
+ * 1.7x Luminal off-peak and 3.4x at peak on the same tokens.
  *
  * Everything else tracks the Flash row on purpose — the same DeepSeek data-use
  * terms, the same effort ladder, and `multimodal: true` because the direct
@@ -1762,7 +1763,7 @@ const DEEPSEEK_V4_FLASH_FAST_MODEL = {
   displayName: 'DeepSeek V4.1 Flash Fast',
   tagline: 'Parallel agents',
   taglineTooltip:
-    'Fast mode: Buffy splits the work across parallel DeepSeek Flash subagents on DeepSeek’s own API, then verifies the combined result. Three times the Flash price.',
+    'Fast mode: Buffy gathers context with parallel subagents on DeepSeek’s own API, makes the change, then verifies it. Priced on DeepSeek’s peak and off-peak hours.',
   availability: 'always',
   // Inert while `always`; names the row this one is a variant of.
   unavailableFallback: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
@@ -3062,7 +3063,7 @@ export const FREEBUFF_MODELS = [
   // FAST MODE beside the row it is a variant of (2026-09-26), behind
   // FREEBUFF_ENABLE_FAST_MODE_IN_UI until it ships. Order here only matters
   // off the meter: every picker sorts its rows cheapest first once prices
-  // arrive, and at three times Flash this lands among the premium rows.
+  // arrive, and at 25-45 Freebucks this lands among the premium rows.
   ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? [DEEPSEEK_V4_FLASH_FAST_MODEL] : []),
   // GPT-6 LUNA TAKES 5.6'S SLOT (2026-09-22). Same position, same tagline,
   // half the price on the flex lane; 5.6 left this list in the same change and
