@@ -158,6 +158,11 @@ export interface EngagementTrackerOptions extends EngagementTimers {
   send: (record: AdEngagement) => void
   /** Called once the tracker has nothing left to send. */
   onDone?: () => void
+  /**
+   * Called once, when this impression's first record of any kind (checkpoint,
+   * final or click-only) has gone out: the server now has a row to merge into.
+   */
+  onRecordOut?: () => void
 }
 
 export interface EngagementTracker {
@@ -195,6 +200,8 @@ export interface EngagementTracker {
   /** The click block this impression has reported (or would), if clicked. */
   readonly clickBlock: EngagementClickBlock | undefined
   readonly flushed: boolean
+  /** A record carrying this impression has gone out (a row exists). */
+  readonly recordOut: boolean
   readonly done: boolean
 }
 
@@ -281,6 +288,15 @@ export function createEngagementTracker(
   // A record (checkpoint, final or click-only) has gone out, so the server
   // has a row for the post-click record to merge into.
   let recordOut = false
+  const markRecordOut = () => {
+    if (recordOut) return
+    recordOut = true
+    try {
+      options.onRecordOut?.()
+    } catch {
+      // registry bookkeeping only
+    }
+  }
   let exposureCheckpointed = false
   let clickCheckpointed = false
   // click-only: the click count the last late-click record carried
@@ -476,7 +492,7 @@ export function createEngagementTracker(
     if (flushed) return
     advance(now())
     emit(build(undefined))
-    recordOut = true
+    markRecordOut()
     maybeSendPostClick()
   }
 
@@ -491,7 +507,7 @@ export function createEngagementTracker(
     if (clickCount === 0 || clickCount === emittedClickCount) return
     emittedClickCount = clickCount
     emit({ v: AD_ENGAGEMENT_VERSION, impUrl, click: currentClick() })
-    recordOut = true
+    markRecordOut()
     maybeSendPostClick()
   }
 
@@ -502,6 +518,9 @@ export function createEngagementTracker(
     },
     get flushed() {
       return flushed
+    },
+    get recordOut() {
+      return recordOut
     },
     get done() {
       return flushed && postClickSettled
@@ -630,7 +649,7 @@ export function createEngagementTracker(
       wasVisible = false
       wasHovering = false
       emit(record)
-      recordOut = true
+      markRecordOut()
       maybeSendPostClick()
       maybeDone()
     },
@@ -684,10 +703,19 @@ export interface EngagementRegistryEnv extends EngagementTimers {
   countsKeys?: boolean
   /** An impression's main record went out (its flush). */
   onFlushed?: (impUrl: string) => void
+  /**
+   * A live impression's first record (a checkpoint) went out, so the server
+   * has its row while the card is still tracking.
+   */
+  onRecordOut?: (impUrl: string) => void
 }
 
-/** `flushed`: the main record is out. `unknown`: never tracked this process. */
-export type EngagementStatus = 'unknown' | 'live' | 'flushed'
+/**
+ * `flushed`: the main record is out. `recorded`: still live, but a checkpoint
+ * is out, so the server has the row a merge record needs. `live`: no record
+ * yet. `unknown`: never tracked this process.
+ */
+export type EngagementStatus = 'unknown' | 'live' | 'recorded' | 'flushed'
 
 export interface EngagementHandle {
   readonly impUrl: string
@@ -869,6 +897,15 @@ export function createEngagementRegistry(
       setTimer,
       clearTimer,
       send: env.send,
+      // the final record reports through `onFlushed` instead
+      ...(late
+        ? {}
+        : {
+            onRecordOut: () => {
+              if (!created.tracker.flushed)
+                safely(() => env.onRecordOut?.(impUrl))
+            },
+          }),
       onDone: () => {
         settling.delete(created.tracker)
         if (map.get(impUrl) === created && created.timer === null)
@@ -966,7 +1003,9 @@ export function createEngagementRegistry(
     },
     status(impUrl) {
       if (finished.has(impUrl)) return 'flushed'
-      return entries.has(impUrl) ? 'live' : 'unknown'
+      const entry = entries.get(impUrl)
+      if (!entry) return 'unknown'
+      return entry.tracker.recordOut ? 'recorded' : 'live'
     },
     closeAll(exit = 'window_close') {
       for (const map of [entries, lateEntries])

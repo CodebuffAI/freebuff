@@ -125,9 +125,11 @@ export interface AdoptionWatcherEnv {
   /** Fire-and-forget; receives only records that parse. */
   send: (record: AdEngagement) => void
   /**
-   * Whether the impression's main engagement record is out. A merge record
-   * is held while it is `live`, so the server sees the row it merges into
-   * first; `unknown` (never tracked) sends at once, since no row is coming.
+   * Whether the server has the impression's engagement row yet. A merge
+   * record is held while it is `live` (no record out), so the server sees the
+   * row it merges into first; `recorded` (a checkpoint is out) and `flushed`
+   * release it; `unknown` (never tracked) sends at once, since no row is
+   * coming.
    */
   status?: (impUrl: string) => EngagementStatus
 }

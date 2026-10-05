@@ -937,6 +937,55 @@ describe('checkpoints: records that do not wait for an unmount (bug 2)', () => {
     c.advance(ENGAGEMENT_CHECKPOINT_MS * 2)
     expect(sent).toHaveLength(0)
   })
+
+  test('a checkpoint reports the row once and status reads `recorded` until the flush', () => {
+    const c = clock()
+    const sent: AdEngagement[] = []
+    const recorded: string[] = []
+    const flushed: string[] = []
+    const registry = createEngagementRegistry({
+      now: c.now,
+      send: (record) => sent.push(record),
+      focus: () => NO_FOCUS,
+      setTimer: c.setTimer,
+      clearTimer: c.clearTimer,
+      onRecordOut: (impUrl) => recorded.push(impUrl),
+      onFlushed: (impUrl) => flushed.push(impUrl),
+    })
+    const a = registry.mount('a', 'measured')!
+    a.tracker.setVisible(a.token, true)
+    expect(registry.status('a')).toBe('live')
+
+    a.tracker.click()
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.exit).toBeUndefined()
+    expect(recorded).toEqual(['a'])
+    expect(registry.status('a')).toBe('recorded')
+
+    // the bounded-exposure checkpoint does not report the row a second time
+    c.advance(ENGAGEMENT_CHECKPOINT_MS * 2)
+    expect(recorded).toEqual(['a'])
+
+    registry.closeAll()
+    expect(registry.status('a')).toBe('flushed')
+    expect(flushed).toEqual(['a'])
+    expect(recorded).toEqual(['a'])
+  })
+
+  test('an impression whose only record is its final one never reports `onRecordOut`', () => {
+    const recorded: string[] = []
+    const r = createEngagementRegistry({
+      now: () => 0,
+      send: () => {},
+      focus: () => NO_FOCUS,
+      checkpointAfterMs: null,
+      onRecordOut: (impUrl) => recorded.push(impUrl),
+    })
+    r.mount('a', 'pinned')
+    r.closeAll()
+    expect(recorded).toEqual([])
+    expect(r.status('a')).toBe('flushed')
+  })
 })
 
 describe('closeAll: the CLI quitting (bug 2)', () => {

@@ -141,6 +141,9 @@ export function adEngagementRegistry(): EngagementRegistry {
     idleMs: getIdleTime,
     countsKeys: true,
     onFlushed: (impUrl) => adoption?.mainRecordSent(impUrl),
+    // a checkpoint created the row: a held adoption record need not wait for
+    // the final record, which a transcript card only sends at quit
+    onRecordOut: (impUrl) => adoption?.mainRecordSent(impUrl),
   })
   ensureAdTerminalFocusWatch()
   subscribeAdTerminalFocus((focused) => created.terminalFocus(focused))

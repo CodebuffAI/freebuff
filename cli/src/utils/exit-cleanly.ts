@@ -67,6 +67,19 @@ export function createExitCliCleanly(deps: ExitCliDependencies) {
       const sponsored = Promise.resolve()
         .then(deps.settleSponsoredRun)
         .catch(() => null)
+      // Also STARTED BEFORE THE TEARDOWN: tearing the renderer down unmounts
+      // every ad card, which stamps each live record with a pending `unmount`
+      // exit that `closeAll` then keeps, so a quit would never read as
+      // `window_close`. Called synchronously so `closeAll` runs now; only the
+      // transport is awaited below.
+      let adEngagement: Promise<void>
+      try {
+        adEngagement = Promise.resolve(deps.flushAdEngagement()).catch(
+          () => {},
+        )
+      } catch {
+        adEngagement = Promise.resolve()
+      }
       try {
         deps.cleanupLocal()
       } catch {
@@ -81,7 +94,7 @@ export function createExitCliCleanly(deps: ExitCliDependencies) {
       const remoteTasks = [
         Promise.resolve().then(deps.flushAnalytics),
         Promise.resolve().then(deps.drainClientLogs),
-        Promise.resolve().then(deps.flushAdEngagement),
+        adEngagement,
         sponsored.then((notice) => {
           if (notice) deps.writeNotice(notice)
         }),

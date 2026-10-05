@@ -134,6 +134,26 @@ describe('adoption watcher', () => {
     expect(watcher.size).toBe(0)
   })
 
+  test('released by a checkpoint while the card is still live (`recorded`)', () => {
+    let status: EngagementStatus = 'live'
+    const { watcher, sent } = harness(() => status)
+    watcher.armClick('imp-1', 'https://neon.tech')
+    watcher.agentCommand('pnpm add @neondatabase/serverless')
+    expect(sent).toHaveLength(0)
+    // the click checkpoint created the row; the card stays mounted
+    status = 'recorded'
+    watcher.mainRecordSent('imp-1')
+    expect(sent).toHaveLength(1)
+    expect(watcher.size).toBe(0)
+  })
+
+  test('an adoption after the checkpoint sends at once', () => {
+    const { watcher, sent } = harness(() => 'recorded')
+    watcher.armClick('imp-1', 'https://neon.tech')
+    watcher.agentCommand('pnpm add @neondatabase/serverless')
+    expect(sent).toHaveLength(1)
+  })
+
   test('an impression never tracked sends at once: no main record is coming', () => {
     const { watcher, sent } = harness(() => 'unknown')
     watcher.armClick('imp-1', 'https://vercel.com')
