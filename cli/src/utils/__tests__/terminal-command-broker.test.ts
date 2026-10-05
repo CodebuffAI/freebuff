@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { spawn, spawnSync } from 'child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'fs'
+import {
+  closeSync,
+  existsSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from 'fs'
+import type { writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
 
@@ -13,7 +22,10 @@ import {
   classifyTerminalBrokerFailure,
   createTerminalCommandBroker,
   isTerminalCommandBrokerInvocation,
+  parseProtocol,
+  probeTempDirectory,
   protocolPathFromEnv,
+  writeProtocolResponse,
 } from '../terminal-command-broker'
 import { sanitizeWindowsCliVersion } from '../windows-terminal-health'
 
@@ -26,6 +38,11 @@ const brokerOwnerFixture = path.join(
   import.meta.dir,
   'fixtures',
   'terminal-command-broker-owner.ts',
+)
+const brokerEmptyResponseFixture = path.join(
+  import.meta.dir,
+  'fixtures',
+  'terminal-command-broker-empty-response.ts',
 )
 const brokerChildFixture = path.join(
   import.meta.dir,
@@ -351,6 +368,127 @@ describe('terminal command broker', () => {
     expect(failures).toEqual([
       { stage: 'completion', failureCode: 'protocol_missing' },
     ])
+  })
+
+  test('never surfaces a raw JSON parse error for an empty or cut-off result', () => {
+    for (const value of ['', '  \n', '{"ok":true,"exitCo']) {
+      let message = ''
+      try {
+        parseProtocol(value)
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error)
+      }
+      expect(message).toContain('result file was empty or cut off')
+      expect(message).not.toContain('JSON Parse error')
+      expect(classifyTerminalBrokerFailure(new Error(message))).toBe(
+        'invalid_response',
+      )
+    }
+    expect(parseProtocol('{"ok":true,"exitCode":3}\n')).toEqual({
+      ok: true,
+      exitCode: 3,
+    })
+  })
+
+  test('an empty result file from a full temp directory says so, without asking for a restart', async () => {
+    const failures: Array<{ stage: string; failureCode: string }> = []
+    const before = protocolFilesForThisProcess()
+    const broker = createTerminalCommandBroker({
+      invocation: () => ({
+        executable: process.execPath,
+        args: [brokerEmptyResponseFixture],
+      }),
+      reportFailure: (failure) => failures.push(failure),
+      probeTempDir: () => 'The temp directory /tmp is full.',
+    })
+
+    let failureMessage = ''
+    try {
+      await runTerminalCommand({
+        command: `printf 'ran'`,
+        process_type: 'SYNC',
+        cwd: process.cwd(),
+        timeout_seconds: 10,
+        terminalCommandBroker: broker,
+      })
+    } catch (error) {
+      failureMessage = error instanceof Error ? error.message : String(error)
+    }
+
+    expect(failureMessage).toContain('Terminal command broker failed:')
+    expect(failureMessage).not.toContain('JSON Parse error')
+    expect(failureMessage).toContain('The temp directory /tmp is full.')
+    expect(failureMessage).toContain('Freebuff does not need to be restarted.')
+    expect(failureMessage).not.toContain('Restart Freebuff and try again.')
+    expect(failures).toEqual([
+      { stage: 'completion', failureCode: 'invalid_response' },
+    ])
+    expect(protocolFilesForThisProcess()).toEqual(before)
+  })
+
+  test('keeps restart guidance for an empty result when the temp directory is healthy', async () => {
+    const broker = createTerminalCommandBroker({
+      invocation: () => ({
+        executable: process.execPath,
+        args: [brokerEmptyResponseFixture],
+      }),
+      reportFailure: () => {},
+      probeTempDir: () => null,
+    })
+
+    await expect(
+      runTerminalCommand({
+        command: `printf 'ran'`,
+        process_type: 'SYNC',
+        cwd: process.cwd(),
+        timeout_seconds: 10,
+        terminalCommandBroker: broker,
+      }),
+    ).rejects.toThrow('Restart Freebuff and try again.')
+  })
+
+  test('a failed result write removes the partial file and explains itself on stderr', () => {
+    const tempDir = mkdtempSync(path.join(tmpdir(), 'codebuff-broker-enospc-'))
+    const protocolPath = path.join(tempDir, 'result.json')
+    const diagnostics: string[] = []
+    try {
+      expect(() =>
+        writeProtocolResponse(
+          protocolPath,
+          { ok: true, exitCode: 0 },
+          {
+            // Mirror the kernel: the file is created, then the write fails.
+            writeFile: ((file: string) => {
+              closeSync(openSync(file, 'wx'))
+              throw Object.assign(
+                new Error('ENOSPC: no space left on device, write'),
+                { code: 'ENOSPC' },
+              )
+            }) as unknown as typeof writeFileSync,
+            writeDiagnostic: (line) => diagnostics.push(line),
+          },
+        ),
+      ).toThrow('ENOSPC')
+      expect(existsSync(protocolPath)).toBe(false)
+      expect(diagnostics.join('')).toContain(
+        `could not record this command's result in ${tempDir}: ENOSPC`,
+      )
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  test('probes the temp directory without leaving files behind', () => {
+    const tempDir = mkdtempSync(path.join(tmpdir(), 'codebuff-broker-probe-'))
+    try {
+      expect(probeTempDirectory(tempDir)).toBeNull()
+      expect(readdirSync(tempDir)).toEqual([])
+      expect(
+        probeTempDirectory(path.join(tempDir, 'does-not-exist')),
+      ).toContain('could not be written (ENOENT)')
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true })
+    }
   })
 
   test('does not add broker recovery guidance to a command spawn failure', async () => {

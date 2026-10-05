@@ -24,6 +24,8 @@ const MAX_REQUEST_BYTES = 4 * 1024 * 1024
 const MAX_PROTOCOL_BYTES = 64 * 1024
 const PROTOCOL_FILE_PREFIX = 'freebuff-terminal-command-broker-'
 const TERMINAL_COMMAND_BROKER_RECOVERY = 'Restart Freebuff and try again.'
+const INCOMPLETE_RESPONSE_MESSAGE =
+  'terminal command broker returned an invalid response: the result file was empty or cut off'
 
 export type TerminalBrokerFailureStage = 'spawn' | 'stdio' | 'completion'
 export type TerminalBrokerFailureCode =
@@ -82,8 +84,51 @@ function reportTerminalBrokerFailure({
   })
 }
 
-function brokerFailure(error: unknown): Error {
+/**
+ * Why the temp directory cannot hold the broker's one-shot result file, or
+ * null when it can. Only consulted after a broker failure: a full or read-only
+ * temp directory is the one cause a restart cannot fix (and makes worse — the
+ * restarted CLI unpacks its renderer into the same directory), so it gets its
+ * own guidance instead of "restart".
+ */
+export function probeTempDirectory(
+  directory: string = os.tmpdir(),
+): string | null {
+  const probePath = path.join(
+    directory,
+    `${PROTOCOL_FILE_PREFIX}probe-${process.pid}-${crypto.randomUUID()}`,
+  )
+  try {
+    writeFileSync(probePath, 'x'.repeat(4096), { flag: 'wx', mode: 0o600 })
+    return null
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOSPC' || code === 'EDQUOT') {
+      return `The temp directory ${directory} is full.`
+    }
+    if (code === 'EROFS' || code === 'EACCES' || code === 'EPERM') {
+      return `The temp directory ${directory} is not writable.`
+    }
+    return `The temp directory ${directory} could not be written (${code ?? errorMessage(error)}).`
+  } finally {
+    removeProtocolFile(probePath)
+  }
+}
+
+function tempDirectoryRecovery(problem: string): string {
+  return `${problem} Free up space there (or set TMPDIR to a writable directory), then run the command again. Freebuff does not need to be restarted.`
+}
+
+function brokerFailure(
+  error: unknown,
+  tempDirectoryProblem: string | null = null,
+): Error {
   const message = errorMessage(error)
+  if (tempDirectoryProblem) {
+    return new Error(
+      `${message}\n\n${tempDirectoryRecovery(tempDirectoryProblem)}`,
+    )
+  }
   return new Error(
     message.includes(TERMINAL_COMMAND_BROKER_RECOVERY)
       ? message
@@ -155,18 +200,53 @@ function removeProtocolFile(protocolPath: string): void {
   }
 }
 
-function writeProtocol(message: BrokerProtocol): void {
+/**
+ * Write the one-shot result file. `wx` creates the file BEFORE writing, so on
+ * a full disk (ENOSPC/EDQUOT) the write throws after leaving an EMPTY file —
+ * which the parent used to read and hand to JSON.parse, surfacing as the
+ * opaque "JSON Parse error: Unexpected EOF". Remove the partial file so the
+ * parent sees a missing response, and say why on the command's stderr.
+ */
+export function writeProtocolResponse(
+  protocolPath: string,
+  message: BrokerProtocol,
+  {
+    writeFile = writeFileSync,
+    removeFile = removeProtocolFile,
+    writeDiagnostic = (line: string) => process.stderr.write(line),
+  }: {
+    writeFile?: typeof writeFileSync
+    removeFile?: (protocolPath: string) => void
+    writeDiagnostic?: (line: string) => void
+  } = {},
+): void {
   const payload = `${JSON.stringify(message)}\n`
   if (Buffer.byteLength(payload) > MAX_PROTOCOL_BYTES) {
     throw new Error('terminal command broker response was too large')
   }
-  // A constrained one-shot file avoids Bun's unreliable custom stdio pipes on
-  // Windows. `wx` ensures even an accidentally reused path is never replaced.
-  writeFileSync(protocolPathFromEnv(), payload, {
-    encoding: 'utf8',
-    flag: 'wx',
-    mode: 0o600,
-  })
+  try {
+    // A constrained one-shot file avoids Bun's unreliable custom stdio pipes on
+    // Windows. `wx` ensures even an accidentally reused path is never replaced.
+    writeFile(protocolPath, payload, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    })
+  } catch (error) {
+    removeFile(protocolPath)
+    try {
+      writeDiagnostic(
+        `\nFreebuff could not record this command's result in ${path.dirname(protocolPath)}: ${errorMessage(error)}\n`,
+      )
+    } catch {
+      // The diagnostic is best-effort; the parent still reports the failure.
+    }
+    throw error
+  }
+}
+
+function writeProtocol(message: BrokerProtocol): void {
+  writeProtocolResponse(protocolPathFromEnv(), message)
 }
 
 function waitForParentDisconnect(): Promise<void> {
@@ -228,7 +308,16 @@ async function readRequest(): Promise<TerminalCommandSpawnRequest> {
     chunks.push(buffer)
   }
 
-  const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  const raw = Buffer.concat(chunks).toString('utf8')
+  if (raw.trim() === '') {
+    throw new Error('terminal command broker received an empty request')
+  }
+  let value: unknown
+  try {
+    value = JSON.parse(raw)
+  } catch {
+    throw new Error('terminal command broker received an incomplete request')
+  }
   if (!isSpawnRequest(value)) {
     throw new Error('terminal command broker received an invalid request')
   }
@@ -280,8 +369,17 @@ export async function serveTerminalCommandBroker(): Promise<void> {
   await reapOwnProcessGroup()
 }
 
-function parseProtocol(value: string): BrokerProtocol {
-  const parsed: unknown = JSON.parse(value)
+export function parseProtocol(value: string): BrokerProtocol {
+  // An empty or truncated file is a write that failed part-way (a full temp
+  // directory), not a protocol violation: never surface JSON.parse's own
+  // "Unexpected EOF", which names nothing a user can act on.
+  if (value.trim() === '') throw new Error(INCOMPLETE_RESPONSE_MESSAGE)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error(INCOMPLETE_RESPONSE_MESSAGE)
+  }
   if (!parsed || typeof parsed !== 'object' || !('ok' in parsed)) {
     throw new Error('terminal command broker returned an invalid response')
   }
@@ -357,11 +455,21 @@ export function createTerminalCommandBroker({
   invocation = defaultBrokerInvocation,
   terminate = terminateProcessGroup,
   reportFailure = reportTerminalBrokerFailure,
+  probeTempDir = probeTempDirectory,
 }: {
   invocation?: () => { executable: string; args: string[] }
   terminate?: typeof terminateProcessGroup
   reportFailure?: (failure: TerminalBrokerFailureTelemetry) => void
+  probeTempDir?: () => string | null
 } = {}): TerminalCommandBroker {
+  const tempDirectoryProblem = (): string | null => {
+    try {
+      return probeTempDir()
+    } catch {
+      return null
+    }
+  }
+
   const report = (stage: TerminalBrokerFailureStage, error: unknown): void => {
     try {
       reportFailure({
@@ -442,8 +550,16 @@ export function createTerminalCommandBroker({
           return parseProtocol(payload.toString('utf8').trim())
         })
         .catch((error) => {
-          if (!terminationRequested) report('completion', error)
-          throw brokerFailure(error)
+          if (terminationRequested) throw brokerFailure(error)
+          report('completion', error)
+          // Each command gets a fresh broker, so a temp-directory problem is
+          // recoverable in place once space is freed; only probe when the
+          // result itself was lost, never on a spawn error.
+          const resultLost =
+            error instanceof Error &&
+            (error.message === INCOMPLETE_RESPONSE_MESSAGE ||
+              error.message.includes('protocol response was missing'))
+          throw brokerFailure(error, resultLost ? tempDirectoryProblem() : null)
         })
         .then((message) => {
           if (!message.ok) throw new Error(message.error)
