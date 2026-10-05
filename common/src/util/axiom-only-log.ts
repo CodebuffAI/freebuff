@@ -430,7 +430,6 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   /** Effective runtime money gates, emitted as bounded configuration state.
    * These are not campaign pricing or advertiser identifiers. */
   first_party_billing_mode: 'string',
-  external_settlement_enabled: 'boolean',
   /**
    * Exact primary allocation is intentionally represented by an opaque,
    * operator-chosen cohort label rather than a campaign or advertiser id.
