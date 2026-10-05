@@ -78,6 +78,9 @@ export function noteAdTurnState(
   if (running && !wasRunning) {
     turnStartedAt = now
     awaitingFirstTokenSince = now
+    // `work.lastError` describes the current (or, between turns, the last)
+    // turn, so a failure from an earlier turn does not ride every later ad.
+    lastErrorClass = 'none'
   }
   if (!running) {
     turnStartedAt = null
@@ -439,46 +442,82 @@ export function subscribeAdAgentCommand(
   }
 }
 
+const textOf = (value: unknown): string =>
+  typeof value === 'string' ? value : ''
+
 /**
- * The text a failed tool result carries, or undefined when it did not fail:
- * an `errorMessage`, or a non-zero exit code (with its stderr, when any).
+ * The error class of a shell command the agent ran that FAILED, or undefined
+ * for anything else. Only the class is returned; the text stays here.
+ *
+ * `lastError` is meant to say what is going wrong in the user's project (a
+ * missing module, a type error, a port in use), so only `run_terminal_command`
+ * results count — the one tool output that carries `command`. An agent's own
+ * mechanics are not the user's error: an edit whose old string did not match,
+ * a search or MCP call that failed, a command killed by its timeout (thrown,
+ * so it arrives as a bare `errorMessage` with no `command`).
+ *
+ * A non-zero exit is classified from stderr, then stdout (tsc and pytest
+ * report there). When nothing names a known class, a bare exit 1 with nothing
+ * on stderr is not an error at all: it is POSIX's "false", which is how grep
+ * says "no match" and how test, diff and which answer. Anything else
+ * unrecognised is `other`.
  */
-export function failedToolOutputText(output: unknown): string | undefined {
+export function shellFailureClassOf(output: unknown): ErrorClass | undefined {
   if (!Array.isArray(output)) return undefined
   for (const part of output) {
     if (!part || typeof part !== 'object' || !('value' in part)) continue
     const value = (part as { value: unknown }).value
     if (!value || typeof value !== 'object' || Array.isArray(value)) continue
     const v = value as {
+      command?: unknown
       errorMessage?: unknown
       exitCode?: unknown
       stderr?: unknown
+      stdout?: unknown
     }
-    if (typeof v.errorMessage === 'string' && v.errorMessage)
-      return v.errorMessage
-    if (typeof v.exitCode === 'number' && v.exitCode !== 0)
-      return typeof v.stderr === 'string' && v.stderr ? v.stderr : 'failed'
+    if (typeof v.command !== 'string') continue
+    const errorMessage = textOf(v.errorMessage)
+    if (errorMessage) return errorClassOf(errorMessage)
+    const exitCode = v.exitCode
+    if (
+      typeof exitCode !== 'number' ||
+      !Number.isFinite(exitCode) ||
+      exitCode === 0
+    )
+      return undefined
+    const stderr = textOf(v.stderr)
+    for (const text of [stderr, textOf(v.stdout)]) {
+      const cls = errorClassOf(text)
+      if (cls !== 'none' && cls !== 'other') return cls
+    }
+    if (exitCode === 1 && !stderr.trim()) return undefined
+    return 'other'
   }
   return undefined
 }
 
-/** A tool result arrived: a failed one sets `lastError` to its class only. */
+/** A tool result arrived: a failed shell command sets `lastError` to its class only. */
 export function noteAdToolResult(output: unknown): void {
   try {
-    const text = failedToolOutputText(output)
-    if (text !== undefined) lastErrorClass = errorClassOf(text)
+    const cls = shellFailureClassOf(output)
+    if (cls !== undefined) lastErrorClass = cls
   } catch {
     // a feature must never break the event stream
   }
 }
 
-/** A turn failed. Only the class of its message is kept, never the text. */
+/**
+ * A turn failed: counted for `turnFailures`. Its message is ignored, and it
+ * does NOT set `lastError`: a failed turn is our service failing (a session
+ * gate, a rate limit, the network), which `turnFailures` already counts, not
+ * an error in the user's project. Desktop's `lastError` likewise reads only
+ * tool results.
+ */
 export function noteAdTurnFailure(
-  message: string | undefined,
+  _message: string | undefined,
   now: number = Date.now(),
 ): void {
   try {
-    lastErrorClass = errorClassOf(message || 'failed')
     turnFailureAt.push(now)
     if (turnFailureAt.length > TURN_FAILURE_MAX)
       turnFailureAt.splice(0, turnFailureAt.length - TURN_FAILURE_MAX)

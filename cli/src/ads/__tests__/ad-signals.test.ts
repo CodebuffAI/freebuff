@@ -18,7 +18,6 @@ import {
   subscribeAdUserSend,
   timedApiCall,
   AD_TURN_FAILURE_WINDOW_MS,
-  failedToolOutputText,
   getAdTypingSummary,
   getAdWorkSnapshot,
   noteAdKeystroke,
@@ -27,6 +26,7 @@ import {
   noteAdToolCall,
   noteAdToolResult,
   noteAdTurnFailure,
+  shellFailureClassOf,
   subscribeAdAgentCommand,
   subscribeAdKeystroke,
   timedAdFetch,
@@ -200,37 +200,111 @@ describe('ad signals: wave 2', () => {
     expect(JSON.stringify(getAdWorkSnapshot())).not.toContain('stripe')
   })
 
-  test('failed tool results keep only their error class', () => {
-    expect(failedToolOutputText([{ type: 'json', value: { exitCode: 0 } }])).toBe(
+  test('a failed shell command keeps only its error class', () => {
+    const shell = (value: Record<string, unknown>) => [
+      { type: 'json', value: { command: 'npm test', ...value } },
+    ]
+    expect(shellFailureClassOf(shell({ exitCode: 0, stdout: 'ok' }))).toBe(
       undefined,
     )
     expect(
-      failedToolOutputText([
-        { type: 'json', value: { exitCode: 1, stderr: 'Error: Cannot find module "left-pad"' } },
-      ]),
-    ).toContain('Cannot find module')
+      shellFailureClassOf(
+        shell({ exitCode: 1, stderr: 'Error: Cannot find module "left-pad"' }),
+      ),
+    ).toBe('module-not-found')
+    // tsc reports on stdout
     expect(
-      failedToolOutputText([{ type: 'json', value: { errorMessage: 'EACCES: /etc/x' } }]),
-    ).toBe('EACCES: /etc/x')
-    expect(failedToolOutputText('nope')).toBeUndefined()
+      shellFailureClassOf(
+        shell({
+          exitCode: 2,
+          stdout: "src/a.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+        }),
+      ),
+    ).toBe('type-error')
+    // a command that could not run at all
+    expect(shellFailureClassOf(shell({ errorMessage: 'spawn EACCES' }))).toBe(
+      'permission-denied',
+    )
+    // unrecognised failures with something on stderr, or a non-1 exit, are `other`
+    expect(
+      shellFailureClassOf(
+        shell({ exitCode: 128, stderr: 'fatal: not a git repository' }),
+      ),
+    ).toBe('other')
+    expect(shellFailureClassOf(shell({ exitCode: 3 }))).toBe('other')
+    expect(shellFailureClassOf('nope')).toBeUndefined()
+  })
 
+  test("exit 1 with nothing on stderr is POSIX's false, not an error", () => {
+    const shell = (value: Record<string, unknown>) => [
+      { type: 'json', value: { command: 'grep -r foo src', ...value } },
+    ]
+    // grep with no match, test, diff, which
+    expect(shellFailureClassOf(shell({ exitCode: 1, stdout: '' }))).toBe(
+      undefined,
+    )
+    expect(
+      shellFailureClassOf(shell({ exitCode: 1, stdout: 'a.txt b.txt differ' })),
+    ).toBe(undefined)
+    // ...unless the output itself names an error
+    expect(
+      shellFailureClassOf(
+        shell({ exitCode: 1, stdout: 'AssertionError: expected 1 to be 2' }),
+      ),
+    ).toBe('assertion-failed')
+  })
+
+  test("the agent's own mechanics are not the user's error", () => {
+    // an edit whose old string did not match, a failed search, an MCP error,
+    // and a command killed by its timeout (thrown, so no `command`)
+    for (const value of [
+      { file: 'a.ts', errorMessage: 'The old string was not found in a.ts' },
+      { errorMessage: 'Code search timed out after 15 seconds.' },
+      { errorMessage: 'ENOENT: no such file or directory, scandir ./nope' },
+      { errorMessage: 'Command timed out after 30 seconds' },
+    ]) {
+      expect(shellFailureClassOf([{ type: 'json', value }])).toBeUndefined()
+      noteAdToolResult([{ type: 'json', value }])
+    }
     expect(getAdWorkSnapshot().lastError).toBe('none')
+  })
+
+  test('lastError holds within a turn and resets when the next one starts', () => {
+    expect(getAdWorkSnapshot().lastError).toBe('none')
+    noteAdTurnState(true, false, 0)
     noteAdToolResult([
-      { type: 'json', value: { exitCode: 1, stderr: 'Error: Cannot find module "left-pad"' } },
+      {
+        type: 'json',
+        value: {
+          command: 'npm run build',
+          exitCode: 1,
+          stderr: 'Error: Cannot find module "left-pad"',
+        },
+      },
     ])
     expect(getAdWorkSnapshot().lastError).toBe('module-not-found')
-    // a successful result does not clear it
-    noteAdToolResult([{ type: 'json', value: { exitCode: 0, stdout: 'ok' } }])
+    // a later success in the same turn does not clear it
+    noteAdToolResult([
+      { type: 'json', value: { command: 'npm i left-pad', exitCode: 0 } },
+    ])
     expect(getAdWorkSnapshot().lastError).toBe('module-not-found')
+    // nor does the turn ending: between turns it describes the last one
+    noteAdTurnState(false, true, 1_000)
+    expect(getAdWorkSnapshot().lastError).toBe('module-not-found')
+    noteAdTurnState(true, false, 2_000)
+    expect(getAdWorkSnapshot().lastError).toBe('none')
     expect(JSON.stringify(getAdWorkSnapshot())).not.toContain('left-pad')
   })
 
-  test('turn failures: class of the message, counted over the trailing hour', () => {
+  test('turn failures are counted over the trailing hour and never set lastError', () => {
     noteAdTurnFailure('429 Too Many Requests from upstream', 0)
-    expect(getAdWorkSnapshot(1).lastError).toBe('rate-limited')
+    expect(getAdWorkSnapshot(1)).toMatchObject({
+      lastError: 'none',
+      turnFailuresLastHour: 1,
+    })
     noteAdTurnFailure(undefined, 1_000)
     expect(getAdWorkSnapshot(2_000)).toMatchObject({
-      lastError: 'other',
+      lastError: 'none',
       turnFailuresLastHour: 2,
     })
     expect(

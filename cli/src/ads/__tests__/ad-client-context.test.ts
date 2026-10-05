@@ -6,7 +6,12 @@ import {
   buildCliAdClientContext,
   createLazyAsyncValue,
   detectStaticTermFacts,
+  findLauncherOnPath,
+  freebuffAgentModeOf,
   installMethodOf,
+  installMethodOfPath,
+  invokedLauncherPath,
+  launcherBinNames,
   localeLanguagesOf,
   median,
   osMajorOf,
@@ -254,6 +259,155 @@ describe('static terminal facts', () => {
       shell: 'other',
     })
     expect(facts({ TERM: 'dumb' }).colors).toBeUndefined()
+  })
+})
+
+describe('static terminal facts: the terminals that used to be `other`', () => {
+  const windowsHost: AdTermHost = {
+    platform: 'win32',
+    release: '10.0.26100',
+    fileExists: () => false,
+  }
+
+  test('a Windows console with no other marker is windows_console, links unknown', () => {
+    const result = facts(
+      { PSModulePath: 'C:\\Program Files\\WindowsPowerShell\\Modules' },
+      windowsHost,
+    )
+    expect(result).toMatchObject({
+      terminal: 'windows_console',
+      multiplexer: 'none',
+      remote: 'none',
+    })
+    // conhost renders no links; Windows Terminal as the default terminal does
+    expect(result.links).toBeUndefined()
+    // Windows Terminal, VS Code and JetBrains still win on Windows
+    expect(facts({ WT_SESSION: 'guid' }, windowsHost).terminal).toBe(
+      'windows_terminal',
+    )
+    expect(facts({ TERM_PROGRAM: 'vscode' }, windowsHost).terminal).toBe(
+      'vscode',
+    )
+    expect(
+      facts({ TERMINAL_EMULATOR: 'JetBrains-JediTerm' }, windowsHost).terminal,
+    ).toBe('jetbrains')
+  })
+
+  test('ssh into Windows says nothing about the client terminal', () => {
+    expect(
+      facts({ SSH_CONNECTION: '10.0.0.2 51234 10.0.0.3 22' }, windowsHost)
+        .terminal,
+    ).toBe('other')
+  })
+
+  test('Git Bash (mintty) and ConEmu', () => {
+    expect(
+      facts(
+        {
+          TERM_PROGRAM: 'mintty',
+          TERM: 'xterm-256color',
+          SHELL: '/usr/bin/bash',
+        },
+        windowsHost,
+      ),
+    ).toMatchObject({ terminal: 'mintty', links: true, shell: 'bash' })
+    expect(
+      facts({ ConEmuPID: '4242', ConEmuANSI: 'ON' }, windowsHost).terminal,
+    ).toBe('conemu')
+  })
+
+  test('Linux desktop terminals', () => {
+    expect(
+      facts(
+        {
+          GNOME_TERMINAL_SCREEN: '/org/gnome/Terminal/screen/1',
+          VTE_VERSION: '7600',
+          TERM: 'xterm-256color',
+        },
+        linuxHost,
+      ),
+    ).toMatchObject({
+      terminal: 'gnome_terminal',
+      links: true,
+      colors: 'truecolor',
+    })
+    // Ptyxis, Tilix, Terminator, xfce4-terminal: VTE without GNOME's markers
+    expect(facts({ VTE_VERSION: '7800' }, linuxHost)).toMatchObject({
+      terminal: 'vte',
+      links: true,
+    })
+    const konsole = facts({ KONSOLE_VERSION: '240802' }, linuxHost)
+    expect(konsole.terminal).toBe('konsole')
+    expect(konsole.links).toBeUndefined()
+    expect(facts({ TERM: 'foot' }, linuxHost)).toMatchObject({
+      terminal: 'foot',
+      links: true,
+    })
+    expect(
+      facts({ XTERM_VERSION: 'XTerm(390)', TERM: 'xterm' }, linuxHost),
+    ).toMatchObject({ terminal: 'xterm', links: false, colors: '16' })
+    // a Linux terminal nothing identifies stays `other`, never windows_console
+    expect(facts({ TERM: 'xterm-256color' }, linuxHost).terminal).toBe('other')
+  })
+
+  test('Zed and Tabby', () => {
+    expect(facts({ TERM_PROGRAM: 'zed', ZED_TERM: 'true' }).terminal).toBe(
+      'zed',
+    )
+    expect(facts({ TERM_PROGRAM: 'Tabby' }).terminal).toBe('tabby')
+  })
+
+  test("tmux on macOS: the hosting app's bundle id names the emulator", () => {
+    expect(
+      facts({
+        TERM_PROGRAM: 'tmux',
+        TMUX: 'x',
+        TERM: 'tmux-256color',
+        __CFBundleIdentifier: 'com.apple.Terminal',
+      }),
+    ).toMatchObject({ terminal: 'apple_terminal', multiplexer: 'tmux' })
+    const tmux = { TERM_PROGRAM: 'tmux', TMUX: 'x' }
+    expect(
+      facts({ ...tmux, __CFBundleIdentifier: 'dev.zed.Zed' }).terminal,
+    ).toBe('zed')
+    expect(
+      facts({
+        ...tmux,
+        __CFBundleIdentifier: 'com.todesktop.230313mzl4w4u92',
+      }).terminal,
+    ).toBe('cursor')
+    // an app outside the list identifies nothing
+    expect(
+      facts({ ...tmux, __CFBundleIdentifier: 'com.example.app' }).terminal,
+    ).toBe('other')
+  })
+
+  test('over ssh, a TERM that names its emulator still does', () => {
+    const ssh = { SSH_CONNECTION: 'x', SSH_TTY: '/dev/pts/1' }
+    expect(facts({ ...ssh, TERM: 'wezterm' }, linuxHost).terminal).toBe(
+      'wezterm',
+    )
+    expect(facts({ ...ssh, TERM: 'foot-extra' }, linuxHost).terminal).toBe(
+      'foot',
+    )
+  })
+
+  test('every detected terminal parses', () => {
+    for (const env of [
+      { TERM_PROGRAM: 'mintty' },
+      { ConEmuPID: '1' },
+      { GNOME_TERMINAL_SERVICE: ':1.2' },
+      { VTE_VERSION: '1' },
+      { KONSOLE_VERSION: '1' },
+      { XTERM_VERSION: '1' },
+      { TERM: 'foot' },
+      { TERM_PROGRAM: 'zed' },
+      { TERM_PROGRAM: 'Tabby' },
+      {},
+    ]) {
+      const term = facts(env, windowsHost)
+      expect(parseAdClientContext({ v: 1, term })).toEqual({ v: 1, term })
+    }
   })
 })
 
@@ -522,8 +676,10 @@ describe('wave 2: pure derivations', () => {
     expect(
       installMethodOf({ npm_config_user_agent: 'npm/10.8.2 node/v22' }, binary),
     ).toBe('npm')
+    // only bunx (or `bun run`) sets the agent; a global bun bin run from the
+    // shell never does, so this is the run-once cache, as npx is for npm
     expect(installMethodOf({ npm_config_user_agent: 'bun/1.3.2' }, binary)).toBe(
-      'bun',
+      'bunx',
     )
     expect(
       installMethodOf({ npm_config_user_agent: 'pnpm/9.1.0 npm/? node/v20' }, binary),
@@ -546,6 +702,160 @@ describe('wave 2: pure derivations', () => {
     expect(launched('/somewhere/else/freebuff')).toBe('other')
     expect(installMethodOf({}, { isBinary: true })).toBe('binary')
     expect(installMethodOf({}, { isBinary: false })).toBe('other')
+  })
+
+  test('installMethodOf: the resolved wrapper path wins over the raw `_`', () => {
+    const env = {
+      CODEBUFF_LAUNCHER_PID: '123',
+      // the bin symlink, whose own name says nothing
+      _: '/opt/homebrew/bin/freebuff',
+    }
+    expect(installMethodOf(env, { isBinary: true })).toBe('other')
+    expect(
+      installMethodOf(env, {
+        isBinary: true,
+        launcherPath: '/opt/homebrew/lib/node_modules/freebuff/index.js',
+      }),
+    ).toBe('npm')
+    // Windows exports no `_`: the PATH lookup's answer is all there is
+    expect(
+      installMethodOf(
+        { CODEBUFF_LAUNCHER_PID: '9' },
+        {
+          isBinary: true,
+          launcherPath: 'C:\\Users\\a\\AppData\\Roaming\\npm\\freebuff.cmd',
+        },
+      ),
+    ).toBe('npm')
+    // the launching package manager still wins
+    expect(
+      installMethodOf(
+        { ...env, npm_config_user_agent: 'npm/10 node/v22', npm_command: 'exec' },
+        { isBinary: true, launcherPath: '/x/.bun/bin/freebuff' },
+      ),
+    ).toBe('npx')
+  })
+
+  test('installMethodOfPath reads the real install locations', () => {
+    const cases: [string, string | undefined][] = [
+      // npm global: macOS (Homebrew node, node.pkg), Linux, ~/.npm-global
+      ['/opt/homebrew/lib/node_modules/freebuff/index.js', 'npm'],
+      ['/usr/local/lib/node_modules/freebuff/index.js', 'npm'],
+      ['/usr/lib/node_modules/freebuff/index.js', 'npm'],
+      ['/home/a/.npm-global/lib/node_modules/freebuff/index.js', 'npm'],
+      // npm global on Windows, nvm-windows, scoop
+      ['C:\\Users\\a\\AppData\\Roaming\\npm\\freebuff.cmd', 'npm'],
+      ['C:\\nvm4w\\nodejs\\freebuff.cmd', 'npm'],
+      ['C:\\Users\\a\\scoop\\persist\\nodejs\\bin\\freebuff.cmd', 'npm'],
+      // version managers that install globals with npm
+      ['/Users/a/.nvm/versions/node/v22.9.0/bin/freebuff', 'npm'],
+      ['/Users/a/.volta/bin/volta-shim', 'npm'],
+      ['/Users/a/.asdf/shims/freebuff', 'npm'],
+      ['/Users/a/.local/state/fnm_multishells/123_456/bin/freebuff', 'npm'],
+      ['/home/a/.local/share/mise/installs/node/22/bin/freebuff', 'npm'],
+      // npx / bunx caches
+      ['/Users/a/.npm/_npx/6a9b/node_modules/freebuff/index.js', 'npx'],
+      ['/private/tmp/bunx-501-freebuff@latest/node_modules/freebuff/index.js', 'bunx'],
+      // bun, pnpm, yarn globals
+      ['/Users/a/.bun/install/global/node_modules/freebuff/index.js', 'bun'],
+      ['C:\\Users\\a\\.bun\\bin\\freebuff.exe', 'bun'],
+      ['/Users/a/Library/pnpm/global/5/node_modules/freebuff/index.js', 'pnpm'],
+      ['/Users/a/.config/yarn/global/node_modules/freebuff/index.js', 'yarn'],
+      ['/opt/homebrew/Cellar/freebuff/1.0/bin/freebuff', 'brew'],
+      // nothing to go on; an NVMe mount is not nvm
+      ['/opt/homebrew/bin/freebuff', undefined],
+      ['/mnt/nvme0/tools/freebuff', undefined],
+      ['', undefined],
+    ]
+    for (const [path, method] of cases)
+      expect([path, installMethodOfPath(path)]).toEqual([path, method])
+  })
+
+  test('invokedLauncherPath trusts `_` only when it names the wrapper', () => {
+    const names = launcherBinNames(true)
+    const realpath = (path: string) =>
+      path === '/opt/homebrew/bin/freebuff'
+        ? '/opt/homebrew/lib/node_modules/freebuff/index.js'
+        : path
+    expect(
+      invokedLauncherPath({ _: '/opt/homebrew/bin/freebuff' }, names, realpath),
+    ).toBe('/opt/homebrew/lib/node_modules/freebuff/index.js')
+    // `node index.js`, `env`, an unrelated last command
+    expect(
+      invokedLauncherPath({ _: '/usr/local/bin/node' }, names, realpath),
+    ).toBeUndefined()
+    expect(invokedLauncherPath({}, names, realpath)).toBeUndefined()
+    // a dangling symlink still names its own directory
+    expect(
+      invokedLauncherPath({ _: '/home/a/.bun/bin/freebuff' }, names, () => {
+        throw new Error('ENOENT')
+      }),
+    ).toBe('/home/a/.bun/bin/freebuff')
+    expect(launcherBinNames(false)).toEqual(['codebuff', 'cb'])
+    expect(
+      invokedLauncherPath(
+        { _: 'C:\\Users\\a\\AppData\\Roaming\\npm\\CB.CMD' },
+        launcherBinNames(false),
+        (p) => p,
+      ),
+    ).toBe('C:\\Users\\a\\AppData\\Roaming\\npm\\CB.CMD')
+  })
+
+  test('findLauncherOnPath finds the first wrapper on PATH, as `which` does', async () => {
+    const fsOf = (present: Record<string, string>) => ({
+      access: async (path: string) => {
+        if (!(path in present)) throw new Error('ENOENT')
+      },
+      realpath: async (path: string) => present[path]!,
+    })
+    expect(
+      await findLauncherOnPath(
+        { PATH: '/usr/bin:/opt/homebrew/bin:/Users/a/.bun/bin' },
+        'darwin',
+        ['freebuff'],
+        fsOf({
+          '/opt/homebrew/bin/freebuff':
+            '/opt/homebrew/lib/node_modules/freebuff/index.js',
+          '/Users/a/.bun/bin/freebuff':
+            '/Users/a/.bun/install/global/node_modules/freebuff/index.js',
+        }),
+      ),
+    ).toBe('/opt/homebrew/lib/node_modules/freebuff/index.js')
+    // Windows: `;` separated, `Path` spelling, shim extensions
+    expect(
+      await findLauncherOnPath(
+        { Path: 'C:\\Windows\\system32;C:\\Users\\a\\AppData\\Roaming\\npm\\' },
+        'win32',
+        ['freebuff'],
+        fsOf({
+          'C:\\Users\\a\\AppData\\Roaming\\npm\\freebuff.cmd':
+            'C:\\Users\\a\\AppData\\Roaming\\npm\\freebuff.cmd',
+        }),
+      ),
+    ).toBe('C:\\Users\\a\\AppData\\Roaming\\npm\\freebuff.cmd')
+    // not on PATH at all, and no PATH
+    expect(
+      await findLauncherOnPath({ PATH: '/usr/bin' }, 'linux', ['freebuff'], fsOf({})),
+    ).toBeUndefined()
+    expect(
+      await findLauncherOnPath({}, 'linux', ['freebuff'], fsOf({})),
+    ).toBeUndefined()
+    // a realpath failure falls back to the path that was found
+    expect(
+      await findLauncherOnPath({ PATH: '/x/pnpm' }, 'linux', ['freebuff'], {
+        access: async () => undefined,
+        realpath: async () => {
+          throw new Error('EACCES')
+        },
+      }),
+    ).toBe('/x/pnpm/freebuff')
+  })
+
+  test('freebuffAgentModeOf speaks Desktop’s build/plan vocabulary', () => {
+    expect(freebuffAgentModeOf('default')).toBe('build')
+    expect(freebuffAgentModeOf('plan')).toBe('plan')
+    expect(freebuffAgentModeOf('review')).toBe('build')
+    expect(freebuffAgentModeOf(undefined)).toBe('build')
   })
 
   test('createLazyAsyncValue is never awaited and re-reads only after its ttl', async () => {

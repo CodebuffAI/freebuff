@@ -15,7 +15,7 @@
  * and does no I/O after the first call (the static terminal facts are read
  * once and cached), so it cannot delay the auction.
  */
-import { existsSync, promises as fsPromises } from 'fs'
+import { existsSync, promises as fsPromises, realpathSync } from 'fs'
 import os from 'os'
 
 import { env as buildEnv } from '@codebuff/common/env'
@@ -77,7 +77,7 @@ import { useChatStore } from '../state/chat-store'
 import { getIdleTime } from '../utils/activity-tracker'
 import { getConfigDir } from '../utils/config-dir'
 import { IS_FREEBUFF } from '../utils/constants'
-import { getSystemProcessEnv } from '../utils/env'
+import { getCliEnv, getSystemProcessEnv } from '../utils/env'
 import { getAgentIdForMode } from '../utils/freebuff-agent-selection'
 import { getSkillCount, isSkillRegistryLoaded } from '../utils/skill-registry'
 
@@ -118,8 +118,43 @@ export type StaticTermFacts = {
 const set = (value: string | undefined): boolean =>
   typeof value === 'string' && value.length > 0
 
-/** Inside a multiplexer `TERM_PROGRAM` names the multiplexer, so the emulator's own markers are the fallback. */
-export function detectTerminal(env: AdTermEnv): Terminal {
+/**
+ * macOS puts the launching app's bundle id in `__CFBundleIdentifier`, and
+ * every shell it starts inherits it, a tmux server included. Matched against
+ * this fixed list only.
+ */
+const MAC_BUNDLE_TERMINALS: readonly (readonly [RegExp, Terminal])[] = [
+  [/^com\.apple\.terminal$/, 'apple_terminal'],
+  [/^com\.googlecode\.iterm2$/, 'iterm'],
+  [/^com\.mitchellh\.ghostty/, 'ghostty'],
+  [/^com\.github\.wez\.wezterm$/, 'wezterm'],
+  [/^net\.kovidgoyal\.kitty$/, 'kitty'],
+  [/^(org|io)\.alacritty$/, 'alacritty'],
+  [/^dev\.warp\./, 'warp'],
+  [/^com\.todesktop\.230313mzl4w4u92$/, 'cursor'],
+  [/^com\.microsoft\.vscode/, 'vscode'],
+  [/^dev\.zed\.zed/, 'zed'],
+  [/^com\.jetbrains\.|^com\.google\.android\.studio$/, 'jetbrains'],
+  [/^org\.tabby$/, 'tabby'],
+]
+
+function terminalOfMacBundle(bundleId: string | undefined): Terminal | undefined {
+  const id = (bundleId ?? '').trim().toLowerCase()
+  if (!id) return undefined
+  for (const [pattern, terminal] of MAC_BUNDLE_TERMINALS)
+    if (pattern.test(id)) return terminal
+  return undefined
+}
+
+/**
+ * Inside a multiplexer `TERM_PROGRAM` names the multiplexer, so the emulator's
+ * own markers are the fallback; over ssh only `TERM` and `LC_TERMINAL` usually
+ * survive. `other` is a terminal nothing here identifies.
+ */
+export function detectTerminal(
+  env: AdTermEnv,
+  platform: string = '',
+): Terminal {
   const program = (env.TERM_PROGRAM ?? '').trim().toLowerCase()
   const term = (env.TERM ?? '').toLowerCase()
   const isCursor =
@@ -148,13 +183,24 @@ export function detectTerminal(env: AdTermEnv): Terminal {
       return 'cursor'
     case 'vscode':
       return isCursor ? 'cursor' : 'vscode'
+    case 'zed':
+      return 'zed'
+    case 'tabby':
+      return 'tabby'
+    case 'mintty':
+      return 'mintty'
   }
   if (/jetbrains/i.test(env.TERMINAL_EMULATOR ?? '')) return 'jetbrains'
   if (set(env.WT_SESSION)) return 'windows_terminal'
   if (set(env.GHOSTTY_RESOURCES_DIR) || term.includes('ghostty'))
     return 'ghostty'
   if (set(env.KITTY_WINDOW_ID) || term === 'xterm-kitty') return 'kitty'
-  if (set(env.WEZTERM_PANE) || set(env.WEZTERM_EXECUTABLE)) return 'wezterm'
+  if (
+    set(env.WEZTERM_PANE) ||
+    set(env.WEZTERM_EXECUTABLE) ||
+    term === 'wezterm'
+  )
+    return 'wezterm'
   if (
     set(env.ALACRITTY_WINDOW_ID) ||
     set(env.ALACRITTY_SOCKET) ||
@@ -166,6 +212,28 @@ export function detectTerminal(env: AdTermEnv): Terminal {
   if (set(env.WARP_IS_LOCAL_SHELL_SESSION)) return 'warp'
   if (isCursor) return 'cursor'
   if (set(env.VSCODE_PID) || set(env.VSCODE_GIT_IPC_HANDLE)) return 'vscode'
+  if (set(env.ZED_TERM)) return 'zed'
+  const bundled = terminalOfMacBundle(env.__CFBundleIdentifier)
+  if (bundled) return bundled
+  if (set(env.ConEmuPID) || set(env.ConEmuANSI) || set(env.ConEmuBuild))
+    return 'conemu'
+  if (set(env.KONSOLE_VERSION) || set(env.KONSOLE_DBUS_SESSION))
+    return 'konsole'
+  if (set(env.GNOME_TERMINAL_SCREEN) || set(env.GNOME_TERMINAL_SERVICE))
+    return 'gnome_terminal'
+  if (set(env.VTE_VERSION)) return 'vte'
+  if (term === 'foot' || term.startsWith('foot-')) return 'foot'
+  if (set(env.XTERM_VERSION)) return 'xterm'
+  // A Windows console that names no other terminal. Over ssh the client's
+  // terminal is unknowable, so that stays `other`.
+  if (
+    platform === 'win32' &&
+    !program &&
+    !set(env.SSH_CONNECTION) &&
+    !set(env.SSH_CLIENT) &&
+    !set(env.SSH_TTY)
+  )
+    return 'windows_console'
   return 'other'
 }
 
@@ -201,7 +269,11 @@ export function detectRemote(env: AdTermEnv, host: AdTermHost): RemoteKind {
   return 'none'
 }
 
-/** Emulators that render OSC 8 hyperlinks. Absent here means unknown, not "no". */
+/**
+ * Emulators that render OSC 8 hyperlinks. Absent here means unknown, not "no":
+ * `windows_console` may be Windows Terminal (links) or conhost (none), and
+ * Konsole renders them only when a setting is on.
+ */
 const OSC8_LINKS: Partial<Record<Terminal, boolean>> = {
   iterm: true,
   ghostty: true,
@@ -211,7 +283,13 @@ const OSC8_LINKS: Partial<Record<Terminal, boolean>> = {
   windows_terminal: true,
   vscode: true,
   cursor: true,
+  // VTE has rendered them since 0.50 (2018)
+  gnome_terminal: true,
+  vte: true,
+  foot: true,
+  mintty: true,
   apple_terminal: false,
+  xterm: false,
 }
 
 /**
@@ -238,6 +316,12 @@ const TRUECOLOR_TERMINALS: ReadonlySet<Terminal> = new Set([
   'vscode',
   'cursor',
   'warp',
+  'zed',
+  'gnome_terminal',
+  'vte',
+  'konsole',
+  'foot',
+  'mintty',
 ])
 
 export function detectColors(
@@ -296,7 +380,7 @@ export function detectStaticTermFacts(
   env: AdTermEnv,
   host: AdTermHost,
 ): StaticTermFacts {
-  const terminal = detectTerminal(env)
+  const terminal = detectTerminal(env, host.platform)
   const multiplexer = detectMultiplexer(env)
   const facts: StaticTermFacts = {
     terminal,
@@ -393,33 +477,135 @@ export function releaseChannelOf(
 }
 
 /**
- * How this CLI was installed, from the package manager that launched it
- * (`npm_config_user_agent`, set by npm/npx/bunx/pnpm/yarn exec), else the
- * path the shell ran (`_`), read only against fixed patterns. The npm
- * wrapper marks its child with `CODEBUFF_LAUNCHER_PID`; a compiled binary
- * started without it was run directly.
+ * The install method a path to the npm wrapper reveals, matched against fixed
+ * patterns only; undefined when it reveals none. Pass the REAL path where
+ * there is one: a global bin is usually a symlink (`/opt/homebrew/bin/x`,
+ * `/usr/local/bin/x`) whose own name says nothing, while its target
+ * (`…/lib/node_modules/x/index.js`) does.
+ */
+export function installMethodOfPath(
+  path: string | undefined,
+): InstallMethod | undefined {
+  const p = (path ?? '').toLowerCase().replace(/\\/g, '/')
+  if (!p) return undefined
+  if (p.includes('/_npx/')) return 'npx'
+  if (/\/bunx-/.test(p)) return 'bunx'
+  if (p.includes('/.bun/')) return 'bun'
+  if (p.includes('pnpm')) return 'pnpm'
+  if (p.includes('yarn')) return 'yarn'
+  if (p.includes('/cellar/')) return 'brew'
+  // npm's global prefixes: `lib/node_modules` (unix), `%APPDATA%\npm`
+  // (Windows), a node install dir (nvm-windows, scoop) and the version
+  // managers that install globals with npm
+  if (
+    /node_modules\/|\/npm\/|\/nodejs\/|\/node\/|\/\.?nvm(4w)?\/|\/\.?fnm\/|fnm_multishells|\/\.?volta\/|\/\.asdf\/|\/\.nodenv\/|\/n\/versions\//.test(
+      p,
+    )
+  )
+    return 'npm'
+  return undefined
+}
+
+/**
+ * How this CLI was installed. The package manager that launched it wins
+ * (`npm_config_user_agent`, which npm/npx/bunx/pnpm/yarn set for what they
+ * run, and which a global bin run from the shell never has). Otherwise the npm
+ * wrapper, which marks its child with `CODEBUFF_LAUNCHER_PID`, is located by
+ * `launcherPath` (resolved by the caller) or the path the shell ran (`_`). A
+ * compiled binary started without the wrapper was run directly.
  */
 export function installMethodOf(
   env: AdTermEnv,
-  host: { isBinary: boolean },
+  host: { isBinary: boolean; launcherPath?: string },
 ): InstallMethod {
   const agent = (env.npm_config_user_agent ?? '').toLowerCase()
   if (agent.startsWith('npm/'))
     return env.npm_command === 'exec' ? 'npx' : 'npm'
-  if (agent.startsWith('bun/')) return 'bun'
+  if (agent.startsWith('bun/')) return 'bunx'
   if (agent.startsWith('pnpm/')) return 'pnpm'
   if (agent.startsWith('yarn/')) return 'yarn'
   if (set(env.CODEBUFF_LAUNCHER_PID)) {
-    const invoked = (env._ ?? '').toLowerCase()
-    if (/[\\/]\.bun[\\/]/.test(invoked)) return 'bun'
-    if (/pnpm/.test(invoked)) return 'pnpm'
-    if (/yarn/.test(invoked)) return 'yarn'
-    if (/[\\/]cellar[\\/]/.test(invoked)) return 'brew'
-    if (/node_modules|[\\/]npm[\\/]|nvm|fnm|volta|[\\/]node[\\/]/.test(invoked))
-      return 'npm'
-    return 'other'
+    return (
+      installMethodOfPath(host.launcherPath) ??
+      installMethodOfPath(env._) ??
+      'other'
+    )
   }
   return host.isBinary ? 'binary' : 'other'
+}
+
+/** The wrapper's bin names: the npm package's `bin` entries. */
+export const launcherBinNames = (freebuff: boolean): readonly string[] =>
+  freebuff ? ['freebuff'] : ['codebuff', 'cb']
+
+const binNameOf = (path: string): string =>
+  (path.split(/[\\/]/).pop() ?? '')
+    .toLowerCase()
+    .replace(/\.(cmd|exe|ps1|bat)$/, '')
+
+/**
+ * `_` when it names the wrapper (bash and zsh export the full path of the
+ * command they ran; cmd, PowerShell and fish do not), symlinks resolved.
+ * Synchronous on purpose: it is the path the shell just executed, so it is
+ * local and present.
+ */
+export function invokedLauncherPath(
+  env: AdTermEnv,
+  names: readonly string[],
+  realpath: (path: string) => string,
+): string | undefined {
+  const invoked = env._
+  if (!invoked || !names.includes(binNameOf(invoked))) return undefined
+  try {
+    return realpath(invoked)
+  } catch {
+    return invoked
+  }
+}
+
+/** PATH entries scanned for the wrapper, so a pathological PATH stays cheap. */
+const LAUNCHER_PATH_SCAN_MAX = 64
+
+/**
+ * The wrapper the shell would run, found as `which` would find it: the first
+ * PATH entry holding one of `names` (with Windows' shim extensions), symlinks
+ * resolved. For shells that do not export `_`. Asynchronous, so a slow PATH
+ * entry (a network share) never blocks an ad request.
+ */
+export async function findLauncherOnPath(
+  env: AdTermEnv,
+  platform: string,
+  names: readonly string[],
+  fs: {
+    access: (path: string) => Promise<unknown>
+    realpath: (path: string) => Promise<string>
+  },
+): Promise<string | undefined> {
+  const windows = platform === 'win32'
+  const dirs = (env.PATH ?? env.Path ?? '')
+    .split(windows ? ';' : ':')
+    .filter((dir) => dir.trim().length > 0)
+    .slice(0, LAUNCHER_PATH_SCAN_MAX)
+  const extensions = windows ? ['.cmd', '.exe', '.ps1', ''] : ['']
+  const sep = windows ? '\\' : '/'
+  for (const dir of dirs) {
+    for (const name of names) {
+      for (const extension of extensions) {
+        const candidate = `${dir.replace(/[\\/]+$/, '')}${sep}${name}${extension}`
+        try {
+          await fs.access(candidate)
+        } catch {
+          continue
+        }
+        try {
+          return await fs.realpath(candidate)
+        } catch {
+          return candidate
+        }
+      }
+    }
+  }
+  return undefined
 }
 
 /**
@@ -782,9 +968,22 @@ function countUserTurns(): number {
   return count
 }
 
+/**
+ * `agent.mode` in Desktop's vocabulary (`build` / `plan`). Freebuff is locked
+ * to Codebuff's `LITE`, which is a billing mode rather than anything the user
+ * chose, so sending it made the field a constant on every Freebuff CLI row.
+ * The CLI's one planning mode is the composer's `/plan`; every turn otherwise
+ * builds. Codebuff keeps its own, user-chosen mode.
+ */
+export function freebuffAgentModeOf(inputMode: string | undefined): string {
+  return inputMode === 'plan' ? 'plan' : 'build'
+}
+
 function liveAgent(): AdContextAgent {
-  const { agentMode } = useChatStore.getState()
-  const agent: AdContextAgent = { mode: agentMode }
+  const { agentMode, inputMode } = useChatStore.getState()
+  const agent: AdContextAgent = {
+    mode: IS_FREEBUFF ? freebuffAgentModeOf(inputMode) : agentMode,
+  }
   try {
     agent.harness = getAgentIdForMode(agentMode)
   } catch {
@@ -861,16 +1060,74 @@ function liveSystem(): AdContextSystem {
 }
 
 let cachedInstallMethod: InstallMethod | null = null
+let launcherPathLookup: { done: boolean; path?: string } | null = null
+
+/** The PATH lookup, started once and never awaited. */
+function launcherOnPath(env: AdTermEnv): { done: boolean; path?: string } {
+  if (launcherPathLookup) return launcherPathLookup
+  const lookup: { done: boolean; path?: string } = { done: false }
+  launcherPathLookup = lookup
+  let started: Promise<string | undefined>
+  try {
+    started = findLauncherOnPath(
+      env,
+      process.platform,
+      launcherBinNames(IS_FREEBUFF),
+      { access: fsPromises.access, realpath: fsPromises.realpath },
+    )
+  } catch {
+    started = Promise.resolve(undefined)
+  }
+  void started
+    .then(
+      (path) => {
+        lookup.path = path
+      },
+      () => undefined,
+    )
+    .finally(() => {
+      lookup.done = true
+    })
+  return lookup
+}
+
+/**
+ * Cached once known. Undefined (unknown) only while the PATH lookup for a
+ * shell that exports no `_` (Windows, fish) is still running, which is the
+ * first ad request of such a process at most.
+ */
+function liveInstallMethod(): InstallMethod | undefined {
+  if (cachedInstallMethod) return cachedInstallMethod
+  const env = getSystemProcessEnv()
+  // A compile-time define: only the literal `process.env.CODEBUFF_IS_BINARY`
+  // is replaced in the binary, so it must be read through getCliEnv(), never
+  // off the runtime process.env (where it is always undefined).
+  const isBinary = getCliEnv().CODEBUFF_IS_BINARY === 'true'
+  const names = launcherBinNames(IS_FREEBUFF)
+  const quick = installMethodOf(env, {
+    isBinary,
+    launcherPath: invokedLauncherPath(env, names, realpathSync),
+  })
+  if (quick !== 'other' || !set(env.CODEBUFF_LAUNCHER_PID)) {
+    cachedInstallMethod = quick
+    return quick
+  }
+  const lookup = launcherOnPath(env)
+  if (!lookup.done) return undefined
+  cachedInstallMethod = installMethodOf(env, {
+    isBinary,
+    launcherPath: lookup.path,
+  })
+  return cachedInstallMethod
+}
 
 function liveApp(): AdContextApp {
-  cachedInstallMethod ??= installMethodOf(getSystemProcessEnv(), {
-    isBinary: Boolean(getSystemProcessEnv().CODEBUFF_IS_BINARY),
-  })
   const app: AdContextApp = {
     uptimeMs: process.uptime() * 1000,
     channel: releaseChannelOf(buildEnv.NEXT_PUBLIC_CB_ENVIRONMENT),
-    installMethod: cachedInstallMethod,
   }
+  const installMethod = liveInstallMethod()
+  if (installMethod) app.installMethod = installMethod
   const runtime = process.versions.bun
     ? runtimeLabelOf('bun', process.versions.bun)
     : runtimeLabelOf('node', process.versions.node)

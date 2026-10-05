@@ -8,6 +8,11 @@ import { z } from 'zod/v4'
 // optional: absent means unknown, never "false" or "zero". A context that fails to parse is dropped and the ad request
 // proceeds without it, so a client/server version skew can cost features but never an ad.
 //
+// Vocabularies are ADDITIVE ONLY. One value outside its enum fails the parse, and that drops the WHOLE context, not
+// the one field. So a new value must be live on every server that parses contexts (the `/api/v1/ads` and `/api/ads`
+// routes are separate services that deploy separately) before a client release sends it, and no value may be removed
+// while an old client can still send it.
+//
 // This file ships in the public mirror. Field names and bucket edges are client behaviour and fine to publish; model
 // weights, thresholds and invalid-traffic cut-offs are not, and must never be added here.
 
@@ -75,6 +80,23 @@ export const TERMINALS = [
   'vscode',
   'cursor',
   'jetbrains',
+  'zed',
+  'tabby',
+  /** Git Bash, MSYS2, Cygwin */
+  'mintty',
+  /** ConEmu and Cmder */
+  'conemu',
+  /**
+   * A Windows console with no other terminal's marker: conhost (a cmd or PowerShell window), or Windows Terminal
+   * reached as the default terminal application, which does not set WT_SESSION
+   */
+  'windows_console',
+  'gnome_terminal',
+  'konsole',
+  /** any other VTE-based terminal: Ptyxis, Tilix, Terminator, xfce4-terminal, ... */
+  'vte',
+  'xterm',
+  'foot',
   'other',
 ] as const
 export const MULTIPLEXERS = ['none', 'tmux', 'screen', 'zellij'] as const
@@ -136,6 +158,8 @@ export const INSTALL_METHODS = [
   'npx',
   'npm',
   'bun',
+  /** `bunx` / `bun x`: run once from bun's cache, as `npx` is from npm's */
+  'bunx',
   'pnpm',
   'yarn',
   'brew',

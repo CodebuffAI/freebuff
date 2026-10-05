@@ -147,6 +147,44 @@ describe('parseAdClientContext', () => {
       parseAdClientContext({ v: 1, win: { focused: true, widthPx: 1512 }, hostname: 'owens-mbp' }),
     ).toEqual({ v: 1, win: { focused: true } })
   })
+
+  test('the CLI terminals and install methods added for the `other` buckets parse', () => {
+    for (const terminal of [
+      'zed',
+      'tabby',
+      'mintty',
+      'conemu',
+      'windows_console',
+      'gnome_terminal',
+      'konsole',
+      'vte',
+      'xterm',
+      'foot',
+    ]) {
+      const ctx = { v: 1, term: { terminal, multiplexer: 'none' } }
+      expect(parseAdClientContext(ctx)).toEqual(ctx)
+    }
+    const bunx = { v: 1, app: { installMethod: 'bunx', channel: 'stable' } }
+    expect(parseAdClientContext(bunx)).toEqual(bunx)
+  })
+
+  test('ONE out-of-vocabulary value drops the WHOLE context, not just its field', () => {
+    // which is why every vocabulary is additive only and must be live on every
+    // server before a client sends a new value
+    const full = {
+      v: 1,
+      sys: { arch: 'arm64', ram: '16-32' },
+      attn: { turnRunning: true },
+      term: { terminal: 'ghostty', multiplexer: 'none' },
+    }
+    expect(parseAdClientContext(full)).toEqual(full)
+    expect(
+      parseAdClientContext({ ...full, term: { ...full.term, terminal: 'a-terminal-from-2027' } }),
+    ).toBeUndefined()
+    expect(
+      parseAdClientContext({ ...full, app: { installMethod: 'a-manager-from-2027' } }),
+    ).toBeUndefined()
+  })
 })
 
 describe('parseAdEngagement', () => {
