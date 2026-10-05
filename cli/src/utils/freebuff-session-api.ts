@@ -1,5 +1,3 @@
-import { FIRST_TAB_DISCOUNT_HEADER } from '@codebuff/common/util/freebuff-first-tab-discount'
-import type { FreebuffWalletSpendLimit } from '@codebuff/common/types/freebuff-session'
 import { freebucksTimeZoneHeaders } from '@codebuff/common/util/freebucks-timezone'
 import {
   sanitizeTerminalStrings,
@@ -188,8 +186,6 @@ type FreebuffSessionCallOptions = {
   multiSession?: boolean
   takeoverInstanceId?: string
   model?: string
-  walletSpendLimit?: FreebuffWalletSpendLimit
-  firstTabDiscount?: boolean
   signal?: AbortSignal
   compact?: boolean
 }
@@ -247,7 +243,6 @@ async function requestFreebuffSession(
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     ...freebucksTimeZoneHeaders(),
-    [FIRST_TAB_DISCOUNT_HEADER]: opts.firstTabDiscount ? '1' : '0',
     ...clientEnvironmentHeaders(),
   }
   const attemptId = freebuffCliAttemptId(opts.instanceId)
@@ -286,9 +281,9 @@ async function requestFreebuffSession(
         ? (freebuffCatalogHandleFor(catalog, opts.model) ?? opts.model)
         : opts.model
     }
-    headers[FREEBUFF_WALLET_SPEND_LIMIT_HEADER] = String(
-      opts.walletSpendLimit ?? 0,
-    )
+    // The admission route refuses a POST without this header; its value no
+    // longer limits anything (wallet consent is the picker's own prompt).
+    headers[FREEBUFF_WALLET_SPEND_LIMIT_HEADER] = 'session'
   }
 
   const endpoint =
@@ -353,9 +348,7 @@ async function requestFreebuffSession(
         body.status === 'premium_slot_taken' ||
         body.status === 'purchase_claim_released' ||
         body.status === 'purchase_in_use' ||
-        body.status === 'purchase_capacity' ||
-        body.status === 'first_tab_discount_changed' ||
-        body.status === 'consent_required')
+        body.status === 'purchase_capacity')
     ) {
       return sanitizeTerminalStrings(body)
     }

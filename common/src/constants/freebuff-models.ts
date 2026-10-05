@@ -3632,6 +3632,9 @@ export const FREEBUFF_INSTANCE_HEADER = 'x-freebuff-instance-id'
 /** Reuse this exact live single-session instance; never buy or take over. */
 export const FREEBUFF_REUSE_INSTANCE_HEADER = 'x-freebuff-reuse-instance-id'
 export const FREEBUFF_MODEL_HEADER = 'x-freebuff-model'
+/** Marks a POST to the dedicated `/admission` route, which refuses one
+ *  without it (older servers also read a wallet ceiling from its value; send
+ *  `session`). Wallet consent itself is client-side. */
 export const FREEBUFF_WALLET_SPEND_LIMIT_HEADER =
   'x-freebuff-wallet-spend-limit'
 /** Dedicated routes fail closed on servers predating these guarantees. */

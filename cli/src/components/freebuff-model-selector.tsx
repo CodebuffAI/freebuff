@@ -1,6 +1,6 @@
 import { isFreebucksPeakModel } from '@codebuff/common/util/freebuff-peak-price'
 import { watchFreebucksPriceChanges } from '@codebuff/common/util/freebuff-price-changes'
-import { firstTabListPriceFor } from '@codebuff/common/util/freebuff-first-tab-discount'
+import { freebucksListPriceFor } from '@codebuff/common/util/freebuff-price-order'
 import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
 import React, {
@@ -131,11 +131,8 @@ const TOGGLE_ID = '__freebuff_toggle__'
 const DETAIL_SEPARATOR = ' · '
 
 /** One chip on a row's second line. `highlight` draws it in the accent colour
- *  — a price the first-tab discount moved. */
+ *  — a price a catalog discount moved. */
 type RowDetail = { text: string; warn: boolean; highlight?: boolean }
-
-/** The chip as plain characters, for the width math. */
-const detailText = (detail: RowDetail): string => detail.text
 
 /** A catalog pill as it is drawn after the tagline. */
 const badgeSuffix = (badge: FreebuffCatalogBadge): string =>
@@ -512,12 +509,12 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       if (rowPrice !== undefined) {
         // Only the price that will be charged. The regular price is NOT
         // shown beside it: many terminals ignore the strikethrough attribute,
-        // and "10 0 Freebucks/hr" then reads as two prices. A row the
-        // first-tab offer moved is drawn in the accent colour instead.
+        // and "10 0 Freebucks/hr" then reads as two prices. A row a catalog
+        // discount moved is drawn in the accent colour instead.
         details.push({
           text: freebucksPriceLabel(rowPrice),
           warn: (freebucks?.balance ?? 0) < rowPrice,
-          highlight: firstTabListPriceFor(freebucks, model.id) !== undefined,
+          highlight: freebucksListPriceFor(freebucks, model.id) !== undefined,
         })
       }
       // Beside the price it qualifies, in the warning colour. The terminal has
@@ -577,7 +574,9 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   )
   const rowDetailsText = useCallback(
     (model: FreebuffModelOption): string =>
-      rowDetails(model).map(detailText).join(DETAIL_SEPARATOR),
+      rowDetails(model)
+        .map((detail) => detail.text)
+        .join(DETAIL_SEPARATOR),
     [rowDetails],
   )
 
@@ -1336,12 +1335,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       // Two Enter events can arrive before React commits the pending state.
       admissionPending.current = true
       setPending(modelId)
-      startSession(
-        modelId,
-        intent.kind === 'confirm'
-          ? (intent.walletSpend ?? 'session')
-          : undefined,
-      ).finally(() => {
+      startSession(modelId).finally(() => {
         admissionPending.current = false
         setPending(null)
       })

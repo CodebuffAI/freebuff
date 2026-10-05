@@ -1,7 +1,3 @@
-import { FIRST_TAB_DISCOUNT_CHANGED_MESSAGE } from '@codebuff/common/util/freebuff-first-tab-discount'
-import { FreebuffPriceSelection } from '@codebuff/common/util/freebuff-price-selection'
-import { freebucksOf } from '../utils/freebucks'
-import type { FreebuffWalletSpendLimit } from '@codebuff/common/types/freebuff-session'
 import { nextFreebucksPriceChange } from '@codebuff/common/util/freebuff-price-changes'
 import {
   getLimitedModelOffers,
@@ -104,8 +100,6 @@ function nextDelayMs(next: FreebuffSessionResponse): number | null {
       // Inside the grace window we keep checking so the post-grace transition
       // (server returns `none`, we synthesize ended-no-instanceId) is prompt.
       return next.instanceId ? activeCadenceMs : null
-    case 'first_tab_discount_changed':
-    case 'consent_required':
     case 'none':
     case 'superseded':
     case 'takeover_prompt':
@@ -147,18 +141,6 @@ interface PollController {
 }
 
 let controller: PollController | null = null
-
-// One CLI choice, scoped to the authenticated account. Wallet permission has
-// its own expiry and response-consumption rules below.
-const selectedPrice = new FreebuffPriceSelection()
-let pendingWalletConsent:
-  | {
-      model: string
-      token: string | undefined
-      limit: FreebuffWalletSpendLimit
-      expiresAt: number
-    }
-  | undefined
 
 /**
  * The model of the most recent EXPLICIT user pick (startFreebuffSession),
@@ -385,7 +367,6 @@ export function resolveFreebuffModelSelectionForSession(
  */
 export function startFreebuffSession(
   model: string,
-  walletSpendLimit?: FreebuffWalletSpendLimit,
   opts: { preserveQueue?: boolean; persistSelection?: boolean } = {},
 ): Promise<void> {
   if (!IS_FREEBUFF) return Promise.resolve()
@@ -395,20 +376,6 @@ export function startFreebuffSession(
   const resolved = resolveFreebuffModelPickForSession(model, current)
   // Remember that the next POST is a deliberate pick, so a `model_locked`
   // rejection explains itself in chat instead of reverting silently.
-  const token = getAuthTokenDetails().token
-  selectedPrice.choose(
-    freebucksOf(current)?.firstTabDiscount?.available ?? false,
-    token,
-  )
-  pendingWalletConsent =
-    walletSpendLimit === undefined
-      ? undefined
-      : {
-          model: resolved,
-          token,
-          limit: walletSpendLimit,
-          expiresAt: Date.now() + 120_000,
-        }
   pendingExplicitPickModel = resolved
   useFreebuffModelStore.getState().setSelectedModel(resolved)
   if (opts.persistSelection !== false) persistFreebuffModelPick(resolved)
@@ -702,14 +669,6 @@ export function useFreebuffSession({
       const fetchController = abortController
       const generation = restartGeneration
       try {
-        const price =
-          method === 'POST'
-            ? selectedPrice.capture(
-                freebucksOf(useFreebuffSessionStore.getState().session)
-                  ?.firstTabDiscount?.available ?? false,
-                token,
-              )
-            : selectedPrice.expectation
         if (method === 'POST' && multiSession) {
           attemptedModel = model
           useFreebuffSessionStore
@@ -723,13 +682,6 @@ export function useFreebuffSession({
           takeoverInstanceId,
           model,
           compact,
-          firstTabDiscount: price?.firstTabDiscount,
-          walletSpendLimit:
-            pendingWalletConsent?.model === model &&
-            pendingWalletConsent.token === token &&
-            pendingWalletConsent.expiresAt > Date.now()
-              ? pendingWalletConsent.limit
-              : undefined,
         })
         if (
           cancelled ||
@@ -815,32 +767,6 @@ export function useFreebuffSession({
             type: 'other',
             message:
               'This session was released. Choose a model to start a new session.',
-            retry: null,
-            outcomeUnknown: false,
-          })
-          return
-        }
-        if (method === 'POST' && next.status === 'active')
-          selectedPrice.purchased(price)
-        if (method === 'POST' && next.status !== 'model_locked')
-          pendingWalletConsent = undefined
-        if (
-          next.status === 'first_tab_discount_changed' ||
-          next.status === 'consent_required'
-        ) {
-          if (next.status === 'first_tab_discount_changed')
-            pendingExplicitPickModel = null
-          apply({
-            status: 'none',
-            freebucks: next.freebucks,
-            accessTier: next.accessTier,
-          })
-          setFailure({
-            type: 'other',
-            message:
-              next.status === 'first_tab_discount_changed'
-                ? FIRST_TAB_DISCOUNT_CHANGED_MESSAGE
-                : `Your balance changed. Choose the model again to confirm ${next.walletConsent.walletSpend} wallet Freebucks.`,
             retry: null,
             outcomeUnknown: false,
           })

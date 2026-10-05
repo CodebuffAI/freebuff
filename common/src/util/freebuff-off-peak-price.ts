@@ -3,14 +3,13 @@ import {
   resolveWindowTimeZone,
 } from '../constants/freebuff-peak-hours'
 import type { FreebuffFreebucksInfo } from '../types/freebuff-session'
-import { discountedSessionPrice } from './freebuff-first-tab-discount'
 import { offPeakPriceAt } from './freebuff-price-changes'
 
 /** Presentation only: prices and schedules come from the server, never the
  *  private rate card. */
 export function freebucksOffPeakCopy(
   info:
-    | Pick<FreebuffFreebucksInfo, 'prices' | 'offPeak' | 'firstTabDiscount'>
+    | Pick<FreebuffFreebucksInfo, 'prices' | 'offPeak'>
     | null
     | undefined,
   modelId: string,
@@ -33,12 +32,7 @@ export function freebucksOffPeakCopy(
     ? `, and all weekend (${beijingWeekendSpan(now, zone)})`
     : ''
   // The resolved quote owns the badge too; do not run a second pricing clock.
-  const active =
-    info.prices[modelId] ===
-    discountedSessionPrice(
-      offer.price,
-      info.firstTabDiscount?.available ? info.firstTabDiscount.amount : 0,
-    )
+  const active = info.prices[modelId] === offer.price
   return {
     active,
     badge: 'Off-peak',

@@ -1,6 +1,5 @@
 import { describe, expect, it, test, spyOn } from 'bun:test'
 import { freebucksFixture } from '../../testing/freebuff'
-import { applyFirstTabDiscount } from '../freebuff-first-tab-discount'
 import {
   SOLAR_PRICE_CHANGES,
   SOLAR_REGULAR_OFFER,
@@ -152,15 +151,6 @@ describe('recurring server prices', () => {
       expect(quote.prices.flash).toBe(stale)
       expect(applyFreebucksPriceChanges(current, now)).toBe(current)
       expect(nextFreebucksPriceChange(current, now)).toBe(Date.parse(next))
-      const discounted = applyFirstTabDiscount(quote, { amount: 10, available: true })
-      const firstTab = applyFreebucksPriceChanges(discounted, now)
-      expect(firstTab.prices.flash).toBe(price - 10)
-      expect(firstTab.listPrices?.flash).toBe(price)
-      expect(discounted.listPrices?.flash).toBe(stale)
-      expect(applyFreebucksPriceChanges(firstTab, now)).toBe(firstTab)
-      expect(applyFirstTabDiscount(firstTab, { amount: 10, available: false }).prices.flash).toBe(price)
-      // A stale crossed-out price still needs repair when the payable price is current.
-      expect(applyFreebucksPriceChanges({ ...firstTab, listPrices: { flash: stale } }, now).listPrices?.flash).toBe(price)
     },
   )
 

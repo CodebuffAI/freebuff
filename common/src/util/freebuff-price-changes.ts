@@ -3,7 +3,6 @@ import type {
   FreebuffOffPeakPrice,
 } from '../types/freebuff-session'
 import { isBeijingWeekend } from '../constants/freebuff-peak-hours'
-import { discountedSessionPrice } from './freebuff-first-tab-discount'
 
 /** Resolve a server-owned daily policy, including windows crossing midnight
  *  and, when the policy says so, weekends that are off-peak all day. `start`
@@ -66,30 +65,17 @@ function nextPriceChangeAt(
 export function applyFreebucksPriceChanges<
   T extends Pick<
     FreebuffFreebucksInfo,
-    | 'prices'
-    | 'listPrices'
-    | 'priceNotices'
-    | 'priceChanges'
-    | 'firstTabDiscount'
-    | 'offPeak'
+    'prices' | 'priceNotices' | 'priceChanges' | 'offPeak'
   >,
 >(info: T, now = Date.now()): T {
   const due = info.priceChanges?.filter(
     (change) => Date.parse(change.at) <= now,
   )
   let prices = info.prices
-  let listPrices = info.listPrices
   let priceNotices = info.priceNotices
   const apply = (modelId: string, price: number, tagline: string) => {
     if (prices[modelId] === undefined) return
-    const discounted = discountedSessionPrice(
-      price,
-      info.firstTabDiscount?.available ? info.firstTabDiscount.amount : 0,
-    )
-    if (prices[modelId] !== discounted)
-      prices = { ...prices, [modelId]: discounted }
-    if (listPrices && listPrices[modelId] !== price)
-      listPrices = { ...listPrices, [modelId]: price }
+    if (prices[modelId] !== price) prices = { ...prices, [modelId]: price }
     if (priceNotices?.[modelId] !== tagline)
       priceNotices = { ...priceNotices, [modelId]: tagline }
   }
@@ -106,14 +92,12 @@ export function applyFreebucksPriceChanges<
   if (
     !due?.length &&
     prices === info.prices &&
-    listPrices === info.listPrices &&
     priceNotices === info.priceNotices
   )
     return info
   return {
     ...info,
     prices,
-    ...(listPrices ? { listPrices } : {}),
     priceNotices,
     priceChanges: info.priceChanges?.filter(
       (change) => Date.parse(change.at) > now,

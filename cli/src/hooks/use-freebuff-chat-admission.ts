@@ -59,7 +59,8 @@ export async function beginFreebuffChatAdmission(admission: ChatAdmission) {
         session?.status === 'active' ? session.model : undefined,
       )
     // A price/balance change must update the question before its answer can
-    // authorize spending. The server still enforces the bounded wallet grant.
+    // authorize spending. This re-check is the only guard: the server takes
+    // no wallet ceiling, so a stale answer would spend unasked.
     if (
       JSON.stringify(intentFor(admission.previousSession)) !==
       JSON.stringify(intentFor(useFreebuffSessionStore.getState().session))
@@ -79,7 +80,7 @@ export async function beginFreebuffChatAdmission(admission: ChatAdmission) {
   useFreebuffSessionStore.getState().setFailure(null)
   useFreebuffChatStore.setState({ admission: starting })
   try {
-    await startFreebuffSession(starting.model, starting.walletSpendLimit, {
+    await startFreebuffSession(starting.model, {
       preserveQueue: true,
       persistSelection: false,
     })
@@ -204,10 +205,6 @@ export function useFreebuffChatAdmission(enabled: boolean) {
           ...resolved,
           phase: 'confirm',
           previousSession: session,
-          walletSpendLimit:
-            intent.kind === 'confirm'
-              ? (intent.walletSpend ?? 'session')
-              : undefined,
           message: `${getFreebuffModelDirectory().get(model).displayName} ${cost}.${wallet}${session.status === 'active' ? ' This ends your current model session; your conversation is kept.' : ''}${intent.kind === 'confirm' && 'claimEarned' in intent && intent.claimEarned ? ' Earned Freebucks will be claimed on admission.' : ''}`,
         },
       })

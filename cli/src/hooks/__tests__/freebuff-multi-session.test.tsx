@@ -297,7 +297,7 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
     }
   })
 
-  test('wallet consent is requested on send and bounded to the quoted spend', async () => {
+  test('wallet consent is asked on send before the admission POST', async () => {
     meter = {
       ...freebucksFixture(0, { [FREEBUFF_MIMO_V25_MODEL_ID]: 5 }),
       balance: 10,
@@ -321,7 +321,7 @@ if (process.env.CLI_MULTI_SESSION_TEST !== '1') {
       requests
         .find((r) => r.method === 'POST')
         ?.headers.get('x-freebuff-wallet-spend-limit'),
-    ).toBe('5')
+    ).toBe('session')
   })
 
   test('a lost model-switch reply can cancel the new claim without orphaning a purchase', async () => {

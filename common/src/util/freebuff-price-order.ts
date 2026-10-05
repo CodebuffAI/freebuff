@@ -5,9 +5,9 @@ import type { FreebuffFreebucksInfo } from '../types/freebuff-session'
  *
  * 1. The price this viewer pays now (`prices`). Unpriced rows sort last:
  *    `undefined` is not free.
- * 2. Then the regular price (`listPrices`, present while a discount applies).
- *    The first-tab discount floors several rows at 0, and without this key
- *    those ties fell through to the name, so a 15 sat above a 2 (2026-10-01).
+ * 2. Then the regular price (`listPrices`, present while a catalog discount
+ *    applies), so two rows a discount brought to the same price keep their
+ *    regular order instead of falling through to the name.
  * 3. Then the display name, so the order is stable.
  *
  * Shared by Desktop, the CLI and Web so the three pickers cannot disagree.
@@ -32,4 +32,20 @@ export function compareByFreebucksPrice(
 /** `x - y`, except two unpriced rows (both infinite) compare equal, not NaN. */
 function orderOf(x: number, y: number): number {
   return x === y ? 0 : x - y
+}
+
+/**
+ * The regular price to draw crossed out beside `modelId`'s price, or
+ * undefined when there is nothing to cross out: an unpriced row, or one whose
+ * list price (a catalog discount's `listPrices`) is not above what it costs.
+ */
+export function freebucksListPriceFor(
+  info: Pick<FreebuffFreebucksInfo, 'prices' | 'listPrices'> | null | undefined,
+  modelId: string,
+): number | undefined {
+  const price = info?.prices[modelId]
+  const listPrice = info?.listPrices?.[modelId]
+  if (price === undefined || listPrice === undefined || listPrice <= price)
+    return undefined
+  return listPrice
 }

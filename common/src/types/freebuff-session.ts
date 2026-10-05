@@ -284,22 +284,11 @@ export interface FreebuffFreebucksInfo {
   /** Session price per model id. Only models on the meter appear here. */
   prices: Record<string, number>
   /**
-   * The list price per model id BEFORE the first-tab discount, so a client
-   * can cross it out beside the discounted `prices` entry. Present only on a
-   * quote that carries `firstTabDiscount`; it equals `prices` while the
-   * discount is unavailable. Never used for admission or charging.
+   * The regular price per model id for a row a catalog discount moved, so a
+   * client can cross it out beside the discounted `prices` entry. Never used
+   * for admission or charging.
    */
   listPrices?: Record<string, number>
-  /** Account-wide first-tab offer. Prices already include it when available. */
-  firstTabDiscount?: {
-    amount: number
-    available: boolean
-    holder?: {
-      instanceId: string | null
-      surface: 'desktop' | 'single'
-      expiresAt: string
-    }
-  }
   /**
    * Rows THIS viewer must buy a plan to open, decided by the server.
    *
@@ -324,7 +313,7 @@ export interface FreebuffFreebucksInfo {
    *  and priceChanges; retained for older server responses. */
   peak?: FreebuffFreebucksPeak
   /** Server-owned recurring prices for new sessions. Clients project this policy
-   *  into `prices` (including first-tab discounts) even when refreshes fail.
+   *  into `prices` even when refreshes fail.
    *  A fresh response replaces the policy; admitted charges never change. */
   offPeak?: Record<string, FreebuffOffPeakPrice>
   /** Scheduled changes announced by the server; do not reprice admitted sessions. */
@@ -774,27 +763,7 @@ export interface FreebuffLimitedModeReason {
   ipPrivacySignals?: FreebuffIpPrivacySignal[] | null
 }
 
-/** Permission for one requested session: a wallet ceiling, or explicit consent
- * to its current price when the balance/quote was unavailable. Absence is zero. */
-export type FreebuffWalletSpendLimit = number | 'session'
-
-export interface FreebuffWalletConsent {
-  price: number
-  walletSpend: number
-}
-
 export type FreebuffSessionAdmissionResponse = (
-  | {
-      status: 'first_tab_discount_changed'
-      accessTier?: FreebuffAccessTier
-      freebucks: FreebuffFreebucksInfo | null
-    }
-  | {
-      status: 'consent_required'
-      accessTier?: FreebuffAccessTier
-      walletConsent: FreebuffWalletConsent
-      freebucks: null
-    }
   | ({
       /** User has no session row. CLI must POST to start a session. Also
        *  returned when `getSessionState` notices the user has been swept past

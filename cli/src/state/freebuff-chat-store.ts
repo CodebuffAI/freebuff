@@ -7,7 +7,6 @@ import {
 import { useFreebuffSessionStore } from './freebuff-session-store'
 
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
-import type { FreebuffWalletSpendLimit } from '@codebuff/common/types/freebuff-session'
 
 export type ChatAdmission = {
   phase: 'requested' | 'confirm' | 'starting' | 'failed'
@@ -15,7 +14,6 @@ export type ChatAdmission = {
   message?: string
   previousSession?: FreebuffSessionResponse | null
   metadataChecked?: boolean
-  walletSpendLimit?: FreebuffWalletSpendLimit
 }
 
 /** Choosing a model is a preference. Only submitting a message admits it. */

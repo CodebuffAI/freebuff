@@ -8,7 +8,6 @@ import {
   resolveFreebuffModelPickForSession,
 } from '../../hooks/use-freebuff-session'
 import { freebucksFixture } from '@codebuff/common/testing/freebuff'
-import { applyFirstTabDiscount } from '@codebuff/common/util/freebuff-first-tab-discount'
 import { FREEBUFF_EARN_PROMPT_SHORT } from '@codebuff/common/constants/freebuff-earn'
 import { afterEach, beforeAll, describe, expect, test, spyOn } from 'bun:test'
 import { createTestRenderer } from '@opentui/core/testing'
@@ -82,7 +81,7 @@ afterEach(() => {
 
 const renderSelector = async (
   maxHeight = 40,
-  startSession?: (model: string, limit?: number | 'session') => Promise<void>,
+  startSession?: (model: string) => Promise<void>,
   width = 100,
   nowMs = FIXED_NOW_MS,
   onSelectModel?: (model: string) => void,
@@ -117,11 +116,9 @@ const renderSelector = async (
 }
 
 test.each([
-  ['2026-09-17T23:00:00Z', '2026-09-19T06:00:00Z', 10, 15, 0],
-  ['2026-09-17T21:00:00Z', '2026-09-18T22:00:00Z', 15, 10, 0],
-  ['2026-09-17T23:00:00Z', '2026-09-19T06:00:00Z', 10, 15, 10],
-  ['2026-09-17T21:00:00Z', '2026-09-18T22:00:00Z', 15, 10, 10],
-] as const)('the mounted CLI picker catches up after multi-day sleep from %s', async (issued, resumed, before, after, discount) => {
+  ['2026-09-17T23:00:00Z', '2026-09-19T06:00:00Z', 10, 15],
+  ['2026-09-17T21:00:00Z', '2026-09-18T22:00:00Z', 15, 10],
+] as const)('the mounted CLI picker catches up after multi-day sleep from %s', async (issued, resumed, before, after) => {
   const now = Date.parse(issued)
   const clock = spyOn(Date, 'now').mockReturnValue(now)
   const realTimeout = globalThis.setTimeout
@@ -134,16 +131,16 @@ test.each([
   try {
     useFreebuffSessionStore.getState().setSession({
       status: 'none', accessTier: 'full',
-      freebucks: applyFirstTabDiscount({
+      freebucks: {
         ...freebucksFixture(25, { [id]: before }),
         offPeak: { [id]: { startHourUtc: 22, endHourUtc: 6, price: 10, regularPrice: 15 } },
         priceChanges: [],
         priceNotices: { [id]: 'Server fallback price notice' },
-      }, { amount: 10, available: discount > 0 }),
+      },
     })
     useFreebuffModelStore.getState().setSelectedModel(id)
     const setup = await renderSelector(40, undefined, 100, now)
-    expect(setup.captureCharFrame()).toMatch(new RegExp(`│ +${before - discount} Freebucks/hr`))
+    expect(setup.captureCharFrame()).toMatch(new RegExp(`│ +${before} Freebucks/hr`))
     expect(setup.captureCharFrame()).not.toContain('Off-peak')
     expect(setup.captureCharFrame()).not.toContain('normally 15/hr')
     expect(setup.captureCharFrame()).not.toContain('Server fallback price notice')
@@ -153,7 +150,7 @@ test.each([
       wake!()
     })
     await setup.renderOnce()
-    expect(setup.captureCharFrame()).toMatch(new RegExp(`│ +${after - discount} Freebucks/hr`))
+    expect(setup.captureCharFrame()).toMatch(new RegExp(`│ +${after} Freebucks/hr`))
     expect(setup.captureCharFrame()).not.toContain('Off-peak')
     expect(setup.captureCharFrame()).not.toContain('normally 15/hr')
   } finally {
@@ -1038,40 +1035,6 @@ describe('GLM selection uses the applicable meter', () => {
     },
   )
 
-  test.each([true, false])(
-    'first-tab discount availability changes the displayed price without extra copy, available=%s',
-    async (available) => {
-      useFreebuffSessionStore.getState().setSession({
-        status: 'none',
-        accessTier: 'limited',
-        freebucks: applyFirstTabDiscount(
-          freebucksFixture(25, { [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 15 }),
-          { amount: 10, available },
-        ),
-      })
-      useFreebuffModelStore
-        .getState()
-        .setSelectedModel(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
-      const setup = await renderSelector()
-      await setup.renderOnce()
-      const frame = setup.captureCharFrame()
-      if (available) {
-        // Only the price charged: many terminals drop the strikethrough
-        // attribute, and "15 5 Freebucks/hr" then reads as two prices.
-        expect(frame).toContain('5 Freebucks/hr')
-        expect(frame).not.toContain('15 5 Freebucks/hr')
-        expect(frame).not.toContain('15 Freebucks/hr')
-      } else {
-        // In use elsewhere: the full price is the price, nothing struck, and
-        // nothing advertised.
-        expect(frame).toContain('15 Freebucks/hr')
-        expect(frame).not.toContain('15 15 Freebucks/hr')
-      }
-      expect(frame).not.toContain('first-tab discount')
-      expect(frame).not.toContain('Prices shown include the discount')
-    },
-  )
-
   test('fresh balances and leaving the audience update selection without remounting', async () => {
     const setBalance = (balance?: number) =>
       useFreebuffSessionStore.getState().setSession({
@@ -1384,7 +1347,7 @@ describe('a row the balance cannot cover', () => {
     }
   })
 
-  test('a pending paywall clears without discount prose when the balance refresh makes the row affordable', async () => {
+  test('a pending paywall clears when the balance refresh makes the row affordable', async () => {
     const { setup, requested } = await renderUnaffordableLuna()
     flushSync(() => setup.mockInput.pressEnter())
     await setup.renderOnce()
@@ -1397,21 +1360,17 @@ describe('a row the balance cannot cover', () => {
       freebucks: {
         // Same viewer as the fixture above: nothing plan-locked for them.
         planRequiredModelIds: [],
-        ...applyFirstTabDiscount(
-          freebucksFixture(25, {
-            [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 20,
-            [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 10,
-          }),
-          { amount: 10, available: true },
-        ),
+        ...freebucksFixture(25, {
+          [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 20,
+          [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 10,
+        }),
       },
     }))
     await setup.renderOnce()
     const frame = setup.captureCharFrame()
     expect(frame).toContain('› GPT-6 Luna')
-    expect(frame).toMatch(/│ +10 Freebucks\/hr/)
+    expect(frame).toMatch(/│ +20 Freebucks\/hr/)
     expect(frame).not.toContain(`Not enough ${FREEBUCKS_LABEL}`)
-    expect(frame).not.toMatch(/first-tab discount|Prices shown include the discount/)
     expect(requested).toEqual([])
 
     flushSync(() => setup.mockInput.pressEnter())
@@ -1722,12 +1681,10 @@ describe('unavailable balances in the mounted CLI picker', () => {
       useFreebuffSessionStore.getState().setSession(pending)
       useFreebuffModelStore.getState().setSelectedModel(id)
       const requests: string[] = []
-      const limits: (number | 'session' | undefined)[] = []
       // Tall enough for the expanded list: GLM is no longer the default
       // (2026-09-30), so the picker opens expanded on it and the balance line
       // sits below every row.
-      const setup = await renderSelector(80, async (model, limit) => {
-        limits.push(limit)
+      const setup = await renderSelector(80, async (model) => {
         requests.push(
           resolveFreebuffModelPickForSession(
             model,
@@ -1776,7 +1733,6 @@ describe('unavailable balances in the mounted CLI picker', () => {
       flushSync(() => setup.mockInput.pressEnter())
       await setup.renderOnce()
       expect(requests).toEqual([id, id, id])
-      expect(limits).toEqual(['session', undefined, 5])
     },
   )
 

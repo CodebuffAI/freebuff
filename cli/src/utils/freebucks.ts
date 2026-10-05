@@ -22,14 +22,11 @@
  */
 
 import { compareByFreebucksPrice } from '@codebuff/common/util/freebuff-price-order'
-import { firstTabQuoteForSession } from '@codebuff/common/util/freebuff-first-tab-discount'
 import { getFreebucksInfo } from '@codebuff/common/types/freebuff-session'
 import {
   FREEBUCKS_REFILL_PENDING_LABEL,
   freebucksRefillPending,
 } from '@codebuff/common/util/freebucks-reset'
-
-import { freebuffCliAttemptId } from './freebuff-session-identity'
 
 import type {
   FreebuffFreebucksInfo,
@@ -51,18 +48,8 @@ export function formatFreebucks(amount: number): string {
 export function freebucksOf(
   session: { status: string } | null | undefined,
 ): FreebuffFreebucksInfo | null | undefined {
-  const state = session as FreebuffSessionServerResponse | null | undefined
-  // A model switch ends the current purchase first, and that end releases its
-  // first-tab discount reservation (the server does this for `cli:` claims
-  // too since 2026-09-30), so the replacement is quoted with the discount.
-  // Ordinary CLI claims use the Desktop purchase store; legacy trial sessions
-  // still use the single-session store. Match the holder's accounting surface.
-  return firstTabQuoteForSession(
-    getFreebucksInfo(state),
-    state?.status === 'active' ? state : undefined,
-    state?.status === 'active' && freebuffCliAttemptId(state.instanceId)
-      ? 'desktop'
-      : 'single',
+  return getFreebucksInfo(
+    session as FreebuffSessionServerResponse | null | undefined,
   )
 }
 
@@ -119,8 +106,8 @@ export function sortModelsByPrice<
   freebucks: FreebuffFreebucksInfo | null | undefined,
 ): readonly T[] {
   if (!freebucks) return models
-  // Ties (a discount floors several rows at 0) break on the regular price,
-  // then the name — shared with Desktop and Web.
+  // Ties (two rows a catalog discount brought to one price) break on the
+  // regular price, then the name — shared with Desktop and Web.
   return [...models].sort((a, b) => compareByFreebucksPrice(freebucks, a, b))
 }
 
