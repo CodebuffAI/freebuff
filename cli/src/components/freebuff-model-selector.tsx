@@ -65,11 +65,11 @@ import {
   freebuffFreeWindowsSummary,
   freebuffPlanSummary,
 } from '@codebuff/common/util/freebuff-plan-summary'
+import { compiledFreebuffModelIdOfRow } from '@codebuff/common/util/freebuff-catalog-compiled-model'
 
 import { startFreebuffSession } from '../hooks/use-freebuff-session'
 import { useNow } from '../hooks/use-now'
 import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
-import { compiledFreebuffModelIdOfRow } from '../utils/freebuff-model-directory'
 import { useFreebuffModelStore } from '../state/freebuff-model-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'

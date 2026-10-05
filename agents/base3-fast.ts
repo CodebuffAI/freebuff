@@ -3,6 +3,7 @@ import { FREEBUFF_BASE3_FAST_WORKER_AGENT_ID } from '@codebuff/common/constants/
 import { createBase3, createBase3CliRoot } from './base3'
 import { publisher } from './constants'
 
+import type { CompactionPolicy } from '@codebuff/common/constants/compaction-policy'
 import type { SecretAgentDefinition } from './types/secret-agent-definition'
 
 /**
@@ -105,12 +106,18 @@ export function createBase3FastCliRoot(
     /** The worker this root fans out to. Production roots take the default;
      *  the buffbench arm names a worker pinned to the ordinary Flash id. */
     workerAgentId?: string
+    /** See createBase3CliRoot: the CLI's server-catalog root runs on an
+     *  opaque handle and passes the row's name and compaction policy. */
+    modelLabel?: string
+    compaction?: CompactionPolicy & { maxContextLength?: number }
   } = {},
 ): Omit<SecretAgentDefinition, 'id'> {
   const {
     noAskUser = false,
     noWeb = false,
     workerAgentId = FREEBUFF_BASE3_FAST_WORKER_AGENT_ID,
+    modelLabel,
+    compaction,
   } = options
   const root = createBase3CliRoot({
     model,
@@ -118,6 +125,8 @@ export function createBase3FastCliRoot(
     noAskUser,
     noWeb,
     extraSystemPrompt: buildBase3FastGuidance(workerAgentId),
+    modelLabel,
+    compaction,
   })
   return {
     ...root,
