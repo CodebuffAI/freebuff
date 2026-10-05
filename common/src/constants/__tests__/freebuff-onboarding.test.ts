@@ -9,6 +9,7 @@ import {
   ONBOARDING_LEGACY_OPTION_IDS,
   ONBOARDING_OTHER_TEXT_MAX,
   onboardingSourceProperties,
+  onboardingTallyFromOptionCounts,
   OTHER_OPTION_ID,
   parseOnboardingSurface,
   resumableOnboardingAnswers,
@@ -485,5 +486,74 @@ describe('resumableOnboardingAnswers', () => {
         otherText: 'lighthouse keeper',
       },
     ])
+  })
+})
+
+describe('onboardingTallyFromOptionCounts — the tally from database counts', () => {
+  /** Group stored answers the way the Postgres GROUP BY does. */
+  function groupLikePostgres(
+    rows: { questionId: string; optionIds: string[]; otherText?: string }[][],
+  ) {
+    const groups = new Map<
+      string,
+      { questionId: string; optionId: string; otherText: string | null; count: number }
+    >()
+    for (const answers of rows) {
+      for (const answer of answers) {
+        for (const optionId of answer.optionIds) {
+          const otherText =
+            optionId === OTHER_OPTION_ID ? (answer.otherText ?? null) : null
+          const key = JSON.stringify([answer.questionId, optionId, otherText])
+          const group = groups.get(key) ?? {
+            questionId: answer.questionId,
+            optionId,
+            otherText,
+            count: 0,
+          }
+          group.count += 1
+          groups.set(key, group)
+        }
+      }
+    }
+    return [...groups.values()]
+  }
+
+  it('equals applying every row: legacy ids, write-ins, unknown ids', () => {
+    const rows = [
+      fullAnswers(),
+      fullAnswers(),
+      [
+        { questionId: 'referral_source', optionIds: ['discord'] },
+        { questionId: 'role', optionIds: ['data_ml'] },
+        { questionId: 'subscriptions', optionIds: ['copilot', 'cursor'] },
+      ],
+      [
+        {
+          questionId: 'referral_source',
+          optionIds: [OTHER_OPTION_ID],
+          otherText: 'saw it on instagram',
+        },
+        { questionId: 'role', optionIds: [OTHER_OPTION_ID], otherText: 'lighthouse keeper' },
+      ],
+      [
+        { questionId: 'retired_question', optionIds: ['x'] },
+        { questionId: 'role', optionIds: ['not_an_option'] },
+      ],
+    ] as { questionId: string; optionIds: string[]; otherText?: string }[][]
+    const expected = emptyOnboardingTally()
+    for (const answers of rows) applyOnboardingAnswersToTally(expected, answers, 1)
+    expect(onboardingTallyFromOptionCounts(groupLikePostgres(rows))).toEqual(expected)
+  })
+
+  it('renders every current option at zero with no responses', () => {
+    expect(onboardingTallyFromOptionCounts([])).toEqual(emptyOnboardingTally())
+  })
+
+  it('ignores a non-positive count', () => {
+    expect(
+      onboardingTallyFromOptionCounts([
+        { questionId: 'role', optionId: 'student', count: 0 },
+      ]),
+    ).toEqual(emptyOnboardingTally())
   })
 })

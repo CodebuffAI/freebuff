@@ -367,6 +367,50 @@ export function applyOnboardingAnswersToTally(
   return otherTexts
 }
 
+/**
+ * The tally from pre-aggregated counts: each entry says `count` stored
+ * answers to `questionId` chose `optionId` (with `otherText` when that option
+ * is the write-in). Used where the database does the counting (the Postgres
+ * admin view, COD-742) instead of a running aggregate.
+ *
+ * The same as `applyOnboardingAnswersToTally` over every row, because that
+ * mapping is linear per (answer, option): each group is mapped once as a
+ * representative answer and scaled by its count.
+ */
+export function onboardingTallyFromOptionCounts(
+  counts: Iterable<{
+    questionId: string
+    optionId: string
+    otherText?: string | null
+    count: number
+  }>,
+  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_QUESTIONS,
+): OnboardingTally {
+  const tally = emptyOnboardingTally(questions)
+  for (const group of counts) {
+    if (!(group.count > 0)) continue
+    const delta = emptyOnboardingTally(questions)
+    applyOnboardingAnswersToTally(
+      delta,
+      [
+        {
+          questionId: group.questionId,
+          optionIds: [group.optionId],
+          ...(group.otherText ? { otherText: group.otherText } : {}),
+        },
+      ],
+      1,
+      questions,
+    )
+    for (const [q, options] of Object.entries(delta)) {
+      for (const [o, n] of Object.entries(options)) {
+        if (n !== 0) tally[q]![o] = (tally[q]![o] ?? 0) + n * group.count
+      }
+    }
+  }
+  return tally
+}
+
 export type OnboardingAnswer = {
   questionId: OnboardingQuestionId
   /** Chosen option ids. Single-choice questions carry exactly one. */
