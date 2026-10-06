@@ -1,6 +1,0 @@
-{
-  "name": "codebuff-agents",
-  "version": "0.0.0",
-  "description": "This directory contains your custom Codebuff agents. Each agent is a TypeScript file that defines an AI agent with specific capabilities and behavior.",
-  "license": "Apache-2.0"
-}

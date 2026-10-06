@@ -112,33 +112,6 @@ export function serializeCacheDebugCorrelation(
   return JSON.stringify(correlation)
 }
 
-export function parseCacheDebugCorrelation(
-  value: unknown,
-): CacheDebugCorrelation | undefined {
-  if (typeof value !== 'string') {
-    return undefined
-  }
-
-  try {
-    const parsed = JSON.parse(value) as Partial<CacheDebugCorrelation>
-    if (
-      typeof parsed.projectRoot === 'string' &&
-      typeof parsed.filename === 'string' &&
-      typeof parsed.snapshotId === 'string'
-    ) {
-      return {
-        projectRoot: parsed.projectRoot,
-        filename: parsed.filename,
-        snapshotId: parsed.snapshotId,
-      }
-    }
-  } catch {
-    return undefined
-  }
-
-  return undefined
-}
-
 export function normalizeProviderRequestBodyForCacheDebug(params: {
   provider: string
   body: unknown

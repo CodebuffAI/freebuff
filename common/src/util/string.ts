@@ -1,5 +1,3 @@
-import { sumBy } from 'lodash'
-
 export const truncateString = (str: string, maxLength: number) => {
   if (str.length <= maxLength) {
     return str
@@ -44,10 +42,6 @@ export const truncateStringWithMessage = ({
  * @return Whether the character is whitespace or not
  */
 export const isWhitespace = (character: string) => /\s/.test(character)
-
-export const randBoolFromStr = (str: string) => {
-  return sumBy(str.split(''), (char) => char.charCodeAt(0)) % 2 === 0
-}
 
 // Irregular plurals that cannot be derived from rules
 // Note: -sis → -ses words are handled by rule, not listed here
@@ -249,50 +243,6 @@ export const pluralize = (
 export const capitalize = (str: string): string => {
   if (!str) return str
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
-}
-
-/**
- * Converts a snake_case string to Title Case
- * Example: "add_subgoal" -> "Add Subgoal"
- */
-export const snakeToTitleCase = (str: string): string => {
-  return str
-    .split('_')
-    .map((word) => capitalize(word))
-    .join(' ')
-}
-
-/**
- * Ensures a URL has the appropriate protocol (http:// or https://)
- * Uses http:// for localhost and local IPs, https:// for all other domains
- */
-export const ensureUrlProtocol = (url: string): string => {
-  if (
-    url.startsWith('http://') ||
-    url.startsWith('https://') ||
-    url.startsWith('file://')
-  ) {
-    return url
-  }
-
-  if (url.startsWith('localhost') || url.match(/^127\.\d+\.\d+\.\d+/)) {
-    return `http://${url}`
-  }
-
-  if (url.startsWith('/')) {
-    return `file://${url}`
-  }
-
-  return `https://${url}`
-}
-
-export const safeReplace = (
-  content: string,
-  searchStr: string,
-  replaceStr: string,
-): string => {
-  const escapedReplaceStr = replaceStr.replace(/\$/g, '$$$$')
-  return content.replace(searchStr, escapedReplaceStr)
 }
 
 /**

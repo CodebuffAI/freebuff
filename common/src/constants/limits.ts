@@ -1,8 +1,6 @@
 export const PROFIT_MARGIN = 0.055
 
-export const REQUEST_CREDIT_SHOW_THRESHOLD = 1
 export const MAX_DATE = new Date(86399999999999)
-export const BILLING_PERIOD_DAYS = 30
 export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60 // 30 days
 export const SESSION_TIME_WINDOW_MS = 30 * 60 * 1000 // 30 minutes - used for matching sessions created around fingerprint creation
 // Signup credits are disabled. Re-enabling requires restoring the Codebuff
@@ -10,10 +8,6 @@ export const SESSION_TIME_WINDOW_MS = 30 * 60 * 1000 // 30 minutes - used for ma
 export const SIGNUP_FREE_CREDITS_GRANT = 0
 // If re-enabled, signup credits require a GitHub account at least this old.
 export const SIGNUP_CREDIT_MIN_GITHUB_ACCOUNT_AGE_MONTHS = 4
-
-// New accounts do not receive monthly free credits; grandfathered monthly grants
-// are based on previous expiring free grants instead of this default.
-export const DEFAULT_FREE_CREDITS_GRANT = 0
 
 // Credit pricing configuration
 export const CREDIT_PRICING = {

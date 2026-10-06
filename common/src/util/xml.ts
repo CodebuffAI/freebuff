@@ -6,12 +6,3 @@
 export function closeXml(toolName: string): string {
   return `</${toolName}>`
 }
-
-/**
- * Generate stop sequences (closing XML tags) for a list of tool names
- * @param toolNames Array of tool names to generate closing tags for
- * @returns Array of closing XML tag strings
- */
-export function getStopSequences(toolNames: readonly string[]): string[] {
-  return toolNames.map((toolName) => `</codebuff_tool_${toolName}>`)
-}
