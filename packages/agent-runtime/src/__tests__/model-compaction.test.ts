@@ -11,6 +11,8 @@ import {
   SUMMARY_OVERRUN_TOLERANCE,
 } from '../model-compaction'
 import { promptSuccess } from '@codebuff/common/util/error'
+import { DEEPSEEK_FLASH_COMPACTION_POLICY } from '@codebuff/common/constants/compaction-policy'
+import { evaluateCompactionTrigger } from '../compact-history'
 import { countTokens, countTokensMessages } from '../util/token-counter'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 import type { PromptAiSdkStreamFn } from '@codebuff/common/types/contracts/llm'
@@ -407,6 +409,67 @@ test('compactWithModelOrFallback falls back to mechanical compaction on any summ
     fallback_failed: false,
   })
   expect(messages).toEqual(before)
+})
+
+test('a fallback on a resumed tool exchange consumes the old idle gap', async () => {
+  // A session ended after a tool result, then the user returned the next day.
+  // The fallback must preserve that pending exchange without reusing its idle
+  // gap when the next tool output crosses Flash's 40k compaction floor.
+  const now = Date.now()
+  const yesterday = now - 24 * 60 * 60 * 1000
+  const history: Message[] = messages.map((message) =>
+    message.role === 'tool' ? structuredClone(message) : { ...message, sentAt: yesterday },
+  )
+  history[2] = {
+    role: 'tool',
+    toolName: 'read_files',
+    toolCallId: 'a',
+    content: [{ type: 'json', value: [{ path: 'a.ts', content: 'old code\n'.repeat(30_000) }] }],
+  }
+  history.push({ ...user('Investigate the failed CI run.'), sentAt: now })
+  const original = structuredClone(history)
+  const fixedTokenCount = 15_000
+  const trigger = (messages: Message[], contextTokenCount = countTokensMessages(messages) + fixedTokenCount) =>
+    evaluateCompactionTrigger({
+      ...DEEPSEEK_FLASH_COMPACTION_POLICY,
+      messages,
+      contextTokenCount,
+      maxContextLength: 320_000,
+    }).trigger
+  expect(trigger(history)).toBe('cache_expiry')
+
+  const result = await compactWithModelOrFallback({
+    messages: history,
+    system: 'You are a coding agent.',
+    maxContextLength: 400_000,
+    fixedTokenCount,
+    fallbackTargetTokens: 272_000,
+    signal: new AbortController().signal,
+    stream: async function* () {
+      throw new Error('summarizer failed')
+    },
+    logger: noopLogger,
+  })
+  expect(result?.fallback).toBe(true)
+  expect(result!.postTokens).toBeLessThan(40_000)
+  expect(history).toEqual(original)
+  const withoutTimestamp = (messages: Message[]) => messages.map(({ sentAt, ...message }) => message)
+  expect(withoutTimestamp(result!.messages.slice(-3))).toEqual(withoutTimestamp(history.slice(-3)))
+
+  const resumedAt = Date.now()
+  const continued: Message[] = [
+    ...result!.messages,
+    { role: 'assistant', sentAt: resumedAt, content: [{ type: 'tool-call', toolName: 'run_terminal_command', toolCallId: 'next', input: { command: 'git status' } }] },
+    { role: 'tool', toolName: 'run_terminal_command', toolCallId: 'next', content: [{ type: 'json', value: { stdout: 'command output '.repeat(5_000) } }] },
+  ]
+  expect(countTokensMessages(continued) + fixedTokenCount).toBeGreaterThan(40_000)
+  expect(trigger(continued)).toBeNull()
+  // Context pressure still compacts, and a genuinely new idle gap still counts.
+  expect(trigger(continued, 320_001)).toBe('context_limit')
+  expect(trigger([
+    ...continued,
+    { ...user('Continue after another break.'), sentAt: resumedAt + 16 * 60 * 1000 },
+  ])).toBe('cache_expiry')
 })
 
 test('compactWithModelOrFallback still propagates cancellation', async () => {

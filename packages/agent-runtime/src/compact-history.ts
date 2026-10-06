@@ -999,7 +999,12 @@ function compactRequestHistory(messages: Message[], tokenBudget: number) {
   const output = [
     ...(summaryInstalled ? [summary] : []),
     ...prefix.map((message) => ({ ...message, sentAt: now })),
-    ...fitted,
+    // On resume, the preserved exchange can include the old assistant and the
+    // new user prompt. Reset their idle gap too, or crossing the token floor
+    // after this pass triggers another cache-expiry compaction mid-work.
+    ...fitted.map((message) =>
+      message.sentAt === undefined ? message : { ...message, sentAt: now },
+    ),
   ]
   if (countTokensMessages(output) > tokenBudget) {
     throw new Error(
