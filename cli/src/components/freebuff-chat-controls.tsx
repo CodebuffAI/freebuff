@@ -5,7 +5,10 @@ import { Button } from './button'
 import { FreebuffModelSelector } from './freebuff-model-selector'
 import { useTheme } from '../hooks/use-theme'
 import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
-import { beginFreebuffChatAdmission } from '../hooks/use-freebuff-chat-admission'
+import {
+  beginFreebuffChatAdmission,
+  FREEBUFF_ADMISSION_QUEUE_PAUSED_MESSAGE,
+} from '../hooks/use-freebuff-chat-admission'
 import {
   returnToFreebuffLanding,
   refreshFreebuffSessionMetadata,
@@ -31,7 +34,7 @@ export function FreebuffChatControls() {
   const nextModel = useFreebuffChatStore((s) => s.nextModel)
   const model = useFreebuffModelStore((s) => s.selectedModel)
   const session = useFreebuffSessionStore((s) => s.session)
-  const { clearQueue } = useChatRuntime()
+  const { clearQueue, queuePaused } = useChatRuntime()
   useEffect(() => {
     if (pickerOpen) void refreshFreebuffSessionMetadata().catch(() => {})
   }, [pickerOpen])
@@ -138,7 +141,9 @@ export function FreebuffChatControls() {
           ? (session.message ??
             'Freebuff is already running elsewhere. Take over that session?')
           : (admission.message ??
-            'Starting your model session… Your message is saved.')}
+            (admission.phase === 'requested' && queuePaused
+              ? FREEBUFF_ADMISSION_QUEUE_PAUSED_MESSAGE
+              : 'Starting your model session… Your message is saved.'))}
       </text>
       <box style={{ flexDirection: 'row', gap: 2 }}>
         {canConfirm && (

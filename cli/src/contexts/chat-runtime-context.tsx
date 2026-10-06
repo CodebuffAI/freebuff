@@ -1,4 +1,7 @@
-import { useFreebuffChatAdmission } from '../hooks/use-freebuff-chat-admission'
+import {
+  freebuffChatAdmissionMayStart,
+  useFreebuffChatAdmission,
+} from '../hooks/use-freebuff-chat-admission'
 import {
   useFreebuffChatStore,
   freebuffChatNeedsAdmission,
@@ -242,9 +245,12 @@ export const ChatRuntimeProvider = ({
   useFreebuffChatAdmission(
     IS_FREEBUFF &&
       !hasSelectedByokConnection &&
-      !isChainInProgress &&
-      queue.streamStatus === 'idle' &&
-      queue.queuedMessages.length > 0,
+      freebuffChatAdmissionMayStart({
+        chainInProgress: isChainInProgress,
+        streamStatus: queue.streamStatus,
+        queuedCount: queue.queuedMessages.length,
+        queuePaused: queue.queuePaused,
+      }),
   )
 
   sendMessageRef.current = sendMessage
