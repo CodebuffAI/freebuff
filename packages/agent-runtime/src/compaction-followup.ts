@@ -13,6 +13,7 @@
 
 import { COMPACTION_FOLLOWUP_EVENT } from '@codebuff/common/util/axiom-only-log'
 
+import { COMPACTED_READ_MARKER } from './compaction-working-set'
 import { countTokensJson } from './util/token-counter'
 
 import type { CompactionTrigger } from './compact-history'
@@ -67,12 +68,31 @@ function toolCallIds(messages: Message[]): Set<string> {
   return ids
 }
 
-function resultIds(messages: Message[]): Set<string> {
-  return new Set(
-    messages.flatMap((message) =>
-      message.role === 'tool' ? [message.toolCallId] : [],
-    ),
-  )
+/** Paths whose contents a history's read_files results actually hold. A
+ * working-set stub names a file without holding it. */
+function heldPaths(messages: Message[]): Set<string> {
+  const held = new Set<string>()
+  for (const message of messages) {
+    if (message.role !== 'tool' || message.toolName !== 'read_files') continue
+    for (const part of message.content) {
+      if (part.type !== 'json' || !Array.isArray(part.value)) continue
+      for (const file of part.value) {
+        const { path, content } = (file ?? {}) as {
+          path?: unknown
+          content?: unknown
+        }
+        if (
+          typeof path === 'string' &&
+          !(
+            typeof content === 'string' &&
+            content.startsWith(COMPACTED_READ_MARKER)
+          )
+        )
+          held.add(path)
+      }
+    }
+  }
+  return held
 }
 
 export function openCompactionWindow(params: {
@@ -82,12 +102,7 @@ export function openCompactionWindow(params: {
   trigger: CompactionTrigger | 'manual'
   now?: number
 }): CompactionWindow {
-  const answered = resultIds(params.after)
-  const carriedPaths = new Set(
-    readCalls(params.after)
-      .filter((call) => answered.has(call.toolCallId))
-      .flatMap((call) => call.paths),
-  )
+  const carriedPaths = heldPaths(params.after)
   return {
     mode: params.mode,
     trigger: params.trigger,

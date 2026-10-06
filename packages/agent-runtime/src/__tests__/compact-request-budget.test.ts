@@ -121,7 +121,13 @@ describe('request-sized compaction', () => {
         content: [{ type: 'text', text: 'I used those contents.' }],
       },
     ])
-    expect(output.some((message) => message.role === 'tool')).toBe(false)
+    // Not preserved as a fresh result. Too big for this window's working set,
+    // it comes back only as a stub.
+    expect(
+      output
+        .filter((message) => message.role === 'tool')
+        .every((message) => message.tags?.includes('COMPACTION_WORKING_SET')),
+    ).toBe(true)
     expect(JSON.stringify(output)).not.toContain('ALREADY_CONSUMED')
   })
 

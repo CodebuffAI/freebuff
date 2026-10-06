@@ -14,7 +14,10 @@ import { promptSuccess } from '@codebuff/common/util/error'
 import { DEEPSEEK_FLASH_COMPACTION_POLICY } from '@codebuff/common/constants/compaction-policy'
 import { evaluateCompactionTrigger } from '../compact-history'
 import { countTokens, countTokensMessages } from '../util/token-counter'
-import type { Message } from '@codebuff/common/types/messages/codebuff-message'
+import type {
+  Message,
+  ToolMessage,
+} from '@codebuff/common/types/messages/codebuff-message'
 import type { PromptAiSdkStreamFn } from '@codebuff/common/types/contracts/llm'
 
 const user = (text: string): Message => ({
@@ -388,6 +391,8 @@ test('compactWithModelOrFallback falls back to mechanical compaction on any summ
       system: 'You are a coding agent.',
       maxContextLength: 16_384,
       fixedTokenCount: 500,
+      // As an automatic trigger aims it: too low to carry both files whole.
+      mechanicalTargetTokens: 4_000,
       signal: new AbortController().signal,
       stream,
       logger: { ...noopLogger, warn: (data: unknown) => warnings.push(data) },
@@ -532,17 +537,22 @@ test('an automatic fallback aims below the trigger instead of refilling the whol
     stream: failing,
     logger: noopLogger,
   }
-  const whole = await compactWithModelOrFallback(params)
+  // Aimed at the whole budget the pass carries a.ts back and saves nothing.
+  expect(await compactWithModelOrFallback(params)).toBeNull()
+  const roomy = await compactWithModelOrFallback({ ...params, fallbackTargetTokens: 4_000 })
   const aimed = await compactWithModelOrFallback({ ...params, fallbackTargetTokens: 1_500 })
-  expect(whole?.fallback).toBe(true)
+  expect(roomy?.fallback).toBe(true)
   expect(aimed?.fallback).toBe(true)
-  expect(aimed!.postTokens).toBeLessThanOrEqual(1_500)
-  expect(aimed!.postTokens).toBeLessThan(whole!.postTokens)
-  expect(JSON.stringify(aimed!.messages)).toContain('Compare the time units in a.ts and b.ts.')
-  // A target that cannot hold the live request falls back to the whole budget
-  // rather than leaving the history uncompacted.
-  const tooSmall = await compactWithModelOrFallback({ ...params, fallbackTargetTokens: 400 })
-  expect(tooSmall?.postTokens).toBe(whole!.postTokens)
+  expect(roomy!.postTokens).toBeLessThanOrEqual(4_000)
+  expect(aimed!.postTokens).toBeLessThanOrEqual(roomy!.postTokens)
+  // Only what the pass rewrites shrinks to a target: the live request and the
+  // unread b.ts result stay whole however low it aims.
+  const bResult = JSON.stringify((messages[5] as ToolMessage).content)
+  for (const result of [roomy, aimed]) {
+    const sent = JSON.stringify(result!.messages)
+    expect(sent).toContain('Compare the time units in a.ts and b.ts.')
+    expect(sent).toContain(bResult)
+  }
 })
 
 // BYOK compaction truncation: the instruction asked for "approximately 6000
@@ -639,6 +649,7 @@ test('a truncated summary falls back to mechanical compaction and is reported as
     maxContextLength: 16_384,
     fixedTokenCount: 500,
     maxOutputTokens: 4_096,
+    mechanicalTargetTokens: 4_000,
     signal: new AbortController().signal,
     stream: (request, maxOutputTokens, onFinishReason) =>
       cutOff({ summary: truncated })(request, maxOutputTokens, onFinishReason),

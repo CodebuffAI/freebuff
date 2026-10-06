@@ -29,7 +29,10 @@ import { type ToolSet } from 'ai'
 import { cloneDeep, mapValues } from 'lodash'
 import z from 'zod/v4'
 
-import { evaluateCompactionTrigger } from './compact-history'
+import {
+  evaluateCompactionTrigger,
+  MECHANICAL_TARGET_SHARE,
+} from './compact-history'
 import type { CompactionTrigger } from './compact-history'
 import {
   closeCompactionWindow,
@@ -1327,11 +1330,16 @@ export async function loopAgentSteps(
               maxOutputTokens: policy.maxOutputTokens,
               // An automatic pass must leave the run under its own trigger, or
               // the next step fires it again on the fallback's output.
+              // The mechanical fallback aims lower still: it keeps no
+              // findings, so it needs room to work in.
               ...(trigger === 'manual'
                 ? {}
                 : {
                     fallbackTargetTokens: Math.floor(
                       thresholdTokens * COMPACTION_LOW_WATER,
+                    ),
+                    mechanicalTargetTokens: Math.floor(
+                      thresholdTokens * MECHANICAL_TARGET_SHARE,
                     ),
                   }),
               signal,
@@ -1519,7 +1527,7 @@ export async function loopAgentSteps(
         currentAgentState.messageHistory.push(
           userMessage({
             content: withSystemTags(
-              'Final completion check: compare the actual deliverables with the user request: exact paths, interfaces, formats, correctness, and any performance requirements. If a necessary check or repair is missing, use the available tools to finish it within the remaining budget. Verify the final edited files; rerun affected checks after repairs, but do not repeat passing checks when the relevant files have not changed. Preserve the tested command\'s exit status when filtering output (for example, Bash pipefail or explicit status capture); a successful output filter is not a passing test. Fix causes rather than skipping tests, weakening assertions, swallowing errors, or adding type/lint suppressions just to pass. If changing a check is required by the requested behavior, explain why and verify that behavior. Respect permission boundaries, refusals, and requests to stop; if awaiting user input or genuinely blocked, report that and end. Otherwise give a concise final answer stating what was verified, which checks failed or could not run, and any remaining limitations.',
+              "Final completion check: compare the actual deliverables with the user request: exact paths, interfaces, formats, correctness, and any performance requirements. If a necessary check or repair is missing, use the available tools to finish it within the remaining budget. Verify the final edited files; rerun affected checks after repairs, but do not repeat passing checks when the relevant files have not changed. Preserve the tested command's exit status when filtering output (for example, Bash pipefail or explicit status capture); a successful output filter is not a passing test. Fix causes rather than skipping tests, weakening assertions, swallowing errors, or adding type/lint suppressions just to pass. If changing a check is required by the requested behavior, explain why and verify that behavior. Respect permission boundaries, refusals, and requests to stop; if awaiting user input or genuinely blocked, report that and end. Otherwise give a concise final answer stating what was verified, which checks failed or could not run, and any remaining limitations.",
             ),
           }),
         )
@@ -1676,7 +1684,11 @@ export async function loopAgentSteps(
             content: frameSteeringContent(
               typeof message === 'string'
                 ? buildUserMessageContent(message, undefined)
-                : buildUserMessageContent(message.prompt, undefined, message.content),
+                : buildUserMessageContent(
+                    message.prompt,
+                    undefined,
+                    message.content,
+                  ),
             ),
             tags: ['USER_PROMPT'],
             keepDuringTruncation: true,

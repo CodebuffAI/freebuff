@@ -12,6 +12,11 @@
  * was read or edited, every command that was run, every user message up to the
  * user budget — which is what a coding agent actually needs to resume.
  *
+ * The runtime's own pass (`compactRequestHistory`, not the shared summary)
+ * adds a working set on top: the newest unedited file reads, re-provided after
+ * the live request, and an outline stub for every other file read. See
+ * compaction-working-set.ts.
+ *
  * `agents/context-pruner.ts` cannot import this module: its `handleSteps` is
  * serialized with `toString()` and re-evaluated standalone, and `agents/` is
  * bundled at build time into the CLI binary, the desktop app and the freebuff
@@ -24,6 +29,12 @@
 
 import { DEFAULT_COMPACTION_POLICY } from '@codebuff/common/constants/compaction-policy'
 import { CONTEXT_COMPACTION_COMPLETED_EVENT } from '@codebuff/common/util/axiom-only-log'
+import {
+  WORKING_SET_SHARE,
+  WORKING_SET_TOKEN_LIMIT,
+  buildWorkingSet,
+  isWorkingSetMessage,
+} from './compaction-working-set'
 import { fitToolResults } from './util/fit-tool-results'
 import { countTokens, countTokensMessages } from './util/token-counter'
 import type {
@@ -80,6 +91,24 @@ const CONTINUATION_TEXT =
 export const DEFAULT_CACHE_EXPIRY_MS = DEFAULT_COMPACTION_POLICY.cacheExpiryMs
 export const DEFAULT_CACHE_EXPIRY_MIN_TOKENS =
   DEFAULT_COMPACTION_POLICY.cacheExpiryMinTokens
+
+/**
+ * Where an automatic mechanical pass aims, as a share of the trigger
+ * threshold. Its result must leave real room under the threshold: when a pass
+ * kept 80-100% of the history, the same run compacted again within ten minutes
+ * 22-51% of the time (prod, 2026-10-05), against 2.6% when it kept under 10%.
+ * Fresh tool results are exempt; see `compactRequestHistory`.
+ */
+export const MECHANICAL_TARGET_SHARE = 0.5
+
+/**
+ * The most a mechanical pass rewrites history into: summary plus working set,
+ * on top of the fixed prompt, the live request and the fresh tool results it
+ * keeps whole. Sized so the result lands near a model handoff's (median ~23k
+ * tokens including the fixed prompt, 2026-10-05) rather than filling the
+ * target: a small result leaves the most room before the next compaction.
+ */
+export const MECHANICAL_HISTORY_TOKENS = 12_000
 
 /** Separator between entries inside the rendered historical memory. */
 const ENTRY_SEPARATOR = '\n\n---\n\n'
@@ -885,8 +914,18 @@ function latestToolExchangeStart(messages: Message[]): number {
 /** Runtime-only request budgeting around the shared historical summarizer.
  * The serialized context-pruner still uses compactMessages' summary algorithm;
  * it does not own the parent's live model request or its fixed token overhead.
+ *
+ * `tokenBudget` is hard: the live request and the fresh tool results must fit
+ * it, clipped if they must. `targetBudget` is soft: the working set and the
+ * summary stop there, so aiming low shrinks only what this pass rewrites and
+ * never clips a result the model has not read yet.
  */
-function compactRequestHistory(messages: Message[], tokenBudget: number) {
+function compactRequestHistory(
+  messages: Message[],
+  tokenBudget: number,
+  targetBudget = tokenBudget,
+  historyBudget = Number.POSITIVE_INFINITY,
+) {
   const tailStart = latestToolExchangeStart(messages)
   let promptStart = messages
     .slice(0, tailStart)
@@ -925,7 +964,11 @@ function compactRequestHistory(messages: Message[], tokenBudget: number) {
   const older = messages
     .slice(0, tailStart)
     .filter((message) => !protectedMessages.has(message))
-  const result = compactMessages({ messages: older })
+  // A previous pass's working set is reads, not conversation: it feeds this
+  // pass's working set and stays out of the summary's tool log.
+  const result = compactMessages({
+    messages: older.filter((message) => !isWorkingSetMessage(message)),
+  })
   const entries = parseSummaryIntoEntries(result.summaryText)
   const now = Date.now()
   // Old persisted compactions put the current request inside the summary and
@@ -955,8 +998,31 @@ function compactRequestHistory(messages: Message[], tokenBudget: number) {
     fresh,
     tokenBudget - prefixTokens - reservedMemory,
   )
-  const remainingTokens =
-    tokenBudget - prefixTokens - countTokensMessages(fitted)
+  const fittedTokens = countTokensMessages(fitted)
+  const hardRemaining = tokenBudget - prefixTokens - fittedTokens
+  // Optional content stops at the target, but never squeezes out the request
+  // reserved above.
+  const optionalTokens = Math.max(
+    Math.min(
+      hardRemaining,
+      targetBudget - prefixTokens - fittedTokens,
+      historyBudget,
+    ),
+    reservedMemory,
+  )
+  const workingSet = buildWorkingSet({
+    older,
+    fresh,
+    tokenBudget: Math.min(
+      WORKING_SET_TOKEN_LIMIT,
+      Math.floor((optionalTokens - reservedMemory) * WORKING_SET_SHARE),
+    ),
+    now,
+  })
+  const workingSetTokens = workingSet
+    ? countTokensMessages(workingSet.messages)
+    : 0
+  const remainingTokens = optionalTokens - workingSetTokens
 
   // Keep the newest historical entries that fit the actual remainder. The
   // 50k/20k summary budgets are ceilings, never permission to exceed a BYOK
@@ -1000,6 +1066,8 @@ function compactRequestHistory(messages: Message[], tokenBudget: number) {
   const output = [
     ...(summaryInstalled ? [summary] : []),
     ...prefix.map((message) => ({ ...message, sentAt: now })),
+    // After the live request, as if the turn had opened by reading them.
+    ...(workingSet?.messages ?? []),
     // On resume, the preserved exchange can include the old assistant and the
     // new user prompt. Reset their idle gap too, or crossing the token floor
     // after this pass triggers another cache-expiry compaction mid-work.
@@ -1027,6 +1095,9 @@ function compactRequestHistory(messages: Message[], tokenBudget: number) {
       ),
       budget_dropped_summary_parts: entries.length - kept.length,
       preserved_fresh_messages: fitted.length,
+      working_set_files: workingSet?.files ?? 0,
+      working_set_stubs: workingSet?.stubs ?? 0,
+      working_set_tokens: workingSetTokens,
     },
   }
 }
@@ -1135,6 +1206,12 @@ export function compactHistoryNow(params: {
   maxContextLength: number
   /** System prompt, tool schemas and next step's scaffolding, outside history. */
   fixedTokenCount?: number
+  /** Where the rewritten part should stop, below `maxContextLength`; see
+   * `compactRequestHistory`. Defaults to `maxContextLength`. */
+  targetTokens?: number
+  /** The most the rewritten history (summary plus working set) may take.
+   * Defaults to MECHANICAL_HISTORY_TOKENS. */
+  historyTokens?: number
   /** Why the caller compacted; a forced pass is `manual`. */
   trigger?: CompactionTrigger | 'manual'
   logger?: Logger
@@ -1150,7 +1227,10 @@ export function compactHistoryNow(params: {
   const fixedTokenCount = params.fixedTokenCount ?? 0
   const result = compactRequestHistory(
     messages,
-    maxContextLength - (params.fixedTokenCount ?? 0),
+    maxContextLength - fixedTokenCount,
+    Math.min(params.targetTokens ?? maxContextLength, maxContextLength) -
+      fixedTokenCount,
+    params.historyTokens ?? MECHANICAL_HISTORY_TOKENS,
   )
   const previousTokens = countTokensMessages(messages)
   const nextTokens = countTokensMessages(result.messages)

@@ -56,14 +56,38 @@ const read = (id: string, content: string, path: string): Message => ({
   ],
 })
 
+const edit = (id: string, path: string): Message[] => [
+  {
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool-call',
+        toolCallId: id,
+        toolName: 'str_replace',
+        input: { path, replacements: [] },
+      },
+    ],
+  },
+  {
+    role: 'tool',
+    toolCallId: id,
+    toolName: 'str_replace',
+    content: [{ type: 'json', value: { file: path, message: 'Updated' } }],
+  },
+]
+
+// Each file was edited after it was read, so the pass carries no working set
+// and the reads are what it reclaims.
 const history = (): Message[] => [
   user('Add a retry to the uploader.'),
   call('a', ['uploader.ts']),
   read('a', 'export const upload = () => {}\n'.repeat(400), 'uploader.ts'),
+  ...edit('a-edit', 'uploader.ts'),
   assistant('Added the retry.'),
   user('Now document it.'),
   call('b', ['README.md']),
   read('b', '# docs\n'.repeat(400), 'README.md'),
+  ...edit('b-edit', 'README.md'),
   assistant('Documented.'),
 ]
 

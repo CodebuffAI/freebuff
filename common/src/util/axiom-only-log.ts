@@ -290,6 +290,10 @@ const CONTEXT_COMPACTION_COMPLETED_FIELDS = {
   summary_estimated_tokens: 'number',
   budget_dropped_summary_parts: 'number',
   preserved_fresh_messages: 'number',
+  /** Files re-provided whole, files left as an outline stub, and their size. */
+  working_set_files: 'number',
+  working_set_stubs: 'number',
+  working_set_tokens: 'number',
   post_tokens: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 

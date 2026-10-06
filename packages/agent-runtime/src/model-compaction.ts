@@ -97,7 +97,10 @@ function repairJsonText(text: string): string {
       if (next !== undefined && VALID_JSON_ESCAPES.has(next)) {
         out += char + next
         i++
-      } else if (next === 'u' && /^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) {
+      } else if (
+        next === 'u' &&
+        /^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))
+      ) {
         out += text.slice(i, i + 6)
         i += 5
       } else if (next === "'") {
@@ -109,7 +112,8 @@ function repairJsonText(text: string): string {
     } else if (char === '\n') out += '\\n'
     else if (char === '\r') out += '\\r'
     else if (char === '\t') out += '\\t'
-    else if (char < ' ') out += `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
+    else if (char < ' ')
+      out += `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
     else out += char
   }
   return out
@@ -197,7 +201,10 @@ function findHandoffString(value: unknown, depth = 0): string | undefined {
   const record = value as Record<string, unknown>
   // A text-form call to some other tool is not a handoff.
   for (const key of ['toolName', 'name', 'tool'])
-    if (typeof record[key] === 'string' && record[key] !== 'complete_compaction')
+    if (
+      typeof record[key] === 'string' &&
+      record[key] !== 'complete_compaction'
+    )
       return undefined
   for (const child of Object.values(record)) {
     const found = findHandoffString(child, depth + 1)
@@ -631,6 +638,38 @@ function compactionErrorKind(error: unknown): string {
 }
 
 /**
+ * The mechanical pass (`compactHistoryNow`, no model call). It aims the part
+ * it rewrites at `targetTokens` and keeps the live request and fresh tool
+ * results whole within `maxContextLength`: it fills whatever room it is given,
+ * so aimed at the hard budget it lands above an automatic trigger's threshold
+ * and the very next step compacts again. Null when it cannot make the history
+ * smaller; throws only when even the hard budget cannot hold the live request.
+ */
+export function compactMechanically(params: {
+  messages: Message[]
+  maxContextLength: number
+  fixedTokenCount: number
+  targetTokens?: number
+  trigger?: CompactionTrigger | 'manual'
+  logger?: Logger
+  runId?: string
+}): {
+  messages: Message[]
+  summary: string
+  preTokens: number
+  postTokens: number
+} | null {
+  const result = compactHistoryNow(params)
+  if (!result) return null
+  return {
+    messages: result.messages,
+    summary: result.summaryText,
+    preTokens: result.previousTokens + params.fixedTokenCount,
+    postTokens: result.nextTokens + params.fixedTokenCount,
+  }
+}
+
+/**
  * `compactWithModel`, but a compaction failure never fails the user's run.
  *
  * The model handoff is the preferred compaction, not the only one: when the
@@ -646,14 +685,12 @@ export async function compactWithModelOrFallback(
     runId?: string
     model?: string
     trigger?: CompactionTrigger | 'manual'
-    /**
-     * Where the mechanical fallback should aim, below `maxContextLength`. That
-     * pass fills whatever budget it is given, so aimed at the hard budget it
-     * lands above an automatic trigger's threshold and the very next step
-     * compacts again. Falls back to `maxContextLength` when the target is too
-     * small to hold the live request.
-     */
+    /** The context a summary longer than requested must still leave the
+     * run under; `compactWithModel`'s `targetTokens`. */
     fallbackTargetTokens?: number
+    /** Where the mechanical fallback aims; see `compactMechanically`.
+     * Defaults to `fallbackTargetTokens`. */
+    mechanicalTargetTokens?: number
   },
 ): Promise<{
   messages: Message[]
@@ -668,6 +705,7 @@ export async function compactWithModelOrFallback(
     model,
     trigger,
     fallbackTargetTokens,
+    mechanicalTargetTokens = fallbackTargetTokens,
     ...modelParams
   } = params
   try {
@@ -700,29 +738,18 @@ export async function compactWithModelOrFallback(
   } catch (error) {
     if (params.signal.aborted || isAbortError(error)) throw error
     const errorMessage = error instanceof Error ? error.message : String(error)
-    let fallback: ReturnType<typeof compactHistoryNow> = null
+    let fallback: ReturnType<typeof compactMechanically> = null
     let fallbackError: string | undefined
-    const mechanical = (maxContextLength: number) =>
-      compactHistoryNow({
+    try {
+      fallback = compactMechanically({
         messages: params.messages,
-        maxContextLength,
+        maxContextLength: params.maxContextLength,
         fixedTokenCount: params.fixedTokenCount,
+        targetTokens: mechanicalTargetTokens,
         trigger,
         logger,
         runId,
       })
-    try {
-      if (
-        fallbackTargetTokens !== undefined &&
-        fallbackTargetTokens < params.maxContextLength
-      ) {
-        try {
-          fallback = mechanical(fallbackTargetTokens)
-        } catch {
-          // The live request does not fit the target; use the whole budget.
-        }
-      }
-      fallback ??= mechanical(params.maxContextLength)
     } catch (mechanicalError) {
       fallbackError =
         mechanicalError instanceof Error
@@ -752,12 +779,6 @@ export async function compactWithModelOrFallback(
       // Logging must never turn a recovered compaction into a failed run.
     }
     if (!fallback) return null
-    return {
-      messages: fallback.messages,
-      summary: fallback.summaryText,
-      preTokens: fallback.previousTokens + params.fixedTokenCount,
-      postTokens: fallback.nextTokens + params.fixedTokenCount,
-      fallback: true,
-    }
+    return { ...fallback, fallback: true }
   }
 }

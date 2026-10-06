@@ -30,7 +30,12 @@ const assistant = (text: string): Message => ({
 const call = (id: string, paths: unknown[] = ['file.ts']): Message => ({
   role: 'assistant',
   content: [
-    { type: 'tool-call', toolCallId: id, toolName: 'read_files', input: { paths } },
+    {
+      type: 'tool-call',
+      toolCallId: id,
+      toolName: 'read_files',
+      input: { paths },
+    },
   ],
 })
 const tool = (id: string, value: JSONValue): Message => ({
@@ -42,15 +47,38 @@ const tool = (id: string, value: JSONValue): Message => ({
 const read = (id: string, content: string, path = 'file.ts') =>
   tool(id, [{ path, content, referencedBy: {} }])
 
-/** A settled conversation: several exchanges, then a final assistant answer. */
+const edit = (id: string, path: string): Message[] => [
+  {
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool-call',
+        toolCallId: id,
+        toolName: 'str_replace',
+        input: { path, replacements: [] },
+      },
+    ],
+  },
+  {
+    role: 'tool',
+    toolCallId: id,
+    toolName: 'str_replace',
+    content: [{ type: 'json', value: { file: path, message: 'Updated' } }],
+  },
+]
+
+/** A settled conversation: several exchanges, then a final assistant answer.
+ * Each file was edited after it was read, so no working set carries it. */
 const settledHistory = (): Message[] => [
   user('Add a retry to the uploader.'),
   call('a', ['uploader.ts']),
   read('a', 'export const upload = () => {}\n'.repeat(400), 'uploader.ts'),
+  ...edit('a-edit', 'uploader.ts'),
   assistant('Added the retry.'),
   user('Now document it.'),
   call('b', ['README.md']),
   read('b', '# docs\n'.repeat(400), 'README.md'),
+  ...edit('b-edit', 'README.md'),
   assistant('Documented.'),
 ]
 
@@ -72,8 +100,9 @@ describe('compactHistoryNow', () => {
     expect(forced).not.toBeNull()
     expect(forced!.nextTokens).toBeLessThan(forced!.previousTokens)
     expect(countTokensMessages(forced!.messages)).toBe(forced!.nextTokens)
+    // Edited after it was read, so it comes back as an outline, not a body.
     expect(JSON.stringify(forced!.messages)).not.toContain(
-      'export const upload',
+      JSON.stringify('export const upload = () => {}\nexport const').slice(1, -1),
     )
   })
 

@@ -5,6 +5,7 @@ import {
   measureCompactionWindow,
   openCompactionWindow,
 } from '../compaction-followup'
+import { COMPACTED_READ_MARKER } from '../compaction-working-set'
 
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 
@@ -24,7 +25,18 @@ const read = (id: string, paths: unknown[]): Message[] => [
     role: 'tool',
     toolCallId: id,
     toolName: 'read_files',
-    content: [{ type: 'json', value: [{ path: 'x', content: 'BODY' }] }],
+    content: [
+      {
+        type: 'json',
+        value: paths.map((entry) => ({
+          path:
+            typeof entry === 'string'
+              ? entry
+              : (entry as { path: string }).path,
+          content: 'BODY',
+        })),
+      },
+    ],
   },
 ]
 
@@ -45,6 +57,34 @@ describe('compaction follow-up window', () => {
     const window = openCompactionWindow({
       before,
       after,
+      mode: 'mechanical',
+      trigger: 'context_limit',
+      now: 0,
+    })
+    expect([...window.elidedPaths]).toEqual(['a.ts'])
+  })
+
+  it('a working-set stub names a file without carrying it', () => {
+    const stubbed: Message[] = [
+      summary,
+      {
+        role: 'tool',
+        toolCallId: 'ws',
+        toolName: 'read_files',
+        content: [
+          {
+            type: 'json',
+            value: [
+              { path: 'b.ts', content: 'BODY' },
+              { path: 'a.ts', content: `${COMPACTED_READ_MARKER}. 3 lines.]` },
+            ],
+          },
+        ],
+      },
+    ]
+    const window = openCompactionWindow({
+      before,
+      after: stubbed,
       mode: 'mechanical',
       trigger: 'context_limit',
       now: 0,

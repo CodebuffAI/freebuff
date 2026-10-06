@@ -326,6 +326,8 @@ describe('getAxiomOnlyLogEvent', () => {
         context_token_count: 212_000,
         summary_estimated_tokens: 13_000,
         preserved_fresh_messages: 2,
+        working_set_files: 3,
+        working_set_stubs: 9,
         post_tokens: 41_000,
         // Not in the allowlist: user content.
         summaryText: '[USER]\nsecret',
@@ -338,6 +340,8 @@ describe('getAxiomOnlyLogEvent', () => {
         context_token_count: 212_000,
         summary_estimated_tokens: 13_000,
         preserved_fresh_messages: 2,
+        working_set_files: 3,
+        working_set_stubs: 9,
         post_tokens: 41_000,
       },
     })
