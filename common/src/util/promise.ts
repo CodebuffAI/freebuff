@@ -71,3 +71,31 @@ export async function withTimeout<T>(
     }
   }
 }
+
+/**
+ * {@link withTimeout} for callers that fail open: settles to `fallback`
+ * instead of rejecting when `timeoutMs` passes first. A rejection of `promise`
+ * before the deadline still rejects; to treat that as the fallback too, pass
+ * `promise.catch(() => fallback)`. The timer is cleared either way, and a
+ * late rejection after the fallback won is handled by the race, never
+ * reported as unhandled.
+ */
+export async function withTimeoutOr<T, F>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: F,
+): Promise<T | F> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+  const timeoutPromise = new Promise<F>((resolve) => {
+    timeoutId = setTimeout(() => resolve(fallback), timeoutMs)
+  })
+
+  try {
+    return await Promise.race([promise, timeoutPromise])
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId)
+    }
+  }
+}

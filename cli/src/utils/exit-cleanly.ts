@@ -1,3 +1,4 @@
+import { withTimeoutOr } from '@codebuff/common/util/promise'
 import { flushAdEngagementOnExit } from '../ads/use-ad-engagement'
 import { flushAnalytics } from './analytics'
 import { IS_FREEBUFF } from './constants'
@@ -5,7 +6,6 @@ import { stopEngagementTracking } from './engagement'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import { drainClientLogs } from './log-shipper'
 import { settleInterruptedSponsoredRun } from './sponsored-run-exit'
-import { withTimeout } from './terminal-color-detection'
 
 const EXIT_CLEANUP_TIMEOUT_MS = 1_000
 
@@ -134,7 +134,7 @@ export const exitCliCleanly = createExitCliCleanly({
     }
   },
   waitForRemoteCleanup: async (tasks) => {
-    await withTimeout(
+    await withTimeoutOr(
       Promise.allSettled(tasks),
       EXIT_CLEANUP_TIMEOUT_MS,
       undefined,

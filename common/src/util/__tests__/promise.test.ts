@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 
-import { INITIAL_RETRY_DELAY, withRetry } from '../promise'
+import {
+  INITIAL_RETRY_DELAY,
+  withRetry,
+  withTimeout,
+  withTimeoutOr,
+} from '../promise'
 
 describe('withRetry', () => {
   describe('basic functionality', () => {
@@ -321,5 +326,92 @@ describe('withRetry', () => {
 
       expect(operation).toHaveBeenCalledTimes(1)
     })
+  })
+})
+
+const after = <T>(ms: number, value: T) =>
+  new Promise<T>((resolve) => setTimeout(() => resolve(value), ms))
+const failAfter = (ms: number, message: string) =>
+  new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(message)), ms),
+  )
+
+describe('withTimeout', () => {
+  it('resolves with the value when it settles first', async () => {
+    expect(await withTimeout(after(1, 'v'), 50)).toBe('v')
+  })
+
+  it('rejects with the given message when the deadline passes first', async () => {
+    await expect(
+      withTimeout(after(50, 'v'), 1, 'store timeout'),
+    ).rejects.toThrow('store timeout')
+  })
+
+  it('defaults the message to the timeout', async () => {
+    await expect(withTimeout(after(50, 'v'), 1)).rejects.toThrow(
+      'Operation timed out after 1ms',
+    )
+  })
+
+  it('passes the promise rejection through unchanged', async () => {
+    await expect(withTimeout(failAfter(1, 'boom'), 50)).rejects.toThrow('boom')
+  })
+
+  it('clears its timer once the promise settles', async () => {
+    const clear = spyOn(globalThis, 'clearTimeout')
+    try {
+      await withTimeout(Promise.resolve('v'), 10_000)
+      expect(clear).toHaveBeenCalledTimes(1)
+    } finally {
+      clear.mockRestore()
+    }
+  })
+})
+
+describe('withTimeoutOr', () => {
+  it('resolves with the value when it settles first', async () => {
+    expect(await withTimeoutOr(after(1, 'v'), 50, null)).toBe('v')
+  })
+
+  it('resolves with the fallback when the deadline passes first', async () => {
+    expect(await withTimeoutOr(after(50, 'v'), 1, null)).toBeNull()
+    const TIMED_OUT = Symbol('timed out')
+    expect(await withTimeoutOr(after(50, 'v'), 1, TIMED_OUT)).toBe(TIMED_OUT)
+  })
+
+  it('passes a rejection before the deadline through unchanged', async () => {
+    await expect(
+      withTimeoutOr(failAfter(1, 'boom'), 50, null),
+    ).rejects.toThrow('boom')
+  })
+
+  it('treats a rejection as the fallback when the caller catches it', async () => {
+    const work = failAfter(1, 'boom')
+    expect(await withTimeoutOr(work.catch(() => null), 50, null)).toBeNull()
+  })
+
+  it('does not report a rejection after the fallback won as unhandled', async () => {
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => unhandled.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      expect(await withTimeoutOr(failAfter(10, 'late'), 1, 'fallback')).toBe(
+        'fallback',
+      )
+      await after(30, null)
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
+  it('clears its timer once the promise settles', async () => {
+    const clear = spyOn(globalThis, 'clearTimeout')
+    try {
+      await withTimeoutOr(Promise.resolve('v'), 10_000, null)
+      expect(clear).toHaveBeenCalledTimes(1)
+    } finally {
+      clear.mockRestore()
+    }
   })
 })

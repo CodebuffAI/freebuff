@@ -12,38 +12,13 @@
 import { openSync, closeSync, writeSync, constants } from 'fs'
 
 import { getCliEnv } from './env'
+import { withTimeoutOr } from '@codebuff/common/util/promise'
 
 import type { CliEnv } from '../types/env'
 
 // Timeout constants
 const OSC_QUERY_TIMEOUT_MS = 500 // Timeout for individual OSC query
 const GLOBAL_OSC_TIMEOUT_MS = 2000 // Global timeout for entire detection process
-
-/**
- * Wrap a promise with a timeout
- * @param promise - The promise to wrap
- * @param timeoutMs - Timeout in milliseconds
- * @param timeoutValue - Value to return on timeout
- */
-export function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  timeoutValue: T,
-): Promise<T> {
-  let timeoutId: NodeJS.Timeout | null = null
-
-  const timeoutPromise = new Promise<T>((resolve) => {
-    timeoutId = setTimeout(() => {
-      resolve(timeoutValue)
-    }, timeoutMs)
-  })
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timeoutId) {
-      clearTimeout(timeoutId)
-    }
-  })
-}
 
 /**
  * Check if the current terminal supports OSC color queries
@@ -449,7 +424,7 @@ async function detectTerminalThemeCore(
  */
 export async function detectTerminalTheme(): Promise<'dark' | 'light' | null> {
   try {
-    return await withTimeout(
+    return await withTimeoutOr(
       detectTerminalThemeCore(),
       GLOBAL_OSC_TIMEOUT_MS,
       null,

@@ -22,6 +22,7 @@
  */
 
 import { getCliEnv } from './env'
+import { withTimeout } from '@codebuff/common/util/promise'
 
 export type SecretStore = {
   get(): Promise<string | null>
@@ -31,21 +32,7 @@ export type SecretStore = {
 
 const KEYCHAIN_TIMEOUT_MS = 2_000
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('keychain timed out')), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error) => {
-        clearTimeout(timer)
-        reject(error)
-      },
-    )
-  })
-}
+const KEYCHAIN_TIMEOUT_MESSAGE = 'keychain timed out'
 
 type BunSecrets = {
   get(options: { service: string; name: string }): Promise<string | null>
@@ -63,11 +50,24 @@ export function bunSecretStore(
     ?.secrets
   if (!secrets) return null
   return {
-    get: () => withTimeout(secrets.get({ service, name }), KEYCHAIN_TIMEOUT_MS),
+    get: () =>
+      withTimeout(
+        secrets.get({ service, name }),
+        KEYCHAIN_TIMEOUT_MS,
+        KEYCHAIN_TIMEOUT_MESSAGE,
+      ),
     set: (value) =>
-      withTimeout(secrets.set({ service, name, value }), KEYCHAIN_TIMEOUT_MS),
+      withTimeout(
+        secrets.set({ service, name, value }),
+        KEYCHAIN_TIMEOUT_MS,
+        KEYCHAIN_TIMEOUT_MESSAGE,
+      ),
     delete: async () => {
-      await withTimeout(secrets.delete({ service, name }), KEYCHAIN_TIMEOUT_MS)
+      await withTimeout(
+        secrets.delete({ service, name }),
+        KEYCHAIN_TIMEOUT_MS,
+        KEYCHAIN_TIMEOUT_MESSAGE,
+      )
     },
   }
 }
