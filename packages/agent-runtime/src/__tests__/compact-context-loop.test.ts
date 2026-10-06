@@ -93,6 +93,7 @@ describe('compactContext in loopAgentSteps', () => {
     template: AgentTemplate,
     messageHistory: Message[],
     prompt?: string,
+    logged?: unknown[],
   ) => {
     const {
       agentTemplate: _,
@@ -101,6 +102,11 @@ describe('compactContext in loopAgentSteps', () => {
     } = createTestAgentRuntimeParams()
 
     runtimeImpl = { ...baseRuntimeParams }
+    if (logged)
+      runtimeImpl.logger = {
+        ...baseRuntimeParams.logger,
+        info: (data: unknown) => logged.push(data),
+      }
     runtimeImpl.promptAiSdkStream = mock(async function* (params: any) {
       if (params.tools.complete_compaction) {
         expect(Object.keys(params.tools)).toEqual(['complete_compaction'])
@@ -245,6 +251,61 @@ describe('compactContext in loopAgentSteps', () => {
     expect(JSON.stringify(seenMessages[0])).not.toContain(
       'BULKY FILE BODY '.repeat(50),
     )
+  })
+
+  it('closes the compaction window at run end, counting the file it dropped', async () => {
+    const history = idleHistory(120)
+    history.splice(
+      1,
+      0,
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool-call',
+            toolCallId: 'old-read',
+            toolName: 'read_files',
+            input: { paths: ['big.ts'] },
+          },
+        ],
+        sentAt: 1_000_000,
+      },
+      {
+        role: 'tool',
+        toolName: 'read_files',
+        toolCallId: 'old-read',
+        content: [
+          {
+            type: 'json',
+            value: [{ path: 'big.ts', content: 'BODY '.repeat(4000) }],
+          },
+        ],
+      },
+    )
+    const logged: unknown[] = []
+    await runLoop(
+      { ...baseTemplate, compactContext: { cacheExpiryMinTokens: null } },
+      history,
+      undefined,
+      logged,
+    )
+    expect(
+      logged.filter(
+        (data) =>
+          (data as { axiomEvent?: string }).axiomEvent ===
+          'context_compaction.followup',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        mode: 'model',
+        trigger_reason: 'cache_expiry',
+        ended_by: 'run_end',
+        elided_read_paths: 1,
+        read_calls_after: 0,
+        reread_paths: 0,
+        tool_calls_after: 1,
+      }),
+    ])
   })
 
   it('a summarizer that throws never fails the turn', async () => {
@@ -510,7 +571,10 @@ describe('compactContext in loopAgentSteps', () => {
               {
                 type: 'json',
                 value: [
-                  { path: `file${i}.ts`, content: `READ ${i} BODY `.repeat(400) },
+                  {
+                    path: `file${i}.ts`,
+                    content: `READ ${i} BODY `.repeat(400),
+                  },
                 ],
               },
             ],

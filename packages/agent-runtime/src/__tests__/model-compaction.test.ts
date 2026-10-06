@@ -854,7 +854,7 @@ test('an installed handoff reports its source, size and budget; a fallback does 
     logger: { ...noopLogger, info: (data: unknown) => infos.push(data) },
     runId: 'run-1',
     model: 'deepseek/deepseek-v4-flash',
-    trigger: 'cache_expiry',
+    trigger: 'cache_expiry' as const,
   }
   await compactWithModelOrFallback({ ...params, stream: replying(handoff) })
   expect(infos).toMatchObject([

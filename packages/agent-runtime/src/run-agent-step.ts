@@ -32,6 +32,11 @@ import z from 'zod/v4'
 import { evaluateCompactionTrigger } from './compact-history'
 import type { CompactionTrigger } from './compact-history'
 import {
+  closeCompactionWindow,
+  openCompactionWindow,
+} from './compaction-followup'
+import type { CompactionWindow } from './compaction-followup'
+import {
   automaticCompactionIsWorthwhile,
   COMPACTION_LOW_WATER,
   compactWithModelOrFallback,
@@ -1194,6 +1199,7 @@ export async function loopAgentSteps(
   let totalSteps = 0
   let llmStepNumber = 0
   let nResponses: string[] | undefined = undefined
+  let compactionWindow: CompactionWindow | undefined
 
   try {
     while (true) {
@@ -1369,6 +1375,22 @@ export async function loopAgentSteps(
               startTime,
             })
             if (compacted) {
+              if (compactionWindow)
+                closeCompactionWindow({
+                  window: compactionWindow,
+                  messages: currentAgentState.messageHistory,
+                  endedBy: 'compaction',
+                  nextTrigger: trigger,
+                  logger,
+                  runId,
+                  model: agentTemplate.model,
+                })
+              compactionWindow = openCompactionWindow({
+                before: currentAgentState.messageHistory,
+                after: compacted.messages,
+                mode: compacted.fallback ? 'fallback' : 'model',
+                trigger,
+              })
               currentAgentState.messageHistory = compacted.messages
               currentAgentState.contextTokenBaseline = undefined
               currentAgentState.contextTokenCount = compacted.postTokens
@@ -1873,6 +1895,15 @@ export async function loopAgentSteps(
       },
     }
   } finally {
+    if (compactionWindow)
+      closeCompactionWindow({
+        window: compactionWindow,
+        messages: currentAgentState.messageHistory,
+        endedBy: 'run_end',
+        logger,
+        runId,
+        model: agentTemplate.model,
+      })
     // The endTurn path inside runProgrammaticStep handles normal completion,
     // but abort/error exits (e.g. chat SSE disconnects) would otherwise leak
     // the run's generator, STEP_ALL flag, and proposed file content forever.

@@ -7,6 +7,7 @@ import {
 import { AbortError, isAbortError } from '@codebuff/common/util/error'
 
 import { compactHistoryNow } from './compact-history'
+import type { CompactionTrigger } from './compact-history'
 import { COMPACTION_PROMPT } from './compaction-prompt'
 import { countTokens, countTokensMessages } from './util/token-counter'
 
@@ -644,7 +645,7 @@ export async function compactWithModelOrFallback(
     logger: Logger
     runId?: string
     model?: string
-    trigger?: string
+    trigger?: CompactionTrigger | 'manual'
     /**
      * Where the mechanical fallback should aim, below `maxContextLength`. That
      * pass fills whatever budget it is given, so aimed at the hard budget it
@@ -706,6 +707,7 @@ export async function compactWithModelOrFallback(
         messages: params.messages,
         maxContextLength,
         fixedTokenCount: params.fixedTokenCount,
+        trigger,
         logger,
         runId,
       })

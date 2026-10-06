@@ -64,6 +64,15 @@ export const MODEL_COMPACTION_FALLBACK_EVENT =
  *  so it cannot serve. Content-free sizes and labels only. */
 export const MODEL_COMPACTION_COMPLETED_EVENT =
   'model_compaction.completed' as const
+/** The runtime's mechanical compaction (packages/agent-runtime/src/compact-history.ts),
+ *  run on its own or as a model compaction's fallback. Shares its field names
+ *  with `context_pruning.completed`. Content-free sizes and counts only. */
+export const CONTEXT_COMPACTION_COMPLETED_EVENT =
+  'context_compaction_completed' as const
+/** One per compaction window, closed by the next compaction or the run's end:
+ *  how much the run read after compacting, and how many of those reads were
+ *  files whose contents the compaction dropped. Counts only, never a path. */
+export const COMPACTION_FOLLOWUP_EVENT = 'context_compaction.followup' as const
 export const ADS_FETCH_COMPLETED_EVENT = AnalyticsEvent.ADS_FETCH_COMPLETED
 export const ADS_FIRST_PARTY_DECISION_EVENT =
   AnalyticsEvent.ADS_FIRST_PARTY_DECISION
@@ -257,6 +266,51 @@ const MODEL_COMPACTION_COMPLETED_FIELDS = {
   sections: 'number',
   pre_tokens: 'number',
   post_tokens: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const CONTEXT_COMPACTION_COMPLETED_FIELDS = {
+  agent_run_id: 'string',
+  trigger_reason: 'string',
+  context_token_count: 'number',
+  max_context_length: 'number',
+  cache_gap_ms: 'number',
+  cache_expiry_ms: 'number',
+  cache_expiry_min_tokens: 'number',
+  message_count: 'number',
+  mid_turn: 'boolean',
+  user_budget: 'number',
+  assistant_tool_budget: 'number',
+  previous_summary_entry_count: 'number',
+  user_entry_count: 'number',
+  dropped_user_entry_count: 'number',
+  assistant_tool_entry_count: 'number',
+  dropped_assistant_tool_entry_count: 'number',
+  newest_entry_forced: 'boolean',
+  live_user_prompt_found: 'boolean',
+  summary_estimated_tokens: 'number',
+  budget_dropped_summary_parts: 'number',
+  preserved_fresh_messages: 'number',
+  post_tokens: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const COMPACTION_FOLLOWUP_FIELDS = {
+  agent_run_id: 'string',
+  model: 'string',
+  /** `model`, `mechanical`, or `fallback` (a failed model pass's mechanical one). */
+  mode: 'string',
+  trigger_reason: 'string',
+  /** `compaction` (the next one) or `run_end`. */
+  ended_by: 'string',
+  next_trigger_reason: 'string',
+  /** Distinct files read before the compaction whose results it dropped. */
+  elided_read_paths: 'number',
+  read_calls_after: 'number',
+  read_paths_after: 'number',
+  /** Distinct `elided_read_paths` read again inside the window. */
+  reread_paths: 'number',
+  read_tokens_after: 'number',
+  tool_calls_after: 'number',
+  window_ms: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 const ADS_FETCH_COMPLETED_FIELDS = {
@@ -942,6 +996,8 @@ export type AxiomOnlyLogEvent = {
     | typeof FILE_WRITE_GUARD_EVENT
     | typeof MODEL_COMPACTION_FALLBACK_EVENT
     | typeof MODEL_COMPACTION_COMPLETED_EVENT
+    | typeof CONTEXT_COMPACTION_COMPLETED_EVENT
+    | typeof COMPACTION_FOLLOWUP_EVENT
     | typeof ADS_FETCH_COMPLETED_EVENT
     | typeof ADS_FIRST_PARTY_DECISION_EVENT
     | typeof ADS_FIRST_PARTY_SETTLEMENT_EVENT
@@ -1033,6 +1089,21 @@ export function getAxiomOnlyLogEvent(
         record,
         MODEL_COMPACTION_COMPLETED_FIELDS,
       ),
+    }
+  }
+  if (eventName === CONTEXT_COMPACTION_COMPLETED_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(
+        record,
+        CONTEXT_COMPACTION_COMPLETED_FIELDS,
+      ),
+    }
+  }
+  if (eventName === COMPACTION_FOLLOWUP_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, COMPACTION_FOLLOWUP_FIELDS),
     }
   }
   if (eventName === ADS_FETCH_COMPLETED_EVENT) {

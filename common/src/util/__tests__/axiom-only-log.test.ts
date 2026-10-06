@@ -20,6 +20,8 @@ import {
   STREAM_RECOVERY_EVENT,
   MODEL_COMPACTION_COMPLETED_EVENT,
   MODEL_COMPACTION_FALLBACK_EVENT,
+  CONTEXT_COMPACTION_COMPLETED_EVENT,
+  COMPACTION_FOLLOWUP_EVENT,
   ADS_CLIENT_EVENT_HYGIENE_FIELDS,
   ADS_FIRST_PARTY_TRACKING_FIELD_NAMES,
   FIRST_PARTY_VIEW_ACK_FIELD_NAMES,
@@ -311,6 +313,60 @@ describe('getAxiomOnlyLogEvent', () => {
         error_name: 'ZodError',
         fallback_applied: true,
         fallback_failed: false,
+      },
+    })
+  })
+
+  test('mechanical compaction ships its sizes and counts', () => {
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: CONTEXT_COMPACTION_COMPLETED_EVENT,
+        agent_run_id: 'run-1',
+        trigger_reason: 'cache_expiry',
+        context_token_count: 212_000,
+        summary_estimated_tokens: 13_000,
+        preserved_fresh_messages: 2,
+        post_tokens: 41_000,
+        // Not in the allowlist: user content.
+        summaryText: '[USER]\nsecret',
+      }),
+    ).toEqual({
+      event: CONTEXT_COMPACTION_COMPLETED_EVENT,
+      data: {
+        agent_run_id: 'run-1',
+        trigger_reason: 'cache_expiry',
+        context_token_count: 212_000,
+        summary_estimated_tokens: 13_000,
+        preserved_fresh_messages: 2,
+        post_tokens: 41_000,
+      },
+    })
+  })
+
+  test('compaction follow-up ships counts, never a path', () => {
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: COMPACTION_FOLLOWUP_EVENT,
+        agent_run_id: 'run-1',
+        mode: 'mechanical',
+        trigger_reason: 'context_limit',
+        ended_by: 'compaction',
+        elided_read_paths: 12,
+        reread_paths: 4,
+        read_tokens_after: 90_000,
+        // Not in the allowlist.
+        elidedPaths: ['src/secret.ts'],
+      }),
+    ).toEqual({
+      event: COMPACTION_FOLLOWUP_EVENT,
+      data: {
+        agent_run_id: 'run-1',
+        mode: 'mechanical',
+        trigger_reason: 'context_limit',
+        ended_by: 'compaction',
+        elided_read_paths: 12,
+        reread_paths: 4,
+        read_tokens_after: 90_000,
       },
     })
   })

@@ -23,6 +23,7 @@
  */
 
 import { DEFAULT_COMPACTION_POLICY } from '@codebuff/common/constants/compaction-policy'
+import { CONTEXT_COMPACTION_COMPLETED_EVENT } from '@codebuff/common/util/axiom-only-log'
 import { fitToolResults } from './util/fit-tool-results'
 import { countTokens, countTokensMessages } from './util/token-counter'
 import type {
@@ -1165,7 +1166,7 @@ export function maybeCompactHistory(params: {
   try {
     logger?.info(
       {
-        axiomEvent: 'context_compaction_completed',
+        axiomEvent: CONTEXT_COMPACTION_COMPLETED_EVENT,
         agent_run_id: runId,
         trigger_reason: trigger,
         context_token_count: contextTokenCount,
@@ -1208,6 +1209,8 @@ export function compactHistoryNow(params: {
   maxContextLength: number
   /** System prompt, tool schemas and next step's scaffolding, outside history. */
   fixedTokenCount?: number
+  /** Why the caller compacted; a forced pass is `manual`. */
+  trigger?: CompactionTrigger | 'manual'
   logger?: Logger
   runId?: string
 }): {
@@ -1218,6 +1221,7 @@ export function compactHistoryNow(params: {
   nextTokens: number
 } | null {
   const { messages, maxContextLength, logger, runId } = params
+  const fixedTokenCount = params.fixedTokenCount ?? 0
   const result = compactRequestHistory(
     messages,
     maxContextLength - (params.fixedTokenCount ?? 0),
@@ -1230,13 +1234,14 @@ export function compactHistoryNow(params: {
   try {
     logger?.info(
       {
-        axiomEvent: 'context_compaction_completed',
+        axiomEvent: CONTEXT_COMPACTION_COMPLETED_EVENT,
         agent_run_id: runId,
-        trigger_reason: 'manual',
-        context_token_count: previousTokens,
+        trigger_reason: params.trigger ?? 'manual',
+        context_token_count: previousTokens + fixedTokenCount,
         max_context_length: maxContextLength,
         message_count: messages.length,
         ...result.stats,
+        post_tokens: nextTokens + fixedTokenCount,
       },
       'Context compaction completed',
     )
