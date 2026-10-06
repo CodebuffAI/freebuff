@@ -1,47 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { getCodebuffClient } from '../utils/codebuff-client'
-import { logger } from '../utils/logger'
 import { useByokSelectionStore } from '../utils/byok'
 import {
-  failedPollDelayMs,
-  jitterPollIntervalMs,
-} from '../utils/polling-backoff'
+  getConnectionStatusSnapshot,
+  subscribeToConnectionStatus,
+} from '../utils/connection-monitor'
 
-// Adaptive health check interval configuration
-// Progressively increases polling interval based on consecutive successful checks
-const HEALTH_CHECK_CONFIG = {
-  // Healthy startup cadence (ms).
-  INITIAL_INTERVAL: 10_000, // 10 seconds
-  // Interval thresholds based on consecutive successful checks
-  INTERVALS: [
-    { successCount: 3, interval: 30_000 }, // 30 seconds after 3 successes
-    { successCount: 6, interval: 60_000 }, // 1 minute after 6 successes
-    { successCount: 10, interval: 120_000 }, // 2 minutes after 10 successes
-    { successCount: 15, interval: 300_000 }, // 5 minutes after 15 successes
-    { successCount: 20, interval: 600_000 }, // 10 minutes after 20 successes
-  ],
-} as const
-
-/**
- * Calculates the next health check interval based on consecutive successful checks
- * Exported for testing purposes
- */
-export function getNextInterval(consecutiveSuccesses: number): number {
-  // Find the highest threshold that we've passed
-  for (let i = HEALTH_CHECK_CONFIG.INTERVALS.length - 1; i >= 0; i--) {
-    const { successCount, interval } = HEALTH_CHECK_CONFIG.INTERVALS[i]
-    if (consecutiveSuccesses >= successCount) {
-      return interval
-    }
-  }
-  return HEALTH_CHECK_CONFIG.INITIAL_INTERVAL
-}
+export { getNextInterval } from '../utils/connection-monitor'
 
 /**
  * Hook to monitor connection status to the Codebuff backend.
- * Jitters the adaptive healthy cadence and exponentially backs off failures so
- * a shared outage cannot synchronize every CLI into a fixed retry wave.
+ *
+ * The health-check loop itself lives in `connection-monitor.ts` as a single process-wide
+ * singleton: it starts on the first subscriber and owns its own adaptive-backoff timer,
+ * independent of any component's render or mount lifecycle. This hook only subscribes to
+ * that shared state — subscribing/unsubscribing (which can happen on every render, e.g.
+ * because `onReconnect` is a fresh closure each time) is cheap and never resets the backoff
+ * or fires a probe.
+ *
+ * It used to be the other way around: the polling loop lived inside this hook's own
+ * `useEffect`, keyed on `onReconnect`'s identity. A render during active streaming
+ * recreated that closure and tore down/restarted the effect — resetting the adaptive
+ * backoff to its 10s floor and firing an immediate request every time. That is what
+ * flooded `/api/healthz`.
  *
  * When the connection transitions from disconnected to connected, the optional
  * onReconnect callback is invoked with a boolean indicating whether this was
@@ -56,6 +37,10 @@ export const useConnectionStatus = (
   const [isConnected, setIsConnected] = useState(true)
   // null = never connected, false = was disconnected, true = was connected
   const previousConnectedRef = useRef<boolean | null>(null)
+  // Read via a ref so an unstable callback identity never resubscribes (let alone resets
+  // the shared monitor's backoff) — only the latest callback is invoked, from the effect below.
+  const onReconnectRef = useRef(onReconnect)
+  onReconnectRef.current = onReconnect
 
   useEffect(() => {
     // A BYOK run talks directly to its selected provider. Do not probe the
@@ -65,89 +50,28 @@ export const useConnectionStatus = (
       previousConnectedRef.current = true
       return
     }
-    let isMounted = true
-    let timeoutId: NodeJS.Timeout | null = null
-    let consecutiveSuccesses = 0
-    let consecutiveFailures = 0
 
-    const scheduleNextCheck = (interval: number) => {
-      if (!isMounted) return
-      timeoutId = setTimeout(() => checkConnection(), interval)
-    }
+    setIsConnected(getConnectionStatusSnapshot())
 
-    const scheduleFailedCheck = (message: string, error?: unknown): void => {
-      if (!isMounted) return
-      setIsConnected(false)
-      previousConnectedRef.current = false
-      consecutiveSuccesses = 0
-      consecutiveFailures++
-      const delayMs = failedPollDelayMs({
-        consecutiveFailures,
-      })
-      logger.debug(
-        {
-          ...(error === undefined ? {} : { error }),
-          delayMs,
-          consecutiveFailures,
-        },
-        message,
-      )
-      scheduleNextCheck(delayMs)
-    }
+    const unsubscribe = subscribeToConnectionStatus((connected) => {
+      const prevConnected = previousConnectedRef.current
+      setIsConnected(connected)
+      previousConnectedRef.current = connected
 
-    const checkConnection = async () => {
-      try {
-        const client = await getCodebuffClient()
-        if (!client) {
-          scheduleFailedCheck('Health check: No client, backing off')
-          return
+      if (connected) {
+        const isInitialConnection = prevConnected === null
+        const shouldFireReconnectCallback =
+          typeof onReconnectRef.current === 'function' &&
+          prevConnected !== true
+
+        if (shouldFireReconnectCallback) {
+          onReconnectRef.current?.(isInitialConnection)
         }
-
-        const connected = await client.checkConnection()
-        if (!isMounted) return
-
-        const prevConnected = previousConnectedRef.current
-        setIsConnected(connected)
-        previousConnectedRef.current = connected
-
-        if (connected) {
-          consecutiveFailures = 0
-          // Determine if this is the initial connection (null) or a reconnection (false)
-          const isInitialConnection = prevConnected === null
-          const shouldFireReconnectCallback =
-            typeof onReconnect === 'function' && prevConnected !== true
-
-          if (shouldFireReconnectCallback) {
-            logger.info(
-              { isInitialConnection },
-              'Reconnection detected, firing onReconnect callback',
-            )
-            onReconnect(isInitialConnection)
-          }
-          consecutiveSuccesses++
-          scheduleNextCheck(
-            jitterPollIntervalMs({
-              intervalMs: getNextInterval(consecutiveSuccesses),
-            }),
-          )
-        } else {
-          scheduleFailedCheck('Health check failed, backing off')
-        }
-      } catch (error) {
-        scheduleFailedCheck('Connection check failed; backing off', error)
       }
-    }
+    })
 
-    // Start first check immediately
-    checkConnection()
-
-    return () => {
-      isMounted = false
-      if (timeoutId) {
-        clearTimeout(timeoutId)
-      }
-    }
-  }, [hasSelectedByokConnection, onReconnect])
+    return unsubscribe
+  }, [hasSelectedByokConnection])
 
   return isConnected
 }

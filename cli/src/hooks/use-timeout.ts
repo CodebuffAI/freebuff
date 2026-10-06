@@ -81,5 +81,19 @@ export function useTimeout() {
     }
   }, [])
 
-  return { setTimeout, clearTimeout }
+  // setTimeout/clearTimeout are already stable (useCallback, no deps); keep the container
+  // object stable too (via a ref, not useMemo, so this works under the minimal test dispatcher
+  // in use-timeout.test.ts) so callers that depend on the whole returned object — e.g. inside
+  // another useCallback's deps array — get the same reference every render instead of a new
+  // object. An unstable object here previously recreated a downstream callback on every render,
+  // which reset an effect keyed on that callback's identity on every render too (see
+  // connection-monitor.ts).
+  const resultRef = useRef<{
+    setTimeout: typeof setTimeout
+    clearTimeout: typeof clearTimeout
+  } | null>(null)
+  if (!resultRef.current) {
+    resultRef.current = { setTimeout, clearTimeout }
+  }
+  return resultRef.current
 }
