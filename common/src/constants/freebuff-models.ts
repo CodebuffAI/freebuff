@@ -3732,14 +3732,6 @@ export const FREEBUFF_SESSION_GRACE_MS = 30 * 60 * 1000
  *  prompt. Only a turn keeps the clock alive — scrolling and typing are
  *  invisible to the server half — so it is deliberately several times longer
  *  than it would need to be if it could see the user. */
-/** Models that accept image input. Used to decide whether uploaded images are
- *  forwarded to the model as real multimodal content. */
-export const FREEBUFF_MULTIMODAL_MODEL_IDS = Object.freeze(
-  SUPPORTED_FREEBUFF_MODELS.filter((model) => model.multimodal).map(
-    (model) => model.id,
-  ),
-)
-
 export const FREEBUFF_WEB_MULTIMODAL_MODEL_IDS = Object.freeze(
   FREEBUFF_WEB_ALL_MODELS.filter((model) => model.multimodal).map(
     (model) => model.id,
@@ -4935,14 +4927,6 @@ export function isFreebuffSpaceBunnyAlphaModelId(
   return freebuffModelIdMatches(id, FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID)
 }
 
-/** Whether `id` names one of the Solar rows served on Upstage's lane. */
-export function isFreebuffSolarModelId(id: string | null | undefined): boolean {
-  return (
-    freebuffModelIdMatches(id, FREEBUFF_SOLAR_PRO_4_MODEL_ID) ||
-    freebuffModelIdMatches(id, FREEBUFF_SOLAR_MINI_4_MODEL_ID)
-  )
-}
-
 /** The catalog's reasoning effort for the requested model, tolerating dated
  *  snapshot suffixes like every other id helper. Null for models that carry
  *  none — see FreebuffModelOption.reasoningEffort. */
@@ -5110,13 +5094,6 @@ export function resolveRememberedFreebuffWebModel(
   return isFreebuffWebRememberableModelId(resolved, options.accessTier)
     ? resolved
     : DEFAULT_FREEBUFF_WEB_MODEL_ID
-}
-
-export function isFreebuffMultimodalModelId(
-  id: string | null | undefined,
-): boolean {
-  if (!id) return false
-  return FREEBUFF_MULTIMODAL_MODEL_IDS.some((modelId) => modelId === id)
 }
 
 /**

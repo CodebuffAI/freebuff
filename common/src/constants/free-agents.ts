@@ -224,9 +224,10 @@ export const FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
  * for no analysis that `surface` does not already answer.
  *
  * Kept as its own map rather than folded into the Web one because the model
- * sets genuinely differ in both directions: Web offers Kimi K3 Eco and Muse
- * Spark, which no CLI build can select; the CLI offers Claude Fable 5.1 on base2,
- * which Web never surfaces. `freebuff_bundled_agents.test.ts` asserts the Web
+ * sets genuinely differ in both directions: Web offers Kimi K3 Eco and GPT-5.6
+ * Luna-ES, which no CLI build can select; the CLI offers Claude Fable 5.1 on
+ * base2, which Web never surfaces. (Muse Spark was Web-only until 2026-09-04;
+ * both versions are in both maps now.) `freebuff_bundled_agents.test.ts` asserts the Web
  * map covers exactly the Web base2 models, so a CLI-only model added there
  * would fail that parity check for the wrong reason.
  */

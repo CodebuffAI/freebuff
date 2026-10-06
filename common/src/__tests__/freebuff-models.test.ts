@@ -77,7 +77,6 @@ import {
   isFreebuffLimitedOfferModelId,
   isFreebuffModelAllowedForAccessTier,
   isFreebuffModelId,
-  isFreebuffMultimodalModelId,
   isFreebuffPausedFreeModelId,
   isFreebuffProOnlyEverySurfaceModelId,
   isFreebuffProOnlyCatalogModelId,
@@ -693,7 +692,7 @@ describe('freebuff model availability', () => {
     ).toBeUndefined()
 
     for (const model of SUPPORTED_FREEBUFF_MODELS) {
-      expect(isFreebuffMultimodalModelId(model.id)).toBe(model.multimodal)
+      expect(getFreebuffModelImageSupport(model.id)).toBe(model.multimodal)
     }
     for (const model of FREEBUFF_WEB_ALL_MODELS) {
       expect(isFreebuffWebMultimodalModelId(model.id)).toBe(model.multimodal)
