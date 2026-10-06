@@ -1,5 +1,3 @@
-import crypto from 'node:crypto'
-
 import { z } from 'zod/v4'
 
 export const userSchema = z.object({
@@ -12,15 +10,3 @@ export const userSchema = z.object({
 })
 
 export type User = z.infer<typeof userSchema>
-
-export const genAuthCode = (
-  fingerprintId: string,
-  expiresAt: string,
-  secret: string,
-) =>
-  crypto
-    .createHash('sha256')
-    .update(secret)
-    .update(fingerprintId)
-    .update(expiresAt)
-    .digest('hex')
