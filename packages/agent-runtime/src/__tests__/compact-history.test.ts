@@ -339,28 +339,23 @@ describe('evaluateCompactionTrigger', () => {
   })
 
   it('fires on a cold cache even when the context still fits', () => {
-    const result = evaluateCompactionTrigger({
-      messages: idleTurn(90),
-      contextTokenCount: WORTH_COMPACTING,
-      maxContextLength: 400_000,
-    })
-    expect(result.trigger).toBe('cache_expiry')
-    expect(result.cacheGapMs).toBe(90 * MINUTE)
-    expect(result.cacheExpiryMs).toBe(DEFAULT_CACHE_EXPIRY_MS)
-    expect(result.cacheExpiryMinTokens).toBe(DEFAULT_CACHE_EXPIRY_MIN_TOKENS)
+    expect(triggerFor(idleTurn(90), WORTH_COMPACTING)).toBe('cache_expiry')
+  })
+
+  it('applies the default TTL when none is given', () => {
+    const ttlMinutes = DEFAULT_CACHE_EXPIRY_MS / MINUTE
+    expect(triggerFor(idleTurn(ttlMinutes), WORTH_COMPACTING)).toBeNull()
+    expect(triggerFor(idleTurn(ttlMinutes + 1), WORTH_COMPACTING)).toBe(
+      'cache_expiry',
+    )
   })
 
   it('leaves a small conversation alone however cold the cache is', () => {
     // Compaction always costs detail; below the floor there is too little to
     // reclaim to be worth it, and the budget walk would evict nothing anyway.
-    const result = evaluateCompactionTrigger({
-      messages: idleTurn(600),
-      contextTokenCount: DEFAULT_CACHE_EXPIRY_MIN_TOKENS - 1,
-      maxContextLength: 400_000,
-    })
-    expect(result.trigger).toBeNull()
-    // No point measuring a gap that cannot fire.
-    expect(result.cacheGapMs).toBeNull()
+    expect(
+      triggerFor(idleTurn(600), DEFAULT_CACHE_EXPIRY_MIN_TOKENS - 1),
+    ).toBeNull()
 
     // One token more and it is worth doing.
     expect(triggerFor(idleTurn(600), DEFAULT_CACHE_EXPIRY_MIN_TOKENS)).toBe(
@@ -416,14 +411,7 @@ describe('evaluateCompactionTrigger', () => {
   })
 
   it('a null TTL disables the opportunistic trigger entirely', () => {
-    const result = evaluateCompactionTrigger({
-      messages: idleTurn(600),
-      contextTokenCount: WORTH_COMPACTING,
-      maxContextLength: 400_000,
-      cacheExpiryMs: null,
-    })
-    expect(result.trigger).toBeNull()
-    expect(result.cacheGapMs).toBeNull()
+    expect(triggerFor(idleTurn(600), WORTH_COMPACTING, null)).toBeNull()
     // The context limit still fires.
     expect(triggerFor(idleTurn(600), 500_000, null)).toBe('context_limit')
   })

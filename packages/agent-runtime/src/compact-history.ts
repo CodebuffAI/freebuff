@@ -1081,10 +1081,6 @@ export function evaluateCompactionTrigger(params: {
 }): {
   /** null means "leave the history alone". */
   trigger: CompactionTrigger | null
-  cacheGapMs: number | null
-  /** The thresholds actually applied, after defaulting. */
-  cacheExpiryMs: number | null
-  cacheExpiryMinTokens: number | null
 } {
   const { messages, contextTokenCount, maxContextLength } = params
   const cacheExpiryMs =
@@ -1114,7 +1110,7 @@ export function evaluateCompactionTrigger(params: {
       ? 'cache_expiry'
       : null
 
-  return { trigger, cacheGapMs, cacheExpiryMs, cacheExpiryMinTokens }
+  return { trigger }
 }
 
 /**
