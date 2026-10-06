@@ -324,45 +324,6 @@ export function expireMessages(
   })
 }
 
-export function getEditedFiles(params: {
-  messages: Message[]
-  logger: Logger
-}): string[] {
-  const { messages, logger } = params
-  return buildArray(
-    messages
-      .filter(
-        (
-          m,
-        ): m is CodebuffToolMessage<
-          'create_plan' | 'str_replace' | 'write_file'
-        > => {
-          return (
-            m.role === 'tool' &&
-            (m.toolName === 'create_plan' ||
-              m.toolName === 'str_replace' ||
-              m.toolName === 'write_file')
-          )
-        },
-      )
-      .map((m) => {
-        try {
-          const fileInfo = m.content[0].value
-          if ('errorMessage' in fileInfo) {
-            return null
-          }
-          return fileInfo.file
-        } catch (error) {
-          logger.error(
-            { error: getErrorObject(error), m },
-            'Error parsing file info',
-          )
-          return null
-        }
-      }),
-  )
-}
-
 export function getPreviouslyReadFiles(params: {
   messages: Message[]
   logger: Logger

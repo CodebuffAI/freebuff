@@ -113,13 +113,3 @@ export function countTokensMessages(messages: Message[]): number {
   }
   return total
 }
-
-export function countTokensForFiles(
-  files: Record<string, string | null>,
-): Record<string, number> {
-  const tokenCounts: Record<string, number> = {}
-  for (const [filePath, content] of Object.entries(files)) {
-    tokenCounts[filePath] = content ? countTokens(content) : 0
-  }
-  return tokenCounts
-}

@@ -50,6 +50,10 @@ import {
   FOLLOWUP_TODO_NUDGE_TAG,
 } from './util/followup-todo-nudge'
 import {
+  decideTodoProgressReminder,
+  TODO_PROGRESS_REMINDER_TAG,
+} from './util/todo-progress-reminder'
+import {
   hasFileEditTool,
   TODO_LOOP_RECOVERY_TAG,
   TODO_LOOP_RECOVERY_THRESHOLD,
@@ -732,6 +736,33 @@ export const runAgentStep = async (
         )
         shouldEndTurn = false
       }
+    }
+  }
+
+  // A to-do list the model never ticks off reads 0/N until the turn's last
+  // step; see util/todo-progress-reminder.ts. Once per list, mid-turn only.
+  if (!shouldEndTurn) {
+    const reminder = decideTodoProgressReminder(agentState.messageHistory)
+    if (reminder) {
+      logger.info(
+        {
+          metric: 'todo_progress_reminder',
+          done: reminder.done,
+          total: reminder.total,
+          callsSinceUpdate: reminder.callsSinceUpdate,
+          model: agentTemplate.model,
+          agentId: agentTemplate.id,
+          userId,
+          runId: agentState.runId,
+        },
+        'To-do list not updated for several tool calls; reminding',
+      )
+      agentState.messageHistory.push(
+        userMessage({
+          content: withSystemTags(reminder.message),
+          tags: [TODO_PROGRESS_REMINDER_TAG],
+        }),
+      )
     }
   }
 

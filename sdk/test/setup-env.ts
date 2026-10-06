@@ -20,9 +20,8 @@ const serverDefaults: Record<string, string> = {
   OPENAI_API_KEY: 'test',
   SERPER_API_KEY: 'test',
   // Direct-provider handlers throw before fetch when their key is unset, so
-  // give the mocked-fetch tests a dummy — without these, whether the CrofAI/
+  // give the mocked-fetch tests a dummy — without these, whether the RunInfra/
   // MiMo routing tests pass depends on the developer's shell env.
-  CROF_AI_API_KEY: 'test',
   RUNINFRA_GATEWAY_KEY: 'test',
   MIMO_API_KEY: 'test',
   PORT: '4242',

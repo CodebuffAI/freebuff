@@ -49,6 +49,7 @@ import {
   FOLLOWUP_TODO_NUDGE_TAG,
   MAX_FOLLOWUP_TODO_NUDGES,
 } from '../util/followup-todo-nudge'
+import { TODO_PROGRESS_REMINDER_TAG } from '../util/todo-progress-reminder'
 import { createToolCallChunk, mockFileContext } from './test-utils'
 
 import type { AgentTemplate } from '../templates/types'
@@ -925,6 +926,57 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       })
       expect(calls).toBe(1)
       expect(nudges(result.agentState)).toBe(0)
+    })
+  })
+
+  describe('to-do progress reminders', () => {
+    const list = (doneCount: number, total = 4) =>
+      createToolCallChunk('write_todos', {
+        todos: Array.from({ length: total }, (_, i) => ({
+          task: `Step ${i + 1}`,
+          completed: i < doneCount,
+        })),
+      })
+    const read = () => createToolCallChunk('read_files', { paths: ['src/example.ts'] })
+    // History carries every reminder given so far, so each prompt shows the running count.
+    const reminders = (prompt: string) =>
+      prompt.split('since you last updated it').length - 1
+
+    it('reminds a model that works through its list without ticking items off, once per list', async () => {
+      mockTemplate.toolNames.push('write_todos')
+      mockAgentState.stepsRemaining = 200
+      // 0/4 then five reads; ticks 1/4 then five reads; then ignores the second reminder
+      const script = [
+        list(0), read(), read(), read(), read(), read(),
+        list(1), read(), read(), read(), read(), read(),
+        read(), read(), read(), read(), read(), read(),
+      ]
+      const seen: string[] = []
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* ({ messages }) {
+          seen.push(JSON.stringify(messages))
+          yield script[seen.length - 1] ?? createToolCallChunk('end_turn', {})
+          return promptSuccess(`progress-${seen.length}`)
+        },
+      })
+      expect(result.output.type).not.toBe('error')
+      expect(seen).toHaveLength(script.length + 1)
+      // Not before the fifth untouched call; right after it, with the real count.
+      expect(reminders(seen[5]!)).toBe(0)
+      expect(reminders(seen[6]!)).toBe(1)
+      expect(seen[6]).toContain('0 of 4 done')
+      // Ticking an item re-arms it, five calls later.
+      expect(reminders(seen[11]!)).toBe(1)
+      expect(reminders(seen[12]!)).toBe(2)
+      expect(seen[12]).toContain('1 of 4 done')
+      // Ignored: never repeated for the same list.
+      expect(reminders(seen.at(-1)!)).toBe(2)
+      expect(
+        result.agentState.messageHistory.filter((m) =>
+          m.tags?.includes(TODO_PROGRESS_REMINDER_TAG),
+        ),
+      ).toHaveLength(2)
     })
   })
 
