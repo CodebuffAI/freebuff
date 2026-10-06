@@ -386,7 +386,7 @@ file was skipped and tracked in **issue #1899** rather than patched a third time
 
 #1983 un-skipped it by moving it off the hand-rolled `mount()` entirely, onto
 `@testing-library/react` + jsdom instead (the pattern already used by
-`UpdatesPage.test.tsx`, `QuotaBadge.test.tsx`, `ConnectorsPanel.test.tsx`, …),
+`UpdatesPage.test.tsx`, `ConnectorsPanel.test.tsx`, …),
 on the theory that the class of bug cannot exist there — React's own scheduler
 owns the dispatcher for the whole render/effect/continuation lifecycle, instead
 of a test file borrowing it by hand.
@@ -578,7 +578,7 @@ different set of tests every run.
 What it looked like: `test-freebuff-desktop` red on four `main` commits in a row,
 once on a commit with no file changes at all, naming ~20 tests across
 `Tab.rename`, `ContextBar.menu`, `AccountMenu.menu`, `AgentPicker.menu` and
-`QuotaBadge` — five files with nothing in common except that they are the only
+`QuotaBadge` (since deleted) — five files with nothing in common except that they were the only
 five that mount React against a real DOM. Renderers came back as the empty
 string, `fireEvent` was handed nothing to click, and the head of the cascade was
 one test sitting on `await new Promise((r) => requestAnimationFrame(r))` until
@@ -634,7 +634,7 @@ which is exactly "some earlier file did this", and running the affected files:
 echo ';(globalThis as any).requestAnimationFrame = () => 0' > /tmp/leak.ts
 cd freebuff-desktop && bun test \
   --preload ../test/setup-scm-loader.ts --preload ../sdk/test/setup-env.ts --preload /tmp/leak.ts \
-  src/ui/shell/Tab.rename.test.tsx src/ui/agent/QuotaBadge.test.tsx
+  src/ui/shell/Tab.rename.test.tsx src/ui/agent/AgentPicker.menu.test.tsx
 ```
 
 **An eighth shape, and one where the wait is fast and the CHECK is slow: a
