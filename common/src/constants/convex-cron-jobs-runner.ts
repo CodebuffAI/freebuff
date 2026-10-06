@@ -64,11 +64,11 @@ export type ConvexCronJobRunners = Readonly<
 >
 
 export const CONVEX_CRON_JOB_RUNNERS: ConvexCronJobRunners = {
-  enforce_processing_deadlines: 'convex',
+  enforce_processing_deadlines: 'graphile',
   reconcile_pr_delivery: 'convex',
-  reconcile_usage_limits: 'convex',
-  enforce_legacy_usage_limits: 'convex',
-  audit_fleet_usage: 'convex',
+  reconcile_usage_limits: 'graphile',
+  enforce_legacy_usage_limits: 'graphile',
+  audit_fleet_usage: 'graphile',
   sweep_freebuff_runs: 'convex',
 }
 

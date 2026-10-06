@@ -12,9 +12,17 @@ import { AGENT_CORE_WRITER_FOR_CONVEX } from '../agent-core-writer'
 import type { ConvexCronJobRunners } from '../convex-cron-jobs-runner'
 
 describe('Convex cron job runners (COD-742)', () => {
-  test('ships dark, and the table names every job and nothing else', () => {
+  test('the table names every job and nothing else, in its reviewed position', () => {
     expect(Object.keys(CONVEX_CRON_JOB_RUNNERS).sort()).toEqual([...CONVEX_CRON_JOB_NAMES].sort())
-    for (const job of CONVEX_CRON_JOB_NAMES) expect(CONVEX_CRON_JOB_RUNNERS[job]).toBe('convex')
+    // Owen's go, 2026-10-06: the jobs that need only the worker env.
+    expect(CONVEX_CRON_JOB_RUNNERS).toEqual({
+      enforce_processing_deadlines: 'graphile',
+      reconcile_pr_delivery: 'convex',
+      reconcile_usage_limits: 'graphile',
+      enforce_legacy_usage_limits: 'graphile',
+      audit_fleet_usage: 'graphile',
+      sweep_freebuff_runs: 'convex',
+    })
   })
 
   test('exactly one runner owns each job in either position of the switch', () => {
