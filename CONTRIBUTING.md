@@ -67,9 +67,8 @@ the PR:
    ported by hand into a private source tree, so a PR that does not explain
    itself is expensive to accept.
 3. **Scope** — must not touch `web/`, `freebuff/web/`, `packages/internal/`,
-   `packages/billing/`, `packages/bigquery/` or `packages/build-tools/`. Those
-   are not part of this repository and a change to them cannot be merged here
-   however good it is.
+   `packages/billing/` or `packages/bigquery/`. Those are not part of this
+   repository and a change to them cannot be merged here however good it is.
 
 ### What gets a PR accepted
 

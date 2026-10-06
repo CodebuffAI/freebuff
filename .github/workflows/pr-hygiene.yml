@@ -127,7 +127,6 @@ jobs:
               'packages/internal/',
               'packages/billing/',
               'packages/bigquery/',
-              'packages/build-tools/',
             ]
             const files = await github.paginate(
               github.rest.pulls.listFiles,
