@@ -34,7 +34,7 @@ const BASE2_DEEPER_RESEARCH =
 const THINKER_SPAWN_LIMIT =
   'Spawn at most one thinker agent per user request. Once a thinker has been spawned for the current request, do not spawn any thinker again.'
 
-type Base2Mode = 'default' | 'free' | 'lite' | 'max' | 'fast'
+type Base2Mode = 'default' | 'free' | 'lite' | 'max'
 
 /**
  * Free mode runs MiniMax M3 (routed through the Fireworks AI API). New Freebuff
@@ -44,7 +44,6 @@ type Base2Mode = 'default' | 'free' | 'lite' | 'max' | 'fast'
 const MODEL_BY_MODE = {
   default: OPUS_MODEL,
   max: OPUS_MODEL,
-  fast: OPUS_MODEL,
   lite: LITE_MODEL,
   free: FREEBUFF_MINIMAX_M3_MODEL_ID,
 } satisfies Record<Base2Mode, SecretAgentDefinition['model']>
@@ -65,7 +64,6 @@ const FALLBACK_REVIEWER_AGENT_ID = 'code-reviewer-deepseek-flash'
 export function createBase2(
   mode: Base2Mode,
   options?: {
-    hasNoValidation?: boolean
     planOnly?: boolean
     noAskUser?: boolean
     noFollowups?: boolean
@@ -78,7 +76,6 @@ export function createBase2(
   },
 ): Omit<SecretAgentDefinition, 'id'> {
   const {
-    hasNoValidation = mode === 'fast',
     planOnly = false,
     noAskUser = false,
     noFollowups = false,
@@ -88,7 +85,6 @@ export function createBase2(
     providerOptions,
   } = options ?? {}
   const isDefault = mode === 'default'
-  const isFast = mode === 'fast'
   const isLite = mode === 'lite'
   const isMax = mode === 'max'
   // Product identity and orchestration shape used to be one flag, which told
@@ -141,7 +137,7 @@ export function createBase2(
     : `${
         isDefault
           ? `[ You implement the changes using the editor agent ]`
-          : isFast || isLean
+          : isLean
             ? '[ You implement the changes using the str_replace or write_file tools ]'
             : '[ You implement the changes using the editor-multi-prompt agent ]'
       }
@@ -211,7 +207,7 @@ ${
       'spawn_agents',
       'read_files',
       'read_subtree',
-      !isFast && !planOnly && 'write_todos',
+      !planOnly && 'write_todos',
       !noAskUser && !noFollowups && 'suggest_followups',
       // Plan mode is enforced by the toolset, not only by the prompt. Prose
       // alone lost: a user who picked PLAN got the whole feature built and
@@ -383,12 +379,10 @@ ${PLACEHOLDER.GIT_CHANGES_PROMPT}
     instructionsPrompt: planOnly
       ? buildPlanOnlyInstructionsPrompt({})
       : buildImplementationInstructionsPrompt({
-          isFast,
           isDefault,
           isMax,
           isLean,
           hasGeminiThinker,
-          hasNoValidation,
           noAskUser,
           noFollowups,
           noReview,
@@ -475,23 +469,19 @@ const PLAN_EXPLORE_PROMPT = EXPLORE_PROMPT.replace(
 )
 
 function buildImplementationInstructionsPrompt({
-  isFast,
   isDefault,
   isMax,
   isLean,
   hasGeminiThinker,
-  hasNoValidation,
   noAskUser,
   noFollowups,
   noReview,
   leanCodeReviewerAgentId,
 }: {
-  isFast: boolean
   isDefault: boolean
   isMax: boolean
   isLean: boolean
   hasGeminiThinker: boolean
-  hasNoValidation: boolean
   noAskUser: boolean
   noFollowups: boolean
   noReview: boolean
@@ -510,7 +500,7 @@ ${buildArray(
   !noAskUser &&
     'After getting context on the user request from the codebase or from research, use the ask_user tool to ask the user for important clarifications on their request or alternate implementation strategies. You should skip this step if the choice is obvious -- only ask the user if you need their help making the best choice.',
   (isDefault || isMax || isLean) &&
-    `- For any task requiring 3+ steps, use the write_todos tool to write out your step-by-step implementation plan. Include ALL of the applicable tasks in the list.${isFast || noReview ? '' : ' You should include a step to review the changes after you have implemented the changes.'}:${hasNoValidation ? '' : ' You should include at least one step to validate/test your changes: be specific about whether to typecheck, run tests, run lints, etc.'} You may be able to do reviewing and validation in parallel in the same step. Skip write_todos for simple tasks like quick edits or answering questions.`,
+    `- For any task requiring 3+ steps, use the write_todos tool to write out your step-by-step implementation plan. Include ALL of the applicable tasks in the list.${noReview ? '' : ' You should include a step to review the changes after you have implemented the changes.'}: You should include at least one step to validate/test your changes: be specific about whether to typecheck, run tests, run lints, etc. You may be able to do reviewing and validation in parallel in the same step. Skip write_todos for simple tasks like quick edits or answering questions.`,
   `- ${THINKER_SPAWN_LIMIT}`,
   hasGeminiThinker && FREEBUFF_GEMINI_THINKER_INSTRUCTIONS_PROMPT,
   (isDefault || isMax) &&
@@ -519,19 +509,13 @@ ${buildArray(
     '- IMPORTANT: You must spawn the editor agent to implement the changes after you have gathered all the context you need. This agent will do the best job of implementing the changes so you must spawn it for all non-trivial changes. Do not pass any prompt or params to the editor agent when spawning it. It will make its own best choices of what to do.',
   isMax &&
     `- IMPORTANT: You must spawn the editor-multi-prompt agent to implement non-trivial code changes, since it will generate the best code changes from multiple implementation proposals. This is the best way to make high quality code changes -- strongly prefer using this agent over the str_replace or write_file tools, unless the change is very straightforward and obvious. You should also prompt it to implement the full task rather than just a single step.`,
-  isFast &&
-    '- Implement the changes using the str_replace or write_file tools. Implement all the changes in one go.',
-  isFast &&
-    '- Do a single typecheck targeted for your changes at most (if applicable for the project). Or skip this step if the change was small.',
-  !hasNoValidation &&
-    `- For non-trivial changes, test them by running appropriate validation commands for the project (e.g. typechecks, tests, lints, etc.). Try to run all appropriate commands in parallel. ${isMax ? ' Typecheck and test the specific area of the project that you are editing *AND* then typecheck and test the entire project if necessary.' : ' If you can, only test the area of the project that you are editing, rather than the entire project.'} You may have to explore the project to find the appropriate commands. Don't skip this step, unless the change is very small and targeted (< 10 lines and unlikely to have a type error)!`,
+  `- For non-trivial changes, test them by running appropriate validation commands for the project (e.g. typechecks, tests, lints, etc.). Try to run all appropriate commands in parallel. ${isMax ? ' Typecheck and test the specific area of the project that you are editing *AND* then typecheck and test the entire project if necessary.' : ' If you can, only test the area of the project that you are editing, rather than the entire project.'} You may have to explore the project to find the appropriate commands. Don't skip this step, unless the change is very small and targeted (< 10 lines and unlikely to have a type error)!`,
   (isDefault || isMax) &&
     `- Spawn a ${isDefault ? 'code-reviewer' : 'code-reviewer-multi-prompt'} to review the code changes after you have implemented changes. (Skip this step only if the change is extremely straightforward and obvious.)`,
   isLean &&
     !noReview &&
     `- Spawn a ${leanCodeReviewerAgentId} to review the changes after you have implemented code changes. (Skip this step only if the change is extremely straightforward and obvious.)`,
-  !isFast &&
-    !noAskUser &&
+  !noAskUser &&
     !noFollowups &&
     `- At the end of your turn, use the suggest_followups tool to suggest ~3 next steps the user might want to take — e.g., "Add unit tests for UserService", "Split the auth module into smaller files", "Continue with the next step". ${FOLLOWUP_STYLE_GUIDANCE}`,
 ).join('\n')}`
