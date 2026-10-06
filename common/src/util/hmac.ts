@@ -46,8 +46,14 @@ export function hmacSha256Base64Url(
 }
 
 /**
- * Constant-time string equality for comparing a presented signature to the
- * expected one.
+ * Constant-time string equality for comparing a presented secret, token or
+ * signature to the expected one. In Node and Bun, use this; code that cannot
+ * import `node:crypto` (Convex V8 functions) uses `constantTimeStringEquals`
+ * from `./constant-time`, which answers identically.
+ *
+ * The answer is exactly `expected === presented`. The strings are compared as
+ * UTF-16 code units, not UTF-8 bytes: UTF-8 encodes every lone surrogate as
+ * U+FFFD, so two different strings could compare equal.
  *
  * A length mismatch is an early (and safe) `false`: the attacker already
  * knows the length of a valid signature, so nothing is leaked by refusing
@@ -58,7 +64,7 @@ export function constantTimeEquals(
   expected: string,
   presented: string,
 ): boolean {
-  const a = Buffer.from(expected)
-  const b = Buffer.from(presented)
+  const a = Buffer.from(expected, 'utf16le')
+  const b = Buffer.from(presented, 'utf16le')
   return a.length === b.length && timingSafeEqual(a, b)
 }

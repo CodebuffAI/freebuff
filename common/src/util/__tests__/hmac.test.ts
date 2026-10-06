@@ -67,7 +67,7 @@ describe('constantTimeEquals', () => {
     expect(constantTimeEquals('', '')).toBe(true)
   })
 
-  test('compares bytes, not code points', () => {
+  test('compares code units, not normalised text', () => {
     expect(constantTimeEquals('é', 'é')).toBe(false)
   })
 })
