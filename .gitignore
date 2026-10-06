@@ -104,3 +104,8 @@ gha-creds-*.json
 # Billboard asset storage credentials and the local R2 emulator's data
 .freebuff-ad-assets.json
 web/.ad-assets-r2/
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.egg-info/
