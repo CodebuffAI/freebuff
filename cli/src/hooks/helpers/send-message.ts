@@ -21,6 +21,7 @@ import {
   isOutOfCreditsError,
   isFreebuffProviderUsageError,
   isFreeModeUnavailableError,
+  FREEBUFF_MODEL_UNAVAILABLE_MESSAGE,
   OUT_OF_CREDITS_MESSAGE,
 } from '../../utils/error-handling'
 import { formatElapsedTime } from '../../utils/format-elapsed-time'
@@ -45,6 +46,7 @@ import type {
 } from '../../types/store'
 import type { ChatMessage } from '../../types/chat'
 import type { AgentMode } from '../../utils/constants'
+import type { FreebuffGateErrorKind } from '../../utils/error-handling'
 import type { SendMessageTimerController } from '../../utils/send-message-timer'
 import type { StreamController } from '../stream-state'
 import type { StreamStatus } from '../use-message-queue'
@@ -435,6 +437,7 @@ export const handleRunCompletion = (params: {
     if (!isByokRun && gateKind) {
       handleFreebuffGateError(gateKind, updater, {
         messageWasDropped: params.hasReceivedContent === false,
+        serverMessage: output.message,
       })
       finalizeAfterError()
       return
@@ -562,6 +565,7 @@ export const handleRunError = (params: {
   if (!isByokRun && gateKind) {
     handleFreebuffGateError(gateKind, updater, {
       messageWasDropped: hasReceivedContent === false,
+      serverMessage: errorInfo.message,
     })
     return
   }
@@ -585,9 +589,9 @@ export const handleRunError = (params: {
  * the UI reflects reality and we stop sending requests until we re-admit.
  */
 function handleFreebuffGateError(
-  kind: ReturnType<typeof getFreebuffGateErrorKind>,
+  kind: FreebuffGateErrorKind,
   updater: BatchedMessageUpdater,
-  opts: { messageWasDropped?: boolean } = {},
+  opts: { messageWasDropped?: boolean; serverMessage?: string } = {},
 ) {
   switch (kind) {
     case 'session_expired':
@@ -632,7 +636,24 @@ function handleFreebuffGateError(
       // so we don't silently fight the other instance for the seat.
       markFreebuffSessionSuperseded()
       return
-    default:
+    case 'model_unavailable':
+      // The model was withdrawn from free mode. Terminal for this request
+      // only: the session survives (`endsTheSession: false`), so neither end it
+      // nor re-admit — that is the re-admission loop the code exists to avoid.
+      // The server's message names the replacement model.
+      updater.setError(
+        opts.serverMessage?.trim() || FREEBUFF_MODEL_UNAVAILABLE_MESSAGE,
+      )
       return
+    default: {
+      // A new gate code must get its own case, never a silent no-op.
+      const unhandled: never = kind
+      updater.setError(
+        opts.serverMessage?.trim() ||
+          'Freebuff could not run this turn on your free session.',
+      )
+      logger.warn({ kind: unhandled }, 'Unhandled freebuff gate error kind')
+      return
+    }
   }
 }

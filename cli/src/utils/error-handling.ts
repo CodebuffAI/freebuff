@@ -249,6 +249,10 @@ export const OUT_OF_CREDITS_MESSAGE = `Out of credits. Please add credits at ${d
 export const FREEBUFF_RATE_LIMIT_MESSAGE =
   'Freebuff is temporarily busy. Please try again in a moment.'
 
+/** Fallback for a `model_unavailable` gate refusal without a server message. */
+export const FREEBUFF_MODEL_UNAVAILABLE_MESSAGE =
+  'This model is no longer available in Freebuff. Pick another model with /model and send your message again.'
+
 export const FREE_MODE_UNAVAILABLE_MESSAGE = IS_FREEBUFF
   ? 'Freebuff is not available in your country.'
   : 'Free mode is not available in your country. You can use another mode to continue.'

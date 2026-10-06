@@ -1,4 +1,12 @@
-import { describe, expect, test, mock, beforeEach, afterEach } from 'bun:test'
+import {
+  describe,
+  expect,
+  test,
+  mock,
+  beforeEach,
+  afterEach,
+  spyOn,
+} from 'bun:test'
 import { FREEBUFF_PROVIDER_USAGE_MESSAGE } from '@codebuff/common/constants/freebuff-errors'
 
 import type { ChatMessage } from '../../../types/chat'
@@ -39,6 +47,9 @@ const {
 } = await import('../send-message')
 const { createBatchedMessageUpdater } =
   await import('../../../utils/message-updater')
+const freebuffSession = await import('../../use-freebuff-session')
+const { FREEBUFF_MODEL_UNAVAILABLE_MESSAGE } =
+  await import('../../../utils/error-handling')
 import { createPaymentRequiredError } from '@codebuff/sdk'
 import type { RunState } from '@codebuff/sdk'
 
@@ -2121,5 +2132,89 @@ describe('freebuff gate errors', () => {
     // error path (which would set a userError from the message).
     expect(messages[0].userError).toContain('Your free session ended')
     expect(messages[0].userError).not.toContain('server said so')
+  })
+
+  describe('model_unavailable', () => {
+    let sessionSpies: Array<ReturnType<typeof spyOn>> = []
+    beforeEach(() => {
+      sessionSpies = [
+        spyOn(freebuffSession, 'markFreebuffSessionEnded'),
+        spyOn(freebuffSession, 'markFreebuffSessionSuperseded'),
+        spyOn(freebuffSession, 'refreshFreebuffSession').mockResolvedValue(
+          undefined,
+        ),
+      ]
+    })
+    afterEach(() => {
+      for (const spy of sessionSpies) spy.mockRestore()
+    })
+
+    const runCompletionWith = (output: Record<string, unknown>) => {
+      const messages = baseMessage()
+      const updater = makeUpdater(messages)
+      handleRunCompletion({
+        runState: {
+          traceSessionId: 'trace-test',
+          sessionState: undefined as any,
+          output: output as any,
+        },
+        actualCredits: undefined,
+        agentMode: 'LITE',
+        timerController: createMockTimerController(),
+        updater,
+        aiMessageId: 'ai-1',
+        wasAbortedByUser: false,
+        setStreamStatus: () => {},
+        setCanProcessQueue: () => {},
+        updateChainInProgress: () => {},
+        setHasReceivedPlanResponse: () => {},
+      })
+      updater.flush()
+      return messages
+    }
+
+    test('handleRunCompletion shows the server message and keeps the session', () => {
+      const serverMessage =
+        'DeepSeek V4 Pro has been withdrawn from Freebuff. Switch to GLM 5.3 Flash to continue.'
+      const messages = runCompletionWith({
+        type: 'error',
+        message: serverMessage,
+        error: 'model_unavailable',
+        statusCode: 410,
+      })
+      expect(messages[0].userError).toBe(serverMessage)
+      expect(messages[0].isComplete).toBe(true)
+      for (const spy of sessionSpies) expect(spy).not.toHaveBeenCalled()
+    })
+
+    test('a session-ending code still ends the session (spy control)', () => {
+      runCompletionWith({
+        type: 'error',
+        message: 'server said so',
+        error: 'session_expired',
+        statusCode: 410,
+      })
+      expect(sessionSpies[0]).toHaveBeenCalledTimes(1)
+    })
+
+    test('handleRunError falls back to a default when the server sent no message', () => {
+      const messages = baseMessage()
+      const updater = makeUpdater(messages)
+      handleRunError({
+        error: Object.assign(new Error(''), {
+          error: 'model_unavailable',
+          statusCode: 410,
+        }),
+        timerController: createMockTimerController(),
+        updater,
+        setIsRetrying: () => {},
+        setStreamStatus: () => {},
+        setCanProcessQueue: () => {},
+        updateChainInProgress: () => {},
+      })
+      updater.flush()
+      expect(messages[0].userError).toBe(FREEBUFF_MODEL_UNAVAILABLE_MESSAGE)
+      for (const spy of sessionSpies) expect(spy).not.toHaveBeenCalled()
+    })
   })
 })

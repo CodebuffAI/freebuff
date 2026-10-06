@@ -6,6 +6,7 @@ import {
 } from '@codebuff/common/constants/freebuff-errors'
 
 import {
+  getFreebuffGateErrorKind,
   getFreebuffRateLimitErrorMessage,
   getFreeModeUnavailableErrorMessage,
   isOutOfCreditsError,
@@ -691,5 +692,29 @@ describe('error-handling', () => {
       const result = createErrorMessage(conflictError, 'msg-409')
       expect(result.content).toContain('Conflict detected')
     })
+  })
+})
+
+describe('getFreebuffGateErrorKind', () => {
+  test('classifies a 410 model_unavailable refusal', () => {
+    expect(
+      getFreebuffGateErrorKind({ error: 'model_unavailable', statusCode: 410 }),
+    ).toBe('model_unavailable')
+  })
+
+  test('requires the code and its status to match', () => {
+    expect(
+      getFreebuffGateErrorKind({ error: 'model_unavailable', statusCode: 409 }),
+    ).toBe(null)
+    expect(getFreebuffGateErrorKind({ error: 'model_unavailable' })).toBe(null)
+  })
+
+  test('leaves session_limit_reached to its own handler', () => {
+    expect(
+      getFreebuffGateErrorKind({
+        error: 'session_limit_reached',
+        statusCode: 409,
+      }),
+    ).toBe(null)
   })
 })
