@@ -72,14 +72,14 @@ describe('a policy with weekends off-peak', () => {
     expect(+saturdayNight.end).toBe(Date.UTC(2026, 8, 20, 6))
   })
 
-  test("the copy names the weekend in the reader's own clock", () => {
+  test("the copy names the weekday peak in the reader's own clock", () => {
     const copy = freebucksOffPeakCopy(
       { prices: { fast: 25 }, offPeak: { fast: deepseekClock } },
       'fast',
       { now: Date.UTC(2026, 8, 17, 12), timeZone: 'America/Los_Angeles' },
     )!
     expect(copy.tooltip).toBe(
-      'Off-peak: 25 Freebucks/hour, daily 3:00 AM–5:00 PM PDT, and all weekend (Fri 9:00 AM–Sun 9:00 AM PDT).',
+      'Peak: 45 Freebucks/hr Sun–Thu, 5 PM–3 AM PDT. 25 otherwise.',
     )
     expect(copy.active).toBe(true)
   })

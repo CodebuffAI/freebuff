@@ -369,6 +369,9 @@ export interface FreebuffOffPeakPrice {
   weekendsOffPeak?: boolean
   price: number
   regularPrice: number
+  /** Why the price moves, as a clause after the hours: "when Freebuff is
+   *  quiet". Absent on older servers; the copy then gives hours alone. */
+  reason?: string
 }
 
 export interface FreebuffPriceChange {

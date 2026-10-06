@@ -857,8 +857,10 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       if (!catalog || model.id !== focusedId) return []
       const row = directory.row(model.id)
       if (!row) return []
+      const schedule = freebucksOffPeakCopy(freebucks, model.id)?.tooltip
       return [
         ...(row.taglineTooltip ? [row.taglineTooltip] : []),
+        ...(schedule ? [schedule] : []),
         ...row.badges.flatMap((badge) =>
           badge.tooltip ? [`${badge.label}: ${badge.tooltip}`] : [],
         ),
@@ -867,7 +869,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           : []),
       ]
     },
-    [catalog, directory, focusedId],
+    [catalog, directory, focusedId, freebucks],
   )
 
   // The referral banner contributes its GLM/copy actions to the selector's

@@ -1774,7 +1774,7 @@ const DEEPSEEK_V4_FLASH_FAST_MODEL = {
   displayName: 'DeepSeek V4.1 Flash Fast',
   tagline: 'Parallel agents',
   taglineTooltip:
-    'Fast mode: Buffy gathers context with parallel subagents on DeepSeek’s own API, makes the change, then verifies it. Priced on DeepSeek’s peak and off-peak hours.',
+    'Gathers context with parallel subagents. Runs on DeepSeek’s own API.',
   availability: 'always',
   // Inert while `always`; names the row this one is a variant of.
   unavailableFallback: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,

@@ -60,6 +60,27 @@ function nextPriceChangeAt(
   return +boundary
 }
 
+/** The policy's runs of one price over the coming week, each `[start, end)`.
+ *  Every run is whole: the scan starts a day back and drops the partial runs
+ *  at either end, so the first is the current or next one. */
+export function offPeakRuns(
+  offer: FreebuffOffPeakPrice,
+  now: number,
+): { start: number; end: number; offPeak: boolean }[] {
+  const hour = 60 * 60 * 1000
+  const from = Math.floor(now / hour) * hour - 24 * hour
+  const runs: { start: number; end: number; offPeak: boolean }[] = []
+  for (let at = from; at < from + 9 * 24 * hour; at += hour) {
+    const offPeak = isOffPeakAt(offer, at)
+    const last = runs[runs.length - 1]
+    if (last?.offPeak === offPeak) last.end = at + hour
+    else runs.push({ start: at, end: at + hour, offPeak })
+  }
+  return runs
+    .slice(1, -1)
+    .filter((run) => run.end > now && run.start < now + 7 * 24 * hour)
+}
+
 /** Apply the SERVER'S dated changes and recurring policies to new-session
  * quotes only. Never change balances or an already-admitted session's charge. */
 export function applyFreebucksPriceChanges<
