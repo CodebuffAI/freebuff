@@ -6,16 +6,29 @@ export interface ZonedDateParts {
   minute: number
 }
 
+// Building a formatter costs far more than using one, and rollups call this
+// once per row. A formatter is immutable, so one per zone is safe to share.
+const partsFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function partsFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = partsFormatters.get(timeZone)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+    partsFormatters.set(timeZone, formatter)
+  }
+  return formatter
+}
+
 export function getZonedParts(date: Date, timeZone: string): ZonedDateParts {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date)
+  const parts = partsFormatter(timeZone).formatToParts(date)
 
   const get = (type: string) => {
     const value = parts.find((part) => part.type === type)?.value

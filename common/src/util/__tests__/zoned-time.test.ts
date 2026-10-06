@@ -133,3 +133,90 @@ describe('getZonedYmd', () => {
     )
   })
 })
+
+/**
+ * getZonedYmd replaced ~15 Pacific-day helpers that formatted with `en-CA`
+ * (whose `YYYY-MM-DD` output is an ICU locale convention, not a contract) or
+ * joined `formatToParts` themselves. The live wall and the ad rollups key
+ * rows by these strings, so the replacement must be exact: pinned values at
+ * every Pacific edge, and agreement with each retired expression over a sweep.
+ */
+describe('getZonedYmd matches every Pacific-day expression it replaced', () => {
+  const PT = 'America/Los_Angeles'
+
+  const enCa = new Intl.DateTimeFormat('en-CA', { timeZone: PT })
+  const enCaTwoDigit = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PT,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const enCaShort = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PT,
+    dateStyle: 'short',
+  })
+  const enUsParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: PT,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const retired: Record<string, (at: Date) => string> = {
+    'en-CA format()': (at) => enCa.format(at),
+    'en-CA 2-digit format()': (at) => enCaTwoDigit.format(at),
+    'en-CA dateStyle short': (at) => enCaShort.format(at),
+    'en-US formatToParts join': (at) => {
+      const parts = enUsParts.formatToParts(at)
+      const get = (type: string) => parts.find((p) => p.type === type)?.value
+      return `${get('year')}-${get('month')}-${get('day')}`
+    },
+  }
+
+  const EDGES: Array<[string, string]> = [
+    // Midnight in PST (UTC-8) and PDT (UTC-7).
+    ['2026-01-15T07:59:59.999Z', '2026-01-14'],
+    ['2026-01-15T08:00:00.000Z', '2026-01-15'],
+    ['2026-07-15T06:59:59.999Z', '2026-07-14'],
+    ['2026-07-15T07:00:00.000Z', '2026-07-15'],
+    // Spring forward: 02:00 PST -> 03:00 PDT at 10:00Z on 2026-03-08.
+    ['2026-03-08T07:59:59.999Z', '2026-03-07'],
+    ['2026-03-08T08:00:00.000Z', '2026-03-08'],
+    ['2026-03-08T09:59:59.999Z', '2026-03-08'],
+    ['2026-03-08T10:00:00.000Z', '2026-03-08'],
+    ['2026-03-09T06:59:59.999Z', '2026-03-08'],
+    ['2026-03-09T07:00:00.000Z', '2026-03-09'],
+    // Fall back: 02:00 PDT -> 01:00 PST at 09:00Z on 2026-11-01.
+    ['2026-11-01T06:59:59.999Z', '2026-10-31'],
+    ['2026-11-01T07:00:00.000Z', '2026-11-01'],
+    ['2026-11-01T08:30:00.000Z', '2026-11-01'],
+    ['2026-11-01T09:30:00.000Z', '2026-11-01'],
+    ['2026-11-02T07:59:59.999Z', '2026-11-01'],
+    ['2026-11-02T08:00:00.000Z', '2026-11-02'],
+    // Year and month rollover, leap day.
+    ['2027-01-01T07:59:59.999Z', '2026-12-31'],
+    ['2027-01-01T08:00:00.000Z', '2027-01-01'],
+    ['2028-02-29T08:00:00.000Z', '2028-02-29'],
+    ['2028-03-01T07:59:59.999Z', '2028-02-29'],
+    ['2028-03-01T08:00:00.000Z', '2028-03-01'],
+  ]
+
+  test.each(EDGES)('%s is Pacific day %s', (iso, expected) => {
+    const at = new Date(iso)
+    expect(getZonedYmd(at, PT)).toBe(expected)
+    for (const format of Object.values(retired)) expect(format(at)).toBe(expected)
+  })
+
+  test('agrees with each retired expression every 30 minutes through 2026', () => {
+    const start = Date.parse('2026-01-01T00:00:00Z')
+    const end = Date.parse('2027-01-01T00:00:00Z')
+    const mismatches: string[] = []
+    for (let ms = start; ms < end; ms += 30 * 60 * 1000) {
+      const at = new Date(ms)
+      const ymd = getZonedYmd(at, PT)
+      for (const [name, format] of Object.entries(retired)) {
+        if (format(at) !== ymd) mismatches.push(`${at.toISOString()} ${name}`)
+      }
+    }
+    expect(mismatches).toEqual([])
+  })
+})

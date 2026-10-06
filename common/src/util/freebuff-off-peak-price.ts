@@ -4,6 +4,7 @@ import {
 } from '../constants/freebuff-peak-hours'
 import type { FreebuffFreebucksInfo } from '../types/freebuff-session'
 import { offPeakPriceAt, offPeakRuns } from './freebuff-price-changes'
+import { getZonedYmd } from './zoned-time'
 
 /** Presentation only: prices and schedules come from the server, never the
  *  private rate card. */
@@ -120,8 +121,8 @@ function dayRange(starts: Date[], zone: string) {
 /** "3:00 AM PDT" when `at` falls on the reader's today, "Mon 3:00 AM PDT"
  *  otherwise: a peak ending after local midnight must not read as tonight. */
 function formatResumeAt(at: number, now: number, zone: string) {
-  const day = new Intl.DateTimeFormat('en-CA', { timeZone: zone })
-  const today = day.format(at) === day.format(now)
+  const today =
+    getZonedYmd(new Date(at), zone) === getZonedYmd(new Date(now), zone)
   const time = new Intl.DateTimeFormat(undefined, {
     ...(today ? {} : { weekday: 'short' as const }),
     hour: 'numeric',
