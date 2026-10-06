@@ -126,6 +126,28 @@ describe('late failure delivered in band', () => {
     )
   })
 
+  it('ends the turn with the message of a final capacity refusal, without a retry', async () => {
+    // The server's Space Bunny queue refusal once its wait budget is spent
+    // (web/.../space-bunny-queue.ts `spaceBunnyAtCapacityChunk`). A retry
+    // would only queue the step for another five minutes, so it carries no
+    // status and a non-numeric code, and must not be classified as one.
+    const message =
+      'Space Bunny is at capacity right now. Please try again in a few minutes or pick another model.'
+    await withServer(
+      errorChunk({ message, code: 'model_at_capacity', type: 'capacity_error' }),
+      (error) => {
+        expect(String(error)).toContain(message)
+        expect(isTransientNetworkError(error)).toBe(false)
+        expect(
+          classifyThrownStreamRecovery({ aborted: false, error }),
+        ).toBeNull()
+        expect(
+          classifyProviderErrorRecovery({ aborted: false, error }),
+        ).toBeNull()
+      },
+    )
+  })
+
   it('is why a bare connection cut is not good enough', () => {
     // The behaviour the in-band chunk exists to avoid. Erroring the response
     // body mid-stream reaches Bun's fetch as this message (confirmed against a
