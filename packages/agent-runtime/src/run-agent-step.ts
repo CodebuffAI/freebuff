@@ -1,5 +1,8 @@
 import { contextPrunerBudgetForModel } from '@codebuff/common/constants/model-config'
-import { modelCompactionThreshold } from '@codebuff/common/constants/compaction-policy'
+import {
+  modelCompactionThreshold,
+  usesDeterministicCompaction,
+} from '@codebuff/common/constants/compaction-policy'
 import {
   supportsAssistantPrefill,
   supportsCacheControl,
@@ -41,6 +44,7 @@ import {
 import type { CompactionWindow } from './compaction-followup'
 import {
   automaticCompactionIsWorthwhile,
+  compactMechanically,
   COMPACTION_LOW_WATER,
   compactWithModelOrFallback,
   compactionTools,
@@ -1317,71 +1321,91 @@ export async function loopAgentSteps(
           const isRoot = !initialAgentState.parentId
           if (isRoot) params.onCompactionStart?.({ trigger })
           let compacted: Awaited<ReturnType<typeof compactWithModelOrFallback>>
+          // An automatic pass must leave the run under its own trigger, or the
+          // next step fires it again on its output. The mechanical pass aims
+          // lower: it keeps no findings, so it needs room to work in.
+          const automatic = trigger !== 'manual'
+          const targetTokens = automatic
+            ? Math.floor(thresholdTokens * COMPACTION_LOW_WATER)
+            : undefined
+          const mechanicalTargetTokens = automatic
+            ? Math.floor(thresholdTokens * MECHANICAL_TARGET_SHARE)
+            : undefined
+          // Mechanical for the user's cohort, on every trigger. On the idle
+          // trigger the cache is already cold, so a summarizer would read the
+          // whole cold history first: it costs more than the prefill it saves
+          // and the user waits for it.
+          const deterministic = usesDeterministicCompaction(userId)
           // Ends after the receipt, so a host never sees a gap between the
           // pass it is showing and the handoff that replaces it.
           try {
-            // A compaction failure must never fail the turn: a summarizer error
-            // or malformed handoff falls back to the mechanical pass.
-            compacted = await compactWithModelOrFallback({
-              messages: currentAgentState.messageHistory,
-              system,
-              maxContextLength,
-              fixedTokenCount,
-              maxOutputTokens: policy.maxOutputTokens,
-              // An automatic pass must leave the run under its own trigger, or
-              // the next step fires it again on the fallback's output.
-              // The mechanical fallback aims lower still: it keeps no
-              // findings, so it needs room to work in.
-              ...(trigger === 'manual'
-                ? {}
-                : {
-                    fallbackTargetTokens: Math.floor(
-                      thresholdTokens * COMPACTION_LOW_WATER,
-                    ),
-                    mechanicalTargetTokens: Math.floor(
-                      thresholdTokens * MECHANICAL_TARGET_SHARE,
-                    ),
-                  }),
-              signal,
-              logger,
-              runId,
-              model: agentTemplate.model,
-              trigger,
-              stream: (messages, maxOutputTokens, onFinishReason) =>
-                getAgentStreamFromTemplate({
-                  ...params,
-                  agentId: agentType,
-                  template: agentTemplate,
+            if (deterministic) {
+              try {
+                compacted = compactMechanically({
+                  messages: currentAgentState.messageHistory,
+                  maxContextLength,
+                  fixedTokenCount,
+                  targetTokens: mechanicalTargetTokens,
+                  trigger,
+                  logger,
                   runId,
-                  messages,
-                  tools: compactionTools,
-                  toolChoice: 'required',
-                  maxOutputTokens,
-                  onFinishReason,
-                  onCostCalculated: async (credits) => {
-                    currentAgentState.creditsUsed += credits
-                    currentAgentState.directCreditsUsed += credits
-                  },
-                  // Compaction usage is spend, not the next root request's context.
-                  onUsageReceived: (usage) =>
-                    params.onAgentUsageReceived?.({
-                      ...usage,
-                      isRoot: false,
-                      agentId: currentAgentState.agentId,
-                    }),
-                  onUsageIncomplete: params.onAgentUsageIncomplete,
-                }),
-            })
-            await addAgentStep({
-              ...params,
-              agentRunId: runId,
-              stepNumber: totalSteps,
-              credits: currentAgentState.directCreditsUsed - before,
-              childRunIds: [],
-              messageId: null,
-              status: 'completed',
-              startTime,
-            })
+                })
+              } catch {
+                // Opportunistic: a history it cannot fit is left alone.
+                compacted = null
+              }
+            } else {
+              // A compaction failure must never fail the turn: a summarizer error
+              // or malformed handoff falls back to the mechanical pass.
+              compacted = await compactWithModelOrFallback({
+                messages: currentAgentState.messageHistory,
+                system,
+                maxContextLength,
+                fixedTokenCount,
+                maxOutputTokens: policy.maxOutputTokens,
+                fallbackTargetTokens: targetTokens,
+                mechanicalTargetTokens,
+                signal,
+                logger,
+                runId,
+                model: agentTemplate.model,
+                trigger,
+                stream: (messages, maxOutputTokens, onFinishReason) =>
+                  getAgentStreamFromTemplate({
+                    ...params,
+                    agentId: agentType,
+                    template: agentTemplate,
+                    runId,
+                    messages,
+                    tools: compactionTools,
+                    toolChoice: 'required',
+                    maxOutputTokens,
+                    onFinishReason,
+                    onCostCalculated: async (credits) => {
+                      currentAgentState.creditsUsed += credits
+                      currentAgentState.directCreditsUsed += credits
+                    },
+                    // Compaction usage is spend, not the next root request's context.
+                    onUsageReceived: (usage) =>
+                      params.onAgentUsageReceived?.({
+                        ...usage,
+                        isRoot: false,
+                        agentId: currentAgentState.agentId,
+                      }),
+                    onUsageIncomplete: params.onAgentUsageIncomplete,
+                  }),
+              })
+              await addAgentStep({
+                ...params,
+                agentRunId: runId,
+                stepNumber: totalSteps,
+                credits: currentAgentState.directCreditsUsed - before,
+                childRunIds: [],
+                messageId: null,
+                status: 'completed',
+                startTime,
+              })
+            }
             if (compacted) {
               if (compactionWindow)
                 closeCompactionWindow({
@@ -1396,7 +1420,11 @@ export async function loopAgentSteps(
               compactionWindow = openCompactionWindow({
                 before: currentAgentState.messageHistory,
                 after: compacted.messages,
-                mode: compacted.fallback ? 'fallback' : 'model',
+                mode: deterministic
+                  ? 'mechanical'
+                  : compacted.fallback
+                    ? 'fallback'
+                    : 'model',
                 trigger,
               })
               currentAgentState.messageHistory = compacted.messages

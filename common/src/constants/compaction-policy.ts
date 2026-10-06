@@ -1,4 +1,5 @@
 import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from './freebuff-model-ids'
+import { fnv1a } from '../util/ad-experiment'
 
 /** Leave input headroom for the model-based compaction request. */
 export function modelCompactionThreshold(maxContextLength: number): number {
@@ -10,7 +11,9 @@ export function modelCompactionThreshold(maxContextLength: number): number {
  * comes back after `cacheExpiryMs` of silence AND the history is at least
  * `cacheExpiryMinTokens`. Below the floor a cold cache is not enough, because
  * compaction costs inference and some detail. The context-limit trigger
- * ignores the floor. Model-based compaction preserves findings from tool results.
+ * ignores the floor. For the users in `usesDeterministicCompaction` every
+ * pass is mechanical (no model call); for the rest it is a model handoff with
+ * the mechanical pass as fallback.
  *
  * The numbers live only here. base3 roots hand the object to the runtime as
  * `compactContext`; the runtime defaults `compactContext: true` to
@@ -30,9 +33,11 @@ export type CompactionPolicy = {
  * of dropped tool results, and under an hour that reads as "the model forgot
  * everything" (a top user complaint) while the cache may still be warm.
  *
- * The 140k floor originated as twice the mechanical summary ceilings. Keep
- * the idle policy stable while switching compactContext to a model handoff;
- * small idle histories do not justify another inference request.
+ * 140k tokens is two mechanical summary ceilings (20k assistant/tool + 50k
+ * user, in compact-history.ts). Below one ceiling the budget walk evicts
+ * nothing, so a mostly-prose history comes back the same size plus the
+ * envelope; the second ceiling is margin for the two sides being measured with
+ * different rulers (`chars / 3` against a BPE count).
  */
 export const DEFAULT_COMPACTION_POLICY: CompactionPolicy = {
   cacheExpiryMs: 60 * 60 * 1000,
@@ -69,4 +74,27 @@ export function compactionPolicyForModel(
   return model === FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
     ? DEEPSEEK_FLASH_COMPACTION_POLICY
     : DEFAULT_COMPACTION_POLICY
+}
+
+/**
+ * Percent of users whose compactions, on every trigger, run the mechanical
+ * pass (a ~12k summary plus a working set of file reads) instead of the model
+ * handoff.
+ *
+ * The cohort is sticky per user, so the two arms can be compared on
+ * `context_compaction.followup` (re-reads and repeat compactions, by `mode`).
+ * It starts small and widens; at 100 the model handoff is deleted. A larger
+ * share only adds users, so nobody flips back. Changing the salt reassigns
+ * everyone.
+ */
+export const DETERMINISTIC_COMPACTION_PERCENT = 10
+const DETERMINISTIC_COMPACTION_SALT = 'deterministic_compaction_2026_10'
+
+export function usesDeterministicCompaction(
+  userId: string | undefined,
+  percent: number = DETERMINISTIC_COMPACTION_PERCENT,
+): boolean {
+  if (percent >= 100) return true
+  if (!userId || percent <= 0) return false
+  return fnv1a(`${DETERMINISTIC_COMPACTION_SALT}:${userId}`) % 100 < percent
 }

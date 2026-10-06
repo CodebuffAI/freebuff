@@ -5,6 +5,7 @@
  */
 
 import * as analytics from '@codebuff/common/analytics'
+import { usesDeterministicCompaction } from '@codebuff/common/constants/compaction-policy'
 import { TEST_USER_ID } from '@codebuff/common/old-constants'
 import { createTestAgentRuntimeParams } from '@codebuff/common/testing/fixtures/agent-runtime'
 import { clearMockedModules } from '@codebuff/common/testing/mock-modules'
@@ -72,12 +73,42 @@ describe('compactContext in loopAgentSteps', () => {
     handleSteps: undefined,
   } satisfies AgentTemplate as AgentTemplate
 
+  /** An old read whose result is most of the history: what a mechanical pass
+   * reclaims. Without it the history is too small to shrink. At ~53k tokens
+   * it is over the 40k working-set limit, so it comes back as a stub. */
+  const bulkyRead = (body = 'BULKY FILE BODY '): Message[] => [
+    {
+      role: 'assistant',
+      content: [
+        {
+          type: 'tool-call',
+          toolCallId: 'old-read',
+          toolName: 'read_files',
+          input: { paths: ['big.ts'] },
+        },
+      ],
+      sentAt: 1_000_000,
+    },
+    {
+      role: 'tool',
+      toolName: 'read_files',
+      toolCallId: 'old-read',
+      content: [
+        {
+          type: 'json',
+          value: [{ path: 'big.ts', content: body.repeat(10_000) }],
+        },
+      ],
+    },
+  ]
+
   /**
    * A conversation whose last assistant message landed `gapMinutes` before the
    * live user prompt — i.e. the prompt cache has had that long to expire.
    */
   const idleHistory = (gapMinutes: number): Message[] => [
     { ...userMessage('the first request'), sentAt: 1_000_000 },
+    ...bulkyRead(),
     {
       ...assistantMessage('DISTINCTIVE PRIOR ANSWER '.repeat(100)),
       sentAt: 1_000_000,
@@ -94,6 +125,7 @@ describe('compactContext in loopAgentSteps', () => {
     messageHistory: Message[],
     prompt?: string,
     logged?: unknown[],
+    userId: string = TEST_USER_ID,
   ) => {
     const {
       agentTemplate: _,
@@ -143,7 +175,7 @@ describe('compactContext in loopAgentSteps', () => {
       spawnParams: undefined,
       fingerprintId: 'test-fingerprint',
       fileContext: mockFileContext,
-      userId: TEST_USER_ID,
+      userId,
       clientSessionId: 'test-session',
       ancestorRunIds: [],
       onResponseChunk: () => {},
@@ -166,6 +198,49 @@ describe('compactContext in loopAgentSteps', () => {
 
   afterAll(() => {
     clearMockedModules()
+  })
+
+  /** A user `usesDeterministicCompaction` puts on the mechanical pass. */
+  const cohortUser = () => {
+    let userId = ''
+    for (let i = 0; !usesDeterministicCompaction(userId); i++)
+      userId = `cohort-user-${i}`
+    return userId
+  }
+
+  it('runs the model handoff for the test user, who is in the model cohort', () => {
+    // Every model-path case below depends on this; at 100% the handoff is gone.
+    expect(usesDeterministicCompaction(TEST_USER_ID)).toBe(false)
+  })
+
+  it('compacts mechanically at the context limit for the deterministic cohort', async () => {
+    const userId = cohortUser()
+    const logged: unknown[] = []
+    const result = await runLoop(
+      overBudget,
+      idleHistory(0),
+      undefined,
+      logged,
+      userId,
+    )
+    expect(result.output.type).not.toBe('error')
+    // The turn's own request only: no `complete_compaction` call.
+    expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(1)
+    const sent = seenMessages[0].map(textOf).join('\n')
+    expect(sent).toContain('<conversation_summary>')
+    expect(sent).toContain('the live question')
+    expect(
+      logged.filter(
+        (data) =>
+          (data as { axiomEvent?: string }).axiomEvent ===
+          'context_compaction.followup',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        mode: 'mechanical',
+        trigger_reason: 'context_limit',
+      }),
+    ])
   })
 
   it('leaves the history alone when the agent has not opted in', async () => {
@@ -205,45 +280,19 @@ describe('compactContext in loopAgentSteps', () => {
     expect(history).toContain('the live question')
   })
 
+  // The idle trigger is mechanical, so these two reach the summarizer through
+  // the context limit: a 4k window under a ~21k-token history.
+  const overBudget = {
+    ...baseTemplate,
+    compactContext: { maxContextLength: 4096, cacheExpiryMs: null },
+  }
+
   it('falls back to mechanical compaction when the summary is unusable', async () => {
     // Arguments cut off by the output cap: JSON that never closes.
     compactionInput = '{"summary": "the first request was about'
-    // A bulky old tool result gives the mechanical pass something to reclaim.
-    const history = idleHistory(120)
-    history.splice(
-      1,
-      0,
-      {
-        role: 'assistant',
-        content: [
-          {
-            type: 'tool-call',
-            toolCallId: 'old-read',
-            toolName: 'read_files',
-            input: { paths: ['big.ts'] },
-          },
-        ],
-        sentAt: 1_000_000,
-      },
-      {
-        role: 'tool',
-        toolName: 'read_files',
-        toolCallId: 'old-read',
-        content: [
-          {
-            type: 'json',
-            value: [
-              { path: 'big.ts', content: 'BULKY FILE BODY '.repeat(4000) },
-            ],
-          },
-        ],
-      },
-    )
-    const result = await runLoop(
-      { ...baseTemplate, compactContext: { cacheExpiryMinTokens: null } },
-      history,
-    )
+    const result = await runLoop(overBudget, idleHistory(0))
     expect(result.output.type).not.toBe('error')
+    expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(2)
     const sent = seenMessages[0].map(textOf).join('\n')
     expect(sent).toContain('<conversation_summary>')
     expect(sent).toContain('the live question')
@@ -253,51 +302,35 @@ describe('compactContext in loopAgentSteps', () => {
     )
   })
 
-  it('closes the compaction window at run end, counting the file it dropped', async () => {
-    const history = idleHistory(120)
-    history.splice(
-      1,
-      0,
-      {
-        role: 'assistant',
-        content: [
-          {
-            type: 'tool-call',
-            toolCallId: 'old-read',
-            toolName: 'read_files',
-            input: { paths: ['big.ts'] },
-          },
-        ],
-        sentAt: 1_000_000,
-      },
-      {
-        role: 'tool',
-        toolName: 'read_files',
-        toolCallId: 'old-read',
-        content: [
-          {
-            type: 'json',
-            value: [{ path: 'big.ts', content: 'BODY '.repeat(4000) }],
-          },
-        ],
-      },
-    )
+  it('compacts mechanically on the idle trigger in the cohort: no summarizer request', async () => {
     const logged: unknown[] = []
-    await runLoop(
+    const result = await runLoop(
       { ...baseTemplate, compactContext: { cacheExpiryMinTokens: null } },
-      history,
+      idleHistory(120),
       undefined,
       logged,
+      cohortUser(),
     )
-    expect(
+    expect(result.output.type).not.toBe('error')
+    // One request, the turn itself; never a `complete_compaction` call.
+    expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(1)
+    const sent = seenMessages[0].map(textOf).join('\n')
+    expect(sent).toContain('<conversation_summary>')
+    expect(sent).toContain('inspected files: big.ts')
+    expect(JSON.stringify(seenMessages[0])).not.toContain(
+      'BULKY FILE BODY '.repeat(50),
+    )
+    const events = (name: string) =>
       logged.filter(
-        (data) =>
-          (data as { axiomEvent?: string }).axiomEvent ===
-          'context_compaction.followup',
-      ),
-    ).toEqual([
+        (data) => (data as { axiomEvent?: string }).axiomEvent === name,
+      )
+    expect(events('model_compaction.completed')).toEqual([])
+    expect(events('context_compaction_completed')).toEqual([
+      expect.objectContaining({ trigger_reason: 'cache_expiry' }),
+    ])
+    expect(events('context_compaction.followup')).toEqual([
       expect.objectContaining({
-        mode: 'model',
+        mode: 'mechanical',
         trigger_reason: 'cache_expiry',
         ended_by: 'run_end',
         elided_read_paths: 1,
@@ -312,10 +345,7 @@ describe('compactContext in loopAgentSteps', () => {
     compactionInput = () => {
       throw new Error('provider exploded mid-compaction')
     }
-    const result = await runLoop(
-      { ...baseTemplate, compactContext: { cacheExpiryMinTokens: null } },
-      idleHistory(120),
-    )
+    const result = await runLoop(overBudget, idleHistory(0))
     expect(result.output.type).not.toBe('error')
     expect(seenMessages).toHaveLength(1)
     expect(seenMessages[0].map(textOf).join('\n')).toContain(
