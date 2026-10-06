@@ -5,7 +5,6 @@ import {
   DEFAULT_CACHE_EXPIRY_MIN_TOKENS,
   DEFAULT_CACHE_EXPIRY_MS,
   evaluateCompactionTrigger,
-  maybeCompactHistory,
   promptCacheGapMs,
 } from '../compact-history'
 
@@ -460,120 +459,7 @@ describe('evaluateCompactionTrigger', () => {
   })
 })
 
-describe('maybeCompactHistory', () => {
-  const overBudget = {
-    contextTokenCount: 500_000,
-    maxContextLength: 400_000,
-  }
-
-  it('returns null when no trigger fires', () => {
-    expect(
-      maybeCompactHistory({
-        messages: idleTurn(5),
-        contextTokenCount: DEFAULT_CACHE_EXPIRY_MIN_TOKENS,
-        maxContextLength: 400_000,
-      }),
-    ).toBeNull()
-  })
-
-  it('compacts when a trigger fires', () => {
-    const result = maybeCompactHistory({
-      messages: [user('question', ['USER_PROMPT']), assistant('answer')],
-      ...overBudget,
-    })
-    expect(result).not.toBeNull()
-    expect(textOf(result![0])).toContain('<conversation_summary>')
-  })
-
-  it('logs the trigger, the cache gap and the pruner-compatible stats', () => {
-    const logs: Array<Record<string, any>> = []
-    const logger = {
-      debug: () => {},
-      info: (data: Record<string, any>) => logs.push(data),
-      warn: () => {},
-      error: () => {},
-    } as any
-
-    maybeCompactHistory({
-      messages: idleTurn(90),
-      contextTokenCount: DEFAULT_CACHE_EXPIRY_MIN_TOKENS,
-      maxContextLength: 400_000,
-      logger,
-      runId: 'run-1',
-    })
-
-    expect(logs).toHaveLength(1)
-    const [event] = logs
-    expect(event.axiomEvent).toBe('context_compaction_completed')
-    expect(event.agent_run_id).toBe('run-1')
-    expect(event.trigger_reason).toBe('cache_expiry')
-    expect(event.cache_gap_ms).toBe(90 * MINUTE)
-    expect(event.cache_expiry_ms).toBe(DEFAULT_CACHE_EXPIRY_MS)
-    // Field names the context-pruner already emits, so the two can be queried
-    // as one series. Every key must be snake_case.
-    for (const key of [
-      'mid_turn',
-      'user_budget',
-      'assistant_tool_budget',
-      'previous_summary_entry_count',
-      'user_entry_count',
-      'dropped_user_entry_count',
-      'assistant_tool_entry_count',
-      'dropped_assistant_tool_entry_count',
-      'newest_entry_forced',
-      'live_user_prompt_found',
-      'summary_estimated_tokens',
-      'cache_expiry_min_tokens',
-    ]) {
-      expect(event).toHaveProperty(key)
-    }
-    expect(Object.keys(event).filter((k) => /[A-Z]/.test(k))).toEqual([
-      'axiomEvent',
-    ])
-  })
-
-  it('omits the cache fields when the trigger is disabled', () => {
-    const logs: Array<Record<string, any>> = []
-    const logger = {
-      debug: () => {},
-      info: (data: Record<string, any>) => logs.push(data),
-      warn: () => {},
-      error: () => {},
-    } as any
-
-    maybeCompactHistory({
-      messages: idleTurn(600),
-      ...overBudget,
-      cacheExpiryMs: null,
-      logger,
-    })
-
-    expect(logs[0].trigger_reason).toBe('context_limit')
-    expect(logs[0]).not.toHaveProperty('cache_gap_ms')
-    expect(logs[0]).not.toHaveProperty('cache_expiry_ms')
-  })
-
-  it('never throws when the logger does', () => {
-    const brokenLogger = {
-      debug: () => {},
-      info: () => {
-        throw new Error('logger unavailable')
-      },
-      warn: () => {},
-      error: () => {},
-    } as any
-
-    expect(() =>
-      maybeCompactHistory({
-        messages: [user('question', ['USER_PROMPT']), assistant('answer')],
-        ...overBudget,
-        logger: brokenLogger,
-      }),
-    ).not.toThrow()
-  })
-})
-
-describe('per-model compaction policies at the runtime entry point', () => {
+describe('per-model compaction policies at the runtime trigger', () => {
   const resumedHistory = (gapMinutes: number): Message[] => [
     { ...assistant('done for now'), sentAt: 1_000_000 },
     {
@@ -582,12 +468,12 @@ describe('per-model compaction policies at the runtime entry point', () => {
     },
   ]
   const compacts = (model: string, gapMinutes: number, tokens: number) =>
-    maybeCompactHistory({
+    evaluateCompactionTrigger({
       ...compactionPolicyForModel(model),
       messages: resumedHistory(gapMinutes),
       contextTokenCount: tokens,
       maxContextLength: 400_000,
-    }) !== null
+    }).trigger !== null
 
   it('the runtime default floor is two summary ceilings (20k + 50k, doubled)', () => {
     expect(DEFAULT_CACHE_EXPIRY_MIN_TOKENS).toBe(2 * (20_000 + 50_000))

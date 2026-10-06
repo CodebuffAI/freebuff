@@ -1,13 +1,17 @@
-// The forced pass. `maybeCompactHistory` answers "is this worth doing unasked";
-// `compactHistoryNow` is what a host calls when the user has already decided, so
-// what it pins is that the decision is the only thing removed — the protected
-// prefix, the fresh tool exchange and the budget are all still the shared ones —
-// plus the two answers a caller has to be able to tell apart: a reduction, and
-// nothing worth doing.
+// The mechanical pass on its own. `evaluateCompactionTrigger` answers "is this
+// worth doing unasked"; `compactHistoryNow` is what runs once that is settled —
+// a user's /compact, or the runtime's fallback when a model compaction fails —
+// so what it pins is that the decision is the only thing removed — the
+// protected prefix, the fresh tool exchange and the budget are all still the
+// shared ones — plus the two answers a caller has to be able to tell apart: a
+// reduction, and nothing worth doing.
 
 import { describe, expect, it } from 'bun:test'
 
-import { compactHistoryNow, maybeCompactHistory } from '../compact-history'
+import {
+  compactHistoryNow,
+  evaluateCompactionTrigger,
+} from '../compact-history'
 import { countTokensMessages } from '../util/token-counter'
 
 import type { JSONValue } from '@codebuff/common/types/json'
@@ -56,12 +60,12 @@ describe('compactHistoryNow', () => {
     const contextTokenCount = countTokensMessages(messages)
     // Well under the budget and the cache is warm: nothing to trigger on.
     expect(
-      maybeCompactHistory({
+      evaluateCompactionTrigger({
         messages,
         contextTokenCount,
         maxContextLength: 400_000,
         cacheExpiryMs: null,
-      }),
+      }).trigger,
     ).toBeNull()
 
     const forced = compactHistoryNow({ messages, maxContextLength: 400_000 })
@@ -130,5 +134,86 @@ describe('compactHistoryNow', () => {
         maxContextLength: 1_000,
       }),
     ).toThrow(/exceed the configured context window/)
+  })
+
+  it('logs the trigger and the pruner-compatible stats', () => {
+    const logs: Array<Record<string, any>> = []
+    const logger = {
+      debug: () => {},
+      info: (data: Record<string, any>) => logs.push(data),
+      warn: () => {},
+      error: () => {},
+    } as any
+
+    compactHistoryNow({
+      messages: settledHistory(),
+      maxContextLength: 400_000,
+      trigger: 'cache_expiry',
+      logger,
+      runId: 'run-1',
+    })
+
+    expect(logs).toHaveLength(1)
+    const [event] = logs
+    expect(event.axiomEvent).toBe('context_compaction_completed')
+    expect(event.agent_run_id).toBe('run-1')
+    expect(event.trigger_reason).toBe('cache_expiry')
+    // Field names the context-pruner already emits, so the two can be queried
+    // as one series. Every key must be snake_case.
+    for (const key of [
+      'mid_turn',
+      'user_budget',
+      'assistant_tool_budget',
+      'previous_summary_entry_count',
+      'user_entry_count',
+      'dropped_user_entry_count',
+      'assistant_tool_entry_count',
+      'dropped_assistant_tool_entry_count',
+      'newest_entry_forced',
+      'live_user_prompt_found',
+      'summary_estimated_tokens',
+    ]) {
+      expect(event).toHaveProperty(key)
+    }
+    expect(Object.keys(event).filter((k) => /[A-Z]/.test(k))).toEqual([
+      'axiomEvent',
+    ])
+  })
+
+  it('reports a pass with no trigger as manual', () => {
+    const logs: Array<Record<string, any>> = []
+    const logger = {
+      debug: () => {},
+      info: (data: Record<string, any>) => logs.push(data),
+      warn: () => {},
+      error: () => {},
+    } as any
+
+    compactHistoryNow({
+      messages: settledHistory(),
+      maxContextLength: 400_000,
+      logger,
+    })
+
+    expect(logs[0].trigger_reason).toBe('manual')
+  })
+
+  it('never throws when the logger does', () => {
+    const brokenLogger = {
+      debug: () => {},
+      info: () => {
+        throw new Error('logger unavailable')
+      },
+      warn: () => {},
+      error: () => {},
+    } as any
+
+    expect(
+      compactHistoryNow({
+        messages: settledHistory(),
+        maxContextLength: 400_000,
+        logger: brokenLogger,
+      }),
+    ).not.toBeNull()
   })
 })

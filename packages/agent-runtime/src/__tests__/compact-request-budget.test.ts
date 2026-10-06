@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { compactMessages, maybeCompactHistory } from '../compact-history'
+import { compactHistoryNow, compactMessages } from '../compact-history'
 import { fitToolResults } from '../util/fit-tool-results'
 import { countTokensMessages } from '../util/token-counter'
 
@@ -37,13 +37,7 @@ const compact = (
   maxContextLength = 4096,
   fixedTokenCount = 500,
 ) =>
-  maybeCompactHistory({
-    messages,
-    contextTokenCount: 100_000,
-    maxContextLength,
-    fixedTokenCount,
-    cacheExpiryMs: null,
-  })!
+  compactHistoryNow({ messages, maxContextLength, fixedTokenCount })!.messages
 
 describe('request-sized compaction', () => {
   it('preserves every call/result in a parallel batch and the current prompt', () => {
@@ -72,6 +66,9 @@ describe('request-sized compaction', () => {
 
   it('keeps steering messages after the fresh tool batch in order', () => {
     const messages = [
+      user('older request'),
+      call('old'),
+      read('old', 'old payload '.repeat(5000)),
       user('Original request'),
       call('a'),
       read('a', 'const value = 1'),

@@ -1118,83 +1118,13 @@ export function evaluateCompactionTrigger(params: {
 }
 
 /**
- * Runtime entry point for `compactContext` agents: decides, compacts and logs.
- * Returns null when the history should be left alone.
- *
- * Never calls a model, so it cannot fail on a provider error and has no
- * fallback path — the previous LLM-summarizing version returned the full
- * history when the call failed, which left the context over budget.
- */
-export function maybeCompactHistory(params: {
-  messages: Message[]
-  contextTokenCount: number
-  maxContextLength: number
-  /** System prompt, tool schemas and next step's scaffolding, outside history. */
-  fixedTokenCount?: number
-  /** Pass null to compact on the context limit only. */
-  cacheExpiryMs?: number | null
-  /** Pass null to take the opportunistic compaction at any size. */
-  cacheExpiryMinTokens?: number | null
-  logger?: Logger
-  runId?: string
-  onCompaction?: (trigger: CompactionTrigger) => void
-}): Message[] | null {
-  const { messages, contextTokenCount, maxContextLength, logger, runId } =
-    params
-
-  const { trigger, cacheGapMs, cacheExpiryMs, cacheExpiryMinTokens } =
-    evaluateCompactionTrigger({
-      messages,
-      contextTokenCount,
-      maxContextLength,
-      cacheExpiryMs: params.cacheExpiryMs,
-      cacheExpiryMinTokens: params.cacheExpiryMinTokens,
-    })
-  if (!trigger) return null
-
-  const result = compactRequestHistory(
-    messages,
-    maxContextLength - (params.fixedTokenCount ?? 0),
-  )
-  try {
-    params.onCompaction?.(trigger)
-  } catch {
-    // Reporting must never block the compaction itself.
-  }
-
-  // Telemetry is best-effort and must never block the compaction itself.
-  try {
-    logger?.info(
-      {
-        axiomEvent: CONTEXT_COMPACTION_COMPLETED_EVENT,
-        agent_run_id: runId,
-        trigger_reason: trigger,
-        context_token_count: contextTokenCount,
-        max_context_length: maxContextLength,
-        ...(cacheGapMs === null ? {} : { cache_gap_ms: cacheGapMs }),
-        ...(cacheExpiryMs === null ? {} : { cache_expiry_ms: cacheExpiryMs }),
-        ...(cacheExpiryMinTokens === null
-          ? {}
-          : { cache_expiry_min_tokens: cacheExpiryMinTokens }),
-        message_count: messages.length,
-        ...result.stats,
-      },
-      'Context compaction completed',
-    )
-  } catch {
-    // Ignore logging failures.
-  }
-
-  return result.messages
-}
-
-/**
  * Compact once, on demand, whatever the triggers say.
  *
- * Same mechanical pass `maybeCompactHistory` runs — same protected prefix, same
- * fresh tool exchange, same budget walk — with the decision removed. A user who
- * asks for it has already decided; `evaluateCompactionTrigger` exists to answer
- * "is this worth doing unasked", which is a different question.
+ * The mechanical pass — protected prefix, fresh tool exchange, budget walk —
+ * with no decision attached. A user who asks for it has already decided;
+ * `evaluateCompactionTrigger` exists to answer "is this worth doing unasked",
+ * which is a different question. It is also the runtime's fallback when a
+ * model compaction fails (`compactWithModelOrFallback`).
  *
  * Returns null when the pass would not make the history smaller. That is not a
  * failure, it is the honest answer for a short conversation: rewriting it would
