@@ -1,5 +1,10 @@
 import { z } from 'zod'
 
+import {
+  SPONSORED_EXECUTION_SURFACES,
+  supabaseFoundationMode,
+} from './sponsored-execution-surface'
+
 /** Client evidence only: the execution host rechecks these facts before Accept. */
 export const sponsoredCapabilityReasonSchema = z.enum([
   'no_git_repository',
@@ -40,112 +45,27 @@ export const sponsoredLocalTargetSchema = z.discriminatedUnion('kind', [
     .object({ kind: z.literal('workspace'), workspaceId: z.string().uuid() })
     .strict(),
 ])
-/**
- * Where a local sponsored run executes. `desktop_windows` (COD-642) runs on
- * the portable floor (`SPONSORED_WINDOWS_CONTAINMENT` in
- * `./sponsored-windows`). A Windows value on the wire admits nothing by
- * itself — the server serves it only behind its server-side switch, every
- * agentic campaign alike when on.
- */
-export const sponsoredExecutionSurfaceSchema = z.enum([
-  'desktop_macos',
-  'desktop_linux',
-  'desktop_windows',
-  'cli_macos',
-  'cli_linux',
-  'cli_wsl',
-])
-export type SponsoredExecutionSurface = z.infer<
-  typeof sponsoredExecutionSurfaceSchema
->
+export {
+  SPONSORED_CLI_EXECUTION_SURFACES,
+  SPONSORED_DESKTOP_EXECUTION_SURFACES,
+  SPONSORED_EXECUTION_SURFACES,
+  SUPABASE_FOUNDATION_MODES,
+  isSponsoredCliExecutionSurface,
+  isSponsoredExecutionSurface,
+  sponsoredCliExecutionSurfaceForRequest,
+  sponsoredDesktopExecutionSurfaceForPlatform,
+  supabaseFoundationMode,
+  type SponsoredCliExecutionSurface,
+  type SponsoredDesktopExecutionSurface,
+  type SponsoredExecutionSurface,
+  type SupabaseFoundationMode,
+} from './sponsored-execution-surface'
 
-/** The Desktop execution surfaces, one per OS a Desktop client reports. */
-export const SPONSORED_DESKTOP_EXECUTION_SURFACES = [
-  'desktop_macos',
-  'desktop_linux',
-  'desktop_windows',
-] as const satisfies readonly SponsoredExecutionSurface[]
-export type SponsoredDesktopExecutionSurface =
-  (typeof SPONSORED_DESKTOP_EXECUTION_SURFACES)[number]
+/** The wire schema of {@link SPONSORED_EXECUTION_SURFACES}. */
+export const sponsoredExecutionSurfaceSchema = z.enum(
+  SPONSORED_EXECUTION_SURFACES,
+)
 
-/**
- * The CLI execution surfaces. macOS runs under the Seatbelt sandbox, Linux and
- * WSL under bubblewrap; the CLI never runs sponsored work on native Windows
- * (its capability reports `windows_no_containment`), so there is no
- * `cli_windows`.
- */
-export const SPONSORED_CLI_EXECUTION_SURFACES = [
-  'cli_macos',
-  'cli_linux',
-  'cli_wsl',
-] as const satisfies readonly SponsoredExecutionSurface[]
-export type SponsoredCliExecutionSurface =
-  (typeof SPONSORED_CLI_EXECUTION_SURFACES)[number]
-
-/** Whether a recorded or reported execution surface is one of the CLI's. */
-export function isSponsoredCliExecutionSurface(
-  surface: string | null | undefined,
-): surface is SponsoredCliExecutionSurface {
-  return (SPONSORED_CLI_EXECUTION_SURFACES as readonly string[]).includes(
-    surface ?? '',
-  )
-}
-
-/**
- * The CLI execution surface a request PROVES it can run a paid sponsored
- * procedure on, or null. The proof is the request's own v2 capability: it must
- * name a CLI surface that belongs to the reported OS (`cli_macos` on macOS,
- * `cli_linux` or `cli_wsl` on Linux -- WSL reports `linux`) with execution
- * `available` and no reason. The CLI reports `available` only when its
- * containment probe passed, so a Linux CLI without `bwrap` is never offered a
- * task whose Accept could only fail.
- *
- * The same OS pairing `/api/ads` applies to a CLI capability
- * (`sponsoredCapabilityMatchesRequest`), and the answer is also what tells
- * `cli_linux` from `cli_wsl`: the reported OS cannot.
- */
-export function sponsoredCliExecutionSurfaceForRequest(
-  reportedOs: string | null | undefined,
-  capability:
-    | {
-        execution: {
-          surface: string
-          status: string
-          reason?: string | undefined
-        }
-      }
-    | null
-    | undefined,
-): SponsoredCliExecutionSurface | null {
-  const execution = capability?.execution
-  if (
-    !execution ||
-    execution.status !== 'available' ||
-    execution.reason !== undefined
-  )
-    return null
-  if (reportedOs === 'macos')
-    return execution.surface === 'cli_macos' ? 'cli_macos' : null
-  if (reportedOs === 'linux')
-    return execution.surface === 'cli_linux' || execution.surface === 'cli_wsl'
-      ? execution.surface
-      : null
-  return null
-}
-
-/**
- * The Desktop execution surface of the OS a Desktop process runs on, or null
- * for an OS Desktop does not run sponsored work on. What the client reports,
- * never what it is granted: the server decides whether that surface is served.
- */
-export function sponsoredDesktopExecutionSurfaceForPlatform(
-  platform: string,
-): SponsoredDesktopExecutionSurface | null {
-  if (platform === 'darwin') return 'desktop_macos'
-  if (platform === 'linux') return 'desktop_linux'
-  if (platform === 'win32') return 'desktop_windows'
-  return null
-}
 export const sponsoredCapabilitySchema = z
   .object({
     schemaVersion: z.literal(2),
@@ -181,20 +101,6 @@ export type CapabilityInspection = z.infer<typeof capabilityInspectionSchema>
 export type SponsoredCapabilityReason = z.infer<
   typeof sponsoredCapabilityReasonSchema
 >
-
-export const SUPABASE_FOUNDATION_MODES = [
-  'foundation-mac',
-  'foundation-desktop',
-  'foundation-backend-desktop',
-  'foundation-local',
-  'foundation-all',
-] as const
-export type SupabaseFoundationMode = (typeof SUPABASE_FOUNDATION_MODES)[number]
-export function supabaseFoundationMode(
-  raw: string | null | undefined,
-): SupabaseFoundationMode | null {
-  return SUPABASE_FOUNDATION_MODES.find((mode) => mode === raw) ?? null
-}
 
 /**
  * The stacks the reviewed Supabase foundation procedure runs on. THE ONE LIST:

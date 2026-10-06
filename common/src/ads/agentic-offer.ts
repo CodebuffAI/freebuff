@@ -42,7 +42,7 @@ import {
   sponsoredCapabilitySchema,
 } from './sponsored-capability'
 import { genericSetupInvitationSchema } from './generic-setup-invitation'
-import { sponsoredInPlaceVersionSchema } from './sponsored-in-place'
+import { SPONSORED_IN_PLACE_VERSION } from './sponsored-in-place'
 
 /** `agenticOfferRoute` on an `/api/ads` request, and `v` on this route's wire. */
 export const AGENTIC_OFFER_ROUTE_VERSION = 1
@@ -134,7 +134,7 @@ export const agenticOfferRequestSchema = z.object({
    * client needs no Git repository to be eligible, so this decides what may
    * be offered; absent is the worktree flow every released build runs.
    */
-  inPlaceExecutionVersion: sponsoredInPlaceVersionSchema.optional(),
+  inPlaceExecutionVersion: z.literal(SPONSORED_IN_PLACE_VERSION).optional(),
   /**
    * Pointer ids to the conversation's trace, never its text
    * (`trace-context.ts`). Unknown here and read with `parseAdTraceContext`, so

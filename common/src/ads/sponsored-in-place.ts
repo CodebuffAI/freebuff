@@ -24,16 +24,14 @@
  * the grant, the target and the terminal vocabulary differ, and an offer can
  * outlive the build that was shown it -- a card offered to an in-place client
  * can be accepted after an update, or by a build that downgraded.
+ *
+ * No zod here: Convex's `ads/proposals.ts` imports this module, and Convex
+ * evaluates a function module's whole import graph on every call. The wire
+ * schema is `z.literal(SPONSORED_IN_PLACE_VERSION)` in `./agentic-offer`.
  */
-
-import { z } from 'zod'
 
 /** `inPlaceExecutionVersion` on the wire, and the only value it may take. */
 export const SPONSORED_IN_PLACE_VERSION = 1
-
-export const sponsoredInPlaceVersionSchema = z.literal(
-  SPONSORED_IN_PLACE_VERSION,
-)
 
 /**
  * Whether this request came from a client that runs in place.

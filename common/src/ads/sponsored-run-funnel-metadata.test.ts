@@ -3,6 +3,12 @@ import { join } from 'node:path'
 
 import { describe, expect, test } from 'bun:test'
 
+import { sponsoredExecutionSurfaceSchema } from './sponsored-capability'
+import {
+  SPONSORED_EXECUTION_SURFACES,
+  isSponsoredExecutionSurface,
+  type SponsoredExecutionSurface,
+} from './sponsored-execution-surface'
 import {
   SPONSORED_PARTIAL_EDITS_COPY,
   sponsoredPartialEditsDiagnostic,
@@ -383,31 +389,105 @@ describe('the schema', () => {
   })
 })
 
-test('telemetry only: the module imports nothing that can bill', () => {
-  const source = readFileSync(
-    join(import.meta.dir, 'sponsored-run-funnel-metadata.ts'),
-    'utf8',
-  )
-  const imports = source.match(/from '[^']+'/g) ?? []
-  expect(imports).toEqual([
+test('telemetry only: the modules import nothing that can bill', () => {
+  const importsOf = (file: string) =>
+    readFileSync(join(import.meta.dir, file), 'utf8').match(/from '[^']+'/g)
+  expect(importsOf('sponsored-run-funnel-metadata.ts')).toEqual([
     "from 'zod'",
     "from './sponsored-capability'",
     "from './sponsored-client-version'",
-    "from './sponsored-in-place'",
+    "from './sponsored-run-funnel-builder'",
+    "from './sponsored-run-funnel-builder'",
   ])
-  // The in-place module is the shared verdict contract and imports only zod.
-  const inPlace = readFileSync(
-    join(import.meta.dir, 'sponsored-in-place.ts'),
-    'utf8',
-  )
-  expect(inPlace.match(/from '[^']+'/g)).toEqual(["from 'zod'"])
-  // The client-version module is pure string handling and imports nothing,
-  // so admitting it widens nothing this test guards.
-  const clientVersion = readFileSync(
-    join(import.meta.dir, 'sponsored-client-version.ts'),
-    'utf8',
-  )
-  expect(clientVersion.match(/from '[^']+'/g)).toBeNull()
+  // The builder reads the metadata TYPE back from the schema module (erased).
+  expect(importsOf('sponsored-run-funnel-builder.ts')).toEqual([
+    "from './sponsored-execution-surface'",
+    "from './sponsored-client-version'",
+    "from './sponsored-in-place'",
+    "from './sponsored-run-funnel-metadata'",
+  ])
+  // The surface list, the in-place verdict contract and the client-version
+  // string handling import nothing, so admitting them widens nothing this
+  // test guards.
+  for (const leaf of [
+    'sponsored-execution-surface.ts',
+    'sponsored-in-place.ts',
+    'sponsored-client-version.ts',
+  ])
+    expect(importsOf(leaf)).toBeNull()
+})
+
+describe('the execution surface the builder records', () => {
+  // The builder used to read the surface with
+  // `sponsoredExecutionSurfaceSchema.safeParse`; it now uses a list check so
+  // Convex need not evaluate zod. These pin the two to the same answer.
+  const OS: Record<SponsoredExecutionSurface, string> = {
+    desktop_macos: 'macos',
+    desktop_linux: 'linux',
+    desktop_windows: 'windows',
+    cli_macos: 'macos',
+    cli_linux: 'linux',
+    cli_wsl: 'linux',
+  }
+  const INVALID: unknown[] = [
+    'cloud',
+    '',
+    ' desktop_macos',
+    'desktop_macos ',
+    'DESKTOP_MACOS',
+    'cli_windows',
+    'desktop',
+    null,
+    undefined,
+    0,
+    true,
+    ['desktop_macos'],
+    { surface: 'desktop_macos' },
+  ]
+
+  test('the list is exactly the schema', () => {
+    expect([...SPONSORED_EXECUTION_SURFACES].sort()).toEqual(
+      [...sponsoredExecutionSurfaceSchema.options].sort(),
+    )
+    for (const value of [...SPONSORED_EXECUTION_SURFACES, ...INVALID])
+      expect(isSponsoredExecutionSurface(value)).toBe(
+        sponsoredExecutionSurfaceSchema.safeParse(value).success,
+      )
+  })
+
+  for (const surface of SPONSORED_EXECUTION_SURFACES) {
+    test(`${surface} is recorded with its OS, on and off Cloud`, () => {
+      for (const project_id of [undefined, 'project_1']) {
+        const metadata = buildSponsoredRunFunnelMetadata({
+          eventType: 'run_failed',
+          row: { project_id, execution_surface: surface },
+        })
+        expect(metadata.execution_surface).toBe(surface)
+        expect(metadata.os).toBe(OS[surface] as typeof metadata.os)
+        expect(
+          sponsoredRunFunnelMetadataSchema.safeParse(metadata).success,
+        ).toBe(true)
+      }
+    })
+  }
+
+  test('an invalid surface is dropped off Cloud and reads as cloud on it', () => {
+    for (const value of INVALID) {
+      const row = { execution_surface: value as string | null | undefined }
+      const local = buildSponsoredRunFunnelMetadata({
+        eventType: 'run_failed',
+        row,
+      })
+      expect('execution_surface' in local).toBe(false)
+      expect('os' in local).toBe(false)
+      const cloud = buildSponsoredRunFunnelMetadata({
+        eventType: 'run_failed',
+        row: { ...row, project_id: 'project_1' },
+      })
+      expect(cloud.execution_surface).toBe('cloud')
+      expect('os' in cloud).toBe(false)
+    }
+  })
 })
 
 describe('the receiver schema', () => {
