@@ -58,30 +58,46 @@ describe('connection-monitor', () => {
     expect(checkConnection).toHaveBeenCalledTimes(1)
   })
 
-  test('repeated subscribe/unsubscribe — simulating a component re-rendering on every streamed token — never resets the backoff or re-probes', async () => {
+  test('repeated subscribe/unsubscribe — simulating a component re-rendering on every streamed token — never re-probes or resets the success streak', async () => {
     const checkConnection = mock(async () => true)
     const monitor = createConnectionMonitor({ checkConnection })
 
-    const unsubscribe1 = monitor.subscribe(() => {})
-    await flush()
-    expect(checkConnection).toHaveBeenCalledTimes(1)
-    expect(timers.length).toBe(1)
-    const scheduledAfterFirstSuccess = timers[0]
+    let currentUnsubscribe = monitor.subscribe(() => {})
+    await flush() // success #1
+    timers[timers.length - 1].fn()
+    await flush() // success #2
+    timers[timers.length - 1].fn()
+    await flush() // success #3 -> consecutiveSuccesses = 3, next tick scheduled ~30s out
+    expect(checkConnection).toHaveBeenCalledTimes(3)
 
     // This is the old bug: a fresh callback identity on every render tore down and recreated
-    // the whole polling effect, firing an immediate probe each time. Simulate 50 "renders".
-    unsubscribe1()
+    // the whole polling effect, firing an immediate probe each time. Simulate 50 "renders" —
+    // each one unsubscribes then resubscribes within the same synchronous tick, exactly as
+    // React's effect cleanup/re-run does for an unstable `onReconnect` identity. Dropping to
+    // zero listeners between the two correctly pauses the loop (see the dedicated pause
+    // tests below); what must NOT happen is a new network probe or a reset of the streak.
     for (let i = 0; i < 50; i++) {
-      const unsubscribe = monitor.subscribe(() => {})
-      unsubscribe()
+      currentUnsubscribe()
+      currentUnsubscribe = monitor.subscribe(() => {})
     }
     await flush()
 
-    // No new network probes, and the original scheduled tick is still the one pending —
-    // resubscribing is just a listener add/remove, never a timer reset.
-    expect(checkConnection).toHaveBeenCalledTimes(1)
-    expect(timers.length).toBe(1)
-    expect(timers[0]).toBe(scheduledAfterFirstSuccess)
+    // No new network probes from the churn itself.
+    expect(checkConnection).toHaveBeenCalledTimes(3)
+
+    // Firing whichever tick the churn left pending makes one real probe...
+    expect(timers.length).toBeGreaterThan(0)
+    timers[timers.length - 1].fn()
+    await flush()
+    expect(checkConnection).toHaveBeenCalledTimes(4)
+
+    // ...and the interval scheduled after THAT success reflects a continuing streak (4
+    // successes land in the 30s bucket), not the old bug's reset to the 10s floor on every
+    // single render.
+    expect(getNextInterval(4)).toBe(30_000)
+    const nextPending = timers[timers.length - 1]
+    expect(nextPending.ms).toBeGreaterThanOrEqual(30_000 * 0.8)
+    expect(nextPending.ms).toBeLessThanOrEqual(30_000 * 1.2)
   })
 
   test('escalates the interval across consecutive successes, matching getNextInterval', async () => {
@@ -189,5 +205,168 @@ describe('connection-monitor', () => {
 
     expect(seen).toEqual([true])
     expect(checkConnection).toHaveBeenCalledTimes(1)
+  })
+
+  test('unsubscribing the last listener pauses the loop — no more probes once it is scheduled', async () => {
+    // Regression test for a bug flagged on PR #5229: unsubscribing (e.g. a BYOK session's
+    // `useConnectionStatus` taking its early return) only removed the listener. The scheduled
+    // tick kept firing forever with nobody listening.
+    const checkConnection = mock(async () => true)
+    const monitor = createConnectionMonitor({ checkConnection })
+
+    const unsubscribe = monitor.subscribe(() => {})
+    await flush()
+    expect(checkConnection).toHaveBeenCalledTimes(1)
+    expect(timers.length).toBe(1)
+
+    unsubscribe()
+
+    // The tick that was already scheduled before the unsubscribe must not fire a probe either.
+    timers[0].fn()
+    await flush()
+
+    expect(checkConnection).toHaveBeenCalledTimes(1)
+  })
+
+  test('resubscribing after a pause resumes polling', async () => {
+    const checkConnection = mock(async () => true)
+    const monitor = createConnectionMonitor({ checkConnection })
+
+    const unsubscribe = monitor.subscribe(() => {})
+    await flush()
+    expect(checkConnection).toHaveBeenCalledTimes(1)
+
+    unsubscribe()
+    await flush()
+    expect(checkConnection).toHaveBeenCalledTimes(1)
+    expect(timers.length).toBe(1) // nothing new scheduled while paused
+
+    // Resubscribing re-arms the loop — debounced rather than firing an immediate probe (see
+    // the "rapid cycles" test below) — instead of leaving it paused forever.
+    const seen: boolean[] = []
+    monitor.subscribe((connected) => seen.push(connected))
+    await flush()
+
+    expect(seen[0]).toBe(true) // cached snapshot, emitted synchronously on subscribe
+    expect(checkConnection).toHaveBeenCalledTimes(1) // still debounced, not an immediate reprobe
+    expect(timers.length).toBe(2) // but the loop did re-arm a tick
+
+    // And that tick, once it fires, makes a real probe — the loop actually resumed, it didn't
+    // just silently re-arm and die.
+    timers[1].fn()
+    await flush()
+    expect(checkConnection).toHaveBeenCalledTimes(2)
+  })
+
+  test('rapid unsubscribe/resubscribe cycles never trigger more than one check per initial interval', async () => {
+    const checkConnection = mock(async () => true)
+    const monitor = createConnectionMonitor({ checkConnection })
+
+    const first = monitor.subscribe(() => {})
+    await flush()
+    expect(checkConnection).toHaveBeenCalledTimes(1)
+
+    // Simulate renders rapidly tearing down and recreating the subscription — immediately
+    // after the one real check, well inside its ~10s initial interval.
+    first()
+    for (let i = 0; i < 20; i++) {
+      const unsubscribe = monitor.subscribe(() => {})
+      unsubscribe()
+    }
+    await flush()
+
+    // Still just the one real probe: each resubscribe is throttled to "whatever's left of the
+    // initial interval," and each subsequent unsubscribe pauses it again before it can fire.
+    expect(checkConnection).toHaveBeenCalledTimes(1)
+  })
+
+  test('an in-flight check resolving after the last listener unsubscribed does not revive the loop', async () => {
+    let resolveCheck: (value: boolean) => void = () => {}
+    const checkConnection = mock(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveCheck = resolve
+        }),
+    )
+    const monitor = createConnectionMonitor({ checkConnection })
+
+    const unsubscribe = monitor.subscribe(() => {})
+    await flush()
+    expect(checkConnection).toHaveBeenCalledTimes(1)
+    // Nothing scheduled yet — the first check is still in flight.
+    expect(timers.length).toBe(0)
+
+    // Last listener leaves while the check is still pending.
+    unsubscribe()
+
+    // Now the in-flight check resolves — after the pause.
+    resolveCheck(true)
+    await flush()
+
+    // A stale resolution must not schedule a new tick, nor flip the cached state via emit.
+    expect(timers.length).toBe(0)
+    expect(monitor.getConnected()).toBe(true) // unchanged from its optimistic default
+  })
+
+  // The shared probe adds `.then`/`.finally` hops, so give continuations a few extra turns.
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+  }
+
+  test('resubscribing while a probe from before the pause is pending adopts it instead of starting another', async () => {
+    let resolveCheck: (value: boolean) => void = () => {}
+    const checkConnection = mock(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveCheck = resolve
+        }),
+    )
+    const monitor = createConnectionMonitor({ checkConnection })
+
+    monitor.subscribe(() => {})()
+    await settle()
+    for (let i = 0; i < 5; i++) monitor.subscribe(() => {})()
+    const seen: boolean[] = []
+    monitor.subscribe((value) => seen.push(value))
+    await settle()
+    expect(checkConnection).toHaveBeenCalledTimes(1)
+
+    resolveCheck(false)
+    await settle()
+
+    // The live subscriber gets the adopted probe's result and the loop carries on from it.
+    expect(seen).toEqual([true, false])
+    expect(checkConnection).toHaveBeenCalledTimes(1)
+    expect(timers.length).toBe(1)
+  })
+
+  test('a probe that settles while paused becomes the next subscriber’s snapshot, without emitting', async () => {
+    let resolveCheck: (value: boolean) => void = () => {}
+    const checkConnection = mock(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveCheck = resolve
+        }),
+    )
+    const monitor = createConnectionMonitor({ checkConnection })
+
+    const paused: boolean[] = []
+    const unsubscribe = monitor.subscribe((value) => paused.push(value))
+    await settle()
+    unsubscribe()
+    resolveCheck(false)
+    await settle()
+
+    expect(paused).toEqual([true]) // only the initial snapshot; the stale result never emits
+    expect(timers.length).toBe(0)
+
+    // Within the initial interval, a new subscriber starts from the fresh (offline) reading
+    // rather than the stale optimistic one, and the next probe waits out the interval.
+    const seen: boolean[] = []
+    monitor.subscribe((value) => seen.push(value))
+    await settle()
+    expect(seen).toEqual([false])
+    expect(checkConnection).toHaveBeenCalledTimes(1)
+    expect(timers.length).toBe(1)
   })
 })

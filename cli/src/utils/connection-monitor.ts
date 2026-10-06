@@ -90,11 +90,53 @@ export function createConnectionMonitor(
   let started = false
   let busy = false
   let stopped = false
+  let lastCheckAt = 0
+  // Bumped whenever the loop pauses (last listener unsubscribes) or stops for good. A
+  // scheduled tick or an in-flight check captures the generation active when it started; if
+  // the generation has since moved on, that tick/check is stale and must not schedule another
+  // one or emit — otherwise it would revive a paused loop with nobody listening. That was the
+  // bug: a BYOK session that unsubscribed (its hook takes the early return for
+  // `hasSelectedByokConnection`) left this loop polling the Codebuff backend forever, since
+  // unsubscribing only removed the listener and never paused the timer.
+  let generation = 0
+  // The one network probe currently awaiting a response, shared by every check that wants a
+  // reading. A loop that resumes while a probe from before its pause is still pending adopts it
+  // instead of starting a second request: the generation guard discards stale continuations,
+  // but it cannot cancel their requests, so without this a fast pause/resume cycle during a
+  // slow health check would stack up concurrent probes.
+  let inFlight: Promise<boolean> | null = null
 
-  const scheduleNext = (interval: number): void => {
-    if (stopped) return
-    if (timeoutId) clearTimeout(timeoutId)
-    timeoutId = setTimeout(() => void check(), interval)
+  const probe = (): Promise<boolean> => {
+    if (!inFlight) {
+      let request: Promise<boolean>
+      try {
+        request = checkConnection()
+      } catch (error) {
+        request = Promise.reject(error)
+      }
+      inFlight = request
+      // Registered before any caller awaits `request`, so it runs first and the slot is free
+      // by the time a continuation might schedule the next probe. Callers await `request`
+      // itself, so sharing adds no extra microtask hops to a check.
+      const release = () => {
+        if (inFlight === request) inFlight = null
+      }
+      request.then(release, release)
+    }
+    return inFlight
+  }
+
+  const clearTimer = (): void => {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+      timeoutId = null
+    }
+  }
+
+  const scheduleNext = (interval: number, gen: number): void => {
+    if (stopped || gen !== generation) return
+    clearTimer()
+    timeoutId = setTimeout(() => void check(gen), interval)
     timeoutId.unref?.()
   }
 
@@ -109,7 +151,11 @@ export function createConnectionMonitor(
     }
   }
 
-  const scheduleFailed = (message: string, error?: unknown): void => {
+  const scheduleFailed = (
+    gen: number,
+    message: string,
+    error?: unknown,
+  ): void => {
     consecutiveSuccesses = 0
     consecutiveFailures++
     const delayMs = failedPollDelayMs({ consecutiveFailures })
@@ -122,18 +168,27 @@ export function createConnectionMonitor(
       message,
     )
     emit(false)
-    scheduleNext(delayMs)
+    scheduleNext(delayMs, gen)
   }
 
-  const check = async (): Promise<void> => {
-    if (stopped) return
+  const check = async (gen: number): Promise<void> => {
+    if (stopped || gen !== generation) return
     if (busy) {
-      scheduleNext(busyRecheckIntervalMs)
+      scheduleNext(busyRecheckIntervalMs, gen)
       return
     }
     try {
-      const ok = await checkConnection()
+      const ok = await probe()
+      lastCheckAt = Date.now()
       if (stopped) return
+      // The generation may have moved on while this awaited — e.g. the last subscriber
+      // unsubscribed mid-check. The reading is still real, so keep it as the snapshot the next
+      // subscriber starts from (it is what `lastCheckAt` now vouches for), but a stale loop must
+      // not emit or reschedule.
+      if (gen !== generation) {
+        connected = ok
+        return
+      }
       if (ok) {
         consecutiveFailures = 0
         consecutiveSuccesses++
@@ -142,12 +197,19 @@ export function createConnectionMonitor(
           jitterPollIntervalMs({
             intervalMs: getNextInterval(consecutiveSuccesses),
           }),
+          gen,
         )
       } else {
-        scheduleFailed('Health check failed, backing off')
+        scheduleFailed(gen, 'Health check failed, backing off')
       }
     } catch (error) {
-      scheduleFailed('Connection check failed; backing off', error)
+      lastCheckAt = Date.now()
+      if (stopped) return
+      if (gen !== generation) {
+        connected = false
+        return
+      }
+      scheduleFailed(gen, 'Connection check failed; backing off', error)
     }
   }
 
@@ -159,10 +221,33 @@ export function createConnectionMonitor(
       listener(connected)
       if (!started) {
         started = true
-        void check()
+        const gen = generation
+        // Resuming shortly after a pause (e.g. a quick unsubscribe/resubscribe cycle) should
+        // not immediately refire a probe — wait out whatever's left of the last check's
+        // interval instead, so toggling quickly never triggers more than one check per
+        // INITIAL_INTERVAL. A probe still pending from before the pause is adopted, not
+        // duplicated (see `probe`).
+        const elapsedSinceLastCheck = lastCheckAt ? Date.now() - lastCheckAt : Infinity
+        if (inFlight) {
+          void check(gen)
+        } else if (elapsedSinceLastCheck < HEALTH_CHECK_CONFIG.INITIAL_INTERVAL) {
+          scheduleNext(
+            HEALTH_CHECK_CONFIG.INITIAL_INTERVAL - elapsedSinceLastCheck,
+            gen,
+          )
+        } else {
+          void check(gen)
+        }
       }
       return () => {
         listeners.delete(listener)
+        // Nobody's listening — pause the loop instead of polling into the void. `started`
+        // stays false so the next subscribe() restarts it; `stopped` stays false so it can.
+        if (listeners.size === 0 && started) {
+          started = false
+          generation++
+          clearTimer()
+        }
       }
     },
     getConnected: () => connected,
@@ -171,8 +256,9 @@ export function createConnectionMonitor(
     },
     stop() {
       stopped = true
+      generation++
       listeners.clear()
-      if (timeoutId) clearTimeout(timeoutId)
+      clearTimer()
     },
   }
 }
