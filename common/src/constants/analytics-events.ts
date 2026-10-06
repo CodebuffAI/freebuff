@@ -454,7 +454,7 @@ export enum AnalyticsEvent {
   // Feature-adoption catch-all. ONE event for the long tail of desktop
   // features (panels, worktrees, diffs, skills, terminal, preview, …), keyed
   // by a bounded `feature` property from
-  // `freebuff-desktop/src/core/features.ts`. A single PostHog insight
+  // `freebuff-desktop/src/shared/features.ts`. A single PostHog insight
   // ("desktop.feature_used, broken down by feature", unique users) answers
   // "what do people actually use?" for the whole app, and adding a feature
   // never means adding an event to this enum or to the sampling lists.

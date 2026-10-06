@@ -25,7 +25,7 @@ The same rule covers generated inputs. `cli/src/agents/bundled-agents.generated.
 
 Tests that need a **service** rather than a variable should skip cleanly and say why, but never in CI. `@codebuff/internal/testing/test-db` probes Postgres once, skips the DB suites locally with the docker command to fix it, and throws when `CODEBUFF_GITHUB_ACTIONS=true` — otherwise a broken CI service container would read as a pass. Gate on **reachability**, never on `!process.env.DATABASE_URL`: the fixtures supply a placeholder URL, so presence stopped meaning availability.
 
-Tests that spawn a server child should race readiness against `proc.exited` and report the child's captured output (see `freebuff-desktop/src/app/server.test.ts`). Polling a dead port surfaces only as "a hook timed out", which names neither the cause nor the process that failed.
+Tests that spawn a server child should race readiness against `proc.exited` and report the child's captured output (see `freebuff-desktop/test/launch-bootstrap.smoke.test.ts`). Polling a dead port surfaces only as "a hook timed out", which names neither the cause nor the process that failed.
 
 ### The CI guard against disappearing tests
 
@@ -349,7 +349,7 @@ bun scripts/flake-hunt.ts --dir cli --rounds 5 --concurrency 3 --hogs 8
 
 # Interrogate one suspect file: cheap enough to run 10 times.
 bunx bun@$(cat freebuff-desktop/.bun-version) scripts/flake-hunt.ts \
-  --cmd "bun test src/app/server.test.ts" --rounds 10
+  --cmd "bun test test/launch-bootstrap.smoke.test.ts" --rounds 10
 ```
 
 It exits non-zero if any run reported a failing test, prints the load average
