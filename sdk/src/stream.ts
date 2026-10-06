@@ -81,7 +81,8 @@ export function createRunStream(
   }
 
   const fail = (error: unknown) => {
-    if (closed) return
+    // Cancellation closes iteration, but an in-flight handler can still fail.
+    if (failure) return
     failure = { error }
     close(true)
     controller.abort(error)
@@ -143,7 +144,7 @@ export function createRunStream(
     })
     .catch((error: unknown) => {
       fail(error)
-      throw error
+      throw failure ? failure.error : error
     })
     .finally(() => {
       signal?.removeEventListener('abort', onAbort)

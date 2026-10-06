@@ -312,6 +312,62 @@ describe('run streams', () => {
     await expect(stream.result).rejects.toBe(error)
   })
 
+  test('preserves executor failures after cancellation', async () => {
+    const run = controlledRun()
+    const stream = createRunStream(options, run.execute)
+    await run.started.promise
+    stream.abort()
+    const error = new Error('Cleanup failed')
+    run.completed.reject(error)
+    await expect(stream.result).rejects.toBe(error)
+  })
+
+  test.each(['event', 'chunk'] as const)(
+    'preserves an in-flight %s callback failure after cancellation',
+    async (kind) => {
+      const run = controlledRun()
+      const callback = deferred<void>()
+      const stream = createRunStream(
+        {
+          ...options,
+          handleEvent: () => callback.promise,
+          handleStreamChunk: () => callback.promise,
+        },
+        run.execute,
+      )
+      const input = await run.started.promise
+      const pending =
+        kind === 'event'
+          ? input.handleEvent?.({ type: 'start', messageHistoryLength: 0 })
+          : input.handleStreamChunk?.('Hello')
+      const reason = new Error('Cancelled')
+      stream.abort(reason)
+      run.completed.resolve(state)
+      const error = new Error('Handler failed after cancellation')
+      callback.reject(error)
+      await pending
+      await expect(stream.result).rejects.toBe(error)
+      expect(input.signal?.reason).toBe(reason)
+    },
+  )
+
+  test('preserves buffer overflow when the executor rejects on abort', async () => {
+    const stream = createRunStream(
+      { ...options, maxBufferedEvents: 1 },
+      async (run) => {
+        await run.handleStreamChunk?.('one')
+        await run.handleStreamChunk?.('two')
+        throw new Error('Executor aborted')
+      },
+    )
+    await expect(stream.result).rejects.toBeInstanceOf(
+      RunStreamBufferOverflowError,
+    )
+    await expect(collect(stream)).rejects.toBeInstanceOf(
+      RunStreamBufferOverflowError,
+    )
+  })
+
   test.each(['event', 'chunk'] as const)(
     'cancels when a %s callback rejects',
     async (kind) => {

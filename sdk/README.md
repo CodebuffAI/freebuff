@@ -317,11 +317,15 @@ const partialRun = await stream.result
 Consume the stream while the run is active. It buffers at most **1,024 unread
 events/chunks** by default; set `maxBufferedEvents` to a positive safe integer to
 change that limit. If the buffer fills, the run is cancelled and both iteration
-and `stream.result` reject with `RunStreamBufferOverflowError`. Events are never
-silently dropped to make room.
+and `stream.result` reject with `RunStreamBufferOverflowError`. Overflow discards
+all unread events already in the buffer. Events are never silently dropped to
+make room while keeping the stream running.
 
 Unexpected execution exceptions and explicit callback failures also reject
-iteration and `stream.result`. Runtime error events remain event data, and an
+iteration and `stream.result`. Errors from an in-flight callback still reject
+`stream.result` after cancellation has ended iteration. The first stream failure
+is preserved if cancelling the runtime produces another exception.
+Runtime error events remain event data, and an
 agent failure can resolve `stream.result` with `output.type === 'error'`, just
 like `run()`. Streaming skips the client's default throwing error-event handler;
 explicit handlers retain their behavior. Await `stream.result` even when you
