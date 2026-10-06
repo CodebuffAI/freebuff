@@ -98,6 +98,24 @@ export const FREEBUFF_CLIENT_DESKTOP = 'desktop'
  *  sign-ins. Not a credential. */
 export const FREEBUFF_INSTALL_ID_HEADER = 'x-freebuff-install-id'
 
+/**
+ * Whether Freebuff Desktop's window was in front of the user when a
+ * completions request left: `watching` (focused, recent input), `visible`
+ * (on screen, another app focused) or `away` (hidden, minimized, locked or
+ * idle). Omitted when the app cannot tell.
+ */
+export const FREEBUFF_ATTENTION_HEADER = 'x-freebuff-attention'
+export const FREEBUFF_ATTENTION_STATES = ['watching', 'visible', 'away'] as const
+export type FreebuffAttention = (typeof FREEBUFF_ATTENTION_STATES)[number]
+
+export function parseFreebuffAttention(
+  value: unknown,
+): FreebuffAttention | undefined {
+  return (FREEBUFF_ATTENTION_STATES as readonly unknown[]).includes(value)
+    ? (value as FreebuffAttention)
+    : undefined
+}
+
 /** Client-persisted identity for a possibly unacknowledged Desktop POST. */
 export const FREEBUFF_DESKTOP_ATTEMPT_HEADER = 'x-freebuff-desktop-attempt-id'
 
