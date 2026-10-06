@@ -33,6 +33,17 @@ describe('shiftUtcDay', () => {
   it('shifts forward too (the rollup uses +1 for the day-end bound)', () => {
     expect(shiftUtcDay('2026-12-31', 1)).toBe('2027-01-01')
   })
+
+  it('crosses month ends and leap days going forward (day-by-day loops)', () => {
+    expect(shiftUtcDay('2026-01-31', 1)).toBe('2026-02-01')
+    expect(shiftUtcDay('2026-02-28', 1)).toBe('2026-03-01')
+    expect(shiftUtcDay('2024-02-28', 1)).toBe('2024-02-29')
+  })
+
+  it('spans a year-long lookback, across a leap day', () => {
+    expect(shiftUtcDay('2026-10-06', -365)).toBe('2025-10-06')
+    expect(shiftUtcDay('2024-03-01', -366)).toBe('2023-03-01')
+  })
 })
 
 describe('todayUtc', () => {
