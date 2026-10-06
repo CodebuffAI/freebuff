@@ -12,7 +12,6 @@ export default tseslint.config(
       '**/.next/*',
       '**/.contentlayer/*',
       '**/node_modules/*',
-      'agents-graveyard/**', // Archived/deprecated agents - no need to lint
     ],
   },
 
