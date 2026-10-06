@@ -11,6 +11,7 @@ import { useTheme } from '../hooks/use-theme'
 import { useChatStore } from '../state/chat-store'
 import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { useByokSelectionStore } from '../utils/byok'
+import { IS_FREEBUFF } from '../utils/constants'
 import { freebucksOf } from '../utils/freebucks'
 import { formatElapsedTime } from '../utils/format-elapsed-time'
 import { formatContextUsage } from '../utils/format-token-count'
@@ -174,7 +175,12 @@ export const StatusBar = ({
         )
 
       case 'connecting':
-        return <ShimmerText text="connecting..." />
+        // The connection monitor starts optimistic; this state means a check failed.
+        return (
+          <span fg={theme.warning}>
+            {`Can't reach ${IS_FREEBUFF ? 'Freebuff' : 'Codebuff'}'s servers. Retrying… Try another network.`}
+          </span>
+        )
 
       case 'waiting':
         return (
@@ -290,7 +296,13 @@ export const StatusBar = ({
           flexBasis: 0,
         }}
       >
-        <text style={{ wrapMode: 'none' }}>{statusIndicatorContent}</text>
+        <text
+          style={{
+            wrapMode: statusIndicatorState.kind === 'connecting' ? 'word' : 'none',
+          }}
+        >
+          {statusIndicatorContent}
+        </text>
       </box>
 
       <box style={{ flexShrink: 0, zIndex: 1 }}>
@@ -300,9 +312,9 @@ export const StatusBar = ({
       <box
         style={{
           zIndex: 1,
-          flexGrow: 1,
+          flexGrow: statusIndicatorState.kind === 'connecting' ? 0 : 1,
           flexShrink: 1,
-          flexBasis: 0,
+          flexBasis: statusIndicatorState.kind === 'connecting' ? 'auto' : 0,
           flexDirection: 'row',
           justifyContent: 'flex-end',
           alignItems: 'center',
