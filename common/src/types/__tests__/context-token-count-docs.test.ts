@@ -30,9 +30,16 @@ const SOURCES = [
     'types',
     'agent-definition.ts',
   ),
+]
+
+const CANONICAL_TYPES_MODULE =
+  '@codebuff/common/templates/initial-agents-dir/types/agent-definition'
+
+// `agents/` (published) and `.agents/` (local templates, absent from the
+// published export, hence the existence check) used to carry hand-kept copies
+// of the public type, and those copies drifted. They now re-export it.
+const REEXPORTS = [
   join(REPO_ROOT, 'agents', 'types', 'agent-definition.ts'),
-  // Local agent templates carry a copy of the same public type. Absent from
-  // the published export, hence the existence check rather than a hard path.
   join(REPO_ROOT, '.agents', 'types', 'agent-definition.ts'),
 ].filter((path) => existsSync(path))
 
@@ -51,6 +58,17 @@ describe('the contextTokenCount docstrings', () => {
     // stop meaning anything.
     expect(SOURCES.length).toBeGreaterThanOrEqual(2)
   })
+
+  for (const path of REEXPORTS) {
+    const where = path.slice(REPO_ROOT.length + 1)
+    test(`${where} re-exports the canonical type instead of copying it`, () => {
+      const source = readFileSync(path, 'utf8')
+      expect(source, where).toContain(
+        `export type * from '${CANONICAL_TYPES_MODULE}'`,
+      )
+      expect(source, where).not.toContain('contextTokenCount')
+    })
+  }
 
   for (const path of SOURCES) {
     const doc = contextTokenCountDoc(readFileSync(path, 'utf8'))

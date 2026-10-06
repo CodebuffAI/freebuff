@@ -93,6 +93,13 @@ export type AuxiliaryMessageData = {
   providerOptions?: ProviderMetadata
   tags?: string[]
 
+  /**
+   * Unix timestamp (ms) when the message was added to history.
+   * Used to detect prompt cache expiry (>5 min gap = cache miss).
+   * This field is stripped before sending to the LLM.
+   */
+  sentAt?: number
+
   /** @deprecated Use tags instead. */
   timeToLive?: 'agentStep' | 'userPrompt'
   /** @deprecated Use tags instead. */
