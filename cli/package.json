@@ -29,7 +29,7 @@
     "./src/pre-init/*.ts"
   ],
   "engines": {
-    "bun": "1.3.11"
+    "bun": "1.3.14"
   },
   "dependencies": {
     "@codebuff/sdk": "workspace:*",
