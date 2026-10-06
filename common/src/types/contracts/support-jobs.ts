@@ -3,17 +3,21 @@
  * `POST /api/admin/support-jobs` (COD-742 Wave A; docs/convex-retirement-
  * wave-a.md, "Issue reports and feedback messages"). The worker owns the
  * retry; freebuff-web owns the work, because the email templates, Resend, the
- * blob store (screenshot URLs) and the Convex admin client (thread context,
- * the feedback-hub upsert) all live there.
+ * blob store (screenshot URLs) and the Convex admin client (thread context)
+ * all live there. The `feed_hub` job went with the frozen feedback hub
+ * (docs/freebuff-feedback-hub.md).
  *
  * Plain types and a hand-written parser rather than zod: both a Next route
  * and a leaf-only package read this.
  */
 
-export const SUPPORT_JOB_SOURCES = ['issue_report', 'feedback_message'] as const
+export const SUPPORT_JOB_SOURCES = [
+  'issue_report',
+  'feedback_message',
+] as const
 export type SupportJobSource = (typeof SUPPORT_JOB_SOURCES)[number]
 
-export const SUPPORT_JOBS = ['send_notification', 'feed_hub'] as const
+export const SUPPORT_JOBS = ['send_notification'] as const
 export type SupportJobName = (typeof SUPPORT_JOBS)[number]
 
 export type SupportJobRequest = {
@@ -31,10 +35,6 @@ export type SupportJobOutcome =
   | 'sent'
   /** Resend refused, or is not configured: recorded on the row, not retried. */
   | 'failed'
-  /** The hub upsert ran (inserted, updated or unchanged). */
-  | 'fed'
-  /** The hub's own kill switch is on; the row will be covered when it is lifted (see the runbook). */
-  | 'hub_disabled'
 
 export type SupportJobResponse = {
   job: SupportJobName

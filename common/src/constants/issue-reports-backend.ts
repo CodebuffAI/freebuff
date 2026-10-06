@@ -10,15 +10,16 @@
  *              registry entries answer `unknown_function`.
  * - `postgres` every write is ONE Postgres transaction (per-user advisory
  *              lock, the 24h quota, the INSERT, and the notification email
- *              plus the feedback-hub copy as graphile jobs). The web form, the
+ *              as a graphile job). The web form, the
  *              admin view and `/api/feedback` call Postgres directly; the
  *              native apps keep calling the same Convex functions, which
  *              forward the submit to freebuff-web and answer the quota with a
  *              shim. The Convex functions stay deployed as the rollback.
  *
- * One constant for both tables: they share the feedback-hub feed, the legacy
- * sweep and the email path, and the sweep must stop reading BOTH Convex
- * copies at the same moment the writers leave them.
+ * One constant for both tables: they share the email path and the admin
+ * reads (`/web/admin/user-feedback` reads `feedback_message` from whichever
+ * store this names). The feedback-hub feed and sweep they also shared are gone
+ * with the frozen hub (docs/freebuff-feedback-hub.md).
  *
  * Imported by Convex as well as by the Next servers, so it must stay a leaf.
  * A flip is a reviewed one-line diff here, never an env var; the revert is the
