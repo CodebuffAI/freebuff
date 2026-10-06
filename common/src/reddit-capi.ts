@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 
 import { IS_PROD } from '@codebuff/common/env'
-import { extractClientIp } from '@codebuff/common/util/rate-limit'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type { RedditCapiEventName } from '@codebuff/common/util/reddit-capi-events'
 
@@ -238,17 +237,22 @@ export function redditConversionId(
  * Identity fields shared by every server-side Reddit conversion call, built
  * from the incoming request's headers. Surface-specific attribution (click id,
  * uuid) is layered on by callers that have it.
+ *
+ * The IP is resolved by the caller, from an edge-verified source, and passed
+ * in. It is never read from `x-real-ip` or the leftmost `x-forwarded-for`
+ * entry here: both pass through Cloudflare from the caller, so they would let
+ * a caller choose what we tell Reddit about them.
  */
 export function redditUserFromRequestHeaders(params: {
   userId: string
   email?: string | null
+  ipAddress?: string | null
   headers: { get(name: string): string | null }
 }): RedditCapiUser {
-  const ip = extractClientIp(params.headers)
   return {
     email: params.email,
     externalId: params.userId,
-    ipAddress: ip === 'unknown' ? undefined : ip,
+    ipAddress: params.ipAddress || undefined,
     userAgent: params.headers.get('user-agent')?.trim() || undefined,
   }
 }

@@ -38,19 +38,3 @@ export function createFixedWindowRateLimiter(opts: {
     },
   }
 }
-
-/**
- * Best-effort client IP for per-IP rate limiting on the unauthenticated ingest
- * endpoints. Prefers the proxy-set `x-real-ip` (harder to spoof than the
- * left-most `x-forwarded-for` token). Accepts any Headers-like object so it
- * works with `NextRequest.headers` without a Next dependency here.
- */
-export function extractClientIp(headers: {
-  get(name: string): string | null
-}): string {
-  return (
-    headers.get('x-real-ip')?.trim() ||
-    headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    'unknown'
-  )
-}
