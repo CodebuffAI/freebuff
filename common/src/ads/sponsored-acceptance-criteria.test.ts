@@ -10,10 +10,10 @@ import {
   mapAdvertiserSuccessCheck,
   parseAcceptanceCriteriaContract,
   parseReviewAcceptanceCriteria,
-  sha256Hex,
   summarizeAcceptanceCriteria,
   type AcceptanceCriteriaContract,
 } from './sponsored-acceptance-criteria'
+import { sha256Hex } from '../util/hash'
 
 const fixture = (): AcceptanceCriteriaContract => ({
   version: ACCEPTANCE_CRITERIA_CONTRACT_VERSION,
