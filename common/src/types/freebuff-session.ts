@@ -3,6 +3,12 @@ import type { FreebuffDesktopConcurrency } from '../constants/freebuff-model-ent
 import type { FreebuffStandingInfo } from '../constants/freebuff-standing'
 import { applyFreebucksPriceChanges } from '../util/freebuff-price-changes'
 
+/** Confirmed Freebucks returned to each original funding source. */
+export interface FreebuffFreebucksRefundSources {
+  daily: number
+  wallet: number
+}
+
 /**
  * Wire-level shapes returned by `/api/v1/freebuff/session`. Source of truth
  * for the CLI (which deserializes these) and the server (which serializes
@@ -845,7 +851,9 @@ export type FreebuffSessionAdmissionResponse = (
       status: 'ended'
       /** Final early-end refund receipt, including zero; retries return the same amount. */
       freebucksRefund?: number
-      /** Final usage is still outstanding; replay DELETE with the same instance for its receipt. */
+      /** The original funding sources restored by the confirmed refund. */
+      freebucksRefundSources?: FreebuffFreebucksRefundSources
+      /** Settlement is outstanding; replay DELETE with the same instance for its receipt. */
       freebucksRefundPending?: boolean
       accessTier?: FreebuffAccessTier
       instanceId?: string
