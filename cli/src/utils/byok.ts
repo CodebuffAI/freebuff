@@ -55,16 +55,6 @@ export function isByokSetupOpen(): boolean {
 }
 
 /**
- * True when the chat may be shown without a Freebuff session: a connection is
- * selected, or the user is setting one up.
- */
-export function useBypassesFreebuffSession(): boolean {
-  return useByokSelectionStore(
-    (state) => state.selected !== undefined || state.setupOpen,
-  )
-}
-
-/**
  * CLI keys are deliberately environment references. A command may name an
  * environment variable, but it can never receive, echo, or persist its value.
  * The shared store keeps Desktop and CLI connection metadata together, while

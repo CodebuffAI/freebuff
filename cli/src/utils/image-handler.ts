@@ -6,7 +6,6 @@ import {
   SUPPORTED_IMAGE_EXTENSIONS,
   MAX_IMAGE_FILE_SIZE,
   MAX_IMAGE_BASE64_SIZE,
-  MAX_TOTAL_IMAGE_SIZE,
   IMAGE_EXTENSIONS_PATTERN,
   getImageMimeType,
   isProviderSupportedImageMediaType,
@@ -46,27 +45,6 @@ interface CompressionResult {
 // Compression settings for iterative compression
 const COMPRESSION_QUALITIES = [85, 70, 50, 30]
 const DIMENSION_LIMITS = [1500, 1200, 800, 600]
-
-/**
- * Validates total size of multiple images
- */
-export function validateTotalImageSize(imageParts: Array<{ size?: number }>): {
-  valid: boolean
-  error?: string
-} {
-  const totalSize = imageParts.reduce((sum, part) => sum + (part.size || 0), 0)
-
-  if (totalSize > MAX_TOTAL_IMAGE_SIZE) {
-    const totalMB = (totalSize / (1024 * 1024)).toFixed(1)
-    const maxMB = (MAX_TOTAL_IMAGE_SIZE / (1024 * 1024)).toFixed(1)
-    return {
-      valid: false,
-      error: `Total image size too large: ${totalMB}MB (max ${maxMB}MB)`,
-    }
-  }
-
-  return { valid: true }
-}
 
 /**
  * Normalizes a user-provided file path by handling escape sequences.

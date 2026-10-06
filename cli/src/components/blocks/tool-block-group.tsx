@@ -9,10 +9,6 @@ interface ToolBlockGroupProps {
   toolBlocks: Extract<ContentBlock, { type: 'tool' }>[]
   keyPrefix: string
   startIndex: number
-  /** @deprecated No longer used for margin calculation */
-  nextIndex: number
-  /** @deprecated No longer used for margin calculation */
-  siblingBlocks: ContentBlock[]
   availableWidth: number
   onToggleCollapsed: (id: string) => void
   markdownPalette: MarkdownPalette

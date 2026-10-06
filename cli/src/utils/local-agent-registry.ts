@@ -486,11 +486,3 @@ export const __resetLocalAgentRegistryForTests = (): void => {
   userAgentFilePaths = new Map()
   mcpServersCache = {}
 }
-
-/**
- * Get the currently loaded MCP servers from mcp.json.
- * Useful for debugging and displaying loaded MCP configuration.
- */
-export const getLoadedMCPServers = (): Record<string, MCPConfig> => {
-  return { ...mcpServersCache }
-}

@@ -1,6 +1,4 @@
-import { Queue } from './arrays'
 import { getCliEnv } from './env'
-import { clamp } from './math'
 
 import type { CliEnv } from '../types/env'
 import type { ScrollAcceleration } from '@opentui/core'
@@ -75,69 +73,6 @@ export class ConstantScrollAccel implements ScrollAcceleration {
   }
 
   reset(): void {
-    this.buffer = 0
-  }
-}
-
-type LinearScrollAccelOptions = {
-  /** How fast to scale the scrolling. */
-  multiplier?: number
-
-  /** What to cap the scrolling speed at.
-   *
-   * This will most likely be ommitted.
-   */
-  maxRows?: number
-
-  /** How long to look back for scroll events.
-   *
-   * This will most likely be omitted.
-   */
-  rollingWindowMs?: number
-}
-
-/** Estimates the scrolling speed based on the frequency of scroll events.
- *
- * The number of lines scrolled is proportional to the number of scroll events
- * in the last `rollingWindowMs`.
- */
-export class LinearScrollAccel implements ScrollAcceleration {
-  private rollingWindowMs: number
-  private multiplier: number
-  private maxRows: number
-  private tickHistory: Queue<number>
-  private buffer: number
-
-  constructor(private opts: LinearScrollAccelOptions = {}) {
-    this.rollingWindowMs = opts.rollingWindowMs ?? 100
-    this.multiplier = opts.multiplier ?? 0.3
-    this.maxRows = opts.maxRows ?? Infinity
-    this.tickHistory = new Queue<number>(undefined, 100)
-    this.buffer = 0
-  }
-
-  /** Calculates the average number of scroll events */
-  tick(now = Date.now()): number {
-    this.tickHistory.enqueue(now)
-
-    let oldestTick = this.tickHistory.peek() ?? now
-    while (oldestTick < now - this.rollingWindowMs) {
-      this.tickHistory.dequeue()
-      oldestTick = this.tickHistory.peek() ?? now
-    }
-
-    this.buffer += clamp(
-      this.tickHistory.length * this.multiplier,
-      -this.maxRows,
-      this.maxRows,
-    )
-    const rows = Math.floor(this.buffer)
-    this.buffer -= rows
-    return rows
-  }
-
-  reset(): void {
-    this.tickHistory.clear()
     this.buffer = 0
   }
 }

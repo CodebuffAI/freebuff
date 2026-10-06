@@ -32,12 +32,6 @@ export const ErrorBoundaryPlaceholder = memo(
 )
 
 /**
- * @deprecated Use `ErrorBoundaryPlaceholder` instead. This alias exists for backward
- * compatibility but the name is misleading since it doesn't actually catch errors.
- */
-export const ErrorBoundary = ErrorBoundaryPlaceholder
-
-/**
  * Helper to safely render content with error handling.
  * Use this when you need to catch render errors in a functional context.
  */

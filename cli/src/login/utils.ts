@@ -3,25 +3,6 @@
  */
 
 /**
- * Calculates the relative luminance of a hex color to determine if it's light or dark mode
- */
-export function isLightModeColor(hexColor: string): boolean {
-  if (!hexColor) return false
-
-  const hex = hexColor.replace('#', '')
-  if (hex.length < 6) {
-    return false
-  }
-
-  const r = parseInt(hex.substring(0, 2), 16)
-  const g = parseInt(hex.substring(2, 4), 16)
-  const b = parseInt(hex.substring(4, 6), 16)
-
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  return luminance > 0.5
-}
-
-/**
  * Formats a URL for display by wrapping it at logical breakpoints
  */
 export function formatUrl(url: string, maxWidth?: number): string[] {
@@ -145,39 +126,5 @@ export function calculateResponsiveLayout(
     sectionMarginBottom,
     contentMaxWidth,
     maxUrlWidth,
-  }
-}
-
-/**
- * Calculates modal height based on terminal size and whether credentials are invalid
- */
-export function calculateModalDimensions(
-  terminalHeight: number,
-  hasInvalidCredentials: boolean,
-  defaultHeight = 24,
-  verticalMargin = 2,
-  maxBaseHeight = 22,
-  warningBannerHeight = 3,
-) {
-  // Calculate available terminal height
-  const availableHeight = terminalHeight || defaultHeight
-
-  // Calculate base modal height (terminal height minus margins, capped at max)
-  const baseModalHeight = Math.min(
-    availableHeight - verticalMargin,
-    maxBaseHeight,
-  )
-
-  // Add warning banner height if credentials are invalid
-  const totalContentHeight =
-    baseModalHeight + (hasInvalidCredentials ? warningBannerHeight : 0)
-
-  // Final modal height cannot exceed available terminal height
-  const modalHeight = Math.min(totalContentHeight, availableHeight)
-
-  return {
-    modalHeight,
-    baseModalHeight,
-    availableHeight,
   }
 }

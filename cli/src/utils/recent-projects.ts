@@ -67,48 +67,6 @@ export const loadRecentProjects = (): RecentProject[] => {
 }
 
 /**
- * Clear all recent projects
- */
-export const clearRecentProjects = (): void => {
-  const recentProjectsPath = getRecentProjectsPath()
-
-  try {
-    if (fs.existsSync(recentProjectsPath)) {
-      fs.writeFileSync(recentProjectsPath, JSON.stringify([], null, 2))
-    }
-  } catch (error) {
-    logger.debug(
-      { error: error instanceof Error ? error.message : String(error) },
-      'Error clearing recent projects',
-    )
-  }
-}
-
-/**
- * Remove a specific project from the recent projects list
- */
-export const removeRecentProject = (projectPath: string): void => {
-  const recentProjectsPath = getRecentProjectsPath()
-
-  try {
-    const existingProjects = loadRecentProjects()
-    const filteredProjects = existingProjects.filter(
-      (p) => p.path !== projectPath,
-    )
-
-    fs.writeFileSync(
-      recentProjectsPath,
-      JSON.stringify(filteredProjects, null, 2),
-    )
-  } catch (error) {
-    logger.debug(
-      { error: error instanceof Error ? error.message : String(error) },
-      'Error removing recent project',
-    )
-  }
-}
-
-/**
  * Save a project to the recent projects list.
  * Updates the timestamp if the project already exists, otherwise adds it.
  * Keeps only the most recent MAX_RECENT_PROJECTS projects.

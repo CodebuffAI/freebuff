@@ -607,12 +607,3 @@ export function setApiClientAuthToken(authToken: string | undefined): void {
   // checks if the token has changed and recreates the client if needed.
   // This avoids race conditions where the client is nullified but not yet recreated.
 }
-
-/**
- * Reset the shared client (mainly for testing)
- */
-export function resetApiClient(): void {
-  sharedClient = null
-  sharedAuthToken = undefined
-  clientCreatedWithToken = undefined
-}

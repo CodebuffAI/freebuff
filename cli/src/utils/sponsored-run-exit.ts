@@ -34,7 +34,7 @@
  * ## Why every signal converges here
  *
  * `renderer-cleanup.ts` routes SIGTERM, SIGHUP and SIGINT to `exitCliCleanly`,
- * and `use-freebuff-ctrl-c-exit.ts` routes Ctrl-C there too -- stdin is in raw
+ * and `use-exit-handler.ts` routes Ctrl-C there too -- stdin is in raw
  * mode, so SIGINT never fires for the key and it arrives as an ordinary
  * OpenTUI event. One seam covers all four. SIGKILL cannot be caught by anyone,
  * so a row left `running` by one is closed on the way back UP rather than on

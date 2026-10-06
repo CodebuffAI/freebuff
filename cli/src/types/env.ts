@@ -7,7 +7,7 @@
  * - Binary build configuration
  */
 
-import type { BaseEnv, ClientEnv } from '@codebuff/common/types/contracts/env'
+import type { BaseEnv } from '@codebuff/common/types/contracts/env'
 
 /**
  * CLI-specific env vars for terminal/IDE detection and editor preferences.
@@ -111,16 +111,3 @@ export type CliEnv = BaseEnv & {
   NODE_TLS_REJECT_UNAUTHORIZED?: string
   NODE_EXTRA_CA_CERTS?: string
 }
-
-/**
- * Full CLI env deps combining client env and CLI env.
- */
-export type CliEnvDeps = {
-  clientEnv: ClientEnv
-  env: CliEnv
-}
-
-/**
- * Function type for getting CLI env values.
- */
-export type GetCliEnvFn = () => CliEnv

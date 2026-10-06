@@ -209,7 +209,7 @@ const AgentBody = memo(
           )
         },
 
-        onToolGroup: (toolBlocks, startIndex, nextIndex) => {
+        onToolGroup: (toolBlocks, startIndex) => {
           const p = propsRef.current
           return (
             <ToolBlockGroup
@@ -217,8 +217,6 @@ const AgentBody = memo(
               toolBlocks={toolBlocks}
               keyPrefix={p.keyPrefix}
               startIndex={startIndex}
-              nextIndex={nextIndex}
-              siblingBlocks={p.nestedBlocks}
               availableWidth={p.availableWidth}
               onToggleCollapsed={p.onToggleCollapsed}
               markdownPalette={p.markdownPalette}

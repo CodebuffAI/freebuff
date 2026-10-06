@@ -17,7 +17,6 @@ import {
   getOscDetectedTheme,
   initializeThemeWatcher,
   setThemeResolver,
-  setLastDetectedTheme,
   setupFileWatchers,
 } from '../utils/theme-system'
 
@@ -96,7 +95,6 @@ export function initializeThemeStore() {
   setupFileWatchers()
 
   const initialThemeName = detectSystemTheme()
-  setLastDetectedTheme(initialThemeName)
   const initialTheme = buildTheme(
     cloneChatTheme(chatThemes[initialThemeName]),
     initialThemeName,

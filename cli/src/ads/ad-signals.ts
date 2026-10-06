@@ -50,10 +50,6 @@ export function noteAdUserSend(now: number = Date.now()): void {
   notify(sendListeners, now)
 }
 
-export function getAdLastSendAt(): number | null {
-  return lastSendAt
-}
-
 export function subscribeAdUserSend(listener: Listener<number>): () => void {
   sendListeners.add(listener)
   return () => {

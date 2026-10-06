@@ -410,17 +410,6 @@ export const appendTextToAgentBlock = (
     textType,
   })
 
-export const replaceTextInAgentBlock = (
-  blocks: ContentBlock[],
-  agentId: string,
-  text: string,
-) =>
-  updateAgentText(blocks, agentId, {
-    type: 'text',
-    mode: 'replace',
-    content: text,
-  })
-
 export const appendToolToAgentBlock = (
   blocks: ContentBlock[],
   agentId: string,

@@ -459,13 +459,3 @@ export function clientEnvironmentHeaders(): Record<string, string> {
     ? { [FREEBUFF_CLIENT_ENV_HEADER]: getClientEnvironmentDescriptor() }
     : {}
 }
-
-/** Test-only. */
-export function resetClientEnvironmentForTest(): void {
-  inputs = null
-  ancestry = UNKNOWN_ANCESTRY
-  colorReply = 'na'
-  systemZone = null
-  cached = null
-  probe = null
-}

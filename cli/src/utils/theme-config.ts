@@ -50,34 +50,6 @@ export const defaultThemeConfig: ThemeConfig = {
 export let themeConfig: ThemeConfig = defaultThemeConfig
 
 /**
- * Update the active theme configuration
- * @param config - New configuration (will be merged with defaults)
- */
-export const setThemeConfig = (config: Partial<ThemeConfig>): void => {
-  themeConfig = {
-    ...defaultThemeConfig,
-    ...config,
-    plugins: [...(defaultThemeConfig.plugins ?? []), ...(config.plugins ?? [])],
-  }
-}
-
-/**
- * Register a theme plugin
- * @param plugin - Plugin to register
- */
-export const registerThemePlugin = (plugin: ThemePlugin): void => {
-  if (!themeConfig.plugins) {
-    themeConfig.plugins = []
-  }
-  // Check if plugin already registered
-  if (themeConfig.plugins.some((p) => p.name === plugin.name)) {
-    console.warn(`Theme plugin "${plugin.name}" is already registered`)
-    return
-  }
-  themeConfig.plugins.push(plugin)
-}
-
-/**
  * Resolve 'default' color values to fallback colors
  * Components should never see 'default' - it's resolved during theme building
  */

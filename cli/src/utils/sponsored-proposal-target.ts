@@ -129,8 +129,3 @@ export function sponsoredWorkspaceId(root: string): string | null {
     return null
   }
 }
-
-/** Test-only: forget the process-wide answer. */
-export function resetSponsoredProposalTarget(): void {
-  cached = null
-}

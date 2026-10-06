@@ -215,18 +215,6 @@ export const getAuthToken = (): string | undefined => {
 }
 
 /**
- * Check if the user has authentication credentials (but doesn't validate them)
- */
-export const hasAuthCredentials = (): boolean => {
-  return !!getAuthTokenDetails().token
-}
-
-export interface AuthValidationResult {
-  authenticated: boolean
-  hasInvalidCredentials: boolean
-}
-
-/**
  * Read existing credentials file, returns empty object if missing/invalid.
  *
  * Drops `chatgptOAuth`, which the removed ChatGPT integration wrote. Both

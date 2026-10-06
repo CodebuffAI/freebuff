@@ -140,7 +140,7 @@ export const BlocksRenderer = memo(
           )
         },
 
-        onToolGroup: (toolBlocks, startIndex, nextIndex) => {
+        onToolGroup: (toolBlocks, startIndex) => {
           const p = propsRef.current
           return (
             <ToolBlockGroup
@@ -148,8 +148,6 @@ export const BlocksRenderer = memo(
               toolBlocks={toolBlocks}
               keyPrefix={p.messageId}
               startIndex={startIndex}
-              nextIndex={nextIndex}
-              siblingBlocks={p.sourceBlocks}
               availableWidth={p.availableWidth}
               onToggleCollapsed={p.onToggleCollapsed}
               markdownPalette={p.markdownPalette}

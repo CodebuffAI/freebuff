@@ -277,40 +277,6 @@ export function isTextBlock(block: ContentBlock): block is TextContentBlock {
   return block.type === 'text'
 }
 
-export function isToolBlock(block: ContentBlock): block is ToolContentBlock {
-  return block.type === 'tool'
-}
-
-export function isAgentBlock(block: ContentBlock): block is AgentContentBlock {
-  return block.type === 'agent'
-}
-
-export function isHtmlBlock(block: ContentBlock): block is HtmlContentBlock {
-  return block.type === 'html'
-}
-
-export function isAgentListBlock(
-  block: ContentBlock,
-): block is AgentListContentBlock {
-  return block.type === 'agent-list'
-}
-
-export function isPlanBlock(block: ContentBlock): block is PlanContentBlock {
-  return block.type === 'plan'
-}
-
-export function isModeDividerBlock(
-  block: ContentBlock,
-): block is ModeDividerContentBlock {
-  return block.type === 'mode-divider'
-}
-
-export function isAskUserBlock(
-  block: ContentBlock,
-): block is AskUserContentBlock {
-  return block.type === 'ask-user'
-}
-
 export function isImageBlock(block: ContentBlock): block is ImageContentBlock {
   return block.type === 'image'
 }

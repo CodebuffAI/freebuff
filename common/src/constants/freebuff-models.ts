@@ -686,19 +686,19 @@ export const FREEBUFF_FABLE_5_1_MODEL_ID = 'anthropic/claude-fable-5.1'
  * prefix names the only place it exists — there is no second wire id, so it
  * cannot become a second entitlement the way `crof/glm-5.2` did.
  *
- * RETIRED FROM EVERY PICKER ON 2026-09-02, replaced by
- * FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID below. The id is still served —
- * it stays in FREEBUFF_WEB_MODELS and the Web premium pool — because a Web
- * session admitted on it before the deploy runs for the rest of its hour, and
- * dropping the id from the catalog fails that session's admission mid-run
- * (see FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS, which is what hides the row).
- * Keeping it reachable is harmless in the meantime: it costs the same, is
- * metered by the same pool, and draws on the same Contributor-tier budget at
- * Meta as the row that replaced it. A saved 1.2 pick is rewritten to 1.3 by
- * `supersededBy`. Delete the row, its roots and the retired-list entry once
- * live sessions have drained.
+ * OUT OF EVERY PICKER SINCE 2026-09-28, when
+ * FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID below took its slot. It is not
+ * in FREEBUFF_MODELS or FREEBUFF_WEB_MODELS, but it stays in
+ * SUPPORTED_FREEBUFF_MODELS and is still served, paid-only and full-access
+ * only (FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
+ * FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS), metered by the Web premium pool
+ * (named explicitly in FREEBUFF_WEB_PREMIUM_MODEL_IDS): released CLI and
+ * Desktop binaries still list it and serve it to subscribers until they
+ * update. It is not a picker-retired id (FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS
+ * is empty). A saved 1.2 pick is rewritten to 1.3 by `supersededBy`. Its roots
+ * and allowlist entries stay for as long as released binaries can send it.
  *
- * It was Freebuff Web only for its whole life: the Contributor tier is rate
+ * It was Freebuff Web only until 2026-09-07: the Contributor tier is rate
  * limited per TEAM, and the only surface that could render the
  * resulting wait was the browser (docs/freebuff-muse-spark.md). What changed
  * that for 1.3 is below.
@@ -3491,9 +3491,8 @@ export const FREEBUFF_WEB_MODELS = [
   // back in the picker without making it admissible — a visible row whose
   // first send is coerced away, which is the offer-without-gate shape
   // common/src/testing/freebuff-offer-invariants.ts exists to catch.
-  // Muse Spark 1.2 reaches this list by spreading FREEBUFF_MODELS again,
-  // as it did before its 2026-09-02 retirement; naming it here too would
-  // duplicate the row.
+  // Muse Spark 1.2 is NOT in this list: it left FREEBUFF_MODELS on 2026-09-28
+  // and stays only in SUPPORTED_FREEBUFF_MODELS for released binaries.
   // Gemini 3.8 Flash reaches this list by spreading FREEBUFF_MODELS since
   // 2026-09-21. It was named here alone while the paywall ran on Web alone;
   // naming it here too would now duplicate the row.
@@ -3540,24 +3539,18 @@ export const FREEBUFF_WEB_GOD_ONLY_MODEL_IDS = Object.freeze(
  * EMPTY BY DEFAULT, and the bar for adding to it is high.
  *
  * Hiding a row here is not a withdrawal — withdrawing a model is the pause
- * list's job (FREEBUFF_PAUSED_FREE_MODEL_IDS) or deletion. The two former
+ * list's job (FREEBUFF_PAUSED_FREE_MODEL_IDS) or deletion. Two former
  * occupants, the CrofAI GLM 5.2 route (from 2026-07-30) and HY3 (since the
- * initial web rollout), were both deleted outright on 2026-08-04.
+ * initial web rollout), were both deleted outright on 2026-08-04. Muse Spark
+ * 1.2 sat here from 2026-09-02 until it went back into the pickers on
+ * 2026-09-07; it left the pickers again on 2026-09-28 without returning here.
  *
  * Park a model here ONLY to let genuinely live sessions drain, and only when
  * the id being reachable in the meantime is harmless — never as the gate
  * itself, and never for a model that costs real money or is entitlement-earned.
  * Then finish the removal.
  */
-export const FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS = [
-  // Muse Spark 1.2, from 2026-09-02, while sessions admitted on it drain. This
-  // is the case the bar above was set for: the id being reachable meanwhile
-  // is harmless because it costs exactly what its replacement costs, is
-  // metered by the same premium pool, and spends the same Contributor-tier
-  // budget at Meta. A saved pick is rewritten to 1.3 by `supersededBy`.
-  // Finish the removal (row, roots, allowlist entries, this line) once the
-  // last 1.2 session is gone — a day is plenty.
-] as const
+export const FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS = [] as const
 
 /** Whether the Web/Cloud picker should offer `id` as a new selection. False
  *  for retired routes (see FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS), which the

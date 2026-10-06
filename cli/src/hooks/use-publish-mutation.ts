@@ -7,11 +7,6 @@ import {
 } from '../commands/publish'
 import { usePublishStore } from '../state/publish-store'
 
-// Query keys for type-safe cache management
-export const publishQueryKeys = {
-  all: ['publish'] as const,
-}
-
 export interface UsePublishMutationDeps {
   handlePublish?: (agentIds: string[]) => Promise<PublishResult>
 }

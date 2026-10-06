@@ -26,7 +26,6 @@ dist-env
 tsconfig.tsbuildinfo
 .manicode
 __mock-projects__
-npm-app/src/__tests__/data/
 .aider*
 .codebuff*
 **.log

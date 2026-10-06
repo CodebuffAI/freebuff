@@ -76,9 +76,6 @@ export type PendingFileAttachment = {
 /** Unified attachment type with discriminator */
 export type PendingAttachment = PendingImageAttachment | PendingTextAttachment | PendingFileAttachment
 
-/** @deprecated Use PendingImageAttachment instead */
-export type PendingImage = PendingImageAttachment
-
 export type PendingBashMessage = {
   id: string
   command: string

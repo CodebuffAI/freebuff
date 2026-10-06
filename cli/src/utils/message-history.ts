@@ -121,23 +121,3 @@ export const saveMessageHistory = (history: string[]): void => {
     // Don't throw - history persistence is not critical
   }
 }
-
-/**
- * Clear message history from file system
- */
-export const clearMessageHistory = (): void => {
-  const historyPath = getMessageHistoryPath()
-
-  try {
-    if (fs.existsSync(historyPath)) {
-      fs.unlinkSync(historyPath)
-    }
-  } catch (error) {
-    logger.error(
-      {
-        error: error instanceof Error ? error.message : String(error),
-      },
-      'Error clearing message history',
-    )
-  }
-}

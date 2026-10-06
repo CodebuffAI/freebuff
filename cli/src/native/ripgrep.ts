@@ -70,11 +70,3 @@ export const getRgPath = (): Promise<string> => {
   }
   return rgPathPromise
 }
-
-/**
- * Reset the cached ripgrep path promise.
- * Used primarily for testing to force re-extraction.
- */
-export const resetRgPathCache = (): void => {
-  rgPathPromise = null
-}

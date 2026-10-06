@@ -4,7 +4,7 @@ import React from 'react'
 import { useShallow } from 'zustand/react/shallow'
 
 import { Button } from './button'
-import { ErrorBoundary } from './error-boundary'
+import { ErrorBoundaryPlaceholder } from './error-boundary'
 import { GridLayout } from './grid-layout'
 import { MessageBlock } from './message-block'
 import { ModeDivider } from './mode-divider'
@@ -76,7 +76,7 @@ const AgentChildrenGrid = memo(
     )
 
     return (
-      <ErrorBoundary fallback={errorFallback} componentName="AgentChildrenGrid">
+      <ErrorBoundaryPlaceholder fallback={errorFallback} componentName="AgentChildrenGrid">
         <box style={{ flexDirection: 'column', gap: 0, width: '100%' }}>
           {subGroups.map((group) => (
             <GridLayout
@@ -88,7 +88,7 @@ const AgentChildrenGrid = memo(
             />
           ))}
         </box>
-      </ErrorBoundary>
+      </ErrorBoundaryPlaceholder>
     )
   },
 )

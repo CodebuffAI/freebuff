@@ -65,16 +65,6 @@ const toolComponentRegistry = new Map<ToolName, ToolComponent>([
 ])
 
 /**
- * Register a new tool component.
- * This allows plugins or extensions to add custom tool renderers.
- *
- * @param component - The tool component to register
- */
-export function registerToolComponent(component: ToolComponent): void {
-  toolComponentRegistry.set(component.toolName, component)
-}
-
-/**
  * Get the registered component for a specific tool name.
  *
  * @param toolName - The name of the tool
@@ -115,12 +105,4 @@ export function renderToolComponent(
     )
     return undefined
   }
-}
-
-/**
- * Get all registered tool names.
- * Useful for debugging or listing available tool renderers.
- */
-export function getRegisteredToolNames(): ToolName[] {
-  return Array.from(toolComponentRegistry.keys())
 }

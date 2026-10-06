@@ -150,8 +150,6 @@ export const useFeedbackStore = create<FeedbackStore>()(
   }))
 )
 
-export const selectIsFeedbackOpen = (state: FeedbackStore) => state.feedbackMode
-export const selectFeedbackMessageId = (state: FeedbackStore) => state.feedbackMessageId
 export const selectIsFeedbackOpenForMessage = (messageId: string) => (state: FeedbackStore) =>
   state.feedbackMode && state.feedbackMessageId === messageId
 export const selectHasSubmittedFeedback = (messageId: string) => (state: FeedbackStore) =>

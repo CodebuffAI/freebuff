@@ -424,6 +424,3 @@ const CompactFileRow = memo(
     )
   },
 )
-
-// Keep the old exports for backward compatibility during transition
-export { ImplementorCard as ImplementorRow }

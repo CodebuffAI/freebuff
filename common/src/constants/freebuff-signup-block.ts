@@ -24,6 +24,10 @@ export type SignupBlockReason =
   | 'untrusted_client_ip'
   | 'ip_signup_velocity'
   | 'prefix_signup_velocity'
+  // Not a signup decision: the GitHub sign-in gate (`isVerifiedGitHubEmail`)
+  // refuses an address GitHub does not list as verified, signup or not. It
+  // shares this vocabulary so the login pages explain it like the others.
+  | 'github_email_unverified'
 
 /**
  * Deliberately actionable and non-accusatory.
@@ -57,6 +61,10 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
     'Too many accounts have been created from this network today. Please try again tomorrow, or contact support if you are on a shared connection.',
   prefix_signup_velocity:
     'Too many accounts have been created from this network today. Please try again tomorrow, or contact support if you are on a shared connection.',
+  // Also shown when GitHub's API could not be reached: the gate fails closed,
+  // and the same two remedies apply.
+  github_email_unverified:
+    "GitHub sign-in needs a verified email. Verify your email in GitHub's settings (Settings → Emails) and try again, or sign in with Google instead. If your email is already verified, GitHub may be temporarily unreachable; please try again in a few minutes.",
 }
 
 /** True when `code` is a reason this module has copy for. Narrows an untrusted

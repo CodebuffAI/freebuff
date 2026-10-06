@@ -820,17 +820,12 @@ describe('freebuff model availability', () => {
   test('the picker-retirement list holds only ids that are harmless to reach', () => {
     // A picker-only retirement is a UI change; withdrawal is the pause list's
     // job. So every entry here has to pass the bar the list's own doc sets:
-    // harmless to reach.
+    // harmless to reach: it costs what its replacement costs, is metered by
+    // the same pool, and spends no scarcer budget.
     //
-    // Muse Spark 1.2 passes it (parked 2026-09-02 while its Web sessions
-    // drain): it costs exactly what its replacement costs, is metered by the
-    // same premium pool, and spends the same Contributor-tier budget at Meta.
-    // It is a temporary occupant — see the removal order on its constant. If
-    // anything ELSE turns up here, check it against the same three questions
-    // before accepting it.
-    // EMPTY since 2026-09-07: its only occupant, Muse Spark 1.2, went back
-    // into the pickers when 1.3 was withdrawn. An id landing here again should
-    // be checked against the same three questions in the comment above.
+    // EMPTY since 2026-09-07: its last occupant, Muse Spark 1.2 (parked
+    // 2026-09-02), went back into the pickers when 1.3 was withdrawn. An id
+    // landing here again should be checked against those three questions.
     expect(FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS).toEqual([])
     for (const id of FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS) {
       // Still a session model (live sessions keep running) and still metered

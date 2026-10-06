@@ -121,11 +121,6 @@ export const isMultiPromptEditor = (agentType: string): boolean => {
 }
 
 /**
- * The parent agent ID for all root-level agents
- */
-export const MAIN_AGENT_ID = 'main-agent'
-
-/**
  * Which harness the CLI's DEFAULT and LITE modes run.
  *
  * base3 runs Codebuff DEFAULT and LITE plus every Freebuff picker model. MAX

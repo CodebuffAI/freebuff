@@ -7,15 +7,6 @@ export type ChunkDestination =
   | { type: 'root'; textType: 'text' | 'reasoning' }
   | { type: 'agent'; agentId: string; textType: 'text' | 'reasoning' }
 
-export const destinationFromTextEvent = (
-  event: { agentId?: string },
-): ChunkDestination => {
-  if (event.agentId) {
-    return { type: 'agent', agentId: event.agentId, textType: 'text' }
-  }
-  return { type: 'root', textType: 'text' }
-}
-
 export const destinationFromChunkEvent = (
   event: StreamChunkEvent,
 ): ChunkDestination | null => {

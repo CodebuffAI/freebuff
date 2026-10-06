@@ -553,12 +553,6 @@ export function setActivityQueryData<T>(queryKey: readonly unknown[], data: T): 
   })
 }
 
-export function useInvalidateActivityQuery() {
-  return useCallback((queryKey: readonly unknown[]) => {
-    invalidateActivityQuery(queryKey)
-  }, [])
-}
-
 /**
  * Reset the activity query cache (mainly for testing).
  */

@@ -33,32 +33,6 @@ import { isImageFile } from './image-handler'
 
 import type { InputValue } from '../types/store'
 
-export function getSubsequenceIndices(
-  str: string,
-  sub: string,
-): number[] | null {
-  let strIndex = 0
-  let subIndex = 0
-
-  const indices: number[] = []
-
-  while (strIndex < str.length && subIndex < sub.length) {
-    if (str[strIndex] === sub[subIndex]) {
-      indices.push(strIndex)
-      subIndex++
-    }
-    strIndex++
-  }
-
-  if (subIndex >= sub.length) {
-    return indices
-  }
-
-  return null
-}
-
-export const BULLET_CHAR = '• '
-
 // Threshold for treating pasted text as an attachment instead of inline insertion
 // Text longer than this value (not equal) becomes an attachment
 export const LONG_TEXT_THRESHOLD = 2000

@@ -44,11 +44,6 @@ export function trackHelperProcess(
   getHelperProcessCensus().track(kind, child)
 }
 
-/** Read-only counts for local diagnostics. */
-export function getHelperProcessSnapshot() {
-  return census?.snapshot() ?? {}
-}
-
 /** `tasklist` stdout, bounded in time and size. */
 export function listWindowsProcesses(): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -72,9 +67,4 @@ export function startWindowsMachineProcessCensus(): void {
     census: getHelperProcessCensus(),
     listProcesses: listWindowsProcesses,
   })
-}
-
-export function stopWindowsMachineProcessCensus(): void {
-  machineCensus?.stop()
-  machineCensus = null
 }
