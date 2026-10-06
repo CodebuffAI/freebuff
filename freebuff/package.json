@@ -9,12 +9,8 @@
     "e2e:version": "bun test e2e/tests/version.e2e.test.ts",
     "e2e:startup": "bun test e2e/tests/startup.e2e.test.ts",
     "e2e:help": "bun test e2e/tests/help-command.e2e.test.ts",
-    "e2e:slash-commands": "bun test e2e/tests/slash-commands.e2e.test.ts",
-    "e2e:mode": "bun test e2e/tests/mode-restriction.e2e.test.ts",
     "e2e:ads": "bun test e2e/tests/ads-behavior.e2e.test.ts",
     "e2e:agent": "bun test e2e/tests/agent-startup.e2e.test.ts",
-    "e2e:code-edit": "bun test e2e/tests/code-edit.e2e.test.ts",
-    "e2e:terminal-command": "bun test e2e/tests/terminal-command.e2e.test.ts",
     "e2e:knowledge-file": "bun test e2e/tests/knowledge-file.e2e.test.ts"
   }
 }

@@ -3,7 +3,6 @@ import { CodebuffClient } from '@codebuff/sdk'
 import { describe, expect, it } from 'bun:test'
 
 import fileListerDefinition from '../file-explorer/file-lister'
-import filePickerDefinition from '../file-explorer/file-picker'
 
 import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
 
@@ -248,101 +247,5 @@ export interface User {
       expect(foundFrontendFile).toBe(true)
     },
     { timeout: 60_000 },
-  )
-})
-
-/**
- * Integration tests for the file-picker agent that spawns subagents.
- * The file-picker spawns file-lister as a subagent to find files.
- * This tests the spawn_agents tool functionality through the SDK.
- */
-describe('File Picker Agent Integration - spawn_agents tool', () => {
-  // Note: This test requires the local agent definitions to be used for both
-  // file-picker AND its spawned file-lister subagent. Currently, the spawned
-  // agent may resolve to the server version which has the old parsing bug.
-  // Skip until we have a way to ensure spawned agents use local definitions.
-  it.skip(
-    'should spawn file-lister subagent and find relevant files',
-    async () => {
-      const apiKey = process.env[API_KEY_ENV_VAR]!
-
-      // Create mock project files
-      const projectFiles: Record<string, string> = {
-        'src/index.ts': `
-import { UserService } from './services/user-service'
-export function main() {
-  const userService = new UserService()
-  console.log('Application started')
-}
-`,
-        'src/services/user-service.ts': `
-export class UserService {
-  async getUser(id: string) {
-    return { id, name: 'John Doe' }
-  }
-}
-`,
-        'src/services/auth-service.ts': `
-export class AuthService {
-  async login(email: string, password: string) {
-    return { token: 'mock-token' }
-  }
-}
-`,
-        'package.json': JSON.stringify({
-          name: 'test-project',
-          version: '1.0.0',
-        }),
-      }
-
-      // Use local agent definitions to test the updated handleSteps
-      const localFilePickerDef = filePickerDefinition
-      const localFileListerDef = fileListerDefinition
-
-      const client = new CodebuffClient({
-        apiKey,
-        cwd: '/tmp/test-project-picker',
-        projectFiles,
-        agentDefinitions: [localFilePickerDef, localFileListerDef],
-      })
-
-      const events: PrintModeEvent[] = []
-
-      // Run the file-picker agent which spawns file-lister as a subagent
-      const run = await client.run({
-        agent: localFilePickerDef.id,
-        prompt: 'Find files related to user authentication',
-        handleEvent: (event) => {
-          events.push(event)
-        },
-      })
-
-      // Check for errors in the output
-      if (run.output.type === 'error') {
-        console.error('File picker error:', run.output)
-      }
-
-      console.log('File picker output type:', run.output.type)
-      console.log('File picker output:', JSON.stringify(run.output, null, 2))
-
-      // The output should not be an error
-      expect(run.output.type).not.toEqual('error')
-
-      // Verify we got some output
-      expect(run.output).toBeDefined()
-
-      // The file-picker should have found relevant files via its spawned file-lister
-      const outputStr =
-        typeof run.output === 'string' ? run.output : JSON.stringify(run.output)
-
-      // Verify that the file-picker found some relevant files
-      const relevantFiles = ['user', 'auth', 'service']
-      const foundRelevantFile = relevantFiles.some((file) =>
-        outputStr.toLowerCase().includes(file.toLowerCase()),
-      )
-
-      expect(foundRelevantFile).toBe(true)
-    },
-    { timeout: 90_000 },
   )
 })
