@@ -327,28 +327,15 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   ad_features_lookup: 'string',
   ad_features_ms: 'number',
   /**
-   * The on-host pclick model's SHADOW score (`pclick-shadow.ts`), for the
-   * request's first shadow-scored decision; absent when none ran. Ids never:
-   * `pclick_shadow_served` is the served ad's shadow pCTR,
-   * `pclick_shadow_l2_served` the live L2 pCTR of the same campaign,
-   * `pclick_shadow_log_ratio` ln(shadow / L2), `pclick_shadow_top_agrees`
-   * whether the shadow's top admitted campaign is the one served,
-   * `pclick_shadow_inputs` whether the user columns came from the feature
-   * store or the no-history defaults, `pclick_shadow_batch_served` the
-   * offline batch (Redis) score of the served campaign and
-   * `pclick_shadow_batch_log_ratio` ln(shadow / batch). Nothing ranks on it;
-   * the per-campaign detail rides the decision to the training log.
+   * The pclick SHADOW (`pclick-shadow.ts`) for the request's first shadow
+   * decision, as known on the serve path; absent when none ran:
+   * `pclick_shadow_outcome` (`pending` once the call to the pclick-scorer
+   * service is started) and `pclick_shadow_inputs` (feature store or
+   * no-history defaults). The scores land after the response; they ride the
+   * decision to the training log.
    */
   pclick_shadow_outcome: 'string',
-  pclick_shadow_scorer: 'string',
   pclick_shadow_inputs: 'string',
-  pclick_shadow_ms: 'number',
-  pclick_shadow_served: 'number',
-  pclick_shadow_l2_served: 'number',
-  pclick_shadow_log_ratio: 'number',
-  pclick_shadow_batch_served: 'number',
-  pclick_shadow_batch_log_ratio: 'number',
-  pclick_shadow_top_agrees: 'boolean',
   /**
    * The eligibility census: two counts and two producer-encoded histogram
    * strings. `eligible_campaign_labels` comma-joins opaque allocation labels
