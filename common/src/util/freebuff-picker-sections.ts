@@ -58,10 +58,11 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     'stealth/space-bunny-alpha': { section: 'unlimited', order: 10 },
     // Solar Pro 4 (2026-10-05): free as a promotion, moved from Optimized.
     'upstage/solar-pro4': { section: 'unlimited', order: 15 },
-    'upstage/solar-mini4': { section: 'unlimited', order: 20 },
     'm-916b95b337': { section: 'unlimited', order: 30, more: true }, // Ling 3.1 Flash
     'm-a273b5e513': { section: 'unlimited', order: 40, more: true }, // Laguna S 2.1
     // Optimized
+    // Solar Mini 4's free promotion ended on 2026-10-05.
+    'upstage/solar-mini4': { section: 'optimized', order: 5 },
     'mimo/mimo-v2.5': { section: 'optimized', order: 10, recommended: true }, // MiMo 2.6 Flash
     'z-ai/glm-5.3-flash': { section: 'optimized', order: 20 },
     'deepseek/deepseek-v4-flash': { section: 'optimized', order: 30 }, // V4.1 Flash
