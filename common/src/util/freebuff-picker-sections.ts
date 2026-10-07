@@ -57,6 +57,7 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     'upstage/solar-pro4': { section: 'unlimited', order: 15 },
     'm-916b95b337': { section: 'unlimited', order: 30, more: true }, // Ling 3.1 Flash
     'm-a273b5e513': { section: 'unlimited', order: 40, more: true }, // Laguna S 2.1
+    'm-02244092cb': { section: 'unlimited', order: 45, more: true }, // Glyph Cluster
     // Optimized
     // Solar Mini 4's free promotion ended on 2026-10-05.
     'upstage/solar-mini4': { section: 'optimized', order: 5 },
@@ -71,6 +72,7 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
       recommended: true,
     },
     'meta/muse-spark-1.3-contributor': { section: 'powerful', order: 10 },
+    'm-79293c5b7d': { section: 'powerful', order: 15 }, // Claude Haiku 5.5
     'openai/gpt-6-luna': { section: 'powerful', order: 20 },
     'mimo/mimo-v2.6-pro': { section: 'powerful', order: 30 },
     'openai/gpt-6.1-sol': { section: 'powerful', order: 40 },

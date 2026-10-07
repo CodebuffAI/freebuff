@@ -175,43 +175,33 @@ describe('per-model effort ladders', () => {
     }
   })
 
-  test('GLM 5.3 Flash offers low/high/max, and runs max by default', () => {
+  test('GLM 5.3 Flash offers low/high, and runs high by default', () => {
     // `max` was removed on 2026-08-31 for looping (re-reading, re-planning,
-    // re-issuing tool calls) and came back the evening of 2026-09-01 because
-    // by then it was the only rung on which the model thought at all. The
-    // explicit default is still the load-bearing half: unset inherits whatever
-    // the vendor feels like today.
+    // re-issuing tool calls), came back on 2026-09-01 as the only rung that
+    // thought at all, and was removed again on 2026-10-07 by product: the
+    // ladder stops at `high`.
     expect(getFreebuffModelEfforts(FREEBUFF_GLM_V53_FLASH_MODEL_ID)).toEqual([
       'low',
       'high',
-      'max',
     ])
 
-    // Half two, and the load-bearing one: an UNTOUCHED turn must send `high`.
-    // This row shipped with no `reasoningEffort` at all, which made
-    // applyFreebuffReasoningDefaults send nothing — and unset measures DEEPER
-    // than `max` on agent prompts (8118/9942/9871 chars vs 7271/8011/5781). So
-    // the looping setting was also the default one, and the chat surfaces,
-    // which have no effort control at all, could run nothing else.
-    // `max` returned the same evening (2026-09-01) as both a rung and the wire
-    // default: by then `high` measured ~300 thinking characters on both Merge
-    // vendors and `max` was the only rung on which the model thought at all.
-    // The loop risk is accepted on purpose — see GLM_V53_FLASH_REASONING_EFFORTS.
+    // An UNTOUCHED turn must send an explicit rung: unset measures deeper
+    // than `max` on agent prompts, so leaving it unset would undo the cap.
     expect(
       getFreebuffModelReasoningEffort(FREEBUFF_GLM_V53_FLASH_MODEL_ID),
-    ).toBe('max')
+    ).toBe('high')
     expect(
       resolveFreebuffReasoningEffort(FREEBUFF_GLM_V53_FLASH_MODEL_ID, undefined),
-    ).toBe('max')
+    ).toBe('high')
     expect(
       getFreebuffModelDefaultEffort(FREEBUFF_GLM_V53_FLASH_MODEL_ID),
-    ).toBe('max')
+    ).toBe('high')
 
-    // A persisted `max` pick — CLI settings, a Desktop thread, a Web preference
-    // — is a ladder rung again and passes through; `xhigh` still clamps DOWN.
+    // A persisted `max` pick — CLI settings, a Desktop thread, a Web
+    // preference — and `xhigh` both clamp DOWN to the cap.
     expect(
       resolveFreebuffReasoningEffort(FREEBUFF_GLM_V53_FLASH_MODEL_ID, 'max'),
-    ).toBe('max')
+    ).toBe('high')
     expect(
       resolveFreebuffReasoningEffort(FREEBUFF_GLM_V53_FLASH_MODEL_ID, 'xhigh'),
     ).toBe('high')
@@ -225,7 +215,7 @@ describe('per-model effort ladders', () => {
         `${FREEBUFF_GLM_V53_FLASH_MODEL_ID}-20260601`,
         'max',
       ),
-    ).toBe('max')
+    ).toBe('high')
   })
 
   test('binary, adaptive, and ignored controls do not masquerade as ladders', () => {

@@ -1063,8 +1063,14 @@ const OX_ALPHA_REASONING_EFFORTS = ['low', 'high', 'max'] as const
  * The looping that removed the rung (#2528) is real and is the trade being
  * made here on purpose: depth over the loop risk, with the wire default
  * moving to `max` in the same change. Watch tool-call repetition per turn.
+ *
+ * `max` REMOVED AGAIN (2026-10-07, product): the ladder stops at `high`, and
+ * `high` is the default. A `max` or `xhigh` from any client or agent is
+ * clamped to `high` server-side (applyFreebuffReasoningDefaults). The trade
+ * is the 2026-09-01 table above taken the other way: shallow thinking on
+ * every turn in exchange for no looping at `max`.
  */
-const GLM_V53_FLASH_REASONING_EFFORTS = ['low', 'high', 'max'] as const
+const GLM_V53_FLASH_REASONING_EFFORTS = ['low', 'high'] as const
 /**
  * The marker that turns a Muse Spark rate limit into a queued turn rather than
  * a failed one.
@@ -2706,10 +2712,14 @@ const GLM_V53_FLASH_MODEL = {
   // that thinks. The loop risk that removed `max` is accepted on purpose and
   // is the thing to watch: tool-call repetition per turn, not thinking depth.
   //
+  //
+  // CAPPED AT `high` ON 2026-10-07 (product): `max` is off the ladder and the
+  // pin is `high` (see GLM_V53_FLASH_REASONING_EFFORTS).
+  //
   // `defaultEffort` EQUALS `reasoningEffort`, the ordinary shape.
   efforts: GLM_V53_FLASH_REASONING_EFFORTS,
-  reasoningEffort: 'max',
-  defaultEffort: 'max',
+  reasoningEffort: 'high',
+  defaultEffort: 'high',
   //
   // No `supersededBy` and no RECOMMENDED badge: nothing in this catalog nudges
   // anyone anywhere, and a notice here would rewrite saved picks on every load
