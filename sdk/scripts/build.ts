@@ -22,6 +22,13 @@ if (!nodePathEntries.has(workspaceNodeModules)) {
   moduleWithInit._initPaths?.()
 }
 
+/**
+ * `--no-types` skips the ~8 s declaration bundle. For builds that only run the
+ * SDK, such as web's Render build: its tsconfig maps `@codebuff/sdk` to the
+ * sources, and nothing at runtime reads `dist/index.d.ts`.
+ */
+const withTypes = !process.argv.includes('--no-types')
+
 async function build() {
   console.log('🧹 Cleaning dist directory...')
   await rm('dist', { recursive: true, force: true })
@@ -138,38 +145,44 @@ async function build() {
   await fixBrokenExportAliases('dist/index.mjs')
   await fixBrokenExportAliases('dist/index.cjs')
 
-  console.log('📝 Generating and bundling TypeScript declarations...')
-  try {
-    const [bundle] = generateDtsBundle(
-      [
+  if (withTypes) {
+    console.log('📝 Generating and bundling TypeScript declarations...')
+    try {
+      const [bundle] = generateDtsBundle(
+        [
+          {
+            filePath: 'src/index.ts',
+            output: {
+              exportReferencedTypes: false,
+            },
+            libraries: {
+              // Treat all @codebuff/* workspace packages as external imports
+              // so dts-bundle-generator doesn't fail on their internal relative imports
+              importedLibraries: [
+                '@codebuff/common',
+                '@codebuff/agent-runtime',
+                '@codebuff/code-map',
+                '@codebuff/llm-providers',
+              ],
+            },
+          },
+        ],
         {
-          filePath: 'src/index.ts',
-          output: {
-            exportReferencedTypes: false,
-          },
-          libraries: {
-            // Treat all @codebuff/* workspace packages as external imports
-            // so dts-bundle-generator doesn't fail on their internal relative imports
-            importedLibraries: [
-              '@codebuff/common',
-              '@codebuff/agent-runtime',
-              '@codebuff/code-map',
-              '@codebuff/llm-providers',
-            ],
-          },
+          preferredConfigPath: join(
+            import.meta.dir,
+            '..',
+            'tsconfig.build.json',
+          ),
         },
-      ],
-      {
-        preferredConfigPath: join(import.meta.dir, '..', 'tsconfig.build.json'),
-      },
-    )
+      )
 
-    await writeFile('dist/index.d.ts', bundle)
-    await fixDuplicateImports()
-    console.log('  ✓ Created bundled type definitions')
-  } catch (error) {
-    console.error('❌ TypeScript declaration bundling failed:', error.message)
-    process.exit(1)
+      await writeFile('dist/index.d.ts', bundle)
+      await fixDuplicateImports()
+      console.log('  ✓ Created bundled type definitions')
+    } catch (error) {
+      console.error('❌ TypeScript declaration bundling failed:', error.message)
+      process.exit(1)
+    }
   }
 
   console.log('📂 Copying WASM files for tree-sitter...')
@@ -181,7 +194,7 @@ async function build() {
   console.log('✅ Build complete!')
   console.log('  📄 dist/index.mjs (ESM)')
   console.log('  📄 dist/index.cjs (CJS)')
-  console.log('  📄 dist/index.d.ts (Types)')
+  if (withTypes) console.log('  📄 dist/index.d.ts (Types)')
 }
 
 /**
