@@ -32,6 +32,8 @@ export interface FreebuffModelPolicyOverlay {
   listPrice?(modelId: string): number | undefined
   /** One-line notice that replaces the tagline in pickers. */
   priceNotice?(modelId: string): string | undefined
+  /** A provider outage: refuse before tier fallback, purchases, or chat substitution. */
+  unavailableMessage?(modelId: string): string | undefined
   efforts?(
     modelId: string,
   ):
