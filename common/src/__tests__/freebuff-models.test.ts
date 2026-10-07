@@ -59,6 +59,7 @@ import {
   SUPPORTED_FREEBUFF_MODELS,
   FREEBUFF_WEB_PREMIUM_MODEL_IDS,
   canFreebuffModelSpawnGeminiThinker,
+  freebuffAppDefaultModelIds,
   freebuffWithdrawnModelMessage,
   getFreebuffDeploymentAvailabilityLabel,
   getFreebuffModel,
@@ -1506,7 +1507,41 @@ describe('freebuff model availability', () => {
     ).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
   })
 
-  test('every surface starts on MiMo 2.6 Flash, on two separate constants', () => {
+  test('Desktop and the browser workspace start on Fast off-peak, Flash at peak, MiMo when limited', () => {
+    const weekdayOffPeak = new Date('2026-10-06T15:00:00Z')
+    const weekdayPeak = new Date('2026-10-07T02:00:00Z')
+    const beijingSaturdayPeakHour = new Date('2026-10-10T02:00:00Z')
+    expect(freebuffAppDefaultModelIds('full', weekdayOffPeak)).toEqual([
+      FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+    ])
+    expect(freebuffAppDefaultModelIds('full', weekdayPeak)).toEqual([
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+    ])
+    // DeepSeek's weekend is off-peak at every hour, as Fast's price is.
+    expect(
+      freebuffAppDefaultModelIds('full', beijingSaturdayPeakHour)[0],
+    ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)
+    // Fast is plan-only at limited access, so an unknown tier never gets it.
+    expect(freebuffAppDefaultModelIds(undefined, weekdayOffPeak)).toEqual([
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+    ])
+    expect(freebuffAppDefaultModelIds('limited', weekdayOffPeak)).toEqual([
+      FREEBUFF_MIMO_V25_MODEL_ID,
+    ])
+    for (const tier of ['full', 'limited'] as const)
+      for (const id of freebuffAppDefaultModelIds(tier, weekdayOffPeak))
+        expect(
+          getFreebuffModelsForAccessTier(tier).some((m) => m.id === id),
+        ).toBe(true)
+    expect(
+      getFreebuffModelsForAccessTier('limited').some(
+        (m) => m.id === FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+      ),
+    ).toBe(true)
+  })
+
+  test('the CLI and Cloud defaults are MiMo 2.6 Flash, on two separate constants', () => {
     // They stay TWO constants because they have diverged before and may again.
     expect(DEFAULT_FREEBUFF_WEB_MODEL_ID).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
     expect(DEFAULT_FREEBUFF_MODEL_ID).toBe(FREEBUFF_MIMO_V25_MODEL_ID)

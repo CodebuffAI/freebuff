@@ -3803,8 +3803,9 @@ export type SupportedFreebuffModelId =
   (typeof SUPPORTED_FREEBUFF_MODELS)[number]['id']
 export type FreebuffWebModelId = (typeof FREEBUFF_WEB_ALL_MODELS)[number]['id']
 
-/** What new freebuff users see selected in the CLI and Desktop pickers, and the
- *  model their "RECOMMENDED" hero opens on. DeepSeek V4.1 Flash as of
+/** What new freebuff users see selected in the CLI picker, and the model its
+ *  "RECOMMENDED" hero opens on; Desktop starts on freebuffAppDefaultModelIds
+ *  and falls back to this. DeepSeek V4.1 Flash as of
  *  2026-09-02 (unmetered on the Luminal lane; it carries the AI-training
  *  notice, and it is also the limited tier's default). The paragraphs below
  *  were written for the GLM 5.3 Flash default of 2026-08-30 and still hold.
@@ -4428,6 +4429,25 @@ export function getRecommendedFreebuffModelId(
     return FALLBACK_FREEBUFF_MODEL_ID
   }
   return DEFAULT_FREEBUFF_MODEL_ID
+}
+
+/** The models a new Freebuff Desktop or browser-workspace chat starts on, in
+ *  the order to try them (product, 2026-10-06). At full access: DeepSeek V4.1
+ *  Flash Fast outside DeepSeek's expensive window, where its price is half,
+ *  then DeepSeek V4.1 Flash, which is also the pick inside the window and
+ *  when the tier is not known yet. At limited access, where Fast is plan-only:
+ *  MiMo 2.6 Flash. The CLI keeps getRecommendedFreebuffModelId. */
+export function freebuffAppDefaultModelIds(
+  accessTier: FreebuffAccessTier | null | undefined,
+  now: Date = new Date(),
+): FreebuffModelId[] {
+  if (accessTier === 'limited') return [LIMITED_FREEBUFF_HERO_MODEL_ID]
+  if (accessTier !== 'full' || isDeepSeekExpensiveWindow(now))
+    return [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]
+  return [
+    FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+    FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  ]
 }
 
 /** The Web/Cloud counterpart of getRecommendedFreebuffModelId: full access →
