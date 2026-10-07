@@ -20,6 +20,9 @@ export type GitHubStatus = {
   connected: boolean
   login?: string
 }
+/** Freebuff web page that finishes a GitHub connection for the signed-in
+ * account; the Cloud API's GitHub callback relays the OAuth code to it. */
+export const GITHUB_CONNECT_COMPLETE_PATH = '/cloud/github/callback'
 export type GitHubPickerClient = {
   status(): Promise<GitHubStatus>
   authorize(): Promise<{ url: string }>
