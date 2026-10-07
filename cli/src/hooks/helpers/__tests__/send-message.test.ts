@@ -48,7 +48,7 @@ const {
 const { createBatchedMessageUpdater } =
   await import('../../../utils/message-updater')
 const freebuffSession = await import('../../use-freebuff-session')
-const { FREEBUFF_MODEL_UNAVAILABLE_MESSAGE } =
+const { FREEBUFF_MODEL_UNAVAILABLE_MESSAGE, FREEBUFF_REFUNDED_START_HINT } =
   await import('../../../utils/error-handling')
 import { createPaymentRequiredError } from '@codebuff/sdk'
 import type { RunState } from '@codebuff/sdk'
@@ -2134,6 +2134,30 @@ describe('freebuff gate errors', () => {
     expect(messages[0].userError).not.toContain('server said so')
   })
 
+  const runCompletionWith = (output: Record<string, unknown>) => {
+    const messages = baseMessage()
+    const updater = makeUpdater(messages)
+    handleRunCompletion({
+      runState: {
+        traceSessionId: 'trace-test',
+        sessionState: undefined as any,
+        output: output as any,
+      },
+      actualCredits: undefined,
+      agentMode: 'LITE',
+      timerController: createMockTimerController(),
+      updater,
+      aiMessageId: 'ai-1',
+      wasAbortedByUser: false,
+      setStreamStatus: () => {},
+      setCanProcessQueue: () => {},
+      updateChainInProgress: () => {},
+      setHasReceivedPlanResponse: () => {},
+    })
+    updater.flush()
+    return messages
+  }
+
   describe('model_unavailable', () => {
     let sessionSpies: Array<ReturnType<typeof spyOn>> = []
     beforeEach(() => {
@@ -2148,30 +2172,6 @@ describe('freebuff gate errors', () => {
     afterEach(() => {
       for (const spy of sessionSpies) spy.mockRestore()
     })
-
-    const runCompletionWith = (output: Record<string, unknown>) => {
-      const messages = baseMessage()
-      const updater = makeUpdater(messages)
-      handleRunCompletion({
-        runState: {
-          traceSessionId: 'trace-test',
-          sessionState: undefined as any,
-          output: output as any,
-        },
-        actualCredits: undefined,
-        agentMode: 'LITE',
-        timerController: createMockTimerController(),
-        updater,
-        aiMessageId: 'ai-1',
-        wasAbortedByUser: false,
-        setStreamStatus: () => {},
-        setCanProcessQueue: () => {},
-        updateChainInProgress: () => {},
-        setHasReceivedPlanResponse: () => {},
-      })
-      updater.flush()
-      return messages
-    }
 
     test('handleRunCompletion shows the server message and keeps the session', () => {
       const serverMessage =
@@ -2215,6 +2215,105 @@ describe('freebuff gate errors', () => {
       updater.flush()
       expect(messages[0].userError).toBe(FREEBUFF_MODEL_UNAVAILABLE_MESSAGE)
       for (const spy of sessionSpies) expect(spy).not.toHaveBeenCalled()
+    })
+  })
+  // The run output the SDK resolves for each real `/api/v1/chat/completions`
+  // refusal: `{error, message}` JSON parsed into `error` / `message`, plus the
+  // HTTP status as `statusCode` (absent for an in-band SSE error chunk).
+  describe('session_superseded and model_at_capacity (real server shapes)', () => {
+    let ended: ReturnType<typeof spyOn>
+    let superseded: ReturnType<typeof spyOn>
+    beforeEach(() => {
+      ended = spyOn(freebuffSession, 'markFreebuffSessionEnded')
+      superseded = spyOn(freebuffSession, 'markFreebuffSessionSuperseded')
+    })
+    afterEach(() => {
+      ended.mockRestore()
+      superseded.mockRestore()
+    })
+
+    test('a refunded start shows the server message, suggests /model, and ends the session', () => {
+      // _post.ts, when beginDesktopStart answers 'refunded' (CLI claims ride
+      // the same multi-session path since #4017).
+      const serverMessage =
+        'This model purchase was refunded. Start a new session to try again.'
+      const messages = runCompletionWith({
+        type: 'error',
+        message: serverMessage,
+        error: 'session_superseded',
+        statusCode: 409,
+      })
+      expect(messages[0].userError).toBe(
+        `${serverMessage} ${FREEBUFF_REFUNDED_START_HINT}`,
+      )
+      expect(messages[0].userError).toContain('/model')
+      expect(messages[0].userError).not.toContain('taken over')
+      expect(messages[0].userError).not.toContain('Restart Freebuff')
+      expect(messages[0].isComplete).toBe(true)
+      // `ended`, not the terminal `superseded`: the next send admits anew.
+      expect(ended).toHaveBeenCalledTimes(1)
+      expect(superseded).not.toHaveBeenCalled()
+    })
+
+    test('an hour closed before the request started relays the server message and ends the session', () => {
+      // RefundAdmissionClosedError, answered as 409 session_superseded.
+      const serverMessage =
+        'Your session ended before this request started. Send your message again to start a new one.'
+      const messages = runCompletionWith({
+        type: 'error',
+        message: serverMessage,
+        error: 'session_superseded',
+        statusCode: 409,
+      })
+      expect(messages[0].userError).toBe(serverMessage)
+      expect(ended).toHaveBeenCalledTimes(1)
+      expect(superseded).not.toHaveBeenCalled()
+    })
+
+    test('a real takeover keeps the takeover message and terminal state', () => {
+      // checkSessionAdmissible in public-api.ts.
+      const messages = runCompletionWith({
+        type: 'error',
+        message:
+          'Another instance of freebuff has taken over this session. Only one instance per account is allowed.',
+        error: 'session_superseded',
+        statusCode: 409,
+      })
+      expect(messages[0].userError).toContain(
+        'released or taken over by another instance',
+      )
+      expect(superseded).toHaveBeenCalledTimes(1)
+      expect(ended).not.toHaveBeenCalled()
+    })
+
+    test('a 503 model_at_capacity is shown as-is and leaves the session alone', () => {
+      // ModelAtCapacityError: 503 {error:'model_at_capacity', message} + Retry-After.
+      const serverMessage =
+        'Space Bunny is at capacity right now. Please try again in a few minutes or pick another model.'
+      const messages = runCompletionWith({
+        type: 'error',
+        message: serverMessage,
+        error: 'model_at_capacity',
+        statusCode: 503,
+      })
+      expect(messages[0].userError).toBe(serverMessage)
+      expect(ended).not.toHaveBeenCalled()
+      expect(superseded).not.toHaveBeenCalled()
+    })
+
+    test('an in-band model_at_capacity chunk is shown as-is and leaves the session alone', () => {
+      // modelAtCapacityChunk: `data: {error:{message, code:'model_at_capacity',
+      // type:'capacity_error'}}` after SSE headers, so no HTTP status.
+      const serverMessage =
+        'Space Bunny is at capacity right now. Please try again in a few minutes or pick another model.'
+      const messages = runCompletionWith({
+        type: 'error',
+        message: serverMessage,
+        error: 'model_at_capacity',
+      })
+      expect(messages[0].userError).toBe(serverMessage)
+      expect(ended).not.toHaveBeenCalled()
+      expect(superseded).not.toHaveBeenCalled()
     })
   })
 })

@@ -18,10 +18,12 @@ import {
   getFreeModeUnavailableErrorMessage,
   getFreebuffGateErrorKind,
   getFreebuffRateLimitErrorMessage,
+  getFreebuffSupersededReason,
   isOutOfCreditsError,
   isFreebuffProviderUsageError,
   isFreeModeUnavailableError,
   FREEBUFF_MODEL_UNAVAILABLE_MESSAGE,
+  FREEBUFF_REFUNDED_START_HINT,
   OUT_OF_CREDITS_MESSAGE,
 } from '../../utils/error-handling'
 import { formatElapsedTime } from '../../utils/format-elapsed-time'
@@ -628,7 +630,24 @@ function handleFreebuffGateError(
       // "let's start fresh".
       refreshFreebuffSession().catch(() => {})
       return
-    case 'session_superseded':
+    case 'session_superseded': {
+      const reason = getFreebuffSupersededReason(opts.serverMessage)
+      if (reason !== 'taken_over') {
+        // A refunded start or an already-closed hour, not another instance:
+        // nothing is fighting us for the seat, and restarting Freebuff would
+        // not help. Say what the server said and end the session, so the next
+        // send admits a new one (possibly on another model). Both readings
+        // come from the message, so it is never empty here.
+        updater.markComplete()
+        const serverMessage = (opts.serverMessage ?? '').trim()
+        updater.setError(
+          reason === 'refunded_start'
+            ? `${serverMessage} ${FREEBUFF_REFUNDED_START_HINT}`
+            : serverMessage,
+        )
+        markFreebuffSessionEnded()
+        return
+      }
       updater.setError(
         'This Freebuff session was released or taken over by another instance. Restart Freebuff to start another session.',
       )
@@ -636,6 +655,7 @@ function handleFreebuffGateError(
       // so we don't silently fight the other instance for the seat.
       markFreebuffSessionSuperseded()
       return
+    }
     case 'model_unavailable':
       // The model was withdrawn from free mode. Terminal for this request
       // only: the session survives (`endsTheSession: false`), so neither end it
