@@ -107,6 +107,15 @@ import { readClipboardImage } from './utils/clipboard-image'
 import { returnToFreebuffLanding } from './hooks/use-freebuff-session'
 import { END_SESSION_MESSAGE, IS_FREEBUFF } from './utils/constants'
 import { getSystemMessage } from './utils/message-history'
+import { ProfileSurveyBox } from './components/profile-survey-box'
+import {
+  closeProfileSurveyForTyping,
+  dispatchProfileSurveyInput,
+  isProfileSurveyOnScreen,
+  setProfileSurveyEligible,
+  setProfileSurveyPrinter,
+  startProfileSurveyOnce,
+} from './state/profile-survey-store'
 import { getInputModeConfig } from './utils/input-modes'
 import { sealInputProfile, withPasteCount } from './utils/input-profile'
 import {
@@ -1816,6 +1825,7 @@ export const Chat = ({
         if (!dockProposal) return
         handleSponsoredProposalMenu(dockProposal.target, !dockProposal.menuOpen)
       },
+      onProfileSurveyInput: dispatchProfileSurveyInput,
     }),
     [
       dockPanel,
@@ -2093,6 +2103,34 @@ export const Chat = ({
     if (dockTakeoverActive) dockPanel.collapse('outside')
   }, [dockTakeoverActive, dockPanel])
 
+  // THE PROFILE SURVEY BOX (COD-779): Freebuff only, only while a turn is
+  // running, only over an empty default-mode draft with no takeover screen
+  // up. The first busy turn of the process fetches it once. Typing a prompt
+  // while it is up closes it silently (answers stay server-side). Its keys
+  // are routed in `keyboard-actions.ts`; it reports nothing to the ad rail.
+  const isTurnBusy = isStreaming || isWaitingForResponse
+  const profileSurveyEligible =
+    IS_FREEBUFF &&
+    isTurnBusy &&
+    inputMode === 'default' &&
+    inputValue.length === 0 &&
+    !feedbackMode &&
+    !publishMode &&
+    !dockTakeoverActive
+  const hasDraft = inputValue.length > 0
+  useEffect(() => {
+    if (IS_FREEBUFF && isTurnBusy) void startProfileSurveyOnce()
+  }, [isTurnBusy])
+  useEffect(() => {
+    if (hasDraft && isProfileSurveyOnScreen()) closeProfileSurveyForTyping()
+    setProfileSurveyEligible(profileSurveyEligible)
+  }, [hasDraft, profileSurveyEligible])
+  useEffect(() => {
+    setProfileSurveyPrinter((text) =>
+      setMessages((prev) => [...prev, getSystemMessage(text)]),
+    )
+  }, [setMessages])
+
   const shouldShowStatusLine =
     !feedbackMode &&
     (hasStatusIndicatorContent ||
@@ -2267,6 +2305,9 @@ export const Chat = ({
             />
           </box>
         )}
+
+        {/* Beside the ad surfaces above, never in place of one. */}
+        {IS_FREEBUFF && <ProfileSurveyBox width={separatorWidth} />}
 
         {IS_FREEBUFF &&
           !freebuffControlsOpen &&

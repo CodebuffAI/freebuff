@@ -1,5 +1,10 @@
 import { getInputModeConfig, type InputMode } from './input-modes'
+import { profileSurveyInputForKey } from './profile-survey-machine'
 import { isPlainEnterKey } from './terminal-enter-detection'
+import type {
+  ProfileSurveyInput,
+  ProfileSurveyKeyContext,
+} from './profile-survey-machine'
 import type { KeyEvent } from '@opentui/core'
 
 
@@ -71,6 +76,12 @@ export type ChatKeyboardState = {
    * keyboard outright and owns its own Escape.
    */
   sponsoredDockActive?: boolean
+  /**
+   * The profile survey box (COD-779), when it is on screen; null/undefined
+   * when it is not, and then it claims nothing. Read fresh from
+   * `profile-survey-store` on every key by `useChatKeyboard`.
+   */
+  profileSurvey?: ProfileSurveyKeyContext | null
 }
 
 /**
@@ -140,6 +151,9 @@ export type ChatKeyboardAction =
   | { type: 'toggle-dock-panel' }
   | { type: 'close-dock-panel' }
   | { type: 'toggle-sponsored-dock' }
+
+  // Profile survey box (COD-779)
+  | { type: 'profile-survey'; input: ProfileSurveyInput }
 
   // No action needed
   | { type: 'show-help' }
@@ -228,6 +242,23 @@ export function resolveChatKeyboardAction(
     if (isDockChord) {
       return { type: 'toggle-dock-panel' }
     }
+  }
+
+  // Priority 1.75: The profile survey box (COD-779), only while it is on
+  // screen AND the draft is empty in default mode. It claims a digit naming
+  // an option, Enter on a multi-select, ← (back) and Esc (not now) — so while
+  // it is up, Esc means "not now" rather than "interrupt the run", and ←
+  // means "back" rather than "chat history". Ctrl+C still interrupts. Any
+  // other key falls through and starts a prompt, which closes the box. The
+  // composer's intercept (`chat-input-key-intercept.ts`) asks the same
+  // function, so the two layers never disagree about a key.
+  if (
+    state.profileSurvey &&
+    state.inputMode === 'default' &&
+    state.inputValue.length === 0
+  ) {
+    const input = profileSurveyInputForKey(key, state.profileSurvey)
+    if (input) return { type: 'profile-survey', input }
   }
 
   // Priority 2: Non-default input mode escape

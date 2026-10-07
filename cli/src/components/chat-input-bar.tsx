@@ -21,6 +21,7 @@ import { useEvent } from '../hooks/use-event'
 import { tryGetProjectRoot } from '../project-files'
 import { useChatStore } from '../state/chat-store'
 import { shouldInterceptChatInputKey } from '../utils/chat-input-key-intercept'
+import { getProfileSurveyKeyContext } from '../state/profile-survey-store'
 import { getInputModeConfig } from '../utils/input-modes'
 import { recordTypedInput } from '../utils/input-profile'
 import { BORDER_CHARS } from '../utils/ui-constants'
@@ -208,6 +209,7 @@ export const ChatInputBar = ({
         lastEditDueToNav: draft.lastEditDueToNav,
         cursorPosition: draft.cursorPosition,
         inputLength: draft.inputValue.length,
+        profileSurvey: getProfileSurveyKeyContext(),
       })
     },
   )
