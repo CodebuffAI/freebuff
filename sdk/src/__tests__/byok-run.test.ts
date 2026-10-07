@@ -168,9 +168,11 @@ describe('direct BYOK SDK runs', () => {
 
   test('refuses server-side web_search without contacting a hosted backend', async () => {
     const requests: string[] = []
+    const bodies: string[] = []
     let step = 0
-    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
       requests.push(String(input))
+      bodies.push(String(init?.body))
       step += 1
       if (step === 1) {
         return sse({ id: 'tool', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'search', type: 'function', function: { name: 'web_search', arguments: JSON.stringify({ query: 'test' }) } }] }, finish_reason: 'tool_calls' }] })
@@ -185,6 +187,8 @@ describe('direct BYOK SDK runs', () => {
     expect(result.output.type).not.toBe('error')
     expect(requests).toHaveLength(2)
     expect(requests.every((url) => url === 'http://127.0.0.1:9876/v1/chat/completions')).toBe(true)
+    // The refusal is what the model sees as the tool result.
+    expect(bodies[1]).toContain('unavailable in a direct BYOK run')
   })
 
   test('explicit connection recovery retains history, repins checkpoints, and can return to hosted inference', async () => {
@@ -263,7 +267,10 @@ describe('direct BYOK SDK runs', () => {
       requests.push(String(input))
       return new Response(JSON.stringify({ error: { message: 'provider-key-canary must not leak' } }), {
         status,
-        headers: { 'content-type': 'application/json' },
+        // The AI SDK retries a 429 three times, 2s/4s/8s apart unless the
+        // provider says otherwise; `retry-after-ms` (OpenAI's header) keeps
+        // every retry and none of the 14s wait.
+        headers: { 'content-type': 'application/json', 'retry-after-ms': '0' },
       })
     }) as typeof fetch
 
@@ -274,7 +281,8 @@ describe('direct BYOK SDK runs', () => {
     if (result.output.type !== 'error') throw new Error('expected BYOK provider error')
     expect(result.output.message).toContain(expected)
     expect(result.output.message).not.toContain('provider-key-canary')
-    expect(requests).not.toHaveLength(0)
+    // 401/402 are final; a 429 is the first try plus the AI SDK's three retries.
+    expect(requests).toHaveLength(status === 429 ? 4 : 1)
     expect(requests.every((url) => url === 'http://127.0.0.1:9876/v1/chat/completions')).toBe(true)
   }, 30_000)
 

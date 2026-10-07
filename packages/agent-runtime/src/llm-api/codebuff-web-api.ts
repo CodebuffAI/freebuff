@@ -9,6 +9,15 @@ const MAX_RETRIES = 3
 const RETRY_BASE_DELAY_MS = 1000
 const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504])
 
+/**
+ * Thrown by a runtime `fetch` that will never reach the hosted service (a
+ * direct BYOK run has no Codebuff allowance). Retrying it cannot succeed, so
+ * the tool fails at once instead of after the 1s + 2s network-error backoff.
+ */
+export class HostedServiceUnavailableError extends Error {
+  override name = 'HostedServiceUnavailableError'
+}
+
 interface CodebuffWebApiEnv {
   clientEnv: ClientEnv
   ciEnv: CiEnv
@@ -121,6 +130,9 @@ const callCodebuffV1 = async (params: {
       return { json, creditsUsed: getNumberField(json, 'creditsUsed') }
     } catch (error) {
       lastError = error instanceof Error ? error.message : 'Network error'
+      if (error instanceof HostedServiceUnavailableError) {
+        return { error: lastError }
+      }
 
       // Retry on network errors
       if (attempt < MAX_RETRIES) {
