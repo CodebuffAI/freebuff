@@ -245,8 +245,11 @@ export const PROFILE_SURVEY_VERSIONS = [
  *  run on the fake client and ignore it. */
 export const ACTIVE_PROFILE_SURVEY_VERSION: number | null = 1
 
-/** Freebucks per arm. Index = arm; assignment is per user per version. */
-export const PROFILE_SURVEY_REWARD_ARMS = [0, 5, 25] as const
+/** Freebucks per arm. Index = arm; assignment is per user per version.
+ *  Arm 2 paid 25 until 2026-10-07, when 5 proved enough; it now pays 5 too, so
+ *  no one is re-bucketed. A state row keeps the reward it was created with, so
+ *  analyse by `reward_freebucks`, not `arm`. */
+export const PROFILE_SURVEY_REWARD_ARMS = [0, 5, 5] as const
 export type ProfileSurveyArm = 0 | 1 | 2
 
 export const PROFILE_SURVEY_ARM_SALT = 'profile_survey_reward_arm_2026_10'
