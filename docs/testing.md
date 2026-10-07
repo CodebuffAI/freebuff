@@ -260,22 +260,78 @@ path (the big four: `freebuff/web`, `freebuff-desktop`, `web`, `cli`), and add
 it to `small` otherwise. The three Windows areas are one `test-windows` job
 for the same reason: setup was 75–95% of each.
 
+### Big suites are sharded
+
+The opposite case: a suite too slow for one runner gets several lanes, one per
+`shard: i/n`, each naming the same single package. `test-with-guard --shard i/n`
+runs the files `scripts/ci/test-shard.ts` assigns to that shard and guards them
+under the key `<key>#i/n`. Today that is the `freebuff/web` and
+`freebuff-desktop` unit suites and `web`'s DB integration suite, two shards
+each.
+
+- **Assignment is a hash of the file's path** (FNV-1a over the path
+  `test:files` prints, modulo n). Adding or deleting a file changes one shard's
+  count and no other. A split by position in the sorted list would move files
+  between shards on every addition, and a healthy shard could fall below its
+  file floor.
+- **Each shard has its own baseline**, recorded from a CI log like any other
+  (never `--update` locally). Changing n, or the hash, moves files between
+  shards, so every shard of that package needs re-recording from the first CI
+  run that has the change. `scripts/__tests__/test-shard.test.ts` pins two
+  assignments so a hash change cannot happen by accident.
+- **The shards must be one complete partition.** `check-test-coverage.ts`
+  fails if a sharded package does not declare every index 1..n of one n exactly
+  once, appears unsharded in the same job as well, or has a file that hashes to
+  no declared shard or to two. Without that check, dropping the `2/2` lane would
+  lose half the suite while every remaining lane passed.
+- **Some files must share a shard.** `SHARD_TOGETHER` in `test-shard.ts`
+  hashes a directory as one unit. web's `src/server/desktop-cloud/` is one:
+  its suites start and stop local R2 (workerd) in-process, and split by file,
+  `store.integration.test.ts` hung for 60s after `org-invite-store`, `storage`
+  and `github` ran before it, reproducibly in CI. With the rest of the
+  directory between them, as in an unsharded run, it passes. Add a group only
+  for a cross-file hazard you have reproduced, and fix the hazard where you can.
+- **A new file order surfaces leaks.** Sharding's first CI run found two
+  freebuff/web tests leaving a fake `window` behind (a later server render then
+  threw on `window.location.href`) and a process-group test that read `/proc`
+  before the killed process had finished exiting. Fix the leaking test; do
+  not move files between shards to hide it.
+- **Conditions that mean "this package" test `matrix.packages`**, not
+  `matrix.lane`: a shard's lane is named `web (1/2)`, so `matrix.lane == 'web'`
+  would quietly stop matching (and stop starting its Redis service).
+
+Measured before sharding (8 green main runs, 2026-10-07; median job time):
+`test-integration-web` 282s and `test-freebuff/web` 276s were the two slowest
+jobs, with ~200s and ~225s of `bun test`. Per-file times from three of those
+logs (the gap between consecutive file headers) split 102s/104s for
+freebuff/web and, with desktop-cloud kept together, 78s/125s for web; web's
+two slowest DB files (~33s and ~22s) land in different shards. With those two
+split, `test-freebuff-desktop` (164–267s of tests on its pinned Bun, 255s
+median job, 330s in the PR's run) was the slowest job, so it is split too,
+96s/98s by per-file time.
+
+Two shards each, not three: the jobs behind them sit at 220–265s
+(`test-windows`, `build-freebuff-web`, `typecheck-freebuff-web`,
+`typecheck-rest`), so a third shard would buy no wall clock for another ~70s of
+setup. Shard a suite only when it is clearly the long pole. Each extra shard
+costs a full job's setup (~50–70s of runner time), and on this pool runner
+pickup was the larger delay in the slowest runs: up to ~350s before a job
+started, which more concurrent jobs make no better.
+
 ### Known remaining cost
 
-`freebuff-desktop` is the heaviest suite — ~54s on CI, about half of all test
-execution in the repo — and `src/app/thread-engine.test.ts` is most of it (244
-of its tests). There is no hot spot to fix: the time is spread evenly (the
-slowest single test is 1.6s) and about a quarter of it is the `gitEngine`
-fixture spawning a real `git init` + commit per test (~125ms each, measured).
-That is genuine coverage of worktree lifecycle behaviour, not slop — the lever
-is sharding, not deleting cases. Sharding needs its own baseline key per shard
-in `.github/test-baselines.json`, recorded from a real CI run (see above), and
-is only worth doing once it is actually on the critical path. It is not today:
-the whole job finishes in 130s against `typecheck`'s 326s.
+What is left on the critical path is not test time. `test-windows` spends
+~130s of its ~264s restoring and installing dependencies on a cold Windows
+runner. `typecheck-freebuff-web` and `typecheck-rest` are one `tsc` each
+(160–220s) behind ~45s of setup, and `build-freebuff-web` is a ~90s Turbopack
+compile with its cache deliberately not kept (see the comment in `ci.yml`).
+None of these has setup left to cut; the levers are incremental `tsc` or a
+larger runner, and both need their own measurement.
 
-Measure it on CI, not locally. That same file takes ~101s on an M-series Mac
-against ~54s for the entire desktop suite on a runner, so local timings will
-send you after the wrong thing.
+Measure test time on CI, not locally. freebuff-desktop's
+`src/app/thread-engine.test.ts` once took ~101s on an M-series Mac against
+~54s for the entire desktop suite on a runner, so local timings will send you
+after the wrong thing.
 
 ### Cold Bun installs beat the dependency cache on Ubicloud
 
