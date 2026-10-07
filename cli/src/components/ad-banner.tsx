@@ -20,6 +20,7 @@ import { visibleWaitingRoomPlacementIds } from '@codebuff/common/ads/waiting-roo
 import { safeOpen } from '../utils/open-url'
 import React, { useState, useMemo, useEffect } from 'react'
 
+import { greptileTerminalColors } from '../ads/partner-brand'
 import { layoutTruncated } from '../ads/ad-engagement'
 import { useAdEngagement } from '../ads/use-ad-engagement'
 
@@ -130,7 +131,11 @@ export const AdCard: React.FC<{
   onClick?: (ad: AdResponse) => void
   onImpression?: (ad: AdResponse) => void
 }> = ({ ad, width, variant = 'card', onClick, onImpression }) => {
-  const theme = useTheme()
+  const baseTheme = useTheme()
+  const brand = greptileTerminalColors(ad)
+  const theme = brand
+    ? { ...baseTheme, foreground: brand.ink, muted: brand.ink, primary: brand.ink }
+    : baseTheme
   const [isHovered, setIsHovered] = useState(false)
 
   useEffect(() => {
@@ -189,6 +194,7 @@ export const AdCard: React.FC<{
         style={{
           width,
           height: INLINE_AD_CARD_HEIGHT,
+          backgroundColor: brand?.background,
           borderStyle: 'single',
           borderColor: accentColor,
           customBorderChars: BORDER_CHARS,
@@ -259,6 +265,7 @@ export const AdCard: React.FC<{
       style={{
         width,
         height: AD_CARD_HEIGHT,
+        backgroundColor: brand?.background,
         borderStyle: 'single',
         borderColor: isHovered ? theme.primary : theme.muted,
         customBorderChars: BORDER_CHARS,
@@ -321,7 +328,7 @@ export const AdCard: React.FC<{
       >
         <text
           style={{
-            fg: INVERTED_CTA_FG,
+            fg: brand?.background ?? INVERTED_CTA_FG,
             bg: isHovered ? theme.primary : theme.muted,
             attributes: TextAttributes.BOLD,
           }}
@@ -377,7 +384,11 @@ export const DockAdCard: React.FC<{
   onClick,
   onImpression,
 }) => {
-  const theme = useTheme()
+  const baseTheme = useTheme()
+  const brand = greptileTerminalColors(ad)
+  const theme = brand
+    ? { ...baseTheme, foreground: brand.ink, muted: brand.ink, primary: brand.ink }
+    : baseTheme
   const [isHovered, setIsHovered] = useState(false)
   const [isCtaHovered, setIsCtaHovered] = useState(false)
 
@@ -443,6 +454,7 @@ export const DockAdCard: React.FC<{
       style={{
         width,
         height: AD_CARD_HEIGHT,
+        backgroundColor: brand?.background,
         borderStyle: 'single',
         borderColor: accentColor,
         customBorderChars: BORDER_CHARS,
@@ -535,7 +547,7 @@ export const DockAdCard: React.FC<{
       >
         <text
           style={{
-            fg: isCtaHovered ? INVERTED_CTA_FG : theme.primary,
+            fg: isCtaHovered ? brand?.background ?? INVERTED_CTA_FG : theme.primary,
             bg: isCtaHovered ? theme.primary : undefined,
             wrapMode: 'none',
           }}
@@ -565,7 +577,11 @@ export const DockDetailPanel: React.FC<{
   onClose: () => void
   onClick?: (ad: AdResponse, from: DockClickOrigin) => void
 }> = ({ ad, width, availableRows, onClose, onClick }) => {
-  const theme = useTheme()
+  const baseTheme = useTheme()
+  const brand = greptileTerminalColors(ad)
+  const theme = brand
+    ? { ...baseTheme, foreground: brand.ink, muted: brand.ink, primary: brand.ink }
+    : baseTheme
   const [isCtaHovered, setIsCtaHovered] = useState(false)
   const [isCloseHovered, setIsCloseHovered] = useState(false)
 
@@ -592,6 +608,7 @@ export const DockDetailPanel: React.FC<{
       style={{
         width: panel.width,
         height: panel.height,
+        backgroundColor: brand?.background,
         borderStyle: 'single',
         borderColor: theme.primary,
         customBorderChars: BORDER_CHARS,
@@ -681,7 +698,7 @@ export const DockDetailPanel: React.FC<{
         >
           <text
             style={{
-              fg: isCtaHovered ? INVERTED_CTA_FG : theme.primary,
+              fg: isCtaHovered ? brand?.background ?? INVERTED_CTA_FG : theme.primary,
               bg: isCtaHovered ? theme.primary : undefined,
               wrapMode: 'none',
             }}

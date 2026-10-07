@@ -82,10 +82,11 @@ export type AdResponse = {
   expandedBody?: string
   bullets?: string[]
   diagram?: string
+  /** Explicit server-owned partner designation. */
+  partnerBrand?: 'greptile'
   /**
-   * A PARTNER creative's fill and ink, `#rrggbb`. Only a partner placement's
-   * fill carries them, and only the partner row reads them — every other slot
-   * in the CLI draws in the terminal theme's own colours.
+   * Reviewed fill and ink, `#rrggbb`, for custom partner rows. Ordinary ads
+   * use them only with Greptile's explicit partner designation.
    */
   brandColor?: string
   brandInk?: string

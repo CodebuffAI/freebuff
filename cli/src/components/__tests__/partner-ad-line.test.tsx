@@ -1,4 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import { RGBA, TextAttributes } from '@opentui/core'
+import { greptileTerminalColors } from '../../ads/partner-brand'
+import { AdCard } from '../ad-banner'
 import { createTestRenderer } from '@opentui/core/testing'
 import { createRoot, flushSync } from '@opentui/react'
 import React from 'react'
@@ -20,6 +23,7 @@ afterEach(() => {
 })
 
 const AD = {
+  partnerBrand: 'greptile' as const,
   title: 'Review PR with Greptile',
   url: 'https://greptile.com',
   brandColor: '#20d6a0',
@@ -63,10 +67,9 @@ describe('PartnerAdLineView', () => {
     expect(frame).not.toContain('greptile.com')
   })
 
-  test('draws plainly rather than not at all when the colours are unusable', async () => {
-    // A creative mid-edit, and a terminal with no truecolor, both land here.
-    // The row keeps its shape, its click and its disclosure; only the colour
-    // is ours rather than a brand we would be inventing.
+  test('keeps the copy and disclosure when the colours are unusable', async () => {
+    // Invalid colours do not remove the row. Greptile retains its indexed
+    // green fallback; non-partner creatives keep the terminal theme.
     const frame = await renderFrame(
       <PartnerAdLineView
         ad={{ ...AD, brandColor: 'not-a-colour', brandInk: undefined }}
@@ -81,89 +84,63 @@ describe('PartnerAdLineView', () => {
   })
 })
 
-describe('the slash menu’s extra row', () => {
+describe('selectable partner menu row', () => {
   const items = [
     { id: 'plan', label: 'plan', description: 'Plan before making changes' },
     { id: 'review', label: 'review', description: 'Review code changes' },
+    { id: 'partner:review', label: '', description: '',
+      render: (selected: boolean, width: number) => <PartnerAdLineView ad={AD} width={width} selected={selected} /> },
     { id: 'queue', label: 'queue', description: 'Manage queued messages' },
   ]
-
-  test('draws the partner row directly under /review', async () => {
-    const frame = await renderFrame(
-      <SuggestionMenu
-        items={items}
-        selectedIndex={0}
-        maxVisible={5}
-        afterItem={{
-          id: 'review',
-          node: <PartnerAdLineView key="ad" ad={AD} width={72} />,
-        }}
-      />,
-      80,
-      6,
-    )
-
+  test('the ad occupies the position between review and queue and shows its selection', async () => {
+    const frame = await renderFrame(<SuggestionMenu items={items} selectedIndex={2} maxVisible={5} />, 80, 6)
     const lines = frame.split('\n').map((line) => line.trim())
-    const reviewRow = lines.findIndex((line) => line.startsWith('/review'))
-    const adRow = lines.findIndex((line) => line.includes('Review PR with'))
-    const queueRow = lines.findIndex((line) => line.startsWith('/queue'))
-    expect(reviewRow).toBeGreaterThanOrEqual(0)
-    expect(adRow).toBe(reviewRow + 1)
-    expect(queueRow).toBe(adRow + 1)
+    const review = lines.findIndex((line) => line.startsWith('/review'))
+    expect(lines[review + 1]).toStartWith('› Review PR with Greptile')
+    expect(lines[review + 2]).toStartWith('/queue')
+    const next = await renderFrame(<SuggestionMenu items={items} selectedIndex={3} maxVisible={1} />, 80, 2)
+    expect(next).toContain('/queue')
+    expect(next).not.toContain('Greptile')
+    const adOnly = await renderFrame(<SuggestionMenu items={items} selectedIndex={2} maxVisible={1} />, 80, 2)
+    expect(adOnly).toContain('› Review PR with Greptile')
   })
+})
 
-  test('is not an item, so it cannot be selected or scrolled onto', async () => {
-    // The row takes no index. If it were an item, `selectedIndex` would land
-    // on an ad and Enter would run it as a command.
-    const withAd = await renderFrame(
-      <SuggestionMenu
-        items={items}
-        selectedIndex={2}
-        maxVisible={5}
-        afterItem={{
-          id: 'review',
-          node: <PartnerAdLineView key="ad" ad={AD} width={72} />,
-        }}
-      />,
-      80,
-      6,
-    )
-    // `/queue` is still the third item and still the selected one.
-    expect(withAd).toContain('/queue')
-    expect(withAd).toContain('Review PR with Greptile')
-  })
+test('Greptile paints the row and ordinary card green with dark ink', async () => {
+  const setup = await createTestRenderer({ width: 78, height: 7 })
+  const root = createRoot(setup.renderer)
+  const fill = { ...AD, adText: 'Ship reviewed code', cta: 'Review', favicon: '', impUrl: '', clickUrl: '' }
+  flushSync(() => root.render(<box flexDirection="column">
+    <PartnerAdLineView ad={AD} width={78} />
+    <AdCard ad={fill} width={78} />
+  </box>))
+  try {
+    await setup.renderOnce()
+    const lines = setup.captureSpans().lines
+    const palette = greptileTerminalColors(AD)!
+    const color = (value: string | RGBA) => typeof value === 'string' ? RGBA.fromHex(value) : value
+    for (const row of [0, 2]) {
+      const text = lines[row]!.spans.find((span) => span.text.includes('Review PR'))!
+      expect(text).toBeDefined()
+      expect(text.bg.toInts()).toEqual(color(palette.background).toInts())
+      expect(text.fg.toInts()).toEqual(color(palette.ink).toInts())
+      expect(text.attributes & TextAttributes.BOLD).toBeTruthy()
+    }
+    // Includes padding: a full-width band, not a green label on a black row.
+    expect(lines[0]!.spans.every((span) => span.bg.toInts().join() === color(palette.background).toInts().join())).toBe(true)
+  } finally {
+    flushSync(() => root.unmount())
+    setup.renderer.destroy()
+  }
+})
 
-  test('draws nothing extra when no row is supplied', async () => {
-    const frame = await renderFrame(
-      <SuggestionMenu items={items} selectedIndex={0} maxVisible={5} />,
-      80,
-      4,
-    )
-
-    expect(frame).toContain('/review')
-    expect(frame).not.toContain('Review PR with Greptile')
-  })
-
-  test('ignores a row whose item is not on screen', async () => {
-    // The window scrolls, and the ad belongs to `/review` rather than to the
-    // menu: a request made while the command is off screen is an impression
-    // for a slot nobody is looking at.
-    const frame = await renderFrame(
-      <SuggestionMenu
-        items={items}
-        selectedIndex={0}
-        maxVisible={5}
-        afterItem={{
-          id: 'not-a-command',
-          node: <PartnerAdLineView key="ad" ad={AD} width={72} />,
-        }}
-      />,
-      80,
-      4,
-    )
-
-    expect(frame).not.toContain('Review PR with Greptile')
-  })
+test('only Greptile gets ordinary branding, with explicit indexed fallback', () => {
+  expect(greptileTerminalColors({ ...AD, partnerBrand: undefined }, true)).toBeNull()
+  expect(greptileTerminalColors(AD, true)).toEqual({ background: AD.brandColor, ink: AD.brandInk })
+  const indexed = greptileTerminalColors(AD, false)!
+  expect((indexed.background as RGBA).intent).toBe('indexed')
+  expect((indexed.background as RGBA).slot).toBe(48)
+  expect((indexed.ink as RGBA).slot).toBe(16)
 })
 
 describe('PartnerAdRow engagement (COD-757)', () => {

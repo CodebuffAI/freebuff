@@ -11,6 +11,9 @@ export interface SuggestionItem {
   labelHighlightIndices?: number[] | null
   description: string
   descriptionHighlightIndices?: number[] | null
+  /** A selectable action row, such as a partner ad, rather than a command. */
+  activate?: () => void
+  render?: (selected: boolean, width: number) => React.ReactNode
 }
 
 interface SuggestionMenuProps {
@@ -21,19 +24,14 @@ interface SuggestionMenuProps {
   onItemClick?: (index: number) => void
   /** Muted hint line rendered below the suggestions */
   footer?: string
-  /**
-   * An extra row drawn directly under one item, when that item is visible.
-   *
-   * NOT AN ITEM. It takes no index, so `selectedIndex`, the scroll window and
-   * every keyboard action stay a function of `items` alone — the row cannot
-   * be selected with the arrow keys and Enter never lands on it. Only a click
-   * reaches it.
-   *
-   * It exists for the partner placement under `/review`, which is the
-   * advertiser's own chrome next to the command it is about. A menu entry
-   * would have been a command that is not a command.
-   */
-  afterItem?: { id: string; node: React.ReactNode }
+}
+
+/** Shared with partner fetching so an off-screen review row does not ask for an ad. */
+export function suggestionWindow(count: number, selectedIndex: number, maxVisible: number) {
+  const selected = Math.max(0, Math.min(selectedIndex, count - 1))
+  const visibleCount = Math.min(Math.max(maxVisible, 1), count)
+  const start = Math.max(0, Math.min(selected - Math.floor((visibleCount - 1) / 2), count - visibleCount))
+  return { start, visibleCount }
 }
 
 export const SuggestionMenu = ({
@@ -43,7 +41,6 @@ export const SuggestionMenu = ({
   prefix = '/',
   onItemClick,
   footer,
-  afterItem,
 }: SuggestionMenuProps) => {
   const theme = useTheme()
   const { terminalWidth } = useTerminalDimensions()
@@ -70,11 +67,7 @@ export const SuggestionMenu = ({
     Math.max(selectedIndex, 0),
     Math.max(items.length - 1, 0),
   )
-  const visibleCount = Math.min(Math.max(maxVisible, 1), items.length)
-
-  const maxStart = Math.max(items.length - visibleCount, 0)
-  const idealStart = clampedSelected - Math.floor((visibleCount - 1) / 2)
-  const start = Math.max(0, Math.min(idealStart, maxStart))
+  const { start, visibleCount } = suggestionWindow(items.length, clampedSelected, maxVisible)
   const visibleItems = items.slice(start, start + visibleCount)
 
   // Calculate max label length for alignment
@@ -98,6 +91,9 @@ export const SuggestionMenu = ({
     const isSelected = absoluteIndex === clampedSelected
     const isHovered = hasHoveredSinceOpen && absoluteIndex === hoveredIndex
     const isHighlighted = isSelected || isHovered
+    if (item.render) {
+      return <React.Fragment key={item.id}>{item.render(isSelected, menuWidth)}</React.Fragment>
+    }
     const labelLength = effectivePrefix.length + item.label.length
     const textColor = isHighlighted ? theme.foreground : theme.inputFg
     const descriptionColor = isHighlighted ? theme.foreground : theme.muted
@@ -218,16 +214,7 @@ export const SuggestionMenu = ({
       }}
       onMouseOut={() => setHoveredIndex(null)}
     >
-      {visibleItems.map((item, idx) =>
-        afterItem && item.id === afterItem.id ? (
-          <React.Fragment key={item.id}>
-            {renderSuggestionItem(item, idx)}
-            {afterItem.node}
-          </React.Fragment>
-        ) : (
-          renderSuggestionItem(item, idx)
-        ),
-      )}
+      {visibleItems.map(renderSuggestionItem)}
       {footer ? (
         <box style={{ paddingLeft: 1, paddingRight: 1 }}>
           <text style={{ fg: theme.muted, wrapMode: 'word' }}>{footer}</text>

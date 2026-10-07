@@ -15,17 +15,17 @@
  *   state this format may never have.
  * - THE COLOURS COME FROM THE REVIEWED CREATIVE, never from a table here. A
  *   rebrand, or a second partner, must not need a CLI release.
- * - A TERMINAL THAT CANNOT DRAW THEM DRAWS OURS. Apple Terminal has no
- *   truecolor, so a hex fill there is not "slightly off", it is wrong; the
- *   row falls back to the theme's own surface rather than lying about a
- *   brand.
+ * - Greptile uses an indexed green on terminals without truecolor. Other
+ *   partner deals retain their existing theme fallback.
  */
 import {
   getPartnerLineLayout,
   isValidBrandHex,
   PARTNER_LINE_GAP,
 } from '@codebuff/common/ads/inline-ad-layout'
-import React, { useEffect, useState } from 'react'
+import { TextAttributes } from '@opentui/core'
+import { greptileTerminalColors } from '../ads/partner-brand'
+import React, { useEffect, useState, useImperativeHandle, type Ref } from 'react'
 
 import { Button } from './button'
 import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
@@ -72,10 +72,6 @@ export function usePartnerAd(
     }
   }, [enabled, placementId])
 
-  useEffect(() => {
-    if (ad) recordPartnerImpression(ad)
-  }, [ad])
-
   return enabled ? ad : null
 }
 
@@ -88,7 +84,7 @@ export function usePartnerAd(
  * answerable from a pure input.
  */
 export const PartnerAdLineView: React.FC<{
-  ad: Pick<AdResponse, 'title' | 'url' | 'brandColor' | 'brandInk'>
+  ad: Pick<AdResponse, 'title' | 'url' | 'brandColor' | 'brandInk' | 'partnerBrand'>
   /**
    * The COLUMNS the row will occupy, for truncation. The box itself is always
    * `100%` of its parent: the row sits inside the slash menu, whose own rows
@@ -99,19 +95,17 @@ export const PartnerAdLineView: React.FC<{
   /** The mouse-up event, when there was one (modifiers for engagement). */
   onClick?: (event?: unknown) => void
   onHover?: (hovering: boolean) => void
-}> = ({ ad, width, onClick, onHover }) => {
+  selected?: boolean
+}> = ({ ad, width, onClick, onHover, selected = false }) => {
   const theme = useTheme()
-  const layout = getPartnerLineLayout(ad, width)
-  // A hex fill is drawn only where a hex fill is a colour. Everywhere else
-  // the row keeps its shape and takes the theme's raised surface: the ad is
-  // still disclosed, still clickable and still where the advertiser bought
-  // it, just not in a colour we would be inventing.
+  const layout = getPartnerLineLayout(ad, width - (selected ? 2 : 0))
+  const greptile = greptileTerminalColors(ad)
   const branded =
     supportsTruecolor() &&
     isValidBrandHex(ad.brandColor) &&
     isValidBrandHex(ad.brandInk)
-  const background = branded ? ad.brandColor : theme.surface
-  const ink = branded ? ad.brandInk : theme.foreground
+  const background = greptile?.background ?? (branded ? ad.brandColor : theme.surface)
+  const ink = greptile?.ink ?? (branded ? ad.brandInk : theme.foreground)
 
   return (
     <Button
@@ -129,8 +123,9 @@ export const PartnerAdLineView: React.FC<{
         overflow: 'hidden',
       }}
     >
-      <text style={{ fg: ink, flexShrink: 1, wrapMode: 'none' }}>
-        {layout.title}
+      <text style={{ fg: ink, flexShrink: 1, wrapMode: 'none' }}
+        attributes={(greptile ? TextAttributes.BOLD : 0) | (selected ? TextAttributes.UNDERLINE : 0)}>
+        {selected ? '› ' : ''}{layout.title}
         {layout.label ? (
           <span>{`${' '.repeat(PARTNER_LINE_GAP)}${layout.label}`}</span>
         ) : null}
@@ -158,30 +153,34 @@ export const PartnerAdLineView: React.FC<{
 export const PartnerAdRow: React.FC<{
   ad: AdResponse
   width: number
+  selected?: boolean
+  activateRef?: Ref<() => void>
   /** Test seams; production reports through the one CLI click path. */
   reportClick?: (ad: AdResponse) => void
   open?: (url: string) => void
-}> = ({ ad, width, reportClick = recordPartnerClick, open = safeOpen }) => {
+}> = ({ ad, width, selected, activateRef, reportClick = recordPartnerClick, open = safeOpen }) => {
   const engagement = useAdEngagement(ad.impUrl, {
     placement: 'pinned',
     truncated: layoutTruncated([
       [ad.title, getPartnerLineLayout(ad, width).title],
     ]),
   })
+  useEffect(() => { recordPartnerImpression(ad) }, [ad])
+  const activate = (event?: unknown) => {
+    if (!ad.clickUrl) return
+    engagement.onClick(event)
+    reportClick(ad)
+    open(ad.clickUrl)
+  }
+  // Keyboard and mouse use the same activation, including engagement/billing.
+  useImperativeHandle(activateRef, () => activate)
   return (
     <PartnerAdLineView
       ad={ad}
       width={width}
+      selected={selected}
       onHover={engagement.onHover}
-      onClick={(event) => {
-        if (!ad.clickUrl) return
-        engagement.onClick(event)
-        // The report beside the link, never awaited: a click that waited on
-        // our own telemetry before opening the browser would be slower than
-        // the ad is worth.
-        reportClick(ad)
-        open(ad.clickUrl)
-      }}
+      onClick={activate}
     />
   )
 }
