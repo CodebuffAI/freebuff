@@ -137,7 +137,8 @@ cd freebuff/web && DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/te
 ## What CI actually spends its time on
 
 `ci.yml` is one flat fan-out: `typecheck`, `build-web`, and three test matrices,
-with **no `needs:` edges between them**. Before that, every test job waited on a
+with **no `needs:` edges between them** (all of them wait only on the short
+`changes` job, below). Before that, every test job waited on a
 combined `build-and-check` gate, and measuring a run showed how badly that
 misread the cost:
 
@@ -319,6 +320,30 @@ setup. Shard a suite only when it is clearly the long pole. Each extra shard
 costs a full job's setup (~50–70s of runner time), and on this pool runner
 pickup was the larger delay in the slowest runs: up to ~350s before a job
 started, which more concurrent jobs make no better.
+
+### A pull request runs only the lanes it can reach
+
+A small `changes` job runs `scripts/ci/affected-lanes.ts` on the PR's merge
+commit, and every other job waits on it (the one `needs:` edge). It resolves
+every file's imports and repo-path reads into a file-level graph, and a lane
+runs when the PR touches its own packages or any file its tests, build or
+typecheck can load. Shared config (lockfile, root tsconfig/bunfig, `ci.yml`,
+`.github/actions/`, `scripts/ci/`, …), an unknown top-level path, or a failed
+`changes` job runs everything; pushes to `main` always run everything, which is
+the backstop for an edge the scanner misses.
+
+- **Why did a lane run (or not)?** The `changes` job's step summary names the
+  changed file that selected each lane. Locally:
+  `bun scripts/ci/affected-lanes.ts --files <path>…`, and
+  `AFFECTED_LANES_DEBUG=1` prints the import chain to each package.
+- **A matrix row** is picked up from `ci.yml` by its `packages`; nothing to add.
+  Shards share `packages`, so they run or skip together.
+- **A new non-matrix job** that should be filtered needs an entry in
+  `SINGLE_JOBS` in the script and its output in the `changes` job; a job with no
+  `needs: changes` simply always runs.
+- An unselected leg of the `test` / `test-db-integration` include matrices still
+  starts a runner and skips every step on `LANE_SELECTED`: a job-level `if:`
+  cannot read `matrix`, and `exclude` cannot remove `include` rows.
 
 ### Known remaining cost
 
