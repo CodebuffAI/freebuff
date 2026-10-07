@@ -17,7 +17,6 @@ import {
   SOLAR_PRO_4_OFFER,
   SOLAR_PRO_4_PROMOTIONAL,
 } from './freebuff-solar-promo'
-import { GLM_V53_FLASH_PROMOTIONAL } from './freebuff-glm-promo'
 import { GPT_61_SOL_PROMOTIONAL } from './freebuff-sol-promo'
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
@@ -1797,6 +1796,10 @@ const DEEPSEEK_V4_FLASH_FAST_MODEL = {
   efforts: DEEPSEEK_V4_REASONING_EFFORTS,
   defaultEffort: 'high',
   isNew: true,
+  // A New pill in place of Recommended (product, 2026-10-07).
+  newBadge: {
+    tooltip: 'Gathers context with parallel subagents on DeepSeek’s own API.',
+  },
 } as const satisfies FreebuffModelOption
 
 /**
@@ -2726,11 +2729,9 @@ const GLM_V53_FLASH_MODEL = {
   // (see migrateSupersededFreebuffModelPreference).
   isNew: true,
   // The Sep 30 "deal ends" notice came off on 2026-10-01: the deal ended and
-  // the price moved (15, then a temporary 25 peak through the catalog).
-  // PROMOTIONAL, by product decision (2026-10-03): 10 Freebucks is a
-  // temporary price, and the label says so rather than letting a user build a
-  // habit on it.
-  promotional: GLM_V53_FLASH_PROMOTIONAL,
+  // the price moved (15, then a temporary 25 peak through the catalog). The
+  // promotional 10 (2026-10-03 to 10-06, and 10-07) ended on 2026-10-07 by
+  // product decision, so the row carries no Promotional label.
 } as const satisfies FreebuffModelOption
 
 /**

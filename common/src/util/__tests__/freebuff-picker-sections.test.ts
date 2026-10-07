@@ -42,7 +42,8 @@ describe('freebuffPickerPlacement', () => {
       expect(at(id)).toEqual({ section: 'powerful', order: expect.any(Number) })
     }
     expect(at(FREEBUFF_GEMINI_38_FLASH_MODEL_ID)).toMatchObject({ section: 'powerful', more: true })
-    expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)).toEqual({ section: 'powerful', order: 5, recommended: true })
+    // Not badged Recommended since 2026-10-07: Optimized's MiMo is the one pick.
+    expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)).toEqual({ section: 'powerful', order: 5 })
   })
 
   test('every listed compiled model has an explicit place', () => {

@@ -53,11 +53,12 @@ export interface FreebuffPickerPlacement {
 const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
   Object.freeze({
     // Unlimited
+    // Glyph Cluster (2026-10-07): the section's first row, never under More.
+    'm-02244092cb': { section: 'unlimited', order: 5 }, // Glyph Cluster
     // Solar Pro 4 (2026-10-05): free as a promotion, moved from Optimized.
     'upstage/solar-pro4': { section: 'unlimited', order: 15 },
     'm-916b95b337': { section: 'unlimited', order: 30, more: true }, // Ling 3.1 Flash
     'm-a273b5e513': { section: 'unlimited', order: 40, more: true }, // Laguna S 2.1
-    'm-02244092cb': { section: 'unlimited', order: 45, more: true }, // Glyph Cluster
     // Optimized
     // Solar Mini 4's free promotion ended on 2026-10-05.
     'upstage/solar-mini4': { section: 'optimized', order: 5 },
@@ -65,14 +66,11 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     'z-ai/glm-5.3-flash': { section: 'optimized', order: 20 },
     'deepseek/deepseek-v4-flash': { section: 'optimized', order: 30 }, // V4.1 Flash
     // Powerful
-    // DeepSeek V4.1 Flash Fast (2026-10-04): the section's pick, first.
-    'deepseek/deepseek-v4-flash-fast': {
-      section: 'powerful',
-      order: 5,
-      recommended: true,
-    },
+    // Claude Haiku 5.5 (2026-10-07): first; paid plans, open in the US.
+    'm-79293c5b7d': { section: 'powerful', order: 1 }, // Claude Haiku 5.5
+    // DeepSeek V4.1 Flash Fast: no longer badged Recommended (2026-10-07).
+    'deepseek/deepseek-v4-flash-fast': { section: 'powerful', order: 5 },
     'meta/muse-spark-1.3-contributor': { section: 'powerful', order: 10 },
-    'm-79293c5b7d': { section: 'powerful', order: 15 }, // Claude Haiku 5.5
     'openai/gpt-6-luna': { section: 'powerful', order: 20 },
     'mimo/mimo-v2.6-pro': { section: 'powerful', order: 30 },
     'openai/gpt-6.1-sol': { section: 'powerful', order: 40 },

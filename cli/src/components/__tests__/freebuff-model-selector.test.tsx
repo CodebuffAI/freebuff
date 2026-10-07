@@ -587,7 +587,7 @@ describe('FreebuffModelSelector tier layout', () => {
     expect(frame).toContain('UNLIMITED · Experimental models')
   })
 
-  test("on the meter, rows sit in Desktop's sections, each section's pick marked Recommended", async () => {
+  test("on the meter, rows sit in Desktop's sections, Optimized's pick marked Recommended", async () => {
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'full',
@@ -610,11 +610,10 @@ describe('FreebuffModelSelector tier layout', () => {
     ]
     expect(order.every((at) => at >= 0)).toBe(true)
     expect(order).toEqual([...order].sort((a, b) => a - b))
-    for (const name of [
-      'MiMo 2.6 Flash',
-      ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? ['DeepSeek V4.1 Flash Fast'] : []),
-    ]) {
-      expect(lines[cardLine(name) + 1]).toContain('Recommended')
+    expect(lines[cardLine('MiMo 2.6 Flash') + 1]).toContain('Recommended')
+    // Flash Fast is not badged Recommended since 2026-10-07.
+    if (FREEBUFF_ENABLE_FAST_MODE_IN_UI) {
+      expect(lines[cardLine('DeepSeek V4.1 Flash Fast') + 1]).not.toContain('Recommended')
     }
     expect(lines[cardLine('GPT-6 Luna') + 1]).not.toContain('Recommended')
     expect(lines[cardLine('Solar Pro 4') + 1]).not.toContain('Recommended')
