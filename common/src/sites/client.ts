@@ -26,6 +26,7 @@ const IDEMPOTENT_TOOLS = new Set([
   'sites_deploy',
   'sites_add_storage',
   'sites_set_secret',
+  'sites_set_published',
 ])
 
 export class SitesClient {
@@ -96,7 +97,7 @@ export class SitesClient {
             'Each site environment includes one database and one storage bucket. Reuse the existing binding.',
           variable_limit:
             'This project has reached its limit of 25 environment variables across Preview and Production. Replace or delete an existing variable.',
-          deploy_required: 'Deploy this environment before adding variables.',
+          deploy_required: 'Deploy this environment first.',
           binding_exists:
             'That name is already used by a database or storage binding.',
           secret_not_found: 'This variable no longer exists. Refresh the list.',
@@ -128,6 +129,29 @@ export class SitesClient {
         'Couldn’t reach Sites. Check your connection and try again.',
       )
     }
+  }
+  async setPublished(
+    siteId: string,
+    env: string,
+    published: boolean,
+    requestId: string,
+    signal?: AbortSignal,
+  ) {
+    try {
+      uuid.parse(siteId)
+      environment.parse(env)
+      key.parse(requestId)
+      z.boolean().parse(published)
+    } catch {
+      throw invalid('Use a valid site, environment and request id.')
+    }
+    return this.request(
+      `/${siteId}/environments/${env}/publication`,
+      published ? 'PUT' : 'DELETE',
+      undefined,
+      requestId,
+      signal,
+    )
   }
   async writeSecret(
     siteId: string,
@@ -241,6 +265,19 @@ export class SitesClient {
       }
       const args = target.passthrough().parse(raw)
       const path = `/${args.siteId}/environments/${args.environment}`
+      if (tool === 'sites_set_published') {
+        const input = target
+          .extend({ published: z.boolean(), requestId: key })
+          .strict()
+          .parse(raw)
+        return await this.setPublished(
+          input.siteId,
+          input.environment,
+          input.published,
+          input.requestId,
+          signal,
+        )
+      }
       if (tool === 'sites_inspect') {
         const [environment, activity] = await Promise.all([
           this.request(path, 'GET', undefined, undefined, signal),

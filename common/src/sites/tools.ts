@@ -75,4 +75,9 @@ export const SITE_TOOL_SPECS: SiteToolSpec[] = [
     'Set or rotate a server-side Worker API key from a UTF-8 file within the workspace (max 5120 bytes, one trailing newline removed). Deploy once first. Never ask the user to paste keys in chat, read/print the file with other tools, or put the value in tool arguments. Use an existing user-provided secret file, exclude it from public assets and version control, and send only its path. A new value requires a fresh requestId.',
     { ...mutation, name: z.string(), valueFile: z.string() },
   ),
+  spec(
+    'sites_set_published',
+    'Publish or unpublish an existing site environment when the user requests it. published=false stops new requests within 30 seconds; code, data, secrets and URL are retained. Preview and Production are independent and both public. Deploying new code does not republish an unpublished environment. published=true resumes the saved deployment subject to hosting limits. Reuse requestId for a retry and check the receipt.',
+    { ...mutation, published: z.boolean() },
+  ),
 ]

@@ -12,6 +12,8 @@ Use sites_list/sites_inspect to understand existing sites. Plan compatible Worke
 
 Use sites_* tools for agent-managed hosting when the user requests it. Keep the site ID in the workspace, inspect existing resources before creating more, and target preview first. Production publishing needs the user's authorization; preview URLs are also public.
 
+To take an environment offline, use sites_set_published with published=false (or Sites → Unpublish). This retains the deployment, data, secrets and URL; serving stops within 30 seconds. Preview and Production are independent. Updates to unpublished environments stay offline until the user requests published=true. Do not delete data to take a site offline.
+
 ${runtime === 'cloud' ? 'When website changes are ready for review, start a dev server in the VM bound to 0.0.0.0 and use cloud_show_dev_server with its port. Follow the Cloud preview networking instructions. A dev-server preview is not a deployment and does not establish Workers compatibility.' : 'When website changes are ready for user review, first show the running dev server using register_preview in the right-side browser panel before offering or attempting a preview deployment. Use a loopback URL and the owned server PID. Install dependencies and start the server only when needed. Reuse a running server, keep hot reload working, and skip this for non-web projects or when the user asks not to preview. A dev-server preview is not a deployment and does not establish Workers compatibility. If preview setup fails, report the blocker rather than silently deploying instead.'}
 
 ${runtime === 'desktop' ? DEV_SERVER_STARTUP_GUIDANCE : ''}
