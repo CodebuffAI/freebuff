@@ -317,7 +317,6 @@ export enum AnalyticsEvent {
   // aborted. Carries `latencyMs`, `model`, and `titleLength` so the failure/
   // fallback rate and added latency are queryable.
   FREEBUFF_CHAT_TITLE_GENERATED = 'freebuff.chat_title_generated',
-  FREEBUFF_PROMPT_ENHANCED = 'freebuff.prompt_enhanced',
 
   // Freebuff - CLI landing page (/cli). Fired when the install command is
   // copied; `location` distinguishes hero vs install section. Lets us measure
