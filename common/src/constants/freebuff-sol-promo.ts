@@ -19,7 +19,7 @@ export const GPT_61_SOL_MODEL_ID = 'openai/gpt-6.1-sol'
 export const GPT_61_SOL_PROMOTIONAL = {
   short: 'Promotional · 1 session a day',
   tooltip:
-    'Temporary promotional price: free in the US, a paid plan everywhere else, and one session a day for every account, paid plans included. The price will go up when the promotion ends.',
+    'Free in the US, a paid plan elsewhere, until the promotion ends. One session a day on every plan.',
 } as const
 
 /**

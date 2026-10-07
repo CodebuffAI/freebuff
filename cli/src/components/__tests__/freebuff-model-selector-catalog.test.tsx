@@ -176,12 +176,12 @@ describe('catalog rows', () => {
   test('prints the focused row’s tooltips, and only that row’s', async () => {
     const setup = await render({ onSelectModel: () => {} })
     let frame = setup.captureCharFrame()
-    expect(frame).toContain('New: Retrained this week.')
-    expect(frame).toContain('Price: Launch rate; may change.')
+    expect(frame).toContain('Retrained this week.')
+    expect(frame).toContain('Launch rate; may change.')
     flushSync(() => setup.mockInput.pressKey('ARROW_DOWN'))
     await setup.renderOnce()
     frame = setup.captureCharFrame()
-    expect(frame).not.toContain('New: Retrained this week.')
+    expect(frame).not.toContain('Retrained this week.')
   })
 
   test('a price notice for the key replaces its tagline', async () => {

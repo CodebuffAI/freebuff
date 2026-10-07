@@ -397,10 +397,14 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   const taglineFor = useCallback(
     (model: FreebuffModelOption) =>
       model.id === FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID ||
-      isFreebucksPeakModel(freebucks, model.id) || freebucks?.offPeak?.[model.id]
+      isFreebucksPeakModel(freebucks, model.id) ||
+      freebucks?.offPeak?.[model.id] ||
+      // The promotion's own pill says it; the notice would repeat it.
+      model.promotional ||
+      directory.row(model.id)?.badges.some((b) => b.kind === 'promotional')
         ? model.tagline
         : (freebucks?.priceNotices?.[model.id] ?? model.tagline),
-    [freebucks],
+    [freebucks, directory],
   )
   const referral = getReferralInfo(session)
   const meterFor = useCallback(
@@ -737,11 +741,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         // CTA line under it already carries "Get 7x usage for $5".
         const offer = upgradeOfferFor(model)
         if (offer) {
-          // The first clause of the server's copy ("DeepSeek V4.1 Flash drops
-          // to 15 Freebucks on a plan"): the whole tooltip is a sentence and a
-          // half, and this line sizes the card and is clipped, never wrapped.
-          const lead = offer.tooltip.split(' — ')[0] ?? offer.tooltip
-          return `${lead}. Enter opens plans.`
+          return `${offer.tooltip.replace(/\.$/, '')}. Enter opens plans.`
         }
         return `Not enough ${FREEBUCKS_LABEL} — ${freebucksPriceLabel(
           intent.price,
@@ -861,9 +861,8 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       return [
         ...(row.taglineTooltip ? [row.taglineTooltip] : []),
         ...(schedule ? [schedule] : []),
-        ...row.badges.flatMap((badge) =>
-          badge.tooltip ? [`${badge.label}: ${badge.tooltip}`] : [],
-        ),
+        // The pill's label is on the row just above; its tooltip alone.
+        ...row.badges.flatMap((badge) => (badge.tooltip ? [badge.tooltip] : [])),
         ...(row.access === 'locked' && row.lockedTooltip
           ? [row.lockedTooltip]
           : []),
@@ -1567,7 +1566,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
               {namePadding + taglineFor(model) + imagesSuffix}
             </span>
           )}
-          {model.isNew && (
+          {model.newBadge && (
             <span fg={theme.primary} attributes={TextAttributes.BOLD}>
               {' · NEW'}
             </span>

@@ -1139,7 +1139,7 @@ export const MUSE_SPARK_FALLBACK_AFTER_MS = 15_000
  *  MUSE_SPARK_FALLBACK_MODEL_ID actually points at; a catalog invariant test
  *  checks the two agree. */
 export const MUSE_SPARK_FALLBACK_NOTICE =
-  "Meta's agentic coding model, 1M context. When it is busy or unavailable, your request is answered on DeepSeek V4.1 Flash instead."
+  "When it's busy, DeepSeek V4.1 Flash answers instead."
 
 /** UI-only rollout switch. Backend support and free-mode allowlists remain
  *  wired even when these models are hidden from the Freebuff picker. */
@@ -2493,7 +2493,7 @@ const GPT_6_LUNA_MODEL = {
   // which is what the badge and its tooltip say.
   experimental: true,
   taglineTooltip:
-    'Runs on OpenAI flex capacity: half the token price, the same speed in our measurements, and a standard-tier backup when flex is busy.',
+    'On OpenAI flex capacity, with a standard-tier backup when it’s busy.',
 } as const satisfies FreebuffModelOption
 
 const GPT_61_SOL_MODEL = {
@@ -2518,7 +2518,7 @@ const GPT_61_SOL_MODEL = {
   // rather than letting a user build a habit on it.
   promotional: GPT_61_SOL_PROMOTIONAL,
   taglineTooltip:
-    "OpenAI's flagship, on flex capacity with a standard-tier backup when flex is busy.",
+    'On OpenAI flex capacity, with a standard-tier backup when it’s busy.',
 } as const satisfies FreebuffModelOption
 
 /**
@@ -2859,7 +2859,7 @@ const MUSE_SPARK_13_CONTRIBUTOR_MODEL = {
   // Announced as new in the Desktop release that shipped it to the picker
   // (2026-09-29), beside GPT-6.1 Sol.
   newBadge: {
-    tooltip: "New: Meta's Muse Spark 1.3, 1M context, on every paid plan.",
+    tooltip: 'Muse Spark 1.3, on every paid plan.',
   },
   taglineTooltip: MUSE_SPARK_FALLBACK_NOTICE,
   availability: 'always',
@@ -2974,7 +2974,7 @@ const SPACE_BUNNY_ALPHA_MODEL = {
   experimental: true,
   // NOT `isNew` any more: the row is withdrawn (FREEBUFF_PAUSED_FREE_MODEL_IDS).
   taglineTooltip:
-    'A stealth model from an anonymous provider. It may change or be withdrawn without notice.',
+    'Stealth model. May change or be withdrawn without notice.',
 } as const satisfies FreebuffModelOption
 
 export const SUPPORTED_FREEBUFF_MODELS = [

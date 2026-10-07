@@ -746,8 +746,8 @@ describe('FreebuffModelSelector tier layout', () => {
     // border, padding the card out by ~17 columns of empty space. What remains
     // is ordinary slack from the widest row in the set.
     //
-    // So this bound tracks the WIDEST ROW, not the hero's own content, and it
-    // moves whenever any row in the set grows. It went 10 -> 14 when GLM 5.3
+    // So this bound tracks the WIDEST ROW, and it moves whenever any row in
+    // the set grows. It went 10 -> 14 when GLM 5.3
     // Flash gained a reasoning ladder, which widens its row two different ways:
     // a model with a pinned `reasoningEffort` shows ` · Reasoning: <rung>`, and
     // a model the user has picked a rung for shows ` · Reasoning: <rung>*`
@@ -761,8 +761,18 @@ describe('FreebuffModelSelector tier layout', () => {
     // fail if the reserved gutter ever comes back, which is the only thing this
     // assertion is really guarding. Widen it again only for a real content
     // change, and check WHICH row got wider before you do.
-    const gapToBorder =
-      heroRow.length - 1 - (heroRow.indexOf('NEW') + 'NEW'.length)
+    // Measured on the WIDEST row (the smallest gap of any card line), not the
+    // hero's: NEW now marks only the row a release announces, so the hero is
+    // no longer the row that sets the width.
+    const gapToBorder = Math.min(
+      ...frame
+        .split('\n')
+        .map((line) => line.trimEnd())
+        .filter((line) => line.startsWith('│') && line.endsWith('│'))
+        .map((line) => line.slice(1, -1))
+        .filter((inner) => inner.trim())
+        .map((inner) => inner.length - inner.trimEnd().length),
+    )
     expect(heroRow.endsWith('│')).toBe(true)
     expect(gapToBorder).toBeLessThan(14)
   })

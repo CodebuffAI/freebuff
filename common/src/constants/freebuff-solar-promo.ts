@@ -27,7 +27,7 @@ const SOLAR_MINI_4_OFFER = {
 export const SOLAR_PRO_4_PROMOTIONAL = {
   short: 'Promotional',
   tooltip:
-    'Temporary promotional price: 0 Freebucks an hour. The price will go up when the promotion ends.',
+    'Temporary price. It goes up when the promotion ends.',
 } as const
 
 // These transitions travel with the server quote so idle clients can update
