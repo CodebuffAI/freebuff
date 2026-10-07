@@ -1,4 +1,5 @@
-import { openaiModels, openrouterModels } from '@codebuff/common/old-constants'
+import { CLAUDE_HAIKU_4_5_MODEL_ID } from '@codebuff/common/constants/anthropic'
+import { openaiModels } from '@codebuff/common/old-constants'
 import { isAbortError, unwrapPromptResult } from '@codebuff/common/util/error'
 
 import type {
@@ -15,7 +16,7 @@ import type { Message } from '@codebuff/common/types/messages/codebuff-message'
  * Attempts to call the specified Gemini model via the standard Gemini API.
  * If that fails, it falls back to using the Vertex AI Gemini endpoint.
  * If Vertex AI also fails, it falls back to either GPT-4o (if `useGPT4oInsteadOfClaude` is true)
- * or a Claude model (Sonnet for 'max' costMode, Haiku otherwise).
+ * or Claude Haiku 4.5.
  *
  * This function handles non-streaming requests and returns the complete response string.
  *
@@ -95,7 +96,7 @@ export async function promptFlashWithFallbacks(
         messages,
         model: useGPT4oInsteadOfClaude
           ? openaiModels.gpt4o
-          : openrouterModels.openrouter_claude_3_5_haiku,
+          : CLAUDE_HAIKU_4_5_MODEL_ID,
       }),
     )
   }

@@ -1,18 +1,51 @@
-/** OpenRouter id of Claude Sonnet 4.6, which serves the retired Sonnet 4 ids. */
+/** OpenRouter id of Claude Sonnet 4.6, which serves the retired Sonnet ids. */
 export const CLAUDE_SONNET_4_6_MODEL_ID = 'anthropic/claude-sonnet-4.6'
+
+/** OpenRouter id of Claude Haiku 4.5, which serves the retired Haiku ids. */
+export const CLAUDE_HAIKU_4_5_MODEL_ID = 'anthropic/claude-haiku-4.5'
+
+/** OpenRouter id of Claude Opus 4.6, which serves the retired Opus ids. */
+export const CLAUDE_OPUS_4_6_MODEL_ID = 'anthropic/claude-opus-4.6'
 
 /**
  * Retired Claude ids that clients still send, mapped to the OpenRouter id of
- * the model that serves them now. Anthropic has answered 404 not_found_error
- * for claude-sonnet-4-20250514 since 2026-10-07 and OpenRouter serves Sonnet 4
- * on Amazon Bedrock alone, but published agents are immutable (an old
+ * the model that serves them now. Anthropic retired claude-sonnet-4-20250514
+ * on 2026-06-15 (404 not_found_error) and OpenRouter serves Sonnet 4 on
+ * Amazon Bedrock alone, but published agents are immutable (an old
  * `codebuff/base` still names it). Sonnet 4.6 bills at the same $3/$15 per
  * million tokens.
+ *
+ * The Claude 3.x ids, Opus 4 and Opus 4.1 are retired too (Anthropic's model
+ * deprecations page; Opus 4.1 went last, on 2026-08-05). OpenRouter has no
+ * endpoint left for any of them except Opus 4.1, which it serves on Amazon
+ * Bedrock alone. Each family lands on its current model: Haiku 4.5, Sonnet 4.6
+ * and Opus 4.6. Opus 4.6 rather than 4.8 because 4.7 and later answer 400 to
+ * a non-default `temperature`, which a client written for Opus 4.1 may send;
+ * both bill $5/$25. `anthropic/claude-haiku-4` never named a real model.
  */
 export const RETIRED_CLAUDE_MODEL_ALIASES: Readonly<Record<string, string>> = {
   'anthropic/claude-sonnet-4': CLAUDE_SONNET_4_6_MODEL_ID,
   'anthropic/claude-4-sonnet-20250522': CLAUDE_SONNET_4_6_MODEL_ID,
   'anthropic/claude-4-sonnet': CLAUDE_SONNET_4_6_MODEL_ID,
+  'anthropic/claude-3.7-sonnet': CLAUDE_SONNET_4_6_MODEL_ID,
+  'anthropic/claude-3.5-sonnet': CLAUDE_SONNET_4_6_MODEL_ID,
+  'anthropic/claude-3.5-sonnet-20240620': CLAUDE_SONNET_4_6_MODEL_ID,
+  'anthropic/claude-3-5-sonnet': CLAUDE_SONNET_4_6_MODEL_ID,
+  'anthropic/claude-3-5-sonnet-20241022': CLAUDE_SONNET_4_6_MODEL_ID,
+  'anthropic/claude-3-5-sonnet-20240620': CLAUDE_SONNET_4_6_MODEL_ID,
+  'anthropic/claude-3-sonnet': CLAUDE_SONNET_4_6_MODEL_ID,
+
+  'anthropic/claude-haiku-4': CLAUDE_HAIKU_4_5_MODEL_ID,
+  'anthropic/claude-3.5-haiku': CLAUDE_HAIKU_4_5_MODEL_ID,
+  'anthropic/claude-3.5-haiku-20241022': CLAUDE_HAIKU_4_5_MODEL_ID,
+  'anthropic/claude-3-5-haiku': CLAUDE_HAIKU_4_5_MODEL_ID,
+  'anthropic/claude-3-5-haiku-20241022': CLAUDE_HAIKU_4_5_MODEL_ID,
+  'anthropic/claude-3-haiku': CLAUDE_HAIKU_4_5_MODEL_ID,
+
+  'anthropic/claude-opus-4.1': CLAUDE_OPUS_4_6_MODEL_ID,
+  'anthropic/claude-opus-4': CLAUDE_OPUS_4_6_MODEL_ID,
+  'anthropic/claude-3-opus': CLAUDE_OPUS_4_6_MODEL_ID,
+  'anthropic/claude-3-opus-20240229': CLAUDE_OPUS_4_6_MODEL_ID,
 }
 
 /** The model that serves `model`: its alias if retired, else `model` itself. */
@@ -28,27 +61,8 @@ export function resolveRetiredClaudeModel(model: string): string {
  */
 
 const OPENROUTER_TO_ANTHROPIC_MODEL_MAP: Record<string, string> = {
-  // Claude 3.x Haiku models
-  'anthropic/claude-3.5-haiku-20241022': 'claude-3-5-haiku-20241022',
-  'anthropic/claude-3.5-haiku': 'claude-3-5-haiku-20241022',
-  'anthropic/claude-3-5-haiku': 'claude-3-5-haiku-20241022',
-  'anthropic/claude-3-5-haiku-20241022': 'claude-3-5-haiku-20241022',
-  'anthropic/claude-3-haiku': 'claude-3-haiku-20240307',
-
-  // Claude 3.x Sonnet models
-  'anthropic/claude-3.5-sonnet': 'claude-3-5-sonnet-20241022',
-  'anthropic/claude-3-5-sonnet': 'claude-3-5-sonnet-20241022',
-  'anthropic/claude-3-5-sonnet-20241022': 'claude-3-5-sonnet-20241022',
-  'anthropic/claude-3-5-sonnet-20240620': 'claude-3-5-sonnet-20240620',
-  'anthropic/claude-3-sonnet': 'claude-3-sonnet-20240229',
-
-  // Claude 3.x Opus models
-  'anthropic/claude-3-opus': 'claude-3-opus-20240229',
-  'anthropic/claude-3-opus-20240229': 'claude-3-opus-20240229',
-
   // Claude 4.x Haiku models
   'anthropic/claude-haiku-4.5': 'claude-haiku-4-5-20251001',
-  'anthropic/claude-haiku-4': 'claude-haiku-4-20250514',
 
   // Claude 4.x Sonnet models
   'anthropic/claude-sonnet-4.6': 'claude-sonnet-4-6',
@@ -66,8 +80,6 @@ const OPENROUTER_TO_ANTHROPIC_MODEL_MAP: Record<string, string> = {
   'anthropic/claude-opus-4.7': 'claude-opus-4-7',
   'anthropic/claude-opus-4.6': 'claude-opus-4-6',
   'anthropic/claude-opus-4.5': 'claude-opus-4-5-20251101',
-  'anthropic/claude-opus-4.1': 'claude-opus-4-1-20250805',
-  'anthropic/claude-opus-4': 'claude-opus-4-1-20250805',
 }
 
 export function isClaudeModel(model: string): boolean {

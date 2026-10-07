@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  CLAUDE_HAIKU_4_5_MODEL_ID,
+  CLAUDE_OPUS_4_6_MODEL_ID,
   CLAUDE_SONNET_4_6_MODEL_ID,
   RETIRED_CLAUDE_MODEL_ALIASES,
   resolveRetiredClaudeModel,
@@ -18,6 +20,72 @@ describe('resolveRetiredClaudeModel', () => {
         CLAUDE_SONNET_4_6_MODEL_ID,
       )
       expect(toAnthropicModelId(retired)).toBe('claude-sonnet-4-6')
+    }
+  })
+
+  test("serves each retired Claude 3.x and Opus 4.x id on its family's current model", () => {
+    for (const [retired, target, anthropicId] of [
+      [
+        'anthropic/claude-3-haiku',
+        CLAUDE_HAIKU_4_5_MODEL_ID,
+        'claude-haiku-4-5-20251001',
+      ],
+      [
+        'anthropic/claude-3.5-haiku-20241022',
+        CLAUDE_HAIKU_4_5_MODEL_ID,
+        'claude-haiku-4-5-20251001',
+      ],
+      [
+        'anthropic/claude-haiku-4',
+        CLAUDE_HAIKU_4_5_MODEL_ID,
+        'claude-haiku-4-5-20251001',
+      ],
+      [
+        'anthropic/claude-3-sonnet',
+        CLAUDE_SONNET_4_6_MODEL_ID,
+        'claude-sonnet-4-6',
+      ],
+      [
+        'anthropic/claude-3.5-sonnet-20240620',
+        CLAUDE_SONNET_4_6_MODEL_ID,
+        'claude-sonnet-4-6',
+      ],
+      [
+        'anthropic/claude-3.7-sonnet',
+        CLAUDE_SONNET_4_6_MODEL_ID,
+        'claude-sonnet-4-6',
+      ],
+      [
+        'anthropic/claude-3-opus-20240229',
+        CLAUDE_OPUS_4_6_MODEL_ID,
+        'claude-opus-4-6',
+      ],
+      ['anthropic/claude-opus-4', CLAUDE_OPUS_4_6_MODEL_ID, 'claude-opus-4-6'],
+      [
+        'anthropic/claude-opus-4.1',
+        CLAUDE_OPUS_4_6_MODEL_ID,
+        'claude-opus-4-6',
+      ],
+    ]) {
+      expect(resolveRetiredClaudeModel(retired)).toBe(target)
+      expect(toAnthropicModelId(retired)).toBe(anthropicId)
+    }
+  })
+
+  // Anthropic's model deprecations page lists each of these as retired, and
+  // a token count for one 404s and is retried on the default model.
+  test('no alias reaches a retired Anthropic id', () => {
+    const retiredAnthropicIds = [
+      /^claude-3-/,
+      /^claude-sonnet-4-20250514$/,
+      /^claude-opus-4-(20250514|1-)/,
+      /^claude-haiku-4-2025/,
+    ]
+    for (const retired of Object.keys(RETIRED_CLAUDE_MODEL_ALIASES)) {
+      const anthropicId = toAnthropicModelId(retired)
+      for (const pattern of retiredAnthropicIds) {
+        expect(anthropicId).not.toMatch(pattern)
+      }
     }
   })
 

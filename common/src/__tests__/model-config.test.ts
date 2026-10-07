@@ -14,21 +14,24 @@ describe('isExplicitlyDefinedModel', () => {
     expect(isExplicitlyDefinedModel('custom/unknown-model')).toBe(false)
   })
 
-  // Adding it would switch the SDK's provider routing for live Sonnet 4.6
-  // traffic (context-pruner) to a fixed order with no fallbacks.
-  test('leaves Sonnet 4.6 unconfigured', () => {
+  // Adding one would switch the SDK's provider routing for its live traffic
+  // (Sonnet 4.6: context-pruner) to a fixed order with no fallbacks.
+  test('leaves the retired-Claude replacements unconfigured', () => {
     expect(isExplicitlyDefinedModel('anthropic/claude-sonnet-4.6')).toBe(false)
+    expect(isExplicitlyDefinedModel('anthropic/claude-haiku-4.5')).toBe(false)
+    expect(isExplicitlyDefinedModel('anthropic/claude-opus-4.6')).toBe(false)
   })
 })
 
 describe('getModelFromShortName', () => {
   test('serves the retired Sonnet short names on Sonnet 4.6', () => {
-    expect(getModelFromShortName('sonnet-4')).toBe(
-      'anthropic/claude-sonnet-4.6',
-    )
-    expect(getModelFromShortName('sonnet-3.7')).toBe(
-      'anthropic/claude-sonnet-4.6',
-    )
+    for (const name of ['sonnet-4', 'sonnet-3.7', 'sonnet-3.6', 'sonnet-3.5']) {
+      expect(getModelFromShortName(name)).toBe('anthropic/claude-sonnet-4.6')
+    }
+  })
+
+  test('serves the retired Opus short name on Opus 4.6', () => {
+    expect(getModelFromShortName('opus-4')).toBe('anthropic/claude-opus-4.6')
   })
 })
 

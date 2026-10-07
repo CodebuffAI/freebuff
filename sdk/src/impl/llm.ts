@@ -69,7 +69,6 @@ const providerOrder = {
     'Anthropic',
     'Amazon Bedrock',
   ],
-  [models.openrouter_claude_opus_4]: ['Google', 'Anthropic'],
 }
 
 function calculateUsedCredits(params: { costDollars: number }): number {
