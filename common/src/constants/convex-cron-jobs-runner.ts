@@ -55,6 +55,21 @@ export const CONVEX_CRON_JOB_NAMES = [
    *  writer (`AGENT_CORE_WRITER_FOR_CONVEX`, ./agent-core-writer.ts); a test
    *  holds the two together. */
   'sweep_freebuff_runs',
+  /** Convex cron `sweep timed out codex and claude agent runs` (1 min):
+   *  clears Codex / Claude Code threads stuck processing past the idle
+   *  window. Convex's agent_thread rows, as `enforce_processing_deadlines`. */
+  'sweep_cli_agent_runs',
+  /** Convex cron `rotate expiring github tokens` (60 min): renews OAuth
+   *  refresh tokens near their lapse, against Convex's `github_connections`.
+   *  Only the trigger moves: Convex's action still rotates, so exactly one
+   *  system rotates in either position (docs/freebuff-github-postgres.md,
+   *  "Rotation"). The Postgres rotation replaces this job, not this switch. */
+  'rotate_github_tokens',
+  /** Convex cron `sweep expired request-intent evaluation cohorts` (15 min):
+   *  the privacy TTL that deletes one expired capture batch per tick from
+   *  Convex. Moving its trigger deletes nothing new; it must keep running
+   *  while any batch lives in Convex. */
+  'sweep_request_intent_eval_cohorts',
 ] as const
 
 export type ConvexCronJobName = (typeof CONVEX_CRON_JOB_NAMES)[number]
@@ -70,6 +85,9 @@ export const CONVEX_CRON_JOB_RUNNERS: ConvexCronJobRunners = {
   enforce_legacy_usage_limits: 'graphile',
   audit_fleet_usage: 'graphile',
   sweep_freebuff_runs: 'convex',
+  sweep_cli_agent_runs: 'convex',
+  rotate_github_tokens: 'convex',
+  sweep_request_intent_eval_cohorts: 'convex',
 }
 
 /**

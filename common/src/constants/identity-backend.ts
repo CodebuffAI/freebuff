@@ -5,7 +5,8 @@
  * FULL tier: `convex` → `shadow` (7 days, zero mismatches) → `postgres`, then
  * a 14-day zero-call soak.
  *
- * Convex stays the WRITER of `users` in every mode. Convex users ids are
+ * Convex stays the WRITER of `users` in every mode here (writes have their
+ * own switch, IDENTITY_WRITE_BACKEND, below). Convex users ids are
  * referenced by about 110 `v.id('users')` fields, so they keep being minted
  * in Convex (`getOrCreateSignedInUser`) and Postgres `user_profile` mirrors
  * them through the projection job until those tables have moved.
@@ -59,7 +60,8 @@ export function identityReadBackend(
  * docs/freebuff-identity-postgres.md ("Writes") — a separate stage from
  * reads because writes flip late: about 110 `v.id('users')` fields and 514
  * `getAuthUser` call sites inside Convex still read Convex `users`, so Convex
- * stays the authority (and the only id minter) in every mode here.
+ * keeps the document every reader sees, and stays the id minter, in every
+ * mode here; up to `dual` it is also the authority.
  *
  * - `convex`  (default): nothing in the port runs. The browser calls the
  *             Convex mutations directly; the registry twins answer
@@ -77,14 +79,24 @@ export function identityReadBackend(
  *             converges anything the twin got wrong (it applies Convex's
  *             document), and the comparison still logs.
  *
- * There is deliberately no `postgres` (Postgres as the authority) yet: it
- * needs every Convex reader of `users` gone, or a Postgres → Convex
- * projection, plus the deletion guard and the cascade on Postgres.
+ * - `postgres` Postgres DECIDES the browser-called writes: the twin runs
+ *             first, with the rows locked and the resurrection guard read
+ *             from `account_deletion_audit`, and a refusal there never
+ *             reaches Convex. An accepted write is then CARRIED to Convex by
+ *             the same Convex mutation, inside the Postgres transaction, so
+ *             a Convex failure rolls it back and the two never part; a new
+ *             account's id is minted by that same call (Convex stays the
+ *             minter while ~110 `v.id('users')` fields and 514
+ *             `getAuthUser` sites read Convex `users`). The answer is the
+ *             twin's. Server-side writers (badge sync, email move, Desktop
+ *             provisioner) behave as at `dual`. The projection still runs.
  *
  * Needs the projection running (`IDENTITY_BACKEND` not `convex`): the twins
- * write a mirror that only the projection keeps whole. A test pins that.
+ * write a mirror that only the projection keeps whole. `postgres` also needs
+ * identity READS on Postgres (`IDENTITY_BACKEND` `postgres`): a writer of
+ * record must read what it decides on. Tests pin both.
  */
-export type IdentityWriteBackend = 'convex' | 'shadow' | 'dual'
+export type IdentityWriteBackend = 'convex' | 'shadow' | 'dual' | 'postgres'
 
 export const IDENTITY_WRITE_BACKEND: IdentityWriteBackend = 'convex'
 
@@ -100,9 +112,19 @@ export function identityWriteTwinEnabled(
   return backend !== 'convex'
 }
 
-/** True when the twin's transaction commits (`dual`); false rolls it back. */
+/**
+ * True when the twin's transaction commits (`dual`, `postgres`); false rolls
+ * it back.
+ */
 export function identityWriteTwinCommits(
   backend: IdentityWriteBackend = identityWriteBackend(),
 ): boolean {
-  return backend === 'dual'
+  return backend === 'dual' || backend === 'postgres'
+}
+
+/** True when Postgres decides a browser-called identity write (`postgres`). */
+export function identityWriteAuthorityIsPostgres(
+  backend: IdentityWriteBackend = identityWriteBackend(),
+): boolean {
+  return backend === 'postgres'
 }
