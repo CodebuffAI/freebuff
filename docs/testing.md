@@ -287,8 +287,8 @@ in total, with a 26.0s median per job. The next three runs restored the same
 with 32.9–34.1s medians. A warm cache was therefore about 7–8s slower per job
 and cost roughly four extra runner-minutes per full CI run.
 
-The smaller observations agree with the full matrix. Migration CI installed
-cold in 23s, while its warm restores took 18–41s. The abuse sweep installed in
+The smaller observations agree with the full matrix. The since-deleted
+Migration CI installed cold in 23s, while its warm restores took 18–41s. The abuse sweep installed in
 17s on a miss and then spent another 24s compressing and saving the cache.
 `setup-project` consequently skips dependency caching on Linux, and standalone
 Ubicloud workflows use that action instead of carrying their own cache blocks.
