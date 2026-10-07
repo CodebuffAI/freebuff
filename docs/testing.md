@@ -243,6 +243,23 @@ first ~65s rebuilding what the job had already restored. It now honours
 still build normally. If you add a job that runs `freebuff/web`'s typecheck or
 build, either let it rebuild or set the flag *after* `build-sdk` — never before.
 
+### Small suites share a runner
+
+Per-job setup (checkout, a cold `bun install`, the SDK cache) is about 45s on
+Ubicloud and 65s with Postgres. In 40 runs measured on 2026-10-06, seventeen
+unit suites took 0.8–1.0 min each as separate jobs, running about 25s of tests
+between them. So `ci.yml`'s test matrices are lists of **lanes**, each running
+one or more packages (`packages`) one after another. Every package still runs
+under its own `test-with-guard` key and baseline, a lane reports every package
+that failed rather than stopping at the first, and `check-test-coverage.ts`
+reads the packages from the lanes. In the database lane, each package after
+the first gets an empty database of its own (`scripts/ci/fresh-test-database.ts`).
+
+Give a suite its own lane when its runtime is a real fraction of the critical
+path (the big four: `freebuff/web`, `freebuff-desktop`, `web`, `cli`), and add
+it to `small` otherwise. The three Windows areas are one `test-windows` job
+for the same reason: setup was 75–95% of each.
+
 ### Known remaining cost
 
 `freebuff-desktop` is the heaviest suite — ~54s on CI, about half of all test
