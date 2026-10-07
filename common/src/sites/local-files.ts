@@ -122,7 +122,13 @@ export async function bundleSite(cwd: string, manifestPath: string) {
       depth = 0,
     ): Promise<void> => {
       if (depth > 20) throw invalid('Static assets are nested too deeply.')
-      for (const entry of await readdir(folder, { withFileTypes: true })) {
+      // Name order, like Cloud's bundler (`sorted(os.listdir())` in
+      // web/src/server/desktop-cloud/sites-files.ts): readdir's order is the
+      // filesystem's, so the same build could otherwise bundle differently.
+      const entries = (await readdir(folder, { withFileTypes: true })).sort(
+        (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+      )
+      for (const entry of entries) {
         if (unsafeAsset(entry.name) || entry.isSymbolicLink())
           throw invalid(
             'Assets must contain only public build output: no hidden files, source maps, private keys, dependencies, or symlinks.',
