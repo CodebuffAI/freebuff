@@ -105,6 +105,43 @@ export const freebuffCatalogBadgeSchema = z.object({
 })
 export type FreebuffCatalogBadge = z.infer<typeof freebuffCatalogBadgeSchema>
 
+/**
+ * Where a row sits in the picker: which section, its position there, whether
+ * it waits under the section's collapsed "More", and whether it is the
+ * section's own pick (the Recommended pill). Server-decided, so a reorder is a
+ * catalog edit, never a client release. Absent: the client's compiled place.
+ */
+export const freebuffCatalogPlacementSchema = z.object({
+  /** A section id from the catalog's `sections` (or a compiled one). */
+  section: z.string().min(1),
+  /** Lower first, within the section. */
+  order: z.number(),
+  more: z.boolean().optional(),
+  recommended: z.boolean().optional(),
+})
+export type FreebuffCatalogPlacement = z.infer<
+  typeof freebuffCatalogPlacementSchema
+>
+
+/** One picker section, as the server names and orders them. */
+export const freebuffCatalogSectionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  /** What the section's models are for, on its info icon. */
+  tooltip: z.string(),
+})
+export type FreebuffCatalogSection = z.infer<typeof freebuffCatalogSectionSchema>
+
+/**
+ * Which time-of-day price pills a row with a peak / off-peak schedule shows:
+ * `both` (Peak in the dearer window, Off-peak in the cheaper one), `peak` (only
+ * Peak), or `none`. Absent: the client's compiled rule.
+ */
+export const freebuffCatalogPeakPillsSchema = z.enum(['both', 'peak', 'none'])
+export type FreebuffCatalogPeakPills = z.infer<
+  typeof freebuffCatalogPeakPillsSchema
+>
+
 export const freebuffCatalogRowSchema = z.object({
   key: z.string().min(1),
   handle: z.string().min(1),
@@ -144,6 +181,10 @@ export const freebuffCatalogRowSchema = z.object({
     .optional(),
   /** Sort position; ascending. Clients that sort by price may ignore it. */
   sortOrder: z.number(),
+  /** The row's picker section and place in it (see the schema). */
+  placement: freebuffCatalogPlacementSchema.optional(),
+  /** Which peak / off-peak price pills the row shows (see the schema). */
+  peakPills: freebuffCatalogPeakPillsSchema.optional(),
   /**
    * A row that opens in the future (ms epoch). Clients do NOT list, select or
    * send such a row until `opensAt` has passed.
@@ -174,6 +215,10 @@ export const freebuffModelCatalogSchema = z.object({
   fallbackKey: z.string().optional(),
   /** Where a locked row's press goes. */
   plansUrl: z.string(),
+  /** The picker's sections, in display order. Absent: the client's compiled
+   *  sections. A row naming a section not listed here takes the client's
+   *  inferred place. */
+  sections: z.array(freebuffCatalogSectionSchema).optional(),
   /** This fetch's id; sent back as FREEBUFF_CATALOG_FETCH_HEADER on every
    *  session and completions request made with these handles. */
   fetchId: z.string().optional(),

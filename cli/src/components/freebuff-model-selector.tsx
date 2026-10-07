@@ -47,8 +47,9 @@ import {
   getFreebuffModelMeter,
 } from '@codebuff/common/util/freebuff-session-pools'
 import {
-  freebuffPickerPlacement,
+  FREEBUFF_PICKER_SECTIONS,
   freebuffPickerSections,
+  freebuffRowPlacement,
   type FreebuffPickerSectionId,
 } from '@codebuff/common/util/freebuff-picker-sections'
 import {
@@ -343,12 +344,16 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     },
     [directory, catalog, session, accessTier, hasPaidSubscription, freebucks],
   )
-  // Desktop's sections. A catalog row's id is its key; placements name the
-  // compiled model it replaces.
+  // The server's sections and each row's place in them (catalog mode); the
+  // compiled layout only when the server sent none. A catalog row's id is its
+  // key; compiled placements name the compiled model it replaces.
+  const pickerSections = catalog?.sections ?? FREEBUFF_PICKER_SECTIONS
   const placementOf = useCallback(
     (model: FreebuffModelOption) => {
       const row = directory.row(model.id)
-      return freebuffPickerPlacement(
+      return freebuffRowPlacement(
+        row?.placement,
+        pickerSections,
         [row ? compiledFreebuffModelIdOfRow(row) : undefined, model.id],
         {
           premium: directory.isPremium(model.id),
@@ -357,7 +362,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         },
       )
     },
-    [directory, planRequired, freebucks],
+    [directory, planRequired, freebucks, pickerSections],
   )
   // Capacity-limited models the SERVER decided to offer on this response. The
   // client has no catalog of its own for these on purpose: when the wave's pool
@@ -896,7 +901,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // below is added on top and is visible in both states.
   const catalogSections = useMemo((): readonly Section[] => {
     if (!expanded) return []
-    return freebuffPickerSections(availableModels, placementOf).map(
+    return freebuffPickerSections(availableModels, placementOf, pickerSections).map(
       ({ section, models }): Section => ({
         key: section.id,
         label: section.label.toUpperCase(),
@@ -904,7 +909,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         models,
       }),
     )
-  }, [expanded, availableModels, placementOf])
+  }, [expanded, availableModels, placementOf, pickerSections])
 
   // Every section that gets drawn, in draw order. THE single source for the
   // render, the navigation order and the height estimate — those three must

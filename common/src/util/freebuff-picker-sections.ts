@@ -8,9 +8,21 @@
  * `freebuff-picker-sections.test.ts` pins each one to the constant it names.
  * Catalog-only rows have no public id, so they are placed by their default
  * catalog key (`defaultCatalogKey`), which is opaque.
+ *
+ * SERVER-DRIVEN since 2026-10-07: the model catalog sends each row's place and
+ * the sections themselves (`placement`, `sections` in freebuff-model-catalog.ts),
+ * and every client draws what it is sent. What is compiled here is only the
+ * server's DEFAULT (default-config.ts builds the catalog's placements from it)
+ * and the fallback for a client talking to a server that sends none. Reorder by
+ * editing the catalog, not this file.
  */
 
-export type FreebuffPickerSectionId = 'unlimited' | 'optimized' | 'powerful'
+export type FreebuffPickerSectionId =
+  | 'unlimited'
+  | 'optimized'
+  | 'powerful'
+  // A section the server catalog defines.
+  | (string & {})
 
 export interface FreebuffPickerSection {
   id: FreebuffPickerSectionId
@@ -77,6 +89,35 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     'google/gemini-3.8-flash': { section: 'powerful', order: 50, more: true },
   })
 
+/** The compiled place of one id, if it has one: the server's default. */
+export function compiledFreebuffPickerPlacement(
+  id: string,
+): FreebuffPickerPlacement | undefined {
+  return PLACEMENTS[id]
+}
+
+/**
+ * A row's place: the server's, when it sent one for a section the picker
+ * draws, else the compiled place (`freebuffPickerPlacement`).
+ */
+export function freebuffRowPlacement(
+  server:
+    | { section: string; order: number; more?: boolean; recommended?: boolean }
+    | undefined,
+  sections: readonly FreebuffPickerSection[],
+  ids: readonly (string | undefined)[],
+  fallback: { premium: boolean; locked: boolean; price: number | undefined },
+): FreebuffPickerPlacement {
+  if (server && sections.some((section) => section.id === server.section))
+    return {
+      section: server.section,
+      order: server.order,
+      ...(server.more ? { more: true } : {}),
+      ...(server.recommended ? { recommended: true } : {}),
+    }
+  return freebuffPickerPlacement(ids, fallback)
+}
+
 /**
  * Where a row goes. `ids` are every name the row may be known by — its
  * compiled id, catalog key — and the first one placed wins. A row placed by
@@ -113,9 +154,11 @@ export function freebuffPickerPlacement(
 export function freebuffPickerSections<T>(
   rows: readonly T[],
   placementOf: (row: T) => FreebuffPickerPlacement,
+  /** The server catalog's sections, when it sent them. */
+  sections: readonly FreebuffPickerSection[] = FREEBUFF_PICKER_SECTIONS,
 ): { section: FreebuffPickerSection; models: T[] }[] {
   const placed = rows.map((row) => ({ row, placement: placementOf(row) }))
-  return FREEBUFF_PICKER_SECTIONS.map((section) => ({
+  return sections.map((section) => ({
     section,
     models: placed
       .filter(({ placement }) => placement.section === section.id)
