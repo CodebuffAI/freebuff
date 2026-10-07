@@ -240,8 +240,10 @@ export const PROFILE_SURVEY_VERSIONS = [
 ] as const satisfies readonly ProfileSurveyVersion[]
 
 /** The version clients are shown. The launch gate: nothing is shown unless
- *  this names a version (null = survey off), never an env var. */
-export const ACTIVE_PROFILE_SURVEY_VERSION: number | null = 1
+ *  this names a version (null = survey off), never an env var. Off until the
+ *  launch; to launch, set it to 1 (one-line PR). The dev and admin previews
+ *  run on the fake client and ignore it. */
+export const ACTIVE_PROFILE_SURVEY_VERSION: number | null = null
 
 /** Freebucks per arm. Index = arm; assignment is per user per version. */
 export const PROFILE_SURVEY_REWARD_ARMS = [0, 5, 25] as const
