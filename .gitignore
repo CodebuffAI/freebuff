@@ -101,6 +101,16 @@ gha-creds-*.json
 # Isolated Desktop campaign development data and credentials
 .local-agentic-ads/
 
+# Desktop Cloud private credentials (loaded by the API and runner)
+.freebuff-cloud.json
+.freebuff-cloud.json.tmp
+web/.cloud-r2/
+
+# Hosted staging build output and mounted credentials
+.staging/
+web/.cloud-worker/
+freebuff-staging-api.json
+freebuff-staging-auth.json
 # Billboard asset storage credentials and the local R2 emulator's data
 .freebuff-ad-assets.json
 web/.ad-assets-r2/
