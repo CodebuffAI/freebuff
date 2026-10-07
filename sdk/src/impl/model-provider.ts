@@ -276,6 +276,10 @@ export const BYOK_CONNECTION_FAILURE_MESSAGE =
  *   by another instance. The row is gone, so every retry gets the same 409;
  *   the user waited ~14s for the card that tells them to start a new session
  *   (5,392 runs / 2,230 users in the 72h to 2026-10-05).
+ * - `model_at_capacity` (503): a queued free model had no slot within the
+ *   request's wait budget (web/.../model-queue.ts). Each retry re-enters the
+ *   queue and waits that budget again before the same refusal, so it is
+ *   surfaced at once — as its in-band form after the grace flush already is.
  */
 const FINAL_REFUSALS: readonly {
   status: number
@@ -293,6 +297,12 @@ const FINAL_REFUSALS: readonly {
     error: 'session_superseded',
     fallbackMessage:
       'This Freebuff session has ended. Start a new session to try again.',
+  },
+  {
+    status: 503,
+    error: 'model_at_capacity',
+    fallbackMessage:
+      'This model is at capacity right now. Please try again in a few minutes or pick another model.',
   },
 ]
 

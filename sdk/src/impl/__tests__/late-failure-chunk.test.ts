@@ -9,14 +9,18 @@
  */
 import http from 'node:http'
 
-import { isTransientNetworkError } from '@codebuff/common/util/error'
+import {
+  extractApiErrorDetails,
+  isTransientNetworkError,
+} from '@codebuff/common/util/error'
 // The vendored fork, which is what model-provider.ts actually builds the
 // backend model from. Testing against the npm @ai-sdk/openai-compatible would
 // prove nothing about the client users are running.
 import { OpenAICompatibleChatLanguageModel } from '@codebuff/llm-providers/openai-compatible'
-import { streamText } from 'ai'
-import { describe, expect, it } from 'bun:test'
+import { APICallError, streamText } from 'ai'
+import { afterEach, describe, expect, it } from 'bun:test'
 
+import { getModelForRequest } from '../model-provider'
 import {
   classifyProviderErrorRecovery,
   classifyThrownStreamRecovery,
@@ -202,4 +206,97 @@ describe('late failure delivered in band', () => {
       expect(String(error)).toContain('Type validation failed')
     })
   })
+})
+
+describe('the same capacity refusal over HTTP', () => {
+  // Before the grace flush (a non-streaming request, or a silent stream), the
+  // queue refusal is `503 {error: 'model_at_capacity', message}` with
+  // `Retry-After: 60` (web/.../_post.ts). The AI SDK retries any 503, so left
+  // alone it re-queued the step and the user saw the refusal late, as
+  // "Failed after N attempts". Like the in-band form it must end the turn at
+  // once, with the server's copy. Served through getModelForRequest, whose
+  // fetch wrapper is what applies the SDK's final refusals.
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  const AT_CAPACITY = {
+    error: 'model_at_capacity',
+    message:
+      'Space Bunny is at capacity right now. Please try again in a few minutes or pick another model.',
+  }
+
+  const serve = (status: number, body: Record<string, unknown>) => {
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls += 1
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json', 'retry-after': '60' },
+      })
+    }) as unknown as typeof fetch
+    return { calls: () => calls }
+  }
+
+  const failureOf = async (maxRetries: number) => {
+    const result = streamText({
+      model: getModelForRequest({ apiKey: 'k', model: 'openai/gpt-5.6-luna' }),
+      messages: [{ role: 'user', content: 'hi' }],
+      maxRetries,
+    })
+    let error: unknown
+    try {
+      for await (const part of result.stream) {
+        if (part.type === 'error') error = (part as { error: unknown }).error
+      }
+    } catch (thrown) {
+      error ??= thrown
+    }
+    await Promise.resolve(result.text).catch((thrown: unknown) => {
+      error ??= thrown
+    })
+    return error
+  }
+
+  it('is refused once, not retried, and keeps the server copy and code', async () => {
+    const server = serve(503, AT_CAPACITY)
+
+    const error = await failureOf(3)
+
+    expect(server.calls()).toBe(1)
+    expect(APICallError.isInstance(error)).toBe(true)
+    const apiError = error as APICallError
+    expect(apiError.isRetryable).toBe(false)
+    expect(apiError.statusCode).toBe(503)
+    expect(apiError.message).toBe(AT_CAPACITY.message)
+    expect(extractApiErrorDetails(error)).toMatchObject({
+      statusCode: 503,
+      errorCode: 'model_at_capacity',
+      message: AT_CAPACITY.message,
+    })
+    // Nor does the agent loop's provider-error recovery pick it back up.
+    expect(classifyThrownStreamRecovery({ aborted: false, error })).toBeNull()
+    expect(classifyProviderErrorRecovery({ aborted: false, error })).toBeNull()
+  })
+
+  it('falls back to its own copy when the body has no message', async () => {
+    serve(503, { error: 'model_at_capacity' })
+
+    const error = (await failureOf(3)) as APICallError
+
+    expect(error.isRetryable).toBe(false)
+    expect(error.message).toContain('at capacity right now')
+  })
+
+  it('any other 503 is still retried', async () => {
+    const server = serve(503, {
+      error: 'service_unavailable',
+      message: 'try again',
+    })
+
+    await failureOf(1)
+
+    expect(server.calls()).toBe(2)
+  }, 15_000)
 })
