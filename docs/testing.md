@@ -213,18 +213,20 @@ and passed on attempt 2 (48.78s), and `nick-fields/retry` reported success. Read
 bun's own `Ran N tests across M files [Xs]` line, not the step duration, and
 grep the log for `Attempt N failed` before trusting any per-job figure.
 
-Every test job ends with a step that reacts to a pass-on-retry, so this stops
-being something you only discover by hand-reading logs. **Unit suites fail**;
-integration suites get a `Flaky suite` warning.
+Unit suites run **once**; integration suites retry and end with a step that
+raises a `Flaky suite` warning when a retry rescued them.
 
 The split is measured, not assumed. Across 100 CI runs / 2000 test-job instances
 (2026-07-31 → 08-02) the retry rescued a unit suite **zero** times; both real
 rescues were `test-integration-packages/internal`, i.e. a Postgres service
 container. Retrying infrastructure is what a retry is for; retrying test logic
-just moves the bill to whoever hits it next, so a retried unit suite is now a
-flake by measurement and fails on the PR that introduced it. `max_attempts`
-stays 3 there on purpose — attempt 2 passing is what separates "flaky" from
-"broken", and a genuinely broken suite already runs three times either way.
+just moves the bill to whoever hits it next. Unit suites therefore used to keep
+three attempts only to fail a pass-on-retry as "flaky", which meant a red unit
+suite ran three times and could never come back green: on 2026-10-07 failing
+`test-freebuff/web` jobs took 736s against 275s green. Since then a flaky unit
+case fails on its first attempt like any other failure, and its `(fail)` line is
+the last in the log. Tell "flaky" from "broken" locally with
+`scripts/flake-hunt.ts`.
 
 ### `sdk/dist` is cached, not rebuilt per job
 
