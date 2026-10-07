@@ -2666,23 +2666,9 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       let compactions = 0
       const result = await loopAgentSteps({
         ...loopAgentStepsBaseParams,
-        promptAiSdkStream: async function* ({
-          tools,
-          onUsageReceived,
-          messages,
-        }) {
-          if (tools?.complete_compaction) {
-            compactions++
-            onUsageReceived?.({
-              inputTokens: 90_000,
-              outputTokens: 100,
-              totalTokens: 90_100,
-              cachedInputTokens: 0,
-            })
-            yield createToolCallChunk('complete_compaction', {
-              summary: 'Prior finding. Next inspect the requested code.',
-            })
-          } else if (++calls === 1) {
+        onCompaction: () => compactions++,
+        promptAiSdkStream: async function* ({ onUsageReceived, messages }) {
+          if (++calls === 1) {
             yield createToolCallChunk('write_todos', {
               todos: [{ task: 'inspect', completed: false }],
             })

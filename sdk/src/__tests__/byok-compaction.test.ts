@@ -52,9 +52,7 @@ function sse(body: unknown): Response {
 }
 
 function scriptedProvider(modelsBody: unknown) {
-  // `compactionRequests` counts provider calls: one pass can take several
-  // when the history is summarized in sections.
-  const counts = { work: 0, compactionRequests: 0, modelListings: 0 }
+  const counts = { work: 0, modelListings: 0 }
   const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url = String(input)
     if (url === `${BASE_URL}/models`) {
@@ -63,15 +61,6 @@ function scriptedProvider(modelsBody: unknown) {
     }
     expect(url).toBe(`${BASE_URL}/chat/completions`)
     const body = JSON.parse(String(init?.body))
-    if (body.tools?.some((t: any) => t.function.name === 'complete_compaction')) {
-      counts.compactionRequests++
-      return sse({
-        id: `compact-${counts.compactionRequests}`, object: 'chat.completion.chunk', created: 1, model: MODEL,
-        choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: `c${counts.compactionRequests}`, type: 'function',
-          function: { name: 'complete_compaction', arguments: JSON.stringify({ summary: `Read files 1..${counts.work}; keep going.` }) } }] },
-          finish_reason: 'tool_calls' }],
-      })
-    }
     counts.work++
     if (counts.work <= FILES) {
       return sse({
@@ -144,16 +133,15 @@ describe('BYOK compaction on an unlisted model', () => {
     const { counts, fetchImpl } = scriptedProvider({ data: [] })
     const { result, passes, lifecycle } = await longTask(await savedWithFormDefaults(), fetchImpl)
     // Pinned so the next test is known to exercise the real failure: twelve
-    // ordinary reads cost repeated compactions on the stored default (four
-    // before the runtime deferred futile threshold compactions, two after).
+    // ordinary reads cost repeated compactions on the stored default.
     expect(passes.length).toBeGreaterThanOrEqual(2)
     // Each pass is bracketed, and ends only after its receipt: a host showing
-    // "Compacting…" never drops it before the handoff arrives.
+    // "Compacting…" never drops it before the pass finishes.
     expect(lifecycle).toEqual(
       passes.flatMap(() => ['start:context_limit', 'receipt', 'end']),
     )
     expect(passes.every((pass) => pass.trigger === 'context_limit')).toBe(true)
-    expect(counts.compactionRequests).toBeGreaterThanOrEqual(passes.length)
+    expect(counts.work).toBe(FILES + 1)
     expect(result.output.type).not.toBe('error')
   }, 60_000)
 
@@ -168,7 +156,6 @@ describe('BYOK compaction on an unlisted model', () => {
     const { result, passes, lifecycle } = await longTask(effective, fetchImpl)
     expect(passes).toEqual([])
     expect(lifecycle).toEqual([])
-    expect(counts.compactionRequests).toBe(0)
     expect(counts.work).toBe(FILES + 1)
     expect(result.output.type).not.toBe('error')
     expect(JSON.stringify(result.output)).toContain('FINAL ANSWER: all twelve files reviewed.')

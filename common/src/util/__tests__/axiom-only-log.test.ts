@@ -18,8 +18,6 @@ import {
   CONTEXT_PRUNING_COMPLETED_EVENT,
   getAxiomOnlyLogEvent,
   STREAM_RECOVERY_EVENT,
-  MODEL_COMPACTION_COMPLETED_EVENT,
-  MODEL_COMPACTION_FALLBACK_EVENT,
   MECHANICAL_COMPACTION_SKIPPED_EVENT,
   CONTEXT_COMPACTION_COMPLETED_EVENT,
   COMPACTION_FOLLOWUP_EVENT,
@@ -289,37 +287,7 @@ describe('getAxiomOnlyLogEvent', () => {
     })
   })
 
-  test('model-compaction fallback ships a fixed error kind, never the message', () => {
-    expect(
-      getAxiomOnlyLogEvent({
-        axiomEvent: MODEL_COMPACTION_FALLBACK_EVENT,
-        agent_run_id: 'run-1',
-        model: 'z-ai/glm-5.3-flash',
-        trigger_reason: 'context_limit',
-        error_kind: 'invalid_summary',
-        error_name: 'ZodError',
-        fallback_applied: true,
-        fallback_failed: false,
-        // Not in the allowlist: may carry provider text or user content.
-        error: 'Invalid input: expected object, received string',
-        fallback_error: 'secret',
-        messageHistory: [{ role: 'user', content: 'secret' }],
-      }),
-    ).toEqual({
-      event: MODEL_COMPACTION_FALLBACK_EVENT,
-      data: {
-        agent_run_id: 'run-1',
-        model: 'z-ai/glm-5.3-flash',
-        trigger_reason: 'context_limit',
-        error_kind: 'invalid_summary',
-        error_name: 'ZodError',
-        fallback_applied: true,
-        fallback_failed: false,
-      },
-    })
-  })
-
-  test('a skipped cohort compaction ships a fixed error kind, never the message', () => {
+  test('a skipped compaction ships a fixed error kind, never the message', () => {
     expect(
       getAxiomOnlyLogEvent({
         axiomEvent: MECHANICAL_COMPACTION_SKIPPED_EVENT,
@@ -330,7 +298,6 @@ describe('getAxiomOnlyLogEvent', () => {
         error_name: 'Error',
         context_token_count: 40_000,
         max_context_length: 32_768,
-        deterministic_cohort: true,
         // Not in the allowlist: may quote the request.
         error: 'The current request and agent instructions exceed ...',
       }),
@@ -344,7 +311,6 @@ describe('getAxiomOnlyLogEvent', () => {
         error_name: 'Error',
         context_token_count: 40_000,
         max_context_length: 32_768,
-        deterministic_cohort: true,
       },
     })
   })
@@ -384,8 +350,6 @@ describe('getAxiomOnlyLogEvent', () => {
       getAxiomOnlyLogEvent({
         axiomEvent: COMPACTION_FOLLOWUP_EVENT,
         agent_run_id: 'run-1',
-        mode: 'mechanical',
-        deterministic_cohort: true,
         trigger_reason: 'context_limit',
         ended_by: 'compaction',
         elided_read_paths: 12,
@@ -399,8 +363,6 @@ describe('getAxiomOnlyLogEvent', () => {
       event: COMPACTION_FOLLOWUP_EVENT,
       data: {
         agent_run_id: 'run-1',
-        mode: 'mechanical',
-        deterministic_cohort: true,
         trigger_reason: 'context_limit',
         ended_by: 'compaction',
         elided_read_paths: 12,
@@ -433,38 +395,6 @@ describe('getAxiomOnlyLogEvent', () => {
         model: 'z-ai/glm-5.3-flash',
         agentId: 'base3',
         runId: 'run-1',
-      },
-    })
-  })
-
-  test('model-compaction completion ships sizes and labels, never the summary', () => {
-    expect(
-      getAxiomOnlyLogEvent({
-        axiomEvent: MODEL_COMPACTION_COMPLETED_EVENT,
-        agent_run_id: 'run-1',
-        model: 'deepseek/deepseek-v4-flash',
-        trigger_reason: 'cache_expiry',
-        summary_source: 'text',
-        summary_tokens: 7_400,
-        summary_budget: 6_000,
-        sections: 1,
-        pre_tokens: 212_000,
-        post_tokens: 31_000,
-        // Not in the allowlist: user content.
-        summary: '## Objective\n- secret',
-      }),
-    ).toEqual({
-      event: MODEL_COMPACTION_COMPLETED_EVENT,
-      data: {
-        agent_run_id: 'run-1',
-        model: 'deepseek/deepseek-v4-flash',
-        trigger_reason: 'cache_expiry',
-        summary_source: 'text',
-        summary_tokens: 7_400,
-        summary_budget: 6_000,
-        sections: 1,
-        pre_tokens: 212_000,
-        post_tokens: 31_000,
       },
     })
   })

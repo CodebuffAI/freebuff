@@ -1,6 +1,6 @@
 // The mechanical pass on its own. `evaluateCompactionTrigger` answers "is this
 // worth doing unasked"; `compactHistoryNow` is what runs once that is settled —
-// a user's /compact, or the runtime's fallback when a model compaction fails —
+// a user's /compact or a triggered compaction —
 // so what it pins is that the decision is the only thing removed — the
 // protected prefix, the fresh tool exchange and the budget are all still the
 // shared ones — plus the two answers a caller has to be able to tell apart: a

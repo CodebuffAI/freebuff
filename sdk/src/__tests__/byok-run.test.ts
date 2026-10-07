@@ -40,22 +40,12 @@ describe('direct BYOK SDK runs', () => {
   const originalFetch = globalThis.fetch
   afterEach(() => { globalThis.fetch = originalFetch })
 
-  test('manual compaction uses the provider tool channel and resumes from the exact saved summary', async () => {
-    const summary = '## Objective\nDocument retry behavior.\n## Important Details\n- uploader.ts retries only network failures.\n## Work State\n### Completed\n- Retry implemented.\n### Active\n- Documentation.\n### Blocked\n- (none)\n## Next Move\n1. Update docs/uploads.md.\n## Relevant Files\n- uploader.ts: retries use milliseconds.'
+  test('manual compaction makes no provider request and resumes from the saved summary', async () => {
     const requests: any[] = []
     globalThis.fetch = (async (input, init) => {
       expect(String(input)).toBe('http://127.0.0.1:9876/v1/chat/completions')
       const body = JSON.parse(String(init?.body))
       requests.push(body)
-      const compacting = body.tools?.some((t: any) => t.function.name === 'complete_compaction')
-      if (compacting) {
-        expect(body.model).toBe('scripted/model')
-        expect(body.tool_choice).toBe('required')
-        expect(body.tools.map((t: any) => t.function.name)).toEqual(['complete_compaction'])
-        expect(JSON.stringify(body.messages)).toContain('READ_FINDING: timeout uses milliseconds')
-        return sse({ id: 'summary', object: 'chat.completion.chunk', created: 1, model: body.model,
-          choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'compact', type: 'function', function: { name: 'complete_compaction', arguments: JSON.stringify({ summary }) } }] }, finish_reason: 'tool_calls' }] })
-      }
       return sse({ id: 'work', object: 'chat.completion.chunk', created: 1, model: body.model,
         choices: [{ index: 0, delta: { content: requests.length === 1 ? 'READ_FINDING: timeout uses milliseconds. '.repeat(1000) : 'Documented.' }, finish_reason: 'stop' }] })
     }) as typeof fetch
@@ -63,51 +53,20 @@ describe('direct BYOK SDK runs', () => {
     const original = await client.run({ agent: agent.id, prompt: 'Document retry behavior.' })
     expect(original.output.type).not.toBe('error')
     const saved = JSON.stringify(original)
-    const receipts: unknown[] = []
+    const receipts: Array<{ trigger: string; summary?: string }> = []
     const compacted = await client.run({ agent: agent.id, prompt: '/compact', previousRun: original, onCompaction: (receipt) => receipts.push(receipt) })
     expect(compacted.output.type).not.toBe('error')
-    expect(requests).toHaveLength(2)
-    expect(receipts).toMatchObject([{ trigger: 'manual', summary }])
+    expect(requests).toHaveLength(1)
+    expect(receipts).toHaveLength(1)
+    expect(receipts[0].trigger).toBe('manual')
+    expect(receipts[0].summary).toContain('READ_FINDING')
+    expect(receipts[0].summary).toContain('[...truncated')
     expect(JSON.stringify(original)).toBe(saved)
     const resumed = await client.run({ agent: agent.id, prompt: 'Continue.', previousRun: JSON.parse(JSON.stringify(compacted)) })
     expect(resumed.output.type).not.toBe('error')
-    expect(requests).toHaveLength(3)
-    expect(JSON.stringify(requests.at(-1).messages)).toContain(summary.replaceAll('\n', '\\n'))
-    expect(JSON.stringify(requests.at(-1).messages)).not.toContain('READ_FINDING')
-    expect(requests.at(-1).tools.some((t: any) => t.function.name === 'complete_compaction')).toBe(false)
-  })
-
-  // An unconfigured connection caps every request at 4,096 output tokens, and
-  // the summarizer used to be asked for ~6,000. A summary cut off by the cap
-  // (finish_reason "length") must never replace the history.
-  test('compaction asks for a summary that fits the connection output cap and refuses one cut off by it', async () => {
-    const cutOff = '## Objective\n- Document retry behavior.\n## Important Details\n- The backoff multiplies by'
-    for (const args of [JSON.stringify({ summary: cutOff }), cutOff, JSON.stringify({ summary: cutOff }).slice(0, -2)]) {
-      const compactions: any[] = []
-      let calls = 0
-      globalThis.fetch = (async (_input, init) => {
-        const body = JSON.parse(String(init?.body))
-        if (body.tools?.some((t: any) => t.function.name === 'complete_compaction')) {
-          compactions.push(body)
-          return sse({ id: 'summary', object: 'chat.completion.chunk', created: 1, model: body.model,
-            choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'compact', type: 'function', function: { name: 'complete_compaction', arguments: args } }] }, finish_reason: 'length' }] })
-        }
-        return sse({ id: 'work', object: 'chat.completion.chunk', created: 1, model: body.model,
-          choices: [{ index: 0, delta: { content: calls++ === 0 ? 'READ_FINDING: timeout uses milliseconds. '.repeat(1000) : 'Documented.' }, finish_reason: 'stop' }] })
-      }) as typeof fetch
-      const client = new CodebuffClient({ byok: connection({ contextWindow: 32_768, maxOutputTokens: 4096 }), agentDefinitions: [agent] })
-      const original = await client.run({ agent: agent.id, prompt: 'Document retry behavior.' })
-      const receipts: Array<{ summary?: string }> = []
-      const compacted = await client.run({ agent: agent.id, prompt: '/compact', previousRun: original, onCompaction: (receipt) => receipts.push(receipt) })
-      expect(compacted.output.type).not.toBe('error')
-      expect(compactions).toHaveLength(1)
-      expect(compactions[0].max_tokens).toBe(4096)
-      expect(JSON.stringify(compactions[0].messages)).toContain('under approximately 2048 tokens')
-      // The mechanical pass replaced the model's cut-off handoff.
-      expect(receipts).toHaveLength(1)
-      expect(receipts[0].summary).not.toContain('The backoff multiplies by')
-      expect(JSON.stringify(compacted.sessionState)).not.toContain('The backoff multiplies by')
-    }
+    expect(requests).toHaveLength(2)
+    expect(JSON.stringify(requests.at(-1).messages)).toContain('<conversation_summary>')
+    expect(JSON.stringify(requests.at(-1).messages).length).toBeLessThan(JSON.stringify(requests[0].messages).length + 40_000)
   })
 
   test('runs a real local write-file tool loop without any Codebuff request', async () => {

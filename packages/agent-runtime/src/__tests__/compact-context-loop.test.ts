@@ -5,10 +5,6 @@
  */
 
 import * as analytics from '@codebuff/common/analytics'
-import {
-  DETERMINISTIC_COMPACTION_PERCENT,
-  usesDeterministicCompaction,
-} from '@codebuff/common/constants/compaction-policy'
 import { TEST_USER_ID } from '@codebuff/common/old-constants'
 import { createTestAgentRuntimeParams } from '@codebuff/common/testing/fixtures/agent-runtime'
 import { clearMockedModules } from '@codebuff/common/testing/mock-modules'
@@ -51,12 +47,6 @@ describe('compactContext in loopAgentSteps', () => {
   let dbSpies: DbSpies
   let seenMessages: Message[][]
   let runtimeImpl: any
-  const defaultCompactionInput: unknown = {
-    summary:
-      'the first request: DISTINCTIVE PRIOR ANSWER. Continue with the live question.',
-  }
-  /** What the summarizer's `complete_compaction` call carries, or a throw. */
-  let compactionInput: unknown | (() => never) = defaultCompactionInput
 
   const baseTemplate: AgentTemplate = {
     id: 'test-agent',
@@ -129,7 +119,6 @@ describe('compactContext in loopAgentSteps', () => {
     messageHistory: Message[],
     prompt?: string,
     logged?: unknown[],
-    userId: string = TEST_USER_ID,
   ) => {
     const {
       agentTemplate: _,
@@ -144,16 +133,6 @@ describe('compactContext in loopAgentSteps', () => {
         info: (data: unknown) => logged.push(data),
       }
     runtimeImpl.promptAiSdkStream = mock(async function* (params: any) {
-      if (params.tools.complete_compaction) {
-        expect(Object.keys(params.tools)).toEqual(['complete_compaction'])
-        expect(params.model).toBe(baseTemplate.model)
-        if (typeof compactionInput === 'function') compactionInput()
-        yield {
-          ...createToolCallChunk('complete_compaction', {}),
-          input: compactionInput,
-        } as ReturnType<typeof createToolCallChunk>
-        return promptSuccess('compaction-message-id')
-      }
       seenMessages.push(params.messages)
       yield { type: 'text' as const, text: 'ok' }
       yield createToolCallChunk('end_turn', {})
@@ -179,7 +158,7 @@ describe('compactContext in loopAgentSteps', () => {
       spawnParams: undefined,
       fingerprintId: 'test-fingerprint',
       fileContext: mockFileContext,
-      userId,
+      userId: TEST_USER_ID,
       clientSessionId: 'test-session',
       ancestorRunIds: [],
       onResponseChunk: () => {},
@@ -189,7 +168,6 @@ describe('compactContext in loopAgentSteps', () => {
 
   beforeEach(() => {
     seenMessages = []
-    compactionInput = defaultCompactionInput
     dbSpies = setupDbSpies(createMockDbOperations())
     spyOn(analytics, 'trackEvent').mockImplementation(() => {})
   })
@@ -204,37 +182,22 @@ describe('compactContext in loopAgentSteps', () => {
     clearMockedModules()
   })
 
-  /** A user `usesDeterministicCompaction` puts on the mechanical pass. */
-  const cohortUser = () => {
-    for (let i = 0; i < 10_000; i++)
-      if (usesDeterministicCompaction(`cohort-user-${i}`))
-        return `cohort-user-${i}`
-    throw new Error('no user in the deterministic-compaction cohort')
+  const overBudget = {
+    ...baseTemplate,
+    compactContext: { maxContextLength: 4096, cacheExpiryMs: null },
   }
-  /** At 0% (the rollback value) there is no cohort to test. */
-  const cohortIt = it.skipIf(DETERMINISTIC_COMPACTION_PERCENT <= 0)
 
-  it('runs the model handoff for the test user, who is in the model cohort', () => {
-    // Every model-path case below depends on this; at 100% the handoff is gone.
-    expect(usesDeterministicCompaction(TEST_USER_ID)).toBe(false)
-  })
-
-  cohortIt('compacts mechanically at the context limit for the deterministic cohort', async () => {
-    const userId = cohortUser()
+  it('compacts at the context limit with no model request of its own', async () => {
     const logged: unknown[] = []
-    const result = await runLoop(
-      overBudget,
-      idleHistory(0),
-      undefined,
-      logged,
-      userId,
-    )
+    const result = await runLoop(overBudget, idleHistory(0), undefined, logged)
     expect(result.output.type).not.toBe('error')
-    // The turn's own request only: no `complete_compaction` call.
     expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(1)
     const sent = seenMessages[0].map(textOf).join('\n')
     expect(sent).toContain('<conversation_summary>')
     expect(sent).toContain('the live question')
+    expect(JSON.stringify(seenMessages[0])).not.toContain(
+      'BULKY FILE BODY '.repeat(50),
+    )
     expect(
       logged.filter(
         (data) =>
@@ -242,11 +205,7 @@ describe('compactContext in loopAgentSteps', () => {
           'context_compaction.followup',
       ),
     ).toEqual([
-      expect.objectContaining({
-        mode: 'mechanical',
-        deterministic_cohort: true,
-        trigger_reason: 'context_limit',
-      }),
+      expect.objectContaining({ trigger_reason: 'context_limit' }),
     ])
   })
 
@@ -258,79 +217,25 @@ describe('compactContext in loopAgentSteps', () => {
     expect(sent).not.toContain('<conversation_summary>')
   })
 
-  it('manual compaction ends after its dedicated tool and preserves the live request', async () => {
+  it('manual compaction makes no model request and preserves the live request', async () => {
     const result = await runLoop(baseTemplate, idleHistory(0), '/compact')
     expect(result.output.type).not.toBe('error')
-    expect(seenMessages).toHaveLength(0)
-    expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(1)
+    expect(runtimeImpl.promptAiSdkStream).not.toHaveBeenCalled()
     const history = result.agentState.messageHistory.map(textOf).join('\n')
     expect(history).toContain('the live question')
     expect(history).toContain('<conversation_summary>')
     expect(history).not.toContain('/compact')
   })
 
-  // Regression: on 2026-09-23 a Freebuff Cloud run failed with
-  // `Agent run error: [{"expected":"object","code":"invalid_type",...}] ZodError
-  // at compactWithModel`. An argument object that fails the tool schema reaches
-  // the runtime as a STRING (the AI SDK's `invalid` tool call), and a strict
-  // `.parse` on it threw straight out of the agent loop.
-  it('accepts a double-encoded compaction summary instead of failing the run', async () => {
-    // What the AI SDK hands over for a model that double-encoded its
-    // arguments: the outer layer parsed, the object still a JSON string.
-    compactionInput = JSON.stringify({
-      summary: 'DOUBLE ENCODED HANDOFF for the live question.',
-    })
-    const result = await runLoop(baseTemplate, idleHistory(0), '/compact')
-    expect(result.output.type).not.toBe('error')
-    const history = result.agentState.messageHistory.map(textOf).join('\n')
-    expect(history).toContain('DOUBLE ENCODED HANDOFF')
-    expect(history).toContain('the live question')
-  })
-
-  // The idle trigger is mechanical, so these two reach the summarizer through
-  // the context limit: a 4k window under a ~21k-token history.
-  const overBudget = {
-    ...baseTemplate,
-    compactContext: { maxContextLength: 4096, cacheExpiryMs: null },
-  }
-
-  it('falls back to mechanical compaction when the summary is unusable', async () => {
-    // Arguments cut off by the output cap: JSON that never closes.
-    compactionInput = '{"summary": "the first request was about'
-    const logged: unknown[] = []
-    const result = await runLoop(overBudget, idleHistory(0), undefined, logged)
-    expect(result.output.type).not.toBe('error')
-    expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(2)
-    // Mechanical by mode, but the model arm by cohort.
-    expect(
-      logged.filter(
-        (data) =>
-          (data as { axiomEvent?: string }).axiomEvent ===
-          'context_compaction.followup',
-      ),
-    ).toEqual([
-      expect.objectContaining({ mode: 'fallback', deterministic_cohort: false }),
-    ])
-    const sent = seenMessages[0].map(textOf).join('\n')
-    expect(sent).toContain('<conversation_summary>')
-    expect(sent).toContain('the live question')
-    expect(sent).not.toContain('the first request was about')
-    expect(JSON.stringify(seenMessages[0])).not.toContain(
-      'BULKY FILE BODY '.repeat(50),
-    )
-  })
-
-  cohortIt('compacts mechanically on the idle trigger in the cohort: no summarizer request', async () => {
+  it('compacts on the idle trigger with no model request of its own', async () => {
     const logged: unknown[] = []
     const result = await runLoop(
       { ...baseTemplate, compactContext: { cacheExpiryMinTokens: null } },
       idleHistory(120),
       undefined,
       logged,
-      cohortUser(),
     )
     expect(result.output.type).not.toBe('error')
-    // One request, the turn itself; never a `complete_compaction` call.
     expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(1)
     const sent = seenMessages[0].map(textOf).join('\n')
     expect(sent).toContain('<conversation_summary>')
@@ -342,17 +247,11 @@ describe('compactContext in loopAgentSteps', () => {
       logged.filter(
         (data) => (data as { axiomEvent?: string }).axiomEvent === name,
       )
-    expect(events('model_compaction.completed')).toEqual([])
     expect(events('context_compaction_completed')).toEqual([
-      expect.objectContaining({
-        trigger_reason: 'cache_expiry',
-        deterministic_cohort: true,
-      }),
+      expect.objectContaining({ trigger_reason: 'cache_expiry' }),
     ])
     expect(events('context_compaction.followup')).toEqual([
       expect.objectContaining({
-        mode: 'mechanical',
-        deterministic_cohort: true,
         trigger_reason: 'cache_expiry',
         ended_by: 'run_end',
         elided_read_paths: 1,
@@ -361,18 +260,6 @@ describe('compactContext in loopAgentSteps', () => {
         tool_calls_after: 1,
       }),
     ])
-  })
-
-  it('a summarizer that throws never fails the turn', async () => {
-    compactionInput = () => {
-      throw new Error('provider exploded mid-compaction')
-    }
-    const result = await runLoop(overBudget, idleHistory(0))
-    expect(result.output.type).not.toBe('error')
-    expect(seenMessages).toHaveLength(1)
-    expect(seenMessages[0].map(textOf).join('\n')).toContain(
-      'the live question',
-    )
   })
 
   it('leaves a small conversation alone however cold the cache is', async () => {
@@ -484,12 +371,6 @@ describe('compactContext in loopAgentSteps', () => {
     } = createTestAgentRuntimeParams()
     runtimeImpl = { ...baseRuntimeParams }
     runtimeImpl.promptAiSdkStream = mock(async function* (params: any) {
-      if (params.tools.complete_compaction) {
-        yield createToolCallChunk('complete_compaction', {
-          summary: 'the first request: DISTINCTIVE PRIOR ANSWER.',
-        })
-        return promptSuccess('compaction-message-id')
-      }
       seenMessages.push(params.messages)
       call++
       yield { type: 'text' as const, text: `STEP ${call} OUTPUT` }
@@ -649,7 +530,7 @@ describe('compactContext in loopAgentSteps', () => {
     it('still compacts at the hard budget', async () => {
       const result = await runLoop(smallWindow, withReads(8))
       const sent = JSON.stringify(seenMessages[0])
-      expect(sent.includes('<conversation_summary>')).toBe(true)
+      expect(sent.includes('READ 0 BODY')).toBe(false)
       expect(sent.includes('review the files')).toBe(true)
       expect(result.output.type).not.toBe('error')
     })

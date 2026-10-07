@@ -57,7 +57,6 @@ describe('compaction follow-up window', () => {
     const window = openCompactionWindow({
       before,
       after,
-      mode: 'mechanical',
       trigger: 'context_limit',
       now: 0,
     })
@@ -85,7 +84,6 @@ describe('compaction follow-up window', () => {
     const window = openCompactionWindow({
       before,
       after: stubbed,
-      mode: 'mechanical',
       trigger: 'context_limit',
       now: 0,
     })
@@ -96,7 +94,6 @@ describe('compaction follow-up window', () => {
     const window = openCompactionWindow({
       before,
       after,
-      mode: 'model',
       trigger: 'context_limit',
       now: 0,
     })
@@ -118,8 +115,6 @@ describe('compaction follow-up window', () => {
     const window = openCompactionWindow({
       before,
       after,
-      mode: 'fallback',
-      deterministicCohort: false,
       trigger: 'cache_expiry',
       now: 1_000,
     })
@@ -139,8 +134,6 @@ describe('compaction follow-up window', () => {
     expect(logged).toEqual([
       expect.objectContaining({
         axiomEvent: 'context_compaction.followup',
-        mode: 'fallback',
-        deterministic_cohort: false,
         trigger_reason: 'cache_expiry',
         ended_by: 'compaction',
         next_trigger_reason: 'context_limit',

@@ -52,27 +52,13 @@ export const STREAM_RECOVERY_EVENT = 'stream_recovery' as const
  *  replace a file with a cut-off copy of itself. Content-free: sizes, tool and
  *  model names only, never a path or file content. */
 export const FILE_WRITE_GUARD_EVENT = 'file_write_guard' as const
-/** Model-based context compaction failed and the runtime fell back to the
- *  mechanical pass (packages/agent-runtime/src/model-compaction.ts). The SDK
- *  is otherwise silent in the Web/Cloud runner, so without an allowlisted
- *  event a summarizer failure is invisible there. Content-free: the error is
- *  reduced to a fixed `error_kind`, never its message. */
-export const MODEL_COMPACTION_FALLBACK_EVENT =
-  'model_compaction.fallback' as const
-/** A model handoff was installed. The denominator for the fallback rate:
- *  'Context compaction completed' counts the fallback's own mechanical pass,
- *  so it cannot serve. Content-free sizes and labels only. */
-export const MODEL_COMPACTION_COMPLETED_EVENT =
-  'model_compaction.completed' as const
-/** A deterministic-cohort compaction that the mechanical pass did not apply:
- *  it threw (the live request alone over budget) or could not shrink the
- *  history. The model arm's equivalent is `model_compaction.fallback` with
- *  `fallback_applied: false`; without this the cohort's misses were silent.
- *  Content-free: a fixed `error_kind`, never the message. */
+/** A compaction the mechanical pass did not apply: it threw (the live request
+ *  alone over budget) or could not shrink the history. Content-free: a fixed
+ *  `error_kind`, never the message. */
 export const MECHANICAL_COMPACTION_SKIPPED_EVENT =
   'mechanical_compaction.skipped' as const
-/** The runtime's mechanical compaction (packages/agent-runtime/src/compact-history.ts),
- *  run on its own or as a model compaction's fallback. Shares its field names
+/** The runtime's mechanical compaction (packages/agent-runtime/src/compact-history.ts).
+ *  Shares its field names
  *  with `context_pruning.completed`. Content-free sizes and counts only. */
 export const CONTEXT_COMPACTION_COMPLETED_EVENT =
   'context_compaction_completed' as const
@@ -257,25 +243,6 @@ const FILE_WRITE_GUARD_FIELDS = {
   openBrackets: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
-/** On every compaction event: whether the user is in the
- *  `usesDeterministicCompaction` cohort, so the arms are compared by cohort
- *  rather than by `mode` (a model-arm fallback is mechanical too). Absent when
- *  the caller does not know (the SDK's `compactRunState`). */
-const COMPACTION_COHORT_FIELDS = {
-  deterministic_cohort: 'boolean',
-} as const satisfies AxiomOnlyFieldSchema
-
-const MODEL_COMPACTION_FALLBACK_FIELDS = {
-  model: 'string',
-  agent_run_id: 'string',
-  trigger_reason: 'string',
-  error_kind: 'string',
-  error_name: 'string',
-  fallback_applied: 'boolean',
-  fallback_failed: 'boolean',
-  ...COMPACTION_COHORT_FIELDS,
-} as const satisfies AxiomOnlyFieldSchema
-
 const MECHANICAL_COMPACTION_SKIPPED_FIELDS = {
   model: 'string',
   agent_run_id: 'string',
@@ -285,20 +252,6 @@ const MECHANICAL_COMPACTION_SKIPPED_FIELDS = {
   error_name: 'string',
   context_token_count: 'number',
   max_context_length: 'number',
-  ...COMPACTION_COHORT_FIELDS,
-} as const satisfies AxiomOnlyFieldSchema
-
-const MODEL_COMPACTION_COMPLETED_FIELDS = {
-  model: 'string',
-  agent_run_id: 'string',
-  trigger_reason: 'string',
-  summary_source: 'string',
-  summary_tokens: 'number',
-  summary_budget: 'number',
-  sections: 'number',
-  pre_tokens: 'number',
-  post_tokens: 'number',
-  ...COMPACTION_COHORT_FIELDS,
 } as const satisfies AxiomOnlyFieldSchema
 
 const CONTEXT_COMPACTION_COMPLETED_FIELDS = {
@@ -328,14 +281,11 @@ const CONTEXT_COMPACTION_COMPLETED_FIELDS = {
   working_set_stubs: 'number',
   working_set_tokens: 'number',
   post_tokens: 'number',
-  ...COMPACTION_COHORT_FIELDS,
 } as const satisfies AxiomOnlyFieldSchema
 
 const COMPACTION_FOLLOWUP_FIELDS = {
   agent_run_id: 'string',
   model: 'string',
-  /** `model`, `mechanical`, or `fallback` (a failed model pass's mechanical one). */
-  mode: 'string',
   trigger_reason: 'string',
   /** `compaction` (the next one) or `run_end`. */
   ended_by: 'string',
@@ -349,7 +299,6 @@ const COMPACTION_FOLLOWUP_FIELDS = {
   read_tokens_after: 'number',
   tool_calls_after: 'number',
   window_ms: 'number',
-  ...COMPACTION_COHORT_FIELDS,
 } as const satisfies AxiomOnlyFieldSchema
 
 const TODO_PROGRESS_REMINDER_FIELDS = {
@@ -1042,9 +991,7 @@ export type AxiomOnlyLogEvent = {
     | typeof CONTEXT_PRUNING_COMPLETED_EVENT
     | typeof STREAM_RECOVERY_EVENT
     | typeof FILE_WRITE_GUARD_EVENT
-    | typeof MODEL_COMPACTION_FALLBACK_EVENT
     | typeof MECHANICAL_COMPACTION_SKIPPED_EVENT
-    | typeof MODEL_COMPACTION_COMPLETED_EVENT
     | typeof CONTEXT_COMPACTION_COMPLETED_EVENT
     | typeof COMPACTION_FOLLOWUP_EVENT
     | typeof TODO_PROGRESS_REMINDER_EVENT
@@ -1126,27 +1073,12 @@ export function getAxiomOnlyLogEvent(
       data: sanitizeAllowlistedFields(record, FILE_WRITE_GUARD_FIELDS),
     }
   }
-  if (eventName === MODEL_COMPACTION_FALLBACK_EVENT) {
-    return {
-      event: eventName,
-      data: sanitizeAllowlistedFields(record, MODEL_COMPACTION_FALLBACK_FIELDS),
-    }
-  }
   if (eventName === MECHANICAL_COMPACTION_SKIPPED_EVENT) {
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(
         record,
         MECHANICAL_COMPACTION_SKIPPED_FIELDS,
-      ),
-    }
-  }
-  if (eventName === MODEL_COMPACTION_COMPLETED_EVENT) {
-    return {
-      event: eventName,
-      data: sanitizeAllowlistedFields(
-        record,
-        MODEL_COMPACTION_COMPLETED_FIELDS,
       ),
     }
   }

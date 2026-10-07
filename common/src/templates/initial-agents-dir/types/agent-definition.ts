@@ -208,10 +208,7 @@ export interface AgentDefinition {
   /** Opt in to in-process context compaction. Defaults to false.
    *
    * Compaction reserves input headroom and also runs after an idle gap. It is
-   * a mechanical rewrite of the history (no model call), or, for users not yet
-   * moved to that, a handoff the same model writes through complete_compaction
-   * (an inference request on the run's normal billing/provider) with the
-   * rewrite as the fallback. Pass
+   * a mechanical rewrite of the history (no model call). Pass
    * `{ cacheExpiryMs }` to tune that idle threshold, or `{ cacheExpiryMs: null }`
    * to compact on the context limit only.
    *

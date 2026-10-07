@@ -299,7 +299,7 @@ export type RunOptions = {
   onUsage?: (usage: AgentUsageData) => void
   /** A model request ended before an exact provider usage receipt arrived. */
   onUsageIncomplete?: () => void
-  /** Successful model-generated compaction, including the exact saved summary. */
+  /** Successful compaction, including the exact saved summary. */
   onCompaction?: (data: ContextCompactionData) => void
   /** A compaction pass began. `onCompactionEnd` always follows, after any `onCompaction`. */
   onCompactionStart?: (data: Pick<ContextCompactionData, 'trigger'>) => void
@@ -660,8 +660,6 @@ async function runOnce({
             ? byokTemplate.compactContext
             : {}),
           maxContextLength: limits.maxContextLength,
-          // The summarizer request is clamped to this cap like any other
-          // BYOK request, so compaction must ask for a summary that fits it.
           maxOutputTokens: limits.maxOutputTokens,
         }
       }

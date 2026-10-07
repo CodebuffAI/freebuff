@@ -1190,8 +1190,7 @@ export function evaluateCompactionTrigger(params: {
  * The mechanical pass — protected prefix, fresh tool exchange, budget walk —
  * with no decision attached. A user who asks for it has already decided;
  * `evaluateCompactionTrigger` exists to answer "is this worth doing unasked",
- * which is a different question. It is also the runtime's fallback when a
- * model compaction fails (`compactWithModelOrFallback`).
+ * which is a different question.
  *
  * Since #5502 the rewritten part (summary plus working set) stops at
  * `historyTokens`, MECHANICAL_HISTORY_TOKENS (12k) by default, however much
@@ -1219,9 +1218,6 @@ export function compactHistoryNow(params: {
   historyTokens?: number
   /** Why the caller compacted; a forced pass is `manual`. */
   trigger?: CompactionTrigger | 'manual'
-  /** Whether the user is in the deterministic-compaction cohort; telemetry
-   * only, omitted when the caller does not know. */
-  deterministicCohort?: boolean
   logger?: Logger
   runId?: string
 }): {
@@ -1256,7 +1252,6 @@ export function compactHistoryNow(params: {
         message_count: messages.length,
         ...result.stats,
         post_tokens: nextTokens + fixedTokenCount,
-        deterministic_cohort: params.deterministicCohort,
       },
       'Context compaction completed',
     )

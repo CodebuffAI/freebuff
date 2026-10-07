@@ -85,21 +85,9 @@ for (const contextWindow of [32768, 131072]) {
     })
     runtime.promptAiSdkStream = mock(async function* ({
       messages,
-      tools,
     }: {
       messages: Message[]
-      tools: Record<string, unknown>
     }) {
-      if (tools.complete_compaction) {
-        // The summarizer sees the actual file contents, including older reads,
-        // and hands their finding to the coding model instead of just paths.
-        expect(JSON.stringify(messages)).toContain('FILE_CONTENT_CANARY')
-        yield createToolCallChunk('complete_compaction', {
-          summary:
-            'FILE_CONTENT_CANARY: inspected app.tsx and theme.ts. The action rows have enabled=true. Next write ready.ts.',
-        })
-        return promptSuccess('compaction-response')
-      }
       requests.push(structuredClone(messages))
       expect(countTokensMessages(messages)).toBeLessThanOrEqual(
         limits.maxContextLength,

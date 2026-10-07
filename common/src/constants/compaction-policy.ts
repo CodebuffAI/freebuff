@@ -1,9 +1,6 @@
-import { BYOK_LOCAL_USER_ID } from './byok'
 import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from './freebuff-model-ids'
-import { fnv1a } from '../util/ad-experiment'
 
-/** Leave input headroom for the model-based compaction request. */
-export function modelCompactionThreshold(maxContextLength: number): number {
+export function compactionThreshold(maxContextLength: number): number {
   return Math.floor(maxContextLength * 0.8)
 }
 
@@ -11,10 +8,8 @@ export function modelCompactionThreshold(maxContextLength: number): number {
  * When a root agent rewrites its own history after an idle gap: the user
  * comes back after `cacheExpiryMs` of silence AND the history is at least
  * `cacheExpiryMinTokens`. Below the floor a cold cache is not enough, because
- * compaction costs inference and some detail. The context-limit trigger
- * ignores the floor. For the users in `usesDeterministicCompaction` every
- * pass is mechanical (no model call); for the rest it is a model handoff with
- * the mechanical pass as fallback.
+ * compaction is free in tokens but never in information. The context-limit
+ * trigger ignores the floor. Every pass is mechanical (no model call).
  *
  * The numbers live only here. base3 roots hand the object to the runtime as
  * `compactContext`; the runtime defaults `compactContext: true` to
@@ -75,31 +70,4 @@ export function compactionPolicyForModel(
   return model === FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
     ? DEEPSEEK_FLASH_COMPACTION_POLICY
     : DEFAULT_COMPACTION_POLICY
-}
-
-/**
- * Percent of users whose compactions, on every trigger, run the mechanical
- * pass (a ~12k summary plus a working set of file reads) instead of the model
- * handoff.
- *
- * The cohort is sticky per user, so the two arms can be compared on
- * `context_compaction.followup` (re-reads and repeat compactions, by
- * `deterministic_cohort`; see docs/logging.md).
- * It starts small and widens; at 100 the model handoff is deleted. A larger
- * share only adds users, so nobody flips back. Changing the salt reassigns
- * everyone.
- */
-export const DETERMINISTIC_COMPACTION_PERCENT = 10
-const DETERMINISTIC_COMPACTION_SALT = 'deterministic_compaction_2026_10'
-
-/** Signed-out runs, and BYOK runs that share `BYOK_LOCAL_USER_ID`, stay on
- * the handoff until 100: hashing the shared id would flip every such user's
- * arm at once. */
-export function usesDeterministicCompaction(
-  userId: string | undefined,
-  percent: number = DETERMINISTIC_COMPACTION_PERCENT,
-): boolean {
-  if (percent >= 100) return true
-  if (!userId || userId === BYOK_LOCAL_USER_ID || percent <= 0) return false
-  return fnv1a(`${DETERMINISTIC_COMPACTION_SALT}:${userId}`) % 100 < percent
 }
