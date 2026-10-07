@@ -288,7 +288,7 @@ export function readSponsoredComputePolicy(
     campaigns,
     // The configured acceptance fee is the only commercial charge. Compute is an
     // internal, bounded cost of fulfilling that offer, capped here.
-    allowanceUsdMicros: 1_500_000,
+    allowanceUsdMicros: 2_500_000,
     acceptancePriceCents,
     ttlMs: SPONSORED_COMPUTE_RUN_WINDOW_MS,
   })
