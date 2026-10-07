@@ -189,6 +189,7 @@ export function buildWorkingSet(params: {
   older: Message[]
   fresh: Message[]
   tokenBudget: number
+  noteBudget?: number
   now: number
 }): { messages: Message[]; files: number; stubs: number } | null {
   const { reads, lastEdit, lastDelegation } = collectReadsAndEdits([
@@ -265,12 +266,20 @@ export function buildWorkingSet(params: {
   }
 
   let stubRoom = Math.min(STUB_TOKEN_LIMIT, params.tokenBudget - used)
+  let noteRoom = (params.noteBudget ?? params.tokenBudget) - used
   const stubs: { path: string; content: string }[] = []
   for (const { read, reason } of left) {
     const stub = { path: read.path, content: stubFor(read, reason) }
-    if (cost(stub) > stubRoom) continue
-    stubs.push(stub)
-    stubRoom -= cost(stub)
+    if (cost(stub) <= Math.min(stubRoom, noteRoom)) {
+      stubs.push(stub)
+      stubRoom -= cost(stub)
+      noteRoom -= cost(stub)
+      continue
+    }
+    const note = { path: read.path, content: stub.content.split('\n')[0] }
+    if (cost(note) > noteRoom) continue
+    stubs.push(note)
+    noteRoom -= cost(note)
   }
 
   const files = [...carried, ...stubs]

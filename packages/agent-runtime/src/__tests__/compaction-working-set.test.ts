@@ -338,6 +338,22 @@ describe('mechanical compaction size', () => {
     expect(compacted.summaryText).toContain('Request 39')
   })
 
+  it('keeps a note for every file read when the target leaves no room', () => {
+    const compacted = compactHistoryNow({
+      messages: longSession(),
+      maxContextLength: 40_000,
+      fixedTokenCount: 16_000,
+      targetTokens: 10_000,
+    })!
+    const paths = workingSet(compacted.messages)!.map((f) => f.path)
+    for (let i = 0; i < 40; i++)
+      expect(paths).toEqual(
+        expect.arrayContaining([`src/a${i}.ts`, `src/b${i}.ts`]),
+      )
+    expect(compacted.summaryText).toContain('Request 39')
+    expect(compacted.nextTokens + 16_000).toBeLessThanOrEqual(40_000)
+  })
+
   it('takes a larger history budget when a caller asks for one', () => {
     const compacted = compactHistoryNow({
       messages: longSession(),

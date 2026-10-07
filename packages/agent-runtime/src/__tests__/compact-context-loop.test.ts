@@ -527,10 +527,13 @@ describe('compactContext in loopAgentSteps', () => {
       expect(result.output.type).not.toBe('error')
     })
 
-    it('still compacts at the hard budget', async () => {
+    it('still compacts at the hard budget, keeping a summary and a note for every earlier read', async () => {
       const result = await runLoop(smallWindow, withReads(8))
       const sent = JSON.stringify(seenMessages[0])
       expect(sent.includes('READ 0 BODY')).toBe(false)
+      expect(sent.includes('<conversation_summary>')).toBe(true)
+      for (let i = 0; i < 7; i++) expect(sent.includes(`"path":"file${i}.ts"`)).toBe(true)
+      expect(sent.match(/contents dropped at compaction/g)).toHaveLength(7)
       expect(sent.includes('review the files')).toBe(true)
       expect(result.output.type).not.toBe('error')
     })

@@ -110,6 +110,8 @@ export const MECHANICAL_TARGET_SHARE = 0.5
  */
 export const MECHANICAL_HISTORY_TOKENS = 12_000
 
+const MIN_HISTORY_TOKENS = 2_000
+
 /** Separator between entries inside the rendered historical memory. */
 const ENTRY_SEPARATOR = '\n\n---\n\n'
 
@@ -1005,7 +1007,7 @@ function compactRequestHistory(
   const optionalTokens = Math.max(
     Math.min(
       hardRemaining,
-      targetBudget - prefixTokens - fittedTokens,
+      Math.max(targetBudget - prefixTokens - fittedTokens, MIN_HISTORY_TOKENS),
       historyBudget,
     ),
     reservedMemory,
@@ -1017,12 +1019,16 @@ function compactRequestHistory(
       WORKING_SET_TOKEN_LIMIT,
       Math.floor((optionalTokens - reservedMemory) * WORKING_SET_SHARE),
     ),
+    noteBudget: hardRemaining - reservedMemory,
     now,
   })
   const workingSetTokens = workingSet
     ? countTokensMessages(workingSet.messages)
     : 0
-  const remainingTokens = optionalTokens - workingSetTokens
+  const remainingTokens = Math.max(
+    optionalTokens - workingSetTokens,
+    Math.min(MIN_HISTORY_TOKENS, hardRemaining - workingSetTokens),
+  )
 
   // Keep the newest historical entries that fit the actual remainder. The
   // 50k/20k summary budgets are ceilings, never permission to exceed a BYOK
