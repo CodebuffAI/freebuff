@@ -1223,7 +1223,7 @@ export const FREEBUFF_LIMITED_SESSION_LIMIT = 6
  * (`docs/freebuff-web-creation-gate.md`).
  *
  * Levels therefore scale only the two pools that are genuinely scarce: premium
- * and the limited region. See `freebuff-levels.ts`.
+ * and the limited region. See `docs/freebuff-levels.md` (retired).
  */
 export const FREEBUFF_PREMIUM_SESSION_RESET_TIMEZONE = 'America/Los_Angeles'
 export const FREEBUFF_PREMIUM_SESSION_PERIOD = 'pacific_day'

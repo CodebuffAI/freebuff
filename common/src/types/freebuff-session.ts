@@ -38,7 +38,7 @@ export interface FreebuffSessionEntitlementBreakdown {
   promo?: number
   /**
    * Sessions added by the account's earned LEVEL
-   * (`common/constants/freebuff-levels.ts`). Omitted at level 0, which is
+   * (retired; `docs/freebuff-levels.md`). Omitted at level 0, which is
    * where every account starts, so the field is absent for most callers and an
    * older client that never reads it still sums to the right `limit` — the
    * server always sends the total.
