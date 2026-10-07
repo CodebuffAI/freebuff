@@ -411,7 +411,7 @@ function realpathForContainment(
   verb: 'read files' | 'write' | 'run commands',
 ): string {
   try {
-    return fs.realpathSync(target)
+    return physicalPath(target)
   } catch {
     // A dangling link and an unreadable/resolution-loop path are both an
     // unknown physical destination. Unknown is a refusal at this boundary.
@@ -421,17 +421,36 @@ function realpathForContainment(
   }
 }
 
+/**
+ * `fs.realpathSync`, except that it never asks the kernel to NAME a file.
+ *
+ * Under Bun on macOS, realpath is `F_GETPATH` on an open descriptor, and a
+ * file with several hard links has no single name: the kernel answers with
+ * whichever link it last looked up. A worktree file that is also linked from
+ * outside therefore realpathed outside now and then (10 in 3,000 calls on a
+ * Mac), and a write the rooted layer handles safely was refused as a symlink
+ * escape. Directories cannot be hard linked, so the parent is realpathed and
+ * the leaf keeps its own name; a symlinked leaf is followed by hand so its
+ * target gets the same treatment. Windows' final path names the link the
+ * handle was opened by, so it keeps the native answer.
+ */
+function physicalPath(target: string, hops = 0): string {
+  if (process.platform === 'win32') return fs.realpathSync(target)
+  const stat = fs.lstatSync(target)
+  if (stat.isDirectory()) return fs.realpathSync(target)
+  const parent = fs.realpathSync(path.dirname(target))
+  if (!stat.isSymbolicLink()) return path.join(parent, path.basename(target))
+  // the kernel's own limit (MAXSYMLINKS on macOS and Linux)
+  if (hops >= 32) throw new Error('too many levels of symbolic links')
+  return physicalPath(
+    path.resolve(parent, fs.readlinkSync(target)),
+    hops + 1,
+  )
+}
+
 function escapesRoot(root: string, target: string): boolean {
   const relative = path.relative(root, target)
   return relative.startsWith('..') || path.isAbsolute(relative)
-}
-
-function realpathOrSelf(target: string): string {
-  try {
-    return fs.realpathSync(target)
-  } catch {
-    return target
-  }
 }
 
 /**

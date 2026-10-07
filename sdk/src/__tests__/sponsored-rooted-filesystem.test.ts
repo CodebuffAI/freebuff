@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -284,6 +284,35 @@ describe('sponsored rooted filesystem: writes outside the worktree are refused',
     )
     expect(fs.statSync(path.join(root, 'hard.txt')).nlink).toBe(1)
   })
+
+  test.skipIf(isWindows)(
+    'through a hard link the kernel names by its outside path',
+    async () => {
+      // Bun's realpath on macOS asks the kernel for an open file's path, and a
+      // hard-linked file answers with whichever link was looked up last. That
+      // made the test above refuse the write about once in 300 runs. Forced
+      // here: containment must not ask the kernel to name a file at all.
+      const hard = path.join(root, 'hard.txt')
+      const secret = path.join(outside, 'secret.txt')
+      fs.linkSync(secret, hard)
+      const realpath = fs.realpathSync
+      const spy = spyOn(fs, 'realpathSync').mockImplementation(((
+        target: fs.PathLike,
+        options?: fs.EncodingOption,
+      ) =>
+        String(target) === hard
+          ? secret
+          : realpath(target, options)) as typeof fs.realpathSync)
+      try {
+        const rooted = createSponsoredRootedFileSystem({ workspaceRoot: root })
+        await rooted.writeFile(hard, 'replaced')
+      } finally {
+        spy.mockRestore()
+      }
+      expect(fs.readFileSync(secret, 'utf8')).toBe('outside-secret')
+      expect(fs.readFileSync(hard, 'utf8')).toBe('replaced')
+    },
+  )
 
   test('to the classes the surface refuses, including through an alias', async () => {
     fs.mkdirSync(path.join(root, '.git', 'hooks'), { recursive: true })
