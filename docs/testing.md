@@ -337,13 +337,16 @@ the backstop for an edge the scanner misses.
   `bun scripts/ci/affected-lanes.ts --files <path>…`, and
   `AFFECTED_LANES_DEBUG=1` prints the import chain to each package.
 - **A matrix row** is picked up from `ci.yml` by its `packages`; nothing to add.
-  Shards share `packages`, so they run or skip together.
+  Shards share `packages`, so they run or skip together. In `test` and
+  `test-db-integration` the rows are the JSON table inside the matrix's
+  `include: ${{ fromJSON(needs.changes.outputs.…_matrix || '[…]') }}`: edit it
+  there (no `}}` inside it). `changes` emits the selected rows, every key kept,
+  so an unselected leg never starts a runner; a PR that selects none emits `[]`,
+  which skips the job (an empty matrix is an error), and a failed `changes`
+  emits nothing, so GitHub falls back to that table and every leg runs.
 - **A new non-matrix job** that should be filtered needs an entry in
   `SINGLE_JOBS` in the script and its output in the `changes` job; a job with no
   `needs: changes` simply always runs.
-- An unselected leg of the `test` / `test-db-integration` include matrices still
-  starts a runner and skips every step on `LANE_SELECTED`: a job-level `if:`
-  cannot read `matrix`, and `exclude` cannot remove `include` rows.
 
 ### Known remaining cost
 
