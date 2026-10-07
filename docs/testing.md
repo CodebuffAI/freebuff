@@ -675,9 +675,16 @@ and the whole budget on a loaded runner. The same pattern cost
 `ProjectSidebar`'s archive/restore case 1.5s. Neither looks slow in the source,
 and raising the timeout would only have hidden it.
 
-The rule: **inside `waitFor` (or any retry), never pass a DOM node to a matcher
-that can fail.** Use `expectFocused(el)` / `expectAbsent(query, what)` from
-`freebuff-desktop/test/support/dom-expect.ts`, which compare identity themselves
-and throw a one-line error. To spot the shape, time the case with
-`bun test --reporter=junit --reporter-outfile=…`: a mounted-React case taking
-over a second with no real I/O is almost always this.
+Both packages now preload a hook that prints any jsdom node as its `outerHTML`
+(capped at 500 chars) and a window or document as its URL:
+`freebuff/web/test/support/jsdom-inspect.ts` (#5694) and its port
+`freebuff-desktop/test/support/jsdom-inspect.ts`. With it, that failed
+`expect(node).toBeNull()` is a one-line message built in about a millisecond.
+A test run without the package's `bunfig.toml` (from another directory) has no
+hook and still prints the whole Window, and the helpers' messages read better,
+so the rule stands: **inside `waitFor` (or any retry), prefer
+`expectFocused(el)` / `expectAbsent(query, what)` from
+`freebuff-desktop/test/support/dom-expect.ts`** over a DOM node in a matcher. To
+spot the shape, time the case with `bun test --reporter=junit
+--reporter-outfile=…`: a mounted-React case taking over a second with no real
+I/O is almost always this.
