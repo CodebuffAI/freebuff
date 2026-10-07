@@ -2967,7 +2967,7 @@ const SPACE_BUNNY_ALPHA_MODEL = {
   efforts: EFFORTS_THROUGH_MAX,
   defaultEffort: 'high',
   experimental: true,
-  isNew: true,
+  // NOT `isNew` any more: the row is withdrawn (FREEBUFF_PAUSED_FREE_MODEL_IDS).
   taglineTooltip:
     'A stealth model from an anonymous provider. It may change or be withdrawn without notice.',
 } as const satisfies FreebuffModelOption
@@ -3099,10 +3099,9 @@ export const FREEBUFF_MODELS = [
   // cheapest first once prices arrive.
   SOLAR_MINI_4_MODEL,
   SOLAR_PRO_4_MODEL,
-  // SPACE BUNNY ALPHA (2026-09-23), a BETA stealth row. Placed after the
-  // named-vendor rows: a row carrying the stealth caveat should not outrank
-  // ones without it.
-  SPACE_BUNNY_ALPHA_MODEL,
+  // SPACE BUNNY ALPHA LEFT THIS LIST on 2026-10-06, withdrawn (see its entry
+  // in FREEBUFF_PAUSED_FREE_MODEL_IDS). It joined on 2026-09-23 as a BETA
+  // stealth row.
   // GEMINI 3.8 FLASH LEFT THIS LIST on 2026-09-03, hours after joining it, when
   // the row was withdrawn, and came back to Web alone behind the paywall on
   // 09-04. It returned to this list on 2026-09-21 — see the note above Muse
@@ -3281,6 +3280,19 @@ export const FREEBUFF_PAUSED_FREE_MODEL_IDS: readonly string[] = [
   // nothing while nothing is admitted, and it is the guard that would stop a
   // repriced stealth slug billing us if this row were ever restored.
   FREEBUFF_OX_ALPHA_MODEL_ID,
+  // Withdrawn from free mode entirely on 2026-10-06. It was served free through
+  // OpenCode Zen after OpenRouter dropped it on 10-05, and OpenCode throttled
+  // our server IPs: from about 20:45Z that day it served nothing, and every
+  // single probe the queue sent, one per five minutes for over an hour, was
+  // refused. With no paid fallback by design, every user who picked it waited
+  // out the queue for a refusal.
+  //
+  // Paused rather than deleted for the reason Ox Alpha's entry gives: released
+  // CLI and Desktop binaries hold the id (it reached the limited tier on
+  // 10-01), so it must stay recognised to be coerced or refused cleanly rather
+  // than looping. Its row, roots, agent allowlist entries, OpenCode Zen lane
+  // and queue stay, so restoring it is this one line.
+  FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID,
   // Withdrawn from free mode entirely on 2026-08-31, on cost, when the reward
   // it backed moved to GLM 5.3 Flash (FREEBUFF_REWARD_MODEL_IDS). This row was
   // reachable ONLY through that earned pool, so re-pointing the pool left it
@@ -3994,11 +4006,8 @@ export const LIMITED_FREEBUFF_MODEL_IDS = [
   ...(FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.limitedAccess
     ? [FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.modelId]
     : []),
-  // Space Bunny Alpha (2026-10-01): admission already admitted it at limited
-  // access and Web/Cloud already listed it there; only the CLI and Desktop
-  // pickers left it out, which limited users (many newly region-locked)
-  // reported as the model disappearing. Free to serve.
-  FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID,
+  // Space Bunny Alpha sat here from 2026-10-01 until its withdrawal on
+  // 2026-10-06 (FREEBUFF_PAUSED_FREE_MODEL_IDS).
 ] as const
 export const LIMITED_FREEBUFF_MODELS = LIMITED_FREEBUFF_MODEL_IDS.map(
   (modelId) => SUPPORTED_FREEBUFF_MODELS.find((model) => model.id === modelId)!,

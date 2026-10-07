@@ -601,7 +601,7 @@ describe('FreebuffModelSelector tier layout', () => {
       lines.findIndex((line) => line.includes('│') && line.includes(name))
     const order = [
       lines.findIndex((line) => line.startsWith('UNLIMITED · Experimental models')),
-      cardLine('Space Bunny Alpha'),
+      cardLine('Solar Pro 4'),
       lines.findIndex((line) => line.startsWith('OPTIMIZED · Strongest')),
       cardLine('MiMo 2.6 Flash'),
       lines.findIndex((line) => line.startsWith('POWERFUL · Frontier')),
@@ -617,7 +617,9 @@ describe('FreebuffModelSelector tier layout', () => {
       expect(lines[cardLine(name) + 1]).toContain('Recommended')
     }
     expect(lines[cardLine('GPT-6 Luna') + 1]).not.toContain('Recommended')
-    expect(lines[cardLine('Space Bunny Alpha') + 1]).not.toContain('Recommended')
+    expect(lines[cardLine('Solar Pro 4') + 1]).not.toContain('Recommended')
+    // Withdrawn 2026-10-06.
+    expect(cardLine('Space Bunny Alpha')).toBe(-1)
   })
 
   test('lists the paid-only row to a free account, locked', async () => {

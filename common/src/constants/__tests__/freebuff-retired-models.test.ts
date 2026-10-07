@@ -2,10 +2,13 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   FREEBUFF_MODELS,
+  FREEBUFF_PAUSED_FREE_MODEL_IDS,
   FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID,
   freebuffRetiredModelMessage,
   getFreebuffModelsForAccessTier,
+  isFreebuffModelId,
   isFreebuffRetiredModelId,
+  SUPPORTED_FREEBUFF_MODELS,
 } from '../freebuff-models'
 
 describe('retired free models', () => {
@@ -34,8 +37,19 @@ describe('retired free models', () => {
   })
 })
 
-test('Space Bunny Alpha is listed at limited access, as admission already allowed', () => {
+test('Space Bunny Alpha is withdrawn: in no picker at any tier, still recognised', () => {
+  for (const tier of ['full', 'limited'] as const) {
+    expect(
+      getFreebuffModelsForAccessTier(tier).map((m) => m.id),
+    ).not.toContain(FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID)
+  }
+  expect(FREEBUFF_PAUSED_FREE_MODEL_IDS).toContain(
+    FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID,
+  )
+  expect(isFreebuffModelId(FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID)).toBe(false)
   expect(
-    getFreebuffModelsForAccessTier('limited').map((m) => m.id),
-  ).toContain(FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID)
+    SUPPORTED_FREEBUFF_MODELS.some(
+      (m) => m.id === FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID,
+    ),
+  ).toBe(true)
 })

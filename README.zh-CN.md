@@ -42,7 +42,6 @@ Freebuff 提供经过筛选的模型目录。常规模型选择器目前包括�
 | **MiMo 2.6 Pro**            | 完整访问       | 小米更强的推理模型，支持图像 |
 | **Solar Mini 4**            | 完整和受限访问 | Upstage 的快速轻量模型；52.4 万上下文，仅支持文本 |
 | **Solar Pro 4**             | 完整和受限访问 | Upstage 更大、更强的模型；52.4 万上下文，仅支持文本 |
-| **Space Bunny Alpha**       | 完整访问       | 测试版。来自匿名提供方的隐身模型，提供方会保留提示词；100 万上下文，支持图像 |
 | **Gemini 3.8 Flash**        | 付费套餐       | 100 万上下文，唯一支持音频、视频和 PDF 输入的模型 |
 | **Muse Spark 1.3**          | 付费套餐       | Meta 的智能体编码模型；100 万上下文。繁忙或不可用时改由 DeepSeek V4.1 Flash 作答，不会让你一直等 |
 | **GPT-6.1 Sol**             | 美国免费，其他地区需付费套餐 | OpenAI 的旗舰模型，限时促销价格，每个账户每天限一次会话；100 万上下文，支持图片 |
@@ -70,7 +69,7 @@ Freebuff 使用专业化智能体，而不是把所有任务都交给同一个�
 
 ## 免费访问
 
-Freebuff 在所有国家和地区均可使用。受支持的地区提供完整访问；其他地区以及使用 VPN 的用户获得受限访问，包括 DeepSeek V4.1 Flash、GLM 5.3 Flash、MiMo 2.6 Flash、Solar Mini 4、Solar Pro 4 和 Space Bunny Alpha。所有模型均按选择器中显示的价格以 Freebucks 计费。受限访问的免费额度为每天 25 Freebucks（使用 VPN 或代理时为 20），所有模型（包括 GLM）都会先使用当天额度；赚取的 Freebucks 存入钱包，在当天额度用完后使用。
+Freebuff 在所有国家和地区均可使用。受支持的地区提供完整访问；其他地区以及使用 VPN 的用户获得受限访问，包括 DeepSeek V4.1 Flash、GLM 5.3 Flash、MiMo 2.6 Flash、Solar Mini 4 和 Solar Pro 4。所有模型均按选择器中显示的价格以 Freebucks 计费。受限访问的免费额度为每天 25 Freebucks（使用 VPN 或代理时为 20），所有模型（包括 GLM）都会先使用当天额度；赚取的 Freebucks 存入钱包，在当天额度用完后使用。
 
 内置模型由文字广告支持。开始前，Freebuff 会显示适用的会话限制以及模型特定的数据使用提示。
 

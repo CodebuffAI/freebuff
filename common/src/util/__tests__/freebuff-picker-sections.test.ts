@@ -28,7 +28,6 @@ const none = { premium: false, locked: false, price: undefined }
 describe('freebuffPickerPlacement', () => {
   test('literal ids are the catalog constants', () => {
     const at = (id: string) => freebuffPickerPlacement([id], none)
-    expect(at(FREEBUFF_SPACE_BUNNY_ALPHA_MODEL_ID)).toEqual({ section: 'unlimited', order: 10 })
     expect(at(FREEBUFF_SOLAR_PRO_4_MODEL_ID)).toEqual({ section: 'unlimited', order: expect.any(Number) })
     expect(at(FREEBUFF_SOLAR_MINI_4_MODEL_ID).section).toBe('optimized')
     expect(at(FREEBUFF_MIMO_V25_MODEL_ID)).toMatchObject({ section: 'optimized', recommended: true })
