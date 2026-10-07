@@ -97,3 +97,13 @@ export const MAX_AGENT_STEPS_DEFAULT = 200
 // Programmatic tool calls can persist additional rows without consuming the
 // LLM-call budget, so keep the transport limit separate and safely bounded.
 export const MAX_AGENT_STEP_ROWS = 1_000
+
+/**
+ * Sent by the SDK on every agent-registry GET to say it applies the publisher
+ * trust gate (`sdk/src/agent-publisher-trust.ts`) to what comes back. The
+ * registry serves an untrusted publisher's `handleSteps` only to a request
+ * carrying it: clients released before the gate `eval` that source with no
+ * check, and they cannot send a header they never knew about.
+ */
+export const AGENT_TRUST_GATE_HEADER = 'x-codebuff-agent-trust-gate'
+export const AGENT_TRUST_GATE_HEADER_VALUE = '1'

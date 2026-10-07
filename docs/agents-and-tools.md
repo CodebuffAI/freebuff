@@ -25,6 +25,16 @@ and SDK `agentDefinitions` are never gated — they are code the user already
 chose to run. This is a trust floor, not isolation: sandboxing the eval,
 signing templates and pinning `latest` are separate work.
 
+Clients released before this gate (`codebuff` and `@codebuff/sdk` on npm) eval
+whatever the registry returns, so the registry GET routes refuse (403) a
+non-`codebuff` template with `handleSteps` unless the request carries
+`AGENT_TRUST_GATE_HEADER` (`common/src/constants/agents.ts`), which only the
+gated SDK sends (`untrustedHandleStepsRefusal` in
+`web/src/app/api/agents/_registry-guard.ts`). The server cannot see the
+caller's trusted set, so the header defers that decision to the client.
+`mcpServers` from non-`codebuff` publishers are refused outright, at publish
+and at GET, whatever the client.
+
 ### Trust gate for repository `.agents` directories
 
 `loadLocalAgents` dynamically imports every `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs`

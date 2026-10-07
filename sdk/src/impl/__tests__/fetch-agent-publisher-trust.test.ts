@@ -1,3 +1,7 @@
+import {
+  AGENT_TRUST_GATE_HEADER,
+  AGENT_TRUST_GATE_HEADER_VALUE,
+} from '@codebuff/common/constants/agents'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 
 import {
@@ -41,7 +45,7 @@ const createLogger = (): Logger =>
 
 /** Serves one registry row from GET /api/v1/agents/:publisher/:agent/:version */
 const serveRegistry = (version: string, data: Record<string, unknown>) => {
-  const fetchMock = mock(async (input: RequestInfo | URL) => {
+  const fetchMock = mock(async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = new URL(
       input instanceof URL
         ? input.toString()
@@ -131,6 +135,15 @@ describe('fetchAgentFromDatabase publisher trust', () => {
       readTrustedAgentPublishersEnv: () => undefined,
     })
     await expect(attempt).rejects.toThrow('acme/deployer@3.0.1')
+  })
+
+  test('tells the registry it applies the trust gate, so untrusted handleSteps reach this check', async () => {
+    const fetchMock = serveRegistry('1.2.0', makeRegistryTemplate())
+    await fetchAs('acme')
+    const init = fetchMock.mock.calls[0]![1]
+    expect(new Headers(init?.headers).get(AGENT_TRUST_GATE_HEADER)).toBe(
+      AGENT_TRUST_GATE_HEADER_VALUE,
+    )
   })
 
   test('untrusted publisher + data-only template (no handleSteps) loads', async () => {

@@ -1,4 +1,8 @@
-import { MAX_AGENT_STEP_ROWS } from '@codebuff/common/constants/agents'
+import {
+  AGENT_TRUST_GATE_HEADER,
+  AGENT_TRUST_GATE_HEADER_VALUE,
+  MAX_AGENT_STEP_ROWS,
+} from '@codebuff/common/constants/agents'
 import { FREEBUFF_ACTING_USER_HEADER } from '@codebuff/common/constants/freebuff-models'
 import { validateSingleAgent } from '@codebuff/common/templates/agent-validation'
 import { DynamicAgentTemplateSchema } from '@codebuff/common/types/dynamic-agent-template'
@@ -300,6 +304,9 @@ export async function fetchAgentFromDatabase(
         method: 'GET',
         headers: {
           Authorization: `Bearer ${apiKey}`,
+          // the registry withholds untrusted handleSteps without it; this
+          // function keeps that promise with the trust check below
+          [AGENT_TRUST_GATE_HEADER]: AGENT_TRUST_GATE_HEADER_VALUE,
         },
       },
       logger,
