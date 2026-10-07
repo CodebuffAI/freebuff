@@ -18,13 +18,14 @@ describe('retired free models', () => {
       'minimax/minimax-m3-20260211',
       'z-ai/glm-5.2',
       'stealth/ox-alpha',
+      'stealth/ox-alpha-20260820',
+      'deepseek/deepseek-v4-pro',
     ])
       expect(isFreebuffRetiredModelId(id)).toBe(true)
     for (const model of FREEBUFF_MODELS)
       expect(isFreebuffRetiredModelId(model.id)).toBe(false)
     expect(isFreebuffRetiredModelId('some/unknown-model')).toBe(false)
-    // Paused but still served through compatibility paths: not retired here.
-    expect(isFreebuffRetiredModelId('deepseek/deepseek-v4-pro')).toBe(false)
+    // Paused, but still a paid path on Freebuff's own Luna agents.
     expect(isFreebuffRetiredModelId('openai/gpt-5.6-luna')).toBe(false)
     expect(isFreebuffRetiredModelId(null)).toBe(false)
   })

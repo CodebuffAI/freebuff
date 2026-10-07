@@ -3217,8 +3217,8 @@ export const FREEBUFF_PAUSED_FREE_MODEL_IDS: readonly string[] = [
   // PAUSED rather than deleted, for the reason every entry here gives: those
   // binaries hold the id in their compiled-in catalog and keep sending it. A
   // full-access pick is refused with the non-session-ending withdrawn
-  // `model_unavailable`, which names GLM 5.3 Flash (the default) as the
-  // replacement; a limited pick is coerced to the limited default.
+  // `model_unavailable`, which names the default as the replacement; a
+  // limited pick is coerced to the limited default.
   //
   // NOT substituted with GPT-6 Luna, deliberately: GPT-6 Luna was open only
   // to US or paid accounts when this was written (every full-access account
@@ -3410,16 +3410,25 @@ export function freebuffPurchasesPausedAvailabilityLabel(): string {
  * instead of an unknown-model error), in no picker, admitted at no tier. The
  * completions route answers them with `freebuffRetiredModelMessage`
  * (2026-10-01: an old CLI was still running MiniMax M3 on `base2-free`,
- * ~2,300 requests a day, because only session admission refused it).
+ * ~2,300 requests a day, because only session admission refused it), and
+ * session admission refuses them as withdrawn with
+ * `freebuffRetiredModelAvailabilityLabel`. Every id here shipped in released
+ * CLI and Desktop catalogs, so the caller is an old build: both answers tell
+ * it to update.
  *
- * DeepSeek V4 Pro and GPT-5.6 Luna are paused too but NOT here: V4 Pro is
- * still served as V4 Flash to the clients that name it, and GPT-5.6 Luna is
- * shared with paid lite mode. Retiring either is a separate decision.
+ * DeepSeek V4 Pro joined on 2026-10-06: no V4 Pro request had been served as
+ * V4 Flash in the week before, so it had no compatibility path left either.
+ *
+ * GPT-5.6 Luna is paused too but NOT here: paid requests still run it on
+ * Freebuff's own Luna agents (`base2-free-luna` in a paid cost mode) and in
+ * paid lite mode, and this list refuses an agent bundled for a retired model
+ * in every cost mode. Free admission refuses it as withdrawn.
  */
 export const FREEBUFF_RETIRED_MODEL_IDS: readonly string[] = [
   FREEBUFF_MINIMAX_M3_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
   FREEBUFF_OX_ALPHA_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
 ]
 
 export function isFreebuffRetiredModelId(
@@ -3437,6 +3446,13 @@ export function freebuffRetiredModelMessage(id: string): string {
     SUPPORTED_FREEBUFF_MODELS.find((m) => freebuffModelIdMatches(id, m.id))
       ?.displayName ?? id
   return `${name} is no longer available in Freebuff. Update to the latest version to keep coding: run \`npm install -g freebuff@latest\` for the CLI, or restart Freebuff Desktop to update it.`
+}
+
+/** The same fact shaped to sit inside "<model> isn't available right now (…)",
+ *  the sentence every released client builds from a `model_unavailable`
+ *  admission refusal (see `freebuffWithdrawnModelAvailabilityLabel`). */
+export function freebuffRetiredModelAvailabilityLabel(): string {
+  return 'retired — update Freebuff to the latest version and pick another model to keep going'
 }
 
 /** Suffix-tolerant like the other model predicates, so a dated provider
