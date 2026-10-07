@@ -51,6 +51,9 @@ process.env.FREEBUFF_ADS_LEAD_NURTURE = 'off'
 // Fixture users, prompts and signups must never reach Vectoral's real feed
 // with the production key. Vectoral's own tests inject `apiKey` and `fetch`.
 delete process.env.VECTORAL_API_KEY
+// Fixture accounts must never send real SMS (and spend real money) through
+// Prelude with the production key. The phone gate's tests inject `fetch`.
+delete process.env.PRELUDE_API_KEY
 // The CPM leg defaults ON in production (COD-677: un-pausing an invoiced CPM
 // campaign is the only switch). Route tests written before that assume it
 // absent; the ones that exercise it set the knob themselves.
