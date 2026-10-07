@@ -88,7 +88,7 @@ describe('copy and view helpers', () => {
   it('completion copy follows what the server credited', () => {
     expect(
       profileSurveyCompletionCopy({ rewardFreebucks: 25, rewardedFreebucks: 25, allNotApplicable: false }),
-    ).toEqual({ kind: 'paid', title: '+25 Freebucks', detail: 'Added to your wallet. Thanks.' })
+    ).toEqual({ kind: 'paid', title: '+25 Freebucks', detail: 'Added to your wallet. Thanks!' })
     expect(
       profileSurveyCompletionCopy({ rewardFreebucks: 5, rewardedFreebucks: 0, allNotApplicable: true }).detail,
     ).toContain("didn't earn the 5 Freebucks")

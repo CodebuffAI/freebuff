@@ -163,12 +163,12 @@ export function profileSurveyCompletionCopy(input: {
     return {
       kind: 'paid',
       title: `+${input.rewardedFreebucks} Freebucks`,
-      detail: 'Added to your wallet. Thanks.',
+      detail: 'Added to your wallet. Thanks!',
     }
   if (input.rewardFreebucks > 0 && input.allNotApplicable)
     return {
       kind: 'unpaid',
-      title: 'Thanks.',
+      title: 'Thanks!',
       detail: `Every answer was “Doesn't apply”, so this one didn't earn the ${input.rewardFreebucks} Freebucks.`,
     }
   return { kind: 'unpaid', title: "Thanks, that's everything.", detail: null }
