@@ -882,13 +882,18 @@ export const FREEBUFF_OX_ALPHA_MAX_PRICE = {
 } as const
 
 /**
- * Space Bunny Alpha — a stealth model on OpenRouter, joined every surface on
- * 2026-09-23 as a BETA row priced 10 Freebucks.
+ * Space Bunny Alpha — a stealth model, joined every surface on 2026-09-23 as a
+ * BETA row; it launched at 10 Freebucks and has been priced 0 since that day
+ * (FREEBUCKS_SESSION_PRICES). Withdrawn on 2026-10-06
+ * (FREEBUFF_PAUSED_FREE_MODEL_IDS).
  *
- * The id is OpenRouter's own slug and falls through to the default OpenRouter
- * route, like Ox Alpha, with the same zero-price fence
- * (FREEBUFF_SPACE_BUNNY_ALPHA_MAX_PRICE). What was true of Ox Alpha is true
- * here, and was measured again rather than inherited (2026-09-23, prod key):
+ * SERVED BY OPENCODE ZEN since OpenRouter withdrew every endpoint for it on
+ * 2026-10-05: the id is aliased to Zen's free `space-bunny-free`
+ * (web/src/llm-api/opencode-zen.ts), behind a fleet-wide queue. The id is
+ * still OpenRouter's own slug, and the OpenRouter route with the same
+ * zero-price fence as Ox Alpha (FREEBUFF_SPACE_BUNNY_ALPHA_MAX_PRICE) remains
+ * in code. The measurements below are of the OpenRouter endpoint, measured
+ * again rather than inherited from Ox Alpha (2026-09-23, prod key):
  *
  *  - ONE endpoint, `stealth`, listed at $0 in and out.
  *  - REASONING IS MANDATORY (`reasoning.mandatory`): `effort: 'none'` answers

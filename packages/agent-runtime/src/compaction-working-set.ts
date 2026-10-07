@@ -13,7 +13,10 @@
  * So the pass re-provides the newest read of each file it can afford, as one
  * `read_files` exchange placed after the live prompt — the shape the model
  * already trusts for file contents. A file that was edited after its last
- * read is never re-provided: those contents are stale. Every other file read
+ * read is never re-provided: those contents are stale. Nor is any file read
+ * before a `spawn_agents` call: the spawned agents' edits never appear in this
+ * history (the fast-mode root delegates its edits that way), so the read may
+ * be stale too. Every other file read
  * earlier gets a stub in the same result instead: its size when read and an
  * outline of its top-level declarations with line numbers, so the model can
  * read one section rather than the whole file.
@@ -33,7 +36,9 @@ export const WORKING_SET_TAG = 'COMPACTION_WORKING_SET'
 export const COMPACTED_READ_MARKER =
   '[read_files: contents dropped at compaction'
 
-/** The most file content one compaction carries, in estimated tokens. */
+/** The most file content one compaction carries, in estimated tokens. At
+ * the default `MECHANICAL_HISTORY_TOKENS` (12k) the share below binds first
+ * (under 5k); this caps a caller that passes a larger `historyTokens`. */
 export const WORKING_SET_TOKEN_LIMIT = 40_000
 
 /** Share of the room left after the live request and fresh results. The rest
@@ -51,6 +56,10 @@ const EDIT_TOOLS = new Set([
   'propose_str_replace',
   'propose_write_file',
 ])
+
+/** Runs agents whose edits stay out of this history. A shell command can
+ * change files too, but it is not counted: most commands change nothing. */
+const DELEGATING_TOOLS = new Set(['spawn_agents'])
 
 /** Status results (missing, blocked, too large, error) are not contents. */
 const STATUS_PREFIXES = [
@@ -81,14 +90,18 @@ function pathOf(input: unknown): string | undefined {
 function collectReadsAndEdits(messages: Message[]): {
   reads: Read[]
   lastEdit: Map<string, number>
+  /** The newest delegation, which may have edited any file; -1 for none. */
+  lastDelegation: number
 } {
   const reads: Read[] = []
   const lastEdit = new Map<string, number>()
+  let lastDelegation = -1
   messages.forEach((message, order) => {
     if (message.role === 'assistant') {
       for (const part of message.content) {
-        if (part.type !== 'tool-call' || !EDIT_TOOLS.has(part.toolName))
-          continue
+        if (part.type !== 'tool-call') continue
+        if (DELEGATING_TOOLS.has(part.toolName)) lastDelegation = order
+        if (!EDIT_TOOLS.has(part.toolName)) continue
         const path = pathOf(part.input)
         if (path) lastEdit.set(path, order)
       }
@@ -105,7 +118,7 @@ function collectReadsAndEdits(messages: Message[]): {
       }
     }
   })
-  return { reads, lastEdit }
+  return { reads, lastEdit, lastDelegation }
 }
 
 const DECLARATION_PATTERNS = [
@@ -153,13 +166,17 @@ export function outlineOf(content: string): { lines: number; outline: string } {
   return { lines, outline: entries.join('\n') }
 }
 
-function stubFor(read: Read, reason: 'budget' | 'edited'): string {
+type StubReason = 'budget' | 'edited' | 'delegated'
+
+function stubFor(read: Read, reason: StubReason): string {
   if (read.content.startsWith(COMPACTED_READ_MARKER)) return read.content
   const { lines, outline } = outlineOf(read.content)
   const why =
     reason === 'edited'
       ? 'You edited it after this read, so read it again before relying on it.'
-      : 'Read it again (a section with offset/limit is enough) if you need it.'
+      : reason === 'delegated'
+        ? 'Agents you spawned after this read may have edited it, so read it again before relying on it.'
+        : 'Read it again (a section with offset/limit is enough) if you need it.'
   return `${COMPACTED_READ_MARKER}. ${lines} lines when read. ${why}]${outline ? `\nOutline:\n${outline}` : ''}`
 }
 
@@ -174,7 +191,7 @@ export function buildWorkingSet(params: {
   tokenBudget: number
   now: number
 }): { messages: Message[]; files: number; stubs: number } | null {
-  const { reads, lastEdit } = collectReadsAndEdits([
+  const { reads, lastEdit, lastDelegation } = collectReadsAndEdits([
     ...params.older,
     ...params.fresh,
   ])
@@ -226,19 +243,24 @@ export function buildWorkingSet(params: {
   let used = countTokensMessages(exchange([]))
 
   const carried: { path: string; content: string }[] = []
-  const left: { read: Read; reason: 'budget' | 'edited' }[] = []
+  const left: { read: Read; reason: StubReason }[] = []
   for (const read of candidates) {
-    const edited = (lastEdit.get(read.path) ?? -1) > read.order
+    const stale: StubReason | undefined =
+      (lastEdit.get(read.path) ?? -1) > read.order
+        ? 'edited'
+        : lastDelegation > read.order
+          ? 'delegated'
+          : undefined
     const file = { path: read.path, content: read.content }
     if (
-      !edited &&
+      !stale &&
       !read.content.startsWith(COMPACTED_READ_MARKER) &&
       used + cost(file) <= params.tokenBudget
     ) {
       carried.push(file)
       used += cost(file)
     } else {
-      left.push({ read, reason: edited ? 'edited' : 'budget' })
+      left.push({ read, reason: stale ?? 'budget' })
     }
   }
 

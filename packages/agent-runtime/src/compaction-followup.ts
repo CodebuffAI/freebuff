@@ -25,6 +25,8 @@ export type CompactionMode = 'model' | 'mechanical' | 'fallback'
 
 export type CompactionWindow = {
   mode: CompactionMode
+  /** The user's arm, which `mode` is not: a model-arm fallback is mechanical. */
+  deterministicCohort?: boolean
   trigger: CompactionTrigger | 'manual'
   openedAt: number
   /** Every tool call already in the compacted history. */
@@ -99,12 +101,14 @@ export function openCompactionWindow(params: {
   before: Message[]
   after: Message[]
   mode: CompactionMode
+  deterministicCohort?: boolean
   trigger: CompactionTrigger | 'manual'
   now?: number
 }): CompactionWindow {
   const carriedPaths = heldPaths(params.after)
   return {
     mode: params.mode,
+    deterministicCohort: params.deterministicCohort,
     trigger: params.trigger,
     openedAt: params.now ?? Date.now(),
     carriedCallIds: toolCallIds(params.after),
@@ -166,6 +170,7 @@ export function closeCompactionWindow(params: {
         agent_run_id: params.runId,
         model: params.model,
         mode: params.window.mode,
+        deterministic_cohort: params.window.deterministicCohort,
         trigger_reason: params.window.trigger,
         ended_by: params.endedBy,
         next_trigger_reason: params.nextTrigger,

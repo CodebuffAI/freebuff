@@ -10,6 +10,7 @@ import {
 import { PROJECT_PROFILE_TOOL_NAME } from '@codebuff/common/constants/project-profile'
 import { TOOLS_WHICH_WONT_FORCE_NEXT_STEP } from '@codebuff/common/tools/constants'
 import { parseAgentId } from '@codebuff/common/util/agent-id-parsing'
+import { TODO_PROGRESS_REMINDER_EVENT } from '@codebuff/common/util/axiom-only-log'
 import { buildArray } from '@codebuff/common/util/array'
 import {
   AbortError,
@@ -44,7 +45,7 @@ import {
 import type { CompactionWindow } from './compaction-followup'
 import {
   automaticCompactionIsWorthwhile,
-  compactMechanically,
+  compactDeterministically,
   COMPACTION_LOW_WATER,
   compactWithModelOrFallback,
   compactionTools,
@@ -758,13 +759,12 @@ export const runAgentStep = async (
     if (reminder) {
       logger.info(
         {
-          metric: 'todo_progress_reminder',
+          axiomEvent: TODO_PROGRESS_REMINDER_EVENT,
           done: reminder.done,
           total: reminder.total,
           callsSinceUpdate: reminder.callsSinceUpdate,
           model: agentTemplate.model,
           agentId: agentTemplate.id,
-          userId,
           runId: agentState.runId,
         },
         'To-do list not updated for several tool calls; reminding',
@@ -1340,20 +1340,17 @@ export async function loopAgentSteps(
           // pass it is showing and the handoff that replaces it.
           try {
             if (deterministic) {
-              try {
-                compacted = compactMechanically({
-                  messages: currentAgentState.messageHistory,
-                  maxContextLength,
-                  fixedTokenCount,
-                  targetTokens: mechanicalTargetTokens,
-                  trigger,
-                  logger,
-                  runId,
-                })
-              } catch {
-                // Opportunistic: a history it cannot fit is left alone.
-                compacted = null
-              }
+              compacted = compactDeterministically({
+                messages: currentAgentState.messageHistory,
+                maxContextLength,
+                fixedTokenCount,
+                targetTokens: mechanicalTargetTokens,
+                trigger,
+                logger,
+                runId,
+                model: agentTemplate.model,
+                contextTokenCount: currentAgentState.contextTokenCount,
+              })
             } else {
               // A compaction failure must never fail the turn: a summarizer error
               // or malformed handoff falls back to the mechanical pass.
@@ -1365,6 +1362,7 @@ export async function loopAgentSteps(
                 maxOutputTokens: policy.maxOutputTokens,
                 fallbackTargetTokens: targetTokens,
                 mechanicalTargetTokens,
+                deterministicCohort: false,
                 signal,
                 logger,
                 runId,
@@ -1425,6 +1423,7 @@ export async function loopAgentSteps(
                   : compacted.fallback
                     ? 'fallback'
                     : 'model',
+                deterministicCohort: deterministic,
                 trigger,
               })
               currentAgentState.messageHistory = compacted.messages

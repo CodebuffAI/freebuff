@@ -1,6 +1,7 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod/v4'
 import {
+  MECHANICAL_COMPACTION_SKIPPED_EVENT,
   MODEL_COMPACTION_COMPLETED_EVENT,
   MODEL_COMPACTION_FALLBACK_EVENT,
 } from '@codebuff/common/util/axiom-only-log'
@@ -651,6 +652,7 @@ export function compactMechanically(params: {
   fixedTokenCount: number
   targetTokens?: number
   trigger?: CompactionTrigger | 'manual'
+  deterministicCohort?: boolean
   logger?: Logger
   runId?: string
 }): {
@@ -667,6 +669,67 @@ export function compactMechanically(params: {
     preTokens: result.previousTokens + params.fixedTokenCount,
     postTokens: result.nextTokens + params.fixedTokenCount,
   }
+}
+
+/**
+ * The deterministic cohort's compaction: the mechanical pass alone, which is
+ * opportunistic, so a history it cannot fit or cannot shrink is left alone.
+ * Either miss is logged (`mechanical_compaction.skipped`), as the model arm's
+ * is (`model_compaction.fallback`), so the two arms count the same attempts.
+ */
+export function compactDeterministically(
+  params: Parameters<typeof compactMechanically>[0] & {
+    logger: Logger
+    model?: string
+    /** The run's context before compacting, for the skip event. */
+    contextTokenCount?: number
+  },
+): ReturnType<typeof compactMechanically> {
+  const { model, contextTokenCount, ...mechanicalParams } = params
+  let error: unknown
+  let result: ReturnType<typeof compactMechanically> = null
+  try {
+    result = compactMechanically({
+      ...mechanicalParams,
+      deterministicCohort: true,
+    })
+  } catch (thrown) {
+    error = thrown
+  }
+  if (result) return result
+  try {
+    const message = error instanceof Error ? error.message : String(error)
+    params.logger[error === undefined ? 'info' : 'warn'](
+      {
+        axiomEvent: MECHANICAL_COMPACTION_SKIPPED_EVENT,
+        agent_run_id: params.runId,
+        model,
+        trigger_reason: params.trigger,
+        error_kind:
+          error === undefined
+            ? 'no_shrink'
+            : message.includes('exceed the configured context window')
+              ? 'over_budget'
+              : 'error',
+        ...(error === undefined
+          ? {}
+          : {
+              error_name: error instanceof Error ? error.name : typeof error,
+              // Not allowlisted for Axiom; local/debug logs only.
+              error: message,
+            }),
+        context_token_count: contextTokenCount,
+        max_context_length: params.maxContextLength,
+        deterministic_cohort: true,
+      },
+      error === undefined
+        ? 'Mechanical compaction could not shrink the history; left unchanged'
+        : 'Mechanical compaction failed; history left unchanged',
+    )
+  } catch {
+    // Logging must never turn a skipped compaction into a failed run.
+  }
+  return null
 }
 
 /**
@@ -691,6 +754,8 @@ export async function compactWithModelOrFallback(
     /** Where the mechanical fallback aims; see `compactMechanically`.
      * Defaults to `fallbackTargetTokens`. */
     mechanicalTargetTokens?: number
+    /** Telemetry only; see `compactHistoryNow`. */
+    deterministicCohort?: boolean
   },
 ): Promise<{
   messages: Message[]
@@ -706,6 +771,7 @@ export async function compactWithModelOrFallback(
     trigger,
     fallbackTargetTokens,
     mechanicalTargetTokens = fallbackTargetTokens,
+    deterministicCohort,
     ...modelParams
   } = params
   try {
@@ -727,6 +793,7 @@ export async function compactWithModelOrFallback(
             sections: result.sections,
             pre_tokens: result.preTokens,
             post_tokens: result.postTokens,
+            deterministic_cohort: deterministicCohort,
           },
           'Model compaction completed',
         )
@@ -747,6 +814,7 @@ export async function compactWithModelOrFallback(
         fixedTokenCount: params.fixedTokenCount,
         targetTokens: mechanicalTargetTokens,
         trigger,
+        deterministicCohort,
         logger,
         runId,
       })
@@ -767,6 +835,7 @@ export async function compactWithModelOrFallback(
           error_name: error instanceof Error ? error.name : typeof error,
           fallback_applied: Boolean(fallback),
           fallback_failed: fallbackError !== undefined,
+          deterministic_cohort: deterministicCohort,
           // Not allowlisted for Axiom; local/debug logs only.
           error: errorMessage,
           ...(fallbackError ? { fallback_error: fallbackError } : {}),

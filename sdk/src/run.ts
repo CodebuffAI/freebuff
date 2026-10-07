@@ -7,6 +7,7 @@ import {
   withSystemTags,
 } from '@codebuff/agent-runtime/util/messages'
 import { MAX_AGENT_STEPS_DEFAULT } from '@codebuff/common/constants/agents'
+import { BYOK_LOCAL_USER_ID } from '@codebuff/common/constants/byok'
 import { toRepoSnapshot } from '@codebuff/common/util/file'
 import { dropUnansweredToolCalls } from '@codebuff/common/util/messages'
 import {
@@ -944,7 +945,7 @@ async function runOnce({
   if (byok) {
     // BYOK is intentionally auth-free: no Codebuff identity, run ledger,
     // token-count, analytics, or helper request is necessary for inference.
-    userId = requestedUserId ?? 'byok-local'
+    userId = requestedUserId ?? BYOK_LOCAL_USER_ID
   } else {
     let userInfo: { id: string } | null
     try {

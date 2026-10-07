@@ -1,4 +1,5 @@
 import { trackEvent as trackCommonEvent } from '@codebuff/common/analytics'
+import { BYOK_LOCAL_USER_ID } from '@codebuff/common/constants/byok'
 import { env as clientEnvDefault } from '@codebuff/common/env'
 import { getCiEnv } from '@codebuff/common/env-ci'
 import { shouldTrackAnalyticsEvent } from '@codebuff/common/util/analytics-sampling'
@@ -120,7 +121,7 @@ export function getAgentRuntimeImpl(
 
     // Database
     getUserInfoFromApiKey: byok
-      ? async () => ({ id: 'byok-local' }) as any
+      ? async () => ({ id: BYOK_LOCAL_USER_ID }) as any
       : getUserInfoFromApiKey,
     // A BYOK run only uses its local agent registry. A missing local agent is
     // an error, never a reason to send its prompt or identity to Freebuff.

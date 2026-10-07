@@ -5,7 +5,10 @@
  */
 
 import * as analytics from '@codebuff/common/analytics'
-import { usesDeterministicCompaction } from '@codebuff/common/constants/compaction-policy'
+import {
+  DETERMINISTIC_COMPACTION_PERCENT,
+  usesDeterministicCompaction,
+} from '@codebuff/common/constants/compaction-policy'
 import { TEST_USER_ID } from '@codebuff/common/old-constants'
 import { createTestAgentRuntimeParams } from '@codebuff/common/testing/fixtures/agent-runtime'
 import { clearMockedModules } from '@codebuff/common/testing/mock-modules'
@@ -75,7 +78,8 @@ describe('compactContext in loopAgentSteps', () => {
 
   /** An old read whose result is most of the history: what a mechanical pass
    * reclaims. Without it the history is too small to shrink. At ~53k tokens
-   * it is over the 40k working-set limit, so it comes back as a stub. */
+   * it is far over the working set's share of the 12k history cap (under
+   * 5k), so it comes back as a stub. */
   const bulkyRead = (body = 'BULKY FILE BODY '): Message[] => [
     {
       role: 'assistant',
@@ -202,18 +206,20 @@ describe('compactContext in loopAgentSteps', () => {
 
   /** A user `usesDeterministicCompaction` puts on the mechanical pass. */
   const cohortUser = () => {
-    let userId = ''
-    for (let i = 0; !usesDeterministicCompaction(userId); i++)
-      userId = `cohort-user-${i}`
-    return userId
+    for (let i = 0; i < 10_000; i++)
+      if (usesDeterministicCompaction(`cohort-user-${i}`))
+        return `cohort-user-${i}`
+    throw new Error('no user in the deterministic-compaction cohort')
   }
+  /** At 0% (the rollback value) there is no cohort to test. */
+  const cohortIt = it.skipIf(DETERMINISTIC_COMPACTION_PERCENT <= 0)
 
   it('runs the model handoff for the test user, who is in the model cohort', () => {
     // Every model-path case below depends on this; at 100% the handoff is gone.
     expect(usesDeterministicCompaction(TEST_USER_ID)).toBe(false)
   })
 
-  it('compacts mechanically at the context limit for the deterministic cohort', async () => {
+  cohortIt('compacts mechanically at the context limit for the deterministic cohort', async () => {
     const userId = cohortUser()
     const logged: unknown[] = []
     const result = await runLoop(
@@ -238,6 +244,7 @@ describe('compactContext in loopAgentSteps', () => {
     ).toEqual([
       expect.objectContaining({
         mode: 'mechanical',
+        deterministic_cohort: true,
         trigger_reason: 'context_limit',
       }),
     ])
@@ -290,9 +297,20 @@ describe('compactContext in loopAgentSteps', () => {
   it('falls back to mechanical compaction when the summary is unusable', async () => {
     // Arguments cut off by the output cap: JSON that never closes.
     compactionInput = '{"summary": "the first request was about'
-    const result = await runLoop(overBudget, idleHistory(0))
+    const logged: unknown[] = []
+    const result = await runLoop(overBudget, idleHistory(0), undefined, logged)
     expect(result.output.type).not.toBe('error')
     expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(2)
+    // Mechanical by mode, but the model arm by cohort.
+    expect(
+      logged.filter(
+        (data) =>
+          (data as { axiomEvent?: string }).axiomEvent ===
+          'context_compaction.followup',
+      ),
+    ).toEqual([
+      expect.objectContaining({ mode: 'fallback', deterministic_cohort: false }),
+    ])
     const sent = seenMessages[0].map(textOf).join('\n')
     expect(sent).toContain('<conversation_summary>')
     expect(sent).toContain('the live question')
@@ -302,7 +320,7 @@ describe('compactContext in loopAgentSteps', () => {
     )
   })
 
-  it('compacts mechanically on the idle trigger in the cohort: no summarizer request', async () => {
+  cohortIt('compacts mechanically on the idle trigger in the cohort: no summarizer request', async () => {
     const logged: unknown[] = []
     const result = await runLoop(
       { ...baseTemplate, compactContext: { cacheExpiryMinTokens: null } },
@@ -326,11 +344,15 @@ describe('compactContext in loopAgentSteps', () => {
       )
     expect(events('model_compaction.completed')).toEqual([])
     expect(events('context_compaction_completed')).toEqual([
-      expect.objectContaining({ trigger_reason: 'cache_expiry' }),
+      expect.objectContaining({
+        trigger_reason: 'cache_expiry',
+        deterministic_cohort: true,
+      }),
     ])
     expect(events('context_compaction.followup')).toEqual([
       expect.objectContaining({
         mode: 'mechanical',
+        deterministic_cohort: true,
         trigger_reason: 'cache_expiry',
         ended_by: 'run_end',
         elided_read_paths: 1,

@@ -119,6 +119,7 @@ describe('compaction follow-up window', () => {
       before,
       after,
       mode: 'fallback',
+      deterministicCohort: false,
       trigger: 'cache_expiry',
       now: 1_000,
     })
@@ -139,6 +140,7 @@ describe('compaction follow-up window', () => {
       expect.objectContaining({
         axiomEvent: 'context_compaction.followup',
         mode: 'fallback',
+        deterministic_cohort: false,
         trigger_reason: 'cache_expiry',
         ended_by: 'compaction',
         next_trigger_reason: 'context_limit',

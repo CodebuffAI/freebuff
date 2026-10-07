@@ -1,3 +1,4 @@
+import { BYOK_LOCAL_USER_ID } from './byok'
 import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from './freebuff-model-ids'
 import { fnv1a } from '../util/ad-experiment'
 
@@ -82,7 +83,8 @@ export function compactionPolicyForModel(
  * handoff.
  *
  * The cohort is sticky per user, so the two arms can be compared on
- * `context_compaction.followup` (re-reads and repeat compactions, by `mode`).
+ * `context_compaction.followup` (re-reads and repeat compactions, by
+ * `deterministic_cohort`; see docs/logging.md).
  * It starts small and widens; at 100 the model handoff is deleted. A larger
  * share only adds users, so nobody flips back. Changing the salt reassigns
  * everyone.
@@ -90,11 +92,14 @@ export function compactionPolicyForModel(
 export const DETERMINISTIC_COMPACTION_PERCENT = 10
 const DETERMINISTIC_COMPACTION_SALT = 'deterministic_compaction_2026_10'
 
+/** Signed-out runs, and BYOK runs that share `BYOK_LOCAL_USER_ID`, stay on
+ * the handoff until 100: hashing the shared id would flip every such user's
+ * arm at once. */
 export function usesDeterministicCompaction(
   userId: string | undefined,
   percent: number = DETERMINISTIC_COMPACTION_PERCENT,
 ): boolean {
   if (percent >= 100) return true
-  if (!userId || percent <= 0) return false
+  if (!userId || userId === BYOK_LOCAL_USER_ID || percent <= 0) return false
   return fnv1a(`${DETERMINISTIC_COMPACTION_SALT}:${userId}`) % 100 < percent
 }

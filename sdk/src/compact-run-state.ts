@@ -40,6 +40,11 @@ export type CompactedRunState = {
  * the only thing it spends is the provider's prompt cache, which a compaction
  * breaks whenever it happens.
  *
+ * The rewritten history (summary plus the working set of file reads) is capped
+ * at the runtime's `MECHANICAL_HISTORY_TOKENS` (12k), not sized to
+ * `maxContextLength`: a large window no longer means a large result. The live
+ * request and the newest tool results are kept whole on top of it.
+ *
  * Returns null when there is nothing to do — no session state, no history, or a
  * pass that would not make the history smaller. A caller reports that as a
  * no-op; it is never an error.

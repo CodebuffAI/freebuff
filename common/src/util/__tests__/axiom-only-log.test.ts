@@ -20,8 +20,10 @@ import {
   STREAM_RECOVERY_EVENT,
   MODEL_COMPACTION_COMPLETED_EVENT,
   MODEL_COMPACTION_FALLBACK_EVENT,
+  MECHANICAL_COMPACTION_SKIPPED_EVENT,
   CONTEXT_COMPACTION_COMPLETED_EVENT,
   COMPACTION_FOLLOWUP_EVENT,
+  TODO_PROGRESS_REMINDER_EVENT,
   ADS_CLIENT_EVENT_HYGIENE_FIELDS,
   ADS_FIRST_PARTY_TRACKING_FIELD_NAMES,
   FIRST_PARTY_VIEW_ACK_FIELD_NAMES,
@@ -317,6 +319,36 @@ describe('getAxiomOnlyLogEvent', () => {
     })
   })
 
+  test('a skipped cohort compaction ships a fixed error kind, never the message', () => {
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: MECHANICAL_COMPACTION_SKIPPED_EVENT,
+        agent_run_id: 'run-1',
+        model: 'deepseek/deepseek-v4-flash',
+        trigger_reason: 'context_limit',
+        error_kind: 'over_budget',
+        error_name: 'Error',
+        context_token_count: 40_000,
+        max_context_length: 32_768,
+        deterministic_cohort: true,
+        // Not in the allowlist: may quote the request.
+        error: 'The current request and agent instructions exceed ...',
+      }),
+    ).toEqual({
+      event: MECHANICAL_COMPACTION_SKIPPED_EVENT,
+      data: {
+        agent_run_id: 'run-1',
+        model: 'deepseek/deepseek-v4-flash',
+        trigger_reason: 'context_limit',
+        error_kind: 'over_budget',
+        error_name: 'Error',
+        context_token_count: 40_000,
+        max_context_length: 32_768,
+        deterministic_cohort: true,
+      },
+    })
+  })
+
   test('mechanical compaction ships its sizes and counts', () => {
     expect(
       getAxiomOnlyLogEvent({
@@ -353,6 +385,7 @@ describe('getAxiomOnlyLogEvent', () => {
         axiomEvent: COMPACTION_FOLLOWUP_EVENT,
         agent_run_id: 'run-1',
         mode: 'mechanical',
+        deterministic_cohort: true,
         trigger_reason: 'context_limit',
         ended_by: 'compaction',
         elided_read_paths: 12,
@@ -360,17 +393,46 @@ describe('getAxiomOnlyLogEvent', () => {
         read_tokens_after: 90_000,
         // Not in the allowlist.
         elidedPaths: ['src/secret.ts'],
+        userId: 'user-1',
       }),
     ).toEqual({
       event: COMPACTION_FOLLOWUP_EVENT,
       data: {
         agent_run_id: 'run-1',
         mode: 'mechanical',
+        deterministic_cohort: true,
         trigger_reason: 'context_limit',
         ended_by: 'compaction',
         elided_read_paths: 12,
         reread_paths: 4,
         read_tokens_after: 90_000,
+      },
+    })
+  })
+
+  test('to-do progress reminder ships counts, never the to-dos or the user', () => {
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: TODO_PROGRESS_REMINDER_EVENT,
+        done: 1,
+        total: 5,
+        callsSinceUpdate: 8,
+        model: 'z-ai/glm-5.3-flash',
+        agentId: 'base3',
+        runId: 'run-1',
+        // Not in the allowlist.
+        userId: 'user-1',
+        todos: ['Fix the secret thing'],
+      }),
+    ).toEqual({
+      event: TODO_PROGRESS_REMINDER_EVENT,
+      data: {
+        done: 1,
+        total: 5,
+        callsSinceUpdate: 8,
+        model: 'z-ai/glm-5.3-flash',
+        agentId: 'base3',
+        runId: 'run-1',
       },
     })
   })

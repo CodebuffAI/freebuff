@@ -64,11 +64,22 @@ export const MODEL_COMPACTION_FALLBACK_EVENT =
  *  so it cannot serve. Content-free sizes and labels only. */
 export const MODEL_COMPACTION_COMPLETED_EVENT =
   'model_compaction.completed' as const
+/** A deterministic-cohort compaction that the mechanical pass did not apply:
+ *  it threw (the live request alone over budget) or could not shrink the
+ *  history. The model arm's equivalent is `model_compaction.fallback` with
+ *  `fallback_applied: false`; without this the cohort's misses were silent.
+ *  Content-free: a fixed `error_kind`, never the message. */
+export const MECHANICAL_COMPACTION_SKIPPED_EVENT =
+  'mechanical_compaction.skipped' as const
 /** The runtime's mechanical compaction (packages/agent-runtime/src/compact-history.ts),
  *  run on its own or as a model compaction's fallback. Shares its field names
  *  with `context_pruning.completed`. Content-free sizes and counts only. */
 export const CONTEXT_COMPACTION_COMPLETED_EVENT =
   'context_compaction_completed' as const
+/** The runtime reminded a model that its to-do list had not moved for several
+ *  tool calls (packages/agent-runtime/src/util/todo-progress-reminder.ts).
+ *  Counts and labels only, never the to-dos or a user id. */
+export const TODO_PROGRESS_REMINDER_EVENT = 'todo_progress_reminder' as const
 /** One per compaction window, closed by the next compaction or the run's end:
  *  how much the run read after compacting, and how many of those reads were
  *  files whose contents the compaction dropped. Counts only, never a path. */
@@ -246,6 +257,14 @@ const FILE_WRITE_GUARD_FIELDS = {
   openBrackets: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
+/** On every compaction event: whether the user is in the
+ *  `usesDeterministicCompaction` cohort, so the arms are compared by cohort
+ *  rather than by `mode` (a model-arm fallback is mechanical too). Absent when
+ *  the caller does not know (the SDK's `compactRunState`). */
+const COMPACTION_COHORT_FIELDS = {
+  deterministic_cohort: 'boolean',
+} as const satisfies AxiomOnlyFieldSchema
+
 const MODEL_COMPACTION_FALLBACK_FIELDS = {
   model: 'string',
   agent_run_id: 'string',
@@ -254,6 +273,19 @@ const MODEL_COMPACTION_FALLBACK_FIELDS = {
   error_name: 'string',
   fallback_applied: 'boolean',
   fallback_failed: 'boolean',
+  ...COMPACTION_COHORT_FIELDS,
+} as const satisfies AxiomOnlyFieldSchema
+
+const MECHANICAL_COMPACTION_SKIPPED_FIELDS = {
+  model: 'string',
+  agent_run_id: 'string',
+  trigger_reason: 'string',
+  /** `no_shrink`, `over_budget` (the live request alone does not fit) or `error`. */
+  error_kind: 'string',
+  error_name: 'string',
+  context_token_count: 'number',
+  max_context_length: 'number',
+  ...COMPACTION_COHORT_FIELDS,
 } as const satisfies AxiomOnlyFieldSchema
 
 const MODEL_COMPACTION_COMPLETED_FIELDS = {
@@ -266,6 +298,7 @@ const MODEL_COMPACTION_COMPLETED_FIELDS = {
   sections: 'number',
   pre_tokens: 'number',
   post_tokens: 'number',
+  ...COMPACTION_COHORT_FIELDS,
 } as const satisfies AxiomOnlyFieldSchema
 
 const CONTEXT_COMPACTION_COMPLETED_FIELDS = {
@@ -295,6 +328,7 @@ const CONTEXT_COMPACTION_COMPLETED_FIELDS = {
   working_set_stubs: 'number',
   working_set_tokens: 'number',
   post_tokens: 'number',
+  ...COMPACTION_COHORT_FIELDS,
 } as const satisfies AxiomOnlyFieldSchema
 
 const COMPACTION_FOLLOWUP_FIELDS = {
@@ -315,6 +349,16 @@ const COMPACTION_FOLLOWUP_FIELDS = {
   read_tokens_after: 'number',
   tool_calls_after: 'number',
   window_ms: 'number',
+  ...COMPACTION_COHORT_FIELDS,
+} as const satisfies AxiomOnlyFieldSchema
+
+const TODO_PROGRESS_REMINDER_FIELDS = {
+  model: 'string',
+  agentId: 'string',
+  runId: 'string',
+  done: 'number',
+  total: 'number',
+  callsSinceUpdate: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 const ADS_FETCH_COMPLETED_FIELDS = {
@@ -999,9 +1043,11 @@ export type AxiomOnlyLogEvent = {
     | typeof STREAM_RECOVERY_EVENT
     | typeof FILE_WRITE_GUARD_EVENT
     | typeof MODEL_COMPACTION_FALLBACK_EVENT
+    | typeof MECHANICAL_COMPACTION_SKIPPED_EVENT
     | typeof MODEL_COMPACTION_COMPLETED_EVENT
     | typeof CONTEXT_COMPACTION_COMPLETED_EVENT
     | typeof COMPACTION_FOLLOWUP_EVENT
+    | typeof TODO_PROGRESS_REMINDER_EVENT
     | typeof ADS_FETCH_COMPLETED_EVENT
     | typeof ADS_FIRST_PARTY_DECISION_EVENT
     | typeof ADS_FIRST_PARTY_SETTLEMENT_EVENT
@@ -1086,6 +1132,15 @@ export function getAxiomOnlyLogEvent(
       data: sanitizeAllowlistedFields(record, MODEL_COMPACTION_FALLBACK_FIELDS),
     }
   }
+  if (eventName === MECHANICAL_COMPACTION_SKIPPED_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(
+        record,
+        MECHANICAL_COMPACTION_SKIPPED_FIELDS,
+      ),
+    }
+  }
   if (eventName === MODEL_COMPACTION_COMPLETED_EVENT) {
     return {
       event: eventName,
@@ -1108,6 +1163,12 @@ export function getAxiomOnlyLogEvent(
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(record, COMPACTION_FOLLOWUP_FIELDS),
+    }
+  }
+  if (eventName === TODO_PROGRESS_REMINDER_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, TODO_PROGRESS_REMINDER_FIELDS),
     }
   }
   if (eventName === ADS_FETCH_COMPLETED_EVENT) {

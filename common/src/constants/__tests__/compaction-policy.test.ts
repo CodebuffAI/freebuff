@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
+import { BYOK_LOCAL_USER_ID } from '../byok'
 import {
   DETERMINISTIC_COMPACTION_PERCENT,
   usesDeterministicCompaction,
@@ -37,5 +38,14 @@ describe('usesDeterministicCompaction', () => {
     expect(ids.every((id) => usesDeterministicCompaction(id, 100))).toBe(true)
     expect(usesDeterministicCompaction(undefined, 50)).toBe(false)
     expect(usesDeterministicCompaction(undefined, 100)).toBe(true)
+  })
+
+  test('keeps the shared BYOK placeholder id out of the cohort until 100', () => {
+    // Its hash lands under some share; every id-less BYOK user would flip there.
+    for (const percent of [1, 10, 50, 99])
+      expect(usesDeterministicCompaction(BYOK_LOCAL_USER_ID, percent)).toBe(
+        false,
+      )
+    expect(usesDeterministicCompaction(BYOK_LOCAL_USER_ID, 100)).toBe(true)
   })
 })

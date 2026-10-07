@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   automaticCompactionIsWorthwhile,
   compactedContextCeiling,
+  compactDeterministically,
   compactionOutputTokens,
   compactionSummaryBudget,
   compactWithModel,
@@ -892,4 +893,112 @@ test('an installed handoff reports its source, size and budget; a fallback does 
         'model_compaction.completed',
     ),
   ).toBe(false)
+})
+
+test('compactDeterministically logs each miss the cohort used to swallow', () => {
+  const infos: unknown[] = []
+  const warnings: unknown[] = []
+  const logger = {
+    ...noopLogger,
+    info: (data: unknown) => infos.push(data),
+    warn: (data: unknown) => warnings.push(data),
+  }
+  const common = {
+    fixedTokenCount: 500,
+    trigger: 'context_limit' as const,
+    logger,
+    runId: 'run-1',
+    model: 'deepseek/deepseek-v4-flash',
+    contextTokenCount: 9_000,
+  }
+
+  // Nothing older than the live request: the pass cannot shrink it.
+  expect(
+    compactDeterministically({
+      ...common,
+      messages: [user('Only the live request.')],
+      maxContextLength: 400_000,
+    }),
+  ).toBeNull()
+  expect(infos).toEqual([
+    {
+      axiomEvent: 'mechanical_compaction.skipped',
+      agent_run_id: 'run-1',
+      model: 'deepseek/deepseek-v4-flash',
+      trigger_reason: 'context_limit',
+      error_kind: 'no_shrink',
+      context_token_count: 9_000,
+      max_context_length: 400_000,
+      deterministic_cohort: true,
+    },
+  ])
+
+  // The live request alone over the budget: the pass throws, the run goes on.
+  expect(
+    compactDeterministically({
+      ...common,
+      messages: [user('too long '.repeat(5_000))],
+      maxContextLength: 2_000,
+    }),
+  ).toBeNull()
+  expect(warnings).toEqual([
+    expect.objectContaining({
+      axiomEvent: 'mechanical_compaction.skipped',
+      error_kind: 'over_budget',
+      error_name: 'Error',
+      deterministic_cohort: true,
+    }),
+  ])
+
+  // A pass that applies logs its completion, marked as the cohort's.
+  infos.length = 0
+  warnings.length = 0
+  const result = compactDeterministically({
+    ...common,
+    messages,
+    maxContextLength: 16_384,
+    targetTokens: 4_000,
+  })
+  expect(result!.postTokens).toBeLessThan(result!.preTokens)
+  expect(warnings).toEqual([])
+  expect(infos).toEqual([
+    expect.objectContaining({
+      axiomEvent: 'context_compaction_completed',
+      deterministic_cohort: true,
+    }),
+  ])
+})
+
+test('the model arm marks its fallback with the cohort flag', async () => {
+  const warnings: unknown[] = []
+  const infos: unknown[] = []
+  await compactWithModelOrFallback({
+    messages,
+    system: 'You are a coding agent.',
+    maxContextLength: 16_384,
+    fixedTokenCount: 500,
+    mechanicalTargetTokens: 4_000,
+    deterministicCohort: false,
+    signal: new AbortController().signal,
+    stream: async function* () {
+      throw new Error('connection reset')
+    },
+    logger: {
+      ...noopLogger,
+      info: (data: unknown) => infos.push(data),
+      warn: (data: unknown) => warnings.push(data),
+    },
+  })
+  expect(warnings).toEqual([
+    expect.objectContaining({
+      axiomEvent: 'model_compaction.fallback',
+      deterministic_cohort: false,
+    }),
+  ])
+  expect(infos).toEqual([
+    expect.objectContaining({
+      axiomEvent: 'context_compaction_completed',
+      deterministic_cohort: false,
+    }),
+  ])
 })

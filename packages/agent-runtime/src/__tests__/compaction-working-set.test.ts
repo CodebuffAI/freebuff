@@ -69,6 +69,46 @@ const edit = (id: string, path: string): Message[] => [
     content: [{ type: 'json', value: { file: path, message: 'Updated' } }],
   },
 ]
+const spawn = (id: string): Message[] => [
+  {
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool-call',
+        toolCallId: id,
+        toolName: 'spawn_agents',
+        input: {
+          agents: [{ agent_type: 'worker', prompt: 'Apply the rename.' }],
+        },
+      },
+    ],
+  },
+  {
+    role: 'tool',
+    toolCallId: id,
+    toolName: 'spawn_agents',
+    content: [{ type: 'json', value: [{ agentType: 'worker', value: 'Done' }] }],
+  },
+]
+const command = (id: string): Message[] => [
+  {
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool-call',
+        toolCallId: id,
+        toolName: 'run_terminal_command',
+        input: { command: 'bun test' },
+      },
+    ],
+  },
+  {
+    role: 'tool',
+    toolCallId: id,
+    toolName: 'run_terminal_command',
+    content: [{ type: 'json', value: { stdout: 'ok' } }],
+  },
+]
 
 const source = (name: string, lines: number) =>
   [
@@ -133,6 +173,47 @@ describe('mechanical compaction working set', () => {
     expect(b.startsWith(COMPACTED_READ_MARKER)).toBe(true)
     expect(b).toContain('You edited it after this read')
     expect(b).toContain('L1 export function b()')
+  })
+
+  // The fast-mode root delegates its edits through spawn_agents, and the
+  // workers' str_replace calls never reach this history.
+  it('never re-provides a read that a later spawn_agents call may have made stale', () => {
+    const compacted = compactHistoryNow({
+      messages: session(
+        read('r1', { 'a.ts': source('a', 10) }),
+        spawn('s1'),
+        read('r2', { 'b.ts': source('b', 10) }),
+      ),
+      maxContextLength: 400_000,
+    })!
+    const files = workingSet(compacted.messages)!
+    // Read after the spawn: current.
+    expect(files.find((f) => f.path === 'b.ts')!.content).toBe(source('b', 10))
+    const a = files.find((f) => f.path === 'a.ts')!.content
+    expect(a.startsWith(COMPACTED_READ_MARKER)).toBe(true)
+    expect(a).toContain('Agents you spawned after this read may have edited it')
+    expect(a).toContain('L1 export function a()')
+  })
+
+  it('treats a spawn in the fresh exchange as a delegated edit too', () => {
+    const messages = session(read('r1', { 'a.ts': source('a', 10) }))
+    // A spawn after the live request: the turn's own delegation, kept fresh.
+    const compacted = compactHistoryNow({
+      messages: [...messages, ...spawn('s1')],
+      maxContextLength: 400_000,
+    })!
+    const a = workingSet(compacted.messages)!.find((f) => f.path === 'a.ts')!
+    expect(a.content.startsWith(COMPACTED_READ_MARKER)).toBe(true)
+  })
+
+  it('still carries a read across a shell command', () => {
+    const compacted = compactHistoryNow({
+      messages: session(read('r1', { 'a.ts': source('a', 10) }), command('c1')),
+      maxContextLength: 400_000,
+    })!
+    expect(workingSet(compacted.messages)).toEqual([
+      { path: 'a.ts', content: source('a', 10) },
+    ])
   })
 
   it('carries the newest reads that fit and stubs the rest with an outline', () => {
