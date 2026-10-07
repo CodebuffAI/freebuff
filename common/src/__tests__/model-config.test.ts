@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   contextPrunerBudgetForModel,
+  getModelFromShortName,
   isExplicitlyDefinedModel,
   models,
   supportsAssistantPrefill,
@@ -11,6 +12,23 @@ describe('isExplicitlyDefinedModel', () => {
   test('distinguishes configured models from unknown model IDs', () => {
     expect(isExplicitlyDefinedModel(models.openrouter_gpt5)).toBe(true)
     expect(isExplicitlyDefinedModel('custom/unknown-model')).toBe(false)
+  })
+
+  // Adding it would switch the SDK's provider routing for live Sonnet 4.6
+  // traffic (context-pruner) to a fixed order with no fallbacks.
+  test('leaves Sonnet 4.6 unconfigured', () => {
+    expect(isExplicitlyDefinedModel('anthropic/claude-sonnet-4.6')).toBe(false)
+  })
+})
+
+describe('getModelFromShortName', () => {
+  test('serves the retired Sonnet short names on Sonnet 4.6', () => {
+    expect(getModelFromShortName('sonnet-4')).toBe(
+      'anthropic/claude-sonnet-4.6',
+    )
+    expect(getModelFromShortName('sonnet-3.7')).toBe(
+      'anthropic/claude-sonnet-4.6',
+    )
   })
 })
 

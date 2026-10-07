@@ -1,6 +1,39 @@
 import { describe, expect, test } from 'bun:test'
 
-import { toAnthropicModelId } from '../anthropic'
+import {
+  CLAUDE_SONNET_4_6_MODEL_ID,
+  RETIRED_CLAUDE_MODEL_ALIASES,
+  resolveRetiredClaudeModel,
+  toAnthropicModelId,
+} from '../anthropic'
+
+describe('resolveRetiredClaudeModel', () => {
+  test('serves every retired Sonnet 4 id as Sonnet 4.6', () => {
+    for (const retired of [
+      'anthropic/claude-sonnet-4',
+      'anthropic/claude-4-sonnet-20250522',
+      'anthropic/claude-4-sonnet',
+    ]) {
+      expect(resolveRetiredClaudeModel(retired)).toBe(
+        CLAUDE_SONNET_4_6_MODEL_ID,
+      )
+      expect(toAnthropicModelId(retired)).toBe('claude-sonnet-4-6')
+    }
+  })
+
+  test('leaves current models and inherited keys alone', () => {
+    expect(resolveRetiredClaudeModel('anthropic/claude-sonnet-4.5')).toBe(
+      'anthropic/claude-sonnet-4.5',
+    )
+    expect(resolveRetiredClaudeModel('toString')).toBe('toString')
+  })
+
+  test('no alias points at another alias', () => {
+    for (const target of Object.values(RETIRED_CLAUDE_MODEL_ALIASES)) {
+      expect(resolveRetiredClaudeModel(target)).toBe(target)
+    }
+  })
+})
 
 describe('toAnthropicModelId', () => {
   test('maps the Freebuff Claude models to ids Anthropic accepts', () => {

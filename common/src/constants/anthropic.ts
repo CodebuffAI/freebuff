@@ -1,3 +1,27 @@
+/** OpenRouter id of Claude Sonnet 4.6, which serves the retired Sonnet 4 ids. */
+export const CLAUDE_SONNET_4_6_MODEL_ID = 'anthropic/claude-sonnet-4.6'
+
+/**
+ * Retired Claude ids that clients still send, mapped to the OpenRouter id of
+ * the model that serves them now. Anthropic has answered 404 not_found_error
+ * for claude-sonnet-4-20250514 since 2026-10-07 and OpenRouter serves Sonnet 4
+ * on Amazon Bedrock alone, but published agents are immutable (an old
+ * `codebuff/base` still names it). Sonnet 4.6 bills at the same $3/$15 per
+ * million tokens.
+ */
+export const RETIRED_CLAUDE_MODEL_ALIASES: Readonly<Record<string, string>> = {
+  'anthropic/claude-sonnet-4': CLAUDE_SONNET_4_6_MODEL_ID,
+  'anthropic/claude-4-sonnet-20250522': CLAUDE_SONNET_4_6_MODEL_ID,
+  'anthropic/claude-4-sonnet': CLAUDE_SONNET_4_6_MODEL_ID,
+}
+
+/** The model that serves `model`: its alias if retired, else `model` itself. */
+export function resolveRetiredClaudeModel(model: string): string {
+  return Object.hasOwn(RETIRED_CLAUDE_MODEL_ALIASES, model)
+    ? RETIRED_CLAUDE_MODEL_ALIASES[model]
+    : model
+}
+
 /**
  * OpenRouter → Anthropic model ID mapping. Used by the token-count API to
  * route Anthropic-family requests to Anthropic's native counting endpoint.
@@ -29,9 +53,6 @@ const OPENROUTER_TO_ANTHROPIC_MODEL_MAP: Record<string, string> = {
   // Claude 4.x Sonnet models
   'anthropic/claude-sonnet-4.6': 'claude-sonnet-4-6',
   'anthropic/claude-sonnet-4.5': 'claude-sonnet-4-5-20250929',
-  'anthropic/claude-sonnet-4': 'claude-sonnet-4-20250514',
-  'anthropic/claude-4-sonnet-20250522': 'claude-sonnet-4-20250514',
-  'anthropic/claude-4-sonnet': 'claude-sonnet-4-20250514',
 
   // Claude 5.x models
   'anthropic/claude-fable-5': 'claude-fable-5',
@@ -57,7 +78,9 @@ export function isClaudeModel(model: string): boolean {
  * Convert an OpenRouter model ID to an Anthropic model ID.
  * Throws if the model has a non-anthropic provider prefix.
  */
-export function toAnthropicModelId(openrouterModel: string): string {
+export function toAnthropicModelId(requestedModel: string): string {
+  const openrouterModel = resolveRetiredClaudeModel(requestedModel)
+
   // Already an Anthropic model ID (no provider prefix)
   if (!openrouterModel.includes('/')) {
     return openrouterModel

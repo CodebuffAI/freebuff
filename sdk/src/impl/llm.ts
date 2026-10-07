@@ -64,11 +64,6 @@ function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
 
 // Provider routing documentation: https://openrouter.ai/docs/features/provider-routing
 const providerOrder = {
-  [models.openrouter_claude_sonnet_4]: [
-    'Google',
-    'Anthropic',
-    'Amazon Bedrock',
-  ],
   [models.openrouter_claude_sonnet_4_5]: [
     'Google',
     'Anthropic',

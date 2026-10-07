@@ -1,3 +1,5 @@
+import { CLAUDE_SONNET_4_6_MODEL_ID } from './anthropic'
+
 // Allowed model prefixes for validation
 export const ALLOWED_MODEL_PREFIXES = [
   'anthropic',
@@ -35,7 +37,6 @@ export type OpenAIModel = (typeof openaiModels)[keyof typeof openaiModels]
 
 export const openrouterModels = {
   openrouter_claude_sonnet_4_5: 'anthropic/claude-sonnet-4.5',
-  openrouter_claude_sonnet_4: 'anthropic/claude-4-sonnet-20250522',
   openrouter_claude_opus_4: 'anthropic/claude-opus-4.1',
   openrouter_claude_3_5_haiku: 'anthropic/claude-3.5-haiku-20241022',
   openrouter_claude_3_5_sonnet: 'anthropic/claude-3.5-sonnet-20240620',
@@ -137,8 +138,11 @@ export const shortModelNames = {
   'flash-2.5': models.openrouter_gemini2_5_flash,
   'opus-4': models.openrouter_claude_opus_4,
   'sonnet-4.5': models.openrouter_claude_sonnet_4_5,
-  'sonnet-4': models.openrouter_claude_sonnet_4,
-  'sonnet-3.7': models.openrouter_claude_sonnet_4,
+  // Retired; Sonnet 4.6 serves them. It stays out of `models`: adding it
+  // would make isExplicitlyDefinedModel true and change the SDK's provider
+  // routing for every live Sonnet 4.6 request.
+  'sonnet-4': CLAUDE_SONNET_4_6_MODEL_ID,
+  'sonnet-3.7': CLAUDE_SONNET_4_6_MODEL_ID,
   'sonnet-3.6': models.openrouter_claude_3_5_sonnet,
   'sonnet-3.5': models.openrouter_claude_3_5_sonnet,
   'gpt-4.1': models.gpt4_1,

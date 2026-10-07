@@ -1,5 +1,6 @@
 import { dirname, isAbsolute, normalize } from 'path'
 
+import { CLAUDE_SONNET_4_6_MODEL_ID } from '@codebuff/common/constants/anthropic'
 import {
   finetunedVertexModels,
   models,
@@ -278,7 +279,7 @@ async function getRelevantFilesForTraining(
     await promptAiSdk({
       ...params,
       messages: messagesWithSystem({ messages: messagesWithPrompt, system }),
-      model: models.openrouter_claude_sonnet_4,
+      model: CLAUDE_SONNET_4_6_MODEL_ID,
       chargeUser: false,
     }),
   )
