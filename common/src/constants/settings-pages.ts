@@ -11,5 +11,6 @@ export const SHARED_SETTINGS_PAGES = [
   { id: 'projects', label: 'Project settings' },
   { id: 'skills', label: 'Skills' },
   { id: 'appearance', label: 'Appearance' },
+  { id: 'shortcuts', label: 'Keyboard shortcuts' },
   { id: 'archived', label: 'Archived' },
 ] as const

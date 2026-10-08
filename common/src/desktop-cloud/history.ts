@@ -19,6 +19,7 @@ export type CloudHistoryRun = {
   error: string | null
 }
 export type CloudHistoryChat = {
+  mission?: import('./mission').CloudMission | null
   id: string
   projectId: string | null
   title: string
