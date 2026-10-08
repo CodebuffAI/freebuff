@@ -100,6 +100,46 @@ function setLogPath(p: string): void {
   )
 }
 
+/**
+ * Resolve the per-run log destination without allowing filesystem failures to
+ * take down the CLI during startup.
+ *
+ * In production, resolving the destination creates the current chat
+ * directory. That directory may be unavailable (for example, when the
+ * config directory is read-only), so callers must treat an absent destination
+ * as "continue without file logging".
+ */
+export function resolveLogTarget(params: {
+  projectRoot: string
+  isDev: boolean
+  getCurrentChatDir: () => string
+}): string | undefined {
+  try {
+    return params.isDev
+      ? path.join(params.projectRoot, 'debug', 'cli.jsonl')
+      : path.join(params.getCurrentChatDir(), CHAT_LOG_FILENAME)
+  } catch {
+    return undefined
+  }
+}
+
+function trySetLogPath(projectRoot: string): void {
+  const logTarget = resolveLogTarget({
+    projectRoot,
+    isDev: IS_DEV,
+    getCurrentChatDir,
+  })
+  if (!logTarget) return
+
+  try {
+    setLogPath(logTarget)
+  } catch {
+    // File logging is best-effort and must never prevent the CLI from
+    // starting when the config or chat directory cannot be written. Keep this
+    // silent: writing to stderr during startup can corrupt the interactive UI.
+  }
+}
+
 export function clearLogFile(): void {
   const projectRoot = getProjectRoot()
   const debugDir = path.join(projectRoot, 'debug')
@@ -139,12 +179,7 @@ function sendAnalyticsAndLog(
       projectRoot = undefined
     }
     if (projectRoot) {
-      const logTarget =
-        IS_DEV
-          ? path.join(projectRoot, 'debug', 'cli.jsonl')
-          : path.join(getCurrentChatDir(), CHAT_LOG_FILENAME)
-
-      setLogPath(logTarget)
+      trySetLogPath(projectRoot)
     }
   }
 
