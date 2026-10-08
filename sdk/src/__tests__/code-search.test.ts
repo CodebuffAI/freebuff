@@ -959,4 +959,53 @@ describe('codeSearch', () => {
       expect(spawnOptions.cwd).toBe('/test/outside')
     })
   })
+
+  describe('exec-capable flags', () => {
+    it.each([
+      '--pre sh',
+      '--pre=/bin/sh',
+      '"--pre" sh',
+      '--pre-glob *.ts --pre sh',
+      '--hostname-bin=/tmp/x',
+      '-z',
+      '--search-zip',
+      '-i -uz',
+    ])('refuses %j before starting ripgrep', async (flags) => {
+      const requests: unknown[] = []
+      const broker: TerminalCommandBroker = {
+        start: (request) => {
+          requests.push(request)
+          throw new Error('ripgrep must not start')
+        },
+      }
+
+      const result = await codeSearch({
+        projectPath: '/test/project',
+        pattern: 'x',
+        flags,
+        processBroker: broker,
+      })
+
+      expect(requests).toHaveLength(0)
+      expect(mockSpawn).not.toHaveBeenCalled()
+      const value = result[0].value as { errorMessage?: string }
+      expect(value.errorMessage).toContain('makes ripgrep run another program')
+    })
+
+    it('still passes ordinary flags through to ripgrep', async () => {
+      const searchPromise = codeSearch({
+        projectPath: '/test/project',
+        pattern: 'x',
+        flags: '-i -g *.zip -C 2',
+      })
+      mockProcess.emit('close', 1)
+      await searchPromise
+
+      expect(mockSpawn).toHaveBeenCalledTimes(1)
+      const args = mockSpawn.mock.calls[0]![1] as string[]
+      expect(args).toEqual(
+        expect.arrayContaining(['-i', '-g', '*.zip', '-C', '2']),
+      )
+    })
+  })
 })

@@ -12,7 +12,9 @@ const inputSchema = z
     path: z
       .string()
       .min(1, 'Path cannot be empty')
-      .describe(`Path to the file relative to the **project root**`),
+      .describe(
+        `Path to the file, relative to the **project root**. Local hosts (CLI, Desktop, SDK) also accept an absolute path, which is not limited to the project.`,
+      ),
     instructions: z
       .string()
       .describe('What the change is intended to do in only one sentence.'),

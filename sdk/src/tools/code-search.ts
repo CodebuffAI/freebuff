@@ -3,6 +3,7 @@ import { spawn } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 
+import { codeSearchExecFlagRefusal } from '../../../common/src/util/code-search-flags'
 import { formatCodeSearchOutput } from '../../../common/src/util/format-code-search'
 import { getBundledRgPath } from '../native/ripgrep'
 
@@ -107,6 +108,12 @@ export function codeSearch({
           type: 'json',
           value: { errorMessage: 'Code search flags contain an unterminated quote.' },
         },
+      ])
+    }
+    const execFlagRefusal = codeSearchExecFlagRefusal(flagsArray)
+    if (execFlagRefusal) {
+      return resolve([
+        { type: 'json', value: { errorMessage: execFlagRefusal } },
       ])
     }
 

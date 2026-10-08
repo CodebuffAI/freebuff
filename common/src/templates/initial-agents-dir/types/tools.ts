@@ -420,7 +420,7 @@ export interface WebSearchParams {
  * Create or edit a file with the given content.
  */
 export interface WriteFileParams {
-  /** Path to the file relative to the **project root** */
+  /** Path to the file, relative to the **project root**. Local hosts (CLI, Desktop, SDK) also accept an absolute path, which is not limited to the project. */
   path: string
   /** What the change is intended to do in only one sentence. */
   instructions: string
