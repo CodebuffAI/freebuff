@@ -353,10 +353,10 @@ the backstop for an edge the scanner misses.
 What is left on the critical path is not test time. `test-windows` spends
 ~130s of its ~264s restoring and installing dependencies on a cold Windows
 runner. `typecheck-freebuff-web` and `typecheck-rest` are one `tsc` each
-(160–220s) behind ~45s of setup, and `build-freebuff-web` is a ~90s Turbopack
-compile with its cache deliberately not kept (see the comment in `ci.yml`).
-None of these has setup left to cut; the levers are incremental `tsc` or a
-larger runner, and both need their own measurement.
+(160–220s) behind ~45s of setup. None of these has setup left to cut; the
+levers are incremental `tsc` or a larger runner, and both need their own
+measurement. `build-freebuff-web`'s ~110s Turbopack compile now starts from the
+previous run's persistent cache (next section).
 
 Measure test time on CI, not locally. freebuff-desktop's
 `src/app/thread-engine.test.ts` once took ~101s on an M-series Mac against
@@ -382,10 +382,20 @@ The Windows and macOS cache remains until those runners have their own cold/warm
 comparison; this measurement says nothing about their install performance.
 
 Keep the caches whose transfer cost is materially smaller than the work they
-avoid. `sdk/dist` is a roughly 17 MB restore instead of an ~18s build. The web
-app's 72–74 MB Next.js cache restores in 2–3s; measured warm builds took 34–47s
-against 61s cold. `oven-sh/setup-bun`'s own small runtime cache is independent
-of dependency installation and also remains enabled.
+avoid. `sdk/dist` is a roughly 17 MB restore instead of an ~18s build.
+`build-freebuff-web` keeps Turbopack's persistent build cache
+(`turbopackFileSystemCacheForBuild`, which Render's production builds already
+use): `scripts/render-next-cache.mjs` stashes `.next/cache` in `$RUNNER_TEMP`
+on GitHub Actions instead of letting the postbuild prune delete it, and main's
+runs save it under a key scoped to `bun.lock` and `next.config.mjs`; pull
+requests restore main's newest. The archive is ~1 GB (1.4 GB unpacked).
+Measured 2026-10-07 on two runs of #5845: the compile went from 112s cold to
+56s warm and the build step from 169s to 86s, against ~16s to restore and ~18s
+to save. Past 3 GiB the stash is dropped, so the next run starts cold.
+`build-web` has no Next cache: web turns the persistent cache off in
+`web/next.config.mjs` because its cold compile is ~30s. `oven-sh/setup-bun`'s
+own small runtime cache is independent of dependency installation and also
+remains enabled.
 
 ## CLI tmux Testing
 
