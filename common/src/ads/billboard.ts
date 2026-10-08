@@ -1,3 +1,4 @@
+import { desktopPlacementSource } from './web-desktop-placements'
 /**
  * BILLBOARDS: Desktop's full-bleed image placements, shared by the serving
  * side (which artwork a creative must carry to fill a slot), the asset
@@ -95,8 +96,8 @@ export type BillboardAssets = Partial<Record<BillboardShape, BillboardAsset>>
 export function billboardShapesForPlacement(
   placementId: string,
 ): readonly BillboardShape[] {
-  if (placementId === BILLBOARD_SIDEBAR_PLACEMENT_ID) return ['sidebar']
-  if (placementId === BILLBOARD_PANEL_PLACEMENT_ID)
+  if (desktopPlacementSource(placementId) === BILLBOARD_SIDEBAR_PLACEMENT_ID) return ['sidebar']
+  if (desktopPlacementSource(placementId) === BILLBOARD_PANEL_PLACEMENT_ID)
     return ['panel_tall', 'panel_portrait', 'panel_square', 'panel_landscape']
   return []
 }

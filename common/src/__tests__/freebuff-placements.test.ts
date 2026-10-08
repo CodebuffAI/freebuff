@@ -250,7 +250,7 @@ describe('copy and configuration', () => {
     // surface costs a house creative and a pinned rollup row.
     expect(bySurface('cli_chat')).toBe(15)
     expect(bySurface('waiting_room')).toBe(4)
-    expect(bySurface('freebuff_web_chat')).toBe(2)
+    expect(bySurface('freebuff_web_chat')).toBe(12)
     expect(bySurface('chat_assistant')).toBe(1)
   })
 
@@ -275,12 +275,15 @@ describe('copy and configuration', () => {
       'Desktop-Spotlight',
       'Desktop-Showcase',
       'Desktop-Intermission',
+      'Desktop-Spotlight:web',
+      'Desktop-Showcase:web',
+      'Desktop-Intermission:web',
     ])
     expect(placementFormat('Desktop-Spotlight')).toBe('spotlight')
     expect(placementFormat('Desktop-Showcase')).toBe('showcase')
     expect(placementFormat('Desktop-Intermission')).toBe('intermission')
     // Resolvable as slots, exactly like every other sellable id.
-    for (const id of breaks) expect(placementSurface(id)).toBe('cli_chat')
+    for (const id of breaks) expect(placementSurface(id)).toBe(id.endsWith(':web') ? 'freebuff_web_chat' : 'cli_chat')
     expect(SPONSOR_BREAK_FORMATS).toEqual([
       'showcase',
       'spotlight',
@@ -300,13 +303,16 @@ describe('copy and configuration', () => {
       'CLI-Partner-Slash-Review',
       'Desktop-Partner-Composer-Launch',
       'CLI-Partner-Composer-Launch',
+      'Desktop-Partner-Skill-Picker:web',
+      'Desktop-Partner-Composer-PR:web',
+      'Desktop-Partner-Composer-Launch:web',
     ])
     for (const id of PARTNER_PLACEMENT_IDS) {
       expect([id, placementFormat(id)]).toEqual([id, 'partner'])
       expect([id, isPartnerPlacement(id)]).toEqual([id, true])
       expect([id, isSponsorBreakPlacement(id)]).toEqual([id, false])
       expect([id, isInterruptingBreakPlacement(id)]).toEqual([id, false])
-      expect([id, placementSurface(id)]).toEqual([id, 'cli_chat'])
+      expect([id, placementSurface(id)]).toEqual([id, id.endsWith(':web') ? 'freebuff_web_chat' : 'cli_chat'])
     }
     expect(isPartnerFormat('inline')).toBe(false)
     expect(isSponsorBreakFormat('partner')).toBe(false)
@@ -353,7 +359,7 @@ describe('copy and configuration', () => {
     const interrupting = PLACEMENT_SLOTS.filter((slot) =>
       isInterruptingBreakPlacement(slot.id),
     ).map((slot) => slot.id)
-    expect(interrupting).toEqual(['Desktop-Spotlight', 'Desktop-Intermission'])
+    expect(interrupting).toEqual(['Desktop-Spotlight', 'Desktop-Intermission', 'Desktop-Spotlight:web', 'Desktop-Intermission:web'])
     expect(isInterruptingBreakPlacement('Desktop-Showcase')).toBe(false)
 
     // Still the conservative fallback for an unknown id, in both directions.
@@ -537,4 +543,19 @@ describe('placement daily cap', () => {
       PLACEMENT_DAILY_CAP_LADDER[placementDailyCapLadderIndex(9_999_999)],
     ).toBe(PLACEMENT_DAILY_CAP_MAX_CENTS)
   })
+})
+
+
+it('web copies retain format labels and name the web surface', () => {
+  const aliases = PLACEMENT_SLOTS.filter((slot) => slot.id.endsWith(':web'))
+  expect(aliases).toHaveLength(10)
+  for (const slot of aliases) {
+    expect(placementSlotLabel(slot.id)).toStartWith('Web — ')
+    expect(placementSlotLabel(slot.id)).not.toContain(':web')
+  }
+  expect(placementSlotLabel('Desktop-Partner-Skill-Picker:web')).toBe('Web — Command menu')
+  expect(placementSlotLabel('Desktop-Partner-Composer-PR:web')).toBe('Web — Composer (PR intent)')
+  expect(placementSlotLabel('Desktop-Billboard-Sidebar:web')).toBe('Web — Sidebar billboard')
+  expect(placementSlotLabel('Desktop-Intermission:web')).toBe('Web — Intermission')
+  expect(placementSlotLabel('Desktop-Future:web')).toBe('Desktop Future:web')
 })

@@ -1,3 +1,8 @@
+import {
+  desktopPlacementSource,
+  isWebDesktopPlacement,
+  webDesktopPlacement,
+} from '../ads/web-desktop-placements'
 /**
  * The placements ad rail — first-party text ads in our own inventory.
  *
@@ -255,7 +260,7 @@ export function isInterruptingBreakFormat(format: PlacementFormat): boolean {
  * leaving either out would route an advertiser's inventory straight past a
  * rendered surface.
  */
-export const PLACEMENT_SLOTS = [
+const ORIGINAL_PLACEMENT_SLOTS = [
   ...IOS_AD_PLACEMENTS.map(({ id }) => ({
     id,
     surface: IOS_AD_SURFACE,
@@ -413,6 +418,15 @@ export const PLACEMENT_SLOTS = [
     available: true,
     format: 'inline',
   },
+] as const
+
+/** Web copies share formats and campaign eligibility, but own their delivery IDs. */
+export const PLACEMENT_SLOTS = [
+  ...ORIGINAL_PLACEMENT_SLOTS,
+  ...ORIGINAL_PLACEMENT_SLOTS.flatMap(slot => {
+    const id = webDesktopPlacement(slot.id)
+    return id ? [{ ...slot, id, surface: 'freebuff_web_chat' as const }] : []
+  }),
 ] as const
 
 /**
@@ -621,6 +635,12 @@ const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
 }
 
 export function placementSlotLabel(placementId: string): string {
+  if (placementId === 'Desktop-Partner-Skill-Picker:web')
+    return 'Web — Command menu'
+  if (isWebDesktopPlacement(placementId)) {
+    const sourceLabel = placementSlotLabel(desktopPlacementSource(placementId))
+    return sourceLabel.replace(/^Desktop(?: —)? /, 'Web — ')
+  }
   if (placementId === TRACKED_LINK_PLACEMENT_ID) return 'Tracked links'
   const formatted = PLACEMENT_FORMAT_LABELS[placementId]
   if (formatted) return formatted
