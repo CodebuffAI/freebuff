@@ -4,7 +4,7 @@ import {
 } from '@codebuff/common/util/file'
 import { sampleSizeWithSeed } from '@codebuff/common/util/random'
 
-import { countTokens, countTokensJson } from '../util/token-counter'
+import { countTokens } from '../util/token-counter'
 
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type {
@@ -32,7 +32,7 @@ export const truncateFileTreeBasedOnTokenBudget = (params: {
   const filteredTree = removeUnimportantFiles(fileTree)
 
   const treeWithTokens = printFileTreeWithTokens(filteredTree, fileTokenScores)
-  const treeWithTokensCount = countTokensJson(treeWithTokens)
+  const treeWithTokensCount = countTokens(treeWithTokens)
 
   if (treeWithTokensCount <= tokenBudget) {
     return {
@@ -43,14 +43,14 @@ export const truncateFileTreeBasedOnTokenBudget = (params: {
   }
 
   const printedFilteredTree = printFileTree(filteredTree)
-  const filteredTreeNoTokensCount = countTokensJson(printedFilteredTree)
+  const filteredTreeNoTokensCount = countTokens(printedFilteredTree)
 
   if (filteredTreeNoTokensCount <= tokenBudget) {
     const filteredTreeWithTokens = printFileTreeWithTokens(
       filteredTree,
       fileTokenScores,
     )
-    const filteredTreeWithTokensCount = countTokensJson(filteredTreeWithTokens)
+    const filteredTreeWithTokensCount = countTokens(filteredTreeWithTokens)
     if (filteredTreeWithTokensCount <= tokenBudget) {
       if (DEBUG) {
         logger.debug(
@@ -120,11 +120,8 @@ export const truncateFileTreeBasedOnTokenBudget = (params: {
 
   // Sample 30 random files and count their tokens together
   const sampleCount = Math.min(30, sortedFiles.length)
-  const sampleFiles = sampleSizeWithSeed(
-    sortedFiles,
-    sampleCount,
-    JSON.stringify(sortedFiles) + JSON.stringify(sampleCount),
-  )
+  const sampleSeed = `${sortedFiles.length}:${sampleCount}:${sortedFiles[0]?.path ?? ''}:${sortedFiles[sortedFiles.length - 1]?.path ?? ''}`
+  const sampleFiles = sampleSizeWithSeed(sortedFiles, sampleCount, sampleSeed)
   const sampleText = sampleFiles.map((f) => f.node.name).join(' ')
   const sampleTokens = countTokens(sampleText)
 
@@ -168,7 +165,7 @@ export const truncateFileTreeBasedOnTokenBudget = (params: {
       .filter((n): n is FileTreeNode => n !== null)
 
     currentPrintedTree = printFileTree(currentTree)
-    currentTokenCount = countTokensJson(currentPrintedTree)
+    currentTokenCount = countTokens(currentPrintedTree)
 
     // Safety check - if we're not making progress, break
     if (currentTokenCount >= previousTokenCount) {
@@ -241,7 +238,7 @@ function pruneFileTokenScores(params: {
     .sort((a, b) => a.score - b.score)
 
   let printedTree = printFileTreeWithTokens(fileTree, fileTokenScores)
-  let totalTokens = countTokensJson(printedTree)
+  let totalTokens = countTokens(printedTree)
 
   if (totalTokens <= tokenBudget) {
     return { pruned: fileTokenScores, printedTree, tokenCount: totalTokens }
@@ -263,7 +260,7 @@ function pruneFileTokenScores(params: {
 
   let index = initialKeepIndex
   printedTree = printFileTreeWithTokens(fileTree, pruned)
-  totalTokens = countTokensJson(printedTree)
+  totalTokens = countTokens(printedTree)
 
   while (totalTokens > tokenBudget && index < sortedTokens.length) {
     const remainingToRemove = totalTokens - tokenBudget
@@ -282,7 +279,7 @@ function pruneFileTokenScores(params: {
 
     // Note: The below function can take a while, so we optimized to have few loop iterations.
     printedTree = printFileTreeWithTokens(fileTree, pruned)
-    totalTokens = countTokensJson(printedTree)
+    totalTokens = countTokens(printedTree)
     index += batchSize
   }
 
@@ -309,9 +306,8 @@ const removeUnimportantFiles = (fileTree: FileTreeNode[]): FileTreeNode[] => {
     if (node.type === 'directory') {
       // Filter out common build/cache directories
       const dirPath = node.filePath.toLowerCase()
-      const isUnimportantDir = unimportantExtensions.some(
-        (ext) =>
-          ext.startsWith('/') && ext.endsWith('/') && dirPath.includes(ext),
+      const isUnimportantDir = UNIMPORTANT_DIR_PATTERNS.some((dir) =>
+        dirPath.includes(dir),
       )
       if (isUnimportantDir) {
         return false
@@ -323,15 +319,26 @@ const removeUnimportantFiles = (fileTree: FileTreeNode[]): FileTreeNode[] => {
     }
 
     const filePath = node.filePath.toLowerCase()
-    return !unimportantExtensions.some(
-      (ext) => !ext.startsWith('/') && filePath.endsWith(ext),
-    )
+    return !UNIMPORTANT_EXTENSIONS.some((ext) => filePath.endsWith(ext))
   }
 
   return fileTree.filter(shouldKeepFile)
 }
 
-const unimportantExtensions = [
+const UNIMPORTANT_DIR_PATTERNS = [
+  // Build output directories
+  '/dist/',
+  '/build/',
+  '/out/',
+  '/target/',
+
+  // Package manager directories
+  '/node_modules/',
+  '/.venv/',
+  '/vendor/',
+] as const
+
+const UNIMPORTANT_EXTENSIONS = [
   // Generated JavaScript/TypeScript files
   '.min.js',
   '.min.css',
@@ -355,17 +362,6 @@ const unimportantExtensions = [
   // Ruby generated files
   '.gem',
   '.rbc',
-
-  // Build output directories
-  '/dist/',
-  '/build/',
-  '/out/',
-  '/target/',
-
-  // Package manager directories
-  '/node_modules/',
-  '/.venv/',
-  '/vendor/',
 
   // Logs and temporary files
   '.log',
@@ -411,4 +407,4 @@ const unimportantExtensions = [
   '.tiff',
   '.tif',
   '.webp',
-]
+] as const
