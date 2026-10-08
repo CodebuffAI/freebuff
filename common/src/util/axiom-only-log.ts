@@ -670,12 +670,19 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
    * The request's one Flash pCTR batch (`ad-model/decisions-pctr.ts`), present
    * whenever the scorer is configured: the model label, the attempt outcome
    * (`scored`, `control`, `timeout`, `http_error`, `no_candidates`, ...), its
-   * latency and how many creatives it asked about. Id-free.
+   * latency, how many ads it asked about out of how many were eligible (the
+   * cut keeps the best 25), and the input budget's token estimate, provider
+   * usage and whether it trimmed context or omitted view history. Id-free.
    */
   decisions_pctr_model: 'string',
   decisions_pctr_outcome: 'string',
   decisions_pctr_latency_ms: 'number',
   decisions_pctr_questions: 'number',
+  decisions_pctr_eligible_ads: 'number',
+  decisions_pctr_estimated_input_tokens: 'number',
+  decisions_pctr_input_tokens: 'number',
+  decisions_pctr_context_trimmed: 'boolean',
+  decisions_pctr_history_omitted: 'boolean',
 } as const satisfies AxiomOnlyFieldSchema
 
 /** Settlement telemetry deliberately excludes impression, campaign, and

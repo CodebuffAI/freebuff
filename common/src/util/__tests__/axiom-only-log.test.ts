@@ -639,6 +639,11 @@ describe('getAxiomOnlyLogEvent', () => {
       decisions_pctr_outcome: 'timeout',
       decisions_pctr_latency_ms: 401.2,
       decisions_pctr_questions: 12,
+      decisions_pctr_eligible_ads: 40,
+      decisions_pctr_estimated_input_tokens: 3200,
+      decisions_pctr_input_tokens: 3150,
+      decisions_pctr_context_trimmed: false,
+      decisions_pctr_history_omitted: true,
     }
     expect(
       getAxiomOnlyLogEvent({
