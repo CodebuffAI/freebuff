@@ -1112,6 +1112,9 @@ export type FreebuffSessionAdmissionResponse = (
       currentInstanceId: string
     }
 ) & {
+  /** Current resolved country for picker recommendations, independent of a
+   *  running session's historical limited-access reason. Display only. */
+  pickerCountryCode?: string | null
   /** Current country verification; does not grant full access. Sent on GET. */
   countryVerified?: boolean
   /** Whether a country verification could change this account's access
@@ -1186,6 +1189,7 @@ export type FreebuffSessionServerResponse =
        *  doesn't match the stored one; the chat-completions gate also
        *  surfaces it as a 409 for fast in-flight feedback. */
       status: 'superseded'
+      pickerCountryCode?: string | null
       desktopSessionCounts?: FreebuffDesktopSessionCounts
       desktopPurchases?: FreebuffDesktopPurchaseInfo[]
       desktopRefunds?: FreebuffDesktopRefundInfo[]
