@@ -57,6 +57,29 @@ import {
 } from '../ad-client-context'
 
 describe('parseAdClientContext', () => {
+  test('web parity fields are optional and keep served separate from viewed', () => {
+    expect(
+      parseAdClientContext({
+        v: 1,
+        sess: { adsThisSession: '0', adsServedThisSession: '4-10' },
+      })?.sess,
+    ).toEqual({ adsThisSession: '0', adsServedThisSession: '4-10' })
+    expect(
+      parseAdClientContext({ v: 1, sess: { adsThisSession: '0' } })?.sess
+        ?.adsServedThisSession,
+    ).toBeUndefined()
+    expect(
+      parseAdEngagement({
+        v: 1,
+        impUrl: 'https://example.com/i',
+        dismissed: true,
+        dismissMs: 1200,
+      })?.dismissed,
+    ).toBe(true)
+    expect(
+      parseAdEngagement({ v: 1, impUrl: 'https://example.com/i' })?.dismissed,
+    ).toBeUndefined()
+  })
   test('accepts a full v1 context', () => {
     const context = {
       v: 1,

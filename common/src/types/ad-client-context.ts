@@ -348,6 +348,8 @@ export const adClientContextSchema = z.object({
     .object({
       turnIndex: z.enum(TURN_INDEX_BUCKETS),
       adsThisSession: z.enum(ADS_SESSION_BUCKETS),
+      /** Fills received, distinct from ads actually viewed. */
+      adsServedThisSession: z.enum(ADS_SESSION_BUCKETS),
       sinceLastAd: since,
       sinceLastClick: since,
     })
@@ -507,6 +509,8 @@ export const adEngagementSchema = z.object({
   cardHeight: z.enum(CARD_DIMENSION_BUCKETS).optional(),
   /** ms from first visible to the user dismissing the ad, when they did */
   dismissMs: ms.optional(),
+  /** Explicit user dismissal, rather than rotation or unmount. */
+  dismissed: z.boolean().optional(),
   /** the user copied text from the ad */
   copied: z.boolean().optional(),
   click: z
@@ -530,7 +534,7 @@ export const adEngagementSchema = z.object({
       browserOpened: z.boolean(),
       /** ms from the click until the window regained focus */
       returnMs: ms,
-      /** within the adoption window after the click, the agent installed a package of the clicked ad's vendor */
+      /** Install command observed within the adoption window; not proof of successful installation. */
       packageInstalled: z.boolean(),
       /** within the adoption window after the click, the user added an MCP server of the clicked ad's vendor */
       mcpAdded: z.boolean(),
