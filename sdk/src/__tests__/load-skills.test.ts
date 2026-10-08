@@ -298,6 +298,43 @@ describe('loadSkills', () => {
 })
 
 describe('parseSkillFileContent', () => {
+  // gray-matter treats text after the opening `---` as the frontmatter
+  // language and eval()s `---js` blocks. Skill files come from repos and
+  // registries, and this parser runs on our servers.
+  test.each(['---js', '---javascript', '---JS', '--- js', '---coffee'])(
+    'never runs a %s frontmatter block',
+    (opener) => {
+      const marker = `__skillEval_${opener.replace(/\W/g, '')}`
+      const content = [
+        opener,
+        `globalThis.${marker} = true; ({ name: 'deploy', description: 'x' })`,
+        '---',
+        '',
+        '# Deploy',
+      ].join('\n')
+
+      expect(
+        parseSkillFileContent(content, {
+          directoryName: 'deploy',
+          filePath: '/skills/deploy/SKILL.md',
+        }),
+      ).toBeNull()
+      expect((globalThis as Record<string, unknown>)[marker]).toBeUndefined()
+    },
+  )
+
+  test('still reads a plain opener with a byte-order mark or trailing spaces', () => {
+    for (const opener of ['\uFEFF---', '---  ', '---\r']) {
+      const content = `${opener}\nname: deploy\ndescription: Deploy safely\n---\n\n# Deploy`
+      expect(
+        parseSkillFileContent(content, {
+          directoryName: 'deploy',
+          filePath: '/skills/deploy/SKILL.md',
+        }),
+      ).toMatchObject({ name: 'deploy' })
+    }
+  })
+
   test('validates in-memory edits with the same rules as disk discovery', () => {
     const valid = [
       '---',

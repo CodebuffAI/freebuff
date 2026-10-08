@@ -62,6 +62,20 @@ describe('handleSkill', () => {
     expect(value.content).toContain('body for installed at runtime')
   })
 
+  it('never evaluates a JavaScript frontmatter block found on disk', async () => {
+    const skillDir = path.join(projectRoot, '.agents', 'skills', 'demo')
+    fs.mkdirSync(skillDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(skillDir, 'SKILL.md'),
+      "---js\nglobalThis.__skillHandlerEval = true; ({ name: 'demo', description: 'x' })\n---\n# demo\n",
+    )
+
+    const { output } = await callSkill('demo', { projectRoot, skills: {} })
+
+    expect((globalThis as Record<string, unknown>).__skillHandlerEval).toBeUndefined()
+    expect((output as any)[0].value.content).toContain("Skill 'demo' not found")
+  })
+
   it('prefers the on-disk copy over a stale pre-loaded cache', async () => {
     writeSkill(projectRoot, 'demo', 'fresh on disk')
 
