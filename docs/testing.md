@@ -350,13 +350,14 @@ the backstop for an edge the scanner misses.
 
 ### Known remaining cost
 
-What is left on the critical path is not test time. `test-windows` spends
-~130s of its ~264s restoring and installing dependencies on a cold Windows
-runner. `typecheck-freebuff-web` and `typecheck-rest` are one `tsc` each
-(160–220s) behind ~45s of setup. None of these has setup left to cut; the
-levers are incremental `tsc` or a larger runner, and both need their own
-measurement. `build-freebuff-web`'s ~110s Turbopack compile now starts from the
-previous run's persistent cache (next section).
+What is left on the critical path is not test time. `test-windows` used to
+spend ~130s of its ~264s restoring the whole monorepo's `node_modules`; it now
+installs only the workspaces its suites load (see "Windows installs" below).
+`typecheck-freebuff-web` and `typecheck-rest` are one `tsc` each
+(160–220s) behind ~45s of setup; the lever there is incremental `tsc` or a
+larger runner, and both need their own measurement. `build-freebuff-web`'s
+~110s Turbopack compile now starts from the previous run's persistent cache
+(next section).
 
 Measure test time on CI, not locally. freebuff-desktop's
 `src/app/thread-engine.test.ts` once took ~101s on an M-series Mac against
@@ -380,6 +381,26 @@ Migration CI installed cold in 23s, while its warm restores took 18–41s. The a
 Ubicloud workflows use that action instead of carrying their own cache blocks.
 The Windows and macOS cache remains until those runners have their own cold/warm
 comparison; this measurement says nothing about their install performance.
+
+### Windows installs
+
+Measured on `windows-latest` on 2026-10-07 (Bun 1.4.2, Defender already off):
+
+| Install | Time |
+| --- | --- |
+| `setup-project`, warm 1.05 GB cache (278k files) | ~110s restore, 95s of it tar unpacking, + 5s install |
+| Whole monorepo, cold, Bun cache on its default C: | 647s |
+| Whole monorepo, cold, Bun cache on D: | 187s |
+| `test-windows`'s workspaces only, cold, cache on D: | 36–54s |
+| The same, warm 400 MB cache (~51k files) | 24–27s restore + 5–7s install |
+
+Two separate costs. File count dominates a restore, so `test-windows` installs
+with `bun install --filter` for the workspaces its suites load. And the
+checkout is on D: while Bun's install cache defaults to C:, so every package
+is copied across volumes; pointing `BUN_INSTALL_CACHE_DIR` at `runner.temp`
+(on D:) cut a cold install 3–4x. Every other Windows job still uses
+`setup-project`, which leaves the cache on C:, so its cold path (a lockfile
+change) is the 647s row.
 
 Keep the caches whose transfer cost is materially smaller than the work they
 avoid. `sdk/dist` is a roughly 17 MB restore instead of an ~18s build.
