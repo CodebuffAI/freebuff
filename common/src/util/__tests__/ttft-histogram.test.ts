@@ -70,6 +70,16 @@ describe('ttftBucketIndex', () => {
     expect(ttftBucketIndex(60 * 60 * 1000)).toBeLessThan(last)
   })
 
+  it('routes NaN to bucket 0, keeps Infinity behavior correct', () => {
+    // Only NaN should default to 0. Negative Infinity should also go to 0
+    // because Math.max(-Infinity, 1) = 1, log(1) = 0, then bucket 0
+    expect(ttftBucketIndex(NaN)).toBe(0)
+    expect(ttftBucketIndex(-Infinity)).toBe(0)
+    // Positive Infinity flows through Math.max/Math.log and clamps to top
+    const last = TTFT_HISTOGRAM_BUCKET_COUNT - 1
+    expect(ttftBucketIndex(Infinity)).toBe(last)
+  })
+
   it('keeps every reported value within half a bucket, plus ms rounding', () => {
     // The geometric half-width is the real guarantee; the extra 0.5ms is
     // ttftBucketMs rounding to whole milliseconds, which only matters at
