@@ -18,7 +18,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsbuildinfo/packages-agent-runtime.tsbuildinfo -p .",
     "test": "bun test $(bun run --silent test:files)",
     "test:files": "find src -name '*.test.ts' ! -name '*.integration.test.ts' 2>/dev/null | sort"
   },

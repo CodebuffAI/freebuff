@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "bun x tsc --noEmit -p tsconfig.json",
+    "typecheck": "bun x tsc --noEmit --incremental --tsBuildInfoFile ../node_modules/.cache/tsbuildinfo/agents.tsbuildinfo -p tsconfig.json",
     "test": "bun test $(bun run --silent test:files)",
     "test:files": "find . -name node_modules -prune -o -name '*.test.ts' ! -name '*.e2e.test.ts' ! -name '*.integration.test.ts' -print 2>/dev/null | sort",
     "test:e2e": "bun test e2e"

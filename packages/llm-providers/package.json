@@ -18,7 +18,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsbuildinfo/packages-llm-providers.tsbuildinfo -p .",
     "test": "bun test $(bun run --silent test:files)",
     "test:files": "find . -name node_modules -prune -o -name '*.test.ts' ! -name '*.integration.test.ts' -print 2>/dev/null | sort"
   },

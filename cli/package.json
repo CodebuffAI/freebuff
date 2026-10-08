@@ -23,7 +23,7 @@
     "test:files": "find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\) ! -name '*.integration.test.ts' ! -name '*.integration.test.tsx' 2>/dev/null | sort",
     "test:files:integration": "find src \\( -name '*.integration.test.ts' -o -name '*.integration.test.tsx' \\) 2>/dev/null | sort",
     "test:tmux-poc": "bun run src/__tests__/tmux-poc.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../node_modules/.cache/tsbuildinfo/cli.tsbuildinfo -p ."
   },
   "sideEffects": [
     "./src/pre-init/*.ts"

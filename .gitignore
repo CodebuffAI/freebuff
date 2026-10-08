@@ -23,7 +23,7 @@ dist
 # The Convex HTTP edge proxies /api/browser-runtime/dist; this is a Next route, not build output.
 !freebuff/web/src/app/api/browser-runtime/dist/
 dist-env
-tsconfig.tsbuildinfo
+*.tsbuildinfo
 .manicode
 __mock-projects__
 .aider*
