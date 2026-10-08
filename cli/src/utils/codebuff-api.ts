@@ -3,6 +3,7 @@ import {
   sanitizeTerminalStrings,
   sanitizeTerminalText,
 } from '@codebuff/common/util/terminal-safe-text'
+import { redactUrlForLog } from '@codebuff/common/util/log-redaction'
 import type {
   PublishAgentsResponse,
 } from '@codebuff/common/types/api/agents/publish'
@@ -232,19 +233,24 @@ function getTlsCertificateError(error: Error, depth = 0): Error | null {
   return getTlsCertificateError(error.cause, depth + 1)
 }
 
+// These messages reach PostHog and Axiom, so they name the URL without its
+// query (the login poll's carries `fingerprintHash`), and a runtime message
+// that quotes the full URL (Bun's fetch errors do) gets the same redaction.
 function formatNetworkErrorMessage(error: Error, method: string, url: string) {
   const requestUrl = new URL(url)
+  const safeUrl = redactUrlForLog(url)
+  const redact = (message: string) => message.split(url).join(safeUrl)
   const tlsCertificateError = getTlsCertificateError(error)
 
   if (tlsCertificateError) {
     return [
       `TLS certificate verification failed for ${requestUrl.origin}.`,
       'If your network intercepts HTTPS traffic, install its root certificate into your system trust store or use a network path that does not intercept TLS.',
-      `Original error: ${tlsCertificateError.message} (${method} ${url})`,
+      `Original error: ${redact(tlsCertificateError.message)} (${method} ${safeUrl})`,
     ].join(' ')
   }
 
-  return `${error.message} (${method} ${url})`
+  return `${redact(error.message)} (${method} ${safeUrl})`
 }
 
 /**

@@ -114,6 +114,8 @@ export type AgentTemplate<
   displayName: string
   model: Model
   reasoningOptions?: OpenRouterReasoningOptions
+  /** Ceiling on output tokens per model call; see AgentDefinition. */
+  maxOutputTokens?: number
   providerOptions?: OpenRouterProviderRoutingOptions
 
   mcpServers: Record<string, MCPConfig>

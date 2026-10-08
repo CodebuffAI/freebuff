@@ -92,7 +92,12 @@ export const getAgentStreamFromTemplate = (params: {
     includeCacheControl,
     logger,
     localAgentTemplates,
-    maxOutputTokens: params.maxOutputTokens,
+    // The agent's own cap is a ceiling a caller can lower, never raise.
+    maxOutputTokens:
+      params.maxOutputTokens !== undefined &&
+      template.maxOutputTokens !== undefined
+        ? Math.min(params.maxOutputTokens, template.maxOutputTokens)
+        : (params.maxOutputTokens ?? template.maxOutputTokens),
     toolChoice: params.toolChoice,
     maxRetries: 3,
     messages,

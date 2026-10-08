@@ -31,3 +31,40 @@ test('agent requests do not set an automatic provider stop', () => {
     'stopSequences',
   )
 })
+
+test.each([
+  [undefined, undefined, undefined],
+  [64, undefined, 64],
+  [undefined, 4_096, 4_096],
+  [64, 4_096, 64],
+  [4_096, 64, 64],
+])(
+  "an agent's maxOutputTokens (%p) is a ceiling a caller (%p) can only lower",
+  (templateCap, callerCap, expected) => {
+    const runtime = createTestAgentRuntimeParams()
+    const template = {
+      ...(runtime.agentTemplate as AgentTemplate),
+      maxOutputTokens: templateCap,
+    }
+
+    getAgentStreamFromTemplate({
+      ...runtime,
+      clientSessionId: 'test-session',
+      fingerprintId: 'test-fingerprint',
+      localAgentTemplates: { [template.id]: template },
+      messages: [],
+      runId: 'test-run',
+      signal: new AbortController().signal,
+      template,
+      tools: {},
+      maxOutputTokens: callerCap,
+      userId: 'test-user',
+      userInputId: 'test-input',
+      promptAiSdkStream: runtime.promptAiSdkStream as PromptAiSdkStreamFn,
+    })
+
+    expect(runtime.promptAiSdkStream.mock.calls[0]?.[0].maxOutputTokens).toBe(
+      expected,
+    )
+  },
+)

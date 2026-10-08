@@ -516,6 +516,59 @@ describe('createCodebuffApiClient', () => {
       )
       expect(mockTlsFetch).toHaveBeenCalledTimes(1)
     })
+
+    test('names the request URL without its query', async () => {
+      const fullUrl =
+        'https://freebuff.com/api/auth/cli/status?fingerprintId=fp-1&fingerprintHash=secret-hash&expiresAt=123'
+      // Bun's fetch errors quote the URL they were fetching.
+      const mockFailingFetch = mock<MockFetch>(() =>
+        Promise.reject(new Error(`ConnectionRefused fetching "${fullUrl}"`)),
+      )
+
+      const client = createCodebuffApiClient({
+        baseUrl: 'https://freebuff.com',
+        fetch: mockFailingFetch as unknown as typeof fetch,
+        retry: { maxRetries: 0 },
+      })
+
+      const error = await client
+        .loginStatus({
+          fingerprintId: 'fp-1',
+          fingerprintHash: 'secret-hash',
+          expiresAt: '123',
+        })
+        .catch((caught: unknown) => caught)
+
+      expect(mockFailingFetch.mock.calls[0]?.[0]).toBe(fullUrl)
+      expect(error).toBeInstanceOf(Error)
+      const message = (error as Error).message
+      expect(message).not.toContain('secret-hash')
+      expect(message).not.toContain('fingerprintId')
+      expect(message).toBe(
+        'ConnectionRefused fetching "https://freebuff.com/api/auth/cli/status" (GET https://freebuff.com/api/auth/cli/status)',
+      )
+    })
+
+    test('keeps the query out of TLS error messages', async () => {
+      const mockTlsFetch = mock<MockFetch>(() =>
+        Promise.reject(
+          new Error('self signed certificate in certificate chain'),
+        ),
+      )
+
+      const client = createCodebuffApiClient({
+        baseUrl: 'https://freebuff.com',
+        fetch: mockTlsFetch as unknown as typeof fetch,
+      })
+
+      await expect(
+        client.loginStatus({
+          fingerprintId: 'fp-1',
+          fingerprintHash: 'secret-hash',
+          expiresAt: '123',
+        }),
+      ).rejects.toThrow('(GET https://freebuff.com/api/auth/cli/status)')
+    })
   })
 
   describe('feedback method', () => {

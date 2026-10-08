@@ -1,3 +1,11 @@
+import {
+  redactHeadersForLog,
+  redactUrlForLog,
+  summarizeRequestBodyForLog,
+} from './log-redaction'
+
+import type { RequestBodySummary } from './log-redaction'
+
 export type ErrorOr<T, E extends ErrorObject = ErrorObject> =
   | Success<T>
   | Failure<E>
@@ -84,8 +92,11 @@ export type ErrorObject = {
   url?: string
   /** Whether the error is retryable (API errors) */
   isRetryable?: boolean
-  /** Request body values that were sent (API errors) - stringified for safety */
-  requestBodyValues?: string
+  /**
+   * Shape of the request body that was sent (API errors): model, message
+   * count, keys and size. Never the body itself, which holds the prompt.
+   */
+  requestBody?: RequestBodySummary
   /** Cause of the error, if nested */
   cause?: ErrorObject
 }
@@ -513,14 +524,19 @@ interface ExtendedErrorProperties {
 /**
  * Safely stringify an object, handling circular references and large objects.
  */
-function safeStringify(value: unknown, maxLength = 10000): string | undefined {
+function safeStringify(
+  value: unknown,
+  maxLength = 10000,
+  redact?: (key: string, val: unknown) => unknown,
+): string | undefined {
   if (value === undefined || value === null) return undefined
   if (typeof value === 'string') return value.slice(0, maxLength)
   try {
     const seen = new WeakSet()
     const str = JSON.stringify(
       value,
-      (_, val) => {
+      (key, raw) => {
+        const val = redact ? redact(key, raw) : raw
         if (typeof val === 'object' && val !== null) {
           if (seen.has(val)) return '[Circular]'
           seen.add(val)
@@ -535,6 +551,33 @@ function safeStringify(value: unknown, maxLength = 10000): string | undefined {
   }
 }
 
+const URL_LIKE = /^[a-z][a-z0-9+.-]*:\/\//i
+
+/**
+ * `rawError` serializes every enumerable field of the error and its causes, so
+ * the same redaction applies there: an AI SDK `APICallError` carries the whole
+ * request body and the response headers, and Bun's fetch errors carry the
+ * request URL as `path`.
+ */
+function redactRawErrorField(key: string, val: unknown): unknown {
+  if (key === 'requestBodyValues') return summarizeRequestBodyForLog(val)
+  if (
+    key === 'requestHeaders' ||
+    key === 'responseHeaders' ||
+    key === 'headers'
+  ) {
+    return redactHeadersForLog(val) ?? val
+  }
+  if (
+    (key === 'url' || key === 'path') &&
+    typeof val === 'string' &&
+    URL_LIKE.test(val)
+  ) {
+    return redactUrlForLog(val)
+  }
+  return val
+}
+
 export function getErrorObject(
   error: unknown,
   options: { includeRawError?: boolean } = {},
@@ -546,15 +589,6 @@ export function getErrorObject(
     let responseBody: string | undefined
     if (extError.responseBody !== undefined) {
       responseBody = safeStringify(extError.responseBody)
-    }
-
-    // Extract requestBodyValues - typically an object, stringify for logging
-    let requestBodyValues: string | undefined
-    if (
-      extError.requestBodyValues !== undefined &&
-      typeof extError.requestBodyValues === 'object'
-    ) {
-      requestBodyValues = safeStringify(extError.requestBodyValues)
     }
 
     // Extract cause - recursively convert to ErrorObject if present
@@ -573,15 +607,20 @@ export function getErrorObject(
           ? extError.statusCode
           : undefined,
       code: typeof extError.code === 'string' ? extError.code : undefined,
-      rawError: options.includeRawError ? safeStringify(error) : undefined,
+      rawError: options.includeRawError
+        ? safeStringify(error, 10000, redactRawErrorField)
+        : undefined,
       // API error fields
       responseBody,
-      url: typeof extError.url === 'string' ? extError.url : undefined,
+      url:
+        typeof extError.url === 'string'
+          ? redactUrlForLog(extError.url)
+          : undefined,
       isRetryable:
         typeof extError.isRetryable === 'boolean'
           ? extError.isRetryable
           : undefined,
-      requestBodyValues,
+      requestBody: summarizeRequestBodyForLog(extError.requestBodyValues),
       cause,
     }
   }

@@ -51,6 +51,11 @@ export interface AgentDefinition {
       }
   )
 
+  /** Ceiling on output tokens for each model call this agent makes. Unset
+   * leaves the model's default. Reasoning tokens count against it on most
+   * providers, so set it only on an agent that does not think. */
+  maxOutputTokens?: number
+
   /**
    * Provider routing options for OpenRouter.
    * Controls which providers to use and fallback behavior.

@@ -144,6 +144,7 @@ export const DynamicAgentDefinitionSchema = z.object({
       ]),
     )
     .optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
   providerOptions: z
     .object({
       order: z.array(z.string()).optional(),
