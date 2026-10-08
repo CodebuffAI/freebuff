@@ -5,10 +5,12 @@ import {
 } from '@codebuff/common/util/terminal-safe-text'
 import { env } from '@codebuff/common/env'
 import {
+  FREEBUFF_CLIENT_VERSION_HEADER,
   FREEBUFF_DESKTOP_ATTEMPT_HEADER,
   FREEBUFF_PURCHASE_CONTINUITY_HEADER,
 } from '@codebuff/common/constants/freebuff-desktop-sessions'
 import { clientEnvironmentHeaders } from './client-environment'
+import { getCliEnv } from './env'
 import { timedApiCall } from '../ads/ad-signals'
 import { freebuffCliAttemptId } from './freebuff-session-identity'
 import {
@@ -245,6 +247,9 @@ async function requestFreebuffSession(
     ...freebucksTimeZoneHeaders(),
     ...clientEnvironmentHeaders(),
   }
+  // Observe-only: ties a server-side refusal line to the build that saw it.
+  const cliVersion = getCliEnv().CODEBUFF_CLI_VERSION
+  if (cliVersion) headers[FREEBUFF_CLIENT_VERSION_HEADER] = cliVersion
   const attemptId = freebuffCliAttemptId(opts.instanceId)
   const multiSession = opts.multiSession ?? Boolean(attemptId)
   if (multiSession) {

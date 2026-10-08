@@ -94,6 +94,14 @@ export const FREEBUFF_DESKTOP_ADMITTED_AT_HEADER =
 export const FREEBUFF_CLIENT_HEADER = 'x-freebuff-client'
 export const FREEBUFF_CLIENT_DESKTOP = 'desktop'
 
+/**
+ * The calling app's own version (`0.0.212`, `1.4.0`), sent by the CLI and
+ * Desktop on session calls. Observe-only: friction lines
+ * (`freebuff_session_refused`) carry it so a refusal can be tied to the build
+ * that saw it. Never gates anything; a client may omit it.
+ */
+export const FREEBUFF_CLIENT_VERSION_HEADER = 'x-freebuff-client-version'
+
 /** A random id Freebuff Desktop mints once per install and keeps across
  *  sign-ins. Not a credential. */
 export const FREEBUFF_INSTALL_ID_HEADER = 'x-freebuff-install-id'
