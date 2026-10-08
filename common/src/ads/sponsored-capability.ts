@@ -90,6 +90,8 @@ export const sponsoredCapabilitySchema = z
         surface: sponsoredExecutionSurfaceSchema,
         status: z.enum(['available', 'unavailable']),
         reason: sponsoredCapabilityReasonSchema.optional(),
+        // Older Linux clients isolate networking; only updated clients report true.
+        outboundNetwork: z.boolean().optional(),
       })
       .strict(),
   })

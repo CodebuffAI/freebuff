@@ -134,6 +134,7 @@ function execution(
           ? 'cli_wsl'
           : 'cli_linux',
     status: 'available',
+    ...(platform === 'linux' ? { outboundNetwork: true } : {}),
   }
 }
 

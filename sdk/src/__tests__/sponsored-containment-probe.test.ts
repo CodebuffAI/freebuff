@@ -16,6 +16,9 @@ describe('sponsored runtime capability probe', () => {
       reason: 'containment-probe-failed',
     })
     expect(calls[0]).toContain('--unshare-all')
+    expect(calls[0].indexOf('--share-net')).toBeGreaterThan(
+      calls[0].indexOf('--unshare-all'),
+    )
     expect(calls[0]).toContain('--clearenv')
   })
   test('macOS requires a successful seatbelt execution', () => {

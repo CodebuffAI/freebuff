@@ -19,6 +19,7 @@ import {
   linkDeveloperShims,
   sponsoredCodeSearchFlagsRefusal,
   sponsoredLinuxEnvArgs,
+  sponsoredLinuxResolverMounts,
   sponsoredMacGitPath,
   sponsoredMacProfile,
   sponsoredMacSecretReadRules,
@@ -904,9 +905,29 @@ describe('sponsored code search process containment', () => {
   )
 })
 
-// ---------------------------------------------------------- F2 loopback deny
+// ---------------------------------------------------------- network policy
 
-describe('sponsored loopback containment (F2)', () => {
+describe('sponsored network access', () => {
+  it('mounts a resolver symlink target without exposing its parent directory', () => {
+    const { root, parent } = workspace()
+    try {
+      const resolver = path.join(root, 'resolv.conf')
+      expect(sponsoredLinuxResolverMounts(resolver)).toEqual([])
+      fs.writeFileSync(resolver, 'nameserver 127.0.0.53\n')
+      const target = fs.realpathSync(resolver)
+      expect(sponsoredLinuxResolverMounts(target)).toEqual([])
+      const link = path.join(parent, 'resolv.conf')
+      fs.symlinkSync(resolver, link)
+      expect(sponsoredLinuxResolverMounts(link)).toEqual([
+        '--ro-bind',
+        target,
+        target,
+      ])
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
   it('denies loopback in the macOS profile while keeping egress', () => {
     const profile = sponsoredMacProfile(['/tmp/ws'], [])
     expect(profile).toContain('(allow network*)')
@@ -920,39 +941,69 @@ describe('sponsored loopback containment (F2)', () => {
     )
   })
 
-  containedIt('cannot reach a listener on this machine', async () => {
-    const server = Bun.serve({
-      port: 0,
-      hostname: '127.0.0.1',
-      fetch: () => new Response('ORCHESTRATOR-REACHED'),
-    })
-    const { root, runtime, parent } = workspace()
-    try {
-      const handle = createSponsoredTerminalBroker({
-        workspaceRoot: root,
-        runtimeDir: runtime,
-      }).start({
-        executable: 'bash',
-        args: [
-          '-c',
-          `curl -s --max-time 4 http://127.0.0.1:${server.port}/ || echo BLOCKED`,
-        ],
-        cwd: root,
-        env: POLLUTED_ENV as NodeJS.ProcessEnv,
+  containedIt(
+    'shares host networking on Linux and denies host loopback on macOS',
+    async () => {
+      const server = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        fetch: () => new Response('ORCHESTRATOR-REACHED'),
       })
-      const stdout = drain(handle.stdout)
-      const stderr = drain(handle.stderr)
-      await handle.completion
-      await stderr
-      // The orchestrator's API pushes branches and opens pull requests with
-      // the user's real credentials. A sandbox that can reach its own
-      // supervisor contains nothing.
-      expect(await stdout).not.toContain('ORCHESTRATOR-REACHED')
-    } finally {
-      server.stop(true)
-      fs.rmSync(parent, { recursive: true, force: true })
-    }
-  })
+      const { root, runtime, parent } = workspace()
+      try {
+        const handle = createSponsoredTerminalBroker({
+          workspaceRoot: root,
+          runtimeDir: runtime,
+        }).start({
+          executable: 'bash',
+          args: [
+            '-c',
+            `curl -s --max-time 4 http://127.0.0.1:${server.port}/ || echo BLOCKED`,
+          ],
+          cwd: root,
+          env: POLLUTED_ENV as NodeJS.ProcessEnv,
+        })
+        const stdout = drain(handle.stdout)
+        const stderr = drain(handle.stderr)
+        await handle.completion
+        await stderr
+        // A local listener makes this independent of public network uptime.
+        // The old isolated Linux network namespace cannot reach this listener.
+        if (process.platform === 'linux')
+          expect(await stdout).toBe('ORCHESTRATOR-REACHED')
+        else expect(await stdout).not.toContain('ORCHESTRATOR-REACHED')
+      } finally {
+        server.stop(true)
+        fs.rmSync(parent, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it.skipIf(!CONTAINMENT_USABLE || process.platform !== 'linux')(
+    'keeps the host resolver readable inside the Linux sandbox',
+    async () => {
+      const { root, runtime, parent } = workspace()
+      try {
+        const resolver = fs.readFileSync('/etc/resolv.conf', 'utf8')
+        const handle = createSponsoredTerminalBroker({
+          workspaceRoot: root,
+          runtimeDir: runtime,
+        }).start({
+          executable: '/bin/cat',
+          args: ['/etc/resolv.conf'],
+          cwd: root,
+          env: POLLUTED_ENV as NodeJS.ProcessEnv,
+        })
+        const stdout = drain(handle.stdout)
+        const stderr = drain(handle.stderr)
+        await handle.completion
+        expect(await stderr).toBe('')
+        expect(await stdout).toBe(resolver)
+      } finally {
+        fs.rmSync(parent, { recursive: true, force: true })
+      }
+    },
+  )
 })
 
 // ------------------------------------------------- the layout Desktop creates

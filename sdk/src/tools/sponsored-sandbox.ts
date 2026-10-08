@@ -25,8 +25,8 @@
  * anywhere but the worktree and the run's private runtime directory, including
  * through a symlink; git finding an ambient credential or prompting for one.
  *
- * Also stops: reaching the machine the run is on. Both profiles deny loopback,
- * because the orchestrator's own API listens there.
+ * macOS denies host loopback. Linux shares the host network, including
+ * loopback, so commands can use the host's DNS, downloads and service APIs.
  *
  * Known limits are tracked privately
  * (`docs/freebuff-sponsored-local-execution.md` §9).
@@ -89,6 +89,14 @@ import type {
 /** Where `bwrap` is on the distributions we have seen it on. */
 const BWRAP_PATHS = ['/usr/bin/bwrap', '/bin/bwrap', '/usr/local/bin/bwrap']
 
+// Keep the capability probe and real commands on the same namespace policy.
+const LINUX_NAMESPACE_ARGS = [
+  '--die-with-parent',
+  '--unshare-all',
+  '--share-net',
+  '--new-session',
+]
+
 export function findBubblewrap(): string | null {
   return BWRAP_PATHS.find((candidate) => fs.existsSync(candidate)) ?? null
 }
@@ -133,7 +141,7 @@ export function probeSponsoredContainment(
     ]
   } else {
     command = bwrap!
-    args = ['--die-with-parent', '--unshare-all', '--new-session']
+    args = [...LINUX_NAMESPACE_ARGS]
     for (const directory of ['/usr', '/bin', '/lib', '/lib64']) {
       if (dependencies.exists(directory))
         args.push('--ro-bind', directory, directory)
@@ -1866,23 +1874,10 @@ function spawnLinux(
       'bubblewrap (bwrap) is required to contain a sponsored run on Linux.',
     )
   }
-  // NO `--share-net`. bubblewrap has no firewall — it can give the run the
-  // host's network namespace or a fresh empty one, and nothing in between —
-  // so "network minus loopback", which is what the macOS profile above
-  // expresses, is not sayable here. Faced with that, the run gets its own
-  // empty namespace:
-  //
-  //   - loopback egress is the one that MATTERS. `--share-net` puts the run
-  //     on the same 127.0.0.1 as the orchestrator, whose API pushes branches
-  //     and opens pull requests with the user's real credentials.
-  //   - nothing granted actually needs the sandbox to reach the internet.
-  //     `read_url` and `web_search` — the two tools carrying the `network`
-  //     capability — execute in the orchestrator's process, not in here, and
-  //     dependency installs are refused outright (COD-336 item 5).
-  //
-  // So this diverges from the macOS arm, deliberately: on Linux the choice is
-  // between blocking loopback and keeping a capability nothing uses.
-  const args = ['--die-with-parent', '--unshare-all', '--new-session']
+  // Share networking so CLI downloads and remote API calls work. This also
+  // exposes host loopback; Linux no longer provides network containment.
+  // Filesystem, process and environment isolation still apply.
+  const args = [...LINUX_NAMESPACE_ARGS]
   for (const dir of [
     '/usr',
     '/bin',
@@ -1894,6 +1889,9 @@ function spawnLinux(
   ]) {
     if (fs.existsSync(dir)) args.push('--ro-bind', dir, dir)
   }
+  // /etc/resolv.conf often points into /run (systemd-resolved), which is not
+  // otherwise mounted. Sharing the network alone would still leave DNS broken.
+  args.push(...sponsoredLinuxResolverMounts())
   const commonDir = linkedWorktree
     ? path.resolve(linkedWorktree.commonDir)
     : null
@@ -1959,6 +1957,15 @@ function spawnLinux(
       stdio: ['ignore', 'pipe', 'pipe'],
     }),
   )
+}
+
+/** Keep the host resolver's symlink target readable without exposing all of /run. */
+export function sponsoredLinuxResolverMounts(
+  resolverPath = '/etc/resolv.conf',
+): string[] {
+  if (!fs.existsSync(resolverPath)) return []
+  const target = fs.realpathSync(resolverPath)
+  return target === resolverPath ? [] : ['--ro-bind', target, target]
 }
 
 /**

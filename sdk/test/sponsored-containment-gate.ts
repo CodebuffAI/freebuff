@@ -4,10 +4,9 @@
  *
  * Some hosts cannot start a nested OS sandbox at all — Codex's own parent
  * Seatbelt profile rejects `sandbox-exec`, a developer's Linux box may have no
- * `bwrap`, and the Ubicloud CI runners cannot configure loopback inside a new
- * network namespace at all (`bwrap: loopback: Failed RTM_NEWADDR: Operation
- * not permitted`), which the sandbox needs because it unshares the network on
- * purpose. On all of those the suites SKIP, with one line saying so.
+ * `bwrap`, and a Linux host may disable unprivileged user namespaces.
+ * On all of those the suites SKIP, with one line saying so. Linux shares the
+ * host network; it still requires the filesystem and process namespaces.
  *
  * One place may NOT skip: the dedicated `test-sponsored-containment` job in
  * `ci.yml`, GitHub-hosted `ubuntu-latest`, which installs bubblewrap and sets
@@ -43,8 +42,8 @@ export function sponsoredContainmentUsable(): boolean {
 /**
  * Whether THIS job declared that containment must execute. Deliberately an
  * explicit variable and not `CI` / `GITHUB_ACTIONS`: `sdk/test/setup-env.ts`
- * forces `CI=true` on every test run, laptop included, and most Linux CI
- * runners cannot run bubblewrap with an unshared network namespace, so
+ * forces `CI=true` on every test run, laptop included, and Linux CI
+ * runners may not support unprivileged bubblewrap, so
  * "in CI on Linux" is not the condition. The one job that installs bubblewrap
  * on a runner that can use it sets this.
  */

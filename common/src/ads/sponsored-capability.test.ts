@@ -26,6 +26,23 @@ const capability: SponsoredCapability = {
   execution: { surface: 'desktop_macos', status: 'available' },
 }
 describe('foundation execution admission', () => {
+  test('preserves outbound network evidence and accepts older clients without it', () => {
+    expect(sponsoredCapabilitySchema.parse(capability)).toEqual(capability)
+    for (const outboundNetwork of [true, false]) {
+      const current = {
+        ...capability,
+        execution: { ...capability.execution, outboundNetwork },
+      }
+      expect(sponsoredCapabilitySchema.parse(current)).toEqual(current)
+    }
+    expect(
+      sponsoredCapabilitySchema.safeParse({
+        ...capability,
+        execution: { ...capability.execution, outboundNetwork: 'true' },
+      }).success,
+    ).toBe(false)
+  })
+
   test('legacy and missing modes never expand audience', () => {
     for (const mode of [
       undefined,
