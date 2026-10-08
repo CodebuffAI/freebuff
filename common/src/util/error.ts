@@ -421,6 +421,17 @@ const TRANSIENT_NETWORK_ERROR_CODES = new Set([
   'ConnectionClosed',
   'ConnectionRefused',
   'FailedToOpenSocket',
+  // Bun's fetch, when a compressed body ends before its compressed stream
+  // does: the same cut connection as above, on a gzip/br response (the
+  // chat-completions SSE body is gzipped, COD-764). Reproduced on Bun 1.3.14:
+  // a gzip SSE body whose HTTP framing ends cleanly mid-stream throws
+  // "ZlibError fetching <url>", code ZlibError; br gives
+  // BrotliDecompressionError. On 2026-10-08 every web deploy turned these
+  // into failed turns (545 in 15 minutes at 2pm PT). The same cut on an
+  // identity body is a clean end, and Node's fetch treats a truncated gzip
+  // body as one too, so both already recover.
+  'ZlibError',
+  'BrotliDecompressionError',
   // undici (Node's fetch): the peer closed the socket. It rides as the cause
   // of the body-read TypeError below.
   'UND_ERR_SOCKET',

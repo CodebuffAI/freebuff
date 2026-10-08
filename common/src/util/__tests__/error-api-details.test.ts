@@ -167,6 +167,20 @@ describe('isTransientNetworkError', () => {
     expect(isTransientNetworkError(bunError)).toBe(true)
   })
 
+  it("detects Bun's error for a compressed body cut mid-stream", () => {
+    // The exact shapes Bun 1.3.14's fetch throws (see the sdk test
+    // compressed-stream-cut.test.ts for the live reproduction).
+    for (const code of ['ZlibError', 'BrotliDecompressionError']) {
+      const error = Object.assign(
+        new Error(
+          `${code} fetching "https://www.codebuff.com/api/v1/chat/completions". For more information, pass \`verbose: true\` in the second argument to fetch()`,
+        ),
+        { code },
+      )
+      expect(isTransientNetworkError(error)).toBe(true)
+    }
+  })
+
   it('detects the undici "fetch failed" TypeError', () => {
     expect(isTransientNetworkError(new TypeError('fetch failed'))).toBe(true)
   })
