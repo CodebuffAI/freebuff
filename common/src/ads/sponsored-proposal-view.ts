@@ -642,7 +642,7 @@ export function sponsoredProposalViewModel(
     logoSrc: sponsoredLogoSrc(row.advertiser_logo_token),
     pullRequestHref,
     advertiserCtaHref,
-    setupExpectation: 'Account setup may be needed after the code is ready.',
+    setupExpectation: 'You may need to sign in or connect your account.',
     setupGuide: ctaStates.includes(row.state)
       ? {
           title: 'Finish setup and verify',

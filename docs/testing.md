@@ -173,6 +173,13 @@ packages had finished and the runner idled on one tsc. So the typecheck job is a
 matrix over *lanes* — `freebuff-web` gets its own runner, `rest` takes the other
 17 — defined in `scripts/ci/typecheck-lanes.ts`.
 
+The `freebuff/web` typecheck allows an 8 GiB Node heap. A cold check measured
+6,239,321 KiB after the October 2026 Desktop/Web changes; the previous 6 GiB
+limit exhausted the heap on both `main` and PR runners. Its dedicated
+`ubicloud-standard-4` runner has 16 GiB RAM, leaving room for Node and the
+runner outside the heap. Keep the full check; incremental caches only reduce
+the work when the prior build info is usable.
+
 Membership lives in that script rather than in `ci.yml` because both obvious
 ways to write it in YAML fail silently:
 
