@@ -666,6 +666,16 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   ranker_fatigue_min_ppm: 'number',
   ranker_fatigue_mean_ppm: 'number',
   ranker_fatigue_disagreements: 'number',
+  /**
+   * The request's one Flash pCTR batch (`ad-model/decisions-pctr.ts`), present
+   * whenever the scorer is configured: the model label, the attempt outcome
+   * (`scored`, `control`, `timeout`, `http_error`, `no_candidates`, ...), its
+   * latency and how many creatives it asked about. Id-free.
+   */
+  decisions_pctr_model: 'string',
+  decisions_pctr_outcome: 'string',
+  decisions_pctr_latency_ms: 'number',
+  decisions_pctr_questions: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 /** Settlement telemetry deliberately excludes impression, campaign, and

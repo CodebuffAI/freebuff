@@ -633,6 +633,26 @@ describe('getAxiomOnlyLogEvent', () => {
     })
   })
 
+  test('keeps the Flash pCTR attempt fields', () => {
+    const flash = {
+      decisions_pctr_model: 'perpetual_flash:pclick_v1',
+      decisions_pctr_outcome: 'timeout',
+      decisions_pctr_latency_ms: 401.2,
+      decisions_pctr_questions: 12,
+    }
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: ADS_FIRST_PARTY_DECISION_EVENT,
+        outcome: 'fill',
+        ...flash,
+        decisions_pctr_scores: { 'creative-123': 0.4 },
+      }),
+    ).toEqual({
+      event: ADS_FIRST_PARTY_DECISION_EVENT,
+      data: { outcome: 'fill', ...flash },
+    })
+  })
+
   test('keeps the COD-760 stage verdicts on fetch completion', () => {
     const verdicts = {
       no_fill_reason: 'direct_all_filtered',
