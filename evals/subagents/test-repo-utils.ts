@@ -7,11 +7,11 @@ import { getErrorObject } from '@codebuff/common/util/error'
 
 const CLONE_RETRY_DELAYS_MS = [5_000, 20_000]
 
-/** A shallow clone checked out at one commit, retried: a clone or fetch that
- *  fails is nearly always the network (a GitHub hiccup, a laptop that slept),
- *  and a task that never got its repository would otherwise be scored as an
- *  agent that did nothing. */
-async function cloneAtCommit(params: {
+/** The task's commit and nothing after it, retried: a failed fetch is nearly
+ *  always the network, and a task without its repository would be scored as
+ *  an agent that did nothing. Fetched by URL rather than cloned, so there is
+ *  no `origin/main` holding the answer and no remote to fetch it from. */
+export async function cloneAtCommit(params: {
   repoUrl: string
   repoDir: string
   sha: string
@@ -20,12 +20,11 @@ async function cloneAtCommit(params: {
   for (let attempt = 0; ; attempt++) {
     try {
       fs.rmSync(repoDir, { recursive: true, force: true })
-      execSync(`git clone --depth 1 ${repoUrl} ${repoDir}`, { stdio: 'ignore' })
-      execSync(`git fetch --depth 1 origin ${sha}`, {
-        cwd: repoDir,
-        stdio: 'ignore',
-      })
-      execSync(`git checkout ${sha}`, { cwd: repoDir, stdio: 'ignore' })
+      fs.mkdirSync(repoDir, { recursive: true })
+      execSync(
+        `git init -q && git fetch -q --depth 1 ${repoUrl} ${sha} && git checkout -q --detach FETCH_HEAD`,
+        { cwd: repoDir, stdio: 'ignore' },
+      )
       return
     } catch (error) {
       const delay = CLONE_RETRY_DELAYS_MS[attempt]

@@ -21,6 +21,8 @@ import { runBuffBench } from './run-buffbench'
  *
  *   bun run buffbench/main-fast-harness.ts 5 all
  *
+ * Add --freestyle to run each arm-on-task in its own Freestyle VM (README).
+ *
  * A run dies with its process (an app restart kills a detached one). To finish
  * it, pass the logs directories it already wrote, comma-separated: every task
  * that has BOTH arms' result files in any of them is skipped, the rest run into
@@ -94,6 +96,7 @@ async function main() {
       : FAST_HARNESS_TASK_IDS
   if (resume) console.log(`Resuming: ${taskIds!.length} task(s) left`)
   await runBuffBench({
+    sandbox: process.argv.includes('--freestyle') ? 'freestyle' : 'local',
     evalDataPaths: [evalDataPath],
     agents: FAST_HARNESS_AGENTS,
     taskIds,

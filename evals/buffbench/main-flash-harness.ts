@@ -29,6 +29,7 @@ async function main() {
   ]) {
     console.log(`\n########## SWEEP: ${agent} ##########\n`)
     await runBuffBench({
+      sandbox: process.argv.includes('--freestyle') ? 'freestyle' : 'local',
       evalDataPaths: [path.join(__dirname, 'eval-codebuff.json')],
       agents: [agent],
       taskIds: TASK_IDS,

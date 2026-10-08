@@ -13,12 +13,18 @@ import { CodexRunner } from './runners/codex'
 import { OpenCodeRunner } from './runners/opencode'
 
 import type { Runner, AgentStep } from './runners/runner'
-import type { EvalCommitV2, FinalCheckOutput } from './types'
+import type { EvalCommitV2, FileDiff, FinalCheckOutput } from './types'
 import type { CodebuffClient } from '@codebuff/sdk'
 
 export type { AgentStep }
 
 export type ExternalAgentType = 'claude' | 'codex' | 'opencode'
+
+/** What an agent run reads from a task: no commit sha, spec or diffs. */
+export type AgentTask = Pick<
+  EvalCommitV2,
+  'id' | 'parentSha' | 'prompt' | 'supplementalFiles'
+> & { fileDiffs: Pick<FileDiff, 'path' | 'status'>[] }
 
 export async function runAgentOnCommit({
   client,
@@ -34,7 +40,7 @@ export async function runAgentOnCommit({
 }: {
   client: CodebuffClient
   agentId: string
-  commit: EvalCommitV2
+  commit: AgentTask
   repoUrl: string
   initCommand?: string
   env?: Record<string, string>
@@ -96,7 +102,7 @@ export async function runAgentOnCommit({
               commitId: commit.id,
               parentSha: commit.parentSha,
               // No arm may read the task's own upstream (tool-overrides.ts).
-              overrideTools: benchToolOverrides({ repoUrl }),
+              overrideTools: benchToolOverrides({ repoUrl, cwd: repoDir, env }),
             })
           }
 

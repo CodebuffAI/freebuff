@@ -31,6 +31,7 @@ async function main() {
 
   // Run all hard tasks across all 4 eval sets
   await runBuffBench({
+    sandbox: process.argv.includes('--freestyle') ? 'freestyle' : 'local',
     evalDataPaths: evalPaths,
     agents: ['base2', 'external:claude'],
     taskIds: allTaskIds,

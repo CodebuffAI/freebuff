@@ -1,4 +1,7 @@
+import path from 'path'
+
 import { readUrl } from '../../sdk/src/tools/read-url'
+import { runTerminalCommand } from '../../sdk/src/tools/run-terminal-command'
 
 import type { CodebuffClient } from '@codebuff/sdk'
 
@@ -27,15 +30,47 @@ type OverrideTools = NonNullable<
  * (<name>.com/docs, <owner>-<name>.mintlify.app), which document the API as
  * it exists AFTER the evaluated commit — the 2026-09-29 baseline saw base3
  * read the current SDK docs for a task whose ground truth was that API.
+ *
+ * `run_terminal_command` gets the same rule (isUpstreamCommand): on
+ * 2026-10-08 base3 `git clone`d the upstream from the terminal and copied the
+ * task's commit. The checkout itself holds no later commit and no remote
+ * (cloneAtCommit in evals/subagents/test-repo-utils.ts).
  */
-export function benchToolOverrides(params: { repoUrl: string }): OverrideTools {
+export function benchToolOverrides(params: {
+  repoUrl: string
+  cwd: string
+  env?: Record<string, string>
+}): OverrideTools {
   const { owner, name } = parseGitHubRepo(params.repoUrl)
   const tokens = [owner, name]
     .filter((t): t is string => !!t)
     .map((t) => t.toLowerCase())
   const isBlocked = (raw: string): boolean => isUpstreamUrl(raw, tokens)
+  const refusal =
+    `This benchmark does not allow reading the evaluated repository's upstream ` +
+    `(${owner}/${name} on GitHub or its published packages). Work from the checkout in front of you.`
 
   return {
+    run_terminal_command: async (input: {
+      command: string
+      process_type: 'SYNC' | 'BACKGROUND'
+      cwd?: string
+      timeout_seconds: number
+    }) => {
+      if (isUpstreamCommand(input.command, tokens)) {
+        return [
+          {
+            type: 'json' as const,
+            value: { command: input.command, errorMessage: refusal },
+          },
+        ]
+      }
+      return runTerminalCommand({
+        ...input,
+        cwd: path.resolve(params.cwd, input.cwd ?? '.'),
+        env: params.env,
+      } as Parameters<typeof runTerminalCommand>[0])
+    },
     read_url: async (input: { url: string; max_chars?: number }) => {
       if (isBlocked(input.url)) {
         return [
@@ -43,9 +78,7 @@ export function benchToolOverrides(params: { repoUrl: string }): OverrideTools {
             type: 'json' as const,
             value: {
               url: input.url,
-              errorMessage:
-                `This benchmark does not allow reading the evaluated repository's upstream ` +
-                `(${owner}/${name} on GitHub or its published packages). Work from the checkout in front of you.`,
+              errorMessage: refusal,
             },
           },
         ]
@@ -90,5 +123,24 @@ export function isUpstreamUrl(raw: string, tokens: string[]): boolean {
       host.endsWith('.' + t + '.com') ||
       host.split(/[.-]/).includes(t) ||
       segments.some((seg) => seg.split(/[.\-_]/).includes(t)),
+  )
+}
+
+/**
+ * Does a shell command reach the evaluated repository or its published
+ * packages? Either a URL in it that isUpstreamUrl refuses (git clone,
+ * ls-remote, curl), or a package manager fetching `@<name>/…` from the
+ * registry (npm view, npm pack, bunx), which serves the code as published
+ * after the commit. Local work passes, `bun --filter @codebuff/sdk test`
+ * included.
+ */
+export function isUpstreamCommand(command: string, tokens: string[]): boolean {
+  const urls = command.match(/\b[a-z][a-z0-9+.-]*:\/\/[^\s'"`<>()]+/gi) ?? []
+  if (urls.some((url) => isUpstreamUrl(url, tokens))) return true
+  const packageFetches = command.matchAll(
+    /\b(?:npx|bunx|(?:npm|pnpm|yarn|bun)\s+(?:pm\s+)?(?:view|info|show|pack|add|install|i|dlx|x|exec))\s([^;&|]*)/gi,
+  )
+  return [...packageFetches].some(([, args]) =>
+    tokens.some((t) => args.toLowerCase().includes(`@${t}/`)),
   )
 }

@@ -182,6 +182,8 @@ evals/buffbench/
 ├── main-single-eval.ts       # Single evaluation runner
 │
 ├── agent-runner.ts           # Executes agents in test repos
+├── freestyle-sandbox.ts      # --freestyle: one Freestyle VM per agent run
+├── freestyle-task.ts         # The in-VM entry point of a Freestyle run
 ├── judge.ts                  # AI judging system
 ├── trace-analyzer.ts         # Per-task trace analysis
 ├── meta-analyzer.ts          # Cross-task meta analysis
@@ -230,6 +232,18 @@ bun run evals/buffbench/main-single-eval.ts
 # Run nightly evaluation with email reporting
 bun run evals/buffbench/main-nightly.ts
 ```
+
+#### Running in Freestyle VMs (recommended)
+
+Pass `--freestyle` to any `main-*.ts` entry point (or `sandbox: 'freestyle'` to `runBuffBench`) and every agent run gets its own [Freestyle](https://freestyle.sh) VM, so a laptop that sleeps delays the run without tainting it:
+
+```bash
+cd evals
+export NEXT_PUBLIC_CB_ENVIRONMENT=prod NEXT_PUBLIC_CODEBUFF_APP_URL=https://www.codebuff.com
+PORT=4242 bun --env-file=../.env.local run buffbench/main-fast-harness.ts 5 all --freestyle
+```
+
+The VM receives this checkout's bench code (uncommitted edits included, never the `eval-*.json` files), runs the clone, agent and final checks as a local run does (`freestyle-task.ts`), and powers off; this machine polls and judges (`freestyle-sandbox.ts`). It needs `FREESTYLE_API_KEY` and a backend the VM can reach (not `localhost`). Running VMs = `taskConcurrency` × agents, which must fit the Freestyle plan. A run that ends without a result is an error carrying the VM's log.
 
 ### Creating New Evaluations
 

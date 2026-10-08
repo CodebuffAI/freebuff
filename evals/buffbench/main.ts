@@ -10,6 +10,7 @@ async function main() {
   // Use 'external:codex' for OpenAI Codex CLI
   // Use 'external:opencode' for OpenCode CLI
   await runBuffBench({
+    sandbox: process.argv.includes('--freestyle') ? 'freestyle' : 'local',
     evalDataPaths: [path.join(__dirname, 'eval-codebuff.json')],
     agents: ['base2-free-evals'],
     taskConcurrency: 6,
