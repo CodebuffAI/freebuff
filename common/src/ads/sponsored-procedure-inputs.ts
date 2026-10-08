@@ -6,16 +6,14 @@ import { isSignedConversionToken } from './sponsored-proposal-cta'
  * ## The consent contract this must not break
  *
  * The advertiser's reviewed procedure is hashed (SHA-256) and the user consents
- * to that exact hash: Desktop previews it over
+ * to that exact template hash: Desktop previews it over
  * `GET /api/v1/ads/proposal/{id}/accept`, the native dialog shows it, and the
  * `POST` carries the hash back — a changed procedure is 409 and cannot inherit
- * the earlier consent. Substituting anything INTO the procedure text after
- * that point would therefore either change the hash (refusing every run) or
- * run text the user did not consent to. So the procedure text is never
- * altered here. Values the procedure needs at run time travel as a SEPARATE,
- * non-hashed section of the prompt, appended after the procedure by the
- * surface that runs it (Desktop's `buildSponsoredPrompt`; Cloud's
- * `queueSponsoredRun`).
+ * the earlier consent. Keep the stored procedure, accept response and hash
+ * unchanged. Only the execution copy resolves the explicit `{bfcid}` slot
+ * using the signed token minted by Accept. No URLs or instructions are
+ * otherwise rewritten. Legacy runtime values still travel as a separate
+ * section after the procedure.
  *
  * ## `advertiserLink`
  *
@@ -43,6 +41,30 @@ import { isSignedConversionToken } from './sponsored-proposal-cta'
 /** The exact text a procedure contains to declare it wants the link. */
 export const ADVERTISER_LINK_PLACEHOLDER = '{{advertiserLink}}'
 export const ADVERTISER_CLICK_ID_PLACEHOLDER = '{{advertiserClickId}}'
+export const BFCID_PLACEHOLDER = '{bfcid}'
+
+// Saving a procedure may URL-encode braces while adding its UTM parameters.
+const BFCID_SLOT = /\{bfcid\}|%7Bbfcid%7D/gi
+
+/** Null means a declared tracking link cannot be used for this run. */
+export function resolveSponsoredBfcidTemplate(
+  text: string,
+  inputs: SponsoredProcedureRuntimeInputs,
+): string | null {
+  if (!text.match(BFCID_SLOT)) return text
+  const clickId = advertiserClickIdFromLink(inputs.advertiserLink)
+  return clickId ? text.replace(BFCID_SLOT, clickId) : null
+}
+
+/** Build execution text only; never use it for persistence, consent or hashing. */
+export function sponsoredProcedurePrompt(
+  procedure: string,
+  inputs: SponsoredProcedureRuntimeInputs,
+): string {
+  const resolved = resolveSponsoredBfcidTemplate(procedure, inputs)
+  const runtime = sponsoredProcedureRuntimeInputsSection(procedure, inputs)
+  return [resolved ?? procedure, ...(runtime ? [runtime] : [])].join('\n\n')
+}
 
 /** Shape validation only: the server supplies the link; the postback verifies its HMAC. */
 export function advertiserClickIdFromLink(
@@ -84,9 +106,16 @@ export function sponsoredProcedureRuntimeInputsSection(
 ): string | null {
   const wantsLink = procedureDeclaresAdvertiserLink(procedure)
   const wantsClickId = procedure.includes(ADVERTISER_CLICK_ID_PLACEHOLDER)
-  if (!wantsLink && !wantsClickId) return null
+  const missingBfcid = resolveSponsoredBfcidTemplate(procedure, inputs) === null
+  if (!wantsLink && !wantsClickId && !missingBfcid) return null
   const link = inputs.advertiserLink?.trim() || null
   const lines = [SPONSORED_RUNTIME_INPUTS_HEADING]
+  if (missingBfcid) {
+    lines.push(
+      '- bfcid: unavailable for this run',
+      `Skip authentication or conversion steps whose URLs require \`${BFCID_PLACEHOLDER}\` (including its URL-encoded form). Explain that tracked conversion is unavailable. Never open or share an unresolved tracking URL, invent a token, or remove the tracking parameter to continue without attribution.`,
+    )
+  }
   if (wantsLink && link) {
     lines.push(
       `- advertiserLink: ${link}`,

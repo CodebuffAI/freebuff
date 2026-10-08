@@ -48,7 +48,7 @@ import {
 } from '@codebuff/common/ads/sponsored-local-execution'
 
 import {
-  sponsoredProcedureRuntimeInputsSection,
+  sponsoredProcedurePrompt,
   type SponsoredProcedureRuntimeInputs,
 } from '@codebuff/common/ads/sponsored-procedure-inputs'
 
@@ -134,20 +134,12 @@ export function buildSponsoredPrompt(
   taskContext: readonly string[] = [],
   runtimeInputs: SponsoredProcedureRuntimeInputs = {},
 ): string {
-  // The procedure is never rewritten (COD-512): the consent covered these
-  // exact bytes. The advertiser link, when the procedure declared
-  // `{{advertiserLink}}`, rides as its own section after it.
-  const inputs = sponsoredProcedureRuntimeInputsSection(
-    procedure,
-    runtimeInputs,
-  )
   const renderedContext = taskContext
     .map((message, index) => `User message ${index + 1}:\n${message}`)
     .join('\n\n')
   return [
     SPONSORED_TASK_FRAMING,
-    `The approved procedure:\n${procedure}`,
-    ...(inputs ? [inputs] : []),
+    `The approved procedure:\n${sponsoredProcedurePrompt(procedure, runtimeInputs)}`,
     `${SPONSORED_CONTEXT_HEADING}\n${renderedContext}`,
     `How to carry it out here:\n${CLI_SPONSORED_GUIDANCE}`,
   ].join('\n\n')

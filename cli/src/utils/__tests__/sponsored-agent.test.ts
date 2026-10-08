@@ -38,6 +38,15 @@ const DESKTOP_RUN = join(
 )
 
 describe('the mirrored in-place guidance', () => {
+  test('resolves tracking in the execution prompt without changing user context', () => {
+    const procedure = 'Sign in at https://acme.example/login?bfcid={bfcid}'
+    const prompt = buildSponsoredPrompt(procedure, ['Keep {bfcid} here'], {
+      advertiserLink: 'https://acme.example/?bfcid=bfc_test_1.p.s',
+    })
+    expect(prompt).toContain('https://acme.example/login?bfcid=bfc_test_1.p.s')
+    expect(prompt).toContain('User message 1:\nKeep {bfcid} here')
+  })
+
   test('every bullet is still byte-identical to Desktop’s', () => {
     const source = readFileSync(DESKTOP_RUN, 'utf8')
     for (const bullet of SPONSORED_IN_PLACE_BULLETS) {

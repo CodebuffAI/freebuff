@@ -4,15 +4,18 @@ import {
   advertiserClickIdFromLink,
   ADVERTISER_LINK_PLACEHOLDER,
   procedureDeclaresAdvertiserLink,
+  resolveSponsoredBfcidTemplate,
+  sponsoredProcedurePrompt,
   sponsoredProcedureRuntimeInputsSection,
   SPONSORED_RUNTIME_INPUTS_HEADING,
 } from './sponsored-procedure-inputs'
+import { tagSponsoredProcedureLinks } from './ad-link-utm'
 
 /**
  * Runtime inputs to a sponsored procedure (COD-512). The property under test
- * is the consent contract: the reviewed procedure text is never rewritten,
- * and the link reaches the run as a separate section only when the procedure
- * asked for it.
+ * is the consent contract: the reviewed template stays unchanged. Only the
+ * execution copy resolves explicit bfcid slots; legacy inputs arrive in a
+ * separate section only when the procedure asked for them.
  */
 
 const LINK = 'https://acme.example/signup?bfcid=bfc_1.p.s'
@@ -22,6 +25,64 @@ const DECLARING = [
   'In the PR body include: Get started: {{advertiserLink}}',
 ].join('\n')
 const SILENT = 'Wire Acme into this repo and open no links.'
+
+describe('onboarding bfcid templates', () => {
+  const procedure = [
+    'Read https://acme.example/docs.',
+    'Sign in at https://accounts.acme.example/login?source=freebuff&bfcid={bfcid}#start.',
+    'Then open https://acme.example/keys?bfcid={bfcid}.',
+  ].join('\n')
+
+  test('fills every explicit slot with the Accept token, preserving the reviewed template', () => {
+    for (const token of ['bfc_1.p.s', 'bfc_test_1.p.s']) {
+      const inputs = { advertiserLink: `https://acme.example/?bfcid=${token}` }
+      const rendered = sponsoredProcedurePrompt(procedure, inputs)
+      expect(rendered).toBe(procedure.replaceAll('{bfcid}', token))
+      expect(procedure).toContain('bfcid={bfcid}')
+      expect(sponsoredProcedurePrompt(SILENT, inputs)).toBe(SILENT)
+    }
+  })
+
+  test('resolves placeholders after the actual save-time UTM tagging', () => {
+    const tagged = tagSponsoredProcedureLinks(
+      'Sign up at https://acme.example/signup?bfcid={bfcid}#start',
+      { domains: ['acme.example'], tags: [['utm_source', 'freebuff']] },
+    )
+    const rendered = sponsoredProcedurePrompt(tagged, { advertiserLink: LINK })
+    const url = new URL(rendered.slice('Sign up at '.length))
+    expect(url.searchParams.get('bfcid')).toBe('bfc_1.p.s')
+    expect(url.searchParams.get('utm_source')).toBe('freebuff')
+    expect(url.hash).toBe('#start')
+  })
+
+  test('missing or invalid attribution refuses a usable link and explains the skipped step', () => {
+    for (const advertiserLink of [
+      null,
+      '',
+      'https://acme.example/?bfcid=spct_pending',
+    ]) {
+      const inputs = { advertiserLink }
+      expect(resolveSponsoredBfcidTemplate(procedure, inputs)).toBeNull()
+      const rendered = sponsoredProcedurePrompt(procedure, inputs)
+      expect(rendered).toContain('bfcid: unavailable')
+      expect(rendered).toContain('Skip authentication or conversion steps')
+      expect(rendered).toContain(
+        'Never open or share an unresolved tracking URL',
+      )
+      expect(rendered).not.toContain('spct_pending')
+    }
+  })
+
+  test('keeps legacy link and CLI declarations working alongside the new template', () => {
+    const rendered = sponsoredProcedurePrompt(
+      `${procedure}\n${DECLARING}\nID={{advertiserClickId}}`,
+      { advertiserLink: LINK },
+    )
+    expect(rendered).toContain('keys?bfcid=bfc_1.p.s')
+    expect(rendered).toContain(`- advertiserLink: ${LINK}`)
+    expect(rendered).toContain('- advertiserClickId: bfc_1.p.s')
+  })
+})
 
 describe('procedureDeclaresAdvertiserLink', () => {
   test('is exactly the placeholder being present', () => {
