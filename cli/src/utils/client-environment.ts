@@ -18,6 +18,7 @@ import { readFile, readlink } from 'fs/promises'
 import {
   FREEBUFF_CLIENT_DESCRIPTOR_VERSION,
   FREEBUFF_CLIENT_ENV_HEADER,
+  type CloudIdeBucket,
   type ProcessKindBucket,
   type TerminalProgramBucket,
 } from '@codebuff/common/constants/freebuff-client-descriptor'
@@ -282,6 +283,15 @@ export function bucketProxy(value: string | undefined): ProxyBucket {
   }
 }
 
+/** The cloud IDE this process runs in, from the variables each one sets. */
+export function cloudIdeOf(env: CliEnv): CloudIdeBucket {
+  if (env.CODESPACES?.trim().toLowerCase() === 'true') return 'codespaces'
+  if (env.GITPOD_WORKSPACE_ID?.trim()) return 'gitpod'
+  if (env.CLOUD_SHELL?.trim().toLowerCase() === 'true') return 'cloudshell'
+  if (env.CODER?.trim().toLowerCase() === 'true') return 'coder'
+  return 'none'
+}
+
 function proxyBucketOf(env: CliEnv): ProxyBucket {
   const buckets = [
     env.HTTPS_PROXY,
@@ -376,6 +386,7 @@ export function formatClientEnvironment(
     ['px', proxyBucketOf(env)],
     ['tls', env.NODE_TLS_REJECT_UNAUTHORIZED?.trim() === '0' ? '0' : '1'],
     ['ca', flag(env.NODE_EXTRA_CA_CERTS?.trim())],
+    ['cde', cloudIdeOf(env)],
   ]
   const zone = tzOverride ? zoneFromZoneinfo(systemZone ?? undefined) : null
   if (zone) fields.push(['stz', zone])

@@ -188,7 +188,7 @@ describe('formatClientEnvironment', () => {
       'yes',
     )
     expect(out).toBe(
-      'v1;in=1;out=1;tp=iterm;term=1;ct=1;sz=120x40;ci=0;ssh=0;l=1;p=shell;g=terminal;osc=1;tzo=0;px=none;tls=1;ca=0',
+      'v1;in=1;out=1;tp=iterm;term=1;ct=1;sz=120x40;ci=0;ssh=0;l=1;p=shell;g=terminal;osc=1;tzo=0;px=none;tls=1;ca=0;cde=none',
     )
     // No raw environment value survives.
     expect(out).not.toContain('xterm')
@@ -214,9 +214,30 @@ describe('formatClientEnvironment', () => {
       'na',
     )
     expect(out).toBe(
-      'v1;in=0;out=0;tp=none;term=0;ct=0;sz=0x0;ci=1;ssh=1;l=0;p=unknown;g=unknown;osc=na;tzo=0;px=none;tls=1;ca=0',
+      'v1;in=0;out=0;tp=none;term=0;ct=0;sz=0x0;ci=1;ssh=1;l=0;p=unknown;g=unknown;osc=na;tzo=0;px=none;tls=1;ca=0;cde=none',
     )
     expect(out).not.toContain('1.2.3.4')
+  })
+
+  test('names the cloud IDE it runs in, from the variables each one sets', () => {
+    const cde = (env: Parameters<typeof createTestCliEnv>[0]) =>
+      formatClientEnvironment(
+        {
+          env: createTestCliEnv(env),
+          ciEnv: noCi,
+          stdinIsTTY: true,
+          stdoutIsTTY: true,
+          columns: 80,
+          rows: 24,
+        },
+        { launcher: true, parent: 'shell', grandparent: 'terminal' },
+        'yes',
+      ).match(/;cde=([a-z]+)/)?.[1]
+    expect(cde({ CODESPACES: 'true' })).toBe('codespaces')
+    expect(cde({ GITPOD_WORKSPACE_ID: 'ws-1' })).toBe('gitpod')
+    expect(cde({ CLOUD_SHELL: 'true' })).toBe('cloudshell')
+    expect(cde({ CODER: 'true' })).toBe('coder')
+    expect(cde({})).toBe('none')
   })
 
   test('records TZ, loopback proxy and TLS overrides', () => {
@@ -239,7 +260,7 @@ describe('formatClientEnvironment', () => {
       grandparent: 'terminal',
     } as const
     const out = formatClientEnvironment(inputs, ancestry, 'yes', 'Asia/Kolkata')
-    expect(out.endsWith(';tzo=1;px=loopback;tls=0;ca=1;stz=Asia/Kolkata')).toBe(
+    expect(out.endsWith(';tzo=1;px=loopback;tls=0;ca=1;cde=none;stz=Asia/Kolkata')).toBe(
       true,
     )
     expect(out).not.toContain('18080')

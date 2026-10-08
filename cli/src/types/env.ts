@@ -26,6 +26,10 @@ export type CliEnv = BaseEnv & {
   SSH_TTY?: string
   SSH_CONNECTION?: string
   CODESPACES?: string
+  // Cloud IDEs (reported as `cde` in the client descriptor)
+  GITPOD_WORKSPACE_ID?: string
+  CLOUD_SHELL?: string
+  CODER?: string
 
   // Where Bun extracts embedded native libraries (the terminal renderer)
   BUN_TMPDIR?: string

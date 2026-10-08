@@ -41,6 +41,18 @@ export const TERMINAL_PROGRAM_BUCKETS = [
 ] as const
 export type TerminalProgramBucket = (typeof TERMINAL_PROGRAM_BUCKETS)[number]
 
+/** The cloud IDE the CLI runs in, from its own environment (`cde`). The
+ *  server reads anything but `none` as a datacenter exit for the account's
+ *  home tier (hosting-home.ts); a claim that can only tighten. */
+export const CLOUD_IDE_BUCKETS = [
+  'none',
+  'codespaces',
+  'gitpod',
+  'cloudshell',
+  'coder',
+] as const
+export type CloudIdeBucket = (typeof CLOUD_IDE_BUCKETS)[number]
+
 /** An ancestor process, reduced to its kind. `unknown` = the lookup failed or
  *  had not finished; `na` = not looked up on this platform. */
 export const PROCESS_KIND_BUCKETS = [
