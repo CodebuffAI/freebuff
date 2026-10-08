@@ -29,6 +29,11 @@ type WriteFileError = {
 
 export type WriteFileResult = WriteFileSuccess | WriteFileError
 
+/** Answering a no-op write plainly matters: a model re-sending the file's
+ * current content read the bare "skipping" as an invitation to retry. */
+export const FILE_CONTENT_UNCHANGED_MESSAGE =
+  'The new content was the same as the old content, skipping. The file already has exactly this content, so do not send this write again: continue with the next task, or end your turn.'
+
 /**
  * Processes a file block, replacing the file content entirely or creating a new file.
  * This is fully deterministic — the content parameter is always written as-is.
@@ -76,7 +81,7 @@ export async function processFileBlock(
     return promptSuccess({
       tool: 'write_file' as const,
       path,
-      error: 'The new content was the same as the old content, skipping.',
+      error: FILE_CONTENT_UNCHANGED_MESSAGE,
     })
   }
 
@@ -128,7 +133,7 @@ export async function processFileBlock(
     return promptSuccess({
       tool: 'write_file' as const,
       path,
-      error: 'The new content was the same as the old content, skipping.',
+      error: FILE_CONTENT_UNCHANGED_MESSAGE,
     })
   }
   logger.debug(

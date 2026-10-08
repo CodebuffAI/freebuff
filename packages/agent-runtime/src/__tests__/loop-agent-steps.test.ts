@@ -40,6 +40,10 @@ import {
   STREAM_INTERRUPTED_TAG,
 } from '../tools/stream-parser'
 import {
+  FILE_EDIT_LOOP_RECOVERY_MESSAGE,
+  FILE_EDIT_LOOP_STOP_MESSAGE,
+} from '../util/file-edit-loop'
+import {
   FILE_EDIT_TOOLS_UNAVAILABLE_NOTE,
   TODO_LOOP_RECOVERY_MESSAGE,
   TODO_LOOP_STOP_MESSAGE,
@@ -667,6 +671,69 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
     expect(prompts[1].split('Time budget:')).toHaveLength(2)
     expect(prompts[2]).toContain('200 seconds remain')
     expect(prompts[3]).toContain('50 seconds remain')
+  })
+
+  it('stops a loop of identical rejected file edits after recovery attempts and can resume on a new prompt', async () => {
+    mockAgentState.stepsRemaining = 200
+    let calls = 0
+    let clientWrites = 0
+    const seenPrompts: string[] = []
+    const result = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      // the file already holds exactly what the model keeps sending
+      requestOptionalFile: async () => 'unchanged',
+      requestToolCall: async () => {
+        clientWrites++
+        throw new Error('a rejected write never reaches the client')
+      },
+      promptAiSdkStream: async function* ({ messages }) {
+        calls++
+        seenPrompts.push(JSON.stringify(messages))
+        yield { type: 'text', text: 'Writing the file now.' }
+        yield createToolCallChunk('write_file', {
+          path: 'output.txt',
+          instructions: `Attempt ${calls}`,
+          content: 'unchanged',
+        })
+        return promptSuccess(`edit-${calls}`)
+      },
+    })
+
+    expect(calls).toBe(6)
+    expect(clientWrites).toBe(0)
+    expect(seenPrompts[2]).not.toContain(FILE_EDIT_LOOP_RECOVERY_MESSAGE)
+    expect(seenPrompts[3]).toContain(FILE_EDIT_LOOP_RECOVERY_MESSAGE)
+    expect(result.output).toMatchObject({
+      type: 'error',
+      message: FILE_EDIT_LOOP_STOP_MESSAGE,
+    })
+    expect(
+      result.agentState.messageHistory.filter(
+        (m) => m.role === 'tool' && m.toolName === 'write_file',
+      ),
+    ).toHaveLength(6)
+
+    let resumeCalls = 0
+    const resumed = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      agentState: result.agentState,
+      prompt: 'Try a different approach',
+      requestOptionalFile: async () => 'unchanged',
+      promptAiSdkStream: async function* () {
+        if (++resumeCalls === 1) {
+          yield createToolCallChunk('write_file', {
+            path: 'output.txt',
+            instructions: 'once more',
+            content: 'unchanged',
+          })
+        } else {
+          yield createToolCallChunk('end_turn', {})
+        }
+        return promptSuccess(`resumed-${resumeCalls}`)
+      },
+    })
+    expect(resumeCalls).toBe(2)
+    expect(resumed.output.type).not.toBe('error')
   })
 
   it('stops an unchanged to-do loop after recovery attempts and can resume on a new prompt', async () => {

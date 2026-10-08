@@ -61,6 +61,15 @@ import {
   TODO_PROGRESS_REMINDER_TAG,
 } from './util/todo-progress-reminder'
 import {
+  FILE_EDIT_LOOP_RECOVERY_MESSAGE,
+  FILE_EDIT_LOOP_RECOVERY_TAG,
+  FILE_EDIT_LOOP_RECOVERY_THRESHOLD,
+  FILE_EDIT_LOOP_STOP_THRESHOLD,
+  FileEditLoopError,
+  isFileEditLoopTool,
+  trailingIdenticalRejectedEdits,
+} from './util/file-edit-loop'
+import {
   hasFileEditTool,
   TODO_LOOP_RECOVERY_TAG,
   TODO_LOOP_RECOVERY_THRESHOLD,
@@ -660,6 +669,46 @@ export const runAgentStep = async (
             todoLoopRecoveryMessage(agentTemplate.toolNames),
           ),
           tags: [TODO_LOOP_RECOVERY_TAG],
+        }),
+      )
+    }
+  }
+
+  // The same shape with file edits: an identical write_file/str_replace is
+  // answered with the same rejection every step, each result forces another
+  // step, and the model re-sends the edit until the step budget is gone.
+  if (
+    !hadToolCallError &&
+    toolCalls.length > 0 &&
+    toolCalls.every((call) => isFileEditLoopTool(call.toolName))
+  ) {
+    const consecutive = trailingIdenticalRejectedEdits(
+      agentState.messageHistory,
+    )
+    if (consecutive >= FILE_EDIT_LOOP_RECOVERY_THRESHOLD) {
+      const stopped = consecutive >= FILE_EDIT_LOOP_STOP_THRESHOLD
+      logger.warn(
+        {
+          metric: stopped
+            ? 'file_edit_loop_stopped'
+            : 'file_edit_loop_recovery',
+          consecutive,
+          model: agentTemplate.model,
+          agentId: agentTemplate.id,
+          userId,
+          runId: agentState.runId,
+        },
+        stopped
+          ? 'Stopping a turn stuck re-sending the same rejected file edit'
+          : 'Model is re-sending the same rejected file edit; adding recovery guidance',
+      )
+      if (stopped) {
+        throw new FileEditLoopError()
+      }
+      agentState.messageHistory.push(
+        userMessage({
+          content: withSystemTags(FILE_EDIT_LOOP_RECOVERY_MESSAGE),
+          tags: [FILE_EDIT_LOOP_RECOVERY_TAG],
         }),
       )
     }
@@ -1790,10 +1839,11 @@ export async function loopAgentSteps(
     const apiErrorDetails = extractApiErrorDetails(error)
     const isIdleTimeout = isFetchIdleTimeoutError(error)
     const isNetworkError = !isIdleTimeout && isTransientNetworkError(error)
-    const isTodoLoop = error instanceof TodoLoopError
+    const isModelLoop =
+      error instanceof TodoLoopError || error instanceof FileEditLoopError
     const hasServerMessage = apiErrorDetails.message !== undefined
     let fallbackMessage: string
-    if (isTodoLoop) {
+    if (isModelLoop) {
       fallbackMessage = error.message
     } else if (isIdleTimeout) {
       fallbackMessage = FETCH_IDLE_TIMEOUT_USER_MESSAGE
@@ -1834,7 +1884,7 @@ export async function loopAgentSteps(
       output: {
         type: 'error',
         message:
-          hasServerMessage || isIdleTimeout || isNetworkError || isTodoLoop
+          hasServerMessage || isIdleTimeout || isNetworkError || isModelLoop
             ? errorMessage
             : 'Agent run error: ' + errorMessage,
         ...(statusCode !== undefined && { statusCode }),
