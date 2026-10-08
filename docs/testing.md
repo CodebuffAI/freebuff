@@ -412,8 +412,8 @@ change) is the 647s row.
 Keep the caches whose transfer cost is materially smaller than the work they
 avoid. `sdk/dist` is a roughly 17 MB restore instead of an ~18s build.
 `build-freebuff-web` keeps Turbopack's persistent build cache
-(`turbopackFileSystemCacheForBuild`, which Render's production builds already
-use): `scripts/render-next-cache.mjs` stashes `.next/cache` in `$RUNNER_TEMP`
+(`turbopackFileSystemCacheForBuild`, on in CI and off on Render, where the
+download cost more than the compile it saved): `scripts/render-next-cache.mjs` stashes `.next/cache` in `$RUNNER_TEMP`
 on GitHub Actions instead of letting the postbuild prune delete it, and main's
 runs save it under a key scoped to `bun.lock` and `next.config.mjs`; pull
 requests restore main's newest. The archive is ~1 GB (1.4 GB unpacked).
