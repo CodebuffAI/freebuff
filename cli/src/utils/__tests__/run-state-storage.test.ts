@@ -1,4 +1,13 @@
-import { describe, test, expect, afterAll, beforeEach, afterEach, mock } from 'bun:test'
+import {
+  describe,
+  test,
+  expect,
+  afterAll,
+  beforeEach,
+  afterEach,
+  mock,
+  spyOn,
+} from 'bun:test'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -17,6 +26,7 @@ import {
   scheduleCheckpointSave,
   settleCheckpointSave,
 } from '../run-state-storage'
+import { createExitCliCleanly } from '../exit-cleanly'
 import type { ChatMessage, ContentBlock } from '../../types/chat'
 import type { RunState } from '@codebuff/sdk'
 
@@ -707,6 +717,119 @@ describe('scheduleCheckpointSave (async, coalescing)', () => {
     await settleCheckpointSave()
 
     expect(readSavedMessages()[0].content).toBe('authoritative')
+  })
+
+  test.each(['run-state.json', 'chat-messages.json'])(
+    'an in-flight %s checkpoint cannot overwrite the synchronous exit flush',
+    async (pausedFile) => {
+      let releaseWrite!: () => void
+      const writeReleased = new Promise<void>((resolve) => {
+        releaseWrite = resolve
+      })
+      let markWriteStarted!: () => void
+      const writeStarted = new Promise<void>((resolve) => {
+        markWriteStarted = resolve
+      })
+      const originalWriteFile = fs.promises.writeFile
+      const writeSpy = spyOn(fs.promises, 'writeFile').mockImplementation(
+        async (...args: Parameters<typeof fs.promises.writeFile>) => {
+          await originalWriteFile(...args)
+          if (
+            String(args[0]).startsWith(path.join(chatDir, pausedFile + '.'))
+          ) {
+            markWriteStarted()
+            await writeReleased
+          }
+        },
+      )
+
+      try {
+        scheduleCheckpointSave(runState('old checkpoint'), messages('old text'))
+        await writeStarted
+        setLiveChatStateProvider('exit-race', () => ({
+          runState: runState('latest state'),
+          messages: messages('latest text before exit'),
+        }))
+        let localFlushContent: string | undefined
+        let contentAtExit: string | undefined
+        let stateAtExit: string | undefined
+        const exitCleanly = createExitCliCleanly({
+          isFreebuff: true,
+          cleanupLocal: () => {
+            // stopActiveRun queues the interrupted turn before the exit flush.
+            scheduleCheckpointSave(
+              runState('latest state'),
+              messages('latest text before exit'),
+            )
+            flushLiveChatState()
+            localFlushContent = readSavedMessages()[0].content
+          },
+          stopEngagementTracking: () => {},
+          flushAnalytics: async () => {},
+          drainClientLogs: async () => {},
+          endFreebuffSession: async () => {},
+          settleSponsoredRun: async () => null,
+          writeNotice: () => {},
+          waitForRemoteCleanup: async (tasks) => {
+            // Allow the older disk write to finish during the real exit flow's
+            // remote-cleanup window, after the synchronous local flush.
+            releaseWrite()
+            await settleCheckpointSave()
+            await Promise.allSettled(tasks)
+          },
+          exit: () => {
+            contentAtExit = readSavedMessages()[0].content
+            stateAtExit = JSON.parse(
+              fs.readFileSync(path.join(chatDir, 'run-state.json'), 'utf8'),
+            ).output.message
+          },
+        })
+
+        await exitCleanly()
+
+        expect(localFlushContent).toBe('latest text before exit')
+        expect(contentAtExit).toBe('latest text before exit')
+        expect(stateAtExit).toBe('latest state')
+        expect(fs.readdirSync(chatDir).sort()).toEqual([
+          'chat-messages.json',
+          'chat-meta.json',
+          'run-state.json',
+        ])
+      } finally {
+        releaseWrite()
+        await settleCheckpointSave()
+        writeSpy.mockRestore()
+        clearLiveChatStateProvider('exit-race')
+      }
+    },
+  )
+
+  test('an authoritative save cancels a queued checkpoint for the same chat', async () => {
+    scheduleCheckpointSave(runState('old checkpoint'), messages('old text'))
+    saveChatState(runState('final'), messages('authoritative'))
+
+    await settleCheckpointSave()
+
+    expect(readSavedMessages()[0].content).toBe('authoritative')
+  })
+
+  test('an authoritative save does not cancel another chat checkpoint', async () => {
+    const otherChatDir = path.join(chatDir, 'other-chat')
+    scheduleCheckpointSave(
+      runState('other state'),
+      messages('other chat'),
+      otherChatDir,
+    )
+    saveChatState(runState('final'), messages('authoritative'))
+
+    await settleCheckpointSave()
+
+    expect(readSavedMessages()[0].content).toBe('authoritative')
+    expect(
+      JSON.parse(
+        fs.readFileSync(path.join(otherChatDir, 'chat-messages.json'), 'utf8'),
+      )[0].content,
+    ).toBe('other chat')
   })
 
   test('settleCheckpointSave is safe with nothing scheduled', async () => {
