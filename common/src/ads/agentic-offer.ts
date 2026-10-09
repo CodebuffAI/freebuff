@@ -50,6 +50,16 @@ export const AGENTIC_OFFER_ROUTE_VERSION = 1
 export const AGENTIC_OFFER_PATH = '/api/v1/ads/agentic/offer'
 
 /**
+ * The ad training log's record of one decision on this route (COD-738): the
+ * `ad_provider_attempt.provider` of its decision row. The row's
+ * `response_body` carries `proposal_id` and `campaign_id`, which is how a
+ * sponsored run is joined back to the conversation the offer was decided on
+ * (`@codebuff/bigquery/agentic-offer-context`). Shared by the producer and the
+ * reader so the two cannot drift.
+ */
+export const AGENTIC_OFFER_TRAINING_LOG_PROVIDER = 'agentic_offer'
+
+/**
  * Was a mirror of `localCapabilitySchema` in
  * `freebuff/web/src/app/api/ads/route.ts`, and DELIBERATELY IS NOT ANY MORE
  * in two fields: `repoFullName` accepts `''` here, and `workspaceId` exists
