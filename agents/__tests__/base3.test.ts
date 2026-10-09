@@ -217,6 +217,23 @@ describe('base3 CLI roots', () => {
     )
   })
 
+  // Freebuff users reported models refusing work because they were "running
+  // out of time" after deadline wording reached every root's system prompt.
+  // Only a host that supplies `deadlineAt` may talk about time.
+  test('never tells the model it is short on time', () => {
+    const prompts = [
+      ...ALL_CLI_ROOTS.map((root) => root.systemPrompt!),
+      createBase3().systemPrompt!,
+      createBase3(undefined, { supportsBackgroundCommands: false })
+        .systemPrompt!,
+    ]
+    for (const prompt of prompts) {
+      expect(prompt).not.toMatch(
+        /deadline|time runs low|reserve time|minimal working result|remaining budget/i,
+      )
+    }
+  })
+
   test('brands Freebuff roots as Freebuff, and Codebuff roots as Codebuff', () => {
     expect(base3FreeDeepseek.systemPrompt).toContain('Freebuff')
     expect(base3FreeDeepseek.systemPrompt).not.toContain('/usage')
