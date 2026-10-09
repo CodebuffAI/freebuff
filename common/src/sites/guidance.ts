@@ -10,7 +10,7 @@ export function sitesGuidance(
 Use sites_list/sites_inspect to understand existing sites. Plan compatible Worker deployments, D1/R2 storage, and @freebuff/auth integration, but do not provision, deploy, or change secrets in plan mode.`
   return `# Sites: Cloudflare, auth, and storage
 
-Use sites_* tools for agent-managed hosting when the user requests it. Keep the site ID in the workspace, inspect existing resources before creating more, and target preview first. Production publishing needs the user's authorization; preview URLs are also public.
+Use sites_* tools for agent-managed hosting when the user requests it. Sites covers hosting, D1/R2 storage and Sign in with Freebuff only. It does not replace service research: when you have a gravity_index tool, keep using it to choose any other service (email, payments, an external database, AI APIs, monitoring, analytics), and, when the user has not asked for Sites, for hosting, auth or storage too. Keep the site ID in the workspace, inspect existing resources before creating more, and target preview first. Production publishing needs the user's authorization; preview URLs are also public.
 
 To take an environment offline, use sites_set_published with published=false (or Sites → Unpublish). This retains the deployment, data, secrets and URL; serving stops within 30 seconds. Preview and Production are independent. Updates to unpublished environments stay offline until the user requests published=true. Do not delete data to take a site offline.
 
