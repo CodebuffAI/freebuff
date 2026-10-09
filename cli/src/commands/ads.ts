@@ -1,4 +1,3 @@
-import { useChatStore } from '../state/chat-store'
 import { useMessageBlockStore } from '../state/message-block-store'
 import { IS_FREEBUFF } from '../utils/constants'
 import { logger } from '../utils/logger'

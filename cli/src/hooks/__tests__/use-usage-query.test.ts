@@ -278,10 +278,7 @@ describe('usageQueryKeys', () => {
   })
 })
 
-describe('useRefreshUsage behavior', () => {
-  // Note: useRefreshUsage is a React hook that wraps invalidateActivityQuery.
-  // We can't call it directly outside a component, but we can test the
-  // underlying invalidation behavior it uses.
+describe('usage query invalidation', () => {
 
   afterEach(() => {
     mock.restore()
@@ -302,7 +299,6 @@ describe('useRefreshUsage behavior', () => {
       getActivityQueryData<typeof mockData>(usageQueryKeys.current()),
     ).toEqual(mockData)
 
-    // Call the underlying invalidation function (what useRefreshUsage wraps)
     invalidateActivityQuery(usageQueryKeys.current())
 
     // Data should still exist (invalidation doesn't remove data)

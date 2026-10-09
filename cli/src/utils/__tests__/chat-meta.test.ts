@@ -11,7 +11,6 @@ import {
   writeChatMeta,
 } from '../chat-meta'
 import {
-  clearChatState,
   saveChatState,
   setChatDirOverrideForTesting,
 } from '../run-state-storage'
@@ -107,7 +106,7 @@ describe('chat-meta', () => {
     expect(readChatMeta(chatDir)).toBeNull()
   })
 
-  test('saveChatState writes the meta sidecar and clearChatState removes it', () => {
+  test('saveChatState writes the meta sidecar', () => {
     const runState = { output: undefined } as unknown as RunState
     const messages = [userMessage('saved prompt')]
 
@@ -119,12 +118,5 @@ describe('chat-meta', () => {
       messageCount: 1,
       firstPrompt: 'saved prompt',
     })
-
-    clearChatState()
-    expect(fs.existsSync(metaPath)).toBe(false)
-    expect(fs.existsSync(path.join(chatDir, 'run-state.json'))).toBe(false)
-    expect(fs.existsSync(path.join(chatDir, CHAT_MESSAGES_FILENAME))).toBe(
-      false,
-    )
   })
 })

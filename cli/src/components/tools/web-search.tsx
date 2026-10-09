@@ -1,7 +1,6 @@
 import { SimpleToolCallItem } from './tool-call-item'
 import { defineToolComponent } from './types'
 
-import type { ChatTheme } from '../../types/theme-system'
 import type { ToolRenderConfig } from './types'
 
 /**

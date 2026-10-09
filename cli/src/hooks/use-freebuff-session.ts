@@ -315,13 +315,6 @@ export function returnToFreebuffLanding(
   })
 }
 
-/** Refresh picker-only metadata (quota and queue depths) while staying on the
- * model selection screen. Used when a midnight-Pacific session quota reset
- * passes while the landing screen is open. */
-export function refreshFreebuffLandingMetadata(): Promise<void> {
-  return restartFreebuffSession('landing')
-}
-
 /** Read-only refresh for the chat picker and first-send pricing check. */
 export function refreshFreebuffSessionMetadata(): Promise<void> {
   return controller?.refreshMetadata() ?? Promise.resolve()

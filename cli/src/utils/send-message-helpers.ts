@@ -8,17 +8,15 @@ import { has } from 'lodash'
 
 import { AI_MESSAGE_ID_PREFIX, generateAiMessageId } from './ai-message-id'
 import { markRunningAgentsAsCancelled } from './block-operations'
-import { shouldHideAgent } from './constants'
 import { formatTimestamp } from './helpers'
 import {
   appendInterruptionNotice,
   autoCollapseBlocks,
-  createAgentBlock,
   stripHiddenAgentBlocks,
 } from './message-block-helpers'
 
 import type { AgentMode } from './constants'
-import type { ChatMessage, ContentBlock } from '../types/chat'
+import type { ChatMessage } from '../types/chat'
 
 // -----------------------------------------------------------------------------
 // Message Creation Helpers
@@ -150,61 +148,9 @@ export const autoCollapsePreviousMessages = (
 // Spawn Agents Helpers
 // -----------------------------------------------------------------------------
 
-export const createSpawnAgentBlocks = (
-  toolCallId: string,
-  agents: Array<{ agent_type?: string; prompt?: string }>,
-): ContentBlock[] =>
-  agents
-    .map((agent, index) => ({ agent, index }))
-    .filter(({ agent }) => !shouldHideAgent(agent.agent_type || ''))
-    .map(({ agent, index }) =>
-      createAgentBlock({
-        agentId: `${toolCallId}-${index}`,
-        agentType: agent.agent_type || '',
-        prompt: agent.prompt,
-      }),
-    )
-
 export const isSpawnAgentsResult = (outputValue: unknown): boolean =>
   Array.isArray(outputValue) &&
   outputValue.some((v: unknown) => {
     if (typeof v !== 'object' || v === null) return false
     return has(v, 'agentName') || has(v, 'agentType')
   })
-
-// -----------------------------------------------------------------------------
-// Message Completion Helpers
-// -----------------------------------------------------------------------------
-
-export const markMessageComplete = (
-  message: ChatMessage,
-  options?: {
-    completionTime?: string
-    credits?: number
-    runState?: unknown
-  },
-): ChatMessage => {
-  const metadata = {
-    ...(message.metadata ?? {}),
-    ...(options?.runState ? { runState: options.runState } : {}),
-  }
-  return {
-    ...message,
-    isComplete: true,
-    ...(options?.completionTime
-      ? { completionTime: options.completionTime }
-      : {}),
-    ...(options?.credits !== undefined ? { credits: options.credits } : {}),
-    metadata,
-  }
-}
-
-export const setMessageError = (
-  message: ChatMessage,
-  errorContent: string,
-): ChatMessage => ({
-  ...message,
-  content: errorContent,
-  blocks: undefined,
-  isComplete: true,
-})

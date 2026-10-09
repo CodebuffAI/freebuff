@@ -289,9 +289,3 @@ export function getConnectionStatusSnapshot(): boolean {
 export function setConnectionMonitorBusy(busy: boolean): void {
   getSingleton().setBusy(busy)
 }
-
-/** Test-only: drop the singleton so each test file gets an isolated monitor and timer. */
-export function resetConnectionMonitorForTests(): void {
-  if (singleton) singleton.stop()
-  singleton = null
-}

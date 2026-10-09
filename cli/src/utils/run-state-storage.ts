@@ -9,14 +9,13 @@ import {
 } from '../project-files'
 import {
   CHAT_MESSAGES_FILENAME,
-  CHAT_META_FILENAME,
   writeChatMeta,
 } from './chat-meta'
 import { logger } from './logger'
 import { classifyStringifyError, serializeForPersistence } from './safe-json'
 import { writeFileAtomic, writeFileAtomicAsync } from './write-file-atomic'
 
-import type { ChatMessage, ContentBlock } from '../types/chat'
+import type { ChatMessage } from '../types/chat'
 import type { RunState } from '@codebuff/sdk'
 
 const RUN_STATE_FILENAME = 'run-state.json'
@@ -96,40 +95,6 @@ export function flushLiveChatState(): void {
   }
 }
 
-/**
- * Recursively extract all agent IDs and tool call IDs from content blocks
- */
-function extractToggleIds(blocks: ContentBlock[] | undefined): string[] {
-  if (!blocks) return []
-
-  const ids: string[] = []
-
-  for (const block of blocks) {
-    if (block.type === 'agent') {
-      ids.push(block.agentId)
-      // Recursively extract from nested blocks
-      ids.push(...extractToggleIds(block.blocks))
-    } else if (block.type === 'tool') {
-      ids.push(block.toolCallId)
-    }
-  }
-
-  return ids
-}
-
-/**
- * Get all toggle IDs (agent IDs and tool call IDs) from chat messages
- */
-export function getAllToggleIdsFromMessages(messages: ChatMessage[]): string[] {
-  const ids: string[] = []
-
-  for (const message of messages) {
-    ids.push(...extractToggleIds(message.blocks))
-  }
-
-  return ids
-}
-
 // Test-only escape hatch: persistence normally resolves the chat directory
 // through project-files (under the user's real config dir). Tests point it at
 // a temp directory instead of mocking module internals — mock.module leaks
@@ -154,22 +119,6 @@ export function resolveCurrentChatDir(): string {
     return chatDirOverride
   }
   return getCurrentChatDir()
-}
-
-/**
- * Get the path to the run state file for the current chat
- */
-export function getRunStatePath(): string {
-  const chatDir = resolveCurrentChatDir()
-  return path.join(chatDir, RUN_STATE_FILENAME)
-}
-
-/**
- * Get the path to the chat messages file for the current chat
- */
-export function getChatMessagesPath(): string {
-  const chatDir = resolveCurrentChatDir()
-  return path.join(chatDir, CHAT_MESSAGES_FILENAME)
 }
 
 // Chat-state saves fail in prod for reasons that are chronic, not transient:
@@ -572,32 +521,5 @@ export function loadMostRecentChatState(
       'Failed to load chat state',
     )
     return null
-  }
-}
-
-/**
- * Clear the saved state files
- */
-export function clearChatState(): void {
-  try {
-    const runStatePath = getRunStatePath()
-    const messagesPath = getChatMessagesPath()
-    const metaPath = path.join(resolveCurrentChatDir(), CHAT_META_FILENAME)
-
-    for (const filePath of [runStatePath, messagesPath, metaPath]) {
-      fs.rmSync(filePath, { force: true })
-    }
-
-    logger.debug(
-      { runStatePath, messagesPath, metaPath },
-      'Cleared chat state files',
-    )
-  } catch (error) {
-    logger.error(
-      {
-        error: error instanceof Error ? error.message : String(error),
-      },
-      'Failed to clear chat state',
-    )
   }
 }

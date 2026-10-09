@@ -21,17 +21,6 @@ import type { FreebuffStreakLine } from '@codebuff/common/util/freebuff-streak-l
 
 const FREEBUFF_STREAK_BONUS_MIN_HEIGHT = 30
 
-/** Columns between the count label and its progress dots. */
-export const FREEBUFF_STREAK_LABEL_GAP = 2
-
-/** Columns kept clear between the heading and the streak when they share a
- *  row. The heading row is laid out space-between inside a shrink-to-fit
- *  column, so when the row is the widest child there is no free space to
- *  distribute and the two would otherwise render flush against each other
- *  ("Start coding for free18 day streak"). This is the floor, and the same
- *  number decides whether they may share a row at all. */
-export const FREEBUFF_STREAK_INLINE_GAP = 3
-
 /** Progress glyphs for a terminal — the same ●/○ pair the shared module and
  *  the desktop app use. Bullet and middle dot were tried here because U+25CF
  *  is missing from a few terminal fonts and lands as a tofu box, but • and ·
@@ -50,33 +39,6 @@ export function getFreebuffStreakLine(
   streak: number,
 ): FreebuffStreakLine | null {
   return getSharedFreebuffStreakLine(streak, TERMINAL_DOT_CHARS)
-}
-
-/** Rendered width of the streak, e.g. "18 day streak  ●●●●●●●+". */
-export function getFreebuffStreakInlineWidth(line: FreebuffStreakLine): number {
-  return line.label.length + FREEBUFF_STREAK_LABEL_GAP + line.dots.length
-}
-
-/** What a user with no streak yet is about to earn. The empty slot is measured
- *  against it so the row doesn't move on day one. */
-const DAY_ONE_LINE = getFreebuffStreakLine(1)!
-
-/** Whether the heading and the streak can share a row with the inline gap left
- *  clear between them. A streak long enough to widen its own label (or a
- *  narrow terminal) pushes the streak onto its own line instead of letting the
- *  two collide. */
-export function fitsFreebuffStreakOnHeadingRow(params: {
-  /** null when the user has no streak yet — measured as day one. */
-  line: FreebuffStreakLine | null
-  headingWidth: number
-  availableWidth: number
-}): boolean {
-  return (
-    params.headingWidth +
-      FREEBUFF_STREAK_INLINE_GAP +
-      getFreebuffStreakInlineWidth(params.line ?? DAY_ONE_LINE) <=
-    params.availableWidth
-  )
 }
 
 /** Returns the earned perk note only when the landing layout can show it

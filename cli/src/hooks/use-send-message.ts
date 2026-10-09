@@ -62,7 +62,6 @@ import {
   resetEarlyReturnState,
   setupStreamingContext,
 } from './helpers/send-message'
-import { NETWORK_ERROR_ID } from '../utils/validation-error-helpers'
 import { yieldToEventLoop } from '../utils/yield-to-event-loop'
 
 import type { ElapsedTimeTracker } from './use-elapsed-time'

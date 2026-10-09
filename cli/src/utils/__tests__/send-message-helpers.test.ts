@@ -29,11 +29,8 @@ import {
   createErrorMessage,
   generateAiMessageId,
   autoCollapsePreviousMessages,
-  createSpawnAgentBlocks,
   isSpawnAgentsResult,
-  markMessageComplete,
   sanitizeRestoredMessages,
-  setMessageError,
 } from '../send-message-helpers'
 
 import type {
@@ -1583,35 +1580,6 @@ describe('appendInterruptionNotice', () => {
 // Spawn Agents Helpers Tests (from send-message-helpers)
 // ============================================================================
 
-describe('createSpawnAgentBlocks', () => {
-  test('creates agent blocks from spawn_agents input', () => {
-    const agents = [
-      { agent_type: 'file-picker', prompt: 'Find files' },
-      { agent_type: 'code-searcher', prompt: 'Search code' },
-    ]
-
-    const result = createSpawnAgentBlocks('tool-1', agents)
-
-    expect(result).toHaveLength(2)
-    expect(result[0].type).toBe('agent')
-    expect((result[0] as AgentContentBlock).agentId).toBe('tool-1-0')
-    expect((result[1] as AgentContentBlock).agentId).toBe('tool-1-1')
-  })
-
-  test('filters out hidden agents', () => {
-    const agents = [
-      { agent_type: 'file-picker' },
-      { agent_type: 'context-pruner' }, // bundled id — hidden
-      { agent_type: 'codebuff/context-pruner' }, // publisher-qualified — hidden
-    ]
-
-    const result = createSpawnAgentBlocks('tool-1', agents)
-
-    expect(result).toHaveLength(1)
-    expect((result[0] as AgentContentBlock).agentType).toBe('file-picker')
-  })
-})
-
 describe('isSpawnAgentsResult', () => {
   test('returns true for spawn_agents result structure', () => {
     const output = [{ agentName: 'file-picker', value: 'result' }]
@@ -1690,73 +1658,6 @@ describe('extractSpawnAgentResultContent', () => {
 
     expect(result.content).toBe('')
     expect(result.hasError).toBe(false)
-  })
-})
-
-// ============================================================================
-// Message Completion Helpers Tests (from send-message-helpers)
-// ============================================================================
-
-describe('markMessageComplete', () => {
-  const baseMessage: ChatMessage = {
-    id: 'msg-1',
-    variant: 'ai',
-    content: 'Hello',
-    timestamp: '',
-  }
-
-  test('marks message as complete', () => {
-    const result = markMessageComplete(baseMessage)
-
-    expect(result.isComplete).toBe(true)
-  })
-
-  test('adds completion time', () => {
-    const result = markMessageComplete(baseMessage, { completionTime: '5s' })
-
-    expect(result.completionTime).toBe('5s')
-  })
-
-  test('adds credits', () => {
-    const result = markMessageComplete(baseMessage, { credits: 100 })
-
-    expect(result.credits).toBe(100)
-  })
-
-  test('adds runState to metadata', () => {
-    const runState = { output: { type: 'text', text: 'Done' } }
-    const result = markMessageComplete(baseMessage, { runState })
-
-    expect(result.metadata?.runState).toEqual(runState)
-  })
-
-  test('preserves existing metadata', () => {
-    const message: ChatMessage = {
-      ...baseMessage,
-      metadata: { userOpened: true },
-    }
-
-    const result = markMessageComplete(message, { credits: 50 })
-
-    expect(result.metadata?.userOpened).toBe(true)
-  })
-})
-
-describe('setMessageError', () => {
-  test('sets error content and clears blocks', () => {
-    const message: ChatMessage = {
-      id: 'msg-1',
-      variant: 'ai',
-      content: '',
-      blocks: [{ type: 'text', content: 'Old content' }],
-      timestamp: '',
-    }
-
-    const result = setMessageError(message, 'Error occurred')
-
-    expect(result.content).toBe('Error occurred')
-    expect(result.blocks).toBeUndefined()
-    expect(result.isComplete).toBe(true)
   })
 })
 

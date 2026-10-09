@@ -1,7 +1,6 @@
 import { env } from '@codebuff/common/env'
-import { useCallback } from 'react'
 
-import { invalidateActivityQuery, useActivityQuery } from './use-activity-query'
+import { useActivityQuery } from './use-activity-query'
 import { getAuthToken } from '../utils/auth'
 import { logger as defaultLogger } from '../utils/logger'
 
@@ -112,13 +111,4 @@ export function useUsageQuery(deps: UseUsageQueryDeps = {}) {
     pauseWhenIdle,
     idleThreshold,
   })
-}
-
-/**
- * Hook to manually trigger a usage data refresh
- */
-export function useRefreshUsage() {
-  return useCallback(() => {
-    invalidateActivityQuery(usageQueryKeys.current())
-  }, [])
 }
