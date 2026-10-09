@@ -53,6 +53,18 @@ export function freebuffDesktopConcurrencyLimits(
     : FREEBUFF_DESKTOP_CONCURRENCY_LIMITS.free
 }
 
+/**
+ * Tabs one account may run at once on one model, given its Freebucks price at
+ * session start: a free model buys parallel agents at no cost, so one tab.
+ * Takes the price because the CLI imports this module and cannot import
+ * freebuff-freebucks (cut from the public export).
+ */
+export function freebuffDesktopModelTabLimit(
+  sessionPrice: number | undefined,
+): number {
+  return sessionPrice === 0 ? 1 : Infinity
+}
+
 export function getFreebuffDesktopConcurrency(
   model: string,
   accessTier: FreebuffAccessTier | null | undefined,
