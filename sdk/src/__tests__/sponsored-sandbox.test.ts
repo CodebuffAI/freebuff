@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { spawnSync } from 'child_process'
+import { spawn, spawnSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -26,6 +26,7 @@ import {
   sponsoredSecretFiles,
 } from '../tools/sponsored-sandbox'
 import { codeSearch, parseCodeSearchFlags } from '../tools/code-search'
+import { probeSponsoredRuntimes } from '../tools/sponsored-runtimes'
 import { sponsoredContainmentTestGate } from '../../test/sponsored-containment-gate'
 
 /**
@@ -1877,5 +1878,86 @@ describe('the shell selector is readable, and nothing around it is', () => {
         fs.rmSync(parent, { recursive: true, force: true })
       }
     },
+  )
+})
+
+/**
+ * COD-829: the capability report's `availableRuntimes` is asked of the run's
+ * own sandbox. A runtime installed under a folder the sandbox does not grant
+ * (nvm, mise, volta under the home folder) is on the host's PATH and must
+ * read as MISSING, because the run will not be able to start it.
+ */
+describe('available runtimes, as the sandbox sees them (COD-829)', () => {
+  function fakeRuntime(dir: string, name: string): void {
+    fs.mkdirSync(dir, { recursive: true })
+    const file = path.join(dir, name)
+    fs.writeFileSync(file, '#!/bin/sh\necho 1.0.0\n')
+    fs.chmodSync(file, 0o755)
+  }
+
+  it('the uncontained probe sees a runtime on PATH', async () => {
+    const { parent, root } = workspace()
+    try {
+      const bin = path.join(parent, 'hidden-toolchain', 'bin')
+      fakeRuntime(bin, 'bun')
+      const direct = {
+        start: (request: {
+          executable: string
+          args: string[]
+          cwd: string
+          env: NodeJS.ProcessEnv
+        }) => {
+          const child = spawn(request.executable, request.args, {
+            cwd: request.cwd,
+            env: request.env,
+          })
+          return {
+            pid: child.pid,
+            stdout: child.stdout,
+            stderr: child.stderr,
+            completion: new Promise<number | null>((resolve) =>
+              child.on('close', (code: number | null) => resolve(code)),
+            ),
+            kill: (signal: NodeJS.Signals) => child.kill(signal),
+            isAlive: () => child.exitCode === null,
+          }
+        },
+      }
+      const runtimes = await probeSponsoredRuntimes(direct, {
+        cwd: root,
+        env: { PATH: `${bin}:/usr/bin:/bin` },
+      })
+      expect(runtimes).toContain('bun')
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  containedIt(
+    'the contained probe reports a home-folder runtime as missing',
+    async () => {
+      const { parent, root, runtime } = workspace()
+      try {
+        // Outside every read root the sandbox grants, like ~/.bun/bin.
+        const bin = path.join(parent, 'hidden-toolchain', 'bin')
+        fakeRuntime(bin, 'bun')
+        const broker = createSponsoredTerminalBroker({
+          workspaceRoot: root,
+          runtimeDir: runtime,
+        })
+        const runtimes = await probeSponsoredRuntimes(broker, {
+          cwd: root,
+          env: { PATH: `${bin}:/usr/bin:/bin` },
+          timeoutMs: 15_000,
+        })
+        // The probe ran to its end inside the sandbox...
+        expect(runtimes).toBeDefined()
+        // ...and could not start what only the host could see.
+        expect(runtimes).not.toContain('bun')
+      } finally {
+        fs.rmSync(parent, { recursive: true, force: true })
+      }
+    },
+    20_000,
   )
 })

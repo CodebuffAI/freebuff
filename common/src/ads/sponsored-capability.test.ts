@@ -43,6 +43,21 @@ describe('foundation execution admission', () => {
     ).toBe(false)
   })
 
+  // COD-829: absent is unknown (older clients); a present list is closed.
+  test('available runtimes are optional, and only known names parse', () => {
+    const withRuntimes = { ...capability, availableRuntimes: ['node', 'npx'] }
+    expect(sponsoredCapabilitySchema.parse(withRuntimes)).toEqual(withRuntimes)
+    expect(sponsoredCapabilitySchema.parse(capability)).not.toHaveProperty(
+      'availableRuntimes',
+    )
+    expect(
+      sponsoredCapabilitySchema.safeParse({
+        ...capability,
+        availableRuntimes: ['deno'],
+      }).success,
+    ).toBe(false)
+  })
+
   test('legacy and missing modes never expand audience', () => {
     for (const mode of [
       undefined,

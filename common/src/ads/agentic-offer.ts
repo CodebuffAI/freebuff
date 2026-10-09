@@ -42,6 +42,7 @@ import {
   sponsoredCapabilitySchema,
 } from './sponsored-capability'
 import { genericSetupInvitationSchema } from './generic-setup-invitation'
+import { sponsoredEnvironmentWarningSchema } from './sponsored-environment-warning'
 import { SPONSORED_IN_PLACE_VERSION } from './sponsored-in-place'
 
 /** `agenticOfferRoute` on an `/api/ads` request, and `v` on this route's wire. */
@@ -204,6 +205,11 @@ const agenticOfferMadeSchema = z.discriminatedUnion('kind', [
     /** Read it through `GET /api/v1/ads/proposal` like every other proposal. */
     proposalId: z.string().min(1),
     campaignId: z.string().min(1),
+    /**
+     * "May not work on your machine" (COD-829): shown on the card, never a
+     * reason to withhold Accept. Absent when the machine matches or is unknown.
+     */
+    environmentWarning: sponsoredEnvironmentWarningSchema.optional(),
   }),
 ])
 

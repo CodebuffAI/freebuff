@@ -61,6 +61,15 @@ export {
   type SupabaseFoundationMode,
 } from './sponsored-execution-surface'
 
+/**
+ * The runtimes a sponsored run can execute, as the run itself sees them
+ * (COD-829): probed from INSIDE the sponsored sandbox, so a Node install the
+ * sandbox hides reads as missing. `python` is python3 or python.
+ */
+export const SPONSORED_RUNTIMES = ['node', 'npx', 'bun', 'python'] as const
+export type SponsoredRuntime = (typeof SPONSORED_RUNTIMES)[number]
+export const sponsoredRuntimeSchema = z.enum(SPONSORED_RUNTIMES)
+
 /** The wire schema of {@link SPONSORED_EXECUTION_SURFACES}. */
 export const sponsoredExecutionSurfaceSchema = z.enum(
   SPONSORED_EXECUTION_SURFACES,
@@ -85,6 +94,9 @@ export const sponsoredCapabilitySchema = z
     hasCommittedStorageBoundary: z.boolean().optional(),
     hasGitRepository: z.boolean(),
     hasCommittedHead: z.boolean(),
+    // COD-829. Absent means unknown (older clients, Windows, a probe that
+    // failed), never "nothing installed": only a reported list can warn.
+    availableRuntimes: z.array(sponsoredRuntimeSchema).max(8).optional(),
     execution: z
       .object({
         surface: sponsoredExecutionSurfaceSchema,
