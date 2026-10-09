@@ -2219,7 +2219,7 @@ function windowsFloorProcessHandle(
 function createWindowsFloorBroker(
   workspaceRoot: string,
   runtimeDir: string,
-  credentialEnv?: Readonly<Record<string, string>>,
+  credentialEnv?: () => Readonly<Record<string, string>> | undefined,
 ): TerminalCommandBroker {
   const paths = sponsoredWindowsRunPaths(runtimeDir)
   return {
@@ -2236,7 +2236,7 @@ function createWindowsFloorBroker(
       }
       const env = withSponsoredRunCredentialEnv(
         scrubSponsoredWindowsEnv(request.env, paths),
-        credentialEnv,
+        credentialEnv?.(),
       )
       const launch = sponsoredWindowsFloorLaunch(request)
       return windowsFloorProcessHandle(
@@ -2286,7 +2286,7 @@ export function createSponsoredTerminalBroker(
     return createWindowsFloorBroker(
       workspaceRoot,
       runtimeDir,
-      options.credentialEnv,
+      () => options.credentialEnv,
     )
   }
   const linkedWorktree = options.linkedWorktree

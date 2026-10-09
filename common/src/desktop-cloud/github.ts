@@ -5,7 +5,7 @@ export type GitHubRepository = {
   defaultBranch: string
   private: boolean
 }
-export type GitHubSource = GitHubRepository & { installationId: number }
+export type GitHubSource = GitHubRepository & { installationId: number; publicReadOnly?: true }
 export type GitHubProjectSelection = {
   repositoryId: number
   fullName: string
