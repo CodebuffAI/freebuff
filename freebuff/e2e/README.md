@@ -86,7 +86,7 @@ runs it on a schedule and before each release.
 
 ```bash
 NEXT_PUBLIC_CB_ENVIRONMENT=prod NEXT_PUBLIC_CODEBUFF_APP_URL=https://www.codebuff.com \
-NEXT_PUBLIC_FREEBUFF_APP_URL=https://freebuff.com NEXT_PUBLIC_SUPPORT_EMAIL=support@codebuff.com \
+NEXT_PUBLIC_FREEBUFF_APP_URL=https://freebuff.com NEXT_PUBLIC_SUPPORT_EMAIL=support@freebuff.com \
 NEXT_PUBLIC_POSTHOG_API_KEY=test NEXT_PUBLIC_POSTHOG_HOST_URL=http://127.0.0.1:9 \
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=test NEXT_PUBLIC_STRIPE_CUSTOMER_PORTAL=http://127.0.0.1:9 \
 NEXT_PUBLIC_WEB_PORT=3000 bun freebuff/cli/build.ts 0.0.0-smoke

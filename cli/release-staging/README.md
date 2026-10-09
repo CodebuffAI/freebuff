@@ -68,4 +68,4 @@ If you still have errors, it's a good idea to [reinstall Node](https://nodejs.or
 
 ## Feedback
 
-We value your input! Please email your feedback to `founders@codebuff.com`. Thank you for using Codecane!
+We value your input! Please email your feedback to `founders@freebuff.com`. Thank you for using Codecane!

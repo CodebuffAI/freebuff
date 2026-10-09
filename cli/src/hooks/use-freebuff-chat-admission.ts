@@ -27,7 +27,7 @@ export function freebuffAdmissionNotice(
   if (!session) return null
   switch (session.status) {
     case 'banned':
-      return 'This account is suspended. To appeal, visit https://freebuff.com/account?tab=standing. If this is a mistake, contact support@codebuff.com.'
+      return 'This account is suspended. To appeal, visit https://freebuff.com/account?tab=standing. If this is a mistake, contact support@freebuff.com.'
     case 'country_blocked':
       return session.countryBlockReason === 'anonymous_network'
         ? `Freebuff detected ${formatFreebuffHardBlockedPrivacySignals(session.ipPrivacySignals)} traffic. Disable VPN, proxy or Tor traffic and try again.`

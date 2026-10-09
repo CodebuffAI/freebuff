@@ -1543,7 +1543,7 @@ async function handlePromptResponse({
       const message = [
         'Received invalid prompt response from server:',
         JSON.stringify(parsedOutput.error.issues),
-        'If this issues persists, please contact support@codebuff.com',
+        'If this issues persists, please contact support@freebuff.com',
       ].join('\n')
       onError({ message })
       resolve({

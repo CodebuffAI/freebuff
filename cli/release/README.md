@@ -104,4 +104,4 @@ Both `http://` and `https://` proxy URLs are supported. Proxy authentication is 
 
 ## Feedback
 
-We value your input! Please email your feedback to `founders@codebuff.com`. Thank you for using Codebuff!
+We value your input! Please email your feedback to `founders@freebuff.com`. Thank you for using Codebuff!

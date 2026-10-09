@@ -430,7 +430,7 @@ logs/YYYY-MM-DDTHH-MM_agent1_vs_agent2/
 CODEBUFF_API_KEY=your-api-key
 
 # Optional
-EVAL_RESULTS_EMAIL=team@codebuff.com  # For nightly email reports
+EVAL_RESULTS_EMAIL=team@freebuff.com  # For nightly email reports
 ```
 
 ### Task Concurrency

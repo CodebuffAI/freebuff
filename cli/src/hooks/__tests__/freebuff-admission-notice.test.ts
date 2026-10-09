@@ -10,6 +10,6 @@ describe('freebuffAdmissionNotice', () => {
       status: 'banned',
     } as FreebuffSessionResponse)
     expect(notice).toContain('https://freebuff.com/account?tab=standing')
-    expect(notice).toContain('support@codebuff.com')
+    expect(notice).toContain('support@freebuff.com')
   })
 })
