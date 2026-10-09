@@ -173,11 +173,6 @@ function gitRootFromRegistry(): string | null {
   return null
 }
 
-/** for tests, which must not depend on the registry of the machine they run on */
-export function resetGitRegistryCache(): void {
-  cachedGitRegistryRoot = undefined
-}
-
 /**
  * The bash this machine will run, or null if it has none.
  *

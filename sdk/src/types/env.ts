@@ -6,10 +6,7 @@
  * - WASM module directory
  */
 
-import type {
-  BaseEnv,
-  ClientEnv,
-} from '@codebuff/common/types/contracts/env'
+import type { BaseEnv } from '@codebuff/common/types/contracts/env'
 
 /**
  * SDK-specific env vars for binary paths and WASM.
@@ -28,16 +25,3 @@ export type SdkEnv = BaseEnv & {
   OVERRIDE_PLATFORM?: string
   OVERRIDE_ARCH?: string
 }
-
-/**
- * Full SDK env deps combining client env and SDK env.
- */
-export type SdkEnvDeps = {
-  clientEnv: ClientEnv
-  env: SdkEnv
-}
-
-/**
- * Function type for getting SDK env values.
- */
-export type GetSdkEnvFn = () => SdkEnv
