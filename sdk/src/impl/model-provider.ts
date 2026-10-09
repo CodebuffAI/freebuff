@@ -11,6 +11,10 @@ import {
   FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
 } from '@codebuff/common/constants/freebuff-errors'
 import { FREEBUFF_ACTING_USER_HEADER } from '@codebuff/common/constants/freebuff-models'
+import {
+  FREEBUFF_SSE_GZIP_RECOVERY_HEADER,
+  FREEBUFF_SSE_GZIP_RECOVERY_VALUE,
+} from '@codebuff/common/constants/sse-compression'
 import { FREEBUFF_GATE_CODES } from '@codebuff/common/types/freebuff-session'
 import { isAbortError, isFetchIdleTimeoutError, isTransientNetworkError } from '@codebuff/common/util/error'
 import {
@@ -562,6 +566,9 @@ export function getModelForRequest({
     headers: () => ({
       Authorization: `Bearer ${apiKey}`,
       'user-agent': `ai-sdk/openai-compatible/${VERSION}/codebuff`,
+      // This build continues a turn whose gzip stream is cut mid-body, so the
+      // backend may gzip it (common/src/constants/sse-compression.ts).
+      [FREEBUFF_SSE_GZIP_RECOVERY_HEADER]: FREEBUFF_SSE_GZIP_RECOVERY_VALUE,
       ...(userId ? { [FREEBUFF_ACTING_USER_HEADER]: userId } : {}),
       ...(openrouterApiKey && { [BYOK_OPENROUTER_HEADER]: openrouterApiKey }),
     }),

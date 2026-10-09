@@ -1,5 +1,9 @@
 import { isAbortError, isTransientNetworkError } from '@codebuff/common/util/error'
 import { FREEBUFF_ACTING_USER_HEADER } from '@codebuff/common/constants/freebuff-models'
+import {
+  FREEBUFF_SSE_GZIP_RECOVERY_HEADER,
+  FREEBUFF_SSE_GZIP_RECOVERY_VALUE,
+} from '@codebuff/common/constants/sse-compression'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 
 import { addAgentStep, finishAgentRun, startAgentRun } from '../database'
@@ -231,6 +235,30 @@ describe('SDK delegated user headers', () => {
       Authorization: 'Bearer service-key',
       [FREEBUFF_ACTING_USER_HEADER]: 'end-user',
     })
+  })
+
+  test('tells the backend it recovers a cut gzip stream, and never tells a BYOK provider', async () => {
+    const backend = getModelForRequest({ apiKey: 'user-key', model: 'test/model' })
+    expect((backend as any).config.headers()).toMatchObject({
+      [FREEBUFF_SSE_GZIP_RECOVERY_HEADER]: FREEBUFF_SSE_GZIP_RECOVERY_VALUE,
+    })
+
+    let byokHeaders = new Headers()
+    globalThis.fetch = mock(async (_input, init) => {
+      byokHeaders = new Headers(init?.headers)
+      return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', {
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    }) as unknown as typeof fetch
+    const result = streamText({
+      model: getModelForRequest({
+        apiKey: 'ignored', model: 'ignored',
+        byok: { id: 'conn', revision: 1, name: 'local', provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:9876/v1', model: 'selected/model', credentialRef: 'connection:conn', createdAt: 'x', updatedAt: 'x', apiKey: 'key' },
+      }),
+      messages: [{ role: 'user', content: 'hello' }],
+    })
+    await result.text
+    expect(byokHeaders.has(FREEBUFF_SSE_GZIP_RECOVERY_HEADER)).toBe(false)
   })
 
   test('sends userId on agent run requests', async () => {
