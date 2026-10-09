@@ -47,6 +47,12 @@ export const labPublishSchema = z
   })
   .strict()
 export type LabPublishInput = z.infer<typeof labPublishSchema>
+export type LabPublishAdvertiser = {
+  id: string
+  name: string
+  campaigns: number
+  agenticCampaigns: number
+}
 export type LabPublishCampaign = {
   id: string
   name: string
