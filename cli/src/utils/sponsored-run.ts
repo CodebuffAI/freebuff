@@ -88,7 +88,7 @@ import {
 import type { SponsoredTurnEnding } from '@codebuff/common/ads/sponsored-in-place'
 import { readdirSync, readFileSync } from 'fs'
 import { randomUUID } from 'node:crypto'
-import { release } from 'node:os'
+import { homedir, release } from 'node:os'
 import path from 'path'
 
 import { applyPatchTool } from '../../../sdk/src/tools/apply-patch'
@@ -106,9 +106,11 @@ import {
   sponsoredCodeSearchFlagsRefusal,
   sponsoredContainment,
 } from '../../../sdk/src/tools/sponsored-sandbox'
+import { sponsoredToolchainReadRoots } from '../../../sdk/src/tools/sponsored-toolchain'
 import { useSponsoredRunStore } from '../state/sponsored-run-store'
 import { getAuthToken } from './auth'
 import { getConfigDir } from './config-dir'
+import { getSystemProcessEnv } from './env'
 import { IS_FREEBUFF } from './constants'
 import {
   getAgentIdForMode,
@@ -1581,6 +1583,14 @@ export function sponsoredOverrideTools(
     // read-only to the run: no commit, no ref, and above all no `hooks/` or
     // `config`, which an unsandboxed `git -C` would later execute as the user.
     readOnlyGitDir: true,
+    // The user's own Node/npm/bun under their home folder, READ-ONLY, or the
+    // private HOME hides it and the run finds no Node (COD-825).
+    additionalReadRoots: sponsoredToolchainReadRoots(
+      getSystemProcessEnv(),
+      homedir(),
+      (skip) =>
+        logger.info(skip, '[sponsored-run] toolchain folder not granted'),
+    ).roots,
   })
   // No broker: the file layer pins directories itself (COD-642).
   const rootedFs = createSponsoredRootedFileSystem({ workspaceRoot })
