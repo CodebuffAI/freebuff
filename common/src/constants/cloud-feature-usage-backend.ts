@@ -5,18 +5,16 @@
  * them off platform Convex (COD-742 Wave A2, light tier; runbook in
  * docs/convex-retirement-wave-a.md, "Cloud feature usage").
  *
- * - `convex`   (default): Convex is the writer and the reader, exactly as
- *              before the port. Nothing in the Postgres port runs, the
- *              registry entries answer `unknown_function`, and the bridge
- *              route answers 409.
+ * - `convex`   (default): Convex is the writer, exactly as before the port.
+ *              Nothing in the Postgres port runs and the bridge route
+ *              answers 409.
  * - `postgres` the writers are still Convex mutations (users, integrations,
  *              invites, BYOK, publish, PR lifecycle) and keep scheduling
  *              `recordCloudFeatureUsage`, which then forwards the event to
  *              freebuff-web instead of inserting it; freebuff-web inserts it
- *              into Postgres. The admin page reads Postgres through the
- *              function registry. The daily counter table has no Postgres
- *              twin: its numbers are a GROUP BY. The Convex functions stay
- *              deployed as the rollback.
+ *              into Postgres. The daily counter table has no Postgres twin.
+ *              The Convex functions stay deployed as the rollback. The admin
+ *              reads (and the Usage page that showed them) were removed.
  *
  * Imported by Convex as well as by the Next servers, so it must stay a leaf.
  * A flip is a reviewed one-line diff here, never an env var; the revert is the

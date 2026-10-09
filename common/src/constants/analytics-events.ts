@@ -27,6 +27,14 @@ export enum AnalyticsEvent {
   // common/src/util/engagement-tracker.ts.
   PRODUCT_ACTIVE_MINUTE = 'product_active_minute',
 
+  // Freebuff Cloud feature use: one event per publish, member invite,
+  // integration, custom link, AI credential connect or delivery step.
+  // Emitted from Convex's `recordCloudFeatureUsage` (PostHog + Axiom, via
+  // convex/analytics.ts) under the canonical codebuff user id. Properties:
+  // `feature` (one of CLOUD_FEATURES) and `project_id` (the Convex project id)
+  // when the use belongs to a project. Never carries the branch or PR detail.
+  CLOUD_FEATURE_USED = 'cloud_feature_used',
+
   // CLI
   APP_LAUNCHED = 'cli.app_launched',
   FINGERPRINT_GENERATED = 'cli.fingerprint_generated',
