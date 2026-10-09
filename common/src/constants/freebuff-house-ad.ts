@@ -133,7 +133,7 @@ const TIER_NAME = ENTRY_TIER?.displayName ?? 'Starter'
  * ("3 more hours a day ... 7 a day in total"). It is deliberately absent from
  * the inline set, where a bare `7 hours/day` would have to stand alone: a
  * LIMITED-ACCESS reader holds no free premium allowance at all
- * (`includeFreeAllowance` in `PlanOptionList`), so 7 is a number they will
+ * (`includeFreeAllowance` in `PricingCards`), so 7 is a number they will
  * never see, and no serve path here knows which reader it has. Stating the
  * increment beside it is what keeps the display line honest for both readers;
  * inline there is no room to, so inline stays on the increment.
