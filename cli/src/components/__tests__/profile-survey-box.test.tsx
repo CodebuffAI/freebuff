@@ -65,7 +65,7 @@ describe('ProfileSurveyBoxView', () => {
     expect(frame).toContain('How big is the team you build with?')
     expect(frame).toContain('1 Just me')
     expect(frame).toContain("0 Doesn't apply")
-    expect(frame).toContain("1–5 pick · 0 doesn't apply · ← back · esc not now (7 days)")
+    expect(frame).toContain("1–5 pick · 0 doesn't apply · ← back · esc not now (3 days)")
   })
 
   test('no reward copy when the arm pays nothing; no back on the first', async () => {

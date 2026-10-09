@@ -135,14 +135,15 @@ export function profileSurveyRewardCopy(
 export function profileSurveyDismissCopy(input: {
   answered: number
   stopped: boolean
+  /** Days this dismissal snoozed for (`profileSurveySnoozeDays`). */
+  snoozeDays: number | null
 }): string {
-  if (input.stopped)
+  if (input.stopped || input.snoozeDays === null)
     return `That's the ${ordinal(PROFILE_SURVEY_MAX_DISMISSALS)} “Not now”, so we won't ask again for this survey.`
   const answers =
     input.answered === 1 ? 'Your 1 answer so far is' : `Your ${input.answered} answers so far are`
-  return input.answered > 0
-    ? `Got it. We'll ask again in 7 days. ${answers} saved.`
-    : `Got it. We'll ask again in 7 days.`
+  const again = `Got it. We'll ask again in ${input.snoozeDays} days.`
+  return input.answered > 0 ? `${again} ${answers} saved.` : again
 }
 
 export type ProfileSurveyCompletionCopy =

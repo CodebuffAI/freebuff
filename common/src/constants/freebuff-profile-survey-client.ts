@@ -3,11 +3,11 @@ import {
   earnsProfileSurveyReward,
   firstUnansweredIndex,
   isValidProfileSurveyAnswer,
+  PROFILE_SURVEY_DAY_MS,
   PROFILE_SURVEY_ID,
-  PROFILE_SURVEY_MAX_DISMISSALS,
-  PROFILE_SURVEY_SNOOZE_MS,
   PROFILE_SURVEY_VERSIONS,
   profileSurveyQuestion,
+  profileSurveySnoozeDays,
   profileSurveyVersion,
   type ProfileSurveyAnswer,
   type ProfileSurveyAnswersResponse,
@@ -243,10 +243,10 @@ export function createFakeProfileSurveyClient(
       }
       if (request.action === 'dismiss') {
         state.dismissCount++
-        state.stopped = state.dismissCount >= PROFILE_SURVEY_MAX_DISMISSALS
-        state.snoozedUntil = state.stopped
-          ? null
-          : now() + PROFILE_SURVEY_SNOOZE_MS
+        const snoozeDays = profileSurveySnoozeDays(state.dismissCount)
+        state.stopped = snoozeDays === null
+        state.snoozedUntil =
+          snoozeDays === null ? null : now() + snoozeDays * PROFILE_SURVEY_DAY_MS
         return {
           ok: true,
           dismissed: true,

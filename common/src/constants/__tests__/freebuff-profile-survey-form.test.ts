@@ -72,17 +72,17 @@ describe('copy and view helpers', () => {
     expect(profileSurveyRewardCopy(0, 10)).toBeNull()
   })
   it('dismiss copy counts answers and names the stop', () => {
-    expect(profileSurveyDismissCopy({ answered: 3, stopped: false })).toBe(
-      "Got it. We'll ask again in 7 days. Your 3 answers so far are saved.",
+    expect(profileSurveyDismissCopy({ answered: 3, stopped: false, snoozeDays: 3 })).toBe(
+      "Got it. We'll ask again in 3 days. Your 3 answers so far are saved.",
     )
-    expect(profileSurveyDismissCopy({ answered: 1, stopped: false })).toContain(
+    expect(profileSurveyDismissCopy({ answered: 1, stopped: false, snoozeDays: 7 })).toContain(
       'Your 1 answer so far is saved.',
     )
-    expect(profileSurveyDismissCopy({ answered: 0, stopped: false })).toBe(
-      "Got it. We'll ask again in 7 days.",
+    expect(profileSurveyDismissCopy({ answered: 0, stopped: false, snoozeDays: 14 })).toBe(
+      "Got it. We'll ask again in 14 days.",
     )
-    expect(profileSurveyDismissCopy({ answered: 4, stopped: true })).toContain(
-      'third “Not now”',
+    expect(profileSurveyDismissCopy({ answered: 4, stopped: true, snoozeDays: null })).toContain(
+      '6th “Not now”',
     )
   })
   it('completion copy follows what the server credited', () => {
@@ -166,17 +166,28 @@ describe('the fake client follows the contract', () => {
       rewardedFreebucks: 0,
     })
   })
-  it('snoozes, then stops on the third dismissal', async () => {
+  it('snoozes 3, 3, 7, 7, 14 days, then stops on the sixth dismissal', async () => {
     let t = 0
+    const day = 24 * 60 * 60 * 1000
     const client = createFakeProfileSurveyClient({ now: () => t })
     const first = await client.post({ action: 'dismiss', version: 1 })
-    expect(first).toMatchObject({ dismissed: true, stopped: false })
+    expect(first).toMatchObject({
+      dismissed: true,
+      stopped: false,
+      snoozedUntil: new Date(3 * day).toISOString(),
+    })
     expect(await client.getState()).toEqual({ show: false, reason: 'snoozed' })
-    t += 8 * 24 * 60 * 60 * 1000
+    t += 3 * day + 1
     expect((await client.getState()).show).toBe(true)
-    await client.post({ action: 'dismiss', version: 1 })
-    const third = await client.post({ action: 'dismiss', version: 1 })
-    expect(third).toMatchObject({ stopped: true, snoozedUntil: null })
+    for (const days of [3, 7, 7, 14]) {
+      const r = await client.post({ action: 'dismiss', version: 1 })
+      expect(r).toMatchObject({
+        stopped: false,
+        snoozedUntil: new Date(t + days * day).toISOString(),
+      })
+    }
+    const sixth = await client.post({ action: 'dismiss', version: 1 })
+    expect(sixth).toMatchObject({ stopped: true, snoozedUntil: null })
     expect(await client.getState()).toEqual({ show: false, reason: 'stopped' })
   })
   it('refuses an invalid answer, lists and clears answers', async () => {

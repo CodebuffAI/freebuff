@@ -1,4 +1,5 @@
 import { TextAttributes } from '@opentui/core'
+import { profileSurveySnoozeDays } from '@codebuff/common/constants/freebuff-profile-survey'
 import React from 'react'
 
 import { useTheme } from '../hooks/use-theme'
@@ -33,12 +34,13 @@ export function profileSurveyHint(state: ProfileSurveyState): string {
   const numbered = numberedOptions(question)
   const top = numbered.filter((n) => n.key > 0).length
   const hasNa = numbered.some((n) => n.key === 0)
+  const snoozeDays = profileSurveySnoozeDays(state.dismissCount + 1)
   const parts = [
     question.multi ? `1–${top} toggle` : `1–${top} pick`,
     ...(question.multi ? ['enter continue'] : []),
     ...(hasNa ? ["0 doesn't apply"] : []),
     ...(state.step > 0 ? ['← back'] : []),
-    'esc not now (7 days)',
+    ...(snoozeDays === null ? ['esc not now'] : [`esc not now (${snoozeDays} days)`]),
   ]
   return parts.join(' · ')
 }

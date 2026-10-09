@@ -364,7 +364,7 @@ describe('copy', () => {
   })
 
   test('dismissal', () => {
-    expect(profileSurveyDismissLine(false)).toContain('7 days')
-    expect(profileSurveyDismissLine(true)).toContain("won't ask again")
+    expect(profileSurveyDismissLine(7)).toBe("Not now: we'll ask again in 7 days.")
+    expect(profileSurveyDismissLine(null)).toContain("won't ask again")
   })
 })

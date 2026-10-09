@@ -13,6 +13,7 @@
  * impression/click reporting.
  */
 
+import { profileSurveySnoozeDays } from '@codebuff/common/constants/freebuff-profile-survey'
 import { create } from 'zustand'
 
 import { FREEBUFF_WEB_URL } from '../login/constants'
@@ -134,13 +135,18 @@ function enqueue(task: () => Promise<void>): void {
 function runEffect(effect: ProfileSurveyEffect): void {
   const api = getClient()
   if (effect.type === 'dismiss') {
+    const dismissCount = useProfileSurveyStore.getState().survey?.dismissCount ?? 0
     enqueue(async () => {
       const response = await api.post({
         action: 'dismiss',
         version: effect.version,
       })
       if (response.ok && 'dismissed' in response) {
-        print(profileSurveyDismissLine(response.stopped))
+        print(
+          profileSurveyDismissLine(
+            response.stopped ? null : profileSurveySnoozeDays(dismissCount + 1),
+          ),
+        )
       } else {
         logger.debug({ response }, '[profile-survey] dismiss not recorded')
       }

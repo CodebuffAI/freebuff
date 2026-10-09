@@ -254,9 +254,18 @@ export type ProfileSurveyArm = 0 | 1 | 2
 
 export const PROFILE_SURVEY_ARM_SALT = 'profile_survey_reward_arm_2026_10'
 export const PROFILE_SURVEY_MIN_ACCOUNT_AGE_MS = 24 * 60 * 60 * 1000
-export const PROFILE_SURVEY_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000
+/** Days each "Not now" snoozes for, by dismissal (1st, 2nd, ...). The
+ *  dismissal after the last entry stops this version for good. */
+export const PROFILE_SURVEY_SNOOZE_DAYS = [3, 3, 7, 7, 14] as const
 /** The dismissal that stops this version for good. */
-export const PROFILE_SURVEY_MAX_DISMISSALS = 3
+export const PROFILE_SURVEY_MAX_DISMISSALS = PROFILE_SURVEY_SNOOZE_DAYS.length + 1
+/** Days the `dismissal`th "Not now" (1-based) snoozes for; null when it
+ *  stops the survey instead. */
+export function profileSurveySnoozeDays(dismissal: number): number | null {
+  if (dismissal >= PROFILE_SURVEY_MAX_DISMISSALS) return null
+  return PROFILE_SURVEY_SNOOZE_DAYS[Math.max(dismissal, 1) - 1]
+}
+export const PROFILE_SURVEY_DAY_MS = 24 * 60 * 60 * 1000
 /** An answer given faster than this (client-measured) is flagged `fast`:
  *  it still counts for completion, but targeting readers exclude it. */
 export const PROFILE_SURVEY_FAST_ANSWER_MS = 800

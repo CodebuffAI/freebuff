@@ -100,7 +100,7 @@ describe('profile survey store', () => {
     dispatchProfileSurveyInput({ type: 'escape' })
     await profileSurveyIdle()
     expect(fake.requests).toEqual([{ action: 'dismiss', version: 1 }])
-    expect(printed).toEqual(["Not now: we'll ask again in 7 days."])
+    expect(printed).toEqual(["Not now: we'll ask again in 3 days."])
   })
 
   test('Esc on the stopping dismissal says so', async () => {

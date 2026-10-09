@@ -47,6 +47,8 @@ export type ProfileSurveyState = {
   version: number
   questions: ProfileSurveyQuestion[]
   rewardFreebucks: number
+  /** "Not now"s already on file, so the next one's snooze is known. */
+  dismissCount: number
   /** Index into `questions`. Equals `questions.length` once finished. */
   step: number
   /** Committed answers by question id (server-resumed or given here). */
@@ -122,6 +124,7 @@ export function createProfileSurveyState(
     version: response.version,
     questions: response.questions,
     rewardFreebucks: response.rewardFreebucks,
+    dismissCount: response.dismissCount,
     step,
     answers,
     selection: selectionFor(response.questions[step], answers),
@@ -339,8 +342,8 @@ export function profileSurveyCompletionLines(
   return `${head}\nedit answers: ${accountUrl}`
 }
 
-export function profileSurveyDismissLine(stopped: boolean): string {
-  return stopped
+export function profileSurveyDismissLine(snoozeDays: number | null): string {
+  return snoozeDays === null
     ? "Got it, we won't ask again."
-    : "Not now: we'll ask again in 7 days."
+    : `Not now: we'll ask again in ${snoozeDays} days.`
 }
