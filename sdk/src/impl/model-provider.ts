@@ -24,6 +24,19 @@ import {
   byokReasoningRetryBody,
   byokRequestTransform,
 } from './byok-request'
+import {
+  chatCompletionsJson,
+  chatCompletionsStream,
+  chatGptResponsesBody,
+} from './chatgpt-responses'
+import {
+  CHATGPT_BYOK_PROVIDER,
+  CHATGPT_CODEX_RESPONSES_URL,
+  CHATGPT_ORIGINATOR,
+  CHATGPT_SIGN_IN_AGAIN,
+  ChatGptAuthError,
+  chatGptAccountId,
+} from '../chatgpt'
 import { getWebsiteUrl } from '../constants'
 import { getByokOpenrouterApiKeyFromEnv } from '../env'
 import { ByokConnectionStateError, byokCompletionUrl, byokCredentialVariable } from '../byok'
@@ -433,6 +446,7 @@ export function getModelForRequest({
   byok,
   requestHeaders,
 }: ModelRequestParams): LanguageModel {
+  if (byok?.provider === CHATGPT_BYOK_PROVIDER) return chatGptModel(byok)
   if (byok) {
     return new OpenAICompatibleChatLanguageModel(byok.model, {
       provider: 'byok',
@@ -600,6 +614,150 @@ export function getModelForRequest({
         )
       : fetchWithRetryableNetworkErrors) as typeof globalThis.fetch,
     includeUsage: undefined,
+    supportsStructuredOutputs: true,
+  })
+}
+
+/**
+ * A fixed, actionable message for a ChatGPT-plan HTTP failure. The body is
+ * only classified, never shown: it can echo the request.
+ */
+export function getChatGptErrorMessage(
+  status: number,
+  detail: { model: string; body: string },
+): string {
+  const model = detail.model.slice(0, MAX_MODEL_ID_IN_MESSAGE)
+  if (status === 401) return CHATGPT_SIGN_IN_AGAIN
+  if (status === 429 || /usage_limit|rate_limit/i.test(detail.body))
+    return 'You have reached your ChatGPT plan’s usage limit. Wait for it to reset, or choose a Freebuff model to continue.'
+  if (status === 403)
+    return `Your ChatGPT plan cannot use "${model}" (HTTP 403). Choose another model or check your plan.`
+  if (
+    (status === 400 || status === 404) &&
+    (isByokModelIdRejection(detail.body) ||
+      /model.{0,80}(?:not supported|unsupported|not available|does not exist)/i.test(
+        detail.body.slice(0, 16_384),
+      ))
+  )
+    return `ChatGPT does not offer "${model}" on your plan (HTTP ${status}). Choose another model.`
+  if (status >= 500)
+    return `ChatGPT is temporarily unavailable (HTTP ${status}). Retry the task later.`
+  return `ChatGPT could not run this request (HTTP ${status}). Retry, or choose another model.`
+}
+
+/**
+ * The user's ChatGPT plan through the Codex backend. The request is the same
+ * Chat Completions body as any BYOK model, translated to the Responses API in
+ * this fetch; the access token is read per request, so a long run outlives
+ * the token it started with.
+ */
+function chatGptModel(byok: ResolvedByokConnection): LanguageModel {
+  const transform = byokRequestTransform(byok)
+  return new OpenAICompatibleChatLanguageModel(byok.model, {
+    provider: 'byok',
+    transformRequestBody: transform,
+    url: () => CHATGPT_CODEX_RESPONSES_URL,
+    headers: () => ({
+      'user-agent': `ai-sdk/openai-compatible/${VERSION}/freebuff-chatgpt`,
+    }),
+    fetch: (async (...args: Parameters<typeof globalThis.fetch>) => {
+      const init = args[1] ?? {}
+      let token: string
+      try {
+        await byok.assertCurrent?.()
+        token = byok.accessToken ? await byok.accessToken() : byok.apiKey
+      } catch (error) {
+        throw new Error(
+          error instanceof ByokConnectionStateError ||
+            error instanceof ChatGptAuthError
+            ? error.message
+            : 'Could not use your ChatGPT sign-in. Sign in with ChatGPT again in API provider settings.',
+        )
+      }
+      let body: Record<string, unknown>
+      try {
+        body = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>
+      } catch {
+        throw new Error('Could not prepare the ChatGPT request.')
+      }
+      const streamed = body.stream === true
+      const accountId = chatGptAccountId(token)
+      try {
+        const response = await globalThis.fetch(CHATGPT_CODEX_RESPONSES_URL, {
+          method: 'POST',
+          signal: init.signal,
+          redirect: 'error',
+          headers: {
+            'content-type': 'application/json',
+            accept: 'text/event-stream',
+            authorization: `Bearer ${token}`,
+            originator: CHATGPT_ORIGINATOR,
+            'openai-beta': 'responses=experimental',
+            'user-agent': `ai-sdk/openai-compatible/${VERSION}/freebuff-chatgpt`,
+            ...(accountId ? { 'chatgpt-account-id': accountId } : {}),
+          },
+          body: JSON.stringify(chatGptResponsesBody(body)),
+        })
+        if (!response.ok || !response.body) {
+          const text = await response.text().catch(() => '')
+          const message = getChatGptErrorMessage(response.status, {
+            model: byok.model,
+            body: text,
+          })
+          // A spent plan or a revoked sign-in answers the same on a retry.
+          if (
+            response.status === 401 ||
+            response.status === 403 ||
+            response.status === 429 ||
+            /usage_limit/i.test(text)
+          )
+            throw new APICallError({
+              message,
+              url: 'chatgpt',
+              requestBodyValues: {},
+              statusCode: response.status,
+              isRetryable: false,
+            })
+          const headers = new Headers({ 'content-type': 'application/json' })
+          for (const name of ['retry-after', 'retry-after-ms']) {
+            const value = response.headers.get(name)
+            if (value && /^\d+(?:\.\d+)?$/.test(value)) headers.set(name, value)
+          }
+          return new Response(JSON.stringify({ error: { message } }), {
+            status: response.ok ? 502 : response.status,
+            headers,
+          })
+        }
+        if (streamed)
+          return new Response(
+            redactProviderStream(chatCompletionsStream(response.body), token),
+            { status: 200, headers: { 'content-type': 'text/event-stream' } },
+          )
+        const completion = await chatCompletionsJson(response.body)
+        return new Response(
+          JSON.stringify(completion.json).split(token).join('[redacted]'),
+          {
+            status: completion.status,
+            headers: { 'content-type': 'application/json' },
+          },
+        )
+      } catch (error) {
+        if (error instanceof APICallError) throw error
+        const safe = sanitizeByokTransportError(error)
+        if (init.signal?.aborted || isAbortError(safe)) {
+          throw new DOMException('ChatGPT request aborted', 'AbortError')
+        }
+        throw new APICallError({
+          message:
+            'Could not connect to ChatGPT. Check your network connection, then retry.',
+          url: 'chatgpt',
+          requestBodyValues: {},
+          cause: safe,
+          isRetryable: isTransientNetworkError(safe),
+        })
+      }
+    }) as typeof globalThis.fetch,
+    includeUsage: true,
     supportsStructuredOutputs: true,
   })
 }

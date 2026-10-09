@@ -74,7 +74,7 @@ export interface Settings {
   byokConnection?: {
     id: string
     revision: number
-    provider?: 'openrouter' | 'openai-compatible'
+    provider?: 'openrouter' | 'openai-compatible' | 'chatgpt'
     model?: string
   }
   /** Reasoning effort for BYOK runs (`/byok effort`). Absent sends no
@@ -245,7 +245,8 @@ const validateSettings = (parsed: unknown): Settings => {
       id: byokConnection.id,
       revision: byokConnection.revision,
       ...(byokConnection.provider === 'openrouter' ||
-      byokConnection.provider === 'openai-compatible'
+      byokConnection.provider === 'openai-compatible' ||
+      byokConnection.provider === 'chatgpt'
         ? { provider: byokConnection.provider }
         : {}),
       ...(typeof byokConnection.model === 'string' && byokConnection.model

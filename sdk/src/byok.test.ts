@@ -20,6 +20,13 @@ import {
   type ByokConnection,
   type ByokSecretStore,
 } from './byok'
+import {
+  CHATGPT_CONTEXT_WINDOW,
+  CHATGPT_DEFAULT_MODELS,
+  CHATGPT_SIGN_IN_AGAIN,
+  type ChatGptTokens,
+} from './chatgpt'
+import { fakeChatGptJwt } from './__tests__/fixtures/chatgpt-jwt'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -743,4 +750,148 @@ test('failed key rotation leaves the old revision recoverable', async () => {
   const updated = await store.update({ ...first, patch: { apiKey: 'new-key' } })
   expect((await store.resolve(updated)).apiKey).toBe('new-key')
   await expect(resolved.assertCurrent!()).rejects.toThrow('changed')
+})
+
+describe('ChatGPT sign-in connections', () => {
+  const tokens = (overrides: Partial<ChatGptTokens> = {}): ChatGptTokens => ({
+    accessToken: 'access-canary',
+    refreshToken: 'refresh-canary',
+    expiresAt: Date.now() + 3_600_000,
+    accountId: 'acct_fixture',
+    ...overrides,
+  })
+
+  test('a sign-in saves the default models on one shared credential, kept out of metadata', async () => {
+    const { store, secret, rows } = fixture()
+    const created = await store.saveChatGptSignIn(tokens())
+    expect(created.map((item) => item.model)).toEqual(
+      CHATGPT_DEFAULT_MODELS.map((item) => item.model),
+    )
+    const references = new Set(rows().map((item) => item.credentialRef))
+    expect(references.size).toBe(1)
+    expect([...references][0]).toMatch(/^chatgpt:/)
+    expect(secret.values.size).toBe(1)
+    expect(JSON.stringify(rows())).not.toContain('canary')
+    expect(rows().every((item) => item.provider === 'chatgpt')).toBe(true)
+
+    // Signing in again replaces the shared tokens and adds nothing.
+    const again = await store.saveChatGptSignIn(tokens({ accessToken: 'access-2' }))
+    expect(again.map((item) => item.id)).toEqual(created.map((item) => item.id))
+    expect(rows()).toHaveLength(created.length)
+    expect([...secret.values.values()][0]).toContain('access-2')
+  })
+
+  test('a sign-in saves the plan’s models, and signing in again adds only new ones', async () => {
+    const { store, rows } = fixture()
+    await store.saveChatGptSignIn(tokens(), [
+      { model: 'gpt-6.1-sol', name: 'GPT-6.1-Sol (ChatGPT)', contextWindow: 400_000 },
+      { model: 'gpt-6-luna', name: 'GPT-6-Luna (ChatGPT)' },
+    ])
+    expect(rows().map((item) => [item.model, item.contextWindow])).toEqual([
+      ['gpt-6.1-sol', 400_000],
+      ['gpt-6-luna', CHATGPT_CONTEXT_WINDOW],
+    ])
+    const all = await store.saveChatGptSignIn(tokens({ accessToken: 'access-2' }), [
+      { model: 'gpt-6.1-sol', name: 'GPT-6.1-Sol (ChatGPT)' },
+      { model: 'gpt-7', name: 'GPT-7 (ChatGPT)' },
+    ])
+    expect(all.map((item) => item.model)).toEqual([
+      'gpt-6.1-sol',
+      'gpt-6-luna',
+      'gpt-7',
+    ])
+    expect(new Set(rows().map((item) => item.credentialRef)).size).toBe(1)
+  })
+
+  test('models share the sign-in, and removing any of them removes it whole', async () => {
+    const { store, secret, rows } = fixture()
+    const other = await store.create(input)
+    const [first, second] = await store.saveChatGptSignIn(tokens())
+    const added = await store.addModel({
+      id: first!.id,
+      revision: first!.revision,
+      model: { name: 'Codex mini', model: 'gpt-codex-mini' },
+    })
+    expect(added.credentialRef).toBe(first!.credentialRef)
+    expect(added.contextWindow).toBe(CHATGPT_CONTEXT_WINDOW)
+    expect(secret.values.size).toBe(2)
+    await store.remove({ id: second!.id, revision: second!.revision })
+    // Every ChatGPT model went, with the sign-in; the other provider stayed.
+    expect(rows().map((item) => item.id)).toEqual([other.id])
+    expect([...secret.values.keys()]).toEqual([other.credentialRef])
+    await expect(
+      store.resolve({ id: first!.id, revision: first!.revision }),
+    ).rejects.toThrow('removed')
+  })
+
+  test('only the sign-in flow creates one, and its sign-in cannot be edited', async () => {
+    const { store } = fixture()
+    await expect(
+      store.create({ name: 'x', provider: 'chatgpt', model: 'gpt-6-sol', apiKey: 'k' }),
+    ).rejects.toThrow('Sign in with ChatGPT')
+    const [first] = await store.saveChatGptSignIn(tokens())
+    await expect(
+      store.update({ id: first!.id, revision: 1, patch: { apiKey: 'k' } }),
+    ).rejects.toThrow('Sign in with ChatGPT again')
+    const renamed = await store.update({
+      id: first!.id,
+      revision: 1,
+      patch: { name: 'Work plan', model: 'gpt-6-astra' },
+    })
+    expect(renamed).toMatchObject({ name: 'Work plan', model: 'gpt-6-astra', revision: 2 })
+    expect(renamed.credentialRef).toBe(first!.credentialRef)
+  })
+
+  test('resolving refreshes an expiring sign-in once, saves it, and hides the token', async () => {
+    let refreshes = 0
+    const fetchImpl = (async (url: string) => {
+      expect(url).toBe('https://auth.openai.com/oauth/token')
+      refreshes++
+      return Response.json({
+        access_token: fakeChatGptJwt(),
+        refresh_token: 'refresh-rotated',
+      })
+    }) as unknown as typeof fetch
+    const { store, secret } = fixture(fetchImpl)
+    const [first] = await store.saveChatGptSignIn(
+      tokens({ expiresAt: Date.now() + 1_000 }),
+    )
+    const resolved = await store.resolve({ id: first!.id, revision: 1 })
+    expect(refreshes).toBe(1)
+    expect([...secret.values.values()][0]).toContain('refresh-rotated')
+    expect(await resolved.accessToken!()).toBe(resolved.apiKey)
+    expect(refreshes).toBe(1)
+    expect(JSON.stringify(resolved)).not.toContain(resolved.apiKey)
+    expect(Object.keys(resolved)).not.toContain('accessToken')
+    // Sibling models reuse the rotated sign-in instead of refreshing again.
+    const others = (await store.list()).filter((item) => item.id !== first!.id)
+    await store.resolve({ id: others[0]!.id, revision: 1 })
+    expect(refreshes).toBe(1)
+  })
+
+  test('a sign-in that can no longer refresh fails with the sign-in-again message', async () => {
+    const fetchImpl = (async () =>
+      Response.json({ error: 'refresh_token_reused' }, { status: 401 })) as unknown as typeof fetch
+    const { store } = fixture(fetchImpl)
+    const [first] = await store.saveChatGptSignIn(tokens({ expiresAt: 0 }))
+    await expect(store.resolve({ id: first!.id, revision: 1 })).rejects.toThrow(
+      CHATGPT_SIGN_IN_AGAIN,
+    )
+    expect(await store.validate({ id: first!.id, revision: 1 })).toMatchObject({
+      ok: false,
+      message: CHATGPT_SIGN_IN_AGAIN,
+    })
+  })
+
+  test('ChatGPT credentials cannot be borrowed by another provider', async () => {
+    const { store, rows } = fixture()
+    await store.saveChatGptSignIn(tokens())
+    const shared = rows()[0]!.credentialRef
+    const metadata = createBunByokMetadataStore({ directory: await temporaryDirectory() })
+    await expect(
+      metadata.set([
+        { ...rows()[0]!, provider: 'openai-compatible', baseUrl: 'https://example.com/v1', credentialRef: shared },
+      ]),
+    ).rejects.toThrow('different connection')
+  })
 })

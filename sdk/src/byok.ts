@@ -5,19 +5,36 @@ import path from 'node:path'
 import { z } from 'zod/v4'
 import { isByokReasoningEffort } from '@codebuff/common/constants/reasoning-effort'
 import type { ByokReasoningEffort } from '@codebuff/common/constants/reasoning-effort'
+import {
+  CHATGPT_BYOK_PROVIDER,
+  CHATGPT_CODEX_BASE_URL,
+  CHATGPT_CODEX_RESPONSES_URL,
+  CHATGPT_CONTEXT_WINDOW,
+  CHATGPT_DEFAULT_MODELS,
+  CHATGPT_MAX_OUTPUT_TOKENS,
+  ChatGptAuthError,
+  needsChatGptRefresh,
+  parseChatGptTokens,
+  refreshChatGptTokens,
+  serializeChatGptTokens,
+  type ChatGptModelChoice,
+  type ChatGptTokens,
+} from './chatgpt'
 import { getSystemProcessEnv } from './env'
 import { recoverByokLock } from './impl/byok-lock'
 
 export const BYOK_SECRET_SERVICE = 'com.freebuff.byok.v1'
 const envReference = /^env:[A-Za-z_][A-Za-z0-9_]*$/
 const ownedReference = /^connection:[a-f0-9-]+:[1-9][0-9]*$/
+/** One ChatGPT sign-in, shared by every model saved from it (see saveChatGptSignIn). */
+const chatGptReference = /^chatgpt:[a-f0-9-]+$/
 const text = z.string().trim().min(1).max(256)
 const connectionSchema = z
   .object({
     id: z.uuid(),
     revision: z.number().int().positive(),
     name: text,
-    provider: z.enum(['openrouter', 'openai-compatible']),
+    provider: z.enum(['openrouter', 'openai-compatible', CHATGPT_BYOK_PROVIDER]),
     model: text,
     baseUrl: z.string().max(2048).optional(),
     contextWindow: z.number().int().min(4096).max(2_000_000).optional(),
@@ -25,7 +42,10 @@ const connectionSchema = z
     credentialRef: z
       .string()
       .refine(
-        (value) => envReference.test(value) || ownedReference.test(value),
+        (value) =>
+          envReference.test(value) ||
+          ownedReference.test(value) ||
+          chatGptReference.test(value),
       ),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
@@ -38,6 +58,12 @@ export type ResolvedByokConnection = ByokConnection & {
   apiKey: string
   /** Recheck revocation before every provider request; never serialized. */
   assertCurrent?: () => Promise<void>
+  /**
+   * ChatGPT sign-ins only: a current access token, refreshed when it is about
+   * to expire. `apiKey` holds the token current when the run started, for
+   * scrubbing; requests must use this instead. Never serialized.
+   */
+  accessToken?: () => Promise<string>
   /**
    * The run's reasoning effort, a per-task choice rather than connection
    * metadata (so never stored). Absent sends no reasoning field at all, which
@@ -105,6 +131,10 @@ export type ByokConnectionStore = {
     revision: number
     patch: ByokConnectionPatch
   }): Promise<ByokConnection>
+  /**
+   * Remove a connection. A ChatGPT model is part of one sign-in, so removing
+   * any of them removes every model on that sign-in, and the sign-in itself.
+   */
   remove(input: { id: string; revision: number }): Promise<void>
   resolve(input: {
     id: string
@@ -114,6 +144,17 @@ export type ByokConnectionStore = {
     id: string
     revision: number
   }): Promise<ByokValidationResult>
+  /**
+   * Save a ChatGPT sign-in and a connection for each of `models` (the plan's
+   * list, see listChatGptModels; CHATGPT_DEFAULT_MODELS by default). Signing
+   * in again replaces the tokens every saved ChatGPT model shares and adds
+   * the listed models not saved yet, leaving saved ones (and their names and
+   * limits) as they are. Returns every ChatGPT connection.
+   */
+  saveChatGptSignIn(
+    tokens: ChatGptTokens,
+    models?: readonly ChatGptModelChoice[],
+  ): Promise<ByokConnection[]>
 }
 
 /**
@@ -169,6 +210,7 @@ export function normalizeByokBaseUrl(
   baseUrl?: string,
 ): string {
   if (provider === 'openrouter') return 'https://openrouter.ai/api/v1'
+  if (provider === CHATGPT_BYOK_PROVIDER) return CHATGPT_CODEX_BASE_URL
   if (provider !== 'openai-compatible')
     throw new Error('Unsupported BYOK provider')
   let url: URL
@@ -193,6 +235,8 @@ export function normalizeByokBaseUrl(
 export function byokCompletionUrl(
   connection: Pick<ByokConnection, 'provider' | 'baseUrl'>,
 ): string {
+  if (connection.provider === CHATGPT_BYOK_PROVIDER)
+    return CHATGPT_CODEX_RESPONSES_URL
   return (
     normalizeByokBaseUrl(connection.provider, connection.baseUrl) +
     '/chat/completions'
@@ -211,8 +255,10 @@ function parseConnections(value: unknown): ByokConnection[] {
     byokModelLimits(item)
     normalizeByokBaseUrl(item.provider, item.baseUrl)
     if (
-      !envReference.test(item.credentialRef) &&
-      !item.credentialRef.startsWith(`connection:${item.id}:`)
+      item.provider === CHATGPT_BYOK_PROVIDER
+        ? !chatGptReference.test(item.credentialRef)
+        : !envReference.test(item.credentialRef) &&
+          !item.credentialRef.startsWith(`connection:${item.id}:`)
     ) {
       throw new ByokConnectionStateError(
         'BYOK credential reference belongs to a different connection',
@@ -372,6 +418,8 @@ export async function discoverByokContextWindow(
   >,
   fetchImpl: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<number | undefined> {
+  // The Codex backend serves no OpenAI-style listing.
+  if (connection.provider === CHATGPT_BYOK_PROVIDER) return undefined
   let base: string
   try {
     base = normalizeByokBaseUrl(connection.provider, connection.baseUrl)
@@ -442,11 +490,12 @@ function copyRuntimeFields(
     value: source.apiKey,
     enumerable: false,
   })
-  if (source.assertCurrent)
-    Object.defineProperty(target, 'assertCurrent', {
-      value: source.assertCurrent,
-      enumerable: false,
-    })
+  for (const field of ['assertCurrent', 'accessToken'] as const)
+    if (source[field])
+      Object.defineProperty(target, field, {
+        value: source[field],
+        enumerable: false,
+      })
   return target
 }
 
@@ -488,19 +537,12 @@ export async function withEffectiveByokLimits(
     maxOutputTokens:
       connection.maxOutputTokens ?? BYOK_DEFAULT_MAX_OUTPUT_TOKENS,
   } as ResolvedByokConnection
-  Object.defineProperty(effective, 'apiKey', {
-    value: connection.apiKey,
-    enumerable: false,
-  })
-  if (connection.assertCurrent)
-    Object.defineProperty(effective, 'assertCurrent', {
-      value: connection.assertCurrent,
-      enumerable: false,
-    })
-  return Object.freeze(effective)
+  return Object.freeze(copyRuntimeFields(effective, connection))
 }
 
 function cleanInput(input: ByokConnectionInput) {
+  if (input.provider === CHATGPT_BYOK_PROVIDER)
+    throw new Error('Sign in with ChatGPT to add a ChatGPT provider')
   const limits = byokModelLimits(input)
   const name = text.safeParse(input.name),
     model = text.safeParse(input.model)
@@ -746,11 +788,72 @@ export function createByokConnectionStore(params: {
     }
     return { ...connection }
   }
+  // Under the metadata lock. A ChatGPT model shares its sign-in's credential
+  // instead of copying it: OpenAI rotates the refresh token on every use, so
+  // a copy would stop working the first time a sibling refreshed.
+  async function createChatGptModel(
+    credentialRef: string,
+    fields: { name: string; model: string; contextWindow?: number; maxOutputTokens?: number },
+  ): Promise<ByokConnection> {
+    const name = text.safeParse(fields.name),
+      model = text.safeParse(fields.model)
+    if (!name.success || !model.success)
+      throw new Error('Connection name and model must contain 1–256 characters')
+    const limits = byokModelLimits({
+      contextWindow: fields.contextWindow ?? CHATGPT_CONTEXT_WINDOW,
+      maxOutputTokens: fields.maxOutputTokens ?? CHATGPT_MAX_OUTPUT_TOKENS,
+    })
+    const now = new Date().toISOString()
+    return {
+      id: crypto.randomUUID(),
+      revision: 1,
+      name: name.data,
+      provider: CHATGPT_BYOK_PROVIDER,
+      model: model.data,
+      baseUrl: CHATGPT_CODEX_BASE_URL,
+      contextWindow: limits.contextWindow,
+      maxOutputTokens: limits.maxOutputTokens,
+      credentialRef,
+      createdAt: now,
+      updatedAt: now,
+    }
+  }
+  // Under the metadata lock, which serializes refreshes across processes:
+  // whoever refreshes second re-reads the rotated token instead of reusing
+  // the old one.
+  async function freshChatGptTokens(reference: string): Promise<ChatGptTokens> {
+    const tokens = parseChatGptTokens(await getSecret(reference))
+    if (!needsChatGptRefresh(tokens)) return tokens
+    const refreshed = await refreshChatGptTokens(tokens, fetchImpl)
+    try {
+      await secretStore.set(reference, serializeChatGptTokens(refreshed))
+    } catch {
+      throw new ByokConnectionStateError(
+        'Could not save your refreshed ChatGPT sign-in in OS credential storage. Unlock it, then sign in with ChatGPT again.',
+      )
+    }
+    return refreshed
+  }
+  /** Sign-in problems become the safe, typed error the model provider shows. */
+  async function chatGptStateErrors<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation()
+    } catch (error) {
+      if (error instanceof ChatGptAuthError)
+        throw new ByokConnectionStateError(error.message)
+      throw error
+    }
+  }
   const store: ByokConnectionStore = {
     create: (input) => exclusive(() => create(input)),
     addModel: ({ id, revision, model }) =>
       exclusive(async () => {
-        const { connection } = await lookup(id, revision)
+        const { connection, connections } = await lookup(id, revision)
+        if (connection.provider === CHATGPT_BYOK_PROVIDER) {
+          const created = await createChatGptModel(connection.credentialRef, model)
+          await metadataStore.set([...connections, created])
+          return { ...created }
+        }
         return create({
           name: model.name,
           model: model.model,
@@ -769,6 +872,36 @@ export function createByokConnectionStore(params: {
     update: ({ id, revision, patch }) =>
       exclusive(async () => {
         const { connection: existing, connections } = await lookup(id, revision)
+        if (existing.provider === CHATGPT_BYOK_PROVIDER) {
+          if (
+            patch.provider !== undefined ||
+            patch.baseUrl !== undefined ||
+            patch.apiKey !== undefined ||
+            patch.credentialRef !== undefined
+          )
+            throw new Error(
+              'A ChatGPT provider has no key or endpoint to change. Sign in with ChatGPT again to replace its sign-in.',
+            )
+          const fields = await createChatGptModel(existing.credentialRef, {
+            name: patch.name ?? existing.name,
+            model: patch.model ?? existing.model,
+            contextWindow: patch.contextWindow ?? existing.contextWindow,
+            maxOutputTokens: patch.maxOutputTokens ?? existing.maxOutputTokens,
+          })
+          const updated = {
+            ...existing,
+            name: fields.name,
+            model: fields.model,
+            contextWindow: fields.contextWindow,
+            maxOutputTokens: fields.maxOutputTokens,
+            revision: revision + 1,
+            updatedAt: fields.updatedAt,
+          }
+          await metadataStore.set(
+            connections.map((item) => (item.id === id ? updated : item)),
+          )
+          return { ...updated }
+        }
         const fields = cleanInput({
           ...existing,
           ...patch,
@@ -835,18 +968,50 @@ export function createByokConnectionStore(params: {
     remove: ({ id, revision }) =>
       exclusive(async () => {
         const { connection, connections } = await lookup(id, revision)
+        // A ChatGPT model goes with its whole sign-in; any other connection
+        // goes alone (environment-backed siblings keep their reference).
+        const removed =
+          connection.provider === CHATGPT_BYOK_PROVIDER
+            ? (item: ByokConnection) =>
+                item.credentialRef === connection.credentialRef
+            : (item: ByokConnection) => item.id === id
+        const shared = connections.some(
+          (item) =>
+            !removed(item) && item.credentialRef === connection.credentialRef,
+        )
         // Erase first: on failure metadata remains so the user can retry.
-        await eraseSecret(connection.credentialRef)
-        await metadataStore.set(connections.filter((item) => item.id !== id))
+        if (!shared) await eraseSecret(connection.credentialRef)
+        await metadataStore.set(connections.filter((item) => !removed(item)))
       }),
     resolve: ({ id, revision }) =>
       exclusive(async () => {
         const { connection } = await lookup(id, revision)
         const result = { ...connection } as ResolvedByokConnection
-        Object.defineProperty(result, 'apiKey', {
-          value: await getSecret(connection.credentialRef),
-          enumerable: false,
-        })
+        if (connection.provider === CHATGPT_BYOK_PROVIDER) {
+          const reference = connection.credentialRef
+          let current = await chatGptStateErrors(() =>
+            freshChatGptTokens(reference),
+          )
+          Object.defineProperty(result, 'apiKey', {
+            value: current.accessToken,
+            enumerable: false,
+          })
+          Object.defineProperty(result, 'accessToken', {
+            value: async () => {
+              if (needsChatGptRefresh(current))
+                current = await exclusive(() =>
+                  chatGptStateErrors(() => freshChatGptTokens(reference)),
+                )
+              return current.accessToken
+            },
+            enumerable: false,
+          })
+        } else {
+          Object.defineProperty(result, 'apiKey', {
+            value: await getSecret(connection.credentialRef),
+            enumerable: false,
+          })
+        }
         Object.defineProperty(result, 'assertCurrent', {
           value: () =>
             exclusive(async () => {
@@ -862,8 +1027,13 @@ export function createByokConnectionStore(params: {
         resolved = await store.resolve(selection)
       } catch (error) {
         // A missing key is a failed check of an existing connection, not a
-        // failed command: `/byok add` has already saved it by now.
-        if (!(error instanceof ByokCredentialError)) throw error
+        // failed command: `/byok add` has already saved it by now. So is an
+        // expired ChatGPT sign-in.
+        if (
+          !(error instanceof ByokCredentialError) &&
+          !(error instanceof ByokConnectionStateError)
+        )
+          throw error
         const saved = (await read()).find(
           (item) =>
             item.id === selection.id && item.revision === selection.revision,
@@ -872,6 +1042,10 @@ export function createByokConnectionStore(params: {
         return { ok: false, connection: { ...saved }, message: error.message }
       }
       const connection = { ...resolved }
+      // Resolving already proved the sign-in works: it refreshed the token if
+      // it had to. The Codex backend has no cheap listing to probe.
+      if (resolved.provider === CHATGPT_BYOK_PROVIDER)
+        return { ok: true, connection }
       let base: string | undefined
       try {
         await resolved.assertCurrent?.()
@@ -933,6 +1107,38 @@ export function createByokConnectionStore(params: {
         }
       }
     },
+    saveChatGptSignIn: (tokens, models = CHATGPT_DEFAULT_MODELS) =>
+      exclusive(async () => {
+        const connections = await read()
+        const saved = connections.filter(
+          (item) => item.provider === CHATGPT_BYOK_PROVIDER,
+        )
+        const value = serializeChatGptTokens(tokens)
+        const fresh = !saved.length
+        const credentialRef = fresh
+          ? `chatgpt:${crypto.randomUUID()}`
+          : saved[0]!.credentialRef
+        if (fresh) await writeSecret(credentialRef, value)
+        else
+          for (const reference of new Set(saved.map((item) => item.credentialRef)))
+            await writeSecret(reference, value)
+        const have = new Set(saved.map((item) => item.model))
+        const created: ByokConnection[] = []
+        for (const model of models)
+          if (!have.has(model.model)) {
+            have.add(model.model)
+            created.push(await createChatGptModel(credentialRef, model))
+          }
+        if (created.length) {
+          try {
+            await metadataStore.set([...connections, ...created])
+          } catch (error) {
+            if (fresh) await secretStore.delete(credentialRef).catch(() => {})
+            throw error
+          }
+        }
+        return [...saved, ...created].map((item) => ({ ...item }))
+      }),
   }
   return store
 }

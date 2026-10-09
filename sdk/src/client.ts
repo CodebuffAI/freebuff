@@ -79,6 +79,9 @@ export class CodebuffClient {
     if (this.options.byok) {
       try {
         await this.options.byok.assertCurrent?.()
+        // A ChatGPT sign-in has no listing to probe; a current token is the check.
+        if (this.options.byok.accessToken)
+          return Boolean(await this.options.byok.accessToken())
         const baseUrl = normalizeByokBaseUrl(
           this.options.byok.provider,
           this.options.byok.baseUrl,

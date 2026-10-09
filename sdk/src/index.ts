@@ -54,6 +54,7 @@ export {
 } from './agent-publisher-trust'
 export * from './credentials'
 export * from './byok'
+export * from './chatgpt'
 export {
   getDefaultAgentDirs,
   listLocalAgentFiles,

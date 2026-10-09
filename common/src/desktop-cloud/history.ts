@@ -45,6 +45,10 @@ export type CloudHistoryChatUpdate = {
   title?: string
   archived?: boolean
 }
+/** Last write wins: a project name has no revision to compare. */
+export type CloudHistoryProjectUpdate = {
+  name: string
+}
 /**
  * A server-internal run event marking that the run's SDK traces are stored in
  * R2 rather than as `trace` events. Never returned by the history API or the
@@ -92,7 +96,7 @@ export function createCloudHistoryClient(
     path: string,
     page: CloudHistoryOptions = {},
     projectId?: string,
-    update?: CloudHistoryChatUpdate,
+    update?: CloudHistoryChatUpdate | CloudHistoryProjectUpdate,
   ): Promise<T> {
     const query = new URLSearchParams()
     if (page.cursor != null) query.set('cursor', page.cursor)
@@ -132,6 +136,17 @@ export function createCloudHistoryClient(
       get<CloudHistoryPage<CloudHistoryProject>>('projects', page),
     getProject: (projectId: string, signal?: AbortSignal) =>
       get<CloudHistoryProject>(`projects/${id(projectId)}`, { signal }),
+    updateProject: (
+      projectId: string,
+      update: CloudHistoryProjectUpdate,
+      signal?: AbortSignal,
+    ) =>
+      get<CloudHistoryProject>(
+        `projects/${id(projectId)}`,
+        { signal },
+        undefined,
+        update,
+      ),
     listChats: (page: CloudHistoryOptions & { projectId?: string } = {}) =>
       get<CloudHistoryPage<CloudHistoryChat>>('chats', page, page.projectId),
     getChat: (chatId: string, signal?: AbortSignal) =>

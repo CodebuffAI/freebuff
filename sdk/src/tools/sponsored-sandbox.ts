@@ -186,7 +186,8 @@ export function sponsoredContainment(
  * Where a LINKED worktree keeps the repository it belongs to.
  *
  * Desktop runs a sponsored turn in a linked worktree at
- * `<project>/.freebuff/worktrees/<threadId>`, whose `.git` is a gitfile
+ * `~/.freebuff/worktrees/<short-id>/<repo-name>` (older releases:
+ * `<project>/.freebuff/worktrees/<threadId>`), whose `.git` is a gitfile
  * pointing at `<project>/.git/worktrees/<threadId>` — OUTSIDE the workspace.
  * With the write roots at `[workspaceRoot, runtimeDir]` and nothing granting
  * the common dir, every git command died at repository discovery:

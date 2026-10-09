@@ -9,6 +9,14 @@
 
 export const ACCOUNT_BYOK_PROVIDERS = ['openrouter', 'openai-compatible'] as const
 export type AccountByokProvider = (typeof ACCOUNT_BYOK_PROVIDERS)[number]
+/**
+ * A ChatGPT plan, connected by signing in rather than with a key: never
+ * accepted on create, only made by the sign-in flow (`/chatgpt/*`).
+ */
+export const ACCOUNT_BYOK_CHATGPT_PROVIDER = 'chatgpt'
+export type AccountByokConnectionProvider =
+  | AccountByokProvider
+  | typeof ACCOUNT_BYOK_CHATGPT_PROVIDER
 
 /** Most saved account providers one account may keep. */
 export const ACCOUNT_BYOK_MAX_CONNECTIONS = 20
@@ -21,9 +29,9 @@ export interface AccountByokConnection {
   /** Bumped by every change; runs and edits name the revision they saw. */
   revision: number
   name: string
-  provider: AccountByokProvider
+  provider: AccountByokConnectionProvider
   model: string
-  /** Normalized endpoint. OpenRouter's is fixed. */
+  /** Normalized endpoint. OpenRouter's and ChatGPT's are fixed. */
   baseUrl: string
   contextWindow: number
   maxOutputTokens: number
@@ -44,6 +52,23 @@ export interface AccountByokConnectionInput {
 
 /** Changing the provider or endpoint requires supplying the key again. */
 export type AccountByokConnectionPatch = Partial<AccountByokConnectionInput>
+
+/**
+ * A ChatGPT sign-in in progress: show `userCode` and `verificationUrl`, then
+ * poll with `handle` every `intervalMs`. The handle is sealed by the server
+ * and opaque to clients.
+ */
+export interface AccountChatGptLogin {
+  handle: string
+  userCode: string
+  verificationUrl: string
+  expiresAt: number
+  intervalMs: number
+}
+
+export type AccountChatGptPoll =
+  | { status: 'pending'; intervalMs: number }
+  | { status: 'connected'; connections: AccountByokConnection[] }
 
 export type AccountByokValidation =
   | { ok: true }

@@ -523,13 +523,12 @@ describe('free mode agent model allowlist', () => {
     }
   })
 
-  test('allows file-picker and file-lister on GPT-6 Luna beside their Gemini models', () => {
-    expect(
-      isFreeModeAllowedAgentModel('file-picker', FREEBUFF_GPT_6_LUNA_MODEL_ID),
-    ).toBe(true)
-    expect(
-      isFreeModeAllowedAgentModel('file-lister', FREEBUFF_GPT_6_LUNA_MODEL_ID),
-    ).toBe(true)
+  test('allows the Luna helpers on GPT-6 Luna beside their Gemini models', () => {
+    for (const agentId of ['file-picker', 'file-lister', 'researcher-web']) {
+      expect(
+        isFreeModeAllowedAgentModel(agentId, FREEBUFF_GPT_6_LUNA_MODEL_ID),
+      ).toBe(true)
+    }
     // Released clients still send the Gemini models.
     expect(
       isFreeModeAllowedAgentModel(
@@ -537,17 +536,20 @@ describe('free mode agent model allowlist', () => {
         'google/gemini-2.5-flash-lite',
       ),
     ).toBe(true)
-    // Only those two moved.
-    expect(
-      isFreeModeAllowedAgentModel(
-        'researcher-web',
-        FREEBUFF_GPT_6_LUNA_MODEL_ID,
-      ),
-    ).toBe(false)
+    // Only those three moved.
+    for (const agentId of ['researcher-docs', 'browser-use', 'basher']) {
+      expect(
+        isFreeModeAllowedAgentModel(agentId, FREEBUFF_GPT_6_LUNA_MODEL_ID),
+      ).toBe(false)
+    }
   })
 
   test('marks only the Luna helpers as helper traffic on a session model', () => {
-    for (const agentId of ['file-picker', 'codebuff/file-lister@0.0.31']) {
+    for (const agentId of [
+      'file-picker',
+      'codebuff/file-lister@0.0.31',
+      'researcher-web',
+    ]) {
       expect(
         isFreebuffHelperOnSessionModel(agentId, FREEBUFF_GPT_6_LUNA_MODEL_ID),
       ).toBe(true)

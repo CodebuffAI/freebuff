@@ -135,7 +135,9 @@ export function byokLoadFailureMessage(error: unknown): string {
 export function describeByokConnection(connection: Pick<ByokConnection, 'name' | 'provider' | 'model'>): string {
   const provider = connection.provider === 'openrouter'
     ? 'OpenRouter'
-    : 'OpenAI-compatible'
+    : connection.provider === 'chatgpt'
+      ? 'ChatGPT plan'
+      : 'OpenAI-compatible'
   return `${connection.name} (${provider} · ${connection.model})`
 }
 

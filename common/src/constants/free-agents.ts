@@ -712,14 +712,17 @@ const GEMINI_HELPER_MODELS = new Set([
 ])
 
 /**
- * Helper subagents that run on GPT-6 Luna, with reasoning off, since
- * 2026-10-05. Luna is also a pickable session model, so a request from one
- * of these on Luna is helper traffic inside whatever session spawned it, not
- * a Luna session: see isFreebuffHelperOnSessionModel.
+ * Helper subagents that run on GPT-6 Luna: file-picker and file-lister with
+ * reasoning off since 2026-10-05, and researcher-web (the Desktop and
+ * Web/Cloud binding, agents/researcher/researcher-web-luna.ts) at medium
+ * effort. Luna is also a pickable session model, so a request from one of
+ * these on Luna is helper traffic inside whatever session spawned it, not a
+ * Luna session: see isFreebuffHelperOnSessionModel.
  */
 const FREEBUFF_LUNA_HELPER_AGENT_IDS: ReadonlySet<string> = new Set([
   'file-picker',
   'file-lister',
+  'researcher-web',
 ])
 
 /**
@@ -997,8 +1000,13 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
     FREEBUFF_GPT_6_LUNA_MODEL_ID,
   ]),
 
-  // Research agents
-  'researcher-web': GEMINI_HELPER_MODELS,
+  // Research agents. researcher-web runs GPT-6 Luna from Desktop and
+  // Web/Cloud (agents/researcher/researcher-web-luna.ts); the CLI's shared
+  // definition stays on Gemini.
+  'researcher-web': new Set([
+    ...GEMINI_HELPER_MODELS,
+    FREEBUFF_GPT_6_LUNA_MODEL_ID,
+  ]),
   'researcher-docs': GEMINI_HELPER_MODELS,
 
   // Browser automation
