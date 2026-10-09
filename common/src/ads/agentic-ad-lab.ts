@@ -22,9 +22,50 @@ export const labAdSchema = z
           return false
         }
       }, 'Use an HTTPS signup URL.'),
+    /** The advertiser campaign (and ad) a Customize copy came from; variations keep it. */
+    source: z
+      .object({
+        campaignId: z.string().min(1).max(120),
+        creativeId: z.string().min(1).max(120).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 export type LabAd = z.infer<typeof labAdSchema>
+const flightDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+/** Clone an advertiser campaign into a new draft that runs this lab ad. */
+export const labPublishSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    draft: labAdSchema,
+    sourceCampaignId: z.string().min(1).max(120),
+    name: z.string().trim().min(1).max(120),
+    flightStart: flightDay,
+    flightEnd: flightDay.nullable(),
+    copyAcceptanceCriteria: z.boolean(),
+  })
+  .strict()
+export type LabPublishInput = z.infer<typeof labPublishSchema>
+export type LabPublishCampaign = {
+  id: string
+  name: string
+  status: string
+  advertiserId: string
+  advertiserName: string
+  agentic: boolean
+  dailyCapCents: number
+  totalBudgetCents: number | null
+  placements: number
+  startsAt: string | null
+  endsAt: string | null
+  hasAcceptanceCriteria: boolean
+}
+export type LabPublishResult = {
+  campaignId: string
+  campaignName: string
+  advertiserName: string
+}
 export const labSelectionSchema = z.discriminatedUnion('kind', [
   z
     .object({ kind: z.literal('creative'), id: z.string().min(1).max(120) })
