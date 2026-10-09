@@ -34,15 +34,31 @@ export const labAdSchema = z
   .strict()
 export type LabAd = z.infer<typeof labAdSchema>
 const flightDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
-/** Clone an advertiser campaign into a new draft that runs this lab ad. */
+/**
+ * A new draft campaign for an advertiser that runs this lab ad. The campaign
+ * settings come from the dialog; `sourceCampaignId` optionally names one of
+ * the advertiser's campaigns whose remaining settings (conversion goal,
+ * frequency cap, the ad's CTA and brand colors) the draft copies.
+ */
 export const labPublishSchema = z
   .object({
     requestId: z.string().uuid(),
     draft: labAdSchema,
-    sourceCampaignId: z.string().min(1).max(120),
+    advertiserId: z.string().min(1).max(120),
+    sourceCampaignId: z.string().min(1).max(120).nullable(),
     name: z.string().trim().min(1).max(120),
+    landingUrl: z.string().trim().min(1).max(2048),
+    dailyCapCents: z.number().int().positive(),
+    totalBudgetCents: z.number().int().positive().nullable(),
     flightStart: flightDay,
     flightEnd: flightDay.nullable(),
+    countryTargeting: z
+      .object({
+        mode: z.enum(['include', 'exclude']),
+        countries: z.array(z.string().min(2).max(2)).min(1).max(250),
+      })
+      .strict()
+      .nullable(),
     copyAcceptanceCriteria: z.boolean(),
   })
   .strict()
@@ -50,6 +66,7 @@ export type LabPublishInput = z.infer<typeof labPublishSchema>
 export type LabPublishAdvertiser = {
   id: string
   name: string
+  websiteUrl: string
   campaigns: number
   agenticCampaigns: number
 }
@@ -60,17 +77,23 @@ export type LabPublishCampaign = {
   advertiserId: string
   advertiserName: string
   agentic: boolean
+  landingUrl: string
   dailyCapCents: number
   totalBudgetCents: number | null
   placements: number
   startsAt: string | null
   endsAt: string | null
+  countryTargeting: { mode: 'include' | 'exclude'; countries: string[] } | null
   hasAcceptanceCriteria: boolean
 }
 export type LabPublishResult = {
   campaignId: string
   campaignName: string
   advertiserName: string
+  /** `pending_review` once submitted; `draft` when submission was refused. */
+  status: string
+  /** Why the campaign stayed a draft. */
+  note?: string
 }
 export const labSelectionSchema = z.discriminatedUnion('kind', [
   z
