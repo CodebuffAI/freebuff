@@ -1,9 +1,5 @@
 import { MAX_LOG_DATA_BYTES } from '../schemas/logs'
-import {
-  redactHeadersForLog,
-  redactUrlForLog,
-  summarizeRequestBodyForLog,
-} from './log-redaction'
+import { redactErrorFieldForLog } from './log-redaction'
 
 import type { LogLevel } from '../types/contracts/logs'
 
@@ -74,18 +70,11 @@ function errorToJson(error: Error): Record<string, unknown> {
     fields.params = `[${fields.params.length} params omitted]`
   }
   // An AI SDK `APICallError` carries the whole LLM request (every message),
-  // the response headers and the URL: keep their shape, never the prompt or a
-  // key.
-  if ('requestBodyValues' in fields) {
-    fields.requestBodyValues = summarizeRequestBodyForLog(
-      fields.requestBodyValues,
-    )
-  }
-  if ('responseHeaders' in fields) {
-    fields.responseHeaders = redactHeadersForLog(fields.responseHeaders)
-  }
-  if (typeof fields.url === 'string') {
-    fields.url = redactUrlForLog(fields.url)
+  // both header sets and the URL, and Bun's fetch errors the URL as `path`:
+  // keep their shape, never the prompt or a key. The same function redacts
+  // `getErrorObject`'s raw dump, so the two paths cannot drift apart.
+  for (const key of Object.keys(fields)) {
+    fields[key] = redactErrorFieldForLog(key, fields[key])
   }
   return {
     ...fields,

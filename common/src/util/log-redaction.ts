@@ -92,3 +92,32 @@ export function redactHeadersForLog(
     ]),
   )
 }
+
+const URL_LIKE = /^[a-z][a-z0-9+.-]*:\/\//i
+
+/**
+ * One field of a serialized error, redacted by name: an AI SDK `APICallError`
+ * carries the whole request body and both header sets, and Bun's fetch errors
+ * carry the request URL as `path`. Every error serializer (`getErrorObject`'s
+ * raw dump, the Axiom and Convex-ingest log data) goes through this one
+ * function, so a field redacted on one path cannot leak on another.
+ */
+export function redactErrorFieldForLog(key: string, val: unknown): unknown {
+  if (key === 'requestBodyValues') return summarizeRequestBodyForLog(val)
+  if (
+    key === 'requestHeaders' ||
+    key === 'responseHeaders' ||
+    key === 'headers'
+  ) {
+    return redactHeadersForLog(val) ?? val
+  }
+  // `url` is always a URL; `path` is also a filesystem path on other errors,
+  // so it is rewritten only when it is one.
+  if (
+    typeof val === 'string' &&
+    (key === 'url' || (key === 'path' && URL_LIKE.test(val)))
+  ) {
+    return redactUrlForLog(val)
+  }
+  return val
+}

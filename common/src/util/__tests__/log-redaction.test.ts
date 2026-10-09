@@ -167,4 +167,19 @@ describe('serializeLogData on an AI SDK APICallError', () => {
     expect(error.responseHeaders['content-type']).toBe('application/json')
     expect(error.message).toBe('Bad Request')
   })
+
+  // The Axiom / Convex-ingest path used to redact fewer fields than
+  // getErrorObject's raw dump (AB827V0 finding 342, 186 residual).
+  test('redacts request headers and a URL-valued path, like getErrorObject', () => {
+    const error = Object.assign(new Error('fetch failed'), {
+      requestHeaders: { authorization: 'Bearer sk-request-header' },
+      path: 'https://freebuff.com/api/auth/cli/status?fingerprintHash=fp-secret',
+    })
+    const serialized = serializeLogData({ error })!
+    expect(serialized).not.toContain('sk-request-header')
+    expect(serialized).not.toContain('fp-secret')
+    expect(JSON.parse(serialized).error.path).toBe(
+      'https://freebuff.com/api/auth/cli/status',
+    )
+  })
 })

@@ -1,5 +1,5 @@
 import {
-  redactHeadersForLog,
+  redactErrorFieldForLog,
   redactUrlForLog,
   summarizeRequestBodyForLog,
 } from './log-redaction'
@@ -551,33 +551,6 @@ function safeStringify(
   }
 }
 
-const URL_LIKE = /^[a-z][a-z0-9+.-]*:\/\//i
-
-/**
- * `rawError` serializes every enumerable field of the error and its causes, so
- * the same redaction applies there: an AI SDK `APICallError` carries the whole
- * request body and the response headers, and Bun's fetch errors carry the
- * request URL as `path`.
- */
-function redactRawErrorField(key: string, val: unknown): unknown {
-  if (key === 'requestBodyValues') return summarizeRequestBodyForLog(val)
-  if (
-    key === 'requestHeaders' ||
-    key === 'responseHeaders' ||
-    key === 'headers'
-  ) {
-    return redactHeadersForLog(val) ?? val
-  }
-  if (
-    (key === 'url' || key === 'path') &&
-    typeof val === 'string' &&
-    URL_LIKE.test(val)
-  ) {
-    return redactUrlForLog(val)
-  }
-  return val
-}
-
 export function getErrorObject(
   error: unknown,
   options: { includeRawError?: boolean } = {},
@@ -608,7 +581,7 @@ export function getErrorObject(
           : undefined,
       code: typeof extError.code === 'string' ? extError.code : undefined,
       rawError: options.includeRawError
-        ? safeStringify(error, 10000, redactRawErrorField)
+        ? safeStringify(error, 10000, redactErrorFieldForLog)
         : undefined,
       // API error fields
       responseBody,
