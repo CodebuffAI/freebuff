@@ -121,18 +121,14 @@ describe('createCodebuffApiClient', () => {
       expect(options?.body).toBe('{"key":"value"}')
     })
 
-    test('should include Cookie header when includeCookie is true', async () => {
+    test('sends the login token as a bearer, never as a cookie', async () => {
       const client = createCodebuffApiClient({
         baseUrl: 'https://test.api',
         authToken: 'my-token',
         fetch: mockFetch as unknown as typeof fetch,
       })
 
-      await client.post(
-        '/api/v1/test',
-        { data: 'test' },
-        { includeCookie: true, includeAuth: false, retry: false },
-      )
+      await client.post('/api/v1/test', { data: 'test' }, { retry: false })
 
       const [, options] = mockFetch.mock.calls[0] as [
         string,
@@ -140,7 +136,7 @@ describe('createCodebuffApiClient', () => {
       ]
       expect(options?.headers).toEqual({
         'Content-Type': 'application/json',
-        Cookie: 'next-auth.session-token=my-token;',
+        Authorization: 'Bearer my-token',
       })
     })
   })

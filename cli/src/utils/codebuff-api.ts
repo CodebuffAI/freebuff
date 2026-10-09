@@ -117,8 +117,6 @@ export interface RequestOptions {
   query?: Record<string, string>
   /** Include Authorization header (default: true when authToken is set) */
   includeAuth?: boolean
-  /** Include session token as Cookie header (for legacy endpoints) */
-  includeCookie?: boolean
   /** Request timeout in ms (overrides default) */
   timeoutMs?: number
   /** Retry configuration (overrides default) */
@@ -330,7 +328,6 @@ export function createCodebuffApiClient(
     const {
       query,
       includeAuth = true,
-      includeCookie = false,
       timeoutMs = defaultTimeoutMs,
       retry: retryConfig = mergedDefaultRetry,
       headers: customHeaders = {},
@@ -347,9 +344,6 @@ export function createCodebuffApiClient(
     const headers: Record<string, string> = { ...customHeaders }
     if (authToken && includeAuth) {
       headers['Authorization'] = `Bearer ${authToken}`
-    }
-    if (authToken && includeCookie) {
-      headers['Cookie'] = `next-auth.session-token=${authToken};`
     }
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json'

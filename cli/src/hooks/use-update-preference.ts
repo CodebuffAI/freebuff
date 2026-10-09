@@ -40,7 +40,6 @@ export function useUpdatePreference() {
       const response = await client.patch<{ success: boolean; error?: string }>(
         '/api/user/preferences',
         params as Record<string, unknown>,
-        { includeCookie: true },
       )
 
       if (!response.ok) {

@@ -20,7 +20,6 @@ export async function fetchSubscriptionData(
   const client = getApiClient()
   const response = await client.get<SubscriptionResponse>(
     '/api/user/subscription',
-    { includeCookie: true },
   )
 
   if (!response.ok) {
