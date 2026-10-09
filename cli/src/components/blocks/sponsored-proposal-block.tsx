@@ -438,7 +438,10 @@ export const SponsoredProposalBlock: React.FC<{
             {view.steps.map((step) => (
               <text
                 key={step.text}
-                style={{ fg: theme.muted, wrapMode: 'none' }}
+                style={{
+                  fg: step.state === 'needs_you' ? theme.warning : theme.muted,
+                  wrapMode: 'none',
+                }}
               >
                 {clip(
                   `${SPONSORED_STEP_STATE_LABEL[step.state]}  ${step.text}`,

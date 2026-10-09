@@ -21,6 +21,8 @@ import {
 import {
   SPONSORED_STATE_TITLE,
   SPONSORED_STEP_STATE_LABEL,
+  isSponsoredProposalStepState,
+  sponsoredStepsNeedingYou,
   sponsoredProposalAction,
   sponsoredProposalMenu,
   sponsoredProposalMinimized,
@@ -172,7 +174,7 @@ describe('setup handoff', () => {
     expect(view({ state: 'landed' }).setupGuide).not.toBeNull()
   })
 
-  test('VM-39 an inconclusive check against a frozen contract still says Couldn\'t verify', () => {
+  test("VM-39 an inconclusive check against a frozen contract still says Couldn't verify", () => {
     const model = view({
       state: 'landed',
       acceptance_criteria_sha256: 'a'.repeat(64),
@@ -223,12 +225,50 @@ describe('steps', () => {
     expect(view({ state: 'running' }).doneStepCount).toBe(0)
   })
 
-  test('VM-5 reads in the todo-dock vocabulary', () => {
+  test('VM-5 reads in the todo-dock vocabulary, needs_you included', () => {
     expect(SPONSORED_STEP_STATE_LABEL).toEqual({
       pending: 'Pending',
       active: 'In progress',
+      needs_you: 'Needs you',
       done: 'Done',
     })
+
+    // A run waiting on the user marks the step in progress as needs_you
+    // (COD-828). One test, not two: the conformance matrix pins the VM count.
+    const steps = [
+      { text: 'Install the SDK', state: 'done' as const },
+      { text: 'Connect your account', state: 'active' as const },
+      { text: 'Wire the client', state: 'pending' as const },
+    ]
+    expect(sponsoredStepsNeedingYou(steps, true).map((s) => s.state)).toEqual([
+      'done',
+      'needs_you',
+      'pending',
+    ])
+    expect(sponsoredStepsNeedingYou(steps, false)).toEqual(steps)
+    // Nothing in progress yet: the first pending step is the one waiting.
+    expect(
+      sponsoredStepsNeedingYou(
+        [
+          { text: 'a', state: 'done' },
+          { text: 'b', state: 'pending' },
+          { text: 'c', state: 'pending' },
+        ],
+        true,
+      ).map((s) => s.state),
+    ).toEqual(['done', 'needs_you', 'pending'])
+    // Already marked by the reporter: left alone, never a second one.
+    const marked = [
+      { text: 'a', state: 'needs_you' as const },
+      { text: 'b', state: 'active' as const },
+    ]
+    expect(sponsoredStepsNeedingYou(marked, true)).toEqual(marked)
+    expect(sponsoredStepsNeedingYou([], true)).toEqual([])
+
+    for (const state of ['pending', 'active', 'needs_you', 'done'])
+      expect(isSponsoredProposalStepState(state)).toBe(true)
+    for (const state of ['blocked', '', null, 3])
+      expect(isSponsoredProposalStepState(state)).toBe(false)
   })
 })
 

@@ -36,7 +36,10 @@ import {
 } from './sponsored-procedure-steps'
 import { declaredRunCredentials } from './sponsored-run-credentials'
 
-import type { SponsoredProposalState } from './sponsored-proposal-view'
+import type {
+  SponsoredProposalState,
+  SponsoredProposalStepState,
+} from './sponsored-proposal-view'
 
 export const SPONSORED_NEEDS_USER_DIRECTIVE = 'needs-user:'
 
@@ -274,7 +277,7 @@ export const SPONSORED_PILL_NEEDS_YOU = 'Needs you'
  */
 export function sponsoredProgressPill(input: {
   state: SponsoredProposalState
-  steps: ReadonlyArray<{ state: 'pending' | 'active' | 'done' }>
+  steps: ReadonlyArray<{ state: SponsoredProposalStepState }>
   plan: SponsoredOfferPlan | null
   needsYou?: boolean
   elapsedMs?: number | null

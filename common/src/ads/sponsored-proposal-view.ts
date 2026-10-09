@@ -135,7 +135,29 @@ export function sponsoredProposalAwaitsVerdict(
   return runStarted || state !== 'offered'
 }
 
-export type SponsoredProposalStepState = 'pending' | 'active' | 'done'
+/**
+ * `needs_you` is a step the run cannot finish without the user: a sign-in, an
+ * API key, a CLI login approval (COD-828). The run waits on it, without a
+ * timer of its own, until the user answers or the grant's deadline passes.
+ */
+export const SPONSORED_PROPOSAL_STEP_STATES = [
+  'pending',
+  'active',
+  'needs_you',
+  'done',
+] as const
+
+export type SponsoredProposalStepState =
+  (typeof SPONSORED_PROPOSAL_STEP_STATES)[number]
+
+export function isSponsoredProposalStepState(
+  value: unknown,
+): value is SponsoredProposalStepState {
+  return (
+    typeof value === 'string' &&
+    (SPONSORED_PROPOSAL_STEP_STATES as readonly string[]).includes(value)
+  )
+}
 
 export type SponsoredProposalStep = {
   text: string
@@ -150,7 +172,28 @@ export const SPONSORED_STEP_STATE_LABEL: Record<
 > = {
   pending: 'Pending',
   active: 'In progress',
+  needs_you: 'Needs you',
   done: 'Done',
+}
+
+/**
+ * The steps as they read while the run is waiting on the user (COD-828): the
+ * step in progress becomes `needs_you`, or the first pending one when nothing
+ * is in progress yet. Steps already marked stay as they are, and a run that
+ * is not waiting gets its steps back unchanged.
+ */
+export function sponsoredStepsNeedingYou(
+  steps: readonly SponsoredProposalStep[],
+  needsYou: boolean,
+): SponsoredProposalStep[] {
+  if (!needsYou || steps.some((step) => step.state === 'needs_you'))
+    return [...steps]
+  const at = steps.findIndex((step) => step.state === 'active')
+  const index =
+    at >= 0 ? at : steps.findIndex((step) => step.state === 'pending')
+  return steps.map((step, i) =>
+    i === index ? { ...step, state: 'needs_you' } : step,
+  )
 }
 
 /**
@@ -628,7 +671,11 @@ export function sponsoredProposalViewModel(
       // screen and a link to it would point at itself.
       case 'delivered':
         return [
-          { kind: 'review-changes', label: 'Review the changes', primary: true },
+          {
+            kind: 'review-changes',
+            label: 'Review the changes',
+            primary: true,
+          },
           { kind: 'undo-changes', label: 'Undo these changes' },
           ...openAdvertiser(),
           ...verifyAgain(),

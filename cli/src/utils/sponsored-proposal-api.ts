@@ -1,3 +1,4 @@
+import type { SponsoredProposalStep } from '@codebuff/common/ads/sponsored-proposal-view'
 import {
   AGENTIC_OFFER_PATH,
   agenticOfferResponseSchema,
@@ -113,7 +114,7 @@ export type SponsoredStateUpdate = {
   /** Diff-verified outcomes, read from the run's own edit receipts. */
   outcomes?: string[]
   outcomeFiles?: Record<string, string[]>
-  steps?: { text: string; state: 'pending' | 'active' | 'done' }[]
+  steps?: SponsoredProposalStep[]
   branch?: string
   prUrl?: string
   /** The sentence the CARD shows. Written for the user, not for us. */
