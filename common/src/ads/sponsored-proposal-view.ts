@@ -1,3 +1,7 @@
+import {
+  formatSponsoredStepCount,
+  sponsoredDoneStepCount,
+} from './sponsored-procedure-steps'
 import { sanitizeAdUrl } from '../util/ad-creative-safety'
 
 /**
@@ -467,6 +471,8 @@ export type SponsoredProposalViewModel = {
   branch: string | null
   steps: SponsoredProposalStep[]
   doneStepCount: number
+  /** "3/8" ({@link formatSponsoredStepCount}); null with no steps. */
+  stepCountLabel: string | null
   logoToken: string | null
   logoSrc: string | null
   pullRequestHref: string | null
@@ -637,7 +643,11 @@ export function sponsoredProposalViewModel(
     failureReason: row.failure_reason || DEFAULT_FAILURE_REASON,
     branch: row.branch || null,
     steps,
-    doneStepCount: steps.filter((step) => step.state === 'done').length,
+    doneStepCount: sponsoredDoneStepCount(steps),
+    stepCountLabel: formatSponsoredStepCount(
+      sponsoredDoneStepCount(steps),
+      steps.length,
+    ),
     logoToken,
     logoSrc: sponsoredLogoSrc(row.advertiser_logo_token),
     pullRequestHref,

@@ -417,7 +417,7 @@ export const SponsoredProposalBlock: React.FC<{
         view.steps.length > 0 && (
           <box style={{ width: '100%', flexDirection: 'column' }}>
             <text style={{ fg: theme.muted, wrapMode: 'none' }}>
-              {`${view.doneStepCount}/${view.steps.length}`}
+              {view.stepCountLabel}
             </text>
             {view.steps.map((step) => (
               <text
