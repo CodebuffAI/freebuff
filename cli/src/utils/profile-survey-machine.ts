@@ -3,8 +3,8 @@
  *
  * No React, no network, no clock: every transition takes the current state
  * and one input and returns the next state plus the effects the caller must
- * run (POST an answer, POST a dismissal). `use-profile-survey.ts` owns the
- * effects; `profile-survey-box.tsx` only draws `state`. The contract — the
+ * run (POST an answer, POST a dismissal, POST an engagement event).
+ * `state/profile-survey-store.ts` owns the effects; `profile-survey-box.tsx` only draws `state`. The contract — the
  * question bank, the wire types and the validity rule — is
  * `@codebuff/common/constants/freebuff-profile-survey`.
  *
@@ -20,6 +20,7 @@ import { isPlainEnterKey } from './terminal-enter-detection'
 
 import type {
   ProfileSurveyAnswer,
+  ProfileSurveyClientEventKind,
   ProfileSurveyOption,
   ProfileSurveyQuestion,
   ProfileSurveyQuestionId,
@@ -57,6 +58,12 @@ export type ProfileSurveyState = {
   selection: string[]
   /** When the current question was shown, for `durationMs`. */
   questionShownAt: number
+  /** When the box first came on screen (the `rendered` event), or null while
+   *  it never has. Dismiss and abandon durations count from here. */
+  renderedAt: number | null
+  /** The question last reported as `question_viewed`, so a box that hides
+   *  and comes back on the same question does not report it twice. */
+  viewedQuestionId: ProfileSurveyQuestionId | null
   status: ProfileSurveyStatus
 }
 
@@ -64,8 +71,11 @@ export type ProfileSurveyInput =
   | { type: 'digit'; digit: number; now: number }
   | { type: 'enter'; now: number }
   | { type: 'back'; now: number }
-  | { type: 'escape' }
-  | { type: 'typed' }
+  | { type: 'escape'; now: number }
+  | { type: 'typed'; now: number }
+  /** The box is on screen right now (the store sends it after every change
+   *  while eligible and asking). Idempotent: it only reports what is new. */
+  | { type: 'shown'; now: number }
 
 export type ProfileSurveyEffect =
   | {
@@ -77,7 +87,21 @@ export type ProfileSurveyEffect =
       /** True when this answer is the last unanswered one. */
       last: boolean
     }
-  | { type: 'dismiss'; version: number }
+  | {
+      type: 'dismiss'
+      version: number
+      /** Time on screen since the box first rendered. */
+      durationMs?: number
+      questionId?: ProfileSurveyQuestionId
+    }
+  /** Fire-and-forget engagement event (the contract's `event` action). */
+  | {
+      type: 'event'
+      version: number
+      event: ProfileSurveyClientEventKind
+      questionId?: ProfileSurveyQuestionId
+      durationMs?: number
+    }
 
 export type ProfileSurveyTransition = {
   state: ProfileSurveyState
@@ -129,6 +153,8 @@ export function createProfileSurveyState(
     answers,
     selection: selectionFor(response.questions[step], answers),
     questionShownAt: now,
+    renderedAt: null,
+    viewedQuestionId: null,
     status: 'asking',
   }
 }
@@ -220,14 +246,65 @@ export function transitionProfileSurvey(
   const question = currentQuestion(state)
   if (!question) return unchanged
 
+  const questionId = question.id as ProfileSurveyQuestionId
+  const onScreenFor = (now: number) =>
+    state.renderedAt === null ? {} : { durationMs: Math.max(0, now - state.renderedAt) }
+
   switch (input.type) {
+    case 'shown': {
+      const effects: ProfileSurveyEffect[] = []
+      if (state.renderedAt === null) {
+        effects.push({ type: 'event', version: state.version, event: 'rendered' })
+      }
+      if (state.viewedQuestionId !== questionId) {
+        effects.push({
+          type: 'event',
+          version: state.version,
+          event: 'question_viewed',
+          questionId,
+        })
+      }
+      if (effects.length === 0) return unchanged
+      return {
+        state: {
+          ...state,
+          renderedAt: state.renderedAt ?? input.now,
+          viewedQuestionId: questionId,
+        },
+        effects,
+      }
+    }
+
     case 'typed':
-      return { state: { ...state, status: 'closed' }, effects: [] }
+      // Abandoned only if it was ever on screen: a box the user never saw
+      // was not walked away from.
+      return {
+        state: { ...state, status: 'closed' },
+        effects:
+          state.renderedAt === null
+            ? []
+            : [
+                {
+                  type: 'event',
+                  version: state.version,
+                  event: 'abandoned',
+                  questionId,
+                  ...onScreenFor(input.now),
+                },
+              ],
+      }
 
     case 'escape':
       return {
         state: { ...state, status: 'dismissed' },
-        effects: [{ type: 'dismiss', version: state.version }],
+        effects: [
+          {
+            type: 'dismiss',
+            version: state.version,
+            questionId,
+            ...onScreenFor(input.now),
+          },
+        ],
       }
 
     case 'back': {
@@ -313,7 +390,7 @@ export function profileSurveyInputForKey(
 ): ProfileSurveyInput | null {
   if (!context) return null
   if (key.ctrl || key.meta || key.option) return null
-  if (key.name === 'escape') return { type: 'escape' }
+  if (key.name === 'escape') return { type: 'escape', now }
   if (key.name === 'left' && !key.shift) return { type: 'back', now }
   if (context.question.multi && isPlainEnterKey(key)) {
     return { type: 'enter', now }

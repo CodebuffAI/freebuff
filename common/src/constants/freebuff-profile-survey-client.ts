@@ -126,9 +126,16 @@ export type FakeProfileSurveyOptions = {
   answers?: Array<Pick<ProfileSurveyAnswer, 'questionId' | 'optionIds'>>
 }
 
+export type ProfileSurveyEventRequest = Extract<
+  ProfileSurveyRequest,
+  { action: 'event' }
+>
+
 export interface FakeProfileSurveyClient extends ProfileSurveyClient {
   /** Every request posted, in order (tests and the preview's log). */
   readonly requests: ProfileSurveyRequest[]
+  /** The `event` requests among them, in order. */
+  readonly events: ProfileSurveyEventRequest[]
   /** Forget everything: answers, dismissals, completion, reward. */
   reset(options?: FakeProfileSurveyOptions): void
 }
@@ -151,6 +158,7 @@ export function createFakeProfileSurveyClient(
   let options = initial
   let state: FakeState
   const requests: ProfileSurveyRequest[] = []
+  const events: ProfileSurveyEventRequest[] = []
   const now = () => (options.now ?? Date.now)()
 
   const seed = () => {
@@ -202,9 +210,11 @@ export function createFakeProfileSurveyClient(
 
   return {
     requests,
+    events,
     reset(next) {
       if (next) options = next
       requests.length = 0
+      events.length = 0
       seed()
     },
 
@@ -240,6 +250,10 @@ export function createFakeProfileSurveyClient(
       if (request.action === 'clear') {
         state.answers.clear()
         return { ok: true, cleared: true }
+      }
+      if (request.action === 'event') {
+        events.push(request)
+        return { ok: true, recorded: true }
       }
       if (request.action === 'dismiss') {
         state.dismissCount++

@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
-import { createHttpProfileSurveyClient } from '../profile-survey-api'
+import {
+  createFakeProfileSurveyClient,
+  createHttpProfileSurveyClient,
+} from '../profile-survey-api'
 
 type Call = { url: string; init: RequestInit }
 
@@ -109,5 +112,84 @@ describe('createHttpProfileSurveyClient', () => {
     })
     const state = await client.getState()
     expect(state.show && state.questions[0].prompt).not.toContain('\u001b')
+  })
+
+  test('event POST sends the event body and reads recorded', async () => {
+    const { calls, impl } = fakeFetch(200, { ok: true, recorded: true })
+    const client = createHttpProfileSurveyClient({
+      baseUrl: 'http://x',
+      getToken: () => 'tok',
+      fetchImpl: impl,
+    })
+    const response = await client.post({
+      action: 'event',
+      version: 1,
+      event: 'abandoned',
+      questionId: 'who_pays',
+      durationMs: 4000,
+      surface: 'cli',
+    })
+    expect(response).toEqual({ ok: true, recorded: true })
+    expect(JSON.parse(calls[0].init.body as string)).toEqual({
+      action: 'event',
+      version: 1,
+      event: 'abandoned',
+      questionId: 'who_pays',
+      durationMs: 4000,
+      surface: 'cli',
+    })
+  })
+
+  test('a network failure on an event POST reads as ok:false', async () => {
+    const client = createHttpProfileSurveyClient({
+      getToken: () => 'tok',
+      fetchImpl: (async () => {
+        throw new Error('offline')
+      }) as unknown as typeof fetch,
+    })
+    expect(
+      await client.post({ action: 'event', version: 1, event: 'rendered' }),
+    ).toEqual({ ok: false, error: 'network' })
+  })
+})
+
+describe('createFakeProfileSurveyClient', () => {
+  test('records events without counting them as answers', async () => {
+    const fake = createFakeProfileSurveyClient({
+      show: true,
+      surveyId: 'profile',
+      version: 1,
+      questions: [
+        {
+          id: 'who_pays',
+          revision: 1,
+          prompt: 'Who pays?',
+          multi: false,
+          options: [{ id: 'me', label: 'Me' }],
+        },
+      ],
+      answers: [],
+      resumeAt: 0,
+      rewardFreebucks: 5,
+      dismissCount: 0,
+    })
+    expect(
+      await fake.post({
+        action: 'event',
+        version: 1,
+        event: 'question_viewed',
+        questionId: 'who_pays',
+      }),
+    ).toEqual({ ok: true, recorded: true })
+    expect(
+      await fake.post({
+        action: 'answer',
+        version: 1,
+        questionId: 'who_pays',
+        optionIds: ['me'],
+        durationMs: 1,
+      }),
+    ).toEqual({ ok: true, completed: true, rewardedFreebucks: 5 })
+    expect(fake.requests.map((r) => r.action)).toEqual(['event', 'answer'])
   })
 })

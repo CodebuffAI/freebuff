@@ -19,6 +19,7 @@ import {
 
 import type {
   ProfileSurveyQuestion,
+  ProfileSurveyQuestionId,
   ProfileSurveyStateResponse,
 } from '@codebuff/common/constants/freebuff-profile-survey'
 import type {
@@ -30,6 +31,8 @@ import type {
 const QUESTIONS: readonly ProfileSurveyQuestion[] =
   profileSurveyVersion(1)!.questionIds.map((id) => profileSurveyQuestion(id)!)
 const q = (id: string) => profileSurveyQuestion(id)!
+/** The second question, as the wire's id type. */
+const SECOND = QUESTIONS[1].id as ProfileSurveyQuestionId
 
 function shown(
   overrides: Partial<Extract<ProfileSurveyStateResponse, { show: true }>> = {},
@@ -253,25 +256,124 @@ describe('back', () => {
 
 describe('escape and typing', () => {
   test('Esc dismisses with one effect', () => {
-    const { state, effects } = run(start(), { type: 'escape' })
+    const { state, effects } = run(start(), { type: 'escape', now: 3_000 })
     expect(state.status).toBe('dismissed')
-    expect(effects).toEqual([{ type: 'dismiss', version: 1 }])
+    // Never rendered: no on-screen duration to report.
+    expect(effects).toEqual([
+      { type: 'dismiss', version: 1, questionId: 'who_pays' },
+    ])
+  })
+
+  test('Esc after render carries time on screen and the current question', () => {
+    const { effects } = run(
+      start(),
+      { type: 'shown', now: 1_500 },
+      digit(1, 2_000),
+      { type: 'shown', now: 2_000 },
+      { type: 'escape', now: 4_250 },
+    )
+    expect(effects.filter((e) => e.type === 'dismiss')).toEqual([
+      {
+        type: 'dismiss',
+        version: 1,
+        questionId: SECOND,
+        durationMs: 2_750,
+      },
+    ])
   })
 
   test('typing closes silently and keeps answers', () => {
-    const { state, effects } = run(start(), digit(1), { type: 'typed' })
+    const { state, effects } = run(start(), digit(1), { type: 'typed', now: 3_000 })
     expect(state.status).toBe('closed')
     expect(state.answers.who_pays).toEqual(['me'])
-    expect(effects).toHaveLength(1) // only the answer, no dismiss
+    expect(effects).toHaveLength(1) // only the answer: never rendered, no abandon
+  })
+
+  test('typing after render reports abandoned with time on screen', () => {
+    const { state, effects } = run(
+      start(),
+      { type: 'shown', now: 1_200 },
+      { type: 'typed', now: 5_200 },
+    )
+    expect(state.status).toBe('closed')
+    expect(effects.at(-1)).toEqual({
+      type: 'event',
+      version: 1,
+      event: 'abandoned',
+      questionId: 'who_pays',
+      durationMs: 4_000,
+    })
+    expect(effects.some((e) => e.type === 'dismiss')).toBe(false)
   })
 
   test('a closed survey ignores every further input', () => {
-    const closed = run(start(), { type: 'typed' }).state
-    for (const input of [digit(1), { type: 'escape' } as const]) {
+    const closed = run(start(), { type: 'typed', now: 0 }).state
+    for (const input of [
+      digit(1),
+      { type: 'escape', now: 0 } as const,
+      { type: 'shown', now: 0 } as const,
+    ]) {
       const t = transitionProfileSurvey(closed, input)
       expect(t.state).toBe(closed)
       expect(t.effects).toEqual([])
     }
+  })
+})
+
+describe('on-screen events', () => {
+  const shownAt = (now: number): ProfileSurveyInput => ({ type: 'shown', now })
+
+  test('first shown: rendered, then the question in view', () => {
+    const { state, effects } = run(start(), shownAt(1_100))
+    expect(effects).toEqual([
+      { type: 'event', version: 1, event: 'rendered' },
+      { type: 'event', version: 1, event: 'question_viewed', questionId: 'who_pays' },
+    ])
+    expect(state.renderedAt).toBe(1_100)
+    expect(state.viewedQuestionId).toBe('who_pays')
+  })
+
+  test('shown again on the same question reports nothing', () => {
+    const once = run(start(), shownAt(1_100)).state
+    const t = transitionProfileSurvey(once, shownAt(9_000))
+    expect(t.state).toBe(once)
+    expect(t.effects).toEqual([])
+  })
+
+  test('rendered once; each new question once, back included', () => {
+    const { state, effects } = run(
+      start(),
+      shownAt(1_000),
+      digit(1),
+      shownAt(2_000),
+      { type: 'back', now: 2_500 },
+      shownAt(2_500),
+      shownAt(2_600),
+    )
+    expect(
+      effects
+        .filter((e) => e.type === 'event')
+        .map((e) => (e.type === 'event' ? [e.event, e.questionId] : null)),
+    ).toEqual([
+      ['rendered', undefined],
+      ['question_viewed', 'who_pays'],
+      ['question_viewed', SECOND],
+      ['question_viewed', 'who_pays'],
+    ])
+    expect(state.renderedAt).toBe(1_000)
+  })
+
+  test('no events until shown: answering alone emits only answers', () => {
+    const { effects } = run(start(), digit(1), digit(1))
+    expect(effects.every((e) => e.type === 'answer')).toBe(true)
+  })
+
+  test('a resumed survey views the resumed question', () => {
+    const { effects } = run(start({ resumeAt: 3 }), shownAt(0))
+    expect(effects.at(-1)).toMatchObject({
+      event: 'question_viewed',
+      questionId: QUESTIONS[3].id,
+    })
   })
 })
 
@@ -333,6 +435,7 @@ describe('profileSurveyInputForKey', () => {
     })
     expect(profileSurveyInputForKey({ name: 'escape' }, single, 1)).toEqual({
       type: 'escape',
+      now: 1,
     })
     expect(profileSurveyInputForKey({ name: 'return' }, single, 1)).toBeNull()
     expect(profileSurveyInputForKey({ name: 'return' }, multi, 1)).toEqual({

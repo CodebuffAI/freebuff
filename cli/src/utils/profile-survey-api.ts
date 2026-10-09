@@ -28,9 +28,8 @@ export const PROFILE_SURVEY_PATH = '/api/profile-survey'
 const REQUEST_TIMEOUT_MS = 10_000
 
 /**
- * A request as the CLI sends it: the contract's request, plus the optional
- * `surface` the backend reads (an additive contract field arriving on the
- * backend branch; declared here so this branch compiles before it merges).
+ * A request as the CLI sends it: the contract's request, with `surface`
+ * (where the contract has one) pinned to `'cli'`.
  */
 export type CliProfileSurveyRequest = ProfileSurveyRequest & {
   surface?: 'cli'
@@ -144,7 +143,8 @@ export type FakeProfileSurveyClient = ProfileSurveyClient & {
 }
 
 /**
- * An in-memory server: answers are stored, the last one completes and pays
+ * An in-memory server: engagement events are recorded (and only listed in
+ * `requests`), answers are stored, the last one completes and pays
  * `rewardFreebucks` once (0 when every answer is notApplicable is the
  * server's rule; the fake keeps it simple and pays whatever it was given).
  */
@@ -177,6 +177,7 @@ export function createFakeProfileSurveyClient(
         }
       }
       if (request.action === 'clear') return { ok: true, cleared: true }
+      if (request.action === 'event') return { ok: true, recorded: true }
       answered.add(request.questionId)
       const total = state.show ? state.questions.length : 0
       if (answered.size < total) return { ok: true, completed: false }

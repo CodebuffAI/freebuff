@@ -57,7 +57,7 @@ describe('chat keyboard resolver with the survey on screen', () => {
       type: 'profile-survey',
       input: { type: 'back' },
     })
-    expect(resolveChatKeyboardAction(esc, state)).toEqual({
+    expect(resolveChatKeyboardAction(esc, state)).toMatchObject({
       type: 'profile-survey',
       input: { type: 'escape' },
     })

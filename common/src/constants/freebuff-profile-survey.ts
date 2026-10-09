@@ -366,6 +366,36 @@ export const PROFILE_SURVEY_FAST_ANSWER_MS = 800
 export const PROFILE_SURVEY_SURFACES = ['desktop', 'web', 'cli'] as const
 export type ProfileSurveySurface = (typeof PROFILE_SURVEY_SURFACES)[number]
 
+/**
+ * Engagement events, stored append-only in `profile_survey_event`. Clients
+ * send `rendered`, `question_viewed` and `abandoned` with the `event` action;
+ * the server writes `dismissed` itself from the `dismiss` action. Events are
+ * fire-and-forget: a client never waits on one or shows its failure.
+ *  - rendered: the card/box actually appeared on screen (once per mount).
+ *    GET's `first_shown_at` only means "fetched".
+ *  - question_viewed: a question came on screen (`questionId`).
+ *  - abandoned: the card/box went away with no answer completing it and no
+ *    "Not now" (CLI: the user typed a prompt; Desktop/Web: unmounted).
+ *    `durationMs` = time it was on screen, `questionId` = the one showing.
+ *  - dismissed: written by the server on `dismiss`, with the request's
+ *    `durationMs` (time on screen) and `questionId`.
+ */
+export const PROFILE_SURVEY_EVENTS = [
+  'rendered',
+  'question_viewed',
+  'abandoned',
+  'dismissed',
+] as const
+export type ProfileSurveyEventKind = (typeof PROFILE_SURVEY_EVENTS)[number]
+/** The kinds a client may send with the `event` action. */
+export const PROFILE_SURVEY_CLIENT_EVENTS = [
+  'rendered',
+  'question_viewed',
+  'abandoned',
+] as const
+export type ProfileSurveyClientEventKind =
+  (typeof PROFILE_SURVEY_CLIENT_EVENTS)[number]
+
 /** One stored answer, as every layer sees it. */
 export type ProfileSurveyAnswer = {
   questionId: ProfileSurveyQuestionId
@@ -413,7 +443,23 @@ export type ProfileSurveyRequest =
       /** Optional: which client answered. */
       surface?: ProfileSurveySurface
     }
-  | { action: 'dismiss'; version: number }
+  | {
+      action: 'dismiss'
+      version: number
+      /** Time the card/box was on screen before "Not now". */
+      durationMs?: number
+      /** The question showing when dismissed. */
+      questionId?: ProfileSurveyQuestionId
+      surface?: ProfileSurveySurface
+    }
+  | {
+      action: 'event'
+      version: number
+      event: ProfileSurveyClientEventKind
+      questionId?: ProfileSurveyQuestionId
+      durationMs?: number
+      surface?: ProfileSurveySurface
+    }
   /** Account page: erase every answer (history included). The reward stays. */
   | { action: 'clear' }
 
@@ -437,6 +483,7 @@ export type ProfileSurveyResponse =
       rewardedFreebucks: number
     }
   | { ok: true; dismissed: true; snoozedUntil: string | null; stopped: boolean }
+  | { ok: true; recorded: true }
   | { ok: false; error: string }
 
 // ---- pure helpers ------------------------------------------------------
