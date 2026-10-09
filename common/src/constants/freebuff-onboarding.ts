@@ -35,6 +35,17 @@ export type OnboardingOption = {
   exclusive?: boolean
 }
 
+/** An option the form stopped offering without a successor. */
+export type OnboardingRetiredOption = OnboardingOption & {
+  /**
+   * The UTC day (`YYYY-MM-DD`) that contains the change. Answers under this
+   * id date from before it, plus the hours of that day that preceded the
+   * change. The admin view lists them apart from the live options and starts
+   * its "since split" range here.
+   */
+  retiredOn: string
+}
+
 export type OnboardingQuestion = {
   id: OnboardingQuestionId
   prompt: string
@@ -53,7 +64,7 @@ export type OnboardingQuestion = {
   /** Options no longer on the form whose past answers have no single
    *  successor. Not offered and not accepted, but still counted and shown in
    *  the admin view, so retiring one does not erase its history. */
-  retiredOptions?: OnboardingOption[]
+  retiredOptions?: OnboardingRetiredOption[]
 }
 
 /** Every question offers this. The accompanying free text is stored separately
@@ -86,7 +97,13 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
     multi: false,
     shuffleOptions: true,
     retiredOptions: [
-      { id: 'tiktok', label: 'Instagram / TikTok / Facebook (before split)' },
+      {
+        id: 'tiktok',
+        label: 'Instagram / TikTok / Facebook (before split)',
+        // Merged 2026-09-28 19:59 PDT (#4337), which is 02:59 UTC on the 29th,
+        // and the admin ranges are UTC days.
+        retiredOn: '2026-09-29',
+      },
     ],
   },
   {
@@ -289,6 +306,25 @@ export function onboardingSourceProperties(
     ONBOARDING_LEGACY_OPTION_IDS.referral_source?.[rawId] ??
     rawId
   return ONBOARDING_SOURCE_PROPERTIES[id] ?? null
+}
+
+/**
+ * The UTC day the newest retired option went away, or null when none has.
+ *
+ * It is where a range starts if every answer in it must come from the options
+ * the form offers now: before it, a retired option's answers sit apart from
+ * the live ones, so platform-level comparisons are only clean from this day on.
+ */
+export function latestOnboardingRetirementDay(
+  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_QUESTIONS,
+): string | null {
+  let latest: string | null = null
+  for (const question of questions) {
+    for (const option of question.retiredOptions ?? []) {
+      if (latest === null || option.retiredOn > latest) latest = option.retiredOn
+    }
+  }
+  return latest
 }
 
 /** Per question, per current option id: how many respondents it counts. */
