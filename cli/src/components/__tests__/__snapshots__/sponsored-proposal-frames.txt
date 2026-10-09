@@ -82,9 +82,9 @@
 │ Acme Deploys     │
 │ Add one-click    │
 │ dep…             │
+│ Starting         │
 │ ⌃O details       │
 └──────────────────┘
-
 
 
 
@@ -106,9 +106,9 @@
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
 │ Add one-click deploys to this project        │
+│ Starting                                     │
 │ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
-
 
 
 
@@ -132,9 +132,9 @@
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
 │ Add one-click deploys to this project                    │
+│ Starting                                                 │
 │ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
-
 
 
 
@@ -238,6 +238,7 @@
 │ Acme Deploys     │
 │ Add one-click    │
 │ dep…             │
+│ Done ✓           │
 │ Committed to     │
 │ sponsored/acme-  │
 │ deploys.         │
@@ -257,11 +258,11 @@
 
 
 
-
 === committed @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
 │ Add one-click deploys to this project        │
+│ Done ✓                                       │
 │ Committed to sponsored/acme-deploys.         │
 │ Nothing was pushed to your repository.       │
 │ ⌃O details · /ads:dismiss-proposal           │
@@ -283,16 +284,15 @@
 
 
 
-
 === committed @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
 │ Add one-click deploys to this project                    │
+│ Done ✓                                                   │
 │ Committed to sponsored/acme-deploys. Nothing was pushed  │
 │ to your repository.                                      │
 │ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
-
 
 
 
@@ -316,9 +316,9 @@
 │ Acme Deploys     │
 │ Sponsored        │
 │ changes…         │
+│ Done ✓           │
 │ ⌃O details       │
 └──────────────────┘
-
 
 
 
@@ -340,9 +340,9 @@
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
 │ Sponsored changes applied to your files      │
+│ Done ✓                                       │
 │ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
-
 
 
 
@@ -366,9 +366,9 @@
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
 │ Sponsored changes applied to your files                  │
+│ Done ✓                                                   │
 │ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
-
 
 
 
@@ -394,10 +394,10 @@
 │ Acme Deploys     │
 │ Add one-click    │
 │ dep…             │
+│ Done ✓           │
 │ Review the pull  │
 │ ⌃O details       │
 └──────────────────┘
-
 
 
 
@@ -418,10 +418,10 @@
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
 │ Add one-click deploys to this project        │
+│ Done ✓                                       │
 │ Review the pull request: https://github.com/ │
 │ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
-
 
 
 
@@ -444,10 +444,10 @@
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
 │ Add one-click deploys to this project                    │
+│ Done ✓                                                   │
 │ Review the pull request: https://github.com/x/y/pull/7   │
 │ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
-
 
 
 
@@ -550,10 +550,10 @@
 │ Acme Deploys     │
 │ Add one-click    │
 │ dep…             │
+│ Done ✓           │
 │ view on GitHub:  │
 │ ⌃O details       │
 └──────────────────┘
-
 
 
 
@@ -574,10 +574,10 @@
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
 │ Add one-click deploys to this project        │
+│ Done ✓                                       │
 │ view on GitHub: https://github.com/x/y/pull/ │
 │ ⌃O details · /ads:dismiss-proposal           │
 └──────────────────────────────────────────────┘
-
 
 
 
@@ -600,10 +600,10 @@
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
 │ Add one-click deploys to this project                    │
+│ Done ✓                                                   │
 │ view on GitHub: https://github.com/x/y/pull/7            │
 │ ⌃O details · /ads:dismiss-proposal                       │
 └──────────────────────────────────────────────────────────┘
-
 
 
 

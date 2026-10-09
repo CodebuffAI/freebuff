@@ -249,7 +249,10 @@ function proposalPayloadEqual(
     left.pr_url === right.pr_url &&
     left.advertiser_cta_url === right.advertiser_cta_url &&
     left.failure_reason === right.failure_reason &&
-    stepsEqual(left.steps, right.steps)
+    stepsEqual(left.steps, right.steps) &&
+    // The offer plan arrives on the poll (COD-824); a row that gains one, or
+    // whose estimate moves, must redraw. Small and server-shaped, so JSON.
+    JSON.stringify(left.offer_plan) === JSON.stringify(right.offer_plan)
   )
 }
 

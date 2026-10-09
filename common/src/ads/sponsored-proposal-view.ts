@@ -3,6 +3,15 @@ import {
   sponsoredDoneStepCount,
 } from './sponsored-procedure-steps'
 import { sanitizeAdUrl } from '../util/ad-creative-safety'
+import {
+  sponsoredOfferPlanFromWire,
+  sponsoredOfferSummary,
+} from './sponsored-offer-plan'
+
+import type {
+  SponsoredOfferPlan,
+  SponsoredOfferPlanWire,
+} from './sponsored-offer-plan'
 
 /**
  * Sponsored proposals — the channel logic, with no surface attached.
@@ -169,6 +178,13 @@ export type SponsoredProposalRow = {
   body: string
   why_this?: string
   steps?: SponsoredProposalStep[]
+  /**
+   * What the reviewed procedure will ask of the user, said before Accept
+   * (COD-824): step count, time estimate, the steps that need them. Attached
+   * by the off-Cloud read route, never stored on the row; absent on Web and
+   * whenever the route could not compose it. Re-validated on render.
+   */
+  offer_plan?: SponsoredOfferPlanWire
   /**
    * The sponsored thread, so a terminal card can offer the read-only view
    * (COD-258). Absent before the proposal is accepted.
@@ -473,6 +489,13 @@ export type SponsoredProposalViewModel = {
   doneStepCount: number
   /** "3/8" ({@link formatSponsoredStepCount}); null with no steps. */
   stepCountLabel: string | null
+  /** The validated `offer_plan`, or null. Feeds `sponsoredProgressPill`. */
+  offerPlan: SponsoredOfferPlan | null
+  /**
+   * "6 steps · ~4 min · 1 needs you (Archil account)", on `offered` only, or
+   * null when there is no plan to say it from.
+   */
+  offerSummary: string | null
   logoToken: string | null
   logoSrc: string | null
   pullRequestHref: string | null
@@ -499,6 +522,7 @@ export function sponsoredProposalViewModel(
   row: SponsoredProposalRow,
 ): SponsoredProposalViewModel {
   const steps = row.steps ?? []
+  const offerPlan = sponsoredOfferPlanFromWire(row.offer_plan)
   const pullRequestHref = sponsoredPullRequestHref(row.pr_url)
   const logoToken = sponsoredLogoToken(row.advertiser_logo_token)
   // Only once there is a diff to go with it: the CTA is the advertiser's "now
@@ -648,6 +672,9 @@ export function sponsoredProposalViewModel(
       sponsoredDoneStepCount(steps),
       steps.length,
     ),
+    offerPlan,
+    offerSummary:
+      row.state === 'offered' ? sponsoredOfferSummary(offerPlan) : null,
     logoToken,
     logoSrc: sponsoredLogoSrc(row.advertiser_logo_token),
     pullRequestHref,

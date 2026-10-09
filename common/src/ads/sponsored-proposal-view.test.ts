@@ -28,6 +28,7 @@ import {
   type SponsoredProposalRow,
   type SponsoredProposalState,
 } from './sponsored-proposal-view'
+import { sponsoredProgressPill } from './sponsored-offer-plan'
 
 const ALL_STATES: SponsoredProposalState[] = [
   'offered',
@@ -590,5 +591,86 @@ describe('sponsoredProposalMinimized', () => {
         false,
       )
     }
+  })
+})
+
+// COD-824: what an offer will ask of the user is said before Accept, and the
+// pill follows the run from Accept onwards.
+describe('offer plan and progress pill', () => {
+  const PLAN = {
+    step_count: 6,
+    needs_user: ['Archil account'],
+    estimate_seconds: 240,
+  }
+
+  test('VM-41 an offered card with a plan says its steps, estimate and the step that needs the user', () => {
+    const v = view({ state: 'offered', offer_plan: PLAN })
+    expect(v.offerSummary).toBe('6 steps · ~4 min · 1 needs you (Archil account)')
+    expect(v.offerPlan).toEqual({
+      stepCount: 6,
+      needsUser: ['Archil account'],
+      estimateSeconds: 240,
+    })
+    // Only the offer speaks it; past Accept the pill does.
+    for (const state of ALL_STATES.filter((s) => s !== 'offered')) {
+      expect(view({ state, offer_plan: PLAN }).offerSummary).toBeNull()
+    }
+  })
+
+  test('VM-42 no plan, or a malformed one, leaves the card as it was', () => {
+    expect(view({ state: 'offered' }).offerSummary).toBeNull()
+    expect(view({ state: 'offered' }).offerPlan).toBeNull()
+    for (const offer_plan of [
+      { ...PLAN, step_count: -1 },
+      { ...PLAN, step_count: 2.5 },
+      { ...PLAN, needs_user: ['\u001b[31mred'] },
+      { ...PLAN, needs_user: 'Archil account' },
+      { ...PLAN, estimate_seconds: '240' },
+    ]) {
+      const v = view({
+        state: 'offered',
+        offer_plan: offer_plan as unknown as SponsoredProposalRow['offer_plan'],
+      })
+      expect(v.offerPlan).toBeNull()
+      expect(v.offerSummary).toBeNull()
+    }
+  })
+
+  test('VM-43 the pill reads queued, running, needs you and done from Accept onwards', () => {
+    const plan = view({ state: 'offered', offer_plan: PLAN }).offerPlan
+    const steps = [
+      { text: 'a', state: 'done' as const },
+      { text: 'b', state: 'done' as const },
+      { text: 'c', state: 'done' as const },
+      { text: 'd', state: 'active' as const },
+      { text: 'e', state: 'pending' as const },
+      { text: 'f', state: 'pending' as const },
+    ]
+    expect(sponsoredProgressPill({ state: 'accepted', steps: [], plan })).toBe(
+      '0/6 · Starting',
+    )
+    expect(
+      sponsoredProgressPill({
+        state: 'running',
+        steps,
+        plan,
+        elapsedMs: 125_000,
+      }),
+    ).toBe('3/6 · 2m')
+    expect(
+      sponsoredProgressPill({ state: 'accepted', steps: [], plan, needsYou: true }),
+    ).toBe('Needs you')
+    for (const state of ['committed', 'delivered', 'landed', 'merged'] as const)
+      expect(sponsoredProgressPill({ state, steps: [], plan })).toBe('6/6 ✓')
+    // The offer and a failure have their own copy and no pill.
+    expect(sponsoredProgressPill({ state: 'offered', steps, plan })).toBeNull()
+    expect(sponsoredProgressPill({ state: 'failed', steps, plan })).toBeNull()
+    // No plan and no steps still says something true.
+    expect(
+      sponsoredProgressPill({ state: 'accepted', steps: [], plan: null }),
+    ).toBe('Starting')
+    expect(
+      sponsoredProgressPill({ state: 'delivered', steps: [], plan: null }),
+    ).toBe('Done ✓')
   })
 })

@@ -9,6 +9,7 @@ import {
   sponsoredProposalMenu,
   sponsoredProposalViewModel,
 } from '@codebuff/common/ads/sponsored-proposal-view'
+import { sponsoredProgressPill } from '@codebuff/common/ads/sponsored-offer-plan'
 import {
   sanitizeTerminalStrings,
   sanitizeTerminalText,
@@ -194,6 +195,16 @@ export const SponsoredProposalBlock: React.FC<{
   const undone = run?.undone === true && (delivered || changedCount > 0)
   const inFlight =
     runPhase === 'accepting' || runPhase === 'queued' || runPhase === 'running'
+  // FROM ACCEPT ONWARDS (COD-824), the same strings as Desktop's pill. This
+  // machine's run phase leads the row, which catches up a poll later.
+  const pill = sponsoredProgressPill({
+    state:
+      runPhase === 'accepting' || runPhase === 'queued'
+        ? 'accepted'
+        : (runPhase ?? view.state),
+    steps: view.steps,
+    plan: view.offerPlan,
+  })
 
   const onMenuKey = useCallback(
     (key: SponsoredProposalMenuKey) => {
@@ -405,6 +416,9 @@ export const SponsoredProposalBlock: React.FC<{
           inner,
         )}
       </text>
+      {view.state === 'offered' && !run && view.offerSummary && (
+        <text style={{ fg: theme.muted }}>{view.offerSummary}</text>
+      )}
       {showBody && <text style={{ fg: theme.muted }}>{view.body}</text>}
       {showBody && canRun && (
         <text style={{ fg: theme.muted }}>
@@ -413,12 +427,14 @@ export const SponsoredProposalBlock: React.FC<{
         </text>
       )}
 
+      {pill && (
+        <text style={{ fg: theme.muted, wrapMode: 'none' }}>
+          {clip(pill, inner)}
+        </text>
+      )}
       {(runPhase === 'running' || view.state === 'running') &&
         view.steps.length > 0 && (
           <box style={{ width: '100%', flexDirection: 'column' }}>
-            <text style={{ fg: theme.muted, wrapMode: 'none' }}>
-              {view.stepCountLabel}
-            </text>
             {view.steps.map((step) => (
               <text
                 key={step.text}
