@@ -45,6 +45,12 @@ export type CloudHistoryChatUpdate = {
   title?: string
   archived?: boolean
 }
+/**
+ * A server-internal run event marking that the run's SDK traces are stored in
+ * R2 rather than as `trace` events. Never returned by the history API or the
+ * live poll.
+ */
+export const TRACES_IN_R2_KIND = 'traces_r2'
 export type CloudHistoryEvent = {
   /** Decimal string: Postgres bigint IDs can exceed JavaScript's safe integer. */
   id: string
