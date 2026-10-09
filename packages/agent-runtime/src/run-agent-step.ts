@@ -7,7 +7,10 @@ import {
 import { PROJECT_PROFILE_TOOL_NAME } from '@codebuff/common/constants/project-profile'
 import { TOOLS_WHICH_WONT_FORCE_NEXT_STEP } from '@codebuff/common/tools/constants'
 import { parseAgentId } from '@codebuff/common/util/agent-id-parsing'
-import { TODO_PROGRESS_REMINDER_EVENT } from '@codebuff/common/util/axiom-only-log'
+import {
+  GRAVITY_REPORT_NUDGE_EVENT,
+  TODO_PROGRESS_REMINDER_EVENT,
+} from '@codebuff/common/util/axiom-only-log'
 import { buildArray } from '@codebuff/common/util/array'
 import {
   AbortError,
@@ -56,6 +59,10 @@ import {
   decideFollowupTodoNudge,
   FOLLOWUP_TODO_NUDGE_TAG,
 } from './util/followup-todo-nudge'
+import {
+  decideGravityReportNudge,
+  GRAVITY_REPORT_NUDGE_TAG,
+} from './util/gravity-report-nudge'
 import {
   decideTodoProgressReminder,
   TODO_PROGRESS_REMINDER_TAG,
@@ -792,6 +799,34 @@ export const runAgentStep = async (
         )
         shouldEndTurn = false
       }
+    }
+  }
+
+  // A turn that integrated a gravity_index recommendation but never reported
+  // it gets one step to do so, with the exact search_id and slug; see
+  // util/gravity-report-nudge.ts. Once per user prompt. Runs even after
+  // task_completed: the conversion is lost if the turn ends here.
+  if (shouldEndTurn && agentTemplate.toolNames.includes('gravity_index')) {
+    const nudge = decideGravityReportNudge(agentState.messageHistory)
+    if (nudge) {
+      logger.info(
+        {
+          axiomEvent: GRAVITY_REPORT_NUDGE_EVENT,
+          pending: nudge.candidates.length,
+          editsSinceRecommendation: nudge.editsSinceRecommendation,
+          model: agentTemplate.model,
+          agentId: agentTemplate.id,
+          runId: agentState.runId,
+        },
+        'Turn ending with an unreported Gravity integration; reminding',
+      )
+      agentState.messageHistory.push(
+        userMessage({
+          content: withSystemTags(nudge.message),
+          tags: [GRAVITY_REPORT_NUDGE_TAG],
+        }),
+      )
+      shouldEndTurn = false
     }
   }
 

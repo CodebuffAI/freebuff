@@ -66,6 +66,12 @@ export const CONTEXT_COMPACTION_COMPLETED_EVENT =
  *  tool calls (packages/agent-runtime/src/util/todo-progress-reminder.ts).
  *  Counts and labels only, never the to-dos or a user id. */
 export const TODO_PROGRESS_REMINDER_EVENT = 'todo_progress_reminder' as const
+/** The runtime reminded a model, as its turn was ending, to report a Gravity
+ *  integration it had been recommended and then edited files for
+ *  (packages/agent-runtime/src/util/gravity-report-nudge.ts). Counts and
+ *  labels only, never a search id, slug or user id. Per-model, so the
+ *  report_integration rate is measurable by model. */
+export const GRAVITY_REPORT_NUDGE_EVENT = 'gravity_report_nudge' as const
 /** One per compaction window, closed by the next compaction or the run's end:
  *  how much the run read after compacting, and how many of those reads were
  *  files whose contents the compaction dropped. Counts only, never a path. */
@@ -308,6 +314,14 @@ const TODO_PROGRESS_REMINDER_FIELDS = {
   done: 'number',
   total: 'number',
   callsSinceUpdate: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const GRAVITY_REPORT_NUDGE_FIELDS = {
+  model: 'string',
+  agentId: 'string',
+  runId: 'string',
+  pending: 'number',
+  editsSinceRecommendation: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 const ADS_FETCH_COMPLETED_FIELDS = {
@@ -1008,6 +1022,7 @@ export type AxiomOnlyLogEvent = {
     | typeof CONTEXT_COMPACTION_COMPLETED_EVENT
     | typeof COMPACTION_FOLLOWUP_EVENT
     | typeof TODO_PROGRESS_REMINDER_EVENT
+    | typeof GRAVITY_REPORT_NUDGE_EVENT
     | typeof ADS_FETCH_COMPLETED_EVENT
     | typeof ADS_FIRST_PARTY_DECISION_EVENT
     | typeof ADS_FIRST_PARTY_SETTLEMENT_EVENT
@@ -1114,6 +1129,12 @@ export function getAxiomOnlyLogEvent(
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(record, TODO_PROGRESS_REMINDER_FIELDS),
+    }
+  }
+  if (eventName === GRAVITY_REPORT_NUDGE_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, GRAVITY_REPORT_NUDGE_FIELDS),
     }
   }
   if (eventName === ADS_FETCH_COMPLETED_EVENT) {
