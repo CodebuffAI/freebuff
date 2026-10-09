@@ -75,6 +75,7 @@ const rejectionKey = (connection: Pick<ResolvedByokConnection, 'id' | 'revision'
 
 export function clearByokReasoningRejections(): void {
   reasoningRejected.clear()
+  replayRejected.clear()
 }
 
 /** Error text that names the field we added, not merely any 400. */
@@ -119,6 +120,79 @@ export function byokReasoningRetryBody(
   if (!stripped) return undefined
   reasoningRejected.add(rejectionKey(connection))
   return JSON.stringify(stripped)
+}
+
+/**
+ * The chat converter replays a step's reasoning on its assistant message as
+ * `reasoning_content` (or OpenRouter's `reasoning_details`). DeepSeek requires
+ * that, but a strict schema refuses the whole request over it: Groq answers
+ * "property 'reasoning_content' is unsupported" on the first follow-up after a
+ * reasoning model's step. Groq is known, so it never gets the fields; any other
+ * endpoint that refuses them by name is retried once without them, and the
+ * connection stops sending them (`byokReasoningReplayRetryBody`).
+ */
+const replayRejected = new Set<string>()
+
+const REPLAY_FIELD = /\breasoning_(?:content|details)\b/
+/** Words of a schema refusal, not DeepSeek's "must be passed back". */
+const REPLAY_REFUSAL =
+  /unsupported|unexpected|not (?:allowed|permitted|supported)|unrecogni[sz]ed|unknown/i
+
+function refusesReasoningReplay(endpoint: string): boolean {
+  return new URL(endpoint).hostname === 'api.groq.com'
+}
+
+/** The messages without replayed reasoning; the same array when none had any. */
+function stripReasoningReplay(messages: unknown[]): unknown[] {
+  let changed = false
+  const stripped = messages.map((raw) => {
+    const m = raw as Record<string, unknown> | null
+    if (
+      m?.role !== 'assistant' ||
+      !('reasoning_content' in m || 'reasoning_details' in m)
+    ) {
+      return raw
+    }
+    changed = true
+    const {
+      reasoning_content: _content,
+      reasoning_details: _details,
+      ...rest
+    } = m
+    return rest
+  })
+  return changed ? stripped : messages
+}
+
+/**
+ * When a 400/422 names a replayed reasoning field as unsupported, the same
+ * request body without it — else undefined. Like `byokReasoningRetryBody`, the
+ * refusal is remembered for the connection revision.
+ */
+export function byokReasoningReplayRetryBody(
+  connection: ResolvedByokConnection,
+  requestBody: unknown,
+  status: number,
+  errorText: string,
+): string | undefined {
+  if (status !== 400 && status !== 422) return undefined
+  if (typeof requestBody !== 'string') return undefined
+  const text = errorText.slice(0, 16_384)
+  if (!REPLAY_FIELD.test(text) || !REPLAY_REFUSAL.test(text)) return undefined
+  let body: Record<string, unknown>
+  try {
+    const parsed: unknown = JSON.parse(requestBody)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      return undefined
+    body = parsed as Record<string, unknown>
+  } catch {
+    return undefined
+  }
+  if (!Array.isArray(body.messages)) return undefined
+  const messages = stripReasoningReplay(body.messages)
+  if (messages === body.messages) return undefined
+  replayRejected.add(rejectionKey(connection))
+  return JSON.stringify({ ...body, messages })
 }
 
 /** Undo `applyReasoningEffort`, or undefined when the body does not carry
@@ -186,9 +260,15 @@ export function byokRequestTransform(connection: ResolvedByokConnection) {
     ? byokReasoningDialect(connection)
     : undefined
 
+  const replayRefused = refusesReasoningReplay(endpoint)
+
   return (body: Record<string, unknown>): Record<string, unknown> => {
-    if (deepSeekReplay && Array.isArray(body.messages)) {
-      body = { ...body, messages: backfillDeepSeekReasoning(body.messages) }
+    if (Array.isArray(body.messages)) {
+      if (replayRefused || replayRejected.has(rejectionKey(connection))) {
+        body = { ...body, messages: stripReasoningReplay(body.messages) }
+      } else if (deepSeekReplay) {
+        body = { ...body, messages: backfillDeepSeekReasoning(body.messages) }
+      }
     }
     // Checked per request, not per transform: a rejection learned mid-run
     // applies to the run's next step too.

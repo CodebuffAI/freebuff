@@ -19,7 +19,11 @@ import {
 } from '@codebuff/llm-providers/openai-compatible'
 import { APICallError } from 'ai'
 
-import { byokReasoningRetryBody, byokRequestTransform } from './byok-request'
+import {
+  byokReasoningReplayRetryBody,
+  byokReasoningRetryBody,
+  byokRequestTransform,
+} from './byok-request'
 import { getWebsiteUrl } from '../constants'
 import { getByokOpenrouterApiKeyFromEnv } from '../env'
 import { ByokConnectionStateError, byokCompletionUrl, byokCredentialVariable } from '../byok'
@@ -458,22 +462,23 @@ export function getModelForRequest({
           const send = (init: RequestInit | undefined) =>
             globalThis.fetch(args[0], { ...(init ?? {}), redirect: 'error' })
           let response = await send(args[1])
+          let body = args[1]?.body
           let errorText: string | undefined
-          if (response.status === 400 || response.status === 422) {
-            errorText = await response.text().catch(() => '')
-            // A provider or model that refuses the picked reasoning effort
-            // still answers the task: once, without the field, remembered
-            // for the connection so later steps do not ask again.
-            const retryBody = byokReasoningRetryBody(
-              byok,
-              args[1]?.body,
-              response.status,
-              errorText,
-            )
-            if (retryBody !== undefined) {
-              response = await send({ ...(args[1] ?? {}), body: retryBody })
-              errorText = undefined
-            }
+          // A provider or model that refuses the picked reasoning effort, or
+          // replayed reasoning on assistant messages, still answers the task:
+          // once per field, without it, remembered for the connection so
+          // later steps do not send it again.
+          for (const retry of [
+            byokReasoningRetryBody,
+            byokReasoningReplayRetryBody,
+          ]) {
+            if (response.status !== 400 && response.status !== 422) break
+            errorText ??= await response.text().catch(() => '')
+            const retryBody = retry(byok, body, response.status, errorText)
+            if (retryBody === undefined) continue
+            body = retryBody
+            response = await send({ ...(args[1] ?? {}), body })
+            errorText = undefined
           }
           if (!response.ok) {
             const modelRejected =

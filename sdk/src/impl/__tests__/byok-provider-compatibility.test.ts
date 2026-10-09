@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
+import { clearByokReasoningRejections } from '../byok-request'
 import { getModelForRequest } from '../model-provider'
 
 import type {
@@ -11,6 +12,7 @@ import type { ResolvedByokConnection } from '../../byok'
 const originalFetch = globalThis.fetch
 afterEach(() => {
   globalThis.fetch = originalFetch
+  clearByokReasoningRejections()
 })
 
 const connection: ResolvedByokConnection = {
@@ -149,6 +151,137 @@ describe('BYOK DeepSeek thinking-mode replay', () => {
     const messages = body.messages as Array<Record<string, unknown>>
     const assistant = messages.find((m) => m.role === 'assistant')
     expect('reasoning_content' in (assistant ?? {})).toBe(false)
+  })
+})
+
+/** A reasoning model's tool-call step, as the agent runtime keeps it. */
+const reasoningLoopPrompt: LanguageModelV2CallOptions['prompt'] = [
+  toolLoopPrompt[0]!,
+  {
+    role: 'assistant',
+    content: [
+      { type: 'reasoning', text: 'I should read a.ts.' },
+      {
+        type: 'tool-call',
+        toolCallId: 'call-1',
+        toolName: 'read_files',
+        input: { paths: ['a.ts'] },
+      },
+    ],
+  },
+  toolLoopPrompt[2]!,
+]
+
+const assistantOf = (body: Record<string, unknown>) =>
+  (body.messages as Array<Record<string, unknown>>).find(
+    (m) => m.role === 'assistant',
+  )
+
+const groqRefusal =
+  "'messages.2' : for 'role:assistant' the following must be satisfied[('messages.2' : property 'reasoning_content' is unsupported)]"
+
+describe('BYOK reasoning replay', () => {
+  // Real report (2026-10-08, Desktop + Groq): every follow-up after a
+  // reasoning step failed with "property 'reasoning_content' is unsupported".
+  for (const mode of ['stream', 'generate'] as const) {
+    test(`${mode}: Groq never receives replayed reasoning`, async () => {
+      const { body } = await request(
+        mode,
+        {
+          baseUrl: 'https://api.groq.com/openai/v1',
+          model: 'openai/gpt-oss-120b',
+        },
+        { prompt: reasoningLoopPrompt },
+      )
+      const assistant = assistantOf(body)
+      expect(assistant?.tool_calls).toBeDefined()
+      expect(assistant).not.toHaveProperty('reasoning_content')
+    })
+  }
+
+  test('a DeepSeek-named model on Groq is not backfilled either', async () => {
+    const { body } = await request(
+      'generate',
+      {
+        baseUrl: 'https://api.groq.com/openai/v1',
+        model: 'deepseek-r1-distill-llama-70b',
+      },
+      { prompt: toolLoopPrompt },
+    )
+    expect(assistantOf(body)).not.toHaveProperty('reasoning_content')
+  })
+
+  function model(
+    overrides: Partial<ResolvedByokConnection>,
+    answer: (body: Record<string, unknown>) => Response,
+  ) {
+    const bodies: Array<Record<string, unknown>> = []
+    globalThis.fetch = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      bodies.push(body)
+      return answer(body)
+    }) as typeof fetch
+    const languageModel = getModelForRequest({
+      apiKey: 'hosted-key-must-not-be-sent',
+      model: 'ignored',
+      byok: { ...connection, ...overrides },
+    }) as LanguageModelV2
+    return { languageModel, bodies }
+  }
+
+  test('another endpoint that refuses it is retried once without it, and is not sent it again', async () => {
+    const { languageModel, bodies } = model(
+      { baseUrl: 'https://api.example.com/v1', model: 'some-reasoning-model' },
+      (body) =>
+        assistantOf(body)?.reasoning_content === undefined
+          ? Response.json({
+              choices: [
+                {
+                  message: { role: 'assistant', content: 'OK' },
+                  finish_reason: 'stop',
+                },
+              ],
+            })
+          : Response.json(
+              { error: { message: groqRefusal } },
+              { status: 400 },
+            ),
+    )
+    for (let step = 0; step < 2; step++) {
+      const result = await languageModel.doGenerate({
+        ...options,
+        prompt: reasoningLoopPrompt,
+      })
+      expect(result.content).toContainEqual({ type: 'text', text: 'OK' })
+    }
+    expect(bodies.map((b) => assistantOf(b)?.reasoning_content)).toEqual([
+      'I should read a.ts.',
+      undefined,
+      undefined,
+    ])
+  })
+
+  test(`DeepSeek's "must be passed back" error is not taken for a refusal`, async () => {
+    const { languageModel, bodies } = model(
+      { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash' },
+      () =>
+        Response.json(
+          {
+            error: {
+              message:
+                'The `reasoning_content` in the thinking mode must be passed back to the API.',
+            },
+          },
+          { status: 400 },
+        ),
+    )
+    await expect(
+      languageModel.doGenerate({ ...options, prompt: reasoningLoopPrompt }),
+    ).rejects.toThrow()
+    expect(bodies).toHaveLength(1)
+    expect(assistantOf(bodies[0]!)?.reasoning_content).toBe(
+      'I should read a.ts.',
+    )
   })
 })
 
