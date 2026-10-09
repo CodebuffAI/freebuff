@@ -1223,13 +1223,16 @@ function matchesAllowedModel(
   if (allowedModels.has(model)) return true
 
   // OpenRouter may return dated variants (e.g. "minimax/minimax-m3-20260211")
-  // so also check date-like suffixes. Do not accept arbitrary suffixes:
-  // "mimo-v2.5-pro" must not match the non-pro "mimo-v2.5" allowlist entry.
+  // so also accept a date suffix, and nothing after it. Do not accept
+  // arbitrary suffixes: "mimo-v2.5-pro" must not match the non-pro "mimo-v2.5"
+  // allowlist entry, and an OpenRouter variant after the date
+  // ("-20260211:nitro", ":floor", ":online") changes routing or adds billed
+  // features on our key.
   for (const allowed of allowedModels) {
     const prefix = allowed + '-'
     if (model.startsWith(prefix)) {
       const suffix = model.slice(prefix.length)
-      if (/^\d{6,8}(?:$|[-:])/.test(suffix)) return true
+      if (/^\d{6,8}$/.test(suffix)) return true
     }
   }
 

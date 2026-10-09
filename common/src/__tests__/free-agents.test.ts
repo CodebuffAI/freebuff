@@ -20,6 +20,7 @@ import {
   FREEBUFF_MIMO_V25_MODEL_ID,
   FALLBACK_FREEBUFF_MODEL_ID,
   DEFAULT_FREEBUFF_MODEL_ID,
+  freebuffModelIdMatches,
 } from '../constants/freebuff-models'
 import { minimaxModels } from '../constants/model-config'
 import { FREEBUFF_GEMINI_THINKER_AGENT_ID } from '../constants/freebuff-gemini-thinker'
@@ -207,6 +208,55 @@ describe('free mode agent model allowlist', () => {
     expect(
       isFreeModeAllowedAgentModel('base2-free', FREEBUFF_GPT_5_6_LUNA_MODEL_ID),
     ).toBe(true)
+  })
+
+  test('accepts a bare dated snapshot but no OpenRouter variant suffix', () => {
+    const dated = `${FREEBUFF_MIMO_V25_MODEL_ID}-20260527`
+    for (const agentId of ['base2-free-mimo', 'code-reviewer-mimo']) {
+      expect(isFreeModeAllowedAgentModel(agentId, dated)).toBe(true)
+      expect(
+        isFreeModeAllowedAgentModel(agentId, `${FREEBUFF_MIMO_V25_MODEL_ID}-202605`),
+      ).toBe(true)
+      // Throughput/price sorting and billed features ride on a `:` variant;
+      // none of them may reach OpenRouter on our key from a free caller.
+      for (const variant of [':nitro', ':floor', ':online', ':free', ':exacto']) {
+        expect(isFreeModeAllowedAgentModel(agentId, dated + variant)).toBe(
+          false,
+        )
+        expect(
+          isFreeModeAllowedAgentModel(
+            agentId,
+            FREEBUFF_MIMO_V25_MODEL_ID + variant,
+          ),
+        ).toBe(false)
+      }
+      // Nor anything after the date.
+      expect(isFreeModeAllowedAgentModel(agentId, `${dated}-pro`)).toBe(false)
+      expect(isFreeModeAllowedAgentModel(agentId, `${dated}-`)).toBe(false)
+      // Date lengths outside 6-8 digits are not snapshots.
+      expect(
+        isFreeModeAllowedAgentModel(agentId, `${FREEBUFF_MIMO_V25_MODEL_ID}-0527`),
+      ).toBe(false)
+      expect(
+        isFreeModeAllowedAgentModel(
+          agentId,
+          `${FREEBUFF_MIMO_V25_MODEL_ID}-202605271`,
+        ),
+      ).toBe(false)
+    }
+  })
+
+  test('the recognition matcher stays a superset of the allowlist suffix rule', () => {
+    // Caps and gates (premium, Gemini Pro) recognise a model through
+    // freebuffModelIdMatches; anything the allowlist admits must match there.
+    const base = FREEBUFF_MIMO_V25_MODEL_ID
+    for (const candidate of [base, `${base}-20260527`, `${base}-202605`]) {
+      expect(isFreeModeAllowedAgentModel('base2-free-mimo', candidate)).toBe(
+        true,
+      )
+      expect(freebuffModelIdMatches(candidate, base)).toBe(true)
+    }
+    expect(freebuffModelIdMatches(`${base}-20260527:nitro`, base)).toBe(true)
   })
 
   test('allows each freebuff reviewer agent only with its configured model', () => {

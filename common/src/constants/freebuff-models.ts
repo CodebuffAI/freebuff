@@ -4795,8 +4795,11 @@ export function isSupportedFreebuffModelId(
  * Match a model id against a base id, tolerating the dated provider snapshot
  * suffix OpenRouter (and our own routing) appends, e.g.
  * `google/gemini-3.1-pro-preview-20260219` for base `google/gemini-3.1-pro-preview`.
- * Mirrors the suffix logic in `isFreeModeAllowedAgentModel` (free-agents.ts) —
- * the two MUST stay in sync. Only a `-YYYYMMDD`-style suffix matches, so e.g.
+ * Deliberately broader than `isFreeModeAllowedAgentModel` (free-agents.ts),
+ * which admits only a bare `-YYYYMMDD`: this also matches a `-` or `:`
+ * continuation after the date, because it RECOGNISES a model for caps and
+ * gates, and a suffixed id must not dodge them. Every id the allowlist admits
+ * must match here, never the reverse. Only a date-led suffix matches, so e.g.
  * `mimo-v2.5-pro` never matches the base `mimo-v2.5`.
  */
 export function freebuffModelIdMatches(
