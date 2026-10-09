@@ -109,6 +109,51 @@ describe('BoundedOutputBuffer', () => {
     expect(output.format()).toStartWith('chunk-0000')
     expect(output.format()).toEndWith('chunk-0999')
   })
+
+  test('strips non-color ANSI control sequences such as line clears and cursor controls', () => {
+    const output = new BoundedOutputBuffer(100)
+    output.append('building...\u001b[2K\r')
+    output.append('\u001b[?25lprogress\u001b[?25h')
+    output.append('\u001b[1A\u001b[2Jdone')
+
+    expect(output.format()).toBe('building...\rprogressdone')
+    expect(output.format()).not.toContain('\u001b[')
+  })
+
+  test('strips fully-terminated OSC sequences and preserves trailing text', () => {
+    const output = new BoundedOutputBuffer(100)
+    // OSC sequence terminated by BEL with text after it in same chunk
+    output.append('building...\u001b]0;my window title\u0007done')
+    // OSC sequence terminated by String Terminator (ST, ESC \)
+    output.append(' \u001b]2;another title\u001b\\completed')
+    // OSC sequence terminated by BEL as the final chunk
+    output.append('\u001b]0;final title\u0007')
+
+    expect(output.format()).toBe('building...done completed')
+    expect(output.format()).not.toContain('\u001b]')
+    expect(output.format()).not.toContain('my window title')
+    expect(output.format()).not.toContain('another title')
+    expect(output.format()).not.toContain('final title')
+  })
+
+  test('buffers and strips split ANSI control sequences across chunk boundaries', () => {
+    const output = new BoundedOutputBuffer(100)
+    // Split CSI
+    output.append('step 1\u001b[2')
+    output.append('K-cleared')
+    output.append(' \u001b[?25')
+    output.append('h-visible')
+    // Split OSC across chunks terminated by BEL
+    output.append(' \u001b]0;tit')
+    output.append('le\u0007-osc-bel')
+    // Split OSC across chunks terminated by ST split between ESC and backslash
+    output.append(' \u001b]0;title2\u001b')
+    output.append('\\-osc-st')
+
+    expect(output.format()).toBe('step 1-cleared -visible -osc-bel -osc-st')
+    expect(output.format()).not.toContain('\u001b[')
+    expect(output.format()).not.toContain('\u001b]')
+  })
 })
 
 describe('terminal command process diagnostics', () => {
