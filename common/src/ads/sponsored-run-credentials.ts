@@ -109,9 +109,13 @@ export function sponsoredCredentialGetUrl(value: unknown): string | null {
 
 /**
  * `key=value` pairs, a value double-quoted when it has spaces. Anything else
- * on the line (a stray word, an unterminated quote) is null.
+ * on the line (a stray word, an unterminated quote, a key not in `known`, a
+ * key given twice) is null. Shared with the `instant-setup:` directive.
  */
-function tokenize(value: string): Map<string, string> | null {
+export function tokenizeSponsoredDirective(
+  value: string,
+  known: ReadonlySet<string> = KNOWN_KEYS,
+): Map<string, string> | null {
   const pairs = new Map<string, string>()
   const pair = /\s*([a-z_]+)=(?:"([^"]*)"|([^\s"]+))/y
   let index = 0
@@ -121,7 +125,7 @@ function tokenize(value: string): Map<string, string> | null {
     const match = pair.exec(value)
     if (!match) return null
     const key = match[1]!
-    if (!KNOWN_KEYS.has(key) || pairs.has(key)) return null
+    if (!known.has(key) || pairs.has(key)) return null
     pairs.set(key, match[2] ?? match[3] ?? '')
     index = pair.lastIndex
     // Pairs are separated by whitespace, never glued together.
@@ -134,7 +138,7 @@ function tokenize(value: string): Map<string, string> | null {
 export function parseRunCredentialDeclaration(
   value: string,
 ): SponsoredRunCredential | null {
-  const pairs = tokenize(value)
+  const pairs = tokenizeSponsoredDirective(value)
   if (!pairs) return null
   const env = pairs.get('env')
   const label = pairs.get('label')
