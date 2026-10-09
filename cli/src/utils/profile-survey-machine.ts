@@ -65,6 +65,9 @@ export type ProfileSurveyState = {
    *  and comes back on the same question does not report it twice. */
   viewedQuestionId: ProfileSurveyQuestionId | null
   status: ProfileSurveyStatus
+  /** Set when this is the day's sponsored survey (COD-839), driven through
+   *  this machine; its effects go to `/api/sponsored-survey`. */
+  sponsored?: { campaignId: string; sponsorName: string }
 }
 
 export type ProfileSurveyInput =

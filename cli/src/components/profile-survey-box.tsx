@@ -40,7 +40,9 @@ export function profileSurveyHint(state: ProfileSurveyState): string {
     ...(question.multi ? ['enter continue'] : []),
     ...(hasNa ? ["0 doesn't apply"] : []),
     ...(state.step > 0 ? ['← back'] : []),
-    ...(snoozeDays === null ? ['esc not now'] : [`esc not now (${snoozeDays} days)`]),
+    ...(snoozeDays === null || state.sponsored
+      ? ['esc not now']
+      : [`esc not now (${snoozeDays} days)`]),
   ]
   return parts.join(' · ')
 }
@@ -85,7 +87,9 @@ export const ProfileSurveyBoxView = ({
   const rows = packOptionLabels(labels, innerWidth)
   const reward =
     state.rewardFreebucks > 0
-      ? `  +${state.rewardFreebucks} Freebucks for all ${total}`
+      ? state.sponsored
+        ? `  Earn ${state.rewardFreebucks} Freebucks`
+        : `  +${state.rewardFreebucks} Freebucks for all ${total}`
       : ''
 
   return (
@@ -102,7 +106,9 @@ export const ProfileSurveyBoxView = ({
       }}
     >
       <text style={{ fg: theme.muted, wrapMode: 'none' }}>
-        {`quick question ${state.step + 1}/${total}  `}
+        {state.sponsored
+          ? `sponsored by ${state.sponsored.sponsorName} ${state.step + 1}/${total}  `
+          : `quick question ${state.step + 1}/${total}  `}
         <span fg={theme.primary}>
           {profileSurveyProgressBar(state.step, total)}
         </span>

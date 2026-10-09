@@ -27,6 +27,12 @@ import { FREEBUFF_WEB_URL } from '../login/constants'
 import { logger } from '../utils/logger'
 import { createHttpProfileSurveyClient } from '../utils/profile-survey-api'
 import {
+  createCliSponsoredSurveyClient,
+  sponsoredCompletionLine,
+  sponsoredOfferToSurveyState,
+} from '../utils/sponsored-survey-api'
+import { observeSponsoredSurvey } from '../utils/survey-events'
+import {
   createProfileSurveyState,
   currentQuestion,
   finishProfileSurvey,
@@ -36,6 +42,7 @@ import {
 } from '../utils/profile-survey-machine'
 
 import type { ProfileSurveyClient } from '../utils/profile-survey-api'
+import type { SponsoredSurveyClient } from '@codebuff/common/constants/freebuff-sponsored-survey-client'
 import type {
   ProfileSurveyEffect,
   ProfileSurveyInput,
@@ -55,7 +62,13 @@ export const useProfileSurveyStore = create<ProfileSurveyStore>(() => ({
   eligible: false,
 }))
 
+// Sponsored funnel pings (COD-837) to `/api/survey-events`: every state
+// change, read by the CLI's event tracker. The profile survey's own engagement
+// events are the machine's `event` effects (#6278), not this.
+useProfileSurveyStore.subscribe((next, prev) => observeSponsoredSurvey(next, prev))
+
 let client: ProfileSurveyClient | null = null
+let sponsoredClient: SponsoredSurveyClient | null = null
 let fetchStarted = false
 let print: (text: string) => void = () => {}
 let postChain: Promise<unknown> = Promise.resolve()
@@ -67,12 +80,25 @@ function getClient(): ProfileSurveyClient {
   return client
 }
 
+function getSponsoredClient(): SponsoredSurveyClient {
+  sponsoredClient ??= createCliSponsoredSurveyClient()
+  return sponsoredClient
+}
+
+/** Tests: swap the sponsored transport (null = the real one). */
+export function setSponsoredSurveyClientForTests(
+  next: SponsoredSurveyClient | null,
+): void {
+  sponsoredClient = next
+}
+
 /** Tests and local previews: swap the transport (null = the real one) and
  *  forget this process's fetch. */
 export function setProfileSurveyClientForTests(
   next: ProfileSurveyClient | null,
 ): void {
   client = next
+  sponsoredClient = null
   fetchStarted = false
   postChain = Promise.resolve()
   pendingEvents.clear()
@@ -106,6 +132,16 @@ export async function startProfileSurveyOnce(now?: number): Promise<void> {
     const survey = createProfileSurveyState(response, at)
     if (survey) {
       useProfileSurveyStore.setState({ survey })
+      reportOnScreen(at)
+      return
+    }
+    // no profile survey to show: the box may carry the day's sponsored one
+    const sponsored = await getSponsoredClient().getState('cli')
+    const state = sponsored.show
+      ? sponsoredOfferToSurveyState(sponsored.survey, at)
+      : null
+    if (state) {
+      useProfileSurveyStore.setState({ survey: state })
       reportOnScreen(at)
     }
   } catch (error) {
@@ -168,7 +204,51 @@ function enqueue(task: () => Promise<void>): void {
   postChain = postChain.then(task, task)
 }
 
+function runSponsoredEffect(
+  effect: ProfileSurveyEffect,
+  sponsored: { campaignId: string },
+): void {
+  // the machine's engagement events are profile-survey events (#6278); the
+  // sponsored funnel is tracked by `observeSponsoredSurvey` instead
+  if (effect.type === 'event') return
+  const api = getSponsoredClient()
+  if (effect.type === 'dismiss') {
+    enqueue(async () => {
+      const response = await api.dismiss({
+        action: 'dismiss',
+        campaignId: sponsored.campaignId,
+        surface: 'cli',
+      })
+      if (!response.ok)
+        logger.debug({ response }, '[sponsored-survey] dismiss not recorded')
+    })
+    return
+  }
+  enqueue(async () => {
+    const response = await api.answer({
+      action: 'answer',
+      campaignId: sponsored.campaignId,
+      questionId: effect.questionId,
+      optionIds: effect.optionIds,
+      durationMs: effect.durationMs,
+      surface: 'cli',
+    })
+    if (!response.ok)
+      logger.debug({ response }, '[sponsored-survey] answer not recorded')
+    const current = useProfileSurveyStore.getState().survey
+    if (!current || current.status !== 'finishing' || !effect.last) return
+    const completed = response.ok && response.completed
+    useProfileSurveyStore.setState({
+      survey: finishProfileSurvey(current, completed),
+    })
+    if (response.ok && response.completed)
+      print(sponsoredCompletionLine(response.rewardedFreebucks))
+  })
+}
+
 function runEffect(effect: ProfileSurveyEffect): void {
+  const sponsored = useProfileSurveyStore.getState().survey?.sponsored
+  if (sponsored) return runSponsoredEffect(effect, sponsored)
   const api = getClient()
   if (effect.type === 'event') {
     sendEvent(api, effect)

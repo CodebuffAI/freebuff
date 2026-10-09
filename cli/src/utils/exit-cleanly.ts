@@ -6,6 +6,7 @@ import { stopEngagementTracking } from './engagement'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import { drainClientLogs } from './log-shipper'
 import { settleInterruptedSponsoredRun } from './sponsored-run-exit'
+import { flushSurveyEventsOnExit } from './survey-events'
 
 const EXIT_CLEANUP_TIMEOUT_MS = 1_000
 
@@ -21,6 +22,8 @@ type ExitCliDependencies = {
    * depended on a checkpoint having already gone out.
    */
   flushAdEngagement: () => Promise<void>
+  /** Survey funnel pings (COD-837): an open survey reports `abandoned`. */
+  flushSurveyEvents?: () => Promise<void>
   endFreebuffSession: () => Promise<void>
   /**
    * Bring a sponsored run to a TERMINAL state, and say what it left behind.
@@ -95,6 +98,9 @@ export function createExitCliCleanly(deps: ExitCliDependencies) {
         Promise.resolve().then(deps.flushAnalytics),
         Promise.resolve().then(deps.drainClientLogs),
         adEngagement,
+        Promise.resolve()
+          .then(deps.flushSurveyEvents)
+          .catch(() => {}),
         sponsored.then((notice) => {
           if (notice) deps.writeNotice(notice)
         }),
@@ -121,6 +127,7 @@ export const exitCliCleanly = createExitCliCleanly({
   flushAnalytics,
   drainClientLogs,
   flushAdEngagement: () => flushAdEngagementOnExit(),
+  flushSurveyEvents: flushSurveyEventsOnExit,
   endFreebuffSession: () => useFreebuffSessionStore.getState().releaseSlot(),
   settleSponsoredRun: settleInterruptedSponsoredRun,
   // `process.stdout.write`, not the logger and not the renderer: the renderer is
