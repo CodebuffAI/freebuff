@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
-  PROFILE_SURVEY_QUESTIONS,
   profileSurveyQuestion,
+  profileSurveyVersion,
 } from '@codebuff/common/constants/freebuff-profile-survey'
 
 import {
@@ -26,7 +26,9 @@ import type {
   ProfileSurveyState,
 } from '../profile-survey-machine'
 
-const QUESTIONS = PROFILE_SURVEY_QUESTIONS as readonly ProfileSurveyQuestion[]
+/** Version 1's ten questions: the machine is version-agnostic, and these pin it. */
+const QUESTIONS: readonly ProfileSurveyQuestion[] =
+  profileSurveyVersion(1)!.questionIds.map((id) => profileSurveyQuestion(id)!)
 const q = (id: string) => profileSurveyQuestion(id)!
 
 function shown(

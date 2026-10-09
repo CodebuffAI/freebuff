@@ -3,7 +3,10 @@ import { createTestRenderer } from '@opentui/core/testing'
 import { createRoot, flushSync } from '@opentui/react'
 import React from 'react'
 
-import { PROFILE_SURVEY_QUESTIONS } from '@codebuff/common/constants/freebuff-profile-survey'
+import {
+  profileSurveyQuestion,
+  profileSurveyVersion,
+} from '@codebuff/common/constants/freebuff-profile-survey'
 
 import { initializeThemeStore } from '../../hooks/use-theme'
 import {
@@ -23,7 +26,9 @@ beforeAll(() => {
   initializeThemeStore()
 })
 
-const QUESTIONS = PROFILE_SURVEY_QUESTIONS as readonly ProfileSurveyQuestion[]
+/** Version 1's ten questions: the CLI is version-agnostic, and these pin its copy. */
+const QUESTIONS: readonly ProfileSurveyQuestion[] =
+  profileSurveyVersion(1)!.questionIds.map((id) => profileSurveyQuestion(id)!)
 
 function stateAt(resumeAt: number, rewardFreebucks = 25): ProfileSurveyState {
   return createProfileSurveyState(

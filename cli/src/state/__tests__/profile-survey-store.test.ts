@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { PROFILE_SURVEY_QUESTIONS } from '@codebuff/common/constants/freebuff-profile-survey'
+import {
+  profileSurveyQuestion,
+  profileSurveyVersion,
+} from '@codebuff/common/constants/freebuff-profile-survey'
 
 import { createFakeProfileSurveyClient } from '../../utils/profile-survey-api'
 import {
@@ -20,7 +23,9 @@ import type {
   ProfileSurveyStateResponse,
 } from '@codebuff/common/constants/freebuff-profile-survey'
 
-const QUESTIONS = PROFILE_SURVEY_QUESTIONS as readonly ProfileSurveyQuestion[]
+/** Version 1's ten questions: the CLI is version-agnostic, and these pin its copy. */
+const QUESTIONS: readonly ProfileSurveyQuestion[] =
+  profileSurveyVersion(1)!.questionIds.map((id) => profileSurveyQuestion(id)!)
 
 const SHOWN: ProfileSurveyStateResponse = {
   show: true,

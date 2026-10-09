@@ -207,6 +207,78 @@ export const PROFILE_SURVEY_QUESTIONS = [
       notApplicable(),
     ],
   },
+  // Version 2 (2026-10-09). No notApplicable option on these: every one
+  // applies to anyone using Freebuff.
+  {
+    id: 'role',
+    revision: 1,
+    prompt: 'What best describes you?',
+    multi: false,
+    options: [
+      { id: 'student', label: 'Student' },
+      { id: 'hobbyist', label: 'Hobbyist' },
+      { id: 'freelancer', label: 'Freelancer or contractor' },
+      { id: 'employed', label: 'Developer at a company' },
+      { id: 'founder', label: 'Founder or indie hacker' },
+      { id: 'other', label: 'Something else' },
+    ],
+  },
+  {
+    id: 'buy_timing',
+    revision: 1,
+    prompt: 'When will you next pay for a dev tool or service?',
+    multi: false,
+    options: [
+      { id: 'this_month', label: 'This month' },
+      { id: 'quarter', label: 'In the next 3 months' },
+      { id: 'later', label: 'Later' },
+      { id: 'never', label: 'Not planning to' },
+    ],
+  },
+  {
+    id: 'other_tools',
+    revision: 1,
+    prompt: 'Which other AI coding tools do you use?',
+    multi: true,
+    options: [
+      { id: 'cursor', label: 'Cursor' },
+      { id: 'claude_code', label: 'Claude Code' },
+      { id: 'copilot', label: 'GitHub Copilot' },
+      { id: 'codex', label: 'Codex' },
+      { id: 'windsurf', label: 'Windsurf' },
+      { id: 'cline', label: 'Cline or Roo' },
+      { id: 'gemini_cli', label: 'Gemini CLI' },
+      { id: 'other', label: 'Something else' },
+      { id: 'none', label: 'Only Freebuff', exclusive: true },
+    ],
+  },
+  {
+    id: 'disappointment',
+    revision: 1,
+    prompt: 'How would you feel if you could no longer use Freebuff?',
+    multi: false,
+    options: [
+      { id: 'very', label: 'Very disappointed' },
+      { id: 'somewhat', label: 'Somewhat disappointed' },
+      { id: 'not', label: 'Not disappointed' },
+    ],
+  },
+  {
+    id: 'pay_trigger',
+    revision: 1,
+    prompt: 'What would get you to pay for Freebuff?',
+    multi: true,
+    options: [
+      { id: 'subscribed', label: 'I already pay', exclusive: true },
+      { id: 'better_models', label: 'Better models' },
+      { id: 'higher_limits', label: 'Higher limits' },
+      { id: 'faster', label: 'Faster responses' },
+      { id: 'cloud_agents', label: 'Cloud agents' },
+      { id: 'fewer_ads', label: 'Fewer ads' },
+      { id: 'lower_price', label: 'A lower price' },
+      { id: 'nothing', label: "Nothing, I'll stay free", exclusive: true },
+    ],
+  },
 ] as const satisfies readonly ProfileSurveyQuestion[]
 
 export type ProfileSurveyQuestionId =
@@ -237,13 +309,33 @@ export const PROFILE_SURVEY_VERSIONS = [
       'industry',
     ],
   },
+  {
+    // Drops v1's four stack questions (deploy, database, languages,
+    // frameworks): the agent can read those from the project. Shared
+    // questions answered under v1 are not asked again.
+    surveyId: PROFILE_SURVEY_ID,
+    version: 2,
+    questionIds: [
+      'who_pays',
+      'tool_spend',
+      'team_size',
+      'role',
+      'building',
+      'shopping',
+      'buy_timing',
+      'industry',
+      'other_tools',
+      'disappointment',
+      'pay_trigger',
+    ],
+  },
 ] as const satisfies readonly ProfileSurveyVersion[]
 
 /** The version clients are shown. The launch gate: nothing is shown unless
  *  this names a version (null = survey off), never an env var. Version 1
- *  launched 2026-10-07. The dev and admin previews
+ *  launched 2026-10-07, version 2 on 2026-10-09. The dev and admin previews
  *  run on the fake client and ignore it. */
-export const ACTIVE_PROFILE_SURVEY_VERSION: number | null = 1
+export const ACTIVE_PROFILE_SURVEY_VERSION: number | null = 2
 
 /** Freebucks per arm. Index = arm; assignment is per user per version.
  *  Arm 2 paid 25 until 2026-10-07, when 5 proved enough; it now pays 5 too, so

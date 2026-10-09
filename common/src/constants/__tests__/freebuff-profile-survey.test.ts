@@ -214,6 +214,19 @@ describe('shipped profile survey versions are immutable', () => {
       'frameworks',
       'industry',
     ],
+    2: [
+      'who_pays',
+      'tool_spend',
+      'team_size',
+      'role',
+      'building',
+      'shopping',
+      'buy_timing',
+      'industry',
+      'other_tools',
+      'disappointment',
+      'pay_trigger',
+    ],
   }
 
   const SHIPPED_OPTION_IDS: Record<string, readonly string[]> = {
@@ -276,6 +289,30 @@ describe('shipped profile survey versions are immutable', () => {
       'agency',
       'other',
       'na',
+    ],
+    role: ['student', 'hobbyist', 'freelancer', 'employed', 'founder', 'other'],
+    buy_timing: ['this_month', 'quarter', 'later', 'never'],
+    other_tools: [
+      'cursor',
+      'claude_code',
+      'copilot',
+      'codex',
+      'windsurf',
+      'cline',
+      'gemini_cli',
+      'other',
+      'none',
+    ],
+    disappointment: ['very', 'somewhat', 'not'],
+    pay_trigger: [
+      'subscribed',
+      'better_models',
+      'higher_limits',
+      'faster',
+      'cloud_agents',
+      'fewer_ads',
+      'lower_price',
+      'nothing',
     ],
   }
 

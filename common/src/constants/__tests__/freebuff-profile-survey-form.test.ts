@@ -153,7 +153,7 @@ describe('the fake client follows the contract', () => {
     ).toEqual({ ok: true, completed: true, rewardedFreebucks: 0 })
   })
   it('every way out still earns in v1: "Not shopping" is a real answer', async () => {
-    const client = createFakeProfileSurveyClient({ rewardFreebucks: 25 })
+    const client = createFakeProfileSurveyClient({ rewardFreebucks: 25, version: 1 })
     const out = (q: ProfileSurveyQuestion) =>
       (q.options.find((o) => o.notApplicable) ?? q.options.find((o) => o.exclusive))!.id
     expect(await answerAll(client, out)).toEqual({ ok: true, completed: true, rewardedFreebucks: 25 })
