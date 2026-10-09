@@ -2,6 +2,7 @@ import { describe, expect, it, test, spyOn } from 'bun:test'
 import { freebucksFixture } from '../../testing/freebuff'
 import {
   SOLAR_PRICE_CHANGES,
+  SOLAR_PROMOTIONAL,
   SOLAR_REGULAR_OFFER,
 } from '../../constants/freebuff-solar-promo'
 import {
@@ -85,7 +86,13 @@ describe('announced Freebucks price changes', () => {
     const back = applyFreebucksPriceChanges(free, ended)
     expect(back.prices).toEqual({ [solar]: 10, [mini]: 5 })
     expect(back.priceNotices[mini]).toBe('Fast and light')
-    expect(back.priceChanges).toEqual([])
+    // Then free again, open-ended, from 2026-10-08.
+    const promo = Date.parse('2026-10-08T21:30:00Z')
+    expect(nextFreebucksPriceChange(back)).toBe(promo)
+    const promoted = applyFreebucksPriceChanges(back, promo)
+    expect(promoted.prices).toEqual({ [solar]: 10, [mini]: 0 })
+    expect(promoted.priceNotices[mini]).toBe(SOLAR_PROMOTIONAL.short)
+    expect(promoted.priceChanges).toEqual([])
   })
 
   it('catches up across all transitions, even when a delayed response lists them out of order', () => {

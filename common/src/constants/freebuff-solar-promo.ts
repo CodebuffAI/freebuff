@@ -21,10 +21,11 @@ const SOLAR_MINI_4_OFFER = {
   tagline: 'Fast and light',
 } as const
 
-// Solar Pro 4's promotion (2026-10-05): free, open-ended, labelled temporary
-// by product decision. The catalog row's `promotional` field, and the price
-// notice released CLI and Desktop builds render in place of the tagline.
-export const SOLAR_PRO_4_PROMOTIONAL = {
+// The Solar promotions (Pro 4 from 2026-10-05, Mini 4 from 2026-10-08): free,
+// open-ended, labelled temporary by product decision. The catalog rows'
+// `promotional` field, and the price notice released CLI and Desktop builds
+// render in place of the tagline.
+export const SOLAR_PROMOTIONAL = {
   short: 'Promotional',
   tooltip:
     'Temporary price. It goes up when the promotion ends.',
@@ -88,12 +89,20 @@ export const SOLAR_PRICE_CHANGES = [
   },
   {
     // A promotion with no end date yet. End it by appending a transition back
-    // to SOLAR_PRO_4_OFFER and dropping the catalog row's `promotional`; the
-    // free window closes at that transition.
+    // to SOLAR_PRO_4_OFFER, dropping the catalog row's `promotional` and moving
+    // it out of Unlimited (freebuff-picker-sections.ts); the free window
+    // closes at that transition.
     at: '2026-10-05T07:15:00Z',
     modelId: FREEBUFF_SOLAR_PRO_4_MODEL_ID,
     price: 0,
-    tagline: SOLAR_PRO_4_PROMOTIONAL.short,
+    tagline: SOLAR_PROMOTIONAL.short,
+  },
+  {
+    // Mini 4 joins it; end it the same way, back to SOLAR_MINI_4_OFFER.
+    at: '2026-10-08T21:30:00Z',
+    modelId: FREEBUFF_SOLAR_MINI_4_MODEL_ID,
+    price: 0,
+    tagline: SOLAR_PROMOTIONAL.short,
   },
 ] as const
 

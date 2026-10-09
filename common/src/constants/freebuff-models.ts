@@ -13,10 +13,7 @@ import {
   isDeepSeekExpensiveWindow,
 } from './freebuff-peak-hours'
 import { mimoModels } from './model-config'
-import {
-  SOLAR_PRO_4_OFFER,
-  SOLAR_PRO_4_PROMOTIONAL,
-} from './freebuff-solar-promo'
+import { SOLAR_PRO_4_OFFER, SOLAR_PROMOTIONAL } from './freebuff-solar-promo'
 import { GPT_61_SOL_PROMOTIONAL } from './freebuff-sol-promo'
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
@@ -2548,14 +2545,17 @@ const SOLAR_PRO_4_MODEL = {
   displayName: 'Solar Pro 4',
   tagline: SOLAR_PRO_4_OFFER.tagline,
   availability: 'always',
-  // Provider-side debugging logs are allowed; this is not a ZDR promise or
-  // permission for AI training. Keep our own training traces disabled.
-  dataUse: 'service',
+  // Labelled for AI training from 2026-10-08: its traces are to go to Upstage
+  // to improve Solar, which the Privacy Policy counts as training use (a
+  // collection notice would not cover it). Not collected yet: see
+  // FREEBUFF_UNTRACED_TRAINING_MODEL_IDS.
+  warning: FREEBUFF_AI_TRAINING_NOTICE,
+  dataUse: 'training',
   premium: FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.fullAccess.premium,
   multimodal: false,
   // PROMOTIONAL, by product decision (2026-10-05): 0 Freebucks is a temporary
   // price. Clear it with the schedule entry that ends the promotion.
-  promotional: SOLAR_PRO_4_PROMOTIONAL,
+  promotional: SOLAR_PROMOTIONAL,
 } as const satisfies FreebuffModelOption
 
 /**
@@ -2578,18 +2578,23 @@ const SOLAR_PRO_4_MODEL = {
  *
  * Reasoning is OFF by default at Upstage (`default_enabled: false`) and the
  * row runs bare, as Pro 4 did.
+ *
+ * FREE AS A PROMOTION from 2026-10-08 (SOLAR_PRICE_CHANGES), open-ended like
+ * Pro 4's, and listed beside it in the pickers' Unlimited section.
  */
 const SOLAR_MINI_4_MODEL = {
   id: FREEBUFF_SOLAR_MINI_4_MODEL_ID,
   displayName: 'Solar Mini 4',
   tagline: 'Fast and light',
   availability: 'always',
-  // Same Upstage endpoint as Pro 4, so the same claim: provider-side debugging
-  // logs are allowed; no training permission; our traces stay off.
-  dataUse: 'service',
+  // As Pro 4: labelled for AI training, traces not collected yet.
+  warning: FREEBUFF_AI_TRAINING_NOTICE,
+  dataUse: 'training',
   premium: FREEBUFF_SOLAR_MINI_4_ENTITLEMENT.fullAccess.premium,
   multimodal: false,
   isNew: true,
+  // As Pro 4's: clear it with the schedule entry that ends the promotion.
+  promotional: SOLAR_PROMOTIONAL,
 } as const satisfies FreebuffModelOption
 
 /**
@@ -3797,10 +3802,16 @@ export const FREEBUFF_WEB_MULTIMODAL_MODEL_IDS = Object.freeze(
  * retaining users' prompts as a SIDE EFFECT of a catalog edit, which is not a
  * decision a catalog edit should be able to make.
  *
+ * Solar Pro 4 and Mini 4, for now: their notice (2026-10-08) has to reach
+ * users before the first trace is kept for Upstage, so collection waits until
+ * sessions have restarted under it, about an hour after the deploy.
+ *
  * Delete an entry here to start tracing that row; that is the whole switch.
  */
 const FREEBUFF_UNTRACED_TRAINING_MODEL_IDS: readonly string[] = [
   ...FREEBUFF_MUSE_SPARK_MODEL_IDS,
+  FREEBUFF_SOLAR_PRO_4_MODEL_ID,
+  FREEBUFF_SOLAR_MINI_4_MODEL_ID,
 ]
 
 /** Free-mode models whose chat-completion traces we store in our own dataset

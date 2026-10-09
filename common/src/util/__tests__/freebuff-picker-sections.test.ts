@@ -31,7 +31,7 @@ describe('freebuffPickerPlacement', () => {
   test('literal ids are the catalog constants', () => {
     const at = (id: string) => freebuffPickerPlacement([id], none)
     expect(at(FREEBUFF_SOLAR_PRO_4_MODEL_ID)).toEqual({ section: 'unlimited', order: expect.any(Number) })
-    expect(at(FREEBUFF_SOLAR_MINI_4_MODEL_ID).section).toBe('optimized')
+    expect(at(FREEBUFF_SOLAR_MINI_4_MODEL_ID).section).toBe('unlimited')
     expect(at(FREEBUFF_MIMO_V25_MODEL_ID)).toMatchObject({ section: 'optimized', recommended: true })
     expect(at(FREEBUFF_GLM_V53_FLASH_MODEL_ID).section).toBe('optimized')
     expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID).section).toBe('optimized')

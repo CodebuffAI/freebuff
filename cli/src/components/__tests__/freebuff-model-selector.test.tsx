@@ -1,8 +1,5 @@
 import { getFreebucksInfo } from '@codebuff/common/types/freebuff-session'
-import {
-  SOLAR_PRICE_CHANGES,
-  solarOfferAt,
-} from '@codebuff/common/constants/freebuff-solar-promo'
+import { SOLAR_PRICE_CHANGES } from '@codebuff/common/constants/freebuff-solar-promo'
 import {
   toLandingSession,
   resolveFreebuffModelPickForSession,
@@ -1560,9 +1557,6 @@ test.each([
           [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 5,
           [SOLAR]: before,
         }),
-        priceNotices: {
-          [SOLAR]: solarOfferAt(cutoff - 137).tagline,
-        },
         // Solar Mini 4's recorded schedule, replayed on the row that replaced
         // it in the picker (2026-09-23): the mechanism under test is generic,
         // and a retired row no longer renders.
@@ -1582,7 +1576,6 @@ test.each([
     const setup = await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 56 : 54, async (model) => {
       requested.push(model)
     })
-    expect(setup.captureCharFrame()).toContain(solarOfferAt(cutoff - 137).tagline)
     expect(wake).toBeDefined()
     // Expand if the affordable recommendation initially collapsed the catalog.
     if (!setup.captureCharFrame().includes('Show fewer')) {
@@ -1600,7 +1593,6 @@ test.each([
       wake!()
     })
     await setup.renderOnce()
-    expect(setup.captureCharFrame()).not.toContain('Labor Day weekend')
     expect(setup.captureCharFrame()).toMatch(
       new RegExp(`Solar Mini 4[^\\n]*\\n[^\\n]*${price} Freebucks/hr`),
     )
