@@ -27,11 +27,6 @@ export const FREEBUFF_TRUST_LEVELS = [
 
 export type FreebuffTrustLevel = (typeof FREEBUFF_TRUST_LEVELS)[number]
 
-/** The level an account holds before anything is known about it. Every failure
- *  path in the resolver must land somewhere DEFINITE, and this is not it — see
- *  `FREEBUFF_TRUST_FALLBACK_LEVEL`. */
-export const FREEBUFF_TRUST_MIN_LEVEL: FreebuffTrustLevel = 'new'
-
 /**
  * The level used when signals cannot be loaded (database error, timeout).
  *

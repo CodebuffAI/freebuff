@@ -50,9 +50,6 @@ export interface AccountByokConnectionInput {
   maxOutputTokens?: number
 }
 
-/** Changing the provider or endpoint requires supplying the key again. */
-export type AccountByokConnectionPatch = Partial<AccountByokConnectionInput>
-
 /**
  * A ChatGPT sign-in in progress: show `userCode` and `verificationUrl`, then
  * poll with `handle` every `intervalMs`. The handle is sealed by the server

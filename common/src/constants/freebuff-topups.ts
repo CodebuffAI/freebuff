@@ -191,9 +191,6 @@ export function advertiserPlacementCpcBand(params: {
   }
 }
 
-/** A single automatic reprice may move at most 25% in either direction. */
-export const AD_PLACEMENT_CPC_REPRICE_MAX_MOVE_BPS = 2_500
-
 /** Thin samples are reported, but never allowed to move money automatically. */
 export const AD_PLACEMENT_CPC_REPRICE_MIN_CLICKS = 50
 

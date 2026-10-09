@@ -76,7 +76,6 @@ export const MAX_PLACEMENT_CREATIVES_PER_CAMPAIGN = 25
  * offers an advertiser.
  */
 export const PLACEMENT_PREVIEW_WIDTHS = [48, 80, 100] as const
-export type PlacementPreviewWidth = (typeof PLACEMENT_PREVIEW_WIDTHS)[number]
 
 /**
  * Days after a click within which saving the advertised service's env var

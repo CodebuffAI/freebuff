@@ -97,12 +97,6 @@ export function isFreebuffSubscriptionPremiumModelId(modelId: string): boolean {
 export const FREEBUFF_SUBSCRIPTION_PEAK_PAUSED_MODEL_IDS: readonly string[] =
   Object.freeze([])
 
-export function isFreebuffSubscriptionPeakPausedModelId(
-  modelId: string,
-): boolean {
-  return FREEBUFF_SUBSCRIPTION_PEAK_PAUSED_MODEL_IDS.includes(modelId)
-}
-
 export function isFreebuffSubscriptionModelId(modelId: string): boolean {
   return FREEBUFF_SUBSCRIPTION_MODEL_IDS.includes(modelId)
 }
@@ -568,35 +562,3 @@ export function freebuffPlanHours(count: number): string {
 export function freebuffPlanHrs(count: number): string {
   return `${count} ${count === 1 ? 'hr' : 'hrs'}`
 }
-
-/**
- * "3 hours/day · 10 hours/5 days · 50 hours/month"
- *
- * Takes the three fields structurally rather than the catalog type, so the
- * CATALOG tier and the wire `FreebuffSubscriptionTierOffer` both satisfy it —
- * the settings page renders the wire shape, and requiring the catalog type
- * there would mean either a cast or a second copy of this string.
- */
-export function freebuffPlanHoursSummary(tier: {
-  dailySessions: number
-  fiveDaySessions: number
-  monthlySessions: number
-}): string {
-  return [
-    `${freebuffPlanHours(tier.dailySessions)}/day`,
-    `${freebuffPlanHours(tier.fiveDaySessions)}/5 days`,
-    `${freebuffPlanHours(tier.monthlySessions)}/month`,
-  ].join(' · ')
-}
-
-/**
- * What the monthly ceiling is spent ON, in the user's words.
- *
- * "compute" is our word for it and meant nothing to the people reading the
- * plan. It was "tokens" for a while, until the account hub started showing
- * real token COUNTS on the same page as "$4.10 of $25 tokens" — one word for a
- * count and a dollar figure at once. "Model spend" is the canonical name for
- * the dollar quantity everywhere now (see CONTEXT.md); "tokens" only ever
- * means a count. Kept as a constant so the label moves in one place.
- */
-export const FREEBUFF_SPEND_UNIT_LABEL = 'model spend'

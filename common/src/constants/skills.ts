@@ -45,16 +45,3 @@ export function isValidSkillName(name: string): boolean {
   }
   return SKILL_NAME_REGEX.test(name)
 }
-
-/**
- * Validates a skill description according to length rules.
- * @param description - The skill description to validate
- * @returns true if valid, false otherwise
- */
-export function isValidSkillDescription(description: string): boolean {
-  return (
-    typeof description === 'string' &&
-    description.length >= 1 &&
-    description.length <= SKILL_DESCRIPTION_MAX_LENGTH
-  )
-}

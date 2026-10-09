@@ -40,8 +40,6 @@ export type GenericSetupInvitation = z.infer<
   typeof genericSetupInvitationSchema
 >
 
-export const GENERIC_SETUP_INVITATION_RECHECK_LABEL = 'Check compatibility'
-
 /**
  * The first Desktop release whose parser knows `generic_setup` (0.0.124,
  * COD-598). An older build parses only the Supabase schema and drops a

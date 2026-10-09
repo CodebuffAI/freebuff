@@ -935,10 +935,6 @@ const PAID_API_REQUEST_FIELDS = {
   ttft_ms: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
-export const PAID_API_REQUEST_FIELD_NAMES: readonly string[] = Object.keys(
-  PAID_API_REQUEST_FIELDS,
-)
-
 const ADS_ADVERTISER_REPORTING_READ_FIELDS = {
   advertiser_id: 'string',
   key_id: 'string',

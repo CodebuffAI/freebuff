@@ -51,6 +51,3 @@ export const supabaseInvitationEventRequestSchema = z
     occurredAt: z.number().int().positive(),
   })
   .strict()
-export type SupabaseInvitationEventRequest = z.infer<
-  typeof supabaseInvitationEventRequestSchema
->

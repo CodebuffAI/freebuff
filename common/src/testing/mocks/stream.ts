@@ -120,16 +120,6 @@ export function createTextChunk(text: string, agentId?: string): TextChunk {
 }
 
 /**
- * Creates a reasoning chunk for testing.
- *
- * @param text - The reasoning text
- * @returns A reasoning chunk
- */
-export function createReasoningChunk(text: string): ReasoningChunk {
-  return { type: 'reasoning', text }
-}
-
-/**
  * Creates a mock async generator that yields the provided chunks.
  *
  * @param chunks - The chunks to yield
@@ -302,12 +292,4 @@ export async function collectStreamChunks<T, R>(
   }
 
   return { chunks, returnValue: result.value }
-}
-
-/**
- * Resets the tool call ID counter.
- * Call this in beforeEach to ensure deterministic IDs.
- */
-export function resetToolCallIdCounter(): void {
-  toolCallIdCounter = 0
 }

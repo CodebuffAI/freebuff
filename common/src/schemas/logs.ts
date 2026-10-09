@@ -62,5 +62,3 @@ export type LogRecordInput = z.infer<typeof logRecordSchema>
 export const logIngestSchema = z.object({
   records: z.array(logRecordSchema).min(1).max(MAX_LOG_RECORDS_PER_BATCH),
 })
-
-export type LogIngestBody = z.infer<typeof logIngestSchema>

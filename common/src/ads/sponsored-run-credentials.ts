@@ -32,8 +32,6 @@ export type SponsoredRunCredential = {
   getUrl?: string
 }
 
-export const SPONSORED_RUN_CREDENTIAL_DIRECTIVE = 'requires-credential:'
-
 /** More than this is not "the account the procedure needs". */
 export const SPONSORED_RUN_CREDENTIAL_MAX = 2
 

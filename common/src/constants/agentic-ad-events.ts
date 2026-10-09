@@ -118,9 +118,6 @@ export type AgenticFunnelEventType = (typeof AGENTIC_FUNNEL_EVENT_TYPES)[number]
  */
 export const RETIRED_AGENTIC_FUNNEL_EVENT_TYPES = ['pr_made'] as const
 
-export type RetiredAgenticFunnelEventType =
-  (typeof RETIRED_AGENTIC_FUNNEL_EVENT_TYPES)[number]
-
 /**
  * The `accepted` event's idempotency key, derived from the PROPOSAL id.
  *

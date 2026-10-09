@@ -40,8 +40,6 @@ export const SPONSORED_OS_SWITCHES = {
 
 /** A Desktop OS whose paid agentic serving sits behind its own switch. */
 export type SponsoredSwitchedOs = keyof typeof SPONSORED_OS_SWITCHES
-export type SponsoredSwitchedOsSurface =
-  (typeof SPONSORED_OS_SWITCHES)[SponsoredSwitchedOs]['surface']
 
 /** The env vars the switches are read from. */
 export type SponsoredOsSwitchEnv = {

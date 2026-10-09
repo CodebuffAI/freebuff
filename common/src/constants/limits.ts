@@ -6,8 +6,6 @@ export const SESSION_TIME_WINDOW_MS = 30 * 60 * 1000 // 30 minutes - used for ma
 // Signup credits are disabled. Re-enabling requires restoring the Codebuff
 // GitHub-link hook and pricing copy in addition to changing this amount.
 export const SIGNUP_FREE_CREDITS_GRANT = 0
-// If re-enabled, signup credits require a GitHub account at least this old.
-export const SIGNUP_CREDIT_MIN_GITHUB_ACCOUNT_AGE_MONTHS = 4
 
 // Credit pricing configuration
 export const CREDIT_PRICING = {
