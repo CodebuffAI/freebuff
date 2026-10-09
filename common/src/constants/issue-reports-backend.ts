@@ -10,11 +10,11 @@
  *              registry entries answer `unknown_function`.
  * - `postgres` every write is ONE Postgres transaction (per-user advisory
  *              lock, the 24h quota, the INSERT, and the notification email
- *              as a graphile job). The web form, the
- *              admin view and `/api/feedback` call Postgres directly; the
- *              native apps keep calling the same Convex functions, which
- *              forward the submit to freebuff-web and answer the quota with a
- *              shim. The Convex functions stay deployed as the rollback.
+ *              as a graphile job). The web form and `/api/feedback` call
+ *              Postgres directly; the native apps keep calling the same
+ *              Convex functions, which forward the submit to freebuff-web and
+ *              answer the quota with a shim. The Convex functions stay
+ *              deployed as the rollback.
  *
  * One constant for both tables: they share the email path and the Axiom
  * `feedback.received` event (docs/logging.md, "User feedback"). The
