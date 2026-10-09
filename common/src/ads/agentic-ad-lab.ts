@@ -3,6 +3,7 @@ import { z } from 'zod/v4'
 export const labAdSchema = z
   .object({
     id: z.string().uuid(),
+    name: z.string().trim().min(1).max(200).optional(),
     advertiserName: z.string().trim().min(1).max(120),
     headline: z.string().trim().min(1).max(200),
     body: z.string().trim().max(2000),
