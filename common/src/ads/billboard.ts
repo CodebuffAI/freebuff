@@ -45,12 +45,8 @@ export const BILLBOARD_SHAPE_SPECS: Record<
 /** Relative aspect-ratio tolerance for an upload. */
 export const BILLBOARD_RATIO_TOLERANCE = 0.02
 
-/** Desktop asks each billboard for a new ad at most this often. */
-export const BILLBOARD_REFRESH_MS = 15 * 60_000
 /** Visible time before a billboard's close control unlocks. */
 export const BILLBOARD_DISMISS_LOCK_MS = 10_000
-/** A pause in typing/clicking that may open a closed panel for its billboard. */
-export const BILLBOARD_PANEL_IDLE_MS = 3_000
 
 export type BillboardFrequencyCap = {
   /** Whose serves share one count: the campaign's, or a single ad's. */
@@ -59,32 +55,27 @@ export type BillboardFrequencyCap = {
   limits: readonly { maxImpressions: number; windowMs: number }[]
 }
 
-const HOUR_MS = 60 * 60_000
-const DAY_MS = 24 * HOUR_MS
+const DAY_MS = 24 * 60 * 60_000
 
 /**
  * The frequency cap on each billboard slot, per user. It REPLACES the
  * campaign's own cap and the hourly ad and advertiser caps for these serves,
- * which count serves rather than screen time: a billboard stays up for up to
- * {@link BILLBOARD_REFRESH_MS}, so an hourly cap still let one campaign hold
+ * which count serves rather than screen time: a billboard stays up until
+ * Gravity takes the screen back, so an hourly cap would let one campaign hold
  * the sidebar all day. Billboard serves therefore do not spend the
  * campaign's hourly cap on its other placements either.
  *
- * - The sidebar serves each campaign 3 times a rolling day, at most once an
- *   hour, so a day's allowance cannot all land in one sitting.
- * - The panel takes over the right panel, so the same ad opens it at most
- *   once a day.
+ * Each slot serves each campaign once a rolling day. The slots count
+ * separately, so a campaign can fill the sidebar and the panel on the same
+ * day (neither Desktop nor the Cloud workspace fills both in the same minute).
  */
 export const BILLBOARD_FREQUENCY_CAPS: Readonly<Record<string, BillboardFrequencyCap>> = {
   [BILLBOARD_SIDEBAR_PLACEMENT_ID]: {
     per: 'campaign',
-    limits: [
-      { maxImpressions: 3, windowMs: DAY_MS },
-      { maxImpressions: 1, windowMs: HOUR_MS },
-    ],
+    limits: [{ maxImpressions: 1, windowMs: DAY_MS }],
   },
   [BILLBOARD_PANEL_PLACEMENT_ID]: {
-    per: 'ad',
+    per: 'campaign',
     limits: [{ maxImpressions: 1, windowMs: DAY_MS }],
   },
 }
