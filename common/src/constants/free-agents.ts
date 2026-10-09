@@ -1063,8 +1063,15 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   [FREEBUFF_GEMINI_THINKER_AGENT_ID]: new Set([FREEBUFF_GEMINI_PRO_MODEL_ID]),
 }
 
+const LUNA_AND_GEMINI_HELPER_MODELS: ReadonlySet<string> = new Set([
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
+  ...GEMINI_HELPER_MODELS,
+])
+
 /**
- * Agents that don't charge credits when credits would be very small (<5).
+ * Agents that don't charge credits when credits would be very small (<5),
+ * each mapped to the models its own definition runs (current and the ones
+ * released clients still ship).
  *
  * These are typically lightweight utility agents that:
  * - Use cheap models (e.g., Gemini Flash)
@@ -1073,18 +1080,23 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
  *
  * Making them free avoids user confusion when they connect their own
  * Claude subscription (BYOK) but still see credit charges for non-Claude models.
+ * The model is part of the key because a run's agent id is the client's
+ * choice; the id alone would make any model free under 5 credits.
  *
  * NOTE: This is separate from FREE_MODE_ALLOWED_AGENTS which is for the
  * explicit "free" cost mode. These agents get free credits only when
  * the cost would be trivial (<5 credits).
  */
-export const FREE_TIER_AGENTS = new Set([
-  'file-picker',
-  'file-picker-max',
-  'file-lister',
-  'researcher-web',
-  'researcher-docs',
-])
+export const FREE_TIER_AGENT_MODELS: Record<string, ReadonlySet<string>> = {
+  'file-picker': new Set([
+    ...LUNA_AND_GEMINI_HELPER_MODELS,
+    'google/gemini-2.5-flash-lite',
+  ]),
+  'file-picker-max': LUNA_AND_GEMINI_HELPER_MODELS,
+  'file-lister': LUNA_AND_GEMINI_HELPER_MODELS,
+  'researcher-web': GEMINI_HELPER_MODELS,
+  'researcher-docs': GEMINI_HELPER_MODELS,
+}
 
 /**
  * Check if the current cost mode is FREE mode.
@@ -1200,6 +1212,13 @@ export function isFreeModeAllowedAgentModel(
   // For these, any model check should fail (they shouldn't be making LLM calls)
   if (allowedModels.size === 0) return false
 
+  return matchesAllowedModel(allowedModels, model)
+}
+
+function matchesAllowedModel(
+  allowedModels: ReadonlySet<string>,
+  model: string,
+): boolean {
   // Exact match first
   if (allowedModels.has(model)) return true
 
@@ -1264,9 +1283,8 @@ export function isLimitedTierSubstitutedModel(
 }
 
 /**
- * Check if an agent should be free (no credit charge) for small requests.
- * This is separate from FREE mode - these agents get free credits only
- * when the cost would be trivial (<5 credits).
+ * Check if an agent is a free tier agent (see FREE_TIER_AGENT_MODELS). Billing
+ * also requires one of its models: see isFreeAgentModel.
  *
  * Handles all agent ID formats:
  * - 'file-picker'
@@ -1280,11 +1298,22 @@ export function isFreeAgent(fullAgentId: string): boolean {
   if (!agentId) return false
 
   // Must be in the free tier agents list
-  if (!FREE_TIER_AGENTS.has(agentId)) return false
+  if (!Object.hasOwn(FREE_TIER_AGENT_MODELS, agentId)) return false
 
   // Must be either internal (no publisher) or from codebuff
   // This prevents publisher spoofing attacks
   if (publisherId && publisherId !== 'codebuff') return false
 
   return true
+}
+
+/**
+ * Check if a free tier agent running this model should be free (no credit
+ * charge) for small requests. This is separate from FREE mode - these agents
+ * get free credits only when the cost would be trivial (<5 credits).
+ */
+export function isFreeAgentModel(fullAgentId: string, model: string): boolean {
+  if (!isFreeAgent(fullAgentId)) return false
+  const { agentId } = parseAgentId(fullAgentId)
+  return matchesAllowedModel(FREE_TIER_AGENT_MODELS[agentId!]!, model)
 }

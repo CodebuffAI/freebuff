@@ -31,6 +31,7 @@ import {
   FREEBUFF_REVIEWER_AGENT_ID_BY_MODEL,
   FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL,
   FREE_MODE_AGENT_MODELS,
+  FREE_TIER_AGENT_MODELS,
   FREEBUFF_ROOT_AGENT_IDS,
   FREEBUFF_ROOT_SYSTEM_PROMPT_OPENINGS,
   getFreebuffRootAgentIdForModel,
@@ -38,6 +39,8 @@ import {
   isFreebuffGeminiThinkerAgent,
   isFreebuffHelperOnSessionModel,
   isFreebuffRootAgent,
+  isFreeAgent,
+  isFreeAgentModel,
   isFreeModeAllowedAgentModel,
   isLimitedTierSubstitutedModel,
 } from '../constants/free-agents'
@@ -995,6 +998,75 @@ describe('every selectable model reviews with its own model', () => {
         model,
         hasOwnReviewer: true,
       })
+    }
+  })
+})
+
+describe('free tier helper agents (small-request exemption)', () => {
+  test('are free only on their own models', () => {
+    expect(isFreeAgentModel('file-picker', FREEBUFF_GPT_6_LUNA_MODEL_ID)).toBe(
+      true,
+    )
+    expect(
+      isFreeAgentModel(
+        'codebuff/researcher-web@0.0.3',
+        GEMINI_3_5_FLASH_LITE_MODEL_ID,
+      ),
+    ).toBe(true)
+    // OpenRouter's dated variants still match, as in free mode.
+    expect(
+      isFreeAgentModel(
+        'file-lister',
+        `${GEMINI_3_1_FLASH_LITE_MODEL_ID}-20260701`,
+      ),
+    ).toBe(true)
+
+    expect(isFreeAgentModel('file-picker', 'anthropic/claude-opus-4.7')).toBe(
+      false,
+    )
+    expect(
+      isFreeAgentModel('researcher-docs', FREEBUFF_GPT_6_LUNA_MODEL_ID),
+    ).toBe(false)
+    expect(
+      isFreeAgentModel(
+        'someone/file-picker@1.0.0',
+        FREEBUFF_GPT_6_LUNA_MODEL_ID,
+      ),
+    ).toBe(false)
+    expect(isFreeAgentModel('base2', FREEBUFF_GPT_6_LUNA_MODEL_ID)).toBe(false)
+  })
+
+  test('isFreeAgent ignores prototype keys', () => {
+    expect(isFreeAgent('file-picker')).toBe(true)
+    expect(isFreeAgent('constructor')).toBe(false)
+    expect(isFreeAgent('toString')).toBe(false)
+  })
+
+  test("each helper's own definition runs a model it is free on", () => {
+    const repoRoot = join(import.meta.dir, '..', '..', '..')
+    const modelConstants: Record<string, string> = {
+      FREEBUFF_GPT_6_LUNA_MODEL_ID,
+      GEMINI_3_5_FLASH_LITE_MODEL_ID,
+      GEMINI_3_1_FLASH_LITE_MODEL_ID,
+    }
+    const sources: Record<string, string[]> = {
+      'file-picker': ['agents', 'file-explorer', 'file-picker.ts'],
+      // createFilePicker('max'): same definition.
+      'file-picker-max': ['agents', 'file-explorer', 'file-picker.ts'],
+      'file-lister': ['agents', 'file-explorer', 'file-lister.ts'],
+      'researcher-web': ['agents', 'researcher', 'researcher-web.ts'],
+      'researcher-docs': ['agents', 'researcher', 'researcher-docs.ts'],
+    }
+    expect(Object.keys(FREE_TIER_AGENT_MODELS).sort()).toEqual(
+      Object.keys(sources).sort(),
+    )
+    for (const [agentId, parts] of Object.entries(sources)) {
+      const source = readFileSync(join(repoRoot, ...parts), 'utf8')
+      const constant = source.match(/\bmodel: (\w+),/)?.[1]
+      // A new constant here means the helper changed model: add it to
+      // FREE_TIER_AGENT_MODELS (and to modelConstants above).
+      expect(constant && modelConstants[constant]).toBeTruthy()
+      expect(isFreeAgentModel(agentId, modelConstants[constant!]!)).toBe(true)
     }
   })
 })

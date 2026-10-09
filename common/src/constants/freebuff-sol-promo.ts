@@ -25,8 +25,9 @@ export const GPT_61_SOL_PROMOTIONAL = {
 /**
  * Models capped at N paid session-hours per Freebucks day, for EVERY account
  * (a plan does not lift it). Enforced by the admission debit under the account
- * lock (`debitAdmission`), counting the day's un-refunded session debits for
- * the model, so it holds on every surface and against parallel starts.
+ * lock (`debitAdmission`), counting the day's session debits for the model
+ * (except failed starts and hours refunded in full), so it holds on every
+ * surface and against parallel starts.
  * Re-entering an hour already paid for never debits, so it is not a second
  * session; a Desktop renewal of a tab's next hour is.
  */
