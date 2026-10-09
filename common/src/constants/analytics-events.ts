@@ -192,12 +192,17 @@ export enum AnalyticsEvent {
   // Feedback hub - the Axiom mirror (docs/freebuff-feedback-hub.md §14).
   // One row per feedback_item the hub inserted or changed, from EVERY source:
   // support email, Discord, GitHub, the in-product forms, CLI and Desktop.
-  // This is the event to query when you want to know what users are saying.
+  // STOPPED 2026-10-06 with the frozen hub; kept so its history stays promoted
+  // to the `event` column.
   FEEDBACK_ITEM_INGESTED = 'feedback.item_ingested',
   // Emitted at the door by the surface that RECEIVED the message, so a
-  // submission is queryable even when the hub write fails or Convex is
-  // unconfigured. Deliberately a different name from the hub mirror above:
-  // one means "a person pressed send", the other "the hub holds this".
+  // submission is queryable even when the store write fails or Convex is
+  // unconfigured. Three doors tell themselves apart by `data.source`: the
+  // CLI/Desktop/SDK POST (`cli` | `desktop` | `sdk`), the in-app issue form
+  // (`issue_report`) and the in-app feedback widget (`feedback_message`).
+  // Read it with `scripts/logs/feedback-stream.ts`. Deliberately a different
+  // name from the hub mirror above: one means "a person pressed send", the
+  // other "the hub holds this".
   FEEDBACK_RECEIVED = 'feedback.received',
 
   // Web - Logs ingest API (client logs/events → BigQuery)
