@@ -26,10 +26,24 @@ export const labAdSchema = z
   .strict()
 export type LabAd = z.infer<typeof labAdSchema>
 export const labSelectionSchema = z.discriminatedUnion('kind', [
+  z
+    .object({ kind: z.literal('creative'), id: z.string().min(1).max(120) })
+    .strict(),
   z.object({ kind: z.literal('campaign'), id: z.string().uuid() }).strict(),
   z.object({ kind: z.literal('draft'), id: z.string().uuid() }).strict(),
 ])
 export type LabSelection = z.infer<typeof labSelectionSchema>
+export type LabAdSearchPage = {
+  items: Array<{
+    id: string
+    name: string
+    campaignName: string
+    advertiserName: string
+    status: string
+    deliveryPaused: boolean
+  }>
+  nextOffset: number | null
+}
 export type LabRepository = {
   projectId: string
   fullName: string
