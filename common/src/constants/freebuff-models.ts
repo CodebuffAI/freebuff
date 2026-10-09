@@ -2547,8 +2547,8 @@ const SOLAR_PRO_4_MODEL = {
   availability: 'always',
   // Labelled for AI training from 2026-10-08: its traces are to go to Upstage
   // to improve Solar, which the Privacy Policy counts as training use (a
-  // collection notice would not cover it). Not collected yet: see
-  // FREEBUFF_UNTRACED_TRAINING_MODEL_IDS.
+  // collection notice would not cover it). Traced from 2026-10-09, once the
+  // label had been live for an hour.
   warning: FREEBUFF_AI_TRAINING_NOTICE,
   dataUse: 'training',
   premium: FREEBUFF_SOLAR_PRO_4_ENTITLEMENT.fullAccess.premium,
@@ -2587,7 +2587,7 @@ const SOLAR_MINI_4_MODEL = {
   displayName: 'Solar Mini 4',
   tagline: 'Fast and light',
   availability: 'always',
-  // As Pro 4: labelled for AI training, traces not collected yet.
+  // As Pro 4: labelled for AI training, and traced.
   warning: FREEBUFF_AI_TRAINING_NOTICE,
   dataUse: 'training',
   premium: FREEBUFF_SOLAR_MINI_4_ENTITLEMENT.fullAccess.premium,
@@ -3802,16 +3802,10 @@ export const FREEBUFF_WEB_MULTIMODAL_MODEL_IDS = Object.freeze(
  * retaining users' prompts as a SIDE EFFECT of a catalog edit, which is not a
  * decision a catalog edit should be able to make.
  *
- * Solar Pro 4 and Mini 4, for now: their notice (2026-10-08) has to reach
- * users before the first trace is kept for Upstage, so collection waits until
- * sessions have restarted under it, about an hour after the deploy.
- *
  * Delete an entry here to start tracing that row; that is the whole switch.
  */
 const FREEBUFF_UNTRACED_TRAINING_MODEL_IDS: readonly string[] = [
   ...FREEBUFF_MUSE_SPARK_MODEL_IDS,
-  FREEBUFF_SOLAR_PRO_4_MODEL_ID,
-  FREEBUFF_SOLAR_MINI_4_MODEL_ID,
 ]
 
 /** Free-mode models whose chat-completion traces we store in our own dataset

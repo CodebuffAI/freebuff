@@ -214,19 +214,14 @@ describe('freebuff model availability', () => {
   test('trace storage follows machine-readable data-use metadata', () => {
     const models: readonly FreebuffModelOption[] = SUPPORTED_FREEBUFF_MODELS
     for (const model of models) {
-      // The rows that carry the training grant and are still NOT traced
+      // The row that carries the training grant and is still NOT traced
       // (FREEBUFF_UNTRACED_TRAINING_MODEL_IDS). Muse Spark: Meta trains on
       // these prompts upstream regardless — that is the Contributor discount —
       // so our own copy buys nothing the grant has not already given away. It
       // entered this test's scope on 2026-09-04 by joining the CLI catalog;
       // without the exception the widening would have started retaining users'
-      // prompts as a side effect of a catalog edit. Solar Pro 4 and Mini 4, for
-      // now: their notice goes out before any trace is kept for Upstage.
-      if (
-        FREEBUFF_MUSE_SPARK_MODEL_IDS.some((id) => id === model.id) ||
-        model.id === FREEBUFF_SOLAR_PRO_4_MODEL_ID ||
-        model.id === FREEBUFF_SOLAR_MINI_4_MODEL_ID
-      ) {
+      // prompts as a side effect of a catalog edit.
+      if (FREEBUFF_MUSE_SPARK_MODEL_IDS.some((id) => id === model.id)) {
         expect(model.dataUse).toBe('training')
         expect(model.warning).toBeDefined()
         expect(isFreebuffTracedModelId(model.id)).toBe(false)
