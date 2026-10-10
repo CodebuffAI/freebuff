@@ -164,13 +164,21 @@ export const FREEBUFF_BASE3_FAST_WORKER_AGENT_ID =
 
 /**
  * The subagent a Freebuff Projects account's Desktop and Cloud threads may
- * spawn, as many as the model asks for (agents/projects-subagent.ts). It runs
+ * spawn, up to FREEBUFF_PROJECTS_MAX_LIVE_SUBAGENTS at once (agents/projects-subagent.ts). It runs
  * its root's model with the root's prompt and history, has the root's coding
  * tools, and may spawn more of itself. The Projects allowlist only:
  * the completions route refuses this id for anyone else
  * (web/src/server/desktop-cloud/projects-access.ts), whatever a client sends.
  */
 export const FREEBUFF_PROJECTS_SUBAGENT_ID = 'freebuff-projects-subagent'
+
+/**
+ * Most Projects subagents one root run may have running at once, nested ones
+ * included (Owen, 2026-10-10: "a cap of like 10-15, not actually unlimited"; then "even for admin we should cap at like 20").
+ * The agent runtime refuses a spawn past it (spawn-agents.ts); every
+ * spawn_agents call is separately held to MAX_SPAWN_AGENTS_PER_CALL.
+ */
+export const FREEBUFF_PROJECTS_MAX_LIVE_SUBAGENTS = 20
 
 /**
  * The Freebuff Web and Cloud roots that run the base3 single-loop harness
