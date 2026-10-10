@@ -1,15 +1,13 @@
 import {
-  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_MIMO_V25_MODEL_ID,
+  FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+  FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
   freebuffModelIdMatches,
   type FreebuffAccessTier,
 } from '../constants/freebuff-models'
-import { isDeepSeekExpensiveWindow } from '../constants/freebuff-peak-hours'
 import type { ReasoningEffort } from '../constants/reasoning-effort'
 import type { FreebuffFreebucksInfo } from '../types/freebuff-session'
-import { offPeakPriceAt } from './freebuff-price-changes'
 
 export interface FreebuffModelPreset {
   id: 'efficient' | 'balanced' | 'powerful'
@@ -30,46 +28,30 @@ export interface FreebuffPresetModel {
 }
 
 /** Recommendations only. Catalog visibility, purchase consent and admission
- * remain owned by the existing model-selection path. */
+ * remain owned by the existing model-selection path.
+ *
+ * Every account with premium access gets the same three stops, whatever its
+ * country: MiMo, DeepSeek V4 Flash at high effort (the Luminal lane), and Muse
+ * Spark 1.3. Muse Spark is a paid-only row, so for a free account that stop is
+ * the ordinary paywall, never an entitlement. A limited-region account that is
+ * neither a subscriber nor holds 100 Freebucks gets the free ladder below. */
 export function getFreebuffModelPresets({
   accessTier,
-  countryCode,
   isSubscriber = false,
   balance = 0,
   pricing,
   models,
-  now = Date.now(),
 }: {
   accessTier?: FreebuffAccessTier | null
-  countryCode?: string | null
   isSubscriber?: boolean
   balance?: number
-  pricing?: Pick<FreebuffFreebucksInfo, 'prices' | 'offPeak'> | null
+  pricing?: Pick<FreebuffFreebucksInfo, 'prices'> | null
   models?: readonly FreebuffPresetModel[]
-  now?: number
 } = {}): readonly FreebuffModelPreset[] {
   const limited = accessTier === 'limited'
-  // No account yet uses the US preview. A known account with no country
-  // follows its access tier, rather than inferring geography from a timezone.
-  const fastEligible =
-    accessTier == null ||
-    (!limited && (countryCode?.toUpperCase() === 'US' || isSubscriber)) ||
-    balance >= 100
   const premium = !limited || isSubscriber || balance >= 100
   const rowFor = (id: string) =>
     models?.find((row) => freebuffModelIdMatches(row.compiledId ?? row.id, id))
-  const fastRow = rowFor(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)
-  const fastOffer =
-    pricing?.offPeak?.[
-      fastRow?.id ?? FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID
-    ] ?? pricing?.offPeak?.[FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]
-  const offPeak = fastOffer
-    ? offPeakPriceAt(fastOffer, now).price === fastOffer.price
-    : !isDeepSeekExpensiveWindow(new Date(now))
-  const flash =
-    fastEligible && offPeak
-      ? FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID
-      : FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
   const preset = (
     id: FreebuffModelPreset['id'],
     label: string,
@@ -101,8 +83,13 @@ export function getFreebuffModelPresets({
   if (premium) {
     return [
       preset('efficient', 'Efficient', FREEBUFF_MIMO_V25_MODEL_ID, null),
-      preset('balanced', 'Balanced', flash, 'high'),
-      preset('powerful', 'Powerful', FREEBUFF_GPT_6_LUNA_MODEL_ID, 'xhigh'),
+      preset('balanced', 'Balanced', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'high'),
+      preset(
+        'powerful',
+        'Powerful',
+        FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+        FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
+      ),
     ]
   }
 
