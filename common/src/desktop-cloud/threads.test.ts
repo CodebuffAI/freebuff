@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  THREAD_GROUPS,
+  arrangeThreadPanel,
+  moveThreadGroup,
   threadDigestSchema,
   threadGroup,
   threadPanel,
@@ -104,4 +107,25 @@ test('schema is strict and accepts both kinds', () => {
   expect(threadDigestSchema.parse(digest({ kind: 'local' }))).toEqual(digest({ kind: 'local' }))
   expect(threadDigestSchema.safeParse({ ...digest(), extra: 1 }).success).toBe(false)
   expect(threadDigestSchema.safeParse(digest({ kind: 'remote' as never })).success).toBe(false)
+})
+
+test('the viewer arranges groups and pins threads to the top of their group', () => {
+  const { groups } = threadPanel([
+    digest({ id: 'old', updatedAt: '2026-10-10T01:00:00Z' }),
+    digest({ id: 'new', updatedAt: '2026-10-10T02:00:00Z' }),
+    digest({ id: 'pinned', updatedAt: '2026-10-10T00:00:00Z' }),
+  ])
+  const arranged = arrangeThreadPanel(groups, {
+    order: ['resolved', 'idle', 'bogus'],
+    pinned: new Set(['pinned']),
+  })
+  expect(arranged.map((entry) => entry.group)).toEqual(['resolved', 'idle', 'waiting', 'working'])
+  expect(arranged[1].threads.map((entry) => entry.id)).toEqual(['pinned', 'new', 'old'])
+  expect(arrangeThreadPanel(groups).map((entry) => entry.group)).toEqual([...THREAD_GROUPS])
+})
+
+test('moving a group puts it where the target was', () => {
+  expect(moveThreadGroup(THREAD_GROUPS, 'resolved', 'waiting')).toEqual(['resolved', 'waiting', 'working', 'idle'])
+  expect(moveThreadGroup(THREAD_GROUPS, 'waiting', 'idle')).toEqual(['working', 'idle', 'waiting', 'resolved'])
+  expect(moveThreadGroup(['idle'], 'idle', 'resolved')).toEqual(['waiting', 'working', 'resolved', 'idle'])
 })

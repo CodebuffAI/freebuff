@@ -65,9 +65,38 @@ export const threadDigestPullRequestSchema = z
     number: z.number().int().positive(),
     state: z.enum(['open', 'merged', 'closed']),
     conflict: z.boolean(),
+    /** Absent reads as not a draft: a producer that never asked GitHub does not say. */
+    draft: z.boolean().optional(),
   })
   .strict()
 export type ThreadDigestPullRequest = z.infer<typeof threadDigestPullRequestSchema>
+
+/**
+ * `uncommitted` counts a shared checkout's working tree; `branch` counts everything a
+ * worktree thread's branch changed against the branch it started from, committed or not.
+ */
+export const THREAD_GIT_CHANGE_SCOPES = ['uncommitted', 'branch'] as const
+export type ThreadGitChangeScope = (typeof THREAD_GIT_CHANGE_SCOPES)[number]
+
+const gitCount = z.number().int().nonnegative()
+
+export const threadDigestGitSchema = z
+  .object({
+    /** The branch the thread works on; null for a detached or shared checkout with no branch. */
+    branch: z.string().min(1).max(THREAD_DIGEST_TEXT_LIMIT).nullable(),
+    /** Null when the producer has not measured it yet, as for a cloud thread Desktop cannot see into. */
+    changes: z
+      .object({
+        scope: z.enum(THREAD_GIT_CHANGE_SCOPES),
+        files: gitCount,
+        adds: gitCount,
+        dels: gitCount,
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict()
+export type ThreadDigestGit = z.infer<typeof threadDigestGitSchema>
 
 export const threadDigestSchema = z
   .object({
@@ -85,6 +114,8 @@ export const threadDigestSchema = z
     lastMessage: text.nullable(),
     pendingQuestion: threadDigestQuestionSchema.nullable(),
     pullRequest: threadDigestPullRequestSchema.nullable(),
+    /** Absent when the producer knows nothing about the thread's git (no branch, nothing measured). */
+    git: threadDigestGitSchema.optional(),
     resolvedAt: isoTime.nullable(),
     /** Absent reads as `freebuff`: a producer that does not say runs on Freebuff. */
     funding: z.enum(THREAD_FUNDINGS).optional(),
@@ -204,4 +235,46 @@ function threadPanelHeadline(groups: readonly ThreadPanelGroup[]): string {
   return groups.some((entry) => entry.threads.length > 0)
     ? 'All clear'
     : 'No threads yet'
+}
+
+/**
+ * The panel's groups as the viewer arranged them: groups in `order` (a saved
+ * order missing a group, or naming an unknown one, still yields all four),
+ * and pinned threads first within each group, keeping newest-first otherwise.
+ */
+export function arrangeThreadPanel(
+  groups: readonly ThreadPanelGroup[],
+  {
+    order = THREAD_GROUPS,
+    pinned = new Set<string>(),
+  }: { order?: readonly string[]; pinned?: ReadonlySet<string> } = {},
+): ThreadPanelGroup[] {
+  const rank = (group: ThreadGroup) => {
+    const at = order.indexOf(group)
+    return at === -1 ? order.length + THREAD_GROUPS.indexOf(group) : at
+  }
+  return [...groups]
+    .sort((a, b) => rank(a.group) - rank(b.group))
+    .map((entry) => ({
+      ...entry,
+      threads: [
+        ...entry.threads.filter((digest) => pinned.has(digest.id)),
+        ...entry.threads.filter((digest) => !pinned.has(digest.id)),
+      ],
+    }))
+}
+
+/** `order` with `group` moved to where `target` sits; unknown groups are dropped. */
+export function moveThreadGroup(
+  order: readonly string[],
+  group: ThreadGroup,
+  target: ThreadGroup,
+): ThreadGroup[] {
+  const known = arrangeThreadPanel(
+    THREAD_GROUPS.map((entry) => ({ group: entry, label: '', threads: [] })),
+    { order },
+  ).map((entry) => entry.group)
+  const without = known.filter((entry) => entry !== group)
+  without.splice(known.indexOf(target), 0, group)
+  return without
 }
