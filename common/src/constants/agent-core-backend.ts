@@ -11,7 +11,9 @@
  */
 export type AgentCoreBackend = 'convex' | 'shadow' | 'postgres'
 
-export const AGENT_CORE_BACKEND: AgentCoreBackend = 'convex'
+// `shadow` (Owen, 2026-10-10): the projection runs once the chain is seeded
+// after the backfill (docs/convex-agent-core-mirror.md); reads stay on Convex.
+export const AGENT_CORE_BACKEND: AgentCoreBackend = 'shadow'
 
 /** Whether the web UI reads the agent core from Postgres (`/api/fn` + live topics). */
 export function agentCoreUiReadsFromPostgres(
