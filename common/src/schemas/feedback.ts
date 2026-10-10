@@ -7,6 +7,7 @@ import {
   MAX_ERRORS,
   MAX_ERROR_ID_LENGTH,
   MAX_ERROR_MESSAGE_LENGTH,
+  MAX_RATED_MESSAGE_CHARS,
   MAX_RECENT_MESSAGES,
   MESSAGE_VARIANTS,
 } from '../constants/feedback'
@@ -35,6 +36,16 @@ export const feedbackRequestSchema = z.object({
   platform: z.string().max(100).optional(),
   messageId: z.string().min(1).max(200).optional(),
   messageVariant: z.enum(MESSAGE_VARIANTS).optional(),
+  /**
+   * The words of the message being rated, so a thumb or a message report says
+   * what it is about. Cut rather than refused when over the cap: an oversized
+   * excerpt must not cost the submission it rides on.
+   */
+  messageText: z
+    .string()
+    .trim()
+    .transform((value) => value.slice(0, MAX_RATED_MESSAGE_CHARS))
+    .optional(),
   completionTime: z.string().max(50).optional(),
   credits: z.number().nonnegative().finite().optional(),
   agentMode: z.string().max(100).optional(),

@@ -11,6 +11,17 @@ export const MAX_ERROR_MESSAGE_LENGTH = 2000
 export const MAX_ERROR_ID_LENGTH = 200
 
 /**
+ * How much of the rated reply rides along on a `type: 'message'` submission.
+ *
+ * A message id alone is useless downstream: Desktop mints it in the renderer
+ * and nothing on the server can resolve it, so a thumb arrived in PostHog and
+ * Discord as `{rating: 'up', text: ''}` with no way to tell what was rated.
+ * The excerpt is what makes the verdict readable. Bounded because it lands in
+ * a PostHog property and a Discord post, not because longer would be wrong.
+ */
+export const MAX_RATED_MESSAGE_CHARS = 2_000
+
+/**
  * A one-click verdict on a single assistant message.
  *
  * `rating` and `category` are NOT redundant. `category` says what kind of
