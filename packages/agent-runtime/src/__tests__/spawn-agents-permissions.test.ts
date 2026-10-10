@@ -280,6 +280,34 @@ describe('Spawn Agents Permissions', () => {
       },
     })
 
+    it('should refuse a batch over MAX_SPAWN_AGENTS_PER_CALL without starting any agent', async () => {
+      const parentAgent = createMockAgent('parent', ['thinker'])
+      const childAgent = createMockAgent('thinker')
+      const sessionState = getInitialSessionState(mockFileContext)
+      // The 21-agent swarm of 2026-10-10, replayed.
+      const toolCall: CodebuffToolCall<'spawn_agents'> = {
+        toolName: 'spawn_agents' as const,
+        toolCallId: 'test-tool-call-id',
+        input: {
+          agents: Array.from({ length: 21 }, () => ({
+            agent_type: 'thinker',
+            prompt: 'swarm',
+          })),
+        },
+      }
+
+      const { output } = await handleSpawnAgents({
+        ...handleSpawnAgentsBaseParams,
+        agentState: sessionState.mainAgentState,
+        agentTemplate: parentAgent,
+        localAgentTemplates: { thinker: childAgent },
+        toolCall,
+      })
+
+      expect(JSON.stringify(output)).toContain('at most 6')
+      expect(mockLoopAgentSteps).not.toHaveBeenCalled()
+    })
+
     it('should allow spawning when agent is in spawnableAgents list', async () => {
       const parentAgent = createMockAgent('parent', ['thinker', 'reviewer'])
       const childAgent = createMockAgent('thinker')

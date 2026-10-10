@@ -1,3 +1,4 @@
+import { MAX_SPAWN_AGENTS_PER_CALL } from '@codebuff/common/tools/params/tool/spawn-agents'
 import { jsonToolResult } from '@codebuff/common/util/messages'
 
 import { outputForParent } from '../../../util/agent-output'
@@ -84,6 +85,20 @@ export const handleSpawnAgents = (async (
   } = params
   const { agents } = toolCall.input
   const { logger } = params
+
+  // Enforce the schema's MAX_SPAWN_AGENTS_PER_CALL even when validation was
+  // bypassed (custom tool-call parsing, a cached schema from an older client).
+  // The batch answers in place: no subagent starts and no token is spent.
+  if (agents.length > MAX_SPAWN_AGENTS_PER_CALL) {
+    return {
+      output: jsonToolResult([
+        {
+          agentType: agents[0]?.agent_type ?? 'unknown',
+          errorMessage: `Refusing to spawn ${agents.length} agents at once: at most ${MAX_SPAWN_AGENTS_PER_CALL} per spawn_agents call. Split the fan-out into smaller batches.`,
+        },
+      ]),
+    }
+  }
 
   await previousToolCallFinished
 
