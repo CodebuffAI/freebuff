@@ -252,6 +252,13 @@ export interface SponsoredSandboxOptions {
   /** Extra trees the run may READ (a toolchain, a shared cache). Never write. */
   additionalReadRoots?: string[]
   /**
+   * Toolchains Freebuff installed for runs (`sponsored-managed-node.ts`):
+   * each `root` is granted READ-ONLY like `additionalReadRoots`, and each
+   * `binDir` goes at the END of the run's `PATH`, so the user's own install
+   * of the same tool is always found first.
+   */
+  managedToolchains?: readonly { root: string; binDir: string }[]
+  /**
    * Set when `workspaceRoot` is a LINKED worktree, so git can reach its
    * repository. See {@link SponsoredLinkedWorktree}.
    *
@@ -2273,8 +2280,13 @@ export function createSponsoredTerminalBroker(
 ): TerminalCommandBroker {
   const workspaceRoot = path.resolve(options.workspaceRoot)
   const runtimeDir = path.resolve(options.runtimeDir)
-  const additionalReadRoots = (options.additionalReadRoots ?? []).map((item) =>
-    path.resolve(item),
+  const managedToolchains = options.managedToolchains ?? []
+  const additionalReadRoots = [
+    ...(options.additionalReadRoots ?? []),
+    ...managedToolchains.map((toolchain) => toolchain.root),
+  ].map((item) => path.resolve(item))
+  const managedBinDirs = managedToolchains.map((toolchain) =>
+    path.resolve(toolchain.binDir),
   )
   const platform = options.platform ?? process.platform
   if (
@@ -2323,6 +2335,11 @@ export function createSponsoredTerminalBroker(
         scrubEnv(request.env, { home, tmp }),
         options.credentialEnv,
       ) as NodeJS.ProcessEnv
+      if (managedBinDirs.length > 0) {
+        env.PATH = [env.PATH, ...managedBinDirs]
+          .filter((item): item is string => Boolean(item))
+          .join(path.delimiter)
+      }
       if (platform === 'darwin' && env.PATH !== undefined) {
         env.PATH = macRunPath(env.PATH)
       }
