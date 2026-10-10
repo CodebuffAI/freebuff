@@ -176,6 +176,7 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     useFreebuffChatStore.setState({
       admission: { phase: 'requested', model: luna, metadataChecked: true },
     })
+    useFreebuffModelStore.setState({ hasExplicitPick: true }) // Luna was picked
     const setup = await mount()
     expect(useFreebuffChatStore.getState().admission?.phase).toBe('confirm')
     expect(setup.captureCharFrame()).toContain('20')

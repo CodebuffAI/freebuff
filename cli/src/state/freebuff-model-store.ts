@@ -2,11 +2,19 @@ import {
   DEFAULT_FREEBUFF_MODEL_ID,
   resolveAvailableFreebuffModel,
 } from '@codebuff/common/constants/freebuff-models'
+import {
+  getFreebucksInfo,
+  getFreebuffServerAccessTier,
+  getSubscriptionInfo,
+} from '@codebuff/common/types/freebuff-session'
+import { getFreebuffModelPresets } from '@codebuff/common/util/freebuff-model-presets'
+import { getFreebuffModelMeter } from '@codebuff/common/util/freebuff-session-pools'
 import { create } from 'zustand'
 
 import { getFreebuffModelDirectory } from './freebuff-catalog-store'
 import {
   loadFreebuffCatalogReasoningEfforts,
+  loadFreebuffModelKeyPreference,
   loadFreebuffModelPreference,
   loadFreebuffReasoningEfforts,
   saveFreebuffCatalogReasoningEffort,
@@ -15,6 +23,7 @@ import {
   saveFreebuffReasoningEffort,
 } from '../utils/settings'
 
+import type { FreebuffSessionResponse } from '../types/freebuff-session'
 import type { ReasoningEffort } from '@codebuff/common/constants/reasoning-effort'
 
 /**
@@ -46,6 +55,8 @@ import type { ReasoningEffort } from '@codebuff/common/constants/reasoning-effor
 interface FreebuffModelStore {
   selectedModel: string
   setSelectedModel: (model: string) => void
+  /** Until the user picks, the selection follows freebuffDefaultModelForSession. */
+  hasExplicitPick: boolean
   /** Per-model effort overrides. A model absent from this map runs its catalog
    *  default; see saveFreebuffReasoningEffort for why absence is the "default"
    *  state rather than a stored null. */
@@ -56,12 +67,17 @@ interface FreebuffModelStore {
   ) => void
 }
 
+const savedFreebuffModelPick = loadFreebuffModelPreference()
+
 export const useFreebuffModelStore = create<FreebuffModelStore>((set) => ({
   selectedModel: resolveAvailableFreebuffModel(
-    loadFreebuffModelPreference() ?? DEFAULT_FREEBUFF_MODEL_ID,
+    savedFreebuffModelPick ?? DEFAULT_FREEBUFF_MODEL_ID,
   ),
   setSelectedModel: (model) =>
     set({ selectedModel: getFreebuffModelDirectory().resolveSelection(model) }),
+  hasExplicitPick:
+    savedFreebuffModelPick !== undefined ||
+    loadFreebuffModelKeyPreference() !== undefined,
   reasoningEffortByModel: {
     ...loadFreebuffReasoningEfforts(),
     ...loadFreebuffCatalogReasoningEfforts(),
@@ -88,6 +104,27 @@ export const useFreebuffModelStore = create<FreebuffModelStore>((set) => ({
  *  the chat-completions metadata builder). */
 export function getSelectedFreebuffModel(): string {
   return useFreebuffModelStore.getState().selectedModel
+}
+
+/** The Desktop and Web slider's Balanced stop, or the catalog's
+ *  recommendation when the meter cannot start it, as on Desktop and Web. */
+export function freebuffDefaultModelForSession(
+  session: FreebuffSessionResponse,
+): string {
+  const directory = getFreebuffModelDirectory()
+  const accessTier = getFreebuffServerAccessTier(session)
+  const freebucks = getFreebucksInfo(session)
+  const balanced = getFreebuffModelPresets({
+    accessTier,
+    isSubscriber: Boolean(
+      getSubscriptionInfo(session)?.tierId ?? freebucks?.planId,
+    ),
+    balance: freebucks?.balance,
+  }).find((preset) => preset.id === 'balanced')!
+  const model = directory.resolveSelection(balanced.modelId)
+  return getFreebuffModelMeter({ model, freebucks }).canStart
+    ? model
+    : directory.recommendedModelId(accessTier)
 }
 
 /**
@@ -133,6 +170,7 @@ function legacyEffortForCatalogKey(
  * key; see `saveFreebuffModelPreference`).
  */
 export function persistFreebuffModelPick(model: string): void {
+  useFreebuffModelStore.setState({ hasExplicitPick: true })
   if (getFreebuffModelDirectory().row(model)?.key === model) {
     saveFreebuffModelKeyPreference(model)
   } else {

@@ -18,6 +18,7 @@ import {
 } from '../../state/freebuff-catalog-store'
 import { useFreebuffChatStore } from '../../state/freebuff-chat-store'
 import {
+  freebuffDefaultModelForSession,
   getEffectiveFreebuffReasoningEffort,
   getSelectedFreebuffModel,
   persistFreebuffModelPick,
@@ -428,11 +429,53 @@ describe('session picks in catalog mode', () => {
   test('an active session re-keyed by the server wins the selection', () => {
     setFreebuffCatalog(CATALOG)
     expect(
-      resolveFreebuffModelSelectionForSession('m-mimo', {
-        status: 'active',
-        model: 'm-flash',
-      } as never),
+      resolveFreebuffModelSelectionForSession(
+        'm-mimo',
+        { status: 'active', model: 'm-flash' } as never,
+        true,
+      ),
     ).toBe('m-flash')
+  })
+})
+
+describe('the default for an account with no explicit pick', () => {
+  const FLASH = FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
+  const MIMO = FREEBUFF_MIMO_V25_MODEL_ID
+  const none = (accessTier: 'full' | 'limited', balance = 50) =>
+    ({
+      status: 'none',
+      accessTier,
+      freebucks: { balance, planId: null, prices: { [FLASH]: 15, [MIMO]: 10 } },
+    }) as never
+
+  test('is the Balanced stop: DeepSeek V4.1 Flash at full access, MiMo at limited', () => {
+    expect(
+      resolveFreebuffModelSelectionForSession(MIMO, none('full'), false),
+    ).toBe(FLASH)
+    expect(
+      resolveFreebuffModelSelectionForSession(FLASH, none('limited'), false),
+    ).toBe(MIMO)
+  })
+
+  test('an explicit pick keeps its model', () => {
+    expect(
+      resolveFreebuffModelSelectionForSession(MIMO, none('full'), true),
+    ).toBe(MIMO)
+  })
+
+  test('steps down to the recommendation when the balance cannot start Balanced', () => {
+    expect(freebuffDefaultModelForSession(none('full', 12))).toBe(MIMO)
+  })
+
+  test('names the catalog row in catalog mode', () => {
+    setFreebuffCatalog(CATALOG)
+    expect(freebuffDefaultModelForSession(none('full'))).toBe('m-flash')
+  })
+
+  test('a pick stops the selection following the default', () => {
+    useFreebuffModelStore.setState({ hasExplicitPick: false })
+    persistFreebuffModelPick(MIMO)
+    expect(useFreebuffModelStore.getState().hasExplicitPick).toBe(true)
   })
 })
 

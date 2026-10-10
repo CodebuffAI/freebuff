@@ -14,6 +14,7 @@ import {
   useFreebuffCatalogStore,
 } from '../state/freebuff-catalog-store'
 import {
+  freebuffDefaultModelForSession,
   getSelectedFreebuffModel,
   persistFreebuffModelPick,
   useFreebuffModelStore,
@@ -345,8 +346,12 @@ export function resolveFreebuffModelPickForSession(
 export function resolveFreebuffModelSelectionForSession(
   selectedModel: string,
   session: FreebuffSessionResponse,
+  hasExplicitPick: boolean,
 ) {
   if (session.status === 'active') return session.model
+  if (session.status === 'none' && !hasExplicitPick) {
+    return freebuffDefaultModelForSession(session)
+  }
   if (session.status === 'none' && session.accessTier === 'limited') {
     return resolveFreebuffModelPickForSession(selectedModel, session)
   }
@@ -587,6 +592,7 @@ export function useFreebuffSession({
       const resolvedModel = resolveFreebuffModelSelectionForSession(
         selectedModel,
         next,
+        useFreebuffModelStore.getState().hasExplicitPick,
       )
       if (resolvedModel !== selectedModel) {
         useFreebuffModelStore.getState().setSelectedModel(resolvedModel)

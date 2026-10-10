@@ -153,12 +153,14 @@ describe('freebuff rows the CLI offers', () => {
       resolveFreebuffModelSelectionForSession(
         FREEBUFF_GPT_6_LUNA_MODEL_ID,
         paidSession,
+        true,
       ),
     ).toBe(FREEBUFF_GPT_6_LUNA_MODEL_ID)
     expect(
       resolveFreebuffModelSelectionForSession(
         FREEBUFF_GPT_6_LUNA_MODEL_ID,
         unpaidSession,
+        true,
       ),
     ).toBe(LIMITED_FREEBUFF_MODEL_ID)
   })

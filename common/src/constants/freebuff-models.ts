@@ -3833,9 +3833,9 @@ export type SupportedFreebuffModelId =
   (typeof SUPPORTED_FREEBUFF_MODELS)[number]['id']
 export type FreebuffWebModelId = (typeof FREEBUFF_WEB_ALL_MODELS)[number]['id']
 
-/** What new freebuff users see selected in the CLI picker, and the model its
- *  "RECOMMENDED" hero opens on; Desktop starts on freebuffAppDefaultModelIds
- *  and falls back to this. DeepSeek V4.1 Flash as of
+/** A new CLI user's selection until a session response moves it to Balanced,
+ *  and the model the picker's "RECOMMENDED" hero opens on; Desktop starts on
+ *  freebuffAppDefaultModelIds and falls back to this. DeepSeek V4.1 Flash as of
  *  2026-09-02 (unmetered on the Luminal lane; it carries the AI-training
  *  notice, and it is also the limited tier's default). The paragraphs below
  *  were written for the GLM 5.3 Flash default of 2026-08-30 and still hold.

@@ -11,6 +11,7 @@ import {
   type ChatAdmission,
 } from '../state/freebuff-chat-store'
 import { getFreebuffModelDirectory } from '../state/freebuff-catalog-store'
+import { useFreebuffModelStore } from '../state/freebuff-model-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import {
   freebucksOf,
@@ -195,7 +196,12 @@ export function useFreebuffChatAdmission(enabled: boolean) {
       })
       return
     }
-    const model = resolveFreebuffModelPickForSession(admission.model, session)
+    // A send before the first session response captured the launch seed.
+    const { hasExplicitPick, selectedModel } = useFreebuffModelStore.getState()
+    const model = resolveFreebuffModelPickForSession(
+      hasExplicitPick ? admission.model : selectedModel,
+      session,
+    )
     const intent = freebucksRowIntent(
       freebucksOf(session),
       model,
