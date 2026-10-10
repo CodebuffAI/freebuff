@@ -2860,11 +2860,11 @@ const MUSE_SPARK_12_CONTRIBUTOR_MODEL = {
 /**
  * Meta Muse Spark 1.3 Contributor. Open to every FULL-ACCESS account with no
  * plan since 2026-10-09 (it was paid-only on every surface from 2026-09-28),
- * at 15 Freebucks; at LIMITED access it stays plan-only
- * (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS), drawn locked with a press that
- * opens the plans page — Luna's and MiMo 2.6 Pro's treatment. Cheaper per
- * token than DeepSeek V4 Flash; what is scarce is Meta's rate limit, and a
- * request that meets it is answered by DeepSeek V4.1 Flash at the same price.
+ * at 10 Freebucks since 2026-10-10 (15 before); at LIMITED access it stays
+ * plan-only (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS), drawn locked with a
+ * press that opens the plans page — Luna's and MiMo 2.6 Pro's treatment.
+ * Cheaper per token than DeepSeek V4 Flash; a request Meta cannot serve is
+ * answered by DeepSeek V4.1 Flash at the same price.
  */
 const MUSE_SPARK_13_CONTRIBUTOR_MODEL = {
   id: FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
@@ -4204,7 +4204,7 @@ export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
     // Muse Spark 1.3 (and 1.2 with it) was paid-only on every surface from
     // 2026-09-28 and LEFT this list on 2026-10-09, by product decision, on
     // MiMo 2.6 Pro's and Luna's terms below: open to every full-access
-    // account at 15 Freebucks, plan-only at limited access
+    // account (10 Freebucks since 2026-10-10), plan-only at limited access
     // (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS). Re-locking it for everyone
     // is a one-line move back here and in the every-surface list, or without a
     // deploy a `locked` full-access entry in the server model catalog.

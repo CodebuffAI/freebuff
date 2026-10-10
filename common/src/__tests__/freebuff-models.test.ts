@@ -2080,7 +2080,7 @@ describe('Meta Muse Spark 1.3 Contributor', () => {
   })
 
   test('carries the announcement badge, naming the entitlement', () => {
-    // The 15 Freebucks price is asserted where the meter lives: the admission
+    // The 10 Freebucks price is asserted where the meter lives: the admission
     // test in web/.../public-api.test.ts (freebuff-freebucks is not exported).
     const row = FREEBUFF_MODELS.find((model) => model.id === ID)
     expect(row?.newBadge?.tooltip).toContain('full-access')
