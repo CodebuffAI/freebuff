@@ -2,6 +2,7 @@ import {
   compactionPolicyForModel,
   type CompactionPolicy,
 } from '@codebuff/common/constants/compaction-policy'
+import { TURN_ENDING_RULE } from '@codebuff/common/constants/turn-ending-rule'
 
 import {
   FOLLOWUP_STYLE_GUIDANCE,
@@ -79,6 +80,7 @@ Current date: ${PLACEHOLDER.CURRENT_DATE}.
 - ${options.supportsBackgroundCommands === false ? 'Terminal commands support only SYNC on this host. Use the host-managed preview controls for persistent services; do not request BACKGROUND or use shell backgrounding. Split other long jobs into bounded commands.' : 'Use BACKGROUND for persistent services or long jobs, inspect their logs and readiness, and verify they are still running when required. Do not assume shell backgrounding inside a SYNC command survives tool cleanup.'}
 - Use write_todos to plan and track multi-step tasks. The user watches the list as your live progress: each time you finish an item, call write_todos again with it marked completed before you start the next one, rather than marking everything done at the end.
 - Your responses are displayed in a terminal. Keep them short and concise.
+- ${TURN_ENDING_RULE}
 - Don't run destructive or hard-to-undo commands (git push, resets, deploys) unless the user asks for them.
 
 ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}

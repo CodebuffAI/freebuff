@@ -4,6 +4,7 @@ import {
   hasFreebuffRootSystemPromptOpening,
 } from '@codebuff/common/constants/free-agents'
 import { compactionPolicyForModel } from '@codebuff/common/constants/compaction-policy'
+import { TURN_ENDING_RULE } from '@codebuff/common/constants/turn-ending-rule'
 import { SUPPORTED_FREEBUFF_MODELS } from '@codebuff/common/constants/freebuff-models'
 import { describe, test, expect } from 'bun:test'
 
@@ -231,6 +232,16 @@ describe('base3 CLI roots', () => {
       expect(prompt).not.toMatch(
         /deadline|time runs low|reserve time|minimal working result|remaining budget/i,
       )
+    }
+  })
+
+  // docs/freebuff-muse-spark.md: Muse Spark ended turns on "let me check…".
+  test('states that a message without a tool call ends the turn', () => {
+    for (const prompt of [
+      createBase3().systemPrompt!,
+      ...ALL_CLI_ROOTS.map((root) => root.systemPrompt!),
+    ]) {
+      expect(prompt).toContain(TURN_ENDING_RULE)
     }
   })
 
