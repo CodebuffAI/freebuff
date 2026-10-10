@@ -10,6 +10,7 @@
  */
 import { WEBSITE_URL } from '@codebuff/sdk'
 import { getAdUserAgent } from '@codebuff/common/util/ad-user-agent'
+import { COMPOSER_INTENT_MAX_DRAFT_CHARS } from '@codebuff/common/ads/composer-intent-scheduler'
 
 import { collectCliAdClientContext } from './ad-client-context'
 import { getSessionDockArm } from '../hooks/use-dock-panel'
@@ -154,6 +155,11 @@ export async function buildAdAuctionRequest(params: {
    * has no sponsored proposal to offer in the first place.
    */
   allowSponsoredRoute?: boolean
+  /**
+   * The composer draft, sent as the newest user message of a composer intent
+   * request (`CLI-Intent`).
+   */
+  draft?: string
 }): Promise<AdAuctionRequest | null> {
   const authToken = getAuthToken()
   if (!authToken) {
@@ -182,7 +188,15 @@ export async function buildAdAuctionRequest(params: {
       },
       body: JSON.stringify({
         ...(params.provider ? { provider: params.provider } : {}),
-        messages: adMessagesForRequest(),
+        messages: params.draft
+          ? [
+              ...adMessagesForRequest(),
+              {
+                role: 'user',
+                content: params.draft.slice(-COMPOSER_INTENT_MAX_DRAFT_CHARS),
+              },
+            ]
+          : adMessagesForRequest(),
         sessionId: chatSessionId,
         device: getAdDeviceInfo(),
         // Pointer ids to the last finished run's trace, never its text,

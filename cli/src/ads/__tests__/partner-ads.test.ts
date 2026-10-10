@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { buildAdAuctionRequest } from '../ad-request'
 import {
   CLI_PARTNER_PLACEMENT_IDS,
+  getComposerIntentAd,
   getPartnerAd,
   PARTNER_AD_TTL_MS,
   partnerAuctionParams,
   resetPartnerAds,
+  type ComposerIntentDeps,
   type PartnerAdDeps,
 } from '../partner-ads'
 
@@ -208,6 +210,34 @@ describe('the request', () => {
   })
 })
 
+describe('the composer intent request body', () => {
+  test('names CLI-Intent and ends with the draft', async () => {
+    const saved = process.env.CODEBUFF_API_KEY
+    process.env.CODEBUFF_API_KEY = saved || 'test-key'
+    try {
+      const built = await buildAdAuctionRequest({
+        surface: 'cli_chat',
+        placementId: 'CLI-Intent',
+        draft: 'review my pr',
+        allowSponsoredRoute: false,
+      })
+      const body = JSON.parse(String(built?.init.body))
+      expect(built?.url.endsWith('/api/v1/ads')).toBe(true)
+      expect(body).toMatchObject({
+        surface: 'cli_chat',
+        placementId: 'CLI-Intent',
+      })
+      expect(body.messages.at(-1)).toEqual({
+        role: 'user',
+        content: 'review my pr',
+      })
+    } finally {
+      if (saved === undefined) delete process.env.CODEBUFF_API_KEY
+      else process.env.CODEBUFF_API_KEY = saved
+    }
+  })
+})
+
 describe('advertiser text reaching the terminal', () => {
   test('escape sequences and controls are stripped from every field', async () => {
     const ESC = '\x1b'
@@ -234,5 +264,70 @@ describe('advertiser text reaching the terminal', () => {
       impUrl: 'imp-partner-1',
     })
     expect(JSON.stringify(ad)).not.toContain('\\u001b')
+  })
+})
+
+describe('the composer intent', () => {
+  const intentHarness = (overrides: Partial<ComposerIntentDeps> = {}) => {
+    const drafts: string[] = []
+    const deps: ComposerIntentDeps = {
+      adsEnabled: () => true,
+      authToken: () => 'token-a',
+      announcedPlacements: async () => ['CLI-Intent'],
+      fetchIntent: async (draft) => {
+        drafts.push(draft)
+        return {
+          ads: [{ ...FILL, placementId: CLI_PARTNER_PLACEMENT_IDS.composer }],
+          provider: 'first_party',
+        }
+      },
+      now: () => 1_000,
+      ...overrides,
+    }
+    return { deps, drafts }
+  }
+
+  test('asks about the draft and answers with the composer partner fill', async () => {
+    const h = intentHarness()
+    expect(await getComposerIntentAd('review my pr', h.deps)).toMatchObject({
+      impUrl: 'imp-partner-1',
+      placementId: CLI_PARTNER_PLACEMENT_IDS.composer,
+      provider: 'first_party',
+      receivedAtMs: 1_000,
+    })
+    expect(h.drafts).toEqual(['review my pr'])
+  })
+
+  test('is never held: every draft is its own question', async () => {
+    const h = intentHarness()
+    await getComposerIntentAd('review my pr', h.deps)
+    await getComposerIntentAd('review my pr', h.deps)
+    expect(h.drafts).toHaveLength(2)
+  })
+
+  test('asks nothing unless the policy announces CLI-Intent and ads are on', async () => {
+    const off = intentHarness({ announcedPlacements: async () => [] })
+    expect(await getComposerIntentAd('review my pr', off.deps)).toBeNull()
+    expect(off.drafts).toEqual([])
+    const disabled = intentHarness({ adsEnabled: () => false })
+    expect(await getComposerIntentAd('review my pr', disabled.deps)).toBeNull()
+    expect(disabled.drafts).toEqual([])
+  })
+
+  test('never draws a fill outside the composer slots or not our own', async () => {
+    const elsewhere = intentHarness({
+      fetchIntent: async () => ({
+        ads: [{ ...FILL, placementId: CLI_PARTNER_PLACEMENT_IDS.slashReview }],
+        provider: 'first_party',
+      }),
+    })
+    expect(await getComposerIntentAd('review my pr', elsewhere.deps)).toBeNull()
+    const foreign = intentHarness({
+      fetchIntent: async () => ({
+        ads: [{ ...FILL, placementId: CLI_PARTNER_PLACEMENT_IDS.composer }],
+        provider: 'gravity',
+      }),
+    })
+    expect(await getComposerIntentAd('review my pr', foreign.deps)).toBeNull()
   })
 })

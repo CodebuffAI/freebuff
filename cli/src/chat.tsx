@@ -38,16 +38,13 @@ import { useShallow } from 'zustand/react/shallow'
 import { getAdsEnabled } from './commands/ads'
 import { routeUserPrompt, addBashMessageToHistory } from './commands/router'
 import { SingleAdBanner, dockPanelRowBudget } from './components/ad-banner'
-import { PartnerAdLine } from './components/partner-ad-line'
+import { PartnerAdRow } from './components/partner-ad-line'
+import { useComposerIntentAd } from './ads/use-composer-intent'
 import { CLI_PARTNER_PLACEMENT_IDS } from './ads/partner-ads'
 import {
   DOCK_PANEL_MAX_WIDTH,
   getDockPanelLayout,
 } from '@codebuff/common/ads/inline-ad-layout'
-import {
-  mentionsLaunchKeyword,
-  mentionsPrKeyword,
-} from '@codebuff/common/ads/partner-triggers'
 import { ChatInputBar } from './components/chat-input-bar'
 import { ChatHeader } from './components/chat-header'
 import { FreebuffActiveSessionSummary } from './components/freebuff-active-session-summary'
@@ -1992,8 +1989,9 @@ export const Chat = ({
   const hasSuggestionMenu = hasSlashSuggestions || hasMentionSuggestions
 
   /**
-   * The PARTNER row above the input, shown only while the draft is about pull
-   * requests and nothing else owns the space.
+   * The PARTNER row above the input, shown only while the server judges the
+   * draft to be about one composer partner's deal (the composer intent) and
+   * nothing else owns the space.
    *
    * Every exclusion here is a moment the user is in the middle of something
    * the row would be interrupting rather than offering: a menu is open over
@@ -2008,19 +2006,16 @@ export const Chat = ({
     !publishMode &&
     !reviewMode &&
     askUserState === null
-  // One row at a time: a PR draft is the PR slot's, and only a draft that is
-  // not about a PR can show the LAUNCH slot (`CLI-Partner-Composer-Launch`).
-  const composerPartnerPlacementId = !composerPartnerRowAllowed
-    ? null
-    : mentionsPrKeyword(inputValue)
-      ? CLI_PARTNER_PLACEMENT_IDS.composer
-      : mentionsLaunchKeyword(inputValue)
-        ? CLI_PARTNER_PLACEMENT_IDS.composerLaunch
-        : null
+  // One row at a time: the server answers with at most one composer partner
+  // fill, on the PR or the LAUNCH slot, for the settled draft.
+  const composerIntentAd = useComposerIntentAd(
+    inputValue,
+    composerPartnerRowAllowed,
+  )
   const normalGreptileVisible =
     !dockProposal && showInlineAds && ads?.[0]?.partnerBrand === 'greptile'
-  const showComposerPartnerAd = composerPartnerPlacementId !== null &&
-    !(composerPartnerPlacementId === CLI_PARTNER_PLACEMENT_IDS.composer && normalGreptileVisible)
+  const showComposerPartnerAd = composerIntentAd !== null &&
+    !(composerIntentAd.placementId === CLI_PARTNER_PLACEMENT_IDS.composer && normalGreptileVisible)
 
   // Show first-time onboarding starter prompts only on a pristine, idle,
   // empty-input default-mode chat — and never while a menu/overlay is up.
@@ -2324,14 +2319,13 @@ export const Chat = ({
             to the feature it is about, not a second banner, so it does not
             take the card's slot. Renders nothing unless the deal is live and
             the slot filled. Aligned to the card's margins above it. */}
-        {showComposerPartnerAd && (
+        {showComposerPartnerAd && composerIntentAd && (
           <box style={{ marginLeft: 1, marginRight: 1 }}>
-            {/* Keyed by slot: switching from the PR row to the launch row
-                must not keep drawing (or clicking) the other deal's fill
-                while the new slot's answer is in flight. */}
-            <PartnerAdLine
-              key={composerPartnerPlacementId}
-              placementId={composerPartnerPlacementId}
+            {/* Keyed by impression: one deal's row never carries over to
+                another's answer. */}
+            <PartnerAdRow
+              key={composerIntentAd.impUrl}
+              ad={composerIntentAd}
               width={separatorWidth}
             />
           </box>

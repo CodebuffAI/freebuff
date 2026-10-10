@@ -21,6 +21,10 @@
  * and the advertiser console previews it from the same layout function.
  */
 import { getPartnerLineLayout } from '@codebuff/common/ads/inline-ad-layout'
+import {
+  CLI_COMPOSER_INTENT_PLACEMENT_ID,
+  COMPOSER_INTENT_PLACEMENTS,
+} from '@codebuff/common/ads/partner-triggers'
 import { getAdUserAgent } from '@codebuff/common/util/ad-user-agent'
 import { createFirstPartyViewAckTelemetry } from '@codebuff/common/util/axiom-only-log'
 import { sanitizeTerminalStrings } from '@codebuff/common/util/terminal-safe-text'
@@ -272,6 +276,88 @@ export async function getPartnerAd(
 
   inFlight.set(placementId, request)
   return request
+}
+
+/** The CLI's composer partner slots: the only slots a composer intent may fill. */
+const CLI_COMPOSER_INTENT_PLACEMENTS: ReadonlySet<string> = new Set(
+  COMPOSER_INTENT_PLACEMENTS[CLI_COMPOSER_INTENT_PLACEMENT_ID],
+)
+
+/** The seams of {@link getComposerIntentAd}, injected like {@link PartnerAdDeps}. */
+export interface ComposerIntentDeps {
+  adsEnabled: () => boolean
+  authToken: () => string | null
+  /** The partner placements the policy named, or `[]` if it named none. */
+  announcedPlacements: () => Promise<readonly string[]>
+  /** One composer intent request for one draft. `null` on any failure. */
+  fetchIntent: (draft: string) => Promise<PartnerAuctionBody | null>
+  now: () => number
+}
+
+async function requestComposerIntent(
+  draft: string,
+): Promise<PartnerAuctionBody | null> {
+  const built = await buildAdAuctionRequest({
+    surface: 'cli_chat',
+    placementId: CLI_COMPOSER_INTENT_PLACEMENT_ID,
+    draft,
+    // The intent is served by the `/api/v1/ads` partner route alone.
+    allowSponsoredRoute: false,
+  })
+  if (!built) return null
+  const response = await timedAdFetch(() => fetch(built.url, built.init))
+  if (!response.ok) {
+    logger.debug(
+      { status: response.status },
+      '[ads] Composer intent request failed',
+    )
+    return null
+  }
+  return (await response.json()) as PartnerAuctionBody
+}
+
+const composerIntentDeps: ComposerIntentDeps = {
+  adsEnabled: getAdsEnabled,
+  authToken: () => getAuthToken() ?? null,
+  announcedPlacements: announcedPartnerPlacements,
+  fetchIntent: requestComposerIntent,
+  now: Date.now,
+}
+
+/**
+ * THE COMPOSER INTENT for one draft (the `CLI-Intent` placement): the
+ * composer partner ad the server judged the draft to be about, or null. Replaces the keyword triggers the
+ * composer row used to read.
+ *
+ * NOT HELD, unlike {@link getPartnerAd}: each draft is its own question, and
+ * the caller paces them (`useComposerIntentAd`, the shared scheduler). The
+ * same refusals as a partner slot, plus one: a fill on any slot that is not
+ * one of the CLI's composer partner slots is never drawn as this row.
+ */
+export async function getComposerIntentAd(
+  draft: string,
+  deps: ComposerIntentDeps = composerIntentDeps,
+): Promise<AdResponse | null> {
+  if (!deps.adsEnabled()) return null
+  const authToken = deps.authToken()
+  if (!authToken) return null
+  syncCacheOwner(authToken)
+  try {
+    const announced = await deps.announcedPlacements()
+    if (!announced.includes(CLI_COMPOSER_INTENT_PLACEMENT_ID)) return null
+    const data = await deps.fetchIntent(draft)
+    // Advertiser-written text is drawn in the terminal: no escape sequences.
+    const ad = data?.ads?.[0] ? sanitizeTerminalStrings(data.ads[0]) : undefined
+    if (!ad?.impUrl) return null
+    const provider = data?.provider ?? ad.provider
+    if (provider !== 'first_party') return null
+    if (!ad.placementId || !CLI_COMPOSER_INTENT_PLACEMENTS.has(ad.placementId))
+      return null
+    return { ...ad, provider, receivedAtMs: deps.now() }
+  } catch (err) {
+    logger.debug({ err }, '[ads] Failed to fetch composer intent ad')
+    return null
+  }
 }
 
 /**

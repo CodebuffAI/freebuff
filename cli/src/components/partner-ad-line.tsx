@@ -25,14 +25,12 @@ import {
 } from '@codebuff/common/ads/inline-ad-layout'
 import { TextAttributes } from '@opentui/core'
 import { greptileTerminalColors } from '../ads/partner-brand'
-import React, { useEffect, useState, useImperativeHandle, type Ref } from 'react'
+import React, { useEffect, useImperativeHandle, type Ref } from 'react'
 
 import { Button } from './button'
-import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
 import { useTheme } from '../hooks/use-theme'
 import { layoutTruncated } from '../ads/ad-engagement'
 import {
-  getPartnerAd,
   recordPartnerClick,
   recordPartnerImpression,
 } from '../ads/partner-ads'
@@ -41,39 +39,6 @@ import { safeOpen } from '../utils/open-url'
 import { supportsTruecolor } from '../utils/theme-system'
 
 import type { AdResponse } from '../hooks/use-gravity-ad'
-
-/**
- * Fetch the held answer for one partner slot.
- *
- * Mounting is what asks, and the module behind `getPartnerAd` holds one
- * answer per placement for half an hour -- so a slash menu opened ten times
- * is one auction and one impression, and a slot with no fill is not asked
- * again on the next keystroke.
- */
-export function usePartnerAd(
-  placementId: string,
-  enabled: boolean,
-): AdResponse | null {
-  const [ad, setAd] = useState<AdResponse | null>(null)
-
-  useEffect(() => {
-    if (!enabled) return
-    let cancelled = false
-    void getPartnerAd(placementId)
-      .then((result) => {
-        if (!cancelled) setAd(result)
-      })
-      .catch(() => {
-        // An ad that could not be fetched is an ad that is not there. There is
-        // no error state to draw inside a row of product chrome.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [enabled, placementId])
-
-  return enabled ? ad : null
-}
 
 /**
  * The row itself, with no fetching in it.
@@ -182,35 +147,5 @@ export const PartnerAdRow: React.FC<{
       onHover={engagement.onHover}
       onClick={activate}
     />
-  )
-}
-
-/**
- * A partner row, fetched.
- *
- * Renders nothing until a fill arrives, and nothing ever if none does: a
- * partner slot with no fill is not a gap to fill with something else, it is a
- * row of product chrome that simply is not there.
- */
-export const PartnerAdLine: React.FC<{
-  placementId: string
-  /**
-   * Whether this slot may be requested at all right now — ads on for this
-   * session, and whatever the caller's own trigger is (a draft about pull
-   * requests, the `/review` command being on screen).
-   */
-  enabled?: boolean
-  /**
-   * Columns the row will occupy. Defaults to `SingleAdBanner`'s budget, since
-   * the composer slot sits directly under that card and has to line up with
-   * it; the slash menu passes its own narrower one.
-   */
-  width?: number
-}> = ({ placementId, enabled = true, width }) => {
-  const { terminalWidth } = useTerminalDimensions()
-  const ad = usePartnerAd(placementId, enabled)
-  if (!ad) return null
-  return (
-    <PartnerAdRow ad={ad} width={width ?? Math.max(10, terminalWidth - 2)} />
   )
 }
