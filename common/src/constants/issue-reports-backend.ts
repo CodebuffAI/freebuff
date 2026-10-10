@@ -27,7 +27,7 @@
  */
 export type IssueReportsBackend = 'convex' | 'postgres'
 
-export const ISSUE_REPORTS_BACKEND: IssueReportsBackend = 'convex'
+export const ISSUE_REPORTS_BACKEND: IssueReportsBackend = 'postgres'
 
 /** Whether `backend` serves issue reports and feedback messages from Postgres. */
 export function issueReportsOnPostgres(

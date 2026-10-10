@@ -21,7 +21,7 @@
  */
 export type AffiliatesBackend = 'convex' | 'postgres'
 
-export const AFFILIATES_BACKEND: AffiliatesBackend = 'convex'
+export const AFFILIATES_BACKEND: AffiliatesBackend = 'postgres'
 
 /** Whether `backend` serves the affiliate program from Postgres. */
 export function affiliatesOnPostgres(

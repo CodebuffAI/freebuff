@@ -21,7 +21,7 @@
  */
 export type EnterpriseLeadsBackend = 'convex' | 'postgres'
 
-export const ENTERPRISE_LEADS_BACKEND: EnterpriseLeadsBackend = 'convex'
+export const ENTERPRISE_LEADS_BACKEND: EnterpriseLeadsBackend = 'postgres'
 
 /** Whether `backend` serves enterprise leads from Postgres. */
 export function enterpriseLeadsOnPostgres(
