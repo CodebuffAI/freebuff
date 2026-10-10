@@ -1,9 +1,16 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, test } from 'bun:test'
 
+import { isPartnerPlacement } from '../constants/freebuff-placements'
 import {
+  CLI_COMPOSER_INTENT_PLACEMENT_ID,
+  COMPOSER_INTENT_PLACEMENT_IDS,
+  COMPOSER_INTENT_PLACEMENTS,
+  composerIntentPartnerSlots,
+  DESKTOP_COMPOSER_INTENT_PLACEMENT_ID,
   LAUNCH_INTENT_KEYWORDS,
   mentionsLaunchKeyword,
   mentionsPrKeyword,
+  PARTNER_SLOT_INTENTS,
   PR_INTENT_KEYWORDS,
 } from './partner-triggers'
 
@@ -128,6 +135,39 @@ describe('mentionsLaunchKeyword', () => {
   it('shares no keyword with the PR trigger, so one draft picks one slot', () => {
     for (const word of LAUNCH_INTENT_KEYWORDS) {
       expect([word, PR_INTENT_KEYWORDS.has(word)]).toEqual([word, false])
+    }
+  })
+})
+
+describe('the composer intent placements', () => {
+  test("each expands to its client's composer partner slots", () => {
+    expect(composerIntentPartnerSlots(['Desktop-Intent'])).toEqual([
+      'Desktop-Partner-Composer-PR',
+      'Desktop-Partner-Composer-Launch',
+    ])
+    expect(composerIntentPartnerSlots(['CLI-Intent'])).toEqual([
+      'CLI-Partner-Composer-PR',
+      'CLI-Partner-Composer-Launch',
+    ])
+    expect(composerIntentPartnerSlots(['Desktop-Inline-Chat'])).toBeNull()
+    expect(
+      composerIntentPartnerSlots(['Desktop-Intent', 'CLI-Intent']),
+    ).toBeNull()
+    expect(COMPOSER_INTENT_PLACEMENT_IDS).toEqual([
+      DESKTOP_COMPOSER_INTENT_PLACEMENT_ID,
+      CLI_COMPOSER_INTENT_PLACEMENT_ID,
+    ])
+  })
+
+  test('every slot it expands to is a real partner slot Flash can be asked about', () => {
+    for (const slots of Object.values(COMPOSER_INTENT_PLACEMENTS)) {
+      for (const slot of slots) {
+        expect([slot, isPartnerPlacement(slot)]).toEqual([slot, true])
+        expect([slot, Boolean(PARTNER_SLOT_INTENTS[slot])]).toEqual([
+          slot,
+          true,
+        ])
+      }
     }
   })
 })

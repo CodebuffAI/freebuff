@@ -115,3 +115,59 @@ export const LAUNCH_INTENT_KEYWORDS: ReadonlySet<string> = new Set([
 export function mentionsLaunchKeyword(text: string): boolean {
   return mentionsAnyWord(text, LAUNCH_INTENT_KEYWORDS)
 }
+
+/**
+ * THE COMPOSER INTENT PLACEMENTS, which replace the keyword triggers above
+ * with a model's judgement. A client asks for ONE of these ids from the
+ * composer, sending the draft as the newest user message. The ads route
+ * knows the id: it expands it into that client's composer partner slots, and
+ * Perpetual Flash decides which of their ads, if any, the draft is about
+ * (`INTENT_PIPELINE` in `packages/internal`). The winner is served, recorded
+ * and billed on its own partner slot, exactly as a keyword-triggered request
+ * for that slot was; nothing is ever delivered on these ids.
+ *
+ * The ad policy announces them in `partnerPlacementIds` while the partner
+ * slots are live, so a client asks only a server that knows them.
+ */
+export const COMPOSER_INTENT_PLACEMENTS: Readonly<
+  Record<string, readonly string[]>
+> = {
+  'Desktop-Intent': [
+    'Desktop-Partner-Composer-PR',
+    'Desktop-Partner-Composer-Launch',
+  ],
+  'CLI-Intent': ['CLI-Partner-Composer-PR', 'CLI-Partner-Composer-Launch'],
+}
+export const DESKTOP_COMPOSER_INTENT_PLACEMENT_ID = 'Desktop-Intent'
+export const CLI_COMPOSER_INTENT_PLACEMENT_ID = 'CLI-Intent'
+export const COMPOSER_INTENT_PLACEMENT_IDS: readonly string[] = Object.keys(
+  COMPOSER_INTENT_PLACEMENTS,
+)
+
+/**
+ * The partner slots a request is decided over when it names ONE composer
+ * intent placement, or null for any other request.
+ */
+export function composerIntentPartnerSlots(
+  placementIds: readonly string[],
+): readonly string[] | null {
+  if (placementIds.length !== 1) return null
+  return COMPOSER_INTENT_PLACEMENTS[placementIds[0]!] ?? null
+}
+
+/**
+ * What each composer partner slot is FOR, in the words Flash is asked about:
+ * the moment the slot's ad belongs beside, stated as what the user is doing.
+ * The model-judged counterpart of {@link PR_INTENT_KEYWORDS} and
+ * {@link LAUNCH_INTENT_KEYWORDS}.
+ */
+export const PARTNER_SLOT_INTENTS: Readonly<Record<string, string>> = {
+  'Desktop-Partner-Composer-PR':
+    'working on a pull request: opening, reviewing, fixing review comments on or merging one, or asking for a code review',
+  'CLI-Partner-Composer-PR':
+    'working on a pull request: opening, reviewing, fixing review comments on or merging one, or asking for a code review',
+  'Desktop-Partner-Composer-Launch':
+    'launching or shipping what they built: deploying it, announcing it, or making a demo, video, deck, landing page or launch post for it',
+  'CLI-Partner-Composer-Launch':
+    'launching or shipping what they built: deploying it, announcing it, or making a demo, video, deck, landing page or launch post for it',
+}

@@ -697,6 +697,22 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   decisions_pctr_input_tokens: 'number',
   decisions_pctr_context_trimmed: 'boolean',
   decisions_pctr_history_omitted: 'boolean',
+  /**
+   * The intent pipeline's one Flash relevance batch
+   * (`ad-model/intent-relevance.ts`), on composer intent decisions only: the
+   * model label, the outcome (`scored`, `disabled`, `timeout`, ...), its
+   * latency, how many ads it asked about out of how many were eligible, how
+   * many it judged relevant, the partner slot it chose, and provider-reported
+   * input tokens. Id-free.
+   */
+  intent_relevance_model: 'string',
+  intent_relevance_outcome: 'string',
+  intent_relevance_latency_ms: 'number',
+  intent_relevance_questions: 'number',
+  intent_relevance_eligible_ads: 'number',
+  intent_relevance_relevant_ads: 'number',
+  intent_relevance_chosen_placement: 'string',
+  intent_relevance_input_tokens: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 /** Settlement telemetry deliberately excludes impression, campaign, and
