@@ -43,9 +43,16 @@ describe('the GPT-6.1 Sol lock', () => {
     )
   })
 
-  it('keeps Muse Spark 1.3 paid-only for the US too', () => {
+  it('keeps Gemini 3.8 Flash paid-only for the US too', () => {
+    const gemini = 'google/gemini-3.8-flash'
+    expect(freebuffPlanRequired(gemini, false, usVerdict)).toBe(true)
+    expect(freebuffPlanRequired(gemini, true, usVerdict)).toBe(false)
+  })
+
+  it('draws Muse Spark 1.3 open for a planless full-access viewer', () => {
     const muse = 'meta/muse-spark-1.3-contributor'
-    expect(freebuffPlanRequired(muse, false, usVerdict)).toBe(true)
-    expect(freebuffPlanRequired(muse, true, usVerdict)).toBe(false)
+    expect(freebuffPlanRequired(muse, false, nonUsVerdict)).toBe(false)
+    expect(freebuffPlanRequired(muse, false, null, 'full')).toBe(false)
+    expect(freebuffPlanRequired(muse, false, null, 'limited')).toBe(true)
   })
 })

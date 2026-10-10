@@ -50,6 +50,8 @@ import {
   LIMITED_FREEBUFF_MODEL_ID,
   LIMITED_FREEBUFF_MODEL_IDS,
   FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS,
+  FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS,
+  isFreebuffLimitedTierPlanOnlyModelId,
   LIMITED_FREEBUFF_MODEL_MISMATCH_MESSAGE,
   MUSE_SPARK_12_CONTRIBUTOR_UPSTREAM_MODEL_ID,
   MUSE_SPARK_13_CONTRIBUTOR_UPSTREAM_MODEL_ID,
@@ -2056,35 +2058,48 @@ describe('limited-offer models (Claude Fable 5.1)', () => {
 describe('Meta Muse Spark 1.3 Contributor', () => {
   const ID = FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID
 
-  test('is the offered Muse Spark row, paid-only on every surface', () => {
+  test('is the offered Muse Spark row, open at full access and plan-only at limited access', () => {
     // Paused 2026-09-07 (`404 model_not_found` on every key), back on
-    // 2026-09-28 on a new key as a paid-only row, paywalled like Gemini 3.8
-    // Flash: listed everywhere, locked without a plan.
+    // 2026-09-28 on a new key as a paid-only row, and open to every
+    // full-access account without a plan from 2026-10-09 (Luna's and MiMo 2.6
+    // Pro's terms): a plan is still what unlocks it at limited access.
     expect(isFreebuffPausedFreeModelId(ID)).toBe(false)
     expect(FREEBUFF_MODELS.map((model) => model.id)).toContain(ID)
     expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).toContain(ID)
     expect(isFreebuffWebSelectableModelId(ID)).toBe(true)
     expect(isFreebuffSessionModelId(ID)).toBe(true)
-    expect(isFreebuffProOnlyCatalogModelId(ID)).toBe(true)
-    expect(isFreebuffProOnlyEverySurfaceModelId(ID)).toBe(true)
+    expect(isFreebuffProOnlyCatalogModelId(ID)).toBe(false)
+    expect(isFreebuffProOnlyEverySurfaceModelId(ID)).toBe(false)
+    expect(isFreebuffLimitedTierPlanOnlyModelId(ID)).toBe(true)
+    expect(FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS).toContain(ID)
     expect(isFreebuffWebPremiumModelId(ID)).toBe(true)
     expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(ID)
     expect(isSupportedFreebuffModelId(ID)).toBe(true)
+  })
+
+  test('carries the announcement badge, naming the entitlement', () => {
+    // The 15 Freebucks price is asserted where the meter lives: the admission
+    // test in web/.../public-api.test.ts (freebuff-freebucks is not exported).
+    const row = FREEBUFF_MODELS.find((model) => model.id === ID)
+    expect(row?.newBadge?.tooltip).toContain('full-access')
   })
 })
 
 describe('Meta Muse Spark 1.2 Contributor', () => {
   const ID = FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID
 
-  test('leaves every picker but stays admissible, paid-only, for released binaries', () => {
+  test('leaves every picker but stays admissible, on the entitlement 1.3 has, for released binaries', () => {
     expect(FREEBUFF_MODELS.map((model) => model.id)).not.toContain(ID)
     expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).not.toContain(ID)
     expect(isFreebuffPausedFreeModelId(ID)).toBe(false)
     expect(isFreebuffSessionModelId(ID)).toBe(true)
     expect(isSupportedFreebuffModelId(ID)).toBe(true)
-    // Not the free way into the same Meta budget 1.3 is paywalled on.
-    expect(isFreebuffProOnlyCatalogModelId(ID)).toBe(true)
-    expect(isFreebuffProOnlyEverySurfaceModelId(ID)).toBe(true)
+    // One Muse Spark entitlement: whatever 1.3 requires, 1.2 requires (a
+    // released binary must not be paywalled on a model the new one opens), and
+    // it is never offered at limited access, plan or not.
+    expect(isFreebuffProOnlyCatalogModelId(ID)).toBe(false)
+    expect(isFreebuffProOnlyEverySurfaceModelId(ID)).toBe(false)
+    expect(isFreebuffLimitedTierPlanOnlyModelId(ID)).toBe(false)
     // Still metered by a pool, although no picker derives it any more.
     expect(isFreebuffWebPremiumModelId(ID)).toBe(true)
   })

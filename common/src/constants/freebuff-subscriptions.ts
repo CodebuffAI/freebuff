@@ -376,13 +376,13 @@ export const FREEBUFF_SUBSCRIPTION_FIVE_DAY_WINDOW_DAYS = 7
  *
  * Enforced on Freebuff Web by default (FREEBUFF_PRO_ENFORCED_SURFACES), and on
  * the CLI and Desktop too for every row in
- * FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS — Gemini 3.8 Flash and, since
- * 2026-09-28, Muse Spark 1.3 (and 1.2, for released binaries), because they
- * sit in the CLI/Desktop catalogs. Those pickers list it
+ * FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS — Gemini 3.8 Flash and GPT-6.1
+ * Sol, because they sit in the CLI/Desktop catalogs. Those pickers list it
  * LOCKED to an account without a plan (`freebuffPlanRequired`). MiMo 2.6 Pro
- * and GPT-6 Luna left this set on 2026-09-25: open to every full-access
- * account, plan-only at limited access
- * (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS). Gemini was Web-only until then.
+ * and GPT-6 Luna left this set on 2026-09-25, and Muse Spark 1.3 (with 1.2)
+ * on 2026-10-09: open to every full-access account, plan-only at limited
+ * access (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS). Gemini was Web-only
+ * until then.
  *
  * Withdrawn history: V4 Pro was the one entry for a few hours (#2254) and left
  * on 2026-08-26 with its withdrawal from free mode — a row nothing may admit
@@ -396,7 +396,7 @@ export const FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS: readonly string[] =
  * Where a Pro row is enforced BY DEFAULT: Freebuff Web.
  *
  * A row in FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS is enforced on the CLI
- * and Desktop too, which is every current row (Gemini 3.8 Flash, Muse Spark 1.3 and 1.2). A future Pro row that is Web-only needs nothing
+ * and Desktop too, which is every current row (Gemini 3.8 Flash, GPT-6.1 Sol). A future Pro row that is Web-only needs nothing
  * more; one added to the shared CLI/Desktop catalog must join that list, or it
  * is served free on those surfaces.
  *
