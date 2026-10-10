@@ -2072,8 +2072,10 @@ describe('Meta Muse Spark 1.3 Contributor', () => {
     expect(isFreebuffProOnlyEverySurfaceModelId(ID)).toBe(false)
     expect(isFreebuffLimitedTierPlanOnlyModelId(ID)).toBe(true)
     expect(FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS).toContain(ID)
-    expect(isFreebuffWebPremiumModelId(ID)).toBe(true)
-    expect(FREEBUFF_STANDARD_MODEL_IDS).not.toContain(ID)
+    // Out of the premium pool since 2026-10-10, when Meta lifted the
+    // Contributor rate limit the pool was bounding: metered like V4 Flash.
+    expect(isFreebuffWebPremiumModelId(ID)).toBe(false)
+    expect(FREEBUFF_STANDARD_MODEL_IDS).toContain(ID)
     expect(isSupportedFreebuffModelId(ID)).toBe(true)
   })
 
@@ -2100,8 +2102,8 @@ describe('Meta Muse Spark 1.2 Contributor', () => {
     expect(isFreebuffProOnlyCatalogModelId(ID)).toBe(false)
     expect(isFreebuffProOnlyEverySurfaceModelId(ID)).toBe(false)
     expect(isFreebuffLimitedTierPlanOnlyModelId(ID)).toBe(false)
-    // Still metered by a pool, although no picker derives it any more.
-    expect(isFreebuffWebPremiumModelId(ID)).toBe(true)
+    // Out of the premium pool with 1.3 (2026-10-10).
+    expect(isFreebuffWebPremiumModelId(ID)).toBe(false)
   })
 
   test('a saved 1.2 pick moves to 1.3 wherever 1.3 is offered', () => {
@@ -2145,12 +2147,11 @@ describe('Muse Spark rate-limit fallback', () => {
       isFreebuffWebPremiumModelId(MUSE_SPARK_FALLBACK_MODEL_ID) ||
         FREEBUFF_STANDARD_MODEL_IDS.includes(MUSE_SPARK_FALLBACK_MODEL_ID),
     ).toBe(true)
-    // Only the ids still OFFERED have to be metered by a pool: a withdrawn
-    // row is served to nobody, so it belongs to no pool. (Both Muse Spark
-    // versions are offered, paid-only, since 2026-09-28.)
+    // Both Muse Spark versions left the premium pool on 2026-10-10, so a
+    // reroute swaps one unmetered row for another and moves no one between
+    // pools.
     for (const id of FREEBUFF_MUSE_SPARK_MODEL_IDS) {
-      if (isFreebuffPausedFreeModelId(id)) continue
-      expect(isFreebuffWebPremiumModelId(id)).toBe(true)
+      expect(isFreebuffWebPremiumModelId(id)).toBe(false)
     }
     // Never the earned-GLM pool — the one direction that would hand out access.
     expect(isFreebuffRewardModelId(MUSE_SPARK_FALLBACK_MODEL_ID)).toBe(false)

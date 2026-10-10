@@ -687,8 +687,8 @@ export const FREEBUFF_FABLE_5_1_MODEL_ID = 'anthropic/claude-fable-5.1'
  * in FREEBUFF_MODELS or FREEBUFF_WEB_MODELS, but it stays in
  * SUPPORTED_FREEBUFF_MODELS and is still served, full-access only and, since
  * 2026-10-09, with no plan needed (it follows 1.3's entitlement: one Muse
- * Spark budget, one rule), metered by the Web premium pool
- * (named explicitly in FREEBUFF_WEB_PREMIUM_MODEL_IDS): released CLI and
+ * Spark budget, one rule), and since 2026-10-10 outside the premium pool like
+ * 1.3: released CLI and
  * Desktop binaries still list it and serve it until they update. It is not a picker-retired id (FREEBUFF_WEB_RETIRED_PICKER_MODEL_IDS
  * is empty). A saved 1.2 pick is rewritten to 1.3 by `supersededBy`. Its roots
  * and allowlist entries stay for as long as released binaries can send it.
@@ -734,8 +734,8 @@ export const MUSE_SPARK_12_CONTRIBUTOR_UPSTREAM_MODEL_ID =
  * mutually exclusive by construction: the fence names a service account no
  * released binary can authenticate as, so leaving it would 403 every CLI and
  * Desktop turn. What replaces it as the guard is the same thing that guards
- * every other picker row: the free-mode agent+model allowlist, the premium
- * pool, and the per-session Freebucks price.
+ * every other picker row: the free-mode agent+model allowlist and the
+ * per-session Freebucks price.
  *
  * CLIENT RELEASES ARE SEPARATE. The catalogs a CLI or Desktop build renders
  * are compiled into the binary, so this change makes the server ready and
@@ -743,11 +743,11 @@ export const MUSE_SPARK_12_CONTRIBUTOR_UPSTREAM_MODEL_ID =
  * point: each client can ship on its own schedule without another server
  * change.
  *
- * Still PREMIUM, and not for the usual reason: it is cheaper per token than
- * the unmetered rows. The shared daily premium pool is doing a different job
- * here — bounding how many accounts sit inside the team-wide ceiling at once —
- * and being in SOME pool is mandatory, since FREEBUFF_STANDARD_MODEL_IDS is
- * derived by filtering `!premium`.
+ * NOT PREMIUM since 2026-10-10. It was premium from launch, though cheaper per
+ * token than the unmetered rows, because the premium pool and its per-request
+ * windows bounded how many accounts sat inside Meta's team-wide ceiling at
+ * once. Meta lifted that ceiling, so the row is metered like DeepSeek V4 Flash:
+ * by its Freebucks price, in as many tabs as an account will pay for.
  */
 export const FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID =
   'meta/muse-spark-1.3-contributor'
@@ -755,7 +755,7 @@ export const FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID =
 export const MUSE_SPARK_13_CONTRIBUTOR_UPSTREAM_MODEL_ID =
   'muse-spark-1.3-contributor'
 /** Every Muse Spark wire id, current first. One entry per Meta model, and
- *  every entry is metered by the same pool: a second id for the SAME upstream
+ *  every entry is metered the same way: a second id for the SAME upstream
  *  model would be the `crof/glm-5.2` second-entitlement shape, which this list is
  *  not — 1.2 and 1.3 are different models on one shared rate-limit bucket. */
 export const FREEBUFF_MUSE_SPARK_MODEL_IDS = [
@@ -2840,7 +2840,8 @@ const MUSE_SPARK_12_CONTRIBUTOR_MODEL = {
   // tier's whole discount is Meta training on prompts and completions.
   warning: FREEBUFF_AI_TRAINING_NOTICE,
   dataUse: 'training',
-  premium: true,
+  // Follows 1.3 out of the premium pool (2026-10-10).
+  premium: false,
   multimodal: false,
   reasoningEffort: FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
   // Up to `high` only (2026-09-29, by product decision).
@@ -2897,7 +2898,9 @@ const MUSE_SPARK_13_CONTRIBUTOR_MODEL = {
   // tier's whole discount is Meta training on prompts and completions.
   warning: FREEBUFF_AI_TRAINING_NOTICE,
   dataUse: 'training',
-  premium: true,
+  // Standard since 2026-10-10, when Meta lifted the Contributor rate limit
+  // that the premium pool was bounding (see the id's doc comment).
+  premium: false,
   // Meta lists image/video/PDF input for this model, but the Meta handler
   // sends text only; an image reaching this row is substituted with a
   // vision-model description at the completions layer, which is a real
@@ -3634,10 +3637,9 @@ export const FREEBUFF_WEB_PREMIUM_MODEL_IDS = Object.freeze([
       model.premium &&
       !FREEBUFF_MODELS.some((publicModel) => publicModel.id === model.id),
   ).map((model) => model.id),
-  // Muse Spark 1.2 left every picker on 2026-09-28 but stays admissible
-  // (paid-only) for the released CLI and Desktop binaries that list it, so it
-  // still needs a pool: nothing derived from the catalog names it any more.
-  FREEBUFF_MUSE_SPARK_12_CONTRIBUTOR_MODEL_ID,
+  // Muse Spark 1.2 was named here from 2026-09-28 (out of every picker, so
+  // nothing derived named it) until 2026-10-10, when both Muse Spark rows
+  // left the premium pool.
 ])
 
 /**

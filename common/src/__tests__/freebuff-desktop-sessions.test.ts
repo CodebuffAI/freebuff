@@ -6,6 +6,8 @@ import {
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_MODELS,
+  FREEBUFF_MUSE_SPARK_MODEL_IDS,
+  FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
   FREEBUFF_WEB_PREMIUM_MODEL_IDS,
 } from '../constants/freebuff-models'
@@ -60,6 +62,11 @@ describe('Freebuff Desktop session concurrency', () => {
       [FREEBUFF_SOLAR_PRO_4_MODEL_ID, 'limited', false, 'slot-bound'],
       [FREEBUFF_SOLAR_PRO_4_MODEL_ID, 'limited', true, 'multi-tab'],
       [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'limited', false, 'slot-bound'],
+      // Muse Spark is multi-tab since 2026-10-10, when Meta lifted the
+      // Contributor rate limit that held it to one tab.
+      [FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID, 'full', false, 'multi-tab'],
+      [FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID, 'full', true, 'multi-tab'],
+      [FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID, 'limited', true, 'multi-tab'],
     ] as const
     for (const [model, tier, paidPlan, expected] of cases) {
       expect(getFreebuffDesktopConcurrency(model, tier, paidPlan)).toBe(
@@ -72,6 +79,9 @@ describe('Freebuff Desktop session concurrency', () => {
       if (desktopModels.has(id)) {
         expect(getFreebuffDesktopConcurrency(id, 'full')).toBe('slot-bound')
       }
+    }
+    for (const id of FREEBUFF_MUSE_SPARK_MODEL_IDS) {
+      expect(getFreebuffDesktopConcurrency(id, 'full')).toBe('multi-tab')
     }
   })
 })
