@@ -4,9 +4,20 @@ import { getWebsiteUrl } from './constants'
 import { getCodebuffApiKeyFromEnv } from './env'
 import { run } from './run'
 import { normalizeByokBaseUrl } from './byok'
+import { createRunStream } from './stream'
 
 import type { RunOptions, CodebuffClientOptions } from './run'
 import type { RunState } from './run-state'
+import type { RunStream, RunStreamOptions } from './stream'
+import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
+
+const defaultHandleEvent = (event: PrintModeEvent) => {
+  if (event.type === 'error') {
+    throw new Error(
+      `Received error: ${event.message}.\n\nProvide a handleEvent function to handle this error.`,
+    )
+  }
+}
 
 export class CodebuffClient {
   public options: CodebuffClientOptions & {
@@ -23,13 +34,7 @@ export class CodebuffClient {
     }
 
     this.options = {
-      handleEvent: (event) => {
-        if (event.type === 'error') {
-          throw new Error(
-            `Received error: ${event.message}.\n\nProvide a handleEvent function to handle this error.`,
-          )
-        }
-      },
+      handleEvent: defaultHandleEvent,
       fingerprintId: `codebuff-sdk-${Math.random().toString(36).substring(2, 15)}`,
       ...options,
       // The direct runtime never sends this placeholder anywhere. It keeps the
@@ -68,6 +73,31 @@ export class CodebuffClient {
       // run() enforces the history pin unless the host explicitly authorizes a switch.
       byok: options.byok ?? this.options.byok,
     })
+  }
+
+  /**
+   * Start a run and consume its events and deltas with `for await`.
+   *
+   * The stream starts immediately and has one consumer. Await `stream.result`
+   * for the final RunState, which can be passed to a subsequent run. Calling
+   * `stream.abort()`, aborting options.signal, or leaving the iteration early
+   * cancels the run and discards unread events. Explicit event/chunk callbacks
+   * still run; error events are yielded without the default throwing handler.
+   * A full buffer or a throwing callback cancels the run and rejects both the
+   * iterator and result. See maxBufferedEvents to configure the buffer limit.
+   */
+  public stream(options: RunStreamOptions): RunStream {
+    const mergedOptions = { ...this.options, ...options }
+    return createRunStream(
+      {
+        ...mergedOptions,
+        handleEvent:
+          mergedOptions.handleEvent === defaultHandleEvent
+            ? undefined
+            : mergedOptions.handleEvent,
+      },
+      (runOptions) => this.run(runOptions),
+    )
   }
 
   /**

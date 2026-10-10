@@ -33,6 +33,13 @@ export type {
   CodebuffToolOutput,
 } from '@codebuff/common/tools/list'
 export * from './client'
+export { RunStreamBufferOverflowError } from './stream'
+export type {
+  RunStream,
+  RunStreamEvent,
+  RunStreamOptions,
+  StreamChunk,
+} from './stream'
 export * from './custom-tool'
 export * from './native/ripgrep'
 export * from './run-state'
