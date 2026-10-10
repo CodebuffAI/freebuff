@@ -6,6 +6,20 @@ export type GitHubRepository = {
   private: boolean
 }
 export type GitHubSource = GitHubRepository & { installationId: number; publicReadOnly?: true }
+/** Most locally deleted paths a local-project cloud chat carries; more starts
+ * the chat from its uploaded files alone. */
+export const CLOUD_LOCAL_GITHUB_DELETED_MAX = 10_000
+/** A Desktop local project's GitHub origin, sent with its first cloud run.
+ * The server uses it only if the user's GitHub connection can push there. */
+export type CloudLocalGitHub = {
+  fullName: string
+  /** Push target: the upstream branch, else the local one; absent when detached. */
+  branch?: string
+  /** A commit GitHub has: local HEAD once pushed, else where it forked. */
+  commit: string
+  /** Files tracked at `commit` that the uploaded folder no longer has. */
+  deleted: string[]
+}
 export type GitHubProjectSelection = {
   repositoryId: number
   fullName: string
