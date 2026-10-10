@@ -24,6 +24,8 @@ export type CloudHistoryChat = {
   projectId: string | null
   title: string
   archivedAt: string | null
+  /** Continue locally (COD-878): when the chat moved to a computer, or null. Absent from older servers. */
+  handedBackAt?: string | null
   metadataRevision: number
   phase: string
   updatedAt: string
@@ -172,5 +174,8 @@ export function createCloudHistoryClient(
       get<CloudHistoryEvents>(`runs/${id(runId)}/events`, page),
     listTraces: (runId: string, page?: CloudHistoryOptions) =>
       get<CloudHistoryEvents>(`runs/${id(runId)}/traces`, page),
+    /** Whether this account may use Freebuff Projects (admins and an allowlist). */
+    getProjectsAccess: (signal?: AbortSignal) =>
+      get<{ allowed: boolean }>('projects-access', { signal }),
   }
 }

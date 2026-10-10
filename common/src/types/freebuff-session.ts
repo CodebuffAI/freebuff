@@ -1135,6 +1135,9 @@ export type FreebuffSessionAdmissionResponse = (
   /** Multi-session Desktop responses only. Counts live, unexpired rows across
    * all Desktop processes for this user. */
   desktopSessionCounts?: FreebuffDesktopSessionCounts
+  /** Desktop responses only: the server lifts this account's tab cap through
+   *  Freebuff Projects' allowlist (COD-878), the only thing that lifts it. */
+  desktopTabCapExempt?: true
 }
 
 /**
@@ -1191,6 +1194,7 @@ export type FreebuffSessionServerResponse =
       status: 'superseded'
       pickerCountryCode?: string | null
       desktopSessionCounts?: FreebuffDesktopSessionCounts
+      desktopTabCapExempt?: true
       desktopPurchases?: FreebuffDesktopPurchaseInfo[]
       desktopRefunds?: FreebuffDesktopRefundInfo[]
     }

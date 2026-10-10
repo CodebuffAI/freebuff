@@ -41,10 +41,25 @@ const FREEBUFF_DESKTOP_CONCURRENCY_LIMITS = {
   subscriber: { 'slot-bound': 3, 'multi-tab': 8 },
 } as const
 
+/**
+ * Tabs in each bucket for an account the server exempts from the tab cap
+ * (Freebuff admins, whose quota is already exempt), so a Projects coordinator
+ * can fan out as many threads as it needs. Finite only because slot-bound
+ * sessions are numbered slots; it is a runaway guard, not a product limit.
+ */
+export const FREEBUFF_DESKTOP_UNCAPPED_TAB_LIMIT = 64
+
 export function freebuffDesktopConcurrencyLimits(
   accessTier: FreebuffAccessTier | null | undefined,
   hasPaidPlan: boolean,
+  uncapped = false,
 ): Record<FreebuffDesktopConcurrency, number> {
+  if (uncapped) {
+    return {
+      'slot-bound': FREEBUFF_DESKTOP_UNCAPPED_TAB_LIMIT,
+      'multi-tab': FREEBUFF_DESKTOP_UNCAPPED_TAB_LIMIT,
+    }
+  }
   if (accessTier === 'limited' && !hasPaidPlan) {
     return { 'slot-bound': 1, 'multi-tab': 0 }
   }
@@ -61,8 +76,9 @@ export function freebuffDesktopConcurrencyLimits(
  */
 export function freebuffDesktopModelTabLimit(
   sessionPrice: number | undefined,
+  uncapped = false,
 ): number {
-  return sessionPrice === 0 ? 1 : Infinity
+  return sessionPrice === 0 && !uncapped ? 1 : Infinity
 }
 
 export function getFreebuffDesktopConcurrency(

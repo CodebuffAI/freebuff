@@ -10,7 +10,9 @@ import {
   FREEBUFF_WEB_PREMIUM_MODEL_IDS,
 } from '../constants/freebuff-models'
 import {
+  FREEBUFF_DESKTOP_UNCAPPED_TAB_LIMIT,
   freebuffDesktopConcurrencyLimits,
+  freebuffDesktopModelTabLimit,
   getFreebuffDesktopConcurrency,
 } from '../constants/freebuff-desktop-sessions'
 
@@ -28,6 +30,19 @@ describe('Freebuff Desktop session concurrency', () => {
       'slot-bound': 3,
       'multi-tab': 8,
     })
+  })
+
+  test('an uncapped account gets the runaway guard in every bucket and tier', () => {
+    for (const tier of ['full', 'limited'] as const) {
+      for (const paid of [false, true]) {
+        expect(freebuffDesktopConcurrencyLimits(tier, paid, true)).toEqual({
+          'slot-bound': FREEBUFF_DESKTOP_UNCAPPED_TAB_LIMIT,
+          'multi-tab': FREEBUFF_DESKTOP_UNCAPPED_TAB_LIMIT,
+        })
+      }
+    }
+    expect(freebuffDesktopModelTabLimit(0)).toBe(1)
+    expect(freebuffDesktopModelTabLimit(0, true)).toBe(Infinity)
   })
 
   test('classifies models by tier and plan', () => {
