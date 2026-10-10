@@ -1,8 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 
+import { MAX_RATED_MESSAGE_CHARS } from '@codebuff/common/constants/feedback'
 import { feedbackRequestSchema } from '@codebuff/common/schemas/feedback'
 
-import { buildFeedbackPayload, buildMessageContext, type RecentMessageSummary } from '../feedback-helpers'
+import {
+  buildFeedbackPayload,
+  buildMessageContext,
+  feedbackMessageText,
+  type RecentMessageSummary,
+} from '../feedback-helpers'
 
 import type { ChatMessage } from '../../types/chat'
 
@@ -214,6 +220,40 @@ describe('buildFeedbackPayload', () => {
       clientFeedbackId: specificId,
     })
     expect(payload.clientFeedbackId).toBe(specificId)
+  })
+
+  // the id is minted by the CLI and means nothing server-side; the words are how a
+  // report says which reply it was about
+  test('carries the text of the message it is about', () => {
+    const target = createMessage({
+      id: 'msg-1',
+      content: '',
+      blocks: [
+        { type: 'text', textType: 'reasoning', content: 'let me think' },
+        { type: 'text', content: 'I edited a.ts' },
+        { type: 'text', textType: 'text', content: 'and b.ts' },
+      ],
+    })
+    const payload = buildFeedbackPayload({ ...baseParams, feedbackMessageId: 'msg-1', target })
+    expect(payload.messageText).toBe('I edited a.ts\n\nand b.ts')
+    expect(feedbackRequestSchema.safeParse(payload).success).toBe(true)
+  })
+
+  test('message text falls back to content and is capped', () => {
+    expect(feedbackMessageText(createMessage({ id: 'u', variant: 'user', content: ' fix it ' }))).toBe('fix it')
+    expect(
+      feedbackMessageText(createMessage({ id: 'a', content: 'x'.repeat(MAX_RATED_MESSAGE_CHARS + 10) })),
+    ).toHaveLength(MAX_RATED_MESSAGE_CHARS)
+  })
+
+  test('general feedback and an empty message carry no message text', () => {
+    expect(buildFeedbackPayload(baseParams).messageText).toBeUndefined()
+    const payload = buildFeedbackPayload({
+      ...baseParams,
+      feedbackMessageId: 'msg-1',
+      target: createMessage({ id: 'msg-1', content: '   ' }),
+    })
+    expect(payload).not.toHaveProperty('messageText')
   })
 
   test('sets type to message when feedbackMessageId is present', () => {

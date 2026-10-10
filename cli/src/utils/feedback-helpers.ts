@@ -2,6 +2,7 @@ import {
   MAX_ERROR_ID_LENGTH,
   MAX_ERROR_MESSAGE_LENGTH,
   MAX_ERRORS,
+  MAX_RATED_MESSAGE_CHARS,
   MAX_RECENT_MESSAGES,
 } from '@codebuff/common/constants/feedback'
 
@@ -46,6 +47,26 @@ export function buildMessageContext(
   return { target, recentMessages: messages.slice(startIndex, targetIndex + 1).map(toRecentMessageSummary) }
 }
 
+/**
+ * The words of the message feedback is about. The id alone is minted by this
+ * process and means nothing to the server, so without the text a report on a
+ * message cannot say which reply it was. Reasoning is left out: it is not what
+ * the user read.
+ */
+export function feedbackMessageText(message: ChatMessage): string {
+  const fromBlocks = (message.blocks ?? [])
+    .flatMap((block) =>
+      block.type === 'text' && block.textType !== 'reasoning'
+        ? [block.content]
+        : [],
+    )
+    .join('\n\n')
+  return (fromBlocks.trim() || message.content.trim()).slice(
+    0,
+    MAX_RATED_MESSAGE_CHARS,
+  )
+}
+
 export interface BuildFeedbackPayloadParams {
   text: string
   feedbackCategory: FeedbackCategory
@@ -76,6 +97,8 @@ export function buildFeedbackPayload(
   const hasMessageId = feedbackMessageId != null && feedbackMessageId !== ''
   const feedbackType: 'message' | 'general' = hasMessageId ? 'message' : 'general'
 
+  const messageText = hasMessageId && target ? feedbackMessageText(target) : ''
+
   const truncatedErrors = errors
     ? errors.slice(0, MAX_ERRORS).map((e) => ({
         id: e.id.slice(0, MAX_ERROR_ID_LENGTH),
@@ -91,6 +114,7 @@ export function buildFeedbackPayload(
     source: 'cli',
     ...(hasMessageId && { messageId: feedbackMessageId }),
     ...(target?.variant != null && { messageVariant: target.variant }),
+    ...(messageText !== '' && { messageText }),
     ...(target?.completionTime != null && target.completionTime !== '' && {
       completionTime: target.completionTime,
     }),
