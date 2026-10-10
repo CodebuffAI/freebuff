@@ -9,8 +9,9 @@
  * `@codebuff/common/constants/freebuff-profile-survey`.
  *
  * Numbering: the question's options other than its notApplicable one are
- * `1..n` in bank order; the notApplicable option, when the question has one,
- * is `0`. An exclusive option that is not notApplicable ("Not shopping") keeps
+ * `1..n` in the order the server sent them (bank order, or this user's
+ * shuffled order under the option-order A/B); the notApplicable option, when
+ * the question has one, is `0`. An exclusive option that is not notApplicable ("Not shopping") keeps
  * its number.
  */
 

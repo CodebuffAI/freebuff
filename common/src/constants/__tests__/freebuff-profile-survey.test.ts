@@ -9,7 +9,10 @@ import {
   PROFILE_SURVEY_REWARD_ARMS,
   PROFILE_SURVEY_VERSIONS,
   profileSurveyArm,
+  profileSurveyOptionOrderArm,
   profileSurveyQuestion,
+  profileSurveyQuestionForUser,
+  PROFILE_SURVEY_SHUFFLED_QUESTIONS,
   profileSurveyRewardKey,
   profileSurveyVersion,
   type ProfileSurveyAnswer,
@@ -64,6 +67,61 @@ describe('profileSurveyArm', () => {
   it('only returns arms with a reward', () => {
     for (let i = 0; i < 100; i++) {
       expect(PROFILE_SURVEY_REWARD_ARMS[profileSurveyArm(`x${i}`, 1)]).toBeDefined()
+    }
+  })
+})
+
+describe('option-order A/B', () => {
+  const ids = Array.from({ length: 20_000 }, (_, i) => `user-${i}`)
+  const shuffledUser = ids.find((id) => profileSurveyOptionOrderArm(id, 2) === 1)!
+  const bankUser = ids.find((id) => profileSurveyOptionOrderArm(id, 2) === 0)!
+
+  it('splits users roughly in half, independently of the reward arm', () => {
+    const shuffled = ids.filter((id) => profileSurveyOptionOrderArm(id, 2) === 1)
+    expect(shuffled.length / ids.length).toBeGreaterThan(0.47)
+    expect(shuffled.length / ids.length).toBeLessThan(0.53)
+    for (const arm of [0, 1, 2]) {
+      const inArm = shuffled.filter((id) => profileSurveyArm(id, 2) === arm)
+      expect(inArm.length / shuffled.length).toBeGreaterThan(0.3)
+      expect(inArm.length / shuffled.length).toBeLessThan(0.37)
+    }
+  })
+
+  it('shows arm 0 and unshuffled questions in bank order', () => {
+    for (const question of PROFILE_SURVEY_QUESTIONS) {
+      expect(profileSurveyQuestionForUser(question, bankUser, 2)).toBe(question)
+    }
+    for (const id of ['who_pays', 'tool_spend', 'team_size', 'buy_timing', 'disappointment']) {
+      expect(profileSurveyQuestionForUser(q(id), shuffledUser, 2)).toBe(q(id))
+    }
+  })
+
+  it('shuffles only free options, keeping pinned ones last in bank order', () => {
+    for (const id of PROFILE_SURVEY_SHUFFLED_QUESTIONS) {
+      const bank = q(id).options
+      const shown = profileSurveyQuestionForUser(q(id), shuffledUser, 2).options
+      expect([...shown].map((o) => o.id).sort()).toEqual(bank.map((o) => o.id).sort())
+      const pinned = bank.filter((o) => o.exclusive || o.notApplicable || o.id === 'other')
+      expect(shown.slice(shown.length - pinned.length)).toEqual(pinned)
+      expect(profileSurveyQuestionForUser(q(id), shuffledUser, 2)).toEqual(
+        profileSurveyQuestionForUser(q(id), shuffledUser, 2),
+      )
+    }
+  })
+
+  it('puts each free option first about equally often', () => {
+    const question = q('building')
+    const firsts = new Map<string, number>()
+    const shuffledIds = ids.filter((id) => profileSurveyOptionOrderArm(id, 2) === 1)
+    for (const id of shuffledIds) {
+      const first = profileSurveyQuestionForUser(question, id, 2).options[0].id
+      firsts.set(first, (firsts.get(first) ?? 0) + 1)
+    }
+    const free = question.options.filter((o) => !o.exclusive && !o.notApplicable)
+    expect(firsts.size).toBe(free.length)
+    for (const count of firsts.values()) {
+      expect(count / shuffledIds.length).toBeGreaterThan(1 / free.length - 0.03)
+      expect(count / shuffledIds.length).toBeLessThan(1 / free.length + 0.03)
     }
   })
 })

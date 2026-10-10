@@ -508,13 +508,85 @@ export function profileSurveyArm(
   userId: string,
   version: number,
 ): ProfileSurveyArm {
-  const input = `${PROFILE_SURVEY_ARM_SALT}:${version}:${userId}`
+  return (fnv1a(`${PROFILE_SURVEY_ARM_SALT}:${version}:${userId}`) %
+    PROFILE_SURVEY_REWARD_ARMS.length) as ProfileSurveyArm
+}
+
+/** Salted FNV-1a, shared by the arm and option-order helpers. */
+function fnv1a(input: string): number {
   let hash = 0x811c9dc5
   for (let i = 0; i < input.length; i++) {
     hash ^= input.charCodeAt(i)
     hash = Math.imul(hash, 0x01000193) >>> 0
   }
-  return (hash % PROFILE_SURVEY_REWARD_ARMS.length) as ProfileSurveyArm
+  return hash
+}
+
+/**
+ * Option-order A/B (2026-10-10). Fast answers picked the first listed option
+ * far more often than slow ones on unordered questions (role "Student" 83% at
+ * 0.8–2s vs 26% at 5s+), so arm 1 sees those questions' options shuffled and
+ * arm 0 sees the bank order; comparing the arms measures position bias.
+ * Ordered scales (spend, team size, timing, disappointment) and `who_pays`
+ * ("Both" reads oddly before "Me") are never shuffled. The server applies the
+ * order to the GET response, so every client — already-installed ones too —
+ * renders it, and records the order shown on each survey-card answer.
+ */
+export const PROFILE_SURVEY_OPTION_ORDER_SALT = 'profile_survey_option_order_2026_10'
+export const PROFILE_SURVEY_SHUFFLED_QUESTIONS: readonly ProfileSurveyQuestionId[] = [
+  'role',
+  'building',
+  'shopping',
+  'industry',
+  'other_tools',
+  'pay_trigger',
+]
+/** Option ids that stay at the end, in bank order, when a question shuffles
+ *  (besides every exclusive or notApplicable option). */
+const PINNED_OPTION_IDS = new Set(['other'])
+
+/** 1 = shuffled options, 0 = bank order. Per user per version. */
+export function profileSurveyOptionOrderArm(
+  userId: string,
+  version: number,
+): 0 | 1 {
+  return (fnv1a(`${PROFILE_SURVEY_OPTION_ORDER_SALT}:${version}:${userId}`) % 2) as
+    | 0
+    | 1
+}
+
+/** `question` with its options in the order this user is shown them:
+ *  deterministic per (user, version, question), so a resume or a re-fetch
+ *  shows the same order. Pinned options keep their bank order at the end. */
+export function profileSurveyQuestionForUser(
+  question: ProfileSurveyQuestion,
+  userId: string,
+  version: number,
+): ProfileSurveyQuestion {
+  if (
+    !(PROFILE_SURVEY_SHUFFLED_QUESTIONS as readonly string[]).includes(question.id) ||
+    profileSurveyOptionOrderArm(userId, version) === 0
+  )
+    return question
+  const pinned = (o: ProfileSurveyOption) =>
+    !!o.exclusive || !!o.notApplicable || PINNED_OPTION_IDS.has(o.id)
+  const free = question.options.filter((o) => !pinned(o))
+  // mulberry32 seeded from the hash: a fixed, well-mixed permutation.
+  let seed = fnv1a(
+    `${PROFILE_SURVEY_OPTION_ORDER_SALT}:${version}:${userId}:${question.id}`,
+  )
+  const next = () => {
+    seed = (seed + 0x6d2b79f5) >>> 0
+    let t = seed
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  for (let i = free.length - 1; i > 0; i--) {
+    const j = Math.floor(next() * (i + 1))
+    ;[free[i], free[j]] = [free[j], free[i]]
+  }
+  return { ...question, options: [...free, ...question.options.filter(pinned)] }
 }
 
 /** The wallet credit idempotency key: one reward per account per version. */
