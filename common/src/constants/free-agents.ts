@@ -163,6 +163,16 @@ export const FREEBUFF_BASE3_FAST_WORKER_AGENT_ID =
   'base3-fast-worker-deepseek-flash'
 
 /**
+ * The subagent a Freebuff Projects account's Desktop and Cloud threads may
+ * spawn, as many as the model asks for (agents/projects-subagent.ts). It runs
+ * its root's model with the root's prompt and history, has the root's coding
+ * tools, and may spawn more of itself. The Projects allowlist only:
+ * the completions route refuses this id for anyone else
+ * (web/src/server/desktop-cloud/projects-access.ts), whatever a client sends.
+ */
+export const FREEBUFF_PROJECTS_SUBAGENT_ID = 'freebuff-projects-subagent'
+
+/**
  * The Freebuff Web and Cloud roots that run the base3 single-loop harness
  * (agents/base3.ts): no subagents, no reviewer, windowed file reads, mechanical
  * compaction instead of a context-pruner spawn. One per selectable model,
@@ -986,6 +996,10 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // the tab's own model, which is the one that tab's session was admitted with.
   // Pinning it to a single model instead would 403 every tab on any other one.
   [FREEBUFF_DESKTOP_AUTORUN_AGENT_ID]: FREEBUFF_DESKTOP_MODELS,
+  // A Projects thread's subagent runs its root's model, so it allows the
+  // root's set. This entry only lets it bill as the session it belongs to;
+  // who may run it at all is the completions route's Projects check.
+  [FREEBUFF_PROJECTS_SUBAGENT_ID]: FREEBUFF_DESKTOP_MODELS,
 
   // File exploration agents. file-picker and file-lister run GPT-6 Luna since
   // 2026-10-05; their Gemini models stay for released clients, which ship
