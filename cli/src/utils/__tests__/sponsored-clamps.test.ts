@@ -532,6 +532,28 @@ describe('the toolset the run is actually offered', () => {
     expect(plain.systemPrompt).toContain('UNCOMMITTED')
   })
 
+  test('report_friction is offered, and named in the prompt, only when asked for', () => {
+    const plain = sponsoredAgentDefinition({
+      agentId: 'base3',
+      isFreebuff: true,
+    })
+    expect(plain.toolNames).not.toContain('report_friction')
+    expect(plain.systemPrompt).not.toContain('report_friction')
+    const reporting = sponsoredAgentDefinition({
+      agentId: 'base3',
+      isFreebuff: true,
+      reportFriction: true,
+    })
+    expect(reporting.toolNames).toContain('report_friction')
+    expect(reporting.toolNames).toEqual([
+      ...(plain.toolNames ?? []),
+      'report_friction',
+    ])
+    expect(reporting.systemPrompt).toContain(
+      'call report_friction: blocking true',
+    )
+  })
+
   test('it keeps the agent id it was given', () => {
     // The sponsored definition is the caller's own root, never a new agent id
     // (see FREE_MODE_AGENT_MODELS).

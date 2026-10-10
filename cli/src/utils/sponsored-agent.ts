@@ -52,6 +52,8 @@ import {
   type SponsoredProcedureRuntimeInputs,
 } from '@codebuff/common/ads/sponsored-procedure-inputs'
 
+import { SPONSORED_FRICTION_TOOL_NAME } from '@codebuff/common/ads/sponsored-run-friction'
+
 import type { SponsoredCapability } from '@codebuff/common/ads/sponsored-local-execution'
 import type { AgentDefinition } from '@codebuff/sdk'
 
@@ -89,6 +91,14 @@ const CLI_SPONSORED_GUIDANCE = [
   ...SPONSORED_IN_PLACE_BULLETS,
   '- There is nobody to answer questions during this run. Do not ask any; decide and proceed, or stop.',
 ].join('\n')
+
+/**
+ * MIRRORED from the last bullet of Desktop's `SPONSORED_SCOPE_GUIDANCE`: what
+ * to do with `report_friction`. Only in the prompt when the tool is handed
+ * to the run, so the run is never told to call a tool it does not have.
+ */
+export const SPONSORED_FRICTION_BULLET =
+  '- When something gets in your way, call report_friction: blocking true for a step you cannot do (before you stop with steps undone), false for one you got past with a retry, a workaround or a guess. It only records the report for Freebuff; carry on as these rules say, and still tell the user what was done and what remains.'
 
 /**
  * THE AUTHORISATION, first. MIRRORED from Desktop's `SPONSORED_TASK_FRAMING`
@@ -158,12 +168,15 @@ export function sponsoredAgentDefinition(options: {
   model?: string
   isFreebuff: boolean
   grant?: ReadonlySet<SponsoredCapability>
+  /** Offer `report_friction` (registered by the caller as a custom tool). */
+  reportFriction?: boolean
 }): AgentDefinition {
   const {
     agentId,
     model,
     isFreebuff,
     grant = SPONSORED_LOCAL_V1_GRANT,
+    reportFriction = false,
   } = options
   const root = createBase3CliRoot({
     ...(model ? { model } : {}),
@@ -177,8 +190,15 @@ export function sponsoredAgentDefinition(options: {
     // sponsored run has to be a subset of an ordinary one, so a tool the root
     // does not have cannot appear here by way of the policy granting its
     // capability.
-    toolNames: sponsoredLocalToolNames(root.toolNames ?? [], grant),
-    systemPrompt: `${root.systemPrompt}\n\n# Sponsored task\n\n${CLI_SPONSORED_GUIDANCE}`,
+    // `report_friction` is ours, not the root's: a custom tool that touches
+    // nothing of the user's, so it is added beside the narrowing.
+    toolNames: [
+      ...sponsoredLocalToolNames(root.toolNames ?? [], grant),
+      ...(reportFriction ? [SPONSORED_FRICTION_TOOL_NAME] : []),
+    ],
+    systemPrompt: `${root.systemPrompt}\n\n# Sponsored task\n\n${CLI_SPONSORED_GUIDANCE}${
+      reportFriction ? `\n${SPONSORED_FRICTION_BULLET}` : ''
+    }`,
     // Nothing is committed by an in-place run; kept so a commit that somehow
     // happened anyway could not be attributed to the user.
     suppressCommitAttribution: true,

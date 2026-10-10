@@ -123,10 +123,12 @@ import {
   buildSponsoredPrompt,
   sponsoredAgentDefinition,
 } from './sponsored-agent'
+import { sponsoredFrictionTool } from './sponsored-friction-tool'
 import { sponsoredRuntimeDir } from './sponsored-git'
 import {
   acceptSponsoredProposal,
   previewSponsoredProposal,
+  reportSponsoredFriction,
   reportSponsoredRunState,
   sponsoredProcedureSha256,
 } from './sponsored-proposal-api'
@@ -168,7 +170,12 @@ import type {
   SponsoredLocalContainment,
 } from '@codebuff/common/ads/sponsored-local-execution'
 import type { FileReadWindow } from '@codebuff/common/types/contracts/client'
-import type { AgentDefinition, OverrideToolHandlers } from '@codebuff/sdk'
+import type { SponsoredFrictionInput } from '@codebuff/common/ads/sponsored-run-friction'
+import type {
+  AgentDefinition,
+  CustomToolDefinition,
+  OverrideToolHandlers,
+} from '@codebuff/sdk'
 
 /** How much of a turn's error text `diagnostic_reason` carries. */
 export const SPONSORED_DIAGNOSTIC_CAUSE_LIMIT = 200
@@ -259,6 +266,8 @@ export type SponsoredTurnPlan = {
   prompt: string
   agent: AgentDefinition
   overrideTools: SponsoredOverrideTools
+  /** Exactly one when reporting: `report_friction`, bound to this run. */
+  customToolDefinitions: CustomToolDefinition[]
   extraCodebuffMetadata: Record<string, string>
   /** Aborted by an interrupt or by the grant expiring. Chat links its own to it. */
   signal: AbortSignal
@@ -282,6 +291,8 @@ export type SponsoredRunDeps = {
   preview: typeof previewSponsoredProposal
   accept: typeof acceptSponsoredProposal
   reportState: typeof reportSponsoredRunState
+  /** The agent's `report_friction`. Absent means the tool is not offered. */
+  reportFriction?: typeof reportSponsoredFriction
   getToken: () => string | null | undefined
   platform: NodeJS.Platform
   containment: (platform: NodeJS.Platform) => SponsoredLocalContainment
@@ -955,7 +966,15 @@ export class SponsoredRun {
         agentId,
         model: grant.modelId,
         isFreebuff: IS_FREEBUFF,
+        reportFriction: !!this.deps.reportFriction,
       }),
+      customToolDefinitions: this.deps.reportFriction
+        ? [
+            sponsoredFrictionTool((report) =>
+              this.reportFriction(active.proposalId, active.runToken, report),
+            ),
+          ]
+        : [],
       overrideTools: beforeFirstToolCall(
         (this.deps.overrideTools ?? sponsoredOverrideTools)(context),
         () => {
@@ -978,6 +997,38 @@ export class SponsoredRun {
         if (!active.settled) this.computeStarted(active)
       },
     }
+  }
+
+  /**
+   * The agent's `report_friction` (a blocker or friction it hit), posted in
+   * the background. The tool has already answered; a failure is only logged,
+   * because the report is telemetry and the run's outcome report does not depend on it.
+   */
+  private reportFriction(
+    proposalId: string,
+    runToken: string,
+    report: SponsoredFrictionInput,
+  ): void {
+    const authToken = this.deps.getToken()
+    if (!authToken || !this.deps.reportFriction) return
+    void this.deps
+      .reportFriction(proposalId, runToken, report, authToken)
+      .then((result) => {
+        if (!result.ok)
+          logger.info(
+            { proposalId, status: result.status },
+            '[sponsored-run] friction report not recorded',
+          )
+      })
+      .catch((error: unknown) =>
+        logger.info(
+          {
+            proposalId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          '[sponsored-run] friction report not recorded',
+        ),
+      )
   }
 
   /**
@@ -1902,6 +1953,7 @@ export const defaultSponsoredRunDeps = (
   preview: previewSponsoredProposal,
   accept: acceptSponsoredProposal,
   reportState: reportSponsoredRunState,
+  reportFriction: reportSponsoredFriction,
   getToken: getAuthToken,
   platform: process.platform,
   containment: sponsoredContainment,

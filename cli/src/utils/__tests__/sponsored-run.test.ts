@@ -11,6 +11,11 @@
  */
 import { afterAll, describe, expect, test } from 'bun:test'
 import {
+  SPONSORED_FRICTION_MAX_PER_RUN,
+  SPONSORED_FRICTION_TOOL_LIMIT_RESULT,
+  SPONSORED_FRICTION_TOOL_RESULT,
+} from '@codebuff/common/ads/sponsored-run-friction'
+import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -426,6 +431,45 @@ describe('the turn', () => {
     expect(plan.prompt).toContain('UNCOMMITTED')
     expect(plan.agent.id).toBe('base3-free-test')
     expect(f.contexts[0]!.workspaceRoot).toBe(f.root)
+    // No reporter injected: no custom tool at all.
+    expect(plan.customToolDefinitions).toEqual([])
+  })
+
+  test('report_friction answers at once, posts what the agent hit, and caps the run', async () => {
+    const posted: unknown[][] = []
+    const f = fakes({
+      reportFriction: async (...args) => {
+        posted.push(args)
+        return { ok: false, status: 503, message: 'down' }
+      },
+    })
+    const { plan, consent } = await runThrough(f)
+    if (!consent.ok) throw new Error('refused')
+    expect(plan.customToolDefinitions.map((tool) => tool.toolName)).toEqual([
+      'report_friction',
+    ])
+    expect(plan.agent.toolNames).toContain('report_friction')
+    const tool = plan.customToolDefinitions[0]!
+    const report = {
+      blocking: true,
+      category: 'needs_api_key',
+      step: 2,
+      detail: 'Step 2 needs an Acme API key.',
+    }
+    expect(await tool.execute(report)).toEqual([
+      { type: 'json', value: SPONSORED_FRICTION_TOOL_RESULT },
+    ])
+    await settle()
+    expect(posted).toHaveLength(1)
+    expect(posted[0]!.slice(0, 2)).toEqual(['proposal-1', 'token-1'])
+    expect(posted[0]![2]).toEqual(report)
+    for (let i = 1; i < SPONSORED_FRICTION_MAX_PER_RUN; i++)
+      await tool.execute(report)
+    expect(await tool.execute(report)).toEqual([
+      { type: 'json', value: SPONSORED_FRICTION_TOOL_LIMIT_RESULT },
+    ])
+    await settle()
+    expect(posted).toHaveLength(SPONSORED_FRICTION_MAX_PER_RUN)
   })
 
   test('running is reported on the turn’s first tool call, with the funded identity', async () => {

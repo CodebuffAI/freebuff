@@ -12,6 +12,7 @@ import type {
 } from '@codebuff/common/ads/agentic-offer'
 import type { SponsoredLocalTarget } from '@codebuff/common/ads/sponsored-capability'
 import type { SponsoredComputeGrant } from '@codebuff/common/ads/sponsored-compute-contract'
+import type { SponsoredFrictionInput } from '@codebuff/common/ads/sponsored-run-friction'
 import { createHash } from 'node:crypto'
 
 import { FREEBUFF_WEB_URL } from '../login/constants'
@@ -752,6 +753,26 @@ export async function reportSponsoredRunState(
     `/api/v1/ads/proposal/${encodeURIComponent(proposalId)}/state`,
     authToken,
     { runToken, ...update },
+  )
+  return attempt.ok
+    ? { ok: true, status: attempt.status }
+    : { ok: false, status: attempt.status, message: attempt.message }
+}
+
+/**
+ * A blocker or friction the run's agent hit (`report_friction`). Telemetry:
+ * the caller logs a failure and moves on.
+ */
+export async function reportSponsoredFriction(
+  proposalId: string,
+  runToken: string,
+  report: SponsoredFrictionInput,
+  authToken: string,
+): Promise<SponsoredWriteResult> {
+  const attempt = await callDetailed<unknown>(
+    `/api/v1/ads/proposal/${encodeURIComponent(proposalId)}/friction`,
+    authToken,
+    { runToken, ...report },
   )
   return attempt.ok
     ? { ok: true, status: attempt.status }

@@ -740,11 +740,11 @@ export const useSendMessage = ({
                 sponsored.plan.onModelEvent,
               ),
               cwd: sponsored.plan.cwd,
-              // BOTH empty, and neither is redundant: stripping a custom tool
-              // from `toolNames` only stops it being OFFERED -- the SDK
-              // dispatches a registered custom tool by name ahead of every
-              // builtin branch.
-              customToolDefinitions: [],
+              // ONLY the run's own `report_friction`, never the user's
+              // custom tools: stripping a custom tool from `toolNames` only
+              // stops it being OFFERED -- the SDK dispatches a registered
+              // custom tool by name ahead of every builtin branch.
+              customToolDefinitions: sponsored.plan.customToolDefinitions,
               overrideTools: sponsored.plan.overrideTools,
             }
           : createRunConfig({

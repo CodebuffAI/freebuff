@@ -18,6 +18,7 @@ import { ensureCliTestEnv } from '../../__tests__/test-utils'
 ensureCliTestEnv()
 
 const {
+  SPONSORED_FRICTION_BULLET,
   SPONSORED_IN_PLACE_BULLETS,
   SPONSORED_CONTEXT_HEADING,
   SPONSORED_TASK_FRAMING,
@@ -52,6 +53,12 @@ describe('the mirrored in-place guidance', () => {
     for (const bullet of SPONSORED_IN_PLACE_BULLETS) {
       expect(source, bullet).toContain(bullet)
     }
+  })
+
+  test('the report_friction bullet is byte-identical to Desktop’s', () => {
+    expect(readFileSync(DESKTOP_RUN, 'utf8')).toContain(
+      SPONSORED_FRICTION_BULLET,
+    )
   })
 
   test('the framing and the context heading are byte-identical to Desktop’s', () => {
