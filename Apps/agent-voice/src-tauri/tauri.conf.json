@@ -1,0 +1,65 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "agent-voice",
+  "version": "0.1.0",
+  "identifier": "com.agentvoice.app",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "agent-voice",
+        "width": 780,
+        "height": 720,
+        "minWidth": 620,
+        "minHeight": 480,
+        "resizable": true
+      },
+      {
+        "label": "overlay",
+        "title": "agent-voice overlay",
+        "width": 520,
+        "height": 150,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "focus": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "RWTokuqdLACh2KLh1q5XGOfjjq8uXdHzJJ2+IpeJiCB2+J/pToT+tfiv",
+      "endpoints": [
+        "https://releases.agentvoice.app/updates/{{target}}/{{arch}}/{{current_version}}"
+      ]
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["agentvoice"]
+      }
+    }
+  }
+}
