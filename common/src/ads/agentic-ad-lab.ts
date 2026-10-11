@@ -118,6 +118,8 @@ export type LabRepository = {
   projectId: string
   fullName: string
   branch: string
+  /** Every chat starts at this commit instead of the branch tip. */
+  commit?: string
 }
 export type LabSettings = {
   revision: number
@@ -149,6 +151,24 @@ export function publicRepositoryName(input: string): string | null {
     !name.split('/').some((part) => part === '.' || part === '..')
     ? name
     : null
+}
+/**
+ * `owner/name@<full 40-hex commit>` pins a lab repository, so every chat on it
+ * starts from the same code. Only a full SHA is accepted, never a branch or
+ * other revision expression.
+ */
+export function publicRepositorySpec(
+  input: string,
+): { fullName: string; commit?: string } | null {
+  const trimmed = input.trim()
+  const at = trimmed.lastIndexOf('@')
+  if (at === -1) {
+    const fullName = publicRepositoryName(trimmed)
+    return fullName ? { fullName } : null
+  }
+  const commit = trimmed.slice(at + 1).toLowerCase()
+  const fullName = publicRepositoryName(trimmed.slice(0, at))
+  return fullName && /^[a-f0-9]{40}$/.test(commit) ? { fullName, commit } : null
 }
 export const LAB_SIGNUP_YES = 'Yes, I’m signed in'
 export const LAB_SIGNUP_NO = 'No, I don’t want to sign up'

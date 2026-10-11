@@ -64,9 +64,12 @@
  * record (`sponsored-run-inflight.ts`) and reported `failed` from there.
  */
 import {
-  SPONSORED_LOCAL_INSTALL_REFUSAL,
+  evaluateSponsoredInstallCommand,
+  sponsoredDeclaredPackagesForProcedureSha256,
+  type SponsoredDeclaredPackage,
+} from '@codebuff/common/ads/sponsored-declared-installs'
+import {
   SPONSORED_LOCAL_V1_GRANT,
-  commandInstallsDependencies,
   evaluateSponsoredLocalToolCall,
   sponsoredCommandRefusal,
   sponsoredGitRefusal,
@@ -943,6 +946,11 @@ export class SponsoredRun {
       runtimeDir: sponsoredRuntimeDir(this.projectRoot, active.runId),
       signal: active.abort.signal,
       recorder: active.recorder,
+      // The skill's pinned packages, from the procedure hash the grant pins;
+      // none for a legacy procedure, which refuses every install.
+      declaredPackages: sponsoredDeclaredPackagesForProcedureSha256(
+        grant.procedureSha256,
+      ),
     }
     // A sponsored grant names a plain model id, which the catalog root does
     // not admit, so a catalog-mode CLI runs it on that model's compiled root.
@@ -1614,6 +1622,11 @@ export type SponsoredToolContext = {
   runtimeDir: string
   signal: AbortSignal
   recorder: SponsoredEditRecorder
+  /**
+   * The packages the run's skill declares it may install
+   * (`sponsored-declared-installs.ts`). Absent refuses every install.
+   */
+  declaredPackages?: readonly SponsoredDeclaredPackage[]
 }
 
 /**
@@ -1774,27 +1787,28 @@ export function sponsoredOverrideTools(
       if (!decision.allowed) return refusal(decision.message)
       // The one refusal here that is a PRODUCT decision rather than a
       // containment one: a postinstall script runs outside the tool loop
-      // entirely, so a run that installs is a run whose diff the user cannot
-      // review (COD-336 decision item 5).
-      if (commandInstallsDependencies(input.command)) {
-        return refusal(SPONSORED_LOCAL_INSTALL_REFUSAL)
-      }
+      // entirely (COD-336 decision item 5). Every install is refused unless
+      // the skill declared the package; a declared one runs as the canonical
+      // `--ignore-scripts` command, never the model's spelling.
+      const install = evaluateSponsoredInstallCommand(
+        input.command,
+        context.declaredPackages,
+      )
+      if (install.kind === 'refuse') return refusal(install.message)
+      const command = install.kind === 'allow' ? install.command : input.command
       // An in-place run leaves its work uncommitted, so it may not move
       // history or configuration. Answered as a sentence the model can act on;
       // the sandbox also denies `.git` outright.
-      const refusedGit = sponsoredRefusedGitSubcommand(input.command)
+      const refusedGit = sponsoredRefusedGitSubcommand(command)
       if (refusedGit) return refusal(sponsoredGitRefusal(refusedGit))
       // Destructive database commands and container lifecycle commands
       // reach state outside the worktree that no sandbox covers (COD-665).
-      const refusedCommand = sponsoredRefusedCommand(
-        input.command,
-        process.platform,
-      )
+      const refusedCommand = sponsoredRefusedCommand(command, process.platform)
       if (refusedCommand)
         return refusal(sponsoredCommandRefusal(refusedCommand))
       context.recorder.noteShellCommand()
       return runTerminalCommand({
-        command: input.command,
+        command,
         process_type: input.process_type ?? 'SYNC',
         cwd: path.resolve(workspaceRoot, input.cwd ?? '.'),
         timeout_seconds: input.timeout_seconds ?? 30,

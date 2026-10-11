@@ -180,7 +180,10 @@ export const LAB_ENVIRONMENT_KEYS = Object.keys(LAB_ENVIRONMENTS) as [
 ]
 
 export const LAB_BATCH_MAX_REPETITIONS = 20
-export const LAB_BATCH_MAX_REPOSITORIES = 10
+/** As many as a tester's lab holds, so one batch covers the whole bench. */
+export const LAB_BATCH_MAX_REPOSITORIES = 30
+/** Repositories a batch runs at once; each one's chats share its own VM. */
+export const LAB_BATCH_PARALLEL_REPOSITORIES = 10
 /** A batch's runs, all repositories together. */
 export const LAB_BATCH_MAX_RUNS = 100
 
@@ -246,7 +249,8 @@ export type LabBatch = {
   environment: LabEnvironment
   signup: 'decline' | 'confirm'
   repetitions: number
-  repositories: Array<{ projectId: string; fullName: string }>
+  /** `commit` is set when the repository was added pinned (`owner/name@sha`). */
+  repositories: Array<{ projectId: string; fullName: string; commit?: string }>
   state: 'running' | 'stopped'
   createdAt: string
   runs: LabBatchRun[]

@@ -79,7 +79,7 @@ export const SPONSORED_IN_PLACE_BULLETS = [
   '- Do NOT run git commands that change anything: no `commit`, `push`, `branch`, `checkout`, `reset`, `stash`, `clean`, `config` or `remote`. They are refused. If the approved procedure above asks you to commit, ignore that one instruction and leave the edits in place; everything else in it still applies.',
   '- Read-only git (`git status`, `git diff`, `git log`) is available and is how you should check your own work.',
   '- You are editing the user’s REAL working copy, which may already hold changes of their own. Touch only what the procedure needs, and never revert or overwrite work you did not make.',
-  '- Do NOT install dependencies. `npm install`, `bun add` and their equivalents are refused: work with what the repository already has.',
+  '- Install only what the procedure pins under "Pinned installs", exactly as pinned, as one plain command such as `npm install name@version` (`pnpm add` and `bun add` work too; install scripts are skipped). Every other install is refused: work with what the repository already has.',
   '- Environment files (`.env`, `.env.local`) and credential files are unreadable to you; `.env.example` and its family are readable and are where placeholder variables belong.',
 ] as const
 

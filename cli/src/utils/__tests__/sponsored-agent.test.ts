@@ -82,7 +82,7 @@ describe('the mirrored in-place guidance', () => {
       at('User message 1:\nWhat database should I use?'),
     )
     expect(at('User message 1:')).toBeLessThan(at('UNCOMMITTED'))
-    expect(prompt).toContain('Do NOT install dependencies')
+    expect(prompt).toContain('Every other install is refused')
     expect(prompt.endsWith('decide and proceed, or stop.')).toBe(true)
   })
 

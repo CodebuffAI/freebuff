@@ -681,7 +681,10 @@ export function scrubSponsoredWindowsEnv(
 // ------------------------------------------------------------------ installs
 
 /**
- * No dependency installs in v1 (COD-336 decision item 5).
+ * No dependency installs in v1 (COD-336 decision item 5), narrowed on
+ * 2026-10-11: a skill's declared packages may install, through
+ * `evaluateSponsoredInstallCommand` (`sponsored-declared-installs.ts`), which
+ * calls this to recognise an install at all.
  *
  * A PRODUCT refusal, not a sandbox limitation, and it is stated as one so
  * nobody reads a future sandbox as permission to lift it: a procedure that
