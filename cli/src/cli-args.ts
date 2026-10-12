@@ -18,6 +18,14 @@ export type ParsedArgs = {
   initialMode?: AgentMode
   /** Load repository `.agents` content without the trust prompt (CI opt-in). */
   trustAgents: boolean
+  /** Disable shell command execution completely. */
+  noShell: boolean
+  /** Ask for approval before every shell command. */
+  askShell: boolean
+  /** Restrict agent to current project directory. */
+  projectOnly: boolean
+  /** Read-only mode - deny write operations. */
+  readOnly: boolean
 }
 
 export function loadPackageVersion(): string {
@@ -67,6 +75,22 @@ export function parseArgs({
         '--trust-agents',
         "Load this repository's .agents files and mcp.json without asking (for CI)",
       )
+      .option(
+        '--no-shell',
+        'Disable shell command execution (shell is enabled by default)',
+      )
+      .option(
+        '--ask-shell',
+        'Ask for approval before every shell command',
+      )
+      .option(
+        '--project-only',
+        'Restrict agent to current project directory',
+      )
+      .option(
+        '--read-only',
+        'Read-only mode - deny write operations',
+      )
       .addArgument(
         new Argument('[command]', 'Command to run').choices(['login']),
       )
@@ -96,6 +120,22 @@ export function parseArgs({
       .option(
         '--trust-agents',
         "Load this repository's .agents files and mcp.json without asking (for CI)",
+      )
+      .option(
+        '--no-shell',
+        'Disable shell command execution (shell is enabled by default)',
+      )
+      .option(
+        '--ask-shell',
+        'Ask for approval before every shell command',
+      )
+      .option(
+        '--project-only',
+        'Restrict agent to current project directory',
+      )
+      .option(
+        '--read-only',
+        'Read-only mode - deny write operations',
       )
       .option('--lite', 'Start in LITE mode')
       .option('--free', 'Start in LITE mode (deprecated alias)')
@@ -141,5 +181,10 @@ export function parseArgs({
     cwd: options.cwd,
     initialMode,
     trustAgents: Boolean(options.trustAgents),
+    // commander --shell/--no-shell sets options.shell (default true when undefined)
+    noShell: options.shell === false,
+    askShell: Boolean(options.askShell),
+    projectOnly: Boolean(options.projectOnly),
+    readOnly: Boolean(options.readOnly),
   }
 }
