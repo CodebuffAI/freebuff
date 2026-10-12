@@ -53,7 +53,8 @@ export function buildFreebuffUsageSummary(params: {
   windowDays?: number
   timeZone?: string
 }): FreebuffUsageSummary {
-  const windowDays = Math.max(1, params.windowDays ?? FREEBUFF_USAGE_MAP_DAYS)
+  const safeWindowDays = params.windowDays !== undefined && Number.isFinite(params.windowDays) ? params.windowDays : FREEBUFF_USAGE_MAP_DAYS
+  const windowDays = Math.max(1, safeWindowDays)
   const todayDateKey = params.todayDateKey
 
   const allDates = [...new Set(params.activeDates)]
