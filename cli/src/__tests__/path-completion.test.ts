@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs'
 import os from 'os'
 import path from 'path'
 
@@ -238,6 +244,18 @@ describe('getPathCompletion', () => {
       const result = getPathCompletion(path.join(tempDir, 'pro'))
       // Files should be ignored, common prefix from directories only
       expect(result).toBe(path.join(tempDir, 'project-'))
+    })
+
+    test('completes symlinks pointing to directories', () => {
+      const targetDir = path.join(tempDir, 'actual-dir')
+      mkdirSync(targetDir)
+      try {
+        symlinkSync(targetDir, path.join(tempDir, 'symlinked-dir'))
+        const result = getPathCompletion(path.join(tempDir, 'sym'))
+        expect(result).toBe(path.join(tempDir, 'symlinked-dir') + path.sep)
+      } catch {
+        // Skip on systems where symlink creation is unprivileged/unsupported
+      }
     })
   })
 })
