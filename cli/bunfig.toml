@@ -13,6 +13,5 @@
 # which is why CI filters those with `find ... ! -name` instead.
 preload = [
   "../sdk/test/setup-env.ts",
-  "../test/setup-scm-loader.ts",
   "./test/setup-agents-artifact.ts",
 ]
