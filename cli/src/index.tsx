@@ -82,6 +82,7 @@ import {
   startClientEnvironmentProbe,
 } from './utils/client-environment'
 import { setOscDetectedTheme } from './utils/theme-system'
+import { setParsedArgs } from './utils/parsed-args'
 
 import type { FileTreeNode } from '@codebuff/common/util/file'
 
@@ -260,7 +261,28 @@ async function main(): Promise<void> {
     cwd,
     initialMode,
     trustAgents,
+    noShell,
+    askShell,
+    projectOnly,
+    readOnly,
   } = parseArgs()
+
+  // Store parsed args for use by getCodebuffClient
+  setParsedArgs({
+    initialPrompt,
+    command,
+    agent,
+    clearLogs,
+    continue: continueChat,
+    continueId,
+    cwd,
+    initialMode,
+    trustAgents,
+    noShell,
+    askShell,
+    projectOnly,
+    readOnly,
+  })
 
   const isLoginCommand = command === 'login'
   const isPublishCommand = command === 'publish'

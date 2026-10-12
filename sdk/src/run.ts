@@ -59,6 +59,16 @@ import { getFiles, getImageFile } from './tools/read-files'
 import { readUrl } from './tools/read-url'
 import { runTerminalCommand } from './tools/run-terminal-command'
 import type { TerminalCommandBroker } from './tools/run-terminal-command'
+import {
+  createExecutionPolicy,
+  authorizeToolCall,
+  classifyTool,
+  guardFileSystem,
+} from './permissions/execution-policy'
+import type {
+  ExecutionPolicy,
+  ShellApprovalCallback,
+} from './permissions/execution-policy'
 
 import type { CustomToolDefinition } from './custom-tool'
 import type { CodebuffRequestHeadersProvider } from './impl/model-provider'
@@ -231,6 +241,15 @@ export type CodebuffClientOptions = {
   /** Optional filter to classify files before reading (runs before gitignore check) */
   fileFilter?: FileFilter
 
+  /** Disable shell command execution completely. */
+  noShell?: boolean
+  /** Ask for approval before every shell command. */
+  askShell?: boolean
+  /** Restrict agent to current project directory. */
+  projectOnly?: boolean
+  /** Read-only mode - deny write operations. */
+  readOnly?: boolean
+
   overrideTools?: OverrideToolHandlers
   customToolDefinitions?: CustomToolDefinition[]
 
@@ -318,6 +337,25 @@ export type RunOptions = {
    *  know a new conversation's trace session before its first run returns.
    *  Ignored when `previousRun` carries one. Unset mints a random UUID. */
   traceSessionId?: string
+  /** Disable shell command execution completely. */
+  noShell?: boolean
+  /** Ask for approval before every shell command. */
+  askShell?: boolean
+  /** Restrict agent to current project directory. */
+  projectOnly?: boolean
+  /** Read-only mode - deny write operations. */
+  readOnly?: boolean
+  /**
+   * Host-provided approval handler for `askShell`. Bound to the run; receives
+   * a unique id per request and must resolve 'approve' or 'deny'.
+   */
+  shellApproval?: ShellApprovalCallback
+  /**
+   * Permit external tools (MCP servers, custom tool definitions, host
+   * overrides) while execution restrictions are active. Off by default: those
+   * tools run outside the SDK's enforcement boundary.
+   */
+  allowExternalTools?: boolean
 }
 
 /**
@@ -582,9 +620,16 @@ async function runOnce({
   terminalShell,
   projectKey,
   traceSessionId: traceSessionIdOption,
+  // Permission options
+  noShell = false,
+  askShell = false,
+  projectOnly = false,
+  readOnly = false,
+  shellApproval,
+  allowExternalTools = false,
 }: RunExecutionOptions): Promise<RunState> {
   const fsSourceValue = typeof fsSource === 'function' ? fsSource() : fsSource
-  const fs = await fsSourceValue
+  const rawFs = await fsSourceValue
   let spawn: CodebuffSpawn
   if (spawnSource) {
     const spawnSourceValue = await spawnSource
@@ -596,6 +641,21 @@ async function runOnce({
   // Never hand a provider credential to an agent subprocess. The credential is
   // only closed over by the model implementation below.
   const toolEnv = byok ? scrubByokCredentialEnv(env, byok.apiKey) : env
+
+  // One immutable policy for THIS run. Captured in the tool-dispatch closure
+  // below so concurrent runs cannot influence each other's permissions.
+  const policy = createExecutionPolicy({
+    projectRoot: cwd ?? process.cwd(),
+    noShell,
+    askShell,
+    projectOnly,
+    readOnly,
+    allowExternalTools,
+    ...(shellApproval ? { shellApproval } : {}),
+  })
+  // Defense in depth: every filesystem tool call goes through an adapter that
+  // enforces read/write containment even if a dispatcher branch missed a check.
+  const fs = guardFileSystem(rawFs, policy)
 
   // Init session state
   let agentId
@@ -823,6 +883,7 @@ async function runOnce({
         apiKey,
         byok,
         signal,
+        policy,
       })
     },
     requestMcpToolData: async ({ mcpConfig, toolNames }) => {
@@ -843,27 +904,51 @@ async function runOnce({
 
       return filteredTools
     },
-    requestFiles: ({ filePaths, fileWindows }) =>
-      readFiles({
+    requestFiles: ({ filePaths, fileWindows }) => {
+      // fs-adapter guard enforces containment on the actual reads below; the
+      // lexical pre-check here fails fast with a clear reason.
+      for (const filePath of filePaths) {
+        const decision = authorizeToolCall(policy, {
+          toolName: 'read_files',
+          capability: 'fs-read',
+          targetPath: path.resolve(requireCwd(cwd, 'read_files'), filePath),
+        })
+        if (!decision.allowed) throw new Error(decision.reason)
+      }
+      return readFiles({
         filePaths,
         fileWindows,
         override: overrideTools?.read_files,
         fileFilter,
         cwd,
         fs,
-      }),
+      })
+    },
     // Only a local read can return an image's bytes. An override reads a
     // remote workspace through the text-only contract, so it keeps images.
     requestImageFile: overrideTools?.read_files
       ? undefined
-      : ({ filePath }) =>
-          getImageFile({
+      : ({ filePath }) => {
+          const decision = authorizeToolCall(policy, {
+            toolName: 'read_files',
+            capability: 'fs-read',
+            targetPath: path.resolve(requireCwd(cwd, 'read_files'), filePath),
+          })
+          if (!decision.allowed) throw new Error(decision.reason)
+          return getImageFile({
             filePath,
             cwd: requireCwd(cwd, 'read_files'),
             fs,
             fileFilter,
-          }),
+          })
+        },
     requestOptionalFile: async ({ filePath }) => {
+      const decision = authorizeToolCall(policy, {
+        toolName: 'read_files',
+        capability: 'fs-read',
+        targetPath: path.resolve(requireCwd(cwd, 'read_files'), filePath),
+      })
+      if (!decision.allowed) throw new Error(decision.reason)
       const files = await readFiles({
         filePaths: [filePath],
         override: overrideTools?.read_files,
@@ -1227,6 +1312,7 @@ async function handleToolCall({
   apiKey,
   byok,
   signal,
+  policy,
 }: {
   action: ServerAction<'tool-call-request'>
   overrides: NonNullable<CodebuffClientOptions['overrideTools']>
@@ -1238,6 +1324,7 @@ async function handleToolCall({
   apiKey: string
   byok?: ResolvedByokConnection
   signal?: AbortSignal
+  policy: ExecutionPolicy
 }): Promise<{ output: ToolResultOutput[] }> {
   const toolName = action.toolName
   const input = action.input
@@ -1262,6 +1349,87 @@ async function handleToolCall({
         },
       ],
     }
+  }
+
+  const denial = (message: string) => ({
+    output: [{ type: 'json' as const, value: { errorMessage: message } }],
+  })
+
+  // -------------------------------------------------------------------------
+  // Centralized authorization. EVERY dispatch path below — MCP, custom tools,
+  // host overrides, and built-in tools — is authorized here first, so none can
+  // bypass the run's policy.
+  // -------------------------------------------------------------------------
+  const capability = classifyTool(toolName)
+
+  if (capability === 'shell') {
+    const commandCwd = path.resolve(
+      requireCwd(cwd, 'run_terminal_command'),
+      (input as { cwd?: string }).cwd ?? '.',
+    )
+    const command = (input as { command?: string }).command ?? ''
+    const processType = (input as { process_type?: 'SYNC' | 'BACKGROUND' })
+      .process_type ?? 'SYNC'
+    const decision = authorizeToolCall(policy, {
+      toolName,
+      capability,
+      command,
+      cwd: commandCwd,
+      processType,
+      signal,
+    })
+    if (!decision.allowed) {
+      if (decision.approvalRequired) {
+        if (!policy.shellApproval) {
+          return denial('Shell command requires approval but no approval handler is configured')
+        }
+        let verdict: 'approve' | 'deny' = 'deny'
+        try {
+          verdict = await policy.shellApproval({
+            id: crypto.randomUUID(),
+            command,
+            cwd: commandCwd,
+            processType,
+            signal,
+          })
+        } catch {
+          verdict = 'deny'
+        }
+        // Re-check abort AFTER approval: the user may have stopped the run
+        // while the prompt was open.
+        if (verdict !== 'approve' || signal?.aborted) {
+          return denial('Shell command denied')
+        }
+      } else {
+        return denial(decision.reason ?? 'Shell command blocked by policy')
+      }
+    }
+  } else if (capability === 'fs-write' || capability === 'fs-read') {
+    // Resolve every path the tool will touch and authorize each one. apply_patch
+    // carries its target under `operation.path`, matching applyPatchTool().
+    const targets: string[] = []
+    if (toolName === 'apply_patch') {
+      const op = (input as { operation?: { path?: string } }).operation
+      if (op?.path) {
+        targets.push(path.resolve(requireCwd(cwd, toolName), op.path))
+      }
+    } else if (Array.isArray((input as { filePaths?: string[] }).filePaths)) {
+      for (const fp of (input as { filePaths: string[] }).filePaths) {
+        targets.push(path.resolve(requireCwd(cwd, toolName), fp))
+      }
+    } else if (typeof (input as { path?: string }).path === 'string') {
+      targets.push(path.resolve(requireCwd(cwd, toolName), (input as { path: string }).path))
+    } else {
+      // Directory-scoped tools (code_search, glob) act on the project root.
+      targets.push(requireCwd(cwd, toolName))
+    }
+    for (const targetPath of targets) {
+      const decision = authorizeToolCall(policy, { toolName, capability, targetPath })
+      if (!decision.allowed) return denial(decision.reason ?? 'Operation blocked by policy')
+    }
+  } else if (capability === 'external') {
+    const decision = authorizeToolCall(policy, { toolName, capability })
+    if (!decision.allowed) return denial(decision.reason ?? 'Tool blocked by policy')
   }
 
   // Handle MCP tool calls when mcpConfig is present
@@ -1340,9 +1508,10 @@ async function handleToolCall({
       })
     } else if (toolName === 'run_terminal_command') {
       const resolvedCwd = requireCwd(cwd, 'run_terminal_command')
+      const commandCwd = path.resolve(resolvedCwd, input.cwd ?? '.')
       result = await runTerminalCommand({
         ...input,
-        cwd: path.resolve(resolvedCwd, input.cwd ?? '.'),
+        cwd: commandCwd,
         env,
         scrubEnvironmentKeys: byok
           ? [
