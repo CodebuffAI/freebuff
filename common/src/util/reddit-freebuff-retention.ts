@@ -14,7 +14,7 @@ export type FreebuffRedditConversionPlan = {
 function daysBetween(fromDateKey: string, toDateKey: string): number {
   const from = new Date(`${fromDateKey}T00:00:00.000Z`).getTime()
   const to = new Date(`${toDateKey}T00:00:00.000Z`).getTime()
-  if (Number.isNaN(from) || Number.isNaN(to)) {
+  if (!Number.isFinite(from) || !Number.isFinite(to)) {
     throw new Error(`Invalid date key range: ${fromDateKey} -> ${toDateKey}`)
   }
   return Math.round((to - from) / DAY_MS)
