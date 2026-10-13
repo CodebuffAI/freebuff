@@ -293,7 +293,12 @@ export const createErrorMessage = (
   error: unknown,
   aiMessageId: string,
 ): Partial<ChatMessage> => {
-  const message = extractErrorMessage(error, 'Unknown error occurred')
+  let message = extractErrorMessage(error, 'Unknown error occurred')
+
+  const details = getCliApiErrorDetails(error)
+  if (details.statusCode === 404) {
+    message = `${message}\n  Hint: You may not be logged in. Run \`freebuff login\` and try again.\n  If the problem persists, run \`freebuff --version\` and open an issue.`
+  }
 
   return {
     id: aiMessageId,
