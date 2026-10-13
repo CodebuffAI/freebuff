@@ -48,6 +48,7 @@ import {
 import { ChatInputBar } from './components/chat-input-bar'
 import { ChatHeader } from './components/chat-header'
 import { FreebuffActiveSessionSummary } from './components/freebuff-active-session-summary'
+import { FreebuffNothingToContinueNotice } from './components/freebuff-nothing-to-continue-notice'
 import { LoadPreviousButton } from './components/load-previous-button'
 import { QueuePanel } from './components/queue-panel'
 import { ReviewScreen } from './components/review-screen'
@@ -166,6 +167,7 @@ export const Chat = ({
   gitRoot,
   onSwitchToGitRoot,
   freebuffSession,
+  continueRequested,
 }: {
   consumeInitialPrompt: () => string | null
   fileTree: FileTreeNode[]
@@ -178,6 +180,8 @@ export const Chat = ({
   gitRoot?: string | null
   onSwitchToGitRoot?: () => void
   freebuffSession: FreebuffSessionResponse | null
+  /** Raw `-c` / `--continue` flag, before history-pick resume folds in. */
+  continueRequested?: boolean
 }) => {
   const [forceFileOnlyMentions, setForceFileOnlyMentions] = useState(false)
   const headerRef = useRef<BoxRenderable | null>(null)
@@ -2341,6 +2345,15 @@ export const Chat = ({
               {freebuffAdmissionNotice(freebuffSession)}
             </text>
           )}
+        {/* Launch-time `-c` / `--continue` with no live session to resume.
+            Distinct from the admission notice above, which never fires on a
+            `status: 'none'` session. */}
+        {IS_FREEBUFF && (
+          <FreebuffNothingToContinueNotice
+            continueRequested={continueRequested === true}
+            session={freebuffSession}
+          />
+        )}
         {inputMode === 'help' && !freebuffControlsOpen && <HelpBanner />}
 
         {shouldShowStatusLine && (

@@ -169,6 +169,12 @@ export const App = ({
   // State to track which chat to resume (set when user selects from history)
   const [resumeChatId, setResumeChatId] = useState<string | null>(null)
   const [continueRequested, setContinueRequested] = useState(continueChat)
+  // Raw `-c` / `--continue` from the command line, captured once at launch.
+  // The chat's "nothing to continue" notice keys off this, not
+  // `continueRequested`: a history-pick resume flips that state too, but
+  // resuming a past conversation never satisfies a launch-time request to
+  // resume a live session.
+  const continueFlagRequested = continueChat
 
   const handleResumeChat = useCallback(
     (chatId: string) => {
@@ -262,6 +268,7 @@ export const App = ({
       logoutMutation={logoutMutation}
       continueChat={effectiveContinueChat}
       continueChatId={effectiveContinueChatId}
+      continueRequested={continueFlagRequested}
       authStatus={authStatus}
       initialMode={initialMode}
       gitRoot={gitRoot}
@@ -287,6 +294,7 @@ interface AuthedSurfaceProps {
   logoutMutation: ReturnType<typeof useAuthState>['logoutMutation']
   continueChat: boolean
   continueChatId: string | undefined
+  continueRequested: boolean
   authStatus: AuthStatus
   initialMode: AgentMode | undefined
   gitRoot: string | null | undefined
@@ -333,6 +341,7 @@ export const AuthedSurfaceRoutes = ({
   setUser,
   logoutMutation,
   authStatus,
+  continueRequested,
   initialMode,
   gitRoot,
   onSwitchToGitRoot,
@@ -369,6 +378,7 @@ export const AuthedSurfaceRoutes = ({
       gitRoot={gitRoot}
       onSwitchToGitRoot={onSwitchToGitRoot}
       freebuffSession={session}
+      continueRequested={continueRequested}
     />
   )
 }
