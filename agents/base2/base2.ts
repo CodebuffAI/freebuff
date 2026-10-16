@@ -76,7 +76,10 @@ export function createBase2(
   const {
     planOnly = false,
     noAskUser = false,
-    noFollowups = false,
+    // Follow-up cards can end a time-limited Freebuff turn while there is
+    // still work to do. Keep them off by default for free-mode roots; a
+    // variant that wants them can explicitly pass noFollowups: false.
+    noFollowups = mode === 'free',
     noReview = false,
     noGravityIndex = false,
     model: modelOverride,

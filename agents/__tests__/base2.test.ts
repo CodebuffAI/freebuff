@@ -398,6 +398,26 @@ describe('base2 provider routing', () => {
 })
 
 describe('base2 optional tools', () => {
+  test('free mode omits follow-up cards by default without disabling questions', () => {
+    const free = createBase2('free')
+
+    expect(free.toolNames).not.toContain('suggest_followups')
+    expect(free.toolNames).toContain('ask_user')
+  })
+
+  test('other modes keep follow-up cards, and free mode can opt back in', () => {
+    for (const mode of ['default', 'lite', 'max'] as const) {
+      expect(createBase2(mode).toolNames).toContain('suggest_followups')
+    }
+
+    expect(
+      createBase2('free', { noFollowups: false }).toolNames,
+    ).toContain('suggest_followups')
+    expect(
+      createBase2('free', { noFollowups: true }).toolNames,
+    ).not.toContain('suggest_followups')
+  })
+
   test('omits gravity_index and its instruction together', () => {
     const base2 = createBase2('free', { noGravityIndex: true })
 
