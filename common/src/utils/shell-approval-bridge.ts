@@ -46,7 +46,7 @@ function notify() {
   for (const l of listeners) l(snapshot, queue.length)
 }
 
-function settle(entry: Entry, verdict: ShellApprovalVerdict) {
+function settleEntry(entry: Entry, verdict: ShellApprovalVerdict) {
   if (entry.settled) return
   entry.settled = true
   if (entry.timer) clearTimeout(entry.timer)
@@ -61,7 +61,7 @@ function activateNext() {
     const next = queue.shift()!
     if (next.settled) continue
     if (next.request.signal?.aborted) {
-      settle(next, 'deny')
+      settleEntry(next, 'deny')
       continue
     }
     active = next
@@ -70,6 +70,21 @@ function activateNext() {
   }
   active = null
   notify()
+}
+
+function settle(entry: Entry, verdict: ShellApprovalVerdict) {
+  if (entry.settled) return
+  const wasActive = active === entry
+  const queuedIndex = queue.indexOf(entry)
+  settleEntry(entry, verdict)
+
+  if (wasActive) {
+    active = null
+    activateNext()
+  } else if (queuedIndex !== -1) {
+    queue.splice(queuedIndex, 1)
+    notify()
+  }
 }
 
 /**
@@ -126,16 +141,15 @@ export function submitShellApproval(
   if (!active || active.request.id !== id || active.settled) return false
   const current = active
   settle(current, verdict)
-  activateNext()
   return true
 }
 
 /** Deny every pending request. Called on UI shutdown so no caller hangs. */
 export function cancelAllShellApprovals(): void {
-  if (active) settle(active, 'deny')
-  for (const entry of queue) settle(entry, 'deny')
-  queue.length = 0
+  const pending = active ? [active, ...queue] : [...queue]
   active = null
+  queue.length = 0
+  for (const entry of pending) settleEntry(entry, 'deny')
   notify()
 }
 

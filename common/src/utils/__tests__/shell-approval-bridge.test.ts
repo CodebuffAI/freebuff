@@ -34,11 +34,42 @@ describe('shell-approval-bridge', () => {
     expect(await p).toBe('deny')
   })
 
+  test('active timeout advances to the next queued approval', async () => {
+    const first = requestShellApproval(req('a'), { timeoutMs: 10 })
+    const second = requestShellApproval(req('b'), { timeoutMs: 1000 })
+    try {
+      expect(await first).toBe('deny')
+      expect(getActiveShellApproval()?.id).toBe('b')
+      expect(submitShellApproval('b', 'approve')).toBe(true)
+      expect(await second).toBe('approve')
+    } finally {
+      cancelAllShellApprovals()
+    }
+  })
+
   test('abort resolves deny', async () => {
     const controller = new AbortController()
     const p = requestShellApproval(req('a', { signal: controller.signal }))
     controller.abort()
     expect(await p).toBe('deny')
+  })
+
+  test('active abort advances to the next queued approval', async () => {
+    const controller = new AbortController()
+    const first = requestShellApproval(
+      req('a', { signal: controller.signal }),
+      { timeoutMs: 1000 },
+    )
+    const second = requestShellApproval(req('b'), { timeoutMs: 1000 })
+    try {
+      controller.abort()
+      expect(await first).toBe('deny')
+      expect(getActiveShellApproval()?.id).toBe('b')
+      expect(submitShellApproval('b', 'approve')).toBe(true)
+      expect(await second).toBe('approve')
+    } finally {
+      cancelAllShellApprovals()
+    }
   })
 
   test('already-aborted signal denies without queueing', async () => {
