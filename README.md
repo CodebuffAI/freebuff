@@ -28,6 +28,13 @@ freebuff
 
 Then describe what you want. Freebuff finds the relevant files, makes changes, and runs the checks that matter for your project.
 
+### Switch accounts
+
+To change the account used by the CLI, enter `/logout` (or `/signout`) in an
+active session. After logging out, press Enter on the login screen to sign in
+again in that interactive session. Alternatively, open a fresh shell/session
+and run `freebuff login` to start the browser login flow directly.
+
 ## Models
 
 Freebuff includes a curated model catalog. The regular picker currently offers:
