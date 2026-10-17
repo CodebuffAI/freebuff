@@ -1,4 +1,9 @@
 import { AskUserBridge } from '@codebuff/common/utils/ask-user-bridge'
+import {
+  subscribeShellApprovals,
+  submitShellApproval,
+  getActiveShellApproval,
+} from '@codebuff/common/utils/shell-approval-bridge'
 import { useEffect } from 'react'
 
 import { useChatStore } from '../state/chat-store'
@@ -49,11 +54,26 @@ function filterRedundantOptions(questions: AskUserQuestion[]): AskUserQuestion[]
   })
 }
 
+/** The single question the shell-approval prompt renders. */
+const SHELL_APPROVAL_QUESTIONS: AskUserQuestion[] = [
+  {
+    question: 'Allow this shell command to run?',
+    header: 'Shell access',
+    options: [
+      { label: 'Approve', description: 'Run the command once' },
+      { label: 'Deny', description: 'Do not run the command' },
+    ],
+    multiSelect: false,
+  },
+]
+
 export function useAskUserBridge() {
   const setAskUserState = useChatStore((state) => state.setAskUserState)
 
   useEffect(() => {
-    const unsubscribe = AskUserBridge.subscribe((request) => {
+    const unsubAsk = AskUserBridge.subscribe((request) => {
+      // A shell approval owns the form while it is active; don't clobber it.
+      if (getActiveShellApproval()) return
       if (request) {
         // Filter out redundant "Custom"/"Other" options since UI provides its own
         const filteredQuestions = filterRedundantOptions(request.questions)
@@ -68,7 +88,26 @@ export function useAskUserBridge() {
         setAskUserState(null)
       }
     })
-    return unsubscribe
+
+    // Surface shell-approval requests through the same form. The correlated
+    // bridge serializes them, so exactly one is active at a time.
+    const unsubShell = subscribeShellApprovals((active) => {
+      if (active) {
+        setAskUserState({
+          toolCallId: active.id,
+          questions: SHELL_APPROVAL_QUESTIONS,
+          selectedAnswers: [-1],
+          otherTexts: [''],
+        })
+      } else if (!AskUserBridge.getPendingRequest()) {
+        setAskUserState(null)
+      }
+    })
+
+    return () => {
+      unsubAsk()
+      unsubShell()
+    }
   }, [setAskUserState])
 
   const submitAnswers = (
@@ -79,11 +118,24 @@ export function useAskUserBridge() {
       otherText?: string
     }>
   ) => {
+    // Route to the correlated shell-approval bridge when an approval is active.
+    const active = getActiveShellApproval()
+    if (active) {
+      const verdict = answers[0]?.selectedOption === 'Approve' ? 'approve' : 'deny'
+      submitShellApproval(active.id, verdict)
+      return
+    }
     // Don't clear input value - preserve user's input from before the questionnaire
     AskUserBridge.submit({ answers })
   }
 
   const skip = () => {
+    const active = getActiveShellApproval()
+    if (active) {
+      // Skipping an approval is a denial, never an implicit approval.
+      submitShellApproval(active.id, 'deny')
+      return
+    }
     // Don't clear input value - preserve user's input from before the questionnaire
     AskUserBridge.submit({ skipped: true })
   }

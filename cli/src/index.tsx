@@ -94,6 +94,7 @@ import {
   startClientEnvironmentProbe,
 } from './utils/client-environment'
 import { applyOscDetectedTheme } from './utils/theme-system'
+import { setParsedArgs } from './utils/parsed-args'
 
 import type { CliEnv } from './types/env'
 import type { FileTreeNode } from '@codebuff/common/util/file'
@@ -386,11 +387,32 @@ async function main(): Promise<void> {
     cwd,
     initialMode,
     trustAgents,
+    noShell,
+    askShell,
+    projectOnly,
+    readOnly,
   } = parseArgs()
 
   // The agent registry/build may repaint before the renderer (non-TTY, trust
   // prompts), so the OSC settle attaches before anything else can output.
   void settleOscDetection()
+
+  // Store parsed args for use by getCodebuffClient
+  setParsedArgs({
+    initialPrompt,
+    command,
+    agent,
+    clearLogs,
+    continue: continueChat,
+    continueId,
+    cwd,
+    initialMode,
+    trustAgents,
+    noShell,
+    askShell,
+    projectOnly,
+    readOnly,
+  })
 
   const isLoginCommand = command === 'login'
   const isPublishCommand = command === 'publish'
