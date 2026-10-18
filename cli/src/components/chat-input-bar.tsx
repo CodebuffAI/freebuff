@@ -342,12 +342,12 @@ export const ChatInputBar = ({
       }
     })
 
-    submitAnswers(formattedAnswers)
+    submitAnswers(formattedAnswers, askUserState)
   }
 
   const handleFormSkip = () => {
     if (!askUserState) return
-    skip()
+    skip(askUserState)
     onInterruptStream()
   }
 
@@ -368,6 +368,7 @@ export const ChatInputBar = ({
         }}
       >
         <MultipleChoiceForm
+          key={askUserState.toolCallId}
           questions={askUserState.questions}
           onSubmit={handleFormSubmit}
           onSkip={handleFormSkip}
