@@ -1159,6 +1159,14 @@ const PAID_API_REQUEST_FIELDS = {
   charged_micros: 'number',
   latency_ms: 'number',
   ttft_ms: 'number',
+  /** HTTP status the provider returned on the last attempt, when it answered. */
+  upstream_status: 'number',
+  /** timeout | transport | http | error_body | client_abort | settlement ... */
+  failure_kind: 'string',
+  /** True when the route was refused because a provider circuit was open. */
+  circuit_open: 'boolean',
+  /** First 12 hex of sha256(key) on invalid_api_key; matches secret_hash. */
+  api_key_digest_prefix: 'string',
 } as const satisfies AxiomOnlyFieldSchema
 
 const ADS_ADVERTISER_REPORTING_READ_FIELDS = {

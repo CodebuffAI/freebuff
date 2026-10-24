@@ -282,6 +282,17 @@ export enum AnalyticsEvent {
   ADVERTISER_CARD_SETUP_FAILED = 'advertiser.card_setup_failed',
   ADVERTISER_API_KEY_CREATED = 'advertiser.api_key_created',
   ADVERTISER_MEMBER_INVITED = 'advertiser.member_invited',
+  // Paid provider API funnel (freebuff/web/src/lib/paid-api-analytics.ts).
+  // Mutations are server-side so web and Desktop both count; distinct_id is
+  // the Postgres user id. FUNDED fires from the Stripe webhook in `web`, once
+  // per newly credited payment.
+  PAID_API_PAGE_VIEWED = 'paid_api.page_viewed',
+  PAID_API_CHECKOUT_STARTED = 'paid_api.checkout_started',
+  PAID_API_CARD_SETUP_STARTED = 'paid_api.card_setup_started',
+  PAID_API_AUTO_TOPUP_CHANGED = 'paid_api.auto_topup_changed',
+  PAID_API_KEY_CREATED = 'paid_api.key_created',
+  PAID_API_KEY_REVOKED = 'paid_api.key_revoked',
+  PAID_API_FUNDED = 'paid_api.funded',
   // Server-side: the off-page facts the browser cannot see. distinct_id is the
   // Postgres user id (the browser identifies by email), so these count and
   // trend but do not join a browser funnel. Top-up CREDITS are not here: the
