@@ -369,4 +369,40 @@ describe('readUrl SSRF protection', () => {
       errorMessage: 'Invalid redirect location: http://',
     })
   })
+
+  it('refuses to fetch through a proxy instead of dropping DNS pinning', async () => {
+    const proxyVars = [
+      'HTTPS_PROXY',
+      'https_proxy',
+      'HTTP_PROXY',
+      'http_proxy',
+      'ALL_PROXY',
+      'all_proxy',
+    ] as const
+    const saved = new Map<string, string | undefined>(
+      proxyVars.map((name) => [name, process.env[name]]),
+    )
+    for (const name of proxyVars) delete process.env[name]
+    process.env.HTTPS_PROXY = 'http://proxy.example.com:8080'
+    try {
+      // No custom fetch: the default transport is under test. The hostname
+      // resolves public, so only the proxy refusal can stop the fetch.
+      const result = await readUrl({
+        url: 'https://example.com/page',
+        lookupHost: async () => ['93.184.216.34'],
+      })
+
+      expect(result[0].value).toEqual({
+        url: 'https://example.com/page',
+        errorMessage:
+          'read_url is unavailable while a proxy is configured (HTTP_PROXY, HTTPS_PROXY or ALL_PROXY is set): the proxy resolves hostnames itself, so the destination cannot be validated against the SSRF policy. Unset the proxy variables to use read_url.',
+      })
+    } finally {
+      for (const name of proxyVars) {
+        const value = saved.get(name)
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+    }
+  })
 })
