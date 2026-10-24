@@ -68,7 +68,7 @@ export type LabSkillVersion = {
   /** Hex sha256 of the trimmed rendered procedure: what batches and runs store. */
   procedureSha256: string
   /** `shipped` is in the repository's registry; the rest live in the Lab. */
-  origin: 'shipped' | 'maker' | 'edit'
+  origin: 'shipped' | 'maker' | 'edit' | 'draft' | 'layer2_edit'
   /** The campaign whose Lab folder holds it; null for shipped and unfiled versions. */
   campaignId: string | null
   research: LabSkillResearch | null
