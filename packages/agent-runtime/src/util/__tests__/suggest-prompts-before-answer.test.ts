@@ -12,6 +12,13 @@ const card = (id: string) =>
     toolName: 'suggest_prompts',
     input: { prompts: [] },
   })
+const followupCard = (id: string) =>
+  assistantMessage({
+    type: 'tool-call',
+    toolCallId: id,
+    toolName: 'suggest_followups',
+    input: { followups: [] },
+  })
 const cards = (n: number) =>
   Array.from({ length: n }, () => ({ toolName: 'suggest_prompts' }))
 const leadIn = "Here's the plan."
@@ -72,5 +79,29 @@ describe('endsOnSuggestPromptsBeforeAnswer', () => {
         card('now'),
       ]),
     ).toBe(true)
+  })
+
+  it("treats the CLI's suggest_followups like suggest_prompts", () => {
+    const followups = [{ toolName: 'suggest_followups' }]
+    expect(
+      endsOnSuggestPromptsBeforeAnswer(followups, '', [
+        prompt(),
+        followupCard('a'),
+      ]),
+    ).toBe(true)
+    expect(
+      endsOnSuggestPromptsBeforeAnswer(followups, 'x'.repeat(300), [
+        prompt(),
+        followupCard('a'),
+      ]),
+    ).toBe(false)
+    // Either tool counts toward once per prompt.
+    expect(
+      endsOnSuggestPromptsBeforeAnswer(followups, leadIn, [
+        prompt(),
+        card('earlier'),
+        followupCard('now'),
+      ]),
+    ).toBe(false)
   })
 })

@@ -1,12 +1,16 @@
-import { MAX_FOLLOWUP_SUGGESTION_CALLS_PER_RESPONSE } from '../tools/stream-parser'
+import {
+  FOLLOWUP_SUGGESTION_TOOL_NAMES,
+  MAX_FOLLOWUP_SUGGESTION_CALLS_PER_RESPONSE,
+} from '../tools/stream-parser'
 
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 
 /**
- * A step that calls suggest_prompts with only a short lead-in ("Here's the
- * plan.") gets one more step, with a note to write the answer, instead of
- * ending the turn. Once per user prompt; cards beside a real answer still end
- * it. Why and how it was measured: docs/freebuff-muse-spark.md.
+ * A step that calls a follow-up suggestion tool (Desktop's suggest_prompts,
+ * the CLI's suggest_followups) with only a short lead-in ("Here's the plan.")
+ * gets one more step, with a note to write the answer, instead of ending the
+ * turn. Once per user prompt; cards beside a real answer still end it. Why and
+ * how it was measured: docs/freebuff-muse-spark.md.
  */
 export const SUGGEST_PROMPTS_BEFORE_ANSWER_TAG = 'SUGGEST_PROMPTS_BEFORE_ANSWER'
 export const SUGGEST_PROMPTS_BEFORE_ANSWER_MESSAGE =
@@ -25,7 +29,9 @@ export function endsOnSuggestPromptsBeforeAnswer(
   if (
     toolCalls.length === 0 ||
     toolCalls.length >= MAX_FOLLOWUP_SUGGESTION_CALLS_PER_RESPONSE ||
-    !toolCalls.every((call) => call.toolName === 'suggest_prompts') ||
+    !toolCalls.every((call) =>
+      FOLLOWUP_SUGGESTION_TOOL_NAMES.has(call.toolName),
+    ) ||
     responseText.trim().length >= ANSWER_MIN_CHARS
   ) {
     return false
@@ -38,7 +44,10 @@ export function endsOnSuggestPromptsBeforeAnswer(
       continue
     }
     for (const part of message.content) {
-      if (part.type === 'tool-call' && part.toolName === 'suggest_prompts') {
+      if (
+        part.type === 'tool-call' &&
+        FOLLOWUP_SUGGESTION_TOOL_NAMES.has(part.toolName)
+      ) {
         suggestCalls++
       }
     }

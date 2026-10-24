@@ -842,26 +842,6 @@ export const runAgentStep = async (
     shouldEndTurn = true
   }
 
-  // Cards before the answer; see util/suggest-prompts-before-answer.ts.
-  if (
-    shouldEndTurn &&
-    !hasTaskCompleted &&
-    endsOnSuggestPromptsBeforeAnswer(
-      toolCalls,
-      fullResponse,
-      agentState.messageHistory,
-    )
-  ) {
-    logger.info({ metric: 'suggest_prompts_before_answer' }, 'Continuing')
-    agentState.messageHistory.push(
-      userMessage({
-        content: withSystemTags(SUGGEST_PROMPTS_BEFORE_ANSWER_MESSAGE),
-        tags: [SUGGEST_PROMPTS_BEFORE_ANSWER_TAG],
-      }),
-    )
-    shouldEndTurn = false
-  }
-
   // Ending on followup cards while the agent's own to-do list is part done
   // stops a task the user asked to have finished (CodebuffAI/freebuff#1434).
   // Bounded per user prompt; see util/followup-todo-nudge.ts. An explicit
@@ -899,6 +879,28 @@ export const runAgentStep = async (
         shouldEndTurn = false
       }
     }
+  }
+
+  // Cards before the answer; see util/suggest-prompts-before-answer.ts. After
+  // the to-do nudge on purpose: an unfinished list sends the agent back to
+  // work, which beats asking it for an answer.
+  if (
+    shouldEndTurn &&
+    !hasTaskCompleted &&
+    endsOnSuggestPromptsBeforeAnswer(
+      toolCalls,
+      fullResponse,
+      agentState.messageHistory,
+    )
+  ) {
+    logger.info({ metric: 'suggest_prompts_before_answer' }, 'Continuing')
+    agentState.messageHistory.push(
+      userMessage({
+        content: withSystemTags(SUGGEST_PROMPTS_BEFORE_ANSWER_MESSAGE),
+        tags: [SUGGEST_PROMPTS_BEFORE_ANSWER_TAG],
+      }),
+    )
+    shouldEndTurn = false
   }
 
   // A turn that integrated a gravity_index recommendation but never reported

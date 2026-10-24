@@ -850,6 +850,10 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
   })
 
   describe('followup cards with unfinished to-dos', () => {
+    const answer = `Here is what changed.\n\n${'- A concrete change and why it was needed.\n'.repeat(10)}`
+    const answerNote = JSON.stringify(
+      SUGGEST_PROMPTS_BEFORE_ANSWER_MESSAGE,
+    ).slice(1, -1)
     const followups = () =>
       createToolCallChunk('suggest_followups', {
         followups: [
@@ -905,6 +909,8 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
         ).slice(1, -1),
       )
       expect(nudges(result.agentState)).toBe(1)
+      // The unfinished list wins over asking for the answer.
+      expect(seenPrompts.join('\n')).not.toContain(answerNote)
     })
 
     it('ends on cards when every to-do is done', async () => {
@@ -912,11 +918,36 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       const result = await loopAgentSteps({
         ...loopAgentStepsBaseParams,
         promptAiSdkStream: async function* () {
-          yield ++calls === 1 ? list(3) : followups()
+          if (++calls === 1) {
+            yield list(3)
+          } else {
+            yield { type: 'text', text: answer }
+            yield followups()
+          }
           return promptSuccess(`done-${calls}`)
         },
       })
       expect(calls).toBe(2)
+      expect(nudges(result.agentState)).toBe(0)
+    })
+
+    it('asks for the answer when the cards come without one', async () => {
+      const seenPrompts: string[] = []
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* ({ messages }) {
+          seenPrompts.push(JSON.stringify(messages))
+          if (seenPrompts.length === 1) {
+            yield followups()
+          } else {
+            yield { type: 'text', text: answer }
+          }
+          return promptSuccess(`answer-${seenPrompts.length}`)
+        },
+      })
+      expect(seenPrompts).toHaveLength(2)
+      expect(seenPrompts[0]).not.toContain(answerNote)
+      expect(seenPrompts[1]).toContain(answerNote)
       expect(nudges(result.agentState)).toBe(0)
     })
 
@@ -987,7 +1018,7 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
         prompt: 'What does this file do?',
         promptAiSdkStream: async function* () {
           calls++
-          yield { type: 'text', text: 'It parses the config.' }
+          yield { type: 'text', text: answer }
           yield followups()
           return promptSuccess(`question-${calls}`)
         },
