@@ -14,7 +14,10 @@ const inputSchema = z
         z.array(
           z.object({
             task: z.string().describe('Description of the task'),
-            completed: z.boolean().describe('Whether the task is completed'),
+            completed: z
+              .boolean()
+              .default(false)
+              .describe('Whether the task is completed'),
           }),
         ),
       )

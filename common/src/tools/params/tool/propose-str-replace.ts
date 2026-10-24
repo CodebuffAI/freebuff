@@ -4,7 +4,9 @@ import {
   $getNativeToolCallExampleString,
   coerceToArray,
   jsonToolResultSchema,
+  liftSingleReplacement,
   normalizeReplacementAliases,
+  repairInput,
 } from '../utils'
 
 import type { $ToolParams } from '../../constants'
@@ -23,7 +25,7 @@ export const proposeUpdateFileResultSchema = z.union([
 
 const toolName = 'propose_str_replace'
 const endsAgentStep = false
-const inputSchema = z
+const editsSchema = z
   .object({
     path: z
       .string()
@@ -67,6 +69,7 @@ const inputSchema = z
   .describe(
     `Propose string replacements in a file without actually applying them.`,
   )
+const inputSchema = repairInput(liftSingleReplacement, editsSchema)
 const description = `
 Propose edits to a file without actually applying them. Use this tool when you want to draft changes that will be reviewed before being applied.
 

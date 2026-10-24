@@ -9,6 +9,7 @@ import { processStream } from '../tools/stream-parser'
 import { parseRawToolCall } from '../tools/tool-executor'
 
 import type { AgentTemplate } from '../templates/types'
+import type { ToolName } from '@codebuff/common/tools/constants'
 import type {
   AgentRuntimeDeps,
   AgentRuntimeScopedDeps,
@@ -545,6 +546,66 @@ describe('tool validation error handling', () => {
     expect(errorEvents.length).toBe(0)
   })
 
+  it('should run a repaired call and surface the repaired input', async () => {
+    const agentWithTodos: AgentTemplate = {
+      ...testAgentTemplate,
+      toolNames: ['write_todos', 'end_turn'],
+    }
+
+    async function* mockStream() {
+      yield {
+        type: 'tool-call',
+        toolName: 'write_todos',
+        toolCallId: 'todos-without-completed',
+        input: { todos: [{ task: 'Fix it' }] },
+      } satisfies StreamChunk
+      return promptSuccess('mock-message-id')
+    }
+
+    const responseChunks: (string | PrintModeEvent)[] = []
+    await processStream({
+      ...agentRuntimeImpl,
+      agentContext: {},
+      agentState: getInitialSessionState(mockFileContext).mainAgentState,
+      agentStepId: 'test-step-id',
+      agentTemplate: agentWithTodos,
+      ancestorRunIds: [],
+      clientSessionId: 'test-session',
+      fileContext: mockFileContext,
+      fingerprintId: 'test-fingerprint',
+      fullResponse: '',
+      localAgentTemplates: { 'test-agent': agentWithTodos },
+      messages: [],
+      prompt: 'test prompt',
+      repoId: undefined,
+      repoUrl: undefined,
+      runId: 'test-run-id',
+      signal: new AbortController().signal,
+      stream: mockStream(),
+      system: 'test system',
+      tools: {},
+      userId: 'test-user',
+      userInputId: 'test-input-id',
+      onCostCalculated: async () => {},
+      onResponseChunk: (chunk) => {
+        responseChunks.push(chunk)
+      },
+    })
+
+    const events = responseChunks.filter(
+      (chunk): chunk is PrintModeEvent => typeof chunk !== 'string',
+    )
+    expect(events.filter((e) => e.type === 'error')).toEqual([])
+    const toolCall = events.find(
+      (e): e is Extract<PrintModeEvent, { type: 'tool_call' }> =>
+        e.type === 'tool_call',
+    )
+    expect(toolCall?.input).toEqual({
+      todos: [{ task: 'Fix it', completed: false }],
+    })
+    expect(events.some((e) => e.type === 'tool_result')).toBe(true)
+  })
+
   it('should parse input JSON string from AI SDK before validation', async () => {
     // The AI SDK can emit tool-call chunks with `input` as a raw JSON string
     // when upstream schema validation fails and the repair function returns
@@ -817,5 +878,116 @@ describe('tool validation error handling', () => {
         !assistantToolCallIds.has(message.toolCallId),
     )
     expect(orphanToolResults.length).toBe(0)
+  })
+})
+
+// Shapes models send that used to be refused, taken from production traces
+// (2026-10-22). Each refusal cost a full model call to retry.
+describe('parseRawToolCall repairs common argument slips', () => {
+  function parse(toolName: ToolName, input: unknown) {
+    return parseRawToolCall({
+      rawToolCall: { toolName, toolCallId: 'slip', input },
+    })
+  }
+  function inputOf(toolName: ToolName, input: unknown) {
+    const result = parse(toolName, input)
+    if ('error' in result) throw new Error(result.error)
+    return result.input as Record<string, unknown>
+  }
+
+  it('treats a to-do without `completed` as open', () => {
+    expect(
+      inputOf('write_todos', {
+        todos: [{ task: 'Read the code', completed: true }, { task: 'Fix it' }],
+      }).todos,
+    ).toEqual([
+      { task: 'Read the code', completed: true },
+      { task: 'Fix it', completed: false },
+    ])
+  })
+
+  it('accepts write_file without `instructions`', () => {
+    expect(inputOf('write_file', { path: 'a.ts', content: 'x\n' })).toEqual({
+      path: 'a.ts',
+      content: 'x\n',
+    })
+  })
+
+  it('lifts a top-level str_replace edit into `replacements`', () => {
+    expect(
+      inputOf('str_replace', {
+        path: 'a.ts',
+        oldString: 'before',
+        newString: 'after',
+        allowMultiple: true,
+      }),
+    ).toEqual({
+      path: 'a.ts',
+      replacements: [
+        { oldString: 'before', newString: 'after', allowMultiple: true },
+      ],
+    })
+    expect(
+      inputOf('str_replace', { path: 'a.ts', oldString: 'a', replacement: 'b' })
+        .replacements,
+    ).toEqual([{ oldString: 'a', newString: 'b', allowMultiple: false }])
+  })
+
+  it('still refuses a str_replace edit it cannot complete', () => {
+    const missingNew = parse('str_replace', { path: 'a.ts', oldString: 'a' })
+    expect('error' in missingNew && missingNew.error).toContain(
+      '- replacements[0].newString',
+    )
+    expect(
+      'error' in parse('str_replace', { path: 'a.ts', newString: 'b' }),
+    ).toBe(true)
+  })
+
+  it('reads `cmd` as `command` and normalizes `process_type`', () => {
+    expect(
+      inputOf('run_terminal_command', {
+        cmd: 'git status',
+        process_type: 'SYNC',
+      }).command,
+    ).toBe('git status')
+    for (const [raw, expected] of [
+      ['SYNC\n', 'SYNC'],
+      ['SYNC\n### 600', 'SYNC'],
+      ['background', 'BACKGROUND'],
+    ]) {
+      expect(
+        inputOf('run_terminal_command', { command: 'ls', process_type: raw })
+          .process_type,
+      ).toBe(expected)
+    }
+    expect(
+      'error' in
+        parse('run_terminal_command', { command: 'ls', process_type: 'BG' }),
+    ).toBe(true)
+  })
+
+  it('drops a numeric code_search `flags` instead of refusing the search', () => {
+    const input = inputOf('code_search', { pattern: 'deploy\\.sh', flags: 20 })
+    expect(input.pattern).toBe('deploy\\.sh')
+    expect(input.flags).toBeUndefined()
+  })
+
+  it('treats a read_files offset or limit of 0 as unset', () => {
+    expect(
+      inputOf('read_files', {
+        paths: [
+          { path: 'a.ts', offset: 0, limit: 2 },
+          { path: 'b.ts', limit: 0 },
+        ],
+      }).paths,
+    ).toEqual([{ path: 'a.ts', limit: 2 }, { path: 'b.ts' }])
+  })
+
+  it('clamps an out-of-range read_url `max_chars`', () => {
+    const url = 'https://example.com/'
+    expect(inputOf('read_url', { url, max_chars: 600 }).max_chars).toBe(1_000)
+    expect(inputOf('read_url', { url, max_chars: 90_000 }).max_chars).toBe(
+      50_000,
+    )
   })
 })

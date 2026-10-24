@@ -69,7 +69,7 @@ export function normalizeReplacementAliases(val: unknown): unknown {
   const replacement = { ...(val as Record<string, unknown>) }
   for (const [target, aliases] of [
     ['oldString', ['old', 'old_str', 'old_string']],
-    ['newString', ['new', 'new_str', 'new_string']],
+    ['newString', ['new', 'new_str', 'new_string', 'replacement']],
   ] as const) {
     if (replacement[target] !== undefined) {
       continue
@@ -80,6 +80,43 @@ export function normalizeReplacementAliases(val: unknown): unknown {
     }
   }
   return replacement
+}
+
+/**
+ * Accepts a single edit sent at the top level (`{ path, oldString, newString }`)
+ * instead of inside `replacements`, the most common str_replace shape slip in
+ * production traces. Input that already has `replacements`, or has no
+ * `oldString`, is left for the schema to judge.
+ */
+export function liftSingleReplacement(
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const edit = normalizeReplacementAliases(input) as Record<string, unknown>
+  if (edit.replacements !== undefined || typeof edit.oldString !== 'string') {
+    return input
+  }
+  const { oldString, newString, allowMultiple, ...rest } = edit
+  return { ...rest, replacements: [{ oldString, newString, allowMultiple }] }
+}
+
+/**
+ * Runs `repair` on a copy of the raw tool input, when it is an object, before
+ * `schema` validates it; anything else goes to the schema untouched. The JSON
+ * schema shown to the model is unchanged (zod renders the inner schema); the
+ * description is carried over because tool prompts read `schema.description`.
+ */
+export function repairInput<T extends z.ZodType>(
+  repair: (input: Record<string, unknown>) => unknown,
+  schema: T,
+) {
+  const repaired = z.preprocess(
+    (val) =>
+      val !== null && typeof val === 'object' && !Array.isArray(val)
+        ? repair({ ...(val as Record<string, unknown>) })
+        : val,
+    schema,
+  )
+  return schema.description ? repaired.describe(schema.description) : repaired
 }
 
 /** Only used for generating tool call strings before all tools are defined.

@@ -240,7 +240,7 @@ export interface ProposeWriteFileParams {
   /** Path to the file relative to the **project root** */
   path: string
   /** What the change is intended to do in only one sentence. */
-  instructions: string
+  instructions?: string
   /** Edit snippet to apply to the file. */
   content: string
 }
@@ -423,7 +423,7 @@ export interface WriteFileParams {
   /** Path to the file, relative to the **project root**. Local hosts (CLI, Desktop, SDK) also accept an absolute path, which is not limited to the project. */
   path: string
   /** What the change is intended to do in only one sentence. */
-  instructions: string
+  instructions?: string
   /** Edit snippet to apply to the file. */
   content: string
 }
@@ -437,7 +437,7 @@ export interface WriteTodosParams {
     /** Description of the task */
     task: string
     /** Whether the task is completed */
-    completed: boolean
+    completed?: boolean
   }[]
 }
 

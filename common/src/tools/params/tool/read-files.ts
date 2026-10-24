@@ -1,6 +1,11 @@
 import z from 'zod/v4'
 
-import { $getNativeToolCallExampleString, coerceToArray, jsonToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  coerceToArray,
+  jsonToolResultSchema,
+  repairInput,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -26,23 +31,32 @@ const pathEntrySchema = z
     `File path to read. Prefer paths relative to the **project root**; absolute paths inside the project are accepted, but paths outside the project will not work.`,
   )
 
+/** Models count lines from 0: an `offset` or `limit` of 0 means "from the start" / "default length". */
+function zeroWindowAsUnset(entry: Record<string, unknown>) {
+  if (entry.offset === 0) delete entry.offset
+  if (entry.limit === 0) delete entry.limit
+  return entry
+}
+
+const windowSchema = z.object({
+  path: z.string().min(1, 'Paths cannot be empty'),
+  offset: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('Line number to start reading from (1-indexed).'),
+  limit: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Maximum number of lines to read (defaults to 2,000).'),
+})
+
 const windowedEntrySchema = z.union([
   pathEntrySchema,
-  z.object({
-    path: z.string().min(1, 'Paths cannot be empty'),
-    offset: z
-      .number()
-      .int()
-      .min(1)
-      .optional()
-      .describe('Line number to start reading from (1-indexed).'),
-    limit: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .describe('Maximum number of lines to read (defaults to 2,000).'),
-  }),
+  repairInput(zeroWindowAsUnset, windowSchema),
 ])
 
 const legacyInputSchema = z

@@ -17,6 +17,7 @@ const inputSchema = z
       ),
     instructions: z
       .string()
+      .optional()
       .describe('What the change is intended to do in only one sentence.'),
     content: z.string().describe(`Complete file content to write to the file.`),
   })

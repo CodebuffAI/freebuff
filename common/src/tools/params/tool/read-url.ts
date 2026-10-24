@@ -1,12 +1,24 @@
 import z from 'zod/v4'
 
-import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  jsonToolResultSchema,
+  repairInput,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
+/** An out-of-range `max_chars` is clamped rather than refused. */
+function clampMaxChars(input: Record<string, unknown>) {
+  if (typeof input.max_chars === 'number') {
+    input.max_chars = Math.min(50_000, Math.max(1_000, input.max_chars))
+  }
+  return input
+}
+
 const toolName = 'read_url'
 const endsAgentStep = true
-const inputSchema = z
+const urlSchema = z
   .object({
     url: z
       .url()
@@ -35,6 +47,7 @@ const inputSchema = z
       ),
   })
   .describe('Fetch a URL and extract readable text from the page.')
+const inputSchema = repairInput(clampMaxChars, urlSchema)
 
 const description = `
 Purpose: Fetch a URL returned by web_search and extract the readable page text so you can answer with source-backed evidence.

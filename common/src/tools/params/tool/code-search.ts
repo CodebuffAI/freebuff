@@ -1,12 +1,22 @@
 import z from 'zod/v4'
 
-import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  jsonToolResultSchema,
+  repairInput,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
+/** A number in `flags` is a result cap in the wrong field: drop it rather than refuse the search. */
+function dropNumericFlags(input: Record<string, unknown>) {
+  if (typeof input.flags === 'number') delete input.flags
+  return input
+}
+
 const toolName = 'code_search'
 const endsAgentStep = true
-const inputSchema = z
+const searchSchema = z
   .object({
     pattern: z
       .string()
@@ -37,6 +47,7 @@ const inputSchema = z
   .describe(
     `Search for string patterns in the project's files. This tool uses ripgrep (rg), a fast line-oriented search tool.`,
   )
+const inputSchema = repairInput(dropNumericFlags, searchSchema)
 const legacyInputSchema = inputSchema.describe(
   `Search for string patterns in the project's files. This tool uses ripgrep (rg), a fast line-oriented search tool. Use this tool only when read_files is not sufficient to find the files you need.`,
 )

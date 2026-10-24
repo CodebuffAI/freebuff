@@ -1,6 +1,10 @@
 import z from 'zod/v4'
 
-import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  jsonToolResultSchema,
+  repairInput,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -178,9 +182,25 @@ export const gitCommitGuidePrompt = buildGitCommitGuidePrompt({
   attribution: true,
 })
 
+/**
+ * Repairs two slips seen in production: `cmd` (another shell tool's name for
+ * `command`) and a `process_type` like "SYNC\n" or "background".
+ */
+function normalizeCommandInput(input: Record<string, unknown>) {
+  if (input.command === undefined && typeof input.cmd === 'string') {
+    input.command = input.cmd
+  }
+  if (typeof input.process_type === 'string') {
+    input.process_type = (
+      input.process_type.trim().split(/\s+/)[0] ?? ''
+    ).toUpperCase()
+  }
+  return input
+}
+
 const toolName = 'run_terminal_command'
 const endsAgentStep = true
-const inputSchema = z
+const commandSchema = z
   .object({
     // Can be empty to use it for a timeout.
     command: z
@@ -213,6 +233,7 @@ const inputSchema = z
   .describe(
     `Execute a CLI command from the **project root** (different from the user's cwd).`,
   )
+const inputSchema = repairInput(normalizeCommandInput, commandSchema)
 const buildDescription = (options: { attribution: boolean }) =>
   `
 Execute commands needed to complete the user's task, including inspecting the environment, running scripts, installing task dependencies, building, testing, generating requested artifacts, and starting required services.

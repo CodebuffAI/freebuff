@@ -199,7 +199,7 @@ function getToolValidationHint(toolName: string): string | undefined {
     return 'Expected shape: { "path": string, "replacements": [{ "oldString": string, "newString": string, "allowMultiple"?: boolean }] }.'
   }
   if (toolName === 'write_file' || toolName === 'propose_write_file') {
-    return 'Expected shape: { "path": string, "instructions": string, "content": string }. Quote string values and escape newlines/quotes inside content.'
+    return 'Expected shape: { "path": string, "content": string, "instructions"?: string }. Quote string values and escape newlines/quotes inside content.'
   }
   return undefined
 }
