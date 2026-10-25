@@ -1,3 +1,4 @@
+import { SPONSORED_RUN_SUMMARY_INSTRUCTION } from './sponsored-run-summary'
 /**
  * THE first-turn prompt of an accepted sponsored run, built once, here, by the
  * server, for every surface (the run spec's `promptTemplate`,
@@ -82,6 +83,7 @@ export const SPONSORED_RUN_SCOPE_GUIDANCE = [
 
 /** The turn's LAST words: a short result, in the same two places every time. */
 export const SPONSORED_RUN_RESULT_REPORT = [
+  SPONSORED_RUN_SUMMARY_INSTRUCTION,
   'When you finish, or stop because a step is blocked, end the turn with this short report and nothing after it:',
   '',
   'Done:',
@@ -309,6 +311,7 @@ export const SPONSORED_RUN_LAYER1_CONTEXT_HEADING =
 
 /** Layer 1's report: the run summary and the Needs-you state read these two lines. */
 export const SPONSORED_RUN_LAYER1_REPORT = [
+  SPONSORED_RUN_SUMMARY_INSTRUCTION,
   'End the turn with:',
   'Done: <what changed>',
   'Still needed from you: <what the user must do, or "Nothing">',

@@ -74,12 +74,72 @@ export const agentConversionDefinitionSchema = z
     (d) => new Set(d.criteria.map((c) => c.id)).size === d.criteria.length,
     'Criterion IDs must be unique',
   )
+/** New skills can measure onboarding only; no model-authored goal or instructions. */
+export const simpleConversionDefinitionSchema = z
+  .object({
+    id: z.literal('onboarding'),
+    version: z.literal(3),
+    goal: z.literal('Verify product onboarding'),
+    criteria: z
+      .array(
+        z.discriminatedUnion('claim', [
+          z
+            .object({
+              id: z.literal('sign-in'),
+              claim: z.literal('signed_in'),
+              origin,
+            })
+            .strict(),
+          z
+            .object({
+              id: z.literal('api-key'),
+              claim: z.literal('new_api_key'),
+              origin,
+              credentialEnv: z
+                .string()
+                .regex(/^[A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)$/),
+            })
+            .strict(),
+          z
+            .object({
+              id: z.literal('product-download'),
+              claim: z.literal('product_download'),
+              origin,
+              product: z.enum(['cli', 'sdk']),
+              package: z.string().min(1).max(214),
+            })
+            .strict(),
+        ]),
+      )
+      .min(1)
+      .max(2),
+  })
+  .strict()
+  .refine(
+    (d) =>
+      new Set(d.criteria.map((c) => c.id)).size === d.criteria.length &&
+      d.criteria.filter((c) => c.claim !== 'signed_in').length <= 1,
+    'Use sign-in and at most one of API-key creation or CLI/SDK download',
+  )
+
+export function validConversionBasis(claim: string, basis: string): boolean {
+  if (claim === 'signed_in') return basis === 'authenticated_session'
+  if (claim === 'product_download') return basis === 'installation_verified'
+  return (
+    basis === 'creation_metadata' ||
+    basis === (claim === 'new_account' ? 'signup_completion' : 'key_creation')
+  )
+}
+
 export const conversionDefinitionSchema = z.union([
+  simpleConversionDefinitionSchema,
   legacyConversionDefinitionSchema,
   agentConversionDefinitionSchema,
 ])
 
 const agentBasis = z.enum([
+  'authenticated_session',
+  'installation_verified',
   'signup_completion',
   'key_creation',
   'creation_metadata',
@@ -118,12 +178,13 @@ const legacyEvidence = z
 const agentEvidence = z
   .object({
     criterionId: slug,
-    source: z.literal('agent_browser'),
+    source: z.enum(['agent_browser', 'agent_install']),
     origin,
     observedAt: z.number().int().nonnegative(),
     verdict: z.enum(['satisfied', 'inconclusive']),
     basis: agentBasis,
     projectCredentialAvailable: z.boolean().optional(),
+    installationVerified: z.boolean().optional(),
   })
   .strict()
 
@@ -139,19 +200,15 @@ export const CONVERSION_DIRECTIVE = 'conversion-definition: '
  * capability, not a version floor: a Desktop release cut without the tools
  * never sends it, whatever its version number.
  */
-export const SPONSORED_CONVERSION_TOOLS_VERSION = 1 as const
+export const SPONSORED_CONVERSION_TOOLS_VERSION = 2 as const
 
 /**
  * Whether a request's `conversionToolsVersion` (untrusted, as sent) says the
- * client has {@link SPONSORED_CONVERSION_TOOLS_VERSION} or a later tool set.
- * Only an integer at least that counts.
+ * client has the original browser tools (set 1) or newer. V3 definitions
+ * additionally require set 2 in sponsoredConversionClientRefusal.
  */
 export function clientHasSponsoredConversionTools(value: unknown): boolean {
-  return (
-    typeof value === 'number' &&
-    Number.isInteger(value) &&
-    value >= SPONSORED_CONVERSION_TOOLS_VERSION
-  )
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1
 }
 
 /**
@@ -268,18 +325,23 @@ export function mergeConversionReport(
       )
         continue
     } else {
-      if (current.definition.version !== 2) continue
+      if (current.definition.version === 1) continue
+      if (
+        (criterion.claim === 'product_download') !==
+        (item.source === 'agent_install')
+      )
+        continue
       if (
         item.verdict === 'satisfied' &&
-        ((current.userAnswer === 'unknown'
-          ? report.userAnswer
-          : current.userAnswer) !== 'confirmed' ||
-          ![
-            'creation_metadata',
-            criterion.claim === 'new_account'
-              ? 'signup_completion'
-              : 'key_creation',
-          ].includes(item.basis) ||
+        ((criterion.claim !== 'product_download' &&
+          (current.userAnswer === 'unknown'
+            ? report.userAnswer
+            : current.userAnswer) !== 'confirmed') ||
+          !validConversionBasis(criterion.claim, item.basis) ||
+          (criterion.claim === 'product_download'
+            ? item.source !== 'agent_install' ||
+              item.installationVerified !== true
+            : item.source !== 'agent_browser') ||
           (criterion.claim === 'new_api_key' &&
             item.projectCredentialAvailable !== true))
       )
@@ -288,7 +350,7 @@ export function mergeConversionReport(
     const prior = evidence.get(item.criterionId)
     if (
       !prior ||
-      (prior.source === 'agent_browser' && prior.verdict !== 'satisfied')
+      (prior.source !== 'browser_metadata' && prior.verdict !== 'satisfied')
     )
       evidence.set(item.criterionId, item)
   }
@@ -314,7 +376,7 @@ export function mergeConversionReport(
     reason: satisfied
       ? 'criteria_satisfied'
       : report.reason === 'criteria_satisfied'
-        ? current.definition.version === 2
+        ? current.definition.version !== 1
           ? 'insufficient_evidence'
           : 'metadata_missing'
         : current.assessment === 'inconclusive' &&

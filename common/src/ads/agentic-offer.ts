@@ -209,6 +209,8 @@ export const agenticOfferRequestSchema = z.object({
    * environment names the same campaign; never grants production authority.
    */
   localTestCampaignId: z.string().uuid().optional(),
+  /** Registered staging only; the server verifies the signed-in tester role. */
+  stagingTestCampaignId: z.string().uuid().optional(),
   /**
    * `1`: this client runs an accepted offer IN PLACE, in the accepting
    * conversation, with no worktree or commit (`sponsored-in-place.ts`). Such a

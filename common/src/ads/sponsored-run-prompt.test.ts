@@ -333,6 +333,7 @@ describe('Layer 1 frame for a Layer 2 skill', () => {
     expect(template).toContain(SPONSORED_RUN_SPEC_SLOTS.taskContext)
     expect(template).toContain(SPONSORED_RUN_SPEC_SLOTS.credentials)
     expect(template.endsWith(SPONSORED_RUN_LAYER1_REPORT)).toBe(true)
+    expect(template).toContain('call report_sponsored_run_summary if available')
     expect(template).not.toContain(SPONSORED_RUN_SCOPE_GUIDANCE)
   })
 

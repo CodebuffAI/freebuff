@@ -470,16 +470,19 @@ test('telemetry only: the modules import nothing that can bill', () => {
     "from './sponsored-in-place'",
     "from './sponsored-run-funnel-metadata'",
   ])
-  // Evidence imports only erased types; it cannot load the driver or billing.
+  // Evidence imports only the pure summary scrubber plus erased types.
   const evidence = readFileSync(
     join(import.meta.dir, 'sponsored-run-evidence.ts'),
     'utf8',
   )
-  expect(evidence.match(/^import (?!type )/gm)).toBeNull()
+  expect(evidence.match(/^import (?!type )[\s\S]*?from ['"][^'"]+['"]/gm)).toEqual([
+    expect.stringContaining("from './sponsored-run-summary'"),
+  ])
   // The surface list, the in-place verdict contract and the client-version
   // string handling import nothing, so admitting them widens nothing this
   // test guards.
   for (const leaf of [
+    'sponsored-run-summary.ts',
     'sponsored-execution-surface.ts',
     'sponsored-in-place.ts',
     'sponsored-client-version.ts',

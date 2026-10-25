@@ -15,6 +15,8 @@ import {
   type SponsoredSkillLayer2,
   type SponsoredSkillLayer2Verify,
 } from './sponsored-skill-layer2'
+import { conversionDefinitionFromProcedure } from './sponsored-conversion'
+import { sponsoredConversionClientRefusal } from './sponsored-skill-client-support'
 import {
   parseSponsoredProcedureSteps,
   sponsoredStepNeedsUser,
@@ -48,6 +50,137 @@ const VERIFY: SponsoredSkillLayer2Verify[] = [
 ]
 
 describe('buildLayer2Skill', () => {
+  test('native HTTP integrations do not require an invented SDK', () => {
+    const result = buildLayer2Skill({ ...base, packages: [] }, '1.0.0')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.skill.packages).toEqual([])
+    expect(result.skill.format).toBe(1)
+    expect(result.skill.fit).toBeUndefined()
+    expect(result.skill.requirements.runtimes).toEqual([{ name: 'node' }])
+    expect(result.skill.steps[0]!.checks.map((c) => c.kind)).toEqual([
+      'no_privileged_secrets',
+    ])
+  })
+  const conversion = {
+    id: 'onboarding',
+    version: 3,
+    goal: 'Verify product onboarding',
+    criteria: [
+      { id: 'sign-in', claim: 'signed_in', origin: 'https://app.posthog.com' },
+      {
+        id: 'api-key',
+        claim: 'new_api_key',
+        origin: 'https://app.posthog.com',
+        credentialEnv: 'POSTHOG_PROJECT_TOKEN',
+      },
+    ],
+  }
+
+  test('preserves onboarding evidence through compile/render and gates clients', () => {
+    const result = buildLayer2Skill(
+      { ...base, envKeys: ['POSTHOG_PROJECT_TOKEN'], conversion },
+      '1.0.0',
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const procedure = renderSponsoredSkillProcedure(result.skill)
+    expect(conversionDefinitionFromProcedure(procedure)).toEqual(conversion)
+    expect(procedure).toContain('report_sponsored_conversion')
+    for (const client of ['cli', 'web'] as const) {
+      expect(
+        sponsoredConversionClientRefusal({ client, skill: result.skill }),
+      ).toBe('conversion_tools_missing')
+    }
+    expect(
+      sponsoredConversionClientRefusal({
+        client: 'desktop',
+        skill: result.skill,
+        conversionToolsVersion: 1,
+      }),
+    ).toBe('desktop_too_old')
+    expect(
+      sponsoredConversionClientRefusal({
+        client: 'desktop',
+        skill: result.skill,
+        conversionToolsVersion: 2,
+      }),
+    ).toBeNull()
+  })
+
+  test('download measurement names a declared product and changes the skill hash', () => {
+    const download = {
+      ...conversion,
+      criteria: [
+        {
+          id: 'product-download',
+          claim: 'product_download',
+          origin: 'https://posthog.com',
+          product: 'sdk',
+          package: 'posthog-js',
+        },
+      ],
+    }
+    const result = buildLayer2Skill({ ...base, conversion: download }, '1.0.0')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.skill.conversion).toEqual(download)
+    expect(sponsoredSkillSha256(result.skill)).not.toBe(
+      sponsoredSkillSha256(compileLayer2Skill(base, '1.0.0')),
+    )
+    expect(
+      buildLayer2Skill(
+        {
+          ...base,
+          conversion: {
+            ...download,
+            criteria: [{ ...download.criteria[0], package: 'undeclared' }],
+          },
+        },
+        '1.0.0',
+      ).ok,
+    ).toBe(false)
+  })
+
+  test('refuses missing credential declarations, legacy and custom conversions', () => {
+    expect(buildLayer2Skill({ ...base, conversion }, '1.0.0').ok).toBe(false)
+    for (const invalid of [
+      { ...conversion, version: 2 },
+      { ...conversion, goal: 'Verify integration success' },
+      {
+        ...conversion,
+        criteria: [
+          { id: 'feedback', claim: 'feedback', origin: 'https://posthog.com' },
+        ],
+      },
+      {
+        ...conversion,
+        criteria: [
+          conversion.criteria[0],
+          { ...conversion.criteria[0], instructions: 'Count API use' },
+        ],
+      },
+      {
+        ...conversion,
+        criteria: [
+          ...conversion.criteria,
+          {
+            id: 'product-download',
+            claim: 'product_download',
+            origin: 'https://posthog.com',
+            product: 'sdk',
+            package: 'posthog-js',
+          },
+        ],
+      },
+    ])
+      expect(
+        buildLayer2Skill(
+          { ...base, envKeys: ['POSTHOG_PROJECT_TOKEN'], conversion: invalid },
+          '1.0.0',
+        ).ok,
+      ).toBe(false)
+  })
   test('an npm skill with no keys compiles to a parsing format-1 skill with no fit', () => {
     const result = buildLayer2Skill(base, '1.0.0')
     expect(result.ok).toBe(true)

@@ -232,8 +232,36 @@ describe('a conversion skill needs a Desktop build with the conversion tools', (
 
   const TOOLS = { conversionToolsVersion: SPONSORED_CONVERSION_TOOLS_VERSION }
 
+  test('v3 requires the onboarding-capable tool set, including procedure-only serving', () => {
+    const conversion = {
+      id: 'onboarding',
+      version: 3,
+      goal: 'Verify product onboarding',
+      criteria: [
+        { id: 'sign-in', claim: 'signed_in', origin: 'https://example.com' },
+      ],
+    }
+    for (const rest of [
+      { skill: skillWith(conversion as never) },
+      { skill: null, procedure: procedureWith(conversion) },
+    ]) {
+      expect(
+        decide('desktop', 'desktop/dev', {
+          ...rest,
+          conversionToolsVersion: 1,
+        }),
+      ).toBe('desktop_too_old')
+      expect(
+        decide('desktop', 'desktop/dev', {
+          ...rest,
+          conversionToolsVersion: 2,
+        }),
+      ).toBeNull()
+    }
+  })
+
   test('only an integer tool-set version of at least 1 counts as the tools', () => {
-    expect(SPONSORED_CONVERSION_TOOLS_VERSION).toBe(1)
+    expect(SPONSORED_CONVERSION_TOOLS_VERSION).toBe(2)
     for (const yes of [1, 2])
       expect(clientHasSponsoredConversionTools(yes), String(yes)).toBe(true)
     for (const no of [undefined, null, 0, -1, 0.5, 1.5, '1', true, NaN, Infinity, {}])

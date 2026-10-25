@@ -8,8 +8,8 @@ import type { LabEnvironment } from './agentic-ad-lab-batch'
  *
  * - `lab`: a Cloud Lab VM (Linux), set up by the Lab batch's environment case
  *   (`LAB_ENVIRONMENTS`).
- * - `desktop`: headless Freebuff Desktop on a GitHub runner
- *   (`sponsored-skill-bench.yml`), with real containment (bwrap and a private
+ * - `desktop`: headless Freebuff Desktop on a GitHub runner (the bench
+ *   workflow that ran it was removed in COD-965), with real containment (bwrap and a private
  *   HOME on Linux), which the Lab cannot reproduce (the COD-825 shim failures).
  *   `setup` runs on the runner before the leg. It may append `KEY=VALUE` lines
  *   to `$BENCH_ENV_FILE` (the Desktop process's environment overrides; `PATH`

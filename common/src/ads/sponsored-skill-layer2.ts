@@ -14,6 +14,7 @@
  */
 
 import { z } from 'zod/v4'
+import { simpleConversionDefinitionSchema } from './sponsored-conversion'
 
 import {
   isSponsoredCredentialEnvName,
@@ -133,7 +134,7 @@ export const sponsoredSkillLayer2Schema = z
       (value) => value.includes('bfcid={bfcid}'),
       'Must carry bfcid={bfcid} in its query.',
     ),
-    packages: z.array(layer2Package).min(1).max(LAYER2_MAX_PACKAGES),
+    packages: z.array(layer2Package).max(LAYER2_MAX_PACKAGES),
     /** Secret env vars the integration reads, collected at the signup step. */
     envKeys: z
       .array(
@@ -147,6 +148,8 @@ export const sponsoredSkillLayer2Schema = z
       )
       .max(LAYER2_MAX_ENV_KEYS)
       .optional(),
+    /** Onboarding evidence only; legacy stored sources may omit measurement. */
+    conversion: simpleConversionDefinitionSchema.optional(),
     /**
      * Code checks that prove the integration landed (an import of the SDK, a
      * call to its client). Omitted or empty compiles to no checks.
@@ -225,7 +228,8 @@ export function compileLayer2Skill(
   const requirements: SponsoredSkill['requirements'] = {
     os: ['darwin', 'linux', 'win32'],
     runtimes: [
-      ...(npm.length ? [{ name: 'node' as const }] : []),
+      // Native HTTP skills have no packages; retain a valid informational runtime.
+      ...(npm.length || !pypi.length ? [{ name: 'node' as const }] : []),
       ...(pypi.length ? [{ name: 'python' as const }] : []),
     ],
     frameworks: ['nodejs'],
@@ -359,6 +363,7 @@ export function compileLayer2Skill(
     preflight: [],
     steps: [integrate, ...userSteps],
     outcomes: envKeys.length ? ['api_key_issued'] : [],
+    ...(source.conversion ? { conversion: source.conversion } : {}),
   }
 }
 

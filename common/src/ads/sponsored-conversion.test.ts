@@ -298,3 +298,112 @@ test('v2 definitions and evidence reject injected prose, caller identity, raw ke
     }).success,
   ).toBe(false)
 })
+
+describe('restricted onboarding conversions', () => {
+  const signIn = {
+    id: 'sign-in',
+    claim: 'signed_in',
+    origin: 'https://acme.example',
+  } as const
+  const install = {
+    id: 'product-download',
+    claim: 'product_download',
+    origin: 'https://acme.example',
+    product: 'sdk',
+    package: '@acme/sdk',
+  } as const
+  const simple = (criteria: unknown[]) =>
+    conversionDefinitionFromProcedure(
+      `conversion-definition: ${JSON.stringify({ id: 'onboarding', version: 3, goal: 'Verify product onboarding', criteria })}`,
+    )
+  test('only sign-in and one key or product event; no custom criteria or instructions', () => {
+    expect(simple([signIn, install])).not.toBeNull()
+    expect(simple([install])).not.toBeNull()
+    for (const claim of [
+      'feedback_submitted',
+      'deployment',
+      'new_account',
+      'api_used',
+    ])
+      expect(simple([{ ...signIn, claim }])).toBeNull()
+    expect(
+      simple([
+        { ...signIn, instructions: 'Submit feedback before counting sign-in' },
+      ]),
+    ).toBeNull()
+    expect(simple([signIn, signIn])).toBeNull()
+    expect(
+      simple([
+        install,
+        {
+          id: 'api-key',
+          claim: 'new_api_key',
+          origin: signIn.origin,
+          credentialEnv: 'ACME_KEY',
+        },
+      ]),
+    ).toBeNull()
+  })
+  test('authenticated existing accounts count; assertions and wrong bases do not', () => {
+    const state = pendingConversion(simple([signIn])!, start)
+    expect(
+      mergeConversionReport(state, report(), start + 1000).assessment,
+    ).toBe('not_assessed')
+    const evidence = {
+      criterionId: signIn.id,
+      source: 'agent_browser',
+      origin: signIn.origin,
+      observedAt: start + 100,
+      verdict: 'satisfied',
+      basis: 'authenticated_session',
+    } as const
+    expect(
+      mergeConversionReport(
+        state,
+        report({ evidence: [evidence] }),
+        start + 1000,
+      ).assessment,
+    ).toBe('satisfied')
+    expect(
+      mergeConversionReport(
+        state,
+        report({ evidence: [{ ...evidence, basis: 'existing_resource' }] }),
+        start + 1000,
+      ).assessment,
+    ).not.toBe('satisfied')
+    expect(
+      mergeConversionReport(
+        state,
+        report({ userAnswer: 'unknown', evidence: [evidence] }),
+        start + 1000,
+      ).assessment,
+    ).not.toBe('satisfied')
+  })
+  test('a download requires host installation verification, without inventing an account requirement', () => {
+    const state = pendingConversion(simple([install])!, start)
+    const evidence = {
+      criterionId: install.id,
+      source: 'agent_install',
+      origin: install.origin,
+      observedAt: start + 100,
+      verdict: 'satisfied',
+      basis: 'installation_verified',
+      installationVerified: true,
+    } as const
+    expect(
+      mergeConversionReport(
+        state,
+        report({ userAnswer: 'unknown', evidence: [evidence] }),
+        start + 1000,
+      ).assessment,
+    ).toBe('satisfied')
+    for (const item of [
+      { ...evidence, installationVerified: false },
+      { ...evidence, source: 'agent_browser' as const },
+    ])
+      expect(
+        mergeConversionReport(state, report({ evidence: [item] }), start + 1000)
+          .assessment,
+      ).not.toBe('satisfied')
+  })
+})

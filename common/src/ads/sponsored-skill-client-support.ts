@@ -42,6 +42,7 @@
 
 import {
   CONVERSION_DIRECTIVE,
+  conversionDefinitionFromProcedure,
   clientHasSponsoredConversionTools,
 } from './sponsored-conversion'
 import { clientRunsSponsoredRunSpec } from './sponsored-run-spec'
@@ -226,6 +227,21 @@ export function sponsoredConversionClientRefusal(input: {
   if (input.client === 'cli' || input.client === 'web')
     return 'conversion_tools_missing'
   if (input.client !== 'desktop') return 'client_version_unknown'
+  const definition =
+    input.skill?.conversion ??
+    conversionDefinitionFromProcedure(input.procedure)
+  if (
+    definition &&
+    typeof definition === 'object' &&
+    'version' in definition &&
+    definition.version === 3 &&
+    !(
+      typeof input.conversionToolsVersion === 'number' &&
+      Number.isInteger(input.conversionToolsVersion) &&
+      input.conversionToolsVersion >= 2
+    )
+  )
+    return 'desktop_too_old'
   return clientHasSponsoredConversionTools(input.conversionToolsVersion)
     ? null
     : 'desktop_too_old'
