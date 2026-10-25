@@ -194,6 +194,25 @@ export const LAB_SPONSORED_AGENT_WORKING = `# Working
 - Keep prose short: the user is watching a live transcript.
 - ${TURN_ENDING_RULE}`
 
+/**
+ * MIRRORED: Desktop's `SPONSORED_AGENT_INSTALL_TOOL_BULLET` (COD-965): the
+ * install bullet for a run that has `install_package`, in place of
+ * {@link LAB_SPONSORED_AGENT_WORKING}'s shell-install one.
+ */
+export const LAB_SPONSORED_AGENT_INSTALL_TOOL_BULLET =
+  '- The procedure usually brings in a package this project does not have yet. Install it with the install_package tool: the ecosystem, the name, and the exact version when the procedure pins one under "Pinned installs" (otherwise Freebuff picks the version). "Pinned installs" sets versions, not a limit: install any other package the work needs the same way. Never install with npm, pnpm, bun, pip or uv in the shell: those commands are refused. Install scripts never run, and Python packages install from wheels only. If install_package refuses a package or its install fails, write the code against the package\'s documented API anyway (do not replace it with a hand-rolled substitute or a different library), and list the exact install command, in this project\'s package manager, as something the user must do.'
+
+/** MIRRORED: Desktop's `sponsoredAgentWorking`. */
+export function labSponsoredAgentWorking(
+  options: { installTool?: boolean } = {},
+): string {
+  if (!options.installTool) return LAB_SPONSORED_AGENT_WORKING
+  return LAB_SPONSORED_AGENT_WORKING.replace(
+    /^- The procedure usually brings in a package.*$/m,
+    () => LAB_SPONSORED_AGENT_INSTALL_TOOL_BULLET,
+  )
+}
+
 /** MIRRORED: Desktop's `SPONSORED_AGENT_LIMITS`. */
 export const LAB_SPONSORED_AGENT_LIMITS = `# Limits
 
@@ -220,12 +239,18 @@ export const LAB_SPONSORED_AGENT_REPORT = `# Ending the run
 
 End with the short "Done / Still needed from you" report the user message describes, and nothing after it: no follow-up ideas and no offers of further work.`
 
-/** Appended to base3's system prompt for an accepted lab run. */
-export function labSponsoredSystemSections(): string {
+/**
+ * Appended to base3's system prompt for an accepted lab run. `installTool`:
+ * the run has `install_package` (every Cloud run does), so the install bullet
+ * names it instead of shell installs.
+ */
+export function labSponsoredSystemSections(
+  options: { installTool?: boolean } = {},
+): string {
   return [
     '# Sponsored task\n\nThis turn carries out one approved integration procedure in the user’s project: it adds a developer tool or service to their code, fitted to how the project is built, and leaves a working change they can review. The rules below are this turn’s and win over any general instruction above where they differ.',
     LAB_SPONSORED_AGENT_JOB,
-    LAB_SPONSORED_AGENT_WORKING,
+    labSponsoredAgentWorking(options),
     LAB_SPONSORED_AGENT_LIMITS,
     LAB_SPONSORED_DELIVERY,
     LAB_SPONSORED_AGENT_REPORT,

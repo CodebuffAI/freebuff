@@ -105,7 +105,7 @@ const SHELL_INSTALL_BULLET = SPONSORED_IN_PLACE_BULLETS[4]
  * `SPONSORED_INSTALL_TOOL_GUIDANCE_BULLET` (`sponsored-run.ts`).
  */
 export const SPONSORED_INSTALL_TOOL_GUIDANCE_BULLET =
-  '- Add any package the procedure needs with the install_package tool (with the exact version when the procedure pins one under "Pinned installs"); install scripts never run. Installing with npm, pnpm, bun, pip or uv in the shell is refused. If install_package refuses a package, work with what the repository already has and tell the user what to install.'
+  '- Add any package the procedure needs with the install_package tool (with the exact version when the procedure pins one under "Pinned installs"). That list sets versions, not a limit: add any other package the work needs the same way. Install scripts never run. Installing with npm, pnpm, bun, pip or uv in the shell is refused. If install_package refuses a package, work with what the repository already has and tell the user what to install.'
 
 /**
  * The one line the CLI adds. Desktop's run is watched in a tab it can stop; a

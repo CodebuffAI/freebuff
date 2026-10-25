@@ -118,7 +118,7 @@ const PINNED_INSTALLS_BULLET =
  * {@link PINNED_INSTALLS_BULLET} and as a line of the Layer 1 frame.
  */
 export const SPONSORED_RUN_INSTALL_TOOL_LINE =
-  'Install packages with the install_package tool (it picks the version and runs the install for you); shell installs are refused.'
+  'Install packages with the install_package tool (it picks the version and runs the install for you); shell installs are refused. "Pinned installs" in the procedure sets versions, not a limit: install any other package the work needs the same way.'
 
 const INSTALL_TOOL_BULLET = `- ${SPONSORED_RUN_INSTALL_TOOL_LINE}`
 
