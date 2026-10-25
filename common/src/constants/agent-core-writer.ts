@@ -8,8 +8,8 @@
  * mirrors it so the public Convex functions the iOS and Android apps call by
  * name can tell when Postgres has become the writer:
  *
- * - `convex` (today): the Convex functions write as before.
- * - `postgres`: the send, create, archive and unarchive mutations refuse with
+ * - `convex`: the Convex functions write as before.
+ * - `postgres` (since 2026-10-19): the send, create, archive and unarchive mutations refuse with
  *   an "update the app" answer (a Convex mutation cannot reach Postgres), and
  *   the cancel action forwards to freebuff-web.
  *
@@ -19,7 +19,7 @@
  */
 export type AgentCoreWriterForConvex = 'convex' | 'postgres'
 
-export const AGENT_CORE_WRITER_FOR_CONVEX: AgentCoreWriterForConvex = 'convex'
+export const AGENT_CORE_WRITER_FOR_CONVEX: AgentCoreWriterForConvex = 'postgres'
 
 /** Whether Postgres writes the agent core, so Convex must not. */
 export function agentCoreAppWritesOnPostgres(

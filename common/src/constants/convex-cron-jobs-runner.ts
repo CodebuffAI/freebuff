@@ -92,11 +92,11 @@ export const CONVEX_CRON_JOB_RUNNERS: ConvexCronJobRunners = {
   reconcile_usage_limits: 'graphile',
   enforce_legacy_usage_limits: 'graphile',
   audit_fleet_usage: 'graphile',
-  sweep_freebuff_runs: 'convex',
+  sweep_freebuff_runs: 'graphile',
   sweep_cli_agent_runs: 'graphile',
   rotate_github_tokens: 'graphile',
   sweep_request_intent_eval_cohorts: 'graphile',
-  fire_automations: 'convex',
+  fire_automations: 'graphile',
 }
 
 /**
