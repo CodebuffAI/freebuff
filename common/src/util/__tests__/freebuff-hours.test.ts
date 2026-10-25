@@ -8,6 +8,7 @@ import {
   freebucksToHours,
   freebuffModelMultiplierLabel,
   freebuffMultiplierText,
+  freebucksShortfallLine,
 } from '../freebuff-hours'
 
 describe('hours', () => {
@@ -62,5 +63,30 @@ describe('hours', () => {
     expect(freebuffMultiplierText(15)).toBe('3x')
     expect(freebuffMultiplierText(5)).toBe('1x')
     expect(freebuffMultiplierText(0)).toBe('free')
+  })
+})
+
+describe('freebucksShortfallLine', () => {
+  test('hours left that cover a 1x hour point at a lower multiplier', () => {
+    const { line, cheaperModelFits } = freebucksShortfallLine({
+      price: 15,
+      balance: 10,
+      modelName: 'DeepSeek V4.1 Flash',
+    })
+    expect(cheaperModelFits).toBe(true)
+    expect(line).toBe(
+      'An hour of DeepSeek V4.1 Flash uses 3 hours, and you have 2 hours left. Pick a model with a lower multiplier to keep going.',
+    )
+  })
+
+  test('under one hour left suggests nothing a cheaper metered row could start', () => {
+    const { line, cheaperModelFits } = freebucksShortfallLine({
+      price: 10,
+      balance: 4,
+    })
+    expect(cheaperModelFits).toBe(false)
+    expect(line).toBe(
+      'An hour of this model uses 2 hours, and you have less than an hour left.',
+    )
   })
 })

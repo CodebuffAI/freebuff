@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { formatHoursWithUnit } from '@codebuff/common/util/freebuff-hours'
+import {
+  formatHoursWithUnit,
+  freebucksShortfallLine,
+} from '@codebuff/common/util/freebuff-hours'
 import { formatFreebuffHardBlockedPrivacySignals } from '@codebuff/common/util/freebuff-privacy'
 
 import {
@@ -33,7 +36,13 @@ export function freebuffAdmissionNotice(
           : `Freebuff is unavailable in ${session.countryCode}. Use /byok to use your own API key.`
     case 'rate_limited':
       return session.freebucksShortfall
-        ? `Not enough hours: ${formatHoursWithUnit(session.freebucksShortfall.balance)} available. See https://freebuff.com/plans or use /model.`
+        ? `${
+            freebucksShortfallLine({
+              ...session.freebucksShortfall,
+              modelName: getFreebuffModelDirectory().get(session.model)
+                .displayName,
+            }).line
+          } Use /model to switch, or see https://freebuff.com/plans.`
         : 'Session limit reached. See https://freebuff.com/plans or choose another model with /model.'
     case 'spend_limited':
       return session.message

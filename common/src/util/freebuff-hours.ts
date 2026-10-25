@@ -83,3 +83,35 @@ export function freebuffMultiplierText(priceFreebucks: number): string {
     (priceFreebucks > 0 ? '1x' : 'free')
   )
 }
+
+/**
+ * The Freebucks meter's refusal (`freebucksShortfall`), as the one sentence
+ * every client leads with. Admission needs a full hour of the chosen model, so
+ * an account with hours left is refused a 3x row that a 1x row would still
+ * start. The old wording led with "Today's hours come back in…", which read as
+ * "you are out for the day" to someone with half a day's hours left (reported
+ * 2026-10-25 as "used all my daily sessions").
+ *
+ * Suggests a lower multiplier only when the balance covers a 1x hour: below
+ * that no cheaper metered row can start either, and the caller's reset and
+ * plan copy is the answer.
+ */
+export function freebucksShortfallLine(params: {
+  price: number
+  balance: number
+  modelName?: string
+}): { line: string; cheaperModelFits: boolean } {
+  const model = params.modelName ?? 'this model'
+  const cheaperModelFits = params.balance >= FREEBUCKS_PER_HOUR
+  const left = cheaperModelFits
+    ? `${formatHoursWithUnit(params.balance)} left`
+    : 'less than an hour left'
+  return {
+    line:
+      `An hour of ${model} uses ${formatHoursWithUnit(params.price)}, and you have ${left}.` +
+      (cheaperModelFits
+        ? ' Pick a model with a lower multiplier to keep going.'
+        : ''),
+    cheaperModelFits,
+  }
+}

@@ -13,12 +13,16 @@ describe('freebuffAdmissionNotice', () => {
     expect(notice).toContain('support@freebuff.com')
   })
 
-  test('a Freebucks shortfall is told in hours', () => {
+  test('a Freebucks shortfall is told in hours, with a cheaper model as the way on', () => {
     const notice = freebuffAdmissionNotice({
       status: 'rate_limited',
-      freebucksShortfall: { price: 15, balance: 7 },
+      model: 'deepseek/deepseek-v4-flash',
+      freebucksShortfall: { price: 15, balance: 10 },
     } as FreebuffSessionResponse)
-    expect(notice).toStartWith('Not enough hours: 1 hour available.')
+    expect(notice).toContain('uses 3 hours, and you have 2 hours left.')
+    expect(notice).toContain('lower multiplier')
+    expect(notice).toContain('/model')
     expect(notice).not.toContain('Freebucks')
+    expect(notice).not.toMatch(/session limit|daily sessions/i)
   })
 })
