@@ -98,6 +98,7 @@ async function createFixture(installedVersion: string): Promise<Fixture> {
     displayName: 'Freebuff',
     configDir,
     deferUpdatesUntilExit: true,
+    supportsUpdateCommand: true,
   }).__testing
   const config = launcher.CONFIG
   const setInstalled = (version: string) => {
@@ -159,6 +160,7 @@ describe('freebuff update: command detection', () => {
   const { isUpdateCommand } = createLauncher({
     packageName: 'freebuff',
     displayName: 'Freebuff',
+    supportsUpdateCommand: true,
   }).__testing
 
   test('detects the command as the first positional argument', () => {
@@ -175,6 +177,16 @@ describe('freebuff update: command detection', () => {
     expect(isUpdateCommand(['--cwd', 'update'])).toBe(false)
     expect(isUpdateCommand(['continue'])).toBe(false)
     expect(isUpdateCommand(['--', 'update'])).toBe(false)
+  })
+
+  test('is off for the wrappers that take a prompt as the first argument', () => {
+    const codebuff = createLauncher({
+      packageName: 'codebuff',
+      displayName: 'Codebuff',
+    }).__testing
+
+    // `codebuff update the readme` is a prompt, not a command.
+    expect(codebuff.isUpdateCommand(['update', 'the', 'readme'])).toBe(false)
   })
 })
 

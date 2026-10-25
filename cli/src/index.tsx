@@ -264,7 +264,10 @@ async function main(): Promise<void> {
   } = parseArgs()
 
   const isLoginCommand = command === 'login'
-  const isUpdateCommand = command === 'update'
+  // Only freebuff has an `update` command; for the other products the first
+  // positional argument is the prompt, so `codebuff update the readme` must
+  // reach the agent instead of exiting here.
+  const isUpdateCommand = IS_FREEBUFF && command === 'update'
   const isPublishCommand = command === 'publish'
   const hasAgentOverride = Boolean(agent?.trim())
 

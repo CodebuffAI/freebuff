@@ -89,6 +89,7 @@ const wrappers = [
       displayName: 'Freebuff',
       telemetryEvent: 'cli.update_freebuff_failed',
       deferUpdatesUntilExit: true,
+      supportsUpdateCommand: true,
     },
   },
 ]

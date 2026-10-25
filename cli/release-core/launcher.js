@@ -188,6 +188,11 @@ function createLauncher(productConfig) {
     // Freebuff sessions remain open between turns. The launcher cannot know
     // when a restart is safe, so keep the process alive until the user exits.
     deferUpdatesUntilExit = false,
+    // Only the freebuff binary defines an `update` command. The codebuff and
+    // codecane binaries take a prompt as their first positional argument, so
+    // `codebuff update the readme` is a prompt there — intercepting it would
+    // install a release and drop what the user typed.
+    supportsUpdateCommand = false,
     tempDownloadDirName = `.${packageName}-download-temp`,
     // Tests only. os.homedir() ignores $HOME under `bun test`, so pointing HOME
     // at a temp dir is not enough to keep a test off the real ~/.config.
@@ -2345,6 +2350,7 @@ function createLauncher(productConfig) {
   const FLAGS_WITH_VALUES = new Set(['--cwd'])
 
   function isUpdateCommand(argv = process.argv.slice(2)) {
+    if (!supportsUpdateCommand) return false
     for (let i = 0; i < argv.length; i++) {
       const arg = argv[i]
       if (arg === '--') return false

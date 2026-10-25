@@ -30,6 +30,7 @@ const launcher = createLauncher({
   binaryChecksums: packageJson.binaryChecksums ?? null,
   telemetryEvent: 'cli.update_freebuff_failed',
   deferUpdatesUntilExit: true,
+  supportsUpdateCommand: true,
 })
 
 module.exports = launcher
