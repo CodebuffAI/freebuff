@@ -21,7 +21,7 @@
  */
 export type HostingBackendMode = 'convex' | 'shadow' | 'postgres'
 
-export const HOSTING_BACKEND: HostingBackendMode = 'shadow'
+export const HOSTING_BACKEND: HostingBackendMode = 'postgres'
 
 /** Who serves hosting READS in `mode`. Shadow still serves Convex. */
 export function hostingReadBackend(
