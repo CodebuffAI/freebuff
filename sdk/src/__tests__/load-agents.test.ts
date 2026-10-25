@@ -376,6 +376,63 @@ describe('loadLocalAgents', () => {
       expect(existsSync(markerFile)).toBe(false)
     })
 
+    test('skips plugin hook directories without importing executable scripts', async () => {
+      const vendorHookDir = path.join(agentsDir, 'vendor', 'ponytail', 'hooks')
+      const directHookDir = path.join(agentsDir, 'ponytail', 'hooks')
+      mkdirSync(vendorHookDir, { recursive: true })
+      mkdirSync(directHookDir, { recursive: true })
+      const vendorMarker = path.join(tempDir, 'vendor-hook-side-effect')
+      const directMarker = path.join(tempDir, 'direct-hook-side-effect')
+      const vendorSupportMarker = path.join(
+        tempDir,
+        'vendor-support-side-effect',
+      )
+      writeAgentFile(
+        vendorHookDir,
+        'ponytail-subagent.js',
+        `
+          const { writeFileSync } = require('fs')
+          writeFileSync(${JSON.stringify(vendorMarker)}, 'imported')
+        `,
+      )
+      writeAgentFile(
+        path.join(agentsDir, 'vendor'),
+        'support.js',
+        `
+          const { writeFileSync } = require('fs')
+          writeFileSync(${JSON.stringify(vendorSupportMarker)}, 'imported')
+        `,
+      )
+      writeAgentFile(
+        directHookDir,
+        'subagent.js',
+        `
+          const { writeFileSync } = require('fs')
+          writeFileSync(${JSON.stringify(directMarker)}, 'imported')
+        `,
+      )
+      writeAgentFile(
+        agentsDir,
+        'real-agent.ts',
+        `
+          export default {
+            id: 'real-agent',
+            displayName: 'Real Agent',
+            model: '${MODEL_NAME}'
+          }
+        `,
+      )
+
+      const result: LoadedAgents = await loadLocalAgents({
+        agentsPath: agentsDir,
+      })
+
+      expect(result['real-agent']).toBeDefined()
+      expect(existsSync(vendorMarker)).toBe(false)
+      expect(existsSync(vendorSupportMarker)).toBe(false)
+      expect(existsSync(directMarker)).toBe(false)
+    })
+
     test('converts handleSteps function to string', async () => {
       mkdirSync(agentsDir, { recursive: true })
       writeAgentFile(
@@ -984,6 +1041,10 @@ describe('loadLocalAgents', () => {
       mkdirSync(path.join(agentsDir, 'skills', 'x'), { recursive: true })
       mkdirSync(path.join(agentsDir, 'nested'), { recursive: true })
       mkdirSync(path.join(agentsDir, 'node_modules'), { recursive: true })
+      mkdirSync(path.join(agentsDir, 'vendor', 'ponytail', 'hooks'), {
+        recursive: true,
+      })
+      mkdirSync(path.join(agentsDir, 'ponytail', 'hooks'), { recursive: true })
       writeFileSync(path.join(agentsDir, 'a.ts'), '')
       writeFileSync(path.join(agentsDir, 'b.mjs'), '')
       writeFileSync(path.join(agentsDir, 'nested', 'c.js'), '')
@@ -992,6 +1053,12 @@ describe('loadLocalAgents', () => {
       writeFileSync(path.join(agentsDir, 'README.md'), '')
       writeFileSync(path.join(agentsDir, 'skills', 'x', 'SKILL.md'), '')
       writeFileSync(path.join(agentsDir, 'node_modules', 'dep.js'), '')
+      writeFileSync(
+        path.join(agentsDir, 'vendor', 'ponytail', 'hooks', 'hook.js'),
+        '',
+      )
+      writeFileSync(path.join(agentsDir, 'vendor', 'support.js'), '')
+      writeFileSync(path.join(agentsDir, 'ponytail', 'hooks', 'hook.js'), '')
 
       expect(listLocalAgentFiles(agentsDir).sort()).toEqual([
         path.join(agentsDir, 'a.ts'),
