@@ -51,7 +51,7 @@
  */
 export type ProjectSpineWriteBackend = 'convex' | 'shadow' | 'dual' | 'postgres'
 
-export const PROJECT_SPINE_WRITE_BACKEND: ProjectSpineWriteBackend = 'shadow'
+export const PROJECT_SPINE_WRITE_BACKEND: ProjectSpineWriteBackend = 'postgres'
 
 /** Read through a function so callers' comparisons are not narrowed away. */
 export function projectSpineWriteBackend(): ProjectSpineWriteBackend {
