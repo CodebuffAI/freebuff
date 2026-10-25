@@ -102,6 +102,7 @@ describe('model picker presets', () => {
         accessTier: 'limited',
         models: [
           { ...models[0]!, efforts: ['low', 'high'], defaultEffort: 'high' },
+          models[1]!,
         ],
       })[0]?.reasoningEffort,
     ).toBe('high')
@@ -202,6 +203,61 @@ describe('model picker presets', () => {
       'm-flash',
       'm-flash',
     ])
+  })
+
+  test('a catalog listing one model gets its thinking levels, Balanced on its default', () => {
+    const one = {
+      id: 'm-flash',
+      compiledId: flash,
+      displayName: 'DeepSeek V4.1 Flash',
+      efforts: ['low', 'high', 'max'] as const,
+      defaultEffort: 'high' as const,
+    }
+    for (const input of [
+      { accessTier: 'full' as const },
+      { accessTier: 'full' as const, isSubscriber: true },
+      { accessTier: 'limited' as const },
+    ]) {
+      const presets = choices({ ...input, models: [one] })
+      expect(
+        presets.map((preset) => [
+          preset.id,
+          preset.label,
+          preset.modelId,
+          preset.reasoningEffort,
+          preset.thinkingLevel,
+        ]),
+      ).toEqual([
+        ['efficient', 'Fast', 'm-flash', 'low', true],
+        ['balanced', 'Default', 'm-flash', 'high', true],
+        ['powerful', 'Max', 'm-flash', 'max', true],
+      ])
+    }
+    const presets = choices({ models: [one] })
+    expect(matchingFreebuffModelPreset(presets, 'm-flash', 'low')?.id).toBe(
+      'efficient',
+    )
+    expect(matchingFreebuffModelPreset(presets, 'm-flash', null)).toBeUndefined()
+    // Every other ladder: its ends and its default.
+    expect(
+      choices({
+        models: [{ ...one, efforts: ['low', 'high'], defaultEffort: 'high' }],
+      }).map((preset) => [preset.id, preset.reasoningEffort]),
+    ).toEqual([
+      ['efficient', 'low'],
+      ['balanced', 'high'],
+    ])
+    // No ladder, or a second row: the usual stops.
+    expect(
+      choices({ models: [{ ...one, efforts: undefined }] }).some(
+        (preset) => preset.thinkingLevel,
+      ),
+    ).toBe(false)
+    expect(
+      choices({
+        models: [one, { id: 'm-luna', compiledId: luna, displayName: 'GPT-6 Luna' }],
+      }).map((preset) => preset.label),
+    ).toEqual(['Fast', 'Balanced', 'Powerful'])
   })
 
   test('custom models and effort overrides keep their detailed trigger labels', () => {

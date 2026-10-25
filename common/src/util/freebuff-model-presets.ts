@@ -15,6 +15,8 @@ export interface FreebuffModelPreset {
   label: string
   modelId: string
   reasoningEffort: ReasoningEffort | null
+  /** A thinking level of the one listed model (`thinkingLevelPresets`). */
+  thinkingLevel?: true
 }
 
 /** IDs are the client's selectable IDs: catalog keys stay opaque. */
@@ -50,7 +52,10 @@ export const FREEBUFF_MIMO_SLOW_CATALOG_KEY = 'm-61c26317cc'
  * ordinary paywall, never an entitlement. Any other limited account gets the
  * free ladder below, built on the server's recommendation for it
  * (`recommendedModelId`, MiMo v2.6 Flash Slow since 2026-10-14) where the catalog sends
- * one, else MiMo. */
+ * one, else MiMo.
+ *
+ * A catalog that lists one model with a reasoning ladder gets that model's
+ * thinking levels instead, at any tier. */
 export function getFreebuffModelPresets({
   accessTier,
   isSubscriber = false,
@@ -68,6 +73,10 @@ export function getFreebuffModelPresets({
    *  `models`, used only while it is listed and available. */
   recommendedModelId?: string | null
 } = {}): readonly FreebuffModelPreset[] {
+  const only = models?.length === 1 ? models[0] : undefined
+  if (only?.efforts && only.efforts.length > 1)
+    return thinkingLevelPresets(only, only.efforts)
+
   const limited = accessTier === 'limited'
   const premium = isSubscriber || balance >= 100
   const rowFor = (id: string) =>
@@ -177,6 +186,47 @@ export function getFreebuffModelPresets({
     base('balanced', 'Balanced'),
     preset('powerful', 'Powerful', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'high'),
   ]
+}
+
+/**
+ * One model's thinking levels as the stops: its lowest rung (Fast), its
+ * default (Default, the Balanced stop new chats start on) and its highest
+ * (Max). "Fast" rather than "Low": a quick answer is a reason to choose it,
+ * where "low" sounds like less. DeepSeek V4.1 Flash's ladder is exactly
+ * low / high / max.
+ */
+const THINKING_LEVEL_LABELS: Record<FreebuffModelPreset['id'], string> = {
+  efficient: 'Fast',
+  balanced: 'Default',
+  powerful: 'Max',
+}
+
+function thinkingLevelPresets(
+  row: FreebuffPresetModel,
+  efforts: readonly ReasoningEffort[],
+): readonly FreebuffModelPreset[] {
+  const balanced =
+    row.defaultEffort && efforts.includes(row.defaultEffort)
+      ? row.defaultEffort
+      : efforts[efforts.length - 1]!
+  const stops = [
+    ...new Set([efforts[0]!, balanced, efforts[efforts.length - 1]!]),
+  ]
+  return stops.map((effort): FreebuffModelPreset => {
+    const id =
+      effort === balanced
+        ? 'balanced'
+        : efforts.indexOf(effort) < efforts.indexOf(balanced)
+          ? 'efficient'
+          : 'powerful'
+    return {
+      id,
+      label: THINKING_LEVEL_LABELS[id],
+      modelId: row.id,
+      reasoningEffort: effort,
+      thinkingLevel: true,
+    }
+  })
 }
 
 /** A manual effort override is custom too: never hide it behind a category. */
