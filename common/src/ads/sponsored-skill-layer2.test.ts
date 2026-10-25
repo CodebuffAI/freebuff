@@ -198,7 +198,7 @@ describe('buildLayer2Skill', () => {
     const reparsed = parseSponsoredSkill(compileLayer2Skill(base, '1.0.0'))
     expect(reparsed.ok).toBe(true)
     expect(skill.steps[0]!.instructions).toContain(
-      'If the folder has no project yet, scaffold a minimal one first, then integrate.',
+      'In an empty folder, scaffold a minimal project first.',
     )
     expect(skill.steps.map((step) => step.kind)).toEqual(['agent', 'user'])
     expect(skill.outcomes).toEqual([])
@@ -389,7 +389,7 @@ describe('the agent step', () => {
       'Build the Posthog integration in this project',
     )
     expect(integrate.instructions).toBe(
-      `${base.goal}\nGuidelines:\n- Read the docs before writing code: ${base.docsUrl}\n- If the folder has no project yet, scaffold a minimal one first, then integrate.\n- Start from the listed packages and add others only when the integration needs them; fit this project's framework and conventions, and change as little as possible.\n- Read POSTHOG_PROJECT_TOKEN from the environment only, and declare it with an empty value in the example env file.\nHow you do it is up to you; the step is done when its checks pass.`,
+      `${base.goal}\nDocs: ${base.docsUrl}\nIn an empty folder, scaffold a minimal project first.\nRead POSTHOG_PROJECT_TOKEN from the environment; declare it empty in the example env file.`,
     )
     expect(
       sponsoredStepNeedsUser(`${integrate.title} ${integrate.instructions}`),
@@ -400,7 +400,7 @@ describe('the agent step', () => {
     const integrate = compileLayer2Skill(base, '1.0.0').steps[0]!
     expect(integrate.instructions).not.toContain('environment')
     expect(integrate.instructions).toEndWith(
-      'change as little as possible.\nHow you do it is up to you; the step is done when its checks pass.',
+      'In an empty folder, scaffold a minimal project first.',
     )
   })
 
@@ -413,7 +413,7 @@ describe('the agent step', () => {
       '1.0.0',
     ).steps[0]!
     expect(integrate.instructions).toContain(
-      '- Read POSTHOG_PROJECT_TOKEN and POSTHOG_PERSONAL_API_KEY from the environment only, and declare each',
+      'Read POSTHOG_PROJECT_TOKEN and POSTHOG_PERSONAL_API_KEY from the environment; declare each empty',
     )
   })
 

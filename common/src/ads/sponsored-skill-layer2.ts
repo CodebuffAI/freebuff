@@ -286,15 +286,17 @@ export function compileLayer2Skill(
   // what it must meet. No wording here may read as user work
   // (`NEEDS_USER_PATTERNS` in sponsored-procedure-steps.ts).
   const envLine = envKeys.length
-    ? `- Read ${envKeys.join(' and ')} from the environment only, and declare ${
+    ? `\nRead ${envKeys.join(' and ')} from the environment; declare ${
         envKeys.length === 1 ? 'it' : 'each'
-      } with an empty value in the example env file.\n`
+      } empty in the example env file.`
     : ''
   const integrate: SponsoredSkillStep = {
     id: 'integrate',
     kind: 'agent',
     title: `Build the ${label} integration in this project`,
-    instructions: `${source.goal}\nGuidelines:\n- Read the docs before writing code: ${source.docsUrl}\n- If the folder has no project yet, scaffold a minimal one first, then integrate.\n- Start from the listed packages and add others only when the integration needs them; fit this project's framework and conventions, and change as little as possible.\n${envLine}How you do it is up to you; the step is done when its checks pass.`,
+    // Layer 1 already says fit the project, fewest changes, read the docs;
+    // the renderer says a step is done when its checks pass.
+    instructions: `${source.goal}\nDocs: ${source.docsUrl}\nIn an empty folder, scaffold a minimal project first.${envLine}`,
     checks: [
       ...verifyChecks,
       ...packageChecks,
@@ -319,7 +321,7 @@ export function compileLayer2Skill(
           id: `connect-${index + 1}`,
           kind: 'user',
           title: `Ask the user to create ${withArticle(`${label} ${keyLabel(env, source.advertiser)}`)} and paste it`,
-          instructions: `The harness asks for the value and saves it to the project's local env file itself; never read, write or print an env file or the value. Once it is set as ${env}, run the feature once and report whether ${label} answered.`,
+          instructions: `The harness saves the value; never read, write or print it or an env file. Once ${env} is set, run the feature once and report whether ${label} answered.`,
           checks: [
             {
               id: `credential-${index + 1}`,
@@ -359,7 +361,8 @@ export function compileLayer2Skill(
     requirements,
     packages,
     tools: [],
-    knowledge: [`Docs: ${source.docsUrl}`],
+    // The docs link is in the integrate step.
+    knowledge: [],
     preflight: [],
     steps: [integrate, ...userSteps],
     outcomes: envKeys.length ? ['api_key_issued'] : [],
