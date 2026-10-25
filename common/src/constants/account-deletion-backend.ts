@@ -37,7 +37,7 @@
  */
 export type AccountDeletionBackend = 'convex' | 'shadow' | 'dual' | 'postgres'
 
-export const ACCOUNT_DELETION_BACKEND: AccountDeletionBackend = 'convex'
+export const ACCOUNT_DELETION_BACKEND: AccountDeletionBackend = 'postgres'
 
 /** Read through a function so callers' comparisons are not narrowed away. */
 export function accountDeletionBackend(): AccountDeletionBackend {

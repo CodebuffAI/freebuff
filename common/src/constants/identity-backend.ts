@@ -98,7 +98,7 @@ export function identityReadBackend(
  */
 export type IdentityWriteBackend = 'convex' | 'shadow' | 'dual' | 'postgres'
 
-export const IDENTITY_WRITE_BACKEND: IdentityWriteBackend = 'shadow'
+export const IDENTITY_WRITE_BACKEND: IdentityWriteBackend = 'postgres'
 
 /** Read through a function so callers' comparisons are not narrowed away. */
 export function identityWriteBackend(): IdentityWriteBackend {
