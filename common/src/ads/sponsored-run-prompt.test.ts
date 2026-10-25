@@ -12,6 +12,8 @@ import {
   SPONSORED_RUN_DESKTOP_IN_PLACE_GUIDANCE,
   SPONSORED_RUN_DESKTOP_WORKTREE_GUIDANCE,
   SPONSORED_RUN_INSTALL_TOOL_LINE,
+  SPONSORED_RUN_LAYER1_INSTALL_TOOL_LINE,
+  layer2ProcedureForModel,
   SPONSORED_RUN_LAYER1_FRAME,
   SPONSORED_RUN_LAYER1_REPORT,
   SPONSORED_RUN_RESULT_REPORT,
@@ -329,7 +331,20 @@ describe('Layer 1 frame for a Layer 2 skill', () => {
       }),
     )
     expect(template.startsWith(SPONSORED_RUN_LAYER1_FRAME)).toBe(true)
-    expect(template).toContain(`The approved procedure:\n${procedure}`)
+    // The model reads a view of the procedure; the stored text is unchanged.
+    expect(spec('desktop').procedure).toBe(procedure)
+    expect(template).toContain(
+      'The approved procedure:\nGoal: Adds Example search.\n\nPinned installs (install exactly these, nothing else):\n- example-sdk@1.2.3\n\n1. Build',
+    )
+    for (const hidden of [
+      'skill: ',
+      'requires-credential:',
+      'outcomes:',
+      'Fit every step',
+    ])
+      expect(template).not.toContain(hidden)
+    // The bfcid note still comes from the full procedure's signup link.
+    expect(template).toContain('- bfcid: unavailable for this run')
     expect(template).toContain(SPONSORED_RUN_SPEC_SLOTS.taskContext)
     expect(template).toContain(SPONSORED_RUN_SPEC_SLOTS.credentials)
     expect(template.endsWith(SPONSORED_RUN_LAYER1_REPORT)).toBe(true)
@@ -377,10 +392,45 @@ describe('Layer 1 frame for a Layer 2 skill', () => {
     }).promptTemplate
     expect(
       template.startsWith(
-        `${SPONSORED_RUN_LAYER1_FRAME}\n${SPONSORED_RUN_INSTALL_TOOL_LINE}`,
+        `${SPONSORED_RUN_LAYER1_FRAME}\n${SPONSORED_RUN_LAYER1_INSTALL_TOOL_LINE}`,
       ),
     ).toBe(true)
+    // Names, not pins: the agent picks the versions.
+    expect(template).toContain('Packages: `example-sdk` (npm).\n\n1. Build')
+    expect(template).not.toContain('Pinned installs')
+    expect(template).not.toContain('1.2.3')
     expect(spec('desktop').promptTemplate).not.toContain('install_package')
+  })
+
+  test('the model view names npm and PyPI packages and drops the wheels line', () => {
+    const view = layer2ProcedureForModel(
+      [
+        'skill: archil-persistent-disk@1.1.0 sha256:' + '0'.repeat(64),
+        'outcomes: api_key_issued',
+        '',
+        'Goal: Persist files.',
+        '',
+        'Fit every step to this repository: its framework, layout and conventions decide where',
+        'files go and how code is written. Each step is done when its checks pass, however you get there.',
+        '',
+        'Pinned installs (install exactly these, nothing else):',
+        '- disk@1.9.0',
+        '- archil==0.18.0 (pip)',
+        'Python (pip) packages install from wheels only, one plain command: `pip install --only-binary=:all: <name>==<version>`.',
+        '',
+        '1. Build it',
+      ].join('\n'),
+      {
+        installTool: true,
+        packages: [
+          { ecosystem: 'npm', name: 'disk' },
+          { ecosystem: 'pypi', name: 'archil' },
+        ],
+      },
+    )
+    expect(view).toBe(
+      'Goal: Persist files.\n\nPackages: `disk` (npm), `archil` (PyPI).\n\n1. Build it',
+    )
   })
 
   test('a registered skill keeps its long frame', () => {
