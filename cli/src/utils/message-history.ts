@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 
@@ -5,7 +6,13 @@ import { getConfigDir } from './auth'
 import { formatTimestamp } from './helpers'
 import { logger } from './logger'
 
-import type { ChatMessage, ContentBlock, FileAttachment, ImageAttachment, TextAttachment } from '../types/chat'
+import type {
+  ChatMessage,
+  ContentBlock,
+  FileAttachment,
+  ImageAttachment,
+  TextAttachment,
+} from '../types/chat'
 
 const MAX_HISTORY_SIZE = 1000
 
@@ -28,8 +35,12 @@ export function getUserMessage(
         }),
     timestamp: formatTimestamp(),
     ...(attachments && attachments.length > 0 ? { attachments } : {}),
-    ...(textAttachments && textAttachments.length > 0 ? { textAttachments } : {}),
-    ...(fileAttachments && fileAttachments.length > 0 ? { fileAttachments } : {}),
+    ...(textAttachments && textAttachments.length > 0
+      ? { textAttachments }
+      : {}),
+    ...(fileAttachments && fileAttachments.length > 0
+      ? { fileAttachments }
+      : {}),
   }
 }
 
@@ -93,14 +104,21 @@ export const loadMessageHistory = (): string[] => {
 /**
  * Save message history to file system
  */
-export const saveMessageHistory = (history: string[]): void => {
+export const saveMessageHistory = (
+  history: string[],
+  fileSystem: Pick<
+    typeof fs,
+    'existsSync' | 'mkdirSync' | 'writeFileSync' | 'renameSync' | 'rmSync'
+  > = fs,
+): void => {
   const configDir = getConfigDir()
   const historyPath = getMessageHistoryPath()
+  const tempPath = `${historyPath}.${process.pid}.${randomUUID()}.tmp`
 
   try {
     // Ensure config directory exists
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true })
+    if (!fileSystem.existsSync(configDir)) {
+      fileSystem.mkdirSync(configDir, { recursive: true })
     }
 
     // Limit history size to prevent file from growing too large
@@ -110,8 +128,18 @@ export const saveMessageHistory = (history: string[]): void => {
         : history
 
     // Save history
-    fs.writeFileSync(historyPath, JSON.stringify(limitedHistory, null, 2))
+    fileSystem.writeFileSync(
+      tempPath,
+      JSON.stringify(limitedHistory, null, 2),
+      {
+        flag: 'wx',
+      },
+    )
+    fileSystem.renameSync(tempPath, historyPath)
   } catch (error) {
+    try {
+      fileSystem.rmSync(tempPath, { force: true })
+    } catch {}
     logger.error(
       {
         error: error instanceof Error ? error.message : String(error),
