@@ -25,6 +25,11 @@ const topics: Record<PageLabel, Topic[]> = {
       label: 'Advanced Mode',
       keywords: 'composer mode buttons skills context usage slash commands',
     },
+    {
+      label: 'Show all models',
+      keywords:
+        'model picker list more models one model simple thinking levels fast default max',
+    },
     { label: 'Feedback', keywords: 'report issue bug feature request help' },
     {
       label: 'Include AGENTS.md',

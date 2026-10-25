@@ -235,6 +235,11 @@ export const freebuffModelCatalogSchema = z.object({
   /** This fetch's id; sent back as FREEBUFF_CATALOG_FETCH_HEADER on every
    *  session and completions request made with these handles. */
   fetchId: z.string().optional(),
+  /** Settings → General → Show all models, sent only to viewers the server
+   *  offers that switch. `default` is where the switch stands until the
+   *  viewer flips it; off, the picker lists one model
+   *  (`pickerFreebuffCatalog`). Absent: no switch, and every row is listed. */
+  showAllModels: z.object({ default: z.boolean() }).optional(),
 })
 export type FreebuffModelCatalog = z.infer<typeof freebuffModelCatalogSchema>
 
