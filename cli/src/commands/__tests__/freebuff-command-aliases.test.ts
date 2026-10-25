@@ -33,6 +33,12 @@ describe('freebuff command aliases', () => {
             assert.equal(SLASH_COMMANDS.some(cmd => cmd.id === name), !isFree)
           }
 
+          // /btw builds its side-question agent from the freebuff catalog, so
+          // Codebuff must not offer it at all.
+          const freeMode = process.env.FREEBUFF_MODE === 'true'
+          assert.equal(SLASH_COMMANDS.some(cmd => cmd.id === 'btw'), freeMode)
+          assert.equal(findCommand('btw') !== undefined, freeMode)
+
           if (process.env.FREEBUFF_MODE !== 'true') {
             for (const name of ['reasoning', 'effort', 'think']) {
               assert.equal(findCommand(name), undefined)
