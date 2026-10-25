@@ -26,6 +26,12 @@ cd ~/my-project
 freebuff
 ```
 
+Update to the latest release at any time:
+
+```bash
+freebuff update
+```
+
 Then describe what you want. Freebuff finds the relevant files, makes changes, and runs the checks that matter for your project.
 
 ## Models
