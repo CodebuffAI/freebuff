@@ -50,6 +50,8 @@ export function isLayer2Skill(
 
 export const LAYER2_MAX_PACKAGES = 6
 export const LAYER2_MAX_ENV_KEYS = 2
+/** Advertiser checks that the integration is really in the code. */
+export const LAYER2_MAX_VERIFY = 3
 
 const slug = z
   .string()
@@ -98,6 +100,28 @@ const layer2Package = z.discriminatedUnion('ecosystem', [
     .strict(),
 ])
 
+const layer2Verify = z
+  .object({
+    /** What the check proves, e.g. "a changed file imports disk". */
+    label: z.string().trim().min(1).max(100),
+    /** A case-insensitive regex over the changed source files. */
+    pattern: z
+      .string()
+      .min(1)
+      .max(200)
+      .refine((pattern) => {
+        try {
+          new RegExp(pattern, 'i')
+          return true
+        } catch {
+          return false
+        }
+      }, 'Not a valid regular expression.'),
+  })
+  .strict()
+
+export type SponsoredSkillLayer2Verify = z.infer<typeof layer2Verify>
+
 export const sponsoredSkillLayer2Schema = z
   .object({
     /** Stable slug, `<advertiser>-<goal>`; one id has many versions. */
@@ -125,6 +149,11 @@ export const sponsoredSkillLayer2Schema = z
       )
       .max(LAYER2_MAX_ENV_KEYS)
       .optional(),
+    /**
+     * Code checks that prove the integration landed (an import of the SDK, a
+     * call to its client). Omitted or empty compiles to no checks.
+     */
+    verify: z.array(layer2Verify).max(LAYER2_MAX_VERIFY).optional(),
     consent: z
       .object({
         title: z.string().trim().min(1).max(100),
@@ -173,6 +202,8 @@ function escapeRegex(text: string): string {
 
 const ENV_EXAMPLE_PATH =
   '**/{.env.example,.env.local.example,.env.sample,.env.template}'
+/** The source files a verify check reads. */
+const SOURCE_FILES = '**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,py}'
 const PYTHON_MANIFESTS =
   '**/{pyproject.toml,requirements*.txt,setup.py,setup.cfg,Pipfile}'
 
@@ -239,17 +270,32 @@ export function compileLayer2Skill(
     key,
   }))
 
+  const verifyChecks: SponsoredSkillCheck[] = (source.verify ?? []).map(
+    (item, index) => ({
+      id: `verify-${index + 1}`,
+      kind: 'file_contains',
+      label: item.label,
+      path: SOURCE_FILES,
+      pattern: item.pattern,
+      flags: 'i',
+    }),
+  )
+
+  // Guidance the agent adapts to the project, not a script; the checks are
+  // what it must meet. No wording here may read as user work
+  // (`NEEDS_USER_PATTERNS` in sponsored-procedure-steps.ts).
   const envLine = envKeys.length
-    ? `\nRead ${envKeys.join(' and ')} from the environment only, and declare ${
+    ? `- Read ${envKeys.join(' and ')} from the environment only, and declare ${
         envKeys.length === 1 ? 'it' : 'each'
-      } with an empty value in the example env file.`
+      } with an empty value in the example env file.\n`
     : ''
   const integrate: SponsoredSkillStep = {
     id: 'integrate',
     kind: 'agent',
     title: `Build the ${label} integration in this project`,
-    instructions: `${source.goal}\nRead the docs before writing code: ${source.docsUrl}\nUse only the pinned packages, fit the project's framework and style, and change as little as possible.${envLine}`,
+    instructions: `${source.goal}\nGuidelines:\n- Read the docs before writing code: ${source.docsUrl}\n- Use only the pinned packages; fit this project's framework and conventions, and change as little as possible.\n${envLine}How you do it is up to you; the step is done when its checks pass.`,
     checks: [
+      ...verifyChecks,
       ...packageChecks,
       ...envChecks,
       {
@@ -344,7 +390,9 @@ export function buildLayer2Skill(
   if (!sponsoredSkillTrackedLink(compiled.skill)) {
     return {
       ok: false,
-      errors: [{ path: 'signupUrl', message: SPONSORED_SKILL_TRACKED_LINK_ERROR }],
+      errors: [
+        { path: 'signupUrl', message: SPONSORED_SKILL_TRACKED_LINK_ERROR },
+      ],
     }
   }
   return { ok: true, source: parsed.data, skill: compiled.skill }

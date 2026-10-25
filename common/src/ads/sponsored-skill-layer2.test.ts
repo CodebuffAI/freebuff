@@ -9,10 +9,15 @@ import {
   buildLayer2Skill,
   compileLayer2Skill,
   isLayer2Skill,
+  LAYER2_MAX_VERIFY,
   LAYER2_SKILL_CHANGELOG,
   type SponsoredSkillLayer2,
+  type SponsoredSkillLayer2Verify,
 } from './sponsored-skill-layer2'
-import { parseSponsoredProcedureSteps } from './sponsored-procedure-steps'
+import {
+  parseSponsoredProcedureSteps,
+  sponsoredStepNeedsUser,
+} from './sponsored-procedure-steps'
 
 const SIGNUP =
   'https://app.posthog.com/signup?utm_source=freebuff&utm_medium=cpc&utm_campaign=analytics&bfcid={bfcid}'
@@ -29,6 +34,17 @@ const base: SponsoredSkillLayer2 = {
     summary: 'Adds 2–4 events for one product question. Nothing is deployed.',
   },
 }
+
+const VERIFY: SponsoredSkillLayer2Verify[] = [
+  {
+    label: 'a changed file imports posthog-js',
+    pattern: `from ['"]posthog-js['"]|require\\(['"]posthog-js['"]\\)`,
+  },
+  {
+    label: 'a changed file calls posthog.capture',
+    pattern: 'posthog\\.capture\\(',
+  },
+]
 
 describe('buildLayer2Skill', () => {
   test('an npm skill with no keys compiles to a parsing format-2 skill', () => {
@@ -147,8 +163,126 @@ describe('buildLayer2Skill', () => {
   })
 
   test('unknown fields are refused', () => {
-    const result = buildLayer2Skill({ ...base, verify: [] }, '1.0.0')
+    const result = buildLayer2Skill({ ...base, checks: [] }, '1.0.0')
     expect(result.ok).toBe(false)
+  })
+})
+
+describe('verify', () => {
+  test('each item becomes a case-insensitive source check, before the auto checks', () => {
+    const result = buildLayer2Skill(
+      { ...base, envKeys: ['POSTHOG_PROJECT_TOKEN'], verify: VERIFY },
+      '1.0.0',
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const checks = result.skill.steps[0]!.checks
+    expect(checks.map((check) => check.id)).toEqual([
+      'verify-1',
+      'verify-2',
+      'package-1',
+      'env-1',
+      'no-secrets',
+    ])
+    expect(checks[0]).toEqual({
+      id: 'verify-1',
+      kind: 'file_contains',
+      label: 'a changed file imports posthog-js',
+      path: '**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,py}',
+      pattern: VERIFY[0]!.pattern,
+      flags: 'i',
+    })
+  })
+
+  test('omitted and empty compile to the same skill and hash', () => {
+    const omitted = compileLayer2Skill(base, '1.0.0')
+    const empty = compileLayer2Skill({ ...base, verify: [] }, '1.0.0')
+    expect(empty).toEqual(omitted)
+    expect(sponsoredSkillSha256(empty)).toBe(sponsoredSkillSha256(omitted))
+    expect(JSON.stringify(omitted)).not.toContain('verify')
+  })
+
+  test('verify moves the hash', () => {
+    expect(
+      sponsoredSkillSha256(
+        compileLayer2Skill({ ...base, verify: VERIFY }, '1.0.0'),
+      ),
+    ).not.toBe(sponsoredSkillSha256(compileLayer2Skill(base, '1.0.0')))
+  })
+
+  test('a pattern that is not a regex is refused', () => {
+    const result = buildLayer2Skill(
+      { ...base, verify: [{ label: 'broken', pattern: 'posthog(' }] },
+      '1.0.0',
+    )
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.errors[0]!.path).toBe('verify.0.pattern')
+  })
+
+  test(`more than ${LAYER2_MAX_VERIFY}, an empty label, a long pattern or an extra field is refused`, () => {
+    const item = VERIFY[1]!
+    for (const verify of [
+      Array.from({ length: LAYER2_MAX_VERIFY + 1 }, () => item),
+      [{ ...item, label: ' ' }],
+      [{ ...item, label: 'x'.repeat(101) }],
+      [{ ...item, pattern: 'a'.repeat(201) }],
+      [{ ...item, flags: 'i' }],
+    ]) {
+      expect(buildLayer2Skill({ ...base, verify }, '1.0.0').ok).toBe(false)
+    }
+  })
+})
+
+describe('the agent step', () => {
+  test('reads as guidance, and never as user work', () => {
+    const skill = compileLayer2Skill(
+      { ...base, envKeys: ['POSTHOG_PROJECT_TOKEN'], verify: VERIFY },
+      '1.0.0',
+    )
+    const integrate = skill.steps[0]!
+    expect(integrate.title).toBe(
+      'Build the Posthog integration in this project',
+    )
+    expect(integrate.instructions).toBe(
+      `${base.goal}\nGuidelines:\n- Read the docs before writing code: ${base.docsUrl}\n- Use only the pinned packages; fit this project's framework and conventions, and change as little as possible.\n- Read POSTHOG_PROJECT_TOKEN from the environment only, and declare it with an empty value in the example env file.\nHow you do it is up to you; the step is done when its checks pass.`,
+    )
+    expect(
+      sponsoredStepNeedsUser(`${integrate.title} ${integrate.instructions}`),
+    ).toBe(false)
+  })
+
+  test('with no keys there is no env line', () => {
+    const integrate = compileLayer2Skill(base, '1.0.0').steps[0]!
+    expect(integrate.instructions).not.toContain('environment')
+    expect(integrate.instructions).toEndWith(
+      'change as little as possible.\nHow you do it is up to you; the step is done when its checks pass.',
+    )
+  })
+
+  test('two keys share one line', () => {
+    const integrate = compileLayer2Skill(
+      {
+        ...base,
+        envKeys: ['POSTHOG_PROJECT_TOKEN', 'POSTHOG_PERSONAL_API_KEY'],
+      },
+      '1.0.0',
+    ).steps[0]!
+    expect(integrate.instructions).toContain(
+      '- Read POSTHOG_PROJECT_TOKEN and POSTHOG_PERSONAL_API_KEY from the environment only, and declare each',
+    )
+  })
+
+  test('the rendered steps with keys and verify still read as agent then user work', () => {
+    const result = buildLayer2Skill(
+      { ...base, envKeys: ['POSTHOG_PROJECT_TOKEN'], verify: VERIFY },
+      '1.0.0',
+    )
+    if (!result.ok) throw new Error(JSON.stringify(result.errors))
+    const steps = parseSponsoredProcedureSteps(
+      renderSponsoredSkillProcedure(result.skill),
+    )
+    expect(steps.map((step) => step.needsUser)).toEqual([false, true])
   })
 })
 
@@ -184,7 +318,20 @@ describe('compileLayer2Skill', () => {
 
   test('renders far under the old long-form skills', () => {
     const rendered = renderSponsoredSkillProcedure(
-      compileLayer2Skill({ ...base, envKeys: ['POSTHOG_PROJECT_TOKEN'] }, '1.0.0'),
+      compileLayer2Skill(
+        {
+          ...base,
+          envKeys: ['POSTHOG_PROJECT_TOKEN'],
+          verify: [
+            ...VERIFY,
+            {
+              label: 'a changed file calls posthog.init',
+              pattern: 'posthog\\.init\\(',
+            },
+          ],
+        },
+        '1.0.0',
+      ),
     )
     expect(rendered.length).toBeLessThan(2_500)
   })
