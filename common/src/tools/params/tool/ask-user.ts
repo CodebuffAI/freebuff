@@ -112,6 +112,8 @@ const outputSchema = z.object({
 const description = `
 Ask the user multiple choice questions and pause execution until they respond. Supports both single-select (radio) and multi-select (checkbox) modes.
 
+Use it rarely: only for a clarification that blocks you entirely, whose answer is not apparent from the request or the code, and where guessing wrong would waste a lot of work. Otherwise choose the sensible direction and state your assumption, or describe the open choice in prose at the end of your turn. In plan mode, follow the plan-mode instructions for asking questions.
+
 The user can either:
 - Select one option (single-select mode, default)
 - Select multiple options (multi-select mode, set multiSelect: true)

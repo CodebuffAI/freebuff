@@ -241,7 +241,9 @@ describe('base3 CLI roots', () => {
 
     expect(withUser.toolNames).toContain('ask_user')
     expect(withUser.toolNames).toContain('suggest_followups')
-    expect(withUser.systemPrompt).toContain('ask_user')
+    // The prompt deliberately says nothing about ask_user; the tool's own
+    // description says when to use it.
+    expect(withUser.systemPrompt).toContain('suggest_followups')
 
     expect(withoutUser.toolNames).not.toContain('ask_user')
     expect(withoutUser.toolNames).not.toContain('suggest_followups')
@@ -296,7 +298,7 @@ describe('base3 CLI roots', () => {
     ]) {
       expect(prompt).toContain('Size the work to the request')
       expect(prompt).toContain('Do everything the user asked for, completely')
-      expect(prompt).toContain('settle the scope before building')
+      expect(prompt).toContain('settle the scope yourself')
       expect(prompt).toContain('Keep verification minimal')
       expect(prompt).toContain('Work through related tool calls as a group')
       expect(prompt).toContain('Avoid tool-by-tool narration, filler, and repeating an unchanged plan')
