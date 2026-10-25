@@ -10,8 +10,12 @@ const {
   fetchSponsoredProposal,
   previewSponsoredProposal,
   reportSponsoredRunState,
+  resolveSponsoredPackage,
   sponsoredProcedureSha256,
 } = await import('../sponsored-proposal-api')
+const { SPONSORED_INSTALL_CAP_REFUSAL } = await import(
+  '@codebuff/common/ads/sponsored-install-tool'
+)
 const { getCliAdRequestUserAgent } = await import('../ad-client-identity')
 
 const originalFetch = globalThis.fetch
@@ -239,6 +243,8 @@ describe('acceptSponsoredProposal renders a refusal, never a code', () => {
       surface: 'cli',
       inPlaceExecutionVersion: 1,
       runSpecVersion: 1,
+      // This build registers `install_package` (COD-965).
+      installToolVersion: 1,
       clientExecutionSurface: 'cli_linux',
     })
   })
@@ -340,5 +346,108 @@ describe('the Accept refusals added with COD-665', () => {
     expect(result.message).toContain(sentence)
     expect(result.message).not.toContain(code)
     expect(result.message).toContain('Nothing in your project changed.')
+  })
+})
+
+describe('resolveSponsoredPackage (install_package, COD-965)', () => {
+  test('POSTs the run token and package to the proposal’s resolver, with the session bearer', async () => {
+    const seen: Array<{ url: string; init?: RequestInit }> = []
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      seen.push({ url, init })
+      return new Response(
+        JSON.stringify({
+          allowed: true,
+          ecosystem: 'npm',
+          name: '@acme/sdk',
+          version: '1.2.3',
+          declared: false,
+        }),
+        { status: 200 },
+      )
+    }) as unknown as typeof fetch
+    const result = await resolveSponsoredPackage(
+      'proposal-1',
+      'run-token-1',
+      { ecosystem: 'npm', name: '@acme/sdk' },
+      'session-token',
+    )
+    expect(result).toEqual({
+      allowed: true,
+      ecosystem: 'npm',
+      name: '@acme/sdk',
+      version: '1.2.3',
+      declared: false,
+    })
+    expect(seen[0]!.url).toEndWith(
+      '/api/v1/ads/proposal/proposal-1/packages/resolve',
+    )
+    expect(seen[0]!.init?.method).toBe('POST')
+    expect(
+      (seen[0]!.init?.headers as Record<string, string>).authorization,
+    ).toBe('Bearer session-token')
+    expect(JSON.parse(String(seen[0]!.init?.body))).toEqual({
+      runToken: 'run-token-1',
+      ecosystem: 'npm',
+      name: '@acme/sdk',
+    })
+  })
+
+  test('429 is the run’s install cap', async () => {
+    respond({ error: 'install_cap' }, 429)
+    expect(
+      await resolveSponsoredPackage(
+        'proposal-1',
+        'run-token-1',
+        { ecosystem: 'pypi', name: 'requests', version: '2.32.3' },
+        'session-token',
+      ),
+    ).toEqual({ allowed: false, reason: SPONSORED_INSTALL_CAP_REFUSAL })
+  })
+
+  test('another refusal is refused, carrying the status or the server’s sentence', async () => {
+    respond({}, 503)
+    const result = await resolveSponsoredPackage(
+      'proposal-1',
+      'run-token-1',
+      { ecosystem: 'npm', name: '@acme/sdk' },
+      'session-token',
+    )
+    expect(result.allowed).toBe(false)
+    respond({ error: 'not_allowed', message: 'Not part of this integration.' }, 403)
+    expect(
+      await resolveSponsoredPackage(
+        'proposal-1',
+        'run-token-1',
+        { ecosystem: 'npm', name: 'left-pad' },
+        'session-token',
+      ),
+    ).toEqual({ allowed: false, reason: 'Not part of this integration.' })
+  })
+
+  test('a malformed 200 and an unreachable server are refusals, never installs', async () => {
+    respond({ allowed: true })
+    expect(
+      (
+        await resolveSponsoredPackage(
+          'proposal-1',
+          'run-token-1',
+          { ecosystem: 'npm', name: '@acme/sdk' },
+          'session-token',
+        )
+      ).allowed,
+    ).toBe(false)
+    globalThis.fetch = (async () => {
+      throw new Error('offline')
+    }) as unknown as typeof fetch
+    expect(
+      (
+        await resolveSponsoredPackage(
+          'proposal-1',
+          'run-token-1',
+          { ecosystem: 'npm', name: '@acme/sdk' },
+          'session-token',
+        )
+      ).allowed,
+    ).toBe(false)
   })
 })

@@ -6,6 +6,11 @@ import {
 } from '@codebuff/common/ads/agentic-offer'
 import { SPONSORED_IN_PLACE_VERSION } from '@codebuff/common/ads/sponsored-in-place'
 import { SPONSORED_RUN_SPEC_VERSION } from '@codebuff/common/ads/sponsored-run-spec'
+import { sponsoredPackageResolveOutcome } from '@codebuff/common/ads/sponsored-install-tool'
+import {
+  SPONSORED_INSTALL_TOOL_VERSION,
+  SPONSORED_PACKAGE_RESOLVE_PATH,
+} from '@codebuff/common/ads/sponsored-package-resolve'
 import { sanitizeTerminalStrings } from '@codebuff/common/util/terminal-safe-text'
 import { normalizeRepoFullName } from '@codebuff/common/ads/sponsored-proposal-target'
 import type {
@@ -15,6 +20,10 @@ import type {
 import type { SponsoredLocalTarget } from '@codebuff/common/ads/sponsored-capability'
 import type { SponsoredComputeGrant } from '@codebuff/common/ads/sponsored-compute-contract'
 import type { SponsoredFrictionInput } from '@codebuff/common/ads/sponsored-run-friction'
+import type {
+  SponsoredPackageResolveBody,
+  SponsoredPackageResolveResponse,
+} from '@codebuff/common/ads/sponsored-package-resolve'
 import { createHash } from 'node:crypto'
 
 import { FREEBUFF_WEB_URL } from '../login/constants'
@@ -647,6 +656,8 @@ export async function acceptSponsoredProposal(
       inPlaceExecutionVersion: SPONSORED_IN_PLACE_VERSION,
       // This build runs the server-built run spec when the Accept carries one.
       runSpecVersion: SPONSORED_RUN_SPEC_VERSION,
+      // This build registers `install_package` for sponsored runs (COD-965).
+      installToolVersion: SPONSORED_INSTALL_TOOL_VERSION,
     },
     ACCEPT_TIMEOUT_MS,
   )
@@ -798,6 +809,35 @@ export async function reportSponsoredFriction(
   return attempt.ok
     ? { ok: true, status: attempt.status }
     : { ok: false, status: attempt.status, message: attempt.message }
+}
+
+/**
+ * `install_package`'s resolver (COD-965): whether this run may install the
+ * package and at which exact version. The server records the decision. A 429
+ * is the run's install cap, any other refusal carries the server's sentence,
+ * and an unreachable server is a refusal too: the tool never installs
+ * without an answer.
+ */
+export async function resolveSponsoredPackage(
+  proposalId: string,
+  runToken: string,
+  request: { ecosystem: 'npm' | 'pypi'; name: string; version?: string },
+  authToken: string,
+): Promise<SponsoredPackageResolveResponse> {
+  const body: SponsoredPackageResolveBody = {
+    runToken,
+    ecosystem: request.ecosystem,
+    name: request.name,
+    ...(request.version ? { version: request.version } : {}),
+  }
+  const attempt = await callDetailed<unknown>(
+    SPONSORED_PACKAGE_RESOLVE_PATH(proposalId),
+    authToken,
+    body,
+  )
+  return attempt.ok
+    ? sponsoredPackageResolveOutcome(attempt.status, attempt.value)
+    : sponsoredPackageResolveOutcome(attempt.status, null, attempt.message)
 }
 
 /**

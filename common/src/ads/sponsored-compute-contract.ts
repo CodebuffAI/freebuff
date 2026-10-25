@@ -70,6 +70,13 @@ export type SponsoredAcceptRequest = {
    * CLI and web, which have no such tools in any build.
    */
   conversionToolsVersion?: typeof SPONSORED_CONVERSION_TOOLS_VERSION
+  /**
+   * A positive integer: this client has the `install_package` tool
+   * (`./sponsored-package-resolve.ts`, COD-965). The run spec's prompt then
+   * says to install through it. Untrusted; anything else reads as absent, and
+   * an absent field leaves the prompt exactly as before.
+   */
+  installToolVersion?: number
 }
 
 /**

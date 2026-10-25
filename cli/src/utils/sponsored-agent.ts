@@ -53,6 +53,7 @@ import {
 } from '@codebuff/common/ads/sponsored-procedure-inputs'
 
 import { SPONSORED_FRICTION_TOOL_NAME } from '@codebuff/common/ads/sponsored-run-friction'
+import { SPONSORED_INSTALL_TOOL_NAME } from '@codebuff/common/ads/sponsored-install-tool'
 import {
   fillSponsoredRunSpecPrompt,
   type SponsoredRunSpec,
@@ -95,14 +96,32 @@ export const SPONSORED_IN_PLACE_BULLETS = [
   '- Environment files (`.env`, `.env.local`) and credential files are unreadable to you; `.env.example` and its family are readable and are where placeholder variables belong.',
 ] as const
 
+/** The shell-install bullet of {@link SPONSORED_IN_PLACE_BULLETS}. */
+const SHELL_INSTALL_BULLET = SPONSORED_IN_PLACE_BULLETS[4]
+
+/**
+ * The install bullet for a run that has `install_package` (COD-965); it
+ * replaces the shell-install bullet. MIRRORED from Desktop's
+ * `SPONSORED_INSTALL_TOOL_GUIDANCE_BULLET` (`sponsored-run.ts`).
+ */
+export const SPONSORED_INSTALL_TOOL_GUIDANCE_BULLET =
+  '- Add any package the procedure needs with the install_package tool (with the exact version when the procedure pins one under "Pinned installs"); install scripts never run. Installing with npm, pnpm, bun, pip or uv in the shell is refused. If install_package refuses a package, work with what the repository already has and tell the user what to install.'
+
 /**
  * The one line the CLI adds. Desktop's run is watched in a tab it can stop; a
  * terminal's is watched too, but nothing it asks is ever shown as a question.
+ * With `install_package`, its bullet stands where the shell-install one was.
  */
-const CLI_SPONSORED_GUIDANCE = [
-  ...SPONSORED_IN_PLACE_BULLETS,
-  '- There is nobody to answer questions during this run. Do not ask any; decide and proceed, or stop.',
-].join('\n')
+function cliSponsoredGuidance(options: { installTool?: boolean } = {}): string {
+  return [
+    ...SPONSORED_IN_PLACE_BULLETS.map((bullet) =>
+      options.installTool && bullet === SHELL_INSTALL_BULLET
+        ? SPONSORED_INSTALL_TOOL_GUIDANCE_BULLET
+        : bullet,
+    ),
+    '- There is nobody to answer questions during this run. Do not ask any; decide and proceed, or stop.',
+  ].join('\n')
+}
 
 /**
  * MIRRORED from the last bullet of Desktop's `SPONSORED_SCOPE_GUIDANCE`: what
@@ -202,13 +221,19 @@ export function buildSponsoredPrompt(
    * the tracked signup `link`, or only ask for the declared `credentials`.
    * The paragraphs are Desktop's, as the Lab mirrors them.
    */
-  options: { deferredSignup?: 'link' | 'credentials' } = {},
+  options: {
+    deferredSignup?: 'link' | 'credentials'
+    /** The run has `install_package` (COD-965). */
+    installTool?: boolean
+  } = {},
 ): string {
   return [
     SPONSORED_TASK_FRAMING,
     `The approved procedure:\n${sponsoredProcedurePrompt(procedure, runtimeInputs)}`,
     sponsoredTaskContextSection(taskContext),
-    `How to carry it out here:\n${CLI_SPONSORED_GUIDANCE}${
+    `How to carry it out here:\n${cliSponsoredGuidance({
+      installTool: options.installTool === true,
+    })}${
       options.deferredSignup ? `\n${LAB_NO_KEYS_IN_CHAT_BULLET}` : ''
     }`,
     ...(options.deferredSignup === 'link'
@@ -236,6 +261,8 @@ export function sponsoredAgentDefinition(options: {
   reportFriction?: boolean
   /** Offer `request_sponsored_signup`: the run has an account step. */
   requestSignup?: boolean
+  /** Offer `install_package` (COD-965, registered by the caller). */
+  installTool?: boolean
 }): AgentDefinition {
   const {
     agentId,
@@ -244,6 +271,7 @@ export function sponsoredAgentDefinition(options: {
     grant = SPONSORED_LOCAL_V1_GRANT,
     reportFriction = false,
     requestSignup = false,
+    installTool = false,
   } = options
   const root = createBase3CliRoot({
     ...(model ? { model } : {}),
@@ -263,8 +291,9 @@ export function sponsoredAgentDefinition(options: {
       ...sponsoredLocalToolNames(root.toolNames ?? [], grant),
       ...(reportFriction ? [SPONSORED_FRICTION_TOOL_NAME] : []),
       ...(requestSignup ? [SPONSORED_SIGNUP_TOOL_NAME] : []),
+      ...(installTool ? [SPONSORED_INSTALL_TOOL_NAME] : []),
     ],
-    systemPrompt: `${root.systemPrompt}\n\n# Sponsored task\n\n${CLI_SPONSORED_GUIDANCE}${
+    systemPrompt: `${root.systemPrompt}\n\n# Sponsored task\n\n${cliSponsoredGuidance({ installTool })}${
       reportFriction ? `\n${SPONSORED_FRICTION_BULLET}` : ''
     }${requestSignup ? `\n${SPONSORED_SIGNUP_BULLET}` : ''}`,
     // Nothing is committed by an in-place run; kept so a commit that somehow

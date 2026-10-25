@@ -722,6 +722,13 @@ export function commandInstallsDependencies(command: string): boolean {
 export const SPONSORED_LOCAL_INSTALL_REFUSAL =
   'Refusing to install dependencies: a sponsored run may not add packages, because a postinstall script runs outside everything the user reviews. Work with what the repository already has.'
 
+/**
+ * The shell-install refusal for a run that has the `install_package` tool
+ * (COD-965): the shell never installs, the tool does, with scripts off.
+ */
+export const SPONSORED_LOCAL_INSTALL_TOOL_REFUSAL =
+  'Refusing this shell install: in a sponsored run, add packages with the install_package tool instead (ecosystem, name, and the version if the procedure pins one). It installs with install scripts turned off and records the package. Installing the whole dependency tree, or running install scripts, is not available here.'
+
 // -------------------------------------------------------------- git history
 
 /**

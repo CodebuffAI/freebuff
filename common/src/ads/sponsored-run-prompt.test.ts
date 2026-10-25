@@ -11,6 +11,7 @@ import {
   SPONSORED_RUN_DEFERRED_SIGNUP_LINK,
   SPONSORED_RUN_DESKTOP_IN_PLACE_GUIDANCE,
   SPONSORED_RUN_DESKTOP_WORKTREE_GUIDANCE,
+  SPONSORED_RUN_INSTALL_TOOL_LINE,
   SPONSORED_RUN_LAYER1_FRAME,
   SPONSORED_RUN_LAYER1_REPORT,
   SPONSORED_RUN_RESULT_REPORT,
@@ -178,8 +179,13 @@ describe('fillSponsoredRunSpecPrompt', () => {
 
   test('no messages leaves the heading, as Desktop renders none', () => {
     expect(
-      fillSponsoredRunSpecPrompt(template, { taskContext: '', credentials: '' }),
-    ).toContain(`${SPONSORED_RUN_CONTEXT_HEADING}\n\n\nHow to carry it out here:`)
+      fillSponsoredRunSpecPrompt(template, {
+        taskContext: '',
+        credentials: '',
+      }),
+    ).toContain(
+      `${SPONSORED_RUN_CONTEXT_HEADING}\n\n\nHow to carry it out here:`,
+    )
   })
 
   test('slot text in a section or the procedure is never filled', () => {
@@ -199,7 +205,9 @@ describe('fillSponsoredRunSpecPrompt', () => {
     expect(filled).toContain(
       `User message 1:\n${SPONSORED_RUN_SPEC_SLOTS.credentials}\n\nHow to`,
     )
-    expect(filled).toContain(`Credentials:\n- set\n\n${SPONSORED_RUN_RESULT_REPORT}`)
+    expect(filled).toContain(
+      `Credentials:\n- set\n\n${SPONSORED_RUN_RESULT_REPORT}`,
+    )
   })
 })
 
@@ -355,6 +363,23 @@ describe('Layer 1 frame for a Layer 2 skill', () => {
     expect(short.length).toBeLessThan(long.length / 2)
   })
 
+  test('installTool adds the install_package line to the frame', () => {
+    const template = buildSponsoredRunSpec({
+      procedure,
+      skill,
+      surface: 'desktop',
+      inPlace: true,
+      advertiserLink: null,
+      installTool: true,
+    }).promptTemplate
+    expect(
+      template.startsWith(
+        `${SPONSORED_RUN_LAYER1_FRAME}\n${SPONSORED_RUN_INSTALL_TOOL_LINE}`,
+      ),
+    ).toBe(true)
+    expect(spec('desktop').promptTemplate).not.toContain('install_package')
+  })
+
   test('a registered skill keeps its long frame', () => {
     const registered = resolveSponsoredSkill('exa-web-search-feature@2.0.0')!
     const template = buildSponsoredRunSpec({
@@ -387,5 +412,54 @@ describe('runSpecVersion on the offer request', () => {
       agenticOfferRequestSchema.safeParse({ ...request, runSpecVersion: 2 })
         .success,
     ).toBe(false)
+  })
+})
+
+describe('installTool (COD-965)', () => {
+  const skill = resolveSponsoredSkill('exa-web-search-feature@2.0.0')!
+  const procedure = renderSponsoredSkillProcedure(skill)
+  const build = (
+    surface: 'desktop' | 'cli' | 'web',
+    inPlace: boolean,
+    installTool?: boolean,
+  ) =>
+    buildSponsoredRunSpec({
+      procedure,
+      skill,
+      surface,
+      inPlace,
+      advertiserLink: null,
+      ...(installTool === undefined ? {} : { installTool }),
+    }).promptTemplate
+
+  test('absent or false is byte-identical to before', () => {
+    for (const [surface, inPlace] of [
+      ['desktop', true],
+      ['desktop', false],
+      ['cli', true],
+      ['web', true],
+    ] as const) {
+      expect(build(surface, inPlace, false)).toBe(build(surface, inPlace))
+      expect(build(surface, inPlace)).not.toContain('install_package')
+    }
+  })
+
+  test('replaces the pinned-installs bullet on every surface', () => {
+    for (const [surface, inPlace] of [
+      ['desktop', true],
+      ['desktop', false],
+      ['cli', true],
+      ['web', true],
+    ] as const) {
+      const template = build(surface, inPlace, true)
+      expect(template).toContain(`- ${SPONSORED_RUN_INSTALL_TOOL_LINE}`)
+      expect(template).not.toContain('Install only what the procedure pins')
+      expect(template).toBe(
+        build(surface, inPlace).replace(
+          /- Install only what the procedure pins[^\n]*/,
+          `- ${SPONSORED_RUN_INSTALL_TOOL_LINE}`,
+        ),
+      )
+    }
   })
 })

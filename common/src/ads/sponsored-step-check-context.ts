@@ -108,7 +108,18 @@ async function packageManagerOf(
   fs: CodebuffFileSystem,
   root: string,
 ): Promise<string> {
-  const has = async (name: string) => (await stamp(fs, root, name)) !== null
+  return sponsoredPackageManagerFromLockfiles(
+    async (name) => (await stamp(fs, root, name)) !== null,
+  )
+}
+
+/**
+ * The project's JavaScript package manager, from which lockfile it has: also
+ * what `install_package` installs with (`sponsored-install-tool.ts`).
+ */
+export async function sponsoredPackageManagerFromLockfiles(
+  has: (name: string) => Promise<boolean>,
+): Promise<'bun' | 'pnpm' | 'yarn' | 'npm'> {
   if ((await has('bun.lock')) || (await has('bun.lockb'))) return 'bun'
   if (await has('pnpm-lock.yaml')) return 'pnpm'
   if (await has('yarn.lock')) return 'yarn'

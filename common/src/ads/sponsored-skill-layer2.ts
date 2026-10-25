@@ -5,8 +5,10 @@
  * `sponsored-run-prompt.ts`).
  *
  * A Layer 2 record is never sent to a client as is. It compiles to an
- * ordinary format-2 `SponsoredSkill`, so every shipped Desktop, CLI and Cloud
- * build parses, hashes and drives it with the code it already has. Store the
+ * ordinary format-1 `SponsoredSkill` with no `fit` block (the "any project"
+ * form), so every shipped Desktop, CLI and Cloud build parses, hashes and
+ * drives it with the code it already has. The offer is decided by relevance
+ * alone; the agent scaffolds a project when the folder has none. Store the
  * compiled skill and its hashes once; never recompile on read, or a later
  * compiler change would move hashes that Accepts already locked.
  */
@@ -29,10 +31,6 @@ import {
   type SponsoredSkillParseError,
   type SponsoredSkillStep,
 } from './sponsored-skill'
-import {
-  requirementsForFit,
-  type SponsoredSkillFit,
-} from './sponsored-skill-fit-format'
 
 /**
  * The changelog every compiled Layer 2 skill carries. It is how the run
@@ -208,7 +206,8 @@ const PYTHON_MANIFESTS =
   '**/{pyproject.toml,requirements*.txt,setup.py,setup.cfg,Pipfile}'
 
 /**
- * The format-2 skill a Layer 2 record stands for. Deterministic: the same
+ * The format-1, fit-free skill a Layer 2 record stands for (COD-965: no
+ * project gate, so any folder can take the offer). Deterministic: the same
  * source and version always give the same bytes, and nothing optional is
  * emitted empty or as a default, so the hash only moves when a field does.
  */
@@ -221,19 +220,17 @@ export function compileLayer2Skill(
   const envKeys = source.envKeys ?? []
   const label = advertiserLabel(source.advertiser)
 
-  const fit: SponsoredSkillFit = {
-    routes: {
-      ...(npm.length ? { node: {} } : {}),
-      ...(pypi.length ? { python: {} } : {}),
-    },
-    // The install guard refuses Yarn; serve such repos nothing.
-    ...(npm.length ? { mustNotExist: ['**/yarn.lock'] } : {}),
+  // Format 1 has no fit block, so `frameworks` must be non-empty even for a
+  // Python-only skill; it is informational there, like the archil skill's.
+  const requirements: SponsoredSkill['requirements'] = {
+    os: ['darwin', 'linux', 'win32'],
+    runtimes: [
+      ...(npm.length ? [{ name: 'node' as const }] : []),
+      ...(pypi.length ? [{ name: 'python' as const }] : []),
+    ],
+    frameworks: ['nodejs'],
+    packageManagers: ['npm', 'pnpm', 'bun'],
   }
-  const requirements = requirementsForFit(
-    fit,
-    { packageManagers: ['npm', 'pnpm', 'bun'] },
-    ['nodejs'],
-  ) as unknown as SponsoredSkill['requirements']
 
   const packages: SponsoredSkillPackage[] = source.packages.map((pkg) => ({
     ecosystem: pkg.ecosystem,
@@ -293,7 +290,7 @@ export function compileLayer2Skill(
     id: 'integrate',
     kind: 'agent',
     title: `Build the ${label} integration in this project`,
-    instructions: `${source.goal}\nGuidelines:\n- Read the docs before writing code: ${source.docsUrl}\n- Use only the pinned packages; fit this project's framework and conventions, and change as little as possible.\n${envLine}How you do it is up to you; the step is done when its checks pass.`,
+    instructions: `${source.goal}\nGuidelines:\n- Read the docs before writing code: ${source.docsUrl}\n- If the folder has no project yet, scaffold a minimal one first, then integrate.\n- Start from the listed packages and add others only when the integration needs them; fit this project's framework and conventions, and change as little as possible.\n${envLine}How you do it is up to you; the step is done when its checks pass.`,
     checks: [
       ...verifyChecks,
       ...packageChecks,
@@ -347,7 +344,7 @@ export function compileLayer2Skill(
       ]
 
   return {
-    format: 2,
+    format: 1,
     id: source.id,
     version,
     changelog: LAYER2_SKILL_CHANGELOG,
@@ -356,7 +353,6 @@ export function compileLayer2Skill(
     fits: source.goal,
     consent: { title: source.consent.title, summary: source.consent.summary },
     requirements,
-    fit,
     packages,
     tools: [],
     knowledge: [`Docs: ${source.docsUrl}`],

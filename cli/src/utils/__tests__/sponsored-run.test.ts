@@ -472,6 +472,84 @@ describe('the turn', () => {
     expect(posted).toHaveLength(SPONSORED_FRICTION_MAX_PER_RUN)
   })
 
+  test('install_package is registered with a resolver, bound to this run, and runs through the run’s shell', async () => {
+    const resolves: unknown[][] = []
+    const shell: Array<Record<string | symbol, unknown>> = []
+    const f = fakes({
+      resolvePackage: async (...args) => {
+        resolves.push(args)
+        return {
+          allowed: true,
+          ecosystem: 'npm',
+          name: '@acme/sdk',
+          version: '1.2.3',
+          declared: true,
+        }
+      },
+      overrideTools: (context) => {
+        f.contexts.push(context)
+        return {
+          run_terminal_command: async (input: Record<string | symbol, unknown>) => {
+            shell.push(input)
+            return [{ type: 'json', value: { stdout: 'added 1', exitCode: 0 } }]
+          },
+        } as unknown as SponsoredOverrideTools
+      },
+    })
+    const { plan, consent } = await runThrough(f)
+    if (!consent.ok) throw new Error('refused')
+    expect(plan.customToolDefinitions.map((tool) => tool.toolName)).toEqual([
+      'install_package',
+    ])
+    expect(plan.agent.toolNames).toContain('install_package')
+    expect(plan.agent.systemPrompt).toContain('install_package tool')
+    expect(plan.prompt).toContain('install_package tool')
+    // The shell refuses installs toward the tool.
+    expect(f.contexts.at(-1)!.installTool).toBe(true)
+    const tool = plan.customToolDefinitions[0]!
+    const out = (await tool.execute({ ecosystem: 'npm', name: '@acme/sdk' })) as Array<{
+      value: Record<string, unknown>
+    }>
+    expect(out[0]!.value).toMatchObject({
+      status: 'installed',
+      command: 'npm install --ignore-scripts --save-exact @acme/sdk@1.2.3',
+    })
+    // The resolver got this run's proposal and run token, and the session bearer.
+    expect(resolves).toEqual([
+      [
+        'proposal-1',
+        'token-1',
+        { ecosystem: 'npm', name: '@acme/sdk' },
+        'session-token',
+      ],
+    ])
+    expect(shell).toHaveLength(1)
+    expect(shell[0]!.command).toBe(
+      'npm install --ignore-scripts --save-exact @acme/sdk@1.2.3',
+    )
+    expect(Object.getOwnPropertySymbols(shell[0]!)).toHaveLength(1)
+  })
+
+  test('install_package without a session refuses and never runs the shell', async () => {
+    let calls = 0
+    let token: string | null = 'session-token'
+    const f = fakes({
+      getToken: () => token,
+      resolvePackage: async () => {
+        calls += 1
+        return { allowed: false, reason: 'x' }
+      },
+    })
+    const { plan } = await runThrough(f)
+    token = null
+    const out = (await plan.customToolDefinitions[0]!.execute({
+      ecosystem: 'npm',
+      name: '@acme/sdk',
+    })) as Array<{ value: Record<string, unknown> }>
+    expect(out[0]!.value.status).toBe('refused')
+    expect(calls).toBe(0)
+  })
+
   test('running is reported on the turn’s first tool call, with the funded identity', async () => {
     const f = fakes({ overrideTools: () => TOOL_STUBS })
     const { consent } = await acceptThrough(f)

@@ -20,6 +20,8 @@ ensureCliTestEnv()
 const {
   SPONSORED_FRICTION_BULLET,
   SPONSORED_IN_PLACE_BULLETS,
+  SPONSORED_INSTALL_TOOL_GUIDANCE_BULLET,
+  sponsoredAgentDefinition,
   SPONSORED_CONTEXT_HEADING,
   SPONSORED_TASK_FRAMING,
   buildSponsoredPrompt,
@@ -51,6 +53,13 @@ describe('the mirrored in-place guidance', () => {
   test('every bullet is still byte-identical to Desktop’s', () => {
     const source = readFileSync(DESKTOP_RUN, 'utf8')
     for (const bullet of SPONSORED_IN_PLACE_BULLETS) {
+      // The shell-install bullet is the one Desktop replaces with its
+      // `install_package` bullet (COD-965); either matching keeps the mirror.
+      if (
+        bullet.startsWith('- Install only') &&
+        source.includes(SPONSORED_INSTALL_TOOL_GUIDANCE_BULLET)
+      )
+        continue
       expect(source, bullet).toContain(bullet)
     }
   })
@@ -96,6 +105,42 @@ describe('the mirrored in-place guidance', () => {
     ])
     expect(prompt).toContain(
       'User message 1:\nfirst message\n\nUser message 2:\nsecond message',
+    )
+  })
+})
+
+describe('install_package (COD-965)', () => {
+  test('the prompt swaps the shell-install bullet for the tool’s', () => {
+    const prompt = buildSponsoredPrompt('Procedure.', [], {}, { installTool: true })
+    expect(prompt).toContain(SPONSORED_INSTALL_TOOL_GUIDANCE_BULLET)
+    expect(prompt).not.toContain('Every other install is refused')
+    expect(prompt).toStartWith(
+      'The user accepted this sponsored task from its offer card.',
+    )
+  })
+
+  test('the definition offers the tool and says to use it only when registered', () => {
+    const without = sponsoredAgentDefinition({
+      agentId: 'base3-free-test',
+      isFreebuff: true,
+    })
+    expect(without.toolNames).not.toContain('install_package')
+    expect(without.systemPrompt).toContain('Every other install is refused')
+    expect(without.systemPrompt).not.toContain('install_package')
+
+    const withTool = sponsoredAgentDefinition({
+      agentId: 'base3-free-test',
+      isFreebuff: true,
+      installTool: true,
+    })
+    expect(withTool.toolNames).toContain('install_package')
+    expect(withTool.systemPrompt).toContain(
+      SPONSORED_INSTALL_TOOL_GUIDANCE_BULLET,
+    )
+    expect(withTool.systemPrompt).not.toContain('Every other install is refused')
+    // Appended, never prepended: the root's opening stays first.
+    expect(withTool.systemPrompt!.startsWith(without.systemPrompt!.slice(0, 200))).toBe(
+      true,
     )
   })
 })

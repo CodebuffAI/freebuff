@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  parseSponsoredSkill,
   renderSponsoredSkillProcedure,
   sponsoredSkillSha256,
   sponsoredSkillTrackedLink,
@@ -47,17 +48,25 @@ const VERIFY: SponsoredSkillLayer2Verify[] = [
 ]
 
 describe('buildLayer2Skill', () => {
-  test('an npm skill with no keys compiles to a parsing format-2 skill', () => {
+  test('an npm skill with no keys compiles to a parsing format-1 skill with no fit', () => {
     const result = buildLayer2Skill(base, '1.0.0')
     expect(result.ok).toBe(true)
     if (!result.ok) return
     const { skill } = result
-    expect(skill.format).toBe(2)
-    expect(skill.fit).toEqual({
-      routes: { node: {} },
-      mustNotExist: ['**/yarn.lock'],
+    expect(skill.format).toBe(1)
+    expect('fit' in skill).toBe(false)
+    expect(skill.preflight).toEqual([])
+    expect(skill.requirements).toEqual({
+      os: ['darwin', 'linux', 'win32'],
+      runtimes: [{ name: 'node' }],
+      frameworks: ['nodejs'],
+      packageManagers: ['npm', 'pnpm', 'bun'],
     })
-    expect(skill.requirements.frameworks).toEqual(['nodejs'])
+    const reparsed = parseSponsoredSkill(compileLayer2Skill(base, '1.0.0'))
+    expect(reparsed.ok).toBe(true)
+    expect(skill.steps[0]!.instructions).toContain(
+      'If the folder has no project yet, scaffold a minimal one first, then integrate.',
+    )
     expect(skill.steps.map((step) => step.kind)).toEqual(['agent', 'user'])
     expect(skill.outcomes).toEqual([])
     expect(sponsoredSkillTrackedLink(skill)).toBe(SIGNUP)
@@ -84,7 +93,7 @@ describe('buildLayer2Skill', () => {
     expect(sponsoredSkillTrackedLink(result.skill)).toBe(SIGNUP)
   })
 
-  test('a pypi skill gets a python route and a manifest check', () => {
+  test('a pypi skill needs python, has no fit, and gets a manifest check', () => {
     const result = buildLayer2Skill(
       {
         ...base,
@@ -94,8 +103,10 @@ describe('buildLayer2Skill', () => {
     )
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.skill.fit).toEqual({ routes: { python: {} } })
-    expect(result.skill.requirements.frameworks).toEqual([])
+    expect(result.skill.format).toBe(1)
+    expect(result.skill.fit).toBeUndefined()
+    expect(result.skill.requirements.runtimes).toEqual([{ name: 'python' }])
+    expect(isLayer2Skill(result.skill)).toBe(true)
     const check = result.skill.steps[0]!.checks[0]!
     expect(check.kind).toBe('file_contains')
   })
@@ -245,7 +256,7 @@ describe('the agent step', () => {
       'Build the Posthog integration in this project',
     )
     expect(integrate.instructions).toBe(
-      `${base.goal}\nGuidelines:\n- Read the docs before writing code: ${base.docsUrl}\n- Use only the pinned packages; fit this project's framework and conventions, and change as little as possible.\n- Read POSTHOG_PROJECT_TOKEN from the environment only, and declare it with an empty value in the example env file.\nHow you do it is up to you; the step is done when its checks pass.`,
+      `${base.goal}\nGuidelines:\n- Read the docs before writing code: ${base.docsUrl}\n- If the folder has no project yet, scaffold a minimal one first, then integrate.\n- Start from the listed packages and add others only when the integration needs them; fit this project's framework and conventions, and change as little as possible.\n- Read POSTHOG_PROJECT_TOKEN from the environment only, and declare it with an empty value in the example env file.\nHow you do it is up to you; the step is done when its checks pass.`,
     )
     expect(
       sponsoredStepNeedsUser(`${integrate.title} ${integrate.instructions}`),
