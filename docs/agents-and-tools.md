@@ -40,7 +40,9 @@ and at GET, whatever the client.
 `loadLocalAgents` dynamically imports every `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs`
 file under `{cwd}/.agents` and `{cwd}/../.agents`, except files under
 `skills/`, `scripts/`, `hooks/`, `vendor/`, `node_modules/` or dot-directories
-(support code, not agent definitions). `loadMCPConfigSync` reads an `mcp.json`
+(support code, not agent definitions). `vendor/` and `hooks/` are reserved
+names: an agent file under either is skipped without a warning, so keep agents
+of your own in another directory. `loadMCPConfigSync` reads an `mcp.json`
 there whose stdio servers are spawned on the first prompt with `$VAR` env
 values filled from the CLI's own environment. Both execute
 repository-supplied code, so cloning a hostile repo and running the CLI inside
