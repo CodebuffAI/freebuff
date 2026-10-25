@@ -13,13 +13,18 @@ import {
 } from '../../contexts/chat-runtime-context'
 import {
   openFreebuffReasoningPicker,
+  selectFreebuffChatModel,
   useFreebuffChatStore,
 } from '../../state/freebuff-chat-store'
 import { useFreebuffModelStore } from '../../state/freebuff-model-store'
 import { useFreebuffSessionStore } from '../../state/freebuff-session-store'
 import { useChatStore } from '../../state/chat-store'
 import { initializeThemeStore } from '../../hooks/use-theme'
-import { DEFAULT_FREEBUFF_MODEL_ID } from '@codebuff/common/constants/freebuff-models'
+import {
+  DEFAULT_FREEBUFF_MODEL_ID,
+  FREEBUFF_MIMO_V25_MODEL_ID,
+} from '@codebuff/common/constants/freebuff-models'
+import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from '@codebuff/common/constants/freebuff-model-ids'
 import type { PendingAttachment } from '../../types/store'
 
 if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
@@ -67,7 +72,41 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     charCount: 18,
   }
 
-  async function mount() {
+  /** The hour on Flash is over and 2 Freebucks are left: Flash is out of
+   *  reach, MiMo is free. */
+  function endedFlashHourWithTwoFreebucks() {
+    const now = Date.now()
+    const resetAt = new Date(now + 3_600_000).toISOString()
+    useFreebuffSessionStore.getState().setSession({
+      status: 'ended',
+      accessTier: 'full',
+      instanceId: 'cli:held',
+      admittedAt: new Date(now - 3_700_000).toISOString(),
+      expiresAt: new Date(now - 100_000).toISOString(),
+      gracePeriodEndsAt: new Date(now + 1_700_000).toISOString(),
+      gracePeriodRemainingMs: 1_700_000,
+      freebucks: {
+        balance: 2,
+        daily: { limit: 100, spent: 98, remaining: 2, resetAt },
+        wallet: { balance: 0, monthlyBonus: 0 },
+        spend: { limitUsd: 1.5, resetAt },
+        monthly: { limitUsd: 25, spentUsd: 0, remainingUsd: 25, resetAt },
+        planId: null,
+        prices: {
+          [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 15,
+          [FREEBUFF_MIMO_V25_MODEL_ID]: 0,
+        },
+      },
+    })
+    useFreebuffModelStore.setState({
+      selectedModel: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+      hasExplicitPick: true,
+    })
+  }
+
+  /** `turnRunning` leaves pricing to the runtime's own gate, which waits on
+   *  the turn. */
+  async function mount(opts: { turnRunning?: boolean } = {}) {
     expect(IS_FREEBUFF).toBe(true)
     useByokSelectionStore.setState({ selected: undefined, setupOpen: false })
     const setup = await createTestRenderer({
@@ -81,7 +120,7 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     })
     let runtime: ReturnType<typeof useChatRuntime> | undefined
     function Seed() {
-      useFreebuffChatAdmission(true)
+      useFreebuffChatAdmission(!opts.turnRunning)
       runtime = useChatRuntime()
       return <FreebuffChatControls />
     }
@@ -102,6 +141,7 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
         </QueryClientProvider>,
       ),
     )
+    if (opts.turnRunning) flushSync(() => runtime!.setStreamStatus('streaming'))
     flushSync(() =>
       runtime!.addToQueueFront({
         content: 'Keep this first message',
@@ -113,7 +153,7 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     while (runtime!.queuedMessages.length === 0 && performance.now() < deadline)
       await Bun.sleep(5)
     expect(runtime!.queuedMessages).toHaveLength(1)
-    return setup
+    return Object.assign(setup, { runtime: runtime! })
   }
 
   test('reasoning shortcut opens the next model at its saved effort and cancels without admission', async () => {
@@ -232,5 +272,86 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     expect(useFreebuffSessionStore.getState().session).toBe(session)
     expect(useChatStore.getState().inputValue).toBe('Keep this first message')
     expect(useFreebuffChatStore.getState().admission).toBeNull()
+  })
+
+  test('too few hours for the old model: Enter opens the picker on another row', async () => {
+    const previous = useFreebuffModelStore.getState()
+    endedFlashHourWithTwoFreebucks()
+    useFreebuffChatStore.setState({
+      admission: {
+        phase: 'requested',
+        model: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+        metadataChecked: true,
+      },
+    })
+    try {
+      const setup = await mount()
+      await setup.renderOnce()
+      expect(useFreebuffChatStore.getState().admission).toMatchObject({
+        phase: 'failed',
+        chooseModel: true,
+      })
+      expect(setup.captureCharFrame()).toContain('Enter: choose another model')
+
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(useFreebuffChatStore.getState().pickerOpen).toBe(true)
+      // The cursor starts off the row this balance cannot start.
+      const cursor = setup
+        .captureCharFrame()
+        .split('\n')
+        .find((line) => line.includes('›'))
+      expect(cursor).toBeDefined()
+      expect(cursor).not.toContain('DeepSeek')
+
+      // Esc leaves the picker for the refusal, not the draft.
+      flushSync(() => setup.mockInput.pressKey('ESCAPE'))
+      await setup.renderOnce()
+      expect(useFreebuffChatStore.getState().pickerOpen).toBe(false)
+      expect(useFreebuffChatStore.getState().admission?.phase).toBe('failed')
+    } finally {
+      useFreebuffModelStore.setState(previous)
+    }
+  })
+
+  test('a message queued behind a running turn can change model before it sends', async () => {
+    const previous = useFreebuffModelStore.getState()
+    endedFlashHourWithTwoFreebucks()
+    useFreebuffChatStore.setState({
+      admission: { phase: 'requested', model: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID },
+    })
+    try {
+      const setup = await mount({ turnRunning: true })
+      await setup.renderOnce()
+      const waiting = setup.captureCharFrame()
+      expect(waiting).toContain('will send after the current turn')
+      expect(waiting).toContain('Enter: change model')
+
+      flushSync(() => setup.mockInput.pressEnter())
+      await setup.renderOnce()
+      expect(useFreebuffChatStore.getState().pickerOpen).toBe(true)
+
+      // The turn ends mid-pick: the old model is not priced while choosing.
+      flushSync(() => setup.runtime.setStreamStatus('idle'))
+      await Bun.sleep(50)
+      expect(useFreebuffChatStore.getState().admission?.phase).toBe('requested')
+
+      // What the picker calls when a row is chosen.
+      flushSync(() => selectFreebuffChatModel(FREEBUFF_MIMO_V25_MODEL_ID))
+      expect(useFreebuffChatStore.getState().pickerOpen).toBe(false)
+      const deadline = performance.now() + 1000
+      while (
+        useFreebuffChatStore.getState().admission?.phase !== 'starting' &&
+        performance.now() < deadline
+      )
+        await Bun.sleep(5)
+      expect(useFreebuffChatStore.getState().admission).toMatchObject({
+        phase: 'starting',
+        model: FREEBUFF_MIMO_V25_MODEL_ID,
+      })
+      expect(setup.runtime.queuedMessages).toHaveLength(1)
+    } finally {
+      useFreebuffModelStore.setState(previous)
+    }
   })
 }

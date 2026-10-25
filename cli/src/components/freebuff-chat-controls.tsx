@@ -20,11 +20,44 @@ import { useFreebuffModelStore } from '../state/freebuff-model-store'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import {
   useFreebuffChatStore,
+  openFreebuffModelPicker,
   selectFreebuffChatModel,
   requestFreebuffChatAdmission,
+  type ChatAdmission,
 } from '../state/freebuff-chat-store'
 import { captureCliFunnel } from '../utils/cli-product-funnel'
 import { isPlainEnterKey } from '../utils/terminal-enter-detection'
+
+type EnterAction = { label: string; run: () => void }
+
+/** What Enter, and the button beside Esc, does for this admission. */
+function enterAction(
+  admission: ChatAdmission,
+  takeover: boolean,
+  waitingOnTurn: boolean,
+): EnterAction | null {
+  const counted = (label: string, run: () => unknown): EnterAction => ({
+    label,
+    run: () => {
+      captureCliFunnel('admission', 'clicked', { model: admission.model })
+      void run()
+    },
+  })
+  if (takeover) return counted('Enter: take over', takeOverFreebuffSession)
+  if (admission.phase === 'confirm')
+    return counted('Enter: confirm and send', () =>
+      beginFreebuffChatAdmission(admission),
+    )
+  // Retrying a refusal for too few hours only repeats it.
+  if (admission.phase === 'failed' && admission.chooseModel)
+    return { label: 'Enter: choose another model', run: openFreebuffModelPicker }
+  if (admission.phase === 'failed')
+    return counted('Enter: retry', requestFreebuffChatAdmission)
+  // A message queued behind a running turn: nothing is starting yet.
+  if (waitingOnTurn)
+    return { label: 'Enter: change model', run: openFreebuffModelPicker }
+  return null
+}
 
 export function FreebuffChatControls() {
   const theme = useTheme()
@@ -35,7 +68,13 @@ export function FreebuffChatControls() {
   const nextModel = useFreebuffChatStore((s) => s.nextModel)
   const model = useFreebuffModelStore((s) => s.selectedModel)
   const session = useFreebuffSessionStore((s) => s.session)
-  const { clearQueue, queuePaused } = useChatRuntime()
+  const { clearQueue, queuePaused, turnRunning } = useChatRuntime()
+  const takeover = session?.status === 'takeover_prompt'
+  const waitingOnTurn =
+    admission?.phase === 'requested' && !queuePaused && turnRunning
+  const enter = admission
+    ? enterAction(admission, takeover, waitingOnTurn)
+    : null
   useEffect(() => {
     if (pickerOpen) {
       captureCliFunnel('model_picker', 'shown', { model: nextModel ?? model })
@@ -95,22 +134,6 @@ export function FreebuffChatControls() {
     useFreebuffChatStore.setState({ admission: null })
   }, [pickerOpen, clearQueue])
 
-  const confirm = useCallback(() => {
-    if (!admission) return
-    if (
-      session?.status === 'takeover_prompt' ||
-      ['confirm', 'failed'].includes(admission.phase)
-    )
-      captureCliFunnel('admission', 'clicked', { model: admission.model })
-    if (session?.status === 'takeover_prompt') {
-      void takeOverFreebuffSession()
-    } else if (admission.phase === 'confirm') {
-      void beginFreebuffChatAdmission(admission)
-    } else if (admission.phase === 'failed') {
-      requestFreebuffChatAdmission()
-    }
-  }, [admission, session])
-
   useKeyboard(
     useCallback(
       (key) => {
@@ -121,10 +144,10 @@ export function FreebuffChatControls() {
         } else if (!pickerOpen && isPlainEnterKey(key)) {
           key.preventDefault?.()
           key.stopPropagation?.()
-          confirm()
+          enter?.run()
         }
       },
-      [cancel, confirm, pickerOpen],
+      [cancel, enter, pickerOpen],
     ),
   )
 
@@ -156,9 +179,6 @@ export function FreebuffChatControls() {
       </box>
     )
   if (!admission) return null
-  const takeover = session?.status === 'takeover_prompt'
-  const canConfirm =
-    takeover || admission.phase === 'confirm' || admission.phase === 'failed'
   return (
     <box
       style={{
@@ -176,18 +196,14 @@ export function FreebuffChatControls() {
           : (admission.message ??
             (admission.phase === 'requested' && queuePaused
               ? FREEBUFF_ADMISSION_QUEUE_PAUSED_MESSAGE
-              : 'Starting your model session… Your message is saved.'))}
+              : waitingOnTurn
+                ? 'Your message is saved and will send after the current turn.'
+                : 'Starting your model session… Your message is saved.'))}
       </text>
       <box style={{ flexDirection: 'row', gap: 2 }}>
-        {canConfirm && (
-          <Button onClick={confirm}>
-            <text style={{ fg: theme.primary }}>
-              {takeover
-                ? 'Enter: take over'
-                : admission.phase === 'failed'
-                  ? 'Enter: retry'
-                  : 'Enter: confirm and send'}
-            </text>
+        {enter && (
+          <Button onClick={enter.run}>
+            <text style={{ fg: theme.primary }}>{enter.label}</text>
           </Button>
         )}
         <Button

@@ -854,7 +854,13 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // Tab/arrow navigation can preview without committing. Starts on the user's
   // saved/active pick (the recommended hero for a new user, since that's the
   // default selection; their own model when expanded for a returning user).
-  const [focusedId, setFocusedId] = useState<string>(() => selectedModel)
+  // Chat opens this picker after a refusal, so a pick that cannot start
+  // begins on the recommendation instead.
+  const [focusedId, setFocusedId] = useState<string>(() =>
+    onSelectModel && !isJoinable(selectedModel)
+      ? recommendedModel.id
+      : selectedModel,
+  )
 
   /**
    * The focused catalog row's hover text, one line each: the terminal has no

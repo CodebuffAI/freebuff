@@ -21,7 +21,8 @@ describe('freebuffAdmissionNotice', () => {
     } as FreebuffSessionResponse)
     expect(notice).toContain('uses 3 hours, and you have 2 hours left.')
     expect(notice).toContain('lower multiplier')
-    expect(notice).toContain('/model')
+    // Shown in the box that hides the input, where Enter opens the picker.
+    expect(notice).toContain('Choose another model')
     expect(notice).not.toContain('Freebucks')
     expect(notice).not.toMatch(/session limit|daily sessions/i)
   })

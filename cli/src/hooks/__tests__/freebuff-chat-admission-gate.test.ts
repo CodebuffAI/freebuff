@@ -12,16 +12,12 @@ import { useFreebuffModelStore } from '../../state/freebuff-model-store'
 import { useFreebuffSessionStore } from '../../state/freebuff-session-store'
 import {
   freebuffChatAdmissionMayStart,
+  freebuffTurnRunning,
   useFreebuffChatAdmission,
 } from '../use-freebuff-chat-admission'
 
 describe('freebuffChatAdmissionMayStart', () => {
-  const ready = {
-    chainInProgress: false,
-    streamStatus: 'idle' as const,
-    queuedCount: 1,
-    queuePaused: false,
-  }
+  const ready = { turnRunning: false, queuedCount: 1, queuePaused: false }
 
   test('admits for an idle queue that holds a message', () => {
     expect(freebuffChatAdmissionMayStart(ready)).toBe(true)
@@ -35,16 +31,22 @@ describe('freebuffChatAdmissionMayStart', () => {
     )
   })
 
-  test('waits for an empty queue, a running chain or a live stream', () => {
+  test('waits for an empty queue or a running turn', () => {
     expect(freebuffChatAdmissionMayStart({ ...ready, queuedCount: 0 })).toBe(
       false,
     )
-    expect(
-      freebuffChatAdmissionMayStart({ ...ready, chainInProgress: true }),
-    ).toBe(false)
-    expect(
-      freebuffChatAdmissionMayStart({ ...ready, streamStatus: 'streaming' }),
-    ).toBe(false)
+    expect(freebuffChatAdmissionMayStart({ ...ready, turnRunning: true })).toBe(
+      false,
+    )
+  })
+
+  test('a running chain or a live stream is a running turn', () => {
+    const idle = { chainInProgress: false, streamStatus: 'idle' as const }
+    expect(freebuffTurnRunning(idle)).toBe(false)
+    expect(freebuffTurnRunning({ ...idle, chainInProgress: true })).toBe(true)
+    expect(freebuffTurnRunning({ ...idle, streamStatus: 'streaming' })).toBe(
+      true,
+    )
   })
 })
 
