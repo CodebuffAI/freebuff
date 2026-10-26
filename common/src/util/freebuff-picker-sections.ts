@@ -114,6 +114,7 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     'm-79293c5b7d': { section: 'powerful', order: 35, more: true }, // Claude Haiku 5.5, 75
     'google/gemini-3.8-flash': { section: 'powerful', order: 40, more: true }, // 80
     'google/gemini-4-argon': { section: 'powerful', order: 45, more: true }, // 100
+    'openai/gpt-6.1-terra': { section: 'powerful', order: 48, more: true }, // 100, promotional
     'openai/gpt-6.1-sol': { section: 'powerful', order: 50, more: true }, // 250
   })
 

@@ -5,6 +5,7 @@ import {
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
   FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_GPT_61_SOL_MODEL_ID,
+  FREEBUFF_GPT_61_TERRA_MODEL_ID,
   FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
   FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS,
   FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
@@ -68,6 +69,9 @@ export const FREEBUFF_SUBSCRIPTION_PREMIUM_MODEL_IDS: readonly string[] =
     // still, for the same reason.
     FREEBUFF_GPT_61_SOL_MODEL_ID,
     FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
+    // GPT-6.1 Terra (2026-10-26): half Sol's card, still many Flash hours a
+    // session.
+    FREEBUFF_GPT_61_TERRA_MODEL_ID,
   ])
 
 export function isFreebuffSubscriptionPremiumModelId(modelId: string): boolean {

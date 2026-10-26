@@ -5,6 +5,7 @@ import {
 import {
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GPT_61_SOL_MODEL_ID,
+  FREEBUFF_GPT_61_TERRA_MODEL_ID,
   FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
   freebuffModelIdMatches,
 } from './freebuff-models'
@@ -29,6 +30,8 @@ const FREEBUFF_DESKTOP_SLOT_BOUND_MODEL_IDS = [
   // the same card (2026-10-13).
   FREEBUFF_GPT_61_SOL_MODEL_ID,
   FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
+  // GPT-6.1 Terra (2026-10-26): one session a day, like Sol, so one tab.
+  FREEBUFF_GPT_61_TERRA_MODEL_ID,
   // Claude Haiku 5.5 with full context, since 2026-10-14. Both names, so
   // the server and Desktop's catalog picker agree.
   FREEBUFF_CLAUDE_HAIKU_55_MODEL_ID,

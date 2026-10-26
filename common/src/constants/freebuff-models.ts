@@ -14,6 +14,7 @@ import {
 } from './freebuff-peak-hours'
 import { mimoModels } from './model-config'
 import { SOLAR_PRO_4_OFFER, SOLAR_PROMOTIONAL } from './freebuff-solar-promo'
+import { GPT_61_TERRA_PROMOTIONAL } from './freebuff-sol-promo'
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
@@ -487,6 +488,44 @@ export const FREEBUFF_GPT_61_SOL_MAX_PRICE = {
  *  `medium`, not Luna's `high`: reasoning bills as output at $5/M here, and
  *  the row's cost measurement was taken at the model's default. */
 export const FREEBUFF_GPT_61_SOL_REASONING_EFFORT = 'medium' as const
+/**
+ * GPT-6.1 Terra (OpenAI), served through OpenRouter, on every surface from
+ * 2026-10-26: OPEN TO EVERY FULL-ACCESS ACCOUNT and a paid plan at limited
+ * access (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS — MiMo 2.6 Pro's and
+ * Luna's terms, not Sol's US-or-paid), at a PROMOTIONAL 100 Freebucks, one
+ * session a day.
+ *
+ * PRICE: OpenRouter lists three bands, read off the live API 2026-10-26 —
+ *
+ *   | tier     | in     | cache read | out    |
+ *   | flex     | $0.50  | $0.025     | $2.50  |
+ *   | standard | $1.00  | $0.05      | $5.00  |
+ *   | fast     | $2.00  | $0.10      | $10.00 |
+ *
+ * Flex is half Sol's flex card on every term. Context 1,050,000, 128k out.
+ */
+export const FREEBUFF_GPT_61_TERRA_MODEL_ID = 'openai/gpt-6.1-terra'
+/**
+ * Endpoint order for GPT-6.1 Terra: OpenAI flex first, standard behind it —
+ * Sol's arrangement (FREEBUFF_GPT_61_SOL_UPSTREAM_ORDER). Standard is 2x flex
+ * on every term, so a sustained rise in its share doubles this row's bill.
+ */
+export const FREEBUFF_GPT_61_TERRA_UPSTREAM_ORDER = [
+  'openai/flex',
+  'openai',
+] as const
+/**
+ * Price ceiling for GPT-6.1 Terra, USD per million: above standard ($1/$5),
+ * which stays reachable, and below OpenAI's `fast` tier ($2/$10), which is the
+ * band this fences out. Strictly above list: a ceiling equal to list 404s.
+ */
+export const FREEBUFF_GPT_61_TERRA_MAX_PRICE = {
+  prompt: 1.25,
+  completion: 6.25,
+} as const
+/** Reasoning effort a GPT-6.1 Terra turn runs at unless the user picks one:
+ *  `medium`, as on Sol, because reasoning bills as output. */
+export const FREEBUFF_GPT_61_TERRA_REASONING_EFFORT = 'medium' as const
 /**
  * Gemini 4 Argon (Google), served through OpenRouter, on every surface from
  * 2026-10-13 on GPT-6.1 Sol's launch terms: FREE TO US VIEWERS and paywalled
@@ -1517,6 +1556,8 @@ export const FREEBUFF_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   // OpenRouter endpoint (verified 2026-09-30), Muse Spark 1.3 the 1,048,576
   // above, and Gemini 3.8 Flash 1,048,576; all entered low like their peers.
   [FREEBUFF_GPT_61_SOL_MODEL_ID]: 1_000_000,
+  // GPT-6.1 Terra publishes 1,050,000 (2026-10-26); entered low like Sol.
+  [FREEBUFF_GPT_61_TERRA_MODEL_ID]: 1_000_000,
   [FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID]: 1_000_000,
   [FREEBUFF_GEMINI_38_FLASH_MODEL_ID]: 1_000_000,
   // Gemini 4 Argon publishes 1,048,576 on every OpenRouter endpoint
@@ -2601,6 +2642,29 @@ const GPT_61_SOL_MODEL = {
     'On OpenAI flex capacity, with a standard-tier backup when it’s busy.',
 } as const satisfies FreebuffModelOption
 
+const GPT_61_TERRA_MODEL = {
+  id: FREEBUFF_GPT_61_TERRA_MODEL_ID,
+  displayName: 'GPT-6.1 Terra',
+  tagline: 'OpenAI · 1 session a day',
+  availability: 'always',
+  // OpenAI's API does not train on request data: no AI-training notice and
+  // no trace storage, as on Sol.
+  dataUse: 'service',
+  premium: true,
+  // OpenRouter reports text + image + file input, as on Sol.
+  multimodal: true,
+  reasoningEffort: FREEBUFF_GPT_61_TERRA_REASONING_EFFORT,
+  // Capped at `high` like Sol: reasoning bills as output.
+  efforts: EFFORTS_THROUGH_HIGH,
+  defaultEffort: FREEBUFF_GPT_61_TERRA_REASONING_EFFORT,
+  isNew: true,
+  // PROMOTIONAL, by product decision (2026-10-26): 100 Freebucks is a
+  // temporary price, and the label says so (and names the daily limit).
+  promotional: GPT_61_TERRA_PROMOTIONAL,
+  taglineTooltip:
+    'On OpenAI flex capacity, with a standard-tier backup when it’s busy.',
+} as const satisfies FreebuffModelOption
+
 const GEMINI_4_ARGON_MODEL = {
   id: FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
   displayName: 'Gemini 4 Argon',
@@ -3114,6 +3178,7 @@ export const SUPPORTED_FREEBUFF_MODELS = [
   GPT_5_6_LUNA_MODEL,
   GPT_6_LUNA_MODEL,
   GPT_61_SOL_MODEL,
+  GPT_61_TERRA_MODEL,
   GEMINI_4_ARGON_MODEL,
   // Solar Pro 4 stays SUPPORTED after its 2026-09-23 retirement for the same
   // reason 5.6 does.
@@ -3277,6 +3342,9 @@ export const FREEBUFF_MODELS = [
   // Gemini 4 Argon (2026-10-13): free in the US, paid-only elsewhere, at a
   // promotional 100 Freebucks.
   GEMINI_4_ARGON_MODEL,
+  // GPT-6.1 Terra (2026-10-26): open at full access, a plan at limited, at a
+  // promotional 100 Freebucks, one session a day.
+  GPT_61_TERRA_MODEL,
   // GPT-6.1 Sol (2026-09-29): free in the US, paid-only elsewhere, at 250
   // Freebucks — the dearest row, so last in a cheapest-first list.
   GPT_61_SOL_MODEL,
@@ -4426,6 +4494,9 @@ export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
     // it is not offered at limited access at all (not even with a plan), only
     // kept for released binaries at full access.
     FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+    // GPT-6.1 Terra (2026-10-26): open to every full-access account, a paid
+    // plan at limited access, on the same terms.
+    FREEBUFF_GPT_61_TERRA_MODEL_ID,
     ...FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
   ])
 
@@ -4756,6 +4827,9 @@ export const FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS: readonly string[] =
     // EVERY paid account, limited region included.
     FREEBUFF_GPT_61_SOL_MODEL_ID,
     FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
+    // GPT-6.1 Terra (2026-10-26): plan-only at limited access, so a
+    // limited-region subscriber must be able to open it.
+    FREEBUFF_GPT_61_TERRA_MODEL_ID,
   ])
 
 /**
@@ -5066,6 +5140,15 @@ export function isFreebuffGpt61SolModelId(
 ): boolean {
   if (!id) return false
   return freebuffModelIdMatches(id, FREEBUFF_GPT_61_SOL_MODEL_ID)
+}
+
+/** Whether the requested model is GPT-6.1 Terra, tolerating a dated
+ *  snapshot. */
+export function isFreebuffGpt61TerraModelId(
+  id: string | null | undefined,
+): boolean {
+  if (!id) return false
+  return freebuffModelIdMatches(id, FREEBUFF_GPT_61_TERRA_MODEL_ID)
 }
 
 export function isFreebuffGpt6LunaModelId(

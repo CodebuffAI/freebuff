@@ -45,6 +45,7 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 | **Gemini 3.8 Flash**        | Paid plans              | 1M context, and the only model that accepts audio, video and PDF |
 | **Muse Spark 1.3**          | Paid plans              | Meta's agentic coding model; 1M context. When it is busy or unavailable, it answers on DeepSeek V4.1 Flash rather than making you wait |
 | **Gemini 4 Argon**          | US, or paid plans elsewhere | Google's flagship reasoning model at a temporary promotional price, one session a day for every account; 1M context, images |
+| **GPT-6.1 Terra**           | Full access; paid plans at limited access | OpenAI's model at a temporary promotional price, one session a day for every account; 1M context, images |
 | **GPT-6.1 Sol**             | US, or paid plans elsewhere | OpenAI's flagship, one session a day for every account; 1M context, images |
 
 Most models draw on your normal daily sessions rather than a separate limit. GLM 5.3 Flash, DeepSeek V4.1 Flash, MiMo v2.6 Flash Fast, Solar Mini 4 and Solar Pro 4 are unmetered at full access and cost no session at all. Models may still serve from a quantized (Q8_0) build.

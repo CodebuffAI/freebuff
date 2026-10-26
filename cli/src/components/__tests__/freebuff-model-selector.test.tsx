@@ -323,8 +323,9 @@ describe('FreebuffModelSelector tier layout', () => {
     // actions beneath it.
     // 52 rows: GPT-6.1 Sol (2026-09-29) made the catalog one row taller again.
     // 53 rows once FREEBUFF_ENABLE_FAST_MODE_IN_UI lists DeepSeek V4.1 Flash Fast.
-    // Five more for the three section headers and the gaps between them.
-    const frame = (await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 58 : 57)).captureCharFrame()
+    // Five more for the three section headers and the gaps between them, and
+    // four for GPT-6.1 Terra's card (2026-10-26).
+    const frame = (await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 62 : 61)).captureCharFrame()
     const actionRow =
       frame.split('\n').find((line) => line.includes('Copy invite link')) ?? ''
 
@@ -1613,8 +1614,9 @@ test.each([
     // 50 rows once FREEBUFF_ENABLE_FAST_MODE_IN_UI lists DeepSeek V4.1 Flash
     // Fast: that row makes the expanded catalog two lines taller.
     // Five more for the three section headers and the gaps between them, and
-    // one for Solar Pro 4's "Promotional" line (2026-10-05).
-    const setup = await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 56 : 54, async (model) => {
+    // one for Solar Pro 4's "Promotional" line (2026-10-05), and four for
+    // GPT-6.1 Terra's card (2026-10-26).
+    const setup = await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 60 : 58, async (model) => {
       requested.push(model)
     })
     expect(wake).toBeDefined()

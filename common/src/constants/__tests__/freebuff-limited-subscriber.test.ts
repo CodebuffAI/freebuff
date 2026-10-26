@@ -165,9 +165,10 @@ describe('paid plans at limited access', () => {
     // terms. Kimi K3 (CrofAI) left on 2026-10-01: its provider is retired and
     // no picker lists it. DeepSeek Flash fast mode joined on 2026-10-05 on
     // MiMo 2.6 Pro's terms, with its picker row behind the UI switch.
-    // Gemini 4 Argon joined on 2026-10-13 on Sol's terms.
+    // Gemini 4 Argon joined on 2026-10-13 on Sol's terms. GPT-6.1 Terra
+    // joined on 2026-10-26 on MiMo 2.6 Pro's terms.
     expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(
-      FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 9 : 8,
+      FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 10 : 9,
     )
   })
 
