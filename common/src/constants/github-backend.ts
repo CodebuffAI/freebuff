@@ -84,4 +84,4 @@ export const GITHUB_WEBHOOK_RECEIVER: GitHubWebhookReceiverMode = 'next'
  */
 export type GitHubActionsRuntime = 'convex' | 'freebuff_web'
 
-export const GITHUB_ACTIONS_RUNTIME: GitHubActionsRuntime = 'convex'
+export const GITHUB_ACTIONS_RUNTIME: GitHubActionsRuntime = 'freebuff_web'
