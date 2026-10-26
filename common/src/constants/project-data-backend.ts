@@ -19,7 +19,7 @@
  */
 export type ProjectDataBackend = 'convex' | 'postgres'
 
-export const PROJECT_DATA_BACKEND: ProjectDataBackend = 'convex'
+export const PROJECT_DATA_BACKEND: ProjectDataBackend = 'postgres'
 
 export function projectDataOnPostgres(
   backend: ProjectDataBackend = PROJECT_DATA_BACKEND,
