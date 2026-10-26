@@ -12,6 +12,12 @@ import type { FreebuffModelCatalog } from '../types/freebuff-model-catalog'
  * Only what is listed changes: prices and admission never read this setting.
  */
 
+/** What a one-model picker says its model is, on the info icon by the Model
+ *  heading: with Show all models off here, and in the Freebuff-1 arm
+ *  (`FREEBUFF_ONE_ROW`). */
+export const FREEBUFF_ONE_MODEL_TAGLINE =
+  'Performs at the level of Opus 5 on benchmarks'
+
 /**
  * Where the switch stands for this viewer: undefined when the catalog does
  * not offer it (no switch, and every model is listed), else the viewer's own
@@ -27,7 +33,8 @@ export function showAllModelsSwitch(
 
 /**
  * `catalog` as the picker lists it. With the switch off, only DeepSeek V4.1
- * Flash's row, which is also the recommended and fallback row; the whole
+ * Flash's row, under `FREEBUFF_ONE_MODEL_TAGLINE`, which is also the
+ * recommended and fallback row; the whole
  * catalog when that row is missing or locked, so the picker is never left
  * empty or holding only a row nobody can start.
  */
@@ -46,7 +53,7 @@ export function pickerFreebuffCatalog(
     ...catalog,
     // Clients redraw when the version changes.
     version: `${catalog.version}.one`,
-    rows: [row],
+    rows: [{ ...row, tagline: FREEBUFF_ONE_MODEL_TAGLINE }],
     recommendedKey: row.key,
     fallbackKey: row.key,
   }

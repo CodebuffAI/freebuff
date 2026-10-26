@@ -12,6 +12,7 @@ import {
 } from '../../types/freebuff-model-catalog'
 import { getFreebuffModelPresets } from '../freebuff-model-presets'
 import {
+  FREEBUFF_ONE_MODEL_TAGLINE,
   pickerFreebuffCatalog,
   showAllModelsSwitch,
 } from '../freebuff-show-all-models'
@@ -74,7 +75,7 @@ describe('the catalog with Show all models off', () => {
     expect(pickerFreebuffCatalog(full, undefined)).toEqual({
       ...full,
       version: 'v7.g1.e1.full.0.one',
-      rows: [flash],
+      rows: [{ ...flash, tagline: FREEBUFF_ONE_MODEL_TAGLINE }],
       recommendedKey: flash.key,
       fallbackKey: flash.key,
     })
@@ -135,9 +136,11 @@ describe('the Show all models switch', () => {
     expect(showAllModelsSwitch(offered(false), true)).toBe(true)
     expect(showAllModelsSwitch(offered(true), false)).toBe(false)
     expect(pickerFreebuffCatalog(offered(true), undefined).rows).toHaveLength(2)
-    expect(pickerFreebuffCatalog(offered(true), false).rows).toEqual([flash])
+    expect(pickerFreebuffCatalog(offered(true), false).rows).toEqual([
+      { ...flash, tagline: FREEBUFF_ONE_MODEL_TAGLINE },
+    ])
     expect(pickerFreebuffCatalog(offered(false), undefined).rows).toEqual([
-      flash,
+      { ...flash, tagline: FREEBUFF_ONE_MODEL_TAGLINE },
     ])
   })
 })
