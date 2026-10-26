@@ -68,7 +68,8 @@ export async function askSideQuestion({
     previousRun,
     // One model call and no tool round trip.
     maxAgentSteps: 1,
-    costMode: 'free',
+    // BYOK skips the free-mode admission path, same as a normal send.
+    costMode: byok ? 'normal' : 'free',
   })
 
   if (state.output.type === 'error') {

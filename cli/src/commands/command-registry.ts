@@ -829,6 +829,8 @@ const ALL_COMMANDS: CommandDefinition[] = [
 
       // Fork the last settled turn, not a transcript copy: the side answer
       // sees what the agent sees, and the run it produces is discarded.
+      // runState is only written at end of turn, so a question asked mid-turn
+      // forks the session as it stood before that turn's newest messages.
       const previousRun = useChatStore.getState().runState
       if (!previousRun) {
         params.setMessages((prev) => [

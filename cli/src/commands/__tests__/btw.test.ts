@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import { askSideQuestion } from '../btw'
 
-import type { RunState } from '@codebuff/sdk'
+import type { ResolvedByokConnection, RunState } from '@codebuff/sdk'
 
 const previousRun = {
   output: { type: 'lastMessage', value: [] },
@@ -11,13 +11,17 @@ const previousRun = {
 
 function clientReturning(output: RunState['output']) {
   const calls: Record<string, unknown>[] = []
-  const getClient = (async () => ({
-    run: async (options: Record<string, unknown>) => {
-      calls.push(options)
-      return { output, traceSessionId: 'trace' }
-    },
-  })) as unknown as Parameters<typeof askSideQuestion>[0]['getClient']
-  return { calls, getClient }
+  const clientArgs: Record<string, unknown>[] = []
+  const getClient = (async (options: Record<string, unknown> = {}) => {
+    clientArgs.push(options)
+    return {
+      run: async (runOptions: Record<string, unknown>) => {
+        calls.push(runOptions)
+        return { output, traceSessionId: 'trace' }
+      },
+    }
+  }) as unknown as Parameters<typeof askSideQuestion>[0]['getClient']
+  return { calls, clientArgs, getClient }
 }
 
 describe('askSideQuestion', () => {
@@ -43,7 +47,29 @@ describe('askSideQuestion', () => {
     expect(calls[0]?.prompt).toBe('Why is X off?')
     expect(calls[0]?.previousRun).toBe(previousRun)
     expect(calls[0]?.maxAgentSteps).toBe(1)
+    expect(calls[0]?.costMode).toBe('free')
     expect((calls[0]?.agent as { toolNames: string[] }).toolNames).toEqual([])
+  })
+
+  test('runs on the selected BYOK connection, off the free-mode path', async () => {
+    const { calls, clientArgs, getClient } = clientReturning({
+      type: 'lastMessage',
+      value: [
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Because you asked.' }],
+        },
+      ],
+    })
+    const byok = {
+      provider: 'openai-compatible',
+      model: 'mine/model',
+    } as ResolvedByokConnection
+
+    await askSideQuestion({ question: 'Why?', previousRun, byok, getClient })
+
+    expect(clientArgs[0]).toEqual({ byok })
+    expect(calls[0]?.costMode).toBe('normal')
   })
 
   test('surfaces a run error', async () => {
