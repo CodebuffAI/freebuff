@@ -10,6 +10,7 @@ import {
   buildLayer2Skill,
   compileLayer2Skill,
   isLayer2Skill,
+  layer2PackageKey,
   LAYER2_MAX_VERIFY,
   LAYER2_SKILL_CHANGELOG,
   type SponsoredSkillLayer2,
@@ -458,6 +459,49 @@ describe('compileLayer2Skill', () => {
     expect('desktop' in skill).toBe(false)
     expect('conversion' in skill).toBe(false)
     expect(skill.changelog).toBe(LAYER2_SKILL_CHANGELOG)
+  })
+
+  test('an unpinned package is declared at its recorded release', () => {
+    const source = {
+      ...base,
+      packages: [{ ecosystem: 'npm' as const, name: 'posthog-js' }],
+    }
+    const result = buildLayer2Skill(
+      source,
+      '1.0.0',
+      new Map([[layer2PackageKey(source.packages[0]!), '1.440.0']]),
+    )
+    if (!result.ok) throw new Error(JSON.stringify(result.errors))
+    expect(result.skill.packages).toEqual([
+      { ecosystem: 'npm', name: 'posthog-js', version: '1.440.0' },
+    ])
+    // The stored source keeps no version.
+    expect(result.source.packages).toEqual([
+      { ecosystem: 'npm', name: 'posthog-js' },
+    ])
+  })
+
+  test('a written pin wins over a recorded release', () => {
+    const result = buildLayer2Skill(
+      base,
+      '1.0.0',
+      new Map([['npm:posthog-js', '9.9.9']]),
+    )
+    if (!result.ok) throw new Error(JSON.stringify(result.errors))
+    expect(result.skill.packages[0]!.version).toBe('1.438.13')
+  })
+
+  test('an unpinned package with no recorded release is refused', () => {
+    const result = buildLayer2Skill(
+      { ...base, packages: [{ ecosystem: 'pypi', name: 'posthog' }] },
+      '1.0.0',
+    )
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        { path: 'packages.0', message: 'No release recorded for posthog.' },
+      ],
+    })
   })
 
   test('renders far under the old long-form skills', () => {

@@ -81,10 +81,16 @@ const layer2Package = z.discriminatedUnion('ecosystem', [
     .object({
       ecosystem: z.literal('npm'),
       name: z.string().trim().regex(NPM_NAME, 'Not an npm package name.'),
+      /**
+       * Usually omitted: the save records the latest release as the compiled
+       * skill's pin, a fallback for clients without install_package, and a
+       * run with the tool installs the latest release (`decideSponsoredPackage`).
+       */
       version: z
         .string()
         .trim()
-        .regex(NPM_EXACT_VERSION, 'Use an exact version, e.g. 1.2.3.'),
+        .regex(NPM_EXACT_VERSION, 'Use an exact version, e.g. 1.2.3.')
+        .optional(),
     })
     .strict(),
   z
@@ -94,7 +100,8 @@ const layer2Package = z.discriminatedUnion('ecosystem', [
       version: z
         .string()
         .trim()
-        .regex(PYPI_EXACT_VERSION, 'Use an exact release, e.g. 2.32.3.'),
+        .regex(PYPI_EXACT_VERSION, 'Use an exact release, e.g. 2.32.3.')
+        .optional(),
     })
     .strict(),
 ])
@@ -165,6 +172,14 @@ export const sponsoredSkillLayer2Schema = z
   .strict()
 
 export type SponsoredSkillLayer2 = z.infer<typeof sponsoredSkillLayer2Schema>
+
+/** `npm:posthog-js`: the key of a package's recorded release. */
+export function layer2PackageKey(pkg: {
+  ecosystem: 'npm' | 'pypi'
+  name: string
+}): string {
+  return `${pkg.ecosystem}:${pkg.name}`
+}
 
 export type Layer2BuildResult =
   | {
@@ -239,7 +254,8 @@ export function compileLayer2Skill(
   const packages: SponsoredSkillPackage[] = source.packages.map((pkg) => ({
     ecosystem: pkg.ecosystem,
     name: pkg.name,
-    version: pkg.version,
+    // buildLayer2Skill fills an unpinned package's recorded release first.
+    version: pkg.version ?? '',
   }))
 
   // A package check only when one ecosystem is declared: in a mixed skill a
@@ -386,10 +402,29 @@ function zodErrors(error: z.ZodError): SponsoredSkillParseError[] {
 export function buildLayer2Skill(
   value: unknown,
   version: string,
+  /**
+   * The release recorded for each package the source leaves unpinned, by
+   * {@link layer2PackageKey}. A package with neither is refused.
+   */
+  releases: ReadonlyMap<string, string> = new Map(),
 ): Layer2BuildResult {
   const parsed = sponsoredSkillLayer2Schema.safeParse(value)
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) }
-  const compiled = parseSponsoredSkill(compileLayer2Skill(parsed.data, version))
+  const missing: SponsoredSkillParseError[] = []
+  const recorded: SponsoredSkillLayer2 = {
+    ...parsed.data,
+    packages: parsed.data.packages.map((pkg, index) => {
+      const release = pkg.version ?? releases.get(layer2PackageKey(pkg))
+      if (!release)
+        missing.push({
+          path: `packages.${index}`,
+          message: `No release recorded for ${pkg.name}.`,
+        })
+      return { ...pkg, version: release ?? '' }
+    }),
+  }
+  if (missing.length) return { ok: false, errors: missing }
+  const compiled = parseSponsoredSkill(compileLayer2Skill(recorded, version))
   if (!compiled.ok) return { ok: false, errors: compiled.errors }
   if (!sponsoredSkillTrackedLink(compiled.skill)) {
     return {
