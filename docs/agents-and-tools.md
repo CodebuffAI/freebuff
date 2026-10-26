@@ -73,6 +73,47 @@ Trust is per directory, not per file content: a trusted repository that later
 pulls a malicious agent file is loaded without a new prompt, the same trade-off
 other coding agents make for their project-level config.
 
+### Async subagents (`spawn_agent_async`)
+
+`spawn_agent_async` starts ONE agent in the background and answers at once
+with a spawn id (`t1`, `t2`, ... per parent, continuing across turns). The
+child starts exactly as a `spawn_agents` child does (`startSubagent`: same
+history boundary, `inheritParentSystemPrompt` / `includeMessageHistory`
+prompt-cache inheritance, the shared `MAX_LIVE_SUBAGENTS_PER_ROOT` cap); only
+delivery differs. `packages/agent-runtime/src/async-subagents.ts` queues the finished
+child's report and the parent's `loopAgentSteps` adds it to the parent's
+history between two steps, as one `ASYNC_SUBAGENT_REPORT` user message holding
+the task and the child's WHOLE transcript (its text, every tool call with its
+input, every result; reasoning left out; huge parts clipped head and tail).
+
+- **Waiting.** A parent's turn never ends with a child still running: a turn
+  that would end waits for the next report. `wait_for_subagents` waits the
+  same way inside a step (or answers at once when nothing is running). It
+  exists because DeepSeek Flash would not send a reply without a tool call to
+  wait: base3's turn-ending rule made it start placeholder tasks or poll with
+  empty reads instead. Steering is read before a wait, so a message sent
+  during one joins a step later.
+- **Errors.** A refused spawn (not spawnable, over the live cap, bad input) is
+  also a tool error, so the parent gets another step to read it. A child that
+  fails reports `status="failed"` with its partial transcript.
+- **Cleanup.** Each run of the parent's loop opens its group and ends it
+  however it exits: children still running are aborted and their reports
+  (and credits) dropped, and a spawn after the loop has ended is refused. The
+  group is keyed by the loop's `runId`, never the agentId: every root run's is
+  `main-agent`, and one process runs many roots at once.
+- **Completion.** An async team carries `task_completed` in its shared tool
+  schema for the children to close their reports with, but its members still
+  end a turn on a reply with no tool call: `requiresExplicitCompletion` is off
+  when `spawn_agent_async` is in the tool schema.
+- **Usage.** Children forward `onAgentUsageReceived` (`isRoot: false`), so a
+  host's usage totals include background work; credits join the parent's
+  `creditsUsed` when the report is delivered.
+
+`agents/base3-async.ts` is built on it: base3 working in batches, which hands
+the checks of a change of eight or more files to one CHECKS subagent (a staff
+test in the CLI and Desktop: docs/freebuff-model-catalog.md, "Row harnesses";
+results: `docs/benchmarks/base3-async/`).
+
 ### Shell Shims
 
 Direct commands without `codebuff` prefix:

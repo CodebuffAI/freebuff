@@ -209,6 +209,13 @@ export const freebuffCatalogRowSchema = z.object({
    * catalog naming the id: `freebuffLegacyModelDigest(savedId)`.
    */
   legacyDigests: z.array(z.string()).optional(),
+  /**
+   * The agent harness a client runs this row on, when it is not the
+   * surface's ordinary one: `base3-async` (`freebuffRowRunsBase3Async`). A
+   * string, not an enum, so a value a release does not know leaves the row on
+   * its ordinary harness instead of failing the whole catalog's parse.
+   */
+  harness: z.string().optional(),
 })
 export type FreebuffCatalogRow = z.infer<typeof freebuffCatalogRowSchema>
 

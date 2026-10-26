@@ -418,7 +418,7 @@ function isConversationSummary(message: Message): boolean {
  * historical memory, and neither counts as evidence that the assistant has
  * started working on the live prompt.
  */
-function isRealHistory(message: Message): boolean {
+export function isRealHistory(message: Message): boolean {
   return (
     !message.tags?.some((tag) => SCAFFOLDING_TAGS.includes(tag)) &&
     !isConversationSummary(message)

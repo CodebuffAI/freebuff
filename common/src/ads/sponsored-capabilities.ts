@@ -120,6 +120,8 @@ export const SPONSORED_CAPABILITY_BY_TOOL: Readonly<
 
   // delegate
   spawn_agents: 'delegate',
+  spawn_agent_async: 'delegate',
+  wait_for_subagents: 'delegate',
   spawn_agent_inline: 'delegate',
   skill: 'delegate',
 })

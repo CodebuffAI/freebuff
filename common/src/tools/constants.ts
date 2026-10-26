@@ -19,6 +19,9 @@ export const TOOLS_WHICH_WONT_FORCE_NEXT_STEP = [
   'suggest_prompts',
   'task_completed',
   'report_project_profile',
+  // Returns at once; a response of only async spawns waits for the first
+  // report instead of taking another step (run-agent-step.ts).
+  'spawn_agent_async',
 ]
 
 // List of all available tools
@@ -51,12 +54,14 @@ export const toolNames = [
   'set_output',
   'skill',
   'spawn_agents',
+  'spawn_agent_async',
   'spawn_agent_inline',
   'str_replace',
   'suggest_followups',
   'task_completed',
   'think_deeply',
   'update_subgoal',
+  'wait_for_subagents',
   'web_search',
   'write_file',
   'write_todos',

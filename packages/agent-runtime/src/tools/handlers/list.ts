@@ -25,6 +25,7 @@ import { handleRunTerminalCommand } from './tool/run-terminal-command'
 import { handleSetMessages } from './tool/set-messages'
 import { handleSetOutput } from './tool/set-output'
 import { handleSkill } from './tool/skill'
+import { handleSpawnAgentAsync } from './tool/spawn-agent-async'
 import { handleSpawnAgentInline } from './tool/spawn-agent-inline'
 import { handleSpawnAgents } from './tool/spawn-agents'
 import { handleStrReplace } from './tool/str-replace'
@@ -32,6 +33,7 @@ import { handleSuggestFollowups } from './tool/suggest-followups'
 import { handleTaskCompleted } from './tool/task-completed'
 import { handleThinkDeeply } from './tool/think-deeply'
 import { handleUpdateSubgoal } from './tool/update-subgoal'
+import { handleWaitForSubagents } from './tool/wait-for-subagents'
 import { handleWebSearch } from './tool/web-search'
 import { handleWriteFile } from './tool/write-file'
 import { handleWriteTodos } from './tool/write-todos'
@@ -79,12 +81,14 @@ export const codebuffToolHandlers: {
   set_output: handleSetOutput,
   skill: handleSkill,
   spawn_agents: handleSpawnAgents,
+  spawn_agent_async: handleSpawnAgentAsync,
   spawn_agent_inline: handleSpawnAgentInline,
   str_replace: handleStrReplace,
   suggest_followups: handleSuggestFollowups,
   task_completed: handleTaskCompleted,
   think_deeply: handleThinkDeeply,
   update_subgoal: handleUpdateSubgoal,
+  wait_for_subagents: handleWaitForSubagents,
   web_search: handleWebSearch,
   write_file: handleWriteFile,
   write_todos: handleWriteTodos,

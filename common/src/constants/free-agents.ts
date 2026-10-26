@@ -189,6 +189,14 @@ export const FREEBUFF_BASE3_FAST_WORKER_AGENT_ID =
   'base3-fast-worker-deepseek-flash'
 
 /**
+ * The base3-async harness's CHECKS subagent (agents/base3-async.ts), pinned to
+ * DeepSeek V4.1 Flash, the one model the harness runs on. Who may run it is the
+ * completions route's call (docs/freebuff-model-catalog.md, "Row harnesses").
+ */
+export const FREEBUFF_BASE3_ASYNC_CHECKS_AGENT_ID =
+  'base3-async-checks-deepseek-flash'
+
+/**
  * The subagent a Freebuff Projects account's Desktop and Cloud threads may
  * spawn, up to FREEBUFF_PROJECTS_MAX_LIVE_SUBAGENTS at once (agents/projects-subagent.ts). It runs
  * its root's model with the root's prompt and history, has the root's coding
@@ -890,6 +898,11 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   ]),
   [FREEBUFF_BASE3_FAST_WORKER_AGENT_ID]: new Set([
     FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+  ]),
+  // The base3-async CHECKS subagent. This entry only lets it bill as its
+  // session; who may run it is the completions route's call.
+  [FREEBUFF_BASE3_ASYNC_CHECKS_AGENT_ID]: new Set([
+    FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   ]),
   'base2-free-mimo': new Set([FREEBUFF_MIMO_V25_MODEL_ID]),
   // Pinned to its one model like every root: a root that allowed both MiMo
