@@ -52,6 +52,21 @@ export type ColdStartDaytonaAttach = {
   packageManager: 'pnpm' | 'bun'
 }
 
+/**
+ * The stale-move backstop of a linux-vm move that ran on freebuff-web
+ * (docs/freebuff-sandbox-workspace-actions.md, "The linux-vm move"): the
+ * `cleanupStaleMove` body of `convex/linuxVmMigration/actions.ts`. Ids only.
+ */
+export type LinuxVmMoveCleanup = {
+  kind: 'linux_vm_move'
+  projectId: string
+  attemptId: string
+  moveKind: 'web' | 'cloud_repo' | 'cloud_no_repo'
+}
+
+/** Every delayed `sandbox_migration.cleanup` a freebuff-web move enqueues. */
+export type SandboxMigrationCleanup = SnapshotMigrationCleanup | LinuxVmMoveCleanup
+
 export type SandboxJobRequest =
   | { job: SandboxSweepRequestJob }
   /** Forwarded by Convex's cold start, not scheduled: no runner-table entry
@@ -59,7 +74,7 @@ export type SandboxJobRequest =
   | { job: 'attach_cold_start_daytona'; attach: ColdStartDaytonaAttach }
   /** One delayed `sandbox_migration.cleanup` job. Enqueued only by
    *  freebuff-web's own migration, so no runner-table entry owns it. */
-  | { job: 'snapshot_migration_cleanup'; cleanup: SnapshotMigrationCleanup }
+  | { job: 'snapshot_migration_cleanup'; cleanup: SandboxMigrationCleanup }
   /** List `daytona_pool_job` rows still `scheduled`; the worker enqueues one
    *  `sandbox.provision_pool_slot` per row. Claims nothing. */
   | { job: 'dispatch_pool_jobs' }
@@ -170,11 +185,44 @@ export function parseColdStartDaytonaAttach(
   return { projectId, sandboxId, previewUrl, packageManager }
 }
 
+const LINUX_VM_MOVE_KINDS: ReadonlyArray<LinuxVmMoveCleanup['moveKind']> = [
+  'web',
+  'cloud_repo',
+  'cloud_no_repo',
+]
+
+/** A snapshot migration's cleanup, or a linux-vm move's. */
+export function parseSandboxMigrationCleanup(
+  value: unknown,
+): SandboxMigrationCleanup | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const { kind, projectId, attemptId, moveKind } = value as Record<
+    string,
+    unknown
+  >
+  if (kind !== 'linux_vm_move') return parseSnapshotMigrationCleanup(value)
+  if (
+    typeof projectId !== 'string' ||
+    !POOL_JOB_ID.test(projectId) ||
+    typeof attemptId !== 'string' ||
+    !ATTEMPT_ID.test(attemptId) ||
+    !LINUX_VM_MOVE_KINDS.includes(moveKind as LinuxVmMoveCleanup['moveKind'])
+  ) {
+    return null
+  }
+  return {
+    kind,
+    projectId,
+    attemptId,
+    moveKind: moveKind as LinuxVmMoveCleanup['moveKind'],
+  }
+}
+
 export function parseSandboxJobRequest(body: unknown): SandboxJobRequest | null {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null
   const { job, poolJobId, cleanup, attach } = body as Record<string, unknown>
   if (job === 'snapshot_migration_cleanup') {
-    const parsed = parseSnapshotMigrationCleanup(cleanup)
+    const parsed = parseSandboxMigrationCleanup(cleanup)
     return parsed ? { job, cleanup: parsed } : null
   }
   if (job === 'attach_cold_start_daytona') {
