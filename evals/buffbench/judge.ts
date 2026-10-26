@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import fs from 'fs'
 import path from 'path'
 
@@ -150,18 +151,19 @@ function fitSections(
     const pb = priority.has(b.path) ? 0 : 1
     return pa - pb || a.text.length - b.text.length
   })
-  const kept: string[] = []
+  const byPath = new Map<string, string>()
   const elided: DiffSection[] = []
   let used = 0
   let keptChars = 0
   for (const section of ordered) {
     const rendered = render(section)
     if (used + rendered.length <= budget) {
-      kept.push(rendered)
+      byPath.set(section.path, rendered)
       used += rendered.length
       keptChars += section.text.length
-    } else if (kept.length === 0 && rendered.length > budget) {
-      kept.push(
+    } else if (byPath.size === 0 && rendered.length > budget) {
+      byPath.set(
+        section.path,
         `${rendered.slice(0, budget)}\n... (this file's diff continues; ${rendered.length - budget} more characters not shown)`,
       )
       used = budget
@@ -170,8 +172,9 @@ function fitSections(
       elided.push(section)
     }
   }
-  // Back to the diff's own order, so the judge reads it as the agent made it.
-  const byPath = new Map(kept.map((text, i) => [ordered[i]!.path, text]))
+  // Back to the diff's own order, so the judge reads it as the agent made it
+  // (and so the ground truth renders identically for every agent run of a
+  // task whenever it fits: the prompt cache's shared prefix).
   const text = sections
     .filter((section) => byPath.has(section.path))
     .map((section) => byPath.get(section.path)!)
@@ -286,9 +289,13 @@ export function buildJudgePrompt(
       ? `\n## Note on length\nTo fit your input, these sections were shortened: ${truncated.join(', ')}. Whole files were kept where possible, the most relevant first, and every file left out is named with its line counts, so the file lists are complete even where the content is not. Judge what is shown; do not count as missing anything the list says was left out.\n`
       : ''
 
+  // Everything that is the same for every agent run of a task (the prompt,
+  // the context files, the ground truth) comes first and the run's own parts
+  // last, so judge calls on one task share a cacheable prefix. The length
+  // note depends on the agent's diff, so it goes at the end.
   const built = `## User Prompt (What the agent was asked to do)
 ${prompt}
-${lengthNote}
+
 ## Context Files (from parent commit)
 ${contextFilesContent || '(No context files)'}
 
@@ -300,7 +307,7 @@ ${groundTruthDiffs}
 ${agentChanges}
 \`\`\`
 ${error ? `\n## Error Encountered\n${error}` : ''}
-${finalCheckOutputs ? `\n## Final Check Command Outputs\n${finalCheckOutputs}` : ''}`
+${finalCheckOutputs ? `\n## Final Check Command Outputs\n${finalCheckOutputs}` : ''}${lengthNote}`
 
   return { prompt: built, truncated, sizes }
 }
@@ -414,6 +421,12 @@ const judgeAgents: Record<string, AgentDefinition> = {
     model: 'anthropic/claude-sonnet-4.6',
     ...judgeAgentBase,
   },
+  'judge-luna': {
+    id: 'judge-luna',
+    model: 'openai/gpt-6-luna',
+    ...judgeAgentBase,
+    reasoningOptions: { enabled: true, effort: 'high' },
+  },
 }
 
 /**
@@ -428,8 +441,14 @@ const judgeAgents: Record<string, AgentDefinition> = {
  * judge-gpt-6-sol replaced judge-gpt (gpt-5.4) on 2026-09-26: the stronger
  * judge, and gpt-5.4 had failed every task of that day's runs on OpenAI
  * credits, leaving sonnet alone. judge-gpt stays defined for old logs.
+ *
+ * judge-luna replaced judge-sonnet on 2026-10-26: the Sonnet judge cost
+ * several times what the agents being judged cost, with little of its prompt
+ * cached. GPT-6 Luna is far cheaper per call and caches automatically on the
+ * shared prefix (see judgeTraceSessionId).
+ * judge-sonnet stays defined for old logs.
  */
-const ACTIVE_JUDGE_IDS = ['judge-gpt-6-sol', 'judge-sonnet'] as const
+const ACTIVE_JUDGE_IDS = ['judge-gpt-6-sol', 'judge-luna'] as const
 
 interface JudgeCommitResultInput {
   client: CodebuffClient
@@ -464,6 +483,23 @@ async function runSingleJudge(
   }
 }
 
+/**
+ * One trace session per task and judge: the server keys OpenAI's
+ * `prompt_cache_key` on it (applyOpenRouterPromptCacheKey), so every judge
+ * call on a task (each arm, each replicate) lands on the machine that already
+ * holds its prompt, the context files and ground truth, in cache.
+ */
+export function judgeTraceSessionId(
+  commitId: string,
+  judgeAgentId: string,
+): string {
+  // Shaped as a UUID, which is what the SDK documents for this field.
+  const hex = createHash('sha256')
+    .update(`buffbench-judge:${judgeAgentId}:${commitId}`)
+    .digest('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+
 async function runSingleJudgeOnce(
   input: JudgeCommitResultInput,
   judgePrompt: string,
@@ -478,6 +514,7 @@ async function runSingleJudgeOnce(
       client.run({
         agent: judgeAgent.id,
         prompt: judgePrompt,
+        traceSessionId: judgeTraceSessionId(input.commit.id, judgeAgentId),
         agentDefinitions: Object.values(judgeAgents),
         handleEvent: (event) => {
           if (event.type === 'text') {
