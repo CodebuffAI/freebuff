@@ -17,6 +17,10 @@ import {
   type SponsoredSkillLayer2Verify,
 } from './sponsored-skill-layer2'
 import { conversionDefinitionFromProcedure } from './sponsored-conversion'
+import {
+  evaluateSponsoredSkillCheck,
+  type SponsoredSkillCheckContext,
+} from './sponsored-skill-checks'
 import { sponsoredConversionClientRefusal } from './sponsored-skill-client-support'
 import {
   parseSponsoredProcedureSteps,
@@ -227,7 +231,7 @@ describe('buildLayer2Skill', () => {
     expect(sponsoredSkillTrackedLink(result.skill)).toBe(SIGNUP)
   })
 
-  test('a pypi skill needs python, has no fit, and gets a manifest check', () => {
+  test('a pypi skill needs python, has no fit, and gets the SDK check', () => {
     const result = buildLayer2Skill(
       {
         ...base,
@@ -245,21 +249,62 @@ describe('buildLayer2Skill', () => {
     expect(check.kind).toBe('file_contains')
   })
 
-  test('a mixed skill has no package checks, so neither project fails one', () => {
+  test('a mixed skill gets one loose SDK check that either package passes', () => {
     const result = buildLayer2Skill(
       {
         ...base,
         packages: [
-          { ecosystem: 'npm', name: 'posthog-node', version: '4.2.1' },
-          { ecosystem: 'pypi', name: 'posthog', version: '3.7.0' },
+          { ecosystem: 'npm', name: 'disk', version: '1.9.0' },
+          { ecosystem: 'pypi', name: 'archil', version: '0.18.0' },
         ],
       },
       '1.0.0',
     )
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    const kinds = result.skill.steps[0]!.checks.map((check) => check.kind)
-    expect(kinds).toEqual(['no_privileged_secrets'])
+    const checks = result.skill.steps[0]!.checks
+    expect(checks.map((check) => check.id)).toEqual(['sdk-used', 'no-secrets'])
+    const sdk = checks[0]!
+    if (sdk.kind !== 'file_contains') throw new Error(sdk.kind)
+    expect(sdk.path).toBe('**')
+    expect(sdk.changedOnly).toBeUndefined()
+    const re = new RegExp(sdk.pattern, sdk.flags)
+    for (const text of [
+      "import { Disk } from 'disk'",
+      '"disk": "^1.9.0"',
+      'archil==0.18.0',
+      'from archil import Archil',
+    ])
+      expect(re.test(text)).toBe(true)
+    for (const text of ['diskutil list', 'archil-cli', 'my_disk = 1'])
+      expect(re.test(text)).toBe(false)
+  })
+
+  test('a skill with no packages gets no SDK check', () => {
+    const result = buildLayer2Skill({ ...base, packages: [] }, '1.0.0')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(
+      result.skill.steps[0]!.checks.some((check) => check.id === 'sdk-used'),
+    ).toBe(false)
+  })
+
+  test('six packages, three verify checks and two keys stay under the check cap', () => {
+    const result = buildLayer2Skill(
+      {
+        ...base,
+        packages: ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => ({
+          ecosystem: 'npm' as const,
+          name: `pkg-${n}`,
+          version: '1.0.0',
+        })),
+        envKeys: ['POSTHOG_PROJECT_TOKEN', 'POSTHOG_API_KEY'],
+        verify: [VERIFY[0]!, VERIFY[1]!, VERIFY[0]!],
+      },
+      '1.0.0',
+    )
+    if (!result.ok) throw new Error(JSON.stringify(result.errors))
+    expect(result.skill.steps[0]!.checks).toHaveLength(7)
   })
 
   test('the rendered steps read as agent then user work', () => {
@@ -325,7 +370,7 @@ describe('verify', () => {
     expect(checks.map((check) => check.id)).toEqual([
       'verify-1',
       'verify-2',
-      'package-1',
+      'sdk-used',
       'env-1',
       'no-secrets',
     ])
@@ -522,5 +567,52 @@ describe('compileLayer2Skill', () => {
       ),
     )
     expect(rendered.length).toBeLessThan(2_500)
+  })
+})
+
+describe('the SDK check, evaluated', () => {
+  const sdkCheck = () => {
+    const result = buildLayer2Skill(
+      {
+        ...base,
+        packages: [
+          { ecosystem: 'npm', name: 'disk', version: '1.9.0' },
+          { ecosystem: 'pypi', name: 'archil', version: '0.18.0' },
+        ],
+      },
+      '1.0.0',
+    )
+    if (!result.ok) throw new Error(JSON.stringify(result.errors))
+    return result.skill.steps[0]!.checks.find((c) => c.id === 'sdk-used')!
+  }
+  const ctx = (files: Record<string, string>, changed: string[]) =>
+    ({
+      files: () => Object.keys(files),
+      changedFiles: () => changed,
+      readFile: (path: string) => files[path] ?? null,
+      runScript: async () => 'missing' as const,
+      runCommand: async () => ({ exitCode: 1, output: '' }),
+    }) as unknown as SponsoredSkillCheckContext
+
+  test('a changed file naming either package passes', async () => {
+    const files = { 'app/store.py': 'from archil import Archil\n' }
+    const result = await evaluateSponsoredSkillCheck(
+      sdkCheck(),
+      ctx(files, ['app/store.py']),
+      { tools: [] },
+    )
+    expect(result.status).toBe('pass')
+  })
+
+  test('the name in an unchanged file does not count', async () => {
+    const files = { 'package.json': '{"dependencies":{"disk":"1.9.0"}}' }
+    const result = await evaluateSponsoredSkillCheck(
+      sdkCheck(),
+      ctx(files, []),
+      {
+        tools: [],
+      },
+    )
+    expect(result.status).toBe('fail')
   })
 })

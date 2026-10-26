@@ -220,8 +220,6 @@ const ENV_EXAMPLE_PATH =
   '**/{.env.example,.env.local.example,.env.sample,.env.template}'
 /** The source files a verify check reads. */
 const SOURCE_FILES = '**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,py}'
-const PYTHON_MANIFESTS =
-  '**/{pyproject.toml,requirements*.txt,setup.py,setup.cfg,Pipfile}'
 
 /**
  * The format-1, fit-free skill a Layer 2 record stands for (COD-965: no
@@ -258,26 +256,24 @@ export function compileLayer2Skill(
     version: pkg.version ?? '',
   }))
 
-  // A package check only when one ecosystem is declared: in a mixed skill a
-  // Node project would fail the Python check and the other way round.
-  const packageChecks: SponsoredSkillCheck[] =
-    npm.length && !pypi.length
-      ? npm.map((pkg, index) => ({
-          id: `package-${index + 1}`,
-          kind: 'package_declared',
-          label: `${pkg.name} is declared in package.json`,
-          name: pkg.name,
-        }))
-      : pypi.length && !npm.length
-        ? pypi.map((pkg, index) => ({
-            id: `package-${index + 1}`,
-            kind: 'file_contains',
-            label: `${pkg.name} is declared in a Python manifest`,
-            path: PYTHON_MANIFESTS,
-            pattern: `(^|[\\s"'\\[,])${escapeRegex(pkg.name)}\\b`,
-            flags: 'im',
-          }))
-        : []
+  // One deliberately loose check that the SDK landed: any file the run
+  // changed names any of the skill's packages (an import, package.json, a
+  // lockfile, requirements.txt, pyproject.toml). Install success is never
+  // reported back, so this stands in for it; a mixed npm/PyPI skill passes
+  // on either ecosystem.
+  const packageNames = source.packages.map((pkg) => escapeRegex(pkg.name))
+  const packageChecks: SponsoredSkillCheck[] = packageNames.length
+    ? [
+        {
+          id: 'sdk-used',
+          kind: 'file_contains',
+          label: `the ${label} SDK shows up in the changes`,
+          path: '**',
+          pattern: `(^|[^A-Za-z0-9_-])(${packageNames.join('|')})([^A-Za-z0-9_-]|$)`,
+          flags: 'im',
+        },
+      ]
+    : []
 
   const envChecks: SponsoredSkillCheck[] = envKeys.map((key, index) => ({
     id: `env-${index + 1}`,
