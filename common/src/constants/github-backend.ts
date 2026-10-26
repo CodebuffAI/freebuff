@@ -6,13 +6,16 @@
  *
  * - `convex`   Convex is the writer and the reader. Nothing in the Postgres
  *              port runs.
- * - `shadow`   (current; Owen, 2026-10-06) Convex still writes and serves. Server paths that read a
+ * - `shadow`   (Owen, 2026-10-06 to the flip) Convex still writes and serves. Server paths that read a
  *              connection or a sync state also read the Postgres copy (a
  *              connection that lags Convex is refreshed from Convex's
  *              current document before it is compared) and log
  *              `convex_pg_shadow_row_mismatch` with ids and column NAMES only:
  *              never a value, and never a token.
- * - `postgres` Postgres writes and serves. Token reads go to the PRIMARY.
+ * - `postgres` (current; Owen, 2026-10-25) Postgres writes and serves. Token
+ *              reads go to the PRIMARY. Every Convex GitHub action goes
+ *              through `githubStore`'s bridge; the cutover is
+ *              docs/freebuff-github-postgres.md, "The cutover".
  *
  * It lives in `common` because both sides read it: Convex (which may import
  * only `@codebuff/common`) and the server/job code. A flip is a reviewed
@@ -20,7 +23,7 @@
  */
 export type GitHubBackendMode = 'convex' | 'shadow' | 'postgres'
 
-export const GITHUB_BACKEND: GitHubBackendMode = 'shadow'
+export const GITHUB_BACKEND: GitHubBackendMode = 'postgres'
 
 /** Who serves GitHub READS in `mode`. Shadow still serves Convex. */
 export function githubReadBackend(
