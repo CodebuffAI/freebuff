@@ -90,6 +90,17 @@ async function mount(node: ReactNode, width = 100, height = 16) {
   return { setup, root }
 }
 
+async function settle(
+  setup: Awaited<ReturnType<typeof createTestRenderer>>,
+  done: () => boolean,
+  tries = 50,
+) {
+  for (let i = 0; i < tries && !done(); i++) {
+    await Bun.sleep(2)
+    await setup.renderOnce()
+  }
+}
+
 const open = (url: string) => void opened.push(url)
 const color = (value: string | RGBA) =>
   typeof value === 'string' ? RGBA.fromHex(value) : value
@@ -119,6 +130,7 @@ test('served statusline: draws the served sponsor in its brand colours, billed o
     .lines[0]!.spans.find((s) => s.text.includes('Ship faster'))!
   expect(tagline.bg.toInts()).toEqual(fillColor.toInts())
 
+  await settle(setup, () => billed.some(([kind]) => kind === 'impression'))
   await setup.renderOnce() // another frame is not another impression
   expect(billed).toEqual([
     [
@@ -156,6 +168,7 @@ test('served splash: served copy through the boxed view, billed impression and c
   expect(frame).toContain('Sponsored')
   expect(frame).toContain('Ship faster with Acme')
   expect(frame).toContain('acme.dev ↗')
+  await settle(setup, () => billed.some(([kind]) => kind === 'impression'))
   expect(billed).toEqual([
     ['impression', 'https://www.codebuff.com/imp/CLI-Splash', 'CLI-Splash'],
   ])
@@ -232,6 +245,7 @@ test('served /deals card: position 1 only, billed impression on insertion, bille
   expect(frame).toContain('1')
   expect(frame).toContain('Acme Cloud')
   expect(frame.match(/Sponsored/g)?.length).toBe(1)
+  await settle(setup, () => billed.some(([kind]) => kind === 'impression'))
   expect(billed).toEqual([
     ['impression', 'https://www.codebuff.com/imp/CLI-Deals', 'CLI-Deals'],
   ])
