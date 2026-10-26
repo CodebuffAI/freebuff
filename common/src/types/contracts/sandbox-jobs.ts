@@ -38,8 +38,25 @@ export type SnapshotMigrationCleanup =
       currentSandboxId: string
     }
 
+/**
+ * A cold start's Daytona attach (`codesandbox/projectCrud:attachDaytonaToInitializingProject`),
+ * forwarded by the Convex action `initializeUnassignedProject` so freebuff-web
+ * runs the mutation through Postgres (docs/freebuff-project-pool.md, "Cold
+ * start"). The raw Daytona sandbox id, its preview URL and the detected
+ * package manager; no credentials.
+ */
+export type ColdStartDaytonaAttach = {
+  projectId: string
+  sandboxId: string
+  previewUrl: string
+  packageManager: 'pnpm' | 'bun'
+}
+
 export type SandboxJobRequest =
   | { job: SandboxSweepRequestJob }
+  /** Forwarded by Convex's cold start, not scheduled: no runner-table entry
+   *  owns it. */
+  | { job: 'attach_cold_start_daytona'; attach: ColdStartDaytonaAttach }
   /** One delayed `sandbox_migration.cleanup` job. Enqueued only by
    *  freebuff-web's own migration, so no runner-table entry owns it. */
   | { job: 'snapshot_migration_cleanup'; cleanup: SnapshotMigrationCleanup }
@@ -67,6 +84,7 @@ export type SandboxJobResponse =
     }
   | { job: 'provision_pool_slot'; ran: true; outcome: PoolSlotOutcome }
   | { job: 'snapshot_migration_cleanup'; ran: true; durationMs: number }
+  | { job: 'attach_cold_start_daytona'; ran: true; durationMs: number }
 
 /** Which runner-table entry a request belongs to: the route refuses a request
  *  whose job is not owned by `graphile`, so a stray POST can never make a
@@ -81,6 +99,7 @@ export function sandboxJobForRequest(
     case 'provision_pool_slot':
       return 'provision_pool'
     case 'snapshot_migration_cleanup':
+    case 'attach_cold_start_daytona':
       return null
     default:
       return request.job
@@ -123,12 +142,44 @@ export function parseSnapshotMigrationCleanup(
   return null
 }
 
+/** A raw Daytona sandbox id (a UUID; the `daytona:` prefix is added by the
+ *  mutation). */
+const RAW_SANDBOX_ID = /^[A-Za-z0-9_.-]{1,200}$/
+const MAX_PREVIEW_URL = 2048
+
+export function parseColdStartDaytonaAttach(
+  value: unknown,
+): ColdStartDaytonaAttach | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const { projectId, sandboxId, previewUrl, packageManager } = value as Record<
+    string,
+    unknown
+  >
+  if (
+    typeof projectId !== 'string' ||
+    !POOL_JOB_ID.test(projectId) ||
+    typeof sandboxId !== 'string' ||
+    !RAW_SANDBOX_ID.test(sandboxId) ||
+    typeof previewUrl !== 'string' ||
+    previewUrl.length > MAX_PREVIEW_URL ||
+    !/^https?:\/\//.test(previewUrl) ||
+    (packageManager !== 'pnpm' && packageManager !== 'bun')
+  ) {
+    return null
+  }
+  return { projectId, sandboxId, previewUrl, packageManager }
+}
+
 export function parseSandboxJobRequest(body: unknown): SandboxJobRequest | null {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null
-  const { job, poolJobId, cleanup } = body as Record<string, unknown>
+  const { job, poolJobId, cleanup, attach } = body as Record<string, unknown>
   if (job === 'snapshot_migration_cleanup') {
     const parsed = parseSnapshotMigrationCleanup(cleanup)
     return parsed ? { job, cleanup: parsed } : null
+  }
+  if (job === 'attach_cold_start_daytona') {
+    const parsed = parseColdStartDaytonaAttach(attach)
+    return parsed ? { job, attach: parsed } : null
   }
   if (
     typeof job === 'string' &&
