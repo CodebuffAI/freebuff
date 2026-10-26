@@ -9,7 +9,9 @@
  * - `shadow` the chain copies every Convex change (insert, patch, delete)
  *            into Postgres, so readers that moved off Convex can read the
  *            mirror. Convex still writes: its writers (project creation,
- *            Cloud connect, the snapshot migration) have not moved.
+ *            Cloud connect, the snapshot migration) have not moved, though
+ *            those that run on freebuff-web also write through to Postgres
+ *            (packages/internal/src/sandbox-migration/write-through.ts).
  *
  * There is no `postgres` yet: that comes with the writers' port.
  *
