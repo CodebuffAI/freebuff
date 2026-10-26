@@ -6,14 +6,14 @@
  *
  * - `convex`   nothing reads or writes the Postgres table, and the
  *              `sandbox_migration.projection` chain ends at its next link.
- * - `shadow`   (current) the chain copies every Convex change (insert,
+ * - `shadow`   the chain copies every Convex change (insert,
  *              patch, delete) into Postgres, so readers that moved off Convex
  *              can read the mirror. Convex still writes first: its writers
  *              that run on freebuff-web also write through to Postgres
  *              (packages/internal/src/sandbox-migration/write-through.ts).
  *              The fences that have not moved (send gates, run claim,
  *              hosting, the Cloud workspace and preview twins) read Convex.
- * - `postgres` as `shadow` for the chain and the writes (Convex stays
+ * - `postgres` (current) as `shadow` for the chain and the writes (Convex stays
  *              authoritative for the Convex-side readers), and every
  *              freebuff-web reader of the row reads Postgres first: a
  *              Postgres row is the answer; a missing row or a failed read
@@ -31,7 +31,7 @@ export const SANDBOX_MIGRATION_BACKENDS = ['convex', 'shadow', 'postgres'] as co
 
 export type SandboxMigrationBackend = (typeof SANDBOX_MIGRATION_BACKENDS)[number]
 
-export const SANDBOX_MIGRATION_BACKEND: SandboxMigrationBackend = 'shadow'
+export const SANDBOX_MIGRATION_BACKEND: SandboxMigrationBackend = 'postgres'
 
 /** Whether the projection mirrors Convex into Postgres (and writers write through). */
 export function sandboxMigrationMirrored(
