@@ -62,3 +62,26 @@ export function githubShadowEnabled(
 export type GitHubWebhookReceiverMode = 'convex_proxy' | 'next'
 
 export const GITHUB_WEBHOOK_RECEIVER: GitHubWebhookReceiverMode = 'next'
+
+/**
+ * Where the GitHub ACTIONS run (docs/freebuff-github-postgres.md, "The
+ * actions on freebuff-web"): the legacy sync executor, the push and
+ * installation webhooks, initial sync, resolution and rollback, the OAuth and
+ * installation callbacks, the connect dialog, env export, token rotation and
+ * hosting's GitHub deployment.
+ *
+ * - `convex`       (current) the Convex actions run them, reading and writing
+ *                  the Postgres store through `githubStore`'s bridge.
+ * - `freebuff_web` freebuff-web runs the SAME action bodies in-process
+ *                  (`freebuff/web/src/server/github/actions/runtime.ts`), on
+ *                  Postgres; the browser calls them through `/api/fn`, the
+ *                  webhook jobs and the rotation cron run them locally, and
+ *                  their scheduled continuations are graphile jobs
+ *                  (`github.run_action`). Only the project spine's and the
+ *                  legacy thread's writes still reach Convex.
+ *
+ * Needs `GITHUB_BACKEND = 'postgres'`. A flip is a reviewed one-line diff.
+ */
+export type GitHubActionsRuntime = 'convex' | 'freebuff_web'
+
+export const GITHUB_ACTIONS_RUNTIME: GitHubActionsRuntime = 'convex'
