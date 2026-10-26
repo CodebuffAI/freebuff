@@ -554,6 +554,42 @@ export function isFreebuffCancellationReason(
 }
 
 /**
+ * Whether confirming a cancel ends the plan on the spot, with no refund for
+ * the rest of the period. Mirrors the cancel route (web
+ * `api/freebuff/subscriptions/cancel/_post.ts`): a grant ends now, a yearly
+ * plan in good standing is only set not to renew, and anything else — a
+ * monthly plan, or a renewal whose payment failed — ends now. A prepaid year
+ * has nothing to cancel and never reaches the confirm step.
+ */
+export function freebuffCancelEndsImmediately(subscription: {
+  source?: string
+  billingInterval?: string
+  paymentFailedTierId?: string
+}): boolean {
+  if (subscription.source === 'grant') return true
+  return (
+    subscription.billingInterval !== 'yearly' ||
+    Boolean(subscription.paymentFailedTierId)
+  )
+}
+
+/**
+ * The phrase typed at the final step of a cancel that ends the plan
+ * immediately. Users kept cancelling and then asking for the rest of the
+ * period back; typing it makes "ends now, no refund" impossible to skim past.
+ * Client-side only: the server already requires the typed account email.
+ */
+export const FREEBUFF_IMMEDIATE_CANCEL_PHRASE =
+  'I understand my plan ends immediately'
+
+/** Case-insensitive, ignoring surrounding and repeated whitespace. */
+export function freebuffImmediateCancelPhraseMatches(typed: string): boolean {
+  const normalize = (value: string) =>
+    value.trim().replace(/\s+/g, ' ').toLowerCase()
+  return normalize(typed) === normalize(FREEBUFF_IMMEDIATE_CANCEL_PHRASE)
+}
+
+/**
  * What a subscriber gives up by cancelling, in the one term that matters:
  * today's beta pricing is not the standing price, and it is not held for an
  * account that leaves.
