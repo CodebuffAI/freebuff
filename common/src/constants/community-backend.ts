@@ -16,6 +16,9 @@
  * freeze, so the flip needs no write freeze and the revert is the same
  * one-line diff while the Convex queries still exist.
  *
+ * The Convex queries are deleted (runbook step 7), so `postgres` is the only
+ * value that serves anything now.
+ *
  * Imported by the browser bundle (the backend map) as well as the server, so
  * it must stay a leaf. Never an env var.
  */
