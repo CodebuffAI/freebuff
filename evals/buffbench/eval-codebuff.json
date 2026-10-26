@@ -8,7 +8,7 @@
       "binPath": "bin/bun"
     }
   ],
-  "initCommand": "bun install && git checkout -- bun.lock",
+  "initCommand": "bun install",
   "finalCheckCommands": ["bun run typecheck", "bun run test"],
   "env": {
     "ANTHROPIC_API_KEY": "test-key",

@@ -37,6 +37,31 @@ export async function cloneAtCommit(params: {
   }
 }
 
+/** Runs the task's setup (usually a dependency install), then restores every
+ *  tracked file whatever its exit status. An install rewrites the lockfile,
+ *  and a change no agent made would sit in every arm's diff for the judge to
+ *  dock. Untracked output such as node_modules stays. */
+export function runInitCommand(params: {
+  repoDir: string
+  initCommand: string
+  env?: Record<string, string>
+}): void {
+  const { repoDir, initCommand, env } = params
+  console.log(`Running init command: ${initCommand}...`)
+  try {
+    execSync(initCommand, {
+      cwd: repoDir,
+      stdio: 'ignore',
+      env: { ...process.env, ...env },
+    })
+  } catch (error) {
+    console.error(
+      `Error running init command: ${getErrorObject(error).message}`,
+    )
+  }
+  execSync('git checkout -q -- .', { cwd: repoDir, stdio: 'ignore' })
+}
+
 /**
  * Helper function to manage test repository lifecycle
  * Sets up a test repo, runs a function with the repo cwd, then cleans up
@@ -60,20 +85,7 @@ export const withTestRepo = async <T>(
   try {
     await cloneAtCommit({ repoUrl, repoDir, sha: parentSha })
 
-    if (initCommand) {
-      console.log(`Running init command: ${initCommand}...`)
-      try {
-        execSync(initCommand, {
-          cwd: repoDir,
-          stdio: 'ignore',
-          env: { ...process.env, ...env },
-        })
-      } catch (error) {
-        console.error(
-          `Error running init command: ${getErrorObject(error).message}`,
-        )
-      }
-    }
+    if (initCommand) runInitCommand({ repoDir, initCommand, env })
 
     // Run the provided function with the repo directory
     return await fn(repoDir)

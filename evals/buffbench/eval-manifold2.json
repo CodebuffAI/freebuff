@@ -1,7 +1,7 @@
 {
   "repoUrl": "https://github.com/manifoldmarkets/manifold",
   "generationDate": "2025-12-10",
-  "initCommand": "yarn install && git checkout -- yarn.lock",
+  "initCommand": "yarn install",
   "finalCheckCommands": [
     "yarn --cwd common tsc --noEmit",
     "yarn --cwd backend/api compile",
