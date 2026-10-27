@@ -429,6 +429,14 @@ const TRANSIENT_NETWORK_ERROR_CODES = new Set([
   'ECONNREFUSED',
   'EPIPE',
   'ETIMEDOUT',
+  // DNS: the host could not be resolved (ENOTFOUND), the resolver had no
+  // answer yet (EAI_AGAIN), or the resolver itself timed out (c-ares's
+  // ETIMEOUT, which is NOT the socket's ETIMEDOUT above). A laptop changing
+  // networks throws these for a few seconds; on 10-26/27 they ended 7
+  // sponsored runs mid-work, each after 14-104 model calls (COD-965).
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ETIMEOUT',
   // Bun-specific fetch error codes
   'ConnectionClosed',
   'ConnectionRefused',

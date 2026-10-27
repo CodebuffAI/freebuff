@@ -181,6 +181,21 @@ describe('isTransientNetworkError', () => {
     }
   })
 
+  it('detects DNS failures, keeping ETIMEOUT apart from ETIMEDOUT', () => {
+    // Bun's shape for a host that will not resolve (COD-965).
+    for (const code of ['ENOTFOUND', 'EAI_AGAIN', 'ETIMEOUT']) {
+      const error = Object.assign(
+        new Error(`getaddrinfo ${code} www.codebuff.com`),
+        { code },
+      )
+      expect(isTransientNetworkError(error)).toBe(true)
+    }
+    expect(isTransientNetworkError({ code: 'ENOTFOUND' })).toBe(true)
+    expect(
+      isTransientNetworkError(Object.assign(new Error('x'), { code: 'ETIME' })),
+    ).toBe(false)
+  })
+
   it('detects the undici "fetch failed" TypeError', () => {
     expect(isTransientNetworkError(new TypeError('fetch failed'))).toBe(true)
   })
