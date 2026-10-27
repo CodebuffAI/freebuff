@@ -9,6 +9,7 @@ import {
   ADS_FIRST_PARTY_SETTLEMENT_EVENT,
   ADS_FIRST_PARTY_VIEW_ACK_EVENT,
   ADS_EXTERNAL_CONVERSION_CLICK_ID_SHAPES,
+  ADS_EXTERNAL_CONVERSION_SELECTED_RAILS,
   ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT,
   ADS_CAMPAIGN_INGRESS_EVIDENCE_EVENT,
   ADS_ADVERTISER_REPORTING_READ_EVENT,
@@ -1078,11 +1079,15 @@ describe('getAxiomOnlyLogEvent', () => {
     )
   })
 
-  test('keeps external conversion postbacks content- and identifier-free', () => {
+  test('keeps only advertiser correlation and content-free dimensions on conversion postbacks', () => {
     expect(
       getAxiomOnlyLogEvent({
         axiomEvent: ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT,
-        channel: 'client',
+        channel: 's2s',
+        selected_rail: 'identity_email',
+        email_present: false,
+        email_hash_present: true,
+        email_hash_valid: true,
         outcome: 'accepted',
         rejection_reason: 'none',
         event_type: 'signup_completed',
@@ -1099,6 +1104,8 @@ describe('getAxiomOnlyLogEvent', () => {
         advertiser_id: 'advertiser-private',
         user_id: 'user-private',
         email: 'private@example.com',
+        em: 'a'.repeat(64),
+        userData: { em: 'a'.repeat(64) },
         url: 'https://partner.example/private',
         body: { private: true },
         error: new Error('private failure'),
@@ -1106,7 +1113,12 @@ describe('getAxiomOnlyLogEvent', () => {
     ).toEqual({
       event: ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT,
       data: {
-        channel: 'client',
+        channel: 's2s',
+        advertiser_id: 'advertiser-private',
+        selected_rail: 'identity_email',
+        email_present: false,
+        email_hash_present: true,
+        email_hash_valid: true,
         outcome: 'accepted',
         rejection_reason: 'none',
         event_type: 'signup_completed',
@@ -1144,11 +1156,42 @@ describe('getAxiomOnlyLogEvent', () => {
     const result = getAxiomOnlyLogEvent({
       ...base,
       click_id_shape: 'bfc_1.private-raw-click-value',
-      advertiser_id: 'advertiser-private',
+      advertiser_id: 'advertiser-1',
       api_key: 'fbadv_private',
     })
     expect(result?.data).not.toHaveProperty('click_id_shape')
     expect(JSON.stringify(result)).not.toContain('private')
+  })
+
+  test('accepts only closed selected rails and boolean identity presence flags', () => {
+    const base = { axiomEvent: ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT }
+    for (const selectedRail of ADS_EXTERNAL_CONVERSION_SELECTED_RAILS) {
+      expect(
+        getAxiomOnlyLogEvent({
+          ...base,
+          selected_rail: selectedRail,
+          email_present: true,
+          email_hash_present: false,
+          email_hash_valid: false,
+        })?.data,
+      ).toEqual({
+        selected_rail: selectedRail,
+        email_present: true,
+        email_hash_present: false,
+        email_hash_valid: false,
+      })
+    }
+    for (const invalid of ['private@example.com', 'a'.repeat(64), 42, null]) {
+      const result = getAxiomOnlyLogEvent({
+        ...base,
+        selected_rail: invalid,
+        email_present: invalid,
+        email_hash_present: invalid,
+        email_hash_valid: invalid,
+        advertiser_id: { raw: 'private-id' },
+      })
+      expect(result?.data).toEqual({})
+    }
   })
 
   test('drops a non-string channel from the postback census', () => {

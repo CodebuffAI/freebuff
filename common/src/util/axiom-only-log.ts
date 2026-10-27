@@ -105,7 +105,7 @@ export const ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT =
 /**
  * Why an authenticated S2S postback failed the click-id shape guard before
  * body validation. Values describe only the failed predicate; the presented
- * value, API key, advertiser, campaign, IP and request body stay out of Axiom.
+ * value, API key, campaign, IP and request body stay out of Axiom.
  */
 export const ADS_EXTERNAL_CONVERSION_CLICK_ID_SHAPES = [
   'missing',
@@ -116,9 +116,17 @@ export const ADS_EXTERNAL_CONVERSION_CLICK_ID_SHAPES = [
 ] as const
 export type AdsExternalConversionClickIdShape =
   (typeof ADS_EXTERNAL_CONVERSION_CLICK_ID_SHAPES)[number]
+/** Selected ingress branch, including requests rejected before a lookup. */
+export const ADS_EXTERNAL_CONVERSION_SELECTED_RAILS = [
+  'click_id',
+  'identity_email',
+  'none',
+] as const
+export type AdsExternalConversionSelectedRail =
+  (typeof ADS_EXTERNAL_CONVERSION_SELECTED_RAILS)[number]
 /**
- * Durable campaign-health evidence. Unlike the content-free postback census,
- * this stream intentionally carries opaque advertiser/campaign identifiers so
+ * Durable campaign-health evidence. This stream also carries an opaque
+ * campaign identifier, beyond the postback census's authenticated advertiser, so
  * the health reader can distinguish independent ingress binding from a join
  * learned only after click resolution. Raw click ids, event ids, credentials,
  * email, IP and user-agent data are never fields on this event.
@@ -1067,13 +1075,23 @@ export function createFirstPartyViewAckTelemetry(
   }
 }
 
-/** Keep the advertiser postback stream safe to aggregate. In particular this
- * must not grow into an attribution/debugging record: the database owns that
- * drill-down and Axiom receives only bounded operational dimensions. */
+/** Keep the advertiser postback stream safe to aggregate. The authenticated
+ * advertiser id correlates integration health; all other fields describe
+ * bounded operational dimensions. Emails, hashes and click/event identifiers
+ * stay out of Axiom. */
 const ADS_EXTERNAL_CONVERSION_POSTBACK_FIELDS = {
   // Which ingress reported: 's2s' (key-authenticated postback) or 'client'
   // (the keyless browser endpoint). Two-valued, never a partner identifier.
   channel: 'string',
+  // Server-resolved after authentication, never a request-body field.
+  advertiser_id: 'string',
+  selected_rail: 'string',
+  // Raw canonical field presence, including fields ignored by click-id routing.
+  // Presence does not imply the supplied email or hash was valid.
+  email_present: 'boolean',
+  email_hash_present: 'boolean',
+  // Whether canonical `em` contains an accepted SHA-256 digest or digest array.
+  email_hash_valid: 'boolean',
   outcome: 'string',
   rejection_reason: 'string',
   click_id_shape: 'string',
@@ -1104,6 +1122,14 @@ function sanitizeExternalConversionPostbackFields(
     )
   ) {
     delete data.click_id_shape
+  }
+  if (
+    typeof data.selected_rail === 'string' &&
+    !(ADS_EXTERNAL_CONVERSION_SELECTED_RAILS as readonly string[]).includes(
+      data.selected_rail,
+    )
+  ) {
+    delete data.selected_rail
   }
   return data
 }
