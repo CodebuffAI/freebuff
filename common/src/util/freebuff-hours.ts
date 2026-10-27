@@ -73,6 +73,29 @@ export function freebuffModelMultiplierLabel(
 }
 
 /**
+ * How many one-hour sessions of a model the balance buys, for the hourglass's
+ * tooltip at limited access (product, 2026-10-27): "2 one-hour sessions left".
+ * Whole sessions, rounded down, never a fraction. Undefined for a free or
+ * unpriced row, or an unknown balance.
+ */
+export function freebuffSessionsLeftLabel(
+  balance: number | null | undefined,
+  priceFreebucks: number | null | undefined,
+): string | undefined {
+  if (
+    balance === null ||
+    balance === undefined ||
+    !Number.isFinite(balance) ||
+    priceFreebucks === null ||
+    priceFreebucks === undefined ||
+    !(priceFreebucks > 0)
+  )
+    return undefined
+  const sessions = Math.floor(Math.max(0, balance) / priceFreebucks + 1e-9)
+  return `${sessions.toLocaleString('en-US')} one-hour ${sessions === 1 ? 'session' : 'sessions'} left`
+}
+
+/**
  * A price as multiplier text for sentences, where an empty label would leave
  * a hole: `freebuffModelMultiplierLabel`, else "1x" for a 1x row and "free"
  * for a free one.

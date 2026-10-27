@@ -26,8 +26,9 @@ export interface FreebuffModelPolicyOverlay {
   /** Every enabled catalog model id (compiled and catalog-only), for callers
    *  that enumerate — a price map, a lock list. */
   catalogModelIds?(): readonly string[]
-  /** Freebucks per session. 0 = unmetered-but-listed. */
-  price?(modelId: string): number | undefined
+  /** Freebucks per session. 0 = unmetered-but-listed. `tier` is the
+   *  viewer's access tier, when known: a row may cost less at limited access. */
+  price?(modelId: string, tier?: 'full' | 'limited'): number | undefined
   /** Crossed-out list price shown beside a discounted `price`. */
   listPrice?(modelId: string): number | undefined
   /** One-line notice that replaces the tagline in pickers. */
