@@ -2066,18 +2066,17 @@ describe('limited-offer models (Claude Fable 5.1)', () => {
 describe('Meta Muse Spark 1.3 Contributor', () => {
   const ID = FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID
 
-  test('is the offered Muse Spark row, open at full access and plan-only at limited access', () => {
+  test('is the offered Muse Spark row, plan-only at every access tier', () => {
     // Paused 2026-09-07 (`404 model_not_found` on every key), back on
-    // 2026-09-28 on a new key as a paid-only row, and open to every
-    // full-access account without a plan from 2026-10-09 (Luna's and MiMo 2.6
-    // Pro's terms): a plan is still what unlocks it at limited access.
+    // 2026-09-28 on a new key as a paid-only row. A paid plan is required on
+    // every surface and access tier (#1525), matching the README.
     expect(isFreebuffPausedFreeModelId(ID)).toBe(false)
     expect(FREEBUFF_MODELS.map((model) => model.id)).toContain(ID)
     expect(FREEBUFF_WEB_MODELS.map((model) => model.id)).toContain(ID)
     expect(isFreebuffWebSelectableModelId(ID)).toBe(true)
     expect(isFreebuffSessionModelId(ID)).toBe(true)
-    expect(isFreebuffProOnlyCatalogModelId(ID)).toBe(false)
-    expect(isFreebuffProOnlyEverySurfaceModelId(ID)).toBe(false)
+    expect(isFreebuffProOnlyCatalogModelId(ID)).toBe(true)
+    expect(isFreebuffProOnlyEverySurfaceModelId(ID)).toBe(true)
     expect(isFreebuffLimitedTierPlanOnlyModelId(ID)).toBe(true)
     expect(FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS).toContain(ID)
     // Out of the premium pool since 2026-10-10, when Meta lifted the

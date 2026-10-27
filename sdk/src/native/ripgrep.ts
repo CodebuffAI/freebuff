@@ -138,7 +138,7 @@ export function getBundledRgPath(
   // No fallback available - bundled binaries are required
   throw new Error(
     `Ripgrep binary not found for ${platform}-${arch}. ` +
-      `Expected at: ${vendorPath} or ${distVendorPath}. ` +
+      `Expected at: ${distVendorPath}${vendorPath ? ` or ${vendorPath}` : ''}. ` +
       `Please run 'npm run fetch-ripgrep' or set CODEBUFF_RG_PATH environment variable.`,
   )
 }
