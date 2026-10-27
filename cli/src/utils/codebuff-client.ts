@@ -1,3 +1,4 @@
+import { FREEBUFF_CLIENT_VERSION_HEADER } from '@codebuff/common/constants/freebuff-desktop-sessions'
 import { API_KEY_ENV_VAR } from '@codebuff/common/old-constants'
 import { AskUserBridge } from '@codebuff/common/utils/ask-user-bridge'
 import { CodebuffClient } from '@codebuff/sdk'
@@ -39,6 +40,12 @@ function removeUndefinedValues<T>(obj: T): T {
     return result as T
   }
   return obj
+}
+
+/** This build's version, which the server logs on the feedback flag line. */
+function cliVersionHeaders(): Record<string, string> {
+  const version = getCliEnv().CODEBUFF_CLI_VERSION
+  return version ? { [FREEBUFF_CLIENT_VERSION_HEADER]: version } : {}
 }
 
 /**
@@ -86,13 +93,15 @@ export async function getCodebuffClient(
       clientInstance = new CodebuffClient({
         ...(apiKey ? { apiKey } : {}),
         ...(options.byok ? { byok: options.byok } : {}),
-        // Catalog mode only: the fetch id and device signature on every
-        // completions request (docs/freebuff-model-catalog.md). Fallback mode
-        // adds nothing, and BYOK requests never consult it.
+        // This build's version on every completions request (observe-only),
+        // and in catalog mode the fetch id and device signature
+        // (docs/freebuff-model-catalog.md). BYOK requests never consult it.
         ...(apiKey
           ? {
-              requestHeaders: (request) =>
-                freebuffCatalogCompletionHeaders(apiKey, request),
+              requestHeaders: async (request) => ({
+                ...cliVersionHeaders(),
+                ...(await freebuffCatalogCompletionHeaders(apiKey, request)),
+              }),
             }
           : {}),
         cwd: projectRoot,

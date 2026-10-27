@@ -129,9 +129,11 @@ export const FREEBUFF_CLIENT_DESKTOP = 'desktop'
 
 /**
  * The calling app's own version (`0.0.212`, `1.4.0`), sent by the CLI and
- * Desktop on session calls. Observe-only: friction lines
- * (`freebuff_session_refused`) carry it so a refusal can be tied to the build
- * that saw it. Never gates anything; a client may omit it.
+ * Desktop on session calls and on chat completions (where the user agent is
+ * the AI SDK's on every client). Observe-only: friction lines
+ * (`freebuff_session_refused`) and the feedback flag line
+ * (`prompt.feedback_flag`) carry it so a report can be tied to the build that
+ * saw it. Never gates anything; a client may omit it.
  */
 export const FREEBUFF_CLIENT_VERSION_HEADER = 'x-freebuff-client-version'
 
