@@ -9,9 +9,9 @@ import type { Parser, Query } from 'web-tree-sitter'
 export const DEBUG_PARSING = false
 const IGNORE_TOKENS = ['__init__', '__post_init__', '__call__', 'constructor']
 const MAX_CALLERS = 25
-const DEFAULT_MAX_PARSE_FILES = 10_000
-const DEFAULT_MAX_PARSE_FILE_BYTES = 1_000_000
-const DEFAULT_MAX_TOTAL_PARSE_BYTES = 500_000_000
+const DEFAULT_MAX_PARSE_FILES = 2_000
+const DEFAULT_MAX_PARSE_FILE_BYTES = 300_000
+const DEFAULT_MAX_TOTAL_PARSE_BYTES = 60_000_000
 
 const MAX_PARSE_FILES = getPositiveIntegerEnv(
   'CODEBUFF_MAX_PARSE_FILES',
