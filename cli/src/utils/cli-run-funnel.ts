@@ -65,8 +65,6 @@ export function createCliRunFunnel(deps: {
           'end_turn',
           'ask_user',
           'spawn_agents',
-          'spawn_agent_async',
-          'wait_for_subagents',
           'spawn_agent_inline',
         ].includes(event.toolName)
       ) {

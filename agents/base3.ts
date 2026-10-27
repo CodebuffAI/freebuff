@@ -3,6 +3,7 @@ import {
   type RootCompactionPolicy,
 } from '@codebuff/common/constants/compaction-policy'
 import {
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
   FREEBUFF_SOLAR_MINI_4_MODEL_ID,
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
@@ -26,6 +27,38 @@ import {
   PLACEHOLDER,
   type SecretAgentDefinition,
 } from './types/secret-agent-definition'
+
+/**
+ * Working in batches, appended to base3's prompt for the roots that ask for it
+ * (`batching`) on the models in BATCHING_MODELS. Every response re-sends the
+ * conversation, so the same work in fewer responses is faster and cheaper
+ * (docs/benchmarks/base3-batched/README.md).
+ * It comes after the dynamic context, outside the core the server compares
+ * (web/src/llm-api/root-instruction-contract.ts), so older clients still match.
+ * Deliberately NOT repeated as a per-step `stepPrompt`: a step prompt is
+ * deleted each step, so no request is a prefix of the next and the prompt
+ * cache collapses (#1158; measured in the benchmark doc above).
+ */
+const BATCHING_GUIDANCE = `## Work in batches
+
+Every response is a round trip: the whole conversation is sent again before the next reply begins, so a task done in fewer responses finishes sooner and costs less. Get as much done in each response as you can.
+
+- **Make every call you already can.** Tool calls that do not depend on each other's results belong in one response, not in a sequence of responses.
+- **Search in one batch.** When you need to find something, send every code_search and glob you can think of together (the names, strings and paths it could be under), rather than one search per response.
+- **Read in one batch.** Read every file that looks relevant in one read_files call, often 5 to 15 of them, including the ones you expect to need next, rather than one file at a time. Go back for more only when what you read points to something specific.
+- **Explore with the dedicated tools.** code_search, glob, list_directory and read_files take many patterns or paths per call; ls, cat, grep and find in the terminal do not.
+- **Edit in one batch.** Make all the edits you already know in one response.
+- **Check in one batch.** Run the checks in the same response as your last edits, as one terminal command that runs every check the change needs (for example each touched package's typecheck and the tests that cover the change), each with its exit status echoed and not piped into head or tail.
+- **Stop when it is done.** Once the request is met and its checks pass, or the question is answered, give the final message.`
+
+/**
+ * The models the section is measured to help: on DeepSeek V4.1 Flash it
+ * finished sooner at the same score. On GPT-6 Luna it bought no time, and on
+ * MiMo v2.5 it cost score, so both keep base3's prompt as it was
+ * (docs/benchmarks/base3-batched/README.md). Add a model only with a paired
+ * buffbench run on it.
+ */
+const BATCHING_MODELS = [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]
 
 /**
  * The models that end a turn on a status line or a plan instead of calling the
@@ -77,12 +110,22 @@ export function createBase3(
     compaction?: RootCompactionPolicy
     /** Web/Cloud owns persistent processes through managed sessions. */
     supportsBackgroundCommands?: boolean
+    /** Append the "Work in batches" section, on a model in BATCHING_MODELS.
+     *  For the roots that run the user's coding agent in build mode: the CLI
+     *  (`createBase3CliRoot`), Desktop and Desktop Cloud. Plan mode, fast mode,
+     *  sponsored runs and Web/Cloud (whose platform runs the checks) leave it
+     *  off, and a lean row never gets it: its context budget says to read
+     *  narrowly. */
+    batching?: boolean
     /** The compiled model a catalog handle stands for, which decides the
      *  per-model parts below; defaults to `model`. */
     compiledModelId?: string
   } = {},
 ): Omit<SecretAgentDefinition, 'id'> {
   const turnEndingNote = TURN_ENDING_NOTE_MODELS.some((id) =>
+    freebuffModelIdMatches(options.compiledModelId ?? model, id),
+  )
+  const batchingModel = BATCHING_MODELS.some((id) =>
     freebuffModelIdMatches(options.compiledModelId ?? model, id),
   )
   const { lean, ...compactContext }: RootCompactionPolicy =
@@ -162,7 +205,7 @@ ${AGENT_VERIFICATION_GUIDANCE}
 ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}
 
 ${PLACEHOLDER.GIT_CHANGES_PROMPT}
-${leanGuidance}`,
+${leanGuidance}${options.batching && batchingModel && !lean ? `\n${BATCHING_GUIDANCE}` : ''}`,
   }
 }
 
@@ -205,6 +248,9 @@ export function createBase3CliRoot(
     compaction?: RootCompactionPolicy
     /** See createBase3. */
     compiledModelId?: string
+    /** See createBase3. On for CLI roots; the sponsored and fast-mode roots
+     *  turn it off. */
+    batching?: boolean
   } = {},
 ): Omit<SecretAgentDefinition, 'id'> {
   const {
@@ -217,6 +263,7 @@ export function createBase3CliRoot(
   const base3 = createBase3(model, {
     compaction: options.compaction,
     compiledModelId: options.compiledModelId,
+    batching: options.batching ?? true,
   })
 
   const root: Omit<SecretAgentDefinition, 'id'> = {

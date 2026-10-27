@@ -112,9 +112,6 @@ const hiddenToolNames = new Set<ToolName | 'spawn_agent_inline'>([
   'spawn_agent_inline',
   'end_turn',
   'spawn_agents',
-  // Each async spawn shows as the subagent's own block when it starts.
-  'spawn_agent_async',
-  'wait_for_subagents',
 ])
 
 const isHiddenToolName = (

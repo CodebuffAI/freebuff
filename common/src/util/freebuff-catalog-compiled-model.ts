@@ -1,4 +1,3 @@
-import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from '../constants/freebuff-model-ids'
 import { SUPPORTED_FREEBUFF_MODELS } from '../constants/freebuff-models'
 import { freebuffLegacyModelDigest } from '../types/freebuff-model-catalog'
 
@@ -25,19 +24,4 @@ export function compiledFreebuffModelIdOfRow(
     if (id) return id
   }
   return undefined
-}
-
-/**
- * Whether the CLI and Desktop run a row on the base3-async harness
- * (agents/base3-async.ts): it names the harness and stands for DeepSeek V4.1
- * Flash, the one model the harness's CHECKS subagent is pinned to
- * (docs/freebuff-model-catalog.md, "Row harnesses").
- */
-export function freebuffRowRunsBase3Async(
-  row: Pick<FreebuffCatalogRow, 'harness' | 'legacyDigests'>,
-): boolean {
-  return (
-    row.harness === 'base3-async' &&
-    compiledFreebuffModelIdOfRow(row) === FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
-  )
 }

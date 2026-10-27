@@ -52,15 +52,6 @@ import {
   compactMechanically,
 } from './compaction'
 import { CACHE_DEBUG_FULL_LOGGING } from './constants'
-import {
-  asyncSubagentReportMessage,
-  beginAsyncSubagentGroup,
-  endAsyncSubagentGroup,
-  hasRunningAsyncSubagents,
-  runningAsyncSubagents,
-  takeAsyncSubagentReports,
-  waitForAsyncSubagentReport,
-} from './async-subagents'
 import { getMCPToolData } from './mcp'
 import {
   runProjectProfileReport,
@@ -824,14 +815,8 @@ export const runAgentStep = async (
   const isThinkOnly = hasNoToolResults && isThinkOnlyResponse(fullResponse)
 
   // If the agent has the task_completed tool, it must be called to end its turn.
-  // Except on an async team (spawn_agent_async in the tool schema, which its
-  // subagents share): the schema carries task_completed for the subagents to
-  // close their reports with, and every member still ends on a reply with no
-  // tool call. The orchestrator's spawn-only reply must end its step so the
-  // loop can wait for reports instead of prompting it again.
   const requiresExplicitCompletion =
-    agentTemplate.toolNames.includes('task_completed') &&
-    !(params.tools && 'spawn_agent_async' in params.tools)
+    agentTemplate.toolNames.includes('task_completed')
 
   let shouldEndTurn: boolean
   if (requiresExplicitCompletion) {
@@ -1408,9 +1393,6 @@ export async function loopAgentSteps(
   let nResponses: string[] | undefined = undefined
   let compactionWindow: CompactionWindow | undefined
 
-  // The subagents this run starts with spawn_agent_async report into this
-  // group; the finally below ends it, stopping any still running.
-  beginAsyncSubagentGroup(runId)
   try {
     while (true) {
       totalSteps++
@@ -1861,30 +1843,6 @@ export async function loopAgentSteps(
         ]
         shouldEndTurn = false
       }
-
-      // Subagents started with spawn_agent_async: every report that has
-      // arrived joins the history now, between two steps. A turn that would
-      // end while one is still running waits for the next report instead, so
-      // a reply of nothing but spawns, or of nothing at all, means "wake me
-      // when one finishes".
-      if (shouldEndTurn && hasRunningAsyncSubagents(runId)) {
-        await waitForAsyncSubagentReport(runId, signal)
-        if (signal.aborted) throw new AbortError()
-      }
-      const reports = takeAsyncSubagentReports(runId)
-      if (reports.length > 0) {
-        const stillRunning = runningAsyncSubagents(runId)
-        currentAgentState.messageHistory = [
-          ...currentAgentState.messageHistory,
-          ...reports.map((report) =>
-            asyncSubagentReportMessage(report, stillRunning),
-          ),
-        ]
-        for (const report of reports) {
-          currentAgentState.creditsUsed += report.creditsUsed
-        }
-        shouldEndTurn = false
-      }
     }
 
     const projectProfileReport =
@@ -2109,9 +2067,6 @@ export async function loopAgentSteps(
       },
     }
   } finally {
-    // On a normal end none is running; a loop that exits early (an error, a
-    // cancellation) stops the ones it started.
-    endAsyncSubagentGroup(runId)
     if (compactionWindow)
       closeCompactionWindow({
         window: compactionWindow,

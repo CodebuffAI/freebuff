@@ -277,6 +277,8 @@ export function sponsoredAgentDefinition(options: {
     ...(model ? { model } : {}),
     isFreebuff,
     noAskUser: true,
+    // A sponsored run follows its reviewed procedure, unchanged.
+    batching: false,
   })
   return {
     ...root,

@@ -7,10 +7,8 @@ export type AllToolNames =
   | 'add_subgoal'
   | 'browser_logs'
   | 'create_plan'
-  | 'spawn_agent_async'
   | 'spawn_agent_inline'
   | 'update_subgoal'
-  | 'wait_for_subagents'
 
 export interface SecretAgentDefinition extends Omit<
   AgentDefinition,

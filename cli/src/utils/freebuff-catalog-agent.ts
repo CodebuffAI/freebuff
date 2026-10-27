@@ -14,22 +14,17 @@
  * root, with `spawn_agents` and its file-picker, code-searcher and worker
  * fan-out, as its compiled root does. Its helpers keep their own plain model
  * ids; the worker's is the fast id the handle resolves to, so the session
- * gate admits it. A `freebuffRowRunsBase3Async` row runs the base3-async
- * root (agents/base3-async.ts), whose bundled CHECKS subagent does the same.
+ * gate admits it.
  *
  * Built fresh for every run rather than cached, because the handle rotates:
  * `loadAgentDefinitions` is read per send, so a refetched catalog reaches the
  * very next turn.
  */
 import { createBase3CliRoot } from '../../../agents/base3'
-import { createBase3AsyncCliRoot } from '../../../agents/base3-async'
 import { createBase3FastCliRoot } from '../../../agents/base3-fast'
 import { FREEBUFF_CLI_CATALOG_ROOT_AGENT_ID } from '@codebuff/common/constants/free-agents'
 import { isFreebuffFastModeModel } from '@codebuff/common/constants/freebuff-model-ids'
-import {
-  compiledFreebuffModelIdOfRow,
-  freebuffRowRunsBase3Async,
-} from '@codebuff/common/util/freebuff-catalog-compiled-model'
+import { compiledFreebuffModelIdOfRow } from '@codebuff/common/util/freebuff-catalog-compiled-model'
 
 import type { FreebuffCatalogRow } from '@codebuff/common/types/freebuff-model-catalog'
 import type { AgentDefinition } from '@codebuff/sdk'
@@ -37,21 +32,19 @@ import type { AgentDefinition } from '@codebuff/sdk'
 export function freebuffCatalogRootAgent(
   row: Pick<
     FreebuffCatalogRow,
-    'handle' | 'displayName' | 'compaction' | 'legacyDigests' | 'harness'
+    'handle' | 'displayName' | 'compaction' | 'legacyDigests'
   >,
 ): AgentDefinition {
   const rowOptions = { modelLabel: row.displayName, compaction: row.compaction }
   const compiledModelId = compiledFreebuffModelIdOfRow(row)
   const root = isFreebuffFastModeModel(compiledModelId)
     ? createBase3FastCliRoot(row.handle, rowOptions)
-    : freebuffRowRunsBase3Async(row)
-      ? createBase3AsyncCliRoot(row.handle, { ...rowOptions, compiledModelId })
-      : createBase3CliRoot({
-          model: row.handle,
-          isFreebuff: true,
-          ...rowOptions,
-          compiledModelId,
-        })
+    : createBase3CliRoot({
+        model: row.handle,
+        isFreebuff: true,
+        ...rowOptions,
+        compiledModelId,
+      })
   return {
     ...root,
     id: FREEBUFF_CLI_CATALOG_ROOT_AGENT_ID,

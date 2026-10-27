@@ -19,7 +19,6 @@ import {
   createAgentState,
   executeSubagent,
   extractSubagentContextParams,
-  forwardSubagentChunk,
 } from './spawn-agent-utils'
 
 import type { CodebuffToolHandlerFunction } from '../handler-function-type'
@@ -107,155 +106,6 @@ function releaseLiveSlot(key: string): void {
   else liveCappedAgents.set(key, live)
 }
 
-/** What a spawn tool's handler is given: spawn_agents and spawn_agent_async
- *  differ only in their tool call. */
-export type SpawnToolParams<T extends 'spawn_agents' | 'spawn_agent_async'> = {
-  previousToolCallFinished: Promise<void>
-  toolCall: CodebuffToolCall<T>
-
-  agentState: AgentState
-  agentTemplate: AgentTemplate
-  currentAssistantMessages?: readonly Message[]
-  fingerprintId: string
-  localAgentTemplates: Record<string, AgentTemplate>
-  logger: Logger
-  system: string
-  tools?: ToolSet
-  userId: string | undefined
-  userInputId: string
-  sendSubagentChunk: SendSubagentChunk
-  writeToClient: (chunk: string | PrintModeEvent) => void
-} & ParamsExcluding<
-  typeof validateAndGetAgentTemplate,
-  'agentTypeStr' | 'parentAgentTemplate'
-> &
-  ParamsExcluding<
-    typeof executeSubagent,
-    | 'userInputId'
-    | 'prompt'
-    | 'spawnParams'
-    | 'agentTemplate'
-    | 'parentAgentState'
-    | 'agentState'
-    | 'fingerprintId'
-    | 'isOnlyChild'
-    | 'parentSystemPrompt'
-    | 'parentTools'
-    | 'onResponseChunk'
-  >
-
-/**
- * Starts one child of a spawn tool call: its live-subagent slot (reserved
- * before the first await, so the children of one batch and of concurrent
- * batches all count against the cap in order), the template and input checks,
- * its state and its run. The slot, and its place in a Projects subagent's
- * scope, are held until the run settles. Throws, holding nothing, when the cap
- * or a check refuses.
- */
-export async function startSubagent(
-  params: SpawnToolParams<'spawn_agents' | 'spawn_agent_async'>,
-  child: {
-    agentTypeStr: string
-    /** The prompt as the parent wrote it: checked against the input schema
-     *  and shown with the child's events. */
-    prompt: string | undefined
-    spawnParams: Record<string, any> | undefined
-    isOnlyChild: boolean
-    /** What a parent should do instead when the cap refuses. */
-    whenFull: string
-    /** What the child's run is given instead of `prompt`. */
-    runPrompt?: string
-    /** A background child (spawn_agent_async): stopped by its own controller
-     *  too, and its usage receipts reach the host directly, since no tool
-     *  result carries its cost. */
-    background?: Pick<
-      Parameters<typeof executeSubagent>[0],
-      'onAgentUsageReceived' | 'onAgentUsageIncomplete'
-    > & { abort: AbortController }
-  },
-) {
-  const parentAgentState = params.agentState
-  const bucket = liveBucket(parentAgentState, child.agentTypeStr)
-  if (!reserveLiveSlot(bucket)) {
-    throw new Error(
-      `at most ${bucket.cap} ${bucket.label} may run at once here and that many are already running. ${child.whenFull}`,
-    )
-  }
-  let childAgentId: string | undefined
-  const release = () => {
-    if (childAgentId) projectsScopeOf.delete(childAgentId)
-    releaseLiveSlot(bucket.key)
-  }
-  try {
-    const { agentTemplate, agentType } = await validateAndGetAgentTemplate({
-      ...params,
-      agentTypeStr: child.agentTypeStr,
-      parentAgentTemplate: params.agentTemplate,
-    })
-    validateAgentInput(agentTemplate, agentType, child.prompt, child.spawnParams)
-
-    const subAgentState = createAgentState(
-      agentType,
-      agentTemplate,
-      parentAgentState,
-      {},
-      {
-        toolCallId: params.toolCall.toolCallId,
-        currentAssistantMessages: params.currentAssistantMessages ?? [],
-      },
-    )
-    if (bucket.projectsScope) {
-      childAgentId = subAgentState.agentId
-      projectsScopeOf.set(childAgentId, bucket.projectsScope)
-    }
-
-    const run = executeSubagent({
-      // Extract common context params to avoid bugs from spreading all params
-      ...extractSubagentContextParams(params),
-      ...(child.background
-        ? {
-            signal: AbortSignal.any([
-              params.signal,
-              child.background.abort.signal,
-            ]),
-            onAgentUsageReceived: child.background.onAgentUsageReceived,
-            onAgentUsageIncomplete: child.background.onAgentUsageIncomplete,
-          }
-        : {}),
-
-      // Spawn-specific params
-      ancestorRunIds: parentAgentState.ancestorRunIds,
-      userInputId: `${params.userInputId}-${agentType}${subAgentState.agentId}`,
-      prompt: child.runPrompt ?? (child.prompt || ''),
-      spawnParams: child.spawnParams,
-      agentTemplate,
-      parentAgentState,
-      agentState: subAgentState,
-      fingerprintId: params.fingerprintId,
-      isOnlyChild: child.isOnlyChild,
-      excludeToolFromMessageHistory: false,
-      fromHandleSteps: false,
-      parentSystemPrompt: params.system,
-      parentTools: agentTemplate.inheritParentSystemPrompt
-        ? (params.tools ?? {})
-        : undefined,
-      onResponseChunk: forwardSubagentChunk({
-        userInputId: params.userInputId,
-        agentType,
-        prompt: child.prompt,
-        subAgentState,
-        parentAgentState,
-        sendSubagentChunk: params.sendSubagentChunk,
-        writeToClient: params.writeToClient,
-      }),
-    }).finally(release)
-    return { agentType, agentTemplate, subAgentState, run }
-  } catch (error) {
-    release()
-    throw error
-  }
-}
-
 /** Test seam: how many capped agents are live, and scope entries held. */
 export function liveCappedAgentCountForTests(): number {
   let total = projectsScopeOf.size
@@ -263,15 +113,57 @@ export function liveCappedAgentCountForTests(): number {
   return total
 }
 export const handleSpawnAgents = (async (
-  params: SpawnToolParams<ToolName>,
+  params: {
+    previousToolCallFinished: Promise<void>
+    toolCall: CodebuffToolCall<ToolName>
+
+    agentState: AgentState
+    agentTemplate: AgentTemplate
+    currentAssistantMessages?: readonly Message[]
+    fingerprintId: string
+    localAgentTemplates: Record<string, AgentTemplate>
+    logger: Logger
+    system: string
+    tools?: ToolSet
+    userId: string | undefined
+    userInputId: string
+    sendSubagentChunk: SendSubagentChunk
+    writeToClient: (chunk: string | PrintModeEvent) => void
+  } & ParamsExcluding<
+    typeof validateAndGetAgentTemplate,
+    'agentTypeStr' | 'parentAgentTemplate'
+  > &
+    ParamsExcluding<
+      typeof executeSubagent,
+      | 'userInputId'
+      | 'prompt'
+      | 'spawnParams'
+      | 'agentTemplate'
+      | 'parentAgentState'
+      | 'agentState'
+      | 'fingerprintId'
+      | 'isOnlyChild'
+      | 'parentSystemPrompt'
+      | 'parentTools'
+      | 'onResponseChunk'
+    >,
 ): Promise<{ output: CodebuffToolOutput<ToolName> }> => {
   const {
     previousToolCallFinished,
     toolCall,
+
     agentState: parentAgentState,
-    logger,
+    agentTemplate: parentAgentTemplate,
+    currentAssistantMessages = [],
+    fingerprintId,
+    system: parentSystemPrompt,
+    tools: parentTools = {},
+    userInputId,
+    sendSubagentChunk,
+    writeToClient,
   } = params
   const { agents } = toolCall.input
+  const { logger } = params
 
   // Enforce the schema's MAX_SPAWN_AGENTS_PER_CALL even when validation was
   // bypassed (custom tool-call parsing, a cached schema from an older client).
@@ -292,19 +184,129 @@ export const handleSpawnAgents = (async (
   const results = await Promise.allSettled(
     agents.map(
       async ({ agent_type: agentTypeStr, prompt, params: spawnParams }) => {
-        const child = await startSubagent(params, {
-          agentTypeStr,
-          prompt,
-          spawnParams,
-          isOnlyChild: agents.length === 1,
-          whenFull:
-            'Do not retry this spawn: do the remaining work yourself, or report what you have.',
-        })
-        const result = await child.run
-        return {
-          ...result,
-          agentType: child.agentType,
-          agentName: child.agentTemplate.displayName,
+        // Reserved before the first await, so the agents of one batch and of
+        // concurrent batches all count against the cap in order.
+        const bucket = liveBucket(parentAgentState, agentTypeStr)
+        if (!reserveLiveSlot(bucket)) {
+          throw new Error(
+            `at most ${bucket.cap} ${bucket.label} may run at once here and that many are already running. Do not retry this spawn: do the remaining work yourself, or report what you have.`,
+          )
+        }
+        let childAgentId: string | undefined
+        try {
+          const { agentTemplate, agentType } =
+            await validateAndGetAgentTemplate({
+              ...params,
+              agentTypeStr,
+              parentAgentTemplate,
+            })
+
+          validateAgentInput(agentTemplate, agentType, prompt, spawnParams)
+
+          const subAgentState = createAgentState(
+            agentType,
+            agentTemplate,
+            parentAgentState,
+            {},
+            {
+              toolCallId: toolCall.toolCallId,
+              currentAssistantMessages,
+            },
+          )
+          if (bucket.projectsScope) {
+            childAgentId = subAgentState.agentId
+            projectsScopeOf.set(childAgentId, bucket.projectsScope)
+          }
+
+          // Extract common context params to avoid bugs from spreading all params
+          const contextParams = extractSubagentContextParams(params)
+
+          const result = await executeSubagent({
+            ...contextParams,
+
+            // Spawn-specific params
+            ancestorRunIds: parentAgentState.ancestorRunIds,
+            userInputId: `${userInputId}-${agentType}${subAgentState.agentId}`,
+            prompt: prompt || '',
+            spawnParams,
+            agentTemplate,
+            parentAgentState,
+            agentState: subAgentState,
+            fingerprintId,
+            isOnlyChild: agents.length === 1,
+            excludeToolFromMessageHistory: false,
+            fromHandleSteps: false,
+            parentSystemPrompt,
+            parentTools: agentTemplate.inheritParentSystemPrompt
+              ? parentTools
+              : undefined,
+            onResponseChunk: (chunk: string | PrintModeEvent) => {
+              if (typeof chunk === 'string') {
+                sendSubagentChunk({
+                  userInputId,
+                  agentId: subAgentState.agentId,
+                  agentType,
+                  chunk,
+                  prompt,
+                })
+                return
+              }
+
+              if (chunk.type === 'text') {
+                if (chunk.text) {
+                  writeToClient({
+                    type: 'text' as const,
+                    agentId: subAgentState.agentId,
+                    text: chunk.text,
+                  })
+                }
+                return
+              }
+
+              // Add parentAgentId for proper nesting in UI
+              const ensureParentAgentId = () => {
+                if (
+                  chunk.type === 'subagent_start' ||
+                  chunk.type === 'subagent_finish'
+                ) {
+                  return (
+                    chunk.parentAgentId ??
+                    subAgentState.parentId ??
+                    parentAgentState?.agentId
+                  )
+                }
+                if (
+                  chunk.type === 'tool_call' ||
+                  chunk.type === 'tool_result'
+                ) {
+                  return (chunk as any).parentAgentId ?? subAgentState.agentId
+                }
+                return undefined
+              }
+
+              const parentAgentId = ensureParentAgentId()
+              if (
+                parentAgentId !== undefined &&
+                (chunk.type === 'subagent_start' ||
+                  chunk.type === 'subagent_finish' ||
+                  chunk.type === 'tool_call' ||
+                  chunk.type === 'tool_result')
+              ) {
+                writeToClient({ ...chunk, parentAgentId })
+                return
+              }
+
+              const eventWithAgent = {
+                ...chunk,
+                agentId: subAgentState.agentId,
+              }
+              writeToClient(eventWithAgent)
+            },
+          })
+          return { ...result, agentType, agentName: agentTemplate.displayName }
+        } finally {
+          if (childAgentId) projectsScopeOf.delete(childAgentId)
+          releaseLiveSlot(bucket.key)
         }
       },
     ),

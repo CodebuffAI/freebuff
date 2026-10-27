@@ -127,6 +127,8 @@ export function createBase3FastCliRoot(
     extraSystemPrompt: buildBase3FastGuidance(workerAgentId),
     modelLabel,
     compaction,
+    // Fast mode keeps its own eval-tuned loop (docs/freebuff-base3-harness.md).
+    batching: false,
   })
   return {
     ...root,

@@ -385,7 +385,6 @@ export async function processStream(
         const isSpawnCall =
           Boolean(transformed) ||
           toolName === 'spawn_agents' ||
-          toolName === 'spawn_agent_async' ||
           toolName === 'spawn_agent_inline'
         const currentAssistantMessages = isSpawnCall
           ? assistantMessages.filter(

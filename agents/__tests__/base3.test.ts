@@ -21,6 +21,7 @@ import { describe, test, expect } from 'bun:test'
 
 import base3, { createBase3, createBase3CliRoot } from '../base3'
 import base3Evals from '../base3-evals'
+import { PLACEHOLDER } from '../types/secret-agent-definition'
 import base3FastFreeDeepseekFlash from '../base3-fast-free-deepseek-flash'
 import base3FreeDeepseek from '../base3-free-deepseek'
 import base3FreeDeepseekFlash from '../base3-free-deepseek-flash'
@@ -341,5 +342,47 @@ describe('a lean compaction policy', () => {
 
   test('keeps `lean` out of compactContext, whose schema is strict', () => {
     expect(lean.compactContext).toEqual(runtimePolicy)
+  })
+})
+
+describe('working in batches', () => {
+  const FLASH = 'deepseek/deepseek-v4-flash'
+  const SECTION = '## Work in batches'
+
+  test('a root gets the section only when it asks, and never as a step prompt', () => {
+    expect(createBase3(FLASH).systemPrompt).not.toContain(SECTION)
+    expect(createBase3(FLASH, { batching: true }).systemPrompt).toContain(SECTION)
+    expect(createBase3CliRoot({ model: FLASH }).systemPrompt).toContain(SECTION)
+    expect(createBase3CliRoot({ model: FLASH, batching: false }).systemPrompt).not.toContain(SECTION)
+    expect(createBase3CliRoot({ model: FLASH }).stepPrompt).toBeUndefined()
+  })
+
+  test('only on the models it is measured to help', () => {
+    expect(
+      createBase3('mimo/mimo-v2.5', { batching: true }).systemPrompt,
+    ).not.toContain(SECTION)
+    expect(
+      createBase3('openai/gpt-6-luna', { batching: true }).systemPrompt,
+    ).not.toContain(SECTION)
+    // a catalog handle is matched by the model it stands for
+    expect(
+      createBase3('fbm1.handle', { batching: true, compiledModelId: FLASH })
+        .systemPrompt,
+    ).toContain(SECTION)
+  })
+
+  test('a lean row never gets it: its context budget says to read narrowly', () => {
+    const lean = createBase3('anthropic/claude-haiku-5.5', {
+      compaction: LEAN_COMPACTION_POLICY,
+      batching: true,
+    })
+    expect(lean.systemPrompt).not.toContain(SECTION)
+  })
+
+  test('it comes after the dynamic context, outside the core the server compares', () => {
+    const prompt = createBase3(FLASH, { batching: true }).systemPrompt!
+    expect(prompt.indexOf(SECTION)).toBeGreaterThan(
+      prompt.indexOf(PLACEHOLDER.GIT_CHANGES_PROMPT),
+    )
   })
 })
