@@ -36,7 +36,10 @@ import {
   labSignInConfirmedNote,
 } from '@codebuff/common/ads/agentic-ad-lab-run'
 import { signupUrlWithEmail } from '@codebuff/common/ads/sponsored-instant-setup'
-import { resolveSponsoredBfcidTemplate } from '@codebuff/common/ads/sponsored-procedure-inputs'
+import {
+  guardSponsoredCredentials,
+  guardSponsoredLink,
+} from '@codebuff/common/ads/sponsored-run-links'
 import {
   redactSponsoredCredentialDeep,
   redactSponsoredCredentialText,
@@ -48,7 +51,6 @@ import type {
   SponsoredRedactableSecret,
   SponsoredRunCredential,
 } from '@codebuff/common/ads/sponsored-run-credentials'
-import type { SponsoredProcedureRuntimeInputs } from '@codebuff/common/ads/sponsored-procedure-inputs'
 import type { SponsoredSignupStep } from '@codebuff/common/ads/sponsored-signup-step'
 
 export const SPONSORED_SIGNUP_TOOL_NAME = 'request_sponsored_signup'
@@ -149,29 +151,6 @@ export class SponsoredHeldCredentials {
   }
 }
 
-/**
- * MIRRORED from Desktop's `requiredCredentials` (COD-965): each declared key
- * page with its `{bfcid}` slot filled from this run's signed click id. The
- * key form may be the first advertiser visit, so a link that cannot be
- * attributed (no signed id) is dropped rather than shown with a literal
- * placeholder, and an `{email}` slot is removed: nobody agreed to share the
- * email on this form (COD-830).
- */
-export function trackedSponsoredCredentials(
-  credentials: readonly SponsoredRunCredential[],
-  inputs: SponsoredProcedureRuntimeInputs,
-): SponsoredRunCredential[] {
-  return credentials.map(({ getUrl, ...credential }) => {
-    const bfcidResolved = getUrl
-      ? resolveSponsoredBfcidTemplate(getUrl, inputs)
-      : null
-    const resolved = bfcidResolved
-      ? signupUrlWithEmail(bfcidResolved, null)
-      : null
-    return { ...credential, ...(resolved ? { getUrl: resolved } : {}) }
-  })
-}
-
 /** User copy for a refused key. Never names a value. */
 export function sponsoredCredentialRefusalCopy(
   credential: SponsoredRunCredential,
@@ -200,10 +179,17 @@ export function sponsoredCredentialSavedLine(
 
 export type SponsoredAccountStepDeps = {
   offerName: string
-  /** The tracked signup link (`sponsoredSignupStep`), or none. */
+  /** The tracked signup link (`sponsoredRunLinks`), or none. */
   signup: SponsoredSignupStep | undefined
-  /** What the procedure declares (`declaredRunCredentials`). */
+  /** What the procedure declares, key pages resolved (`sponsoredRunLinks`). */
   credentials: readonly SponsoredRunCredential[]
+  /**
+   * The Accept's advertiser link: what the guard opens instead of a link
+   * that still has an unfilled click id, when it carries a signed one.
+   */
+  advertiserLink?: string | null
+  /** Told when the guard refused a link (no URL): the warning metric. */
+  onUnfilledClickIdBlocked?: (fallback: 'advertiser_link' | 'none') => void
   held: SponsoredHeldCredentials
   /** Opens a link in the user's browser; false when none could be opened. */
   openUrl: (url: string) => Promise<boolean>
@@ -304,7 +290,11 @@ export class SponsoredAccountStep {
       return { status: 'confirmed', note: labConnectedNote(connected) }
     }
     // The `{email}` slot, if any, is removed: no prefill without consent.
-    const url = signup.url ? signupUrlWithEmail(signup.url, null) : null
+    // A link that still has an unfilled click id is never opened.
+    const url = guardSponsoredLink(
+      signup.url ? signupUrlWithEmail(signup.url, null) : null,
+      this.guardOptions(),
+    )
     if (!url) {
       return {
         status: 'unavailable',
@@ -331,8 +321,10 @@ export class SponsoredAccountStep {
    */
   private async connect(signal: AbortSignal): Promise<string | null> {
     const { credentials, offerName } = this.deps
+    // The form never shows a key page with an unfilled click id.
+    const shown = guardSponsoredCredentials(credentials, this.guardOptions())
     const answer = await this.wait(
-      { kind: 'credentials', offerName, credentials, error: null },
+      { kind: 'credentials', offerName, credentials: shown, error: null },
       signal,
     )
     if (answer.kind !== 'credentials') return null
@@ -382,6 +374,13 @@ export class SponsoredAccountStep {
       timer.unref?.()
       this.deps.show(ask)
     })
+  }
+
+  private guardOptions() {
+    return {
+      advertiserLink: this.deps.advertiserLink ?? null,
+      onBlocked: this.deps.onUnfilledClickIdBlocked,
+    }
   }
 
   private declined(): SponsoredAccountResult {

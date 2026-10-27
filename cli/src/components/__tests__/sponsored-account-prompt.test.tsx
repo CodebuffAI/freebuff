@@ -11,7 +11,7 @@ import React from 'react'
 import { SponsoredAccountPrompt } from '../sponsored-account-prompt'
 import { initializeThemeStore } from '../../hooks/use-theme'
 
-import { trackedSponsoredCredentials } from '../../utils/sponsored-account-step'
+import { resolveSponsoredCredentialLinks } from '@codebuff/common/ads/sponsored-run-links'
 
 import type {
   SponsoredAccountAnswer,
@@ -174,7 +174,7 @@ describe('a key page link with a {bfcid} slot (COD-965)', () => {
   const askFor = (advertiserLink: string | null): SponsoredAccountAsk => ({
     kind: 'credentials',
     offerName: 'Acme',
-    credentials: trackedSponsoredCredentials(declared, { advertiserLink }),
+    credentials: resolveSponsoredCredentialLinks(declared, { advertiserLink }),
     error: null,
   })
 
@@ -196,5 +196,36 @@ describe('a key page link with a {bfcid} slot (COD-965)', () => {
     expect(prompt.frame()).toContain('Acme API key (ACME_API_KEY)')
     expect(prompt.frame()).not.toContain('{bfcid}')
     expect(prompt.frame()).not.toContain('acme.example/k')
+  })
+})
+
+describe('the last guard (COD-965)', () => {
+  test('a placeholder link is neither drawn nor opened', async () => {
+    const prompt = await mount({
+      kind: 'credentials',
+      offerName: 'Acme',
+      credentials: [
+        {
+          env: 'ACME_API_KEY',
+          label: 'Acme API key',
+          getUrl: 'https://acme.example/k?bfcid=%7BBFCID%7D',
+        },
+      ],
+      error: null,
+    })
+    expect(prompt.frame()).toContain('Acme API key (ACME_API_KEY)')
+    expect(prompt.frame()).not.toContain('acme.example/k')
+    expect(prompt.opened).toEqual([])
+  })
+
+  test('a sign-in question with a placeholder link shows no link', async () => {
+    const prompt = await mount({
+      kind: 'signin',
+      offerName: 'Acme',
+      url: 'https://acme.example/signup?bfcid={bfcid}',
+      opened: false,
+    })
+    expect(prompt.frame()).not.toContain('acme.example/signup')
+    expect(prompt.frame()).not.toContain('{bfcid}')
   })
 })

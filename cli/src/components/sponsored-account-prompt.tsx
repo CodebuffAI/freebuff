@@ -1,13 +1,18 @@
 import {
+  UNFILLED_CLICK_ID_BLOCKED_METRIC,
+  isUnfilledClickIdUrl,
+} from '@codebuff/common/ads/sponsored-run-links'
+import {
   decodePasteBytes,
   stripAnsiSequences,
   TextAttributes,
 } from '@opentui/core'
 import { useAppContext, useKeyboard } from '@opentui/react'
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { TerminalLink } from './terminal-link'
 import { useTheme } from '../hooks/use-theme'
+import { logger } from '../utils/logger'
 import { safeOpen } from '../utils/open-url'
 import {
   SPONSORED_SIGNUP_NO,
@@ -25,6 +30,25 @@ import type { KeyEvent, PasteEvent } from '@opentui/core'
 /** What the masked field shows instead of the key. */
 export function maskedSponsoredKey(value: string): string {
   return value.length === 0 ? '' : '•'.repeat(Math.min(value.length, 32))
+}
+
+/**
+ * The last guard before a sponsored link is drawn or opened (COD-965): one
+ * that still has an unfilled click id is neither. The account step already
+ * resolved and guarded it; this only catches a path that did not.
+ */
+export function shownSponsoredLink(url: string | undefined): string | null {
+  if (!url) return null
+  if (!isUnfilledClickIdUrl(url)) return url
+  logger.warn(
+    {
+      metric: UNFILLED_CLICK_ID_BLOCKED_METRIC,
+      surface: 'cli',
+      fallback: 'none',
+    },
+    '[sponsored-account] blocked a link with an unfilled click id',
+  )
+  return null
 }
 
 function preventDefault(key: KeyEvent): void {
@@ -171,6 +195,17 @@ export const SponsoredAccountPrompt: React.FC<{
     ),
   )
 
+  // Once per question, not per keystroke: the guard logs what it blocks.
+  const signinUrl = useMemo(
+    () => (ask.kind === 'signin' ? shownSponsoredLink(ask.url) : null),
+    [ask],
+  )
+  const shownLinks = useMemo(
+    () => fields.map((credential) => shownSponsoredLink(credential.getUrl)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ask],
+  )
+
   const title =
     ask.kind === 'signin'
       ? ' Sign in to continue '
@@ -197,11 +232,13 @@ export const SponsoredAccountPrompt: React.FC<{
               ? `To finish your free ${ask.offerName}, please sign in to the browser tab I just opened.`
               : `To finish your free ${ask.offerName}, please sign in at this link:`}
           </text>
-          <TerminalLink
-            text={ask.url}
-            lineWrap
-            onActivate={() => openUrl(ask.url)}
-          />
+          {signinUrl ? (
+            <TerminalLink
+              text={signinUrl}
+              lineWrap
+              onActivate={() => openUrl(signinUrl)}
+            />
+          ) : null}
           {[SPONSORED_SIGNUP_YES, SPONSORED_SIGNUP_NO].map((label, index) => (
             <text
               key={label}
@@ -230,11 +267,11 @@ export const SponsoredAccountPrompt: React.FC<{
               >
                 {`${credential.label} (${credential.env})`}
               </text>
-              {credential.getUrl ? (
+              {shownLinks[index] ? (
                 <TerminalLink
-                  text={credential.getUrl}
+                  text={shownLinks[index]!}
                   lineWrap
-                  onActivate={() => openUrl(credential.getUrl!)}
+                  onActivate={() => openUrl(shownLinks[index]!)}
                 />
               ) : null}
               <text style={{ fg: theme.foreground }}>

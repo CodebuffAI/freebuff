@@ -10,11 +10,11 @@ import {
   LAB_SIGNUP_DECLINED_NOTE,
   LAB_SIGNUP_NO_STEP_NOTE,
 } from '@codebuff/common/ads/agentic-ad-lab-run'
+import { resolveSponsoredCredentialLinks } from '@codebuff/common/ads/sponsored-run-links'
 
 import {
   SponsoredAccountStep,
   SponsoredHeldCredentials,
-  trackedSponsoredCredentials,
 } from '../sponsored-account-step'
 
 import type {
@@ -209,7 +209,7 @@ describe('a key page link with a {bfcid} slot (COD-965)', () => {
   ]
 
   test('takes the signed click id, and the form shows that link', async () => {
-    const credentials = trackedSponsoredCredentials(declared, {
+    const credentials = resolveSponsoredCredentialLinks(declared, {
       advertiserLink: `https://acme.example/?bfcid=${TOKEN}`,
     })
     expect(credentials).toEqual([
@@ -229,7 +229,7 @@ describe('a key page link with a {bfcid} slot (COD-965)', () => {
 
   test('without a signed click id the link is dropped, never shown with the slot', () => {
     for (const advertiserLink of [null, 'https://acme.example/', undefined]) {
-      const credentials = trackedSponsoredCredentials(declared, {
+      const credentials = resolveSponsoredCredentialLinks(declared, {
         advertiserLink: advertiserLink as string | null,
       })
       expect(credentials).toEqual([
@@ -241,7 +241,7 @@ describe('a key page link with a {bfcid} slot (COD-965)', () => {
   })
 
   test('an encoded slot is filled too, and an {email} slot is removed', () => {
-    const [credential] = trackedSponsoredCredentials(
+    const [credential] = resolveSponsoredCredentialLinks(
       [
         {
           env: 'ACME_API_KEY',
@@ -274,4 +274,51 @@ test('held credentials never serialize their values', () => {
   })
   held.forget()
   expect(held.env()).toBeUndefined()
+})
+
+describe('the unfilled click id guard (COD-965)', () => {
+  const TOKEN = 'bfc_1.p.s'
+  const SIGNED = `https://acme.example/?bfcid=${TOKEN}`
+
+  test('a sign-up link with a placeholder is never opened; the signed advertiser link is', async () => {
+    const blocked: string[] = []
+    const h = harness({
+      signup: { url: 'https://acme.example/signup?bfcid=%257Bbfcid%257D' },
+      credentials: [],
+      advertiserLink: SIGNED,
+      onUnfilledClickIdBlocked: (fallback) => blocked.push(fallback),
+    })
+    void h.step.request(new AbortController().signal)
+    await tick()
+    expect(h.opened).toEqual([SIGNED])
+    expect(blocked).toEqual(['advertiser_link'])
+  })
+
+  test('with no signed advertiser link nothing is opened and the step is unavailable', async () => {
+    const blocked: string[] = []
+    const h = harness({
+      signup: { url: 'https://acme.example/signup?bfcid={bfcid}' },
+      credentials: [],
+      onUnfilledClickIdBlocked: (fallback) => blocked.push(fallback),
+    })
+    const result = await h.step.request(new AbortController().signal)
+    expect(result.status).toBe('unavailable')
+    expect(h.opened).toEqual([])
+    expect(blocked).toEqual(['none'])
+  })
+
+  test('the key form never shows a placeholder key page', async () => {
+    const h = harness({
+      credentials: [
+        { ...CREDENTIAL, getUrl: 'https://acme.example/keys?bfcid={bfcid}' },
+      ],
+    })
+    void h.step.request(new AbortController().signal)
+    await tick()
+    const ask = h.step.asking
+    if (ask?.kind !== 'credentials') throw new Error('expected the form')
+    expect(ask.credentials).toEqual([
+      { env: CREDENTIAL.env, label: CREDENTIAL.label },
+    ])
+  })
 })

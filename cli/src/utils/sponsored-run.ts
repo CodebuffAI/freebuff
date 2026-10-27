@@ -92,9 +92,12 @@ import {
 } from '@codebuff/common/ads/sponsored-in-place'
 import type { SponsoredTurnEnding } from '@codebuff/common/ads/sponsored-in-place'
 import { sponsoredSkillDirective } from '@codebuff/common/ads/sponsored-skill'
-import { declaredRunCredentials } from '@codebuff/common/ads/sponsored-run-credentials'
+import {
+  UNFILLED_CLICK_ID_BLOCKED_METRIC,
+  sponsoredRunLinks,
+  sponsoredRunLinksSignupStep,
+} from '@codebuff/common/ads/sponsored-run-links'
 import { saveSponsoredCredentialsToEnvFile } from '@codebuff/common/ads/sponsored-env-file'
-import { sponsoredSignupStep } from '@codebuff/common/ads/sponsored-signup-step'
 import {
   SPONSORED_STEP_FIX_MIN_GRANT_MS,
   captureSponsoredStepBaseline,
@@ -164,7 +167,6 @@ import {
   SPONSORED_ACCOUNT_STEP_MARGIN_MS,
   SponsoredAccountStep,
   SponsoredHeldCredentials,
-  trackedSponsoredCredentials,
 } from './sponsored-account-step'
 import { sponsoredSignupTool } from './sponsored-signup-tool'
 import {
@@ -647,6 +649,8 @@ export class SponsoredRun {
     procedure: string
     taskContext: readonly string[]
     runtimeInputs: SponsoredProcedureRuntimeInputs
+    /** The Accept's `resolvedLinks`, raw (COD-965); absent from older servers. */
+    resolvedLinks?: unknown
     recorder: SponsoredEditRecorder
     abort: AbortController
     expiryTimer: ReturnType<typeof setTimeout> | null
@@ -1070,6 +1074,7 @@ export class SponsoredRun {
               ? sponsoredAdvertiserCtaHref(accepted.accept.advertiserLink)
               : null,
         },
+        resolvedLinks: accepted.accept.resolvedLinks,
         recorder: new SponsoredEditRecorder(
           {
             runId,
@@ -1200,17 +1205,18 @@ export class SponsoredRun {
     // and the agent calls `request_sponsored_signup` once the work that needs
     // no account is done. A tracked signup link, declared keys, or a skill's
     // user step each make one.
-    // A key page's `{bfcid}` slot takes this run's signed click id, as on
-    // Desktop and Cloud; a link that cannot be attributed is not shown.
-    const declaredCredentials = trackedSponsoredCredentials(
-      declaredRunCredentials(active.procedure),
-      active.runtimeInputs,
-    )
-    const signup = sponsoredSignupStep(
-      active.procedure,
-      active.runtimeInputs,
-      active.skill,
-    )
+    // The links come resolved (COD-965): the Accept's `resolvedLinks` when
+    // the server sent them, else the shared resolver over the same inputs.
+    // A key page's `{bfcid}` slot takes this run's signed click id; a link
+    // that cannot be attributed is not shown.
+    const links = sponsoredRunLinks({
+      procedure: active.procedure,
+      runtimeInputs: active.runtimeInputs,
+      skill: active.skill,
+      serverLinks: active.resolvedLinks,
+    })
+    const declaredCredentials = links.credentials
+    const signup = sponsoredRunLinksSignupStep(links)
     if (signup || declaredCredentials.length > 0) {
       active.accountStep = new SponsoredAccountStep({
         offerName: active.advertiserName,
@@ -1218,6 +1224,16 @@ export class SponsoredRun {
         credentials: declaredCredentials,
         held: active.credentials,
         openUrl: this.deps.openUrl ?? safeOpen,
+        advertiserLink: active.runtimeInputs.advertiserLink ?? null,
+        onUnfilledClickIdBlocked: (fallback) =>
+          logger.warn(
+            {
+              metric: UNFILLED_CLICK_ID_BLOCKED_METRIC,
+              surface: 'cli',
+              fallback,
+            },
+            '[sponsored-run] blocked a link with an unfilled click id',
+          ),
         show: (account) => {
           if (!active.settled) this.set({ account })
         },

@@ -109,6 +109,13 @@ export type SponsoredAccept = {
    * then the run is built here exactly as before.
    */
   runSpec?: unknown
+  /**
+   * The account links the server resolved (COD-965,
+   * `common/src/ads/sponsored-run-links.ts`). UNTRUSTED: used only through
+   * `sponsoredRunLinks`, which holds it to the consented procedure. Absent
+   * from older servers, and then the links are resolved here.
+   */
+  resolvedLinks?: unknown
 }
 
 export type SponsoredAcceptPreview = {
