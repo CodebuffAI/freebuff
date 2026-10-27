@@ -108,6 +108,17 @@ describe('resolveQueuePanelAction', () => {
   })
 })
 
+describe('ctrl+z is absorbed by the composer', () => {
+  test('does not exit or change state', () => {
+    expect(
+      resolveChatKeyboardAction(
+        createKey({ name: 'z', ctrl: true }),
+        createDefaultChatKeyboardState(),
+      ),
+    ).toEqual({ type: 'none' })
+  })
+})
+
 describe('ctrl+q opens the queue editor', () => {
   const ctrlQ = createKey({ name: 'q', ctrl: true })
 
