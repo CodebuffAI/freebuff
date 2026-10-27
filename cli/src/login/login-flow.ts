@@ -1,4 +1,5 @@
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
+import { CLI_AUTH_CODE_LIFETIME_MS } from '@codebuff/common/constants/auth'
 
 import { createCodebuffApiClient } from '../utils/codebuff-api'
 
@@ -141,7 +142,10 @@ export async function pollLoginStatus(
     fingerprintHash,
     expiresAt,
     intervalMs = 5000,
-    timeoutMs = 5 * 60 * 1000,
+    // As long as the code lives. A new account's sign-up, phone step and
+    // Connect can outlast five minutes, and a code approved after polling
+    // stopped is never collected, so the user is asked to log in again.
+    timeoutMs = CLI_AUTH_CODE_LIFETIME_MS,
     shouldContinue,
     via,
   } = options
