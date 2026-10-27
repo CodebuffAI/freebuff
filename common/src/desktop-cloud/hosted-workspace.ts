@@ -16,6 +16,12 @@ export const HOSTED_WORKSPACE_ENVIRONMENTS = [
 ] as const
 
 
+export type HostedRuntimeProgress = {
+  phase: 'preparing' | 'downloading' | 'landing'
+  receivedBytes: number
+  totalBytes: number | null
+}
+
 export type HostedWorkspaceConnection = {
   /** A per-chat checkout does not change the project’s default runtime. */
   threadId?: string
@@ -214,6 +220,7 @@ export type HostedWorkspaceHost = {
   }): Promise<{
     location: 'local' | 'worktree' | 'cloud'
     choices: Array<'local' | 'worktree' | 'cloud'>
+    progress?: HostedRuntimeProgress
   }>
   /** Persist a device-backed cloud chat before a person opens its native panels. */
   prepareLocalChat?(scope: HostedBrowserScope): Promise<HostedBrowserScope>
