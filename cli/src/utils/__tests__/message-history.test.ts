@@ -11,22 +11,25 @@ import {
 } from '../message-history'
 
 describe('message history persistence', () => {
-  let originalHome: string | undefined
-  let tempHome: string
+  let originalConfigDir: string | undefined
+  let tempRoot: string
 
+  // FREEBUFF_CONFIG_DIR, not HOME: os.homedir() ignores $HOME on macOS, so a
+  // HOME override sent these writes to the developer's real config dir.
   beforeEach(() => {
-    originalHome = process.env.HOME
-    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-message-history-'))
-    process.env.HOME = tempHome
+    originalConfigDir = process.env.FREEBUFF_CONFIG_DIR
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-message-history-'))
+    // Not created yet, so saveMessageHistory creates it.
+    process.env.FREEBUFF_CONFIG_DIR = path.join(tempRoot, 'config')
   })
 
   afterEach(() => {
-    if (originalHome === undefined) {
-      delete process.env.HOME
+    if (originalConfigDir === undefined) {
+      delete process.env.FREEBUFF_CONFIG_DIR
     } else {
-      process.env.HOME = originalHome
+      process.env.FREEBUFF_CONFIG_DIR = originalConfigDir
     }
-    fs.rmSync(tempHome, { recursive: true, force: true })
+    fs.rmSync(tempRoot, { recursive: true, force: true })
   })
 
   test('saves and loads history, replacing the previous file whole', () => {
@@ -119,4 +122,15 @@ describe('message history persistence', () => {
       'message-history.json',
     ])
   })
+
+  test.skipIf(process.platform === 'win32')(
+    'writes history owner-only and creates the config dir owner-only',
+    () => {
+      saveMessageHistory(['a private prompt'])
+      const historyPath = getMessageHistoryPath()
+
+      expect(fs.statSync(historyPath).mode & 0o777).toBe(0o600)
+      expect(fs.statSync(path.dirname(historyPath)).mode & 0o777).toBe(0o700)
+    },
+  )
 })

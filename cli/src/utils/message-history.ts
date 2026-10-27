@@ -118,7 +118,7 @@ export const saveMessageHistory = (
   try {
     // Ensure config directory exists
     if (!fileSystem.existsSync(configDir)) {
-      fileSystem.mkdirSync(configDir, { recursive: true })
+      fileSystem.mkdirSync(configDir, { recursive: true, mode: 0o700 })
     }
 
     // Limit history size to prevent file from growing too large
@@ -133,6 +133,8 @@ export const saveMessageHistory = (
       JSON.stringify(limitedHistory, null, 2),
       {
         flag: 'wx',
+        // Owner-only: prompt history is everything the user has typed.
+        mode: 0o600,
       },
     )
     fileSystem.renameSync(tempPath, historyPath)

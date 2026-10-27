@@ -9,7 +9,8 @@ let projectRoot: string | undefined
 let currentChatId: string | undefined
 
 function ensureChatDirectory(dir: string) {
-  mkdirSync(dir, { recursive: true })
+  // Owner-only: chat directories hold transcripts and run state.
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
 }
 
 export function setProjectRoot(dir: string) {

@@ -1,3 +1,4 @@
+import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
@@ -33,4 +34,32 @@ export const getConfigDir = (): string => {
         ? `-${env.NEXT_PUBLIC_CB_ENVIRONMENT}`
         : ''),
   )
+}
+
+/** Owner-only, matching the mode `auth.ts` creates the directory with. */
+const CONFIG_DIR_MODE = 0o700
+
+/**
+ * Best-effort: clamp an existing config directory to owner-only.
+ *
+ * `mkdir` applies its mode only when it creates the directory, so a config
+ * dir first created by something other than login (prompt history, a chat
+ * directory, an older CLI) can be 0755, leaving transcripts, run state and
+ * prompt history under it readable by other users on a shared host. Run once
+ * at startup. Does not create the directory. Skipped on Windows, where POSIX
+ * mode bits do not apply. Never throws.
+ */
+export const tightenConfigDirMode = (configDir?: string): void => {
+  if (process.platform === 'win32') return
+  try {
+    // Resolved inside the try: a relative FREEBUFF_CONFIG_DIR throws here.
+    const dir = configDir ?? getConfigDir()
+    const stat = fs.statSync(dir, { throwIfNoEntry: false })
+    if (!stat?.isDirectory()) return
+    if ((stat.mode & 0o777) !== CONFIG_DIR_MODE) {
+      fs.chmodSync(dir, CONFIG_DIR_MODE)
+    }
+  } catch {
+    // Not ours to fail startup over (e.g. a directory owned by another user).
+  }
 }

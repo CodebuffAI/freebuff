@@ -257,6 +257,24 @@ describe('atomic save and resilient load', () => {
     ).toHaveLength(1)
   })
 
+  test.skipIf(process.platform === 'win32')(
+    'saveChatState creates the chat dir and its files owner-only',
+    () => {
+      const freshDir = path.join(chatDir, 'fresh-chat')
+
+      saveChatState(runState, messages, freshDir)
+
+      expect(fs.statSync(freshDir).mode & 0o777).toBe(0o700)
+      for (const name of fs.readdirSync(freshDir)) {
+        expect(fs.statSync(path.join(freshDir, name)).mode & 0o777).toBe(
+          0o600,
+        )
+      }
+      expect(fs.readdirSync(freshDir)).toContain('run-state.json')
+      expect(fs.readdirSync(freshDir)).toContain('chat-messages.json')
+    },
+  )
+
   test('torn run-state.json still restores the transcript', () => {
     saveChatState(runState, messages)
     fs.writeFileSync(

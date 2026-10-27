@@ -299,3 +299,44 @@ describe('durability', () => {
     expect(fs.readdirSync(tempDir)).toEqual(['out.json'])
   })
 })
+
+// POSIX mode bits only; Windows has no owner/group/other split to assert.
+describe.skipIf(process.platform === 'win32')('private file mode', () => {
+  const modeOf = (file: string) => fs.statSync(file).mode & 0o777
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuff-atomic-mode-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  test('creates the file owner read/write only', () => {
+    const target = path.join(tempDir, 'chat-messages.json')
+
+    writeFileAtomic(target, '[]')
+
+    expect(modeOf(target)).toBe(0o600)
+  })
+
+  test('replacing a world-readable file leaves it owner-only', () => {
+    const target = path.join(tempDir, 'run-state.json')
+    fs.writeFileSync(target, 'old', { mode: 0o644 })
+    fs.chmodSync(target, 0o644)
+
+    writeFileAtomic(target, 'new')
+
+    expect(modeOf(target)).toBe(0o600)
+  })
+
+  test('async: replacing a world-readable file leaves it owner-only', async () => {
+    const target = path.join(tempDir, 'chat-messages.json')
+    fs.writeFileSync(target, 'old', { mode: 0o644 })
+    fs.chmodSync(target, 0o644)
+
+    await writeFileAtomicAsync(target, '[]')
+
+    expect(modeOf(target)).toBe(0o600)
+  })
+})

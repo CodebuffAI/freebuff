@@ -52,7 +52,7 @@ import { resetCodebuffClient } from './utils/codebuff-client'
 import { setApiClientAuthToken } from './utils/codebuff-api'
 import { IS_FREEBUFF } from './utils/constants'
 import { getCliEnv } from './utils/env'
-import { getConfigDir } from './utils/config-dir'
+import { getConfigDir, tightenConfigDirMode } from './utils/config-dir'
 import {
   bunExtractionTempDir,
   defaultRenderLibraryCacheDir,
@@ -246,6 +246,10 @@ async function main(): Promise<void> {
       // Silently ignore OSC detection failures
     }
   }
+
+  // Transcripts, run state and prompt history live under the config dir;
+  // keep it owner-only even if it was first created without a mode.
+  tightenConfigDirMode()
 
   // The Freebuff auth token lives in the OS keychain (auth-token-store.ts):
   // load it before anything reads the credentials. Bounded and never throws.
