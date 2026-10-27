@@ -13,7 +13,7 @@ import type { FreebuffModelCatalog } from '../types/freebuff-model-catalog'
  */
 
 /** What a one-model picker says its model is, on the info icon by the Model
- *  heading: with Show all models off here, and in the Freebuff-1 arm
+ *  heading: with Show all models off here, and for a new account's one row
  *  (`FREEBUFF_ONE_ROW`). */
 export const FREEBUFF_ONE_MODEL_TAGLINE =
   'Performs at the level of Opus 5 on benchmarks'
