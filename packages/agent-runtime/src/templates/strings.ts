@@ -3,6 +3,7 @@ import {
   PROJECT_INSTRUCTIONS_HEADER,
 } from '@codebuff/common/constants/knowledge'
 import { escapeString } from '@codebuff/common/util/string'
+import { withSystemReminderTags } from '@codebuff/common/util/system-reminder'
 import { z } from 'zod/v4'
 
 import { getAgentTemplate } from './agent-registry'
@@ -227,7 +228,7 @@ export async function getAgentPrompt<T extends StringField>(
 
   if (promptType.type === 'stepPrompt' && agentState.agentType && prompt) {
     // Put step prompt within a system_reminder tag so agent doesn't think the user just spoke again.
-    prompt = `<system_reminder>${prompt}</system_reminder>`
+    prompt = withSystemReminderTags(prompt)
   }
 
   if (promptType.type === 'systemPrompt' && listInSystemPrompt) {

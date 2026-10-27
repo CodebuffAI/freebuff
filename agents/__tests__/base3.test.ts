@@ -349,34 +349,44 @@ describe('working in batches', () => {
   const FLASH = 'deepseek/deepseek-v4-flash'
   const SECTION = '## Work in batches'
 
-  test('a root gets the section only when it asks, and never as a step prompt', () => {
+  test('a root gets the section and its reminder only when it asks', () => {
     expect(createBase3(FLASH).systemPrompt).not.toContain(SECTION)
-    expect(createBase3(FLASH, { batching: true }).systemPrompt).toContain(SECTION)
-    expect(createBase3CliRoot({ model: FLASH }).systemPrompt).toContain(SECTION)
-    expect(createBase3CliRoot({ model: FLASH, batching: false }).systemPrompt).not.toContain(SECTION)
-    expect(createBase3CliRoot({ model: FLASH }).stepPrompt).toBeUndefined()
+    expect(createBase3(FLASH).stepPrompt).toBeUndefined()
+    const batched = createBase3(FLASH, { batching: true })
+    expect(batched.systemPrompt).toContain(SECTION)
+    expect(batched.stepPrompt).toStartWith('Work in batches:')
+    const cli = createBase3CliRoot({ model: FLASH })
+    expect(cli.systemPrompt).toContain(SECTION)
+    expect(cli.stepPrompt).toBe(batched.stepPrompt)
+    const off = createBase3CliRoot({ model: FLASH, batching: false })
+    expect(off.systemPrompt).not.toContain(SECTION)
+    expect(off.stepPrompt).toBeUndefined()
   })
 
   test('only on the models it is measured to help', () => {
-    expect(
-      createBase3('mimo/mimo-v2.5', { batching: true }).systemPrompt,
-    ).not.toContain(SECTION)
-    expect(
-      createBase3('openai/gpt-6-luna', { batching: true }).systemPrompt,
-    ).not.toContain(SECTION)
+    // their caches need each request to extend the last: a step prompt,
+    // deleted each step, would miss most of every request
+    for (const model of ['mimo/mimo-v2.5', 'openai/gpt-6-luna']) {
+      const def = createBase3(model, { batching: true })
+      expect(def.systemPrompt).not.toContain(SECTION)
+      expect(def.stepPrompt).toBeUndefined()
+    }
     // a catalog handle is matched by the model it stands for
-    expect(
-      createBase3('fbm1.handle', { batching: true, compiledModelId: FLASH })
-        .systemPrompt,
-    ).toContain(SECTION)
+    const handle = createBase3('fbm1.handle', {
+      batching: true,
+      compiledModelId: FLASH,
+    })
+    expect(handle.systemPrompt).toContain(SECTION)
+    expect(handle.stepPrompt).toStartWith('Work in batches:')
   })
 
   test('a lean row never gets it: its context budget says to read narrowly', () => {
-    const lean = createBase3('anthropic/claude-haiku-5.5', {
+    const lean = createBase3(FLASH, {
       compaction: LEAN_COMPACTION_POLICY,
       batching: true,
     })
     expect(lean.systemPrompt).not.toContain(SECTION)
+    expect(lean.stepPrompt).toBeUndefined()
   })
 
   test('it comes after the dynamic context, outside the core the server compares', () => {

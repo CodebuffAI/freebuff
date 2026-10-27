@@ -92,6 +92,22 @@ describe('createTraceWriter', () => {
     expect(lines.map((l) => l.index)).toEqual([0, 1])
   })
 
+  test('records a step prompt once, and its removal each step is not a rewrite', () => {
+    const writer = createTraceWriter(() => tracePathFor(tempDir))!
+    const reminder: Message = {
+      ...userMessage('<system_reminder>Work in batches</system_reminder>'),
+      tags: ['STEP_PROMPT'],
+    }
+    const history = [userMessage('hello')]
+    writer.recordStep({ ...baseParams, step: 1, messages: [...history, reminder] })
+    history.push(assistantMessage('reading'))
+    writer.recordStep({ ...baseParams, step: 2, messages: [...history, reminder] })
+
+    const lines = readTraceLines()
+    expect(lines.map((l) => l.type)).toEqual(['step_prompt', 'message', 'message'])
+    expect(lines.filter((l) => l.type === 'message').map((l) => l.index)).toEqual([0, 1])
+  })
+
   test('records system prompt once and again only when it changes', () => {
     const writer = createTraceWriter(() => tracePathFor(tempDir))!
 

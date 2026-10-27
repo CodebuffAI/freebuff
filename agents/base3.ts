@@ -2,6 +2,7 @@ import {
   compactionPolicyForModel,
   type RootCompactionPolicy,
 } from '@codebuff/common/constants/compaction-policy'
+import { BASE3_BATCHING_STEP_PROMPT } from '@codebuff/common/constants/base3-step-prompt'
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
@@ -52,11 +53,12 @@ Every response is a round trip: the whole conversation is sent again before the 
 - **Stop when it is done.** Once the request is met and its checks pass, or the question is answered, give the final message.`
 
 /**
- * The models the section is measured to help: on DeepSeek V4.1 Flash it
- * finished sooner at the same score. On GPT-6 Luna it bought no time, and on
- * MiMo v2.5 it cost score, so both keep base3's prompt as it was
- * (docs/benchmarks/base3-batched/README.md). Add a model only with a paired
- * buffbench run on it.
+ * The models the section and its reminder are measured to help: on DeepSeek
+ * V4.1 Flash they finished sooner at the same score. On GPT-6 Luna the section
+ * bought no time, and on MiMo v2.5 it cost score, so both keep base3's prompt
+ * as it was (docs/benchmarks/base3-batched/README.md). Add a model only with a
+ * paired buffbench run on it that also checks its cache hit: the reminder
+ * comes with the section.
  */
 const BATCHING_MODELS = [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]
 
@@ -134,6 +136,7 @@ export function createBase3(
     lean && compactContext.maxContextLength
       ? `\n${leanContextGuidance(compactContext.maxContextLength)}\n`
       : ''
+  const batching = options.batching === true && batchingModel && !lean
   return {
     publisher,
     model,
@@ -161,6 +164,15 @@ export function createBase3(
     // the runtime default instead of the model's.
     compactContext,
     ...(turnEndingNote ? { instructionsPrompt: TURN_ENDING_NOTE } : {}),
+    // The section's reminder at the end of every step, dropped from history
+    // after it. Read once, Flash drifts back to one call per step; repeated,
+    // it keeps batching. A step prompt is deleted each step, so no request
+    // extends the previous one: a provider that caches only exact prefix
+    // extensions then misses most of every request (MiMo and Luna did,
+    // #1158), while Flash's lanes cache partial prefixes and kept their hit
+    // rate. The server skips it where it reads the user's own words
+    // (`isRootStepReminderMessage`).
+    ...(batching ? { stepPrompt: BASE3_BATCHING_STEP_PROMPT } : {}),
     toolNames: [
       'read_files',
       'str_replace',
@@ -205,7 +217,7 @@ ${AGENT_VERIFICATION_GUIDANCE}
 ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}
 
 ${PLACEHOLDER.GIT_CHANGES_PROMPT}
-${leanGuidance}${options.batching && batchingModel && !lean ? `\n${BATCHING_GUIDANCE}` : ''}`,
+${leanGuidance}${batching ? `\n${BATCHING_GUIDANCE}` : ''}`,
   }
 }
 
