@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'child_process'
 import { closeSync, mkdtempSync, openSync, statSync, writeFileSync } from 'fs'
-import { Readable as NodeReadable } from 'stream'
+import { PassThrough, Readable as NodeReadable } from 'stream'
 import * as os from 'os'
 import * as path from 'path'
 
@@ -12,7 +12,11 @@ import type { Readable } from 'stream'
 
 import { stripColors } from '../../../common/src/util/string'
 import { getSystemProcessEnv } from '../env'
-import { createWindowsBashNotFoundError, findWindowsBash } from './windows-bash'
+import {
+  createWindowsBashNotFoundError,
+  findAllWindowsBash,
+  findWindowsBash,
+} from './windows-bash'
 
 import type { CodebuffToolOutput } from '../../../common/src/tools/list'
 
@@ -291,27 +295,57 @@ export function missingDirectoryError(
   }
 }
 
+/**
+ * Spawn the command. On Windows, when policy blocks a bash (EPERM on spawn, reported as an async
+ * `error` event), the next install is tried in the same call so the caller still gets one process.
+ */
 function spawnDirectTerminalCommand(
   request: TerminalCommandSpawnRequest,
+  bashFallbacks: string[] = [],
 ): TerminalCommandProcess {
-  const child: ChildProcessWithoutNullStreams = spawn(
-    request.executable,
-    request.args,
-    {
-      cwd: request.cwd,
-      env: request.env,
-      stdio: 'pipe',
-      // The direct SDK runner owns a process group. Interactive hosts should
-      // provide a broker instead, so the shell never shares their console.
-      detached: true,
-      windowsHide: true,
-    },
-  )
-  const closed = new Promise<number | null>((resolve, reject) => {
-    child.once('error', reject)
-    child.once('close', resolve)
-  })
+  // Stable streams: the caller keeps these even if a fallback bash replaces the first one.
+  const stdout = new PassThrough()
+  const stderr = new PassThrough()
+  let current: ChildProcessWithoutNullStreams | undefined
+  const launch = (
+    executable: string,
+    fallbacks: string[],
+  ): Promise<number | null> =>
+    new Promise((resolve, reject) => {
+      const child: ChildProcessWithoutNullStreams = spawn(
+        executable,
+        request.args,
+        {
+          cwd: request.cwd,
+          env: request.env,
+          stdio: 'pipe',
+          // The direct SDK runner owns a process group. Interactive hosts should
+          // provide a broker instead, so the shell never shares their console.
+          detached: true,
+          windowsHide: true,
+        },
+      )
+      current = child
+      child.once('error', (error: NodeJS.ErrnoException) => {
+        if (error.code === 'EPERM' && fallbacks.length > 0) {
+          // Policy blocked this bash; try the next install with the same streams.
+          const [next, ...rest] = fallbacks
+          launch(next, rest).then(resolve, reject)
+          return
+        }
+        reject(error)
+      })
+      child.stdout.pipe(stdout, { end: false })
+      child.stderr.pipe(stderr, { end: false })
+      child.once('close', (code) => {
+        stdout.end()
+        stderr.end()
+        resolve(code)
+      })
+    })
+  const closed = launch(request.executable, bashFallbacks)
   const completion = closed.then(async (exitCode) => {
+    const child = current as ChildProcessWithoutNullStreams
     if (os.platform() === 'win32' || !isProcessGroupAlive(child)) {
       return exitCode
     }
@@ -337,12 +371,16 @@ function spawnDirectTerminalCommand(
   })
 
   return {
-    pid: child.pid,
-    stdout: child.stdout,
-    stderr: child.stderr,
+    get pid() {
+      return current?.pid
+    },
+    stdout,
+    stderr,
     completion,
-    kill: (signal) => killProcessGroup(child, signal),
-    isAlive: () => isProcessGroupAlive(child),
+    kill: (signal) => {
+      if (current) killProcessGroup(current, signal)
+    },
+    isAlive: () => (current ? isProcessGroupAlive(current) : false),
   }
 }
 
@@ -410,6 +448,7 @@ export function runTerminalCommand({
 
     let shell: string
     let shellArgs: string[]
+    let windowsBashFallbacks: string[] = []
     const brokerOwnsShell = terminalCommandBroker?.ownsShell === true
 
     if (brokerOwnsShell) {
@@ -427,6 +466,10 @@ export function runTerminalCommand({
       }
       shell = bashPath
       shellArgs = ['-c']
+      // Policy can block one install's bash.exe (EPERM on spawn). The others are fallbacks.
+      windowsBashFallbacks = findAllWindowsBash(processEnv).filter(
+        (candidate) => candidate !== bashPath,
+      )
     } else {
       shell = 'bash'
       shellArgs = ['-c']
@@ -472,7 +515,7 @@ export function runTerminalCommand({
       }
       childProcess = terminalCommandBroker
         ? terminalCommandBroker.start(request)
-        : spawnDirectTerminalCommand(request)
+        : spawnDirectTerminalCommand(request, windowsBashFallbacks)
     } catch (error) {
       reject(
         spawnFailure(

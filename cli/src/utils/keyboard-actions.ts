@@ -283,6 +283,12 @@ export function resolveChatKeyboardAction(
       : { type: 'none' }
   }
 
+  // Ctrl+Z is not a suspend key inside the composer. Absorb it here so it never
+  // falls through to the exit rules below.
+  if (key.ctrl && key.name === 'z' && !key.meta && !key.option) {
+    return { type: 'none' }
+  }
+
   // Priority 3: Clear input with ctrl-c when there's text
   if (isCtrlC && state.inputValue.trim().length > 0) {
     return { type: 'clear-input' }

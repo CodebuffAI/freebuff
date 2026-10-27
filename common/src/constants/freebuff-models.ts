@@ -4370,13 +4370,10 @@ export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
     // exemption.
     FREEBUFF_GPT_61_SOL_MODEL_ID,
     FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
-    // Muse Spark 1.3 (and 1.2 with it) was paid-only on every surface from
-    // 2026-09-28 and LEFT this list on 2026-10-09, by product decision, on
-    // MiMo 2.6 Pro's and Luna's terms below: open to every full-access
-    // account at 15 Freebucks, plan-only at limited access
-    // (FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS). Re-locking it for everyone
-    // is a one-line move back here and in the every-surface list, or without a
-    // deploy a `locked` full-access entry in the server model catalog.
+    // Muse Spark 1.3 re-locked for every account without a plan (#1525): the
+    // README and release docs say a paid plan is required. It had left this
+    // list on 2026-10-09 (open to full-access accounts at 15 Freebucks).
+    FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
     //
     // MiMo 2.6 Pro and GPT-6 Luna LEFT this list on 2026-09-25, by product
     // decision: every FULL-ACCESS account opens them with no plan (metered in
@@ -4407,6 +4404,9 @@ export const FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS: readonly string[] =
     // Desktop list them.
     FREEBUFF_GPT_61_SOL_MODEL_ID,
     FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
+    // Muse Spark 1.3 re-locked for every account without a plan (#1525): the
+    // README and release docs say a paid plan is required.
+    FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
   ])
 
 /**
@@ -4493,7 +4493,6 @@ export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
     // plan at limited access, like Luna and MiMo 2.6 Pro. 1.2 is not listed:
     // it is not offered at limited access at all (not even with a plan), only
     // kept for released binaries at full access.
-    FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
     // GPT-6.1 Terra (2026-10-26): open to every full-access account, a paid
     // plan at limited access, on the same terms.
     FREEBUFF_GPT_61_TERRA_MODEL_ID,
