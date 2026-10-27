@@ -14,6 +14,7 @@ export const cloudSkillSchema = z
     name: z.string().regex(SKILL_NAME_PATTERN),
     description: z.string().trim().min(1).max(1000),
     instructions: z.string().trim().min(1).max(50000),
+    enabled: z.boolean().optional(),
     files: z
       .array(
         z
