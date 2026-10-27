@@ -48,6 +48,8 @@ export interface TerminalCommandProcess {
   completion: Promise<number | null>
   kill(signal: NodeJS.Signals): void
   isAlive(): boolean
+  write?(data: string): void
+  resize?(cols: number, rows: number): void
 }
 
 /**
@@ -291,7 +293,7 @@ export function missingDirectoryError(
   }
 }
 
-function spawnDirectTerminalCommand(
+export function spawnDirectTerminalCommand(
   request: TerminalCommandSpawnRequest,
 ): TerminalCommandProcess {
   const child: ChildProcessWithoutNullStreams = spawn(
@@ -338,6 +340,7 @@ function spawnDirectTerminalCommand(
 
   return {
     pid: child.pid,
+    write: data => { child.stdin.write(data) },
     stdout: child.stdout,
     stderr: child.stderr,
     completion,

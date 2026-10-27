@@ -69,7 +69,7 @@ type ClientActionMcpToolData = {
   tools: {
     name: string
     description?: string
-    inputSchema: { type: 'object';[k: string]: unknown }
+    inputSchema: { type: 'object'; [k: string]: unknown }
   }[]
 }
 
@@ -131,6 +131,7 @@ type ServerActionReadFiles = {
 }
 
 type ServerActionToolCallRequest = {
+  toolCallId?: string
   type: 'tool-call-request'
   userInputId: string
   requestId: string

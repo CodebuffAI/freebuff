@@ -583,6 +583,7 @@ export async function executeToolCall<T extends ToolName>(
       }
 
       const clientToolResult = await requestToolCall({
+        toolCallId: toolCall.toolCallId,
         userInputId,
         toolName: clientToolCall.toolName,
         input: clientToolCall.input,
@@ -809,6 +810,7 @@ export async function executeCustomToolCall(
 
       const target = mcpTarget(toolCall.toolName)
       const clientToolResult = await requestToolCall({
+        toolCallId: toolCall.toolCallId,
         userInputId,
         toolName: target ? target.tool : toolCall.toolName,
         input: toolCall.input,

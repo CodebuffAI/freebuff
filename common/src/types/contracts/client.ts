@@ -3,6 +3,7 @@ import type { MCPConfig } from '../mcp'
 import type { ToolResultOutput } from '../messages/content-part'
 
 export type RequestToolCallFn = (params: {
+  toolCallId?: string
   userInputId: string
   toolName: string
   input: Record<string, any> & { timeout_seconds?: number }

@@ -36,7 +36,7 @@ const EXCLUDED_PATH_PATTERNS = ['system32', 'windowsapps']
  * `C:\Program Files\Git` no matter what env it was handed. That is unusable for a caller reasoning
  * about a specific environment, and it silently defeated every test that passed a fixture env.
  */
-function gitRoots(env: NodeJS.ProcessEnv): string[] {
+function gitRoots(env: Record<string, string | undefined>): string[] {
   const localAppData = env.LOCALAPPDATA
   const userProfile = env.USERPROFILE
   const programData = env.ProgramData ?? env.PROGRAMDATA
@@ -68,7 +68,7 @@ function gitRoots(env: NodeJS.ProcessEnv): string[] {
     )
 }
 
-function usablePathDirs(env: NodeJS.ProcessEnv): string[] {
+function usablePathDirs(env: Record<string, string | undefined>): string[] {
   return (env.PATH || env.Path || '')
     .split(path.delimiter)
     .filter(
@@ -86,7 +86,7 @@ function usablePathDirs(env: NodeJS.ProcessEnv): string[] {
  * invisible to PATH until a restart — and a user who just installed Git because we asked them to is
  * exactly who must not then be told to restart us.
  */
-export function windowsBashCandidates(env: NodeJS.ProcessEnv): string[] {
+export function windowsBashCandidates(env: Record<string, string | undefined>): string[] {
   const pathDirs = usablePathDirs(env)
   const candidates = [
     env.CODEBUFF_GIT_BASH_PATH,
@@ -185,7 +185,7 @@ function gitRootFromRegistry(): string | null {
  * left behind by an uninstall cannot resurrect a bash: the path it names is verified like any other.
  */
 export function findWindowsBash(
-  env: NodeJS.ProcessEnv,
+  env: Record<string, string | undefined>,
   registryRoot?: () => string | null,
 ): string | null {
   const found = windowsBashCandidates(env).find(pathExists)
@@ -232,7 +232,7 @@ function compareAppVersionsDescending(a: string, b: string): number {
  * all. Try its newest bundled version first.
  */
 export function windowsGitCandidates(
-  env: NodeJS.ProcessEnv,
+  env: Record<string, string | undefined>,
   readDir: (dir: string) => string[] = listDirectory,
 ): string[] {
   const githubDesktop = env.LOCALAPPDATA
@@ -260,7 +260,7 @@ export function windowsGitCandidates(
  * is searched first and the registry only when it missed, and only for this machine's own env.
  */
 export function findWindowsGit(
-  env: NodeJS.ProcessEnv,
+  env: Record<string, string | undefined>,
   registryRoot?: () => string | null,
 ): string | null {
   const found = windowsGitCandidates(env).find(pathExists)
@@ -279,8 +279,8 @@ type CygpathSpawnResult = {
 
 export type WindowsShellPathDependencies = {
   platform?: NodeJS.Platform
-  env?: NodeJS.ProcessEnv
-  findBash?: (env: NodeJS.ProcessEnv) => string | null
+  env?: Record<string, string | undefined>
+  findBash?: (env: Record<string, string | undefined>) => string | null
   spawnCygpath?: (cygpath: string, filePath: string) => CygpathSpawnResult
   pathExists?: (candidate: string) => boolean
 }

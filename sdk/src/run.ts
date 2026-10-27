@@ -97,8 +97,10 @@ import type { CodebuffSpawn } from '@codebuff/common/types/spawn'
 export type OverrideToolHandlers = {
   [K in Exclude<PublishedClientToolName, 'read_files'>]?: (
     input: any,
+    context?: { toolCallId?: string },
   ) => Promise<ToolResultOutput[]>
 } & {
+  read_image?: import('@codebuff/common/types/contracts/client').RequestImageFileFn
   read_files?: (input: {
     filePaths: string[]
     /** Present only for `windowedFileReads` agents. An override that ignores
@@ -842,10 +844,11 @@ async function runOnce({
     handleStepsLogChunk: () => {
       // Does nothing for now
     },
-    requestToolCall: async ({ userInputId, toolName, input, mcpConfig }) => {
+    requestToolCall: async ({ userInputId, toolName, input, mcpConfig, toolCallId }) => {
       return handleToolCall({
         action: {
           type: 'tool-call-request',
+          toolCallId,
           requestId: crypto.randomUUID(),
           userInputId,
           toolName,
@@ -921,7 +924,7 @@ async function runOnce({
     // remote workspace through the text-only contract, so it keeps images.
     // refuseNonTextFileReads leaves images to the text read, which refuses
     // them.
-    requestImageFile:
+    requestImageFile: overrideTools?.read_image ?? (
       overrideTools?.read_files || refuseNonText
         ? undefined
         : async ({ filePath }) => {
@@ -938,7 +941,7 @@ async function runOnce({
               fs,
               fileFilter,
             })
-          },
+          }),
     requestOptionalFile: async ({ filePath }) => {
       const files = await readFiles({
         filePaths: [filePath],
@@ -1415,7 +1418,7 @@ async function handleToolCall({
       )
     }
     return {
-      output: await customToolHandler.execute(action.input),
+      output: await customToolHandler.execute(action.input, { toolCallId: action.toolCallId }),
     }
   }
 
@@ -1433,7 +1436,7 @@ async function handleToolCall({
       // the union type of all possible tool inputs based on the dynamic toolName.
       // The input has been validated by clientToolCallSchema.parse above.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      result = await override(input as any)
+      result = await override(input as any, { toolCallId: action.toolCallId })
     } else if (toolName === 'end_turn') {
       result = [{ type: 'json', value: { message: 'Turn ended.' } }]
     } else if (toolName === 'write_file' || toolName === 'str_replace') {

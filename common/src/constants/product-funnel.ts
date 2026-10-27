@@ -7,6 +7,7 @@ export const productFunnelProductSchema = z.enum([
   'app_builder',
   'students',
   'cli',
+  'desktop',
 ])
 export const productFunnelStageSchema = z.enum([
   'landing',
@@ -180,6 +181,10 @@ export const productFunnelPropertiesSchema = z
       .regex(/^[a-zA-Z0-9.+_-]+$/)
       .optional(),
     platform: z.enum(['darwin', 'win32', 'linux', 'other']).optional(),
+    originApp: z.enum(['desktop', 'web']).optional(),
+    executionTarget: z.enum(['device', 'cloud']).optional(),
+    renderer: z.literal('web-workspace').optional(),
+    appVersion: z.string().min(1).max(64).regex(/^[a-zA-Z0-9.+_-]+$/).optional(),
   })
   .strict()
 
@@ -191,7 +196,7 @@ export const productFunnelEventSchema = productFunnelPropertiesSchema.extend({
   funnel_stage: productFunnelStageSchema,
   funnel_state: productFunnelStateSchema,
   event_version: z.literal(1),
-  surface: z.enum(['web', 'cli']),
+  surface: z.enum(['web', 'cli', 'desktop']),
   observer: z.enum(['ui', 'cli', 'server']),
 })
 

@@ -219,6 +219,29 @@ describe('base3 CLI roots', () => {
     ])
   })
 
+  test('workspace roots omit todos and scope confirmation without changing CLI roots', () => {
+    const workspace = createBase3(undefined, { workspace: true })
+    const cli = createBase3CliRoot()
+
+    expect(workspace.toolNames).toEqual(
+      createBase3().toolNames!.filter((name) => name !== 'write_todos'),
+    )
+    expect(workspace.systemPrompt).not.toContain('write_todos')
+    expect(workspace.systemPrompt).not.toContain('marking your last to-do completed')
+    expect(workspace.systemPrompt).not.toContain('settle the scope before building')
+    expect(workspace.systemPrompt).not.toContain('let the user confirm')
+    expect(workspace.systemPrompt).toContain('only when you cannot safely or correctly continue')
+    expect(workspace.systemPrompt).toContain('when the user explicitly asks you to ask questions')
+    expect(workspace.systemPrompt).toContain('choose the smallest useful scope')
+    expect(workspace.systemPrompt).toContain(TURN_ENDING_RULE)
+    expect(hasFreebuffRootSystemPromptOpening(workspace.systemPrompt!)).toBe(true)
+
+    expect(cli.toolNames).toContain('write_todos')
+    expect(cli.systemPrompt).toContain('settle the scope yourself, build the smallest version that meets the goal')
+    expect(cli.systemPrompt).toContain('Use write_todos only')
+    expect(cli.systemPrompt).not.toContain('only when you cannot safely or correctly continue')
+  })
+
   test('noWeb drops web_search and read_url and nothing else', () => {
     // The eval harness withholds the web from BOTH arms: the evaluated
     // repositories are public, and a search result quoting their current

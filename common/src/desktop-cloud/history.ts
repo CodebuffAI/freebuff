@@ -1,6 +1,8 @@
 /** Shared history and attachment contract for the Postgres-backed Cloud service. */
 export type CloudHistoryPage<T> = { items: T[]; nextCursor: string | null }
 export type CloudHistoryProject = {
+  /** A durable local target; absence means a hosted project. Never inferred from presence. */
+  deviceExecution?: import('./device-execution').DeviceExecutionTarget | null
   id: string
   name: string
   createdAt: string
@@ -28,6 +30,7 @@ export type CloudHistoryRun = {
   error: string | null
 }
 export type CloudHistoryChat = {
+  deviceExecution?: import('./device-execution').DeviceExecutionTarget | null
   mission?: import('./mission').CloudMission | null
   id: string
   projectId: string | null
@@ -113,8 +116,10 @@ export function createCloudHistoryClient(
     page: CloudHistoryOptions = {},
     projectId?: string,
     update?: CloudHistoryChatUpdate | CloudHistoryProjectUpdate,
+    search?: string,
   ): Promise<T> {
     const query = new URLSearchParams()
+    if (search) query.set('search', search)
     if (page.cursor != null) query.set('cursor', page.cursor)
     if (page.limit !== undefined) query.set('limit', String(page.limit))
     if (projectId !== undefined) query.set('projectId', projectId)
@@ -163,8 +168,8 @@ export function createCloudHistoryClient(
         undefined,
         update,
       ),
-    listChats: (page: CloudHistoryOptions & { projectId?: string } = {}) =>
-      get<CloudHistoryPage<CloudHistoryChat>>('chats', page, page.projectId),
+    listChats: (page: CloudHistoryOptions & { projectId?: string; search?: string } = {}) =>
+      get<CloudHistoryPage<CloudHistoryChat>>('chats', page, page.projectId, undefined, page.search),
     getChat: (chatId: string, signal?: AbortSignal) =>
       get<CloudHistoryChat>(`chats/${id(chatId)}`, { signal }),
     getAttachment: (chatId: string, signal?: AbortSignal) =>

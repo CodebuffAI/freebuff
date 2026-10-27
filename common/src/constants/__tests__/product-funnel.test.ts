@@ -32,6 +32,23 @@ test('closed product funnel contract rejects prompt, path, auth ID and arbitrary
     ).toBe(false)
 })
 
+test('hosted Desktop dimensions stay bounded and survive SDK enrichment sanitization', () => {
+  const hosted = {
+    ...payload, product: 'desktop', surface: 'desktop', observer: 'ui',
+    originApp: 'desktop', renderer: 'web-workspace', appVersion: '1.2.3-staging.2',
+    executionTarget: 'device',
+  }
+  expect(productFunnelEventSchema.safeParse(hosted).success).toBe(true)
+  expect(sanitizeProductFunnelCapture({
+    event: PRODUCT_FUNNEL_EVENT,
+    properties: { ...hosted, $current_url: 'https://host/?secret=private' },
+  }, 'public-token')?.properties).toEqual({ ...hosted, token: 'public-token' })
+  for (const extra of [
+    { appVersion: '/private/path' }, { appVersion: 'x'.repeat(65) },
+    { executionTarget: 'local-path' }, { renderer: 'untrusted' },
+  ]) expect(productFunnelEventSchema.safeParse({ ...hosted, ...extra }).success).toBe(false)
+})
+
 test('SDK URL and person enrichments are removed before capture or mirroring', () => {
   const event: {
     event: string

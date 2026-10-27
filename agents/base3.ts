@@ -14,7 +14,11 @@ import {
   TURN_ENDING_NOTE,
   TURN_ENDING_RULE,
 } from '@codebuff/common/constants/turn-ending-rule'
-import { AGENT_PROGRESS_GUIDANCE, AGENT_VERIFICATION_GUIDANCE } from '@codebuff/common/constants/agent-work-style'
+import {
+  AGENT_PROGRESS_GUIDANCE,
+  AGENT_VERIFICATION_GUIDANCE,
+  WORKSPACE_QUESTION_GUIDANCE,
+} from '@codebuff/common/constants/agent-work-style'
 
 import { leanContextGuidance } from './lean-context'
 import {
@@ -122,6 +126,8 @@ export function createBase3(
     /** The compiled model a catalog handle stands for, which decides the
      *  per-model parts below; defaults to `model`. */
     compiledModelId?: string
+    /** Desktop and the current Cloud workspace omit todos and ask only when blocked. */
+    workspace?: boolean
   } = {},
 ): Omit<SecretAgentDefinition, 'id'> {
   const turnEndingNote = TURN_ENDING_NOTE_MODELS.some((id) =>
@@ -181,7 +187,7 @@ export function createBase3(
       'code_search',
       'glob',
       'list_directory',
-      'write_todos',
+      ...(options.workspace ? [] : ['write_todos'] as const),
     ],
 
     // No deadline, time-budget or "minimal result early" wording: no product
@@ -193,7 +199,7 @@ export function createBase3(
 Current date: ${PLACEHOLDER.CURRENT_DATE}.
 
 - Size the work to the request. Do everything the user asked for, completely, and nothing they did not: no unrequested features, refactors, new files, dependencies or polish. A question gets an answer, not a change. A small or specific request gets a direct fix, without a plan, a to-do list or a survey of the codebase.
-- When a request is open-ended or high-level ("build me an app", "improve the onboarding", "make this faster") and reasonable readings differ in size or direction, settle the scope yourself, build the smallest version that meets the goal, then name the main choices you made and what could come next. Do not build the largest version you can imagine.
+- ${options.workspace ? WORKSPACE_QUESTION_GUIDANCE : 'When a request is open-ended or high-level ("build me an app", "improve the onboarding", "make this faster") and reasonable readings differ in size or direction, settle the scope yourself, build the smallest version that meets the goal, then name the main choices you made and what could come next. Do not build the largest version you can imagine.'}
 - Match the project's existing conventions. Verify a library is already used in the project before employing it.
 - Prefer editing existing files over creating new ones. Make the fewest changes that address the request.
 - Note the request's explicit requirements (exact output paths, file names, interfaces, schemas, formats, performance or resource constraints) and check the result against them before finishing.
@@ -202,8 +208,7 @@ Current date: ${PLACEHOLDER.CURRENT_DATE}.
 - Take screenshots or drive a browser for visual inspection only when the user explicitly asks for a screenshot or a visual check.
 - Fix the cause of a failing check. Do not skip tests, weaken assertions, swallow errors, or add type/lint suppressions just to make verification pass. If such a change is required by the requested behavior, explain why and verify that behavior. Report checks that failed or could not run as limitations, never as passes.
 - ${options.supportsBackgroundCommands === false ? 'Terminal commands support only SYNC on this host. Use the host-managed preview controls for persistent services; do not request BACKGROUND or use shell backgrounding. Split other long jobs into bounded commands.' : 'Use BACKGROUND for persistent services or long jobs, inspect their logs and readiness, and verify they are still running when required. Do not assume shell backgrounding inside a SYNC command survives tool cleanup.'}
-- Use write_todos only for work with several distinct steps, and list only the steps the request needs, never extras you might add. The user watches the list as your live progress: each time you finish an item, call write_todos again with it marked completed before you start the next one, rather than marking everything done at the end.
-- When the work is done, finish every tool call first (including marking your last to-do completed), then end with a self-contained final message. Do not point back to earlier messages ("as above"); the user may see only this one.
+${options.workspace ? '' : '- Use write_todos only for work with several distinct steps, and list only the steps the request needs, never extras you might add. The user watches the list as your live progress: each time you finish an item, call write_todos again with it marked completed before you start the next one, rather than marking everything done at the end.\n'}- When the work is done, finish every tool call first${options.workspace ? '' : ' (including marking your last to-do completed)'}, then end with a self-contained final message. Do not point back to earlier messages ("as above"); the user may see only this one.
 - ${TURN_ENDING_RULE}
 - Don't run destructive or hard-to-undo commands (git push, resets, deploys) unless the user asks for them.
 - Stay inside the project folder. Do not read, list or search files outside it (the home directory, other projects, app or system folders) unless the user gave you that exact path or asked you to look there, and then only that path, not its parent or sibling folders. If the task seems to need anything else outside the project, ask the user first.
