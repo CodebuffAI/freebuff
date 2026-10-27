@@ -203,6 +203,15 @@ export function findWindowsBash(
   return candidate && pathExists(candidate) ? candidate : null
 }
 
+/**
+ * Every bash this machine has, in the order we would try them. A bundled copy that Windows policy
+ * blocks (Attack Surface Reduction answers EPERM on spawn) must not be the only one we can run, so
+ * the terminal falls through to the next install instead of reporting no shell at all.
+ */
+export function findAllWindowsBash(env: NodeJS.ProcessEnv): string[] {
+  return windowsBashCandidates(env).filter(pathExists)
+}
+
 function listDirectory(dir: string): string[] {
   try {
     return fs.readdirSync(dir)
