@@ -141,6 +141,14 @@ export const AGENTIC_FUNNEL_EVENT_TYPES = [
   'needs_you',
   /** The user undid the run's changes. */
   'undo',
+  /**
+   * A sponsored run opened the advertiser's tracked sign-up link for the user
+   * (Desktop's in-app browser, COD-965). Once per proposal: a reopened tab is
+   * the same stage. The step between `needs_you` and the advertiser's own
+   * `account_created`, so "never opened" and "opened, never signed up" read
+   * apart. Telemetry only.
+   */
+  'signup_opened',
 ] as const
 
 export type AgenticFunnelEventType = (typeof AGENTIC_FUNNEL_EVENT_TYPES)[number]
@@ -179,6 +187,7 @@ export const CLIENT_REPORTED_AGENTIC_FUNNEL_EVENT_TYPES = [
   'accept_clicked',
   'needs_you',
   'undo',
+  'signup_opened',
 ] as const satisfies readonly AgenticFunnelEventType[]
 
 export type ClientReportedAgenticFunnelEventType =

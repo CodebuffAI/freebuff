@@ -50,6 +50,7 @@ describe('agentic funnel vocabulary', () => {
       'run_started',
       'needs_you',
       'undo',
+      'signup_opened',
     ])
   })
 
@@ -89,9 +90,9 @@ describe('agentic funnel vocabulary', () => {
       'needs_you',
       'tool_used',
     ])
-    expect(REPEATING_AGENTIC_FUNNEL_EVENT_TYPES as readonly string[]).not.toContain(
-      'accepted',
-    )
+    expect(
+      REPEATING_AGENTIC_FUNNEL_EVENT_TYPES as readonly string[],
+    ).not.toContain('accepted')
   })
 
   test('the three COD-279 stages are members', () => {
@@ -220,6 +221,7 @@ describe('what a client may report', () => {
       'accept_clicked',
       'needs_you',
       'undo',
+      'signup_opened',
     ])
     for (const eventType of CLIENT_REPORTED_AGENTIC_FUNNEL_EVENT_TYPES) {
       expect(AGENTIC_FUNNEL_EVENT_TYPES).toContain(eventType)
@@ -233,9 +235,9 @@ describe('what a client may report', () => {
   test('the guard admits exactly the client set', () => {
     for (const eventType of AGENTIC_FUNNEL_EVENT_TYPES) {
       expect(isClientReportedAgenticFunnelEvent(eventType)).toBe(
-        (CLIENT_REPORTED_AGENTIC_FUNNEL_EVENT_TYPES as readonly string[]).includes(
-          eventType,
-        ),
+        (
+          CLIENT_REPORTED_AGENTIC_FUNNEL_EVENT_TYPES as readonly string[]
+        ).includes(eventType),
       )
     }
     for (const value of [undefined, null, 1, '', 'PLAN_VIEWED', {}]) {
