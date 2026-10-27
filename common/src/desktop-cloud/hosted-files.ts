@@ -11,7 +11,7 @@ export type HostedFilesRequest = HostedBrowserScope & (
 
 export type HostedFileReadResult =
   | { ok: true; content: string; truncated: boolean; revision: string; image?: FileImage; readOnly?: boolean; tooLargeToEdit?: boolean }
-  | { ok: false; error: string; canExpand?: boolean }
+  | { ok: false; error: string; canExpand?: boolean; reason?: 'binary' | 'too_large'; size?: number }
 
 export type HostedFilesResponses = {
   list: { files: Array<{ path: string; name: string; kind: 'file' | 'directory'; depth: number }> }

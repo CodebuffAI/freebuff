@@ -6,6 +6,12 @@ export interface FileDownloadChunk {
   revision: string
 }
 
+/** `attachment` with the path's base name, RFC 5987-encoded so any name is safe in a header. */
+export function attachmentDisposition(path: string): string {
+  const filename = path.split(/[\\/]/).pop() || 'download'
+  return `attachment; filename*=UTF-8''${encodeURIComponent(filename).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16))}`
+}
+
 /** Fetch the first chunk before sending headers so missing files remain HTTP errors.
  * Later failures abort the body: a partial download must never look successful. */
 export async function fileDownloadResponse(
@@ -64,11 +70,10 @@ export async function fileDownloadResponse(
     },
     cancel: close,
   })
-  const filename = path.split(/[\\/]/).pop() || 'download'
   return new Response(body, { headers: {
     'Content-Type': 'application/octet-stream',
     'Content-Length': String(first.size),
-    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16))}`,
+    'Content-Disposition': attachmentDisposition(path),
     'Cache-Control': 'private, no-store, no-transform',
     'X-Content-Type-Options': 'nosniff',
   } })
