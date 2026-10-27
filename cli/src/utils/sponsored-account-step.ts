@@ -36,6 +36,7 @@ import {
   labSignInConfirmedNote,
 } from '@codebuff/common/ads/agentic-ad-lab-run'
 import { signupUrlWithEmail } from '@codebuff/common/ads/sponsored-instant-setup'
+import { resolveSponsoredBfcidTemplate } from '@codebuff/common/ads/sponsored-procedure-inputs'
 import {
   redactSponsoredCredentialDeep,
   redactSponsoredCredentialText,
@@ -47,6 +48,7 @@ import type {
   SponsoredRedactableSecret,
   SponsoredRunCredential,
 } from '@codebuff/common/ads/sponsored-run-credentials'
+import type { SponsoredProcedureRuntimeInputs } from '@codebuff/common/ads/sponsored-procedure-inputs'
 import type { SponsoredSignupStep } from '@codebuff/common/ads/sponsored-signup-step'
 
 export const SPONSORED_SIGNUP_TOOL_NAME = 'request_sponsored_signup'
@@ -145,6 +147,29 @@ export class SponsoredHeldCredentials {
   [inspect.custom](): string {
     return `SponsoredHeldCredentials(${this.names.join(', ') || 'empty'}) [redacted]`
   }
+}
+
+/**
+ * MIRRORED from Desktop's `requiredCredentials` (COD-965): each declared key
+ * page with its `{bfcid}` slot filled from this run's signed click id. The
+ * key form may be the first advertiser visit, so a link that cannot be
+ * attributed (no signed id) is dropped rather than shown with a literal
+ * placeholder, and an `{email}` slot is removed: nobody agreed to share the
+ * email on this form (COD-830).
+ */
+export function trackedSponsoredCredentials(
+  credentials: readonly SponsoredRunCredential[],
+  inputs: SponsoredProcedureRuntimeInputs,
+): SponsoredRunCredential[] {
+  return credentials.map(({ getUrl, ...credential }) => {
+    const bfcidResolved = getUrl
+      ? resolveSponsoredBfcidTemplate(getUrl, inputs)
+      : null
+    const resolved = bfcidResolved
+      ? signupUrlWithEmail(bfcidResolved, null)
+      : null
+    return { ...credential, ...(resolved ? { getUrl: resolved } : {}) }
+  })
 }
 
 /** User copy for a refused key. Never names a value. */

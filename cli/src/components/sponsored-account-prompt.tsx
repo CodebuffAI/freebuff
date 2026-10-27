@@ -51,7 +51,9 @@ export const SponsoredAccountPrompt: React.FC<{
   onAnswer: (answer: SponsoredAccountAnswer) => string | null
   /** Ctrl-C: stop the sponsored run, as it does everywhere else in chat. */
   onInterrupt?: () => void
-}> = ({ ask, onAnswer, onInterrupt }) => {
+  /** Opens a link the user clicks; injected by tests. */
+  openUrl?: (url: string) => void
+}> = ({ ask, onAnswer, onInterrupt, openUrl = safeOpen }) => {
   const theme = useTheme()
   const { keyHandler } = useAppContext()
   const [choice, setChoice] = useState(0)
@@ -198,7 +200,7 @@ export const SponsoredAccountPrompt: React.FC<{
           <TerminalLink
             text={ask.url}
             lineWrap
-            onActivate={() => safeOpen(ask.url)}
+            onActivate={() => openUrl(ask.url)}
           />
           {[SPONSORED_SIGNUP_YES, SPONSORED_SIGNUP_NO].map((label, index) => (
             <text
@@ -232,7 +234,7 @@ export const SponsoredAccountPrompt: React.FC<{
                 <TerminalLink
                   text={credential.getUrl}
                   lineWrap
-                  onActivate={() => safeOpen(credential.getUrl!)}
+                  onActivate={() => openUrl(credential.getUrl!)}
                 />
               ) : null}
               <text style={{ fg: theme.foreground }}>

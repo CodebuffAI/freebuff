@@ -164,6 +164,7 @@ import {
   SPONSORED_ACCOUNT_STEP_MARGIN_MS,
   SponsoredAccountStep,
   SponsoredHeldCredentials,
+  trackedSponsoredCredentials,
 } from './sponsored-account-step'
 import { sponsoredSignupTool } from './sponsored-signup-tool'
 import {
@@ -1199,7 +1200,12 @@ export class SponsoredRun {
     // and the agent calls `request_sponsored_signup` once the work that needs
     // no account is done. A tracked signup link, declared keys, or a skill's
     // user step each make one.
-    const declaredCredentials = declaredRunCredentials(active.procedure)
+    // A key page's `{bfcid}` slot takes this run's signed click id, as on
+    // Desktop and Cloud; a link that cannot be attributed is not shown.
+    const declaredCredentials = trackedSponsoredCredentials(
+      declaredRunCredentials(active.procedure),
+      active.runtimeInputs,
+    )
     const signup = sponsoredSignupStep(
       active.procedure,
       active.runtimeInputs,
@@ -1254,7 +1260,9 @@ export class SponsoredRun {
     const installTool = context.installTool
       ? sponsoredInstallTool({
           ...sponsoredInstallProbe(
-            createSponsoredRootedFileSystem({ workspaceRoot: this.projectRoot }),
+            createSponsoredRootedFileSystem({
+              workspaceRoot: this.projectRoot,
+            }),
             this.projectRoot,
           ),
           resolve: (request) => this.resolvePackage(active, request),

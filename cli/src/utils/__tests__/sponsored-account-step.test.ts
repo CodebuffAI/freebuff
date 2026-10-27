@@ -14,6 +14,7 @@ import {
 import {
   SponsoredAccountStep,
   SponsoredHeldCredentials,
+  trackedSponsoredCredentials,
 } from '../sponsored-account-step'
 
 import type {
@@ -189,6 +190,68 @@ describe('a tracked signup link', () => {
       'unavailable',
     )
     expect(h.opened).toEqual([])
+  })
+})
+
+describe('a key page link with a {bfcid} slot (COD-965)', () => {
+  const TOKEN = 'bfc_1.p.s'
+  const declared = [
+    {
+      env: 'ACME_API_KEY',
+      label: 'Acme API key',
+      getUrl: 'https://acme.example/keys?bfcid={bfcid}',
+    },
+    {
+      env: 'ACME_ORG',
+      label: 'Acme org id',
+      getUrl: 'https://acme.example/org',
+    },
+  ]
+
+  test('takes the signed click id, and the form shows that link', async () => {
+    const credentials = trackedSponsoredCredentials(declared, {
+      advertiserLink: `https://acme.example/?bfcid=${TOKEN}`,
+    })
+    expect(credentials).toEqual([
+      { ...declared[0]!, getUrl: `https://acme.example/keys?bfcid=${TOKEN}` },
+      declared[1]!,
+    ])
+    const h = harness({ credentials })
+    void h.step.request(new AbortController().signal)
+    await Promise.resolve()
+    const ask = h.step.asking
+    expect(ask?.kind).toBe('credentials')
+    if (ask?.kind !== 'credentials') return
+    expect(ask.credentials[0]!.getUrl).toBe(
+      `https://acme.example/keys?bfcid=${TOKEN}`,
+    )
+  })
+
+  test('without a signed click id the link is dropped, never shown with the slot', () => {
+    for (const advertiserLink of [null, 'https://acme.example/', undefined]) {
+      const credentials = trackedSponsoredCredentials(declared, {
+        advertiserLink: advertiserLink as string | null,
+      })
+      expect(credentials).toEqual([
+        { env: 'ACME_API_KEY', label: 'Acme API key' },
+        declared[1]!,
+      ])
+      expect(JSON.stringify(credentials)).not.toContain('bfcid}')
+    }
+  })
+
+  test('an encoded slot is filled too, and an {email} slot is removed', () => {
+    const [credential] = trackedSponsoredCredentials(
+      [
+        {
+          env: 'ACME_API_KEY',
+          label: 'Acme API key',
+          getUrl: 'https://acme.example/keys?bfcid=%7Bbfcid%7D&email={email}',
+        },
+      ],
+      { advertiserLink: `https://acme.example/?bfcid=${TOKEN}` },
+    )
+    expect(credential!.getUrl).toBe(`https://acme.example/keys?bfcid=${TOKEN}`)
   })
 })
 
