@@ -35,8 +35,8 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 | Model                       | Access                  | Best for                                                          |
 | --------------------------- | ----------------------- | ----------------------------------------------------------------- |
 | **MiMo v2.6 Flash Fast**    | Full and limited access | The default everywhere; balanced performance with image support   |
-| **GLM 5.3 Flash**           | Full and limited access | Deepest reasoning, unmetered                                      |
-| **DeepSeek V4.1 Flash 10/17** | Full and limited access | Fast coding and tool use, unmetered                               |
+| **GLM 5.3 Flash**           | Full and limited access | Deepest reasoning                                                 |
+| **DeepSeek V4.1 Flash 10/17** | Full and limited access | Fast coding and tool use                                          |
 | **DeepSeek V4.1 Flash Fast 10/17** | Full access; paid plans at limited access | Fast mode: the same model on DeepSeek's own API, splitting work across parallel subagents and verifying the result; priced on DeepSeek's peak and off-peak hours |
 | **GPT-6 Luna**              | Full access             | Strong all-around with native images; runs on OpenAI flex capacity |
 | **MiMo 2.6 Pro**            | Full access             | Xiaomi's stronger reasoning model, with image support |
@@ -44,17 +44,17 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 | **Solar Pro 4**             | Full and limited access | Upstage's larger, stronger model; 524K context, text only |
 | **Gemini 3.8 Flash**        | Paid plans              | 1M context, and the only model that accepts audio, video and PDF |
 | **Muse Spark 1.3**          | Paid plans              | Meta's agentic coding model; 1M context. When it is busy or unavailable, it answers on DeepSeek V4.1 Flash rather than making you wait |
-| **Gemini 4 Argon**          | US, or paid plans elsewhere | Google's flagship reasoning model at a temporary promotional price, one session a day for every account; 1M context, images |
+| **Gemini 4 Argon**          | US, or paid plans elsewhere | Google's flagship reasoning model, one session a day for every account; 1M context, images |
 | **GPT-6.1 Terra**           | Full access; paid plans at limited access | OpenAI's model at a temporary promotional price, one session a day for every account; 1M context, images |
 | **GPT-6.1 Sol**             | US, or paid plans elsewhere | OpenAI's flagship, one session a day for every account; 1M context, images |
 
-Most models draw on your normal daily sessions rather than a separate limit. GLM 5.3 Flash, DeepSeek V4.1 Flash, MiMo v2.6 Flash Fast, Solar Mini 4 and Solar Pro 4 are unmetered at full access and cost no session at all. Models may still serve from a quantized (Q8_0) build.
+Prices change often, so this README does not list them: the model picker shows what each model costs as a multiplier. An hour on a 1x model uses one hour of your balance, an hour on a 3x model uses three, and models in the picker's Unlimited section use none. Models may still serve from a quantized (Q8_0) build.
 
 DeepSeek V4 Pro was retired from the catalog; GLM 5.3 Flash replaces it as the deep-reasoning pick.
 
 Beyond the regular picker:
 
-- **Referrals and bounties** earn extra sessions on top of the free daily allowance.
+- **Referrals and bounties** earn extra hours on top of the free daily allowance.
 - **Gemini 3.1 Flash Lite** powers specialist tasks such as file finding and research rather than appearing in the main picker.
 
 Availability and limits depend on your access tier, product, and current capacity. Freebuff Desktop can also run locally installed Claude Code and Codex agents using your existing provider account; those connected models are separate from Freebuff's included catalog.
