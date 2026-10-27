@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test'
 import { getErrorObject } from '../error'
 import { serializeLogData } from '../log-data'
 import {
+  redactConvexKeysForLog,
   redactHeadersForLog,
   redactQueryErrorForLog,
   redactUrlForLog,
@@ -231,5 +232,66 @@ describe('redactQueryErrorForLog', () => {
     expect(redactQueryErrorForLog(plain)).toBe(plain)
     expect(redactQueryErrorForLog('text')).toBe('text')
     expect(redactQueryErrorForLog(undefined)).toBeUndefined()
+  })
+})
+
+describe('redactConvexKeysForLog', () => {
+  // Synthetic, in the shape Convex mints (base64 JSON starting `{"v2":`).
+  const TOKEN = 'eyJ2MiI6ImFiY2RlZjAxMjM0NTY3ODkwYWJjZGVmIn0='
+
+  test('keeps the deployment name of a deploy key, drops the token', () => {
+    // The create_deploy_key response body management_api logged until 2026-10-27.
+    const body = JSON.stringify({ deployKey: `dev:brave-otter-123|${TOKEN}` })
+    expect(redactConvexKeysForLog(body)).toBe(
+      '{"deployKey":"dev:brave-otter-123|[redacted]"}',
+    )
+    expect(redactConvexKeysForLog(`prod:calm-fox-9|${TOKEN}`)).toBe(
+      'prod:calm-fox-9|[redacted]',
+    )
+    expect(redactConvexKeysForLog(`preview:team:project:branch|${TOKEN}`)).toBe(
+      'preview:team:project:branch|[redacted]',
+    )
+  })
+
+  test('admin keys in a request header and in a CLI error URL', () => {
+    expect(
+      redactConvexKeysForLog(`Authorization: 'Convex calm-fox-9|${TOKEN}'`),
+    ).toBe("Authorization: 'Convex calm-fox-9|[redacted]'")
+    // `convex env list` handed a key where it wanted a deployment name.
+    expect(
+      redactConvexKeysForLog(
+        `✖ Error fetching GET  https://api.convex.dev/api/deployment/calm-fox-9|${TOKEN} 400 Bad Request`,
+      ),
+    ).toBe(
+      '✖ Error fetching GET  https://api.convex.dev/api/deployment/calm-fox-9|[redacted] 400 Bad Request',
+    )
+    expect(redactConvexKeysForLog(`my-instance|${'a1'.repeat(32)}`)).toBe(
+      'my-instance|[redacted]',
+    )
+  })
+
+  test('bare access tokens and command-line assignments', () => {
+    expect(redactConvexKeysForLog(`Authorization: 'Bearer ${TOKEN}'`)).toBe(
+      "Authorization: 'Bearer [redacted]'",
+    )
+    expect(
+      redactConvexKeysForLog(
+        `CONVEX_DEPLOY_KEY='prod:calm-fox-9|${TOKEN}' bun run convex deploy`,
+      ),
+    ).toBe("CONVEX_DEPLOY_KEY='[redacted]' bun run convex deploy")
+    expect(
+      redactConvexKeysForLog('CONVEX_SELF_HOSTED_ADMIN_KEY=abc123 npx convex'),
+    ).toBe('CONVEX_SELF_HOSTED_ADMIN_KEY=[redacted] npx convex')
+  })
+
+  test('leaves key references and ordinary text alone', () => {
+    for (const text of [
+      'CONVEX_DEPLOY_KEY=$(cat $HOME/.vly-convex/dev.key) npx convex export',
+      '[Management API] Creating deploy key for: calm-fox-9',
+      'Request failed with status code 401',
+      'a | b',
+    ]) {
+      expect(redactConvexKeysForLog(text)).toBe(text)
+    }
   })
 })

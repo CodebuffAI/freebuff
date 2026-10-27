@@ -122,6 +122,31 @@ export function redactErrorFieldForLog(key: string, val: unknown): unknown {
   return val
 }
 
+// `<deployment>|<token>`: an admin key, and a deploy key's body after its
+// `prod:`/`dev:`/`preview:<team>:<project>:` prefix. The name part is kept.
+const CONVEX_KEY_AFTER_NAME = /(\b[A-Za-z0-9_.:-]+\|)[A-Za-z0-9+/=_.-]{20,}/g
+// The token Convex mints for deploy keys and team/project access tokens is
+// base64 JSON starting `{"v2":`, so it is recognisable without a name.
+const CONVEX_V2_TOKEN = /eyJ2MiI6[A-Za-z0-9+/=_.-]*/g
+// `CONVEX_DEPLOY_KEY=…` in a command line; `$(cat …)` is a reference, kept.
+const CONVEX_KEY_ASSIGNMENT =
+  /(\bCONVEX_[A-Z_]*(?:KEY|TOKEN)=)(['"]?)(?!\$)[^\s'"]+/g
+
+/**
+ * Text with every Convex credential replaced by `[redacted]`: deploy keys,
+ * admin keys (`Authorization: Convex <deployment>|<token>`, and the URL the
+ * Convex CLI echoes when handed one), bare access tokens, and
+ * `CONVEX_*_KEY=`/`CONVEX_*_TOKEN=` assignments. The deployment name stays, as
+ * it is what says which key would need rotating. For Convex Management API
+ * response bodies, CLI output and error text bound for a log line.
+ */
+export function redactConvexKeysForLog(text: string): string {
+  return text
+    .replace(CONVEX_KEY_ASSIGNMENT, '$1$2[redacted]')
+    .replace(CONVEX_KEY_AFTER_NAME, '$1[redacted]')
+    .replace(CONVEX_V2_TOKEN, '[redacted]')
+}
+
 const QUERY_PARAMS_MARKER = '\nparams: '
 
 /**
