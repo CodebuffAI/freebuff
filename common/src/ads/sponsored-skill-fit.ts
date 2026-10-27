@@ -444,6 +444,29 @@ export function sponsoredFitCheckDecidable(check: SponsoredSkillCheck): boolean 
   }
 }
 
+/** The preflight check kinds that test the user's project. */
+const SPONSORED_FIT_TEST_KINDS: readonly string[] = [
+  'file_exists',
+  'file_contains',
+  'package_declared',
+]
+
+/**
+ * A skill's own preflight checks that test the project but that no
+ * repository facts can decide (COD-965). The offer serves on `unknown`, so
+ * such a check refuses only after the charged Accept. A format-2 `fit` block
+ * compiles to decidable checks and is never listed.
+ */
+export function sponsoredSkillUndecidableFitChecks(
+  skill: Pick<SponsoredSkill, 'preflight'>,
+): SponsoredSkillCheck[] {
+  return (skill.preflight ?? []).filter(
+    (check) =>
+      SPONSORED_FIT_TEST_KINDS.includes(check.kind) &&
+      !sponsoredFitCheckDecidable(check),
+  )
+}
+
 /** One preflight check's three-valued verdict over the facts. */
 export function evaluateSponsoredFitCheck(
   check: SponsoredSkillCheck,
