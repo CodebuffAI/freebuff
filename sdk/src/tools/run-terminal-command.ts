@@ -219,6 +219,7 @@ export type ActiveTerminalCommandProcess = {
  * pasted into bug reports and those values may contain secrets.
  */
 export function getActiveTerminalCommandProcesses(): ActiveTerminalCommandProcess[] {
+  forgetEndedBackgroundCommands()
   return Array.from(liveChildren).flatMap((child) => {
     if (!child.pid) return []
     return [
@@ -663,6 +664,23 @@ export function releaseBackgroundTerminalCommands(signal: AbortSignal): void {
   for (const [child, entry] of backgroundCommands) {
     if (entry.signal !== signal || !entry.transferable) continue
     signal.removeEventListener('abort', entry.onAbort)
+    liveChildren.delete(child)
+    backgroundCommands.delete(child)
+  }
+}
+
+/**
+ * A background command whose shell exits while its process group lives on
+ * (`nohup server &`, how agents start dev servers) stays tracked past `finish`,
+ * and nothing looks at it again once that group ends. Desktop's helper census
+ * counted every such command ever started as live, so about 3% of macOS and
+ * Linux installs reported a process flood each day. Forget the ones whose
+ * group is gone.
+ */
+function forgetEndedBackgroundCommands(): void {
+  for (const [child, entry] of backgroundCommands) {
+    if (child.isAlive()) continue
+    entry.signal?.removeEventListener('abort', entry.onAbort)
     liveChildren.delete(child)
     backgroundCommands.delete(child)
   }

@@ -669,6 +669,37 @@ describe('managed background commands', () => {
     }
   })
 
+  test('stops listing a detached background command once its group ends', async () => {
+    // Windows tracks the shell itself, so this shape is never retained there.
+    if (process.platform === 'win32') return
+    const { terminalCommandOutputSchema } =
+      await import('../../../common/src/tools/params/tool/run-terminal-command')
+    // The turn ends normally, so its signal never aborts.
+    const turn = new AbortController()
+    const result = await runTerminalCommand({
+      command: 'sleep 0.5 & echo started',
+      process_type: 'BACKGROUND',
+      cwd: tmpdir(),
+      timeout_seconds: 30,
+      signal: turn.signal,
+    })
+    const output = result[0]
+    if (output.type !== 'json') throw new Error('Expected JSON')
+    const value = terminalCommandOutputSchema.parse(output.value)
+    if (!('processId' in value) || !value.stdoutPath)
+      throw new Error('Missing process/log info')
+    const listed = () =>
+      getActiveTerminalCommandProcesses().some(
+        (child) => child.pid === value.processId,
+      )
+    try {
+      expect(listed()).toBe(true)
+      expect(await waitFor(() => !listed(), 3000)).toBe(true)
+    } finally {
+      rmSync(join(value.stdoutPath, '..'), { recursive: true, force: true })
+    }
+  })
+
   test('never bypasses a failing background broker', async () => {
     await expect(
       runTerminalCommand({
