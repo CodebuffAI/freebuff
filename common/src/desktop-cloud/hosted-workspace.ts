@@ -236,8 +236,16 @@ export type HostedWorkspaceHost = {
     location: 'local' | 'worktree' | 'cloud'
     choices: Array<'local' | 'worktree' | 'cloud'>
     progress?: HostedRuntimeProgress
+    /** Display-only metadata resolved by native code for the authenticated chat. */
+    workspace?: {
+      projectName: string
+      projectPath: string
+      directory: string
+      branch: string | null
+      worktree: boolean
+    }
   }>
-  /** Persist a device-backed cloud chat before a person opens its native panels. */
+  /** Persist a device-backed cloud chat before native panels or first-send placement. */
   prepareLocalChat?(scope: HostedBrowserScope): Promise<HostedBrowserScope>
   terminal?: {
     request(input: HostedTerminalRequest): Promise<HostedTerminalResponse>
