@@ -209,6 +209,8 @@ export type HostedWorkspaceHost = {
   platform: string
   launchId?: string
   appVersion: string
+  buildSha?: string
+  nativeProtocolVersion?: number
   customTitleBar?: boolean
   /** The native window stays hidden until the authenticated workspace has rendered. */
   ready?(): Promise<void>
@@ -256,7 +258,7 @@ export type HostedWorkspaceHost = {
   /** Save first-project completion on this Desktop installation only. */
   completeProjectSetup?(): Promise<void>
   /** A selected project may connect its known local folder; no other folder is enrolled. */
-  status(projectId?: string): Promise<HostedWorkspaceStatus>
+  status(projectId?: string, trigger?: 'startup' | 'project-selection' | 'automatic-retry' | 'manual-retry'): Promise<HostedWorkspaceStatus>
   openLocalProject(): Promise<HostedWorkspaceConnection | null>
   disconnect(sessionId: string): Promise<void>
   /** Clears native credentials and the hosted browser session together. */
