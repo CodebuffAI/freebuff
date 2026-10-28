@@ -119,3 +119,6 @@ web/.ad-assets-r2/
 __pycache__/
 *.pyc
 *.egg-info/
+
+# Identity bridging pilot output (per-account outcomes; never committed)
+scripts/identity/out/
