@@ -25,6 +25,7 @@ export const deviceExecutionContext = z
     nativeTools: z.boolean().optional(),
     panelProtocolVersion: z.literal(1).optional(),
     nativeHarnesses: z.boolean().optional(),
+    concurrentHarnesses: z.literal(true).optional(),
     cwd: z.string().min(1).max(4096),
     rg: z.string().max(4096),
   })
@@ -311,6 +312,7 @@ export const deviceCapabilities = z
     executionProtocolVersion: z.literal(2).optional(),
     nativeProtocolVersion: z.literal(3).optional(),
     panelProtocolVersion: z.literal(1).optional(),
+    concurrentHarnesses: z.literal(true).optional(),
   })
   .strict()
 
