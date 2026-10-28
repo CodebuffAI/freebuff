@@ -1911,7 +1911,7 @@ test('chat picker selects without admitting or asking to spend wallet funds', as
 
 test.each(['model', 'reasoning'] as const)('%s entry edits reasoning and Escape returns without selecting', async (initialView) => {
   const model = FREEBUFF_GLM_V53_FLASH_MODEL_ID
-  const previous = useFreebuffModelStore.getState().reasoningEffortByModel
+  const { reasoningEffortByModel: previous, setReasoningEffort } = useFreebuffModelStore.getState()
   useFreebuffSessionStore.getState().setSession({ status: 'none', accessTier: 'full' })
   useFreebuffModelStore.setState({ selectedModel: model, reasoningEffortByModel: {} })
   const selected: string[] = []
@@ -1939,6 +1939,7 @@ test.each(['model', 'reasoning'] as const)('%s entry edits reasoning and Escape 
     expect(selected).toEqual([model])
   } finally {
     persist.mockRestore()
-    useFreebuffModelStore.setState({ reasoningEffortByModel: previous })
+    // mockRestore only patches the spied state object; setState copied the mock on.
+    useFreebuffModelStore.setState({ reasoningEffortByModel: previous, setReasoningEffort })
   }
 })

@@ -313,7 +313,8 @@ describe('the reasoning submenu', () => {
     // Spied like the compiled picker's Tab test: the real setter also writes
     // the settings file, and CI's NODE_ENV=production run shares one process
     // (and one settings file) across every test file.
-    const previous = useFreebuffModelStore.getState().reasoningEffortByModel
+    const { reasoningEffortByModel: previous, setReasoningEffort } =
+      useFreebuffModelStore.getState()
     useFreebuffModelStore.setState({ reasoningEffortByModel: {} })
     const saves: Array<[string, string | undefined]> = []
     const persist = spyOn(
@@ -347,7 +348,12 @@ describe('the reasoning submenu', () => {
       expect(saves).toEqual([['m-cheap', 'max']])
     } finally {
       persist.mockRestore()
-      useFreebuffModelStore.setState({ reasoningEffortByModel: previous })
+      // mockRestore only patches the state object it spied on; each setState
+      // above copied the mock into a new one, so put the real setter back.
+      useFreebuffModelStore.setState({
+        reasoningEffortByModel: previous,
+        setReasoningEffort,
+      })
     }
   })
 
