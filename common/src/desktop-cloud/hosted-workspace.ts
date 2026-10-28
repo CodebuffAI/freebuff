@@ -178,6 +178,11 @@ export type HostedLocalProjectInput = {
 }
 
 export type HostedWorkspaceHost = {
+  /** Local branch names only; native resolves the enrolled folder and refuses unsafe switches. */
+  projectBranches?(input: { projectId: string; branch?: string }): Promise<{
+    current: string | null
+    branches: string[]
+  } | null>
   nativeAgents?(input: HostedNativeAgentsRequest): Promise<{ agents: HostedNativeAgent[] }>
   /** Answers only a native-issued quit request; never grants a generic IPC capability. */
   quit?: {
