@@ -38,6 +38,17 @@ export type SignupBlockReason =
   // Email/password sign-ups only: 3 new accounts on one custom email domain
   // today (`EMAIL_DOMAIN_DAILY_ACCOUNTS`).
   | 'email_domain_velocity'
+  // The sign-up email policy (docs/freebuff-email-password.md → "Email domain
+  // policy"), email/password and GitHub sign-ups: a domain whose mail servers
+  // only forward (catch-all routing, alias relays) ...
+  | 'email_forwarding_not_allowed'
+  // ... a domain with no mail server ...
+  | 'email_domain_no_mail'
+  // ... a custom domain in a full-access country, before the person confirms
+  // it (the login pages offer a confirmation, not only this copy) ...
+  | 'email_domain_unlisted_confirm'
+  // ... and a custom domain anywhere else.
+  | 'email_domain_not_mainstream'
 
 /**
  * Deliberately actionable and non-accusatory.
@@ -74,11 +85,19 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
   // Also shown when GitHub's API could not be reached: the gate fails closed,
   // and the same two remedies apply.
   email_provider_not_allowed:
-    "New accounts can't use a privacy, alias or disposable email address (such as Proton Mail, Tutanota, DuckDuckGo or Firefox Relay). Please sign up with Gmail, Outlook, iCloud, or your work or school email. If you use GitHub, make one of those your primary email in GitHub's settings (Settings → Emails) first.",
+    "New accounts can't use a temporary, disposable, privacy or alias email address (such as a temp-mail inbox, Proton Mail, Tutanota, DuckDuckGo or Firefox Relay). Please sign up with Gmail, Outlook, iCloud, or your work or school email. If you use GitHub, make one of those your primary email in GitHub's settings (Settings → Emails) first.",
   privacy_unverified:
     "We couldn't check your connection just now. Please try again in a few minutes, or continue with Google, Apple or GitHub.",
   email_domain_velocity:
     'Too many accounts have been created with this email domain today. Please try again tomorrow, or continue with Google, Apple or GitHub.',
+  email_forwarding_not_allowed:
+    "This address forwards mail through a routing service (such as Cloudflare Email Routing or ImprovMX), so it can't open a new account. Please sign up with the mailbox it forwards to, like your Gmail, Outlook or iCloud address. If you use GitHub, make that address your primary email in GitHub's settings (Settings → Emails) first.",
+  email_domain_no_mail:
+    "This email domain has no mail server, so it can't receive mail. Check the address, or sign up with Gmail, Outlook or iCloud.",
+  email_domain_unlisted_confirm:
+    "This email isn't from a mainstream provider. You can still use it, but the account gets tighter limits and may need to verify a phone number by SMS (or have a paid plan). For the smoothest start, use Gmail, Outlook, iCloud or Yahoo, or continue with Google.",
+  email_domain_not_mainstream:
+    "In your region, new accounts need an email from a mainstream provider: Gmail, Outlook, iCloud or Yahoo, or a work or school address hosted by Google or Microsoft. Please use one of those, or continue with Google. If you use GitHub, make one of those your primary email in GitHub's settings (Settings → Emails) first.",
   github_email_unverified:
     "GitHub sign-in needs a verified email. Verify your email in GitHub's settings (Settings → Emails) and try again, or sign in with Google instead. If your email is already verified, GitHub may be temporarily unreachable; please try again in a few minutes.",
 }
