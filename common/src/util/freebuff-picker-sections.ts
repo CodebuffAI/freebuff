@@ -96,6 +96,7 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     // the Luminal lane it is our cheapest Flash-class model ($0.91 per 1k
     // messages over 10-07..13, against MiMo 2.6 Flash's $1.35 on OpenRouter).
     'deepseek/deepseek-v4-flash': { section: 'optimized', order: 5, recommended: true }, // V4.1 Flash, 15
+    'm-8db1ccbba6': { section: 'optimized', order: 7 }, // DeepSeek V4.1 Flash Slow, 10
     'm-61c26317cc': { section: 'optimized', order: 10 }, // MiMo v2.6 Flash Slow, 5
     'mimo/mimo-v2.5': { section: 'optimized', order: 12 }, // MiMo v2.6 Flash Fast, 10
     // Muse Spark 1.3 and GPT-6 Luna moved here from Powerful (2026-10-13).
