@@ -347,7 +347,7 @@
 
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
 
-    "@posthog/core": ["@posthog/core@1.61.1", "", { "dependencies": { "@posthog/types": "^1.417.0" } }, "sha512-qyMTxPfjeJkHIhpcukOgBN3BWXbCyFRPz8/Voy5qZtVh9NZqj3EhC6LLeYZuJhL3WpqhQTgn2FMIwAo/ag6fmw=="],
+    "@posthog/core": ["@posthog/core@1.61.2", "", { "dependencies": { "@posthog/types": "^1.418.0" } }, "sha512-l3b6Dc2NmItwmyu6ot7K2jtStQOAQjZw/PB/gpZwk2W6SBCbvPg6YJzReSBSQLuok19ridbfVNk70a5hgoGX2Q=="],
 
     "@posthog/types": ["@posthog/types@1.418.0", "", {}, "sha512-WqDXUWH1R8OilBp2PfDpQIRZSCs3QyOnw7H3YK7lvZLCMIsOqSZAKJrrqYWt4f7FvnVCACRuNGCC0HKh3J/HWw=="],
 
@@ -1129,7 +1129,7 @@
 
     "possible-typed-array-names": ["possible-typed-array-names@1.1.0", "", {}, "sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg=="],
 
-    "posthog-node": ["posthog-node@5.58.0", "", { "dependencies": { "@posthog/core": "^1.61.1" }, "peerDependencies": { "@opentelemetry/api": "^1.2.0", "rxjs": "^7.0.0" }, "optionalPeers": ["@opentelemetry/api", "rxjs"] }, "sha512-UwvrvIQT5wMA8+E7yGXXr6+YCY7Uj9N68MS28wNQ/KYJUXK1d2Y561dRelBoEj2AfaqCNvOMWhWl6kHZSBDwuQ=="],
+    "posthog-node": ["posthog-node@5.59.0", "", { "dependencies": { "@posthog/core": "^1.61.2" }, "peerDependencies": { "@opentelemetry/api": "^1.2.0", "rxjs": "^7.0.0" }, "optionalPeers": ["@opentelemetry/api", "rxjs"] }, "sha512-vn8lr3WTKLNHe9DtP3oXT82+Ywoeo17nPapOH269vlKmbrSZiv6aTsokeGXXlXgkffhI6POk3+CKgBN3ADEONg=="],
 
     "prebuild-install": ["prebuild-install@7.1.3", "", { "dependencies": { "detect-libc": "^2.0.0", "expand-template": "^2.0.3", "github-from-package": "0.0.0", "minimist": "^1.2.3", "mkdirp-classic": "^0.5.3", "napi-build-utils": "^2.0.0", "node-abi": "^3.3.0", "pump": "^3.0.0", "rc": "^1.2.7", "simple-get": "^4.0.0", "tar-fs": "^2.0.0", "tunnel-agent": "^0.6.0" }, "bin": { "prebuild-install": "bin.js" } }, "sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug=="],
 
