@@ -96,22 +96,23 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     // the Luminal lane it is our cheapest Flash-class model ($0.91 per 1k
     // messages over 10-07..13, against MiMo 2.6 Flash's $1.35 on OpenRouter).
     'deepseek/deepseek-v4-flash': { section: 'optimized', order: 5, recommended: true }, // V4.1 Flash, 15
-    'm-8db1ccbba6': { section: 'optimized', order: 7 }, // DeepSeek V4.1 Flash Slow, 10
-    'm-61c26317cc': { section: 'optimized', order: 10 }, // MiMo v2.6 Flash Slow, 5
+    'm-61c26317cc': { section: 'optimized', order: 7 }, // MiMo v2.6 Flash Slow, 5
+    'm-8db1ccbba6': { section: 'optimized', order: 10 }, // DeepSeek V4.1 Flash Slow, 10
     'mimo/mimo-v2.5': { section: 'optimized', order: 12 }, // MiMo v2.6 Flash Fast, 10
     // Muse Spark 1.3 and GPT-6 Luna moved here from Powerful (2026-10-13).
     // Placement only: both stay plan-only at limited access.
     'meta/muse-spark-1.3-contributor': { section: 'optimized', order: 20 }, // 15
     'z-ai/glm-5.3-flash': { section: 'optimized', order: 40 }, // 20
     'openai/gpt-6-luna': { section: 'optimized', order: 50 }, // 20
-    // Powerful: Claude Haiku 5.5's 100k-context row, then cheapest to dearest.
-    // The dearest rows wait under More, cheapest first (product, 2026-10-22,
-    // so the expensive models are less visible): Claude Haiku 5.5 full
-    // context, Gemini 3.8 Flash, Gemini 4 Argon, GPT-6.1 Sol.
-    'm-5b6a604eb6': { section: 'powerful', order: 2 }, // Claude Haiku 5.5, 100k context
+    // Powerful: cheapest to dearest (product, 2026-10-28; Claude Haiku 5.5's
+    // 100k-context row was pinned first before). The dearest rows wait under
+    // More, cheapest first (product, 2026-10-22, so the expensive models are
+    // less visible): Claude Haiku 5.5 full context, Gemini 3.8 Flash, Gemini 4
+    // Argon, GPT-6.1 Terra, GPT-6.1 Sol.
     'mimo/mimo-v2.6-pro': { section: 'powerful', order: 10 }, // 25
     // 25, or 50 in DeepSeek's peak window, so after MiMo 2.6 Pro's flat 25.
     'deepseek/deepseek-v4-flash-fast': { section: 'powerful', order: 20 },
+    'm-5b6a604eb6': { section: 'powerful', order: 30 }, // Claude Haiku 5.5, 100k context, 30
     'm-79293c5b7d': { section: 'powerful', order: 35, more: true }, // Claude Haiku 5.5, 75
     'google/gemini-3.8-flash': { section: 'powerful', order: 40, more: true }, // 80
     'google/gemini-4-argon': { section: 'powerful', order: 45, more: true }, // 100
