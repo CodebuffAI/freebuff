@@ -1200,7 +1200,8 @@ describe('sponsored git in the layout Desktop actually creates', () => {
           layout.worktree,
           'git status --porcelain; echo "exit=$?"',
         )
-        expect(err).toContain('not a git repository')
+        // Git 2.56 names the inaccessible gitfile instead of the repository.
+        expect(err).toMatch(/not a git repository|gitfile does not point to a valid repository/)
         expect(out).toContain('exit=128')
       } finally {
         fs.rmSync(layout.parent, { recursive: true, force: true })
