@@ -50,6 +50,9 @@ export type HouseGrowthCampaign = {
   creatives: readonly HouseAdCreative[]
 }
 
+/** The Desktop download page (the landing site's Desktop product view). */
+export const HOUSE_DESKTOP_DOWNLOAD_URL = `${FREEBUFF_WEB_URL_PROD}/?product=desktop`
+
 export const HOUSE_ANDROID_PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.freebuff.app'
 
@@ -268,8 +271,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_desktop',
     frequencyCap: DAILY,
     creatives: [
-      creative('Get the Freebuff Desktop app', 'The best Freebuff experience, on Mac, Windows and Linux.', 'Download', '/desktop'),
-      creative('See your app as Freebuff builds it', 'Desktop puts chat, code and live previews side by side.', 'Download', '/desktop'),
+      creative('Get the Freebuff Desktop app', 'The best Freebuff experience, on Mac, Windows and Linux.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('See your app as Freebuff builds it', 'Desktop puts chat, code and live previews side by side.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
     ],
   },
   {
@@ -280,8 +283,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_desktop',
     frequencyCap: DAILY,
     creatives: [
-      creative('Freebuff works best on Desktop', 'Free for Mac, Windows and Linux.', 'Download', '/desktop'),
-      creative('Run Freebuff on your own machine', 'Desktop runs your code locally with live previews.', 'Download', '/desktop'),
+      creative('Freebuff works best on Desktop', 'Free for Mac, Windows and Linux.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('Run Freebuff on your own machine', 'Desktop runs your code locally with live previews.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
     ],
   },
   {
@@ -291,8 +294,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_desktop',
     frequencyCap: DAILY,
     creatives: [
-      creative('Get live previews in Freebuff Desktop', 'Watch your app update as Freebuff edits it.', 'Download', '/desktop'),
-      creative('All your Freebuff projects in one window', 'Desktop keeps chats, code and previews together.', 'Download', '/desktop'),
+      creative('Get live previews in Freebuff Desktop', 'Watch your app update as Freebuff edits it.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('All your Freebuff projects in one window', 'Desktop keeps chats, code and previews together.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
     ],
   },
   {
@@ -302,8 +305,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_desktop',
     frequencyCap: DAILY,
     creatives: [
-      creative('Upgrade your Freebuff setup', 'The Desktop app is free on Mac, Windows and Linux.', 'Download', '/desktop'),
-      creative('Built for long Freebuff sessions', 'Desktop handles big projects and long chats.', 'Download', '/desktop'),
+      creative('Upgrade your Freebuff setup', 'The Desktop app is free on Mac, Windows and Linux.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('Built for long Freebuff sessions', 'Desktop handles big projects and long chats.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
     ],
   },
   {
@@ -324,7 +327,7 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'all',
     frequencyCap: DAILY,
     creatives: [
-      creative('Help shape what Freebuff builds next', 'Answer a few questions about how you build.', 'Start', '/?settings=profile-answers'),
+      creative('Help shape what Freebuff builds next', 'Answer a few questions about how you build.', 'Start', '/account'),
     ],
   },
   {
