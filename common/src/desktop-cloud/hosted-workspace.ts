@@ -169,6 +169,14 @@ export type HostedNativeAgentsRequest = {
   harness?: 'claude-code' | 'codex'
 }
 
+/** Folder paths stay in Electron; the hosted form receives only a scoped selection receipt. */
+export type HostedLocalProjectInput = {
+  id: string
+  name: string
+  folderId?: string
+  templateId?: string
+}
+
 export type HostedWorkspaceHost = {
   nativeAgents?(input: HostedNativeAgentsRequest): Promise<{ agents: HostedNativeAgent[] }>
   /** Answers only a native-issued quit request; never grants a generic IPC capability. */
@@ -259,6 +267,10 @@ export type HostedWorkspaceHost = {
   completeProjectSetup?(): Promise<void>
   /** A selected project may connect its known local folder; no other folder is enrolled. */
   status(projectId?: string, trigger?: 'startup' | 'project-selection' | 'automatic-retry' | 'manual-retry'): Promise<HostedWorkspaceStatus>
+  localProjects?: {
+    pickFolder(): Promise<{ id: string; name: string } | null>
+    create(input: HostedLocalProjectInput): Promise<HostedWorkspaceConnection>
+  }
   openLocalProject(): Promise<HostedWorkspaceConnection | null>
   disconnect(sessionId: string): Promise<void>
   /** Clears native credentials and the hosted browser session together. */
