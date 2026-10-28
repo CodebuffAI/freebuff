@@ -182,6 +182,8 @@ export type HostedWorkspaceHost = {
   projectBranches?(input: { projectId: string; branch?: string }): Promise<{
     current: string | null
     branches: string[]
+    /** What a worktree with no starting branch fetches (`origin/main`); older builds omit it. */
+    defaultBranch?: string
   } | null>
   nativeAgents?(input: HostedNativeAgentsRequest): Promise<{ agents: HostedNativeAgent[] }>
   /** Answers only a native-issued quit request; never grants a generic IPC capability. */
@@ -232,9 +234,12 @@ export type HostedWorkspaceHost = {
     projectId: string
     threadId?: string
     location?: 'local' | 'worktree' | 'cloud'
+    sourceBranch?: string
   }): Promise<{
     location: 'local' | 'worktree' | 'cloud'
     choices: Array<'local' | 'worktree' | 'cloud'>
+    supportsWorktreeSourceBranch?: boolean
+    worktreeSourceBranch?: string | null
     progress?: HostedRuntimeProgress
     /** Display-only metadata resolved by native code for the authenticated chat. */
     workspace?: {
