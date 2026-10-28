@@ -57,8 +57,14 @@ export const AGENTIC_FUNNEL_EVENT_TYPES = [
   /** Advertiser-side: the user created an account with the advertiser. */
   'account_created',
   /**
-   * Advertiser-side: the integrated tool was used. Recurring by design — the
-   * advertiser may report it many times with distinct event ids.
+   * RETIRED 2026-10-27. Was the advertiser-side "the integrated tool was
+   * used" postback, recurring with distinct event ids. Nobody reported it
+   * (five rows ever), and Freebuff now assesses the conversion itself at the
+   * end of a run: the agent browser assessment in
+   * `docs/freebuff-sponsored-local-execution.md` ("Agent-assessed
+   * conversions (v2)"). Stays in the array because the Postgres enum mirrors
+   * it in order; readouts skip it through `RETIRED_AGENTIC_FUNNEL_EVENT_TYPES`
+   * and the postback refuses it. Nothing may write it.
    */
   'tool_used',
   // APPEND-ONLY BELOW THIS LINE. The Postgres enum
@@ -160,7 +166,10 @@ export type AgenticFunnelEventType = (typeof AGENTIC_FUNNEL_EVENT_TYPES)[number]
  * them, so a stray row -- a seeder, an old build -- can never surface as a
  * funnel stage. Kept as data so the exclusion is asserted rather than trusted.
  */
-export const RETIRED_AGENTIC_FUNNEL_EVENT_TYPES = ['pr_made'] as const
+export const RETIRED_AGENTIC_FUNNEL_EVENT_TYPES = [
+  'pr_made',
+  'tool_used',
+] as const
 
 /**
  * Stages that can happen more than once per proposal. Funnel recording
@@ -171,7 +180,6 @@ export const RETIRED_AGENTIC_FUNNEL_EVENT_TYPES = ['pr_made'] as const
 export const REPEATING_AGENTIC_FUNNEL_EVENT_TYPES = [
   'accept_refused',
   'needs_you',
-  'tool_used',
 ] as const satisfies readonly AgenticFunnelEventType[]
 
 /**
@@ -271,11 +279,10 @@ export function isBillableAgenticFunnelEvent(
  * side (the proposal surface and the sponsored run) and must not be
  * accepted from a partner: an advertiser asserting `merged` about our own
  * run would be self-reported telemetry about facts we can read directly.
+ * `tool_used` left this set on 2026-10-27: product-use conversions are
+ * assessed by Freebuff at the end of the run, not reported by the advertiser.
  */
-export const AGENTIC_POSTBACK_EVENT_TYPES = [
-  'account_created',
-  'tool_used',
-] as const
+export const AGENTIC_POSTBACK_EVENT_TYPES = ['account_created'] as const
 
 export type AgenticPostbackEventType =
   (typeof AGENTIC_POSTBACK_EVENT_TYPES)[number]

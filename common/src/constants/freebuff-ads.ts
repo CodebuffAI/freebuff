@@ -81,6 +81,16 @@ export const AD_DAILY_BUDGET_STEP_CENTS = 500
  *  right shape. */
 export const AD_MAX_DAILY_BUDGET_CENTS = 100_000
 
+/**
+ * Agentic (sponsored-proposal) campaigns are not self-serve. They run under an
+ * invoiced contract with this monthly minimum commitment, decided 2026-10-27:
+ * a procedure has to be written, reviewed and kept healthy by us, and that
+ * work does not pay back on a prepaid card balance. The public page quotes
+ * this number; the console never offers an agentic campaign without a
+ * contract behind it.
+ */
+export const AGENTIC_ADS_MIN_MONTHLY_COMMITMENT_CENTS = 1_500_000
+
 export function engagementsForDailyBudget(cents: number): number {
   return Math.floor(cents / AD_ENGAGEMENT_PRICE_CENTS)
 }

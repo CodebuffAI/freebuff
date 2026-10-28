@@ -8,6 +8,7 @@ import {
   AGENTIC_FUNNEL_OCCURRENCE_ID_PATTERN,
   CLIENT_REPORTED_AGENTIC_FUNNEL_EVENT_TYPES,
   REPEATING_AGENTIC_FUNNEL_EVENT_TYPES,
+  RETIRED_AGENTIC_FUNNEL_EVENT_TYPES,
   agenticProposalFunnelEventId,
   isClientReportedAgenticFunnelEvent,
   isRepeatingAgenticFunnelEvent,
@@ -88,7 +89,6 @@ describe('agentic funnel vocabulary', () => {
     expect(REPEATING_AGENTIC_FUNNEL_EVENT_TYPES).toEqual([
       'accept_refused',
       'needs_you',
-      'tool_used',
     ])
     expect(
       REPEATING_AGENTIC_FUNNEL_EVENT_TYPES as readonly string[],
@@ -178,11 +178,21 @@ describe('what an advertiser may report', () => {
    * own run — an advertiser asserting them would be self-reported telemetry
    * about something we can read directly.
    */
-  test('stays the two advertiser-side stages', () => {
-    expect(AGENTIC_POSTBACK_EVENT_TYPES).toEqual([
-      'account_created',
+  test('is account_created alone: tool_used retired 2026-10-27', () => {
+    expect(AGENTIC_POSTBACK_EVENT_TYPES).toEqual(['account_created'])
+    expect(AGENTIC_POSTBACK_EVENT_TYPES as readonly string[]).not.toContain(
       'tool_used',
-    ])
+    )
+  })
+
+  test('retired members stay in the enum order and never repeat', () => {
+    expect(RETIRED_AGENTIC_FUNNEL_EVENT_TYPES).toEqual(['pr_made', 'tool_used'])
+    for (const eventType of RETIRED_AGENTIC_FUNNEL_EVENT_TYPES) {
+      expect(AGENTIC_FUNNEL_EVENT_TYPES).toContain(eventType)
+      expect(
+        REPEATING_AGENTIC_FUNNEL_EVENT_TYPES as readonly string[],
+      ).not.toContain(eventType)
+    }
   })
 
   test('every postback type is a funnel type', () => {
