@@ -4,6 +4,7 @@ import { FEATURED_INTEGRATIONS } from '../../desktop-cloud/integrations'
 import {
   HOUSE_GROWTH_CAMPAIGNS,
   HOUSE_GROWTH_INTEGRATION_CAMPAIGNS,
+  houseCampaignFaviconFor,
   houseCampaignGateFor,
   integrationSlugForGate,
 } from '../freebuff-house-growth-ads'
@@ -40,6 +41,18 @@ describe('growth house campaign catalog', () => {
         expect(creative.adText.length).toBeLessThanOrEqual(80)
       }
     }
+  })
+
+  test('integration campaigns carry their app logo; others carry none', () => {
+    for (const campaign of HOUSE_GROWTH_INTEGRATION_CAMPAIGNS) {
+      const slug = integrationSlugForGate(campaign.gate!)
+      expect(houseCampaignFaviconFor(campaign.id)).toBe(
+        `https://freebuff.com/api/integrations/logo/${slug}`,
+      )
+      for (const creative of campaign.creatives)
+        expect(creative.favicon).toBe(houseCampaignFaviconFor(campaign.id)!)
+    }
+    expect(houseCampaignFaviconFor('house-growth-desktop-v1')).toBeNull()
   })
 
   test('the gate map answers by id and ignores unknown ids', () => {

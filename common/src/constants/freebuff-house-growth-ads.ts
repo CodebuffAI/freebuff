@@ -1,4 +1,7 @@
-import { FEATURED_INTEGRATIONS } from '../desktop-cloud/integrations'
+import {
+  FEATURED_INTEGRATIONS,
+  integrationLogoUrl,
+} from '../desktop-cloud/integrations'
 import { HOUSE_AD_FAVICON_URL } from './freebuff-house-ad'
 import { FREEBUFF_WEB_URL_PROD } from './hosts'
 
@@ -47,6 +50,12 @@ export type HouseGrowthCampaign = {
   targeting: HouseGrowthTargeting
   /** Per-campaign cap; the shared house caps still apply on top. */
   frequencyCap: { maxImpressions: number; windowMinutes: number }
+  /**
+   * The icon served beside the copy when it is not Freebuff's own: the
+   * connected app's logo on an integration campaign. Absent uses
+   * `HOUSE_AD_FAVICON_URL`.
+   */
+  favicon?: string
   creatives: readonly HouseAdCreative[]
 }
 
@@ -64,13 +73,14 @@ function creative(
   adText: string,
   cta: string,
   url: string,
+  favicon: string = HOUSE_AD_FAVICON_URL,
 ): HouseAdCreative {
   return {
     title,
     adText,
     cta,
     url: url.startsWith('https://') ? url : `${FREEBUFF_WEB_URL_PROD}${url}`,
-    favicon: HOUSE_AD_FAVICON_URL,
+    favicon,
   }
 }
 
@@ -151,16 +161,21 @@ const INTEGRATION_COPY: Record<
 }
 
 export const HOUSE_GROWTH_INTEGRATION_CAMPAIGNS: readonly HouseGrowthCampaign[] =
-  FEATURED_INTEGRATIONS.map((slug) => ({
-    id: `house-growth-integration-${slug}-v1`,
-    name: `Connect ${INTEGRATION_NAMES[slug]} (house)`,
-    gate: `integration:${slug}` as const,
-    targeting: 'all' as const,
-    frequencyCap: DAILY,
-    creatives: INTEGRATION_COPY[slug].map(([title, body]) =>
-      creative(title, body, 'Connect', '/?settings=integrations'),
-    ),
-  }))
+  FEATURED_INTEGRATIONS.map((slug) => {
+    // The app's own mark, from our logo route (public, cross-origin).
+    const favicon = integrationLogoUrl(FREEBUFF_WEB_URL_PROD, slug)
+    return {
+      id: `house-growth-integration-${slug}-v1`,
+      name: `Connect ${INTEGRATION_NAMES[slug]} (house)`,
+      gate: `integration:${slug}` as const,
+      targeting: 'all' as const,
+      frequencyCap: DAILY,
+      favicon,
+      creatives: INTEGRATION_COPY[slug].map(([title, body]) =>
+        creative(title, body, 'Connect', '/?settings=integrations', favicon),
+      ),
+    }
+  })
 
 /**
  * CLI tips: real slash commands only (`cli/src/data/slash-commands.ts`).
@@ -356,6 +371,21 @@ const GATE_BY_ID: ReadonlyMap<string, HouseCampaignGate> = new Map(
 /** The gate a campaign id carries, or null for an ungated or unknown id. */
 export function houseCampaignGateFor(id: string): HouseCampaignGate | null {
   return GATE_BY_ID.get(id) ?? null
+}
+
+const FAVICON_BY_ID: ReadonlyMap<string, string> = new Map(
+  HOUSE_GROWTH_CAMPAIGNS.flatMap((campaign) =>
+    campaign.favicon ? [[campaign.id, campaign.favicon] as const] : [],
+  ),
+)
+
+/**
+ * The icon a house campaign serves with when its creative uploaded none:
+ * the app's logo for an integration campaign, else null (the caller falls
+ * back to `HOUSE_AD_FAVICON_URL`).
+ */
+export function houseCampaignFaviconFor(id: string): string | null {
+  return FAVICON_BY_ID.get(id) ?? null
 }
 
 /** The integration slug an `integration:<slug>` gate names, else null. */
