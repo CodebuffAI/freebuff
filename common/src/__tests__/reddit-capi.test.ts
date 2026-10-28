@@ -130,3 +130,28 @@ describe('Reddit CAPI', () => {
     expect(called).toBe(false)
   })
 })
+
+test('canonical signup uses the standard SIGN_UP type and activation remains Custom', () => {
+  const base = {
+    conversionId: redditConversionId('SignUp', 'fixture-account'),
+    actionSource: 'WEBSITE' as const,
+    eventAt: 1792497600000,
+    user: { clickId: 'fixture-click' },
+  }
+  const signup = buildRedditCustomConversionBody({
+    ...base,
+    customEventName: 'SignUp',
+  }).data.events[0]!
+  expect(signup.type).toEqual({ tracking_type: 'SIGN_UP' })
+  expect(signup.metadata.conversion_id).toBe(base.conversionId)
+  const activation = buildRedditCustomConversionBody({
+    ...base,
+    customEventName: 'CodingActivation',
+    actionSource: 'OTHER',
+  }).data.events[0]!
+  expect(activation.type).toEqual({
+    tracking_type: 'CUSTOM',
+    custom_event_name: 'CodingActivation',
+  })
+  expect(activation.action_source).toBe('OTHER')
+})

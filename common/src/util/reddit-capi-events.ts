@@ -1,6 +1,11 @@
 import type { FreebuffRedditRetentionMilestoneDays } from '@codebuff/common/util/reddit-freebuff-retention'
 
-export type RedditConversionSurface = 'cli' | 'web' | 'cloud' | 'chat'
+export type RedditConversionSurface =
+  | 'cli'
+  | 'desktop'
+  | 'web'
+  | 'cloud'
+  | 'chat'
 
 export type RedditCapiEventName =
   | 'FirstPrompt'
