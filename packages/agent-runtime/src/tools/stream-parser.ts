@@ -237,12 +237,12 @@ export async function processStream(
   const thinkTagStream = new ThinkTagStream({
     implicitOpen: historyLeaksThinkTags(agentState.messageHistory),
   })
-  const emitThinkSegments = (segments: ThinkStreamSegment[]): void => {
+  const emitThinkSegments = async (segments: ThinkStreamSegment[]) => {
     for (const segment of segments) {
       if (segment.type === 'text') {
-        onResponseChunk(segment.text)
+        await onResponseChunk(segment.text)
       } else {
-        onResponseChunk({
+        await onResponseChunk({
           type: 'reasoning_delta',
           text: segment.text,
           ancestorRunIds,
@@ -595,8 +595,8 @@ export async function processStream(
           // A lane that populates the native reasoning field is by definition
           // not putting the thought in `content`, so this step is not leaking
           // and anything held on speculation is the answer.
-          emitThinkSegments(thinkTagStream.disarmImplicitOpen())
-          onResponseChunk({
+          await emitThinkSegments(thinkTagStream.disarmImplicitOpen())
+          await onResponseChunk({
             type: 'reasoning_delta',
             text: chunk.text,
             ancestorRunIds,
@@ -609,10 +609,10 @@ export async function processStream(
         // isThinkOnlyResponse reads it to keep a thinking-only step from ending
         // the turn, and historyLeaksThinkTags reads it to arm the next step.
         // Stripping it here would erase both signals.
-        emitThinkSegments(thinkTagStream.push(chunk.text))
+        await emitThinkSegments(thinkTagStream.push(chunk.text))
         fullResponseChunks.push(chunk.text)
       } else if (chunk.type === 'error') {
-        onResponseChunk(chunk)
+        await onResponseChunk(chunk)
         if (chunk.source) {
           const recovery = RECOVERY_BY_SOURCE[chunk.source]
           sawStreamRecovery = true
@@ -708,7 +708,7 @@ export async function processStream(
     // recovery, so it is checked here. A step that called a tool is not
     // replying yet, so its open block stays a thought.
     const finishReason = streamFinishReason?.()
-    emitThinkSegments(
+    await emitThinkSegments(
       thinkTagStream.flush({
         stepCompleted:
           !signal.aborted &&
@@ -761,7 +761,7 @@ export async function processStream(
     // Release anything the think-tag split is still holding — a partial tag
     // that never completed, or a head held for an orphan `</think>` that never
     // came. Runs on the abort paths too, so speculation can never lose text.
-    emitThinkSegments(thinkTagStream.flush())
+    await emitThinkSegments(thinkTagStream.flush())
 
     // Trigger cleanup of the processStreamWithTools generator so it flushes any
     // remaining buffered text to assistantMessages before we build the history.

@@ -15,7 +15,7 @@ describe('CodebuffClient handleEvent / handleStreamChunk', () => {
     mock.restore()
   })
 
-  it('streams subagent start/finish once and forwards subagent chunks to handleStreamChunk', async () => {
+  it('awaits slow event and subagent chunk delivery before resolving the turn', async () => {
     spyOn(databaseModule, 'getUserInfoFromApiKey').mockResolvedValue({
       id: 'user-123',
       email: 'test@example.com',
@@ -119,10 +119,12 @@ describe('CodebuffClient handleEvent / handleStreamChunk', () => {
     const result = await client.run({
       agent: 'base2',
       prompt: 'hello world',
-      handleEvent: (event) => {
+      handleEvent: async (event) => {
+        await new Promise(resolve => setTimeout(resolve, 5))
         events.push(event)
       },
-      handleStreamChunk: (chunk) => {
+      handleStreamChunk: async (chunk) => {
+        await new Promise(resolve => setTimeout(resolve, 5))
         streamChunks.push(chunk)
       },
     })

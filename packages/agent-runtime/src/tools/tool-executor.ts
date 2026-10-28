@@ -362,7 +362,7 @@ export async function executeToolCall<T extends ToolName>(
   ) {
     // Emit an error event instead of tool call/result pair
     // The stream parser will convert this to a user message for proper API compliance
-    onResponseChunk({
+    await onResponseChunk({
       type: 'error',
       message: `Tool \`${toolName}\` is not currently available. Make sure to only use tools provided at the start of the conversation AND that you most recently have permission to use.`,
     })
@@ -372,7 +372,7 @@ export async function executeToolCall<T extends ToolName>(
   if ('error' in toolCall && toolCall.truncated) {
     // No "Original tool call input" echo: for a file write that is the head of
     // the file's content, which reads to the model like the file itself.
-    onResponseChunk({ type: 'error', message: toolCall.error })
+    await onResponseChunk({ type: 'error', message: toolCall.error })
     logger.warn(
       {
         axiomEvent: FILE_WRITE_GUARD_EVENT,
@@ -394,7 +394,7 @@ export async function executeToolCall<T extends ToolName>(
 
   if ('error' in toolCall) {
     const formattedInput = formatValueForError(input)
-    onResponseChunk({
+    await onResponseChunk({
       type: 'error',
       message: `${toolCall.error}\n\nOriginal tool call input:\n${formattedInput}`,
     })
@@ -496,7 +496,7 @@ export async function executeToolCall<T extends ToolName>(
       if (errors.length > 0) {
         if (validAgents.length === 0) {
           const errorMsg = `Failed to spawn agents: ${errors.join('; ')}`
-          onResponseChunk({ type: 'error', message: errorMsg })
+          await onResponseChunk({ type: 'error', message: errorMsg })
           logger.debug(
             { toolName, errors },
             'All agents in spawn_agents are invalid, not streaming tool call',
@@ -504,7 +504,7 @@ export async function executeToolCall<T extends ToolName>(
           return previousToolCallFinished
         }
         const errorMsg = `Some agents could not be spawned: ${errors.join('; ')}. Proceeding with valid agents only.`
-        onResponseChunk({ type: 'error', message: errorMsg })
+        await onResponseChunk({ type: 'error', message: errorMsg })
         effectiveInput = { ...effectiveInput, agents: validAgents }
       }
     }
@@ -524,7 +524,7 @@ export async function executeToolCall<T extends ToolName>(
       })
       if (!resolved.success) {
         const errorMessage = `Invalid Gravity button reference: ${resolved.error.message}`
-        onResponseChunk({ type: 'error', message: errorMessage })
+        await onResponseChunk({ type: 'error', message: errorMessage })
         logger.debug(
           { toolName, reference: link, error: resolved.error.message },
           'Failed to resolve render_ui link reference',
@@ -544,7 +544,7 @@ export async function executeToolCall<T extends ToolName>(
   }
 
   // Only emit tool_call event after permission check passes
-  onResponseChunk({
+  await onResponseChunk({
     type: 'tool_call',
     toolCallId,
     toolName,
@@ -600,7 +600,7 @@ export async function executeToolCall<T extends ToolName>(
       content: output,
     }
 
-    onResponseChunk({
+    await onResponseChunk({
       type: 'tool_result',
       toolCallId: toolResult.toolCallId,
       toolName: toolResult.toolName,
@@ -765,7 +765,7 @@ export async function executeCustomToolCall(
   ) {
     // Emit an error event instead of tool call/result pair
     // The stream parser will convert this to a user message for proper API compliance
-    onResponseChunk({
+    await onResponseChunk({
       type: 'error',
       message: `Tool \`${toolName}\` is not currently available. Make sure to only use tools listed in the system instructions.`,
     })
@@ -774,7 +774,7 @@ export async function executeCustomToolCall(
 
   if ('error' in toolCall) {
     const formattedInput = formatValueForError(input)
-    onResponseChunk({
+    await onResponseChunk({
       type: 'error',
       message: `${toolCall.error}\n\nOriginal tool call input:\n${formattedInput}`,
     })
@@ -786,7 +786,7 @@ export async function executeCustomToolCall(
   }
 
   // Only emit tool_call event after permission check passes
-  onResponseChunk({
+  await onResponseChunk({
     type: 'tool_call',
     toolCallId: toolCall.toolCallId,
     toolName,
@@ -818,7 +818,7 @@ export async function executeCustomToolCall(
       })
       return clientToolResult.output satisfies ToolResultOutput[]
     })
-    .then((result) => {
+    .then(async (result) => {
       if (!result) {
         return
       }
@@ -832,7 +832,7 @@ export async function executeCustomToolCall(
         { input, toolResult },
         `${toolName} custom tool call & result (${toolResult.toolCallId})`,
       )
-      onResponseChunk({
+      await onResponseChunk({
         type: 'tool_result',
         toolName: toolResult.toolName,
         toolCallId: toolResult.toolCallId,

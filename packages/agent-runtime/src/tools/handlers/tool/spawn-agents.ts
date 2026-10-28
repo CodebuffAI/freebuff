@@ -240,9 +240,9 @@ export const handleSpawnAgents = (async (
             parentTools: agentTemplate.inheritParentSystemPrompt
               ? parentTools
               : undefined,
-            onResponseChunk: (chunk: string | PrintModeEvent) => {
+            onResponseChunk: async (chunk: string | PrintModeEvent) => {
               if (typeof chunk === 'string') {
-                sendSubagentChunk({
+                await sendSubagentChunk({
                   userInputId,
                   agentId: subAgentState.agentId,
                   agentType,
@@ -254,7 +254,7 @@ export const handleSpawnAgents = (async (
 
               if (chunk.type === 'text') {
                 if (chunk.text) {
-                  writeToClient({
+                  await writeToClient({
                     type: 'text' as const,
                     agentId: subAgentState.agentId,
                     text: chunk.text,
@@ -292,7 +292,7 @@ export const handleSpawnAgents = (async (
                   chunk.type === 'tool_call' ||
                   chunk.type === 'tool_result')
               ) {
-                writeToClient({ ...chunk, parentAgentId })
+                await writeToClient({ ...chunk, parentAgentId })
                 return
               }
 
@@ -300,7 +300,7 @@ export const handleSpawnAgents = (async (
                 ...chunk,
                 agentId: subAgentState.agentId,
               }
-              writeToClient(eventWithAgent)
+              await writeToClient(eventWithAgent)
             },
           })
           return { ...result, agentType, agentName: agentTemplate.displayName }

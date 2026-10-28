@@ -788,7 +788,7 @@ async function runOnce({
 
     if (typeof chunk !== 'string') {
       if (chunk.type === 'reasoning_delta') {
-        handleStreamChunk?.({
+        await handleStreamChunk?.({
           type: 'reasoning_chunk',
           chunk: chunk.text,
           // The agent's stable id (matches subagent_start/subagent_chunk), so
@@ -960,17 +960,17 @@ async function runOnce({
       const fileKey = lookupKeys.find((key) => key in files)
       return toOptionalFile(fileKey === undefined ? null : files[fileKey]!)
     },
-    sendAction: ({ action }) => {
+    sendAction: async ({ action }) => {
       if (action.type === 'action-error') {
         onError({ message: action.message })
         return
       }
       if (action.type === 'response-chunk') {
-        onResponseChunk(action)
+        await onResponseChunk(action)
         return
       }
       if (action.type === 'subagent-response-chunk') {
-        onSubagentResponseChunk(action)
+        await onSubagentResponseChunk(action)
         return
       }
       if (action.type === 'prompt-response') {
@@ -1002,7 +1002,7 @@ async function runOnce({
       prompt,
       forwardToPrompt = true,
     }) => {
-      onSubagentResponseChunk({
+      return onSubagentResponseChunk({
         type: 'subagent-response-chunk',
         userInputId,
         agentId,

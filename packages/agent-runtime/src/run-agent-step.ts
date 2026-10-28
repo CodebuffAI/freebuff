@@ -1738,7 +1738,7 @@ export async function loopAgentSteps(
           ) {
             completionCheckpoint = undefined
           }
-          params.onResponseChunk(chunk)
+          return params.onResponseChunk(chunk)
         },
       }).catch((error: unknown) => {
         const { statusCode, errorCode } = extractApiErrorDetails(error)
