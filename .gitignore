@@ -122,3 +122,6 @@ __pycache__/
 
 # Identity bridging pilot output (per-account outcomes; never committed)
 scripts/identity/out/
+
+# Local lifecycle email previews (scripts/lifecycle-email-sync.ts --preview)
+/lifecycle-preview*/
