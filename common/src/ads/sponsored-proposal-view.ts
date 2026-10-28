@@ -194,6 +194,48 @@ export function sponsoredStepsNeedingYou(
 }
 
 /**
+ * Where a run is, as one status (COD-995 v2): "Step 2 of 3 · Wire the deploy
+ * hook". The current step is the first one not `done`, so the line moves as
+ * each step finishes rather than only at delivery; a run whose steps are all
+ * done reads as its last one. Null with no steps, when there is nothing to
+ * count -- a surface says what it knows instead of inventing a number.
+ */
+export function sponsoredCurrentStep(
+  steps: readonly SponsoredProposalStep[],
+): { number: number; total: number; text: string } | null {
+  if (steps.length === 0) return null
+  const at = steps.findIndex((step) => step.state !== 'done')
+  const index = at === -1 ? steps.length - 1 : at
+  return {
+    number: index + 1,
+    total: steps.length,
+    text: steps[index]!.text.trim(),
+  }
+}
+
+/**
+ * {@link sponsoredCurrentStep} as the line a minimized card shows.
+ *
+ * `planStepCount` is the offer plan's count, for the stretch where the run
+ * has not reported steps of its own -- which on Desktop is the whole run:
+ * the orchestrator reports step states with the terminal report only. The
+ * plan names no steps, so that line is the count alone, "Step 1 of 2".
+ */
+export function sponsoredStepStatusLine(
+  steps: readonly SponsoredProposalStep[],
+  planStepCount?: number | null,
+): string | null {
+  const current =
+    sponsoredCurrentStep(steps) ??
+    (planStepCount && planStepCount > 0
+      ? { number: 1, total: planStepCount, text: '' }
+      : null)
+  if (!current) return null
+  const count = `Step ${current.number} of ${current.total}`
+  return current.text ? `${count} · ${current.text}` : count
+}
+
+/**
  * The fields of a proposal the channel depends on.
  *
  * Structural rather than the Convex document type, so `common` does not depend
