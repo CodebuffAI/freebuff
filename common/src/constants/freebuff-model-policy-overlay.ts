@@ -48,6 +48,10 @@ export interface FreebuffModelPolicyOverlay {
   usOpen?(modelId: string): boolean | undefined
   /** `null` = explicitly no limit. */
   dailySessionLimit?(modelId: string): number | null | undefined
+  /** The catalog has an entry for this model and it is disabled: retired,
+   *  still recognised, offered nowhere. Admission and the chat gate answer it
+   *  as withdrawn, as they do a paused compiled model. */
+  withdrawn?(modelId: string): boolean | undefined
 }
 
 let overlay: FreebuffModelPolicyOverlay | null = null
