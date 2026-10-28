@@ -5,8 +5,8 @@
  *
  * Argon's promotional price ended at the 2026-10-23 repricing (250), and the
  * row is being retired (2026-10-24, FREEBUFF_LEAVING_SOON). Sol (200 since
- * 2026-10-23) is no longer labelled a promotion (product, 2026-10-15); its
- * tagline names the limit instead.
+ * 2026-10-23) lost its Promotional pill on 2026-10-15 and has it back since
+ * 2026-10-28 (product), worded as Terra's (`GPT_61_SOL_PROMOTIONAL`).
  *
  * GPT-6.1 Terra (2026-10-26) is ONE SESSION A DAY too, at a PROMOTIONAL 100
  * with `GPT_61_TERRA_PROMOTIONAL` as its pill and server price notice (one
@@ -25,14 +25,26 @@ export const GEMINI_4_ARGON_MODEL_ID = 'google/gemini-4-argon'
 export const GPT_61_TERRA_MODEL_ID = 'openai/gpt-6.1-terra'
 
 /**
- * Terra's promotional label (product, 2026-10-26). The tooltip also says the
+ * Terra's promotional label (product, 2026-10-26; "1 per day" since
+ * 2026-10-28, from "Promotional · 1 session a day"). The tooltip also says the
  * row is new: Desktop and the Web workspace draw only this pill beside the
- * model name, so its hover text is where that is seen.
+ * model name, so its hover text is where that is seen, and that the price is
+ * promotional.
  */
 export const GPT_61_TERRA_PROMOTIONAL = {
-  short: 'Promotional · 1 session a day',
+  short: '1 per day',
   tooltip:
     'New. A temporary price that goes up when the promotion ends. Open on full access, a paid plan on limited access. One session a day on every plan.',
+} as const
+
+/**
+ * Sol's pill (product, 2026-10-28): the same words as Terra's, so the two
+ * one-a-day OpenAI rows read alike. Sol stays US-or-paid; the tooltip says so.
+ */
+export const GPT_61_SOL_PROMOTIONAL = {
+  short: '1 per day',
+  tooltip:
+    'A promotional price that goes up when the promotion ends. Open with a US connection or a paid plan. One session a day on every plan.',
 } as const
 
 /**

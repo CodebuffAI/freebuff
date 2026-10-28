@@ -14,7 +14,10 @@ import {
 } from './freebuff-peak-hours'
 import { mimoModels } from './model-config'
 import { SOLAR_PRO_4_OFFER, SOLAR_PROMOTIONAL } from './freebuff-solar-promo'
-import { GPT_61_TERRA_PROMOTIONAL } from './freebuff-sol-promo'
+import {
+  GPT_61_SOL_PROMOTIONAL,
+  GPT_61_TERRA_PROMOTIONAL,
+} from './freebuff-sol-promo'
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
@@ -2638,6 +2641,8 @@ const GPT_61_SOL_MODEL = {
   efforts: EFFORTS_THROUGH_HIGH,
   defaultEffort: FREEBUFF_GPT_61_SOL_REASONING_EFFORT,
   isNew: true,
+  // PROMOTIONAL again (product, 2026-10-28), worded as Terra's pill.
+  promotional: GPT_61_SOL_PROMOTIONAL,
   taglineTooltip:
     'On OpenAI flex capacity, with a standard-tier backup when it’s busy.',
 } as const satisfies FreebuffModelOption
