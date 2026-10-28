@@ -890,6 +890,17 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   ranker_fatigue_mean_ppm: 'number',
   ranker_fatigue_disagreements: 'number',
   /**
+   * The company-email boost (`ad-score/company-email-boost.ts`), shipped at
+   * a neutral 1.0: the viewer's fact as read (`yes`, `no`, `unknown`, or
+   * `unread` when no boosted advertiser's campaign loaded), the placements
+   * where a boosted advertiser had a scored campaign for a `yes` viewer,
+   * and those whose lead would change at the proposed multiplier. Counts
+   * only; never a campaign, advertiser or user id.
+   */
+  company_email: 'string',
+  ranker_company_email_placements: 'number',
+  ranker_company_email_disagreements: 'number',
+  /**
    * The request's one Flash pCTR batch (`ad-model/decisions-pctr.ts`), present
    * whenever the scorer is configured: the model label, the attempt outcome
    * (`scored`, `control`, `timeout`, `http_error`, `no_candidates`, ...), its
@@ -1123,10 +1134,19 @@ const ADS_EXTERNAL_CONVERSION_POSTBACK_FIELDS = {
   charged_cents: 'number',
   duration_ms: 'number',
   // Identity rail only (docs/freebuff-placements-conversions.md §16): how the
-  // hashed-email lookup ended — matched | observed_match | unmatched |
-  // ambiguous | gated | consent_denied — and 'none' on every click-id row.
-  // Bounded by construction; never a digest, never a user.
+  // hashed-email lookup ended — matched | observed_match |
+  // observed_bridged_match | unmatched | ambiguous | gated | consent_denied —
+  // and 'none' on every click-id row. Bounded by construction; never a
+  // digest, never a user.
   match_outcome: 'string',
+  // The identity rail's observe-only bridged pass
+  // (docs/freebuff-identity-bridging.md, "Phase 3"): matched | unmatched |
+  // ambiguous | gated | error, absent when it did not run; which linked
+  // address named the matched account (work_email | personal_email |
+  // student_email); and on `ambiguous`, how many distinct accounts clicked.
+  bridge_outcome: 'string',
+  bridge_via: 'string',
+  bridge_clickers: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 function sanitizeExternalConversionPostbackFields(
