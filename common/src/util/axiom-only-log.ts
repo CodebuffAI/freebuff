@@ -583,6 +583,16 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   excluded_campaign_count: 'number',
   eligible_campaign_labels: 'string',
   exclusion_reasons: 'string',
+  /**
+   * The HOUSE leg's own census, beside the book's: the same two counts and
+   * histogram, from the house decision only. The fields above keep the paid
+   * census whenever a paid leg consulted the book first, so on a released
+   * request they never say why house was empty; these do. Absent when the
+   * house leg never ran.
+   */
+  house_eligible_campaign_count: 'number',
+  house_excluded_campaign_count: 'number',
+  house_exclusion_reasons: 'string',
   /** Frozen decision context a later ranker cannot reconstruct after the fact. */
   hour_utc: 'number',
   /** Ads already served in this session; `-1` when the counter is unavailable. */
