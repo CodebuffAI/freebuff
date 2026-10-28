@@ -46,6 +46,10 @@ export function formatFreebuffHardBlockedPrivacySignals(
   return `${labels.slice(0, -1).join(', ')} or ${labels[labels.length - 1]}`
 }
 
+/** The Tor refusal. No plan lifts it: the block runs before plan admission. */
+export const FREEBUFF_TOR_BLOCKED_MESSAGE =
+  'Freebuff is not available over Tor. Connect without Tor and try again.'
+
 export function formatFreebuffHardBlockedMessage(
   signals: readonly FreebuffIpPrivacySignal[] | null | undefined,
 ): string {
