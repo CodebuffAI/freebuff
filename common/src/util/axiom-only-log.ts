@@ -580,6 +580,17 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    * asked. The served campaign's propensity is on `ad_candidate`.
    */
   explore_arm: 'string',
+  /**
+   * COD-996, the served ad's translation step (`ad-translation/serve.ts`):
+   * `ad_translation_result` (`off`, `no_language`, `unassigned`, `skipped`,
+   * `no_copy`, `control`, `translated`, `timeout`, `error`) and its two waits,
+   * the viewer decision (zero after a request's first placement) and the copy
+   * lookup. Absent where the step never ran: no first-party fill, the agentic
+   * pool, a shadow leg.
+   */
+  ad_translation_result: 'string',
+  ad_translation_viewer_ms: 'number',
+  ad_translation_copy_ms: 'number',
   excluded_campaign_count: 'number',
   eligible_campaign_labels: 'string',
   exclusion_reasons: 'string',
