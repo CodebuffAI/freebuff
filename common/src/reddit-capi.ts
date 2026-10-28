@@ -63,6 +63,7 @@ export function buildRedditCapiUserPayload(user: RedditCapiUser) {
 export type SendRedditCustomConversionParams = {
   /** Conversion access token from Reddit Events Manager (env-provided; no-op when unset). */
   accessToken: string | undefined
+  /** Internal event name; acquisition events map to Reddit's standard types. */
   customEventName: RedditCapiEventName | RedditAcquisitionEvent
   conversionId: string
   actionSource: RedditActionSource
@@ -133,10 +134,12 @@ export function buildRedditCustomConversionBody(
           type: {
             ...(params.customEventName === 'SignUp'
               ? { tracking_type: 'SIGN_UP' }
-              : {
-                  tracking_type: 'CUSTOM',
-                  custom_event_name: params.customEventName,
-                }),
+              : params.customEventName === 'CodingActivation'
+                ? { tracking_type: 'LEAD' }
+                : {
+                    tracking_type: 'CUSTOM',
+                    custom_event_name: params.customEventName,
+                  }),
           },
           ...(params.user.clickId ? { click_id: params.user.clickId } : {}),
           metadata: {
@@ -156,7 +159,7 @@ function isRetryableStatus(status: number): boolean {
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-/** Deliver one custom event, retrying one transient failure. */
+/** Deliver one conversion, retrying one transient failure. */
 export async function sendRedditCustomConversion(
   params: SendRedditCustomConversionParams,
 ): Promise<RedditCapiDeliveryResult> {
@@ -184,6 +187,7 @@ export async function sendRedditCustomConversion(
         params.logger?.info(
           {
             customEventName: params.customEventName,
+            trackingType: body.data.events[0]?.type.tracking_type,
             conversionId: params.conversionId,
             attempt,
           },
@@ -213,6 +217,7 @@ export async function sendRedditCustomConversion(
         {
           error,
           customEventName: params.customEventName,
+          trackingType: body.data.events[0]?.type.tracking_type,
           conversionId: params.conversionId,
           attempt,
         },
