@@ -49,6 +49,9 @@ export type SignupBlockReason =
   | 'email_domain_unlisted_confirm'
   // ... and a custom domain anywhere else.
   | 'email_domain_not_mainstream'
+  // Another account on this browser or Fingerprint visitor is banned for what
+  // it did (`deviceLinkedToEvidenceBan` in @codebuff/auth/signup-gate-server).
+  | 'device_linked_to_banned_account'
 
 /**
  * Deliberately actionable and non-accusatory.
@@ -87,7 +90,7 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
   email_provider_not_allowed:
     "New accounts can't use a temporary, disposable, privacy or alias email address (such as a temp-mail inbox, Proton Mail, Tutanota, DuckDuckGo or Firefox Relay). Please sign up with Gmail, Outlook, iCloud, or your work or school email. If you use GitHub, make one of those your primary email in GitHub's settings (Settings → Emails) first.",
   privacy_unverified:
-    "We couldn't check your connection just now. Please try again in a few minutes, or continue with Google, Apple or GitHub.",
+    "We couldn't check your connection just now. Please try again in a few minutes, or continue with another sign-in method.",
   email_domain_velocity:
     'Too many accounts have been created with this email domain today. Please try again tomorrow, or continue with Google, Apple or GitHub.',
   email_forwarding_not_allowed:
@@ -98,6 +101,8 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
     "This email isn't from a mainstream provider. You can still use it, but the account gets tighter limits and may need to verify a phone number by SMS (or have a paid plan). For the smoothest start, use Gmail, Outlook, iCloud or Yahoo, or continue with Google.",
   email_domain_not_mainstream:
     "In your region, new accounts need an email from a mainstream provider: Gmail, Outlook, iCloud or Yahoo, or a work or school address hosted by Google or Microsoft. Please use one of those, or continue with Google. If you use GitHub, make one of those your primary email in GitHub's settings (Settings → Emails) first.",
+  device_linked_to_banned_account:
+    "An account that was suspended has used this browser, so new accounts can't be created from it. If that account was yours, you can appeal from its Standing tab after signing in to it. If you think this is a mistake, contact support.",
   github_email_unverified:
     "GitHub sign-in needs a verified email. Verify your email in GitHub's settings (Settings → Emails) and try again, or sign in with Google instead. If your email is already verified, GitHub may be temporarily unreachable; please try again in a few minutes.",
 }
