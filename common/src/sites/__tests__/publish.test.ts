@@ -153,11 +153,11 @@ test('an existing site gets auth, declared storage and republishing, never a dup
 test('a refused tool call or a rejected deployment ends with an explanation', async () => {
   const refused = await publishSite({
     environment: 'preview',
-    tool: async () => ({ error: 'sites_request_failed', message: 'Your free hosting allowance includes 3 published sites.' }),
+    tool: async () => ({ error: 'sites_request_failed', message: 'Your free hosting allowance includes 6 published sites.' }),
     prepare: async () => prepared(),
     onEvent: () => {},
   })
-  expect(refused).toEqual({ type: 'error', message: 'Your free hosting allowance includes 3 published sites.' })
+  expect(refused).toEqual({ type: 'error', message: 'Your free hosting allowance includes 6 published sites.' })
 
   const rejected = fakeSites({}, {
     operation: {
@@ -231,7 +231,7 @@ test('publishing preserves a newer Unpublish made during the upload', async () =
         }
       if (name === 'sites_set_published') {
         publications++
-        return { error: 'sites_request_failed', message: 'Your free hosting allowance includes 3 published sites.' }
+        return { error: 'sites_request_failed', message: 'Your free hosting allowance includes 6 published sites.' }
       }
       return sites.tool(name, args)
     },
@@ -249,12 +249,12 @@ test('publishing an unpublished environment reports the publication limit', asyn
     environment: 'production',
     siteId: SITE,
     tool: async (name, args) => name === 'sites_set_published'
-      ? { error: 'sites_request_failed', message: 'Your free hosting allowance includes 3 published sites.' }
+      ? { error: 'sites_request_failed', message: 'Your free hosting allowance includes 6 published sites.' }
       : sites.tool(name, args),
     prepare: async () => prepared(),
     onEvent: () => {},
   })
-  expect(result).toEqual({ type: 'error', message: 'Your free hosting allowance includes 3 published sites.' })
+  expect(result).toEqual({ type: 'error', message: 'Your free hosting allowance includes 6 published sites.' })
 })
 
 test('a successful publication receipt cannot announce done if the environment is now unpublished', async () => {
