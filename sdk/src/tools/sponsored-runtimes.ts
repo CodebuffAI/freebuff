@@ -26,14 +26,23 @@ export const SPONSORED_RUNTIME_PROBE_TIMEOUT_MS = 4_000
 /**
  * POSIX sh: prints one runtime name per line for each that runs. Python is
  * `python3`, else `python`, reported as `python`. Ends with a sentinel so a
- * probe cut short is told apart from one that found nothing.
+ * probe cut short is told apart from one that found nothing. Apple's macOS
+ * `/usr/bin/python3` shim launches the CLT installer, so it must be avoided.
  */
 export const SPONSORED_RUNTIME_PROBE_SCRIPT = [
   'for c in node npx bun; do',
   '  command -v "$c" >/dev/null 2>&1 && "$c" --version >/dev/null 2>&1 && echo "$c"',
   'done',
   'for c in python3 python; do',
-  '  if command -v "$c" >/dev/null 2>&1 && "$c" --version >/dev/null 2>&1; then echo python; break; fi',
+  '  if command -v "$c" >/dev/null 2>&1; then',
+  '    p=$(command -v "$c")',
+  '    if [ "$p" = "/usr/bin/$c" ] && [ "$(uname -s)" = "Darwin" ]; then',
+  '      d=$(xcode-select -p 2>/dev/null) || continue',
+  '      [ -n "$d" ] && [ -x "$d/usr/bin/$c" ] || continue',
+  '      p="$d/usr/bin/$c"',
+  '    fi',
+  '    if "$p" --version >/dev/null 2>&1; then echo python; break; fi',
+  '  fi',
   'done',
   'echo __freebuff_runtimes_done__',
 ].join('\n')
