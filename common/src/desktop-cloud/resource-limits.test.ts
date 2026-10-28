@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
   CLOUD_RESOURCE_MESSAGE,
+  CLOUD_RESOURCE_FILES_WHERE,
   CLOUD_RESOURCE_PENDING,
   cloudResourceExplanation,
   isCloudResourceMessage,
@@ -30,4 +31,24 @@ test('the explanation names the limit, says whether the files are safe, and what
   }
   expect(isCloudResourceMessage(CLOUD_RESOURCE_MESSAGE)).toBe(true)
   expect(isCloudResourceMessage(CLOUD_RESOURCE_PENDING)).toBe(true)
+})
+
+test('a web run is told where its saved files are, and that a new chat will not have them', () => {
+  // Desktop moves the chat locally right away; its note is unchanged.
+  expect(cloudResourceExplanation('processes', true, true)).toBe(
+    cloudResourceExplanation('processes', true),
+  )
+  expect(cloudResourceExplanation('processes', true)).not.toContain(
+    CLOUD_RESOURCE_FILES_WHERE,
+  )
+  // Web: "Your files are saved" alone sent users to a new chat, which starts
+  // from the project's source and was empty.
+  const web = cloudResourceExplanation('processes', true, false)
+  expect(web).toBe(
+    'Cloud stopped this turn because the project is running too many processes. Your files are saved. They are kept for this chat only, and only the Freebuff Desktop app can get them back. A new chat does not start from them, and deleting this chat deletes them. Dev servers and watchers left running are the usual cause; stop the ones you no longer need before running this project in Cloud again.',
+  )
+  expect(cloudResourceExplanation('cpu', false, false)).toContain(
+    `this can take a few minutes. ${CLOUD_RESOURCE_FILES_WHERE}`,
+  )
+  expect(isCloudResourceMessage(web)).toBe(false)
 })

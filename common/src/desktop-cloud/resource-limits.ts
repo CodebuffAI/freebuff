@@ -53,18 +53,32 @@ const RESOURCE_EXPLANATIONS: Record<
 }
 
 /**
+ * Where the files went, for a run whose client cannot move it to this computer
+ * (web). Recovery takes the chat's files out of Cloud into a copy only Desktop
+ * reads; a new Cloud chat starts from the project's source, not from them, and
+ * deleting the chat purges the copy. "Your files are saved" alone sent web users
+ * to a new chat that was empty (2026-10-28).
+ */
+export const CLOUD_RESOURCE_FILES_WHERE =
+  'They are kept for this chat only, and only the Freebuff Desktop app can get them back. A new chat does not start from them, and deleting this chat deletes them.'
+
+/**
  * The transcript note written next to a resource-limit failure: which limit,
  * whether the files are already safe, what to clean up. CLOUD_RESOURCE_MESSAGE
  * itself stays the fixed sentence Desktop builds compare against
  * (`isCloudResourceMessage`), so the explanation travels as a text event.
+ * `movesLocally` is false when the run's client cannot continue it locally.
  */
 export function cloudResourceExplanation(
   kind: CloudResourceKind,
   recovered: boolean,
+  movesLocally = true,
 ): string {
   const { what, advice } = RESOURCE_EXPLANATIONS[kind]
   const files = recovered
     ? 'Your files are saved.'
     : 'Your files are being saved for recovery; this can take a few minutes.'
-  return `${what} ${files} ${advice}`
+  return movesLocally
+    ? `${what} ${files} ${advice}`
+    : `${what} ${files} ${CLOUD_RESOURCE_FILES_WHERE} ${advice}`
 }
