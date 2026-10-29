@@ -4,6 +4,7 @@ import React from 'react'
 import { useShallow } from 'zustand/react/shallow'
 
 import { Button } from './button'
+import { MarkdownBody } from './blocks/markdown-body'
 import { ErrorBoundaryPlaceholder } from './error-boundary'
 import { GridLayout } from './grid-layout'
 import { MessageBlock } from './message-block'
@@ -16,11 +17,7 @@ import {
   AGENT_CONTENT_HORIZONTAL_PADDING,
   MAX_AGENT_DEPTH,
 } from '../utils/layout-helpers'
-import {
-  renderMarkdown,
-  hasMarkdown,
-  type MarkdownPalette,
-} from '../utils/markdown-renderer'
+import type { MarkdownPalette } from '../utils/markdown-renderer'
 
 import type { ChatMessage } from '../types/chat'
 import type { FeedbackCategory } from '@codebuff/common/constants/feedback'
@@ -357,6 +354,18 @@ const AgentMessage = memo(
     const isStreaming = useChatStore((state) => state.streamingAgents.has(message.id))
     const setFocusedAgentId = useChatStore((state) => state.setFocusedAgentId)
 
+    const agentCodeBlockWidth = Math.max(
+      10,
+      availableWidth - AGENT_CONTENT_HORIZONTAL_PADDING,
+    )
+    const agentPalette: MarkdownPalette | undefined = useMemo(
+      () => markdownPalette ? {
+        ...markdownPalette,
+        codeTextFg: theme?.foreground ?? markdownPalette.codeTextFg,
+      } : undefined,
+      [markdownPalette, theme?.foreground],
+    )
+
     // Guard against missing agent info (should not happen for agent variant messages)
     if (!message.agent) {
       return (
@@ -388,22 +397,6 @@ const AgentMessage = memo(
       !isStreaming && isCollapsed
         ? lastLine.replace(/[#*_`~\[\]()]/g, '').trim()
         : ''
-
-    const agentCodeBlockWidth = Math.max(
-      10,
-      availableWidth - AGENT_CONTENT_HORIZONTAL_PADDING,
-    )
-    const agentPalette: MarkdownPalette | undefined = markdownPalette ? {
-      ...markdownPalette,
-      codeTextFg: theme?.foreground ?? markdownPalette.codeTextFg,
-    } : undefined
-    const agentMarkdownOptions = {
-      codeBlockWidth: agentCodeBlockWidth,
-      palette: agentPalette!,
-    }
-    const displayContent = hasMarkdown(rawDisplayContent)
-      ? renderMarkdown(rawDisplayContent, agentMarkdownOptions)
-      : rawDisplayContent
 
     const handleTitleClick = (): void => {
       onToggleCollapsed(message.id)
@@ -483,12 +476,14 @@ const AgentMessage = memo(
                 </text>
               )}
               {!isCollapsed && (
-                <text
+                <MarkdownBody
                   key={`agent-content-${message.id}`}
-                  style={{ wrapMode: 'word', fg: theme?.foreground }}
-                >
-                  {displayContent}
-                </text>
+                  content={rawDisplayContent}
+                  isStreaming={isStreaming}
+                  codeBlockWidth={agentCodeBlockWidth}
+                  palette={agentPalette!}
+                  fg={theme?.foreground}
+                />
               )}
             </Button>
           </box>

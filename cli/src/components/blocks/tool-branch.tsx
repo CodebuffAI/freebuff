@@ -1,7 +1,7 @@
 import { sanitizeTerminalOutput } from '@codebuff/common/util/terminal-safe-text'
 import { memo, useCallback } from 'react'
 
-import { ContentWithMarkdown } from './content-with-markdown'
+import { MarkdownBody } from './markdown-body'
 import { useTheme } from '../../hooks/use-theme'
 import { useChatStore } from '../../state/chat-store'
 import { getToolDisplayInfo } from '../../utils/codebuff-client'
@@ -132,32 +132,20 @@ export const ToolBranch = memo(
       },
     }
 
-    const displayContent = (
-      <ContentWithMarkdown
+    const renderableDisplayContent = fullContent ? (
+      <MarkdownBody
         content={fullContent}
         isStreaming={false}
         codeBlockWidth={agentMarkdownOptions.codeBlockWidth}
         palette={agentMarkdownOptions.palette}
+        fg={theme.foreground}
+        attributes={
+          theme.messageTextAttributes && theme.messageTextAttributes !== 0
+            ? theme.messageTextAttributes
+            : undefined
+        }
       />
-    )
-
-    const renderableDisplayContent =
-      displayContent === null ||
-      displayContent === undefined ||
-      displayContent === false ||
-      displayContent === '' ? null : (
-        <text
-          fg={theme.foreground}
-          style={{ wrapMode: 'word' }}
-          attributes={
-            theme.messageTextAttributes && theme.messageTextAttributes !== 0
-              ? theme.messageTextAttributes
-              : undefined
-          }
-        >
-          {displayContent}
-        </text>
-      )
+    ) : null
 
     const headerName = displayInfo.name
 
