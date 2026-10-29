@@ -110,6 +110,30 @@ describe('buildCancelledSessionState', () => {
     )
   })
 
+  test('a checkpoint snapshot shares its history entries with the live run', () => {
+    // What a host persisting deltas needs: the snapshot's prefix IS the live
+    // history's prefix, by identity, so "what changed since my last save" is a
+    // pointer walk rather than a serialization of the whole transcript.
+    const history = [text('user', 'hello'), text('assistant', 'hi')]
+    const live = sessionStateWith(history)
+
+    const snapshot = buildCancelledSessionState({
+      sessionState: live,
+      runtimeMadeProgress: true,
+      message: 'The session ended before this response completed.',
+      shareMessageEntries: true,
+    })
+
+    expect(snapshot.mainAgentState.messageHistory[0]).toBe(history[0])
+    expect(snapshot.mainAgentState.messageHistory[1]).toBe(history[1])
+    // ...while the appended note exists only in the snapshot.
+    expect(snapshot.mainAgentState.messageHistory).toHaveLength(3)
+    expect(live.mainAgentState.messageHistory).toHaveLength(2)
+    expect(live.mainAgentState.contextTokenCount).toBe(
+      countTokensMessages(live.mainAgentState.messageHistory) + SYSTEM_AND_TOOLS,
+    )
+  })
+
   test('does not disturb the live session', () => {
     // Same contract cloneSessionState exists for: the run is still unwinding
     // and the caller keeps using the original.
