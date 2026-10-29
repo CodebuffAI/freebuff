@@ -51,6 +51,11 @@ import {
 import { resetCodebuffClient } from './utils/codebuff-client'
 import { setApiClientAuthToken } from './utils/codebuff-api'
 import { IS_FREEBUFF } from './utils/constants'
+import {
+  describeForeignPreload,
+  foreignPreloadFrom,
+  REFUSE_FOREIGN_PRELOAD,
+} from './utils/preload-guard'
 import { getCliEnv } from './utils/env'
 import { getConfigDir, tightenConfigDirMode } from './utils/config-dir'
 import {
@@ -114,6 +119,34 @@ function createQueryClient(): QueryClient {
 }
 
 async function main(): Promise<void> {
+  // Before anything else: report an injected preload (preload-guard.ts). The
+  // hook itself runs earlier, so this is a speed bump — see that file.
+  const injectedPreload = foreignPreloadFrom({
+    execArgv: process.execArgv,
+    // A repository's own bunfig `preload` is ordinary use, not an injection.
+    cwd: process.cwd(),
+    // Best-effort second channel: a compiled binary reports its own modules
+    // under `/$bunfs/`, and Bun may not expose a CommonJS `require` here.
+    loadedModules: (() => {
+      try {
+        const cache = (
+          globalThis as { require?: { cache?: Record<string, unknown> } }
+        ).require?.cache
+        return cache ? Object.keys(cache) : []
+      } catch {
+        return []
+      }
+    })(),
+  })
+  if (injectedPreload) {
+    // No user-facing switch: the policy is `REFUSE_FOREIGN_PRELOAD`, fixed at
+    // build time (preload-guard.ts), and the default reports and continues so
+    // a legitimate toolchain hook never strands the CLI. The preload has run
+    // by now either way, which is why nothing here asks the user to do anything.
+    console.error(describeForeignPreload(injectedPreload))
+    if (REFUSE_FOREIGN_PRELOAD) process.exit(1)
+  }
+
   // CI gate: `<binary> --smoke-tree-sitter` proves the embedded wasm boots
   // through Parser.init end-to-end. Has to live BEFORE commander.parse() —
   // an earlier attempt put this in a pre-init module with top-level await,
