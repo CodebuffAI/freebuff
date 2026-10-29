@@ -17,8 +17,12 @@ export const HOSTED_WORKSPACE_ENVIRONMENTS = [
 
 
 export type HostedRuntimeProgress = {
-  phase: 'preparing' | 'downloading' | 'landing'
+  /** Absent from Desktops that only reported downloads: read it as `to-local`. */
+  direction?: 'to-local' | 'to-cloud'
+  phase: 'preparing' | 'downloading' | 'landing' | 'uploading' | 'starting'
+  /** Bytes moved so far, in either direction. */
   receivedBytes: number
+  /** Null while unknown; an upload streams, so it never knows its total. */
   totalBytes: number | null
 }
 
@@ -250,6 +254,24 @@ export type HostedWorkspaceHost = {
       worktree: boolean
     }
   }>
+  /** Sites for a chat running on this computer, read from its own checkout. Older builds omit it. */
+  sitesContext?(scope: { projectId: string; threadId: string }): Promise<
+    import('../sites/project-context').SiteCompatibility & {
+      /** Desktop's `Site` rows (freebuff-desktop/src/shared/sites.ts). */
+      sites: unknown[]
+    }
+  >
+  /** The Publish button for a chat running on this computer: builds its checkout, streams stages. */
+  sitesPublish?(
+    input: {
+      projectId: string
+      threadId: string
+      environment: 'preview' | 'production'
+      siteId?: string
+      name?: string
+    },
+    onEvent: (event: import('../sites/publish-events').SitePublishEvent) => void,
+  ): Promise<import('../sites/publish-events').SitePublishResult>
   /** Persist a device-backed cloud chat before native panels or first-send placement. */
   prepareLocalChat?(scope: HostedBrowserScope): Promise<HostedBrowserScope>
   terminal?: {

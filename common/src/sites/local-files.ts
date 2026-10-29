@@ -57,10 +57,26 @@ const manifestSchema = z
 const invalid = (message: string) =>
   new SitesClientError(400, 'invalid_site_request', message)
 
+const outside = (rel: string) =>
+  !rel || rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)
+const missing = (error: unknown) =>
+  (error as NodeJS.ErrnoException)?.code === 'ENOENT' ||
+  (error as NodeJS.ErrnoException)?.code === 'ENOTDIR'
+
 async function localPath(root: string, path: string) {
-  const absolute = await realpath(resolve(root, path))
-  const rel = relative(root, absolute)
-  if (!rel || rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel))
+  const requested = resolve(root, path)
+  const absolute = await realpath(requested).catch((error: unknown) => {
+    // realpath fails before containment can be checked. Name only a path
+    // inside the workspace, relative, so the agent can fix it.
+    const rel = relative(root, requested)
+    if (!missing(error)) throw error
+    if (outside(rel))
+      throw invalid('Site files must be inside this thread’s workspace.')
+    throw invalid(
+      `Site file not found in this chat’s workspace: ${rel.split(sep).join('/')}`,
+    )
+  })
+  if (outside(relative(root, absolute)))
     throw invalid('Site files must be inside this thread’s workspace.')
   return absolute
 }

@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { bundleSite } from '../local-files'
+import { SitesClient } from '../client'
+import { bundleSite, readSiteSecret } from '../local-files'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -82,4 +83,72 @@ test('realtime is an explicit true-only managed capability in the deployment man
       'Invalid deploy manifest',
     )
   }
+})
+
+test('a relative manifest inside the checkout bundles its modules relative to the manifest', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'local-files-checkout-'))
+  roots.push(root)
+  await mkdir(join(root, 'dist'), { recursive: true })
+  await writeFile(join(root, 'dist/worker.js'), 'export default {}')
+  await writeFile(
+    join(root, 'dist/deploy.json'),
+    JSON.stringify({
+      entrypoint: 'worker.js',
+      compatibilityDate: '2026-10-01',
+      modules: [{ name: 'worker.js', type: 'esm', path: 'worker.js' }],
+    }),
+  )
+  const bundle = await bundleSite(root, 'dist/deploy.json')
+  expect(bundle.modules.map((module) => module.name)).toEqual(['worker.js'])
+})
+
+test('a missing manifest, module or secret file names the relative path tried and nothing else', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'local-files-missing-'))
+  roots.push(root)
+  await expect(bundleSite(root, 'deploy.json')).rejects.toThrow(
+    'Site file not found in this chat’s workspace: deploy.json',
+  )
+  await mkdir(join(root, 'dist'))
+  await writeFile(
+    join(root, 'dist/deploy.json'),
+    JSON.stringify({
+      entrypoint: 'worker.js',
+      compatibilityDate: '2026-10-01',
+      modules: [{ name: 'worker.js', type: 'esm', path: 'build/worker.js' }],
+    }),
+  )
+  await expect(bundleSite(root, 'dist/deploy.json')).rejects.toThrow(
+    'Site file not found in this chat’s workspace: dist/build/worker.js',
+  )
+  await expect(readSiteSecret(root, 'secrets/token.txt')).rejects.toThrow(
+    'Site file not found in this chat’s workspace: secrets/token.txt',
+  )
+  // A missing path outside the checkout keeps the containment refusal.
+  await expect(bundleSite(root, '../elsewhere/deploy.json')).rejects.toThrow(
+    'must be inside this thread’s workspace',
+  )
+  const client = new SitesClient({
+    getToken: () => 'token',
+    host: 'https://example.invalid',
+    originApp: 'desktop',
+    fetcher: async () => {
+      throw new Error('A missing manifest must not reach hosting')
+    },
+  })
+  expect(
+    await client.runToolWithContext(
+      'sites_deploy',
+      {
+        siteId: '00000000-0000-4000-8000-000000000000',
+        environment: 'production',
+        requestId: '00000000-0000-4000-8000-000000000001',
+        manifestPath: 'deploy.json',
+      },
+      root,
+      'build',
+    ),
+  ).toEqual({
+    error: 'invalid_site_request',
+    message: 'Site file not found in this chat’s workspace: deploy.json',
+  })
 })
