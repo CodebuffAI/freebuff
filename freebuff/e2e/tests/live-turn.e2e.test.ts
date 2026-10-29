@@ -45,6 +45,18 @@ const FLASH_FOOTER = new RegExp(
   `${FLASH_DISPLAY_NAME}(?: \\d{1,2}/\\d{1,2})?(?: • \\w+)? · `,
 )
 
+test('the Flash row is found past the Slow and Fast rows that share its name', () => {
+  const flash = focusedModelRow(FLASH_DISPLAY_NAME)
+  expect('  › DeepSeek V4.1 Flash  10 Freebucks').toMatch(flash)
+  expect('  › DeepSeek V4.1 Flash 10/17 • Recommended').toMatch(flash)
+  for (const row of [
+    '  › DeepSeek V4.1 Flash Slow  10 Freebucks',
+    '  › DeepSeek V4.1 Flash Fast',
+    '  › DeepSeek V4.1 Flash Fastest',
+  ])
+    expect(row).not.toMatch(flash)
+})
+
 test('Flash footer accepts release dates without accepting Flash Fast', () => {
   for (const label of [
     'DeepSeek V4.1 Flash',
@@ -61,6 +73,7 @@ test('Flash footer accepts release dates without accepting Flash Fast', () => {
     'DeepSeek V4.1 Flash Fast',
     'DeepSeek V4.1 Flash Fast 10/17 • high',
     'DeepSeek V4.1 Flash Fastest • high',
+    'DeepSeek V4.1 Flash Slow • high',
   ]) {
     expect(`${label} · /tmp/freebuff-smoke · /model to change`).not.toMatch(
       FLASH_FOOTER,
@@ -84,14 +97,22 @@ async function backendSessionStatus(): Promise<'active' | 'none'> {
  * picker opens expanded with the cursor on the saved preference; Down moves it and wraps, and a
  * collapse toggle at the end carries no cursor, so stepping forward reaches every row.
  */
+/**
+ * The picker's cursor on `name` itself. "DeepSeek V4.1 Flash Fast" and "DeepSeek
+ * V4.1 Flash Slow" share the prefix (and the picker lists cheapest first, so
+ * Slow comes before Flash); badges may follow the name.
+ */
+function focusedModelRow(name: string): RegExp {
+  return new RegExp(
+    `› ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\s*(?:Fast|Slow))`,
+  )
+}
+
 async function focusModelRow(
   session: FreebuffSession,
   name: string,
 ): Promise<void> {
-  // "DeepSeek V4.1 Flash Fast" shares the prefix, and badges may follow the name
-  const focused = new RegExp(
-    `› ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\s*Fast\\b)`,
-  )
+  const focused = focusedModelRow(name)
   for (let step = 0; step < 30; step++) {
     const output = await session.capture()
     if (focused.test(output)) return
