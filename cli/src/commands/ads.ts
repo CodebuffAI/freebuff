@@ -30,16 +30,22 @@ export const handleAdsEnable = (): {
 }
 
 /**
- * What `/ads:disable` says in Freebuff, where it cannot do what it names.
+ * What `handleAdsDisable` answers on the Freebuff binary. It is a backstop, not
+ * a reachable command: `FREEBUFF_REMOVED_COMMANDS` (command-registry.ts) and
+ * `FREEBUFF_REMOVED_COMMAND_IDS` (slash-commands.ts) have dropped both ads
+ * switches from Freebuff since its first build, so no Freebuff release has ever
+ * written `adsEnabled` (freebuff-command-aliases.test.ts pins that).
  *
- * The rail is part of free mode's price: `getAdsEnabled()` below returns true
- * unconditionally on this binary, so there is no state this command could
- * write that the free client would read. Persisting `adsEnabled: false` anyway
- * was worse than useless -- the SAME settings file is read by Codebuff LITE,
- * which is a paid mode where that key DOES turn ads off, so a free user's
- * dead switch quietly preselected an ad-free paid session later. The command
- * stays reachable (a discoverable answer beats a missing command); only the
- * claim that it worked is gone.
+ * The backstop exists because the rail is part of free mode's price:
+ * `getAdsEnabled()` below returns true unconditionally on this binary, while
+ * the SAME settings file is read by the Codebuff client, where the key does
+ * turn ads off. If the registry guard ever regressed, a write here would
+ * silently preselect an ad-free Codebuff session.
+ *
+ * Do not "repair" a stored `adsEnabled: false` on either binary: with Freebuff
+ * unable to write it, every such value is a Codebuff user's own choice
+ * (including one made in Codebuff's old FREE mode, before 2026-04-18 when that
+ * mode still forced ads on).
  */
 export const FREEBUFF_ADS_FIXED_COPY =
   'Ads cannot be turned off in Freebuff - they pay for the free sessions. ' +
