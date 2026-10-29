@@ -3,6 +3,8 @@ import { describe, expect, test } from 'bun:test'
 import {
   chiSquareSurvival,
   newcombeDifference,
+  revenuePerThousand,
+  revenueUplift,
   sampleRatioMismatch,
   wilsonInterval,
 } from '../stats'
@@ -77,5 +79,83 @@ describe('chiSquareSurvival', () => {
     expect(chiSquareSurvival(10.827566, 1)).toBeCloseTo(0.001, 5)
     expect(chiSquareSurvival(5.991465, 2)).toBeCloseTo(0.05, 5)
     expect(chiSquareSurvival(0.5, 3)).toBeCloseTo(0.918891, 5)
+  })
+})
+
+describe('revenuePerThousand', () => {
+  test('mean and standard error from the sums', () => {
+    // r = [0, 0, 10, 30]: mean 10, sample variance 200, se sqrt(200 / 4).
+    const out = revenuePerThousand({ n: 4, sum: 40, sumSquares: 1_000 })!
+    const se = 1_000 * Math.sqrt(50)
+    expect(out.value).toBe(10_000)
+    expect(out.standardError).toBeCloseTo(se, 4)
+    expect(out.lower).toBeCloseTo(10_000 - 1.959964 * se, 3)
+    expect(out.upper).toBeCloseTo(10_000 + 1.959964 * se, 3)
+  })
+
+  test('constant revenue has zero width, never a negative variance', () => {
+    const out = revenuePerThousand({ n: 3, sum: 0.3, sumSquares: 0.03 })!
+    expect(out.value).toBeCloseTo(100, 6)
+    expect(out.standardError).toBe(0)
+  })
+
+  test('null on too few or invalid sums', () => {
+    expect(revenuePerThousand({ n: 1, sum: 5, sumSquares: 25 })).toBeNull()
+    expect(revenuePerThousand({ n: 10, sum: -1, sumSquares: 1 })).toBeNull()
+    expect(
+      revenuePerThousand({ n: Number.NaN, sum: 1, sumSquares: 1 }),
+    ).toBeNull()
+  })
+
+  test('matches the direct per-opportunity computation', () => {
+    const values = [0, 0, 0, 0, 12, 0, 0, 3.5, 0, 0, 0, 40, 0, 0, 0.2]
+    const n = values.length
+    const sum = values.reduce((a, b) => a + b, 0)
+    const mean = sum / n
+    const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)
+    const out = revenuePerThousand({
+      n,
+      sum,
+      sumSquares: values.reduce((a, b) => a + b * b, 0),
+    })!
+    expect(out.value).toBeCloseTo(1_000 * mean, 4)
+    expect(out.standardError).toBeCloseTo(1_000 * Math.sqrt(variance / n), 4)
+  })
+})
+
+describe('revenueUplift', () => {
+  // uniform r = [0, 0, 10, 30], ranked r = [10, 10, 20, 40]: means 10 and 20,
+  // both with sample variance 200.
+  const uniform = { n: 4, sum: 40, sumSquares: 1_000 }
+  const ranked = { n: 4, sum: 80, sumSquares: 2_200 }
+  const se = 1_000 * Math.sqrt(50)
+
+  test('difference with an independent-arm standard error', () => {
+    const out = revenueUplift(ranked, uniform)!
+    expect(out.ranked.value).toBe(20_000)
+    expect(out.uniform.value).toBe(10_000)
+    expect(out.difference.value).toBe(10_000)
+    const diffSe = Math.sqrt(2) * se
+    expect(out.difference.lower).toBeCloseTo(10_000 - 1.959964 * diffSe, 3)
+    expect(out.difference.upper).toBeCloseTo(10_000 + 1.959964 * diffSe, 3)
+  })
+
+  test('ratio with a delta-method interval on the log scale', () => {
+    const out = revenueUplift(ranked, uniform)!
+    const logSe = Math.sqrt((se / 20_000) ** 2 + (se / 10_000) ** 2)
+    expect(out.ratio!.value).toBe(2)
+    expect(out.ratio!.lower).toBeCloseTo(2 * Math.exp(-1.959964 * logSe), 5)
+    expect(out.ratio!.upper).toBeCloseTo(2 * Math.exp(1.959964 * logSe), 5)
+    expect(out.ratio!.lower).toBeGreaterThan(0)
+  })
+
+  test('no ratio when the uniform arm earned nothing', () => {
+    const out = revenueUplift(ranked, { n: 100, sum: 0, sumSquares: 0 })!
+    expect(out.ratio).toBeNull()
+    expect(out.difference.value).toBe(20_000)
+  })
+
+  test('null when an arm is empty', () => {
+    expect(revenueUplift(ranked, { n: 0, sum: 0, sumSquares: 0 })).toBeNull()
   })
 })
