@@ -351,6 +351,8 @@ export enum AnalyticsEvent {
   FREEBUFF_START_VIEWED = 'freebuff.start_viewed',
   FREEBUFF_START_SIGN_IN_CLICKED = 'freebuff.start_sign_in_clicked',
   FREEBUFF_START_SIGNED_IN = 'freebuff.start_signed_in',
+  // An Android visitor tapped the handoff's Google Play button.
+  FREEBUFF_START_ANDROID_STORE_CLICKED = 'freebuff.start_android_store_clicked',
 
   // Freebuff - Chat
   // Emitted once per new-thread title generation attempt (server-side). The
