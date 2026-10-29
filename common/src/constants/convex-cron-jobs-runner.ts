@@ -36,7 +36,10 @@ export const CONVEX_CRON_JOB_NAMES = [
    *  `forceFinishOverdueMessage` per streaming message past its deadline. */
   'enforce_processing_deadlines',
   /** Convex cron `reconcile cloud PR delivery` (30 min): re-reads PR state
-   *  from GitHub for threads the webhook has not touched in 6 hours. */
+   *  from GitHub for threads the webhook has not touched in 6 hours. On
+   *  graphile since 2026-10-28 (its threads are Postgres's), and the Convex
+   *  cron is deleted: freebuff-web runs the body with its own GitHub App
+   *  key, which its embedded runner already requires. */
   'reconcile_pr_delivery',
   /** Convex cron `reconcile convex usage limits` (5 min): caps users' app
    *  Convex deployments and PAUSES owners over their allowance. */
@@ -88,7 +91,7 @@ export type ConvexCronJobRunners = Readonly<
 
 export const CONVEX_CRON_JOB_RUNNERS: ConvexCronJobRunners = {
   enforce_processing_deadlines: 'graphile',
-  reconcile_pr_delivery: 'convex',
+  reconcile_pr_delivery: 'graphile',
   reconcile_usage_limits: 'graphile',
   enforce_legacy_usage_limits: 'graphile',
   audit_fleet_usage: 'graphile',
