@@ -114,13 +114,38 @@ function ensureCliEnvDefaults(): void {
   }
 }
 
+/**
+ * The private tree's Infisical-backed environment module.
+ *
+ * `packages/internal/` is withheld from the public export (it is on the
+ * mirror's forbidden-path list), so in a public checkout this file does not
+ * exist at all. That is a property of the export, not a missing secret: the
+ * defaults `ensureCliEnvDefaults` installs are the whole environment there.
+ */
+function hasInternalEnvModule(): boolean {
+  return ['ts', 'tsx', 'js', 'mjs'].some((ext) =>
+    fs.existsSync(
+      path.join(__dirname, '../../../packages/internal/src/env.' + ext),
+    ),
+  )
+}
+
 function loadCliEnv(): Record<string, string> {
   if (cachedEnv) {
     return cachedEnv
   }
 
+  ensureCliEnvDefaults()
+
+  // Public export: no internal env module to read, so the defaults above ARE
+  // the environment. Throwing here failed the 22 suites that import this
+  // helper on a tree where nothing was missing but a private directory.
+  if (!hasInternalEnvModule()) {
+    cachedEnv = { ...TEST_CLIENT_ENV_DEFAULTS, ...TEST_SERVER_ENV_DEFAULTS }
+    return cachedEnv
+  }
+
   try {
-    ensureCliEnvDefaults()
     // NOTE: Inline require() is used for lazy loading - the env module depends on
     // Infisical secrets which may not be available at module load time in test environments
     const { env } = require('../../../packages/internal/src/env') as {

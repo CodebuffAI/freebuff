@@ -35,6 +35,19 @@ jobs:
       - name: Build SDK
         run: bun run build:sdk
 
+      # Green has to mean the suites ran. Until these two steps existed, this
+      # workflow only built and smoke-tested, so a red test suite and a green
+      # check were the same thing.
+      - name: Typecheck
+        run: |
+          bun run --cwd=cli typecheck
+          bun run --cwd=sdk typecheck
+
+      - name: Test
+        run: |
+          bun run --cwd=cli test
+          bun run --cwd=sdk test
+
       - name: Build Freebuff binary
         # The compiled binary inlines NEXT_PUBLIC_* at build time, so the values
         # must be present HERE, not only when the binary is run: with an empty
