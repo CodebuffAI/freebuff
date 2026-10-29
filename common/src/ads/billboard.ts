@@ -47,6 +47,8 @@ export const BILLBOARD_RATIO_TOLERANCE = 0.02
 
 /** Visible time before a billboard's close control unlocks. */
 export const BILLBOARD_DISMISS_LOCK_MS = 10_000
+/** Maximum lifetime of a sidebar showing, unchanged by duplicate deliveries. */
+export const BILLBOARD_SIDEBAR_MAX_SHOW_MS = 3 * 60_000
 
 export type BillboardFrequencyCap = {
   /** Whose serves share one count: the campaign's, or a single ad's. */
@@ -66,7 +68,7 @@ const DAY_MS = 24 * HOUR_MS
  * the sidebar all day. Billboard serves therefore do not spend the
  * campaign's hourly cap on its other placements either.
  *
- * The sidebar serves each campaign 5 times a rolling day, at most 2 in a
+ * The sidebar serves each campaign 5 times a rolling day, at most once in a
  * rolling hour. One a day (2026-10-08 to 10-20) left it empty for heavy users:
  * on 10-19, 130k tier-1 sidebar asks went unfilled because the one CPM
  * campaign had spent its serve. The hourly limit stops a minute-by-minute
@@ -82,7 +84,7 @@ export const BILLBOARD_FREQUENCY_CAPS: Readonly<Record<string, BillboardFrequenc
     per: 'campaign',
     limits: [
       { maxImpressions: 5, windowMs: DAY_MS },
-      { maxImpressions: 2, windowMs: HOUR_MS },
+      { maxImpressions: 1, windowMs: HOUR_MS },
     ],
   },
   [BILLBOARD_PANEL_PLACEMENT_ID]: {
