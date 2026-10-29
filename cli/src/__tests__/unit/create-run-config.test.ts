@@ -79,6 +79,29 @@ describe('createRunConfig', () => {
     expect(observeChunk).toHaveBeenCalledTimes(1)
   })
 
+  test('forwards the transcript-scaled checkpoint interval to the SDK', () => {
+    const run = createRunConfig({
+      agent: 'custom',
+      prompt: 'hi',
+      content: undefined,
+      previousRunState: null,
+      agentDefinitions: [],
+      signal: new AbortController().signal,
+    } as unknown as CreateRunConfigParams)
+    expect(run.stateSnapshotIntervalMs).toBeUndefined()
+
+    const scaled = createRunConfig({
+      agent: 'custom',
+      prompt: 'hi',
+      content: undefined,
+      previousRunState: null,
+      agentDefinitions: [],
+      signal: new AbortController().signal,
+      stateSnapshotIntervalMs: 15_000,
+    } as unknown as CreateRunConfigParams)
+    expect(scaled.stateSnapshotIntervalMs).toBe(15_000)
+  })
+
   test('skips the symbol index only for a base3 root', () => {
     expect(config('base3-free-deepseek-flash').skipSymbolIndex).toBe(true)
     expect(config('base3-fast-free-deepseek-flash').skipSymbolIndex).toBe(true)
