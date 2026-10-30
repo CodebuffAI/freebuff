@@ -10,7 +10,7 @@ import React, {
 import { AgentBlockGrid } from './agent-block-grid'
 import { AgentBranchItem } from './agent-branch-item'
 import { trimNewlines, sanitizePreview } from './block-helpers'
-import { ContentWithMarkdown } from './content-with-markdown'
+import { MarkdownBody } from './markdown-body'
 import { ImplementorGroup } from './implementor-row'
 import { ThinkingBlock } from './thinking-block'
 import { ToolBlockGroup } from './tool-block-group'
@@ -280,20 +280,14 @@ const AgentBody = memo(
             const nestedTextColor = explicitColor ?? p.theme.foreground
 
             return (
-              <text
+              <MarkdownBody
                 key={`${p.keyPrefix}-text-${index}`}
-                style={{
-                  wrapMode: 'word',
-                  fg: nestedTextColor,
-                }}
-              >
-                <ContentWithMarkdown
-                  content={filteredNestedContent}
-                  isStreaming={isNestedStreamingText}
-                  codeBlockWidth={markdownOptionsForLevel.codeBlockWidth}
-                  palette={markdownOptionsForLevel.palette}
-                />
-              </text>
+                content={filteredNestedContent}
+                isStreaming={isNestedStreamingText}
+                codeBlockWidth={markdownOptionsForLevel.codeBlockWidth}
+                palette={markdownOptionsForLevel.palette}
+                fg={nestedTextColor}
+              />
             )
           }
 

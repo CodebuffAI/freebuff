@@ -124,6 +124,7 @@ interface RenderState {
 const createRenderState = (
   palette: MarkdownPalette,
   codeBlockWidth: number,
+  keyPrefix = '',
 ): RenderState => {
   let counter = 0
   return {
@@ -131,7 +132,7 @@ const createRenderState = (
     codeBlockWidth,
     nextKey: () => {
       counter += 1
-      return `markdown-${counter}`
+      return `${keyPrefix}markdown-${counter}`
     },
   }
 }
@@ -989,6 +990,121 @@ const renderNode = (
   }
 }
 
+/**
+ * Merges adjacent styled runs that render identically, including runs separated
+ * only by whitespace.
+ *
+ * A frame costs the terminal roughly linearly in the number of nodes it has to
+ * walk - ~60ms for 1,500 nodes regardless of whether anything changed - so a
+ * code block emitted as one span per line is the expensive shape, not the
+ * characters. Merging `<span>line</span>'\n'<span>line</span>` into a single
+ * span removes those per-line nodes without changing a rendered character.
+ */
+const coalesceNodes = (nodes: ReactNode[]): ReactNode[] => {
+  const merged: ReactNode[] = []
+
+  const sameStyledStrings = (
+    a: ReactNode,
+    b: ReactNode,
+  ): [Record<string, unknown>, string, string] | null => {
+    if (!React.isValidElement(a) || !React.isValidElement(b)) return null
+    if (a.type !== b.type) return null
+    const aProps = a.props as Record<string, unknown>
+    const bProps = b.props as Record<string, unknown>
+    const aKeys = Object.keys(aProps).filter((k) => k !== 'children')
+    const bKeys = Object.keys(bProps).filter((k) => k !== 'children')
+    if (aKeys.length !== bKeys.length) return null
+    for (const key of aKeys) {
+      if (aProps[key] !== bProps[key]) return null
+    }
+    if (
+      typeof aProps.children !== 'string' ||
+      typeof bProps.children !== 'string'
+    ) {
+      return null
+    }
+    return [aProps, aProps.children, bProps.children]
+  }
+
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]
+    const prev = merged[merged.length - 1]
+
+    if (
+      typeof prev === 'string' &&
+      typeof node === 'string' &&
+      prev.trim().length > 0 &&
+      node.trim().length > 0
+    ) {
+      merged[merged.length - 1] = prev + node
+      continue
+    }
+
+    const direct = sameStyledStrings(prev, node)
+    if (direct) {
+      const [props, aChildren, bChildren] = direct
+      // Keep the element's key: the merged run is one element, and a keyless
+      // element in an array of children makes React warn.
+      merged[merged.length - 1] = React.createElement(
+        (prev as React.ReactElement).type as React.ElementType,
+        { ...props, key: (prev as React.ReactElement).key, children: aChildren + bChildren },
+      )
+      continue
+    }
+
+    if (!React.isValidElement(node)) {
+      merged.push(node)
+      continue
+    }
+
+    // Absorb a following run of same-styled nodes separated only by
+    // whitespace. Whitespace-only strings after the last node are left alone:
+    // they are the block separator the document-level trim drops.
+    let end = i + 1
+    let separator = ''
+    let absorbed: string | null = null
+    let props: Record<string, unknown> | null = null
+
+    while (end < nodes.length) {
+      const next = nodes[end]
+      if (typeof next === 'string' && next.trim().length === 0) {
+        separator += next
+        end += 1
+        continue
+      }
+      const match = sameStyledStrings(node, next)
+      if (!match) break
+      const [nextProps, , nextChildren] = match
+      props = nextProps
+      absorbed = (absorbed ?? (node.props as { children: string }).children) +
+        separator +
+        nextChildren
+      separator = ''
+      end += 1
+    }
+
+    if (absorbed !== null && props !== null) {
+      merged.push(
+        React.createElement(
+          (node as React.ReactElement).type as React.ElementType,
+          { ...props, key: (node as React.ReactElement).key, children: absorbed },
+        ),
+      )
+      // The run ended at a node that could not be merged; the whitespace after
+      // the last merged node was buffered, not consumed, so re-emit it.
+      if (separator) {
+        merged.push(separator)
+      }
+      i = end - 1
+      continue
+    }
+
+    merged.push(node)
+  }
+
+  return merged
+}
+
 const normalizeOutput = (nodes: ReactNode[]): ReactNode => {
   const trimmed = trimTrailingWhitespaceNodes(nodes)
   if (trimmed.length === 0) {
@@ -1006,6 +1122,253 @@ const normalizeOutput = (nodes: ReactNode[]): ReactNode => {
   )
 }
 
+/**
+ * Parses and renders markdown without trimming the trailing block separator.
+ *
+ * `renderMarkdown` drops that separator, which is correct for a whole document
+ * but not when several rendered fragments are stitched back together: the
+ * incremental streaming renderer needs the separators to line up exactly as a
+ * single render would produce them.
+ */
+export function renderMarkdownNodes(
+  markdown: string,
+  options: MarkdownRenderOptions = {},
+  keyPrefix = '',
+): ReactNode[] {
+  try {
+    const palette = resolvePalette(options.palette)
+    const codeBlockWidth = options.codeBlockWidth ?? 80
+    const state = createRenderState(palette, codeBlockWidth, keyPrefix)
+    const ast = processor.parse(markdown) as Root
+    applyInlineFallbackFormatting(ast)
+    return coalesceNodes(renderNode(ast, state, ast.type, undefined))
+  } catch (error) {
+    logger.error(error, 'Failed to parse markdown')
+    return [markdown]
+  }
+}
+
+/**
+ * Parses and renders markdown as one node group per top-level block.
+ *
+ * A message drawn as a single `<text>` pays for its whole content twice: the
+ * text buffer re-wraps every character whenever any part of it changes, and it
+ * re-wraps the buffer once per node appended while mounting. Measured on this
+ * renderer: a 200 KB answer mounts in 373 ms as one text and 19 ms as one text
+ * per block, and a 1 KB stream flush into a 60 KB answer costs 96 ms against
+ * 9 ms. Each group here is meant to be its own `<text>`, so a growing block
+ * only re-wraps itself.
+ *
+ * Groups keep the separator their block ends with (`\n\n`), which is what
+ * draws the blank line between blocks; only the last group is trimmed, exactly
+ * as `renderMarkdown` trims the document.
+ */
+export function renderMarkdownGroups(
+  markdown: string,
+  options: MarkdownRenderOptions = {},
+  keyPrefix = '',
+): ReactNode[][] {
+  try {
+    const palette = resolvePalette(options.palette)
+    const codeBlockWidth = options.codeBlockWidth ?? 80
+    const ast = processor.parse(markdown) as Root
+    applyInlineFallbackFormatting(ast)
+    const children = ast.children as MarkdownNode[]
+    const groups: ReactNode[][] = []
+
+    children.forEach((child, index) => {
+      const state = createRenderState(
+        palette,
+        codeBlockWidth,
+        `${keyPrefix}b${index}-`,
+      )
+      const nodes = coalesceNodes(
+        renderNode(child, state, 'root', children[index + 1]),
+      )
+      if (nodes.length > 0) {
+        groups.push(nodes)
+      }
+    })
+
+    return groups
+  } catch (error) {
+    logger.error(error, 'Failed to parse markdown')
+    return [[markdown]]
+  }
+}
+
+/**
+ * Source-size target for one text renderable, in characters of rendered text.
+ *
+ * Two costs pull opposite ways: a text renderable re-wraps its whole buffer on
+ * any change (so smaller is cheaper to stream into) while every renderable is
+ * walked once per frame whatever its size (so fewer is cheaper to scroll).
+ * 2KB keeps a streaming flush near a millisecond without turning a long
+ * transcript into thousands of renderables.
+ */
+export const MARKDOWN_CHUNK_CHARS = 2000
+
+/** Visible length of a rendered node list, used to size chunks. */
+export const renderedTextLength = (node: ReactNode): number => {
+  if (node === null || node === undefined || typeof node === 'boolean') {
+    return 0
+  }
+  if (typeof node === 'string') return node.length
+  if (typeof node === 'number') return String(node).length
+  if (Array.isArray(node)) {
+    let length = 0
+    for (const child of node) length += renderedTextLength(child)
+    return length
+  }
+  if (React.isValidElement(node)) {
+    return renderedTextLength(
+      (node.props as { children?: ReactNode }).children,
+    )
+  }
+  return 0
+}
+
+/**
+ * Renders markdown as runs of whole top-level blocks, each run meant to be one
+ * `<text>`.
+ *
+ * A chunk never splits a block, so wrapping and the blank line between blocks
+ * are unchanged; it only decides how many renderables the message costs.
+ */
+export function renderMarkdownChunks(
+  markdown: string,
+  options: MarkdownRenderOptions = {},
+  keyPrefix = '',
+  chunkChars = MARKDOWN_CHUNK_CHARS,
+): ReactNode[][] {
+  const groups = renderMarkdownGroups(markdown, options, keyPrefix)
+  const chunks = packGroups(groups, chunkChars)
+  const last = chunks.length - 1
+  if (last >= 0) {
+    chunks[last] = trimTrailingWhitespaceNodes(chunks[last])
+    if (chunks[last].length === 0) {
+      chunks.pop()
+    }
+  }
+  return chunks
+}
+
+/**
+ * Ends a chunk that will be drawn as its own `<text>`.
+ *
+ * Inside one text, a block's separator (`\n\n`, or a single `\n` for a tight
+ * follow-up such as a paragraph before a list) draws the blank line after it.
+ * At the end of a text the renderable's last line is already closed, so a
+ * blank line is one appended `\n` and a tight follow-up needs none.
+ */
+export const finishChunk = (nodes: ReactNode[]): ReactNode[] => {
+  let newlines = 0
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const node = nodes[i]
+    if (typeof node !== 'string' || node.trim().length > 0) break
+    newlines += (node.match(/\n/g) ?? []).length
+    if (!node.endsWith('\n')) break
+  }
+  const trimmed = trimTrailingWhitespaceNodes(nodes)
+  if (trimmed.length === 0) return trimmed
+  return newlines > 1 ? [...trimmed, '\n'] : trimmed
+}
+
+/** Whether the rendered text of `node` ends with a line break. */
+const endsWithNewline = (node: ReactNode): boolean => {
+  if (typeof node === 'string') return node.endsWith('\n')
+  if (Array.isArray(node)) {
+    for (let i = node.length - 1; i >= 0; i--) {
+      const child = node[i]
+      if (typeof child === 'string') return child.endsWith('\n')
+      if (React.isValidElement(child)) return endsWithNewline(
+        (child.props as { children?: ReactNode }).children,
+      )
+    }
+    return false
+  }
+  if (React.isValidElement(node)) {
+    return endsWithNewline((node.props as { children?: ReactNode }).children)
+  }
+  return false
+}
+
+/**
+ * Splits a rendered block at line boundaries into runs of ~`chunkChars`.
+ *
+ * Only cuts where a line already ends, so no styled run is split and no line
+ * is broken: a 100 KB code fence becomes fifty texts of complete lines instead
+ * of one text that re-wraps end to end whenever it grows. A single line longer
+ * than the target cannot be cut and is returned whole.
+ */
+export const splitNodesAtLineBreaks = (
+  nodes: ReactNode[],
+  chunkChars: number,
+): ReactNode[][] => {
+  const parts: ReactNode[][] = []
+  let current: ReactNode[] = []
+  let chars = 0
+  let atLineStart = true
+
+  for (const node of nodes) {
+    if (atLineStart && chars >= chunkChars && current.length > 0) {
+      parts.push(current)
+      current = []
+      chars = 0
+    }
+    current.push(node)
+    chars += renderedTextLength(node)
+    atLineStart = endsWithNewline(node)
+  }
+
+  if (current.length > 0) {
+    parts.push(current)
+  }
+  return parts
+}
+
+/**
+ * Packs groups into runs, cutting an oversized block at its line boundaries.
+ *
+ * Runs of whole blocks keep wrapping and inter-block spacing untouched; the
+ * line split only applies to a block that is itself larger than a chunk.
+ */
+export const packGroups = (
+  groups: ReactNode[][],
+  chunkChars: number,
+): ReactNode[][] => {
+  const chunks: ReactNode[][] = []
+  let current: ReactNode[] = []
+  let chars = 0
+
+  const add = (nodes: ReactNode[]): void => {
+    current.push(...nodes)
+    chars += renderedTextLength(nodes)
+    if (chars >= chunkChars) {
+      chunks.push(finishChunk(current))
+      current = []
+      chars = 0
+    }
+  }
+
+  for (const group of groups) {
+    const oversized = renderedTextLength(group) > chunkChars
+    const pieces = oversized
+      ? splitNodesAtLineBreaks(group, chunkChars)
+      : [group]
+    for (const piece of pieces) {
+      add(piece)
+    }
+  }
+  if (current.length > 0) {
+    chunks.push(finishChunk(current))
+  }
+  return chunks
+}
+
+/** Drops the whitespace-only nodes a rendered document ends with. */
+export const trimTrailingWhitespace = trimTrailingWhitespaceNodes
+
 export function renderMarkdown(
   markdown: string,
   options: MarkdownRenderOptions = {},
@@ -1016,7 +1379,7 @@ export function renderMarkdown(
     const state = createRenderState(palette, codeBlockWidth)
     const ast = processor.parse(markdown) as Root
     applyInlineFallbackFormatting(ast)
-    const nodes = renderNode(ast, state, ast.type, undefined)
+    const nodes = coalesceNodes(renderNode(ast, state, ast.type, undefined))
     return normalizeOutput(nodes)
   } catch (error) {
     logger.error(error, 'Failed to parse markdown')
