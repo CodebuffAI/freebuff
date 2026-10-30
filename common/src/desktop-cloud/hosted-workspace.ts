@@ -274,6 +274,8 @@ export type HostedWorkspaceHost = {
   ): Promise<import('../sites/publish-events').SitePublishResult>
   /** Persist a device-backed cloud chat before native panels or first-send placement. */
   prepareLocalChat?(scope: HostedBrowserScope): Promise<HostedBrowserScope>
+  /** An archived device chat gives back its Desktop connection unless something still runs in it. */
+  releaseLocalChat?(scope: HostedBrowserScope): Promise<void>
   terminal?: {
     request(input: HostedTerminalRequest): Promise<HostedTerminalResponse>
   }
