@@ -296,17 +296,17 @@ describe('the refund receipt', () => {
     // The reported case. Silence here is what users read as "the feature was
     // removed"; it must not read as an error either.
     expect(freebucksRefundLine(0, false)).toBe(
-      'No hours returned: every session keeps at least one hour of its price, and a refund never refills a daily allowance already used up. A refund returns whole hours of balance a session did not spend, never unused time.',
+      'No hours returned: refunds apply only to full access sessions ended within 30 minutes, and a refund never refills a daily allowance already used up. A refund returns whole hours of balance a session did not spend, never unused time.',
     )
   })
 
   test('a pending receipt promises the unspent charge, not a number', () => {
     expect(freebucksRefundLine(null, true)).toBe(
-      'Refund settling: the whole hours of balance this session did not spend come back, less the one hour every session keeps.',
+      'Refund settling: whole hours of balance this session did not spend may come back.',
     )
     // Pending outranks a stale amount: the settled figure is not known yet.
     expect(freebucksRefundLine(4, true)).toBe(
-      'Refund settling: the whole hours of balance this session did not spend come back, less the one hour every session keeps.',
+      'Refund settling: whole hours of balance this session did not spend may come back.',
     )
   })
 

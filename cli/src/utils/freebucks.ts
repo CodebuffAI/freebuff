@@ -184,22 +184,21 @@ export function freebucksResetCountdown(
  * names the quantity, and the zero case says so out loud instead of leaving
  * the user to infer that the feature was removed.
  *
- * `0` is a settled receipt: the hour's usage cost as much as its price, the
- * price was one hour (every session keeps one, 2026-10-28), or the day's
- * allowance was already used up. It is the ordinary outcome on a cheap row and
- * the one that gets reported as a bug. An unsettled or dropped receipt is
- * `null` and says nothing.
+ * `0` is a settled receipt and the ordinary outcome: limited access, a session
+ * that ended 30 minutes or more after its charge (2026-10-30), a price of one
+ * hour, usage that cost as much as the price, or a day's allowance already
+ * used up. An unsettled or dropped receipt is `null` and says nothing.
  */
 export function freebucksRefundLine(
   lastRefund: number | null,
   refundPending: boolean,
 ): string | null {
   if (refundPending) {
-    return 'Refund settling: the whole hours of balance this session did not spend come back, less the one hour every session keeps.'
+    return 'Refund settling: whole hours of balance this session did not spend may come back.'
   }
   if (lastRefund === null) return null
   if (lastRefund <= 0) {
-    return 'No hours returned: every session keeps at least one hour of its price, and a refund never refills a daily allowance already used up. A refund returns whole hours of balance a session did not spend, never unused time.'
+    return 'No hours returned: refunds apply only to full access sessions ended within 30 minutes, and a refund never refills a daily allowance already used up. A refund returns whole hours of balance a session did not spend, never unused time.'
   }
   return `${formatHoursWithUnit(lastRefund)} of balance returned: what the session's price did not spend, not the time left on it.`
 }
