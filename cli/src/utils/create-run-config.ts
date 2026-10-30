@@ -36,6 +36,9 @@ export type CreateRunConfigParams = {
   extraCodebuffMetadata?: Record<string, string>
   /** Periodic in-flight RunState checkpoints (see RunOptions.onStateSnapshot). */
   onStateSnapshot?: (runState: RunState) => void
+  /** How often those checkpoints fire; scaled to the transcript by
+   *  checkpointIntervalMsForChat (see RunOptions.stateSnapshotIntervalMs). */
+  stateSnapshotIntervalMs?: number
   /** A background summary finished (see RunOptions.onCompactionSummary). */
   onCompactionSummary?: (summary: ConversationSummary) => void
   /** Mid-turn steering: drained by the agent loop at each step boundary;
@@ -113,6 +116,7 @@ export const createRunConfig = (params: CreateRunConfigParams) => {
     byok,
     extraCodebuffMetadata,
     onStateSnapshot,
+    stateSnapshotIntervalMs,
     onCompactionSummary,
     drainSteeringMessages,
   } = params
@@ -159,6 +163,7 @@ export const createRunConfig = (params: CreateRunConfigParams) => {
     byok,
     extraCodebuffMetadata,
     onStateSnapshot,
+    stateSnapshotIntervalMs,
     onCompactionSummary,
     drainSteeringMessages,
     fileFilter: ((filePath: string) => {
