@@ -63,10 +63,11 @@ export const CONVEX_CRON_JOB_NAMES = [
    *  window. Convex's agent_thread rows, as `enforce_processing_deadlines`. */
   'sweep_cli_agent_runs',
   /** Convex cron `rotate expiring github tokens` (60 min): renews OAuth
-   *  refresh tokens near their lapse, against Convex's `github_connections`.
-   *  Only the trigger moves: Convex's action still rotates, so exactly one
-   *  system rotates in either position (docs/freebuff-github-postgres.md,
-   *  "Rotation"). The Postgres rotation replaces this job, not this switch. */
+   *  refresh tokens near their lapse. Under `graphile` freebuff-web runs the
+   *  action's own body over Postgres `github_connections`
+   *  (`GITHUB_ACTIONS_RUNTIME`, docs/freebuff-github-postgres.md,
+   *  "Rotation") and never calls the Convex action (COD-742, readiness B33),
+   *  so exactly one system rotates in either position. */
   'rotate_github_tokens',
   /** Convex cron `sweep expired request-intent evaluation cohorts` (15 min):
    *  the privacy TTL that deletes one expired capture batch per tick from
