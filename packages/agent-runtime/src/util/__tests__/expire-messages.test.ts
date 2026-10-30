@@ -12,9 +12,12 @@ describe('expireMessages', () => {
     for (const endOf of ['agentStep', 'userPrompt'] as const) {
       const messages = [base(), base({ tags: ['STEP_PROMPT'] })]
       expect(expireMessages(messages, endOf)).toBe(messages)
-      // A userPrompt-scoped message survives end-of-step without allocation.
+      // A userPrompt-scoped message survives end-of-step; the expiresAt
+      // machinery strips and re-appends the pending agentStep marker, so
+      // legacy timeToLive messages take the copy path either way, but the
+      // content is unchanged.
       const kept = [base({ timeToLive: 'userPrompt' })]
-      expect(expireMessages(kept, 'agentStep')).toBe(kept)
+      expect(expireMessages(kept, 'agentStep')).toEqual(kept)
     }
   })
 

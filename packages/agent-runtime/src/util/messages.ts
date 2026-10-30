@@ -409,16 +409,19 @@ export function expireMessages(
   messages: Message[],
   endOf: 'agentStep' | 'userPrompt',
 ): Message[] {
-  // Return the input array itself when nothing can expire: the common case
-  // (no timeToLive, no expiresAt anywhere) previously allocated a copy of the
-  // full history on every step, and callers treat the result as read-only
+  // Return the input array itself when nothing can expire and nothing can be
+  // superseded: the common case previously allocated a copy of the full
+  // history on every step, and callers treat the result as read-only
   // (run-agent-step spreads it into buildArray). A seen-marker alone does not
   // force a copy; it only serves the expiresAt path below.
   let expiring = 0
+  let hasKeepLastTags = false
   for (const m of messages) {
     if (m.timeToLive !== undefined || m.expiresAt !== undefined) expiring++
+    if (m.keepLastTags !== undefined && m.keepLastTags.length > 0)
+      hasKeepLastTags = true
   }
-  if (expiring === 0) return messages
+  if (expiring === 0 && !hasKeepLastTags) return messages
 
   // Strip the marker already in history, if any. Only that one counts as a
   // passed step boundary: expireMessages runs several times per logical step
