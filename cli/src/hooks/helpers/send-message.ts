@@ -487,9 +487,6 @@ export const handleRunCompletion = (params: {
   updater.markComplete({
     ...(completionTime && { completionTime }),
     ...(actualCredits !== undefined && { credits: actualCredits }),
-    metadata: {
-      runState,
-    },
   })
 }
 
