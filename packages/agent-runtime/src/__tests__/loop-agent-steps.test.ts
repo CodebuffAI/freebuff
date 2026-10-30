@@ -202,12 +202,9 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       },
     })
     expect(calls).toBe(4)
-    // The check is turn-scoped: the model sees it from the step that pushes
-    // it to the end of the turn, and it does not outlive the turn.
-    expect(prompts.filter((p) => p.includes('Final completion check:'))).toEqual(
-      [prompts[2], prompts[3]],
-    )
     expect(prompts[1]).not.toContain('Final completion check:')
+    expect(prompts[2]).toContain('Final completion check:')
+    expect(prompts[3].split('Final completion check:')).toHaveLength(2)
   })
 
   it('does not add a completion check to a plain answer or exceed the step budget', async () => {
@@ -606,14 +603,13 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
                 else {
                   // Repairs are reachable only if the real loop resumes after
                   // the premature answer and supplies the completion check.
-                  // Turn-scoped expiry keeps the check visible until the turn
-                  // ends, so only the first repair prompt must contain it.
-                  if (index === before.length + 1)
                   completionPrompts = (
                     JSON.stringify(messages).match(
                       /Final completion check:/g,
                     ) ?? []
                   ).length
+                  if (completionPrompts !== 1)
+                    throw new Error('Expected exactly one completion check')
                   const next = repair[index - before.length - 1]
                   if (next) yield next
                   else
@@ -625,7 +621,6 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
                 return promptSuccess(`verification-${calls}`)
               },
             })
-            expect((result.output as { message?: string }).message).toBe(undefined)
             expect(result.output.type).not.toBe('error')
             expect(calls).toBe(
               before.length + 1 + (enabled ? repair.length + 1 : 0),
@@ -872,19 +867,10 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
           completed: i < doneCount,
         })),
       })
-    // Turn-scoped expiry removes a turn's nudges from the returned state,
-    // so count the pushes the model saw: a push increases the running count
-    // of nudge messages by one, and with turn-scoped expiry that count only
-    // grows during the turn.
-    const nudges = (prompts: string[]) =>
-      Math.max(
-        0,
-        ...prompts.map(
-          (p) =>
-            (p.match(/to-do list still has \d+ unfinished items?/g) ?? [])
-              .length,
-        ),
-      )
+    const nudges = (state: AgentState) =>
+      state.messageHistory.filter((m) =>
+        m.tags?.includes(FOLLOWUP_TODO_NUDGE_TAG),
+      ).length
 
     beforeEach(() => {
       mockTemplate.toolNames.push('write_todos', 'suggest_followups')
@@ -922,18 +908,16 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
           'to-do list still has 2 unfinished items: "Step 2", "Step 3"',
         ).slice(1, -1),
       )
-      expect(nudges(seenPrompts)).toBe(1)
+      expect(nudges(result.agentState)).toBe(1)
       // The unfinished list wins over asking for the answer.
       expect(seenPrompts.join('\n')).not.toContain(answerNote)
     })
 
     it('ends on cards when every to-do is done', async () => {
       let calls = 0
-      const seenPrompts: string[] = []
       const result = await loopAgentSteps({
         ...loopAgentStepsBaseParams,
-        promptAiSdkStream: async function* ({ messages }) {
-          seenPrompts.push(JSON.stringify(messages))
+        promptAiSdkStream: async function* () {
           if (++calls === 1) {
             yield list(3)
           } else {
@@ -944,7 +928,7 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
         },
       })
       expect(calls).toBe(2)
-      expect(nudges(seenPrompts)).toBe(0)
+      expect(nudges(result.agentState)).toBe(0)
     })
 
     it('asks for the answer when the cards come without one', async () => {
@@ -964,16 +948,14 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       expect(seenPrompts).toHaveLength(2)
       expect(seenPrompts[0]).not.toContain(answerNote)
       expect(seenPrompts[1]).toContain(answerNote)
-      expect(nudges(seenPrompts)).toBe(0)
+      expect(nudges(result.agentState)).toBe(0)
     })
 
     it('lets the model stop after one nudge when it makes no progress', async () => {
       let calls = 0
-      const seenPrompts: string[] = []
       const result = await loopAgentSteps({
         ...loopAgentStepsBaseParams,
-        promptAiSdkStream: async function* ({ messages }) {
-          seenPrompts.push(JSON.stringify(messages))
+        promptAiSdkStream: async function* () {
           if (++calls === 1) {
             yield list(1)
           } else {
@@ -987,17 +969,15 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
         },
       })
       expect(calls).toBe(3)
-      expect(nudges(seenPrompts)).toBe(1)
+      expect(nudges(result.agentState)).toBe(1)
     })
 
     it(`stops nudging after ${MAX_FOLLOWUP_TODO_NUDGES} times in one prompt`, async () => {
       mockAgentState.stepsRemaining = 50
       let calls = 0
-      const seenPrompts: string[] = []
       const result = await loopAgentSteps({
         ...loopAgentStepsBaseParams,
-        promptAiSdkStream: async function* ({ messages }) {
-          seenPrompts.push(JSON.stringify(messages))
+        promptAiSdkStream: async function* () {
           calls++
           // Progress every cycle (one more item, one more done) but never the
           // whole list.
@@ -1007,7 +987,7 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
           return promptSuccess(`cap-${calls}`)
         },
       })
-      expect(nudges(seenPrompts)).toBe(MAX_FOLLOWUP_TODO_NUDGES)
+      expect(nudges(result.agentState)).toBe(MAX_FOLLOWUP_TODO_NUDGES)
       expect(calls).toBe(2 * (MAX_FOLLOWUP_TODO_NUDGES + 1))
     })
 
@@ -1033,12 +1013,10 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
         },
       ]
       let calls = 0
-      const seenPrompts: string[] = []
       const result = await loopAgentSteps({
         ...loopAgentStepsBaseParams,
         prompt: 'What does this file do?',
-        promptAiSdkStream: async function* ({ messages }) {
-          seenPrompts.push(JSON.stringify(messages))
+        promptAiSdkStream: async function* () {
           calls++
           yield { type: 'text', text: answer }
           yield followups()
@@ -1046,7 +1024,7 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
         },
       })
       expect(calls).toBe(1)
-      expect(nudges(seenPrompts)).toBe(0)
+      expect(nudges(result.agentState)).toBe(0)
     })
   })
 
@@ -1074,24 +1052,8 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
     })
 
     expect(requests).toHaveLength(2)
-    // Turn 2 starts from turn 1 minus the superseded instructions
-    // (keepLastTags): the first divergence is where turn 1's declared-stale
-    // instructions message was pruned.
-    const firstDivergence = requests[0].findIndex(
-      (message, i) =>
-        JSON.stringify(message) !== JSON.stringify(requests[1][i]),
-    )
-    // Turn 2's request diverges from turn 1 exactly where turn 1's
-    // keepLastTags-superseded instructions were pruned; everything earlier
-    // (the long stable prefix the prompt cache depends on) is untouched.
-    expect(firstDivergence).toBeGreaterThan(-1)
-    expect(JSON.stringify(requests[0][firstDivergence])).toContain(
-      'INSTRUCTIONS_PROMPT',
-    )
-    // Turn 1's live turn carried user prompt + instructions (both); turn 2
-    // carries only the new pair, so the shared user prompt text appears once
-    // per request, not once per turn it was live in.
-    expect(JSON.stringify(requests[1]).split('Test user prompt')).toHaveLength(2)
+    expect(requests[1].slice(0, requests[0].length)).toEqual(requests[0])
+    expect(JSON.stringify(requests[1]).split('Test user prompt')).toHaveLength(3)
   })
 
   describe('suggest_prompts before the answer', () => {
@@ -1253,17 +1215,11 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       expect(seen[12]).toContain('1 of 4 done')
       // Ignored: never repeated for the same list.
       expect(reminders(seen.at(-1)!)).toBe(2)
-      // Turn-scoped expiry removes the reminders from the returned state;
-      // what proves both were pushed is that the peak reminders any prompt
-      // carried is 2 and the last one still shows the second reminder.
-      expect(Math.max(...seen.map(reminders))).toBe(2)
-      // The next-turn boundary drops them: no stale reminder survives to be
-      // re-sent against a future, unrelated to-do list.
       expect(
         result.agentState.messageHistory.filter((m) =>
           m.tags?.includes(TODO_PROGRESS_REMINDER_TAG),
         ),
-      ).toHaveLength(0)
+      ).toHaveLength(2)
     })
   })
 

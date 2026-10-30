@@ -243,8 +243,7 @@ export type ChatMessageMetadata = {
   isCollapsed?: boolean
   /** Whether the user manually opened this collapsed item */
   userOpened?: boolean
-  /** @deprecated Never written; older transcripts may still carry it and it
-   * is ignored on load. */
+  /** RunState stored after completion */
   runState?: unknown
 }
 

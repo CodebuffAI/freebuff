@@ -938,25 +938,6 @@ export const getOscDetectedTheme = (): ThemeName | null => oscDetectedTheme
 export const setOscDetectedTheme = (theme: ThemeName | null): void => {
   oscDetectedTheme = theme
 }
-
-/**
- * Record the terminal's OSC 10/11 answer and, when the theme code is already
- * live, re-run the resolver through the same update path the file watchers
- * and SIGUSR2 use (theme-store skips the no-op when nothing changed). Startup
- * calls this when the answer lands: the first frame used the synchronous
- * evidence (COLORFGBG etc.), and the first render after this call reflects
- * the OSC answer. Before the resolver/updater exist (pre-initializeApp) this
- * only records the value, exactly as the old startup-order does.
- */
-export const applyOscDetectedTheme = (theme: ThemeName | null): void => {
-  setOscDetectedTheme(theme)
-  if (theme === null) {
-    return
-  }
-  if (themeResolver && themeStoreUpdater) {
-    recomputeSystemTheme()
-  }
-}
 export const setThemeResolver = (resolver: () => ThemeName) => {
   themeResolver = resolver
 }

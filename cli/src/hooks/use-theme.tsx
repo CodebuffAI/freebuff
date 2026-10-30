@@ -7,10 +7,6 @@
 import { create } from 'zustand'
 
 import { getCliEnv } from '../utils/env'
-import {
-  detectBgColorEvidence,
-  themeFromBgColor,
-} from '../utils/terminal-color-detection'
 import { themeConfig, buildTheme } from '../utils/theme-config'
 import {
   chatThemes,
@@ -52,19 +48,8 @@ const THEME_PRIORITY: ThemeDetector[] = [
     detect: detectIDETheme,
   },
   {
-    // Until the terminal's OSC reply lands (startup now probes in the
-    // background so the first frame is not blocked on it), resolve from the
-    // synchronous evidence: COLORFGBG/TERM_BACKGROUND ahead of the env, then
-    // the per-terminal fallbacks. Once the reply lands it is recorded here
-    // and applied through the same watcher refresh path. Final state matches
-    // the old startup-order whenever the terminal answered the query.
     description: 'OSC terminal colors',
-    detect: () => {
-      const oscTheme = getOscDetectedTheme()
-      if (oscTheme) return oscTheme
-      const envBg = detectBgColorEvidence()
-      return envBg ? themeFromBgColor(envBg) : null
-    },
+    detect: () => getOscDetectedTheme(),
   },
   {
     description: 'Operating system theme',
@@ -144,10 +129,8 @@ export function initializeThemeStore() {
     useThemeStore.getState().setThemeName(name)
   })
 
-  // Note: OSC detection runs in the background from index.tsx (started
-  // before OpenTUI attaches its stdin listener, so the reply is not parsed
-  // as keystrokes); when the answer lands, applyOscDetectedTheme() records
-  // it and drives the same update path the file watchers and SIGUSR2 use.
+  // Note: OSC detection is done earlier in index.tsx before OpenTUI starts,
+  // so the result is already available via getOscDetectedTheme()
 }
 
 export const useTheme = (): ChatTheme => {

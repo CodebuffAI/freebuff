@@ -6,7 +6,6 @@ import type {
   ToolCallPart,
   ToolResultOutput,
 } from './content-part'
-import type { AgentExpiresAt } from '../../../../packages/agent-runtime/src/cache-expiry'
 import type { ProviderMetadata } from './provider-metadata'
 
 export type AuxiliaryMessageData = {
@@ -20,30 +19,13 @@ export type AuxiliaryMessageData = {
    */
   sentAt?: number
 
-  /**
-   * Declarative expiry boundary. Unlike `timeToLive`, a message carrying this
-   * still informs its own next step: `expiresAt` is only applied on the step
-   * after the one that observed the message. `timeToLive: 'agentStep'`, by
-   * contrast, is removed by every step boundary — including the one right
-   * after the message was pushed mid-turn — which is why the step prompt must
-   * be re-pushed (rather than merely re-stamped) each step.
-   */
-  expiresAt?: AgentExpiresAt
-
   // James: All the below is overly prescriptive for the framework.
   // Instead, let's tag what the message is, and let the user decide time to live, keep during truncation, etc.
   /** @deprecated Use tags instead. */
   timeToLive?: 'agentStep' | 'userPrompt'
   /** @deprecated Use tags instead. */
   keepDuringTruncation?: boolean
-  /**
-   * When a message with `keepLastTags` arrives, the latest declaration wins:
-   * earlier messages that share any of the listed tags (a declaration's own
-   * `tags` overlap counts too) are dropped from the assembled history.
-   * Implemented in the agent runtime's per-step/expiry pass (expireMessages).
-   *
-   * @deprecated Use tags instead.
-   */
+  /** @deprecated Use tags instead. */
   keepLastTags?: string[]
 }
 

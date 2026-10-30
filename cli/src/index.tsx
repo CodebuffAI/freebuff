@@ -77,15 +77,12 @@ import { startWindowsMachineProcessCensus } from './utils/helper-process-telemet
 import { startTerminalWatchdog } from './utils/terminal-watchdog'
 import { installTerminalProtocolController } from './utils/terminal-protocol-controller'
 import { initializeSkillRegistry } from './utils/skill-registry'
-import {
-  detectTerminalTheme,
-  detectTerminalThemeWithSupportTestHook,
-} from './utils/terminal-color-detection'
+import { detectTerminalTheme } from './utils/terminal-color-detection'
 import {
   noteTerminalColorReply,
   startClientEnvironmentProbe,
 } from './utils/client-environment'
-import { applyOscDetectedTheme } from './utils/theme-system'
+import { setOscDetectedTheme } from './utils/theme-system'
 
 import type { FileTreeNode } from '@codebuff/common/util/file'
 
@@ -235,48 +232,19 @@ async function main(): Promise<void> {
     process.exit(exitCode)
   }
 
-  // Start OSC theme detection in the background, BEFORE OpenTUI starts.
-  //
-  // Render must not wait on it: the probe deadline is GLOBAL_OSC_TIMEOUT_MS
-  // (2s) and terminals that swallow OSC queries (misconfigured tmux, some
-  // SSH muxes) used to burn all of it before anything painted. The first
-  // frame instead uses the synchronous evidence (COLORFGBG / TERM_BACKGROUND
-  // / per-terminal fallbacks) and the answer is applied when it lands, via
-  // the same live re-theme path the theme file watchers and SIGUSR2 use —
-  // the theme resolver reads the OSC slot first once it is set, so the
-  // settled theme is the one the old await-first startup produced whenever
-  // the terminal answered the query.
-  //
-  // The strict ordering against createCliRenderer() (which puts stdin in raw
-  // mode and attaches its parser) is what keeps the reply out of the key
-  // event stream: STARTING detection ahead of the renderer attaches the OSC
-  // data listener first, so the reply is consumed as the probe answer rather
-  // than arriving as stray keystrokes at the focused input.
-  let oscThemePromise: Promise<'dark' | 'light' | null>
+  // Run OSC theme detection BEFORE anything else.
+  // This MUST happen before OpenTUI starts because OSC responses come through stdin,
+  // and OpenTUI also listens to stdin. Running detection here ensures stdin is clean.
   if (process.stdin.isTTY && process.platform !== 'win32') {
-    oscThemePromise = detectTerminalTheme()
-  } else {
-    oscThemePromise = detectTerminalThemeWithSupportTestHook(false)
-  }
-  // Deferred: the settle handler flips the theme live once the theme code is
-  // up (initializeApp → initializeThemeStore installs the resolver and
-  // updater), but a settle attached here would fire between direnv and the
-  // store init — it would record a result the initial detectSystemTheme()
-  // then re-reads through the same detector order, so the settled theme is
-  // unchanged; attaching at the first settle point just keeps the OSC reply
-  // from driving a reactive update against a half-initialized store.
-  let oscThemePromiseSettled = false
-  const settleOscDetection = () => {
-    if (oscThemePromiseSettled) return
-    oscThemePromiseSettled = true
-    oscThemePromise
-      .then((oscTheme) => {
-        noteTerminalColorReply(oscTheme !== null)
-        applyOscDetectedTheme(oscTheme)
-      })
-      .catch(() => {
-        // Silently ignore OSC detection failures
-      })
+    try {
+      const oscTheme = await detectTerminalTheme()
+      noteTerminalColorReply(oscTheme !== null)
+      if (oscTheme) {
+        setOscDetectedTheme(oscTheme)
+      }
+    } catch {
+      // Silently ignore OSC detection failures
+    }
   }
 
   // Transcripts, run state and prompt history live under the config dir;
@@ -285,22 +253,7 @@ async function main(): Promise<void> {
 
   // The Freebuff auth token lives in the OS keychain (auth-token-store.ts):
   // load it before anything reads the credentials. Bounded and never throws.
-  //
-  // Not awaited inline. The keychain round-trip is IPC and used to sit ahead
-  // of parseArgs/agent-registry/renderer creation, none of which reads the
-  // token. The only sync reads real sessions make afterwards — the effect in
-  // AppWithAsyncAuth and the useAuthQuery/useAuthState hooks — run post-paint
-  // (React effects fire after the first frame is requested) or wait on the
-  // user, so the keychain answer is in the credentials cache by then. The
-  // awaits listed below close the remaining pre-paint windows:
-  //   - commands that exit instead of rendering (login / publish),
-  //   - the analytics rows (token must be classified before they ship;
-  //     shipped rows leave the process, so post-settle rows must not flip),
-  //   - the fallback before the renderer when we could not get far enough
-  //     ahead of it (slow trusts/registry or non-TTY runs).
-  // Fully-overlapped users keep the spare latency for a clearer startup; the
-  // token never gates the first paint.
-  const storedAuthTokenPromise = loadStoredAuthToken()
+  await loadStoredAuthToken()
 
   const {
     initialPrompt,
@@ -313,10 +266,6 @@ async function main(): Promise<void> {
     initialMode,
     trustAgents,
   } = parseArgs()
-
-  // The agent registry/build may repaint before the renderer (non-TTY, trust
-  // prompts), so the OSC settle attaches before anything else can output.
-  settleOscDetection()
 
   const isLoginCommand = command === 'login'
   const isPublishCommand = command === 'publish'
@@ -336,10 +285,8 @@ async function main(): Promise<void> {
     'launch',
   )
 
-  // Handle login command before rendering the app. Login rewrites the
-  // credentials, so it must not race the startup keychain read.
+  // Handle login command before rendering the app
   if (isLoginCommand) {
-    await storedAuthTokenPromise
     await runPlainLogin()
     return
   }
@@ -357,11 +304,7 @@ async function main(): Promise<void> {
       'initial',
     )
 
-  // Requires analytics to be initialized, which is done in initializeApp.
-  // The token settles first: analytics rows ship without a retry, so the
-  // launch/crash rows must not record a sign-in state the keychain read
-  // would have overturned one tick later.
-  await storedAuthTokenPromise
+  // Requires analytics to be initialized, which is done in initializeApp
   trackEvent(AnalyticsEvent.APP_LAUNCHED, {
     version: loadPackageVersion(),
     platform: process.platform,
@@ -426,10 +369,8 @@ async function main(): Promise<void> {
   // Initialize skill registry (loads skills from .agents/skills)
   await initializeSkillRegistry()
 
-  // Handle publish command before rendering the app. Publishing signs the
-  // request with the stored token, so the keychain read must have settled.
+  // Handle publish command before rendering the app
   if (isPublishCommand) {
-    await storedAuthTokenPromise
     const publishIndex = process.argv.indexOf('publish')
     const agentIds = process.argv.slice(publishIndex + 1)
     const result = await handlePublish(agentIds)
@@ -613,36 +554,6 @@ async function main(): Promise<void> {
       })
       .catch(() => {})
   }, 0)
-
-  // Settle gates for the background probe/read, placed AFTER the work they
-  // overlap (trust gates, agent registry, renderer library staging) instead
-  // of ahead of it. First-consumed ordering, not timing, is what keeps the
-  // settled state identical to awaiting both up front:
-  //   - The OSC reply is consumed exclusively through oscDetectedTheme and
-  //     the resolver is only refreshed once the theme code is live
-  //     (initializeApp). A settle that lands before the refresh stores the
-  //     value and initializeThemeStore's initial detectSystemTheme() picks
-  //     it up — the same detector order the awaited startup resolved with.
-  //   - The token's sync readers listed above all fire after this point.
-  // A settle arriving late applies through the normal watcher refresh path,
-  // unchanged from the awaited startup except that paint went first.
-  if (oscThemePromiseSettled) {
-    // Fully overlapped (the common case): nothing to wait on.
-  } else {
-    // The startup work did not cover the deadline: non-TTY runs (the probe
-    // resolves without a query, but the settle handler only attaches after
-    // parseArgs), pre-trusted registries, or a cached renderer library.
-    // There is no rendered frame to surprise the user with yet, so the old
-    // pre-paint wait is restored for the remainder of the deadline — over
-    // the whole startup the probe never gates paint for longer than
-    // GLOBAL_OSC_TIMEOUT_MS, the same bound as before.
-    settleOscDetection()
-    await oscThemePromise
-  }
-  // React effects (and with them every token consumer) run post-paint, so
-  // the keychain overlap already covers real sessions; this await only fires
-  // when startup could not get ahead of the keychain read.
-  await storedAuthTokenPromise
   const renderer = await createCliRenderer({
     backgroundColor: 'transparent',
     exitOnCtrlC: false,

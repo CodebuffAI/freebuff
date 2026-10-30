@@ -82,7 +82,6 @@ import type {
 import type { ToolResultOutput } from '@codebuff/common/types/messages/content-part'
 import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
 import type {
-  AgentState,
   ConversationSummary,
   SessionState,
 } from '@codebuff/common/types/session-state'
@@ -305,15 +304,6 @@ export type RunOptions = {
    * lose the in-flight turn. The final resolved RunState supersedes any
    * snapshot; no snapshots are emitted after the run settles. */
   onStateSnapshot?: (runState: RunState) => void
-  /** How often `onStateSnapshot` fires while a run is in flight. Defaults to
-   *  5s. A host that knows how large the state it persists has grown can
-   *  stretch this: cloning + serializing + fsyncing a multi-MB transcript every
-   *  5s costs seconds of CPU per minute of wall time, so the checkpoint interval
-   *  should grow with the transcript, not stay fixed. Clamped to
-   *  [1s, 60s] — the interval bounds how much a killed process loses, so a host
-   *  cannot disable checkpointing by passing 0 or Infinity. The immediate
-   *  checkpoint at run start is unaffected. */
-  stateSnapshotIntervalMs?: number
   /** Provider-reported usage for each root-agent model request. */
   onUsage?: (usage: AgentUsageData) => void
   /** A model request ended before an exact provider usage receipt arrived. */
@@ -391,21 +381,6 @@ export function applyTerminalShell(
 /** How often onStateSnapshot fires while a run is in flight. */
 const STATE_SNAPSHOT_INTERVAL_MS = 5_000
 
-/** Bounds for `RunOptions.stateSnapshotIntervalMs`. The floor keeps the
- *  checkpoint live; the ceiling bounds the work a killed process can lose. */
-const MIN_STATE_SNAPSHOT_INTERVAL_MS = 1_000
-const MAX_STATE_SNAPSHOT_INTERVAL_MS = 60_000
-
-export function resolveStateSnapshotIntervalMs(requested?: number): number {
-  if (typeof requested !== 'number' || !Number.isFinite(requested)) {
-    return STATE_SNAPSHOT_INTERVAL_MS
-  }
-  return Math.min(
-    MAX_STATE_SNAPSHOT_INTERVAL_MS,
-    Math.max(MIN_STATE_SNAPSHOT_INTERVAL_MS, Math.round(requested)),
-  )
-}
-
 export const STATE_SNAPSHOT_INTERRUPTION_MESSAGE =
   'The session ended before this response completed. Partial progress has been preserved.'
 
@@ -454,58 +429,6 @@ export function cloneSessionState(
 }
 
 /**
- * Copy an agent state's containers while sharing its message objects.
- *
- * Everything the runtime mutates in place is copied: the state object, the
- * `messageHistory` array (pushed to), each subgoal's `logs` array (appended
- * to), `childRunIds`/`ancestorRunIds` (pushed to when a subagent spawns), and
- * the same recursively for subagent states. The message objects themselves are
- * shared, which is what makes a snapshot cheap and — the reason this exists —
- * lets a host recognise that a snapshot extends the previous one by pointer
- * identity instead of re-serializing the whole history to find out.
- *
- * Message objects are immutable once appended: the runtime appends new ones and
- * replaces the history array at step boundaries, and the one place that rewrites
- * an existing message's content (`fitToolResults`, terminal-output shortening)
- * copies it first, precisely so the UI's and trace writer's copies stay intact.
- * The step loop itself already relies on this — it detects that history is an
- * extension of what it sent with `inputHistory.every((m, i) => history[i] === m)`.
- */
-function copyAgentStateSharingMessages(state: AgentState): AgentState {
-  const agentContext: AgentState['agentContext'] = {}
-  for (const [key, subgoal] of Object.entries(state.agentContext ?? {})) {
-    agentContext[key] = { ...subgoal, logs: [...(subgoal.logs ?? [])] }
-  }
-  return {
-    ...state,
-    messageHistory: [...state.messageHistory],
-    agentContext,
-    childRunIds: [...(state.childRunIds ?? [])],
-    ancestorRunIds: [...(state.ancestorRunIds ?? [])],
-    subagents: (state.subagents ?? []).map(copyAgentStateSharingMessages),
-  }
-}
-
-/**
- * The state a periodic checkpoint is built from: independent containers, shared
- * message objects (see copyAgentStateSharingMessages).
- *
- * A host may keep a snapshot, serialize it, or resume from it, but must not
- * mutate a message inside one: those objects belong to the live run.
- *
- * This is what deep-cloning on every snapshot costs: a JSON round-trip of the
- * whole agent state, ~26 ms on a 32 MB history, on the host's thread every
- * checkpoint interval — and it made the snapshots mutually unrelated, so a host
- * persisting them could only ever write the entire transcript again.
- */
-export function snapshotSessionState(state: SessionState): SessionState {
-  return {
-    fileContext: state.fileContext,
-    mainAgentState: copyAgentStateSharingMessages(state.mainAgentState),
-  }
-}
-
-/**
  * The session state a cancelled or errored turn persists, and the state a
  * follow-up prompt resumes from.
  *
@@ -530,24 +453,11 @@ export function buildCancelledSessionState(params: {
   /** Why the turn ended. Appended as a system-tagged user message. */
   message: string
   logger?: Logger
-  /** Share message objects instead of deep-copying them (see
-   *  snapshotSessionState). For periodic checkpoints, which are serialized
-   *  immediately; every other caller keeps the deep copy, because it may hold
-   *  the state while the run is still unwinding. */
-  shareMessageEntries?: boolean
 }): SessionState {
-  const {
-    sessionState,
-    runtimeMadeProgress,
-    promptMessage,
-    message,
-    logger,
-    shareMessageEntries,
-  } = params
+  const { sessionState, runtimeMadeProgress, promptMessage, message, logger } =
+    params
 
-  const state = shareMessageEntries
-    ? snapshotSessionState(sessionState)
-    : cloneSessionState(sessionState, logger)
+  const state = cloneSessionState(sessionState, logger)
   const previousHistory = state.mainAgentState.messageHistory
   // A checkpoint can land after an assistant tool call is recorded but before
   // its result arrives. Drop that half-step at the persistence boundary so a
@@ -709,7 +619,6 @@ async function runOnce({
   costMode,
   extraCodebuffMetadata,
   onStateSnapshot,
-  stateSnapshotIntervalMs,
   onUsage,
   onUsageIncomplete,
   onCompaction,
@@ -847,17 +756,13 @@ async function runOnce({
    * any progress (replaced the shared messageHistory), those messages are
    * preserved. Otherwise the user's message is added so it isn't lost.
    */
-  function getCancelledSessionState(
-    message: string,
-    shareMessageEntries?: boolean,
-  ): SessionState {
+  function getCancelledSessionState(message: string): SessionState {
     const runtimeMadeProgress =
       sessionState.mainAgentState.messageHistory !== initialMessageHistory
 
     return buildCancelledSessionState({
       sessionState,
       runtimeMadeProgress,
-      shareMessageEntries,
       // Only add the user's message if the runtime didn't get a chance to.
       promptMessage:
         prompt || content
@@ -871,13 +776,10 @@ async function runOnce({
       logger,
     })
   }
-  function getCancelledRunState(
-    message?: string,
-    shareMessageEntries?: boolean,
-  ): RunState {
+  function getCancelledRunState(message?: string): RunState {
     message = message ?? 'Run cancelled by user.'
     return {
-      sessionState: getCancelledSessionState(message, shareMessageEntries),
+      sessionState: getCancelledSessionState(message),
       traceSessionId,
       output: {
         type: 'error',
@@ -1155,12 +1057,9 @@ async function runOnce({
   if (onStateSnapshot) {
     // The runtime replaces mainAgentState.messageHistory with a new array at
     // each step boundary, so reference identity is a cheap "has anything
-    // durable changed" check. Skipping unchanged ticks avoids building a
-    // snapshot every interval while the run is just waiting on a slow LLM call.
-    //
-    // Snapshots share their message objects (snapshotSessionState) rather than
-    // deep-copying them: a host persisting them can then write only what is new
-    // since its own last save instead of re-serializing the whole transcript.
+    // durable changed" check. Skipping unchanged ticks avoids deep-cloning a
+    // potentially multi-MB sessionState every interval while the run is just
+    // waiting on a slow LLM call.
     let lastSnapshotHistory: unknown = null
     const emitStateSnapshot = () => {
       if (settled || signal?.aborted) {
@@ -1173,7 +1072,7 @@ async function runOnce({
       lastSnapshotHistory = history
       try {
         onStateSnapshot(
-          getCancelledRunState(STATE_SNAPSHOT_INTERRUPTION_MESSAGE, true),
+          getCancelledRunState(STATE_SNAPSHOT_INTERRUPTION_MESSAGE),
         )
       } catch (error) {
         logger?.debug?.(
@@ -1185,10 +1084,7 @@ async function runOnce({
     // Emit immediately so the user's prompt is checkpointed as soon as the
     // run starts, then keep checkpointing progress while it is in flight.
     emitStateSnapshot()
-    snapshotTimer = setInterval(
-      emitStateSnapshot,
-      resolveStateSnapshotIntervalMs(stateSnapshotIntervalMs),
-    )
+    snapshotTimer = setInterval(emitStateSnapshot, STATE_SNAPSHOT_INTERVAL_MS)
     // Don't let the checkpoint timer keep the host process alive.
     if (typeof (snapshotTimer as any).unref === 'function') {
       ;(snapshotTimer as any).unref()

@@ -39,7 +39,6 @@ import { clearActiveRun, registerActiveRun } from '../utils/active-run'
 import {
   clearLiveChatStateProvider,
   loadMostRecentChatState,
-  refreshChatMetaSync,
   resolveCurrentChatDir,
   saveChatState,
   scheduleCheckpointSave,
@@ -1059,16 +1058,6 @@ export const useSendMessage = ({
             sponsored ? latestRunStateSnapshot : (adoptedRunState ?? runState),
             useChatStore.getState().messages,
             runChatDir,
-          )
-          // The periodic checkpoint no longer rewrites the sidecar, so
-          // refresh it here where a turn ends: /history then reads the
-          // settled chat's summary from chat-meta.json without the full-parse
-          // fallback. (The save above covers every case that wrote messages;
-          // a sponsored turn whose checkpoint already persisted this exact
-          // transcript writes nothing and needs the refresh.)
-          refreshChatMetaSync(
-            runChatDir,
-            useChatStore.getState().messages,
           )
         }
       } catch (error) {

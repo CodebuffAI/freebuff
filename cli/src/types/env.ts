@@ -20,10 +20,6 @@ export type CliEnv = BaseEnv & {
   TERM?: string
   TMUX?: string
   STY?: string
-  // Per-terminal theme evidence used by terminal-color-detection.ts (BaseEnv
-  // already carries TERM_PROGRAM / TERM_BACKGROUND / COLORFGBG).
-  TERM_PROGRAM_VERSION?: string
-  XTERM_VERSION?: string
 
   // SSH/remote session detection
   SSH_CLIENT?: string

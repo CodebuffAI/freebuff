@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { COMPACTION_SUMMARY_PROMPT_OPENING } from '@codebuff/common/constants/compaction-summary'
 
 import { CodebuffClient } from '../client'
@@ -384,47 +384,6 @@ describe('direct BYOK SDK runs', () => {
     expect(requests).toHaveLength(4)
     expect(requests.every((url) => url === 'http://127.0.0.1:9876/v1/chat/completions')).toBe(true)
   }, 30_000)
-
-  test('schedules checkpoints at the host-scaled interval', async () => {
-    globalThis.fetch = (async (_input, init) => {
-      const body = JSON.parse(String(init?.body))
-      return sse({
-        id: 'work', object: 'chat.completion.chunk', created: 1, model: body.model,
-        choices: [{ index: 0, delta: { content: 'Done.' }, finish_reason: 'stop' }],
-      })
-    }) as typeof fetch
-
-    const delays: number[] = []
-    const realSetInterval = globalThis.setInterval
-    const spy = spyOn(globalThis, 'setInterval').mockImplementation(((
-      fn: unknown,
-      delay?: number,
-      ...rest: unknown[]
-    ) => {
-      delays.push(Number(delay))
-      return realSetInterval(fn as TimerHandler, delay, ...(rest as never[]))
-    }) as typeof setInterval)
-    try {
-      // A large persisted chat asks for a longer interval than the 5s default.
-      const scaled = await new CodebuffClient({ agentDefinitions: [agent], byok: connection() })
-        .run({
-          agent: agent.id,
-          prompt: 'Scaled.',
-          stateSnapshotIntervalMs: 12_345,
-          onStateSnapshot: () => {},
-        })
-      expect(scaled.output.type).not.toBe('error')
-
-      const defaults = await new CodebuffClient({ agentDefinitions: [agent], byok: connection() })
-        .run({ agent: agent.id, prompt: 'Default.', onStateSnapshot: () => {} })
-      expect(defaults.output.type).not.toBe('error')
-    } finally {
-      spy.mockRestore()
-    }
-
-    expect(delays).toContain(12_345)
-    expect(delays).toContain(5_000)
-  })
 
   test('returns a local cancellation result without provider or hosted fallback requests', async () => {
     const controller = new AbortController()

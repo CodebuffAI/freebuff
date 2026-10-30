@@ -145,7 +145,6 @@ import {
   assertUserContentSize,
   UserContentTooLargeError,
 } from './util/context-size-guard'
-import { simplifyOldToolResults } from './util/simplify-tool-results'
 import {
   countTokens,
   countTokensJson,
@@ -385,21 +384,9 @@ export const runAgentStep = async (
   // and replayed, that one orphan would fail every later turn, so drop it here
   // — the single point every step's request is built — and assign the cleaned
   // history back so the checkpointed state is valid too.
-  // In a long session, stub tool results older than the newest few with the
-  // omit shapes fitToolResults/getPreviouslyReadFiles already understand:
-  // read_files and terminal outputs up to 100k/50k chars otherwise stay
-  // verbatim in history and are re-sent on every request until compaction.
-  // The pass waits for real past-window volume (see simplifyOldToolResults),
-  // so a history that still fits the window comfortably keeps everything;
-  // the newest results and anything this step later appends are untouched,
-  // and unreplaced messages keep reference identity for the extension check
-  // below.
-  const history = simplifyOldToolResults({
-    messages: dropUnansweredToolCalls(
-      expireMessages(agentState.messageHistory, 'agentStep'),
-    ),
-    logger,
-  })
+  const history = dropUnansweredToolCalls(
+    expireMessages(agentState.messageHistory, 'agentStep'),
+  )
 
   const agentMessagesUntruncated = buildArray<Message>(
     ...history,
@@ -450,7 +437,8 @@ export const runAgentStep = async (
   const systemTokens = countTokens(system)
 
   let cacheDebugCorrelation:
-    ReturnType<typeof createCacheDebugSnapshot> | undefined
+    | ReturnType<typeof createCacheDebugSnapshot>
+    | undefined
   if (CACHE_DEBUG_FULL_LOGGING) {
     try {
       cacheDebugCorrelation = createCacheDebugSnapshot({
@@ -907,10 +895,6 @@ export const runAgentStep = async (
           userMessage({
             content: withSystemTags(decision.message),
             tags: [FOLLOWUP_TODO_NUDGE_TAG],
-            // Steers the current turn's plan; it must stay readable in
-            // every later step of THIS turn (the nudge decision counts it to
-            // rate-limit), and die with the turn.
-            expiresAt: 'userPrompt' as const,
           }),
         )
         shouldEndTurn = false
@@ -935,7 +919,6 @@ export const runAgentStep = async (
       userMessage({
         content: withSystemTags(SUGGEST_PROMPTS_BEFORE_ANSWER_MESSAGE),
         tags: [SUGGEST_PROMPTS_BEFORE_ANSWER_TAG],
-        expiresAt: 'userPrompt' as const,
       }),
     )
     shouldEndTurn = false
@@ -963,7 +946,6 @@ export const runAgentStep = async (
         userMessage({
           content: withSystemTags(nudge.message),
           tags: [GRAVITY_REPORT_NUDGE_TAG],
-          expiresAt: 'userPrompt' as const,
         }),
       )
       shouldEndTurn = false
@@ -991,7 +973,6 @@ export const runAgentStep = async (
         userMessage({
           content: withSystemTags(reminder.message),
           tags: [TODO_PROGRESS_REMINDER_TAG],
-          expiresAt: 'userPrompt' as const,
         }),
       )
     }
@@ -2017,8 +1998,6 @@ export async function loopAgentSteps(
             content: withSystemTags(
               "Final completion check: compare the actual deliverables with the user request: exact paths, interfaces, formats, correctness, and any performance requirements. If a necessary check or repair is missing, use the available tools to finish it. Verify the final edited files; rerun affected checks after repairs, but do not repeat passing checks when the relevant files have not changed. Preserve the tested command's exit status when filtering output (for example, Bash pipefail or explicit status capture); a successful output filter is not a passing test. Fix causes rather than skipping tests, weakening assertions, swallowing errors, or adding type/lint suppressions just to pass. If changing a check is required by the requested behavior, explain why and verify that behavior. Respect permission boundaries, refusals, and requests to stop; if awaiting user input or genuinely blocked, report that and end. Otherwise give a concise final answer stating what was verified, which checks failed or could not run, and any remaining limitations.",
             ),
-            tags: ['COMPLETION_CHECK'],
-            expiresAt: 'userPrompt' as const,
           }),
         )
         shouldEndTurn = false

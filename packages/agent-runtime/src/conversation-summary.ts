@@ -140,9 +140,6 @@ export function summaryRequestHistory(messages: Message[]): Message[] {
 function isEphemeral(message: Message): boolean {
   return (
     message.timeToLive !== undefined ||
-    (message.expiresAt !== undefined &&
-      message.expiresAt !== 'conversation' &&
-      message.expiresAt !== 'notImplemented') ||
     message.tags?.includes('STEP_PROMPT') === true
   )
 }

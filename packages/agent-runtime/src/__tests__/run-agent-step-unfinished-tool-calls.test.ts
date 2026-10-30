@@ -208,45 +208,4 @@ describe('runAgentStep - unfinished tool calls', () => {
       capturedMessages.filter((message) => message.role === 'tool'),
     ).toHaveLength(2)
   })
-
-  it('stubs stale bulky read results but keeps small and newest ones verbatim', async () => {
-    const readResult = (toolCallId: string, content: string): Message => ({
-      role: 'tool',
-      toolCallId,
-      toolName: 'read_files',
-      content: [{ type: 'json', value: [{ path: 'src/app.ts', content }] }],
-    })
-    const bigRead = (marker: string) => `${marker}\n`.repeat(1_000)
-    const agentState = await runWithHistory([
-      userMessage('do the thing'),
-      // Five bulky reads (~17k each) so past-window savings clear the
-      // pass's 20k floor; the newest-3 window is r3, r4 and the small
-      // read, which rides along despite its size floor being separate.
-      ...['first', 'second', 'third', 'fourth', 'fifth'].flatMap((name, i) => [
-        toolCallMessage(`r${i}`),
-        readResult(`r${i}`, bigRead(`const ${name} = ${i};`)),
-      ]),
-      toolCallMessage('small'),
-      readResult('small', 'export const tiny = 1'),
-      userMessage('are you there?'),
-    ])
-
-    const request = JSON.stringify(capturedMessages)
-    // The three oldest bulky reads (newest-3 window = r3, r4, small) were
-    // replaced by the omit stub already understood by getPreviouslyReadFiles
-    // and the fitToolResults re-read hints...
-    expect(request).not.toContain('const first = 0;')
-    expect(request).not.toContain('const second = 1;')
-    expect(request).not.toContain('const third = 2;')
-    expect(request).toContain('contentOmittedForLength')
-    // ...the two newest bulky reads stay verbatim...
-    expect(request.split('const fourth = 3;').length).toBeGreaterThan(10)
-    expect(request.split('const fifth = 4;').length).toBeGreaterThan(10)
-    // ...and the small read rides along inside the window.
-    expect(request).toContain('export const tiny = 1')
-    // The stored history is healed to the same state.
-    const stored = JSON.stringify(agentState.messageHistory)
-    expect(stored).not.toContain('const first = 0;')
-    expect(stored).toContain('export const tiny = 1')
-  })
 })
