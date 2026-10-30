@@ -2,7 +2,7 @@
 export const REDDIT_ATTRIBUTION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
 export const REDDIT_ACTIVATION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 export type RedditAcquisitionEvent = 'SignUp' | 'CodingActivation'
-export type RedditAcquisitionSurface = 'web' | 'desktop' | 'cli'
+export type { CodingActivationSurface as RedditAcquisitionSurface } from './coding-activation-surface'
 export type RedditClickAttribution = {
   clickId?: string
   uuid?: string
