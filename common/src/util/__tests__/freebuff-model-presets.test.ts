@@ -18,7 +18,7 @@ const ids = (input: Parameters<typeof getFreebuffModelPresets>[0] = {}) =>
   choices(input).map((preset) => preset.modelId)
 
 describe('model picker presets', () => {
-  test('full access gets Luna low, Flash high and Flash max, labelled Fast, Balanced and Powerful', () => {
+  test('full access gets Flash low, high and max, labelled Fast, Balanced and Powerful', () => {
     // Signed-out preview and a full-access account of any country, plan or
     // balance all read the same three stops.
     for (const input of [
@@ -27,7 +27,7 @@ describe('model picker presets', () => {
       { accessTier: 'full' as const, balance: 100 },
       { accessTier: 'full' as const, isSubscriber: true },
     ])
-      expect(ids(input)).toEqual([luna, flash, flash])
+      expect(ids(input)).toEqual([flash, flash, flash])
     expect(choices().map((preset) => preset.reasoningEffort)).toEqual([
       'low',
       'high',
@@ -166,7 +166,7 @@ describe('model picker presets', () => {
       expect(ids({ ...input, recommendedModelId: 'm-slow' })).toEqual([mimo, flash, muse])
     expect(
       ids({ accessTier: 'full', recommendedModelId: 'm-slow' }),
-    ).toEqual([luna, flash, flash])
+    ).toEqual([flash, flash, flash])
   })
 
   test('uses catalog keys for compiled models, and falls back to Flash when a stop is withdrawn', () => {
@@ -176,25 +176,7 @@ describe('model picker presets', () => {
       { id: 'm-luna', compiledId: luna, displayName: 'GPT-6 Luna' },
       { id: 'm-muse', compiledId: muse, displayName: 'Muse Spark 1.3' },
     ]
-    expect(ids({ models })).toEqual(['m-luna', 'm-flash', 'm-flash'])
-    const withdrawn = models.filter((row) => row.compiledId !== luna)
-    expect(ids({ models: withdrawn })).toEqual([
-      'm-flash',
-      'm-flash',
-      'm-flash',
-    ])
-    expect(
-      choices({ models: withdrawn }).map((preset) => preset.reasoningEffort),
-    ).toEqual(['high', 'high', 'max'])
-    // A withdrawn stop on the same model as Balanced reads as Balanced.
-    expect(
-      matchingFreebuffModelPreset(
-        choices({ models: withdrawn }),
-        'm-flash',
-        'high',
-      )?.id,
-    ).toBe('balanced')
-
+    expect(ids({ models })).toEqual(['m-flash', 'm-flash', 'm-flash'])
     const limited = { accessTier: 'limited' as const, isSubscriber: true }
     expect(ids({ ...limited, models })).toEqual(['m-mimo', 'm-flash', 'm-muse'])
     const noMuse = models.filter((row) => row.compiledId !== muse)
@@ -262,7 +244,7 @@ describe('model picker presets', () => {
 
   test('custom models and effort overrides keep their detailed trigger labels', () => {
     const presets = choices()
-    expect(matchingFreebuffModelPreset(presets, luna, 'low')?.id).toBe(
+    expect(matchingFreebuffModelPreset(presets, flash, 'low')?.id).toBe(
       'efficient',
     )
     expect(matchingFreebuffModelPreset(presets, flash, 'high')?.id).toBe(
@@ -272,8 +254,8 @@ describe('model picker presets', () => {
       'powerful',
     )
     // Any other effort on a stop's model is a custom pick.
-    expect(matchingFreebuffModelPreset(presets, luna, 'xhigh')).toBeUndefined()
-    expect(matchingFreebuffModelPreset(presets, flash, 'low')).toBeUndefined()
+    expect(matchingFreebuffModelPreset(presets, flash, 'xhigh')).toBeUndefined()
+    expect(matchingFreebuffModelPreset(presets, luna, 'low')).toBeUndefined()
     // Flash's fast mode and Muse Spark are not full-access stops.
     expect(matchingFreebuffModelPreset(presets, fast, 'high')).toBeUndefined()
     expect(matchingFreebuffModelPreset(presets, muse, 'high')).toBeUndefined()

@@ -133,11 +133,11 @@ export const FREEBUFF_DESKTOP_AUTORUN_AGENT_ID = 'freebuff-desktop-autorun'
 export const FREEBUFF_PROJECT_UNDERSTANDING_AGENT_ID = 'freebuff-project-understanding'
 
 /**
- * The one model the project-understanding agent runs, on every surface: GPT-6
- * Luna with reasoning off, served through OpenRouter on OpenAI's endpoints
- * (flex, then standard). Not DeepSeek: the agent reads the user's project
- * files, and those must not go to DeepSeek's own API. Luna is also the cheaper
- * of the two (docs/freebuff-project-understanding.md).
+ * The one model the project-understanding agent asks for, on every surface:
+ * GPT-6 Luna with reasoning off. Since 2026-10-30 the route serves every
+ * Freebuff Luna request on DeepSeek V4.1 Flash (web/src/llm-api/
+ * luna-on-deepseek.ts), whose lanes are Pareto, Respan and Luminal, not
+ * DeepSeek's own API (docs/freebuff-project-understanding.md).
  */
 export const FREEBUFF_PROJECT_UNDERSTANDING_MODEL_ID =
   FREEBUFF_GPT_6_LUNA_MODEL_ID

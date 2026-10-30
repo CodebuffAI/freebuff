@@ -95,17 +95,17 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     // cheapest to dearest (product, 2026-10-15). DeepSeek leads because on
     // the Luminal lane it is our cheapest Flash-class model ($0.91 per 1k
     // messages over 10-07..13, against MiMo 2.6 Flash's $1.35 on OpenRouter).
-    // In view: DeepSeek V4.1 Flash, Muse Spark 1.3, GLM 5.3 Flash, GPT-6 Luna;
-    // both MiMo rows and Flash Slow under More (product, 2026-10-30).
+    // In view: DeepSeek V4.1 Flash, Muse Spark 1.3, GLM 5.3 Flash; both MiMo
+    // rows, Flash Slow and GPT-6 Luna under More (product, 2026-10-30).
     'deepseek/deepseek-v4-flash': { section: 'optimized', order: 5, recommended: true }, // V4.1 Flash, 15
     // Muse Spark 1.3 and GPT-6 Luna moved here from Powerful (2026-10-13).
-    // Placement only: both stay plan-only at limited access.
+    // Placement only: both are plan-only at limited access.
     'meta/muse-spark-1.3-contributor': { section: 'optimized', order: 20 }, // 15
     'z-ai/glm-5.3-flash': { section: 'optimized', order: 40 }, // 20
-    'openai/gpt-6-luna': { section: 'optimized', order: 50 }, // 20
     'm-61c26317cc': { section: 'optimized', order: 60, more: true }, // MiMo v2.6 Flash Slow, 5
     'm-8db1ccbba6': { section: 'optimized', order: 62, more: true }, // DeepSeek V4.1 Flash Slow, 10
     'mimo/mimo-v2.5': { section: 'optimized', order: 64, more: true }, // MiMo v2.6 Flash Fast, 10
+    'openai/gpt-6-luna': { section: 'optimized', order: 66, more: true }, // 20
     // Powerful: cheapest to dearest (product, 2026-10-28; Claude Haiku 5.5's
     // 100k-context row was pinned first before). The dearest rows wait under
     // More, cheapest first (product, 2026-10-22, so the expensive models are
