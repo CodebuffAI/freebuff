@@ -12,6 +12,7 @@ import { useAgentValidation } from '../use-agent-validation'
 import { setProjectRoot, tryGetProjectRoot } from '../../project-files'
 import { useChatStore } from '../../state/chat-store'
 import { stopActiveRun } from '../../utils/active-run'
+import { readChatMeta } from '../../utils/chat-meta'
 import { setChatDirOverrideForTesting } from '../../utils/run-state-storage'
 
 import type { RunState } from '@codebuff/sdk'
@@ -262,6 +263,59 @@ describe('useSendMessage continuation state', () => {
         content: finalText,
       })
       expect(saved.isComplete).toBe(true)
+    } finally {
+      settlePendingRuns()
+      await run
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
+  test('refreshes the chat sidecar at turn end, not on checkpoint drains', async () => {
+    const { setup, root } = await mountHost()
+    const run = sendMessageFromHost!({
+      content: 'summarize this',
+      agentMode: 'DEFAULT',
+    })
+
+    try {
+      await waitFor('SDK run', () => runCalls.length === 1)
+      // The turn-start save writes the sidecar once, so /history lists the
+      // in-flight chat: a valid (non-stale) sidecar describes the transcript.
+      await waitFor('turn-start save', () => readChatMeta(testRoot) !== null)
+
+      // Mid-turn: a checkpoint drain persists new messages but no longer
+      // refreshes the sidecar — it now reads stale against the rewritten
+      // messages file, and readChatMeta legitimately falls back to the full
+      // parse. That is the designed staleness window.
+      useChatStore.getState().setMessages([
+        ...useChatStore.getState().messages,
+        {
+          id: 'msg-steer',
+          variant: 'user',
+          content: 'one more thing',
+          timestamp: new Date().toISOString(),
+        } as any,
+      ])
+      // A new snapshot object, like a later step boundary's: the checkpoint
+      // skips only a byte-identical re-drain of the turn-start save, which
+      // this is not.
+      runCalls[0].runConfig.onStateSnapshot(makeRunState('checkpoint'))
+      await waitFor('checkpoint drain', () =>
+        fs
+          .readFileSync(path.join(testRoot, 'chat-messages.json'), 'utf8')
+          .includes('one more thing'),
+      )
+      expect(readChatMeta(testRoot)).toBeNull()
+
+      runCalls[0].resolve(makeRunState('final'))
+      await run
+
+      // Turn end must leave a fresh sidecar behind.
+      const meta = readChatMeta(testRoot)
+      expect(meta).not.toBeNull()
+      expect(meta!.firstPrompt).toBe('summarize this')
+      expect(meta!.messageCount).toBeGreaterThan(0)
     } finally {
       settlePendingRuns()
       await run
