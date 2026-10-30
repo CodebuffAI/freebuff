@@ -895,6 +895,10 @@ export const runAgentStep = async (
           userMessage({
             content: withSystemTags(decision.message),
             tags: [FOLLOWUP_TODO_NUDGE_TAG],
+            // Steers the current turn's plan; it must stay readable in
+            // every later step of THIS turn (the nudge decision counts it to
+            // rate-limit), and die with the turn.
+            expiresAt: 'userPrompt' as const,
           }),
         )
         shouldEndTurn = false
@@ -919,6 +923,7 @@ export const runAgentStep = async (
       userMessage({
         content: withSystemTags(SUGGEST_PROMPTS_BEFORE_ANSWER_MESSAGE),
         tags: [SUGGEST_PROMPTS_BEFORE_ANSWER_TAG],
+        expiresAt: 'userPrompt' as const,
       }),
     )
     shouldEndTurn = false
@@ -946,6 +951,7 @@ export const runAgentStep = async (
         userMessage({
           content: withSystemTags(nudge.message),
           tags: [GRAVITY_REPORT_NUDGE_TAG],
+          expiresAt: 'userPrompt' as const,
         }),
       )
       shouldEndTurn = false
@@ -973,6 +979,7 @@ export const runAgentStep = async (
         userMessage({
           content: withSystemTags(reminder.message),
           tags: [TODO_PROGRESS_REMINDER_TAG],
+          expiresAt: 'userPrompt' as const,
         }),
       )
     }
@@ -1998,6 +2005,8 @@ export async function loopAgentSteps(
             content: withSystemTags(
               "Final completion check: compare the actual deliverables with the user request: exact paths, interfaces, formats, correctness, and any performance requirements. If a necessary check or repair is missing, use the available tools to finish it. Verify the final edited files; rerun affected checks after repairs, but do not repeat passing checks when the relevant files have not changed. Preserve the tested command's exit status when filtering output (for example, Bash pipefail or explicit status capture); a successful output filter is not a passing test. Fix causes rather than skipping tests, weakening assertions, swallowing errors, or adding type/lint suppressions just to pass. If changing a check is required by the requested behavior, explain why and verify that behavior. Respect permission boundaries, refusals, and requests to stop; if awaiting user input or genuinely blocked, report that and end. Otherwise give a concise final answer stating what was verified, which checks failed or could not run, and any remaining limitations.",
             ),
+            tags: ['COMPLETION_CHECK'],
+            expiresAt: 'userPrompt' as const,
           }),
         )
         shouldEndTurn = false

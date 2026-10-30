@@ -308,20 +308,178 @@ export function getMessagesSubset(params: {
   return messagesSubset
 }
 
+/**
+ * A message the runtime adds to history so the model sees history that
+ * reflects this pass's TTL/keepLastTags pruning. It is stripped by the NEXT
+ * expireMessages call, at which point any real message carrying `expiresAt`
+ * is old enough to expire: without the marker a mid-turn nudge would vanish
+ * from the very next step's prompt, just like timeToLive: 'agentStep' did —
+ * the step prompt survives that exact pruning only because it is re-pushed
+ * (rather than re-stamped) with a fresh TTL every step. The marker pins all
+ * 'agentStep' pruning to the pass after the message's own step.
+ *
+ * The never-sees-text prompt replies to the marker with a terse "Understood."
+ * — accept that over deleting the marker at send time (history is replayed
+ * and re-sent, so whatever is deleted must be re-inserted next step anyway,
+ * in worse order: early in history it also shifts the cached suffix every
+ * step). If a model gets much chattier, gate the marker strip/push on the
+ * template like completionCheck.
+ */
+// cache-expiry is re-exported here so the source location is
+// packages/agent-runtime/src/ (auxiliary-message-data imports it with a
+// sibling-level relative path from common/src/types/messages/). The comments
+// on it force the update cadence: they document the expiry semantics this
+// same file implements.
+export * from './cache-expiry'
+
+const SEEN_MESSAGE_TAGS = [
+  'SEEN_MESSAGES_MARKER',
+  // Renamed from USER_MESSAGE_SEEN on the first cut; the rename document is
+  // in the PR that introduced the marker. Remove this tag once all histories
+  // from before the rename have aged out (they persisted in session state).
+  'USER_MESSAGE_SEEN',
+] as const
+
+export function isSeenMarker(m: Message): boolean {
+  return (
+    m.role === 'user' &&
+    SEEN_MESSAGE_TAGS.some((tag) => m.tags?.includes(tag))
+  )
+}
+
+const SEEN_MARKER_PREFIX = '<step_boundary_snitch> oldest step boundary'
+
+/**
+ * When a message with `keepLastTags` arrives, the latest declaration wins:
+ * earlier messages that share any of the listed tags (a declaration's own
+ * `tags` overlap counts) are dropped from the assembled history. This is a
+ * content-supersede relation, not an observational one: the newest
+ * declaration restates everything the earlier copies said, so they cost
+ * tokens (and shift the cached suffix every step) without informing the
+ * model. That is why it applies on every expireMessages pass, not only once
+ * the model has seen the newest copy.
+ */
+export function applyKeepLastTags(messages: Message[]): Message[] {
+  let cutoff = -1
+  let keepTags: string[] = []
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const tags = messages[i]!.keepLastTags
+    if (tags === undefined) continue
+    cutoff = i
+    keepTags = tags
+    break
+  }
+  if (cutoff === -1) return messages
+  const drop = new Set<number>()
+  for (let i = 0; i < cutoff; i++) {
+    if (messages[i]!.tags?.some((tag) => keepTags.includes(tag))) drop.add(i)
+  }
+  return messages.filter((_, i) => !drop.has(i))
+}
+
+/**
+ * Drop messages whose TTL/expiresAt boundary has passed, plus keepLastTags
+ * supersede rules.
+ *
+ * Semantics:
+ * - `timeToLive: 'agentStep'` dies at every step boundary, including the one
+ *   right after the message was pushed mid-turn.
+ * - `timeToLive: 'userPrompt'` additionally survives step boundaries; it
+ *   dies only at a turn end. Deprecated.
+ * - `expiresAt` is the declarative replacement. A turn-scoped message
+ *   (`expiresAt: 'userPrompt'`, the only value any runtime pusher uses) is
+ *   dropped when the history shows a NEWER USER_PROMPT than the message —
+ *   i.e. at the first step of the turn after the one that created it. During
+ *   its own turn it is in every step's prompt: the nudge decisions that
+ *   push these messages (gravity report, followup to-do, to-do progress,
+ *   completion check) count their own prior nudges in history to rate-limit
+ *   themselves, so expiring a nudge mid-turn would re-arm the rate limiter
+ *   and loop. In exchange a turn's step N+1 only pays for the nudges the
+ *   turn actually produced, which are rate-limited to at most a handful.
+ *   `expiresAt: 'agentStep'` exists for messages that must die at the very
+ *   next boundary (a step prompt, say): it is granted one grace pass —
+ *   tracked by a snitch marker the pass appends behind it — so a push site
+ *   between the step-top and mid-step passes still reaches the model once.
+ *
+ * Order matters with dropUnansweredToolCalls: run that repair AFTER this, so
+ * an expiresAt'd nudge can't flush orphaned tool calls into being repaired
+ * in a way neither the model nor the runtime observed.
+ */
 export function expireMessages(
   messages: Message[],
   endOf: 'agentStep' | 'userPrompt',
 ): Message[] {
-  return messages.filter((m) => {
-    // Keep messages with no timeToLive
-    if (m.timeToLive === undefined) return true
+  // Strip the marker already in history, if any. Only that one counts as a
+  // passed step boundary: expireMessages runs several times per logical step
+  // (a step-top assembly pass and a mid-step cleanup between the push sites
+  // for turn-scoped nudges), so the marker THIS pass is about to append is in
+  // the future of those pushes and must not arm their expiry.
+  const boundaryPassed = messages.some((m) => isSeenMarker(m))
+  const markerSentAt = messages.find((m) => isSeenMarker(m))?.sentAt
+  const withoutMarker = messages.filter((m) => !isSeenMarker(m))
 
-    // Remove messages that have expired
-    if (m.timeToLive === 'agentStep') return false
-    if (m.timeToLive === 'userPrompt' && endOf === 'userPrompt') return false
+  // A turn boundary for expiresAt purposes is the newest USER_PROMPT. Any
+  // expiresAt-carrying message at/after it belongs to the live turn.
+  let liveTurnStart = -1
+  for (let i = withoutMarker.length - 1; i >= 0; i--) {
+    const m = withoutMarker[i]!
+    if (m.role === 'user' && m.tags?.includes('USER_PROMPT')) {
+      liveTurnStart = i
+      break
+    }
+  }
 
-    return true
+  const kept = withoutMarker.filter((m, i) => {
+    if (m.expiresAt === undefined) {
+      // Legacy prescriptive field. New code: expiresAt.
+      if (m.timeToLive === 'agentStep') return false
+      if (m.timeToLive === 'userPrompt' && endOf === 'userPrompt') return false
+      return true
+    }
+    if (
+      m.expiresAt === 'turn' ||
+      m.expiresAt === 'conversation' ||
+      m.expiresAt === 'notImplemented'
+    ) {
+      return true
+    }
+    if (m.expiresAt === 'userPrompt') {
+      // Dead once a newer USER_PROMPT exists; within its turn, every step.
+      if (liveTurnStart !== -1 && i < liveTurnStart) return false
+      if (endOf === 'userPrompt') return false
+      return true
+    }
+    // expiresAt === 'agentStep': one grace pass after the push, then gone at
+    // the first step boundary strictly newer than the message.
+    if (!boundaryPassed) return true
+    if (
+      m.sentAt !== undefined &&
+      markerSentAt !== undefined &&
+      m.sentAt > markerSentAt
+    ) {
+      return true
+    }
+    return false
   })
+
+  const deduped = applyKeepLastTags(kept)
+
+  const needsMarker = deduped.some((m) => m.expiresAt === 'agentStep')
+  if (!needsMarker) return deduped
+  return [
+    ...deduped,
+    {
+      role: 'user' as const,
+      content: [
+        {
+          type: 'text' as const,
+          text: `${SEEN_MARKER_PREFIX} last rites`,
+        },
+      ],
+      tags: [SEEN_MESSAGE_TAGS[0]],
+      sentAt: Date.now(),
+    },
+  ]
 }
 
 export function getPreviouslyReadFiles(params: {
