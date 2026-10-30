@@ -145,6 +145,7 @@ import {
   assertUserContentSize,
   UserContentTooLargeError,
 } from './util/context-size-guard'
+import { simplifyOldToolResults } from './util/simplify-tool-results'
 import {
   countTokens,
   countTokensJson,
@@ -384,9 +385,21 @@ export const runAgentStep = async (
   // and replayed, that one orphan would fail every later turn, so drop it here
   // — the single point every step's request is built — and assign the cleaned
   // history back so the checkpointed state is valid too.
-  const history = dropUnansweredToolCalls(
-    expireMessages(agentState.messageHistory, 'agentStep'),
-  )
+  // In a long session, stub tool results older than the newest few with the
+  // omit shapes fitToolResults/getPreviouslyReadFiles already understand:
+  // read_files and terminal outputs up to 100k/50k chars otherwise stay
+  // verbatim in history and are re-sent on every request until compaction.
+  // The pass waits for real past-window volume (see simplifyOldToolResults),
+  // so a history that still fits the window comfortably keeps everything;
+  // the newest results and anything this step later appends are untouched,
+  // and unreplaced messages keep reference identity for the extension check
+  // below.
+  const history = simplifyOldToolResults({
+    messages: dropUnansweredToolCalls(
+      expireMessages(agentState.messageHistory, 'agentStep'),
+    ),
+    logger,
+  })
 
   const agentMessagesUntruncated = buildArray<Message>(
     ...history,
@@ -437,8 +450,7 @@ export const runAgentStep = async (
   const systemTokens = countTokens(system)
 
   let cacheDebugCorrelation:
-    | ReturnType<typeof createCacheDebugSnapshot>
-    | undefined
+    ReturnType<typeof createCacheDebugSnapshot> | undefined
   if (CACHE_DEBUG_FULL_LOGGING) {
     try {
       cacheDebugCorrelation = createCacheDebugSnapshot({
