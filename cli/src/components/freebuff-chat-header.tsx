@@ -1,5 +1,6 @@
 import { FREEBUFF_ENABLE_STREAK_IN_UI } from '@codebuff/common/constants/freebuff-models'
 import {
+  dailyMeterQuiet,
   getReferralInfo,
   getGlmPromo,
   getSubscriptionInfo,
@@ -127,7 +128,7 @@ export function FreebuffChatHeader({
               : `Next message switches from ${directory.get(session.model).displayName}.`
             : 'Your first message starts the session.'}
         </text>
-        {freebucks && (
+        {freebucks && !dailyMeterQuiet(freebucks) && (
           <text style={{ fg: theme.foreground, wrapMode: 'word' }}>
             {`${formatHours(freebucks.daily.remaining)}/${formatHours(freebucks.daily.limit)} hours remaining`}
           </text>

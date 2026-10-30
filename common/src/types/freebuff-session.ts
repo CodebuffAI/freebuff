@@ -320,6 +320,13 @@ export interface FreebuffFreebucksInfo {
    * keeps every clock.
    */
   untimedModelIds?: readonly string[]
+  /**
+   * The daily meter stays out of sight until the day is mostly spent
+   * (2026-10-29: full access in tiers 1 and 2, most of whom never come near
+   * their pool). Clients hide it below `QUIET_DAILY_METER_SHOWS_AT`; see
+   * `dailyMeterQuiet`. Absent keeps the meter.
+   */
+  quietDailyMeter?: boolean
   /** The plan the daily pool and bonus were sized from; null on free. */
   planId: string | null
   /** Session price per model id. Only models on the meter appear here. */
@@ -690,6 +697,17 @@ export const getRateLimitsByModel = (
     ? (session as { rateLimitsByModel?: FreebuffSessionRateLimitByModel })
         .rateLimitsByModel
     : undefined
+
+/** The share of the daily pool spent at which a `quietDailyMeter` shows. */
+export const QUIET_DAILY_METER_SHOWS_AT = 0.75
+
+/** Whether to leave the daily meter out: the server asked for a quiet meter
+ *  and less than `QUIET_DAILY_METER_SHOWS_AT` of the pool is spent. */
+export const dailyMeterQuiet = (
+  info: Pick<FreebuffFreebucksInfo, 'quietDailyMeter' | 'daily'>,
+): boolean =>
+  info.quietDailyMeter === true &&
+  info.daily.spent < info.daily.limit * QUIET_DAILY_METER_SHOWS_AT
 
 /** The caller's usable Freebucks block. Wire null means refresh unavailable;
  * undefined means no meter supplied. Never synthesize a balance for either. */
