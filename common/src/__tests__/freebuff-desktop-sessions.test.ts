@@ -39,6 +39,26 @@ describe('Freebuff Desktop session concurrency', () => {
     })
   })
 
+  test('free full access in country tiers 1 and 2 gets five ordinary tabs', () => {
+    for (const countryTier of ['tier1', 'tier2']) {
+      expect(
+        freebuffDesktopConcurrencyLimits('full', false, false, countryTier),
+      ).toEqual({ 'slot-bound': 1, 'multi-tab': 5 })
+      // A plan's ceilings and the limited tier's are unchanged.
+      expect(
+        freebuffDesktopConcurrencyLimits('full', true, false, countryTier),
+      ).toEqual({ 'slot-bound': 3, 'multi-tab': 8 })
+      expect(
+        freebuffDesktopConcurrencyLimits('limited', false, false, countryTier),
+      ).toEqual({ 'slot-bound': 1, 'multi-tab': 0 })
+    }
+    for (const countryTier of ['tier3', 'tier4', null, undefined]) {
+      expect(
+        freebuffDesktopConcurrencyLimits('full', false, false, countryTier),
+      ).toEqual({ 'slot-bound': 1, 'multi-tab': 3 })
+    }
+  })
+
   test('an uncapped account gets the runaway guard in every bucket and tier', () => {
     for (const tier of ['full', 'limited'] as const) {
       for (const paid of [false, true]) {

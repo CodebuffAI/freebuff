@@ -43,8 +43,20 @@ const FREEBUFF_DESKTOP_SLOT_BOUND_MODEL_IDS = [
 
 const FREEBUFF_DESKTOP_CONCURRENCY_LIMITS = {
   free: { 'slot-bound': 1, 'multi-tab': 3 },
+  // Free full access in the country tiers below (2026-10-29): 11% of those
+  // accounts reached three ordinary tabs in two weeks and half of them then hit
+  // the cap, with no sign it drove anyone away.
+  freeWide: { 'slot-bound': 1, 'multi-tab': 5 },
   subscriber: { 'slot-bound': 3, 'multi-tab': 8 },
 } as const
+
+/** Country tiers (`FreebuffCountryTier`) whose free full-access accounts get
+ *  `freeWide`. Strings, because the CLI imports this module and the tier type
+ *  lives in freebuff-freebucks (cut from the public export). */
+const FREEBUFF_DESKTOP_WIDE_COUNTRY_TIERS: ReadonlySet<string> = new Set([
+  'tier1',
+  'tier2',
+])
 
 /**
  * Tabs in each bucket for an account the server exempts from the tab cap
@@ -58,6 +70,7 @@ export function freebuffDesktopConcurrencyLimits(
   accessTier: FreebuffAccessTier | null | undefined,
   hasPaidPlan: boolean,
   uncapped = false,
+  countryTier?: string | null,
 ): Record<FreebuffDesktopConcurrency, number> {
   if (uncapped) {
     return {
@@ -68,8 +81,9 @@ export function freebuffDesktopConcurrencyLimits(
   if (accessTier === 'limited' && !hasPaidPlan) {
     return { 'slot-bound': 1, 'multi-tab': 0 }
   }
-  return hasPaidPlan
-    ? FREEBUFF_DESKTOP_CONCURRENCY_LIMITS.subscriber
+  if (hasPaidPlan) return FREEBUFF_DESKTOP_CONCURRENCY_LIMITS.subscriber
+  return FREEBUFF_DESKTOP_WIDE_COUNTRY_TIERS.has(countryTier ?? '')
+    ? FREEBUFF_DESKTOP_CONCURRENCY_LIMITS.freeWide
     : FREEBUFF_DESKTOP_CONCURRENCY_LIMITS.free
 }
 

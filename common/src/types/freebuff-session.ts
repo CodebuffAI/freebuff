@@ -1203,6 +1203,9 @@ export type FreebuffSessionAdmissionResponse = (
   /** Desktop responses only: the server lifts this account's tab cap through
    *  Freebuff Projects' allowlist (COD-878), the only thing that lifts it. */
   desktopTabCapExempt?: true
+  /** Desktop responses only: this account's free ordinary-model tab ceiling,
+   *  sent when its country tier makes it wider than the default. */
+  desktopMultiTabLimit?: number
 }
 
 /**
