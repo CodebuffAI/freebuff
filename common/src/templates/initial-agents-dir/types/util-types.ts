@@ -100,11 +100,30 @@ export type AuxiliaryMessageData = {
    */
   sentAt?: number
 
+  /**
+   * Declarative expiry boundary; see AgentExpiresAt in the agent runtime's
+   * cache-expiry.ts. Duplicated inline here so the scaffolded types stay
+   * self-contained (they cannot import across packages).
+   */
+  expiresAt?:
+    | 'agentStep'
+    | 'userPrompt'
+    | 'turn'
+    | 'conversation'
+    | 'notImplemented'
+
   /** @deprecated Use tags instead. */
   timeToLive?: 'agentStep' | 'userPrompt'
   /** @deprecated Use tags instead. */
   keepDuringTruncation?: boolean
-  /** @deprecated Use tags instead. */
+  /**
+   * When a message with `keepLastTags` arrives, the latest declaration wins:
+   * earlier messages that share any of the listed tags (a declaration's own
+   * `tags` overlap counts too) are dropped from the assembled history by the
+   * runtime's per-step expiry pass.
+   *
+   * @deprecated Use tags instead.
+   */
   keepLastTags?: string[]
 }
 
