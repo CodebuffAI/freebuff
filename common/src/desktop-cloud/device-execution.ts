@@ -26,6 +26,8 @@ export const deviceExecutionContext = z
     panelProtocolVersion: z.literal(1).optional(),
     nativeHarnesses: z.boolean().optional(),
     concurrentHarnesses: z.literal(true).optional(),
+    /** Answers `move_export`: another of the account's computers can take over this folder's chats. */
+    deviceMove: z.literal(true).optional(),
     cwd: z.string().min(1).max(4096),
     rg: z.string().max(4096),
   })
@@ -129,6 +131,25 @@ export const deviceManifestRequest = z
     scope: deviceToolScope,
   })
   .strict()
+/** A chat's Git state for another of the account's computers (docs/desktop/device-execution.md, "Moving a chat to another computer"). */
+export const deviceMoveExportRequest = z
+  .object({
+    method: z.literal('move_export'),
+    workspaceId: z.string().min(1).max(200),
+    /** Commits the receiving computer has; the bundle leaves out what they reach. */
+    have: z.array(z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/)).max(256),
+  })
+  .strict()
+/** `move_export`'s value: the uploaded archive (a source upload), never the bytes. */
+export const deviceMoveExport = z
+  .object({
+    uploadId: z.string().uuid(),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    bytes: z.number().int().positive(),
+  })
+  .strict()
+export type DeviceMoveExport = z.infer<typeof deviceMoveExport>
+export type DeviceMoveExportRequest = z.infer<typeof deviceMoveExportRequest>
 export const deviceToolFailure = z
   .object({ kind: z.literal('tool_error'), message: z.string().max(4000) })
   .strict()
@@ -246,6 +267,7 @@ export const deviceRequest = z.union([
   deviceManifestRequest,
   deviceHarnessRequest,
   deviceReceiptRequest,
+  deviceMoveExportRequest,
 ])
 export const deviceResult = z.union([
   deviceReadResult,
@@ -313,6 +335,7 @@ export const deviceCapabilities = z
     nativeProtocolVersion: z.literal(3).optional(),
     panelProtocolVersion: z.literal(1).optional(),
     concurrentHarnesses: z.literal(true).optional(),
+    deviceMove: z.literal(true).optional(),
   })
   .strict()
 

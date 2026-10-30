@@ -240,8 +240,19 @@ export type HostedWorkspaceHost = {
     location?: 'local' | 'worktree' | 'cloud'
     sourceBranch?: string
   }): Promise<{
-    location: 'local' | 'worktree' | 'cloud'
-    choices: Array<'local' | 'worktree' | 'cloud'>
+    /** `remote`: the chat runs on another of the account's computers, which is awake. */
+    location: 'local' | 'worktree' | 'cloud' | 'remote'
+    choices: Array<'local' | 'worktree' | 'cloud' | 'remote'>
+    /** After a move from another computer: the composer model to continue with, when the chat's
+     * harness is not on this one. */
+    model?: string
+    /** Shown grayed out, with why: `no-checkout`, this computer has no clone of the project's
+     * repository; `origin-unavailable`, the computer its folder is on does not answer; `origin-only`,
+     * only that computer can start it (Cloud, which it uploads). */
+    unavailable?: Array<{
+      location: 'local' | 'worktree' | 'cloud' | 'remote'
+      reason: 'no-checkout' | 'origin-unavailable' | 'origin-only'
+    }>
     supportsWorktreeSourceBranch?: boolean
     worktreeSourceBranch?: string | null
     progress?: HostedRuntimeProgress
