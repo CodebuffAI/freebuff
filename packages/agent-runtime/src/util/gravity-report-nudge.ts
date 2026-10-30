@@ -1,3 +1,5 @@
+import { isSeenMarker } from './messages'
+
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 
 /**
@@ -73,7 +75,9 @@ export function gravityRecommendationFromToolOutput(
 
 /** Whether this step answered the nudge with report_integration calls and
  *  nothing else, so the turn ends once they run. A later user message (the
- *  user steering mid-turn) means it was not the nudge being answered. */
+ *  user steering mid-turn) means it was not the nudge being answered. The
+ *  step-boundary marker expireMessages appends after an expiresAt'd nudge is
+ *  not such a message. */
 export function endsOnGravityReport(
   toolCalls: { toolName: string; input?: unknown }[],
   history: Message[],
@@ -88,7 +92,9 @@ export function endsOnGravityReport(
   ) {
     return false
   }
-  const lastUser = history.findLast((message) => message.role === 'user')
+  const lastUser = history.findLast(
+    (message) => message.role === 'user' && !isSeenMarker(message),
+  )
   return lastUser?.tags?.includes(GRAVITY_REPORT_NUDGE_TAG) === true
 }
 
