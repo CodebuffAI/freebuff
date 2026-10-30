@@ -227,7 +227,12 @@ describe('dropUnansweredToolCalls', () => {
 
 describe('convertCbToModelMessages', () => {
   describe('unfinished tool-call repair', () => {
-    it('drops a call whose result arrives after a user boundary', () => {
+    it('passes through a call whose result arrives after a user boundary', () => {
+      // The repair lives with the history builders (run-agent-step repairs
+      // the step history before it reaches the converter); this converter
+      // used to run dropUnansweredToolCalls a second time on every request
+      // and no longer does. A caller that feeds an unpaired history gets it
+      // back unchanged: the boundary repair is applied upstream, not here.
       const result = convertCbToModelMessages({
         messages: [
           userMessage('start'),
@@ -248,11 +253,12 @@ describe('convertCbToModelMessages', () => {
         includeCacheControl: false,
       })
 
-      // The surviving user messages aggregate after the invalid assistant call
-      // is removed. A result later in history cannot answer across the user
-      // boundary, but freestanding tool results remain supported.
-      expect(result.map((message) => message.role)).toEqual(['user', 'tool'])
-      expect(result[0].content).toHaveLength(2)
+      expect(result.map((message) => message.role)).toEqual([
+        'user',
+        'assistant',
+        'user',
+        'tool',
+      ])
     })
 
     // A media result rides a user message, and the AI SDK treats a user message
