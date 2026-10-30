@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
 
@@ -7,7 +7,11 @@ import { Jimp } from 'jimp'
 
 import { setProjectRoot } from '../../project-files'
 import { calculateDisplaySize } from '../image-display'
-import { processImageFile } from '../image-handler'
+import {
+  MAX_IMAGE_BASE64_SIZE,
+  MAX_IMAGE_FILE_SIZE,
+  processImageFile,
+} from '../image-handler'
 
 // Mock the logger to prevent analytics initialization errors in tests
 mock.module('../logger', () => ({
@@ -130,6 +134,26 @@ describe('Image Dimensions', () => {
         expect(result.imagePart!.height).toBeLessThanOrEqual(1500)
       }
     })
+  })
+
+  test('returns a clear error when an oversized image cannot be decoded for compression', async () => {
+    const fileBuffer = Buffer.alloc(
+      Math.ceil((MAX_IMAGE_BASE64_SIZE * 3) / 4) + 3,
+      0xff,
+    )
+    fileBuffer.write('RIFF', 0)
+    fileBuffer.write('WEBP', 8)
+    writeFileSync(path.join(TEST_DIR, 'large.webp'), fileBuffer)
+
+    expect(fileBuffer.toString('base64').length).toBeGreaterThan(
+      MAX_IMAGE_BASE64_SIZE,
+    )
+    expect(fileBuffer.length).toBeLessThan(MAX_IMAGE_FILE_SIZE)
+
+    const result = await processImageFile('large.webp', TEST_DIR)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('PNG or JPEG')
   })
 
   describe('calculateDisplaySize', () => {
