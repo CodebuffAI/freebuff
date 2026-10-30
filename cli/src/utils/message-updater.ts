@@ -1,11 +1,4 @@
-import { appendTextToRootStream } from './block-operations'
-
 import type { ChatMessage, ContentBlock, TextContentBlock } from '../types/chat'
-
-/** A streamed text delta for the root message. Structural twin of the
- *  event handler's own `TextDelta`, declared here so this module does not
- *  import from the handler that imports it. */
-export type RootTextDelta = { type: 'text' | 'reasoning'; text: string }
 
 // Small wrapper to avoid repeating the ai-message map/update pattern.
 export type SetMessagesFn = (
@@ -17,15 +10,6 @@ export type MessageUpdater = {
   updateAiMessageBlocks: (
     blockUpdater: (blocks: ContentBlock[]) => ContentBlock[],
   ) => void
-  /**
-   * Append a streamed text delta to the root message.
-   *
-   * Prefer this over `updateAiMessageBlocks((blocks) =>
-   * appendTextToRootStream(blocks, delta))`: a batched updater merges
-   * consecutive deltas of the same text type into one append per flush, which
-   * is what keeps a long reply from copying the block array once per token.
-   */
-  appendRootText: (delta: RootTextDelta) => void
   markComplete: (metadata?: Partial<ChatMessage>) => void
   setError: (message: string) => void
   /** Clears the userError field (e.g., when a new message is sent successfully) */
@@ -61,11 +45,6 @@ export const createMessageUpdater = (
       ...msg,
       blocks: blockUpdater(msg.blocks ?? []),
     }))
-  }
-
-  const appendRootText = (delta: RootTextDelta) => {
-    if (!delta.text) return
-    updateAiMessageBlocks((blocks) => appendTextToRootStream(blocks, delta))
   }
 
   const addBlock = (block: ContentBlock) => {
@@ -134,7 +113,6 @@ export const createMessageUpdater = (
   return {
     updateAiMessage,
     updateAiMessageBlocks,
-    appendRootText,
     markComplete,
     setError,
     clearUserError,
@@ -142,25 +120,14 @@ export const createMessageUpdater = (
   }
 }
 
-/**
- * One queued change. A text delta is kept structured rather than as a closure
- * so consecutive deltas of the same type can be merged into a single append at
- * flush time.
- */
-type PendingUpdate =
-  | { kind: 'updater'; update: (msg: ChatMessage) => ChatMessage }
-  | { kind: 'rootText'; delta: RootTextDelta }
-
 /** Batched updater that queues updates and flushes at a regular interval. */
 export const createBatchedMessageUpdater = (
   aiMessageId: string,
   setMessages: SetMessagesFn,
   flushIntervalMs: number = DEFAULT_FLUSH_INTERVAL_MS,
 ): BatchedMessageUpdater => {
-  // Ordered queue, applied on the next flush. Text deltas are merged in place
-  // with the previous entry when they share a type, so a 100ms flush window
-  // costs one block-array append per text type instead of one per token.
-  const pendingUpdaters: PendingUpdate[] = []
+  // Queue of message updater functions to be applied on next flush
+  const pendingUpdaters: Array<(msg: ChatMessage) => ChatMessage> = []
   let intervalId: ReturnType<typeof setInterval> | null = null
   let isDisposed = false
 
@@ -170,18 +137,9 @@ export const createBatchedMessageUpdater = (
     // Capture and clear the queue atomically
     const updaters = pendingUpdaters.splice(0, pendingUpdaters.length)
 
-    // Compose all pending updates into a single transform, in arrival order
+    // Compose all pending updaters into a single transform
     const composedUpdater = (msg: ChatMessage): ChatMessage => {
-      return updaters.reduce(
-        (m, entry) =>
-          entry.kind === 'updater'
-            ? entry.update(m)
-            : {
-                ...m,
-                blocks: appendTextToRootStream(m.blocks ?? [], entry.delta),
-              },
-        msg,
-      )
+      return updaters.reduce((m, fn) => fn(m), msg)
     }
 
     // Apply composed update to the target message
@@ -212,7 +170,7 @@ export const createBatchedMessageUpdater = (
       )
       return
     }
-    pendingUpdaters.push({ kind: 'updater', update: updater })
+    pendingUpdaters.push(updater)
   }
 
   const updateAiMessageBlocks = (
@@ -222,20 +180,6 @@ export const createBatchedMessageUpdater = (
       ...msg,
       blocks: blockUpdater(msg.blocks ?? []),
     }))
-  }
-
-  const appendRootText = (delta: RootTextDelta) => {
-    if (!delta.text) return
-    if (isDisposed) {
-      updateAiMessageBlocks((blocks) => appendTextToRootStream(blocks, delta))
-      return
-    }
-    const tail = pendingUpdaters[pendingUpdaters.length - 1]
-    if (tail && tail.kind === 'rootText' && tail.delta.type === delta.type) {
-      tail.delta = { ...tail.delta, text: tail.delta.text + delta.text }
-      return
-    }
-    pendingUpdaters.push({ kind: 'rootText', delta })
   }
 
   const addBlock = (block: ContentBlock) => {
@@ -325,7 +269,6 @@ export const createBatchedMessageUpdater = (
   return {
     updateAiMessage,
     updateAiMessageBlocks,
-    appendRootText,
     markComplete,
     setError,
     clearUserError,

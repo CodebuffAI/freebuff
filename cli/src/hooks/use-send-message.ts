@@ -37,7 +37,6 @@ import { runWithFreebuffCatalogStaleRetry } from '../utils/freebuff-model-catalo
 import { logger } from '../utils/logger'
 import { clearActiveRun, registerActiveRun } from '../utils/active-run'
 import {
-  checkpointIntervalMsForChat,
   clearLiveChatStateProvider,
   loadMostRecentChatState,
   resolveCurrentChatDir,
@@ -829,11 +828,6 @@ export const useSendMessage = ({
                       ...clientDescriptorMetadata(content),
                     }
                   : undefined,
-              // Checkpoint cost is proportional to the persisted state, so the
-              // interval scales with it — 5s under 8MB, then 10s/15s/20s at
-              // 8MB/16MB/24MB — instead of paying a full clone + serialize +
-              // fsync of tens of MB every 5s.
-              stateSnapshotIntervalMs: checkpointIntervalMsForChat(runChatDir),
               onStateSnapshot: (snapshot) => {
                 const pinnedSnapshot = pinByokConnection(snapshot, selectedByok)
                 latestRunStateSnapshot = pinnedSnapshot

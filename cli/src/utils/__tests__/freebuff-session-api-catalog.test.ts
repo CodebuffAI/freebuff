@@ -47,15 +47,7 @@ test('catalog mode sends the protocol header on every call and the handle for a 
   await callFreebuffSession('POST', 'tok', { model: 'm-flash' })
   await callFreebuffSession('GET', 'tok', { instanceId: 'i1' })
   await callFreebuffSession('DELETE', 'tok', { instanceId: 'i1' })
-  // The first call a session makes is device-key registration, which is not a
-  // session request and carries no model header; selecting the session calls
-  // by URL keeps this test about the session protocol rather than about how
-  // many requests the client happens to make before it.
-  const sessionCalls = fetchSpy.mock.calls.filter(
-    (call: unknown[]) => !String(call[0]).includes('/device-keys'),
-  )
-  expect(sessionCalls).toHaveLength(3)
-  const [post, get, del] = sessionCalls.map(headersOf)
+  const [post, get, del] = fetchSpy.mock.calls.map(headersOf)
   expect(post!.get('x-freebuff-model')).toBe('fbm1.m-flash-h1')
   for (const headers of [post!, get!, del!]) {
     expect(headers.get('x-freebuff-catalog-protocol')).toBe('1')

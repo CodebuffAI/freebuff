@@ -12,10 +12,6 @@ import type {
   TextContentBlock,
 } from '../types/chat'
 
-/** Longest tag minus one: a tag split across the seam can start this far back. */
-const MAX_TAG_LENGTH_PLUS_ONE =
-  Math.max(THINK_OPEN_TAG.length, THINK_CLOSE_TAG.length)
-
 let thinkingIdCounter = 0
 const generateThinkingId = (): string => {
   thinkingIdCounter++
@@ -152,12 +148,7 @@ const appendTextWithThinkParsingToBlocks = (
   if (wasInsideThinking && lastBlock?.type === 'text') {
     const lastBlockContent = lastBlock.content
 
-    // Read the tail once rather than running the prefix table over the whole
-    // block: `endsWith` on a multi-hundred-KB rope flattens it, i.e. O(block)
-    // per chunk, which is quadratic over a thinking stream.
-    const partialLen = getPartialTagLength(
-      lastBlockContent.slice(-MAX_TAG_LENGTH_PLUS_ONE),
-    )
+    const partialLen = getPartialTagLength(lastBlockContent)
     if (partialLen > 0) {
       const potentialTag = lastBlockContent.slice(-partialLen) + text
       if (potentialTag.startsWith(THINK_CLOSE_TAG)) {
@@ -179,32 +170,13 @@ const appendTextWithThinkParsingToBlocks = (
     lastBlock?.type === 'text' &&
     lastBlock.textType === 'text'
   ) {
-    // A think tag can only be *completed* by this delta in two places: at the
-    // seam (the block's tail is a partial tag and this delta finishes it) or
-    // wholly inside `text`. A tag earlier in the block was split out when it
-    // arrived, so there is nothing else to find.
-    //
-    // Detecting those two cases costs O(prefix + chunk). Concatenating the
-    // block and searching the result — the previous shape — was O(block) per
-    // chunk on any text containing '<', which is ordinary in code (JSX, XML,
-    // `a < b`): a 470 KB stream spent ~430 ms in the seam scan once the block
-    // was long. A 1.9 MB stream with ~37,000 think segments still spends 63.9 s
-    // (perf-bench, 2026-10-29) in the shallow `[...blocks]` copy at the top of
-    // this function; this scan is not that cost and does not remove it.
-    const seam = lastBlock.content.slice(
-      Math.max(0, lastBlock.content.length - MAX_TAG_LENGTH_PLUS_ONE),
-    )
-    const partialLen = getPartialTagLength(seam)
-    const seamTail = partialLen > 0 ? seam.slice(-partialLen) : ''
-    const seamCompletesTag =
-      partialLen > 0 &&
-      ((seamTail + text).startsWith(THINK_OPEN_TAG) ||
-        (seamTail + text).startsWith(THINK_CLOSE_TAG))
-    const chunkHasTag =
-      text.includes(THINK_OPEN_TAG) || text.includes(THINK_CLOSE_TAG)
+    const combinedText = lastBlock.content + text
 
-    if (seamCompletesTag || chunkHasTag) {
-      textToParse = lastBlock.content + text
+    if (
+      combinedText.includes(THINK_OPEN_TAG) ||
+      combinedText.includes(THINK_CLOSE_TAG)
+    ) {
+      textToParse = combinedText
       nextBlocks.pop()
     }
   }

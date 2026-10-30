@@ -16,9 +16,7 @@ import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 import type { AgentState } from '@codebuff/common/types/session-state'
 
 const omitUndefined = (value: Record<string, JSONValue | undefined>) => {
-  // Built mutably and returned as `JSONObject`: JSON is read-only on the way
-  // back in, but assembling a new payload needs a writable index here.
-  const result: Record<string, JSONValue | undefined> = {}
+  const result: JSONObject = {}
   for (const [key, field] of Object.entries(value)) {
     if (field !== undefined) {
       result[key] = field

@@ -586,24 +586,6 @@ describe('createAgentBlock', () => {
     expect(block.agentName).toBe('Agent')
     expect(block.agentType).toBe('unknown')
   })
-
-  // A fan-out worker opens collapsed: otherwise every tool block it runs is
-  // drawn live inside the one message that holds the whole fan-out.
-  test('opens a fan-out worker collapsed', () => {
-    const block = createAgentBlock({
-      agentId: 'worker-1',
-      agentType: 'base3-fast-worker-deepseek-flash',
-    })
-    expect(block.isCollapsed).toBe(true)
-  })
-
-  test('leaves a large agent expanded', () => {
-    const block = createAgentBlock({
-      agentId: 'impl-1',
-      agentType: 'editor-implementor',
-    })
-    expect(block.isCollapsed).toBeUndefined()
-  })
 })
 
 describe('updateBlocksRecursively', () => {

@@ -10,7 +10,7 @@
  * surfaces told different things.
  */
 import { describe, expect, test } from 'bun:test'
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { ensureCliTestEnv } from '../../__tests__/test-utils'
@@ -40,11 +40,6 @@ const DESKTOP_RUN = join(
   'sponsored-run.ts',
 )
 
-// `freebuff-desktop/` is not part of the public export, so there is no copy to
-// compare against in a public checkout. The mirror check is skipped there and
-// runs unchanged in the private tree, which is the only place both files exist.
-const DESKTOP_PRESENT = existsSync(DESKTOP_RUN)
-
 describe('the mirrored in-place guidance', () => {
   test('resolves tracking in the execution prompt without changing user context', () => {
     const procedure = 'Sign in at https://acme.example/login?bfcid={bfcid}'
@@ -55,7 +50,7 @@ describe('the mirrored in-place guidance', () => {
     expect(prompt).toContain('User message 1:\nKeep {bfcid} here')
   })
 
-  test.skipIf(!DESKTOP_PRESENT)('every bullet is still byte-identical to Desktop’s', () => {
+  test('every bullet is still byte-identical to Desktop’s', () => {
     const source = readFileSync(DESKTOP_RUN, 'utf8')
     for (const bullet of SPONSORED_IN_PLACE_BULLETS) {
       // The shell-install bullet is the one Desktop replaces with its
@@ -69,13 +64,13 @@ describe('the mirrored in-place guidance', () => {
     }
   })
 
-  test.skipIf(!DESKTOP_PRESENT)('the report_friction bullet is byte-identical to Desktop’s', () => {
+  test('the report_friction bullet is byte-identical to Desktop’s', () => {
     expect(readFileSync(DESKTOP_RUN, 'utf8')).toContain(
       SPONSORED_FRICTION_BULLET,
     )
   })
 
-  test.skipIf(!DESKTOP_PRESENT)('the framing and the context heading are byte-identical to Desktop’s', () => {
+  test('the framing and the context heading are byte-identical to Desktop’s', () => {
     const source = readFileSync(DESKTOP_RUN, 'utf8')
     for (const text of [SPONSORED_TASK_FRAMING, SPONSORED_CONTEXT_HEADING])
       for (const line of text.split('\n')) expect(source, line).toContain(line)

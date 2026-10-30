@@ -1,11 +1,10 @@
-import { describe, expect, spyOn, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { createTestRenderer } from '@opentui/core/testing'
 import { createRoot, flushSync } from '@opentui/react'
 import React from 'react'
 
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 
-import * as auth from '../../utils/auth'
 import { fetchDockArm, useDockPanel, type DockPanelState } from '../use-dock-panel'
 
 import type { CliDockArm } from '@codebuff/common/util/ad-experiment'
@@ -321,16 +320,8 @@ describe('fetchDockArm', () => {
       called = true
       return { ok: true, json: async () => ({ dockArm: 'expandable' }) }
     }) as unknown as typeof fetch
-    // "No token" has to be established, not assumed: a developer machine with
-    // ~/.config/manicode/credentials.json has a token, so the fetch would run
-    // and this test would fail there while passing on CI. Pin the token to
-    // absent instead of depending on whose home directory the suite runs in.
-    const tokenSpy = spyOn(auth, 'getAuthToken').mockReturnValue(undefined)
-    try {
-      expect(await fetchDockArm(spy, 'https://example.invalid')).toBe('control')
-      expect(called).toBe(false)
-    } finally {
-      tokenSpy.mockRestore()
-    }
+    // No CLI auth token is set in the test environment.
+    expect(await fetchDockArm(spy, 'https://example.invalid')).toBe('control')
+    expect(called).toBe(false)
   })
 })

@@ -131,9 +131,9 @@ const appendRootChunk = (state: EventHandlerState, delta: TextDelta) => {
     return
   }
 
-  // Structured rather than a closure: the batched updater merges consecutive
-  // deltas of one type into a single block-array append per flush.
-  state.message.updater.appendRootText(delta)
+  state.message.updater.updateAiMessageBlocks((blocks) =>
+    appendTextToRootStream(blocks, delta),
+  )
 
   if (
     state.mode.agentMode === 'PLAN' &&

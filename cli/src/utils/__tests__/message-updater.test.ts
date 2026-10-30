@@ -1,6 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
 
-import { appendTextToRootStream } from '../block-operations'
 import {
   createMessageUpdater,
   createBatchedMessageUpdater,
@@ -642,70 +641,5 @@ describe('createBatchedMessageUpdater timer behavior', () => {
     // All 3 intervals should be cleared
     expect(clearedIntervals).toHaveLength(3)
     expect(intervalCallbacks.size).toBe(0)
-  })
-})
-
-describe('appendRootText coalescing', () => {
-  const streamed = [
-    { type: 'text' as const, text: 'answer ' },
-    { type: 'text' as const, text: 'more ' },
-    { type: 'text' as const, text: '<thi' },
-    { type: 'reasoning' as const, text: 'nking>why' },
-    { type: 'reasoning' as const, text: '</thi' },
-    { type: 'text' as const, text: 'nk>done' },
-  ]
-
-  test('merged deltas produce the same blocks as one append each', () => {
-    let merged: ChatMessage[] = [{ ...baseMessages[0] }]
-    const batched = createBatchedMessageUpdater('ai-1', (fn) => {
-      merged = fn(merged)
-    }, 10_000)
-    for (const delta of streamed) batched.appendRootText(delta)
-    batched.flush()
-    batched.dispose()
-
-    // Same content applied one at a time, through the primitive the merge
-    // replaces; any difference here is a rendering or ordering regression.
-    const oneByOne = streamed.reduce(
-      (blocks, delta) => appendTextToRootStream(blocks, delta as never),
-      [] as ContentBlock[],
-    )
-    // `thinkingId` comes from a module-global counter, so the two runs number
-    // their reasoning blocks differently; everything visible is compared.
-    const shape = (blocks: ContentBlock[] | undefined) =>
-      (blocks ?? []).map((block) => {
-        const text = block as TextContentBlock
-        return {
-          type: block.type,
-          content: text.content,
-          textType: text.textType,
-          thinkingOpen: text.thinkingOpen,
-        }
-      })
-
-    expect(shape(merged[0].blocks)).toEqual(shape(oneByOne))
-  })
-
-  test('a flush boundary and an interleaved update keep arrival order', () => {
-    let state: ChatMessage[] = [{ ...baseMessages[0] }]
-    const batched = createBatchedMessageUpdater('ai-1', (fn) => {
-      state = fn(state)
-    }, 10_000)
-
-    batched.appendRootText({ type: 'text', text: 'before ' })
-    batched.flush()
-    batched.appendRootText({ type: 'text', text: 'after' })
-    batched.updateAiMessageBlocks((blocks) => [
-      ...blocks,
-      { type: 'text', content: '\ntool output' } as ContentBlock,
-    ])
-    batched.flush()
-    batched.dispose()
-
-    const text = (state[0].blocks ?? [])
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as TextContentBlock).content)
-      .join('|')
-    expect(text).toBe('before after|\ntool output')
   })
 })

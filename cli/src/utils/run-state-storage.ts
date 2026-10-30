@@ -20,51 +20,6 @@ import type { RunState } from '@codebuff/sdk'
 
 const RUN_STATE_FILENAME = 'run-state.json'
 
-// One extra 5s of checkpoint interval per 8 MB of persisted state, capped at
-// 20s: a small chat keeps the base cadence, and only a genuinely large
-// transcript stretches, where a checkpoint costs tens of milliseconds and two
-// fsyncs. Read from the files on disk once per run, so the interval follows the
-// transcript that run will actually be extending.
-const CHECKPOINT_INTERVAL_STEP_BYTES = 8 * 1024 * 1024
-const CHECKPOINT_BASE_INTERVAL_MS = 5_000
-const CHECKPOINT_MAX_INTERVAL_MS = 20_000
-
-/** The interval for a given persisted size - 5s, +5s per 8 MB, capped at 20s. */
-export function checkpointIntervalMsForStateBytes(bytes: number): number {
-  if (!Number.isFinite(bytes) || bytes <= 0) return CHECKPOINT_BASE_INTERVAL_MS
-  const steps = Math.floor(bytes / CHECKPOINT_INTERVAL_STEP_BYTES)
-  return Math.min(
-    CHECKPOINT_MAX_INTERVAL_MS,
-    CHECKPOINT_BASE_INTERVAL_MS * (1 + steps),
-  )
-}
-
-/**
- * The checkpoint interval to hand the SDK for a run in `chatDir` (see
- * `RunOptions.stateSnapshotIntervalMs`). One directory pass, once per run.
- */
-export function checkpointIntervalMsForChat(chatDir: string): number {
-  const want = new Set([RUN_STATE_FILENAME, CHAT_MESSAGES_FILENAME])
-  let bytes = 0
-  try {
-    // One readdir to stat both files at once instead of two per-file statSyncs —
-    // halves syscall count on a path that sits between the UI and the agent
-    // loop.
-    const names = fs.readdirSync(chatDir)
-    for (const name of names) {
-      if (!want.has(name)) continue
-      try {
-        bytes += fs.statSync(path.join(chatDir, name)).size
-      } catch {
-        // File vanished between readdir and stat — leave base interval.
-      }
-    }
-  } catch {
-    // Directory missing — leave base interval.
-  }
-  return checkpointIntervalMsForStateBytes(bytes)
-}
-
 type SavedChatState = {
   runState: RunState
   messages: ChatMessage[]
