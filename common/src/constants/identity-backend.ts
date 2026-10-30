@@ -79,17 +79,18 @@ export function identityReadBackend(
  *             converges anything the twin got wrong (it applies Convex's
  *             document), and the comparison still logs.
  *
- * - `postgres` Postgres DECIDES the browser-called writes: the twin runs
- *             first, with the rows locked and the resurrection guard read
- *             from `account_deletion_audit`, and a refusal there never
- *             reaches Convex. An accepted write is then CARRIED to Convex by
- *             the same Convex mutation, inside the Postgres transaction, so
- *             a Convex failure rolls it back and the two never part; a new
- *             account's id is minted by that same call (Convex stays the
- *             minter while ~110 `v.id('users')` fields and 514
- *             `getAuthUser` sites read Convex `users`). The answer is the
- *             twin's. Server-side writers (badge sync, email move, Desktop
- *             provisioner) behave as at `dual`. The projection still runs.
+ * - `postgres` Postgres DECIDES AND COMMITS the browser-called writes: the
+ *             twin runs first, with the rows locked and the resurrection
+ *             guard read from `account_deletion_audit`, and a refusal there
+ *             never reaches Convex. An accepted write commits on Postgres
+ *             alone, then is CARRIED to Convex by the same Convex mutation
+ *             after COMMIT, best-effort (a failure, e.g. Convex paused, is
+ *             logged and never fails the write; the BYOK/Codex credential
+ *             writers' carry stays required while the runner's credential
+ *             reads are held on Convex). Only a new account's id is
+ *             still minted by the Convex sign-in inside the transaction
+ *             (IDENTITY_USER_ID_MINTER below). The answer is the twin's.
+ *             The projection still runs.
  *
  * Needs the projection running (`IDENTITY_BACKEND` not `convex`): the twins
  * write a mirror that only the projection keeps whole. `postgres` also needs
