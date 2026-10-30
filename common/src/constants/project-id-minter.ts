@@ -19,8 +19,9 @@
  *
  * Flip only with platform Convex paused, or once nothing Convex-side reads a
  * new project: Convex holds no document for a Postgres-minted project, so a
- * Convex action that reads one (a Web cold start's `initializeUnassignedProject`,
- * an old bundle's direct Convex read) finds nothing. A flip is a reviewed
+ * Convex function that reads one (an old bundle's direct Convex read) finds
+ * nothing. A Web cold start of a minted shell runs on freebuff-web
+ * (freebuff/web/src/server/web-cold-start-on-postgres.ts). A flip is a reviewed
  * one-line diff here, never an env var. freebuff-web's Render root is
  * `freebuff/web`, so a commit touching only this file does not deploy it:
  * redeploy freebuff-web by hand after the flip merges. The runner does not
