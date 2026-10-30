@@ -35,7 +35,34 @@ jobs:
       - name: Build SDK
         run: bun run build:sdk
 
+      # Green has to mean the suites ran. Until these two steps existed, this
+      # workflow only built and smoke-tested, so a red test suite and a green
+      # check were the same thing.
+      - name: Typecheck
+        run: |
+          bun run --cwd=cli typecheck
+          bun run --cwd=sdk typecheck
+
+      - name: Test
+        run: |
+          bun run --cwd=cli test
+          bun run --cwd=sdk test
+
       - name: Build Freebuff binary
+        # The compiled binary inlines NEXT_PUBLIC_* at build time, so the values
+        # must be present HERE, not only when the binary is run: with an empty
+        # build environment they are baked in as undefined and every later
+        # invocation dies in the env schema (smoke-binary.ts documents the same
+        # contract from the probe side).
+        env:
+          NEXT_PUBLIC_CB_ENVIRONMENT: prod
+          NEXT_PUBLIC_CODEBUFF_APP_URL: https://codebuff.com
+          NEXT_PUBLIC_SUPPORT_EMAIL: support@freebuff.com
+          NEXT_PUBLIC_POSTHOG_API_KEY: phc_public_placeholder
+          NEXT_PUBLIC_POSTHOG_HOST_URL: https://us.i.posthog.com
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_placeholder
+          NEXT_PUBLIC_STRIPE_CUSTOMER_PORTAL: https://billing.stripe.com/p/login/test
+          NEXT_PUBLIC_WEB_PORT: '3000'
         run: bun freebuff/cli/build.ts 0.0.0-ci
 
       - name: Smoke test Freebuff binary

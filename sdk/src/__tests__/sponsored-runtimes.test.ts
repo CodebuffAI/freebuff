@@ -167,7 +167,10 @@ describe('SPONSORED_RUNTIME_PROBE_SCRIPT Python detection', () => {
     () => {
       const output = runRuntimeProbe({ uname: 'Darwin' })
       expect(output).not.toContain('python\n')
-      expect(parseSponsoredRuntimeProbe(output)).toEqual([])
+      // Nothing python-shaped, not "nothing at all": this probe also reports
+      // node/npx from the host, and asserting an empty list made the test
+      // depend on what the machine happens to have in /usr/bin.
+      expect(parseSponsoredRuntimeProbe(output)).not.toContain('python')
     },
   )
 
@@ -185,7 +188,7 @@ describe('SPONSORED_RUNTIME_PROBE_SCRIPT Python detection', () => {
       xcodeSelectStatus: 1,
     })
     expect(output).not.toContain('python\n')
-    expect(parseSponsoredRuntimeProbe(output)).toEqual([])
+    expect(parseSponsoredRuntimeProbe(output)).not.toContain('python')
   })
 
   testWithSystemPython(
