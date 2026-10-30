@@ -22,14 +22,24 @@ describe('Gravity sidebar contract', () => {
   })
   test('new Gravity names round-trip to stable internal placement IDs', () => {
     for (const [internal, external] of [
-      [SIDEBAR, 'billboard-sidebar-desktop'],
-      [`${SIDEBAR}:web`, 'billboard-sidebar-web'],
+      [SIDEBAR, 'Sidebar-Desktop'],
+      [`${SIDEBAR}:web`, 'Sidebar-Web'],
     ] as const) {
       expect(gravitySidebarPlacementId(internal)).toBe(external)
       expect(internalGravitySidebarPlacementId(external)).toBe(internal)
     }
   })
   test('historical response labels and unrelated placements remain compatible', () => {
+    expect(internalGravitySidebarPlacementId('sidebar-desktop')).toBe(SIDEBAR)
+    expect(internalGravitySidebarPlacementId('sidebar-web')).toBe(
+      `${SIDEBAR}:web`,
+    )
+    expect(internalGravitySidebarPlacementId('billboard-sidebar-desktop')).toBe(
+      SIDEBAR,
+    )
+    expect(internalGravitySidebarPlacementId('billboard-sidebar-web')).toBe(
+      `${SIDEBAR}:web`,
+    )
     expect(internalGravitySidebarPlacementId(`${SIDEBAR}-web`)).toBe(
       `${SIDEBAR}:web`,
     )

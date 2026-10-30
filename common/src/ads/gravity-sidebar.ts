@@ -16,16 +16,22 @@ export function isGravitySidebarRequest(ids: readonly string[]): boolean {
 
 /** External Gravity names are independent of our stable client/reporting IDs. */
 export function gravitySidebarPlacementId(id: string): string {
-  if (id === BILLBOARD_SIDEBAR_PLACEMENT_ID) return 'billboard-sidebar-desktop'
-  if (id === `${BILLBOARD_SIDEBAR_PLACEMENT_ID}:web`)
-    return 'billboard-sidebar-web'
+  if (id === BILLBOARD_SIDEBAR_PLACEMENT_ID) return 'Sidebar-Desktop'
+  if (id === `${BILLBOARD_SIDEBAR_PLACEMENT_ID}:web`) return 'Sidebar-Web'
   return id
 }
 
 /** Accept historical response labels while requests migrate to the new names. */
 export function internalGravitySidebarPlacementId(id: string): string {
-  if (id === 'billboard-sidebar-desktop') return BILLBOARD_SIDEBAR_PLACEMENT_ID
   if (
+    id === 'Sidebar-Desktop' ||
+    id === 'sidebar-desktop' ||
+    id === 'billboard-sidebar-desktop'
+  )
+    return BILLBOARD_SIDEBAR_PLACEMENT_ID
+  if (
+    id === 'Sidebar-Web' ||
+    id === 'sidebar-web' ||
     id === 'billboard-sidebar-web' ||
     id === `${BILLBOARD_SIDEBAR_PLACEMENT_ID}-web`
   )
