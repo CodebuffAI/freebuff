@@ -205,6 +205,9 @@ export type HostedWorkspaceHost = {
   }
   /** Open a reviewed HTTP(S) authorization link in the system browser. */
   openExternal?(url: string): Promise<void>
+  /** Text editing is restricted to this window and native's allowlisted commands. */
+  onTextContextMenu?: import('../types/text-menu').TextMenuBridge['onTextContextMenu']
+  textEdit?: import('../types/text-menu').TextMenuBridge['textEdit']
   shortcuts?: {
     setBindings(bindings: Record<string, string | null>): Promise<void>
     setRecording(recording: boolean): Promise<void>
