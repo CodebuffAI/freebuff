@@ -20,12 +20,31 @@ describe('Gravity sidebar contract', () => {
     ])
       expect(isGravitySidebarRequest(ids)).toBe(false)
   })
-  test('Web slug maps back to the existing internal placement', () => {
-    expect(gravitySidebarPlacementId(`${SIDEBAR}:web`)).toBe(`${SIDEBAR}-web`)
+  test('new Gravity names round-trip to stable internal placement IDs', () => {
+    for (const [internal, external] of [
+      [SIDEBAR, 'billboard-sidebar-desktop'],
+      [`${SIDEBAR}:web`, 'billboard-sidebar-web'],
+    ] as const) {
+      expect(gravitySidebarPlacementId(internal)).toBe(external)
+      expect(internalGravitySidebarPlacementId(external)).toBe(internal)
+    }
+  })
+  test('historical response labels and unrelated placements remain compatible', () => {
     expect(internalGravitySidebarPlacementId(`${SIDEBAR}-web`)).toBe(
       `${SIDEBAR}:web`,
     )
-    expect(gravitySidebarPlacementId(SIDEBAR)).toBe(SIDEBAR)
+    expect(internalGravitySidebarPlacementId(SIDEBAR)).toBe(SIDEBAR)
+    expect(internalGravitySidebarPlacementId(`${SIDEBAR}:web`)).toBe(
+      `${SIDEBAR}:web`,
+    )
+    for (const id of [
+      'Desktop-Billboard-Panel',
+      'Desktop-Inline-Chat',
+      'unknown',
+    ]) {
+      expect(gravitySidebarPlacementId(id)).toBe(id)
+      expect(internalGravitySidebarPlacementId(id)).toBe(id)
+    }
   })
   test('requires full, correctly sized HTTPS artwork; drops unknown shapes', () => {
     expect(

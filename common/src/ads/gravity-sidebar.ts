@@ -14,17 +14,23 @@ export function isGravitySidebarRequest(ids: readonly string[]): boolean {
   return ids.length > 0 && ids.every(isGravitySidebarPlacement)
 }
 
-/** Gravity registration generates a hyphenated slug, unlike our :web IDs. */
+/** External Gravity names are independent of our stable client/reporting IDs. */
 export function gravitySidebarPlacementId(id: string): string {
-  return id === `${BILLBOARD_SIDEBAR_PLACEMENT_ID}:web`
-    ? `${BILLBOARD_SIDEBAR_PLACEMENT_ID}-web`
-    : id
+  if (id === BILLBOARD_SIDEBAR_PLACEMENT_ID) return 'billboard-sidebar-desktop'
+  if (id === `${BILLBOARD_SIDEBAR_PLACEMENT_ID}:web`)
+    return 'billboard-sidebar-web'
+  return id
 }
 
+/** Accept historical response labels while requests migrate to the new names. */
 export function internalGravitySidebarPlacementId(id: string): string {
-  return id === `${BILLBOARD_SIDEBAR_PLACEMENT_ID}-web`
-    ? `${BILLBOARD_SIDEBAR_PLACEMENT_ID}:web`
-    : id
+  if (id === 'billboard-sidebar-desktop') return BILLBOARD_SIDEBAR_PLACEMENT_ID
+  if (
+    id === 'billboard-sidebar-web' ||
+    id === `${BILLBOARD_SIDEBAR_PLACEMENT_ID}-web`
+  )
+    return `${BILLBOARD_SIDEBAR_PLACEMENT_ID}:web`
+  return id
 }
 
 /**
