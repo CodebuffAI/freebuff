@@ -36,18 +36,17 @@ describe('freebuffPickerPlacement', () => {
     expect(at(FREEBUFF_SOLAR_MINI_4_MODEL_ID).section).toBe('unlimited')
     // DeepSeek V4.1 Flash leads Optimized as its pick since 2026-10-14.
     expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)).toEqual({ section: 'optimized', order: 5, recommended: true })
-    // Then cheapest to dearest (2026-10-15): MiMo v2.6 Flash Slow (5), MiMo v2.6 Flash Fast (10),
-    // Muse Spark 1.3 (15), GLM 5.3 Flash and GPT-6 Luna (20).
+    // In view (2026-10-30): Flash, then Muse Spark 1.3, GLM 5.3 Flash, GPT-6
+    // Luna; both MiMo rows and DeepSeek V4.1 Flash Slow under More.
     const optimized = [
-      'm-61c26317cc', // MiMo v2.6 Flash Slow
-      FREEBUFF_MIMO_V25_MODEL_ID,
       FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
       FREEBUFF_GLM_V53_FLASH_MODEL_ID,
       FREEBUFF_GPT_6_LUNA_MODEL_ID,
     ].map((id) => at(id).order)
     expect(optimized).toEqual([...optimized].sort((a, b) => a - b))
     expect(optimized[0]).toBeGreaterThan(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID).order)
-    expect(at(FREEBUFF_MIMO_V25_MODEL_ID)).toEqual({ section: 'optimized', order: 12 })
+    for (const id of ['m-61c26317cc', 'm-8db1ccbba6', FREEBUFF_MIMO_V25_MODEL_ID])
+      expect(at(id)).toEqual({ section: 'optimized', order: expect.any(Number), more: true })
     expect(at(FREEBUFF_GLM_V53_FLASH_MODEL_ID).section).toBe('optimized')
     // Muse Spark 1.3 and GPT-6 Luna moved to Optimized on 2026-10-13.
     for (const id of [FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID, FREEBUFF_GPT_6_LUNA_MODEL_ID]) {
@@ -101,9 +100,10 @@ describe('freebuffPickerSections', () => {
       [
         'optimized',
         [
-          FREEBUFF_MIMO_V25_MODEL_ID,
           FREEBUFF_GLM_V53_FLASH_MODEL_ID,
           FREEBUFF_GPT_6_LUNA_MODEL_ID,
+          // Under More since 2026-10-30, so after the rows in view.
+          FREEBUFF_MIMO_V25_MODEL_ID,
           'unplaced-cheap',
         ],
       ],

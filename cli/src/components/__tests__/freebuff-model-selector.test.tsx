@@ -633,9 +633,10 @@ describe('FreebuffModelSelector tier layout', () => {
       lines.findIndex((line) => line.startsWith('OPTIMIZED · Strongest')),
       // DeepSeek V4.1 Flash leads Optimized as its pick since 2026-10-14.
       cardLine('DeepSeek V4.1 Flash'),
-      cardLine('MiMo v2.6 Flash Fast'),
       // GPT-6 Luna sits in Optimized since 2026-10-13.
       cardLine('GPT-6 Luna'),
+      // MiMo v2.6 Flash Fast waits under More since 2026-10-30: after Luna.
+      cardLine('MiMo v2.6 Flash Fast'),
       lines.findIndex((line) => line.startsWith('POWERFUL · Frontier')),
       ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? [cardLine('DeepSeek V4.1 Flash Fast')] : []),
       lines.findIndex((line) => line.startsWith('UNLIMITED · Experimental models')),

@@ -106,12 +106,12 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
 
   /** `turnRunning` leaves pricing to the runtime's own gate, which waits on
    *  the turn. */
-  async function mount(opts: { turnRunning?: boolean } = {}) {
+  async function mount(opts: { turnRunning?: boolean; height?: number } = {}) {
     expect(IS_FREEBUFF).toBe(true)
     useByokSelectionStore.setState({ selected: undefined, setupOpen: false })
     const setup = await createTestRenderer({
       width: 90,
-      height: 25,
+      height: opts.height ?? 25,
       kittyKeyboard: true,
     })
     const root = createRoot(setup.renderer)
@@ -285,7 +285,11 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
       },
     })
     try {
-      const setup = await mount()
+      // The one startable row (MiMo v2.6 Flash Fast, 0 here) waits under
+      // Optimized's More since 2026-10-30, below Luna. The test renderer never
+      // measures layout, so the picker's scroll-to-cursor cannot run here: a
+      // taller terminal keeps the row in the frame.
+      const setup = await mount({ height: 45 })
       await setup.renderOnce()
       expect(useFreebuffChatStore.getState().admission).toMatchObject({
         phase: 'failed',
