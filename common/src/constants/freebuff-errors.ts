@@ -41,6 +41,20 @@ export const FREEBUFF_TURN_SPEND_LIMIT_MESSAGE =
   'This turn reached its model usage limit. Your session is still available — send a new message to continue from here.'
 
 /**
+ * Our own per-message usage-policy refusal (the prompt-strike gate on the
+ * chat-completions route): HTTP 403 with `{ error, message }`, where
+ * `message` is the user-facing text naming the policy category and the
+ * account's strike count. Final: no client retries a 403, and the same
+ * message is refused again.
+ */
+export const FREEBUFF_PROMPT_POLICY_REFUSED_ERROR_CODE = 'prompt_policy_refused'
+
+/** The fixed opening of that refusal's `message`: Freebuff Web's chat
+ *  shows the message from here on, and never any text before it. */
+export const FREEBUFF_PROMPT_POLICY_REFUSED_OPENING =
+  'Freebuff did not send this message to the model.'
+
+/**
  * DeepSeek's platform content filter: HTTP 400 `invalid_request_error`,
  * "Content Exists Risk (request_id: …)". Applied upstream of every V4.1 Flash
  * lane — Luminal returns the identical body — so no divert escapes it, and
