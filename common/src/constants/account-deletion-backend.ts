@@ -1,3 +1,8 @@
+import {
+  identityUserIdMinter,
+  type IdentityUserIdMinter,
+} from './identity-backend'
+
 /**
  * What account deletion does with the Postgres copies of a Freebuff Web
  * account (COD-742 Wave C, full tier; docs/convex-retirement-account-deletion.md).
@@ -26,12 +31,13 @@
  *             `authorizeAppleDeletion` for the user's proof. The twins are
  *             purged as at `dual`, and the final pass also scrubs
  *             `user_profile`, writes `account_deletion_audit` and spends the
- *             codes (`finalize`). The background job still drives Convex's
- *             own purge (`deleteOwnAccount` with a code the server mints for
- *             that attempt), because the account's Convex rows live there
- *             until their domains move; Convex keeps its own audit row too.
- *             Flips with `IDENTITY_WRITE_BACKEND = postgres`, whose sign-in
- *             guard reads the Postgres audit row.
+ *             codes (`finalize`). The preflight reads nothing from Convex.
+ *             The background job drives Convex's own purge
+ *             (`deleteOwnAccount` with a code the server mints for that
+ *             attempt) only while Convex mints users ids
+ *             (`accountDeletionPurgesConvex`). Flips with
+ *             `IDENTITY_WRITE_BACKEND = postgres`, whose sign-in guard reads
+ *             the Postgres audit row.
  *
  * A constant, not an env var: a flip is a reviewed one-line diff.
  */
@@ -49,6 +55,23 @@ export function accountDeletionPurgesTwins(
   backend: AccountDeletionBackend = accountDeletionBackend(),
 ): boolean {
   return backend === 'dual' || backend === 'postgres'
+}
+
+/**
+ * True when the background job still drives Convex's own purge
+ * (`account_deletion:deleteOwnAccount`): every mode but `postgres`, and at
+ * `postgres` only while Convex mints users ids at sign-in
+ * (`IDENTITY_USER_ID_MINTER = convex`). Convex's sign-in refuses a new account
+ * whose address a claimed Convex `users` document still holds, so while it
+ * mints, a deleted account's document must go or its owner could never sign
+ * up again. Once freebuff-web mints, nothing reads Convex for the account and
+ * its Convex rows stay parked with the rest of Convex (COD-742 B25).
+ */
+export function accountDeletionPurgesConvex(
+  backend: AccountDeletionBackend = accountDeletionBackend(),
+  minter: IdentityUserIdMinter = identityUserIdMinter(),
+): boolean {
+  return backend !== 'postgres' || minter === 'convex'
 }
 
 /** True when Postgres holds the deletion step-up proof (`postgres`). */
