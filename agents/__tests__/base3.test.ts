@@ -69,6 +69,8 @@ const CLI_ROOTS = [
   base3FreeDeepseekFlashEvals,
   base3FreeDeepseek,
   base3FreeDeepseekFlash,
+  // Fast mode: the plain loop since 2026-10-30, no longer base3-fast's fan-out.
+  base3FastFreeDeepseekFlash,
   base3FreeMinimaxM3,
   base3FreeMimo,
   base3FreeMimo26Pro,
@@ -88,20 +90,12 @@ const CLI_ROOTS = [
   base3FreeMuseSpark13,
 ]
 
-/**
- * Every root the CLI map names, including the one that is NOT a single loop:
- * the base3-FAST root (agents/base3-fast.ts) fans out to parallel workers by
- * design and is pinned by agents/__tests__/base3-fast.test.ts. It joins the
- * registration checks below and stays out of the no-subagents loop.
- */
-const ALL_CLI_ROOTS = [...CLI_ROOTS, base3FastFreeDeepseekFlash]
-
 describe('base3 CLI roots', () => {
   test('keeps the efficiency flags the runtime reads', () => {
     // Fable 5.1 deliberately runs base2 for the trace campaign. The
     // count is asserted so a root added without the flags below cannot slip in
     // unnoticed.
-    expect(CLI_ROOTS.length).toBe(23)
+    expect(CLI_ROOTS.length).toBe(24)
     for (const agent of CLI_ROOTS) {
       // Windowed reads + the 100-entry glob cap + search-first tool wording.
       expect(agent.windowedFileReads).toBe(true)
@@ -185,7 +179,7 @@ describe('base3 CLI roots', () => {
   })
 
   test('every Freebuff root is pinned to the model its id is registered under', () => {
-    const byId = new Map(ALL_CLI_ROOTS.map((a) => [a.id, a]))
+    const byId = new Map(CLI_ROOTS.map((a) => [a.id, a]))
     for (const [model, agentId] of Object.entries(
       FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL,
     )) {
@@ -199,7 +193,7 @@ describe('base3 CLI roots', () => {
       if (isFreebuffLimitedOfferModelId(model.id)) continue
       const agentId = FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL[model.id]
       expect(agentId).toBeDefined()
-      expect(ALL_CLI_ROOTS.some((a) => a.id === agentId)).toBe(true)
+      expect(CLI_ROOTS.some((a) => a.id === agentId)).toBe(true)
     }
   })
 
@@ -290,7 +284,7 @@ describe('base3 CLI roots', () => {
   // Only a host that supplies `deadlineAt` may talk about time.
   test('never tells the model it is short on time', () => {
     const prompts = [
-      ...ALL_CLI_ROOTS.map((root) => root.systemPrompt!),
+      ...CLI_ROOTS.map((root) => root.systemPrompt!),
       createBase3().systemPrompt!,
       createBase3(undefined, { supportsBackgroundCommands: false })
         .systemPrompt!,
@@ -306,7 +300,7 @@ describe('base3 CLI roots', () => {
   test('states that a message without a tool call ends the turn', () => {
     for (const prompt of [
       createBase3().systemPrompt!,
-      ...ALL_CLI_ROOTS.map((root) => root.systemPrompt!),
+      ...CLI_ROOTS.map((root) => root.systemPrompt!),
     ]) {
       expect(prompt).toContain(TURN_ENDING_RULE)
     }
@@ -320,7 +314,7 @@ describe('base3 CLI roots', () => {
   test('sizes the work to the request, without dropping completeness', () => {
     for (const prompt of [
       createBase3().systemPrompt!,
-      ...ALL_CLI_ROOTS.map((root) => root.systemPrompt!),
+      ...CLI_ROOTS.map((root) => root.systemPrompt!),
     ]) {
       expect(prompt).toContain('Size the work to the request')
       expect(prompt).toContain('Do everything the user asked for, completely')
@@ -401,6 +395,12 @@ describe('working in batches', () => {
     })
     expect(handle.systemPrompt).toContain(SECTION)
     expect(handle.stepPrompt).toStartWith('Work in batches:')
+    // fast mode is the same model on another lane
+    const fast = createBase3('deepseek/deepseek-v4-flash-fast', {
+      batching: true,
+    })
+    expect(fast.systemPrompt).toContain(SECTION)
+    expect(fast.stepPrompt).toStartWith('Work in batches:')
   })
 
   test('a lean row never gets it: its context budget says to read narrowly', () => {

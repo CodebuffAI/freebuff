@@ -30,8 +30,12 @@ import type { SecretAgentDefinition } from './types/secret-agent-definition'
  * slices, so no git round-trip (and no git) is needed.
  *
  * A worker must be pinned to its root's model or the session gate rejects it
- * mid-run, so the worker id names the model. Which models run this harness is
- * FREEBUFF_FAST_MODE_MODEL_IDS (common/src/constants/freebuff-model-ids.ts).
+ * mid-run, so the worker id names the model.
+ *
+ * No surface runs this harness since 2026-10-30: fast mode is Flash's base3
+ * root, batching included (agents/base3-fast-free-deepseek-flash.ts).
+ * Released CLI and Desktop builds still run it, and the buffbench arm
+ * (base3-fast-free-deepseek-flash-evals.ts) is built from it.
  */
 
 /** Everything the root may spawn: searchers for context, the worker for

@@ -10,19 +10,17 @@ export const FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID = 'deepseek/deepseek-v4-pro'
 export const FREEBUFF_MINIMAX_M3_MODEL_ID = 'minimax/minimax-m3'
 /** DeepSeek V4.1 Flash in FAST MODE: the same model as
  *  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, served by Pareto with DeepSeek's own
- *  API behind it (web/src/llm-api/deepseek-pareto.ts, 2026-10-24) and run on
- *  the `base3-fast` harness,
- *  which gathers context with parallel subagents. Its own wire id because
- *  it is its own entitlement: one wire id per price is the rule, and this
- *  row is priced on DeepSeek's own peak and off-peak hours. */
+ *  API behind it (web/src/llm-api/deepseek-pareto.ts, 2026-10-24), never the
+ *  rationed Luminal lane. Its own wire id because it is its own entitlement:
+ *  one wire id per price is the rule, and this row is priced on DeepSeek's
+ *  own peak and off-peak hours. */
 export const FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID =
   'deepseek/deepseek-v4-flash-fast'
 
 /**
- * The models that run the base3-fast harness (agents/base3-fast.ts). One
- * owner for "is this fast mode": the DeepSeek router's fast-mode lanes, the
- * Luminal grant at admission, and the Desktop harness all read this, so a
- * second fast-mode model is one line here. A fast-mode model IS
+ * The fast-mode models. One owner for "is this fast mode": the DeepSeek
+ * router's fast-mode lanes and the Luminal grant at admission both read
+ * this, so a second fast-mode model is one line here. A fast-mode model IS
  * its base model to everything that follows the upstream model (price card,
  * output budget, image handling) and is NOT one to the two things that follow
  * the lane.

@@ -1247,9 +1247,8 @@ export const FREEBUFF_ENABLE_MIMO_MODELS_IN_UI = true
  *  any surface lists the row (the CLI, Web and Desktop pickers read
  *  FREEBUFF_MODELS; the iOS and Android catalogs list it by hand), and it
  *  leaves both plan sets, while everything behind it stays wired — the id is
- *  SUPPORTED and admitted at full access, priced on DeepSeek's clock, routed
- *  to DeepSeek direct alone, and runs the base3-fast harness. The tests that
- *  count picker rows follow this switch. */
+ *  SUPPORTED and admitted at full access, priced on DeepSeek's clock, and kept
+ *  off the Luminal lane. The tests that count picker rows follow this switch. */
 export const FREEBUFF_ENABLE_FAST_MODE_IN_UI = true
 /** SERVER switch for the fast mode row: held on 2026-10-05 until the CLI and
  *  Desktop releases that carry it, served since. Off: the server's model
@@ -1853,25 +1852,23 @@ const DEEPSEEK_V4_FLASH_MODEL = {
 /**
  * DeepSeek V4.1 Flash in FAST MODE (2026-09-26).
  *
- * The same model as the row above, sold as a separate row because it is a
- * different entitlement in two ways at once:
+ * The same model as the row above, sold as a separate row because it is
+ * served by Pareto with DeepSeek's own API behind it (2026-10-24,
+ * web/src/llm-api/deepseek-pareto.ts), never the rationed Luminal lane:
+ * Pareto decodes as fast as direct (p50 ~224 tok/s) at about half the cost,
+ * and the Flash row is held to ~130 tok/s there so this row stays the fast
+ * one. A move to Luminal the same night was rolled back: under load Luminal
+ * decoded at a p50 of 137.
  *
- *  - It runs the `base3-fast` harness (agents/base3-fast.ts) instead of the
- *    single-loop base3: the root fans context gathering out to parallel
- *    file-pickers, splits the implementation across
- *    parallel worker subagents that share its prompt cache, and verifies the
- *    combined result itself. Several requests in flight at once is the whole
- *    point, which is why it cannot ride the Flash row.
- *  - It is served by Pareto with DeepSeek's own API behind it (2026-10-24,
- *    web/src/llm-api/deepseek-pareto.ts): Pareto decodes as fast as direct
- *    (p50 ~224 tok/s) at about half the cost, and the Flash row is held to
- *    ~130 tok/s there so this row stays the fast one. A move to Luminal the
- *    same night was rolled back: under load Luminal decoded at a p50 of 137.
+ * It runs the same base3 harness as the Flash row, batching section included
+ * (agents/base3.ts BATCHING_MODELS), since 2026-10-30. Before that it ran the
+ * `base3-fast` fan-out (agents/base3-fast.ts), which cost more and was no
+ * faster than base3 batching.
  *
  * Priced on DeepSeek's own clock (freebuff-freebucks.ts): 50 Freebucks in
  * the weekday window where DeepSeek direct doubles, 25 the rest of the time.
- * The harness spends about 1.3x base3 per task. The price was set while the
- * row ran on direct, which bills 1.7x Luminal off-peak and 3.4x at peak.
+ * The price was set while the row ran on direct, which bills 1.7x Luminal
+ * off-peak and 3.4x at peak.
  *
  * Everything else tracks the Flash row on purpose — the same DeepSeek data-use
  * terms, the same effort ladder, and `multimodal: true` because Luminal and
@@ -1884,9 +1881,8 @@ const DEEPSEEK_V4_FLASH_FAST_MODEL = {
   // The build date trails 'Fast' so the collapsed triggers strip it, as on the
   // Flash row.
   displayName: 'DeepSeek V4.1 Flash Fast 10/17',
-  tagline: 'Parallel agents',
-  taglineTooltip:
-    'Gathers context with parallel subagents.',
+  tagline: 'Fast',
+  taglineTooltip: 'Runs on DeepSeek’s own API.',
   availability: 'always',
   // Inert while `always`; names the row this one is a variant of.
   unavailableFallback: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,

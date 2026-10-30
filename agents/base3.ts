@@ -4,6 +4,7 @@ import {
 } from '@codebuff/common/constants/compaction-policy'
 import { BASE3_BATCHING_STEP_PROMPT } from '@codebuff/common/constants/base3-step-prompt'
 import {
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
   FREEBUFF_SOLAR_MINI_4_MODEL_ID,
@@ -64,7 +65,12 @@ Every response is a round trip: the whole conversation is sent again before the 
  * paired buffbench run on it that also checks its cache hit: the reminder
  * comes with the section.
  */
-const BATCHING_MODELS = [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]
+const BATCHING_MODELS = [
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  // The same model in fast mode, on a lane in front of DeepSeek's own API,
+  // which caches partial prefixes as Flash's lanes do.
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+]
 
 /**
  * The models that end a turn on a status line or a plan instead of calling the
@@ -118,7 +124,7 @@ export function createBase3(
     supportsBackgroundCommands?: boolean
     /** Append the "Work in batches" section, on a model in BATCHING_MODELS.
      *  For the roots that run the user's coding agent in build mode: the CLI
-     *  (`createBase3CliRoot`), Desktop and Desktop Cloud. Plan mode, fast mode,
+     *  (`createBase3CliRoot`), Desktop and Desktop Cloud. Plan mode,
      *  sponsored runs and Web/Cloud (whose platform runs the checks) leave it
      *  off, and a lean row never gets it: its context budget says to read
      *  narrowly. */
@@ -265,8 +271,7 @@ export function createBase3CliRoot(
     compaction?: RootCompactionPolicy
     /** See createBase3. */
     compiledModelId?: string
-    /** See createBase3. On for CLI roots; the sponsored and fast-mode roots
-     *  turn it off. */
+    /** See createBase3. On for CLI roots; the sponsored root turns it off. */
     batching?: boolean
   } = {},
 ): Omit<SecretAgentDefinition, 'id'> {

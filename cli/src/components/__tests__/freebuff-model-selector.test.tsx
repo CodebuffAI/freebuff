@@ -799,6 +799,8 @@ describe('FreebuffModelSelector tier layout', () => {
     // Measured on the WIDEST row (the smallest gap of any card line), not the
     // hero's: NEW now marks only the row a release announces, so the hero is
     // no longer the row that sets the width.
+    // 14 -> 15 when fast mode's tagline went from "Parallel agents" to "Fast":
+    // its row was the widest, and Terra's row is now the widest visible one.
     const gapToBorder = Math.min(
       ...frame
         .split('\n')
@@ -809,7 +811,7 @@ describe('FreebuffModelSelector tier layout', () => {
         .map((inner) => inner.length - inner.trimEnd().length),
     )
     expect(heroRow.endsWith('│')).toBe(true)
-    expect(gapToBorder).toBeLessThan(14)
+    expect(gapToBorder).toBeLessThan(15)
   })
 })
 

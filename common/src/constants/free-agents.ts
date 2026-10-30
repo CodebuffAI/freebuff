@@ -175,14 +175,13 @@ export const FREEBUFF_DESKTOP_THREAD_AGENT_IDS = [
 ] as const
 
 /**
- * The base3-fast root and its worker subagent (agents/base3-fast.ts), one pair
- * for the one model that runs fast mode today. The root is a base3 root with
- * a fan-out: it spawns code-searchers in parallel, then
- * splits the implementation across parallel workers that inherit its system
- * prompt and history (so their requests are prompt-cache hits), and verifies
- * the combined result itself. The worker is pinned to the same model as the
- * root — it must be, or the session gate answers session_model_mismatch — and
- * is allowlisted below like every other free-mode subagent.
+ * The fast-mode root and the base3-fast worker subagent (agents/base3-fast.ts).
+ * Since 2026-10-30 the root is Flash's base3 root on the fast model; until
+ * then it ran the base3-fast fan-out (parallel code-searchers, and workers
+ * that inherit its prompt and history). Both ids stay registered because
+ * released CLI and Desktop builds still run that fan-out: the worker is pinned
+ * to the fast model — it must be, or the session gate answers
+ * session_model_mismatch — and allowlisted below like every free-mode subagent.
  */
 export const FREEBUFF_BASE3_FAST_AGENT_ID = 'base3-fast-free-deepseek-flash'
 export const FREEBUFF_BASE3_FAST_WORKER_AGENT_ID =
@@ -228,12 +227,8 @@ export const FREEBUFF_PROJECTS_MAX_LIVE_SUBAGENTS = 20
 export const FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]: 'base3-free-deepseek',
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 'base3-free-deepseek-flash',
-  // Fast mode runs the base3-FAST harness (agents/base3-fast.ts): base3's
-  // loop plus parallel code-searchers and prompt-cached worker
-  // subagents. Registered in the base3 maps because it is the base3 family's
-  // rollout shape (windowed reads, mechanical compaction, no instructions
-  // prompt) with a fan-out on top; the no-subagents assertions on this map
-  // exempt exactly this id, on purpose.
+  // Fast mode: Flash's base3 root on the fast lane, under the id it had while
+  // it ran the base3-fast fan-out (agents/base3-fast.ts).
   [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]: FREEBUFF_BASE3_FAST_AGENT_ID,
   [FREEBUFF_MIMO_V25_MODEL_ID]: 'base3-free-mimo',
   [FREEBUFF_MIMO_V26_PRO_MODEL_ID]: 'base3-free-mimo-2-6-pro',
@@ -280,7 +275,7 @@ export const FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
 export const FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]: 'base3-free-deepseek',
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 'base3-free-deepseek-flash',
-  // Fast mode: the same base3-fast root id on both surfaces (see the Web map).
+  // Fast mode: the same root id on both surfaces (see the Web map).
   [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]: FREEBUFF_BASE3_FAST_AGENT_ID,
   [FREEBUFF_MIMO_V25_MODEL_ID]: 'base3-free-mimo',
   [FREEBUFF_MIMO_V26_PRO_MODEL_ID]: 'base3-free-mimo-2-6-pro',
@@ -885,6 +880,7 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // The worker is the one free-mode subagent that EDITS: it inherits the fast
   // root's prompt and history, so its allowlist entry is what lets the fan-out
   // bill as the session it belongs to instead of metering as a stray request.
+  // No surface spawns it since 2026-10-30; released CLI and Desktop builds do.
   'base2-free-deepseek-flash-fast': new Set([
     FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   ]),

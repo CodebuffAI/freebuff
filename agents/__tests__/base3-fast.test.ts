@@ -20,6 +20,7 @@ import {
   BASE3_FAST_GUIDANCE,
   BASE3_FAST_SPAWNABLE_AGENTS,
   BASE3_FAST_WORKER_ASSIGNMENT_OPENING,
+  createBase3FastCliRoot,
 } from '../base3-fast'
 import base3FastFreeDeepseekFlash from '../base3-fast-free-deepseek-flash'
 import base3FastFreeDeepseekFlashEvals from '../base3-fast-free-deepseek-flash-evals'
@@ -28,7 +29,10 @@ import base3FastWorkerDeepseekFlash from '../base3-fast-worker-deepseek-flash'
 import { createBase3, createBase3CliRoot } from '../base3'
 
 /**
- * The base3-fast harness (agents/base3-fast.ts): base3 plus a fan-out.
+ * The base3-fast harness (agents/base3-fast.ts): base3 plus a fan-out. No
+ * surface runs it since 2026-10-30 (fast mode is Flash's base3 on DeepSeek's
+ * own API), but released CLI and Desktop builds still do, and the buffbench
+ * arm below is built from it.
  *
  * What makes the fan-out affordable is a property of the WORKER definition —
  * it inherits its root's prompt and history, so its request is a cache hit —
@@ -37,7 +41,7 @@ import { createBase3, createBase3CliRoot } from '../base3'
  * at all, and the shape of the guidance: short, suggestive, and firm about
  * exactly two things.
  */
-describe('the base3-fast root', () => {
+describe('the fast-mode root', () => {
   const root = base3FastFreeDeepseekFlash
 
   test('is registered as the fast-mode model root on both surfaces', () => {
@@ -58,6 +62,22 @@ describe('the base3-fast root', () => {
     expect(isFreebuffFastModeModel(root.model)).toBe(true)
     expect(isFreebuffFastModeModel(base3FreeDeepseekFlash.model)).toBe(false)
   })
+
+  test('is the plain base3 CLI root on the fast model, with no fan-out', () => {
+    const plain = createBase3CliRoot({
+      model: FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+      isFreebuff: true,
+    })
+    expect(root.toolNames).toEqual(plain.toolNames)
+    expect(root.toolNames).not.toContain('spawn_agents')
+    expect(root.spawnableAgents).toBeUndefined()
+    expect(root.systemPrompt).toBe(plain.systemPrompt)
+    expect(root.systemPrompt).not.toContain(BASE3_FAST_GUIDANCE)
+  })
+})
+
+describe('the base3-fast root', () => {
+  const root = createBase3FastCliRoot(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)
 
   test('is the CLI root plus spawn_agents, assembled from it, and nothing else moved', () => {
     const plain = createBase3CliRoot({
@@ -179,7 +199,7 @@ describe('the buffbench arms', () => {
 
 describe('the base3-fast worker', () => {
   const worker = base3FastWorkerDeepseekFlash
-  const root = base3FastFreeDeepseekFlash
+  const root = createBase3FastCliRoot(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)
 
   test('is pinned to its root model and allowlisted for free mode', () => {
     expect(worker.id).toBe(FREEBUFF_BASE3_FAST_WORKER_AGENT_ID)
