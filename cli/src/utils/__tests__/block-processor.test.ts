@@ -805,6 +805,19 @@ describe('splitAgentsBySize', () => {
     expect(result).toEqual([agents])
   })
 
+  // A fan-out spawns many workers inside one message, and an expanded worker
+  // draws every tool block it runs. Pagination caps top-level messages, not
+  // the agents nested in one, so a worker has to count as small or a wide
+  // fan-out re-renders its whole tool tree on every streamed chunk.
+  test('treats a fan-out worker as a small agent', () => {
+    const agents = [
+      createNonImplementorAgent('w-1', 'base3-fast-worker-deepseek-flash'),
+      createNonImplementorAgent('w-2', 'base3-fast-worker-deepseek-flash'),
+      createNonImplementorAgent('w-3', 'base3-fast-worker-deepseek-flash-evals'),
+    ]
+    expect(splitAgentsBySize(agents)).toEqual([agents])
+  })
+
   test('gives each large agent its own group', () => {
     const agents = [
       createNonImplementorAgent('cr-1', 'code-reviewer'),

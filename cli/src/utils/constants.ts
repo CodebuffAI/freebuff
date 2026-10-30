@@ -52,6 +52,14 @@ export const shouldHideAgent = (agentId: string): boolean => {
 }
 
 // Agent IDs that should be collapsed by default when they start
+//
+// `fast-worker` is the fan-out worker (`base3-fast-worker-deepseek-flash` and
+// its per-model siblings). A fan-out spawns many of them at once inside a
+// single message, and an expanded worker draws every tool block it runs, so a
+// wide fan-out was the one render path pagination does not bound: the page is
+// capped by top-level message count, the agents nested inside one message are
+// not. Collapsed, a worker still shows its last line and its children, so the
+// result stays readable and one click expands the steps.
 export const COLLAPSED_BY_DEFAULT_AGENT_IDS = [
   'file-picker',
   'code-reviewer-selector',
@@ -63,6 +71,7 @@ export const COLLAPSED_BY_DEFAULT_AGENT_IDS = [
   'glob-matcher',
   'researcher-web',
   'researcher-docs',
+  'fast-worker',
 ] as const
 
 /**
