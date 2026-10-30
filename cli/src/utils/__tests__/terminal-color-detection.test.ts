@@ -7,6 +7,8 @@ import {
   themeFromBgColor,
   themeFromFgColor,
   terminalSupportsOSC,
+  detectTerminalThemeWithSupportTestHook,
+  detectBgColorEvidence,
   getGlobalOscTimeout,
   getQueryOscTimeout,
 } from '../terminal-color-detection'
@@ -421,5 +423,156 @@ describe('OSC response format variations', () => {
     // The RGB pattern should still be found
     const result = parseOSCResponse(response)
     expect(result).toEqual([30, 30, 46])
+  })
+})
+
+// ============================================================================
+// detectBgColorEvidence Tests (sync first-frame evidence)
+// ============================================================================
+
+describe('detectBgColorEvidence', () => {
+  const originalEnv = { ...process.env }
+
+  const clearColorEnv = () => {
+    delete process.env.TERM_BACKGROUND
+    delete process.env.COLORFGBG
+    delete process.env.TERM_PROGRAM
+    delete process.env.TERM_PROGRAM_VERSION
+    delete process.env.XTERM_VERSION
+    delete process.env.TERM
+  }
+
+  beforeEach(() => {
+    process.env = { ...originalEnv }
+    clearColorEnv()
+  })
+
+  afterEach(() => {
+    process.env = originalEnv
+  })
+
+  test('returns black rgb for TERM_BACKGROUND=dark', () => {
+    process.env.TERM_BACKGROUND = 'dark'
+    expect(detectBgColorEvidence()).toEqual([0, 0, 0])
+  })
+
+  test('returns white rgb for TERM_BACKGROUND=light', () => {
+    process.env.TERM_BACKGROUND = 'light'
+    expect(detectBgColorEvidence()).toEqual([255, 255, 255])
+  })
+
+  test('resolves COLORFGBG background index (dark)', () => {
+    process.env.COLORFGBG = '15;0'
+    expect(detectBgColorEvidence()).toEqual([0, 0, 0])
+    expect(themeFromBgColor(detectBgColorEvidence()!)).toBe('dark')
+  })
+
+  test('resolves COLORFGBG background index (light)', () => {
+    process.env.COLORFGBG = '0;15'
+    const rgb = detectBgColorEvidence()
+    expect(rgb).not.toBeNull()
+    expect(themeFromBgColor(rgb!)).toBe('light')
+  })
+
+  test('env evidence wins even when the terminal supports OSC', () => {
+    // OSC-capable terminal: no fallback applies, but COLORFGBG is still
+    // usable as first-frame evidence ahead of the probe's answer.
+    process.env.TERM_PROGRAM = 'iTerm.app'
+    process.env.COLORFGBG = '0;15'
+    expect(detectBgColorEvidence()).not.toBeNull()
+    expect(themeFromBgColor(detectBgColorEvidence()!)).toBe('light')
+  })
+
+  test('applies the Apple Terminal fallback when OSC is unsupported', () => {
+    // Old-version Apple Terminal skipping the query: explicit supportsOsc
+    // pin, since the host pty would otherwise steer terminalSupportsOSC().
+    process.env.TERM = 'fb-test-vt'
+    process.env.TERM_PROGRAM = 'Apple_Terminal'
+    process.env.TERM_PROGRAM_VERSION = '250'
+    const rgb = detectBgColorEvidence(undefined, false)
+    expect(rgb).toEqual([255, 255, 255])
+    expect(themeFromBgColor(rgb!)).toBe('light')
+  })
+
+  test('does not apply terminal fallbacks when a query will be sent', () => {
+    // OSC-capable terminal: the query answer supersedes the fallback, so
+    // the first frame must not assume it.
+    process.env.TERM_PROGRAM = 'WezTerm'
+    process.env.TERM = 'wezterm'
+    expect(detectBgColorEvidence()).toBeNull()
+  })
+
+  test('returns null when nothing is conclusive (no env, no fallback)', () => {
+    // A terminal that will be queried (supportsOsc=true) must not guess from
+    // nothing: the first frame falls through to OS detection, exactly the
+    // old order's behavior before an answer.
+    process.env.TERM = 'screen-256color'
+    process.env.TERM_PROGRAM = 'tmux'
+    expect(detectBgColorEvidence(undefined, true)).toBeNull()
+    // And without a query path or a known terminal hint there is simply no
+    // evidence either.
+    expect(detectBgColorEvidence(undefined, false)).toBeNull()
+  })
+})
+
+// ============================================================================
+// detectTerminalThemeWithSupportTestHook Tests (async query path, env-driven)
+// ============================================================================
+
+describe('detectTerminalThemeWithSupportTestHook', () => {
+  const originalEnv = { ...process.env }
+
+  beforeEach(() => {
+    process.env = { ...originalEnv }
+    delete process.env.TERM_BACKGROUND
+    delete process.env.COLORFGBG
+    delete process.env.TERM_PROGRAM
+    delete process.env.TERM_PROGRAM_VERSION
+    delete process.env.XTERM_VERSION
+    delete process.env.TERM
+  })
+
+  afterEach(() => {
+    process.env = originalEnv
+  })
+
+  test('unsupported-OSC terminal resolves from COLORFGBG without querying', async () => {
+    process.env.TERM = 'ansi'
+    process.env.COLORFGBG = '0;15'
+    const theme = await detectTerminalThemeWithSupportTestHook(false)
+    expect(theme).toBe('light')
+  })
+
+  test('unsupported-OSC terminal resolves from TERM_BACKGROUND', async () => {
+    process.env.TERM = 'ansi'
+    process.env.TERM_BACKGROUND = 'dark'
+    const theme = await detectTerminalThemeWithSupportTestHook(false)
+    expect(theme).toBe('dark')
+  })
+
+  test('unsupported-OSC Apple Terminal falls back per version', async () => {
+    process.env.TERM = 'ansi'
+    process.env.TERM_PROGRAM = 'Apple_Terminal'
+    process.env.TERM_PROGRAM_VERSION = '250'
+    const theme = await detectTerminalThemeWithSupportTestHook(false)
+    expect(theme).toBe('light')
+  })
+
+  test('unsupported-OSC terminal with no signals returns null', async () => {
+    process.env.TERM = 'dumb'
+    process.env.TERM_PROGRAM = 'tmux'
+    const theme = await detectTerminalThemeWithSupportTestHook(false)
+    expect(theme).toBeNull()
+  })
+
+  test('env signals apply even for OSC-capable terminals when it has no answer', async () => {
+    // CI stdin is non-TTY, so queryTerminalOSC resolves null immediately even
+    // with supportsOsc=true: the query "fails" and the env answer applies,
+    // matching a terminal that supports OSC but swallowed the query (the
+    // settle-vs-evidence merge in index.tsx leans on this parity).
+    process.env.TERM_PROGRAM = 'iTerm.app'
+    process.env.COLORFGBG = '15;0'
+    const theme = await detectTerminalThemeWithSupportTestHook(true)
+    expect(theme).toBe('dark')
   })
 })
