@@ -229,67 +229,6 @@ function convertToolMessage(message: Message): ModelMessageWithAuxiliaryData[] {
   )
 }
 
-function convertToolMessages(
-  messages: Message[],
-): ModelMessageWithAuxiliaryData[] {
-  const withoutToolMessages: ModelMessageWithAuxiliaryData[] = []
-  // Media parts ride *user* messages (see convertToolResultMessage), and the AI
-  // SDK throws at a user/system boundary when any tool call issued so far is
-  // still unanswered. Emitting media inline therefore splits a batch of
-  // parallel calls -- the sibling whose result is not reached yet is still
-  // pending, so validation fails client-side before the request is ever sent,
-  // permanently wedging the thread that replays that history. Buffer media
-  // until every call is answered, then flush: waiting on the answers not on
-  // the next non-tool message keeps the image as close to its own result as is
-  // safe, even when something is interleaved between the results.
-  // (convertToolResultMessage already does this within one tool message.)
-  const unanswered = new Set<string>()
-  let pendingMedia: ModelMessageWithAuxiliaryData[] = []
-  const flushMedia = () => {
-    if (unanswered.size > 0 || pendingMedia.length === 0) return
-    withoutToolMessages.push(...pendingMedia)
-    pendingMedia = []
-  }
-
-  for (const message of messages) {
-    const converted = convertToolMessage(message)
-    if (message.role !== 'tool') {
-      flushMedia()
-      withoutToolMessages.push(...converted)
-      for (const part of converted) {
-        if (part.role !== 'assistant') continue
-        for (const content of part.content) {
-          // Mirrors the SDK: a provider-executed call needs no local result, so
-          // tracking one would defer every later image forever.
-          if (content.type !== 'tool-call') continue
-          if (content.providerExecuted !== true) {
-            unanswered.add(content.toolCallId)
-          }
-        }
-      }
-      continue
-    }
-    for (const part of converted) {
-      if (part.role !== 'tool') {
-        pendingMedia.push(part)
-        continue
-      }
-      withoutToolMessages.push(part)
-      for (const content of part.content) {
-        if (content.type === 'tool-result') {
-          unanswered.delete(content.toolCallId)
-        }
-      }
-    }
-    flushMedia()
-  }
-
-  // Anything still buffered had no clean boundary; dropUnansweredToolCalls has
-  // already removed calls that never get answered, so this is just a backstop.
-  withoutToolMessages.push(...pendingMedia)
-  return withoutToolMessages
-}
-
 /**
  * Recursively replace any lone (unpaired) UTF-16 surrogate with U+FFFD in every
  * string reachable from `value`, mutating objects/arrays in place.
@@ -317,7 +256,26 @@ const LONE_SURROGATE_REGEX =
   /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
 
 function toWellFormedString(str: string): string {
+  LONE_SURROGATE_REGEX.lastIndex = 0
   return str.replace(LONE_SURROGATE_REGEX, '�')
+}
+
+/** Whether a string contains an unpaired surrogate the scrub would rewrite. */
+function stringNeedsScrub(str: string): boolean {
+  LONE_SURROGATE_REGEX.lastIndex = 0
+  return LONE_SURROGATE_REGEX.test(str)
+}
+
+function wellFormCopy<T>(value: T): T {
+  const copy = cloneDeep(value)
+  if (typeof (copy as { content?: unknown }).content === 'string') {
+    ;(copy as { content: string }).content = toWellFormedString(
+      (copy as { content: string }).content,
+    )
+  } else {
+    wellFormStringsInPlace((copy as { content?: unknown }).content)
+  }
+  return copy
 }
 
 function wellFormStringsInPlace(value: unknown): void {
@@ -335,6 +293,240 @@ function wellFormStringsInPlace(value: unknown): void {
   }
 }
 
+/**
+ * Per-message conversion cache, keyed by message object identity.
+ *
+ * convertCbToModelMessages runs on every agent step over the full message
+ * history, and its per-message work (cloning the content, scrubbing lone
+ * UTF-16 surrogates, schema-checking the converted form) is a pure function
+ * of that message. History messages are immutable once appended — every
+ * rewrite site (fit-tool-results.ts, trimMessagesToFitTokenLimit,
+ * compaction) allocates a replacement message object rather than mutating
+ * in place — so a WeakMap on the message object caches each message's
+ * conversion exactly once: a step converting N new messages pays only for
+ * those N, however long the history behind them. Stale entries cost
+ * nothing; GC drops them with the message itself.
+ */
+type ConvertedMessage = {
+  /** Surrogate-scrubbed source message, or the original itself when nothing
+   *  had to change (returned by reference — safe because history messages
+   *  are never mutated after append). */
+  scrubbed: Message
+  /**
+   * convertToolMessage output for `scrubbed`: converted role, single content
+   * part per assistant message, surrogate-scrubbed, schema-validated.
+   *
+   * THE CACHE-CONTROL PASS MUST NOT MUTATE THESE OBJECTS: every mark
+   * replaces the per-step entry (or its content array) with a fresh copy,
+   * so the cached form is never touched (see convertCbToModelMessages).
+   */
+  converted: ModelMessageWithAuxiliaryData[]
+  /** Set when a converted part failed AI SDK schema validation; the per-step
+   *  pass rethrows it on every call, the way the uncached validation did. */
+  error?: Error
+}
+
+const convertedMessageCache = new WeakMap<Message, ConvertedMessage>()
+
+function convertMessageCached(message: Message): ConvertedMessage {
+  const cached = convertedMessageCache.get(message)
+  if (cached) return cached
+
+  const scrubbed = messageNeedsScrub(message.content)
+    ? wellFormCopy(message)
+    : message
+  const converted = convertToolMessage(scrubbed)
+  const error = validateConverted(converted)
+  const result = { scrubbed, converted, error }
+  convertedMessageCache.set(message, result)
+  return result
+}
+
+function messageNeedsScrub(content: Message['content']): boolean {
+  if (typeof content === 'string') {
+    return stringNeedsScrub(content)
+  }
+  for (const part of content) {
+    if (valueNeedsScrub(part)) return true
+  }
+  return false
+}
+
+/** Deep pre-pass mirroring wellFormStringsInPlace's traversal, so a message
+ *  is cloned only when the scrub would actually change it. Any repeated
+ *  subtree that survived into history would already make the uncached pass
+ *  rewrite a (formerly) shared structure; treat it as needing a copy. */
+function valueNeedsScrub(value: unknown, seen?: Set<object>): boolean {
+  if (typeof value === 'string') return stringNeedsScrub(value)
+  if (!value || typeof value !== 'object') return false
+  const track = seen ?? new Set<object>()
+  if (track.has(value as object)) return true
+  track.add(value as object)
+  for (const key of Object.keys(value)) {
+    if (valueNeedsScrub((value as Record<string, unknown>)[key], track)) {
+      return true
+    }
+  }
+  track.delete(value as object)
+  return false
+}
+
+/**
+ * Schema-validate one source message's converted parts. A malformed
+ * conversion is deterministic, so the WeakMap caches the failure next to the
+ * converted form; the per-step pass rethrows with the same message.
+ */
+function validateConverted(
+  converted: ModelMessageWithAuxiliaryData[],
+): Error | undefined {
+  for (let i = 0; i < converted.length; i++) {
+    const message = converted[i]
+    const result = modelMessageSchema.safeParse(message)
+    if (result.success) continue
+    return new Error(
+      `convertCbToModelMessages: converted part ${i} of a message failed schema validation.\n` +
+        `Role: ${message.role}\n` +
+        `Message:\n${result.error.message}`,
+    )
+  }
+  return undefined
+}
+
+/**
+ * Rebuild the cross-message envelope over per-message cached conversions:
+ * media buffering plus same-aux aggregation. This replays the pending-call
+ * state machine convertToolMessages ran — each part's pending-set deltas
+ * (the tool-result ids it answers, the calls it opens) come off its source
+ * message at conversion time, so a step pays O(new messages) of conversion
+ * work plus O(history) of envelope bookkeeping over primed cache entries.
+ *
+ * Only media converted out of a tool message ever leaves emission order:
+ * it rides a user message, which providers reject between a tool call and
+ * its result, so it waits (as in convertToolMessages) until the pending
+ * set drains at an answer or at a non-tool boundary.
+ */
+function streamWithMediaBuffering(
+  messages: Message[],
+): ModelMessageWithAuxiliaryData[] {
+  const stream: ModelMessageWithAuxiliaryData[] = []
+  const unanswered = new Set<string>()
+  let pendingMedia: ModelMessageWithAuxiliaryData[] = []
+  const flushMedia = () => {
+    if (unanswered.size > 0 || pendingMedia.length === 0) return
+    stream.push(...pendingMedia)
+    pendingMedia = []
+  }
+
+  for (const message of messages) {
+    const { converted } = convertMessageCached(message)
+    for (const part of converted) {
+      if (isToolMediaPart(part)) {
+        pendingMedia.push(part)
+        flushMedia()
+        continue
+      }
+      stream.push(part)
+      if (message.role === 'tool' && part.role === 'tool') {
+        for (const content of part.content) {
+          if (content.type === 'tool-result') unanswered.delete(content.toolCallId)
+        }
+        flushMedia()
+        continue
+      }
+      if (message.role !== 'tool' && part.role === 'assistant') {
+        for (const content of part.content) {
+          if (content.type === 'tool-call' && content.providerExecuted !== true) {
+            unanswered.add(content.toolCallId)
+          }
+        }
+      }
+      flushMedia()
+    }
+  }
+  // Backstop, same as convertToolMessages': still-buffered media had no
+  // clean boundary and lands at the end.
+  stream.push(...pendingMedia)
+  return stream
+}
+
+/** Media converted out of a tool message: a user message with a single file
+ *  content part that keeps the source message's toolCallId (see
+ *  convertToolResultMessage). The toolCallId is what tells it apart from a
+ *  real user file upload — user messages never carry one. */
+function isToolMediaPart(part: ModelMessageWithAuxiliaryData): boolean {
+  return (
+    part.role === 'user' &&
+    Array.isArray(part.content) &&
+    part.content.length === 1 &&
+    part.content[0]?.type === 'file' &&
+    (part as { toolCallId?: string }).toolCallId !== undefined
+  )
+}
+
+/**
+ * Merge two same-role converted parts without mutating either. The first
+ * merged pair allocates one per-request copy flagged __aggregatedCopy;
+ * further parts append in place to that owned copy.
+ */
+function aggregateInto(
+  out: ModelMessageWithAuxiliaryData,
+  part: ModelMessageWithAuxiliaryData,
+): ModelMessageWithAuxiliaryData {
+  if (out.role === 'system') {
+    const owned = {
+      ...out,
+      content: `${out.content as string}\n\n${part.content as string}`,
+    } as ModelMessageWithAuxiliaryData
+    markOwned(owned)
+    return owned
+  }
+  const owned: ModelMessageWithAuxiliaryData = isAggregatedCopy(out)
+    ? out
+    : ({
+        ...out,
+        content: [...(out.content as unknown[])],
+      } as ModelMessageWithAuxiliaryData)
+  ;(owned.content as unknown[]).push(...(part.content as unknown[]))
+  if (!isAggregatedCopy(owned)) markOwned(owned)
+  return owned
+}
+
+function isAggregatedCopy(message: object): boolean {
+  return (message as { __aggregatedCopy?: boolean }).__aggregatedCopy === true
+}
+
+/**
+ * Flag an object as per-request-owned (non-enumerable, so neither the AI SDK
+ * schema validation nor a provider request body ever sees it). The
+ * aggregation and cache-control passes use it to keep mutating within one
+ * request without re-copying a cached message form.
+ */
+function markOwned(message: object): void {
+  Object.defineProperty(message, '__aggregatedCopy', {
+    value: true,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  })
+}
+
+function isOwnedContent(message: object): boolean {
+  return (message as { __ownedContent?: boolean }).__ownedContent === true
+}
+
+/** Shallow copy with a fresh content array, flagged so the cache-control
+ *  pass copies each cached message at most once per request. */
+function withOwnedContent<T extends { content: unknown }>(message: T): T {
+  const copy = { ...message, content: [...(message.content as unknown[])] }
+  Object.defineProperty(copy, '__ownedContent', {
+    value: true,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  })
+  return copy
+}
+
 export function convertCbToModelMessages({
   messages,
   includeCacheControl = true,
@@ -344,15 +536,16 @@ export function convertCbToModelMessages({
   includeCacheControl?: boolean
   logger?: Logger
 }): ModelMessage[] {
-  // AI SDK validates tool-call/result pairing before making a request. Repair
-  // at this lowest shared boundary as well as in the runtime step builder so
-  // auxiliary calls and restored SDK state cannot poison a thread permanently.
-  const sendableMessages = dropUnansweredToolCalls(messages)
-  const toolMessagesConverted: ModelMessageWithAuxiliaryData[] =
-    convertToolMessages(sendableMessages)
+  // Each history message is converted, scrubbed and schema-checked exactly
+  // once per process (see convertedMessageCache); the per-step cost is the
+  // envelope logic below plus O(1) per message. Orphan repair stays with
+  // the history builders — run-agent-step repairs the step history itself
+  // before it lands in agentState.messageHistory — rather than running
+  // again here over every request.
+  const streamed = streamWithMediaBuffering(messages)
 
   const aggregated: ModelMessageWithAuxiliaryData[] = []
-  for (const message of toolMessagesConverted) {
+  for (const message of streamed) {
     if (aggregated.length === 0) {
       aggregated.push(message)
       continue
@@ -367,31 +560,16 @@ export function convertCbToModelMessages({
       aggregated.push(message)
       continue
     }
-    if (lastMessage.role === 'system' && message.role === 'system') {
-      lastMessage.content += '\n\n' + message.content
+    if (
+      lastMessage.role === message.role &&
+      (lastMessage.role === 'system' ||
+        lastMessage.role === 'user' ||
+        lastMessage.role === 'assistant')
+    ) {
+      aggregated[aggregated.length - 1] = aggregateInto(lastMessage, message)
       continue
     }
-    if (lastMessage.role === 'user' && message.role === 'user') {
-      lastMessage.content.push(...message.content)
-      continue
-    }
-    if (lastMessage.role === 'assistant' && message.role === 'assistant') {
-      lastMessage.content.push(...message.content)
-      continue
-    }
-
     aggregated.push(message)
-  }
-
-  // Neutralize any lone UTF-16 surrogates before the messages reach the provider.
-  // These are mutated in place; every aggregated message is a fresh clone (see
-  // convertToolMessage), so the caller's message history is unaffected.
-  for (const message of aggregated) {
-    if (typeof message.content === 'string') {
-      message.content = toWellFormedString(message.content)
-    } else {
-      wellFormStringsInPlace(message.content)
-    }
   }
 
   if (!includeCacheControl) {
@@ -401,6 +579,10 @@ export function convertCbToModelMessages({
   // Add cache control to specific messages (max of 4 can be marked for caching!):
   // - The message right before the three tagged messages
   // - Last message
+  //
+  // Entries of `aggregated` are shared with convertedMessageCache, so this
+  // pass must never mutate them in place: every mark REPLACES the entry (or
+  // its content array) with the copy withCacheControl returns.
   for (const tag of [
     'LAST_ASSISTANT_MESSAGE',
     'USER_PROMPT',
@@ -419,7 +601,6 @@ export function convertCbToModelMessages({
 
     // Iterate to find the last "valid" message that we can cache control
     let prevMessage: (typeof aggregated)[number]
-    let contentBlock: (typeof prevMessage)['content']
     addCacheControlLoop: while (true) {
       index--
 
@@ -428,16 +609,29 @@ export function convertCbToModelMessages({
         break
       }
 
-      prevMessage = aggregated[index]
-      contentBlock = prevMessage.content
-
-      if (typeof contentBlock === 'string') {
+      const entry = aggregated[index]
+      if (typeof entry.content === 'string') {
         // This must be a system message
-        aggregated[index] = withCacheControl(aggregated[index])
+        aggregated[index] = withCacheControl(entry)
         break
       }
 
-      // Iterate to find the last valid content part (not a very short string)
+      // Make the message and its content array per-request-owned; cached
+      // messages share both with convertedMessageCache across requests, and
+      // repeated tags keep editing the owned copies.
+      if (!isAggregatedCopy(entry) || !isOwnedContent(entry)) {
+        prevMessage = withOwnedContent(entry)
+        markOwned(prevMessage)
+        aggregated[index] = prevMessage
+      } else {
+        prevMessage = entry
+      }
+      const contentBlock = prevMessage.content as Exclude<
+        typeof prevMessage.content,
+        string
+      >
+
+      // Iterate to find the last valid content part
       let lastContentIndex = contentBlock.length
       let lastContentPart: (typeof contentBlock)[number]
       while (true) {
@@ -449,41 +643,30 @@ export function convertCbToModelMessages({
           break
         }
 
-        if (lastContentPart.type !== 'text') {
-          contentBlock[lastContentIndex] = withCacheControl(
-            contentBlock[lastContentIndex],
-          )
-          break addCacheControlLoop
-        }
-
-        prevMessage.content = [
-          ...contentBlock.slice(0, lastContentIndex),
-          withCacheControl(lastContentPart),
-          ...contentBlock.slice(lastContentIndex + 1),
-        ] as typeof contentBlock
-
+        contentBlock[lastContentIndex] = withCacheControl(lastContentPart)
         break addCacheControlLoop
       }
       break
     }
   }
 
-  // Validate each message against the AI SDK schema
-  for (let i = 0; i < aggregated.length; i++) {
-    const message = aggregated[i]
-    const result = modelMessageSchema.safeParse(message)
-    if (!result.success) {
+  // Schema validation ran once per source message at conversion time
+  // (validateConverted, via convertedMessageCache); rethrow any cached
+  // failure the same way the per-step pass did, on every call.
+  {
+    let failed: Error | undefined
+    for (const message of messages) {
+      const cached = convertedMessageCache.get(message)
+      if (cached?.error && !failed) failed = cached.error
+    }
+    if (failed) {
       if (logger) {
         logger.error(
-          { message, aggregated, error: result.error },
-          `convertCbToModelMessages: Message at index ${i} failed schema validation.`,
+          { error: failed },
+          `convertCbToModelMessages: A converted message failed schema validation.`,
         )
       }
-      throw new Error(
-        `convertCbToModelMessages: Message at index ${i} failed schema validation.\n` +
-        `Role: ${message.role}\n` +
-        `Message:\n${result.error.message}`,
-      )
+      throw failed
     }
   }
 

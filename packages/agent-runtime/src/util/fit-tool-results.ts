@@ -1,4 +1,7 @@
-import { countTokensMessages } from './token-counter'
+import {
+  countTokensMessages,
+  probeTokensMessages,
+} from './token-counter'
 
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 import type { JSONValue } from '@codebuff/common/types/json'
@@ -10,6 +13,13 @@ export function fitToolResults(
 ): Message[] {
   if (countTokensMessages(messages) <= tokenBudget) return messages
 
+  // Count probes stay off the memoized estimator (probeTokensMessages):
+  // the budget loop below rewrites the fitted copies' content repeatedly,
+  // and caching each probe's count would pin a stale number onto whatever
+  // message object survives to the caller when nothing ends up clipped.
+  // The cheap path above already memoized the accurate final count for
+  // fits that need no clipping.
+  //
   // Never mutate the full results already handed to the UI/trace writer.
   const fitted: Message[] = messages.map((message) =>
     message.role === 'tool'
@@ -130,29 +140,31 @@ export function fitToolResults(
     }
   }
 
-  if (countTokensMessages(fitted) > tokenBudget) {
+  if (probeTokensMessages(fitted) > tokenBudget) {
     throw new Error(
       'The latest tool calls and their result metadata exceed the configured context window. Use a larger supported context window or request fewer tools at once.',
     )
   }
 
+
   // Requested order, with space already reserved for every later result's
   // omission notice. Count the whole message envelope, not just source text.
   for (const slot of slots) {
     slot.restore()
-    if (countTokensMessages(fitted) <= tokenBudget) continue
+    if (probeTokensMessages(fitted) <= tokenBudget) continue
     let low = 0
     let high = slot.length
     while (low < high) {
       const mid = Math.ceil((low + high) / 2)
       slot.clip(mid)
-      if (countTokensMessages(fitted) <= tokenBudget) low = mid
+      if (probeTokensMessages(fitted) <= tokenBudget) low = mid
       else high = mid - 1
     }
     slot.clip(low)
     // Tokenization isn't strictly monotonic at string boundaries. Never return
     // an oversized request even for that edge case.
-    if (countTokensMessages(fitted) > tokenBudget) slot.clip(0)
+    if (probeTokensMessages(fitted) > tokenBudget) slot.clip(0)
   }
   return fitted
+
 }

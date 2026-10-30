@@ -7,7 +7,10 @@ import {
   promptAborted,
   promptSuccess,
 } from '@codebuff/common/util/error'
-import { convertCbToModelMessages } from '@codebuff/common/util/messages'
+import {
+  convertCbToModelMessages,
+  dropUnansweredToolCalls,
+} from '@codebuff/common/util/messages'
 import { isExplicitlyDefinedModel } from '@codebuff/common/util/model-utils'
 import { StopSequenceHandler } from '@codebuff/common/util/stop-sequence'
 import {
@@ -211,6 +214,19 @@ function emitCacheDebugUsage(params: {
   })
 }
 
+/**
+ * The converter assumes its history is already tool-call-paired — the
+ * per-step runtime history is repaired before it lands in agentState
+ * (run-agent-step) — so the auxiliary entry points here repair at their
+ * own boundary. Cheap: dropUnansweredToolCalls returns the input array
+ * itself when there is nothing to repair.
+ */
+function repairToolCallHistory(
+  messages: Parameters<typeof convertCbToModelMessages>[0]['messages'],
+): typeof messages {
+  return dropUnansweredToolCalls(messages)
+}
+
 export async function* promptAiSdkStream(
   params: ParamsOf<PromptAiSdkStreamFn> & {
     byok?: ResolvedByokConnection
@@ -258,7 +274,10 @@ export async function* promptAiSdkStream(
     abortSignal: params.signal,
     prompt: undefined,
     model: aiSDKModel,
-    messages: convertCbToModelMessages(params),
+    messages: convertCbToModelMessages({
+      ...params,
+      messages: repairToolCallHistory(params.messages),
+    }),
     allowSystemInMessages: true,
     include: {
       ...streamParams.include,
@@ -773,7 +792,10 @@ export async function promptAiSdk(
     }),
     prompt: undefined,
     model: aiSDKModel,
-    messages: convertCbToModelMessages(params),
+    messages: convertCbToModelMessages({
+      ...params,
+      messages: repairToolCallHistory(params.messages),
+    }),
     allowSystemInMessages: true,
     include: {
       ...params.include,
@@ -857,7 +879,10 @@ export async function promptAiSdkStructured<T>(
     prompt: undefined,
     model: aiSDKModel,
     output: Output.object({ schema: params.schema }),
-    messages: convertCbToModelMessages(params),
+    messages: convertCbToModelMessages({
+      ...params,
+      messages: repairToolCallHistory(params.messages),
+    }),
     allowSystemInMessages: true,
     include: { requestBody: true },
     providerOptions: params.byok ? undefined : getProviderOptions({
