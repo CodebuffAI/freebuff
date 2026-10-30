@@ -74,20 +74,51 @@ export function countTokensJson(value: unknown): number {
 export function countTokensMessages(messages: Message[]): number {
   let total = 0
   for (const message of messages) {
-    total += PER_MESSAGE_TOKEN_OVERHEAD
+    total += countTokensMessage(message)
+  }
+  return total
+}
 
-    // content is typed as an array, but tolerate string / missing content the
-    // same way the replaced JSON.stringify did (see getTextContent), so a stray
-    // shape can't crash or mis-count the estimate.
-    const content = (message as { content?: unknown }).content
-    if (typeof content === 'string') {
-      total += countTokens(content)
-      continue
-    }
-    if (!Array.isArray(content)) {
-      continue
-    }
+/**
+ * Per-message token estimate, memoized on the message object.
+ *
+ * countTokensMessages runs several times per agent step over the whole
+ * history (input estimate, output estimate, context recount, truncation
+ * checks), and a message's estimate is a pure function of its content.
+ * History messages are immutable once appended — every rewrite site
+ * (fit-tool-results, trimMessagesToFitTokenLimit, compaction) builds a
+ * replacement message object — so a WeakMap keyed on identity counts each
+ * message's content exactly once per process, and a step that appended N
+ * messages only ever counts those N. The arithmetic is untouched: the list
+ * count is still the exact sum of the per-message counts, associativity
+ * aside (integers, so identical).
+ *
+ * Messages handed in one at a time (compaction trims, `countTokensMessages([
+ * message ])` sites) hit the same cache, so those paths stop re-walking the
+ * same string too. A message that IS mutated in place after being counted
+ * would serve its stale count — the runtime holds no such site (verified
+ * 2026-10-30); fit-tool-results clones before it rewrites, and the stream
+ * parser appends new message objects instead of extending old ones.
+ */
+const messageTokenCountCache = new WeakMap<Message, number>()
 
+export function countTokensMessage(message: Message): number {
+  const cached = messageTokenCountCache.get(message)
+  if (cached !== undefined) return cached
+  const total = countTokensMessageUncached(message)
+  return total
+}
+
+function countTokensMessageUncached(message: Message): number {
+  let total = PER_MESSAGE_TOKEN_OVERHEAD
+
+  // content is typed as an array, but tolerate string / missing content the
+  // same way the replaced JSON.stringify did (see getTextContent), so a stray
+  // shape can't crash or mis-count the estimate.
+  const content = (message as { content?: unknown }).content
+  if (typeof content === 'string') {
+    total += countTokens(content)
+  } else if (Array.isArray(content)) {
     for (const part of content as Array<Record<string, unknown>>) {
       switch (part.type) {
         case 'text':
@@ -111,5 +142,34 @@ export function countTokensMessages(messages: Message[]): number {
       }
     }
   }
+
+  messageTokenCountCache.set(message, total)
+  return total
+}
+
+/**
+ * Drop a memoized per-message estimate. Only for sites that provably mutate
+ * a message after it was counted — fitToolResults is the one place that
+ * clips a message's content in place (on its own defensive copies, but the
+ * copy was counted before the clip).
+ */
+export function uncacheMessageTokens(message: Message): void {
+  messageTokenCountCache.delete(message)
+}
+
+/**
+ * Uncached per-message estimate behind countTokensMessage's memo. For the
+ * rare caller that rewrites a message's content repeatedly while comparing
+ * estimates (fitToolResults' budget loop): memoizing each probe would pin a
+ * probe's number onto the message the caller still owns.
+ */
+export function probeTokensMessage(message: Message): number {
+  return countTokensMessageUncached(message)
+}
+
+/** Uncached list estimate; see probeTokensMessage. */
+export function probeTokensMessages(messages: Message[]): number {
+  let total = 0
+  for (const message of messages) total += countTokensMessageUncached(message)
   return total
 }
