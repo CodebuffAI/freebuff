@@ -28,9 +28,9 @@ export function internalGravitySidebarPlacementId(id: string): string {
 }
 
 /**
- * Proposed full-creative response contract for Gravity. brandImage is a
- * product image, NOT a finished ad. Neither it nor renderer_spec is inferred
- * as billboard artwork. No fetch, composition or generation occurs here.
+ * Legacy complete-image support for clients without sidebarNative. Normal
+ * Gravity product images and renderer specs are rendered separately by newer
+ * clients, never inferred as flattened billboard artwork.
  */
 export function gravitySidebarAssets(value: unknown) {
   const asset = parseBillboardAssets(value)?.sidebar
