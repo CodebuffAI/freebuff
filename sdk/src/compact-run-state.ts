@@ -1,4 +1,5 @@
 import { compactHistoryNow } from '@codebuff/agent-runtime/compact-history'
+import { summaryMatchesHistory } from '@codebuff/agent-runtime/conversation-summary'
 import {
   countTokens,
   countTokensJson,
@@ -9,6 +10,7 @@ import { cloneSessionState } from './run'
 
 import type { RunState } from './run-state'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
+import type { ConversationSummary } from '@codebuff/common/types/session-state'
 
 /**
  * A compaction applied to a run's persisted state, not to a live request.
@@ -209,4 +211,30 @@ export function truncateRunStateAtUserTurn(params: {
     next.mainAgentState.messageHistory,
   )
   return { ...runState, sessionState: next }
+}
+
+/**
+ * A saved run with a background summary added (`onCompactionSummary`), or
+ * null when the summary does not belong in it: the run's history no longer
+ * holds the last message the summary covers (an edit), or it already has a
+ * newer summary. The summary usually finishes after the run returned, so the
+ * host adds it to the state it saved; without it a restart loses it.
+ */
+export function withCompactionSummary(
+  runState: RunState,
+  summary: ConversationSummary,
+): RunState | null {
+  const sessionState = runState.sessionState
+  const agentState = sessionState?.mainAgentState
+  if (!sessionState || !agentState?.messageHistory?.length) return null
+  if (!summaryMatchesHistory(agentState.messageHistory, summary)) return null
+  const current = agentState.compactionSummary
+  if (current && current.createdAt >= summary.createdAt) return null
+  return {
+    ...runState,
+    sessionState: {
+      ...sessionState,
+      mainAgentState: { ...agentState, compactionSummary: summary },
+    },
+  }
 }

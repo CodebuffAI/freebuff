@@ -1,3 +1,5 @@
+import { isFreebuffModelHandle } from '@codebuff/common/types/freebuff-model-catalog'
+
 import {
   countTokens,
   countTokensJson,
@@ -28,6 +30,23 @@ const MIN_SCALE = 0.5
 const MAX_SCALE = 2.5
 
 /**
+ * Whether a token receipt for `anchorModel` still describes `model`. A
+ * Freebuff catalog handle (`fbm1.…`) is reissued each session for the same
+ * thread model, and a Freebuff thread cannot switch models, so two handles
+ * are the same model. Without this, every Desktop restart dropped the
+ * provider's count and the limit check fell back to a text estimate.
+ */
+export function sameContextModel(
+  anchorModel: string | undefined,
+  model: string | undefined,
+): boolean {
+  return (
+    anchorModel === model ||
+    (isFreebuffModelHandle(anchorModel) && isFreebuffModelHandle(model))
+  )
+}
+
+/**
  * Latest receipt plus the estimated change since it. String lengths, not
  * tokenization, keep startup/resume/missing-usage paths cheap even for long
  * runs of repeated characters. A model switch invalidates the anchor.
@@ -49,7 +68,8 @@ export function estimateContextTokens(params: {
     countTokens(systemPrompt) +
     countTokensJson(toolsForTokenCount)
   const baseline = agentState.contextTokenBaseline
-  if (!baseline || baseline.model !== params.model) return estimatedTokens
+  if (!baseline || !sameContextModel(baseline.model, params.model))
+    return estimatedTokens
   const adjusted = Math.round(
     baseline.tokens +
       (estimatedTokens - baseline.estimatedTokens) * (baseline.scale ?? 1),

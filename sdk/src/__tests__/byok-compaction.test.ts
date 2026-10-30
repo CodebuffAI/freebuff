@@ -26,6 +26,8 @@ import {
 } from '../byok'
 import { CodebuffClient } from '../client'
 
+import { COMPACTION_SUMMARY_PROMPT_OPENING } from '@codebuff/common/constants/compaction-summary'
+
 import type { AgentDefinition } from '@codebuff/common/templates/initial-agents-dir/types/agent-definition'
 
 const FILES = 12
@@ -52,7 +54,7 @@ function sse(body: unknown): Response {
 }
 
 function scriptedProvider(modelsBody: unknown) {
-  const counts = { work: 0, modelListings: 0 }
+  const counts = { work: 0, summaries: 0, modelListings: 0 }
   const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url = String(input)
     if (url === `${BASE_URL}/models`) {
@@ -61,17 +63,28 @@ function scriptedProvider(modelsBody: unknown) {
     }
     expect(url).toBe(`${BASE_URL}/chat/completions`)
     const body = JSON.parse(String(init?.body))
+    if (JSON.stringify(body.messages.at(-1)).includes(COMPACTION_SUMMARY_PROMPT_OPENING)) {
+      counts.summaries++
+      return sse({
+        id: `summary-${counts.summaries}`, object: 'chat.completion.chunk', created: 1, model: MODEL,
+        choices: [{ index: 0, delta: { content: `## Objective\n${'- review the twelve files\n'.repeat(20)}` }, finish_reason: 'stop' }],
+      })
+    }
     counts.work++
+    // A provider that honours `stream_options.include_usage`, as BYOK asks:
+    // compaction decides on this count, never on a text estimate.
+    const promptTokens = Math.ceil(JSON.stringify(body.messages).length / 3)
+    const usage = { prompt_tokens: promptTokens, completion_tokens: 20, total_tokens: promptTokens + 20 }
     if (counts.work <= FILES) {
       return sse({
-        id: `work-${counts.work}`, object: 'chat.completion.chunk', created: 1, model: MODEL,
+        id: `work-${counts.work}`, object: 'chat.completion.chunk', created: 1, model: MODEL, usage,
         choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: `read-${counts.work}`, type: 'function',
           function: { name: 'read_files', arguments: JSON.stringify({ paths: [`file${counts.work}.ts`] }) } }] },
           finish_reason: 'tool_calls' }],
       })
     }
     return sse({
-      id: 'final', object: 'chat.completion.chunk', created: 1, model: MODEL,
+      id: 'final', object: 'chat.completion.chunk', created: 1, model: MODEL, usage,
       choices: [{ index: 0, delta: { content: 'FINAL ANSWER: all twelve files reviewed.' }, finish_reason: 'stop' }],
     })
   }) as typeof fetch
@@ -129,34 +142,30 @@ describe('BYOK compaction on an unlisted model', () => {
   beforeEach(() => clearByokContextWindowCache())
   afterEach(() => { globalThis.fetch = originalFetch })
 
-  test('the untouched 32k default keeps hitting its trigger, and stops summarizing its own summary', async () => {
+  test('the untouched 32k default keeps hitting its limit, and each time swaps in a summary', async () => {
     const { counts, fetchImpl } = scriptedProvider({ data: [] })
     const { result, passes, lifecycle } = await longTask(await savedWithFormDefaults(), fetchImpl)
-    // One block per attempt: each is bracketed, and ends only after its
-    // receipt, so a host showing "Compacting…" never drops it early.
-    const blocks: string[][] = []
-    for (const entry of lifecycle) {
-      if (entry.startsWith('start:')) blocks.push([entry])
-      else blocks.at(-1)!.push(entry)
-    }
-    // Pinned so the next test is known to exercise the real failure: twelve
-    // ordinary reads keep this window at its trigger, over and over.
-    expect(blocks.length).toBeGreaterThanOrEqual(2)
-    expect(
-      blocks.every(
-        (block) => block[0] === 'start:context_limit' && block.at(-1) === 'end',
-      ),
-    ).toBe(true)
-    expect(blocks.filter((block) => block.includes('receipt'))).toHaveLength(
+    // Twelve ordinary reads keep this window at its limit, over and over.
+    // Each time the history is replaced by a summary; one that was ready in
+    // the background is used with no wait, so only the others show
+    // "Compacting…", and each of those is closed after its receipt.
+    expect(passes.length).toBeGreaterThanOrEqual(2)
+    expect(passes.every((pass) => pass.trigger === 'context_limit')).toBe(true)
+    expect(lifecycle.filter((entry) => entry === 'receipt')).toHaveLength(
       passes.length,
     )
-    expect(passes.every((pass) => pass.trigger === 'context_limit')).toBe(true)
-    // With ~16k of tool schemas against a 32k window, a pass has nothing to
-    // leave that is not back at the 26k trigger, so most attempts are
-    // abandoned (`automaticCompactionPostCeiling`) and the history is kept
-    // until the hard budget, where one pass applies — instead of summarizing
-    // its own summary every few tool calls.
-    expect(passes.length).toBeLessThan(blocks.length)
+    let open = false
+    for (const entry of lifecycle) {
+      if (entry.startsWith('start:')) {
+        expect(open).toBe(false)
+        open = true
+      } else if (entry === 'end') {
+        expect(open).toBe(true)
+        open = false
+      }
+    }
+    expect(open).toBe(false)
+    expect(counts.summaries).toBeGreaterThanOrEqual(passes.length)
     expect(counts.work).toBe(FILES + 1)
     expect(result.output.type).not.toBe('error')
   }, 60_000)

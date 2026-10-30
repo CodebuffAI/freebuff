@@ -14,6 +14,7 @@ import type { EventHandlerState, StreamChunkEvent } from './sdk-event-handlers'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type {
   AgentDefinition,
+  ConversationSummary,
   FileFilter,
   MessageContent,
   ResolvedByokConnection,
@@ -35,6 +36,8 @@ export type CreateRunConfigParams = {
   extraCodebuffMetadata?: Record<string, string>
   /** Periodic in-flight RunState checkpoints (see RunOptions.onStateSnapshot). */
   onStateSnapshot?: (runState: RunState) => void
+  /** A background summary finished (see RunOptions.onCompactionSummary). */
+  onCompactionSummary?: (summary: ConversationSummary) => void
   /** Mid-turn steering: drained by the agent loop at each step boundary;
    *  returned texts are appended as user prompts and keep the turn going
    *  (see RunOptions.drainSteeringMessages). */
@@ -110,6 +113,7 @@ export const createRunConfig = (params: CreateRunConfigParams) => {
     byok,
     extraCodebuffMetadata,
     onStateSnapshot,
+    onCompactionSummary,
     drainSteeringMessages,
   } = params
 
@@ -155,6 +159,7 @@ export const createRunConfig = (params: CreateRunConfigParams) => {
     byok,
     extraCodebuffMetadata,
     onStateSnapshot,
+    onCompactionSummary,
     drainSteeringMessages,
     fileFilter: ((filePath: string) => {
       if (isSensitiveFile(filePath)) return { status: 'blocked' }

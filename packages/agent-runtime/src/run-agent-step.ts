@@ -2,6 +2,10 @@ import { contextPrunerBudgetForModel } from '@codebuff/common/constants/model-co
 import { compactionThreshold } from '@codebuff/common/constants/compaction-policy'
 import { BYOK_RUN_ID_PREFIX } from '@codebuff/common/constants/byok'
 import {
+  clearCompactionRequestMetadata,
+  SUMMARY_COMPACTION_VERSION,
+} from '@codebuff/common/constants/compaction-telemetry'
+import {
   supportsAssistantPrefill,
   supportsCacheControl,
 } from '@codebuff/common/old-constants'
@@ -9,6 +13,9 @@ import { PROJECT_PROFILE_TOOL_NAME } from '@codebuff/common/constants/project-pr
 import { TOOLS_WHICH_WONT_FORCE_NEXT_STEP } from '@codebuff/common/tools/constants'
 import { parseAgentId } from '@codebuff/common/util/agent-id-parsing'
 import {
+  CONTEXT_COMPACTION_COMPLETED_EVENT,
+  COMPACTION_ATTEMPT_EVENT,
+  COMPACTION_FIRST_OUTPUT_EVENT,
   FILE_EDIT_LOOP_EVENT,
   GRAVITY_REPORT_NUDGE_EVENT,
   TODO_PROGRESS_REMINDER_EVENT,
@@ -35,10 +42,6 @@ import { type ToolSet } from 'ai'
 import { cloneDeep, mapValues } from 'lodash'
 import z from 'zod/v4'
 
-import {
-  evaluateCompactionTrigger,
-  MECHANICAL_TARGET_SHARE,
-} from './compact-history'
 import type { CompactionTrigger } from './compact-history'
 import {
   closeCompactionWindow,
@@ -49,8 +52,18 @@ import {
   automaticCompactionIsWorthwhile,
   automaticCompactionPostCeiling,
   compactionOverBudgetMessage,
-  compactMechanically,
 } from './compaction'
+import {
+  applyConversationSummary,
+  conversationSummaries,
+  isIdleReturn,
+  summarizeAndLog,
+  summaryIsDue,
+  summaryRequestHistory,
+  summaryTargetTokens,
+  summaryReasoningOptions,
+  untilAborted,
+} from './conversation-summary'
 import { CACHE_DEBUG_FULL_LOGGING } from './constants'
 import { getMCPToolData } from './mcp'
 import {
@@ -126,6 +139,7 @@ import {
   estimateContextTokens,
   recordContextUsage,
   recountContextTokens,
+  sameContextModel,
 } from './util/context-token-count'
 import {
   assertUserContentSize,
@@ -167,6 +181,7 @@ import type {
   AgentTemplateType,
   AgentState,
   AgentOutput,
+  ConversationSummary,
 } from '@codebuff/common/types/session-state'
 import type {
   CustomToolDefinitions,
@@ -253,6 +268,12 @@ export const runAgentStep = async (
     /** A root-agent compaction pass began; `onCompactionEnd` follows whatever its outcome. */
     onCompactionStart?: (data: Pick<ContextCompactionData, 'trigger'>) => void
     onCompactionEnd?: () => void
+    /**
+     * A root agent's background summary finished, usually after the run
+     * returned its state. The host adds it to the state it saved
+     * (`withCompactionSummary` in the SDK), so a restart does not lose it.
+     */
+    onCompactionSummary?: (summary: ConversationSummary) => void
   } & ParamsExcluding<
     typeof processStream,
     | 'agentContext'
@@ -1103,6 +1124,7 @@ export async function loopAgentSteps(
   agentState: AgentState
   output: AgentOutput
 }> {
+  const loopStarted = Date.now()
   let agentTemplate = params.agentTemplate
   if (!agentTemplate) {
     agentTemplate =
@@ -1356,11 +1378,18 @@ export async function loopAgentSteps(
   // Mutate initialAgentState so that in-progress work propagates back to the
   // caller's shared reference (e.g. SDK's sessionState.mainAgentState) even if
   // an error is thrown before we return.
+  // What earlier turns left; a USER_PROMPT not in it is this turn's own.
+  const earlierMessages = new Set(initialAgentState.messageHistory)
   initialAgentState.messageHistory = initialMessages
   initialAgentState.systemPrompt = system
   initialAgentState.toolDefinitions = toolDefinitions
   let currentAgentState: AgentState = initialAgentState
-  if (currentAgentState.contextTokenBaseline?.model !== agentTemplate.model) {
+  if (
+    !sameContextModel(
+      currentAgentState.contextTokenBaseline?.model,
+      agentTemplate.model,
+    )
+  ) {
     currentAgentState.contextTokenBaseline = undefined
   }
 
@@ -1392,6 +1421,363 @@ export async function loopAgentSteps(
   let llmStepNumber = 0
   let nResponses: string[] | undefined = undefined
   let compactionWindow: CompactionWindow | undefined
+  let firstOutputLogged = false
+  const idleAtStart = isIdleReturn(currentAgentState.messageHistory)
+
+  const compactionVersion = agentTemplate.compactContext
+    ? SUMMARY_COMPACTION_VERSION
+    : 'not-enabled'
+  const inheritedMetadata = clearCompactionRequestMetadata(
+    params.extraCodebuffMetadata,
+  )
+  const runMetadata = {
+    ...inheritedMetadata,
+    ...(!initialAgentState.parentId &&
+    initialAgentState.contextTokenBaseline?.model === agentTemplate.model
+      ? {
+          compaction_root_start_context_tokens: String(
+            initialAgentState.contextTokenBaseline.tokens,
+          ),
+        }
+      : {}),
+    compaction_version: compactionVersion,
+    compaction_root_model: initialAgentState.parentId
+      ? (inheritedMetadata.compaction_root_model ?? 'unknown')
+      : agentTemplate.model,
+    compaction_root_version: initialAgentState.parentId
+      ? (inheritedMetadata.compaction_root_version ?? 'unknown')
+      : compactionVersion,
+    compaction_root_run_id: initialAgentState.parentId
+      ? (inheritedMetadata.compaction_root_run_id ?? runId)
+      : runId,
+  }
+  // Programmatic spawns also need the root cohort, even before an LLM step.
+  params = { ...params, extraCodebuffMetadata: runMetadata }
+  const telemetry = {
+    compaction_version: compactionVersion,
+    compaction_root_version: runMetadata.compaction_root_version,
+    compaction_root_run_id: runMetadata.compaction_root_run_id,
+    trace_session_id: params.extraCodebuffMetadata?.trace_session_id ?? runId,
+  }
+
+  const compactionPolicy =
+    typeof agentTemplate.compactContext === 'object'
+      ? agentTemplate.compactContext
+      : {}
+  const maxContextLength =
+    compactionPolicy.maxContextLength ??
+    contextPrunerBudgetForModel(agentTemplate.model)
+  // Keyed by conversation, so a summary that finishes after this run ended
+  // reaches the next turn of the same thread.
+  const summaries = conversationSummaries(
+    `${params.extraCodebuffMetadata?.trace_session_id ?? runId}:${initialAgentState.agentId}`,
+  )
+  let idleChecked = false
+  /** The context size the provider reported for this run's latest step:
+   *  input plus output tokens. Summary decisions use only this. */
+  let stepUsageTokens: number | undefined
+  // The server accepts a request only while its run is open, so the run
+  // finishes after the summaries it started.
+  const runSummaries: Promise<unknown>[] = []
+
+  const summarize = (options: {
+    summaryId?: string
+    history: Message[]
+    contextTokens: number | undefined
+    mode: 'background' | 'foreground'
+    midTurn: boolean
+  }) =>
+    summarizeAndLog({
+      summaryId: options.summaryId,
+      history: options.history,
+      system,
+      contextTokens: options.contextTokens,
+      targetTokens: summaryTargetTokens(maxContextLength),
+      maxOutputTokens: compactionPolicy.maxOutputTokens,
+      mode: options.mode,
+      midTurn: options.midTurn,
+      // No time limit: a summary the run waits for is its only way under the
+      // budget, and stopping a slow one ended the run (base3 eval, 10-28).
+      // A background summary is not cancelled with its run: the next turn
+      // can still use it. A dead stream ends on the SDK's idle timeout.
+      signal:
+        options.mode === 'foreground' ? signal : new AbortController().signal,
+      cancelSignal: options.mode === 'foreground' ? signal : undefined,
+      logger,
+      runId,
+      model: agentTemplate.model,
+      telemetry,
+      stream: (request) =>
+        getAgentStreamFromTemplate({
+          ...params,
+          agentId: initialAgentState.parentId
+            ? initialAgentState.agentId
+            : undefined,
+          template: {
+            ...agentTemplate,
+            reasoningOptions: summaryReasoningOptions(
+              agentTemplate.model,
+              agentTemplate.reasoningOptions,
+            ),
+          },
+          runId,
+          messages: request.messages,
+          tools,
+          includeCacheControl: supportsCacheControl(agentTemplate.model),
+          maxOutputTokens: request.maxOutputTokens,
+          signal: request.signal,
+          extraCodebuffMetadata: {
+            ...runMetadata,
+            llm_step_number: String(llmStepNumber + 1),
+            ...request.extraCodebuffMetadata,
+          },
+          onFinishReason: request.onFinishReason,
+          onUsageReceived: request.onUsageReceived,
+          onCostCalculated: async () => {},
+        }),
+    })
+
+  /** Starts a background summary when the context grew enough since the
+   *  last one. The cache is warm here: a step or a turn just ended. */
+  const startSummaryIfDue = (midTurn: boolean, fixedTokenCount: number) => {
+    if (!agentTemplate.compactContext || summaries.pending()) return
+    const history = currentAgentState.messageHistory
+    // A window too small for a summary to clear room (a large fixed prompt
+    // in a small BYOK window) waits for the hard budget instead.
+    if (
+      !automaticCompactionIsWorthwhile({
+        messages: history,
+        maxContextLength,
+        thresholdTokens: compactionThreshold(maxContextLength),
+        fixedTokenCount,
+        maxOutputTokens: compactionPolicy.maxOutputTokens,
+      })
+    )
+      return
+    const contextTokens = stepUsageTokens
+    if (contextTokens === undefined) return
+    const latest = summaries.latest(
+      currentAgentState.compactionSummary,
+      history,
+    )
+    // Swapped in and not sized by a response yet: growth has no start.
+    if (latest && latest.contextTokens === undefined) return
+    if (
+      !summaryIsDue({
+        contextTokens,
+        maxContextLength,
+        latestContextTokens: latest?.contextTokens,
+      })
+    )
+      return
+    const requestHistory = summaryRequestHistory(history)
+    const done = summaries.start(contextTokens, () =>
+      summarize({
+        history: requestHistory,
+        contextTokens,
+        mode: 'background',
+        midTurn,
+      }),
+    )
+    runSummaries.push(
+      done.then((summary) => {
+        if (!summary || initialAgentState.parentId) return
+        try {
+          params.onCompactionSummary?.(summary)
+        } catch (error) {
+          logger.warn(
+            { error: getErrorObject(error) },
+            'Saving the conversation summary failed',
+          )
+        }
+      }),
+    )
+  }
+
+  /**
+   * Replaces the covered history with the newest summary. Waits for a summary
+   * in progress. At the context limit, or on a manual request, with no usable
+   * summary it makes one now (the cache is warm). After an idle gap it never
+   * does: the cache is cold, and the full history costs the same.
+   */
+  const compactWithSummary = async (options: {
+    trigger: CompactionTrigger | 'manual'
+    thresholdTokens: number
+    /** The provider's last count, when known. Reported, never decided on. */
+    preTokens: number | undefined
+  }): Promise<boolean> => {
+    const { trigger, thresholdTokens, preTokens } = options
+    const started = Date.now()
+    const compactionId = crypto.randomUUID()
+    let outcome: 'applied' | 'noop' | 'failed' | 'cancelled' = 'noop'
+    let readySummary = false
+    let waitedForPending = false
+    let generatedForeground = false
+    let summaryId: string | undefined
+    const isRoot = !initialAgentState.parentId
+    const before = currentAgentState.messageHistory
+    // This turn's own request (and steering) stays a real message.
+    const keep = (message: Message) =>
+      message.tags?.includes('USER_PROMPT') === true &&
+      !earlierMessages.has(message)
+    // A summary is worth using when it replaces messages. Whether the result
+    // is small enough is not guessed: the next response's count says, and a
+    // context still over the limit then gets a fresh summary.
+    const usable = (
+      applied: ReturnType<typeof applyConversationSummary>,
+    ): applied is NonNullable<typeof applied> =>
+      applied !== null && applied.messages.length < before.length
+    let statusShown = false
+    const showStatus = () => {
+      if (statusShown || !isRoot) return
+      statusShown = true
+      params.onCompactionStart?.({ trigger })
+    }
+    try {
+      let summary = summaries.latest(
+        currentAgentState.compactionSummary,
+        before,
+      )
+      let applied = summary
+        ? applyConversationSummary({ messages: before, summary, keep })
+        : null
+      readySummary = usable(applied)
+      // A ready summary is used at once, even when a newer one is in
+      // progress: waiting for it cost ~1 min a swap in the base3 eval
+      // (10-28). The newer one replaces it at the next swap, when it adds
+      // something. Only with nothing ready does the run wait for it.
+      const pending = summaries.pending()
+      if (pending && !usable(applied)) {
+        waitedForPending = true
+        showStatus()
+        const completed = await untilAborted(pending.promise, signal)
+        if (!completed) outcome = 'failed'
+        summary = summaries.latest(currentAgentState.compactionSummary, before)
+        applied = summary
+          ? applyConversationSummary({ messages: before, summary, keep })
+          : null
+      }
+      if (!usable(applied) && trigger !== 'cache_expiry') {
+        generatedForeground = true
+        summaryId = crypto.randomUUID()
+        showStatus()
+        const fresh = await summarize({
+          summaryId,
+          history: summaryRequestHistory(before),
+          contextTokens: stepUsageTokens,
+          mode: 'foreground',
+          midTurn: false,
+        })
+        if (fresh) {
+          summary = fresh
+          applied = applyConversationSummary({
+            messages: before,
+            summary: fresh,
+            keep,
+          })
+        } else outcome = 'failed'
+      }
+      if (!summary || !usable(applied)) return false
+      summaryId = summary.id
+
+      if (compactionWindow)
+        closeCompactionWindow({
+          window: compactionWindow,
+          messages: before,
+          endedBy: 'compaction',
+          nextTrigger: trigger,
+          logger,
+          runId,
+          model: agentTemplate.model,
+        })
+      compactionWindow = openCompactionWindow({
+        before,
+        after: applied.messages,
+        trigger,
+        compactionId,
+      })
+      currentAgentState.messageHistory = applied.messages
+      currentAgentState.compactionSummary = applied.summary
+      summaries.replace(applied.summary)
+      currentAgentState.pendingCompactionTelemetry = {
+        id: compactionId,
+        summaryId,
+        trigger,
+      }
+      outcome = 'applied'
+      currentAgentState.contextTokenBaseline = undefined
+      // Not reported, and decides nothing: the next response's count does.
+      currentAgentState.contextTokenCount = estimateContextTokens({
+        agentState: currentAgentState,
+        model: agentTemplate.model,
+        systemPrompt: system,
+        toolsForTokenCount,
+      })
+      try {
+        logger.info(
+          {
+            axiomEvent: CONTEXT_COMPACTION_COMPLETED_EVENT,
+            ...telemetry,
+            compaction_id: compactionId,
+            summary_id: summaryId,
+            agent_run_id: runId,
+            trigger_reason: trigger,
+            context_token_count: preTokens,
+            max_context_length: maxContextLength,
+            message_count: before.length,
+            mid_turn: before
+              .slice(
+                before.findLastIndex((m) => m.tags?.includes('USER_PROMPT')) +
+                  1,
+              )
+              .some((m) => m.role === 'assistant'),
+            summary_estimated_tokens: countTokens(summary.text),
+            preserved_fresh_messages: applied.messages.length - 1,
+          },
+          'Context compaction completed',
+        )
+      } catch {
+        // Telemetry must never block the compaction.
+      }
+      if (isRoot)
+        params.onCompaction?.({
+          trigger,
+          thresholdTokens,
+          summary: summary.text,
+          preTokens,
+          durationMs: Date.now() - started,
+        })
+      return true
+    } catch (error) {
+      outcome = signal.aborted || isAbortError(error) ? 'cancelled' : 'failed'
+      throw error
+    } finally {
+      try {
+        logger.info(
+          {
+            axiomEvent: COMPACTION_ATTEMPT_EVENT,
+            ...telemetry,
+            agent_run_id: runId,
+            model: agentTemplate.model,
+            compaction_id: compactionId,
+            summary_id: summaryId,
+            trigger_reason: trigger,
+            outcome,
+            duration_ms: Date.now() - started,
+            ready_summary: readySummary,
+            waited_for_pending: waitedForPending,
+            generated_foreground: generatedForeground,
+            context_token_count: preTokens,
+            max_context_length: maxContextLength,
+          },
+          'Compaction attempt finished',
+        )
+      } catch {
+        // Telemetry must never change the turn's outcome.
+      }
+      if (statusShown) params.onCompactionEnd?.()
+    }
+  }
 
   try {
     while (true) {
@@ -1440,134 +1826,75 @@ export async function loopAgentSteps(
         (agentTemplate.compactContext && !shouldEndTurn) ||
         manualCompaction
       ) {
-        const policy =
-          typeof agentTemplate.compactContext === 'object'
-            ? agentTemplate.compactContext
-            : {}
-        const maxContextLength =
-          policy.maxContextLength ??
-          contextPrunerBudgetForModel(agentTemplate.model)
         const thresholdTokens = compactionThreshold(maxContextLength)
-        let trigger: CompactionTrigger | 'manual' | null = manualCompaction
-          ? 'manual'
-          : evaluateCompactionTrigger({
-              ...policy,
+        const fixedTokenCount =
+          countTokens(system) +
+          countTokensJson(toolsForTokenCount) +
+          (stepPrompt
+            ? countTokensMessages([userMessage({ content: stepPrompt })])
+            : 0)
+        // A summary made before an edit to a message it covers is dropped.
+        currentAgentState.compactionSummary = summaries.latest(
+          currentAgentState.compactionSummary,
+          currentAgentState.messageHistory,
+        )
+        const idle =
+          !idleChecked && isIdleReturn(currentAgentState.messageHistory)
+        idleChecked = true
+        // The provider's count for the latest response (input + output),
+        // from this run or the saved state. What was added since (tool
+        // results, a new message) is not guessed: the limit leaves 20% of
+        // the budget for it. No count yet (a new chat, right after a swap):
+        // no limit decision until the next response.
+        const baseline = currentAgentState.contextTokenBaseline
+        const contextTokens =
+          baseline && sameContextModel(baseline.model, agentTemplate.model)
+            ? baseline.tokens
+            : undefined
+        const overLimit =
+          contextTokens !== undefined &&
+          contextTokens > thresholdTokens &&
+          // The threshold is a convenience, the budget is not. When even a
+          // perfect compaction would land back near the threshold (a small
+          // BYOK window under a large fixed prompt and tool catalog), keep
+          // working until the hard budget instead.
+          (contextTokens > maxContextLength ||
+            automaticCompactionIsWorthwhile({
               messages: currentAgentState.messageHistory,
-              contextTokenCount: currentAgentState.contextTokenCount,
-              maxContextLength: thresholdTokens,
-            }).trigger
-        const fixedTokenCount = trigger
-          ? countTokens(system) +
-            countTokensJson(toolsForTokenCount) +
-            (stepPrompt
-              ? countTokensMessages([userMessage({ content: stepPrompt })])
-              : 0)
-          : 0
-        // The threshold is a convenience, the budget is not. When even a
-        // perfect compaction would land back near the threshold (a small
-        // BYOK window under a large fixed prompt and tool catalog), firing
-        // there compacts every few steps, each pass summarizing the last
-        // summary. Keep working until the hard budget instead.
-        if (
-          trigger &&
-          trigger !== 'manual' &&
-          currentAgentState.contextTokenCount <= maxContextLength &&
-          !automaticCompactionIsWorthwhile({
-            messages: currentAgentState.messageHistory,
-            maxContextLength,
-            thresholdTokens,
-            fixedTokenCount,
-            maxOutputTokens: policy.maxOutputTokens,
-          })
-        ) {
-          logger.debug(
-            {
-              agentType,
-              runId,
-              contextTokenCount: currentAgentState.contextTokenCount,
+              maxContextLength,
               thresholdTokens,
-              maxContextLength,
               fixedTokenCount,
-            },
-            'Deferred compaction to the hard budget: it could not clear the threshold',
-          )
-          trigger = null
-        }
-        if (trigger) {
-          const started = Date.now()
-          const isRoot = !initialAgentState.parentId
-          if (isRoot) params.onCompactionStart?.({ trigger })
-          let compacted: ReturnType<typeof compactMechanically> = null
-          try {
-            compacted = compactMechanically({
-              messages: currentAgentState.messageHistory,
-              maxContextLength,
-              fixedTokenCount,
-              targetTokens:
-                trigger === 'manual'
-                  ? undefined
-                  : Math.floor(thresholdTokens * MECHANICAL_TARGET_SHARE),
-              // The same low-water rule as the check above, applied to what
-              // the pass actually produced rather than to what it was
-              // predicted to produce. Only below the hard budget: at or over
-              // it compaction is no longer optional.
-              maxPostTokens:
-                trigger === 'manual' ||
-                currentAgentState.contextTokenCount > maxContextLength
-                  ? undefined
-                  : automaticCompactionPostCeiling(thresholdTokens),
+              maxOutputTokens: compactionPolicy.maxOutputTokens,
+            }))
+        const trigger: CompactionTrigger | 'manual' | null = manualCompaction
+          ? 'manual'
+          : overLimit
+            ? idle
+              ? 'context_limit_and_cache_expiry'
+              : 'context_limit'
+            : idle
+              ? 'cache_expiry'
+              : null
+        const compacted = trigger
+          ? await compactWithSummary({
               trigger,
-              logger,
-              runId,
-              model: agentTemplate.model,
-              contextTokenCount: currentAgentState.contextTokenCount,
+              thresholdTokens,
+              preTokens: contextTokens,
             })
-            if (compacted) {
-              if (compactionWindow)
-                closeCompactionWindow({
-                  window: compactionWindow,
-                  messages: currentAgentState.messageHistory,
-                  endedBy: 'compaction',
-                  nextTrigger: trigger,
-                  logger,
-                  runId,
-                  model: agentTemplate.model,
-                })
-              compactionWindow = openCompactionWindow({
-                before: currentAgentState.messageHistory,
-                after: compacted.messages,
-                trigger,
-              })
-              currentAgentState.messageHistory = compacted.messages
-              currentAgentState.contextTokenBaseline = undefined
-              currentAgentState.contextTokenCount = compacted.postTokens
-              if (isRoot)
-                params.onCompaction?.({
-                  trigger,
-                  thresholdTokens,
-                  summary: compacted.summary,
-                  preTokens: compacted.preTokens,
-                  postTokens: compacted.postTokens,
-                  durationMs: Date.now() - started,
-                })
-            }
-          } finally {
-            if (isRoot) params.onCompactionEnd?.()
-          }
-          // A manual request is a maintenance operation, never a coding turn.
-          if (manualCompaction) break
-          if (
-            !compacted &&
-            currentAgentState.contextTokenCount > maxContextLength
-          ) {
-            throw new Error(
-              compactionOverBudgetMessage({
-                maxContextLength,
-                byok: runId.startsWith(BYOK_RUN_ID_PREFIX),
-              }),
-            )
-          }
-          totalSteps++
+          : false
+        // A manual request is a maintenance operation, never a coding turn.
+        if (manualCompaction) break
+        if (
+          !compacted &&
+          contextTokens !== undefined &&
+          contextTokens > maxContextLength
+        ) {
+          throw new Error(
+            compactionOverBudgetMessage({
+              maxContextLength,
+              byok: runId.startsWith(BYOK_RUN_ID_PREFIX),
+            }),
+          )
         }
       }
 
@@ -1704,7 +2031,12 @@ export async function loopAgentSteps(
 
       const creditsBefore = currentAgentState.directCreditsUsed
       const childrenBefore = currentAgentState.childRunIds.length
+      stepUsageTokens = undefined
       llmStepNumber++
+      const appliedCompaction = currentAgentState.pendingCompactionTelemetry
+      // Consume at dispatch, not on success: retries belong to this logical
+      // first request too. A manual /compact carries it to the next turn.
+      delete currentAgentState.pendingCompactionTelemetry
       const {
         agentState: newAgentState,
         shouldEndTurn: llmShouldEndTurn,
@@ -1714,10 +2046,29 @@ export async function loopAgentSteps(
       } = await runAgentStep({
         ...params,
 
+        onAgentUsageReceived: (usage) => {
+          // Spawned agents report through the same callback.
+          if (usage.agentId === initialAgentState.agentId)
+            stepUsageTokens = usage.inputTokens + usage.outputTokens
+          params.onAgentUsageReceived?.(usage)
+        },
         agentState: currentAgentState,
         agentTemplate,
         extraCodebuffMetadata: {
-          ...(params.extraCodebuffMetadata ?? {}),
+          ...runMetadata,
+          compaction_request_id: crypto.randomUUID(),
+          compaction_request_group: appliedCompaction
+            ? 'first_after_compaction'
+            : 'other',
+          ...(appliedCompaction
+            ? {
+                compaction_id: appliedCompaction.id,
+                ...(appliedCompaction.summaryId
+                  ? { compaction_summary_id: appliedCompaction.summaryId }
+                  : {}),
+                compaction_trigger: appliedCompaction.trigger,
+              }
+            : {}),
           llm_step_number: String(llmStepNumber),
         },
         n,
@@ -1728,6 +2079,32 @@ export async function loopAgentSteps(
         tools,
         additionalToolDefinitions: additionalToolDefinitionsWithCache,
         onResponseChunk: (chunk) => {
+          if (
+            !firstOutputLogged &&
+            !initialAgentState.parentId &&
+            (typeof chunk === 'string'
+              ? chunk.trim().length > 0
+              : chunk.type === 'reasoning_delta' &&
+                chunk.agentId === initialAgentState.agentId &&
+                chunk.text.length > 0)
+          ) {
+            firstOutputLogged = true
+            try {
+              logger.info(
+                {
+                  axiomEvent: COMPACTION_FIRST_OUTPUT_EVENT,
+                  ...telemetry,
+                  agent_run_id: runId,
+                  model: agentTemplate.model,
+                  idle_return: idleAtStart,
+                  duration_ms: Date.now() - loopStarted,
+                },
+                'Runtime first output',
+              )
+            } catch {
+              /* Telemetry must not fail output delivery. */
+            }
+          }
           // tool_call is emitted before execution, including custom tools.
           // Conservatively refuse fallback even for a read-only tool or an
           // error event: either may have uncovered a failed verification.
@@ -1807,6 +2184,27 @@ export async function loopAgentSteps(
       Object.assign(initialAgentState, newAgentState)
       currentAgentState = initialAgentState
       shouldEndTurn = llmShouldEndTurn
+      // The first size the provider reports after a swap is where the next
+      // summary's growth is measured from. The swap may have been in an
+      // earlier run (manual /compact ends its run right after it).
+      if (
+        stepUsageTokens !== undefined &&
+        currentAgentState.compactionSummary &&
+        currentAgentState.compactionSummary.contextTokens === undefined
+      ) {
+        currentAgentState.compactionSummary = {
+          ...currentAgentState.compactionSummary,
+          contextTokens: stepUsageTokens,
+        }
+        summaries.replace(currentAgentState.compactionSummary)
+      }
+      // After the response: the size is the provider's count, and the
+      // request just warmed the cache.
+      if (!shouldEndTurn)
+        startSummaryIfDue(
+          true,
+          countTokens(system) + countTokensJson(toolsForTokenCount),
+        )
       usedWorkTools ||= stepUsedWorkTools ?? false
       nResponses = generatedResponses
 
@@ -1866,7 +2264,9 @@ export async function loopAgentSteps(
                 includeCacheControl: supportsCacheControl(agentTemplate.model),
                 signal: reportSignal,
                 extraCodebuffMetadata: {
-                  ...(params.extraCodebuffMetadata ?? {}),
+                  ...runMetadata,
+                  compaction_request_id: crypto.randomUUID(),
+                  compaction_request_group: 'other',
                   llm_step_number: String(llmStepNumber + 1),
                 },
                 onCostCalculated: async () => {},
@@ -1884,6 +2284,19 @@ export async function loopAgentSteps(
 
     recountContextTokensForTurnEnd()
 
+    if (agentTemplate.compactContext && !manualCompaction) {
+      // The last step's response warmed the cache, and the user may not
+      // come back before it expires: the summary is ready for that return.
+      startSummaryIfDue(
+        false,
+        countTokens(system) + countTokensJson(toolsForTokenCount),
+      )
+      currentAgentState.compactionSummary = summaries.latest(
+        currentAgentState.compactionSummary,
+        currentAgentState.messageHistory,
+      )
+    }
+
     const finishCompletedRun = () =>
       finishAgentRun({
         ...params,
@@ -1893,8 +2306,12 @@ export async function loopAgentSteps(
         directCredits: currentAgentState.directCreditsUsed,
         totalCredits: currentAgentState.creditsUsed,
       })
-    if (projectProfileReport) {
-      void projectProfileReport.then(finishCompletedRun)
+    const background = [
+      ...(projectProfileReport ? [projectProfileReport] : []),
+      ...runSummaries,
+    ]
+    if (background.length) {
+      void Promise.allSettled(background).then(finishCompletedRun)
     } else {
       await finishCompletedRun()
     }

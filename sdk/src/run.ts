@@ -81,7 +81,10 @@ import type {
 } from '@codebuff/common/types/messages/codebuff-message'
 import type { ToolResultOutput } from '@codebuff/common/types/messages/content-part'
 import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
-import type { SessionState } from '@codebuff/common/types/session-state'
+import type {
+  ConversationSummary,
+  SessionState,
+} from '@codebuff/common/types/session-state'
 import type { SkillsMap } from '@codebuff/common/types/skill'
 import type { Source } from '@codebuff/common/types/source'
 import type { CodebuffSpawn } from '@codebuff/common/types/spawn'
@@ -310,6 +313,12 @@ export type RunOptions = {
   /** A compaction pass began. `onCompactionEnd` always follows, after any `onCompaction`. */
   onCompactionStart?: (data: Pick<ContextCompactionData, 'trigger'>) => void
   onCompactionEnd?: () => void
+  /**
+   * A structured summary of the conversation, made in the background. It
+   * usually arrives after the run returned, so add it to the state you saved
+   * with `withCompactionSummary`; without it a restart loses the summary.
+   */
+  onCompactionSummary?: (summary: ConversationSummary) => void
   /**
    * The shell this run's terminal commands actually execute in, when the host's
    * broker picks one other than the default (the sponsored Windows floor runs
@@ -615,6 +624,7 @@ async function runOnce({
   onCompaction,
   onCompactionStart,
   onCompactionEnd,
+  onCompactionSummary,
   terminalShell,
   projectKey,
   traceSessionId: traceSessionIdOption,
@@ -1161,6 +1171,7 @@ async function runOnce({
     onCompaction: report(onCompaction),
     onCompactionStart: report(onCompactionStart),
     onCompactionEnd: reportSignal(onCompactionEnd),
+    onCompactionSummary: report(onCompactionSummary),
   }).catch((error) => {
     // A caller's own deadline (`AbortSignal.timeout`) rejects with a
     // `TimeoutError`, the same name Bun's 5-minute fetch idle timeout uses, so

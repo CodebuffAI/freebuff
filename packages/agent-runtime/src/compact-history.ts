@@ -79,7 +79,7 @@ const DEFAULT_ASSISTANT_TOOL_BUDGET = 20_000
 const DEFAULT_USER_BUDGET = 50_000
 
 /** Header used in conversation summaries */
-const SUMMARY_HEADER =
+export const SUMMARY_HEADER =
   'This is a summary of the conversation so far. The original messages have been condensed to save context space.'
 
 const SUMMARY_DISCLAIMER =

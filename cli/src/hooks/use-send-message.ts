@@ -79,7 +79,10 @@ import type {
 } from '../types/contracts/send-message'
 import type { AgentMode } from '../utils/constants'
 import type { SendMessageTimerEvent } from '../utils/send-message-timer'
-import { STATE_SNAPSHOT_INTERRUPTION_MESSAGE } from '@codebuff/sdk'
+import {
+  STATE_SNAPSHOT_INTERRUPTION_MESSAGE,
+  withCompactionSummary,
+} from '@codebuff/sdk'
 
 import type { AgentDefinition, MessageContent, RunState } from '@codebuff/sdk'
 import { isCoveredBySubscription } from '../utils/subscription'
@@ -407,6 +410,8 @@ export const useSendMessage = ({
         },
       }
       let streamingStarted = false
+      /** The state this run saved, once it returned and was adopted. */
+      let adoptedRunState: RunState | undefined
 
       setLiveChatStateProvider(runOwnerId, () => ({
         runState: latestRunStateSnapshot,
@@ -846,6 +851,28 @@ export const useSendMessage = ({
                   runChatDir,
                 )
               },
+              // Usually arrives after the run returned. Only while this run's
+              // state is still the chat's latest: a newer turn has the
+              // summary in memory and saves it itself.
+              onCompactionSummary: (summary) => {
+                const saved = adoptedRunState
+                if (
+                  !saved ||
+                  previousRunStateRef.current !== saved ||
+                  !runChatIsCurrent()
+                )
+                  return
+                const patched = withCompactionSummary(saved, summary)
+                if (!patched) return
+                adoptedRunState = patched
+                previousRunStateRef.current = patched
+                setRunState(patched)
+                saveChatState(
+                  patched,
+                  useChatStore.getState().messages,
+                  runChatDir,
+                )
+              },
               // Mid-turn steering: the agent loop calls this at each step
               // boundary; texts pushed by the router since the last boundary are
               // injected into the running turn as user prompts. The transcript
@@ -986,6 +1013,7 @@ export const useSendMessage = ({
           if (!sponsored) {
             previousRunStateRef.current = runState
             setRunState(runState)
+            adoptedRunState = runState
           }
           setIsRetrying(false)
 
@@ -1026,7 +1054,8 @@ export const useSendMessage = ({
           // and for a sponsored turn, the transcript with the CONVERSATION's
           // run state, which it never touched.
           saveChatState(
-            sponsored ? latestRunStateSnapshot : runState,
+            // A summary that landed since adoption is already in it.
+            sponsored ? latestRunStateSnapshot : (adoptedRunState ?? runState),
             useChatStore.getState().messages,
             runChatDir,
           )

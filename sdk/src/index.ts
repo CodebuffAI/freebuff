@@ -39,8 +39,10 @@ export * from './run-state'
 export {
   compactRunState,
   truncateRunStateAtUserTurn,
+  withCompactionSummary,
 } from './compact-run-state'
 export type { CompactedRunState } from './compact-run-state'
+export type { ConversationSummary } from '@codebuff/common/types/session-state'
 export { ToolHelpers } from './tools'
 export * from './constants'
 export { isAllowedRuntimeAppUrl } from './env'
@@ -88,9 +90,7 @@ export { validateAgents } from './validate-agents'
 export type { ValidationResult, ValidateAgentsOptions } from './validate-agents'
 
 // Free-mode capacity deferral notifications (server-side tier shedding)
-export {
-  setFreeModeCapacityDeferralListener,
-} from './impl/model-provider'
+export { setFreeModeCapacityDeferralListener } from './impl/model-provider'
 export type {
   CodebuffRequestHeadersProvider,
   FreeModeCapacityDeferral,

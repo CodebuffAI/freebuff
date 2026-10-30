@@ -86,6 +86,13 @@ export const GRAVITY_REPORT_NUDGE_EVENT = 'gravity_report_nudge' as const
  *  how much the run read after compacting, and how many of those reads were
  *  files whose contents the compaction dropped. Counts only, never a path. */
 export const COMPACTION_FOLLOWUP_EVENT = 'context_compaction.followup' as const
+/** One per structured-summary request (packages/agent-runtime/src/
+ *  conversation-summary.ts): its outcome, how much of its input came from the
+ *  prompt cache, and its size. Counts and labels only, never the summary. */
+export const COMPACTION_SUMMARY_EVENT = 'compaction_summary' as const
+export const COMPACTION_ATTEMPT_EVENT = 'context_compaction.attempt' as const
+export const COMPACTION_FIRST_OUTPUT_EVENT =
+  'context_compaction.first_output' as const
 export const ADS_FETCH_COMPLETED_EVENT = AnalyticsEvent.ADS_FETCH_COMPLETED
 export const ADS_FIRST_PARTY_DECISION_EVENT =
   AnalyticsEvent.ADS_FIRST_PARTY_DECISION
@@ -375,7 +382,31 @@ const MECHANICAL_COMPACTION_SKIPPED_FIELDS = {
   post_tokens: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
+const COMPACTION_CORRELATION_FIELDS = {
+  compaction_version: 'string',
+  compaction_root_version: 'string',
+  compaction_root_run_id: 'string',
+  trace_session_id: 'string',
+  compaction_id: 'string',
+  summary_id: 'string',
+} as const satisfies AxiomOnlyFieldSchema
+
+const COMPACTION_ATTEMPT_FIELDS = {
+  ...COMPACTION_CORRELATION_FIELDS,
+  agent_run_id: 'string',
+  model: 'string',
+  trigger_reason: 'string',
+  outcome: 'string',
+  duration_ms: 'number',
+  ready_summary: 'boolean',
+  waited_for_pending: 'boolean',
+  generated_foreground: 'boolean',
+  context_token_count: 'number',
+  max_context_length: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
 const CONTEXT_COMPACTION_COMPLETED_FIELDS = {
+  ...COMPACTION_CORRELATION_FIELDS,
   agent_run_id: 'string',
   trigger_reason: 'string',
   context_token_count: 'number',
@@ -405,6 +436,7 @@ const CONTEXT_COMPACTION_COMPLETED_FIELDS = {
 } as const satisfies AxiomOnlyFieldSchema
 
 const COMPACTION_FOLLOWUP_FIELDS = {
+  compaction_id: 'string',
   agent_run_id: 'string',
   model: 'string',
   trigger_reason: 'string',
@@ -420,6 +452,27 @@ const COMPACTION_FOLLOWUP_FIELDS = {
   read_tokens_after: 'number',
   tool_calls_after: 'number',
   window_ms: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const COMPACTION_SUMMARY_FIELDS = {
+  ...COMPACTION_CORRELATION_FIELDS,
+  agent_run_id: 'string',
+  model: 'string',
+  /** `completed`, `failed`, or `cancelled`. */
+  outcome: 'string',
+  /** `background` (prepared ahead) or `foreground` (the run waited for it). */
+  mode: 'string',
+  /** Started while the agent's next request may run beside it. */
+  mid_turn: 'boolean',
+  /** `empty`, `output_limit`, `provider_error`, `timeout` or `no_history`. */
+  error_kind: 'string',
+  finish_reason: 'string',
+  context_token_count: 'number',
+  input_tokens: 'number',
+  cached_input_tokens: 'number',
+  output_tokens: 'number',
+  summary_tokens: 'number',
+  duration_ms: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 const TODO_PROGRESS_REMINDER_FIELDS = {
@@ -1312,6 +1365,9 @@ export type AxiomOnlyLogEvent = {
     | typeof MECHANICAL_COMPACTION_SKIPPED_EVENT
     | typeof CONTEXT_COMPACTION_COMPLETED_EVENT
     | typeof COMPACTION_FOLLOWUP_EVENT
+    | typeof COMPACTION_SUMMARY_EVENT
+    | typeof COMPACTION_ATTEMPT_EVENT
+    | typeof COMPACTION_FIRST_OUTPUT_EVENT
     | typeof TODO_PROGRESS_REMINDER_EVENT
     | typeof FILE_EDIT_LOOP_EVENT
     | typeof GRAVITY_REPORT_NUDGE_EVENT
@@ -1416,6 +1472,30 @@ export function getAxiomOnlyLogEvent(
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(record, COMPACTION_FOLLOWUP_FIELDS),
+    }
+  }
+  if (eventName === COMPACTION_SUMMARY_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, COMPACTION_SUMMARY_FIELDS),
+    }
+  }
+  if (eventName === COMPACTION_ATTEMPT_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, COMPACTION_ATTEMPT_FIELDS),
+    }
+  }
+  if (eventName === COMPACTION_FIRST_OUTPUT_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, {
+        ...COMPACTION_CORRELATION_FIELDS,
+        agent_run_id: 'string',
+        model: 'string',
+        duration_ms: 'number',
+        idle_return: 'boolean',
+      }),
     }
   }
   if (eventName === FILE_EDIT_LOOP_EVENT) {

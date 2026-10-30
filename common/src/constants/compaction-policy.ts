@@ -5,18 +5,18 @@ export function compactionThreshold(maxContextLength: number): number {
 }
 
 /**
- * When a root agent rewrites its own history after an idle gap: the user
- * comes back after `cacheExpiryMs` of silence AND the history is at least
- * `cacheExpiryMinTokens`. Below the floor a cold cache is not enough, because
- * compaction is free in tokens but never in information. The context-limit
- * trigger ignores the floor. Every pass is mechanical (no model call).
+ * When the context-pruner (base2, base-chat) rewrites its history after an
+ * idle gap: the user comes back after `cacheExpiryMs` of silence AND the
+ * history is at least `cacheExpiryMinTokens`. Serialized `handleSteps`
+ * receive it as `AgentStepContext.contextPruning`, resolved in
+ * run-programmatic-step.ts.
  *
- * The numbers live only here. base3 roots hand the object to the runtime as
- * `compactContext`; the runtime defaults `compactContext: true` to
- * DEFAULT_COMPACTION_POLICY; and serialized `handleSteps` that spawn
- * context-pruner (base2, base-chat) receive it as
- * `AgentStepContext.contextPruning`, resolved in run-programmatic-step.ts.
- * Exactly these two keys: `compactContext` is validated with a strict schema.
+ * base3 roots still hand the object to the runtime as `compactContext`, but
+ * the runtime reads only `maxContextLength` and `maxOutputTokens` from it:
+ * it compacts with background structured summaries on fixed rules
+ * (packages/agent-runtime/src/conversation-summary.ts). The two idle keys
+ * stay because `compactContext` is validated with a strict schema and
+ * shipped bundles and catalog rows send them.
  */
 export type CompactionPolicy = {
   cacheExpiryMs: number

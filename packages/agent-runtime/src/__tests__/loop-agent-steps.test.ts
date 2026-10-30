@@ -2936,7 +2936,15 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       const result = await loopAgentSteps({
         ...loopAgentStepsBaseParams,
         onCompaction: () => compactions++,
-        promptAiSdkStream: async function* ({ onUsageReceived, messages }) {
+        promptAiSdkStream: async function* ({
+          onUsageReceived,
+          messages,
+          extraCodebuffMetadata,
+        }) {
+          if (extraCodebuffMetadata?.compaction_summary === '1') {
+            yield { type: 'text', text: `## Objective\n${'- found it\n'.repeat(40)}` }
+            return promptSuccess('summary')
+          }
           if (++calls === 1) {
             yield createToolCallChunk('write_todos', {
               todos: [{ task: 'inspect', completed: false }],
