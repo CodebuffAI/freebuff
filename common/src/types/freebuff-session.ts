@@ -9,8 +9,8 @@ export interface FreebuffFreebucksRefundSources {
   wallet: number
 }
 
-/** A settled session refund: the unused part of a purchased hour, returned
- *  when the hour ended. `id` is stable, so a client can tell a new one. */
+/** A settled session refund, returned when the hour ended. `id` is stable, so
+ *  a client can tell a new one. */
 export interface FreebuffFreebucksRefund extends FreebuffFreebucksRefundSources {
   id: string
 }
