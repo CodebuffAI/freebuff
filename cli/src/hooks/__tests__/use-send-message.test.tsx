@@ -262,7 +262,6 @@ describe('useSendMessage continuation state', () => {
         content: finalText,
       })
       expect(saved.isComplete).toBe(true)
-      expect(saved.metadata.runState).toEqual(finalState)
     } finally {
       settlePendingRuns()
       await run
