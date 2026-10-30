@@ -13,7 +13,11 @@ import {
 } from './chat-meta'
 import { logger } from './logger'
 import { classifyStringifyError, serializeForPersistence } from './safe-json'
-import { writeFileAtomic, writeFileAtomicAsync } from './write-file-atomic'
+import {
+  commitAtomicWrites,
+  prepareAtomicWrite,
+  writeFileAtomic,
+} from './write-file-atomic'
 
 import type { ChatMessage } from '../types/chat'
 import type { RunState } from '@codebuff/sdk'
@@ -399,11 +403,132 @@ export function saveChatState(
       )
       // Sidecar summary so /history can list this chat without parsing the
       // (unbounded) chat-messages.json. Must be written after the messages
-      // file: it records the file's size/mtime to detect staleness.
+      // file: it records the file's size/mtime to detect staleness. Written
+      // only by the authoritative saves (turn completion / interrupt / exit
+      // flush); the periodic checkpoint below deliberately leaves the sidecar
+      // stale, which readChatMeta detects and resolves with a full parse.
       writeChatMeta(chatDir, messages)
     }
+    noteChatStatePersisted(chatDir, runState, messages)
   } catch (error) {
     logSaveWriteFailure(error, chatDir, 'Failed to save chat state')
+  }
+}
+
+// --- Skip checkpoints that would rewrite bytes already on disk --------------
+
+/** What makeCheckpointKey captures about one state. */
+type CheckpointKey = {
+  messages: unknown
+  messagesLength: number
+  lastMessage: unknown
+  runState: unknown
+  /** Identity marker for scalars that went into runStateScalarDigest. */
+  runStateScalarDigest: string
+}
+
+/**
+ * The state the SDK hands a checkpoint is a shallow snapshot whose message
+ * objects are shared with the live run (snapshotSessionState): anything that
+ * mutates them — streaming text appended to the tail message, the CLI's
+ * setMessages replacing the array — always writes through a new container
+ * (`blocks: [...]`, tail copy, or a fresh array). So container identity is a
+ * sound "has anything changed" signal, and it is O(1) where a defensive
+ * re-serialize of a multi-MB transcript on every drain is not.
+ *
+ * The run state gets no such discipline from its producers, so its
+ * mutation-relevant scalars are digested cheaply instead — values the next
+ * turn's continuation depends on, compared by content. The rest of the run
+ * state changes only with the history and its containers carry identity.
+ */
+function makeCheckpointKey(
+  runState: RunState,
+  messages: ChatMessage[],
+): CheckpointKey {
+  const mainAgentState = (runState as { sessionState?: any } | null)
+    ?.sessionState?.mainAgentState
+  let runStateScalarDigest = ''
+  if (mainAgentState && typeof mainAgentState === 'object') {
+    try {
+      runStateScalarDigest = JSON.stringify([
+        mainAgentState.contextTokenCount ?? null,
+        mainAgentState.creditsUsed ?? null,
+        mainAgentState.stepsRemaining ?? null,
+        mainAgentState.agentType ?? null,
+        mainAgentState.compactionSummary?.text ?? null,
+        mainAgentState.pendingCompactionTelemetry ?? null,
+      ])
+    } catch {
+      // Never let a fingerprint break a save: unstringifyable scalars simply
+      // stop comparing equal, which errs on the side of writing.
+      runStateScalarDigest = randomUUID()
+    }
+  }
+  return {
+    messages,
+    messagesLength: Array.isArray(messages) ? messages.length : -1,
+    lastMessage: Array.isArray(messages) ? messages[messages.length - 1] : null,
+    runState,
+    runStateScalarDigest,
+  }
+}
+
+function checkpointKeysEqual(a: CheckpointKey, b: CheckpointKey): boolean {
+  return (
+    a.messages === b.messages &&
+    a.messagesLength === b.messagesLength &&
+    a.lastMessage === b.lastMessage &&
+    a.runState === b.runState &&
+    a.runStateScalarDigest === b.runStateScalarDigest
+  )
+}
+
+// What was last durably written, per chat dir. Checkpoint drains compare
+// against this before serializing: an unchanged checkpoint — the SDK's
+// snapshot timer fired while the run was waiting on a tool or a slow LLM
+// call, or the CLI rescheduled the same settled state — would regenerate two
+// multi-MB JSON documents and pay their fsyncs without changing a single byte
+// on disk.
+const persistedCheckpointKeys = new Map<string, CheckpointKey>()
+
+function noteChatStatePersisted(
+  chatDir: string,
+  runState: RunState,
+  messages: ChatMessage[],
+): void {
+  persistedCheckpointKeys.set(chatDir, makeCheckpointKey(runState, messages))
+}
+
+/**
+ * True when this checkpoint would persist exactly what the last successful
+ * save already wrote. Only drains consult it — the synchronous, authoritative
+ * saves (turn completion, interrupt, exit flush) always write: they are the
+ * final state the user lost if a crash lands before the next checkpoint.
+ */
+function isCheckpointUnchanged(
+  chatDir: string,
+  runState: RunState,
+  messages: ChatMessage[],
+): boolean {
+  const key = persistedCheckpointKeys.get(chatDir)
+  return !!key && checkpointKeysEqual(key, makeCheckpointKey(runState, messages))
+}
+
+/**
+ * Refresh only the /history sidecar for a chat directory, after the messages
+ * file on disk already holds exactly `messages` (e.g. that state landed via
+ * a skipped or regular checkpoint). Authoritative completion paths use this
+ * when the components of the state were last persisted separately, so chat
+ * completion always leaves a fresh sidecar behind.
+ */
+export function refreshChatMetaSync(
+  chatDir: string,
+  messages: ChatMessage[],
+): void {
+  try {
+    writeChatMeta(chatDir, messages)
+  } catch (error) {
+    logSaveWriteFailure(error, chatDir, 'Failed to refresh chat meta')
   }
 }
 
@@ -416,29 +541,49 @@ async function saveChatStateAsync(
   messages: ChatMessage[],
   chatDir: string,
 ): Promise<void> {
+  if (isCheckpointUnchanged(chatDir, runState, messages)) {
+    // Nothing to do at all: no serialize, no writes. An unchanged checkpoint
+    // tick — the SDK fires at the interval regardless of progress — used to
+    // cost two full stringifies of the transcript plus three atomic writes
+    // (run-state, messages, meta) and their fsyncs, all producing the exact
+    // bytes already on disk.
+    return
+  }
   const serialized = serializeChatState(runState, messages, chatDir)
   if (!serialized.runStateJson && !serialized.messagesJson) {
     return
   }
   try {
     await fs.promises.mkdir(chatDir, { recursive: true })
+    // Both files went through tmp-file + fsync + rename + dir fsync each, and
+    // the two dir fsyncs flush the same directory. Prepare both (contents
+    // durable under their temp names), publish both renames, then pay that
+    // directory fsync once for the pair.
+    const pending = []
     if (serialized.runStateJson) {
-      await writeFileAtomicAsync(
-        path.join(chatDir, RUN_STATE_FILENAME),
-        serialized.runStateJson,
+      pending.push(
+        await prepareAtomicWrite(
+          path.join(chatDir, RUN_STATE_FILENAME),
+          serialized.runStateJson,
+        ),
       )
     }
     if (serialized.messagesJson) {
-      await writeFileAtomicAsync(
-        path.join(chatDir, CHAT_MESSAGES_FILENAME),
-        serialized.messagesJson,
+      pending.push(
+        await prepareAtomicWrite(
+          path.join(chatDir, CHAT_MESSAGES_FILENAME),
+          serialized.messagesJson,
+        ),
       )
-      // Sidecar summary so /history can list this chat without parsing the
-      // (unbounded) chat-messages.json. Written after the messages file: it
-      // records that file's size/mtime to detect staleness. The meta write is
-      // tiny, so keeping it synchronous here is fine.
-      writeChatMeta(chatDir, messages)
     }
+    await commitAtomicWrites(pending)
+    // The chat-meta sidecar moved out of this path on purpose: it exists to
+    // summarize a settled chat for /history, is validated against the messages
+    // file's size/mtime with a full-parse fallback (readChatMeta), and cost a
+    // third atomic write plus a statSync on every drain. It is refreshed by
+    // the authoritative save at turn end instead; a mid-turn sidecar that
+    // reads stale is exactly the case readChatMeta was written to detect.
+    noteChatStatePersisted(chatDir, runState, messages)
   } catch (error) {
     logSaveWriteFailure(error, chatDir, 'Failed to save chat state (async)')
   }
