@@ -203,6 +203,18 @@ export type HostedWorkspaceHost = {
   activity?: {
     report(busy: boolean): Promise<void>
   }
+  /**
+   * The native updater (freebuff-desktop/electron/updater.cjs). While this
+   * window is the workspace, the local window that used to show update cards is
+   * hidden, so the page renders them. Subscribing tells native the page does;
+   * without a subscriber, native answers a menu check with its own dialogs.
+   */
+  updates?: {
+    pending(): Promise<import('./desktop-update').UpdateCard | null>
+    action(action: import('./desktop-update').UpdateAction): Promise<string>
+    check(): Promise<import('./desktop-update').UpdateCheckResult>
+    onCard(listener: (card: import('./desktop-update').UpdateCard | null) => void): () => void
+  }
   /** Open a reviewed HTTP(S) authorization link in the system browser. */
   openExternal?(url: string): Promise<void>
   /** Text editing is restricted to this window and native's allowlisted commands. */
