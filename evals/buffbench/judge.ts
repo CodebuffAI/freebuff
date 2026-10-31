@@ -400,55 +400,23 @@ The ground truth shows ONE valid implementation, but it's not the only correct a
 Provide detailed analysis, strengths, weaknesses, and numerical scores.`,
 }
 
+/**
+ * One judge, GPT-6.1 Sol. The runs benched are mostly DeepSeek Flash, and a
+ * second judge cost more than the runs it scored. History: GPT-6 Luna
+ * (2026-10-26 to 10-31) sent its scores as strings, which the output schema
+ * rejects, and failed every verdict; Gemini Pro 403s outside the
+ * gemini-thinker subagent; Sonnet cost several times the agents it judged.
+ * A dead judge is reported below rather than dropped silently.
+ */
 const judgeAgents: Record<string, AgentDefinition> = {
-  'judge-gpt': {
-    id: 'judge-gpt',
-    model: 'openai/gpt-5.4',
+  'judge-gpt-6-1-sol': {
+    id: 'judge-gpt-6-1-sol',
+    model: 'openai/gpt-6.1-sol',
     ...judgeAgentBase,
-  },
-  'judge-gpt-6-sol': {
-    id: 'judge-gpt-6-sol',
-    model: 'openai/gpt-6-sol',
-    ...judgeAgentBase,
-  },
-  'judge-gemini': {
-    id: 'judge-gemini',
-    model: 'google/gemini-3.1-pro-preview',
-    ...judgeAgentBase,
-  },
-  'judge-sonnet': {
-    id: 'judge-sonnet',
-    model: 'anthropic/claude-sonnet-4.6',
-    ...judgeAgentBase,
-  },
-  'judge-luna': {
-    id: 'judge-luna',
-    model: 'openai/gpt-6-luna',
-    ...judgeAgentBase,
-    reasoningOptions: { enabled: true, effort: 'high' },
   },
 }
 
-/**
- * The judges that actually score a run.
- *
- * Not judge-gemini: Gemini Pro is gated to the gemini-thinker subagent
- * server-side, so that judge 403s with free_mode_gemini_thinker_required on
- * every task. It failed silently for a long time — failures are dropped and the
- * remaining judge still reports a confident number — which meant scores billed
- * as a median were really one model's opinion.
- *
- * judge-gpt-6-sol replaced judge-gpt (gpt-5.4) on 2026-09-26: the stronger
- * judge, and gpt-5.4 had failed every task of that day's runs on OpenAI
- * credits, leaving sonnet alone. judge-gpt stays defined for old logs.
- *
- * judge-luna replaced judge-sonnet on 2026-10-26: the Sonnet judge cost
- * several times what the agents being judged cost, with little of its prompt
- * cached. GPT-6 Luna is far cheaper per call and caches automatically on the
- * shared prefix (see judgeTraceSessionId).
- * judge-sonnet stays defined for old logs.
- */
-const ACTIVE_JUDGE_IDS = ['judge-gpt-6-sol', 'judge-luna'] as const
+const ACTIVE_JUDGE_IDS = ['judge-gpt-6-1-sol'] as const
 
 interface JudgeCommitResultInput {
   client: CodebuffClient

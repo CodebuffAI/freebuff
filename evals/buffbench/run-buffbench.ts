@@ -478,9 +478,12 @@ export async function runBuffBench(options: {
 
   // Create logs directory with current date and time and agent IDs
   const date = new Date().toISOString().replace(/:/g, '-').slice(0, 16) // YYYY-MM-DDTHH-MM
+  // Sliced: a directory name is capped at 255 bytes, and five long agent
+  // ids failed the whole run at mkdir (ENAMETOOLONG).
   const agentNames = agents
     .map((id) => id.replace(/[^a-zA-Z0-9-]/g, '_'))
     .join('_vs_')
+    .slice(0, 200)
   const logsDir = path.join(__dirname, 'logs', `${date}_${agentNames}`)
   if (!fs.existsSync(logsDir)) {
     fs.mkdirSync(logsDir, { recursive: true })

@@ -19,6 +19,7 @@ import type {
   AgentRuntimeDeps,
   AgentRuntimeScopedDeps,
 } from '@codebuff/common/types/contracts/agent-runtime'
+import type { AgentUsageData } from '@codebuff/common/types/contracts/llm'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type {
   ParamsExcluding,
@@ -50,6 +51,10 @@ export type SubagentContextParams = AgentRuntimeDeps &
     repoUrl: string | undefined
     signal: AbortSignal
     userId: string | undefined
+    /** Per-request usage receipts: a subagent's requests report through the
+     *  parent's callback (the eval harness prices runs from them). */
+    onAgentUsageReceived?: (usage: AgentUsageData) => void
+    onAgentUsageIncomplete?: () => void
   }
 
 /**
@@ -105,6 +110,8 @@ export function extractSubagentContextParams(
     repoUrl: params.repoUrl,
     signal: params.signal,
     userId: params.userId,
+    onAgentUsageReceived: params.onAgentUsageReceived,
+    onAgentUsageIncomplete: params.onAgentUsageIncomplete,
   }
 }
 

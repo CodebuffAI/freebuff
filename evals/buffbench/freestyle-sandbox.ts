@@ -40,9 +40,16 @@ export type FreestyleTaskInput = {
   finalCheckCommands?: string[]
 }
 
+/** The repo's pinned Bun, for the VM's install: the image's own Bun moves
+ *  (1.4.4 on 2026-10-30 rejects the `.agents` workspace's package name). */
+const PINNED_BUN = fs
+  .readFileSync(path.join(__dirname, '../../.bun-version'), 'utf8')
+  .trim()
+
 /** What the bench imports, plus every package.json so the VM's frozen
  *  install matches bun.lock. */
 const BENCH_SOURCE_PATHS = [
+  '.bun-version',
   'package.json',
   'bun.lock',
   'bunfig.toml',
@@ -197,7 +204,7 @@ async function startTask(
       // --warning: macOS tar's extended headers are noise to GNU tar.
       // The install is retried: ~1 VM in 20 failed one registry tarball
       // ("Fail extracting tarball", 2026-10-12) and zeroed its task.
-      command: `tar --warning=no-unknown-keyword -xzf /tmp/buffbench.tgz -C ${VM_BENCH_DIR} && cd ${VM_BENCH_DIR} && for attempt in 1 2 3; do bun install --frozen-lockfile --filter @codebuff/evals && break; [ $attempt = 3 ] && exit 1; sleep 5; done`,
+      command: `tar --warning=no-unknown-keyword -xzf /tmp/buffbench.tgz -C ${VM_BENCH_DIR} && cd ${VM_BENCH_DIR} && for attempt in 1 2 3; do bun x bun@${PINNED_BUN} install --frozen-lockfile --filter @codebuff/evals && break; [ $attempt = 3 ] && exit 1; sleep 5; done`,
       timeoutMs: 300_000,
     }),
   )
