@@ -27,10 +27,13 @@ export const ThinkingBlock = memo(
   }: ThinkingBlockProps) => {
     const firstBlock = blocks[0]
     const thinkingId = firstBlock?.thinkingId
-    const combinedContent = blocks
-      .map((b) => b.content)
-      .join('')
-      .trim()
+    const combinedContent =
+      blocks.length === 1
+        ? (firstBlock?.content ?? '').trim()
+        : blocks
+            .map((b) => b.content)
+            .join('')
+            .trim()
 
     const thinkingCollapseState = firstBlock?.thinkingCollapseState ?? 'preview'
     const offset = isNested ? NESTED_WIDTH_OFFSET : WIDTH_OFFSET
