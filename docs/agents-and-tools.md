@@ -38,16 +38,21 @@ and at GET, whatever the client.
 ### Trust gate for repository `.agents` directories
 
 `loadLocalAgents` dynamically imports every `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs`
-file under `{cwd}/.agents` and `{cwd}/../.agents`, and `loadMCPConfigSync`
-reads an `mcp.json` there whose stdio servers are spawned on the first prompt
-with `$VAR` env values filled from the CLI's own environment. Both execute
+file under `{cwd}/.agents` and `{cwd}/../.agents`, except files under
+`skills/`, `scripts/`, `hooks/`, `vendor/`, `node_modules/` or dot-directories
+(support code, not agent definitions). `vendor/` and `hooks/` are reserved
+names: an agent file under either is skipped without a warning, so keep agents
+of your own in another directory. `loadMCPConfigSync` reads an `mcp.json`
+there whose stdio servers are spawned on the first prompt with `$VAR` env
+values filled from the CLI's own environment. Both execute
 repository-supplied code, so cloning a hostile repo and running the CLI inside
 it must not run anything without consent. The CLI therefore gates those two
 repository-scoped directories (`cli/src/utils/agent-dir-trust.ts`):
 
 - **What needs trust**: a directory containing at least one executable agent
-  file (the loader's extension filter, minus `.d.ts` and tests) or an
-  `mcp.json`. A directory holding only `skills/` markdown does not, and
+  file (a file the loader would import: extension filter, minus `.d.ts` and
+  tests, outside skipped directories) or an `mcp.json`. A directory holding
+  only `skills/` markdown does not, and
   `~/.agents` never does (it is the user's own). Skills still load from an
   untrusted directory; only agents and `mcp.json` are withheld.
 - **The prompt**: on an interactive launch (stdin and stdout are TTYs) the CLI

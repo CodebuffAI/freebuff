@@ -112,7 +112,9 @@ const shouldSkipAgentDirectory = (name: string): boolean =>
   name.startsWith('.') ||
   name === 'node_modules' ||
   name === 'scripts' ||
+  name === 'hooks' ||
   name === 'skills' ||
+  name === 'vendor' ||
   name.startsWith('skills-')
 
 const isLoadableAgentFileName = (fileName: string): boolean => {
@@ -127,9 +129,9 @@ const isLoadableAgentFileName = (fileName: string): boolean => {
 /**
  * List every file under `dir` that `loadLocalAgents` would import: `.ts`,
  * `.tsx`, `.js`, `.mjs` or `.cjs`, minus `.d.ts` and test files, skipping
- * `skills/`, `scripts/`, `node_modules` and dot-directories. Hosts use this to
- * decide whether a repository-scoped `.agents` directory contains anything
- * executable before importing it.
+ * `skills/`, `scripts/`, `hooks/`, `vendor/`, `node_modules` and
+ * dot-directories. Hosts use this to decide whether a repository-scoped
+ * `.agents` directory contains anything executable before importing it.
  *
  * @returns Absolute file paths; empty when the directory does not exist.
  */
