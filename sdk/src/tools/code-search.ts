@@ -9,6 +9,7 @@ import {
   parseCodeSearchFlags,
 } from '../../../common/src/util/code-search-flags'
 import { isSensitiveEnvFilePath } from '../../../common/src/util/env-file-path'
+import { clipLongLine } from '../../../common/src/util/file-read-limits'
 import { formatCodeSearchOutput } from '../../../common/src/util/format-code-search'
 import { getBundledRgPath } from '../native/ripgrep'
 
@@ -415,7 +416,7 @@ export function codeSearch({
           const lineNumber = evt.data.line_number ?? 0
           // Strip trailing newlines to prevent blank lines in output
           const rawText = evt.data.lines?.text ?? ''
-          const lineText = rawText.replace(/\r?\n$/, '')
+          const lineText = clipLongLine(rawText.replace(/\r?\n$/, ''))
 
           // Format as ripgrep output: filename:line_number:content
           const formattedLine = `${filePath}:${lineNumber}:${lineText}`

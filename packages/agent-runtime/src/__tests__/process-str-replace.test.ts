@@ -535,4 +535,27 @@ function test3() {
     expect(content).toBe(`${filler}${newStr}tail()\n`)
     expect(applyPatch(initialContent, patch)).toBe(content)
   })
+
+  const replaceOnce = async (
+    initialContent: string,
+    oldString: string,
+    newString: string,
+  ) =>
+    processStrReplace({
+      path: 'test.ts',
+      replacements: [{ oldString, newString, allowMultiple: false }],
+      initialContentPromise: Promise.resolve(initialContent),
+      logger,
+    })
+
+  it('re-indents the replacement when the old string matched with extra indentation', async () => {
+    const result = await replaceOnce(
+      'class A {\n  run() {\n    go();\n  }\n}\n',
+      'run() {\n  go();\n}',
+      'run() {\n  stop();\n}',
+    )
+    expect(result).toMatchObject({
+      content: 'class A {\n  run() {\n    stop();\n  }\n}\n',
+    })
+  })
 })

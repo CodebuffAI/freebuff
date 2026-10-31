@@ -299,6 +299,12 @@ export type ExecuteToolCallParams<T extends string = ToolName> = {
   localAgentTemplates: Record<string, AgentTemplate>
   logger: Logger
   previousToolCallFinished: Promise<void>
+  /**
+   * Set on a read that may start before the calls ahead of it finish
+   * (`stream-parser.ts`). Its result still enters the history in call order:
+   * it waits for `previousToolCallFinished`.
+   */
+  readyToRun?: Promise<void>
   prompt: string | undefined
   repoId: string | undefined
   repoUrl: string | undefined
@@ -333,6 +339,7 @@ export async function executeToolCall<T extends ToolName>(
     agentTemplate,
     logger,
     previousToolCallFinished,
+    readyToRun,
     toolCalls,
     toolCallsToAddToMessageHistory,
     toolResults,
@@ -573,7 +580,7 @@ export async function executeToolCall<T extends ToolName>(
   const toolResultPromise = handler({
     ...params,
     toolCall: finalToolCall,
-    previousToolCallFinished,
+    previousToolCallFinished: readyToRun ?? previousToolCallFinished,
     writeToClient: onResponseChunk,
     requestClientToolCall: (async (
       clientToolCall: ClientToolCall<T extends ClientToolName ? T : never>,
@@ -593,6 +600,7 @@ export async function executeToolCall<T extends ToolName>(
   })
 
   return toolResultPromise.then(async ({ output, creditsUsed }) => {
+    if (readyToRun) await previousToolCallFinished
     const toolResult: ToolMessage = {
       role: 'tool',
       toolName,

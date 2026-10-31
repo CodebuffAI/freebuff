@@ -96,6 +96,14 @@ export const FOLLOWUP_SUGGESTION_LIMIT_MESSAGE = `Your previous response was cut
  * response fans out to a few dozen calls at most.
  */
 export const MAX_TOOL_CALLS_PER_RESPONSE = 100
+/** Read-only tools adjacent calls of which run at once; the rest run in order. */
+export const CONCURRENT_READ_TOOLS: ReadonlySet<string> = new Set([
+  'read_files',
+  'code_search',
+  'glob',
+  'list_directory',
+])
+export const MAX_CONCURRENT_READS = 8
 export const TOOL_CALL_LIMIT_TAG = 'TOOL_CALL_LIMIT'
 export const TOOL_CALL_LIMIT_MESSAGE = `Your previous response was cut off because it made more than ${MAX_TOOL_CALLS_PER_RESPONSE} tool calls. The first ${MAX_TOOL_CALLS_PER_RESPONSE} ran and their results are above. Do not repeat a call whose result you already have; if more work is needed, make fewer calls per response.`
 
@@ -282,6 +290,9 @@ export async function processStream(
     resolveStreamDonePromise = resolve
   })
   let previousToolCallFinished = streamDonePromise
+  // What the current run of concurrent reads waits for, and how many it holds.
+  let readGate: Promise<void> | null = null
+  let readsBehindGate = 0
 
   const fileProcessingState: FileProcessingState = {
     promisesByPath: {},
@@ -416,6 +427,19 @@ export async function processStream(
             ? Promise.resolve()
             : previousToolCallFinished
 
+        // A batched response reads many files; adjacent reads run side by side.
+        // Anything else waits for them, and their results keep call order.
+        const concurrentRead =
+          !isXmlMode && isNativeTool && CONCURRENT_READ_TOOLS.has(toolName)
+        if (!concurrentRead || readsBehindGate >= MAX_CONCURRENT_READS) {
+          readGate = null
+          readsBehindGate = 0
+        }
+        if (concurrentRead) {
+          readGate ??= previousPromise
+          readsBehindGate++
+        }
+
         // Determine which executor to use and with what parameters
         let toolPromise: Promise<void>
         if (isNativeTool || transformed) {
@@ -434,6 +458,7 @@ export async function processStream(
               : undefined,
             fullResponse: fullResponseChunks.join(''),
             previousToolCallFinished: previousPromise,
+            readyToRun: readGate ?? undefined,
             toolCallId,
             toolCalls,
             toolCallsToAddToMessageHistory,

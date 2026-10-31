@@ -13,14 +13,25 @@ export const MAX_READ_FILE_LINES = 2_000
 
 /** Maximum characters returned per file in one read_files tool call. */
 export const MAX_READ_FILE_CHARS = 50_000
+/** Per line, so one minified line cannot take a whole read's budget. */
+export const MAX_READ_LINE_CHARS = 2_000
+
+/** A line cut at `max` characters, saying how much was left out. */
+export function clipLongLine(line: string): string {
+  return line.length <= MAX_READ_LINE_CHARS
+    ? line
+    : `${line.slice(0, MAX_READ_LINE_CHARS)} ... [line clipped: ${(line.length - MAX_READ_LINE_CHARS).toLocaleString()} more characters]`
+}
 
 export function windowFileRead(
   content: string,
   offset?: number,
   limit?: number,
 ): string {
-  const lines = content.split('\n')
+  let lines = content.split('\n')
   if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
+  const hasLongLine = lines.some((line) => line.length > MAX_READ_LINE_CHARS)
+  if (hasLongLine) lines = lines.map(clipLongLine)
   const totalLines = lines.length
   const start = Math.max(1, Math.floor(offset ?? 1))
   const maxLines = Math.min(
@@ -49,8 +60,11 @@ export function windowFileRead(
     selected = lines.slice(start - 1, end).join('\n')
   }
 
+  const clipNote = hasLongLine
+    ? ` Lines over ${MAX_READ_LINE_CHARS.toLocaleString()} characters are clipped; the clip marker is not part of the file.`
+    : ''
   if (start === 1 && end === totalLines) {
-    return content
+    return hasLongLine ? `${selected}\n\n[read_files:${clipNote}]` : content
   }
 
   const charCapNote = charCapped
@@ -60,7 +74,7 @@ export function windowFileRead(
     end < totalLines
       ? ` Use code_search to locate the part you need and read a window around it, or call read_files again with offset=${end + 1} to continue.`
       : ''
-  return `${selected}\n\n[read_files: showing lines ${start}-${end} of ${totalLines}.${charCapNote}${continueNote}]`
+  return `${selected}\n\n[read_files: showing lines ${start}-${end} of ${totalLines}.${charCapNote}${clipNote}${continueNote}]`
 }
 
 export type FileReadWindows = Record<string, FileReadWindow[]>

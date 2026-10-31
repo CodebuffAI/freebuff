@@ -70,9 +70,11 @@ export async function processStrReplace(params: {
       logger,
     })
     let updatedOldStr: string | null
+    let updatedNewStr = normalizedNewStr
 
     if (match.success) {
       updatedOldStr = match.oldStr
+      updatedNewStr = match.newStr ?? normalizedNewStr
     } else {
       messages.push(match.error)
       updatedOldStr = null
@@ -83,7 +85,7 @@ export async function processStrReplace(params: {
         ? normalizedCurrentContent
         : normalizedCurrentContent.replaceAll(
             updatedOldStr,
-            () => normalizedNewStr,
+            () => updatedNewStr,
           )
   }
 
@@ -139,7 +141,9 @@ const tryMatchOldStr = (params: {
   newStr: string
   allowMultiple: boolean
   logger: Logger
-}): { success: true; oldStr: string } | { success: false; error: string } => {
+}):
+  | { success: true; oldStr: string; newStr?: string }
+  | { success: false; error: string } => {
   const { initialContent, oldStr, newStr, allowMultiple, logger } = params
   // count the number of occurrences of oldStr in initialContent
   const count = initialContent.split(oldStr).length - 1
@@ -164,7 +168,12 @@ const tryMatchOldStr = (params: {
   })
   if (newChange) {
     logger.debug('Matched with indentation modification')
-    return { success: true, oldStr: newChange.searchContent }
+    // Indented to match: the replacement takes the same extra indentation.
+    return {
+      success: true,
+      oldStr: newChange.searchContent,
+      newStr: newChange.replaceContent,
+    }
   } else {
     // Try matching without any whitespace as a last resort
     const noWhitespaceSearch = oldStr.replace(/\s+/g, '')
