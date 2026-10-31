@@ -1,0 +1,22 @@
+name = "agent-voice-license"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Secrets (never commit these):
+#   bunx wrangler secret put SIGNING_KEY             # PKCS#8 Ed25519 private key, base64
+#   bunx wrangler secret put PADDLE_WEBHOOK_SECRET   # from Paddle → Developer tools → Webhooks
+
+[[kv_namespaces]]
+# Replace with the id printed by `bunx wrangler kv namespace create LICENSES`.
+id = "replace-with-your-kv-namespace-id"
+binding = "LICENSES"
+
+[observability]
+enabled = true
+
+# Local development against the real KV namespace type:
+#   bunx wrangler dev
+# Without KV (or with RATE_LIMIT_DISABLED set) `/activate` reports the missing
+# license rather than throwing, so the endpoint stays testable in isolation.
+[vars]
+RATE_LIMIT_DISABLED = "false"
