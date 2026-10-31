@@ -91,6 +91,11 @@ export const COMPACTION_FOLLOWUP_EVENT = 'context_compaction.followup' as const
  *  prompt cache, and its size. Counts and labels only, never the summary. */
 export const COMPACTION_SUMMARY_EVENT = 'compaction_summary' as const
 export const COMPACTION_ATTEMPT_EVENT = 'context_compaction.attempt' as const
+/** One per physical provider bill (web/src/llm-api/compaction-usage.ts): what
+ *  a request cost and which compaction it belongs to. Ids, labels and counts
+ *  only, never a prompt, an email or a user id. */
+export const COMPACTION_REQUEST_USAGE_EVENT =
+  'compaction.request_usage' as const
 export const COMPACTION_FIRST_OUTPUT_EVENT =
   'context_compaction.first_output' as const
 export const ADS_FETCH_COMPLETED_EVENT = AnalyticsEvent.ADS_FETCH_COMPLETED
@@ -473,6 +478,35 @@ const COMPACTION_SUMMARY_FIELDS = {
   output_tokens: 'number',
   summary_tokens: 'number',
   duration_ms: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const COMPACTION_REQUEST_USAGE_FIELDS = {
+  ...COMPACTION_CORRELATION_FIELDS,
+  compaction_root_model: 'string',
+  compaction_root_start_context_tokens: 'string',
+  compaction_request_id: 'string',
+  compaction_request_group: 'string',
+  compaction_summary_id: 'string',
+  compaction_trigger: 'string',
+  compaction_summary: 'string',
+  /** Every request of this root ships; false rows may be a free-mode sample. */
+  receipt_complete: 'boolean',
+  settlement_id: 'string',
+  message_id: 'string',
+  agent_run_id: 'string',
+  agent_id: 'string',
+  model: 'string',
+  provider: 'string',
+  surface: 'string',
+  cost_mode: 'string',
+  byok: 'boolean',
+  sponsored: 'boolean',
+  provider_cost_usd: 'number',
+  input_tokens: 'number',
+  cached_input_tokens: 'number',
+  output_tokens: 'number',
+  duration_ms: 'number',
+  ttft_ms: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 const TODO_PROGRESS_REMINDER_FIELDS = {
@@ -1367,6 +1401,7 @@ export type AxiomOnlyLogEvent = {
     | typeof COMPACTION_FOLLOWUP_EVENT
     | typeof COMPACTION_SUMMARY_EVENT
     | typeof COMPACTION_ATTEMPT_EVENT
+    | typeof COMPACTION_REQUEST_USAGE_EVENT
     | typeof COMPACTION_FIRST_OUTPUT_EVENT
     | typeof TODO_PROGRESS_REMINDER_EVENT
     | typeof FILE_EDIT_LOOP_EVENT
@@ -1478,6 +1513,12 @@ export function getAxiomOnlyLogEvent(
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(record, COMPACTION_SUMMARY_FIELDS),
+    }
+  }
+  if (eventName === COMPACTION_REQUEST_USAGE_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, COMPACTION_REQUEST_USAGE_FIELDS),
     }
   }
   if (eventName === COMPACTION_ATTEMPT_EVENT) {
