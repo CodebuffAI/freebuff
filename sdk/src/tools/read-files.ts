@@ -168,7 +168,10 @@ export async function getFiles(params: {
         continue
       }
 
-      const windows = fileWindows?.[filePath]
+      const windows =
+        fileWindows?.[filePath] ??
+        fileWindows?.[relativePath] ??
+        (fullPath ? fileWindows?.[fullPath] : undefined)
       const windowedContent =
         limitContent && fileWindows !== undefined
           ? (windows?.length ? windows : [{}])
