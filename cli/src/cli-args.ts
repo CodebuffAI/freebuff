@@ -56,7 +56,7 @@ export function parseArgs({
       .description('Freebuff - Free AI coding assistant')
       .version(version, '-v, --version', 'Print the CLI version')
       .option(
-        '--continue [conversation-id]',
+        '-c, --continue [conversation-id]',
         'Continue from a previous conversation (optionally specify a conversation id)',
       )
       .option(
@@ -86,7 +86,7 @@ export function parseArgs({
         'Remove any existing CLI log files before starting',
       )
       .option(
-        '--continue [conversation-id]',
+        '-c, --continue [conversation-id]',
         'Continue from a previous conversation (optionally specify a conversation id)',
       )
       .option(

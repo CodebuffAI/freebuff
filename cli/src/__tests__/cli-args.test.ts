@@ -179,6 +179,39 @@ describe('Freebuff CLI Argument Parsing', () => {
     expect(result.initialPrompt).toBeNull()
   })
 
+  test('accepts -c as continue without a conversation id', () => {
+    const result = parseArgs({
+      argv: ['node', 'freebuff', '-c'],
+      isFreebuff: true,
+      version: '1.0.0',
+    })
+
+    expect(result.continue).toBe(true)
+    expect(result.continueId).toBeNull()
+  })
+
+  test('accepts --continue as continue without a conversation id', () => {
+    const result = parseArgs({
+      argv: ['node', 'freebuff', '--continue'],
+      isFreebuff: true,
+      version: '1.0.0',
+    })
+
+    expect(result.continue).toBe(true)
+    expect(result.continueId).toBeNull()
+  })
+
+  test('accepts -c with an explicit conversation id', () => {
+    const result = parseArgs({
+      argv: ['node', 'freebuff', '-c', 'abc-123'],
+      isFreebuff: true,
+      version: '1.0.0',
+    })
+
+    expect(result.continue).toBe(true)
+    expect(result.continueId).toBe('abc-123')
+  })
+
   test('parses --trust-agents and defaults it to false', () => {
     expect(
       parseArgs({
