@@ -57,7 +57,7 @@ Rules:
 - Keep exact file paths, symbols, commands, error text and identifiers.
 - Keep user requests that are still open, with their exact wording. Drop the ones newer messages resolved.
 - Keep the state of changes: uncommitted, committed, pushed, in review or merged.
-- Write in the language the user writes in.
+- Keep every heading exactly as written here, in English. Write the text under the headings in the language the user writes in.
 - Keep the summary under about ${targetTokens} tokens.
 - Do not call tools. Do not continue the task. Return only the summary, with no preamble.`
 }

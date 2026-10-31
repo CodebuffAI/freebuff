@@ -222,6 +222,35 @@ describe('generateConversationSummary', () => {
     expect(summary.text).toBe(TEXT.trim())
   })
 
+  it('keeps a summary whose headings the model translated', async () => {
+    const translated = [
+      'Tujuan',
+      'Persyaratan',
+      'Keputusan',
+      'Status Pekerjaan',
+      'Langkah Selanjutnya',
+      'File yang Relevan',
+      'Konteks Penting',
+      'Pertukaran Terakhir',
+    ]
+      .map((heading) => `## ${heading}\n- ${'lanjutkan '.repeat(10)}\n`)
+      .join('\n')
+    const { summary } = await generate(
+      history,
+      streamOf([{ type: 'text', text: `Berikut ringkasannya.\n\n${translated}` }]),
+    )
+    expect(summary.text).toBe(translated.trim())
+  })
+
+  it('rejects a long reply with a few headings of its own', async () => {
+    const reply = ['Plan', 'Steps', 'Risks']
+      .map((heading) => `## ${heading}\n${'next I will edit it. '.repeat(10)}\n`)
+      .join('\n')
+    await expect(
+      generate(history, streamOf([{ type: 'text', text: reply }])),
+    ).rejects.toMatchObject({ kind: 'unrecognized' })
+  })
+
   it('rejects a reply without the summary format', async () => {
     await expect(
       generate(
@@ -243,7 +272,7 @@ describe('generateConversationSummary', () => {
         history,
         streamOf([{ type: 'tool-call', toolName: 'read_files', input: {} }]),
       ),
-    ).rejects.toThrow('no summary')
+    ).rejects.toMatchObject({ kind: 'empty' })
   })
 
   it('rejects a provider error', async () => {

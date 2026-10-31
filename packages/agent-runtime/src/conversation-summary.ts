@@ -66,6 +66,8 @@ const SUMMARY_TARGET_TOKENS = 2_000
 const SUMMARY_TARGET_SHARE = 0.1
 const SUMMARY_MAX_OUTPUT_TOKENS = 16_384
 const MIN_SUMMARY_CHARS = 200
+/** Of the format's eight sections, how many mark a reply with no English one. */
+const MIN_TRANSLATED_SECTIONS = 6
 
 export const CONVERSATION_SUMMARY_TAG = 'CONVERSATION_SUMMARY'
 
@@ -248,11 +250,33 @@ export type SummaryStream = (params: {
 
 export class SummaryError extends Error {
   constructor(
-    readonly kind: 'empty' | 'output_limit' | 'provider_error' | 'no_history',
+    readonly kind:
+      | 'empty'
+      | 'unrecognized'
+      | 'output_limit'
+      | 'provider_error'
+      | 'no_history',
     message: string,
   ) {
     super(message)
   }
+}
+
+/**
+ * The summary in a model's reply, or '' when the reply is not one. It starts
+ * at its first heading; a preamble before it is dropped. The format's headings
+ * are in English, but a model can translate them with the rest (GLM 5.3 Flash
+ * did on 12% of its summaries, prod 2026-10-30, and each one was thrown away),
+ * so a reply with the format's shape counts without the name.
+ */
+export function summaryFromReply(reply: string): string {
+  const text = reply.replace(/<think>[\s\S]*?<\/think>/g, '')
+  const english = text.indexOf('## Objective')
+  if (english >= 0) return text.slice(english).trim()
+  const sections = [...text.matchAll(/^## /gm)]
+  return sections.length >= MIN_TRANSLATED_SECTIONS
+    ? text.slice(sections[0].index).trim()
+    : ''
 }
 
 /**
@@ -320,12 +344,12 @@ export async function generateConversationSummary(params: {
   params.signal.throwIfAborted()
   if (finishReason === 'length')
     throw new SummaryError('output_limit', 'The summary hit the output limit')
-  const reply = text.replace(/<think>[\s\S]*?<\/think>/g, '')
-  // The summary starts at its first heading; a preamble before it is dropped.
-  const start = reply.indexOf('## Objective')
-  const summaryText = start < 0 ? '' : reply.slice(start).trim()
+  const summaryText = summaryFromReply(text)
   if (summaryText.length < MIN_SUMMARY_CHARS)
-    throw new SummaryError('empty', 'The model returned no summary')
+    throw new SummaryError(
+      text.trim().length < MIN_SUMMARY_CHARS ? 'empty' : 'unrecognized',
+      'The model returned no summary',
+    )
   return {
     finishReason,
     summary: {

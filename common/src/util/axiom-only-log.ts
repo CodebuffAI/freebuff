@@ -469,7 +469,8 @@ const COMPACTION_SUMMARY_FIELDS = {
   mode: 'string',
   /** Started while the agent's next request may run beside it. */
   mid_turn: 'boolean',
-  /** `empty`, `output_limit`, `provider_error`, `timeout` or `no_history`. */
+  /** `empty`, `unrecognized` (a reply without the summary format),
+   *  `output_limit`, `provider_error`, `timeout` or `no_history`. */
   error_kind: 'string',
   finish_reason: 'string',
   context_token_count: 'number',
