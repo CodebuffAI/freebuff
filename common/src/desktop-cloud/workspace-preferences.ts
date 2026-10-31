@@ -7,6 +7,8 @@ const shortcuts = z.record(z.string().max(80), z.string().max(120).nullable())
 export const workspacePreferencesSchema = z.object({
   advancedMode: z.boolean(),
   injectAgentsMd: z.boolean(),
+  /** Absent means on. Never defaulted, because an open tab of an older build refuses unknown keys. */
+  notificationSounds: z.boolean().optional(),
   interfaceSize: z.number().int().min(70).max(160),
   desktopMacShortcuts: shortcuts,
   desktopPcShortcuts: shortcuts,
