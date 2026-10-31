@@ -102,6 +102,19 @@ export class CloudHistoryError extends Error {
   }
 }
 
+/**
+ * Sent by every bearer client that can open a chat running on a computer
+ * (`deviceExecution`). Desktop 0.0.192 and older sent no such header and can
+ * only open hosted chats, so the chat list omits device chats for a direct
+ * bearer request without it (`web/src/server/desktop-cloud/history-api.ts`).
+ */
+export const CLOUD_HISTORY_DEVICE_CHATS_HEADER = 'x-freebuff-device-chats'
+
+const bearer = (token: string) => ({
+  Authorization: `Bearer ${token}`,
+  [CLOUD_HISTORY_DEVICE_CHATS_HEADER]: '1',
+})
+
 /** Cookie auth on the same origin, or the existing Desktop session bearer. */
 export function createCloudHistoryClient(
   options: {
@@ -135,10 +148,10 @@ export function createCloudHistoryClient(
         headers: update
           ? {
               'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              ...(token ? bearer(token) : {}),
             }
           : token
-            ? { Authorization: `Bearer ${token}` }
+            ? bearer(token)
             : undefined,
       },
     )
