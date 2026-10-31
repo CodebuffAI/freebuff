@@ -118,14 +118,28 @@ export function freebuffMultiplierText(priceFreebucks: number): string {
  * Suggests a lower multiplier only when the balance covers a 1x hour: below
  * that no cheaper metered row can start either, and the caller's reset and
  * plan copy is the answer.
+ *
+ * `sharedDevice`: the account has spent nothing to explain this, so the line
+ * says whose allowance it was.
  */
 export function freebucksShortfallLine(params: {
   price: number
   balance: number
   modelName?: string
+  sharedDevice?: boolean
 }): { line: string; cheaperModelFits: boolean } {
   const model = params.modelName ?? 'this model'
   const cheaperModelFits = params.balance >= FREEBUCKS_PER_HOUR
+  if (params.sharedDevice) {
+    return {
+      line:
+        `The accounts on this device share one daily allowance, and what's left today doesn't cover an hour of ${model}.` +
+        (cheaperModelFits
+          ? ' Pick a model with a lower multiplier to keep going.'
+          : ''),
+      cheaperModelFits,
+    }
+  }
   const left = cheaperModelFits
     ? `${formatHoursWithUnit(params.balance)} left`
     : 'less than an hour left'

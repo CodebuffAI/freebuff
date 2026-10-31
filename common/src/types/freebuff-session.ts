@@ -1096,9 +1096,15 @@ export type FreebuffSessionAdmissionResponse = (
        * Present when the FREEBUCKS METER refused (2026-09-02): the model's
        * session price against what the account could spend. A client that
        * knows the currency says "N Freebucks short"; older clients read the
-       * daily figures above as an ordinary pool.
+       * daily figures above as an ordinary pool. `sharedDevice`: the account's
+       * own pool would have covered it, and the accounts on this device
+       * sharing one daily allowance is why it did not.
        */
-      freebucksShortfall?: { price: number; balance: number }
+      freebucksShortfall?: {
+        price: number
+        balance: number
+        sharedDevice?: boolean
+      }
       /** Max session units permitted per period (e.g. the configured daily
        * premium allowance, including the earned reward on top of it — or, at
        * limited access, the reward balance plus streak entitlement). */

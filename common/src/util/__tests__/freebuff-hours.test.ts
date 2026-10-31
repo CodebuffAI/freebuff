@@ -67,6 +67,18 @@ describe('hours', () => {
 })
 
 describe('freebucksShortfallLine', () => {
+  test('says the device shared the allowance, not that the account spent it', () => {
+    const { line, cheaperModelFits } = freebucksShortfallLine({
+      price: 15,
+      balance: 0,
+      modelName: 'DeepSeek',
+      sharedDevice: true,
+    })
+    expect(line).toContain('accounts on this device share one daily allowance')
+    expect(line).not.toContain('less than an hour left')
+    expect(cheaperModelFits).toBe(false)
+  })
+
   test('hours left that cover a 1x hour point at a lower multiplier', () => {
     const { line, cheaperModelFits } = freebucksShortfallLine({
       price: 15,
