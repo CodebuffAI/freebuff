@@ -698,6 +698,9 @@ export type SponsorBreakHeroMediaType =
 export const TRACKED_LINK_PLACEMENT_ID = 'tracked-link'
 export const TRACKED_LINK_SURFACE = 'tracked_link'
 
+/** Real, nonbillable outbound clicks from ordinary chat links; never auction inventory. */
+export const ORGANIC_LINK_PLACEMENT_ID = 'organic-link'
+
 /**
  * A human label for any `placement_id`, including grains no slot describes.
  *
@@ -755,6 +758,7 @@ export function placementSlotLabel(placementId: string): string {
     return sourceLabel.replace(/^Desktop(?: —)? /, 'Web — ')
   }
   if (placementId === TRACKED_LINK_PLACEMENT_ID) return 'Tracked links'
+  if (placementId === ORGANIC_LINK_PLACEMENT_ID) return 'Organic links'
   const formatted = PLACEMENT_FORMAT_LABELS[placementId]
   if (formatted) return formatted
   const [head, ...rest] = placementId.split('-')
