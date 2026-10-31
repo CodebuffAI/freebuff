@@ -19,6 +19,8 @@ import {
   handleProposalsOff,
 } from './ads'
 import { handleDealsCommand } from './deals'
+import { askSideQuestion, BTW_USAGE } from './btw'
+import { resolveByokConnection, selectedByokConnection } from '../utils/byok'
 import { handleCopyConversationCommand } from './copy-conversation'
 import { handleExportConversationCommand } from './export-conversation'
 import { handleHelpCommand } from './help'
@@ -225,6 +227,9 @@ const FREEBUFF_ONLY_COMMANDS = new Set([
   // (isFreebuffOriginatedRequest). On Codebuff the command would take a value
   // and silently drop it.
   'reasoning',
+  // Side questions fork the freebuff root agent, which /btw builds from the
+  // freebuff model catalog.
+  'btw',
 ])
 
 const ALL_COMMANDS: CommandDefinition[] = [
@@ -808,6 +813,60 @@ const ALL_COMMANDS: CommandDefinition[] = [
         return
       }
       openFreebuffReasoningPicker()
+    },
+  }),
+  defineCommandWithArgs({
+    name: 'btw',
+    handler: async (params, args) => {
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+
+      const question = args.trim()
+      if (!question) {
+        params.setMessages((prev) => [...prev, getSystemMessage(BTW_USAGE)])
+        return
+      }
+
+      // Fork the last settled turn, not a transcript copy: the side answer
+      // sees what the agent sees, and the run it produces is discarded.
+      // runState is only written at end of turn, so a question asked mid-turn
+      // forks the session as it stood before that turn's newest messages.
+      const previousRun = useChatStore.getState().runState
+      if (!previousRun) {
+        params.setMessages((prev) => [
+          ...prev,
+          getSystemMessage(
+            'Nothing to answer from yet. Send a message first, then ask /btw.',
+          ),
+        ])
+        return
+      }
+
+      const pending = getSystemMessage(`/btw ${question}`)
+      params.setMessages((prev) => [...prev, pending])
+      const settle = (content: string) =>
+        params.setMessages((prev) =>
+          prev.map((message) =>
+            message.id === pending.id ? { ...message, content } : message,
+          ),
+        )
+
+      try {
+        const selectedByok = selectedByokConnection()
+        const byok = selectedByok
+          ? await resolveByokConnection(selectedByok)
+          : undefined
+        const answer = await askSideQuestion({
+          question,
+          previousRun,
+          byok,
+        })
+        settle(`/btw ${question}\n\n${answer}`)
+      } catch (error) {
+        settle(
+          `❌ /btw failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
     },
   }),
   defineCommand({
