@@ -28,6 +28,9 @@ export type AskUserQuestion = {
 export type AnswerState = number | number[]
 
 export type AskUserState = {
+  /** Which bridge produced this form. Shell approvals must route back to the
+   * correlated shell-approval bridge rather than the generic ask_user bridge. */
+  kind?: 'ask-user' | 'shell-approval'
   toolCallId: string
   questions: AskUserQuestion[]
   selectedAnswers: AnswerState[] // Single-select: number (-1 = not answered), Multi-select: number[]

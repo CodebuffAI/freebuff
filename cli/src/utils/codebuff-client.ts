@@ -1,7 +1,12 @@
 import { FREEBUFF_CLIENT_VERSION_HEADER } from '@codebuff/common/constants/freebuff-desktop-sessions'
 import { API_KEY_ENV_VAR } from '@codebuff/common/old-constants'
 import { AskUserBridge } from '@codebuff/common/utils/ask-user-bridge'
+import {
+  requestShellApproval as requestShellApprovalViaBridge,
+  cancelAllShellApprovals,
+} from '@codebuff/common/utils/shell-approval-bridge'
 import { CodebuffClient } from '@codebuff/sdk'
+import type { ShellApprovalCallback } from '@codebuff/sdk'
 
 import { getAuthTokenDetails } from './auth'
 import { getCliEnv, getSystemProcessEnv } from './env'
@@ -12,6 +17,7 @@ import { createTraceWriter } from './trace-writer'
 import { terminalCommandBroker } from './terminal-command-broker'
 import { getRgPath } from '../native/ripgrep'
 import { getProjectRoot } from '../project-files'
+import { getPermissionOptions } from './parsed-args'
 
 import type { ClientToolCall } from '@codebuff/common/tools/list'
 import type { ResolvedByokConnection } from '@codebuff/sdk'
@@ -55,6 +61,8 @@ function cliVersionHeaders(): Record<string, string> {
 export function resetCodebuffClient(): void {
   clientInstance = null
   byokClientIdentity = null
+  // Deny any pending shell approvals so no caller hangs across a client reset.
+  cancelAllShellApprovals()
 }
 
 export async function getCodebuffClient(
@@ -88,6 +96,24 @@ export async function getCodebuffClient(
       }
     }
 
+    // Get permission options from parsed CLI args
+    const permissionOptions = getPermissionOptions()
+
+    // Shell approval callback bound to this run. Uses the correlated
+    // shell-approval bridge (serialized, timeout/abort-aware, id-matched) so a
+    // concurrent request can never be lost or misattributed.
+    const shellApproval: ShellApprovalCallback | undefined =
+      permissionOptions.askShell
+        ? (request) =>
+            requestShellApprovalViaBridge({
+              id: request.id,
+              command: request.command,
+              cwd: request.cwd,
+              processType: request.processType,
+              ...(request.signal ? { signal: request.signal } : {}),
+            })
+        : undefined
+
     try {
       const agentDefinitions = loadAgentDefinitions()
       clientInstance = new CodebuffClient({
@@ -114,6 +140,11 @@ export async function getCodebuffClient(
         logger,
         traceWriter: createTraceWriter(),
         terminalCommandBroker,
+        noShell: permissionOptions.noShell,
+        askShell: permissionOptions.askShell,
+        projectOnly: permissionOptions.projectOnly,
+        readOnly: permissionOptions.readOnly,
+        ...(shellApproval ? { shellApproval } : {}),
         overrideTools: {
           ask_user: async (input: ClientToolCall<'ask_user'>['input']) => {
             const askUserResponse = await AskUserBridge.request(

@@ -1,23 +1,30 @@
 import { AskUserBridge } from '@codebuff/common/utils/ask-user-bridge'
+import {
+  __resetShellApprovalBridge,
+  getActiveShellApproval,
+  requestShellApproval,
+} from '@codebuff/common/utils/shell-approval-bridge'
 import { describe, test, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 
 
+import {
+  buildShellApprovalQuestions,
+  escapeControlCharactersForDisplay,
+  skipForm,
+  submitAnswersForForm,
+} from '../use-ask-user-bridge'
+
+import type { AskUserFormAnswers } from '../use-ask-user-bridge'
 import { useChatStore } from '../../state/chat-store'
 
 describe('useAskUserBridge', () => {
-  const submitAnswers = (
-    answers: Array<{
-      questionIndex: number
-      selectedOption?: string
-      selectedOptions?: string[]
-      otherText?: string
-    }>
-  ) => {
-    AskUserBridge.submit({ answers })
+  // Answers routed as a generic ask_user form (no shell-approval kind).
+  const submitAnswers = (answers: AskUserFormAnswers) => {
+    submitAnswersForForm(answers, { kind: 'ask-user', toolCallId: 'ask-user-1' })
   }
 
   const skip = () => {
-    AskUserBridge.submit({ skipped: true })
+    skipForm({ kind: 'ask-user', toolCallId: 'ask-user-1' })
   }
 
   let submitSpy: ReturnType<typeof spyOn>
@@ -171,6 +178,116 @@ describe('useAskUserBridge', () => {
 
       expect(useChatStore.getState().inputValue).toBe('')
       expect(useChatStore.getState().cursorPosition).toBe(0)
+    })
+  })
+
+  // A shell approval is correlated by id. A late submission from an expired
+  // form must never resolve the command that is active now.
+  describe('shell approval routing', () => {
+    beforeEach(() => {
+      __resetShellApprovalBridge()
+    })
+
+    afterEach(() => {
+      __resetShellApprovalBridge()
+    })
+
+    test('a stale answer for a timed-out request cannot approve the next command', async () => {
+      // Command A is displayed and times out before the user answers it.
+      const aVerdict = await requestShellApproval(
+        { id: 'A', command: 'echo first-command', cwd: '/project', processType: 'SYNC' },
+        { timeoutMs: 1 },
+      )
+      expect(aVerdict).toBe('deny')
+
+      // Command B becomes the active request.
+      let bVerdict: string | undefined
+      const bSettled = requestShellApproval(
+        { id: 'B', command: 'echo second-command', cwd: '/project', processType: 'SYNC' },
+        { timeoutMs: 1000 },
+      ).then((verdict) => {
+        bVerdict = verdict
+      })
+      expect(getActiveShellApproval()?.id).toBe('B')
+
+      // A delayed "Approve" from A's form still carries A's captured id.
+      submitAnswersForForm(
+        [{ questionIndex: 0, selectedOption: 'Approve' }],
+        { kind: 'shell-approval', toolCallId: 'A' },
+      )
+
+      // B is untouched and the generic ask_user bridge was never used.
+      expect(getActiveShellApproval()?.id).toBe('B')
+      expect(bVerdict).toBeUndefined()
+      expect(submitSpy).not.toHaveBeenCalled()
+
+      // Answering B's own form resolves B.
+      submitAnswersForForm(
+        [{ questionIndex: 0, selectedOption: 'Approve' }],
+        { kind: 'shell-approval', toolCallId: 'B' },
+      )
+      await bSettled
+      expect(bVerdict).toBe('approve')
+    })
+
+    test('skipping a shell approval denies it rather than approving', async () => {
+      const verdictPromise = requestShellApproval(
+        { id: 'C', command: 'echo third-command', cwd: '/project', processType: 'SYNC' },
+        { timeoutMs: 1000 },
+      )
+
+      skipForm({ kind: 'shell-approval', toolCallId: 'C' })
+
+      expect(await verdictPromise).toBe('deny')
+    })
+
+    test('any answer other than Approve denies the command', async () => {
+      const verdictPromise = requestShellApproval(
+        { id: 'D', command: 'echo fourth-command', cwd: '/project', processType: 'SYNC' },
+        { timeoutMs: 1000 },
+      )
+
+      submitAnswersForForm(
+        [{ questionIndex: 0, selectedOption: 'Deny' }],
+        { kind: 'shell-approval', toolCallId: 'D' },
+      )
+
+      expect(await verdictPromise).toBe('deny')
+    })
+  })
+
+  describe('buildShellApprovalQuestions', () => {
+    test('shows the exact command, working directory, and process type', () => {
+      const questions = buildShellApprovalQuestions({
+        command: 'bun test',
+        cwd: '/work/project',
+        processType: 'BACKGROUND',
+      })
+
+      const text = questions[0]!.question
+      expect(text).toContain('background')
+      expect(text).toContain('bun test')
+      expect(text).toContain('/work/project')
+    })
+
+    test('escapes control characters without changing the authorized command', () => {
+      const command = 'echo hi\u0007\u001b[31mred'
+      const questions = buildShellApprovalQuestions({
+        command,
+        cwd: '/work',
+        processType: 'SYNC',
+      })
+
+      const text = questions[0]!.question
+      // Control characters are rendered as visible escapes...
+      expect(text).toContain('\\u0007')
+      expect(text).toContain('\\u001b')
+      expect(text).not.toContain('\u0007')
+      expect(text).not.toContain('\u001b')
+      // ...but the raw command is only transformed for display.
+      expect(escapeControlCharactersForDisplay(command)).not.toBe(command)
+      expect(command).toContain('\u0007')
+      expect(command).toContain('\u001b')
     })
   })
 })

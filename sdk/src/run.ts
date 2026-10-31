@@ -1,3 +1,4 @@
+import { promises as nodeFs } from 'fs'
 import path from 'path'
 
 import { callMainPrompt } from '@codebuff/agent-runtime/main-prompt'
@@ -56,6 +57,18 @@ import { getFiles, getImageFile } from './tools/read-files'
 import { readUrl } from './tools/read-url'
 import { runTerminalCommand } from './tools/run-terminal-command'
 import type { TerminalCommandBroker } from './tools/run-terminal-command'
+import {
+  createExecutionPolicy,
+  authorizeToolCall,
+  classifyTool,
+  guardFileSystem,
+  isPathWithinRoot,
+} from './permissions/execution-policy'
+import type {
+  ExecutionPolicy,
+  PathCanonicalizer,
+  ShellApprovalCallback,
+} from './permissions/execution-policy'
 
 import type { CustomToolDefinition } from './custom-tool'
 import type { CodebuffRequestHeadersProvider } from './impl/model-provider'
@@ -240,6 +253,15 @@ export type CodebuffClientOptions = {
   /** Optional filter to classify files before reading (runs before gitignore check) */
   fileFilter?: FileFilter
 
+  /** Disable shell command execution completely. */
+  noShell?: boolean
+  /** Ask for approval before every shell command. */
+  askShell?: boolean
+  /** Restrict filesystem access to the project and deny unrestricted shell. */
+  projectOnly?: boolean
+  /** Deny writes and unrestricted shell commands. */
+  readOnly?: boolean
+
   overrideTools?: OverrideToolHandlers
   customToolDefinitions?: CustomToolDefinition[]
 
@@ -250,6 +272,13 @@ export type CodebuffClientOptions = {
    *  history at each agent step boundary; implementations should append each
    *  message once (see TraceWriter). */
   traceWriter?: TraceWriter
+  /**
+   * Canonicalizer used to resolve symlinks for `projectOnly` confinement. It
+   * must describe the same filesystem as `fsSource`: when a custom adapter is
+   * supplied without one, strict confinement is refused rather than checked
+   * against the host filesystem. Defaults to `fs.promises.realpath`.
+   */
+  canonicalize?: PathCanonicalizer
 }
 
 export type ImageContent = {
@@ -360,6 +389,18 @@ export type RunOptions = {
    * `confineFileToolsToProject`.
    */
   refuseNonTextFileReads?: boolean
+  /** Disable shell command execution completely. */
+  noShell?: boolean
+  /** Ask for approval before every shell command. */
+  askShell?: boolean
+  /** Restrict filesystem access to the project and deny unrestricted shell. */
+  projectOnly?: boolean
+  /** Deny writes and unrestricted shell commands. */
+  readOnly?: boolean
+  /** Host approval callback required by `askShell`. */
+  shellApproval?: ShellApprovalCallback
+  /** Permit host-defined external tools under active restrictions. */
+  allowExternalTools?: boolean
 }
 
 /**
@@ -605,6 +646,7 @@ async function runOnce({
   spawnSource,
   logger,
   traceWriter,
+  canonicalize,
 
   agent,
   prompt,
@@ -630,9 +672,26 @@ async function runOnce({
   traceSessionId: traceSessionIdOption,
   confineFileToolsToProject,
   refuseNonTextFileReads,
+  noShell = false,
+  askShell = false,
+  projectOnly = false,
+  readOnly = false,
+  shellApproval,
+  allowExternalTools = false,
 }: RunExecutionOptions): Promise<RunState> {
   const fsSourceValue = typeof fsSource === 'function' ? fsSource() : fsSource
-  const fs = await fsSourceValue
+  const rawFs = await fsSourceValue
+  const policy = createExecutionPolicy({
+    projectRoot: cwd ?? process.cwd(),
+    noShell,
+    askShell,
+    projectOnly,
+    readOnly,
+    allowExternalTools,
+    ...(shellApproval ? { shellApproval } : {}),
+    ...(canonicalize ? { canonicalize } : {}),
+  })
+  const fs = guardFileSystem(rawFs, policy)
   let spawn: CodebuffSpawn
   if (spawnSource) {
     const spawnSourceValue = await spawnSource
@@ -842,6 +901,16 @@ async function runOnce({
       ? createProjectFence({ projectRoot: cwd, fs })
       : undefined
   const refuseNonText = refuseNonTextFileReads === true
+  const authorizeReadFileOverride = () => {
+    if (!overrideTools?.read_files) return
+    const decision = authorizeToolCall(policy, {
+      toolName: 'read_files',
+      capability: 'external',
+    })
+    if (!decision.allowed) {
+      throw new Error(decision.reason ?? 'External file-read override denied')
+    }
+  }
 
   const agentRuntimeImpl = getAgentRuntimeImpl({
     logger,
@@ -879,6 +948,7 @@ async function runOnce({
         byok,
         signal,
         projectFence,
+        policy,
       })
     },
     requestMcpToolData: async ({ mcpConfig, toolNames }) => {
@@ -900,6 +970,15 @@ async function runOnce({
       return filteredTools
     },
     requestFiles: async ({ filePaths, fileWindows }) => {
+      authorizeReadFileOverride()
+      for (const filePath of filePaths) {
+        const decision = authorizeToolCall(policy, {
+          toolName: 'read_files',
+          capability: 'fs-read',
+          targetPath: path.resolve(requireCwd(cwd, 'read_files'), filePath),
+        })
+        if (!decision.allowed) throw new Error(decision.reason)
+      }
       const read = (paths: string[]) =>
         readFiles({
           filePaths: paths,
@@ -939,6 +1018,17 @@ async function runOnce({
         ? undefined
         : async ({ filePath }) => {
             const imageCwd = requireCwd(cwd, 'read_files')
+            const decision = authorizeToolCall(policy, {
+              toolName: 'read_files',
+              capability: 'fs-read',
+              targetPath: path.resolve(imageCwd, filePath),
+            })
+            if (!decision.allowed) {
+              return {
+                path: resolveFilePath(imageCwd, filePath).relativePath,
+                error: decision.reason ?? 'Operation blocked by policy',
+              }
+            }
             if (projectFence && !(await projectFence.resolve(filePath))) {
               return {
                 path: resolveFilePath(imageCwd, filePath).relativePath,
@@ -953,6 +1043,13 @@ async function runOnce({
             })
           }),
     requestOptionalFile: async ({ filePath }) => {
+      authorizeReadFileOverride()
+      const decision = authorizeToolCall(policy, {
+        toolName: 'read_files',
+        capability: 'fs-read',
+        targetPath: path.resolve(requireCwd(cwd, 'read_files'), filePath),
+      })
+      if (!decision.allowed) throw new Error(decision.reason)
       const files = await readFiles({
         filePaths: [filePath],
         override: overrideTools?.read_files,
@@ -1339,7 +1436,21 @@ async function dropMatchesOutsideProject(
   ) as Promise<ToolResultOutput[]>
 }
 
-async function handleToolCall({
+/**
+ * @internal Exposed so subagent tests can exercise the real permission boundary.
+ */
+/**
+ * Host overrides for these built-ins are UI capabilities that execute entirely
+ * inside the host's own process: they surface a prompt and return the user's
+ * answer. They cannot reach the filesystem or the shell, so requiring
+ * external-tool trust for them would disable the host's own UI under
+ * `--project-only` / `--read-only` / `--no-shell` without protecting anything.
+ * They remain subject to their built-in capability check below, and an MCP tool
+ * or custom tool that merely reuses the name is still classified external.
+ */
+const TRUSTED_UI_OVERRIDE_TOOLS: ReadonlySet<ToolName> = new Set(['ask_user'])
+
+export async function handleToolCall({
   action,
   overrides,
   customToolDefinitions,
@@ -1350,6 +1461,7 @@ async function handleToolCall({
   byok,
   signal,
   projectFence,
+  policy,
 }: {
   action: ServerAction<'tool-call-request'>
   overrides: NonNullable<CodebuffClientOptions['overrideTools']>
@@ -1362,6 +1474,7 @@ async function handleToolCall({
   signal?: AbortSignal
   /** RunOptions.confineFileToolsToProject: unset for every other run. */
   projectFence?: ProjectFence
+  policy: ExecutionPolicy
 }): Promise<{ output: ToolResultOutput[] }> {
   const toolName = action.toolName
   const input = action.input
@@ -1385,6 +1498,167 @@ async function handleToolCall({
           },
         },
       ],
+    }
+  }
+
+  const denial = (message: string) => ({
+    output: [{ type: 'json' as const, value: { errorMessage: message } }],
+  })
+
+  // Resolve the actual destination before authorizing. Tool names alone do not
+  // identify the trust boundary: MCP calls and host overrides execute outside
+  // the SDK, even when they reuse a registered built-in name.
+  const isBuiltinTool = toolNames.includes(toolName as ToolName)
+  const customToolHandler = isBuiltinTool
+    ? undefined
+    : customToolDefinitions[toolName]
+  const isMcpDispatch = Boolean(action.mcpConfig)
+  let override = overrides[toolName as PublishedClientToolName]
+  if (
+    !override &&
+    (toolName === 'str_replace' || toolName === 'apply_patch')
+  ) {
+    // Reuse the write_file override for file editing tools.
+    override = overrides['write_file']
+  }
+
+  const capability =
+    isMcpDispatch || customToolHandler
+      ? 'external'
+      : classifyTool(toolName)
+  const isTrustedUiOverride =
+    Boolean(override) &&
+    !isMcpDispatch &&
+    !customToolHandler &&
+    isBuiltinTool &&
+    TRUSTED_UI_OVERRIDE_TOOLS.has(toolName as ToolName)
+  const hasExternalDispatch =
+    isMcpDispatch ||
+    Boolean(customToolHandler) ||
+    (Boolean(override) && !isTrustedUiOverride)
+
+  // Require explicit host trust for every external destination. A trusted
+  // host override for a built-in still goes through that built-in's policy
+  // checks below; MCP name collisions use only the external classification.
+  if (hasExternalDispatch || capability === 'external') {
+    const decision = authorizeToolCall(policy, {
+      toolName,
+      capability: 'external',
+    })
+    if (!decision.allowed) {
+      return denial(decision.reason ?? 'External tool blocked by policy')
+    }
+  }
+
+  // Built-in policy is separate from dispatch-origin trust so a registered
+  // host override remains subject to the built-in's own limits when trusted.
+  if (capability === 'external') {
+    // External dispatch was authorized above.
+  } else if (capability === 'shell') {
+    const commandCwd = path.resolve(
+      requireCwd(cwd, 'run_terminal_command'),
+      (input as { cwd?: string }).cwd ?? '.',
+    )
+    const command = (input as { command?: string }).command ?? ''
+    const processType = (input as { process_type?: 'SYNC' | 'BACKGROUND' })
+      .process_type ?? 'SYNC'
+    const decision = authorizeToolCall(policy, {
+      toolName,
+      capability,
+      command,
+      cwd: commandCwd,
+      processType,
+      signal,
+    })
+    if (!decision.allowed) {
+      if (decision.approvalRequired) {
+        if (!policy.shellApproval) {
+          return denial('Shell command requires approval but no approval handler is configured')
+        }
+        let verdict: 'approve' | 'deny' = 'deny'
+        try {
+          verdict = await policy.shellApproval({
+            id: crypto.randomUUID(),
+            command,
+            cwd: commandCwd,
+            processType,
+            signal,
+          })
+        } catch {
+          verdict = 'deny'
+        }
+        if (verdict !== 'approve' || signal?.aborted) {
+          return denial('Shell command denied')
+        }
+      } else {
+        return denial(decision.reason ?? 'Shell command blocked by policy')
+      }
+    }
+  } else if (capability === 'fs-write' || capability === 'fs-read') {
+    if (toolName === 'code_search' && policy.projectOnly) {
+      return denial(
+        'code_search is not available in project-only mode because its flags can access paths outside the project',
+      )
+    }
+    const targets: string[] = []
+    const filePaths = (input as { filePaths?: string[] }).filePaths
+    if (toolName === 'apply_patch') {
+      const operation = (input as { operation?: { path?: string } }).operation
+      if (
+        !operation ||
+        typeof operation.path !== 'string' ||
+        operation.path.trim() === ''
+      ) {
+        return denial('apply_patch target could not be verified')
+      }
+      const target = path.resolve(requireCwd(cwd, toolName), operation.path)
+      // Resolve symlinks before trusting containment: a link inside the project
+      // can still point outside it.
+      if (policy.projectOnly) {
+        const canonicalize = policy.canonicalize ?? nodeFs.realpath
+        if (!(await isPathWithinRoot(target, policy.projectRoot, canonicalize))) {
+          return denial(
+            `apply_patch target '${operation.path}' blocked: outside project root '${policy.projectRoot}' (--project-only)`,
+          )
+        }
+      }
+      targets.push(target)
+    } else if (Array.isArray(filePaths)) {
+      for (const filePath of filePaths) {
+        targets.push(path.resolve(requireCwd(cwd, toolName), filePath))
+      }
+    } else if (toolName === 'glob') {
+      const globCwd = (input as { cwd?: string }).cwd ?? '.'
+      targets.push(path.resolve(requireCwd(cwd, toolName), globCwd))
+    } else if (typeof (input as { path?: string }).path === 'string') {
+      targets.push(
+        path.resolve(
+          requireCwd(cwd, toolName),
+          (input as { path: string }).path,
+        ),
+      )
+    }
+    if (targets.length === 0) {
+      // A mutating tool whose target cannot be resolved must not fall back to
+      // the project root: that would authorize an operation whose real path was
+      // never checked. Read tools may fall back because the guarded filesystem
+      // adapter still enforces containment on the concrete path it is handed.
+      if (capability === 'fs-write' && policy.projectOnly) {
+        return denial(
+          `Cannot verify the target path for '${toolName}'; refusing to run a mutating tool without a verified target (--project-only)`,
+        )
+      }
+      targets.push(requireCwd(cwd, toolName))
+    }
+    for (const targetPath of targets) {
+      const decision = authorizeToolCall(policy, {
+        toolName,
+        capability,
+        targetPath,
+      })
+      if (!decision.allowed) {
+        return denial(decision.reason ?? 'Operation blocked by policy')
+      }
     }
   }
 
@@ -1418,11 +1692,9 @@ async function handleToolCall({
   }
 
   let result: ToolResultOutput[]
-  if (toolNames.includes(toolName as ToolName)) {
+  if (isBuiltinTool) {
     clientToolCallSchema.parse(action)
   } else {
-    const customToolHandler = customToolDefinitions[toolName]
-
     if (!customToolHandler) {
       throw new Error(
         `Custom tool handler not found for user input ID ${action.userInputId}`,
@@ -1434,14 +1706,6 @@ async function handleToolCall({
   }
 
   try {
-    let override = overrides[toolName as PublishedClientToolName]
-    if (
-      !override &&
-      (toolName === 'str_replace' || toolName === 'apply_patch')
-    ) {
-      // Reuse the write_file override for file editing tools.
-      override = overrides['write_file']
-    }
     if (override) {
       // Note: This type assertion is necessary because TypeScript cannot narrow
       // the union type of all possible tool inputs based on the dynamic toolName.
