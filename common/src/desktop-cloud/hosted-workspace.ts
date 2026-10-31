@@ -338,6 +338,9 @@ export type HostedWorkspaceHost = {
   localProjects?: {
     pickFolder(): Promise<{ id: string; name: string } | null>
     create(input: HostedLocalProjectInput): Promise<HostedWorkspaceConnection>
+    /** Removing a project: this computer lets go of its folder for it, if it has one. `shared`:
+     * the folder had joined another computer's project, which stays (older builds omit it). */
+    forget?(input: { projectId: string }): Promise<{ shared: boolean } | null>
   }
   openLocalProject(): Promise<HostedWorkspaceConnection | null>
   disconnect(sessionId: string): Promise<void>
