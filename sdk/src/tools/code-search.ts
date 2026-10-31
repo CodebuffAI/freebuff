@@ -5,6 +5,7 @@ import * as path from 'path'
 
 import {
   codeSearchExecFlagRefusal,
+  codeSearchOutputFormat,
   parseCodeSearchFlags,
 } from '../../../common/src/util/code-search-flags'
 import { isSensitiveEnvFilePath } from '../../../common/src/util/env-file-path'
@@ -94,11 +95,23 @@ export function codeSearch({
         { type: 'json', value: { errorMessage: execFlagRefusal } },
       ])
     }
+    const {
+      format: outputFormat,
+      listsFiles,
+      refusal: outputRefusal,
+    } = codeSearchOutputFormat(flagsArray)
+    if (outputRefusal) {
+      return resolve([{ type: 'json', value: { errorMessage: outputRefusal } }])
+    }
 
     // Use JSON output for robust parsing and early stopping
     // --no-config prevents user/system .ripgreprc from interfering
     // -n shows line numbers
     // --json outputs in JSON format, which streams in and allows us to cut off the output if it grows too long
+    // -l, -c and their long forms beat that --json and print plain text. For those
+    // the flags after the caller's fix the record shape: every record names its file,
+    // even a search of one file or with -I, and NUL ends the path so a colon or
+    // newline in it cannot be misread. --color never keeps escapes out of the paths.
     // "--"" prevents pattern from being misparsed as a flag (e.g., pattern starting with '-')
     // Search paths: '.' plus blessed hidden directories that actually exist
     // Filter out non-existent directories to avoid ripgrep stderr errors
@@ -119,8 +132,11 @@ export function codeSearch({
       '-n',
       '--json',
       ...flagsArray,
+      ...(outputFormat === 'json'
+        ? []
+        : ['--with-filename', '--null', '--color', 'never']),
       '--',
-      pattern,
+      ...(listsFiles ? [] : [pattern]),
       ...searchPaths,
     ]
 
@@ -186,6 +202,7 @@ export function codeSearch({
     }
 
     let jsonRemainder = ''
+    let recordRemainder = ''
     let stderrBuf = ''
     // Track matches by file for grouping and limiting
     const fileGroups = new Map<string, string[]>()
@@ -193,6 +210,8 @@ export function codeSearch({
     const fileMatchCounts = new Map<string, number>()
     const filesLimitedByMaxResults = new Set<string>()
     let matchesGlobal = 0
+    // A plain record is one result, but -c can report many matches in it.
+    let countedMatches = 0
     let estimatedOutputLen = 0
     let killedForLimit = false
 
@@ -231,10 +250,17 @@ export function codeSearch({
       }, 1000)
     }
 
+    const matchesFound = () =>
+      outputFormat === 'counts' ? countedMatches : matchesGlobal
+
+    // Plain records skip the shared formatter, which would read a path such as
+    // `a:1:b.ts` as a match line. The header stays the one the CLI's summary reads.
     const formatCollectedOutput = (rawOutput: string) =>
-      formatCodeSearchOutput(rawOutput, {
-        matchCount: matchesGlobal,
-      })
+      outputFormat === 'json'
+        ? formatCodeSearchOutput(rawOutput, { matchCount: matchesGlobal })
+        : [`Found ${matchesFound()} matches`, rawOutput]
+            .filter(Boolean)
+            .join('\n')
 
     const truncateOutput = (output: string, maxLength: number) =>
       output.length > maxLength
@@ -285,11 +311,77 @@ export function codeSearch({
       })
     }, timeoutSeconds * 1000)
 
+    const atResultLimit = () =>
+      matchesGlobal >= globalMaxResults ||
+      estimatedOutputLen >= maxOutputStringLength
+
+    const settleAtResultLimit = () => {
+      killedForLimit = true
+      hardKill()
+
+      // Build final output from collected matches
+      const limitedLines: string[] = []
+      for (const lines of fileGroups.values()) {
+        limitedLines.push(...lines)
+      }
+      const rawOutput = limitedLines.join('\n')
+      const finalOutput = truncateOutput(
+        formatCollectedOutput(rawOutput),
+        maxOutputStringLength,
+      )
+
+      const limitReason =
+        matchesGlobal >= globalMaxResults
+          ? `[Global limit of ${globalMaxResults} results reached.]`
+          : '[Output size limit reached.]'
+
+      settle({
+        stdout: finalOutput + '\n\n' + limitReason,
+        message: `Stopped early after ${matchesFound()} match(es).`,
+      })
+    }
+
+    // `path\0` from -l or --files, `path\0count` and a line end from -c: `\n`,
+    // `\r\n` under --crlf or `\0` under --null-data. --stats text after the last
+    // record never matches, so it is dropped.
+    const fileRecordPattern =
+      outputFormat === 'counts'
+        ? /([^\0]+)\0(\d+)(?:\0|\r?\n)/g
+        : /([^\0]+)\0/g
+
+    const addFileRecord = (filePath: string, count?: string) => {
+      // Same env-family refusal as the JSON branch: a filename or a count from
+      // a `.env` still says whether the pattern matches its secret.
+      if (isSensitiveEnvFilePath(filePath)) return
+      // `--hidden` reaches `.github` from `.` as well as from its own search path.
+      const fileKey = filePath.replace(/^\.[\\/]/, '')
+      if (fileGroups.has(fileKey)) return
+      const formattedLine = count ? `${filePath}:${count}` : filePath
+      fileGroups.set(fileKey, [formattedLine])
+      estimatedOutputLen += formattedLine.length + 1
+      matchesGlobal++
+      countedMatches += Number(count ?? 0)
+      if (atResultLimit()) settleAtResultLimit()
+    }
+
     // Parse ripgrep JSON for early stopping
     childProcess.stdout.on('data', (chunk: Buffer | string) => {
       if (isResolved) return
       const chunkStr =
         typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+
+      if (outputFormat !== 'json') {
+        recordRemainder += chunkStr
+        let consumed = 0
+        for (const match of recordRemainder.matchAll(fileRecordPattern)) {
+          consumed += match[0].length
+          addFileRecord(match[1]!, match[2])
+          if (isResolved) return
+        }
+        recordRemainder = recordRemainder.slice(consumed)
+        return
+      }
+
       jsonRemainder += chunkStr
 
       // Split by lines; last line might be partial
@@ -358,34 +450,7 @@ export function codeSearch({
               matchesGlobal++
 
               // Check global limit or output size limit
-              if (
-                matchesGlobal >= globalMaxResults ||
-                estimatedOutputLen >= maxOutputStringLength
-              ) {
-                killedForLimit = true
-                hardKill()
-
-                // Build final output from collected matches
-                const limitedLines: string[] = []
-                for (const lines of fileGroups.values()) {
-                  limitedLines.push(...lines)
-                }
-                const rawOutput = limitedLines.join('\n')
-                const finalOutput = truncateOutput(
-                  formatCollectedOutput(rawOutput),
-                  maxOutputStringLength,
-                )
-
-                const limitReason =
-                  matchesGlobal >= globalMaxResults
-                    ? `[Global limit of ${globalMaxResults} results reached.]`
-                    : '[Output size limit reached.]'
-
-                return settle({
-                  stdout: finalOutput + '\n\n' + limitReason,
-                  message: `Stopped early after ${matchesGlobal} match(es).`,
-                })
-              }
+              if (atResultLimit()) return settleAtResultLimit()
             }
           }
         }
