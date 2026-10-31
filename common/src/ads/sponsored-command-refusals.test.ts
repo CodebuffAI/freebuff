@@ -477,6 +477,44 @@ describe('a line the walk cannot finish is refused, not allowed', () => {
     }
   })
 
+  it('refuses code handed to an interpreter as an argument', () => {
+    for (const command of [
+      'node -e "require(\'child_process\').execSync(\'docker compose down -v\')"',
+      'bun -e "Bun.spawnSync([\'docker\',\'compose\',\'down\'])"',
+      'python3 -c "import os; os.system(\'docker compose down -v\')"',
+      'php -r "shell_exec(\'docker compose down -v\');"',
+      'perl -e "system(\'docker compose down -v\')"',
+      'ruby -e "system(\'docker compose down -v\')"',
+    ]) {
+      expect({ command, kind: kindOf(command) }).toEqual({
+        command,
+        kind: 'unverifiable',
+      })
+    }
+  })
+
+  it('refuses a command word built from a variable', () => {
+    for (const command of [
+      '$D compose down -v',
+      '${D} compose down -v',
+      'D=docker $D compose down -v',
+    ]) {
+      expect({ command, kind: kindOf(command) }).toEqual({
+        command,
+        kind: 'unverifiable',
+      })
+    }
+  })
+
+  it('still allows interpreters running scripts and judged modules', () => {
+    expectAllowed([
+      'node server.js',
+      'python3 scripts/setup.py',
+      'python3 -m django check',
+      'php artisan migrate:status',
+    ])
+  })
+
   it('refuses an -EncodedCommand that does not decode', () => {
     expect(kindOf('powershell -EncodedCommand !!not-base64!!', 'win32')).toBe(
       'unverifiable',
