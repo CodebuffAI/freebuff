@@ -10,14 +10,41 @@ import {
 // happen on the API; this encoding provides no secrecy or authorization.
 export const ACCOUNT_SKILLS_UPLOAD_MAX_BYTES = 4 * 1024 * 1024
 
+/**
+ * The bytes of one uploaded skill package (a SKILL.md or a .zip) before
+ * encoding. Base64 keeps the body under `ACCOUNT_SKILLS_UPLOAD_MAX_BYTES`, the
+ * limit the browser gateway already applies to a skills save.
+ */
+export const SKILL_PACKAGE_MAX_BYTES = 3_000_000
+
+export const skillPackageUploadSchema = z
+  .object({
+    encoding: z.literal('base64'),
+    format: z.enum(['markdown', 'zip']),
+    data: z.string().min(1).max(ACCOUNT_SKILLS_UPLOAD_MAX_BYTES),
+  })
+  .strict()
+export type SkillPackageUpload = z.infer<typeof skillPackageUploadSchema>
+
+function toBase64(bytes: Uint8Array) {
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 8192)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192))
+  return btoa(binary)
+}
+
+export function encodeSkillPackageUpload(
+  bytes: Uint8Array,
+  format: SkillPackageUpload['format'],
+): SkillPackageUpload {
+  return { encoding: 'base64', format, data: toBase64(bytes) }
+}
+
 export function encodeAccountSkillsUpload(value: AccountSkillsSnapshot) {
   const bytes = new TextEncoder().encode(
     JSON.stringify(accountSkillsUpdateSchema.parse(value)),
   )
-  let binary = ''
-  for (let offset = 0; offset < bytes.length; offset += 8192)
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192))
-  return { encoding: 'base64' as const, data: btoa(binary) }
+  return { encoding: 'base64' as const, data: toBase64(bytes) }
 }
 
 const encodedUploadSchema = z

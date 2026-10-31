@@ -1,6 +1,12 @@
 import { z } from 'zod/v4'
 
 export const CLOUD_SKILL_MAX_RESOURCE_FILES = 100
+export const CLOUD_SKILL_MAX_DESCRIPTION_CHARS = 1000
+export const CLOUD_SKILL_MAX_INSTRUCTIONS_CHARS = 50000
+export const CLOUD_SKILL_MAX_RESOURCE_CHARS = 100000
+/** Per account: the library is one row of `freebuff_account_skills`. */
+export const ACCOUNT_SKILLS_MAX_COUNT = 50
+export const ACCOUNT_SKILLS_MAX_BYTES = 2_500_000
 
 /**
  * What a skill may be called. Narrow on purpose: a name holds no user prose, so
@@ -12,8 +18,16 @@ export const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
 export const cloudSkillSchema = z
   .object({
     name: z.string().regex(SKILL_NAME_PATTERN),
-    description: z.string().trim().min(1).max(1000),
-    instructions: z.string().trim().min(1).max(50000),
+    description: z
+      .string()
+      .trim()
+      .min(1)
+      .max(CLOUD_SKILL_MAX_DESCRIPTION_CHARS),
+    instructions: z
+      .string()
+      .trim()
+      .min(1)
+      .max(CLOUD_SKILL_MAX_INSTRUCTIONS_CHARS),
     enabled: z.boolean().optional(),
     files: z
       .array(
@@ -35,7 +49,7 @@ export const cloudSkillSchema = z
                   !/[\x00-\x1f]/.test(path),
                 'Invalid skill resource path',
               ),
-            contents: z.string().max(100000),
+            contents: z.string().max(CLOUD_SKILL_MAX_RESOURCE_CHARS),
           })
           .strict(),
       )
@@ -90,7 +104,7 @@ export const cloudProjectSettingsUpdateSchema = z
 
 /** Account-wide managed skills; startup scripts remain project scoped. */
 export const accountSkillsSchema = z
-  .object({ skills: z.array(cloudSkillSchema).max(50) })
+  .object({ skills: z.array(cloudSkillSchema).max(ACCOUNT_SKILLS_MAX_COUNT) })
   .strict()
   .refine(
     (value) =>
@@ -99,7 +113,8 @@ export const accountSkillsSchema = z
   )
   .refine(
     (value) =>
-      new TextEncoder().encode(JSON.stringify(value)).length <= 2_500_000,
+      new TextEncoder().encode(JSON.stringify(value)).length <=
+      ACCOUNT_SKILLS_MAX_BYTES,
     'Skills must total less than 2.5 MB',
   )
 export const accountSkillsUpdateSchema = z
