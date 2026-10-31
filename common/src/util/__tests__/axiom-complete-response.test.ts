@@ -44,12 +44,39 @@ describe('isCompleteAxiomResponse', () => {
 })
 
 describe('assertCompleteAxiomResponse', () => {
-  test('names the caller in the error', () => {
-    expect(() =>
-      assertCompleteAxiomResponse({ status: { isPartial: true } }, 'hour 12'),
-    ).toThrow(/^hour 12: Axiom returned a partial or statusless answer/)
+  test('does not throw for a complete response', () => {
     expect(() =>
       assertCompleteAxiomResponse({ status: { isPartial: false } }, 'hour 12'),
     ).not.toThrow()
+  })
+
+  test('throws for a partial response with the caller name', () => {
+    expect(() =>
+      assertCompleteAxiomResponse({ status: { isPartial: true } }, 'hour 12'),
+    ).toThrow(/^hour 12: Axiom returned a partial or statusless answer$/)
+  })
+
+  test('throws for a statusless response — not just partials', () => {
+    expect(() =>
+      assertCompleteAxiomResponse({ buckets: { totals: [] } }, 'hour 12'),
+    ).toThrow(/^hour 12: Axiom returned a partial or statusless answer$/)
+
+    expect(() =>
+      assertCompleteAxiomResponse({ status: {} }, 'hour 12'),
+    ).toThrow(/^hour 12: Axiom returned a partial or statusless answer$/)
+
+    expect(() =>
+      assertCompleteAxiomResponse({ status: null }, 'hour 12'),
+    ).toThrow(/^hour 12: Axiom returned a partial or statusless answer$/)
+  })
+
+  test('throws for non-object inputs', () => {
+    expect(() =>
+      assertCompleteAxiomResponse(null, 'hour 12'),
+    ).toThrow(/^hour 12: Axiom returned a partial or statusless answer$/)
+
+    expect(() =>
+      assertCompleteAxiomResponse(undefined, 'hour 12'),
+    ).toThrow(/^hour 12: Axiom returned a partial or statusless answer$/)
   })
 })
