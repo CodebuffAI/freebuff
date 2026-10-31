@@ -64,6 +64,26 @@ export function gravitySidebarRender(
   return { mode: 'iframe', frameUrl }
 }
 
+/** What Gravity offered for a sidebar fill, before any sanitizing. */
+export type GravityRenderMode = 'iframe' | 'spec' | 'native' | 'none'
+
+export function gravityRenderModeOf(value: unknown): GravityRenderMode {
+  if (typeof value !== 'object' || value === null) return 'none'
+  const { mode } = value as Record<string, unknown>
+  return mode === 'iframe' || mode === 'spec' || mode === 'native'
+    ? mode
+    : 'none'
+}
+
+/**
+ * `ad_impression.provider_meta` for a Gravity sidebar fill: the render mode
+ * Gravity offered, so the iframe share and its CTR are queryable. An offered
+ * iframe may still have drawn as the static card (no `ready` in time).
+ */
+export function gravitySidebarProviderMeta(mode: GravityRenderMode): string {
+  return JSON.stringify({ gravityRender: mode })
+}
+
 export function clampFrameHeight(height: number, max = GFB_MAX_HEIGHT): number {
   return Math.max(GFB_MIN_HEIGHT, Math.min(max, Math.round(height)))
 }
