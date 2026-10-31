@@ -101,13 +101,18 @@ function resolveDownloadOrigin(configuredOrigin, { warn = () => {} } = {}) {
   const isHttp = parsed.protocol === 'http:' || parsed.protocol === 'https:'
   // Only an origin: credentials or a query would ride along on every request.
   const isBareOrigin =
-    !parsed.username && !parsed.password && !parsed.search && !parsed.hash
+    parsed.pathname === '/' &&
+    !parsed.username &&
+    !parsed.password &&
+    !parsed.search &&
+    !parsed.hash
   if (isHttp && isLocal && isBareOrigin) {
     return trimmed
   }
   if (
     parsed.protocol === 'https:' &&
     isReleaseOriginHost(parsed.hostname) &&
+    !parsed.port &&
     isBareOrigin
   ) {
     return trimmed
