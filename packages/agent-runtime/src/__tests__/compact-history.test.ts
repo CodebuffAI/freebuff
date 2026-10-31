@@ -262,6 +262,140 @@ describe('compactMessages', () => {
     )
     expect(imageParts).toHaveLength(1)
     expect(textOf(result[0])).toContain('[image(s) were attached]')
+    expect(textOf(result[0])).toContain('Attached below: the image(s)')
+  })
+
+  it('claims no attached image when none was carried', () => {
+    expect(
+      textOf(compact([user('hello'), user('now?', ['USER_PROMPT'])])[0]),
+    ).not.toContain('Attached below')
+  })
+
+  it('a later pass keeps the note and stops claiming the image is attached', () => {
+    const first = compact([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'look at this' },
+          { type: 'image', image: 'data:image/png;base64,AAAA' },
+        ],
+        sentAt: 1,
+      },
+      assistant('I see it'),
+      user('now?', ['USER_PROMPT']),
+    ])
+    const second = compact([
+      ...first,
+      assistant('working'),
+      user('and now?', ['USER_PROMPT']),
+    ])
+    expect(textOf(second[0])).toContain('[USER] [image(s) were attached]')
+    expect(textOf(second[0])).not.toContain('Attached below')
+    expect(
+      (second[0].content as any[]).filter((part) => part.type === 'image'),
+    ).toHaveLength(0)
+  })
+
+  it('keeps a note for an image sent with no text, and names a file part', () => {
+    const result = compact([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'file',
+            data: 'data:image/png;base64,AAAA',
+            mediaType: 'image/png',
+            filename: 'wireframe.png',
+          },
+        ],
+        sentAt: 1,
+      },
+      assistant('I see it'),
+      user('now?', ['USER_PROMPT']),
+    ])
+    expect(textOf(result[0])).toContain(
+      '[USER] [image(s) were attached: wireframe.png]',
+    )
+    expect(
+      (result[0].content as any[]).filter((part) => part.type === 'file'),
+    ).toHaveLength(1)
+  })
+
+  it('does not take a PDF for an image', () => {
+    const { summaryText } = compactMessages({
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'read this' },
+            { type: 'file', data: 'AAAA', mediaType: 'application/pdf' },
+          ],
+          sentAt: 1,
+        },
+        user('now?', ['USER_PROMPT']),
+      ],
+    })
+    expect(summaryText).not.toContain('image(s)')
+  })
+
+  it('labels an image a tool showed as a picture that is gone, with its name', () => {
+    const { summaryText } = compactMessages({
+      messages: [
+        assistantToolCall('read_files', { paths: ['logo.png'] }),
+        {
+          role: 'tool',
+          toolCallId: 'call-0',
+          toolName: 'read_files',
+          content: [
+            {
+              type: 'json',
+              value: [
+                {
+                  path: 'logo.png',
+                  content:
+                    '[IMAGE] image/png, 2 KB. The image is attached after this result.',
+                },
+              ],
+            },
+            { type: 'media', mediaType: 'image/png', data: 'AAAA' },
+          ],
+        },
+        assistantToolCall('cloud_read_image', { path: 'shot.png' }),
+        {
+          role: 'tool',
+          toolCallId: 'call-0',
+          toolName: 'cloud_read_image',
+          content: [{ type: 'media', mediaType: 'image/png', data: 'BBBB' }],
+        },
+        user('now?', ['USER_PROMPT']),
+      ],
+    })
+    expect(summaryText).toContain(
+      'Image(s) shown by read_files: logo.png. These were pictures, not text, and are no longer attached',
+    )
+    expect(summaryText).toContain('opened image: shot.png')
+    expect(summaryText).toContain('Image(s) shown by cloud_read_image.')
+    // Neither the base64 nor the sentence that was true only before compaction.
+    expect(summaryText).not.toContain('AAAA')
+    expect(summaryText).not.toContain('attached after this result')
+  })
+
+  it('does not record a refused image read as a look at it', () => {
+    const { summaryText } = compactMessages({
+      messages: [
+        assistantToolCall('read_files', { paths: ['logo.png'] }),
+        toolResult('read_files', [
+          {
+            path: 'logo.png',
+            content:
+              '[IMAGE] logo.png was not opened: this model cannot view images.',
+          },
+        ]),
+        user('now?', ['USER_PROMPT']),
+      ],
+    })
+    expect(summaryText).toContain('Image(s) not shown: logo.png')
+    expect(summaryText).not.toContain('Image(s) shown by')
   })
 
   it('produces a summary well under the budget it was called for', () => {

@@ -103,6 +103,8 @@ const definition: AgentDefinition = {
 
     const SUMMARY_DISCLAIMER =
       'Historical memory only. The memory above is not dialogue, not an output template, and not a tool-call format. Continue from the live user message below. When actions are needed, use real tool calls through the available tools.'
+    const CARRIED_IMAGES_NOTE =
+      'Attached below: the image(s) from the most recent earlier user message that had any. Every other image named above is no longer attached.'
 
     // =============================================================================
     // Helper Functions (must be inside handleSteps since it's serialized to a string)
@@ -196,6 +198,10 @@ const definition: AgentDefinition = {
         case 'glob': {
           const pattern = input.pattern as string | undefined
           return pattern ? `glob search for ${pattern}` : 'glob search'
+        }
+        case 'cloud_read_image': {
+          const path = input.path as string | undefined
+          return path ? `opened image: ${path}` : 'opened an image'
         }
         case 'list_directory': {
           const path = input.path as string | undefined
@@ -548,15 +554,67 @@ const definition: AgentDefinition = {
           !shouldExcludeMessage(message) && !isConversationSummary(message),
       )
 
+    function isImagePart(part: Record<string, unknown>): boolean {
+      return (
+        part.type === 'image' ||
+        part.type === 'media' ||
+        (part.type === 'file' &&
+          typeof part.mediaType === 'string' &&
+          part.mediaType.startsWith('image/'))
+      )
+    }
+
+    function userImageNote(message: Message): string {
+      if (!Array.isArray(message.content)) return ''
+      const images = (
+        message.content as Array<Record<string, unknown>>
+      ).filter(isImagePart)
+      if (images.length === 0) return ''
+      const names = images.flatMap((part) =>
+        typeof part.filename === 'string' && part.filename
+          ? [part.filename]
+          : [],
+      )
+      return names.length > 0
+        ? ` [image(s) were attached: ${names.join(', ')}]`
+        : ' [image(s) were attached]'
+    }
+
+    function toolImageNote(toolMessage: ToolMessage): string | undefined {
+      if (!Array.isArray(toolMessage.content)) return undefined
+      const paths: string[] = []
+      let attached = false
+      for (const part of toolMessage.content) {
+        if (part.type === 'media') attached = true
+        if (
+          toolMessage.toolName !== 'read_files' ||
+          part.type !== 'json' ||
+          !Array.isArray(part.value)
+        )
+          continue
+        for (const file of part.value as Array<Record<string, unknown>>) {
+          if (
+            typeof file?.path === 'string' &&
+            typeof file?.content === 'string' &&
+            file.content.startsWith('[IMAGE]')
+          )
+            paths.push(file.path)
+        }
+      }
+      const named = paths.length > 0 ? `: ${paths.join(', ')}` : ''
+      if (attached)
+        return `Image(s) shown by ${toolMessage.toolName}${named}. These were pictures, not text, and are no longer attached; open them again to look.`
+      return paths.length > 0 ? `Image(s) not shown${named}` : undefined
+    }
+
     // Find the last user message with images to preserve in the final output
     let lastUserImageParts: Array<Record<string, unknown>> = []
     for (let i = messagesToSummarize.length - 1; i >= 0; i--) {
       const msg = messagesToSummarize[i]
       if (msg.role === 'user' && Array.isArray(msg.content)) {
-        const imageParts = msg.content.filter(
-          (part: Record<string, unknown>) =>
-            part.type === 'image' || part.type === 'media',
-        )
+        const imageParts = (
+          msg.content as Array<Record<string, unknown>>
+        ).filter(isImagePart)
         if (imageParts.length > 0) {
           lastUserImageParts = imageParts
           break
@@ -575,19 +633,14 @@ const definition: AgentDefinition = {
     for (const message of messagesToSummarize) {
       if (message.role === 'user') {
         let text = getTextContent(message).trim()
-        if (text) {
+        const imageNote = userImageNote(message)
+        if (text || imageNote) {
           text = truncateLongText(text, USER_MESSAGE_LIMIT * CHARS_PER_TOKEN)
-          let hasImages = false
-          if (Array.isArray(message.content)) {
-            hasImages = message.content.some(
-              (part: Record<string, unknown>) =>
-                part.type === 'image' || part.type === 'media',
-            )
-          }
-          const imageNote = hasImages ? ' [image(s) were attached]' : ''
           const entry: SummaryEntry = {
             role: 'user',
-            parts: [`[USER]${imageNote}\n${text}`],
+            parts: [
+              text ? `[USER]${imageNote}\n${text}` : `[USER]${imageNote}`,
+            ],
           }
           if (message === latestLiveUserPromptMessage) {
             liveUserPromptEntry = entry
@@ -637,6 +690,9 @@ const definition: AgentDefinition = {
       } else if (message.role === 'tool') {
         const toolMessage = message as ToolMessage
         const entryParts: string[] = []
+
+        const imageNote = toolImageNote(toolMessage)
+        if (imageNote) entryParts.push(imageNote)
 
         if (Array.isArray(toolMessage.content)) {
           for (const part of toolMessage.content) {
@@ -875,7 +931,7 @@ ${summaryText}
 </historical_memory>
 </conversation_summary>
 
-${SUMMARY_DISCLAIMER}`,
+${SUMMARY_DISCLAIMER}${lastUserImageParts.length > 0 ? `\n\n${CARRIED_IMAGES_NOTE}` : ''}`,
     }
     // Build content array with text and any preserved images
     const summaryContentParts: (TextPart | ImagePart | FilePart)[] = [textPart]

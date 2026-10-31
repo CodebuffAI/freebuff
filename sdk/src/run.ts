@@ -930,10 +930,10 @@ async function runOnce({
       const loaded = inside.length > 0 ? await read(inside) : {}
       return { ...refused, ...loaded }
     },
-    // Only a local read can return an image's bytes. An override reads a
-    // remote workspace through the text-only contract, so it keeps images.
-    // refuseNonTextFileReads leaves images to the text read, which refuses
-    // them.
+    // A remote host reads an image through its own read_image hook: its
+    // read_files override is the text-only contract. Without a hook it keeps
+    // images in that text read, and so does refuseNonTextFileReads, which
+    // refuses them.
     requestImageFile: overrideTools?.read_image ?? (
       overrideTools?.read_files || refuseNonText
         ? undefined

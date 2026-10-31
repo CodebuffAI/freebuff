@@ -1,3 +1,4 @@
+import { buildCompactionSummaryPrompt } from '@codebuff/common/constants/compaction-summary'
 import { promptSuccess } from '@codebuff/common/util/error'
 import { assistantMessage, userMessage } from '@codebuff/common/util/messages'
 import { beforeEach, describe, expect, it } from 'bun:test'
@@ -46,6 +47,16 @@ const generate = (history: Message[], stream: SummaryStream) =>
     stream,
     signal: new AbortController().signal,
   })
+
+describe('buildCompactionSummaryPrompt', () => {
+  // The summary is all that survives a swap: on a base3 root this rule, not
+  // the mechanical pass's labels, is what keeps an image's name.
+  it('asks for every image by name, since the next agent cannot see them', () => {
+    expect(buildCompactionSummaryPrompt(2_000)).toContain(
+      'Name each image the user attached or a tool showed, by file name when it has one',
+    )
+  })
+})
 
 describe('summaryThresholds', () => {
   it('uses 40k and 30k for large windows, shares for small ones', () => {

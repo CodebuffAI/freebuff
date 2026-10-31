@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 
-import { handleReadFiles } from '../tool/read-files'
+import { FILE_READ_STATUS } from '@codebuff/common/constants/paths'
+
+import { MAX_IMAGES_PER_READ_FILES_CALL, handleReadFiles } from '../tool/read-files'
 
 import type { CodebuffToolCall } from '@codebuff/common/tools/list'
 import type { AgentTemplate } from '@codebuff/common/types/agent-template'
@@ -196,6 +198,95 @@ describe('handleReadFiles with prototype-member paths', () => {
       },
       { type: 'media', data: 'iVBORw0KGgo=', mediaType: 'image/png' },
     ])
+  })
+
+  it('attaches at most the capped images, in path order, and leaves other paths alone', async () => {
+    const images = Array.from(
+      { length: MAX_IMAGES_PER_READ_FILES_CALL + 2 },
+      (_, i) => `shot-${i}.png`,
+    )
+    const seenFilePaths: string[][] = []
+    const opened: string[] = []
+    const { output } = await handleReadFiles({
+      previousToolCallFinished: Promise.resolve(),
+      toolCall: {
+        toolName: 'read_files',
+        toolCallId: 'tc-1',
+        input: { paths: ['a.ts', ...images, 'b.ts'] },
+      },
+      agentTemplate: agentTemplate(false),
+      fileContext: { tokenCallers: {} } as any,
+      requestFiles: async ({ filePaths }) => {
+        seenFilePaths.push(filePaths)
+        return Object.fromEntries(filePaths.map((path) => [path, 'content']))
+      },
+      requestImageFile: async ({ filePath }) => {
+        opened.push(filePath)
+        return {
+          path: filePath,
+          data: filePath,
+          mediaType: 'image/png',
+          bytes: 2048,
+        }
+      },
+    })
+
+    expect(MAX_IMAGES_PER_READ_FILES_CALL).toBe(4)
+    const attached = images.slice(0, MAX_IMAGES_PER_READ_FILES_CALL)
+    const deferred = images.slice(MAX_IMAGES_PER_READ_FILES_CALL)
+    // Past the cap the host is never asked: no VM read, no bytes.
+    expect(opened).toEqual(attached)
+    expect(seenFilePaths).toEqual([['a.ts', 'b.ts']])
+    expect(output.slice(1)).toEqual(
+      attached.map((data) => ({
+        type: 'media',
+        data,
+        mediaType: 'image/png',
+      })),
+    )
+    const results = output[0].value as Array<{ path: string; content: string }>
+    expect(results.map((file) => file.path)).toEqual([
+      'a.ts',
+      'b.ts',
+      ...images,
+    ])
+    expect(results.slice(0, 2).map((file) => file.content)).toEqual([
+      'content',
+      'content',
+    ])
+    for (const file of results.slice(-deferred.length)) {
+      expect(file.content).toStartWith(FILE_READ_STATUS.ERROR)
+      expect(file.content).toContain('at most 4 images per call')
+      expect(file.content).toContain('in a later call')
+    }
+  })
+
+  it('counts a repeated image once toward the cap', async () => {
+    const opened: string[] = []
+    const paths = ['a.png', 'a.png', 'b.png', 'c.png', 'd.png']
+    const { output } = await handleReadFiles({
+      previousToolCallFinished: Promise.resolve(),
+      toolCall: {
+        toolName: 'read_files',
+        toolCallId: 'tc-1',
+        input: { paths },
+      },
+      agentTemplate: agentTemplate(false),
+      fileContext: { tokenCallers: {} } as any,
+      requestFiles: async () => ({}),
+      requestImageFile: async ({ filePath }) => {
+        opened.push(filePath)
+        return {
+          path: filePath,
+          data: filePath,
+          mediaType: 'image/png',
+          bytes: 2048,
+        }
+      },
+    })
+
+    expect(opened).toEqual(['a.png', 'b.png', 'c.png', 'd.png'])
+    expect(output).toHaveLength(5)
   })
 
   it('reads images as ordinary files when the host cannot read binary', async () => {

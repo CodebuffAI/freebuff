@@ -1,4 +1,5 @@
 import { isSupportedImageExtension } from '@codebuff/common/constants/images'
+import { FILE_READ_STATUS } from '@codebuff/common/constants/paths'
 import { jsonToolResult, mediaToolResult } from '@codebuff/common/util/messages'
 
 import { getFileReadingUpdates } from '../../../get-file-reading-updates'
@@ -18,6 +19,15 @@ import type { ParamsExcluding } from '@codebuff/common/types/function-params'
 import type { ProjectFileContext } from '@codebuff/common/util/file'
 
 type ToolName = 'read_files'
+
+/**
+ * The most images one read_files call attaches, in path order. An attached
+ * image is re-sent on every later step until compaction, so one batched read
+ * of large images would otherwise weigh on every request after it. Cloud reads
+ * up to 11 MB each. Only this handler sees a whole call: a host's image hook
+ * sees one file.
+ */
+export const MAX_IMAGES_PER_READ_FILES_CALL = 4
 
 function isImagePath(path: string): boolean {
   const dot = path.lastIndexOf('.')
@@ -98,16 +108,26 @@ export const handleReadFiles = (async (
 
   const images = requestImageFile
     ? await Promise.all(
-        imagePaths.map((filePath) => requestImageFile({ filePath })),
+        imagePaths
+          .slice(0, MAX_IMAGES_PER_READ_FILES_CALL)
+          .map((filePath) => requestImageFile({ filePath })),
       )
     : []
-  const imageEntries = images.map((image) => ({
-    path: image.path,
-    content:
-      'data' in image
-        ? `[IMAGE] ${image.mediaType}, ${Math.max(1, Math.round(image.bytes / 1024))} KB. The image is attached after this result.`
-        : image.error,
-  }))
+  const imageEntries = [
+    ...images.map((image) => ({
+      path: image.path,
+      content:
+        'data' in image
+          ? `[IMAGE] ${image.mediaType}, ${Math.max(1, Math.round(image.bytes / 1024))} KB. The image is attached after this result.`
+          : image.error,
+    })),
+    // A read status, not [IMAGE]: compaction counts [IMAGE] entries beside an
+    // attachment as images the model saw, and it never saw these.
+    ...imagePaths.slice(MAX_IMAGES_PER_READ_FILES_CALL).map((path) => ({
+      path,
+      content: `${FILE_READ_STATUS.ERROR} [Not read: read_files attaches at most ${MAX_IMAGES_PER_READ_FILES_CALL} images per call. Read this image in a later call.]`,
+    })),
+  ]
 
   return {
     output: [

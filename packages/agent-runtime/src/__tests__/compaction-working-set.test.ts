@@ -292,6 +292,8 @@ describe('mechanical compaction working set', () => {
         ...session(
           read('r1', {
             'gone.ts': '[FILE_DOES_NOT_EXIST]',
+            'huge.png': '[FILE_TOO_LARGE] [Images over 11 MB cannot be attached.]',
+            'logo.png': '[IMAGE] image/png, 2 KB. The image is attached after this result.',
             'both.ts': source('old', 5),
           }),
         ),

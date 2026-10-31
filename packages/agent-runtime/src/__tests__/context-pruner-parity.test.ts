@@ -145,6 +145,8 @@ const EVERY_TOOL_CALL: Array<{
   { toolName: 'code_search', input: { pattern: 'needle', flags: '-i' } },
   { toolName: 'code_search', input: { pattern: 'no flags' } },
   { toolName: 'glob', input: { pattern: '**/*.ts' } },
+  { toolName: 'cloud_read_image', input: { path: 'shot.png' } },
+  { toolName: 'cloud_read_image', input: {} },
   { toolName: 'list_directory', input: { path: 'src' } },
   { toolName: 'find_files', input: { prompt: 'where is the parser' } },
   { toolName: 'run_terminal_command', input: { command: 'bun test' } },
@@ -285,6 +287,79 @@ const FIXTURES: Record<string, Message[]> = {
     },
     assistant('I see it'),
     user('and now?', ['USER_PROMPT']),
+  ],
+
+  'an image with no text, a named file part and a PDF': [
+    {
+      role: 'user',
+      content: [{ type: 'image', image: 'data:image/png;base64,AAAA' }],
+      sentAt: 1,
+    },
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'file',
+          data: 'AAAA',
+          mediaType: 'image/png',
+          filename: 'wireframe.png',
+        },
+      ],
+      sentAt: 1,
+    },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'and the spec' },
+        { type: 'file', data: 'AAAA', mediaType: 'application/pdf' },
+      ],
+      sentAt: 1,
+    },
+    user('and now?', ['USER_PROMPT']),
+  ],
+
+  'images a tool showed, and one it did not': [
+    user('look at the logo', ['USER_PROMPT']),
+    assistant('reading', [
+      { toolName: 'read_files', input: { paths: ['logo.png'] } },
+    ]),
+    {
+      role: 'tool',
+      toolCallId: 'call-0',
+      toolName: 'read_files',
+      content: [
+        {
+          type: 'json',
+          value: [
+            {
+              path: 'logo.png',
+              content:
+                '[IMAGE] image/png, 2 KB. The image is attached after this result.',
+            },
+          ],
+        },
+        { type: 'media', mediaType: 'image/png', data: 'AAAA' },
+      ],
+    },
+    assistant('viewing', [
+      { toolName: 'cloud_read_image', input: { path: 'shot.png' } },
+    ]),
+    {
+      role: 'tool',
+      toolCallId: 'call-0',
+      toolName: 'cloud_read_image',
+      content: [{ type: 'media', mediaType: 'image/png', data: 'BBBB' }],
+    },
+    assistant('refused', [
+      { toolName: 'read_files', input: { paths: ['other.png'] } },
+    ]),
+    toolMessage('read_files', [
+      {
+        path: 'other.png',
+        content:
+          '[IMAGE] other.png was not opened: this model cannot view images.',
+      },
+    ]),
   ],
 
   // Every branch of summarizeToolCall, which is the bulk of the duplicated
