@@ -40,7 +40,7 @@ import {
 
 import { SUMMARY_HEADER } from './compact-history'
 import { expireMessages, withSystemInstructionTags } from './util/messages'
-import { countTokens } from './util/token-counter'
+import { countTokens, countTokensMessages } from './util/token-counter'
 
 import type { OpenRouterReasoningOptions } from '@codebuff/common/types/agent-template'
 import type {
@@ -95,6 +95,29 @@ export function summaryTargetTokens(maxContextLength: number): number {
   return Math.min(
     SUMMARY_TARGET_TOKENS,
     Math.floor(maxContextLength * SUMMARY_TARGET_SHARE),
+  )
+}
+
+/**
+ * Whether a manual compact is worth a summary request. A chat under twice the
+ * summary's own target gains little from swapping in a summary of about that
+ * size, and a summary already in the history is not counted: pressing Compact
+ * twice in a row is billed once. The caller's scaffolding is not conversation.
+ */
+export function manualCompactionIsWorthwhile(params: {
+  messages: Message[]
+  maxContextLength: number
+}): boolean {
+  const conversation = params.messages.filter(
+    (message) =>
+      !isEphemeral(message) &&
+      !message.tags?.includes('INSTRUCTIONS_PROMPT') &&
+      !message.tags?.includes(CONVERSATION_SUMMARY_TAG),
+  )
+  return (
+    conversation.length >= 2 &&
+    countTokensMessages(conversation) >=
+      2 * summaryTargetTokens(params.maxContextLength)
   )
 }
 

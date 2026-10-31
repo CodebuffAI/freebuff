@@ -38,6 +38,9 @@ export type CreateRunConfigParams = {
   onStateSnapshot?: (runState: RunState) => void
   /** A background summary finished (see RunOptions.onCompactionSummary). */
   onCompactionSummary?: (summary: ConversationSummary) => void
+  /** See RunOptions.onCompactionStart and onCompaction. */
+  onCompactionStart?: () => void
+  onCompaction?: () => void
   /** Mid-turn steering: drained by the agent loop at each step boundary;
    *  returned texts are appended as user prompts and keep the turn going
    *  (see RunOptions.drainSteeringMessages). */
@@ -114,6 +117,8 @@ export const createRunConfig = (params: CreateRunConfigParams) => {
     extraCodebuffMetadata,
     onStateSnapshot,
     onCompactionSummary,
+    onCompactionStart,
+    onCompaction,
     drainSteeringMessages,
   } = params
 
@@ -160,6 +165,8 @@ export const createRunConfig = (params: CreateRunConfigParams) => {
     extraCodebuffMetadata,
     onStateSnapshot,
     onCompactionSummary,
+    onCompactionStart,
+    onCompaction,
     drainSteeringMessages,
     fileFilter: ((filePath: string) => {
       if (isSensitiveFile(filePath)) return { status: 'blocked' }

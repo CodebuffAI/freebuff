@@ -463,6 +463,9 @@ const COMPACTION_SUMMARY_FIELDS = {
   ...COMPACTION_CORRELATION_FIELDS,
   agent_run_id: 'string',
   model: 'string',
+  /** Why a foreground summary was made, `manual` included; absent on a
+   *  background one, which no compaction asked for yet. */
+  trigger_reason: 'string',
   /** `completed`, `failed`, or `cancelled`. */
   outcome: 'string',
   /** `background` (prepared ahead) or `foreground` (the run waited for it). */

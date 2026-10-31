@@ -2,7 +2,12 @@ import {
   freebuffChatNeedsAdmission,
   requestFreebuffChatAdmission,
 } from '../state/freebuff-chat-store'
+import {
+  compactOutcome,
+  isCloudCompactPrompt,
+} from '@codebuff/common/desktop-cloud/compact'
 import { capturePendingAttachments } from '../utils/pending-attachments'
+import { getSystemMessage } from '../utils/message-history'
 import { randomUUID } from 'node:crypto'
 
 import { useCallback, useEffect, useRef } from 'react'
@@ -699,6 +704,7 @@ export const useSendMessage = ({
         // The conversation's own agent is told what a sponsored run did to
         // the files it remembers, once, on its next turn.
         const sponsoredBrief = sponsored ? null : takePendingSponsoredBrief()
+        const compactRun = { started: false, compacted: false }
         const effectivePrompt = sponsoredBrief
           ? `${sponsoredBrief}\n\n${buildPromptWithContext(promptWithBashContext, messageContent)}`
           : buildPromptWithContext(promptWithBashContext, messageContent)
@@ -854,6 +860,12 @@ export const useSendMessage = ({
               // Usually arrives after the run returned. Only while this run's
               // state is still the chat's latest: a newer turn has the
               // summary in memory and saves it itself.
+              onCompactionStart: () => {
+                compactRun.started = true
+              },
+              onCompaction: () => {
+                compactRun.compacted = true
+              },
               onCompactionSummary: (summary) => {
                 const saved = adoptedRunState
                 if (
@@ -1027,6 +1039,17 @@ export const useSendMessage = ({
           // carrying that prompt.
           useChatStore.getState().noteFinishedRunForAdTrace(runState)
         }
+        // A compact streams nothing, so nothing else says what it did.
+        if (
+          isCloudCompactPrompt(content) &&
+          runState.output?.type !== 'error' &&
+          !abortController.signal.aborted &&
+          runChatIsCurrent()
+        )
+          setMessages((prev) => [
+            ...prev,
+            getSystemMessage(compactOutcome(compactRun)),
+          ])
         handleRunCompletion({
           runState,
           actualCredits,

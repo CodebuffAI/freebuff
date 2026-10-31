@@ -124,6 +124,11 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     description: 'Review code changes',
   },
   {
+    id: 'compact',
+    label: 'compact',
+    description: 'Compact this conversation now: the agent continues from a summary',
+  },
+  {
     id: 'queue',
     label: 'queue',
     description: 'Edit, reorder, or delete the messages waiting to be sent',

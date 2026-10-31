@@ -55,6 +55,7 @@ import {
 } from './compaction'
 import {
   applyConversationSummary,
+  manualCompactionIsWorthwhile,
   conversationSummaries,
   isIdleReturn,
   summarizeAndLog,
@@ -1486,6 +1487,8 @@ export async function loopAgentSteps(
     contextTokens: number | undefined
     mode: 'background' | 'foreground'
     midTurn: boolean
+    /** Only a foreground summary knows why it was made. */
+    trigger?: CompactionTrigger | 'manual'
   }) =>
     summarizeAndLog({
       summaryId: options.summaryId,
@@ -1506,7 +1509,9 @@ export async function loopAgentSteps(
       logger,
       runId,
       model: agentTemplate.model,
-      telemetry,
+      telemetry: options.trigger
+        ? { ...telemetry, trigger_reason: options.trigger }
+        : telemetry,
       stream: (request) =>
         getAgentStreamFromTemplate({
           ...params,
@@ -1530,6 +1535,7 @@ export async function loopAgentSteps(
             ...runMetadata,
             llm_step_number: String(llmStepNumber + 1),
             ...request.extraCodebuffMetadata,
+            ...(options.trigger ? { compaction_trigger: options.trigger } : {}),
           },
           onFinishReason: request.onFinishReason,
           onUsageReceived: request.onUsageReceived,
@@ -1657,7 +1663,13 @@ export async function loopAgentSteps(
           ? applyConversationSummary({ messages: before, summary, keep })
           : null
       }
-      if (!usable(applied) && trigger !== 'cache_expiry') {
+      // Never billed for a chat a summary would not shrink, however often the
+      // user asks. The run ends with nothing changed: that is the no-op.
+      const summaryWorthwhile =
+        trigger === 'manual'
+          ? manualCompactionIsWorthwhile({ messages: before, maxContextLength })
+          : trigger !== 'cache_expiry'
+      if (!usable(applied) && summaryWorthwhile) {
         generatedForeground = true
         summaryId = crypto.randomUUID()
         showStatus()
@@ -1667,6 +1679,7 @@ export async function loopAgentSteps(
           contextTokens: stepUsageTokens,
           mode: 'foreground',
           midTurn: false,
+          trigger,
         })
         if (fresh) {
           summary = fresh

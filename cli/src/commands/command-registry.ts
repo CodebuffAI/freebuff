@@ -57,6 +57,8 @@ import { getSkillByName } from '../utils/skill-registry'
 
 import type { MultilineInputHandle } from '../components/multiline-input'
 import type { InputValue, PendingAttachment } from '../types/store'
+import { CLOUD_COMPACT_PROMPT } from '@codebuff/common/desktop-cloud/compact'
+
 import type { ChatMessage } from '../types/chat'
 import type { SendMessageFn } from '../types/contracts/send-message'
 import type { User } from '../utils/auth'
@@ -500,6 +502,33 @@ const ALL_COMMANDS: CommandDefinition[] = [
         // Only disable queue if we're not sending a message
         params.setCanProcessQueue(false)
       }
+    },
+  }),
+  // The runtime's manual compaction: a run of its own, with no coding step. The
+  // server bills its summary like any request of this session; a chat too small
+  // to shrink costs nothing. It waits out a running turn.
+  defineCommand({
+    name: 'compact',
+    handler: (params) => {
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+      if (
+        params.isStreaming ||
+        params.streamMessageIdRef.current ||
+        params.isChainInProgressRef.current
+      ) {
+        params.addToQueue(CLOUD_COMPACT_PROMPT)
+        params.setInputFocused(true)
+        params.inputRef.current?.focus()
+        return
+      }
+      params.sendMessage({
+        content: CLOUD_COMPACT_PROMPT,
+        agentMode: params.agentMode,
+      })
+      setTimeout(() => {
+        params.scrollToLatest()
+      }, 0)
     },
   }),
   defineCommand({

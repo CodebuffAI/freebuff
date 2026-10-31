@@ -780,6 +780,73 @@ describe('compactContext in loopAgentSteps', () => {
         'MODEL SUMMARY',
       )
     })
+
+    it('labels the summary it makes as manual, on the receipt and the log', async () => {
+      const logged: Array<Record<string, unknown>> = []
+      await runLoop(optedIn, idleHistory(0), { prompt: '/compact', logged })
+      expect(
+        runtimeImpl.promptAiSdkStream.mock.calls[0][0].extraCodebuffMetadata,
+      ).toMatchObject({
+        compaction_request_group: 'summary',
+        compaction_trigger: 'manual',
+      })
+      expect(
+        logged.find((row) => row.axiomEvent === 'compaction_summary'),
+      ).toMatchObject({ trigger_reason: 'manual', mode: 'foreground' })
+      expect(
+        logged.find((row) => row.axiomEvent === 'context_compaction.attempt'),
+      ).toMatchObject({ trigger_reason: 'manual', outcome: 'applied' })
+    })
+
+    it('leaves a tiny chat alone without a model call', async () => {
+      const history: Message[] = [
+        { ...userMessage('hi'), sentAt: 1_000_000 },
+        { ...assistantMessage('hello'), sentAt: 1_000_000 },
+      ]
+      const logged: Array<Record<string, unknown>> = []
+      const receipts: unknown[] = []
+      const result = await runLoop(optedIn, history, {
+        prompt: '/compact',
+        logged,
+        runtimeOverrides: {
+          onCompaction: (receipt: unknown) => receipts.push(receipt),
+        },
+      })
+      expect(result.output.type).not.toBe('error')
+      expect(runtimeImpl.promptAiSdkStream).not.toHaveBeenCalled()
+      expect(receipts).toHaveLength(0)
+      expect(joined(result.agentState.messageHistory)).not.toContain(
+        'conversation_summary',
+      )
+      expect(
+        logged.find((row) => row.axiomEvent === 'context_compaction.attempt'),
+      ).toMatchObject({ trigger_reason: 'manual', outcome: 'noop' })
+    })
+
+    it('bills one summary for two presses in a row', async () => {
+      const first = await runLoop(optedIn, idleHistory(0), {
+        prompt: '/compact',
+      })
+      expect(summaryRequests).toHaveLength(1)
+      const second = await runLoop(optedIn, first.agentState.messageHistory, {
+        prompt: '/compact',
+        state: { compactionSummary: first.agentState.compactionSummary },
+      })
+      expect(summaryRequests).toHaveLength(1)
+      expect(second.output.type).not.toBe('error')
+    })
+
+    it('still bills an automatic summary for a chat that small', async () => {
+      const history: Message[] = [
+        { ...userMessage('hi'), sentAt: 1_000_000 },
+        { ...assistantMessage('hello'), sentAt: 1_000_000 },
+        { ...userMessage('next'), tags: ['USER_PROMPT'], sentAt: 1_000_000 },
+      ]
+      await runLoop(optedIn, history, {
+        state: measured(10_000_000),
+      })
+      expect(summaryRequests).toHaveLength(1)
+    })
   })
 
   // Desktop BYOK, 2026-09-24..27 ("compacts every 3-5 turns"): a 32k-default
