@@ -1,3 +1,5 @@
+import { canonicalPlacementId } from './placement-aliases'
+
 /** Native inventory has its own attribution; never alias it to a web or iOS slot. */
 export const ANDROID_AD_SURFACE = 'android' as const
 export const ANDROID_AD_PLACEMENTS = [
@@ -6,11 +8,13 @@ export const ANDROID_AD_PLACEMENTS = [
     label: 'Chat · after an answer',
   },
   {
-    id: 'Android-Coding-After-Assistant-Message',
+    id: 'Coding-AfterAnswer-Inline-Android',
     label: 'Coding · after an answer',
   },
 ] as const
 
 export function isAndroidAdPlacement(id: string | null | undefined): boolean {
-  return ANDROID_AD_PLACEMENTS.some((slot) => slot.id === id)
+  if (!id) return false
+  const canonical = canonicalPlacementId(id)
+  return ANDROID_AD_PLACEMENTS.some((slot) => slot.id === canonical)
 }

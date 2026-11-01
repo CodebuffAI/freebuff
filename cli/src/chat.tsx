@@ -289,9 +289,11 @@ export const Chat = ({
     surface: 'cli_chat',
     forceStart: IS_FREEBUFF,
     // Lazily fill a four-ad pool, then repeat it for later transcript slots.
-    inlinePlacementId: 'CLI-Chat-Inline',
+    // Canonical ids (COD-1043; legacy `CLI-Chat-Inline`, `Single-Ad-Unit-1`):
+    // the server maps them to the registered Gravity slugs.
+    inlinePlacementId: 'Chat-Transcript-Inline-CLI',
     // Keep the rotating above-input slot separate for reporting continuity.
-    slotPlacementId: 'Single-Ad-Unit-1',
+    slotPlacementId: 'Chat-AboveInput-Rotating-CLI',
     // The dock holds that slot while a proposal does: an ad fetched for it
     // then would be served and never rendered.
     slotPaused: dockProposal !== null,

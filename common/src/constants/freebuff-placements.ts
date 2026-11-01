@@ -4,6 +4,10 @@ import {
   webDesktopPlacement,
 } from '../ads/web-desktop-placements'
 import {
+  canonicalPlacementId,
+  legacyPlacementId,
+} from '../ads/placement-aliases'
+import {
   DISPLAY_AD_SERVING_LIVE,
   isDarkDisplayAdPlacement,
   isDisplayAdServingLive,
@@ -308,10 +312,15 @@ export function isInterruptingBreakFormat(format: PlacementFormat): boolean {
  * exclusivity term. That term does not exist, so chat is sellable -- and it is
  * where nearly all the volume is.
  *
- * `Single-Ad-Unit-1` and `Desktop-Below-Chat` are live legacy slots as well as
- * the primary inline units. They remain sellable until their clients retire;
- * leaving either out would route an advertiser's inventory straight past a
- * rendered surface.
+ * `Chat-AboveInput-Rotating-CLI` (was `Single-Ad-Unit-1`) and
+ * `Chat-AboveComposer-Rotating-Desktop` (was `Desktop-Below-Chat`) are live
+ * slots as well as the primary inline units. They remain sellable until their
+ * clients retire; leaving either out would route an advertiser's inventory
+ * straight past a rendered surface.
+ *
+ * Ids are CANONICAL (COD-1043, `ads/placement-aliases.ts`). Shipped clients,
+ * stored targets and history still use the legacy names, so every lookup here
+ * canonicalises first and a legacy id resolves exactly as its new name.
  */
 const ORIGINAL_PLACEMENT_SLOTS = [
   ...IOS_AD_PLACEMENTS.map(({ id }) => ({
@@ -327,51 +336,51 @@ const ORIGINAL_PLACEMENT_SLOTS = [
     format: 'inline' as const,
   })),
   {
-    id: 'waiting-room-1',
+    id: 'WaitingRoom-Slot1-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   {
-    id: 'waiting-room-2',
+    id: 'WaitingRoom-Slot2-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   {
-    id: 'waiting-room-3',
+    id: 'WaitingRoom-Slot3-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   {
-    id: 'waiting-room-4',
+    id: 'WaitingRoom-Slot4-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   // The CLI transcript's inline slot. One id, re-auctioned per eligible slot.
   {
-    id: 'CLI-Chat-Inline',
+    id: 'Chat-Transcript-Inline-CLI',
     surface: 'cli_chat',
     available: true,
     format: 'inline',
   },
   // Desktop's inline slot -- the largest single placement by fill volume.
   {
-    id: 'Desktop-Inline-Chat',
+    id: 'Chat-Transcript-Inline-Desktop',
     surface: 'cli_chat',
     available: true,
     format: 'inline',
   },
   {
-    id: 'Desktop-Below-Chat',
+    id: 'Chat-AboveComposer-Rotating-Desktop',
     surface: 'cli_chat',
     available: true,
     format: 'inline',
   },
   {
-    id: 'Single-Ad-Unit-1',
+    id: 'Chat-AboveInput-Rotating-CLI',
     surface: 'cli_chat',
     available: true,
     format: 'inline',
@@ -478,19 +487,19 @@ const ORIGINAL_PLACEMENT_SLOTS = [
     format: 'branded' as const,
   })),
   {
-    id: 'Web-Chat-After-User-Message',
+    id: 'AgentChat-AfterUserMsg-Inline-Web',
     surface: 'freebuff_web_chat',
     available: true,
     format: 'inline',
   },
   {
-    id: 'Web-Chat-After-Assistant-Message',
+    id: 'AgentChat-AfterAnswer-Inline-Web',
     surface: 'freebuff_web_chat',
     available: true,
     format: 'inline',
   },
   {
-    id: 'Chat-Assistant-Above-Input',
+    id: 'Chat-AboveInput-Mobile-Web',
     surface: 'chat_assistant',
     available: true,
     format: 'inline',
@@ -530,7 +539,8 @@ export const PLACEMENT_SLOTS = [
 export function placementSurface(
   placementId: string,
 ): (typeof PLACEMENT_SLOTS)[number]['surface'] | undefined {
-  const slot = PLACEMENT_SLOTS.find((entry) => entry.id === placementId)
+  const canonical = canonicalPlacementId(placementId)
+  const slot = PLACEMENT_SLOTS.find((entry) => entry.id === canonical)
   if (slot) return slot.surface
   if (/^CLI-Chat-Inline-\d+$/.test(placementId)) return 'cli_chat'
   return undefined
@@ -556,7 +566,8 @@ export function placementSurface(
  * through, and this function is the static fallback it degrades to.
  */
 export function placementFormat(placementId: string): PlacementFormat {
-  const slot = PLACEMENT_SLOTS.find((entry) => entry.id === placementId)
+  const canonical = canonicalPlacementId(placementId)
+  const slot = PLACEMENT_SLOTS.find((entry) => entry.id === canonical)
   return slot?.format ?? 'inline'
 }
 
@@ -618,8 +629,9 @@ export function isTargetablePlacement(
   live: ReadonlySet<string> = DISPLAY_AD_SERVING_LIVE,
 ): boolean {
   return (
-    PLACEMENT_SLOTS.some((slot) => slot.id === placementId) &&
-    !isDarkDisplayAdPlacement(placementId, live)
+    PLACEMENT_SLOTS.some(
+      (slot) => slot.id === canonicalPlacementId(placementId),
+    ) && !isDarkDisplayAdPlacement(placementId, live)
   )
 }
 
@@ -730,7 +742,7 @@ const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
   'Desktop-Spotlight': 'Desktop — Spotlight',
   'Desktop-Showcase': 'Desktop — Showcase',
   'Desktop-Intermission': 'Desktop — Intermission',
-  'Single-Ad-Unit-1': 'CLI — Dock',
+  'Chat-AboveInput-Rotating-CLI': 'CLI — Dock',
   // The splitter would render these "Desktop Partner Skill Picker", which
   // names the id rather than the slot. An advertiser reading a breakdown row
   // wants to know WHERE in the app they appeared.
@@ -751,17 +763,22 @@ const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
 }
 
 export function placementSlotLabel(placementId: string): string {
-  if (placementId === 'Desktop-Partner-Skill-Picker:web')
+  // A legacy and a canonical id are one slot, so they read the same. Renamed
+  // slots keep the label their legacy id always rendered (COD-1043): a
+  // delivery breakdown should not relabel a row because the id moved.
+  const canonical = canonicalPlacementId(placementId)
+  if (canonical === 'Desktop-Partner-Skill-Picker:web')
     return 'Web — Command menu'
-  if (isWebDesktopPlacement(placementId)) {
-    const sourceLabel = placementSlotLabel(desktopPlacementSource(placementId))
+  if (isWebDesktopPlacement(canonical)) {
+    const sourceLabel = placementSlotLabel(desktopPlacementSource(canonical))
     return sourceLabel.replace(/^Desktop(?: —)? /, 'Web — ')
   }
-  if (placementId === TRACKED_LINK_PLACEMENT_ID) return 'Tracked links'
-  if (placementId === ORGANIC_LINK_PLACEMENT_ID) return 'Organic links'
-  const formatted = PLACEMENT_FORMAT_LABELS[placementId]
+  if (canonical === TRACKED_LINK_PLACEMENT_ID) return 'Tracked links'
+  if (canonical === ORGANIC_LINK_PLACEMENT_ID) return 'Organic links'
+  const formatted = PLACEMENT_FORMAT_LABELS[canonical]
   if (formatted) return formatted
-  const [head, ...rest] = placementId.split('-')
+  const named = legacyPlacementId(canonical) ?? canonical
+  const [head, ...rest] = named.split('-')
   if (!head) return placementId
   return [head[0]!.toUpperCase() + head.slice(1), ...rest].join(' ')
 }

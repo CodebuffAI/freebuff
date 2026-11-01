@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
+import { PLACEMENT_RENAMES } from '../ads/placement-aliases'
+import { isWebDesktopPlacement } from '../ads/web-desktop-placements'
 import { AD_CAMPAIGN_STATUSES } from '../constants/freebuff-ads'
 import {
   ACTIVATION_ATTRIBUTION_WINDOW_DAYS,
@@ -24,6 +26,7 @@ import {
   INTERRUPTING_BREAK_FORMATS,
   isInterruptingBreakFormat,
   isInterruptingBreakPlacement,
+  isTargetablePlacement,
   isPartnerFormat,
   isPartnerPlacement,
   isSponsorBreakFormat,
@@ -464,6 +467,7 @@ describe('placementSlotLabel', () => {
   it('names the four format slots by their format, not their position', () => {
     // `Single-Ad-Unit-1` is the one this exists for: the hyphen-splitter
     // renders it "Single Ad Unit 1", which names nothing an advertiser bought.
+    expect(placementSlotLabel('Chat-AboveInput-Rotating-CLI')).toBe('CLI — Dock')
     expect(placementSlotLabel('Single-Ad-Unit-1')).toBe('CLI — Dock')
     expect(placementSlotLabel('Desktop-Spotlight')).toBe('Desktop — Spotlight')
     expect(placementSlotLabel('Desktop-Showcase')).toBe('Desktop — Showcase')
@@ -555,7 +559,9 @@ describe('placement daily cap', () => {
 
 
 it('web copies retain format labels and name the web surface', () => {
-  const aliases = PLACEMENT_SLOTS.filter((slot) => slot.id.endsWith(':web'))
+  const aliases = PLACEMENT_SLOTS.filter((slot) =>
+    isWebDesktopPlacement(slot.id),
+  )
   expect(aliases).toHaveLength(13)
   for (const slot of aliases) {
     expect(placementSlotLabel(slot.id)).toStartWith('Web — ')
@@ -568,4 +574,37 @@ it('web copies retain format labels and name the web surface', () => {
   expect(placementSlotLabel('Desktop-Top-Banner:web')).toBe('Web — Top banner')
   expect(placementSlotLabel('CLI-Deals')).toBe('CLI — /deals')
   expect(placementSlotLabel('Desktop-Future:web')).toBe('Desktop Future:web')
+})
+
+describe('renamed placements (COD-1043)', () => {
+  it('lists every renamed slot under its new id and none under its legacy id', () => {
+    const ids = new Set<string>(PLACEMENT_SLOTS.map((slot) => slot.id))
+    for (const { id, legacy } of PLACEMENT_RENAMES) {
+      // The project-preview banner is Gravity-only: never sellable, never listed.
+      expect([id, ids.has(id)]).toEqual([
+        id,
+        id !== 'Project-AbovePreview-Banner-Web',
+      ])
+      expect([legacy, ids.has(legacy)]).toEqual([legacy, false])
+    }
+  })
+
+  it('answers a legacy id exactly as its new name', () => {
+    for (const { id, legacy } of PLACEMENT_RENAMES) {
+      expect(placementSurface(legacy)).toBe(placementSurface(id))
+      expect(placementFormat(legacy)).toBe(placementFormat(id))
+      expect(placementSlotLabel(legacy)).toBe(placementSlotLabel(id))
+      expect(isTargetablePlacement(legacy)).toBe(isTargetablePlacement(id))
+    }
+  })
+
+  it('keeps the labels the legacy ids always rendered', () => {
+    expect(placementSlotLabel('WaitingRoom-Slot1-CLI')).toBe('Waiting room 1')
+    expect(placementSlotLabel('Chat-Transcript-Inline-CLI')).toBe(
+      'CLI Chat Inline',
+    )
+    expect(placementSlotLabel('Workspace-AboveComposer-Rotating-Web')).toBe(
+      'Web — Below Chat',
+    )
+  })
 })

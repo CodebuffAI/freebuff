@@ -5,6 +5,7 @@ import {
   ADS_BREAK_CLOSED_EVENT,
   ADS_BREAK_SHOWN_EVENT,
 } from '../ads/sponsor-break-events'
+import { canonicalPlacementId } from '../ads/placement-aliases'
 import { PLACEMENT_SLOTS } from '../constants/freebuff-placements'
 import {
   FIRST_PARTY_VIEW_ACK_CLIENT_FAMILIES,
@@ -1166,7 +1167,10 @@ export function createFirstPartyViewAckTelemetry(
   if (
     typeof surface !== 'string' ||
     typeof placementId !== 'string' ||
-    FIRST_PARTY_VIEW_ACK_PLACEMENTS.get(placementId) !== surface ||
+    // Shipped clients still ack under legacy ids (COD-1043): look up by the
+    // canonical id, keep the id as sent.
+    FIRST_PARTY_VIEW_ACK_PLACEMENTS.get(canonicalPlacementId(placementId)) !==
+      surface ||
     !FIRST_PARTY_VIEW_ACK_OUTCOMES.includes(
       outcome as FirstPartyViewAckOutcome,
     ) ||

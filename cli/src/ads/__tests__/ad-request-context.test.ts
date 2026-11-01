@@ -13,7 +13,7 @@ describe('the auction request carries the client context (COD-757)', () => {
       const built = await buildAdAuctionRequest({
         provider: 'gravity',
         surface: 'cli_chat',
-        placementId: 'Single-Ad-Unit-1',
+        placementId: 'Chat-AboveInput-Rotating-CLI',
       })
       expect(built).not.toBeNull()
       const body = JSON.parse(String(built!.init.body))
