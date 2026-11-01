@@ -109,6 +109,14 @@ export const cloudExportV3Schema = cloudExportV2Schema.extend({
 export const cloudExportMetaSchema = z.union([cloudExportV2Schema, cloudExportV3Schema])
 export type CloudExportMeta = z.infer<typeof cloudExportMetaSchema>
 
-/** Archived chats resume through Desktop's existing local landing and Cloud upload. */
+/** Archiving moves a chat's files from its VM to storage; its next turn brings them back. */
 export const ARCHIVED_CHAT_RESTORE_ERROR =
-  'This chat’s Cloud workspace was archived. Restore it in Freebuff Desktop to continue.'
+  'This chat’s Cloud files are archived. Send a message to bring them back.'
+
+/** Cloud has lost its full copy, but the portable export Desktop lands is still there. */
+export const ARCHIVED_CHAT_DESKTOP_ERROR =
+  'Cloud can’t bring back this chat’s files. Open it in Freebuff Desktop to restore its saved copy. Its conversation is safe and stays here to read.'
+
+/** No copy of the chat's files survives, so no client can restore them. */
+export const ARCHIVED_CHAT_LOST_ERROR =
+  'Cloud no longer has this chat’s files, so it can’t continue here. Its conversation is safe and stays here to read. Start a new chat in this project to keep working: it starts from the project’s source, without this chat’s changes.'
