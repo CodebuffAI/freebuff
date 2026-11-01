@@ -92,7 +92,16 @@ export const AGENT_NAME_TO_TYPES = Object.entries(AGENT_NAMES).reduce(
   {} as Record<string, string[]>,
 )
 
-export const MAX_AGENT_STEPS_DEFAULT = 200
+// The step ceiling of a root turn: a backstop for a turn that never stops, not
+// a work limit. A turn that has stalled ends well before it; see
+// packages/agent-runtime/src/util/turn-progress.ts. Keep it under
+// MAX_AGENT_STEP_ROWS, or a long turn loses its later step rows.
+export const MAX_AGENT_STEPS_DEFAULT = 600
+
+// A spawned agent's ceiling, whatever its parent's. Held apart from the root's
+// because every root step can spawn several of these, so raising it multiplies
+// the worst case of a turn.
+export const MAX_SUBAGENT_STEPS_DEFAULT = 200
 
 // Programmatic tool calls can persist additional rows without consuming the
 // LLM-call budget, so keep the transport limit separate and safely bounded.

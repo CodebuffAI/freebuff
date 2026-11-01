@@ -151,6 +151,11 @@ import {
   countTokensJson,
   countTokensMessages,
 } from './util/token-counter'
+import {
+  createTurnProgress,
+  NO_PROGRESS_STOP_MESSAGE,
+  NO_PROGRESS_STOP_THRESHOLD,
+} from './util/turn-progress'
 
 import type { AgentTemplate } from '@codebuff/common/types/agent-template'
 import type { TrackEventFn } from '@codebuff/common/types/contracts/analytics'
@@ -189,6 +194,7 @@ import type {
   ProjectFileContext,
 } from '@codebuff/common/util/file'
 import type { DrainSteeringMessages } from '@codebuff/common/types/contracts/steering'
+import type { StepToolCall } from './util/turn-progress'
 
 // Moved to util/to-json-schema.ts so spawn-agent-inline can use it without an
 // import cycle through run-agent-step. Re-exported here for existing importers.
@@ -316,6 +322,8 @@ export const runAgentStep = async (
   messageId: string | null
   nResponses?: string[]
   usedWorkTools?: boolean
+  stepToolCalls?: StepToolCall[]
+  stepToolResults?: ToolMessage[]
 }> => {
   const {
     agentType,
@@ -344,6 +352,13 @@ export const runAgentStep = async (
 
   if (agentState.stepsRemaining <= 0) {
     logger.warn(
+      {
+        metric: 'agent_step_ceiling',
+        isSubagent: !!agentState.parentId,
+        agentId: agentTemplate.id,
+        model: agentTemplate.model,
+        runId: agentState.runId,
+      },
       `Detected too many consecutive assistant messages without user prompt`,
     )
 
@@ -1026,6 +1041,8 @@ export const runAgentStep = async (
         call.toolName,
       ),
     ),
+    stepToolCalls: toolCalls,
+    stepToolResults: toolResults,
   }
 }
 
@@ -1420,6 +1437,12 @@ export async function loopAgentSteps(
   let currentParams = spawnParams
   let totalSteps = 0
   let llmStepNumber = 0
+  // Root turns only. A subagent keeps its own step ceiling, and most are
+  // read-only by design. A programmatic agent's work happens outside the steps
+  // recorded here, so the count would miss it.
+  const stopsOnNoProgress =
+    !initialAgentState.parentId && !agentTemplate.handleSteps
+  const turnProgress = createTurnProgress()
   let nResponses: string[] | undefined = undefined
   let compactionWindow: CompactionWindow | undefined
   let firstOutputLogged = false
@@ -2054,6 +2077,8 @@ export async function loopAgentSteps(
         agentState: newAgentState,
         shouldEndTurn: llmShouldEndTurn,
         usedWorkTools: stepUsedWorkTools,
+        stepToolCalls,
+        stepToolResults,
         messageId,
         nResponses: generatedResponses,
       } = await runAgentStep({
@@ -2173,6 +2198,8 @@ export async function loopAgentSteps(
           agentState: currentAgentState,
           shouldEndTurn: true,
           usedWorkTools: false,
+          stepToolCalls: undefined,
+          stepToolResults: undefined,
           messageId: null,
           nResponses: undefined,
         }
@@ -2253,6 +2280,39 @@ export async function loopAgentSteps(
           ...messages,
         ]
         shouldEndTurn = false
+        turnProgress.reset()
+      } else {
+        const stepsWithoutProgress = turnProgress.recordStep(
+          stepToolCalls ?? [],
+          stepToolResults ?? [],
+        )
+        // Ends as a finished turn, not a failed one: nothing broke, and a
+        // Mission reads this as the turn's last word when it decides what's next.
+        if (
+          stopsOnNoProgress &&
+          !shouldEndTurn &&
+          stepsWithoutProgress >= NO_PROGRESS_STOP_THRESHOLD
+        ) {
+          logger.warn(
+            {
+              metric: 'turn_no_progress_stopped',
+              stepsWithoutProgress,
+              llmStepNumber,
+              stepsRemaining: currentAgentState.stepsRemaining,
+              model: agentTemplate.model,
+              agentId: agentTemplate.id,
+              userId,
+              runId,
+            },
+            'Stopping a turn that has made no progress',
+          )
+          params.onResponseChunk(`${NO_PROGRESS_STOP_MESSAGE}\n\n`)
+          currentAgentState.messageHistory = [
+            ...currentAgentState.messageHistory,
+            assistantMessage(NO_PROGRESS_STOP_MESSAGE),
+          ]
+          break
+        }
       }
     }
 

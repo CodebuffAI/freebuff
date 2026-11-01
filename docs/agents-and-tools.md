@@ -83,6 +83,24 @@ eval "$(codebuff shims env)"
 base-lite "fix this bug"
 ```
 
+### How a turn ends on its own
+
+A turn that keeps calling tools has two limits of its own, and the first to bind
+ends it.
+
+- **No progress** (`packages/agent-runtime/src/util/turn-progress.ts`, root turns
+  only). 40 consecutive model steps that changed no file and got no tool result
+  this turn had not seen. A stop is a finished turn with an honest message, not
+  a failed one, so a Mission reads it and decides what to do next. Subagents and
+  `handleSteps` agents are exempt: subagents are mostly read-only, and programmatic
+  work happens outside the steps it counts.
+- **Step ceiling.** `MAX_AGENT_STEPS_DEFAULT` for a root turn,
+  `MAX_SUBAGENT_STEPS_DEFAULT` for each spawned agent. The caller's `maxAgentSteps`
+  replaces the root's, and resets on every run. A spawned agent's never inherits
+  it. The root's has to stay under `MAX_AGENT_STEP_ROWS`, or a run stops persisting
+  its later steps. It is a backstop for what the no-progress check cannot see, such
+  as output that changes on every step, or edits that undo each other.
+
 ## Tools
 
 - Tool definitions live in `common/src/tools` and are executed via the SDK helpers + agent-runtime.

@@ -46,7 +46,9 @@ export class FileEditLoopError extends Error {
 
 /** A tool result is a rejection when the handler answered with `errorMessage`
  * (content unchanged, old string not found, cut-off rewrite refused). */
-function isRejectedEdit(message: Extract<Message, { role: 'tool' }>): boolean {
+export function isRejectedEdit(
+  message: Extract<Message, { role: 'tool' }>,
+): boolean {
   if (!Array.isArray(message.content)) return false
   return message.content.some(
     (part) =>

@@ -1,4 +1,4 @@
-import { MAX_AGENT_STEPS_DEFAULT } from '@codebuff/common/constants/agents'
+import { MAX_SUBAGENT_STEPS_DEFAULT } from '@codebuff/common/constants/agents'
 import { toolNames } from '@codebuff/common/tools/constants'
 import {
   normalizeAgentIdForLookup,
@@ -325,7 +325,7 @@ export function createAgentState(
     subagents: [],
     childRunIds: [],
     messageHistory,
-    stepsRemaining: MAX_AGENT_STEPS_DEFAULT,
+    stepsRemaining: MAX_SUBAGENT_STEPS_DEFAULT,
     creditsUsed: 0,
     directCreditsUsed: 0,
     output: undefined,
