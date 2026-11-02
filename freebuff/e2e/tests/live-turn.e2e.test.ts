@@ -124,10 +124,25 @@ async function focusModelRow(
   )
 }
 
+/** How many admission retries the smoke takes before calling production unhealthy. A user facing
+ *  the retry box presses Enter, so the smoke is never stricter than the product. */
+const ADMISSION_RETRIES = 3
+/** Backoff before a retry: the first box can be a momentary shed, so give the backend room. */
+const ADMISSION_RETRY_BACKOFF_MS = 2_000
+
 /**
  * Send the first message and wait for `answer`. The send asks the backend for a session on the
- * chosen model; one that spends Freebucks asks first in a box that Enter confirms, and anything
- * else the box offers (retry, take over) is a failed admission.
+ * chosen model; one that spends Freebucks asks first in a box that Enter confirms.
+ *
+ * A box offering "Enter: retry" means the admission failed, and retrying is exactly what the box
+ * offers a user. A retry spends nothing: admission is idempotent for a stable instance id (see
+ * SESSION_ADMISSION_RETRY_DELAYS_MS in freebuff-desktop/src/server/services/session-client.ts),
+ * and a failed admission has no session to charge for. Taking it matters because the smoke asks
+ * whether a user can get an answer out of production: treating one transient shed as fatal failed
+ * the gate at 41s of a 180s budget and blocked a release (2026-11-02).
+ *
+ * "Enter: take over" still fails immediately: a live session was left behind by an earlier
+ * client, which is a real bug rather than a shed.
  */
 async function sendAndAwaitAnswer(
   session: FreebuffSession,
@@ -138,6 +153,7 @@ async function sendAndAwaitAnswer(
   await session.send(prompt)
   const deadline = Date.now() + timeoutMs
   let confirmed = false
+  let retries = 0
   while (Date.now() < deadline) {
     const { match, output } = await session.waitForAnyText(
       [answer, ADMISSION_CONFIRM, ADMISSION_RETRY, ADMISSION_TAKEOVER],
@@ -154,6 +170,20 @@ async function sendAndAwaitAnswer(
       await sleep(1_000) // the box closes once the admission starts
       continue
     }
+    if (match === ADMISSION_RETRY) {
+      if (retries === ADMISSION_RETRIES) {
+        throw new Error(
+          `Session admission still refused after ${retries} retries.\nLast output:\n${output}`,
+        )
+      }
+      retries++
+      await sleep(ADMISSION_RETRY_BACKOFF_MS * retries)
+      // A retried admission asks again before it spends, so the confirm box can come back.
+      confirmed = false
+      await session.sendKey('Enter')
+      await waitForRetryBoxToClear(session)
+      continue
+    }
     throw new Error(
       `Session admission did not go through (${match}).\nLast output:\n${output}`,
     )
@@ -161,6 +191,20 @@ async function sendAndAwaitAnswer(
   throw new Error(
     `Timed out after ${timeoutMs}ms waiting for "${answer}".\nLast output:\n${await session.capture()}`,
   )
+}
+
+/**
+ * Wait (bounded) for the retry box to be replaced. Captures return the pane's text, so reading the
+ * previous frame again would match the stale "Enter: retry" and spend every retry on it.
+ */
+async function waitForRetryBoxToClear(
+  session: FreebuffSession,
+): Promise<void> {
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    if (!(await session.capture()).includes(ADMISSION_RETRY)) return
+    await sleep(500)
+  }
 }
 
 describe('Freebuff: live turn against the backend', () => {
