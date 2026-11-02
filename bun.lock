@@ -43,6 +43,7 @@
         "codebuff-tui": "./bin/codecane",
       },
       "dependencies": {
+        "@agentclientprotocol/sdk": "^2.2.0",
         "@codebuff/sdk": "workspace:*",
         "@opentui/core": "0.3.4",
         "@opentui/react": "0.3.4",
@@ -184,6 +185,8 @@
     "zod": "^4.2.1",
   },
   "packages": {
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@2.7.0", "", { "peerDependencies": { "@modelcontextprotocol/server": "^2.4.0", "zod": "^3.25.76 || ^4.0.0" }, "optionalPeers": ["@modelcontextprotocol/server"] }, "sha512-oXdQq0plWv3iOg01zJghNZRSuyWeMYxOgWIaSdwg1BZe2ZAC9LRhNDi023lNYxXq1zVIpQjIp8P6AfsxpvxF6g=="],
+
     "@ai-sdk/anthropic": ["@ai-sdk/anthropic@2.0.50", "", { "dependencies": { "@ai-sdk/provider": "2.0.0", "@ai-sdk/provider-utils": "3.0.18" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-21PaHfoLmouOXXNINTsZJsMw+wE5oLR2He/1kq/sKokTVKyq7ObGT1LDk6ahwxaz/GoaNaGankMh+EgVcdv2Cw=="],
 
     "@ai-sdk/gateway": ["@ai-sdk/gateway@4.0.47", "", { "dependencies": { "@ai-sdk/provider": "4.0.7", "@ai-sdk/provider-utils": "5.0.26", "@vercel/oidc": "3.2.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-BuWWlA8atWEnEJzN4eamCpGZWkoK9V3TCyNaMwgRIazhqkgWkA1Wp36si3j2JeVYzlvlEAOWrJ92dr92j/Vkqg=="],
