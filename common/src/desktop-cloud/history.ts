@@ -45,7 +45,20 @@ export type CloudHistoryChat = {
   updatedAt: string
   lastActiveAt: string
   latestRun: CloudHistoryRun | null
+  /** The sidebar "finished" dot, shared by every device. Absent from older servers. */
+  attention?: CloudHistoryAttention
 }
+/**
+ * Each settled run raises `revision`; opening the chat on any device acknowledges through it.
+ * Both only increase, so a stale read or a retried acknowledgement never undoes a newer one.
+ */
+export type CloudHistoryAttention = {
+  revision: number
+  acknowledgedRevision: number
+  reason: 'finished' | 'failed' | 'stopped' | null
+  at: string | null
+}
+export type CloudHistoryAttentionAck = { throughRevision: number }
 /** Attaching observes the existing session; it never admits or purchases one. */
 export type CloudHistoryAttachment = {
   chat: CloudHistoryChat
@@ -128,7 +141,7 @@ export function createCloudHistoryClient(
     path: string,
     page: CloudHistoryOptions = {},
     projectId?: string,
-    update?: CloudHistoryChatUpdate | CloudHistoryProjectUpdate,
+    update?: CloudHistoryChatUpdate | CloudHistoryProjectUpdate | CloudHistoryAttentionAck,
     search?: string,
   ): Promise<T> {
     const query = new URLSearchParams()
@@ -197,6 +210,17 @@ export function createCloudHistoryClient(
         { signal },
         undefined,
         update,
+      ),
+    acknowledgeAttention: (
+      chatId: string,
+      throughRevision: number,
+      signal?: AbortSignal,
+    ) =>
+      get<CloudHistoryChat>(
+        `chats/${id(chatId)}/attention`,
+        { signal },
+        undefined,
+        { throughRevision },
       ),
     listRuns: (chatId: string, page?: CloudHistoryOptions) =>
       get<CloudHistoryPage<CloudHistoryRun>>(`chats/${id(chatId)}/runs`, page),
