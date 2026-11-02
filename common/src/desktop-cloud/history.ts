@@ -28,6 +28,9 @@ export type CloudHistoryRun = {
   createdAt: string
   finishedAt: string | null
   error: string | null
+  /** Since when this turn has been waiting for the computer it runs on to wake or reconnect;
+   * null when it is not. Absent from older servers. */
+  waitingForDeviceSince?: string | null
 }
 export type CloudHistoryChat = {
   deviceExecution?: import('./device-execution').DeviceExecutionTarget | null
