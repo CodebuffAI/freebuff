@@ -545,6 +545,14 @@ describe('appendInterruptionNotice', () => {
 })
 
 describe('createAgentBlock', () => {
+  test('opens a fan-out worker collapsed', () => {
+    const block = createAgentBlock({
+      agentId: 'worker-1',
+      agentType: 'base3-fast-worker-deepseek-flash',
+    })
+    expect(block.isCollapsed).toBe(true)
+  })
+
   test('creates basic agent block with required fields', () => {
     const block = createAgentBlock({
       agentId: 'agent-123',

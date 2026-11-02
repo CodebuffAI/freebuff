@@ -63,6 +63,9 @@ export const COLLAPSED_BY_DEFAULT_AGENT_IDS = [
   'glob-matcher',
   'researcher-web',
   'researcher-docs',
+  // Fan-out workers: one message can hold many, and expanded each draws every
+  // tool block it runs on each streamed frame. Pagination does not bound that.
+  'fast-worker',
 ] as const
 
 /**
