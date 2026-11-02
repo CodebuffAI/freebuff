@@ -1,6 +1,6 @@
 import { createRequire } from 'module'
 
-import { Argument, Command } from 'commander'
+import { Command } from 'commander'
 
 import { IS_FREEBUFF, type AgentMode } from './utils/constants'
 import { getCliEnv } from './utils/env'
@@ -50,7 +50,10 @@ export function parseArgs({
   const program = new Command()
 
   if (isFreebuff) {
-    // Freebuff: simplified CLI - no prompt args, no agent override, no clear-logs
+    // Freebuff: simplified CLI - no agent override, no clear-logs, no mode
+    // flags. The initial prompt is accepted like codebuff's so launchers can
+    // hand a task straight to the TUI; it is sent through the normal chat
+    // path, so session admission, the landing screen and ads are unchanged.
     program
       .name('freebuff')
       .description('Freebuff - Free AI coding assistant')
@@ -67,10 +70,12 @@ export function parseArgs({
         '--trust-agents',
         "Load this repository's .agents files and mcp.json without asking (for CI)",
       )
-      .addArgument(
-        new Argument('[command]', 'Command to run').choices(['login']),
+      .addHelpText(
+        'after',
+        '\nCommands:\n  login                          Log in to your account',
       )
       .helpOption('-h, --help', 'Show this help message')
+      .argument('[prompt...]', 'Initial prompt to send to the agent')
   } else {
     // Codebuff: full CLI with all options
     program
@@ -115,6 +120,14 @@ export function parseArgs({
   const options = program.opts()
   const args = program.args
 
+  // Freebuff has one command, `login`; any other first word is the start of
+  // a prompt. Codebuff keeps its wider command set (login, publish).
+  const command = isFreebuff
+    ? args[0] === 'login'
+      ? 'login'
+      : undefined
+    : args[0]
+
   const continueFlag = options.continue
 
   // Determine initial mode from flags (last flag wins if multiple specified)
@@ -129,8 +142,9 @@ export function parseArgs({
   }
 
   return {
-    initialPrompt: !isFreebuff && args.length > 0 ? args.join(' ') : null,
-    command: args[0],
+    initialPrompt:
+      args.length > 0 && command !== 'login' ? args.join(' ') : null,
+    command,
     agent: options.agent,
     clearLogs: options.clearLogs || false,
     continue: Boolean(continueFlag),

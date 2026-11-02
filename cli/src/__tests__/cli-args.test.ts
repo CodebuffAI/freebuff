@@ -179,6 +179,51 @@ describe('Freebuff CLI Argument Parsing', () => {
     expect(result.initialPrompt).toBeNull()
   })
 
+  test('accepts an initial prompt and joins its words', () => {
+    const result = parseArgs({
+      argv: ['node', 'freebuff', 'add', 'a', 'dark', 'mode', 'toggle'],
+      isFreebuff: true,
+      version: '1.0.0',
+    })
+
+    expect(result.initialPrompt).toBe('add a dark mode toggle')
+    expect(result.command).toBeUndefined()
+    expect(result.initialMode).toBe('LITE')
+  })
+
+  test('accepts an initial prompt alongside --cwd and --continue', () => {
+    // `--continue [id]` takes an optional value, so a prompt that follows it
+    // would be read as the conversation id (as in codebuff); keep it last.
+    const result = parseArgs({
+      argv: [
+        'node',
+        'freebuff',
+        '--cwd',
+        '/tmp',
+        'fix the tests',
+        '--continue',
+      ],
+      isFreebuff: true,
+      version: '1.0.0',
+    })
+
+    expect(result.cwd).toBe('/tmp')
+    expect(result.continue).toBe(true)
+    expect(result.continueId).toBeNull()
+    expect(result.initialPrompt).toBe('fix the tests')
+  })
+
+  test('treats a prompt that starts with a codebuff command word as a prompt', () => {
+    const result = parseArgs({
+      argv: ['node', 'freebuff', 'publish', 'the', 'release', 'notes'],
+      isFreebuff: true,
+      version: '1.0.0',
+    })
+
+    expect(result.command).toBeUndefined()
+    expect(result.initialPrompt).toBe('publish the release notes')
+  })
+
   test('parses --trust-agents and defaults it to false', () => {
     expect(
       parseArgs({

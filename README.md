@@ -28,6 +28,12 @@ freebuff
 
 Then describe what you want. Freebuff finds the relevant files, makes changes, and runs the checks that matter for your project.
 
+You can also pass the first prompt on the command line:
+
+```bash
+freebuff "add a dark mode toggle"
+```
+
 ## Models
 
 Freebuff includes a curated model catalog. The regular picker currently offers:
