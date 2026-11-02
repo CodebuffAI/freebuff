@@ -18,8 +18,8 @@
  */
 
 export type FreebuffPickerSectionId =
-  | 'unlimited'
-  | 'optimized'
+  | 'standard'
+  | 'premium'
   | 'powerful'
   // A section the server catalog defines.
   | (string & {})
@@ -31,13 +31,19 @@ export interface FreebuffPickerSection {
   tooltip: string
 }
 
-/** In display order. Unlimited last (product, 2026-10-14), except at the
- *  limited tier (`freebuffPickerSectionsFor`). */
+/**
+ * In display order, at full access: Premium, Powerful, then Standard last
+ * (product, 2026-11-02, Victor). The same three sections as the limited
+ * layout (default-config.ts's `LIMITED_SECTIONS`), which lists Standard first
+ * (`freebuffPickerSectionsFor`). Standard was "Unlimited" and Premium
+ * "Optimized" until then, and from 2026-10-28 to 11-02 full access in
+ * country tiers 1 and 2 was sent no Unlimited section at all.
+ */
 export const FREEBUFF_PICKER_SECTIONS: readonly FreebuffPickerSection[] =
   Object.freeze([
     {
-      id: 'optimized',
-      label: 'Optimized',
+      id: 'premium',
+      label: 'Premium',
       tooltip: 'Strongest price-to-performance models',
     },
     {
@@ -46,22 +52,22 @@ export const FREEBUFF_PICKER_SECTIONS: readonly FreebuffPickerSection[] =
       tooltip: 'Frontier models like GPT-6.1 Sol and more',
     },
     {
-      id: 'unlimited',
-      label: 'Unlimited',
-      tooltip: 'Experimental models with unlimited usage',
+      id: 'standard',
+      label: 'Standard',
+      tooltip: 'Free and low-cost models',
     },
   ])
 
-/** The sections in one tier's display order: the limited tier keeps
- *  Unlimited first (product, 2026-10-14). */
+/** The sections in one tier's display order: the limited tier lists Standard
+ *  first. */
 export function freebuffPickerSectionsFor(
   tier: 'full' | 'limited' | 'blocked' | undefined,
   sections: readonly FreebuffPickerSection[] = FREEBUFF_PICKER_SECTIONS,
 ): readonly FreebuffPickerSection[] {
   if (tier !== 'limited') return sections
   return [
-    ...sections.filter((section) => section.id === 'unlimited'),
-    ...sections.filter((section) => section.id !== 'unlimited'),
+    ...sections.filter((section) => section.id === 'standard'),
+    ...sections.filter((section) => section.id !== 'standard'),
   ]
 }
 
@@ -78,34 +84,32 @@ export interface FreebuffPickerPlacement {
 
 const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
   Object.freeze({
-    // Unlimited
-    // Nemotron 3.5 Lightning (2026-10-14): new, the picker's first row.
-    'm-ddc687c50f': { section: 'unlimited', order: 1 }, // Nemotron 3.5 Lightning
-    // (MiniMax M3.1 Flash, 'm-b2a427415d', sat second here from 2026-10-19
-    // until its retirement on 2026-10-24; its disabled row has no place.)
-    // Glyph Cluster (2026-10-07): never under More.
-    'm-02244092cb': { section: 'unlimited', order: 5 }, // Glyph Cluster
-    // Solar Pro 4 (2026-10-05): free as a promotion, moved from Optimized.
-    'upstage/solar-pro4': { section: 'unlimited', order: 15 },
-    // Solar Mini 4 (2026-10-08): free as a promotion, back from Optimized.
-    'upstage/solar-mini4': { section: 'unlimited', order: 20 },
-    'm-916b95b337': { section: 'unlimited', order: 30, more: true }, // Ling 3.1 Flash
-    'm-a273b5e513': { section: 'unlimited', order: 40, more: true }, // Laguna S 2.1
-    // Optimized: DeepSeek V4.1 Flash pinned first as the section's pick, then
-    // cheapest to dearest (product, 2026-10-15). DeepSeek leads because on
-    // the Luminal lane it is our cheapest Flash-class model ($0.91 per 1k
-    // messages over 10-07..13, against MiMo 2.6 Flash's $1.35 on OpenRouter).
-    // In view: DeepSeek V4.1 Flash, Muse Spark 1.3, GLM 5.3 Flash; both MiMo
-    // rows, Flash Slow and GPT-6 Luna under More (product, 2026-10-30).
-    'deepseek/deepseek-v4-flash': { section: 'optimized', order: 5, recommended: true }, // V4.1 Flash, 15
+    // Standard (product, 2026-11-02, Victor): the free rows and MiMo v2.6
+    // Flash Slow (one hour a session), last in the picker. Only Solar Pro 4 is
+    // in view; the rest wait under Show more.
+    'upstage/solar-pro4': { section: 'standard', order: 1 },
+    'm-ddc687c50f': { section: 'standard', order: 10, more: true }, // Nemotron 3.5 Lightning
+    'm-02244092cb': { section: 'standard', order: 15, more: true }, // Glyph Cluster
+    'upstage/solar-mini4': { section: 'standard', order: 20, more: true },
+    'm-61c26317cc': { section: 'standard', order: 30, more: true }, // MiMo v2.6 Flash Slow, 5
+    // (MiniMax M3.1 Flash, 'm-b2a427415d', retired 2026-10-24, has no place.)
+    'm-916b95b337': { section: 'standard', order: 40, more: true }, // Ling 3.1 Flash
+    'm-a273b5e513': { section: 'standard', order: 50, more: true }, // Laguna S 2.1
+    // Premium: DeepSeek V4.1 Flash pinned first as the section's pick and the
+    // full-access recommendation, then cheapest to dearest (product,
+    // 2026-10-15). DeepSeek leads because on the Luminal lane it is our
+    // cheapest Flash-class model ($0.91 per 1k messages over 10-07..13,
+    // against MiMo 2.6 Flash's $1.35 on OpenRouter). In view: DeepSeek V4.1
+    // Flash, Muse Spark 1.3, GLM 5.3 Flash; Flash Slow, MiMo v2.6 Flash Fast
+    // and GPT-6 Luna under More (product, 2026-10-30).
+    'deepseek/deepseek-v4-flash': { section: 'premium', order: 5, recommended: true }, // V4.1 Flash, 15
     // Muse Spark 1.3 and GPT-6 Luna moved here from Powerful (2026-10-13).
     // Placement only: both are plan-only at limited access.
-    'meta/muse-spark-1.3-contributor': { section: 'optimized', order: 20 }, // 15
-    'z-ai/glm-5.3-flash': { section: 'optimized', order: 40 }, // 20
-    'm-61c26317cc': { section: 'optimized', order: 60, more: true }, // MiMo v2.6 Flash Slow, 5
-    'm-8db1ccbba6': { section: 'optimized', order: 62, more: true }, // DeepSeek V4.1 Flash Slow, 10
-    'mimo/mimo-v2.5': { section: 'optimized', order: 64, more: true }, // MiMo v2.6 Flash Fast, 10
-    'openai/gpt-6-luna': { section: 'optimized', order: 66, more: true }, // 20
+    'meta/muse-spark-1.3-contributor': { section: 'premium', order: 20 }, // 15
+    'z-ai/glm-5.3-flash': { section: 'premium', order: 40 }, // 20
+    'm-8db1ccbba6': { section: 'premium', order: 62, more: true }, // DeepSeek V4.1 Flash Slow, 10
+    'mimo/mimo-v2.5': { section: 'premium', order: 64, more: true }, // MiMo v2.6 Flash Fast, 10
+    'openai/gpt-6-luna': { section: 'premium', order: 66, more: true }, // 20
     // Powerful: cheapest to dearest (product, 2026-10-28; Claude Haiku 5.5's
     // 100k-context row was pinned first before). The dearest rows wait under
     // More, cheapest first (product, 2026-10-22, so the expensive models are
@@ -156,8 +160,8 @@ export function freebuffRowPlacement(
  * compiled id, catalog key — and the first one placed wins. A row placed by
  * none (a model added after this build) is inferred and tucked under More,
  * so a new server-side model never lands in the prominent part of a section
- * on its own: a premium or plan-locked row is Powerful, a free one Unlimited,
- * anything else Optimized.
+ * on its own: a premium or plan-locked row is Powerful, a free one Standard,
+ * anything else Premium.
  */
 export function freebuffPickerPlacement(
   ids: readonly (string | undefined)[],
@@ -172,8 +176,8 @@ export function freebuffPickerPlacement(
       fallback.premium || fallback.locked
         ? 'powerful'
         : fallback.price === 0
-          ? 'unlimited'
-          : 'optimized',
+          ? 'standard'
+          : 'premium',
     order: Number.POSITIVE_INFINITY,
     more: true,
   }

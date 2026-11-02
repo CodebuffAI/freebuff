@@ -32,23 +32,29 @@ const none = { premium: false, locked: false, price: undefined }
 describe('freebuffPickerPlacement', () => {
   test('literal ids are the catalog constants', () => {
     const at = (id: string) => freebuffPickerPlacement([id], none)
-    expect(at(FREEBUFF_SOLAR_PRO_4_MODEL_ID)).toEqual({ section: 'unlimited', order: expect.any(Number) })
-    expect(at(FREEBUFF_SOLAR_MINI_4_MODEL_ID).section).toBe('unlimited')
-    // DeepSeek V4.1 Flash leads Optimized as its pick since 2026-10-14.
-    expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)).toEqual({ section: 'optimized', order: 5, recommended: true })
-    // In view (2026-10-30): Flash, then Muse Spark 1.3, GLM 5.3 Flash; both
-    // MiMo rows, DeepSeek V4.1 Flash Slow and GPT-6 Luna under More.
-    const optimized = [
+    // Standard, last at full access (2026-11-02): Solar Pro 4 alone in view,
+    // then Nemotron, Glyph, Solar Mini 4 and MiMo v2.6 Flash Slow under More.
+    expect(at(FREEBUFF_SOLAR_PRO_4_MODEL_ID)).toEqual({ section: 'standard', order: 1 })
+    const standardMore = ['m-ddc687c50f', 'm-02244092cb', FREEBUFF_SOLAR_MINI_4_MODEL_ID, 'm-61c26317cc']
+    for (const id of standardMore)
+      expect(at(id)).toEqual({ section: 'standard', order: expect.any(Number), more: true })
+    const standardOrders = standardMore.map((id) => at(id).order)
+    expect(standardOrders).toEqual([...standardOrders].sort((a, b) => a - b))
+    // DeepSeek V4.1 Flash leads Premium as its pick since 2026-10-14.
+    expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)).toEqual({ section: 'premium', order: 5, recommended: true })
+    // In view (2026-10-30): Flash, then Muse Spark 1.3, GLM 5.3 Flash;
+    // DeepSeek V4.1 Flash Slow, MiMo v2.6 Flash Fast and GPT-6 Luna under More.
+    const premium = [
       FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
       FREEBUFF_GLM_V53_FLASH_MODEL_ID,
     ].map((id) => at(id).order)
-    expect(optimized).toEqual([...optimized].sort((a, b) => a - b))
-    expect(optimized[0]).toBeGreaterThan(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID).order)
-    for (const id of ['m-61c26317cc', 'm-8db1ccbba6', FREEBUFF_MIMO_V25_MODEL_ID, FREEBUFF_GPT_6_LUNA_MODEL_ID])
-      expect(at(id)).toEqual({ section: 'optimized', order: expect.any(Number), more: true })
-    expect(at(FREEBUFF_GLM_V53_FLASH_MODEL_ID).section).toBe('optimized')
-    // Muse Spark 1.3 moved to Optimized on 2026-10-13.
-    expect(at(FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID)).toEqual({ section: 'optimized', order: expect.any(Number) })
+    expect(premium).toEqual([...premium].sort((a, b) => a - b))
+    expect(premium[0]).toBeGreaterThan(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID).order)
+    for (const id of ['m-8db1ccbba6', FREEBUFF_MIMO_V25_MODEL_ID, FREEBUFF_GPT_6_LUNA_MODEL_ID])
+      expect(at(id)).toEqual({ section: 'premium', order: expect.any(Number), more: true })
+    expect(at(FREEBUFF_GLM_V53_FLASH_MODEL_ID).section).toBe('premium')
+    // Muse Spark 1.3 moved to Optimized (now Premium) on 2026-10-13.
+    expect(at(FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID)).toEqual({ section: 'premium', order: expect.any(Number) })
     // Gemini 4 Argon waits under Powerful's More since 2026-10-22, between
     // Gemini 3.8 Flash and GPT-6.1 Sol by price.
     expect(at(FREEBUFF_GEMINI_4_ARGON_MODEL_ID)).toEqual({ section: 'powerful', order: 45, more: true })
@@ -57,7 +63,7 @@ describe('freebuffPickerPlacement', () => {
     expect(at(FREEBUFF_GEMINI_38_FLASH_MODEL_ID)).toMatchObject({ section: 'powerful', more: true })
     expect(at(FREEBUFF_GPT_61_SOL_MODEL_ID)).toMatchObject({ section: 'powerful', more: true })
     expect(at(FREEBUFF_GEMINI_38_FLASH_MODEL_ID).order).toBeLessThan(at(FREEBUFF_GPT_61_SOL_MODEL_ID).order)
-    // Not badged Recommended since 2026-10-07: Optimized's own pick is the one.
+    // Not badged Recommended since 2026-10-07: Premium's own pick is the one.
     expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)).toEqual({ section: 'powerful', order: 20 })
   })
 
@@ -69,14 +75,14 @@ describe('freebuffPickerPlacement', () => {
   test('the first placed name wins', () => {
     expect(
       freebuffPickerPlacement(['m-unknown', FREEBUFF_GPT_6_LUNA_MODEL_ID], none).section,
-    ).toBe('optimized')
+    ).toBe('premium')
   })
 
   test('an unplaced row is inferred and tucked under More', () => {
     expect(freebuffPickerPlacement(['x'], { ...none, premium: true })).toMatchObject({ section: 'powerful', more: true })
     expect(freebuffPickerPlacement(['x'], { ...none, locked: true }).section).toBe('powerful')
-    expect(freebuffPickerPlacement(['x'], { ...none, price: 0 })).toMatchObject({ section: 'unlimited', more: true })
-    expect(freebuffPickerPlacement(['x'], { ...none, price: 10 }).section).toBe('optimized')
+    expect(freebuffPickerPlacement(['x'], { ...none, price: 0 })).toMatchObject({ section: 'standard', more: true })
+    expect(freebuffPickerPlacement(['x'], { ...none, price: 10 }).section).toBe('premium')
   })
 })
 
@@ -95,7 +101,7 @@ describe('freebuffPickerSections', () => {
     )
     expect(sections.map(({ section, models }) => [section.id, models])).toEqual([
       [
-        'optimized',
+        'premium',
         [
           FREEBUFF_GLM_V53_FLASH_MODEL_ID,
           // Under More since 2026-10-30, so after the rows in view.
@@ -113,11 +119,12 @@ describe('freebuffPickerSections', () => {
 })
 
 describe('freebuffPickerSectionsFor', () => {
-  test('Unlimited is last, except at the limited tier, where it leads', () => {
+  test('Standard is last, except at the limited tier, where it leads', () => {
     const ids = (tier: 'full' | 'limited') =>
       freebuffPickerSectionsFor(tier).map(({ id }) => id)
-    expect(ids('full')).toEqual(['optimized', 'powerful', 'unlimited'])
-    expect(ids('limited')).toEqual(['unlimited', 'optimized', 'powerful'])
+    expect(ids('full')).toEqual(['premium', 'powerful', 'standard'])
+    expect(ids('limited')).toEqual(['standard', 'premium', 'powerful'])
+    expect(FREEBUFF_PICKER_SECTIONS.map(({ label }) => label)).toEqual(['Premium', 'Powerful', 'Standard'])
   })
 })
 

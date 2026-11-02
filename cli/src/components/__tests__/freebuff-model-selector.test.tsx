@@ -229,6 +229,16 @@ test('a row reads its price as a multiplier, 1x included; a free row carries non
  * and the reward model is an ordinary unmetered grid row, so there is no
  * earned selection there for the landing repair to keep or discard.
  */
+/** No pool header ("PREMIUM" over the premium pool's rows): the only line
+ *  naming Premium is its section header (2026-11-02). */
+const expectNoPoolHeader = (frame: string) =>
+  expect(
+    frame
+      .split('\n')
+      .filter((line) => line.includes('PREMIUM'))
+      .filter((line) => !line.startsWith('PREMIUM · Strongest')),
+  ).toEqual([])
+
 const renderSelectorWithGlmRemaining = async (remaining?: number) => {
   useFreebuffSessionStore.getState().setSession({
     status: 'none',
@@ -349,7 +359,7 @@ describe('FreebuffModelSelector tier layout', () => {
       .setSelectedModel(FREEBUFF_SOLAR_MINI_4_MODEL_ID)
 
     const setup = await renderSelector()
-    // Unlimited is last since 2026-10-14, so the saved pick sits below the
+    // Standard (Unlimited until 2026-11-02) is last since 2026-10-14, so the saved pick sits below the
     // fold: the frame after the first measurement scrolls it into view.
     await new Promise((resolve) => setTimeout(resolve, 0))
     await setup.renderOnce()
@@ -451,19 +461,18 @@ describe('FreebuffModelSelector tier layout', () => {
 
     const setup = await renderSelector()
     const frame = setup.captureCharFrame()
-    const premiumHeaderIndex = frame.indexOf('PREMIUM')
-    const sectionHeaderIndex = frame.indexOf('OPTIMIZED')
+    const sectionHeaderIndex = frame.indexOf('PREMIUM · Strongest')
     // Located by the ROW rather than by a ' RECOMMENDED ' border title, which
     // was removed on 2026-08-21 — nothing in the picker is badged as a
     // recommendation any more. The property under test is unchanged: when the
     // premium pool is spent, the row the user is steered onto sits in its
-    // section (Optimized, the first since 2026-10-14) rather than above the list.
+    // section (Premium, the first since 2026-10-14) rather than above the list.
     //
     // MiMo 2.5 is that row since 2026-08-18 — Flash moved into the premium
     // group and can no longer be what a spent user lands on.
     const heroModelIndex = frame.indexOf('MiMo v2.6 Flash Fast', sectionHeaderIndex)
 
-    expect(sectionHeaderIndex).toBeGreaterThan(premiumHeaderIndex)
+    expect(sectionHeaderIndex).toBeGreaterThanOrEqual(0)
     expect(heroModelIndex).toBeGreaterThan(sectionHeaderIndex)
   })
 
@@ -612,11 +621,11 @@ describe('FreebuffModelSelector tier layout', () => {
       expect(lines[row + 1] ?? '').not.toContain('Paid plan')
     }
     // No pool header: the rows sit in Desktop's sections, as at full access.
-    expect(frame).not.toContain('PREMIUM')
-    expect(frame).toContain('UNLIMITED · Experimental models')
+    expectNoPoolHeader(frame)
+    expect(frame).toContain('STANDARD · Free and low-cost models')
   })
 
-  test("on the meter, rows sit in Desktop's sections, Optimized's pick marked Recommended", async () => {
+  test("on the meter, rows sit in Desktop's sections, Premium's pick marked Recommended", async () => {
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'full',
@@ -628,17 +637,17 @@ describe('FreebuffModelSelector tier layout', () => {
     const lines = frame.split('\n')
     const cardLine = (name: string) =>
       lines.findIndex((line) => line.includes('│') && line.includes(name))
-    // Unlimited last since 2026-10-14.
+    // Standard last since 2026-10-14 (Unlimited until 2026-11-02).
     const order = [
-      lines.findIndex((line) => line.startsWith('OPTIMIZED · Strongest')),
-      // DeepSeek V4.1 Flash leads Optimized as its pick since 2026-10-14.
+      lines.findIndex((line) => line.startsWith('PREMIUM · Strongest')),
+      // DeepSeek V4.1 Flash leads Premium as its pick since 2026-10-14.
       cardLine('DeepSeek V4.1 Flash'),
       // MiMo v2.6 Flash Fast and GPT-6 Luna wait under More since 2026-10-30.
       cardLine('MiMo v2.6 Flash Fast'),
       cardLine('GPT-6 Luna'),
       lines.findIndex((line) => line.startsWith('POWERFUL · Frontier')),
       ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? [cardLine('DeepSeek V4.1 Flash Fast')] : []),
-      lines.findIndex((line) => line.startsWith('UNLIMITED · Experimental models')),
+      lines.findIndex((line) => line.startsWith('STANDARD · Free and low-cost models')),
       cardLine('Solar Pro 4'),
     ]
     expect(order.every((at) => at >= 0)).toBe(true)
@@ -750,10 +759,10 @@ describe('FreebuffModelSelector tier layout', () => {
       .getState()
       .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
 
-    // Tall enough for Unlimited, the last section since 2026-10-14.
+    // Tall enough for Standard, the last section since 2026-10-14.
     const frame = (await renderSelector(80)).captureCharFrame()
-    expect(frame).toContain('UNLIMITED · Experimental models')
-    expect(frame).not.toContain('PREMIUM')
+    expect(frame).toContain('STANDARD · Free and low-cost models')
+    expectNoPoolHeader(frame)
     expect(frame).not.toContain('used')
     expect(frame).not.toContain('resets in')
   })
