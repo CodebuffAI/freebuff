@@ -170,13 +170,14 @@ const appendTextWithThinkParsingToBlocks = (
     lastBlock?.type === 'text' &&
     lastBlock.textType === 'text'
   ) {
-    const combinedText = lastBlock.content + text
+    // A plain text block never holds a whole tag (parsing consumed it), so a
+    // tag can only be completed across the seam: the block's last
+    // tag-length-minus-one characters plus this delta. Scanning just that keeps
+    // each delta O(delta) instead of O(block), which was quadratic over a long reply.
+    const seam = lastBlock.content.slice(-(THINK_CLOSE_TAG.length - 1)) + text
 
-    if (
-      combinedText.includes(THINK_OPEN_TAG) ||
-      combinedText.includes(THINK_CLOSE_TAG)
-    ) {
-      textToParse = combinedText
+    if (seam.includes(THINK_OPEN_TAG) || seam.includes(THINK_CLOSE_TAG)) {
+      textToParse = lastBlock.content + text
       nextBlocks.pop()
     }
   }

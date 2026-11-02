@@ -643,3 +643,66 @@ describe('createBatchedMessageUpdater timer behavior', () => {
     expect(intervalCallbacks.size).toBe(0)
   })
 })
+
+describe('appendRootText', () => {
+  const shape = (blocks: ContentBlock[] | undefined) =>
+    (blocks ?? []).map((block) => {
+      const { content, textType, thinkingOpen } = block as TextContentBlock
+      return { type: block.type, content, textType, thinkingOpen }
+    })
+
+  const deltas = [
+    { type: 'text' as const, text: 'answer ' },
+    { type: 'text' as const, text: 'with <think>a tagged' },
+    { type: 'text' as const, text: ' thought</think> and ' },
+    { type: 'reasoning' as const, text: 'native reasoning' },
+    { type: 'reasoning' as const, text: ' continues' },
+    { type: 'text' as const, text: 'then text' },
+  ]
+
+  test('a batched flush matches applying each delta immediately', () => {
+    let immediate: ChatMessage[] = [{ ...baseMessages[0] }]
+    const plain = createMessageUpdater('ai-1', (fn) => {
+      immediate = fn(immediate)
+    })
+    for (const delta of deltas) plain.appendRootText(delta)
+
+    let batchedState: ChatMessage[] = [{ ...baseMessages[0] }]
+    let setCalls = 0
+    const batched = createBatchedMessageUpdater(
+      'ai-1',
+      (fn) => {
+        setCalls++
+        batchedState = fn(batchedState)
+      },
+      60_000,
+    )
+    for (const delta of deltas) batched.appendRootText(delta)
+    batched.flush()
+    batched.dispose()
+
+    expect(setCalls).toBe(1)
+    expect(shape(batchedState[0].blocks)).toEqual(shape(immediate[0].blocks))
+  })
+
+  test('other updates keep their place between text deltas', () => {
+    let state: ChatMessage[] = [{ ...baseMessages[0] }]
+    const batched = createBatchedMessageUpdater(
+      'ai-1',
+      (fn) => {
+        state = fn(state)
+      },
+      60_000,
+    )
+    batched.appendRootText({ type: 'text', text: 'before ' })
+    batched.appendRootText({ type: 'text', text: 'tool' })
+    batched.addBlock({ type: 'text', content: 'TOOL', textType: 'reasoning' })
+    batched.appendRootText({ type: 'text', text: 'after' })
+    batched.flush()
+    batched.dispose()
+
+    expect(
+      (state[0].blocks ?? []).map((b) => (b as TextContentBlock).content),
+    ).toEqual(['before tool', 'TOOL', 'after'])
+  })
+})

@@ -1,4 +1,8 @@
+import { appendTextToRootStream } from './block-operations'
+
 import type { ChatMessage, ContentBlock, TextContentBlock } from '../types/chat'
+
+export type RootTextDelta = { type: 'text' | 'reasoning'; text: string }
 
 // Small wrapper to avoid repeating the ai-message map/update pattern.
 export type SetMessagesFn = (
@@ -10,6 +14,9 @@ export type MessageUpdater = {
   updateAiMessageBlocks: (
     blockUpdater: (blocks: ContentBlock[]) => ContentBlock[],
   ) => void
+  /** Append a streamed delta to the root message's blocks. The batched
+   *  updater merges consecutive deltas of one type into a single append. */
+  appendRootText: (delta: RootTextDelta) => void
   markComplete: (metadata?: Partial<ChatMessage>) => void
   setError: (message: string) => void
   /** Clears the userError field (e.g., when a new message is sent successfully) */
@@ -45,6 +52,10 @@ export const createMessageUpdater = (
       ...msg,
       blocks: blockUpdater(msg.blocks ?? []),
     }))
+  }
+
+  const appendRootText = (delta: RootTextDelta) => {
+    updateAiMessageBlocks((blocks) => appendTextToRootStream(blocks, delta))
   }
 
   const addBlock = (block: ContentBlock) => {
@@ -113,6 +124,7 @@ export const createMessageUpdater = (
   return {
     updateAiMessage,
     updateAiMessageBlocks,
+    appendRootText,
     markComplete,
     setError,
     clearUserError,
@@ -126,8 +138,13 @@ export const createBatchedMessageUpdater = (
   setMessages: SetMessagesFn,
   flushIntervalMs: number = DEFAULT_FLUSH_INTERVAL_MS,
 ): BatchedMessageUpdater => {
-  // Queue of message updater functions to be applied on next flush
-  const pendingUpdaters: Array<(msg: ChatMessage) => ChatMessage> = []
+  // Queue of message updater functions to be applied on next flush. A root
+  // text append stays a delta, not a closure, until the flush so the next
+  // delta of the same type can extend it: one block-array copy per flush
+  // instead of one per token.
+  const pendingUpdaters: Array<
+    ((msg: ChatMessage) => ChatMessage) | RootTextDelta
+  > = []
   let intervalId: ReturnType<typeof setInterval> | null = null
   let isDisposed = false
 
@@ -139,7 +156,13 @@ export const createBatchedMessageUpdater = (
 
     // Compose all pending updaters into a single transform
     const composedUpdater = (msg: ChatMessage): ChatMessage => {
-      return updaters.reduce((m, fn) => fn(m), msg)
+      return updaters.reduce(
+        (m, entry) =>
+          typeof entry === 'function'
+            ? entry(m)
+            : { ...m, blocks: appendTextToRootStream(m.blocks ?? [], entry) },
+        msg,
+      )
     }
 
     // Apply composed update to the target message
@@ -180,6 +203,23 @@ export const createBatchedMessageUpdater = (
       ...msg,
       blocks: blockUpdater(msg.blocks ?? []),
     }))
+  }
+
+  const appendRootText = (delta: RootTextDelta) => {
+    if (!delta.text) return
+    if (isDisposed) {
+      updateAiMessageBlocks((blocks) => appendTextToRootStream(blocks, delta))
+      return
+    }
+    const last = pendingUpdaters[pendingUpdaters.length - 1]
+    if (last && typeof last !== 'function' && last.type === delta.type) {
+      pendingUpdaters[pendingUpdaters.length - 1] = {
+        type: last.type,
+        text: last.text + delta.text,
+      }
+      return
+    }
+    pendingUpdaters.push({ type: delta.type, text: delta.text })
   }
 
   const addBlock = (block: ContentBlock) => {
@@ -269,6 +309,7 @@ export const createBatchedMessageUpdater = (
   return {
     updateAiMessage,
     updateAiMessageBlocks,
+    appendRootText,
     markComplete,
     setError,
     clearUserError,
