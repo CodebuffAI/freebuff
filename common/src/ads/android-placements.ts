@@ -8,7 +8,7 @@ export const ANDROID_AD_PLACEMENTS = [
     label: 'Chat · after an answer',
   },
   {
-    id: 'Coding-AfterAnswer-Inline-Android',
+    id: 'Inline-After-Agent-Android',
     label: 'Coding · after an answer',
   },
 ] as const

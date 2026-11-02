@@ -8,6 +8,7 @@ import {
 } from '../gravity-placement-slugs'
 import {
   PLACEMENT_RENAMES,
+  RETIRED_PLACEMENT_IDS,
   canonicalPlacementId,
   isLegacyPlacementId,
   legacyPlacementId,
@@ -24,9 +25,24 @@ describe('placement aliases', () => {
       expect(legacyPlacementId(legacy)).toBe(legacy)
       expect(isLegacyPlacementId(legacy)).toBe(true)
       expect(isLegacyPlacementId(id)).toBe(false)
-      expect(placementIdAliases(legacy)).toEqual([id, legacy])
+      expect(placementIdAliases(legacy)[0]).toBe(id)
+      expect(placementIdAliases(legacy)[1]).toBe(legacy)
       expect(samePlacement(id, legacy)).toBe(true)
     }
+  })
+
+  test('a retired first name reads as its renamed placement', () => {
+    for (const { retired, id } of RETIRED_PLACEMENT_IDS) {
+      const legacy = legacyPlacementId(id)!
+      expect(canonicalPlacementId(retired)).toBe(id)
+      expect(legacyPlacementId(retired)).toBe(legacy)
+      expect(placementIdAliases(retired)).toEqual([id, legacy, retired])
+      expect(samePlacement(retired, legacy)).toBe(true)
+      expect(toGravitySlug(retired)).toBe(legacy)
+    }
+    expect(RETIRED_PLACEMENT_IDS.map((r) => r.id).sort()).toEqual(
+      PLACEMENT_RENAMES.map((r) => r.id).sort(),
+    )
   })
 
   test('ids and legacy ids are unique, and never collide', () => {
@@ -68,10 +84,8 @@ describe('gravity slugs', () => {
   })
 
   test('flipped: Gravity is sent the new slug', () => {
-    const flipped = { 'WaitingRoom-Slot1-CLI': true }
-    expect(toGravitySlug('waiting-room-1', flipped)).toBe(
-      'WaitingRoom-Slot1-CLI',
-    )
+    const flipped = { 'Waiting-Room-1-CLI': true }
+    expect(toGravitySlug('waiting-room-1', flipped)).toBe('Waiting-Room-1-CLI')
     expect(toGravitySlug('waiting-room-2', flipped)).toBe('waiting-room-2')
   })
 

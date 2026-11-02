@@ -5,8 +5,8 @@ import { canonicalPlacementId, placementIdAliases } from './placement-aliases'
  * An explicit list prevents arbitrary suffixes from opening campaign targets.
  */
 export const WEB_DESKTOP_SOURCE_PLACEMENTS = [
-  'Chat-Transcript-Inline-Desktop',
-  'Chat-AboveComposer-Rotating-Desktop',
+  'Inline-After-Agent-Desktop',
+  'Above-Input-Desktop',
   'Desktop-Spotlight',
   'Desktop-Showcase',
   'Desktop-Intermission',
@@ -29,8 +29,8 @@ export type DesktopPlacementId = (typeof WEB_DESKTOP_SOURCE_PLACEMENTS)[number]
  * suffix rule plus exceptions.
  */
 const WEB_COPY_BY_SOURCE = {
-  'Chat-Transcript-Inline-Desktop': 'Workspace-Transcript-Inline-Web',
-  'Chat-AboveComposer-Rotating-Desktop': 'Workspace-AboveComposer-Rotating-Web',
+  'Inline-After-Agent-Desktop': 'Inline-After-Agent-Web',
+  'Above-Input-Desktop': 'Above-Input-Web',
   'Desktop-Spotlight': 'Desktop-Spotlight:web',
   'Desktop-Showcase': 'Desktop-Showcase:web',
   'Desktop-Intermission': 'Desktop-Intermission:web',

@@ -467,7 +467,7 @@ describe('placementSlotLabel', () => {
   it('names the four format slots by their format, not their position', () => {
     // `Single-Ad-Unit-1` is the one this exists for: the hyphen-splitter
     // renders it "Single Ad Unit 1", which names nothing an advertiser bought.
-    expect(placementSlotLabel('Chat-AboveInput-Rotating-CLI')).toBe('CLI — Dock')
+    expect(placementSlotLabel('Above-Input-CLI')).toBe('CLI — Dock')
     expect(placementSlotLabel('Single-Ad-Unit-1')).toBe('CLI — Dock')
     expect(placementSlotLabel('Desktop-Spotlight')).toBe('Desktop — Spotlight')
     expect(placementSlotLabel('Desktop-Showcase')).toBe('Desktop — Showcase')
@@ -583,7 +583,7 @@ describe('renamed placements (COD-1043)', () => {
       // The project-preview banner is Gravity-only: never sellable, never listed.
       expect([id, ids.has(id)]).toEqual([
         id,
-        id !== 'Project-AbovePreview-Banner-Web',
+        id !== 'Legacy-Above-Preview-Web',
       ])
       expect([legacy, ids.has(legacy)]).toEqual([legacy, false])
     }
@@ -599,11 +599,11 @@ describe('renamed placements (COD-1043)', () => {
   })
 
   it('keeps the labels the legacy ids always rendered', () => {
-    expect(placementSlotLabel('WaitingRoom-Slot1-CLI')).toBe('Waiting room 1')
-    expect(placementSlotLabel('Chat-Transcript-Inline-CLI')).toBe(
+    expect(placementSlotLabel('Waiting-Room-1-CLI')).toBe('Waiting room 1')
+    expect(placementSlotLabel('Inline-After-Agent-CLI')).toBe(
       'CLI Chat Inline',
     )
-    expect(placementSlotLabel('Workspace-AboveComposer-Rotating-Web')).toBe(
+    expect(placementSlotLabel('Above-Input-Web')).toBe(
       'Web — Below Chat',
     )
   })

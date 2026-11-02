@@ -6,7 +6,7 @@ export const IOS_AD_PLACEMENTS = [
   { id: 'iOS-Chat-After-Assistant-Message', label: 'Chat · after an answer' },
   { id: 'iOS-Coding-After-User-Message', label: 'Coding · after your message' },
   {
-    id: 'Coding-AfterAnswer-Inline-iOS',
+    id: 'Inline-After-Agent-iOS',
     label: 'Coding · after an answer',
   },
 ] as const

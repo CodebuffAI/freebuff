@@ -29,25 +29,21 @@ describe('Desktop inventory mirrored into Web', () => {
   })
 
   test('the two renamed chat slots map to their own Web ids; the rest keep :web', () => {
-    expect(webDesktopPlacement('Chat-AboveComposer-Rotating-Desktop')).toBe(
-      'Workspace-AboveComposer-Rotating-Web',
-    )
-    expect(webDesktopPlacement('Chat-Transcript-Inline-Desktop')).toBe(
-      'Workspace-Transcript-Inline-Web',
+    expect(webDesktopPlacement('Above-Input-Desktop')).toBe('Above-Input-Web')
+    expect(webDesktopPlacement('Inline-After-Agent-Desktop')).toBe(
+      'Inline-After-Agent-Web',
     )
     expect(webDesktopPlacement('Desktop-Spotlight')).toBe(
       'Desktop-Spotlight:web',
     )
     // A legacy source names the same copy.
-    expect(webDesktopPlacement('Desktop-Below-Chat')).toBe(
-      'Workspace-AboveComposer-Rotating-Web',
-    )
+    expect(webDesktopPlacement('Desktop-Below-Chat')).toBe('Above-Input-Web')
   })
 
   test('legacy and canonical ids resolve and target identically', () => {
     const pairs = [
-      ['Desktop-Below-Chat:web', 'Workspace-AboveComposer-Rotating-Web'],
-      ['Desktop-Inline-Chat:web', 'Workspace-Transcript-Inline-Web'],
+      ['Desktop-Below-Chat:web', 'Above-Input-Web'],
+      ['Desktop-Inline-Chat:web', 'Inline-After-Agent-Web'],
     ] as const
     for (const [legacy, canonical] of pairs) {
       expect(isWebDesktopPlacement(legacy)).toBe(true)
@@ -61,30 +57,30 @@ describe('Desktop inventory mirrored into Web', () => {
     // A campaign stored with the legacy Desktop id still reaches both Web names.
     for (const placement of [
       'Desktop-Inline-Chat',
-      'Chat-Transcript-Inline-Desktop',
+      'Inline-After-Agent-Desktop',
       'Desktop-Inline-Chat:web',
-      'Workspace-Transcript-Inline-Web',
+      'Inline-After-Agent-Web',
     ]) {
       expect(campaignTargetsPlacement(['Desktop-Inline-Chat'], placement)).toBe(
         true,
       )
       expect(
-        campaignTargetsPlacement(['Chat-Transcript-Inline-Desktop'], placement),
+        campaignTargetsPlacement(['Inline-After-Agent-Desktop'], placement),
       ).toBe(true)
     }
     expect(
       campaignTargetsPlacement(
         ['Desktop-Inline-Chat:web'],
-        'Chat-Transcript-Inline-Desktop',
+        'Inline-After-Agent-Desktop',
       ),
     ).toBe(false)
-    expect(
-      inheritedPlacementTargets(['Workspace-Transcript-Inline-Web']),
-    ).toEqual([
-      'Workspace-Transcript-Inline-Web',
+    expect(inheritedPlacementTargets(['Inline-After-Agent-Web'])).toEqual([
+      'Inline-After-Agent-Web',
       'Desktop-Inline-Chat:web',
-      'Chat-Transcript-Inline-Desktop',
+      'Workspace-Transcript-Inline-Web',
+      'Inline-After-Agent-Desktop',
       'Desktop-Inline-Chat',
+      'Chat-Transcript-Inline-Desktop',
     ])
   })
 
@@ -93,7 +89,7 @@ describe('Desktop inventory mirrored into Web', () => {
       'CLI-Chat-Inline:web',
       'Desktop-Agentic:web',
       'Desktop-Inline-Chat:web:web',
-      'Chat-Transcript-Inline-Desktop:web',
+      'Inline-After-Agent-Desktop:web',
     ]) {
       expect(isWebDesktopPlacement(id)).toBe(false)
       expect(desktopPlacementSource(id)).toBe(id)

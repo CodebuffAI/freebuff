@@ -312,8 +312,8 @@ export function isInterruptingBreakFormat(format: PlacementFormat): boolean {
  * exclusivity term. That term does not exist, so chat is sellable -- and it is
  * where nearly all the volume is.
  *
- * `Chat-AboveInput-Rotating-CLI` (was `Single-Ad-Unit-1`) and
- * `Chat-AboveComposer-Rotating-Desktop` (was `Desktop-Below-Chat`) are live
+ * `Above-Input-CLI` (was `Single-Ad-Unit-1`) and
+ * `Above-Input-Desktop` (was `Desktop-Below-Chat`) are live
  * slots as well as the primary inline units. They remain sellable until their
  * clients retire; leaving either out would route an advertiser's inventory
  * straight past a rendered surface.
@@ -336,51 +336,51 @@ const ORIGINAL_PLACEMENT_SLOTS = [
     format: 'inline' as const,
   })),
   {
-    id: 'WaitingRoom-Slot1-CLI',
+    id: 'Waiting-Room-1-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   {
-    id: 'WaitingRoom-Slot2-CLI',
+    id: 'Waiting-Room-2-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   {
-    id: 'WaitingRoom-Slot3-CLI',
+    id: 'Waiting-Room-3-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   {
-    id: 'WaitingRoom-Slot4-CLI',
+    id: 'Waiting-Room-4-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   // The CLI transcript's inline slot. One id, re-auctioned per eligible slot.
   {
-    id: 'Chat-Transcript-Inline-CLI',
+    id: 'Inline-After-Agent-CLI',
     surface: 'cli_chat',
     available: true,
     format: 'inline',
   },
   // Desktop's inline slot -- the largest single placement by fill volume.
   {
-    id: 'Chat-Transcript-Inline-Desktop',
+    id: 'Inline-After-Agent-Desktop',
     surface: 'cli_chat',
     available: true,
     format: 'inline',
   },
   {
-    id: 'Chat-AboveComposer-Rotating-Desktop',
+    id: 'Above-Input-Desktop',
     surface: 'cli_chat',
     available: true,
     format: 'inline',
   },
   {
-    id: 'Chat-AboveInput-Rotating-CLI',
+    id: 'Above-Input-CLI',
     surface: 'cli_chat',
     available: true,
     format: 'inline',
@@ -487,19 +487,19 @@ const ORIGINAL_PLACEMENT_SLOTS = [
     format: 'branded' as const,
   })),
   {
-    id: 'AgentChat-AfterUserMsg-Inline-Web',
+    id: 'Legacy-Inline-After-User-Web',
     surface: 'freebuff_web_chat',
     available: true,
     format: 'inline',
   },
   {
-    id: 'AgentChat-AfterAnswer-Inline-Web',
+    id: 'Legacy-Inline-After-Agent-Web',
     surface: 'freebuff_web_chat',
     available: true,
     format: 'inline',
   },
   {
-    id: 'Chat-AboveInput-Mobile-Web',
+    id: 'Above-Input-Mobile',
     surface: 'chat_assistant',
     available: true,
     format: 'inline',
@@ -742,7 +742,7 @@ const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
   'Desktop-Spotlight': 'Desktop — Spotlight',
   'Desktop-Showcase': 'Desktop — Showcase',
   'Desktop-Intermission': 'Desktop — Intermission',
-  'Chat-AboveInput-Rotating-CLI': 'CLI — Dock',
+  'Above-Input-CLI': 'CLI — Dock',
   // The splitter would render these "Desktop Partner Skill Picker", which
   // names the id rather than the slot. An advertiser reading a breakdown row
   // wants to know WHERE in the app they appeared.

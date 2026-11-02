@@ -17,10 +17,10 @@ describe('visibleWaitingRoomPlacementIds', () => {
     expect(placements).toHaveLength(count)
     expect(placements).toEqual(
       [
-        'WaitingRoom-Slot1-CLI',
-        'WaitingRoom-Slot2-CLI',
-        'WaitingRoom-Slot3-CLI',
-        'WaitingRoom-Slot4-CLI',
+        'Waiting-Room-1-CLI',
+        'Waiting-Room-2-CLI',
+        'Waiting-Room-3-CLI',
+        'Waiting-Room-4-CLI',
       ].slice(0, count),
     )
   })
