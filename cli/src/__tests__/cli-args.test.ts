@@ -155,6 +155,17 @@ describe('Freebuff CLI Argument Parsing', () => {
     expect(result.initialMode).toBe('LITE')
   })
 
+  test('accepts update as a command, not an unexpected argument', () => {
+    const result = parseArgs({
+      argv: ['node', 'freebuff', 'update'],
+      isFreebuff: true,
+      version: '1.0.0',
+    })
+
+    expect(result.command).toBe('update')
+    expect(result.initialPrompt).toBeNull()
+  })
+
   test('allows cwd before the login command', () => {
     const result = parseArgs({
       argv: ['node', 'freebuff', '--cwd', '/tmp', 'login'],

@@ -188,6 +188,11 @@ function createLauncher(productConfig) {
     // Freebuff sessions remain open between turns. The launcher cannot know
     // when a restart is safe, so keep the process alive until the user exits.
     deferUpdatesUntilExit = false,
+    // Only the freebuff binary defines an `update` command. The codebuff and
+    // codecane binaries take a prompt as their first positional argument, so
+    // `codebuff update the readme` is a prompt there — intercepting it would
+    // install a release and drop what the user typed.
+    supportsUpdateCommand = false,
     tempDownloadDirName = `.${packageName}-download-temp`,
     // Tests only. os.homedir() ignores $HOME under `bun test`, so pointing HOME
     // at a temp dir is not enough to keep a test off the real ~/.config.
@@ -1405,6 +1410,67 @@ function createLauncher(productConfig) {
     installStagedBinary(stagedBinary)
   }
 
+  /**
+   * `freebuff update`: install the latest release in the foreground.
+   *
+   * The background check stages an update while the session runs and installs
+   * it on exit (see checkForUpdates / installPendingUpdate). This is the same
+   * install, asked for explicitly, so it runs before the binary is spawned and
+   * nothing holds the files being replaced.
+   */
+  async function runUpdateCommand(fetchLatestRelease = getLatestRelease) {
+    const currentVersion = getCurrentVersion()
+    if (currentVersion) {
+      console.log(`${displayName} ${currentVersion} is installed.`)
+    } else {
+      console.log(`${displayName} is not installed yet.`)
+    }
+
+    const latestRelease = await fetchLatestRelease()
+    if (!latestRelease?.version) {
+      console.error('❌ Failed to determine the latest version')
+      console.error('Please check your internet connection and try again')
+      process.exit(1)
+      return
+    }
+
+    if (
+      currentVersion &&
+      compareVersions(currentVersion, latestRelease.version) >= 0
+    ) {
+      console.log(`✅ ${displayName} is already up to date.`)
+      return
+    }
+
+    console.log(`Updating ${displayName} to ${latestRelease.version}...`)
+
+    let stagedBinary
+    try {
+      stagedBinary = await stageBinary(
+        latestRelease.version,
+        getDownloadTargetKey(),
+        { binaryChecksums: latestRelease.binaryChecksums },
+      )
+    } catch (error) {
+      term.clearLine()
+      printDownloadFailure(error)
+      process.exit(1)
+      return
+    }
+
+    try {
+      installStagedBinary(stagedBinary, { quiet: true })
+    } catch (error) {
+      term.clearLine()
+      console.error(`❌ Could not install the update: ${error.message}`)
+      process.exit(1)
+      return
+    }
+
+    term.clearLine()
+    console.log(`✅ Updated ${displayName} to ${latestRelease.version}.`)
+  }
+
   function getRequiredWrapperVersion(currentVersion) {
     if (
       !wrapperVersion ||
@@ -2277,7 +2343,33 @@ function createLauncher(productConfig) {
     return exitListener
   }
 
+  /**
+   * argv entries that consume the next value. Without this, `--cwd update`
+   * (a directory actually named `update`) would read as the command.
+   */
+  const FLAGS_WITH_VALUES = new Set(['--cwd'])
+
+  function isUpdateCommand(argv = process.argv.slice(2)) {
+    if (!supportsUpdateCommand) return false
+    for (let i = 0; i < argv.length; i++) {
+      const arg = argv[i]
+      if (arg === '--') return false
+      if (FLAGS_WITH_VALUES.has(arg)) {
+        i++
+        continue
+      }
+      if (arg.startsWith('-')) continue
+      return arg === 'update'
+    }
+    return false
+  }
+
   async function main() {
+    if (isUpdateCommand()) {
+      await runUpdateCommand()
+      return
+    }
+
     for (const line of startupBanner) {
       console.log(line)
     }
@@ -2317,6 +2409,8 @@ function createLauncher(productConfig) {
       adoptOrphanedStagedUpdates,
       printCrashDiagnostics,
       checkForUpdates,
+      isUpdateCommand,
+      runUpdateCommand,
       spawnInstalledBinary,
       attachExitHandler,
       getDefaultTargetKey,

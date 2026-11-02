@@ -268,8 +268,23 @@ async function main(): Promise<void> {
   } = parseArgs()
 
   const isLoginCommand = command === 'login'
+  // Only freebuff has an `update` command; for the other products the first
+  // positional argument is the prompt, so `codebuff update the readme` must
+  // reach the agent instead of exiting here.
+  const isUpdateCommand = IS_FREEBUFF && command === 'update'
   const isPublishCommand = command === 'publish'
   const hasAgentOverride = Boolean(agent?.trim())
+
+  // The npm wrapper (`freebuff` on PATH) runs `update` itself, before it
+  // spawns this binary (see cli/release-core/launcher.js). Landing here means
+  // the binary was started without that wrapper, so npm is the way to update.
+  if (isUpdateCommand) {
+    console.error(
+      'Freebuff updates through its npm launcher, which is not running here.',
+    )
+    console.error('Update with: npm install -g freebuff@latest')
+    process.exit(1)
+  }
 
   await initializeApp({ cwd })
 
