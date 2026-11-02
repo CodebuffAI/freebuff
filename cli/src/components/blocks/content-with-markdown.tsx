@@ -1,10 +1,12 @@
-import { memo } from 'react'
+import { memo, useRef } from 'react'
 
 import {
+  createStreamingMarkdownCache,
   renderMarkdown,
-  renderStreamingMarkdown,
+  renderStreamingMarkdownIncremental,
   hasMarkdown,
   type MarkdownPalette,
+  type StreamingMarkdownCache,
 } from '../../utils/markdown-renderer'
 
 interface ContentWithMarkdownProps {
@@ -21,13 +23,20 @@ export const ContentWithMarkdown = memo(
     codeBlockWidth,
     palette,
   }: ContentWithMarkdownProps) => {
+    const streamCache = useRef<StreamingMarkdownCache | null>(null)
     if (!hasMarkdown(content)) {
       return content
     }
     const options = { codeBlockWidth, palette }
     if (isStreaming) {
-      return renderStreamingMarkdown(content, options)
+      streamCache.current ??= createStreamingMarkdownCache()
+      return renderStreamingMarkdownIncremental(
+        content,
+        options,
+        streamCache.current,
+      )
     }
+    streamCache.current = null
     return renderMarkdown(content, options)
   },
 )

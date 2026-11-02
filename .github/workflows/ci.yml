@@ -22,6 +22,18 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The build inlines NEXT_PUBLIC_* into the binary, and the smoke test runs
+    # it with a clean environment, so these must be set for the build step.
+    # Not keys: the schema only needs non-empty strings.
+    env:
+      NEXT_PUBLIC_CB_ENVIRONMENT: prod
+      NEXT_PUBLIC_CODEBUFF_APP_URL: https://codebuff.com
+      NEXT_PUBLIC_SUPPORT_EMAIL: support@freebuff.com
+      NEXT_PUBLIC_POSTHOG_API_KEY: ci-not-a-key
+      NEXT_PUBLIC_POSTHOG_HOST_URL: https://us.i.posthog.com
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ci-not-a-key
+      NEXT_PUBLIC_STRIPE_CUSTOMER_PORTAL: https://billing.stripe.com/p/login/test
+      NEXT_PUBLIC_WEB_PORT: '3000'
     steps:
       - uses: actions/checkout@v6
 
@@ -39,15 +51,6 @@ jobs:
         run: bun freebuff/cli/build.ts 0.0.0-ci
 
       - name: Smoke test Freebuff binary
-        env:
-          NEXT_PUBLIC_CB_ENVIRONMENT: prod
-          NEXT_PUBLIC_CODEBUFF_APP_URL: https://codebuff.com
-          NEXT_PUBLIC_SUPPORT_EMAIL: support@freebuff.com
-          NEXT_PUBLIC_POSTHOG_API_KEY: phc_public_placeholder
-          NEXT_PUBLIC_POSTHOG_HOST_URL: https://us.i.posthog.com
-          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_placeholder
-          NEXT_PUBLIC_STRIPE_CUSTOMER_PORTAL: https://billing.stripe.com/p/login/test
-          NEXT_PUBLIC_WEB_PORT: '3000'
         run: |
           chmod +x cli/bin/freebuff
           cli/bin/freebuff --version

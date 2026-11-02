@@ -119,13 +119,15 @@ interface RenderState {
   palette: MarkdownPalette
   codeBlockWidth: number
   nextKey: () => string
+  keysUsed: () => number
 }
 
 const createRenderState = (
   palette: MarkdownPalette,
   codeBlockWidth: number,
+  firstKey = 0,
 ): RenderState => {
-  let counter = 0
+  let counter = firstKey
   return {
     palette,
     codeBlockWidth,
@@ -133,6 +135,7 @@ const createRenderState = (
       counter += 1
       return `markdown-${counter}`
     },
+    keysUsed: () => counter,
   }
 }
 
@@ -1006,6 +1009,13 @@ const normalizeOutput = (nodes: ReactNode[]): ReactNode => {
   )
 }
 
+/** Parse and render to the unnormalized node list, continuing `state`'s keys. */
+const renderRawNodes = (markdown: string, state: RenderState): ReactNode[] => {
+  const ast = processor.parse(markdown) as Root
+  applyInlineFallbackFormatting(ast)
+  return renderNode(ast, state, ast.type, undefined)
+}
+
 export function renderMarkdown(
   markdown: string,
   options: MarkdownRenderOptions = {},
@@ -1014,10 +1024,7 @@ export function renderMarkdown(
     const palette = resolvePalette(options.palette)
     const codeBlockWidth = options.codeBlockWidth ?? 80
     const state = createRenderState(palette, codeBlockWidth)
-    const ast = processor.parse(markdown) as Root
-    applyInlineFallbackFormatting(ast)
-    const nodes = renderNode(ast, state, ast.type, undefined)
-    return normalizeOutput(nodes)
+    return normalizeOutput(renderRawNodes(markdown, state))
   } catch (error) {
     logger.error(error, 'Failed to parse markdown')
     return markdown
@@ -1087,4 +1094,164 @@ export function renderStreamingMarkdown(
   }
 
   return mergeStreamingSegments(segments)
+}
+
+/**
+ * What a streaming message has already rendered: the committed prefix of its
+ * text and that prefix's unnormalized nodes. One per streaming message.
+ */
+export type StreamingMarkdownCache = {
+  optionsKey: string
+  text: string
+  nodes: ReactNode[]
+  keysUsed: number
+  /** The text holds markdown whose meaning crosses blank lines. */
+  nonLocal: boolean
+}
+
+export const createStreamingMarkdownCache = (): StreamingMarkdownCache => ({
+  optionsKey: '',
+  text: '',
+  nodes: [],
+  keysUsed: 0,
+  nonLocal: false,
+})
+
+// Link and footnote definitions resolve references anywhere in the document,
+// and these HTML blocks run past blank lines, so a reply holding any of them
+// is never split.
+const NON_LOCAL_MARKDOWN =
+  /^ {0,3}\[[^\]\n]*\]:|<!--|<\?|<!\[CDATA\[|<(?:script|pre|style|textarea)\b/im
+const LIST_MARKER = /^(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/
+
+/** A line that, after a blank line, can only start a new top-level block. */
+const startsFreshBlock = (line: string): boolean =>
+  line.length > 0 &&
+  line[0] !== ' ' &&
+  line[0] !== '\t' &&
+  line[0] !== '>' &&
+  line[0] !== '<' &&
+  !LIST_MARKER.test(line)
+
+/**
+ * The offset of the last line start in `text` after `from` where the text can
+ * be cut without changing how either side parses or renders: outside any code
+ * fence, after a blank line, before a complete line that cannot continue a
+ * list, blockquote, indented code or HTML block, and with an even count of
+ * ``` runs before it (the count hasIncompleteCodeFence uses). Returns `from`
+ * when there is none. `from` must itself be such a line start.
+ */
+const lastSafeBoundary = (text: string, from: number): number => {
+  let best = from
+  let fence: { char: string; length: number } | null = null
+  let previousBlank = false
+  let tickRuns = 0
+  let lineStart = from
+  while (lineStart < text.length) {
+    const newline = text.indexOf('\n', lineStart)
+    // The unterminated last line can still grow into something else.
+    if (newline === -1) break
+    const line = text.slice(lineStart, newline).replace(/\r$/, '')
+    if (
+      fence === null &&
+      previousBlank &&
+      tickRuns % 2 === 0 &&
+      lineStart > from &&
+      startsFreshBlock(line)
+    ) {
+      best = lineStart
+    }
+    tickRuns += line.split('```').length - 1
+    if (fence === null) {
+      const open = FENCE_OPEN.exec(line)
+      if (open && !(open[1][0] === '`' && open[2].includes('`'))) {
+        fence = { char: open[1][0], length: open[1].length }
+      }
+    } else {
+      const close = FENCE_CLOSE.exec(line)
+      if (
+        close &&
+        close[1][0] === fence.char &&
+        close[1].length >= fence.length
+      ) {
+        fence = null
+      }
+    }
+    previousBlank = line.trim().length === 0
+    lineStart = newline + 1
+  }
+  return best
+}
+
+/**
+ * renderStreamingMarkdown, without re-parsing what earlier calls rendered.
+ *
+ * Re-parsing the whole reply on every flush is linear in its length, so a long
+ * reply falls behind its own stream (a 50 KB reply costs ~50 ms per flush, a
+ * 200 KB one ~260 ms). Text before the last safe boundary (lastSafeBoundary)
+ * parses to the same blocks alone as it does in the whole text, so its nodes
+ * are rendered once and kept, with the key counter continued so the result is
+ * the element tree renderStreamingMarkdown(content) would return.
+ */
+export function renderStreamingMarkdownIncremental(
+  content: string,
+  options: MarkdownRenderOptions,
+  cache: StreamingMarkdownCache,
+): ReactNode {
+  if (!hasMarkdown(content)) {
+    return content
+  }
+
+  const optionsKey = JSON.stringify([
+    options.codeBlockWidth ?? 80,
+    options.palette ?? null,
+  ])
+  if (cache.optionsKey !== optionsKey || !content.startsWith(cache.text)) {
+    Object.assign(cache, createStreamingMarkdownCache(), { optionsKey })
+  }
+  if (!cache.nonLocal && NON_LOCAL_MARKDOWN.test(content.slice(cache.text.length))) {
+    cache.nonLocal = true
+  }
+  if (cache.nonLocal) {
+    return renderStreamingMarkdown(content, options)
+  }
+
+  try {
+    const palette = resolvePalette(options.palette)
+    const codeBlockWidth = options.codeBlockWidth ?? 80
+
+    const boundary = lastSafeBoundary(content, cache.text.length)
+    if (boundary > cache.text.length) {
+      const state = createRenderState(palette, codeBlockWidth, cache.keysUsed)
+      cache.nodes.push(
+        ...renderRawNodes(content.slice(cache.text.length, boundary), state),
+      )
+      cache.keysUsed = state.keysUsed()
+      cache.text = content.slice(0, boundary)
+    }
+
+    const tail = content.slice(cache.text.length)
+    const state = createRenderState(palette, codeBlockWidth, cache.keysUsed)
+    if (!hasIncompleteCodeFence(tail)) {
+      return normalizeOutput([...cache.nodes, ...renderRawNodes(tail, state)])
+    }
+
+    const lastFenceIndex = tail.lastIndexOf('```')
+    const segments: ReactNode[] = []
+    if (cache.text.length + lastFenceIndex > 0) {
+      segments.push(
+        normalizeOutput([
+          ...cache.nodes,
+          ...renderRawNodes(tail.slice(0, lastFenceIndex), state),
+        ]),
+      )
+    }
+    segments.push(tail.slice(lastFenceIndex))
+    return mergeStreamingSegments(segments)
+  } catch {
+    Object.assign(cache, createStreamingMarkdownCache(), { optionsKey })
+    return renderStreamingMarkdown(content, options)
+  }
 }
