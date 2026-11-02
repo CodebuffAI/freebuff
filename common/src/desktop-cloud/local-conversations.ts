@@ -114,7 +114,8 @@ export type LocalConversationResponses = {
   projects: { projects: LocalConversationProject[]; nextOffset: number | null }
   threads: { threads: LocalConversationThread[]; nextOffset: number | null }
   search: { threadIds: string[]; indexing: boolean }
-  migrate: { cloud?: { threadId: string; projectId: string | null }; error?: string; retryable?: false }
+  /** `reason`: a fixed failure token from Desktop 0.0.197+ (`needs-reconnect`: pick the folder again). */
+  migrate: { cloud?: { threadId: string; projectId: string | null }; error?: string; retryable?: false; reason?: string }
   read: LocalConversationSnapshot
   attachment: { dataUrl: string }
 }
