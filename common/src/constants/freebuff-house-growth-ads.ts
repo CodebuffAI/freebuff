@@ -4,6 +4,7 @@ import {
 } from '../desktop-cloud/integrations'
 import { HOUSE_AD_FAVICON_URL } from './freebuff-house-ad'
 import { FREEBUFF_WEB_URL_PROD } from './hosts'
+import { houseCampaignSourceId } from './house-campaign-clone'
 
 import type { HouseAdCreative } from './freebuff-house-ad'
 
@@ -368,9 +369,9 @@ const GATE_BY_ID: ReadonlyMap<string, HouseCampaignGate> = new Map(
   ),
 )
 
-/** The gate a campaign id carries, or null for an ungated or unknown id. */
+/** The gate a campaign id (or its clone) carries, or null for an ungated or unknown id. */
 export function houseCampaignGateFor(id: string): HouseCampaignGate | null {
-  return GATE_BY_ID.get(id) ?? null
+  return GATE_BY_ID.get(houseCampaignSourceId(id)) ?? null
 }
 
 const FAVICON_BY_ID: ReadonlyMap<string, string> = new Map(
@@ -385,7 +386,7 @@ const FAVICON_BY_ID: ReadonlyMap<string, string> = new Map(
  * back to `HOUSE_AD_FAVICON_URL`).
  */
 export function houseCampaignFaviconFor(id: string): string | null {
-  return FAVICON_BY_ID.get(id) ?? null
+  return FAVICON_BY_ID.get(houseCampaignSourceId(id)) ?? null
 }
 
 /** The integration slug an `integration:<slug>` gate names, else null. */

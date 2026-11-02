@@ -1,5 +1,6 @@
 import { HOUSE_AD_FAVICON_URL } from './freebuff-house-ad'
 import { FREEBUFF_WEB_URL_PROD } from './hosts'
+import { houseCampaignSourceId } from './house-campaign-clone'
 
 import type { HouseAdCreative } from './freebuff-house-ad'
 
@@ -151,9 +152,10 @@ export const HOUSE_PRODUCT_ADS: Record<
 }
 
 export function houseProductTipForCampaign(id: string): HouseProductTip | null {
+  const sourceId = houseCampaignSourceId(id)
   return (
     (Object.keys(HOUSE_PRODUCT_CAMPAIGN_IDS) as HouseProductTip[]).find(
-      (tip) => HOUSE_PRODUCT_CAMPAIGN_IDS[tip] === id,
+      (tip) => HOUSE_PRODUCT_CAMPAIGN_IDS[tip] === sourceId,
     ) ?? null
   )
 }
