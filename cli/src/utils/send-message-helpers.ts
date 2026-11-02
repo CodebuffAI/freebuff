@@ -74,8 +74,13 @@ export const sanitizeRestoredMessages = (
 ): ChatMessage[] =>
   messages.map((message) => {
     let restoredMessage = message
-    if (message.metadata?.allowInlineAds) {
-      const { allowInlineAds: _, ...metadata } = message.metadata
+    if (
+      message.metadata &&
+      (message.metadata.allowInlineAds || 'runState' in message.metadata)
+    ) {
+      // Older builds copied the whole turn's run state into each AI message;
+      // dropping it here keeps the next save from writing it back.
+      const { allowInlineAds: _, runState: __, ...metadata } = message.metadata
       restoredMessage = { ...message, metadata }
     }
 

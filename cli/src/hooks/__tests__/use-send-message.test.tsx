@@ -262,7 +262,8 @@ describe('useSendMessage continuation state', () => {
         content: finalText,
       })
       expect(saved.isComplete).toBe(true)
-      expect(saved.metadata.runState).toEqual(finalState)
+      // The run state is saved to run-state.json only, never into a message.
+      expect(saved.metadata ?? {}).not.toHaveProperty('runState')
     } finally {
       settlePendingRuns()
       await run

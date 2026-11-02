@@ -243,7 +243,8 @@ export type ChatMessageMetadata = {
   isCollapsed?: boolean
   /** Whether the user manually opened this collapsed item */
   userOpened?: boolean
-  /** RunState stored after completion */
+  /** Written by older builds: a full copy of the turn's RunState, which lives
+   * in run-state.json. Nothing reads it; restore strips it. */
   runState?: unknown
 }
 
