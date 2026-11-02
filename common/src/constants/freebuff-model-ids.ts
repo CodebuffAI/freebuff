@@ -19,8 +19,7 @@ export const FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID =
 
 /**
  * The fast-mode models. One owner for "is this fast mode": the DeepSeek
- * router's fast-mode lanes and the Luminal grant at admission both read
- * this, so a second fast-mode model is one line here. A fast-mode model IS
+ * router's fast-mode lanes and admission's session pins both read this, so a second fast-mode model is one line here. A fast-mode model IS
  * its base model to everything that follows the upstream model (price card,
  * output budget, image handling) and is NOT one to the two things that follow
  * the lane.
