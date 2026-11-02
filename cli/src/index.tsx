@@ -265,6 +265,7 @@ async function main(): Promise<void> {
     cwd,
     initialMode,
     trustAgents,
+    acp: serveAcpFlag,
   } = parseArgs()
 
   const isLoginCommand = command === 'login'
@@ -275,6 +276,14 @@ async function main(): Promise<void> {
 
   // Set the auth token for the API client
   setApiClientAuthToken(getAuthToken())
+
+  // ACP mode: serve the Agent Client Protocol over stdio instead of the TUI.
+  // Must precede the renderer setup: stdio belongs to the protocol there.
+  if (serveAcpFlag) {
+    const { serveAcp } = await import('./acp/serve')
+    serveAcp()
+    return
+  }
 
   captureCliFunnel(
     'launch',
