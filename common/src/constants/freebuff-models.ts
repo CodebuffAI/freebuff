@@ -4505,6 +4505,26 @@ export function isFreebuffLimitedTierPlanOnlyModelId(id: string): boolean {
   return FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.includes(id)
 }
 
+/**
+ * Rows withdrawn from LIMITED access, plan or not (product, 2026-11-02,
+ * Victor): GPT-6.1 Sol and Terra, after their "Ending" pill ran from 10-28.
+ * Full access is unchanged.
+ *
+ * They stay in FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS on purpose: that list
+ * also keeps a row out of the free limited Web catalog
+ * (FREEBUFF_WEB_GEO_EXEMPT_MODEL_IDS), so dropping them from it would open
+ * them free. The server catalog hides them at limited access (default-config.ts),
+ * which is what admission enforces; the compiled chain drops them from what a
+ * plan opens there (isFreebuffSubscriptionModelIdForAccessTier), and the Web
+ * picker, which never installs the catalog, filters on this list.
+ */
+export const FREEBUFF_LIMITED_TIER_WITHDRAWN_MODEL_IDS: readonly string[] =
+  Object.freeze([FREEBUFF_GPT_61_SOL_MODEL_ID, FREEBUFF_GPT_61_TERRA_MODEL_ID])
+
+export function isFreebuffLimitedTierWithdrawnModelId(id: string): boolean {
+  return FREEBUFF_LIMITED_TIER_WITHDRAWN_MODEL_IDS.includes(id)
+}
+
 export const FREEBUFF_WEB_GEO_EXEMPT_MODEL_IDS: readonly string[] = [
   ...new Set<string>([
     ...LIMITED_FREEBUFF_MODEL_IDS,
@@ -4834,7 +4854,10 @@ export const FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS: readonly string[] =
   ])
 
 /**
- * Whether a plan meters this model, as a local predicate.
+ * Whether a plan opens this model at LIMITED access, as a local predicate:
+ * a model the plan meters, less the rows withdrawn from limited access
+ * (FREEBUFF_LIMITED_TIER_WITHDRAWN_MODEL_IDS), which a plan no longer opens
+ * there.
  *
  * Exported because the limited-tier widening it drives is not one gate but a
  * CHAIN — picker catalog, explicit-pick resolution, session admission, the
@@ -4846,7 +4869,10 @@ export function isFreebuffSubscriptionModelIdForAccessTier(
   model: string | null | undefined,
 ): boolean {
   if (!model) return false
-  return FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS.includes(model)
+  return (
+    FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS.includes(model) &&
+    !isFreebuffLimitedTierWithdrawnModelId(model)
+  )
 }
 
 export function isFreebuffModelId(

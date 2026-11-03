@@ -42,16 +42,17 @@ describe('GPT-6.1 Terra launch terms', () => {
     expect(freebuffDailySessionLimit(FREEBUFF_GPT_61_TERRA_MODEL_ID)).toBe(1)
   })
 
-  test('opens at full access without a plan, and needs one at limited access', () => {
+  test('opens at full access without a plan, and not at limited access even with one', () => {
     expect(
       isFreebuffSessionModelAllowedForAccessTier(FREEBUFF_GPT_61_TERRA_MODEL_ID, 'full', false),
     ).toBe(true)
     expect(
       isFreebuffSessionModelAllowedForAccessTier(FREEBUFF_GPT_61_TERRA_MODEL_ID, 'limited', false),
     ).toBe(false)
+    // Withdrawn from limited access on 2026-11-02 (a plan opened it from 10-26).
     expect(
       isFreebuffSessionModelAllowedForAccessTier(FREEBUFF_GPT_61_TERRA_MODEL_ID, 'limited', true),
-    ).toBe(true)
+    ).toBe(false)
     expect(FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS).toContain(FREEBUFF_GPT_61_TERRA_MODEL_ID)
     expect(FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS).toContain(FREEBUFF_GPT_61_TERRA_MODEL_ID)
   })

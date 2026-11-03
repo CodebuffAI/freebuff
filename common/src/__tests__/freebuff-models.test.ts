@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import { isFreeModeAllowedAgentModel } from '../constants/free-agents'
 import {
+  isFreebuffLimitedTierWithdrawnModelId,
   DEFAULT_FREEBUFF_MODEL_ID,
   DEFAULT_FREEBUFF_WEB_MODEL_ID,
   FALLBACK_FREEBUFF_MODEL_ID,
@@ -1384,11 +1385,14 @@ describe('freebuff model availability', () => {
     // The tier's own rows first, then every row a plan unlocks there — LISTED
     // to every limited account (2026-09-30) and drawn locked without a plan.
     // The appended rows are exactly the server's limited-tier lock list, so
-    // nothing is listed that is neither runnable nor locked.
+    // nothing is listed that is neither runnable nor locked, less GPT-6.1 Sol
+    // and Terra, which no plan opens there since 2026-11-02.
     expect(getFreebuffModelsForAccessTier('limited').map((m) => m.id)).toEqual([
       ...LIMITED_FREEBUFF_MODEL_IDS,
-      ...FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.filter((id) =>
-        FREEBUFF_MODELS.some((m) => m.id === id),
+      ...FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.filter(
+        (id) =>
+          FREEBUFF_MODELS.some((m) => m.id === id) &&
+          !isFreebuffLimitedTierWithdrawnModelId(id),
       ).sort(
         (a, b) =>
           FREEBUFF_MODELS.findIndex((m) => m.id === a) -

@@ -30,6 +30,8 @@ import {
   getFreebuffModelSupersededBy,
   isFreebuffModelId,
   FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS,
+  FREEBUFF_LIMITED_TIER_WITHDRAWN_MODEL_IDS,
+  isFreebuffLimitedTierWithdrawnModelId,
   getFreebuffModel,
   LIMITED_FREEBUFF_HERO_MODEL_ID,
   LIMITED_FREEBUFF_MODELS,
@@ -602,10 +604,20 @@ describe('FreebuffModelSelector tier layout', () => {
     // account since 2026-09-30, drawn locked exactly like a full-access
     // paid-only row: "Paid plan" on the detail line, no price. No plan-lock
     // list arrived with this session, so the tier's own fallback decides.
+    // GPT-6.1 Sol and Terra are not listed at all: no plan opens them there
+    // since 2026-11-02.
     const lines = frame.split('\n')
-    const planRows = FREEBUFF_MODELS.filter((m) =>
-      FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.includes(m.id),
+    const planRows = FREEBUFF_MODELS.filter(
+      (m) =>
+        FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.includes(m.id) &&
+        !isFreebuffLimitedTierWithdrawnModelId(m.id),
     )
+    for (const id of FREEBUFF_LIMITED_TIER_WITHDRAWN_MODEL_IDS) {
+      const model = FREEBUFF_MODELS.find((m) => m.id === id)!
+      expect(
+        lines.some((line) => line.includes('│') && line.includes(model.displayName)),
+      ).toBe(false)
+    }
     expect(planRows.length).toBeGreaterThan(0)
     // The card's own line: a section hint may name a model too.
     const cardLine = (name: string) =>

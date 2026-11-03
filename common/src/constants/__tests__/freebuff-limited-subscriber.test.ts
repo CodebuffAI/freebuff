@@ -5,6 +5,7 @@ import {
   FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_MODELS,
   FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS,
+  FREEBUFF_LIMITED_TIER_WITHDRAWN_MODEL_IDS,
   FREEBUFF_WEB_LIMITED_MODEL_IDS,
   LIMITED_FREEBUFF_MODEL_ID,
   LIMITED_FREEBUFF_MODEL_IDS,
@@ -23,6 +24,12 @@ import {
   FREEBUFF_SUBSCRIPTION_MODEL_IDS,
   FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS,
 } from '../freebuff-subscriptions'
+
+/** The plan models a plan opens at LIMITED access: all of them except GPT-6.1
+ *  Sol and Terra, withdrawn there on 2026-11-02. */
+const LIMITED_PLAN_MODEL_IDS = FREEBUFF_SUBSCRIPTION_MODEL_IDS.filter(
+  (model) => !FREEBUFF_LIMITED_TIER_WITHDRAWN_MODEL_IDS.includes(model),
+)
 
 /**
  * A limited-region account is held to a catalog that contains none of the
@@ -79,7 +86,7 @@ describe('paid plans at limited access', () => {
   })
 
   test('a paid plan unlocks exactly the models it meters', () => {
-    for (const model of FREEBUFF_SUBSCRIPTION_MODEL_IDS) {
+    for (const model of LIMITED_PLAN_MODEL_IDS) {
       expect(
         isFreebuffSessionModelAllowedForAccessTier(model, 'limited', true),
       ).toBe(true)
@@ -152,7 +159,7 @@ describe('paid plans at limited access', () => {
     // gate for a subscriber, which is a property of the gate rather than of
     // the list. It failed on exactly that when Gemini 3.8 Flash was added to
     // the plan and not to the then-duplicated predicate.
-    for (const model of FREEBUFF_SUBSCRIPTION_MODEL_IDS) {
+    for (const model of LIMITED_PLAN_MODEL_IDS) {
       expect(
         isFreebuffSessionModelAllowedForAccessTier(model, 'limited', true),
       ).toBe(true)
@@ -181,12 +188,36 @@ describe('paid plans at limited access', () => {
       expect(isFreebuffSessionModelAllowedForAccessTier(model, 'limited')).toBe(
         false,
       )
-      // ...but a plan still reaches it, or the paywall sells a shut door.
+      // ...but a plan still reaches it, or the paywall sells a shut door,
+      // except the rows withdrawn from limited access, which nothing opens.
       expect(
         isFreebuffSessionModelAllowedForAccessTier(model, 'limited', true),
-      ).toBe(true)
+      ).toBe(!FREEBUFF_LIMITED_TIER_WITHDRAWN_MODEL_IDS.includes(model))
     }
     expect(FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS.length).toBeGreaterThan(0)
+  })
+
+  test('GPT-6.1 Sol and Terra are refused at limited access, plan or not (2026-11-02)', () => {
+    expect(FREEBUFF_LIMITED_TIER_WITHDRAWN_MODEL_IDS).toEqual([
+      'openai/gpt-6.1-sol',
+      'openai/gpt-6.1-terra',
+    ])
+    for (const model of FREEBUFF_LIMITED_TIER_WITHDRAWN_MODEL_IDS) {
+      // Still sold with a plan at full access...
+      expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toContain(model)
+      expect(isFreebuffSessionModelAllowedForAccessTier(model, 'full', true)).toBe(true)
+      // ...never at limited access, and a pick is coerced to the default.
+      expect(isFreebuffSessionModelAllowedForAccessTier(model, 'limited', true)).toBe(false)
+      expect(isFreebuffWebModelAllowedForLimitedTier(model, true)).toBe(false)
+      expect(
+        resolveFreebuffSessionModelForAccessTier(model, 'limited', {
+          hasPaidSubscription: true,
+        }),
+      ).toBe(LIMITED_FREEBUFF_MODEL_ID)
+      // Still plan-only there, which keeps it out of the free Web catalog.
+      expect(FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS).toContain(model)
+      expect(FREEBUFF_WEB_LIMITED_MODEL_IDS).not.toContain(model)
+    }
   })
 
   test('every plan model resolves in the Web catalog', () => {
@@ -228,7 +259,7 @@ describe('a plan model survives resolution, not just the allowlist', () => {
   })
 
   test('a paid plan keeps the pick intact', () => {
-    for (const model of FREEBUFF_SUBSCRIPTION_MODEL_IDS) {
+    for (const model of LIMITED_PLAN_MODEL_IDS) {
       expect(
         resolveFreebuffSessionModelForAccessTier(model, 'limited', {
           hasPaidSubscription: true,
@@ -238,7 +269,7 @@ describe('a plan model survives resolution, not just the allowlist', () => {
   })
 
   test('the Web picker offers and keeps plan rows for a subscriber', () => {
-    for (const model of FREEBUFF_SUBSCRIPTION_MODEL_IDS) {
+    for (const model of LIMITED_PLAN_MODEL_IDS) {
       // The picker's own allowlist — the one whose coercion effect reset a
       // subscriber's selection back to MiMo on the next render.
       expect(isFreebuffWebModelAllowedForLimitedTier(model)).toBe(
