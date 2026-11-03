@@ -13,8 +13,21 @@ import { buildMessageTree } from '../utils/message-tree-utils'
 
 import type { ChatMessage, ContentBlock } from '../types/chat'
 
-/** Batch size for message pagination */
-const MESSAGE_BATCH_SIZE = 15
+/**
+ * Batch size for message pagination.
+ *
+ * This is a frame-cost knob, not a layout preference. A re-render lays out
+ * every rendered node, and the cost is linear in that count whether or not the
+ * node changed — an unchanged 1,500-node transcript measures ~60 ms per frame
+ * against ~0.1 ms when nothing re-renders, so memoizing cannot rescue it. A
+ * streamed chunk re-renders the whole page, which is why a long conversation
+ * used to fall behind its own output.
+ *
+ * One page at 15 messages measured ~11.5k nodes and ~60 ms per frame; six
+ * costs roughly a third of that. `LoadPreviousButton` already offers the rest,
+ * so the trade is one click of history for frames that keep up with the stream.
+ */
+const MESSAGE_BATCH_SIZE = 6
 
 /**
  * Options for useChatMessages hook.
