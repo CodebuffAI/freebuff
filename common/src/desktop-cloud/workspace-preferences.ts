@@ -9,6 +9,10 @@ export const workspacePreferencesSchema = z.object({
   injectAgentsMd: z.boolean(),
   /** Absent means on. Never defaulted, because an open tab of an older build refuses unknown keys. */
   notificationSounds: z.boolean().optional(),
+  /** Settings → General → Sessions: a running chat buys the next hour when its
+   *  hour runs out (web/src/server/desktop-cloud/cloud-session-renewal.ts).
+   *  Absent means on. Never defaulted, for the same reason as `notificationSounds`. */
+  autoStartSessions: z.boolean().optional(),
   interfaceSize: z.number().int().min(70).max(160),
   desktopMacShortcuts: shortcuts,
   desktopPcShortcuts: shortcuts,
