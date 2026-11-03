@@ -32,25 +32,28 @@ const none = { premium: false, locked: false, price: undefined }
 describe('freebuffPickerPlacement', () => {
   test('literal ids are the catalog constants', () => {
     const at = (id: string) => freebuffPickerPlacement([id], none)
-    // Standard, last at full access (2026-11-02): Solar Pro 4 alone in view,
-    // then Nemotron, Glyph, Solar Mini 4 and MiMo v2.6 Flash Slow under More.
-    expect(at(FREEBUFF_SOLAR_PRO_4_MODEL_ID)).toEqual({ section: 'standard', order: 1 })
-    const standardMore = ['m-ddc687c50f', 'm-02244092cb', FREEBUFF_SOLAR_MINI_4_MODEL_ID, 'm-61c26317cc']
+    // Full access, cheapest first (2026-11-03): DeepSeek V4.1 Flash, Flash
+    // Slow and Muse Spark 1.3 in view; every other row under More, Standard
+    // (Solar Pro 4 first) last.
+    expect(at(FREEBUFF_SOLAR_PRO_4_MODEL_ID)).toEqual({ section: 'standard', order: 1, more: true })
+    const standardMore = [FREEBUFF_SOLAR_PRO_4_MODEL_ID, 'm-ddc687c50f', 'm-02244092cb', FREEBUFF_SOLAR_MINI_4_MODEL_ID, 'm-61c26317cc']
     for (const id of standardMore)
       expect(at(id)).toEqual({ section: 'standard', order: expect.any(Number), more: true })
     const standardOrders = standardMore.map((id) => at(id).order)
     expect(standardOrders).toEqual([...standardOrders].sort((a, b) => a - b))
     // DeepSeek V4.1 Flash leads Premium as its pick since 2026-10-14.
     expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)).toEqual({ section: 'premium', order: 5, recommended: true })
-    // In view (2026-10-30): Flash, then Muse Spark 1.3, GLM 5.3 Flash;
-    // DeepSeek V4.1 Flash Slow, MiMo v2.6 Flash Fast and GPT-6 Luna under More.
+    // In view: Flash, then DeepSeek V4.1 Flash Slow and Muse Spark 1.3; GLM
+    // 5.3 Flash, MiMo v2.6 Flash Fast and GPT-6 Luna under More.
+    expect(at('m-8db1ccbba6')).toEqual({ section: 'premium', order: expect.any(Number) })
     const premium = [
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+      'm-8db1ccbba6',
       FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
       FREEBUFF_GLM_V53_FLASH_MODEL_ID,
     ].map((id) => at(id).order)
     expect(premium).toEqual([...premium].sort((a, b) => a - b))
-    expect(premium[0]).toBeGreaterThan(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID).order)
-    for (const id of ['m-8db1ccbba6', FREEBUFF_MIMO_V25_MODEL_ID, FREEBUFF_GPT_6_LUNA_MODEL_ID])
+    for (const id of [FREEBUFF_GLM_V53_FLASH_MODEL_ID, FREEBUFF_MIMO_V25_MODEL_ID, FREEBUFF_GPT_6_LUNA_MODEL_ID])
       expect(at(id)).toEqual({ section: 'premium', order: expect.any(Number), more: true })
     expect(at(FREEBUFF_GLM_V53_FLASH_MODEL_ID).section).toBe('premium')
     // Muse Spark 1.3 moved to Optimized (now Premium) on 2026-10-13.
@@ -58,13 +61,13 @@ describe('freebuffPickerPlacement', () => {
     // Gemini 4 Argon waits under Powerful's More since 2026-10-22, between
     // Gemini 3.8 Flash and GPT-6.1 Sol by price.
     expect(at(FREEBUFF_GEMINI_4_ARGON_MODEL_ID)).toEqual({ section: 'powerful', order: 45, more: true })
-    expect(at(FREEBUFF_MIMO_V26_PRO_MODEL_ID)).toEqual({ section: 'powerful', order: expect.any(Number) })
+    expect(at(FREEBUFF_MIMO_V26_PRO_MODEL_ID)).toEqual({ section: 'powerful', order: expect.any(Number), more: true })
     // Gemini 3.8 Flash, then GPT-6.1 Sol, under Powerful's More.
     expect(at(FREEBUFF_GEMINI_38_FLASH_MODEL_ID)).toMatchObject({ section: 'powerful', more: true })
     expect(at(FREEBUFF_GPT_61_SOL_MODEL_ID)).toMatchObject({ section: 'powerful', more: true })
     expect(at(FREEBUFF_GEMINI_38_FLASH_MODEL_ID).order).toBeLessThan(at(FREEBUFF_GPT_61_SOL_MODEL_ID).order)
     // Not badged Recommended since 2026-10-07: Premium's own pick is the one.
-    expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)).toEqual({ section: 'powerful', order: 20 })
+    expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)).toEqual({ section: 'powerful', order: 20, more: true })
   })
 
   test('every listed compiled model has an explicit place', () => {

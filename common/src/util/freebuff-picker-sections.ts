@@ -84,10 +84,14 @@ export interface FreebuffPickerPlacement {
 
 const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
   Object.freeze({
-    // Standard (product, 2026-11-02, Victor): the free rows and MiMo v2.6
-    // Flash Slow (one hour a session), last in the picker. Only Solar Pro 4 is
-    // in view; the rest wait under Show more.
-    'upstage/solar-pro4': { section: 'standard', order: 1 },
+    // Full access, cheapest first (product, 2026-11-03, Victor): DeepSeek V4.1
+    // Flash, DeepSeek V4.1 Flash Slow and Muse Spark 1.3 in view, every other
+    // row under Show more. The rows being retired carry an Ending pill
+    // (default-config.ts); accounts created from 2026-11-03 get their own
+    // cut-down set (new-account-catalog.ts).
+    //
+    // Standard: the free rows and MiMo v2.6 Flash Slow, last in the picker.
+    'upstage/solar-pro4': { section: 'standard', order: 1, more: true },
     'm-ddc687c50f': { section: 'standard', order: 10, more: true }, // Nemotron 3.5 Lightning
     'm-02244092cb': { section: 'standard', order: 15, more: true }, // Glyph Cluster
     'upstage/solar-mini4': { section: 'standard', order: 20, more: true },
@@ -96,33 +100,24 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     'm-916b95b337': { section: 'standard', order: 40, more: true }, // Ling 3.1 Flash
     'm-a273b5e513': { section: 'standard', order: 50, more: true }, // Laguna S 2.1
     // Premium: DeepSeek V4.1 Flash pinned first as the section's pick and the
-    // full-access recommendation, then cheapest to dearest (product,
-    // 2026-10-15). DeepSeek leads because on the Luminal lane it is our
-    // cheapest Flash-class model ($0.91 per 1k messages over 10-07..13,
-    // against MiMo 2.6 Flash's $1.35 on OpenRouter). In view: DeepSeek V4.1
-    // Flash, Muse Spark 1.3, GLM 5.3 Flash; Flash Slow, MiMo v2.6 Flash Fast
-    // and GPT-6 Luna under More (product, 2026-10-30).
+    // full-access recommendation (on Pareto, our cheapest Flash-class lane).
     'deepseek/deepseek-v4-flash': { section: 'premium', order: 5, recommended: true }, // V4.1 Flash, 15
+    'm-8db1ccbba6': { section: 'premium', order: 10 }, // DeepSeek V4.1 Flash Slow, 10
     // Muse Spark 1.3 and GPT-6 Luna moved here from Powerful (2026-10-13).
     // Placement only: both are plan-only at limited access.
     'meta/muse-spark-1.3-contributor': { section: 'premium', order: 20 }, // 15
-    'z-ai/glm-5.3-flash': { section: 'premium', order: 40 }, // 20
-    'm-8db1ccbba6': { section: 'premium', order: 62, more: true }, // DeepSeek V4.1 Flash Slow, 10
+    'z-ai/glm-5.3-flash': { section: 'premium', order: 40, more: true }, // 20
     'mimo/mimo-v2.5': { section: 'premium', order: 64, more: true }, // MiMo v2.6 Flash Fast, 10
     'openai/gpt-6-luna': { section: 'premium', order: 66, more: true }, // 20
-    // Powerful: cheapest to dearest (product, 2026-10-28; Claude Haiku 5.5's
-    // 100k-context row was pinned first before). The dearest rows wait under
-    // More, cheapest first (product, 2026-10-22, so the expensive models are
-    // less visible): Claude Haiku 5.5 full context, Gemini 3.8 Flash, Gemini 4
-    // Argon, GPT-6.1 Terra, GPT-6.1 Sol.
-    'mimo/mimo-v2.6-pro': { section: 'powerful', order: 10 }, // 25
+    // Powerful: cheapest to dearest, all under Show more.
+    'mimo/mimo-v2.6-pro': { section: 'powerful', order: 10, more: true }, // 25
     // 25, or 50 in DeepSeek's peak window, so after MiMo 2.6 Pro's flat 25.
-    'deepseek/deepseek-v4-flash-fast': { section: 'powerful', order: 20 },
-    'm-5b6a604eb6': { section: 'powerful', order: 30 }, // Claude Haiku 5.5, 100k context, 30
+    'deepseek/deepseek-v4-flash-fast': { section: 'powerful', order: 20, more: true },
+    'm-5b6a604eb6': { section: 'powerful', order: 30, more: true }, // Claude Haiku 5.5, 100k context, 30
     'm-79293c5b7d': { section: 'powerful', order: 35, more: true }, // Claude Haiku 5.5, 75
     'google/gemini-3.8-flash': { section: 'powerful', order: 40, more: true }, // 80
     'google/gemini-4-argon': { section: 'powerful', order: 45, more: true }, // 100
-    'openai/gpt-6.1-terra': { section: 'powerful', order: 48, more: true }, // 100, promotional
+    'openai/gpt-6.1-terra': { section: 'powerful', order: 48, more: true }, // 150, plan only
     'openai/gpt-6.1-sol': { section: 'powerful', order: 50, more: true }, // 250
   })
 

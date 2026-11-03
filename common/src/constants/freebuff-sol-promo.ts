@@ -26,15 +26,16 @@ export const GPT_61_TERRA_MODEL_ID = 'openai/gpt-6.1-terra'
 
 /**
  * Terra's promotional label (product, 2026-10-26; "1 per day" since
- * 2026-10-28, from "Promotional · 1 session a day"). The tooltip also says the
+ * 2026-10-28, from "Promotional · 1 session a day"; "2 per day" from
+ * 2026-11-03, when it went to 150 and behind a plan). The tooltip also says the
  * row is new: Desktop and the Web workspace draw only this pill beside the
  * model name, so its hover text is where that is seen, and that the price is
  * promotional.
  */
 export const GPT_61_TERRA_PROMOTIONAL = {
-  short: '1 per day',
+  short: '2 per day',
   tooltip:
-    'New. A temporary price that goes up when the promotion ends. Open on full access, a paid plan on limited access. One session a day on every plan.',
+    'Included with a paid plan (Pro on limited access). Two sessions a day on every plan.',
 } as const
 
 /**
@@ -60,7 +61,9 @@ export const FREEBUFF_DAILY_SESSION_LIMITS: Readonly<Record<string, number>> =
   Object.freeze({
     [GPT_61_SOL_MODEL_ID]: 1,
     [GEMINI_4_ARGON_MODEL_ID]: 1,
-    [GPT_61_TERRA_MODEL_ID]: 1,
+    // Two from 2026-11-03 (product, Victor), when it went to 150 and behind a
+    // paid plan.
+    [GPT_61_TERRA_MODEL_ID]: 2,
   })
 
 /**

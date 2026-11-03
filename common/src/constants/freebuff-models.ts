@@ -2649,7 +2649,7 @@ const GPT_61_SOL_MODEL = {
 const GPT_61_TERRA_MODEL = {
   id: FREEBUFF_GPT_61_TERRA_MODEL_ID,
   displayName: 'GPT-6.1 Terra',
-  tagline: 'OpenAI · 1 session a day',
+  tagline: 'OpenAI · 2 sessions a day',
   availability: 'always',
   // OpenAI's API does not train on request data: no AI-training notice and
   // no trace storage, as on Sol.
@@ -4374,6 +4374,10 @@ export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
     // exemption.
     FREEBUFF_GPT_61_SOL_MODEL_ID,
     FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
+    // GPT-6.1 Terra (2026-11-03, product, Victor): a paid plan on every
+    // surface, at 150 and two sessions a day. Open to every full-access
+    // account from 2026-10-26 until then.
+    FREEBUFF_GPT_61_TERRA_MODEL_ID,
     // Muse Spark 1.3 (and 1.2 with it) was paid-only on every surface from
     // 2026-09-28 and LEFT this list on 2026-10-09, by product decision, on
     // MiMo 2.6 Pro's and Luna's terms below: open to every full-access
@@ -4411,6 +4415,7 @@ export const FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS: readonly string[] =
     // Desktop list them.
     FREEBUFF_GPT_61_SOL_MODEL_ID,
     FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
+    FREEBUFF_GPT_61_TERRA_MODEL_ID,
   ])
 
 /**

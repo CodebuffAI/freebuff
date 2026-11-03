@@ -17,10 +17,12 @@ import {
 } from '../freebuff-sol-promo'
 
 /**
- * GPT-6.1 Terra's launch terms (product, 2026-10-26): a promotional 100
- * Freebucks, one session a day for every account, open on every full-access
- * account and a paid plan at limited access — MiMo 2.6 Pro's terms, not Sol's
- * US-or-paid.
+ * GPT-6.1 Terra's terms. At launch (product, 2026-10-26): a promotional 100
+ * Freebucks, one session a day, open on every full-access account and a paid
+ * plan at limited access. From 2026-11-03 (product, Victor): 150, two a day,
+ * a paid plan on every surface at full access (not Sol's US exemption); at
+ * limited access only a new account's Pro plan opens it
+ * (packages/internal/.../new-account-catalog.ts).
  */
 describe('GPT-6.1 Terra launch terms', () => {
   test('the leaf module and the catalog name the same id', () => {
@@ -38,11 +40,12 @@ describe('GPT-6.1 Terra launch terms', () => {
     )
   })
 
-  test('is one session a day for every account', () => {
-    expect(freebuffDailySessionLimit(FREEBUFF_GPT_61_TERRA_MODEL_ID)).toBe(1)
+  test('is two sessions a day for every account', () => {
+    expect(freebuffDailySessionLimit(FREEBUFF_GPT_61_TERRA_MODEL_ID)).toBe(2)
+    expect(GPT_61_TERRA_PROMOTIONAL.short).toBe('2 per day')
   })
 
-  test('opens at full access without a plan, and not at limited access even with one', () => {
+  test('the tier gate admits it at full access (the paywall is admission’s), and not at limited access even with a plan', () => {
     expect(
       isFreebuffSessionModelAllowedForAccessTier(FREEBUFF_GPT_61_TERRA_MODEL_ID, 'full', false),
     ).toBe(true)
@@ -57,9 +60,9 @@ describe('GPT-6.1 Terra launch terms', () => {
     expect(FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS).toContain(FREEBUFF_GPT_61_TERRA_MODEL_ID)
   })
 
-  test('is not paywalled at full access, and not tied to the US', () => {
-    expect(FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS).not.toContain(FREEBUFF_GPT_61_TERRA_MODEL_ID)
-    expect(FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS).not.toContain(
+  test('is paywalled at full access on every surface, and not tied to the US', () => {
+    expect(FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS).toContain(FREEBUFF_GPT_61_TERRA_MODEL_ID)
+    expect(FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS).toContain(
       FREEBUFF_GPT_61_TERRA_MODEL_ID,
     )
     expect(FREEBUFF_US_OR_PAID_MODEL_IDS).not.toContain(FREEBUFF_GPT_61_TERRA_MODEL_ID)
