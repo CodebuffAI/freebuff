@@ -760,6 +760,24 @@ export const getSubscriptionInfo = (
     : undefined
 
 /**
+ * Settings lists no Billing page for an account the server shows no upgrade
+ * (`upgradeHidden`: full access in tiers 1 and 2, whose pools cover most use)
+ * unless it holds a plan, live or paused, which it still manages there. Links
+ * that open Billing directly still land.
+ */
+export const billingSettingsHidden = (
+  freebucks: Pick<FreebuffFreebucksInfo, 'upgradeHidden' | 'planId'> | null | undefined,
+  subscription:
+    | Pick<FreebuffSubscriptionInfo, 'tierId' | 'paymentFailedTierId'>
+    | null
+    | undefined,
+): boolean =>
+  freebucks?.upgradeHidden === true &&
+  !freebucks.planId &&
+  !subscription?.tierId &&
+  !subscription?.paymentFailedTierId
+
+/**
  * A capacity-limited model the server is offering RIGHT NOW, beyond whatever
  * the client's own catalog contains.
  *
