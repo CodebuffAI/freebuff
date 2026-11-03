@@ -7,7 +7,8 @@ import {
   FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID as muse,
 } from '../../constants/freebuff-models'
 import {
-  FREEBUFF_MIMO_SLOW_CATALOG_KEY as slowKey,
+  FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY as dsSlowKey,
+  FREEBUFF_MIMO_SLOW_CATALOG_KEY as mimoSlowKey,
   getFreebuffModelPresets,
   matchingFreebuffModelPreset,
 } from '../freebuff-model-presets'
@@ -45,9 +46,9 @@ describe('model picker presets', () => {
     ])
   })
 
-  test('limited subscribers and limited accounts with at least 100 Freebucks get MiMo, Flash at high and Muse Spark', () => {
+  test('limited subscribers and limited accounts with at least 100 Freebucks get DeepSeek Flash Slow, Flash at high and Muse Spark', () => {
     expect(ids({ accessTier: 'limited', isSubscriber: true })).toEqual([
-      mimo,
+      dsSlowKey,
       flash,
       muse,
     ])
@@ -61,7 +62,7 @@ describe('model picker presets', () => {
       ['Powerful', 'high'],
     ])
     expect(ids({ accessTier: 'limited', balance: 100 })).toEqual([
-      mimo,
+      dsSlowKey,
       flash,
       muse,
     ])
@@ -74,9 +75,10 @@ describe('model picker presets', () => {
       { id: 'm-mini', displayName: 'Solar Mini 4', price: 0 },
       { id: 'm-pro', displayName: 'Solar Pro 4', price: 0 },
     ]
+    // No DeepSeek Flash Slow among the rows (Web): Flash at low effort.
     expect(ids({ accessTier: 'limited', models })).toEqual([
       'm-glyph',
-      mimo,
+      flash,
       flash,
     ])
     expect(
@@ -96,7 +98,7 @@ describe('model picker presets', () => {
         accessTier: 'limited',
         models: models.map((row) => ({ ...row, price: undefined })),
       })[0],
-    ).toBe(mimo)
+    ).toBe(flash)
     expect(
       choices({
         accessTier: 'limited',
@@ -108,22 +110,23 @@ describe('model picker presets', () => {
     ).toBe('high')
   })
 
-  test('the limited premium ladder leads with MiMo v2.6 Flash Slow where it is listed and open', () => {
-    const slow = { id: slowKey, displayName: 'MiMo v2.6 Flash Slow' }
+  test('the limited premium ladder leads with DeepSeek V4.1 Flash Slow where it is listed and open, never MiMo', () => {
+    const slow = { id: dsSlowKey, displayName: 'DeepSeek V4.1 Flash Slow' }
+    const mimoSlow = { id: mimoSlowKey, displayName: 'MiMo v2.6 Flash Slow' }
     const input = { accessTier: 'limited' as const, isSubscriber: true }
-    expect(ids({ ...input, models: [slow] })).toEqual([slowKey, flash, muse])
+    expect(ids({ ...input, models: [mimoSlow, slow] })).toEqual([dsSlowKey, flash, muse])
     expect(choices({ ...input, models: [slow] })[0]?.reasoningEffort).toBeNull()
-    // Locked or unlisted (Web, a withdrawn row): MiMo, as before.
-    expect(ids({ ...input, models: [{ ...slow, available: false }] })[0]).toBe(
-      mimo,
+    // Locked or unlisted (Web, a withdrawn row): Flash at low effort.
+    expect(ids({ ...input, models: [{ ...slow, available: false }, mimoSlow] })[0]).toBe(
+      flash,
     )
-    expect(ids({ ...input, models: [] })[0]).toBe(mimo)
+    expect(choices({ ...input, models: [] })[0]?.reasoningEffort).toBe('low')
     // Full access never reads it.
-    expect(ids({ accessTier: 'full', models: [slow] })[0]).not.toBe(slowKey)
+    expect(ids({ accessTier: 'full', models: [slow] })[0]).not.toBe(dsSlowKey)
   })
 
-  test('a planless limited account builds its ladder on the server’s recommendation (MiMo v2.6 Flash Slow)', () => {
-    const slow = { id: 'm-slow', displayName: 'MiMo v2.6 Flash Slow' }
+  test('a planless limited account builds its ladder on the server’s recommendation (DeepSeek V4.1 Flash Slow)', () => {
+    const slow = { id: 'm-slow', displayName: 'DeepSeek V4.1 Flash Slow' }
     const glyph = { id: 'm-glyph', displayName: 'Glyph Cluster', price: 0 }
     // No free promotion: the recommendation fills both lower stops, and a new
     // chat (Balanced) starts on it.
@@ -141,17 +144,17 @@ describe('model picker presets', () => {
     expect(
       ids({ accessTier: 'limited', models: [glyph, slow], recommendedModelId: 'm-slow' }),
     ).toEqual(['m-glyph', 'm-slow', flash])
-    // Unlisted or unavailable: MiMo, as before.
+    // Unlisted or unavailable: Flash at low effort, never MiMo.
     expect(
       ids({ accessTier: 'limited', models: [glyph], recommendedModelId: 'm-slow' }),
-    ).toEqual(['m-glyph', mimo, flash])
+    ).toEqual(['m-glyph', flash, flash])
     expect(
       ids({
         accessTier: 'limited',
         models: [{ ...slow, available: false }],
         recommendedModelId: 'm-slow',
       }),
-    ).toEqual([mimo, mimo, flash])
+    ).toEqual([flash, flash, flash])
     // With no rows to check against (the CLI), the server's pick is taken as is.
     expect(ids({ accessTier: 'limited', recommendedModelId: 'm-slow' })).toEqual([
       'm-slow',
@@ -163,7 +166,7 @@ describe('model picker presets', () => {
       { accessTier: 'limited' as const, isSubscriber: true },
       { accessTier: 'limited' as const, balance: 100 },
     ])
-      expect(ids({ ...input, recommendedModelId: 'm-slow' })).toEqual([mimo, flash, muse])
+      expect(ids({ ...input, recommendedModelId: 'm-slow' })).toEqual([dsSlowKey, flash, muse])
     expect(
       ids({ accessTier: 'full', recommendedModelId: 'm-slow' }),
     ).toEqual([flash, flash, flash])
@@ -178,10 +181,11 @@ describe('model picker presets', () => {
     ]
     expect(ids({ models })).toEqual(['m-flash', 'm-flash', 'm-flash'])
     const limited = { accessTier: 'limited' as const, isSubscriber: true }
-    expect(ids({ ...limited, models })).toEqual(['m-mimo', 'm-flash', 'm-muse'])
+    // MiMo is listed but no stop leads on it.
+    expect(ids({ ...limited, models })).toEqual(['m-flash', 'm-flash', 'm-muse'])
     const noMuse = models.filter((row) => row.compiledId !== muse)
     expect(ids({ ...limited, models: noMuse })).toEqual([
-      'm-mimo',
+      'm-flash',
       'm-flash',
       'm-flash',
     ])
@@ -272,7 +276,7 @@ describe('model picker presets', () => {
     expect(
       matchingFreebuffModelPreset(
         choices({ accessTier: 'limited' }),
-        mimo,
+        dsSlowKey,
         null,
       )?.id,
     ).toBe('balanced')

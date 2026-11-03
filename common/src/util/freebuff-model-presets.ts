@@ -36,6 +36,10 @@ export interface FreebuffPresetModel {
  */
 export const FREEBUFF_MIMO_SLOW_CATALOG_KEY = 'm-61c26317cc'
 
+/** DeepSeek V4.1 Flash Slow's catalog key (`defaultCatalogKey('fbc/deepseek-slow')`),
+ *  found the same way. */
+export const FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY = 'm-8db1ccbba6'
+
 /** Recommendations only. Catalog visibility, purchase consent and admission
  * remain owned by the existing model-selection path.
  *
@@ -46,13 +50,18 @@ export const FREEBUFF_MIMO_SLOW_CATALOG_KEY = 'm-61c26317cc'
  * The first stop is no longer a cheap model, so it reads Fast rather than
  * Efficient; limited ladders keep Efficient.
  *
- * A limited-access subscriber, or one holding 100 Freebucks, gets MiMo v2.6 Flash Slow
- * (MiMo where it is not listed, as on Web), Flash at high effort and Muse Spark
- * 1.3. Muse Spark is a paid-only row, so without a plan that stop is the
- * ordinary paywall, never an entitlement. Any other limited account gets the
- * free ladder below, built on the server's recommendation for it
- * (`recommendedModelId`, MiMo v2.6 Flash Slow since 2026-10-14) where the catalog sends
- * one, else MiMo.
+ * A limited-access subscriber, or one holding 100 Freebucks, gets DeepSeek V4.1
+ * Flash Slow (Flash at low effort where it is not listed, as on Web), Flash at
+ * high effort and Muse Spark 1.3. Muse Spark is a paid-only row, so without a
+ * plan that stop is the ordinary paywall, never an entitlement. Any other
+ * limited account gets the free ladder below, built on the server's
+ * recommendation for it (`recommendedModelId`) where the catalog sends one,
+ * else the same Flash Slow stop.
+ *
+ * No preset recommends MiMo (product, 2026-11-03, Victor): MiMo's provider is
+ * down and its rows are served by DeepSeek, so the ladders that led on MiMo v2.6
+ * Flash Slow (2026-10-14) or fell back to MiMo now lead on DeepSeek V4.1 Flash
+ * Slow.
  *
  * A catalog that lists one model with a reasoning ladder gets that model's
  * thinking levels instead, at any tier. */
@@ -116,21 +125,28 @@ export function getFreebuffModelPresets({
       preset('powerful', 'Powerful', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'max'),
     ]
 
-  if (premium) {
-    // MiMo v2.6 Flash Slow leads where it is listed and open (product, 2026-10-14).
-    const slow = models?.find(
+  // DeepSeek V4.1 Flash Slow where it is listed and open (with no rows to check
+  // against, as in the CLI, its key is taken as is), else Flash at low effort.
+  const flashSlow = (
+    id: FreebuffModelPreset['id'],
+    label: string,
+  ): FreebuffModelPreset =>
+    !models ||
+    models.some(
       (row) =>
-        row.id === FREEBUFF_MIMO_SLOW_CATALOG_KEY && row.available !== false,
+        row.id === FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY && row.available !== false,
     )
+      ? {
+          id,
+          label,
+          modelId: FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY,
+          reasoningEffort: null,
+        }
+      : preset(id, label, FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'low')
+
+  if (premium) {
     return [
-      slow
-        ? {
-            id: 'efficient' as const,
-            label: 'Efficient',
-            modelId: FREEBUFF_MIMO_SLOW_CATALOG_KEY,
-            reasoningEffort: null,
-          }
-        : preset('efficient', 'Efficient', FREEBUFF_MIMO_V25_MODEL_ID, null),
+      flashSlow('efficient', 'Efficient'),
       preset('balanced', 'Balanced', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'high'),
       preset(
         'powerful',
@@ -154,7 +170,7 @@ export function getFreebuffModelPresets({
     )
     .find((row) => row !== undefined)
   // The base of this ladder: the server's pick for the viewer when it is one
-  // they can start, else MiMo.
+  // they can start, else DeepSeek V4.1 Flash Slow.
   const recommended: Pick<FreebuffPresetModel, 'id' | 'defaultEffort'> | undefined = !recommendedModelId
     ? undefined
     : models
@@ -173,7 +189,7 @@ export function getFreebuffModelPresets({
           modelId: recommended.id,
           reasoningEffort: recommended.defaultEffort ?? null,
         }
-      : preset(id, label, FREEBUFF_MIMO_V25_MODEL_ID, null)
+      : flashSlow(id, label)
   return [
     free
       ? {
