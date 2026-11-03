@@ -68,7 +68,7 @@ export function parseArgs({
         "Load this repository's .agents files and mcp.json without asking (for CI)",
       )
       .addArgument(
-        new Argument('[command]', 'Command to run').choices(['login']),
+        new Argument('[command]', 'Command to run: login, or doctor to check this computer for common problems').choices(['login', 'doctor']),
       )
       .helpOption('-h, --help', 'Show this help message')
   } else {
@@ -103,7 +103,7 @@ export function parseArgs({
       .option('--plan', 'Start in PLAN mode')
       .addHelpText(
         'after',
-        '\nCommands:\n  login                          Log in to your account\n  publish                        Publish agents to the registry',
+        '\nCommands:\n  login                          Log in to your account\n  publish                        Publish agents to the registry\n  doctor                         Check this computer for common problems',
       )
       .helpOption('-h, --help', 'Show this help message')
       .argument('[prompt...]', 'Initial prompt to send to the agent')

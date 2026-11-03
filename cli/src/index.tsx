@@ -53,6 +53,7 @@ import { setApiClientAuthToken } from './utils/codebuff-api'
 import { IS_FREEBUFF } from './utils/constants'
 import { getCliEnv } from './utils/env'
 import { getConfigDir, tightenConfigDirMode } from './utils/config-dir'
+import { isDoctorInvocation, runDoctorCommand } from './doctor'
 import {
   bunExtractionTempDir,
   defaultRenderLibraryCacheDir,
@@ -230,6 +231,21 @@ async function main(): Promise<void> {
       exchangeDir,
     })
     process.exit(exitCode)
+  }
+
+  // `freebuff doctor`: before OSC detection, sign-in or analytics, so it still runs when those
+  // are what is broken (doctor/index.ts).
+  if (isDoctorInvocation(process.argv)) {
+    process.exit(
+      await runDoctorCommand({
+        argv: process.argv,
+        packageName: IS_FREEBUFF ? 'freebuff' : 'codebuff',
+        version: loadPackageVersion(),
+        configDir: getConfigDir(),
+        apiUrl: getWebsiteUrl(),
+        launcherVersion: getCliEnv().CODEBUFF_LAUNCHER_VERSION?.slice(0, 32) ?? null,
+      }),
+    )
   }
 
   // Run OSC theme detection BEFORE anything else.

@@ -25,6 +25,7 @@ export type DoctorArea =
   | 'network'
   | 'clock'
   | 'install'
+  | 'state'
   | 'auth'
   | 'environment'
   | 'system'
