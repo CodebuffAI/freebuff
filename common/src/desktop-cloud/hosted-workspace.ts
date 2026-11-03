@@ -199,6 +199,15 @@ export type HostedWorkspaceHost = {
   elevations?: {
     review(): Promise<void>
   }
+  /**
+   * Settings > General > Diagnose (freebuff-desktop/src/server/services/diagnose). Builds without
+   * it omit the key, and the page hides Diagnose. Repairs take only a handle a scan minted.
+   */
+  diagnostics?: {
+    run(options?: { deep?: boolean; includePaths?: boolean; includeChatTitles?: boolean }): Promise<import('../doctor/types').DoctorReport>
+    repair(input: { kind: import('../doctor/types').DoctorRepairKind; ref?: string }): Promise<import('../doctor/types').DoctorRepairResult>
+    undo(undoRef: string): Promise<import('../doctor/types').DoctorRepairResult>
+  }
   /** Mirrors cloud-managed local work for the native quit confirmation. */
   activity?: {
     report(busy: boolean): Promise<void>
