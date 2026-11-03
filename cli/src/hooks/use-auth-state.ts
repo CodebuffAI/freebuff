@@ -3,7 +3,6 @@ import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 
 import { useAuthQuery, useLogoutMutation } from './use-auth-query'
 import { adReports } from '../ads/ad-reports'
-import { useChatStore } from '../state/chat-store'
 import { useLoginStore } from '../state/login-store'
 import { captureCliFunnel } from '../utils/cli-product-funnel'
 import { identifyUser, trackEvent } from '../utils/analytics'
@@ -126,9 +125,6 @@ export const useAuthState = ({
       // Reset the SDK client to pick up new credentials
       resetCodebuffClient()
       resetChatStore()
-      // After the reset, which clears banners: a fresh sign-in is the moment
-      // to invite someone to the community. Restored sessions never get here.
-      if (IS_FREEBUFF) useChatStore.getState().setActiveTopBanner('discord')
       resetLoginState()
       setInputFocused(true)
       setUser(loggedInUser)

@@ -3,10 +3,6 @@ import { randomUUID } from 'node:crypto'
 import { cyan, green, red, yellow, bold } from 'picocolors'
 
 import { LOGIN_WEBSITE_URL } from './constants'
-import {
-  DISCORD_AFTER_LOGIN_TEXT,
-  FREEBUFF_DISCORD_INVITE_URL,
-} from './discord-invite'
 import { generateLoginUrl, pollLoginStatus } from './login-flow'
 import { flushAnalytics, identifyUser, trackEvent } from '../utils/analytics'
 import { captureCliFunnel } from '../utils/cli-product-funnel'
@@ -116,11 +112,6 @@ export async function runPlainLogin(): Promise<void> {
     console.log()
     const cliName = IS_FREEBUFF ? 'freebuff' : 'codebuff'
     console.log('You can now run ' + cyan(cliName) + ' to start.')
-    if (IS_FREEBUFF) {
-      console.log(
-        DISCORD_AFTER_LOGIN_TEXT + ' ' + cyan(FREEBUFF_DISCORD_INVITE_URL),
-      )
-    }
     process.exit(0)
   } else if (result.status === 'timeout') {
     captureCliFunnel('login', 'failed', { reason: 'timeout' })
