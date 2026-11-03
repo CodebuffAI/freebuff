@@ -85,17 +85,20 @@ export interface FreebuffPickerPlacement {
 const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
   Object.freeze({
     // Full access, cheapest first (product, 2026-11-03, Victor): DeepSeek V4.1
-    // Flash, DeepSeek V4.1 Flash Slow and Muse Spark 1.3 in view, every other
-    // row under Show more. The rows being retired carry an Ending pill
-    // (default-config.ts); accounts created from 2026-11-03 get their own
-    // cut-down set (new-account-catalog.ts).
+    // Flash, DeepSeek V4.1 Flash Slow, Muse Spark 1.3 and DeepSeek V4.1 Flash
+    // Fast in view, every other Premium and Powerful row under Show more. The
+    // rows being retired carry an Ending pill (default-config.ts); accounts
+    // created from 2026-11-03 get their own cut-down set
+    // (new-account-catalog.ts).
     //
-    // Standard: the free rows and MiMo v2.6 Flash Slow, last in the picker.
-    'upstage/solar-pro4': { section: 'standard', order: 1, more: true },
-    'm-ddc687c50f': { section: 'standard', order: 10, more: true }, // Nemotron 3.5 Lightning
-    'm-02244092cb': { section: 'standard', order: 15, more: true }, // Glyph Cluster
-    'upstage/solar-mini4': { section: 'standard', order: 20, more: true },
-    'm-61c26317cc': { section: 'standard', order: 30, more: true }, // MiMo v2.6 Flash Slow, 5
+    // Standard, last in the picker: the same rows in the same places as the
+    // limited layout (default-config.ts's `LIMITED_LAYOUT`), so every viewer
+    // sees one Standard set (product, 2026-11-03, Victor).
+    'm-ddc687c50f': { section: 'standard', order: 1 }, // Nemotron 3.5 Lightning, 5
+    'm-02244092cb': { section: 'standard', order: 5 }, // Glyph Cluster, 5
+    'upstage/solar-pro4': { section: 'standard', order: 10 },
+    'upstage/solar-mini4': { section: 'standard', order: 15 },
+    'm-61c26317cc': { section: 'standard', order: 20, more: true }, // MiMo v2.6 Flash Slow, 5
     // (MiniMax M3.1 Flash, 'm-b2a427415d', retired 2026-10-24, has no place.)
     'm-916b95b337': { section: 'standard', order: 40, more: true }, // Ling 3.1 Flash
     'm-a273b5e513': { section: 'standard', order: 50, more: true }, // Laguna S 2.1
@@ -109,10 +112,10 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     'z-ai/glm-5.3-flash': { section: 'premium', order: 40, more: true }, // 20
     'mimo/mimo-v2.5': { section: 'premium', order: 64, more: true }, // MiMo v2.6 Flash Fast, 10
     'openai/gpt-6-luna': { section: 'premium', order: 66, more: true }, // 20
-    // Powerful: cheapest to dearest, all under Show more.
+    // Powerful: DeepSeek V4.1 Flash Fast first and in view (25, or 50 in
+    // DeepSeek's peak window), then cheapest to dearest under Show more.
+    'deepseek/deepseek-v4-flash-fast': { section: 'powerful', order: 5 },
     'mimo/mimo-v2.6-pro': { section: 'powerful', order: 10, more: true }, // 25
-    // 25, or 50 in DeepSeek's peak window, so after MiMo 2.6 Pro's flat 25.
-    'deepseek/deepseek-v4-flash-fast': { section: 'powerful', order: 20, more: true },
     'm-5b6a604eb6': { section: 'powerful', order: 30, more: true }, // Claude Haiku 5.5, 100k context, 30
     'm-79293c5b7d': { section: 'powerful', order: 35, more: true }, // Claude Haiku 5.5, 75
     'google/gemini-3.8-flash': { section: 'powerful', order: 40, more: true }, // 80

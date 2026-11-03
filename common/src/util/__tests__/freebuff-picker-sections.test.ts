@@ -32,15 +32,14 @@ const none = { premium: false, locked: false, price: undefined }
 describe('freebuffPickerPlacement', () => {
   test('literal ids are the catalog constants', () => {
     const at = (id: string) => freebuffPickerPlacement([id], none)
-    // Full access, cheapest first (2026-11-03): DeepSeek V4.1 Flash, Flash
-    // Slow and Muse Spark 1.3 in view; every other row under More, Standard
-    // (Solar Pro 4 first) last.
-    expect(at(FREEBUFF_SOLAR_PRO_4_MODEL_ID)).toEqual({ section: 'standard', order: 1, more: true })
-    const standardMore = [FREEBUFF_SOLAR_PRO_4_MODEL_ID, 'm-ddc687c50f', 'm-02244092cb', FREEBUFF_SOLAR_MINI_4_MODEL_ID, 'm-61c26317cc']
-    for (const id of standardMore)
-      expect(at(id)).toEqual({ section: 'standard', order: expect.any(Number), more: true })
-    const standardOrders = standardMore.map((id) => at(id).order)
-    expect(standardOrders).toEqual([...standardOrders].sort((a, b) => a - b))
+    // Standard matches the limited layout (2026-11-03): Nemotron, Glyph,
+    // Solar Pro 4 and Solar Mini 4 in view, MiMo v2.6 Flash Slow under More.
+    const standard = ['m-ddc687c50f', 'm-02244092cb', FREEBUFF_SOLAR_PRO_4_MODEL_ID, FREEBUFF_SOLAR_MINI_4_MODEL_ID]
+    for (const id of standard)
+      expect(at(id)).toEqual({ section: 'standard', order: expect.any(Number) })
+    expect(at('m-61c26317cc')).toEqual({ section: 'standard', order: 20, more: true })
+    const standardOrders = [...standard, 'm-61c26317cc'].map((id) => at(id).order)
+    expect(standardOrders).toEqual([1, 5, 10, 15, 20])
     // DeepSeek V4.1 Flash leads Premium as its pick since 2026-10-14.
     expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)).toEqual({ section: 'premium', order: 5, recommended: true })
     // In view: Flash, then DeepSeek V4.1 Flash Slow and Muse Spark 1.3; GLM
@@ -66,8 +65,9 @@ describe('freebuffPickerPlacement', () => {
     expect(at(FREEBUFF_GEMINI_38_FLASH_MODEL_ID)).toMatchObject({ section: 'powerful', more: true })
     expect(at(FREEBUFF_GPT_61_SOL_MODEL_ID)).toMatchObject({ section: 'powerful', more: true })
     expect(at(FREEBUFF_GEMINI_38_FLASH_MODEL_ID).order).toBeLessThan(at(FREEBUFF_GPT_61_SOL_MODEL_ID).order)
-    // Not badged Recommended since 2026-10-07: Premium's own pick is the one.
-    expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)).toEqual({ section: 'powerful', order: 20, more: true })
+    // Powerful's one row in view, first (2026-11-03). Not badged Recommended
+    // since 2026-10-07: Premium's own pick is the one.
+    expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)).toEqual({ section: 'powerful', order: 5 })
   })
 
   test('every listed compiled model has an explicit place', () => {
