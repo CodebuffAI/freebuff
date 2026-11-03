@@ -327,6 +327,12 @@ export enum AnalyticsEvent {
   // also exactly what a genuine in-person referral looks like ("try it,
   // here's my laptop").
   FREEBUFF_REFERRAL_SOCK_SIGNAL = 'freebuff.referral.sock_signal',
+  // The first-prompt "Invite 3 friends to unlock custom themes" card in the web
+  // and hosted Desktop workspace. `action`: shown | copied | copy_failed |
+  // dismissed (X or Escape only); `qualifying`: 0-3 referred signups so far.
+  // The old local Desktop renderer reports the user actions as
+  // desktop.feature_used `theme_referral.*` instead.
+  FREEBUFF_THEME_REFERRAL_PROMPT = 'freebuff.theme_referral_prompt',
   // Freebuff - Get Started Page (sign-up, then Freebuff Desktop; in order:
   //   viewed → sign_in_clicked → signed_in → eligibility_resolved →
   //   [connect_github_clicked] → web_clicked | freebuff.desktop_download_clicked

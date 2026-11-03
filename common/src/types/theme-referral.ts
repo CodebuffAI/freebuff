@@ -13,3 +13,10 @@ export interface ThemeReferralPromptResponse {
   show: boolean
   access: ThemeReferralAccess
 }
+
+/** What the first-prompt invitation reports: `shown` once per mount, then each copy or dismissal. */
+export type ThemeReferralPromptAction =
+  | 'shown'
+  | 'copied'
+  | 'copy_failed'
+  | 'dismissed'
