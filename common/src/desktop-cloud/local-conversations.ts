@@ -115,7 +115,8 @@ export type LocalConversationResponses = {
   threads: { threads: LocalConversationThread[]; nextOffset: number | null }
   search: { threadIds: string[]; indexing: boolean }
   /** `reason`: a fixed failure token from Desktop 0.0.197+ (`needs-reconnect`: pick the folder again). */
-  migrate: { cloud?: { threadId: string; projectId: string | null }; error?: string; retryable?: false; reason?: string }
+  /** `deferred`: a background request (no `priority`/`retry`) for a chat not yet in Cloud; nothing was imported. Older Desktops never send it. */
+  migrate: { cloud?: { threadId: string; projectId: string | null }; deferred?: true; error?: string; retryable?: false; reason?: string }
   read: LocalConversationSnapshot
   attachment: { dataUrl: string }
 }

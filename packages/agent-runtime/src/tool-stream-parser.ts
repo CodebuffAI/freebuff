@@ -82,6 +82,11 @@ export async function* processStreamWithTools(params: {
     await processor.onTagEnd(toolName, input, providerOptions)
   }
 
+  // The `text` event is the consolidated copy of the text chunks yielded since
+  // the last flush, never new text: message history is built from it, and the
+  // cloud agent skips persisting it once those chunks were written
+  // (web/src/server/desktop-cloud/agent.ts; pinned by
+  // __tests__/tool-stream-parser-dup-text.test.ts).
   async function flush() {
     if (buffer) {
       await onResponseChunk({
