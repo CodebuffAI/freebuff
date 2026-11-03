@@ -237,9 +237,15 @@ const appendTextWithThinkParsingToBlocks = (
     // (e.g., just "</think>" or "</think>text"). In this case parseThinkTags returns
     // empty or starts with text, but we still need to close the thinking block.
     if (currentLastBlock?.type === 'text') {
-      nextBlocks[nextBlocks.length - 1] = {
-        ...currentLastBlock,
-        thinkingOpen: false,
+      if (currentLastBlock.content) {
+        nextBlocks[nextBlocks.length - 1] = {
+          ...currentLastBlock,
+          thinkingOpen: false,
+        }
+      } else {
+        // Opened by an earlier delta and closed before any content arrived:
+        // the same `<think></think>` in one delta renders nothing.
+        nextBlocks.pop()
       }
     }
   }
@@ -273,6 +279,17 @@ const appendTextWithThinkParsingToBlocks = (
         nextBlocks.push(createTextBlock(segment.content))
       }
     }
+  }
+
+  // A delta that ends exactly on `<think>` leaves the parser inside a think
+  // tag with no content yet, so no thinking segment carries that state. Open
+  // an empty block for it; otherwise the next delta lands as plain text.
+  const lastSegment = segments[segments.length - 1]
+  if (
+    fullText.lastIndexOf(THINK_OPEN_TAG) > fullText.lastIndexOf(THINK_CLOSE_TAG) &&
+    lastSegment?.type !== 'thinking'
+  ) {
+    nextBlocks.push(createReasoningBlock('', true, generateThinkingId()))
   }
 
   return nextBlocks

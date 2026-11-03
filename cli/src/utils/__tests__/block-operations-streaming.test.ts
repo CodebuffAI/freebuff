@@ -38,7 +38,7 @@ describe('appendTextToRootStream seam scan', () => {
   test('chunked deltas produce the blocks of a single append', () => {
     for (const text of corpus) {
       const whole = shape(stream(text, text.length))
-      for (const chunkSize of [7, 8, 9, 64]) {
+      for (const chunkSize of [1, 2, 3, 4, 5, 6, 7, 8, 9, 64]) {
         expect({ text, chunkSize, blocks: shape(stream(text, chunkSize)) })
           .toEqual({ text, chunkSize, blocks: whole })
       }
