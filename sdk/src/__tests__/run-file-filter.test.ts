@@ -285,6 +285,67 @@ describe('CodebuffClientOptions fileFilter', () => {
     expect(requestedFiles['.env.example']).toBe(FILE_READ_STATUS.IGNORED)
   })
 
+  it('should find an edit read a Windows computer keyed with backslashes', async () => {
+    spyOn(databaseModule, 'getUserInfoFromApiKey').mockResolvedValue({
+      id: 'user-123',
+      email: 'test@example.com',
+      name: null,
+      discord_id: null,
+      stripe_customer_id: null,
+      banned: false,
+      created_at: new Date('2024-01-01T00:00:00Z'),
+    })
+    spyOn(databaseModule, 'fetchAgentFromDatabase').mockResolvedValue(null)
+    spyOn(databaseModule, 'startAgentRun').mockResolvedValue('run-1')
+    spyOn(databaseModule, 'finishAgentRun').mockResolvedValue(undefined)
+    spyOn(databaseModule, 'addAgentStep').mockResolvedValue('step-1')
+    spyOn(projectFileTree, 'isFileIgnored').mockResolvedValue(false)
+
+    const optionalFileResult = { current: null as string | null }
+    spyOn(mainPromptModule, 'callMainPrompt').mockImplementation(
+      async (params: Parameters<typeof mainPromptModule.callMainPrompt>[0]) => {
+        const { sendAction, promptId, requestOptionalFile } = params
+        const sessionState = getInitialSessionState(getStubProjectFileContext())
+        optionalFileResult.current = await requestOptionalFile({
+          filePath: 'src/game/store.ts',
+        })
+        await sendAction({
+          action: {
+            type: 'prompt-response',
+            promptId,
+            sessionState,
+            output: { type: 'lastMessage', value: [] },
+          },
+        })
+        return {
+          sessionState,
+          output: { type: 'lastMessage' as const, value: [] },
+        }
+      },
+    )
+
+    const client = new CodebuffClient({
+      apiKey: 'test-key',
+      // Cloud runs the SDK on Linux; the override reads on the user's Windows computer.
+      cwd: '/project',
+      fsSource: createMockFs({ files: {} }),
+      overrideTools: {
+        read_files: async ({ filePaths }) =>
+          Object.fromEntries(
+            filePaths.map((filePath) => [
+              filePath.replaceAll('/', '\\'),
+              'export const store = 1',
+            ]),
+          ),
+      },
+    })
+
+    const result = await client.run({ agent: 'base2', prompt: 'edit' })
+
+    expect(result.output.type).toBe('lastMessage')
+    expect(optionalFileResult.current).toBe('export const store = 1')
+  })
+
   it('should pass fileFilter to requestOptionalFile as well', async () => {
     spyOn(databaseModule, 'getUserInfoFromApiKey').mockResolvedValue({
       id: 'user-123',

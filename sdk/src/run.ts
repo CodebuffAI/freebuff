@@ -50,7 +50,11 @@ import { applyPatchTool } from './tools/apply-patch'
 import { codeSearch } from './tools/code-search'
 import { glob } from './tools/glob'
 import { listDirectory } from './tools/list-directory'
-import { getProjectPathLookupKeys, resolveFilePath } from './tools/path-utils'
+import {
+  findFileLookupKey,
+  getProjectPathLookupKeys,
+  resolveFilePath,
+} from './tools/path-utils'
 import { createProjectFence } from './tools/project-confinement'
 import { getFiles, getImageFile } from './tools/read-files'
 import { readUrl } from './tools/read-url'
@@ -967,7 +971,7 @@ async function runOnce({
       const lookupKeys = cwd
         ? getProjectPathLookupKeys(cwd, filePath)
         : [filePath]
-      const fileKey = lookupKeys.find((key) => key in files)
+      const fileKey = findFileLookupKey(files, lookupKeys)
       return toOptionalFile(fileKey === undefined ? null : files[fileKey]!)
     },
     sendAction: async ({ action }) => {

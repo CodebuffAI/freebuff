@@ -89,3 +89,20 @@ export function getProjectPathLookupKeys(
 
   return [...new Set(keys)]
 }
+
+/**
+ * The key `files` holds a read under: an exact lookup key, else one that differs only in slashes.
+ * A read override can answer from another OS: Desktop's computer chats read on the user's Windows
+ * computer (`src\a.ts`) while this SDK runs in Cloud (`src/a.ts`).
+ */
+export function findFileLookupKey(
+  files: Readonly<Record<string, unknown>>,
+  lookupKeys: readonly string[],
+): string | undefined {
+  const slashes = (key: string) => key.replaceAll('\\', '/')
+  const wanted = lookupKeys.map(slashes)
+  return (
+    lookupKeys.find((key) => Object.hasOwn(files, key)) ??
+    Object.keys(files).find((key) => wanted.includes(slashes(key)))
+  )
+}

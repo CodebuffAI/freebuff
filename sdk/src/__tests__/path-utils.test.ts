@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 
 import {
+  findFileLookupKey,
   getProjectPathLookupKeys,
   resolveFilePathWithinProject,
 } from '../tools/path-utils'
@@ -88,5 +89,26 @@ describe('getProjectPathLookupKeys with Git Bash paths', () => {
         },
       }),
     ).toEqual(['C:\\Users\\me\\repo\\src\\a.ts', '/c/Users/me/repo/src/a.ts'])
+  })
+})
+
+describe('findFileLookupKey', () => {
+  test('an exact key wins', () => {
+    const files = { 'src/a.ts': 'forward', 'src\\a.ts': 'back' }
+    expect(findFileLookupKey(files, ['src/a.ts'])).toBe('src/a.ts')
+  })
+
+  test('a Windows computer answering a forward-slash read is still found', () => {
+    // Cloud computes POSIX keys; Desktop on Windows keys the same file with backslashes.
+    const files = { 'src\\game\\store.ts': 'export const store = 1' }
+    const keys = getProjectPathLookupKeys('/workspace', 'src/game/store.ts')
+    expect(findFileLookupKey(files, keys)).toBe('src\\game\\store.ts')
+  })
+
+  test('a different file is never matched', () => {
+    expect(
+      findFileLookupKey({ 'src\\other.ts': 'x' }, ['src/a.ts']),
+    ).toBeUndefined()
+    expect(findFileLookupKey({}, ['src/a.ts'])).toBeUndefined()
   })
 })
