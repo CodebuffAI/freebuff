@@ -8,8 +8,8 @@ import { LEARN_MORE } from '../help'
 
 // ---------------------------------------------------------------- disk
 
-export const LOW_DISK_BYTES = 2 * 1024 ** 3
-export const CRITICAL_DISK_BYTES = 512 * 1024 ** 2
+const LOW_DISK_BYTES = 2 * 1024 ** 3
+const CRITICAL_DISK_BYTES = 512 * 1024 ** 2
 
 const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(bytes < 10 * 1024 ** 3 ? 1 : 0)} GB`
 

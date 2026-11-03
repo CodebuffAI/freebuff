@@ -17,7 +17,7 @@
  */
 
 /** The prefix of every module inside a compiled Bun binary. */
-export const BUNDLE_PREFIX = '/$bunfs/'
+const BUNDLE_PREFIX = '/$bunfs/'
 
 /** The flags Bun honours as "load this file before the entry point". */
 const PRELOAD_FLAGS = ['--preload', '-r', '--require'] as const

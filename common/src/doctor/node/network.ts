@@ -8,9 +8,9 @@ type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 // ------------------------------------------------------------------ clock
 
 /** Past this, Desktop skips turn-start probes whose 25 s deadline already "passed" (PR #9473). */
-export const CLOCK_SKEW_WARN_MS = 20_000
+const CLOCK_SKEW_WARN_MS = 20_000
 /** Past this, commands (5 min deadline), sign-in and certificate checks break too. */
-export const CLOCK_SKEW_ERROR_MS = 5 * 60_000
+const CLOCK_SKEW_ERROR_MS = 5 * 60_000
 
 export type ClockReading = { skewMs: number; rttMs: number } | { error: string }
 
@@ -36,7 +36,7 @@ export async function readClockSkew(url: string, options: { fetch?: Fetch; now?:
   }
 }
 
-export function clockSyncSteps(platform: string): string[] {
+function clockSyncSteps(platform: string): string[] {
   if (platform === 'win32')
     return ['Open Settings > Time & language > Date & time.', 'Turn on "Set time automatically", then click "Sync now".', 'Restart Freebuff.']
   if (platform === 'darwin')
@@ -179,11 +179,11 @@ export function tlsFinding(host: string, inspection: TlsInspection): DoctorFindi
 
 // ---------------------------------------------------------------- DNS and hosts
 
-export const FREEBUFF_DOMAINS = ['freebuff.com', 'codebuff.com']
+const FREEBUFF_DOMAINS = ['freebuff.com', 'codebuff.com']
 
 const LOCAL_ADDRESS = /^(?:0\.0\.0\.0|127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|169\.254\.|::1?$|::ffff:127\.|f[cd][0-9a-f]{2}:|fe80:)/i
 
-export function isLocalAddress(address: string) {
+function isLocalAddress(address: string) {
   return LOCAL_ADDRESS.test(address)
 }
 
@@ -251,7 +251,7 @@ export function configuredProxies(env: Record<string, string | undefined>) {
   return [...seen.values()]
 }
 
-export function tcpReachable(host: string, port: number, timeoutMs = 3_000, connect = netConnect): Promise<boolean> {
+function tcpReachable(host: string, port: number, timeoutMs = 3_000, connect = netConnect): Promise<boolean> {
   return new Promise(resolve => {
     const socket = connect({ host, port })
     const done = (ok: boolean) => { clearTimeout(timer); socket.destroy(); resolve(ok) }

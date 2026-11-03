@@ -2,7 +2,7 @@ import type { DoctorFinding, DoctorReport, DoctorSeverity } from './types'
 
 const LABEL: Record<DoctorSeverity, string> = { error: 'Problem', warning: 'Warning', info: 'Note', ok: 'OK' }
 
-export function doctorCounts(report: Pick<DoctorReport, 'findings'>) {
+function doctorCounts(report: Pick<DoctorReport, 'findings'>) {
   const counts: Record<DoctorSeverity, number> = { error: 0, warning: 0, info: 0, ok: 0 }
   for (const item of report.findings) counts[item.severity]++
   return counts
