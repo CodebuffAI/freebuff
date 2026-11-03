@@ -143,6 +143,39 @@ describe('CLI Argument Parsing', () => {
 })
 
 describe('Freebuff CLI Argument Parsing', () => {
+  test('parses the execution permission flags', () => {
+    const result = parseArgs({
+      argv: [
+        'node',
+        'freebuff',
+        '--no-shell',
+        '--ask-shell',
+        '--project-only',
+        '--read-only',
+      ],
+      isFreebuff: true,
+      version: '1.0.0',
+    })
+
+    expect(result.noShell).toBe(true)
+    expect(result.askShell).toBe(true)
+    expect(result.projectOnly).toBe(true)
+    expect(result.readOnly).toBe(true)
+  })
+
+  test('defaults execution permission flags to false', () => {
+    const result = parseArgs({
+      argv: ['node', 'freebuff'],
+      isFreebuff: true,
+      version: '1.0.0',
+    })
+
+    expect(result.noShell).toBe(false)
+    expect(result.askShell).toBe(false)
+    expect(result.projectOnly).toBe(false)
+    expect(result.readOnly).toBe(false)
+  })
+
   test('accepts login as a command, not an unexpected argument', () => {
     const result = parseArgs({
       argv: ['node', 'freebuff', 'login'],
@@ -206,5 +239,25 @@ describe('Codebuff --trust-agents', () => {
     })
     expect(result.trustAgents).toBe(true)
     expect(result.initialPrompt).toBe('fix it')
+  })
+
+  test('parses execution permission flags', () => {
+    const result = parseArgs({
+      argv: [
+        'node',
+        'codebuff',
+        '--no-shell',
+        '--ask-shell',
+        '--project-only',
+        '--read-only',
+      ],
+      isFreebuff: false,
+      version: '1.0.0',
+    })
+
+    expect(result.noShell).toBe(true)
+    expect(result.askShell).toBe(true)
+    expect(result.projectOnly).toBe(true)
+    expect(result.readOnly).toBe(true)
   })
 })

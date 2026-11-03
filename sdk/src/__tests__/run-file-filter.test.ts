@@ -205,6 +205,82 @@ describe('CodebuffClientOptions fileFilter', () => {
     expect(optionalFileResult.current).toBe('contents:.ENV')
   })
 
+  it('requires external trust before either direct read_files override path', async () => {
+    spyOn(databaseModule, 'getUserInfoFromApiKey').mockResolvedValue({
+      id: 'user-123',
+      email: 'test@example.com',
+      discord_id: null,
+      stripe_customer_id: null,
+      banned: false,
+      created_at: new Date('2024-01-01T00:00:00Z'),
+    })
+    spyOn(databaseModule, 'fetchAgentFromDatabase').mockResolvedValue(null)
+    spyOn(databaseModule, 'startAgentRun').mockResolvedValue('run-1')
+    spyOn(databaseModule, 'finishAgentRun').mockResolvedValue(undefined)
+    spyOn(databaseModule, 'addAgentStep').mockResolvedValue('step-1')
+
+    const mockFs = createMockFs({
+      files: {
+        '/project/src/index.ts': { content: 'export const value = 1\n' },
+      },
+    })
+    const override = mock(async ({ filePaths }: { filePaths: string[] }) =>
+      Object.fromEntries(
+        filePaths.map((filePath) => [filePath, 'remote data']),
+      ),
+    )
+    const failures: unknown[] = []
+
+    spyOn(mainPromptModule, 'callMainPrompt').mockImplementation(
+      async (params: Parameters<typeof mainPromptModule.callMainPrompt>[0]) => {
+        const { sendAction, promptId, requestFiles, requestOptionalFile } =
+          params
+        const sessionState = getInitialSessionState(getStubProjectFileContext())
+        for (const request of [
+          () => requestFiles({ filePaths: ['src/index.ts'] }),
+          () => requestOptionalFile({ filePath: 'src/index.ts' }),
+        ]) {
+          try {
+            await request()
+          } catch (error) {
+            failures.push(error)
+          }
+        }
+
+        await sendAction({
+          action: {
+            type: 'prompt-response',
+            promptId,
+            sessionState,
+            output: { type: 'lastMessage', value: [] },
+          },
+        })
+
+        return {
+          sessionState,
+          output: { type: 'lastMessage' as const, value: [] },
+        }
+      },
+    )
+
+    const client = new CodebuffClient({
+      apiKey: 'test-key',
+      cwd: '/project',
+      fsSource: mockFs,
+      overrideTools: { read_files: override },
+    })
+    const result = await client.run({
+      agent: 'base2',
+      prompt: 'read files',
+      noShell: true,
+    })
+
+    expect(result.output.type).toBe('lastMessage')
+    expect(failures).toHaveLength(2)
+    expect(failures.map(String).join('\n')).toContain('external capability')
+    expect(override).not.toHaveBeenCalled()
+  })
+
   it('should keep env templates subject to gitignore with allow-example', async () => {
     spyOn(databaseModule, 'getUserInfoFromApiKey').mockResolvedValue({
       id: 'user-123',
