@@ -420,6 +420,8 @@ export async function executeSubagent(
     // If subagents need to see images, they get them through includeMessageHistory,
     // not by creating new image-containing messages for their prompts.
     content: undefined,
+    // A subagent's prompt is its parent's request, never the host's resume.
+    promptIsContinuation: false,
     ancestorRunIds: [...ancestorRunIds, parentAgentState.runId ?? ''],
     agentType: agentTemplate.id,
   })

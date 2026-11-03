@@ -295,6 +295,11 @@ export type RunOptions = {
    * prompt for after the turn finishes. Supports plain strings or { prompt, content }
    * messages with images, and async attachment loading. */
   drainSteeringMessages?: DrainSteeringMessages
+  /** The prompt is the host carrying on work the user already asked for (a
+   * turn resumed after a restart, an automatic follow-up pass), not a new
+   * message. It never counts as the user returning after an idle gap, so it
+   * never swaps the history for its summary on that ground. */
+  promptIsContinuation?: boolean
   costMode?: string
   /** Extra key/values merged into each LLM request's `codebuff_metadata`.
    *  Used by hosts (e.g. the CLI) to forward client-scoped identifiers like
@@ -620,6 +625,7 @@ async function runOnce({
   signal,
   deadlineAt,
   drainSteeringMessages,
+  promptIsContinuation,
   costMode,
   extraCodebuffMetadata,
   onStateSnapshot,
@@ -1156,6 +1162,7 @@ async function runOnce({
       agentId,
     },
     drainSteeringMessages,
+    promptIsContinuation,
     deadlineAt,
     repoUrl: undefined,
     repoId: undefined,

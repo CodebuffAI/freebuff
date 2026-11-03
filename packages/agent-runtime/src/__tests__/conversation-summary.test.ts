@@ -7,6 +7,7 @@ import {
   applyConversationSummary,
   conversationSummaries,
   generateConversationSummary,
+  CONTINUATION_PROMPT_TAG,
   isIdleReturn,
   messageFingerprint,
   resetConversationSummariesForTest,
@@ -122,6 +123,16 @@ describe('isIdleReturn', () => {
     expect(
       isIdleReturn([...history(60 * MINUTE), assistantMessage('working')]),
     ).toBe(false)
+  })
+
+  it('is never true for a continuation prompt, however long the gap', () => {
+    const resumed = history(60 * MINUTE)
+    resumed[2] = {
+      ...resumed[2],
+      tags: ['USER_PROMPT', CONTINUATION_PROMPT_TAG],
+    }
+    expect(isIdleReturn(resumed)).toBe(false)
+    expect(isIdleReturn(resumed, 15 * MINUTE)).toBe(false)
   })
 
   it('waits the threshold it is given', () => {

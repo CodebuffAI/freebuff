@@ -395,6 +395,9 @@ const COMPACTION_CORRELATION_FIELDS = {
   trace_session_id: 'string',
   compaction_id: 'string',
   summary_id: 'string',
+  /** 'true' when the run's prompt continues work the user already asked for
+   *  (a drained Cloud turn's resume, a mission pass); absent otherwise. */
+  continuation_prompt: 'string',
 } as const satisfies AxiomOnlyFieldSchema
 
 const COMPACTION_ATTEMPT_FIELDS = {

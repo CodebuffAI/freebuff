@@ -22,6 +22,7 @@ import {
   STREAM_RECOVERY_EVENT,
   MECHANICAL_COMPACTION_SKIPPED_EVENT,
   CONTEXT_COMPACTION_COMPLETED_EVENT,
+  COMPACTION_FIRST_OUTPUT_EVENT,
   COMPACTION_FOLLOWUP_EVENT,
   FILE_EDIT_LOOP_EVENT,
   TODO_PROGRESS_REMINDER_EVENT,
@@ -480,6 +481,21 @@ describe('getAxiomOnlyLogEvent', () => {
         post_tokens: 41_000,
       },
     })
+  })
+
+  test('a continuation run is marked on its first output and compactions', () => {
+    for (const axiomEvent of [
+      COMPACTION_FIRST_OUTPUT_EVENT,
+      CONTEXT_COMPACTION_COMPLETED_EVENT,
+    ]) {
+      expect(
+        getAxiomOnlyLogEvent({
+          axiomEvent,
+          agent_run_id: 'run-1',
+          continuation_prompt: 'true',
+        })?.data,
+      ).toMatchObject({ agent_run_id: 'run-1', continuation_prompt: 'true' })
+    }
   })
 
   test('compaction follow-up ships counts, never a path', () => {

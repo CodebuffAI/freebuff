@@ -55,6 +55,7 @@ import {
 } from './compaction'
 import {
   applyConversationSummary,
+  CONTINUATION_PROMPT_TAG,
   manualCompactionIsWorthwhile,
   conversationSummaries,
   isIdleReturn,
@@ -1082,6 +1083,9 @@ export async function loopAgentSteps(
      * to the message history as user prompts and keep the turn going, letting a
      * host "steer" a running agent without aborting or losing the current step. */
     drainSteeringMessages?: DrainSteeringMessages
+    /** The prompt continues work the user already asked for (a drain resume,
+     * a mission pass): it is tagged so it never counts as an idle return. */
+    promptIsContinuation?: boolean
     spawnParams: Record<string, any> | undefined
     startAgentRun: StartAgentRunFn
     userId: string | undefined
@@ -1336,7 +1340,9 @@ export async function loopAgentSteps(
         // Actual user message!
         role: 'user',
         content: buildUserMessageContent(prompt, spawnParams, content),
-        tags: ['USER_PROMPT'],
+        tags: params.promptIsContinuation
+          ? ['USER_PROMPT', CONTINUATION_PROMPT_TAG]
+          : ['USER_PROMPT'],
         sentAt: Date.now(),
 
         // James: Deprecate the below, only use tags, which are not prescriptive.
@@ -1484,6 +1490,8 @@ export async function loopAgentSteps(
     compaction_root_version: runMetadata.compaction_root_version,
     compaction_root_run_id: runMetadata.compaction_root_run_id,
     trace_session_id: params.extraCodebuffMetadata?.trace_session_id ?? runId,
+    // Lets Axiom count resumed turns and confirm none compacts as idle.
+    ...(params.promptIsContinuation ? { continuation_prompt: 'true' } : {}),
   }
 
   const compactionPolicy =

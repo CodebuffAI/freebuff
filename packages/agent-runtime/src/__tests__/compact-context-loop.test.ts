@@ -28,6 +28,7 @@ import {
 } from 'bun:test'
 
 import {
+  CONTINUATION_PROMPT_TAG,
   conversationSummaries,
   messageFingerprint,
   resetConversationSummariesForTest,
@@ -490,6 +491,98 @@ describe('compactContext in loopAgentSteps', () => {
       })
       expect(joined(seenMessages[1])).toContain('MODEL SUMMARY')
       expect(joined(seenMessages[1])).not.toContain('DISTINCTIVE PRIOR ANSWER')
+    })
+
+    // A Cloud turn drained mid-task, queued through a deploy, then resumed on
+    // another runner with the worker's continuation prompt: the saved state
+    // ends on the agent's own work, long before the resume.
+    describe('a drain-resumed turn', () => {
+      const drained = (): Message[] => [
+        {
+          ...userMessage('build the page'),
+          tags: ['USER_PROMPT'],
+          sentAt: 1_000_000,
+        },
+        ...bulkyRead(),
+        {
+          ...assistantMessage('DISTINCTIVE PRIOR ANSWER '.repeat(100)),
+          sentAt: 1_000_000,
+        },
+      ]
+      const covering = (history: Message[]): ConversationSummary => ({
+        ...readySummary(history),
+        coveredMessages: history.length,
+        anchor: messageFingerprint(history[history.length - 1]),
+      })
+      const RESUME = 'The Cloud runner restarted. Continue from where you stopped.'
+
+      it('was read as a cache-expiry return before the prompt was marked', async () => {
+        const logged: unknown[] = []
+        const history = drained()
+        await runLoop(optedIn, history, {
+          prompt: RESUME,
+          logged,
+          state: { compactionSummary: covering(history) },
+        })
+        expect(joined(seenMessages[0])).toContain('MODEL SUMMARY')
+        expect(logged).toContainEqual(
+          expect.objectContaining({ trigger_reason: 'cache_expiry' }),
+        )
+      })
+
+      it('keeps the full history when the prompt is a continuation', async () => {
+        const logged: unknown[] = []
+        const history = drained()
+        const result = await runLoop(optedIn, history, {
+          prompt: RESUME,
+          logged,
+          runtimeOverrides: { promptIsContinuation: true },
+          state: { compactionSummary: covering(history) },
+        })
+        const sent = joined(seenMessages[0])
+        expect(sent).toContain('DISTINCTIVE PRIOR ANSWER')
+        expect(sent).toContain(RESUME)
+        expect(sent).not.toContain('MODEL SUMMARY')
+        expect(logged).not.toContainEqual(
+          expect.objectContaining({ axiomEvent: 'context_compaction_completed' }),
+        )
+        // What the post-deploy query counts resumed turns by.
+        expect(logged).toContainEqual(
+          expect.objectContaining({
+            axiomEvent: 'context_compaction.first_output',
+            continuation_prompt: 'true',
+            idle_return: false,
+          }),
+        )
+        const resumed = result.agentState.messageHistory.find((m) =>
+          m.tags?.includes(CONTINUATION_PROMPT_TAG),
+        )
+        expect(resumed?.tags).toContain('USER_PROMPT')
+      })
+
+      it('still swaps when the user next returns after the cache expired', async () => {
+        const history: Message[] = [
+          ...drained(),
+          {
+            ...userMessage(RESUME),
+            tags: ['USER_PROMPT', CONTINUATION_PROMPT_TAG],
+            sentAt: 1_000_000 + 30 * MINUTE,
+          },
+          {
+            ...assistantMessage('finished the page'),
+            sentAt: 1_000_000 + 31 * MINUTE,
+          },
+          {
+            ...userMessage('the live question'),
+            tags: ['USER_PROMPT'],
+            sentAt: 1_000_000 + 60 * MINUTE,
+          },
+        ]
+        await runLoop(optedIn, history, {
+          state: { compactionSummary: readySummary(history) },
+        })
+        expect(joined(seenMessages[0])).toContain('MODEL SUMMARY')
+      })
     })
 
     it('sends the full history after an idle gap when no summary exists', async () => {

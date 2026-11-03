@@ -166,9 +166,16 @@ export function summaryIsDue(params: {
 }
 
 /**
+ * Tags a prompt the host wrote to carry on work the user already asked for
+ * (a Cloud turn resumed after a runner drain, a mission's next pass). It is
+ * not the user returning: the gap before it is a queue, not a user who left.
+ */
+export const CONTINUATION_PROMPT_TAG = 'CONTINUATION_PROMPT'
+
+/**
  * Whether the live prompt arrived after the conversation sat idle longer than
  * `idleMs`, measured from the last assistant message before it. Only true
- * before the assistant answers it.
+ * before the assistant answers it, and never for a continuation prompt.
  */
 export function isIdleReturn(
   messages: Message[],
@@ -182,6 +189,7 @@ export function isIdleReturn(
   if (messages.slice(promptIndex + 1).some((m) => m.role === 'assistant'))
     return false
   const prompt = messages[promptIndex]
+  if (prompt.tags?.includes(CONTINUATION_PROMPT_TAG)) return false
   const sentAt = prompt.sentAt ?? now
   for (let i = promptIndex - 1; i >= 0; i--) {
     const message = messages[i]
