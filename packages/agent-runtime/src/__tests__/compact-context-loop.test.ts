@@ -472,6 +472,26 @@ describe('compactContext in loopAgentSteps', () => {
       )
     })
 
+    it("waits DeepSeek Flash's fifteen minutes before swapping", async () => {
+      const flash = {
+        ...optedIn,
+        model: 'deepseek/deepseek-v4-flash-fast',
+      } as AgentTemplate
+      const warm = idleHistory(12)
+      await runLoop(flash, warm, {
+        state: { compactionSummary: readySummary(warm) },
+      })
+      expect(joined(seenMessages[0])).toContain('DISTINCTIVE PRIOR ANSWER')
+      expect(joined(seenMessages[0])).not.toContain('MODEL SUMMARY')
+
+      const cold = idleHistory(16)
+      await runLoop(flash, cold, {
+        state: { compactionSummary: readySummary(cold) },
+      })
+      expect(joined(seenMessages[1])).toContain('MODEL SUMMARY')
+      expect(joined(seenMessages[1])).not.toContain('DISTINCTIVE PRIOR ANSWER')
+    })
+
     it('sends the full history after an idle gap when no summary exists', async () => {
       await runLoop(optedIn, idleHistory(120))
       expect(joined(seenMessages[0])).toContain('DISTINCTIVE PRIOR ANSWER')

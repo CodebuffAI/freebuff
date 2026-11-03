@@ -14,7 +14,9 @@ export function compactionThreshold(maxContextLength: number): number {
  * base3 roots still hand the object to the runtime as `compactContext`, but
  * the runtime reads only `maxContextLength` and `maxOutputTokens` from it:
  * it compacts with background structured summaries on fixed rules
- * (packages/agent-runtime/src/conversation-summary.ts). The two idle keys
+ * (packages/agent-runtime/src/conversation-summary.ts), whose idle wait is
+ * five minutes, or DEEPSEEK_FLASH_COMPACTION_POLICY's for DeepSeek V4 Flash
+ * and its fast mode (`summaryIdleMs`, keyed on the model). The two idle keys
  * stay because `compactContext` is validated with a strict schema and
  * shipped bundles and catalog rows send them.
  */

@@ -59,6 +59,7 @@ import {
   conversationSummaries,
   isIdleReturn,
   summarizeAndLog,
+  summaryIdleMs,
   summaryIsDue,
   summaryRequestHistory,
   summaryTargetTokens,
@@ -1446,7 +1447,8 @@ export async function loopAgentSteps(
   let nResponses: string[] | undefined = undefined
   let compactionWindow: CompactionWindow | undefined
   let firstOutputLogged = false
-  const idleAtStart = isIdleReturn(currentAgentState.messageHistory)
+  const idleMs = summaryIdleMs(agentTemplate.model)
+  const idleAtStart = isIdleReturn(currentAgentState.messageHistory, idleMs)
 
   const compactionVersion = agentTemplate.compactContext
     ? SUMMARY_COMPACTION_VERSION
@@ -1875,7 +1877,7 @@ export async function loopAgentSteps(
           currentAgentState.messageHistory,
         )
         const idle =
-          !idleChecked && isIdleReturn(currentAgentState.messageHistory)
+          !idleChecked && isIdleReturn(currentAgentState.messageHistory, idleMs)
         idleChecked = true
         // The provider's count for the latest response (input + output),
         // from this run or the saved state. What was added since (tool

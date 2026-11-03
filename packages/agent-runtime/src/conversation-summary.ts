@@ -13,19 +13,25 @@
  *    background: after a step, or when the turn ends. A new summary replaces
  *    the old one.
  * 2. The full history is still sent while the cache is warm.
- * 3. The summary is used only when the user returns after SUMMARY_IDLE_MS, or
- *    when the context reaches its limit. Then the request is the summary, the
- *    messages after it, and the new message.
+ * 3. The summary is used only when the user returns after the model's idle
+ *    threshold (`summaryIdleMs`), or when the context reaches its limit.
+ *    Then the request is the summary, the messages after it, and the new
+ *    message.
  *
  * The summary waits on the agent state (`compactionSummary`), outside the
  * history. A summary that finishes after its run ended reaches the next run
  * of the same conversation through an in-process store.
  */
 
+import { DEEPSEEK_FLASH_COMPACTION_POLICY } from '@codebuff/common/constants/compaction-policy'
 import {
   buildCompactionSummaryPrompt,
   COMPACTION_SUMMARY_METADATA_KEY,
 } from '@codebuff/common/constants/compaction-summary'
+import {
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+} from '@codebuff/common/constants/freebuff-model-ids'
 import { COMPACTION_SUMMARY_EVENT } from '@codebuff/common/util/axiom-only-log'
 import {
   AbortError,
@@ -57,6 +63,31 @@ import type { ConversationSummary } from '@codebuff/common/types/session-state'
  * prod 2026-10-26); Pareto keeps it 10-15 minutes, OpenAI about 30.
  */
 export const SUMMARY_IDLE_MS = 5 * 60 * 1000
+
+/**
+ * DeepSeek V4 Flash, fast mode included, waits as long as its cache lasts.
+ * Measured in prod 2026-11-02/03 on returns that kept the full history (no
+ * summary was ready): on Pareto its cache was still warm (over half the
+ * prompt cached) on 92% of them after 5-15 minutes, and on 89% after 15-30.
+ * Half of its idle triggers fell in that 5-15 minute window, and each swap
+ * there turned a warm prefix into a cold one (8.6% cached on the request
+ * after a swap) while dropping detail the user then saw as "compacting
+ * constantly". Fifteen
+ * minutes is the figure its idle policy already uses
+ * (common/src/constants/compaction-policy.ts).
+ */
+const MODEL_SUMMARY_IDLE_MS: Readonly<Record<string, number>> = {
+  [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]:
+    DEEPSEEK_FLASH_COMPACTION_POLICY.cacheExpiryMs,
+  [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]:
+    DEEPSEEK_FLASH_COMPACTION_POLICY.cacheExpiryMs,
+}
+
+/** The idle gap after which `model`'s summary replaces the history. */
+export function summaryIdleMs(model: string): number {
+  return MODEL_SUMMARY_IDLE_MS[model] ?? SUMMARY_IDLE_MS
+}
+
 export const FIRST_SUMMARY_TOKENS = 40_000
 export const SUMMARY_GROWTH_TOKENS = 30_000
 /** Small windows use shares of the window instead of the fixed sizes. */
@@ -136,9 +167,14 @@ export function summaryIsDue(params: {
 
 /**
  * Whether the live prompt arrived after the conversation sat idle longer than
- * the shortest prompt cache. Only true before the assistant answers it.
+ * `idleMs`, measured from the last assistant message before it. Only true
+ * before the assistant answers it.
  */
-export function isIdleReturn(messages: Message[], now = Date.now()): boolean {
+export function isIdleReturn(
+  messages: Message[],
+  idleMs = SUMMARY_IDLE_MS,
+  now = Date.now(),
+): boolean {
   const promptIndex = messages.findLastIndex((m) =>
     m.tags?.includes('USER_PROMPT'),
   )
@@ -150,9 +186,7 @@ export function isIdleReturn(messages: Message[], now = Date.now()): boolean {
   for (let i = promptIndex - 1; i >= 0; i--) {
     const message = messages[i]
     if (message.role !== 'assistant') continue
-    return (
-      message.sentAt !== undefined && sentAt - message.sentAt > SUMMARY_IDLE_MS
-    )
+    return message.sentAt !== undefined && sentAt - message.sentAt > idleMs
   }
   return false
 }

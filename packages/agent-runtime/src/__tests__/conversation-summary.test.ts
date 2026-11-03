@@ -10,6 +10,7 @@ import {
   isIdleReturn,
   messageFingerprint,
   resetConversationSummariesForTest,
+  summaryIdleMs,
   summaryIsDue,
   summaryReasoningOptions,
   summaryRequestHistory,
@@ -121,6 +122,55 @@ describe('isIdleReturn', () => {
     expect(
       isIdleReturn([...history(60 * MINUTE), assistantMessage('working')]),
     ).toBe(false)
+  })
+
+  it('waits the threshold it is given', () => {
+    expect(isIdleReturn(history(15 * MINUTE), 15 * MINUTE)).toBe(false)
+    expect(isIdleReturn(history(15 * MINUTE + 1), 15 * MINUTE)).toBe(true)
+  })
+
+  // A 20-minute turn that ended seconds ago is not an idle return: the gap
+  // runs from the turn's last assistant message, not its first.
+  it('measures from the end of a long turn, not its start', () => {
+    const turnStart = 0
+    const turnEnd = turnStart + 20 * MINUTE
+    expect(
+      isIdleReturn([
+        prompt('first', turnStart),
+        { ...assistantMessage('started'), sentAt: turnStart + 1_000 },
+        { ...assistantMessage('still going'), sentAt: turnStart + 10 * MINUTE },
+        { ...assistantMessage('done'), sentAt: turnEnd },
+        prompt('next', turnEnd + 10_000),
+      ]),
+    ).toBe(false)
+  })
+})
+
+describe('summaryIdleMs', () => {
+  it('waits fifteen minutes for DeepSeek V4 Flash, fast mode included', () => {
+    expect(summaryIdleMs('deepseek/deepseek-v4-flash')).toBe(15 * MINUTE)
+    expect(summaryIdleMs('deepseek/deepseek-v4-flash-fast')).toBe(15 * MINUTE)
+  })
+
+  it('keeps five minutes for every other model', () => {
+    expect(summaryIdleMs('anthropic/claude-opus-4.8')).toBe(5 * MINUTE)
+    expect(summaryIdleMs('deepseek/deepseek-v4-pro')).toBe(5 * MINUTE)
+    expect(summaryIdleMs('z-ai/glm-5.3-flash')).toBe(5 * MINUTE)
+  })
+
+  // The reported case (2026-11-03): DeepSeek V4.1 Flash, the user back after
+  // 7 to 15 minutes, each return swapped a warm 107k-190k history for a
+  // summary. Under Flash's own threshold none of those returns is idle.
+  it("leaves a Flash user's short break alone", () => {
+    const flash = summaryIdleMs('deepseek/deepseek-v4-flash-fast')
+    const returnAfter = (gap: number): Message[] => [
+      prompt('first', 0),
+      { ...assistantMessage('answer'), sentAt: 1_000 },
+      prompt('next', 1_000 + gap),
+    ]
+    for (const minutes of [7.2, 11.8, 14.4, 14.9])
+      expect(isIdleReturn(returnAfter(minutes * MINUTE), flash)).toBe(false)
+    expect(isIdleReturn(returnAfter(16 * MINUTE), flash)).toBe(true)
   })
 })
 
@@ -248,14 +298,18 @@ describe('generateConversationSummary', () => {
       .join('\n')
     const { summary } = await generate(
       history,
-      streamOf([{ type: 'text', text: `Berikut ringkasannya.\n\n${translated}` }]),
+      streamOf([
+        { type: 'text', text: `Berikut ringkasannya.\n\n${translated}` },
+      ]),
     )
     expect(summary.text).toBe(translated.trim())
   })
 
   it('rejects a long reply with a few headings of its own', async () => {
     const reply = ['Plan', 'Steps', 'Risks']
-      .map((heading) => `## ${heading}\n${'next I will edit it. '.repeat(10)}\n`)
+      .map(
+        (heading) => `## ${heading}\n${'next I will edit it. '.repeat(10)}\n`,
+      )
       .join('\n')
     await expect(
       generate(history, streamOf([{ type: 'text', text: reply }])),
