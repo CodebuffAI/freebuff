@@ -550,15 +550,15 @@ export const FREEBUFF_GPT_61_TERRA_REASONING_EFFORT = 'medium' as const
  */
 export const FREEBUFF_GEMINI_4_ARGON_MODEL_ID = 'google/gemini-4-argon'
 /**
- * Endpoint order for Gemini 4 Argon: AI Studio flex first, AI Studio standard
- * (2x) behind it so a flex capacity refusal or delisting is not a dead turn —
- * Gemini 3.8 Flash's order (GEMINI_38_FLASH_OPENROUTER_UPSTREAM_ORDER), sent
- * with `allow_fallbacks: false` so the BYOK Vertex endpoints never serve. A
- * sustained rise in standard's share doubles this row's bill.
+ * Endpoint order for Gemini 4 Argon: AI Studio flex alone, sent with
+ * `allow_fallbacks: false` so the BYOK Vertex endpoints never serve — Gemini
+ * 3.8 Flash's order (GEMINI_38_FLASH_OPENROUTER_UPSTREAM_ORDER). AI Studio
+ * standard (2x) sat behind it until 2026-11-02; a free-mode request flex
+ * cannot serve now goes to DeepSeek V4.1 Flash
+ * (web/src/llm-api/one-provider-then-deepseek.ts).
  */
 export const FREEBUFF_GEMINI_4_ARGON_UPSTREAM_ORDER = [
   'google-ai-studio/flex',
-  'google-ai-studio',
 ] as const
 /**
  * Price ceiling for Gemini 4 Argon, USD per million: above standard
@@ -2639,8 +2639,11 @@ const GPT_61_SOL_MODEL = {
   isNew: true,
   // PROMOTIONAL again (product, 2026-10-28), worded as Terra's pill.
   promotional: GPT_61_SOL_PROMOTIONAL,
+  // One provider, DeepSeek behind it (2026-11-02,
+  // web/src/llm-api/one-provider-then-deepseek.ts): say so, since the session
+  // stays on DeepSeek once it moves.
   taglineTooltip:
-    'On OpenAI flex capacity, with a standard-tier backup when it’s busy.',
+    'If its provider is down, DeepSeek V4.1 Flash answers for the rest of the session.',
 } as const satisfies FreebuffModelOption
 
 const GPT_61_TERRA_MODEL = {
@@ -2663,7 +2666,7 @@ const GPT_61_TERRA_MODEL = {
   // temporary price, and the label says so (and names the daily limit).
   promotional: GPT_61_TERRA_PROMOTIONAL,
   taglineTooltip:
-    'On OpenAI flex capacity, with a standard-tier backup when it’s busy.',
+    'If its provider is down, DeepSeek V4.1 Flash answers for the rest of the session.',
 } as const satisfies FreebuffModelOption
 
 const GEMINI_4_ARGON_MODEL = {
@@ -2690,7 +2693,7 @@ const GEMINI_4_ARGON_MODEL = {
   // retired. Its "Ending soon" price pill went at the 2026-10-23 repricing.
   leavingSoon: FREEBUFF_LEAVING_SOON,
   taglineTooltip:
-    'On Google flex capacity, with a standard-tier backup when it’s busy.',
+    'On Google flex capacity. If it is down, DeepSeek V4.1 Flash answers for the rest of the session.',
 } as const satisfies FreebuffModelOption
 
 /**
