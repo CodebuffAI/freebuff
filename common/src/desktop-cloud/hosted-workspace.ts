@@ -225,6 +225,14 @@ export type HostedWorkspaceHost = {
     setRecording(recording: boolean): Promise<void>
     onCommand(listener: (command: HostedWorkspaceMenuCommand) => void): () => void
   }
+  /**
+   * The window frame follows the account appearance this page paints: the preference, and on
+   * dark/light the title bar's palette colours (#rrggbb). Older Desktop builds omit it.
+   */
+  setTheme?(
+    theme: 'dark' | 'light' | 'system',
+    titleBarColors?: { color: string; symbolColor: string },
+  ): Promise<void>
   appearance?: {
     snapshot(): Promise<{
       accountId: string
