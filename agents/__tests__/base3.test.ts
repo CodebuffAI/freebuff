@@ -412,6 +412,21 @@ describe('working in batches', () => {
     expect(lean.stepPrompt).toBeUndefined()
   })
 
+  test('batching never reads as economising', () => {
+    // "costs less" led Flash to think "my budget is limited" and stop short
+    const batched = createBase3(FLASH, { batching: true })
+    const section = batched.systemPrompt!.slice(
+      batched.systemPrompt!.indexOf(SECTION),
+    )
+    for (const text of [section, batched.stepPrompt!]) {
+      expect(text).not.toMatch(/\bcosts?\b|\bcheap|\bbudget|\bsav(e|ing)\b/i)
+    }
+    expect(section).toContain(
+      'Batching is about fewer round trips, never about doing less: do every part of the request and verify it.',
+    )
+    expect(batched.stepPrompt).toContain('every part of the request')
+  })
+
   test('it comes after the dynamic context, outside the core the server compares', () => {
     const prompt = createBase3(FLASH, { batching: true }).systemPrompt!
     expect(prompt.indexOf(SECTION)).toBeGreaterThan(

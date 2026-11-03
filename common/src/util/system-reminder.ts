@@ -1,4 +1,7 @@
-import { BASE3_BATCHING_STEP_PROMPT } from '../constants/base3-step-prompt'
+import {
+  BASE3_BATCHING_STEP_PROMPT,
+  BASE3_BATCHING_STEP_PROMPT_PREVIOUS,
+} from '../constants/base3-step-prompt'
 
 /**
  * How the agent runtime frames an agent's step prompt: a user message of its
@@ -9,10 +12,12 @@ export function withSystemReminderTags(text: string): string {
   return `<system_reminder>${text}</system_reminder>`
 }
 
-/** Our roots' step reminders, as they arrive. */
-const ROOT_STEP_REMINDERS: ReadonlySet<string> = new Set([
-  withSystemReminderTags(BASE3_BATCHING_STEP_PROMPT),
-])
+/** Our roots' step reminders, as they arrive, older clients' texts included. */
+const ROOT_STEP_REMINDERS: ReadonlySet<string> = new Set(
+  [BASE3_BATCHING_STEP_PROMPT, ...BASE3_BATCHING_STEP_PROMPT_PREVIOUS].map(
+    withSystemReminderTags,
+  ),
+)
 
 /**
  * A user message that is exactly one of our roots' step reminders: the last

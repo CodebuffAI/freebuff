@@ -41,13 +41,19 @@ import {
  * (docs/benchmarks/base3-batched/README.md).
  * It comes after the dynamic context, outside the core the server compares
  * (web/src/llm-api/root-instruction-contract.ts), so older clients still match.
- * Deliberately NOT repeated as a per-step `stepPrompt`: a step prompt is
- * deleted each step, so no request is a prefix of the next and the prompt
- * cache collapses (#1158; measured in the benchmark doc above).
+ * Its one-line reminder is the `stepPrompt` below.
+ *
+ * No cost or budget wording. Users quoted Flash thinking "my budget is
+ * limited" before a cheap partial fix (2026-10-31, 11-02); this section's
+ * "costs less" was one of the two places our prompts suggested it (the other
+ * was the server's DEEPSEEK_BREVITY_NUDGE). The "never about doing less" line
+ * is what fixed the same failure for a lean row (lean-context.ts).
  */
 const BATCHING_GUIDANCE = `## Work in batches
 
-Every response is a round trip: the whole conversation is sent again before the next reply begins, so a task done in fewer responses finishes sooner and costs less. Get as much done in each response as you can.
+Every response is a round trip: the whole conversation is sent again before the next reply begins, so a task done in fewer responses finishes sooner. Get as much done in each response as you can.
+
+Batching is about fewer round trips, never about doing less: do every part of the request and verify it.
 
 - **Make every call you already can.** Tool calls that do not depend on each other's results belong in one response, not in a sequence of responses.
 - **Search in one batch.** When you need to find something, send every code_search and glob you can think of together (the names, strings and paths it could be under), rather than one search per response.
@@ -55,7 +61,7 @@ Every response is a round trip: the whole conversation is sent again before the 
 - **Explore with the dedicated tools.** code_search, glob, list_directory and read_files take many patterns or paths per call; ls, cat, grep and find in the terminal do not.
 - **Edit in one batch.** Make all the edits you already know in one response.
 - **Check in one batch.** Run the checks in the same response as your last edits, as one terminal command that runs every check the change needs (for example each touched package's typecheck and the tests that cover the change), each with its exit status echoed and not piped into head or tail.
-- **Stop when it is done.** Once the request is met and its checks pass, or the question is answered, give the final message.`
+- **Stop when it is done.** Once every part of the request is done and its checks pass, or the question is answered, give the final message.`
 
 /**
  * The models the section and its reminder are measured to help: on DeepSeek
@@ -207,7 +213,7 @@ Current date: ${PLACEHOLDER.CURRENT_DATE}.
 - Size the work to the request. Do everything the user asked for, completely, and nothing they did not: no unrequested features, refactors, new files, dependencies or polish. A question gets an answer, not a change. A small or specific request gets a direct fix, without a plan, a to-do list or a survey of the codebase.
 - ${options.workspace ? WORKSPACE_QUESTION_GUIDANCE : 'When a request is open-ended or high-level ("build me an app", "improve the onboarding", "make this faster") and reasonable readings differ in size or direction, settle the scope yourself, build the smallest version that meets the goal, then name the main choices you made and what could come next. Do not build the largest version you can imagine.'}
 - Match the project's existing conventions. Verify a library is already used in the project before employing it.
-- Prefer editing existing files over creating new ones. Make the fewest changes that address the request.
+- Prefer editing existing files over creating new ones. Make the fewest changes that fully address the request.
 - Note the request's explicit requirements (exact output paths, file names, interfaces, schemas, formats, performance or resource constraints) and check the result against them before finishing.
 - For performance work, do not claim a speedup without a measurement.
 - Verify the final edited files: after a repair, rerun the affected checks; earlier passing results do not cover later changes. When filtering test or build output through a pipeline, preserve the tested command's exit status (for example, Bash pipefail or explicit status capture), and inspect the failure output.

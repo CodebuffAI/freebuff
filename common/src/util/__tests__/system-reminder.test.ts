@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
-import { BASE3_BATCHING_STEP_PROMPT } from '../../constants/base3-step-prompt'
+import {
+  BASE3_BATCHING_STEP_PROMPT,
+  BASE3_BATCHING_STEP_PROMPT_PREVIOUS,
+} from '../../constants/base3-step-prompt'
 import {
   isRootStepReminderMessage,
   withSystemReminderTags,
@@ -17,6 +20,18 @@ describe('root step reminders', () => {
         content: [{ type: 'text', text: reminder }],
       }),
     ).toBe(true)
+  })
+
+  test("released clients' earlier reminder texts are recognised too", () => {
+    expect(BASE3_BATCHING_STEP_PROMPT_PREVIOUS.length).toBeGreaterThan(0)
+    for (const text of BASE3_BATCHING_STEP_PROMPT_PREVIOUS) {
+      expect(
+        isRootStepReminderMessage({
+          role: 'user',
+          content: withSystemReminderTags(text),
+        }),
+      ).toBe(true)
+    }
   })
 
   test('nothing else passes for one, not even a prompt wrapped in its tags', () => {
