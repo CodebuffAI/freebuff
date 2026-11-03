@@ -29,7 +29,6 @@
  * same histories and fails when they drift.
  */
 
-import { DEFAULT_COMPACTION_POLICY } from '@codebuff/common/constants/compaction-policy'
 import { CONTEXT_COMPACTION_COMPLETED_EVENT } from '@codebuff/common/util/axiom-only-log'
 import {
   WORKING_SET_SHARE,
@@ -92,12 +91,6 @@ const CARRIED_IMAGES_NOTE =
 
 const CONTINUATION_TEXT =
   'Continue the existing assistant turn from the historical memory above. The original user request and completed assistant/tool work are recorded there. Do not restart completed work; resume with the next necessary real tool call or final response.'
-
-/** Thresholds for agents that declare `compactContext: true` without tuning;
- *  owned, with the rationale, by common/src/constants/compaction-policy.ts. */
-export const DEFAULT_CACHE_EXPIRY_MS = DEFAULT_COMPACTION_POLICY.cacheExpiryMs
-export const DEFAULT_CACHE_EXPIRY_MIN_TOKENS =
-  DEFAULT_COMPACTION_POLICY.cacheExpiryMinTokens
 
 /**
  * Where an automatic mechanical pass aims, as a share of the trigger
@@ -1335,94 +1328,10 @@ function compactRequestHistory(
 }
 
 /**
- * How long the conversation sat idle before the live user prompt arrived, or
- * null when the history has no pair of timestamps to measure between.
- *
- * The gap is measured from the last assistant message to the USER_PROMPT that
- * follows it: that is the window in which the provider's prompt cache had to
- * survive on its own. Tool messages carry no `sentAt`, so they are skipped.
- */
-export function promptCacheGapMs(messages: Message[]): number | null {
-  const userPromptIndex = messages.findLastIndex((message) =>
-    message.tags?.includes('USER_PROMPT'),
-  )
-  if (userPromptIndex <= 0) return null
-
-  const userPrompt = messages[userPromptIndex]
-  if (!userPrompt.sentAt) return null
-
-  for (let i = userPromptIndex - 1; i >= 0; i--) {
-    const message = messages[i]
-    if (message.role !== 'assistant') continue
-    return message.sentAt ? userPrompt.sentAt - message.sentAt : null
-  }
-  return null
-}
-
-/**
- * Decides whether to compact, and why.
- *
- * Two triggers. The context limit is the one that must fire — the history no
- * longer fits. Cache expiry is the opportunistic one: once the prompt cache has
- * gone cold, the next request re-reads the whole history at full price anyway,
- * so rewriting it costs nothing and every later step in the turn is cheaper.
- * Compacting while the cache is warm would be the expensive mistake, which is
- * why the TTL errs long.
- *
- * The opportunistic trigger additionally needs enough context to be worth the
- * detail it destroys — see DEFAULT_CACHE_EXPIRY_MIN_TOKENS. The context limit
- * ignores that floor.
- */
-export function evaluateCompactionTrigger(params: {
-  messages: Message[]
-  contextTokenCount: number
-  maxContextLength: number
-  /** Pass null to disable the opportunistic cache-expiry trigger. */
-  cacheExpiryMs?: number | null
-  /** Pass null to take the opportunistic compaction at any size. */
-  cacheExpiryMinTokens?: number | null
-}): {
-  /** null means "leave the history alone". */
-  trigger: CompactionTrigger | null
-} {
-  const { messages, contextTokenCount, maxContextLength } = params
-  const cacheExpiryMs =
-    params.cacheExpiryMs === undefined
-      ? DEFAULT_CACHE_EXPIRY_MS
-      : params.cacheExpiryMs
-  const cacheExpiryMinTokens =
-    params.cacheExpiryMinTokens === undefined
-      ? DEFAULT_CACHE_EXPIRY_MIN_TOKENS
-      : params.cacheExpiryMinTokens
-
-  const overContextLimit = contextTokenCount > maxContextLength
-  const worthCompacting =
-    cacheExpiryMinTokens === null || contextTokenCount >= cacheExpiryMinTokens
-  const cacheGapMs =
-    cacheExpiryMs === null || !worthCompacting
-      ? null
-      : promptCacheGapMs(messages)
-  const cacheExpired =
-    cacheExpiryMs !== null && cacheGapMs !== null && cacheGapMs > cacheExpiryMs
-
-  const trigger: CompactionTrigger | null = overContextLimit
-    ? cacheExpired
-      ? 'context_limit_and_cache_expiry'
-      : 'context_limit'
-    : cacheExpired
-      ? 'cache_expiry'
-      : null
-
-  return { trigger }
-}
-
-/**
  * Compact once, on demand, whatever the triggers say.
  *
  * The mechanical pass — protected prefix, fresh tool exchange, budget walk —
- * with no decision attached. A user who asks for it has already decided;
- * `evaluateCompactionTrigger` exists to answer "is this worth doing unasked",
- * which is a different question.
+ * with no decision attached: the caller has already decided to compact.
  *
  * Since #5502 the rewritten part (summary plus working set) stops at
  * `historyTokens`, MECHANICAL_HISTORY_TOKENS (12k) by default, however much
