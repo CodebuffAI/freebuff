@@ -466,6 +466,17 @@ export interface FreebuffSubscriptionInfo {
    * otherwise, and from servers older than this field.
    */
   paymentFailedTierId?: string
+  /**
+   * This plan keeps the rates from before the 2026-11 change for as long as it
+   * lasts (`planRatesLocked`). Absent with no plan, and from older servers.
+   */
+  ratesLocked?: boolean
+  /**
+   * The account is new (created from 2026-11-03, `isFreebuffNewAccount`): its
+   * plans carry the reduced monthly bonus already, with no deadline to beat.
+   * Absent for an older account, and from older servers.
+   */
+  newAccount?: boolean
   /** True when the subscription lapses at period end. */
   cancelAtPeriodEnd?: boolean
   /** Tier this drops to at the next renewal, when a downgrade is scheduled.
