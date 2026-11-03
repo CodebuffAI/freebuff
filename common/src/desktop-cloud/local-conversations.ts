@@ -29,6 +29,8 @@ export type LocalConversationThread = {
   id: string
   title: string
   draft?: boolean
+  /** Epoch ms of the last prompt, finished turn or creation, for newest-first sidebar order. Absent on older Desktops. */
+  activeAt?: number
   running: boolean
   archived: boolean
   canContinue: boolean
