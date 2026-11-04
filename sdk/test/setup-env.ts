@@ -18,7 +18,6 @@ const testDefaults: Record<string, string> = {
 const serverDefaults: Record<string, string> = {
   OPEN_ROUTER_API_KEY: 'test',
   OPENAI_API_KEY: 'test',
-  SERPER_API_KEY: 'test',
   // Direct-provider handlers throw before fetch when their key is unset, so
   // give the mocked-fetch tests a dummy — without these, whether the RunInfra/
   // MiMo routing tests pass depends on the developer's shell env.

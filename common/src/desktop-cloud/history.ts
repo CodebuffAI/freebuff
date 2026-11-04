@@ -14,6 +14,11 @@ export type CloudHistoryProject = {
    * `listProjects` until someone prompts in it again. Absent from older servers.
    */
   removedAt?: string | null
+  /**
+   * Which workspace the project belongs to (workspace-mode.ts). Set at creation; absent or null
+   * from older servers and for every project created before modes existed, both meaning Code.
+   */
+  mode?: import('./workspace-mode').WorkspaceMode | null
 }
 export type CloudHistoryRun = {
   id: string
@@ -35,6 +40,8 @@ export type CloudHistoryRun = {
 export type CloudHistoryChat = {
   deviceExecution?: import('./device-execution').DeviceExecutionTarget | null
   mission?: import('./mission').CloudMission | null
+  /** The chat this one was forked from (the sidebar nests it there), or null. Absent from older servers. */
+  forkedFrom?: string | null
   id: string
   projectId: string | null
   title: string
@@ -82,6 +89,12 @@ export type CloudHistoryChatUpdate = {
   title?: string
   archived?: boolean
 }
+/**
+ * Fork a chat on the computer it runs on: a new chat with its transcript, attachments and agent
+ * session, holding no Freebuff session of its own until it is sent to. `chatId` is the new chat's
+ * id, minted by the client and reused on a retry so the fork is created once.
+ */
+export type CloudHistoryChatFork = { chatId: string }
 /**
  * Last write wins: a project name has no revision to compare. Removing keeps its chats and files;
  * `removed: false` puts it back in the list.
@@ -149,8 +162,9 @@ export function createCloudHistoryClient(
     path: string,
     page: CloudHistoryOptions = {},
     projectId?: string,
-    update?: CloudHistoryChatUpdate | CloudHistoryProjectUpdate | CloudHistoryAttentionAck,
+    update?: CloudHistoryChatUpdate | CloudHistoryProjectUpdate | CloudHistoryChatFork | CloudHistoryAttentionAck,
     search?: string,
+    method: 'GET' | 'PATCH' | 'POST' = update ? 'PATCH' : 'GET',
   ): Promise<T> {
     const query = new URLSearchParams()
     if (search) query.set('search', search)
@@ -164,7 +178,7 @@ export function createCloudHistoryClient(
         credentials: 'same-origin',
         cache: 'no-store',
         signal: page.signal,
-        method: update ? 'PATCH' : 'GET',
+        method,
         body: update ? JSON.stringify(update) : undefined,
         headers: update
           ? {
@@ -206,6 +220,8 @@ export function createCloudHistoryClient(
       get<CloudHistoryPage<CloudHistoryChat>>('chats', page, page.projectId, undefined, page.search),
     getChat: (chatId: string, signal?: AbortSignal) =>
       get<CloudHistoryChat>(`chats/${id(chatId)}`, { signal }),
+    forkChat: (chatId: string, fork: CloudHistoryChatFork, signal?: AbortSignal) =>
+      get<CloudHistoryChat>(`chats/${id(chatId)}/fork`, { signal }, undefined, fork, undefined, 'POST'),
     getAttachment: (chatId: string, signal?: AbortSignal) =>
       get<CloudHistoryAttachment>(`chats/${id(chatId)}/attachment`, { signal }),
     updateChat: (

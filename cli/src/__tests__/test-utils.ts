@@ -73,7 +73,6 @@ const TEST_SERVER_ENV_DEFAULTS: Record<string, string> = {
   OPEN_ROUTER_API_KEY: 'test',
   OPENAI_API_KEY: 'test',
   ANTHROPIC_API_KEY: 'test',
-  SERPER_API_KEY: 'test',
   GRAVITY_API_KEY: 'test',
   GRAVITY_CAPI_KEY: 'test',
   PORT: '4242',

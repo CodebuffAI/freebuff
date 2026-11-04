@@ -242,7 +242,7 @@ describe('web_search tool with researcher agent (via web API facade)', () => {
 
   test('should handle API errors gracefully', async () => {
     spyOn(webApi, 'callWebSearchAPI').mockResolvedValue({
-      error: 'Serper API timeout',
+      error: 'Search provider timeout',
     })
 
     mockAgentStream([
@@ -274,7 +274,7 @@ describe('web_search tool with researcher agent (via web API facade)', () => {
     expect(toolMsgs.length).toBeGreaterThan(0)
     const last = JSON.stringify(toolMsgs[toolMsgs.length - 1].content)
     expect(last).toContain('errorMessage')
-    expect(last).toContain('Serper API timeout')
+    expect(last).toContain('Search provider timeout')
   })
 
   test('should handle non-Error exceptions from facade', async () => {

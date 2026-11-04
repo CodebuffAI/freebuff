@@ -27,9 +27,14 @@ import {
 
 const FLASH_DISPLAY_NAME = 'DeepSeek V4.1 Flash'
 // Not arithmetic (Flash once answered 4187 + 2359 with 6536), and "seven" never
-// appears in the echoed prompt.
-const SMOKE_PROMPT =
-  'Reply with only the English word for the number 7, in lowercase.'
+// appears in the echoed prompt. Each run tags it with letters g-z: the prompt
+// classifier counts the same normalised turn (digits read as 0) five times in an
+// hour as scripted use (strikes.ts `repeatCount`), and a promotion PR's pushes
+// run this smoke more often than that. No e, so the tag never spells "seven".
+const SMOKE_TAG = Array.from({ length: 6 }, () =>
+  String.fromCharCode(103 + Math.floor(Math.random() * 20)),
+).join('')
+const SMOKE_PROMPT = `Reply with only the English word for the number 7, in lowercase. (Run ${SMOKE_TAG}.)`
 const SMOKE_ANSWER = 'seven'
 
 // The first-send admission box (cli/src/components/freebuff-chat-controls.tsx).

@@ -275,6 +275,11 @@ export type RunOptions = {
   /** End user represented by this run. Trusted service accounts may use this
    *  to run on behalf of a signed-in user; ordinary API keys cannot delegate. */
   userId?: string
+  /** The API key's own user id, when the host already knows it (the Cloud
+   *  runner mints a per-run key for the chat's owner). Skips the identity
+   *  lookup before the first model call; the same id is used, so nothing
+   *  downstream changes. Not a delegation: see `userId` for that. */
+  apiKeyUserId?: string
   /** Content array for multimodal messages (text + images) */
   content?: MessageContent[]
   params?: Record<string, any>
@@ -618,6 +623,7 @@ async function runOnce({
   agent,
   prompt,
   userId: requestedUserId,
+  apiKeyUserId,
   content,
   params,
   previousRun,
@@ -1043,6 +1049,8 @@ async function runOnce({
     // BYOK is intentionally auth-free: no Codebuff identity, run ledger,
     // token-count, analytics, or helper request is necessary for inference.
     userId = requestedUserId ?? BYOK_LOCAL_USER_ID
+  } else if (apiKeyUserId) {
+    userId = requestedUserId ?? apiKeyUserId
   } else {
     let userInfo: { id: string } | null
     try {

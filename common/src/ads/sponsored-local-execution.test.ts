@@ -15,7 +15,6 @@ import {
   scrubSponsoredWindowsEnv,
   sponsoredComputeGrantNamesFloor,
   sponsoredLocalAvailability,
-  sponsoredLocalBranchName,
   sponsoredLocalContainment,
   sponsoredLocalContainmentIsFloor,
   sponsoredLocalContainmentMatchesGrant,
@@ -490,16 +489,6 @@ describe('the sponsored branch namespace', () => {
   test('has no trailing slash, because the grant is built by joining onto it', () => {
     expect(SPONSORED_LOCAL_BRANCH_NAMESPACE).toBe('freebuff')
     expect(SPONSORED_LOCAL_BRANCH_NAMESPACE).not.toContain('/')
-  })
-
-  test('every branch it builds lives inside that namespace', () => {
-    for (const title of ['Sponsored: Acme Deploys', '', '  ---  ', 'ñ']) {
-      const branch = sponsoredLocalBranchName(title, 'run-1')
-      expect(branch.startsWith(`${SPONSORED_LOCAL_BRANCH_NAMESPACE}/`), title).toBe(
-        true,
-      )
-      expect(branch.endsWith('-run-1'), title).toBe(true)
-    }
   })
 
   test('the slug is ref-legal, capped, and never empty', () => {

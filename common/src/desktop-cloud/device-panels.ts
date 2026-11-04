@@ -1,4 +1,5 @@
 import { z } from 'zod/v4'
+import { FILE_UPLOAD_BASE64_MAX, validFileUploadData } from './file-upload'
 
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,120}$/)
 const scope = { projectId: id, threadId: id }
@@ -15,6 +16,8 @@ export const devicePanelRequest = z.discriminatedUnion('panel', [
     z.object({ ...scope, operation: z.literal('read'), path, expanded: z.boolean() }).strict(),
     z.object({ ...scope, operation: z.literal('save'), path, content: z.string().max(512 * 1024), revision: z.string().regex(/^[a-f0-9]{40,64}$/) }).strict(),
     z.object({ ...scope, operation: z.literal('create'), path, kind: z.enum(['file', 'directory']) }).strict(),
+    z.object({ ...scope, operation: z.literal('upload'), path, data: z.string().max(FILE_UPLOAD_BASE64_MAX).refine(value => validFileUploadData(value)) }).strict(),
+    z.object({ ...scope, operation: z.literal('download'), path, offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) }).strict(),
   ]) }).strict(),
   z.object({ panel: z.literal('git'), input: z.discriminatedUnion('operation', [
     z.object({ ...scope, operation: z.literal('changes'), scope: z.enum(['all', 'uncommitted']) }).strict(),

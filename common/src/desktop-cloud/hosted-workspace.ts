@@ -38,6 +38,7 @@ export type HostedWorkspaceConnection = {
 }
 
 export type HostedWorkspaceStatus = {
+  deviceId?: string
   /** Local installation receipt, not an account or browser preference. */
   projectSetupCompleted?: boolean
   accountId: string | null
@@ -254,6 +255,9 @@ export type HostedWorkspaceHost = {
   localConversations?: import('./local-conversations').LocalConversationsHost
   /** This native build understands source-qualified legacy browser/terminal scopes. */
   localHistoryPanels?: true
+  /** This native build branches a forked chat's Claude Code or Codex session (`forkSession` on
+   *  `harness_start`), so the sidebar offers Fork on its chats. Older builds omit it. */
+  chatFork?: true
   files?: import('./hosted-files').HostedFilesHost
   git?: import('./hosted-git').HostedGitHost
   protocolVersion: typeof HOSTED_WORKSPACE_PROTOCOL_VERSION
@@ -271,6 +275,9 @@ export type HostedWorkspaceHost = {
     threadId?: string
     location?: 'local' | 'worktree' | 'cloud'
     sourceBranch?: string
+    /** A new worktree chat's first message: titled to name the chat and its branch. Sent only
+     * when discovery answered `supportsWorktreeTitle`. */
+    prompt?: string
   }): Promise<{
     /** `remote`: the chat runs on another of the account's computers, which is awake. */
     location: 'local' | 'worktree' | 'cloud' | 'remote'
@@ -286,6 +293,12 @@ export type HostedWorkspaceHost = {
       reason: 'no-checkout' | 'origin-unavailable' | 'origin-only'
     }>
     supportsWorktreeSourceBranch?: boolean
+    supportsWorktreeTitle?: boolean
+    /**
+     * A new chat's first turn may run read-only on this computer while the chat moves to Cloud
+     * (warmup.ts): the move tolerates that turn. Older builds omit it and need the move first.
+     */
+    supportsOpener?: boolean
     worktreeSourceBranch?: string | null
     progress?: HostedRuntimeProgress
     /** Display-only metadata resolved by native code for the authenticated chat. */

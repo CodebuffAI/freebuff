@@ -23,12 +23,15 @@ export type DeviceExecutionTarget = z.infer<typeof deviceExecutionTarget>
 export const deviceExecutionContext = z
   .object({
     platform: z.enum(['darwin', 'linux', 'win32']),
+    displayName: z.string().trim().min(1).max(200).optional(),
     nativeTools: z.boolean().optional(),
     panelProtocolVersion: z.literal(1).optional(),
     nativeHarnesses: z.boolean().optional(),
     concurrentHarnesses: z.literal(true).optional(),
     /** Answers `move_export`: another of the account's computers can take over this folder's chats. */
     deviceMove: z.literal(true).optional(),
+    /** Honours `scope.warmup`: a new Cloud chat's first turn runs here read-only while it moves (warmup.ts). */
+    readOnlyOpener: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
     cwd: z.string().min(1).max(4096),
     rg: z.string().max(4096),
@@ -116,6 +119,11 @@ export const deviceToolScope = z
       .array(z.string().min(1).max(120))
       .max(100)
       .optional(),
+    /**
+     * A Cloud chat's warm-up (warmup.ts): only tools that change nothing run, and the rest answer
+     * WARMUP_REFUSAL. Sent only to a device whose context has `readOnlyOpener`.
+     */
+    warmup: z.literal(true).optional(),
   })
   .strict()
 export const deviceToolRequest = z
@@ -203,6 +211,12 @@ export const deviceHarnessRequest = z.discriminatedUnion('method', [
       previousState: z.unknown().optional(),
       /** A completed runtime transfer must not resume a session from another machine. */
       resetSession: z.boolean().optional(),
+      /**
+       * A forked chat's first turn: `previousState` is its source's session, which this turn
+       * branches into a new one instead of resuming. A Desktop without it refuses the request
+       * (the schema is strict), never resuming the source's session in two chats.
+       */
+      forkSession: z.literal(true).optional(),
       importedHistory: z.string().max(20 * 1024 * 1024).optional(),
       /** Quoted history used only when neither Cloud nor Desktop has a CLI session. */
       initialPrompt: z.string().max(2 * 1024 * 1024).optional(),
@@ -356,6 +370,7 @@ export const deviceFrame = z.discriminatedUnion('type', [
 ])
 export const deviceCapabilities = z
   .object({
+    deviceNames: z.literal(true).optional(),
     enabled: z.boolean(),
     protocolVersion: z.literal(DEVICE_EXECUTION_VERSION),
     methods: z.array(z.enum(['read_file', 'list_directory'])),
@@ -364,6 +379,7 @@ export const deviceCapabilities = z
     panelProtocolVersion: z.literal(1).optional(),
     concurrentHarnesses: z.literal(true).optional(),
     deviceMove: z.literal(true).optional(),
+    readOnlyOpener: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
   })
   .strict()

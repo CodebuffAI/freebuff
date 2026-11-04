@@ -407,10 +407,10 @@ export interface ThinkDeeplyParams {
 }
 
 /**
- * Search the web for current information using Serper API.
+ * Search the web for current information.
  */
 export interface WebSearchParams {
-  /** The search query to find relevant web content */
+  /** A concise English keyword query of 1–50 words. No slashes (including package/import names, URLs, or paths), numbers with commas, or non-Latin scripts. Rewrite unsupported terms as English keywords. */
   query: string
   /** Search depth - 'standard' for quick results, 'deep' for more comprehensive search. Default is 'standard'. */
   depth?: 'standard' | 'deep'

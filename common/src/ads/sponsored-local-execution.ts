@@ -266,13 +266,6 @@ export function sponsoredLocalSlug(
   return base || fallback
 }
 
-/** `freebuff/<slug>-<runId>` — the one branch a local sponsored run may write. */
-export function sponsoredLocalBranchName(
-  titleSlug: string,
-  runId: string,
-): string {
-  return `${SPONSORED_LOCAL_BRANCH_NAMESPACE}/${sponsoredLocalSlug(titleSlug)}-${runId}`
-}
 
 // --------------------------------------------------------------- the grant
 
