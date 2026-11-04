@@ -104,4 +104,36 @@ describe('tryToDoStringReplacementWithExtraIndentation', () => {
     expect(result!.searchContent).toBe(' const x = 1;\n')
     expect(result!.replaceContent).toBe(' const x = 2;\n')
   })
+
+  it('should return null when first line matches with indentation but subsequent lines mismatch', () => {
+    const oldFileContent = '  function foo() {\n    return 999;\n  }\n'
+    const searchContent = 'function foo() {\n  return 1;\n}\n'
+    const replaceContent = 'function foo() {\n  return 2;\n}\n'
+
+    const result = tryToDoStringReplacementWithExtraIndentation({
+      oldFileContent,
+      searchContent,
+      replaceContent,
+    })
+
+    expect(result).toBeNull()
+  })
+
+  it('should handle searchContent with leading empty lines and extra indentation', () => {
+    const oldFileContent = '\n    const a = 1;\n    const b = 2;\n'
+    const searchContent = '\nconst a = 1;\nconst b = 2;\n'
+    const replaceContent = '\nconst a = 10;\nconst b = 20;\n'
+
+    const result = tryToDoStringReplacementWithExtraIndentation({
+      oldFileContent,
+      searchContent,
+      replaceContent,
+    })
+
+    expect(result).not.toBeNull()
+    expect(result!.searchContent).toBe('\n    const a = 1;\n    const b = 2;\n')
+    expect(result!.replaceContent).toBe(
+      '\n    const a = 10;\n    const b = 20;\n',
+    )
+  })
 })
