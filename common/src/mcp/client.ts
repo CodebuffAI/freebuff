@@ -5,6 +5,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 import { getErrorObject } from '../util/error'
 import { mcpContentToToolResultOutputs } from './content-mapping'
+import { normalizeMcpServerUrl } from './server-url'
 
 import type { MCPConfig } from '../types/mcp'
 import type { ToolResultOutput } from '../types/messages/content-part'
@@ -79,6 +80,21 @@ function hashConfig(config: MCPConfig): string {
   )
 }
 
+/** The address a remote entry connects to. `mcp.json` often carries a bare `example.com/mcp`. */
+export function remoteMcpUrl(
+  config: Extract<MCPConfig, { url: string }>,
+): URL {
+  const url = new URL(normalizeMcpServerUrl(config.url))
+  if (url.protocol !== 'https:' && url.protocol !== 'http:')
+    throw new Error(
+      `MCP server url must use https (or http), got ${url.protocol} in ${config.url}`,
+    )
+  for (const [key, value] of Object.entries(config.params)) {
+    url.searchParams.set(key, value)
+  }
+  return url
+}
+
 export async function getMCPClient(config: MCPConfig): Promise<string> {
   let key = hashConfig(config)
   if (key in runningClients) {
@@ -107,10 +123,7 @@ export async function getMCPClient(config: MCPConfig): Promise<string> {
     })
     transport = stdioTransport
   } else {
-    const url = new URL(config.url)
-    for (const [key, value] of Object.entries(config.params)) {
-      url.searchParams.set(key, value)
-    }
+    const url = remoteMcpUrl(config)
     const headers = substituteEnvInRecord(config.headers)
     if (config.type === 'http') {
       transport = new StreamableHTTPClientTransport(url, {
