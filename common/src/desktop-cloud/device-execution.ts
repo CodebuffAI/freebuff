@@ -1,5 +1,6 @@
 import { z } from 'zod/v4'
 import { devicePanelOperation } from './device-panels'
+import { deviceGitHubRequest } from './device-github'
 
 /** V1 stays read-only. V2 execution requires an explicit local opt-in. */
 export const DEVICE_EXECUTION_VERSION = 1
@@ -28,6 +29,7 @@ export const deviceExecutionContext = z
     concurrentHarnesses: z.literal(true).optional(),
     /** Answers `move_export`: another of the account's computers can take over this folder's chats. */
     deviceMove: z.literal(true).optional(),
+    githubConnect: z.literal(true).optional(),
     cwd: z.string().min(1).max(4096),
     rg: z.string().max(4096),
   })
@@ -293,6 +295,7 @@ export const deviceRequest = z.union([
   deviceHarnessRequest,
   deviceReceiptRequest,
   deviceMoveExportRequest,
+  deviceGitHubRequest,
 ])
 export const deviceResult = z.union([
   deviceReadResult,
@@ -361,6 +364,7 @@ export const deviceCapabilities = z
     panelProtocolVersion: z.literal(1).optional(),
     concurrentHarnesses: z.literal(true).optional(),
     deviceMove: z.literal(true).optional(),
+    githubConnect: z.literal(true).optional(),
   })
   .strict()
 
