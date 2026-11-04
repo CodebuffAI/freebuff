@@ -141,3 +141,10 @@ export const FREEBUFF_PROVIDER_UPSTREAM_RATE_LIMIT_MESSAGE =
  */
 export const FREEBUFF_PROVIDER_UNREACHABLE_MESSAGE =
   'Freebuff could not get a response from the provider serving this model — the request timed out or the connection was dropped before any reply arrived. This is not a problem with your internet connection or your account. Send the message again, or continue with another model such as GLM 5.3 Flash or DeepSeek V4.1 Flash.'
+
+/** The chat gate's `session_expired` refusal: the hour and its drain window
+ *  are over. The Cloud worker swaps it for the allowance line when its own
+ *  renewal of that hour was refused for the daily allowance
+ *  (cloud-session-renewal.ts), since sending again meets the same refusal. */
+export const FREEBUFF_SESSION_EXPIRED_MESSAGE =
+  'Your free session has expired. Send your message again to start a new one.'
