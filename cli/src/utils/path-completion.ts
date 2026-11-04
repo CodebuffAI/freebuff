@@ -48,22 +48,29 @@ export function getPathCompletion(inputPath: string): string | null {
 
   // List directories in parent that match the partial
   try {
-    const items = readdirSync(parentDir)
+    const entries = readdirSync(parentDir, { withFileTypes: true })
     const matches: string[] = []
 
-    for (const item of items) {
+    for (const entry of entries) {
+      const name = entry.name
       // Skip hidden files unless user typed a dot
-      if (item.startsWith('.') && !partial.startsWith('.')) continue
+      if (name.startsWith('.') && !partial.startsWith('.')) continue
 
-      const fullPath = path.join(parentDir, item)
-      try {
-        if (!statSync(fullPath).isDirectory()) continue
-      } catch {
-        continue
+      // Filter by prefix first before doing any directory resolution
+      if (!name.toLowerCase().startsWith(partial)) continue
+
+      let isDirectory = entry.isDirectory()
+      if (!isDirectory && entry.isSymbolicLink()) {
+        try {
+          const fullPath = path.join(parentDir, name)
+          isDirectory = statSync(fullPath).isDirectory()
+        } catch {
+          isDirectory = false
+        }
       }
 
-      if (item.toLowerCase().startsWith(partial)) {
-        matches.push(item)
+      if (isDirectory) {
+        matches.push(name)
       }
     }
 
