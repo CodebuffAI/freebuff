@@ -19,9 +19,9 @@
 #   -w, --width WIDTH   Terminal width (default: 120)
 #   -h, --height HEIGHT Terminal height (default: 30)
 #   --wait SECONDS      Seconds to wait for app to initialize (default: 4)
-#   -b, --binary [PATH] Use compiled binary (Codebuff-specific shortcut)
-#                       If PATH omitted, uses ./cli/bin/codebuff
-#                       Can also set CODEBUFF_BINARY env var
+#   -b, --binary [PATH] Use compiled binary (Codebuff/Freebuff shortcut)
+#                       If PATH omitted, checks ./cli/bin/freebuff then ./cli/bin/codebuff
+#                       Can also set FREEBUFF_BINARY or CODEBUFF_BINARY env var
 #   --help              Show this help message
 #
 # SESSION LOGS:
@@ -74,8 +74,14 @@ SESSION_NAME=""
 WIDTH=120
 HEIGHT=30  # Reasonable default that matches typical terminal heights
 WAIT_SECONDS=4
-DEFAULT_BINARY="$PROJECT_ROOT/cli/bin/codebuff"
-BINARY_PATH="${CODEBUFF_BINARY:-}"  # Environment variable takes precedence
+if [[ -f "$PROJECT_ROOT/cli/bin/freebuff" ]]; then
+    DEFAULT_BINARY="$PROJECT_ROOT/cli/bin/freebuff"
+elif [[ -f "$PROJECT_ROOT/cli/bin/codebuff" ]]; then
+    DEFAULT_BINARY="$PROJECT_ROOT/cli/bin/codebuff"
+else
+    DEFAULT_BINARY="$PROJECT_ROOT/cli/bin/freebuff"
+fi
+BINARY_PATH="${FREEBUFF_BINARY:-${CODEBUFF_BINARY:-}}"  # Environment variable takes precedence
 CUSTOM_COMMAND=""  # Custom command to run (takes priority over binary/default)
 OUTPUT_FORMAT="json"  # json (default) or plain
 
@@ -200,7 +206,7 @@ if [[ -n "$CUSTOM_COMMAND" ]]; then
 elif [[ -n "$BINARY_PATH" ]]; then
     # Binary mode - validate the binary exists and is executable
     if [[ ! -f "$BINARY_PATH" ]]; then
-        output_error "Binary not found: $BINARY_PATH. Build with: cd cli && bun run build:binary"
+        output_error "Binary not found: $BINARY_PATH. Build with: bun run build:freebuff (or cd cli && bun run build:binary)"
         exit 1
     fi
     if [[ ! -x "$BINARY_PATH" ]]; then
