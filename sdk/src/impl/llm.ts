@@ -2,6 +2,7 @@ import { models, PROFIT_MARGIN } from '@codebuff/common/old-constants'
 import { buildArray } from '@codebuff/common/util/array'
 import { STREAM_RECOVERY_EVENT } from '@codebuff/common/util/axiom-only-log'
 import { normalizeProviderRequestBodyForCacheDebug } from '@codebuff/common/util/cache-debug'
+import { parseToolJson } from '@codebuff/common/tools/repair-tool-json'
 import {
   getErrorObject,
   promptAborted,
@@ -365,6 +366,19 @@ export async function* promptAiSdkStream(
             toolName: 'spawn_agents',
             input: JSON.stringify(spawnAgentsInput),
           }
+        }
+      }
+
+      // Arguments a model got slightly wrong (an unescaped quote in code): run the call as
+      // repaired, if a repair makes them parse; its schema still validates them.
+      if (InvalidToolInputError.isInstance(error)) {
+        const repaired = parseToolJson(toolCall.input)
+        if (repaired?.repair) {
+          logger.info(
+            { toolName, repair: repaired.repair },
+            'Repaired tool call arguments',
+          )
+          return { ...toolCall, input: JSON.stringify(repaired.value) }
         }
       }
 

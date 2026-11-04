@@ -1,5 +1,6 @@
 import z from 'zod/v4'
 
+import { parseToolJson } from '../repair-tool-json'
 import {
   endsAgentStepParam,
   endToolTag,
@@ -21,12 +22,8 @@ import type { ToolResultOutput } from '../../types/messages/content-part'
 export function coerceToArray(val: unknown): unknown {
   if (Array.isArray(val)) return val
   if (typeof val === 'string') {
-    try {
-      const parsed = JSON.parse(val)
-      if (Array.isArray(parsed)) return parsed
-    } catch {
-      // Not valid JSON — fall through to wrap
-    }
+    const parsed = parseToolJson(val)?.value
+    if (Array.isArray(parsed)) return parsed
   }
   if (val != null) return [val]
   return val
@@ -41,17 +38,9 @@ export function coerceToObject(val: unknown): unknown {
     return val
   }
 
-  try {
-    const parsed = JSON.parse(val)
-    if (
-      parsed != null &&
-      typeof parsed === 'object' &&
-      !Array.isArray(parsed)
-    ) {
-      return parsed
-    }
-  } catch {
-    // Leave the original value untouched so schema validation can reject it.
+  const parsed = parseToolJson(val)?.value
+  if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return parsed
   }
 
   return val
