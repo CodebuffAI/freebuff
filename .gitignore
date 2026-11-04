@@ -125,3 +125,7 @@ scripts/identity/out/
 
 # Local lifecycle email previews (scripts/lifecycle-email-sync.ts --preview)
 /lifecycle-preview*/
+
+# Ad creative projects (Remotion, npm-only, not Bun workspaces): renders and deps stay local
+ad-creatives/*/out/
+ad-creatives/*/node_modules/

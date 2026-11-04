@@ -36,6 +36,9 @@ export type CloudHistoryRun = {
   /** Since when this turn has been waiting for the computer it runs on to wake or reconnect;
    * null when it is not. Absent from older servers. */
   waitingForDeviceSince?: string | null
+  /** A queued turn's sibling chat running in the same folder, which it usually waits for;
+   * null when there is none. `title` is null for an untitled chat. Absent from older servers. */
+  waitingForChat?: { id: string; title: string | null } | null
 }
 export type CloudHistoryChat = {
   deviceExecution?: import('./device-execution').DeviceExecutionTarget | null
