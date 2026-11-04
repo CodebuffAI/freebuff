@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
+import { compactionThreshold } from '../constants/compaction-policy'
 import {
   contextPrunerBudgetForModel,
   getModelFromShortName,
@@ -66,7 +67,6 @@ describe('contextPrunerBudgetForModel', () => {
       'anthropic/claude-sonnet-5',
       'openai/gpt-5.4',
       'openai/gpt-5.6-luna',
-      'deepseek/deepseek-v4-flash',
       'deepseek/deepseek-v4-pro',
       'mimo/mimo-v2.5',
       'z-ai/glm-5.2',
@@ -77,6 +77,13 @@ describe('contextPrunerBudgetForModel', () => {
       'some/model-we-have-never-shipped',
     ]) {
       expect(contextPrunerBudgetForModel(model)).toBe(400_000)
+    }
+  })
+
+  test('DeepSeek V4.1 Flash and its fast mode compact at 250k (a 312.5k budget)', () => {
+    for (const model of ['deepseek/deepseek-v4-flash', 'deepseek/deepseek-v4-flash-fast']) {
+      expect(contextPrunerBudgetForModel(model)).toBe(312_500)
+      expect(compactionThreshold(contextPrunerBudgetForModel(model))).toBe(250_000)
     }
   })
 

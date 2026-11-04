@@ -2,6 +2,10 @@ import {
   CLAUDE_OPUS_4_6_MODEL_ID,
   CLAUDE_SONNET_4_6_MODEL_ID,
 } from './anthropic'
+import {
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+} from './freebuff-model-ids'
 
 // Allowed model prefixes for validation
 export const ALLOWED_MODEL_PREFIXES = [
@@ -229,16 +233,34 @@ export function supportsAssistantPrefill(model: Model): boolean {
  * 524,288, not the 1,048,576 OpenRouter advertises (Fireworks rejects with
  * "model maximum context length: 524287"), but 400k is still under it.
  *
- * The return type names the two tiers rather than `number` so a third tier is
- * a deliberate addition here. Serialized generators receive the result as
+ * DeepSeek V4.1 Flash and its fast mode get 312.5k, so they compact at 250k
+ * (0.8x) rather than 320k (product, 2026-11-04, Victor). Not for the window:
+ * every request below the trigger re-reads its whole history, and on 11-02
+ * 35% of Flash calls were past 180k, so the long tail of re-read cached input
+ * is the bill. A compaction costs one cold prefill of ~50k tokens (~$0.003)
+ * that later calls repay.
+ *
+ * The return type names the tiers rather than `number` so another tier is a
+ * deliberate addition here. Serialized generators receive the result as
  * `AgentStepContext.contextPruning.maxContextLength`.
  */
 const SMALL_CONTEXT_MODELS: ReadonlySet<string> = new Set([
   moonshotModels.kimiK27Code,
 ])
 
-export function contextPrunerBudgetForModel(model: Model): 250_000 | 400_000 {
-  return SMALL_CONTEXT_MODELS.has(model) ? 250_000 : 400_000
+const DEEPSEEK_FLASH_MODELS: ReadonlySet<string> = new Set([
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+])
+
+export const DEEPSEEK_FLASH_CONTEXT_BUDGET = 312_500
+
+export function contextPrunerBudgetForModel(
+  model: Model,
+): 250_000 | typeof DEEPSEEK_FLASH_CONTEXT_BUDGET | 400_000 {
+  if (SMALL_CONTEXT_MODELS.has(model)) return 250_000
+  if (DEEPSEEK_FLASH_MODELS.has(model)) return DEEPSEEK_FLASH_CONTEXT_BUDGET
+  return 400_000
 }
 
 export function getModelFromShortName(
