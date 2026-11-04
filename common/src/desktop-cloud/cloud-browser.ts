@@ -1,11 +1,47 @@
 /**
- * The chat's cloud browser (docs/freebuff-cloud-browser.md): a Kernel Chromium
- * in kiosk mode, streamed into the right panel over WebRTC. The panel draws its
- * own tabs and address bar; the stream is only page pixels. These shapes cross
- * the workspace gateway between freebuff-web and the Cloud API.
+ * The chat's cloud browser (docs/freebuff-cloud-browser.md): lightweight iframe
+ * previews, or a Kernel Chromium in kiosk mode streamed over WebRTC. These
+ * shapes cross the workspace gateway between freebuff-web and the Cloud API.
  */
 
 export type CloudBrowserViewport = { width: number; height: number }
+
+/** Agent reveals default to an iframe. Only an explicit browser request starts
+ * Kernel. Omit the preview URL to use the chat's authenticated dev server;
+ * bootstrap tickets must never be included in durable reveal events. */
+export type CloudBrowserOpenRequest = {
+  mode: 'preview' | 'browser'
+  url?: string
+}
+
+export function isCloudBrowserPreviewUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || !value || value.length > 4096) return false
+  try {
+    const url = new URL(value)
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') &&
+      !url.username &&
+      !url.password
+    )
+  } catch {
+    return false
+  }
+}
+
+/** Older dev-server reveal events only have vmSlug; keep them inexpensive too. */
+export function readCloudBrowserOpenRequest(
+  value: unknown,
+): CloudBrowserOpenRequest | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  if (v.mode !== undefined && v.mode !== 'preview' && v.mode !== 'browser')
+    return null
+  if (v.url !== undefined && !isCloudBrowserPreviewUrl(v.url)) return null
+  return {
+    mode: v.mode === 'browser' ? 'browser' : 'preview',
+    ...(typeof v.url === 'string' ? { url: v.url } : {}),
+  }
+}
 
 export type CloudBrowserTab = {
   /** The Chromium target id. Stable for the tab's life, never reused. */
