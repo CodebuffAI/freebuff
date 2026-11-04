@@ -5,6 +5,7 @@ import {
   resolveFreebuffModelPickForSession,
 } from '../../hooks/use-freebuff-session'
 import { freebucksFixture } from '@codebuff/common/testing/freebuff'
+import { FREEBUCKS_SHARED_DEVICE_NOTE } from '@codebuff/common/util/freebuff-hours'
 import { FREEBUFF_EARN_PROMPT_SHORT } from '@codebuff/common/constants/freebuff-earn'
 import { afterEach, beforeAll, describe, expect, test, spyOn } from 'bun:test'
 import { createTestRenderer } from '@opentui/core/testing'
@@ -1379,7 +1380,11 @@ describe('a paid-only row on an account without a plan', () => {
 // the second press opens the page that is the only thing which changes the
 // answer.
 describe('a row the balance cannot cover', () => {
-  const renderUnaffordableLuna = async () => {
+  const renderUnaffordableLuna = async (note?: string) => {
+    const fixture = freebucksFixture(10, {
+      [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 20,
+      [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 10,
+    })
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'full',
@@ -1387,10 +1392,8 @@ describe('a row the balance cannot cover', () => {
         // The Freebucks wall, not the plan wall: this row must be affordable-
         // in-principle for the balance message to be what the press explains.
         planRequiredModelIds: [],
-        ...freebucksFixture(10, {
-          [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 20,
-          [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 10,
-        }),
+        ...fixture,
+        ...(note ? { daily: { ...fixture.daily, note } } : {}),
       },
     })
     // A non-default pick, so the picker opens expanded.
@@ -1419,6 +1422,18 @@ describe('a row the balance cannot cover', () => {
     const frame = setup.captureCharFrame()
     expect(frame).toContain(
       'Not enough hours — needs 4 hours, 2 hours left. Enter opens plans.',
+    )
+    expect(requested).toEqual([])
+  })
+
+  test('says the device shares the allowance when the server says so', async () => {
+    const { setup, requested } = await renderUnaffordableLuna(
+      FREEBUCKS_SHARED_DEVICE_NOTE,
+    )
+    flushSync(() => setup.mockInput.pressEnter())
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain(
+      'The accounts on this device share one daily allowance.',
     )
     expect(requested).toEqual([])
   })

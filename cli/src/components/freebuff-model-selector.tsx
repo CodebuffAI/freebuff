@@ -749,6 +749,10 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         // rather than what is missing. Kept about as short as the line it
         // replaces: this line is measured and clipped, never wrapped, and the
         // CTA line under it already carries "Get 7x usage for $5".
+        // The server's reason the pool is smaller (one allowance shared by
+        // a device's accounts) comes first: it is the line clipping keeps.
+        const note = freebucks?.daily?.note
+        if (note) return `${note} Enter opens plans.`
         const offer = upgradeOfferFor(model)
         if (offer) {
           return `${offer.tooltip.replace(/\.$/, '')}. Enter opens plans.`

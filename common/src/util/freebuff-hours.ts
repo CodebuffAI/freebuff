@@ -107,6 +107,12 @@ export function freebuffMultiplierText(priceFreebucks: number): string {
   )
 }
 
+/** Why a pool is smaller than the account's own when a device's accounts
+ *  share one daily allowance: the server's `daily.note`, and what a client
+ *  shows beside a `sharedDevice` refusal. */
+export const FREEBUCKS_SHARED_DEVICE_NOTE =
+  'The accounts on this device share one daily allowance.'
+
 /**
  * The Freebucks meter's refusal (`freebucksShortfall`), as the one sentence
  * every client leads with. Admission needs a full hour of the chosen model, so
