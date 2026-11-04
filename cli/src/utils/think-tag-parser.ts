@@ -12,28 +12,26 @@ export type ThinkSegment = {
 }
 
 /**
- * Possible partial tag prefixes that we should buffer.
- * These are prefixes that could become a complete tag with more input.
- */
-const PARTIAL_OPEN_PREFIXES = ['<', '<t', '<th', '<thi', '<thin', '<think']
-const PARTIAL_CLOSE_PREFIXES = ['</', '</t', '</th', '</thi', '</thin', '</think']
-
-/**
  * Check if text ends with a potential partial tag that we should buffer.
  * Returns the length of the partial tag suffix, or 0 if none.
  */
 export function getPartialTagLength(text: string): number {
+  const len = text.length
+  if (len === 0) return 0
+
+  // The longest partial tag is '</think' (7 chars). If there is no '<' within
+  // the last 7 characters, the string cannot end with a partial tag.
+  const lastLt = text.lastIndexOf('<')
+  if (lastLt === -1 || lastLt < len - 7) return 0
+
+  const suffix = text.slice(lastLt)
   // Check for partial closing tag first (longer prefixes)
-  for (const prefix of PARTIAL_CLOSE_PREFIXES) {
-    if (text.endsWith(prefix)) {
-      return prefix.length
-    }
+  if (THINK_CLOSE_TAG.startsWith(suffix) && suffix !== THINK_CLOSE_TAG) {
+    return suffix.length
   }
   // Check for partial opening tag
-  for (const prefix of PARTIAL_OPEN_PREFIXES) {
-    if (text.endsWith(prefix)) {
-      return prefix.length
-    }
+  if (THINK_OPEN_TAG.startsWith(suffix) && suffix !== THINK_OPEN_TAG) {
+    return suffix.length
   }
   return 0
 }
@@ -49,53 +47,58 @@ export function parseThinkTags(text: string): ThinkSegment[] {
   }
 
   const segments: ThinkSegment[] = []
-  let remaining = text
+  const len = text.length
+  let cursor = 0
   let insideThink = false
 
-  while (remaining.length > 0) {
+  while (cursor < len) {
     if (insideThink) {
       // Look for closing tag
-      const closeIdx = remaining.indexOf(THINK_CLOSE_TAG)
+      const closeIdx = text.indexOf(THINK_CLOSE_TAG, cursor)
       if (closeIdx === -1) {
         // No closing tag found - all remaining is thinking content
-        if (remaining.length > 0) {
-          segments.push({ type: 'thinking', content: remaining })
+        if (cursor < len) {
+          segments.push({ type: 'thinking', content: text.slice(cursor) })
         }
         break
       }
       // Content before closing tag is thinking
-      if (closeIdx > 0) {
-        segments.push({ type: 'thinking', content: remaining.slice(0, closeIdx) })
+      if (closeIdx > cursor) {
+        segments.push({
+          type: 'thinking',
+          content: text.slice(cursor, closeIdx),
+        })
       }
-      remaining = remaining.slice(closeIdx + THINK_CLOSE_TAG.length)
+      cursor = closeIdx + THINK_CLOSE_TAG.length
       insideThink = false
     } else {
-      const openIdx = remaining.indexOf(THINK_OPEN_TAG)
-      const closeIdx = remaining.indexOf(THINK_CLOSE_TAG)
+      const openIdx = text.indexOf(THINK_OPEN_TAG, cursor)
+      const closeIdx = text.indexOf(THINK_CLOSE_TAG, cursor)
+
       if (closeIdx !== -1 && (openIdx === -1 || closeIdx < openIdx)) {
-        if (closeIdx > 0) {
+        if (closeIdx > cursor) {
           segments.push({
             type: 'thinking',
-            content: remaining.slice(0, closeIdx),
+            content: text.slice(cursor, closeIdx),
           })
         }
-        remaining = remaining.slice(closeIdx + THINK_CLOSE_TAG.length)
+        cursor = closeIdx + THINK_CLOSE_TAG.length
         continue
       }
 
       // Look for opening tag
       if (openIdx === -1) {
         // No opening tag found - all remaining is regular text
-        if (remaining.length > 0) {
-          segments.push({ type: 'text', content: remaining })
+        if (cursor < len) {
+          segments.push({ type: 'text', content: text.slice(cursor) })
         }
         break
       }
       // Content before opening tag is regular text
-      if (openIdx > 0) {
-        segments.push({ type: 'text', content: remaining.slice(0, openIdx) })
+      if (openIdx > cursor) {
+        segments.push({ type: 'text', content: text.slice(cursor, openIdx) })
       }
-      remaining = remaining.slice(openIdx + THINK_OPEN_TAG.length)
+      cursor = openIdx + THINK_OPEN_TAG.length
       insideThink = true
     }
   }
