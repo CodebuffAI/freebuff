@@ -325,6 +325,8 @@ describe('base3 CLI roots', () => {
       expect(prompt).toContain('If about a minute has passed without a visible update')
       expect(prompt).toContain('Use normal assistant text, not thinking/reasoning')
       expect(prompt).toContain('Do not test every UI element')
+      // Unviewed UI work reported as done was 17-22% of sessions (Nov 2-3 trace reports).
+      expect(prompt).toContain('A visual or UI change you did not look at is unverified')
       // Unasked screenshots cost minutes a turn: a local loop of 19 captures
       // on a "make it full screen" ask, and Cloud turns rebuilding Chromium.
       expect(prompt).toContain(
