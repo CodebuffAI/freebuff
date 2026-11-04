@@ -105,6 +105,28 @@ describe('findFileLookupKey', () => {
     expect(findFileLookupKey(files, keys)).toBe('src\\game\\store.ts')
   })
 
+  test.each([
+    'C:\\Users\\me\\proj\\src\\game\\store.ts',
+    'C:/Users/me/proj/src/game/store.ts',
+    'c:\\users\\me\\proj\\src\\game\\store.ts',
+    '/c/Users/me/proj/src/game/store.ts',
+  ])(
+    'an absolute path into a Windows computer finds its read from Cloud: %s',
+    (filePath) => {
+      const files = { 'src\\game\\store.ts': 'export const store = 1' }
+      const keys = getProjectPathLookupKeys('C:\\Users\\me\\proj', filePath)
+      expect(findFileLookupKey(files, keys)).toBe('src\\game\\store.ts')
+    },
+  )
+
+  test('an absolute path outside a Windows computer project finds nothing', () => {
+    const files = { 'src\\a.ts': 'x' }
+    for (const filePath of ['C:\\Users\\me\\other\\src\\a.ts', 'D:\\src\\a.ts']) {
+      const keys = getProjectPathLookupKeys('C:\\Users\\me\\proj', filePath)
+      expect(findFileLookupKey(files, keys)).toBeUndefined()
+    }
+  })
+
   test('a different file is never matched', () => {
     expect(
       findFileLookupKey({ 'src\\other.ts': 'x' }, ['src/a.ts']),

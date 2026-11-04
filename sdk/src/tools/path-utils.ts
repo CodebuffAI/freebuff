@@ -86,8 +86,26 @@ export function getProjectPathLookupKeys(
         resolveFilePath(projectRoot, filePath, dependencies).relativePath,
         filePath,
       ]
+  const windowsKey = windowsComputerRelativePath(projectRoot, filePath)
+  if (windowsKey) keys.unshift(windowsKey)
 
   return [...new Set(keys)]
+}
+
+/**
+ * The project-relative key a Windows computer gives an absolute path (`C:\proj\src\a.ts`, or
+ * Git Bash's `/c/proj/src/a.ts`) when this SDK runs on POSIX: a Cloud worker whose reads Desktop
+ * answers on the user's Windows computer. POSIX `path` cannot relate either to `C:\proj`.
+ */
+function windowsComputerRelativePath(
+  projectRoot: string,
+  filePath: string,
+): string | undefined {
+  if (path.sep !== '/' || !/^[A-Za-z]:[\\/]/.test(projectRoot)) return undefined
+  const nativePath = filePath.replace(/^\/([A-Za-z])(?=\/|$)/, '$1:')
+  return path.win32.isAbsolute(nativePath)
+    ? path.win32.relative(projectRoot, nativePath)
+    : undefined
 }
 
 /**
