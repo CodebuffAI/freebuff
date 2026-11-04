@@ -366,7 +366,9 @@ export function formatClientEnvironment(
   systemZone: string | null = null,
 ): string {
   const { env, ciEnv } = inputs
-  const tzOverride = Boolean(env.TZ?.trim())
+  // Set at all, even empty: `TZ=` makes the process clock UTC and drops the
+  // zone header, which hides the operating system's zone just as well.
+  const tzOverride = env.TZ !== undefined
   const ci =
     ciEnv.CI === 'true' || ciEnv.CI === '1' || ciEnv.GITHUB_ACTIONS === 'true'
   const fields: Array<[string, string]> = [
@@ -433,8 +435,9 @@ export function startClientEnvironmentProbe(
     ancestry = result
     cached = null
   })
-  // Only when TZ overrides the system zone; otherwise the two are the same.
-  const zoneLookup = env.TZ?.trim()
+  // Only when TZ overrides the system zone (set at all, even empty);
+  // otherwise the two are the same.
+  const zoneLookup = env.TZ !== undefined
     ? readZone().then((zone) => {
         systemZone = zone
         cached = null

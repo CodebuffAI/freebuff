@@ -273,6 +273,15 @@ describe('formatClientEnvironment', () => {
       'Asia/Kolkata',
     )
     expect(plain).not.toContain('stz=')
+    // `TZ=` hides the system zone as well as a named one does.
+    const empty = formatClientEnvironment(
+      { ...inputs, env: createTestCliEnv({ TZ: '' }) },
+      ancestry,
+      'yes',
+      'Europe/Istanbul',
+    )
+    expect(empty).toContain(';tzo=1;')
+    expect(empty.endsWith(';stz=Europe/Istanbul')).toBe(true)
   })
 })
 
