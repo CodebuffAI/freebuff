@@ -181,25 +181,44 @@ export function groupConsecutiveToolBlocks(
  * Supports multi-line values with pipe delimiter.
  */
 export function extractValueForKey(output: string, key: string): string | null {
-  if (!output) return null
-  const lines = output.split('\n')
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
+  if (!output || !output.includes(key + ':')) return null
+
+  let lineStart = 0
+  const len = output.length
+
+  while (lineStart < len) {
+    let lineEnd = output.indexOf('\n', lineStart)
+    if (lineEnd === -1) lineEnd = len
+
+    const line = output.slice(lineStart, lineEnd)
     const match = line.match(/^\s*([A-Za-z0-9_]+):\s*(.*)$/)
     if (match && match[1] === key) {
       const rest = match[2]
       if (rest.trim().startsWith('|')) {
-        const baseIndent = lines[i + 1]?.match(/^\s*/)?.[0].length ?? 0
+        let nextStart = lineEnd + 1
+        if (nextStart >= len) return ''
+
+        let nextEnd = output.indexOf('\n', nextStart)
+        if (nextEnd === -1) nextEnd = len
+        const firstLine = output.slice(nextStart, nextEnd)
+        const baseIndent = firstLine.match(/^\s*/)?.[0].length ?? 0
+
         const acc: string[] = []
-        for (let j = i + 1; j < lines.length; j++) {
-          const l = lines[j]
+        let currStart = nextStart
+        while (currStart < len) {
+          let currEnd = output.indexOf('\n', currStart)
+          if (currEnd === -1) currEnd = len
+
+          const l = output.slice(currStart, currEnd)
           const indent = l.match(/^\s*/)?.[0].length ?? 0
           if (l.trim().length === 0) {
             acc.push('')
-            continue
+          } else {
+            if (indent < baseIndent) break
+            acc.push(l.slice(baseIndent))
           }
-          if (indent < baseIndent) break
-          acc.push(l.slice(baseIndent))
+
+          currStart = currEnd + 1
         }
         return acc.join('\n')
       } else {
@@ -210,7 +229,10 @@ export function extractValueForKey(output: string, key: string): string | null {
         return val
       }
     }
+
+    lineStart = lineEnd + 1
   }
+
   return null
 }
 
