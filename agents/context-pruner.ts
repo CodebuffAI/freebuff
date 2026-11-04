@@ -465,7 +465,20 @@ const definition: AgentDefinition = {
 
     function isConversationSummary(message: Message): boolean {
       if (message.role !== 'user') return false
-      return getTextContent(message).includes('<conversation_summary>')
+      // Provenance tag first — see CONVERSATION_SUMMARY_TAG in
+      // packages/agent-runtime/src/compact-history.ts for why identity by
+      // content alone is unsafe (a user message quoting the markers used to
+      // steal the summary's identity and erase the older memory).
+      if (message.tags?.includes('CONVERSATION_SUMMARY')) return true
+      // Legacy fallback for summaries written before the tag existed: require
+      // the full envelope, not just the bare tag a user can easily send.
+      const text = getTextContent(message)
+      return (
+        text.includes('<conversation_summary>') &&
+        text.includes('</conversation_summary>') &&
+        text.includes(SUMMARY_HEADER) &&
+        text.includes('<historical_memory>')
+      )
     }
 
     function extractSummaryContent(message: Message): string {
@@ -943,6 +956,7 @@ ${SUMMARY_DISCLAIMER}${lastUserImageParts.length > 0 ? `\n\n${CARRIED_IMAGES_NOT
       role: 'user',
       content: summaryContentParts,
       sentAt: now,
+      tags: ['CONVERSATION_SUMMARY'],
     }
 
     const continuationMessage: UserMessage = {
