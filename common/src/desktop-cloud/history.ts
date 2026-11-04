@@ -50,6 +50,11 @@ export type CloudHistoryChat = {
   latestRun: CloudHistoryRun | null
   /** The sidebar "finished" dot, shared by every device. Absent from older servers. */
   attention?: CloudHistoryAttention
+  /**
+   * The chat's session claim, the attachment's `instanceId`: a Desktop purchase this chat
+   * holds names it as `holderInstanceId`. Empty when it has none. Absent from older servers.
+   */
+  instanceId?: string
 }
 /**
  * Each settled run raises `revision`; opening the chat on any device acknowledges through it.
