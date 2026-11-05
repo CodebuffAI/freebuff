@@ -327,6 +327,11 @@ export enum AnalyticsEvent {
   // also exactly what a genuine in-person referral looks like ("try it,
   // here's my laptop").
   FREEBUFF_REFERRAL_SOCK_SIGNAL = 'freebuff.referral.sock_signal',
+  // The Desktop welcome's "Invite by email": a signed-in account sent its
+  // `/?ref=` link to a friend's address, which starts the Resend "Friend
+  // invited" sequence (freebuff-web `/api/workspace/referral-invite`).
+  // `domain`: the invitee's mail domain; never the address.
+  FREEBUFF_REFERRAL_INVITE_SENT = 'freebuff.referral.invite_sent',
   // The first-prompt "Invite 3 friends to unlock custom themes" card in the web
   // and hosted Desktop workspace. `action`: shown | copied | copy_failed |
   // dismissed (X or Escape only); `qualifying`: 0-3 referred signups so far.

@@ -17,6 +17,8 @@ export const productFunnelStageSchema = z.enum([
   'install',
   'launch',
   'login',
+  /** the first-sign-in welcome in the hosted Desktop workspace: shown, copied (the invite link), closed */
+  'welcome',
   'browser',
   'context',
   'composer',
@@ -50,6 +52,13 @@ export const productFunnelStateSchema = z.enum([
   'blocked',
   'skipped',
   'recovered',
+])
+/** The Desktop welcome's H1 test: one arm per account, stable, on every `welcome` event. */
+export const welcomeVariantSchema = z.enum([
+  'unlocked',
+  'give',
+  'share',
+  'paying',
 ])
 export const productEntryRouteSchema = z.enum([
   '/',
@@ -183,8 +192,14 @@ export const productFunnelPropertiesSchema = z
     platform: z.enum(['darwin', 'win32', 'linux', 'other']).optional(),
     originApp: z.enum(['desktop', 'web']).optional(),
     executionTarget: z.enum(['device', 'cloud']).optional(),
+    welcome_variant: welcomeVariantSchema.optional(),
     renderer: z.literal('web-workspace').optional(),
-    appVersion: z.string().min(1).max(64).regex(/^[a-zA-Z0-9.+_-]+$/).optional(),
+    appVersion: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-zA-Z0-9.+_-]+$/)
+      .optional(),
   })
   .strict()
 
@@ -204,6 +219,7 @@ export type ProductFunnelProduct = z.infer<typeof productFunnelProductSchema>
 export type ProductEntryRoute = z.infer<typeof productEntryRouteSchema>
 export type ProductFunnelStage = z.infer<typeof productFunnelStageSchema>
 export type ProductFunnelState = z.infer<typeof productFunnelStateSchema>
+export type WelcomeVariant = z.infer<typeof welcomeVariantSchema>
 export type ProductFunnelProperties = z.infer<
   typeof productFunnelPropertiesSchema
 >
