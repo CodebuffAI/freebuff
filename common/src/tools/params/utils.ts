@@ -81,6 +81,14 @@ export function liftSingleReplacement(
   input: Record<string, unknown>,
 ): Record<string, unknown> {
   const edit = normalizeReplacementAliases(input) as Record<string, unknown>
+  if (edit.replacements === undefined) {
+    // `replacement` / `replaces` holding the array (~100 calls/day, Flash, Nov 2026).
+    const alias = edit.replacement ?? edit.replaces
+    if (Array.isArray(alias)) {
+      const { replacement: _, replaces: __, ...rest } = edit
+      return { ...rest, replacements: alias }
+    }
+  }
   if (edit.replacements !== undefined || typeof edit.oldString !== 'string') {
     return input
   }

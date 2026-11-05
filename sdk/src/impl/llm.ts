@@ -2,7 +2,10 @@ import { models, PROFIT_MARGIN } from '@codebuff/common/old-constants'
 import { buildArray } from '@codebuff/common/util/array'
 import { STREAM_RECOVERY_EVENT } from '@codebuff/common/util/axiom-only-log'
 import { normalizeProviderRequestBodyForCacheDebug } from '@codebuff/common/util/cache-debug'
-import { parseToolJson } from '@codebuff/common/tools/repair-tool-json'
+import {
+  parseToolJson,
+  TOOL_NAME_ALIASES,
+} from '@codebuff/common/tools/repair-tool-json'
 import {
   getErrorObject,
   promptAborted,
@@ -367,6 +370,13 @@ export async function* promptAiSdkStream(
             input: JSON.stringify(spawnAgentsInput),
           }
         }
+      }
+
+      // A name models invent for a real tool (`run_command`): run it as that tool.
+      const alias = TOOL_NAME_ALIASES[toolName]
+      if (NoSuchToolError.isInstance(error) && alias && alias in tools) {
+        logger.info({ toolName, alias }, 'Renamed tool call to a real tool')
+        return { ...toolCall, toolName: alias }
       }
 
       // Arguments a model got slightly wrong (an unescaped quote in code): run the call as

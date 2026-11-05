@@ -1,5 +1,5 @@
 /**
- * Repairs for tool-call argument JSON that a model got slightly wrong.
+ * Repairs for tool calls a model got slightly wrong: argument JSON, and invented tool names.
  *
  * Each repair rewrites the raw text and is kept only if the result parses; the tool's schema then
  * validates it like any other call. To handle a newly common slip, add an entry with the trace
@@ -17,7 +17,30 @@ export const TOOL_JSON_REPAIRS: readonly {
   { name: 'raw-control-character', repair: escapeControlCharacters },
   // Same sample: the `replacements` array closed with `}` instead of `]}`.
   { name: 'unclosed-array', repair: closeArraysBeforeBraces },
+  // Solar Pro 4 and Flash, Nov 2026 (~400/day): a backslash JSON does not allow, mostly Windows
+  // paths (`["hunt\NEXT.md"]`) and regexes in code (`\s`, `\x`).
+  { name: 'invalid-escape', repair: escapeLoneBackslashes },
 ]
+
+/**
+ * Names models invent for a real tool, sending that tool's own arguments (Nov 2026 traces, ~770
+ * calls/day, mostly DeepSeek V4 Flash). A call is renamed only when the agent has the real tool;
+ * its schema then validates the arguments as usual.
+ */
+export const TOOL_NAME_ALIASES: Readonly<Record<string, string>> = {
+  run_command: 'run_terminal_command',
+  run_default: 'run_terminal_command',
+  run_exec_command: 'run_terminal_command',
+  run_terminal_code: 'run_terminal_command',
+  exec_command: 'run_terminal_command',
+  run_code: 'run_terminal_command',
+  terminal_command: 'run_terminal_command',
+  bash: 'run_terminal_command',
+  run_terminal_code_search: 'code_search',
+  run_code_search: 'code_search',
+  grep: 'code_search',
+  run_files: 'read_files',
+}
 
 /**
  * `text` parsed, if it parses as is or after the repairs. Repairs apply in order, each to the
@@ -82,6 +105,28 @@ function closeArraysBeforeBraces(text: string): string | undefined {
     containers.pop()
     return closers + ch
   })
+}
+
+/** Doubles each backslash in a string that does not start a valid JSON escape. */
+function escapeLoneBackslashes(text: string): string | undefined {
+  let out = ''
+  let inString = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!
+    if (inString && ch === '\\') {
+      const next = text[i + 1] ?? ''
+      if (/["\\/bfnrt]/.test(next) || /^u[0-9a-fA-F]{4}/.test(text.slice(i + 1, i + 6))) {
+        out += ch + next
+        i++
+      } else {
+        out += '\\\\'
+      }
+      continue
+    }
+    if (ch === '"') inString = !inString
+    out += ch
+  }
+  return out === text ? undefined : out
 }
 
 // What may follow a string's real closing quote, by where the string sits.

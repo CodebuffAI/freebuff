@@ -11,7 +11,7 @@ import { formatValueForError } from '../util/format-value'
 import { codebuffToolHandlers } from './handlers/list'
 import { getMatchingSpawn } from './handlers/tool/spawn-agent-utils'
 import { getAgentTemplate } from '../templates/agent-registry'
-import { repairStringEncodedUnionMembers } from '../util/repair-string-encoded-union-members'
+import { repairCustomToolInput } from '../util/repair-custom-tool-input'
 import { resolveGravityIndexLink } from './gravity-index-cta'
 import { ensureZodSchema } from './prompts'
 import { boundToolResult } from '../util/context-size-guard'
@@ -681,7 +681,7 @@ export function parseRawCustomToolCall(params: {
 
   const rawSchema = customToolDefs?.[toolName]?.inputSchema
   if (rawSchema) {
-    repairStringEncodedUnionMembers(processedParameters, rawSchema)
+    repairCustomToolInput(processedParameters, rawSchema)
     const paramsSchema = ensureZodSchema(rawSchema)
     const result = paramsSchema.safeParse(processedParameters)
 

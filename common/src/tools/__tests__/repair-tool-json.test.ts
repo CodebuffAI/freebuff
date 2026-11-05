@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
+import { applyPatchParams } from '../params/tool/apply-patch'
+import { strReplaceParams } from '../params/tool/str-replace'
 import { coerceToArray } from '../params/utils'
 import { parseToolJson } from '../repair-tool-json'
 
@@ -65,6 +67,18 @@ describe('parseToolJson', () => {
     ).toBe('unescaped-quote+raw-control-character+unclosed-array')
   })
 
+  test('a backslash JSON does not allow is kept as a literal backslash', () => {
+    // Solar Pro 4: Windows paths, unescaped.
+    expect(parseToolJson('{"paths": ["hunt\\NEXT.md", "src\\main\\App.java"]}')).toEqual({
+      value: { paths: ['hunt\\NEXT.md', 'src\\main\\App.java'] },
+      repair: 'invalid-escape',
+    })
+    // Valid escapes beside it are left alone.
+    expect(
+      (parseToolJson('{"newString": "re = /\\s+/\\n\\u00e9"}')?.value as any).newString,
+    ).toBe('re = /\\s+/\n\u00e9')
+  })
+
   test('a call cut off by the output limit is never completed', () => {
     for (const cut of [
       '{"path":"src/editor.rs","content":"use eframe::egui;\\n\\npub fn mark_saved(&mut',
@@ -78,6 +92,27 @@ describe('parseToolJson', () => {
     expect(parseToolJson('{"path": "a.ts", "content": "x')).toBeUndefined()
     expect(parseToolJson('not json')).toBeUndefined()
   })
+})
+
+test('apply_patch reads an operation sent as a JSON string', () => {
+  expect(
+    applyPatchParams.inputSchema.parse({
+      operation: '{"type": "delete_file", "path": "a.ts"}',
+    }),
+  ).toEqual({ operation: { type: 'delete_file', path: 'a.ts' } })
+})
+
+test('str_replace reads `replacement` or `replaces` holding the edits', () => {
+  for (const key of ['replacement', 'replaces'])
+    expect(
+      strReplaceParams.inputSchema.parse({
+        path: 'a.ts',
+        [key]: [{ oldString: 'x', newString: 'y' }],
+      }),
+    ).toEqual({
+      path: 'a.ts',
+      replacements: [{ oldString: 'x', newString: 'y', allowMultiple: false }],
+    })
 })
 
 test('a lane that hands over the broken array as a string still yields the edits', () => {
