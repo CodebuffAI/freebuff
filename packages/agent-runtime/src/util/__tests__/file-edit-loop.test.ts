@@ -4,6 +4,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   FILE_EDIT_LOOP_RECOVERY_TAG,
   FILE_EDIT_LOOP_STOP_THRESHOLD,
+  FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD,
   trailingIdenticalRejectedEdits,
   trailingRejectedEditsToSameFiles,
 } from '../file-edit-loop'
@@ -244,11 +245,17 @@ describe('trailingRejectedEditsToSameFiles', () => {
     })
   })
 
-  it('stops counting at the guard stop threshold', () => {
-    const messages = Array.from({ length: 12 }, (_, i) => edit(`e${i}`)).flat()
+  it('stops counting at the guard stop threshold, or at the limit it is given', () => {
+    const messages = Array.from({ length: 20 }, (_, i) => edit(`e${i}`)).flat()
     expect(trailingRejectedEditsToSameFiles(messages)?.consecutive).toBe(
       FILE_EDIT_LOOP_STOP_THRESHOLD,
     )
+    expect(
+      trailingRejectedEditsToSameFiles(
+        messages,
+        FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD,
+      )?.consecutive,
+    ).toBe(FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD)
   })
 
   it.each([

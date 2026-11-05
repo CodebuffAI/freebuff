@@ -62,6 +62,16 @@ export async function processStrReplace(params: {
     const normalizedOldStr = normalizeLineEndings({ str: oldStr })
     const normalizedNewStr = normalizeLineEndings({ str: newStr })
 
+    // Seen 2026-11-04 from Solar Pro 4: the same replacement with oldString
+    // equal to newString, re-sent until the turn was stopped, because "No
+    // change to the file" alone did not say why.
+    if (normalizedOldStr === normalizedNewStr) {
+      messages.push(
+        'The old string and the new string are identical, so this replacement changes nothing. If the file already has the text you want, this edit is done; otherwise send a new string that differs from the old one.',
+      )
+      continue
+    }
+
     const match = tryMatchOldStr({
       initialContent: normalizedCurrentContent,
       oldStr: normalizedOldStr,

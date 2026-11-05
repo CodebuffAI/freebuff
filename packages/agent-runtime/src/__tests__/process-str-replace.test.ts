@@ -132,6 +132,40 @@ describe('processStrReplace', () => {
     }
   })
 
+  it('says why when the old and new strings are identical', async () => {
+    const line = 'import kotlinx.coroutines.flow.Flow'
+    const result = await processStrReplace({
+      path: 'test.kt',
+      replacements: [{ oldString: line, newString: line, allowMultiple: false }],
+      initialContentPromise: Promise.resolve(`${line}\n`),
+      logger,
+    })
+
+    expect('error' in result).toBe(true)
+    if ('error' in result) {
+      expect(result.error).toContain('old string and the new string are identical')
+      expect(result.error).toContain('No change to the file')
+    }
+  })
+
+  it('applies the other replacements when one pair is identical', async () => {
+    const result = await processStrReplace({
+      path: 'test.ts',
+      replacements: [
+        { oldString: 'a', newString: 'a', allowMultiple: false },
+        { oldString: 'b', newString: 'c', allowMultiple: false },
+      ],
+      initialContentPromise: Promise.resolve('a\nb\n'),
+      logger,
+    })
+
+    expect('content' in result).toBe(true)
+    if ('content' in result) {
+      expect(result.content).toBe('a\nc\n')
+      expect(result.messages.join('\n')).toContain('identical')
+    }
+  })
+
   it('should return error if no changes were made', async () => {
     const initialContent = 'const x = 1;\nconst y = 2;\n'
     const oldStr = 'const z = 3;' // This string doesn't exist in the content

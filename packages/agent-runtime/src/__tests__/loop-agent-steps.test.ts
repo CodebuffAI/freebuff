@@ -42,6 +42,9 @@ import {
 import {
   FILE_EDIT_LOOP_RECOVERY_MESSAGE,
   FILE_EDIT_LOOP_STOP_MESSAGE,
+  FILE_EDIT_LOOP_STOP_THRESHOLD,
+  FILE_EDIT_LOOP_VARIED_RECOVERY_MESSAGE,
+  FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD,
 } from '../util/file-edit-loop'
 import {
   FILE_EDIT_TOOLS_UNAVAILABLE_NOTE,
@@ -735,6 +738,44 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
     })
     expect(resumeCalls).toBe(2)
     expect(resumed.output.type).not.toBe('error')
+  })
+
+  it('stops a loop of varied rejected edits to one file that the identical-edit guard never matches', async () => {
+    mockAgentState.stepsRemaining = 200
+    let calls = 0
+    const seenPrompts: string[] = []
+    const result = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      // Every attempt sends what the file already holds, a little differently
+      // each time, so each one is rejected and no two are identical.
+      requestOptionalFile: async () => `content ${calls}`,
+      requestToolCall: async () => {
+        throw new Error('a rejected write never reaches the client')
+      },
+      promptAiSdkStream: async function* ({ messages }) {
+        calls++
+        seenPrompts.push(JSON.stringify(messages))
+        yield createToolCallChunk('write_file', {
+          path: 'output.txt',
+          instructions: 'Fix it',
+          content: `content ${calls}`,
+        })
+        return promptSuccess(`varied-${calls}`)
+      },
+    })
+
+    expect(calls).toBe(FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD)
+    expect(seenPrompts[FILE_EDIT_LOOP_STOP_THRESHOLD - 1]).not.toContain(
+      FILE_EDIT_LOOP_VARIED_RECOVERY_MESSAGE,
+    )
+    expect(seenPrompts[FILE_EDIT_LOOP_STOP_THRESHOLD]).toContain(
+      FILE_EDIT_LOOP_VARIED_RECOVERY_MESSAGE,
+    )
+    expect(seenPrompts.join('')).not.toContain(FILE_EDIT_LOOP_RECOVERY_MESSAGE)
+    expect(result.output).toMatchObject({
+      type: 'error',
+      message: FILE_EDIT_LOOP_STOP_MESSAGE,
+    })
   })
 
   it('stops an unchanged to-do loop after recovery attempts and can resume on a new prompt', async () => {

@@ -98,6 +98,8 @@ import {
   FILE_EDIT_LOOP_RECOVERY_TAG,
   FILE_EDIT_LOOP_RECOVERY_THRESHOLD,
   FILE_EDIT_LOOP_STOP_THRESHOLD,
+  FILE_EDIT_LOOP_VARIED_RECOVERY_MESSAGE,
+  FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD,
   FileEditLoopError,
   isFileEditLoopTool,
   trailingIdenticalRejectedEdits,
@@ -740,54 +742,57 @@ export const runAgentStep = async (
     }
   }
 
-  // MEASUREMENT ONLY, and deliberately before the guard below so that a turn
-  // the guard stops still leaves this row behind. The loops users photograph
+  // Measured first, and deliberately before the guards below so that a turn
+  // a guard stops still leaves this row behind. The loops users photograph
   // are a model retrying the SAME file, varying the edit a little or reading
-  // the file in between; the guard needs byte-identical arguments and an
-  // unbroken run of edit-only steps, so most of them score below its
-  // threshold and no row is written at all. Over 2026-10-09..14 the only
-  // per-rejection signal Axiom has (write_file's "same as the old content",
-  // which is one `logger.info`) showed ~35% of same-file loops on
-  // guard-capable clients producing no guard row, over just 65 episodes —
-  // and `str_replace` rejections, the common case, log nothing, so that
-  // number is a floor on a sliver. This event makes the real rate a division:
-  // `consecutive` is the loose count, `strictConsecutive` and `guardEligible`
-  // are what the guard saw at the same moment. It changes no behaviour.
-  if (toolCalls.some((call) => isFileEditLoopTool(call.toolName))) {
-    const nearMiss = trailingRejectedEditsToSameFiles(agentState.messageHistory)
-    // Once per episode as it crosses each of the guard's own thresholds, so a
-    // long loop is two rows rather than one per step.
-    if (
-      nearMiss &&
-      (nearMiss.consecutive === FILE_EDIT_LOOP_RECOVERY_THRESHOLD ||
-        nearMiss.consecutive === FILE_EDIT_LOOP_STOP_THRESHOLD)
-    ) {
-      logger.info(
-        {
-          axiomEvent: FILE_EDIT_LOOP_EVENT,
-          metric:
-            nearMiss.consecutive === FILE_EDIT_LOOP_STOP_THRESHOLD
-              ? 'file_edit_loop_same_file_stop_depth'
-              : 'file_edit_loop_same_file',
-          consecutive: nearMiss.consecutive,
-          strictConsecutive: trailingIdenticalRejectedEdits(
-            agentState.messageHistory,
-          ),
-          guardEligible:
-            !hadToolCallError &&
-            toolCalls.every((call) => isFileEditLoopTool(call.toolName)),
-          varied: nearMiss.varied,
-          interleaved: nearMiss.interleaved,
-          mixedStep: nearMiss.mixedStep,
-          toolName: nearMiss.toolName,
-          model: agentTemplate.model,
-          agentId: agentTemplate.id,
-          runId: agentState.runId,
-        },
-        'Trailing steps re-sent a rejected edit to the same file',
+  // the file in between; the identical-edit guard needs byte-identical
+  // arguments and an unbroken run of edit-only steps, so most of them score
+  // below its threshold. Over 2026-10-09..14 the only per-rejection signal
+  // Axiom had (write_file's "same as the old content", one `logger.info`)
+  // showed ~35% of same-file loops on guard-capable clients producing no guard
+  // row. This event makes the real rate a division: `consecutive` is the loose
+  // count, `strictConsecutive` and `guardEligible` are what the identical-edit
+  // guard saw at the same moment. The same loose count drives the varied-edit
+  // guard below.
+  const nearMiss = toolCalls.some((call) => isFileEditLoopTool(call.toolName))
+    ? trailingRejectedEditsToSameFiles(
+        agentState.messageHistory,
+        FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD,
       )
-    }
+    : null
+  // Once per episode as it crosses each of the guards' thresholds, so a long
+  // loop is a few rows rather than one per step.
+  if (
+    nearMiss &&
+    (nearMiss.consecutive === FILE_EDIT_LOOP_RECOVERY_THRESHOLD ||
+      nearMiss.consecutive === FILE_EDIT_LOOP_STOP_THRESHOLD)
+  ) {
+    logger.info(
+      {
+        axiomEvent: FILE_EDIT_LOOP_EVENT,
+        metric:
+          nearMiss.consecutive === FILE_EDIT_LOOP_STOP_THRESHOLD
+            ? 'file_edit_loop_same_file_stop_depth'
+            : 'file_edit_loop_same_file',
+        consecutive: nearMiss.consecutive,
+        strictConsecutive: trailingIdenticalRejectedEdits(
+          agentState.messageHistory,
+        ),
+        guardEligible:
+          !hadToolCallError &&
+          toolCalls.every((call) => isFileEditLoopTool(call.toolName)),
+        varied: nearMiss.varied,
+        interleaved: nearMiss.interleaved,
+        mixedStep: nearMiss.mixedStep,
+        toolName: nearMiss.toolName,
+        model: agentTemplate.model,
+        agentId: agentTemplate.id,
+        runId: agentState.runId,
+      },
+      'Trailing steps re-sent a rejected edit to the same file',
+    )
   }
+  let fileEditLoopGuided = false
 
   // The same shape with file edits: an identical write_file/str_replace is
   // answered with the same rejection every step, each result forces another
@@ -826,7 +831,54 @@ export const runAgentStep = async (
           tags: [FILE_EDIT_LOOP_RECOVERY_TAG],
         }),
       )
+      fileEditLoopGuided = true
     }
+  }
+
+  // The loop the identical-edit guard misses: rejected edits to the same files
+  // that vary a little each time (a stale old string, then an old string equal
+  // to the new one, then another), or with a read between them. No edit has
+  // landed for the whole streak, so it is not progress however it varies.
+  if (nearMiss && nearMiss.consecutive >= FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD) {
+    logger.warn(
+      {
+        metric: 'file_edit_loop_stopped',
+        variedGuard: true,
+        consecutive: nearMiss.consecutive,
+        varied: nearMiss.varied,
+        interleaved: nearMiss.interleaved,
+        mixedStep: nearMiss.mixedStep,
+        model: agentTemplate.model,
+        agentId: agentTemplate.id,
+        userId,
+        runId: agentState.runId,
+      },
+      'Stopping a turn whose file edits to the same files were all rejected',
+    )
+    throw new FileEditLoopError()
+  }
+  if (
+    nearMiss?.consecutive === FILE_EDIT_LOOP_STOP_THRESHOLD &&
+    !fileEditLoopGuided
+  ) {
+    logger.warn(
+      {
+        metric: 'file_edit_loop_recovery',
+        variedGuard: true,
+        consecutive: nearMiss.consecutive,
+        model: agentTemplate.model,
+        agentId: agentTemplate.id,
+        userId,
+        runId: agentState.runId,
+      },
+      'File edits to the same files keep being rejected; adding recovery guidance',
+    )
+    agentState.messageHistory.push(
+      userMessage({
+        content: withSystemTags(FILE_EDIT_LOOP_VARIED_RECOVERY_MESSAGE),
+        tags: [FILE_EDIT_LOOP_RECOVERY_TAG],
+      }),
+    )
   }
 
   agentState.messageHistory = expireMessages(

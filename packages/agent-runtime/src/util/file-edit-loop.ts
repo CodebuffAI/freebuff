@@ -3,12 +3,22 @@ import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 export const FILE_EDIT_LOOP_RECOVERY_TAG = 'FILE_EDIT_LOOP_RECOVERY'
 export const FILE_EDIT_LOOP_RECOVERY_THRESHOLD = 3
 export const FILE_EDIT_LOOP_STOP_THRESHOLD = 6
+/** Steps of rejected edits to one file set, varied or not, that stop a turn.
+ *  Higher than the identical-edit stop because a varied edit can still be a
+ *  model working something out; twelve rejections in a row with no edit landing
+ *  is not. */
+export const FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD = 12
 
 export const FILE_EDIT_LOOP_RECOVERY_MESSAGE =
   'You have repeatedly sent the same file edit, and every attempt was rejected with the same result. Sending it again will not change anything. Read the file to see its current content, make a different edit, or explain the blocker to the user and end your turn.'
 
+/** Sent at the varied count's recovery point: the edits differ, so "the same
+ *  file edit" would be untrue, but each one has been rejected. */
+export const FILE_EDIT_LOOP_VARIED_RECOVERY_MESSAGE =
+  'Your last several edits to this file were all rejected, and none of them changed it. Read the file to see its current content before editing it again. If an edit was rejected because the old and new text are identical, the file already has that text. Otherwise explain the blocker to the user and end your turn.'
+
 export const FILE_EDIT_LOOP_STOP_MESSAGE =
-  'The model got stuck re-sending the same rejected file edit without making progress. This turn was stopped to avoid wasting more of your session. Try a different model or reasoning level, then continue.'
+  'The model kept sending file edits that were all rejected (“No changes to existing files”) without making progress. This turn was stopped to avoid wasting more of your session. Try a different model or reasoning level, then continue.'
 
 /** The tools whose rejection is reported as an `errorMessage` result: a no-op
  * the handler already explained to the model, so re-sending the same call
@@ -146,8 +156,12 @@ function editPath(input: Record<string, unknown>): string {
 }
 
 /** The same shape as `trailingIdenticalRejectedEdits`, counted the way the
- * loops users actually photograph look — FOR MEASUREMENT ONLY. Nothing stops a
- * turn on this count.
+ * loops users actually photograph look. It was measurement only until
+ * 2026-11-05: over the day before, 356 server-side Solar Pro 4 runs reached six
+ * such steps, 115 of them stayed past twenty, and the identical-edit guard
+ * stopped only 157 (a Cloud user watched "No changes to existing files" for 38
+ * minutes). It now gives recovery guidance at `FILE_EDIT_LOOP_STOP_THRESHOLD`
+ * and stops the turn at `FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD` (run-agent-step).
  *
  * Three things the strict counter requires and a real loop often lacks:
  *   - byte-identical arguments, so a model that nudges `old_string` each
@@ -164,6 +178,7 @@ function editPath(input: Record<string, unknown>): string {
  * there is no trailing rejected edit at all. */
 export function trailingRejectedEditsToSameFiles(
   messages: Message[],
+  limit: number = FILE_EDIT_LOOP_STOP_THRESHOLD,
 ): FileEditLoopNearMiss | null {
   let count = 0
   let latestPaths: string | undefined
@@ -238,7 +253,7 @@ export function trailingRejectedEditsToSameFiles(
     latestPaths = stepPaths
     latestKeys = stepKeys
     count++
-    if (count >= FILE_EDIT_LOOP_STOP_THRESHOLD) break
+    if (count >= limit) break
   }
 
   if (count === 0) return null
