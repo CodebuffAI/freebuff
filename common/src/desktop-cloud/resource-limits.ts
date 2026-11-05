@@ -16,6 +16,28 @@ export type CloudResourceKind =
 export const isCloudResourceMessage = (message: string | null | undefined) =>
   message === CLOUD_RESOURCE_MESSAGE || message === CLOUD_RESOURCE_PENDING
 
+/**
+ * Limits a running process hits, not the project itself: a watcher holding too
+ * many files open, a burst of processes or threads, a memory spike. The chat's
+ * saved copy restores without the processes that tripped it, so the chat may
+ * run in Cloud again. A full disk (the files themselves are the problem) and
+ * sustained CPU (the shape of mining) still keep a chat out of Cloud.
+ * Web-only users had no way back from these at all (Lescence, Brendan, 11-04).
+ */
+export const CLOUD_RESTARTABLE_RESOURCES: readonly CloudResourceKind[] = ['files', 'processes', 'memory']
+export const cloudResourceRestarts = (kind: string | null | undefined) =>
+  (CLOUD_RESTARTABLE_RESOURCES as readonly string[]).includes(kind ?? '')
+/** Restarts after a restartable trip, per chat per rolling day; past it the chat waits or goes to Desktop. */
+export const CLOUD_RESOURCE_RESTARTS_PER_DAY = 3
+/** The failed run's error after a restartable trip, for clients that cannot move the chat locally. */
+export const CLOUD_RESOURCE_RESTART_MESSAGE =
+  'Cloud stopped this turn at a resource limit and saved this chat’s files. Send a message to continue it in Cloud from those files; whatever was running (dev servers, watchers) is not started again.'
+/** A send while the restartable trip's copy is still being saved. */
+export const CLOUD_RESOURCE_SAVING_MESSAGE =
+  'Cloud is still saving this chat’s files after its resource limit. Send again in a few minutes to continue it in Cloud.'
+export const CLOUD_RESOURCE_RESTART_LIMIT_MESSAGE =
+  `Cloud stopped this chat at a resource limit ${CLOUD_RESOURCE_RESTARTS_PER_DAY} times in the last day, so it can’t restart in Cloud until a day after the first stop. Its files are saved with this chat, and the Freebuff Desktop app can continue it now (open the chat there and choose Local).`
+
 /** Which limit was hit, in plain words, and what usually takes that resource. */
 const RESOURCE_EXPLANATIONS: Record<
   CloudResourceKind,
@@ -62,6 +84,10 @@ const RESOURCE_EXPLANATIONS: Record<
 export const CLOUD_RESOURCE_FILES_WHERE =
   'They stay with this chat, and the Freebuff Desktop app can continue from them on your computer (open the chat there and choose Local). A new chat starts from your project, not from these files, and deleting this chat deletes them.'
 
+/** Where the files went after a restartable trip (`cloudResourceRestarts`). */
+export const CLOUD_RESOURCE_RESTART_WHERE =
+  'Send a message here to continue this chat in Cloud from them; whatever was running is not started again. The Freebuff Desktop app can also continue them on your computer (open the chat there and choose Local).'
+
 /**
  * The transcript note written next to a resource-limit failure: which limit,
  * whether the files are already safe, what to clean up. CLOUD_RESOURCE_MESSAGE
@@ -78,7 +104,8 @@ export function cloudResourceExplanation(
   const files = recovered
     ? 'Your files are saved.'
     : 'Your files are being saved for recovery; this can take a few minutes.'
-  return movesLocally
-    ? `${what} ${files} ${advice}`
+  if (movesLocally) return `${what} ${files} ${advice}`
+  return cloudResourceRestarts(kind)
+    ? `${what} ${files} ${CLOUD_RESOURCE_RESTART_WHERE} ${advice}`
     : `${what} ${files} ${CLOUD_RESOURCE_FILES_WHERE} ${advice}`
 }
