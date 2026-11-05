@@ -99,6 +99,16 @@ export type CloudHistoryChatUpdate = {
  */
 export type CloudHistoryChatFork = { chatId: string }
 /**
+ * Roll a Freebuff chat back to before one of its messages: that run and every later one leave the
+ * conversation, and the agent forgets them. Files those turns changed are not restored.
+ */
+export type CloudHistoryChatRollback = { runId: string }
+export type CloudHistoryChatRolledBack = {
+  chat: CloudHistoryChat
+  /** `cut`: the agent's memory now ends before the message; `note`: it was told to disregard them. */
+  mode: 'cut' | 'note' | 'unchanged'
+}
+/**
  * Last write wins: a project name has no revision to compare. Removing keeps its chats and files;
  * `removed: false` puts it back in the list.
  */
@@ -165,7 +175,7 @@ export function createCloudHistoryClient(
     path: string,
     page: CloudHistoryOptions = {},
     projectId?: string,
-    update?: CloudHistoryChatUpdate | CloudHistoryProjectUpdate | CloudHistoryChatFork | CloudHistoryAttentionAck,
+    update?: CloudHistoryChatUpdate | CloudHistoryProjectUpdate | CloudHistoryChatFork | CloudHistoryChatRollback | CloudHistoryAttentionAck,
     search?: string,
     method: 'GET' | 'PATCH' | 'POST' = update ? 'PATCH' : 'GET',
   ): Promise<T> {
@@ -225,6 +235,8 @@ export function createCloudHistoryClient(
       get<CloudHistoryChat>(`chats/${id(chatId)}`, { signal }),
     forkChat: (chatId: string, fork: CloudHistoryChatFork, signal?: AbortSignal) =>
       get<CloudHistoryChat>(`chats/${id(chatId)}/fork`, { signal }, undefined, fork, undefined, 'POST'),
+    rollbackChat: (chatId: string, rollback: CloudHistoryChatRollback, signal?: AbortSignal) =>
+      get<CloudHistoryChatRolledBack>(`chats/${id(chatId)}/rollback`, { signal }, undefined, rollback, undefined, 'POST'),
     getAttachment: (chatId: string, signal?: AbortSignal) =>
       get<CloudHistoryAttachment>(`chats/${id(chatId)}/attachment`, { signal }),
     updateChat: (
