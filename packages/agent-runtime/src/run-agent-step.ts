@@ -1539,6 +1539,10 @@ export async function loopAgentSteps(
       signal:
         options.mode === 'foreground' ? signal : new AbortController().signal,
       cancelSignal: options.mode === 'foreground' ? signal : undefined,
+      // A manual compact's summary is the run's only request, so its refusal
+      // (a session that ended, a policy refusal) is the run's outcome: "try
+      // again" would only be refused again (prod 11-02..04).
+      rethrowRefusals: options.trigger === 'manual',
       logger,
       runId,
       model: agentTemplate.model,

@@ -522,7 +522,7 @@ export function resetConversationSummariesForTest(): void {
 }
 
 /** Runs `generateConversationSummary` and logs its outcome; never throws
- *  except on the caller's own abort. */
+ *  except on the caller's own abort, or a refused request when asked. */
 export async function summarizeAndLog(
   params: Parameters<typeof generateConversationSummary>[0] & {
     logger: Logger
@@ -533,6 +533,13 @@ export async function summarizeAndLog(
     midTurn: boolean
     /** The run's own signal: its abort is logged and rethrown. */
     cancelSignal?: AbortSignal
+    /**
+     * Rethrow a request the API or provider refused (thrown by the stream: a
+     * session that ended, a policy refusal, a BYOK 4xx), so the run ends on
+     * that refusal as a turn's request would. An in-band failure (a 5xx or a
+     * cut stream, an empty reply) still returns null: trying again can work.
+     */
+    rethrowRefusals?: boolean
     telemetry?: Record<string, string>
   },
 ): Promise<ConversationSummary | null> {
@@ -543,6 +550,7 @@ export async function summarizeAndLog(
     mode,
     midTurn,
     cancelSignal,
+    rethrowRefusals,
     telemetry,
     ...summaryParams
   } = params
@@ -611,6 +619,13 @@ export async function summarizeAndLog(
       'Conversation summary failed',
     )
     if (cancelSignal?.aborted) throw error
+    if (
+      rethrowRefusals &&
+      !(error instanceof SummaryError) &&
+      !isAbortError(error) &&
+      !summaryParams.signal.aborted
+    )
+      throw error
     return null
   }
 }

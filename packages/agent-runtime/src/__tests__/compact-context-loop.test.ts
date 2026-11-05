@@ -63,6 +63,8 @@ describe('compactContext in loopAgentSteps', () => {
   let seenMessages: Message[][]
   let summaryRequests: Message[][]
   let summaryFails: boolean
+  /** Thrown by the summary request, as the SDK throws an API refusal. */
+  let summaryRefusal: Error | undefined
   let order: string[]
   let runtimeImpl: any
 
@@ -180,6 +182,7 @@ describe('compactContext in loopAgentSteps', () => {
       if (params.extraCodebuffMetadata?.compaction_summary === '1') {
         summaryRequests.push(params.messages)
         order.push('summary')
+        if (summaryRefusal) throw summaryRefusal
         if (summaryFails) {
           yield { type: 'error' as const, message: 'provider down' }
         } else {
@@ -311,6 +314,7 @@ describe('compactContext in loopAgentSteps', () => {
     seenMessages = []
     summaryRequests = []
     summaryFails = false
+    summaryRefusal = undefined
     order = []
     resetConversationSummariesForTest()
     dbSpies = setupDbSpies(createMockDbOperations())
@@ -947,6 +951,67 @@ describe('compactContext in loopAgentSteps', () => {
       })
       expect(summaryRequests).toHaveLength(1)
       expect(second.output.type).not.toBe('error')
+    })
+
+    describe('when the summary request is refused', () => {
+      /** The API's session gate, as the AI SDK throws it. */
+      const sessionEnded = () =>
+        Object.assign(new Error('Conflict'), {
+          statusCode: 409,
+          responseBody: JSON.stringify({
+            error: 'session_superseded',
+            message:
+              'Your session ended before this request started. Send your message again to start a new one.',
+          }),
+        })
+
+      it('ends the run on the refusal, with its status and code', async () => {
+        summaryRefusal = sessionEnded()
+        const logged: Array<Record<string, unknown>> = []
+        const history = idleHistory(0)
+        const result = await runLoop(optedIn, history, {
+          prompt: '/compact',
+          logged,
+        })
+        expect(result.output).toMatchObject({
+          type: 'error',
+          statusCode: 409,
+          error: 'session_superseded',
+          message:
+            'Your session ended before this request started. Send your message again to start a new one.',
+        })
+        expect(seenMessages).toHaveLength(0)
+        expect(joined(result.agentState.messageHistory)).not.toContain(
+          'MODEL SUMMARY',
+        )
+        expect(
+          logged.find((row) => row.axiomEvent === 'compaction_summary'),
+        ).toMatchObject({ trigger_reason: 'manual', outcome: 'failed' })
+        expect(
+          logged.find((row) => row.axiomEvent === 'context_compaction.attempt'),
+        ).toMatchObject({ trigger_reason: 'manual', outcome: 'failed' })
+      })
+
+      it('still ends quietly on a summary the model failed to write', async () => {
+        summaryFails = true
+        const result = await runLoop(optedIn, idleHistory(0), {
+          prompt: '/compact',
+        })
+        expect(result.output.type).not.toBe('error')
+        expect(seenMessages).toHaveLength(0)
+      })
+
+      it('leaves an automatic summary\'s refusal as it was', async () => {
+        summaryRefusal = sessionEnded()
+        const result = await runLoop(optedIn, idleHistory(0), {
+          state: measured(10_000_000),
+        })
+        expect(summaryRequests).toHaveLength(1)
+        expect(result.output).not.toMatchObject({ statusCode: 409 })
+        expect((result.output as { message?: string }).message).toContain(
+          'Compaction could not bring this conversation',
+        )
+      })
     })
 
     it('still bills an automatic summary for a chat that small', async () => {
