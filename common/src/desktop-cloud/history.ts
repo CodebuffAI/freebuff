@@ -55,6 +55,11 @@ export type CloudHistoryChat = {
   handedBackAt?: string | null
   /** Cloud cannot bring this archived chat's files back, but Desktop can land their export. */
   localRestoreRequired?: boolean
+  /**
+   * Cloud stopped this chat at a resource limit and refuses its every Cloud turn (`createRun`),
+   * so a client must not buy a session for one. Absent from older servers.
+   */
+  resourceLimited?: boolean
   metadataRevision: number
   phase: string
   updatedAt: string
