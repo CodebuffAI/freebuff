@@ -105,6 +105,19 @@ ends it.
 
 - Tool definitions live in `common/src/tools` and are executed via the SDK helpers + agent-runtime.
 
+### Searching and reading the public web
+
+Hosted `web_search` uses [Parallel Fast](https://docs.parallel.ai/search/modes).
+It returns up to ten source URLs with excerpts; one request can include several
+keyword variations for the same objective. Use the excerpts first. For a known
+URL or missing detail, `read_url` uses [Extract](https://docs.parallel.ai/extract/extract-quickstart):
+an objective selects relevant passages; omitting it reads the page in order.
+Search uses the index by default; Extract may refresh a page under its default
+policy. Set `live: true` when freshness matters:
+Parallel may reuse a page fetched within ten minutes; older cached pages cannot
+stand in for a failed refresh. Search and fetch share a per-user limit, and a
+direct BYOK run keeps the local public-URL reader.
+
 ### Skill resource paths
 
 Both the runtime `skill` tool and CLI `/skill:<name>` prompts use

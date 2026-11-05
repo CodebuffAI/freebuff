@@ -176,6 +176,11 @@ export enum AnalyticsEvent {
   WEB_SEARCH_ERROR = 'api.web_search_error',
   WEB_SEARCH_RATE_LIMITED = 'api.web_search_rate_limited',
 
+  WEB_FETCH_AUTH_ERROR = 'api.web_fetch_auth_error',
+  WEB_FETCH_RATE_LIMITED = 'api.web_fetch_rate_limited',
+  WEB_FETCH_VALIDATION_ERROR = 'api.web_fetch_validation_error',
+  WEB_FETCH_ERROR = 'api.web_fetch_error',
+
   DOCS_SEARCH_REQUEST = 'api.docs_search_request',
   DOCS_SEARCH_AUTH_ERROR = 'api.docs_search_auth_error',
   DOCS_SEARCH_VALIDATION_ERROR = 'api.docs_search_validation_error',

@@ -35,6 +35,21 @@ const urlSchema = z
       .describe(
         'The full http:// or https:// URL to fetch and extract readable text from.',
       ),
+    objective: z
+      .string()
+      .trim()
+      .min(1)
+      .max(5000)
+      .optional()
+      .describe(
+        'The specific information to extract. Omit to read the page in order.',
+      ),
+    live: z
+      .boolean()
+      .optional()
+      .describe(
+        'Request fresh content only for time-sensitive facts. Pages fetched within the last 10 minutes may be reused.',
+      ),
     max_chars: z
       .number()
       .int()
@@ -50,11 +65,9 @@ const urlSchema = z
 const inputSchema = repairInput(clampMaxChars, urlSchema)
 
 const description = `
-Purpose: Fetch a URL returned by web_search and extract the readable page text so you can answer with source-backed evidence.
+Fetch a known public URL, or read a source when web_search excerpts lack the detail you need. Give an objective to extract the relevant passages. Omit it to read page content up to max_chars. If the search already supplies enough evidence, answer from its excerpts and cite the source.
 
-Use this after web_search when snippets are not enough. Prefer authoritative, relevant pages from the search results. The tool follows redirects, extracts titles and metadata, strips scripts/styles/navigation boilerplate from HTML, and returns normalized readable text.
-
-Do not use run_terminal_command with curl just to inspect web pages; use read_url instead. If read_url reports unsupported content or extraction failure, then choose a different search result or explain the limitation.
+Use read_url for web pages instead of running curl. If a source cannot be read, choose another relevant source or explain the gap.
 
 Example:
 ${$getNativeToolCallExampleString({
@@ -77,11 +90,12 @@ export const readUrlParams = {
     z.union([
       z.object({
         url: z.string(),
-        finalUrl: z.string(),
-        status: z.number(),
+        finalUrl: z.string().optional(),
+        status: z.number().optional(),
         contentType: z.string().optional(),
         title: z.string().optional(),
         description: z.string().optional(),
+        publishDate: z.string().optional(),
         text: z.string(),
         truncated: z.boolean(),
       }),

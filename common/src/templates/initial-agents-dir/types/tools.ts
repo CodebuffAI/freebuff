@@ -281,6 +281,10 @@ export interface ReadSubtreeParams {
 export interface ReadUrlParams {
   /** The full http:// or https:// URL to fetch and extract readable text from. */
   url: string
+  /** The specific information to extract. Omit to read the page in order. */
+  objective?: string
+  /** Request fresh content only for time-sensitive facts. Pages fetched within the last 10 minutes may be reused. */
+  live?: boolean
   /** Maximum number of extracted text characters to return. Defaults to 20000. */
   max_chars?: number
 }
@@ -407,13 +411,17 @@ export interface ThinkDeeplyParams {
 }
 
 /**
- * Search the web for current information.
+ * Search the web for relevant source excerpts and URLs.
  */
 export interface WebSearchParams {
-  /** A concise English keyword query of 1–50 words. No slashes (including package/import names, URLs, or paths), numbers with commas, or non-Latin scripts. Rewrite unsupported terms as English keywords. */
+  /** Primary keyword query, usually 3–6 words. Include the entity, exact package name, or error you are looking for. */
   query: string
-  /** Search depth - 'standard' for quick results, 'deep' for more comprehensive search. Default is 'standard'. */
-  depth?: 'standard' | 'deep'
+  /** What you need to establish. Include relevant context, version, or source preferences. */
+  objective?: string
+  /** Up to two alternate keyword queries for the same objective. Submit them together in this search. */
+  additional_queries?: string[]
+  /** Request fresh pages only when the answer is time-sensitive. Slower; pages fetched within the last 10 minutes may be reused. */
+  live?: boolean
 }
 
 /**

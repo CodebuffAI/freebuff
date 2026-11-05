@@ -32,7 +32,7 @@ In your report, include key findings, relevant insights, and actionable recommen
   handleSteps: function* ({ prompt }) {
     yield {
       toolName: 'web_search' as const,
-      input: { query: prompt || '', depth: 'standard' as const },
+      input: { query: prompt || '' },
     }
     yield 'STEP_ALL'
   },

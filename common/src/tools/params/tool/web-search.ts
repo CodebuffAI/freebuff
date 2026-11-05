@@ -6,56 +6,49 @@ import type { $ToolParams } from '../../constants'
 
 const toolName = 'web_search'
 const endsAgentStep = true
+const keywordQuery = z.string().trim().min(1).max(200)
 const inputSchema = z
   .object({
-    query: z
+    query: keywordQuery.describe(
+      'Primary keyword query, usually 3–6 words. Include the entity, exact package name, or error you are looking for.',
+    ),
+    objective: z
       .string()
-      .min(1, 'Query cannot be empty')
-      .describe(
-        `A concise English keyword query of 1–50 words. No slashes (including package/import names, URLs, or paths), numbers with commas, or non-Latin scripts. Rewrite unsupported terms as English keywords.`,
-      ),
-    depth: z
-      .enum(['standard', 'deep'])
+      .trim()
+      .min(1)
+      .max(5000)
       .optional()
-      .default('standard')
       .describe(
-        `Search depth - 'standard' for quick results, 'deep' for more comprehensive search. Default is 'standard'.`,
+        'What you need to establish. Include relevant context, version, or source preferences.',
+      ),
+    additional_queries: z
+      .array(keywordQuery)
+      .max(2)
+      .optional()
+      .describe(
+        'Up to two alternate keyword queries for the same objective. Submit them together in this search.',
+      ),
+    live: z
+      .boolean()
+      .optional()
+      .describe(
+        'Request fresh pages only when the answer is time-sensitive. Slower; pages fetched within the last 10 minutes may be reused.',
       ),
   })
-  .describe(`Search the web for current information.`)
+  .describe('Search the web for relevant source excerpts and URLs.')
 const description = `
-Purpose: Search the web for current, up-to-date information on any topic.
+Start web research with web_search. Give a short keyword query and describe the information you need in objective. For multiple angles on the same question, add related queries in the same call. Keep exact identifiers, numbers, and names in the relevant language.
 
-Use cases:
-- Finding current information about technologies, libraries, or frameworks
-- Researching best practices and solutions
-- Getting up-to-date news or documentation
-- Finding examples and tutorials
-- Checking current status of services or APIs
-
-Use concise English keyword queries of at most 50 words. Search covers English pages. Queries cannot contain slashes (including package/import names, URLs, or file paths), numbers with commas, or non-Latin scripts.
-Rewrite identifiers into useful keywords: "next/navigation useRouter" → "Nextjs useRouter", "@tanstack/react-query" → "tanstack react-query". Write "101342" instead of "101,342". Translate non-English queries into English and transliterate names. Use read_url directly for a known URL. If web_search returns query guidance, reformulate the query before retrying.
-If a search returns no results, try simpler keywords or alternate spellings, such as "Nextjs" for "Next.js".
-
-The tool returns JSON containing a results array with title, url, and snippet fields. Read source pages with read_url to verify the snippets.
+Read the returned excerpts first. Answer with their source URLs when they provide the evidence you need. Use read_url for a known URL or when an excerpt lacks necessary detail. Indexed content is fine for most searches. Set live only if recently changed information matters.
 
 Example:
 ${$getNativeToolCallExampleString({
   toolName,
   inputSchema,
   input: {
-    query: 'Nextjs useRouter',
-    depth: 'standard',
-  },
-  endsAgentStep,
-})}
-
-${$getNativeToolCallExampleString({
-  toolName,
-  inputSchema,
-  input: {
-    query: 'React Server Components tutorial',
-    depth: 'deep',
+    query: '@tanstack/react-query staleTime',
+    objective:
+      'Find the documented default staleTime in TanStack Query v5 and what it means for background refetches.',
   },
   endsAgentStep,
 })}

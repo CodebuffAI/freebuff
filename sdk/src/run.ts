@@ -1,5 +1,6 @@
 import path from 'path'
 
+import { callWebFetchAPI } from '@codebuff/agent-runtime/llm-api/codebuff-web-api'
 import { callMainPrompt } from '@codebuff/agent-runtime/main-prompt'
 import { adjustContextTokenCountForHistoryEdit } from '@codebuff/agent-runtime/util/context-token-count'
 import {
@@ -20,7 +21,7 @@ import {
   callMCPTool,
 } from '@codebuff/common/mcp/client'
 import { toolNames } from '@codebuff/common/tools/constants'
-import { clientToolCallSchema } from '@codebuff/common/tools/list'
+import { clientToolCallSchema, type CodebuffToolCall } from '@codebuff/common/tools/list'
 import { AgentOutputSchema } from '@codebuff/common/types/session-state'
 import {
   FETCH_IDLE_TIMEOUT_USER_MESSAGE,
@@ -883,6 +884,24 @@ async function runOnce({
           mcpConfig,
         },
         overrides: overrideTools ?? {},
+        readPage: async ({ url, max_chars, objective, live }) => {
+          // A direct BYOK run has no hosted service allowance. Keep its local,
+          // DNS-pinned reader and never send its provider key to the web API.
+          if (byok) return readUrl({ url, max_chars, signal })
+          const page = await callWebFetchAPI({
+            url,
+            maxChars: max_chars,
+            objective,
+            live,
+            sessionId: promptId,
+            signal,
+            apiKey,
+            fetch: agentRuntimeImpl.fetch,
+            logger: agentRuntimeImpl.logger,
+            env: { clientEnv: agentRuntimeImpl.clientEnv, ciEnv: agentRuntimeImpl.ciEnv },
+          })
+          return [{ type: 'json', value: page }]
+        },
         customToolDefinitions: activeCustomToolDefinitions
           ? Object.fromEntries(
               activeCustomToolDefinitions.map((def) => [def.toolName, def]),
@@ -1361,6 +1380,7 @@ async function dropMatchesOutsideProject(
 async function handleToolCall({
   action,
   overrides,
+  readPage,
   customToolDefinitions,
   cwd,
   fs,
@@ -1372,6 +1392,7 @@ async function handleToolCall({
 }: {
   action: ServerAction<'tool-call-request'>
   overrides: NonNullable<CodebuffClientOptions['overrideTools']>
+  readPage: (input: CodebuffToolCall<'read_url'>['input']) => Promise<ToolResultOutput[]>
   customToolDefinitions: Record<string, CustomToolDefinition>
   cwd?: string
   fs: CodebuffFileSystem
@@ -1500,10 +1521,7 @@ async function handleToolCall({
         terminalCommandBroker,
       } as Parameters<typeof runTerminalCommand>[0])
     } else if (toolName === 'read_url') {
-      // Only the tool's own parameters: the transport and SSRF options are
-      // the host's, never the tool call's.
-      const { url, max_chars } = input as { url: string; max_chars?: number }
-      result = await readUrl({ url, max_chars, signal })
+      result = await readPage(input as CodebuffToolCall<'read_url'>['input'])
     } else if (toolName === 'code_search' && projectFence) {
       result = confinedToolError(
         'code_search is not available in this run: it cannot be held to the project directory. Use glob and read_files instead.',

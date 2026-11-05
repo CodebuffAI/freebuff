@@ -173,7 +173,7 @@ describe('researcher-web SDK integration', () => {
         },
         prompt: [
           'Use web search to answer this React docs question.',
-          'After searching, fetch exactly three relevant React docs pages with read_url before answering.',
+          'Then use read_url to verify the hook signature on the one official React reference page.',
           'In React 19, which hook returns state, a form action, and an isPending value for form actions?',
           'Answer with the exact hook name and one short sentence.',
         ].join(' '),
