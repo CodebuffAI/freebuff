@@ -40,6 +40,8 @@ export type CloudHistoryRun = {
    * null when there is none. `title` is null for an untitled chat. Absent from older servers. */
   waitingForChat?: { id: string; title: string | null } | null
 }
+/** A chat's `title` while it has neither a title nor a first run to name it (history-store.ts). */
+export const UNTITLED_CLOUD_CHAT_TITLE = 'Cloud chat'
 export type CloudHistoryChat = {
   deviceExecution?: import('./device-execution').DeviceExecutionTarget | null
   mission?: import('./mission').CloudMission | null
