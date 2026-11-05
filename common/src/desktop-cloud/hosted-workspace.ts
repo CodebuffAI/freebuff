@@ -260,6 +260,8 @@ export type HostedWorkspaceHost = {
   chatFork?: true
   files?: import('./hosted-files').HostedFilesHost
   git?: import('./hosted-git').HostedGitHost
+  /** Open a project's or chat's folder in an app on this computer. Older builds omit it. */
+  openIn?: import('./hosted-open-in').HostedOpenInHost
   protocolVersion: typeof HOSTED_WORKSPACE_PROTOCOL_VERSION
   platform: string
   launchId?: string
