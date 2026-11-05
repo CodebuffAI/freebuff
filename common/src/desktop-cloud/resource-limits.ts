@@ -60,7 +60,7 @@ const RESOURCE_EXPLANATIONS: Record<
  * to a new chat that was empty (2026-10-28).
  */
 export const CLOUD_RESOURCE_FILES_WHERE =
-  'They are kept for this chat only, and only the Freebuff Desktop app can get them back. A new chat does not start from them, and deleting this chat deletes them.'
+  'They stay with this chat, and the Freebuff Desktop app can continue from them on your computer (open the chat there and choose Local). A new chat starts from your project, not from these files, and deleting this chat deletes them.'
 
 /**
  * The transcript note written next to a resource-limit failure: which limit,

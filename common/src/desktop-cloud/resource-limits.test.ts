@@ -45,7 +45,7 @@ test('a web run is told where its saved files are, and that a new chat will not 
   // from the project's source and was empty.
   const web = cloudResourceExplanation('processes', true, false)
   expect(web).toBe(
-    'Cloud stopped this turn because the project is running too many processes. Your files are saved. They are kept for this chat only, and only the Freebuff Desktop app can get them back. A new chat does not start from them, and deleting this chat deletes them. Dev servers and watchers left running are the usual cause; stop the ones you no longer need before running this project in Cloud again.',
+    'Cloud stopped this turn because the project is running too many processes. Your files are saved. They stay with this chat, and the Freebuff Desktop app can continue from them on your computer (open the chat there and choose Local). A new chat starts from your project, not from these files, and deleting this chat deletes them. Dev servers and watchers left running are the usual cause; stop the ones you no longer need before running this project in Cloud again.',
   )
   expect(cloudResourceExplanation('cpu', false, false)).toContain(
     `this can take a few minutes. ${CLOUD_RESOURCE_FILES_WHERE}`,
