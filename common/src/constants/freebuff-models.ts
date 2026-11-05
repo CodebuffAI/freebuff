@@ -3609,6 +3609,13 @@ export function freebuffPurchasesPausedAvailabilityLabel(): string {
   return 'purchased sessions are paused right now — the model itself is fine; try again shortly'
 }
 
+/** A running chat's next hour, refused rather than bought on a pricier model
+ *  than the one the chat was running on (the limited-tier coercion). Rendered
+ *  inside "<model> isn't available right now (…)". */
+export function freebuffContinuationModelUnavailableLabel(): string {
+  return 'not at your current access, and this chat was not moved to a pricier model for you — pick a model to keep working'
+}
+
 /**
  * Models we no longer serve on Freebuff's own agents, with no compatibility
  * path left for them: still recognised (so an old client gets a clear answer
