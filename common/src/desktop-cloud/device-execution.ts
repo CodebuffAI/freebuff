@@ -344,12 +344,48 @@ export const DEVICE_HARNESS_TIME_LIMIT_MESSAGE =
 export const DEVICE_HARNESS_STOPPED_MESSAGE =
   'The turn running on your computer was stopped before it finished. Completed steps are saved; send a message to continue.'
 
+export type DeviceHarness = 'codex' | 'claude-code'
+const HARNESS_LABEL: Record<DeviceHarness, string> = {
+  codex: 'Codex',
+  'claude-code': 'Claude Code',
+}
+const HARNESS_ACCOUNT: Record<DeviceHarness, string> = {
+  codex: 'ChatGPT',
+  'claude-code': 'Claude',
+}
+const PICK_FREEBUFF = 'choose a Freebuff model from the model picker to keep going'
+
+/** Desktop's own copy for a turn it could not run, already worded for the
+ *  user (harness/claude-code.ts, codex-errors.ts, codex.ts). */
+const DESKTOP_WORDED = [
+  /^This agent runs your local (Claude Code|Codex CLI), which is signed out\./,
+  /^Your organization’s Claude Code policy disables autonomous permission mode\b/,
+  /^Freebuff stopped this turn after its Claude Code elevation guard failed\./,
+  /\. Update it to keep using this agent, or switch to another from the selector\.$/,
+]
+
+/** When the CLI says its plan's limit resets, as it printed it (the computer's own clock). */
+function limitReset(message: string): string | null {
+  const at =
+    /\btry again at ([^()\n]{1,60}?)\.?\s*$/i.exec(message) ??
+    /\bresets (?:at )?([^()\n·∙|]{1,40}?(?: \([^)\n]{1,40}\))?)\.?\s*(?:$|[·∙|])/i.exec(message)
+  return at?.[1]?.trim() || null
+}
+
 /**
  * The user-facing message for a native turn's journal `error`, or null when it
  * is not one we can name. Desktop builds before these messages existed wrote the
  * SDK's own text for every abort ("Claude Code process aborted by user").
+ *
+ * The CLI runs on the user's computer with their own sign-in, so most failures
+ * are theirs to fix there: signed out, plan limit used up, a model their plan
+ * cannot use. Only fixed classes are named; the CLI's raw text never is (it can
+ * quote the request).
  */
-export function deviceHarnessFailureMessage(message: string): string | null {
+export function deviceHarnessFailureMessage(
+  message: string,
+  harness?: DeviceHarness,
+): string | null {
   if (
     message === DEVICE_HARNESS_TIME_LIMIT_MESSAGE ||
     message === DEVICE_HARNESS_STOPPED_MESSAGE
@@ -357,7 +393,40 @@ export function deviceHarnessFailureMessage(message: string): string | null {
     return message
   if (/process aborted by user/i.test(message))
     return DEVICE_HARNESS_STOPPED_MESSAGE
+  if (message.length <= 1000 && DESKTOP_WORDED.some((pattern) => pattern.test(message)))
+    return message
+  if (!harness) return null
+  const label = HARNESS_LABEL[harness]
+  const account = HARNESS_ACCOUNT[harness]
+  if (
+    /\b(hit your (usage )?limit|usage limit reached|(5-hour|weekly|session) limit reached)\b/i.test(
+      message,
+    )
+  ) {
+    const reset = limitReset(message)
+    return `Your ${account} plan’s ${label} usage limit is used up${reset ? ` until ${reset}` : ''}. Wait for it to reset, or ${PICK_FREEBUFF}.`
+  }
+  const unsupported =
+    /The '([\w.:/-]{1,80})' model is not supported when using Codex with a ChatGPT account/.exec(
+      message,
+    )
+  if (unsupported)
+    return `Your ChatGPT plan can’t use ${unsupported[1]} in Codex. Choose another model from the model picker.`
+  if (/spend cap set by the owner of your workspace/i.test(message))
+    return `Your ${account} workspace’s spend cap for ${label} is used up. Ask a workspace owner to raise it, or ${PICK_FREEBUFF}.`
+  if (/\bworkspace is out of credits\b/i.test(message))
+    return `Your ${account} workspace is out of ${label} credits. Add credits there, or ${PICK_FREEBUFF}.`
+  if (/^Quota exceeded\. Check your plan and billing details|credit balance is too low/i.test(message))
+    return `The account ${label} signs in with on your computer is out of quota or credit. Check its plan and billing, or ${PICK_FREEBUFF}.`
+  if (new RegExp(`^Could not install ${label}\\b`).test(message))
+    return `Freebuff couldn’t install ${label} on your computer. Check that computer’s internet connection, then send your message again.`
   return null
+}
+
+/** A native turn's failure that no class names: which CLI failed and where, never its raw text. */
+export function deviceHarnessUnnamedFailure(harness: DeviceHarness): string {
+  const label = HARNESS_LABEL[harness]
+  return `${label} stopped on your computer with an error. Completed steps are saved; send a message to try again. If it keeps happening, run \`${harness === 'codex' ? 'codex' : 'claude'}\` in a terminal on that computer to see why, or ${PICK_FREEBUFF}.`
 }
 export const deviceValueResult = z
   .object({
