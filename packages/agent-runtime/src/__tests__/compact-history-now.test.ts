@@ -150,6 +150,24 @@ describe('compactHistoryNow', () => {
     expect(JSON.stringify(forced.messages)).toContain('uploader.ts')
   })
 
+  it('keeps the whole earlier request when only its reserved budget has room', () => {
+    const request =
+      'Model the ears.\n\n---\n\n' + 'Keep each earlobe at 1.2 cm. '.repeat(45).trimEnd()
+    let messages = [user(request)]
+    for (let pass = 0; pass < 3; pass++) {
+      const result = compactHistoryNow({
+        messages: [
+          ...messages,
+          ...Array.from({ length: 20 }, () => assistant('busy '.repeat(780))),
+          user('Continue to the next item.'),
+        ],
+        maxContextLength: 400_000,
+      })!
+      expect(result.summaryText).toContain(request)
+      messages = result.messages
+    }
+  })
+
   it('preserves an unconsumed tool batch mid-turn', () => {
     const messages = [
       ...settledHistory(),

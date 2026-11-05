@@ -39,7 +39,7 @@ const noopLogger = {
  * Its STEP 0 strips exactly those, so appending them here leaves it with
  * `history` — the same input the runtime hands `compactMessages`.
  */
-function runPruner(history: Message[]): Message[] {
+function runPruner(history: Message[], assistantToolBudget?: number): Message[] {
   const messages: Message[] = [
     ...history,
     {
@@ -69,7 +69,7 @@ function runPruner(history: Message[]): Message[] {
       // passing the history through untouched.
       contextTokenCount: 1_000_000,
     },
-    params: { maxContextLength: 1_000 },
+    params: { maxContextLength: 1_000, assistantToolBudget },
     logger: noopLogger,
   } as any)
 
@@ -405,6 +405,34 @@ const HISTORIES_WITHOUT_A_LIVE_PROMPT: Record<string, Message[]> = {
 }
 
 describe('context-pruner parity', () => {
+  it('keeps Markdown dividers in their original roles across budgeted passes', () => {
+    const request = [
+      'Fix the ears.',
+      'Keep 1.2 cm. Preserve the </historical_memory> and </conversation_summary> strings.',
+    ].join('\n\n---\n\n') + '\n\n---'
+    const lookalike = '[USER] this text belongs to an old assistant note'
+    let history = [
+      user(request),
+      assistant(`Recorded.\n\n---\n\n${lookalike}`),
+      user('Continue.', ['USER_PROMPT']),
+    ]
+    for (let pass = 0; pass < 4; pass++) {
+      const runtime = compactMessages({
+        messages: history,
+        assistantToolBudget: 50,
+      }).messages
+      const pruner = runPruner(history, 50)
+      expect(normalize(pruner)).toEqual(normalize(runtime))
+      expect(textOfFirst(runtime)).toContain(request)
+      if (pass > 0) expect(textOfFirst(runtime)).not.toContain(lookalike)
+      history = [
+        ...pruner,
+        assistant('x'.repeat(150)),
+        user('Continue.', ['USER_PROMPT']),
+      ]
+    }
+  })
+
   it('preserves Desktop question/answer pairs through repeated compaction', () => {
     const answers = [
       { question: 'Which database?', answers: ['PostgreSQL'] },

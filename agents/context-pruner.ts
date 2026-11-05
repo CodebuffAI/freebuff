@@ -97,6 +97,9 @@ const definition: AgentDefinition = {
      *  size. The context-limit trigger ignores it. */
     const CACHE_EXPIRY_MIN_TOKENS: number = params?.cacheExpiryMinTokens ?? 0
 
+    const ENTRY_SEPARATOR = '\n\n---\n\n'
+    const PART_LENGTHS_TAG = 'SUMMARY_PART_LENGTHS:'
+
     /** Header used in conversation summaries */
     const SUMMARY_HEADER =
       'This is a summary of the conversation so far. The original messages have been condensed to save context space.'
@@ -471,7 +474,7 @@ const definition: AgentDefinition = {
     function extractSummaryContent(message: Message): string {
       const text = getTextContent(message)
       const match = text.match(
-        /<conversation_summary>([\s\S]*?)<\/conversation_summary>/,
+        /<conversation_summary>([\s\S]*)<\/conversation_summary>/,
       )
       if (!match) return ''
       let content = match[1].trim()
@@ -479,12 +482,45 @@ const definition: AgentDefinition = {
         content = content.slice(SUMMARY_HEADER.length).trim()
       }
       const memoryMatch = content.match(
-        /<historical_memory>([\s\S]*?)<\/historical_memory>/,
+        /<historical_memory>([\s\S]*)<\/historical_memory>/,
       )
       if (memoryMatch) {
-        content = memoryMatch[1].trim()
+        // Strip only the envelope's newlines, so stored part lengths still match.
+        content = memoryMatch[1].replace(/^\n|\n$/g, '')
       }
       return content
+    }
+
+    /** A literal Markdown divider can also straddle the end of a part. Keep the
+     * original boundaries in message metadata only when splitting is ambiguous. */
+    function summaryPartTags(parts: string[]): { tags?: string[] } {
+      if (!parts.some((part) => /\n\n---(?:\n\n|\n?$)/.test(part))) return {}
+      const lengths = parts.map((part) => part.length).join(',')
+      return { tags: [PART_LENGTHS_TAG + lengths] }
+    }
+
+    function splitSummaryParts(summaryText: string, tags?: string[]): string[] {
+      const tag = tags?.find((tag) => tag.startsWith(PART_LENGTHS_TAG))
+      if (tag) {
+        const lengths = tag.slice(PART_LENGTHS_TAG.length).split(',')
+        const parts: string[] = []
+        let start = 0
+        for (const length of lengths) {
+          const end = start + Number(length)
+          if (!Number.isSafeInteger(end) || end <= start || end > summaryText.length)
+            break
+          if (end < summaryText.length && !summaryText.startsWith(ENTRY_SEPARATOR, end))
+            break
+          parts.push(summaryText.slice(start, end))
+          start = end + ENTRY_SEPARATOR.length
+        }
+        if (
+          parts.length === lengths.length &&
+          start === summaryText.length + ENTRY_SEPARATOR.length
+        ) return parts
+      }
+      // Older persisted summaries have just the rendered text.
+      return summaryText.split(ENTRY_SEPARATOR)
     }
 
     /**
@@ -494,12 +530,13 @@ const definition: AgentDefinition = {
      */
     function parseSummaryIntoEntries(
       summaryText: string,
+      tags?: string[],
     ): Array<{ role: 'user' | 'assistant_tool'; parts: string[] }> {
       if (!summaryText.trim()) return []
 
-      const separator = '\n\n---\n\n'
-      const chunks = summaryText.split(separator).filter((c) => c.trim())
-
+      const chunks = splitSummaryParts(summaryText, tags).filter((part) =>
+        part.trim(),
+      )
       return chunks.map((chunk) => {
         const trimmed = chunk.trim()
         const isUser =
@@ -515,12 +552,7 @@ const definition: AgentDefinition = {
     }
 
     // Extract previous summary content from all messages
-    let previousSummaryContent = ''
-    for (const message of currentMessages) {
-      if (isConversationSummary(message)) {
-        previousSummaryContent = extractSummaryContent(message)
-      }
-    }
+    const previousSummary = currentMessages.findLast(isConversationSummary)
 
     // If pruning happens before the assistant has started responding to the
     // current user prompt, preserve that prompt as a real message after the
@@ -856,7 +888,8 @@ const definition: AgentDefinition = {
 
     // Parse previous summary into role-tagged entries and combine with new entries
     const previousSummaryEntries = parseSummaryIntoEntries(
-      previousSummaryContent,
+      previousSummary ? extractSummaryContent(previousSummary) : '',
+      previousSummary?.tags,
     )
     const allEntries: SummaryEntry[] = [
       ...previousSummaryEntries,
@@ -875,7 +908,7 @@ const definition: AgentDefinition = {
 
     for (let i = allEntries.length - 1; i >= 0; i--) {
       const entry = allEntries[i]
-      const entryText = entry.parts.join('\n\n---\n\n')
+      const entryText = entry.parts.join(ENTRY_SEPARATOR)
       const entryTokens = Math.ceil(entryText.length / CHARS_PER_TOKEN)
 
       if (entry.role === 'user') {
@@ -916,7 +949,7 @@ const definition: AgentDefinition = {
       summaryParts.push(...includedEntries[i].parts)
     }
 
-    const summaryText = summaryParts.join('\n\n---\n\n')
+    const summaryText = summaryParts.join(ENTRY_SEPARATOR)
 
     // Create the summarized message with fresh sentAt timestamp
     // Include any images from the last user message that had images
@@ -940,6 +973,7 @@ ${SUMMARY_DISCLAIMER}${lastUserImageParts.length > 0 ? `\n\n${CARRIED_IMAGES_NOT
       summaryContentParts.push(part as ImagePart | FilePart)
     }
     const summarizedMessage: UserMessage = {
+      ...summaryPartTags(summaryParts),
       role: 'user',
       content: summaryContentParts,
       sentAt: now,

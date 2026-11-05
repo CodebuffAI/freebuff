@@ -103,7 +103,7 @@ const MIN_TRANSLATED_SECTIONS = 6
 export const CONVERSATION_SUMMARY_TAG = 'CONVERSATION_SUMMARY'
 
 const SUMMARY_NOTE =
-  'Historical memory only: it replaces the earlier conversation. Messages after it are real messages. The latest user request can appear both in the memory and after it: the memory then records work already done on it, so continue that work, do not start over. If no user message follows, continue the latest request in the memory with real tool calls.'
+  'Historical memory only: it replaces the earlier conversation. Messages after it are real messages. The latest user request can appear both in the memory and after it: the memory then records work already done on it, so continue that work, do not start over. If no user message follows, resume the latest request in the memory. Use real tool calls when further action is needed or give the final response when the work is complete.'
 
 export function summaryThresholds(maxContextLength: number): {
   first: number

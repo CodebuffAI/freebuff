@@ -135,6 +135,7 @@ const MIN_SHORTENED_REQUEST_TOKENS = 400
 
 /** Separator between entries inside the rendered historical memory. */
 const ENTRY_SEPARATOR = '\n\n---\n\n'
+const PART_LENGTHS_TAG = 'SUMMARY_PART_LENGTHS:'
 
 /** Matches the context-pruner's `trigger_reason` values so Axiom can union them. */
 export type CompactionTrigger =
@@ -501,7 +502,7 @@ function toolImageNote(toolMessage: ToolMessage): string | undefined {
 function extractSummaryContent(message: Message): string {
   const text = getTextContent(message)
   const match = text.match(
-    /<conversation_summary>([\s\S]*?)<\/conversation_summary>/,
+    /<conversation_summary>([\s\S]*)<\/conversation_summary>/,
   )
   if (!match) return ''
   let content = match[1].trim()
@@ -509,23 +510,60 @@ function extractSummaryContent(message: Message): string {
     content = content.slice(SUMMARY_HEADER.length).trim()
   }
   const memoryMatch = content.match(
-    /<historical_memory>([\s\S]*?)<\/historical_memory>/,
+    /<historical_memory>([\s\S]*)<\/historical_memory>/,
   )
   if (memoryMatch) {
-    content = memoryMatch[1].trim()
+    // Strip only the envelope's newlines, so stored part lengths still match.
+    content = memoryMatch[1].replace(/^\n|\n$/g, '')
   }
   return content
+}
+
+/** A literal Markdown divider can also straddle the end of a part. Keep the
+ * original boundaries in message metadata only when splitting is ambiguous. */
+function summaryPartTags(parts: string[]): { tags?: string[] } {
+  if (!parts.some((part) => /\n\n---(?:\n\n|\n?$)/.test(part))) return {}
+  const lengths = parts.map((part) => part.length).join(',')
+  return { tags: [PART_LENGTHS_TAG + lengths] }
+}
+
+function splitSummaryParts(summaryText: string, tags?: string[]): string[] {
+  const tag = tags?.find((tag) => tag.startsWith(PART_LENGTHS_TAG))
+  if (tag) {
+    const lengths = tag.slice(PART_LENGTHS_TAG.length).split(',')
+    const parts: string[] = []
+    let start = 0
+    for (const length of lengths) {
+      const end = start + Number(length)
+      if (!Number.isSafeInteger(end) || end <= start || end > summaryText.length)
+        break
+      if (end < summaryText.length && !summaryText.startsWith(ENTRY_SEPARATOR, end))
+        break
+      parts.push(summaryText.slice(start, end))
+      start = end + ENTRY_SEPARATOR.length
+    }
+    if (
+      parts.length === lengths.length &&
+      start === summaryText.length + ENTRY_SEPARATOR.length
+    ) return parts
+  }
+  // Older persisted summaries have just the rendered text.
+  return summaryText.split(ENTRY_SEPARATOR)
 }
 
 /**
  * Parses a previous summary text blob back into role-tagged entries, so a
  * second compaction can re-apply the budgets over old and new history alike.
  */
-function parseSummaryIntoEntries(summaryText: string): SummaryEntry[] {
+function parseSummaryIntoEntries(
+  summaryText: string,
+  tags?: string[],
+): SummaryEntry[] {
   if (!summaryText.trim()) return []
 
-  const chunks = summaryText.split(ENTRY_SEPARATOR).filter((c) => c.trim())
-
+  const chunks = splitSummaryParts(summaryText, tags).filter((part) =>
+    part.trim(),
+  )
   return chunks.map((chunk) => {
     const trimmed = chunk.trim()
     const isUser =
@@ -915,6 +953,7 @@ export function compactMessages(params: {
 
   const previousSummaryEntries = parseSummaryIntoEntries(
     previousSummary ? extractSummaryContent(previousSummary) : '',
+    previousSummary?.tags,
   )
   const entries = [
     ...previousSummaryEntries,
@@ -924,13 +963,17 @@ export function compactMessages(params: {
     entries,
     { assistantToolBudget, userBudget },
   )
-  const summaryText = renderSummaryText(includedEntries)
+  const summaryParts = includedEntries.flatMap((entry) => entry.parts)
+  const summaryText = summaryParts.join(ENTRY_SEPARATOR)
 
   // Images cannot survive as text, so carry the most recent set forward.
   const imageParts = lastUserImageParts(messagesToSummarize)
 
   const finalMessages: Message[] = [
-    buildSummaryMessage(summaryText, imageParts, now),
+    {
+      ...buildSummaryMessage(summaryText, imageParts, now),
+      ...summaryPartTags(summaryParts),
+    },
   ]
   if (instructionsPromptMessage) {
     // Refresh sentAt so downstream cache-expiry checks see a live timestamp.
@@ -1128,7 +1171,10 @@ function compactRequestHistory(
   const result = compactMessages({
     messages: older.filter((message) => !isWorkingSetMessage(message)),
   })
-  const entries = parseSummaryIntoEntries(result.summaryText)
+  const entries = parseSummaryIntoEntries(
+    result.summaryText,
+    result.messages[0].tags,
+  )
   const now = Date.now()
   // Old persisted compactions put the current request inside the summary and
   // remove USER_PROMPT tags. Reserve that request as historical memory rather
@@ -1289,7 +1335,9 @@ function compactRequestHistory(
   }
   const summaryInstalled = countTokensMessages([summary]) <= summaryLimit
   const output = [
-    ...(summaryInstalled ? [summary] : []),
+    ...(summaryInstalled
+      ? [{ ...summary, ...summaryPartTags(kept.flatMap((entry) => entry.parts)) }]
+      : []),
     ...prefix.map((message) => ({ ...message, sentAt: now })),
     // After the live request, as if the turn had opened by reading them.
     ...(workingSet?.messages ?? []),

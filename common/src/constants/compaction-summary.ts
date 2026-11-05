@@ -33,9 +33,9 @@ Use exactly this format. Write "(none)" for an empty section.
 
 ## Work State
 ### Completed
-- [finished goals]
+- [finished items relevant to the objective, including from earlier summaries. Name each outcome and any check that confirmed it]
 ### Active
-- [goals in progress, and how far they got]
+- [for each unfinished item, say what has already changed and what remains to do or verify]
 ### Blocked
 - [what blocks progress, and why]
 
