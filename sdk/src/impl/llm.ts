@@ -8,6 +8,7 @@ import {
 } from '@codebuff/common/tools/repair-tool-json'
 import {
   getErrorObject,
+  isFetchIdleTimeoutError,
   promptAborted,
   promptSuccess,
 } from '@codebuff/common/util/error'
@@ -220,6 +221,8 @@ export async function* promptAiSdkStream(
     byok?: ResolvedByokConnection
     requestHeaders?: CodebuffRequestHeadersProvider
   },
+  /** Internal: this is the one repeat of a request that timed out silently. */
+  idleTimeoutRetried = false,
 ): ReturnType<PromptAiSdkStreamFn> {
   const {
     providerOptions: originalProviderOptions,
@@ -475,6 +478,26 @@ export async function* promptAiSdkStream(
   // band (5xx/429 error chunk) takes the same path: see
   // classifyErrorChunkRecovery.
   let thrownStreamRecovery: StreamEndRecovery | undefined
+  // Any model output part, including one still held by the stop-sequence
+  // buffer or a tool call's streamed input: once one arrived, the step is not
+  // repeated (see silentTimeoutRetry).
+  let receivedModelOutput = false
+  let retryAfterSilentTimeout = false
+  /**
+   * The runtime's 5-minute fetch inactivity timeout (isFetchIdleTimeoutError)
+   * before this step received any output: nothing reached the user and no tool
+   * call exists, so the same request is sent once more. No other layer retries
+   * it: the AI SDK treats a TimeoutError as an abort, and the stream recoveries
+   * below do not classify it. A BYOK request's timeout is sanitized into a
+   * transient network error, which the stream-interrupted recovery already
+   * retries, so it is left to that. A second silent timeout fails as before.
+   */
+  const silentTimeoutRetry = (error: unknown) =>
+    !idleTimeoutRetried &&
+    !params.byok &&
+    !params.signal.aborted &&
+    !receivedModelOutput &&
+    isFetchIdleTimeoutError(error)
   const streamIterator = response.stream[Symbol.asyncIterator]()
   const recoverThrownStream = (
     error: unknown,
@@ -503,6 +526,10 @@ export async function* promptAiSdkStream(
       iteration = await streamIterator.next()
     } catch (error) {
       if (params.signal.aborted) reportUsageIncomplete()
+      if (silentTimeoutRetry(error)) {
+        retryAfterSilentTimeout = true
+        break
+      }
       const recovery = recoverThrownStream(error)
       if (!recovery) throw error
       thrownStreamRecovery = recovery
@@ -510,6 +537,7 @@ export async function* promptAiSdkStream(
     }
     if (iteration.done) break
     const chunkValue = iteration.value
+    if (/^(text|reasoning|tool)-/.test(chunkValue.type)) receivedModelOutput = true
     if (chunkValue.type === 'finish-step') {
       finishProviderMetadata = chunkValue.providerMetadata as
         | ProviderMetadata
@@ -574,6 +602,11 @@ export async function* promptAiSdkStream(
           message: errorMessage,
         }
         continue
+      }
+
+      if (silentTimeoutRetry(chunkValue.error)) {
+        retryAfterSilentTimeout = true
+        break
       }
 
       // A transport error can also arrive as an AI SDK error chunk instead of
@@ -663,6 +696,26 @@ export async function* promptAiSdkStream(
           }
         : chunkValue
     }
+  }
+  if (retryAfterSilentTimeout) {
+    // The abandoned attempt's final-result promises reject with the same
+    // timeout; observe them so none is left unhandled.
+    void Promise.allSettled([
+      response.response,
+      response.request,
+      response.usage,
+      response.providerMetadata,
+    ])
+    logger.warn(
+      {
+        metric: 'stream_silent_timeout_retry',
+        model: params.model,
+        userId: params.userId,
+        userInputId: params.userInputId,
+      },
+      'Model request timed out before any output; sending it once more',
+    )
+    return yield* promptAiSdkStream(params, true)
   }
   const flushed = stopSequenceHandler.flush()
   if (flushed) {
