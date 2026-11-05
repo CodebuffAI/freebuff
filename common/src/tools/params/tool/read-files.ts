@@ -69,10 +69,35 @@ const legacyInputSchema = z
     `Read text files and view images (PNG, JPEG, GIF, WebP) from disk. Local image reads attach the image for visual inspection rather than returning its bytes as text. Returned text content shares a 20,000 estimated-token limit and a 100,000-character hard limit. Prefer the smallest relevant set of files and use code_search for targeted discovery.`,
   )
 
+/**
+ * A window sent as its own entry after the path it belongs to (`["a.dart", {"offset": 3355,
+ * "limit": 50}]`; Flash, Nov 2026, ~170 calls/day) joins that path. A pathless window with no plain
+ * path before it is left for the schema to reject.
+ */
+function attachPathlessWindows(value: unknown): unknown {
+  const entries = coerceToArray(value)
+  if (!Array.isArray(entries)) return entries
+  const out: unknown[] = []
+  for (const entry of entries) {
+    const previous = out.at(-1)
+    if (
+      entry &&
+      typeof entry === 'object' &&
+      !('path' in entry) &&
+      typeof previous === 'string'
+    ) {
+      out[out.length - 1] = { path: previous, ...entry }
+    } else {
+      out.push(entry)
+    }
+  }
+  return out
+}
+
 const windowedInputSchema = z
   .object({
     paths: z
-      .preprocess(coerceToArray, z.array(windowedEntrySchema))
+      .preprocess(attachPathlessWindows, z.array(windowedEntrySchema))
       .describe(
         'List of files to read. Each entry is either a file path, or an object { path, offset, limit } to read a specific line range of that file.',
       ),

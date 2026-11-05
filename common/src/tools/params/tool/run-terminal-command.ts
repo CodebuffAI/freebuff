@@ -170,18 +170,20 @@ export const gitCommitGuidePrompt = buildGitCommitGuidePrompt({
   attribution: true,
 })
 
+/** Other words models use for SYNC (Solar, Nov 2026, ~55 calls/day). */
+const SYNC_SYNONYMS = new Set(['SYN', 'SYNCHRONOUS', 'BLOCKING'])
+
 /**
- * Repairs two slips seen in production: `cmd` (another shell tool's name for
- * `command`) and a `process_type` like "SYNC\n" or "background".
+ * Repairs slips seen in production: `cmd` (another shell tool's name for
+ * `command`), and a `process_type` like "SYNC\n", "background" or "synchronous".
  */
 function normalizeCommandInput(input: Record<string, unknown>) {
   if (input.command === undefined && typeof input.cmd === 'string') {
     input.command = input.cmd
   }
   if (typeof input.process_type === 'string') {
-    input.process_type = (
-      input.process_type.trim().split(/\s+/)[0] ?? ''
-    ).toUpperCase()
+    const type = (input.process_type.trim().split(/\s+/)[0] ?? '').toUpperCase()
+    input.process_type = SYNC_SYNONYMS.has(type) ? 'SYNC' : type
   }
   return input
 }

@@ -983,6 +983,26 @@ describe('parseRawToolCall repairs common argument slips', () => {
     ).toEqual([{ path: 'a.ts', limit: 2 }, { path: 'b.ts' }])
   })
 
+  it('joins a read_files window sent after its path', () => {
+    expect(
+      inputOf('read_files', {
+        paths: ['lib/pdv_page.dart', { offset: 3355, limit: 50 }, 'b.ts'],
+      }).paths,
+    ).toEqual([{ path: 'lib/pdv_page.dart', offset: 3355, limit: 50 }, 'b.ts'])
+    // No path before it: still refused.
+    expect(
+      'error' in parse('read_files', { paths: [{ offset: 380, limit: 180 }] }),
+    ).toBe(true)
+  })
+
+  it('reads synchronous synonyms as SYNC', () => {
+    for (const process_type of ['synchronous', 'BLOCKING', 'SYN'])
+      expect(
+        inputOf('run_terminal_command', { command: 'ls', process_type })
+          .process_type,
+      ).toBe('SYNC')
+  })
+
   it('clamps an out-of-range read_url `max_chars`', () => {
     const url = 'https://example.com/'
     expect(inputOf('read_url', { url, max_chars: 600 }).max_chars).toBe(1_000)
