@@ -7,6 +7,7 @@ import {
   CLOUD_RESOURCE_RESTART_WHERE,
   cloudResourceExplanation,
   cloudResourceRestarts,
+  cloudResourceUsage,
   isCloudResourceMessage,
   type CloudResourceKind,
 } from './resource-limits'
@@ -67,4 +68,27 @@ test('a process-level trip restarts in Cloud from its saved copy; disk and CPU s
   // Desktop moves locally as before, and the run error is not the sentence it acts on.
   expect(cloudResourceExplanation('files', true, true)).not.toContain(CLOUD_RESOURCE_RESTART_WHERE)
   expect(isCloudResourceMessage(CLOUD_RESOURCE_RESTART_MESSAGE)).toBe(false)
+})
+
+test('the note says how much of the limit was in use, when the runner read it', () => {
+  const gb = 1024 ** 3
+  expect(cloudResourceExplanation('processes', true, true, { projectPids: 1020, projectPidLimit: 1024, pids: 900, pidLimit: 2048 })).toContain(
+    'too many processes. Its limit is 1,024 processes and threads, and 1,020 were running at the last check. Your files are saved.',
+  )
+  // Without a project limit, the chat's own.
+  expect(cloudResourceUsage('processes', { pids: 10, pidLimit: 512 })).toBe('Its limit is 512 processes and threads.')
+  expect(cloudResourceUsage('memory', { memory: 7.8 * gb, memoryInactiveFile: 0.3 * gb, memoryLimit: 8 * gb })).toBe(
+    'Its memory limit is 8.0 GB, and 7.5 GB was in use at the last check.',
+  )
+  // After an OOM kill the memory is already free: name the limit only.
+  expect(cloudResourceUsage('memory', { memory: 1 * gb, memoryLimit: 16 * gb })).toBe('Its memory limit is 16 GB.')
+  expect(cloudResourceUsage('disk', { available: 1.4 * gb })).toBe('At the last check it had 1.4 GB free.')
+  expect(cloudResourceUsage('files', { fdPercent: 97, fdComm: 'node <script>' })).toBe(
+    'At the last check the process “nodescript” had 97% of its open-file limit in use.',
+  )
+  expect(cloudResourceUsage('files', { fdPercent: 0 })).toBeNull()
+  for (const kind of ['cpu', 'time'] as CloudResourceKind[]) expect(cloudResourceUsage(kind, { available: gb })).toBeNull()
+  // No reading: the note is exactly as before.
+  expect(cloudResourceExplanation('disk', true, false, undefined)).toBe(cloudResourceExplanation('disk', true, false))
+  expect(cloudResourceUsage('memory', null)).toBeNull()
 })

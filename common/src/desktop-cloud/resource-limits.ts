@@ -75,6 +75,72 @@ const RESOURCE_EXPLANATIONS: Record<
 }
 
 /**
+ * The runner's last reading of the chat's resources (its `ResourceUsage`), as
+ * far as the transcript note uses it. Every field is optional: a stop found in
+ * an error message may come before any reading.
+ */
+export type CloudResourceReading = {
+  available?: number
+  memory?: number
+  memoryInactiveFile?: number
+  memoryLimit?: number
+  pids?: number
+  pidLimit?: number
+  projectPids?: number
+  projectPidLimit?: number
+  fdPercent?: number
+  fdComm?: string
+}
+
+const count = (value: number) => Math.round(value).toLocaleString('en-US')
+const gigabytes = (bytes: number) => {
+  const value = bytes / 1024 ** 3
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} GB`
+}
+const finite = (value: number | undefined): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0
+
+/**
+ * The limit and how much of it was in use, in one sentence, so a note never
+ * says only "a resource limit": users could not tell a watcher from a full
+ * disk, or how far over they were. Usage below half the limit (an OOM kill
+ * has already freed the memory, a fork failure the processes) is left out
+ * rather than shown next to a limit it seems not to reach.
+ */
+export function cloudResourceUsage(
+  kind: CloudResourceKind,
+  reading: CloudResourceReading | null | undefined,
+): string | null {
+  if (!reading) return null
+  if (kind === 'disk')
+    return finite(reading.available) ? `At the last check it had ${gigabytes(reading.available)} free.` : null
+  if (kind === 'memory') {
+    const limit = reading.memoryLimit
+    if (!finite(limit) || limit === 0) return null
+    const used = finite(reading.memory) ? Math.max(0, reading.memory - (reading.memoryInactiveFile ?? 0)) : 0
+    return used >= limit / 2
+      ? `Its memory limit is ${gigabytes(limit)}, and ${gigabytes(used)} was in use at the last check.`
+      : `Its memory limit is ${gigabytes(limit)}.`
+  }
+  if (kind === 'processes') {
+    const project = finite(reading.projectPidLimit) && reading.projectPidLimit > 0
+    const limit = project ? reading.projectPidLimit! : reading.pidLimit
+    const used = project ? reading.projectPids : reading.pids
+    if (!finite(limit) || limit === 0) return null
+    return finite(used) && used >= limit / 2
+      ? `Its limit is ${count(limit)} processes and threads, and ${count(used)} were running at the last check.`
+      : `Its limit is ${count(limit)} processes and threads.`
+  }
+  if (kind === 'files') {
+    if (!finite(reading.fdPercent) || reading.fdPercent === 0) return null
+    // A process name from the user's VM: keep it to a short, plain token.
+    const name = (reading.fdComm ?? '').replace(/[^\w.+@:-]/g, '').slice(0, 32)
+    return `At the last check ${name ? `the process “${name}”` : 'one process'} had ${Math.min(100, Math.round(reading.fdPercent))}% of its open-file limit in use.`
+  }
+  return null
+}
+
+/**
  * Where the files went, for a run whose client cannot move it to this computer
  * (web). Recovery takes the chat's files out of Cloud into a copy only Desktop
  * reads; a new Cloud chat starts from the project's source, not from them, and
@@ -99,8 +165,11 @@ export function cloudResourceExplanation(
   kind: CloudResourceKind,
   recovered: boolean,
   movesLocally = true,
+  reading?: CloudResourceReading | null,
 ): string {
-  const { what, advice } = RESOURCE_EXPLANATIONS[kind]
+  const { advice } = RESOURCE_EXPLANATIONS[kind]
+  const usage = cloudResourceUsage(kind, reading)
+  const what = usage ? `${RESOURCE_EXPLANATIONS[kind].what} ${usage}` : RESOURCE_EXPLANATIONS[kind].what
   const files = recovered
     ? 'Your files are saved.'
     : 'Your files are being saved for recovery; this can take a few minutes.'
