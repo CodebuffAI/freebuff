@@ -7,6 +7,24 @@ import type { CodebuffClient, TerminalCommandBroker } from '@codebuff/sdk'
 
 const DEBUG_ERROR = true
 
+/**
+ * Runs the benchmarked agent at `high` reasoning, Freebuff's default, when it
+ * declares no `reasoningOptions`. The server applies that default only to
+ * free-mode requests and the bench is a normal caller, so without this each
+ * provider used its own default (on 2026-11-04 Pareto reasoned ~25% less than
+ * Luminal and DeepSeek direct, and scored 0.27 lower for it).
+ */
+export function withBenchDefaultReasoning(
+  definitions: any[],
+  agentId: string,
+): any[] {
+  return definitions.map((definition) =>
+    definition?.id === agentId && definition.reasoningOptions === undefined
+      ? { ...definition, reasoningOptions: { enabled: true, effort: 'high' } }
+      : definition,
+  )
+}
+
 export class CodebuffRunner implements Runner {
   private cwd: string
   private env?: Record<string, string>
@@ -60,7 +78,10 @@ export class CodebuffRunner implements Runner {
     const result = await this.client.run({
       agent: this.agentId,
       prompt,
-      agentDefinitions: this.localAgentDefinitions,
+      agentDefinitions: withBenchDefaultReasoning(
+        this.localAgentDefinitions,
+        this.agentId,
+      ),
       cwd: this.cwd,
       env: this.env,
       terminalCommandBroker: this.terminalCommandBroker,
