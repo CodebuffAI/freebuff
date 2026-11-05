@@ -1,4 +1,8 @@
 import { z } from 'zod/v4'
+import {
+  SPONSORED_WINDOWS_CONTAINMENT,
+  SPONSORED_WINDOWS_EXECUTION_SURFACE,
+} from '../ads/sponsored-windows'
 import { devicePanelOperation } from './device-panels'
 import { deviceGitHubRequest } from './device-github'
 
@@ -172,11 +176,38 @@ export const deviceAgenticOfferFactsRequest = z
   .object({ method: z.literal('agentic_offer_facts') })
   .strict()
 /**
+ * The funded Accept's Windows floor grant (COD-1335), relayed by Cloud: the
+ * only grant that selects the floor broker on a Windows computer
+ * (`sponsoredBrokerArm`). Absent on every macOS and Linux run.
+ */
+export const deviceSponsoredExecGrant = z
+  .object({
+    executionSurface: z.literal(SPONSORED_WINDOWS_EXECUTION_SURFACE),
+    containment: z.literal(SPONSORED_WINDOWS_CONTAINMENT),
+  })
+  .strict()
+export type DeviceSponsoredExecGrant = z.infer<typeof deviceSponsoredExecGrant>
+/**
  * One command of an accepted sponsored run, run CONTAINED in the folder: the
  * sponsored sandbox (sandbox-exec on macOS, bwrap on Linux), a private runtime
  * directory for `runId` and read-only Git, never the plain `exec` shell. It has
  * side effects, so it is journaled; its result is `deviceExecResult`'s shape.
+ *
+ * On Windows (COD-1335) there is no sandbox: the run's commands get the floor
+ * (PowerShell 5.1, a scrubbed environment, the private runtime directory)
+ * only with `grant`, and `timeoutSeconds` bounds the command's whole process
+ * tree on the computer (exit 124), since PowerShell has no `timeout`. Both
+ * ride only a floor run's request: an older Desktop parses this strictly.
  */
+/**
+ * A Windows floor command's time limit when Cloud names none (COD-1335), and
+ * the one `cloud_sandbox_exec` names: under the device's own operation cap
+ * ({@link DEVICE_EXEC_MS}), so the computer ends the command's whole job and
+ * answers 124 before the operation itself times out. Without it, a command
+ * that backgrounds a process (a dev server, a watcher, `Start-Process`)
+ * would hold the Job Object owner, which waits for the whole job, until the cap.
+ */
+export const DEVICE_SPONSORED_FLOOR_TIMEOUT_SECONDS = 290
 export const deviceSponsoredExecRequest = z
   .object({
     method: z.literal('sponsored_exec'),
@@ -184,6 +215,13 @@ export const deviceSponsoredExecRequest = z
     runId: z.string().uuid(),
     command: z.string().min(1).max(200_000),
     outputLimit: z.number().int().min(1).max(DEVICE_EXEC_OUTPUT_BYTES),
+    grant: deviceSponsoredExecGrant.optional(),
+    timeoutSeconds: z
+      .number()
+      .int()
+      .min(1)
+      .max(DEVICE_EXEC_MS / 1000)
+      .optional(),
   })
   .strict()
 export type DeviceSponsoredExecRequest = z.infer<typeof deviceSponsoredExecRequest>

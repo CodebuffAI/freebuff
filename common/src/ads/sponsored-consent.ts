@@ -43,17 +43,33 @@ export const SPONSORED_CONSENT_IN_PLACE_SENTENCE =
  * device chat does not offer. The hosted card names the folder under it by its project name: folder
  * paths never reach the hosted page (`hosted-workspace.ts`).
  *
- * No Windows floor sentence goes with it: Windows device chats are refused before an offer
- * (`windows`), because the floor has no sandbox. Add one here before that refusal is lifted.
+ * Shown for a macOS or Linux computer only. A Windows computer runs on the Windows floor, which has
+ * no sandbox, so it gets {@link SPONSORED_CONSENT_DEVICE_WINDOWS_SENTENCE} instead.
  */
 export const SPONSORED_CONSENT_DEVICE_SENTENCE =
   ' is sponsoring this agent run, so it’s free for you. Freebuff’s agent runs it on your computer, in the folder below: its commands are contained to that folder, it edits the files there and commits nothing. It runs in the background so you can keep working.'
 
 /**
+ * The device-chat question for a WINDOWS computer (COD-1335). The run is on the Windows floor
+ * (COD-642): no OS sandbox, a scrubbed environment and a private HOME, so unlike
+ * {@link SPONSORED_CONSENT_DEVICE_SENTENCE} it never says the commands are contained, and like it
+ * it promises no undo. The hosted card shows {@link SPONSORED_CONSENT_WINDOWS_FLOOR_SENTENCE} under
+ * it.
+ *
+ * The card picks it from the row's SERVER-MINTED `execution_surface === 'desktop_windows'`, which
+ * the funded Accept pairs with the computer's own `clientExecutionSurface`
+ * (`acceptClientSurfacePairsWithRow`), never from anything the advertiser wrote.
+ */
+export const SPONSORED_CONSENT_DEVICE_WINDOWS_SENTENCE =
+  ' is sponsoring this agent run, so it’s free for you. Freebuff’s agent runs it on your Windows computer, in the folder below: it edits the files there and commits nothing. It runs in the background so you can keep working.'
+
+/**
  * The second sentence, shown ONLY where the run has no OS sandbox: Windows (COD-642). Plain words
  * for the three things a user is agreeing to there -- their own permissions, no sandbox, and
- * credentials that are kept out of the run's way rather than locked away. Product-owned and fixed:
- * a surface decides from its own platform whether to show it, never from anything it was sent.
+ * credentials that are kept out of the run's way rather than locked away. Product-owned and fixed,
+ * and never chosen from advertiser text: Desktop decides from its own platform whether to show it,
+ * and the hosted card for a device chat from the row's server-minted `desktop_windows` execution
+ * surface (see {@link SPONSORED_CONSENT_DEVICE_WINDOWS_SENTENCE}).
  */
 export const SPONSORED_CONSENT_WINDOWS_FLOOR_SENTENCE =
   'On Windows there is no sandbox. This task runs with your own Windows permissions, and your credentials are hidden from it but not locked away.'
