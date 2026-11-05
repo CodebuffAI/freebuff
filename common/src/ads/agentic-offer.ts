@@ -259,9 +259,56 @@ export const agenticOfferRequestSchema = z.object({
    * instead of failing the request.
    */
   repoFacts: z.unknown().optional(),
+  /**
+   * `AGENTIC_OFFER_DEVICE_CHAT_VERSION`: the Cloud worker asks for a device
+   * chat (agent in Cloud, tools on the user's computer), and every capability
+   * fact came from that computer (`agentic_offer_facts`), exactly as Desktop
+   * reported them with its own offer request. Absent is a VM worktree's facts.
+   */
+  deviceChatVersion: z.literal(1).optional(),
+  /**
+   * A device chat's Cloud project as an offer target
+   * (`cloudProjectWorkspaceId`): its proposal is keyed there and read by the
+   * hosted card, never by the computer's own Desktop. Read only with
+   * `deviceChatVersion` from a workspace bearer.
+   */
+  deviceChatWorkspaceId: z.string().uuid().optional(),
+  /**
+   * `AGENTIC_OFFER_DEVICE_RUN_VERSION`: the Cloud can run an accepted offer
+   * in this device chat, with its commands contained on the computer. Set by
+   * the Cloud worker, never by the computer. Without it a device chat is
+   * judged but never minted a proposal: nothing could run it. Read with
+   * `deviceChatVersion` only.
+   */
+  deviceRunVersion: z.literal(1).optional(),
 })
 
 export type AgenticOfferRequest = z.infer<typeof agenticOfferRequestSchema>
+
+export const AGENTIC_OFFER_DEVICE_CHAT_VERSION = 1
+export const AGENTIC_OFFER_DEVICE_RUN_VERSION = 1
+
+/**
+ * What a computer answers `agentic_offer_facts` with: the facts Desktop puts in
+ * its own offer request, and nothing that names the conversation, a test
+ * campaign or a trace. Keys outside this pick are stripped, so a device cannot
+ * set them on the Cloud worker's request.
+ */
+export const deviceAgenticOfferFactsSchema = agenticOfferRequestSchema
+  .pick({
+    localCapability: true,
+    sponsoredCapability: true,
+    capabilityInspection: true,
+    repoFacts: true,
+    inPlaceExecutionVersion: true,
+    runSpecVersion: true,
+    conversionToolsVersion: true,
+  })
+  .extend({ device: agenticOfferDeviceSchema })
+
+export type DeviceAgenticOfferFacts = z.infer<
+  typeof deviceAgenticOfferFactsSchema
+>
 
 /** Why nothing was offered. Closed, so a dashboard can group by it. */
 export const AGENTIC_OFFER_NONE_REASONS = [

@@ -37,6 +37,19 @@ export const SPONSORED_CONSENT_IN_PLACE_SENTENCE =
   ' is sponsoring this agent run, so it’s free for you. Freebuff’s agent edits the files in the folder below and commits nothing. It runs in the background so you can keep working, and you can undo it after.'
 
 /**
+ * The same question for a hosted DEVICE CHAT (COD-1277): Cloud's agent runs the task, but on the
+ * user's own computer, in the chat's folder, its commands contained there (`sponsored_exec`:
+ * sandbox-exec on macOS, bwrap on Linux). Unlike the in-place sentence it promises no undo, which a
+ * device chat does not offer. The hosted card names the folder under it by its project name: folder
+ * paths never reach the hosted page (`hosted-workspace.ts`).
+ *
+ * No Windows floor sentence goes with it: Windows device chats are refused before an offer
+ * (`windows`), because the floor has no sandbox. Add one here before that refusal is lifted.
+ */
+export const SPONSORED_CONSENT_DEVICE_SENTENCE =
+  ' is sponsoring this agent run, so it’s free for you. Freebuff’s agent runs it on your computer, in the folder below: its commands are contained to that folder, it edits the files there and commits nothing. It runs in the background so you can keep working.'
+
+/**
  * The second sentence, shown ONLY where the run has no OS sandbox: Windows (COD-642). Plain words
  * for the three things a user is agreeing to there -- their own permissions, no sandbox, and
  * credentials that are kept out of the run's way rather than locked away. Product-owned and fixed:

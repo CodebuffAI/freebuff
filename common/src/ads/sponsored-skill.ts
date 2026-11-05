@@ -1611,11 +1611,17 @@ export type SponsoredSkillWebRefusal =
   | 'skill_os'
   | 'skill_path_tool'
   | 'skill_conversion'
+/**
+ * Whether Cloud's sponsored agent can run this skill: on its Linux VM, or, for
+ * a Cloud device chat, contained on the user's computer (`os`). A path tool is
+ * refused either way: its pinned release installs only on the VM.
+ */
 export function sponsoredSkillWebRefusal(
   skill: Pick<SponsoredSkill, 'requirements' | 'tools' | 'conversion'>,
+  os: SponsoredSkillOs = 'linux',
 ): SponsoredSkillWebRefusal | null {
   if (skill.conversion != null) return 'skill_conversion'
-  if (!skill.requirements.os.includes('linux')) return 'skill_os'
+  if (!skill.requirements.os.includes(os)) return 'skill_os'
   if (skill.tools.some((tool) => tool.source === 'path'))
     return 'skill_path_tool'
   return null

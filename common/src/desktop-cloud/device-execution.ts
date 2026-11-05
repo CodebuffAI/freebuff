@@ -30,6 +30,10 @@ export const deviceExecutionContext = z
     concurrentHarnesses: z.literal(true).optional(),
     /** Answers `move_export`: another of the account's computers can take over this folder's chats. */
     deviceMove: z.literal(true).optional(),
+    /** Answers `agentic_offer_facts`: Cloud may ask the agentic offer route after this folder's turns. */
+    agenticOffers: z.literal(true).optional(),
+    /** Answers `sponsored_exec`: Cloud's sponsored agent may run its commands here, contained. */
+    sponsoredExec: z.literal(true).optional(),
     /** Honours `scope.warmup`: a new Cloud chat's first turn runs here read-only while it moves (warmup.ts). */
     readOnlyOpener: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
@@ -160,6 +164,29 @@ export const deviceMoveExport = z
   .strict()
 export type DeviceMoveExport = z.infer<typeof deviceMoveExport>
 export type DeviceMoveExportRequest = z.infer<typeof deviceMoveExportRequest>
+/**
+ * The folder's agentic offer facts, as Desktop sent them with its own offer request (capability,
+ * fit facts, OS); its value is read with `deviceAgenticOfferFactsSchema`. Read-only, never journaled.
+ */
+export const deviceAgenticOfferFactsRequest = z
+  .object({ method: z.literal('agentic_offer_facts') })
+  .strict()
+/**
+ * One command of an accepted sponsored run, run CONTAINED in the folder: the
+ * sponsored sandbox (sandbox-exec on macOS, bwrap on Linux), a private runtime
+ * directory for `runId` and read-only Git, never the plain `exec` shell. It has
+ * side effects, so it is journaled; its result is `deviceExecResult`'s shape.
+ */
+export const deviceSponsoredExecRequest = z
+  .object({
+    method: z.literal('sponsored_exec'),
+    scope: deviceToolScope,
+    runId: z.string().uuid(),
+    command: z.string().min(1).max(200_000),
+    outputLimit: z.number().int().min(1).max(DEVICE_EXEC_OUTPUT_BYTES),
+  })
+  .strict()
+export type DeviceSponsoredExecRequest = z.infer<typeof deviceSponsoredExecRequest>
 export const deviceToolFailure = z
   .object({ kind: z.literal('tool_error'), message: z.string().max(4000) })
   .strict()
@@ -309,6 +336,8 @@ export const deviceRequest = z.union([
   deviceHarnessRequest,
   deviceReceiptRequest,
   deviceMoveExportRequest,
+  deviceAgenticOfferFactsRequest,
+  deviceSponsoredExecRequest,
   deviceGitHubRequest,
 ])
 export const deviceResult = z.union([
@@ -379,6 +408,8 @@ export const deviceCapabilities = z
     panelProtocolVersion: z.literal(1).optional(),
     concurrentHarnesses: z.literal(true).optional(),
     deviceMove: z.literal(true).optional(),
+    agenticOffers: z.literal(true).optional(),
+    sponsoredExec: z.literal(true).optional(),
     readOnlyOpener: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
   })
