@@ -224,8 +224,7 @@ export const MultilineInput = forwardRef<
 ) {
   const theme = useTheme()
   const renderer = useRenderer()
-  const appContext = useAppContext()
-  const { keyHandler } = appContext
+  const { keyHandler } = useAppContext()
   const hookBlinkValue = useChatStore((state) => state.isFocusSupported)
   const effectiveShouldBlinkCursor = shouldBlinkCursor ?? hookBlinkValue
 
@@ -1049,20 +1048,6 @@ export const MultilineInput = forwardRef<
     },
     [insertTextAtCursor, onTypedText],
   )
-
-  // Increase StdinParser timeout from default 10ms to 100ms.
-  // Some terminals (Ghostty, iTerm2, VS Code) split bracketed paste sequences
-  // across multiple stdin reads when drag-dropping files. The default 10ms
-  // timeout causes the parser to flush partial escape sequences as keypresses,
-  // corrupting paste detection. 100ms is still fast for keyboard input but
-  // gives enough time for split paste sequences to arrive.
-  useEffect(() => {
-    const cliRenderer = appContext.renderer as Record<string, unknown> | null
-    const stdinBuffer = cliRenderer?._stdinBuffer as Record<string, unknown> | undefined
-    if (stdinBuffer && typeof stdinBuffer.timeoutMs === 'number') {
-      stdinBuffer.timeoutMs = 100
-    }
-  }, [appContext])
 
   // Global paste event listener — catches paste events (e.g. from drag-and-drop)
   // at the global level, plus a scrollbox-level backup. Some terminals may not

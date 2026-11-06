@@ -83,6 +83,7 @@ import { startWindowsMachineProcessCensus } from './utils/helper-process-telemet
 import { startTerminalWatchdog } from './utils/terminal-watchdog'
 import { installTerminalProtocolController } from './utils/terminal-protocol-controller'
 import { initializeSkillRegistry } from './utils/skill-registry'
+import { installSplitMouseReportGuard } from './utils/split-mouse-report-guard'
 import {
   detectBgColorEvidence,
   detectTerminalTheme,
@@ -722,6 +723,7 @@ async function main(): Promise<void> {
       logger.debug(error, 'Terminal protocol transition failed'),
   })
   renderer.once('destroy', () => terminalProtocols.dispose())
+  renderer.once('destroy', installSplitMouseReportGuard(renderer))
   process.removeListener('uncaughtException', earlyFatalHandler)
   process.removeListener('unhandledRejection', earlyFatalHandler)
 
