@@ -648,8 +648,9 @@ describe('FreebuffModelSelector tier layout', () => {
       accessTier: 'full',
       freebucks: freebucksFixture(100),
     })
-    // Not the hero, so the picker opens expanded.
-    useFreebuffModelStore.getState().setSelectedModel(FREEBUFF_GPT_6_LUNA_MODEL_ID)
+    // A row under More, so the picker opens expanded (GPT-6 Luna until it
+    // moved into Powerful's view on 2026-11-06).
+    useFreebuffModelStore.getState().setSelectedModel('mimo/mimo-v2.6-pro')
     const frame = (await renderSelector(100)).captureCharFrame()
     const lines = frame.split('\n')
     const cardLine = (name: string) =>
@@ -659,10 +660,11 @@ describe('FreebuffModelSelector tier layout', () => {
       lines.findIndex((line) => line.startsWith('PREMIUM · Strongest')),
       // DeepSeek V4.1 Flash leads Premium as its pick since 2026-10-14.
       cardLine('DeepSeek V4.1 Flash'),
-      // MiMo v2.6 Flash Fast and GPT-6 Luna wait under More since 2026-10-30.
+      // MiMo v2.6 Flash Fast waits under More since 2026-10-30.
       cardLine('MiMo v2.6 Flash Fast'),
-      cardLine('GPT-6 Luna'),
       lines.findIndex((line) => line.startsWith('POWERFUL · Frontier')),
+      // GPT-6 Luna leads Powerful, behind a plan, since 2026-11-06.
+      cardLine('GPT-6 Luna'),
       ...(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? [cardLine('DeepSeek V4.1 Flash Fast')] : []),
       lines.findIndex((line) => line.startsWith('STANDARD · Free and low-cost models')),
       cardLine('Solar Pro 4'),
@@ -683,8 +685,9 @@ describe('FreebuffModelSelector tier layout', () => {
 
   test('lists the paid-only row to a free account, locked', async () => {
     // Listed rather than hidden since 2026-09-21: Gemini 3.8 Flash says "Paid
-    // plan" on its detail line instead of a price. MiMo 2.6 Pro and GPT-6 Luna
-    // are open to every full-access account since 2026-09-25, so neither is.
+    // plan" on its detail line instead of a price, and so does GPT-6 Luna
+    // since 2026-11-06. MiMo 2.6 Pro is open to every full-access account
+    // since 2026-09-25, so it is not.
     useFreebuffSessionStore.getState().setSession({
       status: 'none',
       accessTier: 'full',
@@ -696,11 +699,12 @@ describe('FreebuffModelSelector tier layout', () => {
     const gemini = lines.findIndex((line) => line.includes('Gemini 3.8 Flash'))
     expect(gemini).toBeGreaterThanOrEqual(0)
     expect(lines[gemini + 1]).toContain('Paid plan')
-    for (const name of ['MiMo 2.6 Pro', 'GPT-6 Luna']) {
-      const row = lines.findIndex((line) => line.includes(name))
-      expect(row).toBeGreaterThanOrEqual(0)
-      expect(lines[row + 1] ?? '').not.toContain('Paid plan')
-    }
+    const luna = lines.findIndex((line) => line.includes('GPT-6 Luna'))
+    expect(luna).toBeGreaterThanOrEqual(0)
+    expect(lines[luna + 1]).toContain('Paid plan')
+    const mimoPro = lines.findIndex((line) => line.includes('MiMo 2.6 Pro'))
+    expect(mimoPro).toBeGreaterThanOrEqual(0)
+    expect(lines[mimoPro + 1] ?? '').not.toContain('Paid plan')
     expect(lines.some((line) => line.includes('MiMo v2.6 Flash Fast'))).toBe(true)
   })
 
@@ -1651,8 +1655,9 @@ test.each([
     // Fast: that row makes the expanded catalog two lines taller.
     // Five more for the three section headers and the gaps between them, and
     // one for Solar Pro 4's "Promotional" line (2026-10-05), and four for
-    // GPT-6.1 Terra's card (2026-10-26).
-    const setup = await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 60 : 58, async (model) => {
+    // GPT-6.1 Terra's card (2026-10-26), and two for GPT-6 Luna's "Paid plan"
+    // line and Powerful's taller in-view block (2026-11-06).
+    const setup = await renderSelector(FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 62 : 60, async (model) => {
       requested.push(model)
     })
     expect(wake).toBeDefined()

@@ -104,15 +104,16 @@ describe('paid plans at limited access', () => {
     }
   })
 
-  test('GPT-6 Luna is open at full access and plan-only at limited, and 5.6 is retired', () => {
+  test('GPT-6 Luna is plan-only at both tiers, and 5.6 is retired', () => {
     // 5.6's old shape (free at full access, plan-locked at limited) is gone
     // with the row: it left FREEBUFF_MODELS on 2026-09-22.
     expect(FREEBUFF_MODELS.map((m) => m.id)).not.toContain(
       FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
     )
-    // Its replacement is open to every full-access account since 2026-09-25
-    // (US-or-paid before), so it is not a globally paid-only row.
-    expect(FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS).not.toContain(
+    // Its replacement was open to every full-access account from 2026-09-25
+    // and takes a plan at both tiers since 2026-11-06 (product, Victor): a
+    // globally paid-only row, gated by admission rather than the tier rule.
+    expect(FREEBUFF_SUBSCRIPTION_PRO_MODEL_IDS).toContain(
       FREEBUFF_GPT_6_LUNA_MODEL_ID,
     )
     expect(

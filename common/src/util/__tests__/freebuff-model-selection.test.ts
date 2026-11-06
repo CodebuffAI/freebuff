@@ -43,14 +43,12 @@ describe('the plan lock without a server verdict', () => {
     )
   })
 
-  it('leaves Luna and MiMo 2.6 Pro open at full access, Gemini locked', () => {
-    for (const id of [FREEBUFF_GPT_6_LUNA_MODEL_ID, FREEBUFF_MIMO_V26_PRO_MODEL_ID]) {
-      expect(freebuffPlanRequired(id, false, undefined, 'full')).toBe(false)
-      expect(freebuffPlanRequired(id, false, undefined)).toBe(false)
-    }
-    expect(
-      freebuffPlanRequired(FREEBUFF_GEMINI_38_FLASH_MODEL_ID, false, undefined, 'full'),
-    ).toBe(true)
+  it('leaves MiMo 2.6 Pro open at full access; Gemini and GPT-6 Luna locked', () => {
+    expect(freebuffPlanRequired(FREEBUFF_MIMO_V26_PRO_MODEL_ID, false, undefined, 'full')).toBe(false)
+    expect(freebuffPlanRequired(FREEBUFF_MIMO_V26_PRO_MODEL_ID, false, undefined)).toBe(false)
+    // GPT-6 Luna takes a plan at both tiers since 2026-11-06.
+    for (const id of [FREEBUFF_GEMINI_38_FLASH_MODEL_ID, FREEBUFF_GPT_6_LUNA_MODEL_ID])
+      expect(freebuffPlanRequired(id, false, undefined, 'full')).toBe(true)
   })
 
   it('opens every row on a plan, and the server verdict still wins', () => {

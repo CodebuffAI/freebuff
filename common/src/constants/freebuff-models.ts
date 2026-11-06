@@ -4347,6 +4347,10 @@ export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
     // surface, at 150 and two sessions a day. Open to every full-access
     // account from 2026-10-26 until then.
     FREEBUFF_GPT_61_TERRA_MODEL_ID,
+    // GPT-6 Luna (2026-11-06, product, Victor): a paid plan on every surface
+    // and at both tiers, the top Powerful row. Open to every full-access
+    // account from 2026-09-25 until then (see below).
+    FREEBUFF_GPT_6_LUNA_MODEL_ID,
     // Muse Spark 1.3 (and 1.2 with it) was paid-only on every surface from
     // 2026-09-28 and LEFT this list on 2026-10-09, by product decision, on
     // MiMo 2.6 Pro's and Luna's terms below: open to every full-access
@@ -4355,8 +4359,8 @@ export const FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS: readonly string[] =
     // is a one-line move back here and in the every-surface list, or without a
     // deploy a `locked` full-access entry in the server model catalog.
     //
-    // MiMo 2.6 Pro and GPT-6 Luna LEFT this list on 2026-09-25, by product
-    // decision: every FULL-ACCESS account opens them with no plan (metered in
+    // MiMo 2.6 Pro and GPT-6 Luna LEFT this list on 2026-09-25 (Luna came
+    // back on 2026-11-06, above), by product decision: every FULL-ACCESS account opens them with no plan (metered in
     // Freebucks at their own prices). They were paid-only from 2026-09-21, and
     // open to US viewers without a plan from 2026-09-22 (the retired
     // FREEBUFF_US_OR_PAID_MODEL_IDS exemption). At LIMITED access they are
@@ -4385,6 +4389,7 @@ export const FREEBUFF_PRO_ONLY_EVERY_SURFACE_MODEL_IDS: readonly string[] =
     FREEBUFF_GPT_61_SOL_MODEL_ID,
     FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
     FREEBUFF_GPT_61_TERRA_MODEL_ID,
+    FREEBUFF_GPT_6_LUNA_MODEL_ID,
   ])
 
 /**
@@ -4455,16 +4460,15 @@ const FAST_MODE_PLAN_MODEL_IDS = FREEBUFF_ENABLE_FAST_MODE_IN_UI
 /**
  * Rows an unpaid LIMITED-tier account cannot open.
  *
- * Every globally Pro-only row belongs here, plus GPT-6 Luna, MiMo 2.6 Pro and
- * Muse Spark 1.3: all open to every full-access account (since 2026-09-25, and
- * 2026-10-09 for Muse Spark), but a paid plan is still what unlocks them at
- * limited access. Keeping this distinction
+ * Every globally Pro-only row belongs here (GPT-6 Luna among them since
+ * 2026-11-06), plus MiMo 2.6 Pro and Muse Spark 1.3: both open to every
+ * full-access account (since 2026-09-25, and 2026-10-09 for Muse Spark), but a
+ * paid plan is still what unlocks them at limited access. Keeping this distinction
  * explicit prevents the global Pro gate from paywalling full-access users just
  * to preserve the limited-tier catalog boundary.
  */
 export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
   Object.freeze([
-    FREEBUFF_GPT_6_LUNA_MODEL_ID,
     FREEBUFF_MIMO_V26_PRO_MODEL_ID,
     ...FAST_MODE_PLAN_MODEL_IDS,
     // Muse Spark 1.3 (2026-10-09): open to every full-access account, a paid

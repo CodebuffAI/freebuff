@@ -43,7 +43,7 @@ describe('freebuffPickerPlacement', () => {
     // DeepSeek V4.1 Flash leads Premium as its pick since 2026-10-14.
     expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)).toEqual({ section: 'premium', order: 5, recommended: true })
     // In view: Flash, then DeepSeek V4.1 Flash Slow and Muse Spark 1.3; GLM
-    // 5.3 Flash, MiMo v2.6 Flash Fast and GPT-6 Luna under More.
+    // 5.3 Flash and MiMo v2.6 Flash Fast under More.
     expect(at('m-8db1ccbba6')).toEqual({ section: 'premium', order: expect.any(Number) })
     const premium = [
       FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
@@ -52,7 +52,7 @@ describe('freebuffPickerPlacement', () => {
       FREEBUFF_GLM_V53_FLASH_MODEL_ID,
     ].map((id) => at(id).order)
     expect(premium).toEqual([...premium].sort((a, b) => a - b))
-    for (const id of [FREEBUFF_GLM_V53_FLASH_MODEL_ID, FREEBUFF_MIMO_V25_MODEL_ID, FREEBUFF_GPT_6_LUNA_MODEL_ID])
+    for (const id of [FREEBUFF_GLM_V53_FLASH_MODEL_ID, FREEBUFF_MIMO_V25_MODEL_ID])
       expect(at(id)).toEqual({ section: 'premium', order: expect.any(Number), more: true })
     expect(at(FREEBUFF_GLM_V53_FLASH_MODEL_ID).section).toBe('premium')
     // Muse Spark 1.3 moved to Optimized (now Premium) on 2026-10-13.
@@ -65,8 +65,10 @@ describe('freebuffPickerPlacement', () => {
     expect(at(FREEBUFF_GEMINI_38_FLASH_MODEL_ID)).toMatchObject({ section: 'powerful', more: true })
     expect(at(FREEBUFF_GPT_61_SOL_MODEL_ID)).toMatchObject({ section: 'powerful', more: true })
     expect(at(FREEBUFF_GEMINI_38_FLASH_MODEL_ID).order).toBeLessThan(at(FREEBUFF_GPT_61_SOL_MODEL_ID).order)
-    // Powerful's one row in view, first (2026-11-03). Not badged Recommended
-    // since 2026-10-07: Premium's own pick is the one.
+    // Powerful's rows in view: GPT-6 Luna first (a plan, 2026-11-06), then
+    // Flash Fast. Not badged Recommended since 2026-10-07: Premium's own pick
+    // is the one.
+    expect(at(FREEBUFF_GPT_6_LUNA_MODEL_ID)).toEqual({ section: 'powerful', order: 1 })
     expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)).toEqual({ section: 'powerful', order: 5 })
   })
 
@@ -78,7 +80,7 @@ describe('freebuffPickerPlacement', () => {
   test('the first placed name wins', () => {
     expect(
       freebuffPickerPlacement(['m-unknown', FREEBUFF_GPT_6_LUNA_MODEL_ID], none).section,
-    ).toBe('premium')
+    ).toBe('powerful')
   })
 
   test('an unplaced row is inferred and tucked under More', () => {
@@ -109,13 +111,16 @@ describe('freebuffPickerSections', () => {
           FREEBUFF_GLM_V53_FLASH_MODEL_ID,
           // Under More since 2026-10-30, so after the rows in view.
           FREEBUFF_MIMO_V25_MODEL_ID,
-          FREEBUFF_GPT_6_LUNA_MODEL_ID,
           'unplaced-cheap',
         ],
       ],
       [
         'powerful',
-        [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID, FREEBUFF_GEMINI_38_FLASH_MODEL_ID],
+        [
+          FREEBUFF_GPT_6_LUNA_MODEL_ID,
+          FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+          FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
+        ],
       ],
     ])
   })

@@ -106,14 +106,16 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     // full-access recommendation (on Pareto, our cheapest Flash-class lane).
     'deepseek/deepseek-v4-flash': { section: 'premium', order: 5, recommended: true }, // V4.1 Flash, 15
     'm-8db1ccbba6': { section: 'premium', order: 10 }, // DeepSeek V4.1 Flash Slow, 10
-    // Muse Spark 1.3 and GPT-6 Luna moved here from Powerful (2026-10-13).
-    // Placement only: both are plan-only at limited access.
+    // Muse Spark 1.3 moved here from Powerful (2026-10-13). Placement only:
+    // it is plan-only at limited access.
     'meta/muse-spark-1.3-contributor': { section: 'premium', order: 20 }, // 15
     'z-ai/glm-5.3-flash': { section: 'premium', order: 40, more: true }, // 20
     'mimo/mimo-v2.5': { section: 'premium', order: 64, more: true }, // MiMo v2.6 Flash Fast, 10
-    'openai/gpt-6-luna': { section: 'premium', order: 66, more: true }, // 20
-    // Powerful: DeepSeek V4.1 Flash Fast first and in view (25, or 50 in
-    // DeepSeek's peak window), then cheapest to dearest under Show more.
+    // Powerful: GPT-6 Luna first (20, a paid plan since 2026-11-06; in
+    // Premium under Show more from 2026-10-13), then DeepSeek V4.1 Flash Fast
+    // (25, or 50 in DeepSeek's peak window), both in view, then cheapest to
+    // dearest under Show more.
+    'openai/gpt-6-luna': { section: 'powerful', order: 1 }, // 20, plan only
     'deepseek/deepseek-v4-flash-fast': { section: 'powerful', order: 5 },
     'mimo/mimo-v2.6-pro': { section: 'powerful', order: 10, more: true }, // 25
     'm-5b6a604eb6': { section: 'powerful', order: 30, more: true }, // Claude Haiku 5.5, 100k context, 30
