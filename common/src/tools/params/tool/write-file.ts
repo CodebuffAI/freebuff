@@ -1,13 +1,17 @@
 import z from 'zod/v4'
 
 import { updateFileResultSchema } from './str-replace'
-import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  jsonToolResultSchema,
+  repairInput,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
 const toolName = 'write_file'
 const endsAgentStep = false
-const inputSchema = z
+const fileSchema = z
   .object({
     path: z
       .string()
@@ -22,6 +26,15 @@ const inputSchema = z
     content: z.string().describe(`Complete file content to write to the file.`),
   })
   .describe(`Create or overwrite a file with the given content.`)
+/** `contents` or `_content` for `content` (~115-270 calls/day, Nov 2026). */
+function contentAlias(input: Record<string, unknown>) {
+  if (input.content === undefined) {
+    const alias = input.contents ?? input._content
+    if (typeof alias === 'string') input.content = alias
+  }
+  return input
+}
+const inputSchema = repairInput(contentAlias, fileSchema)
 const description = `
 Create or replace a file with the given content.
 

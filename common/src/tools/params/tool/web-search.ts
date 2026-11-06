@@ -1,13 +1,17 @@
 import z from 'zod/v4'
 
-import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  jsonToolResultSchema,
+  repairInput,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
 const toolName = 'web_search'
 const endsAgentStep = true
 const keywordQuery = z.string().trim().min(1).max(200)
-const inputSchema = z
+const searchSchema = z
   .object({
     query: keywordQuery.describe(
       'Primary keyword query, usually 3–6 words. Include the entity, exact package name, or error you are looking for.',
@@ -36,6 +40,13 @@ const inputSchema = z
       ),
   })
   .describe('Search the web for relevant source excerpts and URLs.')
+/** More than two `additional_queries` (~230 calls/day, Nov 2026): search the first two. */
+function keepTwoAdditionalQueries(input: Record<string, unknown>) {
+  if (Array.isArray(input.additional_queries))
+    input.additional_queries = input.additional_queries.slice(0, 2)
+  return input
+}
+const inputSchema = repairInput(keepTwoAdditionalQueries, searchSchema)
 const description = `
 Start web research with web_search. Give a short keyword query and describe the information you need in objective. For multiple angles on the same question, add related queries in the same call. Keep exact identifiers, numbers, and names in the relevant language.
 

@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 
 import { applyPatchParams } from '../params/tool/apply-patch'
 import { strReplaceParams } from '../params/tool/str-replace'
+import { webSearchParams } from '../params/tool/web-search'
+import { writeFileParams } from '../params/tool/write-file'
 import { coerceToArray } from '../params/utils'
 import { parseToolJson } from '../repair-tool-json'
 
@@ -119,4 +121,21 @@ test('a lane that hands over the broken array as a string still yields the edits
   expect(
     coerceToArray('[{"oldString": "<div className="a">", "newString": "<div className=\\"b\\">"}]'),
   ).toEqual([{ oldString: '<div className="a">', newString: '<div className="b">' }])
+})
+
+test('web_search searches the first two of too many additional queries', () => {
+  expect(
+    webSearchParams.inputSchema.parse({
+      query: 'FreeDatool',
+      additional_queries: ['a tutorial', 'b docs', 'c download'],
+    }).additional_queries,
+  ).toEqual(['a tutorial', 'b docs'])
+})
+
+test('write_file reads `contents` or `_content` as `content`', () => {
+  for (const key of ['contents', '_content'])
+    expect(writeFileParams.inputSchema.parse({ path: 'a.py', [key]: 'x = 1\n' })).toEqual({
+      path: 'a.py',
+      content: 'x = 1\n',
+    })
 })
