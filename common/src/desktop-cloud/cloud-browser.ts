@@ -69,15 +69,17 @@ export type CloudBrowserSession = CloudBrowserSnapshot & {
   viewport: CloudBrowserViewport
   /** When the agent last drove this browser, for the panel's idle pause. */
   agentActiveAt: number | null
+  /** Server-observed browser input, never extended by status polling. */
+  lastInputAt?: number
 }
 
-export type CloudBrowserStatus = CloudBrowserSession | { state: 'none' }
+export type CloudBrowserStatus = CloudBrowserSession | { state: 'none' } | { state: 'paused' }
 
 export type CloudBrowserAction =
   | { action: 'connect'; viewport: CloudBrowserViewport }
   | { action: 'resize'; viewport: CloudBrowserViewport }
   | { action: 'open'; url?: string }
-  | { action: 'select'; tabId: string }
+  | { action: 'select'; tabId: string; source?: 'viewer' }
   | { action: 'close'; tabId: string }
   | { action: 'navigate'; tabId: string; to: string }
   | { action: 'stop'; tabId: string }
@@ -191,7 +193,7 @@ export function isCloudBrowserFaviconUrl(value: unknown): value is string {
 export function isCloudBrowserStatus(value: unknown): value is CloudBrowserStatus {
   if (!value || typeof value !== 'object') return false
   const v = value as Record<string, unknown>
-  if (v.state === 'none') return true
+  if (v.state === 'none' || v.state === 'paused') return true
   return (
     v.state === 'ready' &&
     typeof v.sessionId === 'string' &&
@@ -203,15 +205,17 @@ export function isCloudBrowserStatus(value: unknown): value is CloudBrowserStatu
   )
 }
 
-/** Only Kernel's own live-view hosts may be framed, and only over HTTPS. */
+/** Only the providers' live-view hosts may be framed, and only over HTTPS. */
 export function isCloudBrowserLiveViewUrl(value: unknown): value is string {
   if (typeof value !== 'string') return false
   try {
     const url = new URL(value)
     return (
       url.protocol === 'https:' &&
-      (url.hostname.endsWith('.kernel.sh') || url.hostname.endsWith('.onkernel.com')) &&
-      url.pathname.startsWith('/browser/live')
+      !url.username && !url.password &&
+      (((url.hostname.endsWith('.kernel.sh') || url.hostname.endsWith('.onkernel.com')) &&
+        url.pathname.startsWith('/browser/live')) ||
+        (url.hostname === 'live.browser-use.com' && !url.port))
     )
   } catch {
     return false

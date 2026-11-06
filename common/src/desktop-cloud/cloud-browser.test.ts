@@ -55,14 +55,23 @@ describe('cloud browser wire shapes', () => {
     expect(isCloudBrowserTab({ ...tab, faviconUrl: 'https://example.test/favicon.ico' })).toBe(true)
     expect(isCloudBrowserTab({ ...tab, faviconUrl: 'javascript:alert(1)' })).toBe(false)
   })
-  test('only Kernel live-view hosts over HTTPS may be framed', () => {
+  test('only provider live-view hosts over HTTPS may be framed', () => {
     expect(isCloudBrowserLiveViewUrl('https://prod-jfk-hypeman-16.kernel.sh:8443/browser/live/QmDHuC1ncH3h')).toBe(true)
     expect(isCloudBrowserLiveViewUrl('http://prod-jfk-hypeman-16.kernel.sh:8443/browser/live/x')).toBe(false)
     expect(isCloudBrowserLiveViewUrl('https://kernel.sh.attacker.test/browser/live/x')).toBe(false)
     expect(isCloudBrowserLiveViewUrl('https://prod.kernel.sh:8443/other')).toBe(false)
+    expect(isCloudBrowserLiveViewUrl('https://live.browser-use.com/?wss=session')).toBe(true)
+    for (const url of [
+      'https://live.browser-use.com.attacker.test/',
+      'https://other.browser-use.com/',
+      'http://live.browser-use.com/',
+      'https://user:password@live.browser-use.com/',
+      'https://live.browser-use.com:8443/',
+    ]) expect(isCloudBrowserLiveViewUrl(url)).toBe(false)
   })
   test('a status is none or a complete session', () => {
     expect(isCloudBrowserStatus({ state: 'none' })).toBe(true)
+    expect(isCloudBrowserStatus({ state: 'paused' })).toBe(true)
     expect(
       isCloudBrowserStatus({
         state: 'ready',
