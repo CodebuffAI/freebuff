@@ -44,6 +44,7 @@ export const authEventSchema = authContextSchema
         'already_connected',
         'invalid_credentials',
         'invalid_link',
+        'invalid_code',
         'rate_limited',
         'unavailable',
         'challenge_incomplete',
