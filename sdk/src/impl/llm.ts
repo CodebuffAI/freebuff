@@ -492,12 +492,27 @@ export async function* promptAiSdkStream(
    * transient network error, which the stream-interrupted recovery already
    * retries, so it is left to that. A second silent timeout fails as before.
    */
-  const silentTimeoutRetry = (error: unknown) =>
-    !idleTimeoutRetried &&
-    !params.byok &&
-    !params.signal.aborted &&
-    !receivedModelOutput &&
-    isFetchIdleTimeoutError(error)
+  const silentTimeoutRetry = (error: unknown) => {
+    if (params.byok || params.signal.aborted || !isFetchIdleTimeoutError(error))
+      return false
+    if (!idleTimeoutRetried && !receivedModelOutput) return true
+    // Why this one fails instead: output had arrived, or it was the repeat.
+    // STREAM_RECOVERY_EVENT, so a host that forwards only allowlisted events
+    // (the hosted Cloud worker's cloudSdkLogger) still ships it.
+    logger.warn(
+      {
+        axiomEvent: STREAM_RECOVERY_EVENT,
+        metric: 'stream_silent_timeout_failed',
+        model: params.model,
+        userInputId: params.userInputId,
+        hasYieldedContent,
+        receivedModelOutput,
+        repeated: idleTimeoutRetried,
+      },
+      'Model request timed out with no data and was not sent again',
+    )
+    return false
+  }
   const streamIterator = response.stream[Symbol.asyncIterator]()
   const recoverThrownStream = (
     error: unknown,
@@ -708,9 +723,9 @@ export async function* promptAiSdkStream(
     ])
     logger.warn(
       {
+        axiomEvent: STREAM_RECOVERY_EVENT,
         metric: 'stream_silent_timeout_retry',
         model: params.model,
-        userId: params.userId,
         userInputId: params.userInputId,
       },
       'Model request timed out before any output; sending it once more',

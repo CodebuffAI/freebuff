@@ -7,6 +7,8 @@
  */
 import { afterEach, describe, expect, it } from 'bun:test'
 
+import { getAxiomOnlyLogEvent } from '@codebuff/common/util/axiom-only-log'
+
 import { promptAiSdkStream } from '../llm'
 
 import type { StreamChunk } from '@codebuff/common/types/contracts/llm'
@@ -52,22 +54,34 @@ const answerThenTimeout = (text: string) =>
     { headers: { 'Content-Type': 'text/event-stream' } },
   )
 
+/** What a host that forwards only allowlisted events (the hosted Cloud
+ *  worker's cloudSdkLogger) would ship of the SDK's logs. */
+let shipped: Array<{ event: string; data: Record<string, unknown> }> = []
+const ship = (data: unknown) => {
+  const event = getAxiomOnlyLogEvent(data)
+  if (event) shipped.push(event as (typeof shipped)[number])
+}
 const logger = {
-  debug() {},
-  info() {},
-  warn() {},
-  error() {},
+  debug: ship,
+  info: ship,
+  warn: ship,
+  error: ship,
   fatal() {},
   trace() {},
   child() {
     return this
   },
 }
+const silentTimeoutEvents = () =>
+  shipped
+    .filter((e) => String(e.data.metric).startsWith('stream_silent_timeout'))
+    .map((e) => e.data)
 
 describe('promptAiSdkStream after a silent request timeout', () => {
   const originalFetch = globalThis.fetch
   afterEach(() => {
     globalThis.fetch = originalFetch
+    shipped = []
   })
 
   const run = (
@@ -117,6 +131,9 @@ describe('promptAiSdkStream after a silent request timeout', () => {
     expect(attempt.calls()).toBe(2)
     expect(chunks).toEqual([expect.objectContaining({ type: 'text', text: 'Done.' })])
     expect(result.aborted).toBe(false)
+    expect(silentTimeoutEvents()).toEqual([
+      expect.objectContaining({ metric: 'stream_silent_timeout_retry' }),
+    ])
   })
 
   it('fails as before when the repeat times out too', async () => {
@@ -129,12 +146,28 @@ describe('promptAiSdkStream after a silent request timeout', () => {
       name: 'TimeoutError',
     })
     expect(attempt.calls()).toBe(2)
+    expect(silentTimeoutEvents()).toEqual([
+      expect.objectContaining({ metric: 'stream_silent_timeout_retry' }),
+      expect.objectContaining({
+        metric: 'stream_silent_timeout_failed',
+        repeated: true,
+        receivedModelOutput: false,
+      }),
+    ])
   })
 
   it('never repeats a step that already streamed output', async () => {
     const attempt = run([() => answerThenTimeout('Looking at the handler, '), answer])
     const outcome = await drain(attempt.stream).catch((error: unknown) => ({ error }))
     expect(attempt.calls()).toBe(1)
+    expect(silentTimeoutEvents()).toEqual([
+      expect.objectContaining({
+        metric: 'stream_silent_timeout_failed',
+        repeated: false,
+        receivedModelOutput: true,
+        hasYieldedContent: true,
+      }),
+    ])
     // What the partial step does is unchanged; it is only never sent again.
     if ('chunks' in outcome)
       expect(outcome.chunks.filter((c) => c.type === 'text').map((c) => (c as { text: string }).text))

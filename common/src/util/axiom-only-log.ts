@@ -356,6 +356,11 @@ const STREAM_RECOVERY_FIELDS = {
   userInputId: 'string',
   finishReason: 'string',
   hasYieldedContent: 'boolean',
+  /** stream_silent_timeout_*: any model output part (text, reasoning, tool
+   *  input) had arrived before the timeout; the step is then not repeated. */
+  receivedModelOutput: 'boolean',
+  /** stream_silent_timeout_failed: the timed-out request was itself the repeat. */
+  repeated: 'boolean',
   consecutive: 'number',
   /** A 'provider-error' recovery's HTTP status (502, 429, ...). */
   statusCode: 'number',
