@@ -25,7 +25,6 @@ import {
   FREEBUFF_DEFAULT_CONTEXT_WINDOW,
   FREEBUFF_LIMITED_OFFER_MODEL_IDS,
   FREEBUFF_MODEL_CONTEXT_WINDOWS,
-  FREEBUFF_REWARD_MODEL_ID,
   freebuffWithdrawnModelMessage,
   getFreebuffModel,
   getFreebuffModelDefaultEffort,
@@ -38,7 +37,6 @@ import {
   isFreebuffModelAvailable,
   isFreebuffModelId,
   isFreebuffPremiumModelId,
-  isFreebuffRewardModelId,
   isSupportedFreebuffModelId,
   resolveFreebuffModelForAccessTier,
   resolveSupportedFreebuffModel,
@@ -83,10 +81,7 @@ export interface FreebuffModelDirectory {
   isAvailable(id: string, now: Date): boolean
   unavailableLabel(id: string, now: Date): string | undefined
   isPremium(id: string | null | undefined): boolean
-  isReward(id: string | null | undefined): boolean
   isLimitedOffer(id: string | null | undefined): boolean
-  /** What the referral banner's earned-session action starts. */
-  readonly rewardModelId: string
   /** The always-joinable row a pick steps down to. */
   readonly fallbackModelId: string
   recommendedModelId(
@@ -136,9 +131,7 @@ export const compiledFreebuffModelDirectory: FreebuffModelDirectory = {
   isAvailable: (id, now) => isFreebuffModelAvailable(id, now),
   unavailableLabel: (id, now) => getFreebuffModelUnavailableLabel(id, now),
   isPremium: (id) => isFreebuffPremiumModelId(id),
-  isReward: (id) => isFreebuffRewardModelId(id),
   isLimitedOffer: (id) => isFreebuffLimitedOfferModelId(id),
-  rewardModelId: FREEBUFF_REWARD_MODEL_ID,
   fallbackModelId: FALLBACK_FREEBUFF_MODEL_ID,
   recommendedModelId: (accessTier, options) =>
     getRecommendedFreebuffModelId(accessTier, options),
@@ -224,7 +217,6 @@ export function catalogFreebuffModelDirectory(
     catalog.fallbackKey && rowsByKey.has(catalog.fallbackKey)
       ? catalog.fallbackKey
       : recommendedKey
-  const rewardKey = keyForLegacy(FREEBUFF_REWARD_MODEL_ID)
   const limitedOfferKeys = new Set(
     FREEBUFF_LIMITED_OFFER_MODEL_IDS.flatMap((id) => {
       const key = keyForLegacy(id)
@@ -259,13 +251,10 @@ export function catalogFreebuffModelDirectory(
     isAvailable: (id) => rowFor(id) !== undefined,
     unavailableLabel: () => undefined,
     isPremium: (id) => rowFor(id)?.premium ?? false,
-    isReward: (id) =>
-      rewardKey !== undefined && rowFor(id)?.key === rewardKey,
     isLimitedOffer: (id) => {
       const key = rowFor(id)?.key
       return key !== undefined && limitedOfferKeys.has(key)
     },
-    rewardModelId: rewardKey ?? FREEBUFF_REWARD_MODEL_ID,
     fallbackModelId: fallbackKey,
     // The server already resolved the recommendation for THIS viewer; a
     // spent pool is handled by the picker stepping down to a joinable row.

@@ -39,7 +39,6 @@ const FREEBUCKS_PLANS_URL = 'https://freebuff.com/plans'
 import { FreebuffReferralBanner } from './freebuff-referral-banner'
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  FREEBUFF_REWARD_MODEL_ID,
   getFreebuffDeploymentAvailabilityLabel,
   getFreebuffModelsForAccessTier,
 } from '@codebuff/common/constants/freebuff-models'
@@ -149,7 +148,7 @@ const badgeSuffix = (badge: FreebuffCatalogBadge): string =>
  * terminals too narrow for the name column, line 1 compacts to "name · tagline".
  *
  * On short terminals the parent passes `maxHeight`: the model rows and the
- * referral/GLM controls live in one scrollbox capped at that many rows. A
+ * referral controls live in one scrollbox capped at that many rows. A
  * scrollbar appears when the whole menu doesn't fit, and Tab/arrow navigation
  * keeps the focused control scrolled into view.
  */
@@ -190,30 +189,16 @@ interface FreebuffModelSelectorProps {
   keyboardSuspended?: boolean
 }
 
-/** Every model id this screen can offer a tier: the grid, plus the banner's
- *  earned-reward action. Exported so the offer→gate invariant test reads the
- *  real set rather than a copy of it.
- *
- *  The banner's row is offered on BOTH tiers, and it means a different thing on
- *  each since 2026-08-31: at limited access it unlocks the reward model, and at
- *  full access it is an extra PREMIUM session rather than a model at all. The
- *  id below is what the limited half offers; at full access it is already in
- *  the grid, so listing it twice is harmless and listing it at all keeps this
- *  set honest about what the banner can start.
- *
- *  The balance is what gates the row — the banner only renders the action when
- *  the server reports sessions left — and the tier never was. */
+/** Every model id this screen can offer a tier: the grid. Exported so the
+ *  offer→gate invariant test reads the real set rather than a copy of it. */
 export function freebuffCliOfferedModelIds(
   accessTier: FreebuffAccessTier,
   /** Whether the account holds an entitling paid plan. */
   hasPaidSubscription = false,
 ): readonly string[] {
-  return [
-    ...getFreebuffModelsForAccessTier(accessTier, hasPaidSubscription).map(
-      (m) => m.id,
-    ),
-    FREEBUFF_REWARD_MODEL_ID,
-  ]
+  return getFreebuffModelsForAccessTier(accessTier, hasPaidSubscription).map(
+    (m) => m.id,
+  )
 }
 
 export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
@@ -420,23 +405,8 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         model,
         freebucks,
         quota: rateLimitsByModel?.[model],
-        // Older CLI snapshots omit earned quotas; full access and plans do not
-        // need that compatibility fallback.
-        legacyRemaining:
-          accessTier === 'limited' &&
-          !hasPaidSubscription &&
-          directory.isReward(model)
-            ? (referral?.weeklySessionsRemaining ?? 0)
-            : undefined,
       }),
-    [
-      freebucks,
-      rateLimitsByModel,
-      accessTier,
-      hasPaidSubscription,
-      referral?.weeklySessionsRemaining,
-      directory,
-    ],
+    [freebucks, rateLimitsByModel],
   )
   // Present only while a promo runs; absent renders the banner exactly as it
   // rendered before promos existed.
@@ -898,7 +868,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     [catalog, directory, focusedId, freebucks],
   )
 
-  // The referral banner contributes its GLM/copy actions to the selector's
+  // The referral banner contributes its copy/dashboard actions to the selector's
   // navigation order. Keeping them local avoids a global focus bridge now that
   // the banner renders inside this selector.
   const [extraTargets, setExtraTargets] = useState<
@@ -996,11 +966,8 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
 
   useEffect(() => {
     // A model in the grid uses the same meter for focus repair and picking.
-    // Keep an earned banner pick too when an older catalog omits that row.
     const selectionIsStartable =
-      (renderedModelIds.includes(selectedModel) ||
-        directory.isReward(selectedModel)) &&
-      isJoinable(selectedModel)
+      renderedModelIds.includes(selectedModel) && isJoinable(selectedModel)
     if (!onSelectModel && isLanding && !selectionIsStartable) {
       setSelectedModel(recommendedModel.id)
       // The cursor moves too: the focus effect above only rescues an
@@ -1015,7 +982,6 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     recommendedModel.id,
     selectedModel,
     setSelectedModel,
-    directory,
   ])
 
   // Share the suffix between width calculations and rendering.

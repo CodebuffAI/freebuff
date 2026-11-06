@@ -28,10 +28,7 @@ import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
 import { useFreebuffStreakQuery } from '../hooks/use-freebuff-streak-query'
 import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { useFreebuffModelStore } from '../state/freebuff-model-store'
-import {
-  useFreebuffChatStore,
-  selectFreebuffChatModel,
-} from '../state/freebuff-chat-store'
+import { useFreebuffChatStore } from '../state/freebuff-chat-store'
 import { formatHours } from '@codebuff/common/util/freebuff-hours'
 import { freebucksOf, freebucksRefundLine } from '../utils/freebucks'
 import { getFreebuffStreakBonusNoteForLayout } from '../utils/freebuff-streak-line'
@@ -179,7 +176,6 @@ export function FreebuffChatHeader({
             metered={freebucks !== undefined}
             focusedId=""
             onFocusTargetsChange={ignoreFocusTargets}
-            onSelectModel={selectFreebuffChatModel}
           />
         )}
       </box>

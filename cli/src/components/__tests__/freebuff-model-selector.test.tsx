@@ -15,7 +15,6 @@ import React from 'react'
 import * as openUrl from '../../utils/open-url'
 import { FreebuffModelSelector } from '../freebuff-model-selector'
 import {
-  FREEBUFF_REWARD_MODEL_ID,
   DEFAULT_FREEBUFF_MODEL_ID,
   FALLBACK_FREEBUFF_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
@@ -266,29 +265,6 @@ const expectNoPoolHeader = (frame: string) =>
       .filter((line) => !line.startsWith('PREMIUM · Strongest')),
   ).toEqual([])
 
-const renderSelectorWithGlmRemaining = async (remaining?: number) => {
-  useFreebuffSessionStore.getState().setSession({
-    status: 'none',
-    accessTier: 'limited',
-    referral: {
-      code: 'test-referral',
-      referrerName: null,
-      qualifiedCount: 1,
-      ...(remaining === undefined
-        ? {}
-        : { weeklySessionsRemaining: remaining }),
-      resetAt: new Date(FIXED_NOW_MS + 60_000).toISOString(),
-      githubLinked: true,
-    },
-  })
-  useFreebuffModelStore.getState().setSelectedModel(FREEBUFF_REWARD_MODEL_ID)
-
-  const nextSetup = await renderSelector(30)
-  await nextSetup.renderOnce()
-  await Promise.resolve()
-  await nextSetup.renderOnce()
-}
-
 test('the Freebucks picker waits after an expired reset and displays a confirmed refill', async () => {
   const meter = freebucksFixture(0)
   const publish = (remaining: number, resetAt: number) => {
@@ -317,23 +293,27 @@ test('the Freebucks picker waits after an expired reset and displays a confirmed
   expect(setup.captureCharFrame()).not.toContain('Updating balance')
 })
 
-describe('FreebuffModelSelector referral selection', () => {
-  test('keeps a fractional unlocked reward session selected while its request is pending', async () => {
-    await renderSelectorWithGlmRemaining(0.25)
-    expect(getSelectedFreebuffModel()).toBe(FREEBUFF_REWARD_MODEL_ID)
-  })
-
-  test('still repairs a locked reward selection to a visible grid model', async () => {
-    await renderSelectorWithGlmRemaining(0)
-    // The LIMITED hero: MiMo 2.6 Flash since 2026-09-30, an always-open row.
-    // GLM 5.3 Flash (the reward) is earned-metered at this tier, so repairing
-    // onto it would move the user from one locked row to another.
-    expect(getSelectedFreebuffModel()).toBe(LIMITED_FREEBUFF_HERO_MODEL_ID)
-  })
-
-  test('treats an omitted reward balance as locked', async () => {
-    await renderSelectorWithGlmRemaining()
-    expect(getSelectedFreebuffModel()).toBe(LIMITED_FREEBUFF_HERO_MODEL_ID)
+describe('FreebuffModelSelector referral banner', () => {
+  // Rewards are hours now, never a model to unlock. A limited referral block
+  // from an older server may still carry a reward balance; it must not bring
+  // back the "<model> unlocked" card or its launch action.
+  test('draws no reward-model card for a limited balance', async () => {
+    useFreebuffSessionStore.getState().setSession({
+      status: 'none',
+      accessTier: 'limited',
+      referral: {
+        code: 'test-referral',
+        referrerName: null,
+        qualifiedCount: 1,
+        weeklySessionsRemaining: 1,
+        resetAt: new Date(FIXED_NOW_MS + 60_000).toISOString(),
+        githubLinked: true,
+      },
+    })
+    const frame = (await renderSelector(48)).captureCharFrame()
+    expect(frame).toContain('Copy invite link')
+    expect(frame).not.toContain('unlocked')
+    expect(frame).not.toContain('▶ ')
   })
 })
 
@@ -1181,10 +1161,12 @@ describe('GLM selection uses the applicable meter', () => {
     await setup.renderOnce()
     await setup.renderOnce()
     expect(getSelectedFreebuffModel()).toBe(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
+    // Off the meter GLM is an ordinary limited row, metered by the limited
+    // pool like its neighbours; no earned reward balance gates it any more.
     setBalance()
     await setup.renderOnce()
     await setup.renderOnce()
-    expect(getSelectedFreebuffModel()).toBe(LIMITED_FREEBUFF_HERO_MODEL_ID)
+    expect(getSelectedFreebuffModel()).toBe(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
   })
 })
 
@@ -1241,39 +1223,31 @@ test('returning to the landing picker keeps the currency until the fresh probe',
   ).toBe(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
 })
 
-test.each([
-  ['legacy', undefined],
-  ['Freebucks', 4],
-] as const)(
-  'clicking unfunded GLM makes no admission request (%s)',
-  async (_label, balance) => {
-    useFreebuffSessionStore.getState().setSession({
-      status: 'none',
-      accessTier: 'limited',
-      ...(balance === undefined
-        ? {}
-        : { freebucks: freebucksFixture(balance) }),
-    })
-    // A non-hero pick, so the picker opens expanded with GLM on screen. MiMo
-    // 2.6 Flash was that pick until it became the limited hero (2026-09-30).
-    useFreebuffModelStore
-      .getState()
-      .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
-    const requested: string[] = []
-    const setup = await renderSelector(40, async (model) => {
-      requested.push(model)
-    })
-    const y = setup
-      .captureCharFrame()
-      .split('\n')
-      .findIndex((line) => line.includes('GLM 5.3 Flash'))
-    expect(y).toBeGreaterThanOrEqual(0)
-    await setup.mockMouse.click(15, y)
-    await setup.renderOnce()
-    expect(requested).toEqual([])
-    expect(getSelectedFreebuffModel()).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
-  },
-)
+test('clicking unfunded GLM makes no admission request', async () => {
+  useFreebuffSessionStore.getState().setSession({
+    status: 'none',
+    accessTier: 'limited',
+    freebucks: freebucksFixture(4),
+  })
+  // A non-hero pick, so the picker opens expanded with GLM on screen. MiMo
+  // 2.6 Flash was that pick until it became the limited hero (2026-09-30).
+  useFreebuffModelStore
+    .getState()
+    .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+  const requested: string[] = []
+  const setup = await renderSelector(40, async (model) => {
+    requested.push(model)
+  })
+  const y = setup
+    .captureCharFrame()
+    .split('\n')
+    .findIndex((line) => line.includes('GLM 5.3 Flash'))
+  expect(y).toBeGreaterThanOrEqual(0)
+  await setup.mockMouse.click(15, y)
+  await setup.renderOnce()
+  expect(requested).toEqual([])
+  expect(getSelectedFreebuffModel()).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+})
 
 // Gemini 3.8 Flash is PAID-ONLY on every surface since 2026-09-21, and the
 // CLI lists it: locked rather than hidden, so the upgrade has something to

@@ -10,7 +10,6 @@ import { getFreebuffRootAgentIdForModel } from '@codebuff/common/constants/free-
 import {
   FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS,
   FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS,
-  FREEBUFF_REWARD_MODEL_ID,
   getFreebuffModelsForAccessTier,
   FREEBUFF_GLM_V52_MODEL_ID,
   FREEBUFF_GPT_6_LUNA_MODEL_ID,
@@ -165,25 +164,13 @@ describe('freebuff rows the CLI offers', () => {
     ).toBe(LIMITED_FREEBUFF_MODEL_ID)
   })
 
-  test('the earned reward is offered on BOTH tiers', () => {
-    // Limited access included: a bounty grant is redeemable there, so the row
-    // has to be reachable there. The banner still only renders it against a
-    // live balance.
-    //
-    // At FULL access it is also in the GRID since 2026-08-31 — the reward model
-    // is GLM 5.3 Flash, an ordinary unmetered row and the CLI's default pick.
-    // The old assertion that the grid never shows it was correct only while the
-    // reward was GLM 5.2, which no tier's catalog listed.
-    expect(freebuffCliOfferedModelIds('full')).toContain(
-      FREEBUFF_REWARD_MODEL_ID,
-    )
-    expect(freebuffCliOfferedModelIds('limited')).toContain(
-      FREEBUFF_REWARD_MODEL_ID,
-    )
-    // GLM 5.3 Flash is directly selectable in the limited grid as well.
-    expect(getFreebuffModelsForAccessTier('limited').map((m) => m.id)).toContain(
-      FREEBUFF_REWARD_MODEL_ID,
-    )
+  test('offers exactly the tier grid, with no reward row appended', () => {
+    // Rewards are hours now, so nothing outside the grid is offered.
+    for (const tier of ['full', 'limited'] as const) {
+      expect(freebuffCliOfferedModelIds(tier)).toEqual(
+        getFreebuffModelsForAccessTier(tier).map((m) => m.id),
+      )
+    }
   })
 
   // 'base2-free' is the fallback root, and its allowlist has never included the referral reward.

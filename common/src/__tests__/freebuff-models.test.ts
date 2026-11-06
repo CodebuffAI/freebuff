@@ -15,8 +15,6 @@ import {
   FREEBUFF_ENABLE_MIMO_MODELS_IN_UI,
   FREEBUFF_FABLE_5_1_MODEL_ID,
   FREEBUFF_GLM_V52_MODEL_ID,
-  FREEBUFF_REWARD_MODEL_ID,
-  FREEBUFF_REWARD_MODEL_IDS,
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_WEB_LIMITED_MODEL_IDS,
@@ -76,8 +74,6 @@ import {
   getRecommendedFreebuffModelId,
   getRecommendedFreebuffWebModelId,
   isFreebuffDeploymentHours,
-  isFreebuffRewardModelId,
-  isRewardModelRedeemableAtLimitedTier,
   isFreebuffGlmV53FlashModelId,
   isFreebuffGpt56LunaModelId,
   isFreebuffLimitedOfferModelId,
@@ -102,7 +98,6 @@ import {
   isFreebuffWebModelId,
   isFreebuffWebMultimodalModelId,
   isFreebuffWebPremiumModelId,
-  isFreebuffWebRememberableModelId,
   isFreebuffWebSelectableModelId,
   isMuseSparkModelId,
   isSupportedFreebuffModelId,
@@ -112,7 +107,6 @@ import {
   resolveFreebuffSessionModelForAccessTier,
   resolveFreebuffWebModel,
   resolveFreebuffWebModelForLimitedTier,
-  resolveRememberedFreebuffWebModel,
 } from '../constants/freebuff-models'
 import type { FreebuffModelOption } from '../constants/freebuff-models'
 import { setFreebuffModelPolicyOverlay } from '../constants/freebuff-model-policy-overlay'
@@ -330,35 +324,18 @@ describe('freebuff model availability', () => {
   })
 
   /**
-   * GLM 5.3 Flash IS the reward model now (2026-08-31), and GLM 5.2 is
-   * withdrawn — which reverses this test without weakening what it guards.
-   *
-   * The hazard was never "these two must not be the same row". It was that they
-   * share a family name and a `z-ai/` prefix, and a predicate written as a
-   * PREFIX MATCH would silently merge two entitlements (the retired
-   * `crof/glm-5.2` was a second wire id for the earned model, metered by a
-   * different pool).
-   *
-   * So what this pins is that every GLM predicate is still an EXPLICIT ID LIST
-   * — including now, when the two happen to name the same model, because the
-   * next reward move will separate them again.
+   * The two GLM rows share a family name and a `z-ai/` prefix, and a predicate
+   * written as a PREFIX MATCH would silently merge them (the retired
+   * `crof/glm-5.2` was a second wire id for an earned model, metered by a
+   * different pool). So the GLM predicate is an EXPLICIT ID LIST.
    */
   test('the GLM predicates are explicit id lists, never prefix matches', () => {
-    // Same id today, DIFFERENT QUESTIONS: one asks "is this the reward", the
-    // other "does this need the OpenRouter price fence". They are free to
-    // diverge the next time the reward moves, and must be edited separately.
-    expect(isFreebuffRewardModelId(FREEBUFF_GLM_V53_FLASH_MODEL_ID)).toBe(true)
     expect(isFreebuffGlmV53FlashModelId(FREEBUFF_GLM_V53_FLASH_MODEL_ID)).toBe(
       true,
     )
-    // Neither predicate matches the OTHER GLM row, which is what a prefix match
-    // on `z-ai/glm` would have done.
-    expect(isFreebuffRewardModelId(FREEBUFF_GLM_V52_MODEL_ID)).toBe(false)
+    // It does not match the OTHER GLM row, which is what a prefix match on
+    // `z-ai/glm` would have done.
     expect(isFreebuffGlmV53FlashModelId(FREEBUFF_GLM_V52_MODEL_ID)).toBe(false)
-    // The reward model is UNMETERED at full access — the reward it backs is an
-    // extra PREMIUM session there, not this row. Being in the standard list is
-    // what makes that true, and it is the property most easily broken by
-    // "tidying" the reward into the premium lists.
     expect(isFreebuffPremiumModelId(FREEBUFF_GLM_V53_FLASH_MODEL_ID)).toBe(
       false,
     )
@@ -383,8 +360,7 @@ describe('freebuff model availability', () => {
     expect(isFreebuffGlmV53FlashModelId('z-ai/glm-5.3-flash-20260601')).toBe(
       true,
     )
-    expect(isFreebuffRewardModelId('z-ai/glm-5.3-flash-20260601')).toBe(true)
-    expect(isFreebuffRewardModelId('z-ai/glm-5.2-20260601')).toBe(false)
+    expect(isFreebuffGlmV53FlashModelId('z-ai/glm-5.2-20260601')).toBe(false)
   })
 
   test('GLM 5.3 Flash is unmetered at full access', () => {
@@ -427,7 +403,6 @@ describe('freebuff model availability', () => {
     expect(FREEBUFF_WEB_GEO_EXEMPT_MODEL_IDS as readonly string[]).toContain(id)
     expect(FREEBUFF_WEB_LIMITED_MODEL_IDS as readonly string[]).toContain(id)
     expect(isFreebuffWebModelAllowedForLimitedTier(id, false)).toBe(true)
-    expect(isRewardModelRedeemableAtLimitedTier(id)).toBe(true)
 
     // 4. FULLY AVAILABLE to full access: in the catalog, open at every hour,
     //    not paused, and reachable on every surface's model list.
@@ -838,7 +813,6 @@ describe('freebuff model availability', () => {
       // by some pool (never unlimited by omission).
       expect(isFreebuffSessionModelId(id)).toBe(true)
       expect(isFreebuffWebPremiumModelId(id)).toBe(true)
-      expect(isFreebuffRewardModelId(id)).toBe(false)
     }
     for (const model of FREEBUFF_WEB_ALL_MODELS) {
       expect(isFreebuffWebSelectableModelId(model.id)).toBe(
@@ -857,23 +831,30 @@ describe('freebuff model availability', () => {
     ).toBe(true)
   })
 
-  test('CLI access-tier resolver preserves the reward model at every tier', () => {
+  test('CLI access-tier resolver: GLM 5.3 Flash survives as a limited-catalog row', () => {
     expect(
-      resolveFreebuffModelForAccessTier(FREEBUFF_REWARD_MODEL_ID, 'full'),
-    ).toBe(FREEBUFF_REWARD_MODEL_ID)
-    // At full access it survives because it is an ordinary catalog row — the
-    // default one, in fact — so there is nothing special to preserve.
-    //
-    // At LIMITED access it survives the coercion for the reason bounties
-    // introduced in 2026-08-03 and the reward swap kept: an earned session must
-    // be redeemable in every region. The entitlement gate lives DOWN in the
-    // reward quota pool, which at limited tier counts ONLY grants minted
-    // redeemable_at_limited_tier — referral entitlement still buys a
-    // limited-tier user nothing. Coercing here instead would rewrite a
-    // deliberate pick to MiMo and strand the session they earned.
+      resolveFreebuffModelForAccessTier(
+        FREEBUFF_GLM_V53_FLASH_MODEL_ID,
+        'full',
+      ),
+    ).toBe(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
+    // At LIMITED access it survives only because it is in
+    // LIMITED_FREEBUFF_MODEL_IDS; there is no reward-model pass any more.
+    expect(LIMITED_FREEBUFF_MODEL_IDS as readonly string[]).toContain(
+      FREEBUFF_GLM_V53_FLASH_MODEL_ID,
+    )
     expect(
-      resolveFreebuffModelForAccessTier(FREEBUFF_REWARD_MODEL_ID, 'limited'),
-    ).toBe(FREEBUFF_REWARD_MODEL_ID)
+      resolveFreebuffModelForAccessTier(
+        FREEBUFF_GLM_V53_FLASH_MODEL_ID,
+        'limited',
+      ),
+    ).toBe(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
+    expect(
+      isFreebuffSessionModelAllowedForAccessTier(
+        FREEBUFF_GLM_V53_FLASH_MODEL_ID,
+        'limited',
+      ),
+    ).toBe(true)
     // The WITHDRAWN row does not survive it any more, at either tier — which is
     // the whole point of pausing rather than deleting: it is recognised, and
     // therefore coerced, instead of refused.
@@ -915,63 +896,36 @@ describe('freebuff model availability', () => {
     // GLM 5.2's own id stays RECOGNISED after its 2026-08-31 withdrawal — that
     // is the difference between pausing and deleting, and it is what lets a
     // released binary's pick be coerced instead of refused (#1801). It is no
-    // longer the reward, which now names GLM 5.3 Flash.
+    // longer a reward.
     expect(isFreebuffSessionModelId(FREEBUFF_GLM_V52_MODEL_ID)).toBe(true)
-    expect(isFreebuffRewardModelId(FREEBUFF_GLM_V52_MODEL_ID)).toBe(false)
-    expect(isFreebuffRewardModelId(FREEBUFF_REWARD_MODEL_ID)).toBe(true)
   })
 
-  test('an earned row is never remembered as the default, at the tier where it is earned', () => {
-    // An earned row runs out long before the rest of the picker, so remembering
-    // it would strand a new thread / app / page load on a model that fails
-    // admission.
-    //
-    // TIER-SCOPED SINCE 2026-08-31. The reward model is GLM 5.3 Flash, earned
-    // only at LIMITED access; at full access it is unmetered and is
-    // DEFAULT_FREEBUFF_WEB_MODEL_ID itself, so refusing to remember it there
-    // would make the product's default the one pick that never sticks.
-    expect(
-      isFreebuffWebRememberableModelId(FREEBUFF_REWARD_MODEL_ID, 'limited'),
-    ).toBe(false)
-    expect(
-      resolveRememberedFreebuffWebModel(FREEBUFF_REWARD_MODEL_ID, {
-        accessTier: 'limited',
-      }),
-    ).toBe(DEFAULT_FREEBUFF_WEB_MODEL_ID)
-    // A withdrawn row is never remembered either, by a different mechanism:
-    // it resolves to the always-available fallback before this rule is asked.
-    expect(resolveRememberedFreebuffWebModel(FREEBUFF_GLM_V52_MODEL_ID)).toBe(
+  test('a saved Web pick resolves to its own row, or to the fallback once withdrawn', () => {
+    // A withdrawn row resolves to the always-available fallback.
+    expect(resolveFreebuffWebModel(FREEBUFF_GLM_V52_MODEL_ID)).toBe(
       FALLBACK_FREEBUFF_MODEL_ID,
     )
     // A SAVED PRO PICK SELF-HEALS. Pro was withdrawn on 2026-08-26, and a saved
-    // preference is the longest-lived way to hold a dead id — it survives every
-    // deploy and outlives the client release that dropped the row. Resolving it
-    // to the always-available fallback (rather than to the premium default) is
+    // preference is the longest-lived way to hold a dead id. Resolving it to
+    // the always-available fallback (rather than to the premium default) is
     // what stops a returning user's page load landing on a model whose first
     // send is refused.
-    expect(
-      resolveRememberedFreebuffWebModel(FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID),
-    ).toBe(FALLBACK_FREEBUFF_MODEL_ID)
-    // The same row IS remembered at full access, where it is unmetered and
-    // cannot run out. The default when the tier is unknown is the permissive
-    // one, which is correct for every row but this one at that one tier.
-    expect(
-      isFreebuffWebRememberableModelId(FREEBUFF_GLM_V53_FLASH_MODEL_ID, 'full'),
-    ).toBe(true)
-    expect(
-      isFreebuffWebRememberableModelId(FREEBUFF_GLM_V53_FLASH_MODEL_ID),
-    ).toBe(true)
-    expect(resolveRememberedFreebuffWebModel(FREEBUFF_KIMI_MODEL_ID)).toBe(
+    expect(resolveFreebuffWebModel(FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID)).toBe(
+      FALLBACK_FREEBUFF_MODEL_ID,
+    )
+    // Every live row is remembered as itself, at every tier: no row is earned.
+    expect(resolveFreebuffWebModel(LIMITED_FREEBUFF_MODEL_ID)).toBe(
+      LIMITED_FREEBUFF_MODEL_ID,
+    )
+    expect(resolveFreebuffWebModel(FREEBUFF_KIMI_MODEL_ID)).toBe(
       FALLBACK_FREEBUFF_MODEL_ID,
     )
     expect(
-      resolveRememberedFreebuffWebModel(FREEBUFF_KIMI_K3_ECO_MODEL_ID, {
+      resolveFreebuffWebModel(FREEBUFF_KIMI_K3_ECO_MODEL_ID, {
         includeGodOnly: true,
       }),
     ).toBe(FREEBUFF_KIMI_K3_ECO_MODEL_ID)
-    // A retired/unknown saved id keeps the pre-existing resolution: the
-    // always-available fallback, not the premium default.
-    expect(resolveRememberedFreebuffWebModel('some/retired-model')).toBe(
+    expect(resolveFreebuffWebModel('some/retired-model')).toBe(
       FALLBACK_FREEBUFF_MODEL_ID,
     )
   })
@@ -1023,29 +977,26 @@ describe('freebuff model availability', () => {
     ).toBe(LIMITED_FREEBUFF_MODEL_ID)
   })
 
-  test('the bounty-earned reward survives the Web limited-tier coercion', () => {
-    // Regression: this coercion ran BEFORE the quota pool got a say, so a
-    // limited-region user who had earned a bounty session had their pick
-    // rewritten to the free model and could never spend the reward. The
-    // entitlement gate is the reward pool (bounty grants only, at this tier) —
-    // not this allowlist, which is purely about what the picker may display.
-    //
-    // Follows the reward model rather than naming one, so the next swap moves
-    // this assertion with it instead of leaving it pinned to a withdrawn row.
+  test('the Web limited-tier coercion keeps limited-catalog rows', () => {
+    // GLM 5.3 Flash is in the limited catalog, so it is kept by the allowlist
+    // itself; nothing special-cases it as a reward.
     expect(
-      isFreebuffWebModelAllowedForLimitedTier(FREEBUFF_REWARD_MODEL_ID),
+      isFreebuffWebModelAllowedForLimitedTier(FREEBUFF_GLM_V53_FLASH_MODEL_ID),
     ).toBe(true)
     expect(
-      resolveFreebuffWebModelForLimitedTier(FREEBUFF_REWARD_MODEL_ID),
-    ).toBe(FREEBUFF_REWARD_MODEL_ID)
+      resolveFreebuffWebModelForLimitedTier(FREEBUFF_GLM_V53_FLASH_MODEL_ID),
+    ).toBe(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
+    expect(
+      resolveFreebuffWebModelForLimitedTier(LIMITED_FREEBUFF_MODEL_ID),
+    ).toBe(LIMITED_FREEBUFF_MODEL_ID)
     // The WITHDRAWN row does not survive it — a paused id is coerced away at
-    // every tier, which is why pausing had to accompany the reward swap.
+    // every tier.
     expect(
       resolveFreebuffWebModelForLimitedTier(FREEBUFF_GLM_V52_MODEL_ID),
     ).toBe(LIMITED_FREEBUFF_MODEL_ID)
 
-    // The CrofAI GLM route is a paid premium model, NOT the earned one, and
-    // must stay coerced away — the two ids are easy to confuse.
+    // The CrofAI GLM route is deleted and must stay coerced away — the GLM ids
+    // are easy to confuse.
     expect(
       isFreebuffWebModelAllowedForLimitedTier(FREEBUFF_CROF_GLM_V52_MODEL_ID),
     ).toBe(false)
@@ -2166,11 +2117,6 @@ describe('Muse Spark rate-limit fallback', () => {
     for (const id of FREEBUFF_MUSE_SPARK_MODEL_IDS) {
       expect(isFreebuffWebPremiumModelId(id)).toBe(false)
     }
-    // Never the earned-GLM pool — the one direction that would hand out access.
-    expect(isFreebuffRewardModelId(MUSE_SPARK_FALLBACK_MODEL_ID)).toBe(false)
-    expect(FREEBUFF_REWARD_MODEL_IDS).not.toContain(
-      MUSE_SPARK_FALLBACK_MODEL_ID,
-    )
     // And it must be a real, selectable model on every surface Muse Spark is
     // offered on — Web today, and the CLI/Desktop (whose sessions can only run
     // SUPPORTED_ ids) once the row widens — rather than a dangling id.

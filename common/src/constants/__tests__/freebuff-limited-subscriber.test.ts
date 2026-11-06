@@ -12,7 +12,6 @@ import {
   getFreebuffModelsForAccessTier,
   isFreebuffSessionModelAllowedForAccessTier,
   isFreebuffWebModelAllowedForLimitedTier,
-  isFreebuffRewardModelId,
   isFreebuffWebModelId,
   resolveFreebuffSessionModelForAccessTier,
   resolveFreebuffWebModelForLimitedTier,
@@ -33,21 +32,12 @@ const LIMITED_PLAN_MODEL_IDS = FREEBUFF_SUBSCRIPTION_MODEL_IDS.filter(
 
 /**
  * A limited-region account is held to a catalog that contains none of the
- * models a plan meters — EXCEPT the earned reward row. Before this, a
- * subscriber there paid and received nothing at all: every plan model failed
- * admission with session_model_mismatch.
- *
- * THE REWARD ROW IS THE ONE CARVE-OUT, and it has to be. Since 2026-08-31 the
- * reward model is GLM 5.3 Flash, which is also a plan model, and a limited-tier
- * user may reach it against a bounty grant with no plan at all
- * (isRewardModelRedeemableAtLimitedTier). The allowlist deliberately says yes
- * there so an unfunded caller lands on `rate_limited` (limit 0) rather than
- * `session_model_mismatch` — the POOL is the gate, not the catalog. The
- * carve-out is therefore asserted here rather than worked around, because if it
- * ever widened past this one id the plan would stop being worth paying for.
+ * plan-only models. Before this, a subscriber there paid and received nothing
+ * at all: every plan model failed admission with session_model_mismatch.
  *
  * A plan model can also be an ordinary free row of the limited catalog (Flash
  * is), so the assertions distinguish "free in this tier" from "plan-only".
+ * There is no reward-row carve-out since 2026-11-06: rewards are hours.
  */
 /**
  * Free at limited access ON WEB, which since 2026-09-04 is a WIDER set than
@@ -62,14 +52,12 @@ describe('paid plans at limited access', () => {
   test('the limited catalog still excludes every plan-only model when unpaid', () => {
     for (const model of FREEBUFF_SUBSCRIPTION_MODEL_IDS) {
       // The free limited CATALOG excludes every plan model that the tier does
-      // not already hand out, reward row included.
+      // not already hand out.
       expect(FREEBUFF_WEB_LIMITED_MODEL_IDS.includes(model)).toBe(
         freeAtLimitedTier(model),
       )
       expect(isFreebuffSessionModelAllowedForAccessTier(model, 'limited')).toBe(
-        // The reward row is NAMEABLE without a plan so a bounty grant can fund
-        // it; its pool reports 0 for everyone else. See the docblock above.
-        isFreebuffRewardModelId(model) || freeAtLimitedTier(model),
+        freeAtLimitedTier(model),
       )
     }
     // Widening the overlap is a product decision that has to come here, and
@@ -247,13 +235,9 @@ describe('a plan model survives resolution, not just the allowlist', () => {
   test('unpaid limited access still coerces every plan-only model to MiMo', () => {
     for (const model of FREEBUFF_SUBSCRIPTION_MODEL_IDS) {
       expect(resolveFreebuffSessionModelForAccessTier(model, 'limited')).toBe(
-        // The reward row survives coercion without a plan, so a grant-funded
-        // session is launchable from any region; the pool decides whether it
-        // is joinable. A row the tier hands out for free survives too, being
-        // simply allowed. Everything else is rewritten to the free default.
-        isFreebuffRewardModelId(model) || freeAtLimitedTier(model)
-          ? model
-          : LIMITED_FREEBUFF_MODEL_ID,
+        // A row the tier hands out for free survives, being simply allowed.
+        // Everything else is rewritten to the free default.
+        freeAtLimitedTier(model) ? model : LIMITED_FREEBUFF_MODEL_ID,
       )
     }
   })
@@ -273,14 +257,12 @@ describe('a plan model survives resolution, not just the allowlist', () => {
       // The picker's own allowlist — the one whose coercion effect reset a
       // subscriber's selection back to MiMo on the next render.
       expect(isFreebuffWebModelAllowedForLimitedTier(model)).toBe(
-        isFreebuffRewardModelId(model) || freeAtLimitedTier(model),
+        freeAtLimitedTier(model),
       )
       expect(isFreebuffWebModelAllowedForLimitedTier(model, true)).toBe(true)
       expect(resolveFreebuffWebModelForLimitedTier(model, true)).toBe(model)
       expect(resolveFreebuffWebModelForLimitedTier(model)).toBe(
-        isFreebuffRewardModelId(model) || freeAtLimitedTier(model)
-          ? model
-          : LIMITED_FREEBUFF_MODEL_ID,
+        freeAtLimitedTier(model) ? model : LIMITED_FREEBUFF_MODEL_ID,
       )
     }
   })
