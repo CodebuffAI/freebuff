@@ -10,6 +10,10 @@ import {
 // happen on the API; this encoding provides no secrecy or authorization.
 export const ACCOUNT_SKILLS_UPLOAD_MAX_BYTES = 4 * 1024 * 1024
 
+// Older Desktop builds use a strict skill schema without `enabled`.
+export const ACCOUNT_SKILLS_STATE_QUERY = 'includeEnabled'
+export const ACCOUNT_SKILLS_STATE_PATH = `/api/v1/cloud/skills?${ACCOUNT_SKILLS_STATE_QUERY}=1`
+
 /**
  * The bytes of one uploaded skill package (a SKILL.md or a .zip) before
  * encoding. Base64 keeps the body under `ACCOUNT_SKILLS_UPLOAD_MAX_BYTES`, the
