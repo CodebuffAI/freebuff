@@ -226,6 +226,30 @@ test('a row reads its price as a multiplier, 1x included; a free row carries non
   expect(frame).toContain('FREE · 5/5 hours daily')
 })
 
+test('a solo-session discount shows the price the row charges, Free when it covers it', async () => {
+  useFreebuffSessionStore.getState().setSession({
+    status: 'none',
+    accessTier: 'full',
+    freebucks: {
+      ...freebucksFixture(25, {
+        [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 15,
+        [FREEBUFF_MIMO_V25_MODEL_ID]: 30,
+      }),
+      planRequiredModelIds: [],
+      soloDiscount: 15,
+    },
+  })
+  useFreebuffModelStore.getState().setSelectedModel(FREEBUFF_GLM_V53_FLASH_MODEL_ID)
+  const frame = (await renderSelector(60)).captureCharFrame()
+  const lines = frame.split('\n')
+  const detailsOf = (name: string) =>
+    lines[lines.findIndex((line) => line.includes(name)) + 1] ?? ''
+  expect(detailsOf(getFreebuffModel(FREEBUFF_MIMO_V25_MODEL_ID).displayName)).toContain('3x')
+  expect(detailsOf(getFreebuffModel(FREEBUFF_MIMO_V25_MODEL_ID).displayName)).not.toContain('6x')
+  expect(detailsOf('DeepSeek V4.1 Flash')).toContain('Free')
+  expect(detailsOf('DeepSeek V4.1 Flash')).not.toContain('3x')
+})
+
 /**
  * LIMITED tier, which since 2026-08-31 is the only tier where the reward is a
  * MODEL you can select. At full access the reward is an extra premium session

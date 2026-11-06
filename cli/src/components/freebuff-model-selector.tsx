@@ -5,7 +5,7 @@ import {
   formatHoursWithUnit,
   freebuffModelMultiplierLabel,
 } from '@codebuff/common/util/freebuff-hours'
-import { freebucksListPriceFor } from '@codebuff/common/util/freebuff-price-order'
+import { freebucksRowPrice } from '@codebuff/common/util/freebuff-price-order'
 import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
 import React, {
@@ -505,18 +505,25 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       // uses two hours of balance). A free row carries no label; a 1x row reads "1x".
       // Warned when the balance cannot cover it — the same signal the dimmed
       // price carries on the other two surfaces.
-      const rowPrice = freebucksPriceFor(freebucks, model.id)
+      // Less the solo-session discount, as Desktop and Web draw it.
+      const { price: rowPrice, listPrice } = freebucksRowPrice(
+        freebucks,
+        model.id,
+        freebucksPriceFor(freebucks, model.id),
+      )
       if (rowPrice !== undefined) {
         // Only the price that will be charged. The regular price is NOT
         // shown beside it: many terminals ignore the strikethrough attribute,
-        // and "3x 2x" then reads as two prices. A row a catalog discount
-        // moved is drawn in the accent colour instead.
-        const label = freebuffModelMultiplierLabel(rowPrice)
+        // and "3x 2x" then reads as two prices. A row a discount moved is
+        // drawn in the accent colour instead, and one it made free says so.
+        const label =
+          freebuffModelMultiplierLabel(rowPrice) ??
+          (listPrice !== undefined ? (rowPrice > 0 ? '1x' : 'Free') : null)
         if (label) {
           details.push({
             text: label,
             warn: (freebucks?.balance ?? 0) < rowPrice,
-            highlight: freebucksListPriceFor(freebucks, model.id) !== undefined,
+            highlight: listPrice !== undefined,
           })
         }
         // At peak, when the off-peak price is back, so a user can wait for it.

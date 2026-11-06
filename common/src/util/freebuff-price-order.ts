@@ -49,3 +49,27 @@ export function freebucksListPriceFor(
     return undefined
   return listPrice
 }
+
+/**
+ * A row's drawn price: `quoted` less the solo-session discount, which is what
+ * admission charges, and the regular price to cross out beside it (a catalog
+ * list price, else `quoted` when the discount moved it). `quoted` is undefined
+ * for an unpriced or locked row. Shared by Desktop, the CLI and Web.
+ */
+export function freebucksRowPrice(
+  info:
+    | Pick<FreebuffFreebucksInfo, 'prices' | 'listPrices' | 'soloDiscount'>
+    | null
+    | undefined,
+  modelId: string,
+  quoted: number | undefined,
+): { price: number | undefined; listPrice: number | undefined } {
+  if (quoted === undefined) return { price: undefined, listPrice: undefined }
+  const price = Math.max(0, quoted - (info?.soloDiscount ?? 0))
+  return {
+    price,
+    listPrice:
+      freebucksListPriceFor(info, modelId) ??
+      (price < quoted ? quoted : undefined),
+  }
+}
