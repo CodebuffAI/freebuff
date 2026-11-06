@@ -173,7 +173,7 @@ export const HOUSE_GROWTH_INTEGRATION_CAMPAIGNS: readonly HouseGrowthCampaign[] 
       frequencyCap: DAILY,
       favicon,
       creatives: INTEGRATION_COPY[slug].map(([title, body]) =>
-        creative(title, body, 'Connect', '/?settings=integrations', favicon),
+        creative(title, body, `Connect ${INTEGRATION_NAMES[slug]}`, '/?settings=integrations', favicon),
       ),
     }
   })
@@ -183,16 +183,16 @@ export const HOUSE_GROWTH_INTEGRATION_CAMPAIGNS: readonly HouseGrowthCampaign[] 
  * Each headline is the command to run; the line says what it gets you.
  */
 const TIPS: readonly HouseAdCreative[] = [
-  creative('Use /plan before big changes', 'Review the approach before Freebuff writes any code.', 'Learn more', '/docs'),
-  creative('Use /review before you commit', 'Freebuff checks its own changes for bugs.', 'Learn more', '/docs'),
-  creative('Run /interview to turn an idea into a spec', 'Freebuff asks the questions so the build matches your idea.', 'Learn more', '/docs'),
-  creative('Use /history to pick up where you left off', 'Resume any past conversation with its context.', 'Learn more', '/docs'),
-  creative('Use /image to show Freebuff a screenshot', 'Or paste one with Ctrl+V. Freebuff can see the bug.', 'Learn more', '/docs'),
-  creative('Use /model to pick the right model', 'Switch models for the next message, mid-chat.', 'Learn more', '/docs'),
-  creative('Use /todo to see what is left', 'Track Freebuff\'s checklist while it works.', 'Learn more', '/docs'),
-  creative('Use /queue to line up your next asks', 'Edit or reorder messages waiting to be sent.', 'Learn more', '/docs'),
-  creative('Start a line with ! to run a command', 'Run shell commands without leaving the chat.', 'Learn more', '/docs'),
-  creative('Use /export to keep a record', 'Save the whole conversation as a Markdown file.', 'Learn more', '/docs'),
+  creative('Use /plan before big changes', 'Review the approach before Freebuff writes any code.', 'How /plan works', '/docs'),
+  creative('Use /review before you commit', 'Freebuff checks its own changes for bugs.', 'How /review works', '/docs'),
+  creative('Run /interview to turn an idea into a spec', 'Freebuff asks the questions so the build matches your idea.', 'How /interview works', '/docs'),
+  creative('Use /history to pick up where you left off', 'Resume any past conversation with its context.', 'How /history works', '/docs'),
+  creative('Use /image to show Freebuff a screenshot', 'Or paste one with Ctrl+V. Freebuff can see the bug.', 'How /image works', '/docs'),
+  creative('Use /model to pick the right model', 'Switch models for the next message, mid-chat.', 'How /model works', '/docs'),
+  creative('Use /todo to see what is left', 'Track Freebuff\'s checklist while it works.', 'How /todo works', '/docs'),
+  creative('Use /queue to line up your next asks', 'Edit or reorder messages waiting to be sent.', 'How /queue works', '/docs'),
+  creative('Start a line with ! to run a command', 'Run shell commands without leaving the chat.', 'How ! commands work', '/docs'),
+  creative('Use /export to keep a record', 'Save the whole conversation as a Markdown file.', 'How /export works', '/docs'),
 ]
 
 export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
@@ -205,8 +205,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_android',
     frequencyCap: DAILY,
     creatives: [
-      creative('Keep coding from your phone', 'Freebuff for Android: your chats and Cloud projects on the go.', 'Get the app', HOUSE_ANDROID_PLAY_STORE_URL),
-      creative('Check on Freebuff from anywhere', 'Follow your Cloud work and reply from the Android app.', 'Get the app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Keep coding from your phone', 'Freebuff for Android: your chats and Cloud projects on the go.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Check on Freebuff from anywhere', 'Follow your Cloud work and reply from the Android app.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
     ],
   },
   {
@@ -219,8 +219,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_android',
     frequencyCap: DAILY,
     creatives: [
-      creative('Control Freebuff Desktop from your phone', 'The Android app reaches your Desktop threads too.', 'Get the app', HOUSE_ANDROID_PLAY_STORE_URL),
-      creative('Start a Cloud task from your phone', 'Kick off work on Android and check results later.', 'Get the app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Control Freebuff Desktop from your phone', 'The Android app reaches your Desktop threads too.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Start a Cloud task from your phone', 'Kick off work on Android and check results later.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
     ],
   },
   {
@@ -230,8 +230,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_android',
     frequencyCap: DAILY,
     creatives: [
-      creative('Your Freebuff chats, now on Android', 'Pick up any conversation from your phone.', 'Get the app', HOUSE_ANDROID_PLAY_STORE_URL),
-      creative('Reply to Freebuff on the go', 'Answer its questions from Android so work keeps moving.', 'Get the app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Your Freebuff chats, now on Android', 'Pick up any conversation from your phone.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Reply to Freebuff on the go', 'Answer its questions from Android so work keeps moving.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
     ],
   },
   {
@@ -241,8 +241,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_android',
     frequencyCap: DAILY,
     creatives: [
-      creative('Freebuff fits in your pocket', 'Get the Android app on Google Play.', 'Get the app', HOUSE_ANDROID_PLAY_STORE_URL),
-      creative('Step away while Freebuff works', 'Follow along from the Android app.', 'Get the app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Freebuff fits in your pocket', 'Get the Android app on Google Play.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Step away while Freebuff works', 'Follow along from the Android app.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
     ],
   },
   {
@@ -254,8 +254,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'all',
     frequencyCap: DAILY,
     creatives: [
-      creative('Get more daily sessions free', 'Invite a friend. Each one who joins adds sessions.', 'Invite', '/earn/referrals'),
-      creative('Know someone who codes?', 'Invite them to Freebuff and earn extra daily sessions.', 'Invite', '/earn/referrals'),
+      creative('Get more daily sessions free', 'Invite a friend. Each one who joins adds sessions.', 'Invite a friend', '/earn/referrals'),
+      creative('Know someone who codes?', 'Invite them to Freebuff and earn extra daily sessions.', 'Invite a friend', '/earn/referrals'),
     ],
   },
   {
@@ -265,8 +265,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'all',
     frequencyCap: DAILY,
     creatives: [
-      creative('Put your app online in one click', 'Freebuff builds and hosts it on a freebuff.app link.', 'Deploy', '/?view=sites'),
-      creative('Share what you built with a live link', 'Press Deploy. Freebuff handles the build and hosting.', 'Deploy', '/?view=sites'),
+      creative('Put your app online in one click', 'Freebuff builds and hosts it on a freebuff.app link.', 'Deploy my app', '/?view=sites'),
+      creative('Share what you built with a live link', 'Press Deploy. Freebuff handles the build and hosting.', 'Deploy my app', '/?view=sites'),
     ],
   },
   {
@@ -276,8 +276,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'all',
     frequencyCap: DAILY,
     creatives: [
-      creative('Already pay for ChatGPT? Use it here', 'Sign in with ChatGPT and run Freebuff on your plan.', 'Sign in', '/?settings=providers'),
-      creative('Get more out of your ChatGPT plan', 'Use it to power Freebuff. Sign in with ChatGPT.', 'Sign in', '/?settings=providers'),
+      creative('Already pay for ChatGPT? Use it here', 'Sign in with ChatGPT and run Freebuff on your plan.', 'Sign in with ChatGPT', '/?settings=providers'),
+      creative('Get more out of your ChatGPT plan', 'Use it to power Freebuff. Sign in with ChatGPT.', 'Sign in with ChatGPT', '/?settings=providers'),
     ],
   },
   {
@@ -287,8 +287,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_desktop',
     frequencyCap: DAILY,
     creatives: [
-      creative('Get the Freebuff Desktop app', 'The best Freebuff experience, on Mac, Windows and Linux.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
-      creative('See your app as Freebuff builds it', 'Desktop puts chat, code and live previews side by side.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('Get the Freebuff Desktop app', 'The best Freebuff experience, on Mac, Windows and Linux.', 'Get Desktop free', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('See your app as Freebuff builds it', 'Desktop puts chat, code and live previews side by side.', 'Get Desktop free', HOUSE_DESKTOP_DOWNLOAD_URL),
     ],
   },
   {
@@ -299,8 +299,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_desktop',
     frequencyCap: DAILY,
     creatives: [
-      creative('Freebuff works best on Desktop', 'Free for Mac, Windows and Linux.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
-      creative('Run Freebuff on your own machine', 'Desktop runs your code locally with live previews.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('Freebuff works best on Desktop', 'Free for Mac, Windows and Linux.', 'Get Desktop free', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('Run Freebuff on your own machine', 'Desktop runs your code locally with live previews.', 'Get Desktop free', HOUSE_DESKTOP_DOWNLOAD_URL),
     ],
   },
   {
@@ -310,8 +310,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_desktop',
     frequencyCap: DAILY,
     creatives: [
-      creative('Get live previews in Freebuff Desktop', 'Watch your app update as Freebuff edits it.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
-      creative('All your Freebuff projects in one window', 'Desktop keeps chats, code and previews together.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('Get live previews in Freebuff Desktop', 'Watch your app update as Freebuff edits it.', 'Get Desktop free', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('All your Freebuff projects in one window', 'Desktop keeps chats, code and previews together.', 'Get Desktop free', HOUSE_DESKTOP_DOWNLOAD_URL),
     ],
   },
   {
@@ -321,8 +321,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'not_desktop',
     frequencyCap: DAILY,
     creatives: [
-      creative('Upgrade your Freebuff setup', 'The Desktop app is free on Mac, Windows and Linux.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
-      creative('Built for long Freebuff sessions', 'Desktop handles big projects and long chats.', 'Download', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('Upgrade your Freebuff setup', 'The Desktop app is free on Mac, Windows and Linux.', 'Get Desktop free', HOUSE_DESKTOP_DOWNLOAD_URL),
+      creative('Built for long Freebuff sessions', 'Desktop handles big projects and long chats.', 'Get Desktop free', HOUSE_DESKTOP_DOWNLOAD_URL),
     ],
   },
   {
@@ -332,8 +332,8 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'all',
     frequencyCap: DAILY,
     creatives: [
-      creative('Bring your own API key', 'Use your own key inside Freebuff.', 'Set up', '/?settings=providers'),
-      creative('Have an API key? Use it in Freebuff', 'Add your key and pick from your provider\'s models.', 'Set up', '/?settings=providers'),
+      creative('Bring your own API key', 'Use your own key inside Freebuff.', 'Add my API key', '/?settings=providers'),
+      creative('Have an API key? Use it in Freebuff', 'Add your key and pick from your provider\'s models.', 'Add my API key', '/?settings=providers'),
     ],
   },
   {
@@ -343,7 +343,7 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     targeting: 'all',
     frequencyCap: DAILY,
     creatives: [
-      creative('Help shape what Freebuff builds next', 'Answer a few questions about how you build.', 'Start', '/account'),
+      creative('Help shape what Freebuff builds next', 'Answer a few questions about how you build.', 'Take the survey', '/account'),
     ],
   },
   {
