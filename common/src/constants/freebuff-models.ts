@@ -1791,11 +1791,10 @@ const DEEPSEEK_V4_FLASH_MODEL = {
   // bills the 2x card, because DeepSeek still charges it. What is removed is
   // only the decision to stop SERVING inside that window.
   availability: 'always',
-  // REPOINTED off Luna 2026-09-22: GPT-6 Luna is gated to US-or-paid accounts,
-  // and a fallback that most users cannot open is not a fallback. GLM 5.3
-  // Flash is ungated and the cheapest row we serve. Inert while this row is
-  // `always`, like the pointer it replaces.
-  unavailableFallback: FREEBUFF_GLM_V53_FLASH_MODEL_ID,
+  // No `unavailableFallback` since 2026-11-06: it named GPT-6 Luna until
+  // 2026-09-22, then GLM 5.3 Flash, which is now retired from the server
+  // catalog. It was inert while this row is `always`; should it close again,
+  // a pick lands on FALLBACK_FREEBUFF_MODEL_ID unless one is declared.
   warning: FREEBUFF_AI_TRAINING_NOTICE,
   dataUse: 'training',
   // UNLIMITED again as of 2026-08-24, reversing the 2026-08-18 metering. Flash

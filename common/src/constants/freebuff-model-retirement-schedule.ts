@@ -9,13 +9,14 @@
  *             keeps running on the row it was admitted for.
  *   endsAt    requests on a session bound to it are refused as withdrawn,
  *             in the chat gate and on reclaim, so the few sessions still open
- *             end there. The rows then join the catalog's retired set by PR.
+ *             end there.
  *
- * Until then the catalog row carries the "Ending now" pill, whose tooltip
- * (default-config.ts, `retiringBadge`) names these instants in words: move
- * both together. Only session code reads them, with its own clock; the
- * catalog never does, so no test that runs these rows as ordinary fixtures
- * changes with the date. A leaf module.
+ * Both steps have passed: the catalog row is retired for every viewer
+ * (default-config.ts, RETIRED_COMPILED_MODEL_IDS), which makes it withdrawn
+ * through the catalog too. The schedule stays as the refusal for a stored
+ * admin catalog that still enables the row, and as the record of when. Only
+ * session code reads it, with its own clock; the catalog never does. A leaf
+ * module.
  */
 export type FreebuffScheduledRetirement = {
   closesAt: number
