@@ -20,6 +20,7 @@ import {
   CONTEXT_PRUNING_COMPLETED_EVENT,
   getAxiomOnlyLogEvent,
   STREAM_RECOVERY_EVENT,
+  TOOL_CALL_REPAIR_EVENT,
   MECHANICAL_COMPACTION_SKIPPED_EVENT,
   CONTEXT_COMPACTION_COMPLETED_EVENT,
   COMPACTION_FIRST_OUTPUT_EVENT,
@@ -421,6 +422,27 @@ describe('getAxiomOnlyLogEvent', () => {
         finishReason: 'unknown',
         hasYieldedContent: true,
         consecutive: 2,
+      },
+    })
+  })
+
+  test('a tool-call repair ships names only, never the arguments', () => {
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: TOOL_CALL_REPAIR_EVENT,
+        metric: 'arguments_repaired',
+        toolName: 'str_replace',
+        repair: 'unescaped-quote',
+        model: 'deepseek/deepseek-v4-flash',
+        input: '{"path": "secret.ts"}',
+      }),
+    ).toEqual({
+      event: TOOL_CALL_REPAIR_EVENT,
+      data: {
+        metric: 'arguments_repaired',
+        toolName: 'str_replace',
+        repair: 'unescaped-quote',
+        model: 'deepseek/deepseek-v4-flash',
       },
     })
   })

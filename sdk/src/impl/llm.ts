@@ -1,6 +1,9 @@
 import { models, PROFIT_MARGIN } from '@codebuff/common/old-constants'
 import { buildArray } from '@codebuff/common/util/array'
-import { STREAM_RECOVERY_EVENT } from '@codebuff/common/util/axiom-only-log'
+import {
+  STREAM_RECOVERY_EVENT,
+  TOOL_CALL_REPAIR_EVENT,
+} from '@codebuff/common/util/axiom-only-log'
 import { normalizeProviderRequestBodyForCacheDebug } from '@codebuff/common/util/cache-debug'
 import {
   parseToolJson,
@@ -378,7 +381,16 @@ export async function* promptAiSdkStream(
       // A name models invent for a real tool (`run_command`): run it as that tool.
       const alias = TOOL_NAME_ALIASES[toolName]
       if (NoSuchToolError.isInstance(error) && alias && alias in tools) {
-        logger.info({ toolName, alias }, 'Renamed tool call to a real tool')
+        logger.info(
+          {
+            axiomEvent: TOOL_CALL_REPAIR_EVENT,
+            metric: 'tool_renamed',
+            toolName,
+            alias,
+            model: params.model,
+          },
+          'Renamed tool call to a real tool',
+        )
         return { ...toolCall, toolName: alias }
       }
 
@@ -388,7 +400,13 @@ export async function* promptAiSdkStream(
         const repaired = parseToolJson(toolCall.input)
         if (repaired?.repair) {
           logger.info(
-            { toolName, repair: repaired.repair },
+            {
+              axiomEvent: TOOL_CALL_REPAIR_EVENT,
+              metric: 'arguments_repaired',
+              toolName,
+              repair: repaired.repair,
+              model: params.model,
+            },
             'Repaired tool call arguments',
           )
           return { ...toolCall, input: JSON.stringify(repaired.value) }

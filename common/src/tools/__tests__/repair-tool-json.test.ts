@@ -105,6 +105,15 @@ test('apply_patch reads an operation sent as a JSON string', () => {
 })
 
 test('str_replace reads `replacement` or `replaces` holding the edits', () => {
+  expect(
+    strReplaceParams.inputSchema.parse({
+      path: 'a.ts',
+      replaces: '[{"oldString": "x", "newString": "y"}]',
+    }),
+  ).toEqual({
+    path: 'a.ts',
+    replacements: [{ oldString: 'x', newString: 'y', allowMultiple: false }],
+  })
   for (const key of ['replacement', 'replaces'])
     expect(
       strReplaceParams.inputSchema.parse({

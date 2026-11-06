@@ -119,6 +119,17 @@ describe('findFileLookupKey', () => {
     },
   )
 
+  test.each([
+    // Nov 5 failures: outside the project, Git Bash, doubled backslashes, another drive.
+    ['/e/Projects/coaching-app/_inspect/phase3a.js', 'E:\\Projects\\coaching-app\\_inspect\\phase3a.js'],
+    ['G:\\\\blockyvideo\\\\animate_girl.py', 'G:\\blockyvideo\\animate_girl.py'],
+    ['c:/Users/me/other/run.py', 'C:\\Users\\me\\other\\run.py'],
+  ])('a file outside a Windows computer project is found by its full path: %s', (filePath, key) => {
+    const files = { [key]: 'x' }
+    const keys = getProjectPathLookupKeys('C:\\Users\\me\\proj', filePath)
+    expect(findFileLookupKey(files, keys)).toBe(key)
+  })
+
   test('an absolute path outside a Windows computer project finds nothing', () => {
     const files = { 'src\\a.ts': 'x' }
     for (const filePath of ['C:\\Users\\me\\other\\src\\a.ts', 'D:\\src\\a.ts']) {

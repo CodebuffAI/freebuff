@@ -54,6 +54,11 @@ export const STREAM_RECOVERY_EVENT = 'stream_recovery' as const
  *  replace a file with a cut-off copy of itself. Content-free: sizes, tool and
  *  model names only, never a path or file content. */
 export const FILE_WRITE_GUARD_EVENT = 'file_write_guard' as const
+/** A tool call the SDK repaired before running it (sdk/src/impl/llm.ts): arguments a repair in
+ *  common/src/tools/repair-tool-json.ts made parse (`arguments_repaired`, with the repair names),
+ *  or an invented tool name run as the real tool (`tool_renamed`, with the alias). Names only,
+ *  never the arguments. */
+export const TOOL_CALL_REPAIR_EVENT = 'tool_call_repair' as const
 /** A compaction the mechanical pass did not apply: it threw (the live request
  *  alone over budget), could not shrink the history, or would have left the
  *  run back at the threshold that triggered it. Content-free: a fixed
@@ -376,6 +381,14 @@ const FILE_WRITE_GUARD_FIELDS = {
   oldLines: 'number',
   newLines: 'number',
   openBrackets: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const TOOL_CALL_REPAIR_FIELDS = {
+  metric: 'string',
+  toolName: 'string',
+  repair: 'string',
+  alias: 'string',
+  model: 'string',
 } as const satisfies AxiomOnlyFieldSchema
 
 const MECHANICAL_COMPACTION_SKIPPED_FIELDS = {
@@ -1412,6 +1425,7 @@ export type AxiomOnlyLogEvent = {
     | typeof CONTEXT_PRUNING_COMPLETED_EVENT
     | typeof STREAM_RECOVERY_EVENT
     | typeof FILE_WRITE_GUARD_EVENT
+    | typeof TOOL_CALL_REPAIR_EVENT
     | typeof MECHANICAL_COMPACTION_SKIPPED_EVENT
     | typeof CONTEXT_COMPACTION_COMPLETED_EVENT
     | typeof COMPACTION_FOLLOWUP_EVENT
@@ -1499,6 +1513,12 @@ export function getAxiomOnlyLogEvent(
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(record, FILE_WRITE_GUARD_FIELDS),
+    }
+  }
+  if (eventName === TOOL_CALL_REPAIR_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, TOOL_CALL_REPAIR_FIELDS),
     }
   }
   if (eventName === MECHANICAL_COMPACTION_SKIPPED_EVENT) {
