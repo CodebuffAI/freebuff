@@ -134,10 +134,9 @@ export const FREEBUFF_PROJECT_UNDERSTANDING_AGENT_ID = 'freebuff-project-underst
 
 /**
  * The one model the project-understanding agent asks for, on every surface:
- * GPT-6 Luna with reasoning off. Since 2026-10-30 the route serves every
- * Freebuff Luna request on DeepSeek V4.1 Flash (web/src/llm-api/
- * luna-on-deepseek.ts), whose lanes are Pareto, Respan and Luminal, not
- * DeepSeek's own API (docs/freebuff-project-understanding.md).
+ * GPT-6 Luna with reasoning off, on Respan (one-provider-then-deepseek.ts in
+ * web; DeepSeek V4.1 Flash served every Freebuff Luna request from 2026-10-30
+ * to 11-05, see docs/freebuff-project-understanding.md).
  */
 export const FREEBUFF_PROJECT_UNDERSTANDING_MODEL_ID =
   FREEBUFF_GPT_6_LUNA_MODEL_ID

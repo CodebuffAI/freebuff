@@ -1,6 +1,8 @@
 /**
- * Dated retirements (product, 2026-11-05, Victor): GPT-6 Luna and GLM 5.3
- * Flash leave Freebuff in two steps, a slow removal rather than a cut.
+ * Dated retirements (product, 2026-11-05, Victor): GLM 5.3 Flash leaves
+ * Freebuff in two steps, a slow removal rather than a cut. GPT-6 Luna was on
+ * the same schedule until, the same evening, Respan's fix to its prompt cache
+ * made it cheaper to serve than DeepSeek V4.1 Flash, and it stayed.
  *
  *   closesAt  new sessions are refused (fresh admission, and buying the next
  *             hour of a running Desktop tab). A session already admitted
@@ -9,7 +11,7 @@
  *             in the chat gate and on reclaim, so the few sessions still open
  *             end there. The rows then join the catalog's retired set by PR.
  *
- * Until then the catalog rows carry the "Ending now" pill, whose tooltip
+ * Until then the catalog row carries the "Ending now" pill, whose tooltip
  * (default-config.ts, `retiringBadge`) names these instants in words: move
  * both together. Only session code reads them, with its own clock; the
  * catalog never does, so no test that runs these rows as ordinary fixtures
@@ -20,7 +22,7 @@ export type FreebuffScheduledRetirement = {
   endsAt: number
 }
 
-const LUNA_AND_GLM: FreebuffScheduledRetirement = Object.freeze({
+const GLM_V53_FLASH: FreebuffScheduledRetirement = Object.freeze({
   // 6 pm PT on Thursday, November 5, a day after the decision.
   closesAt: Date.parse('2026-11-06T02:00:00Z'),
   endsAt: Date.parse('2026-11-06T05:00:00Z'),
@@ -29,8 +31,7 @@ const LUNA_AND_GLM: FreebuffScheduledRetirement = Object.freeze({
 export const FREEBUFF_SCHEDULED_RETIREMENTS: Readonly<
   Record<string, FreebuffScheduledRetirement>
 > = Object.freeze({
-  'openai/gpt-6-luna': LUNA_AND_GLM,
-  'z-ai/glm-5.3-flash': LUNA_AND_GLM,
+  'z-ai/glm-5.3-flash': GLM_V53_FLASH,
 })
 
 export function freebuffScheduledRetirement(
