@@ -65,6 +65,12 @@ export const AGENTIC_OFFER_ROUTE_VERSION = 1
 export const AGENTIC_OFFER_PATH = '/api/v1/ads/agentic/offer'
 
 /**
+ * Message classification alone, no offer: the Cloud worker's request for a
+ * hosted Desktop turn, which local Desktop's offer request used to classify.
+ */
+export const MESSAGE_CLASSIFICATION_PATH = '/api/v1/ads/message-classification'
+
+/**
  * The ad training log's record of one decision on this route (COD-738): the
  * `ad_provider_attempt.provider` of its decision row. The row's
  * `response_body` carries `proposal_id` and `campaign_id`, which is how a
@@ -284,6 +290,18 @@ export const agenticOfferRequestSchema = z.object({
 })
 
 export type AgenticOfferRequest = z.infer<typeof agenticOfferRequestSchema>
+
+/**
+ * {@link MESSAGE_CLASSIFICATION_PATH}'s body: the offer request's
+ * conversation. Nothing in it labels the row; the route sets the surface.
+ */
+export const messageClassificationRequestSchema = agenticOfferRequestSchema.pick(
+  { v: true, conversationId: true, messages: true },
+)
+
+export type MessageClassificationRequest = z.infer<
+  typeof messageClassificationRequestSchema
+>
 
 export const AGENTIC_OFFER_DEVICE_CHAT_VERSION = 1
 export const AGENTIC_OFFER_DEVICE_RUN_VERSION = 1
