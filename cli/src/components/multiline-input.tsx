@@ -252,17 +252,18 @@ export const MultilineInput = forwardRef<
       if (stickyColumnRef.current != null) {
         return stickyColumnRef.current
       }
+      const cursorPos = cursorPositionRef.current
       const lineIndex = lineStarts.findLastIndex(
-        (lineStart) => lineStart <= cursorPosition,
+        (lineStart) => lineStart <= cursorPos,
       )
       const column =
         lineIndex === -1
           ? 0
-          : cursorPosition - lineStarts[lineIndex] + (cursorIsChar ? -1 : 0)
+          : cursorPos - lineStarts[lineIndex] + (cursorIsChar ? -1 : 0)
       stickyColumnRef.current = Math.max(0, column)
       return stickyColumnRef.current
     },
-    [cursorPosition],
+    [],
   )
 
   // Update last activity on value or cursor changes
@@ -308,7 +309,7 @@ export const MultilineInput = forwardRef<
     ? Math.max(
         0,
         lineInfo.lineStartCols.findLastIndex(
-          (lineStart) => lineStart <= cursorPosition,
+          (lineStart) => lineStart <= cursorPositionRef.current,
         ),
       )
     : 0
@@ -337,12 +338,13 @@ export const MultilineInput = forwardRef<
     if (!selection) return null
 
     // Convert from render positions to original text positions
-    const start = renderPositionToOriginal(value, Math.min(selection.start, selection.end))
-    const end = renderPositionToOriginal(value, Math.max(selection.start, selection.end))
+    const currentValue = valueRef.current
+    const start = renderPositionToOriginal(currentValue, Math.min(selection.start, selection.end))
+    const end = renderPositionToOriginal(currentValue, Math.max(selection.start, selection.end))
 
     if (start === end) return null
     return { start, end }
-  }, [value])
+  }, [])
 
   // Helper to clear the current selection
   const clearSelection = useCallback(() => {
@@ -355,16 +357,19 @@ export const MultilineInput = forwardRef<
     const selection = getSelectionRange()
     if (!selection) return null
 
-    const newValue = value.slice(0, selection.start) + value.slice(selection.end)
+    const currentValue = valueRef.current
+    const newValue = currentValue.slice(0, selection.start) + currentValue.slice(selection.end)
     clearSelection()
     return { newValue, newCursor: selection.start }
-  }, [value, getSelectionRange, clearSelection])
+  }, [getSelectionRange, clearSelection])
 
   // Helper to handle selection deletion and call onChange if selection existed
   // Returns true if selection was deleted, false otherwise
   const handleSelectionDeletion = useCallback((): boolean => {
     const deleted = deleteSelection()
     if (deleted) {
+      valueRef.current = deleted.newValue
+      cursorPositionRef.current = deleted.newCursor
       onChange({
         text: deleted.newValue,
         cursorPosition: deleted.newCursor,
@@ -431,15 +436,18 @@ export const MultilineInput = forwardRef<
 
   const moveCursor = useCallback(
     (nextPosition: number) => {
-      const clamped = clamp(nextPosition, 0, value.length)
-      if (clamped === cursorPosition) return
+      const currentValue = valueRef.current
+      const currentCursor = cursorPositionRef.current
+      const clamped = clamp(nextPosition, 0, currentValue.length)
+      if (clamped === currentCursor) return
+      cursorPositionRef.current = clamped
       onChange({
-        text: value,
+        text: currentValue,
         cursorPosition: clamped,
         lastEditDueToNav: false,
       })
     },
-    [cursorPosition, onChange, value],
+    [onChange],
   )
 
   // Handle mouse clicks to position cursor
@@ -452,6 +460,9 @@ export const MultilineInput = forwardRef<
 
       const scrollBox = scrollBoxRef.current
       if (!scrollBox) return
+
+      const currentValue = valueRef.current
+      const currentCursor = cursorPositionRef.current
 
       const lineStarts = lineInfo?.lineStartCols ?? [0]
 
@@ -472,7 +483,7 @@ export const MultilineInput = forwardRef<
 
       // Get the character range for this line
       const lineStartChar = lineStarts[lineIndex]
-      const lineEndChar = lineStarts[lineIndex + 1] ?? value.length
+      const lineEndChar = lineStarts[lineIndex + 1] ?? currentValue.length
 
       // Convert click x to character position, accounting for tabs
       const clickCol = Math.max(0, Math.floor(event.x - viewportLeft))
@@ -481,7 +492,7 @@ export const MultilineInput = forwardRef<
       let charIndex = lineStartChar
 
       while (charIndex < lineEndChar && visualCol < clickCol) {
-        const char = value[charIndex]
+        const char = currentValue[charIndex]
         if (char === '\t') {
           visualCol += TAB_WIDTH
         } else if (char === '\n') {
@@ -493,18 +504,19 @@ export const MultilineInput = forwardRef<
       }
 
       // Clamp to valid range
-      const newCursorPosition = Math.min(charIndex, value.length)
+      const newCursorPosition = Math.min(charIndex, currentValue.length)
 
       // Update cursor position if changed
-      if (newCursorPosition !== cursorPosition) {
+      if (newCursorPosition !== currentCursor) {
+        cursorPositionRef.current = newCursorPosition
         onChange({
-          text: value,
+          text: currentValue,
           cursorPosition: newCursorPosition,
           lastEditDueToNav: false,
         })
       }
     },
-    [focused, lineInfo, value, cursorPosition, onChange],
+    [focused, lineInfo, onChange],
   )
 
   const isPlaceholder = value.length === 0 && placeholder.length > 0
@@ -575,6 +587,9 @@ export const MultilineInput = forwardRef<
       // Only handle Enter and Ctrl+J here
       if (!isEnterKey && !isCtrlJ) return false
 
+      const currentValue = valueRef.current
+      const currentCursor = cursorPositionRef.current
+
       const isAltLikeModifier = isAltModifier(key)
       // Kitty-protocol keyboards encode plain Enter as an escape sequence
       // (e.g. \x1b[13u) but report modifiers reliably, so the escape-prefix
@@ -587,7 +602,7 @@ export const MultilineInput = forwardRef<
         key.sequence.length > 0 &&
         key.sequence.charCodeAt(0) === 0x1b
       const hasBackslashBeforeCursor =
-        cursorPosition > 0 && value[cursorPosition - 1] === '\\'
+        currentCursor > 0 && currentValue[currentCursor - 1] === '\\'
 
       // Plain Enter: no modifiers, sequence is '\r' (macOS) or '\n' (Linux)
       const isPlainEnter =
@@ -617,12 +632,14 @@ export const MultilineInput = forwardRef<
         // For backslash+Enter, remove the backslash and insert newline
         if (isBackslashEnter) {
           const newValue =
-            value.slice(0, cursorPosition - 1) +
+            currentValue.slice(0, currentCursor - 1) +
             '\n' +
-            value.slice(cursorPosition)
+            currentValue.slice(currentCursor)
+          valueRef.current = newValue
+          cursorPositionRef.current = currentCursor
           onChange({
             text: newValue,
-            cursorPosition,
+            cursorPosition: currentCursor,
             lastEditDueToNav: false,
           })
           return true
@@ -630,10 +647,12 @@ export const MultilineInput = forwardRef<
 
         // For other newline shortcuts (Shift+Enter, Option+Enter, Ctrl+J), just insert newline
         const newValue =
-          value.slice(0, cursorPosition) + '\n' + value.slice(cursorPosition)
+          currentValue.slice(0, currentCursor) + '\n' + currentValue.slice(currentCursor)
+        valueRef.current = newValue
+        cursorPositionRef.current = currentCursor + 1
         onChange({
           text: newValue,
-          cursorPosition: cursorPosition + 1,
+          cursorPosition: currentCursor + 1,
           lastEditDueToNav: false,
         })
         return true
@@ -647,7 +666,7 @@ export const MultilineInput = forwardRef<
 
       return false
     },
-    [value, cursorPosition, onChange, onSubmit],
+    [onChange, onSubmit],
   )
 
   // Handle deletion keys (backspace, delete, ctrl+h, ctrl+d, word/line deletion)
@@ -655,6 +674,8 @@ export const MultilineInput = forwardRef<
     (key: KeyEvent): boolean => {
       const lowerKeyName = (key.name ?? '').toLowerCase()
       const isAltLikeModifier = isAltModifier(key)
+      const value = valueRef.current
+      const cursorPosition = cursorPositionRef.current
       const lineStart = findLineStart(value, cursorPosition)
       const lineEnd = findLineEnd(value, cursorPosition)
       const wordStart = findPreviousWordBoundary(value, cursorPosition)
@@ -669,6 +690,8 @@ export const MultilineInput = forwardRef<
         if (cursorPosition > visualLineStart) {
           const newValue =
             value.slice(0, visualLineStart) + value.slice(cursorPosition)
+          valueRef.current = newValue
+          cursorPositionRef.current = visualLineStart
           onChange({
             text: newValue,
             cursorPosition: visualLineStart,
@@ -677,6 +700,8 @@ export const MultilineInput = forwardRef<
         } else if (cursorPosition > 0) {
           const newValue =
             value.slice(0, cursorPosition - 1) + value.slice(cursorPosition)
+          valueRef.current = newValue
+          cursorPositionRef.current = cursorPosition - 1
           onChange({
             text: newValue,
             cursorPosition: cursorPosition - 1,
@@ -695,6 +720,8 @@ export const MultilineInput = forwardRef<
         if (handleSelectionDeletion()) return true
         const newValue =
           value.slice(0, wordStart) + value.slice(cursorPosition)
+        valueRef.current = newValue
+        cursorPositionRef.current = wordStart
         onChange({
           text: newValue,
           cursorPosition: wordStart,
@@ -732,6 +759,8 @@ export const MultilineInput = forwardRef<
         }
 
         if (newValue !== originalValue) {
+          valueRef.current = newValue
+          cursorPositionRef.current = nextCursor
           onChange({
             text: newValue,
             cursorPosition: nextCursor,
@@ -746,6 +775,8 @@ export const MultilineInput = forwardRef<
         preventKeyDefault(key)
         if (handleSelectionDeletion()) return true
         const newValue = value.slice(0, cursorPosition) + value.slice(wordEnd)
+        valueRef.current = newValue
+        cursorPositionRef.current = cursorPosition
         onChange({
           text: newValue,
           cursorPosition,
@@ -759,6 +790,8 @@ export const MultilineInput = forwardRef<
         preventKeyDefault(key)
         if (handleSelectionDeletion()) return true
         const newValue = value.slice(0, cursorPosition) + value.slice(lineEnd)
+        valueRef.current = newValue
+        cursorPositionRef.current = cursorPosition
         onChange({ text: newValue, cursorPosition, lastEditDueToNav: false })
         return true
       }
@@ -770,6 +803,8 @@ export const MultilineInput = forwardRef<
         if (cursorPosition > 0) {
           const newValue =
             value.slice(0, cursorPosition - 1) + value.slice(cursorPosition)
+          valueRef.current = newValue
+          cursorPositionRef.current = cursorPosition - 1
           onChange({
             text: newValue,
             cursorPosition: cursorPosition - 1,
@@ -786,6 +821,8 @@ export const MultilineInput = forwardRef<
         if (cursorPosition < value.length) {
           const newValue =
             value.slice(0, cursorPosition) + value.slice(cursorPosition + 1)
+          valueRef.current = newValue
+          cursorPositionRef.current = cursorPosition
           onChange({
             text: newValue,
             cursorPosition,
@@ -802,6 +839,8 @@ export const MultilineInput = forwardRef<
         if (cursorPosition > 0) {
           const newValue =
             value.slice(0, cursorPosition - 1) + value.slice(cursorPosition)
+          valueRef.current = newValue
+          cursorPositionRef.current = cursorPosition - 1
           onChange({
             text: newValue,
             cursorPosition: cursorPosition - 1,
@@ -818,6 +857,8 @@ export const MultilineInput = forwardRef<
         if (cursorPosition < value.length) {
           const newValue =
             value.slice(0, cursorPosition) + value.slice(cursorPosition + 1)
+          valueRef.current = newValue
+          cursorPositionRef.current = cursorPosition
           onChange({
             text: newValue,
             cursorPosition,
@@ -829,7 +870,7 @@ export const MultilineInput = forwardRef<
 
       return false
     },
-    [value, cursorPosition, onChange, lineInfo, cursorRow, handleSelectionDeletion],
+    [onChange, lineInfo, cursorRow, handleSelectionDeletion],
   )
 
   // Handle navigation keys (arrows, home, end, word navigation, emacs bindings)
@@ -837,6 +878,8 @@ export const MultilineInput = forwardRef<
     (key: KeyEvent): boolean => {
       const lowerKeyName = (key.name ?? '').toLowerCase()
       const isAltLikeModifier = isAltModifier(key)
+      const value = valueRef.current
+      const cursorPosition = cursorPositionRef.current
       const logicalLineStart = findLineStart(value, cursorPosition)
       const logicalLineEnd = findLineEnd(value, cursorPosition)
       const wordStart = findPreviousWordBoundary(value, cursorPosition)
@@ -866,6 +909,7 @@ export const MultilineInput = forwardRef<
         (key.name === 'left' || lowerKeyName === 'b')
       ) {
         preventKeyDefault(key)
+        cursorPositionRef.current = wordStart
         onChange({
           text: value,
           cursorPosition: wordStart,
@@ -880,6 +924,7 @@ export const MultilineInput = forwardRef<
         (key.name === 'right' || lowerKeyName === 'f')
       ) {
         preventKeyDefault(key)
+        cursorPositionRef.current = wordEnd
         onChange({
           text: value,
           cursorPosition: wordEnd,
@@ -895,6 +940,7 @@ export const MultilineInput = forwardRef<
         (key.name === 'home' && !key.ctrl && !key.meta)
       ) {
         preventKeyDefault(key)
+        cursorPositionRef.current = visualLineStart
         onChange({
           text: value,
           cursorPosition: visualLineStart,
@@ -910,6 +956,7 @@ export const MultilineInput = forwardRef<
         (key.name === 'end' && !key.ctrl && !key.meta)
       ) {
         preventKeyDefault(key)
+        cursorPositionRef.current = visualLineEnd
         onChange({
           text: value,
           cursorPosition: visualLineEnd,
@@ -924,6 +971,7 @@ export const MultilineInput = forwardRef<
         (key.ctrl && key.name === 'home')
       ) {
         preventKeyDefault(key)
+        cursorPositionRef.current = 0
         onChange({ text: value, cursorPosition: 0, lastEditDueToNav: false })
         return true
       }
@@ -934,6 +982,7 @@ export const MultilineInput = forwardRef<
         (key.ctrl && key.name === 'end')
       ) {
         preventKeyDefault(key)
+        cursorPositionRef.current = value.length
         onChange({
           text: value,
           cursorPosition: value.length,
@@ -945,6 +994,7 @@ export const MultilineInput = forwardRef<
       // Ctrl+B: Backward char (Emacs)
       if (key.ctrl && lowerKeyName === 'b' && !key.meta && !key.option) {
         preventKeyDefault(key)
+        cursorPositionRef.current = cursorPosition - 1
         onChange({
           text: value,
           cursorPosition: cursorPosition - 1,
@@ -956,6 +1006,7 @@ export const MultilineInput = forwardRef<
       // Ctrl+F: Forward char (Emacs)
       if (key.ctrl && lowerKeyName === 'f' && !key.meta && !key.option) {
         preventKeyDefault(key)
+        cursorPositionRef.current = Math.min(value.length, cursorPosition + 1)
         onChange({
           text: value,
           cursorPosition: Math.min(value.length, cursorPosition + 1),
@@ -982,15 +1033,17 @@ export const MultilineInput = forwardRef<
       if (key.name === 'up' && !key.ctrl && !key.meta && !key.option) {
         preventKeyDefault(key)
         const desiredIndex = getOrSetStickyColumn(lineStarts, !shouldHighlight)
+        const nextCursor = calculateNewCursorPosition({
+          cursorPosition,
+          lineStarts,
+          cursorIsChar: !shouldHighlight,
+          direction: 'up',
+          desiredIndex,
+        })
+        cursorPositionRef.current = nextCursor
         onChange({
           text: value,
-          cursorPosition: calculateNewCursorPosition({
-            cursorPosition,
-            lineStarts,
-            cursorIsChar: !shouldHighlight,
-            direction: 'up',
-            desiredIndex,
-          }),
+          cursorPosition: nextCursor,
           lastEditDueToNav: false,
         })
         return true
@@ -1000,15 +1053,17 @@ export const MultilineInput = forwardRef<
       if (key.name === 'down' && !key.ctrl && !key.meta && !key.option) {
         preventKeyDefault(key)
         const desiredIndex = getOrSetStickyColumn(lineStarts, !shouldHighlight)
+        const nextCursor = calculateNewCursorPosition({
+          cursorPosition,
+          lineStarts,
+          cursorIsChar: !shouldHighlight,
+          direction: 'down',
+          desiredIndex,
+        })
+        cursorPositionRef.current = nextCursor
         onChange({
           text: value,
-          cursorPosition: calculateNewCursorPosition({
-            cursorPosition,
-            lineStarts,
-            cursorIsChar: !shouldHighlight,
-            direction: 'down',
-            desiredIndex,
-          }),
+          cursorPosition: nextCursor,
           lastEditDueToNav: false,
         })
         return true
@@ -1016,7 +1071,7 @@ export const MultilineInput = forwardRef<
 
       return false
     },
-    [value, cursorPosition, onChange, moveCursor, shouldHighlight, getOrSetStickyColumn],
+    [onChange, moveCursor, shouldHighlight, getOrSetStickyColumn],
   )
 
   // Handle character input (regular chars, tab, and IME/multi-byte input)
