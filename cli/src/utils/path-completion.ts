@@ -80,7 +80,11 @@ export function getPathCompletion(inputPath: string): string | null {
     }
 
     // Multiple matches - find common prefix
-    const sortedMatches = matches.sort()
+    const sortedMatches = matches.sort((a, b) => {
+      const lowerA = a.toLowerCase()
+      const lowerB = b.toLowerCase()
+      return lowerA < lowerB ? -1 : lowerA > lowerB ? 1 : 0
+    })
     const first = sortedMatches[0].toLowerCase()
     const last = sortedMatches[sortedMatches.length - 1].toLowerCase()
     let commonLength = partial.length
