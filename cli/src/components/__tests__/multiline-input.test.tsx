@@ -1,9 +1,17 @@
-import { describe, test, expect } from 'bun:test'
+import { afterEach, beforeAll, describe, test, expect } from 'bun:test'
+import { createTestRenderer } from '@opentui/core/testing'
+import { createRoot, flushSync } from '@opentui/react'
+import React, { useState } from 'react'
 
 import {
   getKeypadPrintableSequence,
   isKeypadEnter,
 } from '../../utils/keypad-keys'
+import { initializeThemeStore } from '../../hooks/use-theme'
+import { useChatStore } from '../../state/chat-store'
+import { MultilineInput } from '../multiline-input'
+
+import type { InputValue } from '../../types/store'
 
 /**
  * Tests for tab character cursor rendering in MultilineInput component.
@@ -1128,5 +1136,65 @@ describe('MultilineInput - newline keyboard shortcuts', () => {
 
   test('isAltModifier returns false for undefined sequence', () => {
     expect(isAltModifier({ option: false })).toBe(false)
+  })
+})
+
+/**
+ * Ctrl+Backspace is the word-delete key in a terminal, but the handler used to
+ * only accept Alt+Backspace or Ctrl+W. This mounts the component so the check
+ * runs against real key events rather than a copy of the condition.
+ */
+describe('MultilineInput - Ctrl+Backspace', () => {
+  beforeAll(() => {
+    initializeThemeStore()
+  })
+
+  afterEach(() => {
+    useChatStore.getState().reset()
+  })
+
+  test('deletes the word before the cursor', async () => {
+    let change: InputValue | undefined
+
+    const Harness = () => {
+      const [value, setValue] = useState('hello world')
+      return (
+        <MultilineInput
+          value={value}
+          onChange={(next) => {
+            change = next
+            setValue(next.text)
+          }}
+          onSubmit={() => {}}
+          onPaste={() => {}}
+          focused
+          cursorPosition={value.length}
+          maxHeight={4}
+        />
+      )
+    }
+
+    const setup = await createTestRenderer({
+      width: 60,
+      height: 10,
+      kittyKeyboard: true,
+    })
+    const root = createRoot(setup.renderer)
+    try {
+      flushSync(() => root.render(<Harness />))
+      await setup.renderOnce()
+
+      flushSync(() => setup.mockInput.pressKey('BACKSPACE', { ctrl: true }))
+      await setup.renderOnce()
+
+      expect(change).toEqual({
+        text: 'hello ',
+        cursorPosition: 6,
+        lastEditDueToNav: false,
+      })
+    } finally {
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
   })
 })
