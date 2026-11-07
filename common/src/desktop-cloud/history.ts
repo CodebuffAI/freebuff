@@ -42,6 +42,13 @@ export type CloudHistoryRun = {
 }
 /** A chat's `title` while it has neither a title nor a first run to name it (history-store.ts). */
 export const UNTITLED_CLOUD_CHAT_TITLE = 'Cloud chat'
+/** The same for a chat that runs on a computer (`deviceExecution`): created before its first send. */
+const UNTITLED_DEVICE_CHAT_TITLE = 'New chat'
+/** A listed chat named only by one of those placeholders: no title and no run yet. */
+export function isUntitledCloudChat(chat: Pick<CloudHistoryChat, 'title' | 'latestRun'>) {
+  return !chat.latestRun &&
+    (chat.title === UNTITLED_CLOUD_CHAT_TITLE || chat.title === UNTITLED_DEVICE_CHAT_TITLE)
+}
 export type CloudHistoryChat = {
   deviceExecution?: import('./device-execution').DeviceExecutionTarget | null
   mission?: import('./mission').CloudMission | null
