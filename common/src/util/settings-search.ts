@@ -9,6 +9,7 @@ type PageLabel =
   | 'MCP'
   | 'Updates'
   | 'Account standing'
+  | 'Referrals'
 
 // Index the settings themselves, including common names people use for them.
 // Keep this alongside the shared navigation, without mounting inactive pages or
@@ -129,6 +130,24 @@ const topics: Record<PageLabel, Topic[]> = {
       ? [{ label: 'Bounties', keywords: 'submissions tasks rewards hours freebucks' }]
       : []),
     { label: 'Offers', keywords: 'earn rewards hours freebucks' },
+  ],
+  // The web's full-access page in Earn's place (freebuff/web settings navigation).
+  Referrals: [
+    {
+      label: 'Invite link',
+      keywords: 'invite friends referral link share copy',
+      surface: 'web',
+    },
+    {
+      label: 'Rewards',
+      keywords: 'themes unlock custom',
+      surface: 'web',
+    },
+    {
+      label: 'Your referrals',
+      keywords: 'signups joined history status friends',
+      surface: 'web',
+    },
   ],
   Integrations: [
     {
