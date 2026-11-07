@@ -1,0 +1,22 @@
+# Normalise the line endings of the files whose committed text is compared
+# against generated output by
+# `common/src/__tests__/freebuff-public-data-use-copy.test.ts`.
+#
+# The copy in those files is compared verbatim, and the renderers emit LF only.
+# The repository stores all of them as LF already, so the CRLF never comes from
+# the commit -- it appears in the working tree on Windows, where
+# `core.autocrlf=true` rewrites LF as CRLF on checkout. The resulting diff shows
+# zero changed lines and the assertion still fails, because every line differs by
+# one invisible `\r`.
+#
+# Pinning these to LF makes the checkout agree with the repository on every
+# platform, which is the durable fix; the comparison no longer depends on
+# whoever's line-ending convention last touched the working tree.
+#
+# Scoped to just the asserted files on purpose: a repo-wide `* text=auto eol=lf`
+# would renormalise everything and bury this change in unrelated diff noise.
+README.md text eol=lf
+freebuff/cli/release/README.md text eol=lf
+web/src/content/advanced/privacy.mdx text eol=lf
+web/src/content/help/faq.mdx text eol=lf
+landing-lab/src/components/sections/Faq.tsx text eol=lf
