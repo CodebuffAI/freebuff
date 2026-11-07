@@ -12,6 +12,12 @@ export interface ThemeReferralAccess {
 export interface ThemeReferralPromptResponse {
   show: boolean
   access: ThemeReferralAccess
+  /**
+   * The account's timing-experiment arm, or null when it is not in the
+   * experiment (or the server predates it). A deferred arm answers
+   * `show: false` at the first send and is claimed later with its stage.
+   */
+  arm?: string | null
 }
 
 /** What the first-prompt invitation reports: `shown` once per mount, then each copy or dismissal. */
