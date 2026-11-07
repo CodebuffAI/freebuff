@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   THREAD_GROUPS,
   arrangeThreadPanel,
+  movePinnedThread,
   moveThreadGroup,
   threadDigestSchema,
   threadGroup,
@@ -122,6 +123,42 @@ test('the viewer arranges groups and pins threads to the top of their group', ()
   expect(arranged.map((entry) => entry.group)).toEqual(['resolved', 'idle', 'waiting', 'working'])
   expect(arranged[1].threads.map((entry) => entry.id)).toEqual(['pinned', 'new', 'old'])
   expect(arrangeThreadPanel(groups).map((entry) => entry.group)).toEqual([...THREAD_GROUPS])
+})
+
+test('the viewer arranges the pinned block itself, and the rest stays newest-first', () => {
+  const { groups } = threadPanel([
+    digest({ id: 'new', updatedAt: '2026-10-10T03:00:00Z' }),
+    digest({ id: 'middle', updatedAt: '2026-10-10T02:00:00Z' }),
+    digest({ id: 'oldest', updatedAt: '2026-10-10T01:00:00Z' }),
+    digest({ id: 'unpinned', updatedAt: '2026-10-10T00:00:00Z' }),
+  ])
+  const pinned = new Set(['new', 'middle', 'oldest'])
+  // Every row here is idle, so the whole panel is one group.
+  const arranged = (options: Parameters<typeof arrangeThreadPanel>[1]) =>
+    arrangeThreadPanel(groups, options).flatMap((entry) => entry.threads.map((t) => t.id))
+
+  // The saved order wins over activity, so a busy thread stops shuffling the block.
+  expect(arranged({ pinned, pinnedOrder: ['oldest', 'new'] })).toEqual(['oldest', 'new', 'middle', 'unpinned'])
+
+  // Nothing saved: the pinned block is the newest-first order it always was.
+  expect(arranged({ pinned })).toEqual(['new', 'middle', 'oldest', 'unpinned'])
+
+  // A saved order naming threads that are gone or unpinned keeps them; only the viewer trims it.
+  expect(arranged({ pinned, pinnedOrder: ['deleted', 'oldest', 'unpinned'] })).toEqual([
+    'oldest',
+    'new',
+    'middle',
+    'unpinned',
+  ])
+})
+
+test('moving a pinned thread leaves it above the row it was dropped on', () => {
+  expect(movePinnedThread(['a', 'b', 'c'], 'c', 'a')).toEqual(['c', 'a', 'b'])
+  expect(movePinnedThread(['a', 'b', 'c'], 'a', 'c')).toEqual(['b', 'a', 'c'])
+  // Never arranged and unknown targets both resolve without losing anyone.
+  expect(movePinnedThread(['a', 'b'], 'c', 'a')).toEqual(['c', 'a', 'b'])
+  expect(movePinnedThread(['a', 'b'], 'a', 'gone')).toEqual(['b', 'a'])
+  expect(movePinnedThread([], 'a', 'b')).toEqual(['a'])
 })
 
 test('moving a group puts it where the target was', () => {
