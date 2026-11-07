@@ -372,6 +372,12 @@ function limitReset(message: string): string | null {
   return at?.[1]?.trim() || null
 }
 
+/** Added to a failed turn that started without its computer (web `cloudRunErrorMessage`): otherwise
+ * the user saw only the generic failure and could not tell the turn never had their files or
+ * terminal. The hosted Desktop page finds it in a failed turn's error to offer Reconnect and retry. */
+export const DEVICE_UNREACHABLE_RUN_NOTE =
+  'Your computer did not respond when this message started, so Freebuff had no access to its files or terminal. Check that Freebuff Desktop is open, then send the message again.'
+
 /**
  * The user-facing message for a native turn's journal `error`, or null when it
  * is not one we can name. Desktop builds before these messages existed wrote the
