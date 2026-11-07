@@ -66,6 +66,37 @@ export const WELCOME_INVITE_VIA = Object.freeze({
   email: 'welcome_email',
   link: 'welcome_link',
 })
+/**
+ * The workspace's other invite placements mark their links the same way:
+ * `<placement>_link` for a copied link, `<placement>_email` for an emailed one,
+ * so each charts apart from the welcome's `via=welcome_`. The invite route
+ * only puts an email value from this list in the emailed link; anything else
+ * is the welcome's. docs/referrals.md lists where each placement is.
+ */
+export const REFERRAL_INVITE_VIA = Object.freeze({
+  dock: Object.freeze({ link: 'dock_link', email: 'dock_email' }),
+  inline: Object.freeze({ link: 'inline_link', email: 'inline_email' }),
+  sidebar: Object.freeze({ link: 'sidebar_link', email: 'sidebar_email' }),
+  settings: Object.freeze({ link: 'settings_link', email: 'settings_email' }),
+})
+export type ReferralInvitePlacement = keyof typeof REFERRAL_INVITE_VIA
+export type ReferralInviteEmailVia =
+  | typeof WELCOME_INVITE_VIA.email
+  | (typeof REFERRAL_INVITE_VIA)[ReferralInvitePlacement]['email']
+export const REFERRAL_INVITE_EMAIL_VIA: readonly ReferralInviteEmailVia[] =
+  Object.freeze([
+    WELCOME_INVITE_VIA.email,
+    ...Object.values(REFERRAL_INVITE_VIA).map((via) => via.email),
+  ])
+
+/** A placement's invite link: the referral code and the placement's `via`. */
+export function referralInviteUrl(
+  origin: string,
+  referralCode: string,
+  placement: ReferralInvitePlacement,
+): string {
+  return `${origin}/?ref=${encodeURIComponent(referralCode)}&${WELCOME_INVITE_VIA_PARAM}=${REFERRAL_INVITE_VIA[placement].link}`
+}
 
 /** The Desktop welcome's H1 test: one arm per account, stable, on every `welcome` event. */
 export const welcomeVariantSchema = z.enum([

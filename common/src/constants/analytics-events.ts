@@ -337,11 +337,16 @@ export enum AnalyticsEvent {
   // invited" sequence (freebuff-web `/api/workspace/referral-invite`).
   // `domain`: the invitee's mail domain; never the address.
   FREEBUFF_REFERRAL_INVITE_SENT = 'freebuff.referral.invite_sent',
-  // The first-prompt "Invite 3 friends to unlock custom themes" card in the web
-  // and hosted Desktop workspace. `action`: shown | copied | copy_failed |
-  // dismissed (X or Escape only); `qualifying`: 0-3 referred signups so far.
-  // The old local Desktop renderer reports the user actions as
-  // desktop.feature_used `theme_referral.*` instead.
+  // Every invite placement in the web and hosted Desktop workspace ("Give your
+  // friends unlimited free coding"; docs/referrals.md lists them). The name is
+  // the first one's, the first-prompt card. `action`: shown | opened (a panel
+  // opened on a click) | copied | copy_failed | dismissed (X or Escape only) |
+  // invite_sent | invite_failed (with the email invite's `outcome`);
+  // `placement`: dock (the first-prompt card; absent before 2026-11) | inline
+  // | sidebar | settings; `qualifying`: 0-3 referred signups so far;
+  // `themes_unlocked`; `arm` where an experiment placed the invite. The old
+  // local Desktop renderer reports the user actions as desktop.feature_used
+  // `theme_referral.*` instead.
   FREEBUFF_THEME_REFERRAL_PROMPT = 'freebuff.theme_referral_prompt',
   // Freebuff - Get Started Page (sign-up, then Freebuff Desktop; in order:
   //   viewed → sign_in_clicked → signed_in → eligibility_resolved →

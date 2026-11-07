@@ -20,3 +20,14 @@ export type ThemeReferralPromptAction =
   | 'copied'
   | 'copy_failed'
   | 'dismissed'
+
+/**
+ * What every invite placement reports on `freebuff.theme_referral_prompt`:
+ * the card's actions, plus `opened` for a placement that opens on a click and
+ * the email invite's answer.
+ */
+export type ReferralInviteAction =
+  | ThemeReferralPromptAction
+  | 'opened'
+  | 'invite_sent'
+  | 'invite_failed'

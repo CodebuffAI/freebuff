@@ -2,7 +2,9 @@ import { expect, test } from 'bun:test'
 import { AnalyticsEvent } from '../analytics-events'
 import {
   PRODUCT_FUNNEL_EVENT,
+  REFERRAL_INVITE_EMAIL_VIA,
   productFunnelEventSchema,
+  referralInviteUrl,
   sanitizeProductFunnelCapture,
 } from '../product-funnel'
 import { shouldTrackAnalyticsEvent } from '../../util/analytics-sampling'
@@ -101,4 +103,17 @@ test('invalid envelopes are dropped and every conversion anchor is unsampled', (
         properties: payload,
       }),
     ).toBe(true)
+})
+
+test('each invite placement names its links; the route accepts only email values', () => {
+  expect(referralInviteUrl('https://freebuff.com', 'a b', 'sidebar')).toBe(
+    'https://freebuff.com/?ref=a%20b&via=sidebar_link',
+  )
+  expect(REFERRAL_INVITE_EMAIL_VIA).toEqual([
+    'welcome_email',
+    'dock_email',
+    'inline_email',
+    'sidebar_email',
+    'settings_email',
+  ])
 })
