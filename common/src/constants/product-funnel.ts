@@ -89,6 +89,17 @@ export const REFERRAL_INVITE_EMAIL_VIA: readonly ReferralInviteEmailVia[] =
     ...Object.values(REFERRAL_INVITE_VIA).map((via) => via.email),
   ])
 
+/**
+ * The PostHog person property naming a signed-in account's OWN invite code
+ * (`user.referral_code`), set once per account per browser when the workspace
+ * learns the code (freebuff/web `lib/own-referral-code.ts`). A friend's landing
+ * carries the code they arrived through (`referral_code`, an event property;
+ * `ref=` in the landing URL), which is random, so this is the only key that
+ * ties an inviter's share to the friends it brought: the Referrals dashboard's
+ * cohort tiles join the two (scripts/posthog-referrals-dashboard.ts).
+ */
+export const OWN_REFERRAL_CODE_PERSON_PROPERTY = 'own_referral_code'
+
 /** A placement's invite link: the referral code and the placement's `via`. */
 export function referralInviteUrl(
   origin: string,
