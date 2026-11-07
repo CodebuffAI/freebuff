@@ -77,6 +77,7 @@ import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
 import { useTheme } from '../hooks/use-theme'
 import {
+  freebuffChatPickerHint,
   freebuffModelNavigationDirectionForKey,
   nextFreebuffModelId,
 } from '../utils/freebuff-model-navigation'
@@ -1761,7 +1762,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // Scrollbox clamped to the rows the parent can spare. When everything fits
   // it shrinks to the content height and no scrollbar shows, so tall
   // terminals look exactly like a plain column.
-  return (
+  const list = (
     <scrollbox
       ref={scrollRef}
       scrollX={false}
@@ -1883,5 +1884,19 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         )}
       </box>
     </scrollbox>
+  )
+  // The chat picker carries its own key hint, which only this component can
+  // word: it knows how many rows the arrows can reach.
+  if (!onSelectModel) return list
+  return (
+    <box style={{ flexDirection: 'column' }}>
+      <text style={{ fg: theme.foreground }}>
+        {freebuffChatPickerHint({
+          modelCount: renderedModelIds.length,
+          focusedHasReasoning: Boolean(directory.efforts(focusedId)?.length),
+        })}
+      </text>
+      {list}
+    </box>
   )
 }

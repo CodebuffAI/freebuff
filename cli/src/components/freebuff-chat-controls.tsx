@@ -154,9 +154,6 @@ export function FreebuffChatControls() {
   if (pickerOpen)
     return (
       <box style={{ flexDirection: 'column', paddingLeft: 1, paddingRight: 1 }}>
-        <text style={{ fg: theme.foreground }}>
-          ↑↓ choose model · Tab reasoning · Enter select · Esc cancel
-        </text>
         <FreebuffModelSelector
           maxHeight={Math.max(4, Math.floor(terminalHeight * 0.65) - 2)}
           selectedModelOverride={nextModel ?? model}

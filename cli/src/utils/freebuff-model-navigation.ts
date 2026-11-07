@@ -24,6 +24,24 @@ export function nextFreebuffModelId(params: {
   return modelIds[(currentIdx + step + modelIds.length) % modelIds.length]
 }
 
+/**
+ * The chat picker's key hint. It names only keys that do something: a
+ * one-model catalog (a new account's single "Freebuff" row) has nothing for
+ * the arrows to move to, and "↑↓ choose model" over one row reads as a
+ * keyboard bug (support, 2026-11-07).
+ */
+export function freebuffChatPickerHint(params: {
+  modelCount: number
+  focusedHasReasoning: boolean
+}): string {
+  return [
+    ...(params.modelCount > 1 ? ['↑↓ choose model'] : []),
+    ...(params.focusedHasReasoning ? ['Tab reasoning'] : []),
+    'Enter select',
+    'Esc cancel',
+  ].join(' · ')
+}
+
 export function freebuffModelNavigationDirectionForKey(key: {
   name?: string
   shift?: boolean
