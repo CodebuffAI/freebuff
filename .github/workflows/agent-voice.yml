@@ -1,0 +1,103 @@
+name: agent-voice
+
+# agent-voice is a standalone package (own bun.lock, not a workspace member), so
+# it gets its own workflow instead of riding along with the monorepo CI.
+#
+# The Rust leg runs `cargo check`/`clippy`/`test` rather than a full Tauri
+# bundle: building the app needs WebView2, CMake and LLVM, which are slower and
+# unavailable on hosted runners. `cargo check --tests` still compiles the
+# `tauri::generate_context!` macro, so configuration errors (capabilities,
+# window labels, updater key) fail here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Apps/agent-voice/**'
+      - '.github/workflows/agent-voice.yml'
+  pull_request:
+    paths:
+      - 'Apps/agent-voice/**'
+      - '.github/workflows/agent-voice.yml'
+
+concurrency:
+  group: agent-voice-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: Apps/agent-voice
+
+jobs:
+  typescript:
+    name: TypeScript (app + worker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test (frontend helpers + license worker)
+        run: bun test
+
+      - name: Build frontend
+        run: bun run build
+
+  rust:
+    name: Rust core
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libxdo-dev cmake clang libssl-dev
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'Apps/agent-voice/src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Frontend build (tauri.conf.json points at ../dist)
+        working-directory: Apps/agent-voice
+        run: bun run build
+
+      - name: Formatting
+        working-directory: Apps/agent-voice/src-tauri
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: Apps/agent-voice/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests
+        working-directory: Apps/agent-voice/src-tauri
+        run: cargo test
