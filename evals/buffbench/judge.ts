@@ -397,7 +397,7 @@ The ground truth shows ONE valid implementation, but it's not the only correct a
 - Is it a reasonable approach given the prompt?
 - Does it maintain code quality?
 
-Provide detailed analysis, strengths, weaknesses, and numerical scores.`,
+Provide detailed analysis, strengths, weaknesses, and numerical scores. Call set_output once with every field at the top level: the three scores as JSON numbers (8, not "8") and strengths and weaknesses as arrays of strings.`,
 }
 
 /**
@@ -468,6 +468,36 @@ export function judgeTraceSessionId(
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
 }
 
+/**
+ * GPT models sometimes send the scores as strings ("7") and the lists as JSON
+ * text. The output schema rejects them, and after its retries the judge ends
+ * with no output (every GPT-6 Luna verdict on 2026-10-30, GPT-6.1 Sol's on
+ * 2026-11-03). The verdict it meant is still in its last set_output call.
+ */
+export function recoverFromSetOutput(input: unknown): JudgingResult | null {
+  if (!input || typeof input !== 'object') return null
+  const raw = (
+    'data' in input && input.data && typeof input.data === 'object'
+      ? input.data
+      : input
+  ) as Record<string, unknown>
+  const coerced = { ...raw }
+  for (const key of ['completionScore', 'codeQualityScore', 'overallScore']) {
+    if (typeof coerced[key] === 'string') coerced[key] = Number(coerced[key])
+  }
+  for (const key of ['strengths', 'weaknesses']) {
+    const value = coerced[key]
+    if (typeof value !== 'string') continue
+    try {
+      coerced[key] = JSON.parse(value)
+    } catch {
+      coerced[key] = [value]
+    }
+  }
+  const parsed = JudgingResultSchema.safeParse(coerced)
+  return parsed.success ? parsed.data : null
+}
+
 async function runSingleJudgeOnce(
   input: JudgeCommitResultInput,
   judgePrompt: string,
@@ -477,6 +507,8 @@ async function runSingleJudgeOnce(
 
   const judgeAgent = judgeAgents[judgeAgentId]
   const agentOutput: string[] = []
+  // The judge's last set_output input, for recoverFromSetOutput.
+  let lastSetOutput: unknown
   try {
     const judgeResult = await withTimeout(
       client.run({
@@ -489,6 +521,7 @@ async function runSingleJudgeOnce(
             agentOutput.push(event.text)
           } else if (event.type === 'tool_call') {
             agentOutput.push(JSON.stringify(event, null, 2))
+            if (event.toolName === 'set_output') lastSetOutput = event.input
           } else if (event.type === 'error') {
             console.warn(`[Judge ${judgeAgentId}] Error event:`, event.message)
           }
@@ -498,7 +531,12 @@ async function runSingleJudgeOnce(
       'Judge agent timed out after 20 minutes',
     )
 
-    if (judgeResult.output.type !== 'structuredOutput') {
+    if (
+      judgeResult.output.type !== 'structuredOutput' ||
+      judgeResult.output.value == null
+    ) {
+      const recovered = recoverFromSetOutput(lastSetOutput)
+      if (recovered) return recovered
       console.error(
         `Judge ${judgeAgentId} - not structured output`,
         JSON.stringify(judgeResult.output, null, 2),
