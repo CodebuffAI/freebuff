@@ -149,6 +149,25 @@ export type {
   TerminalCommandProcess,
   TerminalCommandSpawnRequest,
 } from './tools/run-terminal-command'
+export {
+  createExecutionPolicy,
+  authorizeToolCall,
+  classifyTool,
+  guardFileSystem,
+  canonicalizePath,
+  isPathWithinRoot,
+  isLexicallyWithinRoot,
+} from './permissions/execution-policy'
+export type {
+  ExecutionPolicy,
+  PathCanonicalizer,
+  ShellApprovalCallback,
+  ShellApprovalRequest,
+  ShellApprovalVerdict,
+  ToolCapability,
+  ToolAuthorizationRequest,
+  PolicyDecision,
+} from './permissions/execution-policy'
 // Containment for a sponsored run on the user's own machine (COD-336). Exported
 // from the SDK rather than kept in Desktop because the CLI needs the same
 // boundary, and a second copy of a seatbelt profile is a second thing to be
