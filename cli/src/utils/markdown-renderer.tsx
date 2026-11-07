@@ -1035,13 +1035,57 @@ export function hasMarkdown(content: string): boolean {
   return /[*_`#>\-\+]|\[.*\]\(.*\)|```/.test(content)
 }
 
-export function hasIncompleteCodeFence(content: string): boolean {
-  let fenceCount = 0
-  const fenceRegex = /```/g
-  while (fenceRegex.exec(content)) {
-    fenceCount += 1
+type OpenFence = { char: string; length: number; index: number }
+
+// Any indent or blockquote prefix, so a fence nested in a list or quote counts.
+const LOOSE_FENCE_LINE = /^[ \t>]*(`{3,}|~{3,})(.*)$/
+
+/**
+ * The fence still open after `line` (which starts at `lineStart`), given the
+ * one open before it. Only a run that starts its line opens a fence, and a
+ * backtick run whose info string holds a backtick opens nothing (CommonMark),
+ * so ``` mid-sentence or in ``` a`b is text. A tilde fence is tracked so a
+ * ``` inside it is code.
+ */
+const nextOpenFence = (
+  open: OpenFence | null,
+  line: string,
+  lineStart: number,
+): OpenFence | null => {
+  const match = LOOSE_FENCE_LINE.exec(line)
+  if (!match) return open
+  const [whole, run, rest] = match
+  if (open === null) {
+    if (run[0] === '`' && rest.includes('`')) return null
+    return {
+      char: run[0],
+      length: run.length,
+      index: lineStart + whole.indexOf(run),
+    }
   }
-  return fenceCount % 2 === 1
+  const closes =
+    run[0] === open.char && run.length >= open.length && rest.trim() === ''
+  return closes ? null : open
+}
+
+/** Offset of the ``` that opens a backtick fence still open at the end of
+ *  `content`, or -1. */
+const openBacktickFenceIndex = (content: string): number => {
+  let open: OpenFence | null = null
+  let lineStart = 0
+  while (true) {
+    const newline = content.indexOf('\n', lineStart)
+    const lineEnd = newline === -1 ? content.length : newline
+    const line = content.slice(lineStart, lineEnd).replace(/\r$/, '')
+    open = nextOpenFence(open, line, lineStart)
+    if (newline === -1) break
+    lineStart = newline + 1
+  }
+  return open?.char === '`' ? open.index : -1
+}
+
+export function hasIncompleteCodeFence(content: string): boolean {
+  return openBacktickFenceIndex(content) !== -1
 }
 
 const mergeStreamingSegments = (segments: ReactNode[]): ReactNode => {
@@ -1071,11 +1115,7 @@ export function renderStreamingMarkdown(
     return content
   }
 
-  if (!hasIncompleteCodeFence(content)) {
-    return renderMarkdown(content, options)
-  }
-
-  const lastFenceIndex = content.lastIndexOf('```')
+  const lastFenceIndex = openBacktickFenceIndex(content)
   if (lastFenceIndex === -1) {
     return renderMarkdown(content, options)
   }
@@ -1139,15 +1179,15 @@ const startsFreshBlock = (line: string): boolean =>
  * The offset of the last line start in `text` after `from` where the text can
  * be cut without changing how either side parses or renders: outside any code
  * fence, after a blank line, before a complete line that cannot continue a
- * list, blockquote, indented code or HTML block, and with an even count of
- * ``` runs before it (the count hasIncompleteCodeFence uses). Returns `from`
+ * list, blockquote, indented code or HTML block, and with no fence open by
+ * nextOpenFence's reading (the one hasIncompleteCodeFence uses). Returns `from`
  * when there is none. `from` must itself be such a line start.
  */
 const lastSafeBoundary = (text: string, from: number): number => {
   let best = from
   let fence: { char: string; length: number } | null = null
   let previousBlank = false
-  let tickRuns = 0
+  let looseFence: OpenFence | null = null
   let lineStart = from
   while (lineStart < text.length) {
     const newline = text.indexOf('\n', lineStart)
@@ -1157,13 +1197,13 @@ const lastSafeBoundary = (text: string, from: number): number => {
     if (
       fence === null &&
       previousBlank &&
-      tickRuns % 2 === 0 &&
+      looseFence === null &&
       lineStart > from &&
       startsFreshBlock(line)
     ) {
       best = lineStart
     }
-    tickRuns += line.split('```').length - 1
+    looseFence = nextOpenFence(looseFence, line, lineStart)
     if (fence === null) {
       const open = FENCE_OPEN.exec(line)
       if (open && !(open[1][0] === '`' && open[2].includes('`'))) {
@@ -1234,11 +1274,11 @@ export function renderStreamingMarkdownIncremental(
 
     const tail = content.slice(cache.text.length)
     const state = createRenderState(palette, codeBlockWidth, cache.keysUsed)
-    if (!hasIncompleteCodeFence(tail)) {
+    const lastFenceIndex = openBacktickFenceIndex(tail)
+    if (lastFenceIndex === -1) {
       return normalizeOutput([...cache.nodes, ...renderRawNodes(tail, state)])
     }
 
-    const lastFenceIndex = tail.lastIndexOf('```')
     const segments: ReactNode[] = []
     if (cache.text.length + lastFenceIndex > 0) {
       segments.push(
