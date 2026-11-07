@@ -53,6 +53,20 @@ export const productFunnelStateSchema = z.enum([
   'skipped',
   'recovered',
 ])
+/**
+ * The Desktop welcome's invite links carry `?via=` naming the share that made
+ * them, so the friend's landing pageview (its `$current_url`) ties their
+ * signup and first message back to the welcome in PostHog: one funnel per
+ * person on the invitee's side, next to the inviter's shown → shared tile. Not
+ * a UTM on purpose: a `utm_source` would turn the account's first-touch
+ * channel from `referral` into `campaign_other` (gravity-acquisition-tags.ts).
+ */
+export const WELCOME_INVITE_VIA_PARAM = 'via'
+export const WELCOME_INVITE_VIA = Object.freeze({
+  email: 'welcome_email',
+  link: 'welcome_link',
+})
+
 /** The Desktop welcome's H1 test: one arm per account, stable, on every `welcome` event. */
 export const welcomeVariantSchema = z.enum([
   'unlocked',
