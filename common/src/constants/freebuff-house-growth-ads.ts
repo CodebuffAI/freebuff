@@ -21,7 +21,9 @@ import type { HouseAdCreative } from './freebuff-house-ad'
  * withholds the campaign.
  *
  * Stable ids bind the seeded rows to this policy; copy may change without
- * creating another campaign.
+ * creating another campaign. Changed copy on a seeded campaign bumps its
+ * `copyRevision`, so the seed adds the new creatives under new ids and retires
+ * the old ones, keeping each creative's history its own.
  */
 
 /** A fact that, when true for the viewer, withholds a gated campaign. */
@@ -57,6 +59,13 @@ export type HouseGrowthCampaign = {
    * `HOUSE_AD_FAVICON_URL`.
    */
   favicon?: string
+  /**
+   * Which copy the creatives are. Absent is 1, the first seeded copy. Bump it
+   * when the copy of a seeded campaign changes: the seed retires every
+   * creative of an earlier revision and adds these under new ids
+   * (`scripts/seed-house-growth-campaigns.ts`).
+   */
+  copyRevision?: number
   creatives: readonly HouseAdCreative[]
 }
 
@@ -246,6 +255,9 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     ],
   },
   {
+    // Everyone, at any access tier: Freebuff's free coding is what a friend
+    // gets, and inviting three friends who join unlocks custom themes
+    // (docs/referrals.md). `/referrals` opens the viewer's own referral page.
     id: 'house-growth-referrals-v1',
     name: 'Invite friends (house)',
     // Ungated: referrals are uncapped, so a user who already referred can
@@ -253,9 +265,10 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     gate: null,
     targeting: 'all',
     frequencyCap: DAILY,
+    copyRevision: 2,
     creatives: [
-      creative('Get more daily sessions free', 'Invite a friend. Each one who joins adds sessions.', 'Invite a friend', '/earn/referrals'),
-      creative('Know someone who codes?', 'Invite them to Freebuff and earn extra daily sessions.', 'Invite a friend', '/earn/referrals'),
+      creative('Give your friends unlimited free coding', 'Invite 3 friends to unlock custom themes.', 'Invite a friend', '/referrals'),
+      creative('Invite friends to Freebuff', 'Give them unlimited free coding. Invite 3 friends to unlock custom themes.', 'Invite a friend', '/referrals'),
     ],
   },
   {

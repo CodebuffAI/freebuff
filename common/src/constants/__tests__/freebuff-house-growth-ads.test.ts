@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import { FEATURED_INTEGRATIONS } from '../../desktop-cloud/integrations'
+import { isAdTextSafe } from '../../util/ad-creative-safety'
 import {
   HOUSE_GROWTH_CAMPAIGNS,
   HOUSE_GROWTH_INTEGRATION_CAMPAIGNS,
@@ -59,5 +60,53 @@ describe('growth house campaign catalog', () => {
     expect(houseCampaignGateFor('house-growth-desktop-v1')).toBe('desktop_user')
     expect(houseCampaignGateFor('house-growth-referrals-v1')).toBeNull()
     expect(houseCampaignGateFor('house-product-sites-v1')).toBeNull()
+  })
+
+  test('one referral ad for everyone, offering free coding and themes', () => {
+    const referrals = HOUSE_GROWTH_CAMPAIGNS.filter((c) =>
+      c.id.startsWith('house-growth-referrals'),
+    )
+    expect(referrals.map((c) => c.id)).toEqual(['house-growth-referrals-v1'])
+    const [campaign] = referrals
+    expect(campaign!.creatives[0]!.title).toBe(
+      'Give your friends unlimited free coding',
+    )
+    for (const creative of campaign!.creatives) {
+      const copy = `${creative.title} ${creative.adText}`
+      expect(copy).toContain('unlimited free coding')
+      // The invite cards' words (docs/referrals.md, "Invite surfaces").
+      expect(copy).toContain('Invite 3 friends to unlock custom themes')
+      // The referral reward is themes; no model time is promised.
+      expect(copy).not.toMatch(/terra|hour|session|freebucks/i)
+      expect(creative.url).toBe('https://freebuff.com/referrals')
+    }
+  })
+
+  test('copy is ad-safe and makes none of the house false claims', () => {
+    // The list `freebuff-house-ad.test.ts` and the refresh's `acceptDraft`
+    // hold house copy to, plus "limited", which copy never says to users.
+    // There "unlimited" guards subscription claims; free coding is unlimited,
+    // so the referral ad's "unlimited free coding" is the one exception.
+    const FALSE_CLAIMS = [
+      /no ads/i,
+      /ad-free/i,
+      /without ads/i,
+      /skip the queue/i,
+      /no wait/i,
+      /instant/i,
+      /every model/i,
+      /unlimited/i,
+      /\blimited/i,
+    ]
+    for (const campaign of HOUSE_GROWTH_CAMPAIGNS)
+      for (const creative of campaign.creatives) {
+        for (const text of [creative.title, creative.adText, creative.cta])
+          expect(isAdTextSafe(text)).toBe(true)
+        const copy = `${creative.title} ${creative.adText}`.replace(
+          /unlimited free coding/g,
+          '',
+        )
+        for (const claim of FALSE_CLAIMS) expect(copy).not.toMatch(claim)
+      }
   })
 })
