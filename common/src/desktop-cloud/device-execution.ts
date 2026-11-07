@@ -12,7 +12,14 @@ export const DEVICE_READ_BYTES = 64 * 1024
 export const DEVICE_DIRECTORY_ENTRIES = 100
 export const DEVICE_OPERATION_MS = 25_000
 export const DEVICE_HEARTBEAT_MS = 10_000
-export const DEVICE_SESSION_SECONDS = 60
+/**
+ * How long a folder's enrollment outlives its last heartbeat (server only: Desktop does not read
+ * it). Until then a turn reads it `reconnecting` and waits 45 s for it, not 15 s, and its stream
+ * reconnects without re-registering. Desktop's bridge gives up after five failed reconnects
+ * (~23 s) and then retries an approved folder every 30 s; at 60 s most of those retries came
+ * back to a `gone` session.
+ */
+export const DEVICE_SESSION_SECONDS = 180
 export const DEVICE_FRAME_BYTES = 512 * 1024
 export const DEVICE_EXEC_OUTPUT_BYTES = 16 * 1024 * 1024
 export const DEVICE_EXEC_FRAME_BYTES = 24 * 1024 * 1024
