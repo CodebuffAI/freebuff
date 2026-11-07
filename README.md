@@ -28,6 +28,11 @@ freebuff
 
 Then describe what you want. Freebuff finds the relevant files, makes changes, and runs the checks that matter for your project.
 
+**CLI history upgrade:** Chats saved by older versions remain on disk, but need
+manual recovery before they appear in `/history` or can be continued. See
+[CLI chat history](./docs/cli-chat-history.md#recovering-history-saved-by-older-versions)
+for recovery instructions and the reason automatic migration is unsafe.
+
 ## Models
 
 Freebuff includes a curated model catalog. The regular picker currently offers:
