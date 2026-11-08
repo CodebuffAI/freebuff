@@ -94,6 +94,7 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     // Standard, last in the picker: the same rows in the same places as the
     // limited layout (default-config.ts's `LIMITED_LAYOUT`), so every viewer
     // sees one Standard set (product, 2026-11-03, Victor).
+    'm-0921d81ce7': { section: 'standard', order: 0 }, // Crouton Alpha, 0 (promotional)
     'm-ddc687c50f': { section: 'standard', order: 1 }, // Nemotron 3.5 Lightning, 5
     'm-02244092cb': { section: 'standard', order: 5 }, // Glyph Cluster, 5
     'upstage/solar-pro4': { section: 'standard', order: 10 },
