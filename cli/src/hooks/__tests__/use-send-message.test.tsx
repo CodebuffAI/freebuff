@@ -14,6 +14,11 @@ import { useChatStore } from '../../state/chat-store'
 import { stopActiveRun } from '../../utils/active-run'
 import { setChatDirOverrideForTesting } from '../../utils/run-state-storage'
 
+import {
+  STATE_SNAPSHOT_INTERRUPTION_MESSAGE,
+  USER_INTERRUPTED_MESSAGE,
+} from '@codebuff/sdk'
+
 import type { RunState } from '@codebuff/sdk'
 import type { SendMessageFn } from '../../types/contracts/send-message'
 import type { ElapsedTimeTracker } from '../use-elapsed-time'
@@ -108,6 +113,38 @@ const makeRunState = (marker: string): RunState =>
       message: 'Session ended before this response completed.',
     },
   }) as unknown as RunState
+
+const systemText = (text: string) => ({
+  role: 'user',
+  content: [{ type: 'text', text: `<system>${text}</system>` }],
+})
+
+/** A cancelled SDK run state: `history`, then `message` as the SDK appends it. */
+const makeCancelledRunState = (
+  marker: string,
+  history: unknown[],
+  message: string,
+): RunState =>
+  ({
+    traceSessionId: `trace-${marker}`,
+    sessionState: {
+      mainAgentState: {
+        messageHistory: [...history, systemText(message)],
+      },
+    },
+    output: { type: 'error', message },
+  }) as unknown as RunState
+
+const historyTexts = (state: RunState | undefined) =>
+  (state?.sessionState?.mainAgentState.messageHistory ?? []).map(
+    (message: any) =>
+      typeof message.content === 'string'
+        ? message.content
+        : message.content.map((part: any) => part.text ?? '').join(''),
+  )
+
+const savedRunState = () =>
+  JSON.parse(fs.readFileSync(path.join(testRoot, 'run-state.json'), 'utf8'))
 
 const settlePendingRuns = () => {
   for (const call of runCalls) {
@@ -325,4 +362,156 @@ describe('useSendMessage continuation state', () => {
       setup.renderer.destroy()
     }
   })
+  test('Esc then a new prompt resumes from the user-interrupted history, not "session ended"', async () => {
+    const { setup, root } = await mountHost()
+    const runs: Promise<void>[] = []
+    const prompt = { role: 'user', content: [{ type: 'text', text: 'fix it' }] }
+    const step = { role: 'assistant', content: [{ type: 'text', text: 'On it.' }] }
+    const laterStep = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'Edited cache.ts.' }],
+    }
+
+    try {
+      runs.push(sendMessageFromHost!({ content: 'fix it', agentMode: 'DEFAULT' }))
+      await waitFor('first SDK run', () => runCalls.length === 1)
+      runCalls[0].runConfig.onStateSnapshot(
+        makeCancelledRunState('snap', [prompt, step], STATE_SNAPSHOT_INTERRUPTION_MESSAGE),
+      )
+      stopActiveRun('user-interrupt')
+
+      // The next prompt can start before the aborted run returns.
+      runs.push(sendMessageFromHost!({ content: 'go on', agentMode: 'DEFAULT' }))
+      await waitFor('second SDK run', () => runCalls.length === 2)
+      const resumed = historyTexts(runCalls[1].runConfig.previousRun)
+      expect(resumed).toEqual([
+        'fix it',
+        'On it.',
+        `<system>${USER_INTERRUPTED_MESSAGE}</system>`,
+      ])
+      expect(resumed.join('\n')).not.toContain('session ended')
+      runCalls[1].resolve(makeRunState('second'))
+      await runs[1]
+
+      // The aborted run returning late must not replace the newer turn.
+      runCalls[0].resolve(
+        makeCancelledRunState('late', [prompt, step, laterStep], USER_INTERRUPTED_MESSAGE),
+      )
+      await runs[0]
+      runs.push(sendMessageFromHost!({ content: 'third', agentMode: 'DEFAULT' }))
+      await waitFor('third SDK run', () => runCalls.length === 3)
+      expect(runCalls[2].runConfig.previousRun.traceSessionId).toBe('trace-second')
+    } finally {
+      settlePendingRuns()
+      await Promise.all(runs)
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
+  test('Esc adopts and persists the run\'s own interrupted state when it returns, once', async () => {
+    const { setup, root } = await mountHost()
+    const runs: Promise<void>[] = []
+    const prompt = { role: 'user', content: [{ type: 'text', text: 'fix it' }] }
+    const step = { role: 'assistant', content: [{ type: 'text', text: 'On it.' }] }
+    const laterStep = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'Edited cache.ts.' }],
+    }
+
+    try {
+      runs.push(sendMessageFromHost!({ content: 'fix it', agentMode: 'DEFAULT' }))
+      await waitFor('first SDK run', () => runCalls.length === 1)
+      runCalls[0].runConfig.onStateSnapshot(
+        makeCancelledRunState('snap', [prompt, step], STATE_SNAPSHOT_INTERRUPTION_MESSAGE),
+      )
+      stopActiveRun('user-interrupt')
+      // The runtime's abort state already ends in the interrupted message.
+      runCalls[0].resolve(
+        makeCancelledRunState('own', [prompt, step, laterStep], USER_INTERRUPTED_MESSAGE),
+      )
+      await runs[0]
+
+      const expected = [
+        'fix it',
+        'On it.',
+        'Edited cache.ts.',
+        `<system>${USER_INTERRUPTED_MESSAGE}</system>`,
+      ]
+      expect(historyTexts(savedRunState())).toEqual(expected)
+
+      runs.push(sendMessageFromHost!({ content: 'go on', agentMode: 'DEFAULT' }))
+      await waitFor('second SDK run', () => runCalls.length === 2)
+      expect(historyTexts(runCalls[1].runConfig.previousRun)).toEqual(expected)
+    } finally {
+      settlePendingRuns()
+      await Promise.all(runs)
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
+  test('Esc before any snapshot keeps the prompt in the resumed history', async () => {
+    const { setup, root } = await mountHost()
+    const runs: Promise<void>[] = []
+    const prompt = { role: 'user', content: [{ type: 'text', text: 'fix it' }] }
+
+    try {
+      runs.push(sendMessageFromHost!({ content: 'fix it', agentMode: 'DEFAULT' }))
+      await waitFor('first SDK run', () => runCalls.length === 1)
+      stopActiveRun('user-interrupt')
+      // What the SDK returns on an abort before the runtime started.
+      runCalls[0].resolve(
+        makeCancelledRunState('early', [prompt], 'Run cancelled by user.'),
+      )
+      await runs[0]
+
+      runs.push(sendMessageFromHost!({ content: 'go on', agentMode: 'DEFAULT' }))
+      await waitFor('second SDK run', () => runCalls.length === 2)
+      expect(historyTexts(runCalls[1].runConfig.previousRun)).toEqual([
+        'fix it',
+        `<system>${USER_INTERRUPTED_MESSAGE}</system>`,
+      ])
+    } finally {
+      settlePendingRuns()
+      await Promise.all(runs)
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
+  test.each(['new-chat', 'history-resume'] as const)(
+    'a %s switch during a run adopts nothing from the aborted run',
+    async (reason) => {
+      const { setup, root } = await mountHost()
+      const runs: Promise<void>[] = []
+      const prompt = { role: 'user', content: [{ type: 'text', text: 'old chat' }] }
+
+      try {
+        runs.push(sendMessageFromHost!({ content: 'old chat', agentMode: 'DEFAULT' }))
+        await waitFor('first SDK run', () => runCalls.length === 1)
+        runCalls[0].runConfig.onStateSnapshot(
+          makeCancelledRunState('snap', [prompt], STATE_SNAPSHOT_INTERRUPTION_MESSAGE),
+        )
+        stopActiveRun(reason)
+        // What the switch does right after stopping the run.
+        useChatStore.getState().reset()
+        setChatDirOverrideForTesting(path.join(testRoot, 'other-chat'))
+        runCalls[0].resolve(
+          makeCancelledRunState('old', [prompt], USER_INTERRUPTED_MESSAGE),
+        )
+        await runs[0]
+
+        expect(useChatStore.getState().runState).toBeNull()
+        expect(
+          fs.existsSync(path.join(testRoot, 'other-chat', 'run-state.json')),
+        ).toBe(false)
+      } finally {
+        settlePendingRuns()
+        await Promise.all(runs)
+        flushSync(() => root.unmount())
+        setup.renderer.destroy()
+      }
+    },
+  )
 })

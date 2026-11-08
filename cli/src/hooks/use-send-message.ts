@@ -86,6 +86,7 @@ import type { AgentMode } from '../utils/constants'
 import type { SendMessageTimerEvent } from '../utils/send-message-timer'
 import {
   STATE_SNAPSHOT_INTERRUPTION_MESSAGE,
+  toUserInterruptedRunState,
   withCompactionSummary,
 } from '@codebuff/sdk'
 
@@ -407,13 +408,27 @@ export const useSendMessage = ({
       )
       const runChatDir = resolveCurrentChatDir()
       const runChatIsCurrent = () => resolveCurrentChatDir() === runChatDir
-      let latestRunStateSnapshot: RunState = previousRunStateRef.current ?? {
+      const runStateBeforeRun = previousRunStateRef.current
+      let latestRunStateSnapshot: RunState = runStateBeforeRun ?? {
         traceSessionId: randomUUID(),
         output: {
           type: 'error',
           message: STATE_SNAPSHOT_INTERRUPTION_MESSAGE,
         },
       }
+      /** Set once the SDK has checkpointed this run (`onStateSnapshot`). */
+      let runSnapshotReceived = false
+      /**
+       * Esc (`user-interrupt`) keeps the interrupted turn in THIS chat, unlike a
+       * chat switch, logout or exit, which share the abort but not the chat.
+       * Sponsored turns never become part of the conversation.
+       */
+      const keepsInterruptedTurn = () =>
+        !sponsored &&
+        abortController.signal.reason === 'user-interrupt' &&
+        runChatIsCurrent()
+      /** The state Esc adopted, until the run's own returned state replaces it. */
+      let interruptedRunState: RunState | null = runStateBeforeRun
       let streamingStarted = false
       /** The state this run saved, once it returned and was adopted. */
       let adoptedRunState: RunState | undefined
@@ -435,6 +450,20 @@ export const useSendMessage = ({
         // message/timer cleanup. Preflight cancellation still needs to drop
         // the shared busy UI state synchronously.
         abortController.abort(reason)
+        // Esc: the next prompt resumes from this run's progress, told the user
+        // interrupted it. The snapshot alone says the session ended, which
+        // only a real exit (`process-exit`) should leave behind. Adopted here,
+        // synchronously, because the next prompt can start before the aborted
+        // run returns; the run's own state replaces this one when it does.
+        if (runSnapshotReceived && keepsInterruptedTurn()) {
+          const interrupted =
+            toUserInterruptedRunState(latestRunStateSnapshot) ??
+            latestRunStateSnapshot
+          latestRunStateSnapshot = interrupted
+          interruptedRunState = interrupted
+          previousRunStateRef.current = interrupted
+          setRunState(interrupted)
+        }
         if (!streamingStarted) {
           setIsRetrying(false)
           setStreamStatus('idle')
@@ -836,7 +865,9 @@ export const useSendMessage = ({
                   : undefined,
               onStateSnapshot: (snapshot) => {
                 const pinnedSnapshot = pinByokConnection(snapshot, selectedByok)
+                if (abortController.signal.aborted) return
                 latestRunStateSnapshot = pinnedSnapshot
+                runSnapshotReceived = true
                 // Don't persist once the run is aborted or the user has switched
                 // chats: the store's messages then belong to a different
                 // conversation, and checkpointing them into this run's directory
@@ -1033,11 +1064,32 @@ export const useSendMessage = ({
           // can't land after this authoritative final save.
           await settleCheckpointSave()
         } else if (!sponsored && runChatIsCurrent()) {
-          // An interrupted run is not adopted, but the server already created
-          // its root run: move the ad trace pointer past it, or the next
-          // prompt's offer and display requests would name it as the run
-          // carrying that prompt.
+          // The server already created this interrupted run's root run: move
+          // the ad trace pointer past it, or the next prompt's offer and
+          // display requests would name it as the run carrying that prompt.
           useChatStore.getState().noteFinishedRunForAdTrace(runState)
+          // Esc: adopt the run's own state, which ends in the runtime's "User
+          // interrupted the response" and holds every step the 5 s snapshot
+          // may have missed (or, before any snapshot, the user's prompt). Only
+          // while nothing newer has replaced what Esc adopted: the next prompt
+          // may already have started, or finished, from it.
+          const interrupted = keepsInterruptedTurn()
+            ? toUserInterruptedRunState(runState)
+            : undefined
+          if (
+            interrupted &&
+            previousRunStateRef.current === interruptedRunState
+          ) {
+            previousRunStateRef.current = interrupted
+            setRunState(interrupted)
+            adoptedRunState = interrupted
+            await settleCheckpointSave()
+            saveChatState(
+              interrupted,
+              useChatStore.getState().messages,
+              runChatDir,
+            )
+          }
         }
         // A compact streams nothing, so nothing else says what it did.
         if (

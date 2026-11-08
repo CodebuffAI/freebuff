@@ -139,6 +139,7 @@ import {
   buildUserMessageContent,
   expireMessages,
   frameSteeringContent,
+  USER_INTERRUPTED_MESSAGE,
 } from './util/messages'
 import {
   estimateContextTokens,
@@ -2482,9 +2483,7 @@ export async function loopAgentSteps(
       currentAgentState.messageHistory = [
         ...currentAgentState.messageHistory,
         userMessage(
-          withSystemTags(
-            "User interrupted the response. The assistant's previous work has been preserved.",
-          ),
+          withSystemTags(USER_INTERRUPTED_MESSAGE),
         ),
       ]
 

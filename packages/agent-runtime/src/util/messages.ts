@@ -115,6 +115,14 @@ export function withSystemInstructionTags(str: string): string {
   return `<system_instructions>${str}${closeXml('system_instructions')}`
 }
 
+/**
+ * Why a turn the user stopped (Esc) ended. The runtime appends it on abort, and
+ * the SDK's `toUserInterruptedRunState` uses it so a host that resumes from a
+ * checkpoint after Esc tells the model the same thing.
+ */
+export const USER_INTERRUPTED_MESSAGE =
+  "User interrupted the response. The assistant's previous work has been preserved."
+
 export function withSystemTags(str: string): string {
   return `<system>${str}${closeXml('system')}`
 }

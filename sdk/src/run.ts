@@ -5,6 +5,7 @@ import { callMainPrompt } from '@codebuff/agent-runtime/main-prompt'
 import { adjustContextTokenCountForHistoryEdit } from '@codebuff/agent-runtime/util/context-token-count'
 import {
   buildUserMessageContent,
+  USER_INTERRUPTED_MESSAGE,
   withSystemTags,
 } from '@codebuff/agent-runtime/util/messages'
 import { MAX_AGENT_STEPS_DEFAULT } from '@codebuff/common/constants/agents'
@@ -501,6 +502,73 @@ export function buildCancelledSessionState(params: {
     },
   )
   return state
+}
+
+/** The text of a single-text-part user message, else undefined. */
+function userMessageText(message: Message | undefined): string | undefined {
+  if (!message || message.role !== 'user') return undefined
+  const content = message.content as unknown
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content) || content.length !== 1) return undefined
+  const [part] = content as Array<{ type?: string; text?: unknown }>
+  return part?.type === 'text' && typeof part.text === 'string'
+    ? part.text
+    : undefined
+}
+
+/**
+ * The run state a host resumes from after the USER stopped the turn (Esc).
+ *
+ * A cancelled run state from this SDK ends in the message explaining why the
+ * turn ended, and `output.message` is that same text: the periodic
+ * `onStateSnapshot` says the session ended (true only when the host died
+ * mid-turn), and an early abort says the run was cancelled. After Esc the model
+ * must read that the user interrupted it, as the runtime itself writes on
+ * abort. This swaps the SDK's trailing message for the runtime's, once: a
+ * history that already ends in it (the runtime's own abort state) is returned
+ * as-is, and so is any state that does not end in an SDK cancellation message
+ * (a run that completed as Esc landed).
+ *
+ * Returns undefined when there is no session state to resume from.
+ */
+export function toUserInterruptedRunState(runState: RunState): RunState | undefined {
+  const sessionState = runState.sessionState
+  if (!sessionState) return undefined
+  const previousHistory = sessionState.mainAgentState.messageHistory
+  const interrupted = withSystemTags(USER_INTERRUPTED_MESSAGE)
+  const last = userMessageText(previousHistory.at(-1))
+  if (last === interrupted) return runState
+
+  const appended =
+    runState.output?.type === 'error' && runState.output.message
+      ? withSystemTags(runState.output.message)
+      : undefined
+  if (!appended || last !== appended) return runState
+
+  const nextHistory = previousHistory.slice(0, -1)
+  if (userMessageText(nextHistory.at(-1)) !== interrupted) {
+    nextHistory.push({
+      role: 'user' as const,
+      content: [{ type: 'text' as const, text: interrupted }],
+    })
+  }
+  return {
+    ...runState,
+    sessionState: {
+      ...sessionState,
+      mainAgentState: {
+        ...sessionState.mainAgentState,
+        messageHistory: nextHistory,
+        contextTokenCount: adjustContextTokenCountForHistoryEdit({
+          contextTokenCount: sessionState.mainAgentState.contextTokenCount,
+          previousHistory,
+          nextHistory,
+          scale: sessionState.mainAgentState.contextTokenBaseline?.scale,
+        }),
+      },
+    },
+    output: { type: 'error', message: USER_INTERRUPTED_MESSAGE },
+  }
 }
 
 const createAbortError = (signal?: AbortSignal) => {
