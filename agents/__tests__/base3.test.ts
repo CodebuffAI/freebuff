@@ -19,7 +19,11 @@ import {
 } from '@codebuff/common/constants/freebuff-models'
 import { describe, test, expect } from 'bun:test'
 
-import base3, { createBase3, createBase3CliRoot } from '../base3'
+import base3, {
+  CLI_FOLLOWUP_ORDER_RULE,
+  createBase3,
+  createBase3CliRoot,
+} from '../base3'
 import base3Evals from '../base3-evals'
 import { PLACEHOLDER } from '../types/secret-agent-definition'
 import base3FastFreeDeepseekFlash from '../base3-fast-free-deepseek-flash'
@@ -277,6 +281,19 @@ describe('base3 CLI roots', () => {
         (name) => name !== 'ask_user' && name !== 'suggest_followups',
       ),
     )
+  })
+
+  test('tells the model to write its answer before suggest_followups, only when the tool is offered', () => {
+    // 2026-11-07: 40% of CLI sessions hit the cards-before-the-answer nudge
+    // against 6% on Desktop, whose prompt carries this order rule.
+    const withUser = createBase3CliRoot()
+    const withoutUser = createBase3CliRoot({ noAskUser: true })
+
+    expect(withUser.systemPrompt).toContain(CLI_FOLLOWUP_ORDER_RULE)
+    expect(CLI_FOLLOWUP_ORDER_RULE).toContain('plain text')
+    expect(CLI_FOLLOWUP_ORDER_RULE).toContain('no tool call after it')
+    expect(CLI_FOLLOWUP_ORDER_RULE).toContain('Never put the answer inside the tool')
+    expect(withoutUser.systemPrompt).not.toContain(CLI_FOLLOWUP_ORDER_RULE)
   })
 
   // Freebuff users reported models refusing work because they were "running

@@ -339,6 +339,14 @@ const HUMAN_TOOL_NAMES: ReadonlySet<string> = new Set([
   'suggest_followups',
 ])
 
+/**
+ * Desktop's order (`SUGGEST_PROMPTS_GUIDANCE`), adapted for suggest_followups.
+ * Without it the CLI ended 40% of sessions' turns with cards and no answer
+ * (2026-11-07; docs/freebuff-muse-spark.md, "cards before the answer").
+ */
+export const CLI_FOLLOWUP_ORDER_RULE =
+  'When you finish, first finish all tool work, then write your complete answer or result for the user as plain text, then call suggest_followups as the very last thing in the turn, with no tool call after it. Never put the answer inside the tool. Skip the tool when a follow-up would be pointless.'
+
 function buildCliAppendix({
   isFreebuff,
   model,
@@ -355,7 +363,7 @@ ${
   noAskUser
     ? ''
     : `
-- **Suggest next steps:** At the end of your turn, use the suggest_followups tool to suggest ~3 next steps the user might want to take. ${FOLLOWUP_STYLE_GUIDANCE}`
+- **Suggest next steps:** ${CLI_FOLLOWUP_ORDER_RULE} Suggest ~3 next steps the user might want to take. ${FOLLOWUP_STYLE_GUIDANCE}`
 }
 ${gravityIndexGuidance()}
 ${SKILL_DISCOVERY_GUIDANCE}

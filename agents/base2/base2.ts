@@ -517,7 +517,7 @@ ${buildArray(
     `- Spawn a ${leanCodeReviewerAgentId} to review the changes after you have implemented code changes. (Skip this step only if the change is extremely straightforward and obvious.)`,
   !noAskUser &&
     !noFollowups &&
-    `- At the end of your turn, use the suggest_followups tool to suggest ~3 next steps the user might want to take — e.g., "Add unit tests for UserService", "Split the auth module into smaller files", "Continue with the next step". ${FOLLOWUP_STYLE_GUIDANCE}`,
+    `- At the end of your turn, after writing your answer as plain text, use the suggest_followups tool as the last thing (no tool call after it) to suggest ~3 next steps the user might want to take — e.g., "Add unit tests for UserService", "Split the auth module into smaller files", "Continue with the next step". ${FOLLOWUP_STYLE_GUIDANCE}`,
 ).join('\n')}`
 }
 
