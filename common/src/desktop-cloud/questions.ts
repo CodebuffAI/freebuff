@@ -37,7 +37,18 @@ export type CloudQuestion = Omit<
 export type CloudQuestionRequest = {
   id: string
   questions: CloudQuestion[]
+  /** Its turn ended while the card waited (DEVICE_QUESTION_WAIT_MS): an answer
+   *  now goes out as the user's next message. */
+  deferred?: boolean
 }
+
+/**
+ * How long a turn on the user's computer waits on an unanswered question card
+ * before it ends quietly (completed, no error) and frees its runner slot. The
+ * card stays open on the chat's latest run and its answer becomes the next
+ * message; the client looks for such cards only on runs at least this long.
+ */
+export const DEVICE_QUESTION_WAIT_MS = 15 * 60_000
 
 export const cloudQuestionAnswerSchema = z.discriminatedUnion('skipped', [
   z.object({ skipped: z.literal(true) }),
