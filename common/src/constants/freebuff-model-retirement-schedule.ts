@@ -59,6 +59,27 @@ export function freebuffModelScheduledRetired(
   return !!retirement && now >= retirement.endsAt
 }
 
+/**
+ * Compiled models retired for every viewer (product, 2026-10-27), after their
+ * "Leaving" pills from 2026-10-24: Gemini 4 Argon and Gemini 3.8 Flash. MiMo
+ * 2.6 Pro followed on 2026-10-29, after its Ending pill from 2026-10-27, and
+ * GPT-6.1 Sol on 2026-11-04 (product, Victor), after its Ending pill from
+ * 2026-11-03. GLM 5.3 Flash followed after its two-step removal above ended.
+ * GPT-6 Luna was on the same schedule until it was kept on 2026-11-05.
+ *
+ * The server's default catalog disables these rows (default-config.ts), and a
+ * picker drawing the compiled list without a catalog (signed out, or before
+ * it loads) leaves them out too. The ids stay recognised, so a saved pick
+ * gets the benign stale-catalog answer and lands on the recommendation.
+ */
+export const FREEBUFF_RETIRED_MODEL_IDS: ReadonlySet<string> = new Set([
+  'google/gemini-4-argon',
+  'google/gemini-3.8-flash',
+  'mimo/mimo-v2.6-pro',
+  'openai/gpt-6.1-sol',
+  'z-ai/glm-5.3-flash',
+])
+
 /** Sits inside "<model> isn't available right now (…)", the sentence released
  *  clients build around `availableHours`. */
 export function freebuffClosedModelAvailabilityLabel(): string {
