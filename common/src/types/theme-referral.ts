@@ -7,6 +7,9 @@ export interface ThemeReferralAccess {
   qualifyingReferrals: number
   unlocked: boolean
   referralCode: string | null
+  /** When the account was created (ISO), for the browser workspace's first-visit
+   *  welcome. Absent from servers before 2026-11-07. */
+  accountCreatedAt?: string | null
 }
 
 export interface ThemeReferralPromptResponse {
