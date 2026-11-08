@@ -259,7 +259,59 @@ describe('a rejected argument says which one', () => {
       environment: 'production',
     })
     expect(result.error).toBe('invalid_site_request')
-    expect(result.message).toContain('unrecognized_keys')
+    expect(result.message).toContain('environment (unrecognized_keys)')
+  })
+
+  test('arguments that are not an object say so instead of a bare check name', async () => {
+    const result = await run(
+      'sites_deploy',
+      JSON.stringify({ siteId: '11111111-1111-4111-8111-111111111111' }),
+    )
+    expect(result.error).toBe('invalid_site_request')
+    expect(result.message).toContain('the arguments object (invalid_type)')
+    expect(result.message).not.toContain('11111111')
+  })
+
+  test('a Zod failure while preparing files is not blamed on the arguments', async () => {
+    // Cloud's bundler parsed a VM refusal as `undefined` (2026-11-08):
+    // "Sites rejected these arguments: invalid_type" for valid arguments.
+    const requests: string[] = []
+    const client = new SitesClient({
+      getToken: () => 'token',
+      host: 'https://example.invalid',
+      originApp: 'web',
+      fetcher: async (url) => {
+        requests.push(url)
+        return Response.json({})
+      },
+      files: {
+        bundle: async () => z.object({}).parse(undefined) as never,
+        secret: async () => z.string().max(1).parse('too long'),
+      },
+    })
+    const target = {
+      siteId: 'e77a6cb3-0814-431c-83fe-60f8371253e2',
+      environment: 'preview',
+      requestId: '0f1d3c52-8a4b-4a3e-9d0e-6a8f1f0b7c21',
+    }
+    const deployed = (await client.runToolWithContext(
+      'sites_deploy',
+      { ...target, manifestPath: 'deploy/sites-manifest.json' },
+      '/workspace',
+      'build',
+    )) as { error?: string; message?: string }
+    expect(deployed.error).toBe('invalid_site_request')
+    expect(deployed.message).not.toContain('rejected these arguments')
+    expect(deployed.message).toContain('Could not read the site files')
+    const secret = (await client.runToolWithContext(
+      'sites_set_secret',
+      { ...target, name: 'API_KEY', valueFile: '.secret' },
+      '/workspace',
+      'build',
+    )) as { error?: string; message?: string }
+    expect(secret.message).toContain('Could not read the secret file')
+    expect(secret.message).not.toContain('too long')
+    expect(requests).toEqual([])
   })
 
   test('plan mode and an unknown tool keep their own sentences', async () => {
