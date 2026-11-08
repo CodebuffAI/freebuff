@@ -18,7 +18,6 @@ node_modules
 dev
 # The agentic e2e harness's interactive mode lives in folders named `dev`.
 !scripts/agentic-e2e/dev/
-!freebuff-desktop/src/ui/dev/
 dist
 # The Convex HTTP edge proxies /api/browser-runtime/dist; this is a Next route, not build output.
 !freebuff/web/src/app/api/browser-runtime/dist/
