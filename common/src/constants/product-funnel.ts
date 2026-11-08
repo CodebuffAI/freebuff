@@ -216,6 +216,17 @@ export const productFunnelPropertiesSchema = z
         'history',
       ])
       .optional(),
+    /** `send:failed` `blocked`: the refusing admission's `status`, which is the
+     *  why a bare `blocked` never said (~23% of hosted Desktop senders a day, 2026-11-07). */
+    admission_status: z
+      .string()
+      .regex(/^[a-z_]{1,40}$/)
+      .optional(),
+    /** `send:failed` `error`: the error's class (`sendErrorKind`), never its text. */
+    error_kind: z
+      .string()
+      .regex(/^[a-z0-9_]{1,40}$/)
+      .optional(),
     selection_kind: z
       .enum([
         'default',
