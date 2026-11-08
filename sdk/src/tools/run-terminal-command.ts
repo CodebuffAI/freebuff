@@ -10,6 +10,7 @@ import type {
 } from 'child_process'
 import type { Readable } from 'stream'
 
+import { shellMismatchHint } from '../../../common/src/util/shell-mismatch-hint'
 import { stripColors } from '../../../common/src/util/string'
 import { getSystemProcessEnv } from '../env'
 import { createWindowsBashNotFoundError, findWindowsBash } from './windows-bash'
@@ -610,11 +611,23 @@ export function runTerminalCommand({
         const truncatedStdout = stdout.format()
         const truncatedStderr = stderr.format()
 
+        // A broker that owns the shell runs PowerShell (the sponsored Windows
+        // floor); every other command runs in bash, on Windows too.
+        const hint = shellMismatchHint({
+          platform: os.platform(),
+          shell: brokerOwnsShell ? 'powershell' : 'bash',
+          command,
+          stdout: truncatedStdout,
+          stderr: truncatedStderr,
+          exitCode,
+        })
+
         const combinedOutput = {
           command,
           stdout: truncatedStdout,
           ...(truncatedStderr ? { stderr: truncatedStderr } : {}),
           ...(exitCode !== null ? { exitCode } : {}),
+          ...(hint ? { hint } : {}),
         }
 
         resolve([{ type: 'json', value: combinedOutput }])

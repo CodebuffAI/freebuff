@@ -57,6 +57,9 @@ export const terminalCommandOutputSchema = z.union([
     stderr: z.string().optional(),
     stdout: z.string().optional(),
     exitCode: z.number().optional(),
+    /** One line naming the real shell when the output shows a dialect
+     * mismatch (`common/src/util/shell-mismatch-hint.ts`). */
+    hint: z.string().optional(),
   }),
   z.object({
     command: z.string(),
@@ -65,6 +68,7 @@ export const terminalCommandOutputSchema = z.union([
     stderr: z.string().optional(),
     stdoutOmittedForLength: z.literal(true),
     exitCode: z.number().optional(),
+    hint: z.string().optional(),
   }),
 
   z.object({

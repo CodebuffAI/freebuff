@@ -128,6 +128,16 @@ to forward slashes for file tools and Git Bash. Keep this context on both entry
 paths: the loader knows `filePath`, but raw SKILL.md content alone loses it and
 leaves the agent searching for resources it already loaded instructions for.
 
+### Shell-mismatch hints on terminal results
+
+`run_terminal_command` runs bash, on Windows too (Git Bash), unless a broker
+that `ownsShell` runs PowerShell 5.1 (the sponsored Windows floor). When a
+command fails with a known dialect error (`bash: dir: command not found`, an
+eaten `C:\Users` path, PowerShell's `&&`, `/dev/null`, `rm -rf` or a missing
+`grep`), the SDK adds a one-line `hint` naming the real shell and the
+replacement (`common/src/util/shell-mismatch-hint.ts`). stdout, stderr and the
+exit code are unchanged, and a genuinely missing program gets no hint.
+
 ### Explicit file reads versus discovery
 
 The SDK's `read_files` reads explicitly named text and images even when

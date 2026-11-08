@@ -253,6 +253,39 @@ describe('terminal command process diagnostics', () => {
     expect('stdout' in value ? value.stdout : '').toBe('brokered')
   })
 
+  test('a PowerShell broker failure gets a hint, with stderr and exit code unchanged', async () => {
+    const stderrText =
+      "The token '&&' is not a valid statement separator in this version."
+    const [{ value }] = await runTerminalCommand({
+      command: 'npm ci && npm test',
+      process_type: 'SYNC',
+      cwd: process.cwd(),
+      timeout_seconds: 5,
+      terminalCommandBroker: {
+        ownsShell: true,
+        start: () => {
+          const stdout = new PassThrough()
+          const stderr = new PassThrough()
+          queueMicrotask(() => {
+            stdout.end('')
+            stderr.end(stderrText)
+          })
+          return {
+            pid: 999_997,
+            stdout,
+            stderr,
+            completion: Promise.resolve(1),
+            kill: () => {},
+            isAlive: () => false,
+          }
+        },
+      },
+    })
+    expect('stderr' in value ? value.stderr : '').toBe(stderrText)
+    expect('exitCode' in value ? value.exitCode : null).toBe(1)
+    expect('hint' in value ? value.hint : '').toContain('it has no &&')
+  })
+
   test('a broker that does not own its shell gets the bash request, unchanged', async () => {
     const requests: Array<Record<string, unknown>> = []
     await runTerminalCommand({
