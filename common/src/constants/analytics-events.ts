@@ -332,6 +332,12 @@ export enum AnalyticsEvent {
   // also exactly what a genuine in-person referral looks like ("try it,
   // here's my laptop").
   FREEBUFF_REFERRAL_SOCK_SIGNAL = 'freebuff.referral.sock_signal',
+  // The referred friend's FIRST product use: `referral_v2.activated_at` was
+  // just stamped (packages/billing/src/referral-v2.ts). To PostHog, for the
+  // Referrals dashboard's activations-per-day tile. `accessTier`: full |
+  // limited at that first use; `referrerId`. A later tier upgrade of the same
+  // referral does not repeat it.
+  FREEBUFF_REFERRAL_ACTIVATED = 'freebuff.referral.activated',
   // The Desktop welcome's "Invite by email": a signed-in account sent its
   // `/?ref=` link to a friend's address, which starts the Resend "Friend
   // invited" sequence (freebuff-web `/api/workspace/referral-invite`).
