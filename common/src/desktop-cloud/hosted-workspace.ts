@@ -126,6 +126,8 @@ export type HostedBrowserLayout = HostedBrowserScope & {
   tabId: string
   /** CSS pixels in the hosted page; null detaches the view without stopping its agent. */
   bounds: { x: number; y: number; width: number; height: number } | null
+  /** Scroll position within a fixed-size preview (CSS pixels). */
+  scroll?: { x: number; y: number }
 }
 
 export type HostedTerminalFrame =
@@ -356,6 +358,7 @@ export type HostedWorkspaceHost = {
       request: HostedBrowserScope & { action: HostedBrowserAction },
     ): Promise<HostedBrowserSnapshot>
     layout(request: HostedBrowserLayout): Promise<void>
+    onPan?(callback: (scope: HostedBrowserScope, tabId: string, delta: { x: number; y: number }) => void): () => void
     onChanged?(
       listener: (
         scope: HostedBrowserScope,
