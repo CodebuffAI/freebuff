@@ -3,6 +3,7 @@ import {
   integrationLogoUrl,
 } from '../desktop-cloud/integrations'
 import { HOUSE_AD_FAVICON_URL } from './freebuff-house-ad'
+import { FREEBUFF_IOS_APP_STORE_URL } from './freebuff-mobile-apps'
 import { FREEBUFF_WEB_URL_PROD } from './hosts'
 import { houseCampaignSourceId } from './house-campaign-clone'
 
@@ -38,11 +39,14 @@ export type HouseCampaignGate =
 /**
  * Which inline slots a campaign targets. `all` is every inline catalog slot
  * the house leg may fill; the others subtract the surface the campaign
- * advertises, so nobody is pitched the app they are already in.
+ * advertises, so nobody is pitched the app they are already in. `not_mobile`
+ * leaves out both phone apps' slots: a phone user is never pitched the other
+ * platform's app either.
  */
 export type HouseGrowthTargeting =
   | 'all'
   | 'not_android'
+  | 'not_mobile'
   | 'not_desktop'
   | 'cli_only'
 
@@ -79,11 +83,19 @@ export type HouseGrowthCampaign = {
 /** The Desktop download page (the landing site's Desktop product view). */
 export const HOUSE_DESKTOP_DOWNLOAD_URL = `${FREEBUFF_WEB_URL_PROD}/?product=desktop`
 
-export const HOUSE_ANDROID_PLAY_STORE_URL =
-  'https://play.google.com/store/apps/details?id=com.freebuff.app'
+/**
+ * The phone apps' landing (`freebuff/web/src/app/mobile`): a phone is sent on
+ * to its own store, a computer sees both badges. One destination for both
+ * stores, because a house ad cannot know which phone its reader carries.
+ */
+export const HOUSE_MOBILE_DOWNLOAD_URL = `${FREEBUFF_WEB_URL_PROD}/mobile`
 
-/** The Freebuff iOS app (`com.freebuff.freebuff`) on the App Store. */
-export const HOUSE_IOS_APP_STORE_URL = 'https://apps.apple.com/app/id6808416358'
+/**
+ * The App Store listing, for the one campaign that knows its reader holds an
+ * iPhone (`device: 'ios'`): the same link as every other placement
+ * (`freebuff-mobile-apps.ts`).
+ */
+export const HOUSE_IOS_APP_STORE_URL = FREEBUFF_IOS_APP_STORE_URL
 
 /** One-time actions: one impression a day at most per campaign. */
 const DAILY = { maxImpressions: 1, windowMinutes: 24 * 60 } as const
@@ -216,52 +228,57 @@ const TIPS: readonly HouseAdCreative[] = [
 
 export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
   {
-    id: 'house-growth-android-v1',
-    name: 'Freebuff for Android (house)',
-    // No per-account Android signal exists yet; the Android slots are
-    // excluded instead, so the app is never pitched inside itself.
+    // The phone app: one campaign set for both stores, since a house ad
+    // cannot know which phone its reader carries. The copy names both and
+    // the landing (`/mobile`) sends a phone to its own store and shows a
+    // computer both. Four campaigns on purpose: house campaigns take turns
+    // and share one cap, so a priority gets more turns by having more
+    // campaigns (its own daily cap included), not by new ranking logic.
+    // Ungated: no per-account phone signal exists yet. `not_mobile` keeps it
+    // off the Android slots; the iOS slots never reach the house leg. These
+    // replace the four Android-only campaigns (`REPLACED_HOUSE_CAMPAIGNS` in
+    // the seed pauses those).
+    id: 'house-growth-mobile-v1',
+    name: 'Freebuff for mobile (house)',
     gate: null,
-    targeting: 'not_android',
+    targeting: 'not_mobile',
     frequencyCap: DAILY,
     creatives: [
-      creative('Keep coding from your phone', 'Freebuff for Android: your chats and Cloud projects on the go.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
-      creative('Check on Freebuff from anywhere', 'Follow your Cloud work and reply from the Android app.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Keep coding from your phone', 'Freebuff for iPhone and Android: your chats and Cloud projects on the go.', 'Get the mobile app', HOUSE_MOBILE_DOWNLOAD_URL),
+      creative('Freebuff is now on iPhone and Android', 'Pick up any conversation from your phone.', 'Get the mobile app', HOUSE_MOBILE_DOWNLOAD_URL),
     ],
   },
   {
-    // A second Android campaign on purpose: house campaigns take turns and
-    // share one cap, so a priority gets more turns by having more campaigns
-    // (its own daily cap included), not by new ranking logic.
-    id: 'house-growth-android-2-v1',
-    name: 'Freebuff for Android, second (house)',
+    id: 'house-growth-mobile-2-v1',
+    name: 'Freebuff for mobile, second (house)',
     gate: null,
-    targeting: 'not_android',
+    targeting: 'not_mobile',
     frequencyCap: DAILY,
     creatives: [
-      creative('Control Freebuff Desktop from your phone', 'The Android app reaches your Desktop threads too.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
-      creative('Start a Cloud task from your phone', 'Kick off work on Android and check results later.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Control Freebuff Desktop from your phone', 'The mobile app reaches your Desktop threads too.', 'Get the mobile app', HOUSE_MOBILE_DOWNLOAD_URL),
+      creative('Start a Cloud task from your phone', 'Kick off work on mobile and check results later.', 'Get the mobile app', HOUSE_MOBILE_DOWNLOAD_URL),
     ],
   },
   {
-    id: 'house-growth-android-3-v1',
-    name: 'Freebuff for Android, third (house)',
+    id: 'house-growth-mobile-3-v1',
+    name: 'Freebuff for mobile, third (house)',
     gate: null,
-    targeting: 'not_android',
+    targeting: 'not_mobile',
     frequencyCap: DAILY,
     creatives: [
-      creative('Your Freebuff chats, now on Android', 'Pick up any conversation from your phone.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
-      creative('Reply to Freebuff on the go', 'Answer its questions from Android so work keeps moving.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Your Freebuff chats, in your pocket', 'Free on the App Store and Google Play.', 'Get the mobile app', HOUSE_MOBILE_DOWNLOAD_URL),
+      creative('Reply to Freebuff on the go', 'Answer its questions from your phone so work keeps moving.', 'Get the mobile app', HOUSE_MOBILE_DOWNLOAD_URL),
     ],
   },
   {
-    id: 'house-growth-android-4-v1',
-    name: 'Freebuff for Android, fourth (house)',
+    id: 'house-growth-mobile-4-v1',
+    name: 'Freebuff for mobile, fourth (house)',
     gate: null,
-    targeting: 'not_android',
+    targeting: 'not_mobile',
     frequencyCap: DAILY,
     creatives: [
-      creative('Freebuff fits in your pocket', 'Get the Android app on Google Play.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
-      creative('Step away while Freebuff works', 'Follow along from the Android app.', 'Get the Android app', HOUSE_ANDROID_PLAY_STORE_URL),
+      creative('Freebuff fits in your pocket', 'Get the app for iPhone or Android.', 'Get the mobile app', HOUSE_MOBILE_DOWNLOAD_URL),
+      creative('Step away while Freebuff works', 'Follow along from the mobile app.', 'Get the mobile app', HOUSE_MOBILE_DOWNLOAD_URL),
     ],
   },
   {

@@ -19,6 +19,8 @@ export const productFunnelStageSchema = z.enum([
   'login',
   /** the first-sign-in welcome in the hosted Desktop workspace: shown, copied (the invite link), closed */
   'welcome',
+  /** the phone-app prompt on a return to the workspace after a break: shown, clicked (a store link), closed */
+  'mobile_prompt',
   'browser',
   'context',
   'composer',

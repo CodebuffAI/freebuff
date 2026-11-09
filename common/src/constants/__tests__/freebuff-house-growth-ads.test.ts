@@ -9,6 +9,7 @@ import {
   houseCampaignGateFor,
   integrationSlugForGate,
 } from '../freebuff-house-growth-ads'
+import { FREEBUFF_IOS_APP_STORE_URL } from '../freebuff-mobile-apps'
 import { HOUSE_PRODUCT_CAMPAIGN_IDS } from '../freebuff-house-product-ads'
 
 describe('growth house campaign catalog', () => {
@@ -54,6 +55,48 @@ describe('growth house campaign catalog', () => {
         expect(creative.favicon).toBe(houseCampaignFaviconFor(campaign.id)!)
     }
     expect(houseCampaignFaviconFor('house-growth-desktop-v1')).toBeNull()
+  })
+
+  test('the phone app: four campaigns for both stores, ungated, never inside a phone app', () => {
+    const phone = HOUSE_GROWTH_CAMPAIGNS.filter((c) =>
+      /^house-growth-(mobile|android)/.test(c.id),
+    )
+    expect(phone.map((c) => c.id)).toEqual([
+      'house-growth-mobile-v1',
+      'house-growth-mobile-2-v1',
+      'house-growth-mobile-3-v1',
+      'house-growth-mobile-4-v1',
+    ])
+    for (const campaign of phone) {
+      expect(campaign.gate).toBeNull()
+      expect(campaign.targeting).toBe('not_mobile')
+      for (const creative of campaign.creatives) {
+        // One landing for both stores; the page sends a phone on to its own.
+        expect(creative.url).toBe('https://freebuff.com/mobile')
+        expect(creative.cta).toBe('Get the mobile app')
+        // Copy that names a platform names both: the reader's phone is unknown.
+        const copy = `${creative.title} ${creative.adText}`
+        expect(/android|google play/i.test(copy)).toBe(
+          /iphone|ios|app store/i.test(copy),
+        )
+      }
+    }
+  })
+
+  test('the iOS-browser campaign may name one store: it knows the phone', () => {
+    const ios = HOUSE_GROWTH_CAMPAIGNS.filter((c) =>
+      c.id.startsWith('house-growth-ios'),
+    )
+    expect(ios.map((c) => c.id)).toEqual(['house-growth-ios-v1'])
+    const [campaign] = ios
+    // `device` is what earns the single-platform copy: the house_device
+    // filter shows it to iPhone and iPad browsers alone.
+    expect(campaign!.device).toBe('ios')
+    expect(campaign!.gate).toBeNull()
+    for (const creative of campaign!.creatives) {
+      expect(creative.url).toBe(FREEBUFF_IOS_APP_STORE_URL)
+      expect(creative.cta).toBe('Get the iOS app')
+    }
   })
 
   test('the gate map answers by id and ignores unknown ids', () => {
