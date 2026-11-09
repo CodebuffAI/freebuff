@@ -348,10 +348,14 @@ export const deviceHarnessPage = z
   })
   .strict()
 
-/** How long the device lets one native CLI turn run before it stops it. */
-export const DEVICE_HARNESS_TURN_LIMIT_MS = 60 * 60_000
-/** Journal `error` text when a native turn reaches `DEVICE_HARNESS_TURN_LIMIT_MS`. */
+/**
+ * The error a Freebuff turn on a computer fails with at its cap (web turn-limit.ts).
+ * A native Claude Code or Codex turn has no cap since 2026-11-08.
+ */
 export const DEVICE_HARNESS_TIME_LIMIT_MESSAGE =
+  'This turn reached the 120-minute limit for a turn running on your computer. Completed steps are saved; send a message to continue.'
+/** Journal `error` text Desktop builds from before 2026-11-08 write when a native turn reaches their 60-minute cap. */
+const LEGACY_DEVICE_HARNESS_TIME_LIMIT_MESSAGE =
   'This turn reached the 60-minute limit for a turn running on your computer. Completed steps are saved; send a message to continue.'
 /** Journal `error` text when the native turn was stopped (`harness_stop`) before it finished. */
 export const DEVICE_HARNESS_STOPPED_MESSAGE =
@@ -407,6 +411,7 @@ export function deviceHarnessFailureMessage(
 ): string | null {
   if (
     message === DEVICE_HARNESS_TIME_LIMIT_MESSAGE ||
+    message === LEGACY_DEVICE_HARNESS_TIME_LIMIT_MESSAGE ||
     message === DEVICE_HARNESS_STOPPED_MESSAGE
   )
     return message
