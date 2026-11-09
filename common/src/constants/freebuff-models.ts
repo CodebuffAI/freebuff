@@ -3575,12 +3575,15 @@ export function freebuffWithdrawnModelMessage(id: string): string {
  *  sentence released clients build around `availableHours` — "<model> isn't
  *  available right now (…)". Those binaries predate the `withdrawn` flag and
  *  render that field verbatim, so this is the only wording they can be told a
- *  withdrawal in. */
+ *  withdrawal in. A withdrawn row is gone for every account, so the sentence
+ *  says so: until 2026-11-09 it read "no longer offered in free mode", which a
+ *  subscriber refused on DeepSeek V4.1 Flash Fast the morning it retired took
+ *  to mean their plan no longer covered it. */
 export function freebuffWithdrawnModelAvailabilityLabel(): string {
   const replacement =
     SUPPORTED_FREEBUFF_MODELS.find((m) => m.id === DEFAULT_FREEBUFF_MODEL_ID)
       ?.displayName ?? DEFAULT_FREEBUFF_MODEL_ID
-  return `no longer offered in free mode — we recommend ${replacement}`
+  return `no longer offered in Freebuff, on any plan — we recommend ${replacement}`
 }
 
 /**

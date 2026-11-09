@@ -62,6 +62,7 @@ import {
   SUPPORTED_FREEBUFF_MODELS,
   FREEBUFF_WEB_PREMIUM_MODEL_IDS,
   canFreebuffModelSpawnGeminiThinker,
+  freebuffWithdrawnModelAvailabilityLabel,
   freebuffWithdrawnModelMessage,
   getFreebuffDeploymentAvailabilityLabel,
   getFreebuffModel,
@@ -1216,6 +1217,13 @@ describe('freebuff model availability', () => {
     expect(freebuffWithdrawnModelMessage(MINIMAX_M3_MODEL_ID)).toContain(
       'DeepSeek V4.1 Flash',
     )
+    // The words a released client renders verbatim. A withdrawn row is gone
+    // for every account, paid or not: "free mode" read to a subscriber as
+    // their plan no longer covering it (2026-11-09).
+    expect(freebuffWithdrawnModelAvailabilityLabel()).toStartWith(
+      'no longer offered in Freebuff, on any plan — we recommend DeepSeek V4.1 Flash',
+    )
+    expect(freebuffWithdrawnModelAvailabilityLabel()).not.toContain('free mode')
 
     // The AGENT door stays open, and that is not an oversight. Withdrawal is
     // enforced at admission, so no NEW session can name the model. Sessions
