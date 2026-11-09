@@ -128,6 +128,8 @@ export type HostedBrowserLayout = HostedBrowserScope & {
   bounds: { x: number; y: number; width: number; height: number } | null
   /** Scroll position within a fixed-size preview (CSS pixels). */
   scroll?: { x: number; y: number }
+  /** Keep a still image under a web menu while the native view is detached. */
+  occluded?: boolean
 }
 
 export type HostedTerminalFrame =
@@ -357,7 +359,7 @@ export type HostedWorkspaceHost = {
     action(
       request: HostedBrowserScope & { action: HostedBrowserAction },
     ): Promise<HostedBrowserSnapshot>
-    layout(request: HostedBrowserLayout): Promise<void>
+    layout(request: HostedBrowserLayout): Promise<void | { image: string }>
     onPan?(callback: (scope: HostedBrowserScope, tabId: string, delta: { x: number; y: number }) => void): () => void
     onChanged?(
       listener: (
