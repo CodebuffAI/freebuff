@@ -10,6 +10,7 @@ import type {
 } from 'child_process'
 import type { Readable } from 'stream'
 
+import { COMMAND_TIMEOUT_HINT } from '../../../common/src/tools/params/tool/run-terminal-command'
 import { shellMismatchHint } from '../../../common/src/util/shell-mismatch-hint'
 import { stripColors } from '../../../common/src/util/string'
 import { getSystemProcessEnv } from '../env'
@@ -569,7 +570,9 @@ export function runTerminalCommand({
           signal?.removeEventListener('abort', onAbort)
           killChildProcess()
           reject(
-            new Error(`Command timed out after ${timeout_seconds} seconds`),
+            new Error(
+              `Command timed out after ${timeout_seconds} seconds. ${COMMAND_TIMEOUT_HINT}`,
+            ),
           )
         }
       }, timeout_seconds * 1000)

@@ -194,6 +194,21 @@ function summarizeMissingReplacementFields(
   ].join('\n')
 }
 
+/**
+ * `replacements` that arrived as a string even the JSON repairs could not parse (~2k calls/day,
+ * Nov 2026): a quote in the code left unescaped, which some serving lanes hand over as a string.
+ * Without this the model reads only "expected object, received string".
+ */
+function unparsedReplacementsSummary(
+  toolName: string,
+  input: unknown,
+): string | undefined {
+  if (toolName !== 'str_replace' && toolName !== 'propose_str_replace') return
+  const replacements = (input as { replacements?: unknown } | null)?.replacements
+  if (typeof replacements !== 'string') return
+  return '`replacements` arrived as text that is not valid JSON, usually because a double quote inside the code was not escaped. Send `replacements` as an array of { "oldString", "newString" } objects, and escape every " inside the code as \\".'
+}
+
 function getToolValidationHint(toolName: string): string | undefined {
   if (toolName === 'str_replace' || toolName === 'propose_str_replace') {
     return 'Expected shape: { "path": string, "replacements": [{ "oldString": string, "newString": string, "allowMultiple"?: boolean }] }.'
@@ -202,6 +217,15 @@ function getToolValidationHint(toolName: string): string | undefined {
     return 'Expected shape: { "path": string, "content": string, "instructions"?: string }. Quote string values and escape newlines/quotes inside content.'
   }
   return undefined
+}
+
+/**
+ * A tool this agent does not have right now. Real tools drop out mid-thread too: plan mode, or the
+ * user's computer going offline in a hosted chat, narrows the list (Nov 2026: ~1.4k calls/day to
+ * `run_terminal_command`, `write_file`, `str_replace`), so say why rather than only "use listed tools".
+ */
+function unavailableToolMessage(toolName: string): string {
+  return `Tool \`${toolName}\` is not currently available. The tools you can use can change during a conversation (plan mode, or the user's computer going offline, removes some), so use only the tools in your latest instructions. If the one you need is gone, tell the user what you would do with it instead of calling it again.`
 }
 
 export function parseRawToolCall<T extends ToolName = ToolName>(params: {
@@ -250,10 +274,9 @@ export function parseRawToolCall<T extends ToolName = ToolName>(params: {
 
   if (!result.success) {
     const hint = getToolValidationHint(toolName)
-    const summary = summarizeMissingReplacementFields(
-      toolName,
-      result.error.issues,
-    )
+    const summary =
+      unparsedReplacementsSummary(toolName, processedParameters.input) ??
+      summarizeMissingReplacementFields(toolName, result.error.issues)
     const validationDetails = JSON.stringify(result.error.issues, null, 2)
     return {
       toolName,
@@ -371,7 +394,7 @@ export async function executeToolCall<T extends ToolName>(
     // The stream parser will convert this to a user message for proper API compliance
     await onResponseChunk({
       type: 'error',
-      message: `Tool \`${toolName}\` is not currently available. Make sure to only use tools provided at the start of the conversation AND that you most recently have permission to use.`,
+      message: unavailableToolMessage(toolName),
     })
     return previousToolCallFinished
   }
@@ -775,7 +798,7 @@ export async function executeCustomToolCall(
     // The stream parser will convert this to a user message for proper API compliance
     await onResponseChunk({
       type: 'error',
-      message: `Tool \`${toolName}\` is not currently available. Make sure to only use tools listed in the system instructions.`,
+      message: unavailableToolMessage(toolName),
     })
     return previousToolCallFinished
   }

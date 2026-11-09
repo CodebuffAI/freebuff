@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import { applyPatchParams } from '../params/tool/apply-patch'
+import { renderUIParams } from '../params/tool/render-ui'
 import { strReplaceParams } from '../params/tool/str-replace'
 import { webSearchParams } from '../params/tool/web-search'
 import { writeFileParams } from '../params/tool/write-file'
@@ -147,4 +148,11 @@ test('write_file reads `contents` or `_content` as `content`', () => {
       path: 'a.py',
       content: 'x = 1\n',
     })
+})
+
+test('render_ui reads a widget sent as a JSON string', () => {
+  const widget = { type: 'button', text: 'Open docs', link: 'https://example.com' }
+  expect(
+    renderUIParams.inputSchema.parse({ widget: JSON.stringify(widget) }).widget,
+  ).toMatchObject(widget)
 })

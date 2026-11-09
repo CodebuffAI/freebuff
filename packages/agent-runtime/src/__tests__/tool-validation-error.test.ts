@@ -270,6 +270,23 @@ describe('tool validation error handling', () => {
     }
   })
 
+  it('says replacements arrived as unparseable text, and how to send them', () => {
+    const result = parseRawToolCall({
+      rawToolCall: {
+        toolName: 'str_replace',
+        toolCallId: 'string-replacements',
+        input: {
+          path: 'a.tsx',
+          // Two slips no repair can fix together: a cut string and a stray quote.
+          replacements: '[{"oldString": "<div className="a">", "newString": "x',
+        },
+      },
+    })
+    expect('error' in result && result.error).toContain(
+      '`replacements` arrived as text that is not valid JSON',
+    )
+  })
+
   it('should tell the model a cut-off write was not applied', () => {
     const result = parseRawToolCall({
       rawToolCall: {

@@ -27,6 +27,11 @@ import type { $ToolParams } from '../../constants'
 export const MAX_TERMINAL_TIMEOUT_SECONDS = 600
 export const MAX_TERMINAL_TIMEOUT_MINUTES = MAX_TERMINAL_TIMEOUT_SECONDS / 60
 
+/** Ends every SYNC timeout message. Without it the model mostly re-ran the command and waited
+ *  again (36% of hosted timeouts, Nov 2026); with it, more moved the work to the background. */
+export const COMMAND_TIMEOUT_HINT =
+  'For long-running work, run it with process_type BACKGROUND, redirecting its output to a log, then read the log.'
+
 /** Clamp a model-supplied timeout, preserving the -1 "no timeout" sentinel and
  *  leaving an absent value to the schema default. */
 export function clampTerminalTimeoutSeconds(
