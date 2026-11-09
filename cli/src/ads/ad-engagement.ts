@@ -1,6 +1,6 @@
 /**
  * Per-impression engagement accounting for the CLI's ad cards (COD-757): the
- * terminal port of Desktop's `freebuff-desktop/src/ui/chrome/ad-engagement.ts`.
+ * terminal port of the engagement registry Desktop's retired chat UI used.
  *
  * One `AdEngagement` record per `impUrl`, plus an optional post-click-only
  * record the server merges into it. TRAINING FEATURES ONLY: every value is
