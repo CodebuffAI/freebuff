@@ -54,6 +54,14 @@ This exists because every check bun gives you is blind to the failure mode that 
 
 **Never hand a bare postgres.js query to `expect(...).rejects`.** A query is lazy: it runs only when something calls its `.then()`, and bun 1.3.14's `.rejects` never does, so the test waits forever. The per-test timeout does not fire either, so the whole job runs until its 15-minute step timeout. On 2026-09-30, `region-verifier-runs.integration.test.ts` hung `test-integration-packages/internal` this way on every PR until #4595. Await the query inside a function and assert on what it throws (see that test's `rejects` helper), or use ``expect((async () => await client`...`)()).rejects``.
 
+## Verifying a user-facing flow end to end: the growth lab
+
+When a unit test or the browser preview cannot show a change — a complex Desktop
+change, signup or onboarding, a referral or experiment arm, a country's tier, a real
+turn — run it in the growth lab (`bun lab`, [`growth-lab.md`](./growth-lab.md)): a
+private stack from your checkout where personas sign up as brand-new users and
+screenshots and video come back as proof.
+
 ## Cloud Agent smoke test (no credentials)
 
 A Cloud Agent — or any checkout without Infisical — can confirm the workspace can run a package-local unit test from the placeholder fixture alone. This is one file in `@codebuff/internal`. A pass does not validate the rest of the application, CI, or production runtime.
