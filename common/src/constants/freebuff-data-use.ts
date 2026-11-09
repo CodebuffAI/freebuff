@@ -5,7 +5,7 @@ export const FREEBUFF_POLICY_METADATA = {
   version: '2026-11-12',
   effectiveDate: POLICY_EFFECTIVE_DATE,
   lastUpdated: 'October 13, 2026',
-  privacyPolicyLastUpdated: 'October 18, 2026',
+  privacyPolicyLastUpdated: 'November 8, 2026',
 } as const
 
 export const FREEBUFF_PRIVACY_POLICY_URL = 'https://freebuff.com/privacy-policy'
