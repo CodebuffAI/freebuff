@@ -32,18 +32,20 @@ const none = { premium: false, locked: false, price: undefined }
 describe('freebuffPickerPlacement', () => {
   test('literal ids are the catalog constants', () => {
     const at = (id: string) => freebuffPickerPlacement([id], none)
-    // Standard matches the limited layout (2026-11-03): Nemotron, Glyph,
-    // Solar Pro 4 and Solar Mini 4 in view, MiMo v2.6 Flash Slow under More.
-    const standard = ['m-ddc687c50f', 'm-02244092cb', FREEBUFF_SOLAR_PRO_4_MODEL_ID, FREEBUFF_SOLAR_MINI_4_MODEL_ID]
+    // Standard matches the limited layout (2026-11-03): DeepSeek Slow (the
+    // MiMo Slow row, first from 2026-11-08; under More before), Nemotron,
+    // Glyph, Solar Pro 4 and Solar Mini 4, all in view.
+    const standard = ['m-61c26317cc', 'm-ddc687c50f', 'm-02244092cb', FREEBUFF_SOLAR_PRO_4_MODEL_ID, FREEBUFF_SOLAR_MINI_4_MODEL_ID]
     for (const id of standard)
       expect(at(id)).toEqual({ section: 'standard', order: expect.any(Number) })
-    expect(at('m-61c26317cc')).toEqual({ section: 'standard', order: 20, more: true })
-    const standardOrders = [...standard, 'm-61c26317cc'].map((id) => at(id).order)
-    expect(standardOrders).toEqual([1, 5, 10, 15, 20])
-    // DeepSeek V4.1 Flash leads Premium as its pick since 2026-10-14.
+    expect(at('m-61c26317cc')).toEqual({ section: 'standard', order: -1 })
+    const standardOrders = standard.map((id) => at(id).order)
+    expect(standardOrders).toEqual([-1, 1, 5, 10, 15])
+    // DeepSeek V4.1 Flash, shown as DeepSeek Fast (2026-11-08), leads Premium
+    // as its pick since 2026-10-14.
     expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)).toEqual({ section: 'premium', order: 5, recommended: true })
-    // In view: Flash, then DeepSeek V4.1 Flash Slow and Muse Spark 1.3; GLM
-    // 5.3 Flash and MiMo v2.6 Flash Fast under More.
+    // In view: DeepSeek Fast, then DeepSeek (Flash Slow) and Muse Spark 1.3;
+    // GLM 5.3 Flash and MiMo v2.6 Flash Fast under More.
     expect(at('m-8db1ccbba6')).toEqual({ section: 'premium', order: expect.any(Number) })
     const premium = [
       FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,

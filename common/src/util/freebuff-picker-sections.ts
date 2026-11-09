@@ -94,19 +94,20 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     // Standard, last in the picker: the same rows in the same places as the
     // limited layout (default-config.ts's `LIMITED_LAYOUT`), so every viewer
     // sees one Standard set (product, 2026-11-03, Victor).
+    // DeepSeek Slow (the MiMo Slow row) first (product, 2026-11-08, Victor).
+    'm-61c26317cc': { section: 'standard', order: -1 }, // DeepSeek Slow, 5 (new, promotional)
     'm-0921d81ce7': { section: 'standard', order: 0 }, // Crouton Alpha, 0 (promotional)
-    'm-ddc687c50f': { section: 'standard', order: 1 }, // Nemotron 3.5 Lightning, 5
-    'm-02244092cb': { section: 'standard', order: 5 }, // Glyph Cluster, 5
+    'm-ddc687c50f': { section: 'standard', order: 1 }, // Nemotron 3.5 Lightning, 0
+    'm-02244092cb': { section: 'standard', order: 5 }, // Glyph Cluster, 0
     'upstage/solar-pro4': { section: 'standard', order: 10 },
     'upstage/solar-mini4': { section: 'standard', order: 15 },
-    'm-61c26317cc': { section: 'standard', order: 20, more: true }, // MiMo v2.6 Flash Slow, 5
     // (MiniMax M3.1 Flash, 'm-b2a427415d', retired 2026-10-24, has no place.)
     'm-916b95b337': { section: 'standard', order: 40, more: true }, // Ling 3.1 Flash
     'm-a273b5e513': { section: 'standard', order: 50, more: true }, // Laguna S 2.1
     // Premium: DeepSeek V4.1 Flash pinned first as the section's pick and the
     // full-access recommendation (on Pareto, our cheapest Flash-class lane).
-    'deepseek/deepseek-v4-flash': { section: 'premium', order: 5, recommended: true }, // V4.1 Flash, 15
-    'm-8db1ccbba6': { section: 'premium', order: 10 }, // DeepSeek V4.1 Flash Slow, 10
+    'deepseek/deepseek-v4-flash': { section: 'premium', order: 5, recommended: true }, // DeepSeek Fast, 15
+    'm-8db1ccbba6': { section: 'premium', order: 10 }, // DeepSeek, 10, 80 tokens/s
     // Muse Spark 1.3 moved here from Powerful (2026-10-13). Placement only:
     // it is plan-only at limited access.
     'meta/muse-spark-1.3-contributor': { section: 'premium', order: 20 }, // 15
