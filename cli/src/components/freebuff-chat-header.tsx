@@ -130,6 +130,14 @@ export function FreebuffChatHeader({
             {`${formatHours(freebucks.daily.remaining)}/${formatHours(freebucks.daily.limit)} hours remaining`}
           </text>
         )}
+        {/* The server's reason the pool is smaller than the account's own
+            (a device's shared allowance, the VPN pool). Without it a shared
+            pool reads "0/0 hours remaining" and looks like a broken account. */}
+        {freebucks && !dailyMeterQuiet(freebucks) && freebucks.daily.note && (
+          <text style={{ fg: theme.muted, wrapMode: 'word' }}>
+            {freebucks.daily.note}
+          </text>
+        )}
         {freebucks === null && (
           <text style={{ fg: theme.secondary }}>Balance unavailable</text>
         )}

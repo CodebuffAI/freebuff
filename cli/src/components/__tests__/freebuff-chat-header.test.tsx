@@ -3,6 +3,7 @@ import { createTestRenderer } from '@opentui/core/testing'
 import { createRoot, flushSync } from '@opentui/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { freebucksFixture } from '@codebuff/common/testing/freebuff'
+import { FREEBUCKS_SHARED_DEVICE_NOTE } from '@codebuff/common/util/freebuff-hours'
 import { FreebuffChatHeader } from '../freebuff-chat-header'
 import { initializeThemeStore } from '../../hooks/use-theme'
 import {
@@ -167,4 +168,47 @@ test("the panel reports the ended hour's refund, zero included", async () => {
   expect(await show({ lastRefund: 10 })).toContain('2 hours of balance returned')
   expect(await show({ refundPending: true })).toContain('Refund settling')
   expect(await show({ lastRefund: null })).not.toContain('returned')
+})
+
+test("the panel says why the daily pool is smaller than the account's own", async () => {
+  // A new account on a device whose other accounts had spent the shared
+  // allowance saw only "0/0 hours remaining" and reported it as broken.
+  const token = spyOn(auth, 'getAuthToken').mockReturnValue(undefined)
+  const setup = await createTestRenderer({ width: 130, height: 32 })
+  const root = createRoot(setup.renderer)
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  cleanup = () => {
+    flushSync(() => root.unmount())
+    queries.clear()
+    setup.renderer.destroy()
+    token.mockRestore()
+  }
+  const show = async (note?: string) => {
+    const freebucks = freebucksFixture(0)
+    freebucks.daily = { ...freebucks.daily, limit: 0, spent: 0, note }
+    flushSync(() =>
+      root.render(
+        <QueryClientProvider client={queries}>
+          <FreebuffChatHeader
+            projectRoot="/tmp/project"
+            session={{ status: 'none', accessTier: 'limited', freebucks }}
+          />
+        </QueryClientProvider>,
+      ),
+    )
+    await setup.renderOnce()
+    return setup.captureCharFrame()
+  }
+
+  const shared = await show(FREEBUCKS_SHARED_DEVICE_NOTE)
+  expect(shared).toContain('0/0 hours remaining')
+  expect(shared).toContain(FREEBUCKS_SHARED_DEVICE_NOTE)
+  const lines = shared.split('\n')
+  expect(
+    lines.findIndex((line) => line.includes(FREEBUCKS_SHARED_DEVICE_NOTE)),
+  ).toBe(lines.findIndex((line) => line.includes('hours remaining')) + 1)
+
+  expect(await show()).not.toContain('share one daily allowance')
 })
