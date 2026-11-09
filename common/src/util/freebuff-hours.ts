@@ -21,7 +21,7 @@ export const HOURS_LABEL = 'Hours'
  * a balance, an allowance or a price, so a user who knew Freebucks learns what
  * changed where they look. Every surface uses this exact sentence.
  */
-export const HOURS_RELABEL_NOTE = `Balances now read in hours instead of Freebucks: 1 hour = ${FREEBUCKS_PER_HOUR} Freebucks, an hour on DeepSeek Slow. Nothing was taken from your balance, and a 3x model uses 3 hours per session hour.`
+export const HOURS_RELABEL_NOTE = `Balances now read in hours instead of Freebucks: 1 hour = ${FREEBUCKS_PER_HOUR} Freebucks, an hour on DeepSeek V4.1 Flash Slow. Nothing was taken from your balance, and a 3x model uses 3 hours per session hour.`
 
 /** Freebucks as hours, unrounded. */
 export function freebucksToHours(freebucks: number): number {
