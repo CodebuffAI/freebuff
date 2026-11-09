@@ -105,12 +105,13 @@ export function getFreebuffModelAvailabilityNotice(
       // chose — so "try a direct connection" would be advice they cannot
       // take. Name the likely cause instead.
       // In a full-access country, someone who is not on a VPN (or cannot
-      // turn off what flags the line) can confirm the country with a phone
-      // and an ID on Account → Country (docs/freebuff-access-floor.md § Phone
-      // and ID attestation). Elsewhere there is nothing to confirm.
+      // turn off what flags the line) can confirm the country on Account →
+      // Country (docs/freebuff-access-floor.md § Phone and ID attestation);
+      // turning the VPN off comes first, because only that path asks for an
+      // ID. Elsewhere there is nothing to confirm.
       const confirm =
         countryCode && FREE_MODE_ALLOWED_COUNTRIES.has(countryCode)
-          ? `. Not on one? Confirm your country at ${COUNTRY_PAGE}`
+          ? `. Turn it off first. Can't, or not on one? Confirm your country at ${COUNTRY_PAGE}`
           : ''
       if (isResidentialProxyOnly(reason.ipPrivacySignals)) {
         return `This network is listed as a residential proxy, often because of a bandwidth-sharing app on a device here, so some models aren't available on it${
