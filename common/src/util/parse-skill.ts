@@ -128,6 +128,12 @@ const MATTER_OPTIONS = {
  *
  * Empty frontmatter is `null` rather than an empty object: a SKILL.md with no
  * `name` cannot be addressed, so there is nothing for a caller to do with it.
+ *
+ * Line endings are normalised first. gray-matter hands the engine the block
+ * up to the closing `\n---`, so a CRLF file's last line keeps its `\r`, and
+ * `yaml` (unlike js-yaml) keeps that in the value: `name: x\r` fails the name
+ * rule and a quoted last value fails to parse, silently dropping every skill
+ * saved on Windows.
  */
 function parseFrontmatter(content: string): {
   frontmatter: Record<string, unknown>
@@ -135,7 +141,10 @@ function parseFrontmatter(content: string): {
 } | null {
   if (!PLAIN_FRONTMATTER_OPENER.test(content)) return null
   try {
-    const parsed = matter(content, MATTER_OPTIONS)
+    const parsed = matter(
+      content.replace(/^﻿/, '').replace(/\r\n/g, '\n'),
+      MATTER_OPTIONS,
+    )
     if (!parsed.data || Object.keys(parsed.data).length === 0) {
       return null
     }

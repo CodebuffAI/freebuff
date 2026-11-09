@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import matter from 'gray-matter'
 
-import { parseSkillFileContent } from '../parse-skill'
+import { parseSkillFileContent, readSkillDocument } from '../parse-skill'
 
 // AB827V0 #288: skill frontmatter is user-controlled, and gray-matter's own
 // YAML engine is js-yaml 3 (below the GHSA-mh29-5h37-fv8m floor). Frontmatter
@@ -36,6 +36,59 @@ describe('skill frontmatter YAML', () => {
     )
     expect(skill?.name).toBe('demo-skill')
     expect(skill?.description).toBe('Does a thing')
+  })
+
+  // A SKILL.md saved on Windows: gray-matter left the last frontmatter line's
+  // `\r` in the block, so `name: x\r` failed the name rule and the skill was
+  // skipped without a word (Discord #help, 2026-11-08).
+  describe('CRLF and BOM files parse as their LF twins', () => {
+    const lf = (lines: string[]) => [...lines, 'Body', ''].join('\n')
+    const variants = (doc: string) => ({
+      crlf: doc.replace(/\n/g, '\r\n'),
+      'bom + crlf': `﻿${doc.replace(/\n/g, '\r\n')}`,
+      'bom + lf': `﻿${doc}`,
+    })
+    const docs = {
+      'name last': lf(['---', 'description: Does a thing', 'name: demo-skill', '---']),
+      'quoted value last': lf([
+        '---',
+        'name: demo-skill',
+        'description: "Does a thing"',
+        '---',
+      ]),
+      'flag last': lf([
+        '---',
+        'name: demo-skill',
+        'description: Does a thing',
+        'disable-model-invocation: true',
+        '---',
+      ]),
+    }
+    for (const [label, doc] of Object.entries(docs)) {
+      const twin = parseSkillFileContent(doc, {
+        directoryName: 'demo-skill',
+        filePath: '/tmp/demo-skill/SKILL.md',
+      })
+      for (const [variant, content] of Object.entries(variants(doc))) {
+        test(`${label}, ${variant}`, () => {
+          const skill = parseSkillFileContent(content, {
+            directoryName: 'demo-skill',
+            filePath: '/tmp/demo-skill/SKILL.md',
+          })
+          expect(skill?.name).toBe('demo-skill')
+          expect(skill?.description).toBe('Does a thing')
+          expect(skill?.disableModelInvocation).toBe(twin?.disableModelInvocation)
+          // The document itself is kept byte for byte.
+          expect(skill?.content).toBe(content)
+
+          // The Settings upload reads through the same parser.
+          expect(readSkillDocument(content, 'upload')).toMatchObject({
+            skill: { name: 'demo-skill', description: 'Does a thing' },
+            body: 'Body\n',
+          })
+        })
+      }
+    }
   })
 
   // gray-matter's DEFAULT engine (still used by the web docs) calls js-yaml 3's
