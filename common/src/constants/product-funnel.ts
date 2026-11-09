@@ -78,7 +78,18 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
   inline: Object.freeze({ link: 'inline_link', email: 'inline_email' }),
   sidebar: Object.freeze({ link: 'sidebar_link', email: 'sidebar_email' }),
   settings: Object.freeze({ link: 'settings_link', email: 'settings_email' }),
+  /** The one-time "your friend started coding" notice (docs/referrals.md). */
+  friend_joined: Object.freeze({
+    link: 'friend_joined_link',
+    email: 'friend_joined_email',
+  }),
 })
+/**
+ * The inviter's own link in the "friend started coding" lifecycle email
+ * (`freebuff.friend_activated`), which they forward themselves; apart from
+ * the notice's copied link so the two charts separate.
+ */
+export const FRIEND_JOINED_LIFECYCLE_VIA = 'friend_joined_lifecycle'
 export type ReferralInvitePlacement = keyof typeof REFERRAL_INVITE_VIA
 export type ReferralInviteEmailVia =
   | typeof WELCOME_INVITE_VIA.email

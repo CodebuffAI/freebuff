@@ -115,6 +115,7 @@ test('each invite placement names its links; the route accepts only email values
     'inline_email',
     'sidebar_email',
     'settings_email',
+    'friend_joined_email',
   ])
 })
 
