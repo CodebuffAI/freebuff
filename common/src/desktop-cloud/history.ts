@@ -54,6 +54,11 @@ export type CloudHistoryChat = {
   mission?: import('./mission').CloudMission | null
   /** The chat this one was forked from (the sidebar nests it there), or null. Absent from older servers. */
   forkedFrom?: string | null
+  /**
+   * A side chat (`openSideChat`): the chat it was opened beside, or null for an ordinary chat.
+   * Side chats are left out of `listChats`. Absent from older servers.
+   */
+  sideOf?: string | null
   id: string
   projectId: string | null
   title: string
@@ -112,6 +117,16 @@ export type CloudHistoryChatUpdate = {
  * id, minted by the client and reused on a retry so the fork is created once.
  */
 export type CloudHistoryChatFork = { chatId: string }
+/**
+ * Open a side chat beside a chat on the computer it runs on: a fork, read-only and hidden from
+ * chat lists, made from the chat's last saved turn even while a turn runs. Deleting it (or its
+ * parent) discards it. `chatId` is minted by the client and reused on a retry.
+ */
+export type CloudHistorySideChat = { chatId: string }
+/** The ids of the turns a side chat copied from its parent start with this; its own turns' never
+ *  do (they are client-minted UUIDs). Its panel shows only its own. */
+export const SIDE_CHAT_COPIED_RUN_PREFIX = 'side-'
+export const isSideChatCopiedRun = (runId: string) => runId.startsWith(SIDE_CHAT_COPIED_RUN_PREFIX)
 /**
  * Roll a Freebuff chat back to before one of its messages: that run and every later one leave the
  * conversation, and the agent forgets them. Files those turns changed are not restored.
@@ -249,6 +264,8 @@ export function createCloudHistoryClient(
       get<CloudHistoryChat>(`chats/${id(chatId)}`, { signal }),
     forkChat: (chatId: string, fork: CloudHistoryChatFork, signal?: AbortSignal) =>
       get<CloudHistoryChat>(`chats/${id(chatId)}/fork`, { signal }, undefined, fork, undefined, 'POST'),
+    openSideChat: (chatId: string, side: CloudHistorySideChat, signal?: AbortSignal) =>
+      get<CloudHistoryChat>(`chats/${id(chatId)}/side`, { signal }, undefined, side, undefined, 'POST'),
     rollbackChat: (chatId: string, rollback: CloudHistoryChatRollback, signal?: AbortSignal) =>
       get<CloudHistoryChatRolledBack>(`chats/${id(chatId)}/rollback`, { signal }, undefined, rollback, undefined, 'POST'),
     getAttachment: (chatId: string, signal?: AbortSignal) =>

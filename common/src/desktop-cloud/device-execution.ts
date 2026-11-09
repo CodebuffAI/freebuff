@@ -289,6 +289,12 @@ export const deviceHarnessRequest = z.discriminatedUnion('method', [
        * (the schema is strict), never resuming the source's session in two chats.
        */
       forkSession: z.literal(true).optional(),
+      /**
+       * A side chat's turn (history-store.ts `openSideChat`): read-only, with no Freebuff tools,
+       * because its parent's agent is working in the same folder. A Desktop without it refuses
+       * the request (the schema is strict), never running a side chat with write access.
+       */
+      readOnly: z.literal(true).optional(),
       importedHistory: z.string().max(20 * 1024 * 1024).optional(),
       /** Quoted history used only when neither Cloud nor Desktop has a CLI session. */
       initialPrompt: z.string().max(2 * 1024 * 1024).optional(),

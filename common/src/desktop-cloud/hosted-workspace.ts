@@ -258,6 +258,9 @@ export type HostedWorkspaceHost = {
   /** This native build branches a forked chat's Claude Code or Codex session (`forkSession` on
    *  `harness_start`), so the sidebar offers Fork on its chats. Older builds omit it. */
   chatFork?: true
+  /** This native build runs a side chat's turns read-only (`readOnly` on `harness_start`), so the
+   *  chat menu offers Side chat on its chats. Older builds omit it. */
+  sideChat?: true
   files?: import('./hosted-files').HostedFilesHost
   git?: import('./hosted-git').HostedGitHost
   /** Open a project's or chat's folder in an app on this computer. Older builds omit it. */
