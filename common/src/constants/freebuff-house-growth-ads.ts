@@ -51,6 +51,13 @@ export type HouseGrowthCampaign = {
   name: string
   gate: HouseCampaignGate | null
   targeting: HouseGrowthTargeting
+  /**
+   * The viewer's device the campaign requires, read from the request's
+   * User-Agent at serve time (`filters/user/house-device.ts`). Absent serves
+   * on any device. Unlike `targeting`, this is about the person, not the
+   * slot: an App Store link is useless to someone not holding an iPhone.
+   */
+  device?: 'ios'
   /** Per-campaign cap; the shared house caps still apply on top. */
   frequencyCap: { maxImpressions: number; windowMinutes: number }
   /**
@@ -74,6 +81,9 @@ export const HOUSE_DESKTOP_DOWNLOAD_URL = `${FREEBUFF_WEB_URL_PROD}/?product=des
 
 export const HOUSE_ANDROID_PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.freebuff.app'
+
+/** The Freebuff iOS app (`com.freebuff.freebuff`) on the App Store. */
+export const HOUSE_IOS_APP_STORE_URL = 'https://apps.apple.com/app/id6808416358'
 
 /** One-time actions: one impression a day at most per campaign. */
 const DAILY = { maxImpressions: 1, windowMinutes: 24 * 60 } as const
@@ -255,6 +265,22 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     ],
   },
   {
+    // iPhone and iPad browsers only (`device`): the slots are web, so the
+    // native app is never pitched inside itself. No per-account iOS signal
+    // exists yet, so it is ungated like Android.
+    id: 'house-growth-ios-v1',
+    name: 'Freebuff for iOS (house)',
+    gate: null,
+    targeting: 'not_android',
+    device: 'ios',
+    frequencyCap: DAILY,
+    creatives: [
+      creative('Freebuff is on the App Store', 'Your chats and Cloud projects, now on iPhone and iPad.', 'Get the iOS app', HOUSE_IOS_APP_STORE_URL),
+      creative('Keep coding from your iPhone', 'Follow your Cloud work and reply from the Freebuff app.', 'Get the iOS app', HOUSE_IOS_APP_STORE_URL),
+      creative('Step away while Freebuff works', 'Check on your chats from the iOS app.', 'Get the iOS app', HOUSE_IOS_APP_STORE_URL),
+    ],
+  },
+  {
     // Everyone, at any access tier: Freebuff's free coding is what a friend
     // gets, and inviting three friends who join unlocks custom themes
     // (docs/referrals.md). `/referrals` opens the viewer's own referral page.
@@ -385,6 +411,25 @@ const GATE_BY_ID: ReadonlyMap<string, HouseCampaignGate> = new Map(
 /** The gate a campaign id (or its clone) carries, or null for an ungated or unknown id. */
 export function houseCampaignGateFor(id: string): HouseCampaignGate | null {
   return GATE_BY_ID.get(houseCampaignSourceId(id)) ?? null
+}
+
+const DEVICE_BY_ID: ReadonlyMap<string, 'ios'> = new Map(
+  HOUSE_GROWTH_CAMPAIGNS.flatMap((campaign) =>
+    campaign.device ? [[campaign.id, campaign.device] as const] : [],
+  ),
+)
+
+/** The device a campaign id (or its clone) requires, or null for any device. */
+export function houseCampaignDeviceFor(id: string): 'ios' | null {
+  return DEVICE_BY_ID.get(houseCampaignSourceId(id)) ?? null
+}
+
+/**
+ * An iPhone, iPad or iPod browser. iPadOS Safari in its default desktop mode
+ * reports a Mac User-Agent and is missed: withholding is the safe miss.
+ */
+export function isIosUserAgent(userAgent: string | null | undefined): boolean {
+  return /\b(iPhone|iPad|iPod)\b/.test(userAgent ?? '')
 }
 
 const FAVICON_BY_ID: ReadonlyMap<string, string> = new Map(
