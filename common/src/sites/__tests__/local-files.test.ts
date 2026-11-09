@@ -152,3 +152,75 @@ test('a missing manifest, module or secret file names the relative path tried an
     message: 'Site file not found in this chat’s workspace: deploy.json',
   })
 })
+
+// 2026-11-09: a manifest with an extra top-level `name` key was refused with a
+// fixed message that blamed the entrypoint, so the author kept rewriting a
+// correct entrypoint while production stayed down. Each refusal now names the
+// field that is wrong and never echoes a value from the file.
+test('an invalid deploy manifest names the field that is wrong, not always the entrypoint', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'local-files-manifest-'))
+  roots.push(root)
+  await writeFile(join(root, 'worker.js'), 'export default {}')
+  const valid = {
+    entrypoint: 'index.js',
+    compatibilityDate: '2026-10-01',
+    modules: [{ name: 'index.js', type: 'esm', path: 'worker.js' }],
+  }
+  const refusal = async (manifest: unknown) => {
+    await writeFile(join(root, 'manifest.json'), JSON.stringify(manifest))
+    return bundleSite(root, 'manifest.json').then(
+      () => {
+        throw new Error('expected a refusal')
+      },
+      (error: Error) => error.message,
+    )
+  }
+
+  await writeFile(join(root, 'manifest.json'), JSON.stringify(valid))
+  expect((await bundleSite(root, 'manifest.json')).entrypoint).toBe('index.js')
+
+  const extra = await refusal({ ...valid, name: 'site-secret-slug' })
+  expect(extra).toBe(
+    'Invalid deploy manifest: unknown field "name" (allowed: entrypoint, compatibilityDate, modules, compatibilityFlags, assetsDirectory, spa, runtime, realtime, cache).',
+  )
+  expect(extra).not.toContain('site-secret-slug')
+  expect(extra).not.toContain('entrypoint must match')
+
+  const { compatibilityDate: _, ...undated } = valid
+  expect(await refusal(undated)).toBe(
+    'Invalid deploy manifest: "compatibilityDate" is missing (expected a string).',
+  )
+  expect(await refusal({ ...valid, compatibilityDate: '1 Oct 2026' })).toBe(
+    'Invalid deploy manifest: "compatibilityDate" must be a YYYY-MM-DD date.',
+  )
+  expect(await refusal({ ...valid, modules: 'worker.js' })).toBe(
+    'Invalid deploy manifest: "modules" must be an array.',
+  )
+  expect(
+    await refusal({
+      ...valid,
+      modules: [{ name: 'index.js', type: 'module', path: 'worker.js' }],
+    }),
+  ).toBe(
+    'Invalid deploy manifest: "modules[0].type" must be "esm" or "text" or "wasm".',
+  )
+
+  // The entrypoint wording is kept for the one case it describes.
+  expect(await refusal({ ...valid, entrypoint: 'worker.js' })).toBe(
+    'Invalid deploy manifest: entrypoint must match an ESM module name in modules (the module name, not its local path).',
+  )
+  expect(
+    await refusal({
+      ...valid,
+      modules: [{ name: 'index.js', type: 'text', path: 'worker.js' }],
+    }),
+  ).toContain('entrypoint must match an ESM module name')
+
+  await writeFile(join(root, 'manifest.json'), '{"entrypoint": "secret-value",')
+  const unparsable = await bundleSite(root, 'manifest.json').catch(
+    (error: Error) => error.message,
+  )
+  expect(unparsable).toBe(
+    'Invalid deploy manifest: the file is not valid JSON.',
+  )
+})
