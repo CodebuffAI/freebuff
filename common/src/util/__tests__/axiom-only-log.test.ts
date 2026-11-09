@@ -140,10 +140,9 @@ describe('getAxiomOnlyLogEvent', () => {
     })
   })
 
-  test('ships the new-user ad ramp fields with their types (COD-904)', () => {
+  test('ships the new-user ad ramp fields with their types', () => {
     const fields = {
       new_user_ramp_outcome: 'decided',
-      new_user_ramp_arm: 'ramp',
       session_index: 2,
       new_user_ramp_suppressed: true,
       new_user_ramp_keep_bps: 3333,

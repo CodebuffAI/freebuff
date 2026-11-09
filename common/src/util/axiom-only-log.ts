@@ -863,9 +863,9 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    */
   sponsor_break_cap_status: 'string',
   /**
-   * COD-904, the new-user ad ramp (docs/experiments.md). Present only for an
-   * account enrolled in `new_user_ad_ramp_2026_10` while it is live; absent
-   * on every other completion event. `new_user_ramp_outcome` is `decided`,
+   * The new-user ad ramp (`ad-serving/new-user-ad-ramp.ts`). Present only for
+   * a real account under the ramp's age window; absent on every other
+   * completion event. `new_user_ramp_outcome` is `decided`,
    * or `timeout` / `error` when the decision failed open (then only that
    * field is present, and the request was served as before).
    * `session_index` is the account's lifetime `free_session_admit` count,
@@ -873,7 +873,6 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    * `new_user_signup_day` the Pacific day the account was created.
    */
   new_user_ramp_outcome: 'string',
-  new_user_ramp_arm: 'string',
   session_index: 'number',
   new_user_ramp_suppressed: 'boolean',
   new_user_ramp_keep_bps: 'number',
