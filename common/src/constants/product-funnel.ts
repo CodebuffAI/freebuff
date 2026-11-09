@@ -100,6 +100,16 @@ export const REFERRAL_INVITE_EMAIL_VIA: readonly ReferralInviteEmailVia[] =
  */
 export const OWN_REFERRAL_CODE_PERSON_PROPERTY = 'own_referral_code'
 
+/**
+ * `via` values of links that carry only the account's own `/?ref=` link, with
+ * no email invite behind them, so the invite route never accepts them.
+ * `lifecycle_email`: the Activated sequence's day-7 referral ask
+ * (docs/freebuff-lifecycle-email.md).
+ */
+export const REFERRAL_LINK_ONLY_VIA = Object.freeze({
+  lifecycleEmail: 'lifecycle_email',
+})
+
 /** A placement's invite link: the referral code and the placement's `via`. */
 export function referralInviteUrl(
   origin: string,
