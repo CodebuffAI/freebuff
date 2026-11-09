@@ -52,6 +52,9 @@ export type SignupBlockReason =
   // Another account on this browser or Fingerprint visitor is banned for what
   // it did (`deviceLinkedToEvidenceBan` in @codebuff/auth/signup-gate-server).
   | 'device_linked_to_banned_account'
+  // Not a signup decision: a returning sign-in to an account its owner
+  // deleted (a soft delete: the account is kept, and support can restore it).
+  | 'account_deleted'
 
 /**
  * Deliberately actionable and non-accusatory.
@@ -103,6 +106,8 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
     "In your region, new accounts need an email from a mainstream provider: Gmail, Outlook, iCloud or Yahoo, or a work or school address hosted by Google or Microsoft. Please use one of those, or continue with Google. If you use GitHub, make one of those your primary email in GitHub's settings (Settings → Emails) first.",
   device_linked_to_banned_account:
     "An account that was suspended has used this browser, so new accounts can't be created from it. If that account was yours, you can appeal from its Standing tab after signing in to it. If you think this is a mistake, contact support.",
+  account_deleted:
+    'This account was deleted. To restore it, email support@freebuff.com from its address.',
   github_email_unverified:
     "GitHub sign-in needs a verified email. Verify your email in GitHub's settings (Settings → Emails) and try again, or sign in with Google instead. If your email is already verified, GitHub may be temporarily unreachable; please try again in a few minutes.",
 }
