@@ -62,7 +62,6 @@ import {
   SUPPORTED_FREEBUFF_MODELS,
   FREEBUFF_WEB_PREMIUM_MODEL_IDS,
   canFreebuffModelSpawnGeminiThinker,
-  freebuffAppDefaultModelIds,
   freebuffWithdrawnModelMessage,
   getFreebuffDeploymentAvailabilityLabel,
   getFreebuffModel,
@@ -110,6 +109,7 @@ import {
 } from '../constants/freebuff-models'
 import type { FreebuffModelOption } from '../constants/freebuff-models'
 import { setFreebuffModelPolicyOverlay } from '../constants/freebuff-model-policy-overlay'
+import { FREEBUFF_RETIRED_MODEL_IDS } from '../constants/freebuff-model-retirement-schedule'
 import { minimaxModels } from '../constants/model-config'
 
 const FREEBUFF_KIMI_MODEL_ID = 'moonshotai/kimi-k2.7-code'
@@ -126,8 +126,10 @@ describe('freebuff model availability', () => {
     // The two constants answer different questions: the default is the STARTING
     // pick (leading FREEBUFF_MODELS is the only steer — nothing is badged), the
     // fallback is what is always joinable when the premium pool is spent.
-    expect(DEFAULT_FREEBUFF_MODEL_ID).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
-    expect(FALLBACK_FREEBUFF_MODEL_ID).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    // Both DeepSeek V4.1 Flash since MiMo v2.6 Flash Fast was retired
+    // (product, 2026-11-08, Victor).
+    expect(DEFAULT_FREEBUFF_MODEL_ID).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+    expect(FALLBACK_FREEBUFF_MODEL_ID).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
 
     //
     // THE invariant that moved the default off Flash. A default is what a new
@@ -288,11 +290,11 @@ describe('freebuff model availability', () => {
   })
 
   test('the fallback stays available at every hour, not merely unmetered', () => {
-    // Flash leaving the premium pool makes it eligible for this slot by the
-    // "MUST BE NON-PREMIUM" rule, but it is `off_peak_only`, so it must NOT
-    // take it: a fallback that is shut for ten hours a day is not a fallback.
-    expect(FALLBACK_FREEBUFF_MODEL_ID).not.toBe(
-      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+    // Non-premium is necessary for this slot, not sufficient: a fallback shut
+    // for ten hours a day is not a fallback. Flash took the slot on 2026-11-08
+    // because it is `always` open again, and the fallback must not be retired.
+    expect(FREEBUFF_RETIRED_MODEL_IDS.has(FALLBACK_FREEBUFF_MODEL_ID)).toBe(
+      false,
     )
     const fallback = SUPPORTED_FREEBUFF_MODELS.find(
       (model) => model.id === FALLBACK_FREEBUFF_MODEL_ID,
@@ -301,18 +303,27 @@ describe('freebuff model availability', () => {
     expect(fallback.availability).toBe('always')
   })
 
-  test('MiMo 2.6 Flash LEADS the catalog, and still nothing is badged', () => {
-    // One default at every tier and on every surface as of 2026-09-30 (GLM 5.3
-    // Flash led from 2026-09-05 to then).
+  test('DeepSeek V4.1 Flash LEADS the catalog, and still nothing is badged', () => {
+    // One default at every tier and on every surface as of 2026-11-08 (MiMo
+    // 2.6 Flash led from 2026-09-30, GLM 5.3 Flash from 2026-09-05).
     const all = FREEBUFF_MODELS.map((model) => model.id)
-    expect(all[0]).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
-    expect(DEFAULT_FREEBUFF_MODEL_ID).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
-    expect(DEFAULT_FREEBUFF_WEB_MODEL_ID).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    expect(all[0]).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+    expect(DEFAULT_FREEBUFF_MODEL_ID).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+    expect(DEFAULT_FREEBUFF_WEB_MODEL_ID).toBe(
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+    )
 
     // The properties that make it admissible as a default, asserted rather than
     // trusted — each one is a way the first Enter press could fail.
-    expect(isFreebuffPremiumModelId(FREEBUFF_MIMO_V25_MODEL_ID)).toBe(false)
-    expect(isFreebuffPausedFreeModelId(FREEBUFF_MIMO_V25_MODEL_ID)).toBe(false)
+    expect(isFreebuffPremiumModelId(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)).toBe(
+      false,
+    )
+    expect(
+      isFreebuffPausedFreeModelId(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID),
+    ).toBe(false)
+    expect(
+      FREEBUFF_RETIRED_MODEL_IDS.has(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID),
+    ).toBe(false)
     // STILL NOTHING IS BADGED. Leading the list is the whole recommendation:
     // no ' RECOMMENDED ' badge and no supersedes notice, because a
     // `supersededBy` would rewrite SAVED picks on every load
@@ -581,8 +592,9 @@ describe('freebuff model availability', () => {
     expect(FREEBUFF_MIMO_V25_MODEL_ID).toBe('mimo/mimo-v2.5')
     // Shown as MiMo v2.6 Flash Fast since 2026-10-14, beside MiMo v2.6 Flash Slow.
     expect(row.displayName).toBe('MiMo v2.6 Flash Fast')
-    // Still the unmetered fallback every surface steps down to.
-    expect(FALLBACK_FREEBUFF_MODEL_ID).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    // No longer the fallback (product, 2026-11-08, Victor), ahead of its
+    // retirement.
+    expect(FALLBACK_FREEBUFF_MODEL_ID).not.toBe(FREEBUFF_MIMO_V25_MODEL_ID)
   })
 
   test('MiMo 2.6 Pro is on Luna terms (plan-only at limited access) with a price warning', () => {
@@ -1202,7 +1214,7 @@ describe('freebuff model availability', () => {
     // model is still named TO a user: the pick is gone, so pointing somewhere
     // is the alternative to a dead end.
     expect(freebuffWithdrawnModelMessage(MINIMAX_M3_MODEL_ID)).toContain(
-      'MiMo v2.6 Flash Fast',
+      'DeepSeek V4.1 Flash',
     )
 
     // The AGENT door stays open, and that is not an oversight. Withdrawal is
@@ -1315,21 +1327,25 @@ describe('freebuff model availability', () => {
     expect(completion).toBeLessThan(6.0)
   })
 
-  test('limited access exposes MiMo, GLM 5.3 Flash, Flash and both Solar rows, then the plan rows locked', () => {
+  test('limited access exposes Flash, MiMo, GLM 5.3 Flash and both Solar rows, then the plan rows locked', () => {
     // Two constants since 2026-09-07. The HERO (what the pickers lead with
-    // and recommend) is the same row as the full default: MiMo 2.6 Flash
-    // since 2026-09-30 (GLM 5.3 Flash before). The COERCION TARGET (where an
-    // out-of-tier pick and a substituted session land) stays on DeepSeek V4
-    // Flash, the one row joinable with no meter, no grant and no plan — so a
-    // rollback of the Freebucks audience cannot turn coercion into refusal.
-    expect(LIMITED_FREEBUFF_HERO_MODEL_ID).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    // and recommend) is the same row as the full default: DeepSeek V4.1 Flash
+    // since 2026-11-08 (MiMo 2.6 Flash from 2026-09-30, GLM 5.3 Flash
+    // before). The COERCION TARGET (where an out-of-tier pick and a
+    // substituted session land) is DeepSeek V4 Flash, the one row joinable
+    // with no meter, no grant and no plan — so a rollback of the Freebucks
+    // audience cannot turn coercion into refusal. They name the same row
+    // again, and stay two constants.
+    expect(LIMITED_FREEBUFF_HERO_MODEL_ID).toBe(
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+    )
     expect(LIMITED_FREEBUFF_HERO_MODEL_ID).toBe(DEFAULT_FREEBUFF_MODEL_ID)
     expect(LIMITED_FREEBUFF_MODEL_ID).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     expect(LIMITED_FREEBUFF_MODEL_IDS[0]).toBe(LIMITED_FREEBUFF_HERO_MODEL_ID)
     expect(LIMITED_FREEBUFF_MODEL_IDS).toEqual([
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
       FREEBUFF_MIMO_V25_MODEL_ID,
       FREEBUFF_GLM_V53_FLASH_MODEL_ID,
-      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
       FREEBUFF_SOLAR_MINI_4_MODEL_ID,
       FREEBUFF_SOLAR_PRO_4_MODEL_ID,
     ])
@@ -1409,7 +1425,9 @@ describe('freebuff model availability', () => {
       ),
     ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     expect(LIMITED_FREEBUFF_MODEL_MISMATCH_MESSAGE).toBe(
-      'Limited free access is only available with MiMo v2.6 Flash Fast or GLM 5.3 Flash or DeepSeek V4.1 Flash 10/17 or Solar Mini 4 or Solar Pro 4.',
+      // GLM 5.3 Flash is retired from the catalog, so the message leaves it
+      // out.
+      'Limited free access is only available with DeepSeek V4.1 Flash 10/17 or MiMo v2.6 Flash Fast or Solar Mini 4 or Solar Pro 4.',
     )
     // No row in the tier supersedes another, so no picker may offer a switch
     // that admission would coerce straight back.
@@ -1426,10 +1444,10 @@ describe('freebuff model availability', () => {
     // assertions are what keep the first Enter press joinable at every point
     // in a user's day.
     expect(getRecommendedFreebuffModelId('full')).toBe(
-      FREEBUFF_MIMO_V25_MODEL_ID,
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
     )
     expect(getRecommendedFreebuffModelId(undefined)).toBe(
-      FREEBUFF_MIMO_V25_MODEL_ID,
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
     )
     // THE STEP-DOWN NO LONGER FIRES FOR FULL ACCESS, and that is the point of
     // an unmetered default rather than an oversight. `premiumExhausted` says
@@ -1441,7 +1459,7 @@ describe('freebuff model availability', () => {
     // reverts to a real step-down automatically if a premium default returns.
     expect(
       getRecommendedFreebuffModelId('full', { premiumExhausted: true }),
-    ).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     // What actually has to hold either way: whatever the hero is with the pool
     // spent, it must be joinable on an empty wallet.
     expect(
@@ -1453,7 +1471,7 @@ describe('freebuff model availability', () => {
     // load-bearing one: the hero is the row Enter lands on, so a hero outside
     // the tier's own set is a first keypress that fails admission.
     expect(getRecommendedFreebuffModelId('limited')).toBe(
-      FREEBUFF_MIMO_V25_MODEL_ID,
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
     )
     expect(
       getFreebuffModelsForAccessTier('limited').some(
@@ -1464,52 +1482,18 @@ describe('freebuff model availability', () => {
     // hero anywhere — that tier has no premium pool to spend.
     expect(
       getRecommendedFreebuffModelId('limited', { premiumExhausted: true }),
-    ).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
   })
 
-  test('Desktop and the browser workspace start on Fast off-peak, Flash at peak, MiMo when limited', () => {
-    const weekdayOffPeak = new Date('2026-10-06T15:00:00Z')
-    const weekdayPeak = new Date('2026-10-07T02:00:00Z')
-    const beijingSaturdayPeakHour = new Date('2026-10-10T02:00:00Z')
-    expect(freebuffAppDefaultModelIds('full', weekdayOffPeak)).toEqual([
-      FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
-      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-    ])
-    expect(freebuffAppDefaultModelIds('full', weekdayPeak)).toEqual([
-      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-    ])
-    // DeepSeek's weekend is off-peak at every hour, as Fast's price is.
-    expect(
-      freebuffAppDefaultModelIds('full', beijingSaturdayPeakHour)[0],
-    ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID)
-    // Fast is plan-only at limited access, so an unknown tier never gets it.
-    expect(freebuffAppDefaultModelIds(undefined, weekdayOffPeak)).toEqual([
-      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-    ])
-    expect(freebuffAppDefaultModelIds('limited', weekdayOffPeak)).toEqual([
-      FREEBUFF_MIMO_V25_MODEL_ID,
-    ])
-    for (const tier of ['full', 'limited'] as const)
-      for (const id of freebuffAppDefaultModelIds(tier, weekdayOffPeak))
-        expect(
-          getFreebuffModelsForAccessTier(tier).some((m) => m.id === id),
-        ).toBe(true)
-    expect(
-      getFreebuffModelsForAccessTier('limited').some(
-        (m) => m.id === FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-      ),
-    ).toBe(true)
-  })
-
-  test('the CLI and Cloud defaults are MiMo 2.6 Flash, on two separate constants', () => {
+  test('the CLI and Cloud defaults are DeepSeek V4.1 Flash, on two separate constants', () => {
     // They stay TWO constants because they have diverged before and may again.
-    expect(DEFAULT_FREEBUFF_WEB_MODEL_ID).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
-    expect(DEFAULT_FREEBUFF_MODEL_ID).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    expect(DEFAULT_FREEBUFF_WEB_MODEL_ID).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+    expect(DEFAULT_FREEBUFF_MODEL_ID).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     expect(getRecommendedFreebuffWebModelId('full')).toBe(
-      FREEBUFF_MIMO_V25_MODEL_ID,
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
     )
     expect(getRecommendedFreebuffWebModelId(undefined)).toBe(
-      FREEBUFF_MIMO_V25_MODEL_ID,
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
     )
     // Neither default may be a paused model — that is the pairing that would
     // put every new user on a row the server refuses.
@@ -1540,7 +1524,7 @@ describe('freebuff model availability', () => {
     // premium default does.
     expect(
       getRecommendedFreebuffWebModelId('full', { premiumExhausted: true }),
-    ).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    ).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
     // The property that must hold whatever the hero is: joinable on an empty
     // wallet.
     expect(
@@ -1563,9 +1547,9 @@ describe('freebuff model availability', () => {
         DEFAULT_FREEBUFF_WEB_MODEL_ID,
       ),
     ).toBe(true)
-    // The limited COERCION target is a different row on purpose (the one
-    // joinable off the meter); the limited HERO is this same row.
-    expect(DEFAULT_FREEBUFF_WEB_MODEL_ID).not.toBe(LIMITED_FREEBUFF_MODEL_ID)
+    // The limited COERCION target is its own constant (the row joinable off
+    // the meter); since 2026-11-08 it names this same row, as the hero does.
+    expect(DEFAULT_FREEBUFF_WEB_MODEL_ID).toBe(LIMITED_FREEBUFF_MODEL_ID)
     expect(DEFAULT_FREEBUFF_WEB_MODEL_ID).toBe(LIMITED_FREEBUFF_HERO_MODEL_ID)
     // A limited user must reach it with NO grant and NO plan. This is the real
     // invariant: the hero is the row Enter lands on, so if the only door to it

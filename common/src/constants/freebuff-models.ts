@@ -1,3 +1,4 @@
+import { FREEBUFF_RETIRED_MODEL_IDS as CATALOG_RETIRED_MODEL_IDS } from './freebuff-model-retirement-schedule'
 import {
   addDaysToYmd,
   getUtcForZonedTime,
@@ -1671,6 +1672,8 @@ const MIMO_V25_MODEL = {
   // row's economics or its unmetered/fallback role moved with the name.
   // Shown as "MiMo v2.6 Flash Fast" since 2026-10-14 (product): the full-speed half of
   // the pair with MiMo v2.6 Flash Slow, the same model with a paced hour.
+  // No longer the fallback or a default from 2026-11-08 (product, Victor):
+  // it is to be retired, and FALLBACK_FREEBUFF_MODEL_ID is DeepSeek V4.1 Flash.
   displayName: 'MiMo v2.6 Flash Fast',
   tagline: 'Balanced',
   availability: 'always',
@@ -1809,7 +1812,8 @@ const DEEPSEEK_V4_FLASH_MODEL = {
   // What did NOT move with it, on purpose:
   //  - FALLBACK_FREEBUFF_MODEL_ID stays MiMo. The fallback has to be available
   //    at every hour and Flash is `off_peak_only`; non-premium is necessary for
-  //    that slot, not sufficient.
+  //    that slot, not sufficient. (Flash is `always` again, and took the slot
+  //    on 2026-11-08, ahead of MiMo's retirement.)
   //  - DEFAULT_FREEBUFF_MODEL_ID stays Luna. Which model leads the picker is a
   //    product decision, not a consequence of the quota bucket.
   //  - MIMO_V25_MODEL's supersededBy pointer stays off. Its comment asks for it
@@ -1872,6 +1876,11 @@ const DEEPSEEK_V4_FLASH_MODEL = {
  * direct both read images. Plan-only at limited access, on
  * MiMo 2.6 Pro's terms: open to every full-access account, metered in
  * Freebucks at its own price.
+ *
+ * Retired from the catalog on 2026-11-08 (product, Victor): DeepSeek Fast, the
+ * Flash row above with no speed cap at either tier, replaces it
+ * (FREEBUFF_RETIRED_MODEL_IDS in freebuff-model-retirement-schedule.ts). The
+ * row and its Pareto lane stay so the id is still recognised.
  */
 const DEEPSEEK_V4_FLASH_FAST_MODEL = {
   id: FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
@@ -3268,9 +3277,14 @@ export const FREEBUFF_MODELS = [
   // the only reason this line ever moves. GLM 5.3 Flash led 2026-09-05 to then.
   // The Flash row now sits outside the MiMo UI flag, since the default must be
   // listed; FREEBUFF_ENABLE_MIMO_MODELS_IN_UI gates the Pro row only.
+  //
+  // DEEPSEEK V4.1 FLASH LEADS as of 2026-11-08, with the default, ahead of
+  // MiMo 2.6 Flash's retirement. GLM 5.3 Flash was retired from the catalog
+  // on 11-06 (freebuff-model-retirement-schedule.ts) and stays here so its id
+  // and saved picks are still recognised.
+  DEEPSEEK_V4_FLASH_MODEL,
   MIMO_V25_MODEL,
   GLM_V53_FLASH_MODEL,
-  DEEPSEEK_V4_FLASH_MODEL,
   // FAST MODE beside the row it is a variant of (2026-09-26), behind
   // FREEBUFF_ENABLE_FAST_MODE_IN_UI. Order here only matters
   // off the meter: every picker sorts its rows cheapest first once prices
@@ -3974,8 +3988,8 @@ export type SupportedFreebuffModelId =
 export type FreebuffWebModelId = (typeof FREEBUFF_WEB_ALL_MODELS)[number]['id']
 
 /** A new CLI user's selection until a session response moves it to Balanced,
- *  and the model the picker's "RECOMMENDED" hero opens on; Desktop starts on
- *  freebuffAppDefaultModelIds and falls back to this. DeepSeek V4.1 Flash as of
+ *  and the model the picker's "RECOMMENDED" hero opens on, and Desktop's
+ *  default without a catalog. DeepSeek V4.1 Flash as of
  *  2026-09-02 (unmetered on the Luminal lane; it carries the AI-training
  *  notice, and it is also the limited tier's default). The paragraphs below
  *  were written for the GLM 5.3 Flash default of 2026-08-30 and still hold.
@@ -4014,13 +4028,19 @@ export type FreebuffWebModelId = (typeof FREEBUFF_WEB_ALL_MODELS)[number]['id']
 // FREEBUFF_DEFAULT_MODEL_MIGRATION_ID were deliberately NOT bumped, so no saved
 // GLM pick is rewritten: MiMo is 10 Freebucks an hour to GLM's 5, and moving
 // an inherited GLM pick onto it would silently halve that user's hours.
+//
+// DeepSeek V4.1 Flash (DeepSeek Fast) since 2026-11-08 (product, Victor), ahead
+// of MiMo v2.6 Flash Fast's retirement. The catalog already recommended it at
+// full access; this is the default of a client without a catalog.
 export const DEFAULT_FREEBUFF_MODEL_ID: FreebuffModelId =
-  FREEBUFF_MIMO_V25_MODEL_ID
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
 
 /** The default this one replaced, and the stamp of the one-time move of saved
  *  picks off it (util/freebuff-default-model-migration.ts). Every surface
  *  persists the model a session ran on, so a saved old default is usually
- *  inherited, not chosen. Bump both together at the next flip. */
+ *  inherited, not chosen. Bump both together at the next flip. Not bumped on
+ *  2026-11-08, when the default moved to this same row: a saved MiMo v2.6 Flash
+ *  Fast pick is kept, and moves only when that row is retired. */
 export const PREVIOUS_DEFAULT_FREEBUFF_MODEL_ID: FreebuffModelId =
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
 export const FREEBUFF_DEFAULT_MODEL_MIGRATION_ID = 'glm-5.3-flash-2026-09-05'
@@ -4054,9 +4074,10 @@ export const FREEBUFF_DEFAULT_MODEL_MIGRATION_ID = 'glm-5.3-flash-2026-09-05'
  *  Kept as its own constant from DEFAULT_FREEBUFF_MODEL_ID (CLI/Desktop) so the
  *  browser surfaces can steer independently. They name the same model today and
  *  diverged as recently as 2026-08-04 -> 2026-08-12. */
-// MiMo 2.6 Flash since 2026-09-30, with DEFAULT_FREEBUFF_MODEL_ID.
+// MiMo 2.6 Flash from 2026-09-30, and DeepSeek V4.1 Flash from 2026-11-08,
+// with DEFAULT_FREEBUFF_MODEL_ID.
 export const DEFAULT_FREEBUFF_WEB_MODEL_ID: FreebuffWebModelId =
-  FREEBUFF_MIMO_V25_MODEL_ID
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
 
 /** Premium models the Web/Cloud picker renders small and muted: they are
  *  materially more expensive per token than the recommended default without
@@ -4123,11 +4144,18 @@ export function isFreebuffWebDeemphasizedModelId(
  *  hour Flash became premium: the two edits are one change, and restoring
  *  either alone re-creates the loop.
  *
- *  MiMo 2.5, the cheapest row we serve, which is what the token-heavy Cloud
- *  planner and build paths reading this want. A separate constant from
- *  LIMITED_FREEBUFF_MODEL_ID (the limited hero) on purpose. */
+ *  A separate constant from LIMITED_FREEBUFF_MODEL_ID (the limited coercion
+ *  target) on purpose, though both name DeepSeek V4.1 Flash today.
+ *
+ *  DeepSeek V4.1 Flash (DeepSeek Fast) since 2026-11-08 (product, Victor):
+ *  MiMo v2.6 Flash Fast, the fallback since 2026-08-18, is to be retired, and
+ *  DeepSeek had answered every MiMo request since 11-03. Flash is unmetered by
+ *  the premium pool (`premium: false`) and `always` open, the two things the
+ *  slot needs. It costs more per message than MiMo-on-DeepSeek did (~1,800
+ *  output tokens a message against ~800), which the Cloud planner, title agent
+ *  and context-budget callers reading this now pay. */
 export const FALLBACK_FREEBUFF_MODEL_ID: FreebuffModelId =
-  FREEBUFF_MIMO_V25_MODEL_ID
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
 
 /** The limited tier's hero, and the model an out-of-tier or stale pick is
  *  coerced to. The same row as the full-access default since 2026-09-02. */
@@ -4159,9 +4187,11 @@ export const LIMITED_FREEBUFF_MODEL_ID: FreebuffModelId =
  *  meter is ever rolled back, every picker already repairs a locked hero onto
  *  the next joinable row (the CLI's grid repair, Desktop's `canStart` filter),
  *  and the server coerces onto LIMITED_FREEBUFF_MODEL_ID, never onto this. */
-// MiMo 2.6 Flash since 2026-09-30, with DEFAULT_FREEBUFF_MODEL_ID.
+// MiMo 2.6 Flash from 2026-09-30, and DeepSeek V4.1 Flash from 2026-11-08,
+// with DEFAULT_FREEBUFF_MODEL_ID. The catalog recommends DeepSeek Slow at
+// limited access (default-config.ts); this is the hero of a client without one.
 export const LIMITED_FREEBUFF_HERO_MODEL_ID: FreebuffModelId =
-  FREEBUFF_MIMO_V25_MODEL_ID
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
 /**
  * The limited tier's catalog, hero first — the ONE owner of which models are
  * limited-tier: the web geo-exempt list, the quota pool, and chat's list all
@@ -4187,12 +4217,13 @@ export const LIMITED_FREEBUFF_HERO_MODEL_ID: FreebuffModelId =
 // regional pool, so this widens the catalog without making that tier unmetered.
 // Solar Mini 4 took its place on 2026-09-23, as it did in every picker.
 export const LIMITED_FREEBUFF_MODEL_IDS = [
-  // Hero first (LIMITED_FREEBUFF_HERO_MODEL_ID). MiMo 2.6 Flash since
-  // 2026-09-30 (GLM 5.3 Flash 2026-09-07 to then) — see
-  // LIMITED_FREEBUFF_MODEL_ID for why the coercion target is a different row.
+  // Hero first (LIMITED_FREEBUFF_HERO_MODEL_ID). DeepSeek V4.1 Flash since
+  // 2026-11-08 (MiMo 2.6 Flash 2026-09-30 to then, GLM 5.3 Flash 2026-09-07
+  // to 09-30). GLM is retired from the catalog and stays here only so its id
+  // is still recognised.
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_MIMO_V25_MODEL_ID,
   FREEBUFF_GLM_V53_FLASH_MODEL_ID,
-  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   ...(FREEBUFF_SOLAR_MINI_4_ENTITLEMENT.limitedAccess
     ? [FREEBUFF_SOLAR_MINI_4_ENTITLEMENT.modelId]
     : []),
@@ -4208,9 +4239,13 @@ export const LIMITED_FREEBUFF_MODELS = LIMITED_FREEBUFF_MODEL_IDS.map(
 
 /** The `session_model_mismatch` message for a limited-tier caller naming a
  *  model the tier cannot run; derived so it cannot lag the catalog again. */
-export const LIMITED_FREEBUFF_MODEL_MISMATCH_MESSAGE = `Limited free access is only available with ${LIMITED_FREEBUFF_MODELS.map(
-  (model) => model.displayName,
-).join(' or ')}.`
+// Less the rows the catalog retired for every viewer (GLM 5.3 Flash), which no
+// picker offers.
+export const LIMITED_FREEBUFF_MODEL_MISMATCH_MESSAGE = `Limited free access is only available with ${LIMITED_FREEBUFF_MODELS.filter(
+  (model) => !CATALOG_RETIRED_MODEL_IDS.has(model.id),
+)
+  .map((model) => model.displayName)
+  .join(' or ')}.`
 
 /** Access tier carried in the Freebuff Web Convex JWT. Extends the CLI tier
  *  with 'blocked': the app still loads, but every agent send is rejected
@@ -4449,13 +4484,6 @@ export function isFreebuffProOnlyCatalogModelId(id: string): boolean {
   return FREEBUFF_PRO_ONLY_CATALOG_MODEL_IDS.includes(id)
 }
 
-/** Flash FAST MODE in the plan sets below, on MiMo 2.6 Pro's terms: open at
- *  full access, a plan unlocks it at limited access. Behind the UI switch with
- *  the picker row: a plan cannot sell what no picker lists. */
-const FAST_MODE_PLAN_MODEL_IDS = FREEBUFF_ENABLE_FAST_MODE_IN_UI
-  ? [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]
-  : []
-
 /**
  * Rows an unpaid LIMITED-tier account cannot open.
  *
@@ -4469,7 +4497,8 @@ const FAST_MODE_PLAN_MODEL_IDS = FREEBUFF_ENABLE_FAST_MODE_IN_UI
 export const FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS: readonly string[] =
   Object.freeze([
     FREEBUFF_MIMO_V26_PRO_MODEL_ID,
-    ...FAST_MODE_PLAN_MODEL_IDS,
+    // Flash fast mode sat here from 2026-10-04 until it was retired on
+    // 2026-11-08 (freebuff-model-retirement-schedule.ts).
     // Muse Spark 1.3 (2026-10-09): open to every full-access account, a paid
     // plan at limited access, like Luna and MiMo 2.6 Pro. 1.2 is not listed:
     // it is not offered at limited access at all (not even with a plan), only
@@ -4603,8 +4632,8 @@ export function getFreebuffModelsForAccessTier(
 
 /** The model the CLI/Desktop picker highlights as the "recommended" hero so a
  *  new user can start with one Enter press without scanning the full list. Full
- *  access → DEFAULT_FREEBUFF_MODEL_ID (GPT-5.6 Luna); limited →
- *  LIMITED_FREEBUFF_MODEL_ID (MiMo 2.5). Both names are restated here because
+ *  access → DEFAULT_FREEBUFF_MODEL_ID; limited → LIMITED_FREEBUFF_HERO_MODEL_ID
+ *  (both DeepSeek V4.1 Flash since 2026-11-08). Both names are restated here because
  *  this docblock twice outlived the constants it described — it still named V4
  *  Pro and V4 Flash on 2026-08-24, long after neither was returned.
  *
@@ -4630,25 +4659,6 @@ export function getRecommendedFreebuffModelId(
     return FALLBACK_FREEBUFF_MODEL_ID
   }
   return DEFAULT_FREEBUFF_MODEL_ID
-}
-
-/** The models a new Freebuff Desktop or browser-workspace chat starts on, in
- *  the order to try them (product, 2026-10-06). At full access: DeepSeek V4.1
- *  Flash Fast outside DeepSeek's expensive window, where its price is half,
- *  then DeepSeek V4.1 Flash, which is also the pick inside the window and
- *  when the tier is not known yet. At limited access, where Fast is plan-only:
- *  MiMo 2.6 Flash. The CLI keeps getRecommendedFreebuffModelId. */
-export function freebuffAppDefaultModelIds(
-  accessTier: FreebuffAccessTier | null | undefined,
-  now: Date = new Date(),
-): FreebuffModelId[] {
-  if (accessTier === 'limited') return [LIMITED_FREEBUFF_HERO_MODEL_ID]
-  if (accessTier !== 'full' || isDeepSeekExpensiveWindow(now))
-    return [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]
-  return [
-    FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
-    FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  ]
 }
 
 /** The Web/Cloud counterpart of getRecommendedFreebuffModelId: full access →
@@ -4795,8 +4805,8 @@ export const FREEBUFF_PLAN_METERED_CATALOG_MODEL_IDS: readonly string[] =
     // With Luna: this list is what widens the limited tier for a subscriber,
     // so a plan-only row missing here would be offered and then coerced away.
     FREEBUFF_MIMO_V26_PRO_MODEL_ID,
-    // Flash fast mode, for the same reason as MiMo 2.6 Pro.
-    ...FAST_MODE_PLAN_MODEL_IDS,
+    // Flash fast mode left on 2026-11-08, retired for DeepSeek Fast (the
+    // uncapped Flash row above): a plan cannot sell what no picker lists.
     // Muse Spark 1.3 (2026-09-28): the plans page promises every plan model in
     // every country, so a limited-region subscriber must be able to open it.
     // (1.2 is deliberately absent: it survives only for released binaries at

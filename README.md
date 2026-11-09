@@ -34,9 +34,9 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 
 | Model                       | Access                  | Best for                                                          |
 | --------------------------- | ----------------------- | ----------------------------------------------------------------- |
-| **MiMo v2.6 Flash Fast**    | Full and limited access | The default everywhere; balanced performance with image support   |
+| **DeepSeek V4.1 Flash 10/17** | Full and limited access | The default everywhere; fast coding and tool use |
+| **MiMo v2.6 Flash Fast**    | Full and limited access | Balanced performance with image support; no longer the default |
 | **GLM 5.3 Flash**           | Full and limited access | Deepest reasoning                                                 |
-| **DeepSeek V4.1 Flash 10/17** | Full and limited access | Fast coding and tool use                                          |
 | **DeepSeek V4.1 Flash Fast 10/17** | Full access; paid plans at limited access | Fast mode: the same model on DeepSeek's own API, splitting work across parallel subagents and verifying the result; priced on DeepSeek's peak and off-peak hours |
 | **GPT-6 Luna**              | Full access             | Strong all-around with native images; runs on OpenAI flex capacity |
 | **MiMo 2.6 Pro**            | Full access             | Xiaomi's stronger reasoning model, with image support |

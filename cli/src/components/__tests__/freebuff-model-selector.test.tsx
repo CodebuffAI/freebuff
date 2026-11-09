@@ -585,7 +585,7 @@ describe('FreebuffModelSelector tier layout', () => {
     // in both catalogs restores the intent.
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+      .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
     // Tall enough for the whole limited list, plan rows included (2026-09-30).
     const setup = await renderSelector(80)
 
@@ -778,7 +778,7 @@ describe('FreebuffModelSelector tier layout', () => {
     // Not the hero, so the picker opens expanded.
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+      .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
 
     // Tall enough for Standard, the last section since 2026-10-14.
     const frame = (await renderSelector(80)).captureCharFrame()
@@ -795,13 +795,13 @@ describe('FreebuffModelSelector tier layout', () => {
     })
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+      .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
 
     const frame = (await renderSelector()).captureCharFrame()
     // trimEnd drops the terminal's blank columns to the right of the card, so
     // what's left ends at the card's own right border.
     const heroRow = (
-      frame.split('\n').find((line) => line.includes('› DeepSeek V4.1 Flash')) ??
+      frame.split('\n').find((line) => line.includes('› MiMo v2.6 Flash Fast')) ??
       ''
     ).trimEnd()
 
@@ -1234,10 +1234,11 @@ test('clicking unfunded GLM makes no admission request', async () => {
     freebucks: freebucksFixture(4),
   })
   // A non-hero pick, so the picker opens expanded with GLM on screen. MiMo
-  // 2.6 Flash was that pick until it became the limited hero (2026-09-30).
+  // 2.6 Flash was that pick until it became the limited hero (2026-09-30),
+  // and again since DeepSeek V4.1 Flash took the hero (2026-11-08).
   useFreebuffModelStore
     .getState()
-    .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+    .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
   const requested: string[] = []
   const setup = await renderSelector(40, async (model) => {
     requested.push(model)
@@ -1250,7 +1251,7 @@ test('clicking unfunded GLM makes no admission request', async () => {
   await setup.mockMouse.click(15, y)
   await setup.renderOnce()
   expect(requested).toEqual([])
-  expect(getSelectedFreebuffModel()).toBe(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+  expect(getSelectedFreebuffModel()).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
 })
 
 // Gemini 3.8 Flash is PAID-ONLY on every surface since 2026-09-21, and the
@@ -1307,7 +1308,7 @@ describe('a paid-only row on an account without a plan', () => {
     // pick here until 2026-09-30, is the default now and opens collapsed).
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+      .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
     const requested: string[] = []
     const setup = await renderSelector(40, async (model) => {
       requested.push(model)
@@ -1356,7 +1357,7 @@ describe('a paid-only row on an account without a plan', () => {
       expect(openSpy).toHaveBeenCalledWith('https://freebuff.com/plans')
       expect(requested).toEqual([])
       expect(getSelectedFreebuffModel()).toBe(
-        FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+        FREEBUFF_MIMO_V25_MODEL_ID,
       )
     } finally {
       openSpy.mockRestore()
@@ -1401,7 +1402,7 @@ describe('a row the balance cannot cover', () => {
     // A non-default pick, so the picker opens expanded.
     useFreebuffModelStore
       .getState()
-      .setSelectedModel(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+      .setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
     const requested: string[] = []
     const setup = await renderSelector(40, async (model) => {
       requested.push(model)
@@ -1451,7 +1452,7 @@ describe('a row the balance cannot cover', () => {
       expect(openSpy).toHaveBeenCalledWith('https://freebuff.com/plans')
       expect(requested).toEqual([])
       expect(getSelectedFreebuffModel()).toBe(
-        FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+        FREEBUFF_MIMO_V25_MODEL_ID,
       )
     } finally {
       openSpy.mockRestore()

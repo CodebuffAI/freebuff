@@ -67,6 +67,11 @@ export function freebuffModelScheduledRetired(
  * 2026-11-03. GLM 5.3 Flash followed after its two-step removal above ended.
  * GPT-6 Luna was on the same schedule until it was kept on 2026-11-05.
  *
+ * DeepSeek V4.1 Flash Fast followed on 2026-11-08 (product, Victor), with no
+ * pill first: DeepSeek Fast, the uncapped DeepSeek V4.1 Flash row, replaces
+ * fast mode. MiMo v2.6 Flash Fast is not retired: the server still admits it
+ * for reasons kept out of this public file, and lists it to nobody instead.
+ *
  * The server's default catalog disables these rows (default-config.ts), and a
  * picker drawing the compiled list without a catalog (signed out, or before
  * it loads) leaves them out too. The ids stay recognised, so a saved pick
@@ -78,6 +83,18 @@ export const FREEBUFF_RETIRED_MODEL_IDS: ReadonlySet<string> = new Set([
   'mimo/mimo-v2.6-pro',
   'openai/gpt-6.1-sol',
   'z-ai/glm-5.3-flash',
+  'deepseek/deepseek-v4-flash-fast',
+])
+
+/**
+ * Compiled models still admitted but listed by no picker (product,
+ * 2026-11-08, Victor): MiMo v2.6 Flash Fast, whose Slow row is DeepSeek Slow.
+ * The server catalog sends the row to no viewer (`unlisted`), and the
+ * compiled pickers that draw without a catalog leave it out. A saved pick
+ * still runs on it.
+ */
+export const FREEBUFF_UNLISTED_MODEL_IDS: ReadonlySet<string> = new Set([
+  'mimo/mimo-v2.5',
 ])
 
 /** Sits inside "<model> isn't available right now (…)", the sentence released

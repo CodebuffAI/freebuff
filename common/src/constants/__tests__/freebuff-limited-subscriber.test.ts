@@ -17,7 +17,7 @@ import {
   resolveFreebuffWebModelForLimitedTier,
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_MIMO_V26_PRO_MODEL_ID,
-  FREEBUFF_ENABLE_FAST_MODE_IN_UI,
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
 } from '../freebuff-models'
 import {
   FREEBUFF_SUBSCRIPTION_MODEL_IDS,
@@ -162,9 +162,11 @@ describe('paid plans at limited access', () => {
     // no picker lists it. DeepSeek Flash fast mode joined on 2026-10-05 on
     // MiMo 2.6 Pro's terms, with its picker row behind the UI switch.
     // Gemini 4 Argon joined on 2026-10-13 on Sol's terms. GPT-6.1 Terra
-    // joined on 2026-10-26 on MiMo 2.6 Pro's terms.
-    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(
-      FREEBUFF_ENABLE_FAST_MODE_IN_UI ? 10 : 9,
+    // joined on 2026-10-26 on MiMo 2.6 Pro's terms. Fast mode left on
+    // 2026-11-08, retired for DeepSeek Fast (product, Victor).
+    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).toHaveLength(9)
+    expect(FREEBUFF_SUBSCRIPTION_MODEL_IDS).not.toContain(
+      FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
     )
   })
 

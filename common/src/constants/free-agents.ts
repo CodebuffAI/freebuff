@@ -327,9 +327,8 @@ export const FREEBUFF_BASE3_AGENT_IDS: ReadonlySet<string> = new Set([
  * a few hours and was moved straight off it, because being OUT of that pool is
  * the property this agent is designed around: a planner turn never touches a
  * sandbox, so a premium-pooled planner would let an ordinary user spend their
- * day's sessions without building anything. It tracks FALLBACK_FREEBUFF_MODEL_ID rather than
- * naming a model, so it cannot drift back in the next time a model is
- * re-tiered.
+ * day's sessions without building anything. It tracked FALLBACK_FREEBUFF_MODEL_ID
+ * until 2026-11-08 and is pinned now (CLOUD_MODEL_ID above).
  *
  * With the two variants sharing a model there is nothing to route on, so
  * cloudPlannerAgentIdForModel returns the primary for both — see the guard
@@ -341,14 +340,21 @@ export const FREEBUFF_BASE3_AGENT_IDS: ReadonlySet<string> = new Set([
  * planner admits a free session bound to its model, and a turn resolved to a
  * different model is rejected with session_model_mismatch.
  */
+// Pinned to MiMo v2.6 Flash's id since 2026-11-08 (product, Victor), when
+// FALLBACK_FREEBUFF_MODEL_ID moved to DeepSeek V4.1 Flash: following it would
+// have moved Cloud onto Flash's price (15 vs 10) and onto its AI-training data
+// use. Moving Cloud is a separate decision. MiMo is unlisted but still
+// admitted, and its requests are answered by DeepSeek V4.1 Flash without a
+// training trace (mimo-on-deepseek.ts), so Cloud is unchanged.
+const CLOUD_MODEL_ID = FREEBUFF_MIMO_V25_MODEL_ID
 export const CLOUD_PLANNER_AGENT_ID = 'base2-free-cloud-planner'
-export const CLOUD_PLANNER_MODEL_ID = FALLBACK_FREEBUFF_MODEL_ID
+export const CLOUD_PLANNER_MODEL_ID = CLOUD_MODEL_ID
 export const CLOUD_PLANNER_LIMITED_AGENT_ID = 'base2-free-cloud-planner-limited'
 /** The unlimited model, not LIMITED_FREEBUFF_MODEL_ID: the planner and build
  *  are the token-heavy paths and want the cheapest row (see
  *  CLOUD_BUILD_MODEL_ID). Must be in LIMITED_FREEBUFF_MODEL_IDS, or limited
  *  planner turns fail admission — a test pins that. */
-export const CLOUD_PLANNER_LIMITED_MODEL_ID = FALLBACK_FREEBUFF_MODEL_ID
+export const CLOUD_PLANNER_LIMITED_MODEL_ID = CLOUD_MODEL_ID
 
 /**
  * The model the build runs on after "Start building".
@@ -367,7 +373,7 @@ export const CLOUD_PLANNER_LIMITED_MODEL_ID = FALLBACK_FREEBUFF_MODEL_ID
  * (BlankCloudPlanControls.beginBuild), which is what a model-locked session
  * requires and remains correct whether or not the two models agree.
  */
-export const CLOUD_BUILD_MODEL_ID = FALLBACK_FREEBUFF_MODEL_ID
+export const CLOUD_BUILD_MODEL_ID = CLOUD_MODEL_ID
 
 /** The planner model a given access tier is permitted to run. */
 export function cloudPlannerModelForAccessTier(
