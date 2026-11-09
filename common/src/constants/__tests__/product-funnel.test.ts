@@ -3,9 +3,17 @@ import { AnalyticsEvent } from '../analytics-events'
 import {
   PRODUCT_FUNNEL_EVENT,
   REFERRAL_INVITE_EMAIL_VIA,
+  REFERRAL_INVITE_VIA,
+  REFERRAL_PLACEMENTS,
+  UNMARKED_REFERRAL_PLACEMENT,
+  WELCOME_INVITE_VIA,
+  isKnownReferralVia,
   productFunnelEventSchema,
   referralInviteUrl,
+  referralPlacementFromVia,
   sanitizeProductFunnelCapture,
+  REFERRAL_LINK_ONLY_VIA,
+  FRIEND_JOINED_LIFECYCLE_VIA,
 } from '../product-funnel'
 import { shouldTrackAnalyticsEvent } from '../../util/analytics-sampling'
 
@@ -116,6 +124,47 @@ test('each invite placement names its links; the route accepts only email values
     'sidebar_email',
     'settings_email',
     'friend_joined_email',
+    'settings_earn_email',
+    'earn_email',
+    'appearance_email',
+    'desktop_settings_email',
+    'cli_email',
   ])
 })
 
+test('every placement maps its link and email via back to itself; anything else is the unmarked bucket', () => {
+  expect(REFERRAL_PLACEMENTS).toEqual([
+    'welcome',
+    ...Object.keys(REFERRAL_INVITE_VIA),
+    'lifecycle_email',
+    'friend_joined_lifecycle',
+  ])
+  expect(referralPlacementFromVia(WELCOME_INVITE_VIA.link)).toEqual({
+    placement: 'welcome',
+    method: 'link',
+  })
+  expect(referralPlacementFromVia(WELCOME_INVITE_VIA.email)).toEqual({
+    placement: 'welcome',
+    method: 'email',
+  })
+  for (const [placement, via] of Object.entries(REFERRAL_INVITE_VIA)) {
+    expect(referralPlacementFromVia(via.link)).toEqual({ placement, method: 'link' })
+    expect(referralPlacementFromVia(via.email)).toEqual({ placement, method: 'email' })
+    expect(isKnownReferralVia(via.link)).toBe(true)
+    // The builder's URL carries exactly that via.
+    expect(referralInviteUrl('https://freebuff.com', 'c-1', placement as keyof typeof REFERRAL_INVITE_VIA))
+      .toBe(`https://freebuff.com/?ref=c-1&via=${via.link}`)
+  }
+  // The link-only vias are placements of their own, always a copied link.
+  for (const via of [REFERRAL_LINK_ONLY_VIA.lifecycleEmail, FRIEND_JOINED_LIFECYCLE_VIA]) {
+    expect(referralPlacementFromVia(via)).toEqual({ placement: via, method: 'link' })
+    expect(isKnownReferralVia(via)).toBe(true)
+  }
+  for (const via of [null, undefined, '', 'utm_blob', 'welcome', 42]) {
+    expect(referralPlacementFromVia(via as string | null)).toEqual({
+      placement: UNMARKED_REFERRAL_PLACEMENT,
+      method: null,
+    })
+    expect(isKnownReferralVia(via)).toBe(false)
+  }
+})

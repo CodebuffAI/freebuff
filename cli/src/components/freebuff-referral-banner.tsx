@@ -1,7 +1,12 @@
+import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 import {
   FREEBUFF_EARN_PATH,
   FREEBUFF_EARN_PROMPT_SHORT,
 } from '@codebuff/common/constants/freebuff-earn'
+import {
+  REFERRAL_INVITE_VIA,
+  WELCOME_INVITE_VIA_PARAM,
+} from '@codebuff/common/constants/product-funnel'
 import { TextAttributes } from '@opentui/core'
 import React, { useCallback, useEffect, useState } from 'react'
 
@@ -12,6 +17,7 @@ import { REFERRAL_CLI_DAILY_SESSION_BONUS_CAP } from '@codebuff/common/constants
 import { pluralize } from '@codebuff/common/util/string'
 
 import { useNow } from '../hooks/use-now'
+import { trackEvent } from '../utils/analytics'
 import { useTheme } from '../hooks/use-theme'
 import { LOGIN_WEBSITE_URL } from '../login/constants'
 import { formatFreebuffPremiumResetCountdown } from '../utils/freebuff-premium-reset'
@@ -29,9 +35,13 @@ import type {
  *  bare landing page; the `?ref=` code is still captured into the attribution
  *  cookie there via the root layout's ReferralCodeCapture. When we know the
  *  inviter's name we pass `?referrer=` too so the page greets the friend with
- *  "X invited you to try Freebuff!". */
-function referralLink(code: string, referrerName: string | null): string {
-  const params = new URLSearchParams({ ref: code })
+ *  "X invited you to try Freebuff!". `via=cli_link` names this placement for
+ *  the friend's landing and activation (product-funnel.ts, REFERRAL_INVITE_VIA). */
+export function referralLink(code: string, referrerName: string | null): string {
+  const params = new URLSearchParams({
+    ref: code,
+    [WELCOME_INVITE_VIA_PARAM]: REFERRAL_INVITE_VIA.cli.link,
+  })
   if (referrerName) params.set('referrer', referrerName)
   return `${LOGIN_WEBSITE_URL}/get-started?${params.toString()}`
 }
@@ -239,6 +249,15 @@ export const FreebuffReferralBanner: React.FC<FreebuffReferralBannerProps> = ({
 
   const link = referralLink(referral.code, referral.referrerName)
   const { isCopied, copy } = useCopyToClipboard(link)
+  // The same share event every workspace placement sends (docs/referrals.md),
+  // so the CLI charts beside them on the Referrals dashboard.
+  const copyInvite = useCallback(() => {
+    trackEvent(AnalyticsEvent.FREEBUFF_THEME_REFERRAL_PROMPT, {
+      action: 'copied',
+      placement: 'cli',
+    })
+    copy()
+  }, [copy])
 
   const openDashboard = useCallback(() => {
     void safeOpen(EARN_URL)
@@ -256,7 +275,7 @@ export const FreebuffReferralBanner: React.FC<FreebuffReferralBannerProps> = ({
       <CopyInviteLinkButton
         isCopied={isCopied}
         focused={copyFocused}
-        onCopy={copy}
+        onCopy={copyInvite}
         availableWidth={Math.max(
           0,
           width -

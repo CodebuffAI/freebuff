@@ -83,6 +83,25 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
     link: 'friend_joined_link',
     email: 'friend_joined_email',
   }),
+  /** Settings → Earn → Referrals, the limited-access counterpart of `settings`. */
+  settings_earn: Object.freeze({
+    link: 'settings_earn_link',
+    email: 'settings_earn_email',
+  }),
+  /** The /earn page's Referrals panel. */
+  earn: Object.freeze({ link: 'earn_link', email: 'earn_email' }),
+  /** The theme gate in Appearance settings (hosted workspace and Desktop). */
+  appearance: Object.freeze({
+    link: 'appearance_link',
+    email: 'appearance_email',
+  }),
+  /** The local Desktop shell's Settings → Referrals row. */
+  desktop_settings: Object.freeze({
+    link: 'desktop_settings_link',
+    email: 'desktop_settings_email',
+  }),
+  /** The CLI's referral banner (its link opens /get-started). */
+  cli: Object.freeze({ link: 'cli_link', email: 'cli_email' }),
 })
 /**
  * The inviter's own link in the "friend started coding" lifecycle email
@@ -91,6 +110,7 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
  */
 export const FRIEND_JOINED_LIFECYCLE_VIA = 'friend_joined_lifecycle'
 export type ReferralInvitePlacement = keyof typeof REFERRAL_INVITE_VIA
+
 export type ReferralInviteEmailVia =
   | typeof WELCOME_INVITE_VIA.email
   | (typeof REFERRAL_INVITE_VIA)[ReferralInvitePlacement]['email']
@@ -120,6 +140,72 @@ export const OWN_REFERRAL_CODE_PERSON_PROPERTY = 'own_referral_code'
 export const REFERRAL_LINK_ONLY_VIA = Object.freeze({
   lifecycleEmail: 'lifecycle_email',
 })
+
+/** The Desktop welcome's name as a placement, beside `ReferralInvitePlacement`. */
+export const WELCOME_PLACEMENT = 'welcome'
+/**
+ * Every placement a share can come from, the welcome first: the Referrals
+ * dashboard's shares-per-day series and the activation event's `placement`
+ * values (scripts/posthog-referrals-dashboard.ts).
+ */
+export const REFERRAL_PLACEMENTS: readonly string[] = Object.freeze([
+  WELCOME_PLACEMENT,
+  ...Object.keys(REFERRAL_INVITE_VIA),
+  // Link-only vias: the account forwards its own link, so each is its own
+  // placement (no share event, charted on the activation side alone).
+  REFERRAL_LINK_ONLY_VIA.lifecycleEmail,
+  FRIEND_JOINED_LIFECYCLE_VIA,
+])
+/**
+ * The activation event's `placement` when the referral row carries no `via`:
+ * a bare `ref=` link (shared before 2026-11-08, or from a builder that did
+ * not mark it), a typed code, or an affiliate link.
+ */
+export const UNMARKED_REFERRAL_PLACEMENT = 'plain_link'
+
+const PLACEMENT_BY_VIA: ReadonlyMap<
+  string,
+  { placement: string; method: 'link' | 'email' }
+> = new Map([
+  [WELCOME_INVITE_VIA.link, { placement: WELCOME_PLACEMENT, method: 'link' }],
+  [WELCOME_INVITE_VIA.email, { placement: WELCOME_PLACEMENT, method: 'email' }],
+  ...Object.entries(REFERRAL_INVITE_VIA).flatMap(
+    ([placement, via]): [string, { placement: string; method: 'link' | 'email' }][] => [
+      [via.link, { placement, method: 'link' }],
+      [via.email, { placement, method: 'email' }],
+    ],
+  ),
+  [
+    REFERRAL_LINK_ONLY_VIA.lifecycleEmail,
+    { placement: REFERRAL_LINK_ONLY_VIA.lifecycleEmail, method: 'link' },
+  ],
+  [
+    FRIEND_JOINED_LIFECYCLE_VIA,
+    { placement: FRIEND_JOINED_LIFECYCLE_VIA, method: 'link' },
+  ],
+])
+
+/**
+ * Which placement a stored `via` names, and whether it was a copied link or an
+ * emailed invite, for `freebuff.referral.activated` (referral-v2.ts). A null
+ * or unknown `via` is the unmarked bucket, with no method.
+ */
+export function referralPlacementFromVia(via: string | null | undefined): {
+  placement: string
+  method: 'link' | 'email' | null
+} {
+  return (
+    (via ? PLACEMENT_BY_VIA.get(via) : undefined) ?? {
+      placement: UNMARKED_REFERRAL_PLACEMENT,
+      method: null,
+    }
+  )
+}
+
+/** True for a `via` one of our builders puts on a link or an emailed invite. */
+export function isKnownReferralVia(via: unknown): via is string {
+  return typeof via === 'string' && PLACEMENT_BY_VIA.has(via)
+}
 
 /** A placement's invite link: the referral code and the placement's `via`. */
 export function referralInviteUrl(
