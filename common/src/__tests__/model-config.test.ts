@@ -80,10 +80,10 @@ describe('contextPrunerBudgetForModel', () => {
     }
   })
 
-  test('DeepSeek V4.1 Flash and its fast mode compact at 250k (a 312.5k budget)', () => {
+  test('DeepSeek V4.1 Flash and its fast mode compact at 300k (a 375k budget)', () => {
     for (const model of ['deepseek/deepseek-v4-flash', 'deepseek/deepseek-v4-flash-fast']) {
-      expect(contextPrunerBudgetForModel(model)).toBe(312_500)
-      expect(compactionThreshold(contextPrunerBudgetForModel(model))).toBe(250_000)
+      expect(contextPrunerBudgetForModel(model)).toBe(375_000)
+      expect(compactionThreshold(contextPrunerBudgetForModel(model))).toBe(300_000)
     }
   })
 
