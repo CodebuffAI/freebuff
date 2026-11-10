@@ -178,6 +178,17 @@ export type HostedNativeAgentsRequest = {
   harness?: 'claude-code' | 'codex'
 }
 
+/** A folder Claude Code, Codex or Cursor worked in on this computer, as the page may see it: names
+ * and a window-scoped id, never a path. */
+export type HostedRecentProjectFolder = {
+  id: string
+  name: string
+  /** The containing folder's name, to tell two `web` folders apart. */
+  parentName: string
+  sources: Array<'claude-code' | 'codex' | 'cursor'>
+  lastActiveAt: string | null
+}
+
 /** Folder paths stay in Electron; the hosted form receives only a scoped selection receipt. */
 export type HostedLocalProjectInput = {
   id: string
@@ -381,6 +392,9 @@ export type HostedWorkspaceHost = {
     /** Removing a project: this computer lets go of its folder for it, if it has one. `shared`:
      * the folder had joined another computer's project, which stays (older builds omit it). */
     forget?(input: { projectId: string }): Promise<{ shared: boolean } | null>
+    /** Newest first, at most eight; older builds omit both. Opening one enrolls it like the picker. */
+    recentFolders?(): Promise<HostedRecentProjectFolder[]>
+    openRecentFolder?(id: string): Promise<HostedWorkspaceConnection | null>
   }
   openLocalProject(): Promise<HostedWorkspaceConnection | null>
   disconnect(sessionId: string): Promise<void>
