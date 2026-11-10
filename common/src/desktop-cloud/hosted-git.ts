@@ -16,6 +16,12 @@ export interface GitSummary {
   pullRequest: PullRequestStatus | null
   /** The open PR no longer merges cleanly. */
   conflict: boolean
+  /**
+   * Where this chat's PR would be on github.com: its `origin` and the branch it owns. Lets the
+   * browser read the PR with the account's GitHub connection when `gh` cannot answer (not installed,
+   * signed out, another account). Null for a shared checkout; absent from Desktop before 2026-11.
+   */
+  github?: { repository: string; branch: string } | null
 }
 
 /** Git reads are scoped to the native chat, with no renderer-supplied repository path. */
