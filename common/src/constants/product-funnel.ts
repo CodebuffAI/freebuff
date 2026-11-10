@@ -27,6 +27,8 @@ export const productFunnelStageSchema = z.enum([
   'draft',
   'project',
   'template',
+  /** a new-chat starter pill was clicked (`starter_pills_2026_11`): selected */
+  'starter',
   'model_picker',
   'model_selection',
   'admission',
@@ -335,6 +337,11 @@ export const productFunnelPropertiesSchema = z
     error_kind: z
       .string()
       .regex(/^[a-z0-9_]{1,40}$/)
+      .optional(),
+    /** Which starter pill (`starter:selected`): its prompt id, `game-snake`. */
+    starter: z
+      .string()
+      .regex(/^[a-z0-9-]{1,40}$/)
       .optional(),
     selection_kind: z
       .enum([
