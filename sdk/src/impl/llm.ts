@@ -261,8 +261,8 @@ export async function* promptAiSdkStream(
     ...streamParams,
     ...(params.byok && {
       maxOutputTokens: Math.min(
-        params.maxOutputTokens ?? byokModelLimits(params.byok).maxOutputTokens,
-        byokModelLimits(params.byok).maxOutputTokens,
+        params.maxOutputTokens ?? byokModelLimits(params.byok).reservedOutputTokens,
+        byokModelLimits(params.byok).reservedOutputTokens,
       ),
     }),
     abortSignal: params.signal,
@@ -877,8 +877,8 @@ export async function promptAiSdk(
     ...params,
     ...(params.byok && {
       maxOutputTokens: Math.min(
-        params.maxOutputTokens ?? byokModelLimits(params.byok).maxOutputTokens,
-        byokModelLimits(params.byok).maxOutputTokens,
+        params.maxOutputTokens ?? byokModelLimits(params.byok).reservedOutputTokens,
+        byokModelLimits(params.byok).reservedOutputTokens,
       ),
     }),
     prompt: undefined,
@@ -960,8 +960,8 @@ export async function promptAiSdkStructured<T>(
     ...params,
     ...(params.byok && {
       maxOutputTokens: Math.min(
-        params.maxTokens ?? byokModelLimits(params.byok).maxOutputTokens,
-        byokModelLimits(params.byok).maxOutputTokens,
+        params.maxTokens ?? byokModelLimits(params.byok).reservedOutputTokens,
+        byokModelLimits(params.byok).reservedOutputTokens,
       ),
     }),
     prompt: undefined,

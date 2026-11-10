@@ -796,7 +796,7 @@ async function runOnce({
             ? byokTemplate.compactContext
             : {}),
           maxContextLength: limits.maxContextLength,
-          maxOutputTokens: limits.maxOutputTokens,
+          maxOutputTokens: limits.reservedOutputTokens,
         }
       }
     }

@@ -11,6 +11,7 @@ import {
   byokModelLimits,
   byokCompletionUrl,
   BYOK_DEFAULT_CONTEXT_WINDOW,
+  BYOK_DEFAULT_MAX_OUTPUT_TOKENS,
   BYOK_DISCOVERED_CONTEXT_WINDOW_CAP,
   BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW,
   clearByokContextWindowCache,
@@ -23,6 +24,7 @@ import {
 import {
   CHATGPT_CONTEXT_WINDOW,
   CHATGPT_DEFAULT_MODELS,
+  CHATGPT_MAX_OUTPUT_TOKENS,
   CHATGPT_SIGN_IN_AGAIN,
   type ChatGptTokens,
 } from './chatgpt'
@@ -598,12 +600,63 @@ test('custom model limits reserve output and reject impossible capacities', () =
   ).toEqual({
     contextWindow: 8192,
     maxOutputTokens: 2048,
+    reservedOutputTokens: 2048,
     maxContextLength: 5529,
   })
   expect(() =>
     byokModelLimits({ contextWindow: 8192, maxOutputTokens: 8192 }),
   ).toThrow()
   expect(() => byokModelLimits({ contextWindow: NaN })).toThrow()
+})
+
+test('an output limit just under the window still leaves a positive compaction budget', () => {
+  // window - 1 is what the settings form's `max` offers; it gave a budget of 0,
+  // which the agent schema refuses, so every Cloud run on it failed (2026-11).
+  for (const contextWindow of [4096, 32_768, 131_072, 202_752, 2_000_000]) {
+    const half = Math.floor(contextWindow / 2)
+    for (const maxOutputTokens of [contextWindow - 1, contextWindow - 2, half + 1]) {
+      const limits = byokModelLimits({ contextWindow, maxOutputTokens })
+      expect(limits.maxOutputTokens).toBe(maxOutputTokens)
+      expect(limits.reservedOutputTokens).toBe(half)
+      expect(limits.maxContextLength).toBe(Math.floor((contextWindow - half) * 0.9))
+      expect(Number.isInteger(limits.maxContextLength)).toBe(true)
+      expect(limits.maxContextLength).toBeGreaterThanOrEqual(1843)
+    }
+  }
+  expect(byokModelLimits({ contextWindow: 131_072, maxOutputTokens: 131_071 })).toEqual({
+    contextWindow: 131_072,
+    maxOutputTokens: 131_071,
+    reservedOutputTokens: 65_536,
+    maxContextLength: 58_982,
+  })
+})
+
+test('limits whose output fits in half the window keep their budget and output', () => {
+  for (const [contextWindow, maxOutputTokens] of [
+    [BYOK_DEFAULT_CONTEXT_WINDOW, BYOK_DEFAULT_MAX_OUTPUT_TOKENS],
+    [BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW, BYOK_DEFAULT_MAX_OUTPUT_TOKENS],
+    [CHATGPT_CONTEXT_WINDOW, CHATGPT_MAX_OUTPUT_TOKENS],
+    // The Claude Code and Codex key rows (web/src/server/byok/agent-keys.ts).
+    [200_000, 32_000],
+    [272_000, 32_000],
+    [102_400, 8_192],
+    [8_192, 4_096],
+  ] as const) {
+    expect(byokModelLimits({ contextWindow, maxOutputTokens })).toEqual({
+      contextWindow,
+      maxOutputTokens,
+      reservedOutputTokens: maxOutputTokens,
+      maxContextLength: Math.floor((contextWindow - maxOutputTokens) * 0.9),
+    })
+  }
+  // An unset output limit is still a quarter of the window, at most 4,096.
+  expect(byokModelLimits({})).toEqual({
+    contextWindow: 32_768,
+    maxOutputTokens: 4_096,
+    reservedOutputTokens: 4_096,
+    maxContextLength: 25_804,
+  })
+  expect(byokModelLimits({ contextWindow: 8_192 }).maxContextLength).toBe(5_529)
 })
 
 describe('effective BYOK limits for a run', () => {

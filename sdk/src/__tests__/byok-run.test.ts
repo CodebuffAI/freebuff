@@ -174,6 +174,34 @@ describe('direct BYOK SDK runs', () => {
     expect(legacy.output.message).toContain('no inference source pin')
   }, 30_000)
 
+  test('an output limit of window - 1 still gives the root and a carried helper a valid budget', async () => {
+    const bodies: any[] = []
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      bodies.push(JSON.parse(String(init?.body)))
+      return sse({ id: 'done', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [{ index: 0, delta: { content: 'Done.' }, finish_reason: 'stop' }] })
+    }) as unknown as typeof fetch
+    // A hosted turn's helper stays in the chat's saved state, and the next
+    // turn on the user's key validates it with the root (Cloud, 2026-11).
+    const helper: AgentDefinition = {
+      id: 'researcher-web', displayName: 'Web Researcher', model: 'openai/gpt-6-luna',
+      toolNames: ['read_url'], systemPrompt: 'Research the question.',
+    }
+    const client = new CodebuffClient({
+      agentDefinitions: [agent, helper],
+      byok: connection({ contextWindow: 131_072, maxOutputTokens: 131_071 }),
+    })
+    const result = await client.run({ agent: agent.id, prompt: 'Summarize.' })
+
+    expect(result.output.type).not.toBe('error')
+    const templates = result.sessionState!.fileContext.agentTemplates
+    for (const id of [agent.id, helper.id]) {
+      expect(templates[id]!.compactContext).toMatchObject({ maxContextLength: 58_982, maxOutputTokens: 65_536 })
+    }
+    // The request asks for no more output than the window leaves it.
+    expect(bodies).toHaveLength(1)
+    expect(bodies[0].max_tokens ?? bodies[0].max_completion_tokens).toBe(65_536)
+  })
+
   test('refuses server-side web_search without contacting a hosted backend', async () => {
     const requests: string[] = []
     const bodies: string[] = []
