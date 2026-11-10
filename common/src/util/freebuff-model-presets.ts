@@ -30,14 +30,17 @@ export interface FreebuffPresetModel {
 }
 
 /**
- * MiMo v2.6 Flash Slow's catalog key (`defaultCatalogKey('fbc/mimo-slow')`):
- * a catalog-only row, so it has no public id and is found by its opaque key,
- * as in freebuff-picker-sections.ts. Pinned to its id by the web catalog tests.
+ * DeepSeek V4.1 Flash Slow's catalog key, the row that was MiMo v2.6 Flash
+ * Slow (`defaultCatalogKey('fbc/mimo-slow')`, its first id: a row renamed in
+ * place keeps its key): a catalog-only row, so it has no public id and is
+ * found by its opaque key, as in freebuff-picker-sections.ts. Pinned by the
+ * web catalog tests.
  */
 export const FREEBUFF_MIMO_SLOW_CATALOG_KEY = 'm-61c26317cc'
 
-/** DeepSeek V4.1 Flash Slow's catalog key (`defaultCatalogKey('fbc/deepseek-slow')`),
- *  found the same way. */
+/** DeepSeek V4.1 Flash's catalog key (the steady-speed row,
+ *  `defaultCatalogKey('fbc/deepseek-slow')` from its first id), found the
+ *  same way. */
 export const FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY = 'm-8db1ccbba6'
 
 /** Recommendations only. Catalog visibility, purchase consent and admission
