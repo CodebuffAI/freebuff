@@ -22,6 +22,7 @@ export const devicePanelRequest = z.discriminatedUnion('panel', [
   z.object({ panel: z.literal('git'), input: z.discriminatedUnion('operation', [
     z.object({ ...scope, operation: z.literal('changes'), scope: z.enum(['all', 'uncommitted']) }).strict(),
     z.object({ ...scope, operation: z.literal('diff'), scope: z.enum(['all', 'uncommitted']), path, untracked: z.boolean() }).strict(),
+    z.object({ ...scope, operation: z.literal('summary'), live: z.boolean() }).strict(),
   ]) }).strict(),
   z.object({ panel: z.literal('terminal'), input: z.discriminatedUnion('operation', [
     z.object({ ...terminal, operation: z.literal('attach'), cols: dimensions.cols.optional(), rows: dimensions.rows.optional(),
