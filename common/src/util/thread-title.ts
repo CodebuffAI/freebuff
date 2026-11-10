@@ -42,5 +42,12 @@ export function sanitizeThreadTitle(raw: string): string | null {
   // trailing sentence punctuation
   title = title.replace(/[.!?,;:]+$/g, '').trim()
   if (!title) return null
-  return title.slice(0, THREAD_TITLE_MAX_CHARS)
+  if (title.length <= THREAD_TITLE_MAX_CHARS) return title
+  // Slice by code point, not UTF-16 unit: a 60-unit cut through an emoji or
+  // any other astral character leaves a lone high surrogate, which renders as
+  // a replacement glyph in the tab label.
+  const end = THREAD_TITLE_MAX_CHARS
+  const lastUnit = title.charCodeAt(end - 1)
+  const cutInsidePair = lastUnit >= 0xd800 && lastUnit <= 0xdbff
+  return title.slice(0, cutInsidePair ? end - 1 : end)
 }
