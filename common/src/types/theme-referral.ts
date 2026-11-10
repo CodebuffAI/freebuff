@@ -10,6 +10,10 @@ export interface ThemeReferralAccess {
   /** When the account was created (ISO), for the browser workspace's first-visit
    *  welcome. Absent from servers before 2026-11-07. */
   accountCreatedAt?: string | null
+  /** When the first-send invite card first came up (ISO,
+   *  `account_appearance.referral_prompt_claimed_at`), null when it never has,
+   *  for the returning-session invite banner. */
+  referralPromptClaimedAt?: string | null
 }
 
 export interface ThemeReferralPromptResponse {

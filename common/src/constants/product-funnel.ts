@@ -81,6 +81,11 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
   dock: Object.freeze({ link: 'dock_link', email: 'dock_email' }),
   inline: Object.freeze({ link: 'inline_link', email: 'inline_email' }),
   sidebar: Object.freeze({ link: 'sidebar_link', email: 'sidebar_email' }),
+  /** The returning-session invite banner (docs/referrals.md). */
+  return_banner: Object.freeze({
+    link: 'return_banner_link',
+    email: 'return_banner_email',
+  }),
   settings: Object.freeze({ link: 'settings_link', email: 'settings_email' }),
   /** The one-time "your friend started coding" notice (docs/referrals.md). */
   friend_joined: Object.freeze({
@@ -138,7 +143,7 @@ export const OWN_REFERRAL_CODE_PERSON_PROPERTY = 'own_referral_code'
 /**
  * `via` values of links that carry only the account's own `/?ref=` link, with
  * no email invite behind them, so the invite route never accepts them.
- * `lifecycle_email`: the Activated sequence's day-7 referral ask
+ * `lifecycle_email`: the Activated sequence's day-3 referral ask
  * (docs/freebuff-lifecycle-email.md).
  */
 export const REFERRAL_LINK_ONLY_VIA = Object.freeze({
