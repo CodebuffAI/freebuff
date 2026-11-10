@@ -28,7 +28,10 @@ export function formatCwd(cwd: string | undefined, env?: CliEnv): string {
  */
 export function getRelativePath(filePath: string): string {
   // If it's already a relative path, return as-is
-  if (!filePath.startsWith('/')) return filePath
+  // `path.isAbsolute` rather than a leading '/': a Windows path such as
+  // `C:\\Users\\foo\\project\\src\\helper.ts` is absolute too, and testing for
+  // '/' left it unshortened on every Windows machine.
+  if (!path.isAbsolute(filePath)) return filePath
 
   // Use the non-throwing accessor: the project root may legitimately be
   // unset (e.g. during early startup or in tests), and the fallback below

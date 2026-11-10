@@ -53,6 +53,19 @@ describe('getRelativePath', () => {
     )
   })
 
+  const testOnWindows = process.platform === 'win32' ? test : test.skip
+
+  testOnWindows(
+    'resolves a Windows drive-letter path relative to the project root',
+    () => {
+      // a leading '/' test left every Windows absolute path unshortened
+      setProjectRoot('C:\\Users\\foo\\project')
+      expect(
+        getRelativePath('C:\\Users\\foo\\project\\src\\utils\\helper.ts'),
+      ).toBe(path.join('src', 'utils', 'helper.ts'))
+    },
+  )
+
   test('falls back to returning the absolute path as-is when the project root is unavailable', () => {
     // Simulate "unset": setProjectRoot only accepts a string, so an empty
     // string is used as the falsy sentinel (matches how tryGetProjectRoot's
