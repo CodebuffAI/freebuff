@@ -863,6 +863,12 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    */
   sponsor_break_cap_status: 'string',
   /**
+   * Present (true) only when that verdict's Redis reply arrived after its
+   * 75 ms bound, inside the short grace (`packages/internal/src/ad-serving/ad-redis-bound.ts`):
+   * a plain race would have reported `unavailable` and dropped the break.
+   */
+  sponsor_break_cap_late_reply: 'boolean',
+  /**
    * The new-user ad ramp (`ad-serving/new-user-ad-ramp.ts`). Present only for
    * a real account under the ramp's age window; absent on every other
    * completion event. `new_user_ramp_outcome` is `decided`,
@@ -967,6 +973,12 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   frequency_unavailable_causes: 'string',
   frequency_reservation_ms: 'number',
   frequency_max_reservation_ms: 'number',
+  /**
+   * Frequency reservations whose Redis reply arrived after the 75 ms bound but
+   * inside the short grace (`packages/internal/src/ad-serving/ad-redis-bound.ts`):
+   * each one served where a plain race would have refused. Absent when zero.
+   */
+  frequency_late_replies: 'number',
   duration_ms: 'number',
   /**
    * The L2 v0 ranker, present only while `FREEBUFF_FIRST_PARTY_RANKER` is not
