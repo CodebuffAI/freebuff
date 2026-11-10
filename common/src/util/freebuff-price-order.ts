@@ -51,21 +51,51 @@ export function freebucksListPriceFor(
 }
 
 /**
+ * The solo-session discount on one row: none on a Powerful row (product,
+ * 2026-11-09, Victor), whether the server listed it
+ * (`soloDiscountExcludedModelIds`) or the picker placed it there (`section`).
+ */
+export function freebucksSoloDiscountFor(
+  info:
+    | Pick<FreebuffFreebucksInfo, 'soloDiscount' | 'soloDiscountExcludedModelIds'>
+    | null
+    | undefined,
+  modelId: string,
+  section?: string,
+): number {
+  if (
+    section === 'powerful' ||
+    info?.soloDiscountExcludedModelIds?.includes(modelId)
+  )
+    return 0
+  return info?.soloDiscount ?? 0
+}
+
+/**
  * A row's drawn price: `quoted` less the solo-session discount, which is what
  * admission charges, and the regular price to cross out beside it (a catalog
  * list price, else `quoted` when the discount moved it). `quoted` is undefined
- * for an unpriced or locked row. Shared by Desktop, the CLI and Web.
+ * for an unpriced or locked row. `section` is the row's picker section, when
+ * the caller has placed it: a Powerful row takes no solo discount. Shared by
+ * Desktop, the CLI and Web.
  */
 export function freebucksRowPrice(
   info:
-    | Pick<FreebuffFreebucksInfo, 'prices' | 'listPrices' | 'soloDiscount'>
+    | Pick<
+        FreebuffFreebucksInfo,
+        'prices' | 'listPrices' | 'soloDiscount' | 'soloDiscountExcludedModelIds'
+      >
     | null
     | undefined,
   modelId: string,
   quoted: number | undefined,
+  section?: string,
 ): { price: number | undefined; listPrice: number | undefined } {
   if (quoted === undefined) return { price: undefined, listPrice: undefined }
-  const price = Math.max(0, quoted - (info?.soloDiscount ?? 0))
+  const price = Math.max(
+    0,
+    quoted - freebucksSoloDiscountFor(info, modelId, section),
+  )
   return {
     price,
     listPrice:

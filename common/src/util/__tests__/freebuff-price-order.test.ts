@@ -4,6 +4,7 @@ import {
   compareByFreebucksPrice,
   freebucksListPriceFor,
   freebucksRowPrice,
+  freebucksSoloDiscountFor,
 } from '../freebuff-price-order'
 
 const rows = [
@@ -74,5 +75,17 @@ describe('freebucksRowPrice', () => {
     expect(freebucksRowPrice(quote, 'missing', undefined)).toEqual({ price: undefined, listPrice: undefined })
     expect(freebucksRowPrice(quote, 'luna', undefined)).toEqual({ price: undefined, listPrice: undefined })
     expect(freebucksRowPrice(null, 'luna', 50)).toEqual({ price: 50, listPrice: undefined })
+  })
+
+  // No solo discount on a Powerful row (product, 2026-11-09, Victor).
+  test('a Powerful row, listed by the server or placed by the picker, keeps its price', () => {
+    const listed = { ...quote, soloDiscountExcludedModelIds: ['luna'] }
+    expect(freebucksRowPrice(listed, 'luna', 50)).toEqual({ price: 50, listPrice: undefined })
+    expect(freebucksRowPrice(listed, 'flash', 15)).toEqual({ price: 0, listPrice: 15 })
+    expect(freebucksRowPrice(quote, 'luna', 50, 'powerful')).toEqual({ price: 50, listPrice: undefined })
+    expect(freebucksRowPrice(quote, 'luna', 50, 'premium')).toEqual({ price: 35, listPrice: 50 })
+    expect(freebucksSoloDiscountFor(listed, 'luna')).toBe(0)
+    expect(freebucksSoloDiscountFor(listed, 'flash')).toBe(15)
+    expect(freebucksSoloDiscountFor(null, 'flash')).toBe(0)
   })
 })

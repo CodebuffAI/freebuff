@@ -313,6 +313,12 @@ export interface FreebuffFreebucksInfo {
    */
   soloDiscount?: number
   /**
+   * Rows `soloDiscount` does not apply to: the viewer's Powerful models
+   * (product, 2026-11-09, Victor). Pickers draw and lock them at `prices`, and
+   * admission charges them in full. Sent only beside `soloDiscount`.
+   */
+  soloDiscountExcludedModelIds?: readonly string[]
+  /**
    * Rows on which this viewer is not shown the session clock (2026-10-21:
    * full access in tiers 1 and 2, on a row of five hours or less). Clients
    * draw no time left, countdown or hour-end notice for a session on one.

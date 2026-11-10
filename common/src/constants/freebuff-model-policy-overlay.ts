@@ -52,6 +52,10 @@ export interface FreebuffModelPolicyOverlay {
    *  still recognised, offered nowhere. Admission and the chat gate answer it
    *  as withdrawn, as they do a paused compiled model. */
   withdrawn?(modelId: string): boolean | undefined
+  /** The picker section a full-access viewer finds the model in (a new
+   *  account's set has its own places), for the rule that a Powerful row
+   *  takes no solo-session discount. */
+  section?(modelId: string, viewer: { newAccount: boolean }): string | undefined
 }
 
 let overlay: FreebuffModelPolicyOverlay | null = null
