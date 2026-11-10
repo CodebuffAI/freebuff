@@ -10,10 +10,15 @@ export type CloudHistoryProject = {
   /** The starter selected at project creation; absent from older servers. */
   template?: import('../templates/selected').SelectedTemplate | null
   /**
-   * When the user removed it from their project list, or null. A removed project is left out of
-   * `listProjects` until someone prompts in it again. Absent from older servers.
+   * When the user archived it, or null. Archiving archives its chats too; an archived project is
+   * left out of `listProjects` (Settings > Archived lists it) until it is restored or someone
+   * prompts in it again. Absent from older servers, which send only `removedAt`.
    */
+  archivedAt?: string | null
+  /** @deprecated The same as `archivedAt`, under the name older clients read. */
   removedAt?: string | null
+  /** Its chats, archived or not. Only `listProjects({ archived: true })` counts them. */
+  chatCount?: number
   /**
    * Which workspace the project belongs to (workspace-mode.ts). Set at creation; absent or null
    * from older servers and for every project created before modes existed, both meaning Code.
@@ -138,12 +143,19 @@ export type CloudHistoryChatRolledBack = {
   mode: 'cut' | 'note' | 'unchanged'
 }
 /**
- * Last write wins: a project name has no revision to compare. Removing keeps its chats and files;
- * `removed: false` puts it back in the list.
+ * Last write wins: a project name has no revision to compare. `archived: true` archives the project
+ * and every chat in it; `archived: false` restores it with the chats it archived, while chats
+ * archived on their own stay archived. Nothing is deleted: files and chats are kept. `removed` is
+ * the name older clients send for `archived`.
  */
-export type CloudHistoryProjectUpdate =
-  | { name: string; removed?: boolean }
-  | { name?: string; removed: boolean }
+export type CloudHistoryProjectUpdate = {
+  name?: string
+  archived?: boolean
+  /** @deprecated Older clients' name for `archived`. */
+  removed?: boolean
+}
+/** Archived listings: Settings > Archived. */
+export type CloudHistoryArchivedFilter = { archived?: boolean }
 /**
  * A server-internal run event marking that the run's SDK traces are stored in
  * R2 rather than as `trace` events. Never returned by the history API or the
@@ -207,9 +219,11 @@ export function createCloudHistoryClient(
     update?: CloudHistoryChatUpdate | CloudHistoryProjectUpdate | CloudHistoryChatFork | CloudHistoryChatRollback | CloudHistoryAttentionAck,
     search?: string,
     method: 'GET' | 'PATCH' | 'POST' = update ? 'PATCH' : 'GET',
+    archived?: boolean,
   ): Promise<T> {
     const query = new URLSearchParams()
     if (search) query.set('search', search)
+    if (archived) query.set('archived', 'true')
     if (page.cursor != null) query.set('cursor', page.cursor)
     if (page.limit !== undefined) query.set('limit', String(page.limit))
     if (projectId !== undefined) query.set('projectId', projectId)
@@ -243,8 +257,8 @@ export function createCloudHistoryClient(
   }
   const id = encodeURIComponent
   return {
-    listProjects: (page?: CloudHistoryOptions) =>
-      get<CloudHistoryPage<CloudHistoryProject>>('projects', page),
+    listProjects: (page: CloudHistoryOptions & CloudHistoryArchivedFilter = {}) =>
+      get<CloudHistoryPage<CloudHistoryProject>>('projects', page, undefined, undefined, undefined, 'GET', page.archived),
     getProject: (projectId: string, signal?: AbortSignal) =>
       get<CloudHistoryProject>(`projects/${id(projectId)}`, { signal }),
     updateProject: (
@@ -258,8 +272,9 @@ export function createCloudHistoryClient(
         undefined,
         update,
       ),
-    listChats: (page: CloudHistoryOptions & { projectId?: string; search?: string } = {}) =>
-      get<CloudHistoryPage<CloudHistoryChat>>('chats', page, page.projectId, undefined, page.search),
+    /** `archived`: the chats Settings > Archived lists, archived alone or with their project. */
+    listChats: (page: CloudHistoryOptions & CloudHistoryArchivedFilter & { projectId?: string; search?: string } = {}) =>
+      get<CloudHistoryPage<CloudHistoryChat>>('chats', page, page.projectId, undefined, page.search, 'GET', page.archived),
     getChat: (chatId: string, signal?: AbortSignal) =>
       get<CloudHistoryChat>(`chats/${id(chatId)}`, { signal }),
     forkChat: (chatId: string, fork: CloudHistoryChatFork, signal?: AbortSignal) =>
