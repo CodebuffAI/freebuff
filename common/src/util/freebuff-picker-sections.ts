@@ -96,7 +96,6 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     // sees one Standard set (product, 2026-11-03, Victor).
     // DeepSeek Slow (the MiMo Slow row) first (product, 2026-11-08, Victor).
     'm-61c26317cc': { section: 'standard', order: -1 }, // DeepSeek Slow, 5 (new, promotional)
-    'm-0921d81ce7': { section: 'standard', order: 0 }, // Crouton Alpha, 0 (promotional)
     'm-ddc687c50f': { section: 'standard', order: 1 }, // Nemotron 3.5 Lightning, 0
     'm-02244092cb': { section: 'standard', order: 5 }, // Glyph Cluster, 0
     'upstage/solar-pro4': { section: 'standard', order: 10 },
