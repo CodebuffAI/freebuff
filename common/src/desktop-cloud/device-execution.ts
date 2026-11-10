@@ -5,6 +5,7 @@ import {
 } from '../ads/sponsored-windows'
 import { devicePanelOperation } from './device-panels'
 import { deviceGitHubRequest } from './device-github'
+import { deviceLocalMcpCallRequest } from './local-mcp'
 
 /** V1 stays read-only. V2 execution requires an explicit local opt-in. */
 export const DEVICE_EXECUTION_VERSION = 1
@@ -48,6 +49,9 @@ export const deviceExecutionContext = z
     /** Honours `scope.warmup`: a new Cloud chat's first turn runs here read-only while it moves (warmup.ts). */
     readOnlyOpener: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
+    /** Answers `local_mcp_call` and publishes its local MCP servers (local-mcp.ts). Desktop's
+     * account-wide local MCP connection registers with only this; it is no folder's binding. */
+    localMcp: z.literal(true).optional(),
     cwd: z.string().min(1).max(4096),
     rg: z.string().max(4096),
   })
@@ -470,6 +474,7 @@ export const deviceRequest = z.union([
   deviceAgenticOfferFactsRequest,
   deviceSponsoredExecRequest,
   deviceGitHubRequest,
+  deviceLocalMcpCallRequest,
 ])
 export const deviceResult = z.union([
   deviceReadResult,
@@ -543,6 +548,7 @@ export const deviceCapabilities = z
     sponsoredExec: z.literal(true).optional(),
     readOnlyOpener: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
+    localMcp: z.literal(true).optional(),
   })
   .strict()
 

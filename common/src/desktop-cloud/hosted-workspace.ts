@@ -197,6 +197,12 @@ export type HostedLocalProjectInput = {
   templateId?: string
 }
 
+/** This computer's install id (as Cloud lists its devices) and its servers. */
+export type LocalMcpHostList = {
+  deviceId: string | null
+  servers: import('./local-mcp').LocalMcpServerView[]
+}
+
 export type HostedWorkspaceHost = {
   /** Local branch names only; native resolves the enrolled folder and refuses unsafe switches. */
   projectBranches?(input: { projectId: string; branch?: string }): Promise<{
@@ -223,6 +229,16 @@ export type HostedWorkspaceHost = {
     run(options?: { deep?: boolean; includePaths?: boolean; includeChatTitles?: boolean }): Promise<import('../doctor/types').DoctorReport>
     repair(input: { kind: import('../doctor/types').DoctorRepairKind; ref?: string }): Promise<import('../doctor/types').DoctorRepairResult>
     undo(undoRef: string): Promise<import('../doctor/types').DoctorRepairResult>
+  }
+  /**
+   * Integrations > Custom: MCP servers on this computer (local-mcp.ts). Builds without it omit the
+   * key, and Integrations lists only the account's other computers' servers.
+   */
+  localMcp?: {
+    list(): Promise<LocalMcpHostList>
+    add(server: import('./local-mcp').LocalMcpAddInput): Promise<LocalMcpHostList>
+    remove(id: string): Promise<LocalMcpHostList>
+    setEnabled(id: string, enabled: boolean): Promise<LocalMcpHostList>
   }
   /** Mirrors cloud-managed local work for the native quit confirmation. */
   activity?: {
