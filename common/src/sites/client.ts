@@ -169,6 +169,7 @@ export class SitesClient {
             'An earlier operation on this site never reported its result, so deletion is held until it is reconciled. Contact support@freebuff.com to have the site removed.',
           site_deleting: 'This site is being deleted.',
           subdomain_taken: 'This subdomain is already taken. Try another name.',
+          subdomain_unavailable: "That name isn't available. Choose a different domain.",
           invalid_subdomain: 'Use 1–63 letters, numbers or hyphens. Start and end with a letter or number; generated addresses and customers are reserved.',
           production_subdomain_only: 'Switch to Production to customize your Freebuff address.',
           invalid_domain: 'Enter a subdomain such as www.example.com, without a URL or path. Root domains and platform domains are not supported.',
