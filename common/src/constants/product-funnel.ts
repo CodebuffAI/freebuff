@@ -19,7 +19,7 @@ export const productFunnelStageSchema = z.enum([
   'login',
   /** the first-sign-in welcome in the hosted Desktop workspace: shown, copied (the invite link), closed */
   'welcome',
-  /** the phone-app prompt on a return to the workspace after a break: shown, clicked (a store link), closed */
+  /** the phone-app prompt, on a return to the workspace after a break or after a first finished reply: shown, clicked (a store link), closed */
   'mobile_prompt',
   'browser',
   'context',
@@ -381,6 +381,10 @@ export const productFunnelPropertiesSchema = z
     originApp: z.enum(['desktop', 'web']).optional(),
     executionTarget: z.enum(['device', 'cloud']).optional(),
     welcome_variant: welcomeVariantSchema.optional(),
+    /** `mobile_prompt:shown`: what opened it, a return after a break or a reply that just finished. */
+    prompt_trigger: z.enum(['return', 'reply']).optional(),
+    /** `mobile_prompt:clicked`: which store's button. A scanned QR code is counted by `/mobile`, not here. */
+    store: z.enum(['ios', 'android']).optional(),
     renderer: z.literal('web-workspace').optional(),
     appVersion: z
       .string()
