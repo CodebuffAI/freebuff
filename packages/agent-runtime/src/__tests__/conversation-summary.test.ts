@@ -157,6 +157,21 @@ describe('isIdleReturn', () => {
     expect(isIdleReturn(history(15 * MINUTE + 1), 15 * MINUTE)).toBe(true)
   })
 
+  it('measures from the later of the saved activity time and the last reply', () => {
+    // Stopped six minutes after the last finished reply, resumed at once.
+    expect(
+      isIdleReturn(history(6 * MINUTE), 5 * MINUTE, undefined, 6 * MINUTE),
+    ).toBe(false)
+    // A real break after that stop.
+    expect(isIdleReturn(history(12 * MINUTE), 5 * MINUTE, undefined, 6 * MINUTE)).toBe(
+      true,
+    )
+    // An older runtime ran later turns and left the saved time behind.
+    expect(isIdleReturn(history(2_000), 5 * MINUTE, undefined, -60 * MINUTE)).toBe(
+      false,
+    )
+  })
+
   // A 20-minute turn that ended seconds ago is not an idle return: the gap
   // runs from the turn's last assistant message, not its first.
   it('measures from the end of a long turn, not its start', () => {

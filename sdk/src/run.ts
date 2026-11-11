@@ -483,6 +483,9 @@ export function buildCancelledSessionState(params: {
     params
 
   const state = cloneSessionState(sessionState, logger)
+  // Also used for in-flight checkpoints: a host that exits mid-response must
+  // not count the time spent generating that response as user inactivity.
+  state.mainAgentState.lastActivityAt = Date.now()
   const previousHistory = state.mainAgentState.messageHistory
   // A checkpoint can land after an assistant tool call is recorded but before
   // its result arrives. Drop that half-step at the persistence boundary so a

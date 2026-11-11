@@ -211,13 +211,15 @@ export const CONTINUATION_PROMPT_TAG = 'CONTINUATION_PROMPT'
 
 /**
  * Whether the live prompt arrived after the conversation sat idle longer than
- * `idleMs`, measured from the last assistant message before it. Only true
- * before the assistant answers it, and never for a continuation prompt.
+ * `idleMs`, measured from the later of the last turn end or checkpoint
+ * (`lastActivityAt`) and the last assistant message. Never true after an
+ * answer or for a continuation prompt.
  */
 export function isIdleReturn(
   messages: Message[],
   idleMs = SUMMARY_IDLE_MS,
   now = Date.now(),
+  lastActivityAt?: number,
 ): boolean {
   const promptIndex = messages.findLastIndex((m) =>
     m.tags?.includes('USER_PROMPT'),
@@ -228,12 +230,17 @@ export function isIdleReturn(
   const prompt = messages[promptIndex]
   if (prompt.tags?.includes(CONTINUATION_PROMPT_TAG)) return false
   const sentAt = prompt.sentAt ?? now
+  // The later of the two: a runtime that predates `lastActivityAt` keeps the
+  // field but does not move it, so it can be older than the last reply.
+  let last = lastActivityAt
   for (let i = promptIndex - 1; i >= 0; i--) {
     const message = messages[i]
     if (message.role !== 'assistant') continue
-    return message.sentAt !== undefined && sentAt - message.sentAt > idleMs
+    if (message.sentAt !== undefined)
+      last = Math.max(last ?? message.sentAt, message.sentAt)
+    break
   }
-  return false
+  return last !== undefined && sentAt - last > idleMs
 }
 
 /** The history exactly as the agent's next request sends it. */

@@ -454,6 +454,61 @@ describe('compactContext in loopAgentSteps', () => {
   })
 
   describe('using summaries', () => {
+    it.each(['cancelled', 'failed', 'completed'] as const)(
+      'keeps history on a two-second resume after a long %s turn',
+      async (outcome) => {
+        let now = 1_000_000
+        spyOn(Date, 'now').mockImplementation(() => now)
+        const history = idleHistory(0)
+        const result = await runLoop(optedIn, history, {
+          state: { compactionSummary: readySummary(history) },
+          reportedInput: 1000,
+          step: () => {
+            now += 6 * MINUTE
+            if (outcome === 'cancelled') throw new AbortError()
+            if (outcome === 'failed') throw new Error('stream failed')
+            return [
+              { type: 'text', text: 'done' },
+              createToolCallChunk('end_turn', {}),
+            ]
+          },
+        })
+        expect(result.agentState.lastActivityAt).toBe(now)
+
+        // A restart reads JSON, without the runtime's in-memory summary store.
+        const restored: AgentState = JSON.parse(
+          JSON.stringify(result.agentState),
+        )
+        resetConversationSummariesForTest()
+        now += 2000
+        const logged: unknown[] = []
+        await runLoop(optedIn, restored.messageHistory, {
+          prompt: 'continue',
+          state: restored,
+          reportedInput: 1000,
+          logged,
+        })
+        expect(joined(seenMessages[1])).toContain('DISTINCTIVE PRIOR ANSWER')
+        expect(joined(seenMessages[1])).not.toContain('MODEL SUMMARY')
+        expect(logged).toContainEqual(
+          expect.objectContaining({
+            axiomEvent: 'context_compaction.first_output',
+            idle_return: false,
+          }),
+        )
+
+        // The same saved state must still compact after a genuine idle gap.
+        now += 6 * MINUTE
+        resetConversationSummariesForTest()
+        await runLoop(optedIn, restored.messageHistory, {
+          prompt: 'continue later',
+          state: restored,
+          reportedInput: 1000,
+        })
+        expect(joined(seenMessages[2])).toContain('MODEL SUMMARY')
+      },
+    )
+
     it('keeps sending the full history while the cache is warm', async () => {
       const history = idleHistory(4)
       await runLoop(optedIn, history, {

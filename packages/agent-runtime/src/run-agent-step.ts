@@ -1517,7 +1517,12 @@ export async function loopAgentSteps(
   let compactionWindow: CompactionWindow | undefined
   let firstOutputLogged = false
   const idleMs = summaryIdleMs(agentTemplate.model)
-  const idleAtStart = isIdleReturn(currentAgentState.messageHistory, idleMs)
+  const idleAtStart = isIdleReturn(
+    currentAgentState.messageHistory,
+    idleMs,
+    undefined,
+    currentAgentState.lastActivityAt,
+  )
 
   const compactionVersion = agentTemplate.compactContext
     ? SUMMARY_COMPACTION_VERSION
@@ -2009,7 +2014,13 @@ export async function loopAgentSteps(
           currentAgentState.messageHistory,
         )
         const idle =
-          !idleChecked && isIdleReturn(currentAgentState.messageHistory, idleMs)
+          !idleChecked &&
+          isIdleReturn(
+            currentAgentState.messageHistory,
+            idleMs,
+            undefined,
+            currentAgentState.lastActivityAt,
+          )
         idleChecked = true
         // The provider's count for the latest response (input + output),
         // from this run or the saved state. What was added since (tool
@@ -2742,6 +2753,7 @@ export async function loopAgentSteps(
       },
     }
   } finally {
+    currentAgentState.lastActivityAt = Date.now()
     if (compactionWindow)
       closeCompactionWindow({
         window: compactionWindow,

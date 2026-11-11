@@ -171,6 +171,22 @@ function pinnedByokConnection(
   return (runState as PinnedByokRunState | null)?.byokConnection
 }
 
+/** `runState` with its idle clock started now (`AgentState.lastActivityAt`). */
+function stoppedNow(runState: RunState): RunState {
+  const sessionState = runState.sessionState
+  if (!sessionState) return runState
+  return {
+    ...runState,
+    sessionState: {
+      ...sessionState,
+      mainAgentState: {
+        ...sessionState.mainAgentState,
+        lastActivityAt: Date.now(),
+      },
+    },
+  }
+}
+
 function pinByokConnection(
   runState: RunState,
   connection: { id: string; revision: number } | undefined,
@@ -450,6 +466,10 @@ export const useSendMessage = ({
         // message/timer cleanup. Preflight cancellation still needs to drop
         // the shared busy UI state synchronously.
         abortController.abort(reason)
+        // The snapshot dates from the last step boundary. A long response
+        // stopped now must not count its own running time as idle time.
+        if (runSnapshotReceived)
+          latestRunStateSnapshot = stoppedNow(latestRunStateSnapshot)
         // Esc: the next prompt resumes from this run's progress, told the user
         // interrupted it. The snapshot alone says the session ended, which
         // only a real exit (`process-exit`) should leave behind. Adopted here,
