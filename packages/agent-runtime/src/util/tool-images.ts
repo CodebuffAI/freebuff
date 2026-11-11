@@ -2,8 +2,15 @@ import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 import type { ToolResultOutput } from '@codebuff/common/types/messages/content-part'
 
 /**
- * How many tool-result images stay attached to the conversation, newest
- * first. Two read_files calls' worth (MAX_IMAGES_PER_READ_FILES_CALL is 4).
+ * The most tool-result images attached to the conversation at once. Past it
+ * the history is trimmed back to KEPT_TOOL_IMAGES, newest first (two
+ * read_files calls' worth; MAX_IMAGES_PER_READ_FILES_CALL is 4).
+ *
+ * Trimmed in batches, not to a fixed window on every step (2026-11-11): each
+ * detach rewrites an older tool result, so every message after it is sent
+ * uncached again. A fixed window of 8 did that on every step that added an
+ * image; a window that grows to 16 and then drops to 8 does it once per 8
+ * images.
  *
  * An attached image is re-sent on every later step, and the token counter
  * charges it a flat estimate (token-counter.ts), so compaction never sees its
@@ -14,14 +21,22 @@ import type { ToolResultOutput } from '@codebuff/common/types/messages/content-p
  * about 1.2 GB to the 8 GiB limit within a minute: 9 OOM kills, each taking
  * the runner's ~35 other turns with it.
  */
-export const MAX_ATTACHED_TOOL_IMAGES = 8
+export const MAX_ATTACHED_TOOL_IMAGES = 16
+
+/** How many stay attached after a trim. */
+export const KEPT_TOOL_IMAGES = 8
 
 /**
- * The most base64 characters of attached tool-result images, newest first
- * (about 12 MB of image). One Cloud read can be up to 11 MB, so the newest
- * result is always kept whole, whatever its size.
+ * The most base64 characters of attached tool-result images (about 12 MB of
+ * image), which bounds a request's size and the runner's memory. Past it the
+ * history is trimmed back to KEPT_TOOL_IMAGE_CHARS, newest first. One Cloud
+ * read can be up to 11 MB, so the newest result is always kept whole,
+ * whatever its size.
  */
 export const MAX_ATTACHED_TOOL_IMAGE_CHARS = 16_000_000
+
+/** How many characters of images stay attached after a trim. */
+export const KEPT_TOOL_IMAGE_CHARS = 8_000_000
 
 /** What read_files says about an image that is still attached. */
 const ATTACHED_IMAGE_TEXT = 'The image is attached after this result.'
@@ -81,14 +96,30 @@ function detachImages(
 }
 
 /**
- * Keeps only the newest tool-result images attached: at most
- * MAX_ATTACHED_TOOL_IMAGES and MAX_ATTACHED_TOOL_IMAGE_CHARS, counting whole
- * tool results from the end, and always the newest result that has any.
- * Older results lose their images and say so. User-attached images are
- * untouched. Messages that do not change keep their identity, and a history
- * with nothing to detach is returned as is.
+ * Keeps the attached tool-result images within MAX_ATTACHED_TOOL_IMAGES and
+ * MAX_ATTACHED_TOOL_IMAGE_CHARS. Within both, nothing changes. Past either,
+ * only the newest KEPT_TOOL_IMAGES / KEPT_TOOL_IMAGE_CHARS stay attached,
+ * counting whole tool results from the end, and always the newest result that
+ * has any. Older results lose their images and say so. User-attached images
+ * are untouched. Messages that do not change keep their identity, and a
+ * history with nothing to detach is returned as is.
  */
 export function capToolResultImages(messages: Message[]): Message[] {
+  let attachedImages = 0
+  let attachedChars = 0
+  for (const message of messages) {
+    if (message.role !== 'tool' || !Array.isArray(message.content)) continue
+    for (const part of message.content)
+      if (isImagePart(part)) {
+        attachedImages += 1
+        attachedChars += part.data.length
+      }
+  }
+  if (
+    attachedImages <= MAX_ATTACHED_TOOL_IMAGES &&
+    attachedChars <= MAX_ATTACHED_TOOL_IMAGE_CHARS
+  )
+    return messages
   let images = 0
   let chars = 0
   let full = false
@@ -103,8 +134,8 @@ export function capToolResultImages(messages: Message[]): Message[] {
     const size = parts.reduce((total, part) => total + part.data.length, 0)
     const fits =
       images === 0 ||
-      (images + parts.length <= MAX_ATTACHED_TOOL_IMAGES &&
-        chars + size <= MAX_ATTACHED_TOOL_IMAGE_CHARS)
+      (images + parts.length <= KEPT_TOOL_IMAGES &&
+        chars + size <= KEPT_TOOL_IMAGE_CHARS)
     if (!full && fits) {
       images += parts.length
       chars += size

@@ -1,4 +1,5 @@
 import { contextPrunerBudgetForModel } from '@codebuff/common/constants/model-config'
+import { isRootStepReminderMessage } from '@codebuff/common/util/system-reminder'
 import { compactionThreshold } from '@codebuff/common/constants/compaction-policy'
 import { BYOK_RUN_ID_PREFIX } from '@codebuff/common/constants/byok'
 import {
@@ -425,19 +426,27 @@ export const runAgentStep = async (
     ),
   )
 
-  const agentMessagesUntruncated = buildArray<Message>(
-    ...history,
-
-    stepPrompt &&
-      userMessage({
+  const stepMessage = stepPrompt
+    ? userMessage({
         content: stepPrompt,
         tags: ['STEP_PROMPT'],
 
         // James: Deprecate the below, only use tags, which are not prescriptive.
         timeToLive: 'agentStep' as const,
         keepDuringTruncation: true,
-      }),
-  )
+      })
+    : undefined
+  // base3's batching reminder stays in history instead of expiring after the
+  // step (2026-11-11). Deleting it each step meant no request extended the
+  // one before, so the provider re-read the previous step's tail and output
+  // uncached on every step: about a quarter of DeepSeek Flash's cache misses
+  // (~$300/day). Kept, the history only grows, at ~60 cached tokens a step.
+  // Compaction still leaves it out (`isEphemeral` reads the STEP_PROMPT tag).
+  // Other agents' step prompts still expire.
+  if (stepMessage && isRootStepReminderMessage(stepMessage))
+    delete stepMessage.timeToLive
+
+  const agentMessagesUntruncated = buildArray<Message>(...history, stepMessage)
 
   agentState.messageHistory = agentMessagesUntruncated
 

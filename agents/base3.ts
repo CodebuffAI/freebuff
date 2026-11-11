@@ -184,14 +184,13 @@ export function createBase3(
     // the runtime default instead of the model's.
     compactContext,
     ...(turnEndingNote ? { instructionsPrompt: TURN_ENDING_NOTE } : {}),
-    // The section's reminder at the end of every step, dropped from history
-    // after it. Read once, Flash drifts back to one call per step; repeated,
-    // it keeps batching. A step prompt is deleted each step, so no request
-    // extends the previous one: a provider that caches only exact prefix
-    // extensions then misses most of every request (MiMo and Luna did,
-    // #1158), while Flash's lanes cache partial prefixes and kept their hit
-    // rate. The server skips it where it reads the user's own words
-    // (`isRootStepReminderMessage`).
+    // The section's reminder at the end of every step. Read once, Flash
+    // drifts back to one call per step; repeated, it keeps batching. It stays
+    // in history (run-agent-step.ts, 2026-11-11): deleted each step, no
+    // request extended the previous one, and Flash's lanes re-read the
+    // previous step's tail and output uncached on every step (about a quarter
+    // of its cache misses). The server skips it where it reads the user's own
+    // words (`isRootStepReminderMessage`).
     ...(batching ? { stepPrompt: BASE3_BATCHING_STEP_PROMPT } : {}),
     toolNames: [
       'read_files',

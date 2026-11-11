@@ -12,6 +12,8 @@ import {
   capToolResultImages,
   DETACHED_IMAGE_NOTE,
   DETACHED_IMAGE_TEXT,
+  KEPT_TOOL_IMAGE_CHARS,
+  KEPT_TOOL_IMAGES,
   MAX_ATTACHED_TOOL_IMAGE_CHARS,
   MAX_ATTACHED_TOOL_IMAGES,
 } from '../tool-images'
@@ -54,9 +56,9 @@ describe('capToolResultImages', () => {
 
     const capped = capToolResultImages(history)
     const kept = attached(capped)
-    expect(kept).toHaveLength(MAX_ATTACHED_TOOL_IMAGES)
+    expect(kept).toHaveLength(KEPT_TOOL_IMAGES)
     expect(kept.reduce((n, p) => n + (p.type === 'media' ? p.data.length : 0), 0))
-      .toBeLessThanOrEqual(MAX_ATTACHED_TOOL_IMAGE_CHARS)
+      .toBeLessThanOrEqual(KEPT_TOOL_IMAGE_CHARS)
     // The newest two calls are untouched objects; everything older is detached.
     expect(capped[53]).toBe(history[53])
     expect(capped[52]).toBe(history[52])
@@ -118,9 +120,27 @@ describe('capToolResultImages', () => {
       user,
       ...Array.from({ length: 4 }, (_, i) => readImages(`r${i}`, ['a.png', 'b.png', 'c.png'], 10)),
     ]
-    const capped = capToolResultImages(withTools)
-    expect(capped[0]).toBe(user)
-    expect(attached(capped)).toHaveLength(6)
+    // 12 attached images are within the cap: nothing changes.
+    expect(capToolResultImages(withTools)).toBe(withTools)
+    expect(attached(withTools)).toHaveLength(12)
+  })
+
+  // Trimmed in batches so an older result is rewritten (and everything after
+  // it re-sent uncached) once per KEPT_TOOL_IMAGES images, not on every step.
+  test('images accumulate untouched up to the cap, then drop back to the kept window', () => {
+    let history: Message[] = []
+    const rewrites: number[] = []
+    for (let step = 0; step < 40; step++) {
+      history.push(readImages(`s${step}`, [`p${step}.png`], 10))
+      const capped = capToolResultImages(history)
+      if (capped !== history) rewrites.push(step)
+      history = capped
+      expect(attached(history).length).toBeLessThanOrEqual(MAX_ATTACHED_TOOL_IMAGES)
+    }
+    // The 17th image trims to 8; then every 9th image after that.
+    expect(rewrites).toEqual([16, 25, 34])
+    expect(attached(history).length).toBeLessThanOrEqual(MAX_ATTACHED_TOOL_IMAGES)
+    expect(attached(history).length).toBeGreaterThanOrEqual(KEPT_TOOL_IMAGES)
   })
 
   test('a tool message without a parts array is skipped, never thrown on', () => {
