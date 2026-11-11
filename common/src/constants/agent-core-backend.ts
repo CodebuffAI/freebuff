@@ -13,7 +13,7 @@ export type AgentCoreBackend = 'convex' | 'shadow' | 'postgres'
 
 // `postgres` (Owen, 2026-10-19): the UI reads the agent core from Postgres and
 // Postgres writes it (AGENT_CORE_WRITER); the projection drains, then fences
-// (docs/convex-agent-core-writes.md, "The flip runbook").
+// (docs/convex-agent-core-mirror.md, "The writer cutover: drain, then fence").
 export const AGENT_CORE_BACKEND: AgentCoreBackend = 'postgres'
 
 /** Whether the web UI reads the agent core from Postgres (`/api/fn` + live topics). */

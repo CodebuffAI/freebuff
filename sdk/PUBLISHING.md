@@ -32,7 +32,7 @@ This replaces the previous `tsup` + manual package.json manipulation approach.
 
 - `bun run build` - Build TypeScript only
 - `bun run verify` - Build + run smoke tests
-- `bun run smoke-test` - Run smoke tests on existing build
+- `bun run smoke-test:dist` - Run smoke tests on existing build
 - `bun run clean` - Remove dist directory
 - `bun run release` - Remote build + publish to npm
 - `bun run typecheck` - Type checking only

@@ -49,11 +49,12 @@ bun run test:integration
 | `stream-chunks` | Tests handleStreamChunk callback |
 | `connection-check` | Tests checkConnection() method |
 
-### Unit Tests (`test:unit:e2e`)
-Pure unit tests with no external dependencies.
+### Unit Tests (`test`)
+Pure unit tests with no external dependencies. `bun run test` runs them with the
+rest of the SDK unit tests (`e2e/utils/**/*.test.ts` is included).
 
 ```bash
-bun run test:unit:e2e
+bun run test
 ```
 
 | Test | Description |
@@ -87,10 +88,10 @@ bun run test:e2e
 bun run test:integration
 
 # All unit tests
-bun run test:unit:e2e
+bun run test
 
 # Everything
-bun run test:e2e && bun run test:integration && bun run test:unit:e2e
+bun run test:e2e && bun run test:integration && bun run test
 ```
 
 ## Prerequisites

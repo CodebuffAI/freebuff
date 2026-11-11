@@ -6,7 +6,7 @@ import {
 
 /**
  * Bench-v2: the skill eval bench's POOL, about the production repository mix
- * (docs/freebuff-project-stacks-snapshot.md: TS 41%, Python 32%, JS 31%), with
+ * (project-profile snapshot of 2026-10-08: TS 41%, Python 32%, JS 31%), with
  * the package managers each ecosystem really uses (npm/pnpm/yarn/bun,
  * pip/uv/poetry), other-language and empty-folder controls, and five local
  * fixtures for shapes no public repository has (no git, Windows line endings).

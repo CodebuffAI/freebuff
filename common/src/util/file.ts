@@ -197,7 +197,7 @@ export type ProjectFileContext = {
  *   warehouse.
  * - `branch` and `changedFiles` are names and paths. A repository snapshot is
  *   aggregate scalars, not a manifest; paths and branches are out of contract
- *   (see infobuff docs/specs/2026-08-22-repository-feature-extractor-v2.md).
+ *   (see infobuff/docs/10-feature-registry.md).
  *
  * Everything kept is a count, a bounded enum, or a date percentile. Adding a
  * field here is a deliberate act; widening it by spread is not available.

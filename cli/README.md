@@ -57,28 +57,8 @@ See [tmux.knowledge.md](tmux.knowledge.md) for comprehensive tmux documentation 
 
 ## Build
 
-Build the package:
+Compile the standalone binary (output in `bin/`):
 
 ```bash
-bun run build
+bun run build:binary
 ```
-
-## Run
-
-Run the built TUI:
-
-```bash
-bun run start
-```
-
-Or use the binary directly:
-
-```bash
-codebuff-tui
-```
-
-## Features
-
-- Built with OpenTUI for modern terminal interfaces
-- Uses React for declarative component-based UI
-- TypeScript support out of the box

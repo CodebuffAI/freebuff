@@ -33,8 +33,8 @@ BuffBench evaluates coding agents by having them reconstruct actual git commits 
    - Runs optional validation commands
 
 3. **Judging System** (`judge.ts`)
-   - Uses AI (GPT-5) to score implementations
-   - Runs 2 parallel judges (GPT and Sonnet), averaging their scores and keeping the median judge's analysis; warns loudly if one fails, since a silently-dropped judge turns the panel into a single opinion
+   - Uses AI (`openai/gpt-6.1-sol`) to score implementations
+   - Runs the judges listed in `ACTIVE_JUDGE_IDS` (currently one), averaging their scores and keeping the median judge's analysis; warns loudly if one fails, since a silently-dropped judge turns the panel into a single opinion
    - Compares agent output against ground truth git diffs
    - Provides detailed analysis with strengths and weaknesses
    - Scores on three dimensions: completion, code quality, and overall
@@ -64,7 +64,7 @@ sequenceDiagram
     participant Orchestrator as BuffBench Orchestrator
     participant AgentRunner as Agent Runner
     participant Agent as Coding Agent
-    participant Judge as AI Judge (3x)
+    participant Judge as AI Judge
     participant TraceAnalyzer as Trace Analyzer
     participant MetaAnalyzer as Meta Analyzer
 
@@ -79,7 +79,7 @@ sequenceDiagram
             Agent->>AgentRunner: Return trace + changes
         end
         
-        AgentRunner->>Judge: Judge each agent's output (3 judges)
+        AgentRunner->>Judge: Judge each agent's output
         Judge->>AgentRunner: Return median scores + analysis
         
         AgentRunner->>TraceAnalyzer: Analyze all agent traces
@@ -180,8 +180,11 @@ evals/buffbench/
 ├── main.ts                   # Example usage
 ├── main-nightly.ts           # Nightly evaluation runner with email reporting
 ├── main-single-eval.ts       # Single evaluation runner
+├── main-fast-harness.ts      # base3 vs base3-fast, paired, Freestyle VMs
+├── main-haiku-lean.ts        # Haiku lean-context arm vs production arm
 │
 ├── agent-runner.ts           # Executes agents in test repos
+├── runners/                  # External CLI runners (claude, codex, opencode) and the Codebuff runner
 ├── freestyle-sandbox.ts      # --freestyle: one Freestyle VM per agent run
 ├── freestyle-task.ts         # The in-VM entry point of a Freestyle run
 ├── judge.ts                  # AI judging system
@@ -190,18 +193,19 @@ evals/buffbench/
 │
 ├── gen-evals.ts              # Generate eval tasks from commits
 ├── gen-repo-eval.ts          # End-to-end eval creation
+├── pick-commits.ts           # Select commits worth evaluating
+├── setup-test-repo.ts        # Clone and prepare a test repo
 ├── eval-task-generator.ts    # Task prompt generation
 │
 ├── format-output.ts          # Result formatting utilities
 ├── trace-utils.ts            # Trace processing utilities
 ├── lessons-extractor.ts      # Extract lessons from failures
+├── compare-arms.ts           # Paired read-out of one logs directory
+├── analyze-task-scores.ts    # Find hard tasks across recent runs
 │
 ├── types.ts                  # Type definitions
 │
-├── eval-codebuff.json        # Codebuff project evaluations
-├── eval-manifold.json        # Manifold evaluations
-├── eval-plane.json           # Plane project evaluations
-└── eval-saleor.json          # Saleor e-commerce evaluations
+└── eval-*.json               # Task sets (codebuff, manifold, plane, saleor; *2.json are second sets)
 ```
 
 ## Usage
@@ -447,9 +451,9 @@ taskConcurrency: 10  // High parallelism (faster, more resources)
 
 The `evals/buffbench/` directory contains several example evaluation files:
 
-- **eval-codebuff.json** - Codebuff project evaluations
-- **eval-manifold.json** - Manifold prediction market evaluations
-- **eval-plane.json** - Plane project management evaluations
-- **eval-saleor.json** - Saleor e-commerce platform evaluations
+- **eval-codebuff.json** / **eval-codebuff2.json** - Codebuff project evaluations
+- **eval-manifold.json** / **eval-manifold2.json** - Manifold prediction market evaluations
+- **eval-plane.json** / **eval-plane2.json** - Plane project management evaluations
+- **eval-saleor.json** / **eval-saleor2.json** - Saleor e-commerce platform evaluations
 
 These demonstrate the evaluation format and provide ready-to-use test cases.
