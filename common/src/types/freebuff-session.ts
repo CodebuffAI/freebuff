@@ -1273,9 +1273,9 @@ export type FreebuffSessionAdmissionResponse = (
  * - `limited_region`: the account is in (or declared) a limited-access
  *   country; verifying it grants nothing.
  * - `region_locked`: the account's region is set to limited access by a
- *   permanent lock, and no self-serve verification changes it (only a region
- *   review). Any other lock is `eligible`: a verification that passes clears
- *   it (2026-11-11).
+ *   lock no self-serve verification lifts (region-lock-lift.ts); a phone may
+ *   lift some of them (the status then carries `phoneOverride`). Any other
+ *   lock is `eligible`: a verification that passes clears it (2026-11-11).
  * - `eligible`: verifying from a direct connection in a full-access country
  *   can change it.
  */
