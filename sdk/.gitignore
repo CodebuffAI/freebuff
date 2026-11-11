@@ -1,3 +1,6 @@
 node_modules
 dist
 *.tsbuildinfo
+
+# Compatibility fixtures install fresh in scripts/verify.ts; their lockfiles are throwaway.
+test/*/package-lock.json
