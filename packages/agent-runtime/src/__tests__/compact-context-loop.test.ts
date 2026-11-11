@@ -14,7 +14,7 @@ import {
   setupDbSpies,
 } from '@codebuff/common/testing/mocks/database'
 import { getInitialSessionState } from '@codebuff/common/types/session-state'
-import { promptSuccess } from '@codebuff/common/util/error'
+import { AbortError, promptSuccess } from '@codebuff/common/util/error'
 import { assistantMessage, userMessage } from '@codebuff/common/util/messages'
 import {
   afterAll,
@@ -27,11 +27,13 @@ import {
   spyOn,
 } from 'bun:test'
 
+import { automaticCompactionIsWorthwhile } from '../compaction'
 import {
   CONTINUATION_PROMPT_TAG,
   conversationSummaries,
   messageFingerprint,
   resetConversationSummariesForTest,
+  summaryBandStart,
 } from '../conversation-summary'
 import { loopAgentSteps, USER_PROMPT_REFUSED_NOTE } from '../run-agent-step'
 import { clearAgentGeneratorCache } from '../run-programmatic-step'
@@ -65,6 +67,8 @@ describe('compactContext in loopAgentSteps', () => {
   let summaryFails: boolean
   /** Thrown by the summary request, as the SDK throws an API refusal. */
   let summaryRefusal: Error | undefined
+  /** How long a summary request takes, so a test can catch it in progress. */
+  let summaryDelayMs: number
   let order: string[]
   let runtimeImpl: any
 
@@ -160,8 +164,10 @@ describe('compactContext in loopAgentSteps', () => {
       state?: Partial<AgentState>
       /** The chunks of one agent step; defaults to "ok" and end_turn. */
       step?: () => unknown[]
-      /** Input tokens the provider reports; null reports no usage. */
-      reportedInput?: number | null
+      /** Input tokens the provider reports; null reports no usage. A
+       *  function reports per agent request (1-based). */
+      reportedInput?: number | null | ((call: number) => number | null)
+      signal?: AbortSignal
     } = {},
   ) => {
     const {
@@ -183,6 +189,8 @@ describe('compactContext in loopAgentSteps', () => {
         summaryRequests.push(params.messages)
         order.push('summary')
         if (summaryRefusal) throw summaryRefusal
+        if (summaryDelayMs)
+          await new Promise((resolve) => setTimeout(resolve, summaryDelayMs))
         if (summaryFails) {
           yield { type: 'error' as const, message: 'provider down' }
         } else {
@@ -193,9 +201,12 @@ describe('compactContext in loopAgentSteps', () => {
       seenMessages.push(params.messages)
       order.push('agent')
       // The provider's usage receipt: summary decisions read only this.
-      const inputTokens =
-        options.reportedInput ?? countTokensMessages(params.messages)
-      if (options.reportedInput !== null)
+      const reported =
+        typeof options.reportedInput === 'function'
+          ? options.reportedInput(seenMessages.length)
+          : options.reportedInput
+      const inputTokens = reported ?? countTokensMessages(params.messages)
+      if (reported !== null)
         params.onUsageReceived?.({
           inputTokens,
           outputTokens: 10,
@@ -238,7 +249,7 @@ describe('compactContext in loopAgentSteps', () => {
         ...runtimeImpl.extraCodebuffMetadata,
       },
       onResponseChunk: () => {},
-      signal: new AbortController().signal,
+      signal: options.signal ?? new AbortController().signal,
     } as any)
   }
 
@@ -315,6 +326,7 @@ describe('compactContext in loopAgentSteps', () => {
     summaryRequests = []
     summaryFails = false
     summaryRefusal = undefined
+    summaryDelayMs = 0
     order = []
     resetConversationSummariesForTest()
     dbSpies = setupDbSpies(createMockDbOperations())
@@ -824,6 +836,229 @@ describe('compactContext in loopAgentSteps', () => {
       const history = result.agentState.messageHistory
       expect(textOf(history.at(-1)!)).toContain(USER_PROMPT_REFUSED_NOTE)
       expect(JSON.stringify(history)).not.toContain('REFUSED STEERING')
+    })
+  })
+
+  // Measured 2026-11-10: 416k mid-turn summaries a day, ~107k applied. A
+  // mid-turn summary is made only in the band the limit reads from.
+  describe('the near-limit band', () => {
+    /** A turn of read_files steps whose last step ends it. */
+    const multiStep = {
+      ...optedIn,
+      toolNames: ['read_files', 'end_turn'],
+    } as AgentTemplate
+    const stepsOf = (count: number) => {
+      let call = 0
+      return () => {
+        call++
+        return [
+          { type: 'text' as const, text: `STEP ${call} OUTPUT` },
+          call >= count
+            ? createToolCallChunk('end_turn', {})
+            : createToolCallChunk('read_files', { paths: [`f${call}.ts`] }),
+        ]
+      }
+    }
+    const sizes =
+      (...tokens: number[]) =>
+      (call: number) =>
+        tokens[call - 1] ?? tokens.at(-1)!
+    const wait = (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms))
+    // 400k budget: compaction at 320k, the band from 290k.
+    const BAND = summaryBandStart(400_000)
+
+    it('starts at one growth step below the compaction threshold', () => {
+      expect(BAND).toBe(290_000)
+      expect(summaryBandStart(375_000)).toBe(270_000)
+    })
+
+    it('makes one summary, at the end, for a turn that stays under the band', async () => {
+      const logged: any[] = []
+      await runLoop(multiStep, idleHistory(0), {
+        logged,
+        step: stepsOf(5),
+        reportedInput: sizes(35_000, 65_000, 95_000, 125_000, 165_000),
+        state: { stepsRemaining: 10 },
+      })
+      await settle()
+      expect(seenMessages).toHaveLength(5)
+      expect(summaryRequests).toHaveLength(1)
+      expect(order.at(-1)).toBe('summary')
+      expect(
+        logged.filter((row) => row.axiomEvent === 'compaction_summary'),
+      ).toEqual([
+        expect.objectContaining({ mid_turn: false, context_token_count: 165_010 }),
+      ])
+    })
+
+    it('makes one mid-turn summary once the turn crosses into the band', async () => {
+      const logged: any[] = []
+      await runLoop(multiStep, idleHistory(0), {
+        logged,
+        step: stepsOf(5),
+        reportedInput: sizes(200_000, 260_000, 295_000, 305_000, 315_000),
+        state: { stepsRemaining: 10 },
+      })
+      await settle()
+      expect(summaryRequests).toHaveLength(1)
+      expect(order).toEqual([
+        'agent',
+        'agent',
+        'agent',
+        'summary',
+        'agent',
+        'agent',
+      ])
+      expect(
+        logged.filter((row) => row.axiomEvent === 'compaction_summary'),
+      ).toEqual([
+        expect.objectContaining({ mid_turn: true, context_token_count: 295_010 }),
+      ])
+    })
+
+    it('waits at the limit for the summary in the band over an older ready one', async () => {
+      const history = idleHistory(0)
+      const fresh: ConversationSummary = {
+        ...readySummary(history),
+        id: 'band-summary',
+        text: `## Objective\n- BAND SUMMARY ${'fresh '.repeat(60)}`,
+        contextTokens: 300_000,
+        createdAt: Date.now(),
+      }
+      conversationSummaries('thread-1:test-agent-id').start(
+        300_000,
+        () => new Promise((resolve) => setTimeout(() => resolve(fresh), 20)),
+      )
+      const logged: any[] = []
+      await runLoop(optedIn, history, {
+        logged,
+        state: {
+          // From an earlier turn's end, below the band.
+          compactionSummary: readySummary(history),
+          ...measured(330_000),
+        },
+      })
+      const sent = joined(seenMessages[0])
+      expect(sent).toContain('BAND SUMMARY')
+      expect(sent).not.toContain('MODEL SUMMARY')
+      expect(summaryRequests).toHaveLength(0)
+      expect(
+        logged.find((row) => row.axiomEvent === 'context_compaction.attempt'),
+      ).toMatchObject({
+        outcome: 'applied',
+        trigger_reason: 'context_limit',
+        summary_id: 'band-summary',
+        ready_summary: true,
+        waited_for_pending: true,
+        generated_foreground: false,
+        summary_context_tokens: 300_000,
+      })
+    })
+
+    it('summarizes after a step that jumps past the threshold, and the limit waits for it', async () => {
+      summaryDelayMs = 30
+      const logged: any[] = []
+      const result = await runLoop(multiStep, idleHistory(0), {
+        logged,
+        step: stepsOf(3),
+        reportedInput: sizes(250_000, 330_000, 20_000),
+        state: { stepsRemaining: 10 },
+      })
+      await wait(50)
+      expect(result.output.type).not.toBe('error')
+      expect(summaryRequests).toHaveLength(1)
+      expect(order).toEqual(['agent', 'agent', 'summary', 'agent'])
+      expect(joined(seenMessages[2])).toContain('MODEL SUMMARY')
+      expect(
+        logged.find((row) => row.axiomEvent === 'context_compaction.attempt'),
+      ).toMatchObject({
+        outcome: 'applied',
+        trigger_reason: 'context_limit',
+        waited_for_pending: true,
+        generated_foreground: false,
+        summary_context_tokens: 330_010,
+      })
+    })
+
+    it('reaches the band in a small window', async () => {
+      const window = {
+        ...multiStep,
+        compactContext: { maxContextLength: 40_000 },
+      } as AgentTemplate
+      const history = idleHistory(0)
+      // The band is 26k-32k; a summary there clears real room.
+      expect(summaryBandStart(40_000)).toBe(26_000)
+      expect(
+        automaticCompactionIsWorthwhile({
+          messages: history,
+          maxContextLength: 40_000,
+          thresholdTokens: 32_000,
+          fixedTokenCount: 2_000,
+        }),
+      ).toBe(true)
+      const logged: any[] = []
+      await runLoop(window, history, {
+        logged,
+        step: stepsOf(3),
+        reportedInput: sizes(20_000, 27_000, 30_000),
+        state: { stepsRemaining: 10 },
+      })
+      await settle()
+      expect(summaryRequests).toHaveLength(1)
+      expect(
+        logged.filter((row) => row.axiomEvent === 'compaction_summary'),
+      ).toEqual([
+        expect.objectContaining({ mid_turn: true, context_token_count: 27_010 }),
+      ])
+    })
+
+    it('summarizes a cancelled turn once, and closes the run after it', async () => {
+      summaryDelayMs = 20
+      const controller = new AbortController()
+      const finished: string[] = []
+      let call = 0
+      const logged: any[] = []
+      const result = await runLoop(multiStep, idleHistory(0), {
+        logged,
+        signal: controller.signal,
+        // The stopped step reports no size: the decision uses the last one.
+        reportedInput: (n) => (n === 1 ? 150_000 : null),
+        runtimeOverrides: {
+          finishAgentRun: async (run: { status: string }) => {
+            order.push('finish')
+            finished.push(run.status)
+          },
+        },
+        step: () => {
+          call++
+          if (call === 1)
+            return [createToolCallChunk('read_files', { paths: ['a.ts'] })]
+          controller.abort()
+          throw new AbortError()
+        },
+        state: { stepsRemaining: 10 },
+      })
+      expect(result.output).toMatchObject({ type: 'error' })
+      // The run returned without waiting for the summary.
+      expect(finished).toEqual([])
+      await wait(50)
+      expect(summaryRequests).toHaveLength(1)
+      expect(finished).toEqual(['cancelled'])
+      expect(order).toEqual(['agent', 'agent', 'summary', 'finish'])
+      expect(
+        logged.filter((row) => row.axiomEvent === 'compaction_summary'),
+      ).toEqual([
+        expect.objectContaining({
+          outcome: 'completed',
+          mid_turn: false,
+          context_token_count: 150_010,
+        }),
+      ])
+      // Its history is the one the next request sends, before the note.
+      expect(joined(summaryRequests[0])).not.toContain(
+        joined(result.agentState.messageHistory.slice(-1)),
+      )
     })
   })
 

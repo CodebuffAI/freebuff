@@ -10,6 +10,7 @@ import {
   CONTINUATION_PROMPT_TAG,
   isIdleReturn,
   messageFingerprint,
+  midTurnSummaryIsDue,
   resetConversationSummariesForTest,
   summaryIdleMs,
   summaryIsDue,
@@ -80,6 +81,22 @@ describe('summaryThresholds', () => {
     expect(due(40_000)).toBe(true)
     expect(due(69_999, 40_000)).toBe(false)
     expect(due(70_000, 40_000)).toBe(true)
+  })
+
+  it('makes a mid-turn summary only in the band below the threshold', () => {
+    // 375k: compaction at 300k, the band from 270k.
+    const due = (contextTokens: number, latestContextTokens?: number) =>
+      midTurnSummaryIsDue({
+        contextTokens,
+        maxContextLength: 375_000,
+        latestContextTokens,
+      })
+    expect(due(269_999)).toBe(false)
+    expect(due(269_999, 40_000)).toBe(false)
+    expect(due(270_000)).toBe(true)
+    expect(due(270_000, 239_000)).toBe(true)
+    // One in the band is enough, however far past the threshold.
+    expect(due(360_000, 270_000)).toBe(false)
   })
 })
 

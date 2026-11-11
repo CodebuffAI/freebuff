@@ -59,7 +59,9 @@ import {
   manualCompactionIsWorthwhile,
   conversationSummaries,
   isIdleReturn,
+  midTurnSummaryIsDue,
   summarizeAndLog,
+  summaryBandStart,
   summaryIdleMs,
   summaryIsDue,
   summaryRequestHistory,
@@ -1571,6 +1573,13 @@ export async function loopAgentSteps(
   /** The context size the provider reported for this run's latest step:
    *  input plus output tokens. Summary decisions use only this. */
   let stepUsageTokens: number | undefined
+  /** The last size any step of this run reported: a cancelled or failed
+   *  step reports none, and its turn-end summary is decided on this. */
+  let lastStepUsageTokens: number | undefined
+  /** Mid-turn summaries start in the band below the compaction threshold. */
+  const bandStart = summaryBandStart(maxContextLength)
+  /** Set when compaction left the run over its hard budget. */
+  let stoppedOverBudget = false
   // The server accepts a request only while its run is open, so the run
   // finishes after the summaries it started.
   const runSummaries: Promise<unknown>[] = []
@@ -1641,9 +1650,14 @@ export async function loopAgentSteps(
         }),
     })
 
-  /** Starts a background summary when the context grew enough since the
-   *  last one. The cache is warm here: a step or a turn just ended. */
-  const startSummaryIfDue = (midTurn: boolean, fixedTokenCount: number) => {
+  /** Starts a background summary when one is due: after a step, once the
+   *  context is in the near-limit band; at a turn's end, when it grew enough
+   *  since the last one. The cache is warm here: a step or a turn just ended. */
+  const startSummaryIfDue = (
+    midTurn: boolean,
+    fixedTokenCount: number,
+    contextTokens = stepUsageTokens,
+  ) => {
     if (!agentTemplate.compactContext || summaries.pending()) return
     const history = currentAgentState.messageHistory
     // A window too small for a summary to clear room (a large fixed prompt
@@ -1658,7 +1672,6 @@ export async function loopAgentSteps(
       })
     )
       return
-    const contextTokens = stepUsageTokens
     if (contextTokens === undefined) return
     const latest = summaries.latest(
       currentAgentState.compactionSummary,
@@ -1666,8 +1679,9 @@ export async function loopAgentSteps(
     )
     // Swapped in and not sized by a response yet: growth has no start.
     if (latest && latest.contextTokens === undefined) return
+    const due = midTurn ? midTurnSummaryIsDue : summaryIsDue
     if (
-      !summaryIsDue({
+      !due({
         contextTokens,
         maxContextLength,
         latestContextTokens: latest?.contextTokens,
@@ -1699,6 +1713,38 @@ export async function loopAgentSteps(
   }
 
   /**
+   * A cancelled or failed turn still leaves the user a history to return to,
+   * and the last step's request warmed its cache: summarize it as a finished
+   * turn would be. No step size is reported for the step that stopped, so it
+   * is decided on the last one this run had.
+   */
+  const startSummaryAfterTurnStopped = () => {
+    if (!agentTemplate.compactContext || manualCompaction) return
+    try {
+      startSummaryIfDue(
+        false,
+        countTokens(system) + countTokensJson(toolsForTokenCount),
+        lastStepUsageTokens,
+      )
+    } catch (error) {
+      logger.warn(
+        { error: getErrorObject(error) },
+        'Starting the summary of a stopped turn failed',
+      )
+    }
+  }
+
+  /** The server accepts a request only while its run is open: the run
+   *  finishes after its background work, without holding up the caller. */
+  const finishAfter = async (
+    background: Promise<unknown>[],
+    finish: () => Promise<unknown>,
+  ) => {
+    if (background.length) void Promise.allSettled(background).then(finish)
+    else await finish()
+  }
+
+  /**
    * Replaces the covered history with the newest summary. Waits for a summary
    * in progress. At the context limit, or on a manual request, with no usable
    * summary it makes one now (the cache is warm). After an idle gap it never
@@ -1718,6 +1764,7 @@ export async function loopAgentSteps(
     let waitedForPending = false
     let generatedForeground = false
     let summaryId: string | undefined
+    let summaryContextTokens: number | undefined
     const isRoot = !initialAgentState.parentId
     const before = currentAgentState.messageHistory
     // This turn's own request (and steering) stays a real message.
@@ -1749,9 +1796,19 @@ export async function loopAgentSteps(
       // A ready summary is used at once, even when a newer one is in
       // progress: waiting for it cost ~1 min a swap in the base3 eval
       // (10-28). The newer one replaces it at the next swap, when it adds
-      // something. Only with nothing ready does the run wait for it.
+      // something. The run waits for it with nothing ready, or at the limit
+      // when only it is in the near-limit band: mid-turn summaries start
+      // only there, so the ready one is from an earlier turn's end and would
+      // drop everything since.
       const pending = summaries.pending()
-      if (pending && !usable(applied)) {
+      const pendingIsFresher =
+        pending !== undefined &&
+        (trigger === 'context_limit' ||
+          trigger === 'context_limit_and_cache_expiry') &&
+        pending.contextTokens >= bandStart &&
+        (summary?.contextTokens === undefined ||
+          summary.contextTokens < bandStart)
+      if (pending && (!usable(applied) || pendingIsFresher)) {
         waitedForPending = true
         showStatus()
         const completed = await untilAborted(pending.promise, signal)
@@ -1790,6 +1847,7 @@ export async function loopAgentSteps(
       }
       if (!summary || !usable(applied)) return false
       summaryId = summary.id
+      summaryContextTokens = summary.contextTokens
 
       if (compactionWindow)
         closeCompactionWindow({
@@ -1878,6 +1936,7 @@ export async function loopAgentSteps(
             ready_summary: readySummary,
             waited_for_pending: waitedForPending,
             generated_foreground: generatedForeground,
+            summary_context_tokens: summaryContextTokens,
             context_token_count: preTokens,
             max_context_length: maxContextLength,
           },
@@ -2000,6 +2059,7 @@ export async function loopAgentSteps(
           contextTokens !== undefined &&
           contextTokens > maxContextLength
         ) {
+          stoppedOverBudget = true
           throw new Error(
             compactionOverBudgetMessage({
               maxContextLength,
@@ -2161,8 +2221,10 @@ export async function loopAgentSteps(
 
         onAgentUsageReceived: (usage) => {
           // Spawned agents report through the same callback.
-          if (usage.agentId === initialAgentState.agentId)
+          if (usage.agentId === initialAgentState.agentId) {
             stepUsageTokens = usage.inputTokens + usage.outputTokens
+            lastStepUsageTokens = stepUsageTokens
+          }
           params.onAgentUsageReceived?.(usage)
         },
         agentState: currentAgentState,
@@ -2486,25 +2548,22 @@ export async function loopAgentSteps(
           })
         : undefined
 
-    const finishCompletedRun = () =>
-      finishAgentRun({
-        ...params,
-        runId,
-        status: 'completed',
-        totalSteps,
-        directCredits: currentAgentState.directCreditsUsed,
-        totalCredits: currentAgentState.creditsUsed,
-      })
-    const background = [
-      ...(projectProfileReport ? [projectProfileReport] : []),
-      ...runSummaries,
-      ...(turnReview ? [turnReview] : []),
-    ]
-    if (background.length) {
-      void Promise.allSettled(background).then(finishCompletedRun)
-    } else {
-      await finishCompletedRun()
-    }
+    await finishAfter(
+      [
+        ...(projectProfileReport ? [projectProfileReport] : []),
+        ...runSummaries,
+        ...(turnReview ? [turnReview] : []),
+      ],
+      () =>
+        finishAgentRun({
+          ...params,
+          runId,
+          status: 'completed',
+          totalSteps,
+          directCredits: currentAgentState.directCreditsUsed,
+          totalCredits: currentAgentState.creditsUsed,
+        }),
+    )
 
     return {
       agentState: currentAgentState,
@@ -2529,6 +2588,9 @@ export async function loopAgentSteps(
           'userPrompt',
         )
       }
+
+      // Before the note below, so the summary's history is the cached one.
+      startSummaryAfterTurnStopped()
 
       currentAgentState.messageHistory = [
         ...currentAgentState.messageHistory,
@@ -2555,14 +2617,16 @@ export async function loopAgentSteps(
       // and carries this count across those edits itself.
       recountContextTokensForTurnEnd()
 
-      await finishAgentRun({
-        ...params,
-        runId,
-        status: 'cancelled',
-        totalSteps,
-        directCredits: currentAgentState.directCreditsUsed,
-        totalCredits: currentAgentState.creditsUsed,
-      })
+      await finishAfter(runSummaries, () =>
+        finishAgentRun({
+          ...params,
+          runId,
+          status: 'cancelled',
+          totalSteps,
+          directCredits: currentAgentState.directCreditsUsed,
+          totalCredits: currentAgentState.creditsUsed,
+        }),
+      )
 
       return {
         agentState: currentAgentState,
@@ -2619,6 +2683,10 @@ export async function loopAgentSteps(
     if (refused)
       currentAgentState.messageHistory =
         currentAgentState.messageHistory.filter((m) => !refused.includes(m))
+    // Not after a refusal: an unpaid request, a refused message or a history
+    // over its budget would only be refused again.
+    if (statusCode !== 402 && !refused && !stoppedOverBudget)
+      startSummaryAfterTurnStopped()
     // End the failed turn in the root's history, as a cancellation is ended
     // above: left bare, its prompt joins the next one in the live request
     // that compaction keeps verbatim. A 402 propagates; the SDK ends it.
@@ -2633,15 +2701,17 @@ export async function loopAgentSteps(
     // A failed turn still leaves history behind, and the host still shows the
     // user a context reading before their next message.
     recountContextTokensForTurnEnd()
-    await finishAgentRun({
-      ...params,
-      runId,
-      status,
-      totalSteps,
-      directCredits: currentAgentState.directCreditsUsed,
-      totalCredits: currentAgentState.creditsUsed,
-      errorMessage,
-    })
+    await finishAfter(runSummaries, () =>
+      finishAgentRun({
+        ...params,
+        runId,
+        status,
+        totalSteps,
+        directCredits: currentAgentState.directCreditsUsed,
+        totalCredits: currentAgentState.creditsUsed,
+        errorMessage,
+      }),
+    )
 
     // Payment required errors (402) should propagate
     if (statusCode === 402) {

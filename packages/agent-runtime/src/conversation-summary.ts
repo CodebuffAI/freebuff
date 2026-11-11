@@ -5,13 +5,15 @@
  * decisions, requirements and next steps (accurate), and a user who returns
  * after the prompt cache expired sends a small request (no cold start).
  *
- * 1. When the context reaches FIRST_SUMMARY_TOKENS, and then each time it
- *    grows by SUMMARY_GROWTH_TOKENS since the last summary, the runtime asks
- *    the agent's own model for a summary of the whole conversation. The
- *    request is the agent's normal request plus one instruction, so the
- *    provider reads the history from its warm cache. It runs in the
- *    background: after a step, or when the turn ends. A new summary replaces
- *    the old one.
+ * 1. When a turn ends (or is cancelled or fails) with the context at
+ *    FIRST_SUMMARY_TOKENS, or SUMMARY_GROWTH_TOKENS past the last summary,
+ *    the runtime asks the agent's own model for a summary of the whole
+ *    conversation. Mid-turn, after a step, it asks only once the context is
+ *    in the band below the compaction threshold (`summaryBandStart`), the
+ *    only summary the limit will use. The request is the agent's normal
+ *    request plus one instruction, so the provider reads the history from its
+ *    warm cache. It runs in the background. A new summary replaces the old
+ *    one.
  * 2. The full history is still sent while the cache is warm.
  * 3. The summary is used only when the user returns after the model's idle
  *    threshold (`summaryIdleMs`), or when the context reaches its limit.
@@ -23,7 +25,10 @@
  * of the same conversation through an in-process store.
  */
 
-import { DEEPSEEK_FLASH_COMPACTION_POLICY } from '@codebuff/common/constants/compaction-policy'
+import {
+  compactionThreshold,
+  DEEPSEEK_FLASH_COMPACTION_POLICY,
+} from '@codebuff/common/constants/compaction-policy'
 import {
   buildCompactionSummaryPrompt,
   COMPACTION_SUMMARY_METADATA_KEY,
@@ -163,6 +168,38 @@ export function summaryIsDue(params: {
   if (params.latestContextTokens === undefined)
     return params.contextTokens >= first
   return params.contextTokens - params.latestContextTokens >= growth
+}
+
+/**
+ * Where the near-limit band starts: one growth step below the compaction
+ * threshold (270k on DeepSeek V4 Flash's 375k budget, 290k on 400k).
+ */
+export function summaryBandStart(maxContextLength: number): number {
+  return (
+    compactionThreshold(maxContextLength) -
+    summaryThresholds(maxContextLength).growth
+  )
+}
+
+/**
+ * Whether a step inside a turn should start a summary. Only one in the band
+ * is ever used at the limit; a mid-turn summary below it is replaced by the
+ * turn-end one or a later one before anything reads it. Measured 2026-11-10:
+ * 416k mid-turn summaries a day against ~107k applied. So: one summary once
+ * the context reaches the band, and none while the newest is already in it.
+ */
+export function midTurnSummaryIsDue(params: {
+  contextTokens: number
+  maxContextLength: number
+  /** The newest summary made or in progress, as its context size. */
+  latestContextTokens: number | undefined
+}): boolean {
+  const bandStart = summaryBandStart(params.maxContextLength)
+  if (params.contextTokens < bandStart) return false
+  return (
+    params.latestContextTokens === undefined ||
+    params.latestContextTokens < bandStart
+  )
 }
 
 /**

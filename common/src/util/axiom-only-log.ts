@@ -432,6 +432,8 @@ const COMPACTION_ATTEMPT_FIELDS = {
   ready_summary: 'boolean',
   waited_for_pending: 'boolean',
   generated_foreground: 'boolean',
+  /** The applied summary's context size when it was requested. */
+  summary_context_tokens: 'number',
   context_token_count: 'number',
   max_context_length: 'number',
 } as const satisfies AxiomOnlyFieldSchema
