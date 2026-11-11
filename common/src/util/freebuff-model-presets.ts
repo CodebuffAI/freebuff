@@ -267,6 +267,21 @@ const THINKING_LEVEL_LABELS: Record<FreebuffModelPreset['id'], string> = {
   powerful: 'Max',
 }
 
+/** What each of the one-model picker's thinking levels does: its stop's hover
+ *  text (product, 2026-11-11). */
+export const FREEBUFF_THINKING_LEVEL_HINTS: Record<
+  FreebuffModelPreset['id'],
+  string
+> = {
+  efficient: 'Fast: light reasoning, quickest replies. Good for small edits and questions.',
+  balanced: 'Default: thinks the task through before answering. Best for most work.',
+  powerful: 'Max: the most reasoning, slowest replies. For hard bugs and large changes.',
+}
+
+/** The three levels in one line, for the one-model picker's info icon. */
+export const FREEBUFF_THINKING_LEVELS_SUMMARY =
+  'Fast answers quickly with light reasoning. Default thinks the task through and suits most work. Max reasons the longest, for hard problems.'
+
 function thinkingLevelPresets(
   row: FreebuffPresetModel,
   efforts: readonly ReasoningEffort[],
