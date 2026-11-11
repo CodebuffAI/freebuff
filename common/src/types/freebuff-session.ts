@@ -189,6 +189,23 @@ export interface FreebuffFreebucksWindow {
    *  (`FREEBUCKS_SHARED_DEVICE_NOTE`). Server-resolved copy; absent means
    *  nothing to explain. */
   note?: string
+  /** Today's paid hours still running, each with the part of its price this
+   *  pool paid. `spent` and `remaining` already count every one in full.
+   *  Display only (2026-11-11): clients spread that part over its hour
+   *  (`freebucksDailyShown`); admission and every affordability check keep
+   *  reading `spent`, `remaining` and `balance`. Absent with no hour running,
+   *  and from older servers, whose clients show the debit all at once. */
+  openHours?: readonly FreebuffFreebucksOpenHour[]
+}
+
+/** One paid hour still running, as `FreebuffFreebucksWindow.openHours`. */
+export interface FreebuffFreebucksOpenHour {
+  /** Freebucks this hour's debit took from the daily pool (the wallet's part
+   *  is not usage). A refunded hour is not listed at all. */
+  amount: number
+  /** ISO instants of the hour the debit bought. */
+  startsAt: string
+  endsAt: string
 }
 
 /**
