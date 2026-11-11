@@ -142,6 +142,13 @@ export const deviceReadResult = z.discriminatedUnion('kind', [
     .strict(),
 ])
 export type DeviceReadResult = z.infer<typeof deviceReadResult>
+/**
+ * A turn review's native run (web `startDeviceTurnReview`): its own scope beside
+ * the turn it reviews, so the forked session never joins that turn's journal.
+ */
+export function deviceReviewRunId(runId: string) {
+  return `${runId}:review`
+}
 export const deviceToolScope = z
   .object({
     workspaceId: z.string().min(1).max(200),
