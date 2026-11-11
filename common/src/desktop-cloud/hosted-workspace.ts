@@ -62,6 +62,10 @@ export type HostedWorkspaceStatus = {
     projectName: string
     reconnectStatus?: 'connecting' | 'retrying' | 'needs-approval'
     reconnectMessage?: string
+    /** Why Desktop's last automatic connect of this folder failed, while it keeps retrying (newer Desktop only). */
+    reconnectReason?: string
+    /** When Desktop next retries this folder on its own (epoch ms), while `retrying` (newer Desktop only). */
+    reconnectRetryAt?: number
   }>
 }
 
