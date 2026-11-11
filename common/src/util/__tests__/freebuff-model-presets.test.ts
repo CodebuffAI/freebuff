@@ -7,8 +7,8 @@ import {
   FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID as muse,
 } from '../../constants/freebuff-models'
 import {
-  FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY as dsSlowKey,
-  FREEBUFF_MIMO_SLOW_CATALOG_KEY as mimoSlowKey,
+  FREEBUFF_DEEPSEEK_FLASH_CATALOG_KEY as dsFlashKey,
+  FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY as dsSlowKey,
   freebuffReasoningLadderModelId,
   getFreebuffModelPresets,
   matchingFreebuffModelPreset,
@@ -47,10 +47,12 @@ describe('model picker presets', () => {
     ])
   })
 
-  test('limited subscribers and limited accounts with at least 100 Freebucks get DeepSeek Flash Slow, Flash at high and Muse Spark', () => {
+  test('limited subscribers and limited accounts with at least 100 Freebucks start on DeepSeek Flash Slow, with Muse Spark as Powerful', () => {
+    // Flash Slow is the default at limited access for everyone (2026-11-11),
+    // as the server recommends; it fills Efficient too with no free row.
     expect(ids({ accessTier: 'limited', isSubscriber: true })).toEqual([
       dsSlowKey,
-      flash,
+      dsSlowKey,
       muse,
     ])
     expect(
@@ -59,12 +61,12 @@ describe('model picker presets', () => {
       ),
     ).toEqual([
       ['Efficient', null],
-      ['Balanced', 'high'],
+      ['Balanced', null],
       ['Powerful', 'high'],
     ])
     expect(ids({ accessTier: 'limited', balance: 100 })).toEqual([
       dsSlowKey,
-      flash,
+      dsSlowKey,
       muse,
     ])
     expect(ids({ accessTier: 'limited', balance: 99 })).not.toContain(muse)
@@ -111,14 +113,14 @@ describe('model picker presets', () => {
     ).toBe('high')
   })
 
-  test('the limited premium ladder leads with DeepSeek V4.1 Flash Slow where it is listed and open, never MiMo', () => {
+  test('the limited premium ladder starts on DeepSeek V4.1 Flash Slow where it is listed and open, never the steady-speed Flash row', () => {
     const slow = { id: dsSlowKey, displayName: 'DeepSeek V4.1 Flash Slow' }
-    const mimoSlow = { id: mimoSlowKey, displayName: 'MiMo v2.6 Flash Slow' }
+    const steady = { id: dsFlashKey, displayName: 'DeepSeek V4.1 Flash' }
     const input = { accessTier: 'limited' as const, isSubscriber: true }
-    expect(ids({ ...input, models: [mimoSlow, slow] })).toEqual([dsSlowKey, flash, muse])
+    expect(ids({ ...input, models: [steady, slow] })).toEqual([dsSlowKey, dsSlowKey, muse])
     expect(choices({ ...input, models: [slow] })[0]?.reasoningEffort).toBeNull()
     // Locked or unlisted (Web, a withdrawn row): Flash at low effort.
-    expect(ids({ ...input, models: [{ ...slow, available: false }, mimoSlow] })[0]).toBe(
+    expect(ids({ ...input, models: [{ ...slow, available: false }, steady] })[0]).toBe(
       flash,
     )
     expect(choices({ ...input, models: [] })[0]?.reasoningEffort).toBe('low')
@@ -162,12 +164,12 @@ describe('model picker presets', () => {
       'm-slow',
       flash,
     ])
-    // Premium ladders never read it.
+    // Premium ladders start on it too (2026-11-11), with Muse Spark as Powerful.
     for (const input of [
       { accessTier: 'limited' as const, isSubscriber: true },
       { accessTier: 'limited' as const, balance: 100 },
     ])
-      expect(ids({ ...input, recommendedModelId: 'm-slow' })).toEqual([dsSlowKey, flash, muse])
+      expect(ids({ ...input, recommendedModelId: 'm-slow' })).toEqual(['m-slow', 'm-slow', muse])
     expect(
       ids({ accessTier: 'full', recommendedModelId: 'm-slow' }),
     ).toEqual([flash, flash, flash])

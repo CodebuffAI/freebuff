@@ -30,18 +30,23 @@ export interface FreebuffPresetModel {
 }
 
 /**
- * DeepSeek V4.1 Flash Slow's catalog key, the row that was MiMo v2.6 Flash
- * Slow (`defaultCatalogKey('fbc/mimo-slow')`, its first id: a row renamed in
- * place keeps its key): a catalog-only row, so it has no public id and is
- * found by its opaque key, as in freebuff-picker-sections.ts. Pinned by the
+ * DeepSeek V4.1 Flash Slow's catalog key (`fbc/deepseek-flash-slow`, once MiMo
+ * v2.6 Flash Slow: `defaultCatalogKey('fbc/mimo-slow')`, its first id, since a
+ * row renamed in place keeps its key). A catalog-only row has no public id and
+ * is found by its opaque key, as in freebuff-picker-sections.ts. Pinned by the
  * web catalog tests.
  */
-export const FREEBUFF_MIMO_SLOW_CATALOG_KEY = 'm-61c26317cc'
+export const FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY = 'm-61c26317cc'
 
 /** DeepSeek V4.1 Flash's catalog key (the steady-speed row,
- *  `defaultCatalogKey('fbc/deepseek-slow')` from its first id), found the
- *  same way. */
-export const FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY = 'm-8db1ccbba6'
+ *  `fbc/deepseek-flash`, first id `fbc/deepseek-slow`), found the same way.
+ *  NOT the Slow row, whatever its first id says. */
+export const FREEBUFF_DEEPSEEK_FLASH_CATALOG_KEY = 'm-8db1ccbba6'
+
+/** Old names, swapped against today's rows (the "slow" one is Flash, the
+ *  "mimo" one is Flash Slow). Kept for importers until they move. */
+export const FREEBUFF_MIMO_SLOW_CATALOG_KEY = FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY
+export const FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY = FREEBUFF_DEEPSEEK_FLASH_CATALOG_KEY
 
 /** Recommendations only. Catalog visibility, purchase consent and admission
  * remain owned by the existing model-selection path.
@@ -53,13 +58,16 @@ export const FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY = 'm-8db1ccbba6'
  * The first stop is no longer a cheap model, so it reads Fast rather than
  * Efficient; limited ladders keep Efficient.
  *
- * A limited-access subscriber, or one holding 100 Freebucks, gets DeepSeek V4.1
- * Flash Slow (Flash at low effort where it is not listed, as on Web), Flash at
- * high effort and Muse Spark 1.3. Muse Spark is a paid-only row, so without a
- * plan that stop is the ordinary paywall, never an entitlement. Any other
- * limited account gets the free ladder below, built on the server's
- * recommendation for it (`recommendedModelId`) where the catalog sends one,
- * else the same Flash Slow stop.
+ * LIMITED ACCESS DEFAULTS TO DEEPSEEK V4.1 FLASH SLOW for every account
+ * (product, 2026-11-11, Victor: one picker everywhere), matching the server's
+ * recommendation. Balanced, the stop new chats start on, is the server's pick
+ * (`recommendedModelId`, Flash Slow at limited access) or Flash Slow itself;
+ * a free row (Glyph, Solar) or Flash Slow is Efficient. Powerful is Muse
+ * Spark 1.3 for a subscriber or a holder of 100 Freebucks (a paid-only row,
+ * so without a plan that stop is the ordinary paywall, never an entitlement)
+ * and DeepSeek V4.1 Flash Fast at high effort otherwise. Until 11-11 those
+ * accounts started on Flash Fast and their "Flash Slow" stop was the
+ * steady-speed Flash row (the two keys' names were swapped).
  *
  * No preset recommends MiMo (product, 2026-11-03, Victor): MiMo's provider is
  * down and its rows are served by DeepSeek, so the ladders that led on MiMo v2.6
@@ -137,28 +145,16 @@ export function getFreebuffModelPresets({
     !models ||
     models.some(
       (row) =>
-        row.id === FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY && row.available !== false,
+        row.id === FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY &&
+        row.available !== false,
     )
       ? {
           id,
           label,
-          modelId: FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY,
+          modelId: FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY,
           reasoningEffort: null,
         }
       : preset(id, label, FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'low')
-
-  if (premium) {
-    return [
-      flashSlow('efficient', 'Efficient'),
-      preset('balanced', 'Balanced', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'high'),
-      preset(
-        'powerful',
-        'Powerful',
-        FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
-        FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
-      ),
-    ]
-  }
 
   // Only a live, open, explicitly zero-priced row qualifies. Display names
   // identify catalog-only candidates without publishing their upstream IDs.
@@ -203,7 +199,14 @@ export function getFreebuffModelPresets({
         }
       : base('efficient', 'Efficient'),
     base('balanced', 'Balanced'),
-    preset('powerful', 'Powerful', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'high'),
+    premium
+      ? preset(
+          'powerful',
+          'Powerful',
+          FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+          FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
+        )
+      : preset('powerful', 'Powerful', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'high'),
   ]
 }
 
