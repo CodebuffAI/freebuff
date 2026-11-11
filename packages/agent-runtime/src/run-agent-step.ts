@@ -76,6 +76,7 @@ import {
   shouldOfferProjectProfileTool,
 } from './project-profile'
 import { getAgentStreamFromTemplate } from './prompt-agent-stream'
+import { capToolResultImages } from './util/tool-images'
 import { reviewTurn } from './turn-review'
 import { isThinkOnlyResponse } from './util/think-tags'
 import {
@@ -415,8 +416,13 @@ export const runAgentStep = async (
   // and replayed, that one orphan would fail every later turn, so drop it here
   // — the single point every step's request is built — and assign the cleaned
   // history back so the checkpointed state is valid too.
-  const history = dropUnansweredToolCalls(
-    expireMessages(agentState.messageHistory, 'agentStep'),
+  // Only the newest tool-result images stay attached (tool-images.ts): a
+  // history of hundreds of page images re-sent on every step OOM-killed Cloud
+  // runners on 2026-11-11. Assigned back below, so the saved state shrinks too.
+  const history = capToolResultImages(
+    dropUnansweredToolCalls(
+      expireMessages(agentState.messageHistory, 'agentStep'),
+    ),
   )
 
   const agentMessagesUntruncated = buildArray<Message>(
