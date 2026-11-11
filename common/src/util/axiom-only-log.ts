@@ -97,6 +97,10 @@ export const COMPACTION_FOLLOWUP_EVENT = 'context_compaction.followup' as const
  *  prompt cache, and its size. Counts and labels only, never the summary. */
 export const COMPACTION_SUMMARY_EVENT = 'compaction_summary' as const
 export const COMPACTION_ATTEMPT_EVENT = 'context_compaction.attempt' as const
+/** One per finished-turn review request (packages/agent-runtime/src/
+ *  turn-review.ts): its outcome, verdict, how many actions it offered and how
+ *  much of its input came from the prompt cache. Never the actions' text. */
+export const TURN_REVIEW_EVENT = 'turn_review' as const
 /** One per physical provider bill (web/src/llm-api/compaction-usage.ts): what
  *  a request cost and which compaction it belongs to. Ids, labels and counts
  *  only, never a prompt, an email or a user id. */
@@ -503,6 +507,22 @@ const COMPACTION_SUMMARY_FIELDS = {
   cached_input_tokens: 'number',
   output_tokens: 'number',
   summary_tokens: 'number',
+  duration_ms: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const TURN_REVIEW_FIELDS = {
+  ...COMPACTION_CORRELATION_FIELDS,
+  agent_run_id: 'string',
+  model: 'string',
+  /** `completed`, `unrecognized` (no review in the reply) or `failed`. */
+  outcome: 'string',
+  finish_reason: 'string',
+  /** `ready`, `needs_changes` or `not_promising`; absent with no verdict. */
+  verdict: 'string',
+  action_count: 'number',
+  input_tokens: 'number',
+  cached_input_tokens: 'number',
+  output_tokens: 'number',
   duration_ms: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
@@ -1441,6 +1461,7 @@ export type AxiomOnlyLogEvent = {
     | typeof CONTEXT_COMPACTION_COMPLETED_EVENT
     | typeof COMPACTION_FOLLOWUP_EVENT
     | typeof COMPACTION_SUMMARY_EVENT
+    | typeof TURN_REVIEW_EVENT
     | typeof COMPACTION_ATTEMPT_EVENT
     | typeof COMPACTION_REQUEST_USAGE_EVENT
     | typeof COMPACTION_FIRST_OUTPUT_EVENT
@@ -1560,6 +1581,12 @@ export function getAxiomOnlyLogEvent(
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(record, COMPACTION_SUMMARY_FIELDS),
+    }
+  }
+  if (eventName === TURN_REVIEW_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, TURN_REVIEW_FIELDS),
     }
   }
   if (eventName === COMPACTION_REQUEST_USAGE_EVENT) {

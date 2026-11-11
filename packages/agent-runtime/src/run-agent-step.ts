@@ -74,6 +74,7 @@ import {
   shouldOfferProjectProfileTool,
 } from './project-profile'
 import { getAgentStreamFromTemplate } from './prompt-agent-stream'
+import { reviewTurn } from './turn-review'
 import { isThinkOnlyResponse } from './util/think-tags'
 import {
   decideFollowupTodoNudge,
@@ -187,6 +188,7 @@ import type {
   TextPart,
   ImagePart,
 } from '@codebuff/common/types/messages/content-part'
+import type { TurnReview } from '@codebuff/common/constants/turn-review'
 import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
 import type {
   AgentTemplateType,
@@ -286,6 +288,12 @@ export const runAgentStep = async (
      * (`withCompactionSummary` in the SDK), so a restart does not lose it.
      */
     onCompactionSummary?: (summary: ConversationSummary) => void
+    /**
+     * Given, a root turn that ended normally is reviewed by its own model in
+     * the background (turn-review.ts), usually after the run returned. The
+     * review never joins the history.
+     */
+    onTurnReview?: (review: TurnReview) => void
   } & ParamsExcluding<
     typeof processStream,
     | 'agentContext'
@@ -2437,6 +2445,47 @@ export async function loopAgentSteps(
       )
     }
 
+    // The last response warmed the cache; the host shows what comes back.
+    const onTurnReview = params.onTurnReview
+    const turnReview =
+      onTurnReview && !initialAgentState.parentId && !manualCompaction
+        ? reviewTurn({
+            history: summaryRequestHistory(currentAgentState.messageHistory),
+            system,
+            logger,
+            runId,
+            model: agentTemplate.model,
+            telemetry,
+            stream: (request) =>
+              getAgentStreamFromTemplate({
+                ...params,
+                agentId: undefined,
+                template: {
+                  ...agentTemplate,
+                  reasoningOptions: summaryReasoningOptions(
+                    agentTemplate.model,
+                    agentTemplate.reasoningOptions,
+                  ),
+                },
+                runId,
+                messages: request.messages,
+                tools,
+                includeCacheControl: supportsCacheControl(agentTemplate.model),
+                maxOutputTokens: request.maxOutputTokens,
+                signal: request.signal,
+                extraCodebuffMetadata: {
+                  ...runMetadata,
+                  ...request.extraCodebuffMetadata,
+                },
+                onFinishReason: request.onFinishReason,
+                onUsageReceived: request.onUsageReceived,
+                onCostCalculated: async () => {},
+              }),
+          }).then((review) => {
+            if (review) onTurnReview(review)
+          })
+        : undefined
+
     const finishCompletedRun = () =>
       finishAgentRun({
         ...params,
@@ -2449,6 +2498,7 @@ export async function loopAgentSteps(
     const background = [
       ...(projectProfileReport ? [projectProfileReport] : []),
       ...runSummaries,
+      ...(turnReview ? [turnReview] : []),
     ]
     if (background.length) {
       void Promise.allSettled(background).then(finishCompletedRun)

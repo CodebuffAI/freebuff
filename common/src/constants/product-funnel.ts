@@ -29,6 +29,8 @@ export const productFunnelStageSchema = z.enum([
   'template',
   /** a new-chat starter pill was clicked (`starter_pills_2026_11`): selected */
   'starter',
+  /** a finished turn's review (`turn_review_2026_11`): shown, selected (one of its buttons) */
+  'turn_review',
   'model_picker',
   'model_selection',
   'admission',
@@ -350,6 +352,14 @@ export const productFunnelPropertiesSchema = z
       .string()
       .regex(/^[a-z0-9-]{1,40}$/)
       .optional(),
+    /** `turn_review`: the review's verdict, `none` when it judged no change. */
+    review_verdict: z
+      .enum(['ready', 'needs_changes', 'not_promising', 'none'])
+      .optional(),
+    /** `turn_review:selected`: which button, from 0 (the most valuable). */
+    review_action: z.number().int().min(0).max(9).optional(),
+    /** `turn_review:selected`: a fix to the change, or a next step beyond it. */
+    review_action_kind: z.enum(['fix', 'next']).optional(),
     selection_kind: z
       .enum([
         'default',

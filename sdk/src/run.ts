@@ -78,6 +78,7 @@ import type {
   AgentUsageData,
   ContextCompactionData,
 } from '@codebuff/common/types/contracts/llm'
+import type { TurnReview } from '@codebuff/common/constants/turn-review'
 import type { TraceWriter } from '@codebuff/common/types/contracts/trace'
 import type { DrainSteeringMessages } from '@codebuff/common/types/contracts/steering'
 import type { CodebuffFileSystem } from '@codebuff/common/types/filesystem'
@@ -335,6 +336,14 @@ export type RunOptions = {
    * with `withCompactionSummary`; without it a restart loses the summary.
    */
   onCompactionSummary?: (summary: ConversationSummary) => void
+  /**
+   * Asks the agent's own model, once a turn ends normally, for a review of it:
+   * one-click next prompts and a verdict on any change (`TURN_REVIEW_PROMPT`).
+   * It reuses the turn's prompt cache, usually arrives a few seconds after the
+   * run returned, and never joins the history. Not called when the reply held
+   * no review.
+   */
+  onTurnReview?: (review: TurnReview) => void
   /**
    * The shell this run's terminal commands actually execute in, when the host's
    * broker picks one other than the default (the sponsored Windows floor runs
@@ -710,6 +719,7 @@ async function runOnce({
   onCompactionStart,
   onCompactionEnd,
   onCompactionSummary,
+  onTurnReview,
   terminalShell,
   projectKey,
   traceSessionId: traceSessionIdOption,
@@ -1278,6 +1288,7 @@ async function runOnce({
     onCompactionStart: report(onCompactionStart),
     onCompactionEnd: reportSignal(onCompactionEnd),
     onCompactionSummary: report(onCompactionSummary),
+    onTurnReview: report(onTurnReview),
   }).catch((error) => {
     // A caller's own deadline (`AbortSignal.timeout`) rejects with a
     // `TimeoutError`, the same name Bun's 5-minute fetch idle timeout uses, so
