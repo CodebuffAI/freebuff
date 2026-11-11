@@ -25,6 +25,19 @@ export const DEVICE_FRAME_BYTES = 512 * 1024
 export const DEVICE_EXEC_OUTPUT_BYTES = 16 * 1024 * 1024
 export const DEVICE_EXEC_FRAME_BYTES = 24 * 1024 * 1024
 export const DEVICE_EXEC_MS = 5 * 60_000
+/** How long Desktop's `request_elevation` card waits for the user to approve it (elevation.ts). */
+export const DEVICE_ELEVATION_APPROVAL_MS = 10 * 60_000
+/** How long an approved elevated command may run before Desktop gives up on it (elevation.ts). */
+export const DEVICE_ELEVATION_COMMAND_MS = 5 * 60_000
+/**
+ * A `request_elevation` operation's deadline: the approval window, then the command, plus a
+ * minute for delivery and the answer. Under DEVICE_EXEC_MS a user who took a few minutes to
+ * approve, or a command that ran a while, outlived the operation and Cloud refused Desktop's
+ * answer (`bridge` 504). Cloud applies a change at once and Desktop only with a release, so
+ * shortening either window leaves Cloud waiting less than installed builds take.
+ */
+export const DEVICE_ELEVATION_MS =
+  DEVICE_ELEVATION_APPROVAL_MS + DEVICE_ELEVATION_COMMAND_MS + 60_000
 export const deviceExecutionTarget = z
   .object({
     sessionId: z.string().uuid(),
@@ -485,6 +498,16 @@ export const deviceResult = z.union([
 export type DeviceToolScope = z.infer<typeof deviceToolScope>
 export type DeviceRequest = z.infer<typeof deviceRequest>
 export type DeviceResult = z.infer<typeof deviceResult>
+/**
+ * How long a device operation may take: the server's deadline for a mutating one, from when it
+ * is posted, and Desktop's cap on its own work, from when it arrives. A read's server deadline
+ * is shorter (DEVICE_OPERATION_MS or the caller's `answerMs`).
+ */
+export function deviceOperationMs(request: DeviceRequest): number {
+  return request.method === 'tool' && request.name === 'request_elevation'
+    ? DEVICE_ELEVATION_MS
+    : DEVICE_EXEC_MS
+}
 export const deviceRegistration = z
   .object({
     protocolVersion: z.literal(DEVICE_EXECUTION_VERSION),
