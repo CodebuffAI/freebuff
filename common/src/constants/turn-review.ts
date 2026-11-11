@@ -28,6 +28,8 @@ export type TurnReview = {
   verdict: TurnReviewVerdict | null
   /** Why, in one short line; null without a verdict. */
   reason: string | null
+  /** The one message the review recommends sending next, offered in the composer (Tab fills it). */
+  nextPrompt: string | null
   actions: TurnReviewAction[]
 }
 
@@ -66,8 +68,10 @@ Turn the answers into at most ${MAX_TURN_REVIEW_ACTIONS} actions, the most valua
 - "prompt": what the user would send, in their voice. It must stand alone, because the agent that receives it never sees this review: name what to change or try and why, in one or two sentences, and leave the how to the agent.
 Do not offer what was already done or declined, or two buttons that do the same thing.
 
+Last, write "nextPrompt": the single message you would recommend the user send next, taking all of the above into account. It is offered in their empty message box, where one key fills it in for them to send. It may combine several instructions, such as the fixes the change needs and one valuable follow-up, but keep it concise: one to three short sentences in the user's voice that stand alone. Use null when nothing is worth sending.
+
 Reply with only this JSON, and no other text:
-{"verdict": "ready" | "needs_changes" | "not_promising" | null, "reason": "..." | null, "actions": [{"kind": "fix" | "next", "label": "...", "prompt": "..."}]}`
+{"verdict": "ready" | "needs_changes" | "not_promising" | null, "reason": "..." | null, "actions": [{"kind": "fix" | "next", "label": "...", "prompt": "..."}], "nextPrompt": "..." | null}`
 
 function clip(value: unknown, max: number): string {
   if (typeof value !== 'string') return ''
@@ -91,7 +95,7 @@ export function parseTurnReview(reply: string): TurnReview | null {
 /** A review from untrusted JSON (a model's reply, a stored event), or null. */
 export function turnReviewFrom(value: unknown): TurnReview | null {
   if (!value || typeof value !== 'object') return null
-  const raw = value as { verdict?: unknown; reason?: unknown; actions?: unknown }
+  const raw = value as Record<string, unknown>
   const verdict = TURN_REVIEW_VERDICTS.includes(raw.verdict as TurnReviewVerdict)
     ? (raw.verdict as TurnReviewVerdict)
     : null
@@ -103,7 +107,8 @@ export function turnReviewFrom(value: unknown): TurnReview | null {
       actions.push({ label, prompt, kind: item?.kind === 'fix' ? 'fix' : 'next' })
     if (actions.length === MAX_TURN_REVIEW_ACTIONS) break
   }
-  if (!verdict && !actions.length) return null
+  const nextPrompt = clip(raw.nextPrompt, MAX_PROMPT_CHARS) || null
+  if (!verdict && !actions.length && !nextPrompt) return null
   const reason = (verdict && clip(raw.reason, MAX_REASON_CHARS)) || null
-  return { verdict, reason, actions }
+  return { verdict, reason, actions, nextPrompt }
 }

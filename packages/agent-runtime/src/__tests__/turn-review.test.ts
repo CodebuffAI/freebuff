@@ -29,6 +29,7 @@ const REVIEW = {
     { kind: 'fix', label: 'Cut the retry wrapper', prompt: 'Inline the one-use retry wrapper.' },
     { kind: 'next', label: 'Add a test', prompt: 'Add a test for the stall.' },
   ],
+  nextPrompt: 'Cut the retry wrapper, then add a test for the stall.',
 }
 
 const template = {
@@ -185,11 +186,15 @@ describe('parseTurnReview', () => {
       reason: null,
       // An action with no known kind is a next step.
       actions: actions.slice(0, 5).map((action) => ({ ...action, kind: 'next' })),
+      nextPrompt: null,
     })
   })
 
   it('is null for no review at all', () => {
     expect(parseTurnReview('{"verdict": null, "actions": []}')).toBeNull()
+    // A recommended next message alone is still a review.
+    expect(parseTurnReview('{"verdict": null, "actions": [], "nextPrompt": "Add a test."}'))
+      .toEqual({ verdict: null, reason: null, actions: [], nextPrompt: 'Add a test.' })
     expect(parseTurnReview('not json')).toBeNull()
   })
 })

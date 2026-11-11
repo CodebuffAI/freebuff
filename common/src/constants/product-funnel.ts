@@ -356,8 +356,9 @@ export const productFunnelPropertiesSchema = z
       .optional(),
     /** `turn_review:selected`: which button, from 0 (the most valuable). */
     review_action: z.number().int().min(0).max(9).optional(),
-    /** `turn_review:selected`: a fix to the change, or a next step beyond it. */
-    review_action_kind: z.enum(['fix', 'next']).optional(),
+    /** `turn_review:selected`: a fix to the change, a next step beyond it, or
+     *  the recommended next message taken into the composer with Tab. */
+    review_action_kind: z.enum(['fix', 'next', 'next_prompt']).optional(),
     selection_kind: z
       .enum([
         'default',
