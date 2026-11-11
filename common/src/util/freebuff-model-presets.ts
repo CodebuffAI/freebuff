@@ -268,24 +268,3 @@ export function matchingFreebuffModelPreset(
     presets.find(matches)
   )
 }
-
-/**
- * The one model every stop names, when the slider is that model's reasoning
- * (product, 2026-11-05: full access slides DeepSeek V4.1 Flash low / high / max
- * and nothing else). Undefined for a ladder that moves between models, and for
- * the one-model picker's thinking levels, which name no model at all. A picker
- * showing this ladder while another model is selected offers the model as one
- * Recommended option instead of a slider that matches no stop.
- */
-export function freebuffReasoningLadderModelId(
-  presets: readonly FreebuffModelPreset[],
-): string | undefined {
-  const first = presets[0]
-  if (!first || presets.length < 2) return undefined
-  if (presets.some((preset) => preset.thinkingLevel)) return undefined
-  return presets.every((preset) =>
-    freebuffModelIdMatches(preset.modelId, first.modelId),
-  )
-    ? first.modelId
-    : undefined
-}

@@ -9,7 +9,6 @@ import {
 import {
   FREEBUFF_DEEPSEEK_FLASH_CATALOG_KEY as dsFlashKey,
   FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY as dsSlowKey,
-  freebuffReasoningLadderModelId,
   getFreebuffModelPresets,
   matchingFreebuffModelPreset,
 } from '../freebuff-model-presets'
@@ -283,32 +282,5 @@ describe('model picker presets', () => {
         null,
       )?.id,
     ).toBe('balanced')
-  })
-
-  test('full access slides one model, so the slider is that model\'s reasoning; ladders that move between models are not', () => {
-    expect(freebuffReasoningLadderModelId(choices({ accessTier: 'full' }))).toBe(flash)
-    const rows = [
-      { id: 'm-flash', compiledId: flash, displayName: 'DeepSeek V4.1 Flash 10/17' },
-      { id: 'm-luna', compiledId: luna, displayName: 'GPT-6 Luna' },
-    ]
-    expect(
-      freebuffReasoningLadderModelId(choices({ accessTier: 'full', models: rows })),
-    ).toBe('m-flash')
-    expect(
-      freebuffReasoningLadderModelId(
-        choices({ accessTier: 'limited', isSubscriber: true }),
-      ),
-    ).toBeUndefined()
-    // The one-model picker's thinking levels name no model.
-    expect(
-      freebuffReasoningLadderModelId(
-        choices({
-          models: [
-            { ...rows[0]!, efforts: ['low', 'high', 'max'], defaultEffort: 'high' },
-          ],
-        }),
-      ),
-    ).toBeUndefined()
-    expect(freebuffReasoningLadderModelId([])).toBeUndefined()
   })
 })
