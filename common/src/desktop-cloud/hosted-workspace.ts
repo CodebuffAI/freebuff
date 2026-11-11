@@ -26,6 +26,18 @@ export type HostedRuntimeProgress = {
   totalBytes: number | null
 }
 
+/**
+ * What a `runtime` request asked for, as Desktop's `desktop.workspace_native` and the hosted
+ * page's `desktop.workspace_ipc` rows name it: `runtime:project` (a new chat's choices),
+ * `runtime:status` (a chat's), or `runtime:<location>` (a move).
+ */
+export function hostedRuntimeIpcOperation(input: unknown): string {
+  const scope = input && typeof input === 'object' ? (input as { threadId?: unknown; location?: unknown }) : {}
+  if (typeof scope.location === 'string' && ['local', 'worktree', 'cloud', 'remote'].includes(scope.location))
+    return `runtime:${scope.location}`
+  return scope.threadId ? 'runtime:status' : 'runtime:project'
+}
+
 export type HostedWorkspaceConnection = {
   /** A per-chat checkout does not change the project’s default runtime. */
   threadId?: string
