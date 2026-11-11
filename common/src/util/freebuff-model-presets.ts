@@ -75,8 +75,59 @@ export const FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY = FREEBUFF_DEEPSEEK_FLASH_CATALO
  * Slow.
  *
  * A catalog that lists one model with a reasoning ladder gets that model's
- * thinking levels instead, at any tier. */
+ * thinking levels instead, at any tier.
+ *
+ * CHAT MODE'S DEFAULT STOP IS DEEPSEEK V4.1 FLASH SLOW at every tier
+ * (`chatMode`; product, 2026-11-11, Victor). Its Balanced stop, the one a new
+ * Chat-mode chat starts on, was DeepSeek V4.1 Flash Fast at full access and
+ * wherever the viewer's tier was not known yet, so a "hello" cost three
+ * hours. The other stops are the tier's own, so a chat already on Fast,
+ * Efficient or Powerful keeps it. Where Flash Slow is not listed or open,
+ * Balanced stays the tier's. */
 export function getFreebuffModelPresets({
+  chatMode = false,
+  ...params
+}: {
+  accessTier?: FreebuffAccessTier | null
+  isSubscriber?: boolean
+  balance?: number
+  pricing?: Pick<FreebuffFreebucksInfo, 'prices'> | null
+  models?: readonly FreebuffPresetModel[]
+  /** The catalog's recommended row for this viewer (a catalog key). With
+   *  `models`, used only while it is listed and available. */
+  recommendedModelId?: string | null
+  /** The Chat-mode slider's stops (workspace-mode.ts). */
+  chatMode?: boolean
+} = {}): readonly FreebuffModelPreset[] {
+  const presets = tierPresets(params)
+  if (!chatMode || !flashSlowOffered(params.models)) return presets
+  return presets.map((preset) =>
+    preset.id === 'balanced'
+      ? {
+          id: 'balanced',
+          label: preset.label,
+          modelId: FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY,
+          reasoningEffort: null,
+        }
+      : preset,
+  )
+}
+
+/** DeepSeek V4.1 Flash Slow is listed and open in `models`; with no rows to
+ *  check against (the CLI, a caller before its catalog), its key is taken as
+ *  is. */
+function flashSlowOffered(models: readonly FreebuffPresetModel[] | undefined) {
+  return (
+    !models ||
+    models.some(
+      (row) =>
+        row.id === FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY &&
+        row.available !== false,
+    )
+  )
+}
+
+function tierPresets({
   accessTier,
   isSubscriber = false,
   balance = 0,
@@ -89,10 +140,8 @@ export function getFreebuffModelPresets({
   balance?: number
   pricing?: Pick<FreebuffFreebucksInfo, 'prices'> | null
   models?: readonly FreebuffPresetModel[]
-  /** The catalog's recommended row for this viewer (a catalog key). With
-   *  `models`, used only while it is listed and available. */
   recommendedModelId?: string | null
-} = {}): readonly FreebuffModelPreset[] {
+}): readonly FreebuffModelPreset[] {
   const only = models?.length === 1 ? models[0] : undefined
   if (only?.efforts && only.efforts.length > 1)
     return thinkingLevelPresets(only, only.efforts)
@@ -142,12 +191,7 @@ export function getFreebuffModelPresets({
     id: FreebuffModelPreset['id'],
     label: string,
   ): FreebuffModelPreset =>
-    !models ||
-    models.some(
-      (row) =>
-        row.id === FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY &&
-        row.available !== false,
-    )
+    flashSlowOffered(models)
       ? {
           id,
           label,

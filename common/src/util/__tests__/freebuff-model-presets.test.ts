@@ -248,6 +248,57 @@ describe('model picker presets', () => {
     ).toEqual(['Fast', 'Balanced', 'Powerful'])
   })
 
+  // Chat mode's default stop (product, 2026-11-11, Victor): a "hello" on
+  // Flash Fast at high cost three hours.
+  test('chat mode’s Balanced is DeepSeek V4.1 Flash Slow at every tier; its other stops are the tier’s', () => {
+    const slow = { id: dsSlowKey, displayName: 'DeepSeek V4.1 Flash Slow' }
+    const flashRow = { id: 'm-flash', compiledId: flash, displayName: 'DeepSeek V4.1 Flash Fast' }
+    const glyph = { id: 'm-glyph', displayName: 'Glyph Cluster', price: 0 }
+    const stops = (input: Parameters<typeof getFreebuffModelPresets>[0]) =>
+      choices({ ...input, chatMode: true }).map((preset) => [
+        preset.label,
+        preset.modelId,
+        preset.reasoningEffort,
+      ])
+    // Full access, and a picker that has not read the tier yet.
+    for (const accessTier of ['full', undefined] as const)
+      expect(stops({ accessTier, models: [flashRow, slow] })).toEqual([
+        ['Fast', 'm-flash', 'low'],
+        ['Balanced', dsSlowKey, null],
+        ['Powerful', 'm-flash', 'max'],
+      ])
+    // Limited: a free row stays Efficient, Muse Spark Powerful for a subscriber.
+    expect(
+      stops({ accessTier: 'limited', models: [glyph, slow], recommendedModelId: dsSlowKey }),
+    ).toEqual([
+      ['Efficient', 'm-glyph', null],
+      ['Balanced', dsSlowKey, null],
+      ['Powerful', flash, 'high'],
+    ])
+    expect(
+      stops({ accessTier: 'limited', isSubscriber: true, models: [slow] }).map(
+        (stop) => stop[1],
+      ),
+    ).toEqual([dsSlowKey, dsSlowKey, muse])
+    // With no rows to check against, the key is taken as is.
+    expect(stops({})[1]).toEqual(['Balanced', dsSlowKey, null])
+    // Locked or not listed: the tier's own Balanced.
+    expect(
+      stops({ models: [flashRow, { ...slow, available: false }] })[1],
+    ).toEqual(['Balanced', 'm-flash', 'high'])
+    expect(stops({ models: [flashRow] })[1]).toEqual(['Balanced', 'm-flash', 'high'])
+    // A new chat lands on Balanced; a chat already on another stop keeps it,
+    // and the old default (Flash Fast at high) is no stop at full access.
+    const full = choices({ models: [flashRow, slow], chatMode: true })
+    expect(matchingFreebuffModelPreset(full, dsSlowKey, null)?.id).toBe('balanced')
+    expect(matchingFreebuffModelPreset(full, 'm-flash', 'low')?.id).toBe('efficient')
+    expect(matchingFreebuffModelPreset(full, 'm-flash', 'max')?.id).toBe('powerful')
+    expect(matchingFreebuffModelPreset(full, 'm-flash', 'high')).toBeUndefined()
+    // Code mode's presets are unchanged.
+    expect(ids({ models: [flashRow, slow] })).toEqual(['m-flash', 'm-flash', 'm-flash'])
+    expect(choices({ models: [flashRow, slow] })[1]?.reasoningEffort).toBe('high')
+  })
+
   test('custom models and effort overrides keep their detailed trigger labels', () => {
     const presets = choices()
     expect(matchingFreebuffModelPreset(presets, flash, 'low')?.id).toBe(
