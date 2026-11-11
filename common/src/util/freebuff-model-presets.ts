@@ -278,9 +278,9 @@ export const FREEBUFF_THINKING_LEVEL_HINTS: Record<
   powerful: 'Max: the most reasoning, slowest replies. For hard bugs and large changes.',
 }
 
-/** The three levels in one line, for the one-model picker's info icon. */
+/** The levels in one short line, for the one-model picker's info icon. */
 export const FREEBUFF_THINKING_LEVELS_SUMMARY =
-  'Fast answers quickly with light reasoning. Default thinks the task through and suits most work. Max reasons the longest, for hard problems.'
+  'Fast answers quickest; Max thinks longest.'
 
 function thinkingLevelPresets(
   row: FreebuffPresetModel,
