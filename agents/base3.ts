@@ -130,10 +130,12 @@ export function createBase3(
     supportsBackgroundCommands?: boolean
     /** Append the "Work in batches" section, on a model in BATCHING_MODELS.
      *  For the roots that run the user's coding agent in build mode: the CLI
-     *  (`createBase3CliRoot`), Desktop and Desktop Cloud. Plan mode,
-     *  sponsored runs and Web/Cloud (whose platform runs the checks) leave it
-     *  off, and a lean row never gets it: its context budget says to read
-     *  narrowly. */
+     *  (`createBase3CliRoot`), Desktop and Desktop Cloud. Desktop Cloud passes
+     *  it in plan mode too, so its system prompt stays the same across a
+     *  Plan/Build switch, and drops the step reminder there. Desktop's plan
+     *  mode, sponsored runs and Web/Cloud (whose platform runs the checks)
+     *  leave it off, and a lean row never gets it: its context budget says to
+     *  read narrowly. */
     batching?: boolean
     /** The compiled model a catalog handle stands for, which decides the
      *  per-model parts below; defaults to `model`. */
