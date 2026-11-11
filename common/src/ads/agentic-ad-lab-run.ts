@@ -6,8 +6,9 @@
  *
  *  - the turn prompt from `freebuff-desktop/src/server/services/sponsored-run.ts`
  *    (`buildSponsoredPrompt`, `SPONSORED_TASK_FRAMING`, ...),
- *  - the system prompt sections from
- *    `freebuff-desktop/src/server/harness/sponsored-agent.ts`,
+ *  - the system prompt sections from Desktop's sponsored agent
+ *    (`harness/sponsored-agent.ts`, deleted 2026-11 with the local turn
+ *    runner, so those sections are no longer pinned to a source),
  *  - the account step's questions and notes from
  *    `freebuff-desktop/src/server/services/sponsored-signup.ts`.
  *

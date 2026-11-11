@@ -2,10 +2,9 @@
  * The skill evaluator's view of a LOCAL run's worktree: the
  * `SponsoredSkillCheckContext` the step driver (`sponsored-step-driver.ts`)
  * checks a sponsored skill's steps over, for a run that edits the user's own
- * checkout in place. Shared by Desktop's harness
- * (`freebuff-desktop/src/server/harness/sponsored-step-loop.ts`) and the CLI
- * (`cli/src/utils/sponsored-run.ts`), so "step 3 passed" is measured the same
- * way on both. Each surface supplies its own file system (the sponsored
+ * checkout in place. Used by the CLI (`cli/src/utils/sponsored-run.ts`), and
+ * until 2026-11 by Desktop's retired local harness, so "step 3 passed" is
+ * measured the same way on each. Each surface supplies its own file system (the sponsored
  * rooted one) and its own sandboxed shell, under the agent's own refusals.
  *
  * Doc: `docs/ads/agentic/step-checks.md`.
