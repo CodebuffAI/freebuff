@@ -110,6 +110,12 @@ export type CloudHistoryAttachment = {
     admittedAt: string
     expiresAt: string | null
   } | null
+  /**
+   * This claim bought an hour that is now over by the clock, so its next admission is refused
+   * (`purchase_claim_released`: claims are single-use). The composer starts a new claim before
+   * sending instead of learning it from that refusal. Absent: not ended, or an older server.
+   */
+  claimEnded?: true
 }
 export type CloudHistoryChatUpdate = {
   expectedRevision: number
