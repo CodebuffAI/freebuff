@@ -504,7 +504,7 @@ describe('placement daily cap', () => {
     // it -- both read this constant, which is the whole reason it is here.
     expect(PLACEMENT_DAILY_CAP_MIN_CENTS).toBe(5_000)
     expect(PLACEMENT_DAILY_CAP_MAX_CENTS).toBe(500_000)
-    expect(PLACEMENT_DAILY_CAP_DEFAULT_CENTS).toBe(10_000)
+    expect(PLACEMENT_DAILY_CAP_DEFAULT_CENTS).toBe(20_000)
   })
 
   it('clamps into the bounds and answers with whole cents', () => {

@@ -1108,7 +1108,7 @@ export const OVERSHOOT_POLICY_COPY =
  */
 export const PLACEMENT_DAILY_CAP_MIN_CENTS = 5_000
 export const PLACEMENT_DAILY_CAP_MAX_CENTS = 500_000
-export const PLACEMENT_DAILY_CAP_DEFAULT_CENTS = 10_000
+export const PLACEMENT_DAILY_CAP_DEFAULT_CENTS = 20_000
 export const PLACEMENT_DAILY_CAP_MIN_ERROR = `Daily budget must be at least $${PLACEMENT_DAILY_CAP_MIN_CENTS / 100}.`
 
 /** Whole cents inside the bounds, which is exactly what the API accepts. */
