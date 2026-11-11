@@ -33,6 +33,9 @@ import { REASONING_EFFORTS } from '../constants/reasoning-effort'
  *  session endpoints). Its presence is what tells the session endpoints to
  *  answer with catalog keys instead of model ids. */
 export const FREEBUFF_CATALOG_PROTOCOL_HEADER = 'x-freebuff-catalog-protocol'
+/** Set by the Freebuff Web gateway on a catalog request from a phone (the iOS
+ *  or Android app, or a phone browser): Show all models then starts off. */
+export const FREEBUFF_CATALOG_PHONE_HEADER = 'x-freebuff-catalog-phone'
 export const FREEBUFF_CATALOG_PROTOCOL_VERSION = '1'
 export const FREEBUFF_MODEL_CATALOG_PATH = '/api/v1/freebuff/models'
 
