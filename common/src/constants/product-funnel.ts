@@ -78,6 +78,8 @@ export const WELCOME_INVITE_VIA = Object.freeze({
  * is the welcome's. docs/referrals.md lists where each placement is.
  */
 export const REFERRAL_INVITE_VIA = Object.freeze({
+  /** The first-send dock card and the card under the first reply, both
+   *  removed 2026-11-11; kept so links already shared still attribute. */
   dock: Object.freeze({ link: 'dock_link', email: 'dock_email' }),
   inline: Object.freeze({ link: 'inline_link', email: 'inline_email' }),
   sidebar: Object.freeze({ link: 'sidebar_link', email: 'sidebar_email' }),

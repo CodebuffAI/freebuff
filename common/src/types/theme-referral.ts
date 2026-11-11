@@ -10,24 +10,9 @@ export interface ThemeReferralAccess {
   /** When the account was created (ISO), for the browser workspace's first-visit
    *  welcome. Absent from servers before 2026-11-07. */
   accountCreatedAt?: string | null
-  /** When the first-send invite card first came up (ISO,
-   *  `account_appearance.referral_prompt_claimed_at`), null when it never has,
-   *  for the returning-session invite banner. */
-  referralPromptClaimedAt?: string | null
 }
 
-export interface ThemeReferralPromptResponse {
-  show: boolean
-  access: ThemeReferralAccess
-  /**
-   * The account's timing-experiment arm, or null when it is not in the
-   * experiment (or the server predates it). A deferred arm answers
-   * `show: false` at the first send and is claimed later with its stage.
-   */
-  arm?: string | null
-}
-
-/** What the first-prompt invitation reports: `shown` once per mount, then each copy or dismissal. */
+/** What an invite card reports: `shown` once per mount, then each copy or dismissal. */
 export type ThemeReferralPromptAction =
   | 'shown'
   | 'copied'
