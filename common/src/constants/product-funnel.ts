@@ -83,11 +83,6 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
   dock: Object.freeze({ link: 'dock_link', email: 'dock_email' }),
   inline: Object.freeze({ link: 'inline_link', email: 'inline_email' }),
   sidebar: Object.freeze({ link: 'sidebar_link', email: 'sidebar_email' }),
-  /** The returning-session invite banner (docs/referrals.md). */
-  return_banner: Object.freeze({
-    link: 'return_banner_link',
-    email: 'return_banner_email',
-  }),
   settings: Object.freeze({ link: 'settings_link', email: 'settings_email' }),
   /** The one-time "your friend started coding" notice (docs/referrals.md). */
   friend_joined: Object.freeze({

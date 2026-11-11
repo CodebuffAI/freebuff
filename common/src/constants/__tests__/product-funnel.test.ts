@@ -122,7 +122,6 @@ test('each invite placement names its links; the route accepts only email values
     'dock_email',
     'inline_email',
     'sidebar_email',
-    'return_banner_email',
     'settings_email',
     'friend_joined_email',
     'settings_earn_email',
@@ -140,8 +139,8 @@ test('every placement maps its link and email via back to itself; anything else 
     'lifecycle_email',
     'friend_joined_lifecycle',
   ])
-  expect(referralInviteUrl('https://freebuff.com', 'c-1', 'return_banner')).toBe(
-    'https://freebuff.com/?ref=c-1&via=return_banner_link',
+  expect(referralInviteUrl('https://freebuff.com', 'c-1', 'friend_joined')).toBe(
+    'https://freebuff.com/?ref=c-1&via=friend_joined_link',
   )
   expect(referralPlacementFromVia(WELCOME_INVITE_VIA.link)).toEqual({
     placement: 'welcome',
