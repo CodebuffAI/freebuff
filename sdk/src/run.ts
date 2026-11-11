@@ -344,6 +344,8 @@ export type RunOptions = {
    * no review.
    */
   onTurnReview?: (review: TurnReview) => void
+  /** The review's instruction, e.g. `turnReviewPrompt(recentPrompts)`; TURN_REVIEW_PROMPT when absent. */
+  turnReviewPrompt?: string
   /**
    * The shell this run's terminal commands actually execute in, when the host's
    * broker picks one other than the default (the sponsored Windows floor runs
@@ -723,6 +725,7 @@ async function runOnce({
   onCompactionEnd,
   onCompactionSummary,
   onTurnReview,
+  turnReviewPrompt,
   terminalShell,
   projectKey,
   traceSessionId: traceSessionIdOption,
@@ -1292,6 +1295,7 @@ async function runOnce({
     onCompactionEnd: reportSignal(onCompactionEnd),
     onCompactionSummary: report(onCompactionSummary),
     onTurnReview: report(onTurnReview),
+    turnReviewPrompt,
   }).catch((error) => {
     // A caller's own deadline (`AbortSignal.timeout`) rejects with a
     // `TimeoutError`, the same name Bun's 5-minute fetch idle timeout uses, so

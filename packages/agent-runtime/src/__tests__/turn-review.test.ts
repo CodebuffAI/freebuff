@@ -2,6 +2,7 @@ import * as analytics from '@codebuff/common/analytics'
 import {
   parseTurnReview,
   TURN_REVIEW_PROMPT,
+  turnReviewPrompt,
 } from '@codebuff/common/constants/turn-review'
 import { TEST_USER_ID } from '@codebuff/common/old-constants'
 import { createTestAgentRuntimeParams } from '@codebuff/common/testing/fixtures/agent-runtime'
@@ -64,6 +65,7 @@ describe('turn review', () => {
 
   const run = async (options: {
     onTurnReview?: (review: TurnReview) => void
+    turnReviewPrompt?: string
     parentId?: string
     logged?: any[]
   }) => {
@@ -111,6 +113,7 @@ describe('turn review', () => {
       onResponseChunk: () => {},
       signal: new AbortController().signal,
       ...(options.onTurnReview ? { onTurnReview: options.onTurnReview } : {}),
+      ...(options.turnReviewPrompt ? { turnReviewPrompt: options.turnReviewPrompt } : {}),
     } as any)
     // The review runs in the background, after the loop returned.
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -147,6 +150,12 @@ describe('turn review', () => {
     expect(
       result.agentState.messageHistory.map(textOf).join('\n'),
     ).not.toContain(TURN_REVIEW_PROMPT)
+  })
+
+  it("asks with the host's prompt when it has the user's recent messages", async () => {
+    const prompt = turnReviewPrompt(['Open a PR, then review and simplify it'])
+    await run({ onTurnReview: () => {}, turnReviewPrompt: prompt })
+    expect(textOf(reviewRequests[0].messages.at(-1))).toContain('- Open a PR, then review and simplify it')
   })
 
   it('asks nothing without a host callback, or for a subagent', async () => {
@@ -190,11 +199,33 @@ describe('parseTurnReview', () => {
     })
   })
 
+  it("repairs a last string the model left unclosed", () => {
+    expect(
+      parseTurnReview('{"verdict":"ready","reason":"Clean.","actions":[],"nextPrompt":"Simplify, review and merge the PR when green.}'),
+    ).toMatchObject({ verdict: 'ready', nextPrompt: 'Simplify, review and merge the PR when green.' })
+  })
+
   it('is null for no review at all', () => {
     expect(parseTurnReview('{"verdict": null, "actions": []}')).toBeNull()
     // A recommended next message alone is still a review.
     expect(parseTurnReview('{"verdict": null, "actions": [], "nextPrompt": "Add a test."}'))
       .toEqual({ verdict: null, reason: null, actions: [], nextPrompt: 'Add a test.' })
     expect(parseTurnReview('not json')).toBeNull()
+  })
+})
+
+describe('turnReviewPrompt', () => {
+  it('is the bare prompt without recent messages', () => {
+    expect(turnReviewPrompt()).toBe(TURN_REVIEW_PROMPT)
+    expect(turnReviewPrompt(['  ', ''])).toBe(TURN_REVIEW_PROMPT)
+  })
+
+  it('lists recent messages newest first, one line each, clipped and capped', () => {
+    const prompts = ['merge it\n\nnow', 'x'.repeat(400), ...Array.from({ length: 30 }, (_, i) => `m${i}`)]
+    const recent = turnReviewPrompt(prompts).split('newest first.')[1]!
+    const lines = recent.split('\n').filter((line) => line.startsWith('- '))
+    expect(lines).toHaveLength(25)
+    expect(lines[0]).toBe('- merge it now')
+    expect(lines[1]!.length).toBeLessThanOrEqual(302)
   })
 })

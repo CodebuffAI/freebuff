@@ -73,6 +73,28 @@ Last, write "nextPrompt": the single message you would recommend the user send n
 Reply with only this JSON, and no other text:
 {"verdict": "ready" | "needs_changes" | "not_promising" | null, "reason": "..." | null, "actions": [{"kind": "fix" | "next", "label": "...", "prompt": "..."}], "nextPrompt": "..." | null}`
 
+/** How many of the user's own recent messages a review reads, and how much of each. */
+export const TURN_REVIEW_RECENT_PROMPTS = 25
+const RECENT_PROMPT_CHARS = 300
+
+/**
+ * TURN_REVIEW_PROMPT with the user's own recent messages from across their
+ * chats, newest first, so the buttons and `nextPrompt` read the way this user
+ * works: whether they open pull requests or keep changes local, how much they
+ * ask for at once, their wording. Without any, the prompt alone.
+ */
+export function turnReviewPrompt(recentPrompts: readonly string[] = []): string {
+  const lines = recentPrompts
+    .map((prompt) => clip(prompt, RECENT_PROMPT_CHARS))
+    .filter(Boolean)
+    .slice(0, TURN_REVIEW_RECENT_PROMPTS)
+  if (!lines.length) return TURN_REVIEW_PROMPT
+  return `${TURN_REVIEW_PROMPT}
+
+For reference, the user's recent messages across their chats, newest first. Match how they work, such as whether they open pull requests or keep changes local, how much they ask for at once, and their wording, but never copy a request they already made:
+${lines.map((line) => `- ${line}`).join('\n')}`
+}
+
 function clip(value: unknown, max: number): string {
   if (typeof value !== 'string') return ''
   const text = value.replace(/\s+/g, ' ').trim()
@@ -85,11 +107,14 @@ export function parseTurnReview(reply: string): TurnReview | null {
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start < 0 || end <= start) return null
-  try {
-    return turnReviewFrom(JSON.parse(text.slice(start, end + 1)))
-  } catch {
-    return null
+  const body = text.slice(start, end + 1)
+  // A model sometimes drops the last string's closing quote ("nextPrompt":"…}).
+  for (const candidate of [body, body.replace(/\}\s*$/, '"}')]) {
+    try {
+      return turnReviewFrom(JSON.parse(candidate))
+    } catch {}
   }
+  return null
 }
 
 /** A review from untrusted JSON (a model's reply, a stored event), or null. */

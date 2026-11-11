@@ -298,6 +298,8 @@ export const runAgentStep = async (
      * review never joins the history.
      */
     onTurnReview?: (review: TurnReview) => void
+    /** The review's instruction (`turnReviewPrompt`); TURN_REVIEW_PROMPT when absent. */
+    turnReviewPrompt?: string
   } & ParamsExcluding<
     typeof processStream,
     | 'agentContext'
@@ -2540,6 +2542,7 @@ export async function loopAgentSteps(
         ? reviewTurn({
             history: summaryRequestHistory(currentAgentState.messageHistory),
             system,
+            prompt: params.turnReviewPrompt,
             logger,
             runId,
             model: agentTemplate.model,

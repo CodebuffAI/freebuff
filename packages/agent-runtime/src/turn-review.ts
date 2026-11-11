@@ -30,6 +30,8 @@ export const TURN_REVIEW_TIMEOUT_MS = 90_000
 export async function reviewTurn(params: {
   history: Message[]
   system: string
+  /** TURN_REVIEW_PROMPT, or `turnReviewPrompt` with the user's recent messages. */
+  prompt?: string
   stream: SummaryStream
   logger: Logger
   runId: string
@@ -47,7 +49,9 @@ export async function reviewTurn(params: {
         systemMessage(params.system),
         ...params.history,
         // Tagged so the server's prompt classifier skips it as product text.
-        userMessage({ content: withSystemInstructionTags(TURN_REVIEW_PROMPT) }),
+        userMessage({
+          content: withSystemInstructionTags(params.prompt ?? TURN_REVIEW_PROMPT),
+        }),
       ],
       maxOutputTokens: TURN_REVIEW_MAX_OUTPUT_TOKENS,
       signal: AbortSignal.timeout(TURN_REVIEW_TIMEOUT_MS),
