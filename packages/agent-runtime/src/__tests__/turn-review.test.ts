@@ -1,6 +1,7 @@
 import * as analytics from '@codebuff/common/analytics'
 import {
   parseTurnReview,
+  readTurnReview,
   TURN_REVIEW_CHAT_PROMPT,
   TURN_REVIEW_PROMPT,
   turnReviewPrompt,
@@ -178,6 +179,15 @@ describe('turn review', () => {
       action_count: 0,
     })
   })
+
+  it("logs a review with nothing to suggest as empty, and reports null", async () => {
+    reviewReply = '{"verdict": null, "reason": null, "actions": [], "nextPrompt": null}'
+    const reviews: (TurnReview | null)[] = []
+    const logged: any[] = []
+    await run({ onTurnReview: (review) => reviews.push(review), logged })
+    expect(reviews).toEqual([null])
+    expect(logged.find((row) => row.axiomEvent === 'turn_review')).toMatchObject({ outcome: 'empty' })
+  })
 })
 
 describe('parseTurnReview', () => {
@@ -200,6 +210,25 @@ describe('parseTurnReview', () => {
       actions: actions.slice(0, 5).map((action) => ({ ...action, kind: 'next' })),
       nextPrompt: null,
     })
+  })
+
+  it('keeps the first complete review and ignores what follows it', () => {
+    expect(parseTurnReview(`${JSON.stringify(REVIEW)}"}`)).toEqual(REVIEW as TurnReview)
+    expect(parseTurnReview(`${JSON.stringify(REVIEW)}\n{"verdict": "not_promising"}`)).toEqual(REVIEW as TurnReview)
+  })
+
+  it('skips braces in prose before the review, such as CSS', () => {
+    const reply = `Checked the page: .card { color: red; } looks right.\n${JSON.stringify(REVIEW)}`
+    expect(parseTurnReview(reply)).toEqual(REVIEW as TurnReview)
+  })
+
+  it('tells an empty review apart from a reply that holds none', () => {
+    const empty = '{"verdict": null, "reason": null, "actions": [], "nextPrompt": null}'
+    expect(readTurnReview(empty)).toBe('empty')
+    expect(parseTurnReview(empty)).toBeNull()
+    // An object that is not a review, such as a lone action, is no review at all.
+    expect(readTurnReview('{"kind": "fix", "label": "Cut it", "prompt": "Cut it."}')).toBeNull()
+    expect(readTurnReview('I think it is fine.')).toBeNull()
   })
 
   it("repairs a last string the model left unclosed", () => {

@@ -129,20 +129,72 @@ function clip(value: unknown, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text
 }
 
-/** The review in a model's reply, or null when the reply holds none. */
+/** The review in a model's reply, or null when the reply holds none (or an empty one). */
 export function parseTurnReview(reply: string): TurnReview | null {
+  const read = readTurnReview(reply)
+  return read === 'empty' ? null : read
+}
+
+/**
+ * The review in a model's reply: the first complete JSON object shaped like
+ * one (it names `verdict`, `actions` or `nextPrompt`), ignoring prose and
+ * other braces around it and anything after it, such as a stray `"}`.
+ * `'empty'` is a well-formed review with nothing in it (the model judged there
+ * was nothing to suggest); null is a reply that holds no review at all.
+ */
+export function readTurnReview(reply: string): TurnReview | 'empty' | null {
   const text = reply.replace(/<think>[\s\S]*?<\/think>/g, '')
+  for (const candidate of jsonObjects(text)) {
+    const review = reviewShaped(candidate)
+    if (review !== undefined) return review
+  }
+  // A model sometimes drops the last string's closing quote ("nextPrompt":"…}).
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start < 0 || end <= start) return null
-  const body = text.slice(start, end + 1)
-  // A model sometimes drops the last string's closing quote ("nextPrompt":"…}).
-  for (const candidate of [body, body.replace(/\}\s*$/, '"}')]) {
-    try {
-      return turnReviewFrom(JSON.parse(candidate))
-    } catch {}
+  return reviewShaped(text.slice(start, end).trimEnd() + '"}') ?? null
+}
+
+/** The review in one JSON object's text, `'empty'`, or undefined when it is not one. */
+function reviewShaped(json: string): TurnReview | 'empty' | undefined {
+  let value: unknown
+  try {
+    value = JSON.parse(json)
+  } catch {
+    return undefined
   }
-  return null
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  if (!['verdict', 'actions', 'nextPrompt'].some((key) => key in value)) return undefined
+  return turnReviewFrom(value) ?? 'empty'
+}
+
+/** At most this many `{` are tried, so a reply full of code costs little. */
+const MAX_JSON_STARTS = 200
+
+/**
+ * Each balanced `{…}` in the text, outermost first, skipping braces inside
+ * JSON strings. An object that fails to parse is followed by the ones inside
+ * it, so a CSS block or a broken wrapper never hides the review after it.
+ */
+function* jsonObjects(text: string): Generator<string> {
+  let tried = 0
+  for (let start = text.indexOf('{'); start >= 0 && tried < MAX_JSON_STARTS; start = text.indexOf('{', start + 1)) {
+    tried++
+    let depth = 0
+    let inString = false
+    for (let i = start; i < text.length; i++) {
+      const char = text[i]
+      if (inString) {
+        if (char === '\\') i++
+        else if (char === '"') inString = false
+      } else if (char === '"') inString = true
+      else if (char === '{') depth++
+      else if (char === '}' && --depth === 0) {
+        yield text.slice(start, i + 1)
+        break
+      }
+    }
+  }
 }
 
 /** A review from untrusted JSON (a model's reply, a stored event), or null. */

@@ -6,7 +6,7 @@
  */
 
 import {
-  parseTurnReview,
+  readTurnReview,
   TURN_REVIEW_METADATA_KEY,
   TURN_REVIEW_PROMPT,
 } from '@codebuff/common/constants/turn-review'
@@ -72,8 +72,10 @@ export async function reviewTurn(params: {
       if (next.value.type === 'error') throw new Error(next.value.message)
       if (next.value.type === 'text') text += next.value.text
     }
-    review = parseTurnReview(text)
-    outcome = review ? 'completed' : 'unrecognized'
+    const read = readTurnReview(text)
+    // `empty`: a well-formed review with nothing to suggest, not a broken reply.
+    outcome = read === 'empty' ? 'empty' : read ? 'completed' : 'unrecognized'
+    review = read === 'empty' ? null : read
     return review
   } catch (error) {
     params.logger.debug?.({ error: getErrorObject(error) }, 'Turn review failed')
