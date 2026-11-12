@@ -339,10 +339,11 @@ export type HostedWorkspaceHost = {
     model?: string
     /** Shown grayed out, with why: `no-checkout`, this computer has no clone of the project's
      * repository; `origin-unavailable`, the computer its folder is on does not answer; `origin-only`,
-     * only that computer can start it (Cloud, which it uploads). */
+     * only that computer can start it (Cloud, which it uploads); `cloud-only`, a new chat in a Cloud
+     * project with no folder on this computer (the page sets it: Local downloads an existing chat). */
     unavailable?: Array<{
       location: 'local' | 'worktree' | 'cloud' | 'remote'
-      reason: 'no-checkout' | 'origin-unavailable' | 'origin-only'
+      reason: 'no-checkout' | 'origin-unavailable' | 'origin-only' | 'cloud-only'
     }>
     supportsWorktreeSourceBranch?: boolean
     supportsWorktreeTitle?: boolean
