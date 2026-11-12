@@ -28,6 +28,8 @@ export const productFunnelStageSchema = z.enum([
   'composer',
   'draft',
   'project',
+  /** hosted Desktop's first-project screen ("Open a project to get started"): shown, selected (`project_choice`) */
+  'project_setup',
   'template',
   /** a new-chat starter pill was clicked (`starter_pills_2026_11`): selected */
   'starter',
@@ -300,6 +302,12 @@ export const productFunnelPropertiesSchema = z
         'template',
         'unknown',
       ])
+      .optional(),
+    /** `project_setup:selected` and local `project` events: which way in the
+     *  user took: an existing folder, a recent one, a new local folder, a
+     *  GitHub repo, a template, or Start from scratch. */
+    project_choice: z
+      .enum(['open_folder', 'recent_folder', 'new_local', 'github', 'template', 'scratch'])
       .optional(),
     destination: z
       .enum(['desktop', 'cli', 'web', 'app_builder', 'cowork', 'mobile'])

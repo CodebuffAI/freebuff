@@ -172,3 +172,11 @@ test('every placement maps its link and email via back to itself; anything else 
     expect(isKnownReferralVia(via)).toBe(false)
   }
 })
+
+test('first-project setup choices and local project outcomes parse; unknown choices do not', () => {
+  const desktop = { ...payload, product: 'desktop' as const, entry_route: '/' as const, surface: 'desktop' as const, observer: 'ui' as const }
+  expect(productFunnelEventSchema.safeParse({ ...desktop, funnel_stage: 'project_setup', funnel_state: 'shown' }).success).toBe(true)
+  expect(productFunnelEventSchema.safeParse({ ...desktop, funnel_stage: 'project_setup', funnel_state: 'selected', project_choice: 'github' }).success).toBe(true)
+  expect(productFunnelEventSchema.safeParse({ ...desktop, funnel_stage: 'project', funnel_state: 'cancelled', project_kind: 'local', project_choice: 'open_folder' }).success).toBe(true)
+  expect(productFunnelEventSchema.safeParse({ ...desktop, funnel_stage: 'project_setup', funnel_state: 'selected', project_choice: '/Users/me/app' }).success).toBe(false)
+})
