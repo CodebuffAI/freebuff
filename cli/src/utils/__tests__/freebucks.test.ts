@@ -281,14 +281,14 @@ describe('freebucksPriceFor', () => {
 })
 
 describe('the refund receipt', () => {
-  test('names half the price less usage, never the time left on the hour', () => {
+  test('names what the session did not cost, never the time left on the hour', () => {
     // The whole point of the line: six reports in two hours read the refund as
     // pro-rated by elapsed minutes.
     expect(freebucksRefundLine(10, false)).toBe(
-      "2 hours of balance returned: half the session's price less what it used, not the time left on it.",
+      "2 hours of balance returned: what the session did not cost, not the time left on it.",
     )
     expect(freebucksRefundLine(5, false)).toBe(
-      "1 hour of balance returned: half the session's price less what it used, not the time left on it.",
+      "1 hour of balance returned: what the session did not cost, not the time left on it.",
     )
   })
 
@@ -296,17 +296,17 @@ describe('the refund receipt', () => {
     // The reported case. Silence here is what users read as "the feature was
     // removed"; it must not read as an error either.
     expect(freebucksRefundLine(0, false)).toBe(
-      "No hours returned: refunds apply only to full access sessions ended within 30 minutes, and a refund never refills a daily allowance already used up. A refund is half a session's price less what it used, in whole hours, never unused time.",
+      "No hours returned: a used session returns half its price less what it used, up to 2 hours a day, and a refund never refills a daily allowance already used up. Refunds are whole hours of balance, never unused time.",
     )
   })
 
   test('a pending receipt promises the rule, not a number', () => {
     expect(freebucksRefundLine(null, true)).toBe(
-      "Refund settling: half this session's price less what it used may come back, in whole hours.",
+      "Refund settling: an unused session comes back in full; a used one returns half its price less what it used, up to 2 hours a day.",
     )
     // Pending outranks a stale amount: the settled figure is not known yet.
     expect(freebucksRefundLine(4, true)).toBe(
-      "Refund settling: half this session's price less what it used may come back, in whole hours.",
+      "Refund settling: an unused session comes back in full; a used one returns half its price less what it used, up to 2 hours a day.",
     )
   })
 
