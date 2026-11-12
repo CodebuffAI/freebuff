@@ -7,6 +7,8 @@
  * its reply never join the conversation.
  */
 
+import type { WorkspaceMode } from '../desktop-cloud/workspace-mode'
+
 export const TURN_REVIEW_VERDICTS = [
   'ready',
   'needs_changes',
@@ -74,25 +76,50 @@ Last, write "nextPrompt": the single message you would recommend the user send n
 Reply with only this JSON, and no other text:
 {"verdict": "ready" | "needs_changes" | "not_promising" | null, "reason": "..." | null, "actions": [{"kind": "fix" | "next", "label": "...", "prompt": "..."}], "nextPrompt": "..." | null}`
 
+/**
+ * A Chat-mode turn's review (docs/freebuff-workspace-modes.md): its user is not
+ * a developer and the turn rarely makes a change to judge, so it asks only for
+ * follow-up buttons and the next message, with no verdict or fixes.
+ */
+export const TURN_REVIEW_CHAT_PROMPT = `Stop working on the task. The turn is over, and the user has not replied yet. Look back at the conversation and help the user decide what to ask next. The user never sees this message or your reply, only the buttons you return. Do not call any tools.
+
+Offer at most ${MAX_TURN_REVIEW_ACTIONS} follow-ups, the most valuable first: the natural next questions or requests that build on this conversation and move the user toward what they are trying to get done. Each is a button the user can click to send its prompt as their next message:
+- "label": two to five words that say what the button does, like "Make it shorter" or "Compare the two options".
+- "prompt": what the user would send, in their voice and their language. It must stand alone in one or two sentences, saying what they want and why.
+Do not offer what was already done or declined, or two buttons that do the same thing. Offer nothing rather than something weak; an answer that settles the matter needs no buttons.
+
+Last, write "nextPrompt": the single message you would recommend the user send next. It is offered in their empty message box, where one key fills it in for them to send. Keep it to one or two short sentences in the user's voice that stand alone. Use null when nothing is worth sending.
+
+Reply with only this JSON, and no other text:
+{"actions": [{"label": "...", "prompt": "..."}], "nextPrompt": "..." | null}`
+
 /** How many of the user's own recent messages a review reads, and how much of each. */
 export const TURN_REVIEW_RECENT_PROMPTS = 25
 const RECENT_PROMPT_CHARS = 300
 
 /**
- * TURN_REVIEW_PROMPT with the user's own recent messages from across their
- * chats, newest first, so the buttons and `nextPrompt` read the way this user
- * works: whether they open pull requests or keep changes local, how much they
- * ask for at once, their wording. Without any, the prompt alone.
+ * The review prompt for a turn's mode (TURN_REVIEW_PROMPT for Code,
+ * TURN_REVIEW_CHAT_PROMPT for Chat) with the user's own recent messages from
+ * across their chats, newest first, so the buttons and `nextPrompt` read the
+ * way this user works: whether they open pull requests or keep changes local,
+ * how much they ask for at once, their wording. Without any, the prompt alone.
  */
-export function turnReviewPrompt(recentPrompts: readonly string[] = []): string {
+export function turnReviewPrompt(
+  recentPrompts: readonly string[] = [],
+  mode: WorkspaceMode = 'code',
+): string {
+  const prompt = mode === 'chat' ? TURN_REVIEW_CHAT_PROMPT : TURN_REVIEW_PROMPT
   const lines = recentPrompts
-    .map((prompt) => clip(prompt, RECENT_PROMPT_CHARS))
+    .map((recent) => clip(recent, RECENT_PROMPT_CHARS))
     .filter(Boolean)
     .slice(0, TURN_REVIEW_RECENT_PROMPTS)
-  if (!lines.length) return TURN_REVIEW_PROMPT
-  return `${TURN_REVIEW_PROMPT}
+  if (!lines.length) return prompt
+  const habits = mode === 'chat'
+    ? 'how much they ask for at once and their wording'
+    : 'whether they open pull requests or keep changes local, how much they ask for at once, and their wording'
+  return `${prompt}
 
-For reference, the user's recent messages across their chats, newest first. Match how they work, such as whether they open pull requests or keep changes local, how much they ask for at once, and their wording, but never copy a request they already made:
+For reference, the user's recent messages across their chats, newest first. Match how they work, such as ${habits}, but never copy a request they already made:
 ${lines.map((line) => `- ${line}`).join('\n')}`
 }
 

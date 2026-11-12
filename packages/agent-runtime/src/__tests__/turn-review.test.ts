@@ -1,6 +1,7 @@
 import * as analytics from '@codebuff/common/analytics'
 import {
   parseTurnReview,
+  TURN_REVIEW_CHAT_PROMPT,
   TURN_REVIEW_PROMPT,
   turnReviewPrompt,
 } from '@codebuff/common/constants/turn-review'
@@ -218,6 +219,13 @@ describe('turnReviewPrompt', () => {
   it('is the bare prompt without recent messages', () => {
     expect(turnReviewPrompt()).toBe(TURN_REVIEW_PROMPT)
     expect(turnReviewPrompt(['  ', ''])).toBe(TURN_REVIEW_PROMPT)
+  })
+
+  it("asks a Chat-mode turn for follow-ups and a next message, with no verdict", () => {
+    expect(turnReviewPrompt([], 'chat')).toBe(TURN_REVIEW_CHAT_PROMPT)
+    const prompt = turnReviewPrompt(['Plan a trip to Lisbon'], 'chat')
+    expect(prompt).toContain('- Plan a trip to Lisbon')
+    expect(prompt).not.toMatch(/verdict|merge|pull request/i)
   })
 
   it('lists recent messages newest first, one line each, clipped and capped', () => {
