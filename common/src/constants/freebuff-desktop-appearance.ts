@@ -10,7 +10,8 @@ export const DESKTOP_APPEARANCE_PRESET_IDS = [
   'alpine', 'dune', 'tide', 'blossom', 'orbit', 'after-rain', 'ember', 'kanagawa',
   'aurora', 'violet-hour', 'phosphor', 'mirage', 'nebula', 'frost', 'peach', 'midnight',
   'lilac', 'dusk', 'seafoam', 'graphite', 'daybreak', 'sherbet', 'paper', 'carbon',
-  'streak-fire',
+  'streak-fire', 'gold-streak-fire', 'white-streak-fire', 'blue-streak-fire',
+  'plasma-streak-fire', 'rainbow-streak-fire',
 ] as const
 
 /**
@@ -24,6 +25,35 @@ export const STREAK_THEME_PRESET_ID = 'streak-fire'
 export const STREAK_EXPERIMENT_KEY = 'streak_display_2026_11'
 /** The streak that unlocks it: the reward interval, whose grant is the unlock. */
 export const STREAK_THEME_REQUIRED_DAYS = FREEBUFF_STREAK_REWARD_INTERVAL_DAYS
+
+/**
+ * The streak themes, in the order they unlock: a flame burning hotter (orange,
+ * gold, white, blue), then past fire (plasma, a prism). Streak Fire is the
+ * 7-day one above; each later one unlocks when the account's streak reaches
+ * its `days` after they launched (2026-11-12), counting the streak already
+ * running then, so 100 days in a row unlock them all at once and an older
+ * streak unlocks nothing. All are kept for good (`freebuff_streak_theme_unlock`).
+ */
+export const STREAK_THEME_TIERS = [
+  { id: STREAK_THEME_PRESET_ID, name: 'Streak Fire', days: STREAK_THEME_REQUIRED_DAYS },
+  { id: 'gold-streak-fire', name: 'Gold Streak Fire', days: 14 },
+  { id: 'white-streak-fire', name: 'White Streak Fire', days: 21 },
+  { id: 'blue-streak-fire', name: 'Blue Streak Fire', days: 28 },
+  { id: 'plasma-streak-fire', name: 'Plasma Streak Fire', days: 50 },
+  { id: 'rainbow-streak-fire', name: 'Rainbow Streak Fire', days: 100 },
+] as const
+export type StreakThemeTier = (typeof STREAK_THEME_TIERS)[number]
+
+/** The highest streak theme a streak of `days` has reached, or undefined
+ *  below 7: the streak's own colours (`workspace-streak.css`). */
+export function streakThemeTierForDays(days: number): StreakThemeTier | undefined {
+  return [...STREAK_THEME_TIERS].reverse().find((tier) => days >= tier.days)
+}
+
+/** The streak theme `id` names, or undefined for any other preset. */
+export function streakThemeTier(id: string): StreakThemeTier | undefined {
+  return STREAK_THEME_TIERS.find((tier) => tier.id === id)
+}
 
 /** What Desktop reports: a shipped preset, or `custom` for any saved custom theme. */
 export const DESKTOP_APPEARANCE_REPORTABLE = [...DESKTOP_APPEARANCE_PRESET_IDS, 'custom'] as const

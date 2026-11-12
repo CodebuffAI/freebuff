@@ -11,6 +11,11 @@ export interface ThemeReferralAccess {
    *  it, and it does not unlock the rest. Absent from servers before
    *  2026-11-11, read as false. */
   streakThemeUnlocked?: boolean
+  /** The longest streak, in days, the account has reached since the later
+   *  streak themes launched (or its current one), which unlocks them for
+   *  good (`STREAK_THEME_TIERS`). 0 for an account not offered them or
+   *  without Streak Fire. Absent from older servers, read as 0. */
+  streakThemeDays?: number
   /** The account is in the streak experiment's `streak` arm, so clients show
    *  the Streak Fire theme (locked or not) and its Streak reward section;
    *  everyone else never sees it. Absent from older servers, read as false. */
