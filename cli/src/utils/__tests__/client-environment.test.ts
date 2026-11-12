@@ -10,6 +10,10 @@ import {
   type ProcessInfo,
   readProcessInfo,
   zoneFromZoneinfo,
+  containerOf,
+  isWsl,
+  virtualizationOf,
+  type MachineFacts,
 } from '../client-environment'
 
 import type { CiEnv } from '@codebuff/common/types/contracts/env'
@@ -188,7 +192,7 @@ describe('formatClientEnvironment', () => {
       'yes',
     )
     expect(out).toBe(
-      'v1;in=1;out=1;tp=iterm;term=1;ct=1;sz=120x40;ci=0;ssh=0;l=1;p=shell;g=terminal;osc=1;tzo=0;px=none;tls=1;ca=0;cde=none',
+      'v1;in=1;out=1;tp=iterm;term=1;ct=1;sz=120x40;ci=0;ssh=0;l=1;p=shell;g=terminal;osc=1;tzo=0;px=none;tls=1;ca=0;cde=none;ctr=unk;vm=unk;wsl=0',
     )
     // No raw environment value survives.
     expect(out).not.toContain('xterm')
@@ -214,7 +218,7 @@ describe('formatClientEnvironment', () => {
       'na',
     )
     expect(out).toBe(
-      'v1;in=0;out=0;tp=none;term=0;ct=0;sz=0x0;ci=1;ssh=1;l=0;p=unknown;g=unknown;osc=na;tzo=0;px=none;tls=1;ca=0;cde=none',
+      'v1;in=0;out=0;tp=none;term=0;ct=0;sz=0x0;ci=1;ssh=1;l=0;p=unknown;g=unknown;osc=na;tzo=0;px=none;tls=1;ca=0;cde=none;ctr=unk;vm=unk;wsl=0',
     )
     expect(out).not.toContain('1.2.3.4')
   })
@@ -260,7 +264,7 @@ describe('formatClientEnvironment', () => {
       grandparent: 'terminal',
     } as const
     const out = formatClientEnvironment(inputs, ancestry, 'yes', 'Asia/Kolkata')
-    expect(out.endsWith(';tzo=1;px=loopback;tls=0;ca=1;cde=none;stz=Asia/Kolkata')).toBe(
+    expect(out.endsWith(';tzo=1;px=loopback;tls=0;ca=1;cde=none;ctr=unk;vm=unk;wsl=0;stz=Asia/Kolkata')).toBe(
       true,
     )
     expect(out).not.toContain('18080')
@@ -317,5 +321,47 @@ describe('zoneFromZoneinfo', () => {
     [undefined, null],
   ] as const)('%p -> %p', (value, zone) => {
     expect(zoneFromZoneinfo(value)).toBe(zone)
+  })
+})
+
+describe('machine facts (2026-11-11)', () => {
+  const facts = (patch: Partial<MachineFacts>): MachineFacts => ({
+    dockerenv: false,
+    containerenv: false,
+    cgroup: '0::/init.scope\n',
+    dmiVendor: 'Dell Inc.\n',
+    dmiProduct: 'XPS 15 9530\n',
+    procVersion: 'Linux version 6.8.0-45-generic',
+    ...patch,
+  })
+
+  test('container: podman, k8s, docker, lxc, none; na off Linux', () => {
+    expect(containerOf(facts({ containerenv: true }))).toBe('podman')
+    expect(containerOf(facts({ cgroup: '0::/kubepods/besteffort/pod1' }))).toBe('k8s')
+    expect(containerOf(facts({ dockerenv: true }))).toBe('docker')
+    expect(containerOf(facts({ cgroup: '0::/lxc/web' }))).toBe('lxc')
+    expect(containerOf(facts({}))).toBe('none')
+    expect(containerOf(null)).toBe('na')
+  })
+
+  test('virtualization: clouds, desktop hypervisors, real hardware, unreadable', () => {
+    expect(virtualizationOf(facts({ dmiVendor: 'Amazon EC2', dmiProduct: 't3.micro' }))).toBe('aws')
+    expect(virtualizationOf(facts({ dmiVendor: 'Google', dmiProduct: 'Google Compute Engine' }))).toBe('gcp')
+    expect(virtualizationOf(facts({ dmiVendor: 'DigitalOcean', dmiProduct: 'Droplet' }))).toBe('digitalocean')
+    expect(virtualizationOf(facts({ dmiVendor: 'Hetzner', dmiProduct: 'vServer' }))).toBe('hetzner')
+    expect(virtualizationOf(facts({ dmiVendor: 'QEMU', dmiProduct: 'Standard PC (Q35 + ICH9, 2009)' }))).toBe('qemu')
+    expect(virtualizationOf(facts({ dmiVendor: 'Microsoft Corporation', dmiProduct: 'Virtual Machine' }))).toBe('hyperv')
+    expect(virtualizationOf(facts({ dmiVendor: 'innotek GmbH', dmiProduct: 'VirtualBox' }))).toBe('vbox')
+    expect(virtualizationOf(facts({ dmiVendor: 'Parallels Software International Inc.', dmiProduct: 'Parallels ARM Virtual Machine' }))).toBe('parallels')
+    expect(virtualizationOf(facts({}))).toBe('none')
+    expect(virtualizationOf(facts({ dmiVendor: null, dmiProduct: null }))).toBe('unk')
+    expect(virtualizationOf(null)).toBe('na')
+  })
+
+  test('WSL from its env var or the kernel line', () => {
+    const env = createTestCliEnv()
+    expect(isWsl(env, facts({}))).toBe(false)
+    expect(isWsl(env, facts({ procVersion: 'Linux version 5.15.153.1-microsoft-standard-WSL2' }))).toBe(true)
+    expect(isWsl(createTestCliEnv({ WSL_DISTRO_NAME: 'Ubuntu' }), null)).toBe(true)
   })
 })
