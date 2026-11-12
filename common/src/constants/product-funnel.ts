@@ -228,6 +228,19 @@ export const welcomeVariantSchema = z.enum([
   'give',
   'share',
   'paying',
+  // The click-through welcome flow's arms (welcome-flow/steps.ts): which steps
+  // it shows, or the one-screen welcome as it was (`flow_control`).
+  'flow_control',
+  'flow_full',
+  'flow_no_integrations',
+])
+/** A step of the click-through welcome flow (welcome-flow/steps.ts). */
+export const welcomeStepSchema = z.enum([
+  'unlocked',
+  'build',
+  'integrations',
+  'mobile',
+  'invite',
 ])
 export const productEntryRouteSchema = z.enum([
   '/',
@@ -388,8 +401,10 @@ export const productFunnelPropertiesSchema = z
     originApp: z.enum(['desktop', 'web']).optional(),
     executionTarget: z.enum(['device', 'cloud']).optional(),
     welcome_variant: welcomeVariantSchema.optional(),
-    /** `mobile_prompt:shown`: what opened it, a return after a break or a reply that just finished. */
-    prompt_trigger: z.enum(['return', 'reply']).optional(),
+    /** `welcome` events from the click-through flow: the step on screen. */
+    welcome_step: welcomeStepSchema.optional(),
+    /** `mobile_prompt:shown`: what opened it, a return after a break, a reply that just finished, or the Get started checklist. */
+    prompt_trigger: z.enum(['return', 'reply', 'checklist']).optional(),
     /** `mobile_prompt:clicked`: which store's button. A scanned QR code is counted by `/mobile`, not here. */
     store: z.enum(['ios', 'android']).optional(),
     renderer: z.literal('web-workspace').optional(),
@@ -419,6 +434,7 @@ export type ProductEntryRoute = z.infer<typeof productEntryRouteSchema>
 export type ProductFunnelStage = z.infer<typeof productFunnelStageSchema>
 export type ProductFunnelState = z.infer<typeof productFunnelStateSchema>
 export type WelcomeVariant = z.infer<typeof welcomeVariantSchema>
+export type WelcomeStep = z.infer<typeof welcomeStepSchema>
 export type ProductFunnelProperties = z.infer<
   typeof productFunnelPropertiesSchema
 >
