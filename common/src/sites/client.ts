@@ -163,9 +163,13 @@ export class SitesClient {
           binding_exists:
             'That name is already used by a database or storage binding.',
           secret_not_found: 'This variable no longer exists. Refresh the list.',
+          // The server's refusal says which operation holds the environment and
+          // what to do: wait for it, retry in so many minutes, or ask support.
           environment_busy:
-            'An operation is still running, or an earlier one never reported its result. If this keeps happening, contact support@freebuff.com.',
+            data.message ??
+            'An operation is still running, or an earlier one ended without Cloudflare confirming it. Try again in 10 minutes. If this keeps happening, contact support@freebuff.com.',
           site_deletion_needs_reconciliation:
+            data.message ??
             'An earlier operation on this site never reported its result, so deletion is held until it is reconciled. Contact support@freebuff.com to have the site removed.',
           site_deleting: 'This site is being deleted.',
           subdomain_taken: 'This subdomain is already taken. Try another name.',

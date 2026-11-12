@@ -82,3 +82,36 @@ test('publication and saved-project limits have distinct recovery instructions',
     expect(result.message).toContain(message!)
   }
 })
+
+// MamieNana (2026-11-12): the deploy tool said only that "an earlier one never
+// reported its result", which nothing the owner could do would change. The
+// server's refusal now says which operation holds the environment and when to
+// try again, so the tool passes it through.
+test('a busy environment relays the server’s refusal, which says what to do', async () => {
+  const refusal = (body: Record<string, unknown>) =>
+    new SitesClient({
+      getToken: randomUUID,
+      host: 'https://example.invalid',
+      originApp: 'desktop',
+      fetcher: async () => Response.json(body, { status: 409 }),
+    }).runToolWithContext(
+      'sites_set_published',
+      {
+        siteId,
+        environment: 'production',
+        published: true,
+        requestId: 'request-0001',
+      },
+      '/workspace',
+      'build',
+    ) as Promise<{ error: string; message: string }>
+  const message =
+    'An earlier deployment ended without Cloudflare confirming it. Freebuff checks it with Cloudflare 10 minutes after it ended, so try again in 4 minutes.'
+  expect(
+    await refusal({ error: 'environment_busy', message }),
+  ).toMatchObject({ error: 'sites_request_failed', message })
+  // An older backend without a message still gets advice.
+  expect(
+    (await refusal({ error: 'environment_busy' })).message,
+  ).toContain('Try again in 10 minutes')
+})

@@ -236,8 +236,11 @@ function isPublished(environment: SiteEnvironment): boolean {
 /** Receipts keep only codes; say what each means without vendor prose. */
 export function operationFailureMessage(operation: Operation): string {
   const result = operation.result
-  if (operation.state === 'unknown' || result?.error === 'cloudflare_outcome_unknown')
-    return 'Cloudflare did not confirm the deployment. Check deployment activity in Manage site before publishing again.'
+  if (operation.state === 'unknown')
+    return 'Cloudflare did not confirm the deployment. Publish again in 10 minutes: Freebuff first checks with Cloudflare whether this one landed.'
+  // Settled later from Cloudflare's state (web reconcile.ts) without landing.
+  if (result?.error === 'cloudflare_outcome_unknown')
+    return 'Cloudflare did not confirm the deployment. Publish again.'
   const provider = result?.provider
   if (provider?.stage === 'worker_upload' && provider.codes?.includes(10021))
     return 'Cloudflare could not start the built Worker: it failed startup validation. This usually means code that cannot run on Workers, such as a Node.js-only module.'
