@@ -44,7 +44,7 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 | **DeepSeek V4.1 Flash Fast** | Full and limited access | The same DeepSeek model at full speed |
 | **GPT-6 Luna**              | Full access; paid plans on newer accounts | Strong all-around with native images; 1M context |
 | **Muse Spark 1.3**          | Paid plans              | Meta's agentic coding model; 1M context. When it is busy or unavailable, it answers on DeepSeek V4.1 Flash rather than making you wait |
-| **Muse Ember**              | Paid plans              | Meta's fast coding model; 100K context |
+| **Muse Ember**              | Paid plans              | Meta's fast coding model; 375K context |
 | **Claude Haiku 5.5 · 100k context** | Paid plans      | Anthropic's fast model, with a 100K context window |
 | **GPT-6.1 Terra**           | Paid plans              | OpenAI's model, two sessions a day; 1M context, images |
 

@@ -44,7 +44,7 @@ Freebuff 提供经过筛选的模型目录。常规模型选择器目前包括�
 | **DeepSeek V4.1 Flash Fast** | 完整和受限访问 | 同一 DeepSeek 模型，全速运行 |
 | **GPT-6 Luna**              | 完整访问；较新账户需付费套餐 | 综合能力强，原生支持图像；100 万上下文 |
 | **Muse Spark 1.3**          | 付费套餐       | Meta 的智能体编码模型；100 万上下文。繁忙或不可用时改由 DeepSeek V4.1 Flash 作答，不会让你一直等 |
-| **Muse Ember**              | 付费套餐       | Meta 的快速编码模型；10 万上下文 |
+| **Muse Ember**              | 付费套餐       | Meta 的快速编码模型；37.5 万上下文 |
 | **Claude Haiku 5.5 · 100k context** | 付费套餐 | Anthropic 的快速模型，上下文窗口为 10 万 |
 | **GPT-6.1 Terra**           | 付费套餐       | OpenAI 的模型，每天两次会话；100 万上下文，支持图片 |
 
