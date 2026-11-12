@@ -722,6 +722,7 @@ describe('late clicks: a redraw of an already-flushed impression (bug 1)', () =>
         pointerMovedOver: true,
         region: 'cta',
         count: 1,
+        atClick: true,
       },
     })
 
@@ -859,12 +860,20 @@ describe('checkpoints: records that do not wait for an unmount (bug 2)', () => {
     c.advance(1_000)
     tracker.click()
     expect(sent).toHaveLength(1)
-    expect(sent[0]).toMatchObject({ visibleMs: 1_000, click: { count: 1 } })
+    expect(sent[0]).toMatchObject({
+      visibleMs: 1_000,
+      click: { count: 1, atClick: true },
+    })
     expect(sent[0]!.exit).toBeUndefined()
     tracker.click()
     expect(sent).toHaveLength(1)
     tracker.flush('rotation')
-    expect(sent[1]).toMatchObject({ exit: 'rotation', click: { count: 2 } })
+    // the final record's `click` replaces the checkpoint's in the shallow
+    // merge, so it still says the click was sent at the click
+    expect(sent[1]).toMatchObject({
+      exit: 'rotation',
+      click: { count: 2, atClick: true },
+    })
   })
 
   test('post-click goes out once the click checkpoint has, not at the flush', () => {
@@ -895,6 +904,9 @@ describe('checkpoints: records that do not wait for an unmount (bug 2)', () => {
     tracker.click()
     tracker.checkpoint()
     expect(sent).toHaveLength(0)
+    // nothing went out at the click, so the flush does not claim it did
+    tracker.flush('unmount')
+    expect(sent[0]!.click?.atClick).toBeUndefined()
   })
 
   test('a card that never unmounts checkpoints after the bounded exposure', () => {

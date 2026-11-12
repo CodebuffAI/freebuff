@@ -646,6 +646,12 @@ export const adEngagementSchema = z.object({
       region: z.enum(CLICK_REGIONS),
       modifier: z.boolean(),
       count: count,
+      /**
+       * A record carrying this click was sent AT the click, not only when the impression's record flushed later. The
+       * client half of matching against the server-seen click (`ad_impression.clicked_at`): a click with no record
+       * at all then means a lost send or a hit no client made, not a flush that never ran. Never billing.
+       */
+      atClick: z.boolean(),
     })
     .partial()
     .optional(),

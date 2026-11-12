@@ -514,6 +514,8 @@ export function createEngagementTracker(
       if (clickCount === 0) return priorClick
       return defined({
         ...priorClick,
+        // the late click went out the moment it landed
+        atClick: true,
         count: count((priorClick.count ?? 1) + clickCount),
       })
     }
@@ -620,6 +622,10 @@ export function createEngagementTracker(
             focusSupported && focused !== null ? focused : undefined,
           region: detail.region,
           modifier: detail.modifier,
+          // A click-only tracker and a checkpointing one both send this click
+          // the moment it lands (below); the flush's `click` replaces it in
+          // the server's shallow merge, so it must say so too.
+          atClick: clickOnly || checkpoints ? true : undefined,
         })
         armPostClick(t)
       })

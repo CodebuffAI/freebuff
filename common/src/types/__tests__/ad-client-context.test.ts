@@ -254,6 +254,14 @@ describe('parseAdEngagement', () => {
     expect(parseAdEngagement(record)).toEqual(record)
   })
 
+  test('keeps click.atClick and rejects a non-boolean one', () => {
+    const record = { v: 1, impUrl: 'https://ads.example/i', click: { region: 'cta', count: 1, atClick: true } }
+    expect(parseAdEngagement(record)).toEqual(record)
+    expect(parseAdEngagement({ ...record, click: { count: 1 } })?.click).toEqual({ count: 1 })
+    expect(parseAdEngagement({ ...record, click: { atClick: 'yes' } })).toBeUndefined()
+    expect(parseAdEngagement({ ...record, click: { atClick: 1 } })).toBeUndefined()
+  })
+
   test('yielded: why an ad gave way and how long it was held hidden; unknown reasons fail', () => {
     const record = {
       v: 1,
