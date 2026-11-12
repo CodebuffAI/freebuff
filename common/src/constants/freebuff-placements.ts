@@ -374,7 +374,7 @@ const ORIGINAL_PLACEMENT_SLOTS = [
     format: 'inline',
   },
   // The one-line link at the end of a Desktop reply: favicon, link text, "Ad".
-  // Dark until the `inlineAdStyle` policy arm serves `link`; not self-serve.
+  // Served when the `inlineAdStyle` policy arm is `link`; not self-serve.
   {
     id: 'Inline-Link-After-Agent-Desktop',
     surface: 'cli_chat',

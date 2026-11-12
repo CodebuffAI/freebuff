@@ -228,9 +228,8 @@ describe('copy and configuration', () => {
     // `available` partner slot would appear in the self-serve picker. The
     // billboards are operator-placed until the console can upload their art.
     // The branded (display-ad) units are sellable exactly when live, and none
-    // is live yet (`DISPLAY_AD_SERVING_LIVE`). The inline link is dark behind
-    // the `inlineAdStyle` arm, so selling it would sell inventory that never
-    // draws.
+    // is live yet (`DISPLAY_AD_SERVING_LIVE`). The inline link is operator-run
+    // behind the `inlineAdStyle` arm, so it stays out of the self-serve picker.
     const darkInline = new Set([
       'Inline-Link-After-Agent-Desktop',
       'Inline-Link-After-Agent-Web',
