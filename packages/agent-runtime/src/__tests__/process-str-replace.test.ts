@@ -592,4 +592,68 @@ function test3() {
       content: 'class A {\n  run() {\n    stop();\n  }\n}\n',
     })
   })
+
+  it('refuses an indentation match that fits more than one place', async () => {
+    const content = 'if (a) {\n    go();\n}\nif (b) {\n    go();\n}\n'
+    const result = await replaceOnce(content, 'go();', 'stop();')
+    expect('error' in result && result.error).toContain('Found 2 occurrences')
+  })
+
+  it('refuses a whitespace-insensitive match that fits more than one place', async () => {
+    const content = 'call(a,  b);\ncall(a, b );\n'
+    const result = await replaceOnce(content, 'call(a,b);', 'call(c);')
+    expect('error' in result && result.error).toContain('Found 2 occurrences')
+  })
+
+  it('keeps the indentation before a whitespace-insensitive match', async () => {
+    const result = await replaceOnce(
+      'function f() {\n  const  y  =  2;\n}\n',
+      'const y=2;',
+      'const y = 3;',
+    )
+    expect(result).toMatchObject({
+      content: 'function f() {\n  const y = 3;\n}\n',
+    })
+  })
+
+  it('shows the closest lines with line numbers on a miss', async () => {
+    const content = [
+      'import x from "x"',
+      '',
+      'function total(items) {',
+      '  let sum = 0',
+      '  for (const item of items) sum += item.price',
+      '  return sum',
+      '}',
+      '',
+    ].join('\n')
+    const result = await replaceOnce(
+      content,
+      'let sum = 0\nfor (const item of items) sum += item.cost\nreturn sum',
+      'return items.length',
+    )
+    expect('error' in result).toBe(true)
+    if ('error' in result) {
+      expect(result.error).toContain('was not found')
+      expect(result.error).toContain('closest matching lines')
+      expect(result.error).toContain('4 |   let sum = 0')
+      expect(result.error).toContain('5 |   for (const item of items) sum += item.price')
+      expect(result.error).not.toContain('import x')
+    }
+  })
+
+  it('points out curly quotes the old string typed as straight ones', async () => {
+    const content = 'const title = \u201cHello\u201d\nconst body = \u201cWorld\u201d\n'
+    const result = await replaceOnce(
+      content,
+      'const title = "Hello"\nconst body = "World"',
+      'const title = "Hi"',
+    )
+    expect('error' in result && result.error).toContain('curly quotes or non-breaking spaces')
+  })
+
+  it('gives no hint when nothing in the file resembles the old string', async () => {
+    const result = await replaceOnce('const x = 1;\n', 'unrelated();', 'y();')
+    expect('error' in result && result.error).not.toContain('closest')
+  })
 })
