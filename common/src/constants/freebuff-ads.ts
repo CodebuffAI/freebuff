@@ -384,7 +384,13 @@ export function isValidDailyBudgetCents(cents: number): boolean {
 // Platforms
 // ---------------------------------------------------------------------------
 
-export const AD_PLATFORMS = ['twitter', 'linkedin', 'reddit', 'github'] as const
+export const AD_PLATFORMS = [
+  'twitter',
+  'linkedin',
+  'reddit',
+  'github',
+  'youtube',
+] as const
 export type AdPlatform = (typeof AD_PLATFORMS)[number]
 
 export const AD_PLATFORM_LABELS: Record<AdPlatform, string> = {
@@ -392,6 +398,7 @@ export const AD_PLATFORM_LABELS: Record<AdPlatform, string> = {
   linkedin: 'LinkedIn',
   reddit: 'Reddit',
   github: 'GitHub',
+  youtube: 'YouTube',
 }
 
 /**
@@ -405,12 +412,17 @@ export const AD_PLATFORM_LABELS: Record<AdPlatform, string> = {
  * GitHub is a single action: star the repository. There is no comment to
  * write, so everything comment-shaped (suggestions, comment URLs, the comment
  * paste-back) is skipped for it — see `platformRequiresComment`.
+ *
+ * YouTube is a comment under a video. It is only ever bought through the Earn
+ * chat as the single `comment` action; the bundle here is the same one step,
+ * so a YouTube post with no action set still asks for something sensible.
  */
 export const AD_PLATFORM_ACTIONS: Record<AdPlatform, readonly string[]> = {
   twitter: ['Like the post', 'Reply with a real comment', 'Repost it'],
   linkedin: ['React to the post', 'Comment something real', 'Repost it'],
   reddit: ['Upvote the post', 'Leave a genuine comment'],
   github: ['Star the repository'],
+  youtube: ['Leave a genuine comment on the video'],
 }
 
 /**
@@ -442,6 +454,7 @@ export const AD_PLATFORM_HOSTS: Record<AdPlatform, readonly string[]> = {
   linkedin: ['linkedin.com', 'lnkd.in'],
   reddit: ['reddit.com', 'redd.it'],
   github: ['github.com'],
+  youtube: ['youtube.com', 'youtu.be'],
 }
 
 /**
@@ -461,6 +474,7 @@ export const AD_PLATFORM_IMAGE_HOSTS: Record<AdPlatform, readonly string[]> = {
     'repository-images.githubusercontent.com',
     'avatars.githubusercontent.com',
   ],
+  youtube: ['i.ytimg.com'],
 }
 
 /** The preview image URL if it is an https URL on the post's own platform's
@@ -543,7 +557,17 @@ export const isServableLandingUrl = (raw: string): boolean => {
   }
 }
 
-export function platformForUrl(rawUrl: string): AdPlatform | null {
+/**
+ * Platforms bought only through the Earn chat's campaign assistant. The
+ * advertiser console's own forms and routes do not take their links: nothing
+ * there prices a single action or asks for a verified account.
+ */
+const EARN_CHAT_ONLY_PLATFORMS: readonly AdPlatform[] = ['youtube']
+
+export function platformForUrl(
+  rawUrl: string,
+  options: { earnChat?: boolean } = {},
+): AdPlatform | null {
   let host: string
   try {
     // Normalized, so a pasted `x.com/...` resolves to X rather than to null.
@@ -554,6 +578,9 @@ export function platformForUrl(rawUrl: string): AdPlatform | null {
     return null
   }
   for (const platform of AD_PLATFORMS) {
+    if (!options.earnChat && EARN_CHAT_ONLY_PLATFORMS.includes(platform)) {
+      continue
+    }
     for (const allowed of AD_PLATFORM_HOSTS[platform]) {
       if (host === allowed || host.endsWith(`.${allowed}`)) return platform
     }
