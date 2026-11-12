@@ -242,6 +242,12 @@ export function useAdEngagement(
      * registry, so a registry failure never loses an impression.
      */
     onSeen?: () => void
+    /**
+     * A `measured` card only: every viewport measurement while it is drawn
+     * (`undefined` = could not measure), then `false` once it is gone. The
+     * chat reads it to give the screen to one ad at a time (`ad-screen.ts`).
+     */
+    onVisibility?: (visible: boolean | undefined) => void
   },
 ): AdEngagementBinding {
   const { placement, truncated } = options
@@ -251,6 +257,47 @@ export function useAdEngagement(
   const onSeenRef = useRef(options.onSeen)
   onSeenRef.current = options.onSeen
   const wantsSeen = placement === 'measured' && options.onSeen !== undefined
+  const onVisibilityRef = useRef(options.onVisibility)
+  onVisibilityRef.current = options.onVisibility
+  const wantsVisibility =
+    placement === 'measured' && options.onVisibility !== undefined
+
+  useEffect(() => {
+    if (!wantsVisibility || !impUrl) return
+    const report = (visible: boolean | undefined) => {
+      try {
+        onVisibilityRef.current?.(visible)
+      } catch {
+        // a visibility report must never break the card
+      }
+    }
+    const check = () => {
+      let visible: boolean | undefined
+      try {
+        const node = nodeRef.current
+        visible =
+          node && !node.isDestroyed
+            ? rowsIntersect(
+                { top: node.screenY, height: node.height },
+                getAdTranscriptViewport(),
+              )
+            : undefined
+      } catch {
+        visible = undefined
+      }
+      report(visible)
+    }
+    // The faster poll: scrolling a card into view leaves the dock beside it
+    // for at most one poll, well inside the card's 1 s impression dwell.
+    const first = setTimeout(check, 0)
+    const interval = setInterval(check, TRANSCRIPT_SEEN_POLL_MS)
+    ;(interval as { unref?: () => void }).unref?.()
+    return () => {
+      clearTimeout(first)
+      clearInterval(interval)
+      report(false)
+    }
+  }, [impUrl, wantsVisibility])
 
   useEffect(() => {
     if (!wantsSeen || !impUrl) return

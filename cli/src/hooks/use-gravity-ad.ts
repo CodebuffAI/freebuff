@@ -11,7 +11,7 @@ import {
 import { createFirstPartyViewAckTelemetry } from '@codebuff/common/util/axiom-only-log'
 import { sanitizeTerminalStrings } from '@codebuff/common/util/terminal-safe-text'
 import { useRenderer } from '@opentui/react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useTerminalLayout } from './use-terminal-layout'
 import { buildAdAuctionRequest } from '../ads/ad-request'
@@ -34,6 +34,13 @@ import {
   armAdAdoptionWatch,
   TRANSCRIPT_VISIBILITY_POLL_MS,
 } from '../ads/use-ad-engagement'
+import {
+  cardRequestNeedsNetworkHint,
+  dockRequestNeedsNetworkHint,
+  dropOurFillBesideNetwork,
+  keepNewestResponseAd,
+  suppressOurCards,
+} from '../ads/ad-screen'
 import { trackAdClickAck, watchAdClickReturn } from '../ads/click-return'
 import { getAdsEnabled } from '../commands/ads'
 import { useChatStore } from '../state/chat-store'
@@ -152,8 +159,14 @@ export function inlineRequestDisposition(params: {
   count: number
   focused: boolean | undefined
   endVisible?: boolean
+  /**
+   * A sponsored offer holds the dock. It is never hidden, so the card waits
+   * (retried until the offer has gone, while the answer is still newest).
+   */
+  offerInDock?: boolean
 }): 'request' | 'defer' | 'none' {
   if (params.count <= 0) return 'none'
+  if (params.offerInDock) return 'defer'
   if (!adFocusAllows(params.focused)) return 'defer'
   return params.endVisible === false ? 'defer' : 'request'
 }
@@ -168,6 +181,139 @@ export function answerEndVisible(
   } catch {
     return undefined
   }
+}
+
+/**
+ * The rotation clock after the slot gave way for `yieldedAt..now`: the
+ * hidden time does not count, so the held ad gets the rest of its interval.
+ * `firstTickInMs` is when the next rotation is due; null `lastRotationAt`
+ * (nothing shown yet) starts a fresh interval.
+ */
+export function resumeRotationAfterYield(params: {
+  lastRotationAt: number | null
+  yieldedAt: number
+  now: number
+  intervalMs?: number
+}): { lastRotationAt: number | null; firstTickInMs: number } {
+  const interval = params.intervalMs ?? AD_ROTATION_INTERVAL_MS
+  if (params.lastRotationAt === null)
+    return { lastRotationAt: null, firstTickInMs: interval }
+  const hiddenMs = Math.max(0, params.now - params.yieldedAt)
+  const shownMs = Math.max(0, params.yieldedAt - params.lastRotationAt)
+  return {
+    lastRotationAt: params.lastRotationAt + hiddenMs,
+    firstTickInMs: Math.max(0, interval - shownMs),
+  }
+}
+
+/** The dock giving way, while it does: since when, and what it holds. */
+export type SlotYieldHold = { since: number; impUrls: string[] }
+
+/**
+ * A rotation's answer that landed while the slot had given way (a fetch
+ * already in flight when the card came into view): kept, not drawn, and
+ * shown when the slot comes back, with no second request. `undefined` is
+ * "nothing held"; `null` is a held "clear the slot" (a withheld answer).
+ */
+export type HeldRotation = AdResponse[] | null | undefined
+
+/**
+ * What one rotation answer does to the slot: `show` it now, or keep it
+ * `held` because the slot has given way since the request left.
+ */
+export function deliverRotation(
+  ctrl: { heldRotation: HeldRotation },
+  show: AdResponse[] | null | undefined,
+  yielded: boolean,
+): 'show' | 'held' | 'none' {
+  if (show === undefined) return 'none'
+  if (!yielded) return 'show'
+  ctrl.heldRotation = show
+  return 'held'
+}
+
+/**
+ * The slot giving way (`yielded` true) or coming back (false). Returns the
+ * next hold. Giving way holds the drawn ads' engagement records open.
+ * Coming back, in order: a rotation answer held meanwhile is shown (a full
+ * interval from now); else a first fetch skipped meanwhile runs; else the
+ * clock resumes with the rest of the held ad's interval. The held records
+ * are released after the swap, so an ad replaced meanwhile ends as a
+ * rotation.
+ */
+export function applySlotYield(
+  hold: SlotYieldHold | null,
+  params: {
+    yielded: boolean
+    now: number
+    /** impUrls the slot draws now. */
+    drawnImpUrls: readonly string[]
+    /** The slot is started and not hidden. */
+    slotActive: boolean
+    focused: boolean | undefined
+    ctrl: {
+      lastRotationAt: number | null
+      initialFetchPending: boolean
+      heldRotation: HeldRotation
+    }
+    hold: (impUrl: string) => void
+    release: (impUrl: string) => void
+    show: (ads: AdResponse[] | null) => void
+    runInitialFetch: () => void
+    restartRotationTimer: (firstDelayMs?: number) => void
+    intervalMs?: number
+  },
+): SlotYieldHold | null {
+  if (params.yielded) {
+    if (hold) return hold
+    const impUrls = [...params.drawnImpUrls]
+    for (const impUrl of impUrls) params.hold(impUrl)
+    return { since: params.now, impUrls }
+  }
+  if (!hold) return null
+  const ctrl = params.ctrl
+  const held = ctrl.heldRotation
+  ctrl.heldRotation = undefined
+  if (params.slotActive && held !== undefined) {
+    params.show(held)
+    ctrl.lastRotationAt = params.now
+    params.restartRotationTimer()
+  } else if (
+    params.slotActive &&
+    ctrl.initialFetchPending &&
+    adFocusAllows(params.focused)
+  ) {
+    params.runInitialFetch()
+    params.restartRotationTimer()
+  } else if (params.slotActive) {
+    const resumed = resumeRotationAfterYield({
+      lastRotationAt: ctrl.lastRotationAt,
+      yieldedAt: hold.since,
+      now: params.now,
+      intervalMs: params.intervalMs,
+    })
+    ctrl.lastRotationAt = resumed.lastRotationAt
+    params.restartRotationTimer(resumed.firstTickInMs)
+  }
+  for (const impUrl of hold.impUrls) params.release(impUrl)
+  return null
+}
+
+/**
+ * The impUrls on screen for the focus-return path: the dock's ads unless the
+ * slot has given way, and every drawn end-of-answer card.
+ */
+export function drawnAdImpUrls(params: {
+  dockAds: readonly AdResponse[] | null
+  dockYielded: boolean
+  responseAds: Record<string, readonly AdResponse[]>
+}): Set<string> {
+  const drawn = new Set<string>()
+  if (!params.dockYielded)
+    for (const ad of params.dockAds ?? []) drawn.add(ad.impUrl)
+  for (const list of Object.values(params.responseAds))
+    for (const ad of list) drawn.add(ad.impUrl)
+  return drawn
 }
 
 /** The controller fields the focus-return path reads and writes. */
@@ -370,6 +516,8 @@ type GravityController = {
   deferredInlineRequests: Map<string, MeasureRows | undefined>
   /** Polls deferred card requests while any are held. */
   deferredInlinePoll: ReturnType<typeof setInterval> | null
+  /** A rotation answer that landed while the slot had given way. */
+  heldRotation: HeldRotation
 }
 
 type ChoiceCache = Pick<GravityController, 'choiceCache' | 'choiceCacheIndex'>
@@ -588,6 +736,13 @@ type GravityAdOptionsBase = {
    * fetched only when they can be rendered. Inline ads are unaffected.
    */
   slotPaused?: boolean
+  /**
+   * The slot gives way to an end-of-answer card in the transcript viewport
+   * (one ad on screen at a time): no ad drawn, no fetch, no impression, and
+   * the rotation clock stops. When it ends the slot shows the ad it held,
+   * with the rest of that ad's interval.
+   */
+  slotYielded?: boolean
   placementIds?: string[]
 }
 
@@ -624,6 +779,9 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   // Read by the tick through a ref, so pausing needs no timer restart.
   const slotPausedRef = useRef(false)
   slotPausedRef.current = options?.slotPaused ?? false
+  const slotYielded = options?.slotYielded ?? false
+  const slotYieldedRef = useRef(false)
+  slotYieldedRef.current = slotYielded
   const placementIds = options?.placementIds
   const [ads, setAdsState] = useState<AdResponse[] | null>(null)
   // The rotating slot's creatives as last set, so a swap can be told to the
@@ -702,9 +860,12 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     deferredImpressions: new Map(),
     deferredInlineRequests: new Map(),
     deferredInlinePoll: null,
+    heldRotation: undefined,
   })
   const responseAdsRef = useRef<Record<string, AdResponse[]>>({})
   responseAdsRef.current = responseAds
+  // The cards actually drawable (our own left out beside a network dock).
+  const drawableResponseAdsRef = useRef<Record<string, AdResponse[]>>({})
 
   // Ref for the tick function (avoids useCallback dependency issues)
   const tickRef = useRef<() => void>(() => {})
@@ -712,7 +873,9 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   const requestResponseAdsRef = useRef<
     (messageId: string, count: number, measureEnd?: MeasureRows) => void
   >(() => {})
-  const restartRotationTimerRef = useRef<() => void>(() => {})
+  const restartRotationTimerRef = useRef<(firstDelayMs?: number) => void>(
+    () => {},
+  )
 
   // Ref to track whether ads should be hidden for use in async code
   const shouldHideAdsRef = useRef(shouldHideAds)
@@ -873,6 +1036,8 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   const fetchAd = async (params?: {
     placementId?: string
     placementIds?: string[]
+    /** The other slot shows an ad-network ad: network fills only. */
+    networkAdInView?: boolean
   }): Promise<FetchAdResult> => {
     // Don't fetch ads when they should be hidden
     if (shouldHideAdsRef.current) return null
@@ -886,6 +1051,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
         ? { placementIds: params.placementIds }
         : {}),
       allowSponsoredRoute: true,
+      ...(params?.networkAdInView ? { networkAdInView: true } : {}),
     })
     if (!request) return null
 
@@ -914,6 +1080,24 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       const data = await response.json()
 
       if (isWithheldAdResponse(data)) return { withheld: true }
+
+      if (
+        Array.isArray(data.ads) &&
+        data.ads.length > 0 &&
+        dropOurFillBesideNetwork(
+          { provider: data.provider ?? provider },
+          params?.networkAdInView === true,
+        )
+      ) {
+        // Asked for the network only (the other slot shows a network ad)
+        // and answered with ours by a server that ignores the hint: never
+        // drawn, never counted, not this slot's answer.
+        logger.debug(
+          { placementId: params?.placementId },
+          '[ads] Dropped our own fill beside an ad-network ad',
+        )
+        return null
+      }
 
       if (Array.isArray(data.ads) && data.ads.length > 0) {
         // Receipt stamp for `renderDelayMs` (COD-365): the response is in
@@ -952,19 +1136,24 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     const ctrl = ctrlRef.current
     try {
       if (slotPausedRef.current) return
-      if (!adFocusAllows(getAdTerminalFocus())) {
+      if (slotYieldedRef.current || !adFocusAllows(getAdTerminalFocus())) {
         ctrl.initialFetchPending = true
         return
       }
       ctrl.initialFetchPending = false
       ctrl.lastRotationAt = Date.now()
+      const networkAdInView = dockRequestNeedsNetworkHint()
       const result = await fetchAd({
         placementId: slotPlacementId,
         placementIds,
+        ...(networkAdInView ? { networkAdInView } : {}),
       })
       if (result && 'ads' in result) {
         addToChoiceCache(ctrl, result.ads)
-        setAds(result.ads)
+        // The slot may have given way while the request was out: keep the
+        // answer for when it comes back rather than set an ad nobody sees.
+        if (deliverRotation(ctrl, result.ads, slotYieldedRef.current) === 'show')
+          setAds(result.ads)
         ctrl.adsShownSinceActivity = 1
       }
     } finally {
@@ -983,7 +1172,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
         const now = Date.now()
         const plan = rotationTickPlan({
           adsEnabled: getAdsEnabled(),
-          slotPaused: slotPausedRef.current,
+          slotPaused: slotPausedRef.current || slotYieldedRef.current,
           focused: getAdTerminalFocus(),
           adsShownSinceActivity: ctrl.adsShownSinceActivity,
           userActive: isUserActive(ACTIVITY_THRESHOLD_MS),
@@ -993,14 +1182,21 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
         if (plan === 'skip') return
         ctrl.lastRotationAt = now
 
+        const networkAdInView = dockRequestNeedsNetworkHint()
         const result =
           plan === 'fetch'
-            ? await fetchAd({ placementId: slotPlacementId, placementIds })
+            ? await fetchAd({
+                placementId: slotPlacementId,
+                placementIds,
+                ...(networkAdInView ? { networkAdInView } : {}),
+              })
             : null
 
         const step = rotationStep(ctrl, result)
         if (step.countsAsShown) ctrl.adsShownSinceActivity += 1
-        if (step.show !== undefined) setAds(step.show)
+        // Given way since the request left: held, shown when the slot is back.
+        if (deliverRotation(ctrl, step.show, slotYieldedRef.current) === 'show')
+          setAds(step.show ?? null)
       } finally {
         ctrl.tickInFlight = false
       }
@@ -1071,14 +1267,17 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       if (!focused) return
       const ctrl = ctrlRef.current
       try {
-        const drawn = new Set<string>()
-        for (const ad of adsRef.current ?? []) drawn.add(ad.impUrl)
-        for (const list of Object.values(responseAdsRef.current))
-          for (const ad of list) drawn.add(ad.impUrl)
         handleAdFocusReturn(ctrl, {
           now: Date.now(),
-          drawnImpUrls: drawn,
-          slotActive: shouldStartRef.current && !shouldHideAdsRef.current,
+          drawnImpUrls: drawnAdImpUrls({
+            dockAds: adsRef.current,
+            dockYielded: slotYieldedRef.current,
+            responseAds: drawableResponseAdsRef.current,
+          }),
+          slotActive:
+            shouldStartRef.current &&
+            !shouldHideAdsRef.current &&
+            !slotYieldedRef.current,
           recordImpression: (ad) => recordImpressionRef.current(ad),
           runInitialFetch: () => void initialFetchRef.current(),
           rotate: () => tickRef.current(),
@@ -1099,6 +1298,34 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     })
   }, [])
 
+  // The slot giving way to an end-of-answer card and coming back
+  // (`applySlotYield`). The held ad's engagement record stays open (not
+  // flushed as an unmount) and counts its hidden time.
+  const yieldRef = useRef<SlotYieldHold | null>(null)
+  useEffect(() => {
+    const registry = (): ReturnType<typeof adEngagementRegistry> | null => {
+      try {
+        return adEngagementRegistry()
+      } catch {
+        return null
+      }
+    }
+    yieldRef.current = applySlotYield(yieldRef.current, {
+      yielded: slotYielded,
+      now: Date.now(),
+      drawnImpUrls: (adsRef.current ?? []).map((ad) => ad.impUrl),
+      slotActive: shouldStartRef.current && !shouldHideAdsRef.current,
+      focused: getAdTerminalFocus(),
+      ctrl: ctrlRef.current,
+      hold: (impUrl) => registry()?.hold(impUrl, 'inline_card_in_view'),
+      release: (impUrl) => registry()?.release(impUrl),
+      show: (next) => setAds(next),
+      runInitialFetch: () => void initialFetchRef.current(),
+      restartRotationTimer: (firstDelayMs) =>
+        restartRotationTimerRef.current(firstDelayMs),
+    })
+  }, [slotYielded])
+
   // Start rotation when user sends first message (or immediately if forced).
   useEffect(() => {
     if (!shouldStart || !getAdsEnabled() || shouldHideAds) return
@@ -1112,13 +1339,27 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     // run on focus return restarts it, so the next tick is a full interval
     // after that rotation.
     let id = setInterval(() => tickRef.current(), AD_ROTATION_INTERVAL_MS)
-    restartRotationTimerRef.current = () => {
+    let first: ReturnType<typeof setTimeout> | null = null
+    // With `firstDelayMs`, the next tick comes after that delay (the rest of
+    // an interval interrupted by the slot giving way), then every interval.
+    restartRotationTimerRef.current = (firstDelayMs?: number) => {
       clearInterval(id)
-      id = setInterval(() => tickRef.current(), AD_ROTATION_INTERVAL_MS)
+      if (first) clearTimeout(first)
+      first = null
+      if (firstDelayMs === undefined) {
+        id = setInterval(() => tickRef.current(), AD_ROTATION_INTERVAL_MS)
+        return
+      }
+      first = setTimeout(() => {
+        first = null
+        tickRef.current()
+        id = setInterval(() => tickRef.current(), AD_ROTATION_INTERVAL_MS)
+      }, firstDelayMs)
     }
 
     return () => {
       clearInterval(id)
+      if (first) clearTimeout(first)
       restartRotationTimerRef.current = () => {}
     }
   }, [shouldStart, shouldHideAds, provider, surface, placementIds?.join(',')])
@@ -1156,6 +1397,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
         count,
         focused: getAdTerminalFocus(),
         endVisible: answerEndVisible(measureEnd),
+        offerInDock: slotPausedRef.current,
       }) === 'defer'
     ) {
       ctrl.deferredInlineRequests.set(messageId, measureEnd)
@@ -1187,14 +1429,41 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       messageId,
       count,
       fetchOne: async () => {
-        const result = await fetchAd({ placementId: inlinePlacementId })
+        // The dock holds an ad-network ad: a card of ours would not be drawn
+        // beside it, so ask for the network only (dropped if ours comes back).
+        const networkAdInView = cardRequestNeedsNetworkHint()
+        const result = await fetchAd({
+          placementId: inlinePlacementId,
+          ...(networkAdInView ? { networkAdInView } : {}),
+        })
         return result && 'ads' in result ? (result.ads[0] ?? null) : null
       },
       onAd: (ad) => {
-        setResponseAds((prev) => ({
-          ...prev,
-          [messageId]: [...(prev[messageId] ?? []), ad],
-        }))
+        // Only the newest answer's card is drawn: one card on screen at a
+        // time, however the transcript is scrolled.
+        const answerOrder = useChatStore
+          .getState()
+          .messages.filter(isAnswerMessage)
+          .map((m) => m.id)
+        const { next, superseded, dropped } = keepNewestResponseAd(
+          responseAdsRef.current,
+          messageId,
+          ad,
+          answerOrder,
+        )
+        // A late card for an older answer, or for one no longer in the
+        // transcript: nothing drawn changes.
+        if (dropped) return
+        for (const old of superseded) {
+          ctrl.deferredImpressions.delete(old.impUrl)
+          try {
+            adEngagementRegistry().noteYield(old.impUrl, 'newer_inline_card')
+          } catch {
+            // engagement must never break the card
+          }
+        }
+        responseAdsRef.current = next
+        setResponseAds(next)
       },
     })
   }
@@ -1203,9 +1472,26 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
 
   // Don't return ads when ads should be hidden
   const visible = shouldStart && !shouldHideAds
+  // Coming back with an answer held while blank: drawn from this render, so
+  // the old ad never flashes before the swap the yield effect commits.
+  const heldRotation = ctrlRef.current.heldRotation
+  const slotAds =
+    !slotYielded && yieldRef.current && heldRotation !== undefined
+      ? heldRotation
+      : ads
+  // Rule 1: an ad-network ad held by the dock means our own cards are not
+  // drawn (a sponsored offer in the dock holds no ad).
+  const dockHeldAd = slotPausedRef.current ? null : (slotAds?.[0] ?? null)
+  const drawableResponseAds = useMemo(
+    () => suppressOurCards(responseAds, dockHeldAd),
+    [responseAds, dockHeldAd?.provider, dockHeldAd?.impUrl],
+  )
+  drawableResponseAdsRef.current = drawableResponseAds
   return {
-    ads: visible ? ads : null,
-    responseAds: visibleResponseAds(visible, responseAds),
+    // Still returned while the slot gives way: the caller keeps the slot's
+    // rows (blank) so the layout does not move, and draws it again after.
+    ads: visible ? slotAds : null,
+    responseAds: visibleResponseAds(visible, drawableResponseAds),
     requestResponseAds,
     isLoading,
     recordClick,

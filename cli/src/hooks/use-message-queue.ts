@@ -320,6 +320,24 @@ export const useMessageQueue = (
     [writeQueue],
   )
 
+  /** Drop every queued copy of `content` (compared trimmed). Used when the
+   *  server refused that text under the usage policy: a copy would only be
+   *  refused again and count again. Returns how many were dropped. */
+  const dropQueuedCopies = useCallback(
+    (content: string): number => {
+      const refused = content.trim()
+      const current = queuedMessagesRef.current
+      const next = current.filter(
+        (message) => message.content.trim() !== refused,
+      )
+      if (next.length === current.length) return 0
+
+      writeQueue(next)
+      return current.length - next.length
+    },
+    [writeQueue],
+  )
+
   /** Move a queued message to `toIndex`, clamped to the queue's bounds so
    *  callers can pass index±1 at the edges without a guard. */
   const moveQueuedMessage = useCallback(
@@ -394,6 +412,7 @@ export const useMessageQueue = (
     addToQueueFront,
     editQueuedMessage,
     removeQueuedMessage,
+    dropQueuedCopies,
     moveQueuedMessage,
     startStreaming,
     setStreamStatus,

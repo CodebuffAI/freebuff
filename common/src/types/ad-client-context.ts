@@ -119,6 +119,17 @@ export const ENGAGEMENT_EXITS = [
   'window_close',
 ] as const
 export const CLICK_REGIONS = ['title', 'body', 'cta', 'logo', 'other'] as const
+/**
+ * Why a drawn ad stopped being shown while another ad took the screen (one ad on screen at a time):
+ * - `inline_card_in_view`: the slot above the input gave way to an end-of-answer card in the transcript viewport;
+ * - `network_ad_on_screen`: one of our own ads gave way to an ad-network ad on screen;
+ * - `newer_inline_card`: an older answer's card gave way to a newer answer's card.
+ */
+export const AD_YIELD_REASONS = [
+  'inline_card_in_view',
+  'network_ad_on_screen',
+  'newer_inline_card',
+] as const
 
 // ---- context v1 additions (COD-757 wave 2). Additive and optional, so `v` stays 1. ----
 
@@ -562,6 +573,18 @@ export const adEngagementSchema = z.object({
   firstHoverMs: ms.optional(),
   sentMessageDuringExposure: z.boolean().optional(),
   exit: z.enum(ENGAGEMENT_EXITS).optional(),
+  /**
+   * The ad gave way to another ad on screen: the latest reason, how many times it gave way, and (when its slot held
+   * it to show again) the total ms it was hidden while held.
+   */
+  yielded: z
+    .object({
+      reason: z.enum(AD_YIELD_REASONS),
+      count: count,
+      hiddenMs: ms,
+    })
+    .partial()
+    .optional(),
   truncated: z.boolean().optional(),
   imageFailed: z.boolean().optional(),
   imageLoadMs: ms.optional(),

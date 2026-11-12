@@ -75,6 +75,14 @@ export function usePartnerSuggestion({
     }
   }, [enabled, reviewVisible, fetchAd])
 
+  // Disabled (an ad-network ad on screen, a form, the menu closed): forget
+  // the fill, so reopening never re-inserts a stale row. A late answer is
+  // already cancelled above; `getPartnerAd` keeps it, so asking again on
+  // reopen makes no second request.
+  useEffect(() => {
+    if (!enabled) setAd(null)
+  }, [enabled])
+
   // A late fill must not move the highlight onto the ad or another command.
   const previous = useRef({ items, menuItems, selectedIndex })
   useLayoutEffect(() => {

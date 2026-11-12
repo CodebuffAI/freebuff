@@ -160,6 +160,12 @@ export async function buildAdAuctionRequest(params: {
    * request (`CLI-Intent`).
    */
   draft?: string
+  /**
+   * The other main slot already holds an ad-network ad (one ad on screen at
+   * a time): the server may fill this request only from the network. Sent
+   * only when true; an older server ignores it.
+   */
+  networkAdInView?: boolean
 }): Promise<AdAuctionRequest | null> {
   const authToken = getAuthToken()
   if (!authToken) {
@@ -219,6 +225,7 @@ export async function buildAdAuctionRequest(params: {
         // policy resolves, so the server falls back to its own assignment
         // rather than being handed a guess.
         ...(dockArm ? { cliDockArm: dockArm } : {}),
+        ...(params.networkAdInView ? { networkAdInView: true } : {}),
         // Bucketed terminal/attention/session facts (COD-757), training
         // features only. Synchronous and total: `undefined` drops the key.
         ...(clientContext ? { clientContext } : {}),

@@ -205,3 +205,59 @@ test('no fill creates no menu position; an offscreen review never fetches', asyn
     setup.renderer.destroy()
   }
 })
+
+test('disabled while a fill is in flight: the late fill is not drawn, and reopening redraws nothing stale', async () => {
+  const answers: Array<(ad: AdResponse | null) => void> = []
+  const fetchAd = () =>
+    new Promise<AdResponse | null>((resolve) => answers.push(resolve))
+  let currentItems: SuggestionItem[] = []
+  let setEnabled: (value: boolean) => void = () => {}
+  function Harness() {
+    const [enabled, set] = useState(true)
+    setEnabled = set
+    currentItems = usePartnerSuggestion({
+      items: commands,
+      selectedIndex: 0,
+      setSelectedIndex: () => {},
+      maxVisible: 5,
+      enabled,
+      fetchAd,
+    })
+    return null
+  }
+  const setup = await createTestRenderer({ width: 80, height: 3 })
+  const root = createRoot(setup.renderer)
+  const settle = async () => {
+    for (let i = 0; i < 3; i++) {
+      await setup.renderOnce()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      flushSync(() => {})
+    }
+  }
+  const ids = () => currentItems.map((i) => i.id)
+  try {
+    // a first fill, drawn
+    flushSync(() => root.render(<Harness />))
+    await settle()
+    answers.shift()!(fill)
+    await settle()
+    expect(ids()).toContain(PARTNER_REVIEW_ITEM_ID)
+    // a network ad appears: the row goes, and its state is forgotten
+    flushSync(() => setEnabled(false))
+    await settle()
+    expect(ids()).not.toContain(PARTNER_REVIEW_ITEM_ID)
+    // reopened: nothing stale is re-inserted before the (held) answer returns
+    flushSync(() => setEnabled(true))
+    await setup.renderOnce()
+    expect(ids()).not.toContain(PARTNER_REVIEW_ITEM_ID)
+    // closed again while that request is still out: its late answer is dropped
+    flushSync(() => setEnabled(false))
+    await settle()
+    answers.shift()!({ ...fill, impUrl: 'late' })
+    await settle()
+    expect(ids()).not.toContain(PARTNER_REVIEW_ITEM_ID)
+  } finally {
+    flushSync(() => root.unmount())
+    setup.renderer.destroy()
+  }
+})

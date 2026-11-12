@@ -23,6 +23,10 @@ import React, { useState, useMemo, useEffect } from 'react'
 
 import { greptileTerminalColors } from '../ads/partner-brand'
 import { layoutTruncated } from '../ads/ad-engagement'
+import {
+  reportInlineCardDrawn,
+  reportInlineCardVisibility,
+} from '../ads/ad-screen'
 import { useAdEngagement } from '../ads/use-ad-engagement'
 
 import { Button } from './button'
@@ -212,6 +216,13 @@ export const AdCard: React.FC<{
     if (isInline) return
     onImpression?.(ad)
   }, [ad, onImpression, isInline])
+  // One ad on screen at a time: our own units read whether a card is drawn.
+  useEffect(() => {
+    if (!isInline) return
+    const drawn = { impUrl: ad.impUrl, provider: ad.provider }
+    reportInlineCardDrawn(drawn, true)
+    return () => reportInlineCardDrawn(drawn, false)
+  }, [ad.impUrl, ad.provider, isInline])
 
   // Laid out before the early return below, so the engagement hook can judge
   // truncation from exactly what is drawn.
@@ -249,7 +260,15 @@ export const AdCard: React.FC<{
             [ad.adText, card.description],
           ])
         : undefined,
-    ...(isInline ? { onSeen: () => onImpression?.(ad) } : {}),
+    ...(isInline
+      ? {
+          onSeen: () => onImpression?.(ad),
+          // One ad on screen at a time: the dock gives way while this card
+          // is in the transcript viewport.
+          onVisibility: (visible: boolean | undefined) =>
+            reportInlineCardVisibility(ad, visible),
+        }
+      : {}),
   })
 
   const buttonProps = {
@@ -840,6 +859,19 @@ export const DOCK_CLOSE_LABEL = '[ Close ]'
  * one outcome the spec forbids outright.
  */
 export const DOCK_COMPOSER_RESERVED_ROWS = AD_CARD_HEIGHT + 6
+
+/**
+ * Rows the dock keeps, blank, while it gives way to an end-of-answer card:
+ * the collapsed dock's own height at every width and arm (the detail panel
+ * collapses when the dock goes blank), so nothing above or below it moves
+ * and a resize cannot leave it stale.
+ */
+export const DOCK_BLANK_ROWS = AD_CARD_HEIGHT
+
+/** The dock's rows while it gives way: blank, its collapsed height. */
+export const DockBlankRows: React.FC = () => (
+  <box style={{ height: DOCK_BLANK_ROWS, flexShrink: 0 }} />
+)
 
 /**
  * How many rows the panel may occupy above the dock at this terminal height.

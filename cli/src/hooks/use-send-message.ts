@@ -28,6 +28,7 @@ import {
   selectedByokConnection,
 } from '../utils/byok'
 import { AGENT_MODE_TO_COST_MODE, IS_FREEBUFF } from '../utils/constants'
+import { isPromptPolicyRefusal } from '../utils/error-handling'
 import { createEventHandlerState } from '../utils/create-event-handler-state'
 import { captureCliFunnel, cliFunnelKey } from '../utils/cli-product-funnel'
 import { createCliRunFunnel } from '../utils/cli-run-funnel'
@@ -123,6 +124,9 @@ interface UseSendMessageOptions {
    *  after a user interrupt, so the held text doesn't auto-start a new turn
    *  the user just stopped. */
   pauseQueue?: () => void
+  /** Drop queued copies of a message the server refused under the usage
+   *  policy, which would each be refused again and count again. */
+  dropQueuedCopies?: (content: string) => void
   continueChat: boolean
   continueChatId?: string
   subscriptionData?: SubscriptionResponse | null
@@ -211,6 +215,7 @@ export const useSendMessage = ({
   resumeQueue,
   requeueMessageAtFront,
   pauseQueue,
+  dropQueuedCopies,
   continueChat,
   continueChatId,
   subscriptionData,
@@ -516,6 +521,15 @@ export const useSendMessage = ({
         releaseRunOwnership()
         settleSponsored(true)
         return true
+      }
+
+      // A refused message is final (no client retries the 403): queued copies
+      // of it would each be refused again and count again. Dropped before the
+      // run's completion reopens the queue.
+      const dropCopiesIfRefused = (failure: unknown) => {
+        if (sponsored || !isPromptPolicyRefusal(failure)) return
+        if (!runChatIsCurrent()) return
+        dropQueuedCopies?.(content)
       }
 
       const finishPreflight = () => {
@@ -1111,6 +1125,12 @@ export const useSendMessage = ({
             )
           }
         }
+        if (
+          runState.output?.type === 'error' &&
+          !abortController.signal.aborted
+        ) {
+          dropCopiesIfRefused(runState.output)
+        }
         // A compact streams nothing, so nothing else says what it did.
         if (
           isCloudCompactPrompt(content) &&
@@ -1166,6 +1186,7 @@ export const useSendMessage = ({
         // may have started. Uses per-run abortController.signal (not shared
         // streamRefs) so a newer run's reset() can't clear this flag.
         if (!abortController.signal.aborted) {
+          dropCopiesIfRefused(error)
           handleRunError({
             error,
             timerController,
@@ -1282,6 +1303,7 @@ export const useSendMessage = ({
       requeueMessageAtFront,
       resumeQueue,
       pauseQueue,
+      dropQueuedCopies,
       scrollToLatest,
       setCanProcessQueue,
       setFocusedAgentId,

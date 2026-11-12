@@ -14,8 +14,12 @@ import {
   inlineRequestDisposition,
   rotationDueOnFocus,
   rotationTickPlan,
+  applySlotYield,
+  deliverRotation,
   dispatchFirstPartyViewAcknowledgement,
+  drawnAdImpUrls,
   isAnswerMessage,
+  resumeRotationAfterYield,
   isInlineAdEligibleAnswer,
   isWithheldAdResponse,
   NO_RESPONSE_ADS,
@@ -565,5 +569,230 @@ describe('handleAdFocusReturn', () => {
     expect(tickAt(180_000)).toBe('skip')
     expect(tickAt(185_000)).toBe('fetch')
     expect(rotations).toEqual([125_000])
+  })
+})
+
+describe('the dock giving way to an end-of-answer card in view', () => {
+  const ad = (impUrl: string) =>
+    ({ impUrl, adText: '', title: '', cta: '', url: '', favicon: '', clickUrl: '' }) as AdResponse
+
+  test('a yielded slot neither fetches nor swaps on a tick', () => {
+    expect(
+      rotationTickPlan({
+        adsEnabled: true,
+        slotPaused: true,
+        focused: true,
+        adsShownSinceActivity: 0,
+        userActive: true,
+      }),
+    ).toBe('skip')
+  })
+
+  test('the hidden time does not count: the held ad gets the rest of its interval', () => {
+    // shown 20 s, hidden 100 s
+    const resumed = resumeRotationAfterYield({
+      lastRotationAt: 1_000,
+      yieldedAt: 21_000,
+      now: 121_000,
+      intervalMs: 60_000,
+    })
+    expect(resumed).toEqual({ lastRotationAt: 101_000, firstTickInMs: 40_000 })
+    // the tick at the resumed due time rotates; one just before is skipped
+    const due = 121_000 + resumed.firstTickInMs
+    const plan = (now: number) =>
+      rotationTickPlan({
+        adsEnabled: true,
+        slotPaused: false,
+        focused: true,
+        adsShownSinceActivity: 0,
+        userActive: true,
+        lastRotationAt: resumed.lastRotationAt,
+        now,
+      })
+    expect(plan(due)).toBe('fetch')
+    expect(plan(due - AD_ROTATION_TICK_SLACK_MS - 1)).toBe('skip')
+  })
+
+  test('an ad already past its interval when hidden rotates on return', () => {
+    expect(
+      resumeRotationAfterYield({
+        lastRotationAt: 0,
+        yieldedAt: 70_000,
+        now: 80_000,
+        intervalMs: 60_000,
+      }).firstTickInMs,
+    ).toBe(0)
+  })
+
+  test('nothing shown yet starts a fresh interval', () => {
+    expect(
+      resumeRotationAfterYield({
+        lastRotationAt: null,
+        yieldedAt: 5,
+        now: 10,
+        intervalMs: 60_000,
+      }),
+    ).toEqual({ lastRotationAt: null, firstTickInMs: 60_000 })
+  })
+
+  test('a yielded dock is not drawn, so a held impression is not sent on focus return', () => {
+    const responseAds = { 'ai-1': [ad('card')] }
+    expect([
+      ...drawnAdImpUrls({ dockAds: [ad('dock')], dockYielded: true, responseAds }),
+    ]).toEqual(['card'])
+    expect(
+      [
+        ...drawnAdImpUrls({
+          dockAds: [ad('dock')],
+          dockYielded: false,
+          responseAds,
+        }),
+      ].sort(),
+    ).toEqual(['card', 'dock'])
+  })
+
+  test('focus return while yielded: the dock does not rotate or fetch', () => {
+    const state: FocusReturnState = {
+      lastRotationAt: 0,
+      initialFetchPending: true,
+      deferredImpressions: new Map([['dock', ad('dock')]]),
+    }
+    const calls: string[] = []
+    const result = handleAdFocusReturn(state, {
+      now: 10_000_000,
+      drawnImpUrls: drawnAdImpUrls({
+        dockAds: [ad('dock')],
+        dockYielded: true,
+        responseAds: {},
+      }),
+      slotActive: false,
+      recordImpression: (a) => calls.push(`imp:${a.impUrl}`),
+      runInitialFetch: () => calls.push('initial'),
+      rotate: () => calls.push('rotate'),
+      restartRotationTimer: () => calls.push('restart'),
+      retryDeferredInline: () => calls.push('retry'),
+    })
+    expect(result).toBe('none')
+    expect(calls).toEqual(['retry'])
+  })
+})
+
+describe('applySlotYield: the dock giving way and coming back', () => {
+  const ad = (impUrl: string) =>
+    ({ impUrl, adText: '', title: '', cta: '', url: '', favicon: '', clickUrl: '' }) as AdResponse
+  const harness = (ctrlOver: Partial<{
+    lastRotationAt: number | null
+    initialFetchPending: boolean
+    heldRotation: AdResponse[] | null | undefined
+  }> = {}) => {
+    const calls: string[] = []
+    const ctrl = {
+      lastRotationAt: 1_000 as number | null,
+      initialFetchPending: false,
+      heldRotation: undefined as AdResponse[] | null | undefined,
+      ...ctrlOver,
+    }
+    const run = (
+      hold: ReturnType<typeof applySlotYield>,
+      yielded: boolean,
+      now: number,
+      extra: { slotActive?: boolean; focused?: boolean } = {},
+    ) =>
+      applySlotYield(hold, {
+        yielded,
+        now,
+        drawnImpUrls: ['dock-a'],
+        slotActive: extra.slotActive ?? true,
+        focused: extra.focused,
+        ctrl,
+        hold: (u) => calls.push(`hold:${u}`),
+        release: (u) => calls.push(`release:${u}`),
+        show: (ads) => calls.push(`show:${ads?.map((a) => a.impUrl).join(',') ?? 'null'}`),
+        runInitialFetch: () => calls.push('initial'),
+        restartRotationTimer: (ms) => calls.push(`restart:${ms ?? 'interval'}`),
+        intervalMs: 60_000,
+      })
+    return { calls, ctrl, run }
+  }
+
+  test('giving way holds the drawn ads once; a repeat changes nothing', () => {
+    const h = harness()
+    const hold = h.run(null, true, 21_000)
+    expect(hold).toEqual({ since: 21_000, impUrls: ['dock-a'] })
+    expect(h.run(hold, true, 30_000)).toBe(hold)
+    expect(h.calls).toEqual(['hold:dock-a'])
+  })
+
+  test('coming back resumes the clock with the rest of the interval, then releases', () => {
+    const h = harness()
+    const hold = h.run(null, true, 21_000) // shown 20 s
+    expect(h.run(hold, false, 121_000)).toBeNull() // hidden 100 s
+    expect(h.calls).toEqual(['hold:dock-a', 'restart:40000', 'release:dock-a'])
+    expect(h.ctrl.lastRotationAt).toBe(101_000)
+  })
+
+  test('an answer held while blank is shown on return, a full interval from now, before the release', () => {
+    const h = harness()
+    const hold = h.run(null, true, 21_000)
+    expect(deliverRotation(h.ctrl, [ad('dock-b')], true)).toBe('held')
+    h.run(hold, false, 50_000)
+    expect(h.calls).toEqual([
+      'hold:dock-a',
+      'show:dock-b',
+      'restart:interval',
+      'release:dock-a',
+    ])
+    expect(h.ctrl.lastRotationAt).toBe(50_000)
+    expect(h.ctrl.heldRotation).toBeUndefined()
+  })
+
+  test('a first fetch skipped while blank runs on return when focused', () => {
+    const h = harness({ lastRotationAt: null, initialFetchPending: true })
+    const hold = h.run(null, true, 0)
+    h.run(hold, false, 5_000, { focused: true })
+    expect(h.calls).toEqual(['hold:dock-a', 'initial', 'restart:interval', 'release:dock-a'])
+  })
+
+  test('unfocused on return: the skipped first fetch waits for focus; a fresh interval starts', () => {
+    const h = harness({ lastRotationAt: null, initialFetchPending: true })
+    const hold = h.run(null, true, 0)
+    h.run(hold, false, 5_000, { focused: false })
+    expect(h.calls).toEqual(['hold:dock-a', 'restart:60000', 'release:dock-a'])
+  })
+
+  test('an inactive slot (ads hidden) only releases', () => {
+    const h = harness({ heldRotation: [ad('dock-b')] })
+    const hold = h.run(null, true, 0)
+    h.run(hold, false, 5_000, { slotActive: false })
+    expect(h.calls).toEqual(['hold:dock-a', 'release:dock-a'])
+    expect(h.ctrl.heldRotation).toBeUndefined()
+  })
+})
+
+describe('deliverRotation: a dock fetch landing while the slot is blank', () => {
+  const ad = { impUrl: 'x' } as AdResponse
+  test('shown at once while the slot draws; held (not set, not counted) while blank', () => {
+    const ctrl = { heldRotation: undefined as AdResponse[] | null | undefined }
+    expect(deliverRotation(ctrl, [ad], false)).toBe('show')
+    expect(ctrl.heldRotation).toBeUndefined()
+    expect(deliverRotation(ctrl, [ad], true)).toBe('held')
+    expect(ctrl.heldRotation).toEqual([ad])
+    // a withheld answer (clear the slot) is held as such
+    expect(deliverRotation(ctrl, null, true)).toBe('held')
+    expect(ctrl.heldRotation).toBeNull()
+    // nothing to deliver
+    expect(deliverRotation(ctrl, undefined, true)).toBe('none')
+  })
+})
+
+describe('a sponsored offer in the dock holds the card request', () => {
+  test('deferred while the offer holds the dock, requested once it has gone', () => {
+    const base = { count: 1, focused: true as const, endVisible: true }
+    expect(inlineRequestDisposition({ ...base, offerInDock: true })).toBe('defer')
+    expect(inlineRequestDisposition({ ...base, offerInDock: false })).toBe('request')
+    // still the other gates once the offer has gone
+    expect(
+      inlineRequestDisposition({ ...base, endVisible: false, offerInDock: false }),
+    ).toBe('defer')
   })
 })

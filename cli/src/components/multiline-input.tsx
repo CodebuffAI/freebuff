@@ -244,6 +244,18 @@ export const MultilineInput = forwardRef<
   valueRef.current = value
   cursorPositionRef.current = cursorPosition
 
+  // A plain Enter submits only if it is the last key of its stdin read.
+  // OpenTUI hands every key of one read to these handlers before React
+  // re-renders, and a terminal without bracketed paste (a phone keyboard's
+  // clipboard, some web terminals) types a paste out as keys, its line breaks
+  // as Return. Submitting on each one sent the same draft once per pasted line:
+  // hundreds of identical prompts, refused as `scripted` (2026-11-11). The
+  // submit waits for a microtask, which runs after the read's last key; text
+  // typed before then turns the pending Enter into a line break.
+  const pendingSubmitRef = useRef(false)
+  const onSubmitRef = useRef(onSubmit)
+  onSubmitRef.current = onSubmit
+
   // Helper to get or set the sticky column for vertical navigation.
   // When stickyColumnRef.current is set, we return it (preserving column across
   // multiple up/down presses). When null, we calculate from current cursor position.
@@ -429,6 +441,23 @@ export const MultilineInput = forwardRef<
     [onChange, getSelectionRange, clearSelection],
   )
 
+  /** More input followed a pending Enter in the same read: it was a pasted
+   *  line break, so insert it as one instead of submitting. */
+  const settlePendingEnterAsNewline = useCallback(() => {
+    if (!pendingSubmitRef.current) return
+    pendingSubmitRef.current = false
+    insertTextAtCursor('\n')
+  }, [insertTextAtCursor])
+
+  const submitAtEndOfRead = useCallback(() => {
+    pendingSubmitRef.current = true
+    queueMicrotask(() => {
+      if (!pendingSubmitRef.current) return
+      pendingSubmitRef.current = false
+      onSubmitRef.current()
+    })
+  }, [])
+
   const moveCursor = useCallback(
     (nextPosition: number) => {
       const clamped = clamp(nextPosition, 0, value.length)
@@ -575,6 +604,13 @@ export const MultilineInput = forwardRef<
       // Only handle Enter and Ctrl+J here
       if (!isEnterKey && !isCtrlJ) return false
 
+      // Another line break in the same read: the pending Enter was one too.
+      settlePendingEnterAsNewline()
+      // The refs, not the render's props: earlier keys of this read (a pasted
+      // line, a pending Enter just inserted) are not rendered yet.
+      const currentValue = valueRef.current
+      const currentCursor = cursorPositionRef.current
+
       const isAltLikeModifier = isAltModifier(key)
       // Kitty-protocol keyboards encode plain Enter as an escape sequence
       // (e.g. \x1b[13u) but report modifiers reliably, so the escape-prefix
@@ -587,7 +623,7 @@ export const MultilineInput = forwardRef<
         key.sequence.length > 0 &&
         key.sequence.charCodeAt(0) === 0x1b
       const hasBackslashBeforeCursor =
-        cursorPosition > 0 && value[cursorPosition - 1] === '\\'
+        currentCursor > 0 && currentValue[currentCursor - 1] === '\\'
 
       // Plain Enter: no modifiers, sequence is '\r' (macOS) or '\n' (Linux)
       const isPlainEnter =
@@ -617,37 +653,37 @@ export const MultilineInput = forwardRef<
         // For backslash+Enter, remove the backslash and insert newline
         if (isBackslashEnter) {
           const newValue =
-            value.slice(0, cursorPosition - 1) +
+            currentValue.slice(0, currentCursor - 1) +
             '\n' +
-            value.slice(cursorPosition)
+            currentValue.slice(currentCursor)
+          valueRef.current = newValue
           onChange({
             text: newValue,
-            cursorPosition,
+            cursorPosition: currentCursor,
             lastEditDueToNav: false,
           })
           return true
         }
 
         // For other newline shortcuts (Shift+Enter, Option+Enter, Ctrl+J), just insert newline
-        const newValue =
-          value.slice(0, cursorPosition) + '\n' + value.slice(cursorPosition)
-        onChange({
-          text: newValue,
-          cursorPosition: cursorPosition + 1,
-          lastEditDueToNav: false,
-        })
+        insertTextAtCursor('\n')
         return true
       }
 
       if (isPlainEnter) {
         preventKeyDefault(key)
-        onSubmit()
+        submitAtEndOfRead()
         return true
       }
 
       return false
     },
-    [value, cursorPosition, onChange, onSubmit],
+    [
+      onChange,
+      insertTextAtCursor,
+      settlePendingEnterAsNewline,
+      submitAtEndOfRead,
+    ],
   )
 
   // Handle deletion keys (backspace, delete, ctrl+h, ctrl+d, word/line deletion)
@@ -1039,6 +1075,7 @@ export const MultilineInput = forwardRef<
       const textToInsert = getPrintableKeySequence(key)
       if (textToInsert !== null) {
         preventKeyDefault(key)
+        settlePendingEnterAsNewline()
         insertTextAtCursor(textToInsert)
         onTypedText?.(textToInsert)
         return true
@@ -1046,7 +1083,7 @@ export const MultilineInput = forwardRef<
 
       return false
     },
-    [insertTextAtCursor, onTypedText],
+    [insertTextAtCursor, onTypedText, settlePendingEnterAsNewline],
   )
 
   // Global paste event listener — catches paste events (e.g. from drag-and-drop)

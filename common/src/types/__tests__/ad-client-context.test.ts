@@ -254,6 +254,25 @@ describe('parseAdEngagement', () => {
     expect(parseAdEngagement(record)).toEqual(record)
   })
 
+  test('yielded: why an ad gave way and how long it was held hidden; unknown reasons fail', () => {
+    const record = {
+      v: 1,
+      impUrl: 'https://ads.example/i',
+      exit: 'unmount',
+      yielded: { reason: 'inline_card_in_view', count: 2, hiddenMs: 41_000 },
+    }
+    expect(parseAdEngagement(record)).toEqual(record)
+    const superseded = {
+      v: 1,
+      impUrl: 'https://ads.example/j',
+      yielded: { reason: 'newer_inline_card', count: 1 },
+    }
+    expect(parseAdEngagement(superseded)).toEqual(superseded)
+    expect(
+      parseAdEngagement({ v: 1, impUrl: 'https://ads.example/k', yielded: { reason: 'boredom' } }),
+    ).toBeUndefined()
+  })
+
   test('a post-click-only upsert is valid on its own', () => {
     const update = { v: 1, impUrl: 'https://ads.example/i', postClick: { returnMs: 2_000 } }
     expect(parseAdEngagement(update)).toEqual(update)

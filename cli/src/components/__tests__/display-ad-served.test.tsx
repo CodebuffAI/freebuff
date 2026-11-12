@@ -8,6 +8,11 @@ import { DisplayAdDeals } from '../display-ad-deals'
 import { DisplayAdSplash } from '../display-ad-splash'
 import { DisplayAdStatusline } from '../display-ad-statusline'
 import { cliSponsorColors } from '../../ads/display-ads'
+import {
+  reportDockHeld,
+  reportInlineCardDrawn,
+  resetAdScreenForTests,
+} from '../../ads/ad-screen'
 import { useDisplayAdsStore } from '../../ads/display-ads-store'
 import { setCliDisplayAdTrackerForTests } from '../../ads/display-ads-telemetry'
 import {
@@ -42,6 +47,7 @@ afterEach(() => {
   cleanup?.()
   cleanup = undefined
   useDisplayAdsStore.setState({ splashHiddenOn: null, statuslineHidden: false })
+  resetAdScreenForTests()
 })
 
 function served(placementId: 'CLI-Splash' | 'CLI-Statusline' | 'CLI-Deals') {
@@ -277,4 +283,98 @@ test('the served row shows the /deals hint only when CLI-Deals is served', async
     2,
   )
   expect(withDeals.setup.captureCharFrame()).toContain('/deals')
+})
+
+test('an ad-network ad on screen: our display units draw, request and bill nothing', async () => {
+  reportDockHeld({ impUrl: 'imp-network-dock', provider: 'gravity' })
+  const { asked, get } = fake(served('CLI-Statusline'))
+  const { setup } = await mount(
+    <DisplayAdStatusline enabled={false} getServed={get} />,
+    100,
+    2,
+  )
+  expect(setup.captureCharFrame().trim()).toBe('')
+  cleanup?.()
+  reportDockHeld(null)
+  reportInlineCardDrawn(
+    { impUrl: 'imp-network-card', provider: 'gravity' },
+    true,
+  )
+  const splash = await mount(
+    <DisplayAdSplash
+      width={68}
+      variant="boxed"
+      enabled={false}
+      getServed={get}
+    />,
+  )
+  expect(splash.setup.captureCharFrame().trim()).toBe('')
+  cleanup?.()
+  // the mock preview gives way too
+  await mount(<DisplayAdStatusline enabled getServed={get} />, 100, 2)
+  expect(asked).toEqual([])
+  expect(billed).toEqual([])
+  expect(events).toEqual([])
+})
+
+test('our own ad on screen does not hide our display units', async () => {
+  reportDockHeld({ impUrl: 'imp-own-dock', provider: 'first_party' })
+  const { asked, get } = fake(served('CLI-Statusline'))
+  const { setup } = await mount(
+    <DisplayAdStatusline enabled={false} getServed={get} />,
+    100,
+    2,
+  )
+  expect(setup.captureCharFrame()).toContain('Acme Cloud')
+  expect(asked).toEqual(['CLI-Statusline'])
+})
+
+test('the unit gives way when a network ad arrives and comes back with the same impression when it leaves', async () => {
+  const { asked, get } = fake(served('CLI-Statusline'))
+  const { setup } = await mount(
+    <DisplayAdStatusline enabled={false} getServed={get} />,
+    100,
+    2,
+  )
+  expect(setup.captureCharFrame()).toContain('Acme Cloud')
+  reportDockHeld({ impUrl: 'imp-network-dock', provider: 'gravity' })
+  await setup.renderOnce()
+  expect(setup.captureCharFrame().trim()).toBe('')
+  reportDockHeld(null)
+  await settle(setup, () => setup.captureCharFrame().includes('Acme Cloud'))
+  expect(setup.captureCharFrame()).toContain('Acme Cloud')
+  // The same served ad comes back (no second auction answer): the redraw asks
+  // to bill the SAME impUrl, which `recordPartnerImpression` drops as already
+  // acknowledged, so the account sees one impression.
+  const impressions = billed.filter(([kind]) => kind === 'impression')
+  expect(new Set(impressions.map(([, impUrl]) => impUrl)).size).toBe(1)
+  expect(asked.length).toBeGreaterThanOrEqual(1)
+})
+
+test('a statusline once drawn keeps its row, blank, while it gives way', async () => {
+  const { get } = fake(served('CLI-Statusline'))
+  const { setup } = await mount(
+    <box style={{ flexDirection: 'column' }}>
+      <text>ABOVE</text>
+      <DisplayAdStatusline enabled={false} getServed={get} />
+      <text>BELOW</text>
+    </box>,
+    100,
+    4,
+  )
+  const rowOf = (needle: string) =>
+    setup
+      .captureCharFrame()
+      .split('\n')
+      .findIndex((line) => line.includes(needle))
+  expect(setup.captureCharFrame()).toContain('Acme Cloud')
+  const below = rowOf('BELOW')
+  reportDockHeld({ impUrl: 'imp-network-dock', provider: 'gravity' })
+  await setup.renderOnce()
+  expect(setup.captureCharFrame()).not.toContain('Acme Cloud')
+  expect(rowOf('BELOW')).toBe(below)
+  // hidden by the user: the row is given back
+  useDisplayAdsStore.setState({ statuslineHidden: true })
+  await setup.renderOnce()
+  expect(rowOf('BELOW')).toBe(below - 1)
 })

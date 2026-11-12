@@ -6,6 +6,9 @@ import React from 'react'
 import {
   AD_CARD_HEIGHT,
   AdCard,
+  DOCK_BLANK_ROWS,
+  DockBlankRows,
+  SingleAdBanner,
   adLinkNotice,
   openAdClick,
   type AdClickDeps,
@@ -15,6 +18,7 @@ import {
   orderedRequestedAds,
 } from '../ad-banner'
 import { initializeThemeStore } from '../../hooks/use-theme'
+import { resetAdScreenForTests, useAdScreenStore } from '../../ads/ad-screen'
 import {
   getAdTerminalFocus,
   registerAdTranscriptViewport,
@@ -540,5 +544,154 @@ describe('inline transcript card impression', () => {
     expect(presented).toEqual(['imp-inline-1'])
     flushSync(() => root.unmount())
     setup.renderer.destroy()
+  })
+})
+
+describe('one ad on screen at a time: the inline card reports where it is', () => {
+  const card = {
+    adText: 'Inline copy',
+    title: 'Inline title',
+    cta: 'Go',
+    url: 'https://example.com',
+    favicon: '',
+    clickUrl: '',
+    impUrl: 'imp-screen-1',
+    provider: 'gravity' as const,
+  }
+
+  test('in view it holds the screen; out of view it lets go only after the release window; unmounted at once', async () => {
+    resetAdScreenForTests()
+    let viewport = { top: 0, bottom: 4 }
+    const unregister = registerAdTranscriptViewport(() => viewport)
+    const setup = await createTestRenderer({ width: 60, height: 4 })
+    const root = createRoot(setup.renderer)
+    try {
+      flushSync(() => {
+        root.render(<AdCard ad={card} width={60} variant="inline" />)
+      })
+      await setup.renderOnce()
+      await new Promise((r) => setTimeout(r, 50))
+      expect(useAdScreenStore.getState().inlineCard).toEqual({
+        impUrl: 'imp-screen-1',
+        provider: 'gravity',
+      })
+      expect(useAdScreenStore.getState().inlineCardDrawn?.impUrl).toBe(
+        'imp-screen-1',
+      )
+      viewport = { top: 100, bottom: 120 }
+      await new Promise((r) => setTimeout(r, 600))
+      // still within the release window
+      expect(useAdScreenStore.getState().inlineCard?.impUrl).toBe(
+        'imp-screen-1',
+      )
+      await new Promise((r) => setTimeout(r, 1_100))
+      expect(useAdScreenStore.getState().inlineCard).toBeNull()
+      viewport = { top: 0, bottom: 4 }
+      await new Promise((r) => setTimeout(r, 300))
+      expect(useAdScreenStore.getState().inlineCard?.impUrl).toBe(
+        'imp-screen-1',
+      )
+      flushSync(() => root.unmount())
+      expect(useAdScreenStore.getState().inlineCard).toBeNull()
+      expect(useAdScreenStore.getState().inlineCardDrawn).toBeNull()
+    } finally {
+      setup.renderer.destroy()
+      unregister()
+      resetAdSignalsForTests()
+      resetAdScreenForTests()
+    }
+  }, 10_000)
+
+  test('with no measurable viewport the card is drawn but never takes the screen', async () => {
+    resetAdScreenForTests()
+    const setup = await createTestRenderer({ width: 60, height: 4 })
+    const root = createRoot(setup.renderer)
+    try {
+      flushSync(() => {
+        root.render(<AdCard ad={card} width={60} variant="inline" />)
+      })
+      await setup.renderOnce()
+      await new Promise((r) => setTimeout(r, 1_300))
+      expect(useAdScreenStore.getState().inlineCard).toBeNull()
+      expect(useAdScreenStore.getState().inlineCardDrawn?.impUrl).toBe(
+        'imp-screen-1',
+      )
+      flushSync(() => root.unmount())
+    } finally {
+      setup.renderer.destroy()
+      resetAdScreenForTests()
+    }
+  }, 10_000)
+
+  test('the dock card does not report itself as the inline card', async () => {
+    resetAdScreenForTests()
+    const setup = await createTestRenderer({
+      width: 60,
+      height: AD_CARD_HEIGHT,
+    })
+    const root = createRoot(setup.renderer)
+    flushSync(() => {
+      root.render(
+        <AdCard
+          ad={{ ...card, impUrl: 'imp-dock-1', provider: undefined }}
+          width={60}
+        />,
+      )
+    })
+    await setup.renderOnce()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(useAdScreenStore.getState().inlineCard).toBeNull()
+    expect(useAdScreenStore.getState().inlineCardDrawn).toBeNull()
+    flushSync(() => root.unmount())
+    setup.renderer.destroy()
+  })
+})
+
+describe('the dock blank while it gives way', () => {
+  const dockAd = {
+    adText:
+      'Automate mobile UI testing with plain-English steps and more copy.',
+    title: 'Test every release',
+    cta: 'Try free',
+    url: 'https://www.drizz.dev/ios',
+    favicon: '',
+    clickUrl: '',
+    impUrl: 'imp-dock-blank',
+  }
+  const rowOf = (frame: string, needle: string) =>
+    frame.split('\n').findIndex((line) => line.includes(needle))
+
+  test('keeps exactly the collapsed dock height at every width and arm, expanded or not', async () => {
+    expect(DOCK_BLANK_ROWS).toBe(AD_CARD_HEIGHT)
+    for (const width of [40, 80, 160]) {
+      for (const arm of ['control', 'expandable'] as const) {
+        const setup = await createTestRenderer({ width, height: 30 })
+        const root = createRoot(setup.renderer)
+        const draw = (blank: boolean) =>
+          flushSync(() => {
+            root.render(
+              <box style={{ flexDirection: 'column' }}>
+                <text>TOP</text>
+                {blank ? (
+                  <DockBlankRows />
+                ) : (
+                  <SingleAdBanner ad={dockAd} arm={arm} />
+                )}
+                <text>BELOW</text>
+              </box>,
+            )
+          })
+        draw(false)
+        await setup.renderOnce()
+        const shownRow = rowOf(setup.captureCharFrame(), 'BELOW')
+        draw(true)
+        await setup.renderOnce()
+        const blankFrame = setup.captureCharFrame()
+        expect(rowOf(blankFrame, 'BELOW')).toBe(shownRow)
+        expect(blankFrame).not.toContain('Test every release')
+        flushSync(() => root.unmount())
+        setup.renderer.destroy()
+      }
+    }
   })
 })
