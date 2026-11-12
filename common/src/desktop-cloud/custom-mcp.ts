@@ -29,7 +29,7 @@ export const customMcpInputSchema = z
           host === '0.0.0.0' ||
           /^127\./.test(host)
         )
-      }, 'Cloud can’t reach a server on your own computer. Use a public HTTPS URL, or add local servers in the CLI.')
+      }, 'Cloud can’t reach a server on your own computer. In Freebuff Desktop, add it under This computer instead, or use a public HTTPS URL.')
       .refine((value) => {
         // Zod still runs this after `.url()` fails; a throw here would escape `safeParse`.
         if (!URL.canParse(value)) return false

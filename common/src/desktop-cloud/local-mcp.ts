@@ -88,6 +88,15 @@ export const localMcpAddInput = z
   .strict()
 export type LocalMcpAddInput = z.infer<typeof localMcpAddInput>
 
+/**
+ * Whether this computer's switched-on servers reached the account's chats. `failed` carries a fixed
+ * phrase and an HTTP status at most, never a server's answer.
+ */
+export type LocalMcpCloudStatus =
+  | { state: 'off' | 'connecting' }
+  | { state: 'published'; at: number }
+  | { state: 'failed'; error: string; at: number }
+
 /** A server on this computer, as Desktop shows it in Integrations. Never carries env values. */
 export type LocalMcpServerView = {
   id: string
@@ -98,5 +107,10 @@ export type LocalMcpServerView = {
   enabled: boolean
   status: 'connected' | 'connecting' | 'disconnected' | 'disabled' | 'error' | 'auth_required'
   toolCount: number
+  /**
+   * How many of its tools reach chats: one computer publishes at most LOCAL_MCP_MANIFEST_BYTES.
+   * Set while the server is on; builds before 11-12 omit it.
+   */
+  publishedTools?: number
   error: string | null
 }

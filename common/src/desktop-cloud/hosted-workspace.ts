@@ -217,6 +217,8 @@ export type HostedLocalProjectInput = {
 export type LocalMcpHostList = {
   deviceId: string | null
   servers: import('./local-mcp').LocalMcpServerView[]
+  /** Whether those servers reached the account's chats. Builds before 11-12 omit it. */
+  cloud?: import('./local-mcp').LocalMcpCloudStatus
 }
 
 export type HostedWorkspaceHost = {

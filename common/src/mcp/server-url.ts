@@ -13,6 +13,21 @@ const HOST_WITH_PORT = /^[^\s/:?#]+:\d+(?:[/?#]|$)/
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i
 
 /**
+ * Whether one field that takes either a command line or a server URL holds a URL: one with an
+ * http(s) scheme, or one typed without it (`localhost:3845/mcp`, `127.0.0.1:3845`, `[::1]:3845`).
+ * A command never starts with `name:<digits>`.
+ */
+export function isMcpServerAddress(raw: string): boolean {
+  const value = raw.trim()
+  return (
+    /^https?:\/\//i.test(value) ||
+    HOST_WITH_PORT.test(value) ||
+    /^\[[0-9a-f:.]+\]:\d+(?:[/?#]|$)/i.test(value) ||
+    /^localhost(?:[/?#]|$)/i.test(value)
+  )
+}
+
+/**
  * Trims `raw` and, when it has no scheme, prefixes `https://` — or `http://` for a loopback host,
  * the only place plain HTTP is allowed and where local MCP servers almost always listen.
  * A value that already has a scheme is returned trimmed and otherwise untouched.
