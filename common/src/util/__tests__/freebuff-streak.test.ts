@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   addDaysToDateKey,
   calculateFreebuffStreak,
+  freebuffActiveDaysAgo,
   getFreebuffDailyStreakRewardPool,
   getFreebuffStreakGlmBonusUnits,
   getFreebuffUsageDateKey,
@@ -67,6 +68,34 @@ describe('freebuff streak helpers', () => {
       todayUsed: false,
       lastUsageDate: '2026-05-25',
     })
+  })
+})
+
+describe('freebuffActiveDaysAgo', () => {
+  test('counts back from today, ascending, without repeats', () => {
+    expect(
+      freebuffActiveDaysAgo({
+        activeDateKeys: ['2026-11-11', '2026-11-10', '2026-11-03', '2026-11-03', '2026-10-31'],
+        todayDateKey: '2026-11-11',
+      }),
+    ).toEqual([0, 1, 8, 11])
+  })
+
+  test('drops days outside the window, after today, or malformed', () => {
+    expect(
+      freebuffActiveDaysAgo({
+        activeDateKeys: ['2026-11-12', '2026-11-09', '2026-11-01', 'nonsense'],
+        todayDateKey: '2026-11-11',
+        windowDays: 10,
+      }),
+    ).toEqual([2])
+  })
+
+  test('crosses a daylight-saving change as whole days', () => {
+    // US clocks went back on 2026-11-01: the dates are still five days apart.
+    expect(
+      freebuffActiveDaysAgo({ activeDateKeys: ['2026-10-30'], todayDateKey: '2026-11-04' }),
+    ).toEqual([5])
   })
 })
 

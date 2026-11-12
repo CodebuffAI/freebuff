@@ -46,6 +46,35 @@ export function getFreebuffUsageDateKey(
   )
 }
 
+/** How far back the streak response's `activeDaysAgo` reaches: the longest
+ *  activity grid a client draws (the web popup's 140 days). */
+export const FREEBUFF_STREAK_ACTIVITY_WINDOW_DAYS = 140
+
+/**
+ * The account's active days as days before today (0 is today), ascending and
+ * without repeats, inside the last `windowDays`: the streak response's
+ * `activeDaysAgo`. Offsets, not dates, so a client lights its activity grid
+ * with no date or time-zone arithmetic of its own. A date after today (a day
+ * recorded in a zone ahead of the reader's) and a malformed key are dropped.
+ */
+export function freebuffActiveDaysAgo(params: {
+  activeDateKeys: readonly string[]
+  todayDateKey: string
+  windowDays?: number
+}): number[] {
+  const windowDays = params.windowDays ?? FREEBUFF_STREAK_ACTIVITY_WINDOW_DAYS
+  const today = Date.parse(`${params.todayDateKey}T00:00:00.000Z`)
+  if (Number.isNaN(today)) return []
+  const daysAgo = new Set<number>()
+  for (const dateKey of params.activeDateKeys) {
+    const date = Date.parse(`${dateKey}T00:00:00.000Z`)
+    if (Number.isNaN(date)) continue
+    const ago = Math.round((today - date) / DAY_MS)
+    if (ago >= 0 && ago < windowDays) daysAgo.add(ago)
+  }
+  return [...daysAgo].sort((a, b) => a - b)
+}
+
 export function addDaysToDateKey(dateKey: string, days: number): string {
   const date = new Date(`${dateKey}T00:00:00.000Z`)
   if (Number.isNaN(date.getTime())) {
