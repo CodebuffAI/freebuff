@@ -21,6 +21,8 @@ export const productFunnelStageSchema = z.enum([
   'welcome',
   /** the phone-app prompt, on a return to the workspace after a break or after a first finished reply: shown, clicked (a store link), closed */
   'mobile_prompt',
+  /** Desktop's Get started checklist (`desktop_checklist_2026_11`): shown (exposure, both arms, `checklist_variant`), clicked (a step's button, `checklist_step`), closed (hidden from its menu or Done) */
+  'checklist',
   'browser',
   'context',
   'composer',
@@ -234,6 +236,10 @@ export const welcomeVariantSchema = z.enum([
   'flow_full',
   'flow_no_integrations',
 ])
+/** Desktop's Get started checklist A/B (onboarding-checklist/model.ts): `control` installs never see the card. */
+export const checklistVariantSchema = z.enum(['control', 'checklist'])
+/** A step of the Get started checklist (onboarding-checklist/model.ts). */
+export const checklistStepSchema = z.enum(['project', 'message', 'mobile', 'themes'])
 /** A step of the click-through welcome flow (welcome-flow/steps.ts). */
 export const welcomeStepSchema = z.enum([
   'unlocked',
@@ -403,6 +409,10 @@ export const productFunnelPropertiesSchema = z
     welcome_variant: welcomeVariantSchema.optional(),
     /** `welcome` events from the click-through flow: the step on screen. */
     welcome_step: welcomeStepSchema.optional(),
+    /** `checklist` events: the install's arm of the Get started checklist test. */
+    checklist_variant: checklistVariantSchema.optional(),
+    /** `checklist:clicked`: whose button. */
+    checklist_step: checklistStepSchema.optional(),
     /** `mobile_prompt:shown`: what opened it, a return after a break, a reply that just finished, or the Get started checklist. */
     prompt_trigger: z.enum(['return', 'reply', 'checklist']).optional(),
     /** `mobile_prompt:clicked`: which store's button. A scanned QR code is counted by `/mobile`, not here. */
