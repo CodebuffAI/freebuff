@@ -40,8 +40,8 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 | **DeepSeek V4.1 Flash Slow** | Full and limited access | The same model streamed more slowly, for fewer hours; the default at limited access and in Chat mode |
 | **Solar Mini 4**            | Full and limited access | Upstage's fast, compact model; 500K context, text only |
 | **Solar Pro 4**             | Full and limited access | Upstage's larger, stronger model; 500K context, text only |
-| **Glyph Cluster** and **Nemotron 3.5 Lightning** | Full and limited access | Free experimental models that use none of your hours; 256K context |
-| **DeepSeek V4.1 Flash Fast** | Full and limited access; paid plans on newer accounts | The same DeepSeek model at full speed |
+| **Beam 1.0**, **Glyph Cluster** and **Nemotron 3.5 Lightning** | Full and limited access | Free experimental models that use none of your hours; 256K context |
+| **DeepSeek V4.1 Flash Fast** | Full and limited access | The same DeepSeek model at full speed |
 | **GPT-6 Luna**              | Full access; paid plans on newer accounts | Strong all-around with native images; 1M context |
 | **Muse Spark 1.3**          | Paid plans              | Meta's agentic coding model; 1M context. When it is busy or unavailable, it answers on DeepSeek V4.1 Flash rather than making you wait |
 | **Muse Ember**              | Paid plans              | Meta's fast coding model; 100K context |
@@ -71,7 +71,7 @@ Freebuff uses specialized agents instead of sending every task through one model
 
 ## Free access
 
-Freebuff is available in every country. Supported regions receive full access; other regions and VPN users receive limited access to DeepSeek V4.1 Flash, DeepSeek V4.1 Flash Slow, Solar Mini 4, Solar Pro 4 and the free experimental models, and a paid plan adds more. Every model is paid for in hours at the rate shown in the picker: an hour of DeepSeek V4.1 Flash Slow uses one hour of balance, a three-hour model uses three. The free limited-access allowance is 5 hours a day, or 4 on a VPN or proxy, spent first on every model; earned hours go into your wallet and are used after it. (Balances read in hours since 2026-10-15; 1 hour = 5 Freebucks.)
+Freebuff is available in every country. Supported regions receive full access; other regions and VPN users receive limited access to DeepSeek V4.1 Flash, DeepSeek V4.1 Flash Slow, DeepSeek V4.1 Flash Fast, Solar Mini 4, Solar Pro 4 and the free experimental models (Beam 1.0, Glyph Cluster and Nemotron 3.5 Lightning), and a paid plan adds more. Every model is paid for in hours at the rate shown in the picker: an hour of DeepSeek V4.1 Flash Slow uses one hour of balance, a three-hour model uses three. The free limited-access allowance is 5 hours a day, or 4 on a VPN or proxy, spent first on every model; earned hours go into your wallet and are used after it. (Balances read in hours since 2026-10-15; 1 hour = 5 Freebucks.)
 
 Text ads support the included models. Freebuff shows the applicable session limits and any model-specific data-use notice before you start.
 

@@ -10,11 +10,13 @@
 
 | 产品                 | 功能                         | 开始使用                                                        |
 | -------------------- | ---------------------------- | --------------------------------------------------------------- |
-| **Freebuff Desktop** | 在本地并行运行多个智能体     | [下载 macOS、Windows 或 Linux 版](https://freebuff.com/desktop) |
+| **Freebuff Desktop** | 在本地并行运行多个智能体     | [下载 macOS、Windows 或 Linux 版](https://freebuff.com)         |
 | **Freebuff CLI**     | 从终端编程                   | [安装 CLI](https://freebuff.com/cli)                            |
 | **Freebuff Web**     | 构建和发布全栈应用           | [构建应用](https://freebuff.com/web)                            |
 | **Freebuff Cloud**   | 在任意 GitHub 仓库运行智能体 | [连接仓库](https://freebuff.com/cloud)                          |
 | **Freebuff Chat**    | 使用 AI 进行研究和思考       | [开始对话](https://freebuff.com/chat)                           |
+
+Freebuff 的 iOS 和 Android 应用让你在手机上查看并继续对话，包括 Freebuff Desktop 打开时在你电脑上运行的对话：[获取移动应用](https://freebuff.com/mobile)。
 
 ## 快速开始
 
@@ -34,23 +36,21 @@ Freebuff 提供经过筛选的模型目录。常规模型选择器目前包括�
 
 | 模型                        | 访问范围       | 适用场景                                         |
 | --------------------------- | -------------- | ------------------------------------------------ |
-| **DeepSeek V4.1 Flash 10/17** | 完整和受限访问 | 所有模式下的默认模型；快速编程和工具调用                               |
-| **MiMo v2.6 Flash Fast**    | 完整和受限访问 | 均衡性能并支持图像；不再是默认模型         |
-| **GLM 5.3 Flash**           | 完整和受限访问 | 推理最深入                                       |
-| **DeepSeek V4.1 Flash Fast 10/17** | 完整访问；受限访问需付费计划 | 快速模式：同一模型运行于 DeepSeek 官方 API，将工作拆分给并行子智能体并自行验证结果；按 DeepSeek 的高峰和非高峰时段定价 |
-| **GPT-6 Luna**              | 完整访问       | 综合能力强，原生支持图像；运行于 OpenAI flex 容量 |
-| **MiMo 2.6 Pro**            | 完整访问       | 小米更强的推理模型，支持图像 |
-| **Solar Mini 4**            | 完整和受限访问 | Upstage 的快速轻量模型；52.4 万上下文，仅支持文本 |
-| **Solar Pro 4**             | 完整和受限访问 | Upstage 更大、更强的模型；52.4 万上下文，仅支持文本 |
-| **Gemini 3.8 Flash**        | 付费套餐       | 100 万上下文，唯一支持音频、视频和 PDF 输入的模型 |
+| **DeepSeek V4.1 Flash**     | 完整和受限访问 | 默认模型；快速编程和工具调用，100 万上下文 |
+| **DeepSeek V4.1 Flash Slow** | 完整和受限访问 | 同一模型，输出速度较慢，消耗的小时更少；受限访问和 Chat 模式下的默认模型 |
+| **Solar Mini 4**            | 完整和受限访问 | Upstage 的快速轻量模型；50 万上下文，仅支持文本 |
+| **Solar Pro 4**             | 完整和受限访问 | Upstage 更大、更强的模型；50 万上下文，仅支持文本 |
+| **Beam 1.0**、**Glyph Cluster** 和 **Nemotron 3.5 Lightning** | 完整和受限访问 | 免费的实验性模型，不消耗你的小时额度；25.6 万上下文 |
+| **DeepSeek V4.1 Flash Fast** | 完整和受限访问 | 同一 DeepSeek 模型，全速运行 |
+| **GPT-6 Luna**              | 完整访问；较新账户需付费套餐 | 综合能力强，原生支持图像；100 万上下文 |
 | **Muse Spark 1.3**          | 付费套餐       | Meta 的智能体编码模型；100 万上下文。繁忙或不可用时改由 DeepSeek V4.1 Flash 作答，不会让你一直等 |
-| **Gemini 4 Argon**          | 美国免费，其他地区需付费套餐 | Google 的旗舰推理模型，每个账户每天限一次会话；100 万上下文，支持图片 |
-| **GPT-6.1 Terra**           | 完整访问；受限访问需付费计划 | OpenAI 的模型，限时促销价格，每个账户每天限一次会话；100 万上下文，支持图片 |
-| **GPT-6.1 Sol**             | 美国免费，其他地区需付费套餐 | OpenAI 的旗舰模型，每个账户每天限一次会话；100 万上下文，支持图片 |
+| **Muse Ember**              | 付费套餐       | Meta 的快速编码模型；10 万上下文 |
+| **Claude Haiku 5.5 · 100k context** | 付费套餐 | Anthropic 的快速模型，上下文窗口为 10 万 |
+| **GPT-6.1 Terra**           | 付费套餐       | OpenAI 的模型，每天两次会话；100 万上下文，支持图片 |
 
-价格经常变化，因此本 README 不再列出：模型选择器会以倍数显示每个模型的费用。在 1x 模型上使用一小时消耗 1 小时额度，在 3x 模型上使用一小时消耗 3 小时，选择器“无限”（Unlimited）分区中的模型不消耗额度。模型仍可能由量化（Q8_0）版本提供服务。
+价格经常变化，因此本 README 不再列出：模型选择器会显示在每个模型上使用一小时消耗多少小时额度。在一小时模型上使用一小时消耗 1 小时额度，在三小时模型上使用一小时消耗 3 小时，免费的实验性模型不消耗额度。模型仍可能由量化（Q8_0）版本提供服务。
 
-DeepSeek V4 Pro 已从模型目录中下线，由 GLM 5.3 Flash 接替其深度推理的位置。
+GLM 5.3 Flash、MiMo 2.6 Pro、GPT-6.1 Sol、Gemini 4 Argon 和 Gemini 3.8 Flash 已从模型目录中下线，MiMo v2.6 Flash Fast 不再列出。
 
 常规模型选择器之外：
 
@@ -71,7 +71,7 @@ Freebuff 使用专业化智能体，而不是把所有任务都交给同一个�
 
 ## 免费访问
 
-Freebuff 在所有国家和地区均可使用。受支持的地区提供完整访问；其他地区以及使用 VPN 的用户获得受限访问，包括 DeepSeek V4.1 Flash 10/17、GLM 5.3 Flash、MiMo v2.6 Flash Fast、Solar Mini 4 和 Solar Pro 4。所有模型均按选择器中显示的倍数以小时计费：MiMo v2.6 Flash Slow 每小时用掉 1 小时额度，3x 模型用掉 3 小时。受限访问的免费额度为每天 5 小时（使用 VPN 或代理时为 4 小时），所有模型（包括 GLM）都会先使用当天额度；赚取的小时存入钱包，在当天额度用完后使用。（自 2026-10-15 起余额以小时显示；1 小时 = 5 Freebucks。）
+Freebuff 在所有国家和地区均可使用。受支持的地区提供完整访问；其他地区以及使用 VPN 的用户获得受限访问，包括 DeepSeek V4.1 Flash、DeepSeek V4.1 Flash Slow、DeepSeek V4.1 Flash Fast、Solar Mini 4、Solar Pro 4 以及免费的实验性模型（Beam 1.0、Glyph Cluster 和 Nemotron 3.5 Lightning），付费套餐可解锁更多模型。所有模型均按选择器中显示的费率以小时计费：DeepSeek V4.1 Flash Slow 每小时用掉 1 小时额度，三小时模型用掉 3 小时。受限访问的免费额度为每天 5 小时（使用 VPN 或代理时为 4 小时），所有模型都会先使用当天额度；赚取的小时存入钱包，在当天额度用完后使用。（自 2026-10-15 起余额以小时显示；1 小时 = 5 Freebucks。）
 
 内置模型由文字广告支持。开始前，Freebuff 会显示适用的会话限制以及模型特定的数据使用提示。
 
