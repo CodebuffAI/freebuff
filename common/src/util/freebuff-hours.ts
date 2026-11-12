@@ -222,3 +222,14 @@ export function freebucksShortfallLine(params: {
     cheaperModelFits,
   }
 }
+
+/**
+ * How a turn that ended for want of hours opens its message: the day's
+ * allowance cannot start another hour, and no cheaper model would either. The
+ * Cloud worker words it (`allowanceRefusalMessage`); the hosted page finds it
+ * to offer plans beside Retry, which meets the same refusal until the reset.
+ */
+export const FREEBUFF_HOURS_USED_UP = 'Today’s hours are used up'
+
+export const isFreebuffHoursUsedUp = (message: string | null | undefined) =>
+  !!message?.startsWith(FREEBUFF_HOURS_USED_UP)

@@ -413,6 +413,15 @@ function limitReset(message: string): string | null {
   return at?.[1]?.trim() || null
 }
 
+/**
+ * What to do when Desktop refuses a chat because its folder's identity no longer matches the chat's
+ * binding and no known input says why (Desktop's `bindingChangeAdvice` 'unknown'). The notice that
+ * shows it has Reconnect folder. Builds before this pointed at Settings > General > Diagnose, which
+ * the page no longer shows (#10015); the hosted page rewrites that sentence from them.
+ */
+export const CHECKOUT_RECONNECT_FIX =
+  'Choose Reconnect folder to connect it again, or start a new chat in this folder. This chat’s history is kept.'
+
 /** Added to a failed turn that started without its computer (web `cloudRunErrorMessage`): otherwise
  * the user saw only the generic failure and could not tell the turn never had their files or
  * terminal. The hosted Desktop page finds it in a failed turn's error to offer Reconnect and retry. */

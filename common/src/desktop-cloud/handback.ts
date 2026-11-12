@@ -49,9 +49,10 @@ export interface HandbackResponse {
   handedBackAt: string
 }
 
-/** The 409 a run request gets for a chat that continues on a computer. */
+/** The 409 a run request gets for a chat that continues on a computer. No control is called
+ *  "Continue in Cloud" any more: Desktop and the hosted page move a chat with its run location. */
 export const HANDED_BACK_RUN_ERROR =
-  'This chat continues on a computer. Open it there, or choose Continue in Cloud on that computer to bring it back.'
+  'This chat continues on a computer. Open it there, or choose Cloud as its run location on that computer to bring it back.'
 
 /** The 409 a handback gets when Cloud moved on after the export; export again. */
 export const STALE_EXPORT_ERROR =

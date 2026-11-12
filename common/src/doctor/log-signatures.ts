@@ -27,7 +27,7 @@ export const COMMON_LOG_SIGNATURES: LogSignature[] = [
     id: 'log.git-dubious-ownership', pattern: /dubious ownership|safe\.directory/i,
     severity: 'warning', area: 'git', title: 'Git refused a folder owned by another user',
     detail: 'Git stops working in a folder whose owner is a different user account ("dubious ownership"). This often happens after copying a project from another computer or user, or on an external drive.',
-    steps: ['If you own this folder, trust it in git (Diagnose offers this for each project it finds).', 'Otherwise, take ownership of the folder with your own user account.'],
+    steps: ['If you own this folder, trust it in git: run git config --global --add safe.directory followed by the folder\'s full path.', 'Otherwise, take ownership of the folder with your own user account.'],
     learnMore: LEARN_MORE.gitSafeDirectory,
   },
   {
