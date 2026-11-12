@@ -22,9 +22,12 @@ import type { ModelUsageData } from '@codebuff/common/types/contracts/llm'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 
-const TURN_REVIEW_MAX_OUTPUT_TOKENS = 4_000
-/** A review that comes later than this is no longer worth waiting for. */
-export const TURN_REVIEW_TIMEOUT_MS = 90_000
+/**
+ * A review may think as long as it needs: no output cap beyond the agent's own,
+ * and this generous limit. A 4,000-token cap and 90 s limit failed 5.5% of
+ * reviews (11-12), mostly a model's reasoning spending the whole budget.
+ */
+export const TURN_REVIEW_TIMEOUT_MS = 10 * 60_000
 
 /** Asks for the review. `history` must be what the agent's next request sends. */
 export async function reviewTurn(params: {
@@ -53,7 +56,6 @@ export async function reviewTurn(params: {
           content: withSystemInstructionTags(params.prompt ?? TURN_REVIEW_PROMPT),
         }),
       ],
-      maxOutputTokens: TURN_REVIEW_MAX_OUTPUT_TOKENS,
       signal: AbortSignal.timeout(TURN_REVIEW_TIMEOUT_MS),
       extraCodebuffMetadata: { [TURN_REVIEW_METADATA_KEY]: '1' },
       onFinishReason: (reason) => {

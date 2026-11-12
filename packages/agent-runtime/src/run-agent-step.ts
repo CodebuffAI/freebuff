@@ -297,7 +297,7 @@ export const runAgentStep = async (
      * the background (turn-review.ts), usually after the run returned. The
      * review never joins the history.
      */
-    onTurnReview?: (review: TurnReview) => void
+    onTurnReview?: (review: TurnReview | null) => void
     /** The review's instruction (`turnReviewPrompt`); TURN_REVIEW_PROMPT when absent. */
     turnReviewPrompt?: string
   } & ParamsExcluding<
@@ -2573,7 +2573,7 @@ export async function loopAgentSteps(
                 onCostCalculated: async () => {},
               }),
           }).then((review) => {
-            if (review) onTurnReview(review)
+            onTurnReview(review)
           })
         : undefined
 

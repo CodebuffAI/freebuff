@@ -350,7 +350,8 @@ export function applyConversationSummary(params: {
 
 export type SummaryStream = (params: {
   messages: Message[]
-  maxOutputTokens: number
+  /** Absent: the agent's own limit. */
+  maxOutputTokens?: number
   signal: AbortSignal
   extraCodebuffMetadata: Record<string, string>
   onFinishReason: (reason: string) => void

@@ -65,7 +65,7 @@ describe('turn review', () => {
   let reviewReply: string
 
   const run = async (options: {
-    onTurnReview?: (review: TurnReview) => void
+    onTurnReview?: (review: TurnReview | null) => void
     turnReviewPrompt?: string
     parentId?: string
     logged?: any[]
@@ -136,7 +136,7 @@ describe('turn review', () => {
   })
 
   it("asks the agent's own prefix for a review and never keeps it", async () => {
-    const reviews: TurnReview[] = []
+    const reviews: (TurnReview | null)[] = []
     const result = await run({ onTurnReview: (review) => reviews.push(review) })
 
     expect(reviews).toEqual([REVIEW as TurnReview])
@@ -146,6 +146,8 @@ describe('turn review', () => {
     // Same system prompt and tools as the agent's own request: the cache hits.
     expect(review.messages[0]).toEqual(agent.messages[0])
     expect(Object.keys(review.tools)).toEqual(Object.keys(agent.tools))
+    // No output cap of its own: the review may think as long as the agent's turns.
+    expect(review.maxOutputTokens).toBe(agent.maxOutputTokens)
     expect(textOf(review.messages.at(-1))).toContain(TURN_REVIEW_PROMPT)
     expect(review.messages.map(textOf).join('\n')).toContain('Done: the stall is fixed.')
     expect(
@@ -165,12 +167,12 @@ describe('turn review', () => {
     expect(reviewRequests).toHaveLength(0)
   })
 
-  it('reports nothing for a reply that holds no review', async () => {
+  it('reports null for a reply that holds no review, so the host stops waiting', async () => {
     reviewReply = 'I think it is fine.'
-    const reviews: TurnReview[] = []
+    const reviews: (TurnReview | null)[] = []
     const logged: any[] = []
     await run({ onTurnReview: (review) => reviews.push(review), logged })
-    expect(reviews).toHaveLength(0)
+    expect(reviews).toEqual([null])
     expect(logged.find((row) => row.axiomEvent === 'turn_review')).toMatchObject({
       outcome: 'unrecognized',
       action_count: 0,

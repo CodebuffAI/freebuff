@@ -340,10 +340,10 @@ export type RunOptions = {
    * Asks the agent's own model, once a turn ends normally, for a review of it:
    * one-click next prompts and a verdict on any change (`TURN_REVIEW_PROMPT`).
    * It reuses the turn's prompt cache, usually arrives a few seconds after the
-   * run returned, and never joins the history. Not called when the reply held
-   * no review.
+   * run returned, and never joins the history. Called with null when the review failed or
+   * held nothing, so a host stops waiting for it.
    */
-  onTurnReview?: (review: TurnReview) => void
+  onTurnReview?: (review: TurnReview | null) => void
   /** The review's instruction, e.g. `turnReviewPrompt(recentPrompts)`; TURN_REVIEW_PROMPT when absent. */
   turnReviewPrompt?: string
   /**
