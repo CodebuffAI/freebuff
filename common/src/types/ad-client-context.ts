@@ -120,6 +120,23 @@ export const ENGAGEMENT_EXITS = [
 ] as const
 export const CLICK_REGIONS = ['title', 'body', 'cta', 'logo', 'other'] as const
 /**
+ * Why an ad stopped being drawn while still held, beside `exit` (how the
+ * record ended). A separate field, not new `exit` values: a server still on
+ * the older schema strips an unknown key but would refuse an unknown `exit`.
+ * - `outranked`: hidden because a higher-ranked ad came into view (the
+ *   web workspace's one-ad-on-screen order: an inline ad over the banner, a
+ *   newer inline ad over an older one).
+ * - `gravity_took_screen`: removed or hidden because a Gravity ad was drawn
+ *   (our billboards and partner units, or our banner or inline ad beside a
+ *   Gravity one).
+ * - `retired_by_newer_inline`: an inline ad retired by a newer one in its chat.
+ */
+export const ENGAGEMENT_ENDED_BY = [
+  'outranked',
+  'gravity_took_screen',
+  'retired_by_newer_inline',
+] as const
+/**
  * Why a drawn ad stopped being shown while another ad took the screen (one ad on screen at a time):
  * - `inline_card_in_view`: the slot above the input gave way to an end-of-answer card in the transcript viewport;
  * - `network_ad_on_screen`: one of our own ads gave way to an ad-network ad on screen;
@@ -592,6 +609,16 @@ export const adEngagementSchema = z.object({
   idleVisibleMs: ms.optional(),
   /** times the ad re-entered the viewport after leaving it */
   reentries: count.optional(),
+  /** ad units drawn in the viewport when this ad was first seen, itself included */
+  adsInView: count.optional(),
+  /**
+   * Time the ad was held (mounted, the page visible) but hidden by the web
+   * workspace's one-ad or never-beside-Gravity rules. `visibleMs` never
+   * includes it. Absent when the ad was never hidden.
+   */
+  hiddenMs: ms.optional(),
+  /** Why the ad stopped being drawn while still held; see {@link ENGAGEMENT_ENDED_BY}. */
+  endedBy: z.enum(ENGAGEMENT_ENDED_BY).optional(),
   /**
    * keystrokes while the ad was visible, BUCKETED: an exact count beside the exposure's own `visibleMs` would be a
    * typing-rate measurement finer than `attn.typingSpeed`, so only the coarse bucket is accepted

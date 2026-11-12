@@ -193,12 +193,19 @@ describe('the policy tables', () => {
       rotationMs: 60_000,
       inlinePoolMax: 4,
       rotateOnlyWhileActive: false,
+      oneAdOnScreen: false,
     })
   })
 
   test('every reduced arm rotates only while the person is active', () => {
     for (const arm of SPONSOR_BREAK_ARMS.filter((a) => a !== 'control'))
       expect(SPONSOR_BREAK_ARM_POLICY[arm].rotateOnlyWhileActive).toBe(true)
+  })
+
+  test('every reduced arm shows at most one ad on screen; control does not', () => {
+    expect(SPONSOR_BREAK_ARM_POLICY.control.oneAdOnScreen).toBe(false)
+    for (const arm of SPONSOR_BREAK_ARMS.filter((a) => a !== 'control'))
+      expect(SPONSOR_BREAK_ARM_POLICY[arm].oneAdOnScreen).toBe(true)
   })
 
   test('every reduced arm slows and shrinks the inline load', () => {

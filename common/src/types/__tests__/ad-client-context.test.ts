@@ -289,6 +289,22 @@ describe('parseAdEngagement', () => {
     expect(parseAdEngagement(record)).toEqual(record)
   })
 
+  test('carries hidden time and why the ad stopped being drawn, and rejects unknown reasons', () => {
+    const record = {
+      v: 1,
+      impUrl: 'https://ads.example/held',
+      visibleMs: 20_000,
+      hiddenMs: 180_000,
+      endedBy: 'outranked',
+      exit: 'rotation',
+    }
+    expect(parseAdEngagement(record)).toEqual(record)
+    for (const endedBy of ['gravity_took_screen', 'retired_by_newer_inline'])
+      expect(parseAdEngagement({ ...record, endedBy })?.endedBy).toBe(endedBy)
+    expect(parseAdEngagement({ ...record, endedBy: 'other' })).toBeUndefined()
+    expect(parseAdEngagement({ ...record, hiddenMs: -1 })).toBeUndefined()
+  })
+
   test('requires impUrl and rejects out-of-range timings', () => {
     expect(parseAdEngagement({ v: 1 })).toBeUndefined()
     expect(parseAdEngagement({ v: 1, impUrl: 'x', visibleMs: -1 })).toBeUndefined()
