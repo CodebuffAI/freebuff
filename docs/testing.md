@@ -285,9 +285,12 @@ for the same reason: setup was 75–95% of each.
 The opposite case: a suite too slow for one runner gets several lanes, one per
 `shard: i/n`, each naming the same single package. `test-with-guard --shard i/n`
 runs the files `scripts/ci/test-shard.ts` assigns to that shard and guards them
-under the key `<key>#i/n`. Today that is the `freebuff/web` and
-`freebuff-desktop` unit suites and `web`'s DB integration suite, two shards
-each.
+under the key `<key>#i/n`. Today that is the `freebuff/web` and `web` unit
+suites (three shards each), the `freebuff-desktop` unit suite and `web`'s DB
+integration suite (two each). The `freebuff/web` unit shards are a job of
+their own, `test-freebuff-web`, which does not wait on `changes`: each shard
+runs `affected-lanes.ts` itself and skips its steps when the PR cannot reach
+the package (`ci.yml` has the reasoning).
 
 - **Assignment is a hash of the file's path** (FNV-1a over the path
   `test:files` prints, modulo n). Adding or deleting a file changes one shard's
@@ -305,7 +308,14 @@ each.
   no declared shard or to two. Without that check, dropping the `2/2` lane would
   lose half the suite while every remaining lane passed.
 - **Some files must share a shard.** `SHARD_TOGETHER` in `test-shard.ts`
-  hashes a directory as one unit. web's `src/server/desktop-cloud/` is one:
+  hashes a directory of one suite as one unit (a suite is a guard key, so a
+  package's unit and integration suites are separate). Giving the group a
+  shard to itself was tried on 2026-11-11 (PR #10617) to even out web's DB
+  shards, 92s and 267s: alone, the directory ran in ~140s, but
+  `device-execution/execution.redis.integration.test.ts` then failed in 3 of
+  5 attempts ("Device transport unavailable"), which it does not do with the
+  rest of its shard around it. Find that dependency before trying again.
+  web's DB suite's `src/server/desktop-cloud/` is one:
   its suites start and stop local R2 (workerd) in-process, and split by file,
   `store.integration.test.ts` hung for 60s after `org-invite-store`, `storage`
   and `github` ran before it, reproducibly in CI. With the rest of the
@@ -429,7 +439,11 @@ runs save it under a key scoped to `bun.lock` and `next.config.mjs`; pull
 requests restore main's newest. The archive is ~1 GB (1.4 GB unpacked).
 Measured 2026-10-07 on two runs of #5845: the compile went from 112s cold to
 56s warm and the build step from 169s to 86s, against ~16s to restore and ~18s
-to save. Past 3 GiB the stash is dropped, so the next run starts cold.
+to save. Past 5 GiB the cache is dropped and a marker file is stashed in its
+place: that tiny entry becomes the newest under the key prefix, `restore`
+deletes it and the next run builds cold and saves a fresh cache. (Dropping
+without a marker saved nothing, so every run kept restoring the last entry
+under the cap and outgrowing it again.)
 `build-web` has no Next cache: web turns the persistent cache off in
 `web/next.config.mjs` because its cold compile is ~30s. `oven-sh/setup-bun`'s
 own small runtime cache is independent of dependency installation and also
