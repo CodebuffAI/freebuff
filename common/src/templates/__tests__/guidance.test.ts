@@ -54,4 +54,43 @@ describe('starter template context', () => {
       expect(prompt).not.toContain('project is new or empty')
     }
   })
+
+  test('minimal starters are discoverable and terminal starters use command output', () => {
+    for (const runtime of ['desktop', 'cloud'] as const) {
+      const generic = templatesGuidance('build', runtime)
+      expect(generic).toContain('Blank website, Web app, Browser extension, Command-line tool, API service and Automation script')
+      expect(generic).toContain('Prefer a minimal starter')
+      expect(generic).toContain('run it without changing it')
+      for (const prompt of [generic, templatesGuidance('build', runtime, { id: 'hello-world-cli', name: 'Hello world CLI' })]) {
+        expect(prompt).toContain('actual terminal output instead')
+        expect(prompt).toContain('do not start a web server')
+        expect(prompt).toContain('first message asks for a live preview')
+      }
+      expect(templatesGuidance('plan', runtime, { id: 'hello-world-cli', name: 'Hello world CLI' })).not.toContain('run its documented command')
+    }
+  })
+
+  test('templates choose working defaults by outcome and explain Python hosting constraints', () => {
+    for (const mode of ['build', 'plan'] as const) {
+      for (const template of [undefined, { id: 'python-script', name: 'Automation script' }, { id: 'json-api', name: 'API service' }]) {
+        const prompt = templatesGuidance(mode, 'cloud', template)
+        expect(prompt).toContain('not by framework names')
+        expect(prompt).toContain('without asking the user to choose a stack')
+        expect(prompt).toContain('Honor an explicitly requested language or framework')
+        expect(prompt).toContain('prefer Freebuff Sites')
+        expect(prompt).toContain('cannot deploy Python/FastAPI servers')
+        expect(prompt).toContain('do not silently replace the requested language')
+      }
+    }
+  })
+
+  test('extension setup does not confuse a browser popup with a hosted website', () => {
+    for (const runtime of ['desktop', 'cloud'] as const) {
+      const prompt = templatesGuidance('build', runtime, { id: 'browser-extension', name: 'Browser extension' })
+      expect(prompt).toContain('demonstrate the installed popup')
+      expect(prompt).toContain("WXT's dev server is not a working website preview")
+      expect(prompt).toContain('remaining toolbar/active-tab check')
+      expect(prompt).toContain('extension itself does not deploy to Sites')
+    }
+  })
 })
