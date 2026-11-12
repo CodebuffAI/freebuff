@@ -230,6 +230,11 @@ export enum AnalyticsEvent {
   // Provider-ledger snapshot. Keep the latest fetched_at per UTC day before
   // summing; today's row is explicitly partial. No per-user identity.
   ADS_GRAVITY_REVENUE_DAILY = 'ads.gravity_revenue_daily',
+  // Our own Gravity counts from Postgres `ad_impression` per UTC day,
+  // placement, surface, client, render format and traffic class, set beside
+  // ads.gravity_revenue_daily. Restated hourly: keep the latest computed_at per
+  // day. No per-user identity.
+  ADS_GRAVITY_RECONCILIATION_DAILY = 'ads.gravity_reconciliation_daily',
   ADS_FIRST_PARTY_VIEW_ACK = 'ads.first_party_view_ack',
   /**
    * The CLI dock was expanded into its detail panel (COD-457). A UI gesture,

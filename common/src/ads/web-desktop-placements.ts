@@ -49,6 +49,26 @@ const WEB_COPY_BY_SOURCE = {
 export type WebDesktopPlacementId =
   (typeof WEB_COPY_BY_SOURCE)[DesktopPlacementId]
 
+/**
+ * Web copies the browser workspace no longer serves. Each stays registered
+ * above, so impressions already served keep their identity for clicks, events
+ * and reporting, but the browser policy never announces it and `POST /api/ads`
+ * answers it with an empty no-fill before any provider is asked (an older tab
+ * may still request it).
+ *
+ * `Desktop-Spotlight:web`: removed 2026-11-12. Gravity never filled it (0
+ * fills a day since 11-03 at 10-20k requests a day). Native
+ * `Desktop-Spotlight` is unchanged.
+ */
+export const RETIRED_WEB_DESKTOP_PLACEMENTS: ReadonlySet<WebDesktopPlacementId> =
+  new Set<WebDesktopPlacementId>(['Desktop-Spotlight:web'])
+
+export function isRetiredWebDesktopPlacement(id: string): boolean {
+  return (RETIRED_WEB_DESKTOP_PLACEMENTS as ReadonlySet<string>).has(
+    canonicalPlacementId(id),
+  )
+}
+
 const webCopyBySource = new Map<string, WebDesktopPlacementId>(
   Object.entries(WEB_COPY_BY_SOURCE),
 )

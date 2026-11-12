@@ -5,6 +5,7 @@ import {
   campaignTargetsPlacement,
   desktopPlacementSource,
   inheritedPlacementTargets,
+  isRetiredWebDesktopPlacement,
   isWebDesktopPlacement,
   webDesktopPlacement,
   WEB_DESKTOP_SOURCE_PLACEMENTS,
@@ -96,6 +97,17 @@ describe('Desktop inventory mirrored into Web', () => {
       expect(campaignTargetsPlacement(['Desktop-Inline-Chat'], id)).toBe(false)
     }
     expect(campaignTargetsPlacement([], 'Desktop-Inline-Chat:web')).toBe(false)
+  })
+
+  test('only the Spotlight web copy is retired; it stays registered', () => {
+    expect(isRetiredWebDesktopPlacement('Desktop-Spotlight:web')).toBe(true)
+    expect(isWebDesktopPlacement('Desktop-Spotlight:web')).toBe(true)
+    for (const id of [
+      'Desktop-Spotlight',
+      'Desktop-Intermission:web',
+      'Desktop-Showcase:web',
+    ])
+      expect(isRetiredWebDesktopPlacement(id)).toBe(false)
   })
 
   test('billboard artwork fits the same shapes on both copies', () => {
