@@ -10,6 +10,11 @@ export type CloudHistoryProject = {
   /** The starter selected at project creation; absent from older servers. */
   template?: import('../templates/selected').SelectedTemplate | null
   /**
+   * Created with files: its folder source carries an upload (a chosen folder, a template, a legacy
+   * copy). False for an empty or GitHub project; absent from older servers.
+   */
+  seeded?: boolean
+  /**
    * When the user archived it, or null. Archiving archives its chats too; an archived project is
    * left out of `listProjects` (Settings > Archived lists it) until it is restored or someone
    * prompts in it again. Absent from older servers, which send only `removedAt`.
