@@ -1,5 +1,5 @@
-import { TextAttributes } from '@opentui/core'
-import { memo, useState } from 'react'
+import { TextAttributes, type BoxRenderable } from '@opentui/core'
+import { memo, useCallback, useRef, useState } from 'react'
 
 import { BlocksRenderer } from './blocks/blocks-renderer'
 import { UserContentWithCopyButton } from './blocks/user-content-copy'
@@ -10,6 +10,7 @@ import { MessageFooter } from './message-footer'
 import { TextAttachmentCard } from './text-attachment-card'
 import { UserErrorBanner } from './user-error-banner'
 import { ValidationErrorPopover } from './validation-error-popover'
+import { lastRowOf } from '../ads/ad-engagement'
 import { useTheme } from '../hooks/use-theme'
 import { useWhyDidYouUpdateById } from '../hooks/use-why-did-you-update'
 import { getCliEnv } from '../utils/env'
@@ -144,6 +145,12 @@ export const MessageBlock = memo(({
   isLastMessage,
 }: MessageBlockProps) => {
   const [showValidationPopover, setShowValidationPopover] = useState(false)
+  // The answer's last screen row, where its end-of-answer ad card will draw.
+  const blocksBoxRef = useRef<BoxRenderable | null>(null)
+  const measureBlocksEnd = useCallback(
+    () => lastRowOf(blocksBoxRef.current),
+    [],
+  )
 
   const bashCwd = metadata?.bashCwd ? formatCwd(metadata.bashCwd) : undefined
 
@@ -275,6 +282,7 @@ export const MessageBlock = memo(({
       <box style={{ flexDirection: 'column', gap: 1, width: '100%' }}>
         {blocks ? (
           <box
+            ref={blocksBoxRef}
             style={{
               flexDirection: 'column',
               gap: 1,
@@ -296,6 +304,7 @@ export const MessageBlock = memo(({
               onBuildLite={onBuildLite}
               isLastMessage={isLastMessage}
               contentToCopy={isUser ? content : undefined}
+              measureEnd={measureBlocksEnd}
             />
           </box>
         ) : (

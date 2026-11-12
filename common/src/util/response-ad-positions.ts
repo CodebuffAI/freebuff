@@ -52,3 +52,33 @@ export function responseAdNodePositions(params: {
   }
   return positions
 }
+
+/**
+ * Inline cards a terminal client draws per answer when it places one card
+ * after the answer's last content instead of interspersing cards between
+ * nodes. A card in the middle of a long answer can be requested and never
+ * scrolled to; the end of a finished answer is where the reader stops.
+ */
+export const RESPONSE_AD_END_SLOT_COUNT = 1
+
+/**
+ * Rendered nodes a completed answer needs before it gets an end-of-answer
+ * card: the same floor as the first interspersed slot
+ * ({@link responseAdSlotCount} is first non-zero at this node count), so a
+ * short answer carries no card.
+ */
+export const RESPONSE_AD_END_MIN_NODE_COUNT = RESPONSE_AD_FIRST_NODE_COUNT + 1
+
+/**
+ * End-of-answer slots eligible right now: one once the answer has completed
+ * with at least {@link RESPONSE_AD_END_MIN_NODE_COUNT} nodes, none while it is
+ * still streaming or when it is shorter than that.
+ */
+export function responseAdEndSlotCount(params: {
+  nodeCount: number
+  isComplete: boolean
+}): number {
+  return params.isComplete && params.nodeCount >= RESPONSE_AD_END_MIN_NODE_COUNT
+    ? RESPONSE_AD_END_SLOT_COUNT
+    : 0
+}

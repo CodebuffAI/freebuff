@@ -10,7 +10,9 @@ import { useCallback, useEffect, useRef } from 'react'
 import { createAdoptionWatcher, type AdoptionWatcher } from './ad-adoption'
 import {
   createEngagementRegistry,
+  createViewDwellGate,
   rowsIntersect,
+  TRANSCRIPT_IMPRESSION_DWELL_MS,
   type ClickRegion,
   type EngagementHandle,
   type EngagementRegistry,
@@ -18,6 +20,7 @@ import {
 } from './ad-engagement'
 import {
   ensureAdTerminalFocusWatch,
+  getAdTerminalFocus,
   getAdTerminalFocusState,
   getAdTranscriptViewport,
   subscribeAdAgentCommand,
@@ -36,6 +39,9 @@ import type { AdEngagement } from '@codebuff/common/types/ad-client-context'
 
 /** How often a transcript card re-measures whether it is inside the viewport. */
 export const TRANSCRIPT_VISIBILITY_POLL_MS = 500
+
+/** How often a transcript card waiting for its first view re-measures itself. */
+export const TRANSCRIPT_SEEN_POLL_MS = 250
 
 /** One POST to `/api/v1/ads/engagement`. Resolves either way; never throws. */
 async function sendAdEngagement(record: AdEngagement): Promise<void> {
@@ -229,12 +235,59 @@ export function useAdEngagement(
     placement: OwnerPlacement
     truncated?: boolean
     enabled?: boolean
+    /**
+     * A `measured` card only: called once, after the card's rows have stayed
+     * inside the transcript viewport for {@link TRANSCRIPT_IMPRESSION_DWELL_MS}
+     * while the terminal was not unfocused. Independent of the engagement
+     * registry, so a registry failure never loses an impression.
+     */
+    onSeen?: () => void
   },
 ): AdEngagementBinding {
   const { placement, truncated } = options
   const enabled = options.enabled ?? true
   const handleRef = useRef<EngagementHandle | null>(null)
   const nodeRef = useRef<MeasurableNode | null>(null)
+  const onSeenRef = useRef(options.onSeen)
+  onSeenRef.current = options.onSeen
+  const wantsSeen = placement === 'measured' && options.onSeen !== undefined
+
+  useEffect(() => {
+    if (!wantsSeen || !impUrl) return
+    const gate = createViewDwellGate(TRANSCRIPT_IMPRESSION_DWELL_MS)
+    let interval: ReturnType<typeof setInterval> | null = null
+    const check = () => {
+      let visible: boolean | undefined
+      try {
+        const node = nodeRef.current
+        visible =
+          node && !node.isDestroyed
+            ? rowsIntersect(
+                { top: node.screenY, height: node.height },
+                getAdTranscriptViewport(),
+              )
+            : undefined
+      } catch {
+        visible = undefined
+      }
+      if (gate.update(performance.now(), visible, getAdTerminalFocus())) {
+        if (interval) clearInterval(interval)
+        interval = null
+        try {
+          onSeenRef.current?.()
+        } catch {
+          // an impression report must never break the card
+        }
+      }
+    }
+    const first = setTimeout(check, 0)
+    interval = setInterval(check, TRANSCRIPT_SEEN_POLL_MS)
+    ;(interval as { unref?: () => void }).unref?.()
+    return () => {
+      clearTimeout(first)
+      if (interval) clearInterval(interval)
+    }
+  }, [impUrl, wantsSeen])
 
   useEffect(() => {
     if (!enabled || !impUrl) return

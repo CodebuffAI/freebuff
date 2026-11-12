@@ -1,7 +1,19 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 
 import {
+  registerAdTranscriptViewport,
+  resetAdSignalsForTests,
+} from '../../ads/ad-signals'
+import {
+  AD_ROTATION_TICK_SLACK_MS,
+  adFocusAllows,
+  answerEndVisible,
+  handleAdFocusReturn,
   claimAdImpression,
+  impressionDisposition,
+  inlineRequestDisposition,
+  rotationDueOnFocus,
+  rotationTickPlan,
   dispatchFirstPartyViewAcknowledgement,
   isAnswerMessage,
   isInlineAdEligibleAnswer,
@@ -14,7 +26,7 @@ import {
   visibleResponseAds,
 } from '../use-gravity-ad'
 
-import type { AdResponse } from '../use-gravity-ad'
+import type { AdResponse, FocusReturnState } from '../use-gravity-ad'
 import type { ChatMessage } from '../../types/chat'
 import {
   acknowledgeFirstPartyView,
@@ -313,5 +325,245 @@ describe('a withheld ad response (COD-906)', () => {
       countsAsShown: true,
     })
     expect(ctrl.choiceCache).toHaveLength(2)
+  })
+})
+
+describe('terminal focus gates fetches and impressions', () => {
+  test('only a reported unfocus blocks; unknown focus counts as focused', () => {
+    expect(adFocusAllows(true)).toBe(true)
+    expect(adFocusAllows(undefined)).toBe(true)
+    expect(adFocusAllows(false)).toBe(false)
+  })
+
+  const tick = (over: Partial<Parameters<typeof rotationTickPlan>[0]>) =>
+    rotationTickPlan({
+      adsEnabled: true,
+      slotPaused: false,
+      focused: true,
+      adsShownSinceActivity: 0,
+      userActive: true,
+      ...over,
+    })
+
+  test('an unfocused terminal makes no fetch and no swap on a tick', () => {
+    expect(tick({ focused: false })).toBe('skip')
+    expect(tick({ focused: false, userActive: false })).toBe('skip')
+  })
+
+  test('unknown focus rotates exactly as focused does', () => {
+    expect(tick({ focused: undefined })).toBe('fetch')
+    expect(tick({ focused: undefined, userActive: false })).toBe('cache')
+  })
+
+  test('the activity rule is unchanged: three after activity, typed in 30 s', () => {
+    expect(tick({ adsShownSinceActivity: 2 })).toBe('fetch')
+    expect(tick({ adsShownSinceActivity: 3 })).toBe('cache')
+    expect(tick({ userActive: false })).toBe('cache')
+    expect(tick({ slotPaused: true })).toBe('skip')
+    expect(tick({ adsEnabled: false })).toBe('skip')
+  })
+
+  test('focus returning rotates only once the interval has elapsed', () => {
+    expect(rotationDueOnFocus({ lastRotationAt: null, now: 0 })).toBe(true)
+    expect(
+      rotationDueOnFocus({ lastRotationAt: 1_000, now: 1_000 + 59_999 }),
+    ).toBe(false)
+    expect(
+      rotationDueOnFocus({ lastRotationAt: 1_000, now: 1_000 + 60_000 }),
+    ).toBe(true)
+  })
+
+  test('an impression waits for focus; unknown focus and clicks do not wait', () => {
+    expect(impressionDisposition({ focused: false })).toBe('defer')
+    expect(impressionDisposition({ focused: undefined })).toBe('fire')
+    expect(impressionDisposition({ focused: true })).toBe('fire')
+    // A click on an ad whose impression never fired sends it first.
+    expect(impressionDisposition({ focused: false, force: true })).toBe('fire')
+  })
+
+  test('the end-of-answer card is requested only while not unfocused', () => {
+    expect(inlineRequestDisposition({ count: 1, focused: true })).toBe(
+      'request',
+    )
+    expect(inlineRequestDisposition({ count: 1, focused: undefined })).toBe(
+      'request',
+    )
+    expect(inlineRequestDisposition({ count: 1, focused: false })).toBe('defer')
+    // The renderer asks with 0 until the answer completes: no request.
+    expect(inlineRequestDisposition({ count: 0, focused: true })).toBe('none')
+  })
+
+  test("the card waits until the answer's end is in the viewport", () => {
+    expect(
+      inlineRequestDisposition({ count: 1, focused: true, endVisible: false }),
+    ).toBe('defer')
+    expect(
+      inlineRequestDisposition({ count: 1, focused: true, endVisible: true }),
+    ).toBe('request')
+    // Unmeasurable: request, as before the visibility check existed.
+    expect(
+      inlineRequestDisposition({
+        count: 1,
+        focused: undefined,
+        endVisible: undefined,
+      }),
+    ).toBe('request')
+    expect(
+      inlineRequestDisposition({ count: 1, focused: false, endVisible: true }),
+    ).toBe('defer')
+  })
+
+  test('a tick within one interval of the last rotation is skipped', () => {
+    const at = (lastRotationAt: number | null, now: number) =>
+      tick({ lastRotationAt, now })
+    expect(at(null, 5_000)).toBe('fetch')
+    expect(at(0, 5_000)).toBe('skip')
+    expect(at(0, 60_000 - AD_ROTATION_TICK_SLACK_MS - 1)).toBe('skip')
+    // Timer jitter: a tick a hair early still rotates.
+    expect(at(0, 60_000 - AD_ROTATION_TICK_SLACK_MS)).toBe('fetch')
+    expect(at(0, 60_000)).toBe('fetch')
+  })
+})
+
+describe('answerEndVisible', () => {
+  afterEach(() => resetAdSignalsForTests())
+
+  test("tests the answer's last row against the transcript viewport", () => {
+    registerAdTranscriptViewport(() => ({ top: 10, bottom: 30 }))
+    expect(answerEndVisible(() => ({ top: 29, height: 1 }))).toBe(true)
+    expect(answerEndVisible(() => ({ top: 30, height: 1 }))).toBe(false)
+    expect(answerEndVisible(() => ({ top: 5, height: 1 }))).toBe(false)
+  })
+
+  test('unmeasurable on either side is undefined', () => {
+    expect(answerEndVisible(() => ({ top: 29, height: 1 }))).toBeUndefined()
+    registerAdTranscriptViewport(() => ({ top: 10, bottom: 30 }))
+    expect(answerEndVisible(undefined)).toBeUndefined()
+    expect(answerEndVisible(() => null)).toBeUndefined()
+    expect(
+      answerEndVisible(() => {
+        throw new Error('destroyed')
+      }),
+    ).toBeUndefined()
+  })
+})
+
+describe('handleAdFocusReturn', () => {
+  const ad = (impUrl: string): AdResponse => ({
+    adText: 'x',
+    title: 't',
+    cta: 'c',
+    url: 'https://example.com',
+    favicon: '',
+    clickUrl: 'https://track.example/c',
+    impUrl,
+  })
+
+  function run(
+    state: FocusReturnState,
+    over: { now?: number; drawn?: string[]; slotActive?: boolean } = {},
+  ) {
+    const calls: string[] = []
+    const impressions: string[] = []
+    const result = handleAdFocusReturn(state, {
+      now: over.now ?? 0,
+      drawnImpUrls: new Set(over.drawn ?? []),
+      slotActive: over.slotActive ?? true,
+      recordImpression: (a) => impressions.push(a.impUrl),
+      runInitialFetch: () => calls.push('initial_fetch'),
+      rotate: () => calls.push('rotate'),
+      restartRotationTimer: () => calls.push('restart_timer'),
+      retryDeferredInline: () => calls.push('retry_inline'),
+    })
+    return { result, calls, impressions }
+  }
+
+  test('sends a held impression only for an ad still drawn', () => {
+    const state: FocusReturnState = {
+      lastRotationAt: 0,
+      initialFetchPending: false,
+      deferredImpressions: new Map([
+        ['imp-drawn', ad('imp-drawn')],
+        ['imp-gone', ad('imp-gone')],
+      ]),
+    }
+    const { impressions } = run(state, { now: 10_000, drawn: ['imp-drawn'] })
+    expect(impressions).toEqual(['imp-drawn'])
+    // The held set is cleared either way: a gone ad is never sent later.
+    expect(state.deferredImpressions.size).toBe(0)
+  })
+
+  test('runs a first fetch skipped while unfocused, and re-phases the timer', () => {
+    const state: FocusReturnState = {
+      lastRotationAt: null,
+      initialFetchPending: true,
+      deferredImpressions: new Map(),
+    }
+    const { result, calls } = run(state)
+    expect(result).toBe('initial_fetch')
+    expect(calls).toEqual(['initial_fetch', 'restart_timer', 'retry_inline'])
+  })
+
+  test('rotates only when a full interval has passed', () => {
+    const state: FocusReturnState = {
+      lastRotationAt: 0,
+      initialFetchPending: false,
+      deferredImpressions: new Map(),
+    }
+    expect(run(state, { now: 30_000 }).calls).toEqual(['retry_inline'])
+    expect(run(state, { now: 60_000 }).calls).toEqual([
+      'rotate',
+      'restart_timer',
+      'retry_inline',
+    ])
+  })
+
+  test('a stopped slot neither fetches nor rotates, but still retries the card', () => {
+    const state: FocusReturnState = {
+      lastRotationAt: null,
+      initialFetchPending: true,
+      deferredImpressions: new Map(),
+    }
+    expect(run(state, { slotActive: false }).calls).toEqual(['retry_inline'])
+  })
+
+  test('the dock does not rotate twice within one interval after focus returns', () => {
+    // Last rotation at 0; the ticks at 60 s and 120 s were skipped while
+    // unfocused. Focus returns at 125 s and rotates.
+    const state: FocusReturnState = {
+      lastRotationAt: 0,
+      initialFetchPending: false,
+      deferredImpressions: new Map(),
+    }
+    const rotations: number[] = []
+    const focusAt = 125_000
+    handleAdFocusReturn(state, {
+      now: focusAt,
+      drawnImpUrls: new Set(),
+      slotActive: true,
+      recordImpression: () => {},
+      runInitialFetch: () => {},
+      rotate: () => {
+        state.lastRotationAt = focusAt
+        rotations.push(focusAt)
+      },
+      restartRotationTimer: () => {},
+      retryDeferredInline: () => {},
+    })
+    // A tick still on the old phase (180 s) is 55 s after that rotation:
+    // skipped. A tick a full interval later rotates.
+    const tickAt = (now: number) =>
+      rotationTickPlan({
+        adsEnabled: true,
+        slotPaused: false,
+        focused: true,
+        adsShownSinceActivity: 0,
+        userActive: true,
+        lastRotationAt: state.lastRotationAt,
+        now,
+      })
+    expect(tickAt(180_000)).toBe('skip')
+    expect(tickAt(185_000)).toBe('fetch')
+    expect(rotations).toEqual([125_000])
   })
 })

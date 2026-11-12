@@ -83,6 +83,7 @@ import { useClipboard } from './hooks/use-clipboard'
 import { useEvent } from './hooks/use-event'
 import { useGravityAd, visibleResponseAds } from './hooks/use-gravity-ad'
 import {
+  noteAdUserInput,
   registerAdTranscriptViewport,
   setAdTranscriptScrolledUp,
 } from './ads/ad-signals'
@@ -288,7 +289,7 @@ export const Chat = ({
     inline: true,
     surface: 'cli_chat',
     forceStart: IS_FREEBUFF,
-    // Lazily fill a four-ad pool, then repeat it for later transcript slots.
+    // One card per answer, after its last content, once it has completed.
     // Canonical ids (COD-1043; legacy `CLI-Chat-Inline`, `Single-Ad-Unit-1`):
     // the server maps them to the registered Gravity slugs.
     inlinePlacementId: 'Inline-After-Agent-CLI',
@@ -1588,6 +1589,8 @@ export const Chat = ({
   const handleSubmit = useCallback(async () => {
     // Report activity for ad rotation
     reportActivity()
+    // A submit proves the terminal has focus.
+    noteAdUserInput()
     // A new send collapses the panel: the user has moved on from the ad.
     dockPanel.collapse('send')
     // Update terminal title with truncated user input

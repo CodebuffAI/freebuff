@@ -6,6 +6,10 @@ import {
 } from '@codebuff/common/types/ad-client-context'
 
 import {
+  createViewDwellGate,
+  TRANSCRIPT_IMPRESSION_DWELL_MS,
+} from '../ad-engagement'
+import {
   ENGAGEMENT_CHECKPOINT_MS,
   ENGAGEMENT_IDLE_AFTER_MS,
   ENGAGEMENT_RELEASE_GRACE_MS,
@@ -1112,5 +1116,50 @@ describe('the engagement poster', () => {
     await poster.post({ v: 1, impUrl: 'a' })
     await poster.post({ v: 1, impUrl: 'a', exit: 'unmount' })
     expect(seen).toEqual(['checkpoint', 'unmount'])
+  })
+})
+
+describe('createViewDwellGate (transcript card impression)', () => {
+  test('fires once, only after the rows stayed in the viewport for the dwell', () => {
+    expect(TRANSCRIPT_IMPRESSION_DWELL_MS).toBe(1_000)
+    const gate = createViewDwellGate()
+    expect(gate.update(0, true, true)).toBe(false)
+    expect(gate.update(500, true, true)).toBe(false)
+    expect(gate.update(999, true, true)).toBe(false)
+    expect(gate.update(1_000, true, true)).toBe(true)
+    expect(gate.update(5_000, true, true)).toBe(false)
+    expect(gate.fired).toBe(true)
+  })
+
+  test('leaving the viewport restarts the dwell', () => {
+    const gate = createViewDwellGate(1_000)
+    gate.update(0, true, true)
+    expect(gate.update(800, false, true)).toBe(false)
+    expect(gate.update(900, true, true)).toBe(false)
+    expect(gate.update(1_800, true, true)).toBe(false)
+    expect(gate.update(1_900, true, true)).toBe(true)
+  })
+
+  test('a card that is never in the viewport never fires', () => {
+    const gate = createViewDwellGate(1_000)
+    for (let t = 0; t <= 10_000; t += 250) {
+      expect(gate.update(t, false, true)).toBe(false)
+    }
+  })
+
+  test('an unfocused terminal pauses the dwell; unknown focus does not', () => {
+    const unfocused = createViewDwellGate(1_000)
+    for (let t = 0; t <= 5_000; t += 250) {
+      expect(unfocused.update(t, true, false)).toBe(false)
+    }
+    const unknown = createViewDwellGate(1_000)
+    unknown.update(0, true, undefined)
+    expect(unknown.update(1_000, true, undefined)).toBe(true)
+  })
+
+  test('an unmeasurable card counts as seen', () => {
+    const gate = createViewDwellGate(1_000)
+    gate.update(0, undefined, undefined)
+    expect(gate.update(1_000, undefined, undefined)).toBe(true)
   })
 })

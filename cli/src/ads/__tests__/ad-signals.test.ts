@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
+import { reportActivity } from '../../utils/activity-tracker'
 import {
   AD_RTT_WINDOW,
+  ensureAdTerminalFocusWatch,
+  noteAdUserInput,
+  subscribeAdTerminalFocus,
   getAdSessionSnapshot,
   getAdTerminalFocus,
   getAdTerminalFocusState,
@@ -47,6 +51,34 @@ describe('ad signals', () => {
       supported: true,
       focused: false,
     })
+  })
+
+  test('a key or submit after a focus-out report restores focus', () => {
+    const seen: boolean[] = []
+    subscribeAdTerminalFocus((f) => seen.push(f))
+    // Input with focus unknown or already focused changes nothing.
+    noteAdUserInput()
+    expect(getAdTerminalFocus()).toBeUndefined()
+    noteAdTerminalFocus(true)
+    noteAdUserInput()
+    expect(seen).toEqual([true])
+    // Focus-out, then the terminal stops reporting: input brings focus back
+    // and tells the focus listeners, once.
+    noteAdTerminalFocus(false)
+    noteAdUserInput()
+    noteAdUserInput()
+    expect(getAdTerminalFocus()).toBe(true)
+    expect(seen).toEqual([true, false, true])
+  })
+
+  test('general activity (mouse movement, input changes) does not restore focus', () => {
+    ensureAdTerminalFocusWatch()
+    noteAdTerminalFocus(false)
+    reportActivity()
+    expect(getAdTerminalFocus()).toBe(false)
+    // Only a key or a submit does.
+    noteAdUserInput()
+    expect(getAdTerminalFocus()).toBe(true)
   })
 
   test('only an observed start stamps the turn', () => {

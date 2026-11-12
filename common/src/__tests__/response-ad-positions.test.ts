@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  responseAdEndSlotCount,
+  RESPONSE_AD_END_MIN_NODE_COUNT,
   responseAdNodePositions,
+  RESPONSE_AD_END_SLOT_COUNT,
   responseAdSlotCount,
   RESPONSE_AD_FIRST_NODE_COUNT,
   RESPONSE_AD_NODE_STEP,
@@ -68,5 +71,31 @@ describe('responseAdNodePositions', () => {
         step: 0,
       }),
     ).toEqual([0, 1, 2])
+  })
+})
+
+describe('responseAdEndSlotCount', () => {
+  test('one slot, and only once the answer has completed', () => {
+    expect(RESPONSE_AD_END_SLOT_COUNT).toBe(1)
+    expect(responseAdEndSlotCount({ nodeCount: 12, isComplete: false })).toBe(0)
+    expect(responseAdEndSlotCount({ nodeCount: 12, isComplete: true })).toBe(1)
+  })
+
+  test('a long answer still gets exactly one slot', () => {
+    expect(responseAdEndSlotCount({ nodeCount: 400, isComplete: true })).toBe(1)
+  })
+
+  test('an empty completed answer gets none', () => {
+    expect(responseAdEndSlotCount({ nodeCount: 0, isComplete: true })).toBe(0)
+  })
+
+  test('a short answer gets none: the floor is the old first-slot minimum', () => {
+    expect(RESPONSE_AD_END_MIN_NODE_COUNT).toBe(3)
+    // The interspersed rule's first slot opened at this node count too.
+    expect(responseAdSlotCount({ nodeCount: 2 })).toBe(0)
+    expect(responseAdSlotCount({ nodeCount: 3 })).toBe(1)
+    expect(responseAdEndSlotCount({ nodeCount: 1, isComplete: true })).toBe(0)
+    expect(responseAdEndSlotCount({ nodeCount: 2, isComplete: true })).toBe(0)
+    expect(responseAdEndSlotCount({ nodeCount: 3, isComplete: true })).toBe(1)
   })
 })

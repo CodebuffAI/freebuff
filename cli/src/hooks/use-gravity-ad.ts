@@ -16,16 +16,23 @@ import { useEffect, useRef, useState } from 'react'
 import { useTerminalLayout } from './use-terminal-layout'
 import { buildAdAuctionRequest } from '../ads/ad-request'
 import {
+  ensureAdTerminalFocusWatch,
+  getAdTerminalFocus,
   noteAdClicked,
   noteAdTurnState,
   noteAdsServed,
   registerAdRenderer,
+  getAdTranscriptViewport,
+  subscribeAdTerminalFocus,
+  subscribeAdUserSend,
   timedAdFetch,
   timedApiCall,
 } from '../ads/ad-signals'
+import { rowsIntersect, type MeasureRows } from '../ads/ad-engagement'
 import {
   adEngagementRegistry,
   armAdAdoptionWatch,
+  TRANSCRIPT_VISIBILITY_POLL_MS,
 } from '../ads/use-ad-engagement'
 import { trackAdClickAck, watchAdClickReturn } from '../ads/click-return'
 import { getAdsEnabled } from '../commands/ads'
@@ -44,17 +51,181 @@ import {
 import { clientEnvironmentHeaders } from '../utils/client-environment'
 import {
   createLazyResponseAdQueue,
-  MAX_RESPONSE_AD_POOL_SIZE,
   requestLazyResponseAds,
 } from '../utils/lazy-response-ads'
+import { RESPONSE_AD_END_SLOT_COUNT } from '../utils/response-ad-positions'
 
 import type { ChatMessage } from '../types/chat'
 import type { DockClickContext } from './use-dock-panel'
 
 const AD_ROTATION_INTERVAL_MS = 60 * 1000 // 60 seconds per ad
+/**
+ * Timer jitter a rotation tick tolerates: a tick is due once the last rotation
+ * is at least the interval minus this old. Every rotation re-phases the timer,
+ * so ticks normally land a full interval after the last rotation.
+ */
+export const AD_ROTATION_TICK_SLACK_MS = 1_000
 const MAX_ADS_AFTER_ACTIVITY = 3 // Show up to 3 ads after last activity, then pause fetching new ads
 const ACTIVITY_THRESHOLD_MS = 30_000 // 30 seconds idle threshold for fetching new ads
 const MAX_AD_CACHE_SIZE = 50 // Maximum number of ads to keep in cache
+
+/**
+ * Whether the terminal's focus lets an ad be fetched or counted. Only a
+ * reported `false` blocks: `undefined` means the terminal never reported
+ * focus (no DEC 1004 support), which must read as focused, or every such
+ * terminal would draw ads it never counts.
+ */
+export function adFocusAllows(focused: boolean | undefined): boolean {
+  return focused !== false
+}
+
+/**
+ * What one rotation tick of the slot above the input does.
+ * - `skip`: nothing (ads off, the slot held by a proposal, or the terminal
+ *   unfocused: no fetch, no swap, so no new impression either).
+ * - `fetch`: auction a new ad (the activity rule: fewer than
+ *   {@link MAX_ADS_AFTER_ACTIVITY} shown since the user last typed, and they
+ *   typed within {@link ACTIVITY_THRESHOLD_MS}).
+ * - `cache`: no auction; re-show a cached ad if there is one.
+ */
+export function rotationTickPlan(params: {
+  adsEnabled: boolean
+  slotPaused: boolean
+  focused: boolean | undefined
+  adsShownSinceActivity: number
+  userActive: boolean
+  /** `Date.now()` of the slot's last rotation; null or absent before any. */
+  lastRotationAt?: number | null
+  now?: number
+}): 'skip' | 'fetch' | 'cache' {
+  if (!params.adsEnabled || params.slotPaused) return 'skip'
+  if (!adFocusAllows(params.focused)) return 'skip'
+  // A rotation on focus return (or a first fetch run late) may have happened
+  // since the last tick: never rotate twice within one interval.
+  if (
+    params.lastRotationAt != null &&
+    params.now !== undefined &&
+    params.now - params.lastRotationAt <
+      AD_ROTATION_INTERVAL_MS - AD_ROTATION_TICK_SLACK_MS
+  )
+    return 'skip'
+  return params.adsShownSinceActivity < MAX_ADS_AFTER_ACTIVITY &&
+    params.userActive
+    ? 'fetch'
+    : 'cache'
+}
+
+/**
+ * On focus returning: rotate now only when a full interval has passed since
+ * the slot last rotated (ticks while unfocused were skipped, not queued).
+ */
+export function rotationDueOnFocus(params: {
+  lastRotationAt: number | null
+  now: number
+  intervalMs?: number
+}): boolean {
+  if (params.lastRotationAt === null) return true
+  return (
+    params.now - params.lastRotationAt >=
+    (params.intervalMs ?? AD_ROTATION_INTERVAL_MS)
+  )
+}
+
+/**
+ * An impression reported while the terminal is unfocused waits for focus;
+ * a click (`force`) is proof of a view and always goes now.
+ */
+export function impressionDisposition(params: {
+  focused: boolean | undefined
+  force?: boolean
+}): 'fire' | 'defer' {
+  return params.force || adFocusAllows(params.focused) ? 'fire' : 'defer'
+}
+
+/**
+ * Whether an answer's end-of-answer card may be auctioned now: the answer has
+ * completed (the renderer only asks then), the terminal is not unfocused, and
+ * the answer's end, where the card will draw, is in the transcript viewport.
+ * `endVisible: undefined` (unmeasurable) does not hold the request back.
+ */
+export function inlineRequestDisposition(params: {
+  count: number
+  focused: boolean | undefined
+  endVisible?: boolean
+}): 'request' | 'defer' | 'none' {
+  if (params.count <= 0) return 'none'
+  if (!adFocusAllows(params.focused)) return 'defer'
+  return params.endVisible === false ? 'defer' : 'request'
+}
+
+/** Whether the rows `measure` reports lie in the transcript viewport. */
+export function answerEndVisible(
+  measure: MeasureRows | undefined,
+): boolean | undefined {
+  if (!measure) return undefined
+  try {
+    return rowsIntersect(measure(), getAdTranscriptViewport())
+  } catch {
+    return undefined
+  }
+}
+
+/** The controller fields the focus-return path reads and writes. */
+export type FocusReturnState = {
+  lastRotationAt: number | null
+  initialFetchPending: boolean
+  deferredImpressions: Map<string, AdResponse>
+}
+
+/**
+ * Focus returning: send impressions held while unfocused for ads still drawn
+ * (ads no longer drawn are dropped), run a skipped first fetch or an overdue
+ * rotation (re-phasing the rotation timer, so the next regular tick is a full
+ * interval later), and retry a card request held while unfocused.
+ */
+export function handleAdFocusReturn(
+  state: FocusReturnState,
+  deps: {
+    now: number
+    /** impUrls of every ad currently drawn (dock and transcript cards). */
+    drawnImpUrls: ReadonlySet<string>
+    /** The slot above the input is running (started and not hidden). */
+    slotActive: boolean
+    recordImpression: (ad: AdResponse) => void
+    runInitialFetch: () => void
+    rotate: () => void
+    restartRotationTimer: () => void
+    retryDeferredInline: () => void
+    intervalMs?: number
+  },
+): 'initial_fetch' | 'rotate' | 'none' {
+  const deferred = [...state.deferredImpressions.values()]
+  state.deferredImpressions.clear()
+  for (const ad of deferred) {
+    if (deps.drawnImpUrls.has(ad.impUrl)) deps.recordImpression(ad)
+  }
+
+  let rotated: 'initial_fetch' | 'rotate' | 'none' = 'none'
+  if (deps.slotActive) {
+    if (state.initialFetchPending) {
+      deps.runInitialFetch()
+      rotated = 'initial_fetch'
+    } else if (
+      rotationDueOnFocus({
+        lastRotationAt: state.lastRotationAt,
+        now: deps.now,
+        intervalMs: deps.intervalMs,
+      })
+    ) {
+      deps.rotate()
+      rotated = 'rotate'
+    }
+    if (rotated !== 'none') deps.restartRotationTimer()
+  }
+
+  deps.retryDeferredInline()
+  return rotated
+}
 
 // Ad response type (normalized shape across providers; credits added after impression)
 export type AdResponse = {
@@ -161,12 +332,16 @@ export type AdSurface = 'waiting_room' | 'cli_chat'
 export type GravityAdState = {
   ads: AdResponse[] | null
   /**
-   * On-demand ad pools keyed by assistant message id. The renderer repeats a
-   * full pool when the response has more eligible slots than distinct ads.
+   * End-of-answer ads keyed by assistant message id: at most
+   * {@link RESPONSE_AD_END_SLOT_COUNT} per answer.
    */
   responseAds: Record<string, AdResponse[]>
-  /** Lazily fill the response's bounded ad pool as slots become eligible. */
-  requestResponseAds: (messageId: string, count: number) => void
+  /** Auction an answer's end-of-answer card once the answer has completed. */
+  requestResponseAds: (
+    messageId: string,
+    count: number,
+    measureEnd?: MeasureRows,
+  ) => void
   isLoading: boolean
   recordClick: (ad: AdResponse, dock?: DockClickContext) => void
   recordImpression: (ad: AdResponse) => void
@@ -181,6 +356,20 @@ type GravityController = {
   tickInFlight: boolean
   inlineQueue: ReturnType<typeof createLazyResponseAdQueue<AdResponse>>
   eligibleSlotCounts: Map<string, number>
+  /** `Date.now()` of the slot's last fetch or rotation, null before the first. */
+  lastRotationAt: number | null
+  /** The first fetch was skipped because the terminal was unfocused. */
+  initialFetchPending: boolean
+  /** Impressions reported while unfocused, sent when focus returns. */
+  deferredImpressions: Map<string, AdResponse>
+  /**
+   * Answers whose card was asked for while the terminal was unfocused or the
+   * answer's end was off screen, with the measure of that end. Retried on
+   * focus return and on a poll; cleared when the user sends a new prompt.
+   */
+  deferredInlineRequests: Map<string, MeasureRows | undefined>
+  /** Polls deferred card requests while any are held. */
+  deferredInlinePoll: ReturnType<typeof setInterval> | null
 }
 
 type ChoiceCache = Pick<GravityController, 'choiceCache' | 'choiceCacheIndex'>
@@ -417,9 +606,12 @@ type GravityAdOptions = GravityAdOptionsBase &
   )
 
 /**
- * Fetches the rotating ad slot and, with `inline`, one reusable placement each
- * time another interspersed response slot becomes eligible. Short answers make
- * no unnecessary inline requests; long answers repeat a pool of four ads.
+ * Fetches the rotating ad slot and, with `inline`, one card per answer, placed
+ * after the answer's last content and auctioned once the answer has completed.
+ *
+ * Nothing is fetched and no impression is sent while the terminal reports
+ * itself unfocused (`adFocusAllows`); a terminal that never reports focus
+ * counts as focused.
  */
 export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   const enabled = options?.enabled ?? true
@@ -493,6 +685,8 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   // forceStart lets callers (e.g. the landing screen) opt out of the
   // "wait for the first user message" gate.
   const shouldStart = forceStart || hasUserMessagedStore
+  const shouldStartRef = useRef(shouldStart)
+  shouldStartRef.current = shouldStart
 
   // Single consolidated controller ref
   const ctrlRef = useRef<GravityController>({
@@ -503,22 +697,48 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     tickInFlight: false,
     inlineQueue: createLazyResponseAdQueue<AdResponse>(),
     eligibleSlotCounts: new Map(),
+    lastRotationAt: null,
+    initialFetchPending: false,
+    deferredImpressions: new Map(),
+    deferredInlineRequests: new Map(),
+    deferredInlinePoll: null,
   })
+  const responseAdsRef = useRef<Record<string, AdResponse[]>>({})
+  responseAdsRef.current = responseAds
 
   // Ref for the tick function (avoids useCallback dependency issues)
   const tickRef = useRef<() => void>(() => {})
+  const initialFetchRef = useRef<() => Promise<void>>(async () => {})
+  const requestResponseAdsRef = useRef<
+    (messageId: string, count: number, measureEnd?: MeasureRows) => void
+  >(() => {})
+  const restartRotationTimerRef = useRef<() => void>(() => {})
 
   // Ref to track whether ads should be hidden for use in async code
   const shouldHideAdsRef = useRef(shouldHideAds)
   shouldHideAdsRef.current = shouldHideAds
 
   // Fire impression and update credits (called when showing an ad)
-  const recordImpressionOnce = (ad: AdResponse): void => {
+  const recordImpressionOnce = (
+    ad: AdResponse,
+    options?: { force?: boolean },
+  ): void => {
     // Don't record impressions when ads should be hidden
     if (shouldHideAdsRef.current) return
 
     const ctrl = ctrlRef.current
     const { impUrl } = ad
+    if (ctrl.impressionsFired.has(impUrl)) return
+    if (
+      impressionDisposition({
+        focused: getAdTerminalFocus(),
+        force: options?.force,
+      }) === 'defer'
+    ) {
+      ctrl.deferredImpressions.set(impUrl, ad)
+      return
+    }
+    ctrl.deferredImpressions.delete(impUrl)
     if (!claimAdImpression(ctrl.impressionsFired, impUrl)) return
 
     const recordLocalImpression = async (): Promise<void> => {
@@ -632,11 +852,15 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     })
   }
 
+  // The focus listener is subscribed once; it calls the latest closure.
+  const recordImpressionRef = useRef(recordImpressionOnce)
+  recordImpressionRef.current = recordImpressionOnce
+
   const recordClick = (ad: AdResponse, dock?: DockClickContext): void => {
-    // A click is proof the ad was on screen. Its view normally went out at
-    // mount; this sends it now if it never did (deduped otherwise), so the
-    // click report below has a view to wait behind.
-    recordImpressionOnce(ad)
+    // A click is proof the ad was on screen. Its view normally went out when
+    // it was seen; this sends it now if it never did (deduped otherwise), so
+    // the click report below has a view to wait behind.
+    recordImpressionOnce(ad, { force: true })
     recordAdClick(ad, {
       ...(surface ? { surface } : {}),
       ...(dock ? { dock } : {}),
@@ -722,6 +946,32 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     return null
   }
 
+  // The slot's first fetch. Skipped while the terminal is unfocused; the
+  // focus listener runs it when focus returns.
+  initialFetchRef.current = async () => {
+    const ctrl = ctrlRef.current
+    try {
+      if (slotPausedRef.current) return
+      if (!adFocusAllows(getAdTerminalFocus())) {
+        ctrl.initialFetchPending = true
+        return
+      }
+      ctrl.initialFetchPending = false
+      ctrl.lastRotationAt = Date.now()
+      const result = await fetchAd({
+        placementId: slotPlacementId,
+        placementIds,
+      })
+      if (result && 'ads' in result) {
+        addToChoiceCache(ctrl, result.ads)
+        setAds(result.ads)
+        ctrl.adsShownSinceActivity = 1
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   // Update tick function (uses ref to avoid useCallback dependency issues)
   tickRef.current = () => {
     void (async () => {
@@ -730,16 +980,23 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       ctrl.tickInFlight = true
 
       try {
-        if (!getAdsEnabled() || slotPausedRef.current) return
+        const now = Date.now()
+        const plan = rotationTickPlan({
+          adsEnabled: getAdsEnabled(),
+          slotPaused: slotPausedRef.current,
+          focused: getAdTerminalFocus(),
+          adsShownSinceActivity: ctrl.adsShownSinceActivity,
+          userActive: isUserActive(ACTIVITY_THRESHOLD_MS),
+          lastRotationAt: ctrl.lastRotationAt,
+          now,
+        })
+        if (plan === 'skip') return
+        ctrl.lastRotationAt = now
 
-        // Derive "can fetch new ads" from counter and activity (no separate paused ref needed)
-        const canFetchNew =
-          ctrl.adsShownSinceActivity < MAX_ADS_AFTER_ACTIVITY &&
-          isUserActive(ACTIVITY_THRESHOLD_MS)
-
-        const result = canFetchNew
-          ? await fetchAd({ placementId: slotPlacementId, placementIds })
-          : null
+        const result =
+          plan === 'fetch'
+            ? await fetchAd({ placementId: slotPlacementId, placementIds })
+            : null
 
         const step = rotationStep(ctrl, result)
         if (step.countsAsShown) ctrl.adsShownSinceActivity += 1
@@ -749,6 +1006,90 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       }
     })()
   }
+
+  // Retry a held end-of-answer card request: only the latest answer's, and
+  // only while it is still the latest (a new prompt drops it, see below).
+  // requestResponseAds re-checks focus and visibility and holds it again if
+  // either still blocks.
+  const retryDeferredInline = (): void => {
+    const ctrl = ctrlRef.current
+    if (ctrl.deferredInlineRequests.size === 0) return
+    const pending = new Map(ctrl.deferredInlineRequests)
+    ctrl.deferredInlineRequests.clear()
+    const answers = useChatStore.getState().messages.filter(isAnswerMessage)
+    const latest = answers[answers.length - 1]?.id
+    if (latest && pending.has(latest)) {
+      requestResponseAdsRef.current(
+        latest,
+        RESPONSE_AD_END_SLOT_COUNT,
+        pending.get(latest),
+      )
+    }
+  }
+  const retryDeferredInlineRef = useRef(retryDeferredInline)
+  retryDeferredInlineRef.current = retryDeferredInline
+
+  // While a card request is held, re-check it on a poll, so scrolling the
+  // answer's end into view releases it.
+  const stopDeferredInlinePoll = (): void => {
+    const ctrl = ctrlRef.current
+    if (ctrl.deferredInlinePoll) clearInterval(ctrl.deferredInlinePoll)
+    ctrl.deferredInlinePoll = null
+  }
+  const ensureDeferredInlinePoll = (): void => {
+    const ctrl = ctrlRef.current
+    if (ctrl.deferredInlinePoll) return
+    ctrl.deferredInlinePoll = setInterval(() => {
+      try {
+        retryDeferredInlineRef.current()
+      } catch (err) {
+        logger.debug({ err }, '[ads] Deferred card retry failed')
+      }
+      if (ctrlRef.current.deferredInlineRequests.size === 0) {
+        stopDeferredInlinePoll()
+      }
+    }, TRANSCRIPT_VISIBILITY_POLL_MS)
+    ;(ctrl.deferredInlinePoll as { unref?: () => void }).unref?.()
+  }
+
+  // A new prompt drops a held card request: the user has moved on.
+  useEffect(() => {
+    const stop = subscribeAdUserSend(() => {
+      ctrlRef.current.deferredInlineRequests.clear()
+      stopDeferredInlinePoll()
+    })
+    return () => {
+      stop()
+      stopDeferredInlinePoll()
+    }
+  }, [])
+
+  // Focus returning (a focus-in report, or a key or submit after a focus-out report).
+  useEffect(() => {
+    ensureAdTerminalFocusWatch()
+    return subscribeAdTerminalFocus((focused) => {
+      if (!focused) return
+      const ctrl = ctrlRef.current
+      try {
+        const drawn = new Set<string>()
+        for (const ad of adsRef.current ?? []) drawn.add(ad.impUrl)
+        for (const list of Object.values(responseAdsRef.current))
+          for (const ad of list) drawn.add(ad.impUrl)
+        handleAdFocusReturn(ctrl, {
+          now: Date.now(),
+          drawnImpUrls: drawn,
+          slotActive: shouldStartRef.current && !shouldHideAdsRef.current,
+          recordImpression: (ad) => recordImpressionRef.current(ad),
+          runInitialFetch: () => void initialFetchRef.current(),
+          rotate: () => tickRef.current(),
+          restartRotationTimer: () => restartRotationTimerRef.current(),
+          retryDeferredInline: () => retryDeferredInlineRef.current(),
+        })
+      } catch (err) {
+        logger.debug({ err }, '[ads] Focus-return handling failed')
+      }
+    })
+  }, [])
 
   // Reset ads shown counter on user activity
   useEffect(() => {
@@ -765,38 +1106,34 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     setIsLoading(true)
 
     // Fetch first ad immediately, unless the dock already holds the slot.
-    void (async () => {
-      if (slotPausedRef.current) {
-        setIsLoading(false)
-        return
-      }
-      const result = await fetchAd({
-        placementId: slotPlacementId,
-        placementIds,
-      })
-      if (result && 'ads' in result) {
-        const ctrl = ctrlRef.current
-        addToChoiceCache(ctrl, result.ads)
-        setAds(result.ads)
-        ctrl.adsShownSinceActivity = 1
-      }
-      setIsLoading(false)
-    })()
+    void initialFetchRef.current()
 
-    // Start interval for rotation (consistent 60s intervals)
-    const id = setInterval(() => tickRef.current(), AD_ROTATION_INTERVAL_MS)
+    // Start interval for rotation (consistent 60s intervals). A rotation
+    // run on focus return restarts it, so the next tick is a full interval
+    // after that rotation.
+    let id = setInterval(() => tickRef.current(), AD_ROTATION_INTERVAL_MS)
+    restartRotationTimerRef.current = () => {
+      clearInterval(id)
+      id = setInterval(() => tickRef.current(), AD_ROTATION_INTERVAL_MS)
+    }
 
     return () => {
       clearInterval(id)
+      restartRotationTimerRef.current = () => {}
     }
   }, [shouldStart, shouldHideAds, provider, surface, placementIds?.join(',')])
 
-  // Called by BlocksRenderer only when its streamed node count makes another
-  // between-node slot eligible, until the four-ad pool is full. Requests use
-  // the same placement id and are serialized per answer so higher-value early
-  // results retain their order. The renderer cycles that exact pool for later
-  // slots without additional auctions or impression events.
-  const requestResponseAds = (messageId: string, count: number): void => {
+  // Called by BlocksRenderer once an answer has completed, for its single
+  // end-of-answer card. One auction per answer at most: the queue counts the
+  // attempt, so a no-fill is not retried and a re-render asks for nothing new.
+  // Held (and retried) while the terminal is unfocused or the answer's end is
+  // off screen, so a card is not fetched where it will not be seen.
+  const requestResponseAds = (
+    messageId: string,
+    rawCount: number,
+    measureEnd?: MeasureRows,
+  ): void => {
+    const count = Math.min(rawCount, RESPONSE_AD_END_SLOT_COUNT)
     if (
       !inline ||
       !inlinePlacementId ||
@@ -814,6 +1151,18 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     }
 
     const ctrl = ctrlRef.current
+    if (
+      inlineRequestDisposition({
+        count,
+        focused: getAdTerminalFocus(),
+        endVisible: answerEndVisible(measureEnd),
+      }) === 'defer'
+    ) {
+      ctrl.deferredInlineRequests.set(messageId, measureEnd)
+      ensureDeferredInlinePoll()
+      return
+    }
+    ctrl.deferredInlineRequests.delete(messageId)
     const previousEligibleCount = ctrl.eligibleSlotCounts.get(messageId) ?? 0
     if (count > previousEligibleCount) {
       ctrl.eligibleSlotCounts.set(messageId, count)
@@ -821,7 +1170,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
         response_id: messageId,
         chat_session_id: useChatStore.getState().chatSessionId,
         eligible_slot_count: count,
-        pool_size: MAX_RESPONSE_AD_POOL_SIZE,
+        pool_size: RESPONSE_AD_END_SLOT_COUNT,
         provider,
         surface,
         placement_id: inlinePlacementId,
@@ -831,19 +1180,6 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
         AnalyticsEvent.CLI_INLINE_AD_SLOT_ELIGIBLE,
         telemetryProperties,
       )
-
-      if (
-        count > MAX_RESPONSE_AD_POOL_SIZE &&
-        previousEligibleCount <= MAX_RESPONSE_AD_POOL_SIZE
-      ) {
-        enqueueClientLog({
-          level: 'info',
-          event: 'cli.inline_ad_pool_reused',
-          message: 'CLI inline-ad pool reused',
-          client_session_id: telemetryProperties.chat_session_id,
-          data: telemetryProperties,
-        })
-      }
     }
 
     void requestLazyResponseAds({
@@ -862,6 +1198,8 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       },
     })
   }
+
+  requestResponseAdsRef.current = requestResponseAds
 
   // Don't return ads when ads should be hidden
   const visible = shouldStart && !shouldHideAds

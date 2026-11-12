@@ -1076,3 +1076,65 @@ export function rowsIntersect(
     return undefined
   return card.top < viewport.bottom && card.top + card.height > viewport.top
 }
+
+/** Screen rows of something drawn in the transcript; `null` when unmeasurable. */
+export type MeasureRows = () => { top: number; height: number } | null
+
+/**
+ * The last screen row of a laid-out node (where content placed after it
+ * starts), or `null` when there is no node or it cannot be measured.
+ */
+export function lastRowOf(
+  node: { screenY: number; height: number; isDestroyed?: boolean } | null,
+): { top: number; height: number } | null {
+  if (!node || node.isDestroyed) return null
+  if (!Number.isFinite(node.screenY) || !Number.isFinite(node.height)) return null
+  if (node.height <= 0) return null
+  return { top: node.screenY + node.height - 1, height: 1 }
+}
+
+// ---------------------------------------------------------- seen-after-dwell
+
+/**
+ * How long a transcript card's rows must stay inside the viewport, with the
+ * terminal not known to be unfocused, before its impression is reported.
+ */
+export const TRANSCRIPT_IMPRESSION_DWELL_MS = 1_000
+
+export interface ViewDwellGate {
+  /**
+   * Feed one measurement. Returns `true` exactly once: on the first update at
+   * which the card has been continuously seen for the dwell.
+   *
+   * `visible: undefined` (unmeasurable: no viewport registered, or a node
+   * that cannot be measured) counts as seen, so a layout the check cannot
+   * read still reports what it draws. `focused: undefined` (the terminal has
+   * never reported focus) counts as focused. Only a definite `false` on
+   * either side breaks the run and restarts the dwell.
+   */
+  update(now: number, visible: boolean | undefined, focused: boolean | undefined): boolean
+  readonly fired: boolean
+}
+
+export function createViewDwellGate(
+  dwellMs: number = TRANSCRIPT_IMPRESSION_DWELL_MS,
+): ViewDwellGate {
+  let since: number | undefined
+  let fired = false
+  return {
+    update(now, visible, focused) {
+      if (fired) return false
+      if (visible === false || focused === false || !Number.isFinite(now)) {
+        since = undefined
+        return false
+      }
+      since ??= now
+      if (now - since < dwellMs) return false
+      fired = true
+      return true
+    },
+    get fired() {
+      return fired
+    },
+  }
+}

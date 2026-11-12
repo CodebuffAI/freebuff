@@ -4,6 +4,7 @@ import { immer } from 'zustand/middleware/immer'
 
 import type { FeedbackCategory } from '@codebuff/common/constants/feedback'
 
+import type { MeasureRows } from '../ads/ad-engagement'
 import type { AdResponse } from '../hooks/use-gravity-ad'
 import type { ChatMessage } from '../types/chat'
 import type { ChatTheme } from '../types/theme-system'
@@ -68,8 +69,15 @@ export interface MessageBlockCallbacks {
   onAdClick: (ad: AdResponse) => void
   /** Record an impression for an interspersed response ad. */
   onAdImpression: (ad: AdResponse) => void
-  /** Ensure the response has fetched ads for every currently eligible slot. */
-  onResponseAdsNeeded: (messageId: string, count: number) => void
+  /**
+   * Ask for the answer's end-of-answer card. `measureEnd` reads the answer's
+   * last screen row, so the request can wait until that row is on screen.
+   */
+  onResponseAdsNeeded: (
+    messageId: string,
+    count: number,
+    measureEnd?: MeasureRows,
+  ) => void
   /**
    * Sponsored proposals (COD-376). Beside `responseAds` because they share a
    * transcript and nothing else -- a display ad is a link out, a proposal is an

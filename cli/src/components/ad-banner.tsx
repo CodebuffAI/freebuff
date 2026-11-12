@@ -17,7 +17,8 @@ import {
 import type { DockClickOrigin } from '@codebuff/common/ads/ad-event-hygiene'
 import type { CliDockArm } from '@codebuff/common/util/ad-experiment'
 import { visibleWaitingRoomPlacementIds } from '@codebuff/common/ads/waiting-room-placements'
-import { safeOpen } from '../utils/open-url'
+import { isRemoteSession, showClipboardMessage } from '../utils/clipboard'
+import { isOpenableWebUrl, safeOpen } from '../utils/open-url'
 import React, { useState, useMemo, useEffect } from 'react'
 
 import { greptileTerminalColors } from '../ads/partner-brand'
@@ -107,6 +108,69 @@ export function getCardAdLayout(
   }
 }
 
+/** How long the "copy this link" line stays up after an ad click cannot open. */
+export const AD_LINK_NOTICE_MS = 15_000
+
+/** What became of one click on an ad. */
+export type AdClickOutcome = 'opened' | 'link_shown' | 'ignored'
+
+export type AdClickDeps = {
+  open: (url: string) => Promise<boolean>
+  isRemote: () => boolean
+  showLink: (ad: Pick<AdResponse, 'url'>) => void
+}
+
+/**
+ * The line shown when a click cannot open a browser here. It carries the
+ * advertiser's plain landing `url`, never the tracked `clickUrl`: the tracked
+ * link is a short-lived, per-impression redirect that counts a click when it
+ * is followed, so pasting it elsewhere would count a click this client chose
+ * not to record, and it stays live in scrollback after the user moves on.
+ */
+export function adLinkNotice(ad: Pick<AdResponse, 'url'>): string {
+  return isOpenableWebUrl(ad.url)
+    ? `Couldn't open a browser here. Link: ${ad.url}`
+    : "Couldn't open a browser here."
+}
+
+const liveAdClickDeps: AdClickDeps = {
+  open: safeOpen,
+  isRemote: isRemoteSession,
+  showLink: (ad) =>
+    showClipboardMessage(adLinkNotice(ad), { durationMs: AD_LINK_NOTICE_MS }),
+}
+
+/**
+ * The one path every ad click in this file takes: try to open the tracked
+ * link, and report the click (`onOpened`) only when a browser was opened.
+ *
+ * A session over SSH never opens: the opener would run on the remote host,
+ * where nobody is looking, and report success. There, and whenever opening
+ * fails (no display server, WSL without Windows interop, a refused URL), no
+ * click is reported and the landing URL is shown as a line to copy instead.
+ */
+export async function openAdClick(
+  ad: Pick<AdResponse, 'clickUrl' | 'url'>,
+  onOpened: () => void,
+  deps: AdClickDeps = liveAdClickDeps,
+): Promise<AdClickOutcome> {
+  if (!ad.clickUrl) return 'ignored'
+  let opened = false
+  if (!deps.isRemote()) {
+    try {
+      opened = await deps.open(ad.clickUrl)
+    } catch {
+      opened = false
+    }
+  }
+  if (opened) {
+    onOpened()
+    return 'opened'
+  }
+  deps.showLink(ad)
+  return 'link_shown'
+}
+
 /**
  * Calculate evenly distributed column widths that sum exactly to availableWidth.
  * Distributes remainder pixels across the first N columns so there's no gap.
@@ -121,9 +185,13 @@ function columnWidths(count: number, availableWidth: number): number[] {
  * A single ad card: full-width above the input ({@link SingleAdBanner}),
  * content-width when interspersed inside an assistant response
  * (BlocksRenderer), and in a row of columns on the landing screen
- * ({@link ChoiceAdBanner}). Manages its own hover state and
- * fires its impression on mount and on ad rotation (deduped per impUrl in the
- * ads hook, so remounts and scroll churn don't double-count).
+ * ({@link ChoiceAdBanner}). Manages its own hover state.
+ *
+ * Impressions are deduped per impUrl in the ads hook. A pinned card (dock,
+ * landing screen) reports its impression on mount and on ad rotation. An
+ * inline transcript card reports it only once its rows have stayed inside the
+ * transcript viewport for the dwell (`useAdEngagement`'s `onSeen`), or on a
+ * click, whichever comes first.
  */
 export const AdCard: React.FC<{
   ad: AdResponse
@@ -139,9 +207,11 @@ export const AdCard: React.FC<{
     : baseTheme
   const [isHovered, setIsHovered] = useState(false)
 
+  const isInline = variant === 'inline'
   useEffect(() => {
+    if (isInline) return
     onImpression?.(ad)
-  }, [ad, onImpression])
+  }, [ad, onImpression, isInline])
 
   // Laid out before the early return below, so the engagement hook can judge
   // truncation from exactly what is drawn.
@@ -179,6 +249,7 @@ export const AdCard: React.FC<{
             [ad.adText, card.description],
           ])
         : undefined,
+    ...(isInline ? { onSeen: () => onImpression?.(ad) } : {}),
   })
 
   const buttonProps = {
@@ -186,8 +257,10 @@ export const AdCard: React.FC<{
     onClick: (event?: unknown) => {
       if (!ad.clickUrl) return
       engagement.onClick(event)
-      onClick?.(ad)
-      safeOpen(ad.clickUrl)
+      // A click is proof the card was on screen: an inline card clicked
+      // before its dwell elapsed reports its impression now (deduped).
+      onImpression?.(ad)
+      void openAdClick(ad, () => onClick?.(ad))
     },
     onMouseOver: () => {
       setIsHovered(true)
@@ -552,8 +625,7 @@ export const DockAdCard: React.FC<{
         onClick={(event?: unknown) => {
           if (!ad.clickUrl) return
           engagement.onClick(event, 'cta')
-          onClick?.(ad, 'dock')
-          safeOpen(ad.clickUrl)
+          void openAdClick(ad, () => onClick?.(ad, 'dock'))
         }}
         onMouseOver={() => setIsCtaHovered(true)}
         onMouseOut={() => setIsCtaHovered(false)}
@@ -707,8 +779,7 @@ export const DockDetailPanel: React.FC<{
           onClick={(event?: unknown) => {
             if (!ad.clickUrl) return
             engagement.onClick(event, 'cta')
-            onClick?.(ad, 'panel')
-            safeOpen(ad.clickUrl)
+            void openAdClick(ad, () => onClick?.(ad, 'panel'))
           }}
           onMouseOver={() => setIsCtaHovered(true)}
           onMouseOut={() => setIsCtaHovered(false)}

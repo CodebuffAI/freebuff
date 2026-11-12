@@ -11,23 +11,15 @@ import { ToolBlockGroup } from './tool-block-group'
 import { AdCard } from '../ad-banner'
 import { useMessageBlockStore } from '../../state/message-block-store'
 import { processBlocks, type BlockProcessorHandlers } from '../../utils/block-processor'
-import {
-  getResponseAdForSlot,
-  responseAdDisplayCount,
-} from '../../utils/lazy-response-ads'
-import {
-  responseAdNodePositions,
-  responseAdSlotCount,
-} from '../../utils/response-ad-positions'
-
-import type { ReactNode } from 'react'
+import { responseAdEndSlotCount } from '../../utils/response-ad-positions'
+import type { MeasureRows } from '../../ads/ad-engagement'
 import type { ContentBlock } from '../../types/chat'
 import type { MarkdownPalette } from '../../utils/markdown-renderer'
 
 // `availableWidth` is terminalWidth - 2, but message content is clipped
 // tighter: the transcript scrollbox pads its content (1 left + 2 right) and
 // the message adds a 1-col side gutter each side, for a net 3 columns less.
-// Size interspersed ad cards to the clipped interior so their right border
+// Size the end-of-answer ad card to the clipped interior so their right border
 // stays visible.
 const RESPONSE_AD_WIDTH_INSET = 3
 
@@ -46,6 +38,11 @@ interface BlocksRendererProps {
   onBuildLite: () => void
   isLastMessage?: boolean
   contentToCopy?: string
+  /**
+   * The answer's last screen row, where the end-of-answer card will draw. The
+   * card is requested only once that row is in the transcript viewport.
+   */
+  measureEnd?: MeasureRows
 }
 
 /** Props stored in ref for stable handler access */
@@ -83,6 +80,7 @@ export const BlocksRenderer = memo(
     onBuildLite,
     isLastMessage,
     contentToCopy,
+    measureEnd,
   }: BlocksRendererProps) => {
     const lastTextBlockIndex = contentToCopy
       ? sourceBlocks.reduceRight(
@@ -237,51 +235,41 @@ export const BlocksRenderer = memo(
       )
 
     const nodes = processBlocks(sourceBlocks, handlers)
-    const eligibleAdCount = responseAdSlotCount({ nodeCount: nodes.length })
+    // One card per answer, after its last content, asked for only once the
+    // answer has completed with enough content (the hook also waits for
+    // terminal focus and for the answer's end to be on screen).
+    const endSlotCount = responseAdEndSlotCount({
+      nodeCount: nodes.length,
+      isComplete: isComplete === true,
+    })
+    const measureEndRef = useRef(measureEnd)
+    measureEndRef.current = measureEnd
 
     useEffect(() => {
-      if (eligibleAdCount > 0) {
-        onResponseAdsNeeded(messageId, eligibleAdCount)
+      if (endSlotCount > 0) {
+        onResponseAdsNeeded(messageId, endSlotCount, () =>
+          measureEndRef.current ? measureEndRef.current() : null,
+        )
       }
-    }, [eligibleAdCount, messageId, onResponseAdsNeeded])
+    }, [endSlotCount, messageId, onResponseAdsNeeded])
 
-    if (!responseAds || responseAds.length === 0) {
+    const ad = endSlotCount > 0 ? responseAds?.[0] : undefined
+    if (!ad) {
       return <>{nodes}</>
     }
 
-    // Intersperse ads between rendered nodes. Positions depend only on the
-    // node count (nodes are append-only while streaming), so each ad stays put
-    // once its slot has a following node.
-    const displayAdCount = responseAdDisplayCount({
-      eligibleCount: eligibleAdCount,
-      poolSize: responseAds.length,
-    })
-    const positions = responseAdNodePositions({
-      nodeCount: nodes.length,
-      adCount: displayAdCount,
-    })
-    const children: ReactNode[] = []
-    let nextAd = 0
-    nodes.forEach((node, i) => {
-      children.push(node)
-      if (nextAd < positions.length && positions[nextAd] === i) {
-        const ad = getResponseAdForSlot(responseAds, nextAd)
-        if (ad) {
-          children.push(
-            <AdCard
-              key={`response-ad-${messageId}-${nextAd}`}
-              ad={ad}
-              width={Math.max(20, availableWidth - RESPONSE_AD_WIDTH_INSET)}
-              variant="inline"
-              onClick={onAdClick}
-              onImpression={onAdImpression}
-            />,
-          )
-        }
-        nextAd++
-      }
-    })
-
-    return <>{children}</>
+    return (
+      <>
+        {nodes}
+        <AdCard
+          key={`response-ad-${messageId}`}
+          ad={ad}
+          width={Math.max(20, availableWidth - RESPONSE_AD_WIDTH_INSET)}
+          variant="inline"
+          onClick={onAdClick}
+          onImpression={onAdImpression}
+        />
+      </>
+    )
   },
 )

@@ -7,6 +7,7 @@ import {
   requestLazyResponseAds,
   responseAdDisplayCount,
 } from '../lazy-response-ads'
+import { RESPONSE_AD_END_SLOT_COUNT } from '../response-ad-positions'
 
 type TestAd = { impUrl: string; clickUrl?: string }
 
@@ -163,5 +164,44 @@ describe('repeated response ad pool', () => {
     ])
     expect(sequence[0]).toBe(sequence[4])
     expect(sequence[0]?.clickUrl).toBe(sequence[4]?.clickUrl)
+  })
+})
+
+describe('one end-of-answer slot', () => {
+  test('repeated requests for one answer auction exactly once', async () => {
+    const queue = createLazyResponseAdQueue<TestAd>()
+    const shown: TestAd[] = []
+    let fetchCount = 0
+    const fetchOne = async () => ({ impUrl: `imp-${++fetchCount}` })
+    for (let i = 0; i < 5; i++) {
+      await requestLazyResponseAds({
+        queue,
+        messageId: 'ai-1',
+        count: RESPONSE_AD_END_SLOT_COUNT,
+        fetchOne,
+        onAd: (ad) => shown.push(ad),
+      })
+    }
+    expect(fetchCount).toBe(1)
+    expect(shown.map((ad) => ad.impUrl)).toEqual(['imp-1'])
+  })
+
+  test('a no-fill is not retried for the same answer', async () => {
+    const queue = createLazyResponseAdQueue<TestAd>()
+    let fetchCount = 0
+    const fetchOne = async () => {
+      fetchCount++
+      return null
+    }
+    for (let i = 0; i < 3; i++) {
+      await requestLazyResponseAds({
+        queue,
+        messageId: 'ai-1',
+        count: RESPONSE_AD_END_SLOT_COUNT,
+        fetchOne,
+        onAd: () => {},
+      })
+    }
+    expect(fetchCount).toBe(1)
   })
 })
