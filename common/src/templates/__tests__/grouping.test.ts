@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { templateCategories } from '../grouping'
+import { PICKER_FEATURED_TEMPLATE_IDS, templateCategories } from '../grouping'
 
 type Entry = { id: string; kind: 'site' | 'app'; tags: string[] }
 
@@ -67,6 +67,20 @@ describe('templateCategories', () => {
       ['Games', ['flappy-bird']],
       ['SaaS', ['moodboard']],
     ])
+  })
+
+  test('Featured lists the picked templates in the picked order, starters never', () => {
+    expect(
+      chips(
+        [
+          { id: 'blank-website', kind: 'site', tags: ['category:starter'] },
+          { id: 'moodboard', kind: 'app', tags: ['category:saas'] },
+          { id: 'crm', kind: 'app', tags: ['category:saas'] },
+          { id: 'crosscut', kind: 'app', tags: ['category:game'] },
+        ],
+        { featured: PICKER_FEATURED_TEMPLATE_IDS, starters: true },
+      )[0],
+    ).toEqual(['Featured', ['crosscut', 'moodboard']])
   })
 
   test('a new-project picker drops Featured and keeps starters, in All and their own chip', () => {

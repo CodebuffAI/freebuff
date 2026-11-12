@@ -22,6 +22,22 @@ export const FEATURED_TEMPLATE_IDS = [
   'customer-health',
 ] as const
 
+/**
+ * The template picker's Featured chip (Sites page, new-project dialog, web
+ * workspace): the eight showpieces, best first, in this order. Unlike the
+ * landing's list it takes games. Ids missing from the catalogue are skipped.
+ */
+export const PICKER_FEATURED_TEMPLATE_IDS = [
+  'crosscut',
+  'retro-terminal',
+  'creative-agency',
+  'indie-game',
+  'climate-story',
+  'fusion-energy',
+  'moodboard',
+  'illustration-store',
+] as const
+
 const CHIP_LABEL: Record<TemplateCategory, string> = {
   'landing-page': 'Landing pages',
   store: 'Stores',
@@ -51,8 +67,12 @@ export function templateCategory(template: CategoryTemplate): TemplateCategory {
 export type TemplateChip<T> = { id: string; label: string; templates: T[] }
 
 export type TemplateChipOptions = {
-  /** Lead with the hand-picked Featured chip. */
-  featured?: boolean
+  /**
+   * Lead with a hand-picked Featured chip: `true` for the landing's
+   * {@link FEATURED_TEMPLATE_IDS} in the order given, or a list of ids to show
+   * in that list's order.
+   */
+  featured?: boolean | readonly string[]
   /**
    * Keep near-empty starter projects, in All and in their own Starters chip.
    * The landing leaves them out; a new-project picker keeps them.
@@ -71,14 +91,24 @@ export function templateCategories<T extends CategoryTemplate>(
   const kept = starters
     ? templates
     : templates.filter((template) => templateCategory(template) !== 'starter')
+  const byId = new Map(kept.map((template) => [template.id, template]))
   const picked = new Set<string>(FEATURED_TEMPLATE_IDS)
+  const featuredTemplates =
+    featured === true
+      ? kept.filter((template) => picked.has(template.id))
+      : featured
+        ? featured.flatMap((id) => {
+            const template = byId.get(id)
+            return template ? [template] : []
+          })
+        : []
   return [
     ...(featured
       ? [
           {
             id: 'featured',
             label: 'Featured',
-            templates: kept.filter((template) => picked.has(template.id)),
+            templates: featuredTemplates,
           },
         ]
       : []),
