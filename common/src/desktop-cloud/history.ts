@@ -77,6 +77,12 @@ export type CloudHistoryChat = {
    * so a client must not buy a session for one. Absent from older servers.
    */
   resourceLimited?: boolean
+  /**
+   * The project's latest checkpoint failed for being over the 4 GiB limit, so Cloud can neither
+   * archive it nor back up its newest changes; null once one succeeds. Every chat in the project
+   * carries it. Absent from older servers.
+   */
+  checkpointTooLarge?: import('./checkpoint-limit').CheckpointTooLarge | null
   metadataRevision: number
   phase: string
   updatedAt: string
