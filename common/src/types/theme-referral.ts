@@ -6,6 +6,15 @@ export interface ThemeReferralAccess {
   /** Progress is capped at the unlock threshold; no referred identities leave the server. */
   qualifyingReferrals: number
   unlocked: boolean
+  /** The account once reached a 7-day streak, which unlocks the Streak Fire
+   *  theme (`STREAK_THEME_PRESET_ID`) on its own: `unlocked` does not include
+   *  it, and it does not unlock the rest. Absent from servers before
+   *  2026-11-11, read as false. */
+  streakThemeUnlocked?: boolean
+  /** The account is in the streak experiment's `streak` arm, so clients show
+   *  the Streak Fire theme (locked or not) and its Streak reward section;
+   *  everyone else never sees it. Absent from older servers, read as false. */
+  streakThemeOffered?: boolean
   referralCode: string | null
   /** When the account was created (ISO), for the browser workspace's first-visit
    *  welcome. Absent from servers before 2026-11-07. */

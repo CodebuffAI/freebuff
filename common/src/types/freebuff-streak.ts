@@ -41,4 +41,10 @@ export interface FreebuffStreakResponse {
    * Pacific). Absent when nothing was granted, and from older servers.
    */
   bonusExpiresAt?: string | null
+  /**
+   * Whether the account has ever reached a 7-day streak, which unlocks the
+   * Streak Fire theme for good (`STREAK_THEME_PRESET_ID`). Absent from older
+   * servers, which clients read as false.
+   */
+  streakThemeUnlocked?: boolean
 }

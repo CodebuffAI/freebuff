@@ -23,6 +23,26 @@ export interface FreebuffStreakLine {
   progress: { filled: number; total: number; beyond: boolean }
 }
 
+/** One slot of the week a graphical surface draws: a streak day, today's
+ *  (still unsent) or ahead. */
+export type FreebuffStreakSlot = 'done' | 'today' | 'empty'
+
+/**
+ * The week toward the 7-day milestone as slots, for the workspace's streak
+ * card and popup (the phone apps mirror it): one per streak day, filling to
+ * seven and staying full past it as the dots do. While today is still
+ * unsent, the next slot is today's.
+ */
+export function getFreebuffStreakWeekSlots(
+  streak: number,
+  todayUsed: boolean,
+): FreebuffStreakSlot[] {
+  const filled = Math.min(Math.max(streak, 0), FREEBUFF_STREAK_WEEK)
+  return Array.from({ length: FREEBUFF_STREAK_WEEK }, (_, index) =>
+    index < filled ? 'done' : index === filled && !todayUsed ? 'today' : 'empty',
+  )
+}
+
 /** Glyph pair used to draw the progress dots. */
 export interface FreebuffStreakDotChars {
   filled: string
