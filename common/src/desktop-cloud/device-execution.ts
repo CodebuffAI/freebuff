@@ -3,6 +3,7 @@ import {
   SPONSORED_WINDOWS_CONTAINMENT,
   SPONSORED_WINDOWS_EXECUTION_SURFACE,
 } from '../ads/sponsored-windows'
+import { CLAUDE_TRANSCRIPT_ID } from './claude-turn-marks'
 import { devicePanelOperation } from './device-panels'
 import { deviceGitHubRequest } from './device-github'
 import { deviceLocalMcpCallRequest } from './local-mcp'
@@ -316,6 +317,12 @@ export const deviceHarnessRequest = z.discriminatedUnion('method', [
        * (the schema is strict), never resuming the source's session in two chats.
        */
       forkSession: z.literal(true).optional(),
+      /**
+       * With `forkSession`, after a Claude Code chat was rolled back (claude-turn-marks.ts): the
+       * branch keeps the session only up to this transcript entry. A Desktop without it refuses the
+       * request (the schema is strict), never resuming the turns the user rolled back.
+       */
+      resumeSessionAt: z.string().regex(CLAUDE_TRANSCRIPT_ID).optional(),
       /**
        * A side chat's turn (history-store.ts `openSideChat`): read-only, with no Freebuff tools,
        * because its parent's agent is working in the same folder. A Desktop without it refuses

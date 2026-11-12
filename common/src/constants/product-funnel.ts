@@ -110,6 +110,8 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
   }),
   /** The CLI's referral banner (its link opens /get-started). */
   cli: Object.freeze({ link: 'cli_link', email: 'cli_email' }),
+  /** The Rewards page on the rail (docs/freebuff-referral-rewards.md). */
+  rewards: Object.freeze({ link: 'rewards_link', email: 'rewards_email' }),
 })
 /**
  * The inviter's own link in the "friend started coding" lifecycle email

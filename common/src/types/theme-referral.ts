@@ -1,8 +1,24 @@
+/** Referred friends it takes to unlock themes, at limited access or when the tier is unknown. */
 export const THEME_REFERRAL_REQUIREMENT = 3 as const
+/**
+ * The same at full access: one friend. Full-access accounts get a lower bar
+ * on every referral reward (docs/freebuff-referral-rewards.md).
+ */
+export const THEME_REFERRAL_REQUIREMENT_FULL_ACCESS = 1 as const
+
+/** The unlock threshold for an account's access tier; unknown reads as limited. */
+export function themeReferralRequirement(
+  accessTier: 'full' | 'limited' | null | undefined,
+): number {
+  return accessTier === 'full'
+    ? THEME_REFERRAL_REQUIREMENT_FULL_ACCESS
+    : THEME_REFERRAL_REQUIREMENT
+}
 
 /** Account entitlement, calculated by the server from a subscription or referred signups. */
 export interface ThemeReferralAccess {
-  requiredReferrals: typeof THEME_REFERRAL_REQUIREMENT
+  /** 1 at full access, 3 otherwise (`themeReferralRequirement`). */
+  requiredReferrals: number
   /** Progress is capped at the unlock threshold; no referred identities leave the server. */
   qualifyingReferrals: number
   unlocked: boolean

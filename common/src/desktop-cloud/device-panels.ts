@@ -1,5 +1,6 @@
 import { z } from 'zod/v4'
 import { FILE_UPLOAD_BASE64_MAX, validFileUploadData } from './file-upload'
+import { BACKGROUND_TASK_ID } from './hosted-tasks'
 
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,120}$/)
 const scope = { projectId: id, threadId: id }
@@ -23,6 +24,10 @@ export const devicePanelRequest = z.discriminatedUnion('panel', [
     z.object({ ...scope, operation: z.literal('changes'), scope: z.enum(['all', 'uncommitted']) }).strict(),
     z.object({ ...scope, operation: z.literal('diff'), scope: z.enum(['all', 'uncommitted']), path, untracked: z.boolean() }).strict(),
     z.object({ ...scope, operation: z.literal('summary'), live: z.boolean() }).strict(),
+  ]) }).strict(),
+  z.object({ panel: z.literal('tasks'), input: z.discriminatedUnion('operation', [
+    z.object({ ...scope, operation: z.literal('list') }).strict(),
+    z.object({ ...scope, operation: z.literal('stop'), taskId: z.string().regex(BACKGROUND_TASK_ID) }).strict(),
   ]) }).strict(),
   z.object({ panel: z.literal('terminal'), input: z.discriminatedUnion('operation', [
     z.object({ ...terminal, operation: z.literal('attach'), cols: dimensions.cols.optional(), rows: dimensions.rows.optional(),

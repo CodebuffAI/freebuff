@@ -308,8 +308,13 @@ export type HostedWorkspaceHost = {
   /** This native build runs a side chat's turns read-only (`readOnly` on `harness_start`), so the
    *  chat menu offers Side chat on its chats. Older builds omit it. */
   sideChat?: true
+  /** This native build resumes a rolled-back Claude Code chat at its kept turn (`resumeSessionAt`
+   *  on `harness_start`), so Roll back and Edit are offered on its messages. Older builds omit it. */
+  claudeRollback?: true
   files?: import('./hosted-files').HostedFilesHost
   git?: import('./hosted-git').HostedGitHost
+  /** A local Claude Code chat's background tasks and subagents (`hosted-tasks.ts`). Older builds omit it. */
+  tasks?: import('./hosted-tasks').HostedTasksHost
   /** Open a project's or chat's folder in an app on this computer. Older builds omit it. */
   openIn?: import('./hosted-open-in').HostedOpenInHost
   protocolVersion: typeof HOSTED_WORKSPACE_PROTOCOL_VERSION
