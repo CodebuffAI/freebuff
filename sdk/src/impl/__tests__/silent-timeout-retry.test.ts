@@ -156,22 +156,60 @@ describe('promptAiSdkStream after a silent request timeout', () => {
     ])
   })
 
-  it('never repeats a step that already streamed output', async () => {
+  it('never repeats a step that already streamed output: it continues it, as a cut connection is', async () => {
     const attempt = run([() => answerThenTimeout('Looking at the handler, '), answer])
-    const outcome = await drain(attempt.stream).catch((error: unknown) => ({ error }))
+    const { chunks, result } = await drain(attempt.stream)
+    // Not sent again: what arrived stays, and the agent loop's forced next
+    // step (capped like every stream recovery) continues from it.
     expect(attempt.calls()).toBe(1)
+    expect(result.aborted).toBe(false)
+    expect(
+      chunks.filter((c) => c.type === 'text').map((c) => (c as { text: string }).text),
+    ).toEqual(['Looking at the handler, '])
+    expect(chunks.at(-1)).toEqual(
+      expect.objectContaining({
+        type: 'error',
+        source: 'stream-interrupted',
+        detail: expect.stringContaining('5 minutes after the response had started'),
+      }),
+    )
     expect(silentTimeoutEvents()).toEqual([
       expect.objectContaining({
-        metric: 'stream_silent_timeout_failed',
-        repeated: false,
+        metric: 'stream_silent_timeout_continued',
         receivedModelOutput: true,
         hasYieldedContent: true,
       }),
     ])
-    // What the partial step does is unchanged; it is only never sent again.
-    if ('chunks' in outcome)
-      expect(outcome.chunks.filter((c) => c.type === 'text').map((c) => (c as { text: string }).text))
-        .toEqual(['Looking at the handler, '])
+  })
+
+  it('continues a step whose only output was reasoning (a queue notice, or thinking) when it goes silent', async () => {
+    const reasoningThenTimeout = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                sse(chunk({ reasoning: 'Glyph Cluster is busy: #2 in the queue' })),
+              ),
+            )
+            setTimeout(() => controller.error(timeout()), 5)
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      )
+    const attempt = run([reasoningThenTimeout, answer])
+    const { chunks } = await drain(attempt.stream)
+    expect(attempt.calls()).toBe(1)
+    expect(chunks.at(-1)).toEqual(
+      expect.objectContaining({ type: 'error', source: 'stream-interrupted' }),
+    )
+    expect(silentTimeoutEvents()).toEqual([
+      expect.objectContaining({
+        metric: 'stream_silent_timeout_continued',
+        receivedModelOutput: true,
+        hasYieldedContent: false,
+      }),
+    ])
   })
 
   it('does not repeat a request the user cancelled', async () => {

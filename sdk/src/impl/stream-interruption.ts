@@ -35,7 +35,10 @@
  */
 
 import type { StreamRecoverySource } from '@codebuff/common/types/contracts/llm'
-import { isTransientNetworkError } from '@codebuff/common/util/error'
+import {
+  isFetchIdleTimeoutError,
+  isTransientNetworkError,
+} from '@codebuff/common/util/error'
 import { APICallError } from 'ai'
 
 export interface StreamFinishInfo {
@@ -168,6 +171,41 @@ export function classifyThrownStreamRecovery(params: {
     message:
       'A connection-level error interrupted the provider request, so the output above may be incomplete. Continue from where it left off (or start the step over if nothing useful arrived).',
     detail: 'A connection-level error occurred while requesting or reading the provider response.',
+  }
+}
+
+/**
+ * The runtime's 5-minute fetch inactivity timeout (isFetchIdleTimeoutError)
+ * AFTER the step received output. The request cannot be sent again (that
+ * would repeat what already reached the user), but the step can be continued
+ * from what arrived, exactly as a cut connection is
+ * ({@link classifyThrownStreamRecovery}), under the same cap on back-to-back
+ * recoveries (MAX_CONSECUTIVE_STREAM_RECOVERIES).
+ *
+ * Before (2026-11-11), this ended the turn: 1,225 hosted Cloud runs in three
+ * days stopped on "Connection timed out: no data was received from the server
+ * for 5 minutes", 620 of them in two days after output had arrived (the
+ * timeout before any output was already sent once more). The same timeout
+ * before any output is promptAiSdkStream's to repeat, not this.
+ */
+export function classifyIdleTimeoutRecovery(params: {
+  aborted: boolean
+  error: unknown
+  /** Any model output part arrived before the timeout. */
+  receivedOutput: boolean
+}): StreamEndRecovery | null {
+  if (
+    params.aborted ||
+    !params.receivedOutput ||
+    !isFetchIdleTimeoutError(params.error)
+  )
+    return null
+  return {
+    source: 'stream-interrupted',
+    message:
+      'The response stopped arriving: no data came for 5 minutes, so the output above may be incomplete. Continue from where it left off (or start the step over if nothing useful arrived).',
+    detail:
+      'No data was received from the server for 5 minutes after the response had started.',
   }
 }
 

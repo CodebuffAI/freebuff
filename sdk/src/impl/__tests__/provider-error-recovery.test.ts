@@ -228,6 +228,71 @@ describe('classifyProviderErrorRecovery on real wire shapes', () => {
   })
 })
 
+/**
+ * The Vercel AI Gateway's mid-stream failures name their cause in `code` with a
+ * word. As sent, no status reaches the client and the turn ends; the server
+ * now gives each a status (normalizeGatewayStreamError,
+ * web/src/llm-api/vercel-gateway.ts), which this reads as retryable.
+ */
+describe('Vercel AI Gateway mid-stream failures', () => {
+  const gatewayError = (error: Record<string, unknown>) => ({
+    id: 'gen_1',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model: 'fbc/beam-free',
+    choices: [],
+    error,
+  })
+
+  it.each([
+    [
+      'Beam, temporarily unavailable',
+      {
+        message: 'The inference service is temporarily unavailable',
+        code: 503,
+        gateway_code: 'upstream_unavailable_error',
+      },
+      503,
+    ],
+    [
+      'Glyph, stream timeout',
+      {
+        message: 'The stealth model could not complete the request.',
+        type: 'provider_error',
+        code: 504,
+        gateway_code: 'gateway_stream_timeout',
+      },
+      504,
+    ],
+    [
+      'Nemotron, stream error',
+      { message: 'Stream error occurred', code: 502, gateway_code: 'error' },
+      502,
+    ],
+  ] as const)('retries %s as the server now sends it', async (_label, error, statusCode) => {
+    const recovery = classifyProviderErrorRecovery({
+      aborted: false,
+      error: await errorPartFor(gatewayError(error)),
+    })
+    expect(recovery).toEqual(
+      expect.objectContaining({ source: 'provider-error', statusCode }),
+    )
+  })
+
+  it('reads the word codes the gateway itself sends as fatal', async () => {
+    for (const code of [
+      'upstream_unavailable_error',
+      'gateway_stream_timeout',
+      'error',
+    ]) {
+      const error = await errorPartFor(
+        gatewayError({ message: 'The inference service is temporarily unavailable', code }),
+      )
+      expect(classifyProviderErrorRecovery({ aborted: false, error })).toBeNull()
+    }
+  })
+})
+
 describe('classifyProviderErrorRecovery on constructed errors', () => {
   const apiError = (
     fields: Partial<ConstructorParameters<typeof APICallError>[0]>,

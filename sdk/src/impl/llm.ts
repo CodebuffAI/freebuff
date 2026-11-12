@@ -35,6 +35,7 @@ import { byokModelLimits } from '../byok'
 import type { ResolvedByokConnection } from '../byok'
 import {
   classifyErrorChunkRecovery,
+  classifyIdleTimeoutRecovery,
   classifyStreamEndRecovery,
   classifyThrownStreamRecovery,
   streamFinishInfoOf,
@@ -505,16 +506,18 @@ export async function* promptAiSdkStream(
    * The runtime's 5-minute fetch inactivity timeout (isFetchIdleTimeoutError)
    * before this step received any output: nothing reached the user and no tool
    * call exists, so the same request is sent once more. No other layer retries
-   * it: the AI SDK treats a TimeoutError as an abort, and the stream recoveries
-   * below do not classify it. A BYOK request's timeout is sanitized into a
-   * transient network error, which the stream-interrupted recovery already
-   * retries, so it is left to that. A second silent timeout fails as before.
+   * it: the AI SDK treats a TimeoutError as an abort. A BYOK request's timeout
+   * is sanitized into a transient network error, which the stream-interrupted
+   * recovery already retries, so it is left to that. The same timeout after
+   * output had arrived is continued instead (idleTimeoutContinuation). A
+   * second silent timeout with no output fails as before.
    */
   const silentTimeoutRetry = (error: unknown) => {
     if (params.byok || params.signal.aborted || !isFetchIdleTimeoutError(error))
       return false
     if (!idleTimeoutRetried && !receivedModelOutput) return true
-    // Why this one fails instead: output had arrived, or it was the repeat.
+    if (receivedModelOutput) return false
+    // Why this one fails instead: it was the repeat, and nothing arrived.
     // STREAM_RECOVERY_EVENT, so a host that forwards only allowlisted events
     // (the hosted Cloud worker's cloudSdkLogger) still ships it.
     logger.warn(
@@ -530,6 +533,31 @@ export async function* promptAiSdkStream(
       'Model request timed out with no data and was not sent again',
     )
     return false
+  }
+  /** The idle timeout after output: continued, not sent again
+   *  (classifyIdleTimeoutRecovery). Tried ahead of `classify`, which does not
+   *  know the timeout. */
+  const idleTimeoutContinuation = (
+    classify: typeof classifyThrownStreamRecovery,
+  ): typeof classifyThrownStreamRecovery => (recoveryParams) => {
+    if (params.byok) return classify(recoveryParams)
+    const recovery = classifyIdleTimeoutRecovery({
+      ...recoveryParams,
+      receivedOutput: receivedModelOutput,
+    })
+    if (!recovery) return classify(recoveryParams)
+    logger.warn(
+      {
+        axiomEvent: STREAM_RECOVERY_EVENT,
+        metric: 'stream_silent_timeout_continued',
+        model: params.model,
+        userInputId: params.userInputId,
+        hasYieldedContent,
+        receivedModelOutput,
+      },
+      'Model response went silent after output; continuing the step',
+    )
+    return recovery
   }
   const streamIterator = response.stream[Symbol.asyncIterator]()
   const recoverThrownStream = (
@@ -563,7 +591,10 @@ export async function* promptAiSdkStream(
         retryAfterSilentTimeout = true
         break
       }
-      const recovery = recoverThrownStream(error)
+      const recovery = recoverThrownStream(
+        error,
+        idleTimeoutContinuation(classifyThrownStreamRecovery),
+      )
       if (!recovery) throw error
       thrownStreamRecovery = recovery
       break
@@ -650,7 +681,7 @@ export async function* promptAiSdkStream(
       // why classifyErrorChunkRecovery tries it first.
       const recovery = recoverThrownStream(
         chunkValue.error,
-        classifyErrorChunkRecovery,
+        idleTimeoutContinuation(classifyErrorChunkRecovery),
       )
       if (recovery) {
         thrownStreamRecovery = recovery
