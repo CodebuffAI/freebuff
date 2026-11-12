@@ -233,6 +233,7 @@ export const productEntryRouteSchema = z.enum([
   '/',
   '/app',
   '/app-builder',
+  '/website-builder',
   '/students',
   '/cloud',
   '/chat',
