@@ -6,6 +6,7 @@ import { canonicalPlacementId, placementIdAliases } from './placement-aliases'
  */
 export const WEB_DESKTOP_SOURCE_PLACEMENTS = [
   'Inline-After-Agent-Desktop',
+  'Inline-Link-After-Agent-Desktop',
   'Above-Input-Desktop',
   'Desktop-Spotlight',
   'Desktop-Showcase',
@@ -30,6 +31,7 @@ export type DesktopPlacementId = (typeof WEB_DESKTOP_SOURCE_PLACEMENTS)[number]
  */
 const WEB_COPY_BY_SOURCE = {
   'Inline-After-Agent-Desktop': 'Inline-After-Agent-Web',
+  'Inline-Link-After-Agent-Desktop': 'Inline-Link-After-Agent-Web',
   'Above-Input-Desktop': 'Above-Input-Web',
   'Desktop-Spotlight': 'Desktop-Spotlight:web',
   'Desktop-Showcase': 'Desktop-Showcase:web',

@@ -228,13 +228,20 @@ describe('copy and configuration', () => {
     // `available` partner slot would appear in the self-serve picker. The
     // billboards are operator-placed until the console can upload their art.
     // The branded (display-ad) units are sellable exactly when live, and none
-    // is live yet (`DISPLAY_AD_SERVING_LIVE`).
+    // is live yet (`DISPLAY_AD_SERVING_LIVE`). The inline link is dark behind
+    // the `inlineAdStyle` arm, so selling it would sell inventory that never
+    // draws.
+    const darkInline = new Set([
+      'Inline-Link-After-Agent-Desktop',
+      'Inline-Link-After-Agent-Web',
+    ])
     for (const slot of PLACEMENT_SLOTS) {
       expect([slot.id, slot.available]).toEqual([
         slot.id,
         slot.format !== 'partner' &&
           slot.format !== 'billboard' &&
-          slot.format !== 'branded',
+          slot.format !== 'branded' &&
+          !darkInline.has(slot.id),
       ])
     }
     expect(new Set(PLACEMENT_SLOTS.map((slot) => slot.id)).size).toBe(
@@ -255,10 +262,11 @@ describe('copy and configuration', () => {
     // billboards, which are deliberately the same surface: each is a different
     // RENDERER on the same chat surface, not a new surface, and adding a
     // surface costs a house creative and a pinned rollup row. So are the six
-    // branded (display-ad) units, three of them mirrored to web.
-    expect(bySurface('cli_chat')).toBe(21)
+    // branded (display-ad) units, three of them mirrored to web, and the
+    // inline link renderer.
+    expect(bySurface('cli_chat')).toBe(22)
     expect(bySurface('waiting_room')).toBe(4)
-    expect(bySurface('freebuff_web_chat')).toBe(15)
+    expect(bySurface('freebuff_web_chat')).toBe(16)
     expect(bySurface('chat_assistant')).toBe(1)
   })
 
@@ -562,7 +570,7 @@ it('web copies retain format labels and name the web surface', () => {
   const aliases = PLACEMENT_SLOTS.filter((slot) =>
     isWebDesktopPlacement(slot.id),
   )
-  expect(aliases).toHaveLength(13)
+  expect(aliases).toHaveLength(14)
   for (const slot of aliases) {
     expect(placementSlotLabel(slot.id)).toStartWith('Web — ')
     expect(placementSlotLabel(slot.id)).not.toContain(':web')

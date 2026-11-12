@@ -373,6 +373,14 @@ const ORIGINAL_PLACEMENT_SLOTS = [
     available: true,
     format: 'inline',
   },
+  // The one-line link at the end of a Desktop reply: favicon, link text, "Ad".
+  // Dark until the `inlineAdStyle` policy arm serves `link`; not self-serve.
+  {
+    id: 'Inline-Link-After-Agent-Desktop',
+    surface: 'cli_chat',
+    available: false,
+    format: 'inline',
+  },
   {
     id: 'Above-Input-Desktop',
     surface: 'cli_chat',
@@ -742,6 +750,7 @@ const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
   'Desktop-Spotlight': 'Desktop — Spotlight',
   'Desktop-Showcase': 'Desktop — Showcase',
   'Desktop-Intermission': 'Desktop — Intermission',
+  'Inline-Link-After-Agent-Desktop': 'Desktop — Inline link',
   'Above-Input-CLI': 'CLI — Dock',
   // The splitter would render these "Desktop Partner Skill Picker", which
   // names the id rather than the slot. An advertiser reading a breakdown row

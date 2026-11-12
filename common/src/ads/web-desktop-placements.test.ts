@@ -11,8 +11,8 @@ import {
 } from './web-desktop-placements'
 
 describe('Desktop inventory mirrored into Web', () => {
-  test('all thirteen copies preserve their format and targeting availability', () => {
-    expect(WEB_DESKTOP_SOURCE_PLACEMENTS).toHaveLength(13)
+  test('all fourteen copies preserve their format and targeting availability', () => {
+    expect(WEB_DESKTOP_SOURCE_PLACEMENTS).toHaveLength(14)
     for (const id of WEB_DESKTOP_SOURCE_PLACEMENTS) {
       const web = webDesktopPlacement(id)!
       const source = PLACEMENT_SLOTS.find((slot) => slot.id === id)!
