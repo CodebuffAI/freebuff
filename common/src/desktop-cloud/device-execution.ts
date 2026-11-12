@@ -65,6 +65,9 @@ export const deviceExecutionContext = z
     /** Answers `local_mcp_call` and publishes its local MCP servers (local-mcp.ts). Desktop's
      * account-wide local MCP connection registers with only this; it is no folder's binding. */
     localMcp: z.literal(true).optional(),
+    /** This install's earlier ids, from its own profile after Desktop restored an id a reset had
+     * replaced. A chat bound with one may move to this folder (web device-execution/rebind.ts). */
+    previousDeviceIds: z.array(z.string().uuid()).min(1).max(8).optional(),
     cwd: z.string().min(1).max(4096),
     rg: z.string().max(4096),
   })
@@ -588,6 +591,7 @@ export const deviceCapabilities = z
     readOnlyOpener: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
     localMcp: z.literal(true).optional(),
+    previousDevices: z.literal(true).optional(),
   })
   .strict()
 
