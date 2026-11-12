@@ -105,6 +105,46 @@ describe('the sponsor break arm', () => {
   })
 })
 
+describe('shrinking the holdout in two steps', () => {
+  const moves = (from: string, to: string) => {
+    const before = parseSponsorBreakSplitBps(from)
+    const after = parseSponsorBreakSplitBps(to)
+    const counts = new Map<string, number>()
+    const total = 20_000
+    for (let i = 0; i < total; i++) {
+      const userId = `holdout-user-${i}`
+      const move = `${sponsorBreakArmForUser(userId, { mode: 'on', splitBps: before })}>${sponsorBreakArmForUser(userId, { mode: 'on', splitBps: after })}`
+      counts.set(move, (counts.get(move) ?? 0) + 1)
+    }
+    return { counts, total }
+  }
+  const original =
+    'control=5000,reduced=2500,reduced_spotlight=2500,reduced_intermission=0'
+  const first =
+    'control=5000,reduced=5000,reduced_spotlight=0,reduced_intermission=0'
+  const second =
+    'control=1000,reduced=9000,reduced_spotlight=0,reduced_intermission=0'
+
+  test('the first step retires the break arm and leaves control alone', () => {
+    const { counts } = moves(original, first)
+    expect([...counts.keys()].sort()).toEqual([
+      'control>control',
+      'reduced>reduced',
+      'reduced_spotlight>reduced',
+    ])
+  })
+
+  test('the second step moves people out of control only, and nobody into it', () => {
+    const { counts, total } = moves(first, second)
+    expect([...counts.keys()].sort()).toEqual([
+      'control>control',
+      'control>reduced',
+      'reduced>reduced',
+    ])
+    expect(counts.get('control>control')! / total).toBeCloseTo(0.1, 1)
+  })
+})
+
 describe('parseSponsorBreakSplitBps', () => {
   test('parses a well-formed table', () => {
     expect(
@@ -148,11 +188,17 @@ describe('parseSponsorBreakSplitBps', () => {
 })
 
 describe('the policy tables', () => {
-  test('control restates today: a 60s rotation and a pool of four', () => {
+  test('control keeps the original cadence: a 60s rotation on the clock and a pool of four', () => {
     expect(SPONSOR_BREAK_ARM_POLICY.control).toEqual({
       rotationMs: 60_000,
       inlinePoolMax: 4,
+      rotateOnlyWhileActive: false,
     })
+  })
+
+  test('every reduced arm rotates only while the person is active', () => {
+    for (const arm of SPONSOR_BREAK_ARMS.filter((a) => a !== 'control'))
+      expect(SPONSOR_BREAK_ARM_POLICY[arm].rotateOnlyWhileActive).toBe(true)
   })
 
   test('every reduced arm slows and shrinks the inline load', () => {

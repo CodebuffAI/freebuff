@@ -321,17 +321,33 @@ export const SHOWCASE_SPLIT_BPS = 5_000
  * client derived from its name are two places one experiment can drift.
  *
  * `inlinePoolMax` is the distinct-ad pool the transcript draws from and
- * `rotationMs` how long a drawn card holds its slot. `control` restates
- * today's values rather than referencing them, so reading this table is enough
- * to know what every arm does.
+ * `rotationMs` how long a drawn card holds its slot. `rotateOnlyWhileActive`
+ * makes the banner ask for its next ad only while the person is using the
+ * app: a rotation that comes due while they are idle waits for their next
+ * input. `control` restates the original values rather than referencing them,
+ * so reading this table is enough to know what every arm does.
+ *
+ * `control` is the holdout: the reduced cadence is the product's behaviour and
+ * `control` keeps the earlier one for comparison.
  */
 export const SPONSOR_BREAK_ARM_POLICY: Readonly<
-  Record<SponsorBreakArm, { rotationMs: number; inlinePoolMax: number }>
+  Record<
+    SponsorBreakArm,
+    { rotationMs: number; inlinePoolMax: number; rotateOnlyWhileActive: boolean }
+  >
 > = {
-  control: { rotationMs: 60_000, inlinePoolMax: 4 },
-  reduced: { rotationMs: 180_000, inlinePoolMax: 2 },
-  reduced_spotlight: { rotationMs: 180_000, inlinePoolMax: 2 },
-  reduced_intermission: { rotationMs: 180_000, inlinePoolMax: 2 },
+  control: { rotationMs: 60_000, inlinePoolMax: 4, rotateOnlyWhileActive: false },
+  reduced: { rotationMs: 180_000, inlinePoolMax: 2, rotateOnlyWhileActive: true },
+  reduced_spotlight: {
+    rotationMs: 180_000,
+    inlinePoolMax: 2,
+    rotateOnlyWhileActive: true,
+  },
+  reduced_intermission: {
+    rotationMs: 180_000,
+    inlinePoolMax: 2,
+    rotateOnlyWhileActive: true,
+  },
 }
 
 /**
