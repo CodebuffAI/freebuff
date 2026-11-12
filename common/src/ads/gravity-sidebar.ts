@@ -14,6 +14,16 @@ export function isGravitySidebarRequest(ids: readonly string[]): boolean {
   return ids.length > 0 && ids.every(isGravitySidebarPlacement)
 }
 
+/**
+ * `FREEBUFF_GRAVITY_SIDEBAR`: whether sidebar-only requests ask Gravity first.
+ * Default off: the Web sidebar ran at ~0.15% CTR against ~0.42% for
+ * Above-Input-Web (2026-11-11), so it serves first-party billboards only.
+ * Set `on` to restore the Gravity-first sidebar.
+ */
+export function gravitySidebarEnabled(value: string | undefined): boolean {
+  return value?.trim().toLowerCase() === 'on'
+}
+
 /** External Gravity names are independent of our stable client/reporting IDs. */
 export function gravitySidebarPlacementId(id: string): string {
   if (id === BILLBOARD_SIDEBAR_PLACEMENT_ID) return 'Sidebar-Desktop'

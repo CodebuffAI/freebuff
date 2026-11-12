@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   gravitySidebarAssets,
+  gravitySidebarEnabled,
   gravitySidebarPlacementId,
   internalGravitySidebarPlacementId,
   isGravitySidebarRequest,
@@ -19,6 +20,12 @@ describe('Gravity sidebar contract', () => {
       [SIDEBAR, 'Desktop-Inline-Chat'],
     ])
       expect(isGravitySidebarRequest(ids)).toBe(false)
+  })
+  test('Gravity-first sidebar is off unless explicitly on', () => {
+    for (const value of [undefined, '', 'off', 'shadow', 'true'])
+      expect(gravitySidebarEnabled(value)).toBe(false)
+    for (const value of ['on', ' ON '])
+      expect(gravitySidebarEnabled(value)).toBe(true)
   })
   test('new Gravity names round-trip to stable internal placement IDs', () => {
     for (const [internal, external] of [
