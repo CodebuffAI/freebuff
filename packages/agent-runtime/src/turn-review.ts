@@ -9,6 +9,7 @@ import {
   readTurnReview,
   TURN_REVIEW_METADATA_KEY,
   TURN_REVIEW_PROMPT,
+  TURN_REVIEW_TIMEOUT_MS,
 } from '@codebuff/common/constants/turn-review'
 import { TURN_REVIEW_EVENT } from '@codebuff/common/util/axiom-only-log'
 import { getErrorObject } from '@codebuff/common/util/error'
@@ -21,13 +22,6 @@ import type { TurnReview } from '@codebuff/common/constants/turn-review'
 import type { ModelUsageData } from '@codebuff/common/types/contracts/llm'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
-
-/**
- * A review may think as long as it needs: no output cap beyond the agent's own,
- * and this generous limit. A 4,000-token cap and 90 s limit failed 5.5% of
- * reviews (11-12), mostly a model's reasoning spending the whole budget.
- */
-export const TURN_REVIEW_TIMEOUT_MS = 10 * 60_000
 
 /** Asks for the review. `history` must be what the agent's next request sends. */
 export async function reviewTurn(params: {

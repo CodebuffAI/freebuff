@@ -48,6 +48,14 @@ export const TURN_REVIEW_EVENT_KIND = 'turn_review'
 /** `codebuff_metadata` key that marks a review request. */
 export const TURN_REVIEW_METADATA_KEY = 'turn_review'
 
+/**
+ * How long a review may take, on every path (the runtime's request, a
+ * Claude Code or Codex fork on the user's computer). A review may think as
+ * long as it needs: a 4,000-token cap and 90 s limit failed 5.5% of reviews
+ * (11-12), mostly a model's reasoning spending the whole budget.
+ */
+export const TURN_REVIEW_TIMEOUT_MS = 10 * 60_000
+
 export const MAX_TURN_REVIEW_ACTIONS = 5
 const MAX_LABEL_CHARS = 60
 const MAX_PROMPT_CHARS = 1_000
