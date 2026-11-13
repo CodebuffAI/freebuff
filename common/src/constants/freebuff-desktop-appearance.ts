@@ -20,13 +20,14 @@ export const DESKTOP_APPEARANCE_PRESET_IDS = [
  * unlock it; it is earned by using Freebuff seven days in a row.
  */
 export const STREAK_THEME_PRESET_ID = 'streak-fire'
-/** The streak display experiment (docs/experiments.md, "Streaks"): its
- *  `streak` arm is shown the streak and offered Streak Fire. */
+/** The first streak display experiment (docs/experiments.md, "Streaks"),
+ *  replaced by `STREAK_CLASSIC_EXPERIMENT_KEY`: its `streak` arm saw the
+ *  activity grid and keeps the Streak Fire offer. */
 export const STREAK_EXPERIMENT_KEY = 'streak_display_2026_11'
-/** The split of the display experiment's `control` arm (docs/experiments.md,
- *  "Streak UI"): its `classic` arm is shown the classic seven-day streak on
- *  web and Desktop and offered Streak Fire too. */
-export const STREAK_UI_EXPERIMENT_KEY = 'streak_ui_2026_11'
+/** The streak experiment (docs/experiments.md, "Classic streak"): its
+ *  `classic` arm is shown the streak (the classic seven-day UI on web and
+ *  Desktop) and offered Streak Fire; `control` sees no streak. */
+export const STREAK_CLASSIC_EXPERIMENT_KEY = 'streak_classic_2026_11'
 /** The streak that unlocks it: the reward interval, whose grant is the unlock. */
 export const STREAK_THEME_REQUIRED_DAYS = FREEBUFF_STREAK_REWARD_INTERVAL_DAYS
 
@@ -49,7 +50,7 @@ export const STREAK_THEME_TIERS = [
 export type StreakThemeTier = (typeof STREAK_THEME_TIERS)[number]
 
 /** The highest streak theme a streak of `days` has reached, or undefined
- *  below 7: the streak's own colours (`workspace-streak.css`). */
+ *  below 7: the streak's own colours (`workspace-streak-classic.css`). */
 export function streakThemeTierForDays(days: number): StreakThemeTier | undefined {
   return [...STREAK_THEME_TIERS].reverse().find((tier) => days >= tier.days)
 }

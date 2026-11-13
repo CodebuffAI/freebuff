@@ -32,9 +32,11 @@ export interface ThemeReferralAccess {
    *  good (`STREAK_THEME_TIERS`). 0 for an account not offered them or
    *  without Streak Fire. Absent from older servers, read as 0. */
   streakThemeDays?: number
-  /** The account is in the streak experiment's `streak` arm, so clients show
-   *  the Streak Fire theme (locked or not) and its Streak reward section;
-   *  everyone else never sees it. Absent from older servers, read as false. */
+  /** The account is shown the streak (`streak_classic_2026_11`'s `classic`
+   *  arm, or `streak_display_2026_11`'s `streak` arm before it), so clients
+   *  show its Streak reward section: the streak themes earned and the next one
+   *  to earn. Everyone else never sees it. Absent from older servers, read as
+   *  false. */
   streakThemeOffered?: boolean
   referralCode: string | null
   /** When the account was created (ISO), for the browser workspace's first-visit
