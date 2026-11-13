@@ -241,27 +241,45 @@ function threadPanelHeadline(groups: readonly ThreadPanelGroup[]): string {
  * The panel's groups as the viewer arranged them: groups in `order` (a saved
  * order missing a group, or naming an unknown one, still yields all four),
  * and pinned threads first within each group, keeping newest-first otherwise.
+ *
+ * Within the pinned block the viewer's own `pinnedOrder` wins, so a pinned
+ * thread stays where it was put instead of shuffling with every message. It is
+ * a partial order: pinned threads it does not name — never arranged, or since
+ * deleted from it — sort in behind the named ones, and sort is stable, so they
+ * keep their newest-first order there.
  */
 export function arrangeThreadPanel(
   groups: readonly ThreadPanelGroup[],
   {
     order = THREAD_GROUPS,
     pinned = new Set<string>(),
-  }: { order?: readonly string[]; pinned?: ReadonlySet<string> } = {},
+    pinnedOrder = [],
+  }: {
+    order?: readonly string[]
+    pinned?: ReadonlySet<string>
+    pinnedOrder?: readonly string[]
+  } = {},
 ): ThreadPanelGroup[] {
   const rank = (group: ThreadGroup) => {
     const at = order.indexOf(group)
     return at === -1 ? order.length + THREAD_GROUPS.indexOf(group) : at
   }
+  const rankPinned = (digest: ThreadDigest) => {
+    const at = pinnedOrder.indexOf(digest.id)
+    return at === -1 ? pinnedOrder.length : at
+  }
   return [...groups]
     .sort((a, b) => rank(a.group) - rank(b.group))
-    .map((entry) => ({
-      ...entry,
-      threads: [
-        ...entry.threads.filter((digest) => pinned.has(digest.id)),
-        ...entry.threads.filter((digest) => !pinned.has(digest.id)),
-      ],
-    }))
+    .map((entry) => {
+      const pinnedThreads = entry.threads.filter((digest) => pinned.has(digest.id))
+      return {
+        ...entry,
+        threads: [
+          ...pinnedThreads.sort((a, b) => rankPinned(a) - rankPinned(b)),
+          ...entry.threads.filter((digest) => !pinned.has(digest.id)),
+        ],
+      }
+    })
 }
 
 /** `order` with `group` moved to where `target` sits; unknown groups are dropped. */
@@ -276,5 +294,29 @@ export function moveThreadGroup(
   ).map((entry) => entry.group)
   const without = known.filter((entry) => entry !== group)
   without.splice(known.indexOf(target), 0, group)
+  return without
+}
+
+/**
+ * `pinnedOrder` with `thread` moved to sit directly above `target`, so a drag
+ * onto a row leaves it where it was dropped.
+ *
+ * Unlike the group order this list is partial — it holds only the pinned
+ * threads the viewer has arranged — so a `thread` it never named is simply
+ * inserted, and a `target` it never named (one still resting in the
+ * newest-first tail) sends `thread` to the end of the saved order, where the
+ * tail follows it. Names not matching a pinned thread are kept: a saved order
+ * outlives threads that were deleted or unpinned, and dropping them is the
+ * viewer's call, not this function's.
+ */
+export function movePinnedThread(
+  pinnedOrder: readonly string[],
+  thread: string,
+  target: string,
+): string[] {
+  const without = pinnedOrder.filter((id) => id !== thread)
+  const at = without.indexOf(target)
+  if (at === -1) return [...without, thread]
+  without.splice(at, 0, thread)
   return without
 }
