@@ -4,10 +4,11 @@
  *
  * A login code is minted without authentication, so a link that connected on
  * sight would hand the signed-in person's session to whoever minted it. The
- * Connect click guards that. The same-network match
+ * Connect click guards that. The same-place rule
  * (`@codebuff/auth/cli-login-network`) skips it when the app and the browser
- * share a small network; this skips it on any network, VPN or IPv4/IPv6 split
- * included, because the proof travels through the app itself:
+ * are in the same country and neither is on a VPN or other anonymizing
+ * network; this skips it on any network, VPN included, because the proof
+ * travels through the app itself:
  *
  * 1. The app runs an HTTP server on 127.0.0.1 and opens the login through it,
  *    so the hosted login URL it hands the browser carries `loopback_port`.
@@ -26,7 +27,7 @@
  * their code's hash but never sees the challenge (it lives in the victim's
  * cookie and the victim's loopback request); and an app that is listening
  * there answers for its own code, never for the one in the link. Anything
- * missing or wrong falls back to the network rule and then the button.
+ * missing or wrong falls back to the same-place rule and then the button.
  *
  * Nothing here is secret: the HMAC key is the per-code hash the app already
  * holds. Shared by the web app (verifier), Desktop and the CLI (provers).
