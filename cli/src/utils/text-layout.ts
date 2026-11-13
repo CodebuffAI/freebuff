@@ -62,11 +62,16 @@ export function getLastNVisualLines(text: string, cols: number, n: number): { li
   const lines: string[] = []
   if (!text) return { lines, hasMore: false }
 
+  let hasMore = false
   const tokens = text.split(/(\s+)/)
   let current = ''
   let currentWidth = 0
 
   const pushLine = () => {
+    if (lines.length === n) {
+      hasMore = true
+      lines.shift()
+    }
     lines.push(current)
     current = ''
     currentWidth = 0
@@ -104,10 +109,8 @@ export function getLastNVisualLines(text: string, cols: number, n: number): { li
     appendSegment(token)
   }
 
-  if (current.length > 0 || lines.length === 0) pushLine()
-  const hasMore = lines.length > n
-  const lastLines = lines.slice(-n)
-  return { lines: lastLines, hasMore }
+  if (current.length > 0 || (!hasMore && lines.length === 0)) pushLine()
+  return { lines, hasMore }
 }
 
 export function computeInputLayoutMetrics({
