@@ -54,6 +54,18 @@ describe('sanitizeThreadTitle', () => {
     )
   })
 
+  test('never cuts an astral character in half', () => {
+    // the label is drawn in a tab; half a surrogate pair renders as a
+    // replacement glyph instead of the emoji the model wrote
+    const title = sanitizeThreadTitle('a'.repeat(59) + '🚀 deploy pipeline')!
+    expect(title).toHaveLength(59)
+    expect(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(
+        title,
+      ),
+    ).toBe(false)
+  })
+
   test('returns null when nothing usable is left', () => {
     // null keeps the placeholder the caller already showed instead of blanking the label
     for (const raw of ['', '   ', '"..."', 'Title:', '!!!', '“”']) {
