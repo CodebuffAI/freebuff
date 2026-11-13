@@ -230,6 +230,9 @@ describe('copy and configuration', () => {
     const darkInline = new Set([
       'Inline-Link-After-Agent-Desktop',
       'Inline-Link-After-Agent-Web',
+      'Inline-Link-After-Agent-CLI',
+      'Inline-Link-After-Agent-iOS',
+      'Inline-Link-After-Agent-Android',
     ])
     for (const slot of PLACEMENT_SLOTS) {
       expect([slot.id, slot.available]).toEqual([
@@ -259,8 +262,8 @@ describe('copy and configuration', () => {
     // RENDERER on the same chat surface, not a new surface, and adding a
     // surface costs a house creative and a pinned rollup row. So are the six
     // branded (display-ad) units, three of them mirrored to web, and the
-    // inline link renderer.
-    expect(bySurface('cli_chat')).toBe(20)
+    // inline link renderers (Desktop and CLI).
+    expect(bySurface('cli_chat')).toBe(21)
     expect(bySurface('waiting_room')).toBe(4)
     expect(bySurface('freebuff_web_chat')).toBe(14)
     expect(bySurface('chat_assistant')).toBe(1)

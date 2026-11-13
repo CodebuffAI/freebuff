@@ -287,16 +287,16 @@ export function isFirstPartyOnlyFormat(format: PlacementFormat): boolean {
  * canonicalises first and a legacy id resolves exactly as its new name.
  */
 const ORIGINAL_PLACEMENT_SLOTS = [
-  ...IOS_AD_PLACEMENTS.map(({ id }) => ({
-    id,
+  ...IOS_AD_PLACEMENTS.map((slot) => ({
+    id: slot.id,
     surface: IOS_AD_SURFACE,
-    available: true,
+    available: 'available' in slot ? slot.available : true,
     format: 'inline' as const,
   })),
-  ...ANDROID_AD_PLACEMENTS.map(({ id }) => ({
-    id,
+  ...ANDROID_AD_PLACEMENTS.map((slot) => ({
+    id: slot.id,
     surface: ANDROID_AD_SURFACE,
-    available: true,
+    available: 'available' in slot ? slot.available : true,
     format: 'inline' as const,
   })),
   {
@@ -328,6 +328,14 @@ const ORIGINAL_PLACEMENT_SLOTS = [
     id: 'Inline-After-Agent-CLI',
     surface: 'cli_chat',
     available: true,
+    format: 'inline',
+  },
+  // The CLI's one-line link after an answer. Dark until the ad network
+  // approves the format (see #10807); not self-serve.
+  {
+    id: 'Inline-Link-After-Agent-CLI',
+    surface: 'cli_chat',
+    available: false,
     format: 'inline',
   },
   // Desktop's inline slot -- the largest single placement by fill volume.
@@ -680,6 +688,9 @@ const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
   'Desktop-Intermission': 'Desktop — Intermission',
   'Desktop-Intermission:web': 'Web — Intermission',
   'Inline-Link-After-Agent-Desktop': 'Desktop — Inline link',
+  'Inline-Link-After-Agent-CLI': 'CLI — Inline link',
+  'Inline-Link-After-Agent-iOS': 'iOS — Inline link',
+  'Inline-Link-After-Agent-Android': 'Android — Inline link',
   'Above-Input-CLI': 'CLI — Dock',
   // The splitter would render these "Desktop Partner Skill Picker", which
   // names the id rather than the slot. An advertiser reading a breakdown row

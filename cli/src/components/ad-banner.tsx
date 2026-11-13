@@ -22,6 +22,7 @@ import { isOpenableWebUrl, safeOpen } from '../utils/open-url'
 import React, { useState, useMemo, useEffect } from 'react'
 
 import { greptileTerminalColors } from '../ads/partner-brand'
+import { inlineLinkText, CLI_INLINE_LINK_MAX_CHARS } from '../ads/inline-link-ad'
 import { layoutTruncated } from '../ads/ad-engagement'
 import {
   reportInlineCardDrawn,
@@ -50,6 +51,8 @@ interface ChoiceAdBannerProps {
 // subtracts this from the model picker's height budget.
 export const AD_CARD_HEIGHT = 5
 export const INLINE_AD_CARD_HEIGHT = 4 // border-top + header row + detail row + border-bottom
+/** The disclosure after the inline link ad's copy. */
+const INLINE_LINK_DISCLOSURE = ` ${INLINE_AD_DISCLOSURE}`
 
 // Layout lives in `common` so the advertiser campaign builder's creative
 // preview fits copy exactly the way this renderer does. Re-exported here
@@ -196,11 +199,16 @@ function columnWidths(count: number, availableWidth: number): number[] {
  * inline transcript card reports it only once its rows have stayed inside the
  * transcript viewport for the dwell (`useAdEngagement`'s `onSeen`), or on a
  * click, whichever comes first.
+ *
+ * The `link` variant is the one-line inline link ad (`inlineStyle: 'link'`,
+ * placement `Inline-Link-After-Agent-CLI`): the copy underlined, then a dim
+ * "Ad". It is measured, seen, yielded to and clicked exactly as the inline
+ * card is; only the drawing differs.
  */
 export const AdCard: React.FC<{
   ad: AdResponse
   width: number
-  variant?: 'card' | 'inline'
+  variant?: 'card' | 'inline' | 'link'
   onClick?: (ad: AdResponse) => void
   onImpression?: (ad: AdResponse) => void
 }> = ({ ad, width, variant = 'card', onClick, onImpression }) => {
@@ -211,7 +219,8 @@ export const AdCard: React.FC<{
     : baseTheme
   const [isHovered, setIsHovered] = useState(false)
 
-  const isInline = variant === 'inline'
+  // Both transcript variants: the card and the link.
+  const isInline = variant === 'inline' || variant === 'link'
   useEffect(() => {
     if (isInline) return
     onImpression?.(ad)
@@ -234,7 +243,18 @@ export const AdCard: React.FC<{
       Math.max(0, width - 8 - AD_REPORT_CONTROL_COLUMNS),
     )
   }
-  const card = variant === 'inline' ? null : getCardAdLayout(ad, width)
+  // The link's text, fitted to the row beside its " Ad" and report control.
+  const linkText =
+    variant === 'link'
+      ? inlineLinkText(
+          ad,
+          Math.min(
+            CLI_INLINE_LINK_MAX_CHARS,
+            width - INLINE_LINK_DISCLOSURE.length - AD_REPORT_CONTROL_COLUMNS,
+          ),
+        )
+      : null
+  const card = variant === 'card' ? getCardAdLayout(ad, width) : null
   if (card?.headline) {
     card.headline = truncateToWidth(
       card.headline,
@@ -244,8 +264,12 @@ export const AdCard: React.FC<{
   // An inline card scrolls with the transcript and is measured; the dock and
   // the landing screen's columns sit outside any scrollbox.
   const engagement = useAdEngagement(ad.impUrl, {
-    placement: variant === 'inline' ? 'measured' : 'pinned',
-    truncated: inlineLayout
+    placement: isInline ? 'measured' : 'pinned',
+    truncated: linkText !== null
+      ? layoutTruncated([
+          [inlineLinkText(ad, Number.MAX_SAFE_INTEGER), linkText],
+        ])
+      : inlineLayout
       ? layoutTruncated([
           [
             (ad.title ?? '').trim() ||
@@ -289,6 +313,40 @@ export const AdCard: React.FC<{
       setIsHovered(false)
       engagement.onHover(false)
     },
+  }
+
+  if (linkText !== null) {
+    return (
+      <Button
+        {...buttonProps}
+        style={{
+          width,
+          height: 1,
+          flexDirection: 'row',
+          overflow: 'hidden',
+        }}
+      >
+        <text
+          style={{
+            fg: isHovered ? theme.primary : theme.link,
+            flexShrink: 1,
+            wrapMode: 'none',
+          }}
+          attributes={TextAttributes.UNDERLINE}
+        >
+          {linkText}
+        </text>
+        <box style={{ flexDirection: 'row', flexShrink: 0 }}>
+          <text
+            style={{ fg: theme.muted, wrapMode: 'none' }}
+            attributes={TextAttributes.DIM}
+          >
+            {INLINE_LINK_DISCLOSURE}
+          </text>
+          <AdReportButton ad={{ ...ad, surface: 'cli' }} color={theme.muted} />
+        </box>
+      </Button>
+    )
   }
 
   if (inlineLayout) {

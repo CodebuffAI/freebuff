@@ -11,6 +11,13 @@ export const ANDROID_AD_PLACEMENTS = [
     id: 'Inline-After-Agent-Android',
     label: 'Coding · after an answer',
   },
+  // The one-line link at the end of a coding answer; served when the
+  // `inlineAdStyle` policy arm is `link`. Operator-run, not self-serve.
+  {
+    id: 'Inline-Link-After-Agent-Android',
+    label: 'Coding · inline link after an answer',
+    available: false,
+  },
 ] as const
 
 export function isAndroidAdPlacement(id: string | null | undefined): boolean {

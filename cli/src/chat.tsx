@@ -47,6 +47,7 @@ import {
 import { PartnerAdRow } from './components/partner-ad-line'
 import { useComposerIntentAd } from './ads/use-composer-intent'
 import { CLI_PARTNER_PLACEMENT_IDS } from './ads/partner-ads'
+import { CLI_INLINE_LINK_PLACEMENT_ID } from './ads/inline-link-ad'
 import {
   reportDockHeld,
   useInlineCardOnScreen,
@@ -310,6 +311,9 @@ export const Chat = ({
     // Canonical ids (COD-1043; legacy `CLI-Chat-Inline`, `Single-Ad-Unit-1`):
     // the server maps them to the registered Gravity slugs.
     inlinePlacementId: 'Inline-After-Agent-CLI',
+    // The one-line link in place of the card: only when the policy says
+    // `link` and the CLI's own gate (`CLI_INLINE_LINK_AD_LIVE`) is on.
+    inlineLinkPlacementId: CLI_INLINE_LINK_PLACEMENT_ID,
     // Keep the rotating above-input slot separate for reporting continuity.
     slotPlacementId: 'Above-Input-CLI',
     // The dock holds that slot while a proposal does: an ad fetched for it

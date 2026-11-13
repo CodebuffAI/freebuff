@@ -265,7 +265,7 @@ export const BlocksRenderer = memo(
           key={`response-ad-${messageId}`}
           ad={ad}
           width={Math.max(20, availableWidth - RESPONSE_AD_WIDTH_INSET)}
-          variant="inline"
+          variant={ad.inlineStyle === 'link' ? 'link' : 'inline'}
           onClick={onAdClick}
           onImpression={onAdImpression}
         />

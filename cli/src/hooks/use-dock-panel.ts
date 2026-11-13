@@ -83,6 +83,17 @@ export function getSessionDisplayPlacementIds(): readonly string[] | null {
   return sessionDisplayPlacementIds
 }
 
+/**
+ * The policy's `inlineAdStyle` (`card` | `link`), or `null` while the policy
+ * is unresolved. Read only through `cliInlineAdStyle`
+ * (`ads/inline-link-ad.ts`), which also requires the CLI's own gate.
+ */
+let sessionInlineAdStyle: 'card' | 'link' | null = null
+
+export function getSessionInlineAdStyle(): 'card' | 'link' | null {
+  return sessionInlineAdStyle
+}
+
 /** The one in-flight policy fetch, so concurrent askers share an answer. */
 let policyRequest: Promise<CliDockArm> | null = null
 
@@ -124,6 +135,7 @@ export function resetAdPolicySession(): void {
   sessionDockArm = null
   sessionPartnerPlacementIds = null
   sessionDisplayPlacementIds = null
+  sessionInlineAdStyle = null
   policyRequest = null
 }
 
@@ -163,7 +175,10 @@ export async function fetchDockArm(
       dockArm?: unknown
       partnerPlacementIds?: unknown
       displayPlacementIds?: unknown
+      inlineAdStyle?: unknown
     }
+    // Anything but `link` (an older server, a missing field) is the card.
+    sessionInlineAdStyle = data?.inlineAdStyle === 'link' ? 'link' : 'card'
     sessionPartnerPlacementIds = policyPlacementIds(data?.partnerPlacementIds)
     sessionDisplayPlacementIds = policyPlacementIds(data?.displayPlacementIds)
     return data?.dockArm === 'expandable' ? 'expandable' : 'control'
@@ -171,6 +186,7 @@ export async function fetchDockArm(
     logger.debug({ err }, '[ads] Failed to fetch dock policy')
     sessionPartnerPlacementIds = []
     sessionDisplayPlacementIds = []
+    sessionInlineAdStyle = 'card'
     return 'control'
   }
 }

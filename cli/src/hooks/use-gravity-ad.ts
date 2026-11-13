@@ -64,6 +64,8 @@ import { RESPONSE_AD_END_SLOT_COUNT } from '../utils/response-ad-positions'
 
 import type { ChatMessage } from '../types/chat'
 import type { DockClickContext } from './use-dock-panel'
+import { getSessionInlineAdStyle } from './use-dock-panel'
+import { inlineAdRequestPlan } from '../ads/inline-link-ad'
 
 const AD_ROTATION_INTERVAL_MS = 60 * 1000 // 60 seconds per ad
 /**
@@ -409,6 +411,11 @@ export type AdResponse = {
    */
   brandColor?: string
   brandInk?: string
+  /**
+   * Set only on an end-of-answer ad auctioned for the one-line link
+   * (`Inline-Link-After-Agent-CLI`); absent means the card. Client-side only.
+   */
+  inlineStyle?: 'link'
 }
 
 /**
@@ -753,10 +760,17 @@ type GravityAdOptions = GravityAdOptionsBase &
         inline: true
         /** Reusable provider placement id for every lazy inline auction. */
         inlinePlacementId: string
+        /**
+         * The placement for the one-line link that replaces the card when
+         * the policy says `link` AND `CLI_INLINE_LINK_AD_LIVE` is on
+         * (`ads/inline-link-ad.ts`). Ignored while the gate is off.
+         */
+        inlineLinkPlacementId?: string
       }
     | {
         inline?: false
         inlinePlacementId?: never
+        inlineLinkPlacementId?: never
       }
   )
 
@@ -775,6 +789,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
   const surface = options?.surface
   const inline = options?.inline ?? false
   const inlinePlacementId = options?.inlinePlacementId
+  const inlineLinkPlacementId = options?.inlineLinkPlacementId
   const slotPlacementId = options?.slotPlacementId
   // Read by the tick through a ref, so pausing needs no timer restart.
   const slotPausedRef = useRef(false)
@@ -1405,6 +1420,13 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       return
     }
     ctrl.deferredInlineRequests.delete(messageId)
+    // Card or link, decided once per auction. With the CLI gate off this is
+    // always the card placement, so the request is exactly the card's.
+    const plan = inlineAdRequestPlan({
+      cardPlacementId: inlinePlacementId,
+      linkPlacementId: inlineLinkPlacementId,
+      policyStyle: getSessionInlineAdStyle(),
+    })
     const previousEligibleCount = ctrl.eligibleSlotCounts.get(messageId) ?? 0
     if (count > previousEligibleCount) {
       ctrl.eligibleSlotCounts.set(messageId, count)
@@ -1415,7 +1437,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
         pool_size: RESPONSE_AD_END_SLOT_COUNT,
         provider,
         surface,
-        placement_id: inlinePlacementId,
+        placement_id: plan.placementId,
         is_freebuff: IS_FREEBUFF,
       }
       trackInlineAdEvent(
@@ -1433,10 +1455,17 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
         // beside it, so ask for the network only (dropped if ours comes back).
         const networkAdInView = cardRequestNeedsNetworkHint()
         const result = await fetchAd({
-          placementId: inlinePlacementId,
+          placementId: plan.placementId,
           ...(networkAdInView ? { networkAdInView } : {}),
         })
-        return result && 'ads' in result ? (result.ads[0] ?? null) : null
+        const ad = result && 'ads' in result ? (result.ads[0] ?? null) : null
+        if (!ad || plan.style !== 'link') return ad
+        // Drawn as the link, and its view acknowledged under the link's id.
+        return {
+          ...ad,
+          placementId: ad.placementId ?? plan.placementId,
+          inlineStyle: 'link' as const,
+        }
       },
       onAd: (ad) => {
         // Only the newest answer's card is drawn: one card on screen at a
