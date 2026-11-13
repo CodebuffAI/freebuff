@@ -844,6 +844,23 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   /** A Gravity no-fill that was a 205 release, which opens our paid first-party
    * legs. False on a 204 no-fill, which leaves the slot to house ads only. */
   gravity_no_fill_released: 'boolean',
+  /**
+   * Which identity signals the Gravity request carried, as presence flags
+   * (`gravity-signal-flags.ts`), never their values. Present only when
+   * Gravity was actually asked; absent when `gravity_outcome` is
+   * `not_attempted` and on rows logged before 2026-11-13.
+   */
+  gravity_signal_messages: 'boolean',
+  gravity_signal_session_id: 'boolean',
+  gravity_signal_user_id: 'boolean',
+  gravity_signal_user_id_top_level: 'boolean',
+  gravity_signal_email_hash: 'boolean',
+  gravity_signal_phone_hash: 'boolean',
+  gravity_signal_user_agent: 'boolean',
+  gravity_signal_ip: 'boolean',
+  gravity_signal_os: 'boolean',
+  gravity_signal_device_type: 'boolean',
+  gravity_signal_advertising_id: 'boolean',
   selection_reason: 'string',
   ad_count: 'number',
   surface: 'string',
