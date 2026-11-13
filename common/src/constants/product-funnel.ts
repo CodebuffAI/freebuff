@@ -396,6 +396,12 @@ export const productFunnelPropertiesSchema = z
       .optional(),
     /** `turn_review:shown`: whether the review offered the "Code review" pill. */
     review_offers_code_review: z.boolean().optional(),
+    /** `turn_review:shown`: whether the review offered the "Brainstorm follow-ups" pill. */
+    review_offers_brainstorm: z.boolean().optional(),
+    /** `turn_review:shown`: how many buttons the review offered. */
+    review_action_count: z.number().int().min(0).max(9).optional(),
+    /** `turn_review:selected`: whether the button was "Brainstorm follow-ups" (a `next` kind). */
+    review_action_brainstorm: z.boolean().optional(),
     selection_kind: z
       .enum([
         'default',

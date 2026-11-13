@@ -62,6 +62,14 @@ export const TURN_REVIEW_METADATA_KEY = 'turn_review'
 export const TURN_REVIEW_TIMEOUT_MS = 10 * 60_000
 
 export const MAX_TURN_REVIEW_ACTIONS = 5
+
+/** The label of the button a review offers once a turn finishes a feature or fix. */
+export const BRAINSTORM_FOLLOW_UPS_LABEL = 'Brainstorm follow-ups'
+
+/** Whether an action is the "Brainstorm follow-ups" button, so analytics can count it apart from other next steps. */
+export function isBrainstormAction(action: Pick<TurnReviewAction, 'label'>): boolean {
+  return action.label.trim().toLowerCase() === BRAINSTORM_FOLLOW_UPS_LABEL.toLowerCase()
+}
 const MAX_LABEL_CHARS = 60
 const MAX_PROMPT_CHARS = 1_000
 const MAX_REASON_CHARS = 160
@@ -82,6 +90,7 @@ Turn the answers into at most ${MAX_TURN_REVIEW_ACTIONS} actions, the most valua
 - "label": two to five words that say what the button does, like "Cut the retry wrapper" or "Try a single query".
 - "prompt": what the user would send, in their voice. It must stand alone, because the agent that receives it never sees this review: name what to change or try and why, in one or two sentences, and leave the how to the agent.
 When the turn changed code, include an action of kind "review" labeled "Code review" whose prompt asks the agent to review its own change with fresh eyes: switch to a better alternative where there is one, simplify the code, remove unnecessary cases, and cut anything not needed, for the cleanest, most maintainable result.
+When the turn finished a feature or fix, such as merging a pull request or committing the change, include an action of kind "next" labeled "${BRAINSTORM_FOLLOW_UPS_LABEL}" whose prompt asks the agent to use the whole conversation as context and think up the most valuable follow-up ideas, including new ones no one has mentioned yet rather than only restating what was already discussed, each with why it is worth doing, ranked by value, without starting on any of them.
 Every action, and "nextPrompt", must be something the user could sensibly send as their very next message, right now. Never offer a step that has to wait on something that has not happened yet, such as a merge, a deploy, a release, a review, or data arriving, like "Re-measure after deploy" while the pull request is still open: no one clicks it now. Offer only what the agent can start on as soon as it is sent.
 Do not offer what was already done or declined, or two buttons that do the same thing.
 

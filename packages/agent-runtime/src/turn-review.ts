@@ -6,6 +6,7 @@
  */
 
 import {
+  isBrainstormAction,
   readTurnReview,
   TURN_REVIEW_METADATA_KEY,
   TURN_REVIEW_PROMPT,
@@ -86,6 +87,7 @@ export async function reviewTurn(params: {
           finish_reason: finishReason,
           verdict: review?.verdict ?? undefined,
           action_count: review?.actions.length ?? 0,
+          offers_brainstorm: review?.actions.some(isBrainstormAction) ?? false,
           duration_ms: Date.now() - started,
           ...(usage
             ? {
