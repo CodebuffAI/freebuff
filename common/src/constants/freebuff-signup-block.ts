@@ -78,8 +78,12 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
     'Please complete the verification check on the sign-in page and try again. If it never appeared, an ad blocker or network filter may be blocking www.google.com/recaptcha.',
   recaptcha_invalid:
     'That verification check could not be confirmed. Please try again.',
+  // Since 2026-11-12 an emailed code for a Gmail or Outlook alias signs in to
+  // the inbox's one account, so this is left for an inbox with two or more
+  // accounts, an alias on another provider, and OAuth sign-ups: say which
+  // address to use, not "sign in" (sign-in and sign-up are one email box).
   mailbox_already_registered:
-    'An account already exists for this email address. Try signing in instead.',
+    'This inbox already has a Freebuff account under another spelling of the address (dots or a +label). Sign in with the address you first used, or with Google, GitHub or Apple if that is how you signed up.',
   privacy_egress:
     'Accounts cannot be created over a VPN, proxy, or hosting provider. Please turn it off and try again — you can turn it back on afterwards.',
   untrusted_client_ip:
