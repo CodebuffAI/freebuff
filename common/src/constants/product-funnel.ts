@@ -389,8 +389,8 @@ export const productFunnelPropertiesSchema = z
     /** `turn_review:selected`: which button, from 0 (the most valuable). */
     review_action: z.number().int().min(0).max(9).optional(),
     /** `turn_review:selected`: a fix to the change, the "Code review" pill, a
-     *  next step beyond it, or the recommended next message taken into the
-     *  composer with Tab. */
+     *  next step beyond it, the "Brainstorm follow-ups" pill, or the
+     *  recommended next message taken into the composer with Tab. */
     review_action_kind: z
       .enum([...TURN_REVIEW_ACTION_KINDS, 'next_prompt'])
       .optional(),
@@ -400,8 +400,6 @@ export const productFunnelPropertiesSchema = z
     review_offers_brainstorm: z.boolean().optional(),
     /** `turn_review:shown`: how many buttons the review offered. */
     review_action_count: z.number().int().min(0).max(9).optional(),
-    /** `turn_review:selected`: whether the button was "Brainstorm follow-ups" (a `next` kind). */
-    review_action_brainstorm: z.boolean().optional(),
     selection_kind: z
       .enum([
         'default',
