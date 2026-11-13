@@ -5,8 +5,8 @@ export type JSONValue =
   | string
   | number
   | boolean
-  | JSONObject
-  | JSONArray
+  | Readonly<JSONObject>
+  | readonly JSONValue[]
 export const jsonValueSchema: z.ZodType<JSONValue> = z.lazy(() =>
   z.union([
     z.null(),
@@ -26,4 +26,4 @@ export type JSONObject = { [key in string]: JSONValue | undefined }
 export const jsonArraySchema: z.ZodType<JSONArray> = z.lazy(() =>
   z.array(jsonValueSchema),
 )
-export type JSONArray = JSONValue[]
+export type JSONArray = readonly JSONValue[]
