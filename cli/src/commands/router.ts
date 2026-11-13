@@ -6,6 +6,7 @@ import { runTerminalCommand } from '@codebuff/sdk'
 import {
   dispatchSkillPrompt,
   findCommand,
+  sendOrQueuePrompt,
   type RouterParams,
   type CommandResult,
 } from './command-registry'
@@ -335,10 +336,7 @@ export async function routeUserPrompt(
     setInputFocused(true)
     inputRef.current?.focus()
 
-    sendMessage({ content: buildPlanPrompt(trimmed), agentMode })
-    setTimeout(() => {
-      scrollToLatest()
-    }, 0)
+    sendOrQueuePrompt(params, buildPlanPrompt(trimmed))
     return
   }
 
@@ -351,10 +349,7 @@ export async function routeUserPrompt(
     setInputFocused(true)
     inputRef.current?.focus()
 
-    sendMessage({ content: buildInterviewPrompt(trimmed), agentMode })
-    setTimeout(() => {
-      scrollToLatest()
-    }, 0)
+    sendOrQueuePrompt(params, buildInterviewPrompt(trimmed))
     return
   }
 
@@ -399,10 +394,7 @@ export async function routeUserPrompt(
     setInputFocused(true)
     inputRef.current?.focus()
 
-    sendMessage({ content: buildReviewPrompt('custom', trimmed), agentMode })
-    setTimeout(() => {
-      scrollToLatest()
-    }, 0)
+    sendOrQueuePrompt(params, buildReviewPrompt('custom', trimmed))
     return
   }
 
