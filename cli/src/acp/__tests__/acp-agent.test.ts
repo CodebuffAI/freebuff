@@ -4,17 +4,25 @@ import { FreebuffAcpAgent } from '../acp-agent'
 
 import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
 
-function agent(runTurn?: unknown) {
+/** The real constructor shape: a logger nested under `logger`, not spread at
+ *  the top level. The previous version passed a bare logger and compiled only
+ *  because the whole object was cast to `never`, which is exactly the bug it
+ *  was supposed to catch. */
+function agent(runTurn?: (request: never) => Promise<{ previousRun: null }>) {
+  const calls: Array<{ level: string; data: unknown }> = []
   const backend = new FreebuffAcpAgent({
-    runTurn: runTurn as never,
-    info: () => {},
-    error: () => {},
-    warn: () => {},
-    debug: () => {},
-    child: () => ({}) as never,
-  } as never)
+    logger: {
+      info: (data: unknown) => calls.push({ level: 'info', data }),
+      error: (data: unknown) => calls.push({ level: 'error', data }),
+      warn: (data: unknown) => calls.push({ level: 'warn', data }),
+      debug: (data: unknown) => calls.push({ level: 'debug', data }),
+      fatal: (data: unknown) => calls.push({ level: 'fatal', data }),
+      trace: (data: unknown) => calls.push({ level: 'trace', data }),
+    } as never,
+    ...(runTurn ? { runTurn: runTurn as never } : {}),
+  })
   const sessionId = backend.newSession('/tmp/project')
-  return { backend, sessionId }
+  return { backend, sessionId, calls }
 }
 
 describe('ACP event mapping', () => {

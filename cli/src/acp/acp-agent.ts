@@ -27,9 +27,18 @@ import { RequestError } from '@agentclientprotocol/sdk'
 import { logger } from '../utils/logger'
 import { getCodebuffClient } from '../utils/codebuff-client'
 import { loadAgentDefinitions } from '../utils/local-agent-registry'
-import { AGENT_MODE_TO_COST_MODE, IS_FREEBUFF } from '../utils/constants'
-import { freebuffSessionMetadata } from '../utils/freebuff-session-identity'
-import { getFreebuffInstanceId } from '../hooks/use-freebuff-session'
+import {
+  AGENT_MODE_TO_COST_MODE,
+  AGENT_MODE_TO_ID,
+  IS_FREEBUFF,
+} from '../utils/constants'
+import {
+  clientDescriptorMetadata,
+  freebuffSessionMetadata,
+} from '../utils/freebuff-session-identity'
+import { AcpSessionError, acpFreebuffSession } from './freebuff-session'
+
+import type { AgentMode } from '../utils/constants'
 
 import type { AgentContext } from '@agentclientprotocol/sdk'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
@@ -76,6 +85,8 @@ export type AcpUpdate =
 export type AcpTurnRequest = {
   prompt: string
   cwd: string
+  /** LITE by default: the only mode a free account can buy. */
+  mode: AgentMode
   previousRun: RunState | null
   signal: AbortSignal
   onEvent: (event: PrintModeEvent) => void | Promise<void>
@@ -87,6 +98,7 @@ export type AcpTurnResult = {
 
 type AcpSession = {
   cwd: string
+  mode: AgentMode
   previousRun: RunState | null
   /** The in-flight turn's abort, so `session/cancel` reaches the SDK run. */
   pendingPrompt: AbortController | null
@@ -99,19 +111,24 @@ export class FreebuffAcpAgent {
   private readonly logger: Logger
   /** Runs one turn. Replaced in tests; the default is the SDK run. */
   private readonly runTurn: (request: AcpTurnRequest) => Promise<AcpTurnResult>
+  /** Mode new sessions start in. ACP can override it per session later. */
+  private readonly defaultMode: AgentMode
 
   constructor(options: {
     logger?: Logger
     runTurn?: (request: AcpTurnRequest) => Promise<AcpTurnResult>
+    mode?: AgentMode
   } = {}) {
     this.logger = options.logger ?? logger
     this.runTurn = options.runTurn ?? defaultRunTurn
+    this.defaultMode = options.mode ?? 'LITE'
   }
 
-  newSession(cwd: string): string {
+  newSession(cwd: string, mode: AgentMode = this.defaultMode): string {
     const sessionId = crypto.randomUUID()
     this.sessions.set(sessionId, {
       cwd,
+      mode,
       previousRun: null,
       pendingPrompt: null,
       openToolCalls: new Set(),
@@ -136,7 +153,7 @@ export class FreebuffAcpAgent {
   /** PrintModeEvent -> ACP update, or null when the event carries nothing a
    *  client can show. Pure: no I/O, so it is directly unit-testable. */
   eventToUpdate(
-    sessionId: string,
+    _sessionId: string,
     event: PrintModeEvent,
   ): { update: AcpUpdate } | { error: string } | null {
     switch (event.type) {
@@ -157,7 +174,6 @@ export class FreebuffAcpAgent {
           },
         }
       case 'tool_call': {
-        this.sessions.get(sessionId)?.openToolCalls.add(event.toolCallId)
         return {
           update: {
             sessionUpdate: 'tool_call',
@@ -171,7 +187,6 @@ export class FreebuffAcpAgent {
         }
       }
       case 'tool_result': {
-        this.sessions.get(sessionId)?.openToolCalls.delete(event.toolCallId)
         const content: ContentBlock[] = []
         for (const part of event.output) {
           if (part.type === 'json') {
@@ -214,9 +229,17 @@ export class FreebuffAcpAgent {
     sessionId: string,
     promptBlocks: ContentBlock[],
     cx: AgentContext,
-  ): Promise<'end_turn' | 'cancelled'> {
+  ): Promise<'end_turn' | 'cancelled' | 'refusal'> {
     const session = this.sessions.get(sessionId)
     if (!session) throw RequestError.sessionNotFound(sessionId)
+    // Two concurrent turns would interleave their updates and race
+    // `previousRun`; ACP clients are expected to cancel first.
+    if (session.pendingPrompt) {
+      throw RequestError.invalidParams(
+        {},
+        'This session is already running a turn. Cancel it before sending another.',
+      )
+    }
 
     const prompt = promptBlocks
       .map((b) => (b.type === 'text' ? b.text : ''))
@@ -241,10 +264,18 @@ export class FreebuffAcpAgent {
       const result = await this.runTurn({
         prompt,
         cwd: session.cwd,
+        mode: session.mode,
         previousRun: session.previousRun,
         signal: abort.signal,
         onEvent: async (event: PrintModeEvent) => {
           if (abort.signal.aborted) return
+          // Track the calls this turn leaves open so they can be closed at the
+          // end; the mapping itself stays pure.
+          if (event.type === 'tool_call') {
+            session.openToolCalls.add(event.toolCallId)
+          } else if (event.type === 'tool_result') {
+            session.openToolCalls.delete(event.toolCallId)
+          }
           const mapped = this.eventToUpdate(sessionId, event)
           if (!mapped) return
           if ('error' in mapped) {
@@ -267,6 +298,15 @@ export class FreebuffAcpAgent {
 
       session.previousRun = result.previousRun
       return abort.signal.aborted ? 'cancelled' : 'end_turn'
+    } catch (error) {
+      // A refused admission is not a protocol failure: the editor should keep
+      // the session and show why, so the user can fix the account state and
+      // send again instead of reconnecting the agent.
+      if (error instanceof AcpSessionError) {
+        await notify({ sessionUpdate: 'notice', notice: error.message })
+        return 'refusal'
+      }
+      throw error
     } finally {
       session.pendingPrompt = null
     }
@@ -284,27 +324,41 @@ const defaultRunTurn = async (request: AcpTurnRequest): Promise<AcpTurnResult> =
   if (!client) throw RequestError.authRequired({})
 
   const agentDefinitions = loadAgentDefinitions()
-  const freebuffInstanceId = IS_FREEBUFF ? getFreebuffInstanceId() : undefined
+
+  // No renderer means no `useFreebuffSession`: nothing has admitted the hour
+  // the TUI would have claimed, and the backend refuses an unadmitted free
+  // completion. Claim it here and keep it for the life of the process.
+  const admission = IS_FREEBUFF
+    ? await acpFreebuffSession.ensure(request.signal)
+    : null
 
   const result = (await client.run({
-    agent: 'base2-free',
+    agent: AGENT_MODE_TO_ID[request.mode],
     prompt: request.prompt,
     agentDefinitions,
     previousRun: request.previousRun ?? undefined,
     cwd: request.cwd,
     signal: request.signal,
-    costMode: AGENT_MODE_TO_COST_MODE.LITE,
-    ...(freebuffInstanceId
-      ? { extraCodebuffMetadata: freebuffSessionMetadata(freebuffInstanceId) }
+    costMode: AGENT_MODE_TO_COST_MODE[request.mode],
+    ...(admission
+      ? {
+          extraCodebuffMetadata: {
+            ...freebuffSessionMetadata(admission.instanceId),
+            ...clientDescriptorMetadata(request.prompt),
+          },
+        }
       : {}),
     handleEvent: request.onEvent,
   } as never)) as RunState
 
   if (result.output?.type === 'error' && !request.signal.aborted) {
+    // A failed run still resolves the turn. Surface it, or the client shows a
+    // successful turn that produced nothing.
     logger.warn(
       { error: result.output.message },
       '[acp] turn ended with an error',
     )
+    await request.onEvent({ type: 'error', message: result.output.message })
   }
   return { previousRun: result }
 }
