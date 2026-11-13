@@ -68,8 +68,12 @@ export function parseArgs({
         "Load this repository's .agents files and mcp.json without asking (for CI)",
       )
       .addArgument(
-        new Argument('[command]', 'Command to run: login, or doctor to check this computer for common problems').choices(['login', 'doctor']),
+        new Argument(
+          '[prompt...]',
+          'Command to run (login, or doctor), or an initial prompt to send to the agent',
+        ),
       )
+      .allowExcessArguments(true)
       .helpOption('-h, --help', 'Show this help message')
   } else {
     // Codebuff: full CLI with all options
@@ -128,9 +132,21 @@ export function parseArgs({
     if (options.plan) initialMode = 'PLAN'
   }
 
+  // Freebuff accepts a first task the way Codebuff does: bare words that are not
+  // one of its commands become the session's initial prompt, so a launcher can
+  // start the session with its task instead of typing it into the TUI.
+  const freebuffCommands: readonly string[] = ['login', 'doctor']
+  const freebuffCommand =
+    isFreebuff && args[0] !== undefined && freebuffCommands.includes(args[0])
+      ? args[0]
+      : undefined
+
   return {
-    initialPrompt: !isFreebuff && args.length > 0 ? args.join(' ') : null,
-    command: args[0],
+    initialPrompt:
+      args.length > 0 && (!isFreebuff || freebuffCommand === undefined)
+        ? args.join(' ')
+        : null,
+    command: isFreebuff ? freebuffCommand : args[0],
     agent: options.agent,
     clearLogs: options.clearLogs || false,
     continue: Boolean(continueFlag),
