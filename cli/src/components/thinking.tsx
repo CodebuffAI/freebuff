@@ -38,21 +38,32 @@ export const Thinking = memo(
       )
     }
 
-    const width = Math.max(10, availableWidth ?? contentMaxWidth)
-    // Normalize content to single line for consistent preview (but preserve in expanded mode)
-    const normalizedContent = content.replace(/\n+/g, ' ').trim()
-    // Account for "..." prefix (3 chars) when calculating line widths
-    const effectiveWidth = width - 3
-    const { lines, hasMore } = getLastNVisualLines(
-      normalizedContent,
-      effectiveWidth,
-      PREVIEW_LINE_COUNT,
-    )
-    // In expanded mode, preserve original line breaks for proper markdown rendering
-    const expandedContent = content.replace(/\n\n+/g, '\n\n').trim()
-
     const showFull = thinkingCollapseState === 'expanded'
-    const showPreview = thinkingCollapseState === 'preview' && lines.length > 0
+    const isPreviewCandidate = thinkingCollapseState === 'preview'
+
+    let lines: string[] = []
+    let hasMore = false
+    if (isPreviewCandidate) {
+      const width = Math.max(10, availableWidth ?? contentMaxWidth)
+      // Normalize content to single line for consistent preview (but preserve in expanded mode)
+      const normalizedContent = content.replace(/\n+/g, ' ').trim()
+      // Account for "..." prefix (3 chars) when calculating line widths
+      const effectiveWidth = width - 3
+      const result = getLastNVisualLines(
+        normalizedContent,
+        effectiveWidth,
+        PREVIEW_LINE_COUNT,
+      )
+      lines = result.lines
+      hasMore = result.hasMore
+    }
+
+    // In expanded mode, preserve original line breaks for proper markdown rendering
+    const expandedContent = showFull
+      ? content.replace(/\n\n+/g, '\n\n').trim()
+      : ''
+
+    const showPreview = isPreviewCandidate && lines.length > 0
 
     const toggleIndicator =
       !isThinkingComplete ? '• '
