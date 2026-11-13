@@ -442,6 +442,10 @@ export function platformRequiresComment(platform: AdPlatform): boolean {
  * Reddit is paused (2026-10-13); its posts stay active for advertisers and
  * resume serving when it is removed here. An engagement already opened can
  * still be submitted.
+ *
+ * The pause covers the listings anyone could take. A campaign made in the
+ * Earn chat takes only accounts connected there (`requires_verified_account`)
+ * and is served on every platform the chat sells, Reddit included.
  */
 export const AD_PAUSED_PLATFORMS: readonly AdPlatform[] = ['reddit']
 
