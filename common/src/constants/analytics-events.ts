@@ -457,6 +457,22 @@ export enum AnalyticsEvent {
   FREEBUFF_HOME_INSTALL_GUIDE_EXPANDED = 'freebuff.home_install_guide_expanded',
   FREEBUFF_HOME_FAQ_OPENED = 'freebuff.home_faq_opened',
 
+  // Freebuff - Merch store (/store, freebuff/web/src/lib/merch/store-analytics.ts).
+  // Page views are PostHog's own $pageview. The purchase happens on Shopify's
+  // checkout, so it is not here: the cart carries `_posthog_distinct_id` to
+  // join an order back to its visitor.
+  FREEBUFF_STORE_CATEGORY_SELECTED = 'freebuff.store_category_selected',
+  FREEBUFF_STORE_PRODUCT_CLICKED = 'freebuff.store_product_clicked',
+  FREEBUFF_STORE_PRODUCT_VIEWED = 'freebuff.store_product_viewed',
+  FREEBUFF_STORE_OPTION_SELECTED = 'freebuff.store_option_selected',
+  FREEBUFF_STORE_PHOTO_SELECTED = 'freebuff.store_photo_selected',
+  FREEBUFF_STORE_ADD_TO_CART = 'freebuff.store_add_to_cart',
+  FREEBUFF_STORE_CART_OPENED = 'freebuff.store_cart_opened',
+  FREEBUFF_STORE_CART_QUANTITY_CHANGED = 'freebuff.store_cart_quantity_changed',
+  FREEBUFF_STORE_CART_ITEM_REMOVED = 'freebuff.store_cart_item_removed',
+  FREEBUFF_STORE_CHECKOUT_STARTED = 'freebuff.store_checkout_started',
+  FREEBUFF_STORE_FAQ_OPENED = 'freebuff.store_faq_opened',
+
   // Freebuff - Home hero: the visitor committed to a product (`tab`, `surface`,
   // `action`; see HeroTabs.tsx). A hero Desktop download is instead
   // FREEBUFF_DESKTOP_DOWNLOAD_CLICKED at HOME_HERO_DOWNLOAD_LOCATION.
