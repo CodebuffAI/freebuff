@@ -241,6 +241,12 @@ export function operationFailureMessage(operation: Operation): string {
   // Settled later from Cloudflare's state (web reconcile.ts) without landing.
   if (result?.error === 'cloudflare_outcome_unknown')
     return 'Cloudflare did not confirm the deployment. Publish again.'
+  // The server stopped before recording a result, then settled it the same way.
+  if (result?.error === 'request_interrupted')
+    return 'Freebuff was interrupted before it recorded the deployment. Publish again.'
+  // No upload starts 15 minutes into a deployment (web reconcile.ts).
+  if (result?.error === 'operation_deadline')
+    return 'The deployment ran out of time and was stopped before it went live. Publish again.'
   const provider = result?.provider
   if (provider?.stage === 'worker_upload' && provider.codes?.includes(10021))
     return 'Cloudflare could not start the built Worker: it failed startup validation. This usually means code that cannot run on Workers, such as a Node.js-only module.'

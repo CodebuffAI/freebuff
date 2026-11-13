@@ -286,6 +286,11 @@ test('failure messages come from receipt codes, never vendor prose', () => {
   expect(operationFailureMessage({ id: 'a', state: 'failed', result: {} })).toBe(
     'Cloudflare rejected the deployment.',
   )
+  // Ours, not Cloudflare's: never reported as a rejection.
+  for (const error of ['request_interrupted', 'operation_deadline'])
+    expect(
+      operationFailureMessage({ id: 'a', state: 'failed', result: { error } }),
+    ).toContain('Publish again')
 })
 
 test('Windows package shims use only fixed words', () => {
