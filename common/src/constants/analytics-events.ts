@@ -417,6 +417,10 @@ export enum AnalyticsEvent {
   // click) — a direct read on whether the click feedback is landing.
   FREEBUFF_DESKTOP_DOWNLOAD_CLICKED = 'freebuff.desktop_download_clicked',
 
+  // Freebuff - a phone tapped its own app store button on the homepage or the
+  // sign-in step. `store` is ios | android, `location` the button.
+  FREEBUFF_MOBILE_APP_CLICKED = 'freebuff.mobile_app_clicked',
+
   // Freebuff Web creation gate: the user's idea was screened as something Web
   // cannot build, and they clicked through to the surface we suggested.
   // `surface` is desktop | cli | unsupported. Pairs with the Convex
