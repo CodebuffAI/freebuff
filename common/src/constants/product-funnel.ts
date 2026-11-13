@@ -240,6 +240,10 @@ export const welcomeVariantSchema = z.enum([
   'flow_control',
   'flow_full',
   'flow_no_integrations',
+  // The same two arms after the flow went full screen with the app tour
+  // (2026-11-12): new names, so their rows never mix with the dialog's.
+  'flow_full_v2',
+  'flow_no_integrations_v2',
 ])
 /** Desktop's Get started checklist A/B (onboarding-checklist/model.ts): `control` installs never see the card. */
 export const checklistVariantSchema = z.enum(['control', 'checklist'])
@@ -249,6 +253,8 @@ export const checklistStepSchema = z.enum(['project', 'message', 'mobile', 'them
 export const welcomeStepSchema = z.enum([
   'unlocked',
   'build',
+  'modes',
+  'panel',
   'integrations',
   'mobile',
   'invite',
