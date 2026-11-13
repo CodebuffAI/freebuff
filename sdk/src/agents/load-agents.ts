@@ -115,6 +115,25 @@ const shouldSkipAgentDirectory = (name: string): boolean =>
   name === 'skills' ||
   name.startsWith('skills-')
 
+/**
+ * True for a subdirectory that is an installed package or a checkout rather
+ * than a folder the user keeps agent definitions in.
+ *
+ * Users vendor third-party skill repos, npm packages and git checkouts under
+ * `.agents`. Such a tree ships its own CLI entrypoints and tests, and the
+ * loader imports every candidate before it can look at the export shape, so
+ * the first matching file runs at startup: a pixelfx checker calling
+ * `process.exit()` and a Superpowers bootstrap test exiting on missing argv
+ * both took the CLI down before the prompt appeared. Nothing in such a tree is
+ * an agent definition the user wrote, so prune it during discovery instead of
+ * importing it. The scanned directory itself is never tested: an `.agents`
+ * directory may legitimately be a package too.
+ */
+const isInstalledPackageDirectory = (dir: string): boolean =>
+  fs.existsSync(path.join(dir, 'package.json')) ||
+  fs.existsSync(path.join(dir, 'node_modules')) ||
+  fs.existsSync(path.join(dir, '.git'))
+
 const isLoadableAgentFileName = (fileName: string): boolean => {
   const extension = path.extname(fileName).toLowerCase()
   return (
@@ -127,7 +146,8 @@ const isLoadableAgentFileName = (fileName: string): boolean => {
 /**
  * List every file under `dir` that `loadLocalAgents` would import: `.ts`,
  * `.tsx`, `.js`, `.mjs` or `.cjs`, minus `.d.ts` and test files, skipping
- * `skills/`, `scripts/`, `node_modules` and dot-directories. Hosts use this to
+ * `skills/`, `scripts/`, `node_modules`, dot-directories and subdirectories
+ * that are installed packages or checkouts. Hosts use this to
  * decide whether a repository-scoped `.agents` directory contains anything
  * executable before importing it.
  *
@@ -141,6 +161,7 @@ export const listLocalAgentFiles = (dir: string): string[] => {
       const fullPath = path.join(dir, entry.name)
       if (entry.isDirectory()) {
         if (shouldSkipAgentDirectory(entry.name)) continue
+        if (isInstalledPackageDirectory(fullPath)) continue
         files.push(...listLocalAgentFiles(fullPath))
         continue
       }
@@ -176,8 +197,7 @@ export const getDefaultAgentDirs = (): string[] => {
  * A caller that has not made that decision must not reach them through a
  * default (AB827V0 #070).
  */
-export const getUserAgentDir = (): string =>
-  path.join(os.homedir(), '.agents')
+export const getUserAgentDir = (): string => path.join(os.homedir(), '.agents')
 
 /**
  * Load agent definitions from `.agents` directories.

@@ -3,6 +3,10 @@
 ## Agents
 
 - Prompt/programmatic agents live in `.agents/` (programmatic agents use `handleSteps` generators).
+- Discovery skips a subdirectory that is an installed package or checkout
+  (`package.json`, `node_modules` or `.git`): vendored skill repos nest their
+  own CLI entrypoints and tests there, and the loader executes a file before it
+  can see whether it is an agent definition.
 - Generator functions are NOT sandboxed: the runtime `eval`s a `handleSteps` source string in the process that runs the agent (`packages/agent-runtime/src/run-programmatic-step.ts`); agent templates define tool access and subagents.
 
 ### Registry agents with executable `handleSteps` require publisher trust

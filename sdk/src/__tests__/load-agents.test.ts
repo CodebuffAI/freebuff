@@ -1,3 +1,4 @@
+import { spawnSync } from 'child_process'
 import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs'
 import os from 'os'
 import path from 'path'
@@ -374,6 +375,99 @@ describe('loadLocalAgents', () => {
 
       expect(result['real-agent']).toBeDefined()
       expect(existsSync(markerFile)).toBe(false)
+    })
+
+    test('skips installed package directories without importing their files', async () => {
+      mkdirSync(agentsDir, { recursive: true })
+      // An .agents directory can itself be a package; the boundary is the
+      // subdirectories, which is where vendored tooling lives.
+      writeFileSync(path.join(agentsDir, 'package.json'), '{}', 'utf8')
+
+      const markerFile = path.join(tempDir, 'vendored-side-effect')
+      const vendoredDirs = [
+        { dir: path.join(agentsDir, 'vendor', 'pixelfx'), packageJson: true },
+        { dir: path.join(agentsDir, 'checkout', 'superpowers'), git: true },
+        {
+          dir: path.join(agentsDir, 'workspace', 'tool-list'),
+          nodeModules: true,
+        },
+      ]
+      for (const { dir, packageJson, git, nodeModules } of vendoredDirs) {
+        mkdirSync(dir, { recursive: true })
+        if (packageJson)
+          writeFileSync(path.join(dir, 'package.json'), '{}', 'utf8')
+        if (git) mkdirSync(path.join(dir, '.git'))
+        if (nodeModules) mkdirSync(path.join(dir, 'node_modules'))
+        writeAgentFile(
+          dir,
+          'check.mjs',
+          `
+            const { writeFileSync } = require('fs')
+            writeFileSync(${JSON.stringify(markerFile)}, 'imported')
+          `,
+        )
+      }
+      writeAgentFile(
+        agentsDir,
+        'real-agent.ts',
+        `
+          export default {
+            id: 'real-agent',
+            displayName: 'Real Agent',
+            model: '${MODEL_NAME}'
+          }
+        `,
+      )
+
+      const result: LoadedAgents = await loadLocalAgents({
+        agentsPath: agentsDir,
+      })
+
+      expect(Object.keys(result)).toEqual(['real-agent'])
+      expect(existsSync(markerFile)).toBe(false)
+    })
+
+    test('a process.exit() in a package subdirectory cannot terminate the loader', async () => {
+      const pkgDir = path.join(agentsDir, 'vendor', 'exiting')
+      mkdirSync(path.join(pkgDir, 'tools'), { recursive: true })
+      writeFileSync(path.join(pkgDir, 'package.json'), '{}', 'utf8')
+      writeAgentFile(pkgDir, path.join('tools', 'check.mjs'), 'process.exit(7)')
+      writeAgentFile(
+        agentsDir,
+        'real-agent.ts',
+        `
+          export default {
+            id: 'real-agent',
+            displayName: 'Real Agent',
+            model: '${MODEL_NAME}'
+          }
+        `,
+      )
+
+      // Bounded child process: if discovery ever imports the exiting file again
+      // the child exits non-zero instead of taking the test runner with it.
+      const scriptPath = path.join(tempDir, 'run-loader.ts')
+      writeFileSync(
+        scriptPath,
+        `
+          import { loadLocalAgents } from ${JSON.stringify(
+            path.resolve('src/agents/load-agents.ts'),
+          )}
+          const agents = await loadLocalAgents({
+            agentsPath: ${JSON.stringify(agentsDir)},
+          })
+          console.log('LOADED:' + Object.keys(agents).join(','))
+        `,
+        'utf8',
+      )
+
+      const child = spawnSync(process.execPath, [scriptPath], {
+        encoding: 'utf8',
+        timeout: 60_000,
+      })
+
+      expect(child.status).toBe(0)
+      expect(child.stdout).toContain('LOADED:real-agent')
     })
 
     test('converts handleSteps function to string', async () => {
