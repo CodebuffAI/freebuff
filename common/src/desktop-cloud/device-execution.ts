@@ -4,6 +4,9 @@ import {
   SPONSORED_WINDOWS_EXECUTION_SURFACE,
 } from '../ads/sponsored-windows'
 import { CLAUDE_TRANSCRIPT_ID } from './claude-turn-marks'
+
+/** A Codex turn id (`turn/started`), as a side chat forks its parent's thread before it. */
+export const CODEX_TURN_ID = /^[a-zA-Z0-9_.:-]{1,128}$/
 import { devicePanelOperation } from './device-panels'
 import { deviceGitHubRequest } from './device-github'
 import { deviceLocalMcpCallRequest } from './local-mcp'
@@ -323,6 +326,13 @@ export const deviceHarnessRequest = z.discriminatedUnion('method', [
        * request (the schema is strict), never resuming the turns the user rolled back.
        */
       resumeSessionAt: z.string().regex(CLAUDE_TRANSCRIPT_ID).optional(),
+      /**
+       * With `forkSession`, a Codex side chat opened while its parent's turn ran: the branch keeps
+       * the thread up to before this turn (`thread/fork` `beforeTurnId`), so it holds no half-done
+       * turn. A Desktop without it refuses the request (the schema is strict), never forking the
+       * running turn in.
+       */
+      forkBeforeTurnId: z.string().regex(CODEX_TURN_ID).optional(),
       /**
        * A side chat's turn (history-store.ts `openSideChat`): read-only, with no Freebuff tools,
        * because its parent's agent is working in the same folder. A Desktop without it refuses
