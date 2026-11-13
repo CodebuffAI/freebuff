@@ -97,6 +97,9 @@ export const HOUSE_MOBILE_DOWNLOAD_URL = `${FREEBUFF_WEB_URL_PROD}/mobile`
  */
 export const HOUSE_IOS_APP_STORE_URL = FREEBUFF_IOS_APP_STORE_URL
 
+/** The Dark Mode Shirt's page in the merch store. */
+const HOUSE_STORE_SHIRT_URL = '/store/freebuff-dark-mode-shirt'
+
 /** One-time actions: one impression a day at most per campaign. */
 const DAILY = { maxImpressions: 1, windowMinutes: 24 * 60 } as const
 
@@ -400,6 +403,39 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     frequencyCap: DAILY,
     creatives: [
       creative('Help shape what Freebuff builds next', 'Answer a few questions about how you build.', 'Take the survey', '/account'),
+    ],
+  },
+  {
+    // The merch store (docs/freebuff-merch-store.md). Ungated and measured on
+    // clicks alone: orders are Shopify's and never reach our servers, so
+    // there is no purchase to attribute and no buyer to withhold it from.
+    // The price is the shirt's Shopify price on 2026-11-12; it can change
+    // there with no deploy, so a price change needs a `copyRevision` here.
+    id: 'house-growth-store-shirt-v1',
+    name: 'Dark Mode Shirt (house)',
+    gate: null,
+    targeting: 'all',
+    frequencyCap: DAILY,
+    creatives: [
+      creative('Freebuff now has merch!', 'Get yours: the Dark Mode logo tee, $15.', 'Get yours', HOUSE_STORE_SHIRT_URL),
+      creative('Rep Freebuff for $15', 'The Dark Mode logo tee, in Black Heather or Heather Forest.', 'Get the shirt', HOUSE_STORE_SHIRT_URL),
+      creative('Freebuff merch is here', 'Rep Freebuff for $15. Sizes XS to 4XL.', 'Get yours', HOUSE_STORE_SHIRT_URL),
+      creative('Get your Freebuff shirt', 'New in the store: the Dark Mode tee, $15.', 'Shop merch', HOUSE_STORE_SHIRT_URL),
+      creative('The Freebuff shirt, now in dark mode', 'The classic logo tee in two dark colors. $15.', 'Get the shirt', HOUSE_STORE_SHIRT_URL),
+    ],
+  },
+  {
+    // The whole store. No prices and no shipping claims, by Owen's review.
+    id: 'house-growth-store-v1',
+    name: 'Merch store (house)',
+    gate: null,
+    targeting: 'all',
+    frequencyCap: DAILY,
+    creatives: [
+      creative('The Freebuff store is open', 'Shirts, hoodies, stickers and more.', 'Shop the store', '/store'),
+      creative('Freebuff now has merch!', 'Stickers, shirts, hoodies and more. Get yours.', 'Get yours', '/store'),
+      creative('Freebuff stickers are here', 'Put the logo on your laptop.', 'Get stickers', '/store'),
+      creative('Rep Freebuff at your desk', 'Desk mats, water bottles, hoodies and tees in the store.', 'Shop the store', '/store'),
     ],
   },
   {
