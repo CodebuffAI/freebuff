@@ -24,12 +24,20 @@ export function getPathCompletion(inputPath: string): string | null {
     expandedPath = path.join(homeDir, expandedPath.slice(1))
   }
 
-  // If the path ends with /, we're completing inside that directory
+  // If the path ends with a separator, we're completing inside that directory
   // Otherwise, we're completing the last component
   let parentDir: string
   let partial: string
 
-  if (expandedPath.endsWith(path.sep)) {
+  // A trailing '/' is a directory boundary on every platform, but on Windows
+  // `path.sep` is '\\', so checking only the native separator treated
+  // `C:/Users/foo/` as a partial name and completed the parent directory
+  // instead of listing the one the user was already inside.
+  const endsWithSeparator =
+    expandedPath.endsWith(path.sep) ||
+    (path.sep === '\\' && expandedPath.endsWith('/'))
+
+  if (endsWithSeparator) {
     parentDir = expandedPath
     partial = ''
   } else {
