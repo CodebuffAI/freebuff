@@ -18,9 +18,9 @@ export type TurnReviewVerdict = (typeof TURN_REVIEW_VERDICTS)[number]
 
 /**
  * In the order the pills show. `fix`: improves this change (a cut, a missing
- * piece, a better approach). `review`: the "Code review" pill, asking the
+ * piece, a better approach). `review`: the "Review" pill, asking the
  * agent to review its own change. `next`: work beyond it. `brainstorm`: the
- * "Brainstorm follow-ups" pill once a turn finishes a feature or fix, its own
+ * "Brainstorm" pill once a turn finishes a feature or fix, its own
  * kind so analytics count it whatever the model labels it.
  */
 export const TURN_REVIEW_ACTION_KINDS = [
@@ -83,14 +83,14 @@ Consider these questions. Not every one makes sense for every turn: for a code c
 4. What follow-ups would be most valuable?
 5. Is the change on track to merge? "ready": useful and a net positive after the complexity it adds, nothing important left. "needs_changes": a good direction with a few things to fix first. "not_promising": the wrong change, or not worth it. Use null when the turn made no change to judge. The assistant who did the work is biased toward it, so do not rubber-stamp it.
 
-With a verdict, give its "reason": one plain sentence of at most 15 words that a non-expert understands, saying what makes it ready or what is wrong, like "Does what you asked with one small, clean change." or "The retry wrapper isn't needed, and empty input isn't handled." Use null with no verdict.
+With a verdict, give its "reason": one plain sentence of at most 10 words that a non-expert understands, saying what makes it ready or what is wrong, like "Does what you asked with one small, clean change." or "Drop the retry wrapper; handle empty input." It shares one line with the verdict, so keep it short. Use null with no verdict.
 
 Turn the answers into at most ${MAX_TURN_REVIEW_ACTIONS} actions, the most valuable first. Each is a button the user can click to send its prompt as their next message:
 - "kind": "fix" for anything that improves this change itself (a cut, a missing piece, a better approach), or "next" for a follow-up beyond it. A "needs_changes" or "not_promising" verdict should come with the fixes it names.
-- "label": two to five words that say what the button does, like "Cut the retry wrapper" or "Try a single query".
+- "label": two to four words that say what the button does, like "Cut retry wrapper" or "Try one query". The buttons share one row, so shorter is better.
 - "prompt": what the user would send, in their voice. It must stand alone, because the agent that receives it never sees this review: name what to change or try and why, in one or two sentences, and leave the how to the agent.
-When the turn changed code that has not been reviewed yet, include an action of kind "review" labeled "Code review" whose prompt asks the agent to review its own change with fresh eyes: switch to a better alternative where there is one, simplify the code, remove unnecessary cases, and cut anything not needed, for the cleanest, most maintainable result. Leave it out when the change is already done, such as merged or pushed, or when this turn or a recent one already reviewed it and little has changed since.
-When the turn finished a feature or fix, such as merging a pull request or committing the change, include an action of kind "brainstorm" labeled "Brainstorm follow-ups" whose prompt asks the agent to use the whole conversation as context and think up the most valuable follow-up ideas, including new ones no one has mentioned yet rather than only restating what was already discussed, each with why it is worth doing, ranked by value, without starting on any of them.
+When the turn changed code that has not been reviewed yet, include an action of kind "review" labeled "Review" whose prompt asks the agent to review its own change with fresh eyes: switch to a better alternative where there is one, simplify the code, remove unnecessary cases, and cut anything not needed, for the cleanest, most maintainable result. Leave it out when the change is already done, such as merged or pushed, or when this turn or a recent one already reviewed it and little has changed since.
+When the turn finished a feature or fix, such as merging a pull request or committing the change, include an action of kind "brainstorm" labeled "Brainstorm" whose prompt asks the agent to use the whole conversation as context and think up the most valuable follow-up ideas, including new ones no one has mentioned yet rather than only restating what was already discussed, each with why it is worth doing, ranked by value, without starting on any of them.
 Every action, and "nextPrompt", must be something the user could sensibly send as their very next message, right now. Never offer a step that has to wait on something that has not happened yet, such as a merge, a deploy, a release, a review, or data arriving, like "Re-measure after deploy" while the pull request is still open: no one clicks it now. Offer only what the agent can start on as soon as it is sent.
 Do not offer what was already done or declined, or two buttons that do the same thing.
 
@@ -107,7 +107,7 @@ Reply with only this JSON, and no other text:
 export const TURN_REVIEW_CHAT_PROMPT = `Stop working on the task. The turn is over, and the user has not replied yet. Look back at the conversation and help the user decide what to ask next. The user never sees this message or your reply, only the buttons you return. Do not call any tools.
 
 Offer at most ${MAX_TURN_REVIEW_ACTIONS} follow-ups, the most valuable first: the natural next questions or requests that build on this conversation and move the user toward what they are trying to get done. Each is a button the user can click to send its prompt as their next message:
-- "label": two to five words that say what the button does, like "Make it shorter" or "Compare the two options".
+- "label": two to four words that say what the button does, like "Make it shorter" or "Compare both options". The buttons share one row, so shorter is better.
 - "prompt": what the user would send, in their voice and their language. It must stand alone in one or two sentences, saying what they want and why.
 Do not offer what was already done or declined, or two buttons that do the same thing. Offer nothing rather than something weak; an answer that settles the matter needs no buttons.
 
