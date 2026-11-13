@@ -332,15 +332,17 @@ describe('truncateStringWithMessage', () => {
 
   it('does not split surrogate pairs', () => {
     const rocket = '🚀'
-    const str = 'a'.repeat(21) + rocket + 'b'.repeat(50)
-    // Suffix length is 28 (\n[TRUNCATED DUE TO LENGTH...])
-    // maxLength = 50 -> end = 50 - 28 = 22 (lands right after high surrogate of rocket)
+    // 'a'.repeat(20) places the high surrogate at index 20.
+    // Default suffix '\n[TRUNCATED DUE TO LENGTH...]' is 29 chars long.
+    // maxLength = 50 -> cut index end = 50 - 29 = 21, landing right after the high surrogate.
+    const str = 'a'.repeat(20) + rocket + 'b'.repeat(50)
     const result = truncateStringWithMessage({
       str,
       maxLength: 50,
       remove: 'END',
     })
-    expect(result).not.toContain('\uD83D\n')
+    expect(result).toBe('a'.repeat(20) + '\n[TRUNCATED DUE TO LENGTH...]')
+    expect(result).not.toContain('\uD83D')
     expect(result.length).toBeLessThanOrEqual(50)
   })
 })
