@@ -231,24 +231,27 @@ export function firstPartyAdRouteForGeoRequest(
 
 /**
  * ============================================================================
- * SPONSOR BREAKS (COD-453 scope item 5)
+ * THE CADENCE HOLDOUT (née sponsor breaks, COD-453 scope item 5)
  * ============================================================================
  *
  * Two INDEPENDENT sticky experiments, each with its own salt, its own knob and
- * its own arm vocabulary. They are independent because they ask different
- * questions of the same person: the break experiment asks whether interrupting
- * once buys back the attention four inline cards an hour spend, and the
- * showcase experiment asks whether a taller always-present unit does. Sharing
- * a salt would correlate the two assignments and make neither readable.
+ * its own arm vocabulary. Sharing a salt would correlate the two assignments
+ * and make neither readable.
+ *
+ * The first was the sponsor-break experiment. Its two break arms
+ * (`reduced_spotlight`, `reduced_intermission`) were removed with the
+ * Spotlight and Intermission breaks themselves on 2026-11-12; what is left is
+ * the LIVE `control` vs `reduced` cadence holdout, which still rides the
+ * original salt, arm names, env knobs and the `sponsor_break_arm` log field so
+ * that every assignment and every readout built on them is unchanged.
  */
 
 /**
- * Salt for the sticky sponsor-break arm.
+ * Salt for the sticky sponsor-break (cadence holdout) arm.
  *
- * NEW, never reused, and dated like every salt in this module. Rotating it
- * reshuffles every user, which for an arm that CHANGES DELIVERY is a new
- * experiment and has to look like one -- so a rotation gets a new dated
- * constant rather than an edit to this string.
+ * NEVER EDIT. Rotating it reshuffles every user, which for an arm that CHANGES
+ * DELIVERY is a new experiment and has to look like one -- so a rotation gets
+ * a new dated constant rather than an edit to this string.
  */
 export const SPONSOR_BREAK_ARM_SALT = 'ads_sponsor_break_arm_2026_09'
 
@@ -260,29 +263,29 @@ export const SPONSOR_BREAK_ARM_SALT = 'ads_sponsor_break_arm_2026_09'
 export const SHOWCASE_ARM_SALT = 'ads_showcase_cadence_2026_09'
 
 /**
- * The sponsor-break arms.
+ * The live arms.
  *
  * ORDER IS PART OF THE CONTRACT. {@link sponsorBreakArmForUser} walks this
  * array accumulating basis points, so reordering it moves every user between
- * arms exactly as rotating the salt would -- without the salt change that is
- * supposed to announce a reshuffle.
+ * arms exactly as rotating the salt would. The removed break arms sat AFTER
+ * these two, so dropping them moves nobody in `control` or `reduced`.
  *
- * - `control` is today: 60s inline rotation, a pool of 4, no break.
- * - `reduced` is the inline half of the hypothesis ALONE -- fewer, slower
- *   inline cards and still no break. It is the arm that says whether an
- *   improvement is the break or merely the quiet, and without it every break
- *   arm is confounded with the cadence change it ships beside.
- * - `reduced_spotlight` / `reduced_intermission` add one break format on top of
- *   `reduced`. Showcase is deliberately NOT an arm here: it does not interrupt,
- *   so it is not comparable to these, and it gets its own 50/50 knob below.
+ * - `control` is the holdout: 60s inline rotation on the clock, a pool of 4.
+ * - `reduced` is the product's cadence: 180s, only while the person is active,
+ *   one ad on screen.
  */
-export const SPONSOR_BREAK_ARMS = [
-  'control',
-  'reduced',
+export const SPONSOR_BREAK_ARMS = ['control', 'reduced'] as const
+export type SponsorBreakArm = (typeof SPONSOR_BREAK_ARMS)[number]
+
+/**
+ * Arm names the split knob may still carry from before the breaks were
+ * removed (an Infisical override, an old deploy). The parser accepts them; see
+ * {@link parseSponsorBreakSplitBpsDetailed} for what their share does.
+ */
+export const REMOVED_SPONSOR_BREAK_ARMS = [
   'reduced_spotlight',
   'reduced_intermission',
 ] as const
-export type SponsorBreakArm = (typeof SPONSOR_BREAK_ARMS)[number]
 
 export const SHOWCASE_ARMS = ['control', 'showcase'] as const
 export type ShowcaseArm = (typeof SHOWCASE_ARMS)[number]
@@ -297,19 +300,16 @@ export function parseSponsorBreakExperimentMode(
 }
 
 /**
- * An even four-way split, in basis points of 10,000.
- *
- * Even rather than control-heavy: all four arms cost the same to serve, and
- * the comparison of interest is between the three treatments rather than
- * against a precisely-measured control.
+ * The split used when the knob is absent or unparseable, in basis points of
+ * 10,000. It is the old even four-way split with the two removed break arms
+ * folded into `reduced` (the same rule the parser applies), so `control`'s
+ * bucket range under a fallback is what it always was.
  */
 export const DEFAULT_SPONSOR_BREAK_SPLIT_BPS: Readonly<
   Record<SponsorBreakArm, number>
 > = {
   control: 2_500,
-  reduced: 2_500,
-  reduced_spotlight: 2_500,
-  reduced_intermission: 2_500,
+  reduced: 7_500,
 }
 
 /** The showcase test is a straight 50/50; there is only one thing to vary. */
@@ -358,83 +358,26 @@ export const SPONSOR_BREAK_ARM_POLICY: Readonly<
     rotateOnlyWhileActive: true,
     oneAdOnScreen: true,
   },
-  reduced_spotlight: {
-    rotationMs: 180_000,
-    inlinePoolMax: 2,
-    rotateOnlyWhileActive: true,
-    oneAdOnScreen: true,
-  },
-  reduced_intermission: {
-    rotationMs: 180_000,
-    inlinePoolMax: 2,
-    rotateOnlyWhileActive: true,
-    oneAdOnScreen: true,
-  },
 }
 
 /**
- * The break placement ids an arm may render. Empty for the two arms that run
- * no break, which is what makes the policy response TOTAL: a client reads
- * `breakPlacementIds` and never maps an arm name onto a placement itself, so
- * adding a fourth format stays a server change.
- */
-export const SPONSOR_BREAK_ARM_PLACEMENT_IDS: Readonly<
-  Record<SponsorBreakArm, readonly string[]>
-> = {
-  control: [],
-  reduced: [],
-  reduced_spotlight: ['Desktop-Spotlight'],
-  reduced_intermission: ['Desktop-Intermission'],
-}
-
-/** Bounds for the Intermission countdown, in milliseconds. */
-export const SPONSOR_BREAK_TIMER_MS_DEFAULT = 3_000
-export const SPONSOR_BREAK_TIMER_MS_MIN = 1_000
-export const SPONSOR_BREAK_TIMER_MS_MAX = 5_000
-
-/**
- * Clamp, never reject. This knob is read on a serving path and a bad value
- * must not take the policy route down -- an out-of-range countdown is a typo
- * in Infisical, and the honest answer to a typo is the nearest legal number.
- */
-export function clampSponsorBreakTimerMs(value: unknown): number {
-  const numeric =
-    typeof value === 'number'
-      ? value
-      : typeof value === 'string' && value.trim() !== ''
-        ? Number(value)
-        : Number.NaN
-  if (!Number.isFinite(numeric)) return SPONSOR_BREAK_TIMER_MS_DEFAULT
-  return Math.min(
-    SPONSOR_BREAK_TIMER_MS_MAX,
-    Math.max(SPONSOR_BREAK_TIMER_MS_MIN, Math.round(numeric)),
-  )
-}
-
-/**
- * Bounds for SPOTLIGHT'S DISMISS LOCK, in milliseconds (COD-454).
+ * Bounds for the web Showcase card's DISMISS LOCK, in milliseconds (COD-454).
+ * Written for Spotlight, which was removed; Showcase still reads it through
+ * the policy's `dismissLockMs`. The lock gates only the ways OUT (the X), never
+ * the CTA.
  *
- * A DIFFERENT THING FROM THE COUNTDOWN ABOVE, and the difference is the whole
- * reason it is a second knob rather than a reuse of `timerMs`. Intermission's
- * countdown gates the WHOLE card: nothing may be pressed until it finishes.
- * The dismiss lock gates only the ways OUT — the X, Escape, the backdrop and
- * Continue — while the CTA and the hero stay live throughout, so the shortest
- * path off the card the entire time is the advertiser's own link. Sharing one
- * value would mean re-tuning one format silently re-tuned the other.
- *
- * ZERO IS LEGAL AND IS THE KILL SWITCH -- unlike the countdown, whose floor is
- * 1000. A lock of 0 restores the immediately-dismissible card exactly, which is
- * the rollback an operator needs to be able to reach without a deploy.
+ * ZERO IS LEGAL AND IS THE KILL SWITCH: a lock of 0 restores the
+ * immediately-dismissible card exactly.
  */
 export const SPONSOR_BREAK_DISMISS_LOCK_MS_DEFAULT = 5_000
 export const SPONSOR_BREAK_DISMISS_LOCK_MS_MIN = 0
 export const SPONSOR_BREAK_DISMISS_LOCK_MS_MAX = 5_000
 
 /**
- * Clamp, never reject — the same rule and the same reason as
- * {@link clampSponsorBreakTimerMs}. The ceiling is what matters here: this
- * value decides how long a full-screen card cannot be dismissed, so every hop
- * that could have introduced a bad one bounds it again.
+ * Clamp, never reject. This knob is read on a serving path and a bad value
+ * must not take the policy route down -- the honest answer to a typo is the
+ * nearest legal number. The ceiling is what matters: this value decides how
+ * long a card cannot be dismissed.
  */
 export function clampSponsorBreakDismissLockMs(value: unknown): number {
   const numeric =
@@ -473,9 +416,20 @@ export function showcaseArmBucket(userId: string | null | undefined): number {
   return fnv1a(`${SHOWCASE_ARM_SALT}:${userId ?? ''}`) % 10_000
 }
 
+export interface SponsorBreakSplitParse {
+  split: Readonly<Record<SponsorBreakArm, number>>
+  /**
+   * Basis points the knob gave a REMOVED break arm, now counted in `reduced`.
+   * 0 when it named none or gave them 0. A non-zero value is a stale config
+   * worth a warning, never an error.
+   */
+  foldedRemovedArmBps: number
+  /** True when the whole value was rejected and the default split applies. */
+  fellBack: boolean
+}
+
 /**
- * Parse the split knob:
- * `control=2500,reduced=2500,reduced_spotlight=2500,reduced_intermission=2500`.
+ * Parse the split knob: `control=1000,reduced=9000`.
  *
  * TOTAL. An unparseable value, an unknown arm name, a negative number, or a
  * table summing past 10,000 all return the default split rather than throwing
@@ -486,19 +440,26 @@ export function showcaseArmBucket(userId: string | null | undefined): number {
  *
  * A table summing UNDER 10,000 is LEGAL and means the remainder stays in
  * `control` -- which is how a 10% ramp is expressed.
+ *
+ * REMOVED ARMS (`reduced_spotlight`, `reduced_intermission`) are still valid
+ * keys. Their share is FOLDED INTO `reduced`: they sat after `reduced` in the
+ * arm order, so `control`'s bucket range is untouched and the users who would
+ * have drawn a break land in `reduced` -- exactly the arm they were
+ * (`reduced` plus a break). A share of 0 is therefore a no-op, and a non-zero
+ * one never serves a break, never throws, and is reported back through
+ * `foldedRemovedArmBps` so the caller can warn.
  */
-export function parseSponsorBreakSplitBps(
+export function parseSponsorBreakSplitBpsDetailed(
   raw: string | null | undefined,
-): Readonly<Record<SponsorBreakArm, number>> {
-  if (typeof raw !== 'string' || raw.trim() === '') {
-    return DEFAULT_SPONSOR_BREAK_SPLIT_BPS
+): SponsorBreakSplitParse {
+  const fallback: SponsorBreakSplitParse = {
+    split: DEFAULT_SPONSOR_BREAK_SPLIT_BPS,
+    foldedRemovedArmBps: 0,
+    fellBack: true,
   }
-  const parsed: Record<SponsorBreakArm, number> = {
-    control: 0,
-    reduced: 0,
-    reduced_spotlight: 0,
-    reduced_intermission: 0,
-  }
+  if (typeof raw !== 'string' || raw.trim() === '') return fallback
+  const parsed: Record<SponsorBreakArm, number> = { control: 0, reduced: 0 }
+  let folded = 0
   let total = 0
   for (const entry of raw.split(',')) {
     const parts = entry.split('=')
@@ -506,22 +467,34 @@ export function parseSponsorBreakSplitBps(
     // bare `control` parses as `control=0` -- `Number('')` is 0 -- and the
     // whole table silently becomes zeros, which assigns everybody to control
     // while looking like a configured split.
-    if (parts.length !== 2) return DEFAULT_SPONSOR_BREAK_SPLIT_BPS
+    if (parts.length !== 2) return fallback
     const [name = '', value = ''] = parts
-    const arm = name.trim() as SponsorBreakArm
-    if (!SPONSOR_BREAK_ARMS.includes(arm)) {
-      return DEFAULT_SPONSOR_BREAK_SPLIT_BPS
-    }
-    if (value.trim() === '') return DEFAULT_SPONSOR_BREAK_SPLIT_BPS
+    const arm = name.trim()
+    const live = (SPONSOR_BREAK_ARMS as readonly string[]).includes(arm)
+    const removed = (REMOVED_SPONSOR_BREAK_ARMS as readonly string[]).includes(
+      arm,
+    )
+    if (!live && !removed) return fallback
+    if (value.trim() === '') return fallback
     const bps = Number(value.trim())
-    if (!Number.isInteger(bps) || bps < 0 || bps > 10_000) {
-      return DEFAULT_SPONSOR_BREAK_SPLIT_BPS
+    if (!Number.isInteger(bps) || bps < 0 || bps > 10_000) return fallback
+    if (live) {
+      parsed[arm as SponsorBreakArm] = bps
+    } else {
+      folded += bps
     }
-    parsed[arm] = bps
     total += bps
   }
-  if (total > 10_000) return DEFAULT_SPONSOR_BREAK_SPLIT_BPS
-  return parsed
+  if (total > 10_000) return fallback
+  parsed.reduced += folded
+  return { split: parsed, foldedRemovedArmBps: folded, fellBack: false }
+}
+
+/** {@link parseSponsorBreakSplitBpsDetailed}, the split alone. */
+export function parseSponsorBreakSplitBps(
+  raw: string | null | undefined,
+): Readonly<Record<SponsorBreakArm, number>> {
+  return parseSponsorBreakSplitBpsDetailed(raw).split
 }
 
 /**
@@ -534,8 +507,6 @@ export function parseSponsorBreakSplitBps(
  *
  * `shadow` still returns a REAL arm -- it is assigned and logged, and whether
  * anything may be routed on it is the caller's decision, not this function's.
- * Folding the mode check into the return value here would mean a shadow week
- * measured nothing.
  *
  * A caller with no user id parks in `control`: every ad surface rejects
  * unauthenticated callers, so this is defensive rather than a supported path.

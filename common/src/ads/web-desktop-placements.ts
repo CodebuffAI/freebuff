@@ -8,9 +8,7 @@ export const WEB_DESKTOP_SOURCE_PLACEMENTS = [
   'Inline-After-Agent-Desktop',
   'Inline-Link-After-Agent-Desktop',
   'Above-Input-Desktop',
-  'Desktop-Spotlight',
   'Desktop-Showcase',
-  'Desktop-Intermission',
   'Desktop-Partner-Skill-Picker',
   'Desktop-Partner-Composer-PR',
   'Desktop-Partner-Composer-Launch',
@@ -33,9 +31,7 @@ const WEB_COPY_BY_SOURCE = {
   'Inline-After-Agent-Desktop': 'Inline-After-Agent-Web',
   'Inline-Link-After-Agent-Desktop': 'Inline-Link-After-Agent-Web',
   'Above-Input-Desktop': 'Above-Input-Web',
-  'Desktop-Spotlight': 'Desktop-Spotlight:web',
   'Desktop-Showcase': 'Desktop-Showcase:web',
-  'Desktop-Intermission': 'Desktop-Intermission:web',
   'Desktop-Partner-Skill-Picker': 'Desktop-Partner-Skill-Picker:web',
   'Desktop-Partner-Composer-PR': 'Desktop-Partner-Composer-PR:web',
   'Desktop-Partner-Composer-Launch': 'Desktop-Partner-Composer-Launch:web',
@@ -48,26 +44,6 @@ const WEB_COPY_BY_SOURCE = {
 
 export type WebDesktopPlacementId =
   (typeof WEB_COPY_BY_SOURCE)[DesktopPlacementId]
-
-/**
- * Web copies the browser workspace no longer serves. Each stays registered
- * above, so impressions already served keep their identity for clicks, events
- * and reporting, but the browser policy never announces it and `POST /api/ads`
- * answers it with an empty no-fill before any provider is asked (an older tab
- * may still request it).
- *
- * `Desktop-Spotlight:web`: removed 2026-11-12. Gravity never filled it (0
- * fills a day since 11-03 at 10-20k requests a day). Native
- * `Desktop-Spotlight` is unchanged.
- */
-export const RETIRED_WEB_DESKTOP_PLACEMENTS: ReadonlySet<WebDesktopPlacementId> =
-  new Set<WebDesktopPlacementId>(['Desktop-Spotlight:web'])
-
-export function isRetiredWebDesktopPlacement(id: string): boolean {
-  return (RETIRED_WEB_DESKTOP_PLACEMENTS as ReadonlySet<string>).has(
-    canonicalPlacementId(id),
-  )
-}
 
 const webCopyBySource = new Map<string, WebDesktopPlacementId>(
   Object.entries(WEB_COPY_BY_SOURCE),

@@ -852,15 +852,15 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   /** Each asked provider and its outcome, `gravity:no_fill>first_party:fill`. */
   yield_actual_attempt_chain: 'string',
   /**
-   * COD-453. The sticky sponsor-break arm this request's viewer is in
-   * (`control` | `reduced` | `reduced_spotlight` | `reduced_intermission`),
-   * and the separate showcase-cadence arm beside it.
+   * COD-453. The sticky cadence-holdout arm this request's viewer is in
+   * (`control` | `reduced`; historical rows also carry the removed
+   * `reduced_spotlight` / `reduced_intermission`), and the separate
+   * showcase-cadence arm beside it. The field keeps its sponsor-break name so
+   * every readout built on it still works.
    *
-   * Present on EVERY completion event, including the overwhelming majority
-   * that carry no break placement at all -- because the arm is a property of
-   * the PERSON, and the inline delivery a `reduced` user gets is exactly what
-   * the arm has to be compared on. Reporting it only on break requests would
-   * leave the cadence half of the hypothesis unmeasurable.
+   * Present on EVERY completion event, because the arm is a property of the
+   * PERSON, and the inline delivery a `reduced` user gets is exactly what the
+   * arm has to be compared on.
    *
    * While `FREEBUFF_SPONSOR_BREAK_EXPERIMENT` is `off` this reads `control`
    * for everyone, which is the same value it carried before the field
@@ -873,23 +873,6 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   gravity_showcase_config_id: 'string',
   gravity_showcase_arm: 'string',
   gravity_showcase_attempt_id: 'string',
-  /**
-   * The daily-cap verdict, present only on a request that RESOLVED a break
-   * placement: `allowed`, `capped`, `too_early` or `unavailable`.
-   *
-   * The three refusals collapse to one census code (`break_capped`) because
-   * the census is a closed histogram; they stay separate HERE because they are
-   * three different incidents. A rise in `unavailable` is Redis, a rise in
-   * `too_early` is the minimum-session floor binding harder than intended, and
-   * only `capped` is the feature working.
-   */
-  sponsor_break_cap_status: 'string',
-  /**
-   * Present (true) only when that verdict's Redis reply arrived after its
-   * 75 ms bound, inside the short grace (`packages/internal/src/ad-serving/ad-redis-bound.ts`):
-   * a plain race would have reported `unavailable` and dropped the break.
-   */
-  sponsor_break_cap_late_reply: 'boolean',
   /**
    * The new-user ad ramp (`ad-serving/new-user-ad-ramp.ts`). Present only for
    * a real account under the ramp's age window; absent on every other
@@ -1420,7 +1403,7 @@ const ADS_REQUEST_REJECTED_FIELDS = {
 const ADS_SPONSOR_BREAK_FIELDS = {
   placement_id: 'string',
   surface: 'string',
-  /** `spotlight` | `showcase` | `intermission`. */
+  /** `showcase` (historically also `spotlight` | `intermission`). */
   format: 'string',
   sponsor_break_arm: 'string',
   policy_provenance: 'string',
@@ -1438,9 +1421,6 @@ const ADS_SPONSOR_BREAK_FIELDS = {
    * `render_delay_ms` follows.
    */
   dwell_ms: 'number',
-  /** Intermission's countdown, and whether it ran out before they acted. */
-  timer_ms: 'number',
-  timer_completed: 'boolean',
   dismiss_lock_ms: 'number',
   lock_completed: 'boolean',
   // COD-365 hygiene, required on every client ads event by the CI guard.

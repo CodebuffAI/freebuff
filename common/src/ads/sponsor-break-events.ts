@@ -73,9 +73,6 @@ export function isSponsorBreakEvent(
  * - `escape` — a keyboard dismiss. Deliberately NOT pooled with `x`: one is a
  *   considered exit and one is a reflex, and telling them apart is how a
  *   format learns whether it is being read or swatted.
- * - `timer_then_continue` — Intermission only: the countdown finished and THEN
- *   they pressed continue. Distinct from `continue` because the countdown
- *   makes the two mean different things about the dwell that preceded them.
  * - `click` — they left through the ad. The break also emits
  *   `ads.break_clicked`; this method is what stops a click showing up as an
  *   unexplained missing close.
@@ -87,7 +84,6 @@ export const SPONSOR_BREAK_CLOSE_METHODS = [
   'x',
   'continue',
   'escape',
-  'timer_then_continue',
   'click',
   'thread_switch',
 ] as const
@@ -165,7 +161,10 @@ export const FREEBUFF_DWELL_HEADER = 'X-Freebuff-Dwell-Ms'
 export interface SponsorBreakEventPayload {
   placement_id: string
   surface: string
-  /** The break's render format: `spotlight` | `showcase` | `intermission`. */
+  /**
+   * The break's render format: `showcase` today. Historical rows also carry
+   * `spotlight` and `intermission`, removed 2026-11-12.
+   */
   format: string
   /** The sticky arm this user is in, so the event needs no join to be read. */
   sponsor_break_arm: string
@@ -176,21 +175,10 @@ export interface SponsorBreakEventPayload {
   trigger?: SponsorBreakTrigger
   method?: SponsorBreakCloseMethod
   dwell_ms?: number
-  timer_ms?: number
-  timer_completed?: boolean
   /**
    * THE DISMISS LOCK: how long the ways OUT were held, in milliseconds of
-   * VISIBLE time. Spotlight (COD-454) and Showcase (COD-455) both hold their
-   * dismissals, so this is ONE field across the formats and `format` is what
-   * separates them.
-   *
-   * Separate from `timer_ms` because the two hold different things -- the
-   * countdown gates the whole card, the lock only the dismissals -- and
-   * pooling them would make the readout unable to say which format a row came
-   * from without joining on `format`. Concretely: Intermission's `timer_ms`
-   * counts down to a Continue button the person is waiting ON, while this
-   * counts down to a control they may never look for, on a card that is fully
-   * clickable and fully ignorable throughout.
+   * VISIBLE time (COD-454, now Showcase's). The card stays fully clickable
+   * throughout; only the dismissals are held.
    */
   dismiss_lock_ms?: number
   /**
@@ -225,15 +213,12 @@ export function buildSponsorBreakEvent(params: {
   trigger?: SponsorBreakTrigger
   method?: unknown
   dwellMs?: unknown
-  timerMs?: unknown
-  timerCompleted?: unknown
   dismissLockMs?: unknown
   lockCompleted?: unknown
   clientEventId?: unknown
   clientFamily?: AdEventClientFamily
 }): SponsorBreakEventPayload {
   const dwellMs = clampDwellMs(params.dwellMs)
-  const timerMs = clampDwellMs(params.timerMs)
   const dismissLockMs = clampDwellMs(params.dismissLockMs)
   const clientEventId = readClientEventId(params.clientEventId)
   return {
@@ -251,10 +236,6 @@ export function buildSponsorBreakEvent(params: {
       ? { method: params.method }
       : {}),
     ...(dwellMs === null ? {} : { dwell_ms: dwellMs }),
-    ...(timerMs === null ? {} : { timer_ms: timerMs }),
-    ...(typeof params.timerCompleted === 'boolean'
-      ? { timer_completed: params.timerCompleted }
-      : {}),
     ...(dismissLockMs === null ? {} : { dismiss_lock_ms: dismissLockMs }),
     ...(typeof params.lockCompleted === 'boolean'
       ? { lock_completed: params.lockCompleted }

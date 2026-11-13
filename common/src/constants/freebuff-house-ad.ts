@@ -97,18 +97,20 @@ export const HOUSE_AD_CREATIVES: Readonly<
   chat_assistant_sr: HOUSE_AD_VARIATIONS.chat_assistant_sr[0]!,
 })
 
-export const HOUSE_BREAK_AD_PLACEMENT_IDS = [
-  'Desktop-Spotlight',
-  'Desktop-Showcase',
-] as const
+/**
+ * The break placement the house campaign fills. Spotlight was dropped when it
+ * was removed (2026-11-12); a stored Spotlight target on the house campaign
+ * row is answered `placement_retired` and ignored by the refresh scripts.
+ */
+export const HOUSE_BREAK_AD_PLACEMENT_IDS = ['Desktop-Showcase'] as const
 
 export type HouseBreakAdPlacementId =
   (typeof HOUSE_BREAK_AD_PLACEMENT_IDS)[number]
 
 /**
  * Break cards have real 28/60/18 limits. Shorten the approved headlines for
- * these cards and keep their descriptions. Both placements share a creative
- * pool; the rollout preserves the existing uploaded hero images.
+ * these cards and keep their descriptions. The rollout preserves the existing
+ * uploaded hero images.
  */
 const BREAK_VARIATIONS = Object.freeze([
   creative('More daily Freebuff usage', SUBSCRIPTION_VARIATIONS[0]!.adText),
@@ -122,7 +124,6 @@ const BREAK_VARIATIONS = Object.freeze([
 export const HOUSE_BREAK_AD_VARIATIONS: Readonly<
   Record<HouseBreakAdPlacementId, readonly HouseAdCreative[]>
 > = Object.freeze({
-  'Desktop-Spotlight': BREAK_VARIATIONS,
   'Desktop-Showcase': BREAK_VARIATIONS,
 })
 

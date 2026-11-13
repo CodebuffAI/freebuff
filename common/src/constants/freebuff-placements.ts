@@ -107,16 +107,18 @@ export const ATTRIBUTION_WINDOW_COPY = `Activation counts within ${ACTIVATION_AT
  *
  * `inline` is every slot that shipped before sponsor breaks: a card in the
  * flow of a transcript or a waiting room, text-first, with an optional small
- * logo. The other three are the SPONSOR BREAK family -- an image-led unit that
- * interrupts rather than accompanies, and that a text-only creative cannot
- * fill at all.
+ * logo. `showcase` is what is left of the SPONSOR BREAK family -- an
+ * image-led unit that a text-only creative cannot fill at all. (The two
+ * interrupting break formats, `spotlight` and `intermission`, were removed on
+ * 2026-11-12; their placement ids are answered `placement_retired`, see
+ * `common/src/ads/retired-placements.ts`.)
  *
  * WHY THIS IS NOT A SURFACE. A surface is what the request came from, and
  * every consumer of it is a total map: adding one costs a house creative, a
  * pinned row in the opportunity rollup and an entry in every
  * `Record<AdSurface, ...>`. A break is the same Desktop chat surface as the
  * inline slot beside it, asking for a different renderer -- so the format is
- * a property of the SLOT, and the three break ids keep `surface: 'cli_chat'`.
+ * a property of the SLOT, and the break id keeps `surface: 'cli_chat'`.
  *
  * The serving consequences live in `packages/internal/src/ad-serving`: a
  * creative with no hero image never fills a non-inline placement, and the
@@ -125,8 +127,6 @@ export const ATTRIBUTION_WINDOW_COPY = `Activation counts within ${ACTIVATION_AT
 export const PLACEMENT_FORMATS = [
   'inline',
   'showcase',
-  'spotlight',
-  'intermission',
   'partner',
   'billboard',
   'branded',
@@ -165,8 +165,6 @@ export function isCatalogPlacementFormat(
  */
 export const SPONSOR_BREAK_FORMATS = [
   'showcase',
-  'spotlight',
-  'intermission',
 ] as const satisfies readonly PlacementFormat[]
 
 /**
@@ -248,40 +246,6 @@ export function isFirstPartyOnlyFormat(format: PlacementFormat): boolean {
     isBillboardFormat(format) ||
     isBrandedFormat(format)
   )
-}
-
-/**
- * The formats that INTERRUPT, which is a strictly narrower question than
- * {@link isSponsorBreakFormat} and the only one the daily cap may ask.
- *
- * The two predicates exist because COD-453 conflated two properties that
- * happen to coincide for two of the three break formats:
- *
- * - WHAT A CREATIVE MUST LOOK LIKE. Image-led, hero required, tight copy, and
- *   never the text-only house floor. True of all three, which is what
- *   {@link isSponsorBreakFormat} answers, and it stays the predicate every
- *   creative-shape rule reads.
- * - WHAT IT COSTS THE READER. `spotlight` and `intermission` take the screen
- *   away from the work in front of them, which is why they are rationed: one
- *   per UTC day, never inside the first ten minutes of a session, and never at
- *   all on a deployment with no Redis to count them. `showcase` takes nothing
- *   away -- it is the SAME slot above the composer that already holds a
- *   sponsored banner every sixty seconds, drawn taller (COD-455).
- *
- * Capping Showcase makes its own experiment unrunnable rather than merely
- * conservative: the treatment arm would see the tall card for at most one
- * rotation a day and be byte-identical to control for the rest of it, so the
- * format test would measure nothing and the null result would read as "the
- * format made no difference". A frequency cap on a unit whose frequency is
- * fixed by the arm it is being compared against is not a safety margin.
- */
-export const INTERRUPTING_BREAK_FORMATS: readonly PlacementFormat[] = [
-  'spotlight',
-  'intermission',
-]
-
-export function isInterruptingBreakFormat(format: PlacementFormat): boolean {
-  return INTERRUPTING_BREAK_FORMATS.includes(format)
 }
 
 /**
@@ -393,26 +357,14 @@ const ORIGINAL_PLACEMENT_SLOTS = [
     available: true,
     format: 'inline',
   },
-  // The three sponsor breaks. Same surface as the inline Desktop slots on
-  // purpose -- see {@link PLACEMENT_FORMATS} for why the format and not the
-  // surface is what distinguishes them.
-  {
-    id: 'Desktop-Spotlight',
-    surface: 'cli_chat',
-    available: true,
-    format: 'spotlight',
-  },
+  // The sponsor break that remains. Same surface as the inline Desktop slots
+  // on purpose -- see {@link PLACEMENT_FORMATS} for why the format and not the
+  // surface is what distinguishes it.
   {
     id: 'Desktop-Showcase',
     surface: 'cli_chat',
     available: true,
     format: 'showcase',
-  },
-  {
-    id: 'Desktop-Intermission',
-    surface: 'cli_chat',
-    available: true,
-    format: 'intermission',
   },
   // The partner slots -- two in Desktop, two in the CLI. `available: false`
   // is the exclusivity: the campaign-builder picker reads that flag, so none
@@ -585,15 +537,6 @@ export function isSponsorBreakPlacement(placementId: string): boolean {
 }
 
 /**
- * Whether this placement id INTERRUPTS, and is therefore subject to the daily
- * cap. See {@link INTERRUPTING_BREAK_FORMATS} for why this is not the same
- * question as {@link isSponsorBreakPlacement}.
- */
-export function isInterruptingBreakPlacement(placementId: string): boolean {
-  return isInterruptingBreakFormat(placementFormat(placementId))
-}
-
-/**
  * Whether this placement id is one advertiser's own chrome. See
  * {@link isPartnerFormat} for what that buys and what it costs.
  *
@@ -657,24 +600,6 @@ export function isTargetablePlacement(
  * copy for an inline slot and the console is where a placement choice and its
  * copy are seen together.
  */
-/**
- * The one delivery fact a break's numbers cannot be read without.
- *
- * A break is capped at one per user per day, so its impression count is
- * bounded by AUDIENCE rather than by budget: a break row two orders of
- * magnitude under an inline row beside it is the cap working, not
- * under-delivery. Stated wherever a break's delivery is shown, in one place
- * so the builder's picker and the delivery breakdown cannot phrase the same
- * cap two ways.
- *
- * Deliberately not a number. The cap itself is server-side and operator-owned
- * (`FREEBUFF_SPONSOR_BREAK_DAILY_CAP`); printing a figure here would be a
- * second copy of it, free to drift, in the one place an advertiser would
- * quote it back to us.
- */
-export const SPONSOR_BREAK_FREQUENCY_COPY =
-  'Shown at most once per user per day'
-
 export const SPONSOR_BREAK_CREATIVE_LIMITS = {
   titleMaxLength: 28,
   bodyMaxLength: 60,
@@ -747,9 +672,13 @@ export const ORGANIC_LINK_PLACEMENT_ID = 'organic-link'
  * reads the same way in the place it is bought and the place it is reported.
  */
 const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
+  // Spotlight and Intermission were removed 2026-11-12; their labels stay so
+  // historical delivery rows still read as the slot they were.
   'Desktop-Spotlight': 'Desktop — Spotlight',
+  'Desktop-Spotlight:web': 'Web — Spotlight',
   'Desktop-Showcase': 'Desktop — Showcase',
   'Desktop-Intermission': 'Desktop — Intermission',
+  'Desktop-Intermission:web': 'Web — Intermission',
   'Inline-Link-After-Agent-Desktop': 'Desktop — Inline link',
   'Above-Input-CLI': 'CLI — Dock',
   // The splitter would render these "Desktop Partner Skill Picker", which

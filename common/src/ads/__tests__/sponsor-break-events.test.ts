@@ -47,7 +47,8 @@ describe('the break close vocabulary', () => {
     expect(SPONSOR_BREAK_CLOSE_METHODS).toContain('x')
     expect(SPONSOR_BREAK_CLOSE_METHODS).toContain('escape')
     expect(SPONSOR_BREAK_CLOSE_METHODS).toContain('continue')
-    expect(SPONSOR_BREAK_CLOSE_METHODS).toContain('timer_then_continue')
+    // Intermission's `timer_then_continue` left with it (2026-11-12).
+    expect(SPONSOR_BREAK_CLOSE_METHODS).not.toContain('timer_then_continue')
     expect(SPONSOR_BREAK_CLOSE_METHODS).toContain('thread_switch')
   })
 })
@@ -100,18 +101,18 @@ describe('clampDwellMs', () => {
 
 describe('buildSponsorBreakEvent', () => {
   const base = {
-    placementId: 'Desktop-Spotlight',
+    placementId: 'Desktop-Showcase',
     surface: 'cli_chat',
-    format: 'spotlight',
-    arm: 'reduced_spotlight',
+    format: 'showcase',
+    arm: 'reduced',
   }
 
   test('drops every unknown optional rather than emitting a sentinel', () => {
     expect(buildSponsorBreakEvent(base)).toEqual({
-      placement_id: 'Desktop-Spotlight',
+      placement_id: 'Desktop-Showcase',
       surface: 'cli_chat',
-      format: 'spotlight',
-      sponsor_break_arm: 'reduced_spotlight',
+      format: 'showcase',
+      sponsor_break_arm: 'reduced',
       sample_rate: 1,
     })
   })
@@ -120,10 +121,8 @@ describe('buildSponsorBreakEvent', () => {
     expect(
       buildSponsorBreakEvent({
         ...base,
-        method: 'timer_then_continue',
+        method: 'continue',
         dwellMs: 4200,
-        timerMs: 3000,
-        timerCompleted: true,
         clientEventId: 'evt-123',
         clientFamily: 'desktop',
         campaignLabel: 'pilot-b',
@@ -131,17 +130,15 @@ describe('buildSponsorBreakEvent', () => {
         opportunityId: 'opp_1',
       }),
     ).toEqual({
-      placement_id: 'Desktop-Spotlight',
+      placement_id: 'Desktop-Showcase',
       surface: 'cli_chat',
-      format: 'spotlight',
-      sponsor_break_arm: 'reduced_spotlight',
+      format: 'showcase',
+      sponsor_break_arm: 'reduced',
       campaign_label: 'pilot-b',
       creative_version: 3,
       opportunity_id: 'opp_1',
-      method: 'timer_then_continue',
+      method: 'continue',
       dwell_ms: 4200,
-      timer_ms: 3000,
-      timer_completed: true,
       client_event_id: 'evt-123',
       client_family: 'desktop',
       sample_rate: 1,
@@ -149,10 +146,6 @@ describe('buildSponsorBreakEvent', () => {
   })
 
   test('the dismiss lock rides the close event, and 0 survives (COD-454)', () => {
-    // `dismiss_lock_ms` is a DIFFERENT field from `timer_ms` because the two
-    // hold different things — the countdown gates the whole card, the lock
-    // only the ways out — so a readout must be able to tell them apart without
-    // joining on the format.
     expect(
       buildSponsorBreakEvent({
         ...base,
@@ -213,10 +206,10 @@ describe('the Axiom allowlist', () => {
       expect(
         getAxiomOnlyLogEvent({
           axiomEvent,
-          placement_id: 'Desktop-Intermission',
+          placement_id: 'Desktop-Showcase',
           surface: 'cli_chat',
-          format: 'intermission',
-          sponsor_break_arm: 'reduced_intermission',
+          format: 'showcase',
+          sponsor_break_arm: 'reduced',
           dwell_ms: 5000,
           method: 'continue',
           client_family: 'desktop',
@@ -230,10 +223,10 @@ describe('the Axiom allowlist', () => {
       ).toEqual({
         event: axiomEvent,
         data: {
-          placement_id: 'Desktop-Intermission',
+          placement_id: 'Desktop-Showcase',
           surface: 'cli_chat',
-          format: 'intermission',
-          sponsor_break_arm: 'reduced_intermission',
+          format: 'showcase',
+          sponsor_break_arm: 'reduced',
           dwell_ms: 5000,
           method: 'continue',
           client_family: 'desktop',

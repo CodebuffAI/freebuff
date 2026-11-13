@@ -247,12 +247,10 @@ describe('house ad catalog', () => {
     }
   })
 
-  test('only Spotlight uses the accent markup, because only Spotlight draws it', () => {
-    // MEASURED, on the `showcase-house` shot: `splitMarkedTitle` belongs to the
-    // Spotlight card. The Showcase banner renders its title as plain text, so a
-    // `*Pro*` there reaches the reader with the asterisks in it. Keying this
-    // catalog by placement is what makes the difference expressible; this is
-    // what stops a later copy edit putting the markup back.
+  test('Showcase copy carries no accent markup, because Showcase does not draw it', () => {
+    // MEASURED, on the `showcase-house` shot: the Showcase banner renders its
+    // title as plain text, so a `*Pro*` there reaches the reader with the
+    // asterisks in it.
     for (const creative of HOUSE_BREAK_AD_VARIATIONS['Desktop-Showcase']) {
       expect(creative.title).not.toContain('*')
     }
@@ -282,10 +280,8 @@ describe('house ad catalog', () => {
         HOUSE_BREAK_AD_VARIATIONS[placementId].length,
       ).toBeGreaterThanOrEqual(2)
     }
-    // Intermission is deliberately out of scope (COD-486): it is the one break
-    // format this campaign does not run, and a stray entry here would put the
-    // promotion in front of a reader mid-task with no way to tell.
-    expect(HOUSE_BREAK_AD_PLACEMENT_IDS).not.toContain('Desktop-Intermission')
+    // Spotlight and Intermission were removed 2026-11-12.
+    expect(HOUSE_BREAK_AD_PLACEMENT_IDS).toEqual(['Desktop-Showcase'])
   })
 
   test('the floor can never serve a break creative', () => {
