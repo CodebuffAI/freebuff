@@ -765,6 +765,21 @@ const SCRIPT_RUNNER_VALUE_OPTIONS: ReadonlySet<string> = new Set([
 ])
 const PYTHONS = /^(python[\d.]*|py)$/
 
+/**
+ * Flags that hand an interpreter code as an argument instead of a command
+ * line: `node -e`, `python -c`, `php -r`. The code is data to the walk, not
+ * a command line it can read, so a spelling behind one of these flags is
+ * judged the way a PowerShell script file is: unverifiable.
+ */
+const INLINE_CODE_FLAGS: ReadonlyMap<string, readonly string[]> = new Map([
+  ['node', ['-e', '--eval', '-p', '--print']],
+  ['nodejs', ['-e', '--eval', '-p', '--print']],
+  ['bun', ['-e', '--eval']],
+  ['perl', ['-e', '-E']],
+  ['ruby', ['-e']],
+  ['php', ['-r']],
+])
+
 /** Decode `-EncodedCommand`'s base64 UTF-16LE, or null if it is not that. */
 function decodePowerShellCommand(encoded: string): string | null {
   try {
@@ -933,6 +948,20 @@ function analyzeSegment(
     if (found) return found
   }
 
+  // A command word the line itself builds, from a variable or a
+  // substitution, runs whatever the variable holds. The walk cannot read
+  // it, so it fails closed like the other unreadable shapes.
+  if (
+    headToken.text.includes('$') ||
+    headToken.text.includes('`') ||
+    /^%[^%]+%$/.test(headToken.text)
+  ) {
+    return {
+      kind: 'unverifiable',
+      invocation: 'a command word built from a variable',
+    }
+  }
+
   const linuxCommand = wslCommand(head, args, platform)
   if (linuxCommand !== null) {
     return analyzeRest(linuxCommand, 'linux', depth + 1, judge)
@@ -1014,6 +1043,27 @@ function analyzeSegment(
         ),
     )
     return analyzeSegment(rest, platform, depth + 1, judge)
+  }
+  // Code handed to an interpreter as an argument is not a command line the
+  // walk can read. `eval` and `iex` strings are re-analysed above because
+  // they hold shell text; interpreter code does not, so it fails closed
+  // instead of passing unread.
+  const inlineFlags = PYTHONS.test(head)
+    ? ['-c']
+    : INLINE_CODE_FLAGS.get(head)
+  if (inlineFlags) {
+    const flag = args.find(
+      (token) =>
+        !token.quoted &&
+        inlineFlags.some(
+          (candidate) =>
+            token.text === candidate ||
+            token.text.startsWith(`${candidate}=`),
+        ),
+    )
+    if (flag) {
+      return { kind: 'unverifiable', invocation: `${head} ${flag.text}` }
+    }
   }
   if (COMMAND_LIST_RUNNERS.has(head)) {
     for (const token of args) {
