@@ -294,23 +294,57 @@ export function freebuffSubscriptionBillingInterval(
 }
 
 /**
- * What one subscription adds to MRR at list price, the unit every MRR figure
- * sums: a yearly plan is a twelfth of its annual charge. A grant is never
- * revenue, and a tier the catalog no longer carries prices at 0 rather than a
- * guess.
+ * What one subscription adds to MRR, the unit every MRR figure sums: the list
+ * price of its NEXT renewal, monthly-normalised (a yearly plan is a twelfth of
+ * its annual charge). A scheduled downgrade prices at the lower tier, which
+ * Stripe already bills (`pendingTier`). A grant is never revenue, and a tier
+ * the catalog no longer carries prices at 0 rather than a guess.
+ *
+ * It is a USD list price: a plan billed in INR, EUR, BRL or KRW counts at its
+ * USD price, since the local prices are FX-rounded from it
+ * (`local-prices.ts`), and one-time coupons (intro, save offer, upgrade
+ * credit) are not subtracted. Whether a row counts at all is the caller's
+ * rule; `freebuffSubscriptionRenews` is the cancellation half of it.
  */
 export function freebuffSubscriptionMrrUsd(subscription: {
   tier: string
   billingInterval: string
   source: string
+  pendingTier?: string | null
 }): number {
-  const tier = freebuffSubscriptionTier(subscription.tier)
-  if (!tier || subscription.source === 'grant') return 0
+  if (subscription.source === 'grant') return 0
+  const tier =
+    freebuffSubscriptionTier(subscription.pendingTier) ??
+    freebuffSubscriptionTier(subscription.tier)
+  if (!tier) return 0
   const interval = freebuffSubscriptionBillingInterval(
     subscription.billingInterval,
   )
   return interval === 'yearly' ? tier.yearlyPriceUsd / 12 : tier.priceUsd
 }
+
+/**
+ * Whether a live subscription will renew, i.e. still adds MRR. A Stripe plan
+ * set to cancel at period end keeps its access until then but leaves MRR from
+ * the cancel, as Stripe's Billing MRR does. A prepaid year always carries the
+ * flag (nothing renews) and is not a cancellation: it counts a twelfth of the
+ * year until it ends.
+ */
+export function freebuffSubscriptionRenews(subscription: {
+  source: string
+  cancelAtPeriodEnd: boolean
+}): boolean {
+  return !(subscription.source === 'stripe' && subscription.cancelAtPeriodEnd)
+}
+
+/** What the admin dashboards' MRR counts, for their labels. */
+export const FREEBUFF_MRR_DEFINITION =
+  'Paid plans with access now (active), at the USD list price of their next ' +
+  'renewal, monthly-normalised (a year counts 1/12). Past due, grants and ' +
+  'plans set to cancel are held out; prepaid years count. One-time coupons ' +
+  "are not subtracted. Stripe's Billing MRR also counts past due, leaves out " +
+  'prepaid years and other Stripe products, and subtracts one-time coupons ' +
+  'for the month they discount.'
 
 /** The next tier up, or undefined at the top. Drives every upgrade CTA. */
 export function nextFreebuffSubscriptionTier(
