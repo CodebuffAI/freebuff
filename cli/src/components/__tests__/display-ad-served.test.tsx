@@ -107,6 +107,11 @@ async function settle(
   }
 }
 
+// The served fetch resolves off the render loop; a loaded CI runner can take
+// longer than mount's short sleep to commit it.
+const drawn = (setup: Awaited<ReturnType<typeof createTestRenderer>>) =>
+  settle(setup, () => setup.captureCharFrame().includes('Acme Cloud'))
+
 const open = (url: string) => void opened.push(url)
 const color = (value: string | RGBA) =>
   typeof value === 'string' ? RGBA.fromHex(value) : value
@@ -119,6 +124,7 @@ test('served statusline: draws the served sponsor in its brand colours, billed o
     100,
     2,
   )
+  await drawn(setup)
   const frame = setup.captureCharFrame()
   expect(frame).toContain('Ad │ Acme Cloud')
   expect(frame).toContain('Ship faster with Acme')
@@ -169,6 +175,7 @@ test('served splash: served copy through the boxed view, billed impression and c
       open={open}
     />,
   )
+  await drawn(setup)
   const frame = setup.captureCharFrame()
   expect(frame).toContain('Acme Cloud')
   expect(frame).toContain('Sponsored')
@@ -247,6 +254,7 @@ test('served /deals card: position 1 only, billed impression on insertion, bille
     100,
     10,
   )
+  await drawn(setup)
   const frame = setup.captureCharFrame()
   expect(frame).toContain('1')
   expect(frame).toContain('Acme Cloud')
@@ -274,6 +282,7 @@ test('the served row shows the /deals hint only when CLI-Deals is served', async
     100,
     2,
   )
+  await drawn(without.setup)
   expect(without.setup.captureCharFrame()).toContain('Ad │ Acme Cloud')
   expect(without.setup.captureCharFrame()).not.toContain('/deals')
   cleanup?.()
@@ -282,6 +291,7 @@ test('the served row shows the /deals hint only when CLI-Deals is served', async
     100,
     2,
   )
+  await drawn(withDeals.setup)
   expect(withDeals.setup.captureCharFrame()).toContain('/deals')
 })
 
@@ -325,6 +335,7 @@ test('our own ad on screen does not hide our display units', async () => {
     100,
     2,
   )
+  await drawn(setup)
   expect(setup.captureCharFrame()).toContain('Acme Cloud')
   expect(asked).toEqual(['CLI-Statusline'])
 })
@@ -336,6 +347,7 @@ test('the unit gives way when a network ad arrives and comes back with the same 
     100,
     2,
   )
+  await drawn(setup)
   expect(setup.captureCharFrame()).toContain('Acme Cloud')
   reportDockHeld({ impUrl: 'imp-network-dock', provider: 'gravity' })
   await setup.renderOnce()
@@ -367,6 +379,7 @@ test('a statusline once drawn keeps its row, blank, while it gives way', async (
       .captureCharFrame()
       .split('\n')
       .findIndex((line) => line.includes(needle))
+  await drawn(setup)
   expect(setup.captureCharFrame()).toContain('Acme Cloud')
   const below = rowOf('BELOW')
   reportDockHeld({ impUrl: 'imp-network-dock', provider: 'gravity' })

@@ -16,8 +16,13 @@ export const TURN_REVIEW_VERDICTS = [
 ] as const
 export type TurnReviewVerdict = (typeof TURN_REVIEW_VERDICTS)[number]
 
-/** `fix`: improves this change (a cut, a missing piece, a better approach). `next`: work beyond it. */
-export type TurnReviewActionKind = 'fix' | 'next'
+/**
+ * In the order the pills show. `fix`: improves this change (a cut, a missing
+ * piece, a better approach). `review`: the "Code review" pill, asking the
+ * agent to review its own change. `next`: work beyond it.
+ */
+export const TURN_REVIEW_ACTION_KINDS = ['fix', 'review', 'next'] as const
+export type TurnReviewActionKind = (typeof TURN_REVIEW_ACTION_KINDS)[number]
 
 export type TurnReviewAction = {
   label: string
@@ -76,14 +81,14 @@ Turn the answers into at most ${MAX_TURN_REVIEW_ACTIONS} actions, the most valua
 - "kind": "fix" for anything that improves this change itself (a cut, a missing piece, a better approach), or "next" for a follow-up beyond it. A "needs_changes" or "not_promising" verdict should come with the fixes it names.
 - "label": two to five words that say what the button does, like "Cut the retry wrapper" or "Try a single query".
 - "prompt": what the user would send, in their voice. It must stand alone, because the agent that receives it never sees this review: name what to change or try and why, in one or two sentences, and leave the how to the agent.
-When the turn changed code, include a "fix" action labeled "Code review" whose prompt asks the agent to review its own change with fresh eyes: switch to a better alternative where there is one, simplify the code, remove unnecessary cases, and cut anything not needed, for the cleanest, most maintainable result.
+When the turn changed code, include an action of kind "review" labeled "Code review" whose prompt asks the agent to review its own change with fresh eyes: switch to a better alternative where there is one, simplify the code, remove unnecessary cases, and cut anything not needed, for the cleanest, most maintainable result.
 Every action, and "nextPrompt", must be something the user could sensibly send as their very next message, right now. Never offer a step that has to wait on something that has not happened yet, such as a merge, a deploy, a release, a review, or data arriving, like "Re-measure after deploy" while the pull request is still open: no one clicks it now. Offer only what the agent can start on as soon as it is sent.
 Do not offer what was already done or declined, or two buttons that do the same thing.
 
 Last, write "nextPrompt": the single message you would recommend the user send next, taking all of the above into account. It is offered in their empty message box, where one key fills it in for them to send. It may combine several instructions, such as the fixes the change needs and one valuable follow-up, but keep it concise: one to three short sentences in the user's voice that stand alone. Use null when nothing is worth sending.
 
 Reply with only this JSON, and no other text:
-{"verdict": "ready" | "needs_changes" | "not_promising" | null, "reason": "..." | null, "actions": [{"kind": "fix" | "next", "label": "...", "prompt": "..."}], "nextPrompt": "..." | null}`
+{"verdict": "ready" | "needs_changes" | "not_promising" | null, "reason": "..." | null, "actions": [{"kind": "fix" | "review" | "next", "label": "...", "prompt": "..."}], "nextPrompt": "..." | null}`
 
 /**
  * A Chat-mode turn's review (docs/freebuff-workspace-modes.md): its user is not
@@ -218,7 +223,11 @@ export function turnReviewFrom(value: unknown): TurnReview | null {
     const label = clip(item?.label, MAX_LABEL_CHARS)
     const prompt = clip(item?.prompt, MAX_PROMPT_CHARS)
     if (label && prompt)
-      actions.push({ label, prompt, kind: item?.kind === 'fix' ? 'fix' : 'next' })
+      actions.push({
+        label,
+        prompt,
+        kind: TURN_REVIEW_ACTION_KINDS.includes(item?.kind) ? item.kind : 'next',
+      })
     if (actions.length === MAX_TURN_REVIEW_ACTIONS) break
   }
   const nextPrompt = clip(raw.nextPrompt, MAX_PROMPT_CHARS) || null

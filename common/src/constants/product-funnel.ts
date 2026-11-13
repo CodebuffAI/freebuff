@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { TURN_REVIEW_ACTION_KINDS } from './turn-review'
 import { templateAnalyticsFields } from '../templates/analytics'
 
 export const PRODUCT_FUNNEL_EVENT = 'freebuff.product_funnel_step'
@@ -381,9 +382,14 @@ export const productFunnelPropertiesSchema = z
       .optional(),
     /** `turn_review:selected`: which button, from 0 (the most valuable). */
     review_action: z.number().int().min(0).max(9).optional(),
-    /** `turn_review:selected`: a fix to the change, a next step beyond it, or
-     *  the recommended next message taken into the composer with Tab. */
-    review_action_kind: z.enum(['fix', 'next', 'next_prompt']).optional(),
+    /** `turn_review:selected`: a fix to the change, the "Code review" pill, a
+     *  next step beyond it, or the recommended next message taken into the
+     *  composer with Tab. */
+    review_action_kind: z
+      .enum([...TURN_REVIEW_ACTION_KINDS, 'next_prompt'])
+      .optional(),
+    /** `turn_review:shown`: whether the review offered the "Code review" pill. */
+    review_offers_code_review: z.boolean().optional(),
     selection_kind: z
       .enum([
         'default',

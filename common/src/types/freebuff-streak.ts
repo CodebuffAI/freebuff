@@ -55,4 +55,11 @@ export interface FreebuffStreakResponse {
    * servers, which clients read as false.
    */
   streakThemeUnlocked?: boolean
+  /**
+   * Which streak UI to draw, set by freebuff.com's `/api/web/streak` for the
+   * `classic` arm of `streak_ui_2026_11` (a split of the display
+   * experiment's control): the seven-day flames the activity grid replaced.
+   * Absent means the grid. Web and Desktop only.
+   */
+  ui?: 'classic'
 }
