@@ -36,12 +36,12 @@ Freebuff includes a curated model catalog. The regular picker currently offers:
 
 | Model                       | Access                  | Best for                                                          |
 | --------------------------- | ----------------------- | ----------------------------------------------------------------- |
-| **DeepSeek V4.1 Flash**     | Full and limited access | The default; fast coding and tool use, 1M context |
-| **DeepSeek V4.1 Flash Slow** | Full and limited access | The same model streamed more slowly, for fewer hours; the default at limited access and in Chat mode |
+| **DeepSeek V4.1 Flash**     | Full and limited access | Fast coding and tool use at a steady speed, 1M context; the default at limited access with a paid plan |
+| **DeepSeek V4.1 Flash Slow** | Full and limited access | The same model streamed more slowly, for fewer hours; the default at limited access without a plan, and in Chat mode |
 | **Solar Mini 4**            | Full and limited access | Upstage's fast, compact model; 500K context, text only |
 | **Solar Pro 4**             | Full and limited access | Upstage's larger, stronger model; 500K context, text only |
 | **Beam 1.0**, **Glyph Cluster** and **Nemotron 3.5 Lightning** | Full and limited access | Free experimental models that use none of your hours; 256K context |
-| **DeepSeek V4.1 Flash Fast** | Full and limited access | The same DeepSeek model at full speed |
+| **DeepSeek V4.1 Flash Fast** | Full and limited access | The same DeepSeek model at full speed; the default at full access |
 | **GPT-6 Luna**              | Full access; paid plans on newer accounts | Strong all-around with native images; 1M context |
 | **Muse Spark 1.3**          | Paid plans              | Meta's agentic coding model; 1M context. When it is busy or unavailable, it answers on DeepSeek V4.1 Flash rather than making you wait |
 | **Muse Ember**              | Paid plans              | Meta's fast coding model; 375K context |
