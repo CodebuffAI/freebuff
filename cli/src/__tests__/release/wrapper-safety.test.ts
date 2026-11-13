@@ -166,7 +166,30 @@ for (const wrapper of wrappers) {
 
 describe('shared release launcher safety', () => {
   const launcherPath = join(repoRoot, 'cli/release-core/launcher.js')
-  const { createLauncher } = require(launcherPath)
+  const { createLauncher, resolveDownloadOrigin, DEFAULT_DOWNLOAD_ORIGIN } =
+    require(launcherPath)
+
+  test('rejects release URL overrides with a path or nonstandard public port', () => {
+    const warnings: string[] = []
+
+    expect(
+      resolveDownloadOrigin('https://freebuff.com/api', {
+        warn: (message: string) => warnings.push(message),
+      }),
+    ).toBe(DEFAULT_DOWNLOAD_ORIGIN)
+    expect(
+      resolveDownloadOrigin('https://codebuff.com:8443', {
+        warn: (message: string) => warnings.push(message),
+      }),
+    ).toBe(DEFAULT_DOWNLOAD_ORIGIN)
+    expect(warnings).toHaveLength(2)
+  })
+
+  test('accepts a bare loopback origin with a custom port for local development', () => {
+    expect(resolveDownloadOrigin('http://127.0.0.1:43127')).toBe(
+      'http://127.0.0.1:43127',
+    )
+  })
 
   test('stages an update before stopping the running process', () => {
     const source = readFileSync(launcherPath, 'utf8')

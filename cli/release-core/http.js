@@ -60,7 +60,18 @@ function evaluateRedirect(currentUrl, location, options = {}) {
     }
   }
 
-  const originalHostname = new URL(options.originalUrl || currentUrl).hostname
+  const originalUrl = new URL(options.originalUrl || currentUrl)
+  const originalHostname = originalUrl.hostname
+
+  if (target.username || target.password) {
+    return { ok: false, reason: 'Refusing redirect containing URL credentials' }
+  }
+  if (target.port !== originalUrl.port) {
+    return {
+      ok: false,
+      reason: `Refusing redirect to unexpected port ${target.port || '(default)'}`,
+    }
+  }
   if (!isRedirectHostAllowed(target.hostname, originalHostname)) {
     return {
       ok: false,
