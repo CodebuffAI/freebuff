@@ -100,6 +100,14 @@ export const HOUSE_IOS_APP_STORE_URL = FREEBUFF_IOS_APP_STORE_URL
 /** The Dark Mode Shirt's page in the merch store. */
 const HOUSE_STORE_SHIRT_URL = '/store/freebuff-dark-mode-shirt'
 
+/**
+ * The merch campaigns' icon: the Dark Mode Shirt's product photo on Shopify's
+ * CDN (allowed by the web CSP's `merch` hosts), resized by the CDN. If the
+ * photo is deleted in Shopify the icon breaks: update this URL with it.
+ */
+const HOUSE_STORE_ICON_URL =
+  'https://cdn.shopify.com/s/files/1/1009/5172/0225/files/14074578496085982312_2048_1400x.jpg?v=1794546590&width=128'
+
 /** One-time actions: one impression a day at most per campaign. */
 const DAILY = { maxImpressions: 1, windowMinutes: 24 * 60 } as const
 
@@ -416,12 +424,13 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     gate: null,
     targeting: 'all',
     frequencyCap: DAILY,
+    favicon: HOUSE_STORE_ICON_URL,
     creatives: [
-      creative('Freebuff now has merch!', 'Get yours: the Dark Mode logo tee, $15.', 'Get yours', HOUSE_STORE_SHIRT_URL),
-      creative('Rep Freebuff for $15', 'The Dark Mode logo tee, in Black Heather or Heather Forest.', 'Get the shirt', HOUSE_STORE_SHIRT_URL),
-      creative('Freebuff merch is here', 'Rep Freebuff for $15. Sizes XS to 4XL.', 'Get yours', HOUSE_STORE_SHIRT_URL),
-      creative('Get your Freebuff shirt', 'New in the store: the Dark Mode tee, $15.', 'Shop merch', HOUSE_STORE_SHIRT_URL),
-      creative('The Freebuff shirt, now in dark mode', 'The classic logo tee in two dark colors. $15.', 'Get the shirt', HOUSE_STORE_SHIRT_URL),
+      creative('Freebuff now has merch!', 'Get yours: the Dark Mode logo tee, $15.', 'Get yours', HOUSE_STORE_SHIRT_URL, HOUSE_STORE_ICON_URL),
+      creative('Rep Freebuff for $15', 'The Dark Mode logo tee, in Black Heather or Heather Forest.', 'Get the shirt', HOUSE_STORE_SHIRT_URL, HOUSE_STORE_ICON_URL),
+      creative('Freebuff merch is here', 'Rep Freebuff for $15. Sizes XS to 4XL.', 'Get yours', HOUSE_STORE_SHIRT_URL, HOUSE_STORE_ICON_URL),
+      creative('Get your Freebuff shirt', 'New in the store: the Dark Mode tee, $15.', 'Shop merch', HOUSE_STORE_SHIRT_URL, HOUSE_STORE_ICON_URL),
+      creative('The Freebuff shirt, now in dark mode', 'The classic logo tee in two dark colors. $15.', 'Get the shirt', HOUSE_STORE_SHIRT_URL, HOUSE_STORE_ICON_URL),
     ],
   },
   {
@@ -431,11 +440,12 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     gate: null,
     targeting: 'all',
     frequencyCap: DAILY,
+    favicon: HOUSE_STORE_ICON_URL,
     creatives: [
-      creative('The Freebuff store is open', 'Shirts, hoodies, stickers and more.', 'Shop the store', '/store'),
-      creative('Freebuff now has merch!', 'Stickers, shirts, hoodies and more. Get yours.', 'Get yours', '/store'),
-      creative('Freebuff stickers are here', 'Put the logo on your laptop.', 'Get stickers', '/store'),
-      creative('Rep Freebuff at your desk', 'Desk mats, water bottles, hoodies and tees in the store.', 'Shop the store', '/store'),
+      creative('The Freebuff store is open', 'Shirts, hoodies, stickers and more.', 'Shop the store', '/store', HOUSE_STORE_ICON_URL),
+      creative('Freebuff now has merch!', 'Stickers, shirts, hoodies and more. Get yours.', 'Get yours', '/store', HOUSE_STORE_ICON_URL),
+      creative('Freebuff stickers are here', 'Put the logo on your laptop.', 'Get stickers', '/store', HOUSE_STORE_ICON_URL),
+      creative('Rep Freebuff at your desk', 'Desk mats, water bottles, hoodies and tees in the store.', 'Shop the store', '/store', HOUSE_STORE_ICON_URL),
     ],
   },
   {
