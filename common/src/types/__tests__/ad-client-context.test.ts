@@ -14,6 +14,7 @@ import {
   bucketEditRatio,
   bucketFreeMemory,
   bucketInstallAge,
+  bucketDownlink,
   bucketJitter,
   bucketLanguageCount,
   bucketLatency,
@@ -25,6 +26,7 @@ import {
   bucketUptime,
   bucketZoom,
   cpuFamilyOf,
+  cpuTierOf,
   createPointerTracker,
   createTypingTracker,
   distanceToRect,
@@ -252,6 +254,33 @@ describe('parseAdEngagement', () => {
     expect(parseAdEngagement(record)).toEqual(record)
   })
 
+  test('keeps click.atClick and rejects a non-boolean one', () => {
+    const record = { v: 1, impUrl: 'https://ads.example/i', click: { region: 'cta', count: 1, atClick: true } }
+    expect(parseAdEngagement(record)).toEqual(record)
+    expect(parseAdEngagement({ ...record, click: { count: 1 } })?.click).toEqual({ count: 1 })
+    expect(parseAdEngagement({ ...record, click: { atClick: 'yes' } })).toBeUndefined()
+    expect(parseAdEngagement({ ...record, click: { atClick: 1 } })).toBeUndefined()
+  })
+
+  test('yielded: why an ad gave way and how long it was held hidden; unknown reasons fail', () => {
+    const record = {
+      v: 1,
+      impUrl: 'https://ads.example/i',
+      exit: 'unmount',
+      yielded: { reason: 'inline_card_in_view', count: 2, hiddenMs: 41_000 },
+    }
+    expect(parseAdEngagement(record)).toEqual(record)
+    const superseded = {
+      v: 1,
+      impUrl: 'https://ads.example/j',
+      yielded: { reason: 'newer_inline_card', count: 1 },
+    }
+    expect(parseAdEngagement(superseded)).toEqual(superseded)
+    expect(
+      parseAdEngagement({ v: 1, impUrl: 'https://ads.example/k', yielded: { reason: 'boredom' } }),
+    ).toBeUndefined()
+  })
+
   test('a post-click-only upsert is valid on its own', () => {
     const update = { v: 1, impUrl: 'https://ads.example/i', postClick: { returnMs: 2_000 } }
     expect(parseAdEngagement(update)).toEqual(update)
@@ -266,6 +295,25 @@ describe('parseAdEngagement', () => {
       focusedVisibleMs: 800,
     }
     expect(parseAdEngagement(record)).toEqual(record)
+  })
+
+  test('carries hidden time and why the ad stopped being drawn, and drops unknown reasons', () => {
+    const record = {
+      v: 1,
+      impUrl: 'https://ads.example/held',
+      visibleMs: 20_000,
+      hiddenMs: 180_000,
+      endedBy: 'outranked',
+      exit: 'rotation',
+    }
+    expect(parseAdEngagement(record)).toEqual(record)
+    for (const endedBy of ['gravity_took_screen', 'retired_by_newer_inline', 'expired'])
+      expect(parseAdEngagement({ ...record, endedBy })?.endedBy).toBe(endedBy)
+    // A reason this server does not know yet keeps the record, without the reason.
+    const unknown = parseAdEngagement({ ...record, endedBy: 'other' })
+    expect(unknown?.visibleMs).toBe(20_000)
+    expect(unknown?.endedBy).toBeUndefined()
+    expect(parseAdEngagement({ ...record, hiddenMs: -1 })).toBeUndefined()
   })
 
   test('requires impUrl and rejects out-of-range timings', () => {
@@ -431,6 +479,18 @@ describe('wave 2 fields and helpers', () => {
     expect(cpuFamilyOf('Apple M9')).toBe('apple_other')
     expect(cpuFamilyOf('Intel(R) Core(TM) i9-9980HK CPU @ 2.40GHz')).toBe('intel')
     expect(cpuFamilyOf('AMD Ryzen 9 7950X')).toBe('amd')
+    expect(cpuTierOf('Apple M3')).toBe('apple_base')
+    expect(cpuTierOf('Apple M3 Pro')).toBe('apple_pro')
+    expect(cpuTierOf('Apple M4 Max')).toBe('apple_max')
+    expect(cpuTierOf('Apple M2 Ultra')).toBe('apple_ultra')
+    expect(cpuTierOf('Intel(R) Core(TM) i9-9980HK CPU @ 2.40GHz')).toBe('x86_9')
+    expect(cpuTierOf('Intel(R) Core(TM) Ultra 7 155H')).toBe('x86_7')
+    expect(cpuTierOf('AMD Ryzen 5 5600X 6-Core Processor')).toBe('x86_5')
+    expect(cpuTierOf('AMD Ryzen AI 9 HX 370')).toBe('x86_9')
+    expect(cpuTierOf('AMD Ryzen Threadripper 3970X')).toBe('x86_workstation')
+    expect(cpuTierOf('Intel(R) Xeon(R) W-2245 CPU')).toBe('x86_workstation')
+    expect(cpuTierOf('Snapdragon(R) X Elite')).toBe('other')
+    expect(cpuTierOf('')).toBe('other')
     expect(gpuVendorOf('ANGLE (NVIDIA GeForce RTX 4090)')).toBe('nvidia')
     expect(gpuVendorOf('Google SwiftShader')).toBe('software')
     expect(gpuVendorOf('Apple M2')).toBe('apple')
@@ -452,6 +512,9 @@ describe('wave 2 fields and helpers', () => {
     expect(jitterOf([100])).toBeUndefined()
     expect(jitterOf([100, 120, 100])).toBe(20)
     expect(bucketJitter(20)).toBe('10-50')
+    expect(bucketDownlink(0.4)).toBe('<1')
+    expect(bucketDownlink(10)).toBe('5-25')
+    expect(bucketDownlink(100)).toBe('100+')
     expect(bucketTerminalRows(24)).toBe('24-39')
     expect(toolCategoryOf('read_files')).toBe('read')
     expect(toolCategoryOf('str_replace')).toBe('edit')
@@ -503,6 +566,15 @@ describe('wave 2 fields and helpers', () => {
     expect(adVendorOfPackage('left-pad')).toBeUndefined()
     expect(adVendorOfMcp('https://mcp.supabase.com/mcp')).toBe('supabase')
     expect(adVendorOfMcp('owens-internal-tool')).toBeUndefined()
+  })
+})
+
+describe('COD-883 fields', () => {
+  test('chip tier and downlink parse, and an unknown value drops the context', () => {
+    const context = { v: 1, sys: { cpuTier: 'apple_max' }, net: { downlink: '25-100' } }
+    expect(parseAdClientContext(context)).toEqual(context as never)
+    expect(parseAdClientContext({ v: 1, sys: { cpuTier: 'Apple M3 Max' } })).toBeUndefined()
+    expect(parseAdClientContext({ v: 1, net: { downlink: '37.5' } })).toBeUndefined()
   })
 })
 

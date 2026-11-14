@@ -1,3 +1,4 @@
+import { SPONSORED_RUN_SUMMARY_INSTRUCTION } from './sponsored-run-summary'
 /**
  * The step driver: the harness, not the model, decides when a sponsored
  * skill's steps are done (piece 3 of COD-822; the format is
@@ -45,6 +46,12 @@ import {
   deliveredSponsoredSkillForProcedure,
   deliveredSponsoredSkillForRef,
 } from './sponsored-skill-delivery'
+import {
+  sponsoredRepoFactsFiles,
+  sponsoredSkillFactChecksOnly,
+  sponsoredStaticCheckContext,
+  type SponsoredRepoFacts,
+} from './sponsored-skill-fit'
 import { resolveSponsoredSkill } from './sponsored-skills/registry'
 import {
   evaluateSponsoredSkillChecks,
@@ -323,6 +330,8 @@ export type SponsoredStepLoopDeps<State> = {
   redact?: (text: string) => string
   /** A `report_friction` blocker, sent for each step left blocked. */
   onFriction?: (input: SponsoredFrictionInput) => void
+  /** Ask for an agent closing summary after checks even when no fixes were needed. */
+  alwaysReport?: boolean
   /** Persist checked completion before the optional final report segment. */
   onChecksComplete?: (result: SponsoredStepDriveResult) => void
   /** Progress only (see {@link SponsoredStepDriverDeps.onStep}). */
@@ -358,9 +367,9 @@ export async function runSponsoredStepLoop<State>(
   deps.onChecksComplete?.(result)
 
   // The report the user reads must match the checks, not the model's memory
-  // of what it tried. Only after a fix: otherwise the first segment's report
-  // already described the work the checks then confirmed.
-  if (result.fixes > 0 && deps.canContinue()) {
+  // of what it tried. Summary-capable clients always request this closing
+  // segment; older clients need it only after a fix.
+  if ((result.fixes > 0 || deps.alwaysReport) && deps.canContinue()) {
     const next = await deps.resume(sponsoredStepReportPrompt(result), state)
     if (next !== null) state = next
   }
@@ -556,6 +565,32 @@ export async function runSponsoredSkillPreflight(
   }
 }
 
+/**
+ * THE PREFLIGHT over repository facts instead of a worktree: the same
+ * {@link runSponsoredSkillPreflight} the run calls, on the checks facts can
+ * decide (`sponsoredSkillFactChecksOnly`), over the project exactly as the
+ * facts show it (`sponsoredRepoFactsFiles`: their files and manifests, and
+ * nothing else). No command runs. So where a run would find no manifest or
+ * no dependency its preflight needs, this fails the same check, with the
+ * same evaluator and label.
+ *
+ * The offer route holds a Desktop V1 snapshot (`localCapability.framework`,
+ * which says only whether a root package.json exists and declares next) to
+ * it: docs/freebuff-agentic-ads.md, "Skill fit on the offer route".
+ */
+export function runSponsoredSkillPreflightOverFacts(input: {
+  skill: SponsoredSkill
+  facts: SponsoredRepoFacts
+  /** The device OS, as `requirements.os` names it; unknown skips that check. */
+  platform: string | null | undefined
+}): Promise<SponsoredSkillPreflightOutcome> {
+  return runSponsoredSkillPreflight({
+    skill: sponsoredSkillFactChecksOnly(input.skill),
+    ctx: sponsoredStaticCheckContext(sponsoredRepoFactsFiles(input.facts)),
+    platform: input.platform,
+  })
+}
+
 /** The run error's opening, as {@link runSponsoredSkillPreflight} writes it. */
 export const SPONSORED_PREFLIGHT_FAILED_PREFIX = 'Preflight failed before any edit:'
 
@@ -632,6 +667,7 @@ export function sponsoredStepReportPrompt(
       (step) => `- Step ${step.number}: ${STATUS_LINE[step.status]}`,
     ),
     '',
+    SPONSORED_RUN_SUMMARY_INSTRUCTION,
     'Make no more changes. Write your final report in the format the task asked for. Report a step as done only if it is done above; for each step that is not, say plainly what is still needed.',
   ].join('\n')
 }

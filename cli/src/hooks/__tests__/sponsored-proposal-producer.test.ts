@@ -12,6 +12,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import { ensureCliTestEnv } from '../../__tests__/test-utils'
+import { patchSponsoredProposalBlock } from '../../utils/sponsored-proposal-state'
 
 ensureCliTestEnv()
 
@@ -68,6 +69,66 @@ const withBlock = (
     ],
   } as ChatMessage,
 ]
+
+describe('reports remain attached to their original proposal', () => {
+  for (const alreadySending of [false, true]) {
+    test(`a replacement is not marked busy or answered when the old report ${alreadySending ? 'finishes' : 'starts'}`, () => {
+      let messages = withBlock()
+      if (alreadySending) {
+        messages = patchSponsoredProposalBlock(
+          messages,
+          TARGET,
+          { busy: true },
+          'proposal-1',
+        )
+      }
+      messages = applyPolledProposal(
+        messages,
+        TARGET,
+        present(proposal({ _id: 'proposal-2' })),
+      )
+      messages = patchSponsoredProposalBlock(
+        messages,
+        TARGET,
+        { busy: true },
+        'proposal-1',
+      )
+      messages = patchSponsoredProposalBlock(
+        messages,
+        TARGET,
+        { busy: false, answered: true },
+        'proposal-1',
+      )
+      const replacement = findProposalBlock(messages)!
+      expect(replacement.proposal._id).toBe('proposal-2')
+      expect(replacement.busy).toBeUndefined()
+      expect(replacement.answered).toBeUndefined()
+    })
+  }
+
+  test('refreshing the same proposal preserves its pending state and accepts its completion', () => {
+    let messages = patchSponsoredProposalBlock(
+      withBlock(),
+      TARGET,
+      { busy: true },
+      'proposal-1',
+    )
+    messages = applyPolledProposal(
+      messages,
+      TARGET,
+      present(proposal({ headline: 'Updated offer headline' })),
+    )
+    expect(findProposalBlock(messages)?.busy).toBe(true)
+    messages = patchSponsoredProposalBlock(
+      messages,
+      TARGET,
+      { busy: false, answered: true },
+      'proposal-1',
+    )
+    expect(findProposalBlock(messages)?.answered).toBe(true)
+    expect(findProposalBlock(messages)?.busy).toBe(false)
+  })
+})
 
 describe('the cadence', () => {
   test('an offer is polled once a minute; a run several times', () => {

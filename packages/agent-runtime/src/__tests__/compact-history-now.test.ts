@@ -1,6 +1,5 @@
-// The mechanical pass on its own. `evaluateCompactionTrigger` answers "is this
-// worth doing unasked"; `compactHistoryNow` is what runs once that is settled —
-// a user's /compact or a triggered compaction —
+// The mechanical pass on its own. `compactHistoryNow` is what runs once the
+// decision to compact is settled — a user's /compact or a triggered compaction —
 // so what it pins is that the decision is the only thing removed — the
 // protected prefix, the fresh tool exchange and the budget are all still the
 // shared ones — plus the two answers a caller has to be able to tell apart: a
@@ -8,10 +7,7 @@
 
 import { describe, expect, it } from 'bun:test'
 
-import {
-  compactHistoryNow,
-  evaluateCompactionTrigger,
-} from '../compact-history'
+import { compactHistoryNow } from '../compact-history'
 import { countTokensMessages } from '../util/token-counter'
 
 import type { JSONValue } from '@codebuff/common/types/json'
@@ -125,19 +121,8 @@ describe('compactHistoryNow', () => {
     expect(JSON.stringify(compacted.messages)).toContain(answer)
   })
 
-  it('compacts a history the triggers would have left alone', () => {
+  it('compacts a history well under the context limit', () => {
     const messages = settledHistory()
-    const contextTokenCount = countTokensMessages(messages)
-    // Well under the budget and the cache is warm: nothing to trigger on.
-    expect(
-      evaluateCompactionTrigger({
-        messages,
-        contextTokenCount,
-        maxContextLength: 400_000,
-        cacheExpiryMs: null,
-      }).trigger,
-    ).toBeNull()
-
     const forced = compactHistoryNow({ messages, maxContextLength: 400_000 })
     expect(forced).not.toBeNull()
     expect(forced!.nextTokens).toBeLessThan(forced!.previousTokens)
@@ -163,6 +148,24 @@ describe('compactHistoryNow', () => {
     expect(JSON.stringify(live[0])).toContain('Now document it')
     // The mechanical summary keeps what was read and edited, not its contents.
     expect(JSON.stringify(forced.messages)).toContain('uploader.ts')
+  })
+
+  it('keeps the whole earlier request when only its reserved budget has room', () => {
+    const request =
+      'Model the ears.\n\n---\n\n' + 'Keep each earlobe at 1.2 cm. '.repeat(45).trimEnd()
+    let messages = [user(request)]
+    for (let pass = 0; pass < 3; pass++) {
+      const result = compactHistoryNow({
+        messages: [
+          ...messages,
+          ...Array.from({ length: 20 }, () => assistant('busy '.repeat(780))),
+          user('Continue to the next item.'),
+        ],
+        maxContextLength: 400_000,
+      })!
+      expect(result.summaryText).toContain(request)
+      messages = result.messages
+    }
   })
 
   it('preserves an unconsumed tool batch mid-turn', () => {

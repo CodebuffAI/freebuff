@@ -36,7 +36,10 @@ export const CONVEX_CRON_JOB_NAMES = [
    *  `forceFinishOverdueMessage` per streaming message past its deadline. */
   'enforce_processing_deadlines',
   /** Convex cron `reconcile cloud PR delivery` (30 min): re-reads PR state
-   *  from GitHub for threads the webhook has not touched in 6 hours. */
+   *  from GitHub for threads the webhook has not touched in 6 hours. On
+   *  graphile since 2026-10-28 (its threads are Postgres's), and the Convex
+   *  cron is deleted: freebuff-web runs the body with its own GitHub App
+   *  key, which its embedded runner already requires. */
   'reconcile_pr_delivery',
   /** Convex cron `reconcile convex usage limits` (5 min): caps users' app
    *  Convex deployments and PAUSES owners over their allowance. */
@@ -60,10 +63,11 @@ export const CONVEX_CRON_JOB_NAMES = [
    *  window. Convex's agent_thread rows, as `enforce_processing_deadlines`. */
   'sweep_cli_agent_runs',
   /** Convex cron `rotate expiring github tokens` (60 min): renews OAuth
-   *  refresh tokens near their lapse, against Convex's `github_connections`.
-   *  Only the trigger moves: Convex's action still rotates, so exactly one
-   *  system rotates in either position (docs/freebuff-github-postgres.md,
-   *  "Rotation"). The Postgres rotation replaces this job, not this switch. */
+   *  refresh tokens near their lapse. Under `graphile` freebuff-web runs the
+   *  action's own body over Postgres `github_connections`
+   *  (`GITHUB_ACTIONS_RUNTIME`, docs/freebuff-github-postgres.md,
+   *  "Rotation") and never calls the Convex action (COD-742, readiness B33),
+   *  so exactly one system rotates in either position. */
   'rotate_github_tokens',
   /** Convex cron `sweep expired request-intent evaluation cohorts` (15 min):
    *  the privacy TTL that deletes one expired capture batch per tick from
@@ -88,15 +92,15 @@ export type ConvexCronJobRunners = Readonly<
 
 export const CONVEX_CRON_JOB_RUNNERS: ConvexCronJobRunners = {
   enforce_processing_deadlines: 'graphile',
-  reconcile_pr_delivery: 'convex',
+  reconcile_pr_delivery: 'graphile',
   reconcile_usage_limits: 'graphile',
   enforce_legacy_usage_limits: 'graphile',
   audit_fleet_usage: 'graphile',
-  sweep_freebuff_runs: 'convex',
+  sweep_freebuff_runs: 'graphile',
   sweep_cli_agent_runs: 'graphile',
   rotate_github_tokens: 'graphile',
   sweep_request_intent_eval_cohorts: 'graphile',
-  fire_automations: 'convex',
+  fire_automations: 'graphile',
 }
 
 /**

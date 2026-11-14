@@ -69,6 +69,13 @@ export const AD_POSTPAID_DEFAULT_CREDIT_LINE_CENTS = 20_000
 
 /** Collection must start before the minimum credit line can stop delivery. */
 export const AD_POSTPAID_COLLECTION_THRESHOLD_CENTS = 10_000
+/** Final collection tier; the effective trigger still reserves credit headroom. */
+export const AD_POSTPAID_MATURE_COLLECTION_THRESHOLD_CENTS = 20_000
+
+/** Collect earlier until the advertiser has established a payment history. */
+export const AD_POSTPAID_INITIAL_COLLECTION_THRESHOLD_CENTS = 2_500
+export const AD_POSTPAID_COLLECTION_MIN_SUCCESSES = 2
+export const AD_POSTPAID_COLLECTION_MIN_HISTORY_DAYS = 14
 
 /**
  * Referral launch promotion: qualify only after $100 has both been collected
@@ -100,7 +107,7 @@ export const AD_PLACEMENT_COLLECTION_RETENTION_DAYS = 180
  * Advertiser trust score / derived credit line (COD-268).
  *
  * The line is expressed as DAYS OF OBSERVED BURN, not as a raw multiple of a
- * 30-day total. Collection is nightly (plus a $100 threshold sweep), so the
+ * 30-day total. Collection is nightly (plus payment-history threshold sweeps), so the
  * only question the line has to answer is "how many days of this advertiser's
  * spend are we willing to have outstanding between sweeps". Three days covers
  * a weekend plus one failed retry; ten days is the most we extend to anybody

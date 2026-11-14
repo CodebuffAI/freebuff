@@ -1,10 +1,12 @@
 import { promises as nodeFs } from 'fs'
 import path from 'path'
 
+import { callWebFetchAPI } from '@codebuff/agent-runtime/llm-api/codebuff-web-api'
 import { callMainPrompt } from '@codebuff/agent-runtime/main-prompt'
 import { adjustContextTokenCountForHistoryEdit } from '@codebuff/agent-runtime/util/context-token-count'
 import {
   buildUserMessageContent,
+  USER_INTERRUPTED_MESSAGE,
   withSystemTags,
 } from '@codebuff/agent-runtime/util/messages'
 import { MAX_AGENT_STEPS_DEFAULT } from '@codebuff/common/constants/agents'
@@ -21,7 +23,7 @@ import {
   callMCPTool,
 } from '@codebuff/common/mcp/client'
 import { toolNames } from '@codebuff/common/tools/constants'
-import { clientToolCallSchema } from '@codebuff/common/tools/list'
+import { clientToolCallSchema, type CodebuffToolCall } from '@codebuff/common/tools/list'
 import { AgentOutputSchema } from '@codebuff/common/types/session-state'
 import {
   FETCH_IDLE_TIMEOUT_USER_MESSAGE,
@@ -51,7 +53,11 @@ import { applyPatchTool } from './tools/apply-patch'
 import { codeSearch } from './tools/code-search'
 import { glob } from './tools/glob'
 import { listDirectory } from './tools/list-directory'
-import { getProjectPathLookupKeys, resolveFilePath } from './tools/path-utils'
+import {
+  findFileLookupKey,
+  getProjectPathLookupKeys,
+  resolveFilePath,
+} from './tools/path-utils'
 import { createProjectFence } from './tools/project-confinement'
 import { getFiles, getImageFile } from './tools/read-files'
 import { readUrl } from './tools/read-url'
@@ -85,6 +91,7 @@ import type {
   AgentUsageData,
   ContextCompactionData,
 } from '@codebuff/common/types/contracts/llm'
+import type { TurnReview } from '@codebuff/common/constants/turn-review'
 import type { TraceWriter } from '@codebuff/common/types/contracts/trace'
 import type { DrainSteeringMessages } from '@codebuff/common/types/contracts/steering'
 import type { CodebuffFileSystem } from '@codebuff/common/types/filesystem'
@@ -94,7 +101,10 @@ import type {
 } from '@codebuff/common/types/messages/codebuff-message'
 import type { ToolResultOutput } from '@codebuff/common/types/messages/content-part'
 import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
-import type { SessionState } from '@codebuff/common/types/session-state'
+import type {
+  ConversationSummary,
+  SessionState,
+} from '@codebuff/common/types/session-state'
 import type { SkillsMap } from '@codebuff/common/types/skill'
 import type { Source } from '@codebuff/common/types/source'
 import type { CodebuffSpawn } from '@codebuff/common/types/spawn'
@@ -110,8 +120,10 @@ import type { CodebuffSpawn } from '@codebuff/common/types/spawn'
 export type OverrideToolHandlers = {
   [K in Exclude<PublishedClientToolName, 'read_files'>]?: (
     input: any,
+    context?: { toolCallId?: string },
   ) => Promise<ToolResultOutput[]>
 } & {
+  read_image?: import('@codebuff/common/types/contracts/client').RequestImageFileFn
   read_files?: (input: {
     filePaths: string[]
     /** Present only for `windowedFileReads` agents. An override that ignores
@@ -213,8 +225,14 @@ export type CodebuffClientOptions = {
    *  `computeProjectIndexFromFiles`). Skips the per-run tree-sitter parse;
    *  ignored when `projectFiles` is absent. */
   projectIndex?: ComputedProjectIndex
+  /** See `InitialSessionStateOptions.skipSymbolIndex`. */
+  skipSymbolIndex?: boolean
   knowledgeFiles?: Record<string, string>
   agentDefinitions?: AgentDefinition[]
+  /** See `InitialSessionStateOptions.agentDirs`: the directories a fresh
+   *  session may import agent modules from when `agentDefinitions` is
+   *  omitted. Defaults to `~/.agents`; never the repository. */
+  agentDirs?: string[]
   maxAgentSteps?: number
   env?: Record<string, string>
   /** Optional host process boundary that keeps terminal tools away from an
@@ -289,6 +307,11 @@ export type RunOptions = {
   /** End user represented by this run. Trusted service accounts may use this
    *  to run on behalf of a signed-in user; ordinary API keys cannot delegate. */
   userId?: string
+  /** The API key's own user id, when the host already knows it (the Cloud
+   *  runner mints a per-run key for the chat's owner). Skips the identity
+   *  lookup before the first model call; the same id is used, so nothing
+   *  downstream changes. Not a delegation: see `userId` for that. */
+  apiKeyUserId?: string
   /** Content array for multimodal messages (text + images) */
   content?: MessageContent[]
   params?: Record<string, any>
@@ -309,6 +332,11 @@ export type RunOptions = {
    * prompt for after the turn finishes. Supports plain strings or { prompt, content }
    * messages with images, and async attachment loading. */
   drainSteeringMessages?: DrainSteeringMessages
+  /** The prompt is the host carrying on work the user already asked for (a
+   * turn resumed after a restart, an automatic follow-up pass), not a new
+   * message. It never counts as the user returning after an idle gap, so it
+   * never swaps the history for its summary on that ground. */
+  promptIsContinuation?: boolean
   costMode?: string
   /** Extra key/values merged into each LLM request's `codebuff_metadata`.
    *  Used by hosts (e.g. the CLI) to forward client-scoped identifiers like
@@ -331,6 +359,22 @@ export type RunOptions = {
   /** A compaction pass began. `onCompactionEnd` always follows, after any `onCompaction`. */
   onCompactionStart?: (data: Pick<ContextCompactionData, 'trigger'>) => void
   onCompactionEnd?: () => void
+  /**
+   * A structured summary of the conversation, made in the background. It
+   * usually arrives after the run returned, so add it to the state you saved
+   * with `withCompactionSummary`; without it a restart loses the summary.
+   */
+  onCompactionSummary?: (summary: ConversationSummary) => void
+  /**
+   * Asks the agent's own model, once a turn ends normally, for a review of it:
+   * one-click next prompts and a verdict on any change (`TURN_REVIEW_PROMPT`).
+   * It reuses the turn's prompt cache, usually arrives a few seconds after the
+   * run returned, and never joins the history. Called with null when the review failed or
+   * held nothing, so a host stops waiting for it.
+   */
+  onTurnReview?: (review: TurnReview | null) => void
+  /** The review's instruction, e.g. `turnReviewPrompt(recentPrompts)`; TURN_REVIEW_PROMPT when absent. */
+  turnReviewPrompt?: string
   /**
    * The shell this run's terminal commands actually execute in, when the host's
    * broker picks one other than the default (the sponsored Windows floor runs
@@ -482,6 +526,9 @@ export function buildCancelledSessionState(params: {
     params
 
   const state = cloneSessionState(sessionState, logger)
+  // Also used for in-flight checkpoints: a host that exits mid-response must
+  // not count the time spent generating that response as user inactivity.
+  state.mainAgentState.lastActivityAt = Date.now()
   const previousHistory = state.mainAgentState.messageHistory
   // A checkpoint can land after an assistant tool call is recorded but before
   // its result arrives. Drop that half-step at the persistence boundary so a
@@ -510,6 +557,73 @@ export function buildCancelledSessionState(params: {
     },
   )
   return state
+}
+
+/** The text of a single-text-part user message, else undefined. */
+function userMessageText(message: Message | undefined): string | undefined {
+  if (!message || message.role !== 'user') return undefined
+  const content = message.content as unknown
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content) || content.length !== 1) return undefined
+  const [part] = content as Array<{ type?: string; text?: unknown }>
+  return part?.type === 'text' && typeof part.text === 'string'
+    ? part.text
+    : undefined
+}
+
+/**
+ * The run state a host resumes from after the USER stopped the turn (Esc).
+ *
+ * A cancelled run state from this SDK ends in the message explaining why the
+ * turn ended, and `output.message` is that same text: the periodic
+ * `onStateSnapshot` says the session ended (true only when the host died
+ * mid-turn), and an early abort says the run was cancelled. After Esc the model
+ * must read that the user interrupted it, as the runtime itself writes on
+ * abort. This swaps the SDK's trailing message for the runtime's, once: a
+ * history that already ends in it (the runtime's own abort state) is returned
+ * as-is, and so is any state that does not end in an SDK cancellation message
+ * (a run that completed as Esc landed).
+ *
+ * Returns undefined when there is no session state to resume from.
+ */
+export function toUserInterruptedRunState(runState: RunState): RunState | undefined {
+  const sessionState = runState.sessionState
+  if (!sessionState) return undefined
+  const previousHistory = sessionState.mainAgentState.messageHistory
+  const interrupted = withSystemTags(USER_INTERRUPTED_MESSAGE)
+  const last = userMessageText(previousHistory.at(-1))
+  if (last === interrupted) return runState
+
+  const appended =
+    runState.output?.type === 'error' && runState.output.message
+      ? withSystemTags(runState.output.message)
+      : undefined
+  if (!appended || last !== appended) return runState
+
+  const nextHistory = previousHistory.slice(0, -1)
+  if (userMessageText(nextHistory.at(-1)) !== interrupted) {
+    nextHistory.push({
+      role: 'user' as const,
+      content: [{ type: 'text' as const, text: interrupted }],
+    })
+  }
+  return {
+    ...runState,
+    sessionState: {
+      ...sessionState,
+      mainAgentState: {
+        ...sessionState.mainAgentState,
+        messageHistory: nextHistory,
+        contextTokenCount: adjustContextTokenCountForHistoryEdit({
+          contextTokenCount: sessionState.mainAgentState.contextTokenCount,
+          previousHistory,
+          nextHistory,
+          scale: sessionState.mainAgentState.contextTokenBaseline?.scale,
+        }),
+      },
+    },
+    output: { type: 'error', message: USER_INTERRUPTED_MESSAGE },
+  }
 }
 
 const createAbortError = (signal?: AbortSignal) => {
@@ -610,8 +724,10 @@ async function runOnce({
   includeHomeSkills,
   projectFiles,
   projectIndex,
+  skipSymbolIndex,
   knowledgeFiles,
   agentDefinitions,
+  agentDirs,
   maxAgentSteps = MAX_AGENT_STEPS_DEFAULT,
   env,
   terminalCommandBroker,
@@ -632,6 +748,7 @@ async function runOnce({
   agent,
   prompt,
   userId: requestedUserId,
+  apiKeyUserId,
   content,
   params,
   previousRun,
@@ -639,6 +756,7 @@ async function runOnce({
   signal,
   deadlineAt,
   drainSteeringMessages,
+  promptIsContinuation,
   costMode,
   extraCodebuffMetadata,
   onStateSnapshot,
@@ -647,6 +765,9 @@ async function runOnce({
   onCompaction,
   onCompactionStart,
   onCompactionEnd,
+  onCompactionSummary,
+  onTurnReview,
+  turnReviewPrompt,
   terminalShell,
   projectKey,
   traceSessionId: traceSessionIdOption,
@@ -705,6 +826,7 @@ async function runOnce({
         customToolDefinitions,
         projectFiles,
         projectIndex,
+        skipSymbolIndex,
         maxAgentSteps,
       },
     )
@@ -717,9 +839,11 @@ async function runOnce({
       includeHomeSkills,
       knowledgeFiles,
       agentDefinitions,
+      agentDirs,
       customToolDefinitions,
       projectFiles,
       projectIndex,
+      skipSymbolIndex,
       maxAgentSteps,
       fs,
       spawn,
@@ -747,7 +871,7 @@ async function runOnce({
             ? byokTemplate.compactContext
             : {}),
           maxContextLength: limits.maxContextLength,
-          maxOutputTokens: limits.maxOutputTokens,
+          maxOutputTokens: limits.reservedOutputTokens,
         }
       }
     }
@@ -834,7 +958,7 @@ async function runOnce({
 
     if (typeof chunk !== 'string') {
       if (chunk.type === 'reasoning_delta') {
-        handleStreamChunk?.({
+        await handleStreamChunk?.({
           type: 'reasoning_chunk',
           chunk: chunk.text,
           // The agent's stable id (matches subagent_start/subagent_chunk), so
@@ -900,10 +1024,11 @@ async function runOnce({
     handleStepsLogChunk: () => {
       // Does nothing for now
     },
-    requestToolCall: async ({ userInputId, toolName, input, mcpConfig }) => {
+    requestToolCall: async ({ userInputId, toolName, input, mcpConfig, toolCallId }) => {
       return handleToolCall({
         action: {
           type: 'tool-call-request',
+          toolCallId,
           requestId: crypto.randomUUID(),
           userInputId,
           toolName,
@@ -912,6 +1037,24 @@ async function runOnce({
           mcpConfig,
         },
         overrides: overrideTools ?? {},
+        readPage: async ({ url, max_chars, objective, live }) => {
+          // A direct BYOK run has no hosted service allowance. Keep its local,
+          // DNS-pinned reader and never send its provider key to the web API.
+          if (byok) return readUrl({ url, max_chars, signal })
+          const page = await callWebFetchAPI({
+            url,
+            maxChars: max_chars,
+            objective,
+            live,
+            sessionId: promptId,
+            signal,
+            apiKey,
+            fetch: agentRuntimeImpl.fetch,
+            logger: agentRuntimeImpl.logger,
+            env: { clientEnv: agentRuntimeImpl.clientEnv, ciEnv: agentRuntimeImpl.ciEnv },
+          })
+          return [{ type: 'json', value: page }]
+        },
         customToolDefinitions: activeCustomToolDefinitions
           ? Object.fromEntries(
               activeCustomToolDefinitions.map((def) => [def.toolName, def]),
@@ -985,11 +1128,11 @@ async function runOnce({
       const loaded = inside.length > 0 ? await read(inside) : {}
       return { ...refused, ...loaded }
     },
-    // Only a local read can return an image's bytes. An override reads a
-    // remote workspace through the text-only contract, so it keeps images.
-    // refuseNonTextFileReads leaves images to the text read, which refuses
-    // them.
-    requestImageFile:
+    // A remote host reads an image through its own read_image hook: its
+    // read_files override is the text-only contract. Without a hook it keeps
+    // images in that text read, and so does refuseNonTextFileReads, which
+    // refuses them.
+    requestImageFile: overrideTools?.read_image ?? (
       overrideTools?.read_files || refuseNonText
         ? undefined
         : async ({ filePath }) => {
@@ -1017,7 +1160,7 @@ async function runOnce({
               fs,
               fileFilter,
             })
-          },
+          }),
     requestOptionalFile: async ({ filePath }) => {
       authorizeReadFileOverride()
       const decision = authorizeToolCall(policy, {
@@ -1040,20 +1183,20 @@ async function runOnce({
       const lookupKeys = cwd
         ? getProjectPathLookupKeys(cwd, filePath)
         : [filePath]
-      const fileKey = lookupKeys.find((key) => key in files)
+      const fileKey = findFileLookupKey(files, lookupKeys)
       return toOptionalFile(fileKey === undefined ? null : files[fileKey]!)
     },
-    sendAction: ({ action }) => {
+    sendAction: async ({ action }) => {
       if (action.type === 'action-error') {
         onError({ message: action.message })
         return
       }
       if (action.type === 'response-chunk') {
-        onResponseChunk(action)
+        await onResponseChunk(action)
         return
       }
       if (action.type === 'subagent-response-chunk') {
-        onSubagentResponseChunk(action)
+        await onSubagentResponseChunk(action)
         return
       }
       if (action.type === 'prompt-response') {
@@ -1085,7 +1228,7 @@ async function runOnce({
       prompt,
       forwardToPrompt = true,
     }) => {
-      onSubagentResponseChunk({
+      return onSubagentResponseChunk({
         type: 'subagent-response-chunk',
         userInputId,
         agentId,
@@ -1106,6 +1249,8 @@ async function runOnce({
     // BYOK is intentionally auth-free: no Codebuff identity, run ledger,
     // token-count, analytics, or helper request is necessary for inference.
     userId = requestedUserId ?? BYOK_LOCAL_USER_ID
+  } else if (apiKeyUserId) {
+    userId = requestedUserId ?? apiKeyUserId
   } else {
     let userInfo: { id: string } | null
     try {
@@ -1225,6 +1370,7 @@ async function runOnce({
       agentId,
     },
     drainSteeringMessages,
+    promptIsContinuation,
     deadlineAt,
     repoUrl: undefined,
     repoId: undefined,
@@ -1244,6 +1390,9 @@ async function runOnce({
     onCompaction: report(onCompaction),
     onCompactionStart: report(onCompactionStart),
     onCompactionEnd: reportSignal(onCompactionEnd),
+    onCompactionSummary: report(onCompactionSummary),
+    onTurnReview: report(onTurnReview),
+    turnReviewPrompt,
   }).catch((error) => {
     // A caller's own deadline (`AbortSignal.timeout`) rejects with a
     // `TimeoutError`, the same name Bun's 5-minute fetch idle timeout uses, so
@@ -1428,6 +1577,7 @@ const TRUSTED_UI_OVERRIDE_TOOLS: ReadonlySet<ToolName> = new Set(['ask_user'])
 export async function handleToolCall({
   action,
   overrides,
+  readPage,
   customToolDefinitions,
   cwd,
   fs,
@@ -1440,6 +1590,7 @@ export async function handleToolCall({
 }: {
   action: ServerAction<'tool-call-request'>
   overrides: NonNullable<CodebuffClientOptions['overrideTools']>
+  readPage: (input: CodebuffToolCall<'read_url'>['input']) => Promise<ToolResultOutput[]>
   customToolDefinitions: Record<string, CustomToolDefinition>
   cwd?: string
   fs: CodebuffFileSystem
@@ -1676,7 +1827,7 @@ export async function handleToolCall({
       )
     }
     return {
-      output: await customToolHandler.execute(action.input),
+      output: await customToolHandler.execute(action.input, { toolCallId: action.toolCallId }),
     }
   }
 
@@ -1686,7 +1837,7 @@ export async function handleToolCall({
       // the union type of all possible tool inputs based on the dynamic toolName.
       // The input has been validated by clientToolCallSchema.parse above.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      result = await override(input as any)
+      result = await override(input as any, { toolCallId: action.toolCallId })
     } else if (toolName === 'end_turn') {
       result = [{ type: 'json', value: { message: 'Turn ended.' } }]
     } else if (toolName === 'write_file' || toolName === 'str_replace') {
@@ -1720,10 +1871,7 @@ export async function handleToolCall({
         terminalCommandBroker,
       } as Parameters<typeof runTerminalCommand>[0])
     } else if (toolName === 'read_url') {
-      // Only the tool's own parameters: the transport and SSRF options are
-      // the host's, never the tool call's.
-      const { url, max_chars } = input as { url: string; max_chars?: number }
-      result = await readUrl({ url, max_chars, signal })
+      result = await readPage(input as CodebuffToolCall<'read_url'>['input'])
     } else if (toolName === 'code_search' && projectFence) {
       result = confinedToolError(
         'code_search is not available in this run: it cannot be held to the project directory. Use glob and read_files instead.',

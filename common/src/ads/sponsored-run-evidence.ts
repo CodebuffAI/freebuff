@@ -1,3 +1,7 @@
+import {
+  scrubSponsoredRunSummary,
+  SPONSORED_RUN_SUMMARY_MAX,
+} from './sponsored-run-summary'
 import type { SponsoredStepDriveResult } from './sponsored-step-driver'
 import type { SponsoredTurnEnding } from './sponsored-in-place'
 
@@ -42,6 +46,7 @@ export const SPONSORED_RUN_ENDINGS = [
   'runner_restarted',
 ] as const
 export type SponsoredRunEvidence = {
+  agentSummary?: string
   version: 1
   ending: (typeof SPONSORED_RUN_ENDINGS)[number]
   checks: Array<{
@@ -69,6 +74,7 @@ export function parseSponsoredRunEvidence(
       (k) =>
         ![
           'version',
+          'agentSummary',
           'ending',
           'checks',
           'checksRecorded',
@@ -76,6 +82,10 @@ export function parseSponsoredRunEvidence(
           'truncated',
         ].includes(k),
     ) ||
+    (v.agentSummary !== undefined &&
+      (typeof v.agentSummary !== 'string' ||
+        !v.agentSummary.trim() ||
+        v.agentSummary.length > SPONSORED_RUN_SUMMARY_MAX)) ||
     v.version !== 1 ||
     !(SPONSORED_RUN_ENDINGS as readonly unknown[]).includes(v.ending) ||
     (v.verificationPending !== undefined &&
@@ -113,6 +123,9 @@ export function parseSponsoredRunEvidence(
   }
   return {
     version: 1,
+    ...(scrubSponsoredRunSummary(v.agentSummary)
+      ? { agentSummary: scrubSponsoredRunSummary(v.agentSummary)! }
+      : {}),
     ending: v.ending as SponsoredRunEvidence['ending'],
     checks,
     ...(v.verificationPending ? { verificationPending: true as const } : {}),

@@ -2,7 +2,10 @@ import {
   compactionPolicyForModel,
   type RootCompactionPolicy,
 } from '@codebuff/common/constants/compaction-policy'
+import { BASE3_BATCHING_STEP_PROMPT } from '@codebuff/common/constants/base3-step-prompt'
 import {
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
   FREEBUFF_SOLAR_MINI_4_MODEL_ID,
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
@@ -12,6 +15,11 @@ import {
   TURN_ENDING_NOTE,
   TURN_ENDING_RULE,
 } from '@codebuff/common/constants/turn-ending-rule'
+import {
+  AGENT_PROGRESS_GUIDANCE,
+  AGENT_VERIFICATION_GUIDANCE,
+  WORKSPACE_QUESTION_GUIDANCE,
+} from '@codebuff/common/constants/agent-work-style'
 
 import { leanContextGuidance } from './lean-context'
 import {
@@ -25,6 +33,50 @@ import {
   PLACEHOLDER,
   type SecretAgentDefinition,
 } from './types/secret-agent-definition'
+
+/**
+ * Working in batches, appended to base3's prompt for the roots that ask for it
+ * (`batching`) on the models in BATCHING_MODELS. Every response re-sends the
+ * conversation, so the same work in fewer responses is faster and cheaper
+ * (docs/benchmarks/base3-batched/README.md).
+ * It comes after the dynamic context, outside the core the server compares
+ * (web/src/llm-api/root-instruction-contract.ts), so older clients still match.
+ * Its one-line reminder is the `stepPrompt` below.
+ *
+ * No cost or budget wording. Users quoted Flash thinking "my budget is
+ * limited" before a cheap partial fix (2026-10-31, 11-02); this section's
+ * "costs less" was one of the two places our prompts suggested it (the other
+ * was the server's DEEPSEEK_BREVITY_NUDGE). The "never about doing less" line
+ * is what fixed the same failure for a lean row (lean-context.ts).
+ */
+const BATCHING_GUIDANCE = `## Work in batches
+
+Every response is a round trip: the whole conversation is sent again before the next reply begins, so a task done in fewer responses finishes sooner. Get as much done in each response as you can.
+
+Batching is about fewer round trips, never about doing less: do every part of the request and verify it.
+
+- **Make every call you already can.** Tool calls that do not depend on each other's results belong in one response, not in a sequence of responses.
+- **Search in one batch.** When you need to find something, send every code_search and glob you can think of together (the names, strings and paths it could be under), rather than one search per response.
+- **Read in one batch.** Read every file that looks relevant in one read_files call, often 5 to 15 of them, including the ones you expect to need next, rather than one file at a time. Go back for more only when what you read points to something specific.
+- **Explore with the dedicated tools.** code_search, glob, list_directory and read_files take many patterns or paths per call; ls, cat, grep and find in the terminal do not.
+- **Edit in one batch.** Make all the edits you already know in one response.
+- **Check in one batch.** Run the checks in the same response as your last edits, as one terminal command that runs every check the change needs (for example each touched package's typecheck and the tests that cover the change), each with its exit status echoed and not piped into head or tail.
+- **Stop when it is done.** Once every part of the request is done and its checks pass, or the question is answered, give the final message.`
+
+/**
+ * The models the section and its reminder are measured to help: on DeepSeek
+ * V4.1 Flash they finished sooner at the same score. On GPT-6 Luna the section
+ * bought no time, and on MiMo v2.5 it cost score, so both keep base3's prompt
+ * as it was (docs/benchmarks/base3-batched/README.md). Add a model only with a
+ * paired buffbench run on it that also checks its cache hit: the reminder
+ * comes with the section.
+ */
+const BATCHING_MODELS = [
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  // The same model in fast mode, on a lane in front of DeepSeek's own API,
+  // which caches partial prefixes as Flash's lanes do.
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+]
 
 /**
  * The models that end a turn on a status line or a plan instead of calling the
@@ -76,12 +128,26 @@ export function createBase3(
     compaction?: RootCompactionPolicy
     /** Web/Cloud owns persistent processes through managed sessions. */
     supportsBackgroundCommands?: boolean
+    /** Append the "Work in batches" section, on a model in BATCHING_MODELS.
+     *  For the roots that run the user's coding agent in build mode: the CLI
+     *  (`createBase3CliRoot`), Desktop and Desktop Cloud. Desktop Cloud passes
+     *  it in plan mode too, so its system prompt stays the same across a
+     *  Plan/Build switch, and drops the step reminder there. Desktop's plan
+     *  mode, sponsored runs and Web/Cloud (whose platform runs the checks)
+     *  leave it off, and a lean row never gets it: its context budget says to
+     *  read narrowly. */
+    batching?: boolean
     /** The compiled model a catalog handle stands for, which decides the
      *  per-model parts below; defaults to `model`. */
     compiledModelId?: string
+    /** Desktop and the current Cloud workspace omit todos and ask only when blocked. */
+    workspace?: boolean
   } = {},
 ): Omit<SecretAgentDefinition, 'id'> {
   const turnEndingNote = TURN_ENDING_NOTE_MODELS.some((id) =>
+    freebuffModelIdMatches(options.compiledModelId ?? model, id),
+  )
+  const batchingModel = BATCHING_MODELS.some((id) =>
     freebuffModelIdMatches(options.compiledModelId ?? model, id),
   )
   const { lean, ...compactContext }: RootCompactionPolicy =
@@ -90,6 +156,7 @@ export function createBase3(
     lean && compactContext.maxContextLength
       ? `\n${leanContextGuidance(compactContext.maxContextLength)}\n`
       : ''
+  const batching = options.batching === true && batchingModel && !lean
   return {
     publisher,
     model,
@@ -108,12 +175,23 @@ export function createBase3(
     outputMode: 'last_message',
     includeMessageHistory: true,
     windowedFileReads: true,
-    completionCheck: true,
+    // A root built on this that can spawn lists those agents once, at the end
+    // of its system prompt, not in a message after every user prompt that
+    // stays in history.
+    spawnableAgentsInSystemPrompt: true,
     // Per-model idle gap and token floor (common/src/constants/
     // compaction-policy.ts). Explicit, not `true`: a bare `true` would take
     // the runtime default instead of the model's.
     compactContext,
     ...(turnEndingNote ? { instructionsPrompt: TURN_ENDING_NOTE } : {}),
+    // The section's reminder at the end of every step. Read once, Flash
+    // drifts back to one call per step; repeated, it keeps batching. It stays
+    // in history (run-agent-step.ts, 2026-11-11): deleted each step, no
+    // request extended the previous one, and Flash's lanes re-read the
+    // previous step's tail and output uncached on every step (about a quarter
+    // of its cache misses). The server skips it where it reads the user's own
+    // words (`isRootStepReminderMessage`).
+    ...(batching ? { stepPrompt: BASE3_BATCHING_STEP_PROMPT } : {}),
     toolNames: [
       'read_files',
       'str_replace',
@@ -122,7 +200,7 @@ export function createBase3(
       'code_search',
       'glob',
       'list_directory',
-      'write_todos',
+      ...(options.workspace ? [] : ['write_todos'] as const),
     ],
 
     // No deadline, time-budget or "minimal result early" wording: no product
@@ -133,23 +211,31 @@ export function createBase3(
 
 Current date: ${PLACEHOLDER.CURRENT_DATE}.
 
+- Size the work to the request. Do everything the user asked for, completely, and nothing they did not: no unrequested features, refactors, new files, dependencies or polish. A question gets an answer, not a change. A small or specific request gets a direct fix, without a plan, a to-do list or a survey of the codebase.
+- ${options.workspace ? WORKSPACE_QUESTION_GUIDANCE : 'When a request is open-ended or high-level ("build me an app", "improve the onboarding", "make this faster") and reasonable readings differ in size or direction, settle the scope yourself, build the smallest version that meets the goal, then name the main choices you made and what could come next. Do not build the largest version you can imagine.'}
 - Match the project's existing conventions. Verify a library is already used in the project before employing it.
-- Prefer editing existing files over creating new ones. Make the fewest changes that address the request.
-- Verify non-trivial changes by running the project's typecheck and relevant tests.
-- Extract the acceptance criteria before implementing: exact output paths, file names, interfaces, schemas, formats, and any performance or resource constraints. Check the actual artifacts against those criteria before finishing.
-- Test the delivered artifact through the interface the user will use. A successful build or exit code alone does not prove the requested behavior. For performance work, measure correctness and timing on representative inputs; do not claim a speedup without a measurement.
+- Prefer editing existing files over creating new ones. Make the fewest changes that fully address the request.
+- Note the request's explicit requirements (exact output paths, file names, interfaces, schemas, formats, performance or resource constraints) and check the result against them before finishing.
+- For performance work, do not claim a speedup without a measurement.
 - Verify the final edited files: after a repair, rerun the affected checks; earlier passing results do not cover later changes. When filtering test or build output through a pipeline, preserve the tested command's exit status (for example, Bash pipefail or explicit status capture), and inspect the failure output.
+- Take screenshots or drive a browser for visual inspection only when the user explicitly asks for a screenshot or a visual check.
 - Fix the cause of a failing check. Do not skip tests, weaken assertions, swallow errors, or add type/lint suppressions just to make verification pass. If such a change is required by the requested behavior, explain why and verify that behavior. Report checks that failed or could not run as limitations, never as passes.
-- ${options.supportsBackgroundCommands === false ? 'Terminal commands support only SYNC on this host. Use the host-managed preview controls for persistent services; do not request BACKGROUND or use shell backgrounding. Split other long jobs into bounded commands.' : 'Use BACKGROUND for persistent services or long jobs, inspect their logs and readiness, and verify they are still running when required. Do not assume shell backgrounding inside a SYNC command survives tool cleanup.'}
-- Use write_todos to plan and track multi-step tasks. The user watches the list as your live progress: each time you finish an item, call write_todos again with it marked completed before you start the next one, rather than marking everything done at the end.
-- Your responses are displayed in a terminal. Keep them short and concise.
+- ${options.supportsBackgroundCommands === false ? 'Terminal commands support only SYNC on this host. Use the host-managed preview controls for persistent services; do not request BACKGROUND or use shell backgrounding. Split other long jobs into bounded commands.' : 'Use BACKGROUND for persistent services or long jobs, inspect their logs and readiness, and verify they are still running when required. Do not assume shell backgrounding inside a SYNC command survives tool cleanup. Nothing wakes you when a BACKGROUND command finishes: to report on long work, wait for it in this turn with a SYNC command that exits when it does; otherwise tell the user plainly that you will not be notified and how to check.'}
+${options.workspace ? '' : '- Use write_todos only for work with several distinct steps, and list only the steps the request needs, never extras you might add. The user watches the list as your live progress: each time you finish an item, call write_todos again with it marked completed before you start the next one, rather than marking everything done at the end.\n'}- When the work is done, finish every tool call first${options.workspace ? '' : ' (including marking your last to-do completed)'}, then end with a self-contained final message. Do not point back to earlier messages ("as above"); the user may see only this one.
 - ${TURN_ENDING_RULE}
 - Don't run destructive or hard-to-undo commands (git push, resets, deploys) unless the user asks for them.
+- Stay inside the project folder. Do not read, list or search files outside it (the home directory, other projects, app or system folders) unless the user gave you that exact path or asked you to look there, and then only that path, not its parent or sibling folders. If the task seems to need anything else outside the project, ask the user first.
+
+${AGENT_PROGRESS_GUIDANCE}
+
+When a progress update is warranted and more work remains, put it before the next tool call in the same response so the update does not end the turn.
+
+${AGENT_VERIFICATION_GUIDANCE}
 
 ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}
 
 ${PLACEHOLDER.GIT_CHANGES_PROMPT}
-${leanGuidance}`,
+${leanGuidance}${batching ? `\n${BATCHING_GUIDANCE}` : ''}`,
   }
 }
 
@@ -192,6 +278,8 @@ export function createBase3CliRoot(
     compaction?: RootCompactionPolicy
     /** See createBase3. */
     compiledModelId?: string
+    /** See createBase3. On for CLI roots; the sponsored root turns it off. */
+    batching?: boolean
   } = {},
 ): Omit<SecretAgentDefinition, 'id'> {
   const {
@@ -204,6 +292,7 @@ export function createBase3CliRoot(
   const base3 = createBase3(model, {
     compaction: options.compaction,
     compiledModelId: options.compiledModelId,
+    batching: options.batching ?? true,
   })
 
   const root: Omit<SecretAgentDefinition, 'id'> = {
@@ -251,6 +340,14 @@ const HUMAN_TOOL_NAMES: ReadonlySet<string> = new Set([
   'suggest_followups',
 ])
 
+/**
+ * Desktop's order (`SUGGEST_PROMPTS_GUIDANCE`), adapted for suggest_followups.
+ * Without it the CLI ended 40% of sessions' turns with cards and no answer
+ * (2026-11-07; docs/freebuff-muse-spark.md, "cards before the answer").
+ */
+export const CLI_FOLLOWUP_ORDER_RULE =
+  'When you finish, first finish all tool work, then write your complete answer or result for the user as plain text, then call suggest_followups as the very last thing in the turn, with no tool call after it. Never put the answer inside the tool. Skip the tool when a follow-up would be pointless.'
+
 function buildCliAppendix({
   isFreebuff,
   model,
@@ -267,8 +364,7 @@ ${
   noAskUser
     ? ''
     : `
-- **Ask about important decisions:** Use the ask_user tool to collaborate with the user on non-obvious choices — alternate implementation strategies, ambiguous requirements. Gather context first, and skip it when the answer is obvious or the detail can be changed later.
-- **Suggest next steps:** At the end of your turn, use the suggest_followups tool to suggest ~3 next steps the user might want to take. ${FOLLOWUP_STYLE_GUIDANCE}`
+- **Suggest next steps:** ${CLI_FOLLOWUP_ORDER_RULE} Suggest ~3 next steps the user might want to take. ${FOLLOWUP_STYLE_GUIDANCE}`
 }
 ${gravityIndexGuidance()}
 ${SKILL_DISCOVERY_GUIDANCE}

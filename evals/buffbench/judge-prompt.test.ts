@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { buildJudgePrompt, splitUnifiedDiff } from './judge'
+import { buildJudgePrompt, judgeTraceSessionId, splitUnifiedDiff } from './judge'
 
 import type { FileDiff } from './types'
 
@@ -156,5 +156,42 @@ describe('buildJudgePrompt', () => {
     expect(built.prompt).toContain(
       '- src/elsewhere.ts (+300 −0 lines, not shown)',
     )
+  })
+})
+
+describe('judge prompt caching', () => {
+  it('puts the length note after the agent\'s changes, so the shared prefix does not depend on the run', () => {
+    const big = 'x'.repeat(200)
+    const built = buildJudgePrompt(
+      {
+        prompt: 'do it',
+        fileDiffs: [{ path: 'src/a.ts', diff: `diff --git a/src/a.ts b/src/a.ts\n+${big}` } as never],
+        contextFiles: { 'src/a.ts': big },
+        agentDiff: `diff --git a/src/a.ts b/src/a.ts\n+${big}`,
+      },
+      { contextChars: 50, contextFileChars: 50, groundTruthChars: 1_000, agentDiffChars: 1_000, finalCheckChars: 100 },
+    )
+    expect(built.prompt).toContain('## Note on length')
+    expect(built.prompt.indexOf('## Note on length')).toBeGreaterThan(
+      built.prompt.indexOf("## Agent's Changes"),
+    )
+  })
+
+  it('renders the ground truth identically whatever the agent touched, when it fits', () => {
+    const fileDiffs = ['src/a.ts', 'src/b.ts', 'src/c.ts'].map(
+      (path) => ({ path, diff: `diff --git a/${path} b/${path}\n+line of ${path}` }) as never,
+    )
+    const one = buildJudgePrompt({ prompt: 'p', fileDiffs, contextFiles: {}, agentDiff: 'diff --git a/src/c.ts b/src/c.ts\n+mine' })
+    const two = buildJudgePrompt({ prompt: 'p', fileDiffs, contextFiles: {}, agentDiff: 'diff --git a/src/a.ts b/src/a.ts\n+other' })
+    const prefix = (s: string) => s.slice(0, s.indexOf("## Agent's Changes"))
+    expect(prefix(one.prompt)).toBe(prefix(two.prompt))
+  })
+
+  it('gives every judge call on a task the same UUID-shaped trace session, distinct per judge and task', () => {
+    const a = judgeTraceSessionId('commit-1', 'judge-luna')
+    expect(a).toBe(judgeTraceSessionId('commit-1', 'judge-luna'))
+    expect(a).not.toBe(judgeTraceSessionId('commit-2', 'judge-luna'))
+    expect(a).not.toBe(judgeTraceSessionId('commit-1', 'judge-gpt-6-sol'))
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/)
   })
 })

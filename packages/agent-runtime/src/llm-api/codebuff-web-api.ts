@@ -1,4 +1,4 @@
-import { withTimeout } from '@codebuff/common/util/promise'
+import { z } from 'zod/v4'
 
 import type { ClientEnv, CiEnv } from '@codebuff/common/types/contracts/env'
 import type { JSONObject } from '@codebuff/common/types/json'
@@ -48,6 +48,7 @@ const getNumberField = (value: unknown, key: string): number | undefined => {
 const callCodebuffV1 = async (params: {
   endpoint:
     | '/api/v1/web-search'
+    | '/api/v1/web-fetch'
     | '/api/v1/docs-search'
     | '/api/v1/gravity-index'
   payload: unknown
@@ -56,7 +57,8 @@ const callCodebuffV1 = async (params: {
   env: CodebuffWebApiEnv
   baseUrl?: string
   apiKey?: string
-  requestName: 'web-search' | 'docs-search' | 'gravity-index'
+  signal?: AbortSignal
+  requestName: 'web-search' | 'web-fetch' | 'docs-search' | 'gravity-index'
 }): Promise<{ json?: unknown; error?: string; creditsUsed?: number }> => {
   const { endpoint, payload, fetch, logger, env, requestName } = params
   const baseUrl = params.baseUrl ?? env.clientEnv.NEXT_PUBLIC_CODEBUFF_APP_URL
@@ -69,21 +71,27 @@ const callCodebuffV1 = async (params: {
   const url = `${baseUrl}${endpoint}`
   let lastError: string | undefined
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  // A disconnected paid request may already have reached the provider. The
+  // research routes own their upstream retry policy; never replay the POST.
+  const research = requestName === 'web-search' || requestName === 'web-fetch'
+  const maxAttempts = research ? 1 : MAX_RETRIES
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const res = await withTimeout(
-        fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-            'x-codebuff-api-key': apiKey,
-          },
-          body: JSON.stringify(payload),
-        }),
-        FETCH_TIMEOUT_MS,
-        `Request to ${endpoint} timed out after ${FETCH_TIMEOUT_MS}ms`,
-      )
+      const timeout = AbortSignal.timeout(FETCH_TIMEOUT_MS)
+      const res = await fetch(url, {
+        method: 'POST',
+        // A redirected request could forward the custom API key header.
+        ...(research ? { redirect: 'error' as const } : {}),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'x-codebuff-api-key': apiKey,
+        },
+        body: JSON.stringify(payload),
+        signal: params.signal
+          ? AbortSignal.any([params.signal, timeout])
+          : timeout,
+      })
 
       const text = await res.text()
       const json = tryParseJson(text)
@@ -92,11 +100,12 @@ const callCodebuffV1 = async (params: {
         const err =
           getStringField(json, 'error') ??
           getStringField(json, 'message') ??
-          text ??
-          'Request failed'
+          (research
+            ? `Web API ${requestName} returned ${res.status}`
+            : text || 'Request failed')
 
         // Retry on transient errors
-        if (RETRYABLE_STATUS_CODES.has(res.status) && attempt < MAX_RETRIES) {
+        if (RETRYABLE_STATUS_CODES.has(res.status) && attempt < maxAttempts) {
           const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1)
           logger.warn(
             {
@@ -104,7 +113,7 @@ const callCodebuffV1 = async (params: {
               status: res.status,
               statusText: res.statusText,
               attempt,
-              maxRetries: MAX_RETRIES,
+              maxRetries: maxAttempts,
               nextRetryDelayMs: delay,
             },
             `Web API ${requestName} request failed with retryable status, retrying...`,
@@ -119,7 +128,7 @@ const callCodebuffV1 = async (params: {
             url,
             status: res.status,
             statusText: res.statusText,
-            body: text?.slice(0, 500),
+            ...(research ? {} : { body: text?.slice(0, 500) }),
             attempt,
           },
           `Web API ${requestName} request failed`,
@@ -135,7 +144,7 @@ const callCodebuffV1 = async (params: {
       }
 
       // Retry on network errors
-      if (attempt < MAX_RETRIES) {
+      if (attempt < maxAttempts) {
         const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1)
         logger.warn(
           {
@@ -144,7 +153,7 @@ const callCodebuffV1 = async (params: {
                 ? { name: error.name, message: error.message }
                 : error,
             attempt,
-            maxRetries: MAX_RETRIES,
+            maxRetries: maxAttempts,
             nextRetryDelayMs: delay,
           },
           `Web API ${requestName} network error, retrying...`,
@@ -170,38 +179,85 @@ const callCodebuffV1 = async (params: {
   return { error: lastError ?? 'Request failed after all retries' }
 }
 
-export async function callWebSearchAPI(params: {
-  query: string
-  depth?: 'standard' | 'deep'
-  repoUrl?: string | null
+type WebToolClient = {
   fetch: typeof globalThis.fetch
   logger: Logger
   env: CodebuffWebApiEnv
   baseUrl?: string
   apiKey?: string
-}): Promise<{ result?: string; error?: string; creditsUsed?: number }> {
-  const { query, depth = 'standard', repoUrl, fetch, logger, env } = params
-  const payload = { query, depth, ...(repoUrl ? { repoUrl } : {}) }
+  signal?: AbortSignal
+}
 
+export async function callWebSearchAPI(
+  params: WebToolClient & {
+    query: string
+    searchQueries?: string[]
+    objective?: string
+    live?: boolean
+    sessionId?: string
+    repoUrl?: string | null
+  },
+): Promise<{ result?: string; error?: string; creditsUsed?: number }> {
+  const { query, searchQueries, objective, live, sessionId, repoUrl } = params
   const res = await callCodebuffV1({
+    ...params,
     endpoint: '/api/v1/web-search',
-    payload,
-    fetch,
-    logger,
-    env,
-    baseUrl: params.baseUrl,
-    apiKey: params.apiKey,
+    payload: {
+      query,
+      searchQueries,
+      objective,
+      live,
+      sessionId,
+      repoUrl: repoUrl ?? undefined,
+    },
     requestName: 'web-search',
   })
   if (res.error) return { error: res.error }
 
   const result = getStringField(res.json, 'result')
-  if (result) {
-    return { result, creditsUsed: res.creditsUsed }
+  if (result) return { result, creditsUsed: res.creditsUsed }
+  return {
+    error: getStringField(res.json, 'error') ?? 'Invalid web search response',
   }
+}
 
-  const error = getStringField(res.json, 'error')
-  return { error: error ?? 'Invalid response format' }
+const fetchResultSchema = z.union([
+  z.object({
+    url: z.string(),
+    title: z.string().optional(),
+    content: z.string(),
+    publishDate: z.string().optional(),
+    truncated: z.boolean(),
+  }),
+  z.object({ url: z.string(), error: z.string() }),
+])
+
+export async function callWebFetchAPI(
+  params: WebToolClient & {
+    url: string
+    maxChars?: number
+    objective?: string
+    live?: boolean
+    sessionId?: string
+  },
+) {
+  const { url, maxChars, objective, live, sessionId } = params
+  const res = await callCodebuffV1({
+    ...params,
+    endpoint: '/api/v1/web-fetch',
+    payload: { url, maxChars, objective, live, sessionId },
+    requestName: 'web-fetch',
+  })
+  const errorMessage = res.error ?? getStringField(res.json, 'error')
+  if (errorMessage) return { url, errorMessage }
+
+  const parsed = z.object({ result: fetchResultSchema }).safeParse(res.json)
+  if (!parsed.success)
+    return { url, errorMessage: 'Invalid web fetch response' }
+  const page = parsed.data.result
+  if ('error' in page) return { url, errorMessage: page.error }
+  const { content: text, ...metadata } = page
+  return { ...metadata, text }
 }
 
 export async function callDocsSearchAPI(params: {

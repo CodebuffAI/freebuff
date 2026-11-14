@@ -1,11 +1,12 @@
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 
 import { useAuthQuery, useLogoutMutation } from './use-auth-query'
-import { useChatStore } from '../state/chat-store'
+import { adReports } from '../ads/ad-reports'
 import { useLoginStore } from '../state/login-store'
+import { captureCliFunnel } from '../utils/cli-product-funnel'
 import { identifyUser, trackEvent } from '../utils/analytics'
-import { getUserCredentials } from '../utils/auth'
+import { getAuthToken, getUserCredentials } from '../utils/auth'
 import { resetCodebuffClient } from '../utils/codebuff-client'
 import { IS_FREEBUFF } from '../utils/constants'
 import { loggerContext } from '../utils/logger'
@@ -48,6 +49,8 @@ export const useAuthState = ({
     initialAuthState,
   )
   const [user, setUser] = useState<User | null>(null)
+  const authToken = getAuthToken()
+  useLayoutEffect(() => adReports.syncAccount(), [authToken])
 
   // Update authentication state when requireAuth changes
   useEffect(() => {
@@ -80,6 +83,7 @@ export const useAuthState = ({
         // the login modal, so `cli.login` would otherwise never fire for them —
         // making them look like a login-step drop-off in the funnel even though
         // they're authenticated. Emit it here too, tagged by `via`.
+        captureCliFunnel('login', 'succeeded', { restored: true }, 'restore')
         trackEvent(AnalyticsEvent.LOGIN, {
           userId: authQuery.data.id,
           via: 'session_restore',
@@ -88,6 +92,7 @@ export const useAuthState = ({
         })
       }
     } else if (authQuery.isError) {
+      adReports.reset()
       setIsAuthenticated(false)
       setUser(null)
       clearAuthLoggerContext()
@@ -97,6 +102,7 @@ export const useAuthState = ({
   // Handle successful login
   const handleLoginSuccess = useCallback(
     (loggedInUser: User) => {
+      adReports.reset()
       // Identify first (aliases the pre-login anonymous history to the real
       // user id) so the login event below is attributed to the user.
       if (loggedInUser.id && loggedInUser.email) {
@@ -105,6 +111,8 @@ export const useAuthState = ({
           email: loggedInUser.email,
         })
       }
+
+      captureCliFunnel('login', 'succeeded', { restored: false })
 
       // Track successful login
       trackEvent(AnalyticsEvent.LOGIN, {
@@ -117,9 +125,6 @@ export const useAuthState = ({
       // Reset the SDK client to pick up new credentials
       resetCodebuffClient()
       resetChatStore()
-      // After the reset, which clears banners: a fresh sign-in is the moment
-      // to invite someone to the community. Restored sessions never get here.
-      if (IS_FREEBUFF) useChatStore.getState().setActiveTopBanner('discord')
       resetLoginState()
       setInputFocused(true)
       setUser(loggedInUser)

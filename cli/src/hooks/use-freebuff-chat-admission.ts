@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { formatHoursWithUnit } from '@codebuff/common/util/freebuff-hours'
+import {
+  formatHoursWithUnit,
+  freebucksShortfallLine,
+} from '@codebuff/common/util/freebuff-hours'
 import { formatFreebuffHardBlockedPrivacySignals } from '@codebuff/common/util/freebuff-privacy'
 
 import {
@@ -33,8 +36,14 @@ export function freebuffAdmissionNotice(
           : `Freebuff is unavailable in ${session.countryCode}. Use /byok to use your own API key.`
     case 'rate_limited':
       return session.freebucksShortfall
-        ? `Not enough hours: ${formatHoursWithUnit(session.freebucksShortfall.balance)} available. See https://freebuff.com/plans or use /model.`
-        : 'Session limit reached. See https://freebuff.com/plans or choose another model with /model.'
+        ? `${
+            freebucksShortfallLine({
+              ...session.freebucksShortfall,
+              modelName: getFreebuffModelDirectory().get(session.model)
+                .displayName,
+            }).line
+          } Choose another model or visit https://freebuff.com/plans.`
+        : 'Session limit reached. Choose another model or visit https://freebuff.com/plans.'
     case 'spend_limited':
       return session.message
     case 'ip_capped':
@@ -94,23 +103,25 @@ export async function beginFreebuffChatAdmission(admission: ChatAdmission) {
   }
 }
 
+/** A turn is running: its stream is live or its chain is still in progress. */
+export function freebuffTurnRunning(queue: {
+  chainInProgress: boolean
+  streamStatus: StreamStatus
+}): boolean {
+  return queue.chainInProgress || queue.streamStatus !== 'idle'
+}
+
 /**
  * Admission buys an hour for the queue to spend, so it waits until the queue
  * can spend it. A user-paused queue sends nothing: admitting for one bought
  * an hour no turn started, which the server refunds after five minutes.
  */
 export function freebuffChatAdmissionMayStart(queue: {
-  chainInProgress: boolean
-  streamStatus: StreamStatus
+  turnRunning: boolean
   queuedCount: number
   queuePaused: boolean
 }): boolean {
-  return (
-    !queue.chainInProgress &&
-    queue.streamStatus === 'idle' &&
-    queue.queuedCount > 0 &&
-    !queue.queuePaused
-  )
+  return !queue.turnRunning && queue.queuedCount > 0 && !queue.queuePaused
 }
 
 /** Shown while a requested admission waits on a paused queue. */
@@ -121,6 +132,7 @@ export const FREEBUFF_ADMISSION_QUEUE_PAUSED_MESSAGE =
 export function useFreebuffChatAdmission(enabled: boolean) {
   const checking = useRef<ChatAdmission | null>(null)
   const admission = useFreebuffChatStore((s) => s.admission)
+  const pickerOpen = useFreebuffChatStore((s) => s.pickerOpen)
   const session = useFreebuffSessionStore((s) => s.session)
   const failure = useFreebuffSessionStore((s) => s.failure)
 
@@ -143,12 +155,18 @@ export function useFreebuffChatAdmission(enabled: boolean) {
         const message = freebuffAdmissionNotice(session)
         if (message)
           useFreebuffChatStore.setState({
-            admission: { ...admission, phase: 'failed', message },
+            admission: {
+              ...admission,
+              phase: 'failed',
+              message,
+              chooseModel: session?.status === 'rate_limited',
+            },
           })
       }
       return
     }
-    if (admission.phase !== 'requested') return
+    // A pick in progress replaces this request; don't price the old model.
+    if (admission.phase !== 'requested' || pickerOpen) return
     if (!session) {
       if (failure && !failure.retry)
         useFreebuffChatStore.setState({
@@ -210,7 +228,8 @@ export function useFreebuffChatAdmission(enabled: boolean) {
         admission: {
           ...resolved,
           phase: 'failed',
-          message: `Not enough hours for ${getFreebuffModelDirectory().get(model).displayName}: an hour on it takes ${formatHoursWithUnit(intent.price)}. Choose another model with /model or visit https://freebuff.com/plans.`,
+          message: `Not enough hours for ${getFreebuffModelDirectory().get(model).displayName}: an hour on it takes ${formatHoursWithUnit(intent.price)}. Choose another model or visit https://freebuff.com/plans.`,
+          chooseModel: true,
         },
       })
     } else if (
@@ -243,5 +262,5 @@ export function useFreebuffChatAdmission(enabled: boolean) {
       useFreebuffChatStore.setState({ admission: resolved })
       void beginFreebuffChatAdmission(resolved)
     }
-  }, [enabled, admission, session, failure])
+  }, [enabled, admission, pickerOpen, session, failure])
 }

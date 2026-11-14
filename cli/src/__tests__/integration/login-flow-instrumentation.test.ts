@@ -24,6 +24,102 @@ const createTrackEventMock = () =>
   mock((_event: AnalyticsEvent, _properties?: Record<string, any>) => {})
 
 describe('login-flow analytics instrumentation', () => {
+  test('plain and TUI callers carry one explicit CLI UUID without changing authentication', async () => {
+    const cliFlowId = 'a0000000-0000-4000-8000-000000000001'
+    for (const via of ['modal', 'plain_command'] as const) {
+      const data = {
+        loginUrl: 'https://freebuff.test/login?auth_code=opaque-auth-code',
+        fingerprintHash: 'private-hash',
+        expiresAt: '2030-01-01T00:00:00Z',
+      }
+      const loginCode = mock(async () => ({
+        ok: true as const,
+        status: 200,
+        data,
+      }))
+      const result = await generateLoginUrl(
+        {
+          logger: createMockLogger(),
+          apiClient: createMockApiClient({ loginCode }),
+        },
+        {
+          baseUrl: 'https://freebuff.test',
+          fingerprintId: 'private-fingerprint',
+          via,
+          cliFlowId,
+        },
+      )
+      const browserUrl = new URL(result.loginUrl)
+      expect(browserUrl.searchParams.get('cli_flow')).toBe(cliFlowId)
+      expect(browserUrl.searchParams.getAll('cli_flow')).toEqual([cliFlowId])
+      expect(browserUrl.searchParams.get('auth_code')).toBe('opaque-auth-code')
+      expect(result.fingerprintHash).toBe(data.fingerprintHash)
+      expect(result.expiresAt).toBe(data.expiresAt)
+      expect(loginCode).toHaveBeenCalledWith({
+        fingerprintId: 'private-fingerprint',
+      })
+      expect(data.loginUrl).not.toContain('cli_flow')
+    }
+  })
+
+  test('auth codes and invalid correlation values never imply CLI origin', async () => {
+    const data = {
+      loginUrl:
+        'https://freebuff.test/login?auth_code=opaque-auth-code&native_apple=1',
+      fingerprintHash: 'private-hash',
+      expiresAt: '2030-01-01T00:00:00Z',
+    }
+    const loginCode = mock(async () => ({
+      ok: true as const,
+      status: 200,
+      data,
+    }))
+    const apiClient = createMockApiClient({ loginCode })
+    for (const cliFlowId of [
+      undefined,
+      'private-fingerprint',
+      'opaque-auth-code',
+    ]) {
+      const result = await generateLoginUrl(
+        { logger: createMockLogger(), apiClient },
+        {
+          baseUrl: 'https://freebuff.test',
+          fingerprintId: 'private-fingerprint',
+          cliFlowId,
+        },
+      )
+      expect(result).toEqual(data)
+    }
+  })
+
+  test('optional correlation never rejects an unusable or non-web URL', async () => {
+    for (const loginUrl of ['not a URL', 'freebuff://login?auth_code=opaque']) {
+      const data = {
+        loginUrl,
+        fingerprintHash: 'hash',
+        expiresAt: '2030-01-01T00:00:00Z',
+      }
+      const loginCode = mock(async () => ({
+        ok: true as const,
+        status: 200,
+        data,
+      }))
+      expect(
+        await generateLoginUrl(
+          {
+            logger: createMockLogger(),
+            apiClient: createMockApiClient({ loginCode }),
+          },
+          {
+            baseUrl: 'https://freebuff.test',
+            fingerprintId: 'fingerprint',
+            cliFlowId: 'a0000000-0000-4000-8000-000000000001',
+          },
+        ),
+      ).toEqual(data)
+    }
+  })
+
   test('generateLoginUrl emits LOGIN_STARTED on entry and nothing else on success', async () => {
     const trackEvent = createTrackEventMock()
     const loginCode = mock(async () => ({
@@ -84,13 +180,20 @@ describe('login-flow analytics instrumentation', () => {
   test('pollLoginStatus emits LOGIN_TIMEOUT with attempts + via', async () => {
     const trackEvent = createTrackEventMock()
     const loginStatus = mock(
-      async () => ({ ok: false, status: 401 }) as ApiResponse<{ user?: unknown }>,
+      async () =>
+        ({ ok: false, status: 401 }) as ApiResponse<{ user?: unknown }>,
     )
     const apiClient = createMockApiClient({ loginStatus })
     const clock = createClock()
 
     const result = await pollLoginStatus(
-      { sleep: clock.sleep, logger: createMockLogger(), now: clock.now, apiClient, trackEvent },
+      {
+        sleep: clock.sleep,
+        logger: createMockLogger(),
+        now: clock.now,
+        apiClient,
+        trackEvent,
+      },
       {
         baseUrl: 'https://cli.test',
         fingerprintId: 'finger-1',
@@ -115,7 +218,13 @@ describe('login-flow analytics instrumentation', () => {
     const clock = createClock()
 
     const result = await pollLoginStatus(
-      { sleep: clock.sleep, logger: createMockLogger(), now: clock.now, apiClient, trackEvent },
+      {
+        sleep: clock.sleep,
+        logger: createMockLogger(),
+        now: clock.now,
+        apiClient,
+        trackEvent,
+      },
       {
         baseUrl: 'https://cli.test',
         fingerprintId: 'finger-1',

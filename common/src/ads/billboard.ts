@@ -47,6 +47,8 @@ export const BILLBOARD_RATIO_TOLERANCE = 0.02
 
 /** Visible time before a billboard's close control unlocks. */
 export const BILLBOARD_DISMISS_LOCK_MS = 10_000
+/** Maximum lifetime of a sidebar showing, unchanged by duplicate deliveries. */
+export const BILLBOARD_SIDEBAR_MAX_SHOW_MS = 3 * 60_000
 
 export type BillboardFrequencyCap = {
   /** Whose serves share one count: the campaign's, or a single ad's. */
@@ -55,7 +57,8 @@ export type BillboardFrequencyCap = {
   limits: readonly { maxImpressions: number; windowMs: number }[]
 }
 
-const DAY_MS = 24 * 60 * 60_000
+const HOUR_MS = 60 * 60_000
+const DAY_MS = 24 * HOUR_MS
 
 /**
  * The frequency cap on each billboard slot, per user. It REPLACES the
@@ -65,14 +68,24 @@ const DAY_MS = 24 * 60 * 60_000
  * the sidebar all day. Billboard serves therefore do not spend the
  * campaign's hourly cap on its other placements either.
  *
- * Each slot serves each campaign once a rolling day. The slots count
- * separately, so a campaign can fill the sidebar and the panel on the same
- * day (neither Desktop nor the Cloud workspace fills both in the same minute).
+ * The sidebar serves each campaign 5 times a rolling day, at most once in a
+ * rolling hour. One a day (2026-10-08 to 10-20) left it empty for heavy users:
+ * on 10-19, 130k tier-1 sidebar asks went unfilled because the one CPM
+ * campaign had spent its serve. The hourly limit stops a minute-by-minute
+ * sidebar from spending the day's 5 in one sitting. The panel stays at once a
+ * rolling day per campaign: it opens a full right panel, not a card. The slots
+ * count separately, so a campaign can fill the sidebar and the panel on the
+ * same day (neither Desktop nor the Cloud workspace fills both in the same
+ * minute). In every list the daily limit stays first: it keeps the bare key,
+ * so counts carry across deploys.
  */
 export const BILLBOARD_FREQUENCY_CAPS: Readonly<Record<string, BillboardFrequencyCap>> = {
   [BILLBOARD_SIDEBAR_PLACEMENT_ID]: {
     per: 'campaign',
-    limits: [{ maxImpressions: 1, windowMs: DAY_MS }],
+    limits: [
+      { maxImpressions: 5, windowMs: DAY_MS },
+      { maxImpressions: 1, windowMs: HOUR_MS },
+    ],
   },
   [BILLBOARD_PANEL_PLACEMENT_ID]: {
     per: 'campaign',

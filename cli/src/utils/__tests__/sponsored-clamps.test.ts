@@ -38,6 +38,7 @@ const { sponsoredCapabilityForTool } =
   await import('@codebuff/common/ads/sponsored-capabilities')
 
 const { SponsoredEditRecorder } = await import('../sponsored-receipts')
+const { SPONSORED_INSTALL_TOOL_EXEC } = await import('../sponsored-install-tool')
 
 import type { SponsoredToolContext } from '../sponsored-run'
 import type { SponsoredReceiptStore } from '../sponsored-receipts'
@@ -365,6 +366,25 @@ describe('the shell', () => {
       const result = await tools.run_terminal_command({ command })
       expect(JSON.stringify(result), command).toContain('Refusing to install')
     }
+  })
+
+  test('with install_package, a shell install is refused toward the tool (COD-965)', async () => {
+    const tools = sponsoredOverrideTools({ ...context(), installTool: true })
+    for (const command of ['npm install left-pad', 'pip install y']) {
+      const result = JSON.stringify(
+        await tools.run_terminal_command({ command }),
+      )
+      expect(result, command).toContain('install_package')
+    }
+  })
+
+  test('the tool’s marker skips only the install decision: every other refusal holds', async () => {
+    const tools = sponsoredOverrideTools({ ...context(), installTool: true })
+    const result = await tools.run_terminal_command({
+      command: 'git commit -am "x"',
+      [SPONSORED_INSTALL_TOOL_EXEC]: true,
+    } as never)
+    expect(JSON.stringify(result)).toContain('Refusing `git')
   })
 
   test('git that moves history or config is refused; reading it is not', async () => {

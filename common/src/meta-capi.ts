@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 
+import type { CodingActivationSurface } from './util/coding-activation-surface'
 import type { MetaAdsEventName } from './util/meta-ads'
 
 import {
@@ -48,7 +49,7 @@ export type SendMetaConversionParams = {
   eventAt: Date
   userId: string
   attribution: MetaConversionAttribution
-  surface: 'web' | 'desktop' | 'cli'
+  surface: CodingActivationSurface
   testEventCode?: string
   eventSourceUrl?: 'https://freebuff.com/advertisers'
   conversionValue?: MetaConversionValue
@@ -82,8 +83,8 @@ export function buildMetaConversionBody(params: SendMetaConversionParams) {
         event_name: params.eventName,
         event_id: params.eventId,
         event_time: Math.floor(params.eventAt.getTime() / 1000),
-        // A desktop/CLI activation is not a website conversion or a mobile app
-        // SDK event. Keep its source honest even when enrollment was on the web.
+        // A desktop/CLI/phone-app activation is not a website conversion or a
+        // mobile app SDK event (the apps don't run Meta's SDK). Keep its source honest even when enrollment was on the web.
         action_source: params.surface === 'web' ? 'website' : 'other',
         ...(params.surface === 'web'
           ? {

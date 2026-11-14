@@ -1,6 +1,6 @@
 import os from 'os'
 
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from './button'
 import { MultilineInput } from './multiline-input'
@@ -13,6 +13,7 @@ import { useSearchableList } from '../hooks/use-searchable-list'
 import { useSheenAnimation } from '../hooks/use-sheen-animation'
 import { useTerminalLayout } from '../hooks/use-terminal-layout'
 import { useTheme } from '../hooks/use-theme'
+import { captureCliFunnel } from '../utils/cli-product-funnel'
 import { exitCliCleanly } from '../utils/exit-cleanly'
 import { formatCwd } from '../utils/path-helpers'
 import { loadRecentProjects } from '../utils/recent-projects'
@@ -62,6 +63,9 @@ export const ProjectPickerScreen: React.FC<ProjectPickerScreenProps> = ({
   initialPath,
 }) => {
   const theme = useTheme()
+  useEffect(() => {
+    captureCliFunnel('context', 'shown', { project_kind: 'folder' })
+  }, [])
   const [sheenPosition, setSheenPosition] = useState(0)
 
   // Directory browsing state and navigation

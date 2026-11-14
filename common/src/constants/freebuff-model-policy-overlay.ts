@@ -26,8 +26,9 @@ export interface FreebuffModelPolicyOverlay {
   /** Every enabled catalog model id (compiled and catalog-only), for callers
    *  that enumerate — a price map, a lock list. */
   catalogModelIds?(): readonly string[]
-  /** Freebucks per session. 0 = unmetered-but-listed. */
-  price?(modelId: string): number | undefined
+  /** Freebucks per session. 0 = unmetered-but-listed. `tier` is the
+   *  viewer's access tier, when known: a row may cost less at limited access. */
+  price?(modelId: string, tier?: 'full' | 'limited'): number | undefined
   /** Crossed-out list price shown beside a discounted `price`. */
   listPrice?(modelId: string): number | undefined
   /** One-line notice that replaces the tagline in pickers. */
@@ -47,6 +48,14 @@ export interface FreebuffModelPolicyOverlay {
   usOpen?(modelId: string): boolean | undefined
   /** `null` = explicitly no limit. */
   dailySessionLimit?(modelId: string): number | null | undefined
+  /** The catalog has an entry for this model and it is disabled: retired,
+   *  still recognised, offered nowhere. Admission and the chat gate answer it
+   *  as withdrawn, as they do a paused compiled model. */
+  withdrawn?(modelId: string): boolean | undefined
+  /** The picker section a full-access viewer finds the model in (a new
+   *  account's set has its own places), for the rule that a Powerful row
+   *  takes no solo-session discount. */
+  section?(modelId: string, viewer: { newAccount: boolean }): string | undefined
 }
 
 let overlay: FreebuffModelPolicyOverlay | null = null

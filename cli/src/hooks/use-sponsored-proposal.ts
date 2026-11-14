@@ -199,7 +199,15 @@ export function applyPolledProposal(
               isSponsoredProposalBlock(block) &&
               block.target === target &&
               block.answered !== true
-                ? { ...block, proposal, refreshUnavailable: undefined }
+                ? {
+                    ...block,
+                    proposal,
+                    busy:
+                      block.proposal._id === proposal._id
+                        ? block.busy
+                        : undefined,
+                    refreshUnavailable: undefined,
+                  }
                 : block,
             ),
           }

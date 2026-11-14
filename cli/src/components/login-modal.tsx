@@ -13,11 +13,13 @@ import { useClipboard } from '../hooks/use-clipboard'
 import { useFetchLoginUrl } from '../hooks/use-fetch-login-url'
 import { useLoginKeyboardHandlers } from '../hooks/use-login-keyboard-handlers'
 import { useLoginPolling } from '../hooks/use-login-polling'
+import { stopLoginLoopback } from '../login/loopback-server'
 import { useLogo } from '../hooks/use-logo'
 import { useSheenAnimation } from '../hooks/use-sheen-animation'
 import { useTheme } from '../hooks/use-theme'
 import { formatUrl, calculateResponsiveLayout } from '../login/utils'
 import { useLoginStore } from '../state/login-store'
+import { captureCliFunnel } from '../utils/cli-product-funnel'
 import { IS_FREEBUFF } from '../utils/constants'
 import { copyTextToClipboard, isRemoteSession } from '../utils/clipboard'
 import { getFingerprintId } from '../utils/fingerprint'
@@ -36,6 +38,9 @@ export const LoginModal = ({
   hasInvalidCredentials = false,
 }: LoginModalProps) => {
   const renderer = useRenderer()
+  useEffect(() => captureCliFunnel('login', 'shown'), [])
+  // The sign-in's loopback server lives only as long as this modal.
+  useEffect(() => stopLoginLoopback, [])
   const theme = useTheme()
 
   // Use zustand store for all state

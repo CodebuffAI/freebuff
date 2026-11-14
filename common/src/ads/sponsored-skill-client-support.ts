@@ -29,8 +29,22 @@
  * packages, and it resolves nothing itself. It is refused only when the
  * SERVER cannot resolve the skill the procedure names
  * (`skill_unresolved`), because then there is no spec to hand it.
+ *
+ * A skill that carries a CONVERSION DEFINITION (`conversion`, either
+ * version) is the exception to all of the above, run-spec clients, the web
+ * client and free-text procedures included: only a Desktop build that
+ * advertises the conversion tools (`conversionToolsVersion`,
+ * `SPONSORED_CONVERSION_TOOLS_VERSION` in `./sponsored-conversion.ts`) can
+ * run it, so it is never offered to, nor accepted from, any other build. It
+ * is a capability rather than a version floor because the tools ship on a
+ * branch: a Desktop release cut without them must not pass on its number.
  */
 
+import {
+  CONVERSION_DIRECTIVE,
+  conversionDefinitionFromProcedure,
+  clientHasSponsoredConversionTools,
+} from './sponsored-conversion'
 import { clientRunsSponsoredRunSpec } from './sponsored-run-spec'
 import { compareSponsoredSkillVersions } from './sponsored-skill'
 
@@ -80,7 +94,10 @@ export const SPONSORED_SKILL_FORMAT_2_MIN_CLIENT = {
 export type SponsoredSkillClientRefusal =
   /** A Desktop or CLI user agent whose version cannot be read. */
   | 'client_version_unknown'
-  /** A Desktop older than the skill needs. */
+  /**
+   * A Desktop older than the skill needs, or (a conversion skill) one that
+   * does not advertise the conversion tools.
+   */
   | 'desktop_too_old'
   /** A CLI that neither bundles the skill nor takes it from the Accept. */
   | 'cli_too_old'
@@ -89,6 +106,13 @@ export type SponsoredSkillClientRefusal =
    * procedure names, so it has no spec to deliver.
    */
   | 'skill_unresolved'
+  /**
+   * The skill carries a conversion definition and this client has no
+   * conversion tools in any build: the CLI and the web (Cloud) client. No
+   * update fixes it, only running the offer in Desktop. A Desktop that does
+   * not advertise the tools is `desktop_too_old`.
+   */
+  | 'conversion_tools_missing'
 
 /**
  * Why `clientVersion` (`desktop/<v>` or `cli/<v>`, from
@@ -98,16 +122,36 @@ export type SponsoredSkillClientRefusal =
  * `skill` is the resolved skill, or null when the procedure names one that
  * could not be read: that is treated as declaring packages, since an unknown
  * verdict must not serve. `dev` builds always pass.
+ *
+ * `procedure` is the text the client would run. When `skill` is null it is
+ * the only way to see a conversion definition (the `conversion-definition:`
+ * line the skill renders), so pass it wherever it is at hand. A free-text
+ * procedure (`skillRef` null) with that line is gated too.
+ *
+ * `conversionToolsVersion` is the request's field, as sent: a Desktop runs a
+ * conversion skill only when it advertises the tools, `dev` builds included.
  */
 export function sponsoredSkillClientRefusal(input: {
   client: 'desktop' | 'cli' | 'web' | null
   clientVersion: string | null
   /** The skill the procedure names (`sponsoredSkillDirective`), or null for free text. */
   skillRef: { id: string; version: string } | null
-  skill: { packages: readonly unknown[]; format?: number } | null
+  skill: {
+    packages: readonly unknown[]
+    format?: number
+    conversion?: unknown
+  } | null
+  /** The procedure text the skill renders to, when the caller has it. */
+  procedure?: string | null
   /** The request's `runSpecVersion`, as sent. */
   runSpecVersion?: unknown
+  /** The request's `conversionToolsVersion`, as sent. */
+  conversionToolsVersion?: unknown
 }): SponsoredSkillClientRefusal | null {
+  // CONVERSION FIRST, for every client, run-spec, web and free text
+  // included: only a Desktop build with the conversion tools can run it.
+  const conversion = sponsoredConversionClientRefusal(input)
+  if (conversion) return conversion
   if (!input.skillRef) return null
   // FORMAT 2 FIRST, for every Desktop and CLI build, run-spec ones included:
   // a build that cannot parse the skill cannot drive it.
@@ -162,6 +206,47 @@ export function sponsoredSkillClientRefusal(input: {
     : 'cli_too_old'
 }
 
+/**
+ * The conversion part of {@link sponsoredSkillClientRefusal} alone: why this
+ * client cannot run a skill (or free-text procedure) that carries a
+ * conversion definition, or null when it carries none or the client can.
+ * Needs no skill lookup when `procedure` is the rendered text, which always
+ * carries the `conversion-definition:` line of a skill that has one.
+ */
+export function sponsoredConversionClientRefusal(input: {
+  client: 'desktop' | 'cli' | 'web' | null
+  skill?: { conversion?: unknown } | null
+  procedure?: string | null
+  conversionToolsVersion?: unknown
+}): 'conversion_tools_missing' | 'desktop_too_old' | 'client_version_unknown' | null {
+  if (
+    input.skill?.conversion == null &&
+    !procedureCarriesConversion(input.procedure)
+  )
+    return null
+  if (input.client === 'cli' || input.client === 'web')
+    return 'conversion_tools_missing'
+  if (input.client !== 'desktop') return 'client_version_unknown'
+  const definition =
+    input.skill?.conversion ??
+    conversionDefinitionFromProcedure(input.procedure)
+  if (
+    definition &&
+    typeof definition === 'object' &&
+    'version' in definition &&
+    definition.version === 3 &&
+    !(
+      typeof input.conversionToolsVersion === 'number' &&
+      Number.isInteger(input.conversionToolsVersion) &&
+      input.conversionToolsVersion >= 2
+    )
+  )
+    return 'desktop_too_old'
+  return clientHasSponsoredConversionTools(input.conversionToolsVersion)
+    ? null
+    : 'desktop_too_old'
+}
+
 /** `desktop/<v>` → `<v>` (or `dev`); null when it is not this client's or not a version. */
 function clientVersionOf(
   client: 'desktop' | 'cli',
@@ -172,6 +257,21 @@ function clientVersionOf(
   const version = clientVersion.slice(prefix.length)
   if (version === 'dev') return version
   return /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version) ? version : null
+}
+
+/**
+ * Whether a procedure text carries a conversion definition line, well-formed
+ * or not: a malformed one still asks the client for conversion tools.
+ */
+function procedureCarriesConversion(
+  procedure: string | null | undefined,
+): boolean {
+  return (
+    procedure
+      ?.replace(/\r\n?/g, '\n')
+      .split('\n')
+      .some((line) => line.startsWith(CONVERSION_DIRECTIVE)) === true
+  )
 }
 
 function maxVersion(a: string, b: string | undefined): string {

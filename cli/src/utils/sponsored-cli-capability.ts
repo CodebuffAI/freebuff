@@ -15,6 +15,11 @@ import { join } from 'path'
 
 import { sponsoredContainment } from '../../../sdk/src/tools/sponsored-sandbox'
 import { bunGitRunner, type GitRunner } from './sponsored-git'
+import {
+  sharedTrackedFilesCache,
+  sponsoredGitProbes,
+  type TrackedFilesCache,
+} from './sponsored-git-probe-cache'
 
 export type SponsoredCliCapabilityResult = {
   sponsoredCapability: SponsoredCapability | null
@@ -138,7 +143,12 @@ function execution(
   }
 }
 
-/** Read-only inspection; it never creates a workspace marker or touches Git state. */
+/**
+ * Read-only inspection; it never creates a workspace marker or touches Git state.
+ * With a `trackedFiles` cache its `ls-files` answer is reused while git's
+ * index is unchanged (`sponsored-git-probe-cache.ts`); without one every
+ * question is asked live.
+ */
 export async function sponsoredCliCapability(
   root: string,
   git: GitRunner = bunGitRunner,
@@ -146,16 +156,16 @@ export async function sponsoredCliCapability(
   containment: (
     platform: NodeJS.Platform,
   ) => SponsoredLocalContainment = sponsoredContainment,
+  trackedFiles: TrackedFilesCache | null = null,
 ): Promise<SponsoredCliCapabilityResult> {
   const runtime = execution(platform, containment)
   if (typeof runtime === 'string') return unavailable(runtime)
   try {
-    const [inside, remote, tracked, head] = await Promise.all([
-      git(['-C', root, 'rev-parse', '--is-inside-work-tree']),
-      git(['-C', root, 'remote', 'get-url', 'origin']),
-      git(['-C', root, 'ls-files']),
-      git(['-C', root, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}']),
-    ])
+    const { inside, remote, tracked, head } = await sponsoredGitProbes(
+      root,
+      git,
+      trackedFiles,
+    )
     if (inside.exitCode !== 0 || inside.stdout.trim() !== 'true')
       return unavailable('no_git_repository')
     if (tracked.exitCode !== 0) return unavailable('inspection_failed')
@@ -209,4 +219,18 @@ export async function sponsoredCliCapability(
   } catch {
     return unavailable('inspection_failed')
   }
+}
+
+/** What the ad request and the agentic offer ask: the real git, cached. */
+export function cachedSponsoredCliCapability(
+  root: string,
+): Promise<SponsoredCliCapabilityResult> {
+  // `undefined` takes each default, so they are stated once, above.
+  return sponsoredCliCapability(
+    root,
+    undefined,
+    undefined,
+    undefined,
+    sharedTrackedFilesCache,
+  )
 }

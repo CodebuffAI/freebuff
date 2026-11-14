@@ -37,6 +37,10 @@ import {
 } from '@codebuff/common/ads/agentic-ad-lab-run'
 import { signupUrlWithEmail } from '@codebuff/common/ads/sponsored-instant-setup'
 import {
+  guardSponsoredCredentials,
+  guardSponsoredLink,
+} from '@codebuff/common/ads/sponsored-run-links'
+import {
   redactSponsoredCredentialDeep,
   redactSponsoredCredentialText,
   sponsoredCredentialValueProblem,
@@ -175,10 +179,17 @@ export function sponsoredCredentialSavedLine(
 
 export type SponsoredAccountStepDeps = {
   offerName: string
-  /** The tracked signup link (`sponsoredSignupStep`), or none. */
+  /** The tracked signup link (`sponsoredRunLinks`), or none. */
   signup: SponsoredSignupStep | undefined
-  /** What the procedure declares (`declaredRunCredentials`). */
+  /** What the procedure declares, key pages resolved (`sponsoredRunLinks`). */
   credentials: readonly SponsoredRunCredential[]
+  /**
+   * The Accept's advertiser link: what the guard opens instead of a link
+   * that still has an unfilled click id, when it carries a signed one.
+   */
+  advertiserLink?: string | null
+  /** Told when the guard refused a link (no URL): the warning metric. */
+  onUnfilledClickIdBlocked?: (fallback: 'advertiser_link' | 'none') => void
   held: SponsoredHeldCredentials
   /** Opens a link in the user's browser; false when none could be opened. */
   openUrl: (url: string) => Promise<boolean>
@@ -279,7 +290,11 @@ export class SponsoredAccountStep {
       return { status: 'confirmed', note: labConnectedNote(connected) }
     }
     // The `{email}` slot, if any, is removed: no prefill without consent.
-    const url = signup.url ? signupUrlWithEmail(signup.url, null) : null
+    // A link that still has an unfilled click id is never opened.
+    const url = guardSponsoredLink(
+      signup.url ? signupUrlWithEmail(signup.url, null) : null,
+      this.guardOptions(),
+    )
     if (!url) {
       return {
         status: 'unavailable',
@@ -306,8 +321,10 @@ export class SponsoredAccountStep {
    */
   private async connect(signal: AbortSignal): Promise<string | null> {
     const { credentials, offerName } = this.deps
+    // The form never shows a key page with an unfilled click id.
+    const shown = guardSponsoredCredentials(credentials, this.guardOptions())
     const answer = await this.wait(
-      { kind: 'credentials', offerName, credentials, error: null },
+      { kind: 'credentials', offerName, credentials: shown, error: null },
       signal,
     )
     if (answer.kind !== 'credentials') return null
@@ -357,6 +374,13 @@ export class SponsoredAccountStep {
       timer.unref?.()
       this.deps.show(ask)
     })
+  }
+
+  private guardOptions() {
+    return {
+      advertiserLink: this.deps.advertiserLink ?? null,
+      onBlocked: this.deps.onUnfilledClickIdBlocked,
+    }
   }
 
   private declined(): SponsoredAccountResult {

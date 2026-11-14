@@ -163,9 +163,21 @@ export const listLocalAgentFiles = (dir: string): string[] => {
 export const getDefaultAgentDirs = (): string[] => {
   const cwdAgents = path.join(process.cwd(), '.agents')
   const parentAgents = path.join(process.cwd(), '..', '.agents')
-  const homeAgents = path.join(os.homedir(), '.agents')
-  return [cwdAgents, parentAgents, homeAgents]
+  return [cwdAgents, parentAgents, getUserAgentDir()]
 }
+
+/**
+ * The user's own `~/.agents` directory — the only default location whose
+ * content the user put there themselves.
+ *
+ * Repository-scoped `.agents` directories (`{cwd}/.agents`, `{cwd}/../.agents`)
+ * execute code when imported and start whatever their `mcp.json` names, so they
+ * belong to a trust decision the HOST makes (the CLI's `agent-dir-trust.ts`).
+ * A caller that has not made that decision must not reach them through a
+ * default (AB827V0 #070).
+ */
+export const getUserAgentDir = (): string =>
+  path.join(os.homedir(), '.agents')
 
 /**
  * Load agent definitions from `.agents` directories.

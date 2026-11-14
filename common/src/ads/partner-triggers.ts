@@ -132,10 +132,8 @@ export function mentionsLaunchKeyword(text: string): boolean {
 export const COMPOSER_INTENT_PLACEMENTS: Readonly<
   Record<string, readonly string[]>
 > = {
-  'Desktop-Intent': [
-    'Desktop-Partner-Composer-PR',
-    'Desktop-Partner-Composer-Launch',
-  ],
+  // Desktop retired the PR composer pill; CLI keeps its own PR placement.
+  'Desktop-Intent': ['Desktop-Partner-Composer-Launch'],
   'CLI-Intent': ['CLI-Partner-Composer-PR', 'CLI-Partner-Composer-Launch'],
 }
 export const DESKTOP_COMPOSER_INTENT_PLACEMENT_ID = 'Desktop-Intent'

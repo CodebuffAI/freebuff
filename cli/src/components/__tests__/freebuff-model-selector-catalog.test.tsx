@@ -308,12 +308,88 @@ describe('a locked row', () => {
   })
 })
 
+describe('the chat picker', () => {
+  // The terminal bytes for Up and Down that the picker must act on. Windows
+  // consoles (conhost and Windows Terminal, VT input) send the CSI form, or
+  // the SS3 form while application cursor keys are on, like xterm.
+  const ARROWS = [
+    { label: 'CSI', up: '\x1b[A', down: '\x1b[B' },
+    { label: 'SS3 (application cursor keys)', up: '\x1bOA', down: '\x1bOB' },
+  ]
+  const send = (setup: Awaited<ReturnType<typeof render>>, bytes: string) =>
+    flushSync(() => setup.renderer.stdin.emit('data', Buffer.from(bytes)))
+
+  // Rows draw in section order: Cheap, Future, Hero (focused), Locked.
+  const focused = (frame: string) =>
+    ['Cheap Model', 'Future Model', 'Hero Model', 'Locked Model'].find((name) =>
+      lineWith(frame, name).includes(`› ${name}`),
+    )
+
+  for (const { label, up, down } of ARROWS) {
+    test(`moves the highlight on ${label} arrow sequences`, async () => {
+      const setup = await render({ onSelectModel: () => {} })
+      expect(focused(setup.captureCharFrame())).toBe('Hero Model')
+      send(setup, down)
+      await setup.renderOnce()
+      expect(focused(setup.captureCharFrame())).toBe('Locked Model')
+      send(setup, up)
+      await setup.renderOnce()
+      send(setup, up)
+      await setup.renderOnce()
+      expect(focused(setup.captureCharFrame())).toBe('Future Model')
+    })
+  }
+
+  test('names the arrows, and Tab only on a row with a reasoning ladder', async () => {
+    const setup = await render({ onSelectModel: () => {} })
+    expect(setup.captureCharFrame()).toContain(
+      '↑↓ choose model · Enter select · Esc cancel',
+    )
+    flushSync(() => setup.mockInput.pressKey('ARROW_UP'))
+    flushSync(() => setup.mockInput.pressKey('ARROW_UP'))
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(focused(frame)).toBe('Cheap Model')
+    expect(frame).toContain(
+      '↑↓ choose model · Tab reasoning · Enter select · Esc cancel',
+    )
+  })
+
+  test('a one-model catalog offers no arrows, only its reasoning ladder', async () => {
+    setFreebuffCatalog(
+      catalogFixture([
+        catalogRow('m-one', {
+          displayName: 'Freebuff',
+          efforts: ['low', 'high', 'max'],
+          defaultEffort: 'high',
+        }),
+      ]),
+    )
+    const setup = await render({ selected: 'm-one', onSelectModel: () => {} })
+    let frame = setup.captureCharFrame()
+    expect(lineWith(frame, 'Freebuff')).toContain('Freebuff • high')
+    expect(frame).toContain('Tab reasoning · Enter select · Esc cancel')
+    expect(frame).not.toContain('↑↓ choose model')
+    flushSync(() => setup.mockInput.pressKey('TAB'))
+    await setup.renderOnce()
+    frame = setup.captureCharFrame()
+    expect(frame).toContain('Freebuff • Reasoning')
+    expect(frame).toContain('↑↓ choose · Enter save · Esc back')
+  })
+
+  test('the landing picker draws no chat hint', async () => {
+    const setup = await render()
+    expect(setup.captureCharFrame()).not.toContain('Esc cancel')
+  })
+})
+
 describe('the reasoning submenu', () => {
   test('offers the row ladder with its default, and saves per key', async () => {
     // Spied like the compiled picker's Tab test: the real setter also writes
     // the settings file, and CI's NODE_ENV=production run shares one process
     // (and one settings file) across every test file.
-    const previous = useFreebuffModelStore.getState().reasoningEffortByModel
+    const { reasoningEffortByModel: previous, setReasoningEffort } =
+      useFreebuffModelStore.getState()
     useFreebuffModelStore.setState({ reasoningEffortByModel: {} })
     const saves: Array<[string, string | undefined]> = []
     const persist = spyOn(
@@ -347,7 +423,12 @@ describe('the reasoning submenu', () => {
       expect(saves).toEqual([['m-cheap', 'max']])
     } finally {
       persist.mockRestore()
-      useFreebuffModelStore.setState({ reasoningEffortByModel: previous })
+      // mockRestore only patches the state object it spied on; each setState
+      // above copied the mock into a new one, so put the real setter back.
+      useFreebuffModelStore.setState({
+        reasoningEffortByModel: previous,
+        setReasoningEffort,
+      })
     }
   })
 

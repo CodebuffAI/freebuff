@@ -10,7 +10,9 @@ import { useCallback, useEffect, useRef } from 'react'
 import { createAdoptionWatcher, type AdoptionWatcher } from './ad-adoption'
 import {
   createEngagementRegistry,
+  createViewDwellGate,
   rowsIntersect,
+  TRANSCRIPT_IMPRESSION_DWELL_MS,
   type ClickRegion,
   type EngagementHandle,
   type EngagementRegistry,
@@ -18,6 +20,7 @@ import {
 } from './ad-engagement'
 import {
   ensureAdTerminalFocusWatch,
+  getAdTerminalFocus,
   getAdTerminalFocusState,
   getAdTranscriptViewport,
   subscribeAdAgentCommand,
@@ -36,6 +39,9 @@ import type { AdEngagement } from '@codebuff/common/types/ad-client-context'
 
 /** How often a transcript card re-measures whether it is inside the viewport. */
 export const TRANSCRIPT_VISIBILITY_POLL_MS = 500
+
+/** How often a transcript card waiting for its first view re-measures itself. */
+export const TRANSCRIPT_SEEN_POLL_MS = 250
 
 /** One POST to `/api/v1/ads/engagement`. Resolves either way; never throws. */
 async function sendAdEngagement(record: AdEngagement): Promise<void> {
@@ -229,12 +235,106 @@ export function useAdEngagement(
     placement: OwnerPlacement
     truncated?: boolean
     enabled?: boolean
+    /**
+     * A `measured` card only: called once, after the card's rows have stayed
+     * inside the transcript viewport for {@link TRANSCRIPT_IMPRESSION_DWELL_MS}
+     * while the terminal was not unfocused. Independent of the engagement
+     * registry, so a registry failure never loses an impression.
+     */
+    onSeen?: () => void
+    /**
+     * A `measured` card only: every viewport measurement while it is drawn
+     * (`undefined` = could not measure), then `false` once it is gone. The
+     * chat reads it to give the screen to one ad at a time (`ad-screen.ts`).
+     */
+    onVisibility?: (visible: boolean | undefined) => void
   },
 ): AdEngagementBinding {
   const { placement, truncated } = options
   const enabled = options.enabled ?? true
   const handleRef = useRef<EngagementHandle | null>(null)
   const nodeRef = useRef<MeasurableNode | null>(null)
+  const onSeenRef = useRef(options.onSeen)
+  onSeenRef.current = options.onSeen
+  const wantsSeen = placement === 'measured' && options.onSeen !== undefined
+  const onVisibilityRef = useRef(options.onVisibility)
+  onVisibilityRef.current = options.onVisibility
+  const wantsVisibility =
+    placement === 'measured' && options.onVisibility !== undefined
+
+  useEffect(() => {
+    if (!wantsVisibility || !impUrl) return
+    const report = (visible: boolean | undefined) => {
+      try {
+        onVisibilityRef.current?.(visible)
+      } catch {
+        // a visibility report must never break the card
+      }
+    }
+    const check = () => {
+      let visible: boolean | undefined
+      try {
+        const node = nodeRef.current
+        visible =
+          node && !node.isDestroyed
+            ? rowsIntersect(
+                { top: node.screenY, height: node.height },
+                getAdTranscriptViewport(),
+              )
+            : undefined
+      } catch {
+        visible = undefined
+      }
+      report(visible)
+    }
+    // The faster poll: scrolling a card into view leaves the dock beside it
+    // for at most one poll, well inside the card's 1 s impression dwell.
+    const first = setTimeout(check, 0)
+    const interval = setInterval(check, TRANSCRIPT_SEEN_POLL_MS)
+    ;(interval as { unref?: () => void }).unref?.()
+    return () => {
+      clearTimeout(first)
+      clearInterval(interval)
+      report(false)
+    }
+  }, [impUrl, wantsVisibility])
+
+  useEffect(() => {
+    if (!wantsSeen || !impUrl) return
+    const gate = createViewDwellGate(TRANSCRIPT_IMPRESSION_DWELL_MS)
+    let interval: ReturnType<typeof setInterval> | null = null
+    const check = () => {
+      let visible: boolean | undefined
+      try {
+        const node = nodeRef.current
+        visible =
+          node && !node.isDestroyed
+            ? rowsIntersect(
+                { top: node.screenY, height: node.height },
+                getAdTranscriptViewport(),
+              )
+            : undefined
+      } catch {
+        visible = undefined
+      }
+      if (gate.update(performance.now(), visible, getAdTerminalFocus())) {
+        if (interval) clearInterval(interval)
+        interval = null
+        try {
+          onSeenRef.current?.()
+        } catch {
+          // an impression report must never break the card
+        }
+      }
+    }
+    const first = setTimeout(check, 0)
+    interval = setInterval(check, TRANSCRIPT_SEEN_POLL_MS)
+    ;(interval as { unref?: () => void }).unref?.()
+    return () => {
+      clearTimeout(first)
+      if (interval) clearInterval(interval)
+    }
+  }, [impUrl, wantsSeen])
 
   useEffect(() => {
     if (!enabled || !impUrl) return

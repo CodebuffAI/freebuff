@@ -9,9 +9,9 @@ import type { SecretAgentDefinition } from './types/secret-agent-definition'
 /**
  * base3-fast: base3's loop with a fan-out on top.
  *
- * The root is a base3 CLI root plus `spawn_agents` and three things to spawn:
- * `file-picker` and `code-searcher` for context, in parallel, and the worker
- * below for the one shape of work worth splitting — a large mechanical change
+ * The root is a base3 CLI root plus `spawn_agents` and two things to spawn:
+ * `code-searcher` for context, in parallel, and the worker below for the one
+ * shape of work worth splitting — a large mechanical change
  * repeated across many independent files. The root implements everything
  * else itself: across five 62-task runs the tasks it split were the ones it
  * did worst on and no faster than base3 (docs/benchmarks/base3-fast/). Every
@@ -30,15 +30,19 @@ import type { SecretAgentDefinition } from './types/secret-agent-definition'
  * slices, so no git round-trip (and no git) is needed.
  *
  * A worker must be pinned to its root's model or the session gate rejects it
- * mid-run, so the worker id names the model. Which models run this harness is
- * FREEBUFF_FAST_MODE_MODEL_IDS (common/src/constants/freebuff-model-ids.ts).
+ * mid-run, so the worker id names the model.
+ *
+ * No surface runs this harness since 2026-10-30: fast mode is Flash's base3
+ * root, batching included (agents/base3-fast-free-deepseek-flash.ts).
+ * Released CLI and Desktop builds still run it, and the buffbench arm
+ * (base3-fast-free-deepseek-flash-evals.ts) is built from it.
  */
 
-/** Everything the root may spawn: pickers and searchers for context, the
- *  worker for slices. The code-searcher is programmatic — a batch of ripgrep
- *  queries and no model call — so it needs no free-mode allowlist entry. */
+/** Everything the root may spawn: searchers for context, the worker for
+ *  slices. The code-searcher is programmatic — a batch of ripgrep queries and
+ *  no model call — so it needs no free-mode allowlist entry. No file-picker
+ *  since 2026-10-16: the 62-task bench without it (2026-10-05) was a wash. */
 export const BASE3_FAST_SPAWNABLE_AGENTS = [
-  'file-picker',
   'code-searcher',
   FREEBUFF_BASE3_FAST_WORKER_AGENT_ID,
 ] as const
@@ -75,9 +79,9 @@ export function buildBase3FastGuidance(
   return `
 # Fast mode
 
-You are running in fast mode: besides your own tools you can spawn helpers with spawn_agents, and everything named in one spawn_agents call runs at the same time. Spawning context helpers in parallel is really, really helpful here and strongly encouraged. The notes below are the shape that works, not a script: when the user is asking a question, thinking something through or wants a small change, just answer or make it.
+You are running in fast mode: besides your own tools you can spawn helpers with spawn_agents, and everything named in one spawn_agents call runs at the same time. Fast mode makes work quicker, not bigger: the scope is still exactly what the user asked for. When the user is asking a question, thinking something through or wants a small change, just answer or make it, with no helpers. For a task that needs code you have not read, spawning context helpers in parallel is really, really helpful and strongly encouraged. The notes below are the shape that works, not a script.
 
-**Context.** When a task needs you to understand code you have not read, start with one spawn_agents call that spawns several file-pickers, each prompted from a different angle (the feature itself, its callers and tests, the conventions it should match), together with code-searchers, each carrying a batch of ripgrep queries for the names and patterns involved — put every query you can already think of into that first round. Then read generously: one read_files call with every path that looked relevant, rather than one file per step. Follow up with another round of code-searchers when the first points somewhere specific; a second round of file-pickers is rarely worth it. Everything you need is in the repository in front of you: do not search the web for this project's own code, history or packages.
+**Context.** When a task needs you to understand code you have not read, start with one spawn_agents call that spawns several code-searchers, each carrying a batch of ripgrep queries from a different angle (the feature itself, its callers and tests, the conventions it should match) — put every query you can already think of into that first round. Then read what they found in one read_files call with every path that looked relevant, rather than one file per step. Follow up with another round of code-searchers when the first points somewhere specific. Everything you need is in the repository in front of you: do not search the web for this project's own code, history or packages.
 
 **Implementing.** Make the change yourself. A change you hold in your head comes out coherent, and the slow part of any delegation is reading, reconciling and repairing what came back. Workers exist for one shape of work: a large, mechanical change repeated across many independent files, where each slice can be written without seeing the others, such as a rename across a tree or the same migration applied to dozens of modules. Only then spawn one ${workerAgentId} per slice, all in one spawn_agents call, after writing any piece the slices must agree on (a new type, signature or helper) yourself. Give each worker a short assignment that opens with "${BASE3_FAST_WORKER_ASSIGNMENT_OPENING}", then names the files it owns, the shared names it must use, and what belongs to another worker. Never give two workers the same file.
 
@@ -127,12 +131,14 @@ export function createBase3FastCliRoot(
     extraSystemPrompt: buildBase3FastGuidance(workerAgentId),
     modelLabel,
     compaction,
+    // Fast mode keeps its own eval-tuned loop (docs/freebuff-base3-harness.md).
+    batching: false,
   })
   return {
     ...root,
     displayName: 'Buffy (fast mode)',
     spawnerPrompt:
-      'Fast-mode coding agent: gathers context with parallel file-pickers and code-searchers, implements the change itself, and can split a large mechanical change across parallel prompt-cached workers that report which files they changed',
+      'Fast-mode coding agent: gathers context with parallel code-searchers, implements the change itself, and can split a large mechanical change across parallel prompt-cached workers that report which files they changed',
     toolNames: [...root.toolNames!, 'spawn_agents'],
     spawnableAgents: BASE3_FAST_SPAWNABLE_AGENTS.map((id) =>
       id === FREEBUFF_BASE3_FAST_WORKER_AGENT_ID ? workerAgentId : id,

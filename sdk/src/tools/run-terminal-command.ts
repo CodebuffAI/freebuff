@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'child_process'
-import { closeSync, mkdtempSync, openSync, writeFileSync } from 'fs'
+import { closeSync, mkdtempSync, openSync, statSync, writeFileSync } from 'fs'
 import { Readable as NodeReadable } from 'stream'
 import * as os from 'os'
 import * as path from 'path'
@@ -10,6 +10,8 @@ import type {
 } from 'child_process'
 import type { Readable } from 'stream'
 
+import { COMMAND_TIMEOUT_HINT } from '../../../common/src/tools/params/tool/run-terminal-command'
+import { shellMismatchHint } from '../../../common/src/util/shell-mismatch-hint'
 import { stripColors } from '../../../common/src/util/string'
 import { getSystemProcessEnv } from '../env'
 import { createWindowsBashNotFoundError, findWindowsBash } from './windows-bash'
@@ -48,6 +50,8 @@ export interface TerminalCommandProcess {
   completion: Promise<number | null>
   kill(signal: NodeJS.Signals): void
   isAlive(): boolean
+  write?(data: string): void
+  resize?(cols: number, rows: number): void
 }
 
 /**
@@ -219,6 +223,7 @@ export type ActiveTerminalCommandProcess = {
  * pasted into bug reports and those values may contain secrets.
  */
 export function getActiveTerminalCommandProcesses(): ActiveTerminalCommandProcess[] {
+  forgetEndedBackgroundCommands()
   return Array.from(liveChildren).flatMap((child) => {
     if (!child.pid) return []
     return [
@@ -253,7 +258,44 @@ export function rewriteWindowsNulRedirects(command: string): string {
   return command.replace(/([<>]\s*)nul(?![\w.])/gi, '$1/dev/null')
 }
 
-function spawnDirectTerminalCommand(
+/**
+ * The error to report for a spawn that failed because `directory` is missing
+ * or not a directory, or null for any other failure.
+ *
+ * Such a spawn fails with an ENOENT that names the executable (`uv_spawn
+ * 'C:\Program Files\Git\bin\bash.exe'`, `posix_spawn 'bash'`, ripgrep's path).
+ * That reads as the program being missing, and models retried the same call
+ * hundreds of times instead of fixing the directory. Checked only after a
+ * failure, so a broker's own refusals (a sponsored run's containment) pass
+ * through unchanged.
+ */
+export function missingDirectoryError(
+  error: unknown,
+  directory: string,
+  label: string,
+): string | null {
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  const message = error instanceof Error ? error.message : String(error)
+  if (
+    code !== 'ENOENT' &&
+    code !== 'ENOTDIR' &&
+    !/\b(ENOENT|ENOTDIR)\b/.test(message)
+  ) {
+    return null
+  }
+  try {
+    return statSync(directory).isDirectory()
+      ? null
+      : `${label} "${directory}" is not a directory.`
+  } catch (statError) {
+    const statCode = (statError as NodeJS.ErrnoException).code
+    return statCode === 'ENOENT' || statCode === 'ENOTDIR'
+      ? `${label} "${directory}" does not exist.`
+      : null
+  }
+}
+
+export function spawnDirectTerminalCommand(
   request: TerminalCommandSpawnRequest,
 ): TerminalCommandProcess {
   const child: ChildProcessWithoutNullStreams = spawn(
@@ -300,6 +342,7 @@ function spawnDirectTerminalCommand(
 
   return {
     pid: child.pid,
+    write: data => { child.stdin.write(data) },
     stdout: child.stdout,
     stderr: child.stderr,
     completion,
@@ -396,6 +439,13 @@ export function runTerminalCommand({
 
     // Resolve cwd to absolute path
     const resolvedCwd = path.resolve(cwd)
+    const missingCwd = (error: unknown) =>
+      missingDirectoryError(error, resolvedCwd, 'Working directory')
+    const spawnFailure = (error: unknown, prefix: string) =>
+      new Error(
+        missingCwd(error) ??
+          `${prefix}: ${error instanceof Error ? error.message : String(error)}`,
+      )
 
     let childProcess: TerminalCommandProcess
     try {
@@ -419,7 +469,10 @@ export function runTerminalCommand({
           command,
           signal,
           terminalCommandBroker,
-        ).then(resolve, reject)
+        ).then(resolve, (error) => {
+          const missing = missingCwd(error)
+          reject(missing ? new Error(missing) : error)
+        })
         return
       }
       childProcess = terminalCommandBroker
@@ -427,8 +480,11 @@ export function runTerminalCommand({
         : spawnDirectTerminalCommand(request)
     } catch (error) {
       reject(
-        new Error(
-          `${terminalCommandBroker ? 'Failed to start terminal command broker' : 'Failed to spawn command'}: ${error instanceof Error ? error.message : String(error)}`,
+        spawnFailure(
+          error,
+          terminalCommandBroker
+            ? 'Failed to start terminal command broker'
+            : 'Failed to spawn command',
         ),
       )
       return
@@ -514,7 +570,9 @@ export function runTerminalCommand({
           signal?.removeEventListener('abort', onAbort)
           killChildProcess()
           reject(
-            new Error(`Command timed out after ${timeout_seconds} seconds`),
+            new Error(
+              `Command timed out after ${timeout_seconds} seconds. ${COMMAND_TIMEOUT_HINT}`,
+            ),
           )
         }
       }, timeout_seconds * 1000)
@@ -556,11 +614,23 @@ export function runTerminalCommand({
         const truncatedStdout = stdout.format()
         const truncatedStderr = stderr.format()
 
+        // A broker that owns the shell runs PowerShell (the sponsored Windows
+        // floor); every other command runs in bash, on Windows too.
+        const hint = shellMismatchHint({
+          platform: os.platform(),
+          shell: brokerOwnsShell ? 'powershell' : 'bash',
+          command,
+          stdout: truncatedStdout,
+          stderr: truncatedStderr,
+          exitCode,
+        })
+
         const combinedOutput = {
           command,
           stdout: truncatedStdout,
           ...(truncatedStderr ? { stderr: truncatedStderr } : {}),
           ...(exitCode !== null ? { exitCode } : {}),
+          ...(hint ? { hint } : {}),
         }
 
         resolve([{ type: 'json', value: combinedOutput }])
@@ -583,8 +653,13 @@ export function runTerminalCommand({
         if (wasFinished) return
 
         reject(
-          new Error(
-            `${terminalCommandBroker ? 'Terminal command broker failed' : childProcess.pid ? 'Terminal command process failed' : 'Failed to spawn command'}: ${error instanceof Error ? error.message : String(error)}`,
+          spawnFailure(
+            error,
+            terminalCommandBroker
+              ? 'Terminal command broker failed'
+              : childProcess.pid
+                ? 'Terminal command process failed'
+                : 'Failed to spawn command',
           ),
         )
       })
@@ -608,6 +683,23 @@ export function releaseBackgroundTerminalCommands(signal: AbortSignal): void {
   for (const [child, entry] of backgroundCommands) {
     if (entry.signal !== signal || !entry.transferable) continue
     signal.removeEventListener('abort', entry.onAbort)
+    liveChildren.delete(child)
+    backgroundCommands.delete(child)
+  }
+}
+
+/**
+ * A background command whose shell exits while its process group lives on
+ * (`nohup server &`, how agents start dev servers) stays tracked past `finish`,
+ * and nothing looks at it again once that group ends. Desktop's helper census
+ * counted every such command ever started as live, so about 3% of macOS and
+ * Linux installs reported a process flood each day. Forget the ones whose
+ * group is gone.
+ */
+function forgetEndedBackgroundCommands(): void {
+  for (const [child, entry] of backgroundCommands) {
+    if (child.isAlive()) continue
+    entry.signal?.removeEventListener('abort', entry.onAbort)
     liveChildren.delete(child)
     backgroundCommands.delete(child)
   }

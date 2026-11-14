@@ -19,6 +19,19 @@ function contextBudget(template: ContextPolicy): number {
   )
 }
 
+/** The most new user content may hold, in estimated tokens, unless the
+ * model's context budget is smaller. */
+export const MAX_USER_CONTENT_TOKENS = 128_000
+
+/** `refused` is the content, which is never kept in history. */
+export class UserContentTooLargeError extends Error {
+  constructor(readonly refused: Message[]) {
+    super(
+      'The new message is too large. Send a smaller excerpt or attach a file instead.',
+    )
+  }
+}
+
 /** New input is not covered by the previous receipt. Refuse oversized user
  * content explicitly rather than silently changing a user's instructions. */
 export function assertUserContentSize(
@@ -26,11 +39,10 @@ export function assertUserContentSize(
   template: ContextPolicy,
 ): void {
   if (
-    countTokensMessages(messages) > Math.min(128_000, contextBudget(template))
+    countTokensMessages(messages) >
+    Math.min(MAX_USER_CONTENT_TOKENS, contextBudget(template))
   ) {
-    throw new Error(
-      'The new message is too large. Send a smaller excerpt or attach a file instead.',
-    )
+    throw new UserContentTooLargeError(messages)
   }
 }
 

@@ -1,7 +1,7 @@
 import { freebucksFixture } from '@codebuff/common/testing/freebuff'
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import {
-  FREEBUFF_REWARD_MODEL_ID,
+  FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   FREEBUFF_FABLE_5_1_MODEL_ID,
   resolveFreebuffModelForAccessTier,
 } from '@codebuff/common/constants/freebuff-models'
@@ -31,14 +31,14 @@ afterEach(() => {
   fetchSpy = undefined
 })
 
-test('the reward model reaches the session POST header unchanged', async () => {
+test('a full-access pick reaches the session POST header unchanged', async () => {
   fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
     new Response(JSON.stringify({ status: 'none' }), {
       headers: { 'content-type': 'application/json' },
     }),
   )
   const resolved = resolveFreebuffModelForAccessTier(
-    FREEBUFF_REWARD_MODEL_ID,
+    FREEBUFF_GLM_V53_FLASH_MODEL_ID,
     'full',
   )
 
@@ -51,7 +51,7 @@ test('the reward model reaches the session POST header unchanged', async () => {
     freebucksTimeZoneHeaders()[FREEBUCKS_TIMEZONE_HEADER] ?? null,
   )
   expect(new Headers(init?.headers).get('x-freebuff-model')).toBe(
-    FREEBUFF_REWARD_MODEL_ID,
+    FREEBUFF_GLM_V53_FLASH_MODEL_ID,
   )
 })
 

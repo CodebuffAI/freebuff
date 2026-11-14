@@ -1,3 +1,6 @@
+import { formatSkillContent } from '@codebuff/common/util/skills'
+import type { SkillDefinition } from '@codebuff/common/types/skill'
+
 /**
  * Centralized prompt builders for /plan and /review commands.
  * This ensures consistent behavior regardless of entry path. Both run on the
@@ -44,14 +47,14 @@ export function buildInterviewPrompt(input: string): string {
  * command (when it carries trailing text) and the skill input mode's second
  * submit, so both entry paths produce byte-identical prompts.
  *
- * `content` is the whole SKILL.md (frontmatter included) — same as the
- * agent-runtime's own skill tool output.
+ * Includes the source directory and whole SKILL.md (frontmatter included),
+ * using the same resource-path guidance as the agent-runtime's skill tool.
  */
 export function buildSkillPrompt(
-  skill: { name: string; content: string },
+  skill: Pick<SkillDefinition, 'name' | 'content' | 'filePath'>,
   input: string,
 ): string {
-  const skillContext = `<skill name="${skill.name}">\n${skill.content}\n</skill>`
+  const skillContext = `<skill name="${skill.name}">\n${formatSkillContent(skill)}\n</skill>`
   const trimmedInput = input.trim()
   return (
     `I invoke the following skill:\n\n${skillContext}\n\n` +
@@ -117,4 +120,3 @@ export function buildReviewPromptFromArgs(input: string): string {
   // Use the same format as preset scopes for consistency
   return `${REVIEW_BASE_PROMPT} ${trimmedInput}`
 }
-

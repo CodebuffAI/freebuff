@@ -2,10 +2,9 @@
  * The skill evaluator's view of a LOCAL run's worktree: the
  * `SponsoredSkillCheckContext` the step driver (`sponsored-step-driver.ts`)
  * checks a sponsored skill's steps over, for a run that edits the user's own
- * checkout in place. Shared by Desktop's harness
- * (`freebuff-desktop/src/server/harness/sponsored-step-loop.ts`) and the CLI
- * (`cli/src/utils/sponsored-run.ts`), so "step 3 passed" is measured the same
- * way on both. Each surface supplies its own file system (the sponsored
+ * checkout in place. Used by the CLI (`cli/src/utils/sponsored-run.ts`), and
+ * until 2026-11 by Desktop's retired local harness, so "step 3 passed" is
+ * measured the same way on each. Each surface supplies its own file system (the sponsored
  * rooted one) and its own sandboxed shell, under the agent's own refusals.
  *
  * Doc: `docs/ads/agentic/step-checks.md`.
@@ -108,7 +107,18 @@ async function packageManagerOf(
   fs: CodebuffFileSystem,
   root: string,
 ): Promise<string> {
-  const has = async (name: string) => (await stamp(fs, root, name)) !== null
+  return sponsoredPackageManagerFromLockfiles(
+    async (name) => (await stamp(fs, root, name)) !== null,
+  )
+}
+
+/**
+ * The project's JavaScript package manager, from which lockfile it has: also
+ * what `install_package` installs with (`sponsored-install-tool.ts`).
+ */
+export async function sponsoredPackageManagerFromLockfiles(
+  has: (name: string) => Promise<boolean>,
+): Promise<'bun' | 'pnpm' | 'yarn' | 'npm'> {
   if ((await has('bun.lock')) || (await has('bun.lockb'))) return 'bun'
   if (await has('pnpm-lock.yaml')) return 'pnpm'
   if (await has('yarn.lock')) return 'yarn'

@@ -1,4 +1,6 @@
 import { Button } from './button'
+import { DisplayAdStatusline } from './display-ad-statusline'
+import { CLI_DISPLAY_AD_PLACEMENT_IDS } from '../ads/display-ads'
 import { useTheme } from '../hooks/use-theme'
 import { useChatStore } from '../state/chat-store'
 import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
@@ -23,23 +25,28 @@ export function FreebuffChatFooter({ projectRoot }: { projectRoot: string }) {
   const effort = getEffectiveFreebuffReasoningEffort(model.id)
   const name = useChatStore((s) => getFirstUserPrompt(s.messages))
   return (
-    <box style={{ flexDirection: 'column', flexShrink: 0, paddingLeft: 1 }}>
-      <Button onClick={openFreebuffModelPicker}>
-        <text style={{ wrapMode: 'word', fg: theme.foreground }}>
-          <span
-            fg={theme.primary}
-          >{`${model.displayName}${effort ? ` • ${effort}` : ''}`}</span>
-          <span fg={theme.muted}>{` · ${formatCwd(projectRoot)} · `}</span>
-          <span fg={theme.primary}>/model</span>
-          <span
-            fg={theme.muted}
-          >{` to change · Chat: ${name === '(empty chat)' ? 'New chat' : name.replace(/\s+/g, ' ')}`}</span>
+    <box style={{ flexDirection: 'column', flexShrink: 0 }}>
+      <box style={{ flexDirection: 'column', paddingLeft: 1 }}>
+        <Button onClick={openFreebuffModelPicker}>
+          <text style={{ wrapMode: 'word', fg: theme.foreground }}>
+            <span
+              fg={theme.primary}
+            >{`${model.displayName}${effort ? ` • ${effort}` : ''}`}</span>
+            <span fg={theme.muted}>{` · ${formatCwd(projectRoot)} · `}</span>
+            <span fg={theme.primary}>/model</span>
+            <span
+              fg={theme.muted}
+            >{` to change · Chat: ${name === '(empty chat)' ? 'New chat' : name.replace(/\s+/g, ' ')}`}</span>
+          </text>
+        </Button>
+        <text style={{ fg: theme.muted }}>
+          <span fg={theme.foreground}>←</span> for history ·{' '}
+          <span fg={theme.foreground}>?</span> for help
         </text>
-      </Button>
-      <text style={{ fg: theme.muted }}>
-        <span fg={theme.foreground}>←</span> for history ·{' '}
-        <span fg={theme.foreground}>?</span> for help
-      </text>
+      </box>
+      <DisplayAdStatusline
+        placementId={CLI_DISPLAY_AD_PLACEMENT_IDS.cliStatusline}
+      />
     </box>
   )
 }

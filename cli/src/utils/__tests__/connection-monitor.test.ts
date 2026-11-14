@@ -165,7 +165,7 @@ describe('connection-monitor', () => {
     timers[0].fn() // the next scheduled tick, now while busy
     await flush()
 
-    // No second network probe — busy already proves reachability — but it did reschedule.
+    // Already healthy and busy: skip the redundant probe, but keep the loop scheduled.
     expect(checkConnection).toHaveBeenCalledTimes(1)
     expect(timers.length).toBe(2)
     expect(timers[1].ms).toBe(5_000)
@@ -175,6 +175,64 @@ describe('connection-monitor', () => {
     await flush()
 
     expect(checkConnection).toHaveBeenCalledTimes(2)
+  })
+
+  test('an offline monitor keeps backing off while busy and recovers before the turn ends', async () => {
+    let networkAvailable = false
+    const checkConnection = mock(async () => networkAvailable)
+    const monitor = createConnectionMonitor({ checkConnection })
+    const seen: boolean[] = []
+    monitor.subscribe((connected) => seen.push(connected))
+    await flush()
+    expect(seen).toEqual([true, false])
+
+    monitor.setBusy(true)
+    // Starting a turn alone is not evidence that the network recovered.
+    expect(monitor.getConnected()).toBe(false)
+    timers[timers.length - 1].fn()
+    await flush()
+    expect(checkConnection).toHaveBeenCalledTimes(2)
+    expect(monitor.getConnected()).toBe(false)
+    // Second failure retains the normal 20–40s backoff, not the busy 5s tick.
+    expect(timers[timers.length - 1].ms).toBeGreaterThanOrEqual(20_000)
+    expect(timers[timers.length - 1].ms).toBeLessThanOrEqual(40_000)
+
+    networkAvailable = true
+    timers[timers.length - 1].fn()
+    await flush()
+    expect(checkConnection).toHaveBeenCalledTimes(3)
+    expect(monitor.getConnected()).toBe(true)
+    expect(seen).toEqual([true, false, false, true])
+
+    // Still busy, now healthy: return to skipping redundant health checks.
+    timers[timers.length - 1].fn()
+    await flush()
+    expect(checkConnection).toHaveBeenCalledTimes(3)
+    expect(timers[timers.length - 1].ms).toBe(5_000)
+    monitor.stop()
+  })
+
+  test('a probe failing after a turn starts does not prevent recovery during that turn', async () => {
+    let finishProbe!: (connected: boolean) => void
+    const checkConnection = mock(() => Promise.resolve(true))
+    checkConnection.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      finishProbe = resolve
+    }))
+    const monitor = createConnectionMonitor({ checkConnection })
+    const seen: boolean[] = []
+    monitor.subscribe((connected) => seen.push(connected))
+
+    monitor.setBusy(true)
+    finishProbe(false)
+    await flush()
+    expect(monitor.getConnected()).toBe(false)
+
+    timers[timers.length - 1].fn()
+    await flush()
+    expect(checkConnection).toHaveBeenCalledTimes(2)
+    expect(monitor.getConnected()).toBe(true)
+    expect(seen).toEqual([true, false, true])
+    monitor.stop()
   })
 
   test('stop() prevents any further probing', async () => {

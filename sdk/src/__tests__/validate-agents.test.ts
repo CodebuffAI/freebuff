@@ -846,6 +846,7 @@ describe('validateAgents', () => {
       expect(result.validationErrors[0].message).toContain(
         'Server error occurred',
       )
+      expect(result.validationErrors[0].message).toContain('HTTP 500')
     })
 
     it('should handle network failures', async () => {

@@ -139,13 +139,13 @@ export const handleSpawnAgentInline = (async (
     fingerprintId,
     parentSystemPrompt: system,
     parentTools,
-    onResponseChunk: (chunk) => {
+    onResponseChunk: async (chunk) => {
       // Context pruning is internal and its raw summary would be noisy in the
       // client, but lifecycle events still need to flow so the UI can explain
       // the otherwise silent pause.
       if (typeof chunk === 'string') {
         if (agentType !== 'context-pruner') {
-          sendSubagentChunk({
+          await sendSubagentChunk({
             userInputId,
             agentId: childAgentState.agentId,
             agentType,
@@ -160,7 +160,7 @@ export const handleSpawnAgentInline = (async (
       if (agentType === 'context-pruner' && !isLifecycleEvent) return
       if (chunk.type === 'text') {
         if (chunk.text) {
-          sendSubagentChunk({
+          await sendSubagentChunk({
             userInputId,
             agentId: childAgentState.agentId,
             agentType,
@@ -170,7 +170,7 @@ export const handleSpawnAgentInline = (async (
         }
         return
       }
-      writeToClient(chunk)
+      await writeToClient(chunk)
     },
     clearUserPromptMessagesAfterResponse: false,
   })

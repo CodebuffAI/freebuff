@@ -28,12 +28,13 @@ export const paidSocialClickCookie = (platform: PaidSocialPlatform) =>
   `freebuff_${platform}_click`
 /** TikTok's own first-party browser cookie, set by its pixel on public pages. */
 export const TIKTOK_BROWSER_COOKIE = '_ttp'
-// Public, static OAuth endpoints only. No arbitrary URL, query, user ID, or
+// Public, static authentication endpoints only. No arbitrary URL, query, user ID, or
 // project path may enter the vendor's required website-event page context.
 export const PAID_SOCIAL_SIGNUP_PATHS = [
   '/api/auth/callback/github',
   '/api/auth/callback/google',
   '/api/auth/callback/apple',
+  '/api/auth/email',
 ] as const
 export type PaidSocialSignupPath = (typeof PAID_SOCIAL_SIGNUP_PATHS)[number]
 export function paidSocialSignupPath(

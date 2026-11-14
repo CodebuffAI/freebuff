@@ -67,7 +67,7 @@ export const handleStrReplace = (async (
       return {
         tool: 'str_replace' as const,
         path,
-        error: 'Unknown error: Failed to process the str_replace block.',
+        error: `Error: Failed to process the str_replace block. ${typeof error === 'string' ? error : error.message}`,
       }
     })
     .then((fileProcessingResult) => ({

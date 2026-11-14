@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 
 import { LOGIN_WEBSITE_URL } from '../login/constants'
 import { pollLoginStatus } from '../login/login-flow'
+import { captureCliFunnel } from '../utils/cli-product-funnel'
 import { trackEvent } from '../utils/analytics'
 import { logger } from '../utils/logger'
 
@@ -88,6 +89,7 @@ export function useLoginPolling({
           const user = result.user as User
           onSuccessRef.current(user)
         } else if (result.status === 'timeout') {
+          captureCliFunnel('login', 'failed', { reason: 'timeout' })
           logger.warn('Login polling timed out after configured limit')
           onTimeoutRef.current()
         }

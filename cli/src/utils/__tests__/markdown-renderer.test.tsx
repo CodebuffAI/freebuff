@@ -2,7 +2,11 @@ import { TextAttributes } from '@opentui/core'
 import { describe, expect, test } from 'bun:test'
 import React from 'react'
 
-import { renderMarkdown, renderStreamingMarkdown } from '../markdown-renderer'
+import {
+  hasIncompleteCodeFence,
+  renderMarkdown,
+  renderStreamingMarkdown,
+} from '../markdown-renderer'
 
 type El = React.ReactElement<Record<string, unknown>>
 
@@ -146,6 +150,24 @@ describe('markdown renderer', () => {
     expect(boldNode).toBeDefined()
     expect(flattenChildren(boldNode!.props.children)).toEqual(['done'])
     expect(nodes[nodes.length - 1]).toBe('```js\nconsole.log(')
+  })
+
+  test('a ``` run that opens no fence leaves the rest of the stream rendered', () => {
+    for (const content of [
+      'A.\n\n``` a`b\n\n**after**\n',
+      'Then ``` alone in text.\n\n**after**\n',
+      '~~~\n```\n~~~\n\n**after**\n',
+    ]) {
+      expect(hasIncompleteCodeFence(content)).toBe(false)
+      expect(renderStreamingMarkdown(content)).toEqual(renderMarkdown(content))
+    }
+  })
+
+  test('a fence nested in a list or quote is still open while streaming', () => {
+    expect(hasIncompleteCodeFence('- item\n\n  ```ts\n  const a')).toBe(true)
+    expect(hasIncompleteCodeFence('> ```\n> code')).toBe(true)
+    expect(hasIncompleteCodeFence('````md\n```\ninner')).toBe(true)
+    expect(hasIncompleteCodeFence('```\ncode\n```')).toBe(false)
   })
 
   test('renders strikethrough text with GFM', () => {

@@ -472,6 +472,89 @@ describe('the turn', () => {
     expect(posted).toHaveLength(SPONSORED_FRICTION_MAX_PER_RUN)
   })
 
+  test('install_package is registered with a resolver, bound to this run, and runs through the run’s shell', async () => {
+    const resolves: unknown[][] = []
+    const shell: Array<Record<string | symbol, unknown>> = []
+    const f = fakes({
+      resolvePackage: async (...args) => {
+        resolves.push(args)
+        return {
+          allowed: true,
+          ecosystem: 'npm',
+          name: '@acme/sdk',
+          version: '1.2.3',
+          declared: true,
+        }
+      },
+      overrideTools: (context) => {
+        f.contexts.push(context)
+        return {
+          run_terminal_command: async (
+            input: Record<string | symbol, unknown>,
+          ) => {
+            shell.push(input)
+            return [{ type: 'json', value: { stdout: 'added 1', exitCode: 0 } }]
+          },
+        } as unknown as SponsoredOverrideTools
+      },
+    })
+    const { plan, consent } = await runThrough(f)
+    if (!consent.ok) throw new Error('refused')
+    expect(plan.customToolDefinitions.map((tool) => tool.toolName)).toEqual([
+      'install_package',
+    ])
+    expect(plan.agent.toolNames).toContain('install_package')
+    expect(plan.agent.systemPrompt).toContain('install_package tool')
+    expect(plan.prompt).toContain('install_package tool')
+    // The shell refuses installs toward the tool.
+    expect(f.contexts.at(-1)!.installTool).toBe(true)
+    const tool = plan.customToolDefinitions[0]!
+    const out = (await tool.execute({
+      ecosystem: 'npm',
+      name: '@acme/sdk',
+    })) as Array<{
+      value: Record<string, unknown>
+    }>
+    expect(out[0]!.value).toMatchObject({
+      status: 'installed',
+      command: 'npm install --ignore-scripts --save-exact @acme/sdk@1.2.3',
+    })
+    // The resolver got this run's proposal and run token, and the session bearer.
+    expect(resolves).toEqual([
+      [
+        'proposal-1',
+        'token-1',
+        { ecosystem: 'npm', name: '@acme/sdk' },
+        'session-token',
+      ],
+    ])
+    expect(shell).toHaveLength(1)
+    expect(shell[0]!.command).toBe(
+      'npm install --ignore-scripts --save-exact @acme/sdk@1.2.3',
+    )
+    expect(Object.getOwnPropertySymbols(shell[0]!)).toHaveLength(1)
+  })
+
+  test('install_package without a session refuses and never runs the shell', async () => {
+    let calls = 0
+    let token: string | null = 'session-token'
+    const f = fakes({
+      getToken: () => token,
+      resolvePackage: async () => {
+        calls += 1
+        return { allowed: false, reason: 'x' }
+      },
+    })
+    const { plan } = await runThrough(f)
+    token = null
+    const out = (await plan.customToolDefinitions[0]!.execute({
+      ecosystem: 'npm',
+      name: '@acme/sdk',
+    })) as Array<{ value: Record<string, unknown> }>
+    expect(out[0]!.value.status).toBe('refused')
+    expect(calls).toBe(0)
+  })
+
   test('running is reported on the turn’s first tool call, with the funded identity', async () => {
     const f = fakes({ overrideTools: () => TOOL_STUBS })
     const { consent } = await acceptThrough(f)
@@ -1297,5 +1380,81 @@ describe('diagnosticCause', () => {
     expect(diagnosticCause('boom\nstack trace\nsource')).toBe(': boom')
     expect(diagnosticCause(null)).toBe('')
     expect(diagnosticCause('x'.repeat(500)).length).toBeLessThan(210)
+  })
+})
+
+describe('the account links (COD-965)', () => {
+  const TOKEN = 'bfc_1.p.s'
+  function withLinks(resolvedLinks: unknown, advertiserLink?: string) {
+    const opened: string[] = []
+    const f = fakes({
+      openUrl: async (url) => {
+        opened.push(url)
+        return true
+      },
+      accept: async (proposalId, token, binding) => {
+        const result = await fakes().deps.accept(proposalId, token, binding)
+        if (!result.ok) return result
+        return {
+          ...result,
+          accept: {
+            ...result.accept,
+            ...(advertiserLink ? { advertiserLink } : {}),
+            resolvedLinks,
+          },
+        }
+      },
+    })
+    return { f, opened }
+  }
+  async function requestSignup(f: ReturnType<typeof fakes>) {
+    await acceptThrough(f)
+    const plan = await f.service.startTurn()
+    if (!plan) throw new Error('expected a plan')
+    const tool = plan.customToolDefinitions.find(
+      (definition) => definition.toolName === 'request_sponsored_signup',
+    )
+    if (!tool) throw new Error('expected the signup tool')
+    void (tool as { execute: (input: unknown) => Promise<unknown> }).execute({})
+    await settle()
+  }
+
+  test('a server sign-up link the reviewed procedure does not name is never opened', async () => {
+    // The server's links are trusted only where they point at a page the
+    // procedure itself names; this procedure names none.
+    const url = `https://acme.example/signup?bfcid=${TOKEN}`
+    const { f, opened } = withLinks({
+      signupUrl: url,
+      signupSource: 'procedure',
+      credentials: [],
+    })
+    await acceptThrough(f)
+    const plan = await f.service.startTurn()
+    expect(
+      plan!.customToolDefinitions.some(
+        (definition) => definition.toolName === 'request_sponsored_signup',
+      ),
+    ).toBe(false)
+    expect(opened).toEqual([])
+  })
+
+  test('a server link with an unfilled click id is refused, and the local resolver decides', async () => {
+    const { f, opened } = withLinks(
+      {
+        signupUrl: 'https://acme.example/signup?bfcid=%7Bbfcid%7D',
+        signupSource: 'procedure',
+        credentials: [],
+      },
+      `https://acme.example/?bfcid=${TOKEN}`,
+    )
+    await acceptThrough(f)
+    const plan = await f.service.startTurn()
+    // The reviewed procedure needs no account, so locally there is no step.
+    expect(
+      plan!.customToolDefinitions.some(
+        (definition) => definition.toolName === 'request_sponsored_signup',
+      ),
+    ).toBe(false)
+    expect(opened).toEqual([])
   })
 })

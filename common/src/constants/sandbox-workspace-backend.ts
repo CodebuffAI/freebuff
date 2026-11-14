@@ -5,9 +5,9 @@
  * access from the project spine (COD-742 sandboxes,
  * docs/freebuff-sandbox-workspace-actions.md).
  *
- * - `convex`   (default): the browser calls Convex; the twins answer
+ * - `convex`   the browser calls Convex; the twins answer
  *              `unknown_function`.
- * - `postgres` the browser calls freebuff-web. Refused (the map keeps the
+ * - `postgres` (current, Owen 2026-10-19) the browser calls freebuff-web. Refused (the map keeps the
  *              browser on Convex) until the spine reads are on Postgres.
  *
  * No `shadow`: these are actions with side effects on the sandbox, so running
@@ -16,4 +16,4 @@
  */
 export type SandboxWorkspaceBackend = 'convex' | 'postgres'
 
-export const SANDBOX_WORKSPACE_BACKEND: SandboxWorkspaceBackend = 'convex'
+export const SANDBOX_WORKSPACE_BACKEND: SandboxWorkspaceBackend = 'postgres'

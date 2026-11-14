@@ -142,7 +142,6 @@ describe('mentionsLaunchKeyword', () => {
 describe('the composer intent placements', () => {
   test("each expands to its client's composer partner slots", () => {
     expect(composerIntentPartnerSlots(['Desktop-Intent'])).toEqual([
-      'Desktop-Partner-Composer-PR',
       'Desktop-Partner-Composer-Launch',
     ])
     expect(composerIntentPartnerSlots(['CLI-Intent'])).toEqual([

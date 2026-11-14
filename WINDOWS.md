@@ -1,27 +1,8 @@
-## Codebuff for Windows dev setup
+# Codebuff on Windows
 
-Welcome!
+## Set-up guide
 
-For development, we have a shared windows machine, via shadow.tech.
-
-### Accessing the machine
-
-You can access the machine either from the browser or with the desktop app:
-
-1. Shadow.tech Web viewer:
-
-- Go to https://pc.shadow.tech/home
-
-2. Shadow.tech desktop app:
-
-- They claim its better, idk.
-- https://shadow.tech/download/
-
-Supposedly you can also use Window's Remote Desktop to access the machine instead, but I've not tried it. Shadow.tech claims their protocol is better optimized for lower bandwidth use & hence smoother performance.
-
-## Set-up guide:
-
-You shouldn't need this - but just in case you stop using Shadow.tech, or make a new account, here's a guide on how to get from a blank Windows install to a Codebuff install.
+How to get from a blank Windows install to a Codebuff install.
 
 Surprisingly: most guides in fact recommend running everything in an Admin PowerShell, contra to advice to not use sudo on eg: Linux/macOS.
 

@@ -1,6 +1,11 @@
 import z from 'zod/v4'
 
-import { $getNativeToolCallExampleString, coerceToArray, jsonToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  coerceToArray,
+  jsonToolResultSchema,
+  repairInput,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -26,23 +31,32 @@ const pathEntrySchema = z
     `File path to read. Prefer paths relative to the **project root**; absolute paths inside the project are accepted, but paths outside the project will not work.`,
   )
 
+/** Models count lines from 0: an `offset` or `limit` of 0 means "from the start" / "default length". */
+function zeroWindowAsUnset(entry: Record<string, unknown>) {
+  if (entry.offset === 0) delete entry.offset
+  if (entry.limit === 0) delete entry.limit
+  return entry
+}
+
+const windowSchema = z.object({
+  path: z.string().min(1, 'Paths cannot be empty'),
+  offset: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('Line number to start reading from (1-indexed).'),
+  limit: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Maximum number of lines to read (defaults to 2,000).'),
+})
+
 const windowedEntrySchema = z.union([
   pathEntrySchema,
-  z.object({
-    path: z.string().min(1, 'Paths cannot be empty'),
-    offset: z
-      .number()
-      .int()
-      .min(1)
-      .optional()
-      .describe('Line number to start reading from (1-indexed).'),
-    limit: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .describe('Maximum number of lines to read (defaults to 2,000).'),
-  }),
+  repairInput(zeroWindowAsUnset, windowSchema),
 ])
 
 const legacyInputSchema = z
@@ -52,19 +66,44 @@ const legacyInputSchema = z
       .describe('List of file paths to read.'),
   })
   .describe(
-    `Read multiple files from disk. Returned file content shares a 20,000 estimated-token limit and a 100,000-character hard limit. Prefer the smallest relevant set of files and use code_search for targeted discovery.`,
+    `Read text files and view images (PNG, JPEG, GIF, WebP) from disk. Local image reads attach the image for visual inspection rather than returning its bytes as text. Returned text content shares a 20,000 estimated-token limit and a 100,000-character hard limit. Prefer the smallest relevant set of files and use code_search for targeted discovery.`,
   )
+
+/**
+ * A window sent as its own entry after the path it belongs to (`["a.dart", {"offset": 3355,
+ * "limit": 50}]`; Flash, Nov 2026, ~170 calls/day) joins that path. A pathless window with no plain
+ * path before it is left for the schema to reject.
+ */
+function attachPathlessWindows(value: unknown): unknown {
+  const entries = coerceToArray(value)
+  if (!Array.isArray(entries)) return entries
+  const out: unknown[] = []
+  for (const entry of entries) {
+    const previous = out.at(-1)
+    if (
+      entry &&
+      typeof entry === 'object' &&
+      !('path' in entry) &&
+      typeof previous === 'string'
+    ) {
+      out[out.length - 1] = { path: previous, ...entry }
+    } else {
+      out.push(entry)
+    }
+  }
+  return out
+}
 
 const windowedInputSchema = z
   .object({
     paths: z
-      .preprocess(coerceToArray, z.array(windowedEntrySchema))
+      .preprocess(attachPathlessWindows, z.array(windowedEntrySchema))
       .describe(
         'List of files to read. Each entry is either a file path, or an object { path, offset, limit } to read a specific line range of that file.',
       ),
   })
   .describe(
-    `Read files from disk. List several paths to read several files in one call. Large files are cut off after 2,000 lines, with a note telling you the file's total line count. Don't read a large file whole: use code_search to locate the part you need (matches come with line numbers), then read a window around it with { path, offset, limit }. Avoid tiny repeated slices; when in doubt, take a window of a few hundred lines.`,
+    `Read text files and view images (PNG, JPEG, GIF, WebP) from disk. Local image reads attach the image for visual inspection rather than returning its bytes as text. List several paths to read several files in one call. Line ranges apply only to text files. Large text files are cut off after 2,000 lines, with a note telling you the file's total line count. Don't read a large text file whole: use code_search to locate the part you need (matches come with line numbers), then read a window around it with { path, offset, limit }. Avoid tiny repeated slices; when in doubt, take a window of a few hundred lines.`,
   )
 
 const description = `
@@ -73,7 +112,7 @@ ${$getNativeToolCallExampleString({
   toolName,
   inputSchema: legacyInputSchema,
   input: {
-    paths: ['path/to/file1.ts', 'path/to/file2.ts'],
+    paths: ['path/to/file.ts', 'path/to/screenshot.png'],
   },
   endsAgentStep,
 })}

@@ -4,7 +4,9 @@ import {
   $getNativeToolCallExampleString,
   coerceToArray,
   jsonToolResultSchema,
+  liftSingleReplacement,
   normalizeReplacementAliases,
+  repairInput,
 } from '../utils'
 
 import type { $ToolParams } from '../../constants'
@@ -23,7 +25,7 @@ export const updateFileResultSchema = z.union([
 
 const toolName = 'str_replace'
 const endsAgentStep = false
-const inputSchema = z
+const editsSchema = z
   .object({
     path: z
       .string()
@@ -65,6 +67,7 @@ const inputSchema = z
       .describe('Array of replacements to make.'),
   })
   .describe(`Replace strings in a file with new strings.`)
+const inputSchema = repairInput(liftSingleReplacement, editsSchema)
 const description = `
 Use this tool to make edits within existing files.
 

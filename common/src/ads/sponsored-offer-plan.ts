@@ -4,8 +4,9 @@
  * `connect_dismissed` runs closed a median 23s after Accept: people accepted,
  * met an account or API-key step they had not expected, and left. The step
  * tracker existed, but only from `running` on, after most of those losses.
- * So the offer card now says "6 steps · ~4 min · 1 needs you (Archil
- * account)", and a progress pill follows the run from Accept onwards.
+ * So a progress pill follows the run from Accept onwards. (The offer card
+ * once also said "6 steps · ~4 min · 1 needs you (Archil account)" before
+ * Accept; that line was dropped on 2026-10-23 as clutter on the ad.)
  *
  * Everything here is derived from the reviewed procedure text, the same way
  * `outcomes:` (`sponsored-run-outcomes.ts`) and `requires-credential:`
@@ -45,8 +46,6 @@ export const SPONSORED_NEEDS_USER_DIRECTIVE = 'needs-user:'
 
 /** More than this is a procedure we would not believe the count of. */
 export const SPONSORED_OFFER_STEP_MAX = 50
-/** Named on the card; any more are counted, not listed. */
-export const SPONSORED_OFFER_NEEDS_USER_MAX = 3
 const LABEL_MAX = 40
 /** Two hours: a longer "estimate" is a broken span, not a run. */
 const ESTIMATE_MAX_SECONDS = 2 * 60 * 60
@@ -224,33 +223,6 @@ export function sponsoredOfferPlanFromWire(
 /** `~4 min`; never under a minute, since the estimate is not that precise. */
 export function sponsoredEstimateCopy(seconds: number): string {
   return `~${Math.max(1, Math.round(seconds / 60))} min`
-}
-
-/**
- * The offer card's one line: "6 steps · ~4 min · 1 needs you (Archil
- * account)". Null when the plan says nothing, so the card is unchanged.
- */
-export function sponsoredOfferSummary(
-  plan: SponsoredOfferPlan | null,
-): string | null {
-  if (!plan) return null
-  const parts: string[] = []
-  if (plan.stepCount !== null)
-    parts.push(`${plan.stepCount} step${plan.stepCount === 1 ? '' : 's'}`)
-  if (plan.estimateSeconds !== null)
-    parts.push(sponsoredEstimateCopy(plan.estimateSeconds))
-  if (plan.needsUser.length > 0) {
-    const named = plan.needsUser
-      .filter((label) => label !== '')
-      .slice(0, SPONSORED_OFFER_NEEDS_USER_MAX)
-    const more = plan.needsUser.filter((l) => l !== '').length - named.length
-    const names =
-      named.length > 0
-        ? ` (${named.join(', ')}${more > 0 ? `, +${more} more` : ''})`
-        : ''
-    parts.push(`${plan.needsUser.length} needs you${names}`)
-  }
-  return parts.length > 0 ? parts.join(' · ') : null
 }
 
 /** `45s` under a minute, then whole minutes: `2m`. */

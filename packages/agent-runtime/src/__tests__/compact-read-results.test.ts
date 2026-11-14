@@ -85,9 +85,15 @@ for (const contextWindow of [32768, 131072]) {
     })
     runtime.promptAiSdkStream = mock(async function* ({
       messages,
+      extraCodebuffMetadata,
     }: {
       messages: Message[]
+      extraCodebuffMetadata?: Record<string, string>
     }) {
+      if (extraCodebuffMetadata?.compaction_summary === '1') {
+        yield { type: 'text' as const, text: `## Objective\n${'- summary\n'.repeat(40)}` }
+        return promptSuccess('summary')
+      }
       requests.push(structuredClone(messages))
       expect(countTokensMessages(messages)).toBeLessThanOrEqual(
         limits.maxContextLength,

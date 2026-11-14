@@ -1,6 +1,10 @@
 import z from 'zod/v4'
 
-import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  coerceToObject,
+  jsonToolResultSchema,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -43,7 +47,7 @@ export type ApplyPatchOperation = z.infer<typeof operationSchema>
 
 const inputSchema = z
   .object({
-    operation: operationSchema.describe(
+    operation: z.preprocess(coerceToObject, operationSchema).describe(
       'The file operation to perform. type is one of create_file, update_file, or delete_file.',
     ),
   })

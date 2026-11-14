@@ -21,6 +21,7 @@ export const E2E_MOCK_API_KEY = 'codebuff-e2e-mock'
 const MOCK_USER = {
   id: 'e2e-user',
   email: 'e2e-user@codebuff.test',
+  name: null,
   discord_id: null,
   referral_code: null,
   stripe_customer_id: null,

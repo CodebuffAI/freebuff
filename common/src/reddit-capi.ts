@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 
 import { IS_PROD } from '@codebuff/common/env'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
+import type { RedditAcquisitionEvent } from '@codebuff/common/util/reddit-acquisition'
 import type { RedditCapiEventName } from '@codebuff/common/util/reddit-capi-events'
 
 export type { RedditCapiEventName }
@@ -62,7 +63,8 @@ export function buildRedditCapiUserPayload(user: RedditCapiUser) {
 export type SendRedditCustomConversionParams = {
   /** Conversion access token from Reddit Events Manager (env-provided; no-op when unset). */
   accessToken: string | undefined
-  customEventName: RedditCapiEventName
+  /** Internal event name; acquisition events map to Reddit's standard types. */
+  customEventName: RedditCapiEventName | RedditAcquisitionEvent
   conversionId: string
   actionSource: RedditActionSource
   eventAt?: number
@@ -130,8 +132,14 @@ export function buildRedditCustomConversionBody(
           action_source: params.actionSource,
           ...(eventSourceUrl ? { event_source_url: eventSourceUrl } : {}),
           type: {
-            tracking_type: 'CUSTOM',
-            custom_event_name: params.customEventName,
+            ...(params.customEventName === 'SignUp'
+              ? { tracking_type: 'SIGN_UP' }
+              : params.customEventName === 'CodingActivation'
+                ? { tracking_type: 'LEAD' }
+                : {
+                    tracking_type: 'CUSTOM',
+                    custom_event_name: params.customEventName,
+                  }),
           },
           ...(params.user.clickId ? { click_id: params.user.clickId } : {}),
           metadata: {
@@ -151,7 +159,7 @@ function isRetryableStatus(status: number): boolean {
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-/** Deliver one custom event, retrying one transient failure. */
+/** Deliver one conversion, retrying one transient failure. */
 export async function sendRedditCustomConversion(
   params: SendRedditCustomConversionParams,
 ): Promise<RedditCapiDeliveryResult> {
@@ -179,6 +187,7 @@ export async function sendRedditCustomConversion(
         params.logger?.info(
           {
             customEventName: params.customEventName,
+            trackingType: body.data.events[0]?.type.tracking_type,
             conversionId: params.conversionId,
             attempt,
           },
@@ -187,13 +196,12 @@ export async function sendRedditCustomConversion(
         return 'sent'
       }
 
-      const responseBody = (await response.text().catch(() => '')).slice(0, 500)
       if (attempt === 1 && isRetryableStatus(response.status)) {
         await sleepImpl(100)
         continue
       }
       throw new RedditCapiDeliveryError(
-        `Reddit CAPI rejected ${params.customEventName} (${response.status}): ${responseBody}`,
+        `Reddit CAPI rejected ${params.customEventName} (${response.status})`,
         response.status,
       )
     } catch (error) {
@@ -209,6 +217,7 @@ export async function sendRedditCustomConversion(
         {
           error,
           customEventName: params.customEventName,
+          trackingType: body.data.events[0]?.type.tracking_type,
           conversionId: params.conversionId,
           attempt,
         },
@@ -227,7 +236,7 @@ export async function sendRedditCustomConversion(
 }
 
 export function redditConversionId(
-  event: RedditCapiEventName,
+  event: RedditCapiEventName | RedditAcquisitionEvent,
   userId: string,
 ): string {
   return sha256(`${event}:${userId}`)

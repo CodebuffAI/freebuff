@@ -1,18 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 
-import {
-  compactMessages,
-  DEFAULT_CACHE_EXPIRY_MIN_TOKENS,
-  DEFAULT_CACHE_EXPIRY_MS,
-  evaluateCompactionTrigger,
-  promptCacheGapMs,
-} from '../compact-history'
-
-import { compactionPolicyForModel } from '@codebuff/common/constants/compaction-policy'
+import { compactMessages } from '../compact-history'
 
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
-
-const MINUTE = 60 * 1000
 
 const user = (text: string, tags?: string[]): Message => ({
   role: 'user',
@@ -42,15 +32,6 @@ const toolResult = (toolName: string, value: unknown): Message => ({
   toolName,
   content: [{ type: 'json', value: value as any }],
 })
-
-/** A user prompt that landed `gapMinutes` after the assistant's last message. */
-const idleTurn = (gapMinutes: number): Message[] => [
-  { ...assistant('previous turn answer'), sentAt: 1_000_000 },
-  {
-    ...user('the new question', ['USER_PROMPT']),
-    sentAt: 1_000_000 + gapMinutes * MINUTE,
-  },
-]
 
 const textOf = (message: Message): string =>
   Array.isArray(message.content)
@@ -262,6 +243,140 @@ describe('compactMessages', () => {
     )
     expect(imageParts).toHaveLength(1)
     expect(textOf(result[0])).toContain('[image(s) were attached]')
+    expect(textOf(result[0])).toContain('Attached below: the image(s)')
+  })
+
+  it('claims no attached image when none was carried', () => {
+    expect(
+      textOf(compact([user('hello'), user('now?', ['USER_PROMPT'])])[0]),
+    ).not.toContain('Attached below')
+  })
+
+  it('a later pass keeps the note and stops claiming the image is attached', () => {
+    const first = compact([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'look at this' },
+          { type: 'image', image: 'data:image/png;base64,AAAA' },
+        ],
+        sentAt: 1,
+      },
+      assistant('I see it'),
+      user('now?', ['USER_PROMPT']),
+    ])
+    const second = compact([
+      ...first,
+      assistant('working'),
+      user('and now?', ['USER_PROMPT']),
+    ])
+    expect(textOf(second[0])).toContain('[USER] [image(s) were attached]')
+    expect(textOf(second[0])).not.toContain('Attached below')
+    expect(
+      (second[0].content as any[]).filter((part) => part.type === 'image'),
+    ).toHaveLength(0)
+  })
+
+  it('keeps a note for an image sent with no text, and names a file part', () => {
+    const result = compact([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'file',
+            data: 'data:image/png;base64,AAAA',
+            mediaType: 'image/png',
+            filename: 'wireframe.png',
+          },
+        ],
+        sentAt: 1,
+      },
+      assistant('I see it'),
+      user('now?', ['USER_PROMPT']),
+    ])
+    expect(textOf(result[0])).toContain(
+      '[USER] [image(s) were attached: wireframe.png]',
+    )
+    expect(
+      (result[0].content as any[]).filter((part) => part.type === 'file'),
+    ).toHaveLength(1)
+  })
+
+  it('does not take a PDF for an image', () => {
+    const { summaryText } = compactMessages({
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'read this' },
+            { type: 'file', data: 'AAAA', mediaType: 'application/pdf' },
+          ],
+          sentAt: 1,
+        },
+        user('now?', ['USER_PROMPT']),
+      ],
+    })
+    expect(summaryText).not.toContain('image(s)')
+  })
+
+  it('labels an image a tool showed as a picture that is gone, with its name', () => {
+    const { summaryText } = compactMessages({
+      messages: [
+        assistantToolCall('read_files', { paths: ['logo.png'] }),
+        {
+          role: 'tool',
+          toolCallId: 'call-0',
+          toolName: 'read_files',
+          content: [
+            {
+              type: 'json',
+              value: [
+                {
+                  path: 'logo.png',
+                  content:
+                    '[IMAGE] image/png, 2 KB. The image is attached after this result.',
+                },
+              ],
+            },
+            { type: 'media', mediaType: 'image/png', data: 'AAAA' },
+          ],
+        },
+        assistantToolCall('cloud_read_image', { path: 'shot.png' }),
+        {
+          role: 'tool',
+          toolCallId: 'call-0',
+          toolName: 'cloud_read_image',
+          content: [{ type: 'media', mediaType: 'image/png', data: 'BBBB' }],
+        },
+        user('now?', ['USER_PROMPT']),
+      ],
+    })
+    expect(summaryText).toContain(
+      'Image(s) shown by read_files: logo.png. These were pictures, not text, and are no longer attached',
+    )
+    expect(summaryText).toContain('opened image: shot.png')
+    expect(summaryText).toContain('Image(s) shown by cloud_read_image.')
+    // Neither the base64 nor the sentence that was true only before compaction.
+    expect(summaryText).not.toContain('AAAA')
+    expect(summaryText).not.toContain('attached after this result')
+  })
+
+  it('does not record a refused image read as a look at it', () => {
+    const { summaryText } = compactMessages({
+      messages: [
+        assistantToolCall('read_files', { paths: ['logo.png'] }),
+        toolResult('read_files', [
+          {
+            path: 'logo.png',
+            content:
+              '[IMAGE] logo.png was not opened: this model cannot view images.',
+          },
+        ]),
+        user('now?', ['USER_PROMPT']),
+      ],
+    })
+    expect(summaryText).toContain('Image(s) not shown: logo.png')
+    expect(summaryText).not.toContain('Image(s) shown by')
   })
 
   it('produces a summary well under the budget it was called for', () => {
@@ -278,206 +393,5 @@ describe('compactMessages', () => {
 
     // Default budgets are 20k assistant/tool + 50k user estimated tokens.
     expect(Math.ceil(summaryText.length / 3)).toBeLessThan(75_000)
-  })
-})
-
-describe('promptCacheGapMs', () => {
-  it('measures from the last assistant message to the live prompt', () => {
-    expect(promptCacheGapMs(idleTurn(42))).toBe(42 * MINUTE)
-  })
-
-  it('skips tool messages, which carry no timestamp', () => {
-    const [prevAssistant, prompt] = idleTurn(10)
-    expect(
-      promptCacheGapMs([
-        prevAssistant,
-        { role: 'tool', toolCallId: 'c1', toolName: 'read_files', content: [] },
-        prompt,
-      ]),
-    ).toBe(10 * MINUTE)
-  })
-
-  it('is null when there is nothing to measure between', () => {
-    expect(promptCacheGapMs([])).toBeNull()
-    expect(
-      promptCacheGapMs([user('only a prompt', ['USER_PROMPT'])]),
-    ).toBeNull()
-    expect(
-      promptCacheGapMs([user('untagged'), user('prompt', ['USER_PROMPT'])]),
-    ).toBeNull()
-    expect(
-      promptCacheGapMs([
-        { ...assistant('no timestamp'), sentAt: undefined },
-        user('prompt', ['USER_PROMPT']),
-      ]),
-    ).toBeNull()
-  })
-})
-
-describe('evaluateCompactionTrigger', () => {
-  /** Over the size floor, still well under the context limit. */
-  const WORTH_COMPACTING = DEFAULT_CACHE_EXPIRY_MIN_TOKENS + 1
-
-  const triggerFor = (
-    messages: Message[],
-    contextTokenCount: number,
-    cacheExpiryMs?: number | null,
-  ) =>
-    evaluateCompactionTrigger({
-      messages,
-      contextTokenCount,
-      maxContextLength: 400_000,
-      cacheExpiryMs,
-    }).trigger
-
-  it('does nothing while the context fits and the cache is warm', () => {
-    expect(triggerFor(idleTurn(5), WORTH_COMPACTING)).toBeNull()
-  })
-
-  it('fires on the context limit even with a warm cache', () => {
-    expect(triggerFor(idleTurn(5), 500_000)).toBe('context_limit')
-  })
-
-  it('fires on a cold cache even when the context still fits', () => {
-    expect(triggerFor(idleTurn(90), WORTH_COMPACTING)).toBe('cache_expiry')
-  })
-
-  it('applies the default TTL when none is given', () => {
-    const ttlMinutes = DEFAULT_CACHE_EXPIRY_MS / MINUTE
-    expect(triggerFor(idleTurn(ttlMinutes), WORTH_COMPACTING)).toBeNull()
-    expect(triggerFor(idleTurn(ttlMinutes + 1), WORTH_COMPACTING)).toBe(
-      'cache_expiry',
-    )
-  })
-
-  it('leaves a small conversation alone however cold the cache is', () => {
-    // Compaction always costs detail; below the floor there is too little to
-    // reclaim to be worth it, and the budget walk would evict nothing anyway.
-    expect(
-      triggerFor(idleTurn(600), DEFAULT_CACHE_EXPIRY_MIN_TOKENS - 1),
-    ).toBeNull()
-
-    // One token more and it is worth doing.
-    expect(triggerFor(idleTurn(600), DEFAULT_CACHE_EXPIRY_MIN_TOKENS)).toBe(
-      'cache_expiry',
-    )
-  })
-
-  it('honours a custom floor, and null removes it', () => {
-    const tiny = 1_000
-    expect(triggerFor(idleTurn(90), tiny)).toBeNull()
-    expect(
-      evaluateCompactionTrigger({
-        messages: idleTurn(90),
-        contextTokenCount: tiny,
-        maxContextLength: 400_000,
-        cacheExpiryMinTokens: 500,
-      }).trigger,
-    ).toBe('cache_expiry')
-    expect(
-      evaluateCompactionTrigger({
-        messages: idleTurn(90),
-        contextTokenCount: tiny,
-        maxContextLength: 400_000,
-        cacheExpiryMinTokens: null,
-      }).trigger,
-    ).toBe('cache_expiry')
-  })
-
-  it('the floor never blocks the context-limit trigger', () => {
-    // A context over the limit must be compacted whatever the floor says.
-    expect(
-      evaluateCompactionTrigger({
-        messages: idleTurn(45),
-        contextTokenCount: 500_000,
-        maxContextLength: 400_000,
-        cacheExpiryMinTokens: 10_000_000,
-      }).trigger,
-    ).toBe('context_limit')
-  })
-
-  it('reports both when both are true', () => {
-    expect(triggerFor(idleTurn(90), 500_000)).toBe(
-      'context_limit_and_cache_expiry',
-    )
-  })
-
-  it('honours a custom TTL in both directions', () => {
-    expect(triggerFor(idleTurn(10), WORTH_COMPACTING)).toBeNull()
-    expect(triggerFor(idleTurn(10), WORTH_COMPACTING, 5 * MINUTE)).toBe(
-      'cache_expiry',
-    )
-    expect(triggerFor(idleTurn(45), WORTH_COMPACTING, 60 * MINUTE)).toBeNull()
-  })
-
-  it('a null TTL disables the opportunistic trigger entirely', () => {
-    expect(triggerFor(idleTurn(600), WORTH_COMPACTING, null)).toBeNull()
-    // The context limit still fires.
-    expect(triggerFor(idleTurn(600), 500_000, null)).toBe('context_limit')
-  })
-
-  it('does not re-fire on the steps that follow a cache-expiry compaction', () => {
-    const history = idleTurn(90)
-    expect(triggerFor(history, WORTH_COMPACTING)).toBe('cache_expiry')
-
-    // Compaction restamps every surviving message and drops the assistant
-    // messages that preceded the live prompt, so the gap is gone.
-    const compacted = compact(history)
-    expect(triggerFor(compacted, WORTH_COMPACTING)).toBeNull()
-
-    // ...and stays gone as the turn accumulates more work.
-    expect(
-      triggerFor(
-        [...compacted, assistant('one'), assistant('two')],
-        WORTH_COMPACTING,
-      ),
-    ).toBeNull()
-  })
-
-  it('fires again on the next turn if the user idles again', () => {
-    const nextTurn: Message[] = [
-      ...compact(idleTurn(90)),
-      { ...assistant('done'), sentAt: 2_000_000 },
-      {
-        ...user('another question', ['USER_PROMPT']),
-        sentAt: 2_000_000 + 90 * MINUTE,
-      },
-    ]
-    expect(triggerFor(nextTurn, WORTH_COMPACTING)).toBe('cache_expiry')
-  })
-})
-
-describe('per-model compaction policies at the runtime trigger', () => {
-  const resumedHistory = (gapMinutes: number): Message[] => [
-    { ...assistant('done for now'), sentAt: 1_000_000 },
-    {
-      ...user('back after a break', ['USER_PROMPT']),
-      sentAt: 1_000_000 + gapMinutes * MINUTE,
-    },
-  ]
-  const compacts = (model: string, gapMinutes: number, tokens: number) =>
-    evaluateCompactionTrigger({
-      ...compactionPolicyForModel(model),
-      messages: resumedHistory(gapMinutes),
-      contextTokenCount: tokens,
-      maxContextLength: 400_000,
-    }).trigger !== null
-
-  it('the runtime default floor is two summary ceilings (20k + 50k, doubled)', () => {
-    expect(DEFAULT_CACHE_EXPIRY_MIN_TOKENS).toBe(2 * (20_000 + 50_000))
-    expect(DEFAULT_CACHE_EXPIRY_MS).toBe(60 * MINUTE)
-  })
-
-  it('DeepSeek Flash compacts a 60k thread after 16 minutes, not 14, and never under 40k', () => {
-    const flash = 'deepseek/deepseek-v4-flash'
-    expect(compacts(flash, 16, 60_000)).toBe(true)
-    expect(compacts(flash, 14, 60_000)).toBe(false)
-    expect(compacts(flash, 30, 39_999)).toBe(false)
-  })
-
-  it('every other model stays on the hour / 140k', () => {
-    const pro = 'deepseek/deepseek-v4-pro'
-    expect(compacts(pro, 61, 60_000)).toBe(false)
-    expect(compacts(pro, 61, 200_000)).toBe(true)
   })
 })

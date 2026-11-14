@@ -5,6 +5,27 @@ export const CLOUD_ARCHIVE_BYTES = 4 * 1024 ** 3
 export const CLOUD_EXPANDED_BYTES = 16 * 1024 ** 3
 export const CLOUD_SOURCE_FILES = 200_000
 export const CLOUD_UPLOAD_PART_BYTES = 8 * 1024 ** 2
+// `GET projects/:id/git-bases?archive=…`: the client packs a Git upload's base bundle before its
+// files. Desktop 0.0.174 packed it after them and hung on any real project, so the API serves
+// the bases (which turn the bundle on) only to clients that send this.
+export const CLOUD_GIT_BASES_ARCHIVE = '2'
+// `?archive=` of a client that uploads Git objects instead of history bundles: a packfile of only
+// what Cloud lacks, registered as a project pack (POST projects/:id/packs), and a zstd overlay of
+// the working tree's differences. It is also told the bases those packs made shallow, which a
+// bundle client must never build on.
+export const CLOUD_GIT_BASES_PACKED = '3'
+/**
+ * What a direct (streamed) source upload holds, which fixes its object key's suffix: a zstd tar
+ * of files laid over a chat's base, or a Git packfile. Proxied uploads are always `.tar.gz`.
+ */
+export const cloudSourceKindSchema = z.enum(['overlay', 'pack'])
+export type CloudSourceKind = z.infer<typeof cloudSourceKindSchema>
+export const CLOUD_SOURCE_SUFFIX: Record<CloudSourceKind, string> = {
+  overlay: '.tar.zst',
+  pack: '.pack',
+}
+/** A project pack's commits, HEAD included; more unpushed commits than this go up as HEAD alone. */
+export const CLOUD_PACK_MAX_COMMITS = 500
 
 /**
  * What a size refusal tells the user to DO.

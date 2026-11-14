@@ -200,3 +200,30 @@ export async function saveSponsoredCredentialsToEnvFile(input: {
     return { saved: false, reason: 'io' }
   }
 }
+
+/** Private host check: only the names of connected credentials still saved in the
+ * project's ignored env file escape. Never expose contents to the sponsored agent. */
+export async function availableSponsoredProjectCredentials(input: {
+  workspace: string
+  values: Readonly<Record<string, string>>
+  isIgnored: (workspace: string, relative: string) => Promise<boolean>
+}): Promise<string[]> {
+  try {
+    const file = await sponsoredEnvFileFor(input.workspace)
+    if (!(await input.isIgnored(input.workspace, file))) return []
+    const saved = await plainFile(join(input.workspace, file))
+    if (!saved || saved === 'not_a_file') return []
+    const rows = saved.text.split(/\r?\n/)
+    return Object.entries(input.values).flatMap(([name, value]) => {
+      const expected = sponsoredEnvLine(name, value)
+      const matches = rows.filter((row) =>
+        new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=`).test(row),
+      )
+      return expected && matches.length === 1 && matches[0] === expected
+        ? [name]
+        : []
+    })
+  } catch {
+    return []
+  }
+}

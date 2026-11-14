@@ -306,6 +306,29 @@ describe('context-pruner handleSteps', () => {
     )
   })
 
+  // The free-mode subagent budget counts the pruner as an ordinary child run
+  // (web/.../free-mode-subagent-budget.ts); that is safe only while it never
+  // asks for a model step, so no refusal can fail the root's own step.
+  test('never yields a model step, whether or not it prunes', () => {
+    for (const contextTokenCount of [1_000, 250_000]) {
+      mockAgentState.messageHistory = [createMessage('user', 'Hello')]
+      mockAgentState.contextTokenCount = contextTokenCount
+      const generator = contextPruner.handleSteps!({
+        agentState: mockAgentState,
+        logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+        params: { maxContextLength: 200_000 },
+      })
+      const yielded: unknown[] = []
+      for (let next = generator.next(); !next.done; next = generator.next()) {
+        yielded.push(next.value)
+      }
+      expect(yielded.length).toBeGreaterThan(0)
+      for (const value of yielded) {
+        expect(value).toMatchObject({ toolName: 'set_messages' })
+      }
+    }
+  })
+
   test('summarizes conversation when context exceeds max limit', () => {
     const messages = [
       createMessage('user', 'Please help me with this task'),

@@ -1,7 +1,7 @@
 /**
- * End-to-end cover for the `compactContext` flag: compact-history.test.ts
- * proves the algorithm, and this proves the runtime actually reaches it and
- * that the rewritten history is what the model sees.
+ * End-to-end cover for the `compactContext` flag: conversation-summary.test.ts
+ * proves the pieces, and this proves the loop makes summaries at the right
+ * time and that the history the model sees is the one it should.
  */
 
 import * as analytics from '@codebuff/common/analytics'
@@ -14,7 +14,7 @@ import {
   setupDbSpies,
 } from '@codebuff/common/testing/mocks/database'
 import { getInitialSessionState } from '@codebuff/common/types/session-state'
-import { promptSuccess } from '@codebuff/common/util/error'
+import { AbortError, promptSuccess } from '@codebuff/common/util/error'
 import { assistantMessage, userMessage } from '@codebuff/common/util/messages'
 import {
   afterAll,
@@ -27,15 +27,29 @@ import {
   spyOn,
 } from 'bun:test'
 
-import { loopAgentSteps } from '../run-agent-step'
+import { automaticCompactionIsWorthwhile } from '../compaction'
+import {
+  CONTINUATION_PROMPT_TAG,
+  conversationSummaries,
+  messageFingerprint,
+  resetConversationSummariesForTest,
+  summaryBandStart,
+} from '../conversation-summary'
+import { loopAgentSteps, USER_PROMPT_REFUSED_NOTE } from '../run-agent-step'
 import { clearAgentGeneratorCache } from '../run-programmatic-step'
+import { countTokensMessages } from '../util/token-counter'
 import { createToolCallChunk, mockFileContext } from './test-utils'
 
 import type { AgentTemplate } from '../templates/types'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
+import type {
+  AgentState,
+  ConversationSummary,
+} from '@codebuff/common/types/session-state'
 import type { DbSpies } from '@codebuff/common/testing/mocks/database'
 
 const MINUTE = 60 * 1000
+const SUMMARY_TEXT = `## Objective\n- MODEL SUMMARY of the work so far ${'detail '.repeat(60)}`
 
 const textOf = (message: Message): string =>
   Array.isArray(message.content)
@@ -44,9 +58,18 @@ const textOf = (message: Message): string =>
         .join('\n')
     : String(message.content ?? '')
 
+const joined = (messages: Message[]) => messages.map(textOf).join('\n')
+
 describe('compactContext in loopAgentSteps', () => {
   let dbSpies: DbSpies
   let seenMessages: Message[][]
+  let summaryRequests: Message[][]
+  let summaryFails: boolean
+  /** Thrown by the summary request, as the SDK throws an API refusal. */
+  let summaryRefusal: Error | undefined
+  /** How long a summary request takes, so a test can catch it in progress. */
+  let summaryDelayMs: number
+  let order: string[]
   let runtimeImpl: any
 
   const baseTemplate: AgentTemplate = {
@@ -67,10 +90,9 @@ describe('compactContext in loopAgentSteps', () => {
     handleSteps: undefined,
   } satisfies AgentTemplate as AgentTemplate
 
-  /** An old read whose result is most of the history: what a mechanical pass
-   * reclaims. Without it the history is too small to shrink. At ~53k tokens
-   * it is far over the working set's share of the 12k history cap (under
-   * 5k), so it comes back as a stub. */
+  const optedIn = { ...baseTemplate, compactContext: true } as AgentTemplate
+
+  /** An old read whose result is most of the history (~53k tokens). */
   const bulkyRead = (body = 'BULKY FILE BODY '): Message[] => [
     {
       role: 'assistant',
@@ -97,10 +119,7 @@ describe('compactContext in loopAgentSteps', () => {
     },
   ]
 
-  /**
-   * A conversation whose last assistant message landed `gapMinutes` before the
-   * live user prompt — i.e. the prompt cache has had that long to expire.
-   */
+  /** The last assistant message landed `gapMinutes` before the live prompt. */
   const idleHistory = (gapMinutes: number): Message[] => [
     { ...userMessage('the first request'), sentAt: 1_000_000 },
     ...bulkyRead(),
@@ -115,12 +134,41 @@ describe('compactContext in loopAgentSteps', () => {
     },
   ]
 
+  /** The provider's count for the last response, as the saved state holds it. */
+  const measured = (tokens: number) => ({
+    contextTokenBaseline: {
+      model: baseTemplate.model,
+      tokens,
+      estimatedTokens: tokens,
+      scale: 1,
+    },
+  })
+
+  /** A summary covering everything before the live question. */
+  const readySummary = (history: Message[]): ConversationSummary => ({
+    id: 'ready-summary',
+    text: SUMMARY_TEXT,
+    coveredMessages: history.length - 1,
+    anchor: messageFingerprint(history[history.length - 2]),
+    contextTokens: 55_000,
+    createdAt: 1,
+  })
+
   const runLoop = async (
     template: AgentTemplate,
     messageHistory: Message[],
-    prompt?: string,
-    logged?: unknown[],
-    runtimeOverrides: Record<string, unknown> = {},
+    options: {
+      prompt?: string
+      logged?: unknown[]
+      runtimeOverrides?: Record<string, unknown>
+      state?: Partial<AgentState>
+      /** The chunks of one agent step; defaults to "ok" and end_turn. */
+      step?: () => unknown[]
+      /** Input tokens the provider reports; null reports no usage. A
+       *  function reports per agent request (1-based). */
+      reportedInput?: number | null | ((call: number) => number | null)
+      signal?: AbortSignal
+    } = {},
   ) => {
     const {
       agentTemplate: _,
@@ -128,16 +176,48 @@ describe('compactContext in loopAgentSteps', () => {
       ...baseRuntimeParams
     } = createTestAgentRuntimeParams()
 
-    runtimeImpl = { ...baseRuntimeParams, ...runtimeOverrides }
-    if (logged)
+    runtimeImpl = { ...baseRuntimeParams, ...options.runtimeOverrides }
+    if (options.logged) {
+      const logged = options.logged
       runtimeImpl.logger = {
         ...baseRuntimeParams.logger,
         info: (data: unknown) => logged.push(data),
       }
+    }
     runtimeImpl.promptAiSdkStream = mock(async function* (params: any) {
+      if (params.extraCodebuffMetadata?.compaction_summary === '1') {
+        summaryRequests.push(params.messages)
+        order.push('summary')
+        if (summaryRefusal) throw summaryRefusal
+        if (summaryDelayMs)
+          await new Promise((resolve) => setTimeout(resolve, summaryDelayMs))
+        if (summaryFails) {
+          yield { type: 'error' as const, message: 'provider down' }
+        } else {
+          yield { type: 'text' as const, text: SUMMARY_TEXT }
+        }
+        return promptSuccess('summary-id')
+      }
       seenMessages.push(params.messages)
-      yield { type: 'text' as const, text: 'ok' }
-      yield createToolCallChunk('end_turn', {})
+      order.push('agent')
+      // The provider's usage receipt: summary decisions read only this.
+      const reported =
+        typeof options.reportedInput === 'function'
+          ? options.reportedInput(seenMessages.length)
+          : options.reportedInput
+      const inputTokens = reported ?? countTokensMessages(params.messages)
+      if (reported !== null)
+        params.onUsageReceived?.({
+          inputTokens,
+          outputTokens: 10,
+          cachedInputTokens: 0,
+          totalTokens: inputTokens + 10,
+        })
+      const chunks = options.step?.() ?? [
+        { type: 'text' as const, text: 'ok' },
+        createToolCallChunk('end_turn', {}),
+      ]
+      for (const chunk of chunks) yield chunk as any
       return promptSuccess('mock-message-id')
     })
 
@@ -155,21 +235,100 @@ describe('compactContext in loopAgentSteps', () => {
         messageHistory,
         output: undefined,
         stepsRemaining: 5,
+        ...options.state,
       },
-      prompt,
+      prompt: options.prompt,
       spawnParams: undefined,
       fingerprintId: 'test-fingerprint',
       fileContext: mockFileContext,
       userId: TEST_USER_ID,
       clientSessionId: 'test-session',
       ancestorRunIds: [],
+      extraCodebuffMetadata: {
+        trace_session_id: 'thread-1',
+        ...runtimeImpl.extraCodebuffMetadata,
+      },
       onResponseChunk: () => {},
-      signal: new AbortController().signal,
+      signal: options.signal ?? new AbortController().signal,
     } as any)
   }
 
+  it('links the applied summary, wait, follow-up and first request', async () => {
+    const history = idleHistory(6)
+    const logged: any[] = []
+    await runLoop(optedIn, history, {
+      logged,
+      state: { compactionSummary: readySummary(history) },
+      reportedInput: 1000,
+    })
+    const attempt = logged.find(
+      (row) => row.axiomEvent === 'context_compaction.attempt',
+    )
+    expect(attempt).toMatchObject({
+      outcome: 'applied',
+      summary_id: 'ready-summary',
+      compaction_version: 'summary-v1',
+      ready_summary: true,
+      waited_for_pending: false,
+    })
+    expect(attempt.duration_ms).toBeGreaterThanOrEqual(0)
+    const request =
+      runtimeImpl.promptAiSdkStream.mock.calls[0][0].extraCodebuffMetadata
+    expect(request).toMatchObject({
+      compaction_request_group: 'first_after_compaction',
+      compaction_id: attempt.compaction_id,
+      compaction_summary_id: 'ready-summary',
+      compaction_root_version: 'summary-v1',
+      compaction_version: 'summary-v1',
+    })
+    expect(request.compaction_request_id).toBeTruthy()
+    expect(
+      logged.find(
+        (row) => row.axiomEvent === 'context_compaction.first_output',
+      ),
+    ).toMatchObject({ idle_return: true, agent_run_id: attempt.agent_run_id })
+    expect(
+      logged.find((row) => row.axiomEvent === 'context_compaction.followup'),
+    ).toMatchObject({ compaction_id: attempt.compaction_id })
+  })
+
+  it('labels small runs too, without inheriting a parent request group', async () => {
+    await runLoop(baseTemplate, [userMessage('small')], {
+      reportedInput: 100,
+      state: { parentId: 'parent' },
+      runtimeOverrides: {
+        extraCodebuffMetadata: {
+          compaction_root_version: 'summary-v1',
+          compaction_root_run_id: 'root',
+          compaction_id: 'parent-swap',
+          compaction_summary: '1',
+          compaction_request_group: 'first_after_compaction',
+        },
+      },
+    })
+    const request =
+      runtimeImpl.promptAiSdkStream.mock.calls[0][0].extraCodebuffMetadata
+    expect(request).toMatchObject({
+      compaction_version: 'not-enabled',
+      compaction_root_version: 'summary-v1',
+      compaction_root_run_id: 'root',
+      compaction_request_group: 'other',
+    })
+    expect(request.compaction_id).toBeUndefined()
+    expect(request.compaction_summary).toBeUndefined()
+  })
+
+  /** Lets background summaries settle. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 10))
+
   beforeEach(() => {
     seenMessages = []
+    summaryRequests = []
+    summaryFails = false
+    summaryRefusal = undefined
+    summaryDelayMs = 0
+    order = []
+    resetConversationSummariesForTest()
     dbSpies = setupDbSpies(createMockDbOperations())
     spyOn(analytics, 'trackEvent').mockImplementation(() => {})
   })
@@ -184,337 +343,988 @@ describe('compactContext in loopAgentSteps', () => {
     clearMockedModules()
   })
 
-  const overBudget = {
-    ...baseTemplate,
-    compactContext: { maxContextLength: 4096, cacheExpiryMs: null },
-  }
-
-  it('compacts at the context limit with no model request of its own', async () => {
-    const logged: unknown[] = []
-    const result = await runLoop(overBudget, idleHistory(0), undefined, logged)
-    expect(result.output.type).not.toBe('error')
-    expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(1)
-    const sent = seenMessages[0].map(textOf).join('\n')
-    expect(sent).toContain('<conversation_summary>')
-    expect(sent).toContain('the live question')
-    expect(JSON.stringify(seenMessages[0])).not.toContain(
-      'BULKY FILE BODY '.repeat(50),
-    )
-    expect(
-      logged.filter(
-        (data) =>
-          (data as { axiomEvent?: string }).axiomEvent ===
-          'context_compaction.followup',
-      ),
-    ).toEqual([
-      expect.objectContaining({ trigger_reason: 'context_limit' }),
-    ])
-  })
-
-  describe('when compaction cannot get under the budget', () => {
-    /** The run's error output appends the stack after the message. */
-    const firstLine = (output: { type: string; message?: string }) =>
-      output.message?.split('\n')[0]
-
-    /** The live request is kept verbatim, so one this large cannot shrink. */
-    const unshrinkable = (): Message[] => [
-      {
-        ...userMessage('LIVE REQUEST BODY '.repeat(5_000)),
-        tags: ['USER_PROMPT'],
-        sentAt: 1_000_000,
-      },
-    ]
-
-    it('points a hosted run at a larger-context model', async () => {
-      const result = await runLoop(overBudget, unshrinkable())
-      expect(runtimeImpl.promptAiSdkStream).not.toHaveBeenCalled()
-      expect(result.output.type).toBe('error')
-      expect(firstLine(result.output)).toBe(
-        "Agent run error: Compaction could not bring this conversation under the model's 4,096-token context budget. History has been preserved. Start a new thread, or switch to a model with a larger context window.",
-      )
-    })
-
-    it('keeps the context window hint for a BYOK run', async () => {
-      const result = await runLoop(overBudget, unshrinkable(), undefined, [], {
-        startAgentRun: async () => `${BYOK_RUN_ID_PREFIX}test-run`,
-      })
-      expect(runtimeImpl.promptAiSdkStream).not.toHaveBeenCalled()
-      expect(result.output.type).toBe('error')
-      expect(firstLine(result.output)).toBe(
-        "Agent run error: Compaction could not bring this conversation under the model's 4,096-token context budget. History has been preserved. Start a new thread, or give a BYOK connection a larger context window if its model supports one.",
-      )
-    })
-  })
-
   it('leaves the history alone when the agent has not opted in', async () => {
     await runLoop(baseTemplate, idleHistory(120))
-
-    const sent = seenMessages[0].map(textOf).join('\n')
-    expect(sent).toContain('DISTINCTIVE PRIOR ANSWER')
-    expect(sent).not.toContain('<conversation_summary>')
+    await settle()
+    expect(joined(seenMessages[0])).toContain('DISTINCTIVE PRIOR ANSWER')
+    expect(summaryRequests).toHaveLength(0)
   })
 
-  it('manual compaction makes no model request and preserves the live request', async () => {
-    const result = await runLoop(baseTemplate, idleHistory(0), '/compact')
-    expect(result.output.type).not.toBe('error')
-    expect(runtimeImpl.promptAiSdkStream).not.toHaveBeenCalled()
-    const history = result.agentState.messageHistory.map(textOf).join('\n')
-    expect(history).toContain('the live question')
-    expect(history).toContain('<conversation_summary>')
-    expect(history).not.toContain('/compact')
-  })
+  describe('making summaries', () => {
+    it('summarizes in the background with the same prefix the agent sends', async () => {
+      const logged: unknown[] = []
+      const history = idleHistory(0)
+      const result = await runLoop(optedIn, history, { logged })
+      await settle()
 
-  it('compacts on the idle trigger with no model request of its own', async () => {
-    const logged: unknown[] = []
-    const result = await runLoop(
-      { ...baseTemplate, compactContext: { cacheExpiryMinTokens: null } },
-      idleHistory(120),
-      undefined,
-      logged,
-    )
-    expect(result.output.type).not.toBe('error')
-    expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(1)
-    const sent = seenMessages[0].map(textOf).join('\n')
-    expect(sent).toContain('<conversation_summary>')
-    expect(sent).toContain('inspected files: big.ts')
-    expect(JSON.stringify(seenMessages[0])).not.toContain(
-      'BULKY FILE BODY '.repeat(50),
-    )
-    const events = (name: string) =>
-      logged.filter(
-        (data) => (data as { axiomEvent?: string }).axiomEvent === name,
+      // The agent's own request still carries the full history.
+      expect(joined(seenMessages[0])).toContain('DISTINCTIVE PRIOR ANSWER')
+      expect(summaryRequests).toHaveLength(1)
+      // Checked after the step's response, never before its request.
+      expect(order).toEqual(['agent', 'summary'])
+      const request = summaryRequests[0]
+      // The step's request byte for byte, then its response, then the
+      // instruction: the provider reads the request part from its cache.
+      expect(request.slice(0, seenMessages[0].length)).toEqual(seenMessages[0])
+      expect(joined(request.slice(seenMessages[0].length))).toContain('ok')
+      expect(textOf(request.at(-1)!)).toContain(
+        'Write a structured summary of this whole conversation.',
       )
-    expect(events('context_compaction_completed')).toEqual([
-      expect.objectContaining({ trigger_reason: 'cache_expiry' }),
-    ])
-    expect(events('context_compaction.followup')).toEqual([
-      expect.objectContaining({
-        trigger_reason: 'cache_expiry',
-        ended_by: 'run_end',
-        elided_read_paths: 1,
-        read_calls_after: 0,
-        reread_paths: 0,
-        tool_calls_after: 1,
-      }),
-    ])
-  })
-
-  it('leaves a small conversation alone however cold the cache is', async () => {
-    // The default size floor: compaction always costs detail, and there is
-    // nothing here worth reclaiming.
-    await runLoop({ ...baseTemplate, compactContext: true }, idleHistory(600))
-
-    const sent = seenMessages[0].map(textOf).join('\n')
-    expect(sent).toContain('DISTINCTIVE PRIOR ANSWER')
-    expect(sent).not.toContain('<conversation_summary>')
-  })
-
-  it('leaves the history alone while the cache is still warm', async () => {
-    await runLoop(
-      { ...baseTemplate, compactContext: { cacheExpiryMinTokens: null } },
-      idleHistory(5),
-    )
-
-    const sent = seenMessages[0].map(textOf).join('\n')
-    expect(sent).toContain('DISTINCTIVE PRIOR ANSWER')
-    expect(sent).not.toContain('<conversation_summary>')
-  })
-
-  it('compacts before the model call once the cache has gone cold', async () => {
-    const result = await runLoop(
-      { ...baseTemplate, compactContext: { cacheExpiryMinTokens: null } },
-      idleHistory(120),
-    )
-
-    // The model must see the rewritten history, not the original.
-    const sent = seenMessages[0].map(textOf).join('\n')
-    expect(sent).toContain('<conversation_summary>')
-    expect(sent).toContain('the first request')
-    expect(sent).toContain('the live question')
-
-    // ...and the state the caller gets back is the compacted one.
-    const history = result.agentState.messageHistory.map(textOf).join('\n')
-    expect(history).toContain('<conversation_summary>')
-  })
-
-  it('uses a custom model input budget rather than the hosted model default', async () => {
-    const history = idleHistory(0)
-    history.splice(1, 0, {
-      ...assistantMessage('old context '.repeat(2000)),
-      sentAt: 1_000_000,
+      // It finishes after the run returned, so it waits in the store.
+      expect(
+        conversationSummaries('thread-1:test-agent-id').latest(
+          undefined,
+          result.agentState.messageHistory,
+        )?.text,
+      ).toBe(SUMMARY_TEXT.trim())
+      expect(logged).toContainEqual(
+        expect.objectContaining({
+          axiomEvent: 'compaction_summary',
+          outcome: 'completed',
+          mode: 'background',
+        }),
+      )
     })
-    await runLoop(
-      {
-        ...baseTemplate,
-        compactContext: { maxContextLength: 4096, cacheExpiryMs: null },
-      },
-      history,
-    )
-    expect(seenMessages[0].map(textOf).join('\n')).toContain(
-      '<conversation_summary>',
-    )
-    expect(seenMessages[0].map(textOf).join('\n')).toContain(
-      'the live question',
-    )
+
+    it('hands the finished summary to the host to save', async () => {
+      const saved: unknown[] = []
+      const result = await runLoop(optedIn, idleHistory(0), {
+        runtimeOverrides: {
+          onCompactionSummary: (summary: unknown) => saved.push(summary),
+        },
+      })
+      // The run returned before the summary finished.
+      expect(result.agentState.compactionSummary).toBeUndefined()
+      await settle()
+      expect(saved).toEqual([
+        expect.objectContaining({ text: SUMMARY_TEXT.trim() }),
+      ])
+    })
+
+    it('sizes the context from the provider, never from the text', async () => {
+      // The text estimate of this history is over 40k; the provider says 30k.
+      await runLoop(optedIn, idleHistory(0), { reportedInput: 30_000 })
+      await settle()
+      expect(summaryRequests).toHaveLength(0)
+
+      // No usage receipt: no decision.
+      await runLoop(optedIn, idleHistory(0), { reportedInput: null })
+      await settle()
+      expect(summaryRequests).toHaveLength(0)
+    })
+
+    it('makes no summary for a small conversation', async () => {
+      await runLoop(optedIn, [{ ...userMessage('hi'), tags: ['USER_PROMPT'] }])
+      await settle()
+      expect(summaryRequests).toHaveLength(0)
+    })
+
+    it('makes no new summary until the context grows enough', async () => {
+      const history = idleHistory(0)
+      await runLoop(optedIn, history, {
+        state: { compactionSummary: readySummary(history) },
+      })
+      await settle()
+      expect(summaryRequests).toHaveLength(0)
+    })
+
+    it('makes a new summary after the context grows by 30k tokens', async () => {
+      const history = idleHistory(0)
+      await runLoop(optedIn, history, {
+        state: {
+          compactionSummary: {
+            ...readySummary(history),
+            contextTokens: 20_000,
+          },
+        },
+      })
+      await settle()
+      expect(summaryRequests).toHaveLength(1)
+    })
+
+    it('waits for a cold cache to warm before summarizing', async () => {
+      // An idle return with no summary: the full history goes once, and the
+      // summary is made at the turn's end, when the cache is warm again.
+      await runLoop(optedIn, idleHistory(120))
+      expect(joined(seenMessages[0])).toContain('DISTINCTIVE PRIOR ANSWER')
+      await settle()
+      expect(summaryRequests).toHaveLength(1)
+      expect(joined(summaryRequests[0])).toContain('ok')
+    })
   })
 
-  it('honours a per-agent cache TTL', async () => {
-    await runLoop(
-      {
-        ...baseTemplate,
-        compactContext: {
-          cacheExpiryMs: 60 * MINUTE,
-          cacheExpiryMinTokens: null,
-        },
+  describe('using summaries', () => {
+    it.each(['cancelled', 'failed', 'completed'] as const)(
+      'keeps history on a two-second resume after a long %s turn',
+      async (outcome) => {
+        let now = 1_000_000
+        spyOn(Date, 'now').mockImplementation(() => now)
+        const history = idleHistory(0)
+        const result = await runLoop(optedIn, history, {
+          state: { compactionSummary: readySummary(history) },
+          reportedInput: 1000,
+          step: () => {
+            now += 6 * MINUTE
+            if (outcome === 'cancelled') throw new AbortError()
+            if (outcome === 'failed') throw new Error('stream failed')
+            return [
+              { type: 'text', text: 'done' },
+              createToolCallChunk('end_turn', {}),
+            ]
+          },
+        })
+        expect(result.agentState.lastActivityAt).toBe(now)
+
+        // A restart reads JSON, without the runtime's in-memory summary store.
+        const restored: AgentState = JSON.parse(
+          JSON.stringify(result.agentState),
+        )
+        resetConversationSummariesForTest()
+        now += 2000
+        const logged: unknown[] = []
+        await runLoop(optedIn, restored.messageHistory, {
+          prompt: 'continue',
+          state: restored,
+          reportedInput: 1000,
+          logged,
+        })
+        expect(joined(seenMessages[1])).toContain('DISTINCTIVE PRIOR ANSWER')
+        expect(joined(seenMessages[1])).not.toContain('MODEL SUMMARY')
+        expect(logged).toContainEqual(
+          expect.objectContaining({
+            axiomEvent: 'context_compaction.first_output',
+            idle_return: false,
+          }),
+        )
+
+        // The same saved state must still compact after a genuine idle gap.
+        now += 6 * MINUTE
+        resetConversationSummariesForTest()
+        await runLoop(optedIn, restored.messageHistory, {
+          prompt: 'continue later',
+          state: restored,
+          reportedInput: 1000,
+        })
+        expect(joined(seenMessages[2])).toContain('MODEL SUMMARY')
       },
-      idleHistory(30),
-    )
-    expect(seenMessages[0].map(textOf).join('\n')).not.toContain(
-      '<conversation_summary>',
     )
 
-    seenMessages = []
-    await runLoop(
-      {
-        ...baseTemplate,
-        compactContext: {
-          cacheExpiryMs: 10 * MINUTE,
-          cacheExpiryMinTokens: null,
+    it('keeps sending the full history while the cache is warm', async () => {
+      const history = idleHistory(4)
+      await runLoop(optedIn, history, {
+        state: { compactionSummary: readySummary(history) },
+      })
+      expect(joined(seenMessages[0])).toContain('DISTINCTIVE PRIOR ANSWER')
+      expect(joined(seenMessages[0])).not.toContain('MODEL SUMMARY')
+    })
+
+    it('swaps in the summary when the user returns after the cache expired', async () => {
+      const logged: unknown[] = []
+      const history = idleHistory(6)
+      const result = await runLoop(optedIn, history, {
+        logged,
+        state: { compactionSummary: readySummary(history) },
+      })
+
+      expect(summaryRequests).toHaveLength(0)
+      const sent = joined(seenMessages[0])
+      expect(sent).toContain('<conversation_summary>')
+      expect(sent).toContain('MODEL SUMMARY')
+      expect(sent).toContain('the live question')
+      expect(sent).not.toContain('BULKY FILE BODY')
+      expect(sent).not.toContain('DISTINCTIVE PRIOR ANSWER')
+      expect(joined(result.agentState.messageHistory)).toContain(
+        'MODEL SUMMARY',
+      )
+      expect(logged).toContainEqual(
+        expect.objectContaining({
+          axiomEvent: 'context_compaction_completed',
+          trigger_reason: 'cache_expiry',
+        }),
+      )
+    })
+
+    it("waits DeepSeek Flash's fifteen minutes before swapping", async () => {
+      const flash = {
+        ...optedIn,
+        model: 'deepseek/deepseek-v4-flash-fast',
+      } as AgentTemplate
+      const warm = idleHistory(12)
+      await runLoop(flash, warm, {
+        state: { compactionSummary: readySummary(warm) },
+      })
+      expect(joined(seenMessages[0])).toContain('DISTINCTIVE PRIOR ANSWER')
+      expect(joined(seenMessages[0])).not.toContain('MODEL SUMMARY')
+
+      const cold = idleHistory(16)
+      await runLoop(flash, cold, {
+        state: { compactionSummary: readySummary(cold) },
+      })
+      expect(joined(seenMessages[1])).toContain('MODEL SUMMARY')
+      expect(joined(seenMessages[1])).not.toContain('DISTINCTIVE PRIOR ANSWER')
+    })
+
+    // A Cloud turn drained mid-task, queued through a deploy, then resumed on
+    // another runner with the worker's continuation prompt: the saved state
+    // ends on the agent's own work, long before the resume.
+    describe('a drain-resumed turn', () => {
+      const drained = (): Message[] => [
+        {
+          ...userMessage('build the page'),
+          tags: ['USER_PROMPT'],
+          sentAt: 1_000_000,
         },
-      },
-      idleHistory(30),
-    )
-    expect(seenMessages[0].map(textOf).join('\n')).toContain(
-      '<conversation_summary>',
-    )
+        ...bulkyRead(),
+        {
+          ...assistantMessage('DISTINCTIVE PRIOR ANSWER '.repeat(100)),
+          sentAt: 1_000_000,
+        },
+      ]
+      const covering = (history: Message[]): ConversationSummary => ({
+        ...readySummary(history),
+        coveredMessages: history.length,
+        anchor: messageFingerprint(history[history.length - 1]),
+      })
+      const RESUME = 'The Cloud runner restarted. Continue from where you stopped.'
+
+      it('was read as a cache-expiry return before the prompt was marked', async () => {
+        const logged: unknown[] = []
+        const history = drained()
+        await runLoop(optedIn, history, {
+          prompt: RESUME,
+          logged,
+          state: { compactionSummary: covering(history) },
+        })
+        expect(joined(seenMessages[0])).toContain('MODEL SUMMARY')
+        expect(logged).toContainEqual(
+          expect.objectContaining({ trigger_reason: 'cache_expiry' }),
+        )
+      })
+
+      it('keeps the full history when the prompt is a continuation', async () => {
+        const logged: unknown[] = []
+        const history = drained()
+        const result = await runLoop(optedIn, history, {
+          prompt: RESUME,
+          logged,
+          runtimeOverrides: { promptIsContinuation: true },
+          state: { compactionSummary: covering(history) },
+        })
+        const sent = joined(seenMessages[0])
+        expect(sent).toContain('DISTINCTIVE PRIOR ANSWER')
+        expect(sent).toContain(RESUME)
+        expect(sent).not.toContain('MODEL SUMMARY')
+        expect(logged).not.toContainEqual(
+          expect.objectContaining({ axiomEvent: 'context_compaction_completed' }),
+        )
+        // What the post-deploy query counts resumed turns by.
+        expect(logged).toContainEqual(
+          expect.objectContaining({
+            axiomEvent: 'context_compaction.first_output',
+            continuation_prompt: 'true',
+            idle_return: false,
+          }),
+        )
+        const resumed = result.agentState.messageHistory.find((m) =>
+          m.tags?.includes(CONTINUATION_PROMPT_TAG),
+        )
+        expect(resumed?.tags).toContain('USER_PROMPT')
+      })
+
+      it('still swaps when the user next returns after the cache expired', async () => {
+        const history: Message[] = [
+          ...drained(),
+          {
+            ...userMessage(RESUME),
+            tags: ['USER_PROMPT', CONTINUATION_PROMPT_TAG],
+            sentAt: 1_000_000 + 30 * MINUTE,
+          },
+          {
+            ...assistantMessage('finished the page'),
+            sentAt: 1_000_000 + 31 * MINUTE,
+          },
+          {
+            ...userMessage('the live question'),
+            tags: ['USER_PROMPT'],
+            sentAt: 1_000_000 + 60 * MINUTE,
+          },
+        ]
+        await runLoop(optedIn, history, {
+          state: { compactionSummary: readySummary(history) },
+        })
+        expect(joined(seenMessages[0])).toContain('MODEL SUMMARY')
+      })
+    })
+
+    it('sends the full history after an idle gap when no summary exists', async () => {
+      await runLoop(optedIn, idleHistory(120))
+      expect(joined(seenMessages[0])).toContain('DISTINCTIVE PRIOR ANSWER')
+    })
+
+    it('swaps once, not on every step of the turn', async () => {
+      let call = 0
+      const template = {
+        ...optedIn,
+        toolNames: ['read_files', 'end_turn'],
+      } as AgentTemplate
+      const history = idleHistory(120)
+      await runLoop(template, history, {
+        state: { compactionSummary: readySummary(history) },
+        step: () => {
+          call++
+          return [
+            { type: 'text' as const, text: `STEP ${call} OUTPUT` },
+            call >= 3
+              ? createToolCallChunk('end_turn', {})
+              : createToolCallChunk('read_files', {
+                  paths: [`file${call}.txt`],
+                }),
+          ]
+        },
+      })
+
+      expect(seenMessages.length).toBe(3)
+      const summaryCounts = seenMessages.map(
+        (messages) =>
+          messages.filter((m) => textOf(m).includes('<conversation_summary>'))
+            .length,
+      )
+      expect(summaryCounts).toEqual([1, 1, 1])
+      const lastStep = joined(seenMessages[2])
+      expect(lastStep).toContain('STEP 1 OUTPUT')
+      expect(lastStep).toContain('STEP 2 OUTPUT')
+      expect(lastStep).toContain('the live question')
+    })
+
+    it('drops a summary whose covered messages an edit removed', async () => {
+      const history = idleHistory(120)
+      const summary = {
+        ...readySummary(history),
+        anchor: messageFingerprint(
+          assistantMessage('a message the edit removed'),
+        ),
+      }
+      const result = await runLoop(optedIn, history, {
+        state: { compactionSummary: summary },
+      })
+      expect(joined(seenMessages[0])).toContain('DISTINCTIVE PRIOR ANSWER')
+      expect(result.agentState.compactionSummary?.anchor).not.toBe(
+        summary.anchor,
+      )
+    })
+
+    it('reaches the next turn when it finishes after its run ended', async () => {
+      const first = await runLoop(optedIn, idleHistory(0))
+      await settle()
+      expect(summaryRequests).toHaveLength(1)
+
+      // The host persisted the state before the summary finished.
+      const persisted: Message[] = JSON.parse(
+        JSON.stringify(first.agentState.messageHistory),
+      )
+      const lastAssistant = persisted.findLast((m) => m.role === 'assistant')!
+      seenMessages = []
+      await runLoop(optedIn, [
+        ...persisted,
+        {
+          ...userMessage('a question an hour later'),
+          tags: ['USER_PROMPT'],
+          sentAt: (lastAssistant.sentAt ?? 0) + 60 * MINUTE,
+        },
+      ])
+      const sent = joined(seenMessages[0])
+      expect(sent).toContain('MODEL SUMMARY')
+      expect(sent).toContain('a question an hour later')
+      expect(sent).not.toContain('BULKY FILE BODY')
+    })
   })
 
-  it('compacts once, not on every step of the turn', async () => {
-    // A cache-expiry compaction that re-fired each step would throw away the
-    // work the agent did in the step before it. Compaction restamps the live
-    // prompt and drops the assistant messages ahead of it, which is what makes
-    // the gap unmeasurable afterwards — prove it against the real loop.
-    let call = 0
-    const template = {
+  describe('at the context limit', () => {
+    const smallBudget = {
       ...baseTemplate,
-      toolNames: ['read_files', 'end_turn'],
-      compactContext: { cacheExpiryMinTokens: null },
+      compactContext: { maxContextLength: 4096 },
     } as AgentTemplate
 
-    const {
-      agentTemplate: _,
-      localAgentTemplates: __,
-      ...baseRuntimeParams
-    } = createTestAgentRuntimeParams()
-    runtimeImpl = { ...baseRuntimeParams }
-    runtimeImpl.promptAiSdkStream = mock(async function* (params: any) {
-      seenMessages.push(params.messages)
-      call++
-      yield { type: 'text' as const, text: `STEP ${call} OUTPUT` }
-      // A real tool call keeps the loop going; end the turn on the third pass.
-      yield call >= 3
-        ? createToolCallChunk('end_turn', {})
-        : createToolCallChunk('read_files', { paths: [`file${call}.txt`] })
-      return promptSuccess('mock-message-id')
+    it('makes a summary now when none is ready, then swaps it in', async () => {
+      const result = await runLoop(smallBudget, idleHistory(0), {
+        state: measured(60_000),
+      })
+      expect(result.output.type).not.toBe('error')
+      expect(summaryRequests).toHaveLength(1)
+      // It summarized the full history...
+      expect(JSON.stringify(summaryRequests[0])).toContain('BULKY FILE BODY')
+      // ...and the agent's request carries only the summary.
+      const sent = joined(seenMessages[0])
+      expect(sent).toContain('MODEL SUMMARY')
+      expect(sent).not.toContain('BULKY FILE BODY')
     })
 
-    const sessionState = getInitialSessionState(mockFileContext)
-    await loopAgentSteps({
-      ...runtimeImpl,
-      agentType: template.id,
-      localAgentTemplates: { [template.id]: template },
-      repoId: undefined,
-      repoUrl: undefined,
-      userInputId: 'test-user-input',
-      agentState: {
-        ...sessionState.mainAgentState,
-        agentId: 'test-agent-id',
-        messageHistory: idleHistory(120),
-        output: undefined,
-        stepsRemaining: 5,
-      },
-      prompt: undefined,
-      spawnParams: undefined,
-      fingerprintId: 'test-fingerprint',
-      fileContext: mockFileContext,
-      userId: TEST_USER_ID,
-      clientSessionId: 'test-session',
-      ancestorRunIds: [],
-      onResponseChunk: () => {},
-      signal: new AbortController().signal,
-    } as any)
+    it("keeps the turn's own request after a summary made for it", async () => {
+      // Without this, the request lived only inside the summary, and an edit
+      // of it later could not find it and cleared the whole chat.
+      const result = await runLoop(smallBudget, idleHistory(0).slice(0, -1), {
+        prompt: 'THE NEW REQUEST',
+        state: measured(60_000),
+      })
+      expect(summaryRequests).toHaveLength(1)
+      expect(JSON.stringify(summaryRequests[0])).toContain('THE NEW REQUEST')
+      const sent = seenMessages[0]
+      expect(textOf(sent[1])).toContain('<conversation_summary>')
+      expect(textOf(sent[2])).toBe('THE NEW REQUEST')
+      expect(
+        result.agentState.messageHistory.filter((m) =>
+          m.tags?.includes('USER_PROMPT'),
+        ),
+      ).toHaveLength(1)
+    })
 
-    expect(seenMessages.length).toBeGreaterThanOrEqual(3)
+    it('decides on the provider count only, never a text estimate', async () => {
+      // ~55k of text and no count for it: no decision until a response.
+      await runLoop(smallBudget, idleHistory(0), { reportedInput: null })
+      await settle()
+      expect(summaryRequests).toHaveLength(0)
+      expect(JSON.stringify(seenMessages[0])).toContain('BULKY FILE BODY')
+    })
 
-    // Exactly one compaction: the summary appears from step 1 on, and each
-    // later step still carries the earlier steps' output rather than a fresh
-    // memory blob that swallowed them.
-    const summaryCounts = seenMessages.map(
-      (messages) =>
-        messages.filter((message) =>
-          textOf(message).includes('<conversation_summary>'),
-        ).length,
-    )
-    expect(summaryCounts.every((count) => count === 1)).toBe(true)
+    it('uses a ready summary while a newer one is still in progress', async () => {
+      // The newer summary never finishes: waiting for it would hang the run.
+      conversationSummaries('thread-1:test-agent-id').start(
+        70_000,
+        () => new Promise(() => {}),
+      )
+      const history = idleHistory(0)
+      const budget = {
+        ...baseTemplate,
+        compactContext: { maxContextLength: 60_000 },
+      } as AgentTemplate
+      await runLoop(budget, history, {
+        state: {
+          compactionSummary: readySummary(history),
+          ...measured(55_000),
+        },
+      })
+      const sent = joined(seenMessages[0])
+      expect(sent).toContain('MODEL SUMMARY')
+      expect(sent).toContain('the live question')
+    })
 
-    const lastStep = seenMessages[seenMessages.length - 1]
-      .map(textOf)
-      .join('\n')
-    expect(lastStep).toContain('STEP 1 OUTPUT')
-    expect(lastStep).toContain('STEP 2 OUTPUT')
-    // The live prompt is still a real message, never folded into the memory.
-    expect(lastStep).toContain('the live question')
+    it('uses a ready summary without waiting for a new one', async () => {
+      const history = idleHistory(0)
+      const budget = {
+        ...baseTemplate,
+        compactContext: { maxContextLength: 60_000 },
+      } as AgentTemplate
+      await runLoop(budget, history, {
+        state: {
+          compactionSummary: readySummary(history),
+          ...measured(55_000),
+        },
+      })
+      expect(summaryRequests).toHaveLength(0)
+      const sent = joined(seenMessages[0])
+      expect(sent).toContain('MODEL SUMMARY')
+      expect(sent).toContain('the live question')
+    })
+
+    describe('when no summary can be made', () => {
+      const firstLine = (output: { type: string; message?: string }) =>
+        output.message?.split('\n')[0]
+
+      it('points a hosted run at a larger-context model', async () => {
+        summaryFails = true
+        const logged: any[] = []
+        const result = await runLoop(smallBudget, idleHistory(0), {
+          logged,
+          state: measured(60_000),
+        })
+        expect(seenMessages).toHaveLength(0)
+        const summary = logged.find(
+          (row) => row.axiomEvent === 'compaction_summary',
+        )
+        expect(summary).toMatchObject({ outcome: 'failed' })
+        expect(
+          logged.find((row) => row.axiomEvent === 'context_compaction.attempt'),
+        ).toMatchObject({
+          outcome: 'failed',
+          summary_id: summary.summary_id,
+          generated_foreground: true,
+        })
+        expect(firstLine(result.output)).toBe(
+          "Agent run error: Compaction could not bring this conversation under the model's 4,096-token context budget. History has been preserved. Start a new thread, or switch to a model with a larger context window.",
+        )
+      })
+
+      it('keeps the context window hint for a BYOK run', async () => {
+        summaryFails = true
+        const result = await runLoop(smallBudget, idleHistory(0), {
+          state: measured(60_000),
+          runtimeOverrides: {
+            startAgentRun: async () => `${BYOK_RUN_ID_PREFIX}test-run`,
+          },
+        })
+        expect(firstLine(result.output)).toBe(
+          "Agent run error: Compaction could not bring this conversation under the model's 4,096-token context budget. History has been preserved. Start a new thread, or give a BYOK connection a larger context window if its model supports one.",
+        )
+      })
+    })
+
+    it('keeps no message the size guard refused', async () => {
+      const first = await runLoop(smallBudget, [], {
+        prompt: 'REFUSED PROMPT BODY '.repeat(2_000),
+      })
+      expect(seenMessages).toHaveLength(0)
+      expect(first.agentState.messageHistory).toHaveLength(1)
+      expect(textOf(first.agentState.messageHistory[0])).toContain(
+        USER_PROMPT_REFUSED_NOTE,
+      )
+    })
+
+    it('gives a refused mid-turn steering message the refusal note', async () => {
+      const result = await runLoop(smallBudget, [], {
+        prompt: 'hello',
+        runtimeOverrides: {
+          drainSteeringMessages: async () => [
+            'REFUSED STEERING '.repeat(2_000),
+          ],
+        },
+      })
+      const history = result.agentState.messageHistory
+      expect(textOf(history.at(-1)!)).toContain(USER_PROMPT_REFUSED_NOTE)
+      expect(JSON.stringify(history)).not.toContain('REFUSED STEERING')
+    })
   })
 
-  it('survives agent-definition validation, which strips unknown keys', async () => {
-    // DynamicAgentDefinitionSchema is a non-passthrough z.object, so a field
-    // missing from it is silently dropped and the flag never reaches here.
-    const { validateSingleAgent } =
-      await import('@codebuff/common/templates/agent-validation')
-    const definition = {
-      id: 'validated-agent',
-      displayName: 'Validated',
-      model: 'anthropic/claude-opus-5',
-      inputSchema: {},
-      compactContext: { cacheExpiryMs: 10 * MINUTE, cacheExpiryMinTokens: 5 },
+  // Measured 2026-11-10: 416k mid-turn summaries a day, ~107k applied. A
+  // mid-turn summary is made only in the band the limit reads from.
+  describe('the near-limit band', () => {
+    /** A turn of read_files steps whose last step ends it. */
+    const multiStep = {
+      ...optedIn,
+      toolNames: ['read_files', 'end_turn'],
+    } as AgentTemplate
+    const stepsOf = (count: number) => {
+      let call = 0
+      return () => {
+        call++
+        return [
+          { type: 'text' as const, text: `STEP ${call} OUTPUT` },
+          call >= count
+            ? createToolCallChunk('end_turn', {})
+            : createToolCallChunk('read_files', { paths: [`f${call}.ts`] }),
+        ]
+      }
     }
+    const sizes =
+      (...tokens: number[]) =>
+      (call: number) =>
+        tokens[call - 1] ?? tokens.at(-1)!
+    const wait = (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms))
+    // 400k budget: compaction at 320k, the band from 290k.
+    const BAND = summaryBandStart(400_000)
 
-    const result = validateSingleAgent({ template: definition })
-    expect(result.error).toBeUndefined()
-    expect(result.agentTemplate?.compactContext).toEqual({
-      cacheExpiryMs: 10 * MINUTE,
-      cacheExpiryMinTokens: 5,
+    it('starts at one growth step below the compaction threshold', () => {
+      expect(BAND).toBe(290_000)
+      expect(summaryBandStart(375_000)).toBe(270_000)
     })
 
-    // The boolean form and the opt-out both round-trip too.
-    expect(
-      validateSingleAgent({
-        template: { ...definition, compactContext: true },
-      }).agentTemplate?.compactContext,
-    ).toBe(true)
-    expect(
-      validateSingleAgent({
-        template: { ...definition, compactContext: { cacheExpiryMs: null } },
-      }).agentTemplate?.compactContext,
-    ).toEqual({ cacheExpiryMs: null })
+    it('makes one summary, at the end, for a turn that stays under the band', async () => {
+      const logged: any[] = []
+      await runLoop(multiStep, idleHistory(0), {
+        logged,
+        step: stepsOf(5),
+        reportedInput: sizes(35_000, 65_000, 95_000, 125_000, 165_000),
+        state: { stepsRemaining: 10 },
+      })
+      await settle()
+      expect(seenMessages).toHaveLength(5)
+      expect(summaryRequests).toHaveLength(1)
+      expect(order.at(-1)).toBe('summary')
+      expect(
+        logged.filter((row) => row.axiomEvent === 'compaction_summary'),
+      ).toEqual([
+        expect.objectContaining({ mid_turn: false, context_token_count: 165_010 }),
+      ])
+    })
 
-    // A typo in the option name is rejected rather than silently ignored.
-    expect(
-      validateSingleAgent({
-        template: { ...definition, compactContext: { cacheExpiry: 1000 } },
-      }).success,
-    ).toBe(false)
+    it('makes one mid-turn summary once the turn crosses into the band', async () => {
+      const logged: any[] = []
+      await runLoop(multiStep, idleHistory(0), {
+        logged,
+        step: stepsOf(5),
+        reportedInput: sizes(200_000, 260_000, 295_000, 305_000, 315_000),
+        state: { stepsRemaining: 10 },
+      })
+      await settle()
+      expect(summaryRequests).toHaveLength(1)
+      expect(order).toEqual([
+        'agent',
+        'agent',
+        'agent',
+        'summary',
+        'agent',
+        'agent',
+      ])
+      expect(
+        logged.filter((row) => row.axiomEvent === 'compaction_summary'),
+      ).toEqual([
+        expect.objectContaining({ mid_turn: true, context_token_count: 295_010 }),
+      ])
+    })
+
+    it('waits at the limit for the summary in the band over an older ready one', async () => {
+      const history = idleHistory(0)
+      const fresh: ConversationSummary = {
+        ...readySummary(history),
+        id: 'band-summary',
+        text: `## Objective\n- BAND SUMMARY ${'fresh '.repeat(60)}`,
+        contextTokens: 300_000,
+        createdAt: Date.now(),
+      }
+      conversationSummaries('thread-1:test-agent-id').start(
+        300_000,
+        () => new Promise((resolve) => setTimeout(() => resolve(fresh), 20)),
+      )
+      const logged: any[] = []
+      await runLoop(optedIn, history, {
+        logged,
+        state: {
+          // From an earlier turn's end, below the band.
+          compactionSummary: readySummary(history),
+          ...measured(330_000),
+        },
+      })
+      const sent = joined(seenMessages[0])
+      expect(sent).toContain('BAND SUMMARY')
+      expect(sent).not.toContain('MODEL SUMMARY')
+      expect(summaryRequests).toHaveLength(0)
+      expect(
+        logged.find((row) => row.axiomEvent === 'context_compaction.attempt'),
+      ).toMatchObject({
+        outcome: 'applied',
+        trigger_reason: 'context_limit',
+        summary_id: 'band-summary',
+        ready_summary: true,
+        waited_for_pending: true,
+        generated_foreground: false,
+        summary_context_tokens: 300_000,
+      })
+    })
+
+    it('summarizes after a step that jumps past the threshold, and the limit waits for it', async () => {
+      summaryDelayMs = 30
+      const logged: any[] = []
+      const result = await runLoop(multiStep, idleHistory(0), {
+        logged,
+        step: stepsOf(3),
+        reportedInput: sizes(250_000, 330_000, 20_000),
+        state: { stepsRemaining: 10 },
+      })
+      await wait(50)
+      expect(result.output.type).not.toBe('error')
+      expect(summaryRequests).toHaveLength(1)
+      expect(order).toEqual(['agent', 'agent', 'summary', 'agent'])
+      expect(joined(seenMessages[2])).toContain('MODEL SUMMARY')
+      expect(
+        logged.find((row) => row.axiomEvent === 'context_compaction.attempt'),
+      ).toMatchObject({
+        outcome: 'applied',
+        trigger_reason: 'context_limit',
+        waited_for_pending: true,
+        generated_foreground: false,
+        summary_context_tokens: 330_010,
+      })
+    })
+
+    it('reaches the band in a small window', async () => {
+      const window = {
+        ...multiStep,
+        compactContext: { maxContextLength: 40_000 },
+      } as AgentTemplate
+      const history = idleHistory(0)
+      // The band is 26k-32k; a summary there clears real room.
+      expect(summaryBandStart(40_000)).toBe(26_000)
+      expect(
+        automaticCompactionIsWorthwhile({
+          messages: history,
+          maxContextLength: 40_000,
+          thresholdTokens: 32_000,
+          fixedTokenCount: 2_000,
+        }),
+      ).toBe(true)
+      const logged: any[] = []
+      await runLoop(window, history, {
+        logged,
+        step: stepsOf(3),
+        reportedInput: sizes(20_000, 27_000, 30_000),
+        state: { stepsRemaining: 10 },
+      })
+      await settle()
+      expect(summaryRequests).toHaveLength(1)
+      expect(
+        logged.filter((row) => row.axiomEvent === 'compaction_summary'),
+      ).toEqual([
+        expect.objectContaining({ mid_turn: true, context_token_count: 27_010 }),
+      ])
+    })
+
+    it('summarizes a cancelled turn once, and closes the run after it', async () => {
+      summaryDelayMs = 20
+      const controller = new AbortController()
+      const finished: string[] = []
+      let call = 0
+      const logged: any[] = []
+      const result = await runLoop(multiStep, idleHistory(0), {
+        logged,
+        signal: controller.signal,
+        // The stopped step reports no size: the decision uses the last one.
+        reportedInput: (n) => (n === 1 ? 150_000 : null),
+        runtimeOverrides: {
+          finishAgentRun: async (run: { status: string }) => {
+            order.push('finish')
+            finished.push(run.status)
+          },
+        },
+        step: () => {
+          call++
+          if (call === 1)
+            return [createToolCallChunk('read_files', { paths: ['a.ts'] })]
+          controller.abort()
+          throw new AbortError()
+        },
+        state: { stepsRemaining: 10 },
+      })
+      expect(result.output).toMatchObject({ type: 'error' })
+      // The run returned without waiting for the summary.
+      expect(finished).toEqual([])
+      await wait(50)
+      expect(summaryRequests).toHaveLength(1)
+      expect(finished).toEqual(['cancelled'])
+      expect(order).toEqual(['agent', 'agent', 'summary', 'finish'])
+      expect(
+        logged.filter((row) => row.axiomEvent === 'compaction_summary'),
+      ).toEqual([
+        expect.objectContaining({
+          outcome: 'completed',
+          mid_turn: false,
+          context_token_count: 150_010,
+        }),
+      ])
+      // Its history is the one the next request sends, before the note.
+      expect(joined(summaryRequests[0])).not.toContain(
+        joined(result.agentState.messageHistory.slice(-1)),
+      )
+    })
+  })
+
+  describe('manual /compact', () => {
+    it('uses the latest summary', async () => {
+      const history = idleHistory(0)
+      const result = await runLoop(optedIn, history, {
+        prompt: '/compact',
+        state: { compactionSummary: readySummary(history) },
+      })
+      expect(result.output.type).not.toBe('error')
+      expect(summaryRequests).toHaveLength(0)
+      expect(seenMessages).toHaveLength(0)
+      const kept = joined(result.agentState.messageHistory)
+      expect(kept).toContain('MODEL SUMMARY')
+      expect(kept).toContain('the live question')
+      expect(kept).not.toContain('/compact')
+    })
+
+    it('reports no size until the provider counts the next request', async () => {
+      const history = idleHistory(0)
+      const receipts: Array<{ preTokens?: number; postTokens?: number }> = []
+      const compacted = await runLoop(optedIn, history, {
+        prompt: '/compact',
+        state: { compactionSummary: readySummary(history) },
+        runtimeOverrides: {
+          onCompaction: (receipt: { postTokens?: number }) =>
+            receipts.push(receipt),
+        },
+      })
+      expect(receipts).toHaveLength(1)
+      expect(receipts[0].postTokens).toBeUndefined()
+      expect(compacted.agentState.compactionSummary?.contextTokens).toBe(
+        undefined,
+      )
+
+      // The next turn, in another run: its first response sets the size.
+      const next = await runLoop(
+        optedIn,
+        [
+          ...compacted.agentState.messageHistory,
+          { ...userMessage('next question'), tags: ['USER_PROMPT'] },
+        ],
+        {
+          reportedInput: 9_000,
+          state: {
+            compactionSummary: compacted.agentState.compactionSummary,
+            pendingCompactionTelemetry: JSON.parse(
+              JSON.stringify(compacted.agentState.pendingCompactionTelemetry),
+            ),
+          },
+        },
+      )
+      expect(next.agentState.compactionSummary?.contextTokens).toBe(9_010)
+      expect(
+        runtimeImpl.promptAiSdkStream.mock.calls[0][0].extraCodebuffMetadata,
+      ).toMatchObject({
+        compaction_request_group: 'first_after_compaction',
+        compaction_id: compacted.agentState.pendingCompactionTelemetry!.id,
+      })
+      expect(next.agentState.pendingCompactionTelemetry).toBeUndefined()
+    })
+
+    it('makes a summary now when none exists', async () => {
+      const result = await runLoop(optedIn, idleHistory(0), {
+        prompt: '/compact',
+      })
+      expect(summaryRequests).toHaveLength(1)
+      expect(seenMessages).toHaveLength(0)
+      expect(joined(result.agentState.messageHistory)).toContain(
+        'MODEL SUMMARY',
+      )
+    })
+
+    it('labels the summary it makes as manual, on the receipt and the log', async () => {
+      const logged: Array<Record<string, unknown>> = []
+      await runLoop(optedIn, idleHistory(0), { prompt: '/compact', logged })
+      expect(
+        runtimeImpl.promptAiSdkStream.mock.calls[0][0].extraCodebuffMetadata,
+      ).toMatchObject({
+        compaction_request_group: 'summary',
+        compaction_trigger: 'manual',
+      })
+      expect(
+        logged.find((row) => row.axiomEvent === 'compaction_summary'),
+      ).toMatchObject({ trigger_reason: 'manual', mode: 'foreground' })
+      expect(
+        logged.find((row) => row.axiomEvent === 'context_compaction.attempt'),
+      ).toMatchObject({ trigger_reason: 'manual', outcome: 'applied' })
+    })
+
+    it('leaves a tiny chat alone without a model call', async () => {
+      const history: Message[] = [
+        { ...userMessage('hi'), sentAt: 1_000_000 },
+        { ...assistantMessage('hello'), sentAt: 1_000_000 },
+      ]
+      const logged: Array<Record<string, unknown>> = []
+      const receipts: unknown[] = []
+      const result = await runLoop(optedIn, history, {
+        prompt: '/compact',
+        logged,
+        runtimeOverrides: {
+          onCompaction: (receipt: unknown) => receipts.push(receipt),
+        },
+      })
+      expect(result.output.type).not.toBe('error')
+      expect(runtimeImpl.promptAiSdkStream).not.toHaveBeenCalled()
+      expect(receipts).toHaveLength(0)
+      expect(joined(result.agentState.messageHistory)).not.toContain(
+        'conversation_summary',
+      )
+      expect(
+        logged.find((row) => row.axiomEvent === 'context_compaction.attempt'),
+      ).toMatchObject({ trigger_reason: 'manual', outcome: 'noop' })
+    })
+
+    it('bills one summary for two presses in a row', async () => {
+      const first = await runLoop(optedIn, idleHistory(0), {
+        prompt: '/compact',
+      })
+      expect(summaryRequests).toHaveLength(1)
+      const second = await runLoop(optedIn, first.agentState.messageHistory, {
+        prompt: '/compact',
+        state: { compactionSummary: first.agentState.compactionSummary },
+      })
+      expect(summaryRequests).toHaveLength(1)
+      expect(second.output.type).not.toBe('error')
+    })
+
+    describe('when the summary request is refused', () => {
+      /** The API's session gate, as the AI SDK throws it. */
+      const sessionEnded = () =>
+        Object.assign(new Error('Conflict'), {
+          statusCode: 409,
+          responseBody: JSON.stringify({
+            error: 'session_superseded',
+            message:
+              'Your session ended before this request started. Send your message again to start a new one.',
+          }),
+        })
+
+      it('ends the run on the refusal, with its status and code', async () => {
+        summaryRefusal = sessionEnded()
+        const logged: Array<Record<string, unknown>> = []
+        const history = idleHistory(0)
+        const result = await runLoop(optedIn, history, {
+          prompt: '/compact',
+          logged,
+        })
+        expect(result.output).toMatchObject({
+          type: 'error',
+          statusCode: 409,
+          error: 'session_superseded',
+          message:
+            'Your session ended before this request started. Send your message again to start a new one.',
+        })
+        expect(seenMessages).toHaveLength(0)
+        expect(joined(result.agentState.messageHistory)).not.toContain(
+          'MODEL SUMMARY',
+        )
+        expect(
+          logged.find((row) => row.axiomEvent === 'compaction_summary'),
+        ).toMatchObject({ trigger_reason: 'manual', outcome: 'failed' })
+        expect(
+          logged.find((row) => row.axiomEvent === 'context_compaction.attempt'),
+        ).toMatchObject({ trigger_reason: 'manual', outcome: 'failed' })
+      })
+
+      it('still ends quietly on a summary the model failed to write', async () => {
+        summaryFails = true
+        const result = await runLoop(optedIn, idleHistory(0), {
+          prompt: '/compact',
+        })
+        expect(result.output.type).not.toBe('error')
+        expect(seenMessages).toHaveLength(0)
+      })
+
+      it('leaves an automatic summary\'s refusal as it was', async () => {
+        summaryRefusal = sessionEnded()
+        const result = await runLoop(optedIn, idleHistory(0), {
+          state: measured(10_000_000),
+        })
+        expect(summaryRequests).toHaveLength(1)
+        expect(result.output).not.toMatchObject({ statusCode: 409 })
+        expect((result.output as { message?: string }).message).toContain(
+          'Compaction could not bring this conversation',
+        )
+      })
+    })
+
+    it('still bills an automatic summary for a chat that small', async () => {
+      const history: Message[] = [
+        { ...userMessage('hi'), sentAt: 1_000_000 },
+        { ...assistantMessage('hello'), sentAt: 1_000_000 },
+        { ...userMessage('next'), tags: ['USER_PROMPT'], sentAt: 1_000_000 },
+      ]
+      await runLoop(optedIn, history, {
+        state: measured(10_000_000),
+      })
+      expect(summaryRequests).toHaveLength(1)
+    })
   })
 
   // Desktop BYOK, 2026-09-24..27 ("compacts every 3-5 turns"): a 32k-default
   // connection's budget is 25,804 tokens and its threshold 20,643, while the
-  // prompt and tool catalog take ~15k. Compacting at the threshold landed
-  // right back under it, so the next read or two compacted again.
+  // prompt and tool catalog take ~15k.
   describe('a small window under a large fixed prompt', () => {
     const smallWindow = {
       ...baseTemplate,
       systemPrompt: 'Follow the project conventions carefully. '.repeat(1_100),
-      compactContext: { maxContextLength: 25_804, cacheExpiryMs: null },
+      compactContext: { maxContextLength: 25_804 },
     } as AgentTemplate
     const withReads = (count: number): Message[] => {
       const history: Message[] = [
@@ -555,34 +1365,52 @@ describe('compactContext in loopAgentSteps', () => {
     }
 
     it('keeps working past the threshold instead of compacting futilely', async () => {
-      // ~15k fixed + ~6k of reads: over the 20,643 threshold, under the budget.
-      const result = await runLoop(smallWindow, withReads(4))
-      expect(runtimeImpl.promptAiSdkStream).toHaveBeenCalledTimes(1)
+      const result = await runLoop(smallWindow, withReads(4), {
+        state: measured(21_000),
+      })
       const sent = JSON.stringify(seenMessages[0])
       expect(sent.includes('<conversation_summary>')).toBe(false)
       expect(sent.includes('READ 0 BODY')).toBe(true)
       expect(result.output.type).not.toBe('error')
     })
 
-    it('still compacts at the hard budget, keeping a summary and a note for every earlier read', async () => {
-      const result = await runLoop(smallWindow, withReads(8))
+    it('still compacts at the hard budget', async () => {
+      const result = await runLoop(smallWindow, withReads(8), {
+        state: measured(30_000),
+      })
       const sent = JSON.stringify(seenMessages[0])
       expect(sent.includes('READ 0 BODY')).toBe(false)
-      expect(sent.includes('<conversation_summary>')).toBe(true)
-      for (let i = 0; i < 7; i++) expect(sent.includes(`"path":"file${i}.ts"`)).toBe(true)
-      expect(sent.match(/contents dropped at compaction/g)).toHaveLength(7)
-      expect(sent.includes('review the files')).toBe(true)
+      expect(sent.includes('MODEL SUMMARY')).toBe(true)
       expect(result.output.type).not.toBe('error')
     })
   })
 
-  it('a null TTL opts out of the opportunistic trigger', async () => {
-    await runLoop(
-      { ...baseTemplate, compactContext: { cacheExpiryMs: null } },
-      idleHistory(600),
-    )
-    expect(seenMessages[0].map(textOf).join('\n')).not.toContain(
-      '<conversation_summary>',
-    )
+  it('survives agent-definition validation, which strips unknown keys', async () => {
+    const { validateSingleAgent } =
+      await import('@codebuff/common/templates/agent-validation')
+    const definition = {
+      id: 'validated-agent',
+      displayName: 'Validated',
+      model: 'anthropic/claude-opus-5',
+      inputSchema: {},
+      compactContext: { cacheExpiryMs: 10 * MINUTE, cacheExpiryMinTokens: 5 },
+    }
+
+    const result = validateSingleAgent({ template: definition })
+    expect(result.error).toBeUndefined()
+    expect(result.agentTemplate?.compactContext).toEqual({
+      cacheExpiryMs: 10 * MINUTE,
+      cacheExpiryMinTokens: 5,
+    })
+    expect(
+      validateSingleAgent({
+        template: { ...definition, compactContext: true },
+      }).agentTemplate?.compactContext,
+    ).toBe(true)
+    expect(
+      validateSingleAgent({
+        template: { ...definition, compactContext: { cacheExpiry: 1000 } },
+      }).success,
+    ).toBe(false)
   })
 })

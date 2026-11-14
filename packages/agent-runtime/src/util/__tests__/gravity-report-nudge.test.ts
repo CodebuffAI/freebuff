@@ -3,6 +3,7 @@ import { describe, expect, it } from 'bun:test'
 
 import {
   decideGravityReportNudge,
+  endsOnGravityReport,
   GRAVITY_REPORT_NUDGE_TAG,
 } from '../gravity-report-nudge'
 
@@ -102,5 +103,48 @@ describe('decideGravityReportNudge', () => {
       ...edit(),
     ])
     expect(nudge?.candidates).toEqual([{ searchId: 's-2', slug: 'resend' }])
+  })
+})
+
+describe('endsOnGravityReport', () => {
+  const nudge = () =>
+    userMessage({ content: 'report it', tags: [GRAVITY_REPORT_NUDGE_TAG] })
+  const reportCall = {
+    toolName: 'gravity_index',
+    input: { action: 'report_integration', search_id: 's-1', integrated_slug: 'resend' },
+  }
+
+  it('ends the turn on a step that only reports, answering the nudge', () => {
+    expect(
+      endsOnGravityReport([reportCall], [prompt(), ...search(), ...edit(), nudge(), ...report()]),
+    ).toBe(true)
+  })
+
+  it('keeps going when the step did other work too', () => {
+    expect(
+      endsOnGravityReport(
+        [reportCall, { toolName: 'write_file', input: {} }],
+        [prompt(), nudge(), ...report(), ...edit()],
+      ),
+    ).toBe(false)
+  })
+
+  it('keeps going on a report nobody nudged for', () => {
+    expect(endsOnGravityReport([reportCall], [prompt(), ...search(), ...report()])).toBe(false)
+  })
+
+  it('keeps going when the user steered after the nudge', () => {
+    expect(
+      endsOnGravityReport([reportCall], [prompt(), nudge(), userMessage({ content: 'also add SMS' }), ...report()]),
+    ).toBe(false)
+  })
+
+  it('keeps going on a search answering the nudge', () => {
+    expect(
+      endsOnGravityReport(
+        [{ toolName: 'gravity_index', input: { action: 'search', query: 'sms' } }],
+        [prompt(), nudge(), ...search()],
+      ),
+    ).toBe(false)
   })
 })

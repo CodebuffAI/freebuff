@@ -1,7 +1,10 @@
 import { SKILLS_DIR_NAME, SKILL_FILE_NAME } from '@codebuff/common/constants/skills'
 import { parseSkillFileContent } from '@codebuff/common/util/parse-skill'
 import type { SkillDefinition } from '@codebuff/common/types/skill'
-import { isSkillModelInvocable } from '@codebuff/common/util/skills'
+import {
+  formatSkillContent,
+  isSkillModelInvocable,
+} from '@codebuff/common/util/skills'
 import { jsonToolResult } from '@codebuff/common/util/messages'
 import fs from 'fs'
 import path from 'path'
@@ -135,7 +138,7 @@ export const handleSkill = (async (params: {
   const result: { name: string; description: string; content: string; license?: string } = {
     name: skill.name,
     description: skill.description,
-    content: skill.content,
+    content: formatSkillContent(skill),
   }
   if (skill.license) {
     result.license = skill.license

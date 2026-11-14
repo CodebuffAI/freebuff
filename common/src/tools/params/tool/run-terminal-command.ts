@@ -1,6 +1,10 @@
 import z from 'zod/v4'
 
-import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  jsonToolResultSchema,
+  repairInput,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -22,6 +26,11 @@ import type { $ToolParams } from '../../constants'
  */
 export const MAX_TERMINAL_TIMEOUT_SECONDS = 600
 export const MAX_TERMINAL_TIMEOUT_MINUTES = MAX_TERMINAL_TIMEOUT_SECONDS / 60
+
+/** Ends every SYNC timeout message. Without it the model mostly re-ran the command and waited
+ *  again (36% of hosted timeouts, Nov 2026); with it, more moved the work to the background. */
+export const COMMAND_TIMEOUT_HINT =
+  'For long-running work, run it with process_type BACKGROUND, redirecting its output to a log, then read the log.'
 
 /** Clamp a model-supplied timeout, preserving the -1 "no timeout" sentinel and
  *  leaving an absent value to the schema default. */
@@ -53,6 +62,9 @@ export const terminalCommandOutputSchema = z.union([
     stderr: z.string().optional(),
     stdout: z.string().optional(),
     exitCode: z.number().optional(),
+    /** One line naming the real shell when the output shows a dialect
+     * mismatch (`common/src/util/shell-mismatch-hint.ts`). */
+    hint: z.string().optional(),
   }),
   z.object({
     command: z.string(),
@@ -61,6 +73,7 @@ export const terminalCommandOutputSchema = z.union([
     stderr: z.string().optional(),
     stdoutOmittedForLength: z.literal(true),
     exitCode: z.number().optional(),
+    hint: z.string().optional(),
   }),
 
   z.object({
@@ -146,18 +159,7 @@ When the user requests a new git commit, please follow these steps closely:
 2. **Select relevant files to include in the commit:**
    Use the git context established at the start of this conversation to decide which files are pertinent to the changes. Stage any new untracked files that are relevant, but avoid committing previously modified files (from the beginning of the conversation) unless they directly relate to this commit.
 
-3. **Analyze the staged changes and compose a commit message:**
-   Enclose your analysis in <commit_analysis> tags. Within these tags, you should:
-   - Note which files have been altered or added.
-   - Categorize the nature of the changes (e.g., new feature, fix, refactor, documentation, etc.).
-   - Consider the purpose or motivation behind the alterations.
-   - Refrain from using tools to inspect code beyond what is presented in the git context.
-   - Evaluate the overall impact on the project.
-   - Check for sensitive details that should not be committed.
-   - Draft a concise, one- to two-sentence commit message focusing on the “why” rather than the “what.”
-   - Use precise, straightforward language that accurately represents the changes.
-   - Ensure the message provides clarity—avoid generic or vague terms like “Update” or “Fix” without context.
-   - Revisit your draft to confirm it truly reflects the changes and their intention.
+3. **Check the staged changes and write the message.** Leave out sensitive details. Write one or two concise, specific sentences on why the change was made, not just what changed.
 
 `
 
@@ -170,7 +172,6 @@ const GIT_COMMIT_GUIDE_TAIL = `
 - Push to the remote repository only when the user has authorized pushing.
 - Avoid using interactive flags (e.g., \`-i\`) that require unsupported interactive input.
 - Do not create an empty commit if there are no changes.
-- Make sure your commit message is concise yet descriptive, focusing on the intention behind the changes rather than merely describing them.
 `
 
 /** The default commit guidance, including attribution. */
@@ -178,9 +179,27 @@ export const gitCommitGuidePrompt = buildGitCommitGuidePrompt({
   attribution: true,
 })
 
+/** Other words models use for SYNC (Solar, Nov 2026, ~55 calls/day). */
+const SYNC_SYNONYMS = new Set(['SYN', 'SYNCHRONOUS', 'BLOCKING'])
+
+/**
+ * Repairs slips seen in production: `cmd` (another shell tool's name for
+ * `command`), and a `process_type` like "SYNC\n", "background" or "synchronous".
+ */
+function normalizeCommandInput(input: Record<string, unknown>) {
+  if (input.command === undefined && typeof input.cmd === 'string') {
+    input.command = input.cmd
+  }
+  if (typeof input.process_type === 'string') {
+    const type = (input.process_type.trim().split(/\s+/)[0] ?? '').toUpperCase()
+    input.process_type = SYNC_SYNONYMS.has(type) ? 'SYNC' : type
+  }
+  return input
+}
+
 const toolName = 'run_terminal_command'
 const endsAgentStep = true
-const inputSchema = z
+const commandSchema = z
   .object({
     // Can be empty to use it for a timeout.
     command: z
@@ -213,6 +232,7 @@ const inputSchema = z
   .describe(
     `Execute a CLI command from the **project root** (different from the user's cwd).`,
   )
+const inputSchema = repairInput(normalizeCommandInput, commandSchema)
 const buildDescription = (options: { attribution: boolean }) =>
   `
 Execute commands needed to complete the user's task, including inspecting the environment, running scripts, installing task dependencies, building, testing, generating requested artifacts, and starting required services.

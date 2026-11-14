@@ -16,9 +16,6 @@ tags
 
 node_modules
 dev
-# The agentic e2e harness's interactive mode lives in folders named `dev`.
-!scripts/agentic-e2e/dev/
-!freebuff-desktop/src/ui/dev/
 dist
 # The Convex HTTP edge proxies /api/browser-runtime/dist; this is a Next route, not build output.
 !freebuff/web/src/app/api/browser-runtime/dist/
@@ -119,3 +116,13 @@ web/.ad-assets-r2/
 __pycache__/
 *.pyc
 *.egg-info/
+
+# Identity bridging pilot output (per-account outcomes; never committed)
+scripts/identity/out/
+
+# Local lifecycle email previews (scripts/lifecycle-email-sync.ts --preview)
+/lifecycle-preview*/
+
+# Ad creative projects (Remotion, npm-only, not Bun workspaces): renders and deps stay local
+ad-creatives/*/out/
+ad-creatives/*/node_modules/

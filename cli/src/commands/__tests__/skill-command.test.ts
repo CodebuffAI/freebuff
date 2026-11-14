@@ -85,7 +85,31 @@ describe('/skill:<name> command', () => {
       .calls[0] as [{ content: string }]
     expect(content).toBe(buildSkillPrompt(TEST_SKILL, 'for v2.1 only'))
     expect(content).toContain('<skill name="release-notes">')
+    expect(content).toContain(
+      'Base directory for this skill: "/tmp/skills/release-notes/"',
+    )
     expect(content).toContain('User request: for v2.1 only')
+  })
+
+  test('a Windows skill keeps its resource directory in the submitted prompt', async () => {
+    const skill = {
+      ...TEST_SKILL,
+      filePath:
+        'C:\\Users\\Test User\\.agents\\skills\\release-notes\\SKILL.md',
+      content: 'Read references/guide.md, then run scripts/check.js.',
+    }
+    __setSkillsForTests({ [skill.name]: skill })
+    const command = findCommand('skill:release-notes')!
+    const params = createMockParams({ inputValue: '/skill:release-notes run it' })
+    await command.handler(params, 'run it')
+
+    const [{ content }] = (params.sendMessage as ReturnType<typeof mock>).mock
+      .calls[0] as [{ content: string }]
+    expect(content).toContain(
+      'Base directory for this skill: "C:/Users/Test User/.agents/skills/release-notes/"',
+    )
+    expect(content).toContain("not the project's working directory")
+    expect(content).toContain(skill.content)
   })
 })
 
@@ -107,6 +131,9 @@ describe('skill input mode submit', () => {
       .calls[0] as [{ content: string }]
     expect(content).toBe(
       buildSkillPrompt(TEST_SKILL, 'focus on the API changes'),
+    )
+    expect(content).toContain(
+      'Base directory for this skill: "/tmp/skills/release-notes/"',
     )
   })
 

@@ -1,5 +1,6 @@
 import { describe, test, expect, mock } from 'bun:test'
 
+import { CLI_AUTH_CODE_LIFETIME_MS } from '@codebuff/common/constants/auth'
 import { createMockLogger } from '@codebuff/common/testing/mock-types'
 import { generateLoginUrl, pollLoginStatus } from '../../login/login-flow'
 import { createMockApiClient } from '../helpers/mock-api-client'
@@ -235,6 +236,66 @@ describe('Login Polling (Working)', () => {
       return JSON.stringify(payload as Parameters<Logger['error']>[0]).includes('network failed')
     })
     expect(sawNetworkFailure).toBe(true)
+  })
+
+  test('P0: Polling Lifecycle - by default waits as long as the login code lives', async () => {
+    // A new account's sign-up, phone step and Connect can take longer than
+    // five minutes; an approval after polling stopped is never collected.
+    const logger = createMockLogger()
+    const clock = createClock()
+    const approvedAt = 7 * 60 * 1000
+    const loginStatusMock = mock(async () =>
+      clock.now() >= approvedAt
+        ? ({
+            ok: true,
+            status: 200,
+            data: { user: { id: 'u-late', email: 'late@test.dev' } },
+          } as ApiResponse<{ user?: unknown }>)
+        : ({ ok: false, status: 401 } as ApiResponse<{ user?: unknown }>),
+    )
+
+    const result = await pollLoginStatus(
+      {
+        sleep: clock.sleep,
+        logger,
+        now: clock.now,
+        apiClient: createMockApiClient({ loginStatus: loginStatusMock }),
+      },
+      {
+        baseUrl: 'https://cli.test',
+        fingerprintId: 'finger-late',
+        fingerprintHash: 'hash-late',
+        expiresAt: '2030-01-01T00:00:00Z',
+      },
+    )
+
+    expect(result.status).toBe('success')
+  })
+
+  test('P0: Polling Lifecycle - by default stops when the login code expires', async () => {
+    const logger = createMockLogger()
+    const clock = createClock()
+    const loginStatusMock = mock(
+      async () => ({ ok: false, status: 401 }) as ApiResponse<{ user?: unknown }>,
+    )
+
+    const result = await pollLoginStatus(
+      {
+        sleep: clock.sleep,
+        logger,
+        now: clock.now,
+        apiClient: createMockApiClient({ loginStatus: loginStatusMock }),
+      },
+      {
+        baseUrl: 'https://cli.test',
+        fingerprintId: 'finger-expired',
+        fingerprintHash: 'hash-expired',
+        expiresAt: '2030-01-01T00:00:00Z',
+      },
+    )
+
+    expect(result.status).toBe('timeout')
+    expect(clock.now()).toBe(CLI_AUTH_CODE_LIFETIME_MS)
   })
 
   test('P0: generateLoginUrl wrapper - should hit backend and return payload', async () => {

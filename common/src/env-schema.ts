@@ -80,6 +80,11 @@ export const clientEnvSchema = z.object({
    *  design — it only authorizes ingestion. Optional so a dev checkout without
    *  it boots with replay simply switched off. */
   NEXT_PUBLIC_HUMANBEHAVIOR_API_KEY: z.string().min(1).optional(),
+  /** Prelude Web SDK key for the phone gate's browser signals (Freebuff Web
+   *  `prelude-signals.ts`). Publishable by design: it only reports signals;
+   *  the server half is `PRELUDE_API_KEY`. Optional: unset skips the signals
+   *  and the code is sent as before. */
+  NEXT_PUBLIC_PRELUDE_WEB_SDK_KEY: z.string().min(1).optional(),
 } satisfies Record<`${typeof CLIENT_ENV_PREFIX}${string}`, any>)
 export const clientEnvVars = clientEnvSchema.keyof().options
 export type ClientEnvVar = (typeof clientEnvVars)[number]
@@ -117,4 +122,5 @@ export const clientProcessEnv: ClientInput = {
   NEXT_PUBLIC_RECAPTCHA_V2_SIZE: process.env.NEXT_PUBLIC_RECAPTCHA_V2_SIZE,
   NEXT_PUBLIC_HUMANBEHAVIOR_API_KEY:
     process.env.NEXT_PUBLIC_HUMANBEHAVIOR_API_KEY,
+  NEXT_PUBLIC_PRELUDE_WEB_SDK_KEY: process.env.NEXT_PUBLIC_PRELUDE_WEB_SDK_KEY,
 }

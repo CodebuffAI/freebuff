@@ -120,6 +120,23 @@ describe('run failure evidence', () => {
   })
 })
 
+describe('a spent compute grant', () => {
+  test("Desktop's `turn grant-expired` reads as the grant expiring, with or without a code", () => {
+    for (const metadata of [
+      { diagnostic_reason: 'turn grant-expired: the active window was spent' },
+      {
+        failure_code: 'other',
+        diagnostic_reason:
+          'turn grant-expired; the turn recorded no file edits',
+      },
+    ]) {
+      expect(sponsoredFailureExplanation({ metadata }).detail).toContain(
+        'The compute grant expired.',
+      )
+    }
+  })
+})
+
 describe('existing replay diagnostics', () => {
   test('reads the actual diagnostic_reason field and retains unknown causes safely', () => {
     expect(

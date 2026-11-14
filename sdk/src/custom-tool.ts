@@ -14,7 +14,7 @@ export type CustomToolDefinition<
   description: string
   endsAgentStep: boolean
   exampleInputs: Input[]
-  execute: (params: Args) => Promise<ToolResultOutput[]>
+  execute: (params: Args, context?: { toolCallId?: string }) => Promise<ToolResultOutput[]>
 }
 
 /**
@@ -51,7 +51,7 @@ export function getCustomToolDefinition<
   description: string
   endsAgentStep?: boolean
   exampleInputs?: Input[]
-  execute: (params: Args) => Promise<ToolResultOutput[]> | ToolResultOutput[]
+  execute: (params: Args, context?: { toolCallId?: string }) => Promise<ToolResultOutput[]> | ToolResultOutput[]
 }): CustomToolDefinition<TN, Args, Input> {
   return {
     toolName,
@@ -59,8 +59,8 @@ export function getCustomToolDefinition<
     description,
     endsAgentStep,
     exampleInputs,
-    execute: async (params) => {
-      return await execute(params)
+    execute: async (params, context) => {
+      return await execute(params, context)
     },
   }
 }

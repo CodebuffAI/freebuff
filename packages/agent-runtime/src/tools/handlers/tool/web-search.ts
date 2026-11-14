@@ -25,6 +25,7 @@ export const handleWebSearch = (async (params: {
   userId: string | undefined
 
   fetch: typeof globalThis.fetch
+  signal: AbortSignal
   clientEnv: ClientEnv
   ciEnv: CiEnv
 }): Promise<{
@@ -46,16 +47,17 @@ export const handleWebSearch = (async (params: {
     userInputId,
 
     fetch,
+    signal,
     clientEnv,
     ciEnv,
   } = params
-  const { query, depth } = toolCall.input
+  const { query, objective, additional_queries, live } = toolCall.input
 
   const searchStartTime = Date.now()
   const searchContext = {
     toolCallId: toolCall.toolCallId,
-    query,
-    depth,
+    queryCount: 1 + (additional_queries?.length ?? 0),
+    live: live === true,
     userId,
     agentStepId,
     clientSessionId,
@@ -71,7 +73,13 @@ export const handleWebSearch = (async (params: {
   try {
     const webApi = await callWebSearchAPI({
       query,
-      depth,
+      searchQueries: additional_queries?.length
+        ? [query, ...additional_queries]
+        : undefined,
+      objective,
+      live,
+      sessionId: clientSessionId,
+      signal,
       repoUrl: repoUrl ?? null,
       fetch,
       logger,
@@ -127,7 +135,7 @@ export const handleWebSearch = (async (params: {
     }
   } catch (error) {
     const searchDuration = Date.now() - searchStartTime
-    const errorMessage = `Error performing web search for "${query}": ${
+    const errorMessage = `Error performing web search: ${
       error instanceof Error ? error.message : 'Unknown error'
     }`
     logger.error(

@@ -557,9 +557,9 @@ async function executeSingleToolCall(
     toolCallsToAddToMessageHistory: [],
     toolResultsToAddToMessageHistory,
 
-    onResponseChunk: (chunk: string | PrintModeEvent) => {
+    onResponseChunk: async (chunk: string | PrintModeEvent) => {
       if (typeof chunk === 'string') {
-        onResponseChunk(chunk)
+        await onResponseChunk(chunk)
         return
       }
 
@@ -572,7 +572,7 @@ async function executeSingleToolCall(
           case 'subagent_start':
           case 'subagent_finish':
             if (!chunk.parentAgentId) {
-              onResponseChunk({
+              await onResponseChunk({
                 ...chunk,
                 parentAgentId,
               })
@@ -582,7 +582,7 @@ async function executeSingleToolCall(
           case 'tool_call':
           case 'tool_result': {
             if (!chunk.parentAgentId) {
-              onResponseChunk({
+              await onResponseChunk({
                 ...chunk,
                 parentAgentId,
               })
@@ -596,7 +596,7 @@ async function executeSingleToolCall(
       }
 
       // For other events or top-level spawns, send as-is
-      onResponseChunk(chunk)
+      await onResponseChunk(chunk)
     },
   })
 

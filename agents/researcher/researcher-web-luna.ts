@@ -13,7 +13,7 @@ export const WEB_RESEARCHER_AGENT_ID = 'researcher-web'
  */
 export const WEB_RESEARCHER_GUIDANCE = `# Web research
 
-When an answer depends on current or external information that needs more than one lookup (library versions and APIs, release notes, unfamiliar error messages, pricing, service docs), spawn the researcher-web agent with a focused question. It searches, reads the source pages and reports back with the URLs it read. Spawn several in parallel only for independent questions, usually one to three per request, and don't respawn one to re-check what it already reported. For a single quick lookup, call web_search or read_url yourself. Don't research what you already know well or what the codebase itself answers. Cite the source URLs to the user when they matter.`
+For a web lookup, start with web_search and read its excerpts. Answer from them and cite their URLs if they cover the question. Use read_url when a specific page is requested or an excerpt needs more context. Set live only for time-sensitive information. For research that needs multiple independent lookups, spawn the researcher-web agent with a focused question. Don't research what the codebase already answers.`
 
 /**
  * researcher-web on GPT-6 Luna: the web researcher Legacy Chat ran, now also

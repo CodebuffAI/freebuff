@@ -15,6 +15,7 @@ describe('run() on prompt-error', () => {
     spyOn(databaseModule, 'getUserInfoFromApiKey').mockResolvedValue({
       id: 'user-123',
       email: 'test@example.com',
+      name: null,
       discord_id: null,
       stripe_customer_id: null,
       banned: false,

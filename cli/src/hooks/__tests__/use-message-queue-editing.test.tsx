@@ -206,4 +206,29 @@ describe('queue editing', () => {
       harness.dispose()
     }
   })
+
+  test('copies of a refused message are dropped; everything else still runs', async () => {
+    const harness = await mountBusyQueue()
+    try {
+      await harness.act(() => {
+        harness.queue.addToQueue('refused text')
+        harness.queue.addToQueue('something else')
+        harness.queue.addToQueue('  refused text\n')
+        harness.queue.addToQueue('refused text')
+      })
+
+      await harness.act(() => {
+        expect(harness.queue.dropQueuedCopies('refused text')).toBe(3)
+        expect(harness.queue.dropQueuedCopies('refused text')).toBe(0)
+      })
+      expect(harness.contents()).toEqual(['something else'])
+
+      await harness.finishRun()
+      expect(harness.sent().map((send) => send.content)).toEqual([
+        'something else',
+      ])
+    } finally {
+      harness.dispose()
+    }
+  })
 })

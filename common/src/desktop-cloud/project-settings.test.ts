@@ -280,3 +280,26 @@ test('a refusal names no value the client sent', () => {
     'Skill "review" cannot be saved: the skill itself was rejected (unrecognized_keys). Fix it and save again.',
   )
 })
+
+test('skill enable state is optional for old libraries and preserved on save', () => {
+  const skill = {
+    name: 'review',
+    description: 'Review code',
+    instructions: 'Read the diff.',
+  }
+  for (const enabled of [undefined, true, false]) {
+    const result = accountSkillsUpdateSchema.parse({
+      revision: 1,
+      settings: {
+        skills: [{ ...skill, ...(enabled === undefined ? {} : { enabled }) }],
+      },
+    })
+    expect(result.settings.skills[0]?.enabled).toBe(enabled)
+  }
+  expect(
+    accountSkillsUpdateSchema.safeParse({
+      revision: 1,
+      settings: { skills: [{ ...skill, enabled: 'false' }] },
+    }).success,
+  ).toBe(false)
+})

@@ -48,6 +48,11 @@ export const CLOUD_CODEX_MODELS: readonly CloudCliModel[] = [
     tagline: 'Reliable agentic workhorse for everyday tasks',
   },
   {
+    id: 'gpt-6.1-sol',
+    label: 'GPT-6.1-Sol',
+    tagline: 'Latest agentic workhorse for everyday tasks',
+  },
+  {
     id: 'gpt-6-astra',
     label: 'GPT-6-Astra',
     tagline: 'Most capable model for complex, demanding work',
@@ -142,3 +147,9 @@ export type CloudAgentAccess =
       /** Epoch milliseconds. */
       expiresAt?: number
     }
+
+/** Device catalogs come from the installed CLI, independently of the VM allowlist. */
+export function parseNativeCliModelValue(value: string | null | undefined): { agent: CloudCliAgent; model: string } | null {
+  const match = value?.match(/^agent:(claude-code|codex):([a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199})$/)
+  return match ? { agent: match[1] as CloudCliAgent, model: match[2]! } : null
+}

@@ -1,7 +1,9 @@
+import { realpath as fsRealpath } from 'fs/promises'
+
 import * as runAgentStep from '@codebuff/agent-runtime/run-agent-step'
 import { handleSpawnAgentInline } from '@codebuff/agent-runtime/tools/handlers/tool/spawn-agent-inline'
-import { handleSpawnAgents } from '@codebuff/agent-runtime/tools/handlers/tool/spawn-agents'
 import { extractSubagentContextParams } from '@codebuff/agent-runtime/tools/handlers/tool/spawn-agent-utils'
+import { handleSpawnAgents } from '@codebuff/agent-runtime/tools/handlers/tool/spawn-agents'
 import * as mcpClientModule from '@codebuff/common/mcp/client'
 import {
   mockFileContext,
@@ -11,7 +13,6 @@ import { createMockFs } from '@codebuff/common/testing/mocks/filesystem'
 import { getInitialSessionState } from '@codebuff/common/types/session-state'
 import { assistantMessage } from '@codebuff/common/util/messages'
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import { realpath as fsRealpath } from 'fs/promises'
 import { z } from 'zod/v4'
 
 import { CodebuffClient } from '../client'
@@ -22,11 +23,11 @@ import {
 } from '../permissions/execution-policy'
 import { handleToolCall } from '../run'
 
-import type { SubagentContextParams } from '@codebuff/agent-runtime/tools/handlers/tool/spawn-agent-utils'
-import type { MCPConfig } from '@codebuff/common/types/mcp'
 import type { CustomToolDefinition } from '../custom-tool'
+import type { SubagentContextParams } from '@codebuff/agent-runtime/tools/handlers/tool/spawn-agent-utils'
 import type { AgentDefinition } from '@codebuff/common/templates/initial-agents-dir/types/agent-definition'
 import type { AgentTemplate } from '@codebuff/common/types/agent-template'
+import type { MCPConfig } from '@codebuff/common/types/mcp'
 import type { ToolResultOutput } from '@codebuff/common/types/messages/content-part'
 
 type SpawnMode = 'spawn_agents' | 'spawn_agent_inline'
@@ -103,6 +104,9 @@ async function runSpawnCase(mode: SpawnMode) {
         mcpConfig,
       },
       overrides: { run_terminal_command: shellOverride },
+      readPage: async () => {
+        throw new Error('readPage must not be called by the execution-policy tests')
+      },
       customToolDefinitions,
       cwd: '/project',
       fs,
@@ -318,6 +322,9 @@ describe('dispatch-origin execution policy', () => {
       }),
       overrides: {},
       customToolDefinitions: {},
+      readPage: async () => {
+        throw new Error('readPage must not be called by the execution-policy tests')
+      },
       cwd: '/project',
       fs: guardFileSystem(createMockFs(), policy),
       policy,
@@ -339,6 +346,9 @@ describe('dispatch-origin execution policy', () => {
       action: action('write_file'),
       overrides: { write_file: hostOverride },
       customToolDefinitions: {},
+      readPage: async () => {
+        throw new Error('readPage must not be called by the execution-policy tests')
+      },
       cwd: '/project',
       fs: guardFileSystem(createMockFs(), policy),
       policy,
@@ -362,6 +372,9 @@ describe('dispatch-origin execution policy', () => {
       action: action('write_file'),
       overrides: { write_file: hostOverride },
       customToolDefinitions: {},
+      readPage: async () => {
+        throw new Error('readPage must not be called by the execution-policy tests')
+      },
       cwd: '/project',
       fs: guardFileSystem(createMockFs(), policy),
       policy,
@@ -416,6 +429,9 @@ describe('ask_user host override under execution restrictions', () => {
         action: askAction(),
         overrides: { ask_user: askOverride },
         customToolDefinitions: {},
+        readPage: async () => {
+          throw new Error('readPage must not be called by the execution-policy tests')
+        },
         cwd: '/project',
         fs: guardFileSystem(createMockFs(), policy),
         policy,
@@ -445,6 +461,9 @@ describe('ask_user host override under execution restrictions', () => {
       }),
       overrides: { ask_user: askOverride },
       customToolDefinitions: {},
+      readPage: async () => {
+        throw new Error('readPage must not be called by the execution-policy tests')
+      },
       cwd: '/project',
       fs: guardFileSystem(createMockFs(), policy),
       policy,
@@ -462,6 +481,7 @@ describe('top-level client.run() sub-agent policy inheritance', () => {
     spyOn(databaseModule, 'getUserInfoFromApiKey').mockResolvedValue({
       id: 'user-1',
       email: 'test@example.com',
+      name: null,
       discord_id: null,
       stripe_customer_id: null,
       banned: false,
@@ -500,8 +520,8 @@ describe('top-level client.run() sub-agent policy inheritance', () => {
             agentTemplate: options.localAgentTemplates[agentType]!,
             ancestorRunIds: options.ancestorRunIds,
             fingerprintId: options.fingerprintId,
-            system: options.system,
-            tools: options.tools ?? {},
+            system: options.parentSystemPrompt ?? '',
+            tools: options.parentTools ?? {},
             userInputId: 'root-spawn',
             writeToClient: () => {},
             previousToolCallFinished: Promise.resolve(),

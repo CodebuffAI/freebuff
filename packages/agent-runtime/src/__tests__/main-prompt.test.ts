@@ -332,6 +332,7 @@ describe('mainPrompt', () => {
 
     // Verify the write_file call was made with the correct arguments
     expect(requestToolCallSpy).toHaveBeenCalledWith({
+      toolCallId: expect.any(String),
       userInputId: expect.any(String), // userInputId
       toolName: 'write_file',
       input: expect.objectContaining({

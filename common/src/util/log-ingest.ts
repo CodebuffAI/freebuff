@@ -17,8 +17,8 @@ import type { LogRow, LogSource } from '../types/contracts/logs'
  * Oversized goes through the same field-wise fit as the server-side sink
  * (`serializeLogData`), so a client row keeps the fields that identify it
  * instead of collapsing to one `preview` string. The CLI is the producer that
- * made this matter: its `Agent execution failed` line carries `messageHistory`
- * and `systemPrompt`, and arrives here as `source: cli`.
+ * made this matter: its `Agent execution failed` line used to carry
+ * `messageHistory` and `systemPrompt`, and arrives here as `source: cli`.
  */
 function truncateData(data: unknown): unknown {
   if (data === undefined) return null
