@@ -32,8 +32,6 @@ export const productFunnelStageSchema = z.enum([
   /** hosted Desktop's first-project screen ("Open a project to get started"): shown, selected (`project_choice`) */
   'project_setup',
   'template',
-  /** a new-chat starter pill was clicked (`starter_pills_2026_11`): selected */
-  'starter',
   /** a finished turn's review (`turn_review_2026_11`): shown, selected (one of its buttons) */
   'turn_review',
   'model_picker',
@@ -378,11 +376,6 @@ export const productFunnelPropertiesSchema = z
     error_kind: z
       .string()
       .regex(/^[a-z0-9_]{1,40}$/)
-      .optional(),
-    /** Which starter pill (`starter:selected`): its prompt id, `game-snake`. */
-    starter: z
-      .string()
-      .regex(/^[a-z0-9-]{1,40}$/)
       .optional(),
     /** `turn_review`: the review's verdict, `none` when it judged no change. */
     review_verdict: z
