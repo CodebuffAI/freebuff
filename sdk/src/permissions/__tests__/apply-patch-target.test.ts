@@ -25,6 +25,9 @@ async function dispatchApplyPatch(
       timeout: undefined,
     },
     overrides: { write_file: writeOverride },
+    readPage: async () => {
+      throw new Error('readPage must not be called by the apply_patch tests')
+    },
     customToolDefinitions: {},
     cwd: options.cwd,
     fs: createMockFs(),
