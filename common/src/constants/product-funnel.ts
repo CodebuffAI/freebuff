@@ -22,7 +22,7 @@ export const productFunnelStageSchema = z.enum([
   'welcome',
   /** the phone-app prompt, on a return to the workspace after a break or after a first finished reply: shown, clicked (a store link), closed */
   'mobile_prompt',
-  /** Desktop's Get started checklist (`desktop_checklist_2026_11`): shown (exposure, both arms, `checklist_variant`), clicked (a step's button, `checklist_step`), closed (hidden from its menu or Done) */
+  /** The Get started checklist: shown (once per page load), clicked (a step's button, `checklist_step`), closed (hidden from its menu or Done). Its A/B (`desktop_checklist_2026_11`, `checklist_variant`) ended 2026-11-13 with the card kept. */
   'checklist',
   'browser',
   'context',
@@ -245,7 +245,7 @@ export const welcomeVariantSchema = z.enum([
   'flow_full_v2',
   'flow_no_integrations_v2',
 ])
-/** Desktop's Get started checklist A/B (onboarding-checklist/model.ts): `control` installs never see the card. */
+/** The Get started checklist A/B's arms; since it ended (2026-11-13) every event says `checklist`. */
 export const checklistVariantSchema = z.enum(['control', 'checklist'])
 /** A step of the Get started checklist (onboarding-checklist/model.ts). */
 export const checklistStepSchema = z.enum(['project', 'message', 'mobile', 'themes'])
