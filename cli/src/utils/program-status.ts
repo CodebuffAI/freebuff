@@ -6,6 +6,12 @@
  * terminal-title.ts, because OpenTUI captures stdout.
  *
  * Sequence: ESC ] 7501 ; state=<state>:app=<program>[:kind=<kind>] ESC \
+ *
+ * OSC 7501 is not a registered sequence; it is Herdr's private convention.
+ * Terminal parsers consume an OSC string up to its terminator and discard the
+ * ones they do not implement, so xterm-compatible emulators (xterm, VTE,
+ * iTerm2, WezTerm, kitty, Alacritty, Windows Terminal) print nothing for this
+ * report. There is no visible fallback to design around.
  */
 
 import { IS_FREEBUFF } from './constants'
@@ -18,8 +24,15 @@ export type ProgramStatusState =
   | 'done'
   | 'clear'
 
-/** Only sent alongside `blocked`. */
-export type BlockedKind = 'permission' | 'question'
+/**
+ * Only sent alongside `blocked`.
+ *
+ * `ask_user` is the CLI's only blocking prompt, so it is the only kind we can
+ * report truthfully. Permission prompts do not exist in the CLI yet; adding
+ * `permission` before one is wired up would make the terminal announce a state
+ * the UI never shows.
+ */
+export type BlockedKind = 'question'
 
 export type ProgramStatusUpdate =
   | { state: 'idle' | 'working' | 'done' }
@@ -34,7 +47,8 @@ const OSC_TERMINATOR = '\x1b\\' // ST
  * Decide the next report from the CLI's turn and prompt state.
  *
  * A turn that just ended reports `done`; only a CLI that has not worked yet
- * reports `idle`.
+ * reports `idle`. `isAsking` means the `ask_user` prompt is waiting for the
+ * user, which is the `blocked`/`question` report.
  */
 export function nextProgramStatusUpdate(params: {
   isChainInProgress: boolean
