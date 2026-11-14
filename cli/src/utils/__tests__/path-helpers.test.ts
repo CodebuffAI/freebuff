@@ -23,9 +23,7 @@ describe('formatCwd', () => {
 
   test('falls back to USERPROFILE when HOME is unset', () => {
     const env = { USERPROFILE: 'C:\\Users\\foo' } as CliEnv
-    expect(formatCwd('C:\\Users\\foo\\project', env)).toBe(
-      '~\\project',
-    )
+    expect(formatCwd('C:\\Users\\foo\\project', env)).toBe('~\\project')
   })
 })
 
@@ -47,10 +45,11 @@ describe('getRelativePath', () => {
   })
 
   test('resolves an absolute path relative to the project root when one is set', () => {
-    setProjectRoot('/Users/foo/project')
-    expect(getRelativePath('/Users/foo/project/src/utils/helper.ts')).toBe(
-      path.join('src', 'utils', 'helper.ts'),
-    )
+    const projectRoot = path.resolve('/Users/foo/project')
+    setProjectRoot(projectRoot)
+    expect(
+      getRelativePath(path.join(projectRoot, 'src', 'utils', 'helper.ts')),
+    ).toBe(path.join('src', 'utils', 'helper.ts'))
   })
 
   test('falls back to returning the absolute path as-is when the project root is unavailable', () => {
