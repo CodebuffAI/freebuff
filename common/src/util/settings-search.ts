@@ -9,6 +9,7 @@ type PageLabel =
   | 'MCP'
   | 'Updates'
   | 'Account standing'
+  | 'Apps & downloads'
 
 // Index the settings themselves, including common names people use for them.
 // Keep this alongside the shared navigation, without mounting inactive pages or
@@ -80,6 +81,23 @@ const topics: Record<PageLabel, Topic[]> = {
     {
       label: 'Delete account',
       keywords: 'remove account data privacy',
+      surface: 'web',
+    },
+  ],
+  'Apps & downloads': [
+    {
+      label: 'Desktop app',
+      keywords: 'download install mac windows linux desktop app',
+      surface: 'web',
+    },
+    {
+      label: 'Command line',
+      keywords: 'cli terminal npm install command line',
+      surface: 'web',
+    },
+    {
+      label: 'Mobile app',
+      keywords: 'phone iphone android ios app store google play qr code mobile',
       surface: 'web',
     },
   ],

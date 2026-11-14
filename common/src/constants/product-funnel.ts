@@ -327,6 +327,8 @@ export const productFunnelPropertiesSchema = z
         'footer',
         'workspace',
         'picker',
+        // Settings → Apps & downloads (freebuff/web settings/apps-settings.tsx).
+        'settings',
         'unknown',
       ])
       .optional(),
