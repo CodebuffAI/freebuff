@@ -297,7 +297,7 @@ describe('parseAdEngagement', () => {
     expect(parseAdEngagement(record)).toEqual(record)
   })
 
-  test('carries hidden time and why the ad stopped being drawn, and rejects unknown reasons', () => {
+  test('carries hidden time and why the ad stopped being drawn, and drops unknown reasons', () => {
     const record = {
       v: 1,
       impUrl: 'https://ads.example/held',
@@ -307,9 +307,12 @@ describe('parseAdEngagement', () => {
       exit: 'rotation',
     }
     expect(parseAdEngagement(record)).toEqual(record)
-    for (const endedBy of ['gravity_took_screen', 'retired_by_newer_inline'])
+    for (const endedBy of ['gravity_took_screen', 'retired_by_newer_inline', 'expired'])
       expect(parseAdEngagement({ ...record, endedBy })?.endedBy).toBe(endedBy)
-    expect(parseAdEngagement({ ...record, endedBy: 'other' })).toBeUndefined()
+    // A reason this server does not know yet keeps the record, without the reason.
+    const unknown = parseAdEngagement({ ...record, endedBy: 'other' })
+    expect(unknown?.visibleMs).toBe(20_000)
+    expect(unknown?.endedBy).toBeUndefined()
     expect(parseAdEngagement({ ...record, hiddenMs: -1 })).toBeUndefined()
   })
 

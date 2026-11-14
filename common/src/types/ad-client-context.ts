@@ -130,11 +130,18 @@ export const CLICK_REGIONS = ['title', 'body', 'cta', 'logo', 'other'] as const
  *   (our billboards and partner units, or our banner or inline ad beside a
  *   Gravity one).
  * - `retired_by_newer_inline`: an inline ad retired by a newer one in its chat.
+ * - `expired`: taken off screen because it had been shown too long (the
+ *   wall-clock cap, or the shorter limit while the person was away).
+ *
+ * Adding a value is safe for older clients, and the schema drops a value it
+ * does not know (keeping the rest of the record), so a client may send a new
+ * value before every server knows it.
  */
 export const ENGAGEMENT_ENDED_BY = [
   'outranked',
   'gravity_took_screen',
   'retired_by_newer_inline',
+  'expired',
 ] as const
 /**
  * Why a drawn ad stopped being shown while another ad took the screen (one ad on screen at a time):
@@ -617,8 +624,11 @@ export const adEngagementSchema = z.object({
    * includes it. Absent when the ad was never hidden.
    */
   hiddenMs: ms.optional(),
-  /** Why the ad stopped being drawn while still held; see {@link ENGAGEMENT_ENDED_BY}. */
-  endedBy: z.enum(ENGAGEMENT_ENDED_BY).optional(),
+  /**
+   * Why the ad stopped being drawn while still held; see {@link ENGAGEMENT_ENDED_BY}.
+   * An unknown value is dropped, not refused: the record's timings stay.
+   */
+  endedBy: z.enum(ENGAGEMENT_ENDED_BY).optional().catch(undefined),
   /**
    * keystrokes while the ad was visible, BUCKETED: an exact count beside the exposure's own `visibleMs` would be a
    * typing-rate measurement finer than `attn.typingSpeed`, so only the coarse bucket is accepted
