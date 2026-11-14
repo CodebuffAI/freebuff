@@ -27,6 +27,9 @@ export const getCliEnv = (): CliEnv => ({
   TERM: process.env.TERM,
   TMUX: process.env.TMUX,
   STY: process.env.STY,
+  // Per-terminal theme fallbacks (terminal-color-detection.ts)
+  TERM_PROGRAM_VERSION: process.env.TERM_PROGRAM_VERSION,
+  XTERM_VERSION: process.env.XTERM_VERSION,
 
   // SSH/remote session detection
   SSH_CLIENT: process.env.SSH_CLIENT,
@@ -36,6 +39,7 @@ export const getCliEnv = (): CliEnv => ({
   GITPOD_WORKSPACE_ID: process.env.GITPOD_WORKSPACE_ID,
   CLOUD_SHELL: process.env.CLOUD_SHELL,
   CODER: process.env.CODER,
+  WSL_DISTRO_NAME: process.env.WSL_DISTRO_NAME,
 
   // Where Bun extracts embedded native libraries (the terminal renderer)
   BUN_TMPDIR: process.env.BUN_TMPDIR,

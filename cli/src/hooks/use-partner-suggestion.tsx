@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react'
+import { useAdExpired } from '../ads/ad-expiry-clock'
 import { CLI_PARTNER_PLACEMENT_IDS, getPartnerAd } from '../ads/partner-ads'
 import { PartnerAdRow } from '../components/partner-ad-line'
 import {
@@ -31,7 +32,10 @@ export function usePartnerSuggestion({
   enabled: boolean
   fetchAd?: typeof getPartnerAd
 }) {
-  const [ad, setAd] = useState<AdResponse | null>(null)
+  const [fill, setAd] = useState<AdResponse | null>(null)
+  // Shown too long (`ad-expiry-clock.ts`): the row comes out of the menu.
+  const expired = useAdExpired(fill?.impUrl)
+  const ad = expired ? null : fill
   const activate = useRef<(() => void) | null>(null)
   const menuItems = useMemo(() => {
     const reviewIndex = items.findIndex((item) => item.id === 'review')
@@ -74,6 +78,14 @@ export function usePartnerSuggestion({
       cancelled = true
     }
   }, [enabled, reviewVisible, fetchAd])
+
+  // Disabled (an ad-network ad on screen, a form, the menu closed): forget
+  // the fill, so reopening never re-inserts a stale row. A late answer is
+  // already cancelled above; `getPartnerAd` keeps it, so asking again on
+  // reopen makes no second request.
+  useEffect(() => {
+    if (!enabled) setAd(null)
+  }, [enabled])
 
   // A late fill must not move the highlight onto the ad or another command.
   const previous = useRef({ items, menuItems, selectedIndex })

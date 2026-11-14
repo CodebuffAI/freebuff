@@ -836,14 +836,15 @@ describe('every freebuff root agent declares a prompt opening', () => {
     'base2-free-deepseek': BASE2,
     'base2-free-deepseek-flash': BASE2,
     // Fast mode's base2 twin (kill-switch fallback); createBase2('free', …)
-    // like its siblings. Its base3-fast root is covered by the base3 map
-    // spread below: base3-fast appends to base3's prompt, so position 0 holds.
+    // like its siblings. Its base3 root is covered by the base3 map spread
+    // below.
     'base2-free-deepseek-flash-fast': BASE2,
     'base2-free-mimo': BASE2,
     'base2-free-minimax-m3': BASE2,
     'base2-free-luna': BASE2,
     'base2-free-luna-6': BASE2,
     'base2-free-gpt-6-1-sol': BASE2,
+    'base2-free-gpt-6-1-terra': BASE2,
     'base2-free-gemini-4-argon': BASE2,
     'base2-free-solar-pro4': BASE2,
     'base2-free-solar-mini4': BASE2,

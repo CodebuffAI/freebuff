@@ -13,8 +13,11 @@
  * drawn. The card UX is being reworked, and the rework must not need a
  * contract change -- an invitation carries the existing invitation payload,
  * and a proposal is read from the proposal routes as every proposal already
- * is. The response objects are not `.strict()`, so the server may add fields
- * without a version bump and an older client simply drops them.
+ * is. Since revamp S10 a proposal may also carry its `preview`: the two
+ * answers those routes would give, so the card draws and Accept is one POST
+ * without a second read. The response objects are not `.strict()`, so the
+ * server may add fields without a version bump and an older client simply
+ * drops them.
  *
  * CUTOVER. There is no server knob: the Desktop release that sends
  * `agenticOfferRoute: 1` is the cutover. For such a client this endpoint
@@ -53,10 +56,19 @@ import {
   type SponsoredRepoFacts,
 } from './sponsored-skill-fit'
 
+/** `offerPreviewVersion` on a request whose client draws the offer's preview. */
+export const AGENTIC_OFFER_PREVIEW_VERSION = 1
+
 /** `agenticOfferRoute` on an `/api/ads` request, and `v` on this route's wire. */
 export const AGENTIC_OFFER_ROUTE_VERSION = 1
 
 export const AGENTIC_OFFER_PATH = '/api/v1/ads/agentic/offer'
+
+/**
+ * Message classification alone, no offer: the Cloud worker's request for a
+ * hosted Desktop turn, which local Desktop's offer request used to classify.
+ */
+export const MESSAGE_CLASSIFICATION_PATH = '/api/v1/ads/message-classification'
 
 /**
  * The ad training log's record of one decision on this route (COD-738): the
@@ -203,6 +215,8 @@ export const agenticOfferRequestSchema = z.object({
    * environment names the same campaign; never grants production authority.
    */
   localTestCampaignId: z.string().uuid().optional(),
+  /** Registered staging only; the server verifies the signed-in tester role. */
+  stagingTestCampaignId: z.string().uuid().optional(),
   /**
    * `1`: this client runs an accepted offer IN PLACE, in the accepting
    * conversation, with no worktree or commit (`sponsored-in-place.ts`). Such a
@@ -217,6 +231,21 @@ export const agenticOfferRequestSchema = z.object({
    * too old to resolve it (`sponsoredSkillClientRefusal`).
    */
   runSpecVersion: z.literal(SPONSORED_RUN_SPEC_VERSION).optional(),
+  /**
+   * `1`: this client draws a proposal's card from the offer's `preview` and
+   * Accepts with one POST (S10). Only then does the server build the
+   * preview: it costs two reads per proposal, which a client that reads the
+   * proposal routes itself would pay twice. Absent is every released build.
+   */
+  offerPreviewVersion: z.literal(AGENTIC_OFFER_PREVIEW_VERSION).optional(),
+  /**
+   * `SPONSORED_CONVERSION_TOOLS_VERSION`: this client has the sponsored
+   * conversion tools (`sponsored-conversion.ts`), so a skill with a
+   * conversion definition may be offered to it. Unknown here and read with
+   * `clientHasSponsoredConversionTools`, so a malformed value reads as absent
+   * instead of failing the request.
+   */
+  conversionToolsVersion: z.unknown().optional(),
   /**
    * Pointer ids to the conversation's trace, never its text
    * (`trace-context.ts`). Unknown here and read with `parseAdTraceContext`, so
@@ -236,9 +265,68 @@ export const agenticOfferRequestSchema = z.object({
    * instead of failing the request.
    */
   repoFacts: z.unknown().optional(),
+  /**
+   * `AGENTIC_OFFER_DEVICE_CHAT_VERSION`: the Cloud worker asks for a device
+   * chat (agent in Cloud, tools on the user's computer), and every capability
+   * fact came from that computer (`agentic_offer_facts`), exactly as Desktop
+   * reported them with its own offer request. Absent is a VM worktree's facts.
+   */
+  deviceChatVersion: z.literal(1).optional(),
+  /**
+   * A device chat's Cloud project as an offer target
+   * (`cloudProjectWorkspaceId`): its proposal is keyed there and read by the
+   * hosted card, never by the computer's own Desktop. Read only with
+   * `deviceChatVersion` from a workspace bearer.
+   */
+  deviceChatWorkspaceId: z.string().uuid().optional(),
+  /**
+   * `AGENTIC_OFFER_DEVICE_RUN_VERSION`: the Cloud can run an accepted offer
+   * in this device chat, with its commands contained on the computer. Set by
+   * the Cloud worker, never by the computer. Without it a device chat is
+   * judged but never minted a proposal: nothing could run it. Read with
+   * `deviceChatVersion` only.
+   */
+  deviceRunVersion: z.literal(1).optional(),
 })
 
 export type AgenticOfferRequest = z.infer<typeof agenticOfferRequestSchema>
+
+/**
+ * {@link MESSAGE_CLASSIFICATION_PATH}'s body: the offer request's
+ * conversation. Nothing in it labels the row; the route sets the surface.
+ */
+export const messageClassificationRequestSchema = agenticOfferRequestSchema.pick(
+  { v: true, conversationId: true, messages: true },
+)
+
+export type MessageClassificationRequest = z.infer<
+  typeof messageClassificationRequestSchema
+>
+
+export const AGENTIC_OFFER_DEVICE_CHAT_VERSION = 1
+export const AGENTIC_OFFER_DEVICE_RUN_VERSION = 1
+
+/**
+ * What a computer answers `agentic_offer_facts` with: the facts Desktop puts in
+ * its own offer request, and nothing that names the conversation, a test
+ * campaign or a trace. Keys outside this pick are stripped, so a device cannot
+ * set them on the Cloud worker's request.
+ */
+export const deviceAgenticOfferFactsSchema = agenticOfferRequestSchema
+  .pick({
+    localCapability: true,
+    sponsoredCapability: true,
+    capabilityInspection: true,
+    repoFacts: true,
+    inPlaceExecutionVersion: true,
+    runSpecVersion: true,
+    conversionToolsVersion: true,
+  })
+  .extend({ device: agenticOfferDeviceSchema })
+
+export type DeviceAgenticOfferFacts = z.infer<
+  typeof deviceAgenticOfferFactsSchema
+>
 
 /** Why nothing was offered. Closed, so a dashboard can group by it. */
 export const AGENTIC_OFFER_NONE_REASONS = [
@@ -261,7 +349,11 @@ export const AGENTIC_OFFER_NONE_REASONS = [
   'not_tier1',
   /** Classification ran and nothing matched or was invitable. */
   'no_match',
-  /** Matched, but the pool declined: cap, no fill, mint rules, not offered. */
+  /**
+   * Matched, but the pool declined: cap, no fill, mint rules, not offered.
+   * Also the user-wide pre-check before relevance: the user opted out, or
+   * already has a live proposal on this target, so nothing could be minted.
+   */
   'suppressed',
   'deadline',
   'error',
@@ -275,6 +367,36 @@ const agenticOfferNoneSchema = z.object({
   reason: z.enum(AGENTIC_OFFER_NONE_REASONS),
 })
 
+/**
+ * A proposal's card and Accept preview, carried on the offer (agentic ads
+ * revamp S10, E3). Each part is EXACTLY the body a read would answer, so a
+ * client handles it as it handles that read:
+ *
+ * - `proposal`: `GET /api/v1/ads/proposal`'s `proposal` (the card row, with
+ *   its `offer_plan`);
+ * - `accept`: `GET /api/v1/ads/proposal/{id}/accept`'s 200 body (the
+ *   procedure the Accept binds, its SHA-256, the acceptance criteria and the
+ *   skill), the same checks having passed.
+ *
+ * Advisory, never authority: every click-time check stays in the Accept POST,
+ * which answers 409 `procedure_changed` (with the new `preview`) when the
+ * procedure moved. Sent only to a request with `offerPreviewVersion: 1`, and
+ * absent whenever either read would not answer 200 for this proposal or did
+ * not answer in time; the client then reads as before.
+ */
+export const agenticOfferPreviewSchema = z.object({
+  proposal: z.object({ _id: z.string().min(1) }).loose(),
+  accept: z
+    .object({
+      proposalId: z.string().min(1),
+      procedure: z.string().min(1),
+      procedureSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .loose(),
+})
+
+export type AgenticOfferPreview = z.infer<typeof agenticOfferPreviewSchema>
+
 const agenticOfferMadeSchema = z.discriminatedUnion('kind', [
   z.object({
     v: z.literal(AGENTIC_OFFER_ROUTE_VERSION),
@@ -286,7 +408,10 @@ const agenticOfferMadeSchema = z.discriminatedUnion('kind', [
     v: z.literal(AGENTIC_OFFER_ROUTE_VERSION),
     decision: z.literal('offer'),
     kind: z.literal('proposal'),
-    /** Read it through `GET /api/v1/ads/proposal` like every other proposal. */
+    /**
+     * Read it through `GET /api/v1/ads/proposal` like every other proposal,
+     * unless `preview` already carries that answer.
+     */
     proposalId: z.string().min(1),
     campaignId: z.string().min(1),
     /**
@@ -294,6 +419,11 @@ const agenticOfferMadeSchema = z.discriminatedUnion('kind', [
      * reason to withhold Accept. Absent when the machine matches or is unknown.
      */
     environmentWarning: sponsoredEnvironmentWarningSchema.optional(),
+    /**
+     * The card and Accept preview (S10, `agenticOfferPreviewSchema`). A
+     * malformed one is dropped, never a reason to refuse the offer.
+     */
+    preview: agenticOfferPreviewSchema.optional().catch(undefined),
   }),
 ])
 

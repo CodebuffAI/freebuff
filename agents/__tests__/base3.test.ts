@@ -19,8 +19,13 @@ import {
 } from '@codebuff/common/constants/freebuff-models'
 import { describe, test, expect } from 'bun:test'
 
-import base3, { createBase3, createBase3CliRoot } from '../base3'
+import base3, {
+  CLI_FOLLOWUP_ORDER_RULE,
+  createBase3,
+  createBase3CliRoot,
+} from '../base3'
 import base3Evals from '../base3-evals'
+import { PLACEHOLDER } from '../types/secret-agent-definition'
 import base3FastFreeDeepseekFlash from '../base3-fast-free-deepseek-flash'
 import base3FreeDeepseek from '../base3-free-deepseek'
 import base3FreeDeepseekFlash from '../base3-free-deepseek-flash'
@@ -30,6 +35,7 @@ import base3FreeGlmV53Flash from '../base3-free-glm-5-3-flash'
 import base3FreeLuna from '../base3-free-luna'
 import base3FreeLuna6 from '../base3-free-luna-6'
 import base3FreeGpt61Sol from '../base3-free-gpt-6-1-sol'
+import base3FreeGpt61Terra from '../base3-free-gpt-6-1-terra'
 import base3FreeMimo from '../base3-free-mimo'
 import base3FreeMimo26Pro from '../base3-free-mimo-2-6-pro'
 import base3FreeMinimaxM3 from '../base3-free-minimax-m3'
@@ -67,6 +73,8 @@ const CLI_ROOTS = [
   base3FreeDeepseekFlashEvals,
   base3FreeDeepseek,
   base3FreeDeepseekFlash,
+  // Fast mode: the plain loop since 2026-10-30, no longer base3-fast's fan-out.
+  base3FastFreeDeepseekFlash,
   base3FreeMinimaxM3,
   base3FreeMimo,
   base3FreeMimo26Pro,
@@ -75,6 +83,7 @@ const CLI_ROOTS = [
   base3FreeLuna,
   base3FreeLuna6,
   base3FreeGpt61Sol,
+  base3FreeGpt61Terra,
   base3FreeOxAlpha,
   base3FreeSolarPro4,
   base3FreeSolarMini4,
@@ -85,20 +94,12 @@ const CLI_ROOTS = [
   base3FreeMuseSpark13,
 ]
 
-/**
- * Every root the CLI map names, including the one that is NOT a single loop:
- * the base3-FAST root (agents/base3-fast.ts) fans out to parallel workers by
- * design and is pinned by agents/__tests__/base3-fast.test.ts. It joins the
- * registration checks below and stays out of the no-subagents loop.
- */
-const ALL_CLI_ROOTS = [...CLI_ROOTS, base3FastFreeDeepseekFlash]
-
 describe('base3 CLI roots', () => {
   test('keeps the efficiency flags the runtime reads', () => {
     // Fable 5.1 deliberately runs base2 for the trace campaign. The
     // count is asserted so a root added without the flags below cannot slip in
     // unnoticed.
-    expect(CLI_ROOTS.length).toBe(22)
+    expect(CLI_ROOTS.length).toBe(24)
     for (const agent of CLI_ROOTS) {
       // Windowed reads + the 100-entry glob cap + search-first tool wording.
       expect(agent.windowedFileReads).toBe(true)
@@ -182,7 +183,7 @@ describe('base3 CLI roots', () => {
   })
 
   test('every Freebuff root is pinned to the model its id is registered under', () => {
-    const byId = new Map(ALL_CLI_ROOTS.map((a) => [a.id, a]))
+    const byId = new Map(CLI_ROOTS.map((a) => [a.id, a]))
     for (const [model, agentId] of Object.entries(
       FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL,
     )) {
@@ -196,7 +197,7 @@ describe('base3 CLI roots', () => {
       if (isFreebuffLimitedOfferModelId(model.id)) continue
       const agentId = FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL[model.id]
       expect(agentId).toBeDefined()
-      expect(ALL_CLI_ROOTS.some((a) => a.id === agentId)).toBe(true)
+      expect(CLI_ROOTS.some((a) => a.id === agentId)).toBe(true)
     }
   })
 
@@ -214,6 +215,29 @@ describe('base3 CLI roots', () => {
       'list_directory',
       'write_todos',
     ])
+  })
+
+  test('workspace roots omit todos and scope confirmation without changing CLI roots', () => {
+    const workspace = createBase3(undefined, { workspace: true })
+    const cli = createBase3CliRoot()
+
+    expect(workspace.toolNames).toEqual(
+      createBase3().toolNames!.filter((name) => name !== 'write_todos'),
+    )
+    expect(workspace.systemPrompt).not.toContain('write_todos')
+    expect(workspace.systemPrompt).not.toContain('marking your last to-do completed')
+    expect(workspace.systemPrompt).not.toContain('settle the scope before building')
+    expect(workspace.systemPrompt).not.toContain('let the user confirm')
+    expect(workspace.systemPrompt).toContain('only when you cannot safely or correctly continue')
+    expect(workspace.systemPrompt).toContain('when the user explicitly asks you to ask questions')
+    expect(workspace.systemPrompt).toContain('choose the smallest useful scope')
+    expect(workspace.systemPrompt).toContain(TURN_ENDING_RULE)
+    expect(hasFreebuffRootSystemPromptOpening(workspace.systemPrompt!)).toBe(true)
+
+    expect(cli.toolNames).toContain('write_todos')
+    expect(cli.systemPrompt).toContain('settle the scope yourself, build the smallest version that meets the goal')
+    expect(cli.systemPrompt).toContain('Use write_todos only')
+    expect(cli.systemPrompt).not.toContain('only when you cannot safely or correctly continue')
   })
 
   test('noWeb drops web_search and read_url and nothing else', () => {
@@ -241,7 +265,9 @@ describe('base3 CLI roots', () => {
 
     expect(withUser.toolNames).toContain('ask_user')
     expect(withUser.toolNames).toContain('suggest_followups')
-    expect(withUser.systemPrompt).toContain('ask_user')
+    // The prompt deliberately says nothing about ask_user; the tool's own
+    // description says when to use it.
+    expect(withUser.systemPrompt).toContain('suggest_followups')
 
     expect(withoutUser.toolNames).not.toContain('ask_user')
     expect(withoutUser.toolNames).not.toContain('suggest_followups')
@@ -257,12 +283,25 @@ describe('base3 CLI roots', () => {
     )
   })
 
+  test('tells the model to write its answer before suggest_followups, only when the tool is offered', () => {
+    // 2026-11-07: 40% of CLI sessions hit the cards-before-the-answer nudge
+    // against 6% on Desktop, whose prompt carries this order rule.
+    const withUser = createBase3CliRoot()
+    const withoutUser = createBase3CliRoot({ noAskUser: true })
+
+    expect(withUser.systemPrompt).toContain(CLI_FOLLOWUP_ORDER_RULE)
+    expect(CLI_FOLLOWUP_ORDER_RULE).toContain('plain text')
+    expect(CLI_FOLLOWUP_ORDER_RULE).toContain('no tool call after it')
+    expect(CLI_FOLLOWUP_ORDER_RULE).toContain('Never put the answer inside the tool')
+    expect(withoutUser.systemPrompt).not.toContain(CLI_FOLLOWUP_ORDER_RULE)
+  })
+
   // Freebuff users reported models refusing work because they were "running
   // out of time" after deadline wording reached every root's system prompt.
   // Only a host that supplies `deadlineAt` may talk about time.
   test('never tells the model it is short on time', () => {
     const prompts = [
-      ...ALL_CLI_ROOTS.map((root) => root.systemPrompt!),
+      ...CLI_ROOTS.map((root) => root.systemPrompt!),
       createBase3().systemPrompt!,
       createBase3(undefined, { supportsBackgroundCommands: false })
         .systemPrompt!,
@@ -278,9 +317,39 @@ describe('base3 CLI roots', () => {
   test('states that a message without a tool call ends the turn', () => {
     for (const prompt of [
       createBase3().systemPrompt!,
-      ...ALL_CLI_ROOTS.map((root) => root.systemPrompt!),
+      ...CLI_ROOTS.map((root) => root.systemPrompt!),
     ]) {
       expect(prompt).toContain(TURN_ENDING_RULE)
+    }
+  })
+
+  // Flash on this prompt read every verification and planning rule as a
+  // standing order and built far past small asks, and built a large version of
+  // open-ended asks instead of settling scope (docs/freebuff-base3-harness.md,
+  // "Scope discipline"). The completeness half stays: base3 once lost to base2
+  // on Flash for leaving requested work undone.
+  test('sizes the work to the request, without dropping completeness', () => {
+    for (const prompt of [
+      createBase3().systemPrompt!,
+      ...CLI_ROOTS.map((root) => root.systemPrompt!),
+    ]) {
+      expect(prompt).toContain('Size the work to the request')
+      expect(prompt).toContain('Do everything the user asked for, completely')
+      expect(prompt).toContain('settle the scope yourself')
+      expect(prompt).toContain('Keep verification minimal')
+      expect(prompt).toContain('Work through related tool calls as a group')
+      expect(prompt).toContain('Avoid tool-by-tool narration, filler, and repeating an unchanged plan')
+      expect(prompt).toContain('If about a minute has passed without a visible update')
+      expect(prompt).toContain('Use normal assistant text, not thinking/reasoning')
+      expect(prompt).toContain('Do not test every UI element')
+      // Unviewed UI work reported as done was 17-22% of sessions (Nov 2-3 trace reports).
+      expect(prompt).toContain('A visual or UI change you did not look at is unverified')
+      // Unasked screenshots cost minutes a turn: a local loop of 19 captures
+      // on a "make it full screen" ask, and Cloud turns rebuilding Chromium.
+      expect(prompt).toContain(
+        'Take screenshots or drive a browser for visual inspection only when the user explicitly asks',
+      )
+      expect(prompt).not.toContain('through the interface the user will use')
     }
   })
 
@@ -309,5 +378,78 @@ describe('a lean compaction policy', () => {
 
   test('keeps `lean` out of compactContext, whose schema is strict', () => {
     expect(lean.compactContext).toEqual(runtimePolicy)
+  })
+})
+
+describe('working in batches', () => {
+  const FLASH = 'deepseek/deepseek-v4-flash'
+  const SECTION = '## Work in batches'
+
+  test('a root gets the section and its reminder only when it asks', () => {
+    expect(createBase3(FLASH).systemPrompt).not.toContain(SECTION)
+    expect(createBase3(FLASH).stepPrompt).toBeUndefined()
+    const batched = createBase3(FLASH, { batching: true })
+    expect(batched.systemPrompt).toContain(SECTION)
+    expect(batched.stepPrompt).toStartWith('Work in batches:')
+    const cli = createBase3CliRoot({ model: FLASH })
+    expect(cli.systemPrompt).toContain(SECTION)
+    expect(cli.stepPrompt).toBe(batched.stepPrompt)
+    const off = createBase3CliRoot({ model: FLASH, batching: false })
+    expect(off.systemPrompt).not.toContain(SECTION)
+    expect(off.stepPrompt).toBeUndefined()
+  })
+
+  test('only on the models it is measured to help', () => {
+    // their caches need each request to extend the last: a step prompt,
+    // deleted each step, would miss most of every request
+    for (const model of ['mimo/mimo-v2.5', 'openai/gpt-6-luna']) {
+      const def = createBase3(model, { batching: true })
+      expect(def.systemPrompt).not.toContain(SECTION)
+      expect(def.stepPrompt).toBeUndefined()
+    }
+    // a catalog handle is matched by the model it stands for
+    const handle = createBase3('fbm1.handle', {
+      batching: true,
+      compiledModelId: FLASH,
+    })
+    expect(handle.systemPrompt).toContain(SECTION)
+    expect(handle.stepPrompt).toStartWith('Work in batches:')
+    // fast mode is the same model on another lane
+    const fast = createBase3('deepseek/deepseek-v4-flash-fast', {
+      batching: true,
+    })
+    expect(fast.systemPrompt).toContain(SECTION)
+    expect(fast.stepPrompt).toStartWith('Work in batches:')
+  })
+
+  test('a lean row never gets it: its context budget says to read narrowly', () => {
+    const lean = createBase3(FLASH, {
+      compaction: LEAN_COMPACTION_POLICY,
+      batching: true,
+    })
+    expect(lean.systemPrompt).not.toContain(SECTION)
+    expect(lean.stepPrompt).toBeUndefined()
+  })
+
+  test('batching never reads as economising', () => {
+    // "costs less" led Flash to think "my budget is limited" and stop short
+    const batched = createBase3(FLASH, { batching: true })
+    const section = batched.systemPrompt!.slice(
+      batched.systemPrompt!.indexOf(SECTION),
+    )
+    for (const text of [section, batched.stepPrompt!]) {
+      expect(text).not.toMatch(/\bcosts?\b|\bcheap|\bbudget|\bsav(e|ing)\b/i)
+    }
+    expect(section).toContain(
+      'Batching is about fewer round trips, never about doing less: do every part of the request and verify it.',
+    )
+    expect(batched.stepPrompt).toContain('every part of the request')
+  })
+
+  test('it comes after the dynamic context, outside the core the server compares', () => {
+    const prompt = createBase3(FLASH, { batching: true }).systemPrompt!
+    expect(prompt.indexOf(SECTION)).toBeGreaterThan(
+      prompt.indexOf(PLACEHOLDER.GIT_CHANGES_PROMPT),
+    )
   })
 })

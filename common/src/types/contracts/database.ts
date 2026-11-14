@@ -8,6 +8,7 @@ import type { Logger } from '@codebuff/common/types/contracts/logger'
 type User = {
   id: string
   email: string
+  name: string | null
   discord_id: string | null
   stripe_customer_id: string | null
   banned: boolean
@@ -16,6 +17,7 @@ type User = {
 export const userColumns = [
   'id',
   'email',
+  'name',
   'discord_id',
   'stripe_customer_id',
   'banned',

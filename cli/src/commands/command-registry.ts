@@ -5,6 +5,7 @@ import {
 } from '../state/freebuff-chat-store'
 import { getFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { safeOpen } from '../utils/open-url'
+import { adReports } from '../ads/ad-reports'
 
 import {
   handleAdsEnable,
@@ -17,6 +18,7 @@ import {
   handleProposalReport,
   handleProposalsOff,
 } from './ads'
+import { handleDealsCommand } from './deals'
 import { handleCopyConversationCommand } from './copy-conversation'
 import { handleExportConversationCommand } from './export-conversation'
 import { handleHelpCommand } from './help'
@@ -55,6 +57,8 @@ import { getSkillByName } from '../utils/skill-registry'
 
 import type { MultilineInputHandle } from '../components/multiline-input'
 import type { InputValue, PendingAttachment } from '../types/store'
+import { CLOUD_COMPACT_PROMPT } from '@codebuff/common/desktop-cloud/compact'
+
 import type { ChatMessage } from '../types/chat'
 import type { SendMessageFn } from '../types/contracts/send-message'
 import type { User } from '../utils/auth'
@@ -216,6 +220,8 @@ const FREEBUFF_ONLY_COMMANDS = new Set([
   'end-session',
   'model',
   'dashboard',
+  // The mock display-ad list behind the Freebuff footer's sponsor row.
+  'deals',
   // Freebuff-only because the ladder it reads is the FREEBUFF catalog's, and
   // the metadata it sets is honored only for free-mode traffic
   // (isFreebuffOriginatedRequest). On Codebuff the command would take a value
@@ -224,6 +230,16 @@ const FREEBUFF_ONLY_COMMANDS = new Set([
 ])
 
 const ALL_COMMANDS: CommandDefinition[] = [
+  defineCommandWithArgs({
+    name: 'ads:report',
+    handler: async (params, args) => {
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+      const message = await adReports.command(args)
+      if (message)
+        params.setMessages((prev) => [...prev, getSystemMessage(message)])
+    },
+  }),
   defineCommand({
     name: 'ads:enable',
     handler: (params) => {
@@ -299,7 +315,8 @@ const ALL_COMMANDS: CommandDefinition[] = [
       const message = await handleProposalReport(
         useChatStore.getState().messages,
       )
-      params.setMessages((prev) => [...prev, getSystemMessage(message)])
+      if (message)
+        params.setMessages((prev) => [...prev, getSystemMessage(message)])
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
     },
@@ -320,6 +337,15 @@ const ALL_COMMANDS: CommandDefinition[] = [
     handler: async (params) => {
       const message = await handleProposalsOff()
       params.setMessages((prev) => [...prev, getSystemMessage(message)])
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+    },
+  }),
+  defineCommandWithArgs({
+    name: 'deals',
+    handler: async (params, args) => {
+      const content = await handleDealsCommand(args)
+      params.setMessages((prev) => [...prev, getSystemMessage(content)])
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
     },
@@ -476,6 +502,33 @@ const ALL_COMMANDS: CommandDefinition[] = [
         // Only disable queue if we're not sending a message
         params.setCanProcessQueue(false)
       }
+    },
+  }),
+  // The runtime's manual compaction: a run of its own, with no coding step. The
+  // server bills its summary like any request of this session; a chat too small
+  // to shrink costs nothing. It waits out a running turn.
+  defineCommand({
+    name: 'compact',
+    handler: (params) => {
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+      if (
+        params.isStreaming ||
+        params.streamMessageIdRef.current ||
+        params.isChainInProgressRef.current
+      ) {
+        params.addToQueue(CLOUD_COMPACT_PROMPT)
+        params.setInputFocused(true)
+        params.inputRef.current?.focus()
+        return
+      }
+      params.sendMessage({
+        content: CLOUD_COMPACT_PROMPT,
+        agentMode: params.agentMode,
+      })
+      setTimeout(() => {
+        params.scrollToLatest()
+      }, 0)
     },
   }),
   defineCommand({
@@ -886,7 +939,7 @@ function createSkillCommand(skillName: string): CommandDefinition {
  */
 export function dispatchSkillPrompt(
   params: RouterParams,
-  skill: { name: string; content: string },
+  skill: { name: string; content: string; filePath: string },
   input: string,
 ): void {
   const userPrompt = buildSkillPrompt(skill, input)

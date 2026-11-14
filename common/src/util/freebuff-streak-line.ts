@@ -4,7 +4,6 @@ import {
   getFreebuffStreakGlmWeeklyUnits,
   isFreebuffStreakGlmBonusActive,
 } from './freebuff-streak'
-import { getZonedParts, getZonedYmd } from './zoned-time'
 
 /** Days in a streak "week" — the milestone the progress dots fill toward. */
 export const FREEBUFF_STREAK_WEEK = 7
@@ -22,6 +21,26 @@ export interface FreebuffStreakLine {
    *  FREEBUFF_STREAK_WEEK, carried so a renderer that can't import this module
    *  knows how many slots to draw; `beyond` is the trailing "+". */
   progress: { filled: number; total: number; beyond: boolean }
+}
+
+/** One slot of the week a graphical surface draws: a streak day, today's
+ *  (still unsent) or ahead. */
+export type FreebuffStreakSlot = 'done' | 'today' | 'empty'
+
+/**
+ * The week toward the 7-day milestone as slots, for the workspace's streak
+ * card and popup (the phone apps mirror it): one per streak day, filling to
+ * seven and staying full past it as the dots do. While today is still
+ * unsent, the next slot is today's.
+ */
+export function getFreebuffStreakWeekSlots(
+  streak: number,
+  todayUsed: boolean,
+): FreebuffStreakSlot[] {
+  const filled = Math.min(Math.max(streak, 0), FREEBUFF_STREAK_WEEK)
+  return Array.from({ length: FREEBUFF_STREAK_WEEK }, (_, index) =>
+    index < filled ? 'done' : index === filled && !todayUsed ? 'today' : 'empty',
+  )
 }
 
 /** Glyph pair used to draw the progress dots. */
@@ -73,13 +92,10 @@ function getFreebuffStreakPerk(params: {
   freebucksDailyBonus?: number | null
 }): string {
   if (params.freebucksDailyBonus != null && params.freebucksDailyBonus > 0) {
-    // Says WHERE it goes and WHEN it lands: into the daily allowance (never
-    // the wallet, so it does not pile up), with the first message of a streak
-    // day, not sign-in. WHICH day, and when it expires, is the status line's
-    // job (`getFreebuffStreakBonusStatus`), in the reader's own clock — "every
-    // Pacific day" named the zone but still left Asia and Europe expecting it
-    // at their midnight (2026-09-27/28 "streak bonus not credited" reports).
-    return `+${formatHoursWithUnit(params.freebucksDailyBonus)} to your daily allowance with each day's first message`
+    // One short line on purpose (2026-10-18). The longer "to your daily
+    // allowance with each day's first message", followed by a status line on
+    // when today's bonus landed and expires, read as a paragraph.
+    return `+${formatHoursWithUnit(params.freebucksDailyBonus)} every day`
   }
   // Only advertise GLM when the recurring full-access streak entitlement is
   // active, so the copy never promises a perk the gate won't honor.
@@ -131,165 +147,4 @@ export function getFreebuffStreakBonusNote(params: {
     return `🎁 ${remaining} more ${remaining === 1 ? 'day' : 'days'} to unlock ${perk}`
   }
   return `🎁 Streak perk: ${perk}`
-}
-
-/** Whole calendar days from `from` to `to` (both `YYYY-MM-DD`). */
-function calendarDaysBetween(from: string, to: string): number {
-  return Math.round(
-    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
-      86_400_000,
-  )
-}
-
-/**
- * When a streak day ends, as copy in the reader's clock: "midnight" (the
- * coming one), "3:00 PM", "3:00 PM tomorrow" once that time of day has
- * already passed locally, or "3:00 PM Thursday" further out.
- *
- * `resetAt` is the server's `nextResetAt`. Since 2026-10-01 that is the daily
- * allowance's reset, the account's own midnight, so a reader at home sees
- * "midnight". Another clock time means the reader is away from the account's
- * timezone (a remote CLI, travel) or talking to an older server whose streak
- * day was Pacific. Only the one interval after a timezone change runs past a
- * day (up to about two), which is what the weekday is for.
- *
- * `timeZone` defaults to the runtime's own zone — the user's, on the CLI, the
- * Desktop orchestrator and a browser. A server must pass one.
- *
- * `labelReaderClock` marks a clock time as the reader's: "11:00 AM (your
- * time)". A bare "11:00 AM" had a Dubai reader asking whether it meant server
- * time or their PC's (2026-10-01). "midnight" is left bare: it is the
- * reader's own.
- */
-export function formatFreebuffStreakResetTime(params: {
-  resetAt: Date
-  now: Date
-  timeZone?: string
-  labelReaderClock?: boolean
-}): string {
-  const timeZone =
-    params.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
-  const { hour, minute } = getZonedParts(params.resetAt, timeZone)
-  const days = calendarDaysBetween(
-    getZonedYmd(params.now, timeZone),
-    getZonedYmd(params.resetAt, timeZone),
-  )
-  // The coming midnight: the day ends tonight.
-  if (hour === 0 && minute === 0 && days <= 1) return 'midnight'
-  const time = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-    .format(params.resetAt)
-    // Newer ICU puts a narrow no-break space before AM/PM; a terminal may not
-    // draw it, and it throws off width math that counts columns.
-    .replace(/\s/g, ' ')
-  const when =
-    days <= 0
-      ? time
-      : days === 1
-        ? `${time} tomorrow`
-        : `${time} ${new Intl.DateTimeFormat('en-US', {
-            timeZone,
-            weekday: 'long',
-          }).format(params.resetAt)}`
-  return params.labelReaderClock ? `${when} (your time)` : when
-}
-
-/**
- * Where today's Freebucks streak bonus stands, for a 7+ day streak on the
- * meter: added to today's allowance (and until when), already expired with
- * the allowance, still to come with a message, or next due after the streak
- * day's reset — every time in the reader's own clock. Null off the meter,
- * below the milestone, or without a server `nextResetAt` (an older server),
- * so a client never guesses the boundary.
- *
- * The rules it states are the award's (`awardFreebuffDailyStreakReward`): one
- * grant per account day — the daily allowance's own day, midnight to midnight
- * in the account's timezone since 2026-10-01 — made by the first free-mode
- * message of that day, which raises the allowance until its reset
- * (`bonusExpiresAt`, the same instant as `nextResetAt`). A reader at home
- * therefore sees "+3 hours added to today's allowance until midnight · next
- * +3 hours with your first message after that" — the bonus is 15 Freebucks and
- * every line here renders it through `formatHoursWithUnit`, so the comment has
- * to quote hours or it dates itself. Nothing here changes the rules. The
- * branches for a bonus that expires before the streak day ends serve servers
- * from before 2026-10-01, whose streak day was Pacific.
- */
-export function getFreebuffStreakBonusStatus(params: {
-  streak: number
-  todayUsed: boolean
-  /** The streak response's `todayCredited`; null/undefined = unknown. */
-  todayCredited?: boolean | null
-  freebucksDailyBonus?: number | null
-  nextResetAt?: string | null
-  /** The streak response's `bonusExpiresAt`: when today's granted bonus
-   *  leaves the allowance; null once it has. Undefined = not reported. */
-  bonusExpiresAt?: string | null
-  now?: Date
-  /** Render zone; the runtime's own when omitted. */
-  timeZone?: string
-  /** Drop the "(your time)" label on the next streak day's clock time, for a
-   *  surface too narrow for it (the CLI falls back to this before hiding the
-   *  line). */
-  compact?: boolean
-}): string | null {
-  if (!FREEBUFF_STREAK_REWARDS_ENABLED) return null
-  if (params.freebucksDailyBonus == null || !(params.freebucksDailyBonus > 0))
-    return null
-  // Shown in hours (freebuff-hours.ts); the response carries Freebucks.
-  const bonus = formatHoursWithUnit(params.freebucksDailyBonus)
-  if (params.streak < FREEBUFF_STREAK_WEEK) return null
-  if (!params.nextResetAt) return null
-  const resetAt = new Date(params.nextResetAt)
-  const now = params.now ?? new Date()
-  // A payload held past its own reset describes a day that is already over.
-  if (!Number.isFinite(resetAt.getTime()) || resetAt <= now) return null
-  // A next streak day that starts at an odd hour of the reader's clock (away
-  // from the account's timezone, or an older Pacific-day server) was misread
-  // as server time; label it. "midnight" (the reader at home) stays bare.
-  const when = formatFreebuffStreakResetTime({
-    resetAt,
-    now,
-    timeZone: params.timeZone,
-    labelReaderClock: !params.compact,
-  })
-  if (params.todayCredited === true) {
-    // The bonus lives in the DAILY allowance and leaves with it at the
-    // allowance's reset. Since 2026-10-01 that is also when the streak day
-    // ends (one sentence below); an older server's Pacific streak day ended
-    // at another time, so say both, in the reader's clock.
-    const expiresAt =
-      typeof params.bonusExpiresAt === 'string'
-        ? new Date(params.bonusExpiresAt)
-        : null
-    if (expiresAt && Number.isFinite(expiresAt.getTime()) && expiresAt > now) {
-      const until = formatFreebuffStreakResetTime({
-        resetAt: expiresAt,
-        now,
-        timeZone: params.timeZone,
-        labelReaderClock: !params.compact,
-      })
-      // One reset for both (a Pacific reader): say it once.
-      if (expiresAt.getTime() === resetAt.getTime()) {
-        return `+${bonus} added to today's allowance until ${until} · next +${bonus} with your first message after that`
-      }
-      return `+${bonus} added to today's allowance until ${until} · next +${bonus} after ${when}`
-    }
-    // Granted, but the allowance it raised has since reset: only an older
-    // server's Pacific streak day can do this — east of Pacific, between local
-    // midnight and the Pacific reset, the grant belonged to the reader's
-    // YESTERDAY (2026-09-29 report, 17-day streak in India).
-    if (params.bonusExpiresAt === null || expiresAt) {
-      return `+${bonus} expired at your daily reset · next +${bonus} with your first message after ${when}`
-    }
-    return `+${bonus} credited · next +${bonus} with your first message after ${when}`
-  }
-  // Today already counted, so its first message has been sent: whatever
-  // became of that credit, the next one belongs to the next day.
-  if (params.todayUsed) {
-    return `Next +${bonus} with your first message after ${when}`
-  }
-  return `Send a message before ${when} to earn +${bonus}`
 }

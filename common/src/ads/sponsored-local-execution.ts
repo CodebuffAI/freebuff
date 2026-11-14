@@ -62,8 +62,8 @@ import {
  * Why a local sponsored run cannot happen on this machine.
  *
  * Three of these are about CONTAINMENT and one is not. `no-consent-bridge`
- * says the machine can contain the run perfectly well and there is nobody
- * here to ask permission — a different fact, with a different fix, which is
+ * says the machine can contain the run perfectly well but the desktop shell
+ * is absent — a different fact, with a different fix, which is
  * why it does not share `unsupported-platform`'s sentence.
  */
 export type SponsoredLocalUnavailableReason =
@@ -147,7 +147,7 @@ export const SPONSORED_LOCAL_UNAVAILABLE_COPY: Record<
   // because the first is permanent and the second is fixed by opening the
   // app.
   'no-consent-bridge':
-    'Sponsored tasks need the Freebuff desktop app, which is what asks you to approve the task before it runs. Open this project in the app to accept.',
+    'Sponsored tasks need the Freebuff desktop app. Open this project in the app to accept.',
   // About THIS offer, not the machine: another offer can still run here.
   'offered-for-another-os':
     'This sponsored task was offered for a different kind of computer, so it can’t run on this one.',
@@ -266,13 +266,6 @@ export function sponsoredLocalSlug(
   return base || fallback
 }
 
-/** `freebuff/<slug>-<runId>` — the one branch a local sponsored run may write. */
-export function sponsoredLocalBranchName(
-  titleSlug: string,
-  runId: string,
-): string {
-  return `${SPONSORED_LOCAL_BRANCH_NAMESPACE}/${sponsoredLocalSlug(titleSlug)}-${runId}`
-}
 
 // --------------------------------------------------------------- the grant
 
@@ -305,8 +298,8 @@ export const SPONSORED_LOCAL_V1_GRANT: ReadonlySet<SponsoredCapability> =
   )
 
 /**
- * The arm for any machine whose containment we cannot stand up: option A from
- * the doc, kept as the explicit fallback rather than as an absence. A run
+ * The arm for any machine whose containment we cannot stand up: kept as the
+ * explicit fallback rather than as an absence. A run
  * holding this can still edit files through the three write tools, which is
  * where the path refusals are load-bearing again. (Windows used to be this arm
  * too; since COD-642 it is {@link SPONSORED_LOCAL_FLOOR_GRANT}, and only when
@@ -721,6 +714,13 @@ export function commandInstallsDependencies(command: string): boolean {
 
 export const SPONSORED_LOCAL_INSTALL_REFUSAL =
   'Refusing to install dependencies: a sponsored run may not add packages, because a postinstall script runs outside everything the user reviews. Work with what the repository already has.'
+
+/**
+ * The shell-install refusal for a run that has the `install_package` tool
+ * (COD-965): the shell never installs, the tool does, with scripts off.
+ */
+export const SPONSORED_LOCAL_INSTALL_TOOL_REFUSAL =
+  'Refusing this shell install: in a sponsored run, add packages with the install_package tool instead (ecosystem, name, and the version if the procedure pins one). It installs with install scripts turned off and records the package. Installing the whole dependency tree, or running install scripts, is not available here.'
 
 // -------------------------------------------------------------- git history
 

@@ -36,15 +36,23 @@ export const handbackRequestSchema = z
   .strict()
 export type HandbackRequest = z.infer<typeof handbackRequestSchema>
 
+/** Sent only after Desktop has committed the local landing. The timestamp identifies this move,
+ * so a delayed acknowledgement cannot reclaim a later Cloud workspace. */
+export const handbackCompleteSchema = handbackRequestSchema.extend({
+  handedBackAt: z.iso.datetime({ offset: true }),
+})
+export type HandbackCompleteRequest = z.infer<typeof handbackCompleteSchema>
+
 export interface HandbackResponse {
   workspaceId: string
   /** ISO time the chat left Cloud. Repeating the same handback returns the original time. */
   handedBackAt: string
 }
 
-/** The 409 a run request gets for a chat that continues on a computer. */
+/** The 409 a run request gets for a chat that continues on a computer. No control is called
+ *  "Continue in Cloud" any more: Desktop and the hosted page move a chat with its run location. */
 export const HANDED_BACK_RUN_ERROR =
-  'This chat continues on a computer. Open it there, or choose Continue in Cloud on that computer to bring it back.'
+  'This chat continues on a computer. Open it there, or choose Cloud as its run location on that computer to bring it back.'
 
 /** The 409 a handback gets when Cloud moved on after the export; export again. */
 export const STALE_EXPORT_ERROR =
@@ -71,7 +79,7 @@ export const CLOUD_EXPORT_BUNDLE_REF = 'HEAD'
 
 const commitSchema = z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/)
 
-export const cloudExportMetaSchema = z
+const cloudExportV2Schema = z
   .object({
     version: z.literal(2),
     /** The commit the worktree started from (its marker), or null for a chat initialized before it was recorded. */
@@ -86,4 +94,30 @@ export const cloudExportMetaSchema = z
     deleted: z.array(z.string().max(4096)).max(200_000),
   })
   .strict()
+/** V3 sends Git objects once plus only working files whose bytes differ from HEAD.
+ * `have` is a complete commit graph verified by the receiver; unknown bases send a full pack.
+ * `files` is the complete eligible working-file inventory, for plain-folder reconstruction.
+ * `shallow` preserves any history boundary already present in Cloud (never invents one).
+ */
+export const cloudExportV3Schema = cloudExportV2Schema.extend({
+  version: z.literal(3),
+  bundle: z.literal(false),
+  pack: z.boolean(),
+  have: commitSchema.nullable(),
+  shallow: z.array(commitSchema).max(200_000),
+  files: z.array(z.string().max(4096)).max(200_000),
+}).strict()
+export const cloudExportMetaSchema = z.union([cloudExportV2Schema, cloudExportV3Schema])
 export type CloudExportMeta = z.infer<typeof cloudExportMetaSchema>
+
+/** Archiving moves a chat's files from its VM to storage; its next turn brings them back. */
+export const ARCHIVED_CHAT_RESTORE_ERROR =
+  'This chat’s Cloud files are archived. Send a message to bring them back.'
+
+/** Cloud has lost its full copy, but the portable export Desktop lands is still there. */
+export const ARCHIVED_CHAT_DESKTOP_ERROR =
+  'Cloud can’t bring back this chat’s files. Open it in Freebuff Desktop to restore its saved copy. Its conversation is safe and stays here to read.'
+
+/** No copy of the chat's files survives, so no client can restore them. */
+export const ARCHIVED_CHAT_LOST_ERROR =
+  'Cloud no longer has this chat’s files, so it can’t continue here. Its conversation is safe and stays here to read. Start a new chat in this project to keep working: it starts from the project’s source, without this chat’s changes.'

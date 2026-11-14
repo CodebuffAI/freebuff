@@ -5,7 +5,7 @@ import {
   formatHoursWithUnit,
   freebuffModelMultiplierLabel,
 } from '@codebuff/common/util/freebuff-hours'
-import { freebucksListPriceFor } from '@codebuff/common/util/freebuff-price-order'
+import { freebucksRowPrice } from '@codebuff/common/util/freebuff-price-order'
 import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
 import React, {
@@ -39,7 +39,6 @@ const FREEBUCKS_PLANS_URL = 'https://freebuff.com/plans'
 import { FreebuffReferralBanner } from './freebuff-referral-banner'
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  FREEBUFF_REWARD_MODEL_ID,
   getFreebuffDeploymentAvailabilityLabel,
   getFreebuffModelsForAccessTier,
 } from '@codebuff/common/constants/freebuff-models'
@@ -78,6 +77,7 @@ import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
 import { useTheme } from '../hooks/use-theme'
 import {
+  freebuffChatPickerHint,
   freebuffModelNavigationDirectionForKey,
   nextFreebuffModelId,
 } from '../utils/freebuff-model-navigation'
@@ -149,7 +149,7 @@ const badgeSuffix = (badge: FreebuffCatalogBadge): string =>
  * terminals too narrow for the name column, line 1 compacts to "name · tagline".
  *
  * On short terminals the parent passes `maxHeight`: the model rows and the
- * referral/GLM controls live in one scrollbox capped at that many rows. A
+ * referral controls live in one scrollbox capped at that many rows. A
  * scrollbar appears when the whole menu doesn't fit, and Tab/arrow navigation
  * keeps the focused control scrolled into view.
  */
@@ -190,30 +190,16 @@ interface FreebuffModelSelectorProps {
   keyboardSuspended?: boolean
 }
 
-/** Every model id this screen can offer a tier: the grid, plus the banner's
- *  earned-reward action. Exported so the offer→gate invariant test reads the
- *  real set rather than a copy of it.
- *
- *  The banner's row is offered on BOTH tiers, and it means a different thing on
- *  each since 2026-08-31: at limited access it unlocks the reward model, and at
- *  full access it is an extra PREMIUM session rather than a model at all. The
- *  id below is what the limited half offers; at full access it is already in
- *  the grid, so listing it twice is harmless and listing it at all keeps this
- *  set honest about what the banner can start.
- *
- *  The balance is what gates the row — the banner only renders the action when
- *  the server reports sessions left — and the tier never was. */
+/** Every model id this screen can offer a tier: the grid. Exported so the
+ *  offer→gate invariant test reads the real set rather than a copy of it. */
 export function freebuffCliOfferedModelIds(
   accessTier: FreebuffAccessTier,
   /** Whether the account holds an entitling paid plan. */
   hasPaidSubscription = false,
 ): readonly string[] {
-  return [
-    ...getFreebuffModelsForAccessTier(accessTier, hasPaidSubscription).map(
-      (m) => m.id,
-    ),
-    FREEBUFF_REWARD_MODEL_ID,
-  ]
+  return getFreebuffModelsForAccessTier(accessTier, hasPaidSubscription).map(
+    (m) => m.id,
+  )
 }
 
 export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
@@ -420,23 +406,8 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         model,
         freebucks,
         quota: rateLimitsByModel?.[model],
-        // Older CLI snapshots omit earned quotas; full access and plans do not
-        // need that compatibility fallback.
-        legacyRemaining:
-          accessTier === 'limited' &&
-          !hasPaidSubscription &&
-          directory.isReward(model)
-            ? (referral?.weeklySessionsRemaining ?? 0)
-            : undefined,
       }),
-    [
-      freebucks,
-      rateLimitsByModel,
-      accessTier,
-      hasPaidSubscription,
-      referral?.weeklySessionsRemaining,
-      directory,
-    ],
+    [freebucks, rateLimitsByModel],
   )
   // Present only while a promo runs; absent renders the banner exactly as it
   // rendered before promos existed.
@@ -505,18 +476,25 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       // uses two hours of balance). A free row carries no label; a 1x row reads "1x".
       // Warned when the balance cannot cover it — the same signal the dimmed
       // price carries on the other two surfaces.
-      const rowPrice = freebucksPriceFor(freebucks, model.id)
+      // Less the solo-session discount, as Desktop and Web draw it.
+      const { price: rowPrice, listPrice } = freebucksRowPrice(
+        freebucks,
+        model.id,
+        freebucksPriceFor(freebucks, model.id),
+      )
       if (rowPrice !== undefined) {
         // Only the price that will be charged. The regular price is NOT
         // shown beside it: many terminals ignore the strikethrough attribute,
-        // and "3x 2x" then reads as two prices. A row a catalog discount
-        // moved is drawn in the accent colour instead.
-        const label = freebuffModelMultiplierLabel(rowPrice)
+        // and "3x 2x" then reads as two prices. A row a discount moved is
+        // drawn in the accent colour instead, and one it made free says so.
+        const label =
+          freebuffModelMultiplierLabel(rowPrice) ??
+          (listPrice !== undefined ? (rowPrice > 0 ? '1x' : 'Free') : null)
         if (label) {
           details.push({
             text: label,
             warn: (freebucks?.balance ?? 0) < rowPrice,
-            highlight: freebucksListPriceFor(freebucks, model.id) !== undefined,
+            highlight: listPrice !== undefined,
           })
         }
         // At peak, when the off-peak price is back, so a user can wait for it.
@@ -749,6 +727,10 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         // rather than what is missing. Kept about as short as the line it
         // replaces: this line is measured and clipped, never wrapped, and the
         // CTA line under it already carries "Get 7x usage for $5".
+        // The server's reason the pool is smaller (one allowance shared by
+        // a device's accounts) comes first: it is the line clipping keeps.
+        const note = freebucks?.daily?.note
+        if (note) return `${note} Enter opens plans.`
         const offer = upgradeOfferFor(model)
         if (offer) {
           return `${offer.tooltip.replace(/\.$/, '')}. Enter opens plans.`
@@ -854,7 +836,13 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // Tab/arrow navigation can preview without committing. Starts on the user's
   // saved/active pick (the recommended hero for a new user, since that's the
   // default selection; their own model when expanded for a returning user).
-  const [focusedId, setFocusedId] = useState<string>(() => selectedModel)
+  // Chat opens this picker after a refusal, so a pick that cannot start
+  // begins on the recommendation instead.
+  const [focusedId, setFocusedId] = useState<string>(() =>
+    onSelectModel && !isJoinable(selectedModel)
+      ? recommendedModel.id
+      : selectedModel,
+  )
 
   /**
    * The focused catalog row's hover text, one line each: the terminal has no
@@ -881,7 +869,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     [catalog, directory, focusedId, freebucks],
   )
 
-  // The referral banner contributes its GLM/copy actions to the selector's
+  // The referral banner contributes its copy/dashboard actions to the selector's
   // navigation order. Keeping them local avoids a global focus bridge now that
   // the banner renders inside this selector.
   const [extraTargets, setExtraTargets] = useState<
@@ -979,11 +967,8 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
 
   useEffect(() => {
     // A model in the grid uses the same meter for focus repair and picking.
-    // Keep an earned banner pick too when an older catalog omits that row.
     const selectionIsStartable =
-      (renderedModelIds.includes(selectedModel) ||
-        directory.isReward(selectedModel)) &&
-      isJoinable(selectedModel)
+      renderedModelIds.includes(selectedModel) && isJoinable(selectedModel)
     if (!onSelectModel && isLanding && !selectionIsStartable) {
       setSelectedModel(recommendedModel.id)
       // The cursor moves too: the focus effect above only rescues an
@@ -998,7 +983,6 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
     recommendedModel.id,
     selectedModel,
     setSelectedModel,
-    directory,
   ])
 
   // Share the suffix between width calculations and rendering.
@@ -1778,7 +1762,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // Scrollbox clamped to the rows the parent can spare. When everything fits
   // it shrinks to the content height and no scrollbar shows, so tall
   // terminals look exactly like a plain column.
-  return (
+  const list = (
     <scrollbox
       ref={scrollRef}
       scrollX={false}
@@ -1900,5 +1884,19 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         )}
       </box>
     </scrollbox>
+  )
+  // The chat picker carries its own key hint, which only this component can
+  // word: it knows how many rows the arrows can reach.
+  if (!onSelectModel) return list
+  return (
+    <box style={{ flexDirection: 'column' }}>
+      <text style={{ fg: theme.foreground }}>
+        {freebuffChatPickerHint({
+          modelCount: renderedModelIds.length,
+          focusedHasReasoning: Boolean(directory.efforts(focusedId)?.length),
+        })}
+      </text>
+      {list}
+    </box>
   )
 }

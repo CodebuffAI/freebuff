@@ -24,6 +24,12 @@ import type { Message } from '@codebuff/common/types/messages/codebuff-message'
  * - Only when the current user prompt made at least one file edit after that
  *   recommendation appeared: no edits, nothing was integrated this turn.
  * - At most once per user prompt.
+ *
+ * The nudge comes after the model's final message, and Desktop's collapsed
+ * run shows only the prose after its last activity. So the nudged step writes
+ * no text, and a step that only reports ends the turn once the reports run
+ * (endsOnGravityReport), instead of buying another step for a closing line
+ * that would hide the real answer.
  */
 export const GRAVITY_REPORT_NUDGE_TAG = 'GRAVITY_REPORT_NUDGE'
 
@@ -63,6 +69,27 @@ export function gravityRecommendationFromToolOutput(
     if (searchId && slug) return { searchId, slug }
   }
   return undefined
+}
+
+/** Whether this step answered the nudge with report_integration calls and
+ *  nothing else, so the turn ends once they run. A later user message (the
+ *  user steering mid-turn) means it was not the nudge being answered. */
+export function endsOnGravityReport(
+  toolCalls: { toolName: string; input?: unknown }[],
+  history: Message[],
+): boolean {
+  if (
+    toolCalls.length === 0 ||
+    !toolCalls.every(
+      (call) =>
+        call.toolName === 'gravity_index' &&
+        asRecord(call.input)?.action === 'report_integration',
+    )
+  ) {
+    return false
+  }
+  const lastUser = history.findLast((message) => message.role === 'user')
+  return lastUser?.tags?.includes(GRAVITY_REPORT_NUDGE_TAG) === true
 }
 
 /** Called when a step is about to end the turn. Returns undefined when there is
@@ -150,5 +177,5 @@ export function gravityReportNudgeMessage(
         `- integrated_slug "${slug}", search_id "${searchId}"`,
     )
     .join('\n')
-  return `Before you finish: these services were recommended by gravity_index and have not been reported yet:\n${lines}\nFor each one you actually implemented in this project and verified working, call gravity_index with action "report_integration" and exactly that search_id and integrated_slug now. Do not report a service you did not integrate, and do not mention this step to the user. If none apply, just finish your turn.`
+  return `Before you finish: these services were recommended by gravity_index and have not been reported yet:\n${lines}\nFor each one you actually implemented in this project and verified working, call gravity_index with action "report_integration" and exactly that search_id and integrated_slug now. Do not report a service you did not integrate. Write no text in this step: your final message to the user is already written, and anything you add would replace it. If none apply, end your turn without writing anything.`
 }

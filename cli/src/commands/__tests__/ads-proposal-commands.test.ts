@@ -5,6 +5,7 @@ import {
   handleProposalAccept,
   handleProposalDismiss,
   handleProposalMenu,
+  handleProposalReport,
   handleProposalUndo,
   liveSponsoredProposal,
 } from '../ads'
@@ -135,6 +136,25 @@ describe('liveSponsoredProposal', () => {
   })
 })
 
+describe('/ads:report-proposal', () => {
+  test('opens the same explanation form as the proposal menu without reporting', () => {
+    const calls = recordCalls()
+    expect(
+      handleProposalReport(withBlocks(proposalBlock()), () => 'token'),
+    ).toBeNull()
+    expect(calls).toEqual([['control', 'acme/deploys', 'report']])
+  })
+
+  test('requires a current proposal and sign-in', () => {
+    const calls = recordCalls()
+    expect(handleProposalReport([], () => 'token')).toContain('No sponsored')
+    expect(
+      handleProposalReport(withBlocks(proposalBlock()), () => undefined),
+    ).toContain('Sign in')
+    expect(calls).toEqual([])
+  })
+})
+
 /**
  * Phase 2's three commands (COD-339).
  *
@@ -238,6 +258,8 @@ describe('the commands are reachable by typing them', () => {
       'ads:accept-proposal',
       'ads:undo',
       'ads:proposals-off',
+      'ads:report',
+      'ads:report-proposal',
     ]) {
       expect(findCommand(name)?.name, name).toBe(name)
     }

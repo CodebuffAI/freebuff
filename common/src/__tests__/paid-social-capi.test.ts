@@ -333,11 +333,29 @@ describe('paid social transport contracts', () => {
         }),
       ).toThrow('native surface')
   })
+  test('TikTok email registration uses its real static endpoint, with no fabricated OAuth source', () => {
+    const request = buildPaidSocialRequest({
+      ...base,
+      config: tiktok,
+      attribution: { ...base.attribution, signupPath: '/api/auth/email' },
+    })
+    expect(request.body.data).toMatchObject([
+      {
+        event: 'CompleteRegistration',
+        event_id: 'stable-occurrence',
+        page: { url: 'https://freebuff.com/api/auth/email' },
+      },
+    ])
+    expect(JSON.stringify(request.body)).not.toContain('/callback/')
+  })
   test('TikTok refuses arbitrary/private/query-bearing registration contexts', () => {
     for (const signupPath of [
       undefined,
       '/web/project/private',
       '/api/auth/callback/github?code=secret',
+      '/api/auth/email?callbackUrl=/web/project/private',
+      '/api/auth/email#token=secret',
+      '/api/auth/callback/email',
     ])
       expect(() =>
         buildPaidSocialRequest({

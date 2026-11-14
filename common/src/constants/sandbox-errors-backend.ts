@@ -4,14 +4,14 @@
  * checked-in switch for the first part of the sandboxes domain to leave
  * platform Convex (COD-742; runbook in docs/freebuff-sandbox-errors-postgres.md).
  *
- * - `convex`   (default): Convex writes and serves, exactly as before. The
+ * - `convex`   Convex writes and serves, exactly as before. The
  *              registry entries answer `unknown_function`, nothing reads the
  *              Postgres tables, and the projection chain ends at its next link.
  * - `shadow`   Convex still writes and serves. The `sandbox_errors.projection`
  *              chains copy every Convex change (insert, patch, delete) into
  *              Postgres, and the browser reads both and compares
  *              (`convex_pg_shadow_mismatch`). Writes stay on Convex.
- * - `postgres` the web's error panels read and write Postgres, and the
+ * - `postgres` (current, Owen 2026-10-19) the web's error panels read and write Postgres, and the
  *              `/runtime-error` intake on freebuff.com writes Postgres. The
  *              chains keep running INSERT-ONLY, for the writers still on
  *              Convex (the Convex deploy pipeline's build errors, apps that
@@ -29,7 +29,7 @@
  */
 export type SandboxErrorsBackend = 'convex' | 'shadow' | 'postgres'
 
-export const SANDBOX_ERRORS_BACKEND: SandboxErrorsBackend = 'convex'
+export const SANDBOX_ERRORS_BACKEND: SandboxErrorsBackend = 'postgres'
 
 /** Whether the registry serves the error reads (for the browser to compare, in `shadow`). */
 export function sandboxErrorsReadsServed(

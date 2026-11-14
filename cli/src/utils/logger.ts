@@ -18,6 +18,10 @@ import {
   setAnalyticsErrorLogger,
   trackEvent,
 } from './analytics'
+import {
+  clipErrorLogString,
+  sanitizeErrorLogData,
+} from './error-log-redaction'
 import { enqueueClientLog } from './log-shipper'
 import { getCurrentChatDir, getProjectRoot } from '../project-files'
 
@@ -153,21 +157,26 @@ function sendAnalyticsAndLog(
   const normalizedMsg = isStringOnly ? (data as string) : msg
   const includeData = normalizedData != null && !isEmptyObject(normalizedData)
   const axiomOnlyLogEvent = getAxiomOnlyLogEvent(normalizedData)
+  const { data: remoteData, msg: remoteMsg } = remoteLogPayload({
+    level,
+    data: includeData ? normalizedData : undefined,
+    msg: stringFormat(normalizedMsg ?? '', ...args),
+  })
 
   const toTrack = {
-    ...(includeData ? { data: normalizedData } : {}),
+    ...(includeData ? { data: remoteData } : {}),
     level,
     loggerContext,
-    msg: stringFormat(normalizedMsg, ...args),
+    msg: remoteMsg,
   }
 
   logAsErrorIfNeeded(toTrack)
 
   if (!IS_DEV && includeData && typeof normalizedData === 'object') {
     const analyticsPayloads = analyticsDispatcher.process({
-      data: normalizedData,
+      data: remoteData,
       level,
-      msg: stringFormat(normalizedMsg ?? '', ...args),
+      msg: remoteMsg,
       fallbackUserId: loggerContext.userId,
     })
 
@@ -190,22 +199,18 @@ function sendAnalyticsAndLog(
       includeData && typeof normalizedData === 'object'
         ? getAnalyticsEventId(normalizedData)
         : null
-    // Mirror the PostHog path's redaction: only ship raw payloads for errors or
-    // when full telemetry is enabled; otherwise ship a summary. Keeps PII/data
-    // volume symmetric across the two sinks.
-    const includeRawData =
-      isFullTelemetryEnabled({
-        distinctId: loggerContext.userId,
-        properties: loggerContext,
-      }) ||
-      level === 'error' ||
-      level === 'fatal'
     const shipData = axiomOnlyLogEvent
       ? axiomOnlyLogEvent.data
       : includeData
-        ? includeRawData
-          ? normalizedData
-          : summarizeAnalyticsValue(normalizedData)
+        ? selectAxiomLogData({
+            level,
+            data: normalizedData,
+            sanitizedErrorData: remoteData,
+            fullTelemetry: isFullTelemetryEnabled({
+              distinctId: loggerContext.userId,
+              properties: loggerContext,
+            }),
+          })
         : undefined
     const record: LogRecordInput = {
       timestamp: new Date().toISOString(),
@@ -213,7 +218,7 @@ function sendAnalyticsAndLog(
       event:
         axiomOnlyLogEvent?.event ??
         (analyticsEventId ? String(analyticsEventId) : undefined),
-      message: stringFormat(normalizedMsg ?? '', ...args),
+      message: remoteMsg,
       client_session_id:
         (axiomOnlyLogEvent?.data.client_session_id as string | undefined) ??
         loggerContext.clientSessionId,
@@ -246,6 +251,43 @@ function sendAnalyticsAndLog(
     const obj = includeData ? { ...base, data: normalizedData } : base
     pinoLogger[level](obj, normalizedMsg as any, ...args)
   }
+}
+
+/**
+ * What a record sends off the machine to both PostHog paths (error tracking
+ * and the analytics event) and the Axiom mirror: for error and fatal records,
+ * never the conversation, file contents or bulk data they may carry.
+ */
+export function remoteLogPayload(params: {
+  level: LogLevel
+  data: unknown
+  msg: string
+}): { data: unknown; msg: string } {
+  const { level, data, msg } = params
+  if (level !== 'error' && level !== 'fatal') return { data, msg }
+  return {
+    data: data === undefined ? undefined : sanitizeErrorLogData(data),
+    msg: clipErrorLogString(msg),
+  }
+}
+
+/**
+ * The `data` an Axiom mirror record carries. Error and fatal records ship the
+ * sanitized payload whatever the telemetry setting, so a failure never mirrors
+ * the conversation. Other levels ship raw only under full telemetry, otherwise
+ * a summary, matching the PostHog path.
+ */
+export function selectAxiomLogData(params: {
+  level: LogLevel
+  data: unknown
+  fullTelemetry: boolean
+  sanitizedErrorData?: unknown
+}): unknown {
+  const { level, data, fullTelemetry } = params
+  if (level === 'error' || level === 'fatal') {
+    return params.sanitizedErrorData ?? sanitizeErrorLogData(data)
+  }
+  return fullTelemetry ? data : summarizeAnalyticsValue(data)
 }
 
 function logAsErrorIfNeeded(toTrack: {

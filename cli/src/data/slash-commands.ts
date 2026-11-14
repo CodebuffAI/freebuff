@@ -48,9 +48,15 @@ const FREEBUFF_ONLY_COMMAND_IDS = new Set([
   'model',
   'reasoning',
   'dashboard',
+  'deals',
 ])
 
 const ALL_SLASH_COMMANDS: SlashCommand[] = [
+  {
+    id: 'ads:report',
+    label: 'ads:report',
+    description: 'Explain a problem with an ad: /ads:report <number> (or list recent ads)',
+  },
   {
     id: 'help',
     label: 'help',
@@ -116,6 +122,11 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     id: 'review',
     label: 'review',
     description: 'Review code changes',
+  },
+  {
+    id: 'compact',
+    label: 'compact',
+    description: 'Compact this conversation now: the agent continues from a summary',
   },
   {
     id: 'queue',
@@ -210,6 +221,11 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     label: 'reasoning',
     description: 'Choose reasoning effort for your next message model',
     aliases: ['effort', 'think'],
+  },
+  {
+    id: 'deals',
+    label: 'deals',
+    description: 'Sponsored offers: /deals use <n> opens one, /deals off hides them',
   },
   {
     id: 'end-session',

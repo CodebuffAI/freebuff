@@ -1,0 +1,519 @@
+import { z } from 'zod'
+import { TURN_REVIEW_ACTION_KINDS } from './turn-review'
+import { templateAnalyticsFields } from '../templates/analytics'
+
+export const PRODUCT_FUNNEL_EVENT = 'freebuff.product_funnel_step'
+export const productFunnelProductSchema = z.enum([
+  'web',
+  'app_builder',
+  'students',
+  'cli',
+  'desktop',
+])
+export const productFunnelStageSchema = z.enum([
+  'landing',
+  'cta',
+  'copy',
+  'download',
+  'install',
+  'launch',
+  'login',
+  /** the first-sign-in welcome in the hosted Desktop workspace: shown, copied (the invite link), closed */
+  'welcome',
+  /** the phone-app prompt, on a return to the workspace after a break or after a first finished reply: shown, clicked (a store link), closed */
+  'mobile_prompt',
+  /** The Get started checklist: shown (once per page load), clicked (a step's button, `checklist_step`), closed (hidden from its menu or Done). Its A/B (`desktop_checklist_2026_11`, `checklist_variant`) ended 2026-11-13 with the card kept. */
+  'checklist',
+  'browser',
+  'context',
+  'composer',
+  'draft',
+  'project',
+  /** hosted Desktop's first-project screen ("Open a project to get started"): shown, selected (`project_choice`) */
+  'project_setup',
+  'template',
+  /** a new-chat starter pill was clicked (`starter_pills_2026_11`): selected */
+  'starter',
+  /** a finished turn's review (`turn_review_2026_11`): shown, selected (one of its buttons) */
+  'turn_review',
+  'model_picker',
+  'model_selection',
+  'admission',
+  'send',
+  'turn',
+  'response',
+  'preview',
+])
+export const productFunnelStateSchema = z.enum([
+  'shown',
+  'clicked',
+  'copied',
+  'started',
+  'opened',
+  'ready',
+  'selected',
+  'applied',
+  'accepted',
+  'received',
+  'visible',
+  'succeeded',
+  'failed',
+  'cancelled',
+  'closed',
+  'blocked',
+  'skipped',
+  'recovered',
+])
+/**
+ * The Desktop welcome's invite links carry `?via=` naming the share that made
+ * them, so the friend's landing pageview (its `$current_url`) ties their
+ * signup and first message back to the welcome in PostHog: one funnel per
+ * person on the invitee's side, next to the inviter's shown → shared tile. Not
+ * a UTM on purpose: a `utm_source` would turn the account's first-touch
+ * channel from `referral` into `campaign_other` (gravity-acquisition-tags.ts).
+ */
+export const WELCOME_INVITE_VIA_PARAM = 'via'
+export const WELCOME_INVITE_VIA = Object.freeze({
+  email: 'welcome_email',
+  link: 'welcome_link',
+})
+/**
+ * The workspace's other invite placements mark their links the same way:
+ * `<placement>_link` for a copied link, `<placement>_email` for an emailed one,
+ * so each charts apart from the welcome's `via=welcome_`. The invite route
+ * only puts an email value from this list in the emailed link; anything else
+ * is the welcome's. docs/referrals.md lists where each placement is.
+ */
+export const REFERRAL_INVITE_VIA = Object.freeze({
+  dock: Object.freeze({ link: 'dock_link', email: 'dock_email' }),
+  inline: Object.freeze({ link: 'inline_link', email: 'inline_email' }),
+  sidebar: Object.freeze({ link: 'sidebar_link', email: 'sidebar_email' }),
+  settings: Object.freeze({ link: 'settings_link', email: 'settings_email' }),
+  /** The one-time "your friend started coding" notice (docs/referrals.md). */
+  friend_joined: Object.freeze({
+    link: 'friend_joined_link',
+    email: 'friend_joined_email',
+  }),
+  /** Settings → Earn → Referrals, the limited-access counterpart of `settings`. */
+  settings_earn: Object.freeze({
+    link: 'settings_earn_link',
+    email: 'settings_earn_email',
+  }),
+  /** The /earn page's Referrals panel. */
+  earn: Object.freeze({ link: 'earn_link', email: 'earn_email' }),
+  /** The theme gate in Appearance settings (hosted workspace and Desktop). */
+  appearance: Object.freeze({
+    link: 'appearance_link',
+    email: 'appearance_email',
+  }),
+  /** The local Desktop shell's Settings → Referrals row. */
+  desktop_settings: Object.freeze({
+    link: 'desktop_settings_link',
+    email: 'desktop_settings_email',
+  }),
+  /** The CLI's referral banner (its link opens /get-started). */
+  cli: Object.freeze({ link: 'cli_link', email: 'cli_email' }),
+  /** The Rewards page on the rail (docs/freebuff-referral-rewards.md). */
+  rewards: Object.freeze({ link: 'rewards_link', email: 'rewards_email' }),
+})
+/**
+ * The inviter's own link in the "friend started coding" lifecycle email
+ * (`freebuff.friend_activated`), which they forward themselves; apart from
+ * the notice's copied link so the two charts separate.
+ */
+export const FRIEND_JOINED_LIFECYCLE_VIA = 'friend_joined_lifecycle'
+export type ReferralInvitePlacement = keyof typeof REFERRAL_INVITE_VIA
+
+export type ReferralInviteEmailVia =
+  | typeof WELCOME_INVITE_VIA.email
+  | (typeof REFERRAL_INVITE_VIA)[ReferralInvitePlacement]['email']
+export const REFERRAL_INVITE_EMAIL_VIA: readonly ReferralInviteEmailVia[] =
+  Object.freeze([
+    WELCOME_INVITE_VIA.email,
+    ...Object.values(REFERRAL_INVITE_VIA).map((via) => via.email),
+  ])
+
+/**
+ * The PostHog person property naming a signed-in account's OWN invite code
+ * (`user.referral_code`), set once per account per browser when the workspace
+ * learns the code (freebuff/web `lib/own-referral-code.ts`). A friend's landing
+ * carries the code they arrived through (`referral_code`, an event property;
+ * `ref=` in the landing URL), which is random, so this is the only key that
+ * ties an inviter's share to the friends it brought: the Referrals dashboard's
+ * cohort tiles join the two (scripts/posthog-referrals-dashboard.ts).
+ */
+export const OWN_REFERRAL_CODE_PERSON_PROPERTY = 'own_referral_code'
+
+/**
+ * `via` values of links that carry only the account's own `/?ref=` link, with
+ * no email invite behind them, so the invite route never accepts them.
+ * `lifecycle_email`: the Activated sequence's day-3 referral ask
+ * (docs/freebuff-lifecycle-email.md).
+ */
+export const REFERRAL_LINK_ONLY_VIA = Object.freeze({
+  lifecycleEmail: 'lifecycle_email',
+})
+
+/** The Desktop welcome's name as a placement, beside `ReferralInvitePlacement`. */
+export const WELCOME_PLACEMENT = 'welcome'
+/**
+ * Every placement a share can come from, the welcome first: the Referrals
+ * dashboard's shares-per-day series and the activation event's `placement`
+ * values (scripts/posthog-referrals-dashboard.ts).
+ */
+export const REFERRAL_PLACEMENTS: readonly string[] = Object.freeze([
+  WELCOME_PLACEMENT,
+  ...Object.keys(REFERRAL_INVITE_VIA),
+  // Link-only vias: the account forwards its own link, so each is its own
+  // placement (no share event, charted on the activation side alone).
+  REFERRAL_LINK_ONLY_VIA.lifecycleEmail,
+  FRIEND_JOINED_LIFECYCLE_VIA,
+])
+/**
+ * The activation event's `placement` when the referral row carries no `via`:
+ * a bare `ref=` link (shared before 2026-11-08, or from a builder that did
+ * not mark it), a typed code, or an affiliate link.
+ */
+export const UNMARKED_REFERRAL_PLACEMENT = 'plain_link'
+
+const PLACEMENT_BY_VIA: ReadonlyMap<
+  string,
+  { placement: string; method: 'link' | 'email' }
+> = new Map([
+  [WELCOME_INVITE_VIA.link, { placement: WELCOME_PLACEMENT, method: 'link' }],
+  [WELCOME_INVITE_VIA.email, { placement: WELCOME_PLACEMENT, method: 'email' }],
+  ...Object.entries(REFERRAL_INVITE_VIA).flatMap(
+    ([placement, via]): [string, { placement: string; method: 'link' | 'email' }][] => [
+      [via.link, { placement, method: 'link' }],
+      [via.email, { placement, method: 'email' }],
+    ],
+  ),
+  [
+    REFERRAL_LINK_ONLY_VIA.lifecycleEmail,
+    { placement: REFERRAL_LINK_ONLY_VIA.lifecycleEmail, method: 'link' },
+  ],
+  [
+    FRIEND_JOINED_LIFECYCLE_VIA,
+    { placement: FRIEND_JOINED_LIFECYCLE_VIA, method: 'link' },
+  ],
+])
+
+/**
+ * Which placement a stored `via` names, and whether it was a copied link or an
+ * emailed invite, for `freebuff.referral.activated` (referral-v2.ts). A null
+ * or unknown `via` is the unmarked bucket, with no method.
+ */
+export function referralPlacementFromVia(via: string | null | undefined): {
+  placement: string
+  method: 'link' | 'email' | null
+} {
+  return (
+    (via ? PLACEMENT_BY_VIA.get(via) : undefined) ?? {
+      placement: UNMARKED_REFERRAL_PLACEMENT,
+      method: null,
+    }
+  )
+}
+
+/** True for a `via` one of our builders puts on a link or an emailed invite. */
+export function isKnownReferralVia(via: unknown): via is string {
+  return typeof via === 'string' && PLACEMENT_BY_VIA.has(via)
+}
+
+/** A placement's invite link: the referral code and the placement's `via`. */
+export function referralInviteUrl(
+  origin: string,
+  referralCode: string,
+  placement: ReferralInvitePlacement,
+): string {
+  return `${origin}/?ref=${encodeURIComponent(referralCode)}&${WELCOME_INVITE_VIA_PARAM}=${REFERRAL_INVITE_VIA[placement].link}`
+}
+
+/** The Desktop welcome's H1 test: one arm per account, stable, on every `welcome` event. */
+export const welcomeVariantSchema = z.enum([
+  'unlocked',
+  'give',
+  'share',
+  'paying',
+  // The click-through welcome flow's arms (welcome-flow/steps.ts): which steps
+  // it shows, or the one-screen welcome as it was (`flow_control`).
+  'flow_control',
+  'flow_full',
+  'flow_no_integrations',
+  // The same two arms after the flow went full screen with the app tour
+  // (2026-11-12): new names, so their rows never mix with the dialog's.
+  'flow_full_v2',
+  'flow_no_integrations_v2',
+])
+/** The Get started checklist A/B's arms; since it ended (2026-11-13) every event says `checklist`. */
+export const checklistVariantSchema = z.enum(['control', 'checklist'])
+/** A step of the Get started checklist (onboarding-checklist/model.ts). */
+export const checklistStepSchema = z.enum(['project', 'message', 'mobile', 'themes'])
+/** A step of the click-through welcome flow (welcome-flow/steps.ts). */
+export const welcomeStepSchema = z.enum([
+  'unlocked',
+  'build',
+  'modes',
+  'panel',
+  'integrations',
+  'mobile',
+  'invite',
+])
+export const productEntryRouteSchema = z.enum([
+  '/',
+  '/app',
+  '/app-builder',
+  '/website-builder',
+  '/students',
+  '/cloud',
+  '/chat',
+  '/cli',
+  'cli',
+  'other',
+])
+const opaqueId = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[a-zA-Z0-9_-]+$/)
+const modelId = z
+  .string()
+  .min(1)
+  .max(120)
+  .regex(/^[a-zA-Z0-9_./:@-]+$/)
+
+/** Closed payload: no prompts, paths, URLs, account IDs, auth IDs or provider errors. */
+export const productFunnelPropertiesSchema = z
+  .object({
+    ...templateAnalyticsFields,
+    entry_account_state: z
+      .enum(['signed_out', 'signed_in', 'stored_credentials'])
+      .optional(),
+    run_id: opaqueId.optional(),
+    thread_id: opaqueId.optional(),
+    project_id: opaqueId.optional(),
+    input_id: opaqueId.optional(),
+    model: modelId.optional(),
+    previous_model: modelId.optional(),
+    harness: z
+      .enum(['codebuff', 'codex', 'claude-code', 'external', 'unknown'])
+      .optional(),
+    project_kind: z
+      .enum([
+        'folder',
+        'no_folder',
+        'cloud',
+        'cloud_repo',
+        'cloud_empty',
+        'local',
+        'template',
+        'unknown',
+      ])
+      .optional(),
+    /** `project_setup:selected` and local `project` events: which way in the
+     *  user took: an existing folder, a recent one, a new local folder, a
+     *  GitHub repo, a template, or Start from scratch. */
+    project_choice: z
+      .enum(['open_folder', 'recent_folder', 'new_local', 'github', 'template', 'scratch'])
+      .optional(),
+    destination: z
+      .enum(['desktop', 'cli', 'web', 'app_builder', 'cowork', 'mobile'])
+      .optional(),
+    location: z
+      .enum([
+        'nav',
+        'hero',
+        'everywhere',
+        'footer',
+        'workspace',
+        'picker',
+        // Settings → Apps & downloads (freebuff/web settings/apps-settings.tsx).
+        'settings',
+        'unknown',
+      ])
+      .optional(),
+    reason: z
+      .enum([
+        'empty',
+        'error',
+        'refused',
+        'recovered',
+        'paywall',
+        'setup',
+        'cancel',
+        'navigation',
+        'escape',
+        'outside',
+        'unavailable',
+        'timeout',
+        'invalid',
+        'unsupported',
+        'blocked',
+        'already_running',
+        'default',
+        'unknown',
+        'compacting',
+        'moving',
+        'too_long',
+        'admission',
+        'existing',
+        'closed',
+        'completed',
+        'stopped',
+        'failed',
+        'cancelled',
+        'selection',
+        'retry',
+        'queue',
+        'history',
+      ])
+      .optional(),
+    /** `send:failed` `blocked`: the refusing admission's `status`, which is the
+     *  why a bare `blocked` never said (~23% of hosted Desktop senders a day, 2026-11-07). */
+    admission_status: z
+      .string()
+      .regex(/^[a-z_]{1,40}$/)
+      .optional(),
+    /** `send:failed` `error`: the error's class (`sendErrorKind`), never its text. */
+    error_kind: z
+      .string()
+      .regex(/^[a-z0-9_]{1,40}$/)
+      .optional(),
+    /** Which starter pill (`starter:selected`): its prompt id, `game-snake`. */
+    starter: z
+      .string()
+      .regex(/^[a-z0-9-]{1,40}$/)
+      .optional(),
+    /** `turn_review`: the review's verdict, `none` when it judged no change. */
+    review_verdict: z
+      .enum(['ready', 'needs_changes', 'not_promising', 'none'])
+      .optional(),
+    /** `turn_review:selected`: which button, from 0 (the most valuable). */
+    review_action: z.number().int().min(0).max(9).optional(),
+    /** `turn_review:selected`: a fix to the change, the "Code review" pill, a
+     *  next step beyond it, the "Brainstorm follow-ups" pill, or the
+     *  recommended next message taken into the composer with Tab. */
+    review_action_kind: z
+      .enum([...TURN_REVIEW_ACTION_KINDS, 'next_prompt'])
+      .optional(),
+    /** `turn_review:shown`: whether the review offered the "Code review" pill. */
+    review_offers_code_review: z.boolean().optional(),
+    /** `turn_review:shown`: whether the review offered the "Brainstorm follow-ups" pill. */
+    review_offers_brainstorm: z.boolean().optional(),
+    /** `turn_review:shown`: how many buttons the review offered. */
+    review_action_count: z.number().int().min(0).max(9).optional(),
+    selection_kind: z
+      .enum([
+        'default',
+        'changed',
+        'unchanged',
+        'reselected',
+        'blocked',
+        'unknown',
+      ])
+      .optional(),
+    has_attachments: z.boolean().optional(),
+    attachment_count: z.number().int().min(0).max(1000).optional(),
+    character_count: z.number().int().min(0).max(10_000_000).optional(),
+    duration_ms: z
+      .number()
+      .int()
+      .min(0)
+      .max(7 * 24 * 60 * 60 * 1000)
+      .optional(),
+    has_output: z.boolean().optional(),
+    output_kind: z.enum(['text', 'tool', 'file_change']).optional(),
+    restored: z.boolean().optional(),
+    queued: z.boolean().optional(),
+    release: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-zA-Z0-9.+_-]+$/)
+      .optional(),
+    platform: z.enum(['darwin', 'win32', 'linux', 'other']).optional(),
+    originApp: z.enum(['desktop', 'web']).optional(),
+    executionTarget: z.enum(['device', 'cloud']).optional(),
+    welcome_variant: welcomeVariantSchema.optional(),
+    /** `welcome` events from the click-through flow: the step on screen. */
+    welcome_step: welcomeStepSchema.optional(),
+    /** `checklist` events: the install's arm of the Get started checklist test. */
+    checklist_variant: checklistVariantSchema.optional(),
+    /** `checklist:clicked`: whose button. */
+    checklist_step: checklistStepSchema.optional(),
+    /** `mobile_prompt:shown`: what opened it, a return after a break, a reply that just finished, or the Get started checklist. */
+    prompt_trigger: z.enum(['return', 'reply', 'checklist']).optional(),
+    /** `mobile_prompt:clicked`: which store's button. A scanned QR code is counted by `/mobile`, not here. */
+    store: z.enum(['ios', 'android']).optional(),
+    renderer: z.literal('web-workspace').optional(),
+    appVersion: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-zA-Z0-9.+_-]+$/)
+      .optional(),
+  })
+  .strict()
+
+/** Product identifies the entry cohort; Students/Builder share the web runtime. */
+export const productFunnelEventSchema = productFunnelPropertiesSchema.extend({
+  product: productFunnelProductSchema,
+  flow_id: z.string().uuid(),
+  entry_route: productEntryRouteSchema,
+  funnel_stage: productFunnelStageSchema,
+  funnel_state: productFunnelStateSchema,
+  event_version: z.literal(1),
+  surface: z.enum(['web', 'cli', 'desktop']),
+  observer: z.enum(['ui', 'cli', 'server']),
+})
+
+export type ProductFunnelProduct = z.infer<typeof productFunnelProductSchema>
+export type ProductEntryRoute = z.infer<typeof productEntryRouteSchema>
+export type ProductFunnelStage = z.infer<typeof productFunnelStageSchema>
+export type ProductFunnelState = z.infer<typeof productFunnelStateSchema>
+export type WelcomeVariant = z.infer<typeof welcomeVariantSchema>
+export type WelcomeStep = z.infer<typeof welcomeStepSchema>
+export type ProductFunnelProperties = z.infer<
+  typeof productFunnelPropertiesSchema
+>
+export type ProductFunnelEvent = z.infer<typeof productFunnelEventSchema>
+export type ProductJourney = Pick<
+  ProductFunnelEvent,
+  'flow_id' | 'product' | 'entry_route'
+>
+
+/** Strip SDK URL/person enrichment before either capture or the log mirror. */
+export function sanitizeProductFunnelCapture<
+  T extends {
+    event: string
+    properties: Record<string, unknown>
+  },
+>(event: T, projectToken: string): T | null {
+  if (event.event !== PRODUCT_FUNNEL_EVENT) return event
+  const fields: Record<string, unknown> = {}
+  for (const key of productFunnelEventSchema.keyof().options) {
+    if (event.properties[key] !== undefined) fields[key] = event.properties[key]
+  }
+  const parsed = productFunnelEventSchema.safeParse(fields)
+  if (!parsed.success) return null
+  // posthog-js adds this public ingest key before before_send; transport does
+  // not restore it after sanitization. Never copy an untrusted event token.
+  const properties: Record<string, unknown> = {
+    ...parsed.data,
+    token: projectToken,
+  }
+  for (const key of [
+    'distinct_id',
+    '$insert_id',
+    '$session_id',
+    '$is_identified',
+  ]) {
+    const value = event.properties[key]
+    if (typeof value === 'string' || typeof value === 'boolean')
+      properties[key] = value
+  }
+  const sanitized = { ...event, properties }
+  Reflect.deleteProperty(sanitized, '$set')
+  Reflect.deleteProperty(sanitized, '$set_once')
+  return sanitized
+}

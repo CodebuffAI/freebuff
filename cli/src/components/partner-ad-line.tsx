@@ -24,10 +24,12 @@ import {
   PARTNER_LINE_GAP,
 } from '@codebuff/common/ads/inline-ad-layout'
 import { TextAttributes } from '@opentui/core'
+import { toAdReport, type AdReport } from '@codebuff/common/ads/ad-report'
 import { greptileTerminalColors } from '../ads/partner-brand'
 import React, { useEffect, useImperativeHandle, type Ref } from 'react'
 
 import { Button } from './button'
+import { AdReportButton, AD_REPORT_CONTROL_COLUMNS } from './ad-report-button'
 import { useTheme } from '../hooks/use-theme'
 import { layoutTruncated } from '../ads/ad-engagement'
 import {
@@ -61,9 +63,13 @@ export const PartnerAdLineView: React.FC<{
   onClick?: (event?: unknown) => void
   onHover?: (hovering: boolean) => void
   selected?: boolean
-}> = ({ ad, width, onClick, onHover, selected = false }) => {
+  report?: AdReport
+}> = ({ ad, width, onClick, onHover, selected = false, report }) => {
   const theme = useTheme()
-  const layout = getPartnerLineLayout(ad, width - (selected ? 2 : 0))
+  const layout = getPartnerLineLayout(
+    ad,
+    width - (selected ? 2 : 0) - (report ? AD_REPORT_CONTROL_COLUMNS : 0),
+  )
   const greptile = greptileTerminalColors(ad)
   const branded =
     supportsTruecolor() &&
@@ -98,9 +104,12 @@ export const PartnerAdLineView: React.FC<{
       {/* `theme.muted` is set against OUR surfaces and vanishes on an
           arbitrary brand fill, so the disclosure inherits the advertiser's own
           ink. It is the one part of this row that may never be hard to read. */}
-      <text style={{ fg: ink, flexShrink: 0, wrapMode: 'none' }}>
-        {layout.disclosure}
-      </text>
+      <box style={{ flexDirection: 'row', flexShrink: 0 }}>
+        <text style={{ fg: ink, wrapMode: 'none' }}>
+          {layout.disclosure}
+        </text>
+        {report && <AdReportButton ad={report} color={ink} />}
+      </box>
     </Button>
   )
 }
@@ -127,7 +136,13 @@ export const PartnerAdRow: React.FC<{
   const engagement = useAdEngagement(ad.impUrl, {
     placement: 'pinned',
     truncated: layoutTruncated([
-      [ad.title, getPartnerLineLayout(ad, width).title],
+      [
+        ad.title,
+        getPartnerLineLayout(
+          ad,
+          width - (selected ? 2 : 0) - AD_REPORT_CONTROL_COLUMNS,
+        ).title,
+      ],
     ]),
   })
   useEffect(() => { recordPartnerImpression(ad) }, [ad])
@@ -146,6 +161,7 @@ export const PartnerAdRow: React.FC<{
       selected={selected}
       onHover={engagement.onHover}
       onClick={activate}
+      report={toAdReport({ ...ad, surface: 'cli' })}
     />
   )
 }

@@ -16,6 +16,7 @@ import {
 } from '@codebuff/common/ads/ad-event-hygiene'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { setAdExpiryPolicy } from '../ads/ad-expiry-clock'
 import { getAuthToken } from '../utils/auth'
 import { logger } from '../utils/logger'
 import { trackEvent } from '../utils/analytics'
@@ -71,6 +72,29 @@ export function getSessionPartnerPlacementIds(): readonly string[] | null {
   return sessionPartnerPlacementIds
 }
 
+/**
+ * The DISPLAY-AD placements (`CLI-Splash`, `CLI-Statusline`, `CLI-Deals`) the
+ * policy announced as live (`displayPlacementIds`), or `null` while the policy
+ * is unresolved. Same null-vs-empty rule as the partner list: `[]` means
+ * "none is serving, request nothing".
+ */
+let sessionDisplayPlacementIds: readonly string[] | null = null
+
+export function getSessionDisplayPlacementIds(): readonly string[] | null {
+  return sessionDisplayPlacementIds
+}
+
+/**
+ * The policy's `inlineAdStyle` (`card` | `link`), or `null` while the policy
+ * is unresolved. Read only through `cliInlineAdStyle`
+ * (`ads/inline-link-ad.ts`), which also requires the CLI's own gate.
+ */
+let sessionInlineAdStyle: 'card' | 'link' | null = null
+
+export function getSessionInlineAdStyle(): 'card' | 'link' | null {
+  return sessionInlineAdStyle
+}
+
 /** The one in-flight policy fetch, so concurrent askers share an answer. */
 let policyRequest: Promise<CliDockArm> | null = null
 
@@ -111,7 +135,18 @@ export function resolveAdPolicy(): Promise<CliDockArm> {
 export function resetAdPolicySession(): void {
   sessionDockArm = null
   sessionPartnerPlacementIds = null
+  sessionDisplayPlacementIds = null
+  sessionInlineAdStyle = null
   policyRequest = null
+}
+
+/** A placement-id list off the policy body: non-empty strings, else `[]`. */
+export function policyPlacementIds(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (id): id is string => typeof id === 'string' && id.length > 0,
+      )
+    : []
 }
 
 /**
@@ -120,9 +155,10 @@ export function resetAdPolicySession(): void {
  * unparseable body, an arm string we do not recognise — lands on control. An
  * experiment that fails open into its own treatment arm is not an experiment.
  *
- * The partner list fails the same way, to nothing at all: an older server, an
- * unreachable one and a deal that is not live must all leave this client
- * drawing no partner row rather than requesting a slot it was never offered.
+ * The partner and display-ad lists fail the same way, to nothing at all: an
+ * older server, an unreachable one and a deal that is not live must all leave
+ * this client drawing no partner row or served display ad rather than
+ * requesting a slot it was never offered.
  */
 export async function fetchDockArm(
   fetchImpl: typeof fetch = fetch,
@@ -135,20 +171,30 @@ export async function fetchDockArm(
       method: 'GET',
       headers: { Authorization: `Bearer ${authToken}` },
     })
-    if (!response.ok) return 'control'
+    if (!response.ok) {
+      setAdExpiryPolicy(null)
+      return 'control'
+    }
     const data = (await response.json()) as {
       dockArm?: unknown
       partnerPlacementIds?: unknown
+      displayPlacementIds?: unknown
+      inlineAdStyle?: unknown
     }
-    sessionPartnerPlacementIds = Array.isArray(data?.partnerPlacementIds)
-      ? data.partnerPlacementIds.filter(
-          (id): id is string => typeof id === 'string' && id.length > 0,
-        )
-      : []
+    // Anything but `link` (an older server, a missing field) is the card.
+    sessionInlineAdStyle = data?.inlineAdStyle === 'link' ? 'link' : 'card'
+    sessionPartnerPlacementIds = policyPlacementIds(data?.partnerPlacementIds)
+    sessionDisplayPlacementIds = policyPlacementIds(data?.displayPlacementIds)
+    // How long one ad may stay drawn (`adMaxShownMs`, `adAwayExpiryMs`);
+    // an older server sends neither and the defaults apply.
+    setAdExpiryPolicy(data)
     return data?.dockArm === 'expandable' ? 'expandable' : 'control'
   } catch (err) {
     logger.debug({ err }, '[ads] Failed to fetch dock policy')
     sessionPartnerPlacementIds = []
+    sessionDisplayPlacementIds = []
+    sessionInlineAdStyle = 'card'
+    setAdExpiryPolicy(null)
     return 'control'
   }
 }

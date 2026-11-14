@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 
-import { normalizeUrlInput, platformForUrl } from './freebuff-ads'
+import {
+  normalizeUrlInput,
+  platformForUrl,
+  promotedPostImageUrl,
+} from './freebuff-ads'
 
 // ---------------------------------------------------------------------------
 // A pasted link, with the scheme people do not type
@@ -67,5 +71,56 @@ describe('platformForUrl, on links typed without a scheme', () => {
   test('still refuses a host that is not a supported platform', () => {
     expect(platformForUrl('acme.dev/blog/post')).toBeNull()
     expect(platformForUrl('not a url at all')).toBeNull()
+  })
+})
+
+describe('promotedPostImageUrl', () => {
+  test("keeps the post's own platform image", () => {
+    expect(
+      promotedPostImageUrl(
+        'github',
+        'https://opengraph.githubassets.com/1/workweave/router',
+      ),
+    ).toBe('https://opengraph.githubassets.com/1/workweave/router')
+    expect(
+      promotedPostImageUrl('linkedin', 'https://media.licdn.com/dms/image/x'),
+    ).toBe('https://media.licdn.com/dms/image/x')
+  })
+
+  test('drops any other host, including our own origin', () => {
+    expect(
+      promotedPostImageUrl('github', 'https://tracker.example/px.gif?p=1'),
+    ).toBeNull()
+    expect(
+      promotedPostImageUrl(
+        'github',
+        'https://freebuff.com/api/web/referral-eligibility?ref=abc',
+      ),
+    ).toBeNull()
+    // another platform's CDN is not this post's image
+    expect(
+      promotedPostImageUrl('github', 'https://pbs.twimg.com/media/x.jpg'),
+    ).toBeNull()
+    // suffix tricks
+    expect(
+      promotedPostImageUrl(
+        'github',
+        'https://opengraph.githubassets.com.evil.example/x',
+      ),
+    ).toBeNull()
+  })
+
+  test('drops non-https, credentials, ports and junk', () => {
+    expect(
+      promotedPostImageUrl('twitter', 'http://pbs.twimg.com/media/x.jpg'),
+    ).toBeNull()
+    expect(
+      promotedPostImageUrl('twitter', 'https://u:p@pbs.twimg.com/media/x.jpg'),
+    ).toBeNull()
+    expect(
+      promotedPostImageUrl('twitter', 'https://pbs.twimg.com:8443/media/x.jpg'),
+    ).toBeNull()
+    expect(promotedPostImageUrl('twitter', 'not a url')).toBeNull()
+    expect(promotedPostImageUrl('twitter', null)).toBeNull()
   })
 })

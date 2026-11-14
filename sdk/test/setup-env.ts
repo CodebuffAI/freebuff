@@ -18,7 +18,6 @@ const testDefaults: Record<string, string> = {
 const serverDefaults: Record<string, string> = {
   OPEN_ROUTER_API_KEY: 'test',
   OPENAI_API_KEY: 'test',
-  SERPER_API_KEY: 'test',
   // Direct-provider handlers throw before fetch when their key is unset, so
   // give the mocked-fetch tests a dummy — without these, whether the RunInfra/
   // MiMo routing tests pass depends on the developer's shell env.
@@ -51,6 +50,9 @@ process.env.FREEBUFF_ADS_LEAD_NURTURE = 'off'
 // Fixture users, prompts and signups must never reach Vectoral's real feed
 // with the production key. Vectoral's own tests inject `apiKey` and `fetch`.
 delete process.env.VECTORAL_API_KEY
+// The same for SuperPenguin: fixture generations must never reach the real
+// workspace. Its tests inject a fake event client.
+delete process.env.SP_API_KEY
 // Fixture accounts must never send real SMS (and spend real money) through
 // Prelude with the production key. The phone gate's tests inject `fetch`.
 delete process.env.PRELUDE_API_KEY

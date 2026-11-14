@@ -11,7 +11,7 @@ import { formatValueForError } from '../util/format-value'
 import { codebuffToolHandlers } from './handlers/list'
 import { getMatchingSpawn } from './handlers/tool/spawn-agent-utils'
 import { getAgentTemplate } from '../templates/agent-registry'
-import { repairStringEncodedUnionMembers } from '../util/repair-string-encoded-union-members'
+import { repairCustomToolInput } from '../util/repair-custom-tool-input'
 import { resolveGravityIndexLink } from './gravity-index-cta'
 import { ensureZodSchema } from './prompts'
 import { boundToolResult } from '../util/context-size-guard'
@@ -194,14 +194,38 @@ function summarizeMissingReplacementFields(
   ].join('\n')
 }
 
+/**
+ * `replacements` that arrived as a string even the JSON repairs could not parse (~2k calls/day,
+ * Nov 2026): a quote in the code left unescaped, which some serving lanes hand over as a string.
+ * Without this the model reads only "expected object, received string".
+ */
+function unparsedReplacementsSummary(
+  toolName: string,
+  input: unknown,
+): string | undefined {
+  if (toolName !== 'str_replace' && toolName !== 'propose_str_replace') return
+  const replacements = (input as { replacements?: unknown } | null)?.replacements
+  if (typeof replacements !== 'string') return
+  return '`replacements` arrived as text that is not valid JSON, usually because a double quote inside the code was not escaped. Send `replacements` as an array of { "oldString", "newString" } objects, and escape every " inside the code as \\".'
+}
+
 function getToolValidationHint(toolName: string): string | undefined {
   if (toolName === 'str_replace' || toolName === 'propose_str_replace') {
     return 'Expected shape: { "path": string, "replacements": [{ "oldString": string, "newString": string, "allowMultiple"?: boolean }] }.'
   }
   if (toolName === 'write_file' || toolName === 'propose_write_file') {
-    return 'Expected shape: { "path": string, "instructions": string, "content": string }. Quote string values and escape newlines/quotes inside content.'
+    return 'Expected shape: { "path": string, "content": string, "instructions"?: string }. Quote string values and escape newlines/quotes inside content.'
   }
   return undefined
+}
+
+/**
+ * A tool this agent does not have right now. Real tools drop out mid-thread too: plan mode, or the
+ * user's computer going offline in a hosted chat, narrows the list (Nov 2026: ~1.4k calls/day to
+ * `run_terminal_command`, `write_file`, `str_replace`), so say why rather than only "use listed tools".
+ */
+function unavailableToolMessage(toolName: string): string {
+  return `Tool \`${toolName}\` is not currently available. The tools you can use can change during a conversation (plan mode, or the user's computer going offline, removes some), so use only the tools in your latest instructions. If the one you need is gone, tell the user what you would do with it instead of calling it again.`
 }
 
 export function parseRawToolCall<T extends ToolName = ToolName>(params: {
@@ -250,10 +274,9 @@ export function parseRawToolCall<T extends ToolName = ToolName>(params: {
 
   if (!result.success) {
     const hint = getToolValidationHint(toolName)
-    const summary = summarizeMissingReplacementFields(
-      toolName,
-      result.error.issues,
-    )
+    const summary =
+      unparsedReplacementsSummary(toolName, processedParameters.input) ??
+      summarizeMissingReplacementFields(toolName, result.error.issues)
     const validationDetails = JSON.stringify(result.error.issues, null, 2)
     return {
       toolName,
@@ -299,6 +322,12 @@ export type ExecuteToolCallParams<T extends string = ToolName> = {
   localAgentTemplates: Record<string, AgentTemplate>
   logger: Logger
   previousToolCallFinished: Promise<void>
+  /**
+   * Set on a read that may start before the calls ahead of it finish
+   * (`stream-parser.ts`). Its result still enters the history in call order:
+   * it waits for `previousToolCallFinished`.
+   */
+  readyToRun?: Promise<void>
   prompt: string | undefined
   repoId: string | undefined
   repoUrl: string | undefined
@@ -333,6 +362,7 @@ export async function executeToolCall<T extends ToolName>(
     agentTemplate,
     logger,
     previousToolCallFinished,
+    readyToRun,
     toolCalls,
     toolCallsToAddToMessageHistory,
     toolResults,
@@ -362,9 +392,9 @@ export async function executeToolCall<T extends ToolName>(
   ) {
     // Emit an error event instead of tool call/result pair
     // The stream parser will convert this to a user message for proper API compliance
-    onResponseChunk({
+    await onResponseChunk({
       type: 'error',
-      message: `Tool \`${toolName}\` is not currently available. Make sure to only use tools provided at the start of the conversation AND that you most recently have permission to use.`,
+      message: unavailableToolMessage(toolName),
     })
     return previousToolCallFinished
   }
@@ -372,7 +402,7 @@ export async function executeToolCall<T extends ToolName>(
   if ('error' in toolCall && toolCall.truncated) {
     // No "Original tool call input" echo: for a file write that is the head of
     // the file's content, which reads to the model like the file itself.
-    onResponseChunk({ type: 'error', message: toolCall.error })
+    await onResponseChunk({ type: 'error', message: toolCall.error })
     logger.warn(
       {
         axiomEvent: FILE_WRITE_GUARD_EVENT,
@@ -394,7 +424,7 @@ export async function executeToolCall<T extends ToolName>(
 
   if ('error' in toolCall) {
     const formattedInput = formatValueForError(input)
-    onResponseChunk({
+    await onResponseChunk({
       type: 'error',
       message: `${toolCall.error}\n\nOriginal tool call input:\n${formattedInput}`,
     })
@@ -496,7 +526,7 @@ export async function executeToolCall<T extends ToolName>(
       if (errors.length > 0) {
         if (validAgents.length === 0) {
           const errorMsg = `Failed to spawn agents: ${errors.join('; ')}`
-          onResponseChunk({ type: 'error', message: errorMsg })
+          await onResponseChunk({ type: 'error', message: errorMsg })
           logger.debug(
             { toolName, errors },
             'All agents in spawn_agents are invalid, not streaming tool call',
@@ -504,7 +534,7 @@ export async function executeToolCall<T extends ToolName>(
           return previousToolCallFinished
         }
         const errorMsg = `Some agents could not be spawned: ${errors.join('; ')}. Proceeding with valid agents only.`
-        onResponseChunk({ type: 'error', message: errorMsg })
+        await onResponseChunk({ type: 'error', message: errorMsg })
         effectiveInput = { ...effectiveInput, agents: validAgents }
       }
     }
@@ -524,7 +554,7 @@ export async function executeToolCall<T extends ToolName>(
       })
       if (!resolved.success) {
         const errorMessage = `Invalid Gravity button reference: ${resolved.error.message}`
-        onResponseChunk({ type: 'error', message: errorMessage })
+        await onResponseChunk({ type: 'error', message: errorMessage })
         logger.debug(
           { toolName, reference: link, error: resolved.error.message },
           'Failed to resolve render_ui link reference',
@@ -544,7 +574,7 @@ export async function executeToolCall<T extends ToolName>(
   }
 
   // Only emit tool_call event after permission check passes
-  onResponseChunk({
+  await onResponseChunk({
     type: 'tool_call',
     toolCallId,
     toolName,
@@ -573,7 +603,7 @@ export async function executeToolCall<T extends ToolName>(
   const toolResultPromise = handler({
     ...params,
     toolCall: finalToolCall,
-    previousToolCallFinished,
+    previousToolCallFinished: readyToRun ?? previousToolCallFinished,
     writeToClient: onResponseChunk,
     requestClientToolCall: (async (
       clientToolCall: ClientToolCall<T extends ClientToolName ? T : never>,
@@ -583,6 +613,7 @@ export async function executeToolCall<T extends ToolName>(
       }
 
       const clientToolResult = await requestToolCall({
+        toolCallId: toolCall.toolCallId,
         userInputId,
         toolName: clientToolCall.toolName,
         input: clientToolCall.input,
@@ -592,6 +623,7 @@ export async function executeToolCall<T extends ToolName>(
   })
 
   return toolResultPromise.then(async ({ output, creditsUsed }) => {
+    if (readyToRun) await previousToolCallFinished
     const toolResult: ToolMessage = {
       role: 'tool',
       toolName,
@@ -599,7 +631,7 @@ export async function executeToolCall<T extends ToolName>(
       content: output,
     }
 
-    onResponseChunk({
+    await onResponseChunk({
       type: 'tool_result',
       toolCallId: toolResult.toolCallId,
       toolName: toolResult.toolName,
@@ -672,7 +704,7 @@ export function parseRawCustomToolCall(params: {
 
   const rawSchema = customToolDefs?.[toolName]?.inputSchema
   if (rawSchema) {
-    repairStringEncodedUnionMembers(processedParameters, rawSchema)
+    repairCustomToolInput(processedParameters, rawSchema)
     const paramsSchema = ensureZodSchema(rawSchema)
     const result = paramsSchema.safeParse(processedParameters)
 
@@ -764,16 +796,16 @@ export async function executeCustomToolCall(
   ) {
     // Emit an error event instead of tool call/result pair
     // The stream parser will convert this to a user message for proper API compliance
-    onResponseChunk({
+    await onResponseChunk({
       type: 'error',
-      message: `Tool \`${toolName}\` is not currently available. Make sure to only use tools listed in the system instructions.`,
+      message: unavailableToolMessage(toolName),
     })
     return previousToolCallFinished
   }
 
   if ('error' in toolCall) {
     const formattedInput = formatValueForError(input)
-    onResponseChunk({
+    await onResponseChunk({
       type: 'error',
       message: `${toolCall.error}\n\nOriginal tool call input:\n${formattedInput}`,
     })
@@ -785,7 +817,7 @@ export async function executeCustomToolCall(
   }
 
   // Only emit tool_call event after permission check passes
-  onResponseChunk({
+  await onResponseChunk({
     type: 'tool_call',
     toolCallId: toolCall.toolCallId,
     toolName,
@@ -809,6 +841,7 @@ export async function executeCustomToolCall(
 
       const target = mcpTarget(toolCall.toolName)
       const clientToolResult = await requestToolCall({
+        toolCallId: toolCall.toolCallId,
         userInputId,
         toolName: target ? target.tool : toolCall.toolName,
         input: toolCall.input,
@@ -816,7 +849,7 @@ export async function executeCustomToolCall(
       })
       return clientToolResult.output satisfies ToolResultOutput[]
     })
-    .then((result) => {
+    .then(async (result) => {
       if (!result) {
         return
       }
@@ -830,7 +863,7 @@ export async function executeCustomToolCall(
         { input, toolResult },
         `${toolName} custom tool call & result (${toolResult.toolCallId})`,
       )
-      onResponseChunk({
+      await onResponseChunk({
         type: 'tool_result',
         toolName: toolResult.toolName,
         toolCallId: toolResult.toolCallId,

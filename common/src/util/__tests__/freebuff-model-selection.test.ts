@@ -11,6 +11,7 @@ import {
 import type { FreebuffFreebucksInfo } from '../../types/freebuff-session'
 import {
   freebuffPlanRequired,
+  freebuffSessionUntimed,
   freebucksRowIntent,
 } from '../freebuff-model-selection'
 
@@ -42,14 +43,12 @@ describe('the plan lock without a server verdict', () => {
     )
   })
 
-  it('leaves Luna and MiMo 2.6 Pro open at full access, Gemini locked', () => {
-    for (const id of [FREEBUFF_GPT_6_LUNA_MODEL_ID, FREEBUFF_MIMO_V26_PRO_MODEL_ID]) {
-      expect(freebuffPlanRequired(id, false, undefined, 'full')).toBe(false)
-      expect(freebuffPlanRequired(id, false, undefined)).toBe(false)
-    }
-    expect(
-      freebuffPlanRequired(FREEBUFF_GEMINI_38_FLASH_MODEL_ID, false, undefined, 'full'),
-    ).toBe(true)
+  it('leaves MiMo 2.6 Pro open at full access; Gemini and GPT-6 Luna locked', () => {
+    expect(freebuffPlanRequired(FREEBUFF_MIMO_V26_PRO_MODEL_ID, false, undefined, 'full')).toBe(false)
+    expect(freebuffPlanRequired(FREEBUFF_MIMO_V26_PRO_MODEL_ID, false, undefined)).toBe(false)
+    // GPT-6 Luna takes a plan at both tiers since 2026-11-06.
+    for (const id of [FREEBUFF_GEMINI_38_FLASH_MODEL_ID, FREEBUFF_GPT_6_LUNA_MODEL_ID])
+      expect(freebuffPlanRequired(id, false, undefined, 'full')).toBe(true)
   })
 
   it('opens every row on a plan, and the server verdict still wins', () => {
@@ -94,5 +93,16 @@ describe('the full-access session policy', () => {
     expect(intent(freebucks(never), 'flash')).toBe('paywall')
     // 30 less 15 is still more than 10.
     expect(intent(freebucks({ ...never, soloDiscount: 15 }), 'pro')).toBe('paywall')
+  })
+
+  it('hides the clock only on the rows the server names', () => {
+    const info = freebucks({ spendWithoutAsking: true, untimedModelIds: ['flash'] })
+    expect(freebuffSessionUntimed('flash', info)).toBe(true)
+    expect(freebuffSessionUntimed('pro', info)).toBe(false)
+    expect(freebuffSessionUntimed(undefined, info)).toBe(false)
+    // No verdict (an older server, another tier, an unreadable balance) keeps it.
+    expect(freebuffSessionUntimed('flash', freebucks())).toBe(false)
+    expect(freebuffSessionUntimed('flash', null)).toBe(false)
+    expect(freebuffSessionUntimed('flash', undefined)).toBe(false)
   })
 })

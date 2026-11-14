@@ -83,9 +83,70 @@ eval "$(codebuff shims env)"
 base-lite "fix this bug"
 ```
 
+### How a turn ends on its own
+
+A turn that keeps calling tools has two limits of its own, and the first to bind
+ends it.
+
+- **No progress** (`packages/agent-runtime/src/util/turn-progress.ts`, root turns
+  only). 40 consecutive model steps that changed no file and got no tool result
+  this turn had not seen. A stop is a finished turn with an honest message, not
+  a failed one, so a Mission reads it and decides what to do next. Subagents and
+  `handleSteps` agents are exempt: subagents are mostly read-only, and programmatic
+  work happens outside the steps it counts.
+- **Step ceiling.** `MAX_AGENT_STEPS_DEFAULT` for a root turn,
+  `MAX_SUBAGENT_STEPS_DEFAULT` for each spawned agent. The caller's `maxAgentSteps`
+  replaces the root's, and resets on every run. A spawned agent's never inherits
+  it. The root's has to stay under `MAX_AGENT_STEP_ROWS`, or a run stops persisting
+  its later steps. It is a backstop for what the no-progress check cannot see, such
+  as output that changes on every step, or edits that undo each other.
+
 ## Tools
 
 - Tool definitions live in `common/src/tools` and are executed via the SDK helpers + agent-runtime.
+
+### Searching and reading the public web
+
+Hosted `web_search` uses [Parallel Fast](https://docs.parallel.ai/search/modes).
+It returns up to ten source URLs with excerpts; one request can include several
+keyword variations for the same objective. Use the excerpts first. For a known
+URL or missing detail, `read_url` uses [Extract](https://docs.parallel.ai/extract/extract-quickstart):
+an objective selects relevant passages; omitting it reads the page in order.
+Search uses the index by default; Extract may refresh a page under its default
+policy. Set `live: true` when freshness matters:
+Parallel may reuse a page fetched within ten minutes; older cached pages cannot
+stand in for a failed refresh. Search and fetch share a per-user limit, and a
+direct BYOK run keeps the local public-URL reader.
+
+### Skill resource paths
+
+Both the runtime `skill` tool and CLI `/skill:<name>` prompts use
+`common/src/util/skills.ts` → `formatSkillContent` to include the loaded skill's
+base directory. Bundled `scripts/`, `references/`, and `assets/` paths resolve
+against that directory, not the project cwd. Windows separators are normalized
+to forward slashes for file tools and Git Bash. Keep this context on both entry
+paths: the loader knows `filePath`, but raw SKILL.md content alone loses it and
+leaves the agent searching for resources it already loaded instructions for.
+
+### Shell-mismatch hints on terminal results
+
+`run_terminal_command` runs bash, on Windows too (Git Bash), unless a broker
+that `ownsShell` runs PowerShell 5.1 (the sponsored Windows floor). When a
+command fails with a known dialect error (`bash: dir: command not found`, an
+eaten `C:\Users` path, PowerShell's `&&`, `/dev/null`, `rm -rf` or a missing
+`grep`), the SDK adds a one-line `hint` naming the real shell and the
+replacement (`common/src/util/shell-mismatch-hint.ts`). stdout, stderr and the
+exit code are unchanged, and a genuinely missing program gets no hint.
+
+### Explicit file reads versus discovery
+
+The SDK's `read_files` reads explicitly named text and images even when
+`.gitignore` or built-in discovery exclusions hide them (for example,
+`sandbox/` renders or dependency source). File-tree discovery and background
+project-understanding reads still apply those exclusions. Explicit reads honor
+`.codebuffignore` / `.manicodeignore` and caller-provided file filters; sensitive
+`.env` files remain blocked, and env templates still obey all project ignore
+rules. `.freebuffignore` controls workspace transfers, not this read policy.
 
 ### Cut-off file edits are refused, never repaired
 

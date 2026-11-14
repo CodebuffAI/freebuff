@@ -3,10 +3,7 @@ import {
   sponsoredDoneStepCount,
 } from './sponsored-procedure-steps'
 import { sanitizeAdUrl } from '../util/ad-creative-safety'
-import {
-  sponsoredOfferPlanFromWire,
-  sponsoredOfferSummary,
-} from './sponsored-offer-plan'
+import { sponsoredOfferPlanFromWire } from './sponsored-offer-plan'
 
 import type {
   SponsoredOfferPlan,
@@ -197,6 +194,48 @@ export function sponsoredStepsNeedingYou(
 }
 
 /**
+ * Where a run is, as one status (COD-995 v2): "Step 2 of 3 · Wire the deploy
+ * hook". The current step is the first one not `done`, so the line moves as
+ * each step finishes rather than only at delivery; a run whose steps are all
+ * done reads as its last one. Null with no steps, when there is nothing to
+ * count -- a surface says what it knows instead of inventing a number.
+ */
+export function sponsoredCurrentStep(
+  steps: readonly SponsoredProposalStep[],
+): { number: number; total: number; text: string } | null {
+  if (steps.length === 0) return null
+  const at = steps.findIndex((step) => step.state !== 'done')
+  const index = at === -1 ? steps.length - 1 : at
+  return {
+    number: index + 1,
+    total: steps.length,
+    text: steps[index]!.text.trim(),
+  }
+}
+
+/**
+ * {@link sponsoredCurrentStep} as the line a minimized card shows.
+ *
+ * `planStepCount` is the offer plan's count, for the stretch where the run
+ * has not reported steps of its own -- which on Desktop is the whole run:
+ * the orchestrator reports step states with the terminal report only. The
+ * plan names no steps, so that line is the count alone, "Step 1 of 2".
+ */
+export function sponsoredStepStatusLine(
+  steps: readonly SponsoredProposalStep[],
+  planStepCount?: number | null,
+): string | null {
+  const current =
+    sponsoredCurrentStep(steps) ??
+    (planStepCount && planStepCount > 0
+      ? { number: 1, total: planStepCount, text: '' }
+      : null)
+  if (!current) return null
+  const count = `Step ${current.number} of ${current.total}`
+  return current.text ? `${count} · ${current.text}` : count
+}
+
+/**
  * The fields of a proposal the channel depends on.
  *
  * Structural rather than the Convex document type, so `common` does not depend
@@ -246,6 +285,8 @@ export type SponsoredProposalRow = {
    * `href`.
    */
   advertiser_cta_url?: string
+  /** The accepted run owns the account question and conversion assessment. */
+  agent_managed_conversion?: true
   /**
    * The execution surface the offer was minted for (`desktop_macos`,
    * `desktop_windows`, ...). A surface refuses to accept a row minted for a
@@ -532,13 +573,11 @@ export type SponsoredProposalViewModel = {
   doneStepCount: number
   /** "3/8" ({@link formatSponsoredStepCount}); null with no steps. */
   stepCountLabel: string | null
-  /** The validated `offer_plan`, or null. Feeds `sponsoredProgressPill`. */
-  offerPlan: SponsoredOfferPlan | null
   /**
-   * "6 steps · ~4 min · 1 needs you (Archil account)", on `offered` only, or
-   * null when there is no plan to say it from.
+   * The validated `offer_plan`, or null. Feeds `sponsoredProgressPill` from
+   * Accept onwards; the offer itself says nothing of it.
    */
-  offerSummary: string | null
+  offerPlan: SponsoredOfferPlan | null
   logoToken: string | null
   logoSrc: string | null
   pullRequestHref: string | null
@@ -719,46 +758,45 @@ export function sponsoredProposalViewModel(
       steps.length,
     ),
     offerPlan,
-    offerSummary:
-      row.state === 'offered' ? sponsoredOfferSummary(offerPlan) : null,
     logoToken,
     logoSrc: sponsoredLogoSrc(row.advertiser_logo_token),
     pullRequestHref,
     advertiserCtaHref,
-    setupGuide: ctaStates.includes(row.state)
-      ? {
-          title: 'Finish setup and verify',
-          eyebrow:
-            row.state === 'merged'
-              ? 'Finish setup'
-              : // Nothing is merged on an in-place run, so "Before you merge"
-                // would name a step that does not exist here.
-                row.state === 'delivered'
-                ? 'Before you keep it'
-                : 'Before you merge',
-          heading: `Connect ${row.advertiser_name}`,
-          description:
-            'Your code is ready. Create an account or sign in, then add your project settings.',
-          steps: [
-            {
-              title: '1. Review the code',
-              detail:
-                'Review the changes and setup notes. The code is ready for review; the live connection still needs checking.',
-            },
-            {
-              title: '2. Set up your account',
-              detail: `Create or sign in to your ${row.advertiser_name} account if needed. Follow the setup notes to connect your project and configure credentials in your environment settings.`,
-            },
-            {
-              title: '3. Verify in your app',
-              detail:
-                'Run the feature against your connected project using the setup notes. A signup or passing local tests alone does not verify the integration.',
-            },
-          ],
-          verificationNote:
-            'Live integration verification is not recorded by this card. These are your next steps; they do not restart the sponsored run.',
-        }
-      : null,
+    setupGuide:
+      ctaStates.includes(row.state) && !row.agent_managed_conversion
+        ? {
+            title: 'Finish setup and verify',
+            eyebrow:
+              row.state === 'merged'
+                ? 'Finish setup'
+                : // Nothing is merged on an in-place run, so "Before you merge"
+                  // would name a step that does not exist here.
+                  row.state === 'delivered'
+                  ? 'Before you keep it'
+                  : 'Before you merge',
+            heading: `Connect ${row.advertiser_name}`,
+            description:
+              'Your code is ready. Create an account or sign in, then add your project settings.',
+            steps: [
+              {
+                title: '1. Review the code',
+                detail:
+                  'Review the changes and setup notes. The code is ready for review; the live connection still needs checking.',
+              },
+              {
+                title: '2. Set up your account',
+                detail: `Create or sign in to your ${row.advertiser_name} account if needed. Follow the setup notes to connect your project and configure credentials in your environment settings.`,
+              },
+              {
+                title: '3. Verify in your app',
+                detail:
+                  'Run the feature against your connected project using the setup notes. A signup or passing local tests alone does not verify the integration.',
+              },
+            ],
+            verificationNote:
+              'Live integration verification is not recorded by this card. These are your next steps; they do not restart the sponsored run.',
+          }
+        : null,
     verification,
     actions: [
       ...stateActions,

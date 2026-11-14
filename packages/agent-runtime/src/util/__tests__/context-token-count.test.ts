@@ -149,6 +149,17 @@ describe('provider-anchored context size', () => {
     expect(estimateContextTokens(params)).toBe(fallback)
   })
 
+  test('keeps the receipt when only the Freebuff session handle changed', () => {
+    const params = { ...setup(), model: 'fbm1.session-1' }
+    params.agentState.contextTokenBaseline!.model = 'fbm1.session-1'
+    expect(estimateContextTokens({ ...params, model: 'fbm1.session-2' })).toBe(
+      12_500,
+    )
+    expect(estimateContextTokens({ ...params, model: 'test-model' })).not.toBe(
+      12_500,
+    )
+  })
+
   test('missing, zero, negative and non-finite receipts do not erase a valid anchor', () => {
     const params = setup()
     for (const inputTokens of [0, -1, NaN, Infinity]) {

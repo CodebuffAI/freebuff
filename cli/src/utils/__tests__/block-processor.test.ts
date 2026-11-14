@@ -784,6 +784,14 @@ describe('processBlocks', () => {
 // ============================================================================
 
 describe('splitAgentsBySize', () => {
+  test('groups fan-out workers as small agents', () => {
+    const agents = [
+      createNonImplementorAgent('w-1', 'base3-fast-worker-deepseek-flash'),
+      createNonImplementorAgent('w-2', 'base3-fast-worker-deepseek-flash'),
+    ]
+    expect(splitAgentsBySize(agents)).toEqual([agents])
+  })
+
   test('returns single group for empty array', () => {
     const result = splitAgentsBySize([])
     expect(result).toEqual([[]])

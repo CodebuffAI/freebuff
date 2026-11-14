@@ -4,7 +4,7 @@
  * `common/src/ads/sponsored-skills/<id>/<version>.bench.json` and indexed in
  * `sponsored-skills/receipts.ts`. CI checks the newest version of every skill
  * has a current one (`sponsored-skill-bench-receipt.test.ts`) and runs
- * nothing: the bench itself runs only when someone dispatches it.
+ * nothing. The bench workflow that wrote receipts was removed in COD-965.
  */
 import {
   benchCellPass,

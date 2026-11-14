@@ -23,6 +23,8 @@ export interface SiteDomains {
   domains: SiteDomain[]
   primaryHostname: string | null
   defaultHostname: string
+  /** Present on backends that support editing the Freebuff address. */
+  platformDomain?: string
 }
 export type SiteDomainAction = 'connect' | 'verify' | 'primary' | 'remove'
 export interface SiteDomainResult {

@@ -92,7 +92,7 @@ export type SendPaidSocialConversionParams = {
 
 /**
  * The page TikTok is told the event happened on. Registration completes on
- * the public OAuth callback the user actually hit. Activation happens inside
+ * the public authentication endpoint the user actually hit. Activation happens inside
  * Desktop or the CLI, off the site, so it is reported as a CUSTOM web event on
  * that surface's public product page — decided 2026-09-19, because cost per
  * activation is the campaign's primary metric and TikTok can only see what it

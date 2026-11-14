@@ -3,7 +3,6 @@
  *
  * NOTE: Due to React 19 + Bun + OpenTUI compatibility issues, we test the component's
  * core logic in isolation rather than rendering the full component.
- * See cli/knowledge.md for details on the testing constraints.
  */
 
 import { describe, it, expect } from 'bun:test'

@@ -6,7 +6,6 @@ import { loadAgentDefinitions } from '../utils/local-agent-registry'
 import { hasSelectedByokConnection } from '../utils/byok'
 import { IS_FREEBUFF } from '../utils/constants'
 import { logger } from '../utils/logger'
-import { filterNetworkErrors } from '../utils/validation-error-helpers'
 
 import type { AgentDefinition } from '@codebuff/sdk'
 
@@ -74,17 +73,21 @@ export const useAgentValidation = (): UseAgentValidationResult => {
         setValidationErrors([])
         return { success: true, errors: [] }
       } else {
-        const filteredValidationErrors = filterNetworkErrors(
-          validationResult.validationErrors,
-        )
-        setValidationErrors(filteredValidationErrors)
-        return { success: false, errors: filteredValidationErrors }
+        // Transport failures block the send too; retain the reason for the UI
+        // and diagnostics instead of silently aborting with an empty error list.
+        setValidationErrors(validationResult.validationErrors)
+        return { success: false, errors: validationResult.validationErrors }
       }
     } catch (error) {
       logger.error({ error }, 'Agent validation failed with exception')
-      // Don't update validation errors on exception - keep previous state
-      // Return failure to block message sending on validation errors
-      return { success: false, errors: [] }
+      const errors = [
+        {
+          id: 'validation_error',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      ]
+      setValidationErrors(errors)
+      return { success: false, errors }
     } finally {
       setIsValidating(false)
     }

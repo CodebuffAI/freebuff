@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
+import { sitesGuidance } from '../guidance'
 import { SITE_TOOL_SPECS } from '../tools'
 
 /**
@@ -36,13 +37,17 @@ describe('the Sites tool surface', () => {
       'sites_enable_auth',
       'sites_inspect',
       'sites_list',
+      'sites_prepare_next',
+      'sites_prepare_realtime',
       'sites_set_published',
       'sites_set_secret',
     ])
   })
 
   test('the tool that says data is retained also says where deletion lives, so the model never reports a gap that is not there', () => {
-    const retaining = SITE_TOOL_SPECS.filter((spec) => /retained/i.test(spec.description))
+    const retaining = SITE_TOOL_SPECS.filter((spec) =>
+      /retained/i.test(spec.description),
+    )
     expect(retaining.map((spec) => spec.name)).toEqual(['sites_set_published'])
     const [{ description }] = retaining
     expect(description).toContain('Unpublishing is not deletion')
@@ -61,5 +66,15 @@ describe('the Sites tool surface', () => {
     const { description } = byName.get('sites_set_published')!
     expect(description).toContain('never reported its result')
     expect(description).toContain('support@freebuff.com')
+  })
+
+  // 2026-10-21: told only to save the site id "in the workspace", an agent
+  // wrote it into .freebuff/project-id, the marker Desktop reads to find a
+  // folder's chats, and the next launch opened the project with none of them.
+  test('saving the site id never takes Freebuff’s own project marker', () => {
+    expect(byName.get('sites_create')!.description).toContain(
+      'never in .freebuff/project-id',
+    )
+    expect(sitesGuidance('build')).toContain('never in .freebuff/project-id')
   })
 })

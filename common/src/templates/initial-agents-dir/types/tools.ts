@@ -240,7 +240,7 @@ export interface ProposeWriteFileParams {
   /** Path to the file relative to the **project root** */
   path: string
   /** What the change is intended to do in only one sentence. */
-  instructions: string
+  instructions?: string
   /** Edit snippet to apply to the file. */
   content: string
 }
@@ -281,6 +281,10 @@ export interface ReadSubtreeParams {
 export interface ReadUrlParams {
   /** The full http:// or https:// URL to fetch and extract readable text from. */
   url: string
+  /** The specific information to extract. Omit to read the page in order. */
+  objective?: string
+  /** Request fresh content only for time-sensitive facts. Pages fetched within the last 10 minutes may be reused. */
+  live?: boolean
   /** Maximum number of extracted text characters to return. Defaults to 20000. */
   max_chars?: number
 }
@@ -407,13 +411,17 @@ export interface ThinkDeeplyParams {
 }
 
 /**
- * Search the web for current information using Serper API.
+ * Search the web for relevant source excerpts and URLs.
  */
 export interface WebSearchParams {
-  /** The search query to find relevant web content */
+  /** Primary keyword query, usually 3–6 words. Include the entity, exact package name, or error you are looking for. */
   query: string
-  /** Search depth - 'standard' for quick results, 'deep' for more comprehensive search. Default is 'standard'. */
-  depth?: 'standard' | 'deep'
+  /** What you need to establish. Include relevant context, version, or source preferences. */
+  objective?: string
+  /** Up to two alternate keyword queries for the same objective. Submit them together in this search. */
+  additional_queries?: string[]
+  /** Request fresh pages only when the answer is time-sensitive. Slower; pages fetched within the last 10 minutes may be reused. */
+  live?: boolean
 }
 
 /**
@@ -423,21 +431,21 @@ export interface WriteFileParams {
   /** Path to the file, relative to the **project root**. Local hosts (CLI, Desktop, SDK) also accept an absolute path, which is not limited to the project. */
   path: string
   /** What the change is intended to do in only one sentence. */
-  instructions: string
+  instructions?: string
   /** Edit snippet to apply to the file. */
   content: string
 }
 
 /**
- * Write a todo list to track tasks for multi-step implementations. Use this frequently to maintain an updated step-by-step plan.
+ * Write a todo list to track tasks for multi-step implementations. Keep it updated as you complete each step.
  */
 export interface WriteTodosParams {
-  /** List of todos with their completion status. Add ALL of the applicable tasks to the list, so you don't forget to do anything. Try to order the todos the same way you will complete them. Do not mark todos as completed if you have not completed them yet! */
+  /** List of todos with their completion status. List every step the user's request requires, so you don't forget any, and nothing it does not: no extra features, refactors or polish. Try to order the todos the same way you will complete them. Do not mark todos as completed if you have not completed them yet! */
   todos: {
     /** Description of the task */
     task: string
     /** Whether the task is completed */
-    completed: boolean
+    completed?: boolean
   }[]
 }
 

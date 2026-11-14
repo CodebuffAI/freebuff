@@ -3,12 +3,16 @@
  * Argon (2026-10-13). Both are ONE SESSION A DAY for every account, paid
  * plans included.
  *
- * `GEMINI_4_ARGON_PROMOTIONAL` is Argon's `promotional` field and its server
- * price notice (`freebucksPricing().priceNotices`) that released CLI and
- * Desktop builds render in place of the tagline: one constant so the two
- * cannot disagree, naming the daily limit so nobody meets it first as a
- * refusal. Sol (250 since 2026-10-13, 100 at launch) is no longer labelled a
- * promotion (product, 2026-10-15); its tagline names the limit instead.
+ * Argon's promotional price ended at the 2026-10-23 repricing (250), and the
+ * row is being retired (2026-10-24, FREEBUFF_LEAVING_SOON). Sol (200 since
+ * 2026-10-23) lost its Promotional pill on 2026-10-15 and has it back since
+ * 2026-10-28 (product), worded as Terra's (`GPT_61_SOL_PROMOTIONAL`).
+ *
+ * GPT-6.1 Terra (2026-10-26) is ONE SESSION A DAY too, at a PROMOTIONAL 100
+ * with `GPT_61_TERRA_PROMOTIONAL` as its pill and server price notice (one
+ * constant, so the two cannot disagree, and it names the daily limit so
+ * nobody meets it first as a refusal). Not US-or-paid: it opens on every
+ * full-access account and needs a plan only at limited access.
  *
  * A leaf module, like freebuff-solar-promo.ts, because the Freebucks price
  * map, the model catalog and the admission debit all read it and none may
@@ -18,18 +22,30 @@ import { getFreebuffModelPolicyOverlay } from './freebuff-model-policy-overlay'
 
 export const GPT_61_SOL_MODEL_ID = 'openai/gpt-6.1-sol'
 export const GEMINI_4_ARGON_MODEL_ID = 'google/gemini-4-argon'
+export const GPT_61_TERRA_MODEL_ID = 'openai/gpt-6.1-terra'
 
 /**
- * The tooltip also says the row is NEW and EXPERIMENTAL (product,
- * 2026-10-13): Desktop and the Web workspace draw only the promotional pill
- * beside a model name, so its hover text is where those two facts are seen.
- * Since 2026-10-16 it leads with the promotion ending very soon (product: the
- * promotional price does not cover the row's cost).
+ * Terra's promotional label (product, 2026-10-26; "1 per day" since
+ * 2026-10-28, from "Promotional · 1 session a day"; "2 per day" from
+ * 2026-11-03, when it went to 150 and behind a plan). The tooltip also says the
+ * row is new: Desktop and the Web workspace draw only this pill beside the
+ * model name, so its hover text is where that is seen, and that the price is
+ * promotional.
  */
-export const GEMINI_4_ARGON_PROMOTIONAL = {
-  short: 'Promotional · 1 session a day',
+export const GPT_61_TERRA_PROMOTIONAL = {
+  short: '2 per day',
   tooltip:
-    'This promotional price ends very soon. New and experimental: it may be unreliable or change without notice. Free in the US, a paid plan elsewhere, until the promotion ends. One session a day on every plan.',
+    'Included with a paid plan (Pro on limited access). Two sessions a day on every plan.',
+} as const
+
+/**
+ * Sol's pill (product, 2026-10-28): the same words as Terra's, so the two
+ * one-a-day OpenAI rows read alike. Sol stays US-or-paid; the tooltip says so.
+ */
+export const GPT_61_SOL_PROMOTIONAL = {
+  short: '1 per day',
+  tooltip:
+    'A promotional price that goes up when the promotion ends. Open with a US connection or a paid plan. One session a day on every plan.',
 } as const
 
 /**
@@ -45,6 +61,9 @@ export const FREEBUFF_DAILY_SESSION_LIMITS: Readonly<Record<string, number>> =
   Object.freeze({
     [GPT_61_SOL_MODEL_ID]: 1,
     [GEMINI_4_ARGON_MODEL_ID]: 1,
+    // Two from 2026-11-03 (product, Victor), when it went to 150 and behind a
+    // paid plan.
+    [GPT_61_TERRA_MODEL_ID]: 2,
   })
 
 /**

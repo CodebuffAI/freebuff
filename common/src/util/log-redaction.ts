@@ -121,3 +121,59 @@ export function redactErrorFieldForLog(key: string, val: unknown): unknown {
   }
   return val
 }
+
+// `<deployment>|<token>`: an admin key, and a deploy key's body after its
+// `prod:`/`dev:`/`preview:<team>:<project>:` prefix. The name part is kept.
+const CONVEX_KEY_AFTER_NAME = /(\b[A-Za-z0-9_.:-]+\|)[A-Za-z0-9+/=_.-]{20,}/g
+// The token Convex mints for deploy keys and team/project access tokens is
+// base64 JSON starting `{"v2":`, so it is recognisable without a name.
+const CONVEX_V2_TOKEN = /eyJ2MiI6[A-Za-z0-9+/=_.-]*/g
+// `CONVEX_DEPLOY_KEY=…` in a command line; `$(cat …)` is a reference, kept.
+const CONVEX_KEY_ASSIGNMENT =
+  /(\bCONVEX_[A-Z_]*(?:KEY|TOKEN)=)(['"]?)(?!\$)[^\s'"]+/g
+
+/**
+ * Text with every Convex credential replaced by `[redacted]`: deploy keys,
+ * admin keys (`Authorization: Convex <deployment>|<token>`, and the URL the
+ * Convex CLI echoes when handed one), bare access tokens, and
+ * `CONVEX_*_KEY=`/`CONVEX_*_TOKEN=` assignments. The deployment name stays, as
+ * it is what says which key would need rotating. For Convex Management API
+ * response bodies, CLI output and error text bound for a log line.
+ */
+export function redactConvexKeysForLog(text: string): string {
+  return text
+    .replace(CONVEX_KEY_ASSIGNMENT, '$1$2[redacted]')
+    .replace(CONVEX_KEY_AFTER_NAME, '$1[redacted]')
+    .replace(CONVEX_V2_TOKEN, '[redacted]')
+}
+
+const QUERY_PARAMS_MARKER = '\nparams: '
+
+/**
+ * A drizzle `DrizzleQueryError` without its bound values. Drizzle writes every
+ * param into `message` (and so into `stack`) as well as `params`, and the
+ * values of an auth write are credentials: on 2026-10-19 freebuff-web logged a
+ * Google access token and ID token from a failed `linkAccount` insert. The
+ * statement and the `cause` holding the Postgres reason are kept; the params
+ * become their count. Any other value is returned unchanged.
+ */
+export function redactQueryErrorForLog<T>(error: T): T {
+  if (!(error instanceof Error)) return error
+  const fields = error as Error & { query?: unknown; params?: unknown }
+  if (typeof fields.query !== 'string' || !('params' in fields)) return error
+  const marker = error.message.indexOf(QUERY_PARAMS_MARKER)
+  const count = Array.isArray(fields.params) ? fields.params.length : 0
+  const omitted = `[${count} params omitted]`
+  const message =
+    marker === -1
+      ? error.message
+      : `${error.message.slice(0, marker)}${QUERY_PARAMS_MARKER}${omitted}`
+  const redacted = new Error(message, { cause: error.cause })
+  Object.assign(redacted, error, { params: omitted })
+  redacted.name = error.name
+  redacted.stack =
+    error.stack && error.stack.includes(error.message)
+      ? error.stack.replace(error.message, () => message)
+      : `${error.name}: ${message}`
+  return redacted as T
+}

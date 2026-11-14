@@ -379,19 +379,88 @@ export function themeFromFgColor(
 }
 
 /**
+ * Terminal-specific fallbacks that cost no terminal I/O, in priority order.
+ * Returns null when nothing is conclusive: tmux, screen, SSH and generic
+ * linux/xterm TERM values are per-session, not per-terminal, so dark/light
+ * cannot be inferred from them.
+ */
+function detectTerminalFallbackTheme(
+  env: CliEnv = getCliEnv(),
+): 'dark' | 'light' | null {
+  // Apple Terminal does not answer OSC 10/11 but exports TERM_PROGRAM_VERSION
+  // that correlates with the profile's theme in supported ranges.
+  if (env.TERM_PROGRAM === 'Apple_Terminal' && env.TERM_PROGRAM_VERSION) {
+    const version = parseInt(env.TERM_PROGRAM_VERSION, 10)
+    if (Number.isFinite(version)) {
+      return version >= 400 ? 'dark' : 'light'
+    }
+  }
+
+  // xterm defaults to a white background unless the user configures it.
+  if (
+    env.XTERM_VERSION !== undefined &&
+    (env.TERM === 'xterm' || env.TERM === 'xterm-color')
+  ) {
+    return 'light'
+  }
+
+  return null
+}
+
+/**
+ * Sync background-color evidence usable for the first frame, before the
+ * terminal's OSC reply exists. Env signals (TERM_BACKGROUND, COLORFGBG) are
+ * checked ahead of querying; terminal-specific fallbacks (which used to run
+ * instead of querying when OSC looked unsupported) apply only when a query
+ * will not be sent. The supportsOsc parameter exists so tests can pin the
+ * query/no-query branch without a TTY, matching
+ * detectTerminalThemeWithSupportTestHook; production callers leave it
+ * undefined and get the env probe.
+ */
+export function detectBgColorEvidence(
+  env: CliEnv = getCliEnv(),
+  supportsOsc?: boolean,
+): [number, number, number] | null {
+  const envBgRgb = detectBgColorFromEnv(env)
+  if (envBgRgb) {
+    return envBgRgb
+  }
+
+  if ((supportsOsc ?? terminalSupportsOSC(env)) === false) {
+    const fallback = detectTerminalFallbackTheme(env)
+    if (fallback) {
+      return fallback === 'dark' ? [0, 0, 0] : [255, 255, 255]
+    }
+  }
+
+  return null
+}
+
+/**
+ * The theme a terminal that cannot answer an OSC query still has: env
+ * signals first, then per-terminal fallbacks. Pure — no terminal I/O — and
+ * shared with detectTerminalThemeCore's tail so both paths agree.
+ */
+function detectTerminalEvidenceTheme(
+  env: CliEnv = getCliEnv(),
+): 'dark' | 'light' | null {
+  const envBgRgb = detectBgColorFromEnv(env)
+  if (envBgRgb) {
+    return themeFromBgColor(envBgRgb)
+  }
+  return detectTerminalFallbackTheme(env)
+}
+
+/**
  * Core detection logic without any timeout wrapping
  * This is the actual detection implementation
  */
 async function detectTerminalThemeCore(
   env: CliEnv = getCliEnv(),
+  query: (oscCode: number) => Promise<string | null> = queryTerminalOSC,
 ): Promise<'dark' | 'light' | null> {
-  // Check if terminal supports OSC
-  if (!terminalSupportsOSC(env)) {
-    return null
-  }
-
   // Try background color first (OSC 11) - more reliable
-  const bgResponse = await queryTerminalOSC(11)
+  const bgResponse = await query(11)
   if (bgResponse) {
     const bgRgb = parseOSCResponse(bgResponse)
     if (bgRgb) {
@@ -400,7 +469,7 @@ async function detectTerminalThemeCore(
   }
 
   // Fallback to foreground color (OSC 10)
-  const fgResponse = await queryTerminalOSC(10)
+  const fgResponse = await query(10)
   if (fgResponse) {
     const fgRgb = parseOSCResponse(fgResponse)
     if (fgRgb) {
@@ -408,13 +477,41 @@ async function detectTerminalThemeCore(
     }
   }
 
-  // Fallback to COLORFGBG environment variable if available
-  const envBgRgb = detectBgColorFromEnv(env)
-  if (envBgRgb) {
-    return themeFromBgColor(envBgRgb)
-  }
+  // Keep parity with the sync evidence path: the env signals and the
+  // per-terminal fallbacks apply even for terminals that support OSC, when
+  // the terminal had no answer. detectBgColorFromEnv is checked first so the
+  // precedence matches detectBgColorEvidence.
+  return detectTerminalEvidenceTheme(env)
+}
 
-  return null
+/**
+ * Detect terminal theme by querying OSC 10/11
+ * Wrapped with a global timeout to prevent hanging
+ * @returns 'dark', 'light', or null if detection failed
+ */
+export async function detectTerminalThemeWithSupportTestHook(
+  supportsOsc?: boolean,
+  query: (oscCode: number) => Promise<string | null> = queryTerminalOSC,
+): Promise<'dark' | 'light' | null> {
+  // Subsumes the old terminalSupportsOSC() gate that ran ahead of this
+  // function: when OSC is unsupported there is no query to send — writing one
+  // anyway puts an escape sequence on a tty that cannot answer it and toggles
+  // stdin raw mode for a reply that never comes — and the env/fallback answer
+  // is returned synchronously. The param exists so tests can simulate an
+  // OSC-capable terminal without TTY emulation; production callers leave it
+  // undefined and get the env probe.
+  if ((supportsOsc ?? terminalSupportsOSC()) === false) {
+    return detectTerminalEvidenceTheme()
+  }
+  try {
+    return await withTimeoutOr(
+      detectTerminalThemeCore(undefined, query),
+      GLOBAL_OSC_TIMEOUT_MS,
+      null,
+    )
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -423,15 +520,7 @@ async function detectTerminalThemeCore(
  * @returns 'dark', 'light', or null if detection failed
  */
 export async function detectTerminalTheme(): Promise<'dark' | 'light' | null> {
-  try {
-    return await withTimeoutOr(
-      detectTerminalThemeCore(),
-      GLOBAL_OSC_TIMEOUT_MS,
-      null,
-    )
-  } catch {
-    return null
-  }
+  return detectTerminalThemeWithSupportTestHook(undefined, queryTerminalOSC)
 }
 
 /**

@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { spawn, spawnSync } from 'child_process'
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -6,7 +6,10 @@ import { join } from 'path'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 
 import { TERMINAL_RESET_SEQUENCES } from '../utils/terminal-reset-sequences'
-import { classifyTerminalWatchdogSpawnFailure } from '../utils/terminal-watchdog'
+import {
+  classifyTerminalWatchdogSpawnFailure,
+  windowsPowerShellPath,
+} from '../utils/terminal-watchdog'
 import { sanitizeWindowsCliVersion } from '../utils/windows-terminal-health'
 
 import type { ChildProcess } from 'child_process'
@@ -21,8 +24,8 @@ afterAll(() => {
 
 // Every fixture is spawned at once and killed at once, so these are one shared
 // budget for the whole file instead of a per-test cost. Windows pays for two
-// PowerShell hops (bootstrap + out-of-job watchdog) on a runner that is often
-// busy scanning them, hence the wide margin there.
+// PowerShell hops (bootstrap + out-of-job watchdog) for every fixture at once,
+// hence the wide margin there.
 //
 // Ready is longer than the fixture's own arm deadline on purpose, so the
 // fixture is what reports a failure to arm (it names the marker it waited on);
@@ -288,6 +291,30 @@ describe('terminal watchdog', () => {
 // wall clock is one fixture's cost, not the sum. Nothing here throws — a wait
 // that times out still snapshots, so the failing assertion names the scenario.
 describe('terminal watchdog (fixture processes)', () => {
+  // A fresh Windows VM can take most of a minute to run its first PowerShell,
+  // and each fixture below would pay that inside its arm deadline. Pay it once,
+  // here. Get-Process loads the same module as the watchdog's own cmdlets.
+  if (IS_WINDOWS) {
+    const warmUpMs = 120_000
+    beforeAll(() => {
+      const { error } = spawnSync(
+        windowsPowerShellPath(),
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          '$null = Get-Process -Id $PID',
+        ],
+        { stdio: 'ignore', timeout: warmUpMs },
+      )
+      if (error) {
+        console.error(
+          `PowerShell warm-up failed, so the fixtures likely will too: ${error.message}`,
+        )
+      }
+    }, warmUpMs + 10_000)
+  }
+
   beforeAll(async () => {
     runs = SCENARIOS.map(startRun)
     await Promise.all(runs.map((run) => run.readyPromise))

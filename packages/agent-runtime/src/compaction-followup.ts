@@ -21,6 +21,7 @@ import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 
 export type CompactionWindow = {
+  compactionId?: string
   trigger: CompactionTrigger | 'manual'
   openedAt: number
   /** Every tool call already in the compacted history. */
@@ -92,6 +93,7 @@ function heldPaths(messages: Message[]): Set<string> {
 }
 
 export function openCompactionWindow(params: {
+  compactionId?: string
   before: Message[]
   after: Message[]
   trigger: CompactionTrigger | 'manual'
@@ -99,6 +101,7 @@ export function openCompactionWindow(params: {
 }): CompactionWindow {
   const carriedPaths = heldPaths(params.after)
   return {
+    compactionId: params.compactionId,
     trigger: params.trigger,
     openedAt: params.now ?? Date.now(),
     carriedCallIds: toolCallIds(params.after),
@@ -157,6 +160,7 @@ export function closeCompactionWindow(params: {
     params.logger.info(
       {
         axiomEvent: COMPACTION_FOLLOWUP_EVENT,
+        compaction_id: params.window.compactionId,
         agent_run_id: params.runId,
         model: params.model,
         trigger_reason: params.window.trigger,

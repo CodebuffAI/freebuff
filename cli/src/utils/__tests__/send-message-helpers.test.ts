@@ -1737,6 +1737,17 @@ describe('sanitizeRestoredMessages', () => {
     expect(result.metadata).toEqual({ userOpened: true })
   })
 
+  test('strips the run state older builds copied into message metadata', () => {
+    const [result] = sanitizeRestoredMessages([
+      streamedShell({
+        isComplete: true,
+        metadata: { runState: { sessionState: {} }, userOpened: true },
+      }),
+    ])
+
+    expect(result.metadata).toEqual({ userOpened: true })
+  })
+
   test('drops persisted hidden agent blocks (context-pruner)', () => {
     const [result] = sanitizeRestoredMessages([
       streamedShell({

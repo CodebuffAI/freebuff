@@ -1,6 +1,10 @@
 import z from 'zod/v4'
 
-import { $getNativeToolCallExampleString, jsonToolResultSchema } from '../utils'
+import {
+  $getNativeToolCallExampleString,
+  coerceToObject,
+  jsonToolResultSchema,
+} from '../utils'
 
 import type { $ToolParams } from '../../constants'
 
@@ -108,7 +112,10 @@ const widgetSchema = z.discriminatedUnion('type', [buttonWidgetSchema])
 
 const inputSchema = z
   .object({
-    widget: widgetSchema.describe('The UI widget to render.'),
+    // A widget sent as a JSON string is read as the object it encodes.
+    widget: z
+      .preprocess(coerceToObject, widgetSchema)
+      .describe('The UI widget to render.'),
   })
   .describe('Render a small interactive UI widget for the user.')
 

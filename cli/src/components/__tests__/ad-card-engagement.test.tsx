@@ -100,7 +100,9 @@ describe('AdCard engagement', () => {
     expect(fake.sent[0]!.exit).toBeUndefined()
     fake.runTimers()
 
-    expect(clicked).toEqual(['imp-card-1'])
+    // The test-only click URL cannot be opened, so no ad click is reported
+    // (`openAdClick`); the engagement record still counts the gesture.
+    expect(clicked).toEqual([])
     expect(fake.sent).toHaveLength(2)
     const record = fake.sent[1]!
     expect(record).toMatchObject({

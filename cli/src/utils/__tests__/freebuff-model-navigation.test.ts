@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  freebuffChatPickerHint,
   freebuffModelNavigationDirectionForKey,
   nextFreebuffModelId,
 } from '../freebuff-model-navigation'
@@ -98,5 +99,22 @@ describe('freebuffModelNavigationDirectionForKey', () => {
 
   test('ignores non-navigation keys', () => {
     expect(freebuffModelNavigationDirectionForKey({ name: 'enter' })).toBeNull()
+  })
+})
+
+describe('freebuffChatPickerHint', () => {
+  test('names the arrows only when there is another model to move to', () => {
+    expect(
+      freebuffChatPickerHint({ modelCount: 3, focusedHasReasoning: true }),
+    ).toBe('↑↓ choose model · Tab reasoning · Enter select · Esc cancel')
+    expect(
+      freebuffChatPickerHint({ modelCount: 1, focusedHasReasoning: true }),
+    ).toBe('Tab reasoning · Enter select · Esc cancel')
+  })
+
+  test('names Tab only when the focused row has a reasoning ladder', () => {
+    expect(
+      freebuffChatPickerHint({ modelCount: 2, focusedHasReasoning: false }),
+    ).toBe('↑↓ choose model · Enter select · Esc cancel')
   })
 })

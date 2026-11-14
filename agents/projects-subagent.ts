@@ -23,8 +23,7 @@ import type { SecretAgentDefinition } from './types/secret-agent-definition'
  *
  * At most FREEBUFF_PROJECTS_MAX_LIVE_SUBAGENTS run at once under one root,
  * nested ones included (the agent runtime's spawn_agents handler). The helpers
- * one of them spawns (file-picker and its file-lister, code-searcher,
- * researcher-web) count against that subagent's own MAX_LIVE_SUBAGENTS_PER_ROOT,
+ * one of them spawns (code-searcher, researcher-web) count against that subagent's own MAX_LIVE_SUBAGENTS_PER_ROOT,
  * apart from the root's and its siblings', so they neither starve nor are
  * starved by the rest of the tree. Every spawn_agents call is held to
  * MAX_SPAWN_AGENTS_PER_CALL. Every agent also has its step budget, and

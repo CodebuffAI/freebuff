@@ -1,4 +1,5 @@
 import { FREEBUFF_DEFAULT_CONTEXT_WINDOW } from '@codebuff/common/constants/freebuff-models'
+import { freebuffSessionUntimed } from '@codebuff/common/util/freebuff-model-selection'
 import { TextAttributes } from '@opentui/core'
 import React, { useEffect, useState } from 'react'
 
@@ -114,6 +115,13 @@ export const StatusBar = ({
   }, [timerStartTime, shouldShowTimer, statusIndicatorState?.kind])
 
   const sessionProgress = useFreebuffSessionProgress(freebuffSession)
+  // The clock this session draws: none on a row the server marks untimed for
+  // this viewer, whose next hour starts on the next send without a question.
+  const clock =
+    freebuffSession?.status === 'active' &&
+    freebuffSessionUntimed(freebuffSession.model, freebucksOf(freebuffSession))
+      ? null
+      : sessionProgress
   const modelDirectory = useFreebuffModelDirectory()
   // A metered session is NOT unlimited, and the absence of `rateLimit` is no
   // longer evidence that it is: a Freebucks row carries no pool row at all, so
@@ -213,14 +221,18 @@ export const StatusBar = ({
         }
         if (sessionProgress !== null) {
           const isUrgent =
-            sessionProgress.remainingMs < FREEBUFF_COUNTDOWN_VISIBLE_MS
+            clock !== null && clock.remainingMs < FREEBUFF_COUNTDOWN_VISIBLE_MS
           // One template string on purpose: conditional text-node children
           // inside a <span> trip OpenTUI's reconciler (see knowledge.md).
-          const idleLabel = `${
+          const idleLabel = [
             isUnlimited
               ? 'unlimited'
-              : formatFreebuffSessionRemaining(sessionProgress.remainingMs)
-          }${contextUsage ? ` · ${contextUsage}` : ''}`
+              : clock && formatFreebuffSessionRemaining(clock.remainingMs),
+            contextUsage,
+          ]
+            .filter(Boolean)
+            .join(' · ')
+          if (!idleLabel) return null
           return (
             <span
               fg={
@@ -270,7 +282,7 @@ export const StatusBar = ({
         backgroundColor: hasContent ? theme.surface : 'transparent',
       }}
     >
-      {sessionProgress !== null && (
+      {clock !== null && (
         <box
           style={{
             position: 'absolute',
@@ -280,7 +292,7 @@ export const StatusBar = ({
             bottom: 0,
             // Fill anchors left and shrinks as time passes — the draining
             // bar is the countdown; no separate numeric readout needed.
-            width: `${sessionProgress.fraction * 100}%`,
+            width: `${clock.fraction * 100}%`,
             // A green tint keeps the countdown distinct from its gray track
             // while preserving contrast for the status text in either theme.
             backgroundColor: theme.name === 'light' ? '#c7e8b5' : '#28452a',
@@ -334,13 +346,13 @@ export const StatusBar = ({
               ✕ End session
             </StatusActionButton>
           )}
-        {sessionProgress !== null &&
-          sessionProgress.remainingMs < FREEBUFF_COUNTDOWN_VISIBLE_MS &&
+        {clock !== null &&
+          clock.remainingMs < FREEBUFF_COUNTDOWN_VISIBLE_MS &&
           statusIndicatorState.kind !== 'idle' &&
           !isUnlimited && (
             <text style={{ wrapMode: 'none' }}>
               <span fg={theme.warning} attributes={TextAttributes.BOLD}>
-                {formatFreebuffSessionCountdown(sessionProgress.remainingMs)}
+                {formatFreebuffSessionCountdown(clock.remainingMs)}
               </span>
             </text>
           )}

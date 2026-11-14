@@ -178,8 +178,8 @@ silently checked against the host filesystem.
 
 Knowledge files provide project context to the agent. The SDK auto-discovers:
 
-- **Project files**: `knowledge.md`, `AGENTS.md`, or `CLAUDE.md` in each directory (priority order)
-- **User files**: `~/.knowledge.md`, `~/.AGENTS.md`, or `~/.CLAUDE.md` (case-insensitive)
+- **Project files**: `AGENTS.md` or `CLAUDE.md` in each directory (priority order)
+- **User files**: `~/.AGENTS.md` or `~/.CLAUDE.md` (case-insensitive)
 
 Override with `knowledgeFiles` (replaces project files) or `userKnowledgeFiles` (merges with home directory files):
 
@@ -187,8 +187,8 @@ Override with `knowledgeFiles` (replaces project files) or `userKnowledgeFiles` 
 await client.run({
   agent: 'codebuff/base@0.0.16',
   prompt: 'Help me refactor',
-  knowledgeFiles: { 'knowledge.md': '# Guidelines\n- Use TypeScript' },
-  userKnowledgeFiles: { '~/.knowledge.md': '# Preferences\n- Be concise' },
+  knowledgeFiles: { 'AGENTS.md': '# Guidelines\n- Use TypeScript' },
+  userKnowledgeFiles: { '~/.AGENTS.md': '# Preferences\n- Be concise' },
 })
 ```
 
@@ -225,6 +225,10 @@ bridges already do this.
 ### `loadLocalAgents(options)`
 
 Loads agent definitions from `.agents` directories on disk.
+
+Agent files are executable modules: importing one runs its top-level code in
+this process, so load only directories you trust. `run()` never imports a
+repository's `.agents` on its own (see `agentDirs` below).
 
 ```typescript
 import { loadLocalAgents, CodebuffClient } from '@codebuff/sdk'
@@ -294,6 +298,8 @@ Runs a Codebuff agent with the specified options.
 - **`knowledgeFiles`** (object, optional): Knowledge files to inject into every `run()` call. Uses the same schema as `projectFiles` - keys are file paths and values are file contents. These files are added directly to the agent's context.
 
 - **`agentDefinitions`** (array, optional): Array of custom agent definitions. Each object should satisfy the AgentDefinition type.
+
+- **`agentDirs`** (string[], optional): Directories a new session imports agent modules from when `agentDefinitions` is omitted. Defaults to `~/.agents`; the working directory's `.agents` is never imported implicitly. Ignored when `agentDefinitions` is given, even as `[]`.
 
 - **`customToolDefinitions`** (array, optional): Array of custom tool definitions that extend the agent's capabilities. Each tool definition includes a name, Zod schema for input validation, and a handler function. These tools can be called by the agent during execution.
 

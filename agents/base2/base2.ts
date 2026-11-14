@@ -7,8 +7,8 @@ import {
 import { FREEBUFF_REVIEWER_AGENT_ID_BY_MODEL } from '@codebuff/common/constants/free-agents'
 import {
   canFreebuffModelSpawnGeminiThinker,
-  FREEBUFF_MINIMAX_M3_MODEL_ID,
   FREEBUFF_FABLE_5_1_MODEL_ID,
+  FREEBUFF_MIMO_V25_MODEL_ID,
 } from '@codebuff/common/constants/freebuff-models'
 
 import {
@@ -35,15 +35,23 @@ const THINKER_SPAWN_LIMIT =
 type Base2Mode = 'default' | 'free' | 'lite' | 'max'
 
 /**
- * Free mode runs MiniMax M3 (routed through the Fireworks AI API). New Freebuff
- * clients select an explicit free variant from the model picker; the
- * unqualified base2-free agent covers legacy callers.
+ * Free mode's model when a root names none: the unqualified base2-free agent
+ * (legacy callers, the Web/Cloud fallback root, and the base2-free evals). New
+ * Freebuff clients select an explicit free variant from the model picker.
+ *
+ * MiMo v2.6 Flash Fast since 2026-10-24, the Freebuff default and already on
+ * base2-free's allowlist. It was MiniMax M3 until then, two months after M3 was
+ * withdrawn: no session could be admitted on it, so a client that fell back to
+ * this root was told to update, while the nightly buffbench run (which calls
+ * as the Freebuff Web service account, exempt from the retired-model 410) was
+ * the last thing still spending on MiniMax: ~3.5k messages and ~$30 a day on
+ * Fireworks, 09:00-12:00 UTC.
  */
 const MODEL_BY_MODE = {
   default: OPUS_MODEL,
   max: OPUS_MODEL,
   lite: LITE_MODEL,
-  free: FREEBUFF_MINIMAX_M3_MODEL_ID,
+  free: FREEBUFF_MIMO_V25_MODEL_ID,
 } satisfies Record<Base2Mode, SecretAgentDefinition['model']>
 
 /**
@@ -509,7 +517,7 @@ ${buildArray(
     `- Spawn a ${leanCodeReviewerAgentId} to review the changes after you have implemented code changes. (Skip this step only if the change is extremely straightforward and obvious.)`,
   !noAskUser &&
     !noFollowups &&
-    `- At the end of your turn, use the suggest_followups tool to suggest ~3 next steps the user might want to take — e.g., "Add unit tests for UserService", "Split the auth module into smaller files", "Continue with the next step". ${FOLLOWUP_STYLE_GUIDANCE}`,
+    `- At the end of your turn, after writing your answer as plain text, use the suggest_followups tool as the last thing (no tool call after it) to suggest ~3 next steps the user might want to take — e.g., "Add unit tests for UserService", "Split the auth module into smaller files", "Continue with the next step". ${FOLLOWUP_STYLE_GUIDANCE}`,
 ).join('\n')}`
 }
 

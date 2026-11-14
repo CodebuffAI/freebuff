@@ -95,13 +95,13 @@ export function isCodebaseSalesOffer(
 }
 
 /** Published body is also frozen into each repository's acceptance record. */
-export const CODEBASE_CONTRIBUTION_TERMS_VERSION = '2026-10-15-v1'
+export const CODEBASE_CONTRIBUTION_TERMS_VERSION = '2026-10-30-v1'
 export const CODEBASE_CONTRIBUTION_TERMS_URL =
   'https://freebuff.com/repository-contribution-terms'
 export const CODEBASE_CONTRIBUTION_TERMS_PARAGRAPHS = [
   'You confirm you own or are authorized to contribute the selected repository, its submitted source and reachable Git history, and the included issues and pull requests. Do not contribute secrets, personal data or material you cannot authorize.',
   'You give Freebuff a nonexclusive license to copy, prepare and license this contribution to partners for commercial AI training and evaluation. You keep ownership. A contribution does not guarantee selection or a sale.',
-  'If your contribution is included in a first completed paid license, Freebuff will determine and settle a one-time reward manually, from 1 to 10,000 Freebucks. There is no fixed percentage or currency conversion. Later licenses do not create additional rewards. A reversed or refunded sale is not a completed paid license.',
+  'If your contribution is included in a first completed paid license, Freebuff will determine and settle a one-time reward manually, of up to 2,000 hours of usage. There is no fixed percentage or currency conversion. Later licenses do not create additional rewards. A reversed or refunded sale is not a completed paid license.',
   "Freebuff may retain and offer the contribution for up to one year after acceptance. You may withdraw before then to stop new licensing and request removal of Freebuff's stored contribution copies. Existing partner licenses and limited consent/payment audit records survive withdrawal; previously licensed data cannot be recalled from partners.",
   'The acceptance record preserves the displayed terms and exact repository snapshot. Collection and preparation run in the background. New snapshots require their own recorded scope; accepting does not authorize automatic ongoing capture.',
 ] as const

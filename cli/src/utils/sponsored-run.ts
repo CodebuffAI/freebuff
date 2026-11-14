@@ -92,9 +92,12 @@ import {
 } from '@codebuff/common/ads/sponsored-in-place'
 import type { SponsoredTurnEnding } from '@codebuff/common/ads/sponsored-in-place'
 import { sponsoredSkillDirective } from '@codebuff/common/ads/sponsored-skill'
-import { declaredRunCredentials } from '@codebuff/common/ads/sponsored-run-credentials'
+import {
+  UNFILLED_CLICK_ID_BLOCKED_METRIC,
+  sponsoredRunLinks,
+  sponsoredRunLinksSignupStep,
+} from '@codebuff/common/ads/sponsored-run-links'
 import { saveSponsoredCredentialsToEnvFile } from '@codebuff/common/ads/sponsored-env-file'
-import { sponsoredSignupStep } from '@codebuff/common/ads/sponsored-signup-step'
 import {
   SPONSORED_STEP_FIX_MIN_GRANT_MS,
   captureSponsoredStepBaseline,
@@ -166,6 +169,13 @@ import {
   SponsoredHeldCredentials,
 } from './sponsored-account-step'
 import { sponsoredSignupTool } from './sponsored-signup-tool'
+import {
+  SPONSORED_INSTALL_TOOL_EXEC,
+  sponsoredInstallExec,
+  sponsoredInstallTool,
+} from './sponsored-install-tool'
+import { sponsoredInstallProbe } from '@codebuff/common/ads/sponsored-install-tool'
+import type { SponsoredPackageResolveResponse } from '@codebuff/common/ads/sponsored-package-resolve'
 import { safeOpen } from './open-url'
 import { bunGitRunner, sponsoredRuntimeDir } from './sponsored-git'
 import type { GitRunner } from './sponsored-git'
@@ -174,6 +184,7 @@ import {
   previewSponsoredProposal,
   reportSponsoredFriction,
   reportSponsoredRunState,
+  resolveSponsoredPackage,
   sponsoredProcedureSha256,
 } from './sponsored-proposal-api'
 import { sponsoredProposalLocalTarget } from './sponsored-proposal-target'
@@ -375,6 +386,11 @@ export type SponsoredRunDeps = {
   reportState: typeof reportSponsoredRunState
   /** The agent's `report_friction`. Absent means the tool is not offered. */
   reportFriction?: typeof reportSponsoredFriction
+  /**
+   * `install_package`'s resolver (COD-965). Absent means the tool is not
+   * offered and a shell install keeps its pre-tool refusal.
+   */
+  resolvePackage?: typeof resolveSponsoredPackage
   getToken: () => string | null | undefined
   platform: NodeJS.Platform
   containment: (platform: NodeJS.Platform) => SponsoredLocalContainment
@@ -633,6 +649,8 @@ export class SponsoredRun {
     procedure: string
     taskContext: readonly string[]
     runtimeInputs: SponsoredProcedureRuntimeInputs
+    /** The Accept's `resolvedLinks`, raw (COD-965); absent from older servers. */
+    resolvedLinks?: unknown
     recorder: SponsoredEditRecorder
     abort: AbortController
     expiryTimer: ReturnType<typeof setTimeout> | null
@@ -1056,6 +1074,7 @@ export class SponsoredRun {
               ? sponsoredAdvertiserCtaHref(accepted.accept.advertiserLink)
               : null,
         },
+        resolvedLinks: accepted.accept.resolvedLinks,
         recorder: new SponsoredEditRecorder(
           {
             runId,
@@ -1178,17 +1197,26 @@ export class SponsoredRun {
         !active.skill &&
         sponsoredSkillDirective(active.procedure) !== null,
       credentialEnv: () => active.credentials.env(),
+      // `install_package` (COD-965): the run has it whenever this build can
+      // ask the server's resolver, and a shell install is refused toward it.
+      installTool: !!this.deps.resolvePackage,
     }
     // THE ACCOUNT STEP, deferred as Desktop defers it: the turn starts now,
     // and the agent calls `request_sponsored_signup` once the work that needs
     // no account is done. A tracked signup link, declared keys, or a skill's
     // user step each make one.
-    const declaredCredentials = declaredRunCredentials(active.procedure)
-    const signup = sponsoredSignupStep(
-      active.procedure,
-      active.runtimeInputs,
-      active.skill,
-    )
+    // The links come resolved (COD-965): the Accept's `resolvedLinks` when
+    // the server sent them, else the shared resolver over the same inputs.
+    // A key page's `{bfcid}` slot takes this run's signed click id; a link
+    // that cannot be attributed is not shown.
+    const links = sponsoredRunLinks({
+      procedure: active.procedure,
+      runtimeInputs: active.runtimeInputs,
+      skill: active.skill,
+      serverLinks: active.resolvedLinks,
+    })
+    const declaredCredentials = links.credentials
+    const signup = sponsoredRunLinksSignupStep(links)
     if (signup || declaredCredentials.length > 0) {
       active.accountStep = new SponsoredAccountStep({
         offerName: active.advertiserName,
@@ -1196,6 +1224,16 @@ export class SponsoredRun {
         credentials: declaredCredentials,
         held: active.credentials,
         openUrl: this.deps.openUrl ?? safeOpen,
+        advertiserLink: active.runtimeInputs.advertiserLink ?? null,
+        onUnfilledClickIdBlocked: (fallback) =>
+          logger.warn(
+            {
+              metric: UNFILLED_CLICK_ID_BLOCKED_METRIC,
+              surface: 'cli',
+              fallback,
+            },
+            '[sponsored-run] blocked a link with an unfilled click id',
+          ),
         show: (account) => {
           if (!active.settled) this.set({ account })
         },
@@ -1231,6 +1269,21 @@ export class SponsoredRun {
     // command is not the model spending the sponsor's compute.
     const stepChecks = active.skill
       ? await this.stepCheckContext(active, active.skill, runTools)
+      : undefined
+    // `install_package` runs its canonical command through the run's own
+    // shell override (the same sandbox, refusals and receipts as every other
+    // command), marked so only the shell-install refusal is skipped.
+    const installTool = context.installTool
+      ? sponsoredInstallTool({
+          ...sponsoredInstallProbe(
+            createSponsoredRootedFileSystem({
+              workspaceRoot: this.projectRoot,
+            }),
+            this.projectRoot,
+          ),
+          resolve: (request) => this.resolvePackage(active, request),
+          exec: sponsoredInstallExec(overrideTools.run_terminal_command),
+        })
       : undefined
     // THE PREFLIGHT, before the turn's first segment: a skill whose OS this
     // is not, or whose tool is missing, ends the run here with no turn and no
@@ -1278,7 +1331,10 @@ export class SponsoredRun {
             active.procedure,
             active.taskContext,
             active.runtimeInputs,
-            deferredSignup ? { deferredSignup } : {},
+            {
+              ...(deferredSignup ? { deferredSignup } : {}),
+              ...(installTool ? { installTool: true } : {}),
+            },
           ),
       agent: sponsoredAgentDefinition({
         agentId,
@@ -1286,6 +1342,7 @@ export class SponsoredRun {
         isFreebuff: IS_FREEBUFF,
         reportFriction: !!this.deps.reportFriction,
         requestSignup: !!accountStep,
+        installTool: !!installTool,
       }),
       customToolDefinitions: [
         ...(this.deps.reportFriction
@@ -1302,6 +1359,7 @@ export class SponsoredRun {
               ),
             ]
           : []),
+        ...(installTool ? [installTool] : []),
       ],
       overrideTools,
       // A signed one-run grant is the only route through sponsored metering.
@@ -1460,6 +1518,56 @@ export class SponsoredRun {
         return first
       } finally {
         stop?.removeEventListener('abort', interrupt)
+      }
+    }
+  }
+
+  /**
+   * `install_package`'s resolver call, bound to this run's proposal and run
+   * token and signed with the session bearer. Never throws: a missing session
+   * or a transport error is a refusal the tool hands back to the model.
+   */
+  private async resolvePackage(
+    active: { proposalId: string; runToken: string },
+    request: { ecosystem: 'npm' | 'pypi'; name: string; version?: string },
+  ): Promise<SponsoredPackageResolveResponse> {
+    const authToken = this.deps.getToken()
+    if (!authToken || !this.deps.resolvePackage) {
+      return {
+        allowed: false,
+        reason:
+          'Freebuff could not approve this install (not signed in). Carry on without it and tell the user.',
+      }
+    }
+    try {
+      const resolved = await this.deps.resolvePackage(
+        active.proposalId,
+        active.runToken,
+        request,
+        authToken,
+      )
+      logger.info(
+        {
+          proposalId: active.proposalId,
+          ecosystem: request.ecosystem,
+          name: request.name,
+          allowed: resolved.allowed,
+        },
+        '[sponsored-run] install_package resolved',
+      )
+      return resolved
+    } catch (error) {
+      logger.info(
+        {
+          proposalId: active.proposalId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        '[sponsored-run] install_package resolve failed',
+      )
+      return {
+        allowed: false,
+        reason:
+          'Could not reach Freebuff to approve this install. Carry on without it and tell the user.',
       }
     }
   }
@@ -2130,6 +2238,11 @@ export type SponsoredToolContext = {
   /** The procedure names a skill this build could not load (installs say so). */
   skillUnresolved?: boolean
   /**
+   * The run has `install_package` (COD-965): a shell install is refused
+   * toward the tool instead of with the pre-tool wording.
+   */
+  installTool?: boolean
+  /**
    * The keys the user connected for this run, read at each command: they
    * may connect one mid-turn. Injected by the broker after its scrub.
    */
@@ -2296,6 +2409,12 @@ export function sponsoredOverrideTools(
       process_type?: 'SYNC' | 'BACKGROUND'
       cwd?: string
       timeout_seconds?: number
+      /**
+       * Set only by `install_package` (a symbol, so never by the model's
+       * JSON input): `command` is its canonical install of a validated,
+       * server-resolved package.
+       */
+      [SPONSORED_INSTALL_TOOL_EXEC]?: true
     }) => {
       const decision = evaluateSponsoredLocalToolCall(
         'run_terminal_command',
@@ -2307,11 +2426,20 @@ export function sponsoredOverrideTools(
       // entirely (COD-336 decision item 5). Every install is refused unless
       // the skill declared the package; a declared one runs as the canonical
       // `--ignore-scripts` command, never the model's spelling.
-      const install = evaluateSponsoredInstallCommand(
-        input.command,
-        context.declaredPackages,
-        { skillUnresolved: context.skillUnresolved === true },
-      )
+      // `install_package`'s own command skips only this decision: it is
+      // already the canonical scripts-off spelling, and every refusal below
+      // and the sandbox still apply.
+      const install =
+        input[SPONSORED_INSTALL_TOOL_EXEC] === true
+          ? ({ kind: 'not-install' } as const)
+          : evaluateSponsoredInstallCommand(
+              input.command,
+              context.declaredPackages,
+              {
+                skillUnresolved: context.skillUnresolved === true,
+                ...(context.installTool ? { installTool: true } : {}),
+              },
+            )
       if (install.kind === 'refuse') return refusal(install.message)
       const command = install.kind === 'allow' ? install.command : input.command
       // An in-place run leaves its work uncommitted, so it may not move
@@ -2588,6 +2716,7 @@ export const defaultSponsoredRunDeps = (
   accept: acceptSponsoredProposal,
   reportState: reportSponsoredRunState,
   reportFriction: reportSponsoredFriction,
+  resolvePackage: resolveSponsoredPackage,
   getToken: getAuthToken,
   platform: process.platform,
   containment: sponsoredContainment,

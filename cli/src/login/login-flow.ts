@@ -1,4 +1,5 @@
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
+import { CLI_AUTH_CODE_LIFETIME_MS } from '@codebuff/common/constants/auth'
 
 import { createCodebuffApiClient } from '../utils/codebuff-api'
 
@@ -32,6 +33,24 @@ export interface GenerateLoginUrlOptions {
   baseUrl: string
   fingerprintId: string
   via?: LoginVia
+  /** Explicit Freebuff CLI origin. Never use a fingerprint or auth token here. */
+  cliFlowId?: string
+}
+
+const CLI_FLOW_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/** Attribution is optional and cannot make a usable sign-in URL fail. */
+function withCliLoginFlow(loginUrl: string, flowId?: string): string {
+  if (!flowId || !CLI_FLOW_ID.test(flowId)) return loginUrl
+  try {
+    const url = new URL(loginUrl)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return loginUrl
+    url.searchParams.set('cli_flow', flowId)
+    return url.toString()
+  } catch {
+    return loginUrl
+  }
 }
 
 export async function generateLoginUrl(
@@ -82,7 +101,10 @@ export async function generateLoginUrl(
     throw new Error('Failed to get login URL')
   }
 
-  return response.data
+  const loginUrl = withCliLoginFlow(response.data.loginUrl, options.cliFlowId)
+  return loginUrl === response.data.loginUrl
+    ? response.data
+    : { ...response.data, loginUrl }
 }
 
 interface PollLoginStatusDeps {
@@ -120,7 +142,10 @@ export async function pollLoginStatus(
     fingerprintHash,
     expiresAt,
     intervalMs = 5000,
-    timeoutMs = 5 * 60 * 1000,
+    // As long as the code lives. A new account's sign-up, phone step and
+    // Connect can outlast five minutes, and a code approved after polling
+    // stopped is never collected, so the user is asked to log in again.
+    timeoutMs = CLI_AUTH_CODE_LIFETIME_MS,
     shouldContinue,
     via,
   } = options

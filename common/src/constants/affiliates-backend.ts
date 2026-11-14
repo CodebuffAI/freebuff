@@ -16,8 +16,10 @@
  *
  * There is deliberately no shadow mode (light tier): flip after the freeze,
  * backfill and a verified reconcile. A flip is a reviewed one-line diff here,
- * never an env var, and the revert is the same diff while the Convex
- * functions still exist.
+ * never an env var.
+ *
+ * The Convex functions, the HMAC route and the partner-API proxy are deleted
+ * (runbook step 8), so `postgres` is the only value that serves anything now.
  */
 export type AffiliatesBackend = 'convex' | 'postgres'
 

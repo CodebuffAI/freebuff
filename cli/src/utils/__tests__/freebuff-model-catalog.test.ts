@@ -448,13 +448,15 @@ describe('the default for an account with no explicit pick', () => {
       freebucks: { balance, planId: null, prices: { [FLASH]: 15, [MIMO]: 10 } },
     }) as never
 
-  test('is the Balanced stop: DeepSeek V4.1 Flash at full access, MiMo at limited', () => {
+  // DeepSeek V4.1 Flash at both tiers without a catalog since the fallback
+  // moved off MiMo (product, 2026-11-08, Victor).
+  test('is the Balanced stop: DeepSeek V4.1 Flash at both tiers', () => {
     expect(
       resolveFreebuffModelSelectionForSession(MIMO, none('full'), false),
     ).toBe(FLASH)
     expect(
-      resolveFreebuffModelSelectionForSession(FLASH, none('limited'), false),
-    ).toBe(MIMO)
+      resolveFreebuffModelSelectionForSession(MIMO, none('limited'), false),
+    ).toBe(FLASH)
   })
 
   test('an explicit pick keeps its model', () => {
@@ -463,8 +465,12 @@ describe('the default for an account with no explicit pick', () => {
     ).toBe(MIMO)
   })
 
+  // Without a catalog the recommendation is DeepSeek V4.1 Flash too since
+  // 2026-11-08 (MiMo before), so there is no cheaper row to step down to.
   test('steps down to the recommendation when the balance cannot start Balanced', () => {
-    expect(freebuffDefaultModelForSession(none('full', 12))).toBe(MIMO)
+    expect(freebuffDefaultModelForSession(none('full', 12))).toBe(
+      DEFAULT_FREEBUFF_MODEL_ID,
+    )
   })
 
   test('names the catalog row in catalog mode', () => {

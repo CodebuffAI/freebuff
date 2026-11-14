@@ -8,10 +8,16 @@ import { createRoot, flushSync } from '@opentui/react'
 import React, { useEffect, useRef } from 'react'
 
 import { useSendMessage } from '../use-send-message'
+import { useAgentValidation } from '../use-agent-validation'
 import { setProjectRoot, tryGetProjectRoot } from '../../project-files'
 import { useChatStore } from '../../state/chat-store'
 import { stopActiveRun } from '../../utils/active-run'
 import { setChatDirOverrideForTesting } from '../../utils/run-state-storage'
+
+import {
+  STATE_SNAPSHOT_INTERRUPTION_MESSAGE,
+  USER_INTERRUPTED_MESSAGE,
+} from '@codebuff/sdk'
 
 import type { RunState } from '@codebuff/sdk'
 import type { SendMessageFn } from '../../types/contracts/send-message'
@@ -25,8 +31,15 @@ type RunCall = {
 
 let sendMessageFromHost: SendMessageFn | null = null
 let runCalls: RunCall[] = []
+let droppedCopies: string[] = []
 let testRoot: string
 let originalProjectRoot: string
+let useHostedValidation = false
+let validateBeforeSend = async () => ({
+  success: true,
+  errors: [] as Array<{ id: string; message: string }>,
+})
+const originalFetch = globalThis.fetch
 
 const fakeClient = {
   run: (runConfig: any) =>
@@ -46,6 +59,7 @@ const makeTimer = (): ElapsedTimeTracker => ({
 })
 
 const Host = () => {
+  const validation = useAgentValidation()
   const inputRef = useRef<any>(null)
   const activeSubagentsRef = useRef(new Set<string>())
   const isChainInProgressRef = useRef(false)
@@ -59,13 +73,18 @@ const Host = () => {
     isChainInProgressRef,
     setStreamStatus: () => {},
     setCanProcessQueue: () => {},
-    onBeforeMessageSend: async () => ({ success: true, errors: [] }),
+    onBeforeMessageSend: useHostedValidation
+      ? validation.validate
+      : validateBeforeSend,
     mainAgentTimer,
     scrollToLatest: () => {},
     isQueuePausedRef,
     isProcessingQueueRef,
     resumeQueue: () => {},
     requeueMessageAtFront: () => {},
+    dropQueuedCopies: (content) => {
+      droppedCopies.push(content)
+    },
     continueChat: false,
     subscriptionData: null,
     getClient: async () => fakeClient as any,
@@ -99,6 +118,38 @@ const makeRunState = (marker: string): RunState =>
     },
   }) as unknown as RunState
 
+const systemText = (text: string) => ({
+  role: 'user',
+  content: [{ type: 'text', text: `<system>${text}</system>` }],
+})
+
+/** A cancelled SDK run state: `history`, then `message` as the SDK appends it. */
+const makeCancelledRunState = (
+  marker: string,
+  history: unknown[],
+  message: string,
+): RunState =>
+  ({
+    traceSessionId: `trace-${marker}`,
+    sessionState: {
+      mainAgentState: {
+        messageHistory: [...history, systemText(message)],
+      },
+    },
+    output: { type: 'error', message },
+  }) as unknown as RunState
+
+const historyTexts = (state: RunState | undefined) =>
+  (state?.sessionState?.mainAgentState.messageHistory ?? []).map(
+    (message: any) =>
+      typeof message.content === 'string'
+        ? message.content
+        : message.content.map((part: any) => part.text ?? '').join(''),
+  )
+
+const savedRunState = () =>
+  JSON.parse(fs.readFileSync(path.join(testRoot, 'run-state.json'), 'utf8'))
+
 const settlePendingRuns = () => {
   for (const call of runCalls) {
     call.resolve(makeRunState('cleanup'))
@@ -108,6 +159,9 @@ const settlePendingRuns = () => {
 beforeEach(() => {
   sendMessageFromHost = null
   runCalls = []
+  droppedCopies = []
+  useHostedValidation = false
+  validateBeforeSend = async () => ({ success: true, errors: [] })
   testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'use-send-message-'))
   originalProjectRoot = tryGetProjectRoot() ?? process.cwd()
   setProjectRoot(process.cwd())
@@ -116,6 +170,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  globalThis.fetch = originalFetch
   stopActiveRun('process-exit')
   setChatDirOverrideForTesting(undefined)
   setProjectRoot(originalProjectRoot)
@@ -132,6 +187,94 @@ const mountHost = async () => {
 }
 
 describe('useSendMessage continuation state', () => {
+  test.each([
+    {
+      name: 'JSON HTTP rejection',
+      respond: async () =>
+        new Response(JSON.stringify({ error: 'Too many agent definitions' }), {
+          status: 400,
+        }),
+      detail: 'HTTP 400',
+      reason: 'Too many agent definitions',
+    },
+    {
+      name: 'HTML HTTP rejection',
+      respond: async () =>
+        new Response('<html>Blocked</html>', {
+          status: 403,
+          statusText: 'Forbidden',
+        }),
+      detail: 'HTTP 403',
+      reason: 'Forbidden',
+    },
+    {
+      name: 'connection failure',
+      respond: async (): Promise<Response> => {
+        throw new Error('Connection reset')
+      },
+      detail: 'Connection reset',
+      reason: 'Connection reset',
+    },
+  ])(
+    'shows a $name before running the model and allows retry',
+    async ({ respond, detail, reason }) => {
+      useHostedValidation = true
+      globalThis.fetch = Object.assign(respond, {
+        preconnect: originalFetch.preconnect,
+      }) as typeof fetch
+      const { setup, root } = await mountHost()
+      let retry: Promise<void> | undefined
+      try {
+        await sendMessageFromHost!({ content: 'hi', agentMode: 'DEFAULT' })
+        expect(runCalls).toHaveLength(0)
+        const messages = useChatStore.getState().messages
+        expect(
+          messages.find((message) => message.variant === 'user')
+            ?.validationErrors,
+        ).toEqual([
+          { id: 'network_error', message: expect.stringContaining(detail) },
+        ])
+        expect(messages.at(-1)?.variant).toBe('error')
+        expect(messages.at(-1)?.content).toContain('Message not sent')
+        expect(messages.at(-1)?.content).toContain(detail)
+        expect(messages.at(-1)?.content).toContain(reason)
+
+        globalThis.fetch = Object.assign(
+          async () => new Response(JSON.stringify({ validationErrors: [] })),
+          {
+            preconnect: originalFetch.preconnect,
+          },
+        ) as typeof fetch
+        retry = sendMessageFromHost!({
+          content: 'hi again',
+          agentMode: 'DEFAULT',
+        })
+        await waitFor('retry SDK run', () => runCalls.length === 1)
+      } finally {
+        settlePendingRuns()
+        await retry
+        flushSync(() => root.unmount())
+        setup.renderer.destroy()
+      }
+    },
+  )
+
+  test('shows a fallback when validation refuses without error details', async () => {
+    validateBeforeSend = async () => ({ success: false, errors: [] })
+    const { setup, root } = await mountHost()
+    try {
+      await sendMessageFromHost!({ content: 'hi', agentMode: 'DEFAULT' })
+      expect(runCalls).toHaveLength(0)
+      const messages = useChatStore.getState().messages
+      expect(messages.at(-1)?.variant).toBe('error')
+      expect(messages.at(-1)?.content).toContain('Message not sent')
+      expect(messages.at(-1)?.content).toContain('without an explanation')
+    } finally {
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
   test('persists the final streamed text and completion state before returning', async () => {
     const { setup, root } = await mountHost()
     const run = sendMessageFromHost!({
@@ -161,7 +304,8 @@ describe('useSendMessage continuation state', () => {
         content: finalText,
       })
       expect(saved.isComplete).toBe(true)
-      expect(saved.metadata.runState).toEqual(finalState)
+      // The run state is saved to run-state.json only, never into a message.
+      expect(saved.metadata ?? {}).not.toHaveProperty('runState')
     } finally {
       settlePendingRuns()
       await run
@@ -201,7 +345,10 @@ describe('useSendMessage continuation state', () => {
       )
       await waitFor('third SDK run', () => runCalls.length === 3)
 
-      expect(runCalls[2].runConfig.previousRun).toBe(abortedSnapshot)
+      // The snapshot, with its idle clock started at the stop.
+      expect(runCalls[2].runConfig.previousRun.traceSessionId).toBe(
+        abortedSnapshot.traceSessionId,
+      )
 
       const finalState = makeRunState('final')
       runCalls[2].resolve(finalState)
@@ -223,4 +370,227 @@ describe('useSendMessage continuation state', () => {
       setup.renderer.destroy()
     }
   })
+  test('Esc then a new prompt resumes from the user-interrupted history, not "session ended"', async () => {
+    const { setup, root } = await mountHost()
+    const runs: Promise<void>[] = []
+    const prompt = { role: 'user', content: [{ type: 'text', text: 'fix it' }] }
+    const step = { role: 'assistant', content: [{ type: 'text', text: 'On it.' }] }
+    const laterStep = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'Edited cache.ts.' }],
+    }
+
+    try {
+      runs.push(sendMessageFromHost!({ content: 'fix it', agentMode: 'DEFAULT' }))
+      await waitFor('first SDK run', () => runCalls.length === 1)
+      runCalls[0].runConfig.onStateSnapshot(
+        makeCancelledRunState('snap', [prompt, step], STATE_SNAPSHOT_INTERRUPTION_MESSAGE),
+      )
+      const stoppedAt = Date.now()
+      stopActiveRun('user-interrupt')
+
+      // The next prompt can start before the aborted run returns.
+      runs.push(sendMessageFromHost!({ content: 'go on', agentMode: 'DEFAULT' }))
+      await waitFor('second SDK run', () => runCalls.length === 2)
+      // The snapshot is as old as the step it was taken at; the idle clock
+      // starts at the stop.
+      expect(
+        runCalls[1].runConfig.previousRun.sessionState.mainAgentState
+          .lastActivityAt,
+      ).toBeGreaterThanOrEqual(stoppedAt)
+      const resumed = historyTexts(runCalls[1].runConfig.previousRun)
+      expect(resumed).toEqual([
+        'fix it',
+        'On it.',
+        `<system>${USER_INTERRUPTED_MESSAGE}</system>`,
+      ])
+      expect(resumed.join('\n')).not.toContain('session ended')
+      runCalls[1].resolve(makeRunState('second'))
+      await runs[1]
+
+      // The aborted run returning late must not replace the newer turn.
+      runCalls[0].resolve(
+        makeCancelledRunState('late', [prompt, step, laterStep], USER_INTERRUPTED_MESSAGE),
+      )
+      await runs[0]
+      runs.push(sendMessageFromHost!({ content: 'third', agentMode: 'DEFAULT' }))
+      await waitFor('third SDK run', () => runCalls.length === 3)
+      expect(runCalls[2].runConfig.previousRun.traceSessionId).toBe('trace-second')
+    } finally {
+      settlePendingRuns()
+      await Promise.all(runs)
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
+  test('Esc adopts and persists the run\'s own interrupted state when it returns, once', async () => {
+    const { setup, root } = await mountHost()
+    const runs: Promise<void>[] = []
+    const prompt = { role: 'user', content: [{ type: 'text', text: 'fix it' }] }
+    const step = { role: 'assistant', content: [{ type: 'text', text: 'On it.' }] }
+    const laterStep = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'Edited cache.ts.' }],
+    }
+
+    try {
+      runs.push(sendMessageFromHost!({ content: 'fix it', agentMode: 'DEFAULT' }))
+      await waitFor('first SDK run', () => runCalls.length === 1)
+      runCalls[0].runConfig.onStateSnapshot(
+        makeCancelledRunState('snap', [prompt, step], STATE_SNAPSHOT_INTERRUPTION_MESSAGE),
+      )
+      stopActiveRun('user-interrupt')
+      // The runtime's abort state already ends in the interrupted message.
+      runCalls[0].resolve(
+        makeCancelledRunState('own', [prompt, step, laterStep], USER_INTERRUPTED_MESSAGE),
+      )
+      await runs[0]
+
+      const expected = [
+        'fix it',
+        'On it.',
+        'Edited cache.ts.',
+        `<system>${USER_INTERRUPTED_MESSAGE}</system>`,
+      ]
+      expect(historyTexts(savedRunState())).toEqual(expected)
+
+      runs.push(sendMessageFromHost!({ content: 'go on', agentMode: 'DEFAULT' }))
+      await waitFor('second SDK run', () => runCalls.length === 2)
+      expect(historyTexts(runCalls[1].runConfig.previousRun)).toEqual(expected)
+    } finally {
+      settlePendingRuns()
+      await Promise.all(runs)
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
+  test('Esc before any snapshot keeps the prompt in the resumed history', async () => {
+    const { setup, root } = await mountHost()
+    const runs: Promise<void>[] = []
+    const prompt = { role: 'user', content: [{ type: 'text', text: 'fix it' }] }
+
+    try {
+      runs.push(sendMessageFromHost!({ content: 'fix it', agentMode: 'DEFAULT' }))
+      await waitFor('first SDK run', () => runCalls.length === 1)
+      stopActiveRun('user-interrupt')
+      // What the SDK returns on an abort before the runtime started.
+      runCalls[0].resolve(
+        makeCancelledRunState('early', [prompt], 'Run cancelled by user.'),
+      )
+      await runs[0]
+
+      runs.push(sendMessageFromHost!({ content: 'go on', agentMode: 'DEFAULT' }))
+      await waitFor('second SDK run', () => runCalls.length === 2)
+      expect(historyTexts(runCalls[1].runConfig.previousRun)).toEqual([
+        'fix it',
+        `<system>${USER_INTERRUPTED_MESSAGE}</system>`,
+      ])
+    } finally {
+      settlePendingRuns()
+      await Promise.all(runs)
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
+  const REFUSAL = {
+    statusCode: 403,
+    error: 'prompt_policy_refused',
+    message: 'Freebuff did not send this message to the model.',
+  }
+
+  test.each([
+    {
+      name: 'returned as the run output',
+      fail: (call: RunCall) =>
+        call.resolve({
+          ...makeRunState('refused'),
+          output: { type: 'error', ...REFUSAL },
+        } as unknown as RunState),
+    },
+    {
+      name: 'thrown by the run',
+      fail: (call: RunCall) => call.reject({ ...REFUSAL }),
+    },
+  ])(
+    'a usage-policy refusal ($name) drops queued copies of the refused text',
+    async ({ fail }) => {
+      const { setup, root } = await mountHost()
+      const run = sendMessageFromHost!({
+        content: 'same text',
+        agentMode: 'DEFAULT',
+      })
+      try {
+        await waitFor('SDK run', () => runCalls.length === 1)
+        fail(runCalls[0])
+        await run
+        expect(droppedCopies).toEqual(['same text'])
+      } finally {
+        settlePendingRuns()
+        await run
+        flushSync(() => root.unmount())
+        setup.renderer.destroy()
+      }
+    },
+  )
+
+  test('any other failed run leaves the queue alone', async () => {
+    const { setup, root } = await mountHost()
+    const runs: Promise<void>[] = []
+    try {
+      runs.push(sendMessageFromHost!({ content: 'one', agentMode: 'DEFAULT' }))
+      await waitFor('first SDK run', () => runCalls.length === 1)
+      runCalls[0].resolve(makeRunState('failed'))
+      await runs[0]
+
+      runs.push(sendMessageFromHost!({ content: 'two', agentMode: 'DEFAULT' }))
+      await waitFor('second SDK run', () => runCalls.length === 2)
+      runCalls[1].reject({ statusCode: 403, error: 'free_mode_unavailable' })
+      await runs[1]
+
+      expect(droppedCopies).toEqual([])
+    } finally {
+      settlePendingRuns()
+      await Promise.all(runs)
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
+  test.each(['new-chat', 'history-resume'] as const)(
+    'a %s switch during a run adopts nothing from the aborted run',
+    async (reason) => {
+      const { setup, root } = await mountHost()
+      const runs: Promise<void>[] = []
+      const prompt = { role: 'user', content: [{ type: 'text', text: 'old chat' }] }
+
+      try {
+        runs.push(sendMessageFromHost!({ content: 'old chat', agentMode: 'DEFAULT' }))
+        await waitFor('first SDK run', () => runCalls.length === 1)
+        runCalls[0].runConfig.onStateSnapshot(
+          makeCancelledRunState('snap', [prompt], STATE_SNAPSHOT_INTERRUPTION_MESSAGE),
+        )
+        stopActiveRun(reason)
+        // What the switch does right after stopping the run.
+        useChatStore.getState().reset()
+        setChatDirOverrideForTesting(path.join(testRoot, 'other-chat'))
+        runCalls[0].resolve(
+          makeCancelledRunState('old', [prompt], USER_INTERRUPTED_MESSAGE),
+        )
+        await runs[0]
+
+        expect(useChatStore.getState().runState).toBeNull()
+        expect(
+          fs.existsSync(path.join(testRoot, 'other-chat', 'run-state.json')),
+        ).toBe(false)
+      } finally {
+        settlePendingRuns()
+        await Promise.all(runs)
+        flushSync(() => root.unmount())
+        setup.renderer.destroy()
+      }
+    },
+  )
 })

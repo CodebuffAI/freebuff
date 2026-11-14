@@ -9,8 +9,8 @@ export interface FreebuffFreebucksRefundSources {
   wallet: number
 }
 
-/** A settled session refund: the unused part of a purchased hour, returned
- *  when the hour ended. `id` is stable, so a client can tell a new one. */
+/** A settled session refund, returned when the hour ended. `id` is stable, so
+ *  a client can tell a new one. */
 export interface FreebuffFreebucksRefund extends FreebuffFreebucksRefundSources {
   id: string
 }
@@ -184,10 +184,28 @@ export interface FreebuffFreebucksWindow {
   /** ISO instant the pool refills. */
   resetAt: string
   resetTimeZone?: string
-  /** Why the pool is this size, when the user can do something about it —
-   *  today only the smaller free pool on a VPN or proxy. Server-resolved
-   *  copy; absent means nothing to explain. */
+  /** Why the pool is this size: the smaller free pool on a VPN or proxy
+   *  (`freebucksDailyPoolNote`), or a device's accounts sharing one allowance
+   *  (`FREEBUCKS_SHARED_DEVICE_NOTE`). Server-resolved copy; absent means
+   *  nothing to explain. */
   note?: string
+  /** Today's paid hours still running, each with the part of its price this
+   *  pool paid. `spent` and `remaining` already count every one in full.
+   *  Display only (2026-11-11): clients spread that part over its hour
+   *  (`freebucksDailyShown`); admission and every affordability check keep
+   *  reading `spent`, `remaining` and `balance`. Absent with no hour running,
+   *  and from older servers, whose clients show the debit all at once. */
+  openHours?: readonly FreebuffFreebucksOpenHour[]
+}
+
+/** One paid hour still running, as `FreebuffFreebucksWindow.openHours`. */
+export interface FreebuffFreebucksOpenHour {
+  /** Freebucks this hour's debit took from the daily pool (the wallet's part
+   *  is not usage). A refunded hour is not listed at all. */
+  amount: number
+  /** ISO instants of the hour the debit bought. */
+  startsAt: string
+  endsAt: string
 }
 
 /**
@@ -311,6 +329,28 @@ export interface FreebuffFreebucksInfo {
    * `price - soloDiscount`; `prices` stay at list.
    */
   soloDiscount?: number
+  /**
+   * Rows `soloDiscount` does not apply to: the viewer's Powerful models
+   * (product, 2026-11-09, Victor). Pickers draw and lock them at `prices`, and
+   * admission charges them in full. Sent only beside `soloDiscount`.
+   */
+  soloDiscountExcludedModelIds?: readonly string[]
+  /**
+   * Rows on which this viewer is not shown the session clock (2026-10-21:
+   * full access in tiers 1 and 2, on a row of five hours or less). Clients
+   * draw no time left, countdown or hour-end notice for a session on one.
+   * Sent only beside `spendWithoutAsking`, so an hour that runs out renews
+   * without a question. Display only: the session is still an hour. Absent
+   * keeps every clock.
+   */
+  untimedModelIds?: readonly string[]
+  /**
+   * The daily meter stays out of sight until the day is mostly spent
+   * (2026-10-29: full access in tiers 1 and 2, most of whom never come near
+   * their pool). Clients hide it below `QUIET_DAILY_METER_SHOWS_AT`; see
+   * `dailyMeterQuiet`. Absent keeps the meter.
+   */
+  quietDailyMeter?: boolean
   /** The plan the daily pool and bonus were sized from; null on free. */
   planId: string | null
   /** Session price per model id. Only models on the meter appear here. */
@@ -361,6 +401,13 @@ export interface FreebuffFreebucksInfo {
    * that predates the field.
    */
   upgrade?: FreebuffFreebucksUpgrade
+  /**
+   * The server's verdict that this account is shown no upgrade button, not
+   * even a subscriber's next plan up (2026-10-22: full access in tiers 1 and
+   * 2, whose pools cover most use). Overrides `upgrade`. Absent keeps the
+   * button.
+   */
+  upgradeHidden?: boolean
 }
 
 export interface FreebuffFreebucksUpgrade {
@@ -443,6 +490,17 @@ export interface FreebuffSubscriptionInfo {
    * otherwise, and from servers older than this field.
    */
   paymentFailedTierId?: string
+  /**
+   * This plan keeps the rates from before the 2026-11 change for as long as it
+   * lasts (`planRatesLocked`). Absent with no plan, and from older servers.
+   */
+  ratesLocked?: boolean
+  /**
+   * The account is new (created from 2026-11-03, `isFreebuffNewAccount`): its
+   * plans carry the reduced monthly bonus already, with no deadline to beat.
+   * Absent for an older account, and from older servers.
+   */
+  newAccount?: boolean
   /** True when the subscription lapses at period end. */
   cancelAtPeriodEnd?: boolean
   /** Tier this drops to at the next renewal, when a downgrade is scheduled.
@@ -675,6 +733,17 @@ export const getRateLimitsByModel = (
         .rateLimitsByModel
     : undefined
 
+/** The share of the daily pool spent at which a `quietDailyMeter` shows. */
+export const QUIET_DAILY_METER_SHOWS_AT = 0.75
+
+/** Whether to leave the daily meter out: the server asked for a quiet meter
+ *  and less than `QUIET_DAILY_METER_SHOWS_AT` of the pool is spent. */
+export const dailyMeterQuiet = (
+  info: Pick<FreebuffFreebucksInfo, 'quietDailyMeter' | 'daily'>,
+): boolean =>
+  info.quietDailyMeter === true &&
+  info.daily.spent < info.daily.limit * QUIET_DAILY_METER_SHOWS_AT
+
 /** The caller's usable Freebucks block. Wire null means refresh unavailable;
  * undefined means no meter supplied. Never synthesize a balance for either. */
 export const getFreebucksInfo = (
@@ -724,6 +793,24 @@ export const getSubscriptionInfo = (
   session && 'subscription' in session
     ? (session as { subscription?: FreebuffSubscriptionInfo }).subscription
     : undefined
+
+/**
+ * Settings lists no Billing page for an account the server shows no upgrade
+ * (`upgradeHidden`: full access in tiers 1 and 2, whose pools cover most use)
+ * unless it holds a plan, live or paused, which it still manages there. Links
+ * that open Billing directly still land.
+ */
+export const billingSettingsHidden = (
+  freebucks: Pick<FreebuffFreebucksInfo, 'upgradeHidden' | 'planId'> | null | undefined,
+  subscription:
+    | Pick<FreebuffSubscriptionInfo, 'tierId' | 'paymentFailedTierId'>
+    | null
+    | undefined,
+): boolean =>
+  freebucks?.upgradeHidden === true &&
+  !freebucks.planId &&
+  !subscription?.tierId &&
+  !subscription?.paymentFailedTierId
 
 /**
  * A capacity-limited model the server is offering RIGHT NOW, beyond whatever
@@ -1062,9 +1149,15 @@ export type FreebuffSessionAdmissionResponse = (
        * Present when the FREEBUCKS METER refused (2026-09-02): the model's
        * session price against what the account could spend. A client that
        * knows the currency says "N Freebucks short"; older clients read the
-       * daily figures above as an ordinary pool.
+       * daily figures above as an ordinary pool. `sharedDevice`: the account's
+       * own pool would have covered it, and the accounts on this device
+       * sharing one daily allowance is why it did not.
        */
-      freebucksShortfall?: { price: number; balance: number }
+      freebucksShortfall?: {
+        price: number
+        balance: number
+        sharedDevice?: boolean
+      }
       /** Max session units permitted per period (e.g. the configured daily
        * premium allowance, including the earned reward on top of it — or, at
        * limited access, the reward balance plus streak entitlement). */
@@ -1169,6 +1262,9 @@ export type FreebuffSessionAdmissionResponse = (
   /** Desktop responses only: the server lifts this account's tab cap through
    *  Freebuff Projects' allowlist (COD-878), the only thing that lifts it. */
   desktopTabCapExempt?: true
+  /** Desktop responses only: this account's free ordinary-model tab ceiling,
+   *  sent when its country tier makes it wider than the default. */
+  desktopMultiTabLimit?: number
 }
 
 /**
@@ -1176,8 +1272,10 @@ export type FreebuffSessionAdmissionResponse = (
  * (docs/freebuff-access-floor.md § Declare first):
  * - `limited_region`: the account is in (or declared) a limited-access
  *   country; verifying it grants nothing.
- * - `region_locked`: the account's region is set to limited access, and no
- *   self-serve verification changes it (only a region review).
+ * - `region_locked`: the account's region is set to limited access by a
+ *   lock no self-serve verification lifts (region-lock-lift.ts); a phone may
+ *   lift some of them (the status then carries `phoneOverride`). Any other
+ *   lock is `eligible`: a verification that passes clears it (2026-11-11).
  * - `eligible`: verifying from a direct connection in a full-access country
  *   can change it.
  */

@@ -4,6 +4,20 @@ export function isSkillModelInvocable(skill: SkillDefinition): boolean {
   return skill.disableModelInvocation !== true
 }
 
+/** Keep bundled resource paths usable in both tool and user-invoked skills. */
+export function formatSkillContent(
+  skill: Pick<SkillDefinition, 'content' | 'filePath'>,
+): string {
+  // Forward slashes work in Windows file tools and Git Bash as well as POSIX.
+  // Preserve the supplying host's path rather than resolving it on this host.
+  const filePath = skill.filePath.replace(/\\/g, '/')
+  const baseDirectory = filePath.slice(0, filePath.lastIndexOf('/') + 1) || './'
+  return `Base directory for this skill: ${JSON.stringify(baseDirectory)}
+Resolve skill-relative paths (such as scripts/, references/, and assets/) against this directory, not the project's working directory.
+
+${skill.content}`
+}
+
 /**
  * Escapes special XML characters in a string.
  */

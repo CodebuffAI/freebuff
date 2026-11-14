@@ -1,9 +1,11 @@
+import { readClientEventId } from '../ads/ad-event-hygiene'
 import { AnalyticsEvent } from '../constants/analytics-events'
 import {
   ADS_BREAK_CLICKED_EVENT,
   ADS_BREAK_CLOSED_EVENT,
   ADS_BREAK_SHOWN_EVENT,
 } from '../ads/sponsor-break-events'
+import { canonicalPlacementId } from '../ads/placement-aliases'
 import { PLACEMENT_SLOTS } from '../constants/freebuff-placements'
 import {
   FIRST_PARTY_VIEW_ACK_CLIENT_FAMILIES,
@@ -43,8 +45,8 @@ export const CONTEXT_PRUNING_COMPLETED_EVENT =
 /** Stream-cut / output-limit recovery (sdk/src/impl/stream-interruption.ts,
  *  packages/agent-runtime/src/tools/stream-parser.ts). `metric` distinguishes
  *  the log sites (stream_recovery_detected / _rescued) that share this one
- *  allowlisted event — `_gave_up` logs at error level, which already ships
- *  raw and doesn't need the allowlist. */
+ *  allowlisted event — `_gave_up` logs at error level, which ships its
+ *  scalar fields (CLI error sanitizer) and doesn't need the allowlist. */
 export const STREAM_RECOVERY_EVENT = 'stream_recovery' as const
 /** A file edit was refused because it looked cut off mid-generation
  *  (packages/agent-runtime/src/util/truncated-write-guard.ts). `metric`
@@ -52,6 +54,11 @@ export const STREAM_RECOVERY_EVENT = 'stream_recovery' as const
  *  replace a file with a cut-off copy of itself. Content-free: sizes, tool and
  *  model names only, never a path or file content. */
 export const FILE_WRITE_GUARD_EVENT = 'file_write_guard' as const
+/** A tool call the SDK repaired before running it (sdk/src/impl/llm.ts): arguments a repair in
+ *  common/src/tools/repair-tool-json.ts made parse (`arguments_repaired`, with the repair names),
+ *  or an invented tool name run as the real tool (`tool_renamed`, with the alias). Names only,
+ *  never the arguments. */
+export const TOOL_CALL_REPAIR_EVENT = 'tool_call_repair' as const
 /** A compaction the mechanical pass did not apply: it threw (the live request
  *  alone over budget), could not shrink the history, or would have left the
  *  run back at the threshold that triggered it. Content-free: a fixed
@@ -85,6 +92,22 @@ export const GRAVITY_REPORT_NUDGE_EVENT = 'gravity_report_nudge' as const
  *  how much the run read after compacting, and how many of those reads were
  *  files whose contents the compaction dropped. Counts only, never a path. */
 export const COMPACTION_FOLLOWUP_EVENT = 'context_compaction.followup' as const
+/** One per structured-summary request (packages/agent-runtime/src/
+ *  conversation-summary.ts): its outcome, how much of its input came from the
+ *  prompt cache, and its size. Counts and labels only, never the summary. */
+export const COMPACTION_SUMMARY_EVENT = 'compaction_summary' as const
+export const COMPACTION_ATTEMPT_EVENT = 'context_compaction.attempt' as const
+/** One per finished-turn review request (packages/agent-runtime/src/
+ *  turn-review.ts): its outcome, verdict, how many actions it offered and how
+ *  much of its input came from the prompt cache. Never the actions' text. */
+export const TURN_REVIEW_EVENT = 'turn_review' as const
+/** One per physical provider bill (web/src/llm-api/compaction-usage.ts): what
+ *  a request cost and which compaction it belongs to. Ids, labels and counts
+ *  only, never a prompt, an email or a user id. */
+export const COMPACTION_REQUEST_USAGE_EVENT =
+  'compaction.request_usage' as const
+export const COMPACTION_FIRST_OUTPUT_EVENT =
+  'context_compaction.first_output' as const
 export const ADS_FETCH_COMPLETED_EVENT = AnalyticsEvent.ADS_FETCH_COMPLETED
 export const ADS_FIRST_PARTY_DECISION_EVENT =
   AnalyticsEvent.ADS_FIRST_PARTY_DECISION
@@ -104,7 +127,7 @@ export const ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT =
 /**
  * Why an authenticated S2S postback failed the click-id shape guard before
  * body validation. Values describe only the failed predicate; the presented
- * value, API key, advertiser, campaign, IP and request body stay out of Axiom.
+ * value, API key, campaign, IP and request body stay out of Axiom.
  */
 export const ADS_EXTERNAL_CONVERSION_CLICK_ID_SHAPES = [
   'missing',
@@ -115,9 +138,17 @@ export const ADS_EXTERNAL_CONVERSION_CLICK_ID_SHAPES = [
 ] as const
 export type AdsExternalConversionClickIdShape =
   (typeof ADS_EXTERNAL_CONVERSION_CLICK_ID_SHAPES)[number]
+/** Selected ingress branch, including requests rejected before a lookup. */
+export const ADS_EXTERNAL_CONVERSION_SELECTED_RAILS = [
+  'click_id',
+  'identity_email',
+  'none',
+] as const
+export type AdsExternalConversionSelectedRail =
+  (typeof ADS_EXTERNAL_CONVERSION_SELECTED_RAILS)[number]
 /**
- * Durable campaign-health evidence. Unlike the content-free postback census,
- * this stream intentionally carries opaque advertiser/campaign identifiers so
+ * Durable campaign-health evidence. This stream also carries an opaque
+ * campaign identifier, beyond the postback census's authenticated advertiser, so
  * the health reader can distinguish independent ingress binding from a join
  * learned only after click resolution. Raw click ids, event ids, credentials,
  * email, IP and user-agent data are never fields on this event.
@@ -158,6 +189,33 @@ const SHOWCASE_PRESENTATION_VARIANTS = [
   'inline_fallback',
   'text_only_image_failure',
 ] as const
+
+/** Web does not run Desktop's Gravity creative experiment. Keep this shape
+ * distinct so a presentation never fabricates its experiment identifiers. */
+export function createWebShowcasePresentationTelemetry(
+  value: unknown,
+): Record<string, string | number | boolean> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const row = value as Record<string, unknown>
+  if (
+    row.placement_id !== 'Desktop-Showcase:web' ||
+    row.surface !== 'freebuff_web_chat' ||
+    row.format !== 'showcase' ||
+    row.client_family !== 'web' ||
+    !readClientEventId(row.client_event_id)
+  )
+    return null
+  const clean = sanitizeAllowlistedFields(row, ADS_SPONSOR_BREAK_FIELDS)
+  if (
+    ['curated', 'legacy', 'text_only_image_failure'].includes(
+      String(row.showcase_variant),
+    )
+  )
+    clean.showcase_variant = String(row.showcase_variant)
+  if (row.showcase_arm === 'control' || row.showcase_arm === 'showcase')
+    clean.showcase_arm = row.showcase_arm
+  return clean
+}
 
 /** Bounded client report of a presentation; this does not prove delivery. */
 export function createGravityShowcasePresentationTelemetry(
@@ -307,6 +365,11 @@ const STREAM_RECOVERY_FIELDS = {
   userInputId: 'string',
   finishReason: 'string',
   hasYieldedContent: 'boolean',
+  /** stream_silent_timeout_*: any model output part (text, reasoning, tool
+   *  input) had arrived before the timeout; the step is then not repeated. */
+  receivedModelOutput: 'boolean',
+  /** stream_silent_timeout_failed: the timed-out request was itself the repeat. */
+  repeated: 'boolean',
   consecutive: 'number',
   /** A 'provider-error' recovery's HTTP status (502, 429, ...). */
   statusCode: 'number',
@@ -324,6 +387,14 @@ const FILE_WRITE_GUARD_FIELDS = {
   openBrackets: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
+const TOOL_CALL_REPAIR_FIELDS = {
+  metric: 'string',
+  toolName: 'string',
+  repair: 'string',
+  alias: 'string',
+  model: 'string',
+} as const satisfies AxiomOnlyFieldSchema
+
 const MECHANICAL_COMPACTION_SKIPPED_FIELDS = {
   model: 'string',
   agent_run_id: 'string',
@@ -339,7 +410,36 @@ const MECHANICAL_COMPACTION_SKIPPED_FIELDS = {
   post_tokens: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
+const COMPACTION_CORRELATION_FIELDS = {
+  compaction_version: 'string',
+  compaction_root_version: 'string',
+  compaction_root_run_id: 'string',
+  trace_session_id: 'string',
+  compaction_id: 'string',
+  summary_id: 'string',
+  /** 'true' when the run's prompt continues work the user already asked for
+   *  (a drained Cloud turn's resume, a mission pass); absent otherwise. */
+  continuation_prompt: 'string',
+} as const satisfies AxiomOnlyFieldSchema
+
+const COMPACTION_ATTEMPT_FIELDS = {
+  ...COMPACTION_CORRELATION_FIELDS,
+  agent_run_id: 'string',
+  model: 'string',
+  trigger_reason: 'string',
+  outcome: 'string',
+  duration_ms: 'number',
+  ready_summary: 'boolean',
+  waited_for_pending: 'boolean',
+  generated_foreground: 'boolean',
+  /** The applied summary's context size when it was requested. */
+  summary_context_tokens: 'number',
+  context_token_count: 'number',
+  max_context_length: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
 const CONTEXT_COMPACTION_COMPLETED_FIELDS = {
+  ...COMPACTION_CORRELATION_FIELDS,
   agent_run_id: 'string',
   trigger_reason: 'string',
   context_token_count: 'number',
@@ -369,6 +469,7 @@ const CONTEXT_COMPACTION_COMPLETED_FIELDS = {
 } as const satisfies AxiomOnlyFieldSchema
 
 const COMPACTION_FOLLOWUP_FIELDS = {
+  compaction_id: 'string',
   agent_run_id: 'string',
   model: 'string',
   trigger_reason: 'string',
@@ -384,6 +485,80 @@ const COMPACTION_FOLLOWUP_FIELDS = {
   read_tokens_after: 'number',
   tool_calls_after: 'number',
   window_ms: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const COMPACTION_SUMMARY_FIELDS = {
+  ...COMPACTION_CORRELATION_FIELDS,
+  agent_run_id: 'string',
+  model: 'string',
+  /** Why a foreground summary was made, `manual` included; absent on a
+   *  background one, which no compaction asked for yet. */
+  trigger_reason: 'string',
+  /** `completed`, `failed`, or `cancelled`. */
+  outcome: 'string',
+  /** `background` (prepared ahead) or `foreground` (the run waited for it). */
+  mode: 'string',
+  /** Started while the agent's next request may run beside it. */
+  mid_turn: 'boolean',
+  /** `empty`, `unrecognized` (a reply without the summary format),
+   *  `output_limit`, `provider_error`, `timeout` or `no_history`. */
+  error_kind: 'string',
+  finish_reason: 'string',
+  context_token_count: 'number',
+  input_tokens: 'number',
+  cached_input_tokens: 'number',
+  output_tokens: 'number',
+  summary_tokens: 'number',
+  duration_ms: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const TURN_REVIEW_FIELDS = {
+  ...COMPACTION_CORRELATION_FIELDS,
+  agent_run_id: 'string',
+  model: 'string',
+  /** `claude-code` or `codex` for a review of a turn on the user's computer; absent for Freebuff's agent. */
+  harness: 'string',
+  /** `completed`, `empty` (nothing to suggest), `unrecognized` (no review in the reply) or `failed`. */
+  outcome: 'string',
+  finish_reason: 'string',
+  /** `ready`, `needs_changes` or `not_promising`; absent with no verdict. */
+  verdict: 'string',
+  action_count: 'number',
+  /** Whether the review offered the "Brainstorm follow-ups" button. */
+  offers_brainstorm: 'boolean',
+  input_tokens: 'number',
+  cached_input_tokens: 'number',
+  output_tokens: 'number',
+  duration_ms: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
+const COMPACTION_REQUEST_USAGE_FIELDS = {
+  ...COMPACTION_CORRELATION_FIELDS,
+  compaction_root_model: 'string',
+  compaction_root_start_context_tokens: 'string',
+  compaction_request_id: 'string',
+  compaction_request_group: 'string',
+  compaction_summary_id: 'string',
+  compaction_trigger: 'string',
+  compaction_summary: 'string',
+  /** Every request of this root ships; false rows may be a free-mode sample. */
+  receipt_complete: 'boolean',
+  settlement_id: 'string',
+  message_id: 'string',
+  agent_run_id: 'string',
+  agent_id: 'string',
+  model: 'string',
+  provider: 'string',
+  surface: 'string',
+  cost_mode: 'string',
+  byok: 'boolean',
+  sponsored: 'boolean',
+  provider_cost_usd: 'number',
+  input_tokens: 'number',
+  cached_input_tokens: 'number',
+  output_tokens: 'number',
+  duration_ms: 'number',
+  ttft_ms: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 const TODO_PROGRESS_REMINDER_FIELDS = {
@@ -480,6 +655,9 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   ad_score_as_of: 'string',
   ad_score_payload_bytes: 'number',
   ad_score_decode_ms: 'number',
+  // Online scoring transport time for the representative placement; absent
+  // when no prediction call was timed, never synthesized from decode time.
+  ad_score_prediction_ms: 'number',
   ad_score_ranked: 'boolean',
   /**
    * The online feature store's SHADOW read (COD-755), on every request:
@@ -493,6 +671,27 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    */
   ad_features_lookup: 'string',
   ad_features_ms: 'number',
+  /**
+   * On a `ready` read only: the model's live click history
+   * (`liveLabels.status`: `ready`, `expired`, `not_ready`, `no_through`,
+   * `no_version` or `disabled`; anything but `ready` serves the frozen labels
+   * alone) and, when `ready`, `ad_features_live_label_days`, L's day through
+   * today (60 is the last before `expired`).
+   */
+  ad_features_live_labels: 'string',
+  ad_features_live_label_days: 'number',
+  /**
+   * The conversation's newest message classification, read beside the
+   * feature store's user read (`ml-feature-store/message-classification.ts`)
+   * for the Flash pCTR call's `state.messageClassification`:
+   * `message_classification_lookup` is `ready`, `missing` (none for this
+   * conversation), `no_conversation` (no `sessionId`), `opted_out`,
+   * `unconfigured`, `disabled`, `gate_unavailable`, `unavailable`, `timeout`
+   * or `not_read`; `message_classification_age_s` how old the one found was.
+   * Id-free.
+   */
+  message_classification_lookup: 'string',
+  message_classification_age_s: 'number',
   /**
    * The pclick SHADOW (`pclick-shadow.ts`) for the request's first shadow
    * decision, as known on the serve path; absent when none ran:
@@ -512,9 +711,38 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    * campaign handle on Axiom, the raw id stays in Postgres.
    */
   eligible_campaign_count: 'number',
+  /**
+   * THE UNIFORM ARM (`first-party-selection.ts`, `firstPartyExploreArm`):
+   * the placement's arm on every request whose direct stage ran on a leg in
+   * the experiment, `uniform` or `ranked`, no-fills included, so the split
+   * can be checked. Absent on the exempt legs and where our book was never
+   * asked. The served campaign's propensity is on `ad_candidate`.
+   */
+  explore_arm: 'string',
+  /**
+   * COD-996, the served ad's translation step (`ad-translation/serve.ts`):
+   * `ad_translation_result` (`off`, `no_language`, `unassigned`, `skipped`,
+   * `no_copy`, `control`, `translated`, `timeout`, `error`) and its two waits,
+   * the viewer decision (zero after a request's first placement) and the copy
+   * lookup. Absent where the step never ran: no first-party fill, the agentic
+   * pool, a shadow leg.
+   */
+  ad_translation_result: 'string',
+  ad_translation_viewer_ms: 'number',
+  ad_translation_copy_ms: 'number',
   excluded_campaign_count: 'number',
   eligible_campaign_labels: 'string',
   exclusion_reasons: 'string',
+  /**
+   * The HOUSE leg's own census, beside the book's: the same two counts and
+   * histogram, from the house decision only. The fields above keep the paid
+   * census whenever a paid leg consulted the book first, so on a released
+   * request they never say why house was empty; these do. Absent when the
+   * house leg never ran.
+   */
+  house_eligible_campaign_count: 'number',
+  house_excluded_campaign_count: 'number',
+  house_exclusion_reasons: 'string',
   /** Frozen decision context a later ranker cannot reconstruct after the fact. */
   hour_utc: 'number',
   /** Ads already served in this session; `-1` when the counter is unavailable. */
@@ -618,6 +846,23 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   /** A Gravity no-fill that was a 205 release, which opens our paid first-party
    * legs. False on a 204 no-fill, which leaves the slot to house ads only. */
   gravity_no_fill_released: 'boolean',
+  /**
+   * Which identity signals the Gravity request carried, as presence flags
+   * (`gravity-signal-flags.ts`), never their values. Present only when
+   * Gravity was actually asked; absent when `gravity_outcome` is
+   * `not_attempted` and on rows logged before 2026-11-13.
+   */
+  gravity_signal_messages: 'boolean',
+  gravity_signal_session_id: 'boolean',
+  gravity_signal_user_id: 'boolean',
+  gravity_signal_user_id_top_level: 'boolean',
+  gravity_signal_email_hash: 'boolean',
+  gravity_signal_phone_hash: 'boolean',
+  gravity_signal_user_agent: 'boolean',
+  gravity_signal_ip: 'boolean',
+  gravity_signal_os: 'boolean',
+  gravity_signal_device_type: 'boolean',
+  gravity_signal_advertising_id: 'boolean',
   selection_reason: 'string',
   ad_count: 'number',
   surface: 'string',
@@ -628,15 +873,15 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   /** Each asked provider and its outcome, `gravity:no_fill>first_party:fill`. */
   yield_actual_attempt_chain: 'string',
   /**
-   * COD-453. The sticky sponsor-break arm this request's viewer is in
-   * (`control` | `reduced` | `reduced_spotlight` | `reduced_intermission`),
-   * and the separate showcase-cadence arm beside it.
+   * COD-453. The sticky cadence-holdout arm this request's viewer is in
+   * (`control` | `reduced`; historical rows also carry the removed
+   * `reduced_spotlight` / `reduced_intermission`), and the separate
+   * showcase-cadence arm beside it. The field keeps its sponsor-break name so
+   * every readout built on it still works.
    *
-   * Present on EVERY completion event, including the overwhelming majority
-   * that carry no break placement at all -- because the arm is a property of
-   * the PERSON, and the inline delivery a `reduced` user gets is exactly what
-   * the arm has to be compared on. Reporting it only on break requests would
-   * leave the cadence half of the hypothesis unmeasurable.
+   * Present on EVERY completion event, because the arm is a property of the
+   * PERSON, and the inline delivery a `reduced` user gets is exactly what the
+   * arm has to be compared on.
    *
    * While `FREEBUFF_SPONSOR_BREAK_EXPERIMENT` is `off` this reads `control`
    * for everyone, which is the same value it carried before the field
@@ -650,16 +895,20 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   gravity_showcase_arm: 'string',
   gravity_showcase_attempt_id: 'string',
   /**
-   * The daily-cap verdict, present only on a request that RESOLVED a break
-   * placement: `allowed`, `capped`, `too_early` or `unavailable`.
-   *
-   * The three refusals collapse to one census code (`break_capped`) because
-   * the census is a closed histogram; they stay separate HERE because they are
-   * three different incidents. A rise in `unavailable` is Redis, a rise in
-   * `too_early` is the minimum-session floor binding harder than intended, and
-   * only `capped` is the feature working.
+   * The new-user ad ramp (`ad-serving/new-user-ad-ramp.ts`). Present only for
+   * a real account under the ramp's age window; absent on every other
+   * completion event. `new_user_ramp_outcome` is `decided`,
+   * or `timeout` / `error` when the decision failed open (then only that
+   * field is present, and the request was served as before).
+   * `session_index` is the account's lifetime `free_session_admit` count,
+   * capped at 4; `new_user_ramp_keep_bps` the keep probability it implied;
+   * `new_user_signup_day` the Pacific day the account was created.
    */
-  sponsor_break_cap_status: 'string',
+  new_user_ramp_outcome: 'string',
+  session_index: 'number',
+  new_user_ramp_suppressed: 'boolean',
+  new_user_ramp_keep_bps: 'number',
+  new_user_signup_day: 'string',
   /**
    * Why a response carried zero ads (COD-760; COD-453 introduced it for
    * `break_capped` alone). Set on EVERY response with zero ads, on both
@@ -669,7 +918,8 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    * - a refusal ahead of the chain: `break_capped` (unchanged; it also
    *   drives `exclusion_reasons: 'break_capped:1'`), `setup_invitation`,
    *   `invitation_recheck`, `partner_slot_empty`, `billboard_slot_empty`,
-   *   `no_visible_slot`, `global_load`, `no_placements`;
+   *   `no_visible_slot`, `global_load`, `no_placements`, `new_user_ramp`
+   *   (COD-904: the new-user ad ramp withheld this request);
    * - Gravity, when it was the last paid stage asked:
    *   `gravity_passed_to_us` (a 205), `gravity_kept_slot_empty` (a 204),
    *   `gravity_timeout`, `gravity_error`, `gravity_no_api_key`,
@@ -738,6 +988,8 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   primary_allocation_invalid: 'boolean',
   no_fill_reason: 'string',
   selection_reason: 'string',
+  /** The uniform arm per request: `uniform`, `ranked` or `mixed`; absent on an exempt leg. */
+  explore_arm: 'string',
   ad_count: 'number',
   placement_count: 'number',
   candidate_count: 'number',
@@ -747,6 +999,12 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   frequency_unavailable_causes: 'string',
   frequency_reservation_ms: 'number',
   frequency_max_reservation_ms: 'number',
+  /**
+   * Frequency reservations whose Redis reply arrived after the 75 ms bound but
+   * inside the short grace (`packages/internal/src/ad-serving/ad-redis-bound.ts`):
+   * each one served where a plain race would have refused. Absent when zero.
+   */
+  frequency_late_replies: 'number',
   duration_ms: 'number',
   /**
    * The L2 v0 ranker, present only while `FREEBUFF_FIRST_PARTY_RANKER` is not
@@ -782,11 +1040,22 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   ranker_fatigue_mean_ppm: 'number',
   ranker_fatigue_disagreements: 'number',
   /**
+   * The company-email boost (`ad-score/company-email-boost.ts`), shipped at
+   * a neutral 1.0: the viewer's fact as read (`yes`, `no`, `unknown`, or
+   * `unread` when no boosted advertiser's campaign loaded), the placements
+   * where a boosted advertiser had a scored campaign for a `yes` viewer,
+   * and those whose lead would change at the proposed multiplier. Counts
+   * only; never a campaign, advertiser or user id.
+   */
+  company_email: 'string',
+  ranker_company_email_placements: 'number',
+  ranker_company_email_disagreements: 'number',
+  /**
    * The request's one Flash pCTR batch (`ad-model/decisions-pctr.ts`), present
    * whenever the scorer is configured: the model label, the attempt outcome
    * (`scored`, `control`, `timeout`, `http_error`, `no_candidates`, ...), its
    * latency, how many ads it asked about out of how many were eligible (the
-   * cut keeps the best 25), and the input budget's token estimate, provider
+   * cut keeps the best 10), and the input budget's token estimate, provider
    * usage and whether it trimmed context or omitted view history. Id-free.
    */
   decisions_pctr_model: 'string',
@@ -798,6 +1067,20 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   decisions_pctr_input_tokens: 'number',
   decisions_pctr_context_trimmed: 'boolean',
   decisions_pctr_history_omitted: 'boolean',
+  /**
+   * The message-context split (`DECISIONS_PCTR_MESSAGES_WITHHELD_SHARE_BPS`,
+   * `ad-model/decisions-pctr.ts`): `sent`, the conversation went as
+   * `state.messages`; `withheld`, the batch went with an empty conversation.
+   * Set on every outcome inside the Flash arm, `no_context` included.
+   */
+  decisions_pctr_message_context: 'string',
+  /**
+   * Whether the conversation's message classification went with the batch:
+   * `sent`, `none` (the store had none), `other_model` (from a classifier
+   * version this prompt does not describe) or `omitted` (dropped to fit the
+   * token budget). The block itself rides the decision into the training log.
+   */
+  decisions_pctr_message_classification: 'string',
   /**
    * The intent pipeline's one Flash relevance batch
    * (`ad-model/intent-relevance.ts`), on composer intent decisions only: the
@@ -942,7 +1225,10 @@ export function createFirstPartyViewAckTelemetry(
   if (
     typeof surface !== 'string' ||
     typeof placementId !== 'string' ||
-    FIRST_PARTY_VIEW_ACK_PLACEMENTS.get(placementId) !== surface ||
+    // Shipped clients still ack under legacy ids (COD-1043): look up by the
+    // canonical id, keep the id as sent.
+    FIRST_PARTY_VIEW_ACK_PLACEMENTS.get(canonicalPlacementId(placementId)) !==
+      surface ||
     !FIRST_PARTY_VIEW_ACK_OUTCOMES.includes(
       outcome as FirstPartyViewAckOutcome,
     ) ||
@@ -974,13 +1260,23 @@ export function createFirstPartyViewAckTelemetry(
   }
 }
 
-/** Keep the advertiser postback stream safe to aggregate. In particular this
- * must not grow into an attribution/debugging record: the database owns that
- * drill-down and Axiom receives only bounded operational dimensions. */
+/** Keep the advertiser postback stream safe to aggregate. The authenticated
+ * advertiser id correlates integration health; all other fields describe
+ * bounded operational dimensions. Emails, hashes and click/event identifiers
+ * stay out of Axiom. */
 const ADS_EXTERNAL_CONVERSION_POSTBACK_FIELDS = {
   // Which ingress reported: 's2s' (key-authenticated postback) or 'client'
   // (the keyless browser endpoint). Two-valued, never a partner identifier.
   channel: 'string',
+  // Server-resolved after authentication, never a request-body field.
+  advertiser_id: 'string',
+  selected_rail: 'string',
+  // Raw canonical field presence, including fields ignored by click-id routing.
+  // Presence does not imply the supplied email or hash was valid.
+  email_present: 'boolean',
+  email_hash_present: 'boolean',
+  // Whether canonical `em` contains an accepted SHA-256 digest or digest array.
+  email_hash_valid: 'boolean',
   outcome: 'string',
   rejection_reason: 'string',
   click_id_shape: 'string',
@@ -991,10 +1287,19 @@ const ADS_EXTERNAL_CONVERSION_POSTBACK_FIELDS = {
   charged_cents: 'number',
   duration_ms: 'number',
   // Identity rail only (docs/freebuff-placements-conversions.md §16): how the
-  // hashed-email lookup ended — matched | observed_match | unmatched |
-  // ambiguous | gated | consent_denied — and 'none' on every click-id row.
-  // Bounded by construction; never a digest, never a user.
+  // hashed-email lookup ended — matched | observed_match |
+  // observed_bridged_match | unmatched | ambiguous | gated | consent_denied —
+  // and 'none' on every click-id row. Bounded by construction; never a
+  // digest, never a user.
   match_outcome: 'string',
+  // The identity rail's observe-only bridged pass
+  // (docs/freebuff-identity-bridging.md, "Phase 3"): matched | unmatched |
+  // ambiguous | gated | error, absent when it did not run; which linked
+  // address named the matched account (work_email | personal_email |
+  // student_email); and on `ambiguous`, how many distinct accounts clicked.
+  bridge_outcome: 'string',
+  bridge_via: 'string',
+  bridge_clickers: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
 function sanitizeExternalConversionPostbackFields(
@@ -1011,6 +1316,14 @@ function sanitizeExternalConversionPostbackFields(
     )
   ) {
     delete data.click_id_shape
+  }
+  if (
+    typeof data.selected_rail === 'string' &&
+    !(ADS_EXTERNAL_CONVERSION_SELECTED_RAILS as readonly string[]).includes(
+      data.selected_rail,
+    )
+  ) {
+    delete data.selected_rail
   }
   return data
 }
@@ -1066,6 +1379,14 @@ const PAID_API_REQUEST_FIELDS = {
   charged_micros: 'number',
   latency_ms: 'number',
   ttft_ms: 'number',
+  /** HTTP status the provider returned on the last attempt, when it answered. */
+  upstream_status: 'number',
+  /** timeout | transport | http | error_body | client_abort | settlement ... */
+  failure_kind: 'string',
+  /** True when the route was refused because a provider circuit was open. */
+  circuit_open: 'boolean',
+  /** First 12 hex of sha256(key) on invalid_api_key; matches secret_hash. */
+  api_key_digest_prefix: 'string',
 } as const satisfies AxiomOnlyFieldSchema
 
 const ADS_ADVERTISER_REPORTING_READ_FIELDS = {
@@ -1103,9 +1424,11 @@ const ADS_REQUEST_REJECTED_FIELDS = {
 const ADS_SPONSOR_BREAK_FIELDS = {
   placement_id: 'string',
   surface: 'string',
-  /** `spotlight` | `showcase` | `intermission`. */
+  /** `showcase` (historically also `spotlight` | `intermission`). */
   format: 'string',
   sponsor_break_arm: 'string',
+  policy_provenance: 'string',
+  showcase_arm: 'string',
   campaign_label: 'string',
   creative_version: 'number',
   opportunity_id: 'string',
@@ -1119,9 +1442,8 @@ const ADS_SPONSOR_BREAK_FIELDS = {
    * `render_delay_ms` follows.
    */
   dwell_ms: 'number',
-  /** Intermission's countdown, and whether it ran out before they acted. */
-  timer_ms: 'number',
-  timer_completed: 'boolean',
+  dismiss_lock_ms: 'number',
+  lock_completed: 'boolean',
   // COD-365 hygiene, required on every client ads event by the CI guard.
   client_event_id: 'string',
   client_family: 'string',
@@ -1137,9 +1459,15 @@ export type AxiomOnlyLogEvent = {
     | typeof CONTEXT_PRUNING_COMPLETED_EVENT
     | typeof STREAM_RECOVERY_EVENT
     | typeof FILE_WRITE_GUARD_EVENT
+    | typeof TOOL_CALL_REPAIR_EVENT
     | typeof MECHANICAL_COMPACTION_SKIPPED_EVENT
     | typeof CONTEXT_COMPACTION_COMPLETED_EVENT
     | typeof COMPACTION_FOLLOWUP_EVENT
+    | typeof COMPACTION_SUMMARY_EVENT
+    | typeof TURN_REVIEW_EVENT
+    | typeof COMPACTION_ATTEMPT_EVENT
+    | typeof COMPACTION_REQUEST_USAGE_EVENT
+    | typeof COMPACTION_FIRST_OUTPUT_EVENT
     | typeof TODO_PROGRESS_REMINDER_EVENT
     | typeof FILE_EDIT_LOOP_EVENT
     | typeof GRAVITY_REPORT_NUDGE_EVENT
@@ -1222,6 +1550,12 @@ export function getAxiomOnlyLogEvent(
       data: sanitizeAllowlistedFields(record, FILE_WRITE_GUARD_FIELDS),
     }
   }
+  if (eventName === TOOL_CALL_REPAIR_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, TOOL_CALL_REPAIR_FIELDS),
+    }
+  }
   if (eventName === MECHANICAL_COMPACTION_SKIPPED_EVENT) {
     return {
       event: eventName,
@@ -1244,6 +1578,42 @@ export function getAxiomOnlyLogEvent(
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(record, COMPACTION_FOLLOWUP_FIELDS),
+    }
+  }
+  if (eventName === COMPACTION_SUMMARY_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, COMPACTION_SUMMARY_FIELDS),
+    }
+  }
+  if (eventName === TURN_REVIEW_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, TURN_REVIEW_FIELDS),
+    }
+  }
+  if (eventName === COMPACTION_REQUEST_USAGE_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, COMPACTION_REQUEST_USAGE_FIELDS),
+    }
+  }
+  if (eventName === COMPACTION_ATTEMPT_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, COMPACTION_ATTEMPT_FIELDS),
+    }
+  }
+  if (eventName === COMPACTION_FIRST_OUTPUT_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, {
+        ...COMPACTION_CORRELATION_FIELDS,
+        agent_run_id: 'string',
+        model: 'string',
+        duration_ms: 'number',
+        idle_return: 'boolean',
+      }),
     }
   }
   if (eventName === FILE_EDIT_LOOP_EVENT) {
@@ -1307,7 +1677,9 @@ export function getAxiomOnlyLogEvent(
     }
   }
   if (eventName === ADS_SHOWCASE_PRESENTED_EVENT) {
-    const data = createGravityShowcasePresentationTelemetry(record)
+    const data =
+      createGravityShowcasePresentationTelemetry(record) ??
+      createWebShowcasePresentationTelemetry(record)
     // Keep the event inside the restricted branch even when malformed. The
     // sink treats `null` as an ordinary row and would otherwise retain the raw
     // client payload that failed validation.

@@ -6,7 +6,6 @@
  * cross-run isolation property that a process-global policy would violate.
  */
 
-import { describe, test, expect } from 'bun:test'
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync } from 'fs'
 import { realpath as fsRealpath } from 'fs/promises'
 import { tmpdir } from 'os'
@@ -14,6 +13,7 @@ import { join } from 'path'
 
 import { toolNames } from '@codebuff/common/tools/constants'
 import { toolParams } from '@codebuff/common/tools/list'
+import { describe, test, expect } from 'bun:test'
 
 import {
   BUILT_IN_TOOL_CAPABILITIES,

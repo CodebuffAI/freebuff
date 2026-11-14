@@ -7,12 +7,13 @@ const mode = process.argv[2]
 const rendererFixture = process.argv[3]
 // Two separate clocks, because they bound different things. Boot covers
 // spawning bun + transpiling the TSX renderer on a cold CI runner — slow, and
-// not what this test measures. Survival starts only once the launcher has
-// been killed and bounds the thing under test: how long the CLI may outlive
-// its launcher (it polls the launcher PID every 500ms). A single
-// start-anchored deadline let a slow boot eat the whole survival budget and
-// pushed real failures into the harness's contentless test timeout.
-const READY_TIMEOUT_MS = 15_000
+// not what this test measures, so it is only a backstop for a renderer that
+// never comes up. Survival starts only once the launcher has been killed and
+// bounds the thing under test: how long the CLI may outlive its launcher (it
+// polls the launcher PID every 500ms). A single start-anchored deadline let a
+// slow boot eat the whole survival budget and pushed real failures into the
+// harness's contentless test timeout.
+const READY_TIMEOUT_MS = 60_000
 const SURVIVAL_TIMEOUT_MS = 6_000
 
 if (mode !== 'observe' && mode !== 'launch') {

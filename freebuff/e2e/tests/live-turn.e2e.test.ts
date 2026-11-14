@@ -17,6 +17,8 @@ import path from 'path'
 
 import { afterEach, describe, expect, test } from 'bun:test'
 
+import { smokeSessionStatus } from '../../../scripts/lib/prod-smoke-session'
+
 import {
   FREEBUFF_CHAT_READY_TEXT,
   FreebuffSession,
@@ -25,9 +27,14 @@ import {
 
 const FLASH_DISPLAY_NAME = 'DeepSeek V4.1 Flash'
 // Not arithmetic (Flash once answered 4187 + 2359 with 6536), and "seven" never
-// appears in the echoed prompt.
-const SMOKE_PROMPT =
-  'Reply with only the English word for the number 7, in lowercase.'
+// appears in the echoed prompt. Each run tags it with letters g-z: the prompt
+// classifier counts the same normalised turn (digits read as 0) five times in an
+// hour as scripted use (strikes.ts `repeatCount`), and a promotion PR's pushes
+// run this smoke more often than that. No e, so the tag never spells "seven".
+const SMOKE_TAG = Array.from({ length: 6 }, () =>
+  String.fromCharCode(103 + Math.floor(Math.random() * 20)),
+).join('')
+const SMOKE_PROMPT = `Reply with only the English word for the number 7, in lowercase. (Run ${SMOKE_TAG}.)`
 const SMOKE_ANSWER = 'seven'
 
 // The first-send admission box (cli/src/components/freebuff-chat-controls.tsx).
@@ -37,8 +44,47 @@ const ADMISSION_TAKEOVER = 'Enter: take over'
 const ADMISSION_OPEN = 'Esc: back to draft'
 // The `/model` picker's key hint, shown while it holds the composer's place.
 const MODEL_PICKER_OPEN = 'Enter select · Esc cancel'
-// The footer under the composer: "<model>[ • <effort>] · <cwd> · /model to change · …".
-const FLASH_FOOTER = new RegExp(`${FLASH_DISPLAY_NAME}( • \\w+)? · `)
+// Catalog labels can include a release date, e.g. "Flash 10/17". Keep the name
+// boundary so "Flash Fast" cannot satisfy the selected-model assertion.
+const FLASH_FOOTER = new RegExp(
+  `${FLASH_DISPLAY_NAME}(?: \\d{1,2}/\\d{1,2})?(?: • \\w+)? · `,
+)
+
+test('the Flash row is found past the Slow and Fast rows that share its name', () => {
+  const flash = focusedModelRow(FLASH_DISPLAY_NAME)
+  expect('  › DeepSeek V4.1 Flash  10 Freebucks').toMatch(flash)
+  expect('  › DeepSeek V4.1 Flash 10/17 • Recommended').toMatch(flash)
+  for (const row of [
+    '  › DeepSeek V4.1 Flash Slow  10 Freebucks',
+    '  › DeepSeek V4.1 Flash Fast',
+    '  › DeepSeek V4.1 Flash Fastest',
+  ])
+    expect(row).not.toMatch(flash)
+})
+
+test('Flash footer accepts release dates without accepting Flash Fast', () => {
+  for (const label of [
+    'DeepSeek V4.1 Flash',
+    'DeepSeek V4.1 Flash • high',
+    'DeepSeek V4.1 Flash 10/17',
+    'DeepSeek V4.1 Flash 10/17 • high',
+    'DeepSeek V4.1 Flash 1/7 • low',
+  ]) {
+    expect(`${label} · /tmp/freebuff-smoke · /model to change`).toMatch(
+      FLASH_FOOTER,
+    )
+  }
+  for (const label of [
+    'DeepSeek V4.1 Flash Fast',
+    'DeepSeek V4.1 Flash Fast 10/17 • high',
+    'DeepSeek V4.1 Flash Fastest • high',
+    'DeepSeek V4.1 Flash Slow • high',
+  ]) {
+    expect(`${label} · /tmp/freebuff-smoke · /model to change`).not.toMatch(
+      FLASH_FOOTER,
+    )
+  }
+})
 
 const apiKey =
   process.env.FREEBUFF_SMOKE_API_KEY || process.env.CODEBUFF_API_KEY || null
@@ -46,14 +92,9 @@ const live = apiKey ? test : test.skip
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** The backend's own view of the account's session: `none` once it has been ended. */
-async function backendSessionStatus(): Promise<string> {
-  const res = await fetch('https://www.codebuff.com/api/v1/freebuff/session', {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  })
-  return (
-    ((await res.json()) as { status?: string }).status ?? `http ${res.status}`
-  )
+/** Observe the per-instance slots used by both smoke clients. */
+async function backendSessionStatus(): Promise<'active' | 'none'> {
+  return smokeSessionStatus('https://www.codebuff.com', apiKey!)
 }
 
 /**
@@ -61,14 +102,22 @@ async function backendSessionStatus(): Promise<string> {
  * picker opens expanded with the cursor on the saved preference; Down moves it and wraps, and a
  * collapse toggle at the end carries no cursor, so stepping forward reaches every row.
  */
+/**
+ * The picker's cursor on `name` itself. "DeepSeek V4.1 Flash Fast" and "DeepSeek
+ * V4.1 Flash Slow" share the prefix (and the picker lists cheapest first, so
+ * Slow comes before Flash); badges may follow the name.
+ */
+function focusedModelRow(name: string): RegExp {
+  return new RegExp(
+    `› ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\s*(?:Fast|Slow))`,
+  )
+}
+
 async function focusModelRow(
   session: FreebuffSession,
   name: string,
 ): Promise<void> {
-  // "DeepSeek V4.1 Flash Fast" shares the prefix, and badges may follow the name
-  const focused = new RegExp(
-    `› ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\s*Fast\\b)`,
-  )
+  const focused = focusedModelRow(name)
   for (let step = 0; step < 30; step++) {
     const output = await session.capture()
     if (focused.test(output)) return
@@ -80,10 +129,25 @@ async function focusModelRow(
   )
 }
 
+/** How many admission retries the smoke takes before calling production unhealthy. A user facing
+ *  the retry box presses Enter, so the smoke is never stricter than the product. */
+const ADMISSION_RETRIES = 3
+/** Backoff before a retry: the first box can be a momentary shed, so give the backend room. */
+const ADMISSION_RETRY_BACKOFF_MS = 2_000
+
 /**
  * Send the first message and wait for `answer`. The send asks the backend for a session on the
- * chosen model; one that spends Freebucks asks first in a box that Enter confirms, and anything
- * else the box offers (retry, take over) is a failed admission.
+ * chosen model; one that spends Freebucks asks first in a box that Enter confirms.
+ *
+ * A box offering "Enter: retry" means the admission failed, and retrying is exactly what the box
+ * offers a user. A retry spends nothing: admission is idempotent for a stable instance id (see
+ * SESSION_ADMISSION_RETRY_DELAYS_MS in freebuff-desktop/src/server/services/session-client.ts),
+ * and a failed admission has no session to charge for. Taking it matters because the smoke asks
+ * whether a user can get an answer out of production: treating one transient shed as fatal failed
+ * the gate at 41s of a 180s budget and blocked a release (2026-11-02).
+ *
+ * "Enter: take over" still fails immediately: a live session was left behind by an earlier
+ * client, which is a real bug rather than a shed.
  */
 async function sendAndAwaitAnswer(
   session: FreebuffSession,
@@ -94,6 +158,7 @@ async function sendAndAwaitAnswer(
   await session.send(prompt)
   const deadline = Date.now() + timeoutMs
   let confirmed = false
+  let retries = 0
   while (Date.now() < deadline) {
     const { match, output } = await session.waitForAnyText(
       [answer, ADMISSION_CONFIRM, ADMISSION_RETRY, ADMISSION_TAKEOVER],
@@ -110,6 +175,20 @@ async function sendAndAwaitAnswer(
       await sleep(1_000) // the box closes once the admission starts
       continue
     }
+    if (match === ADMISSION_RETRY) {
+      if (retries === ADMISSION_RETRIES) {
+        throw new Error(
+          `Session admission still refused after ${retries} retries.\nLast output:\n${output}`,
+        )
+      }
+      retries++
+      await sleep(ADMISSION_RETRY_BACKOFF_MS * retries)
+      // A retried admission asks again before it spends, so the confirm box can come back.
+      confirmed = false
+      await session.sendKey('Enter')
+      await waitForRetryBoxToClear(session)
+      continue
+    }
     throw new Error(
       `Session admission did not go through (${match}).\nLast output:\n${output}`,
     )
@@ -117,6 +196,20 @@ async function sendAndAwaitAnswer(
   throw new Error(
     `Timed out after ${timeoutMs}ms waiting for "${answer}".\nLast output:\n${await session.capture()}`,
   )
+}
+
+/**
+ * Wait (bounded) for the retry box to be replaced. Captures return the pane's text, so reading the
+ * previous frame again would match the stale "Enter: retry" and spend every retry on it.
+ */
+async function waitForRetryBoxToClear(
+  session: FreebuffSession,
+): Promise<void> {
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    if (!(await session.capture()).includes(ADMISSION_RETRY)) return
+    await sleep(500)
+  }
 }
 
 describe('Freebuff: live turn against the backend', () => {
@@ -198,6 +291,8 @@ describe('Freebuff: live turn against the backend', () => {
       expect(footer).toMatch(FLASH_FOOTER)
 
       await sendAndAwaitAnswer(session, SMOKE_PROMPT, SMOKE_ANSWER, 180_000)
+
+      expect(await backendSessionStatus()).toBe('active')
 
       // End the session the way a user does, then ask the backend directly.
       await session.send('/end-session')

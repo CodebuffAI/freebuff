@@ -391,8 +391,8 @@ describe('getFiles', () => {
     })
   })
 
-  describe('gitignore blocking', () => {
-    test('should return IGNORED for gitignored files', async () => {
+  describe('agent ignore blocking', () => {
+    test('should return IGNORED for files excluded by agent ignore rules', async () => {
       isFileIgnoredSpy.mockResolvedValue(true)
 
       const mockFs = createMockFs({
@@ -429,6 +429,7 @@ describe('getFiles', () => {
         filePath: 'src/index.ts',
         projectRoot: '/project',
         fs: mockFs,
+        explicitRead: true,
       })
     })
 
@@ -454,8 +455,8 @@ describe('getFiles', () => {
     })
   })
 
-  describe('default gitignore behavior', () => {
-    test('should block gitignored files when no fileFilter is provided', async () => {
+  describe('default agent ignore behavior', () => {
+    test('should honor agent ignore rules when no fileFilter is provided', async () => {
       isFileIgnoredSpy.mockResolvedValue(true)
 
       const mockFs = createMockFs({
@@ -468,7 +469,7 @@ describe('getFiles', () => {
         filePaths: ['node_modules/pkg/index.js'],
         cwd: '/project',
         fs: mockFs,
-        // No fileFilter provided - SDK applies default gitignore checking
+        // No fileFilter provided - SDK applies agent-owned ignore rules
       })
 
       expect(result['node_modules/pkg/index.js']).toBe(FILE_READ_STATUS.IGNORED)
@@ -1006,7 +1007,7 @@ describe('getImageFile', () => {
     }
   })
 
-  test('applies the gitignore and filter policy of read_files', async () => {
+  test('applies the agent ignore and filter policy of read_files', async () => {
     const mockFs = createMockFs({
       files: { '/project/shot.png': { content: 'PNGDATA' } },
     })

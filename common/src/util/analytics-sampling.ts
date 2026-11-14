@@ -13,6 +13,8 @@ const SAMPLED_EVENT_RATES: Partial<Record<AnalyticsEvent, number>> = {
 const ALWAYS_TRACK_EVENTS = new Set<AnalyticsEvent>([
   // DAU is measured from MESSAGE_SENT, so it must never be sampled.
   AnalyticsEvent.MESSAGE_SENT,
+  // Every conversion stage must have the same unsampled denominator.
+  AnalyticsEvent.PRODUCT_FUNNEL_STEP,
   // Engaged-time is summed from event counts, so it must never be sampled.
   AnalyticsEvent.PRODUCT_ACTIVE_MINUTE,
   AnalyticsEvent.APP_LAUNCHED,
@@ -40,6 +42,9 @@ const ALWAYS_TRACK_EVENTS = new Set<AnalyticsEvent>([
   AnalyticsEvent.DESKTOP_PROJECT_OPENED,
   AnalyticsEvent.DESKTOP_PROJECT_CREATED,
   AnalyticsEvent.DESKTOP_TURN_COMPLETED,
+  AnalyticsEvent.DESKTOP_FUNNEL_STEP,
+  AnalyticsEvent.DESKTOP_ACQUISITION_STEP,
+  AnalyticsEvent.FREEBUFF_AUTH_STEP,
   // Low-volume recovery funnel. Sampling any stage independently would make
   // creation-to-success and repeated-failure rates impossible to measure.
   AnalyticsEvent.DESKTOP_FAILED_TURN_RECOVERY,

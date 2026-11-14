@@ -2,7 +2,12 @@ import {
   freebuffChatNeedsAdmission,
   requestFreebuffChatAdmission,
 } from '../state/freebuff-chat-store'
+import {
+  compactOutcome,
+  isCloudCompactPrompt,
+} from '@codebuff/common/desktop-cloud/compact'
 import { capturePendingAttachments } from '../utils/pending-attachments'
+import { getSystemMessage } from '../utils/message-history'
 import { randomUUID } from 'node:crypto'
 
 import { useCallback, useEffect, useRef } from 'react'
@@ -11,7 +16,10 @@ import { setCurrentChatId } from '../project-files'
 import { createStreamController } from './stream-state'
 import { useChatStore } from '../state/chat-store'
 import { getFreebuffInstanceId } from './use-freebuff-session'
-import { getSelectedFreebuffReasoningEffort } from '../state/freebuff-model-store'
+import {
+  getSelectedFreebuffReasoningEffort,
+  getSelectedFreebuffModel,
+} from '../state/freebuff-model-store'
 import { getCodebuffClient } from '../utils/codebuff-client'
 import {
   byokLoadFailureMessage,
@@ -20,7 +28,10 @@ import {
   selectedByokConnection,
 } from '../utils/byok'
 import { AGENT_MODE_TO_COST_MODE, IS_FREEBUFF } from '../utils/constants'
+import { isPromptPolicyRefusal } from '../utils/error-handling'
 import { createEventHandlerState } from '../utils/create-event-handler-state'
+import { captureCliFunnel, cliFunnelKey } from '../utils/cli-product-funnel'
+import { createCliRunFunnel } from '../utils/cli-run-funnel'
 import { createRunConfig } from '../utils/create-run-config'
 import { getAgentIdForMode } from '../utils/freebuff-agent-selection'
 import {
@@ -74,7 +85,11 @@ import type {
 } from '../types/contracts/send-message'
 import type { AgentMode } from '../utils/constants'
 import type { SendMessageTimerEvent } from '../utils/send-message-timer'
-import { STATE_SNAPSHOT_INTERRUPTION_MESSAGE } from '@codebuff/sdk'
+import {
+  STATE_SNAPSHOT_INTERRUPTION_MESSAGE,
+  toUserInterruptedRunState,
+  withCompactionSummary,
+} from '@codebuff/sdk'
 
 import type { AgentDefinition, MessageContent, RunState } from '@codebuff/sdk'
 import { isCoveredBySubscription } from '../utils/subscription'
@@ -109,6 +124,9 @@ interface UseSendMessageOptions {
    *  after a user interrupt, so the held text doesn't auto-start a new turn
    *  the user just stopped. */
   pauseQueue?: () => void
+  /** Drop queued copies of a message the server refused under the usage
+   *  policy, which would each be refused again and count again. */
+  dropQueuedCopies?: (content: string) => void
   continueChat: boolean
   continueChatId?: string
   subscriptionData?: SubscriptionResponse | null
@@ -157,6 +175,22 @@ function pinnedByokConnection(
   return (runState as PinnedByokRunState | null)?.byokConnection
 }
 
+/** `runState` with its idle clock started now (`AgentState.lastActivityAt`). */
+function stoppedNow(runState: RunState): RunState {
+  const sessionState = runState.sessionState
+  if (!sessionState) return runState
+  return {
+    ...runState,
+    sessionState: {
+      ...sessionState,
+      mainAgentState: {
+        ...sessionState.mainAgentState,
+        lastActivityAt: Date.now(),
+      },
+    },
+  }
+}
+
 function pinByokConnection(
   runState: RunState,
   connection: { id: string; revision: number } | undefined,
@@ -181,6 +215,7 @@ export const useSendMessage = ({
   resumeQueue,
   requeueMessageAtFront,
   pauseQueue,
+  dropQueuedCopies,
   continueChat,
   continueChatId,
   subscriptionData,
@@ -364,17 +399,60 @@ export const useSendMessage = ({
       // context switch during attachment processing, validation, or client
       // creation had no controller to stop.
       const runOwnerId = randomUUID()
+      const funnelDetails = {
+        run_id: runOwnerId,
+        thread_id: cliFunnelKey(useChatStore.getState().chatSessionId),
+        model: shouldUseByok ? 'byok' : getSelectedFreebuffModel(),
+        harness: 'codebuff' as const,
+        has_attachments:
+          (attachments?.length ??
+            useChatStore.getState().pendingAttachments.length) > 0,
+        character_count: Math.min(content.length, 10_000_000),
+      }
+      const runFunnel = createCliRunFunnel({
+        capture: (stage, state, details) => {
+          // Sponsored work and its generated followups never count as conversion.
+          if (!sponsored) {
+            if (stage === 'send' && state === 'accepted')
+              captureCliFunnel('model_selection', 'applied', funnelDetails)
+            captureCliFunnel(stage, state, { ...funnelDetails, ...details })
+          }
+        },
+      })
       const abortController = new AbortController()
+      abortController.signal.addEventListener(
+        'abort',
+        () => runFunnel.cancel(),
+        {
+          once: true,
+        },
+      )
       const runChatDir = resolveCurrentChatDir()
       const runChatIsCurrent = () => resolveCurrentChatDir() === runChatDir
-      let latestRunStateSnapshot: RunState = previousRunStateRef.current ?? {
+      const runStateBeforeRun = previousRunStateRef.current
+      let latestRunStateSnapshot: RunState = runStateBeforeRun ?? {
         traceSessionId: randomUUID(),
         output: {
           type: 'error',
           message: STATE_SNAPSHOT_INTERRUPTION_MESSAGE,
         },
       }
+      /** Set once the SDK has checkpointed this run (`onStateSnapshot`). */
+      let runSnapshotReceived = false
+      /**
+       * Esc (`user-interrupt`) keeps the interrupted turn in THIS chat, unlike a
+       * chat switch, logout or exit, which share the abort but not the chat.
+       * Sponsored turns never become part of the conversation.
+       */
+      const keepsInterruptedTurn = () =>
+        !sponsored &&
+        abortController.signal.reason === 'user-interrupt' &&
+        runChatIsCurrent()
+      /** The state Esc adopted, until the run's own returned state replaces it. */
+      let interruptedRunState: RunState | null = runStateBeforeRun
       let streamingStarted = false
+      /** The state this run saved, once it returned and was adopted. */
+      let adoptedRunState: RunState | undefined
 
       setLiveChatStateProvider(runOwnerId, () => ({
         runState: latestRunStateSnapshot,
@@ -393,6 +471,24 @@ export const useSendMessage = ({
         // message/timer cleanup. Preflight cancellation still needs to drop
         // the shared busy UI state synchronously.
         abortController.abort(reason)
+        // The snapshot dates from the last step boundary. A long response
+        // stopped now must not count its own running time as idle time.
+        if (runSnapshotReceived)
+          latestRunStateSnapshot = stoppedNow(latestRunStateSnapshot)
+        // Esc: the next prompt resumes from this run's progress, told the user
+        // interrupted it. The snapshot alone says the session ended, which
+        // only a real exit (`process-exit`) should leave behind. Adopted here,
+        // synchronously, because the next prompt can start before the aborted
+        // run returns; the run's own state replaces this one when it does.
+        if (runSnapshotReceived && keepsInterruptedTurn()) {
+          const interrupted =
+            toUserInterruptedRunState(latestRunStateSnapshot) ??
+            latestRunStateSnapshot
+          latestRunStateSnapshot = interrupted
+          interruptedRunState = interrupted
+          previousRunStateRef.current = interrupted
+          setRunState(interrupted)
+        }
         if (!streamingStarted) {
           setIsRetrying(false)
           setStreamStatus('idle')
@@ -425,6 +521,15 @@ export const useSendMessage = ({
         releaseRunOwnership()
         settleSponsored(true)
         return true
+      }
+
+      // A refused message is final (no client retries the 403): queued copies
+      // of it would each be refused again and count again. Dropped before the
+      // run's completion reopens the queue.
+      const dropCopiesIfRefused = (failure: unknown) => {
+        if (sponsored || !isPromptPolicyRefusal(failure)) return
+        if (!runChatIsCurrent()) return
+        dropQueuedCopies?.(content)
       }
 
       const finishPreflight = () => {
@@ -495,24 +600,24 @@ export const useSendMessage = ({
           if (releaseIfStopped()) return
 
           if (!validationResult.success) {
-            logger.warn(
-              { errors: validationResult.errors },
-              '[send-message] Validation failed',
-            )
             const errorsToAttach =
               validationResult.errors.length === 0
                 ? [
-                    // Hide this for now, as validate endpoint may be flaky and we don't want to bother users.
-                    // {
-                    //   id: NETWORK_ERROR_ID,
-                    //   message:
-                    //     'Agent validation failed. This may be due to a network issue or temporary server problem. Please try again.',
-                    // },
+                    {
+                      id: 'validation_error',
+                      message:
+                        'The validation check failed without an explanation.',
+                    },
                   ]
                 : validationResult.errors
 
-            setMessages((prev) =>
-              prev.map((msg) => {
+            // Error-level telemetry retains details; warnings are summarized.
+            logger.error(
+              { errors: errorsToAttach },
+              '[send-message] Validation failed',
+            )
+            setMessages((prev) => [
+              ...prev.map((msg) => {
                 if (msg.id !== userMessageId) {
                   return msg
                 }
@@ -521,7 +626,13 @@ export const useSendMessage = ({
                   validationErrors: errorsToAttach,
                 }
               }),
-            )
+              createErrorChatMessage(
+                `Message not sent: agent validation failed. ${errorsToAttach[0].message} Check the error and try again.`,
+              ),
+            ])
+            await yieldToEventLoop()
+            if (releaseIfStopped()) return
+            setTimeout(() => scrollToLatest(), 0)
             finishPreflight()
             return
           }
@@ -656,6 +767,7 @@ export const useSendMessage = ({
         // The conversation's own agent is told what a sponsored run did to
         // the files it remembers, once, on its next turn.
         const sponsoredBrief = sponsored ? null : takePendingSponsoredBrief()
+        const compactRun = { started: false, compacted: false }
         const effectivePrompt = sponsoredBrief
           ? `${sponsoredBrief}\n\n${buildPromptWithContext(promptWithBashContext, messageContent)}`
           : buildPromptWithContext(promptWithBashContext, messageContent)
@@ -769,6 +881,8 @@ export const useSendMessage = ({
               previousRunState: previousRunStateForTurn,
               agentDefinitions,
               eventHandlerState,
+              observeEvent: (event) => runFunnel.event(event),
+              observeChunk: (chunk) => runFunnel.chunk(chunk),
               signal: abortController.signal,
               // BYOK never enters the Freebuff free-mode admission or budget path.
               costMode: byok ? 'normal' : AGENT_MODE_TO_COST_MODE[agentMode],
@@ -785,7 +899,9 @@ export const useSendMessage = ({
                   : undefined,
               onStateSnapshot: (snapshot) => {
                 const pinnedSnapshot = pinByokConnection(snapshot, selectedByok)
+                if (abortController.signal.aborted) return
                 latestRunStateSnapshot = pinnedSnapshot
+                runSnapshotReceived = true
                 // Don't persist once the run is aborted or the user has switched
                 // chats: the store's messages then belong to a different
                 // conversation, and checkpointing them into this run's directory
@@ -806,6 +922,34 @@ export const useSendMessage = ({
                   runChatDir,
                 )
               },
+              // Usually arrives after the run returned. Only while this run's
+              // state is still the chat's latest: a newer turn has the
+              // summary in memory and saves it itself.
+              onCompactionStart: () => {
+                compactRun.started = true
+              },
+              onCompaction: () => {
+                compactRun.compacted = true
+              },
+              onCompactionSummary: (summary) => {
+                const saved = adoptedRunState
+                if (
+                  !saved ||
+                  previousRunStateRef.current !== saved ||
+                  !runChatIsCurrent()
+                )
+                  return
+                const patched = withCompactionSummary(saved, summary)
+                if (!patched) return
+                adoptedRunState = patched
+                previousRunStateRef.current = patched
+                setRunState(patched)
+                saveChatState(
+                  patched,
+                  useChatStore.getState().messages,
+                  runChatDir,
+                )
+              },
               // Mid-turn steering: the agent loop calls this at each step
               // boundary; texts pushed by the router since the last boundary are
               // injected into the running turn as user prompts. The transcript
@@ -820,6 +964,9 @@ export const useSendMessage = ({
               },
             })
 
+        funnelDetails.model = shouldUseByok
+          ? 'byok'
+          : getSelectedFreebuffModel()
         let runConfig = buildRunConfig()
 
         // Log a summary only: the full run config contains the entire
@@ -863,8 +1010,12 @@ export const useSendMessage = ({
                   agentId,
                   agentDefinitions,
                 )
+                funnelDetails.model = shouldUseByok
+                  ? 'byok'
+                  : getSelectedFreebuffModel()
                 runConfig = buildRunConfig()
               }
+              runFunnel.accept()
               return client.run(runConfig as Parameters<typeof client.run>[0])
             },
             canRetry: () =>
@@ -876,6 +1027,9 @@ export const useSendMessage = ({
               runChatIsCurrent(),
           }),
           selectedByok,
+        )
+        runFunnel.finish(
+          Boolean(runState.output && runState.output.type !== 'error'),
         )
         // THE CHECKS DECIDE WHEN A SPONSORED SKILL IS DONE (Desktop parity,
         // `docs/ads/agentic/step-checks.md`): a driven run's steps are
@@ -936,6 +1090,7 @@ export const useSendMessage = ({
           if (!sponsored) {
             previousRunStateRef.current = runState
             setRunState(runState)
+            adoptedRunState = runState
           }
           setIsRetrying(false)
 
@@ -943,12 +1098,50 @@ export const useSendMessage = ({
           // can't land after this authoritative final save.
           await settleCheckpointSave()
         } else if (!sponsored && runChatIsCurrent()) {
-          // An interrupted run is not adopted, but the server already created
-          // its root run: move the ad trace pointer past it, or the next
-          // prompt's offer and display requests would name it as the run
-          // carrying that prompt.
+          // The server already created this interrupted run's root run: move
+          // the ad trace pointer past it, or the next prompt's offer and
+          // display requests would name it as the run carrying that prompt.
           useChatStore.getState().noteFinishedRunForAdTrace(runState)
+          // Esc: adopt the run's own state, which ends in the runtime's "User
+          // interrupted the response" and holds every step the 5 s snapshot
+          // may have missed (or, before any snapshot, the user's prompt). Only
+          // while nothing newer has replaced what Esc adopted: the next prompt
+          // may already have started, or finished, from it.
+          const interrupted = keepsInterruptedTurn()
+            ? toUserInterruptedRunState(runState)
+            : undefined
+          if (
+            interrupted &&
+            previousRunStateRef.current === interruptedRunState
+          ) {
+            previousRunStateRef.current = interrupted
+            setRunState(interrupted)
+            adoptedRunState = interrupted
+            await settleCheckpointSave()
+            saveChatState(
+              interrupted,
+              useChatStore.getState().messages,
+              runChatDir,
+            )
+          }
         }
+        if (
+          runState.output?.type === 'error' &&
+          !abortController.signal.aborted
+        ) {
+          dropCopiesIfRefused(runState.output)
+        }
+        // A compact streams nothing, so nothing else says what it did.
+        if (
+          isCloudCompactPrompt(content) &&
+          runState.output?.type !== 'error' &&
+          !abortController.signal.aborted &&
+          runChatIsCurrent()
+        )
+          setMessages((prev) => [
+            ...prev,
+            getSystemMessage(compactOutcome(compactRun)),
+          ])
         handleRunCompletion({
           runState,
           actualCredits,
@@ -976,12 +1169,14 @@ export const useSendMessage = ({
           // and for a sponsored turn, the transcript with the CONVERSATION's
           // run state, which it never touched.
           saveChatState(
-            sponsored ? latestRunStateSnapshot : runState,
+            // A summary that landed since adoption is already in it.
+            sponsored ? latestRunStateSnapshot : (adoptedRunState ?? runState),
             useChatStore.getState().messages,
             runChatDir,
           )
         }
       } catch (error) {
+        runFunnel.finish(false)
         if (sponsored) {
           sponsoredErrorText =
             error instanceof Error ? error.message : String(error)
@@ -991,6 +1186,7 @@ export const useSendMessage = ({
         // may have started. Uses per-run abortController.signal (not shared
         // streamRefs) so a newer run's reset() can't clear this flag.
         if (!abortController.signal.aborted) {
+          dropCopiesIfRefused(error)
           handleRunError({
             error,
             timerController,
@@ -1107,6 +1303,7 @@ export const useSendMessage = ({
       requeueMessageAtFront,
       resumeQueue,
       pauseQueue,
+      dropQueuedCopies,
       scrollToLatest,
       setCanProcessQueue,
       setFocusedAgentId,

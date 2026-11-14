@@ -1,5 +1,85 @@
 # Testing
 
+## When to add a test, and when not to
+
+Read this before writing a test. Tests are not free: each one is typechecked,
+run on every PR that reaches its package, and has to be kept passing by
+whoever changes the code next. On 2026-11-12 the repo held 5,700 test files
+(1.7M lines), and 285 mounted-DOM files in `freebuff/web` took 590s of that
+suite's 820s while guarding almost nothing that had ever been an incident.
+They were cut. Do not grow them back.
+
+**The bar: a test earns its place only if its failure would mean a real
+incident.** Ask "if this assertion went red in prod instead of CI, would
+someone have to be told?" If the honest answer is "someone would notice a
+slightly different screen and fix it", do not write the test.
+
+Write a test for:
+
+- **Money**: billing, credits, quotas, ad spend, payouts, refunds, pricing.
+- **Access**: auth, sign-in, permissions, bans, rate limits, free-mode gates.
+- **Data loss or corruption**: drafts, messages, files, git state, migrations,
+  anything that deletes, or that sends twice or to the wrong place.
+- **Security**: sandbox and containment, consent, secrets or private code
+  reaching a published or client bundle, the DB access boundary.
+- **Contracts with something we cannot redeploy together**: the wire format
+  between a shipped CLI, SDK or Desktop build and the server, a provider API,
+  a persisted row or file format.
+- **Logic with real branching**: parsers, reducers, state machines, selection
+  and ranking, retries and concurrency. Test the pure function directly.
+- **A bug that reached users**, as one test at the lowest level that
+  reproduces it. Not a suite, and not for a cosmetic bug.
+
+Do not write a test for:
+
+- **How the UI looks or is arranged**: position, order, size, spacing,
+  colour, contrast, class names, CSS rules, icons, DOM structure, which
+  element wraps which, animation, scroll offsets, popover placement.
+- **Static copy**: labels, tooltips, placeholder and empty-state text.
+- **Presentational wiring**: "renders X when prop Y is set", "shows the
+  spinner while loading", "the button is disabled when the field is empty".
+  Verify these once in the preview or the growth lab when you make the change.
+- **Source text**: a test that reads a `.ts`, `.tsx` or `.css` file and
+  matches strings in it. It breaks on every refactor and proves nothing about
+  behaviour. The exception is a guard for an incident class above (a secret in
+  a published folder, a write opened on the wrong database lane), and its
+  header must name the incident.
+- **Markup snapshots.**
+- **Mocks talking to themselves**: asserting that a mock was called the way
+  the test set it up, with no logic of ours in between.
+- **What the typechecker already proves**: shapes, required props, exhaustive
+  switches, constants equal to themselves.
+- **Admin-only pages and internal dashboards** rendering their tables.
+- **A second copy** of coverage that exists one level down. If the reducer is
+  tested, do not also mount the component to watch it call the reducer.
+
+Rules of thumb:
+
+- **Put the logic where it is cheap to test.** Pull the decision out of the
+  component into a pure function and test that. A mounted-React test costs
+  100 to 1000 times a function test (a jsdom per file, seconds each) and fails
+  for reasons unrelated to the change.
+- **A mounted-DOM test (`*.dom.test.tsx`) is a last resort**, for a critical
+  flow (sending, stopping, sign-in, paying) that cannot be reached any other
+  way. One file per flow, not one per component.
+- **A change to how something looks needs no new test and may delete one.** If
+  an existing test fails only because an element moved or copy changed, delete
+  that assertion rather than updating it.
+- **No test over a second without a reason** in its header. Real sleeps,
+  spawned processes and whole-repo scans belong in an integration or smoke
+  lane, if anywhere.
+- **Fewer, not more, when fixing a bug.** One failing-then-passing case. Do
+  not add the six neighbouring cases "for completeness".
+- **Deleting a test is a normal change.** Say which and why in the PR body,
+  and lower the floor in `.github/test-baselines.json` ("The CI guard against
+  disappearing tests" below).
+
+A PR that only changes UI appearance, copy, docs or admin pages should usually
+add zero tests. Reviewers: ask for a test to be removed as readily as you ask
+for one to be added.
+
+## How to write the ones that are worth it
+
 - Prefer dependency injection over module mocking; define contracts in `common/src/types/contracts/`.
 - Use `spyOn()` only for globals / legacy seams.
 - Avoid `mock.module()` for functions; use `@codebuff/common/testing/mock-modules.ts` helpers for constants only. A module mock lasts for the rest of the `bun test` process, and `mock.restore()` does not undo it (see "the FILE ORDER").
@@ -53,6 +133,14 @@ This exists because every check bun gives you is blind to the failure mode that 
 **`[test].exclude` in `bunfig.toml` does nothing on bun 1.3.14.** Verified by pointing it at an ordinary test file, which still ran. That is why the repo-root `exclude` does not keep `*.integration.test.*` out of a root run, and why CI filters them with `find ... ! -name '*.integration.test.ts'`. Gate on a runtime condition instead of trusting the key.
 
 **Never hand a bare postgres.js query to `expect(...).rejects`.** A query is lazy: it runs only when something calls its `.then()`, and bun 1.3.14's `.rejects` never does, so the test waits forever. The per-test timeout does not fire either, so the whole job runs until its 15-minute step timeout. On 2026-09-30, `region-verifier-runs.integration.test.ts` hung `test-integration-packages/internal` this way on every PR until #4595. Await the query inside a function and assert on what it throws (see that test's `rejects` helper), or use ``expect((async () => await client`...`)()).rejects``.
+
+## Verifying a user-facing flow end to end: the growth lab
+
+When a unit test or the browser preview cannot show a change — a complex Desktop
+change, signup or onboarding, a referral or experiment arm, a country's tier, a real
+turn — run it in the growth lab (`bun lab`, [`growth-lab.md`](./growth-lab.md)): a
+private stack from your checkout where personas sign up as brand-new users and
+screenshots and video come back as proof.
 
 ## Cloud Agent smoke test (no credentials)
 
@@ -277,9 +365,12 @@ for the same reason: setup was 75–95% of each.
 The opposite case: a suite too slow for one runner gets several lanes, one per
 `shard: i/n`, each naming the same single package. `test-with-guard --shard i/n`
 runs the files `scripts/ci/test-shard.ts` assigns to that shard and guards them
-under the key `<key>#i/n`. Today that is the `freebuff/web` and
-`freebuff-desktop` unit suites and `web`'s DB integration suite, two shards
-each.
+under the key `<key>#i/n`. Today that is the `freebuff/web` and `web` unit
+suites (three shards each), the `freebuff-desktop` unit suite and `web`'s DB
+integration suite (two each). The `freebuff/web` unit shards are a job of
+their own, `test-freebuff-web`, which does not wait on `changes`: each shard
+runs `affected-lanes.ts` itself and skips its steps when the PR cannot reach
+the package (`ci.yml` has the reasoning).
 
 - **Assignment is a hash of the file's path** (FNV-1a over the path
   `test:files` prints, modulo n). Adding or deleting a file changes one shard's
@@ -297,7 +388,14 @@ each.
   no declared shard or to two. Without that check, dropping the `2/2` lane would
   lose half the suite while every remaining lane passed.
 - **Some files must share a shard.** `SHARD_TOGETHER` in `test-shard.ts`
-  hashes a directory as one unit. web's `src/server/desktop-cloud/` is one:
+  hashes a directory of one suite as one unit (a suite is a guard key, so a
+  package's unit and integration suites are separate). Giving the group a
+  shard to itself was tried on 2026-11-11 (PR #10617) to even out web's DB
+  shards, 92s and 267s: alone, the directory ran in ~140s, but
+  `device-execution/execution.redis.integration.test.ts` then failed in 3 of
+  5 attempts ("Device transport unavailable"), which it does not do with the
+  rest of its shard around it. Find that dependency before trying again.
+  web's DB suite's `src/server/desktop-cloud/` is one:
   its suites start and stop local R2 (workerd) in-process, and split by file,
   `store.integration.test.ts` hung for 60s after `org-invite-store`, `storage`
   and `github` ran before it, reproducibly in CI. With the rest of the
@@ -421,7 +519,11 @@ runs save it under a key scoped to `bun.lock` and `next.config.mjs`; pull
 requests restore main's newest. The archive is ~1 GB (1.4 GB unpacked).
 Measured 2026-10-07 on two runs of #5845: the compile went from 112s cold to
 56s warm and the build step from 169s to 86s, against ~16s to restore and ~18s
-to save. Past 3 GiB the stash is dropped, so the next run starts cold.
+to save. Past 5 GiB the cache is dropped and a marker file is stashed in its
+place: that tiny entry becomes the newest under the key prefix, `restore`
+deletes it and the next run builds cold and saves a fresh cache. (Dropping
+without a marker saved nothing, so every run kept restoring the last entry
+under the cap and outgrowing it again.)
 `build-web` has no Next cache: web turns the persistent cache off in
 `web/next.config.mjs` because its cold compile is ~30s. `oven-sh/setup-bun`'s
 own small runtime cache is independent of dependency installation and also

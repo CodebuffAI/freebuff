@@ -7,7 +7,6 @@ import {
 } from '../ads/ad-signals'
 
 import {
-  appendTextToRootStream,
   appendToolToAgentBlock,
   closeNativeReasoningBlock,
   closeNativeReasoningInAgent,
@@ -131,9 +130,7 @@ const appendRootChunk = (state: EventHandlerState, delta: TextDelta) => {
     return
   }
 
-  state.message.updater.updateAiMessageBlocks((blocks) =>
-    appendTextToRootStream(blocks, delta),
-  )
+  state.message.updater.appendRootText(delta)
 
   if (
     state.mode.agentMode === 'PLAN' &&

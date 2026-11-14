@@ -13,6 +13,7 @@ import {
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 
+import { freebuffModeDefine } from './freebuff-mode'
 import {
   ensureOpenTuiNativeBundle,
   type OpenTuiNativeTarget,
@@ -127,6 +128,8 @@ async function main() {
   if (!version) {
     throw new Error('Version argument is required when building a binary')
   }
+  // Before the slow prebuild steps, so a mislabelled free build fails at once.
+  const freebuffMode = freebuffModeDefine(binaryName, process.env)
 
   log(`Building ${binaryName} @ ${version}`)
 
@@ -167,7 +170,7 @@ async function main() {
     ['process.env.CODEBUFF_IS_BINARY', '"true"'],
     ['process.env.CODEBUFF_CLI_VERSION', `"${version}"`],
     ['process.env.CODEBUFF_CLI_TARGET', `"${getCliTargetLabel(targetInfo)}"`],
-    ['process.env.FREEBUFF_MODE', `"${process.env.FREEBUFF_MODE ?? 'false'}"`],
+    ['process.env.FREEBUFF_MODE', `"${freebuffMode}"`],
     ...nextPublicEnvVars,
   ]
 

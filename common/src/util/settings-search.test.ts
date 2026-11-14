@@ -61,3 +61,11 @@ test('only searches available pages and controls on the current surface', () => 
     'appearance',
   )
 })
+
+test('skips controls the caller hides', () => {
+  const label = 'Automatically start the next session'
+  expect(search('auto start', 'desktop')[0]?.detail).toBe(label)
+  expect(
+    searchSettings('auto start', SHARED_SETTINGS_PAGES, 'desktop', [label]),
+  ).toEqual([])
+})

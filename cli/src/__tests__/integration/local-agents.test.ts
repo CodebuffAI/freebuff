@@ -397,7 +397,8 @@ describe('Local Agent Integration', () => {
     }
     expect(
       definitions.find(
-        (definition) => definition.id === 'base3-fast-free-deepseek-flash',
+        (definition) =>
+          definition.id === 'base3-fast-free-deepseek-flash-evals',
       )?.spawnableAgents,
     ).toContain('test-custom-agent')
 

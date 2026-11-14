@@ -28,6 +28,124 @@ const run = (tool: string, args: unknown, mode = 'build') =>
     message?: string
   }>
 
+test('Next.js preparation runs in the workspace without creating or deploying a site', async () => {
+  const calls: unknown[] = []
+  const result = {
+    manifestPath: 'app/freebuff-sites-build/manifest.json',
+    localWranglerConfigPath: 'app/freebuff.wrangler.jsonc',
+    logPath: 'app/freebuff-sites-build/build.log',
+    runtime: 'opennext' as const,
+    nextVersion: '16.4.1',
+    adapterVersion: '1.20.12',
+  }
+  const client = new SitesClient({
+    getToken: () => undefined,
+    host: 'https://example.invalid',
+    originApp: 'desktop',
+    fetcher: async () => {
+      throw new Error('Preparation must not make hosting requests')
+    },
+    prepareNext: async (...args) => {
+      calls.push(args)
+      return result
+    },
+  })
+  const signal = new AbortController().signal
+  expect(
+    await client.runToolWithContext(
+      'sites_prepare_next',
+      { projectDirectory: 'app' },
+      '/workspace',
+      'build',
+      signal,
+    ),
+  ).toEqual(result)
+  expect(calls).toEqual([['/workspace', 'app', signal]])
+  expect(
+    await client.runToolWithContext(
+      'sites_prepare_next',
+      {},
+      '/workspace',
+      'plan',
+    ),
+  ).toMatchObject({ error: 'invalid_site_request' })
+  expect(calls).toHaveLength(1)
+})
+
+test('realtime preparation runs locally without credentials and Next passes the explicit capability', async () => {
+  const calls: unknown[] = []
+  const realtimeResult = {
+    directory: 'app/freebuff-realtime',
+    localWranglerConfigPath: 'app/freebuff-realtime/wrangler.jsonc',
+    serverModulePath: 'app/freebuff-realtime/server.js',
+    browserModulePath: 'app/freebuff-realtime/browser.js',
+    readmePath: 'app/freebuff-realtime/README.md',
+    created: [],
+    preserved: [],
+  }
+  const local = new SitesClient({
+    getToken: () => undefined,
+    host: 'https://example.invalid',
+    originApp: 'desktop',
+    fetcher: async () => {
+      throw new Error('No hosting request is permitted')
+    },
+    prepareRealtime: async (...args) => {
+      calls.push(args)
+      return realtimeResult
+    },
+    prepareNext: async (...args) => {
+      calls.push(args)
+      return {
+        manifestPath: 'manifest.json',
+        localWranglerConfigPath: 'wrangler.jsonc',
+        logPath: 'build.log',
+        runtime: 'opennext',
+        nextVersion: '16.4.1',
+        adapterVersion: '1.20.12',
+      }
+    },
+  })
+  const signal = new AbortController().signal
+  expect(
+    await local.runToolWithContext(
+      'sites_prepare_realtime',
+      { projectDirectory: 'app' },
+      '/workspace',
+      'build',
+      signal,
+    ),
+  ).toEqual(realtimeResult)
+  await local.runToolWithContext(
+    'sites_prepare_next',
+    { realtime: true },
+    '/workspace',
+    'build',
+    signal,
+  )
+  expect(calls).toEqual([
+    ['/workspace', 'app', signal],
+    ['/workspace', '.', signal, { realtime: true }],
+  ])
+  expect(
+    await local.runToolWithContext(
+      'sites_prepare_realtime',
+      {},
+      '/workspace',
+      'plan',
+    ),
+  ).toMatchObject({ error: 'invalid_site_request' })
+  expect(
+    await local.runToolWithContext(
+      'sites_prepare_next',
+      { realtime: false },
+      '/workspace',
+      'build',
+    ),
+  ).toMatchObject({ error: 'invalid_site_request' })
+  expect(calls).toHaveLength(2)
+})
+
 describe('the published schema is the schema that is enforced', () => {
   // The drift itself: every constraint the client applies must be visible in
   // the JSON Schema the model reads, or a refusal is unexplainable by design.
@@ -36,7 +154,9 @@ describe('the published schema is the schema that is enforced', () => {
       const json = z.toJSONSchema(z.object(spec.shape), { io: 'input' }) as {
         properties?: Record<string, unknown>
       }
-      expect(Object.keys(json.properties ?? {})).toEqual(Object.keys(spec.shape))
+      expect(Object.keys(json.properties ?? {})).toEqual(
+        Object.keys(spec.shape),
+      )
     }
   })
 
@@ -64,7 +184,9 @@ describe('the published schema is the schema that is enforced', () => {
       // `format` and the length bounds do not survive; a pattern does, which is
       // why every constraint a model must satisfy is expressed as one.
       if ('siteId' in spec.shape)
-        expect(roundTripped.properties?.siteId.pattern).toContain('[0-9a-fA-F]{8}')
+        expect(roundTripped.properties?.siteId.pattern).toContain(
+          '[0-9a-fA-F]{8}',
+        )
       if (spec.name === 'sites_add_storage' || spec.name === 'sites_set_secret')
         expect(roundTripped.properties?.name.pattern).toBe(
           '^[A-Z][A-Z0-9_]{0,63}$',
@@ -137,7 +259,59 @@ describe('a rejected argument says which one', () => {
       environment: 'production',
     })
     expect(result.error).toBe('invalid_site_request')
-    expect(result.message).toContain('unrecognized_keys')
+    expect(result.message).toContain('environment (unrecognized_keys)')
+  })
+
+  test('arguments that are not an object say so instead of a bare check name', async () => {
+    const result = await run(
+      'sites_deploy',
+      JSON.stringify({ siteId: '11111111-1111-4111-8111-111111111111' }),
+    )
+    expect(result.error).toBe('invalid_site_request')
+    expect(result.message).toContain('the arguments object (invalid_type)')
+    expect(result.message).not.toContain('11111111')
+  })
+
+  test('a Zod failure while preparing files is not blamed on the arguments', async () => {
+    // Cloud's bundler parsed a VM refusal as `undefined` (2026-11-08):
+    // "Sites rejected these arguments: invalid_type" for valid arguments.
+    const requests: string[] = []
+    const client = new SitesClient({
+      getToken: () => 'token',
+      host: 'https://example.invalid',
+      originApp: 'web',
+      fetcher: async (url) => {
+        requests.push(url)
+        return Response.json({})
+      },
+      files: {
+        bundle: async () => z.object({}).parse(undefined) as never,
+        secret: async () => z.string().max(1).parse('too long'),
+      },
+    })
+    const target = {
+      siteId: 'e77a6cb3-0814-431c-83fe-60f8371253e2',
+      environment: 'preview',
+      requestId: '0f1d3c52-8a4b-4a3e-9d0e-6a8f1f0b7c21',
+    }
+    const deployed = (await client.runToolWithContext(
+      'sites_deploy',
+      { ...target, manifestPath: 'deploy/sites-manifest.json' },
+      '/workspace',
+      'build',
+    )) as { error?: string; message?: string }
+    expect(deployed.error).toBe('invalid_site_request')
+    expect(deployed.message).not.toContain('rejected these arguments')
+    expect(deployed.message).toContain('Could not read the site files')
+    const secret = (await client.runToolWithContext(
+      'sites_set_secret',
+      { ...target, name: 'API_KEY', valueFile: '.secret' },
+      '/workspace',
+      'build',
+    )) as { error?: string; message?: string }
+    expect(secret.message).toContain('Could not read the secret file')
+    expect(secret.message).not.toContain('too long')
+    expect(requests).toEqual([])
   })
 
   test('plan mode and an unknown tool keep their own sentences', async () => {
@@ -146,7 +320,9 @@ describe('a rejected argument says which one', () => {
       { siteId: '11111111-1111-4111-8111-111111111111', name: 'My Site' },
       'plan',
     )
-    expect(planned.message).toBe('Sites mutations are unavailable in plan mode.')
+    expect(planned.message).toBe(
+      'Sites mutations are unavailable in plan mode.',
+    )
 
     const unknown = await run('sites_teleport', {
       siteId: '11111111-1111-4111-8111-111111111111',

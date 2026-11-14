@@ -45,6 +45,21 @@ export function freebuffPlanRequired(
   return isFreebuffSubscriptionProModelId(modelId)
 }
 
+/**
+ * Whether a session on `modelId` hides its clock: no time left, countdown or
+ * hour-end notice. The SERVER's per-viewer verdict (`untimedModelIds`), never
+ * a local reading of tier or price; absent keeps the clock.
+ */
+export function freebuffSessionUntimed(
+  modelId: string | undefined,
+  freebucks: Pick<FreebuffFreebucksInfo, 'untimedModelIds'> | null | undefined,
+): boolean {
+  return (
+    modelId !== undefined &&
+    freebucks?.untimedModelIds?.includes(modelId) === true
+  )
+}
+
 /** The locked row's short label, for a badge or a detail line. */
 export const FREEBUFF_PLAN_REQUIRED_LABEL = 'Paid plan'
 

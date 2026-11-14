@@ -4,7 +4,9 @@ import z from 'zod/v4'
 import {
   coerceToArray,
   coerceToObject,
+  liftSingleReplacement,
   normalizeReplacementAliases,
+  repairInput,
 } from '../utils'
 
 describe('coerceToArray', () => {
@@ -209,5 +211,74 @@ describe('normalizeReplacementAliases', () => {
       old_str: 'ignored',
       new_str: 'ignored',
     })
+  })
+})
+
+describe('liftSingleReplacement', () => {
+  it('lifts a top-level edit into replacements', () => {
+    expect(
+      liftSingleReplacement({ path: 'a.ts', oldString: 'x', newString: 'y' }),
+    ).toEqual({
+      path: 'a.ts',
+      replacements: [
+        { oldString: 'x', newString: 'y', allowMultiple: undefined },
+      ],
+    })
+  })
+
+  it('accepts the aliases models use for the two strings', () => {
+    expect(
+      liftSingleReplacement({ path: 'a.ts', old_string: 'x', new_string: 'y' }),
+    ).toMatchObject({ replacements: [{ oldString: 'x', newString: 'y' }] })
+    expect(
+      liftSingleReplacement({ path: 'a.ts', oldString: 'x', replacement: 'y' }),
+    ).toMatchObject({ replacements: [{ oldString: 'x', newString: 'y' }] })
+  })
+
+  it('leaves input with replacements, or without an oldString, alone', () => {
+    const withReplacements = { path: 'a.ts', replacements: [], oldString: 'x' }
+    expect(liftSingleReplacement(withReplacements)).toBe(withReplacements)
+    const noOldString = { path: 'a.ts', newString: 'y' }
+    expect(liftSingleReplacement(noOldString)).toBe(noOldString)
+  })
+})
+
+describe('repairInput', () => {
+  const schema = z
+    .object({
+      path: z.string(),
+      flags: z.string().optional(),
+      mode: z.enum(['SYNC', 'BACKGROUND']).default('SYNC'),
+    })
+    .describe('Example tool.')
+
+  it('runs the repair before validation', () => {
+    const repaired = repairInput(
+      (input) => ({ ...input, path: 'fixed' }),
+      schema,
+    )
+    expect(repaired.parse({ path: 'x' })).toEqual({
+      path: 'fixed',
+      mode: 'SYNC',
+    })
+  })
+
+  it('repairs a copy and leaves anything but an object to the schema', () => {
+    const input = { path: 'x', flags: 3 }
+    const repaired = repairInput((copy) => {
+      delete copy.flags
+      return copy
+    }, schema)
+    expect(repaired.parse(input)).toEqual({ path: 'x', mode: 'SYNC' })
+    expect(input).toEqual({ path: 'x', flags: 3 })
+    expect(repaired.safeParse('not an object').success).toBe(false)
+  })
+
+  it('keeps the JSON schema and description the model sees', () => {
+    const repaired = repairInput((val) => val, schema)
+    expect(z.toJSONSchema(repaired, { io: 'input' })).toEqual(
+      z.toJSONSchema(schema, { io: 'input' }),
+    )
+    expect(repaired.description).toBe('Example tool.')
   })
 })

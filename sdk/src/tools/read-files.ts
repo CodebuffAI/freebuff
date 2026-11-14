@@ -77,7 +77,7 @@ export async function getFiles(params: {
     refuseNonText = false,
   } = params
   // If the caller provides a filter, they own additional filtering decisions.
-  // Otherwise the SDK also applies default gitignore checking.
+  // Otherwise explicit reads honor agent ignore files, not discovery exclusions.
   const hasCustomFilter = fileFilter !== undefined
 
   const result = Object.create(null) as Record<string, string | null>
@@ -128,14 +128,15 @@ export async function getFiles(params: {
     const isExampleFile =
       isEnvTemplate || filterResult?.status === 'allow-example'
 
-    // Custom-filter callers own ordinary filtering decisions, except that env
-    // templates must still obey gitignore when the read_files policy is active.
+    // Explicit reads may name Git-ignored artifacts. Keep the full discovery
+    // policy for env templates and the background project-understanding agent.
     if ((!hasCustomFilter || isEnvTemplate) && isWithinProject) {
       const ignored = await isFileIgnored({
         filePath: relativePath,
         projectRoot: cwd,
         fs,
         ...(isEnvTemplate ? { allowEnvTemplate: true } : {}),
+        ...(!isEnvTemplate && !refuseNonText ? { explicitRead: true } : {}),
       })
       if (ignored) {
         result[relativePath] = FILE_READ_STATUS.IGNORED
@@ -230,13 +231,21 @@ export async function getImageFile(params: {
         ` [${ext} images cannot be attached; models accept only PNG, JPEG, GIF and WebP. Convert it with a terminal command (for example \`magick ${relativePath} /tmp/preview.png\`) and read that instead.]`,
     }
   }
-  if (fileFilter?.(relativePath).status === 'blocked') {
+  if (
+    isSensitiveEnvFilePath(relativePath) ||
+    fileFilter?.(relativePath).status === 'blocked'
+  ) {
     return { path: relativePath, error: FILE_READ_STATUS.IGNORED }
   }
   if (
     !fileFilter &&
     isWithinProject &&
-    (await isFileIgnored({ filePath: relativePath, projectRoot: cwd, fs }))
+    (await isFileIgnored({
+      filePath: relativePath,
+      projectRoot: cwd,
+      fs,
+      explicitRead: true,
+    }))
   ) {
     return { path: relativePath, error: FILE_READ_STATUS.IGNORED }
   }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 
 import {
+  findFileLookupKey,
   getProjectPathLookupKeys,
   resolveFilePathWithinProject,
 } from '../tools/path-utils'
@@ -88,5 +89,59 @@ describe('getProjectPathLookupKeys with Git Bash paths', () => {
         },
       }),
     ).toEqual(['C:\\Users\\me\\repo\\src\\a.ts', '/c/Users/me/repo/src/a.ts'])
+  })
+})
+
+describe('findFileLookupKey', () => {
+  test('an exact key wins', () => {
+    const files = { 'src/a.ts': 'forward', 'src\\a.ts': 'back' }
+    expect(findFileLookupKey(files, ['src/a.ts'])).toBe('src/a.ts')
+  })
+
+  test('a Windows computer answering a forward-slash read is still found', () => {
+    // Cloud computes POSIX keys; Desktop on Windows keys the same file with backslashes.
+    const files = { 'src\\game\\store.ts': 'export const store = 1' }
+    const keys = getProjectPathLookupKeys('/workspace', 'src/game/store.ts')
+    expect(findFileLookupKey(files, keys)).toBe('src\\game\\store.ts')
+  })
+
+  test.each([
+    'C:\\Users\\me\\proj\\src\\game\\store.ts',
+    'C:/Users/me/proj/src/game/store.ts',
+    'c:\\users\\me\\proj\\src\\game\\store.ts',
+    '/c/Users/me/proj/src/game/store.ts',
+  ])(
+    'an absolute path into a Windows computer finds its read from Cloud: %s',
+    (filePath) => {
+      const files = { 'src\\game\\store.ts': 'export const store = 1' }
+      const keys = getProjectPathLookupKeys('C:\\Users\\me\\proj', filePath)
+      expect(findFileLookupKey(files, keys)).toBe('src\\game\\store.ts')
+    },
+  )
+
+  test.each([
+    // Nov 5 failures: outside the project, Git Bash, doubled backslashes, another drive.
+    ['/e/Projects/coaching-app/_inspect/phase3a.js', 'E:\\Projects\\coaching-app\\_inspect\\phase3a.js'],
+    ['G:\\\\blockyvideo\\\\animate_girl.py', 'G:\\blockyvideo\\animate_girl.py'],
+    ['c:/Users/me/other/run.py', 'C:\\Users\\me\\other\\run.py'],
+  ])('a file outside a Windows computer project is found by its full path: %s', (filePath, key) => {
+    const files = { [key]: 'x' }
+    const keys = getProjectPathLookupKeys('C:\\Users\\me\\proj', filePath)
+    expect(findFileLookupKey(files, keys)).toBe(key)
+  })
+
+  test('an absolute path outside a Windows computer project finds nothing', () => {
+    const files = { 'src\\a.ts': 'x' }
+    for (const filePath of ['C:\\Users\\me\\other\\src\\a.ts', 'D:\\src\\a.ts']) {
+      const keys = getProjectPathLookupKeys('C:\\Users\\me\\proj', filePath)
+      expect(findFileLookupKey(files, keys)).toBeUndefined()
+    }
+  })
+
+  test('a different file is never matched', () => {
+    expect(
+      findFileLookupKey({ 'src\\other.ts': 'x' }, ['src/a.ts']),
+    ).toBeUndefined()
+    expect(findFileLookupKey({}, ['src/a.ts'])).toBeUndefined()
   })
 })

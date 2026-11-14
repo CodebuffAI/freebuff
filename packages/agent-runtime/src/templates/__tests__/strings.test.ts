@@ -483,6 +483,63 @@ describe('getAgentPrompt', () => {
       expect(stepResult).toBeDefined()
       expect(stepResult).not.toContain('You can spawn the following agents:')
     })
+
+    describe('spawnableAgentsInSystemPrompt', () => {
+      const researcher = createMockAgentTemplate({
+        id: 'researcher-web',
+        spawnerPrompt: 'Browses the web',
+      })
+      const render = (
+        overrides: Partial<AgentTemplate>,
+        type: 'systemPrompt' | 'instructionsPrompt',
+      ) => {
+        const root = createMockAgentTemplate({
+          id: 'root',
+          toolNames: ['spawn_agents'],
+          spawnableAgents: ['researcher-web'],
+          systemPrompt: 'System prompt content.',
+          instructionsPrompt: '',
+          spawnableAgentsInSystemPrompt: true,
+          ...overrides,
+        })
+        return getAgentPrompt({
+          agentTemplate: root,
+          promptType: { type },
+          fileContext: createMockFileContext(),
+          agentState: createMockAgentState('root'),
+          agentTemplates: { root, 'researcher-web': researcher },
+          additionalToolDefinitions: async () => ({}),
+          logger: createMockLogger(),
+          apiKey: TEST_AGENT_RUNTIME_IMPL.apiKey,
+          databaseAgentCache: TEST_AGENT_RUNTIME_IMPL.databaseAgentCache,
+          fetchAgentFromDatabase: TEST_AGENT_RUNTIME_IMPL.fetchAgentFromDatabase,
+        })
+      }
+
+      test('lists the agents once at the end of the system prompt, never per turn', async () => {
+        expect(await render({}, 'systemPrompt')).toBe(
+          'System prompt content.\n\n# Agents you can spawn\n\n- researcher-web: Browses the web',
+        )
+        // an agent with no instructions of its own sends no per-turn message at all
+        expect(await render({}, 'instructionsPrompt')).toBeUndefined()
+      })
+
+      test('an agent that inherits its parent system prompt keeps the per-turn list', async () => {
+        const inherited = { inheritParentSystemPrompt: true }
+        expect(await render(inherited, 'systemPrompt')).not.toContain(
+          'researcher-web',
+        )
+        expect(await render(inherited, 'instructionsPrompt')).toContain(
+          '- researcher-web: Browses the web',
+        )
+      })
+
+      test('lists nothing when the model has no spawn tool', async () => {
+        expect(await render({ toolNames: [] }, 'systemPrompt')).toBe(
+          'System prompt content.',
+        )
+      })
+    })
   })
 
   describe('KNOWLEDGE_FILES_CONTENTS placeholder', () => {

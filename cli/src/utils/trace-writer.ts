@@ -16,6 +16,8 @@ type AgentTraceState = {
    * rewrites (compaction/expiry) without holding onto message objects. */
   writtenRoles: string[]
   system: string | undefined
+  /** The step prompt last written, serialised. */
+  stepPrompt: string | undefined
 }
 
 /**
@@ -77,6 +79,7 @@ export function createTraceWriter(
       const state = agentStates.get(agentId) ?? {
         writtenRoles: [],
         system: undefined,
+        stepPrompt: undefined,
       }
       const base = { agentId, agentType, runId, userInputId, step }
       const timestamp = new Date().toISOString()
@@ -85,15 +88,22 @@ export function createTraceWriter(
         lines.push(JSON.stringify({ timestamp, ...record }))
       }
 
+      // An agent's step prompt ends each step's request and is gone from the
+      // next (the runtime drops it every step): diffed with the history it
+      // would read as a rewrite at every step. It is recorded like the system
+      // prompt instead, once and again only when it changes.
+      const history = messages.filter((m) => !m.tags?.includes('STEP_PROMPT'))
+      const stepPrompt = messages.find((m) => m.tags?.includes('STEP_PROMPT'))
+
       const rewritten =
-        messages.length < state.writtenRoles.length ||
-        state.writtenRoles.some((role, i) => messages[i]?.role !== role)
+        history.length < state.writtenRoles.length ||
+        state.writtenRoles.some((role, i) => history[i]?.role !== role)
       if (rewritten) {
         appendLine({
           ...base,
           type: 'history_rewritten',
           previousMessageCount: state.writtenRoles.length,
-          messageCount: messages.length,
+          messageCount: history.length,
         })
         state.writtenRoles = []
       }
@@ -103,8 +113,14 @@ export function createTraceWriter(
         state.system = system
       }
 
-      for (let i = state.writtenRoles.length; i < messages.length; i++) {
-        const message = messages[i] as Message
+      const stepPromptText = stepPrompt && JSON.stringify(stepPrompt.content)
+      if (stepPromptText && stepPromptText !== state.stepPrompt) {
+        appendLine({ ...base, type: 'step_prompt', message: stepPrompt })
+        state.stepPrompt = stepPromptText
+      }
+
+      for (let i = state.writtenRoles.length; i < history.length; i++) {
+        const message = history[i] as Message
         appendLine({
           ...base,
           type: 'message',
@@ -113,7 +129,7 @@ export function createTraceWriter(
         })
       }
 
-      state.writtenRoles = messages.map((m) => m.role)
+      state.writtenRoles = history.map((m) => m.role)
       agentStates.set(agentId, state)
 
       if (lines.length === 0) return

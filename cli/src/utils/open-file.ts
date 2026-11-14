@@ -15,15 +15,16 @@ const escapeForShell = (value: string): string =>
 const escapeForCmd = (value: string): string =>
   `"${value.replace(/"/g, '""')}"`
 
-const replaceFilePlaceholder = (command: string, filePath: string): string => {
-  if (command.includes('%f')) {
-    return command.replace(/%f/g, filePath)
-  }
-  if (command.includes('{file}')) {
-    return command.replace(/{file}/g, filePath)
-  }
-  return command
-}
+// `%f` or `{file}`, with any matching quotes a user put around it (`"%f"`):
+// the substituted path is already quoted, and quoting it twice would hand the
+// editor a path with literal quote marks in it.
+const FILE_PLACEHOLDER = /(["']?)(%f|\{file\})\1/g
+
+// filePath must already be shell-quoted: the command runs with `shell: true`, and
+// the path can come from a repo (agent file names). The function replacer keeps
+// `$&` / `$'` in a file name from being read as replacement patterns.
+const replaceFilePlaceholder = (command: string, filePath: string): string =>
+  command.replace(FILE_PLACEHOLDER, () => filePath)
 
 const buildEditorCommands = (
   filePath: string,
@@ -31,7 +32,6 @@ const buildEditorCommands = (
 ): string[] => {
   const commands: string[] = []
   const shellPath = isWindows ? escapeForCmd(filePath) : escapeForShell(filePath)
-  const rawPath = filePath
 
   // Check custom editor env vars
   const editorValues = [
@@ -43,11 +43,11 @@ const buildEditorCommands = (
 
   for (const value of editorValues) {
     if (!value) continue
-    const withFile = replaceFilePlaceholder(value, rawPath)
+    const withFile = replaceFilePlaceholder(value, shellPath)
     if (withFile !== value) {
       commands.push(withFile)
     } else {
-      commands.push(`${value} ${isWindows ? shellPath : shellPath}`)
+      commands.push(`${value} ${shellPath}`)
     }
   }
 

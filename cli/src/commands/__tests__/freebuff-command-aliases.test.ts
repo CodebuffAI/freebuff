@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 describe('freebuff command aliases', () => {
-  test.each(['true', 'false'])('model and reasoning commands respect FREEBUFF_MODE=%s', (freebuffMode) => {
+  test.each(['true', 'false'])('model, reasoning and ads commands respect FREEBUFF_MODE=%s', (freebuffMode) => {
     const slashCommandsUrl = new URL(
       '../../data/slash-commands.ts',
       import.meta.url,
@@ -23,6 +23,15 @@ describe('freebuff command aliases', () => {
           import { useFreebuffSessionStore } from ${JSON.stringify(new URL('../../state/freebuff-session-store.ts', import.meta.url).href)}
           import { getFreebuffModelDirectory } from ${JSON.stringify(new URL('../../state/freebuff-catalog-store.ts', import.meta.url).href)}
           import assert from 'node:assert/strict'
+
+          // These write adsEnabled to the settings file Codebuff shares
+          // (~/.config/manicode). Freebuff always shows ads, so it must not
+          // offer a switch it ignores and Codebuff would honour.
+          for (const name of ['ads:enable', 'ads:disable']) {
+            const isFree = process.env.FREEBUFF_MODE === 'true'
+            assert.equal(findCommand(name) === undefined, isFree)
+            assert.equal(SLASH_COMMANDS.some(cmd => cmd.id === name), !isFree)
+          }
 
           if (process.env.FREEBUFF_MODE !== 'true') {
             for (const name of ['reasoning', 'effort', 'think']) {

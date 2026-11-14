@@ -17,7 +17,9 @@ import { getInitialSessionState } from '@codebuff/common/types/session-state'
 import { getStubProjectFileContext } from '@codebuff/common/util/file'
 import { describe, expect, test } from 'bun:test'
 
-import { compactRunState } from '../compact-run-state'
+import { messageFingerprint } from '@codebuff/agent-runtime/conversation-summary'
+
+import { compactRunState, withCompactionSummary } from '../compact-run-state'
 
 import type { RunState } from '../run-state'
 import type { JSONValue } from '@codebuff/common/types/json'
@@ -44,7 +46,12 @@ const assistant = (text: string): Message => ({
 const call = (id: string, paths: string[]): Message => ({
   role: 'assistant',
   content: [
-    { type: 'tool-call', toolCallId: id, toolName: 'read_files', input: { paths } },
+    {
+      type: 'tool-call',
+      toolCallId: id,
+      toolName: 'read_files',
+      input: { paths },
+    },
   ],
 })
 const read = (id: string, content: string, path: string): Message => ({
@@ -172,7 +179,50 @@ describe('compactRunState', () => {
 
   test('answers null when the state carries no session at all', () => {
     expect(
-      compact({ output: { type: 'lastMessage', value: [] }, traceSessionId: 't' }),
+      compact({
+        output: { type: 'lastMessage', value: [] },
+        traceSessionId: 't',
+      }),
     ).toBeNull()
+  })
+})
+
+describe('withCompactionSummary', () => {
+  const history = [user('Fix the timeout.'), assistant('Done: it uses ms now.')]
+  const summary = (
+    createdAt: number,
+    anchor = messageFingerprint(history[1]),
+  ) => ({
+    text: '## Objective\n- Fix the timeout.',
+    coveredMessages: 2,
+    anchor,
+    contextTokens: 40_000,
+    createdAt,
+  })
+
+  test('adds the summary without touching the saved state', () => {
+    const saved = runStateWith(history)
+    const before = JSON.stringify(saved)
+    const next = withCompactionSummary(saved, summary(1))!
+    expect(next.sessionState!.mainAgentState.compactionSummary).toEqual(
+      summary(1),
+    )
+    expect(next.sessionState!.mainAgentState.messageHistory).toBe(history)
+    expect(JSON.stringify(saved)).toBe(before)
+  })
+
+  test('answers null when the history no longer holds what it covers', () => {
+    expect(
+      withCompactionSummary(runStateWith(history), summary(1, 'gone:1')),
+    ).toBeNull()
+  })
+
+  test('never replaces a newer summary', () => {
+    const saved = withCompactionSummary(runStateWith(history), summary(5))!
+    expect(withCompactionSummary(saved, summary(4))).toBeNull()
+    expect(
+      withCompactionSummary(saved, summary(6))!.sessionState!.mainAgentState
+        .compactionSummary!.createdAt,
+    ).toBe(6)
   })
 })

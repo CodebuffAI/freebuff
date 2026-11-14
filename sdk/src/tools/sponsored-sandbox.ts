@@ -69,6 +69,7 @@ import {
   evaluateSponsoredReadPath,
 } from '@codebuff/common/ads/sponsored-capabilities'
 import { withSponsoredRunCredentialEnv } from '@codebuff/common/ads/sponsored-run-credentials'
+import { parseCodeSearchFlags } from '@codebuff/common/util/code-search-flags'
 import { ENV_TEMPLATE_FILE_PATTERNS } from '@codebuff/common/util/env-file-path'
 
 import { getSystemProcessEnv } from '../env'
@@ -79,7 +80,7 @@ import {
   sponsoredLinuxRuntimePath,
   sponsoredLinuxSearchPath,
 } from './sponsored-linux-runtime'
-import { INCLUDED_HIDDEN_DIRS, parseCodeSearchFlags } from './code-search'
+import { INCLUDED_HIDDEN_DIRS } from './code-search'
 import {
   sameWindowsPath,
   windowsNativePath,

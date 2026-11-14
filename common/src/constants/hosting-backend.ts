@@ -3,13 +3,14 @@
  * `project_domain` tables) — the checked-in switch for moving hosting off
  * platform Convex (COD-742 batch 5, track E4; docs/freebuff-hosting-postgres.md).
  *
- * - `convex`   (default): Convex is the writer and the reader. Nothing in the
+ * - `convex`   Convex is the writer and the reader. Nothing in the
  *              Postgres port runs: no job is enqueued, the graphile cron for
  *              stale deploys no-ops, and the Convex cron keeps sweeping.
  * - `shadow`   Convex still writes and serves. Server paths that read a
  *              deployment also read the Postgres copy (kept current by the
- *              catch-up/repair script) and log `convex_pg_shadow_row_mismatch`
- *              with ids and column NAMES only, never values.
+ *              `hosting.projection` chain) and log
+ *              `convex_pg_shadow_row_mismatch` with ids and column NAMES
+ *              only, never values. Current since 2026-10-19.
  * - `postgres` Postgres writes and serves; the deploy runs as the
  *              `hosting.deploy_on_freestyle` job; the Convex stale-deploy cron
  *              no-ops so exactly one sweeper ever runs.
@@ -20,7 +21,7 @@
  */
 export type HostingBackendMode = 'convex' | 'shadow' | 'postgres'
 
-export const HOSTING_BACKEND: HostingBackendMode = 'convex'
+export const HOSTING_BACKEND: HostingBackendMode = 'postgres'
 
 /** Who serves hosting READS in `mode`. Shadow still serves Convex. */
 export function hostingReadBackend(

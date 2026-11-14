@@ -15,9 +15,9 @@ const HEALTH_CHECK_CONFIG = {
     { successCount: 15, interval: 300_000 }, // 5 minutes after 15 successes
     { successCount: 20, interval: 600_000 }, // 10 minutes after 20 successes
   ],
-  // While a real request is in flight, its own success already proves the backend is up.
-  // Recheck on this short cadence (without hitting the network) rather than probing
-  // concurrently with the turn, and resume the normal schedule the moment it ends.
+  // While connected and a real request is in flight, skip redundant probes.
+  // Recheck on this short cadence without hitting the network. Offline monitors
+  // keep their failure-backoff probes so they can recover during an active turn.
   BUSY_RECHECK_INTERVAL: 5_000,
 } as const
 
@@ -42,8 +42,8 @@ export interface ConnectionMonitor {
   /** Returns the current snapshot immediately, then notifies on every subsequent check. */
   subscribe(listener: ConnectionListener): () => void
   getConnected(): boolean
-  /** A real request is in flight (or just finished). Its own success is stronger evidence of
-   *  connectivity than a dedicated probe, so pause probing while busy and resume right after. */
+  /** Pause redundant probes while busy and connected. Being busy alone does not prove
+   *  connectivity: offline monitors keep probing on the failure-backoff schedule. */
   setBusy(busy: boolean): void
   /** Stops the pending timer for good. Production code never calls this; tests do. */
   stop(): void
@@ -173,7 +173,7 @@ export function createConnectionMonitor(
 
   const check = async (gen: number): Promise<void> => {
     if (stopped || gen !== generation) return
-    if (busy) {
+    if (busy && connected) {
       scheduleNext(busyRecheckIntervalMs, gen)
       return
     }

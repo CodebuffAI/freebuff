@@ -1,8 +1,6 @@
 import {
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
-  FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_MIMO_V25_MODEL_ID,
-  FREEBUFF_MIMO_V26_PRO_MODEL_ID,
   FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
   FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
   freebuffModelIdMatches,
@@ -16,6 +14,8 @@ export interface FreebuffModelPreset {
   label: string
   modelId: string
   reasoningEffort: ReasoningEffort | null
+  /** A thinking level of the one listed model (`thinkingLevelPresets`). */
+  thinkingLevel?: true
 }
 
 /** IDs are the client's selectable IDs: catalog keys stay opaque. */
@@ -30,28 +30,104 @@ export interface FreebuffPresetModel {
 }
 
 /**
- * MiMo v2.6 Flash Slow's catalog key (`defaultCatalogKey('fbc/mimo-slow')`):
- * a catalog-only row, so it has no public id and is found by its opaque key,
- * as in freebuff-picker-sections.ts. Pinned to its id by the web catalog tests.
+ * DeepSeek V4.1 Flash Slow's catalog key (`fbc/deepseek-flash-slow`, once MiMo
+ * v2.6 Flash Slow: `defaultCatalogKey('fbc/mimo-slow')`, its first id, since a
+ * row renamed in place keeps its key). A catalog-only row has no public id and
+ * is found by its opaque key, as in freebuff-picker-sections.ts. Pinned by the
+ * web catalog tests.
  */
-export const FREEBUFF_MIMO_SLOW_CATALOG_KEY = 'm-61c26317cc'
+export const FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY = 'm-61c26317cc'
+
+/** DeepSeek V4.1 Flash's catalog key (the steady-speed row,
+ *  `fbc/deepseek-flash`, first id `fbc/deepseek-slow`), found the same way.
+ *  NOT the Slow row, whatever its first id says. */
+export const FREEBUFF_DEEPSEEK_FLASH_CATALOG_KEY = 'm-8db1ccbba6'
+
+/** Old names, swapped against today's rows (the "slow" one is Flash, the
+ *  "mimo" one is Flash Slow). Kept for importers until they move. */
+export const FREEBUFF_MIMO_SLOW_CATALOG_KEY = FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY
+export const FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY = FREEBUFF_DEEPSEEK_FLASH_CATALOG_KEY
 
 /** Recommendations only. Catalog visibility, purchase consent and admission
  * remain owned by the existing model-selection path.
  *
- * Full access (product, 2026-10-16): GPT-6 Luna at low effort, DeepSeek V4.1
- * Flash at high effort (the Luminal lane), and MiMo 2.6 Pro (no effort ladder).
+ * Full access (product, 2026-10-16): DeepSeek V4.1 Flash at low effort (GPT-6
+ * Luna until 2026-10-30, when it left the first view of the picker), at high
+ * effort (the Luminal lane), and at max effort (since 2026-10-17; MiMo 2.6 Pro
+ * before).
  * The first stop is no longer a cheap model, so it reads Fast rather than
  * Efficient; limited ladders keep Efficient.
  *
- * A limited-access subscriber, or one holding 100 Freebucks, gets MiMo v2.6 Flash Slow
- * (MiMo where it is not listed, as on Web), Flash at high effort and Muse Spark
- * 1.3. Muse Spark is a paid-only row, so without a plan that stop is the
- * ordinary paywall, never an entitlement. Any other limited account gets the
- * free ladder below, built on the server's recommendation for it
- * (`recommendedModelId`, MiMo v2.6 Flash Slow since 2026-10-14) where the catalog sends
- * one, else MiMo. */
+ * LIMITED ACCESS DEFAULTS TO DEEPSEEK V4.1 FLASH SLOW for every account
+ * (product, 2026-11-11, Victor: one picker everywhere), matching the server's
+ * recommendation. Balanced, the stop new chats start on, is the server's pick
+ * (`recommendedModelId`, Flash Slow at limited access) or Flash Slow itself;
+ * a free row (Glyph, Solar) or Flash Slow is Efficient. Powerful is Muse
+ * Spark 1.3 for a subscriber or a holder of 100 Freebucks (a paid-only row,
+ * so without a plan that stop is the ordinary paywall, never an entitlement)
+ * and DeepSeek V4.1 Flash Fast at high effort otherwise. Until 11-11 those
+ * accounts started on Flash Fast and their "Flash Slow" stop was the
+ * steady-speed Flash row (the two keys' names were swapped).
+ *
+ * No preset recommends MiMo (product, 2026-11-03, Victor): MiMo's provider is
+ * down and its rows are served by DeepSeek, so the ladders that led on MiMo v2.6
+ * Flash Slow (2026-10-14) or fell back to MiMo now lead on DeepSeek V4.1 Flash
+ * Slow.
+ *
+ * A catalog that lists one model with a reasoning ladder gets that model's
+ * thinking levels instead, at any tier.
+ *
+ * CHAT MODE'S DEFAULT STOP IS DEEPSEEK V4.1 FLASH SLOW at every tier
+ * (`chatMode`; product, 2026-11-11, Victor). Its Balanced stop, the one a new
+ * Chat-mode chat starts on, was DeepSeek V4.1 Flash Fast at full access and
+ * wherever the viewer's tier was not known yet, so a "hello" cost three
+ * hours. The other stops are the tier's own, so a chat already on Fast,
+ * Efficient or Powerful keeps it. Where Flash Slow is not listed or open,
+ * Balanced stays the tier's. */
 export function getFreebuffModelPresets({
+  chatMode = false,
+  ...params
+}: {
+  accessTier?: FreebuffAccessTier | null
+  isSubscriber?: boolean
+  balance?: number
+  pricing?: Pick<FreebuffFreebucksInfo, 'prices'> | null
+  models?: readonly FreebuffPresetModel[]
+  /** The catalog's recommended row for this viewer (a catalog key). With
+   *  `models`, used only while it is listed and available. */
+  recommendedModelId?: string | null
+  /** The Chat-mode slider's stops (workspace-mode.ts). */
+  chatMode?: boolean
+} = {}): readonly FreebuffModelPreset[] {
+  const presets = tierPresets(params)
+  if (!chatMode || !flashSlowOffered(params.models)) return presets
+  return presets.map((preset) =>
+    preset.id === 'balanced'
+      ? {
+          id: 'balanced',
+          label: preset.label,
+          modelId: FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY,
+          reasoningEffort: null,
+        }
+      : preset,
+  )
+}
+
+/** DeepSeek V4.1 Flash Slow is listed and open in `models`; with no rows to
+ *  check against (the CLI, a caller before its catalog), its key is taken as
+ *  is. */
+function flashSlowOffered(models: readonly FreebuffPresetModel[] | undefined) {
+  return (
+    !models ||
+    models.some(
+      (row) =>
+        row.id === FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY &&
+        row.available !== false,
+    )
+  )
+}
+
+function tierPresets({
   accessTier,
   isSubscriber = false,
   balance = 0,
@@ -64,10 +140,12 @@ export function getFreebuffModelPresets({
   balance?: number
   pricing?: Pick<FreebuffFreebucksInfo, 'prices'> | null
   models?: readonly FreebuffPresetModel[]
-  /** The catalog's recommended row for this viewer (a catalog key). With
-   *  `models`, used only while it is listed and available. */
   recommendedModelId?: string | null
-} = {}): readonly FreebuffModelPreset[] {
+}): readonly FreebuffModelPreset[] {
+  const only = models?.length === 1 ? models[0] : undefined
+  if (only?.efforts && only.efforts.length > 1)
+    return thinkingLevelPresets(only, only.efforts)
+
   const limited = accessTier === 'limited'
   const premium = isSubscriber || balance >= 100
   const rowFor = (id: string) =>
@@ -102,35 +180,25 @@ export function getFreebuffModelPresets({
 
   if (!limited)
     return [
-      preset('efficient', 'Fast', FREEBUFF_GPT_6_LUNA_MODEL_ID, 'low'),
+      preset('efficient', 'Fast', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'low'),
       preset('balanced', 'Balanced', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'high'),
-      preset('powerful', 'Powerful', FREEBUFF_MIMO_V26_PRO_MODEL_ID, null),
+      preset('powerful', 'Powerful', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'max'),
     ]
 
-  if (premium) {
-    // MiMo v2.6 Flash Slow leads where it is listed and open (product, 2026-10-14).
-    const slow = models?.find(
-      (row) =>
-        row.id === FREEBUFF_MIMO_SLOW_CATALOG_KEY && row.available !== false,
-    )
-    return [
-      slow
-        ? {
-            id: 'efficient' as const,
-            label: 'Efficient',
-            modelId: FREEBUFF_MIMO_SLOW_CATALOG_KEY,
-            reasoningEffort: null,
-          }
-        : preset('efficient', 'Efficient', FREEBUFF_MIMO_V25_MODEL_ID, null),
-      preset('balanced', 'Balanced', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'high'),
-      preset(
-        'powerful',
-        'Powerful',
-        FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
-        FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
-      ),
-    ]
-  }
+  // DeepSeek V4.1 Flash Slow where it is listed and open (with no rows to check
+  // against, as in the CLI, its key is taken as is), else Flash at low effort.
+  const flashSlow = (
+    id: FreebuffModelPreset['id'],
+    label: string,
+  ): FreebuffModelPreset =>
+    flashSlowOffered(models)
+      ? {
+          id,
+          label,
+          modelId: FREEBUFF_DEEPSEEK_FLASH_SLOW_CATALOG_KEY,
+          reasoningEffort: null,
+        }
+      : preset(id, label, FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'low')
 
   // Only a live, open, explicitly zero-priced row qualifies. Display names
   // identify catalog-only candidates without publishing their upstream IDs.
@@ -145,7 +213,7 @@ export function getFreebuffModelPresets({
     )
     .find((row) => row !== undefined)
   // The base of this ladder: the server's pick for the viewer when it is one
-  // they can start, else MiMo.
+  // they can start, else DeepSeek V4.1 Flash Slow.
   const recommended: Pick<FreebuffPresetModel, 'id' | 'defaultEffort'> | undefined = !recommendedModelId
     ? undefined
     : models
@@ -164,7 +232,7 @@ export function getFreebuffModelPresets({
           modelId: recommended.id,
           reasoningEffort: recommended.defaultEffort ?? null,
         }
-      : preset(id, label, FREEBUFF_MIMO_V25_MODEL_ID, null)
+      : flashSlow(id, label)
   return [
     free
       ? {
@@ -175,8 +243,71 @@ export function getFreebuffModelPresets({
         }
       : base('efficient', 'Efficient'),
     base('balanced', 'Balanced'),
-    preset('powerful', 'Powerful', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'high'),
+    premium
+      ? preset(
+          'powerful',
+          'Powerful',
+          FREEBUFF_MUSE_SPARK_13_CONTRIBUTOR_MODEL_ID,
+          FREEBUFF_MUSE_SPARK_REASONING_EFFORT,
+        )
+      : preset('powerful', 'Powerful', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'high'),
   ]
+}
+
+/**
+ * One model's thinking levels as the stops: its lowest rung (Fast), its
+ * default (Default, the Balanced stop new chats start on) and its highest
+ * (Max). "Fast" rather than "Low": a quick answer is a reason to choose it,
+ * where "low" sounds like less. DeepSeek V4.1 Flash's ladder is exactly
+ * low / high / max.
+ */
+const THINKING_LEVEL_LABELS: Record<FreebuffModelPreset['id'], string> = {
+  efficient: 'Fast',
+  balanced: 'Default',
+  powerful: 'Max',
+}
+
+/** What each of the one-model picker's thinking levels does: its stop's hover
+ *  text (product, 2026-11-11). */
+export const FREEBUFF_THINKING_LEVEL_HINTS: Record<
+  FreebuffModelPreset['id'],
+  string
+> = {
+  efficient: 'Fast: light reasoning, quickest replies. Good for small edits and questions.',
+  balanced: 'Default: thinks the task through before answering. Best for most work.',
+  powerful: 'Max: the most reasoning, slowest replies. For hard bugs and large changes.',
+}
+
+/** The levels in one short line, for the one-model picker's info icon. */
+export const FREEBUFF_THINKING_LEVELS_SUMMARY =
+  'Fast answers quickest; Max thinks longest.'
+
+function thinkingLevelPresets(
+  row: FreebuffPresetModel,
+  efforts: readonly ReasoningEffort[],
+): readonly FreebuffModelPreset[] {
+  const balanced =
+    row.defaultEffort && efforts.includes(row.defaultEffort)
+      ? row.defaultEffort
+      : efforts[efforts.length - 1]!
+  const stops = [
+    ...new Set([efforts[0]!, balanced, efforts[efforts.length - 1]!]),
+  ]
+  return stops.map((effort): FreebuffModelPreset => {
+    const id =
+      effort === balanced
+        ? 'balanced'
+        : efforts.indexOf(effort) < efforts.indexOf(balanced)
+          ? 'efficient'
+          : 'powerful'
+    return {
+      id,
+      label: THINKING_LEVEL_LABELS[id],
+      modelId: row.id,
+      reasoningEffort: effort,
+      thinkingLevel: true,
+    }
+  })
 }
 
 /** A manual effort override is custom too: never hide it behind a category. */

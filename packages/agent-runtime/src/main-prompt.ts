@@ -172,7 +172,7 @@ export async function callMainPrompt(
 
   if (validationErrors.length > 0) {
     const message = `Invalid agent config: ${validationErrors.map((err) => err.message).join('\n')}`
-    sendAction({
+    await sendAction({
       action: {
         type: 'prompt-error',
         message,
@@ -188,7 +188,7 @@ export async function callMainPrompt(
     }
   }
 
-  sendAction({
+  await sendAction({
     action: {
       type: 'response-chunk',
       userInputId: promptId,
@@ -204,9 +204,9 @@ export async function callMainPrompt(
   const result = await mainPrompt({
     ...params,
     localAgentTemplates,
-    onResponseChunk: (chunk) => {
+    onResponseChunk: async (chunk) => {
       if (!params.signal.aborted) {
-        sendAction({
+        await sendAction({
           action: {
             type: 'response-chunk',
             userInputId: promptId,
@@ -219,7 +219,7 @@ export async function callMainPrompt(
 
   const { sessionState, output } = result
 
-  sendAction({
+  await sendAction({
     action: {
       type: 'response-chunk',
       userInputId: promptId,
@@ -232,7 +232,7 @@ export async function callMainPrompt(
   })
 
   // Send prompt data back
-  sendAction({
+  await sendAction({
     action: {
       type: 'prompt-response',
       promptId,

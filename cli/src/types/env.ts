@@ -20,6 +20,10 @@ export type CliEnv = BaseEnv & {
   TERM?: string
   TMUX?: string
   STY?: string
+  // Per-terminal theme evidence used by terminal-color-detection.ts (BaseEnv
+  // already carries TERM_PROGRAM / TERM_BACKGROUND / COLORFGBG).
+  TERM_PROGRAM_VERSION?: string
+  XTERM_VERSION?: string
 
   // SSH/remote session detection
   SSH_CLIENT?: string
@@ -30,6 +34,8 @@ export type CliEnv = BaseEnv & {
   GITPOD_WORKSPACE_ID?: string
   CLOUD_SHELL?: string
   CODER?: string
+  // Windows Subsystem for Linux (reported as `wsl`)
+  WSL_DISTRO_NAME?: string
 
   // Where Bun extracts embedded native libraries (the terminal renderer)
   BUN_TMPDIR?: string

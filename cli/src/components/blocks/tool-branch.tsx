@@ -5,12 +5,20 @@ import { ContentWithMarkdown } from './content-with-markdown'
 import { useTheme } from '../../hooks/use-theme'
 import { useChatStore } from '../../state/chat-store'
 import { getToolDisplayInfo } from '../../utils/codebuff-client'
-import { shouldCollapseToolByDefault } from '../../utils/constants'
+import {
+  canAgentHideToolCall,
+  shouldCollapseToolByDefault,
+} from '../../utils/constants'
 import { renderToolComponent } from '../tools/registry'
 import { ToolCallItem } from '../tools/tool-call-item'
 
 import type { ContentBlock } from '../../types/chat'
 import type { MarkdownPalette } from '../../utils/markdown-renderer'
+
+const firstLineOf = (text: string): string => {
+  const [first = '', ...rest] = text.split('\n')
+  return rest.length > 0 ? `${first} (+${rest.length} lines)` : first
+}
 
 interface ToolBranchProps {
   toolBlock: Extract<ContentBlock, { type: 'tool' }>
@@ -41,7 +49,11 @@ export const ToolBranch = memo(
     if (toolBlock.toolName === 'ask_user') {
       return null
     }
-    if ('includeToolCall' in toolBlock && toolBlock.includeToolCall === false) {
+    // An agent can hide its own bookkeeping calls. Any other call it hides,
+    // such as a terminal command, is drawn collapsed to one line instead.
+    const hiddenByAgent =
+      'includeToolCall' in toolBlock && toolBlock.includeToolCall === false
+    if (hiddenByAgent && canAgentHideToolCall(toolBlock.toolName)) {
       return null
     }
 
@@ -57,8 +69,10 @@ export const ToolBranch = memo(
     
     // Tools without a registered component (fallback rendering) should be collapsed by default
     const hasRegisteredComponent = toolRenderConfig !== undefined
-    const isCollapsed = toolBlock.isCollapsed ?? 
-      (hasRegisteredComponent ? shouldCollapseToolByDefault(toolBlock.toolName) : true)
+    const isCollapsed = toolBlock.isCollapsed ??
+      (hasRegisteredComponent && !hiddenByAgent
+        ? shouldCollapseToolByDefault(toolBlock.toolName)
+        : true)
 
     const inputContent = `\`\`\`json\n${JSON.stringify(toolBlock.input, null, 2)}\n\`\`\``
     const codeBlockLang =
@@ -153,16 +167,20 @@ export const ToolBranch = memo(
 
     return (
       <box key={keyPrefix}>
-        {toolRenderConfig ? (
+        {toolRenderConfig && !hiddenByAgent ? (
           toolRenderConfig.content
         ) : (
           <ToolCallItem
             name={headerName}
-            content={renderableDisplayContent}
+            content={toolRenderConfig?.content ?? renderableDisplayContent}
             isCollapsed={isCollapsed}
             isStreaming={isStreaming}
-            streamingPreview={streamingPreview}
-            finishedPreview={finishedPreview}
+            streamingPreview={
+              hiddenByAgent ? firstLineOf(streamingPreview) : streamingPreview
+            }
+            finishedPreview={
+              hiddenByAgent ? firstLineOf(finishedPreview) : finishedPreview
+            }
             onToggle={handleToggle}
             titleSuffix={undefined}
           />

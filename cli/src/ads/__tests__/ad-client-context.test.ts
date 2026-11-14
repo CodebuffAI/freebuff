@@ -978,6 +978,7 @@ describe('buildCliAdClientContext: wave 2', () => {
       freeMemory: '10-25%',
       cores: '9-12',
       cpu: 'apple_m4',
+      cpuTier: 'apple_pro',
       diskFree: '50-200',
     })
     expect(context.app).toEqual({
@@ -1068,6 +1069,7 @@ describe('buildCliAdClientContext: wave 2', () => {
       ram: '16-32',
       cores: '5-8',
       cpu: 'other',
+      cpuTier: 'other',
     })
     expect(context.app).toEqual({ channel: 'dev' })
     expect(context.ui).toBeUndefined()

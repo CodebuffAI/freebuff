@@ -24,6 +24,8 @@ import { clearAgentGeneratorCache } from '../run-programmatic-step'
 import {
   FOLLOWUP_SUGGESTION_LIMIT_TAG,
   MAX_FOLLOWUP_SUGGESTION_CALLS_PER_RESPONSE,
+  MAX_TOOL_CALLS_PER_RESPONSE,
+  TOOL_CALL_LIMIT_TAG,
 } from '../tools/stream-parser'
 import {
   SUGGEST_PROMPTS_BEFORE_ANSWER_MESSAGE,
@@ -501,6 +503,71 @@ describe('runAgentStep - set_output tool', () => {
       expect(toolCalls).toHaveLength(MAX_FOLLOWUP_SUGGESTION_CALLS_PER_RESPONSE)
       // Suggestions never force another step, so the cut response ends the turn.
       expect(result.shouldEndTurn).toBe(true)
+    })
+  })
+
+  describe('tool-call cap', () => {
+    // 10-22: MiMo responses streamed thousands of calls (3,539 to 12,146),
+    // which compaction could then never fit, wedging the chat.
+    const checkAgent = (): AgentTemplate => ({
+      ...testAgent,
+      id: 'tool-cap-agent',
+      toolNames: ['run_check', 'end_turn'],
+    })
+    const fileContextWithCheck = (): ProjectFileContext => ({
+      ...mockFileContext,
+      customToolDefinitions: {
+        run_check: {
+          inputSchema: {
+            type: 'object',
+            properties: { n: { type: 'number' } },
+            required: ['n'],
+          },
+          description: 'Run a check',
+          endsAgentStep: false,
+        },
+      },
+    })
+
+    it('stops a response past the cap, runs the first calls, and tells the model', async () => {
+      const seen = { pulled: 0, finished: false, signal: undefined as AbortSignal | undefined }
+      runAgentStepBaseParams.promptAiSdkStream = (async function* (params: { signal: AbortSignal }) {
+        seen.signal = params.signal
+        for (let i = 0; i < 2_000; i++) {
+          seen.pulled++
+          yield createToolCallChunk('run_check', { n: i })
+        }
+        seen.finished = true
+        return promptSuccess('mock-message-id')
+      }) as any
+      const executed: string[] = []
+      runAgentStepBaseParams.requestToolCall = async ({ toolName }) => {
+        executed.push(toolName)
+        return { output: [{ type: 'json', value: { ok: true } }] }
+      }
+      const runSignal = new AbortController().signal
+      const agent = checkAgent()
+      const fileContext = fileContextWithCheck()
+      const result = await runAgentStep({
+        ...runAgentStepBaseParams,
+        signal: runSignal,
+        agentType: agent.id,
+        localAgentTemplates: { [agent.id]: agent },
+        agentTemplate: agent,
+        agentState: getInitialSessionState(fileContext).mainAgentState,
+        fileContext,
+        prompt: 'Check everything',
+      })
+
+      expect(executed).toHaveLength(MAX_TOOL_CALLS_PER_RESPONSE)
+      expect(seen.pulled).toBe(MAX_TOOL_CALLS_PER_RESPONSE + 1)
+      expect(seen.finished).toBe(false)
+      expect(seen.signal?.aborted).toBe(true)
+      expect(runSignal.aborted).toBe(false)
+      const notes = result.agentState.messageHistory.filter((m) =>
+        m.tags?.includes(TOOL_CALL_LIMIT_TAG),
+      )
+      expect(notes).toHaveLength(1)
     })
   })
 

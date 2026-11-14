@@ -17,6 +17,7 @@ import {
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
   FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_GPT_61_SOL_MODEL_ID,
+  FREEBUFF_GPT_61_TERRA_MODEL_ID,
   FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
   FREEBUFF_DEEPSEEK_V41_FLASH_MODEL_ID,
   FREEBUFF_GLM_V53_MODEL_ID,
@@ -132,11 +133,10 @@ export const FREEBUFF_DESKTOP_AUTORUN_AGENT_ID = 'freebuff-desktop-autorun'
 export const FREEBUFF_PROJECT_UNDERSTANDING_AGENT_ID = 'freebuff-project-understanding'
 
 /**
- * The one model the project-understanding agent runs, on every surface: GPT-6
- * Luna with reasoning off, served through OpenRouter on OpenAI's endpoints
- * (flex, then standard). Not DeepSeek: the agent reads the user's project
- * files, and those must not go to DeepSeek's own API. Luna is also the cheaper
- * of the two (docs/freebuff-project-understanding.md).
+ * The one model the project-understanding agent asks for, on every surface:
+ * GPT-6 Luna with reasoning off, on Respan (one-provider-then-deepseek.ts in
+ * web; DeepSeek V4.1 Flash served every Freebuff Luna request from 2026-10-30
+ * to 11-05, see docs/freebuff-project-understanding.md).
  */
 export const FREEBUFF_PROJECT_UNDERSTANDING_MODEL_ID =
   FREEBUFF_GPT_6_LUNA_MODEL_ID
@@ -174,14 +174,13 @@ export const FREEBUFF_DESKTOP_THREAD_AGENT_IDS = [
 ] as const
 
 /**
- * The base3-fast root and its worker subagent (agents/base3-fast.ts), one pair
- * for the one model that runs fast mode today. The root is a base3 root with
- * a fan-out: it spawns file-pickers in parallel, then
- * splits the implementation across parallel workers that inherit its system
- * prompt and history (so their requests are prompt-cache hits), and verifies
- * the combined result itself. The worker is pinned to the same model as the
- * root — it must be, or the session gate answers session_model_mismatch — and
- * is allowlisted below like every other free-mode subagent.
+ * The fast-mode root and the base3-fast worker subagent (agents/base3-fast.ts).
+ * Since 2026-10-30 the root is Flash's base3 root on the fast model; until
+ * then it ran the base3-fast fan-out (parallel code-searchers, and workers
+ * that inherit its prompt and history). Both ids stay registered because
+ * released CLI and Desktop builds still run that fan-out: the worker is pinned
+ * to the fast model — it must be, or the session gate answers
+ * session_model_mismatch — and allowlisted below like every free-mode subagent.
  */
 export const FREEBUFF_BASE3_FAST_AGENT_ID = 'base3-fast-free-deepseek-flash'
 export const FREEBUFF_BASE3_FAST_WORKER_AGENT_ID =
@@ -227,12 +226,8 @@ export const FREEBUFF_PROJECTS_MAX_LIVE_SUBAGENTS = 20
 export const FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]: 'base3-free-deepseek',
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 'base3-free-deepseek-flash',
-  // Fast mode runs the base3-FAST harness (agents/base3-fast.ts): base3's
-  // loop plus parallel file-pickers and prompt-cached worker
-  // subagents. Registered in the base3 maps because it is the base3 family's
-  // rollout shape (windowed reads, mechanical compaction, no instructions
-  // prompt) with a fan-out on top; the no-subagents assertions on this map
-  // exempt exactly this id, on purpose.
+  // Fast mode: Flash's base3 root on the fast lane, under the id it had while
+  // it ran the base3-fast fan-out (agents/base3-fast.ts).
   [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]: FREEBUFF_BASE3_FAST_AGENT_ID,
   [FREEBUFF_MIMO_V25_MODEL_ID]: 'base3-free-mimo',
   [FREEBUFF_MIMO_V26_PRO_MODEL_ID]: 'base3-free-mimo-2-6-pro',
@@ -240,6 +235,7 @@ export const FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 'base3-free-luna',
   [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 'base3-free-luna-6',
   [FREEBUFF_GPT_61_SOL_MODEL_ID]: 'base3-free-gpt-6-1-sol',
+  [FREEBUFF_GPT_61_TERRA_MODEL_ID]: 'base3-free-gpt-6-1-terra',
   [FREEBUFF_GEMINI_4_ARGON_MODEL_ID]: 'base3-free-gemini-4-argon',
   [FREEBUFF_GLM_V52_MODEL_ID]: 'base3-free-glm',
   [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 'base3-free-glm-5-3-flash',
@@ -278,7 +274,7 @@ export const FREEBUFF_WEB_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
 export const FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID]: 'base3-free-deepseek',
   [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]: 'base3-free-deepseek-flash',
-  // Fast mode: the same base3-fast root id on both surfaces (see the Web map).
+  // Fast mode: the same root id on both surfaces (see the Web map).
   [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]: FREEBUFF_BASE3_FAST_AGENT_ID,
   [FREEBUFF_MIMO_V25_MODEL_ID]: 'base3-free-mimo',
   [FREEBUFF_MIMO_V26_PRO_MODEL_ID]: 'base3-free-mimo-2-6-pro',
@@ -286,6 +282,7 @@ export const FREEBUFF_CLI_BASE3_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 'base3-free-luna',
   [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 'base3-free-luna-6',
   [FREEBUFF_GPT_61_SOL_MODEL_ID]: 'base3-free-gpt-6-1-sol',
+  [FREEBUFF_GPT_61_TERRA_MODEL_ID]: 'base3-free-gpt-6-1-terra',
   [FREEBUFF_GEMINI_4_ARGON_MODEL_ID]: 'base3-free-gemini-4-argon',
   [FREEBUFF_GLM_V52_MODEL_ID]: 'base3-free-glm',
   [FREEBUFF_GLM_V53_FLASH_MODEL_ID]: 'base3-free-glm-5-3-flash',
@@ -330,9 +327,8 @@ export const FREEBUFF_BASE3_AGENT_IDS: ReadonlySet<string> = new Set([
  * a few hours and was moved straight off it, because being OUT of that pool is
  * the property this agent is designed around: a planner turn never touches a
  * sandbox, so a premium-pooled planner would let an ordinary user spend their
- * day's sessions without building anything. It tracks FALLBACK_FREEBUFF_MODEL_ID rather than
- * naming a model, so it cannot drift back in the next time a model is
- * re-tiered.
+ * day's sessions without building anything. It tracked FALLBACK_FREEBUFF_MODEL_ID
+ * until 2026-11-08 and is pinned now (CLOUD_MODEL_ID above).
  *
  * With the two variants sharing a model there is nothing to route on, so
  * cloudPlannerAgentIdForModel returns the primary for both — see the guard
@@ -344,14 +340,21 @@ export const FREEBUFF_BASE3_AGENT_IDS: ReadonlySet<string> = new Set([
  * planner admits a free session bound to its model, and a turn resolved to a
  * different model is rejected with session_model_mismatch.
  */
+// Pinned to MiMo v2.6 Flash's id since 2026-11-08 (product, Victor), when
+// FALLBACK_FREEBUFF_MODEL_ID moved to DeepSeek V4.1 Flash: following it would
+// have moved Cloud onto Flash's price (15 vs 10) and onto its AI-training data
+// use. Moving Cloud is a separate decision. MiMo is unlisted but still
+// admitted, and its requests are answered by DeepSeek V4.1 Flash without a
+// training trace (mimo-on-deepseek.ts), so Cloud is unchanged.
+const CLOUD_MODEL_ID = FREEBUFF_MIMO_V25_MODEL_ID
 export const CLOUD_PLANNER_AGENT_ID = 'base2-free-cloud-planner'
-export const CLOUD_PLANNER_MODEL_ID = FALLBACK_FREEBUFF_MODEL_ID
+export const CLOUD_PLANNER_MODEL_ID = CLOUD_MODEL_ID
 export const CLOUD_PLANNER_LIMITED_AGENT_ID = 'base2-free-cloud-planner-limited'
 /** The unlimited model, not LIMITED_FREEBUFF_MODEL_ID: the planner and build
  *  are the token-heavy paths and want the cheapest row (see
  *  CLOUD_BUILD_MODEL_ID). Must be in LIMITED_FREEBUFF_MODEL_IDS, or limited
  *  planner turns fail admission — a test pins that. */
-export const CLOUD_PLANNER_LIMITED_MODEL_ID = FALLBACK_FREEBUFF_MODEL_ID
+export const CLOUD_PLANNER_LIMITED_MODEL_ID = CLOUD_MODEL_ID
 
 /**
  * The model the build runs on after "Start building".
@@ -370,7 +373,7 @@ export const CLOUD_PLANNER_LIMITED_MODEL_ID = FALLBACK_FREEBUFF_MODEL_ID
  * (BlankCloudPlanControls.beginBuild), which is what a model-locked session
  * requires and remains correct whether or not the two models agree.
  */
-export const CLOUD_BUILD_MODEL_ID = FALLBACK_FREEBUFF_MODEL_ID
+export const CLOUD_BUILD_MODEL_ID = CLOUD_MODEL_ID
 
 /** The planner model a given access tier is permitted to run. */
 export function cloudPlannerModelForAccessTier(
@@ -477,6 +480,7 @@ export const FREEBUFF_ROOT_AGENT_IDS = [
   // sessions drain.
   'base2-free-luna-6',
   'base2-free-gpt-6-1-sol',
+  'base2-free-gpt-6-1-terra',
   'base2-free-gemini-4-argon',
   'base2-free-solar-pro4',
   'base2-free-solar-mini4',
@@ -578,6 +582,7 @@ export const FREEBUFF_ROOT_AGENT_IDS = [
   'base3-free-luna',
   'base3-free-luna-6',
   'base3-free-gpt-6-1-sol',
+  'base3-free-gpt-6-1-terra',
   'base3-free-gemini-4-argon',
   'base3-free-solar-pro4',
   'base3-free-solar-mini4',
@@ -613,6 +618,7 @@ export const FREEBUFF_ROOT_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 'base2-free-luna',
   [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 'base2-free-luna-6',
   [FREEBUFF_GPT_61_SOL_MODEL_ID]: 'base2-free-gpt-6-1-sol',
+  [FREEBUFF_GPT_61_TERRA_MODEL_ID]: 'base2-free-gpt-6-1-terra',
   [FREEBUFF_GEMINI_4_ARGON_MODEL_ID]: 'base2-free-gemini-4-argon',
   [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: 'base2-free-solar-pro4',
   [FREEBUFF_SOLAR_MINI_4_MODEL_ID]: 'base2-free-solar-mini4',
@@ -700,6 +706,7 @@ export const FREEBUFF_REVIEWER_AGENT_ID_BY_MODEL: Record<string, string> = {
   [FREEBUFF_GPT_5_6_LUNA_MODEL_ID]: 'code-reviewer-luna',
   [FREEBUFF_GPT_6_LUNA_MODEL_ID]: 'code-reviewer-luna-6',
   [FREEBUFF_GPT_61_SOL_MODEL_ID]: 'code-reviewer-gpt-6-1-sol',
+  [FREEBUFF_GPT_61_TERRA_MODEL_ID]: 'code-reviewer-gpt-6-1-terra',
   [FREEBUFF_GEMINI_4_ARGON_MODEL_ID]: 'code-reviewer-gemini-4-argon',
   [FREEBUFF_SOLAR_PRO_4_MODEL_ID]: 'code-reviewer-solar-pro4',
   [FREEBUFF_SOLAR_MINI_4_MODEL_ID]: 'code-reviewer-solar-mini4',
@@ -734,6 +741,7 @@ const FREEBUFF_DESKTOP_MODELS = new Set([
   FREEBUFF_GPT_5_6_LUNA_MODEL_ID,
   FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_GPT_61_SOL_MODEL_ID,
+  FREEBUFF_GPT_61_TERRA_MODEL_ID,
   FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
   FREEBUFF_SOLAR_PRO_4_MODEL_ID,
   FREEBUFF_SOLAR_MINI_4_MODEL_ID,
@@ -877,6 +885,7 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // The worker is the one free-mode subagent that EDITS: it inherits the fast
   // root's prompt and history, so its allowlist entry is what lets the fan-out
   // bill as the session it belongs to instead of metering as a stray request.
+  // No surface spawns it since 2026-10-30; released CLI and Desktop builds do.
   'base2-free-deepseek-flash-fast': new Set([
     FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
   ]),
@@ -898,6 +907,7 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   'base2-free-luna': new Set([FREEBUFF_GPT_5_6_LUNA_MODEL_ID]),
   'base2-free-luna-6': new Set([FREEBUFF_GPT_6_LUNA_MODEL_ID]),
   'base2-free-gpt-6-1-sol': new Set([FREEBUFF_GPT_61_SOL_MODEL_ID]),
+  'base2-free-gpt-6-1-terra': new Set([FREEBUFF_GPT_61_TERRA_MODEL_ID]),
   'base2-free-gemini-4-argon': new Set([FREEBUFF_GEMINI_4_ARGON_MODEL_ID]),
   'base2-free-solar-pro4': new Set([FREEBUFF_SOLAR_PRO_4_MODEL_ID]),
   'base2-free-solar-mini4': new Set([FREEBUFF_SOLAR_MINI_4_MODEL_ID]),
@@ -1092,6 +1102,7 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   'code-reviewer-luna': new Set([FREEBUFF_GPT_5_6_LUNA_MODEL_ID]),
   'code-reviewer-luna-6': new Set([FREEBUFF_GPT_6_LUNA_MODEL_ID]),
   'code-reviewer-gpt-6-1-sol': new Set([FREEBUFF_GPT_61_SOL_MODEL_ID]),
+  'code-reviewer-gpt-6-1-terra': new Set([FREEBUFF_GPT_61_TERRA_MODEL_ID]),
   'code-reviewer-gemini-4-argon': new Set([FREEBUFF_GEMINI_4_ARGON_MODEL_ID]),
   'code-reviewer-solar-pro4': new Set([FREEBUFF_SOLAR_PRO_4_MODEL_ID]),
   'code-reviewer-solar-mini4': new Set([FREEBUFF_SOLAR_MINI_4_MODEL_ID]),

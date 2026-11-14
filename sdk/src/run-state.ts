@@ -16,7 +16,7 @@ import { getErrorObject } from '@codebuff/common/util/error'
 import { cloneDeep } from 'lodash'
 import z from 'zod/v4'
 
-import { loadLocalAgents } from './agents/load-agents'
+import { getUserAgentDir, loadLocalAgents } from './agents/load-agents'
 import { loadSkills } from './skills/load-skills'
 
 // Re-export for SDK consumers
@@ -116,10 +116,22 @@ export type InitialSessionStateOptions = {
   /** Precomputed index for exactly these `projectFiles` (see
    *  ComputedProjectIndex). Ignored when `projectFiles` is absent. */
   projectIndex?: ComputedProjectIndex
+  /** Build the file tree but skip the tree-sitter parse (it reads every
+   *  project file before the first request), leaving `fileTokenScores` and
+   *  `tokenCallers` empty. Only the file-picker's tree prompt, `read_subtree`
+   *  and `read_files`' `referencedBy` read them. */
+  skipSymbolIndex?: boolean
   knowledgeFiles?: Record<string, string>
   /** User-provided knowledge files that will be merged with home directory files */
   userKnowledgeFiles?: Record<string, string>
   agentDefinitions?: AgentDefinition[]
+  /**
+   * Directories `loadLocalAgents` may import when the host did not supply
+   * `agentDefinitions`. A host that gates repository `.agents` content passes
+   * only what the user trusted; omitting it loads the user's own `~/.agents`
+   * and never the repository (AB827V0 #070).
+   */
+  agentDirs?: string[]
   customToolDefinitions?: CustomToolDefinition[]
   maxAgentSteps?: number
   fs?: CodebuffFileSystem
@@ -915,11 +927,20 @@ export async function initialSessionState(
     }
   }
 
+  // An explicit list — even an empty one — is the host's answer, not a cue to
+  // go looking. A host that gates repository `.agents` content passes the
+  // directories that survived; `[]` means none did. Discovering the defaults
+  // here re-imported the very repository directory the gate had just skipped
+  // (AB827V0 #070: a cloned repo's `.agents/*.ts` ran on import), and the
+  // unhosted default is now the user's own `~/.agents` rather than the cwd.
   let processedAgentTemplates: Record<string, any> = {}
-  if (agentDefinitions && agentDefinitions.length > 0) {
+  if (params.agentDefinitions !== undefined) {
     processedAgentTemplates = processAgentDefinitions(agentDefinitions)
   } else {
-    processedAgentTemplates = await loadLocalAgents({ verbose: false })
+    processedAgentTemplates = await loadLocalAgents({
+      verbose: false,
+      agentDirs: params.agentDirs ?? [getUserAgentDir()],
+    })
   }
   const processedCustomToolDefinitions = processCustomToolDefinitions(
     customToolDefinitions,
@@ -945,7 +966,9 @@ export async function initialSessionState(
           discoveredProject,
         })
       : undefined
-    if (projectIndex) {
+    if (projectIndex && params.skipSymbolIndex) {
+      fileTree = projectIndex.fileTree
+    } else if (projectIndex) {
       const result = await computeProjectIndex(projectIndex)
       fileTree = result.fileTree
       fileTokenScores = result.fileTokenScores
@@ -1049,6 +1072,7 @@ export async function generateInitialRunState({
   knowledgeFiles,
   userKnowledgeFiles,
   agentDefinitions,
+  agentDirs,
   customToolDefinitions,
   maxAgentSteps,
   fs,
@@ -1059,6 +1083,7 @@ export async function generateInitialRunState({
   knowledgeFiles?: Record<string, string>
   userKnowledgeFiles?: Record<string, string>
   agentDefinitions?: AgentDefinition[]
+  agentDirs?: string[]
   customToolDefinitions?: CustomToolDefinition[]
   maxAgentSteps?: number
   fs: CodebuffFileSystem
@@ -1072,6 +1097,7 @@ export async function generateInitialRunState({
       knowledgeFiles,
       userKnowledgeFiles,
       agentDefinitions,
+      agentDirs,
       customToolDefinitions,
       maxAgentSteps,
       fs,
@@ -1128,6 +1154,8 @@ export async function applyOverridesToSessionState(
     /** Precomputed index for exactly these `projectFiles` (see
      *  ComputedProjectIndex). Ignored when `projectFiles` is absent. */
     projectIndex?: ComputedProjectIndex
+    /** See InitialSessionStateOptions.skipSymbolIndex. */
+    skipSymbolIndex?: boolean
     knowledgeFiles?: Record<string, string>
     agentDefinitions?: AgentDefinition[]
     customToolDefinitions?: CustomToolDefinition[]
@@ -1159,7 +1187,11 @@ export async function applyOverridesToSessionState(
         cwd,
         projectFiles: overrides.projectFiles,
       })
-      if (projectIndex) {
+      if (projectIndex && overrides.skipSymbolIndex) {
+        sessionState.fileContext.fileTree = projectIndex.fileTree
+        sessionState.fileContext.fileTokenScores = {}
+        sessionState.fileContext.tokenCallers = {}
+      } else if (projectIndex) {
         const { fileTree, fileTokenScores, tokenCallers } =
           await computeProjectIndex(projectIndex)
         sessionState.fileContext.fileTree = fileTree

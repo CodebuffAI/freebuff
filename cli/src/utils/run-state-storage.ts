@@ -115,7 +115,7 @@ export function setChatDirOverrideForTesting(dir: string | undefined): void {
  */
 export function resolveCurrentChatDir(): string {
   if (chatDirOverride) {
-    fs.mkdirSync(chatDirOverride, { recursive: true })
+    fs.mkdirSync(chatDirOverride, { recursive: true, mode: 0o700 })
     return chatDirOverride
   }
   return getCurrentChatDir()
@@ -340,7 +340,7 @@ export function saveChatState(
   try {
     // The dir existed when the save was captured, but may have been removed
     // since (e.g. the chat deleted from /history mid-run).
-    fs.mkdirSync(chatDir, { recursive: true })
+    fs.mkdirSync(chatDir, { recursive: true, mode: 0o700 })
     if (serialized.runStateJson) {
       writeFileAtomic(
         path.join(chatDir, RUN_STATE_FILENAME),

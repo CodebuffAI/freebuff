@@ -1,5 +1,6 @@
 import { FREEBUFF_ENABLE_STREAK_IN_UI } from '@codebuff/common/constants/freebuff-models'
 import {
+  dailyMeterQuiet,
   getReferralInfo,
   getGlmPromo,
   getSubscriptionInfo,
@@ -11,27 +12,26 @@ import {
   formatPlanWindows,
 } from '@codebuff/common/util/freebuff-plan-summary'
 
+import {
+  DisplayAdSplash,
+  displayAdSplashVariant,
+} from './display-ad-splash'
 import { FreebuffPausedPlanNotice } from './freebuff-paused-plan-notice'
 import { FreebuffReferralBanner } from './freebuff-referral-banner'
 import {
   FREEBUFF_WORDMARK,
   FREEBUFF_WORDMARK_COMPACT,
 } from '../utils/freebuff-wordmark'
+import { CLI_DISPLAY_AD_PLACEMENT_IDS } from '../ads/display-ads'
 import { useTheme } from '../hooks/use-theme'
 import { useTerminalDimensions } from '../hooks/use-terminal-dimensions'
 import { useFreebuffStreakQuery } from '../hooks/use-freebuff-streak-query'
 import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { useFreebuffModelStore } from '../state/freebuff-model-store'
-import {
-  useFreebuffChatStore,
-  selectFreebuffChatModel,
-} from '../state/freebuff-chat-store'
+import { useFreebuffChatStore } from '../state/freebuff-chat-store'
 import { formatHours } from '@codebuff/common/util/freebuff-hours'
 import { freebucksOf, freebucksRefundLine } from '../utils/freebucks'
-import {
-  getFreebuffStreakBonusNoteForLayout,
-  getFreebuffStreakBonusStatusForLayout,
-} from '../utils/freebuff-streak-line'
+import { getFreebuffStreakBonusNoteForLayout } from '../utils/freebuff-streak-line'
 import { getFreebuffModelAvailabilityNotice } from '@codebuff/common/util/freebuff-model-availability'
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
 
@@ -90,11 +90,6 @@ export function FreebuffChatHeader({
     terminalHeight,
     availableWidth: width - 4,
   })
-  const streakBonusStatus = getFreebuffStreakBonusStatusForLayout({
-    note: streakBonus,
-    streak: streak.data,
-    availableWidth: width - 4,
-  })
   return (
     <box
       style={{
@@ -130,9 +125,17 @@ export function FreebuffChatHeader({
               : `Next message switches from ${directory.get(session.model).displayName}.`
             : 'Your first message starts the session.'}
         </text>
-        {freebucks && (
+        {freebucks && !dailyMeterQuiet(freebucks) && (
           <text style={{ fg: theme.foreground, wrapMode: 'word' }}>
             {`${formatHours(freebucks.daily.remaining)}/${formatHours(freebucks.daily.limit)} hours remaining`}
+          </text>
+        )}
+        {/* The server's reason the pool is smaller than the account's own
+            (a device's shared allowance, the VPN pool). Without it a shared
+            pool reads "0/0 hours remaining" and looks like a broken account. */}
+        {freebucks && !dailyMeterQuiet(freebucks) && freebucks.daily.note && (
+          <text style={{ fg: theme.muted, wrapMode: 'word' }}>
+            {freebucks.daily.note}
           </text>
         )}
         {freebucks === null && (
@@ -172,11 +175,6 @@ export function FreebuffChatHeader({
             {streakBonus}
           </text>
         )}
-        {streakBonusStatus && (
-          <text style={{ fg: theme.muted, wrapMode: 'word' }}>
-            {streakBonusStatus}
-          </text>
-        )}
         {referral && (
           <FreebuffReferralBanner
             width={width - 4}
@@ -186,10 +184,14 @@ export function FreebuffChatHeader({
             metered={freebucks !== undefined}
             focusedId=""
             onFocusTargetsChange={ignoreFocusTargets}
-            onSelectModel={selectFreebuffChatModel}
           />
         )}
       </box>
+      <DisplayAdSplash
+        width={width}
+        variant={displayAdSplashVariant(terminalHeight)}
+        placementId={CLI_DISPLAY_AD_PLACEMENT_IDS.cliSplash}
+      />
     </box>
   )
 }

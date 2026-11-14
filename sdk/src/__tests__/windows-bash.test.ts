@@ -40,6 +40,18 @@ afterEach(() => {
 })
 
 describe('findWindowsBash', () => {
+  it('uses the app bundle on a clean machine, including paths with spaces', () => {
+    const bundled = installGitAt('Freebuff App/resources/git')
+    expect(findWindowsBash({ PATH: '', FREEBUFF_GIT_DIR: bundled })).toBe(path.join(bundled, 'bin', 'bash.exe'))
+    const override = touch(path.join(root, 'custom'), 'bash.exe')
+    expect(findWindowsBash({ FREEBUFF_GIT_DIR: bundled, CODEBUFF_GIT_BASH_PATH: override })).toBe(override)
+  })
+
+  it('falls back to installed Git when the app bundle is missing', () => {
+    const installed = installGitAt('Git')
+    expect(findWindowsBash({ FREEBUFF_GIT_DIR: path.join(root, 'missing'), ProgramFiles: root })).toBe(path.join(installed, 'bin', 'bash.exe'))
+  })
+
   it('prefers an explicit CODEBUFF_GIT_BASH_PATH over everything else', () => {
     const override = touch(path.join(root, 'custom'), 'bash.exe')
     const programFiles = installGitAt('ProgramFiles')

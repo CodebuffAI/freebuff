@@ -91,6 +91,18 @@ describe('platformForUrl', () => {
     expect(platformForUrl('https://mygithub.com/a')).toBeNull()
   })
 
+  it('takes a YouTube link only for the Earn chat', () => {
+    // The advertiser console's forms and routes call it bare: nothing there
+    // sells a single action, so a video link is no platform to them.
+    expect(platformForUrl('https://www.youtube.com/watch?v=abc')).toBeNull()
+    expect(platformForUrl('https://youtu.be/abc')).toBeNull()
+    expect(
+      platformForUrl('https://www.youtube.com/watch?v=abc', { earnChat: true }),
+    ).toBe('youtube')
+    expect(platformForUrl('https://youtu.be/abc', { earnChat: true })).toBe('youtube')
+    expect(platformForUrl('https://x.com/acme/status/1', { earnChat: true })).toBe('twitter')
+  })
+
   it('refuses anything that is not an http(s) URL', () => {
     expect(platformForUrl('javascript:alert(1)')).toBeNull()
     expect(platformForUrl('not a url')).toBeNull()

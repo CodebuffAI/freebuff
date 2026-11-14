@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import fs from 'fs'
 import path from 'path'
 
@@ -150,18 +151,19 @@ function fitSections(
     const pb = priority.has(b.path) ? 0 : 1
     return pa - pb || a.text.length - b.text.length
   })
-  const kept: string[] = []
+  const byPath = new Map<string, string>()
   const elided: DiffSection[] = []
   let used = 0
   let keptChars = 0
   for (const section of ordered) {
     const rendered = render(section)
     if (used + rendered.length <= budget) {
-      kept.push(rendered)
+      byPath.set(section.path, rendered)
       used += rendered.length
       keptChars += section.text.length
-    } else if (kept.length === 0 && rendered.length > budget) {
-      kept.push(
+    } else if (byPath.size === 0 && rendered.length > budget) {
+      byPath.set(
+        section.path,
         `${rendered.slice(0, budget)}\n... (this file's diff continues; ${rendered.length - budget} more characters not shown)`,
       )
       used = budget
@@ -170,8 +172,9 @@ function fitSections(
       elided.push(section)
     }
   }
-  // Back to the diff's own order, so the judge reads it as the agent made it.
-  const byPath = new Map(kept.map((text, i) => [ordered[i]!.path, text]))
+  // Back to the diff's own order, so the judge reads it as the agent made it
+  // (and so the ground truth renders identically for every agent run of a
+  // task whenever it fits: the prompt cache's shared prefix).
   const text = sections
     .filter((section) => byPath.has(section.path))
     .map((section) => byPath.get(section.path)!)
@@ -286,9 +289,13 @@ export function buildJudgePrompt(
       ? `\n## Note on length\nTo fit your input, these sections were shortened: ${truncated.join(', ')}. Whole files were kept where possible, the most relevant first, and every file left out is named with its line counts, so the file lists are complete even where the content is not. Judge what is shown; do not count as missing anything the list says was left out.\n`
       : ''
 
+  // Everything that is the same for every agent run of a task (the prompt,
+  // the context files, the ground truth) comes first and the run's own parts
+  // last, so judge calls on one task share a cacheable prefix. The length
+  // note depends on the agent's diff, so it goes at the end.
   const built = `## User Prompt (What the agent was asked to do)
 ${prompt}
-${lengthNote}
+
 ## Context Files (from parent commit)
 ${contextFilesContent || '(No context files)'}
 
@@ -300,7 +307,7 @@ ${groundTruthDiffs}
 ${agentChanges}
 \`\`\`
 ${error ? `\n## Error Encountered\n${error}` : ''}
-${finalCheckOutputs ? `\n## Final Check Command Outputs\n${finalCheckOutputs}` : ''}`
+${finalCheckOutputs ? `\n## Final Check Command Outputs\n${finalCheckOutputs}` : ''}${lengthNote}`
 
   return { prompt: built, truncated, sizes }
 }
@@ -390,46 +397,26 @@ The ground truth shows ONE valid implementation, but it's not the only correct a
 - Is it a reasonable approach given the prompt?
 - Does it maintain code quality?
 
-Provide detailed analysis, strengths, weaknesses, and numerical scores.`,
-}
-
-const judgeAgents: Record<string, AgentDefinition> = {
-  'judge-gpt': {
-    id: 'judge-gpt',
-    model: 'openai/gpt-5.4',
-    ...judgeAgentBase,
-  },
-  'judge-gpt-6-sol': {
-    id: 'judge-gpt-6-sol',
-    model: 'openai/gpt-6-sol',
-    ...judgeAgentBase,
-  },
-  'judge-gemini': {
-    id: 'judge-gemini',
-    model: 'google/gemini-3.1-pro-preview',
-    ...judgeAgentBase,
-  },
-  'judge-sonnet': {
-    id: 'judge-sonnet',
-    model: 'anthropic/claude-sonnet-4.6',
-    ...judgeAgentBase,
-  },
+Provide detailed analysis, strengths, weaknesses, and numerical scores. Call set_output once with every field at the top level: the three scores as JSON numbers (8, not "8") and strengths and weaknesses as arrays of strings.`,
 }
 
 /**
- * The judges that actually score a run.
- *
- * Not judge-gemini: Gemini Pro is gated to the gemini-thinker subagent
- * server-side, so that judge 403s with free_mode_gemini_thinker_required on
- * every task. It failed silently for a long time — failures are dropped and the
- * remaining judge still reports a confident number — which meant scores billed
- * as a median were really one model's opinion.
- *
- * judge-gpt-6-sol replaced judge-gpt (gpt-5.4) on 2026-09-26: the stronger
- * judge, and gpt-5.4 had failed every task of that day's runs on OpenAI
- * credits, leaving sonnet alone. judge-gpt stays defined for old logs.
+ * One judge, GPT-6.1 Sol. The runs benched are mostly DeepSeek Flash, and a
+ * second judge cost more than the runs it scored. History: GPT-6 Luna
+ * (2026-10-26 to 10-31) sent its scores as strings, which the output schema
+ * rejects, and failed every verdict; Gemini Pro 403s outside the
+ * gemini-thinker subagent; Sonnet cost several times the agents it judged.
+ * A dead judge is reported below rather than dropped silently.
  */
-const ACTIVE_JUDGE_IDS = ['judge-gpt-6-sol', 'judge-sonnet'] as const
+const judgeAgents: Record<string, AgentDefinition> = {
+  'judge-gpt-6-1-sol': {
+    id: 'judge-gpt-6-1-sol',
+    model: 'openai/gpt-6.1-sol',
+    ...judgeAgentBase,
+  },
+}
+
+const ACTIVE_JUDGE_IDS = ['judge-gpt-6-1-sol'] as const
 
 interface JudgeCommitResultInput {
   client: CodebuffClient
@@ -464,6 +451,53 @@ async function runSingleJudge(
   }
 }
 
+/**
+ * One trace session per task and judge: the server keys OpenAI's
+ * `prompt_cache_key` on it (applyOpenRouterPromptCacheKey), so every judge
+ * call on a task (each arm, each replicate) lands on the machine that already
+ * holds its prompt, the context files and ground truth, in cache.
+ */
+export function judgeTraceSessionId(
+  commitId: string,
+  judgeAgentId: string,
+): string {
+  // Shaped as a UUID, which is what the SDK documents for this field.
+  const hex = createHash('sha256')
+    .update(`buffbench-judge:${judgeAgentId}:${commitId}`)
+    .digest('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+
+/**
+ * GPT models sometimes send the scores as strings ("7") and the lists as JSON
+ * text. The output schema rejects them, and after its retries the judge ends
+ * with no output (every GPT-6 Luna verdict on 2026-10-30, GPT-6.1 Sol's on
+ * 2026-11-03). The verdict it meant is still in its last set_output call.
+ */
+export function recoverFromSetOutput(input: unknown): JudgingResult | null {
+  if (!input || typeof input !== 'object') return null
+  const raw = (
+    'data' in input && input.data && typeof input.data === 'object'
+      ? input.data
+      : input
+  ) as Record<string, unknown>
+  const coerced = { ...raw }
+  for (const key of ['completionScore', 'codeQualityScore', 'overallScore']) {
+    if (typeof coerced[key] === 'string') coerced[key] = Number(coerced[key])
+  }
+  for (const key of ['strengths', 'weaknesses']) {
+    const value = coerced[key]
+    if (typeof value !== 'string') continue
+    try {
+      coerced[key] = JSON.parse(value)
+    } catch {
+      coerced[key] = [value]
+    }
+  }
+  const parsed = JudgingResultSchema.safeParse(coerced)
+  return parsed.success ? parsed.data : null
+}
+
 async function runSingleJudgeOnce(
   input: JudgeCommitResultInput,
   judgePrompt: string,
@@ -473,17 +507,21 @@ async function runSingleJudgeOnce(
 
   const judgeAgent = judgeAgents[judgeAgentId]
   const agentOutput: string[] = []
+  // The judge's last set_output input, for recoverFromSetOutput.
+  let lastSetOutput: unknown
   try {
     const judgeResult = await withTimeout(
       client.run({
         agent: judgeAgent.id,
         prompt: judgePrompt,
+        traceSessionId: judgeTraceSessionId(input.commit.id, judgeAgentId),
         agentDefinitions: Object.values(judgeAgents),
         handleEvent: (event) => {
           if (event.type === 'text') {
             agentOutput.push(event.text)
           } else if (event.type === 'tool_call') {
             agentOutput.push(JSON.stringify(event, null, 2))
+            if (event.toolName === 'set_output') lastSetOutput = event.input
           } else if (event.type === 'error') {
             console.warn(`[Judge ${judgeAgentId}] Error event:`, event.message)
           }
@@ -493,7 +531,12 @@ async function runSingleJudgeOnce(
       'Judge agent timed out after 20 minutes',
     )
 
-    if (judgeResult.output.type !== 'structuredOutput') {
+    if (
+      judgeResult.output.type !== 'structuredOutput' ||
+      judgeResult.output.value == null
+    ) {
+      const recovered = recoverFromSetOutput(lastSetOutput)
+      if (recovered) return recovered
       console.error(
         `Judge ${judgeAgentId} - not structured output`,
         JSON.stringify(judgeResult.output, null, 2),
