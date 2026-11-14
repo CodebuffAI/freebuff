@@ -28,6 +28,33 @@ export type SignupBlockReason =
   // refuses an address GitHub does not list as verified, signup or not. It
   // shares this vocabulary so the login pages explain it like the others.
   | 'github_email_unverified'
+  // A new account on a privacy, alias or disposable mail provider
+  // (`isPrivacyEmailDomain` in @codebuff/auth/link-guard).
+  | 'email_provider_not_allowed'
+  // Email/password sign-ups only (docs/freebuff-email-password.md): the
+  // signup gate could not run, and that path fails closed where OAuth fails
+  // open.
+  | 'privacy_unverified'
+  // Email/password sign-ups only: 3 new accounts on one custom email domain
+  // today (`EMAIL_DOMAIN_DAILY_ACCOUNTS`).
+  | 'email_domain_velocity'
+  // The sign-up email policy (docs/freebuff-email-password.md → "Email domain
+  // policy"), email/password and GitHub sign-ups: a domain whose mail servers
+  // only forward (catch-all routing, alias relays) ...
+  | 'email_forwarding_not_allowed'
+  // ... a domain with no mail server ...
+  | 'email_domain_no_mail'
+  // ... a custom domain in a full-access country, before the person confirms
+  // it (the login pages offer a confirmation, not only this copy) ...
+  | 'email_domain_unlisted_confirm'
+  // ... and a custom domain anywhere else.
+  | 'email_domain_not_mainstream'
+  // Another account on this browser or Fingerprint visitor is banned for what
+  // it did (`deviceLinkedToEvidenceBan` in @codebuff/auth/signup-gate-server).
+  | 'device_linked_to_banned_account'
+  // Not a signup decision: a returning sign-in to an account its owner
+  // deleted (a soft delete: the account is kept, and support can restore it).
+  | 'account_deleted'
 
 /**
  * Deliberately actionable and non-accusatory.
@@ -51,8 +78,12 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
     'Please complete the verification check on the sign-in page and try again. If it never appeared, an ad blocker or network filter may be blocking www.google.com/recaptcha.',
   recaptcha_invalid:
     'That verification check could not be confirmed. Please try again.',
+  // Since 2026-11-12 an emailed code for a Gmail or Outlook alias signs in to
+  // the inbox's one account, so this is left for an inbox with two or more
+  // accounts, an alias on another provider, and OAuth sign-ups: say which
+  // address to use, not "sign in" (sign-in and sign-up are one email box).
   mailbox_already_registered:
-    'An account already exists for this email address. Try signing in instead.',
+    'This inbox already has a Freebuff account under another spelling of the address (dots or a +label). Sign in with the address you first used, or with Google, GitHub or Apple if that is how you signed up.',
   privacy_egress:
     'Accounts cannot be created over a VPN, proxy, or hosting provider. Please turn it off and try again — you can turn it back on afterwards.',
   untrusted_client_ip:
@@ -63,8 +94,48 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
     'Too many accounts have been created from this network today. Please try again tomorrow, or contact support if you are on a shared connection.',
   // Also shown when GitHub's API could not be reached: the gate fails closed,
   // and the same two remedies apply.
+  email_provider_not_allowed:
+    "New accounts can't use a temporary, disposable, privacy or alias email address (such as a temp-mail inbox, Proton Mail, Tutanota, DuckDuckGo or Firefox Relay). Please sign up with Gmail, Outlook, iCloud, or your work or school email. If you use GitHub, make one of those your primary email in GitHub's settings (Settings → Emails) first.",
+  privacy_unverified:
+    "We couldn't check your connection just now. Please try again in a few minutes, or continue with another sign-in method.",
+  email_domain_velocity:
+    'Too many accounts have been created with this email domain today. Please try again tomorrow, or continue with Google, Apple or GitHub.',
+  email_forwarding_not_allowed:
+    "This address forwards mail through a routing service (such as Cloudflare Email Routing or ImprovMX), so it can't open a new account. Please sign up with the mailbox it forwards to, like your Gmail, Outlook or iCloud address. If you use GitHub, make that address your primary email in GitHub's settings (Settings → Emails) first.",
+  email_domain_no_mail:
+    "This email domain has no mail server, so it can't receive mail. Check the address, or sign up with Gmail, Outlook or iCloud.",
+  email_domain_unlisted_confirm:
+    "This email isn't from a mainstream provider. You can still use it, but the account gets tighter limits and may need to verify a phone number by SMS (or have a paid plan). For the smoothest start, use Gmail, Outlook, iCloud or Yahoo, or continue with Google.",
+  email_domain_not_mainstream:
+    "In your region, new accounts need an email from a mainstream provider: Gmail, Outlook, iCloud or Yahoo, or a work or school address hosted by Google or Microsoft. Please use one of those, or continue with Google. If you use GitHub, make one of those your primary email in GitHub's settings (Settings → Emails) first.",
+  device_linked_to_banned_account:
+    "An account that was suspended has used this browser, so new accounts can't be created from it. If that account was yours, you can appeal from its Standing tab after signing in to it. If you think this is a mistake, contact support.",
+  account_deleted:
+    'This account was deleted. To restore it, email support@freebuff.com from its address.',
   github_email_unverified:
     "GitHub sign-in needs a verified email. Verify your email in GitHub's settings (Settings → Emails) and try again, or sign in with Google instead. If your email is already verified, GitHub may be temporarily unreachable; please try again in a few minutes.",
+}
+
+/**
+ * The refusals that mean only "no bot-check proof reached the server" (or one
+ * failed). Freebuff's login pages never show these as a refusal: they re-run
+ * the checks in the background and continue the same sign-in once they bank
+ * (`signup-challenge-client/challenge-recovery.ts`). The copy above remains
+ * for surfaces that do not recover.
+ */
+export const BOT_CHECK_REFUSALS = [
+  'captcha_missing',
+  'captcha_invalid',
+  'recaptcha_missing',
+  'recaptcha_invalid',
+] as const satisfies readonly SignupBlockReason[]
+
+export type BotCheckRefusal = (typeof BOT_CHECK_REFUSALS)[number]
+
+export function isBotCheckRefusal(
+  code: string | null | undefined,
+): code is BotCheckRefusal {
+  return (BOT_CHECK_REFUSALS as readonly string[]).includes(code ?? '')
 }
 
 /** True when `code` is a reason this module has copy for. Narrows an untrusted

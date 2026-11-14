@@ -110,6 +110,7 @@ export const TEST_AGENT_RUNTIME_IMPL = Object.freeze({
     const user = {
       id: 'test-user-id',
       email: 'test@example.com',
+      name: null,
       discord_id: 'test-discord-id',
       stripe_customer_id: null,
       banned: false,
@@ -276,6 +277,7 @@ export function createTestAgentRuntimeParams(
       mock(async () => ({
         id: 'test-user-id',
         email: 'test@example.com',
+        name: null,
       })),
     handleStepsLogChunk: overrides.handleStepsLogChunk ?? mock(() => {}),
     requestOptionalFile:
@@ -326,6 +328,7 @@ export function createTestAgentRuntimeDeps(): Omit<
     getUserInfoFromApiKey: mock(async () => ({
       id: 'test-user-id',
       email: 'test@example.com',
+      name: null,
     })),
     handleStepsLogChunk: mock(() => {}),
     requestOptionalFile: mock(async () => null),

@@ -3,13 +3,19 @@ import { spawn } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 
-import { codeSearchExecFlagRefusal } from '../../../common/src/util/code-search-flags'
+import {
+  codeSearchExecFlagRefusal,
+  codeSearchOutputFormat,
+  parseCodeSearchFlags,
+} from '../../../common/src/util/code-search-flags'
 import { isSensitiveEnvFilePath } from '../../../common/src/util/env-file-path'
+import { clipLongLine } from '../../../common/src/util/file-read-limits'
 import { formatCodeSearchOutput } from '../../../common/src/util/format-code-search'
 import { getBundledRgPath } from '../native/ripgrep'
 
 import type { CodebuffToolOutput } from '../../../common/src/tools/list'
 import { Logger } from '@codebuff/common/types/contracts/logger'
+import { missingDirectoryError } from './run-terminal-command'
 import type {
   TerminalCommandBroker,
   TerminalCommandProcess,
@@ -27,43 +33,6 @@ export const INCLUDED_HIDDEN_DIRS: readonly string[] = [
   '.husky', // Git hooks
 ]
 
-/**
- * Parse the user-facing flag string once so validation and process spawning see
- * the same argv. Quotes group whitespace but are not passed to ripgrep because
- * spawn() does not invoke a shell.
- */
-export function parseCodeSearchFlags(flags: string | undefined): string[] | null {
-  if (!flags?.trim()) return []
-  const tokens: string[] = []
-  let token = ''
-  let quote: "'" | '"' | null = null
-  let tokenStarted = false
-  for (const character of flags) {
-    if (quote) {
-      if (character === quote) quote = null
-      else token += character
-      tokenStarted = true
-      continue
-    }
-    if (character === "'" || character === '"') {
-      quote = character
-      tokenStarted = true
-    } else if (/\s/.test(character)) {
-      if (tokenStarted) {
-        tokens.push(token)
-        token = ''
-        tokenStarted = false
-      }
-    } else {
-      token += character
-      tokenStarted = true
-    }
-  }
-  if (quote) return null
-  if (tokenStarted) tokens.push(token)
-  return tokens
-}
-
 export function codeSearch({
   projectPath,
   pattern,
@@ -72,7 +41,8 @@ export function codeSearch({
   maxResults = 15,
   globalMaxResults = 250,
   maxOutputStringLength = 20_000,
-  timeoutSeconds = 10,
+  // 10 s killed correct searches on big repos and slow disks.
+  timeoutSeconds = 20,
   logger,
   signal,
   processBroker,
@@ -99,6 +69,16 @@ export function codeSearch({
     // directory on the system.
     const projectRoot = path.resolve(projectPath)
     const searchCwd = cwd ? path.resolve(projectRoot, cwd) : projectRoot
+    // A `cwd` naming a file asks for that file's matches, so search it from
+    // its directory instead of failing to start in it. Never through a
+    // broker: a sponsored run's broker admits only the directory search
+    // below, and must not be preceded by a stat of a path the model chose.
+    let searchFile = false
+    if (!processBroker) {
+      try {
+        searchFile = fs.statSync(searchCwd).isFile()
+      } catch {}
+    }
 
     // Do not deduplicate: repeated flag-argument pairs such as `-g *.ts` are
     // meaningful. The shared parser keeps quoted values as one argv entry.
@@ -117,11 +97,23 @@ export function codeSearch({
         { type: 'json', value: { errorMessage: execFlagRefusal } },
       ])
     }
+    const {
+      format: outputFormat,
+      listsFiles,
+      refusal: outputRefusal,
+    } = codeSearchOutputFormat(flagsArray)
+    if (outputRefusal) {
+      return resolve([{ type: 'json', value: { errorMessage: outputRefusal } }])
+    }
 
     // Use JSON output for robust parsing and early stopping
     // --no-config prevents user/system .ripgreprc from interfering
     // -n shows line numbers
     // --json outputs in JSON format, which streams in and allows us to cut off the output if it grows too long
+    // -l, -c and their long forms beat that --json and print plain text. For those
+    // the flags after the caller's fix the record shape: every record names its file,
+    // even a search of one file or with -I, and NUL ends the path so a colon or
+    // newline in it cannot be misread. --color never keeps escapes out of the paths.
     // "--"" prevents pattern from being misparsed as a flag (e.g., pattern starting with '-')
     // Search paths: '.' plus blessed hidden directories that actually exist
     // Filter out non-existent directories to avoid ripgrep stderr errors
@@ -132,14 +124,21 @@ export function codeSearch({
         return false
       }
     })
-    const searchPaths = ['.', ...existingHiddenDirs]
+    // ripgrep searches a path it is given whatever the ignore rules, `-g` and
+    // `-t` filters say.
+    const searchPaths = searchFile
+      ? [path.basename(searchCwd)]
+      : ['.', ...existingHiddenDirs]
     const args = [
       '--no-config',
       '-n',
       '--json',
       ...flagsArray,
+      ...(outputFormat === 'json'
+        ? []
+        : ['--with-filename', '--null', '--color', 'never']),
       '--',
-      pattern,
+      ...(listsFiles ? [] : [pattern]),
       ...searchPaths,
     ]
 
@@ -173,7 +172,7 @@ export function codeSearch({
         })
       } else {
         const child = spawn(rgPath, args, {
-          cwd: searchCwd,
+          cwd: searchFile ? path.dirname(searchCwd) : searchCwd,
           stdio: ['ignore', 'pipe', 'pipe'],
         })
         childProcess = {
@@ -191,16 +190,18 @@ export function codeSearch({
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
       return resolve([
         {
           type: 'json',
-          value: { errorMessage: `Failed to execute ripgrep: ${message}` },
+          value: {
+            errorMessage: ripgrepFailureMessage(error, rgPath, searchCwd),
+          },
         },
       ])
     }
 
     let jsonRemainder = ''
+    let recordRemainder = ''
     let stderrBuf = ''
     // Track matches by file for grouping and limiting
     const fileGroups = new Map<string, string[]>()
@@ -208,6 +209,8 @@ export function codeSearch({
     const fileMatchCounts = new Map<string, number>()
     const filesLimitedByMaxResults = new Set<string>()
     let matchesGlobal = 0
+    // A plain record is one result, but -c can report many matches in it.
+    let countedMatches = 0
     let estimatedOutputLen = 0
     let killedForLimit = false
 
@@ -246,10 +249,17 @@ export function codeSearch({
       }, 1000)
     }
 
+    const matchesFound = () =>
+      outputFormat === 'counts' ? countedMatches : matchesGlobal
+
+    // Plain records skip the shared formatter, which would read a path such as
+    // `a:1:b.ts` as a match line. The header stays the one the CLI's summary reads.
     const formatCollectedOutput = (rawOutput: string) =>
-      formatCodeSearchOutput(rawOutput, {
-        matchCount: matchesGlobal,
-      })
+      outputFormat === 'json'
+        ? formatCodeSearchOutput(rawOutput, { matchCount: matchesGlobal })
+        : [`Found ${matchesFound()} matches`, rawOutput]
+            .filter(Boolean)
+            .join('\n')
 
     const truncateOutput = (output: string, maxLength: number) =>
       output.length > maxLength
@@ -300,11 +310,77 @@ export function codeSearch({
       })
     }, timeoutSeconds * 1000)
 
+    const atResultLimit = () =>
+      matchesGlobal >= globalMaxResults ||
+      estimatedOutputLen >= maxOutputStringLength
+
+    const settleAtResultLimit = () => {
+      killedForLimit = true
+      hardKill()
+
+      // Build final output from collected matches
+      const limitedLines: string[] = []
+      for (const lines of fileGroups.values()) {
+        limitedLines.push(...lines)
+      }
+      const rawOutput = limitedLines.join('\n')
+      const finalOutput = truncateOutput(
+        formatCollectedOutput(rawOutput),
+        maxOutputStringLength,
+      )
+
+      const limitReason =
+        matchesGlobal >= globalMaxResults
+          ? `[Global limit of ${globalMaxResults} results reached.]`
+          : '[Output size limit reached.]'
+
+      settle({
+        stdout: finalOutput + '\n\n' + limitReason,
+        message: `Stopped early after ${matchesFound()} match(es).`,
+      })
+    }
+
+    // `path\0` from -l or --files, `path\0count` and a line end from -c: `\n`,
+    // `\r\n` under --crlf or `\0` under --null-data. --stats text after the last
+    // record never matches, so it is dropped.
+    const fileRecordPattern =
+      outputFormat === 'counts'
+        ? /([^\0]+)\0(\d+)(?:\0|\r?\n)/g
+        : /([^\0]+)\0/g
+
+    const addFileRecord = (filePath: string, count?: string) => {
+      // Same env-family refusal as the JSON branch: a filename or a count from
+      // a `.env` still says whether the pattern matches its secret.
+      if (isSensitiveEnvFilePath(filePath)) return
+      // `--hidden` reaches `.github` from `.` as well as from its own search path.
+      const fileKey = filePath.replace(/^\.[\\/]/, '')
+      if (fileGroups.has(fileKey)) return
+      const formattedLine = count ? `${filePath}:${count}` : filePath
+      fileGroups.set(fileKey, [formattedLine])
+      estimatedOutputLen += formattedLine.length + 1
+      matchesGlobal++
+      countedMatches += Number(count ?? 0)
+      if (atResultLimit()) settleAtResultLimit()
+    }
+
     // Parse ripgrep JSON for early stopping
     childProcess.stdout.on('data', (chunk: Buffer | string) => {
       if (isResolved) return
       const chunkStr =
         typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+
+      if (outputFormat !== 'json') {
+        recordRemainder += chunkStr
+        let consumed = 0
+        for (const match of recordRemainder.matchAll(fileRecordPattern)) {
+          consumed += match[0].length
+          addFileRecord(match[1]!, match[2])
+          if (isResolved) return
+        }
+        recordRemainder = recordRemainder.slice(consumed)
+        return
+      }
+
       jsonRemainder += chunkStr
 
       // Split by lines; last line might be partial
@@ -338,7 +414,7 @@ export function codeSearch({
           const lineNumber = evt.data.line_number ?? 0
           // Strip trailing newlines to prevent blank lines in output
           const rawText = evt.data.lines?.text ?? ''
-          const lineText = rawText.replace(/\r?\n$/, '')
+          const lineText = clipLongLine(rawText.replace(/\r?\n$/, ''))
 
           // Format as ripgrep output: filename:line_number:content
           const formattedLine = `${filePath}:${lineNumber}:${lineText}`
@@ -373,34 +449,7 @@ export function codeSearch({
               matchesGlobal++
 
               // Check global limit or output size limit
-              if (
-                matchesGlobal >= globalMaxResults ||
-                estimatedOutputLen >= maxOutputStringLength
-              ) {
-                killedForLimit = true
-                hardKill()
-
-                // Build final output from collected matches
-                const limitedLines: string[] = []
-                for (const lines of fileGroups.values()) {
-                  limitedLines.push(...lines)
-                }
-                const rawOutput = limitedLines.join('\n')
-                const finalOutput = truncateOutput(
-                  formatCollectedOutput(rawOutput),
-                  maxOutputStringLength,
-                )
-
-                const limitReason =
-                  matchesGlobal >= globalMaxResults
-                    ? `[Global limit of ${globalMaxResults} results reached.]`
-                    : '[Output size limit reached.]'
-
-                return settle({
-                  stdout: finalOutput + '\n\n' + limitReason,
-                  message: `Stopped early after ${matchesGlobal} match(es).`,
-                })
-              }
+              if (atResultLimit()) return settleAtResultLimit()
             }
           }
         }
@@ -537,10 +586,28 @@ export function codeSearch({
       })
       .catch((error: unknown) => {
         if (isResolved) return
-        const message = error instanceof Error ? error.message : String(error)
-        settle({
-          errorMessage: `Failed to execute ripgrep: ${message}. Vendored ripgrep not found; ensure @codebuff/sdk is up-to-date or set CODEBUFF_RG_PATH.`,
-        })
+        settle({ errorMessage: ripgrepFailureMessage(error, rgPath, searchCwd) })
       })
   })
+}
+
+/**
+ * Only a missing binary blames the install: saying so for every failure sent
+ * models off installing ripgrep when the cause was permissions or a busy system.
+ */
+export function ripgrepFailureMessage(
+  error: unknown,
+  rgPath: string,
+  searchCwd: string,
+): string {
+  const missingDirectory = missingDirectoryError(
+    error,
+    searchCwd,
+    'Search directory',
+  )
+  if (missingDirectory) return missingDirectory
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  const message = error instanceof Error ? error.message : String(error)
+  const binaryMissing = code === 'ENOENT' && !fs.existsSync(rgPath)
+  return `Failed to execute ripgrep: ${message}.${binaryMissing ? ` Vendored ripgrep not found at ${rgPath}; ensure @codebuff/sdk is up-to-date or set CODEBUFF_RG_PATH.` : ''}`
 }

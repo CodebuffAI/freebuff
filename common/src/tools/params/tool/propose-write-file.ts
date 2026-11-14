@@ -15,6 +15,7 @@ const inputSchema = z
       .describe(`Path to the file relative to the **project root**`),
     instructions: z
       .string()
+      .optional()
       .describe('What the change is intended to do in only one sentence.'),
     content: z.string().describe(`Complete file content to write to the file.`),
   })

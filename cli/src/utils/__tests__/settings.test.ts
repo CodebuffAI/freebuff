@@ -192,3 +192,17 @@ describe('the one-time Freebucks introduction mark', () => {
     expect(typeof raw.freebucksIntroSeenAt).toBe('string')
   })
 })
+
+describe('display-ad opt-in', () => {
+  test('keeps a string or string-list displayAds and drops anything else', () => {
+    testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuff-settings-'))
+    getConfigDirSpy = spyOn(auth, 'getConfigDir').mockReturnValue(testConfigDir)
+
+    fs.writeFileSync(getSettingsPath(), JSON.stringify({ displayAds: ['cliSplash'] }))
+    expect(loadSettings().displayAds).toEqual(['cliSplash'])
+    fs.writeFileSync(getSettingsPath(), JSON.stringify({ displayAds: 'all' }))
+    expect(loadSettings().displayAds).toBe('all')
+    fs.writeFileSync(getSettingsPath(), JSON.stringify({ displayAds: [1] }))
+    expect(loadSettings().displayAds).toBeUndefined()
+  })
+})

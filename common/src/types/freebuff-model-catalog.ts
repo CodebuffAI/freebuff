@@ -33,6 +33,9 @@ import { REASONING_EFFORTS } from '../constants/reasoning-effort'
  *  session endpoints). Its presence is what tells the session endpoints to
  *  answer with catalog keys instead of model ids. */
 export const FREEBUFF_CATALOG_PROTOCOL_HEADER = 'x-freebuff-catalog-protocol'
+/** Set by the Freebuff Web gateway on a catalog request from a phone (the iOS
+ *  or Android app, or a phone browser): Show all models then starts off. */
+export const FREEBUFF_CATALOG_PHONE_HEADER = 'x-freebuff-catalog-phone'
 export const FREEBUFF_CATALOG_PROTOCOL_VERSION = '1'
 export const FREEBUFF_MODEL_CATALOG_PATH = '/api/v1/freebuff/models'
 
@@ -235,6 +238,17 @@ export const freebuffModelCatalogSchema = z.object({
   /** This fetch's id; sent back as FREEBUFF_CATALOG_FETCH_HEADER on every
    *  session and completions request made with these handles. */
   fetchId: z.string().optional(),
+  /** Settings → General → Show all models, sent only to viewers the server
+   *  offers that switch. `default` is where the switch stands until the
+   *  viewer flips it; off, the picker lists one model
+   *  (`pickerFreebuffCatalog`). Absent: no switch, and every row is listed. */
+  showAllModels: z.object({ default: z.boolean() }).optional(),
+  /** True for an account created at or after
+   *  `FREEBUFF_MODEL_PICKER_RETIRED_SINCE` (constants/freebuff-model-picker.ts):
+   *  the composer shows no model picker unless Settings → Advanced Mode is on
+   *  or the account has its own provider, Claude Code or Codex connected, and
+   *  the picker it does show lists every model. Absent: today's picker. */
+  hideModelPicker: z.boolean().optional(),
 })
 export type FreebuffModelCatalog = z.infer<typeof freebuffModelCatalogSchema>
 

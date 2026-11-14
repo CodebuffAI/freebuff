@@ -11,6 +11,8 @@ import { safeOpen } from './utils/open-url'
 import { getAuthToken } from './utils/auth'
 import { isSponsoredProposalBlock } from './types/chat'
 import { runSponsoredProposalControl } from './utils/sponsored-proposal-control'
+import { patchSponsoredProposalBlock } from './utils/sponsored-proposal-state'
+import { toSponsoredProposalAdReport } from '@codebuff/common/ads/ad-report'
 import {
   replaySponsoredTerminalReports,
   sponsoredRunFor,
@@ -37,15 +39,28 @@ import { useShallow } from 'zustand/react/shallow'
 
 import { getAdsEnabled } from './commands/ads'
 import { routeUserPrompt, addBashMessageToHistory } from './commands/router'
-import { SingleAdBanner, dockPanelRowBudget } from './components/ad-banner'
+import {
+  DockBlankRows,
+  SingleAdBanner,
+  dockPanelRowBudget,
+} from './components/ad-banner'
 import { PartnerAdRow } from './components/partner-ad-line'
 import { useComposerIntentAd } from './ads/use-composer-intent'
 import { CLI_PARTNER_PLACEMENT_IDS } from './ads/partner-ads'
+import { CLI_INLINE_LINK_PLACEMENT_ID } from './ads/inline-link-ad'
+import {
+  reportDockHeld,
+  useInlineCardOnScreen,
+  useNetworkAdOnScreen,
+} from './ads/ad-screen'
+import { adEngagementRegistry } from './ads/use-ad-engagement'
 import {
   DOCK_PANEL_MAX_WIDTH,
   getDockPanelLayout,
 } from '@codebuff/common/ads/inline-ad-layout'
 import { ChatInputBar } from './components/chat-input-bar'
+import { AdReportPrompt, useAdReportPrompt } from './components/ad-report-prompt'
+import { adReports } from './ads/ad-reports'
 import { ChatHeader } from './components/chat-header'
 import { FreebuffActiveSessionSummary } from './components/freebuff-active-session-summary'
 import { LoadPreviousButton } from './components/load-previous-button'
@@ -64,6 +79,7 @@ import { TodoPanel } from './components/todo-panel'
 import { TopBanner } from './components/top-banner'
 import { useChatRuntime } from './contexts/chat-runtime-context'
 import { getSlashCommandsWithSkills } from './data/slash-commands'
+import { cliDisplayAdEnabled } from './ads/display-ads'
 import { useAskUserBridge } from './hooks/use-ask-user-bridge'
 import { useChatInput } from './hooks/use-chat-input'
 import {
@@ -78,6 +94,7 @@ import { useClipboard } from './hooks/use-clipboard'
 import { useEvent } from './hooks/use-event'
 import { useGravityAd, visibleResponseAds } from './hooks/use-gravity-ad'
 import {
+  noteAdUserInput,
   registerAdTranscriptViewport,
   setAdTranscriptScrolledUp,
 } from './ads/ad-signals'
@@ -188,6 +205,7 @@ export const Chat = ({
   const headerRef = useRef<BoxRenderable | null>(null)
   const [isHeaderVisible, setIsHeaderVisible] = useState(true)
   const [todoPanelOpen, setTodoPanelOpen] = useState(false)
+  const adReportPrompt = useAdReportPrompt()
   const chatSessionId = useChatStore((state) => state.chatSessionId)
   useEffect(() => setTodoPanelOpen(false), [chatSessionId])
 
@@ -270,6 +288,13 @@ export const Chat = ({
     return null
   }, [messages, sponsoredRunSnapshot])
 
+  // ONE AD ON SCREEN AT A TIME (`ads/ad-screen.ts`): while an end-of-answer
+  // card is in the transcript viewport the dock gives way, and our own units
+  // give way while the dock holds, or the transcript draws, an ad-network ad.
+  const inlineCardOnScreen = useInlineCardOnScreen()
+  const dockYielded = inlineCardOnScreen !== null
+  const networkAdOnScreen = useNetworkAdOnScreen()
+
   const {
     ads,
     responseAds,
@@ -282,16 +307,33 @@ export const Chat = ({
     inline: true,
     surface: 'cli_chat',
     forceStart: IS_FREEBUFF,
-    // Lazily fill a four-ad pool, then repeat it for later transcript slots.
-    inlinePlacementId: 'CLI-Chat-Inline',
+    // One card per answer, after its last content, once it has completed.
+    // Canonical ids (COD-1043; legacy `CLI-Chat-Inline`, `Single-Ad-Unit-1`):
+    // the server maps them to the registered Gravity slugs.
+    inlinePlacementId: 'Inline-After-Agent-CLI',
+    // The one-line link in place of the card: only when the policy says
+    // `link` and the CLI's own gate (`CLI_INLINE_LINK_AD_LIVE`) is on.
+    inlineLinkPlacementId: CLI_INLINE_LINK_PLACEMENT_ID,
     // Keep the rotating above-input slot separate for reporting continuity.
-    slotPlacementId: 'Single-Ad-Unit-1',
+    slotPlacementId: 'Above-Input-CLI',
     // The dock holds that slot while a proposal does: an ad fetched for it
     // then would be served and never rendered.
     slotPaused: dockProposal !== null,
+    // An end-of-answer card in view has the screen: the dock holds its ad,
+    // requests nothing and stops its clock until the card leaves the view.
+    slotYielded: dockYielded,
   })
   const showInlineAds =
     !hasSelectedByokConnection && (IS_FREEBUFF || getAdsEnabled())
+
+  // What the dock HOLDS (drawn or blank while a card has the screen), so our
+  // own units give way to a network ad it holds. Held, not visible: the dock
+  // going blank for a card must not reopen our rows (and move the card).
+  const dockHeldAd = !dockProposal && showInlineAds ? (ads?.[0] ?? null) : null
+  useLayoutEffect(() => {
+    reportDockHeld(dockHeldAd)
+  }, [dockHeldAd?.impUrl, dockHeldAd?.provider])
+  useEffect(() => () => reportDockHeld(null), [])
 
   // Stable identities so the message-block callbacks (set once) always call
   // the latest recorder from the hook.
@@ -316,23 +358,13 @@ export const Chat = ({
   messagesRef.current = messages
 
   const patchProposalBlock = useEvent(
-    (target: string, patch: Partial<SponsoredProposalContentBlock>) => {
+    (
+      target: string,
+      patch: Partial<SponsoredProposalContentBlock>,
+      proposalId?: string,
+    ) => {
       setMessages((prev) =>
-        prev.map((message) =>
-          message.blocks?.some(
-            (block) =>
-              isSponsoredProposalBlock(block) && block.target === target,
-          )
-            ? {
-                ...message,
-                blocks: message.blocks.map((block) =>
-                  isSponsoredProposalBlock(block) && block.target === target
-                    ? { ...block, ...patch }
-                    : block,
-                ),
-              }
-            : message,
-        ),
+        patchSponsoredProposalBlock(prev, target, patch, proposalId),
       )
     },
   )
@@ -412,6 +444,40 @@ export const Chat = ({
         !authToken
       )
         return
+      if (control === 'report') {
+        const entry = adReports.register(
+          toSponsoredProposalAdReport(block.proposal, 'cli'),
+        )
+        const proposalId = block.proposal._id
+        patchProposalBlock(target, { menuOpen: false })
+        adReports.open(entry, async (reportSnapshot) => {
+          if (getAuthToken() !== authToken)
+            throw new Error('The report account changed')
+          patchProposalBlock(target, { busy: true }, proposalId)
+          let succeeded = false
+          try {
+            succeeded = await runSponsoredProposalControl(
+              'report',
+              {
+                proposalId,
+                advertiserId: block.proposal.advertiser_id,
+                reportSnapshot,
+              },
+              authToken,
+            )
+            if (!succeeded) throw new Error('Could not send the proposal report')
+          } finally {
+            if (getAuthToken() === authToken) {
+              patchProposalBlock(
+                target,
+                succeeded ? { busy: false, answered: true } : { busy: false },
+                proposalId,
+              )
+            }
+          }
+        })
+        return
+      }
       patchProposalBlock(target, { busy: true, menuOpen: false })
       const proposalId = block.proposal._id
       const advertiserId = block.proposal.advertiser_id
@@ -424,7 +490,11 @@ export const Chat = ({
           // without a network and without mounting chat.
           succeeded = await runSponsoredProposalControl(
             control,
-            { proposalId, advertiserId },
+            {
+              proposalId,
+              advertiserId,
+              reportSnapshot: toSponsoredProposalAdReport(block.proposal, 'cli'),
+            },
             authToken,
           )
         } finally {
@@ -752,7 +822,9 @@ export const Chat = ({
   }, [ads, terminalWidth, terminalHeight])
 
   const dockPanel = useDockPanel({
-    ad: ads?.[0],
+    // No ad while the dock gives way: an open panel collapses ('gone') and
+    // the chord opens nothing that is not drawn.
+    ad: dockYielded ? undefined : ads?.[0],
     enabled: showInlineAds,
     canExpand: dockPanelFits,
   })
@@ -816,6 +888,8 @@ export const Chat = ({
     return allCommands.filter((cmd) => {
       if (cmd.id === 'ads:enable') return !hasSubscription && !adsEnabled
       if (cmd.id === 'ads:disable') return !hasSubscription && adsEnabled
+      // The mock display-ad list rides the cliStatusline flag (off by default).
+      if (cmd.id === 'deals') return cliDisplayAdEnabled('cliStatusline')
       return true
     })
   }, [inputValue, loadedSkills, hasSubscription]) // Re-evaluate when input changes (user may have just toggled)
@@ -1248,7 +1322,7 @@ export const Chat = ({
     setSelectedIndex: setSlashSelectedIndex,
     maxVisible: isCompactHeight ? 5 : terminalHeight > 35 ? 15 : 10,
     enabled:
-      showInlineAds && slashContext.active &&
+      showInlineAds && !networkAdOnScreen && slashContext.active &&
       !getInputModeConfig(inputMode).disableSlashSuggestions &&
       !feedbackMode && !publishMode && !reviewMode && !queuePanelOpen &&
       askUserState === null,
@@ -1548,18 +1622,24 @@ export const Chat = ({
   }, [feedbackMode, askUserState, inputRef])
 
   const handleSubmit = useCallback(async () => {
+    // The draft as it is now, not as of the last render: keys that arrived
+    // together are applied before React re-renders, so the render's copy can
+    // miss what was just typed, or still hold a draft a submit already sent.
+    const draft = useChatStore.getState().inputValue
     // Report activity for ad rotation
     reportActivity()
+    // A submit proves the terminal has focus.
+    noteAdUserInput()
     // A new send collapses the panel: the user has moved on from the ad.
     dockPanel.collapse('send')
     // Update terminal title with truncated user input
-    if (inputValue.trim()) {
-      setTerminalTitle(inputValue)
+    if (draft.trim()) {
+      setTerminalTitle(draft)
     }
-    sealInputProfile(inputValue)
-    const result = await onSubmitPrompt(inputValue, agentMode)
+    sealInputProfile(draft)
+    const result = await onSubmitPrompt(draft, agentMode)
     handleCommandResult(result)
-  }, [onSubmitPrompt, inputValue, agentMode, handleCommandResult, dockPanel])
+  }, [onSubmitPrompt, agentMode, handleCommandResult, dockPanel])
 
   const totalMentionMatches = agentMatches.length + fileMatches.length
   const historyNavUpEnabled =
@@ -1915,6 +1995,7 @@ export const Chat = ({
     // card claims no keys at all outside this span; that is what makes turning
     // chat's off for the span safe rather than a second overlap.
     disabled:
+      adReportPrompt !== null ||
       askUserState !== null ||
       sponsoredAccountAsking ||
       reviewMode ||
@@ -2010,10 +2091,13 @@ export const Chat = ({
    * the row would be interrupting rather than offering: a menu is open over
    * this slot, a form or a review screen owns the keyboard, or the input is
    * not a draft at all. `showInlineAds` is the same gate the rotating card
-   * above it reads, so a session with ads off never asks for this slot.
+   * above it reads, so a session with ads off never asks for this slot. An
+   * ad-network ad on screen (dock or end-of-answer card) holds it back too:
+   * one of our own rows never shares the screen with one.
    */
   const composerPartnerRowAllowed =
     showInlineAds &&
+    !networkAdOnScreen &&
     !hasSuggestionMenu &&
     !feedbackMode &&
     !publishMode &&
@@ -2026,9 +2110,30 @@ export const Chat = ({
     composerPartnerRowAllowed,
   )
   const normalGreptileVisible =
-    !dockProposal && showInlineAds && ads?.[0]?.partnerBrand === 'greptile'
+    !dockProposal &&
+    showInlineAds &&
+    !dockYielded &&
+    ads?.[0]?.partnerBrand === 'greptile'
   const showComposerPartnerAd = composerIntentAd !== null &&
     !(composerIntentAd.placementId === CLI_PARTNER_PLACEMENT_IDS.composer && normalGreptileVisible)
+
+  // The composer row giving way to an ad-network ad: its engagement record
+  // says why it went. Runs before the effect below forgets the row.
+  const shownComposerAdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const impUrl = shownComposerAdRef.current
+    if (!networkAdOnScreen || !impUrl) return
+    shownComposerAdRef.current = null
+    try {
+      adEngagementRegistry().noteYield(impUrl, 'network_ad_on_screen')
+    } catch {
+      // engagement must never break the composer
+    }
+  }, [networkAdOnScreen])
+  useEffect(() => {
+    shownComposerAdRef.current =
+      showComposerPartnerAd && composerIntentAd ? composerIntentAd.impUrl : null
+  })
 
   // Show first-time onboarding starter prompts only on a pristine, idle,
   // empty-input default-mode chat — and never while a menu/overlay is up.
@@ -2131,6 +2236,7 @@ export const Chat = ({
   // it simply closes for the duration -- and `collapse` is a no-op when it was
   // already shut, so this fires exactly one `dock_collapsed`.
   const dockTakeoverActive =
+    adReportPrompt !== null ||
     askUserState !== null ||
     sponsoredAccountAsking ||
     reviewMode ||
@@ -2307,7 +2413,14 @@ export const Chat = ({
           />
         )}
 
-        {!dockProposal && ads?.[0] && showInlineAds && (
+        {/* Giving way to an end-of-answer card in view: the dock's rows stay,
+            blank at its collapsed height, and the held ad comes back when
+            the card leaves the view. */}
+        {!dockProposal && ads?.[0] && showInlineAds && dockYielded && (
+          <DockBlankRows />
+        )}
+
+        {!dockProposal && ads?.[0] && showInlineAds && !dockYielded && (
           <SingleAdBanner
             ad={ads[0]}
             onClick={recordClick}
@@ -2377,7 +2490,9 @@ export const Chat = ({
           />
         )}
 
-        {freebuffControlsOpen && !askUserState ? (
+        {adReportPrompt ? (
+          <AdReportPrompt key={adReportPrompt.entry.id} prompt={adReportPrompt} />
+        ) : freebuffControlsOpen && !askUserState ? (
           <FreebuffChatControls />
         ) : reviewMode ? (
           // Review and ask_user take precedence over the session-ended banner:

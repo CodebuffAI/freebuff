@@ -133,6 +133,129 @@ export function sampleRatioMismatch(
   }
 }
 
+/**
+ * One arm's per-opportunity revenue, as sums: `n` opportunities (no-fills
+ * included, at revenue 0), `sum` = sum of revenue r_i and `sumSquares` =
+ * sum of r_i^2, all in one unit (cents). Sums add across days and
+ * placements, so rollup rows combine by addition before this is called.
+ */
+export type RevenueSums = {
+  readonly n: number
+  readonly sum: number
+  readonly sumSquares: number
+}
+
+export type RevenuePerThousand = {
+  /** 1,000 x mean revenue per opportunity. */
+  readonly value: number
+  /** Standard error of `value`. */
+  readonly standardError: number
+  readonly lower: number
+  readonly upper: number
+}
+
+export type RevenueUplift = {
+  readonly uniform: RevenuePerThousand
+  readonly ranked: RevenuePerThousand
+  /** ranked - uniform per 1,000 opportunities, 95% normal interval. */
+  readonly difference: {
+    readonly value: number
+    readonly lower: number
+    readonly upper: number
+  }
+  /**
+   * ranked / uniform with a 95% interval from the delta method on the log
+   * ratio; null when either arm's mean is 0.
+   */
+  readonly ratio: {
+    readonly value: number
+    readonly lower: number
+    readonly upper: number
+  } | null
+}
+
+function validSums(s: RevenueSums): boolean {
+  return (
+    Number.isFinite(s.n) &&
+    Number.isFinite(s.sum) &&
+    Number.isFinite(s.sumSquares) &&
+    s.n >= 2 &&
+    s.sum >= 0 &&
+    s.sumSquares >= 0
+  )
+}
+
+/** Unrounded mean and standard error, per 1,000 opportunities. */
+function perThousandRaw(sums: RevenueSums): { value: number; se: number } {
+  const mean = sums.sum / sums.n
+  const variance = Math.max(
+    0,
+    (sums.sumSquares - (sums.sum * sums.sum) / sums.n) / (sums.n - 1),
+  )
+  return { value: 1_000 * mean, se: 1_000 * Math.sqrt(variance / sums.n) }
+}
+
+/**
+ * Mean revenue per 1,000 opportunities with a 95% normal (CLT) interval.
+ * The sample variance comes from the sums, (Q - S^2/n) / (n - 1), clamped at
+ * 0 against rounding. Treats opportunities as independent, which ignores
+ * clustering by user: read the interval as a lower bound on the true width.
+ * `null` below two opportunities or on invalid sums.
+ */
+export function revenuePerThousand(
+  sums: RevenueSums,
+): RevenuePerThousand | null {
+  if (!validSums(sums)) return null
+  const { value, se } = perThousandRaw(sums)
+  return {
+    value: round6(value),
+    standardError: round6(se),
+    lower: round6(value - Z_95 * se),
+    upper: round6(value + Z_95 * se),
+  }
+}
+
+/**
+ * The ranked arm's revenue uplift over the uniform (random) arm, per 1,000
+ * opportunities: the difference with a 95% interval (independent arms,
+ * se = sqrt(se_r^2 + se_u^2)), and the ratio with a 95% interval from the
+ * delta method, var(log(m_r / m_u)) ~ (se_r / m_r)^2 + (se_u / m_u)^2,
+ * exponentiated back (so it is asymmetric and never below 0). `null` when
+ * either arm has under two opportunities.
+ */
+export function revenueUplift(
+  ranked: RevenueSums,
+  uniform: RevenueSums,
+): RevenueUplift | null {
+  const r = revenuePerThousand(ranked)
+  const u = revenuePerThousand(uniform)
+  if (!r || !u) return null
+  const rr = perThousandRaw(ranked)
+  const ur = perThousandRaw(uniform)
+  const diff = rr.value - ur.value
+  const diffSe = Math.sqrt(rr.se ** 2 + ur.se ** 2)
+  let ratio: RevenueUplift['ratio'] = null
+  if (rr.value > 0 && ur.value > 0) {
+    const logSe = Math.sqrt((rr.se / rr.value) ** 2 + (ur.se / ur.value) ** 2)
+    const logRatio = Math.log(rr.value / ur.value)
+    ratio = {
+      value: round6(rr.value / ur.value),
+      lower: round6(Math.exp(logRatio - Z_95 * logSe)),
+      upper: round6(Math.exp(logRatio + Z_95 * logSe)),
+    }
+  }
+  return {
+    uniform: u,
+    ranked: r,
+    difference: {
+      value: round6(diff),
+      lower: round6(diff - Z_95 * diffSe),
+      upper: round6(diff + Z_95 * diffSe),
+    },
+    ratio,
+  }
+}
+
 /** P(X >= x) for X ~ chi-square(k). */
 export function chiSquareSurvival(x: number, k: number): number {
   if (x <= 0) return 1

@@ -249,8 +249,17 @@ export async function processImageFile(
   let wasCompressed = false
 
   if (base64Data.length > MAX_IMAGE_BASE64_SIZE) {
-    const compressionResult = await compressImageToFitSize(processedBuffer)
-    
+    let compressionResult: CompressionResult
+    try {
+      compressionResult = await compressImageToFitSize(processedBuffer)
+    } catch (error) {
+      logger.debug({ resolvedPath, error }, 'Image handler: Failed to compress')
+      return {
+        success: false,
+        error: `Image too large and its format can't be resized here: ${filePath}. Convert it to PNG or JPEG (or use a smaller image) and try again.`,
+      }
+    }
+
     if (!compressionResult.success) {
       return { success: false, error: compressionResult.error }
     }

@@ -11,6 +11,7 @@ import type {
 } from './sponsored-windows'
 import type { SPONSORED_IN_PLACE_VERSION } from './sponsored-in-place'
 import type { SPONSORED_RUN_SPEC_VERSION } from './sponsored-run-spec'
+import type { SPONSORED_CONVERSION_TOOLS_VERSION } from './sponsored-conversion'
 
 /** The clients a funded Accept can come from. */
 export const SPONSORED_ACCEPT_SURFACES = ['desktop', 'cli', 'web'] as const
@@ -61,6 +62,21 @@ export type SponsoredAcceptRequest = {
    * charges nothing again and is safe to retry).
    */
   runSpecVersion?: typeof SPONSORED_RUN_SPEC_VERSION
+  /**
+   * `1`: this client has the sponsored conversion tools
+   * (`./sponsored-conversion.ts`). Without it a skill with a conversion
+   * definition is refused before anything is charged: `409
+   * client_update_required` on Desktop, `409 unsupported_surface` on the
+   * CLI and web, which have no such tools in any build.
+   */
+  conversionToolsVersion?: typeof SPONSORED_CONVERSION_TOOLS_VERSION
+  /**
+   * A positive integer: this client has the `install_package` tool
+   * (`./sponsored-package-resolve.ts`, COD-965). The run spec's prompt then
+   * says to install through it. Untrusted; anything else reads as absent, and
+   * an absent field leaves the prompt exactly as before.
+   */
+  installToolVersion?: number
 }
 
 /**
@@ -113,16 +129,57 @@ export function acceptClientSurfacePairsWithRow(
 }
 
 /**
- * How long a grant keeps spending once its run has STARTED (COD-665).
+ * How much ACTIVE time a grant may spend once its run has started.
  *
- * The window opens at the run's first reserved call on the server, and at the
- * turn taking the grant on Desktop -- never at Accept. An in-place run is a
- * turn queued BEHIND whatever the user already had running, and a clock that
- * started at Accept spent the wait: some grants expired before their turn
- * came up, and others were cut off mid-run. Accept is still the one charge;
- * only the compute window moved.
+ * Active time is the run's working time, not wall time: the server adds up
+ * the gaps between consecutive reserved calls, each gap capped at
+ * {@link SPONSORED_ACTIVE_GAP_CAP_MS} ({@link sponsoredActiveMsAfterCall}),
+ * and Desktop pauses its own clock while the run is parked on the user (a
+ * sign-up card, a credential form, a CLI login). A run waiting on the user
+ * is bounded only by the run token ({@link SPONSORED_COMPUTE_START_DEADLINE_MS},
+ * Accept + 24h). Replaced the 60-minute wall-clock window, which killed ~121
+ * Desktop runs a week at exactly 60 minutes while they waited on the user.
  */
-export const SPONSORED_COMPUTE_RUN_WINDOW_MS = 60 * 60_000
+export const SPONSORED_COMPUTE_ACTIVE_WINDOW_MS = 90 * 60_000
+
+/**
+ * The most one gap between two reserved calls can add to a grant's active
+ * time. A longer gap is the run waiting (on the user, or on a long command
+ * Desktop is timing itself), and counts only this much.
+ */
+export const SPONSORED_ACTIVE_GAP_CAP_MS = 5 * 60_000
+
+/**
+ * A grant's active time after one more reserved call at `nowMs`: the previous
+ * total plus the gap since the last call, capped at
+ * {@link SPONSORED_ACTIVE_GAP_CAP_MS}. The first call (`lastCallAtMs` null)
+ * adds nothing, and a clock that went backwards adds nothing.
+ */
+export function sponsoredActiveMsAfterCall(
+  prevActiveMs: number,
+  lastCallAtMs: number | null,
+  nowMs: number,
+): number {
+  if (lastCallAtMs === null) return prevActiveMs
+  const gap = Math.max(0, nowMs - lastCallAtMs)
+  return prevActiveMs + Math.min(gap, SPONSORED_ACTIVE_GAP_CAP_MS)
+}
+
+/** Whether a grant has spent its active window. */
+export function sponsoredActiveWindowSpent(activeMs: number): boolean {
+  return activeMs > SPONSORED_COMPUTE_ACTIVE_WINDOW_MS
+}
+
+/**
+ * @deprecated The wall-clock run window (COD-665), now equal to
+ * {@link SPONSORED_COMPUTE_ACTIVE_WINDOW_MS}. Kept for the clients that cannot
+ * tell waiting from working (the CLI's local cutoff via
+ * {@link sponsoredComputeRunDeadlineMs}) and for the legacy Convex sweep. The
+ * server no longer brings a grant's `expires_at` in by it; it meters active
+ * time instead.
+ */
+export const SPONSORED_COMPUTE_RUN_WINDOW_MS =
+  SPONSORED_COMPUTE_ACTIVE_WINDOW_MS
 
 /**
  * How long an accepted grant may wait for its run to start: the hard end of
@@ -144,6 +201,9 @@ export const SPONSORED_COMPUTE_START_DEADLINE_MS = SPONSORED_RUN_TOKEN_TTL_MS
  * or before the server's -- Desktop applies it when the turn takes the grant,
  * a moment before that turn's first call reaches the server. A grant issued
  * before COD-665 already expires an hour after Accept, and this leaves it so.
+ *
+ * Wall clock: the server no longer applies it (it meters active time), so it
+ * only bounds a client that cannot pause its clock while waiting on the user.
  */
 export function sponsoredComputeRunDeadlineMs(
   grantExpiresAtMs: number,
@@ -180,21 +240,61 @@ export const SPONSORED_WEB_START_WINDOW_MS = 2 * 60 * 60_000
 
 /**
  * When the stale sweep may fail an off-Cloud row that reported `running` at
- * `runningAtMs`: the spend window from then plus the grace, never past the
- * run token's own expiry (measured from Accept), because a report after that
- * could not be authenticated anyway.
+ * `runningAtMs`. Never past the run token's own expiry (measured from Accept),
+ * because a report after that could not be authenticated anyway, and:
+ *
+ *  - parked on the user (`awaitingUserSinceMs` set): exactly the token's
+ *    expiry. Waiting on the user does not count against the run.
+ *  - otherwise: a full {@link SPONSORED_COMPUTE_ACTIVE_WINDOW_MS} from the
+ *    latest of the run's start, its last reserved call and the moment it
+ *    last resumed from waiting on the user (`resumedAtMs`), plus
+ *    {@link SPONSORED_RUNNING_SWEEP_GRACE_MS}. A live run cannot have more
+ *    than the active window left after any call, so a long command that makes
+ *    no calls is never swept before Desktop's own cutoff.
+ *
+ * Called with two arguments (the legacy Convex sweep), it is the second arm
+ * from `runningAtMs`.
  */
 export function sponsoredRunningSweepDeadlineMs(
   runningAtMs: number,
   acceptedAtMs: number,
+  activity: Readonly<{
+    lastReservedAtMs?: number | null
+    awaitingUserSinceMs?: number | null
+    /** When the run last stopped waiting on the user (the marker cleared). */
+    resumedAtMs?: number | null
+  }> = {},
 ): number {
+  const tokenExpiry = acceptedAtMs + SPONSORED_RUN_TOKEN_TTL_MS
+  if (
+    activity.awaitingUserSinceMs !== undefined &&
+    activity.awaitingUserSinceMs !== null
+  )
+    return tokenExpiry
+  const lastActivity = Math.max(
+    runningAtMs,
+    activity.lastReservedAtMs ?? 0,
+    activity.resumedAtMs ?? 0,
+  )
   return Math.min(
-    runningAtMs +
-      SPONSORED_COMPUTE_RUN_WINDOW_MS +
+    lastActivity +
+      SPONSORED_COMPUTE_ACTIVE_WINDOW_MS +
       SPONSORED_RUNNING_SWEEP_GRACE_MS,
-    acceptedAtMs + SPONSORED_RUN_TOKEN_TTL_MS,
+    tokenExpiry,
   )
 }
+
+/**
+ * The run-state report a Desktop run sends while it is parked on the user (a
+ * sign-up card, a credential form, a CLI login):
+ * `POST /api/v1/ads/proposal/{id}/state` with
+ * `{ runToken, state: 'awaiting_user', runId }`. It sets the row's
+ * `awaiting_user_since` (kept if already set), and the next `running` report
+ * clears it and stamps `awaiting_user_resumed_at`, from which the sweep gives
+ * the resumed run a fresh active window. Neither writes a funnel row or changes the row's state. A server
+ * older than this answers 400 for it, which the client ignores.
+ */
+export const SPONSORED_AWAITING_USER_STATE = 'awaiting_user' as const
 
 /** Public response shape. The bearer belongs in host memory, never a thread. */
 export type SponsoredComputeGrant = Readonly<{
@@ -204,11 +304,11 @@ export type SponsoredComputeGrant = Readonly<{
   procedureSha256: string
   modelId: string
   /**
-   * When the grant stops spending. Issued as Accept +
-   * {@link SPONSORED_COMPUTE_START_DEADLINE_MS}, and brought in to the run's
-   * start + {@link SPONSORED_COMPUTE_RUN_WINDOW_MS} once it starts (see
-   * {@link sponsoredComputeRunDeadlineMs}). A replayed Accept after the start
-   * answers the brought-in value.
+   * The grant's hard end: Accept + {@link SPONSORED_COMPUTE_START_DEADLINE_MS}
+   * (the run token's life). Within it the server meters ACTIVE time against
+   * {@link SPONSORED_COMPUTE_ACTIVE_WINDOW_MS}. A grant whose run started
+   * before the active clock shipped may carry an `expires_at` already brought
+   * in to its start + 1h, and a replayed Accept answers that value.
    */
   expiresAtMs: number
   allowanceUsdMicros: number
@@ -238,8 +338,8 @@ export type SponsoredComputePolicy = Readonly<{
   allowanceUsdMicros: number
   acceptancePriceCents: number
   /**
-   * The grant's life once its run has started
-   * ({@link SPONSORED_COMPUTE_RUN_WINDOW_MS}); not measured from Accept.
+   * The grant's active-time budget once its run has started
+   * ({@link SPONSORED_COMPUTE_ACTIVE_WINDOW_MS}); not wall time.
    */
   ttlMs: number
 }>
@@ -323,6 +423,6 @@ export function readSponsoredComputePolicy(
     // internal, bounded cost of fulfilling that offer, capped here.
     allowanceUsdMicros: 2_500_000,
     acceptancePriceCents,
-    ttlMs: SPONSORED_COMPUTE_RUN_WINDOW_MS,
+    ttlMs: SPONSORED_COMPUTE_ACTIVE_WINDOW_MS,
   })
 }

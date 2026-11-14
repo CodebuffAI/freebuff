@@ -42,6 +42,7 @@
 
 import {
   SPONSORED_LOCAL_INSTALL_REFUSAL,
+  SPONSORED_LOCAL_INSTALL_TOOL_REFUSAL,
   commandInstallsDependencies,
 } from './sponsored-local-execution'
 import {
@@ -79,11 +80,11 @@ export function sponsoredDeclaredPackagesForProcedureSha256(
 export const SPONSORED_DECLARED_PACKAGES_MAX = 20
 
 /** npm's package-name rules, lowercase only (new packages cannot be uppercase). */
-const NPM_PACKAGE_NAME =
+export const NPM_PACKAGE_NAME =
   /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/
 
 /** An exact semver: no range, no tag, no `v` prefix. */
-const EXACT_SEMVER =
+export const EXACT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 
 /**
@@ -156,7 +157,8 @@ export type SponsoredInstallDecision =
   | { kind: 'allow'; command: string }
   | { kind: 'refuse'; message: string }
 
-type PackageManager = 'npm' | 'pnpm' | 'bun'
+export type SponsoredNpmPackageManager = 'npm' | 'pnpm' | 'bun'
+type PackageManager = SponsoredNpmPackageManager
 
 const INSTALL_SUBCOMMANDS: Readonly<
   Record<PackageManager, ReadonlySet<string>>
@@ -183,7 +185,7 @@ const SHELL_METACHARACTERS = /[;&|<>`$(){}\n\r'"\\*?]/
  * rewritten to it rather than kept as `cd <dir> && …`, because the Windows
  * floor runs PowerShell 5.1, which has no `&&`.
  */
-const DIR_FLAGS: Readonly<Record<PackageManager, readonly string[]>> = {
+export const DIR_FLAGS: Readonly<Record<PackageManager, readonly string[]>> = {
   npm: ['--prefix'],
   pnpm: ['--dir', '-C'],
   bun: ['--cwd'],
@@ -210,7 +212,12 @@ export function sponsoredInstallSubdir(dir: string): string | null {
   return segments.join('/')
 }
 
-function canonicalInstall(
+/**
+ * The one spelling of an npm-ecosystem install the harness runs: scripts
+ * skipped, exact version saved. Also what `install_package` runs
+ * (`sponsored-install-tool.ts`); `specs` must already be validated.
+ */
+export function canonicalInstall(
   manager: PackageManager,
   specs: string[],
   dev: boolean,
@@ -277,18 +284,33 @@ export function evaluateSponsoredInstallCommand(
    * The run's procedure names a skill this build could not load, so its
    * declared list is unknown rather than empty: refused with that cause.
    */
-  options: { skillUnresolved?: boolean } = {},
+  options: {
+    skillUnresolved?: boolean
+    /**
+     * The run has the `install_package` tool (COD-965): every refusal tells
+     * the agent to use it instead of the shell. Absent, the wording is the
+     * one every released build shows.
+     */
+    installTool?: boolean
+  } = {},
 ): SponsoredInstallDecision {
   if (!commandInstallsDependencies(command)) return { kind: 'not-install' }
   if (!declared || declared.length === 0) {
     return {
       kind: 'refuse',
-      message: options.skillUnresolved
-        ? SPONSORED_SKILL_UNRESOLVED_INSTALL_REFUSAL
-        : SPONSORED_LOCAL_INSTALL_REFUSAL,
+      message: options.installTool
+        ? SPONSORED_LOCAL_INSTALL_TOOL_REFUSAL
+        : options.skillUnresolved
+          ? SPONSORED_SKILL_UNRESOLVED_INSTALL_REFUSAL
+          : SPONSORED_LOCAL_INSTALL_REFUSAL,
     }
   }
-  const refuse = { kind: 'refuse', message: declaredRefusal(declared) } as const
+  const refuse = {
+    kind: 'refuse',
+    message: options.installTool
+      ? SPONSORED_LOCAL_INSTALL_TOOL_REFUSAL
+      : declaredRefusal(declared),
+  } as const
 
   let dir: string | null = ''
   const cd = LEADING_CD.exec(command)
@@ -305,7 +327,12 @@ export function evaluateSponsoredInstallCommand(
     dir,
     declared.filter((pkg) => pkg.ecosystem === 'pypi'),
   )
-  if (python !== 'not-python') return python ?? refuse
+  if (python !== 'not-python') {
+    // The wheel-only refusal names the exact command to re-run; with the
+    // tool, the tool is the way.
+    if (python?.kind === 'refuse' && options.installTool) return refuse
+    return python ?? refuse
+  }
 
   const manager = tokens[0] as PackageManager
   if (manager !== 'npm' && manager !== 'pnpm' && manager !== 'bun') {

@@ -92,6 +92,13 @@ export interface Settings {
    *  moment it renders, not when it is dismissed, so "once" holds however
    *  the launch ends. */
   freebucksIntroSeenAt?: string
+  /** Local opt-in for the mock display-ad placements: `"all"` or a list of
+   *  placement ids (`["cliSplash", "cliStatusline"]`). Every placement is off
+   *  without it (common/src/ads/display-ads/placements.ts). Hand-edited only. */
+  displayAds?: string | string[]
+  /** Local day (`YYYY-MM-DD`) the user hid the `cliSplash` sponsor block
+   *  ("hide for today"). Any other day draws it again. */
+  displayAdSplashHiddenOn?: string
 }
 
 /**
@@ -279,6 +286,21 @@ const validateSettings = (parsed: unknown): Settings => {
   // "shown once" mark lasted exactly one launch (2026-09-05).
   if (typeof obj.freebucksIntroSeenAt === 'string') {
     settings.freebucksIntroSeenAt = obj.freebucksIntroSeenAt
+  }
+
+  if (
+    typeof obj.displayAds === 'string' ||
+    (Array.isArray(obj.displayAds) &&
+      obj.displayAds.every((id) => typeof id === 'string'))
+  ) {
+    settings.displayAds = obj.displayAds as string | string[]
+  }
+
+  if (
+    typeof obj.displayAdSplashHiddenOn === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(obj.displayAdSplashHiddenOn)
+  ) {
+    settings.displayAdSplashHiddenOn = obj.displayAdSplashHiddenOn
   }
 
   return settings

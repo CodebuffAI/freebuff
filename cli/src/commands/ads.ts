@@ -29,11 +29,49 @@ export const handleAdsEnable = (): {
   }
 }
 
-export const handleAdsDisable = (): {
+/**
+ * What `handleAdsDisable` answers on the Freebuff binary. It is a backstop, not
+ * a reachable command: `FREEBUFF_REMOVED_COMMANDS` (command-registry.ts) and
+ * `FREEBUFF_REMOVED_COMMAND_IDS` (slash-commands.ts) have dropped both ads
+ * switches from Freebuff since its first build, so no Freebuff release has ever
+ * written `adsEnabled` (freebuff-command-aliases.test.ts pins that).
+ *
+ * The backstop exists because the rail is part of free mode's price:
+ * `getAdsEnabled()` below returns true unconditionally on this binary, while
+ * the SAME settings file is read by the Codebuff client, where the key does
+ * turn ads off. If the registry guard ever regressed, a write here would
+ * silently preselect an ad-free Codebuff session.
+ *
+ * Do not "repair" a stored `adsEnabled: false` on either binary: with Freebuff
+ * unable to write it, every such value is a Codebuff user's own choice
+ * (including one made in Codebuff's old FREE mode, before 2026-04-18 when that
+ * mode still forced ads on).
+ */
+export const FREEBUFF_ADS_FIXED_COPY =
+  'Ads cannot be turned off in Freebuff - they pay for the free sessions. ' +
+  'This switch applies only to the Codebuff client.'
+
+export const handleAdsDisable = (
+  deps: {
+    /** Pinned for tests only; production reads the build constant. */
+    isFreebuff?: boolean
+    save?: typeof saveSettings
+  } = {},
+): {
   postUserMessage: (messages: ChatMessage[]) => ChatMessage[]
 } => {
+  if (deps.isFreebuff ?? IS_FREEBUFF) {
+    logger.info('[gravity] Ads: disable refused (free mode has no ad switch)')
+    return {
+      postUserMessage: (messages) => [
+        ...messages,
+        getSystemMessage(FREEBUFF_ADS_FIXED_COPY),
+      ],
+    }
+  }
+
   logger.info('[gravity] Disabling ads')
-  saveSettings({ adsEnabled: false })
+  ;(deps.save ?? saveSettings)({ adsEnabled: false })
 
   return {
     postUserMessage: (messages) => [
@@ -138,20 +176,17 @@ export function handleProposalDismiss(messages: ChatMessage[]): string | null {
 
 export const handleProposalReport = (
   messages: ChatMessage[],
-): Promise<string> =>
-  withProposal(
-    messages,
-    (block, authToken) =>
-      runSponsoredProposalControl(
-        'report',
-        {
-          proposalId: block.proposal._id,
-          advertiserId: block.proposal.advertiser_id,
-        },
-        authToken,
-      ),
-    'Reported. Thanks — we review every report.',
-  )
+  getToken = getAuthToken,
+): string | null => {
+  const block = liveSponsoredProposal(messages)
+  if (!block) return 'No sponsored proposal on screen.'
+  if (block.refreshUnavailable) return proposalRefreshUnavailableMessage()
+  if (!getToken()) return 'Sign in to report this sponsored proposal.'
+  useMessageBlockStore
+    .getState()
+    .callbacks.onSponsoredProposalControl(block.target, 'report')
+  return null
+}
 
 export const handleProposalNeverAdvertiser = (
   messages: ChatMessage[],

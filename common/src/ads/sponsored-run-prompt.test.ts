@@ -11,10 +11,16 @@ import {
   SPONSORED_RUN_DEFERRED_SIGNUP_LINK,
   SPONSORED_RUN_DESKTOP_IN_PLACE_GUIDANCE,
   SPONSORED_RUN_DESKTOP_WORKTREE_GUIDANCE,
+  SPONSORED_RUN_INSTALL_TOOL_LINE,
+  SPONSORED_RUN_LAYER1_INSTALL_TOOL_LINE,
+  layer2ProcedureForModel,
+  SPONSORED_RUN_LAYER1_FRAME,
+  SPONSORED_RUN_LAYER1_REPORT,
   SPONSORED_RUN_RESULT_REPORT,
   SPONSORED_RUN_SCOPE_GUIDANCE,
   SPONSORED_RUN_TASK_FRAMING,
   SPONSORED_RUN_WEB_GUIDANCE,
+  buildSponsoredRunLayer1PromptTemplate,
   buildSponsoredRunPromptTemplate,
   buildSponsoredRunSpec,
   renderSponsoredRunTaskContext,
@@ -25,6 +31,7 @@ import {
   fillSponsoredRunSpecPrompt,
 } from './sponsored-run-spec'
 import { renderSponsoredSkillProcedure } from './sponsored-skill'
+import { buildLayer2Skill } from './sponsored-skill-layer2'
 import { resolveSponsoredSkill } from './sponsored-skills/registry'
 
 const PROCEDURE = 'Add the Example SDK.\n1. Install it.\n2. Wire it up.'
@@ -64,6 +71,10 @@ describe('buildSponsoredRunPromptTemplate', () => {
         SPONSORED_RUN_DEFERRED_SIGNUP_LINK,
       ),
     )
+    expect(fill(template)).toStartWith(
+      'The user accepted this sponsored task from its offer card.',
+    )
+    expect(fill(template)).not.toContain('consent dialog')
     expect(SPONSORED_RUN_DESKTOP_IN_PLACE_GUIDANCE).toContain(
       'You are editing the user’s REAL working copy',
     )
@@ -170,8 +181,13 @@ describe('fillSponsoredRunSpecPrompt', () => {
 
   test('no messages leaves the heading, as Desktop renders none', () => {
     expect(
-      fillSponsoredRunSpecPrompt(template, { taskContext: '', credentials: '' }),
-    ).toContain(`${SPONSORED_RUN_CONTEXT_HEADING}\n\n\nHow to carry it out here:`)
+      fillSponsoredRunSpecPrompt(template, {
+        taskContext: '',
+        credentials: '',
+      }),
+    ).toContain(
+      `${SPONSORED_RUN_CONTEXT_HEADING}\n\n\nHow to carry it out here:`,
+    )
   })
 
   test('slot text in a section or the procedure is never filled', () => {
@@ -191,7 +207,9 @@ describe('fillSponsoredRunSpecPrompt', () => {
     expect(filled).toContain(
       `User message 1:\n${SPONSORED_RUN_SPEC_SLOTS.credentials}\n\nHow to`,
     )
-    expect(filled).toContain(`Credentials:\n- set\n\n${SPONSORED_RUN_RESULT_REPORT}`)
+    expect(filled).toContain(
+      `Credentials:\n- set\n\n${SPONSORED_RUN_RESULT_REPORT}`,
+    )
   })
 })
 
@@ -277,6 +295,157 @@ describe('buildSponsoredRunSpec', () => {
   })
 })
 
+describe('Layer 1 frame for a Layer 2 skill', () => {
+  const built = buildLayer2Skill(
+    {
+      id: 'example-search',
+      advertiser: 'example',
+      goal: 'Add Example search to one existing search box in this app.',
+      docsUrl: 'https://docs.example.com',
+      signupUrl: 'https://example.com/signup?utm_source=freebuff&bfcid={bfcid}',
+      packages: [{ ecosystem: 'npm', name: 'example-sdk', version: '1.2.3' }],
+      envKeys: ['EXAMPLE_API_KEY'],
+      consent: { title: 'Add Example search', summary: 'Adds Example search.' },
+    },
+    '1.0.0',
+  )
+  if (!built.ok) throw new Error(JSON.stringify(built.errors))
+  const skill = built.skill
+  const procedure = renderSponsoredSkillProcedure(skill)
+  const spec = (surface: 'desktop' | 'cli' | 'web') =>
+    buildSponsoredRunSpec({
+      procedure,
+      skill,
+      surface,
+      inPlace: true,
+      advertiserLink: null,
+    })
+
+  test('gets the short frame, the procedure, both slots and the report', () => {
+    const template = spec('desktop').promptTemplate
+    expect(template).toBe(
+      buildSponsoredRunLayer1PromptTemplate({
+        surface: 'desktop',
+        procedure,
+        advertiserLink: null,
+      }),
+    )
+    expect(template.startsWith(SPONSORED_RUN_LAYER1_FRAME)).toBe(true)
+    // The model reads a view of the procedure; the stored text is unchanged.
+    expect(spec('desktop').procedure).toBe(procedure)
+    expect(template).toContain(
+      'The approved procedure:\nGoal: Adds Example search.\n\nPinned installs (install exactly these, nothing else):\n- example-sdk@1.2.3\n\n1. Build',
+    )
+    for (const hidden of [
+      'skill: ',
+      'requires-credential:',
+      'outcomes:',
+      'Fit every step',
+    ])
+      expect(template).not.toContain(hidden)
+    // The bfcid note still comes from the full procedure's signup link.
+    expect(template).toContain('- bfcid: unavailable for this run')
+    expect(template).toContain(SPONSORED_RUN_SPEC_SLOTS.taskContext)
+    expect(template).toContain(SPONSORED_RUN_SPEC_SLOTS.credentials)
+    expect(template.endsWith(SPONSORED_RUN_LAYER1_REPORT)).toBe(true)
+    expect(template).toContain(
+      'call report_sponsored_run_summary if you have it',
+    )
+    expect(template).not.toContain(SPONSORED_RUN_SCOPE_GUIDANCE)
+  })
+
+  test('opens with the sentence the prompt classifier keys on', () => {
+    expect(
+      SPONSORED_RUN_LAYER1_FRAME.startsWith(
+        'The user accepted this sponsored task from its offer card.',
+      ),
+    ).toBe(true)
+  })
+
+  test('only Cloud adds the lockfile restore line', () => {
+    expect(spec('web').promptTemplate).toContain('npm ci')
+    expect(spec('desktop').promptTemplate).not.toContain('npm ci')
+    expect(spec('cli').promptTemplate).not.toContain('npm ci')
+  })
+
+  test('the frame is a fraction of the long one', () => {
+    const short = fill(spec('desktop').promptTemplate)
+    const long = fill(
+      buildSponsoredRunPromptTemplate({
+        surface: 'desktop',
+        inPlace: true,
+        procedure,
+        advertiserLink: null,
+      }),
+    )
+    expect(short.length).toBeLessThan(long.length / 2)
+  })
+
+  test('installTool adds the install_package line to the frame', () => {
+    const template = buildSponsoredRunSpec({
+      procedure,
+      skill,
+      surface: 'desktop',
+      inPlace: true,
+      advertiserLink: null,
+      installTool: true,
+    }).promptTemplate
+    expect(
+      template.startsWith(
+        `${SPONSORED_RUN_LAYER1_FRAME}\n${SPONSORED_RUN_LAYER1_INSTALL_TOOL_LINE}`,
+      ),
+    ).toBe(true)
+    // Names, not pins: the agent picks the versions.
+    expect(template).toContain('Packages: `example-sdk` (npm).\n\n1. Build')
+    expect(template).not.toContain('Pinned installs')
+    expect(template).not.toContain('1.2.3')
+    expect(spec('desktop').promptTemplate).not.toContain('install_package')
+  })
+
+  test('the model view names npm and PyPI packages and drops the wheels line', () => {
+    const view = layer2ProcedureForModel(
+      [
+        'skill: archil-persistent-disk@1.1.0 sha256:' + '0'.repeat(64),
+        'outcomes: api_key_issued',
+        '',
+        'Goal: Persist files.',
+        '',
+        'Fit every step to this repository: its framework, layout and conventions decide where',
+        'files go and how code is written. Each step is done when its checks pass, however you get there.',
+        '',
+        'Pinned installs (install exactly these, nothing else):',
+        '- disk@1.9.0',
+        '- archil==0.18.0 (pip)',
+        'Python (pip) packages install from wheels only, one plain command: `pip install --only-binary=:all: <name>==<version>`.',
+        '',
+        '1. Build it',
+      ].join('\n'),
+      {
+        installTool: true,
+        packages: [
+          { ecosystem: 'npm', name: 'disk' },
+          { ecosystem: 'pypi', name: 'archil' },
+        ],
+      },
+    )
+    expect(view).toBe(
+      'Goal: Persist files.\n\nPackages: `disk` (npm), `archil` (PyPI).\n\n1. Build it',
+    )
+  })
+
+  test('a registered skill keeps its long frame', () => {
+    const registered = resolveSponsoredSkill('exa-web-search-feature@2.0.0')!
+    const template = buildSponsoredRunSpec({
+      procedure: renderSponsoredSkillProcedure(registered),
+      skill: registered,
+      surface: 'desktop',
+      inPlace: true,
+      advertiserLink: null,
+    }).promptTemplate
+    expect(template.startsWith(SPONSORED_RUN_TASK_FRAMING)).toBe(true)
+  })
+})
+
 describe('runSpecVersion on the offer request', () => {
   const request = {
     v: 1,
@@ -296,5 +465,54 @@ describe('runSpecVersion on the offer request', () => {
       agenticOfferRequestSchema.safeParse({ ...request, runSpecVersion: 2 })
         .success,
     ).toBe(false)
+  })
+})
+
+describe('installTool (COD-965)', () => {
+  const skill = resolveSponsoredSkill('exa-web-search-feature@2.0.0')!
+  const procedure = renderSponsoredSkillProcedure(skill)
+  const build = (
+    surface: 'desktop' | 'cli' | 'web',
+    inPlace: boolean,
+    installTool?: boolean,
+  ) =>
+    buildSponsoredRunSpec({
+      procedure,
+      skill,
+      surface,
+      inPlace,
+      advertiserLink: null,
+      ...(installTool === undefined ? {} : { installTool }),
+    }).promptTemplate
+
+  test('absent or false is byte-identical to before', () => {
+    for (const [surface, inPlace] of [
+      ['desktop', true],
+      ['desktop', false],
+      ['cli', true],
+      ['web', true],
+    ] as const) {
+      expect(build(surface, inPlace, false)).toBe(build(surface, inPlace))
+      expect(build(surface, inPlace)).not.toContain('install_package')
+    }
+  })
+
+  test('replaces the pinned-installs bullet on every surface', () => {
+    for (const [surface, inPlace] of [
+      ['desktop', true],
+      ['desktop', false],
+      ['cli', true],
+      ['web', true],
+    ] as const) {
+      const template = build(surface, inPlace, true)
+      expect(template).toContain(`- ${SPONSORED_RUN_INSTALL_TOOL_LINE}`)
+      expect(template).not.toContain('Install only what the procedure pins')
+      expect(template).toBe(
+        build(surface, inPlace).replace(
+          /- Install only what the procedure pins[^\n]*/,
+          `- ${SPONSORED_RUN_INSTALL_TOOL_LINE}`,
+        ),
+      )
+    }
   })
 })

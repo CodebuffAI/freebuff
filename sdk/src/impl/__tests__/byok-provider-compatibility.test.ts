@@ -588,3 +588,52 @@ describe('BYOK Gemini thought signatures', () => {
     expect(firstCallOf(bodies[0]!)).not.toHaveProperty('extra_content')
   })
 })
+
+describe('OpenAI reasoning models on Azure OpenAI', () => {
+  test('a GPT-5 deployment gets max_completion_tokens and no stop', async () => {
+    const { body } = await request('generate', {
+      baseUrl: 'https://example-resource.openai.azure.com/openai/v1/',
+      model: 'gpt-5-mini',
+    })
+    expect(body.max_tokens).toBeUndefined()
+    expect(body.stop).toBeUndefined()
+    expect(body.max_completion_tokens).toBe(4096)
+  })
+
+  test('a non-reasoning model on the same host keeps max_tokens and stop', async () => {
+    const { body } = await request('generate', {
+      baseUrl: 'https://example-resource.openai.azure.com/openai/v1/',
+      model: 'gpt-4.1',
+    })
+    expect(body.max_tokens).toBe(4096)
+    expect(body.stop).toBeDefined()
+    expect(body.max_completion_tokens).toBeUndefined()
+  })
+
+  test('the same model on another host keeps the plain body, which its gateway translates', async () => {
+    for (const baseUrl of ['https://openrouter.ai/api/v1/', 'http://localhost:4000/v1', 'https://openai.azure.com.example/v1']) {
+      const { body } = await request('generate', { baseUrl, model: 'gpt-5-mini' })
+      expect(body.max_tokens).toBe(4096)
+      expect(body.max_completion_tokens).toBeUndefined()
+    }
+  })
+
+  test('the AI Foundry hosts count as Azure too', async () => {
+    const { body } = await request('generate', {
+      baseUrl: 'https://example.services.ai.azure.com/openai/v1/',
+      model: 'o4-mini',
+    })
+    expect(body.max_completion_tokens).toBe(4096)
+    expect(body.max_tokens).toBeUndefined()
+  })
+})
+
+describe('isOpenAIReasoningModel', () => {
+  test('names GPT-5 and later and the o-series, not GPT-4 models', async () => {
+    const { isOpenAIReasoningModel } = await import('../byok-request')
+    for (const m of ['gpt-5-mini', 'openai/gpt-5.1', 'gpt-6.1-sol', 'o4-mini', 'o3', 'azure/o1-preview', 'GPT-5'])
+      expect(isOpenAIReasoningModel(m)).toBe(true)
+    for (const m of ['gpt-4o', 'gpt-4.1-mini', 'gpt-4o-mini', 'deepseek-v4', 'llama-3.3-70b', 'omni-moderation'])
+      expect(isOpenAIReasoningModel(m)).toBe(false)
+  })
+})

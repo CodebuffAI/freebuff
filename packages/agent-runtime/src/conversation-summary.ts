@@ -1,0 +1,709 @@
+/**
+ * Compaction by structured summary, prepared in the background.
+ *
+ * The goals: a summary is ready before it is needed (low latency), it keeps
+ * decisions, requirements and next steps (accurate), and a user who returns
+ * after the prompt cache expired sends a small request (no cold start).
+ *
+ * 1. When a turn ends (or is cancelled or fails) with the context at
+ *    FIRST_SUMMARY_TOKENS, or SUMMARY_GROWTH_TOKENS past the last summary,
+ *    the runtime asks the agent's own model for a summary of the whole
+ *    conversation. Mid-turn, after a step, it asks only once the context is
+ *    in the band below the compaction threshold (`summaryBandStart`), the
+ *    only summary the limit will use. The request is the agent's normal
+ *    request plus one instruction, so the provider reads the history from its
+ *    warm cache. It runs in the background. A new summary replaces the old
+ *    one.
+ * 2. The full history is still sent while the cache is warm.
+ * 3. The summary is used only when the user returns after the model's idle
+ *    threshold (`summaryIdleMs`), or when the context reaches its limit.
+ *    Then the request is the summary, the messages after it, and the new
+ *    message.
+ *
+ * The summary waits on the agent state (`compactionSummary`), outside the
+ * history. A summary that finishes after its run ended reaches the next run
+ * of the same conversation through an in-process store.
+ */
+
+import {
+  compactionThreshold,
+  DEEPSEEK_FLASH_COMPACTION_POLICY,
+} from '@codebuff/common/constants/compaction-policy'
+import {
+  buildCompactionSummaryPrompt,
+  COMPACTION_SUMMARY_METADATA_KEY,
+} from '@codebuff/common/constants/compaction-summary'
+import {
+  FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+} from '@codebuff/common/constants/freebuff-model-ids'
+import { COMPACTION_SUMMARY_EVENT } from '@codebuff/common/util/axiom-only-log'
+import {
+  AbortError,
+  getErrorObject,
+  isAbortError,
+} from '@codebuff/common/util/error'
+import {
+  dropUnansweredToolCalls,
+  systemMessage,
+  userMessage,
+} from '@codebuff/common/util/messages'
+
+import { SUMMARY_HEADER } from './compact-history'
+import { expireMessages, withSystemInstructionTags } from './util/messages'
+import { countTokens, countTokensMessages } from './util/token-counter'
+
+import type { OpenRouterReasoningOptions } from '@codebuff/common/types/agent-template'
+import type {
+  ModelUsageData,
+  PromptAiSdkStreamFn,
+} from '@codebuff/common/types/contracts/llm'
+import type { Logger } from '@codebuff/common/types/contracts/logger'
+import type { Message } from '@codebuff/common/types/messages/codebuff-message'
+import type { ConversationSummary } from '@codebuff/common/types/session-state'
+
+/**
+ * The idle gap after which the summary replaces the history. Five minutes is
+ * the shortest prompt cache measured on our lanes (Anthropic via Respan,
+ * prod 2026-10-26); Pareto keeps it 10-15 minutes, OpenAI about 30.
+ */
+export const SUMMARY_IDLE_MS = 5 * 60 * 1000
+
+/**
+ * DeepSeek V4 Flash, fast mode included, waits as long as its cache lasts.
+ * Measured in prod 2026-11-02/03 on returns that kept the full history (no
+ * summary was ready): on Pareto its cache was still warm (over half the
+ * prompt cached) on 92% of them after 5-15 minutes, and on 89% after 15-30.
+ * Half of its idle triggers fell in that 5-15 minute window, and each swap
+ * there turned a warm prefix into a cold one (8.6% cached on the request
+ * after a swap) while dropping detail the user then saw as "compacting
+ * constantly". Fifteen
+ * minutes is the figure its idle policy already uses
+ * (common/src/constants/compaction-policy.ts).
+ */
+const MODEL_SUMMARY_IDLE_MS: Readonly<Record<string, number>> = {
+  [FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID]:
+    DEEPSEEK_FLASH_COMPACTION_POLICY.cacheExpiryMs,
+  [FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID]:
+    DEEPSEEK_FLASH_COMPACTION_POLICY.cacheExpiryMs,
+}
+
+/** The idle gap after which `model`'s summary replaces the history. */
+export function summaryIdleMs(model: string): number {
+  return MODEL_SUMMARY_IDLE_MS[model] ?? SUMMARY_IDLE_MS
+}
+
+export const FIRST_SUMMARY_TOKENS = 40_000
+export const SUMMARY_GROWTH_TOKENS = 30_000
+/** Small windows use shares of the window instead of the fixed sizes. */
+const FIRST_SUMMARY_SHARE = 0.2
+const SUMMARY_GROWTH_SHARE = 0.15
+const SUMMARY_TARGET_TOKENS = 2_000
+const SUMMARY_TARGET_SHARE = 0.1
+const SUMMARY_MAX_OUTPUT_TOKENS = 16_384
+const MIN_SUMMARY_CHARS = 200
+/** Of the format's eight sections, how many mark a reply with no English one. */
+const MIN_TRANSLATED_SECTIONS = 6
+
+export const CONVERSATION_SUMMARY_TAG = 'CONVERSATION_SUMMARY'
+
+const SUMMARY_NOTE =
+  'Historical memory only: it replaces the earlier conversation. Messages after it are real messages. The latest user request can appear both in the memory and after it: the memory then records work already done on it, so continue that work, do not start over. If no user message follows, resume the latest request in the memory. Use real tool calls when further action is needed or give the final response when the work is complete.'
+
+export function summaryThresholds(maxContextLength: number): {
+  first: number
+  growth: number
+} {
+  return {
+    first: Math.min(
+      FIRST_SUMMARY_TOKENS,
+      Math.floor(maxContextLength * FIRST_SUMMARY_SHARE),
+    ),
+    growth: Math.min(
+      SUMMARY_GROWTH_TOKENS,
+      Math.floor(maxContextLength * SUMMARY_GROWTH_SHARE),
+    ),
+  }
+}
+
+/** How long a summary is asked to be: small windows get a shorter one. */
+export function summaryTargetTokens(maxContextLength: number): number {
+  return Math.min(
+    SUMMARY_TARGET_TOKENS,
+    Math.floor(maxContextLength * SUMMARY_TARGET_SHARE),
+  )
+}
+
+/**
+ * Whether a manual compact is worth a summary request. A chat under twice the
+ * summary's own target gains little from swapping in a summary of about that
+ * size, and a summary already in the history is not counted: pressing Compact
+ * twice in a row is billed once. The caller's scaffolding is not conversation.
+ */
+export function manualCompactionIsWorthwhile(params: {
+  messages: Message[]
+  maxContextLength: number
+}): boolean {
+  const conversation = params.messages.filter(
+    (message) =>
+      !isEphemeral(message) &&
+      !message.tags?.includes('INSTRUCTIONS_PROMPT') &&
+      !message.tags?.includes(CONVERSATION_SUMMARY_TAG),
+  )
+  return (
+    conversation.length >= 2 &&
+    countTokensMessages(conversation) >=
+      2 * summaryTargetTokens(params.maxContextLength)
+  )
+}
+
+/** Whether the context grew enough since `latest` to need a new summary. */
+export function summaryIsDue(params: {
+  contextTokens: number
+  maxContextLength: number
+  /** The newest summary made or in progress, as its context size. */
+  latestContextTokens: number | undefined
+}): boolean {
+  const { first, growth } = summaryThresholds(params.maxContextLength)
+  if (params.latestContextTokens === undefined)
+    return params.contextTokens >= first
+  return params.contextTokens - params.latestContextTokens >= growth
+}
+
+/**
+ * Where the near-limit band starts: one growth step below the compaction
+ * threshold (270k on DeepSeek V4 Flash's 375k budget, 290k on 400k).
+ */
+export function summaryBandStart(maxContextLength: number): number {
+  return (
+    compactionThreshold(maxContextLength) -
+    summaryThresholds(maxContextLength).growth
+  )
+}
+
+/**
+ * Whether a step inside a turn should start a summary. Only one in the band
+ * is ever used at the limit; a mid-turn summary below it is replaced by the
+ * turn-end one or a later one before anything reads it. Measured 2026-11-10:
+ * 416k mid-turn summaries a day against ~107k applied. So: one summary once
+ * the context reaches the band, and none while the newest is already in it.
+ */
+export function midTurnSummaryIsDue(params: {
+  contextTokens: number
+  maxContextLength: number
+  /** The newest summary made or in progress, as its context size. */
+  latestContextTokens: number | undefined
+}): boolean {
+  const bandStart = summaryBandStart(params.maxContextLength)
+  if (params.contextTokens < bandStart) return false
+  return (
+    params.latestContextTokens === undefined ||
+    params.latestContextTokens < bandStart
+  )
+}
+
+/**
+ * Tags a prompt the host wrote to carry on work the user already asked for
+ * (a Cloud turn resumed after a runner drain, a mission's next pass). It is
+ * not the user returning: the gap before it is a queue, not a user who left.
+ */
+export const CONTINUATION_PROMPT_TAG = 'CONTINUATION_PROMPT'
+
+/**
+ * Whether the live prompt arrived after the conversation sat idle longer than
+ * `idleMs`, measured from the later of the last turn end or checkpoint
+ * (`lastActivityAt`) and the last assistant message. Never true after an
+ * answer or for a continuation prompt.
+ */
+export function isIdleReturn(
+  messages: Message[],
+  idleMs = SUMMARY_IDLE_MS,
+  now = Date.now(),
+  lastActivityAt?: number,
+): boolean {
+  const promptIndex = messages.findLastIndex((m) =>
+    m.tags?.includes('USER_PROMPT'),
+  )
+  if (promptIndex <= 0) return false
+  if (messages.slice(promptIndex + 1).some((m) => m.role === 'assistant'))
+    return false
+  const prompt = messages[promptIndex]
+  if (prompt.tags?.includes(CONTINUATION_PROMPT_TAG)) return false
+  const sentAt = prompt.sentAt ?? now
+  // The later of the two: a runtime that predates `lastActivityAt` keeps the
+  // field but does not move it, so it can be older than the last reply.
+  let last = lastActivityAt
+  for (let i = promptIndex - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message.role !== 'assistant') continue
+    if (message.sentAt !== undefined)
+      last = Math.max(last ?? message.sentAt, message.sentAt)
+    break
+  }
+  return last !== undefined && sentAt - last > idleMs
+}
+
+/** The history exactly as the agent's next request sends it. */
+export function summaryRequestHistory(messages: Message[]): Message[] {
+  return dropUnansweredToolCalls(expireMessages(messages, 'agentStep'))
+}
+
+function isEphemeral(message: Message): boolean {
+  return (
+    message.timeToLive !== undefined ||
+    message.tags?.includes('STEP_PROMPT') === true
+  )
+}
+
+/** A short, stable id for a message's content (FNV-1a). */
+export function messageFingerprint(message: Message): string {
+  const text =
+    message.role +
+    '\u0000' +
+    (message.role === 'tool' ? message.toolCallId : '') +
+    '\u0000' +
+    JSON.stringify(message.content)
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return `${(hash >>> 0).toString(16)}:${text.length}`
+}
+
+/**
+ * Where the summary's covered part ends in `messages`, or -1 when the last
+ * covered message is gone (an edit removed it). Searched from its recorded
+ * position first, then from the end: dropped scaffolding can move it.
+ */
+function anchorIndex(
+  messages: Message[],
+  summary: ConversationSummary,
+): number {
+  const expected = summary.coveredMessages - 1
+  if (
+    messages[expected] &&
+    messageFingerprint(messages[expected]) === summary.anchor
+  )
+    return expected
+  for (let i = Math.min(expected, messages.length - 1); i >= 0; i--) {
+    if (messageFingerprint(messages[i]) === summary.anchor) return i
+  }
+  return -1
+}
+
+export function summaryMatchesHistory(
+  messages: Message[],
+  summary: ConversationSummary,
+): boolean {
+  return anchorIndex(messages, summary) >= 0
+}
+
+export function buildConversationSummaryMessage(
+  text: string,
+  now = Date.now(),
+): Message {
+  return {
+    role: 'user',
+    tags: [CONVERSATION_SUMMARY_TAG],
+    sentAt: now,
+    content: [
+      {
+        type: 'text',
+        text: `<conversation_summary>\n${SUMMARY_HEADER}\n\n<historical_memory>\n${text}\n</historical_memory>\n</conversation_summary>\n\n${SUMMARY_NOTE}`,
+      },
+    ],
+  }
+}
+
+/**
+ * The history with the summary in place of what it covers, and the summary
+ * re-anchored on its own message (it now covers itself). Covered messages
+ * that `keep` accepts (the current turn's own user messages) stay as real
+ * messages right after it: a summary made at the limit, or during a turn,
+ * covers the request it is answering, and that request must reach the model
+ * word for word. Its size is unset until the provider reports the next
+ * request's. Null when the summary no longer matches.
+ */
+export function applyConversationSummary(params: {
+  messages: Message[]
+  summary: ConversationSummary
+  keep?: (message: Message) => boolean
+  now?: number
+}): { messages: Message[]; summary: ConversationSummary } | null {
+  const index = anchorIndex(params.messages, params.summary)
+  if (index < 0) return null
+  const head = buildConversationSummaryMessage(params.summary.text, params.now)
+  const { contextTokens: _, ...summary } = params.summary
+  const kept = params.keep
+    ? params.messages.slice(0, index + 1).filter(params.keep)
+    : []
+  return {
+    messages: [head, ...kept, ...params.messages.slice(index + 1)],
+    summary: {
+      ...summary,
+      coveredMessages: 1,
+      anchor: messageFingerprint(head),
+    },
+  }
+}
+
+export type SummaryStream = (params: {
+  messages: Message[]
+  /** Absent: the agent's own limit. */
+  maxOutputTokens?: number
+  signal: AbortSignal
+  extraCodebuffMetadata: Record<string, string>
+  onFinishReason: (reason: string) => void
+  onUsageReceived: (usage: ModelUsageData) => void
+}) => ReturnType<PromptAiSdkStreamFn>
+
+export class SummaryError extends Error {
+  constructor(
+    readonly kind:
+      | 'empty'
+      | 'unrecognized'
+      | 'output_limit'
+      | 'provider_error'
+      | 'no_history',
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
+/**
+ * The summary in a model's reply, or '' when the reply is not one. It starts
+ * at its first heading; a preamble before it is dropped. The format's headings
+ * are in English, but a model can translate them with the rest (GLM 5.3 Flash
+ * did on 12% of its summaries, prod 2026-10-30, and each one was thrown away),
+ * so a reply with the format's shape counts without the name.
+ */
+export function summaryFromReply(reply: string): string {
+  const text = reply.replace(/<think>[\s\S]*?<\/think>/g, '')
+  const english = text.indexOf('## Objective')
+  if (english >= 0) return text.slice(english).trim()
+  const sections = [...text.matchAll(/^## /gm)]
+  return sections.length >= MIN_TRANSLATED_SECTIONS
+    ? text.slice(sections[0].index).trim()
+    : ''
+}
+
+/**
+ * Asks the model for the summary. `history` must be what the agent's next
+ * request sends (`summaryRequestHistory`), or the cache misses.
+ */
+export async function generateConversationSummary(params: {
+  summaryId?: string
+  history: Message[]
+  system: string
+  /** The provider's count when the summary was requested, if known. */
+  contextTokens?: number
+  targetTokens: number
+  maxOutputTokens?: number
+  stream: SummaryStream
+  signal: AbortSignal
+  onUsage?: (usage: ModelUsageData) => void
+}): Promise<{ summary: ConversationSummary; finishReason?: string }> {
+  const { history } = params
+  const summaryId = params.summaryId ?? crypto.randomUUID()
+  const createdAt = Date.now()
+  const anchor = history.findLastIndex((m) => !isEphemeral(m))
+  if (anchor < 0)
+    throw new SummaryError('no_history', 'No history to summarize')
+  let finishReason: string | undefined
+  const stream = params.stream({
+    messages: [
+      systemMessage(params.system),
+      ...history,
+      // Tagged so the server's prompt classifier skips it as product text.
+      userMessage({
+        content: withSystemInstructionTags(
+          buildCompactionSummaryPrompt(params.targetTokens),
+        ),
+      }),
+    ],
+    maxOutputTokens:
+      params.maxOutputTokens !== undefined && params.maxOutputTokens > 0
+        ? Math.min(SUMMARY_MAX_OUTPUT_TOKENS, params.maxOutputTokens)
+        : SUMMARY_MAX_OUTPUT_TOKENS,
+    signal: params.signal,
+    extraCodebuffMetadata: {
+      [COMPACTION_SUMMARY_METADATA_KEY]: '1',
+      compaction_summary_id: summaryId,
+      compaction_request_id: summaryId,
+      compaction_request_group: 'summary',
+    },
+    onFinishReason: (reason) => {
+      finishReason = reason
+    },
+    onUsageReceived: (usage) => params.onUsage?.(usage),
+  })
+  let text = ''
+  for (;;) {
+    const next = await stream.next()
+    if (next.done) {
+      if (next.value.aborted) params.signal.throwIfAborted()
+      break
+    }
+    const chunk = next.value
+    if (chunk.type === 'error')
+      throw new SummaryError('provider_error', chunk.message)
+    if (chunk.type === 'text') text += chunk.text
+  }
+  params.signal.throwIfAborted()
+  if (finishReason === 'length')
+    throw new SummaryError('output_limit', 'The summary hit the output limit')
+  const summaryText = summaryFromReply(text)
+  if (summaryText.length < MIN_SUMMARY_CHARS)
+    throw new SummaryError(
+      text.trim().length < MIN_SUMMARY_CHARS ? 'empty' : 'unrecognized',
+      'The model returned no summary',
+    )
+  return {
+    finishReason,
+    summary: {
+      id: summaryId,
+      text: summaryText,
+      coveredMessages: anchor + 1,
+      anchor: messageFingerprint(history[anchor]),
+      ...(params.contextTokens === undefined
+        ? {}
+        : { contextTokens: params.contextTokens }),
+      createdAt,
+    },
+  }
+}
+
+type Entry = {
+  latest?: ConversationSummary
+  pending?: {
+    promise: Promise<ConversationSummary | null>
+    contextTokens: number
+  }
+}
+
+const MAX_CONVERSATIONS = 200
+const conversations = new Map<string, Entry>()
+
+function entry(key: string): Entry {
+  let value = conversations.get(key)
+  if (value) {
+    conversations.delete(key)
+  } else {
+    value = {}
+  }
+  conversations.set(key, value)
+  while (conversations.size > MAX_CONVERSATIONS) {
+    const oldest = conversations.keys().next().value
+    if (oldest === undefined) break
+    conversations.delete(oldest)
+  }
+  return value
+}
+
+/** The newest of the stored summary and the one in `state`. */
+function newer(
+  a: ConversationSummary | undefined,
+  b: ConversationSummary | undefined,
+): ConversationSummary | undefined {
+  if (!a) return b
+  if (!b) return a
+  return b.createdAt > a.createdAt ? b : a
+}
+
+/**
+ * One conversation's summaries in this process: the newest finished one and
+ * the one in progress. Keyed by conversation and agent, so a summary that
+ * finishes after its run ended reaches the next turn.
+ */
+export function conversationSummaries(key: string) {
+  return {
+    /** The newest summary that still matches `messages`. */
+    latest(
+      fromState: ConversationSummary | undefined,
+      messages: Message[],
+    ): ConversationSummary | undefined {
+      const summary = newer(fromState, entry(key).latest)
+      return summary && summaryMatchesHistory(messages, summary)
+        ? summary
+        : undefined
+    },
+    pending() {
+      return entry(key).pending
+    },
+    /** Records a summary the history now carries (after it was applied). */
+    replace(summary: ConversationSummary | undefined) {
+      entry(key).latest = summary
+    },
+    /** Starts a summary unless one is running. */
+    start(
+      contextTokens: number,
+      run: () => Promise<ConversationSummary | null>,
+    ): Promise<ConversationSummary | null> {
+      const current = entry(key)
+      if (current.pending) return current.pending.promise
+      const promise = run()
+        .then((summary) => {
+          if (summary) {
+            const target = entry(key)
+            target.latest = newer(target.latest, summary)
+          }
+          return summary
+        })
+        .catch(() => null)
+        .finally(() => {
+          const target = conversations.get(key)
+          if (target?.pending?.promise === promise) target.pending = undefined
+        })
+      current.pending = { promise, contextTokens }
+      return promise
+    },
+  }
+}
+
+export function resetConversationSummariesForTest(): void {
+  conversations.clear()
+}
+
+/** Runs `generateConversationSummary` and logs its outcome; never throws
+ *  except on the caller's own abort, or a refused request when asked. */
+export async function summarizeAndLog(
+  params: Parameters<typeof generateConversationSummary>[0] & {
+    logger: Logger
+    runId: string
+    model: string
+    mode: 'background' | 'foreground'
+    /** Started while the agent's next request may be running. */
+    midTurn: boolean
+    /** The run's own signal: its abort is logged and rethrown. */
+    cancelSignal?: AbortSignal
+    /**
+     * Rethrow a request the API or provider refused (thrown by the stream: a
+     * session that ended, a policy refusal, a BYOK 4xx), so the run ends on
+     * that refusal as a turn's request would. An in-band failure (a 5xx or a
+     * cut stream, an empty reply) still returns null: trying again can work.
+     */
+    rethrowRefusals?: boolean
+    telemetry?: Record<string, string>
+  },
+): Promise<ConversationSummary | null> {
+  const {
+    logger,
+    runId,
+    model,
+    mode,
+    midTurn,
+    cancelSignal,
+    rethrowRefusals,
+    telemetry,
+    ...summaryParams
+  } = params
+  const started = Date.now()
+  const summaryId = params.summaryId ?? crypto.randomUUID()
+  let usage: ModelUsageData | undefined
+  const log = (data: Record<string, unknown>, message: string) => {
+    try {
+      logger.info(
+        {
+          axiomEvent: COMPACTION_SUMMARY_EVENT,
+          ...telemetry,
+          summary_id: summaryId,
+          agent_run_id: runId,
+          model,
+          mode,
+          mid_turn: midTurn,
+          context_token_count: params.contextTokens,
+          duration_ms: Date.now() - started,
+          ...(usage
+            ? {
+                input_tokens: usage.inputTokens,
+                cached_input_tokens: usage.cachedInputTokens,
+                output_tokens: usage.outputTokens,
+              }
+            : {}),
+          ...data,
+        },
+        message,
+      )
+    } catch {
+      // Logging must never fail a summary.
+    }
+  }
+  try {
+    const { summary, finishReason } = await generateConversationSummary({
+      ...summaryParams,
+      summaryId,
+      onUsage: (received) => {
+        usage = received
+        summaryParams.onUsage?.(received)
+      },
+    })
+    log(
+      {
+        outcome: 'completed',
+        finish_reason: finishReason,
+        summary_tokens: countTokens(summary.text),
+      },
+      'Conversation summary completed',
+    )
+    return summary
+  } catch (error) {
+    log(
+      {
+        outcome: cancelSignal?.aborted ? 'cancelled' : 'failed',
+        error_kind:
+          error instanceof SummaryError
+            ? error.kind
+            : isAbortError(error) || summaryParams.signal.aborted
+              ? 'timeout'
+              : 'provider_error',
+        // Not allowlisted for Axiom; local/debug logs only.
+        error: getErrorObject(error),
+      },
+      'Conversation summary failed',
+    )
+    if (cancelSignal?.aborted) throw error
+    if (
+      rethrowRefusals &&
+      !(error instanceof SummaryError) &&
+      !isAbortError(error) &&
+      !summaryParams.signal.aborted
+    )
+      throw error
+    return null
+  }
+}
+
+/** Waits for `promise`, or rejects when `signal` aborts first. */
+export function untilAborted<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  signal.throwIfAborted()
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new AbortError())
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', onAbort)
+    })
+  })
+}
+
+/**
+ * The reasoning settings for a summary request: the agent's own, at low
+ * effort. On a high-effort model a summary at the limit thought for minutes
+ * (a 150k-token summary took 304 s on DeepSeek V4.1 Flash) and one spent its
+ * whole output budget on reasoning, leaving no summary. Anthropic models keep
+ * their settings: changing thinking parameters there invalidates the cached
+ * messages, the summary's whole saving.
+ */
+export function summaryReasoningOptions(
+  model: string,
+  reasoning: OpenRouterReasoningOptions | undefined,
+): OpenRouterReasoningOptions | undefined {
+  if (!reasoning || !('effort' in reasoning)) return reasoning
+  if (model.startsWith('anthropic/')) return reasoning
+  if (['none', 'minimal', 'low'].includes(reasoning.effort)) return reasoning
+  return { ...reasoning, effort: 'low' }
+}

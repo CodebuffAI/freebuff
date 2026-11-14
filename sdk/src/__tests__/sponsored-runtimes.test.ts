@@ -1,9 +1,20 @@
 import { describe, expect, test } from 'bun:test'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { PassThrough } from 'stream'
 
 import {
   parseSponsoredRuntimeProbe,
   probeSponsoredRuntimes,
+  SPONSORED_RUNTIME_PROBE_SCRIPT,
 } from '../tools/sponsored-runtimes'
 
 import type { TerminalCommandBroker } from '../tools/run-terminal-command'
@@ -41,6 +52,55 @@ function broker(
         isAlive: () => false,
       }
     },
+  }
+}
+
+const testWithSystemPython = test.skipIf(!existsSync('/usr/bin/python3'))
+
+function runRuntimeProbe(options: {
+  uname: 'Darwin' | 'Linux'
+  xcodeSelectPath?: string
+  xcodeSelectStatus?: number
+  hasDevPython?: boolean
+}): string {
+  const root = mkdtempSync(join(tmpdir(), 'sponsored-runtime-probe-'))
+  const fakebin = join(root, 'fakebin')
+  const devDir = join(root, 'developer')
+  mkdirSync(fakebin)
+  if (options.hasDevPython) {
+    const devPython = join(devDir, 'usr/bin/python3')
+    mkdirSync(join(devDir, 'usr/bin'), { recursive: true })
+    writeFileSync(devPython, '#!/bin/sh\nexit 0\n')
+    chmodSync(devPython, 0o755)
+  }
+  writeFileSync(
+    fakebin + '/uname',
+    `#!/bin/sh\nprintf '%s\\n' '${options.uname}'\n`,
+  )
+  writeFileSync(
+    fakebin + '/xcode-select',
+    '#!/bin/sh\nprintf "%s\\n" "$XCODE_SELECT_PATH"\nexit "$XCODE_SELECT_STATUS"\n',
+  )
+  chmodSync(fakebin + '/uname', 0o755)
+  chmodSync(fakebin + '/xcode-select', 0o755)
+
+  try {
+    const result = Bun.spawnSync(
+      ['/bin/sh', '-c', SPONSORED_RUNTIME_PROBE_SCRIPT],
+      {
+        env: {
+          PATH: `${fakebin}:/usr/bin:/bin`,
+          XCODE_SELECT_PATH: options.xcodeSelectPath ?? devDir,
+          XCODE_SELECT_STATUS: String(options.xcodeSelectStatus ?? 0),
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+    expect(result.exitCode).toBe(0)
+    return result.stdout.toString()
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 }
 
@@ -99,4 +159,40 @@ describe('probeSponsoredRuntimes', () => {
     expect(await probeSponsoredRuntimes(floor, request)).toBeUndefined()
     expect(floor.started).toBe(0)
   })
+})
+
+describe('SPONSORED_RUNTIME_PROBE_SCRIPT Python detection', () => {
+  testWithSystemPython(
+    'skips the macOS shim when the developer Python is missing',
+    () => {
+      const output = runRuntimeProbe({ uname: 'Darwin' })
+      expect(output).not.toContain('python\n')
+      expect(parseSponsoredRuntimeProbe(output)).toEqual([])
+    },
+  )
+
+  testWithSystemPython(
+    'uses the Python inside the selected developer directory',
+    () => {
+      const output = runRuntimeProbe({ uname: 'Darwin', hasDevPython: true })
+      expect(parseSponsoredRuntimeProbe(output)).toContain('python')
+    },
+  )
+
+  testWithSystemPython('skips the macOS shim when xcode-select fails', () => {
+    const output = runRuntimeProbe({
+      uname: 'Darwin',
+      xcodeSelectStatus: 1,
+    })
+    expect(output).not.toContain('python\n')
+    expect(parseSponsoredRuntimeProbe(output)).toEqual([])
+  })
+
+  testWithSystemPython(
+    'keeps using /usr/bin/python3 on non-Darwin systems',
+    () => {
+      const output = runRuntimeProbe({ uname: 'Linux' })
+      expect(parseSponsoredRuntimeProbe(output)).toContain('python')
+    },
+  )
 })

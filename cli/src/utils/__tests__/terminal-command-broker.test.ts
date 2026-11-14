@@ -492,6 +492,9 @@ describe('terminal command broker', () => {
   })
 
   test('does not add broker recovery guidance to a command spawn failure', async () => {
+    // Driven through the broker itself: runTerminalCommand reports a missing
+    // cwd by its path (the SDK's missingDirectoryError), which would hide the
+    // broker's own message for a command it failed to spawn.
     const missingCwd = path.join(
       tmpdir(),
       `missing-freebuff-cwd-${crypto.randomUUID()}`,
@@ -499,13 +502,12 @@ describe('terminal command broker', () => {
 
     let failureMessage = ''
     try {
-      await runTerminalCommand({
-        command: `printf 'must not run'`,
-        process_type: 'SYNC',
+      await createTestBroker().start({
+        executable: process.execPath,
+        args: ['--version'],
         cwd: missingCwd,
-        timeout_seconds: 10,
-        terminalCommandBroker: createTestBroker(),
-      })
+        env: { PATH: process.env.PATH ?? '' },
+      }).completion
     } catch (error) {
       failureMessage = error instanceof Error ? error.message : String(error)
     }

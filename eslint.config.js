@@ -136,6 +136,46 @@ export default tseslint.config(
     },
   },
 
+  // Freebuff admin (S62): every /web/admin page is built on
+  // `@/components/admin-ui`. Keep the old kits out so a page cannot drift back.
+  {
+    files: ['freebuff/web/src/app/web/admin/**/*.{js,mjs,cjs,ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@/vly/components/ui',
+                '@/vly/components/ui/*',
+                '@/components/ui',
+                '@/components/ui/*',
+                '**/vly/components/ui',
+                '**/vly/components/ui/*',
+              ],
+              message:
+                'Admin pages use @/components/admin-ui, not the vly ui kit (S62). `@/components/ui/*` resolves to it too.',
+            },
+            {
+              group: ['**/ads/console/ui', '**/ads/console/ui.tsx'],
+              message:
+                'Admin pages use @/components/admin-ui, not the ads console kit (S62).',
+            },
+            {
+              group: [
+                '**/admin/AdminPageFrame',
+                '**/admin/AdminPageFrame.tsx',
+              ],
+              message:
+                'Use PageColumn and PageHeader from @/components/admin-ui (S62).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // Prettier config (last to override formatting rules)
   eslintConfigPrettier,
 )

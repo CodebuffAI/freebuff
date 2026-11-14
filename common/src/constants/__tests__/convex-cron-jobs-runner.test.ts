@@ -17,16 +17,17 @@ describe('Convex cron job runners (COD-742)', () => {
     // Owen's go, 2026-10-06: the jobs that need only the worker env.
     expect(CONVEX_CRON_JOB_RUNNERS).toEqual({
       enforce_processing_deadlines: 'graphile',
-      reconcile_pr_delivery: 'convex',
+      // 2026-10-28 (COD-742): its Convex cron is deleted.
+      reconcile_pr_delivery: 'graphile',
       reconcile_usage_limits: 'graphile',
       enforce_legacy_usage_limits: 'graphile',
       audit_fleet_usage: 'graphile',
-      sweep_freebuff_runs: 'convex',
+      sweep_freebuff_runs: 'graphile',
       // Built dark 2026-10-07; triggers flipped on Owen's go, 2026-10-14.
       sweep_cli_agent_runs: 'graphile',
       rotate_github_tokens: 'graphile',
       sweep_request_intent_eval_cohorts: 'graphile',
-      fire_automations: 'convex',
+      fire_automations: 'graphile',
     })
   })
 

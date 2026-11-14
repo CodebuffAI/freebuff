@@ -40,7 +40,7 @@ import { getAdDeviceInfo, getCliAdRequestUserAgent } from './ad-client-identity'
 import { getCliEnv } from './env'
 import { getAuthToken } from './auth'
 import { logger } from './logger'
-import { sponsoredCliCapability } from './sponsored-cli-capability'
+import { cachedSponsoredCliCapability } from './sponsored-cli-capability'
 import { requestAgenticOffer } from './sponsored-proposal-api'
 import { sponsoredWorkspaceId } from './sponsored-proposal-target'
 
@@ -210,7 +210,7 @@ export type AgenticOfferDeps = {
 
 const defaultDeps: AgenticOfferDeps = {
   getToken: getAuthToken,
-  capability: (root) => sponsoredCliCapability(root),
+  capability: cachedSponsoredCliCapability,
   workspaceId: sponsoredWorkspaceId,
   localTestCampaign: cliLocalTestCampaign,
   request: requestAgenticOffer,

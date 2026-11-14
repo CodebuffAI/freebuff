@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
-import { getInlineAdLayout, MIN_INLINE_AD_WIDTH } from '../../ads/inline-ad-layout'
+import {
+  getInlineAdLayout,
+  MIN_INLINE_AD_WIDTH,
+} from '../../ads/inline-ad-layout'
 import {
   PLACEMENT_PREVIEW_WIDTHS,
   PLACEMENT_SLOTS,
@@ -15,31 +18,15 @@ import {
   HOUSE_AD_TEXT_BUDGET,
   HOUSE_AD_TITLE_BUDGET,
   HOUSE_AD_VARIATIONS,
+  HOUSE_SOL_AD_VARIATIONS,
   HOUSE_BREAK_AD_PLACEMENT_IDS,
   HOUSE_BREAK_AD_VARIATIONS,
 } from '../freebuff-house-ad'
 
 import type { HouseAdCreative, HouseAdSurface } from '../freebuff-house-ad'
 
-/**
- * The subscription promotion's copy.
- *
- * The point of these tests is that the width budget is CHECKED rather than
- * remembered. Every inline creative here is written to a character count taken
- * from the real renderer, and three things move it without anyone touching this
- * copy: the layout function, the preview widths, and the subscription price
- * (which is interpolated, so `$8/mo` becoming `$10/mo` lengthens every line).
- * Each of those is a silent truncation waiting to happen, so each is asserted.
- */
-
-/**
- * The width from which a description must render uncut.
- *
- * Matches `MIN_INLINE_WIDTH_WITH_DESTINATION` in the layout module by
- * coincidence of design rather than by import: that constant is about whether
- * the destination label is drawn, and this is about what we hold our own copy
- * to. Tying them together would make a change to one silently move the other.
- */
+// The legacy budgets remain checked for older seeds. Current approved copy
+// uses campaign field limits and can ellipsize in narrow CLI previews.
 const DESCRIPTION_ENFORCED_FROM = 48
 
 const SURFACES: HouseAdSurface[] = [
@@ -123,25 +110,22 @@ describe('house ad width budget', () => {
     expect(worstDescription).toBe(HOUSE_AD_TEXT_BUDGET)
   })
 
-  test.each(everyInlineCreative())(
-    '$surface variation $index survives every preview width uncut',
+  test.each([
+    ...everyInlineCreative(),
+    ...HOUSE_SOL_AD_VARIATIONS.map((creative, index) => ({
+      surface: 'sol',
+      index,
+      creative,
+    })),
+  ])(
+    '$surface variation $index fits the campaign contract and wide CLI preview',
     ({ creative }) => {
-      expect(creative.title.length).toBeLessThanOrEqual(HOUSE_AD_TITLE_BUDGET)
-      expect(creative.adText.length).toBeLessThanOrEqual(HOUSE_AD_TEXT_BUDGET)
-
-      // The budgets above are the arithmetic; this is the renderer's own
-      // verdict. A creative passes only if what the reader sees is the string
-      // we wrote -- no ellipsis, at the renderer floor or any width the
-      // console previews.
-      for (const width of [MIN_INLINE_AD_WIDTH, ...PLACEMENT_PREVIEW_WIDTHS]) {
-        const layout = getInlineAdLayout(creative, width)
-        expect(layout.title).toBe(creative.title)
-        // Below 48 the description genuinely cannot hold a sentence from
-        // anybody, so it is allowed to truncate there and nowhere else.
-        if (width >= DESCRIPTION_ENFORCED_FROM) {
-          expect(layout.description).toBe(creative.adText)
-        }
-      }
+      expect(creative.title.length).toBeLessThanOrEqual(120)
+      expect(creative.adText.length).toBeLessThanOrEqual(500)
+      expect(creative.cta.length).toBeLessThanOrEqual(80)
+      const layout = getInlineAdLayout(creative, 100)
+      expect(layout.title).toBe(creative.title)
+      expect(layout.description).toBe(creative.adText)
     },
   )
 })
@@ -227,11 +211,14 @@ describe('house ad catalog', () => {
       /jump the/i,
       /starts? (right )?now/i,
       /instant/i,
+      /every model/i,
+      /unlimited/i,
     ]
     const everyCreative = [
       ...everyInlineCreative().map(({ creative }) => creative),
       ...everyBreakCreative().map(({ creative }) => creative),
       ...HOUSE_AD_DISPLAY_VARIATIONS,
+      ...HOUSE_SOL_AD_VARIATIONS,
     ]
     for (const creative of everyCreative) {
       const copy = `${creative.title} ${creative.adText}`
@@ -260,12 +247,10 @@ describe('house ad catalog', () => {
     }
   })
 
-  test('only Spotlight uses the accent markup, because only Spotlight draws it', () => {
-    // MEASURED, on the `showcase-house` shot: `splitMarkedTitle` belongs to the
-    // Spotlight card. The Showcase banner renders its title as plain text, so a
-    // `*Pro*` there reaches the reader with the asterisks in it. Keying this
-    // catalog by placement is what makes the difference expressible; this is
-    // what stops a later copy edit putting the markup back.
+  test('Showcase copy carries no accent markup, because Showcase does not draw it', () => {
+    // MEASURED, on the `showcase-house` shot: the Showcase banner renders its
+    // title as plain text, so a `*Pro*` there reaches the reader with the
+    // asterisks in it.
     for (const creative of HOUSE_BREAK_AD_VARIATIONS['Desktop-Showcase']) {
       expect(creative.title).not.toContain('*')
     }
@@ -295,10 +280,8 @@ describe('house ad catalog', () => {
         HOUSE_BREAK_AD_VARIATIONS[placementId].length,
       ).toBeGreaterThanOrEqual(2)
     }
-    // Intermission is deliberately out of scope (COD-486): it is the one break
-    // format this campaign does not run, and a stray entry here would put the
-    // promotion in front of a reader mid-task with no way to tell.
-    expect(HOUSE_BREAK_AD_PLACEMENT_IDS).not.toContain('Desktop-Intermission')
+    // Spotlight and Intermission were removed 2026-11-12.
+    expect(HOUSE_BREAK_AD_PLACEMENT_IDS).toEqual(['Desktop-Showcase'])
   })
 
   test('the floor can never serve a break creative', () => {

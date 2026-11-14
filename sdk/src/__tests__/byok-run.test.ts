@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { afterEach, describe, expect, test } from 'bun:test'
+import { COMPACTION_SUMMARY_PROMPT_OPENING } from '@codebuff/common/constants/compaction-summary'
 
 import { CodebuffClient } from '../client'
 import { ByokConnectionStateError, createByokConnectionStore, type ByokConnection } from '../byok'
@@ -40,11 +41,17 @@ describe('direct BYOK SDK runs', () => {
   const originalFetch = globalThis.fetch
   afterEach(() => { globalThis.fetch = originalFetch })
 
-  test('manual compaction makes no provider request and resumes from the saved summary', async () => {
+  test('manual compaction swaps in the structured summary and resumes from it', async () => {
     const requests: any[] = []
+    let summaries = 0
     globalThis.fetch = (async (input, init) => {
       expect(String(input)).toBe('http://127.0.0.1:9876/v1/chat/completions')
       const body = JSON.parse(String(init?.body))
+      if (JSON.stringify(body.messages.at(-1)).includes(COMPACTION_SUMMARY_PROMPT_OPENING)) {
+        summaries++
+        return sse({ id: 'summary', object: 'chat.completion.chunk', created: 1, model: body.model,
+          choices: [{ index: 0, delta: { content: `## Objective\n${'- MODEL_SUMMARY: document retry behavior\n'.repeat(10)}` }, finish_reason: 'stop' }] })
+      }
       requests.push(body)
       return sse({ id: 'work', object: 'chat.completion.chunk', created: 1, model: body.model,
         choices: [{ index: 0, delta: { content: requests.length === 1 ? 'READ_FINDING: timeout uses milliseconds. '.repeat(1000) : 'Documented.' }, finish_reason: 'stop' }] })
@@ -57,16 +64,17 @@ describe('direct BYOK SDK runs', () => {
     const compacted = await client.run({ agent: agent.id, prompt: '/compact', previousRun: original, onCompaction: (receipt) => receipts.push(receipt) })
     expect(compacted.output.type).not.toBe('error')
     expect(requests).toHaveLength(1)
+    expect(summaries).toBe(1)
     expect(receipts).toHaveLength(1)
     expect(receipts[0].trigger).toBe('manual')
-    expect(receipts[0].summary).toContain('READ_FINDING')
-    expect(receipts[0].summary).toContain('[...truncated')
+    expect(receipts[0].summary).toContain('MODEL_SUMMARY')
     expect(JSON.stringify(original)).toBe(saved)
     const resumed = await client.run({ agent: agent.id, prompt: 'Continue.', previousRun: JSON.parse(JSON.stringify(compacted)) })
     expect(resumed.output.type).not.toBe('error')
     expect(requests).toHaveLength(2)
-    expect(JSON.stringify(requests.at(-1).messages)).toContain('<conversation_summary>')
-    expect(JSON.stringify(requests.at(-1).messages).length).toBeLessThan(JSON.stringify(requests[0].messages).length + 40_000)
+    const sent = JSON.stringify(requests.at(-1).messages)
+    expect(sent).toContain('<conversation_summary>')
+    expect(sent).not.toContain('READ_FINDING')
   })
 
   test('runs a real local write-file tool loop without any Codebuff request', async () => {
@@ -165,6 +173,34 @@ describe('direct BYOK SDK runs', () => {
     if (legacy.output.type !== 'error') throw new Error('expected legacy pin error')
     expect(legacy.output.message).toContain('no inference source pin')
   }, 30_000)
+
+  test('an output limit of window - 1 still gives the root and a carried helper a valid budget', async () => {
+    const bodies: any[] = []
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      bodies.push(JSON.parse(String(init?.body)))
+      return sse({ id: 'done', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [{ index: 0, delta: { content: 'Done.' }, finish_reason: 'stop' }] })
+    }) as unknown as typeof fetch
+    // A hosted turn's helper stays in the chat's saved state, and the next
+    // turn on the user's key validates it with the root (Cloud, 2026-11).
+    const helper: AgentDefinition = {
+      id: 'researcher-web', displayName: 'Web Researcher', model: 'openai/gpt-6-luna',
+      toolNames: ['read_url'], systemPrompt: 'Research the question.',
+    }
+    const client = new CodebuffClient({
+      agentDefinitions: [agent, helper],
+      byok: connection({ contextWindow: 131_072, maxOutputTokens: 131_071 }),
+    })
+    const result = await client.run({ agent: agent.id, prompt: 'Summarize.' })
+
+    expect(result.output.type).not.toBe('error')
+    const templates = result.sessionState!.fileContext.agentTemplates
+    for (const id of [agent.id, helper.id]) {
+      expect(templates[id]!.compactContext).toMatchObject({ maxContextLength: 58_982, maxOutputTokens: 65_536 })
+    }
+    // The request asks for no more output than the window leaves it.
+    expect(bodies).toHaveLength(1)
+    expect(bodies[0].max_tokens ?? bodies[0].max_completion_tokens).toBe(65_536)
+  })
 
   test('refuses server-side web_search without contacting a hosted backend', async () => {
     const requests: string[] = []

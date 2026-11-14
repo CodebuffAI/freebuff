@@ -238,7 +238,7 @@ Capture learnings for future sessions:
    b. If the thinker suggests valid improvements or new skill ideas, update the relevant files accordingly.
    c. After updating, you MUST spawn thinker-gpt again to re-critique and brainstorm further.
    d. Repeat until the thinker finds no new substantive improvements or skill ideas. Do NOT skip the re-critique — every revision must be verified.`}${noAskUser ? '' : `
-${noLearning ? '1' : '4'}. Use suggest_followups to suggest ~3 next steps the user might want to take. ${FOLLOWUP_STYLE_GUIDANCE}`}
+${noLearning ? '1' : '4'}. After your final summary, use suggest_followups as the last thing (no tool call after it) to suggest ~3 next steps the user might want to take. ${FOLLOWUP_STYLE_GUIDANCE}`}
 
 Make sure to narrate to the user what you are doing and why you are doing it as you go along. Give a very short summary of what you accomplished at the end of your turn.
 

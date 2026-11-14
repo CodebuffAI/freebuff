@@ -5,6 +5,7 @@ import {
 import {
   FREEBUFF_GEMINI_38_FLASH_MODEL_ID,
   FREEBUFF_GPT_61_SOL_MODEL_ID,
+  FREEBUFF_GPT_61_TERRA_MODEL_ID,
   FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
   freebuffModelIdMatches,
 } from './freebuff-models'
@@ -29,6 +30,8 @@ const FREEBUFF_DESKTOP_SLOT_BOUND_MODEL_IDS = [
   // the same card (2026-10-13).
   FREEBUFF_GPT_61_SOL_MODEL_ID,
   FREEBUFF_GEMINI_4_ARGON_MODEL_ID,
+  // GPT-6.1 Terra (2026-10-26): one session a day, like Sol, so one tab.
+  FREEBUFF_GPT_61_TERRA_MODEL_ID,
   // Claude Haiku 5.5 with full context, since 2026-10-14. Both names, so
   // the server and Desktop's catalog picker agree.
   FREEBUFF_CLAUDE_HAIKU_55_MODEL_ID,
@@ -40,8 +43,20 @@ const FREEBUFF_DESKTOP_SLOT_BOUND_MODEL_IDS = [
 
 const FREEBUFF_DESKTOP_CONCURRENCY_LIMITS = {
   free: { 'slot-bound': 1, 'multi-tab': 3 },
+  // Free full access in the country tiers below (2026-10-29): 11% of those
+  // accounts reached three ordinary tabs in two weeks and half of them then hit
+  // the cap, with no sign it drove anyone away.
+  freeWide: { 'slot-bound': 1, 'multi-tab': 5 },
   subscriber: { 'slot-bound': 3, 'multi-tab': 8 },
 } as const
+
+/** Country tiers (`FreebuffCountryTier`) whose free full-access accounts get
+ *  `freeWide`. Strings, because the CLI imports this module and the tier type
+ *  lives in freebuff-freebucks (cut from the public export). */
+const FREEBUFF_DESKTOP_WIDE_COUNTRY_TIERS: ReadonlySet<string> = new Set([
+  'tier1',
+  'tier2',
+])
 
 /**
  * Tabs in each bucket for an account the server exempts from the tab cap
@@ -55,6 +70,7 @@ export function freebuffDesktopConcurrencyLimits(
   accessTier: FreebuffAccessTier | null | undefined,
   hasPaidPlan: boolean,
   uncapped = false,
+  countryTier?: string | null,
 ): Record<FreebuffDesktopConcurrency, number> {
   if (uncapped) {
     return {
@@ -65,8 +81,9 @@ export function freebuffDesktopConcurrencyLimits(
   if (accessTier === 'limited' && !hasPaidPlan) {
     return { 'slot-bound': 1, 'multi-tab': 0 }
   }
-  return hasPaidPlan
-    ? FREEBUFF_DESKTOP_CONCURRENCY_LIMITS.subscriber
+  if (hasPaidPlan) return FREEBUFF_DESKTOP_CONCURRENCY_LIMITS.subscriber
+  return FREEBUFF_DESKTOP_WIDE_COUNTRY_TIERS.has(countryTier ?? '')
+    ? FREEBUFF_DESKTOP_CONCURRENCY_LIMITS.freeWide
     : FREEBUFF_DESKTOP_CONCURRENCY_LIMITS.free
 }
 
@@ -126,9 +143,11 @@ export const FREEBUFF_CLIENT_DESKTOP = 'desktop'
 
 /**
  * The calling app's own version (`0.0.212`, `1.4.0`), sent by the CLI and
- * Desktop on session calls. Observe-only: friction lines
- * (`freebuff_session_refused`) carry it so a refusal can be tied to the build
- * that saw it. Never gates anything; a client may omit it.
+ * Desktop on session calls and on chat completions (where the user agent is
+ * the AI SDK's on every client). Observe-only: friction lines
+ * (`freebuff_session_refused`) and the feedback flag line
+ * (`prompt.feedback_flag`) carry it so a report can be tied to the build that
+ * saw it. Never gates anything; a client may omit it.
  */
 export const FREEBUFF_CLIENT_VERSION_HEADER = 'x-freebuff-client-version'
 

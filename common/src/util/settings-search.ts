@@ -9,6 +9,7 @@ type PageLabel =
   | 'MCP'
   | 'Updates'
   | 'Account standing'
+  | 'Apps & downloads'
 
 // Index the settings themselves, including common names people use for them.
 // Keep this alongside the shared navigation, without mounting inactive pages or
@@ -23,7 +24,13 @@ const topics: Record<PageLabel, Topic[]> = {
   General: [
     {
       label: 'Advanced Mode',
-      keywords: 'composer mode buttons skills context usage slash commands',
+      keywords:
+        'composer mode buttons skills context usage slash commands model picker show all models',
+    },
+    {
+      label: 'Show all models',
+      keywords:
+        'model picker list more models one model simple thinking levels fast default max',
     },
     { label: 'Feedback', keywords: 'report issue bug feature request help' },
     {
@@ -38,6 +45,11 @@ const topics: Record<PageLabel, Topic[]> = {
     {
       label: 'Full access',
       keywords: 'permissions approval administrator commands',
+      surface: 'desktop',
+    },
+    {
+      label: 'Pre-sync projects to Cloud',
+      keywords: 'cloud upload sync background faster move',
       surface: 'desktop',
     },
     {
@@ -69,6 +81,23 @@ const topics: Record<PageLabel, Topic[]> = {
     {
       label: 'Delete account',
       keywords: 'remove account data privacy',
+      surface: 'web',
+    },
+  ],
+  'Apps & downloads': [
+    {
+      label: 'Desktop app',
+      keywords: 'download install mac windows linux desktop app',
+      surface: 'web',
+    },
+    {
+      label: 'Command line',
+      keywords: 'cli terminal npm install command line',
+      surface: 'web',
+    },
+    {
+      label: 'Mobile app',
+      keywords: 'phone iphone android ios app store google play qr code mobile',
       surface: 'web',
     },
   ],
@@ -262,6 +291,7 @@ export function searchSettings<T extends SettingsSearchPage>(
   query: string,
   pages: readonly T[],
   surface: Surface,
+  hidden: readonly string[] = [],
 ): { page: T; detail?: string }[] {
   const normalized = normalize(query)
   if (!normalized) return query.trim() ? [] : pages.map((page) => ({ page }))
@@ -271,6 +301,7 @@ export function searchSettings<T extends SettingsSearchPage>(
       let detail: string | undefined
       for (const topic of topics[page.label]) {
         if (topic.surface && topic.surface !== surface) continue
+        if (hidden.includes(topic.label)) continue
         const value = score(
           normalized,
           topic.label,

@@ -41,6 +41,7 @@ import {
   bucketTurnIndex,
   bucketUptime,
   cpuFamilyOf,
+  cpuTierOf,
   jitterOf,
   parseAdClientContext,
   primaryLanguageOf,
@@ -800,6 +801,7 @@ function systemSection(system: AdContextSystem) {
         : undefined,
     cores: cores !== undefined ? bucketCores(cores) : undefined,
     cpu: system.cpuModel ? cpuFamilyOf(system.cpuModel) : undefined,
+    cpuTier: system.cpuModel ? cpuTierOf(system.cpuModel) : undefined,
     diskFree: disk !== undefined && disk >= 0 ? bucketDiskFree(disk) : undefined,
   })
 }

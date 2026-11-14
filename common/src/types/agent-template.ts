@@ -138,6 +138,8 @@ export type AgentTemplate<
   windowedFileReads?: boolean
   /** One final verification opportunity after tool work, within the existing step budget. */
   completionCheck?: boolean
+  /** List the spawnable agents once in the system prompt instead of after every user prompt. */
+  spawnableAgentsInSystemPrompt?: boolean
   suppressCommitAttribution?: boolean
   compactContext?:
     | boolean

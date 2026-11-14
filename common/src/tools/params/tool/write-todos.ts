@@ -14,23 +14,26 @@ const inputSchema = z
         z.array(
           z.object({
             task: z.string().describe('Description of the task'),
-            completed: z.boolean().describe('Whether the task is completed'),
+            completed: z
+              .boolean()
+              .default(false)
+              .describe('Whether the task is completed'),
           }),
         ),
       )
       .describe(
-        "List of todos with their completion status. Add ALL of the applicable tasks to the list, so you don't forget to do anything. Try to order the todos the same way you will complete them. Do not mark todos as completed if you have not completed them yet!",
+        "List of todos with their completion status. List every step the user's request requires, so you don't forget any, and nothing it does not: no extra features, refactors or polish. Try to order the todos the same way you will complete them. Do not mark todos as completed if you have not completed them yet!",
       ),
   })
   .describe(
-    'Write a todo list to track tasks for multi-step implementations. Use this frequently to maintain an updated step-by-step plan.',
+    'Write a todo list to track tasks for multi-step implementations. Keep it updated as you complete each step.',
   )
 const description = `
-Use this tool to track your objectives through an ordered step-by-step plan. Call this tool after you have gathered context on the user's request to plan out the implementation steps for the user's request.
+Use this tool to track your objectives through an ordered step-by-step plan, for requests that need several distinct steps. Skip it for a question, a single edit or another small change. Call it after you have gathered context on the user's request to plan the steps that request needs. The list is the user's request broken down, not a place to add work they did not ask for.
 
 After completing each todo step, call this tool again to update the list and mark that task as completed. Note that each time you call this tool, rewrite ALL todos with their current status.
 
-Use this tool frequently as you work through tasks to update the list of todos with their current status. Doing this is extremely useful because it helps you stay on track and complete all the requirements of the user's request. It also helps inform the user of your plans and the current progress, which they want to know at all times.
+Update the list as you work through it. This helps you stay on track and complete all the requirements of the user's request, and it shows the user your plan and current progress.
 
 Example:
 ${$getNativeToolCallExampleString({

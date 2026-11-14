@@ -3,6 +3,15 @@ import {
   isWebDesktopPlacement,
   webDesktopPlacement,
 } from '../ads/web-desktop-placements'
+import {
+  canonicalPlacementId,
+  legacyPlacementId,
+} from '../ads/placement-aliases'
+import {
+  DISPLAY_AD_SERVING_LIVE,
+  isDarkDisplayAdPlacement,
+  isDisplayAdServingLive,
+} from '../ads/display-ads/serving'
 /**
  * The placements ad rail — first-party text ads in our own inventory.
  *
@@ -98,16 +107,18 @@ export const ATTRIBUTION_WINDOW_COPY = `Activation counts within ${ACTIVATION_AT
  *
  * `inline` is every slot that shipped before sponsor breaks: a card in the
  * flow of a transcript or a waiting room, text-first, with an optional small
- * logo. The other three are the SPONSOR BREAK family -- an image-led unit that
- * interrupts rather than accompanies, and that a text-only creative cannot
- * fill at all.
+ * logo. `showcase` is what is left of the SPONSOR BREAK family -- an
+ * image-led unit that a text-only creative cannot fill at all. (The two
+ * interrupting break formats, `spotlight` and `intermission`, were removed on
+ * 2026-11-12; their placement ids are answered `placement_retired`, see
+ * `common/src/ads/retired-placements.ts`.)
  *
  * WHY THIS IS NOT A SURFACE. A surface is what the request came from, and
  * every consumer of it is a total map: adding one costs a house creative, a
  * pinned row in the opportunity rollup and an entry in every
  * `Record<AdSurface, ...>`. A break is the same Desktop chat surface as the
  * inline slot beside it, asking for a different renderer -- so the format is
- * a property of the SLOT, and the three break ids keep `surface: 'cli_chat'`.
+ * a property of the SLOT, and the break id keeps `surface: 'cli_chat'`.
  *
  * The serving consequences live in `packages/internal/src/ad-serving`: a
  * creative with no hero image never fills a non-inline placement, and the
@@ -116,12 +127,32 @@ export const ATTRIBUTION_WINDOW_COPY = `Activation counts within ${ACTIVATION_AT
 export const PLACEMENT_FORMATS = [
   'inline',
   'showcase',
-  'spotlight',
-  'intermission',
   'partner',
   'billboard',
+  'branded',
 ] as const
 export type PlacementFormat = (typeof PLACEMENT_FORMATS)[number]
+
+/**
+ * The formats the operator `ad_placement` catalog (platform Convex) may
+ * STORE: every format but `branded`. Convex is being retired (COD-742) and
+ * its stored validator is frozen, and the catalog no longer reaches serving,
+ * so a branded slot's format is never written there: its catalog row leaves
+ * `format` unset and `resolveCatalogPlacementFormat` degrades that to the
+ * static registry, which says `branded`.
+ */
+export type CatalogPlacementFormat = Exclude<PlacementFormat, 'branded'>
+export const CATALOG_PLACEMENT_FORMATS: readonly CatalogPlacementFormat[] =
+  PLACEMENT_FORMATS.filter(isCatalogPlacementFormat)
+
+export function isCatalogPlacementFormat(
+  format: string,
+): format is CatalogPlacementFormat {
+  return (
+    format !== 'branded' &&
+    (PLACEMENT_FORMATS as readonly string[]).includes(format)
+  )
+}
 
 /**
  * The formats that are a sponsor break.
@@ -134,8 +165,6 @@ export type PlacementFormat = (typeof PLACEMENT_FORMATS)[number]
  */
 export const SPONSOR_BREAK_FORMATS = [
   'showcase',
-  'spotlight',
-  'intermission',
 ] as const satisfies readonly PlacementFormat[]
 
 /**
@@ -189,45 +218,34 @@ export function isBillboardFormat(format: PlacementFormat): boolean {
 }
 
 /**
+ * BRANDED PLACEMENTS: the display-ad units drawn in the sponsor's own colours
+ * (`common/src/ads/display-ads/`): Desktop's top banner, home takeover and
+ * Settings › MCP featured row, the CLI's launch splash, statusline and
+ * `/deals`.
+ *
+ * A TEXT creative (title, body, CTA, logo) plus the creative's
+ * `brand_color` / `brand_ink`, so no hero and no artwork is required. Like a
+ * billboard it is competitive first-party inventory that no paid network can
+ * draw, so a branded request takes the billboard ROUTE -- the paid
+ * first-party auction alone, never Gravity, never the house floor
+ * (`billboardRequestShape`, `dropUnfitBillboardFills`). Every branded slot is
+ * DARK until its id is in `DISPLAY_AD_SERVING_LIVE`
+ * (`common/src/ads/display-ads/serving.ts`).
+ */
+export function isBrandedFormat(format: PlacementFormat): boolean {
+  return format === 'branded'
+}
+
+/**
  * Formats no paid network, CPC backfill or house floor may fill, served by
  * the first-party CPM leg alone.
  */
 export function isFirstPartyOnlyFormat(format: PlacementFormat): boolean {
-  return isPartnerFormat(format) || isBillboardFormat(format)
-}
-
-/**
- * The formats that INTERRUPT, which is a strictly narrower question than
- * {@link isSponsorBreakFormat} and the only one the daily cap may ask.
- *
- * The two predicates exist because COD-453 conflated two properties that
- * happen to coincide for two of the three break formats:
- *
- * - WHAT A CREATIVE MUST LOOK LIKE. Image-led, hero required, tight copy, and
- *   never the text-only house floor. True of all three, which is what
- *   {@link isSponsorBreakFormat} answers, and it stays the predicate every
- *   creative-shape rule reads.
- * - WHAT IT COSTS THE READER. `spotlight` and `intermission` take the screen
- *   away from the work in front of them, which is why they are rationed: one
- *   per UTC day, never inside the first ten minutes of a session, and never at
- *   all on a deployment with no Redis to count them. `showcase` takes nothing
- *   away -- it is the SAME slot above the composer that already holds a
- *   sponsored banner every sixty seconds, drawn taller (COD-455).
- *
- * Capping Showcase makes its own experiment unrunnable rather than merely
- * conservative: the treatment arm would see the tall card for at most one
- * rotation a day and be byte-identical to control for the rest of it, so the
- * format test would measure nothing and the null result would read as "the
- * format made no difference". A frequency cap on a unit whose frequency is
- * fixed by the arm it is being compared against is not a safety margin.
- */
-export const INTERRUPTING_BREAK_FORMATS: readonly PlacementFormat[] = [
-  'spotlight',
-  'intermission',
-]
-
-export function isInterruptingBreakFormat(format: PlacementFormat): boolean {
-  return INTERRUPTING_BREAK_FORMATS.includes(format)
+  return (
+    isPartnerFormat(format) ||
+    isBillboardFormat(format) ||
+    isBrandedFormat(format)
+  )
 }
 
 /**
@@ -258,94 +276,103 @@ export function isInterruptingBreakFormat(format: PlacementFormat): boolean {
  * exclusivity term. That term does not exist, so chat is sellable -- and it is
  * where nearly all the volume is.
  *
- * `Single-Ad-Unit-1` and `Desktop-Below-Chat` are live legacy slots as well as
- * the primary inline units. They remain sellable until their clients retire;
- * leaving either out would route an advertiser's inventory straight past a
- * rendered surface.
+ * `Above-Input-CLI` (was `Single-Ad-Unit-1`) and
+ * `Above-Input-Desktop` (was `Desktop-Below-Chat`) are live
+ * slots as well as the primary inline units. They remain sellable until their
+ * clients retire; leaving either out would route an advertiser's inventory
+ * straight past a rendered surface.
+ *
+ * Ids are CANONICAL (COD-1043, `ads/placement-aliases.ts`). Shipped clients,
+ * stored targets and history still use the legacy names, so every lookup here
+ * canonicalises first and a legacy id resolves exactly as its new name.
  */
 const ORIGINAL_PLACEMENT_SLOTS = [
-  ...IOS_AD_PLACEMENTS.map(({ id }) => ({
-    id,
+  ...IOS_AD_PLACEMENTS.map((slot) => ({
+    id: slot.id,
     surface: IOS_AD_SURFACE,
-    available: true,
+    available: 'available' in slot ? slot.available : true,
     format: 'inline' as const,
   })),
-  ...ANDROID_AD_PLACEMENTS.map(({ id }) => ({
-    id,
+  ...ANDROID_AD_PLACEMENTS.map((slot) => ({
+    id: slot.id,
     surface: ANDROID_AD_SURFACE,
-    available: true,
+    available: 'available' in slot ? slot.available : true,
     format: 'inline' as const,
   })),
   {
-    id: 'waiting-room-1',
+    id: 'Waiting-Room-1-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   {
-    id: 'waiting-room-2',
+    id: 'Waiting-Room-2-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   {
-    id: 'waiting-room-3',
+    id: 'Waiting-Room-3-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   {
-    id: 'waiting-room-4',
+    id: 'Waiting-Room-4-CLI',
     surface: 'waiting_room',
     available: true,
     format: 'inline',
   },
   // The CLI transcript's inline slot. One id, re-auctioned per eligible slot.
   {
-    id: 'CLI-Chat-Inline',
+    id: 'Inline-After-Agent-CLI',
     surface: 'cli_chat',
     available: true,
+    format: 'inline',
+  },
+  // The CLI's one-line link after an answer. Dark until the ad network
+  // approves the format (see #10807); not self-serve.
+  {
+    id: 'Inline-Link-After-Agent-CLI',
+    surface: 'cli_chat',
+    available: false,
     format: 'inline',
   },
   // Desktop's inline slot -- the largest single placement by fill volume.
   {
-    id: 'Desktop-Inline-Chat',
+    id: 'Inline-After-Agent-Desktop',
+    surface: 'cli_chat',
+    available: true,
+    format: 'inline',
+  },
+  // The one-line link at the end of a Desktop reply: favicon, link text, "Ad".
+  // Served when the `inlineAdStyle` policy arm is `link`; not self-serve.
+  {
+    id: 'Inline-Link-After-Agent-Desktop',
+    surface: 'cli_chat',
+    available: false,
+    format: 'inline',
+  },
+  {
+    id: 'Above-Input-Desktop',
     surface: 'cli_chat',
     available: true,
     format: 'inline',
   },
   {
-    id: 'Desktop-Below-Chat',
+    id: 'Above-Input-CLI',
     surface: 'cli_chat',
     available: true,
     format: 'inline',
   },
-  {
-    id: 'Single-Ad-Unit-1',
-    surface: 'cli_chat',
-    available: true,
-    format: 'inline',
-  },
-  // The three sponsor breaks. Same surface as the inline Desktop slots on
-  // purpose -- see {@link PLACEMENT_FORMATS} for why the format and not the
-  // surface is what distinguishes them.
-  {
-    id: 'Desktop-Spotlight',
-    surface: 'cli_chat',
-    available: true,
-    format: 'spotlight',
-  },
+  // The sponsor break that remains. Same surface as the inline Desktop slots
+  // on purpose -- see {@link PLACEMENT_FORMATS} for why the format and not the
+  // surface is what distinguishes it.
   {
     id: 'Desktop-Showcase',
     surface: 'cli_chat',
     available: true,
     format: 'showcase',
-  },
-  {
-    id: 'Desktop-Intermission',
-    surface: 'cli_chat',
-    available: true,
-    format: 'intermission',
   },
   // The partner slots -- two in Desktop, two in the CLI. `available: false`
   // is the exclusivity: the campaign-builder picker reads that flag, so none
@@ -409,20 +436,38 @@ const ORIGINAL_PLACEMENT_SLOTS = [
     available: false,
     format: 'billboard',
   },
+  // The display-ad (branded) units. `available` is the serving gate: an id is
+  // sellable exactly when it is in `DISPLAY_AD_SERVING_LIVE`, and until then
+  // it is refused by targeting validation and withheld by the serve path.
+  ...(
+    [
+      'Desktop-Top-Banner',
+      'Desktop-Home-Takeover',
+      'Desktop-MCP-Featured',
+      'CLI-Splash',
+      'CLI-Statusline',
+      'CLI-Deals',
+    ] as const
+  ).map((id) => ({
+    id,
+    surface: 'cli_chat' as const,
+    available: isDisplayAdServingLive(id),
+    format: 'branded' as const,
+  })),
   {
-    id: 'Web-Chat-After-User-Message',
+    id: 'Legacy-Inline-After-User-Web',
     surface: 'freebuff_web_chat',
     available: true,
     format: 'inline',
   },
   {
-    id: 'Web-Chat-After-Assistant-Message',
+    id: 'Legacy-Inline-After-Agent-Web',
     surface: 'freebuff_web_chat',
     available: true,
     format: 'inline',
   },
   {
-    id: 'Chat-Assistant-Above-Input',
+    id: 'Above-Input-Mobile',
     surface: 'chat_assistant',
     available: true,
     format: 'inline',
@@ -434,7 +479,11 @@ export const PLACEMENT_SLOTS = [
   ...ORIGINAL_PLACEMENT_SLOTS,
   ...ORIGINAL_PLACEMENT_SLOTS.flatMap((slot) => {
     const id = webDesktopPlacement(slot.id)
-    return id ? [{ ...slot, id, surface: 'freebuff_web_chat' as const }] : []
+    if (!id) return []
+    // A branded mirror is its own gate: Desktop going live does not open web.
+    const available =
+      slot.format === 'branded' ? isDisplayAdServingLive(id) : slot.available
+    return [{ ...slot, id, surface: 'freebuff_web_chat' as const, available }]
   }),
 ] as const
 
@@ -458,7 +507,8 @@ export const PLACEMENT_SLOTS = [
 export function placementSurface(
   placementId: string,
 ): (typeof PLACEMENT_SLOTS)[number]['surface'] | undefined {
-  const slot = PLACEMENT_SLOTS.find((entry) => entry.id === placementId)
+  const canonical = canonicalPlacementId(placementId)
+  const slot = PLACEMENT_SLOTS.find((entry) => entry.id === canonical)
   if (slot) return slot.surface
   if (/^CLI-Chat-Inline-\d+$/.test(placementId)) return 'cli_chat'
   return undefined
@@ -484,22 +534,14 @@ export function placementSurface(
  * through, and this function is the static fallback it degrades to.
  */
 export function placementFormat(placementId: string): PlacementFormat {
-  const slot = PLACEMENT_SLOTS.find((entry) => entry.id === placementId)
+  const canonical = canonicalPlacementId(placementId)
+  const slot = PLACEMENT_SLOTS.find((entry) => entry.id === canonical)
   return slot?.format ?? 'inline'
 }
 
 /** Whether this placement id renders as a sponsor break rather than inline. */
 export function isSponsorBreakPlacement(placementId: string): boolean {
   return isSponsorBreakFormat(placementFormat(placementId))
-}
-
-/**
- * Whether this placement id INTERRUPTS, and is therefore subject to the daily
- * cap. See {@link INTERRUPTING_BREAK_FORMATS} for why this is not the same
- * question as {@link isSponsorBreakPlacement}.
- */
-export function isInterruptingBreakPlacement(placementId: string): boolean {
-  return isInterruptingBreakFormat(placementFormat(placementId))
 }
 
 /**
@@ -526,6 +568,32 @@ export const BILLBOARD_PLACEMENT_IDS: readonly string[] =
     (slot) => slot.id,
   )
 
+/** Every branded (display-ad) slot in the registry, live or dark. */
+export const BRANDED_PLACEMENT_IDS: readonly string[] = PLACEMENT_SLOTS.filter(
+  (slot) => slot.format === 'branded',
+).map((slot) => slot.id)
+
+export function isBrandedPlacement(placementId: string): boolean {
+  return isBrandedFormat(placementFormat(placementId))
+}
+
+/**
+ * Whether a campaign may TARGET this placement id: registered, and not a dark
+ * display-ad placement. The one question campaign validation asks, for an
+ * advertiser and an operator alike -- `available` additionally decides what
+ * an advertiser may add on their own. `live` is a test seam.
+ */
+export function isTargetablePlacement(
+  placementId: string,
+  live: ReadonlySet<string> = DISPLAY_AD_SERVING_LIVE,
+): boolean {
+  return (
+    PLACEMENT_SLOTS.some(
+      (slot) => slot.id === canonicalPlacementId(placementId),
+    ) && !isDarkDisplayAdPlacement(placementId, live)
+  )
+}
+
 /**
  * What a creative must look like to fill a SPONSOR BREAK.
  *
@@ -540,24 +608,6 @@ export const BILLBOARD_PLACEMENT_IDS: readonly string[] =
  * copy for an inline slot and the console is where a placement choice and its
  * copy are seen together.
  */
-/**
- * The one delivery fact a break's numbers cannot be read without.
- *
- * A break is capped at one per user per day, so its impression count is
- * bounded by AUDIENCE rather than by budget: a break row two orders of
- * magnitude under an inline row beside it is the cap working, not
- * under-delivery. Stated wherever a break's delivery is shown, in one place
- * so the builder's picker and the delivery breakdown cannot phrase the same
- * cap two ways.
- *
- * Deliberately not a number. The cap itself is server-side and operator-owned
- * (`FREEBUFF_SPONSOR_BREAK_DAILY_CAP`); printing a figure here would be a
- * second copy of it, free to drift, in the one place an advertiser would
- * quote it back to us.
- */
-export const SPONSOR_BREAK_FREQUENCY_COPY =
-  'Shown at most once per user per day'
-
 export const SPONSOR_BREAK_CREATIVE_LIMITS = {
   titleMaxLength: 28,
   bodyMaxLength: 60,
@@ -601,6 +651,9 @@ export type SponsorBreakHeroMediaType =
 export const TRACKED_LINK_PLACEMENT_ID = 'tracked-link'
 export const TRACKED_LINK_SURFACE = 'tracked_link'
 
+/** Real, nonbillable outbound clicks from ordinary chat links; never auction inventory. */
+export const ORGANIC_LINK_PLACEMENT_ID = 'organic-link'
+
 /**
  * A human label for any `placement_id`, including grains no slot describes.
  *
@@ -627,10 +680,18 @@ export const TRACKED_LINK_SURFACE = 'tracked_link'
  * reads the same way in the place it is bought and the place it is reported.
  */
 const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
+  // Spotlight and Intermission were removed 2026-11-12; their labels stay so
+  // historical delivery rows still read as the slot they were.
   'Desktop-Spotlight': 'Desktop — Spotlight',
+  'Desktop-Spotlight:web': 'Web — Spotlight',
   'Desktop-Showcase': 'Desktop — Showcase',
   'Desktop-Intermission': 'Desktop — Intermission',
-  'Single-Ad-Unit-1': 'CLI — Dock',
+  'Desktop-Intermission:web': 'Web — Intermission',
+  'Inline-Link-After-Agent-Desktop': 'Desktop — Inline link',
+  'Inline-Link-After-Agent-CLI': 'CLI — Inline link',
+  'Inline-Link-After-Agent-iOS': 'iOS — Inline link',
+  'Inline-Link-After-Agent-Android': 'Android — Inline link',
+  'Above-Input-CLI': 'CLI — Dock',
   // The splitter would render these "Desktop Partner Skill Picker", which
   // names the id rather than the slot. An advertiser reading a breakdown row
   // wants to know WHERE in the app they appeared.
@@ -642,19 +703,31 @@ const PLACEMENT_FORMAT_LABELS: Record<string, string> = {
   'CLI-Partner-Composer-Launch': 'CLI — Composer (launch intent)',
   'Desktop-Billboard-Sidebar': 'Desktop — Sidebar billboard',
   'Desktop-Billboard-Panel': 'Desktop — Right panel billboard',
+  'Desktop-Top-Banner': 'Desktop — Top banner',
+  'Desktop-Home-Takeover': 'Desktop — New chat takeover',
+  'Desktop-MCP-Featured': 'Desktop — Featured MCP servers',
+  'CLI-Splash': 'CLI — Launch splash',
+  'CLI-Statusline': 'CLI — Statusline',
+  'CLI-Deals': 'CLI — /deals',
 }
 
 export function placementSlotLabel(placementId: string): string {
-  if (placementId === 'Desktop-Partner-Skill-Picker:web')
+  // A legacy and a canonical id are one slot, so they read the same. Renamed
+  // slots keep the label their legacy id always rendered (COD-1043): a
+  // delivery breakdown should not relabel a row because the id moved.
+  const canonical = canonicalPlacementId(placementId)
+  if (canonical === 'Desktop-Partner-Skill-Picker:web')
     return 'Web — Command menu'
-  if (isWebDesktopPlacement(placementId)) {
-    const sourceLabel = placementSlotLabel(desktopPlacementSource(placementId))
+  if (isWebDesktopPlacement(canonical)) {
+    const sourceLabel = placementSlotLabel(desktopPlacementSource(canonical))
     return sourceLabel.replace(/^Desktop(?: —)? /, 'Web — ')
   }
-  if (placementId === TRACKED_LINK_PLACEMENT_ID) return 'Tracked links'
-  const formatted = PLACEMENT_FORMAT_LABELS[placementId]
+  if (canonical === TRACKED_LINK_PLACEMENT_ID) return 'Tracked links'
+  if (canonical === ORGANIC_LINK_PLACEMENT_ID) return 'Organic links'
+  const formatted = PLACEMENT_FORMAT_LABELS[canonical]
   if (formatted) return formatted
-  const [head, ...rest] = placementId.split('-')
+  const named = legacyPlacementId(canonical) ?? canonical
+  const [head, ...rest] = named.split('-')
   if (!head) return placementId
   return [head[0]!.toUpperCase() + head.slice(1), ...rest].join(' ')
 }
@@ -984,7 +1057,7 @@ export const OVERSHOOT_POLICY_COPY =
  */
 export const PLACEMENT_DAILY_CAP_MIN_CENTS = 5_000
 export const PLACEMENT_DAILY_CAP_MAX_CENTS = 500_000
-export const PLACEMENT_DAILY_CAP_DEFAULT_CENTS = 10_000
+export const PLACEMENT_DAILY_CAP_DEFAULT_CENTS = 20_000
 export const PLACEMENT_DAILY_CAP_MIN_ERROR = `Daily budget must be at least $${PLACEMENT_DAILY_CAP_MIN_CENTS / 100}.`
 
 /** Whole cents inside the bounds, which is exactly what the API accepts. */

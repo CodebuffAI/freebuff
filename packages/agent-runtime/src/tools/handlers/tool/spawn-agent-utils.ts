@@ -1,4 +1,4 @@
-import { MAX_AGENT_STEPS_DEFAULT } from '@codebuff/common/constants/agents'
+import { MAX_SUBAGENT_STEPS_DEFAULT } from '@codebuff/common/constants/agents'
 import { toolNames } from '@codebuff/common/tools/constants'
 import {
   normalizeAgentIdForLookup,
@@ -19,6 +19,7 @@ import type {
   AgentRuntimeDeps,
   AgentRuntimeScopedDeps,
 } from '@codebuff/common/types/contracts/agent-runtime'
+import type { AgentUsageData } from '@codebuff/common/types/contracts/llm'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type {
   ParamsExcluding,
@@ -50,6 +51,10 @@ export type SubagentContextParams = AgentRuntimeDeps &
     repoUrl: string | undefined
     signal: AbortSignal
     userId: string | undefined
+    /** Per-request usage receipts: a subagent's requests report through the
+     *  parent's callback (the eval harness prices runs from them). */
+    onAgentUsageReceived?: (usage: AgentUsageData) => void
+    onAgentUsageIncomplete?: () => void
   }
 
 /**
@@ -105,6 +110,8 @@ export function extractSubagentContextParams(
     repoUrl: params.repoUrl,
     signal: params.signal,
     userId: params.userId,
+    onAgentUsageReceived: params.onAgentUsageReceived,
+    onAgentUsageIncomplete: params.onAgentUsageIncomplete,
   }
 }
 
@@ -318,7 +325,7 @@ export function createAgentState(
     subagents: [],
     childRunIds: [],
     messageHistory,
-    stepsRemaining: MAX_AGENT_STEPS_DEFAULT,
+    stepsRemaining: MAX_SUBAGENT_STEPS_DEFAULT,
     creditsUsed: 0,
     directCreditsUsed: 0,
     output: undefined,
@@ -413,6 +420,8 @@ export async function executeSubagent(
     // If subagents need to see images, they get them through includeMessageHistory,
     // not by creating new image-containing messages for their prompts.
     content: undefined,
+    // A subagent's prompt is its parent's request, never the host's resume.
+    promptIsContinuation: false,
     ancestorRunIds: [...ancestorRunIds, parentAgentState.runId ?? ''],
     agentType: agentTemplate.id,
   })

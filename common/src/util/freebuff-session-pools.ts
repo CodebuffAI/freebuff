@@ -1,3 +1,4 @@
+import { freebucksSoloDiscountFor } from './freebuff-price-order'
 import { applyFreebucksPriceChanges } from './freebuff-price-changes'
 /**
  * Splitting a picker section's quota rows into "the pool this section is about"
@@ -163,7 +164,7 @@ export function getFreebuffModelMeter({
       canStart:
         freebucks.quotaExempt === true ||
         freebucks.balance + (freebucks.claimableGrantFreebucks ?? 0) >=
-          Math.max(0, price - (freebucks.soloDiscount ?? 0)),
+          Math.max(0, price - freebucksSoloDiscountFor(freebucks, model ?? '')),
     }
   }
   return {

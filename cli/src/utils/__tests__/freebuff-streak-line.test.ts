@@ -3,7 +3,6 @@ import { describe, test, expect } from 'bun:test'
 import {
   getFreebuffStreakBonusNote,
   getFreebuffStreakBonusNoteForLayout,
-  getFreebuffStreakBonusStatusForLayout,
   getFreebuffStreakLine,
 } from '../freebuff-streak-line'
 
@@ -112,23 +111,21 @@ describe('getFreebuffStreakBonusNote', () => {
         accessTier: 'full',
         freebucksDailyBonus: 15,
       }),
-    ).toBe("🎁 Streak perk: +3 hours to your daily allowance with each day's first message")
+    ).toBe('🎁 Streak perk: +3 hours every day')
     expect(
       getFreebuffStreakBonusNote({
         streak: 14,
         accessTier: 'limited',
         freebucksDailyBonus: 15,
       }),
-    ).toBe("🎁 Streak perk: +3 hours to your daily allowance with each day's first message")
+    ).toBe('🎁 Streak perk: +3 hours every day')
     expect(
       getFreebuffStreakBonusNote({
         streak: 3,
         accessTier: 'full',
         freebucksDailyBonus: 15,
       }),
-    ).toBe(
-      "🎁 4 more days to unlock +3 hours to your daily allowance with each day's first message",
-    )
+    ).toBe('🎁 4 more days to unlock +3 hours every day')
     // An older server sends no field; null keeps the session copy.
     expect(
       getFreebuffStreakBonusNote({
@@ -185,54 +182,6 @@ describe('getFreebuffStreakBonusNoteForLayout', () => {
         terminalHeight: 30,
         availableWidth: note.length - 1,
       }),
-    ).toBeNull()
-  })
-})
-
-describe('getFreebuffStreakBonusStatusForLayout', () => {
-  const streak = {
-    streak: 9,
-    todayUsed: true,
-    lastUsageDate: '2026-09-27',
-    timeZone: 'America/Los_Angeles',
-    freebucksDailyBonus: 15,
-    nextResetAt: '2026-09-28T07:00:00.000Z',
-    todayCredited: true,
-    // Singapore midnight: the allowance the bonus went to resets then.
-    bonusExpiresAt: '2026-09-28T16:00:00.000Z',
-  }
-  const layout = {
-    note: "🎁 Streak perk: +3 hours to your daily allowance with each day's first message",
-    streak,
-    availableWidth: 80,
-    // 09:00 in Singapore, still the 27th in Pacific.
-    now: new Date('2026-09-28T01:00:00.000Z'),
-    timeZone: 'Asia/Singapore',
-  }
-
-  test('shows the allowance bonus and both local resets under the perk note', () => {
-    expect(
-      getFreebuffStreakBonusStatusForLayout({ ...layout, availableWidth: 100 }),
-    ).toBe(
-      "+3 hours added to today's allowance until midnight · next +3 hours after 3:00 PM (your time)",
-    )
-  })
-
-  test('a narrow row drops the "(your time)" label before the line', () => {
-    expect(
-      getFreebuffStreakBonusStatusForLayout(layout),
-    ).toBe("+3 hours added to today's allowance until midnight · next +3 hours after 3:00 PM")
-  })
-
-  test('never without the note it explains, nor wider than a row', () => {
-    expect(
-      getFreebuffStreakBonusStatusForLayout({ ...layout, note: null }),
-    ).toBeNull()
-    expect(
-      getFreebuffStreakBonusStatusForLayout({ ...layout, streak: undefined }),
-    ).toBeNull()
-    expect(
-      getFreebuffStreakBonusStatusForLayout({ ...layout, availableWidth: 20 }),
     ).toBeNull()
   })
 })

@@ -203,6 +203,13 @@ export interface AgentDefinition {
   /** One final verification opportunity after tool work, within the existing step budget. */
   completionCheck?: boolean
 
+  /** List the agents this agent can spawn once, at the end of its system
+   * prompt, instead of in a message after every user prompt. Defaults to
+   * false. Has no effect with inheritParentSystemPrompt, whose system prompt
+   * is the parent's.
+   */
+  spawnableAgentsInSystemPrompt?: boolean
+
   /** Drop the agent-attribution trailer from the run_terminal_command commit
    * guidance, so a commit this agent makes carries no `Co-Authored-By` or
    * "Generated with" line. For a run that commits into somebody else's

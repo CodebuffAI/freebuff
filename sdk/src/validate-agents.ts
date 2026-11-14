@@ -113,15 +113,14 @@ export async function validateAgents(
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         const errorMessage =
-          (errorData as any).error ||
-          `HTTP ${response.status}: ${response.statusText}`
+          (errorData as any).error || response.statusText
 
         return {
           success: false,
           validationErrors: [
             {
               id: 'network_error',
-              message: `Failed to validate via API: ${errorMessage}`,
+              message: `Failed to validate via API (HTTP ${response.status}): ${errorMessage}`,
             },
           ],
           errorCount: 1,

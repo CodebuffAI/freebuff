@@ -132,7 +132,7 @@ export function buildGravityFirstMessagePayload(params: {
         }
       : {}),
     // Hashed like every other match key we send (Meta `em`, the Gravity
-    // auction's `hashed_email`): never the raw address (AB827V0 #293).
+    // auction's `email_hash`): never the raw address (AB827V0 #293).
     ...(hashedEmail ? { em: [hashedEmail] } : {}),
     external_id: [params.userId],
   }

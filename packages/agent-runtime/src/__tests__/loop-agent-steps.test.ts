@@ -1,3 +1,4 @@
+import { BASE3_BATCHING_STEP_PROMPT } from '@codebuff/common/constants/base3-step-prompt'
 import * as analytics from '@codebuff/common/analytics'
 import { FREEBUFF_TURN_SPEND_LIMIT_MESSAGE } from '@codebuff/common/constants/freebuff-errors'
 import { TEST_USER_ID } from '@codebuff/common/old-constants'
@@ -42,6 +43,9 @@ import {
 import {
   FILE_EDIT_LOOP_RECOVERY_MESSAGE,
   FILE_EDIT_LOOP_STOP_MESSAGE,
+  FILE_EDIT_LOOP_STOP_THRESHOLD,
+  FILE_EDIT_LOOP_VARIED_RECOVERY_MESSAGE,
+  FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD,
 } from '../util/file-edit-loop'
 import {
   FILE_EDIT_TOOLS_UNAVAILABLE_NOTE,
@@ -737,6 +741,44 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
     expect(resumed.output.type).not.toBe('error')
   })
 
+  it('stops a loop of varied rejected edits to one file that the identical-edit guard never matches', async () => {
+    mockAgentState.stepsRemaining = 200
+    let calls = 0
+    const seenPrompts: string[] = []
+    const result = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      // Every attempt sends what the file already holds, a little differently
+      // each time, so each one is rejected and no two are identical.
+      requestOptionalFile: async () => `content ${calls}`,
+      requestToolCall: async () => {
+        throw new Error('a rejected write never reaches the client')
+      },
+      promptAiSdkStream: async function* ({ messages }) {
+        calls++
+        seenPrompts.push(JSON.stringify(messages))
+        yield createToolCallChunk('write_file', {
+          path: 'output.txt',
+          instructions: 'Fix it',
+          content: `content ${calls}`,
+        })
+        return promptSuccess(`varied-${calls}`)
+      },
+    })
+
+    expect(calls).toBe(FILE_EDIT_LOOP_VARIED_STOP_THRESHOLD)
+    expect(seenPrompts[FILE_EDIT_LOOP_STOP_THRESHOLD - 1]).not.toContain(
+      FILE_EDIT_LOOP_VARIED_RECOVERY_MESSAGE,
+    )
+    expect(seenPrompts[FILE_EDIT_LOOP_STOP_THRESHOLD]).toContain(
+      FILE_EDIT_LOOP_VARIED_RECOVERY_MESSAGE,
+    )
+    expect(seenPrompts.join('')).not.toContain(FILE_EDIT_LOOP_RECOVERY_MESSAGE)
+    expect(result.output).toMatchObject({
+      type: 'error',
+      message: FILE_EDIT_LOOP_STOP_MESSAGE,
+    })
+  })
+
   it('stops an unchanged to-do loop after recovery attempts and can resume on a new prompt', async () => {
     mockTemplate.toolNames.push('write_todos')
     mockAgentState.stepsRemaining = 200
@@ -850,6 +892,10 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
   })
 
   describe('followup cards with unfinished to-dos', () => {
+    const answer = `Here is what changed.\n\n${'- A concrete change and why it was needed.\n'.repeat(10)}`
+    const answerNote = JSON.stringify(
+      SUGGEST_PROMPTS_BEFORE_ANSWER_MESSAGE,
+    ).slice(1, -1)
     const followups = () =>
       createToolCallChunk('suggest_followups', {
         followups: [
@@ -905,6 +951,8 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
         ).slice(1, -1),
       )
       expect(nudges(result.agentState)).toBe(1)
+      // The unfinished list wins over asking for the answer.
+      expect(seenPrompts.join('\n')).not.toContain(answerNote)
     })
 
     it('ends on cards when every to-do is done', async () => {
@@ -912,11 +960,36 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       const result = await loopAgentSteps({
         ...loopAgentStepsBaseParams,
         promptAiSdkStream: async function* () {
-          yield ++calls === 1 ? list(3) : followups()
+          if (++calls === 1) {
+            yield list(3)
+          } else {
+            yield { type: 'text', text: answer }
+            yield followups()
+          }
           return promptSuccess(`done-${calls}`)
         },
       })
       expect(calls).toBe(2)
+      expect(nudges(result.agentState)).toBe(0)
+    })
+
+    it('asks for the answer when the cards come without one', async () => {
+      const seenPrompts: string[] = []
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        promptAiSdkStream: async function* ({ messages }) {
+          seenPrompts.push(JSON.stringify(messages))
+          if (seenPrompts.length === 1) {
+            yield followups()
+          } else {
+            yield { type: 'text', text: answer }
+          }
+          return promptSuccess(`answer-${seenPrompts.length}`)
+        },
+      })
+      expect(seenPrompts).toHaveLength(2)
+      expect(seenPrompts[0]).not.toContain(answerNote)
+      expect(seenPrompts[1]).toContain(answerNote)
       expect(nudges(result.agentState)).toBe(0)
     })
 
@@ -987,7 +1060,7 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
         prompt: 'What does this file do?',
         promptAiSdkStream: async function* () {
           calls++
-          yield { type: 'text', text: 'It parses the config.' }
+          yield { type: 'text', text: answer }
           yield followups()
           return promptSuccess(`question-${calls}`)
         },
@@ -1023,6 +1096,43 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
     expect(requests).toHaveLength(2)
     expect(requests[1].slice(0, requests[0].length)).toEqual(requests[0])
     expect(JSON.stringify(requests[1]).split('Test user prompt')).toHaveLength(3)
+  })
+
+  // base3's batching reminder stays in history (2026-11-11): deleting it each
+  // step meant no request extended the one before, costing the provider's
+  // cache the previous step's tail and output. Other step prompts expire.
+  it.each([
+    [BASE3_BATCHING_STEP_PROMPT, true],
+    ['Test agent step prompt', false],
+  ] as const)('a step prompt (%s) stays in history: %s', async (stepPrompt, kept) => {
+    mockTemplate.stepPrompt = stepPrompt
+    const requests: unknown[][] = []
+    const promptAiSdkStream: Parameters<
+      typeof loopAgentSteps
+    >[0]['promptAiSdkStream'] = async function* ({ messages }) {
+      requests.push(JSON.parse(JSON.stringify(messages)))
+      yield { type: 'text', text: 'Done.' }
+      return promptSuccess(`step-${requests.length}`)
+    }
+    // A real root has an agent type, which wraps its step prompt in
+    // <system_reminder> tags; the reminder is recognised by that whole text.
+    const first = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      agentState: { ...loopAgentStepsBaseParams.agentState, agentType: 'base3' },
+      promptAiSdkStream,
+    })
+    await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      agentState: first.agentState,
+      prompt: 'continue',
+      promptAiSdkStream,
+    })
+    expect(requests).toHaveLength(2)
+    const copies = JSON.stringify(requests[1]).split(stepPrompt).length - 1
+    expect(copies).toBe(kept ? 2 : 1)
+    if (kept)
+      // The second request extends the first: nothing before it changed.
+      expect(requests[1].slice(0, requests[0].length)).toEqual(requests[0])
   })
 
   describe('suggest_prompts before the answer', () => {
@@ -1090,6 +1200,53 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       expect(requests).toHaveLength(1)
       expect(JSON.stringify(result.agentState.messageHistory)).not.toContain(
         note,
+      )
+    })
+  })
+
+  describe('Gravity report nudge', () => {
+    // search -> edit -> answer, then the nudge, then the report
+    const script = () => [
+      createToolCallChunk('gravity_index', { action: 'search', query: 'send email' }),
+      createToolCallChunk('write_file', {
+        path: 'src/email.ts',
+        instructions: 'Send email',
+        content: 'export {}',
+      }),
+      { type: 'text' as const, text: 'Added Resend email sending.' },
+      createToolCallChunk('gravity_index', {
+        action: 'report_integration',
+        search_id: 's-1',
+        integrated_slug: 'resend',
+      }),
+      { type: 'text' as const, text: 'Reported.' },
+    ]
+
+    it('ends the turn once the nudged report runs, with no closing step', async () => {
+      mockTemplate.toolNames.push('gravity_index')
+      const steps = script()
+      const seen: string[] = []
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        fetch: (async () =>
+          new Response(
+            JSON.stringify({
+              search_id: 's-1',
+              recommendation: { slug: 'resend', name: 'Resend' },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          )) as unknown as typeof globalThis.fetch,
+        promptAiSdkStream: async function* ({ messages }) {
+          seen.push(JSON.stringify(messages))
+          yield steps[seen.length - 1] ?? createToolCallChunk('end_turn', {})
+          return promptSuccess(`gravity-${seen.length}`)
+        },
+      })
+      expect(result.output.type).not.toBe('error')
+      expect(seen).toHaveLength(4)
+      expect(seen[3]).toContain('Write no text in this step')
+      expect(JSON.stringify(result.agentState.messageHistory)).not.toContain(
+        'Reported.',
       )
     })
   })
@@ -2210,6 +2367,32 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       expect(finishAgentRunStatus).toBe('failed')
     })
 
+    it('logs failure shape without message or system prompt contents', async () => {
+      const errorLogs: unknown[] = []
+      const logger = {
+        ...loopAgentStepsBaseParams.logger,
+        error: (data: unknown, message?: string) => {
+          if (message === 'Agent execution failed') errorLogs.push(data)
+        },
+      }
+
+      const result = await loopAgentSteps({
+        ...loopAgentStepsBaseParams,
+        logger,
+        promptAiSdkStream: async function* () {
+          throw new Error('Agent execution failed for test')
+        },
+      })
+
+      expect(result.output.type).toBe('error')
+      expect(errorLogs).toHaveLength(1)
+      const errorPayload = errorLogs[0] as Record<string, unknown>
+      expect(errorPayload).not.toHaveProperty('messageHistory')
+      expect(errorPayload).not.toHaveProperty('systemPrompt')
+      expect(typeof errorPayload.messageCount).toBe('number')
+      expect(typeof errorPayload.systemPromptChars).toBe('number')
+    })
+
     it('should handle signal.aborted before loop starts', async () => {
       // Test that if signal is already aborted when loopAgentSteps is called,
       // it returns immediately with a cancelled message
@@ -2832,7 +3015,15 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
       const result = await loopAgentSteps({
         ...loopAgentStepsBaseParams,
         onCompaction: () => compactions++,
-        promptAiSdkStream: async function* ({ onUsageReceived, messages }) {
+        promptAiSdkStream: async function* ({
+          onUsageReceived,
+          messages,
+          extraCodebuffMetadata,
+        }) {
+          if (extraCodebuffMetadata?.compaction_summary === '1') {
+            yield { type: 'text', text: `## Objective\n${'- found it\n'.repeat(40)}` }
+            return promptSuccess('summary')
+          }
           if (++calls === 1) {
             yield createToolCallChunk('write_todos', {
               todos: [{ task: 'inspect', completed: false }],

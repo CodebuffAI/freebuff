@@ -131,9 +131,8 @@ export function useChatStreaming({
   const steersRun =
     (isStreaming || isChainInProgress) && !sponsoredHoldsQueue
 
-  // A turn in flight already proves the backend is reachable — its own success (or failure)
-  // is better evidence than a dedicated probe racing it for sockets/CPU. Pause the shared
-  // connection monitor's polling for the duration and let it resume right after.
+  // Skip redundant health checks during a turn when the monitor is already connected.
+  // If offline, it keeps probing with backoff so recovery can clear the status mid-turn.
   useEffect(() => {
     setConnectionMonitorBusy(isStreaming || isChainInProgress)
     return () => setConnectionMonitorBusy(false)

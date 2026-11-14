@@ -31,7 +31,10 @@ test('history client targets new Cloud and keeps transcript and trace endpoints 
     getToken: async () => 'session',
     fetch: async (url, init) => {
       urls.push(url)
-      expect(init?.headers).toEqual({ Authorization: 'Bearer session' })
+      expect(init?.headers).toEqual({
+        Authorization: 'Bearer session',
+        'x-freebuff-device-chats': '1',
+      })
       return Response.json({ items: [], nextCursor: null, endCursor: null })
     },
   })
@@ -80,6 +83,7 @@ test('history client updates shared metadata with explicit revision and bearer a
       expect(init?.headers).toEqual({
         'Content-Type': 'application/json',
         Authorization: 'Bearer token',
+        'x-freebuff-device-chats': '1',
       })
       expect(JSON.parse(String(init?.body))).toEqual(update)
       return Response.json({

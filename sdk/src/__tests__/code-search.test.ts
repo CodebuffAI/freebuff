@@ -9,9 +9,12 @@ import {
   createRgJsonContext,
 } from '@codebuff/common/testing/mocks'
 import { describe, expect, it, mock, beforeEach, afterEach } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { PassThrough } from 'node:stream'
 
-import { codeSearch } from '../tools/code-search'
+import { codeSearch, ripgrepFailureMessage } from '../tools/code-search'
 
 import type { MockChildProcess } from '@codebuff/common/testing/mocks'
 import type { TerminalCommandBroker } from '../tools/run-terminal-command'
@@ -935,6 +938,78 @@ describe('codeSearch', () => {
       expect(spawnOptions.cwd).toBe('/test/project/subdir')
     })
 
+    it('names a missing search directory instead of ripgrep', async () => {
+      // ripgrep spawned in a missing cwd fails with an ENOENT naming ripgrep
+      mockSpawn.mockImplementation(() => {
+        throw Object.assign(
+          new Error("ENOENT: no such file or directory, posix_spawn 'rg'"),
+          { code: 'ENOENT' },
+        )
+      })
+
+      const result = await codeSearch({
+        projectPath: '/test/project',
+        pattern: 'test',
+        cwd: 'not-created-yet',
+      })
+
+      expect(asCodeSearchResult(result[0]).errorMessage).toBe(
+        'Search directory "/test/project/not-created-yet" does not exist.',
+      )
+    })
+
+    describe('a file named as cwd', () => {
+      let root: string
+      beforeEach(() => {
+        root = mkdtempSync(path.join(tmpdir(), 'code-search-file-cwd-'))
+        mkdirSync(path.join(root, 'src'))
+        writeFileSync(path.join(root, 'src', 'app.ts'), 'test content\n')
+      })
+      afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+      it('searches that file from its directory', async () => {
+        const searchPromise = codeSearch({
+          projectPath: root,
+          pattern: 'test',
+          cwd: 'src/app.ts',
+        })
+        mockProcess.emit('close', 0)
+        await searchPromise
+
+        const [, args, options] = mockSpawn.mock.calls[0]! as [
+          string,
+          string[],
+          { cwd: string },
+        ]
+        expect(options.cwd).toBe(path.join(root, 'src'))
+        expect(args.slice(-3)).toEqual(['--', 'test', 'app.ts'])
+      })
+
+      it('leaves a broker the cwd as named', async () => {
+        const requests: Parameters<TerminalCommandBroker['start']>[0][] = []
+        await codeSearch({
+          projectPath: root,
+          pattern: 'test',
+          cwd: 'src/app.ts',
+          processBroker: {
+            start: (request) => {
+              requests.push(request)
+              return {
+                stdout: new PassThrough(),
+                stderr: new PassThrough(),
+                completion: Promise.resolve(1),
+                kill: () => {},
+                isAlive: () => false,
+              }
+            },
+          },
+        })
+
+        expect(requests[0]!.cwd).toBe(path.join(root, 'src', 'app.ts'))
+        expect(requests[0]!.args.at(-1)).toBe('.')
+      })
+    })
+
     it('should search cwd outside the project directory', async () => {
       const searchPromise = codeSearch({
         projectPath: '/test/project',
@@ -1086,5 +1161,30 @@ describe('codeSearch', () => {
       expect(value.stdout).toContain('.env.template')
       expect(value.stdout).toContain('Found 3 matches')
     })
+  })
+})
+
+describe('ripgrepFailureMessage', () => {
+  const errno = (code: string) =>
+    Object.assign(new Error(`spawn rg ${code}`), { code })
+  const cwd = tmpdir()
+
+  it('blames the install only when the binary is missing', () => {
+    const missing = path.join(cwd, 'no-such-rg-binary')
+    expect(ripgrepFailureMessage(errno('ENOENT'), missing, cwd)).toContain(
+      `Vendored ripgrep not found at ${missing}`,
+    )
+  })
+
+  it('leaves the install out of any other failure', () => {
+    const message = ripgrepFailureMessage(errno('EACCES'), '/bin/rg', cwd)
+    expect(message).toBe('Failed to execute ripgrep: spawn rg EACCES.')
+  })
+
+  it('still reports a missing search directory', () => {
+    const gone = path.join(cwd, 'no-such-search-dir-xyz')
+    expect(ripgrepFailureMessage(errno('ENOENT'), '/bin/rg', gone)).toBe(
+      `Search directory "${gone}" does not exist.`,
+    )
   })
 })

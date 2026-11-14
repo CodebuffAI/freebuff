@@ -8,7 +8,7 @@ import { sanitizeAdUrl } from '../util/ad-creative-safety'
  * writes it to `ad_sponsored_proposal.conversion_token`; the advertiser's
  * postback (`/api/ads/agentic/postback`) verifies exactly that token. Until
  * this module nothing ever presented the token to anyone, so the advertiser
- * could never report `account_created` / `tool_used` against a sponsored run.
+ * could never report `account_created` against a sponsored run.
  *
  * The CTA is the campaign's landing URL with `bfcid=<conversion_token>`
  * appended — the same shape the display rail's `/r/<code>` redirect lands the

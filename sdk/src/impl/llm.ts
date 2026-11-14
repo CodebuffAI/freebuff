@@ -1,9 +1,17 @@
 import { models, PROFIT_MARGIN } from '@codebuff/common/old-constants'
 import { buildArray } from '@codebuff/common/util/array'
-import { STREAM_RECOVERY_EVENT } from '@codebuff/common/util/axiom-only-log'
+import {
+  STREAM_RECOVERY_EVENT,
+  TOOL_CALL_REPAIR_EVENT,
+} from '@codebuff/common/util/axiom-only-log'
 import { normalizeProviderRequestBodyForCacheDebug } from '@codebuff/common/util/cache-debug'
 import {
+  parseToolJson,
+  TOOL_NAME_ALIASES,
+} from '@codebuff/common/tools/repair-tool-json'
+import {
   getErrorObject,
+  isFetchIdleTimeoutError,
   promptAborted,
   promptSuccess,
 } from '@codebuff/common/util/error'
@@ -27,6 +35,7 @@ import { byokModelLimits } from '../byok'
 import type { ResolvedByokConnection } from '../byok'
 import {
   classifyErrorChunkRecovery,
+  classifyIdleTimeoutRecovery,
   classifyStreamEndRecovery,
   classifyThrownStreamRecovery,
   streamFinishInfoOf,
@@ -216,6 +225,8 @@ export async function* promptAiSdkStream(
     byok?: ResolvedByokConnection
     requestHeaders?: CodebuffRequestHeadersProvider
   },
+  /** Internal: this is the one repeat of a request that timed out silently. */
+  idleTimeoutRetried = false,
 ): ReturnType<PromptAiSdkStreamFn> {
   const {
     providerOptions: originalProviderOptions,
@@ -251,8 +262,8 @@ export async function* promptAiSdkStream(
     ...streamParams,
     ...(params.byok && {
       maxOutputTokens: Math.min(
-        params.maxOutputTokens ?? byokModelLimits(params.byok).maxOutputTokens,
-        byokModelLimits(params.byok).maxOutputTokens,
+        params.maxOutputTokens ?? byokModelLimits(params.byok).reservedOutputTokens,
+        byokModelLimits(params.byok).reservedOutputTokens,
       ),
     }),
     abortSignal: params.signal,
@@ -368,6 +379,41 @@ export async function* promptAiSdkStream(
         }
       }
 
+      // A name models invent for a real tool (`run_command`): run it as that tool.
+      const alias = TOOL_NAME_ALIASES[toolName]
+      if (NoSuchToolError.isInstance(error) && alias && alias in tools) {
+        logger.info(
+          {
+            axiomEvent: TOOL_CALL_REPAIR_EVENT,
+            metric: 'tool_renamed',
+            toolName,
+            alias,
+            model: params.model,
+          },
+          'Renamed tool call to a real tool',
+        )
+        return { ...toolCall, toolName: alias }
+      }
+
+      // Arguments a model got slightly wrong (an unescaped quote in code): run the call as
+      // repaired, if a repair makes them parse; its schema still validates them.
+      if (InvalidToolInputError.isInstance(error)) {
+        const repaired = parseToolJson(toolCall.input)
+        if (repaired?.repair) {
+          logger.info(
+            {
+              axiomEvent: TOOL_CALL_REPAIR_EVENT,
+              metric: 'arguments_repaired',
+              toolName,
+              repair: repaired.repair,
+              model: params.model,
+            },
+            'Repaired tool call arguments',
+          )
+          return { ...toolCall, input: JSON.stringify(repaired.value) }
+        }
+      }
+
       // For all other cases (invalid args, unknown tools, etc.), pass through
       // the original tool call.
       logger.info(
@@ -451,6 +497,68 @@ export async function* promptAiSdkStream(
   // band (5xx/429 error chunk) takes the same path: see
   // classifyErrorChunkRecovery.
   let thrownStreamRecovery: StreamEndRecovery | undefined
+  // Any model output part, including one still held by the stop-sequence
+  // buffer or a tool call's streamed input: once one arrived, the step is not
+  // repeated (see silentTimeoutRetry).
+  let receivedModelOutput = false
+  let retryAfterSilentTimeout = false
+  /**
+   * The runtime's 5-minute fetch inactivity timeout (isFetchIdleTimeoutError)
+   * before this step received any output: nothing reached the user and no tool
+   * call exists, so the same request is sent once more. No other layer retries
+   * it: the AI SDK treats a TimeoutError as an abort. A BYOK request's timeout
+   * is sanitized into a transient network error, which the stream-interrupted
+   * recovery already retries, so it is left to that. The same timeout after
+   * output had arrived is continued instead (idleTimeoutContinuation). A
+   * second silent timeout with no output fails as before.
+   */
+  const silentTimeoutRetry = (error: unknown) => {
+    if (params.byok || params.signal.aborted || !isFetchIdleTimeoutError(error))
+      return false
+    if (!idleTimeoutRetried && !receivedModelOutput) return true
+    if (receivedModelOutput) return false
+    // Why this one fails instead: it was the repeat, and nothing arrived.
+    // STREAM_RECOVERY_EVENT, so a host that forwards only allowlisted events
+    // (the hosted Cloud worker's cloudSdkLogger) still ships it.
+    logger.warn(
+      {
+        axiomEvent: STREAM_RECOVERY_EVENT,
+        metric: 'stream_silent_timeout_failed',
+        model: params.model,
+        userInputId: params.userInputId,
+        hasYieldedContent,
+        receivedModelOutput,
+        repeated: idleTimeoutRetried,
+      },
+      'Model request timed out with no data and was not sent again',
+    )
+    return false
+  }
+  /** The idle timeout after output: continued, not sent again
+   *  (classifyIdleTimeoutRecovery). Tried ahead of `classify`, which does not
+   *  know the timeout. */
+  const idleTimeoutContinuation = (
+    classify: typeof classifyThrownStreamRecovery,
+  ): typeof classifyThrownStreamRecovery => (recoveryParams) => {
+    if (params.byok) return classify(recoveryParams)
+    const recovery = classifyIdleTimeoutRecovery({
+      ...recoveryParams,
+      receivedOutput: receivedModelOutput,
+    })
+    if (!recovery) return classify(recoveryParams)
+    logger.warn(
+      {
+        axiomEvent: STREAM_RECOVERY_EVENT,
+        metric: 'stream_silent_timeout_continued',
+        model: params.model,
+        userInputId: params.userInputId,
+        hasYieldedContent,
+        receivedModelOutput,
+      },
+      'Model response went silent after output; continuing the step',
+    )
+    return recovery
+  }
   const streamIterator = response.stream[Symbol.asyncIterator]()
   const recoverThrownStream = (
     error: unknown,
@@ -479,13 +587,21 @@ export async function* promptAiSdkStream(
       iteration = await streamIterator.next()
     } catch (error) {
       if (params.signal.aborted) reportUsageIncomplete()
-      const recovery = recoverThrownStream(error)
+      if (silentTimeoutRetry(error)) {
+        retryAfterSilentTimeout = true
+        break
+      }
+      const recovery = recoverThrownStream(
+        error,
+        idleTimeoutContinuation(classifyThrownStreamRecovery),
+      )
       if (!recovery) throw error
       thrownStreamRecovery = recovery
       break
     }
     if (iteration.done) break
     const chunkValue = iteration.value
+    if (/^(text|reasoning|tool)-/.test(chunkValue.type)) receivedModelOutput = true
     if (chunkValue.type === 'finish-step') {
       finishProviderMetadata = chunkValue.providerMetadata as
         | ProviderMetadata
@@ -552,6 +668,11 @@ export async function* promptAiSdkStream(
         continue
       }
 
+      if (silentTimeoutRetry(chunkValue.error)) {
+        retryAfterSilentTimeout = true
+        break
+      }
+
       // A transport error can also arrive as an AI SDK error chunk instead of
       // making iterator.next() reject. Recover both runtime shapes identically.
       // So does a provider that reported a retryable failure (5xx/429) in
@@ -560,7 +681,7 @@ export async function* promptAiSdkStream(
       // why classifyErrorChunkRecovery tries it first.
       const recovery = recoverThrownStream(
         chunkValue.error,
-        classifyErrorChunkRecovery,
+        idleTimeoutContinuation(classifyErrorChunkRecovery),
       )
       if (recovery) {
         thrownStreamRecovery = recovery
@@ -639,6 +760,26 @@ export async function* promptAiSdkStream(
           }
         : chunkValue
     }
+  }
+  if (retryAfterSilentTimeout) {
+    // The abandoned attempt's final-result promises reject with the same
+    // timeout; observe them so none is left unhandled.
+    void Promise.allSettled([
+      response.response,
+      response.request,
+      response.usage,
+      response.providerMetadata,
+    ])
+    logger.warn(
+      {
+        axiomEvent: STREAM_RECOVERY_EVENT,
+        metric: 'stream_silent_timeout_retry',
+        model: params.model,
+        userInputId: params.userInputId,
+      },
+      'Model request timed out before any output; sending it once more',
+    )
+    return yield* promptAiSdkStream(params, true)
   }
   const flushed = stopSequenceHandler.flush()
   if (flushed) {
@@ -767,8 +908,8 @@ export async function promptAiSdk(
     ...params,
     ...(params.byok && {
       maxOutputTokens: Math.min(
-        params.maxOutputTokens ?? byokModelLimits(params.byok).maxOutputTokens,
-        byokModelLimits(params.byok).maxOutputTokens,
+        params.maxOutputTokens ?? byokModelLimits(params.byok).reservedOutputTokens,
+        byokModelLimits(params.byok).reservedOutputTokens,
       ),
     }),
     prompt: undefined,
@@ -850,8 +991,8 @@ export async function promptAiSdkStructured<T>(
     ...params,
     ...(params.byok && {
       maxOutputTokens: Math.min(
-        params.maxTokens ?? byokModelLimits(params.byok).maxOutputTokens,
-        byokModelLimits(params.byok).maxOutputTokens,
+        params.maxTokens ?? byokModelLimits(params.byok).reservedOutputTokens,
+        byokModelLimits(params.byok).reservedOutputTokens,
       ),
     }),
     prompt: undefined,

@@ -7,6 +7,18 @@ import { FREEBUFF_WEB_URL_PROD } from './hosts'
 export const PLATFORM_CONVEX_SITE_URL_PROD =
   'https://harmless-tapir-303.convex.site'
 
+/**
+ * Platform Convex's prod client URL (`harmless-tapir-303`, the
+ * `ConvexReactClient` / `ConvexHttpClient` address). A public deployment URL,
+ * not a secret, so it is a constant rather than an env var: until COD-742 it
+ * reached freebuff-web only through `convex deploy --cmd` at build time, so
+ * pausing Convex would have left freebuff-web unable to build. Read through
+ * freebuff/web's `platformConvexUrl()`, which keeps the env override for dev,
+ * staging, CI and tests.
+ */
+export const PLATFORM_CONVEX_URL_PROD =
+  'https://harmless-tapir-303.convex.cloud'
+
 /** Where non-`/api/` Convex paths live on freebuff.com. */
 export const CONVEX_HTTP_EDGE_PREFIX = '/api/edge'
 

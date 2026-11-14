@@ -444,6 +444,29 @@ export function sponsoredFitCheckDecidable(check: SponsoredSkillCheck): boolean 
   }
 }
 
+/** The preflight check kinds that test the user's project. */
+const SPONSORED_FIT_TEST_KINDS: readonly string[] = [
+  'file_exists',
+  'file_contains',
+  'package_declared',
+]
+
+/**
+ * A skill's own preflight checks that test the project but that no
+ * repository facts can decide (COD-965). The offer serves on `unknown`, so
+ * such a check refuses only after the charged Accept. A format-2 `fit` block
+ * compiles to decidable checks and is never listed.
+ */
+export function sponsoredSkillUndecidableFitChecks(
+  skill: Pick<SponsoredSkill, 'preflight'>,
+): SponsoredSkillCheck[] {
+  return (skill.preflight ?? []).filter(
+    (check) =>
+      SPONSORED_FIT_TEST_KINDS.includes(check.kind) &&
+      !sponsoredFitCheckDecidable(check),
+  )
+}
+
 /** One preflight check's three-valued verdict over the facts. */
 export function evaluateSponsoredFitCheck(
   check: SponsoredSkillCheck,
@@ -712,6 +735,64 @@ export const SPONSORED_FIT_READ_NAMES: readonly string[] = [
   ...SPONSORED_FIT_MANIFEST_NAMES,
   ...SPONSORED_FIT_MARKER_NAMES,
 ]
+
+/** What a listed file that is neither a manifest nor an empty marker holds. */
+const LISTED_FILE_PLACEHOLDER = '#\n'
+
+/**
+ * The repository exactly as its facts show it, as files the REAL check
+ * evaluator can read ({@link sponsoredStaticCheckContext}):
+ * - each listed manifest, rendered from its dependency names (package.json
+ *   as a `dependencies` object, a Python manifest one name per line, as
+ *   {@link sponsoredManifestProjection}); a listed manifest with no names is
+ *   an empty one (`{}`, or nothing);
+ * - an empty marker empty, and any other listed file a non-blank line;
+ * - and NOTHING the facts do not list.
+ *
+ * That last point is an assumption about what the facts leave out, and it is
+ * what lets the run's own preflight answer over facts
+ * (`runSponsoredSkillPreflightOverFacts` in `./sponsored-step-driver`): a
+ * check that needs a file or a dependency the facts do not show fails. Only
+ * a caller that has decided to hold the facts to that should use it; the
+ * offer route does it for a Desktop V1 snapshot (docs/freebuff-agentic-ads.md,
+ * "Skill fit on the offer route").
+ */
+export function sponsoredRepoFactsFiles(
+  facts: SponsoredRepoFacts,
+): Record<string, string> {
+  const files: Record<string, string> = {}
+  for (const path of facts.paths) {
+    const basename = path.split('/').at(-1) ?? ''
+    const manifest = manifestAt(facts, path)
+    const ecosystem = manifest?.ecosystem ?? manifestEcosystem(basename)
+    if (ecosystem === 'npm') {
+      const dependencies = Object.fromEntries(
+        (manifest?.names ?? []).map((name) => [name, '*']),
+      )
+      files[path] = `${JSON.stringify({ dependencies }, null, 2)}\n`
+    } else if (ecosystem === 'pypi') {
+      files[path] = manifest ? sponsoredManifestProjection(manifest) : ''
+    } else {
+      files[path] = facts.empty?.includes(path) ? '' : LISTED_FILE_PLACEHOLDER
+    }
+  }
+  return files
+}
+
+/**
+ * `skill` with only the preflight checks repository facts can decide
+ * ({@link sponsoredFitCheckDecidable}). A format-2 fit block compiles into
+ * such checks and is kept whole. Commands, scripts and checks of any other
+ * file are left to the run's own preflight, which sees the real project.
+ */
+export function sponsoredSkillFactChecksOnly(
+  skill: SponsoredSkill,
+): SponsoredSkill {
+  return {
+    ...skill,
+    preflight: (skill.preflight ?? []).filter(sponsoredFitCheckDecidable),
+  }
+}
 
 /**
  * A check context over a fixed set of files, for evaluating the REAL checks

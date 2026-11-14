@@ -31,12 +31,28 @@ export const CODEBUFF_OWN_CREDITS_ERROR_PATTERN = /codebuff\.com\/usage/i
 export const FREEBUFF_PROVIDER_USAGE_MESSAGE =
   'Freebuff ran out of provider usage and needs a refill. This is on us, not your account.'
 
-/** Legacy older-server refusal, retained by SDK/CLI/Web recovery handlers.
- * Current servers no longer emit this spend cutoff. */
+/** Final for the request's turn: the SDK does not retry it. The per-turn spend
+ * breaker that introduced it is gone; servers now send it only to a subagent
+ * whose research budget is spent (web/.../chat-subagent-budget.ts and
+ * free-mode-subagent-budget.ts), which fails that subagent, not the turn. */
 export const FREEBUFF_TURN_SPEND_LIMIT_ERROR_CODE = 'turn_spend_limit'
 
 export const FREEBUFF_TURN_SPEND_LIMIT_MESSAGE =
   'This turn reached its model usage limit. Your session is still available — send a new message to continue from here.'
+
+/**
+ * Our own per-message usage-policy refusal (the prompt-strike gate on the
+ * chat-completions route): HTTP 403 with `{ error, message }`, where
+ * `message` is the user-facing text naming the policy category and the
+ * account's strike count. Final: no client retries a 403, and the same
+ * message is refused again.
+ */
+export const FREEBUFF_PROMPT_POLICY_REFUSED_ERROR_CODE = 'prompt_policy_refused'
+
+/** The fixed opening of that refusal's `message`: Freebuff Web's chat
+ *  shows the message from here on, and never any text before it. */
+export const FREEBUFF_PROMPT_POLICY_REFUSED_OPENING =
+  'Freebuff did not send this message to the model.'
 
 /**
  * DeepSeek's platform content filter: HTTP 400 `invalid_request_error`,
@@ -125,3 +141,10 @@ export const FREEBUFF_PROVIDER_UPSTREAM_RATE_LIMIT_MESSAGE =
  */
 export const FREEBUFF_PROVIDER_UNREACHABLE_MESSAGE =
   'Freebuff could not get a response from the provider serving this model — the request timed out or the connection was dropped before any reply arrived. This is not a problem with your internet connection or your account. Send the message again, or continue with another model such as GLM 5.3 Flash or DeepSeek V4.1 Flash.'
+
+/** The chat gate's `session_expired` refusal: the hour and its drain window
+ *  are over. The Cloud worker swaps it for the allowance line when its own
+ *  renewal of that hour was refused for the daily allowance
+ *  (cloud-session-renewal.ts), since sending again meets the same refusal. */
+export const FREEBUFF_SESSION_EXPIRED_MESSAGE =
+  'Your free session has expired. Send your message again to start a new one.'

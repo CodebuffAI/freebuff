@@ -14,6 +14,9 @@ export type ChatAdmission = {
   message?: string
   previousSession?: FreebuffSessionResponse | null
   metadataChecked?: boolean
+  /** A refusal whose way out is another model (too few hours, a spent
+   *  session limit): Enter opens the picker instead of retrying it. */
+  chooseModel?: boolean
 }
 
 /** Choosing a model is a preference. Only submitting a message admits it. */
@@ -29,8 +32,14 @@ export const useFreebuffChatStore = create<{
   admission: null,
 }))
 
+/** Only an admission POST in flight holds the model. One waiting on a busy
+ *  queue, a confirmation or a refusal can still change it. */
+function admissionInFlight() {
+  return useFreebuffChatStore.getState().admission?.phase === 'starting'
+}
+
 function openFreebuffPicker(initialView: 'model' | 'reasoning') {
-  if (useFreebuffChatStore.getState().admission) return
+  if (admissionInFlight()) return
   useFreebuffChatStore.setState({
     pickerOpen: true,
     pickerInitialView: initialView,
@@ -46,9 +55,15 @@ export function openFreebuffReasoningPicker() {
 }
 
 export function selectFreebuffChatModel(model: string) {
-  if (useFreebuffChatStore.getState().admission) return
+  if (admissionInFlight()) return
   persistFreebuffModelPick(model)
-  useFreebuffChatStore.setState({ nextModel: model, pickerOpen: false })
+  const waiting = useFreebuffChatStore.getState().admission !== null
+  useFreebuffChatStore.setState({
+    nextModel: model,
+    pickerOpen: false,
+    // The held message goes out on the new pick, asked about afresh.
+    ...(waiting ? { admission: { phase: 'requested', model } } : {}),
+  })
 }
 
 export function freebuffChatModel() {

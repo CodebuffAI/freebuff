@@ -64,6 +64,37 @@ export function parseSkillFileContent(
 }
 
 /**
+ * Read one SKILL.md with no directory to hold its name to, saying which part
+ * failed: an uploaded file has no directory, so its frontmatter is what names
+ * it. The same frontmatter parser and schema as `parseSkillFileContent`, so an
+ * upload this accepts is one the loader would accept under that name.
+ */
+export function readSkillDocument(
+  content: string,
+  filePath: string,
+):
+  | { skill: SkillDefinition; body: string }
+  | { problem: 'frontmatter' | 'name' | 'description' } {
+  const parsed = parseFrontmatter(content)
+  if (!parsed) return { problem: 'frontmatter' }
+  const result = SkillFrontmatterSchema.safeParse(parsed.frontmatter)
+  if (!result.success)
+    return {
+      problem: result.error.issues.some((issue) => issue.path[0] === 'name')
+        ? 'name'
+        : 'description',
+    }
+  return {
+    skill: createSkillDefinition({
+      frontmatter: result.data,
+      content,
+      filePath,
+    }),
+    body: parsed.body,
+  }
+}
+
+/**
  * The opening delimiter with nothing after it. gray-matter reads any text after
  * the first `---` as the frontmatter language, and `---js` selects its
  * JavaScript engine, which `eval()`s the block. SKILL.md files come from repos
@@ -97,6 +128,12 @@ const MATTER_OPTIONS = {
  *
  * Empty frontmatter is `null` rather than an empty object: a SKILL.md with no
  * `name` cannot be addressed, so there is nothing for a caller to do with it.
+ *
+ * Line endings are normalised first. gray-matter hands the engine the block
+ * up to the closing `\n---`, so a CRLF file's last line keeps its `\r`, and
+ * `yaml` (unlike js-yaml) keeps that in the value: `name: x\r` fails the name
+ * rule and a quoted last value fails to parse, silently dropping every skill
+ * saved on Windows.
  */
 function parseFrontmatter(content: string): {
   frontmatter: Record<string, unknown>
@@ -104,7 +141,10 @@ function parseFrontmatter(content: string): {
 } | null {
   if (!PLAIN_FRONTMATTER_OPENER.test(content)) return null
   try {
-    const parsed = matter(content, MATTER_OPTIONS)
+    const parsed = matter(
+      content.replace(/^﻿/, '').replace(/\r\n/g, '\n'),
+      MATTER_OPTIONS,
+    )
     if (!parsed.data || Object.keys(parsed.data).length === 0) {
       return null
     }

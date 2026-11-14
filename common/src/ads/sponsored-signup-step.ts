@@ -59,7 +59,7 @@ export function sponsoredSignupStep(
   }
   const needsAccount =
     declaredRunCredentials(procedure).length > 0 ||
-    Boolean(skill?.steps.some((step) => step.kind === 'user'))
+    Boolean(skill?.steps?.some((step) => step.kind === 'user'))
   const landing = needsAccount ? trackedAdvertiserLink(inputs) : null
   return landing ? { url: landing } : undefined
 }
@@ -70,7 +70,7 @@ export function sponsoredSignupStep(
  * exactly one SIGNED click id (never the `{bfcid}` slot), so opening it is
  * attributed. Null otherwise.
  */
-function trackedAdvertiserLink(
+export function trackedAdvertiserLink(
   inputs: SponsoredProcedureRuntimeInputs,
 ): string | null {
   const raw = inputs.advertiserLink?.trim()

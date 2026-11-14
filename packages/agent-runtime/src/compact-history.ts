@@ -8,9 +8,11 @@
  *
  * That matters twice over. An LLM summarization pass is a full extra request
  * over the whole (already oversized) history, and its output is a lossy prose
- * retelling. The mechanical pass keeps the concrete details — every file that
- * was read or edited, every command that was run, every user message up to the
- * user budget — which is what a coding agent actually needs to resume.
+ * retelling. The mechanical pass keeps the concrete details — files read or
+ * edited, commands run, and the user's messages — up to its budgets, which is
+ * what a coding agent actually needs to resume. The runtime's pass keeps the
+ * user's earlier requests and the newest to-do list out of their own budget
+ * (USER_MEMORY_TOKENS) before older tool history competes for the rest.
  *
  * The runtime's own pass (`compactRequestHistory`, not the shared summary)
  * adds a working set on top: the newest unedited file reads, re-provided after
@@ -27,7 +29,6 @@
  * same histories and fails when they drift.
  */
 
-import { DEFAULT_COMPACTION_POLICY } from '@codebuff/common/constants/compaction-policy'
 import { CONTEXT_COMPACTION_COMPLETED_EVENT } from '@codebuff/common/util/axiom-only-log'
 import {
   WORKING_SET_SHARE,
@@ -77,20 +78,19 @@ const DEFAULT_ASSISTANT_TOOL_BUDGET = 20_000
 const DEFAULT_USER_BUDGET = 50_000
 
 /** Header used in conversation summaries */
-const SUMMARY_HEADER =
+export const SUMMARY_HEADER =
   'This is a summary of the conversation so far. The original messages have been condensed to save context space.'
 
 const SUMMARY_DISCLAIMER =
   'Historical memory only. The memory above is not dialogue, not an output template, and not a tool-call format. Continue from the live user message below. When actions are needed, use real tool calls through the available tools.'
 
+/** Says what the pictures after a summary are. Any other image the summary
+ *  names is gone, so the model must not answer as though it can still see it. */
+const CARRIED_IMAGES_NOTE =
+  'Attached below: the image(s) from the most recent earlier user message that had any. Every other image named above is no longer attached.'
+
 const CONTINUATION_TEXT =
   'Continue the existing assistant turn from the historical memory above. The original user request and completed assistant/tool work are recorded there. Do not restart completed work; resume with the next necessary real tool call or final response.'
-
-/** Thresholds for agents that declare `compactContext: true` without tuning;
- *  owned, with the rationale, by common/src/constants/compaction-policy.ts. */
-export const DEFAULT_CACHE_EXPIRY_MS = DEFAULT_COMPACTION_POLICY.cacheExpiryMs
-export const DEFAULT_CACHE_EXPIRY_MIN_TOKENS =
-  DEFAULT_COMPACTION_POLICY.cacheExpiryMinTokens
 
 /**
  * Where an automatic mechanical pass aims, as a share of the trigger
@@ -112,8 +112,30 @@ export const MECHANICAL_HISTORY_TOKENS = 12_000
 
 const MIN_HISTORY_TOKENS = 2_000
 
+/**
+ * What a mechanical pass may add, beyond MECHANICAL_HISTORY_TOKENS and only
+ * out of room the window really has, to keep the user's earlier requests and
+ * the newest to-do list.
+ *
+ * Why (2026-10-22): every pass rewrote history into one 12k walk, newest
+ * entry first, that SKIPPED any entry larger than what was left. 14,061 of
+ * 15,538 context-limit passes over 10-19 to 10-22 dropped entries (median
+ * 115); a long spec from an earlier prompt went whole, the summary kept a
+ * median 3.9k tokens, and the to-do list survived only if its line won the
+ * walk. "It forgot what I asked" and "compacted and lost my plan" were the
+ * second-largest group of context complaints in that week's feedback. The
+ * context-pruner already gives user entries their own budget; this does the
+ * same for the runtime's pass. An earlier request too large for what is left
+ * is shortened (head and tail), not dropped.
+ */
+export const USER_MEMORY_TOKENS = 24_000
+
+/** Below this, a shortened earlier request says too little to be worth keeping. */
+const MIN_SHORTENED_REQUEST_TOKENS = 400
+
 /** Separator between entries inside the rendered historical memory. */
 const ENTRY_SEPARATOR = '\n\n---\n\n'
+const PART_LENGTHS_TAG = 'SUMMARY_PART_LENGTHS:'
 
 /** Matches the context-pruner's `trigger_reason` values so Axiom can union them. */
 export type CompactionTrigger =
@@ -215,6 +237,10 @@ function summarizeToolCall(
     case 'glob': {
       const pattern = input.pattern as string | undefined
       return pattern ? `glob search for ${pattern}` : 'glob search'
+    }
+    case 'cloud_read_image': {
+      const path = input.path as string | undefined
+      return path ? `opened image: ${path}` : 'opened an image'
     }
     case 'list_directory': {
       const path = input.path as string | undefined
@@ -402,25 +428,81 @@ function isRealHistory(message: Message): boolean {
   )
 }
 
+/** A file part counts only when it is a picture: a PDF is not one. */
+function isImagePart(part: Record<string, unknown>): boolean {
+  return (
+    part.type === 'image' ||
+    part.type === 'media' ||
+    (part.type === 'file' &&
+      typeof part.mediaType === 'string' &&
+      part.mediaType.startsWith('image/'))
+  )
+}
+
 /** The images on the most recent user message that had any. */
 function lastUserImageParts(messages: Message[]): Array<ImagePart | FilePart> {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]
     if (message.role !== 'user' || !Array.isArray(message.content)) continue
-    const imageParts = message.content.filter(
-      (part: Record<string, unknown>) =>
-        part.type === 'image' || part.type === 'media',
-    )
+    const imageParts = message.content.filter(isImagePart)
     if (imageParts.length > 0) return imageParts as Array<ImagePart | FilePart>
   }
   return []
+}
+
+/** The history's note for a user message's images, with any file names. */
+function userImageNote(message: Message): string {
+  if (!Array.isArray(message.content)) return ''
+  const images = (message.content as Array<Record<string, unknown>>).filter(
+    isImagePart,
+  )
+  if (images.length === 0) return ''
+  const names = images.flatMap((part) =>
+    typeof part.filename === 'string' && part.filename ? [part.filename] : [],
+  )
+  return names.length > 0
+    ? ` [image(s) were attached: ${names.join(', ')}]`
+    : ' [image(s) were attached]'
+}
+
+/**
+ * The history's note for a tool result that held an image. A read_files result
+ * names its images; any other tool's call, one entry up, says what it opened.
+ * Pixels the model saw must not read as text it can consult, and a read that
+ * returned no pixels must not read as a look at the image.
+ */
+function toolImageNote(toolMessage: ToolMessage): string | undefined {
+  if (!Array.isArray(toolMessage.content)) return undefined
+  const paths: string[] = []
+  let attached = false
+  for (const part of toolMessage.content) {
+    if (part.type === 'media') attached = true
+    if (
+      toolMessage.toolName !== 'read_files' ||
+      part.type !== 'json' ||
+      !Array.isArray(part.value)
+    )
+      continue
+    for (const file of part.value as Array<Record<string, unknown>>) {
+      if (
+        typeof file?.path === 'string' &&
+        typeof file?.content === 'string' &&
+        file.content.startsWith('[IMAGE]')
+      )
+        paths.push(file.path)
+    }
+  }
+  const named = paths.length > 0 ? `: ${paths.join(', ')}` : ''
+  if (attached)
+    return `Image(s) shown by ${toolMessage.toolName}${named}. These were pictures, not text, and are no longer attached; open them again to look.`
+  return paths.length > 0 ? `Image(s) not shown${named}` : undefined
 }
 
 /** Pulls the historical memory back out of a summary message. */
 function extractSummaryContent(message: Message): string {
   const text = getTextContent(message)
   const match = text.match(
-    /<conversation_summary>([\s\S]*?)<\/conversation_summary>/,
+    /<conversation_summary>([\s\S]*)<\/conversation_summary>/,
   )
   if (!match) return ''
   let content = match[1].trim()
@@ -428,23 +510,60 @@ function extractSummaryContent(message: Message): string {
     content = content.slice(SUMMARY_HEADER.length).trim()
   }
   const memoryMatch = content.match(
-    /<historical_memory>([\s\S]*?)<\/historical_memory>/,
+    /<historical_memory>([\s\S]*)<\/historical_memory>/,
   )
   if (memoryMatch) {
-    content = memoryMatch[1].trim()
+    // Strip only the envelope's newlines, so stored part lengths still match.
+    content = memoryMatch[1].replace(/^\n|\n$/g, '')
   }
   return content
+}
+
+/** A literal Markdown divider can also straddle the end of a part. Keep the
+ * original boundaries in message metadata only when splitting is ambiguous. */
+function summaryPartTags(parts: string[]): { tags?: string[] } {
+  if (!parts.some((part) => /\n\n---(?:\n\n|\n?$)/.test(part))) return {}
+  const lengths = parts.map((part) => part.length).join(',')
+  return { tags: [PART_LENGTHS_TAG + lengths] }
+}
+
+function splitSummaryParts(summaryText: string, tags?: string[]): string[] {
+  const tag = tags?.find((tag) => tag.startsWith(PART_LENGTHS_TAG))
+  if (tag) {
+    const lengths = tag.slice(PART_LENGTHS_TAG.length).split(',')
+    const parts: string[] = []
+    let start = 0
+    for (const length of lengths) {
+      const end = start + Number(length)
+      if (!Number.isSafeInteger(end) || end <= start || end > summaryText.length)
+        break
+      if (end < summaryText.length && !summaryText.startsWith(ENTRY_SEPARATOR, end))
+        break
+      parts.push(summaryText.slice(start, end))
+      start = end + ENTRY_SEPARATOR.length
+    }
+    if (
+      parts.length === lengths.length &&
+      start === summaryText.length + ENTRY_SEPARATOR.length
+    ) return parts
+  }
+  // Older persisted summaries have just the rendered text.
+  return summaryText.split(ENTRY_SEPARATOR)
 }
 
 /**
  * Parses a previous summary text blob back into role-tagged entries, so a
  * second compaction can re-apply the budgets over old and new history alike.
  */
-function parseSummaryIntoEntries(summaryText: string): SummaryEntry[] {
+function parseSummaryIntoEntries(
+  summaryText: string,
+  tags?: string[],
+): SummaryEntry[] {
   if (!summaryText.trim()) return []
 
-  const chunks = summaryText.split(ENTRY_SEPARATOR).filter((c) => c.trim())
-
+  const chunks = splitSummaryParts(summaryText, tags).filter((part) =>
+    part.trim(),
+  )
   return chunks.map((chunk) => {
     const trimmed = chunk.trim()
     const isUser =
@@ -470,16 +589,13 @@ function summarizeMessagesIntoEntries(messages: Message[]): SummaryEntry[] {
   for (const message of messages) {
     if (message.role === 'user') {
       let text = getTextContent(message).trim()
-      if (!text) continue
+      const imageNote = userImageNote(message)
+      if (!text && !imageNote) continue
       text = truncateLongText(text, USER_MESSAGE_LIMIT * CHARS_PER_TOKEN)
-      const hasImages =
-        Array.isArray(message.content) &&
-        message.content.some(
-          (part: Record<string, unknown>) =>
-            part.type === 'image' || part.type === 'media',
-        )
-      const imageNote = hasImages ? ' [image(s) were attached]' : ''
-      entries.push({ role: 'user', parts: [`[USER]${imageNote}\n${text}`] })
+      entries.push({
+        role: 'user',
+        parts: [text ? `[USER]${imageNote}\n${text}` : `[USER]${imageNote}`],
+      })
     } else if (message.role === 'assistant') {
       const textParts: string[] = []
       const toolSummaries: string[] = []
@@ -541,6 +657,9 @@ function summarizeMessagesIntoEntries(messages: Message[]): SummaryEntry[] {
  */
 function summarizeToolResult(toolMessage: ToolMessage): string[] {
   const entryParts: string[] = []
+
+  const imageNote = toolImageNote(toolMessage)
+  if (imageNote) entryParts.push(imageNote)
 
   if (Array.isArray(toolMessage.content)) {
     for (const part of toolMessage.content) {
@@ -757,7 +876,7 @@ ${summaryText}
 </historical_memory>
 </conversation_summary>
 
-${SUMMARY_DISCLAIMER}`,
+${SUMMARY_DISCLAIMER}${imageParts.length > 0 ? `\n\n${CARRIED_IMAGES_NOTE}` : ''}`,
   }
   return {
     role: 'user',
@@ -834,6 +953,7 @@ export function compactMessages(params: {
 
   const previousSummaryEntries = parseSummaryIntoEntries(
     previousSummary ? extractSummaryContent(previousSummary) : '',
+    previousSummary?.tags,
   )
   const entries = [
     ...previousSummaryEntries,
@@ -843,13 +963,17 @@ export function compactMessages(params: {
     entries,
     { assistantToolBudget, userBudget },
   )
-  const summaryText = renderSummaryText(includedEntries)
+  const summaryParts = includedEntries.flatMap((entry) => entry.parts)
+  const summaryText = summaryParts.join(ENTRY_SEPARATOR)
 
   // Images cannot survive as text, so carry the most recent set forward.
   const imageParts = lastUserImageParts(messagesToSummarize)
 
   const finalMessages: Message[] = [
-    buildSummaryMessage(summaryText, imageParts, now),
+    {
+      ...buildSummaryMessage(summaryText, imageParts, now),
+      ...summaryPartTags(summaryParts),
+    },
   ]
   if (instructionsPromptMessage) {
     // Refresh sentAt so downstream cache-expiry checks see a live timestamp.
@@ -932,6 +1056,57 @@ function latestToolExchangeStart(messages: Message[]): number {
     : messages.length
 }
 
+/**
+ * The most tool calls of the newest exchange a pass keeps verbatim; any older
+ * calls in the same batch, with their results, go to the summary instead.
+ *
+ * Why (2026-10-23): a runaway response (3,539 to 12,146 calls, 10-22) left a
+ * batch whose calls alone were 150k-330k tokens and whole was up to ~9M.
+ * The pass kept the batch whole, `fitToolResults` can clip results but not
+ * calls, so it threw on every later turn and the chat stayed stuck at the 400k
+ * budget error. Matches the per-response cap in tools/stream-parser.ts.
+ */
+export const MAX_PROTECTED_TOOL_CALLS = 100
+
+/** Splits an oversized newest exchange: the newest calls (and every result of
+ *  a kept message) stay; the rest are returned to be summarized. */
+export function capProtectedToolBatch(batch: Message[]): {
+  kept: Message[]
+  spilled: Message[]
+} {
+  const callIds = batch.flatMap((message) =>
+    message.role === 'assistant' && Array.isArray(message.content)
+      ? message.content.flatMap((part) =>
+          part.type === 'tool-call' ? [part.toolCallId] : [],
+        )
+      : [],
+  )
+  if (callIds.length <= MAX_PROTECTED_TOOL_CALLS) return { kept: batch, spilled: [] }
+  const newest = new Set(callIds.slice(-MAX_PROTECTED_TOOL_CALLS))
+  const keptIds = new Set<string>()
+  const keptAssistant = new Set<Message>()
+  for (const message of batch) {
+    if (message.role !== 'assistant' || !Array.isArray(message.content)) continue
+    const ids = message.content.flatMap((part) =>
+      part.type === 'tool-call' ? [part.toolCallId] : [],
+    )
+    if (ids.some((id) => newest.has(id))) {
+      keptAssistant.add(message)
+      ids.forEach((id) => keptIds.add(id))
+    }
+  }
+  const keep = (message: Message) =>
+    message.role === 'tool'
+      ? keptIds.has(message.toolCallId)
+      : message.role === 'assistant'
+        ? keptAssistant.has(message)
+        : true
+  return {
+    kept: batch.filter(keep),
+    spilled: batch.filter((message) => !keep(message)),
+  }
+}
+
 /** Runtime-only request budgeting around the shared historical summarizer.
  * The serialized context-pruner still uses compactMessages' summary algorithm;
  * it does not own the parent's live model request or its fixed token overhead.
@@ -978,19 +1153,28 @@ function compactRequestHistory(
       sentAt: Date.now(),
     })
   }
-  const fresh = messages
-    .slice(tailStart)
-    .filter((message) => !message.tags?.includes('STEP_PROMPT'))
+  const { kept: fresh, spilled } = capProtectedToolBatch(
+    messages
+      .slice(tailStart)
+      .filter((message) => !message.tags?.includes('STEP_PROMPT')),
+  )
   const protectedMessages = new Set([...prefix, ...fresh])
-  const older = messages
-    .slice(0, tailStart)
-    .filter((message) => !protectedMessages.has(message))
+  const older = [
+    ...messages
+      .slice(0, tailStart)
+      .filter((message) => !protectedMessages.has(message)),
+    // An oversized batch's older calls are history now, after everything else.
+    ...spilled,
+  ]
   // A previous pass's working set is reads, not conversation: it feeds this
   // pass's working set and stays out of the summary's tool log.
   const result = compactMessages({
     messages: older.filter((message) => !isWorkingSetMessage(message)),
   })
-  const entries = parseSummaryIntoEntries(result.summaryText)
+  const entries = parseSummaryIntoEntries(
+    result.summaryText,
+    result.messages[0].tags,
+  )
   const now = Date.now()
   // Old persisted compactions put the current request inside the summary and
   // remove USER_PROMPT tags. Reserve that request as historical memory rather
@@ -1056,8 +1240,7 @@ function compactRequestHistory(
     historicalRequest ? [historicalRequest] : [],
   )
   let images = result.messages[0].content.filter(
-    (part): part is ImagePart | FilePart =>
-      part.type === 'image' || part.type === 'file',
+    (part): part is ImagePart | FilePart => isImagePart(part),
   )
   if (
     countTokensMessages([
@@ -1065,31 +1248,96 @@ function compactRequestHistory(
     ]) > remainingTokens
   )
     images = []
+  const entryTokens = (entry: SummaryEntry) =>
+    countTokens(entry.parts.join(ENTRY_SEPARATOR) + ENTRY_SEPARATOR)
+  // The user's earlier requests and the newest to-do list first, out of their
+  // own allowance (USER_MEMORY_TOKENS), newest first; a request too large for
+  // what is left is shortened rather than skipped.
+  const reserved = new Set<SummaryEntry>(selected)
+  const shortened = new Map<SummaryEntry, SummaryEntry>()
+  // Only out of room under the pass's own target as well as the window, so a
+  // pass still lands well below its trigger and does not compact again at once.
+  const userAllowance = Math.max(
+    0,
+    Math.min(
+      USER_MEMORY_TOKENS,
+      Math.min(hardRemaining, targetBudget - prefixTokens - fittedTokens) -
+        workingSetTokens -
+        remainingTokens,
+    ),
+  )
+  let userAvailable = userAllowance
+  const newestTodos = entries.findLast(
+    (entry) =>
+      entry.role !== 'user' &&
+      entry.parts.some((part) => part.includes('Todos: ')),
+  )
+  const reserveFirst = [
+    ...(newestTodos ? [newestTodos] : []),
+    ...entries.filter((entry) => entry.role === 'user').reverse(),
+  ]
+  for (const entry of reserveFirst) {
+    if (selected.has(entry)) continue
+    const tokens = entryTokens(entry)
+    if (tokens <= userAvailable) {
+      selected.add(entry)
+      reserved.add(entry)
+      userAvailable -= tokens
+      continue
+    }
+    if (entry.role !== 'user' || userAvailable < MIN_SHORTENED_REQUEST_TOKENS)
+      continue
+    const text = entry.parts.join(ENTRY_SEPARATOR)
+    const short: SummaryEntry = {
+      role: entry.role,
+      parts: [truncateLongText(text, Math.floor(text.length * (userAvailable / tokens) * 0.9))],
+    }
+    const shortTokens = entryTokens(short)
+    if (shortTokens > userAvailable) continue
+    shortened.set(entry, short)
+    selected.add(entry)
+    reserved.add(entry)
+    userAvailable -= shortTokens
+  }
+  const summaryLimit = remainingTokens + (userAllowance - userAvailable)
   let available =
     remainingTokens -
     countTokensMessages([
-      buildSummaryMessage(renderSummaryText([...selected]), images, now),
+      buildSummaryMessage(
+        renderSummaryText(
+          [...selected].filter((entry) => !reserved.has(entry) || entry === historicalRequest),
+        ),
+        images,
+        now,
+      ),
     ])
   for (let i = entries.length - 1; i >= 0; i--) {
     if (selected.has(entries[i])) continue
-    const tokens = countTokens(
-      entries[i].parts.join(ENTRY_SEPARATOR) + ENTRY_SEPARATOR,
-    )
+    const tokens = entryTokens(entries[i])
     if (tokens > available) continue
     selected.add(entries[i])
     available -= tokens
   }
-  const kept = entries.filter((entry) => selected.has(entry))
+  const kept = entries
+    .filter((entry) => selected.has(entry))
+    .map((entry) => shortened.get(entry) ?? entry)
+  const isReserved = (entry: SummaryEntry) =>
+    reserved.has(entry) || [...shortened.values()].includes(entry)
   let summary = buildSummaryMessage(renderSummaryText(kept), images, now)
-  while (kept.length && countTokensMessages([summary]) > remainingTokens) {
-    const removable = kept.findIndex((entry) => entry !== historicalRequest)
+  while (kept.length && countTokensMessages([summary]) > summaryLimit) {
+    // Older tool history goes first; the reserved requests only if that is not enough.
+    let removable = kept.findIndex((entry) => !isReserved(entry))
+    if (removable < 0)
+      removable = kept.findIndex((entry) => entry !== historicalRequest)
     if (removable < 0) break
     kept.splice(removable, 1)
     summary = buildSummaryMessage(renderSummaryText(kept), images, now)
   }
-  const summaryInstalled = countTokensMessages([summary]) <= remainingTokens
+  const summaryInstalled = countTokensMessages([summary]) <= summaryLimit
   const output = [
-    ...(summaryInstalled ? [summary] : []),
+    ...(summaryInstalled
+      ? [{ ...summary, ...summaryPartTags(kept.flatMap((entry) => entry.parts)) }]
+      : []),
     ...prefix.map((message) => ({ ...message, sentAt: now })),
     // After the live request, as if the turn had opened by reading them.
     ...(workingSet?.messages ?? []),
@@ -1128,94 +1376,10 @@ function compactRequestHistory(
 }
 
 /**
- * How long the conversation sat idle before the live user prompt arrived, or
- * null when the history has no pair of timestamps to measure between.
- *
- * The gap is measured from the last assistant message to the USER_PROMPT that
- * follows it: that is the window in which the provider's prompt cache had to
- * survive on its own. Tool messages carry no `sentAt`, so they are skipped.
- */
-export function promptCacheGapMs(messages: Message[]): number | null {
-  const userPromptIndex = messages.findLastIndex((message) =>
-    message.tags?.includes('USER_PROMPT'),
-  )
-  if (userPromptIndex <= 0) return null
-
-  const userPrompt = messages[userPromptIndex]
-  if (!userPrompt.sentAt) return null
-
-  for (let i = userPromptIndex - 1; i >= 0; i--) {
-    const message = messages[i]
-    if (message.role !== 'assistant') continue
-    return message.sentAt ? userPrompt.sentAt - message.sentAt : null
-  }
-  return null
-}
-
-/**
- * Decides whether to compact, and why.
- *
- * Two triggers. The context limit is the one that must fire — the history no
- * longer fits. Cache expiry is the opportunistic one: once the prompt cache has
- * gone cold, the next request re-reads the whole history at full price anyway,
- * so rewriting it costs nothing and every later step in the turn is cheaper.
- * Compacting while the cache is warm would be the expensive mistake, which is
- * why the TTL errs long.
- *
- * The opportunistic trigger additionally needs enough context to be worth the
- * detail it destroys — see DEFAULT_CACHE_EXPIRY_MIN_TOKENS. The context limit
- * ignores that floor.
- */
-export function evaluateCompactionTrigger(params: {
-  messages: Message[]
-  contextTokenCount: number
-  maxContextLength: number
-  /** Pass null to disable the opportunistic cache-expiry trigger. */
-  cacheExpiryMs?: number | null
-  /** Pass null to take the opportunistic compaction at any size. */
-  cacheExpiryMinTokens?: number | null
-}): {
-  /** null means "leave the history alone". */
-  trigger: CompactionTrigger | null
-} {
-  const { messages, contextTokenCount, maxContextLength } = params
-  const cacheExpiryMs =
-    params.cacheExpiryMs === undefined
-      ? DEFAULT_CACHE_EXPIRY_MS
-      : params.cacheExpiryMs
-  const cacheExpiryMinTokens =
-    params.cacheExpiryMinTokens === undefined
-      ? DEFAULT_CACHE_EXPIRY_MIN_TOKENS
-      : params.cacheExpiryMinTokens
-
-  const overContextLimit = contextTokenCount > maxContextLength
-  const worthCompacting =
-    cacheExpiryMinTokens === null || contextTokenCount >= cacheExpiryMinTokens
-  const cacheGapMs =
-    cacheExpiryMs === null || !worthCompacting
-      ? null
-      : promptCacheGapMs(messages)
-  const cacheExpired =
-    cacheExpiryMs !== null && cacheGapMs !== null && cacheGapMs > cacheExpiryMs
-
-  const trigger: CompactionTrigger | null = overContextLimit
-    ? cacheExpired
-      ? 'context_limit_and_cache_expiry'
-      : 'context_limit'
-    : cacheExpired
-      ? 'cache_expiry'
-      : null
-
-  return { trigger }
-}
-
-/**
  * Compact once, on demand, whatever the triggers say.
  *
  * The mechanical pass — protected prefix, fresh tool exchange, budget walk —
- * with no decision attached. A user who asks for it has already decided;
- * `evaluateCompactionTrigger` exists to answer "is this worth doing unasked",
- * which is a different question.
+ * with no decision attached: the caller has already decided to compact.
  *
  * Since #5502 the rewritten part (summary plus working set) stops at
  * `historyTokens`, MECHANICAL_HISTORY_TOKENS (12k) by default, however much

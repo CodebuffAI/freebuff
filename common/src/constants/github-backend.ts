@@ -6,13 +6,14 @@
  *
  * - `convex`   Convex is the writer and the reader. Nothing in the Postgres
  *              port runs.
- * - `shadow`   (current; Owen, 2026-10-06) Convex still writes and serves. Server paths that read a
- *              connection or a sync state also read the Postgres copy (a
- *              connection that lags Convex is refreshed from Convex's
- *              current document before it is compared) and log
- *              `convex_pg_shadow_row_mismatch` with ids and column NAMES only:
- *              never a value, and never a token.
- * - `postgres` Postgres writes and serves. Token reads go to the PRIMARY.
+ * - `shadow`   (2026-10-06 to the flip) Convex wrote and served while the
+ *              runner's token read compared the Postgres copy. The comparison
+ *              was removed after the flip (2026-10-26), so `shadow` now
+ *              behaves as `convex`.
+ * - `postgres` (current; Owen, 2026-10-25) Postgres writes and serves. Token
+ *              reads go to the PRIMARY. Every Convex GitHub action goes
+ *              through `githubStore`'s bridge; the cutover is
+ *              docs/freebuff-github-postgres.md, "The cutover".
  *
  * It lives in `common` because both sides read it: Convex (which may import
  * only `@codebuff/common`) and the server/job code. A flip is a reviewed
@@ -20,7 +21,7 @@
  */
 export type GitHubBackendMode = 'convex' | 'shadow' | 'postgres'
 
-export const GITHUB_BACKEND: GitHubBackendMode = 'shadow'
+export const GITHUB_BACKEND: GitHubBackendMode = 'postgres'
 
 /** Who serves GitHub READS in `mode`. Shadow still serves Convex. */
 export function githubReadBackend(
@@ -61,3 +62,26 @@ export function githubShadowEnabled(
 export type GitHubWebhookReceiverMode = 'convex_proxy' | 'next'
 
 export const GITHUB_WEBHOOK_RECEIVER: GitHubWebhookReceiverMode = 'next'
+
+/**
+ * Where the GitHub ACTIONS run (docs/freebuff-github-postgres.md, "The
+ * actions on freebuff-web"): the legacy sync executor, the push and
+ * installation webhooks, initial sync, resolution and rollback, the OAuth and
+ * installation callbacks, the connect dialog, env export, token rotation and
+ * hosting's GitHub deployment.
+ *
+ * - `convex`       (current) the Convex actions run them, reading and writing
+ *                  the Postgres store through `githubStore`'s bridge.
+ * - `freebuff_web` freebuff-web runs the SAME action bodies in-process
+ *                  (`freebuff/web/src/server/github/actions/runtime.ts`), on
+ *                  Postgres; the browser calls them through `/api/fn`, the
+ *                  webhook jobs and the rotation cron run them locally, and
+ *                  their scheduled continuations are graphile jobs
+ *                  (`github.run_action`). Only the project spine's and the
+ *                  legacy thread's writes still reach Convex.
+ *
+ * Needs `GITHUB_BACKEND = 'postgres'`. A flip is a reviewed one-line diff.
+ */
+export type GitHubActionsRuntime = 'convex' | 'freebuff_web'
+
+export const GITHUB_ACTIONS_RUNTIME: GitHubActionsRuntime = 'freebuff_web'

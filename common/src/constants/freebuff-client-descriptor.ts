@@ -69,3 +69,48 @@ export const PROCESS_KIND_BUCKETS = [
   'na',
 ] as const
 export type ProcessKindBucket = (typeof PROCESS_KIND_BUCKETS)[number]
+
+/** The container the CLI runs in (`ctr`, 2026-11-11), from `/.dockerenv`,
+ *  `/run/.containerenv` and `/proc/1/cgroup` on Linux. Context only, never a
+ *  verdict: dev containers are normal. `unk` = not probed yet, `na` = not
+ *  Linux. */
+export const CONTAINER_BUCKETS = [
+  'none',
+  'docker',
+  'podman',
+  'k8s',
+  'lxc',
+  'unk',
+  'na',
+] as const
+export type ContainerBucket = (typeof CONTAINER_BUCKETS)[number]
+
+/** The hypervisor or cloud the machine reports (`vm`, 2026-11-11), from the
+ *  DMI vendor and product strings any user can read on Linux. A cloud name
+ *  (aws, gcp, azure, ...) is a server; a desktop hypervisor (vmware,
+ *  parallels, vbox, hyperv) is often a developer's own VM. Context only.
+ *  `unk` = not probed yet or unreadable, `na` = not Linux. */
+export const VIRTUALIZATION_BUCKETS = [
+  'none',
+  'aws',
+  'gcp',
+  'azure',
+  'digitalocean',
+  'hetzner',
+  'linode',
+  'vultr',
+  'ovh',
+  'oracle',
+  'alibaba',
+  'kvm',
+  'qemu',
+  'xen',
+  'vmware',
+  'hyperv',
+  'vbox',
+  'parallels',
+  'other',
+  'unk',
+  'na',
+] as const
+export type VirtualizationBucket = (typeof VIRTUALIZATION_BUCKETS)[number]

@@ -139,6 +139,46 @@ describe('terminal command process diagnostics', () => {
     }
   })
 
+  test('names a missing working directory instead of the shell', async () => {
+    // Spawning in a missing cwd fails with an ENOENT naming the shell
+    // ("uv_spawn 'C:\Program Files\Git\bin\bash.exe'"), which models read as
+    // bash being missing and retried for hundreds of calls.
+    const tempDir = mkdtempSync(join(tmpdir(), 'codebuff-missing-cwd-'))
+    const missing = join(tempDir, 'not-created-yet')
+
+    try {
+      for (const process_type of ['SYNC', 'BACKGROUND'] as const) {
+        await expect(
+          runTerminalCommand({
+            command: 'true',
+            process_type,
+            cwd: missing,
+            timeout_seconds: 5,
+          }),
+        ).rejects.toThrow(`Working directory "${missing}" does not exist.`)
+      }
+      // Only a failed spawn is diagnosed: a broker's own refusal (a sponsored
+      // run's containment) still reads the same for every path outside it.
+      await expect(
+        runTerminalCommand({
+          command: 'true',
+          process_type: 'SYNC',
+          cwd: missing,
+          timeout_seconds: 5,
+          terminalCommandBroker: {
+            start: () => {
+              throw new Error('only inside its own worktree')
+            },
+          },
+        }),
+      ).rejects.toThrow(
+        'Failed to start terminal command broker: only inside its own worktree',
+      )
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
   test('uses broker output and completion without spawning directly', async () => {
     const stdout = new PassThrough()
     const stderr = new PassThrough()
@@ -211,6 +251,39 @@ describe('terminal command process diagnostics', () => {
     expect(requests[0]!.executable).toBe('')
     expect(requests[0]!.args).toEqual([])
     expect('stdout' in value ? value.stdout : '').toBe('brokered')
+  })
+
+  test('a PowerShell broker failure gets a hint, with stderr and exit code unchanged', async () => {
+    const stderrText =
+      "The token '&&' is not a valid statement separator in this version."
+    const [{ value }] = await runTerminalCommand({
+      command: 'npm ci && npm test',
+      process_type: 'SYNC',
+      cwd: process.cwd(),
+      timeout_seconds: 5,
+      terminalCommandBroker: {
+        ownsShell: true,
+        start: () => {
+          const stdout = new PassThrough()
+          const stderr = new PassThrough()
+          queueMicrotask(() => {
+            stdout.end('')
+            stderr.end(stderrText)
+          })
+          return {
+            pid: 999_997,
+            stdout,
+            stderr,
+            completion: Promise.resolve(1),
+            kill: () => {},
+            isAlive: () => false,
+          }
+        },
+      },
+    })
+    expect('stderr' in value ? value.stderr : '').toBe(stderrText)
+    expect('exitCode' in value ? value.exitCode : null).toBe(1)
+    expect('hint' in value ? value.hint : '').toContain('it has no &&')
   })
 
   test('a broker that does not own its shell gets the bash request, unchanged', async () => {
@@ -626,6 +699,37 @@ describe('managed background commands', () => {
         } catch {}
         rmSync(join(value.stdoutPath, '..'), { recursive: true, force: true })
       }
+    }
+  })
+
+  test('stops listing a detached background command once its group ends', async () => {
+    // Windows tracks the shell itself, so this shape is never retained there.
+    if (process.platform === 'win32') return
+    const { terminalCommandOutputSchema } =
+      await import('../../../common/src/tools/params/tool/run-terminal-command')
+    // The turn ends normally, so its signal never aborts.
+    const turn = new AbortController()
+    const result = await runTerminalCommand({
+      command: 'sleep 0.5 & echo started',
+      process_type: 'BACKGROUND',
+      cwd: tmpdir(),
+      timeout_seconds: 30,
+      signal: turn.signal,
+    })
+    const output = result[0]
+    if (output.type !== 'json') throw new Error('Expected JSON')
+    const value = terminalCommandOutputSchema.parse(output.value)
+    if (!('processId' in value) || !value.stdoutPath)
+      throw new Error('Missing process/log info')
+    const listed = () =>
+      getActiveTerminalCommandProcesses().some(
+        (child) => child.pid === value.processId,
+      )
+    try {
+      expect(listed()).toBe(true)
+      expect(await waitFor(() => !listed(), 3000)).toBe(true)
+    } finally {
+      rmSync(join(value.stdoutPath, '..'), { recursive: true, force: true })
     }
   })
 

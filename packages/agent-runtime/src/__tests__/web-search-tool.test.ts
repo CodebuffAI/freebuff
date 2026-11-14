@@ -125,7 +125,11 @@ describe('web_search tool with researcher agent (via web API facade)', () => {
     })
 
     expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({ query: 'test query', depth: 'standard' }),
+      expect.objectContaining({
+        query: 'test query',
+        live: undefined,
+        sessionId: 'test-session',
+      }),
     )
   })
 
@@ -168,15 +172,17 @@ describe('web_search tool with researcher agent (via web API facade)', () => {
     )
   })
 
-  test('should handle custom depth parameter', async () => {
+  test('sends related queries, objective and explicit freshness together', async () => {
     spyOn(webApi, 'callWebSearchAPI').mockResolvedValue({
-      result: 'Deep result',
+      result: 'Search excerpts',
     })
 
     mockAgentStream([
       createToolCallChunk('web_search', {
-        query: 'RSC tutorial',
-        depth: 'deep',
+        query: '@tanstack/react-query staleTime',
+        additional_queries: ['TanStack Query 鮮度'],
+        objective: 'Identify the latest documented staleTime default.',
+        live: true,
       }),
       createToolCallChunk('end_turn', {}),
     ])
@@ -200,7 +206,15 @@ describe('web_search tool with researcher agent (via web API facade)', () => {
     })
 
     expect(webApi.callWebSearchAPI).toHaveBeenCalledWith(
-      expect.objectContaining({ depth: 'deep' }),
+      expect.objectContaining({
+        query: '@tanstack/react-query staleTime',
+        searchQueries: [
+          '@tanstack/react-query staleTime',
+          'TanStack Query 鮮度',
+        ],
+        objective: 'Identify the latest documented staleTime default.',
+        live: true,
+      }),
     )
   })
 
@@ -242,7 +256,7 @@ describe('web_search tool with researcher agent (via web API facade)', () => {
 
   test('should handle API errors gracefully', async () => {
     spyOn(webApi, 'callWebSearchAPI').mockResolvedValue({
-      error: 'Serper API timeout',
+      error: 'Search provider timeout',
     })
 
     mockAgentStream([
@@ -274,7 +288,7 @@ describe('web_search tool with researcher agent (via web API facade)', () => {
     expect(toolMsgs.length).toBeGreaterThan(0)
     const last = JSON.stringify(toolMsgs[toolMsgs.length - 1].content)
     expect(last).toContain('errorMessage')
-    expect(last).toContain('Serper API timeout')
+    expect(last).toContain('Search provider timeout')
   })
 
   test('should handle non-Error exceptions from facade', async () => {

@@ -30,6 +30,20 @@ export const shouldCollapseToolByDefault = (toolName: string): boolean => {
   return COLLAPSED_BY_DEFAULT_TOOL_NAMES.includes(toolName as ToolName)
 }
 
+// Tools an agent may keep out of the transcript with `includeToolCall: false`.
+// They only change the agent's own state. Any other hidden call, such as a
+// file read or a terminal command, is still drawn (collapsed): the Privacy
+// Policy says files an agent reads and commands it runs are shown.
+export const AGENT_HIDEABLE_TOOL_NAMES: readonly ToolName[] = [
+  'set_output',
+  'set_messages',
+  'add_message',
+] as const
+
+export const canAgentHideToolCall = (toolName: string): boolean => {
+  return AGENT_HIDEABLE_TOOL_NAMES.includes(toolName as ToolName)
+}
+
 /**
  * Check if an agent ID should be hidden from rendering
  */
@@ -49,6 +63,9 @@ export const COLLAPSED_BY_DEFAULT_AGENT_IDS = [
   'glob-matcher',
   'researcher-web',
   'researcher-docs',
+  // Fan-out workers: one message can hold many, and expanded each draws every
+  // tool block it runs on each streamed frame. Pagination does not bound that.
+  'fast-worker',
 ] as const
 
 /**

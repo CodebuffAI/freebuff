@@ -1,5 +1,5 @@
 import { MAX_LOG_DATA_BYTES } from '../schemas/logs'
-import { redactErrorFieldForLog } from './log-redaction'
+import { redactErrorFieldForLog, redactQueryErrorForLog } from './log-redaction'
 
 import type { LogLevel } from '../types/contracts/logs'
 
@@ -28,14 +28,6 @@ const MAX_ERROR_STACK_CHARS = 2_000
 const MAX_ERROR_MESSAGE_CHARS = 2_000
 const MAX_ERROR_QUERY_CHARS = 500
 
-function safeLength(value: unknown): number {
-  try {
-    return JSON.stringify(value)?.length ?? 0
-  } catch {
-    return Number.POSITIVE_INFINITY
-  }
-}
-
 function clip(text: string, max: number): string {
   return text.length > max
     ? `${text.slice(0, max)}… [${text.length - max} chars omitted]`
@@ -51,23 +43,18 @@ function clip(text: string, max: number): string {
  * (`code`, `status`, a driver's `query`) are kept, and `cause` is walked by the
  * same replacer.
  */
-function errorToJson(error: Error): Record<string, unknown> {
+function errorToJson(original: Error): Record<string, unknown> {
+  // A drizzle `DrizzleQueryError` carries the whole statement as `query`, and
+  // every bound value as `params` and again in `message` and `stack`. The
+  // values can be credentials (OAuth tokens on an auth insert), so they are
+  // never logged; for a bulk insert they were also hundreds of KB: the
+  // ad-revenue rollup's 2026-10-02 failure logged 522 KB, the row was cut at
+  // MAX_LOG_DATA_BYTES, and the `cause` holding the Postgres reason came after
+  // the cut. Keep the head of the statement and the cause.
+  const error = redactQueryErrorForLog(original)
   const fields: Record<string, unknown> = { ...error }
-  // A drizzle `DrizzleQueryError` carries the whole statement as `query`, every
-  // bound value as `params`, and both again in `message`. For a bulk insert
-  // that is hundreds of KB: the ad-revenue rollup's 2026-10-02 failure logged
-  // 522 KB, the row was cut at MAX_LOG_DATA_BYTES, and the `cause` holding the
-  // Postgres reason came after the cut, so it never reached Axiom. Keep the
-  // head of the statement, replace a long param list with its count, and keep
-  // the cause.
   if (typeof fields.query === 'string') {
     fields.query = clip(fields.query, MAX_ERROR_QUERY_CHARS)
-  }
-  if (
-    Array.isArray(fields.params) &&
-    safeLength(fields.params) > MAX_ERROR_QUERY_CHARS
-  ) {
-    fields.params = `[${fields.params.length} params omitted]`
   }
   // An AI SDK `APICallError` carries the whole LLM request (every message),
   // both header sets and the URL, and Bun's fetch errors the URL as `path`:

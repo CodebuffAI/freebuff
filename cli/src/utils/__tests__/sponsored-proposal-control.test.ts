@@ -16,13 +16,25 @@ import type { SponsoredProposalControlDeps } from '../sponsored-proposal-control
  * card stays live instead of being marked answered.
  */
 
-const PROPOSAL = { proposalId: 'proposal-1', advertiserId: 'adv_acme' }
+const PROPOSAL = {
+  proposalId: 'proposal-1',
+  advertiserId: 'adv_acme',
+  reportSnapshot: {
+    title: 'Example offer',
+    proposalId: 'proposal-1',
+    reason: 'This offer makes a misleading claim.',
+  },
+}
 
 function deps(
   results: { report?: boolean; dismiss?: boolean; setPrefs?: boolean } = {},
 ) {
   const calls: string[] = []
   const impl: SponsoredProposalControlDeps = {
+    getToken: () => 'tok',
+    notify: async () => {
+      calls.push('notify')
+    },
     report: async () => {
       calls.push('report')
       return results.report ?? true
@@ -76,12 +88,66 @@ describe('the preference write gates the dismiss', () => {
 })
 
 describe('the single-call controls report what happened', () => {
-  test('report touches nothing else', async () => {
+  test('an account change before submission prevents both notification and proposal writes', async () => {
+    const { calls, impl } = deps()
+    impl.getToken = () => 'other-account'
+    expect(
+      await runSponsoredProposalControl('report', PROPOSAL, 'tok', impl),
+    ).toBe(false)
+    expect(calls).toEqual([])
+  })
+
+  test('an account change during notification prevents the subsequent proposal write', async () => {
+    const { calls, impl } = deps()
+    let token = 'tok'
+    let finish!: () => void
+    impl.getToken = () => token
+    impl.notify = async () => {
+      calls.push('notify')
+      await new Promise<void>((resolve) => {
+        finish = resolve
+      })
+    }
+    const result = runSponsoredProposalControl('report', PROPOSAL, 'tok', impl)
+    token = 'other-account'
+    finish()
+    expect(await result).toBe(false)
+    expect(calls).toEqual(['notify'])
+  })
+
+  test('report notifies before updating the proposal', async () => {
     const { calls, impl } = deps()
     expect(
       await runSponsoredProposalControl('report', PROPOSAL, 'tok', impl),
     ).toBe(true)
-    expect(calls).toEqual(['report'])
+    expect(calls).toEqual(['notify', 'report'])
+  })
+
+  test('failed notifications keep the proposal report retryable', async () => {
+    const { calls, impl } = deps()
+    impl.notify = async () => {
+      throw new Error('offline')
+    }
+    expect(
+      await runSponsoredProposalControl('report', PROPOSAL, 'tok', impl),
+    ).toBe(false)
+    expect(calls).toEqual([])
+  })
+
+  test('missing explanation never notifies or changes the proposal', async () => {
+    const { calls, impl } = deps()
+    expect(
+      await runSponsoredProposalControl(
+        'report',
+        {
+          proposalId: PROPOSAL.proposalId,
+          advertiserId: PROPOSAL.advertiserId,
+        },
+        'tok',
+        impl,
+      ),
+    ).toBe(false)
+    expect(calls).toEqual([])
   })
 
   test('dismiss touches nothing else', async () => {

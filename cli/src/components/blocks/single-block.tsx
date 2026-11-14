@@ -127,6 +127,9 @@ export const SingleBlock = memo(
       }
 
       case 'html': {
+        // `render` is a function, so a chat restored from disk has lost it
+        // (e.g. a `/deals` list): draw nothing rather than throw.
+        if (typeof block.render !== 'function') return null
         return (
           <box
             key={`${messageId}-html-${idx}`}

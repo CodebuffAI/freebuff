@@ -6,7 +6,6 @@ import {
   sponsoredOfferPlan,
   sponsoredOfferPlanFromWire,
   sponsoredOfferPlanToWire,
-  sponsoredOfferSummary,
   sponsoredNeedsUserAnnotations,
 } from './sponsored-offer-plan'
 
@@ -115,42 +114,7 @@ describe('sponsoredOfferPlan', () => {
   })
 })
 
-describe('sponsoredOfferSummary', () => {
-  test('reads like the issue says it should', () => {
-    expect(
-      sponsoredOfferSummary({
-        stepCount: 6,
-        needsUser: ['Archil account'],
-        estimateSeconds: 240,
-      }),
-    ).toBe('6 steps · ~4 min · 1 needs you (Archil account)')
-  })
-
-  test('drops what it does not know, and names at most three', () => {
-    expect(
-      sponsoredOfferSummary({
-        stepCount: 1,
-        needsUser: [],
-        estimateSeconds: null,
-      }),
-    ).toBe('1 step')
-    expect(
-      sponsoredOfferSummary({
-        stepCount: null,
-        needsUser: ['', 'a', 'b', 'c', 'd'],
-        estimateSeconds: 20,
-      }),
-    ).toBe('~1 min · 5 needs you (a, b, c, +1 more)')
-    expect(
-      sponsoredOfferSummary({
-        stepCount: null,
-        needsUser: [],
-        estimateSeconds: null,
-      }),
-    ).toBeNull()
-    expect(sponsoredOfferSummary(null)).toBeNull()
-  })
-
+describe('sponsoredNeedsUserLabel', () => {
   test('labels are printable text only', () => {
     expect(sponsoredNeedsUserLabel('Archil account)')).toBe('Archil account')
     expect(sponsoredNeedsUserLabel('a\u001b[2Jb')).toBeNull()

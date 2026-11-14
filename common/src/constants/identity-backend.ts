@@ -27,7 +27,7 @@
  */
 export type IdentityBackend = 'convex' | 'shadow' | 'postgres'
 
-export const IDENTITY_BACKEND: IdentityBackend = 'shadow'
+export const IDENTITY_BACKEND: IdentityBackend = 'postgres'
 
 /** Read through a function so callers' comparisons are not narrowed away. */
 export function identityBackend(): IdentityBackend {
@@ -79,17 +79,18 @@ export function identityReadBackend(
  *             converges anything the twin got wrong (it applies Convex's
  *             document), and the comparison still logs.
  *
- * - `postgres` Postgres DECIDES the browser-called writes: the twin runs
- *             first, with the rows locked and the resurrection guard read
- *             from `account_deletion_audit`, and a refusal there never
- *             reaches Convex. An accepted write is then CARRIED to Convex by
- *             the same Convex mutation, inside the Postgres transaction, so
- *             a Convex failure rolls it back and the two never part; a new
- *             account's id is minted by that same call (Convex stays the
- *             minter while ~110 `v.id('users')` fields and 514
- *             `getAuthUser` sites read Convex `users`). The answer is the
- *             twin's. Server-side writers (badge sync, email move, Desktop
- *             provisioner) behave as at `dual`. The projection still runs.
+ * - `postgres` Postgres DECIDES AND COMMITS the browser-called writes: the
+ *             twin runs first, with the rows locked and the resurrection
+ *             guard read from `account_deletion_audit`, and a refusal there
+ *             never reaches Convex. An accepted write commits on Postgres
+ *             alone, then is CARRIED to Convex by the same Convex mutation
+ *             after COMMIT, best-effort (a failure, e.g. Convex paused, is
+ *             logged and never fails the write; the BYOK/Codex credential
+ *             writers' carry stays required while the runner's credential
+ *             reads are held on Convex). Only a new account's id is
+ *             still minted by the Convex sign-in inside the transaction
+ *             (IDENTITY_USER_ID_MINTER below). The answer is the twin's.
+ *             The projection still runs.
  *
  * Needs the projection running (`IDENTITY_BACKEND` not `convex`): the twins
  * write a mirror that only the projection keeps whole. `postgres` also needs
@@ -98,7 +99,7 @@ export function identityReadBackend(
  */
 export type IdentityWriteBackend = 'convex' | 'shadow' | 'dual' | 'postgres'
 
-export const IDENTITY_WRITE_BACKEND: IdentityWriteBackend = 'convex'
+export const IDENTITY_WRITE_BACKEND: IdentityWriteBackend = 'postgres'
 
 /** Read through a function so callers' comparisons are not narrowed away. */
 export function identityWriteBackend(): IdentityWriteBackend {
@@ -127,4 +128,28 @@ export function identityWriteAuthorityIsPostgres(
   backend: IdentityWriteBackend = identityWriteBackend(),
 ): boolean {
   return backend === 'postgres'
+}
+
+/**
+ * WHO MINTS A NEW ACCOUNT'S users ID at sign-in, while
+ * `IDENTITY_WRITE_BACKEND` is `postgres` (docs/freebuff-identity-postgres.md,
+ * "Ids"). A checked-in constant, flipped by a reviewed PR.
+ *
+ * - `convex` (shipped): the Convex sign-in mutation, carried inside the twin's
+ *   transaction, mints it (two Convex calls per new account: the mutation and
+ *   `users:viewer` for its creation time).
+ * - `freebuff_web`: the twin mints it in Convex's id format with no Convex
+ *   call (`packages/internal/src/identity/local-ids.ts`), and no later
+ *   identity write of that account is carried to Convex. Such an account has
+ *   NO Convex `users` document, so every Convex function it still reaches
+ *   through `getAuthUser` refuses it ("Flipping the minter" in the doc lists
+ *   them). Flip only once those are gone, or Convex is paused.
+ */
+export type IdentityUserIdMinter = 'convex' | 'freebuff_web'
+
+export const IDENTITY_USER_ID_MINTER: IdentityUserIdMinter = 'convex'
+
+/** Read through a function so callers' comparisons are not narrowed away. */
+export function identityUserIdMinter(): IdentityUserIdMinter {
+  return IDENTITY_USER_ID_MINTER
 }

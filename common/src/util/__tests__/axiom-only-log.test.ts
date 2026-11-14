@@ -9,6 +9,7 @@ import {
   ADS_FIRST_PARTY_SETTLEMENT_EVENT,
   ADS_FIRST_PARTY_VIEW_ACK_EVENT,
   ADS_EXTERNAL_CONVERSION_CLICK_ID_SHAPES,
+  ADS_EXTERNAL_CONVERSION_SELECTED_RAILS,
   ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT,
   ADS_CAMPAIGN_INGRESS_EVIDENCE_EVENT,
   ADS_ADVERTISER_REPORTING_READ_EVENT,
@@ -19,8 +20,10 @@ import {
   CONTEXT_PRUNING_COMPLETED_EVENT,
   getAxiomOnlyLogEvent,
   STREAM_RECOVERY_EVENT,
+  TOOL_CALL_REPAIR_EVENT,
   MECHANICAL_COMPACTION_SKIPPED_EVENT,
   CONTEXT_COMPACTION_COMPLETED_EVENT,
+  COMPACTION_FIRST_OUTPUT_EVENT,
   COMPACTION_FOLLOWUP_EVENT,
   FILE_EDIT_LOOP_EVENT,
   TODO_PROGRESS_REMINDER_EVENT,
@@ -28,6 +31,21 @@ import {
   ADS_FIRST_PARTY_TRACKING_FIELD_NAMES,
   FIRST_PARTY_VIEW_ACK_FIELD_NAMES,
 } from '../axiom-only-log'
+
+test('ships measured ad prediction latency and keeps absent timing absent', () => {
+  expect(
+    getAxiomOnlyLogEvent({
+      axiomEvent: ADS_FETCH_COMPLETED_EVENT,
+      ad_score_prediction_ms: 19.457,
+    })?.data.ad_score_prediction_ms,
+  ).toBe(19.457)
+  expect(
+    getAxiomOnlyLogEvent({
+      axiomEvent: ADS_FETCH_COMPLETED_EVENT,
+      outcome: 'fill',
+    })?.data,
+  ).not.toHaveProperty('ad_score_prediction_ms')
+})
 
 describe('getAxiomOnlyLogEvent', () => {
   test('ships click quality facts with explicit unknowns and bounded reasons', () => {
@@ -120,6 +138,32 @@ describe('getAxiomOnlyLogEvent', () => {
       event: ADS_FETCH_COMPLETED_EVENT,
       data: { client_inline_cadence: cadence },
     })
+  })
+
+  test('ships the new-user ad ramp fields with their types', () => {
+    const fields = {
+      new_user_ramp_outcome: 'decided',
+      session_index: 2,
+      new_user_ramp_suppressed: true,
+      new_user_ramp_keep_bps: 3333,
+      new_user_signup_day: '2026-10-21',
+      no_fill_reason: 'new_user_ramp',
+    }
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: ADS_FETCH_COMPLETED_EVENT,
+        ...fields,
+        user_created_at: '2026-10-21T00:00:00Z',
+      }),
+    ).toEqual({ event: ADS_FETCH_COMPLETED_EVENT, data: fields })
+    // A wrong type is dropped, not coerced.
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: ADS_FETCH_COMPLETED_EVENT,
+        session_index: '2',
+        new_user_ramp_suppressed: 'yes',
+      })?.data,
+    ).toEqual({})
   })
 
   test('strictly bounds client-reported Showcase presentation telemetry', () => {
@@ -381,6 +425,27 @@ describe('getAxiomOnlyLogEvent', () => {
     })
   })
 
+  test('a tool-call repair ships names only, never the arguments', () => {
+    expect(
+      getAxiomOnlyLogEvent({
+        axiomEvent: TOOL_CALL_REPAIR_EVENT,
+        metric: 'arguments_repaired',
+        toolName: 'str_replace',
+        repair: 'unescaped-quote',
+        model: 'deepseek/deepseek-v4-flash',
+        input: '{"path": "secret.ts"}',
+      }),
+    ).toEqual({
+      event: TOOL_CALL_REPAIR_EVENT,
+      data: {
+        metric: 'arguments_repaired',
+        toolName: 'str_replace',
+        repair: 'unescaped-quote',
+        model: 'deepseek/deepseek-v4-flash',
+      },
+    })
+  })
+
   test('a skipped compaction ships a fixed error kind, never the message', () => {
     expect(
       getAxiomOnlyLogEvent({
@@ -437,6 +502,21 @@ describe('getAxiomOnlyLogEvent', () => {
         post_tokens: 41_000,
       },
     })
+  })
+
+  test('a continuation run is marked on its first output and compactions', () => {
+    for (const axiomEvent of [
+      COMPACTION_FIRST_OUTPUT_EVENT,
+      CONTEXT_COMPACTION_COMPLETED_EVENT,
+    ]) {
+      expect(
+        getAxiomOnlyLogEvent({
+          axiomEvent,
+          agent_run_id: 'run-1',
+          continuation_prompt: 'true',
+        })?.data,
+      ).toMatchObject({ agent_run_id: 'run-1', continuation_prompt: 'true' })
+    }
   })
 
   test('compaction follow-up ships counts, never a path', () => {
@@ -774,6 +854,7 @@ describe('getAxiomOnlyLogEvent', () => {
       decisions_pctr_input_tokens: 3150,
       decisions_pctr_context_trimmed: false,
       decisions_pctr_history_omitted: true,
+      decisions_pctr_message_context: 'withheld',
     }
     expect(
       getAxiomOnlyLogEvent({
@@ -1035,11 +1116,15 @@ describe('getAxiomOnlyLogEvent', () => {
     )
   })
 
-  test('keeps external conversion postbacks content- and identifier-free', () => {
+  test('keeps only advertiser correlation and content-free dimensions on conversion postbacks', () => {
     expect(
       getAxiomOnlyLogEvent({
         axiomEvent: ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT,
-        channel: 'client',
+        channel: 's2s',
+        selected_rail: 'identity_email',
+        email_present: false,
+        email_hash_present: true,
+        email_hash_valid: true,
         outcome: 'accepted',
         rejection_reason: 'none',
         event_type: 'signup_completed',
@@ -1056,6 +1141,8 @@ describe('getAxiomOnlyLogEvent', () => {
         advertiser_id: 'advertiser-private',
         user_id: 'user-private',
         email: 'private@example.com',
+        em: 'a'.repeat(64),
+        userData: { em: 'a'.repeat(64) },
         url: 'https://partner.example/private',
         body: { private: true },
         error: new Error('private failure'),
@@ -1063,7 +1150,12 @@ describe('getAxiomOnlyLogEvent', () => {
     ).toEqual({
       event: ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT,
       data: {
-        channel: 'client',
+        channel: 's2s',
+        advertiser_id: 'advertiser-private',
+        selected_rail: 'identity_email',
+        email_present: false,
+        email_hash_present: true,
+        email_hash_valid: true,
         outcome: 'accepted',
         rejection_reason: 'none',
         event_type: 'signup_completed',
@@ -1101,11 +1193,42 @@ describe('getAxiomOnlyLogEvent', () => {
     const result = getAxiomOnlyLogEvent({
       ...base,
       click_id_shape: 'bfc_1.private-raw-click-value',
-      advertiser_id: 'advertiser-private',
+      advertiser_id: 'advertiser-1',
       api_key: 'fbadv_private',
     })
     expect(result?.data).not.toHaveProperty('click_id_shape')
     expect(JSON.stringify(result)).not.toContain('private')
+  })
+
+  test('accepts only closed selected rails and boolean identity presence flags', () => {
+    const base = { axiomEvent: ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT }
+    for (const selectedRail of ADS_EXTERNAL_CONVERSION_SELECTED_RAILS) {
+      expect(
+        getAxiomOnlyLogEvent({
+          ...base,
+          selected_rail: selectedRail,
+          email_present: true,
+          email_hash_present: false,
+          email_hash_valid: false,
+        })?.data,
+      ).toEqual({
+        selected_rail: selectedRail,
+        email_present: true,
+        email_hash_present: false,
+        email_hash_valid: false,
+      })
+    }
+    for (const invalid of ['private@example.com', 'a'.repeat(64), 42, null]) {
+      const result = getAxiomOnlyLogEvent({
+        ...base,
+        selected_rail: invalid,
+        email_present: invalid,
+        email_hash_present: invalid,
+        email_hash_valid: invalid,
+        advertiser_id: { raw: 'private-id' },
+      })
+      expect(result?.data).toEqual({})
+    }
   })
 
   test('drops a non-string channel from the postback census', () => {
@@ -1161,4 +1284,65 @@ describe('getAxiomOnlyLogEvent', () => {
       },
     })
   })
+})
+
+test('web showcase telemetry is separately validated and never manufactures Desktop experiment fields', () => {
+  const result = getAxiomOnlyLogEvent({
+    axiomEvent: ADS_SHOWCASE_PRESENTED_EVENT,
+    placement_id: 'Desktop-Showcase:web',
+    surface: 'freebuff_web_chat',
+    format: 'showcase',
+    client_family: 'web',
+    client_event_id: '12345678-1234-4234-8234-123456789abc',
+    sponsor_break_arm: 'unknown',
+    policy_provenance: 'unavailable',
+    showcase_variant: 'legacy',
+    impUrl: 'secret',
+    userId: 'secret',
+    gravity_showcase_version: 'forged',
+  })
+  expect(result?.data).toMatchObject({
+    placement_id: 'Desktop-Showcase:web',
+    showcase_variant: 'legacy',
+    policy_provenance: 'unavailable',
+  })
+  expect(result?.data).not.toHaveProperty('gravity_showcase_version')
+  expect(result?.data).not.toHaveProperty('impUrl')
+  expect(result?.data).not.toHaveProperty('userId')
+  expect(
+    getAxiomOnlyLogEvent({
+      axiomEvent: ADS_SHOWCASE_PRESENTED_EVENT,
+      placement_id: 'Desktop-Showcase:web',
+      format: 'showcase',
+      client_family: 'desktop',
+    })?.data,
+  ).toEqual({})
+})
+
+test('sponsor lifecycle retains dismissal lock semantics in the restricted sink', () => {
+  for (const event of [
+    'ads.break_shown',
+    'ads.break_clicked',
+    'ads.break_closed',
+    ADS_SHOWCASE_PRESENTED_EVENT,
+  ]) {
+    const result = getAxiomOnlyLogEvent({
+      axiomEvent: event,
+      placement_id: 'Desktop-Showcase:web',
+      surface: 'freebuff_web_chat',
+      format: 'showcase',
+      client_family: 'web',
+      client_event_id: '12345678-1234-4234-8234-123456789abc',
+      dismiss_lock_ms: 5000,
+      lock_completed: false,
+      userId: 'private',
+      impUrl: 'private',
+    })
+    expect(result?.data).toMatchObject({
+      dismiss_lock_ms: 5000,
+      lock_completed: false,
+    })
+    expect(result?.data).not.toHaveProperty('userId')
+    expect(result?.data).not.toHaveProperty('impUrl')
+  }
 })

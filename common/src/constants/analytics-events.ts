@@ -13,12 +13,13 @@ export enum AnalyticsEvent {
   // per-surface DAU (filter on the `surface` property) and a combined DAU (no
   // filter). The `surface` property is one of: cli, web, chat, desktop, cloud
   // (web = the freebuff.com builder, cloud = connected-repo builder projects).
-  // Native sends additionally carry `client_platform: 'ios' | 'android'`;
-  // surface still describes the mode, and missing platform means unknown.
+  // A native app's send reports its platform instead, ios or android, from
+  // any screen (messageSentSurface).
   // Emission points: cli client analytics; chat's stream route (server-side);
   // desktop's analytics module; web/cloud via the Convex send mutation
   // (PostHog + Axiom, both direct from Convex — see convex/analytics.ts).
   MESSAGE_SENT = 'message_sent',
+  PRODUCT_FUNNEL_STEP = 'freebuff.product_funnel_step',
 
   // Cross-surface — engaged time
   // Emitted once per minute of *active engagement* on each surface (cli / web /
@@ -175,6 +176,11 @@ export enum AnalyticsEvent {
   WEB_SEARCH_ERROR = 'api.web_search_error',
   WEB_SEARCH_RATE_LIMITED = 'api.web_search_rate_limited',
 
+  WEB_FETCH_AUTH_ERROR = 'api.web_fetch_auth_error',
+  WEB_FETCH_RATE_LIMITED = 'api.web_fetch_rate_limited',
+  WEB_FETCH_VALIDATION_ERROR = 'api.web_fetch_validation_error',
+  WEB_FETCH_ERROR = 'api.web_fetch_error',
+
   DOCS_SEARCH_REQUEST = 'api.docs_search_request',
   DOCS_SEARCH_AUTH_ERROR = 'api.docs_search_auth_error',
   DOCS_SEARCH_VALIDATION_ERROR = 'api.docs_search_validation_error',
@@ -224,6 +230,11 @@ export enum AnalyticsEvent {
   // Provider-ledger snapshot. Keep the latest fetched_at per UTC day before
   // summing; today's row is explicitly partial. No per-user identity.
   ADS_GRAVITY_REVENUE_DAILY = 'ads.gravity_revenue_daily',
+  // Our own Gravity counts from Postgres `ad_impression` per UTC day,
+  // placement, surface, client, render format and traffic class, set beside
+  // ads.gravity_revenue_daily. Restated hourly: keep the latest computed_at per
+  // day. No per-user identity.
+  ADS_GRAVITY_RECONCILIATION_DAILY = 'ads.gravity_reconciliation_daily',
   ADS_FIRST_PARTY_VIEW_ACK = 'ads.first_party_view_ack',
   /**
    * The CLI dock was expanded into its detail panel (COD-457). A UI gesture,
@@ -281,6 +292,17 @@ export enum AnalyticsEvent {
   ADVERTISER_CARD_SETUP_FAILED = 'advertiser.card_setup_failed',
   ADVERTISER_API_KEY_CREATED = 'advertiser.api_key_created',
   ADVERTISER_MEMBER_INVITED = 'advertiser.member_invited',
+  // Paid provider API funnel (freebuff/web/src/lib/paid-api-analytics.ts).
+  // Mutations are server-side so web and Desktop both count; distinct_id is
+  // the Postgres user id. FUNDED fires from the Stripe webhook in `web`, once
+  // per newly credited payment.
+  PAID_API_PAGE_VIEWED = 'paid_api.page_viewed',
+  PAID_API_CHECKOUT_STARTED = 'paid_api.checkout_started',
+  PAID_API_CARD_SETUP_STARTED = 'paid_api.card_setup_started',
+  PAID_API_AUTO_TOPUP_CHANGED = 'paid_api.auto_topup_changed',
+  PAID_API_KEY_CREATED = 'paid_api.key_created',
+  PAID_API_KEY_REVOKED = 'paid_api.key_revoked',
+  PAID_API_FUNDED = 'paid_api.funded',
   // Server-side: the off-page facts the browser cannot see. distinct_id is the
   // Postgres user id (the browser identifies by email), so these count and
   // trend but do not join a browser funnel. Top-up CREDITS are not here: the
@@ -315,21 +337,56 @@ export enum AnalyticsEvent {
   // also exactly what a genuine in-person referral looks like ("try it,
   // here's my laptop").
   FREEBUFF_REFERRAL_SOCK_SIGNAL = 'freebuff.referral.sock_signal',
-  // Freebuff - Get Started Page (referral onboarding funnel, in order:
+  // The referred friend's FIRST product use: `referral_v2.activated_at` was
+  // just stamped (packages/billing/src/referral-v2.ts). To PostHog, for the
+  // Referrals dashboard's activations-per-day tile. `accessTier`: full |
+  // limited at that first use; `referrerId`. A later tier upgrade of the same
+  // referral does not repeat it.
+  FREEBUFF_REFERRAL_ACTIVATED = 'freebuff.referral.activated',
+  // The Desktop welcome's "Invite by email": a signed-in account sent its
+  // `/?ref=` link to a friend's address, which starts the Resend "Friend
+  // invited" sequence (freebuff-web `/api/workspace/referral-invite`).
+  // `domain`: the invitee's mail domain; never the address.
+  FREEBUFF_REFERRAL_INVITE_SENT = 'freebuff.referral.invite_sent',
+  // Every invite placement in the web and hosted Desktop workspace ("Give your
+  // friends unlimited free coding"; docs/referrals.md lists them). The name is
+  // the first one's, the first-prompt card. `action`: shown | opened (a panel
+  // opened on a click) | copied | copy_failed | dismissed (X or Escape only) |
+  // invite_sent | invite_failed (with the email invite's `outcome`);
+  // `placement`: dock (the first-prompt card; absent before 2026-11) | inline
+  // | sidebar | settings; `qualifying`: 0-3 referred signups so far;
+  // `themes_unlocked`; `arm` where an experiment placed the invite. The old
+  // local Desktop renderer reports the user actions as desktop.feature_used
+  // `theme_referral.*` instead.
+  FREEBUFF_THEME_REFERRAL_PROMPT = 'freebuff.theme_referral_prompt',
+  // Freebuff - Get Started Page (sign-up, then Freebuff Desktop; in order:
   //   viewed → sign_in_clicked → signed_in → eligibility_resolved →
-  //   [connect_github_clicked] → install_command_copied | web_clicked).
-  // Every event carries a `referrer` prop (the inviter's name) for per-referrer
-  // funnel breakdowns.
+  //   [connect_github_clicked] → web_clicked | freebuff.desktop_download_clicked
+  //   (location get_started)).
+  // Every get_started event carries a `referrer` prop (the inviter's name) for
+  // per-referrer funnel breakdowns.
   FREEBUFF_GET_STARTED_VIEWED = 'freebuff.get_started_viewed',
   FREEBUFF_GET_STARTED_SIGN_IN_CLICKED = 'freebuff.get_started_sign_in_clicked',
   FREEBUFF_GET_STARTED_SIGNED_IN = 'freebuff.get_started_signed_in',
+  FREEBUFF_EMAIL_AUTH = 'freebuff.email_auth',
+  FREEBUFF_AUTH_STEP = 'freebuff.auth_step',
   FREEBUFF_GET_STARTED_ELIGIBILITY_RESOLVED = 'freebuff.get_started_eligibility_resolved',
   FREEBUFF_GET_STARTED_CONNECT_GITHUB_CLICKED = 'freebuff.get_started_connect_github_clicked',
-  FREEBUFF_GET_STARTED_INSTALL_COMMAND_COPIED = 'freebuff.get_started_install_command_copied',
   FREEBUFF_GET_STARTED_WEB_CLICKED = 'freebuff.get_started_web_clicked',
-  // Deprecated (previous get-started design — no longer fired):
+  // Deprecated (previous get-started designs — no longer fired):
+  FREEBUFF_GET_STARTED_INSTALL_COMMAND_COPIED = 'freebuff.get_started_install_command_copied',
   FREEBUFF_GET_STARTED_HELP_EXPANDED = 'freebuff.get_started_help_expanded',
   FREEBUFF_GET_STARTED_EDITOR_CLICKED = 'freebuff.get_started_editor_clicked',
+
+  // Paid signup destinations. A handoff arrival is not a signup; compare the
+  // signed-out entry with canonical web.signup and message_sent conversions.
+  FREEBUFF_START_VIEWED = 'freebuff.start_viewed',
+  FREEBUFF_START_SIGN_IN_CLICKED = 'freebuff.start_sign_in_clicked',
+  FREEBUFF_START_SIGNED_IN = 'freebuff.start_signed_in',
+  // An Android visitor tapped the handoff's Google Play button.
+  FREEBUFF_START_ANDROID_STORE_CLICKED = 'freebuff.start_android_store_clicked',
+  // An iPhone or iPad visitor tapped the handoff's App Store button.
+  FREEBUFF_START_IOS_STORE_CLICKED = 'freebuff.start_ios_store_clicked',
 
   // Freebuff - Chat
   // Emitted once per new-thread title generation attempt (server-side). The
@@ -359,6 +416,10 @@ export enum AnalyticsEvent {
   // because the same download had just started (the "did that work?" double
   // click) — a direct read on whether the click feedback is landing.
   FREEBUFF_DESKTOP_DOWNLOAD_CLICKED = 'freebuff.desktop_download_clicked',
+
+  // Freebuff - a phone tapped its own app store button on the homepage or the
+  // sign-in step. `store` is ios | android, `location` the button.
+  FREEBUFF_MOBILE_APP_CLICKED = 'freebuff.mobile_app_clicked',
 
   // Freebuff Web creation gate: the user's idea was screened as something Web
   // cannot build, and they clicked through to the surface we suggested.
@@ -399,6 +460,22 @@ export enum AnalyticsEvent {
   FREEBUFF_HOME_GITHUB_CLICKED = 'freebuff.home_github_clicked',
   FREEBUFF_HOME_INSTALL_GUIDE_EXPANDED = 'freebuff.home_install_guide_expanded',
   FREEBUFF_HOME_FAQ_OPENED = 'freebuff.home_faq_opened',
+
+  // Freebuff - Merch store (/store, freebuff/web/src/lib/merch/store-analytics.ts).
+  // Page views are PostHog's own $pageview. The purchase happens on Shopify's
+  // checkout, so it is not here: the cart carries `_posthog_distinct_id` to
+  // join an order back to its visitor.
+  FREEBUFF_STORE_CATEGORY_SELECTED = 'freebuff.store_category_selected',
+  FREEBUFF_STORE_PRODUCT_CLICKED = 'freebuff.store_product_clicked',
+  FREEBUFF_STORE_PRODUCT_VIEWED = 'freebuff.store_product_viewed',
+  FREEBUFF_STORE_OPTION_SELECTED = 'freebuff.store_option_selected',
+  FREEBUFF_STORE_PHOTO_SELECTED = 'freebuff.store_photo_selected',
+  FREEBUFF_STORE_ADD_TO_CART = 'freebuff.store_add_to_cart',
+  FREEBUFF_STORE_CART_OPENED = 'freebuff.store_cart_opened',
+  FREEBUFF_STORE_CART_QUANTITY_CHANGED = 'freebuff.store_cart_quantity_changed',
+  FREEBUFF_STORE_CART_ITEM_REMOVED = 'freebuff.store_cart_item_removed',
+  FREEBUFF_STORE_CHECKOUT_STARTED = 'freebuff.store_checkout_started',
+  FREEBUFF_STORE_FAQ_OPENED = 'freebuff.store_faq_opened',
 
   // Freebuff - Home hero: the visitor committed to a product (`tab`, `surface`,
   // `action`; see HeroTabs.tsx). A hero Desktop download is instead
@@ -468,6 +545,8 @@ export enum AnalyticsEvent {
   DESKTOP_PROJECT_CREATED = 'desktop.project_created',
   DESKTOP_PROJECT_REMOVED = 'desktop.project_removed',
   DESKTOP_TURN_COMPLETED = 'desktop.turn_completed',
+  DESKTOP_FUNNEL_STEP = 'desktop.funnel_step',
+  DESKTOP_ACQUISITION_STEP = 'desktop.acquisition_step',
   DESKTOP_FAILED_TURN_RECOVERY = 'desktop.failed_turn_recovery',
   DESKTOP_HARNESS_CHANGED = 'desktop.harness_changed',
   DESKTOP_MODEL_CHANGED = 'desktop.model_changed',
@@ -506,6 +585,15 @@ export enum AnalyticsEvent {
   ADS_SHOWCASE_PRESENTED = 'ads.showcase_presented',
   DESKTOP_AD_CLICKED = 'desktop.ad_clicked',
   DESKTOP_INLINE_AD_SLOT_ELIGIBLE = 'desktop.inline_ad_slot_eligible',
+  // Mock display-ad placements (common/src/ads/display-ads/telemetry.ts):
+  // analytics ONLY. Every row carries mock_creative: true and billable: false;
+  // nothing is served behind them, so no ad_impression / ledger row, view ack
+  // or ads.impression_recorded / desktop.ad_shown is ever written for one.
+  DISPLAY_AD_IMPRESSION = 'display_ads.impression',
+  DISPLAY_AD_CLICK = 'display_ads.click',
+  DISPLAY_AD_DISMISS = 'display_ads.dismiss',
+  DISPLAY_AD_RESTORE = 'display_ads.restore',
+  DISPLAY_AD_ACTION = 'display_ads.action',
   // Shutdown/crash lifecycle of harness CLI children: turns aborted at quit so
   // their CLIs terminate, orphans from a dead orchestrator reaped at launch,
   // and interrupted turns auto-resumed by recovery. Together these answer "how

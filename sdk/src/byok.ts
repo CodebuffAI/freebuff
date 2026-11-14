@@ -302,6 +302,17 @@ export const BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW = 131_072
  */
 export const BYOK_DISCOVERED_CONTEXT_WINDOW_CAP = 400_000
 
+/**
+ * A connection's limits as a run uses them. `maxOutputTokens` is the stored
+ * setting; `reservedOutputTokens` is the most output a request asks for, and
+ * `maxContextLength` (the compaction budget) is 90% of the window left after it.
+ *
+ * The reservation is at most half the window. The settings form's `max`
+ * offers an output limit of window - 1, which left a budget of 0: the agent
+ * schema then refused every agent of the run before any model call (Cloud,
+ * 2026-11). A prompt plus output over the window is also a request a strict
+ * endpoint refuses. Any valid window keeps a budget of at least 1,843.
+ */
 export function byokModelLimits(connection: {
   contextWindow?: number
   maxOutputTokens?: number
@@ -322,10 +333,15 @@ export function byokModelLimits(connection: {
       'Choose a context limit of 4096–2000000 tokens and a smaller positive output limit',
     )
   }
+  const reservedOutputTokens = Math.min(
+    maxOutputTokens,
+    Math.floor(contextWindow / 2),
+  )
   return {
     contextWindow,
     maxOutputTokens,
-    maxContextLength: Math.floor((contextWindow - maxOutputTokens) * 0.9),
+    reservedOutputTokens,
+    maxContextLength: Math.floor((contextWindow - reservedOutputTokens) * 0.9),
   }
 }
 

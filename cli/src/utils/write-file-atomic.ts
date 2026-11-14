@@ -11,6 +11,13 @@ function tempPathFor(filePath: string): string {
 }
 
 /**
+ * Owner read/write only: these files are chat transcripts and run state. The
+ * temp file is created with this mode and the rename carries the inode, so
+ * every rewrite also replaces an older world-readable file with a private one.
+ */
+const PRIVATE_FILE_MODE = 0o600
+
+/**
  * Every filesystem call an atomic write makes, as one seam.
  *
  * A successful fsync leaves no trace in the resulting file: the only way to
@@ -107,7 +114,7 @@ export function writeFileAtomic(filePath: string, data: string): void {
   try {
     // 'wx' so a temp path that somehow already exists is a loud error rather
     // than a silent clobber of another write's bytes.
-    const fd = activeFs.openSync(tmpPath, 'wx')
+    const fd = activeFs.openSync(tmpPath, 'wx', PRIVATE_FILE_MODE)
     try {
       // Given an fd, writeFileSync loops until every byte is written; a bare
       // writeSync may not.
@@ -140,7 +147,11 @@ export async function writeFileAtomicAsync(
 ): Promise<void> {
   const tmpPath = tempPathFor(filePath)
   try {
-    const handle = await activeFs.promises.open(tmpPath, 'wx')
+    const handle = await activeFs.promises.open(
+      tmpPath,
+      'wx',
+      PRIVATE_FILE_MODE,
+    )
     try {
       await handle.writeFile(data)
       await handle.sync()

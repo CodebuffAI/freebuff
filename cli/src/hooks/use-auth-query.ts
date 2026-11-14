@@ -11,6 +11,7 @@ import {
   RETRY_BACKOFF_BASE_DELAY_MS,
 } from '@codebuff/sdk'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { adReports } from '../ads/ad-reports'
 
 import {
   getUserCredentials as defaultGetUserCredentials,
@@ -234,6 +235,7 @@ export function useLogoutMutation(deps: UseLogoutMutationDeps = {}) {
 
   return useMutation({
     mutationFn: logoutUser,
+    onMutate: () => adReports.reset(),
     onSuccess: () => {
       // Reset the SDK client after logout
       resetCodebuffClient()

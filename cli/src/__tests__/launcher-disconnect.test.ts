@@ -23,12 +23,10 @@ const RENDERER_FIXTURE = path.join(
  * immediately before `process.exit`, so the bytes are already in the pipe and
  * this only covers the hand-off — measured, 100ms was enough to capture them in
  * full. Kept well above that, but deliberately short: the fixture bounds itself
- * at ~21s worst case (15s renderer-ready deadline, then a 6s survival window
- * that starts only once the launcher is killed), and the headroom under the
- * test timeout below is what stops a slow runner from turning a real failure
- * back into the contentless timeout this indirection exists to prevent. A cold
- * Windows CI runner once ate most of a start-anchored budget just booting bun,
- * landing the whole run on the old 15s test timeout with zero diagnostics.
+ * at its READY_TIMEOUT_MS renderer-ready deadline plus a SURVIVAL_TIMEOUT_MS
+ * window that starts only once the launcher is killed, and the headroom under
+ * the test timeout below is what stops a slow runner from turning a real failure
+ * back into the contentless timeout this indirection exists to prevent.
  */
 const OUTPUT_DRAIN_MS = 750
 
@@ -38,8 +36,10 @@ test('the CLI exits cleanly when its package launcher disappears', async () => {
     signal: NodeJS.Signals | null
     output: string
   }>((resolve, reject) => {
+    // On this already-running Bun, not `node`: a fresh Windows VM can take
+    // seconds to start node for the first time, and no fixture clock covers it.
     const child = spawn(
-      'node',
+      process.execPath,
       [LAUNCHER_FIXTURE, 'observe', RENDERER_FIXTURE],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     )
@@ -101,4 +101,4 @@ test('the CLI exits cleanly when its package launcher disappears', async () => {
   expect(result.output).toContain('CLEAN_EXIT_VISIBLE')
   expect(result.output).toContain('CLI_EXITED_AFTER_LAUNCHER')
   expect(result.output).not.toContain('CLI survived after its launcher exited')
-}, 30_000)
+}, 90_000)

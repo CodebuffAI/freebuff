@@ -69,7 +69,11 @@ export function sponsoredFailureExplanation(input: {
     )
   )
     ended = 'The run encountered a network error.'
-  else if (ending === 'grant_expired' || code === 'grant_expired')
+  else if (
+    ending === 'grant_expired' ||
+    code === 'grant_expired' ||
+    text.startsWith('turn grant-expired')
+  )
     ended = 'The compute grant expired.'
   else if (code === 'timed_out')
     ended = 'The run stopped reporting and was marked timed out.'

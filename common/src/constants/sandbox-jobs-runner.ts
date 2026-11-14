@@ -66,6 +66,36 @@ export const SANDBOX_JOB_RUNNERS: SandboxJobRunners = {
 }
 
 /**
+ * Where the warm-pool QUEUE (`daytona_pool_job`) lives (COD-742,
+ * docs/freebuff-project-pool.md "Reconciliation"):
+ *
+ * - `convex`   Convex's table, through `pool_management`'s mutations.
+ * - `postgres` Postgres `daytona_pool_job`: freebuff-web's reconcile inserts
+ *              the deficit, the dispatcher lists it and the provisioner claims
+ *              and settles rows there. Convex's `replenishPoolIfEmpty` and
+ *              its schedulers step aside.
+ *
+ * Only honoured while both `reconcile_pool` and `provision_pool` run on
+ * graphile: the Convex reconciler and the Convex fallback batch only know
+ * Convex's rows. A flip back is this one line; rows left in either store are
+ * an abandoned queue (the next reconcile refills from the other), never data.
+ */
+export type PoolJobStore = 'convex' | 'postgres'
+
+export const POOL_JOB_STORE: PoolJobStore = 'postgres'
+
+export function poolJobsOnPostgres(
+  store: PoolJobStore = POOL_JOB_STORE,
+  runners: SandboxJobRunners = SANDBOX_JOB_RUNNERS,
+): boolean {
+  return (
+    store === 'postgres' &&
+    sandboxJobOwnedBy('reconcile_pool', 'graphile', runners) &&
+    sandboxJobOwnedBy('provision_pool', 'graphile', runners)
+  )
+}
+
+/**
  * Whether `runner` owns `job`. The ONLY question either side asks: the Convex
  * cron asks `sandboxJobOwnedBy(job, 'convex')` and no-ops on false; the
  * graphile task asks `sandboxJobOwnedBy(job, 'graphile')` and no-ops on false.

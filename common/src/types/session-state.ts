@@ -34,6 +34,8 @@ export type AgentState = {
   subagents: AgentState[]
   childRunIds: string[]
   messageHistory: Message[]
+  /** Last turn end or in-flight checkpoint (Unix ms). Active work is not idle. */
+  lastActivityAt?: number
   stepsRemaining: number
   creditsUsed: number
   directCreditsUsed: number
@@ -60,6 +62,35 @@ export type AgentState = {
      *  added since is scaled by it; absent on older anchors (scale 1). */
     scale?: number
   }
+  /**
+   * The newest structured summary of this history, made in the background
+   * while the prompt cache was warm (agent-runtime conversation-summary.ts).
+   * It is not in `messageHistory` until the runtime uses it.
+   */
+  compactionSummary?: ConversationSummary
+  /** Carried across manual compaction and resume until the next model request. */
+  pendingCompactionTelemetry?: {
+    id: string
+    summaryId?: string
+    trigger: string
+  }
+}
+
+export type ConversationSummary = {
+  /** Joins the source request, generated summary, and its later applications. */
+  id?: string
+  text: string
+  /** How many history messages the summary covers, from the start. */
+  coveredMessages: number
+  /** Fingerprint of the last covered message: finds the cut after edits. */
+  anchor: string
+  /**
+   * The provider's context count the next summary's growth is measured
+   * from: when it was requested, or, once swapped in, the first response
+   * after the swap. Unset until that response: never estimated from text.
+   */
+  contextTokens?: number
+  createdAt: number
 }
 
 export const AgentOutputSchema = z.discriminatedUnion('type', [

@@ -4,6 +4,7 @@ import {
   FREEBUFF_FABLE_5_1_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
+  FREEBUFF_GPT_6_LUNA_MODEL_ID,
   FREEBUFF_MINIMAX_M3_MODEL_ID,
   FREEBUFF_MIMO_V25_MODEL_ID,
 } from '@codebuff/common/constants/freebuff-models'
@@ -31,14 +32,18 @@ describe('base2 reviewer selection', () => {
     expect(base2.instructionsPrompt).toContain('Spawn a code-reviewer-lite')
   })
 
-  test('free mode still uses MiniMax M3 and its matching reviewer', () => {
+  test('free mode without a model runs MiMo, never retired MiniMax M3', () => {
+    // MiniMax M3 until 2026-10-24, two months after it was withdrawn: the
+    // nightly buffbench run on base2-free kept spending on it as the
+    // service account. MiMo is the Freebuff default and on base2-free's
+    // allowlist, so the unqualified root is base2-free-mimo under another id.
     const base2 = createBase2('free')
 
-    expect(base2.model).toBe(FREEBUFF_MINIMAX_M3_MODEL_ID)
-    expect(base2.spawnableAgents).toContain('code-reviewer-minimax-m3')
-    expect(base2.instructionsPrompt).toContain(
-      'Spawn a code-reviewer-minimax-m3',
-    )
+    expect(base2.model).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+    expect(base2.model).not.toBe(FREEBUFF_MINIMAX_M3_MODEL_ID)
+    expect(base2.spawnableAgents).toContain('code-reviewer-mimo')
+    expect(base2.spawnableAgents).not.toContain('code-reviewer-minimax-m3')
+    expect(base2.instructionsPrompt).toContain('Spawn a code-reviewer-mimo')
   })
 
   test('the lite reviewer runs the same model as lite mode', () => {
@@ -131,7 +136,10 @@ describe('base2 gemini thinker', () => {
       createBase2('free', { model: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID })
         .spawnableAgents,
     ).not.toContain(GEMINI_THINKER)
-    expect(createBase2('free').spawnableAgents).toContain(GEMINI_THINKER)
+    expect(
+      createBase2('free', { model: FREEBUFF_GPT_6_LUNA_MODEL_ID })
+        .spawnableAgents,
+    ).toContain(GEMINI_THINKER)
   })
 
   test.each(['default', 'max'] as const)('%s mode does not get it', (mode) => {
@@ -449,7 +457,7 @@ describe('base2 context pruning', () => {
     return step.input.params
   }
 
-  test('free mode (MiniMax M3) defaults context pruning to 400k tokens', () => {
+  test('free mode with no model given defaults context pruning to 400k tokens', () => {
     const base2 = createBase2('free')
     const generator = base2.handleSteps!({ params: undefined } as any)
 
@@ -492,8 +500,9 @@ describe('base2 context pruning', () => {
     expect(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID).toBe(
       'deepseek/deepseek-v4-flash',
     )
+    // 375k: Flash compacts at 0.8x = 300k (2026-11-10; 250k from 2026-11-04).
     const flashParams = {
-      maxContextLength: 400_000,
+      maxContextLength: 375_000,
       ...DEEPSEEK_FLASH_COMPACTION_POLICY,
     }
     const flash = { model: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID }

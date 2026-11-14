@@ -11,9 +11,9 @@ import {
 } from '../run-queue-cohort'
 
 describe('run queue cohort (COD-742)', () => {
-  test('is off as checked in: merging the cutover moves no run', () => {
-    expect(RUN_QUEUE_COHORT).toBe('off')
-    expect(parseRunQueueCohort(RUN_QUEUE_COHORT)).toEqual({ kind: 'off' })
+  test('ships at staff: Convex marks god/admin runs for the queue', () => {
+    expect(RUN_QUEUE_COHORT).toBe('staff')
+    expect(parseRunQueueCohort(RUN_QUEUE_COHORT)).toEqual({ kind: 'staff' })
   })
 
   test('parses the ladder, and anything else reads as off', () => {

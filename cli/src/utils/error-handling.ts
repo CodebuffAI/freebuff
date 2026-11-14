@@ -1,5 +1,6 @@
 import {
   CODEBUFF_OWN_CREDITS_ERROR_PATTERN,
+  FREEBUFF_PROMPT_POLICY_REFUSED_ERROR_CODE,
   FREEBUFF_PROVIDER_USAGE_ERROR_PATTERN,
   FREEBUFF_TURN_SPEND_LIMIT_ERROR_CODE,
   FREEBUFF_TURN_SPEND_LIMIT_MESSAGE,
@@ -106,6 +107,15 @@ const getTopLevelApiErrorDetails = (
     }),
   }
 }
+
+/**
+ * The server refused the message under the usage policy before any model saw
+ * it. Final: the same text is refused again and counts again, so the client
+ * never sends a copy of it on its own.
+ */
+export const isPromptPolicyRefusal = (error: unknown): boolean =>
+  getCliApiErrorDetails(error).errorCode ===
+  FREEBUFF_PROMPT_POLICY_REFUSED_ERROR_CODE
 
 const getCliApiErrorDetails = (error: unknown) => {
   const parsed = extractApiErrorDetails(error)

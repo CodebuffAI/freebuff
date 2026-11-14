@@ -1,5 +1,6 @@
 import {
   freebuffChatAdmissionMayStart,
+  freebuffTurnRunning,
   useFreebuffChatAdmission,
 } from '../hooks/use-freebuff-chat-admission'
 import {
@@ -62,6 +63,8 @@ export interface ChatRuntime {
   streamStatus: StreamStatus
   isWaitingForResponse: boolean
   isStreaming: boolean
+  /** A turn is streaming or its chain is still in progress. */
+  turnRunning: boolean
   setStreamStatus: (status: StreamStatus) => void
   queuedMessages: QueuedMessage[]
   queuePaused: boolean
@@ -237,17 +240,21 @@ export const ChatRuntimeProvider = ({
     resumeQueue: queue.resumeQueue,
     requeueMessageAtFront: queue.addToQueueFront,
     pauseQueue: queue.pauseQueue,
+    dropQueuedCopies: queue.dropQueuedCopies,
     continueChat,
     continueChatId,
     subscriptionData,
   })
 
+  const turnRunning = freebuffTurnRunning({
+    chainInProgress: isChainInProgress,
+    streamStatus: queue.streamStatus,
+  })
   useFreebuffChatAdmission(
     IS_FREEBUFF &&
       !hasSelectedByokConnection &&
       freebuffChatAdmissionMayStart({
-        chainInProgress: isChainInProgress,
-        streamStatus: queue.streamStatus,
+        turnRunning,
         queuedCount: queue.queuedMessages.length,
         queuePaused: queue.queuePaused,
       }),
@@ -307,6 +314,7 @@ export const ChatRuntimeProvider = ({
     streamStatus: queue.streamStatus,
     isWaitingForResponse: queue.streamStatus === 'waiting',
     isStreaming: queue.streamStatus !== 'idle',
+    turnRunning,
     setStreamStatus: queue.setStreamStatus,
     queuedMessages: queue.queuedMessages,
     queuePaused: queue.queuePaused,

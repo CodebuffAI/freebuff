@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  POOL_JOB_STORE,
   SANDBOX_JOB_NAMES,
   SANDBOX_JOB_RUNNERS,
+  poolJobsOnPostgres,
   sandboxJobOwnedBy,
 } from '../sandbox-jobs-runner'
 
@@ -60,5 +62,23 @@ describe('sandbox job runners (COD-742 E1)', () => {
     } as unknown as SandboxJobRunners
     expect(sandboxJobOwnedBy('sweep_errored', 'convex', runners)).toBe(false)
     expect(sandboxJobOwnedBy('sweep_errored', 'graphile', runners)).toBe(false)
+  })
+})
+
+describe('pool job store (COD-742)', () => {
+  test('the queue is on Postgres, with both pool jobs on graphile', () => {
+    expect(POOL_JOB_STORE).toBe('postgres')
+    expect(poolJobsOnPostgres()).toBe(true)
+  })
+
+  test('refused while either pool job still runs on Convex', () => {
+    for (const job of ['reconcile_pool', 'provision_pool'] as const) {
+      const runners = {
+        ...SANDBOX_JOB_RUNNERS,
+        [job]: 'convex',
+      } as SandboxJobRunners
+      expect(poolJobsOnPostgres('postgres', runners)).toBe(false)
+    }
+    expect(poolJobsOnPostgres('convex')).toBe(false)
   })
 })
