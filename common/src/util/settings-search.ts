@@ -23,7 +23,8 @@ const topics: Record<PageLabel, Topic[]> = {
   General: [
     {
       label: 'Advanced Mode',
-      keywords: 'composer mode buttons skills context usage slash commands',
+      keywords:
+        'composer mode buttons skills context usage slash commands model picker show all models',
     },
     {
       label: 'Show all models',

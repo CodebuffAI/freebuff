@@ -243,6 +243,12 @@ export const freebuffModelCatalogSchema = z.object({
    *  viewer flips it; off, the picker lists one model
    *  (`pickerFreebuffCatalog`). Absent: no switch, and every row is listed. */
   showAllModels: z.object({ default: z.boolean() }).optional(),
+  /** True for an account created at or after
+   *  `FREEBUFF_MODEL_PICKER_RETIRED_SINCE` (constants/freebuff-model-picker.ts):
+   *  the composer shows no model picker unless Settings → Advanced Mode is on
+   *  or the account has its own provider, Claude Code or Codex connected, and
+   *  the picker it does show lists every model. Absent: today's picker. */
+  hideModelPicker: z.boolean().optional(),
 })
 export type FreebuffModelCatalog = z.infer<typeof freebuffModelCatalogSchema>
 
