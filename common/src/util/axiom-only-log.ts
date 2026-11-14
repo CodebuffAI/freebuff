@@ -516,7 +516,9 @@ const TURN_REVIEW_FIELDS = {
   ...COMPACTION_CORRELATION_FIELDS,
   agent_run_id: 'string',
   model: 'string',
-  /** `completed`, `unrecognized` (no review in the reply) or `failed`. */
+  /** `claude-code` or `codex` for a review of a turn on the user's computer; absent for Freebuff's agent. */
+  harness: 'string',
+  /** `completed`, `empty` (nothing to suggest), `unrecognized` (no review in the reply) or `failed`. */
   outcome: 'string',
   finish_reason: 'string',
   /** `ready`, `needs_changes` or `not_promising`; absent with no verdict. */
