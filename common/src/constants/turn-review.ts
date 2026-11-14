@@ -18,9 +18,9 @@ export type TurnReviewVerdict = (typeof TURN_REVIEW_VERDICTS)[number]
 
 /**
  * In the order the pills show. `fix`: improves this change (a cut, a missing
- * piece, a better approach). `review`: the "Review" pill, asking the
+ * piece, a better approach). `review`: the "Code review" pill, asking the
  * agent to review its own change. `next`: work beyond it. `brainstorm`: the
- * "Brainstorm" pill once the work reaches a stopping point, its own
+ * "Brainstorm follow-ups" pill once the work reaches a stopping point, its own
  * kind so analytics count it whatever the model labels it.
  */
 export const TURN_REVIEW_ACTION_KINDS = [
@@ -89,8 +89,8 @@ Turn the answers into at most ${MAX_TURN_REVIEW_ACTIONS} actions, the most valua
 - "kind": "fix" for anything that improves this change itself (a cut, a missing piece, a better approach), or "next" for a follow-up beyond it. A "needs_changes" or "not_promising" verdict should come with the fixes it names.
 - "label": two to four words that say what the button does, like "Cut retry wrapper" or "Try one query". The buttons share one row, so shorter is better.
 - "prompt": what the user would send, in their voice. It must stand alone, because the agent that receives it never sees this review: name what to change or try and why, in one or two sentences, and leave the how to the agent.
-When the turn changed code that has not been reviewed yet, include an action of kind "review" labeled "Review" whose prompt asks the agent to review its own change with fresh eyes: switch to a better alternative where there is one, simplify the code, remove unnecessary cases, and cut anything not needed, for the cleanest, most maintainable result. Leave it out when the change is already done, such as merged or pushed, or when this turn or a recent one already reviewed it and little has changed since.
-When the work is at a stopping point, such as a feature or fix just finished, committed or merged, include an action of kind "brainstorm" labeled "Brainstorm" whose prompt asks the agent to use the whole conversation as context and think up the most valuable follow-up ideas, including new ones no one has mentioned yet rather than only restating what was already discussed, each with why it is worth doing, ranked by value, without starting on any of them. Leave it out in the middle of a change.
+When the turn changed code that has not been reviewed yet, include an action of kind "review" labeled "Code review" whose prompt asks the agent to review its own change with fresh eyes: switch to a better alternative where there is one, simplify the code, remove unnecessary cases, and cut anything not needed, for the cleanest, most maintainable result. Leave it out when the change is already done, such as merged or pushed, or when this turn or a recent one already reviewed it and little has changed since.
+When the work is at a stopping point, such as a feature or fix just finished, committed or merged, include an action of kind "brainstorm" labeled "Brainstorm follow-ups" whose prompt asks the agent to use the whole conversation as context and think up the most valuable follow-up ideas, including new ones no one has mentioned yet rather than only restating what was already discussed, each with why it is worth doing, ranked by value, without starting on any of them. Leave it out in the middle of a change.
 Every action, and "nextPrompt", must be something the user could sensibly send as their very next message, right now. Never offer a step that has to wait on something that has not happened yet, such as a merge, a deploy, a release, a review, or data arriving, like "Re-measure after deploy" while the pull request is still open: no one clicks it now. Offer only what the agent can start on as soon as it is sent.
 Do not offer what was already done or declined, or two buttons that do the same thing.
 
