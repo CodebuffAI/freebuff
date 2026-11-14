@@ -116,6 +116,28 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
     "GitHub sign-in needs a verified email. Verify your email in GitHub's settings (Settings → Emails) and try again, or sign in with Google instead. If your email is already verified, GitHub may be temporarily unreachable; please try again in a few minutes.",
 }
 
+/**
+ * The refusals that mean only "no bot-check proof reached the server" (or one
+ * failed). Freebuff's login pages never show these as a refusal: they re-run
+ * the checks in the background and continue the same sign-in once they bank
+ * (`signup-challenge-client/challenge-recovery.ts`). The copy above remains
+ * for surfaces that do not recover.
+ */
+export const BOT_CHECK_REFUSALS = [
+  'captcha_missing',
+  'captcha_invalid',
+  'recaptcha_missing',
+  'recaptcha_invalid',
+] as const satisfies readonly SignupBlockReason[]
+
+export type BotCheckRefusal = (typeof BOT_CHECK_REFUSALS)[number]
+
+export function isBotCheckRefusal(
+  code: string | null | undefined,
+): code is BotCheckRefusal {
+  return (BOT_CHECK_REFUSALS as readonly string[]).includes(code ?? '')
+}
+
 /** True when `code` is a reason this module has copy for. Narrows an untrusted
  *  query-string value without a cast at every call site. */
 export function isSignupBlockReason(
