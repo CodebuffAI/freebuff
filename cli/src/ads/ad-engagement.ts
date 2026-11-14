@@ -75,6 +75,7 @@ export type AdYieldReason = NonNullable<
   NonNullable<AdEngagement['yielded']>['reason']
 >
 export type ClickRegion = (typeof CLICK_REGIONS)[number]
+export type EngagementEndedBy = NonNullable<AdEngagement['endedBy']>
 
 /** A click followed by focus loss within this long means the browser took focus. */
 export const POST_CLICK_LEAVE_GRACE_MS = 3_000
@@ -194,6 +195,8 @@ export interface EngagementTracker {
   hide(reason: AdYieldReason, held: boolean): void
   /** A held ad is shown again; ends the hidden interval. */
   unhide(): void
+  /** Why the ad came off screen (`endedBy` on the final record). */
+  endedBy(value: EngagementEndedBy): void
   /**
    * The bounded-exposure checkpoint: send the record so far and keep
    * tracking. At most once, shared with the leave-the-viewport checkpoint;
@@ -290,6 +293,7 @@ export function createEngagementTracker(
   let heldHiddenMs = 0
   let heldEver = false
   let hiddenSince: number | undefined
+  let endedBy: EngagementEndedBy | undefined
 
   let click: Omit<NonNullable<AdEngagement['click']>, 'count'> | undefined
   let clickCount = 0
@@ -492,6 +496,7 @@ export function createEngagementTracker(
             })
           : undefined,
       truncated,
+      endedBy,
       idleVisibleMs:
         visibilityKnown && lastInputAt !== undefined
           ? clampMs(idleVisibleMs)
@@ -684,6 +689,10 @@ export function createEngagementTracker(
         hiddenSince = undefined
       })
     },
+    endedBy(value) {
+      if (flushed || clickOnly) return
+      endedBy = value
+    },
     checkpoint() {
       exposureCheckpoint()
     },
@@ -808,6 +817,12 @@ export interface EngagementRegistry {
   release(impUrl: string): void
   /** A drawn impression gave way for good (it will unmount now). */
   noteYield(impUrl: string, reason: AdYieldReason): void
+  /**
+   * A drawn impression came off screen because it was shown too long
+   * (`common/src/ads/ad-expiry.ts`): it ends as `rotation` with
+   * `endedBy: 'expired'`. Call before the slot swaps it out.
+   */
+  noteExpired(impUrl: string): void
   terminalFocus(focused: boolean): void
   messageSent(): void
   userInput(): void
@@ -841,8 +856,10 @@ interface Entry {
 export function decideExit(input: {
   rotatedAway: boolean
   msSinceMessageSent: number | undefined
+  /** Taken off for being shown too long: a rotation with no successor. */
+  expired?: boolean
 }): EngagementExit {
-  if (input.rotatedAway) return 'rotation'
+  if (input.rotatedAway || input.expired) return 'rotation'
   if (
     input.msSinceMessageSent !== undefined &&
     input.msSinceMessageSent >= 0 &&
@@ -868,6 +885,7 @@ export function createEngagementRegistry(
   const lateEntries = new Map<string, Entry>()
   const finished = new Set<string>()
   const rotatedAway = new Set<string>()
+  const expired = new Set<string>()
   const swappedInAt = new Map<string, number>()
   // The click block each clicked impression has reported, for late clicks.
   const clicks = new Map<string, EngagementClickBlock>()
@@ -925,6 +943,7 @@ export function createEngagementRegistry(
     if (!entry.late) {
       finished.add(impUrl)
       rotatedAway.delete(impUrl)
+      expired.delete(impUrl)
     }
     safely(() => entry.tracker.flush(exit))
     safely(() => {
@@ -998,6 +1017,7 @@ export function createEngagementRegistry(
   const startRelease = (impUrl: string, entry: Entry) => {
     const exit = decideExit({
       rotatedAway: rotatedAway.has(impUrl),
+      expired: expired.has(impUrl),
       msSinceMessageSent:
         lastMessageAt === undefined ? undefined : env.now() - lastMessageAt,
     })
@@ -1078,6 +1098,12 @@ export function createEngagementRegistry(
       const entry = entries.get(impUrl)
       if (!entry || entry.tracker.flushed || entry.held) return
       safely(() => entry.tracker.hide(reason, false))
+    },
+    noteExpired(impUrl) {
+      const entry = entries.get(impUrl)
+      if (!entry || entry.tracker.flushed) return
+      remember(expired, impUrl)
+      safely(() => entry.tracker.endedBy('expired'))
     },
     noteSlotSwap(from, to) {
       const incoming = new Set(to)

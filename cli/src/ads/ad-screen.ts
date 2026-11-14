@@ -248,3 +248,26 @@ export function keepNewestResponseAd<T>(
     dropped: false,
   }
 }
+
+/**
+ * The end-of-answer cards without the ones that have expired
+ * (`ad-expiry-clock.ts`): an expired card is taken off and never drawn
+ * again. Returns `prev` itself when nothing expired, so the caller can skip
+ * the state write.
+ */
+export function dropExpiredResponseAds<T extends { impUrl: string }>(
+  prev: Record<string, T[]>,
+  isExpired: (impUrl: string) => boolean,
+): { next: Record<string, T[]>; expired: T[] } {
+  const expired: T[] = []
+  const next: Record<string, T[]> = {}
+  for (const [id, ads] of Object.entries(prev)) {
+    const kept = ads.filter((ad) => {
+      if (!isExpired(ad.impUrl)) return true
+      expired.push(ad)
+      return false
+    })
+    if (kept.length > 0) next[id] = kept
+  }
+  return expired.length === 0 ? { next: prev, expired } : { next, expired }
+}

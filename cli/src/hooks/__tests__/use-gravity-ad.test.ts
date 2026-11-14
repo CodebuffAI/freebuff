@@ -330,6 +330,48 @@ describe('a withheld ad response (COD-906)', () => {
     })
     expect(ctrl.choiceCache).toHaveLength(2)
   })
+
+  test('the cache never re-shows an expired ad', () => {
+    const ctrl = {
+      choiceCache: [[ad('old')], [ad('fresh')]] as AdResponse[][],
+      choiceCacheIndex: 0,
+    }
+    const expired = (impUrl: string) => impUrl === 'old'
+    expect(rotationStep(ctrl, null, expired).show).toEqual([ad('fresh')])
+    expect(rotationStep(ctrl, null, expired).show).toEqual([ad('fresh')])
+    expect(
+      rotationStep({ ...ctrl, choiceCache: [[ad('old')]] }, null, expired),
+    ).toEqual({ show: undefined, countsAsShown: false })
+  })
+})
+
+describe('ad expiry on a rotation tick', () => {
+  const tick = (over: Partial<Parameters<typeof rotationTickPlan>[0]>) =>
+    rotationTickPlan({
+      adsEnabled: true,
+      slotPaused: false,
+      focused: true,
+      adsShownSinceActivity: 0,
+      userActive: true,
+      ...over,
+    })
+
+  test('an expired ad is cleared even on a tick that would skip', () => {
+    expect(tick({ currentExpired: true })).toBe('expire')
+    expect(tick({ currentExpired: true, focused: false })).toBe('expire')
+    expect(tick({ currentExpired: true, slotPaused: true })).toBe('expire')
+    expect(
+      tick({ currentExpired: true, lastRotationAt: 1_000, now: 2_000 }),
+    ).toBe('expire')
+    expect(tick({ currentExpired: true, adsEnabled: false })).toBe('skip')
+  })
+
+  test('after an expiry, nothing is re-shown until the person is active', () => {
+    expect(tick({ expiredIdle: true, userActive: false })).toBe('skip')
+    expect(tick({ expiredIdle: true, adsShownSinceActivity: 3 })).toBe('skip')
+    expect(tick({ expiredIdle: true })).toBe('fetch')
+    expect(tick({ expiredIdle: false, userActive: false })).toBe('cache')
+  })
 })
 
 describe('terminal focus gates fetches and impressions', () => {

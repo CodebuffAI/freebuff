@@ -32,6 +32,7 @@ import { isDisplayAdPlacementId } from '@codebuff/common/ads/display-ads/serving
 import { sanitizeTerminalStrings } from '@codebuff/common/util/terminal-safe-text'
 import { useEffect, useState } from 'react'
 
+import { isAdExpired, noteAdDrawn, useAdExpired } from './ad-expiry-clock'
 import { buildAdAuctionRequest } from './ad-request'
 import { timedAdFetch } from './ad-signals'
 import { recordPartnerClick, recordPartnerImpression } from './partner-ads'
@@ -40,6 +41,7 @@ import {
   getSessionDisplayPlacementIds,
   resolveAdPolicy,
 } from '../hooks/use-dock-panel'
+import { subscribeToActivity } from '../utils/activity-tracker'
 import { getAuthToken } from '../utils/auth'
 import { logger } from '../utils/logger'
 
@@ -170,7 +172,14 @@ export async function getDisplayAd(
   syncCacheOwner(authToken)
 
   const answer = held.get(placementId)
-  if (answer && deps.now() < answer.expiresAt) return answer.sponsor
+  // A held fill that has been on screen too long is not served again: the
+  // slot asks for a new one (`ad-expiry-clock.ts`).
+  if (
+    answer &&
+    deps.now() < answer.expiresAt &&
+    !(answer.sponsor && isAdExpired(answer.sponsor.served.impUrl))
+  )
+    return answer.sponsor
   const pending = inFlight.get(placementId)
   if (pending) return pending
 
@@ -246,6 +255,7 @@ export function setServedDisplayAdBillingForTests(
 /** Billed impression, on insertion. The helper dedupes by `impUrl`. */
 export function recordServedDisplayImpression(sponsor: CliServedSponsor): void {
   drawn.add(sponsor.served.impUrl)
+  noteAdDrawn(sponsor.served.impUrl)
   billing.impression(sponsor)
 }
 
@@ -261,6 +271,9 @@ export type GetDisplayAd = (
 /**
  * The served sponsor for one placement while `active`, else null. Requests
  * nothing while inactive (the mock flag is on, or the unit is hidden).
+ *
+ * A drawn sponsor that expires (`ad-expiry-clock.ts`) is taken off; the unit
+ * asks again on the person's next input, for a new fill.
  */
 export function useServedDisplayAd(
   placementId: string,
@@ -268,6 +281,8 @@ export function useServedDisplayAd(
   get: GetDisplayAd = getDisplayAd,
 ): CliServedSponsor | null {
   const [sponsor, setSponsor] = useState<CliServedSponsor | null>(null)
+  const [round, setRound] = useState(0)
+  const expired = useAdExpired(sponsor?.served.impUrl)
   useEffect(() => {
     if (!active) return
     let live = true
@@ -277,8 +292,12 @@ export function useServedDisplayAd(
     return () => {
       live = false
     }
-  }, [placementId, active, get])
-  return active ? sponsor : null
+  }, [placementId, active, get, round])
+  useEffect(() => {
+    if (!active || !expired) return
+    return subscribeToActivity(() => setRound((r) => r + 1))
+  }, [active, expired])
+  return active && !expired ? sponsor : null
 }
 
 /** The billed impression for a drawn served unit, on insertion. */

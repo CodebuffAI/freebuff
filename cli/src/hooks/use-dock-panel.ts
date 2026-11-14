@@ -16,6 +16,7 @@ import {
 } from '@codebuff/common/ads/ad-event-hygiene'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { setAdExpiryPolicy } from '../ads/ad-expiry-clock'
 import { getAuthToken } from '../utils/auth'
 import { logger } from '../utils/logger'
 import { trackEvent } from '../utils/analytics'
@@ -170,7 +171,10 @@ export async function fetchDockArm(
       method: 'GET',
       headers: { Authorization: `Bearer ${authToken}` },
     })
-    if (!response.ok) return 'control'
+    if (!response.ok) {
+      setAdExpiryPolicy(null)
+      return 'control'
+    }
     const data = (await response.json()) as {
       dockArm?: unknown
       partnerPlacementIds?: unknown
@@ -181,12 +185,16 @@ export async function fetchDockArm(
     sessionInlineAdStyle = data?.inlineAdStyle === 'link' ? 'link' : 'card'
     sessionPartnerPlacementIds = policyPlacementIds(data?.partnerPlacementIds)
     sessionDisplayPlacementIds = policyPlacementIds(data?.displayPlacementIds)
+    // How long one ad may stay drawn (`adMaxShownMs`, `adAwayExpiryMs`);
+    // an older server sends neither and the defaults apply.
+    setAdExpiryPolicy(data)
     return data?.dockArm === 'expandable' ? 'expandable' : 'control'
   } catch (err) {
     logger.debug({ err }, '[ads] Failed to fetch dock policy')
     sessionPartnerPlacementIds = []
     sessionDisplayPlacementIds = []
     sessionInlineAdStyle = 'card'
+    setAdExpiryPolicy(null)
     return 'control'
   }
 }

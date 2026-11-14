@@ -24,6 +24,7 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { greptileTerminalColors } from '../ads/partner-brand'
 import { inlineLinkText, CLI_INLINE_LINK_MAX_CHARS } from '../ads/inline-link-ad'
 import { layoutTruncated } from '../ads/ad-engagement'
+import { noteAdDrawn } from '../ads/ad-expiry-clock'
 import {
   reportInlineCardDrawn,
   reportInlineCardVisibility,
@@ -229,6 +230,8 @@ export const AdCard: React.FC<{
   useEffect(() => {
     if (!isInline) return
     const drawn = { impUrl: ad.impUrl, provider: ad.provider }
+    // Its expiry clock starts at the first draw (`ad-expiry-clock.ts`).
+    noteAdDrawn(ad.impUrl)
     reportInlineCardDrawn(drawn, true)
     return () => reportInlineCardDrawn(drawn, false)
   }, [ad.impUrl, ad.provider, isInline])

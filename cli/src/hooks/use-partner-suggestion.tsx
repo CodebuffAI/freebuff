@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react'
+import { useAdExpired } from '../ads/ad-expiry-clock'
 import { CLI_PARTNER_PLACEMENT_IDS, getPartnerAd } from '../ads/partner-ads'
 import { PartnerAdRow } from '../components/partner-ad-line'
 import {
@@ -31,7 +32,10 @@ export function usePartnerSuggestion({
   enabled: boolean
   fetchAd?: typeof getPartnerAd
 }) {
-  const [ad, setAd] = useState<AdResponse | null>(null)
+  const [fill, setAd] = useState<AdResponse | null>(null)
+  // Shown too long (`ad-expiry-clock.ts`): the row comes out of the menu.
+  const expired = useAdExpired(fill?.impUrl)
+  const ad = expired ? null : fill
   const activate = useRef<(() => void) | null>(null)
   const menuItems = useMemo(() => {
     const reviewIndex = items.findIndex((item) => item.id === 'review')

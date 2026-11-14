@@ -1,6 +1,7 @@
 import { createComposerIntentScheduler } from '@codebuff/common/ads/composer-intent-scheduler'
 import { useEffect, useRef, useState } from 'react'
 
+import { useAdExpired } from './ad-expiry-clock'
 import { getComposerIntentAd } from './partner-ads'
 
 import type { AdResponse } from '../hooks/use-gravity-ad'
@@ -52,5 +53,7 @@ export function useComposerIntentAd(
     setAd(null)
   }, [enabled])
 
-  return enabled ? ad : null
+  // Shown too long (`ad-expiry-clock.ts`): taken off until the next answer.
+  const expired = useAdExpired(ad?.impUrl)
+  return enabled && !expired ? ad : null
 }

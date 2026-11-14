@@ -338,6 +338,24 @@ function registryHarness(focus: FocusState = NO_FOCUS) {
 }
 
 describe('engagement registry', () => {
+  test("an expired ad ends as `rotation` with `endedBy: 'expired'`", () => {
+    const { c, sent, registry } = registryHarness()
+    const a = registry.mount('a', 'pinned')!
+    c.advance(360_000)
+    registry.noteExpired('a')
+    registry.unmount(a)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    // the final record (a checkpoint may have gone out before it)
+    expect(sent.at(-1)).toMatchObject({ exit: 'rotation', endedBy: 'expired' })
+  })
+
+  test('an ordinary unmount carries no endedBy', () => {
+    const { c, sent, registry } = registryHarness()
+    registry.unmount(registry.mount('a', 'pinned')!)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    expect(sent[0]?.endedBy).toBeUndefined()
+  })
+
   test('a rotation ends the old record as `rotation` after the grace', () => {
     const { c, sent, registry } = registryHarness()
     registry.noteSlotSwap([], ['a'])
@@ -481,6 +499,9 @@ describe('helpers', () => {
     expect(
       decideExit({ rotatedAway: false, msSinceMessageSent: undefined }),
     ).toBe('unmount')
+    expect(
+      decideExit({ rotatedAway: false, msSinceMessageSent: 5_000, expired: true }),
+    ).toBe('rotation')
   })
 
   test('layoutTruncated', () => {

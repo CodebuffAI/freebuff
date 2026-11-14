@@ -35,8 +35,15 @@ import {
   TRANSCRIPT_VISIBILITY_POLL_MS,
 } from '../ads/use-ad-engagement'
 import {
+  isAdExpired,
+  noteAdDrawn,
+  noteAdExpiredEngagement,
+} from '../ads/ad-expiry-clock'
+import { AD_EXPIRY_CHECK_MS } from '@codebuff/common/ads/ad-expiry'
+import {
   cardRequestNeedsNetworkHint,
   dockRequestNeedsNetworkHint,
+  dropExpiredResponseAds,
   dropOurFillBesideNetwork,
   keepNewestResponseAd,
   suppressOurCards,
@@ -96,6 +103,12 @@ export function adFocusAllows(focused: boolean | undefined): boolean {
  *   {@link MAX_ADS_AFTER_ACTIVITY} shown since the user last typed, and they
  *   typed within {@link ACTIVITY_THRESHOLD_MS}).
  * - `cache`: no auction; re-show a cached ad if there is one.
+ * - `expire`: the drawn ad has been shown too long (`ad-expiry-clock.ts`):
+ *   clear the slot. Decided before every reason to skip, so an unfocused
+ *   terminal (whose ticks all skip) still loses its ad.
+ *
+ * After an expiry the slot stays empty until the person is active again
+ * (`expiredIdle`): no cached re-show, and the next active tick fetches.
  */
 export function rotationTickPlan(params: {
   adsEnabled: boolean
@@ -106,8 +119,14 @@ export function rotationTickPlan(params: {
   /** `Date.now()` of the slot's last rotation; null or absent before any. */
   lastRotationAt?: number | null
   now?: number
-}): 'skip' | 'fetch' | 'cache' {
-  if (!params.adsEnabled || params.slotPaused) return 'skip'
+  /** The drawn ad has expired under the shared rule. */
+  currentExpired?: boolean
+  /** The slot was cleared by an expiry and the person has not been active since. */
+  expiredIdle?: boolean
+}): 'skip' | 'fetch' | 'cache' | 'expire' {
+  if (!params.adsEnabled) return 'skip'
+  if (params.currentExpired) return 'expire'
+  if (params.slotPaused) return 'skip'
   if (!adFocusAllows(params.focused)) return 'skip'
   // A rotation on focus return (or a first fetch run late) may have happened
   // since the last tick: never rotate twice within one interval.
@@ -118,10 +137,9 @@ export function rotationTickPlan(params: {
       AD_ROTATION_INTERVAL_MS - AD_ROTATION_TICK_SLACK_MS
   )
     return 'skip'
-  return params.adsShownSinceActivity < MAX_ADS_AFTER_ACTIVITY &&
-    params.userActive
-    ? 'fetch'
-    : 'cache'
+  if (params.adsShownSinceActivity < MAX_ADS_AFTER_ACTIVITY && params.userActive)
+    return 'fetch'
+  return params.expiredIdle ? 'skip' : 'cache'
 }
 
 /**
@@ -264,6 +282,12 @@ export function applySlotYield(
     runInitialFetch: () => void
     restartRotationTimer: (firstDelayMs?: number) => void
     intervalMs?: number
+    /**
+     * The held ad expired while hidden (it kept ageing): drop it instead of
+     * showing it again.
+     */
+    heldExpired?: boolean
+    expire?: () => void
   },
 ): SlotYieldHold | null {
   if (params.yielded) {
@@ -286,6 +310,9 @@ export function applySlotYield(
     adFocusAllows(params.focused)
   ) {
     params.runInitialFetch()
+    params.restartRotationTimer()
+  } else if (params.slotActive && params.heldExpired && params.expire) {
+    params.expire()
     params.restartRotationTimer()
   } else if (params.slotActive) {
     const resumed = resumeRotationAfterYield({
@@ -525,6 +552,8 @@ type GravityController = {
   deferredInlinePoll: ReturnType<typeof setInterval> | null
   /** A rotation answer that landed while the slot had given way. */
   heldRotation: HeldRotation
+  /** The slot was cleared by an expiry; no cached re-show until activity. */
+  expiredIdle: boolean
 }
 
 type ChoiceCache = Pick<GravityController, 'choiceCache' | 'choiceCacheIndex'>
@@ -538,12 +567,20 @@ function addToChoiceCache(ctrl: ChoiceCache, ads: AdResponse[]): void {
   ctrl.choiceCache.push(ads)
 }
 
-// Pure helper: get the next cached ad set
-function nextFromChoiceCache(ctrl: ChoiceCache): AdResponse[] | null {
-  if (ctrl.choiceCache.length === 0) return null
-  const set = ctrl.choiceCache[ctrl.choiceCacheIndex % ctrl.choiceCache.length]!
-  ctrl.choiceCacheIndex = (ctrl.choiceCacheIndex + 1) % ctrl.choiceCache.length
-  return set
+// Pure helper: get the next cached ad set, passing over expired ones (an
+// expired impression is never drawn again).
+function nextFromChoiceCache(
+  ctrl: ChoiceCache,
+  isExpired: (impUrl: string) => boolean = () => false,
+): AdResponse[] | null {
+  for (let tries = 0; tries < ctrl.choiceCache.length; tries++) {
+    const set =
+      ctrl.choiceCache[ctrl.choiceCacheIndex % ctrl.choiceCache.length]!
+    ctrl.choiceCacheIndex =
+      (ctrl.choiceCacheIndex + 1) % ctrl.choiceCache.length
+    if (!set.some((ad) => isExpired(ad.impUrl))) return set
+  }
+  return null
 }
 
 /**
@@ -575,13 +612,14 @@ export type AdFetchResult =
 export function rotationStep(
   ctrl: ChoiceCache,
   result: AdFetchResult,
+  isExpired?: (impUrl: string) => boolean,
 ): { show: AdResponse[] | null | undefined; countsAsShown: boolean } {
   if (result && 'withheld' in result) return { show: null, countsAsShown: false }
   if (result) {
     addToChoiceCache(ctrl, result.ads)
     return { show: result.ads, countsAsShown: true }
   }
-  const cachedSet = nextFromChoiceCache(ctrl)
+  const cachedSet = nextFromChoiceCache(ctrl, isExpired)
   return cachedSet
     ? { show: cachedSet, countsAsShown: true }
     : { show: undefined, countsAsShown: false }
@@ -819,6 +857,8 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       // engagement must never break rotation
     }
     adsRef.current = resolved
+    // The dock draws what it is set to (a yielded slot holds instead).
+    for (const ad of resolved ?? []) noteAdDrawn(ad.impUrl)
     setAdsState(resolved)
   }
   const [responseAds, setResponseAds] = useState<Record<string, AdResponse[]>>(
@@ -876,6 +916,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     deferredInlineRequests: new Map(),
     deferredInlinePoll: null,
     heldRotation: undefined,
+    expiredIdle: false,
   })
   const responseAdsRef = useRef<Record<string, AdResponse[]>>({})
   responseAdsRef.current = responseAds
@@ -1176,6 +1217,39 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     }
   }
 
+  // The dock's drawn ad has been shown too long. A yielded slot draws
+  // nothing; its held ad is checked when the slot comes back.
+  const slotAdExpired = (): boolean =>
+    !slotYieldedRef.current &&
+    (adsRef.current ?? []).some((ad) => isAdExpired(ad.impUrl))
+
+  // Clear the slot for an expiry: the records end as `rotation` with
+  // `endedBy: 'expired'`, and nothing is re-shown from the cache until the
+  // person is active again.
+  const expireSlot = (): void => {
+    for (const ad of adsRef.current ?? []) noteAdExpiredEngagement(ad.impUrl)
+    ctrlRef.current.expiredIdle = true
+    setAds(null)
+  }
+
+  // Every AD_EXPIRY_CHECK_MS: the dock and the end-of-answer cards.
+  const checkExpiry = (): void => {
+    if (slotAdExpired()) expireSlot()
+    const { next, expired } = dropExpiredResponseAds(
+      responseAdsRef.current,
+      (impUrl) => isAdExpired(impUrl),
+    )
+    if (expired.length === 0) return
+    for (const ad of expired) {
+      ctrlRef.current.deferredImpressions.delete(ad.impUrl)
+      noteAdExpiredEngagement(ad.impUrl)
+    }
+    responseAdsRef.current = next
+    setResponseAds(next)
+  }
+  const checkExpiryRef = useRef(checkExpiry)
+  checkExpiryRef.current = checkExpiry
+
   // Update tick function (uses ref to avoid useCallback dependency issues)
   tickRef.current = () => {
     void (async () => {
@@ -1193,7 +1267,13 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
           userActive: isUserActive(ACTIVITY_THRESHOLD_MS),
           lastRotationAt: ctrl.lastRotationAt,
           now,
+          currentExpired: slotAdExpired(),
+          expiredIdle: ctrl.expiredIdle,
         })
+        if (plan === 'expire') {
+          expireSlot()
+          return
+        }
         if (plan === 'skip') return
         ctrl.lastRotationAt = now
 
@@ -1207,7 +1287,9 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
               })
             : null
 
-        const step = rotationStep(ctrl, result)
+        const step = rotationStep(ctrl, result, (impUrl) =>
+          isAdExpired(impUrl),
+        )
         if (step.countsAsShown) ctrl.adsShownSinceActivity += 1
         // Given way since the request left: held, shown when the slot is back.
         if (deliverRotation(ctrl, step.show, slotYieldedRef.current) === 'show')
@@ -1310,6 +1392,7 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
     if (!getAdsEnabled()) return
     return subscribeToActivity(() => {
       ctrlRef.current.adsShownSinceActivity = 0
+      ctrlRef.current.expiredIdle = false
     })
   }, [])
 
@@ -1338,6 +1421,10 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       runInitialFetch: () => void initialFetchRef.current(),
       restartRotationTimer: (firstDelayMs) =>
         restartRotationTimerRef.current(firstDelayMs),
+      heldExpired:
+        !slotYielded &&
+        (adsRef.current ?? []).some((ad) => isAdExpired(ad.impUrl)),
+      expire: () => expireSlot(),
     })
   }, [slotYielded])
 
@@ -1372,8 +1459,16 @@ export const useGravityAd = (options?: GravityAdOptions): GravityAdState => {
       }, firstDelayMs)
     }
 
+    // Expiry is checked more often than the slot rotates, and also covers
+    // the end-of-answer cards.
+    const expiryCheck = setInterval(
+      () => checkExpiryRef.current(),
+      AD_EXPIRY_CHECK_MS,
+    )
+
     return () => {
       clearInterval(id)
+      clearInterval(expiryCheck)
       if (first) clearTimeout(first)
       restartRotationTimerRef.current = () => {}
     }

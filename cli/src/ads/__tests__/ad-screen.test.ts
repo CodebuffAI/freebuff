@@ -6,6 +6,7 @@ import {
   dockRequestNeedsNetworkHint,
   dropOurFillBesideNetwork,
   isNetworkAd,
+  dropExpiredResponseAds,
   keepNewestResponseAd,
   networkAdOnScreen,
   reportDockHeld,
@@ -253,5 +254,24 @@ describe('the flap: a row of ours, the card on the edge, the dock', () => {
         expect(rowFlips).toBe(0)
         expect(dockFlips).toBeLessThanOrEqual(1)
       }
+  })
+})
+
+describe('dropExpiredResponseAds', () => {
+  const card = (impUrl: string) => ({ impUrl })
+
+  test('an expired card is taken off; the rest stay', () => {
+    const prev = { 'ai-1': [card('old')], 'ai-2': [card('new')] }
+    const { next, expired } = dropExpiredResponseAds(
+      prev,
+      (impUrl) => impUrl === 'old',
+    )
+    expect(next).toEqual({ 'ai-2': [card('new')] })
+    expect(expired).toEqual([card('old')])
+  })
+
+  test('nothing expired returns the same map', () => {
+    const prev = { 'ai-1': [card('a')] }
+    expect(dropExpiredResponseAds(prev, () => false).next).toBe(prev)
   })
 })
