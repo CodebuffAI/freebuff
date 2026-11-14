@@ -11,6 +11,7 @@ import { useAuthQuery } from './hooks/use-auth-query'
 import { useAuthState } from './hooks/use-auth-state'
 import { useFreebuffModelCatalog } from './hooks/use-freebuff-model-catalog'
 import { useFreebuffSession } from './hooks/use-freebuff-session'
+import { useProgramStatus } from './hooks/use-program-status'
 import { useTerminalFocus } from './hooks/use-terminal-focus'
 import { getProjectRoot, startNewChat } from './project-files'
 import { useChatHistoryStore } from './state/chat-history-store'
@@ -87,6 +88,9 @@ export const App = ({
   const handleSupportDetected = useCallback(() => {
     setIsFocusSupported(true)
   }, [setIsFocusSupported])
+
+  // Report lifecycle state to terminals that support the open status protocol.
+  useProgramStatus()
 
   // Enable terminal focus detection to stop cursor blinking when window loses focus
   // Cursor starts visible but not blinking; blinking enabled once terminal support confirmed
