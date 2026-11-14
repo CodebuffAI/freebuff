@@ -2,6 +2,10 @@
  * Where each turn of a local Claude Code chat ended in the CLI's own transcript, so Roll back can
  * cut the model's memory at a message (web history-store.ts `rollbackChat`, claude-rollback.ts).
  *
+ * A local Codex chat saves the same marks (Desktop's codex.ts): `session` is its Codex thread and
+ * `end` the run's last native turn, which a rollback forks the thread through (`thread/fork` with
+ * `lastTurnId`).
+ *
  * Desktop's Claude harness (claude-code.ts) appends one mark to the chat's saved state at the end
  * of every turn that produced a reply. A rollback keeps the marks of the runs it keeps and resumes
  * the last one's session AT its last entry, branched into a new session (`resumeSessionAt` with

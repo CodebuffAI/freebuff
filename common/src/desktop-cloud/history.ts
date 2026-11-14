@@ -49,6 +49,10 @@ export type CloudHistoryRun = {
   /** A queued turn's sibling chat running in the same folder, which it usually waits for;
    * null when there is none. `title` is null for an untitled chat. Absent from older servers. */
   waitingForChat?: { id: string; title: string | null } | null
+  /** Queued by the chat's Desktop when its Claude Code process answered on its own after a
+   *  background task finished (web device-execution/background-wake.ts): no message opens it.
+   *  Absent from older servers. */
+  backgroundWake?: boolean
 }
 /** A chat's `title` while it has neither a title nor a first run to name it (history-store.ts). */
 export const UNTITLED_CLOUD_CHAT_TITLE = 'Cloud chat'

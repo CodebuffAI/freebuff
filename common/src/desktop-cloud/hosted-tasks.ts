@@ -1,9 +1,10 @@
 import type { HostedBrowserScope } from './hosted-workspace'
 
 /**
- * The background work a local Claude Code chat's kept process is running (freebuff-desktop's
- * claude-live-session.ts): `run_in_background` shells, Monitors, and subagents, foreground or
- * backgrounded. It outlives the turn that started it, so the Overview shows it beside the chat.
+ * The background work a local Claude Code or Codex chat's kept process is running (freebuff-desktop's
+ * claude-live-session.ts and codex-tasks.ts): Claude Code's `run_in_background` shells, Monitors and
+ * subagents, foreground or backgrounded; Codex's subagents and the shells it leaves running. It
+ * outlives the turn that started it, so the Overview shows it beside the chat.
  */
 export type BackgroundTaskKind = 'shell' | 'agent' | 'monitor' | 'workflow' | 'other'
 
@@ -30,8 +31,12 @@ export interface BackgroundTask {
   totalTokens?: number
 }
 
+/** Finished tasks the Overview still lists: the most recent ones, for a while after they end. */
+export const FINISHED_TASKS_KEPT = 20
+export const FINISHED_TASK_MS = 30 * 60_000
+
 export interface BackgroundTasksSnapshot {
-  /** A Claude Code process is kept for this chat; false means nothing can be running in it. */
+  /** A Claude Code or Codex process is kept for this chat; false means nothing can be running in it. */
   live: boolean
   /** Running tasks first, then recently finished ones, newest first within each. */
   tasks: BackgroundTask[]
@@ -47,5 +52,6 @@ export type HostedTasksHost = {
   request<T extends HostedTasksRequest>(input: T): Promise<HostedTasksResponses[T['operation']]>
 }
 
-/** Task ids are the CLI's own; anything else is refused before it reaches a process. */
+/** Task ids are the CLI's own (Codex: a subagent's thread id, a command's item id); anything else
+ *  is refused before it reaches a process. */
 export const BACKGROUND_TASK_ID = /^[a-zA-Z0-9_.:-]{1,128}$/

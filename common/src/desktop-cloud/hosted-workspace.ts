@@ -313,12 +313,17 @@ export type HostedWorkspaceHost = {
   /** This native build resumes a rolled-back Claude Code chat at its kept turn (`resumeSessionAt`
    *  on `harness_start`), so Roll back and Edit are offered on its messages. Older builds omit it. */
   claudeRollback?: true
+  /** This native build forks a rolled-back Codex chat's thread through its kept turn
+   *  (`resumeSessionAt` on `harness_start`, `thread/fork` with `lastTurnId`), so Edit is offered on
+   *  its messages. Older builds omit it. */
+  codexRollback?: true
   /** This native build forks a Codex thread before a turn (`forkBeforeTurnId` on `harness_start`),
    *  so a Codex chat's side chat opens while its turn runs. Older builds omit it. */
   codexForkBeforeTurn?: true
   files?: import('./hosted-files').HostedFilesHost
   git?: import('./hosted-git').HostedGitHost
-  /** A local Claude Code chat's background tasks and subagents (`hosted-tasks.ts`). Older builds omit it. */
+  /** A local Claude Code or Codex chat's background tasks and subagents (`hosted-tasks.ts`). Older
+   *  builds omit it; builds before Codex's answer a Codex chat with no process. */
   tasks?: import('./hosted-tasks').HostedTasksHost
   /** Open a project's or chat's folder in an app on this computer. Older builds omit it. */
   openIn?: import('./hosted-open-in').HostedOpenInHost

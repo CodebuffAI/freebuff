@@ -339,6 +339,12 @@ export const deviceHarnessRequest = z.discriminatedUnion('method', [
        * the request (the schema is strict), never running a side chat with write access.
        */
       readOnly: z.literal(true).optional(),
+      /**
+       * A Claude Code chat's wake (the kept process answered on its own after a background task
+       * finished): the turn sends nothing and shows that answer (Desktop's claude-live-session.ts).
+       * Cloud queues one only for a Desktop that reported the wake, so no older build sees it.
+       */
+      backgroundWake: z.literal(true).optional(),
       importedHistory: z.string().max(20 * 1024 * 1024).optional(),
       /** Quoted history used only when neither Cloud nor Desktop has a CLI session. */
       initialPrompt: z.string().max(2 * 1024 * 1024).optional(),
