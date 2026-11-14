@@ -42,14 +42,6 @@ export interface FreebuffStreakResponse {
    */
   bonusExpiresAt?: string | null
   /**
-   * The days the account was active in the last
-   * `FREEBUFF_STREAK_ACTIVITY_WINDOW_DAYS`, as days before today (0 is today),
-   * ascending: the activity grid a client draws beside the count. It reaches
-   * back past the current run, so a streak that broke still shows where it
-   * was. Absent from older servers; a client then draws the current run alone.
-   */
-  activeDaysAgo?: number[]
-  /**
    * Whether the account has ever reached a 7-day streak, which unlocks the
    * Streak Fire theme for good (`STREAK_THEME_PRESET_ID`). Absent from older
    * servers, which clients read as false.
