@@ -1,5 +1,16 @@
 import type { HostedBrowserScope } from './hosted-workspace'
 
+export const TASKS_PANEL_UNSUPPORTED = 'DEVICE_TASKS_UNSUPPORTED'
+
+export function isTasksPanelUnsupported(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === TASKS_PANEL_UNSUPPORTED
+  )
+}
+
 /**
  * The background work a local Claude Code or Codex chat's kept process is running (freebuff-desktop's
  * claude-live-session.ts and codex-tasks.ts): Claude Code's `run_in_background` shells, Monitors and

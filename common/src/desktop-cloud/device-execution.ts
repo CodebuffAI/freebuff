@@ -55,6 +55,7 @@ export const deviceExecutionContext = z
     displayName: z.string().trim().min(1).max(200).optional(),
     nativeTools: z.boolean().optional(),
     panelProtocolVersion: z.literal(1).optional(),
+    tasksPanel: z.literal(true).optional(),
     nativeHarnesses: z.boolean().optional(),
     concurrentHarnesses: z.literal(true).optional(),
     /** Answers `move_export`: another of the account's computers can take over this folder's chats. */
@@ -607,6 +608,7 @@ export const deviceCapabilities = z
     executionProtocolVersion: z.literal(2).optional(),
     nativeProtocolVersion: z.literal(3).optional(),
     panelProtocolVersion: z.literal(1).optional(),
+    tasksPanel: z.literal(true).optional(),
     concurrentHarnesses: z.literal(true).optional(),
     deviceMove: z.literal(true).optional(),
     agenticOffers: z.literal(true).optional(),
