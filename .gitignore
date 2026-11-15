@@ -132,3 +132,7 @@ ad-creatives/*/node_modules/
 # Local contact data holds real phone numbers (PII). Root-anchored so it never
 # matches a nested project's own data/ directory.
 /data/
+
+# Reference clone of a third-party repo kept locally for reading; never part of
+# this project's source.
+/OpenWA/
