@@ -1,6 +1,5 @@
 import {
   isValidProfileSurveyAnswer,
-  PROFILE_SURVEY_MAX_DISMISSALS,
   type ProfileSurveyAnswer,
   type ProfileSurveyQuestion,
 } from './freebuff-profile-survey'
@@ -133,18 +132,21 @@ export function profileSurveyRewardCopy(
     : null
 }
 
+/**
+ * The line after "Not now". It never says when the survey comes back (COD-1552):
+ * a promised date reads as a countdown, and when the dismissal fails to save
+ * the promise is wrong.
+ */
 export function profileSurveyDismissCopy(input: {
   answered: number
+  /** This dismissal is the last one: the survey will not be asked again. */
   stopped: boolean
-  /** Days this dismissal snoozed for (`profileSurveySnoozeDays`). */
-  snoozeDays: number | null
 }): string {
-  if (input.stopped || input.snoozeDays === null)
-    return `That's the ${ordinal(PROFILE_SURVEY_MAX_DISMISSALS)} “Not now”, so we won't ask again for this survey.`
+  if (input.stopped) return "Got it. We won't ask again."
+  if (input.answered === 0) return 'Got it.'
   const answers =
     input.answered === 1 ? 'Your 1 answer so far is' : `Your ${input.answered} answers so far are`
-  const again = `Got it. We'll ask again in ${input.snoozeDays} days.`
-  return input.answered > 0 ? `${again} ${answers} saved.` : again
+  return `Got it. ${answers} saved.`
 }
 
 export type ProfileSurveyCompletionCopy =
@@ -174,10 +176,6 @@ export function profileSurveyCompletionCopy(input: {
       detail: `Every answer was “Doesn't apply”, so this one didn't earn the ${formatHoursWithUnit(input.rewardFreebucks)}.`,
     }
   return { kind: 'unpaid', title: "Thanks, that's everything.", detail: null }
-}
-
-function ordinal(n: number): string {
-  return n === 1 ? 'first' : n === 2 ? 'second' : n === 3 ? 'third' : `${n}th`
 }
 
 /** The account page section, on freebuff.com. */
