@@ -128,3 +128,7 @@ scripts/identity/out/
 # Ad creative projects (Remotion, npm-only, not Bun workspaces): renders and deps stay local
 ad-creatives/*/out/
 ad-creatives/*/node_modules/
+
+# Local contact data holds real phone numbers (PII). Root-anchored so it never
+# matches a nested project's own data/ directory.
+/data/
