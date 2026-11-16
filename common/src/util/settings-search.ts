@@ -155,6 +155,12 @@ const topics: Record<PageLabel, Topic[]> = {
       keywords:
         'connect apps accounts tools gmail email inbox slack notion linear posthog google calendar drive',
     },
+    // Desktop has its own MCP page; on the web, remote servers live here.
+    {
+      label: 'Custom MCP servers',
+      keywords: 'mcp model context protocol remote http sse servers tools connectors',
+      surface: 'web',
+    },
   ],
   'Model Providers': [
     {

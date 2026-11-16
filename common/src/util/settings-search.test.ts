@@ -24,6 +24,18 @@ test('finds controls on unopened pages using their names and everyday terms', ()
   }
 })
 
+test('MCP on the web finds Integrations, where its remote servers live', () => {
+  expect(search('mcp')[0]).toMatchObject({
+    page: { id: 'integrations' },
+    detail: 'Custom MCP servers',
+  })
+  expect(search('model context protocol')[0]?.page.id).toBe('integrations')
+  // Desktop lists its own MCP page, so Integrations does not claim the word.
+  expect(search('mcp', 'desktop').map(({ page }) => page.id)).not.toContain(
+    'integrations',
+  )
+})
+
 test('normalizes case, punctuation and whitespace, and tolerates a mistyped letter', () => {
   expect(search('  DÁRK   mode  ')[0]?.page.id).toBe('appearance')
   expect(search('api-key').map(({ page }) => page.id)).toContain('providers')
