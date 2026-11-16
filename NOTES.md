@@ -87,6 +87,12 @@ Installed official CLI is `freebuff 0.2.36` and **does not include `--acp`**, so
 
 Protocol/unit gates can still pass. Live free-mode completion + T3 editor E2E remain blocked until Codebuff ships an allowlisted build with `--acp`.
 
+### Upstream confirmation (espetro on #319)
+
+> It has to live in the official binary. … what fails is the client allowlist, which an **in-tree flag satisfies**.
+
+So the unblock is: merge in-tree `--acp` (#1672 / #1611) → official npm/Desktop CLI release → T3 points at that binary. Self-built Windows binaries remain third-party even with `CODEBUFF_IS_BINARY` + Freebuff-CLI UA.
+
 ## 9. When an official `--acp` build ships
 
 Strike-safe readiness check (no prompts):
