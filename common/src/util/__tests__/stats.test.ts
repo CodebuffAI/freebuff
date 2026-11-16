@@ -2,10 +2,12 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   chiSquareSurvival,
+  inverseNormalCdf,
   newcombeDifference,
   revenuePerThousand,
   revenueUplift,
   sampleRatioMismatch,
+  sampleSizePerArm,
   wilsonInterval,
 } from '../stats'
 
@@ -79,6 +81,86 @@ describe('chiSquareSurvival', () => {
     expect(chiSquareSurvival(10.827566, 1)).toBeCloseTo(0.001, 5)
     expect(chiSquareSurvival(5.991465, 2)).toBeCloseTo(0.05, 5)
     expect(chiSquareSurvival(0.5, 3)).toBeCloseTo(0.918891, 5)
+  })
+})
+
+describe('inverseNormalCdf', () => {
+  test('known quantiles, in the centre and both tails', () => {
+    expect(inverseNormalCdf(0.5)).toBeCloseTo(0, 9)
+    expect(inverseNormalCdf(0.975)).toBeCloseTo(1.959964, 6)
+    expect(inverseNormalCdf(0.8)).toBeCloseTo(0.841621, 6)
+    expect(inverseNormalCdf(0.9875)).toBeCloseTo(2.241403, 6)
+    expect(inverseNormalCdf(0.01)).toBeCloseTo(-2.326348, 6)
+    expect(inverseNormalCdf(1e-6)).toBeCloseTo(-4.753424, 5)
+  })
+
+  test('is antisymmetric about 0.5', () => {
+    for (const p of [0.001, 0.02, 0.3]) {
+      expect(inverseNormalCdf(1 - p)).toBeCloseTo(-inverseNormalCdf(p), 8)
+    }
+  })
+
+  test('refuses p outside (0, 1)', () => {
+    for (const p of [0, 1, -0.1, Number.NaN]) {
+      expect(() => inverseNormalCdf(p)).toThrow()
+    }
+  })
+})
+
+describe('sampleSizePerArm', () => {
+  test('28% baseline, one point: about 32,000 per arm', () => {
+    const n = sampleSizePerArm({ baseline: 0.28, effect: 0.01 })
+    expect(Math.abs(n - 31_992) / 31_992).toBeLessThan(0.01)
+  })
+
+  test("matches the playbook's table (5% significance, 80% power)", () => {
+    // experiments/PLAYBOOK.md, "How many users"; within one user of rounding.
+    const table: [number, number, number][] = [
+      [0.05, 0.01, 8_158],
+      [0.1, 0.02, 3_841],
+      [0.28, 0.02, 8_080],
+      [0.4, 0.05, 1_534],
+    ]
+    for (const [baseline, effect, expected] of table) {
+      const n = sampleSizePerArm({ baseline, effect })
+      expect(Math.abs(n - expected)).toBeLessThanOrEqual(1)
+    }
+  })
+
+  test('a decrease needs the same order of users as an increase', () => {
+    const down = sampleSizePerArm({ baseline: 0.28, effect: -0.01 })
+    expect(down).toBeGreaterThan(30_000)
+    expect(down).toBeLessThan(33_000)
+  })
+
+  test('more treatment arms split alpha and need more users per arm', () => {
+    const two = sampleSizePerArm({ baseline: 0.28, effect: 0.01 })
+    const three = sampleSizePerArm({
+      baseline: 0.28,
+      effect: 0.01,
+      treatmentArms: 2,
+    })
+    expect(three).toBe(
+      sampleSizePerArm({ baseline: 0.28, effect: 0.01, alpha: 0.025 }),
+    )
+    expect(three).toBeGreaterThan(two)
+  })
+
+  test('higher power needs more users', () => {
+    expect(
+      sampleSizePerArm({ baseline: 0.28, effect: 0.01, power: 0.9 }),
+    ).toBeGreaterThan(sampleSizePerArm({ baseline: 0.28, effect: 0.01 }))
+  })
+
+  test('refuses impossible inputs', () => {
+    expect(() => sampleSizePerArm({ baseline: 0, effect: 0.01 })).toThrow()
+    expect(() => sampleSizePerArm({ baseline: 1, effect: -0.01 })).toThrow()
+    expect(() => sampleSizePerArm({ baseline: 0.28, effect: 0 })).toThrow()
+    expect(() => sampleSizePerArm({ baseline: 0.95, effect: 0.05 })).toThrow()
+    expect(() => sampleSizePerArm({ baseline: 0.02, effect: -0.03 })).toThrow()
+    expect(() =>
+      sampleSizePerArm({ baseline: 0.28, effect: 0.01, treatmentArms: 0 }),
+    ).toThrow()
   })
 })
 

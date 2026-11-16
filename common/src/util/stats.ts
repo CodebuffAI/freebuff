@@ -134,6 +134,111 @@ export function sampleRatioMismatch(
 }
 
 /**
+ * The standard normal quantile (probit): the z with P(Z <= z) = p, for
+ * 0 < p < 1. Acklam's rational approximation, relative error under 1.2e-9
+ * across the whole range, which is far below what a sample size needs.
+ */
+export function inverseNormalCdf(p: number): number {
+  if (!(p > 0 && p < 1)) {
+    throw new Error(`inverseNormalCdf needs 0 < p < 1, got ${p}`)
+  }
+  const a = [
+    -3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2,
+    1.38357751867269e2, -3.066479806614716e1, 2.506628277459239,
+  ]
+  const b = [
+    -5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2,
+    6.680131188771972e1, -1.328068155288572e1,
+  ]
+  const c = [
+    -7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838,
+    -2.549732539343734, 4.374664141464968, 2.938163982698783,
+  ]
+  const d = [
+    7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996,
+    3.754408661907416,
+  ]
+  const low = 0.02425
+  // The tails: one rational function in sqrt(-2 log p), mirrored.
+  const tail = (q: number) => {
+    const t = Math.sqrt(-2 * Math.log(q))
+    return (
+      (((((c[0] * t + c[1]) * t + c[2]) * t + c[3]) * t + c[4]) * t + c[5]) /
+      ((((d[0] * t + d[1]) * t + d[2]) * t + d[3]) * t + 1)
+    )
+  }
+  if (p < low) return tail(p)
+  if (p > 1 - low) return -tail(1 - p)
+  const q = p - 0.5
+  const r = q * q
+  return (
+    ((((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) *
+      q) /
+    (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1)
+  )
+}
+
+export type SampleSizeInput = {
+  /** The control arm's expected rate, 0 < baseline < 1. */
+  readonly baseline: number
+  /**
+   * The smallest absolute change worth detecting, as a proportion (0.01 is one
+   * percentage point). Either sign; baseline + effect must stay inside (0, 1).
+   */
+  readonly effect: number
+  /** Treatment arms beside control; the significance level is split across them. */
+  readonly treatmentArms?: number
+  /** Two-sided significance level before the split. Default 0.05. */
+  readonly alpha?: number
+  /** Probability of detecting `effect` when it is real. Default 0.8. */
+  readonly power?: number
+}
+
+/**
+ * Users each arm needs for a two-sided two-proportion z-test (normal
+ * approximation, equal arms), rounded up:
+ *
+ *   n = (z_{1-α/2} √(2 p̄(1-p̄)) + z_{1-β} √(p1(1-p1) + p2(1-p2)))² / δ²
+ *
+ * with p1 = baseline, p2 = baseline + δ and p̄ their mean. With k treatment
+ * arms α becomes α / k (Bonferroni), as the readout's verdict rules divide it.
+ * At a 28% baseline and a one-point effect this is about 32,000 per arm.
+ */
+export function sampleSizePerArm(input: SampleSizeInput): number {
+  const { baseline: p1, effect: delta } = input
+  const treatmentArms = input.treatmentArms ?? 1
+  const alpha = input.alpha ?? 0.05
+  const power = input.power ?? 0.8
+  const p2 = p1 + delta
+  if (!(p1 > 0 && p1 < 1)) {
+    throw new Error(`baseline must be between 0 and 1, got ${p1}`)
+  }
+  if (!Number.isFinite(delta) || delta === 0) {
+    throw new Error(`effect must be a non-zero number, got ${delta}`)
+  }
+  if (!(p2 > 0 && p2 < 1)) {
+    throw new Error(
+      `baseline + effect must be between 0 and 1, got ${round6(p2)}`,
+    )
+  }
+  if (!Number.isInteger(treatmentArms) || treatmentArms < 1) {
+    throw new Error(
+      `treatmentArms must be a positive integer, got ${treatmentArms}`,
+    )
+  }
+  if (!(alpha > 0 && alpha < 1) || !(power > 0 && power < 1)) {
+    throw new Error('alpha and power must be between 0 and 1')
+  }
+  const zAlpha = inverseNormalCdf(1 - alpha / treatmentArms / 2)
+  const zBeta = inverseNormalCdf(power)
+  const mean = (p1 + p2) / 2
+  const root =
+    zAlpha * Math.sqrt(2 * mean * (1 - mean)) +
+    zBeta * Math.sqrt(p1 * (1 - p1) + p2 * (1 - p2))
+  return Math.ceil((root * root) / (delta * delta))
+}
+
+/**
  * One arm's per-opportunity revenue, as sums: `n` opportunities (no-fills
  * included, at revenue 0), `sum` = sum of revenue r_i and `sumSquares` =
  * sum of r_i^2, all in one unit (cents). Sums add across days and
