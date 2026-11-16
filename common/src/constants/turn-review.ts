@@ -47,13 +47,6 @@ export type TurnReview = {
   actions: TurnReviewAction[]
 }
 
-/**
- * The Cloud A/B (docs/experiments.md): `review` turns get the review in place
- * of `suggest_prompts` cards; `control` is the agent as it was. Inert until
- * its `experiment` row is running.
- */
-export const TURN_REVIEW_EXPERIMENT_KEY = 'turn_review_2026_11'
-
 /** The run event that carries a review to the workspace. */
 export const TURN_REVIEW_EVENT_KIND = 'turn_review'
 

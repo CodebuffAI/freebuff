@@ -32,7 +32,7 @@ export const productFunnelStageSchema = z.enum([
   /** hosted Desktop's first-project screen ("Open a project to get started"): shown, selected (`project_choice`) */
   'project_setup',
   'template',
-  /** a finished turn's review (`turn_review_2026_11`): shown, selected (one of its buttons) */
+  /** a finished turn's review: shown, selected (one of its buttons) */
   'turn_review',
   'model_picker',
   'model_selection',
