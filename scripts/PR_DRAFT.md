@@ -36,20 +36,22 @@ Superior Freebuff `--acp` free-mode path for T3 Code / Zed Local ACP hosts.
 
 ## Test plan / evidence
 
-- [x] `bun test --cwd cli src/acp` → **31 pass / 0 fail**
+- [x] `bun test --cwd cli src/acp` → **32 pass / 0 fail**
 - [x] Rodrigo’s original suite still covered unmodified in spirit (event mapping, protocol, session refusals, stdio handshake)
 - [x] New host-fix tests: UA lowercase, `--acp`⇒trustAgents + early branch, setSessionMode/mode maps, formatFreebuffAcpError, model_unavailable + 90s backoff (fake clock), refusal exactly once, release reasons
 - [x] Scripted harness: `scripts/acp-stdio-harness.ts` (initialize → session/new → prompt; `--cancel-ms` → `cancelled`)
 - [x] Cancel harness: `stopReason: cancelled`, no orphaned child
+- [x] Feat-compiled Windows `freebuff-acp.exe` exposes `--acp` / `--trust-agents`; handshake-only initialize + session/new returns free modes (MiMo / DeepSeek / GLM + agent modes)
+- [x] T3 Local ACP `providerInstances.freebuff-acp` enabled → compiled exe; UI selects Freebuff provider + `base2-free` (screenshots under sandbox `bin/screenshots/`)
 - [ ] **Live free-mode completion** — **BLOCKED** (see below)
-- [ ] **T3 Code Local ACP editor test** — **BLOCKED** on the same allowlist gate
+- [ ] **T3 Code E2E prompt stream / mode switch / second turn** — **BLOCKED** on the same allowlist gate
 - [ ] Full-repo `tsc` / lint — ACP files clean; repo has pre-existing AI SDK type errors unrelated to this branch (~20)
 
 ### Live blocker (do not mark ready)
 
-Dev entry `bun run cli/src/entry.ts --acp` admits a session, then chat completions return **403 `third_party_client_warning`** (strike recorded). Official `freebuff 0.2.36` has **no `--acp`**. See `scripts/acp-live-blocker.md` and `scripts/acp-harness-live.redacted.jsonl`.
+Dev entry `bun run cli/src/entry.ts --acp` admits a session, then chat completions return **403 `third_party_client_warning`** (strike recorded). NOTES also records that a **self-built** Windows binary still hits the same gate. Official `freebuff 0.2.36` has **no `--acp`**. See `scripts/acp-live-blocker.md` and `scripts/acp-harness-live.redacted.jsonl`.
 
-**Needs:** an official allowlisted Freebuff build that includes `--acp`.
+**Needs:** an official allowlisted Freebuff build that includes `--acp`. No further live free probes until that ships.
 
 ## Notes
 

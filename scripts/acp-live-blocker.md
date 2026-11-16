@@ -36,8 +36,14 @@ Admission and ACP framing succeeded (DeepSeek selected). Completions returned **
 | Live harness framing | initialize → session/new (modes picker) → prompt → ACP `notice` for third_party |
 | Official `freebuff 0.2.36` | No `--acp` flag (cannot use allowlisted binary for this path yet) |
 
-## T3 Code Local ACP
+## T3 Code Local ACP (updated 2026-11-15)
 
-Cannot complete a real free-mode reply until Codebuff ships an allowlisted build that includes `--acp`. Protocol connect / mode picker can still be exercised against this branch’s entry for non-free paths, but free completions will strike the account.
+Local ACP **config + handshake** now verified against a feat-compiled `freebuff-acp.exe`:
 
-**Stop condition honored:** live free-mode completion is **not** marked passed. Do not re-run `--live` against `bun run cli/src/entry.ts` on this account without an allowlisted build (strike counter already advanced).
+- T3 `providerInstances.freebuff-acp.enabled = true` with `--acp --trust-agents`
+- Handshake-only (no `session/prompt`): protocol v1, session id, free model modes
+- UI: Freebuff provider + `base2-free` selected (sandbox screenshots)
+
+Still **cannot** complete a real free-mode reply until Codebuff ships an **allowlisted** build that includes `--acp`. Self-built binaries are documented in `NOTES.md` as still receiving `third_party_client_warning`.
+
+**Stop condition honored:** live free-mode completion is **not** marked passed. Do not re-run `--live` / T3 free prompts on this account without an allowlisted build (strike counter already advanced).

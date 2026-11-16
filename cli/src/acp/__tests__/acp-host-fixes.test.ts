@@ -70,8 +70,8 @@ describe('parseArgs --acp implies trustAgents', () => {
   test('--acp early branch runs before OSC / interactive TTY setup', async () => {
     const source = await Bun.file(`${import.meta.dir}/../../index.tsx`).text()
     const early = source.indexOf('const serveAcpEarly')
-    // Match the runtime OSC call site, not the import line.
-    const oscRuntime = source.indexOf('await detectTerminalTheme()')
+    // Match the runtime OSC call site (background promise), not the import line.
+    const oscRuntime = source.indexOf('? detectTerminalTheme()')
     const trustPrompt = source.indexOf('trustAgents || isTruthyOptIn')
     expect(early).toBeGreaterThan(-1)
     expect(oscRuntime).toBeGreaterThan(-1)
