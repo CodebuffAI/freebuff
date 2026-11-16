@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   freebuffCountryVerificationPrompt,
+  freebuffLimitedAccessReason,
   freebuffLimitedCountry,
 } from '../freebuff-country-prompt'
 
@@ -93,5 +94,54 @@ describe('freebuffLimitedCountry', () => {
     ]) {
       expect(freebuffLimitedCountry(session as never)).toBeNull()
     }
+  })
+})
+
+describe('freebuffLimitedAccessReason', () => {
+  const reason = (session: Record<string, unknown>) =>
+    freebuffLimitedAccessReason(session as never)
+
+  test('a VPN or proxy in a full-access country carries the banner prompt', () => {
+    expect(reason(vpn)).toMatchObject({
+      kind: 'vpn',
+      prompt: { label: 'VPN detected, verify country to unlock' },
+    })
+    expect(reason({ ...vpn, ipPrivacySignals: ['proxy'] })?.kind).toBe('proxy')
+  })
+
+  test('a limited-access country names the country', () => {
+    expect(
+      reason({ ...vpn, countryCode: 'BD', countryBlockReason: 'country_not_allowed' }),
+    ).toEqual({ kind: 'country', country: { code: 'BD', name: 'Bangladesh' } })
+  })
+
+  test('the access floor, a VPN verifying cannot unlock, and unresolved connections', () => {
+    expect(reason({ ...vpn, countryBlockReason: 'recent_limited_country' })).toEqual({
+      kind: 'floor',
+    })
+    expect(reason({ ...vpn, countryCode: 'IN' })).toEqual({ kind: 'anonymous' })
+    expect(reason({ ...vpn, countryVerified: true })).toEqual({ kind: 'anonymous' })
+    for (const countryBlockReason of [
+      'anonymized_or_unknown_country',
+      'missing_client_ip',
+      'unresolved_client_ip',
+      'ip_privacy_lookup_failed',
+    ]) {
+      expect(reason({ ...vpn, countryBlockReason })).toEqual({ kind: 'unresolved' })
+    }
+    expect(reason({ ...vpn, countryBlockReason: null })).toEqual({ kind: 'other' })
+  })
+
+  test('nothing at full access or on a plan', () => {
+    expect(reason({ ...vpn, accessTier: 'full' })).toBeNull()
+    expect(
+      reason({
+        ...vpn,
+        countryCode: 'BD',
+        countryBlockReason: 'country_not_allowed',
+        subscription: { tierId: 'pro' },
+      }),
+    ).toBeNull()
+    expect(freebuffLimitedAccessReason(undefined)).toBeNull()
   })
 })

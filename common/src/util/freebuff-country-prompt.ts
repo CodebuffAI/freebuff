@@ -108,3 +108,89 @@ export function freebuffLimitedCountry(
   }
   return { code, name: formatFreebuffCountryName(code) }
 }
+
+/**
+ * Why an account without a plan is on limited access, for surfaces that
+ * explain the smaller allowance in words (plan card, Earn, Cloud meter). It
+ * composes the two helpers above so every surface agrees with the sidebar:
+ * - `vpn` / `proxy`: the sidebar's banner (`freebuffCountryVerificationPrompt`),
+ *   the only case that earns "verify country to unlock";
+ * - `country`: limited because of where it is (`freebuffLimitedCountry`);
+ *   verifying cannot change it, so no verify link;
+ * - `floor`: held by the access floor (`recent_limited_country`); verifying
+ *   from home internet or mobile data is the way out for someone who moved;
+ * - `anonymous`: a VPN or proxy verifying cannot unlock (a limited-access exit,
+ *   a country already verified): a direct connection is the way out;
+ * - `unresolved`: the connection's region could not be confirmed;
+ * - `other`: no reason given (the limited-IP list, an older server).
+ * Null at full access and for a paying account, which is never called
+ * limited nor sent to verify (operator, 2026-10-01).
+ */
+export type FreebuffLimitedAccessReason =
+  | { kind: 'vpn' | 'proxy'; prompt: FreebuffCountryVerificationPrompt }
+  | { kind: 'country'; country: { code: string; name: string } }
+  | { kind: 'floor' | 'anonymous' | 'unresolved' | 'other' }
+
+export function freebuffLimitedAccessReason(
+  session: SessionLike,
+): FreebuffLimitedAccessReason | null {
+  if (!session || getFreebuffServerAccessTier(session) !== 'limited') {
+    return null
+  }
+  if (getSubscriptionInfo(session)?.tierId != null) return null
+  const prompt = freebuffCountryVerificationPrompt(session)
+  if (prompt) return { kind: prompt.kind, prompt }
+  const country = freebuffLimitedCountry(session)
+  if (country) return { kind: 'country', country }
+  switch ((session as CountryFields).countryBlockReason) {
+    case 'recent_limited_country':
+      return { kind: 'floor' }
+    case 'anonymous_network':
+      return { kind: 'anonymous' }
+    case 'anonymized_or_unknown_country':
+    case 'missing_client_ip':
+    case 'unresolved_client_ip':
+    case 'ip_privacy_lookup_failed':
+      return { kind: 'unresolved' }
+    default:
+      return { kind: 'other' }
+  }
+}
+
+/**
+ * The sentence a surface shows for a limited reason, and whether it may
+ * offer Account → Country beside it (`verify`): only a VPN or proxy the
+ * banner would show, and the access floor ("Moved?"). Null where there is
+ * nothing to say (`other`).
+ */
+export function freebuffLimitedAccessCopy(
+  reason: FreebuffLimitedAccessReason | null,
+): { text: string; verify: boolean } | null {
+  switch (reason?.kind) {
+    case 'vpn':
+    case 'proxy':
+      return { text: `${reason.prompt.label}. ${reason.prompt.tooltip}`, verify: true }
+    case 'country':
+      return {
+        text: `Daily hours are set by country; this is the allowance in ${reason.country.name}.`,
+        verify: false,
+      }
+    case 'floor':
+      return {
+        text: 'This account was recently used from a region with a smaller allowance, so that allowance applies for a while. Moved? Verify your country from home internet or mobile data.',
+        verify: true,
+      }
+    case 'anonymous':
+      return {
+        text: 'This connection looks like a VPN or proxy, so the smaller allowance applies while you use it.',
+        verify: false,
+      }
+    case 'unresolved':
+      return {
+        text: "We couldn't confirm your region on this connection, so the smaller allowance applies for now.",
+        verify: false,
+      }
+    default:
+      return null
+  }
+}
