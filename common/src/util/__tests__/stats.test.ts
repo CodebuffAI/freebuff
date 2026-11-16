@@ -39,6 +39,14 @@ describe('newcombeDifference', () => {
   test('is null without trials', () => {
     expect(newcombeDifference(1, 2, 0, 0)).toBeNull()
   })
+
+  test('a larger z widens the interval around the same difference', () => {
+    const at95 = newcombeDifference(56, 70, 48, 80)!
+    const at975 = newcombeDifference(56, 70, 48, 80, 2.241403)!
+    expect(at975.difference).toBe(at95.difference)
+    expect(at975.lower).toBeLessThan(at95.lower)
+    expect(at975.upper).toBeGreaterThan(at95.upper)
+  })
 })
 
 describe('sampleRatioMismatch', () => {

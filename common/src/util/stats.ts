@@ -29,8 +29,7 @@ function validProportion(successes: number, trials: number): boolean {
 }
 
 /** Unrounded Wilson bounds; callers have already validated the inputs. */
-function wilsonRaw(successes: number, trials: number) {
-  const z = Z_95
+function wilsonRaw(successes: number, trials: number, z = Z_95) {
   const p = successes / trials
   const z2 = z * z
   const denominator = 1 + z2 / trials
@@ -67,12 +66,15 @@ export type DifferenceInterval = {
  * by Newcombe's hybrid score method (method 10, Newcombe 1998), built from
  * the two Wilson intervals. Well-behaved at small counts and near 0 or 1,
  * where the Wald interval is not. `null` when either arm has no trials.
+ * Pass `z` for another level (2.241403 for 97.5%, a Bonferroni-corrected
+ * comparison of two treatment arms).
  */
 export function newcombeDifference(
   successes1: number,
   trials1: number,
   successes2: number,
   trials2: number,
+  z = Z_95,
 ): DifferenceInterval | null {
   if (
     !validProportion(successes1, trials1) ||
@@ -80,8 +82,8 @@ export function newcombeDifference(
   ) {
     return null
   }
-  const a = wilsonRaw(successes1, trials1)
-  const b = wilsonRaw(successes2, trials2)
+  const a = wilsonRaw(successes1, trials1, z)
+  const b = wilsonRaw(successes2, trials2, z)
   const d = a.p - b.p
   const lower = d - Math.sqrt((a.p - a.lower) ** 2 + (b.upper - b.p) ** 2)
   const upper = d + Math.sqrt((a.upper - a.p) ** 2 + (b.p - b.lower) ** 2)
