@@ -16,11 +16,19 @@
  * is how a SIGINT ends up swallowed instead of ending the process.
  */
 import {
+  DEFAULT_FREEBUFF_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+} from '@codebuff/common/constants/freebuff-models'
+
+import {
   callFreebuffSession,
   FreebuffSessionRequestError,
 } from '../utils/freebuff-session-api'
 import { newFreebuffCliInstanceId } from '../utils/freebuff-session-identity'
-import { getSelectedFreebuffModel } from '../state/freebuff-model-store'
+import {
+  getSelectedFreebuffModel,
+  useFreebuffModelStore,
+} from '../state/freebuff-model-store'
 import { getAuthTokenDetails } from '../utils/auth'
 import { IS_FREEBUFF } from '../utils/constants'
 import { logger } from '../utils/logger'
@@ -46,12 +54,32 @@ export class AcpSessionError extends Error {
 /** Assume an hour when the server does not send an expiry. */
 const FALLBACK_SESSION_MS = 60 * 60 * 1_000
 
+/** Give up waiting for an active hour after this many ms. */
+export const ACP_SESSION_ADMIT_DEADLINE_MS = 90_000
+
+const TRANSIENT_STATUS_CODES = new Set([408, 429, 503])
+
 function expiryOf(response: FreebuffSessionServerResponse): number {
   if ('expiresAt' in response && typeof response.expiresAt === 'string') {
     const parsed = Date.parse(response.expiresAt)
     if (Number.isFinite(parsed)) return parsed
   }
   return Date.now() + FALLBACK_SESSION_MS
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new AcpSessionError('Cancelled'))
+      return
+    }
+    const timer = setTimeout(resolve, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new AcpSessionError('Cancelled'))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 /** The picker's refusals, in wording an editor surface can show without the
@@ -87,6 +115,38 @@ export function describeRefusal(
   }
 }
 
+function isHardRefusal(status: FreebuffSessionServerResponse['status']): boolean {
+  return (
+    status === 'banned' ||
+    status === 'country_blocked' ||
+    status === 'rate_limited' ||
+    status === 'spend_limited' ||
+    status === 'ip_capped' ||
+    status === 'model_locked' ||
+    status === 'premium_slot_taken' ||
+    status === 'purchase_in_use' ||
+    status === 'purchase_capacity' ||
+    status === 'superseded' ||
+    status === 'ended'
+  )
+}
+
+function fallbackModelFor(model: string): string {
+  return model === FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
+    ? DEFAULT_FREEBUFF_MODEL_ID
+    : FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
+}
+
+/** Optional seams for unit tests (fake clocks, stubbed session API). */
+export type AcpFreebuffSessionOptions = {
+  isFreebuff?: boolean
+  admitDeadlineMs?: number
+  callSession?: typeof callFreebuffSession
+  getToken?: () => { token: string | null }
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
+  now?: () => number
+}
+
 /**
  * Holds at most one hour for the process. Turns reuse it; a different selected
  * model releases it and claims again, because the server locks an hour to the
@@ -98,19 +158,26 @@ export function describeRefusal(
 export class AcpFreebuffSession {
   private admission: AcpAdmission | null = null
   private queue: Promise<unknown> = Promise.resolve()
+  private readonly options: AcpFreebuffSessionOptions
+
+  constructor(options: AcpFreebuffSessionOptions = {}) {
+    this.options = options
+  }
 
   /** The held hour, when it is still valid and (optionally) for `model`. */
   current(model?: string): AcpAdmission | null {
     const held = this.admission
     if (!held) return null
-    if (held.expiresAtMs <= Date.now()) return null
+    const now = this.options.now?.() ?? Date.now()
+    if (held.expiresAtMs <= now) return null
     if (model && held.model !== model) return null
     return held
   }
 
   /** Admit the selected model, reusing a live hour for the same model. */
   ensure(signal?: AbortSignal): Promise<AcpAdmission | null> {
-    if (!IS_FREEBUFF) return Promise.resolve(null)
+    const isFreebuff = this.options.isFreebuff ?? IS_FREEBUFF
+    if (!isFreebuff) return Promise.resolve(null)
     const run = this.queue.then(() => this.ensureNow(signal))
     // Keep the chain alive after a refusal: one failed admission must not
     // wedge every later turn.
@@ -121,8 +188,27 @@ export class AcpFreebuffSession {
     return run
   }
 
+  /**
+   * Claim (or reuse) a free hour. POST once, then poll GET until active,
+   * falling back once on `model_unavailable`, backing off on 408/429/503,
+   * and giving up cleanly at {@link ACP_SESSION_ADMIT_DEADLINE_MS}.
+   */
   private async ensureNow(signal?: AbortSignal): Promise<AcpAdmission> {
-    const model = getSelectedFreebuffModel()
+    const callSession = this.options.callSession ?? callFreebuffSession
+    const getToken = this.options.getToken ?? getAuthTokenDetails
+    const wait = this.options.sleep ?? sleep
+    const now = this.options.now ?? Date.now
+    const deadlineMs =
+      this.options.admitDeadlineMs ?? ACP_SESSION_ADMIT_DEADLINE_MS
+
+    let model = getSelectedFreebuffModel()
+    // Drop a leftover catalog key from a prior TUI session — ACP stays on
+    // compiled model ids so completions are not refused as third-party.
+    if (model.startsWith('m-')) {
+      model = FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
+      useFreebuffModelStore.getState().setSelectedModel(model)
+    }
+
     const held = this.current(model)
     if (held) return held
 
@@ -131,49 +217,112 @@ export class AcpFreebuffSession {
     // so the account never holds two slots for this process.
     if (this.admission) await this.release('model-switch')
 
-    const { token } = getAuthTokenDetails()
+    const { token } = getToken()
     if (!token) {
       throw new AcpSessionError(
         'Not signed in. Run `freebuff login` on this machine before connecting an editor.',
       )
     }
 
-    const instanceId = newFreebuffCliInstanceId()
-    let response: FreebuffSessionServerResponse
-    try {
-      response = await callFreebuffSession('POST', token, {
-        instanceId,
-        multiSession: true,
-        model,
-        signal,
-      })
-    } catch (error) {
-      if (error instanceof FreebuffSessionRequestError) {
-        throw new AcpSessionError(
-          `Could not start a Freebuff session: ${error.message}`,
-        )
+    const deadline = now() + deadlineMs
+    let claimId = newFreebuffCliInstanceId()
+    let method: 'POST' | 'GET' = 'POST'
+    let lastStatus = 'none'
+    let fellBackOnce = false
+
+    while (now() < deadline) {
+      if (signal?.aborted) throw new AcpSessionError('Cancelled')
+
+      try {
+        const response = await callSession(method, token, {
+          signal,
+          instanceId: claimId,
+          multiSession: true,
+          model: method === 'POST' ? model : undefined,
+        })
+        lastStatus = response.status
+
+        if (response.status === 'active') {
+          const admission: AcpAdmission = {
+            instanceId:
+              'instanceId' in response && response.instanceId
+                ? response.instanceId
+                : claimId,
+            model:
+              'model' in response && response.model ? response.model : model,
+            expiresAtMs: expiryOf(response),
+          }
+          this.admission = admission
+          useFreebuffModelStore.getState().setSelectedModel(admission.model)
+          logger.info(
+            { model: admission.model },
+            '[acp] free session admitted for this process',
+          )
+          return admission
+        }
+
+        if (response.status === 'model_unavailable') {
+          const unavailable = response as FreebuffSessionServerResponse & {
+            updateRequired?: boolean
+            purchasesPaused?: boolean
+            dailyLimitReached?: boolean
+            availableHours?: string
+            requestedModel?: string
+          }
+          if (
+            unavailable.updateRequired ||
+            unavailable.purchasesPaused ||
+            unavailable.dailyLimitReached
+          ) {
+            throw new AcpSessionError(
+              unavailable.availableHours ||
+                `Freebuff model unavailable: ${unavailable.requestedModel ?? model}`,
+            )
+          }
+          if (fellBackOnce) {
+            throw new AcpSessionError(
+              `Freebuff model unavailable after fallback (requested ${unavailable.requestedModel ?? model}).`,
+            )
+          }
+          const fallback = fallbackModelFor(model)
+          logger.info(
+            { requested: unavailable.requestedModel ?? model, fallback },
+            '[acp] model unavailable; retrying with fallback',
+          )
+          model = fallback
+          useFreebuffModelStore.getState().setSelectedModel(fallback)
+          claimId = newFreebuffCliInstanceId()
+          fellBackOnce = true
+          method = 'POST'
+          continue
+        }
+
+        if (isHardRefusal(response.status)) {
+          throw new AcpSessionError(describeRefusal(response))
+        }
+
+        // Transient / none: poll GET until active or timeout.
+        method = 'GET'
+      } catch (error) {
+        if (error instanceof AcpSessionError) throw error
+        if (error instanceof FreebuffSessionRequestError) {
+          if (TRANSIENT_STATUS_CODES.has(error.statusCode)) {
+            await wait(error.retryAfterMs ?? 1_000, signal)
+            continue
+          }
+          throw new AcpSessionError(
+            `Could not start a Freebuff session: ${error.message}`,
+          )
+        }
+        throw error
       }
-      throw error
+
+      await wait(500, signal)
     }
 
-    if (response.status !== 'active') {
-      throw new AcpSessionError(describeRefusal(response))
-    }
-
-    const admission: AcpAdmission = {
-      instanceId:
-        'instanceId' in response && response.instanceId
-          ? response.instanceId
-          : instanceId,
-      model: 'model' in response && response.model ? response.model : model,
-      expiresAtMs: expiryOf(response),
-    }
-    this.admission = admission
-    logger.info(
-      { model: admission.model },
-      '[acp] free session admitted for this process',
+    throw new AcpSessionError(
+      `Timed out waiting for a Freebuff session (last status: ${lastStatus}).`,
     )
-    return admission
   }
 
   /** Best-effort DELETE so the hour is not left charged to the account. */
@@ -181,10 +330,12 @@ export class AcpFreebuffSession {
     const admission = this.admission
     if (!admission) return
     this.admission = null
-    const { token } = getAuthTokenDetails()
+    const getToken = this.options.getToken ?? getAuthTokenDetails
+    const callSession = this.options.callSession ?? callFreebuffSession
+    const { token } = getToken()
     if (!token) return
     try {
-      await callFreebuffSession('DELETE', token, {
+      await callSession('DELETE', token, {
         instanceId: admission.instanceId,
         multiSession: true,
       })
@@ -193,6 +344,11 @@ export class AcpFreebuffSession {
       // Losing this costs the tail of an hour; it must never fail a turn.
       logger.warn({ reason, error }, '[acp] could not release the free session')
     }
+  }
+
+  /** Test helper: seed a held admission without calling the API. */
+  seedAdmissionForTests(admission: AcpAdmission): void {
+    this.admission = admission
   }
 }
 
