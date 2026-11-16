@@ -42,6 +42,8 @@ Superior Freebuff `--acp` free-mode path for T3 Code / Zed Local ACP hosts.
 - [x] Scripted harness: `scripts/acp-stdio-harness.ts` (initialize → session/new → prompt; `--cancel-ms` → `cancelled`)
 - [x] Cancel harness: `stopReason: cancelled`, no orphaned child
 - [x] Feat-compiled Windows `freebuff-acp.exe` exposes `--acp` / `--trust-agents`; handshake-only initialize + session/new returns free modes (MiMo / DeepSeek / GLM + agent modes)
+- [x] `session/set_mode` emits `current_mode_update` and tracks picker `currentModeId` (model or agent mode)
+- [x] Compiled-binary cancel harness: `stopReason: cancelled` (`scripts/acp-harness-cancel-bin.jsonl`)
 - [x] T3 Local ACP `providerInstances.freebuff-acp` enabled → compiled exe; UI selects Freebuff provider + `base2-free` (screenshots under sandbox `bin/screenshots/`)
 - [ ] **Live free-mode completion** — **BLOCKED** (see below)
 - [ ] **T3 Code E2E prompt stream / mode switch / second turn** — **BLOCKED** on the same allowlist gate
@@ -49,7 +51,7 @@ Superior Freebuff `--acp` free-mode path for T3 Code / Zed Local ACP hosts.
 
 ### Live blocker (do not mark ready)
 
-Dev entry `bun run cli/src/entry.ts --acp` admits a session, then chat completions return **403 `third_party_client_warning`** (strike recorded). NOTES also records that a **self-built** Windows binary still hits the same gate. Official `freebuff 0.2.36` has **no `--acp`**. See `scripts/acp-live-blocker.md` and `scripts/acp-harness-live.redacted.jsonl`.
+Dev entry `bun run cli/src/entry.ts --acp` admits a session, then chat completions return **403 `third_party_client_warning`** (strike recorded). NOTES also records that a **self-built** Windows binary still hits the same gate. Official npm `freebuff@latest` is still **0.2.36** and has **no `--acp`** (rechecked 2026-11-15; only `latest` dist-tag). See `scripts/acp-live-blocker.md` and `scripts/acp-harness-live.redacted.jsonl`.
 
 **Needs:** an official allowlisted Freebuff build that includes `--acp`. No further live free probes until that ships.
 
