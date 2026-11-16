@@ -50,7 +50,8 @@ export interface FreebuffStreakResponse {
   /**
    * A streak milestone (a streak theme's days) reached today, set by
    * freebuff.com's `/api/web/streak` for the `share` arm of
-   * `streak_share_2026_11`: the workspace offers to share it. Absent otherwise.
+   * `streak_share_2026_11`: the workspace offers to share it. Phone apps get it
+   * only when they ask with `?share=1`. Absent otherwise.
    */
   shareMilestone?: number
 }

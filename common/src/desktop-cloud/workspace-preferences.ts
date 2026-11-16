@@ -13,9 +13,14 @@ export const workspacePreferencesSchema = z.object({
    *  hour runs out (web/src/server/desktop-cloud/cloud-session-renewal.ts).
    *  Absent means on. Never defaulted, for the same reason as `notificationSounds`. */
   autoStartSessions: z.boolean().optional(),
-  /** The highest streak milestone whose share dialog this account was shown
-   *  (`streak_share_2026_11`): each milestone's opens once per account. Absent
-   *  means none. Never defaulted, for the same reason as `notificationSounds`. */
+  /** The streak day whose milestone share dialog (`streak_share_2026_11`) this
+   *  account was last shown, as that day's `nextResetAt`: the dialog opens once
+   *  per milestone day on any surface, and again when a new streak reaches a
+   *  milestone. Absent means none. Never defaulted, for the same reason as
+   *  `notificationSounds`. */
+  streakShareShownFor: z.string().max(40).optional(),
+  /** Unread: the first build's once-per-milestone record (2026-11-16), kept so
+   *  a stored value still parses. */
   streakShareShownThrough: z.number().int().min(0).max(100_000).optional(),
   interfaceSize: z.number().int().min(70).max(160),
   desktopMacShortcuts: shortcuts,
