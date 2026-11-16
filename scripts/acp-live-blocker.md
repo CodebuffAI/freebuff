@@ -42,7 +42,10 @@ Local ACP **config + handshake** now verified against a feat-compiled `freebuff-
 
 - T3 `providerInstances.freebuff-acp.enabled = true` with `--acp --trust-agents`
 - Handshake-only (no `session/prompt`): protocol v1, session id, free model modes
+- `session/set_mode` emits `current_mode_update` (picker sync for T3/Zed)
+- Compiled-binary cancel harness: `stopReason: cancelled` (`scripts/acp-harness-cancel-bin.jsonl`)
 - UI: Freebuff provider + `base2-free` selected (sandbox screenshots)
+- Official npm `freebuff@0.2.36` still has no `--acp` (checked 2026-11-15)
 
 Still **cannot** complete a real free-mode reply until Codebuff ships an **allowlisted** build that includes `--acp`. Self-built binaries are documented in `NOTES.md` as still receiving `third_party_client_warning`.
 
