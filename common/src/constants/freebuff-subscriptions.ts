@@ -416,8 +416,8 @@ export const FREEBUFF_SUBSCRIPTION_FIVE_DAY_WINDOW_DAYS = 7
  * the plan it sells cannot open.
  *
  * The rows are still LISTED to a free account, without a price, and selecting
- * one opens the plans page. That is deliberate and is the same call
- * `LIMITED_TIER_PLAN_LOCKED_MODELS` documents: a row the user cannot start is
+ * one opens the plans page. That is deliberate and is the same call the
+ * limited tier's plan rows make: a row the user cannot start is
  * worth drawing when the only thing in the way is a plan we sell. The price is
  * suppressed because a Freebucks figure beside a row Freebucks cannot buy
  * reads as the way in, and sends the user to spend a balance that will not

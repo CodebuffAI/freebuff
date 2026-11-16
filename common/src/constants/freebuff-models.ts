@@ -4633,7 +4633,7 @@ export function getFreebuffModelsForAccessTier(
   // limited viewer is FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS, which is
   // every row appended below. They were hidden until then, which gave the
   // plans page nothing to point at from the CLI and Desktop pickers (the Web
-  // picker already listed them, LIMITED_TIER_PLAN_LOCKED_MODELS).
+  // picker already listed them).
   // `hasPaidSubscription` no longer changes WHICH rows are listed, only
   // whether they are locked; it stays in the signature for its callers.
   void hasPaidSubscription
