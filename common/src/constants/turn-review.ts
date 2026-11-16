@@ -50,6 +50,12 @@ export type TurnReview = {
 /** The run event that carries a review to the workspace. */
 export const TURN_REVIEW_EVENT_KIND = 'turn_review'
 
+/**
+ * Sent with a run by a phone app that draws a review. A phone build without it
+ * keeps its `suggest_prompts` instead; older servers ignore it.
+ */
+export const CLOUD_TURN_REVIEW_HEADER = 'x-freebuff-cloud-turn-review'
+
 /** `codebuff_metadata` key that marks a review request. */
 export const TURN_REVIEW_METADATA_KEY = 'turn_review'
 
