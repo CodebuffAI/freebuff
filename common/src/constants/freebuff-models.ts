@@ -3885,6 +3885,9 @@ export const FREEBUFF_SESSION_UNSUPPORTED_MESSAGE =
 export const FREEBUFF_ACTING_USER_HEADER = 'x-freebuff-acting-user-id'
 /** Server-to-server header; honoured only from the Freebuff Web service account. */
 export const FREEBUFF_PRIVILEGED_USER_HEADER = 'x-freebuff-privileged-user'
+/** Server-to-server header, sent only by the Freebuff Web admin proxy after
+ *  `checkGodAuth` passed; honoured only from the Freebuff Web service account. */
+export const FREEBUFF_GOD_USER_HEADER = 'x-freebuff-god-user'
 /**
  * The house-ad click id (`bfcid`) lifted out of its first-party freebuff.com
  * cookie and carried to the Stripe checkout route on codebuff.com, which
