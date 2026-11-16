@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   freebuffCountryVerificationPrompt,
+  freebuffLimitedAccessCopy,
   freebuffLimitedAccessReason,
-  freebuffLimitedCountry,
 } from '../freebuff-country-prompt'
 
 const vpn = {
@@ -69,34 +69,6 @@ describe('freebuffCountryVerificationPrompt', () => {
   })
 })
 
-describe('freebuffLimitedCountry', () => {
-  const limited = {
-    status: 'none',
-    accessTier: 'limited',
-    countryCode: 'IN',
-    countryBlockReason: 'country_not_allowed',
-  }
-
-  test('names a limited-access country the account is in', () => {
-    expect(freebuffLimitedCountry(limited as never)).toEqual({
-      code: 'IN',
-      name: 'India',
-    })
-  })
-
-  test('nothing for a VPN, an unknown country, a full-access country or full access', () => {
-    for (const session of [
-      { ...limited, countryBlockReason: 'anonymous_network' },
-      { ...limited, countryCode: 'UNKNOWN' },
-      { ...limited, countryCode: null },
-      { ...limited, countryCode: 'US' },
-      { ...limited, accessTier: 'full' },
-    ]) {
-      expect(freebuffLimitedCountry(session as never)).toBeNull()
-    }
-  })
-})
-
 describe('freebuffLimitedAccessReason', () => {
   const reason = (session: Record<string, unknown>) =>
     freebuffLimitedAccessReason(session as never)
@@ -109,18 +81,25 @@ describe('freebuffLimitedAccessReason', () => {
     expect(reason({ ...vpn, ipPrivacySignals: ['proxy'] })?.kind).toBe('proxy')
   })
 
-  test('a limited-access country names the country', () => {
+  test('a limited-access country', () => {
     expect(
       reason({ ...vpn, countryCode: 'BD', countryBlockReason: 'country_not_allowed' }),
-    ).toEqual({ kind: 'country', country: { code: 'BD', name: 'Bangladesh' } })
+    ).toEqual({ kind: 'country' })
   })
 
-  test('the access floor, a VPN verifying cannot unlock, and unresolved connections', () => {
+  test('the access floor, a VPN the banner does not name, and unresolved connections', () => {
     expect(reason({ ...vpn, countryBlockReason: 'recent_limited_country' })).toEqual({
       kind: 'floor',
     })
-    expect(reason({ ...vpn, countryCode: 'IN' })).toEqual({ kind: 'anonymous' })
-    expect(reason({ ...vpn, countryVerified: true })).toEqual({ kind: 'anonymous' })
+    // The exit's country rides along: it decides whether the VPN is said.
+    expect(reason({ ...vpn, countryCode: 'IN' })).toEqual({
+      kind: 'anonymous',
+      countryCode: 'IN',
+    })
+    expect(reason({ ...vpn, countryVerified: true })).toEqual({
+      kind: 'anonymous',
+      countryCode: 'US',
+    })
     for (const countryBlockReason of [
       'anonymized_or_unknown_country',
       'missing_client_ip',
@@ -143,5 +122,52 @@ describe('freebuffLimitedAccessReason', () => {
       }),
     ).toBeNull()
     expect(freebuffLimitedAccessReason(undefined)).toBeNull()
+  })
+})
+
+// 2026-11-16: limited access is explained only when a VPN or proxy exit in a
+// full-access country is the cause; every other reason says nothing.
+describe('freebuffLimitedAccessCopy', () => {
+  const copy = (session: Record<string, unknown>) =>
+    freebuffLimitedAccessCopy(freebuffLimitedAccessReason(session as never))
+
+  test('a VPN or proxy the banner names, with the verify link', () => {
+    expect(copy(vpn)).toMatchObject({ verify: true })
+    expect(copy({ ...vpn, ipPrivacySignals: ['proxy'] })).toMatchObject({
+      verify: true,
+    })
+  })
+
+  test('a VPN or proxy exit in a full-access country the banner does not name, without a link', () => {
+    for (const session of [
+      { ...vpn, countryVerified: true },
+      { ...vpn, verificationCanChangeAccess: false },
+    ]) {
+      expect(copy(session)).toMatchObject({ verify: false })
+    }
+  })
+
+  test('nothing for a VPN exit in a limited-access country or an unknown one', () => {
+    for (const countryCode of ['IN', 'BD', 'UNKNOWN', null]) {
+      expect(copy({ ...vpn, countryCode })).toBeNull()
+      expect(copy({ ...vpn, countryCode, countryVerified: true })).toBeNull()
+    }
+  })
+
+  test('nothing for a limited country, the access floor, an unresolved connection or no reason', () => {
+    for (const session of [
+      { ...vpn, countryCode: 'BD', countryBlockReason: 'country_not_allowed' },
+      { ...vpn, countryBlockReason: 'recent_limited_country' },
+      { ...vpn, countryBlockReason: 'unresolved_client_ip' },
+      { ...vpn, countryBlockReason: 'ip_privacy_lookup_failed' },
+      { ...vpn, countryBlockReason: null },
+    ]) {
+      expect(copy(session)).toBeNull()
+    }
+  })
+
+  test('nothing at full access or on a plan', () => {
+    expect(copy({ ...vpn, accessTier: 'full' })).toBeNull()
+    expect(copy({ ...vpn, subscription: { tierId: 'pro' } })).toBeNull()
   })
 })
