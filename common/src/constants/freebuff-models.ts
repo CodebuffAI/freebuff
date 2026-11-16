@@ -527,6 +527,21 @@ export const FREEBUFF_GPT_61_TERRA_MAX_PRICE = {
   prompt: 1.25,
   completion: 6.25,
 } as const
+/**
+ * GPT-6.1 Terra on OpenAI's `fast` tier ($2/$10 per M, OpenRouter's
+ * `openai/fast` endpoint, read 2026-11-14): the first-thread A/B's one chat
+ * (web/src/server/free-session/first-thread-model-experiment.ts). Standard
+ * behind it, so a fast-tier capacity refusal is a slower turn, not a dead one.
+ */
+export const FREEBUFF_GPT_61_TERRA_FAST_UPSTREAM_ORDER = [
+  'openai/fast',
+  'openai',
+] as const
+/** Its ceiling: strictly above the fast card, so it admits `openai/fast`. */
+export const FREEBUFF_GPT_61_TERRA_FAST_MAX_PRICE = {
+  prompt: 2.5,
+  completion: 12.5,
+} as const
 /** Reasoning effort a GPT-6.1 Terra turn runs at unless the user picks one:
  *  `medium`, as on Sol, because reasoning bills as output. */
 export const FREEBUFF_GPT_61_TERRA_REASONING_EFFORT = 'medium' as const
