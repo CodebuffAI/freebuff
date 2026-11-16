@@ -150,7 +150,9 @@ export function parseArgs({
         : null,
     cwd: options.cwd,
     initialMode,
-    trustAgents: Boolean(options.trustAgents),
+    // ACP hosts (T3, Zed) have no TTY for the agent-dir trust prompt; treat
+    // --acp like an explicit --trust-agents so stdio never blocks on [y/N].
+    trustAgents: Boolean(options.trustAgents) || Boolean(options.acp),
     acp: Boolean(options.acp),
   }
 }

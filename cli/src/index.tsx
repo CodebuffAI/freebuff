@@ -300,6 +300,24 @@ async function main(): Promise<void> {
     )
   }
 
+  // ACP must win before any stdin readline (OSC theme, agent-dir trust, login).
+  // On Windows a piped stdio host can still look like a TTY to Bun, so a trust
+  // prompt would steal ACP JSON-RPC off stdin and hang forever. stdout must
+  // carry only JSON-RPC once this path runs.
+  const serveAcpEarly = process.argv.some(
+    (arg) => arg === '--acp' || arg.endsWith('--acp'),
+  )
+  if (serveAcpEarly) {
+    tightenConfigDirMode()
+    await loadStoredAuthToken()
+    const { cwd: acpCwd } = parseArgs()
+    await initializeApp({ cwd: acpCwd })
+    setApiClientAuthToken(getAuthToken())
+    const { serveAcp } = await import('./acp/serve')
+    serveAcp()
+    return
+  }
+
   // Start OSC theme detection in the background, BEFORE OpenTUI starts.
   //
   // Render must not wait on it: the probe deadline is GLOBAL_OSC_TIMEOUT_MS
@@ -386,7 +404,6 @@ async function main(): Promise<void> {
     cwd,
     initialMode,
     trustAgents,
-    acp: serveAcpFlag,
   } = parseArgs()
 
   // The agent registry/build may repaint before the renderer (non-TTY, trust
@@ -401,14 +418,6 @@ async function main(): Promise<void> {
 
   // Set the auth token for the API client
   setApiClientAuthToken(getAuthToken())
-
-  // ACP mode: serve the Agent Client Protocol over stdio instead of the TUI.
-  // Must precede the renderer setup: stdio belongs to the protocol there.
-  if (serveAcpFlag) {
-    const { serveAcp } = await import('./acp/serve')
-    serveAcp()
-    return
-  }
 
   captureCliFunnel(
     'launch',
