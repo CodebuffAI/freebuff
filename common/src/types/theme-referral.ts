@@ -72,3 +72,6 @@ export type ReferralInviteAction =
   | 'opened'
   | 'invite_sent'
   | 'invite_failed'
+  /** The streak milestone dialog's Post on X and Share on LinkedIn. */
+  | 'posted_x'
+  | 'posted_linkedin'

@@ -13,6 +13,10 @@ export const workspacePreferencesSchema = z.object({
    *  hour runs out (web/src/server/desktop-cloud/cloud-session-renewal.ts).
    *  Absent means on. Never defaulted, for the same reason as `notificationSounds`. */
   autoStartSessions: z.boolean().optional(),
+  /** The highest streak milestone whose share dialog this account was shown
+   *  (`streak_share_2026_11`): each milestone's opens once per account. Absent
+   *  means none. Never defaulted, for the same reason as `notificationSounds`. */
+  streakShareShownThrough: z.number().int().min(0).max(100_000).optional(),
   interfaceSize: z.number().int().min(70).max(160),
   desktopMacShortcuts: shortcuts,
   desktopPcShortcuts: shortcuts,

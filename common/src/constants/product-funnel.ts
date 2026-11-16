@@ -113,6 +113,8 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
   cli: Object.freeze({ link: 'cli_link', email: 'cli_email' }),
   /** The Rewards page on the rail (docs/freebuff-referral-rewards.md). */
   rewards: Object.freeze({ link: 'rewards_link', email: 'rewards_email' }),
+  /** The streak milestone dialog (`streak_share_2026_11`, docs/referrals.md). */
+  streak: Object.freeze({ link: 'streak_link', email: 'streak_email' }),
 })
 /**
  * The inviter's own link in the "friend started coding" lifecycle email
