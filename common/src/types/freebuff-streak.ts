@@ -49,8 +49,8 @@ export interface FreebuffStreakResponse {
   streakThemeUnlocked?: boolean
   /**
    * A streak milestone (a streak theme's days) reached today, set by
-   * freebuff.com's `/api/web/streak` for the `share` arm of
-   * `streak_share_2026_11`: the workspace offers to share it. Phone apps get it
+   * freebuff.com's `/api/web/streak` for a `classic` account: the workspace
+   * offers to share it. Phone apps get it
    * only when they ask with `?share=1`. Absent otherwise.
    */
   shareMilestone?: number
