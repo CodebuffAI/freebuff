@@ -1,6 +1,6 @@
 import type { ChangesScope, CloudChanges, FileDiffResult } from './changes'
 import type { HostedBrowserScope } from './hosted-workspace'
-import type { PullRequestStatus } from './pull-request'
+import type { PullRequestSnapshot, PullRequestStatus } from './pull-request'
 
 /**
  * Where a chat's changes live and where they go: its branch, what "branch changes" compare
@@ -29,8 +29,16 @@ export type HostedGitRequest = HostedBrowserScope & (
   | { operation: 'changes'; scope: ChangesScope }
   | { operation: 'diff'; scope: ChangesScope; path: string; untracked: boolean }
   | { operation: 'summary'; live: boolean }
+  /** A PR the chat touched, read with the computer's `gh`; `pullRequest` is null when `gh` cannot see it.
+   *  An object, never a bare null, which the device relay refuses. Desktop builds before 2026-11-16 reject it. */
+  | { operation: 'pullRequest'; repository: string; number: number }
 )
-export type HostedGitResponses = { changes: CloudChanges; diff: FileDiffResult; summary: GitSummary }
+export type HostedGitResponses = {
+  changes: CloudChanges
+  diff: FileDiffResult
+  summary: GitSummary
+  pullRequest: PullRequestSnapshot
+}
 export type HostedGitHost = {
   request<T extends HostedGitRequest>(input: T): Promise<HostedGitResponses[T['operation']]>
 }
