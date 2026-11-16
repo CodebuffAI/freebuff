@@ -457,3 +457,15 @@ test('the progress stream round-trips and a stream that ends early is an error',
   const refused = Response.json({ error: 'This chat is already publishing.' }, { status: 409 })
   expect(await readSitePublishStream(refused)).toEqual({ type: 'error', message: 'This chat is already publishing.' })
 })
+
+test('a refusal to replace another chat’s deploy reaches the button with what to confirm', async () => {
+  const replace = { chatId: 'chat-0', chatTitle: 'Build MARAH', url: 'https://marah.freebuff.page' }
+  const response = sitePublishResponse(async (onEvent) => {
+    onEvent({ type: 'error', message: 'Replace?', replace })
+  }, new AbortController().signal)
+  expect(await readSitePublishStream(response)).toEqual({ type: 'error', message: 'Replace?', replace })
+  const malformed = sitePublishResponse(async (onEvent) => {
+    onEvent({ type: 'error', message: 'Replace?', replace: { chatId: 1 } as never })
+  }, new AbortController().signal)
+  expect(await readSitePublishStream(malformed)).toEqual({ type: 'error', message: 'Replace?' })
+})

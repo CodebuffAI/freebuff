@@ -87,11 +87,15 @@ const IDEMPOTENT_TOOLS = new Set([
   'sites_set_published',
 ])
 
+/** Attribution sent with every request; a Cloud chat also names itself. */
+export type SiteRequestContext = {
+  originProjectId: string
+  originProjectType: 'local' | 'cloud'
+  originChatId?: string
+}
+
 export class SitesClient {
-  private context = new AsyncLocalStorage<{
-    originProjectId: string
-    originProjectType: 'local' | 'cloud'
-  }>()
+  private context = new AsyncLocalStorage<SiteRequestContext>()
   constructor(
     private options: {
       getToken: () => string | null | undefined
@@ -331,7 +335,7 @@ export class SitesClient {
     cwd: string,
     mode: string,
     signal?: AbortSignal,
-    context?: { originProjectId: string; originProjectType: 'local' | 'cloud' },
+    context?: SiteRequestContext,
   ) {
     const run = () => this.runTool(tool, raw, cwd, mode, signal)
     return context ? this.context.run(context, run) : run()
