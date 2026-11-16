@@ -86,3 +86,21 @@ Installed official CLI is `freebuff 0.2.36` and **does not include `--acp`**, so
 **Do not keep retrying live completions from a non-allowlisted build** — each refusal adds strikes.
 
 Protocol/unit gates can still pass. Live free-mode completion + T3 editor E2E remain blocked until Codebuff ships an allowlisted build with `--acp`.
+
+## 9. When an official `--acp` build ships
+
+Strike-safe readiness check (no prompts):
+
+```text
+bun scripts/acp-official-ready.ts --npm
+bun scripts/acp-official-ready.ts --bin path/to/official/freebuff
+```
+
+Then live + T3 E2E (only on allowlisted official builds):
+
+```text
+FREEBUFF_ACP_CMD="<official> --acp --trust-agents" bun scripts/acp-stdio-harness.ts --handshake-only --set-mode MAX
+FREEBUFF_ACP_CMD="<official> --acp --trust-agents" bun scripts/acp-stdio-harness.ts --live --turns 2 --set-mode MAX
+```
+
+Point T3 `providerInstances.freebuff-acp` at that binary, capture screenshots of streamed reply + mode switch + second turn.

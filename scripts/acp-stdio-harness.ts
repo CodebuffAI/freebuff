@@ -10,10 +10,15 @@
  *   bun scripts/acp-stdio-harness.ts --prompt "Say hi in one sentence."
  *   bun scripts/acp-stdio-harness.ts --cancel-ms 500
  *   bun scripts/acp-stdio-harness.ts --turns 2
+ *   bun scripts/acp-stdio-harness.ts --handshake-only
+ *   bun scripts/acp-stdio-harness.ts --handshake-only --set-mode MAX
  *   bun scripts/acp-stdio-harness.ts --live   # expect a real free-mode completion
  *
  * Exit 0 on protocol success. Writes a transcript to
  * scripts/acp-harness-transcript.jsonl (override with --transcript).
+ *
+ * `--live` must only be used against an allowlisted official Freebuff build
+ * that includes `--acp`. Dev entry / self-built binaries strike the account.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import fs from 'node:fs'
@@ -47,9 +52,16 @@ const cancelMs = argValue('--cancel-ms')
   ? Number(argValue('--cancel-ms'))
   : undefined
 const live = hasFlag('--live')
+const handshakeOnly = hasFlag('--handshake-only')
+const setModeId = argValue('--set-mode')
 const transcriptPath =
   argValue('--transcript') ??
   path.join(repoRoot, 'scripts/acp-harness-transcript.jsonl')
+
+if (live && handshakeOnly) {
+  process.stderr.write('Cannot combine --live with --handshake-only\n')
+  process.exit(2)
+}
 
 const cmdEnv = process.env.FREEBUFF_ACP_CMD
 const childArgs = cmdEnv
@@ -183,73 +195,112 @@ try {
     | undefined
   logLine('meta', { sessionId, modes })
 
-  for (let turn = 0; turn < turns; turn++) {
-    const promptId = 100 + turn
-    const text =
-      turns === 1 ? promptText : `${promptText} (turn ${turn + 1})`
+  if (setModeId) {
     send({
       jsonrpc: '2.0',
-      id: promptId,
-      method: 'session/prompt',
-      params: {
-        sessionId,
-        prompt: [{ type: 'text', text }],
-      },
+      id: 3,
+      method: 'session/set_mode',
+      params: { sessionId, modeId: setModeId },
     })
-
-    if (cancelMs !== undefined && turn === 0) {
-      await new Promise((r) => setTimeout(r, cancelMs))
-      send({
-        jsonrpc: '2.0',
-        method: 'session/cancel',
-        params: { sessionId },
-      })
+    const setMode = await waitFor((m) => m.id === 3, 30_000)
+    if (setMode.error) {
+      throw new Error(`session/set_mode failed: ${setMode.error.message}`)
     }
-
-    const promptTimeout = live ? 180_000 : cancelMs !== undefined ? 60_000 : 120_000
-    const response = await waitFor((m) => m.id === promptId, promptTimeout)
-    if (response.error) {
-      throw new Error(`session/prompt failed: ${response.error.message}`)
-    }
-    const stopReason = response.result?.stopReason
-    const updates = inbox.filter(
+    const modeUpdate = await waitFor(
       (m) =>
         m.method === 'session/update' &&
-        (m.params as { sessionId?: string } | undefined)?.sessionId ===
-          sessionId,
+        (m.params as { update?: { sessionUpdate?: string; currentModeId?: string } })
+          ?.update?.sessionUpdate === 'current_mode_update',
+      10_000,
     )
-    logLine('meta', {
-      turn: turn + 1,
-      stopReason,
-      updateCount: updates.length,
-    })
+    const update = (
+      modeUpdate.params as { update?: { currentModeId?: string } } | undefined
+    )?.update
+    logLine('meta', { setModeId, currentModeUpdate: update })
+    if (update?.currentModeId !== setModeId) {
+      throw new Error(
+        `current_mode_update expected ${setModeId}, got ${String(update?.currentModeId)}`,
+      )
+    }
+  }
 
-    if (cancelMs !== undefined && turn === 0) {
-      if (stopReason !== 'cancelled') {
-        throw new Error(`Expected stopReason cancelled, got ${String(stopReason)}`)
-      }
-    } else if (live) {
-      if (stopReason !== 'end_turn') {
-        throw new Error(
-          `Live free-mode expected end_turn, got ${String(stopReason)}`,
-        )
-      }
-      const hasChunk = updates.some((m) => {
-        const update = (m.params as { update?: { sessionUpdate?: string } })
-          ?.update
-        return update?.sessionUpdate === 'agent_message_chunk'
+  if (!handshakeOnly) {
+    for (let turn = 0; turn < turns; turn++) {
+      const promptId = 100 + turn
+      const text =
+        turns === 1 ? promptText : `${promptText} (turn ${turn + 1})`
+      send({
+        jsonrpc: '2.0',
+        id: promptId,
+        method: 'session/prompt',
+        params: {
+          sessionId,
+          prompt: [{ type: 'text', text }],
+        },
       })
-      if (!hasChunk) {
-        throw new Error('Live free-mode: no agent_message_chunk streamed')
+
+      if (cancelMs !== undefined && turn === 0) {
+        await new Promise((r) => setTimeout(r, cancelMs))
+        send({
+          jsonrpc: '2.0',
+          method: 'session/cancel',
+          params: { sessionId },
+        })
       }
-    } else if (stopReason !== 'end_turn' && stopReason !== 'refusal') {
-      // Without live credentials a refusal is acceptable for protocol framing.
-      throw new Error(`Unexpected stopReason: ${String(stopReason)}`)
+
+      const promptTimeout =
+        live ? 180_000 : cancelMs !== undefined ? 60_000 : 120_000
+      const response = await waitFor((m) => m.id === promptId, promptTimeout)
+      if (response.error) {
+        throw new Error(`session/prompt failed: ${response.error.message}`)
+      }
+      const stopReason = response.result?.stopReason
+      const updates = inbox.filter(
+        (m) =>
+          m.method === 'session/update' &&
+          (m.params as { sessionId?: string } | undefined)?.sessionId ===
+            sessionId,
+      )
+      logLine('meta', {
+        turn: turn + 1,
+        stopReason,
+        updateCount: updates.length,
+      })
+
+      if (cancelMs !== undefined && turn === 0) {
+        if (stopReason !== 'cancelled') {
+          throw new Error(
+            `Expected stopReason cancelled, got ${String(stopReason)}`,
+          )
+        }
+      } else if (live) {
+        if (stopReason !== 'end_turn') {
+          throw new Error(
+            `Live free-mode expected end_turn, got ${String(stopReason)}`,
+          )
+        }
+        const hasChunk = updates.some((m) => {
+          const update = (m.params as { update?: { sessionUpdate?: string } })
+            ?.update
+          return update?.sessionUpdate === 'agent_message_chunk'
+        })
+        if (!hasChunk) {
+          throw new Error('Live free-mode: no agent_message_chunk streamed')
+        }
+      } else if (stopReason !== 'end_turn' && stopReason !== 'refusal') {
+        // Without live credentials a refusal is acceptable for protocol framing.
+        throw new Error(`Unexpected stopReason: ${String(stopReason)}`)
+      }
     }
   }
 
   exitCode = 0
-  logLine('meta', { ok: true, live, pid: child.pid })
+  logLine('meta', {
+    ok: true,
+    live,
+    handshakeOnly,
+    pid: child.pid,
+  })
 } catch (error) {
   logLine('meta', { ok: false, error: String(error) })
   process.stderr.write(`Harness failed: ${String(error)}\n`)
