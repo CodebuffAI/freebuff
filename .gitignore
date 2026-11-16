@@ -126,3 +126,8 @@ scripts/identity/out/
 # Ad creative projects (Remotion, npm-only, not Bun workspaces): renders and deps stay local
 ad-creatives/*/out/
 ad-creatives/*/node_modules/
+
+# ACP stdio harness local transcripts (may include account notices / PII)
+scripts/acp-harness-*.jsonl
+!scripts/acp-harness-live.redacted.jsonl
+

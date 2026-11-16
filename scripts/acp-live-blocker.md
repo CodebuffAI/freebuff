@@ -27,8 +27,17 @@ Admission and ACP framing succeeded (DeepSeek selected). Completions returned **
 - Dev entry (`bun run cli/src/entry.ts --acp`) is **not** on the free-mode allowlist.
 - Installed official CLI `freebuff 0.2.36` has **no `--acp` flag**.
 
+## What still passed without an allowlisted binary
+
+| Gate | Result |
+| --- | --- |
+| ACP unit/integration (`bun test --cwd cli src/acp`) | **31 pass / 0 fail** (Rodrigo’s suite + host-fix coverage) |
+| Scripted cancel harness (`--cancel-ms 200`) | **`stopReason: cancelled`**, child exited, no orphan |
+| Live harness framing | initialize → session/new (modes picker) → prompt → ACP `notice` for third_party |
+| Official `freebuff 0.2.36` | No `--acp` flag (cannot use allowlisted binary for this path yet) |
+
 ## T3 Code Local ACP
 
 Cannot complete a real free-mode reply until Codebuff ships an allowlisted build that includes `--acp`. Protocol connect / mode picker can still be exercised against this branch’s entry for non-free paths, but free completions will strike the account.
 
-**Stop condition honored:** live free-mode completion is not marked passed.
+**Stop condition honored:** live free-mode completion is **not** marked passed. Do not re-run `--live` against `bun run cli/src/entry.ts` on this account without an allowlisted build (strike counter already advanced).
