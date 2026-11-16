@@ -119,7 +119,11 @@ describe('setSessionMode', () => {
     )
 
     backend.setSessionMode(sessionId, 'MAX')
+    expect(backend.sessionModes(sessionId).currentModeId).toBe('MAX')
     backend.setSessionMode(sessionId, FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)
+    expect(backend.sessionModes(sessionId).currentModeId).toBe(
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+    )
     expect(useFreebuffModelStore.getState().selectedModel).toBe(
       FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
     )

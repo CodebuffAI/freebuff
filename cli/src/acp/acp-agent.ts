@@ -93,6 +93,7 @@ export type AcpUpdate =
       content?: Array<{ type: 'content'; content: ContentBlock }>
     }
   | { sessionUpdate: 'notice'; notice: string }
+  | { sessionUpdate: 'current_mode_update'; currentModeId: string }
 
 /** What one turn needs from the SDK run. Injected so the protocol surface can
  *  be tested without a backend, and so the run path stays swappable. */
@@ -115,6 +116,12 @@ type AcpSession = {
   mode: AgentMode
   /** Freebuff compiled model id selected via ACP session modes. */
   modelId: string
+  /**
+   * What the ACP host picker shows as current: last `session/set_mode` id
+   * (model or agent mode). Distinct from `mode`/`modelId`, which both stay
+   * applied for the next turn.
+   */
+  pickerModeId: string
   previousRun: RunState | null
   /** The in-flight turn's abort, so `session/cancel` reaches the SDK run. */
   pendingPrompt: AbortController | null
@@ -232,6 +239,7 @@ export class FreebuffAcpAgent {
       cwd,
       mode,
       modelId,
+      pickerModeId: modelId,
       previousRun: null,
       pendingPrompt: null,
       openToolCalls: new Set(),
@@ -245,7 +253,7 @@ export class FreebuffAcpAgent {
     availableModes: Array<{ id: string; name: string; description?: string }>
   } {
     const session = this.sessions.get(sessionId)
-    const currentModeId = session?.modelId || defaultModelId()
+    const currentModeId = session?.pickerModeId || session?.modelId || defaultModelId()
     const availableModes = [
       ...FREEBUFF_ACP_MODEL_MODES.map((m) => ({
         id: m.id,
@@ -263,6 +271,7 @@ export class FreebuffAcpAgent {
 
     if (isAgentMode(modeId)) {
       session.mode = modeId
+      session.pickerModeId = modeId
       return
     }
 
@@ -275,6 +284,7 @@ export class FreebuffAcpAgent {
     }
 
     session.modelId = modeId
+    session.pickerModeId = modeId
     useFreebuffModelStore.getState().setSelectedModel(modeId)
     // Next turn must re-admit on the new model.
     void acpFreebuffSession.release('mode-switch')

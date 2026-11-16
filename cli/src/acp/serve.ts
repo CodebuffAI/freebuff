@@ -42,8 +42,17 @@ export function serveAcp(options: { logger?: Logger } = {}): void {
         modes: backend.sessionModes(sessionId),
       }
     })
-    .onRequest(acp.methods.agent.session.setMode, ({ params }) => {
+    .onRequest(acp.methods.agent.session.setMode, async ({ params, client }) => {
       backend.setSessionMode(params.sessionId, params.modeId)
+      // Hosts (T3/Zed) keep the picker in sync via current_mode_update.
+      const { currentModeId } = backend.sessionModes(params.sessionId)
+      await client.notify('session/update', {
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: 'current_mode_update',
+          currentModeId,
+        },
+      })
       return {}
     })
     .onRequest(acp.methods.agent.session.prompt, async ({ params, client }) => {
