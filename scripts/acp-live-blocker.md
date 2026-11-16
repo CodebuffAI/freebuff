@@ -45,7 +45,9 @@ Local ACP **config + handshake** now verified against a feat-compiled `freebuff-
 - `session/set_mode` emits `current_mode_update` (picker sync for T3/Zed)
 - Compiled-binary cancel harness: `stopReason: cancelled` (`scripts/acp-harness-cancel-bin.jsonl`)
 - UI: Freebuff provider + `base2-free` selected (sandbox screenshots)
-- Official npm `freebuff@0.2.36` still has no `--acp` (checked 2026-11-15)
+- Official npm `freebuff@0.2.36` still has no `--acp` (rechecked 2026-11-16)
+- Freebuff Desktop present under `%LOCALAPPDATA%\Programs\@codebufffreebuff-desktop` — no bundled `--acp` CLI
+- Background watcher: `bun scripts/acp-t3-e2e-when-ready.ts --watch` (15m poll) → live harness when ready
 
 Still **cannot** complete a real free-mode reply until Codebuff ships an **allowlisted** build that includes `--acp`. Self-built binaries are documented in `NOTES.md` as still receiving `third_party_client_warning`.
 

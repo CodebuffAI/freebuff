@@ -55,6 +55,15 @@ Dev entry `bun run cli/src/entry.ts --acp` admits a session, then chat completio
 
 **Needs:** an official allowlisted Freebuff build that includes `--acp`. No further live free probes until that ships.
 
+Strike-safe readiness + auto E2E when it lands:
+
+```text
+bun scripts/acp-official-ready.ts --npm
+bun scripts/acp-t3-e2e-when-ready.ts --watch   # polls npm; runs --live --turns 2 when --acp appears
+```
+
+Freebuff Desktop is installed locally but does **not** ship a stdio `--acp` CLI (Electron + orchestrator only).
+
 ## Notes
 
 Research dump: `NOTES.md`.
