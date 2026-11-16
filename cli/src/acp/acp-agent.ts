@@ -18,11 +18,19 @@
  *   error           -> notice
  *   finish          -> the `session/prompt` response resolves (end_turn)
  *
- * Nothing here touches auth, ads or the session store: the ACP surface is a
- * second front end over the same conversation machinery, with sessions kept
- * in-memory per connection and continued via the SDK's `previousRun` state.
+ * Free-mode session admission is headless here (no TUI poll hook): before each
+ * turn `defaultRunTurn` claims an hour through `acpFreebuffSession.ensure`,
+ * then attaches `freebuff_instance_id` on the SDK run. Sessions and
+ * previousRun state stay in-memory per ACP connection. ACP session modes
+ * expose the Freebuff model picker for hosts like T3 Code.
  */
 import { RequestError } from '@agentclientprotocol/sdk'
+import {
+  DEFAULT_FREEBUFF_MODEL_ID,
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  FREEBUFF_GLM_V53_FLASH_MODEL_ID,
+  FREEBUFF_MIMO_V25_MODEL_ID,
+} from '@codebuff/common/constants/freebuff-models'
 
 import { logger } from '../utils/logger'
 import { getCodebuffClient } from '../utils/codebuff-client'
@@ -30,12 +38,18 @@ import { loadAgentDefinitions } from '../utils/local-agent-registry'
 import {
   AGENT_MODE_TO_COST_MODE,
   AGENT_MODE_TO_ID,
+  AGENT_MODES,
   IS_FREEBUFF,
 } from '../utils/constants'
+import { getAgentIdForMode } from '../utils/freebuff-agent-selection'
 import {
   clientDescriptorMetadata,
   freebuffSessionMetadata,
 } from '../utils/freebuff-session-identity'
+import {
+  getSelectedFreebuffModel,
+  useFreebuffModelStore,
+} from '../state/freebuff-model-store'
 import { AcpSessionError, acpFreebuffSession } from './freebuff-session'
 
 import type { AgentMode } from '../utils/constants'
@@ -99,11 +113,97 @@ export type AcpTurnResult = {
 type AcpSession = {
   cwd: string
   mode: AgentMode
+  /** Freebuff compiled model id selected via ACP session modes. */
+  modelId: string
   previousRun: RunState | null
   /** The in-flight turn's abort, so `session/cancel` reaches the SDK run. */
   pendingPrompt: AbortController | null
   /** Tool calls opened this turn that never reached a terminal status. */
   openToolCalls: Set<string>
+}
+
+/** Compiled free models offered as ACP session modes (T3 model picker). */
+export const FREEBUFF_ACP_MODEL_MODES = [
+  {
+    id: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+    name: 'DeepSeek V4 Flash',
+    description: 'Freebuff free — DeepSeek V4 Flash',
+  },
+  {
+    id: FREEBUFF_MIMO_V25_MODEL_ID,
+    name: 'MiMo V2.5',
+    description: 'Freebuff free — MiMo V2.5 (default when available)',
+  },
+  {
+    id: FREEBUFF_GLM_V53_FLASH_MODEL_ID,
+    name: 'GLM 5.3 Flash',
+    description: 'Freebuff free — GLM 5.3 Flash',
+  },
+] as const
+
+/** Agent modes offered alongside Freebuff models so hosts can switch cost mode. */
+const ACP_AGENT_MODE_ENTRIES = AGENT_MODES.map((id) => ({
+  id,
+  name: id,
+  description: `Agent mode ${id} → ${AGENT_MODE_TO_ID[id]} / ${AGENT_MODE_TO_COST_MODE[id]}`,
+}))
+
+/** Make Freebuff gate / allowlist refusals readable in T3. */
+export function formatFreebuffAcpError(message: string): string {
+  const lower = message.toLowerCase()
+  if (
+    lower.includes('third_party_client') ||
+    lower.includes('third-party client')
+  ) {
+    return (
+      'Freebuff refused this request: free mode only works through the official ' +
+      'Freebuff CLI, Freebuff Desktop, or freebuff.com — not a third-party host. ' +
+      'T3 Local ACP needs an allowlisted Freebuff build with --acp. ' +
+      'Original: ' +
+      message
+    )
+  }
+  if (
+    lower.includes('prompt_policy') ||
+    lower.includes('scripted or automated')
+  ) {
+    return (
+      'Freebuff refused this prompt under its usage policy (scripted/automated or ' +
+      'repeated messages). Wait for the daily strike reset, or send a different prompt. ' +
+      'Original: ' +
+      message
+    )
+  }
+  if (lower.includes('rate_limited') || lower.includes('session limit')) {
+    return `Freebuff session limit: ${message}`
+  }
+  if (lower.includes('waiting_room') || lower.includes('start a session')) {
+    return `Freebuff session required: ${message}`
+  }
+  return message
+}
+
+function defaultModelId(): string {
+  // Prefer DeepSeek for ACP: MiMo is often model_unavailable under headless
+  // admission, which forces a fallback and can race the completion model.
+  const selected = getSelectedFreebuffModel()
+  if (selected && !selected.startsWith('m-')) return selected
+  return FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID || DEFAULT_FREEBUFF_MODEL_ID
+}
+
+function isAgentMode(value: string): value is AgentMode {
+  return (AGENT_MODES as readonly string[]).includes(value)
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const name = 'name' in error ? String(error.name) : ''
+  const message = 'message' in error ? String(error.message) : ''
+  return (
+    name === 'AbortError' ||
+    message === 'Cancelled' ||
+    /operation was aborted|aborted/i.test(message)
+  )
 }
 
 export class FreebuffAcpAgent {
@@ -126,14 +226,58 @@ export class FreebuffAcpAgent {
 
   newSession(cwd: string, mode: AgentMode = this.defaultMode): string {
     const sessionId = crypto.randomUUID()
+    const modelId = defaultModelId()
+    useFreebuffModelStore.getState().setSelectedModel(modelId)
     this.sessions.set(sessionId, {
       cwd,
       mode,
+      modelId,
       previousRun: null,
       pendingPrompt: null,
       openToolCalls: new Set(),
     })
     return sessionId
+  }
+
+  /** ACP session modes: Freebuff models (picker) plus agent/cost modes. */
+  sessionModes(sessionId: string): {
+    currentModeId: string
+    availableModes: Array<{ id: string; name: string; description?: string }>
+  } {
+    const session = this.sessions.get(sessionId)
+    const currentModeId = session?.modelId || defaultModelId()
+    const availableModes = [
+      ...FREEBUFF_ACP_MODEL_MODES.map((m) => ({
+        id: m.id,
+        name: m.name,
+        description: m.description,
+      })),
+      ...ACP_AGENT_MODE_ENTRIES,
+    ]
+    return { currentModeId, availableModes }
+  }
+
+  setSessionMode(sessionId: string, modeId: string): void {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw RequestError.sessionNotFound(sessionId)
+
+    if (isAgentMode(modeId)) {
+      session.mode = modeId
+      return
+    }
+
+    const knownModel = FREEBUFF_ACP_MODEL_MODES.some((m) => m.id === modeId)
+    if (!knownModel) {
+      throw RequestError.invalidParams(
+        {},
+        `Unknown Freebuff model mode: ${modeId}`,
+      )
+    }
+
+    session.modelId = modeId
+    useFreebuffModelStore.getState().setSelectedModel(modeId)
+    // Next turn must re-admit on the new model.
+    void acpFreebuffSession.release('mode-switch')
   }
 
   hasSession(sessionId: string): boolean {
@@ -261,6 +405,11 @@ export class FreebuffAcpAgent {
     }
 
     try {
+      // Pin the session's chosen model before admission/run. Admission may
+      // fall back to another model; defaultRunTurn re-syncs the store to the
+      // admitted model before client.run so agent id and hour stay matched.
+      useFreebuffModelStore.getState().setSelectedModel(session.modelId)
+
       const result = await this.runTurn({
         prompt,
         cwd: session.cwd,
@@ -279,7 +428,10 @@ export class FreebuffAcpAgent {
           const mapped = this.eventToUpdate(sessionId, event)
           if (!mapped) return
           if ('error' in mapped) {
-            await notify({ sessionUpdate: 'notice', notice: mapped.error })
+            await notify({
+              sessionUpdate: 'notice',
+              notice: formatFreebuffAcpError(mapped.error),
+            })
             return
           }
           await notify(mapped.update)
@@ -299,11 +451,28 @@ export class FreebuffAcpAgent {
       session.previousRun = result.previousRun
       return abort.signal.aborted ? 'cancelled' : 'end_turn'
     } catch (error) {
+      // Cancel must resolve as stopReason cancelled — never as a JSON-RPC
+      // Internal error (ACP clients surface those to the user).
+      if (abort.signal.aborted || isAbortError(error)) {
+        for (const toolCallId of session.openToolCalls) {
+          await notify({
+            sessionUpdate: 'tool_call_update',
+            toolCallId,
+            status: 'failed',
+          })
+        }
+        session.openToolCalls.clear()
+        return 'cancelled'
+      }
       // A refused admission is not a protocol failure: the editor should keep
       // the session and show why, so the user can fix the account state and
-      // send again instead of reconnecting the agent.
+      // send again instead of reconnecting the agent. Report exactly once —
+      // notice + refusal stopReason, never also throw.
       if (error instanceof AcpSessionError) {
-        await notify({ sessionUpdate: 'notice', notice: error.message })
+        await notify({
+          sessionUpdate: 'notice',
+          notice: formatFreebuffAcpError(error.message),
+        })
         return 'refusal'
       }
       throw error
@@ -332,8 +501,15 @@ const defaultRunTurn = async (request: AcpTurnRequest): Promise<AcpTurnResult> =
     ? await acpFreebuffSession.ensure(request.signal)
     : null
 
+  // Freebuff LITE must resolve the root agent for the *selected* model via
+  // getAgentIdForMode (not the static AGENT_MODE_TO_ID.LITE → base2-free map
+  // entry alone), or completions use a different model than the admitted hour.
+  if (admission) {
+    useFreebuffModelStore.getState().setSelectedModel(admission.model)
+  }
+
   const result = (await client.run({
-    agent: AGENT_MODE_TO_ID[request.mode],
+    agent: getAgentIdForMode(request.mode),
     prompt: request.prompt,
     agentDefinitions,
     previousRun: request.previousRun ?? undefined,

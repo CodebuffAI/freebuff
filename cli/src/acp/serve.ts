@@ -37,7 +37,14 @@ export function serveAcp(options: { logger?: Logger } = {}): void {
     }))
     .onRequest(acp.methods.agent.session.new, ({ params }) => {
       const sessionId = backend.newSession(params.cwd)
-      return { sessionId }
+      return {
+        sessionId,
+        modes: backend.sessionModes(sessionId),
+      }
+    })
+    .onRequest(acp.methods.agent.session.setMode, ({ params }) => {
+      backend.setSessionMode(params.sessionId, params.modeId)
+      return {}
     })
     .onRequest(acp.methods.agent.session.prompt, async ({ params, client }) => {
       const stop = await backend.prompt(params.sessionId, params.prompt, client)

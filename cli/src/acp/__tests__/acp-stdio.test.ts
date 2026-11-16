@@ -17,7 +17,9 @@ type JsonRpcMessage = {
 }
 
 describe('freebuff --acp over stdio', () => {
-  test('a client can initialize and create a session', async () => {
+  test(
+    'a client can initialize and create a session',
+    async () => {
     const child = spawn(
       'bun',
       ['run', path.join(repoRoot, 'cli/src/entry.ts'), '--acp'],
@@ -97,5 +99,8 @@ describe('freebuff --acp over stdio', () => {
     expect(initialize?.result?.protocolVersion).toBe(1)
     expect(session?.error).toBeUndefined()
     expect(typeof session?.result?.sessionId).toBe('string')
-  })
+    expect(session?.result?.modes).toBeDefined()
+  },
+    35_000,
+  )
 })
