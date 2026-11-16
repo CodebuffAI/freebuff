@@ -10,6 +10,7 @@ type PageLabel =
   | 'Updates'
   | 'Account standing'
   | 'Apps & downloads'
+  | 'Artifacts'
 
 // Index the settings themselves, including common names people use for them.
 // Keep this alongside the shared navigation, without mounting inactive pages or
@@ -98,6 +99,14 @@ const topics: Record<PageLabel, Topic[]> = {
     {
       label: 'Mobile app',
       keywords: 'phone iphone android ios app store google play qr code mobile',
+      surface: 'web',
+    },
+  ],
+  Artifacts: [
+    {
+      label: 'Your artifacts',
+      keywords:
+        'docs documents slides decks sheets spreadsheets data whiteboards designs shared links share rename delete library',
       surface: 'web',
     },
   ],
