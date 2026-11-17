@@ -144,6 +144,16 @@ describe('freebucksShortfallLine', () => {
     )
   })
 
+  test('without a visible picker the hint says where to find one', () => {
+    const { line } = freebucksShortfallLine({
+      price: 15,
+      balance: 10,
+      modelPickerHidden: true,
+    })
+    expect(line).toContain('turn on Advanced Mode')
+    expect(line).not.toContain('Pick a model')
+  })
+
   test('under one hour left suggests nothing a cheaper metered row could start', () => {
     const { line, cheaperModelFits } = freebucksShortfallLine({
       price: 10,

@@ -191,22 +191,28 @@ export const FREEBUCKS_SHARED_DEVICE_NOTE =
  *
  * `sharedDevice`: the account has spent nothing to explain this, so the line
  * says whose allowance it was.
+ *
+ * `modelPickerHidden`: the viewer has no model picker (it sits behind Settings
+ * → Advanced Mode), so "pick a model" would name a control they cannot see
+ * (reported 2026-11-17, with 2 hours left and no way to use them).
  */
 export function freebucksShortfallLine(params: {
   price: number
   balance: number
   modelName?: string
   sharedDevice?: boolean
+  modelPickerHidden?: boolean
 }): { line: string; cheaperModelFits: boolean } {
   const model = params.modelName ?? 'this model'
   const cheaperModelFits = params.balance >= FREEBUCKS_PER_HOUR
+  const suggestion = params.modelPickerHidden
+    ? ' To keep going, turn on Advanced Mode in Settings → General and pick a model with a lower multiplier.'
+    : ' Pick a model with a lower multiplier to keep going.'
   if (params.sharedDevice) {
     return {
       line:
         `The accounts on this device share one daily allowance, and what's left today doesn't cover an hour of ${model}.` +
-        (cheaperModelFits
-          ? ' Pick a model with a lower multiplier to keep going.'
-          : ''),
+        (cheaperModelFits ? suggestion : ''),
       cheaperModelFits,
     }
   }
@@ -216,9 +222,7 @@ export function freebucksShortfallLine(params: {
   return {
     line:
       `An hour of ${model} uses ${formatHoursWithUnit(params.price)}, and you have ${left}.` +
-      (cheaperModelFits
-        ? ' Pick a model with a lower multiplier to keep going.'
-        : ''),
+      (cheaperModelFits ? suggestion : ''),
     cheaperModelFits,
   }
 }
