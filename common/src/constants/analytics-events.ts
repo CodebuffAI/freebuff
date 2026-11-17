@@ -409,11 +409,12 @@ export enum AnalyticsEvent {
   // separate identity space with no key back to the web landing.
   FREEBUFF_CLI_INSTALL_COMMAND_COPIED = 'freebuff.cli_install_command_copied',
 
-  // Freebuff - Enterprise landing page (/enterprise). Fired when the contact
-  // form is submitted successfully; carries `companySize` and whether the
-  // sender self-identified as an AI lab, so inbound demand can be segmented
-  // without reading the emails. The lead itself lands in james@/victor@ inboxes
-  // — this event only measures the funnel into them.
+  // Freebuff - Enterprise seat form (/enterprise). Fired by the server on each
+  // stored submission: `seats`, `monthly_total_usd`, the screening `status`
+  // and `qualified` (shown the booking link or not) with its reason codes,
+  // country, network type and email-domain kind. No company, email or IP.
+  // distinct_id is the browser's PostHog id when it sent one. The lead itself
+  // is in Postgres `enterprise_lead` and the founders' inbox.
   FREEBUFF_ENTERPRISE_CONTACT_SUBMITTED = 'freebuff.enterprise_contact_submitted',
 
   // Freebuff - Desktop download CTAs (home hero, products row, /desktop).
