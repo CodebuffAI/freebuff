@@ -576,8 +576,8 @@ export function mixHex(a: string, b: string, share: number): string {
 export function deckPalette(deck: Pick<Deck, 'tokens'>, mode: 'light' | 'dark'): Record<TokenColorRole, string> {
   const app =
     mode === 'light'
-      ? { ink: '#1a1a1d', soft: '#5c5c66', accent: '#5e774e', paper: '#ffffff' }
-      : { ink: '#ebebeb', soft: '#9e9e9e', accent: '#b5cea5', paper: '#171717' }
+      ? { ink: '#1a1a1d', soft: '#5c5c66', accent: '#507e35', paper: '#ffffff' }
+      : { ink: '#ebebeb', soft: '#9e9e9e', accent: '#a7d78e', paper: '#171717' }
   const colors = deck.tokens?.colors ?? {}
   const ink = colors.ink ?? app.ink
   const soft = colors.soft ?? app.soft
