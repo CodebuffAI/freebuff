@@ -15,6 +15,12 @@ export type CloudHistoryProject = {
    */
   seeded?: boolean
   /**
+   * The user started it empty in Freebuff ("From scratch"), the only kind of project whose new chat
+   * offers templates. False for a chosen folder, a GitHub repository, a template, a copy, and every
+   * project created before this was recorded; absent from older servers.
+   */
+  startedFromScratch?: boolean
+  /**
    * When the user archived it, or null. Archiving archives its chats too; an archived project is
    * left out of `listProjects` (Settings > Archived lists it) until it is restored or someone
    * prompts in it again. Absent from older servers, which send only `removedAt`.

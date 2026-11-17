@@ -617,6 +617,8 @@ export const deviceCapabilities = z
     githubConnect: z.literal(true).optional(),
     localMcp: z.literal(true).optional(),
     previousDevices: z.literal(true).optional(),
+    /** Accepts `origin: 'scratch'` on a project Desktop creates or binds. */
+    projectOrigin: z.literal(true).optional(),
   })
   .strict()
 
