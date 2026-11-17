@@ -17,34 +17,45 @@ const MAX_TITLE_LENGTH = 60
 const TITLE_PREFIX = IS_FREEBUFF ? 'Freebuff: ' : 'Codebuff: '
 const OSC_TERMINATOR = '\x07' // BEL
 
-function isInTmux(env: ReturnType<typeof getCliEnv>): boolean {
+type MultiplexerEnv = Pick<
+  ReturnType<typeof getCliEnv>,
+  'TMUX' | 'STY' | 'TERM'
+>
+
+function isInTmux(env: MultiplexerEnv): boolean {
   return Boolean(env.TMUX)
 }
 
-function isInScreen(env: ReturnType<typeof getCliEnv>): boolean {
+function isInScreen(env: MultiplexerEnv): boolean {
   if (env.STY) return true
   const term = env.TERM ?? ''
   return term.startsWith('screen') && !isInTmux(env)
 }
 
-/**
- * Build the OSC title sequence with tmux/screen passthrough if needed
- */
-function buildTitleSequence(title: string, env: ReturnType<typeof getCliEnv>): string {
-  const osc = `\x1b]0;${title}${OSC_TERMINATOR}`
-
+/** Wrap an OSC sequence for tmux/screen passthrough, if one is in the way. */
+export function wrapForMultiplexer(
+  sequence: string,
+  env: MultiplexerEnv,
+): string {
   // tmux passthrough: wrap in DCS and double ESC characters
   if (isInTmux(env)) {
-    const escaped = osc.replace(/\x1b/g, '\x1b\x1b')
+    const escaped = sequence.replace(/\x1b/g, '\x1b\x1b')
     return `\x1bPtmux;${escaped}\x1b\\`
   }
 
   // GNU screen passthrough: wrap in DCS
   if (isInScreen(env)) {
-    return `\x1bP${osc}\x1b\\`
+    return `\x1bP${sequence}\x1b\\`
   }
 
-  return osc
+  return sequence
+}
+
+/**
+ * Build the OSC title sequence with tmux/screen passthrough if needed
+ */
+function buildTitleSequence(title: string, env: MultiplexerEnv): string {
+  return wrapForMultiplexer(`\x1b]0;${title}${OSC_TERMINATOR}`, env)
 }
 
 /**
