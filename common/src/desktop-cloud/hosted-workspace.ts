@@ -184,6 +184,8 @@ export type HostedNativeAgent = {
   harness: 'claude-code' | 'codex'
   installed: boolean
   signedIn?: boolean
+  /** Connected to the account in Settings → Model Providers (agent-logins.ts). */
+  connected?: boolean
   pending?: boolean
   needsUpdate?: boolean
   canInstall: boolean
