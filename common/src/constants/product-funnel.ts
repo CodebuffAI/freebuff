@@ -317,7 +317,7 @@ export const productFunnelPropertiesSchema = z
       .enum(['open_folder', 'recent_folder', 'new_local', 'github', 'template', 'scratch'])
       .optional(),
     destination: z
-      .enum(['desktop', 'cli', 'web', 'app_builder', 'cowork', 'mobile'])
+      .enum(['desktop', 'cli', 'web', 'app_builder', 'cowork', 'chat', 'mobile'])
       .optional(),
     location: z
       .enum([
