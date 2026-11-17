@@ -359,6 +359,12 @@ export enum AnalyticsEvent {
   // local Desktop renderer reports the user actions as desktop.feature_used
   // `theme_referral.*` instead.
   FREEBUFF_THEME_REFERRAL_PROMPT = 'freebuff.theme_referral_prompt',
+  // The workspace streak popup opened from the New tab's chip or the sidebar
+  // row (web and hosted Desktop). `placement`: chip | sidebar; `surface`:
+  // web | desktop; `streak`: the current streak in days (null before the
+  // streak loaded). Measures who looks at the streak in streak_classic_2026_11,
+  // whose exposure is only the streak's fetch.
+  FREEBUFF_STREAK_OPENED = 'freebuff.streak.opened',
   // Freebuff - Get Started Page (sign-up, then Freebuff Desktop; in order:
   //   viewed → sign_in_clicked → signed_in → eligibility_resolved →
   //   [connect_github_clicked] → web_clicked | freebuff.desktop_download_clicked
