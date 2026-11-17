@@ -5,7 +5,8 @@
  * start the first refusal refunds the purchase, so the retry met a 409
  * `session_superseded` and the user read "This model purchase was refunded …
  * Start a new session" instead of the limit (Discord #787). The SDK must
- * refuse the long wait once and keep the limiter's own copy.
+ * refuse the long wait once and keep the limiter's own copy. The tab ceiling
+ * (409 `session_limit_reached`) refunds a start the same way (11-14..17).
  */
 import { extractApiErrorDetails } from '@codebuff/common/util/error'
 import { APICallError, streamText } from 'ai'
@@ -139,4 +140,28 @@ describe('a free-mode rate-limit refusal (429 free_mode_rate_limited)', () => {
 
     expect(server.calls()).toBe(2)
   }, 15_000)
+})
+
+describe('a tab-ceiling refusal (409 session_limit_reached)', () => {
+  test('is refused once and keeps the ceiling copy, never reaching the refunded-start 409', async () => {
+    const TAB_LIMIT = {
+      error: 'session_limit_reached',
+      message:
+        'Freebuff allows 5 unlimited-model tabs at a time. Close another hosted-model tab and try again.',
+    }
+    const server = serve(
+      { status: 409, body: TAB_LIMIT },
+      { status: 409, body: REFUNDED },
+    )
+
+    const error = (await failureOf(3)) as APICallError
+
+    expect(server.calls()).toBe(1)
+    expect(error.isRetryable).toBe(false)
+    expect(extractApiErrorDetails(error)).toMatchObject({
+      statusCode: 409,
+      errorCode: 'session_limit_reached',
+      message: TAB_LIMIT.message,
+    })
+  })
 })

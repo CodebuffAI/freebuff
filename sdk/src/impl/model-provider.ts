@@ -337,6 +337,12 @@ export const BYOK_CONNECTION_FAILURE_MESSAGE =
  *   session", which only bought another session into the same cap (Discord
  *   #787: 29 Cloud runs in 2 hours on the daily window). A shorter wait is
  *   still retried: the AI SDK sits it out first.
+ * - `session_limit_reached` (409): the account is over its tab ceiling. The
+ *   same shape as the daily window: on a model start the refusal refunds the
+ *   purchase and ends its row, so every retry met `session_superseded` and the
+ *   user read "This model purchase was refunded … Start a new session" instead
+ *   of "close another tab", and each new chat bought and refunded another hour
+ *   (11-14..17: ~85% of those Cloud failures).
  */
 const FINAL_REFUSALS: readonly {
   status: number
@@ -370,6 +376,12 @@ const FINAL_REFUSALS: readonly {
       'You have reached a free-model request limit. Try again later.',
     when: (response) =>
       retryAfterMsOf(response) >= AI_SDK_MAX_HONOURED_RETRY_AFTER_MS,
+  },
+  {
+    status: FREEBUFF_GATE_CODES.session_limit_reached.status,
+    error: 'session_limit_reached',
+    fallbackMessage:
+      'Too many Freebuff tabs are running at once. Close another tab and try again.',
   },
 ]
 
