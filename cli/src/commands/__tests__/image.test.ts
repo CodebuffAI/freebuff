@@ -1,26 +1,6 @@
 import { describe, test, expect } from 'bun:test'
 
-/**
- * Tests for the handleImageCommand argument parsing behavior.
- *
- * These tests verify the parsing logic independently of the actual
- * validateAndAddImage implementation by testing the parsing function directly.
- */
-
-// Extract the parsing logic that handleImageCommand uses
-// New simplified implementation: split on whitespace
-function parseImageCommandArgs(args: string): {
-  imagePath: string | null
-  message: string
-} {
-  const [imagePath, ...rest] = args.trim().split(/\s+/)
-
-  if (!imagePath) {
-    return { imagePath: null, message: '' }
-  }
-
-  return { imagePath, message: rest.join(' ') }
-}
+import { parseImageCommandArgs } from '../parse-image-args'
 
 describe('handleImageCommand parsing', () => {
   describe('argument parsing', () => {
@@ -61,8 +41,37 @@ describe('handleImageCommand parsing', () => {
     test('handles multiple spaces between path and message', () => {
       const result = parseImageCommandArgs('./image.png    hello world')
       expect(result.imagePath).toBe('./image.png')
-      // The regex only captures content after the first whitespace group
       expect(result.message).toBe('hello world')
+    })
+
+    test('handles double-quoted path with spaces and message', () => {
+      const result = parseImageCommandArgs(
+        '"Screenshot 2026-09-02 at 10.00.00.png" please analyze this',
+      )
+      expect(result.imagePath).toBe('Screenshot 2026-09-02 at 10.00.00.png')
+      expect(result.message).toBe('please analyze this')
+    })
+
+    test('handles single-quoted path with spaces and message', () => {
+      const result = parseImageCommandArgs(
+        "'./Screenshots/My Capture.png' what is in this picture?",
+      )
+      expect(result.imagePath).toBe('./Screenshots/My Capture.png')
+      expect(result.message).toBe('what is in this picture?')
+    })
+
+    test('handles quoted path only without message', () => {
+      const result = parseImageCommandArgs('"my screenshot.png"')
+      expect(result.imagePath).toBe('my screenshot.png')
+      expect(result.message).toBe('')
+    })
+
+    test('handles backslash-escaped spaces in path', () => {
+      const result = parseImageCommandArgs(
+        './My\\ Screenshot.png check this out',
+      )
+      expect(result.imagePath).toBe('./My Screenshot.png')
+      expect(result.message).toBe('check this out')
     })
   })
 
@@ -94,6 +103,12 @@ describe('handleImageCommand parsing', () => {
     test('handles tilde paths', () => {
       const result = parseImageCommandArgs('~/Downloads/image.png')
       expect(result.imagePath).toBe('~/Downloads/image.png')
+    })
+
+    test('handles empty quotes gracefully', () => {
+      const result = parseImageCommandArgs('"" please analyze this')
+      expect(result.imagePath).toBeNull()
+      expect(result.message).toBe('please analyze this')
     })
   })
 })
