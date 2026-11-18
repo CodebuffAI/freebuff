@@ -604,6 +604,13 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    */
   client_inline_cadence: 'string',
   /**
+   * Why the request's stored client context is what it is: `parsed`,
+   * `absent`, `invalid`, `gpc`, `opted_out` or `consent_denied`
+   * (`AdClientContextStatus`). A label for counting dropped contexts; it never
+   * drives serving, eligibility, pricing, or billing.
+   */
+  client_context_status: 'string',
+  /**
    * The REQUEST-grain correlation handle (`adr_`, COD-406): one per HTTP ad
    * request on both rails. Opaque and server-minted: never derived from the
    * prompt, the IP, or the session.
