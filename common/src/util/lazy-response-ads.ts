@@ -16,8 +16,10 @@ export function responseAdDisplayCount(params: {
   eligibleCount: number
   poolSize: number
 }): number {
-  const eligibleCount = Math.max(0, Math.floor(params.eligibleCount))
-  const poolSize = Math.max(0, Math.floor(params.poolSize))
+  const safeEligibleCount = Number.isFinite(params.eligibleCount) ? params.eligibleCount : 0
+  const safePoolSize = Number.isFinite(params.poolSize) ? params.poolSize : 0
+  const eligibleCount = Math.max(0, Math.floor(safeEligibleCount))
+  const poolSize = Math.max(0, Math.floor(safePoolSize))
   return poolSize >= MAX_RESPONSE_AD_POOL_SIZE
     ? eligibleCount
     : Math.min(eligibleCount, poolSize)
