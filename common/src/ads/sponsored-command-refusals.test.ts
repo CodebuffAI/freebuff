@@ -506,6 +506,43 @@ describe('a line the walk cannot finish is refused, not allowed', () => {
     }
   })
 
+  it('refuses inline code in the = form, quoted or not', () => {
+    for (const command of [
+      'node --eval=console.log(1)',
+      'node --eval="console.log(1)"',
+      "node --eval='console.log(1)'",
+      'bun -e="console.log(1)"',
+    ]) {
+      expect({ command, kind: kindOf(command) }).toEqual({
+        command,
+        kind: 'unverifiable',
+      })
+    }
+  })
+
+  it('refuses a command word built from a substitution', () => {
+    for (const command of [
+      '$(echo docker) compose down -v',
+      '$(docker) compose down -v',
+      '`echo docker` compose down -v',
+      'D=docker $(echo docker) compose down -v',
+    ]) {
+      expect({ command, kind: kindOf(command) }).toEqual({
+        command,
+        kind: 'unverifiable',
+      })
+    }
+  })
+
+  it('still judges a substitution in argument position on its own line', () => {
+    expectRefused('container', [
+      'echo $(docker compose down -v)',
+      'echo `docker compose down -v`',
+      'D=$(docker compose down -v)',
+      '$(docker compose down -v)',
+    ])
+  })
+
   it('still allows interpreters running scripts and judged modules', () => {
     expectAllowed([
       'node server.js',
