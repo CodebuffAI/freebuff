@@ -1,5 +1,6 @@
 import { ApplyPatchComponent } from './apply-patch'
 import { CodeSearchComponent } from './code-search'
+import { GenerateImageComponent } from './generate-image'
 import { GlobComponent } from './glob'
 import { GravityIndexComponent } from './gravity-index'
 import { ListDirectoryComponent } from './list-directory'
@@ -33,6 +34,7 @@ import type { ToolName } from '@codebuff/sdk'
 const toolComponentRegistry = new Map<ToolName, ToolComponent>([
   [ApplyPatchComponent.toolName, ApplyPatchComponent],
   [CodeSearchComponent.toolName, CodeSearchComponent],
+  [GenerateImageComponent.toolName, GenerateImageComponent],
   [GlobComponent.toolName, GlobComponent],
   [GravityIndexComponent.toolName, GravityIndexComponent],
   [ListDirectoryComponent.toolName, ListDirectoryComponent],

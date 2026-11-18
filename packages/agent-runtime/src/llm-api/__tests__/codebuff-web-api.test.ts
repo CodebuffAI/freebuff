@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   HostedServiceUnavailableError,
+  callGenerateImageAPI,
   callWebSearchAPI,
   callWebFetchAPI,
 } from '../codebuff-web-api'
@@ -115,5 +116,30 @@ describe('hosted web research transport', () => {
     })
     expect(calls).toBe(1)
     expect(res.error).toContain('502')
+  })
+})
+
+describe('generate_image transport', () => {
+  test('a job still running at the route deadline is resumed by id, never resubmitted', async () => {
+    const bodies: unknown[] = []
+    const answers = [
+      Response.json({ jobId: 'job-1' }, { status: 202 }),
+      Response.json({ jobId: 'job-1' }, { status: 202 }),
+      Response.json({ url: 'https://img.example/a.jpg', width: 1024, height: 1024 }),
+    ]
+    const fetch = (async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)))
+      return answers.shift()!
+    }) as typeof globalThis.fetch
+
+    const result = await callGenerateImageAPI({ prompt: 'a cabin', aspectRatio: '1:1', fetch, logger, env })
+
+    expect(result).toEqual({ url: 'https://img.example/a.jpg', width: 1024, height: 1024 })
+    // One paid submit; every later request only waits on that job.
+    expect(bodies).toEqual([
+      { prompt: 'a cabin', aspectRatio: '1:1' },
+      { jobId: 'job-1' },
+      { jobId: 'job-1' },
+    ])
   })
 })

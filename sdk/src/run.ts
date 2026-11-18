@@ -1494,7 +1494,7 @@ async function handleToolCall({
 
   if (
     byok &&
-    ['web_search', 'read_docs', 'gravity_index', 'render_ui'].includes(toolName)
+    ['web_search', 'read_docs', 'gravity_index', 'render_ui', 'generate_image'].includes(toolName)
   ) {
     return {
       output: [{ type: 'json', value: { errorMessage: `${toolName} is unavailable in a direct BYOK run` } }],

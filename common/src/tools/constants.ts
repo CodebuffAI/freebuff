@@ -33,6 +33,7 @@ export const toolNames = [
   'create_plan',
   'end_turn',
   'find_files',
+  'generate_image',
   'glob',
   'gravity_index',
   'list_directory',

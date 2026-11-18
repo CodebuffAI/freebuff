@@ -298,10 +298,11 @@ export function createBase3CliRoot(
   const root: Omit<SecretAgentDefinition, 'id'> = {
     ...base3,
     // base3's own eight, then the CLI surface: `web_search`/`read_url`
-    // replace the researcher subagents base2 spawned; the last five drive the
+    // replace the researcher subagents base2 spawned; the next five drive the
     // ask-user panel, the followup cards, service discovery, rendered UI and
-    // skills. (The shipped-agents CI guard checks this toolset by importing
-    // the definitions, so it may be assembled rather than restated.)
+    // skills; generate_image makes art for the project. (The shipped-agents
+    // CI guard checks this toolset by importing the definitions, so it may be
+    // assembled rather than restated.)
     toolNames: [
       ...base3.toolNames!,
       'web_search',
@@ -311,6 +312,7 @@ export function createBase3CliRoot(
       'gravity_index',
       'render_ui',
       'skill',
+      'generate_image',
     ],
     systemPrompt: `${base3.systemPrompt}
 ${extraSystemPrompt ? `${extraSystemPrompt}\n` : ''}${buildCliAppendix({

@@ -1,3 +1,8 @@
+import {
+  GENERATE_IMAGE_CLIENT_TIMEOUT_MS,
+  GENERATE_IMAGE_MAX_WAIT_MS,
+} from '@codebuff/common/tools/params/tool/generate-image'
+import { deadlineSignal } from '@codebuff/common/util/promise'
 import { z } from 'zod/v4'
 
 import type { ClientEnv, CiEnv } from '@codebuff/common/types/contracts/env'
@@ -51,6 +56,7 @@ const callCodebuffV1 = async (params: {
     | '/api/v1/web-fetch'
     | '/api/v1/docs-search'
     | '/api/v1/gravity-index'
+    | '/api/v1/generate-image'
   payload: unknown
   fetch: typeof globalThis.fetch
   logger: Logger
@@ -58,7 +64,12 @@ const callCodebuffV1 = async (params: {
   baseUrl?: string
   apiKey?: string
   signal?: AbortSignal
-  requestName: 'web-search' | 'web-fetch' | 'docs-search' | 'gravity-index'
+  requestName:
+    | 'web-search'
+    | 'web-fetch'
+    | 'docs-search'
+    | 'gravity-index'
+    | 'generate-image'
 }): Promise<{ json?: unknown; error?: string; creditsUsed?: number }> => {
   const { endpoint, payload, fetch, logger, env, requestName } = params
   const baseUrl = params.baseUrl ?? env.clientEnv.NEXT_PUBLIC_CODEBUFF_APP_URL
@@ -73,11 +84,20 @@ const callCodebuffV1 = async (params: {
 
   // A disconnected paid request may already have reached the provider. The
   // research routes own their upstream retry policy; never replay the POST.
-  const research = requestName === 'web-search' || requestName === 'web-fetch'
+  // An image is paid per generation the same way.
+  const research =
+    requestName === 'web-search' ||
+    requestName === 'web-fetch' ||
+    requestName === 'generate-image'
   const maxAttempts = research ? 1 : MAX_RETRIES
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const deadline = deadlineSignal(
+      requestName === 'generate-image'
+        ? GENERATE_IMAGE_CLIENT_TIMEOUT_MS
+        : FETCH_TIMEOUT_MS,
+      params.signal,
+    )
     try {
-      const timeout = AbortSignal.timeout(FETCH_TIMEOUT_MS)
       const res = await fetch(url, {
         method: 'POST',
         // A redirected request could forward the custom API key header.
@@ -88,9 +108,7 @@ const callCodebuffV1 = async (params: {
           'x-codebuff-api-key': apiKey,
         },
         body: JSON.stringify(payload),
-        signal: params.signal
-          ? AbortSignal.any([params.signal, timeout])
-          : timeout,
+        signal: deadline.signal,
       })
 
       const text = await res.text()
@@ -173,6 +191,8 @@ const callCodebuffV1 = async (params: {
         `Web API ${requestName} network error after all retries`,
       )
       return { error: lastError }
+    } finally {
+      deadline.clear()
     }
   }
 
@@ -218,6 +238,50 @@ export async function callWebSearchAPI(
   if (result) return { result, creditsUsed: res.creditsUsed }
   return {
     error: getStringField(res.json, 'error') ?? 'Invalid web search response',
+  }
+}
+
+const generatedImageSchema = z.object({
+  url: z.string(),
+  width: z.number(),
+  height: z.number(),
+})
+const pendingImageSchema = z.object({ jobId: z.string() })
+
+export async function callGenerateImageAPI(
+  params: WebToolClient & {
+    prompt: string
+    aspectRatio?: string
+  },
+): Promise<
+  { url: string; width: number; height: number } | { errorMessage: string }
+> {
+  const giveUpAt = Date.now() + GENERATE_IMAGE_MAX_WAIT_MS
+  let payload: Record<string, unknown> = {
+    prompt: params.prompt,
+    aspectRatio: params.aspectRatio,
+  }
+  for (;;) {
+    const res = await callCodebuffV1({
+      ...params,
+      endpoint: '/api/v1/generate-image',
+      payload,
+      requestName: 'generate-image',
+    })
+    if (res.error) return { errorMessage: res.error }
+    const image = generatedImageSchema.safeParse(res.json)
+    if (image.success) return image.data
+    const pending = pendingImageSchema.safeParse(res.json)
+    if (!pending.success)
+      return { errorMessage: 'Invalid image generation response' }
+    if (Date.now() >= giveUpAt)
+      return {
+        errorMessage:
+          'The image is taking too long to generate. Try again later.',
+      }
+    // Still running at the route's deadline: keep waiting on the same job.
+    // Never resubmit the prompt: each new job is a new charge.
+    payload = { jobId: pending.data.jobId }
   }
 }
 
