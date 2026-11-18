@@ -395,6 +395,8 @@ export enum AnalyticsEvent {
   FREEBUFF_START_ANDROID_STORE_CLICKED = 'freebuff.start_android_store_clicked',
   // An iPhone or iPad visitor tapped the handoff's App Store button.
   FREEBUFF_START_IOS_STORE_CLICKED = 'freebuff.start_ios_store_clicked',
+  // A phone visitor tapped "Start in your browser" under the store button.
+  FREEBUFF_START_BROWSER_CLICKED = 'freebuff.start_browser_clicked',
 
   // Freebuff - Chat
   // Emitted once per new-thread title generation attempt (server-side). The
