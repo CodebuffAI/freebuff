@@ -282,6 +282,8 @@ export enum AnalyticsEvent {
   /** Left the builder (navigated away, closed the tab) without saving. */
   ADVERTISER_BUILDER_ABANDONED = 'advertiser.builder_abandoned',
   ADVERTISER_CAMPAIGN_SAVED = 'advertiser.campaign_saved',
+  ADVERTISER_TARGET_COST_GUIDANCE_SHOWN = 'advertiser.target_cost_guidance_shown',
+  ADVERTISER_TARGET_COST_SAVED = 'advertiser.target_cost_saved',
   ADVERTISER_CAMPAIGN_SAVE_FAILED = 'advertiser.campaign_save_failed',
   ADVERTISER_CREATIVE_SAVED = 'advertiser.creative_saved',
   ADVERTISER_CAMPAIGN_LIFECYCLE_ACTION = 'advertiser.campaign_lifecycle_action',
