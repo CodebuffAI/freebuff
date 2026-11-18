@@ -8,6 +8,56 @@ native shell, an automation script) can drive the same server without re-derivin
 
 Nothing here is private: it is the shape of a loopback interface, not any user's data.
 
+## Provenance
+
+Written against the installed **Freebuff Desktop `0.0.203`** build. Every claim below is a literal in
+one of these files, recorded with the hash of the copy it was read from:
+
+| Artifact | SHA-256 (first 16) |
+|---|---|
+| `resources/app.asar` (the Electron shell) | `af684513edb0c024` |
+| `app/electron/orchestrator-startup.cjs` | `debeb69d7d935a81` |
+| `app/electron/shell-lifetime.cjs` | `9affdeff0595e928` |
+| `app/electron/launch-bootstrap.cjs` | `e7b2390dbc95f2ae` |
+| `resources/orchestrator/orchestrator.js` (the bundled server) | `6a34e09a2722c87b` |
+
+The bundle keeps its source paths, which are the fastest way to check these against the real tree:
+`src/server/boot-phase.ts` (the phase list), `src/server/services/orchestrator-lock.ts` (the profile
+lock and the exit code), and the shell modules named above.
+
+| Claim | Where | Literal |
+|---|---|---|
+| the nine phases, in order | `orchestrator-startup.cjs:22` | `const BOOT_PHASES = new Set([` … `'projects_boot_end',` |
+| phase line prefix | `orchestrator-startup.cjs:19` | `const PHASE_PREFIX = '[orchestrator-phase] '` |
+| 30 s spawn → ready | `orchestrator-startup.cjs:35` | `const READY_LINE_BUDGET_MS = 30_000` |
+| 60 s ready → `/healthz` | `orchestrator-startup.cjs:37` | `const HEALTH_BUDGET_MS = 60_000` |
+| ready line shape | `orchestrator.js` | ``console.log(`[orchestrator-ready] ${JSON.stringify({ launchId: LAUNCH_ID, pid: process.pid, port: serverPort })}`)`` |
+| stdin bootstrap line | `launch-bootstrap.cjs:20` | `function launchBootstrapLine({ shellLifetimeToken, launchId, cdpBridgeToken, mcpConsentToken })` |
+| 3 s ping | `shell-lifetime.cjs:9` | `const DEFAULT_PING_MS = 3000` |
+| HMAC labels | `shell-lifetime.cjs:37,46` | `` `client:${challenge}:${clientChallenge}` ``, `` `server:${challenge}:${clientChallenge}` `` |
+| `/api/*` gate | `orchestrator.js` | `pathname.startsWith("/api/")` |
+| header and cookie names | `orchestrator.js` | `var LAUNCH_TOKEN_HEADER = "x-freebuff-launch-id"`, `` `freebuff_launch_${port}` `` |
+| 401 body | `orchestrator.js` | `json4({ error: "invalid launch id" }, 401)` |
+| exit code 75 | `orchestrator.js` | `var PROFILE_BUSY_EXIT = 75` … `process.exit(PROFILE_BUSY_EXIT)` |
+| profile lock file | `orchestrator.js` | `` `${statePath}.orchestrator-lock.sqlite` ``, opened with `PRAGMA busy_timeout = 0` |
+| lock wait default | `main.cjs:932` | `FREEBUFF_PROFILE_LOCK_WAIT_MS: '10000'` |
+
+Re-checking a claim is one grep, no build:
+
+```bash
+npx @electron/asar extract "<install>/resources/app.asar" app
+grep -n "READY_LINE_BUDGET_MS\|HEALTH_BUDGET_MS" app/electron/orchestrator-startup.cjs
+grep -n "PROFILE_BUSY_EXIT\|invalid launch id\|LAUNCH_TOKEN_HEADER" \
+  "<install>/resources/orchestrator/orchestrator.js"
+```
+
+**Across versions.** None of these constants is negotiated — no handshake carries a protocol
+version — so a build that renames a phase or moves a budget breaks a client silently instead of
+saying so. This page is a snapshot of one build, and where it disagrees with a newer one, the build
+is right. The parts worth relying on are the shape: a phase line on stdout, a ready line carrying a
+launch id, a bootstrap line on stdin, an HMAC lifetime socket, and a launch-id header on `/api/*`.
+The constants next to them are the part to re-read when a release changes.
+
 ## The two-process shape
 
 ```
@@ -86,15 +136,13 @@ Every `/api/*` path is refused with `401 unauthorized` unless the request carrie
 | `CODEBUFF_WASM_DIR`, `CODEBUFF_TREE_SITTER_WASM_PATH` | tree-sitter wasm used by code features |
 | `FREEBUFF_BUN_PATH` | override the bundled Bun |
 
-## Why this exists
+## Scope
 
-A shell boundary like this is the kind of thing a port, a test harness or an automation script
-re-derives one frustrating session at a time. This page fixes the shape in one place. It came
-from observing a shipped install, so if the real shell ever changes the handshake, this page
-should be updated with it.
+This documents a boundary that exists today, and it is useful whether or not a native shell is ever
+built: a test harness, a diagnostics client or an automation script needs the same facts, and none
+of them needs the direction question answered first. Nothing here argues for a particular shell.
 
-A reference implementation of all of the above is ~500 lines of dependency-light Rust: it spawns
-the same server, keeps it alive and reports its state in a sidebar. It is deliberately not part of
-this document — whether a native shell belongs in this repository is the question the accompanying
-issue asks. Neither the shell code nor the server code is required to use this contract; only the
+A reference implementation of all of the above is ~500 lines of dependency-light Rust: it spawns the
+same server, keeps it alive and reports its state in a sidebar. It is deliberately not part of this
+document. Neither the shell code nor the server code is required to use this contract; only the
 words above.
