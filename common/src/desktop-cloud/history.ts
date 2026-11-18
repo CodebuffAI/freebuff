@@ -1,6 +1,8 @@
 /** Shared history and attachment contract for the Postgres-backed Cloud service. */
 export type CloudHistoryPage<T> = { items: T[]; nextCursor: string | null }
 export type CloudHistoryProject = {
+  /** Multiplayer: set when another account shared this project, or a chat in it, with the caller. */
+  sharedBy?: CloudHistorySharer | null
   /** A durable local target; absence means a hosted project. Never inferred from presence. */
   deviceExecution?: import('./device-execution').DeviceExecutionTarget | null
   id: string
@@ -70,6 +72,8 @@ export function isUntitledCloudChat(chat: Pick<CloudHistoryChat, 'title' | 'late
     (chat.title === UNTITLED_CLOUD_CHAT_TITLE || chat.title === UNTITLED_DEVICE_CHAT_TITLE)
 }
 export type CloudHistoryChat = {
+  /** Multiplayer: set when another account shared this chat with the caller; null or absent for their own. */
+  sharedBy?: CloudHistorySharer | null
   deviceExecution?: import('./device-execution').DeviceExecutionTarget | null
   mission?: import('./mission').CloudMission | null
   /** The chat this one was forked from (the sidebar nests it there), or null. Absent from older servers. */
@@ -148,7 +152,17 @@ export type CloudHistoryChatUpdate = {
  * session, holding no Freebuff session of its own until it is sent to. `chatId` is the new chat's
  * id, minted by the client and reused on a retry so the fork is created once.
  */
-export type CloudHistoryChatFork = { chatId: string }
+export type CloudHistoryChatFork = {
+  chatId: string
+  /**
+   * Multiplayer: the fork of a chat shared with the caller lands in the caller's own account, in
+   * this project of theirs, on this computer binding of theirs (history-store.ts `forkSharedChat`).
+   * Required for a shared chat, refused for one's own.
+   */
+  into?: { projectId: string; deviceExecution: import('./device-execution').DeviceExecutionTarget }
+}
+/** Multiplayer: the owner of a chat or project another account shared with the caller. */
+export type CloudHistorySharer = { email: string; name: string | null }
 /**
  * Open a side chat beside a chat on the computer it runs on: a fork, read-only and hidden from
  * chat lists, made from the chat's last saved turn even while a turn runs. Deleting it (or its

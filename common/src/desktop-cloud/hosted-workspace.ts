@@ -362,6 +362,14 @@ export type HostedWorkspaceHost = {
       location: 'local' | 'worktree' | 'cloud' | 'remote'
       reason: 'no-checkout' | 'origin-unavailable' | 'origin-only' | 'cloud-only'
     }>
+    /**
+     * Multiplayer: this chat is one a teammate shared, on their computer, and this Desktop forks it
+     * here: `location: 'local'` copies its files into a new local project of this account's and
+     * answers the fork in `forked` (shared-fork.ts). Older Desktops omit it, and fork nothing.
+     */
+    sharedFork?: true
+    /** The fork a `location: 'local'` request made of a teammate's shared chat. */
+    forked?: { chat: import('./history').CloudHistoryChat; projectId: string }
     supportsWorktreeSourceBranch?: boolean
     supportsWorktreeTitle?: boolean
     /**
