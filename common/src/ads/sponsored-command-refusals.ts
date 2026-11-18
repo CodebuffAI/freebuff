@@ -71,6 +71,18 @@ function lexCommandLine(command: string): Token[][] {
   let quoted = false
   let expands = false
   let inToken = false
+  // A substitution where the command word belongs (`$(echo docker) …`,
+  // `` `echo docker` … ``) splits into the inner line and the rest of the
+  // line, and neither half is the command that runs. The marker segment
+  // appended at the end lets the walk refuse the composed line while a
+  // refused inner line still reports its own kind first.
+  let headSubstitution = false
+  const atCommandWord = () =>
+    current.every(
+      (token) =>
+        !token.quoted && /^[A-Za-z_][A-Za-z0-9_]*=/.test(token.text),
+    ) &&
+    (!inToken || !text.includes('='))
   const endToken = () => {
     if (inToken) current.push({ text, quoted, literal: quoted && !expands })
     text = ''
@@ -112,11 +124,17 @@ function lexCommandLine(command: string): Token[][] {
       inToken = true
       continue
     }
-    if (';&|(){}`'.includes(ch)) {
+    if (ch === '`') {
+      if (atCommandWord()) headSubstitution = true
+      endSegment()
+      continue
+    }
+    if (';&|(){}'.includes(ch)) {
       endSegment()
       continue
     }
     if (ch === '$' && command[index + 1] === '(') {
+      if (atCommandWord()) headSubstitution = true
       endSegment()
       index++
       continue
@@ -125,6 +143,9 @@ function lexCommandLine(command: string): Token[][] {
     inToken = true
   }
   endSegment()
+  if (headSubstitution) {
+    segments.push([{ text: '$(…)', quoted: false, literal: false }])
+  }
   return segments
 }
 
@@ -950,7 +971,9 @@ function analyzeSegment(
 
   // A command word the line itself builds, from a variable or a
   // substitution, runs whatever the variable holds. The walk cannot read
-  // it, so it fails closed like the other unreadable shapes.
+  // it, so it fails closed like the other unreadable shapes. A literal
+  // `$` in a command word is read as a variable on purpose: a real
+  // command name containing one is not a shape worth passing unread.
   if (
     headToken.text.includes('$') ||
     headToken.text.includes('`') ||
@@ -1052,14 +1075,15 @@ function analyzeSegment(
     ? ['-c']
     : INLINE_CODE_FLAGS.get(head)
   if (inlineFlags) {
-    const flag = args.find(
-      (token) =>
-        !token.quoted &&
-        inlineFlags.some(
-          (candidate) =>
-            token.text === candidate ||
-            token.text.startsWith(`${candidate}=`),
-        ),
+    // The `=` form attaches the value to the flag (`--eval="…"`), so the
+    // token is the flag even where its value was quoted. A bare flag word
+    // only counts unquoted, like elsewhere in the walk.
+    const flag = args.find((token) =>
+      inlineFlags.some(
+        (candidate) =>
+          (token.text === candidate && !token.quoted) ||
+          token.text.startsWith(`${candidate}=`),
+      ),
     )
     if (flag) {
       return { kind: 'unverifiable', invocation: `${head} ${flag.text}` }
