@@ -367,6 +367,12 @@ export enum AnalyticsEvent {
   // streak loaded). Measures who looks at the streak in streak_classic_2026_11,
   // whose exposure is only the streak's fetch.
   FREEBUFF_STREAK_OPENED = 'freebuff.streak.opened',
+  // The workspace's Integrations page, to rank INTEGRATION_CATEGORIES by what
+  // people want. `action`: category_opened (`category`) | connect_clicked
+  // (`app`, `from`: a category id | search | connected, `position`: 0-based
+  // in that list, absent for connected) | connected (`app`, `from`: the
+  // account appeared while the page waited) | search_more_clicked.
+  FREEBUFF_INTEGRATIONS_PAGE = 'freebuff.integrations_page',
   // Freebuff - Get Started Page (sign-up, then Freebuff Desktop; in order:
   //   viewed → sign_in_clicked → signed_in → eligibility_resolved →
   //   [connect_github_clicked] → web_clicked | freebuff.desktop_download_clicked
