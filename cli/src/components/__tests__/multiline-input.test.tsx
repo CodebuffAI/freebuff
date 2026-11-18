@@ -1,9 +1,21 @@
-import { describe, test, expect } from 'bun:test'
+import { beforeAll, describe, expect, test } from 'bun:test'
+import { createTestRenderer } from '@opentui/core/testing'
+import { createRoot, flushSync } from '@opentui/react'
+import React from 'react'
 
 import {
   getKeypadPrintableSequence,
   isKeypadEnter,
 } from '../../utils/keypad-keys'
+import { initializeThemeStore } from '../../hooks/use-theme'
+import {
+  calculateMultilineInputCursorPosition,
+  MultilineInput,
+} from '../multiline-input'
+
+beforeAll(() => {
+  initializeThemeStore()
+})
 
 /**
  * Tests for tab character cursor rendering in MultilineInput component.
@@ -239,6 +251,187 @@ describe('MultilineInput - tab character handling', () => {
 
     // 'a' (1) + tab (4) + 'b' (1) = 6
     expect(renderPos).toBe(6)
+  })
+})
+
+describe('MultilineInput - hardware cursor coordinates', () => {
+  const viewportX = 10
+  const viewportY = 20
+  const lineInfo = (lineStartCols: number[]) => ({ lineStartCols })
+
+  test('places the ASCII caret using terminal cell columns', () => {
+    expect(
+      calculateMultilineInputCursorPosition({
+        text: 'hello',
+        cursorPosition: 2,
+        lineInfo: lineInfo([0]),
+        viewportX,
+        viewportY,
+        verticalScrollPosition: 0,
+      }),
+    ).toEqual({ x: 13, y: 21 })
+  })
+
+  test('advances two terminal cells after a CJK wide character', () => {
+    expect(
+      calculateMultilineInputCursorPosition({
+        text: '你a',
+        cursorPosition: 1,
+        lineInfo: lineInfo([0]),
+        viewportX,
+        viewportY,
+        verticalScrollPosition: 0,
+      }),
+    ).toEqual({ x: 13, y: 21 })
+  })
+
+  test('handles mixed ASCII and CJK widths', () => {
+    expect(
+      calculateMultilineInputCursorPosition({
+        text: 'a你b',
+        cursorPosition: 2,
+        lineInfo: lineInfo([0]),
+        viewportX,
+        viewportY,
+        verticalScrollPosition: 0,
+      }),
+    ).toEqual({ x: 14, y: 21 })
+  })
+
+  test('uses the existing four-cell tab expansion', () => {
+    expect(
+      calculateMultilineInputCursorPosition({
+        text: '\ta',
+        cursorPosition: 1,
+        lineInfo: lineInfo([0]),
+        viewportX,
+        viewportY,
+        verticalScrollPosition: 0,
+      }),
+    ).toEqual({ x: 15, y: 21 })
+  })
+
+  test('uses cumulative visual-line offsets for wrapped text', () => {
+    expect(
+      calculateMultilineInputCursorPosition({
+        text: 'abcdefghij',
+        cursorPosition: 7,
+        lineInfo: lineInfo([0, 5]),
+        viewportX,
+        viewportY,
+        verticalScrollPosition: 0,
+      }),
+    ).toEqual({ x: 13, y: 22 })
+  })
+
+  test('applies the viewport offset and vertical scroll position', () => {
+    expect(
+      calculateMultilineInputCursorPosition({
+        text: 'a\nb\nc',
+        cursorPosition: 4,
+        lineInfo: lineInfo([0, 2, 4]),
+        viewportX,
+        viewportY,
+        verticalScrollPosition: 1,
+      }),
+    ).toEqual({ x: 11, y: 22 })
+  })
+})
+
+describe('MultilineInput - hardware cursor lifecycle', () => {
+  test('moves the renderer cursor two cells after a CJK character', async () => {
+    const setup = await createTestRenderer({ width: 30, height: 8 })
+    const root = createRoot(setup.renderer)
+
+    try {
+      flushSync(() =>
+        root.render(
+          <MultilineInput
+            value="你a"
+            onChange={() => {}}
+            onSubmit={() => {}}
+            onPaste={() => {}}
+            cursorPosition={1}
+            maxHeight={3}
+            shouldBlinkCursor={false}
+            focused
+          />,
+        ),
+      )
+      await setup.renderOnce()
+
+      expect(setup.renderer.getCursorState()).toMatchObject({
+        x: 4,
+        y: 1,
+        visible: true,
+      })
+    } finally {
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
+  test('places the renderer cursor on the wrapped visual row', async () => {
+    const setup = await createTestRenderer({ width: 12, height: 8 })
+    const root = createRoot(setup.renderer)
+    const props = {
+      value: 'one two three',
+      onChange: () => {},
+      onSubmit: () => {},
+      onPaste: () => {},
+      cursorPosition: 13,
+      maxHeight: 5,
+      shouldBlinkCursor: false,
+      focused: true,
+    }
+
+    try {
+      flushSync(() => root.render(<MultilineInput {...props} />))
+      await setup.renderOnce()
+
+      // The wrapped second line is scrolled into the top viewport row.
+      expect(setup.renderer.getCursorState()).toMatchObject({
+        x: 7,
+        y: 1,
+        visible: true,
+      })
+    } finally {
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
+  test('hides the hardware cursor when unfocused and on unmount', async () => {
+    const setup = await createTestRenderer({ width: 30, height: 8 })
+    const root = createRoot(setup.renderer)
+    const props = {
+      value: 'input',
+      onChange: () => {},
+      onSubmit: () => {},
+      onPaste: () => {},
+      cursorPosition: 2,
+      maxHeight: 3,
+      shouldBlinkCursor: false,
+    }
+
+    try {
+      flushSync(() => root.render(<MultilineInput {...props} focused />))
+      await setup.renderOnce()
+      expect(setup.renderer.getCursorState().visible).toBe(true)
+
+      flushSync(() => root.render(<MultilineInput {...props} focused={false} />))
+      await setup.renderOnce()
+      expect(setup.renderer.getCursorState().visible).toBe(false)
+
+      flushSync(() => root.render(<MultilineInput {...props} focused />))
+      await setup.renderOnce()
+      expect(setup.renderer.getCursorState().visible).toBe(true)
+
+      flushSync(() => root.unmount())
+      expect(setup.renderer.getCursorState().visible).toBe(false)
+    } finally {
+      setup.renderer.destroy()
+    }
   })
 })
 
