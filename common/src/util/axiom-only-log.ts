@@ -146,6 +146,15 @@ export const ADS_EXTERNAL_CONVERSION_SELECTED_RAILS = [
 ] as const
 export type AdsExternalConversionSelectedRail =
   (typeof ADS_EXTERNAL_CONVERSION_SELECTED_RAILS)[number]
+
+/** The payload field names `replay_mismatch_fields` may carry. */
+export const ADS_EXTERNAL_CONVERSION_REPLAY_MISMATCH_FIELDS = [
+  'event_type',
+  'value',
+  'currency',
+  'plan',
+  'occurred_at',
+] as const
 /**
  * Durable campaign-health evidence. This stream also carries an opaque
  * campaign identifier, beyond the postback census's authenticated advertiser, so
@@ -1286,6 +1295,10 @@ const ADS_EXTERNAL_CONVERSION_POSTBACK_FIELDS = {
   email_hash_valid: 'boolean',
   outcome: 'string',
   rejection_reason: 'string',
+  // Only on `outcome: 'replay_mismatch'`: which payload fields of a reused
+  // event id differ from its first report, comma-joined from the fixed
+  // vocabulary below. Field names, never their values.
+  replay_mismatch_fields: 'string',
   click_id_shape: 'string',
   event_type: 'string',
   traffic_class: 'string',
@@ -1331,6 +1344,18 @@ function sanitizeExternalConversionPostbackFields(
     )
   ) {
     delete data.selected_rail
+  }
+  if (
+    typeof data.replay_mismatch_fields === 'string' &&
+    !data.replay_mismatch_fields
+      .split(',')
+      .every((field) =>
+        (
+          ADS_EXTERNAL_CONVERSION_REPLAY_MISMATCH_FIELDS as readonly string[]
+        ).includes(field),
+      )
+  ) {
+    delete data.replay_mismatch_fields
   }
   return data
 }

@@ -1200,6 +1200,39 @@ describe('getAxiomOnlyLogEvent', () => {
     expect(JSON.stringify(result)).not.toContain('private')
   })
 
+  test('keeps replay-mismatch field names and drops anything outside the vocabulary', () => {
+    const base = {
+      axiomEvent: ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT,
+      channel: 's2s',
+      outcome: 'replay_mismatch',
+      rejection_reason: 'none',
+    }
+    expect(
+      getAxiomOnlyLogEvent({
+        ...base,
+        replay_mismatch_fields: 'value,occurred_at',
+      })?.data,
+    ).toEqual({
+      channel: 's2s',
+      outcome: 'replay_mismatch',
+      rejection_reason: 'none',
+      replay_mismatch_fields: 'value,occurred_at',
+    })
+    for (const leaked of [
+      'value=4900',
+      'value,private-event',
+      ['value'],
+      4900,
+    ]) {
+      const result = getAxiomOnlyLogEvent({
+        ...base,
+        replay_mismatch_fields: leaked,
+      })
+      expect(result?.data).not.toHaveProperty('replay_mismatch_fields')
+      expect(result?.data).toMatchObject({ outcome: 'replay_mismatch' })
+    }
+  })
+
   test('accepts only closed selected rails and boolean identity presence flags', () => {
     const base = { axiomEvent: ADS_EXTERNAL_CONVERSION_POSTBACK_EVENT }
     for (const selectedRail of ADS_EXTERNAL_CONVERSION_SELECTED_RAILS) {
