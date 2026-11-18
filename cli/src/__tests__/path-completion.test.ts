@@ -122,6 +122,26 @@ describe('getPathCompletion', () => {
     })
   })
 
+  describe('mixed-case common prefixes', () => {
+    test('does not extend past a directory between the sorted endpoints', () => {
+      for (const name of ['Alpha', 'Azure', 'alps']) {
+        mkdirSync(path.join(tempDir, name))
+      }
+
+      expect(getPathCompletion(path.join(tempDir, 'a'))).toBeNull()
+    })
+
+    test('extends only to the prefix shared by every mixed-case match', () => {
+      for (const name of ['ProjectAlpha', 'ProjectBeta', 'projectAlps']) {
+        mkdirSync(path.join(tempDir, name))
+      }
+
+      expect(getPathCompletion(path.join(tempDir, 'pro'))).toBe(
+        path.join(tempDir, 'Project'),
+      )
+    })
+  })
+
   describe('hidden directories', () => {
     test('skips hidden directories by default', () => {
       mkdirSync(path.join(tempDir, '.hidden'))
