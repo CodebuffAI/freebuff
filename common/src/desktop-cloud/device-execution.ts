@@ -66,6 +66,8 @@ export const deviceExecutionContext = z
     sponsoredExec: z.literal(true).optional(),
     /** Honours `scope.warmup`: a new Cloud chat's first turn runs here read-only while it moves (warmup.ts). */
     readOnlyOpener: z.literal(true).optional(),
+    /** Honours `scope.sideParentId`: a side chat's read-only turn runs in its parent's own worktree. */
+    sideParentScope: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
     /** Answers `local_mcp_call` and publishes its local MCP servers (local-mcp.ts). Desktop's
      * account-wide local MCP connection registers with only this; it is no folder's binding. */
@@ -171,6 +173,12 @@ export const deviceToolScope = z
      * WARMUP_REFUSAL. Sent only to a device whose context has `readOnlyOpener`.
      */
     warmup: z.literal(true).optional(),
+    /**
+     * A side chat's parent (history-store.ts `openSideChat`): its read-only turns may run in the
+     * parent's own checkout, a worktree that otherwise serves only the parent. Sent only to a
+     * device whose context has `sideParentScope`.
+     */
+    sideParentId: z.string().min(1).max(200).optional(),
   })
   .strict()
 export const deviceToolRequest = z
@@ -425,6 +433,9 @@ const PICK_FREEBUFF = 'choose a Freebuff model from the model picker to keep goi
 
 /** Desktop's own copy for a turn it could not run, already worded for the
  *  user (harness/claude-code.ts, codex-errors.ts, codex.ts). */
+/** Desktop's refusal of a chat whose checkout (a worktree, or a chat moved there) is another chat's. */
+export const CHECKOUT_OTHER_CHAT_REFUSAL = 'This checkout belongs to another chat'
+
 const DESKTOP_WORDED = [
   /^This agent runs your local (Claude Code|Codex CLI), which is signed out\./,
   /^Your organization’s Claude Code policy disables autonomous permission mode\b/,
@@ -477,6 +488,9 @@ export function deviceHarnessFailureMessage(
     return message
   if (/process aborted by user/i.test(message))
     return DEVICE_HARNESS_STOPPED_MESSAGE
+  // Desktops before `sideParentScope` refused every side chat of a chat in its own worktree.
+  if (message === CHECKOUT_OTHER_CHAT_REFUSAL)
+    return 'Freebuff on your computer refused this chat because its folder is another chat’s worktree. Update Freebuff Desktop on that computer, then send your message again.'
   if (message.length <= 1000 && DESKTOP_WORDED.some((pattern) => pattern.test(message)))
     return message
   if (!harness) return null
@@ -614,6 +628,7 @@ export const deviceCapabilities = z
     agenticOffers: z.literal(true).optional(),
     sponsoredExec: z.literal(true).optional(),
     readOnlyOpener: z.literal(true).optional(),
+    sideParentScope: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
     localMcp: z.literal(true).optional(),
     previousDevices: z.literal(true).optional(),
