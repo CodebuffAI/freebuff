@@ -48,9 +48,35 @@ describe('program status', () => {
 
   test('writes a report to a tty path', () => {
     withTtyFile((ttyPath) => {
-      expect(reportProgramStatus('working', { ttyPath })).toBe(true)
+      expect(reportProgramStatus('working', { ttyPath, env: {} })).toBe(true)
       expect(readFileSync(ttyPath, 'utf8')).toBe(
         buildProgramStatusSequence('working'),
+      )
+    })
+  })
+
+  test('wraps the report in a tmux passthrough', () => {
+    withTtyFile((ttyPath) => {
+      expect(
+        reportProgramStatus('working', { ttyPath, env: { TMUX: '/tmp/tmux' } }),
+      ).toBe(true)
+      const report = buildProgramStatusSequence('working')
+      expect(readFileSync(ttyPath, 'utf8')).toBe(
+        `\x1bPtmux;${report.replace(/\x1b/g, '\x1b\x1b')}${ST}`,
+      )
+    })
+  })
+
+  test('wraps the report in a screen passthrough', () => {
+    withTtyFile((ttyPath) => {
+      expect(
+        reportProgramStatus('done', {
+          ttyPath,
+          env: { TERM: 'screen-256color' },
+        }),
+      ).toBe(true)
+      expect(readFileSync(ttyPath, 'utf8')).toBe(
+        `\x1bP${buildProgramStatusSequence('done')}${ST}`,
       )
     })
   })

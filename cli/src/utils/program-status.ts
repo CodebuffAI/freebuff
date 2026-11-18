@@ -1,21 +1,25 @@
 /**
  * Program Status Protocol (OSC 7501) reporting.
  *
- * Terminals such as Herdr treat a program as an agent only when it reports its
+ * Terminals and multiplexers treat a program as an agent when it reports its
  * lifecycle through OSC 7501. We write directly to /dev/tty, like
  * terminal-title.ts, because OpenTUI captures stdout.
  *
  * Sequence: ESC ] 7501 ; state=<state>:app=<program>[:kind=<kind>] ESC \
  *
- * OSC 7501 is not a registered sequence; it is Herdr's private convention.
- * Terminal parsers consume an OSC string up to its terminator and discard the
- * ones they do not implement, so xterm-compatible emulators (xterm, VTE,
- * iTerm2, WezTerm, kitty, Alacritty, Windows Terminal) print nothing for this
- * report. There is no visible fallback to design around.
+ * OSC 7501 is not a registered sequence; it is claimed by convention, and
+ * terminal parsers discard OSC codes they do not implement, so xterm-compatible
+ * emulators (xterm, VTE, iTerm2, WezTerm, kitty, Alacritty, Windows Terminal)
+ * print nothing for this report. There is no visible fallback to design around.
+ *
+ * Inside tmux or screen the report goes out in a DCS passthrough, because bare
+ * escape sequences written to /dev/tty are dropped there.
  */
 
 import { IS_FREEBUFF } from './constants'
-import { writeTerminalControlSync } from './terminal-io'
+import { wrapForMultiplexer, writeTerminalControlSync } from './terminal-io'
+
+import type { MultiplexerEnv } from './terminal-io'
 
 export type ProgramStatusState =
   | 'idle'
@@ -84,10 +88,13 @@ export function buildProgramStatusSequence(
  */
 export function reportProgramStatus(
   state: ProgramStatusState,
-  options: { kind?: BlockedKind; ttyPath?: string } = {},
+  options: { kind?: BlockedKind; ttyPath?: string; env?: MultiplexerEnv } = {},
 ): boolean {
   return writeTerminalControlSync(
-    buildProgramStatusSequence(state, { kind: options.kind }),
+    wrapForMultiplexer(
+      buildProgramStatusSequence(state, { kind: options.kind }),
+      options.env,
+    ),
     options.ttyPath,
   )
 }
