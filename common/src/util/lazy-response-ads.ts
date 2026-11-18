@@ -29,7 +29,8 @@ export function getResponseAdForSlot<T>(
   slotIndex: number,
 ): T | undefined {
   if (ads.length === 0) return undefined
-  return ads[Math.max(0, Math.floor(slotIndex)) % ads.length]
+  const safeSlotIndex = Number.isFinite(slotIndex) ? slotIndex : 0
+  return ads[Math.max(0, Math.floor(safeSlotIndex)) % ads.length]
 }
 
 export function createLazyResponseAdQueue<
