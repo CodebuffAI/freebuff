@@ -954,3 +954,39 @@ so the rule stands: **inside `waitFor` (or any retry), prefer
 spot the shape, time the case with `bun test --reporter=junit
 --reporter-outfile=…`: a mounted-React case taking over a second with no real
 I/O is almost always this.
+
+**A ninth shape, and one that is pure CPU: a role query over the whole page.**
+`getByRole('button', { name })` computes the accessible name of every button
+under its container, and each name asks jsdom for at least one computed style.
+jsdom 20 answered each of those by matching the element, and then every
+ancestor (to resolve the inherited `visibility`), against all 120 rules of its
+built-in stylesheet: 450 to 650 µs a call in this package's suites, so a
+page-wide lookup on a page with ~190 buttons cost ~100 ms on a laptop and
+about three times that on CI. Inside `findByRole` or `waitFor` every failed
+attempt pays it again. That was `DataPane` › "authoring: …" timing out at 5 s
+on unrelated PRs (2026-11-18, #11250), and most of what was left of the
+hidden-ads case in `workspace-app.projects-send` (#10286). `hidden: true` does
+not help: the cost is the name, not the inaccessibility check.
+
+`freebuff/web/test/support/jsdom-style-rules.ts` now remembers which of those
+built-in rules matched an element, until jsdom's own mutation counter for its
+tree or the focused element changes. Measured on the eight slowest mounted
+files, `getComputedStyle` went from 450-650 µs to 80-280 µs a call; `DataR3`,
+`DataPane` and `workspace-app.projects-send` run in less than half the time,
+and all 145 mounted files together in 177 s instead of 227 s. What it does not
+cover is the page's own stylesheets: their rules are still matched for the
+element and each ancestor on every call, so a suite that mounts a hundred
+rules of CSS (`CampaignOnboarding`, the file viewer) gains about half as much.
+The rule therefore still stands for a page with many controls: **scope the
+lookup** with `within(toolbar)`, or use `getByText` / `getByLabelText`, which
+compute no styles. jsdom 22 and later cache computed styles themselves (31 is
+50 to 100 times faster per call than 20), so that file is deleted when
+jsdom moves past 20; it says how it fails when that happens.
+
+A faster DOM also removes slack a test was leaning on without saying so.
+`DocTabs` › "a table cell picks up row, column and alignment tools" needed a
+zero-delay editor timer to fire before its click's `act()` resolved. That held
+while the click never took under 3.4 ms, and stopped holding once its fastest
+runs took 0.96 ms, inside the timer's 1 ms. **Wait behind such a timer** (a
+`setTimeout` of your own, created after it, inside the same `act`); do not
+count on the work before it being slow.
