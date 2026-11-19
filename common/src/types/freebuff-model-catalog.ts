@@ -257,6 +257,11 @@ export const freebuffModelCatalogSchema = z.object({
    *  Max) and nothing else, and the trigger names the level alone. Absent:
    *  no slider. */
   effortSlider: z.boolean().optional(),
+  /** False on a phone's read while `FREEBUFF_APP_MODEL_PICKER`
+   *  (constants/freebuff-model-picker.ts) is off: the iOS and Android apps
+   *  draw no Freebuff model picker, whatever `hideModelPicker` or Advanced
+   *  Mode say. Web ignores it. Absent: the apps follow `hideModelPicker`. */
+  appModelPicker: z.boolean().optional(),
 })
 export type FreebuffModelCatalog = z.infer<typeof freebuffModelCatalogSchema>
 

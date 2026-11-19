@@ -17,6 +17,17 @@ export const FREEBUFF_MODEL_PICKER_RETIRED_SINCE = Date.parse(
   '2026-11-14T00:00:00Z',
 )
 
+/**
+ * THE iOS AND ANDROID APPS' MODEL PICKER (product, Sam, 2026-11-19): off for
+ * everyone, to cut choices on a phone. While false, every catalog read from a
+ * phone carries `appModelPicker: false`, and the apps draw no Freebuff model
+ * control for any account, Advanced Mode or not: Code mode runs on the
+ * account's default, Chat mode on Balanced. Claude Code and Codex keep their
+ * models. Set true to bring the picker back with no app release: the apps
+ * then follow `hideModelPicker` and Advanced Mode again, as Web does.
+ */
+export const FREEBUFF_APP_MODEL_PICKER: boolean = false
+
 /** Whether an account created at `createdAt` (ms or ISO) is past the cutoff. */
 export function modelPickerRetiredForAccount(
   createdAt: number | string | null | undefined,
