@@ -19,7 +19,14 @@ one of these files, recorded with the hash of the copy it was read from:
 | `app/electron/orchestrator-startup.cjs` | `debeb69d7d935a81` |
 | `app/electron/shell-lifetime.cjs` | `9affdeff0595e928` |
 | `app/electron/launch-bootstrap.cjs` | `e7b2390dbc95f2ae` |
-| `resources/orchestrator/orchestrator.js` (the bundled server) | `6a34e09a2722c87b` |
+| `resources/orchestrator/orchestrator.js` (the bundled server) | `6a34e09a2722c87b`, then `c0267ead585538d3` |
+
+The orchestrator bundle is the one file here that an update replaces on its own: while this page
+was under review the install moved from `6a34e09a2722c87b` to `c0267ead585538d3` (the shell's
+`app.asar` hash above did not change). Every literal in the table below was re-read in the newer
+bundle and every one of them is still there, unchanged — the phases, both budgets, the launch-id
+header, the profile-lock exit code and its stderr line. So the page still describes the current
+build, and the pair of hashes is the record of that check.
 
 The bundle keeps its source paths, which are the fastest way to check these against the real tree:
 `src/server/boot-phase.ts` (the phase list), `src/server/services/orchestrator-lock.ts` (the profile
