@@ -45,6 +45,9 @@ process.env.FREEBUFF_GOD_QUOTA_EXEMPT = 'on'
 // Integration CI imports production secrets. Fixture campaigns must never
 // notify the real ads channel; notification tests inject their own transport.
 delete process.env.FREEBUFF_ADS_SLACK_WEBHOOK_URL
+// Nor send real mail: the onboarding fixture's launch mailed the review inbox
+// on every run. Tests that check mail inject their own `send`.
+delete process.env.RESEND_API_KEY
 // Submission fixtures must never update real Loops contacts or enroll leads.
 process.env.FREEBUFF_ADS_LEAD_NURTURE = 'off'
 // Fixture users, prompts and signups must never reach Vectoral's real feed
