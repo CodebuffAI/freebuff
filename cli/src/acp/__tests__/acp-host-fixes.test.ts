@@ -17,7 +17,10 @@ import {
   AGENT_MODE_TO_ID,
 } from '../../utils/constants'
 import { getCliAdRequestUserAgent } from '../../utils/ad-client-identity'
-import { FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID } from '@codebuff/common/constants/freebuff-models'
+import {
+  FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  FREEBUFF_MIMO_V25_MODEL_ID,
+} from '@codebuff/common/constants/freebuff-models'
 import { useFreebuffModelStore } from '../../state/freebuff-model-store'
 
 import type { FreebuffSessionServerResponse } from '@codebuff/common/types/freebuff-session'
@@ -154,7 +157,7 @@ describe('setSessionMode', () => {
 
 describe('refused admission reported exactly once', () => {
   test('notice + stopReason refusal, no thrown error, no duplicate', async () => {
-    const notices: string[] = []
+    const updates: Array<Record<string, unknown>> = []
     const backend = new FreebuffAcpAgent({
       runTurn: async () => {
         throw new AcpSessionError(
@@ -166,8 +169,11 @@ describe('refused admission reported exactly once', () => {
     })
     const sessionId = backend.newSession('/tmp/project')
     const cx = {
-      notify: async (_method: string, params: { update?: { notice?: string } }) => {
-        if (params.update?.notice) notices.push(params.update.notice)
+      notify: async (
+        _method: string,
+        params: { update: Record<string, unknown> },
+      ) => {
+        updates.push(params.update)
       },
     }
 
@@ -178,8 +184,54 @@ describe('refused admission reported exactly once', () => {
     )
 
     expect(stop).toBe('refusal')
-    expect(notices).toHaveLength(1)
-    expect(notices[0]).toContain('session limit')
+    // Exactly one standard update: an agent message with a text block.
+    expect(updates).toHaveLength(1)
+    expect(updates[0]).toEqual({
+      sessionUpdate: 'agent_message_chunk',
+      content: {
+        type: 'text',
+        text: expect.stringContaining('session limit'),
+      },
+    })
+    expect(JSON.stringify(updates)).not.toContain('"notice"')
+  })
+
+  test('error event is an agent_message_chunk, set apart from streamed text', async () => {
+    const texts: string[] = []
+    const backend = new FreebuffAcpAgent({
+      runTurn: async (request) => {
+        await request.onEvent({ type: 'text', text: 'Partial answer.' } as never)
+        await request.onEvent({
+          type: 'error',
+          message: 'session limit reached',
+        } as never)
+        return { previousRun: null }
+      },
+    })
+    const sessionId = backend.newSession('/tmp/project')
+    const cx = {
+      notify: async (
+        _method: string,
+        params: {
+          update: { sessionUpdate: string; content?: { text?: string } }
+        },
+      ) => {
+        expect(params.update.sessionUpdate).toBe('agent_message_chunk')
+        texts.push(params.update.content?.text ?? '')
+      },
+    }
+
+    await backend.prompt(
+      sessionId,
+      [{ type: 'text', text: 'hello' }] as ContentBlock[],
+      cx as never,
+    )
+
+    expect(texts).toHaveLength(2)
+    expect(texts[0]).toBe('Partial answer.')
+    // Blank-line separated, so it does not read as the model's last sentence.
+    expect(texts[1]).toStartWith('\n\n')
+    expect(texts.join('')).toContain('Partial answer.\n\nFreebuff session limit')
   })
 })
 
@@ -249,6 +301,48 @@ describe('AcpFreebuffSession ensureNow polling', () => {
     expect(calls.some((c) => c.method === 'POST' && c.model !== FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)).toBe(
       true,
     )
+    // The retry names the other model explicitly, and that is what is admitted.
+    expect(calls.filter((c) => c.method === 'POST').map((c) => c.model)).toEqual([
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+      FREEBUFF_MIMO_V25_MODEL_ID,
+    ])
+    expect(admission?.model).toBe(FREEBUFF_MIMO_V25_MODEL_ID)
+  })
+
+  test('model_unavailable on MiMo falls back to DeepSeek', async () => {
+    useFreebuffModelStore.getState().setSelectedModel(FREEBUFF_MIMO_V25_MODEL_ID)
+
+    const posts: Array<string | undefined> = []
+    let clock = 0
+    const session = new AcpFreebuffSession({
+      isFreebuff: true,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms
+      },
+      getToken: () => ({ token: 'test-token' }),
+      callSession: async (method, _token, opts) => {
+        if (method === 'POST') posts.push(opts?.model)
+        if (method === 'POST' && posts.length === 1) {
+          return {
+            status: 'model_unavailable',
+            requestedModel: FREEBUFF_MIMO_V25_MODEL_ID,
+          } as FreebuffSessionServerResponse
+        }
+        return {
+          status: 'active',
+          instanceId: 'inst-2',
+          model: opts?.model,
+          expiresAt: new Date(clock + 3_600_000).toISOString(),
+        } as FreebuffSessionServerResponse
+      },
+    })
+
+    await session.ensure()
+    expect(posts).toEqual([
+      FREEBUFF_MIMO_V25_MODEL_ID,
+      FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+    ])
   })
 
   test('transient 408/429/503 backoff then give up at deadline with ACP error', async () => {

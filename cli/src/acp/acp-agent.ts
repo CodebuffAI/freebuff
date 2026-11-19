@@ -15,7 +15,8 @@
  *   reasoning_delta -> agent_thought_chunk
  *   tool_call       -> tool_call (pending)
  *   tool_result     -> tool_call_update (completed, with output content)
- *   error           -> notice
+ *   error           -> agent_message_chunk (the readable reason; `notice` is
+ *                      not a standard update every host renders)
  *   finish          -> the `session/prompt` response resolves (end_turn)
  *
  * Free-mode session admission is headless here (no TUI poll hook): before each
@@ -92,7 +93,6 @@ export type AcpUpdate =
       status: 'completed' | 'failed'
       content?: Array<{ type: 'content'; content: ContentBlock }>
     }
-  | { sessionUpdate: 'notice'; notice: string }
   | { sessionUpdate: 'current_mode_update'; currentModeId: string }
 
 /** What one turn needs from the SDK run. Injected so the protocol surface can
@@ -414,6 +414,21 @@ export class FreebuffAcpAgent {
       await cx.notify('session/update', { sessionId, update } as never)
     }
 
+    // Whether this turn already streamed assistant text. A reason appended to
+    // it must start a new paragraph, or it reads as the model's last sentence.
+    let streamedText = false
+    const notifyReason = async (message: string) => {
+      const reason = formatFreebuffAcpError(message)
+      await notify({
+        sessionUpdate: 'agent_message_chunk',
+        content: {
+          type: 'text',
+          text: streamedText ? `\n\n${reason}` : reason,
+        },
+      })
+      streamedText = true
+    }
+
     try {
       // Pin the session's chosen model before admission/run. Admission may
       // fall back to another model; defaultRunTurn re-syncs the store to the
@@ -438,11 +453,11 @@ export class FreebuffAcpAgent {
           const mapped = this.eventToUpdate(sessionId, event)
           if (!mapped) return
           if ('error' in mapped) {
-            await notify({
-              sessionUpdate: 'notice',
-              notice: formatFreebuffAcpError(mapped.error),
-            })
+            await notifyReason(mapped.error)
             return
+          }
+          if (mapped.update.sessionUpdate === 'agent_message_chunk') {
+            streamedText = true
           }
           await notify(mapped.update)
         },
@@ -477,12 +492,9 @@ export class FreebuffAcpAgent {
       // A refused admission is not a protocol failure: the editor should keep
       // the session and show why, so the user can fix the account state and
       // send again instead of reconnecting the agent. Report exactly once —
-      // notice + refusal stopReason, never also throw.
+      // agent message + refusal stopReason, never also throw.
       if (error instanceof AcpSessionError) {
-        await notify({
-          sessionUpdate: 'notice',
-          notice: formatFreebuffAcpError(error.message),
-        })
+        await notifyReason(error.message)
         return 'refusal'
       }
       throw error

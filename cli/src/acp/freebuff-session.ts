@@ -16,8 +16,8 @@
  * is how a SIGINT ends up swallowed instead of ending the process.
  */
 import {
-  DEFAULT_FREEBUFF_MODEL_ID,
   FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
+  FREEBUFF_MIMO_V25_MODEL_ID,
 } from '@codebuff/common/constants/freebuff-models'
 
 import {
@@ -131,9 +131,13 @@ function isHardRefusal(status: FreebuffSessionServerResponse['status']): boolean
   )
 }
 
+/** The other model to try when `model` is unavailable. Named ids, not
+ *  DEFAULT_FREEBUFF_MODEL_ID: the default is DeepSeek V4.1 Flash since
+ *  2026-11-08, so using it here made DeepSeek "fall back" to itself. MiMo is
+ *  unlisted but still admitted by the server. */
 function fallbackModelFor(model: string): string {
   return model === FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
-    ? DEFAULT_FREEBUFF_MODEL_ID
+    ? FREEBUFF_MIMO_V25_MODEL_ID
     : FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID
 }
 
