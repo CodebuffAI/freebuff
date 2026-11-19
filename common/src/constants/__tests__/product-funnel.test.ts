@@ -131,6 +131,8 @@ test('each invite placement names its links; the route accepts only email values
     'cli_email',
     'rewards_email',
     'streak_email',
+    'first_preview_email',
+    'first_publish_email',
   ])
 })
 

@@ -41,6 +41,8 @@ export const productFunnelStageSchema = z.enum([
   'turn',
   'response',
   'preview',
+  /** the Publish button's own build and deploy: succeeded or failed */
+  'publish',
 ])
 export const productFunnelStateSchema = z.enum([
   'shown',
@@ -115,6 +117,16 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
   rewards: Object.freeze({ link: 'rewards_link', email: 'rewards_email' }),
   /** The streak milestone dialog (docs/referrals.md). */
   streak: Object.freeze({ link: 'streak_link', email: 'streak_email' }),
+  /** The invite dialog after the first real look at a site preview (`referral_moments_2026_11`). */
+  first_preview: Object.freeze({
+    link: 'first_preview_link',
+    email: 'first_preview_email',
+  }),
+  /** The invite dialog after the first finished site publish (`referral_moments_2026_11`). */
+  first_publish: Object.freeze({
+    link: 'first_publish_link',
+    email: 'first_publish_email',
+  }),
 })
 /**
  * The inviter's own link in the "friend started coding" lifecycle email
