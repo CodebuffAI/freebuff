@@ -50,6 +50,36 @@ export interface FreebuffRecentUsage {
   totalTokens: number
 }
 
+/** One Pacific day's free-mode tokens (input + output). */
+export interface FreebuffTokenDay {
+  /** `YYYY-MM-DD`, a PACIFIC date (`freebuff_token_day`'s key). */
+  date: string
+  tokens: number
+}
+
+/**
+ * Every free-mode token the account has used, from `freebuff_token_day`
+ * (one row per Pacific day, kept for good) plus the days the nightly roll
+ * has not reached yet, read live. See docs/freebuff-account-hub.md.
+ */
+export interface FreebuffLifetimeTokens {
+  /** input + output over the account's whole recorded history. */
+  totalTokens: number
+  /** Cache-inclusive, as everywhere: cache reads are inside this. */
+  inputTokens: number
+  outputTokens: number
+  /** What those tokens cost Freebuff at its providers, in USD: roughly what
+   *  the same use would have cost on the API, shown as the user's saving. */
+  costUsd: number
+  /** The day with the most tokens, ever; null before the first. */
+  peakDay: FreebuffTokenDay | null
+  /** The first Pacific day with tokens; null before the first. */
+  firstDate: string | null
+  /** Days with tokens inside the activity-map window, oldest first. Pacific
+   *  dates; quiet days are absent. */
+  days: FreebuffTokenDay[]
+}
+
 export interface FreebuffUsageSessionsByModel {
   model: string
   sessions: number
@@ -75,6 +105,12 @@ export interface FreebuffUsageSummary {
   recent: FreebuffRecentUsage | null
   /** Sessions admitted per model over the last 30 days, busiest first. */
   sessionsByModel: FreebuffUsageSessionsByModel[]
+  /**
+   * Lifetime tokens and per-day tokens for the map. Absent from a server
+   * that predates it; null when the read failed or timed out (the UI says so
+   * rather than showing a zero).
+   */
+  lifetime?: FreebuffLifetimeTokens | null
   /**
    * The account's own charges and returns, newest first, over a short window.
    * Optional: absent from a server that predates it, and an empty array from

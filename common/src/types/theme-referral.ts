@@ -75,3 +75,10 @@ export type ReferralInviteAction =
   /** The streak milestone dialog's Post on X and Share on LinkedIn. */
   | 'posted_x'
   | 'posted_linkedin'
+  /** The year card's other platforms (Settings → Usage → Share). */
+  | 'posted_facebook'
+  | 'posted_whatsapp'
+  /** The year card's image handed to the share sheet (Instagram on a phone). */
+  | 'shared_image'
+  /** The year card's image saved. */
+  | 'downloaded'

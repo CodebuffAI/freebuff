@@ -127,6 +127,8 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
     link: 'first_publish_link',
     email: 'first_publish_email',
   }),
+  /** Settings → Usage → Share, the "year in Freebuff" card's link (docs/freebuff-account-hub.md). */
+  year: Object.freeze({ link: 'year_link', email: 'year_email' }),
 })
 /**
  * The inviter's own link in the "friend started coding" lifecycle email
