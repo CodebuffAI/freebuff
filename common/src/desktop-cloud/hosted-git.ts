@@ -41,4 +41,6 @@ export type HostedGitResponses = {
 }
 export type HostedGitHost = {
   request<T extends HostedGitRequest>(input: T): Promise<HostedGitResponses[T['operation']]>
+  /** The shell passes `pullRequest` requests; builds through 0.0.204 omit it and refuse them. */
+  pullRequest?: true
 }
