@@ -379,6 +379,12 @@ export type HostedWorkspaceHost = {
     supportsOpener?: boolean
     worktreeSourceBranch?: string | null
     progress?: HostedRuntimeProgress
+    /**
+     * A move that started and did not finish (its request failed, or Desktop quit). Another choice
+     * is refused until it finishes: a request for this location and branch finishes it. Builds
+     * before 11-18 omit it.
+     */
+    pendingMove?: { location: 'local' | 'worktree' | 'cloud'; sourceBranch?: string }
     /** Display-only metadata resolved by native code for the authenticated chat. */
     workspace?: {
       projectName: string
