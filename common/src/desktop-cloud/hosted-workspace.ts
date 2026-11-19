@@ -276,6 +276,15 @@ export type HostedWorkspaceHost = {
     check(): Promise<import('./desktop-update').UpdateCheckResult>
     onCard(listener: (card: import('./desktop-update').UpdateCard | null) => void): () => void
   }
+  /**
+   * Settings > General > Discord: the "Playing Freebuff" Rich Presence switch
+   * (freebuff-desktop/electron/discord-presence.cjs). `null` when the build has
+   * no presence. Older builds omit the key, and the page hides the switch.
+   */
+  discordPresence?: {
+    enabled(): Promise<boolean | null>
+    setEnabled(enabled: boolean): Promise<boolean | null>
+  }
   /** Open a reviewed HTTP(S) authorization link in the system browser. */
   openExternal?(url: string): Promise<void>
   /** Text editing is restricted to this window and native's allowlisted commands. */
