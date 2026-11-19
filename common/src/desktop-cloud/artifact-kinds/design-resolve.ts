@@ -45,6 +45,15 @@ export function breakpointOf(board: DesignBoard, breakpointId: string | null | u
   return board.breakpoints?.find((entry) => entry.id === breakpointId) ?? null
 }
 
+export type DesignWidthPreview = { boardId: string; width: number }
+
+/** Use the widest authored layout that fits, or the narrowest when all are wider. */
+export function breakpointAtWidth(board: DesignBoard, width: number): string | null {
+  const widths = [{ id: null, w: board.w }, ...(board.breakpoints ?? [])]
+  const fitting = widths.filter((entry) => entry.w <= width).sort((a, b) => b.w - a.w)
+  return (fitting[0] ?? widths.sort((a, b) => a.w - b.w)[0]).id
+}
+
 /** Every breakpoint id any board declares, in first-seen order (the editor's switcher). */
 export function designBreakpoints(design: Design): Breakpoint[] {
   const seen = new Map<string, Breakpoint>()
@@ -242,9 +251,9 @@ function materializeNode(node: DesignNode, ctx: ResolveContext, parent: { from: 
  * the `responsive`/`textStyle`/`fillStyle` keys dropped). A board that does not declare the
  * breakpoint draws at its base size. For drawing and checking only: never stored.
  */
-export function materializeBoard(board: DesignBoard, styles: DesignStyles | undefined, breakpointId: string | null | undefined): DesignBoard {
+export function materializeBoard(board: DesignBoard, styles: DesignStyles | undefined, breakpointId: string | null | undefined, previewWidth?: number): DesignBoard {
   const breakpoint = breakpointOf(board, breakpointId)
-  const w = breakpoint?.w ?? board.w
+  const w = previewWidth ?? breakpoint?.w ?? board.w
   const h = breakpoint?.h ?? board.h
   const ctx: ResolveContext = { styles, breakpoint: breakpoint?.id ?? null }
   const root = materializeNode(board.root, ctx, null, { from: { w: board.w, h: board.h }, to: { w, h } }) as FrameNode
@@ -256,8 +265,17 @@ export function materializeBoard(board: DesignBoard, styles: DesignStyles | unde
  * their values, `variables` winning: a prototype's state; design-logic.ts). Main components keep
  * their style refs for instances.
  */
-export function materializeDesign(design: Design, breakpointId: string | null | undefined, variables?: Readonly<Record<string, VariableValue>>): Design {
-  const boards = design.boards.map((board) => materializeBoard(board, design.styles, breakpointId))
+export function materializeDesign(
+  design: Design,
+  breakpointId: string | null | undefined,
+  variables?: Readonly<Record<string, VariableValue>>,
+  preview?: DesignWidthPreview | null,
+): Design {
+  const boards = design.boards.map((board) =>
+    preview?.boardId === board.id
+      ? materializeBoard(board, design.styles, breakpointAtWidth(board, preview.width), preview.width)
+      : materializeBoard(board, design.styles, breakpointId),
+  )
   if (!hasLogic(design)) return { ...design, boards }
   const scope = logicScope(design, variables, collectMains(design.boards))
   return { ...design, boards: boards.map((board) => materializeBoardLogic(board, scope)) }

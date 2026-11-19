@@ -369,6 +369,13 @@ const dashboard = (): any => ({
 })
 
 describe('data', () => {
+  test('resetting one design setting and adding another both apply', () => {
+    const base = { ...dashboard(), appearance: { palette: 'cool' } }
+    const mine = dashboard()
+    const theirs = { ...base, appearance: { ...base.appearance, font: 'serif' } }
+    expect(merged(merge('data', base, mine, theirs)).appearance).toEqual({ font: 'serif' })
+  })
+
   test('different blocks, datasets and filters edited merge; the same block edited differently conflicts', () => {
     const base = dashboard()
     const mine = clone(base)

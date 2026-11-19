@@ -431,7 +431,7 @@ export function kpiResult(dashboard: Dashboard, block: KpiBlock, state: FilterSt
         previousKey === null ? '' : `vs ${formatKey(previousKey, sparkType ?? 'string', true)}`
     } else {
       base = block.delta.vs
-      defaultLabel = `vs ${formatValue(block.delta.vs, block.format, dashboard.currency)}`
+      defaultLabel = `vs ${formatValue(block.delta.vs, block.format, dashboard.currency, block.percentDigits)}`
     }
   }
 
@@ -923,7 +923,7 @@ export function formatPercent(fraction: number): string {
   return `${trimNumber(fraction * 100, 1)}%`
 }
 
-export function formatValue(value: number | null | undefined, format: ValueFormat, currency = 'USD'): string {
+export function formatValue(value: number | null | undefined, format: ValueFormat, currency = 'USD', percentDigits?: number): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return EMPTY
   switch (format) {
     case 'integer':
@@ -950,7 +950,7 @@ export function formatValue(value: number | null | undefined, format: ValueForma
       }).format(value)
     }
     case 'percent':
-      return formatPercent(value)
+      return percentDigits === undefined ? formatPercent(value) : `${trimNumber(value * 100, percentDigits)}%`
     case 'number':
       return trimNumber(value, Math.abs(value) >= 100 ? 0 : 2)
   }
@@ -1142,13 +1142,13 @@ export function describeBlock(dashboard: Dashboard, block: DataBlock, state: Fil
   switch (block.kind) {
     case 'kpi': {
       const r = kpiResult(dashboard, block, state)
-      body = `${block.label}: ${formatValue(r.value, block.format, dashboard.currency)}`
+      body = `${block.label}: ${formatValue(r.value, block.format, dashboard.currency, block.percentDigits)}`
       if (r.delta) body += ` (${r.delta.text} ${r.delta.label}, ${r.delta.direction})`
       const rule = firstRule(block.rules, r.value)
       if (rule) body += `. Flagged: ${ruleWord(rule)}`
       if (r.trend.length > 1) {
         body += `. Trend: ${r.trend
-          .map((p) => formatValue(p.value, block.format, dashboard.currency))
+          .map((p) => formatValue(p.value, block.format, dashboard.currency, block.percentDigits))
           .join(', ')}`
       }
       body += `. ${explainKpi(dashboard, block, state)}`
@@ -1543,7 +1543,7 @@ export function dashboardReadout(stored: Dashboard, now: number, limit = READOUT
       const r = kpiResult(dashboard, block, state)
       const rule = firstRule(block.rules, r.value)
       lines.push(
-        `kpi ${block.id} = ${formatValue(r.value, block.format, dashboard.currency)}${r.value === null ? '' : ` (raw ${Number(r.value.toPrecision(12))})`}${r.delta ? `, ${r.delta.text} ${r.delta.label}` : ''}${rule ? `, flagged ${ruleWord(rule)}` : ''}${r.period !== null ? `, period ${r.period}` : ''}, ${r.rowCount} rows`,
+        `kpi ${block.id} = ${formatValue(r.value, block.format, dashboard.currency, block.percentDigits)}${r.value === null ? '' : ` (raw ${Number(r.value.toPrecision(12))})`}${r.delta ? `, ${r.delta.text} ${r.delta.label}` : ''}${rule ? `, flagged ${ruleWord(rule)}` : ''}${r.period !== null ? `, period ${r.period}` : ''}, ${r.rowCount} rows`,
       )
     } else if (block.kind === 'chart') {
       const data = chartData(dashboard, block, state)

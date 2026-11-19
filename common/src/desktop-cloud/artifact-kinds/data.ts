@@ -471,6 +471,7 @@ export const kpiBlockSchema = z
     delta: deltaSchema.optional(),
     sparkline: id.optional(),
     format: formatSchema,
+    percentDigits: z.number().int().min(0).max(4).optional(),
     sourceId: id,
     note: z.string().max(200).optional(),
     span: spanSchema.optional(),
@@ -600,6 +601,16 @@ const dashboardShape = z
     subtitle: z.string().max(300).optional(),
     asOf: z.string().regex(ISO_DATE_TIME, 'an ISO date or date-time').optional(),
     layout: z.enum(['grid', 'story']),
+    appearance: z
+      .object({
+        palette: z.enum(['neutral', 'cool', 'warm']).optional(),
+        background: z.literal('raised').optional(),
+        font: z.literal('serif').optional(),
+        corners: z.enum(['square', 'round']).optional(),
+        textSize: z.literal('large').optional(),
+      })
+      .strict()
+      .optional(),
     currency: z
       .string()
       .regex(/^[A-Z]{3}$/, 'an ISO 4217 code like USD')
@@ -927,6 +938,7 @@ export const DATA_GUIDE = `Data (kind "data"): a dashboard, metrics page, KPI tr
 
 { "version": 1, "title": "Weekly product metrics", "subtitle"?: one line, "asOf"?: ISO date or date-time the data was pulled,
   "layout": "grid" (dashboard) | "story" (one column, text between charts), "currency"?: ISO 4217 code (default USD),
+  "appearance"?: { "palette"?: "neutral" | "cool" | "warm", "background"?: "raised", "font"?: "serif", "corners"?: "square" | "round", "textSize"?: "large" },
   "sources": [{ "id": "wh", "label": "Warehouse events table", "detail"?: "how it was pulled", "window"?: "Sep 21 - Nov 14, 2026 (PT)" }] (1-${MAX_SOURCES}),
   "datasets": [{ "id": "weekly", "sourceId": "wh", "title"?: "...", "columns": [{ "key": "week", "label": "Week", "type": "date" }, ...] (1-${MAX_COLUMNS}), "rows": [{ "week": "2026-11-09", "users": 48210 }] (<= ${MAX_ROWS_PER_DATASET}) }] (<= ${MAX_DATASETS}),
   "blocks": [Block, ...] (1-${MAX_BLOCKS}, in page order), "filters"?: [Filter, ...] (<= ${MAX_FILTERS}) }

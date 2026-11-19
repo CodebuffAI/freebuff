@@ -97,6 +97,7 @@ export function resolveInstance(
     ...own,
     w: instance.w ?? main.w,
     h: instance.h ?? main.h,
+    margin: instance.margin ?? main.margin,
     grow: instance.grow ?? main.grow,
     minW: instance.minW ?? main.minW,
     maxW: instance.maxW ?? main.maxW,

@@ -10,6 +10,7 @@ import {
   TEXT_ALIGNS,
   TEXT_COLORS,
   TEXT_SIZES,
+  isSlideColor,
   type Deck,
   type DeckTransition,
   type Slide,
@@ -129,7 +130,7 @@ export function deleteSlide(deck: Deck, id: string): { deck: Deck; selectId: str
   const index = deck.slides.findIndex((slide) => slide.id === id)
   if (index === -1 || deck.slides.length <= 1) return { deck, selectId: id }
   const slides = deck.slides.filter((slide) => slide.id !== id)
-  return { deck: { ...deck, slides }, selectId: slides[Math.min(index, slides.length - 1)].id }
+  return { deck: afterSlideRemoval(deck, slides), selectId: slides[Math.min(index, slides.length - 1)].id }
 }
 
 /** Move the slide at `from` so it lands at index `to` (both clamped). */
@@ -298,16 +299,48 @@ export function slideTransition(deck: Pick<Deck, 'transition' | 'slides'>, index
 
 /** Set (or, with `undefined`, clear back to the deck's) one slide's transition. */
 export function setSlideTransition(deck: Deck, id: string, transition: DeckTransition | undefined): Deck {
+  return setSlideField(deck, id, 'transition', transition)
+}
+
+/** Set a custom slide background, or fall back to the deck's palette. */
+export function setSlideBackground(deck: Deck, id: string, background: string | undefined): Deck {
+  if (background !== undefined && !isSlideColor(background)) return deck
+  return setSlideField(deck, id, 'background', background)
+}
+
+/** Keep a slide editable while omitting it during playback. */
+export function setSlideSkipped(deck: Deck, id: string, skipped: boolean): Deck {
+  return setSlideField(deck, id, 'skipped', skipped || undefined)
+}
+
+/** Choose the slide displayed on the deck's card, or use its first slide. */
+export function setDeckThumbnail(deck: Deck, id: string | undefined): Deck {
+  if (id === deck.thumbnailSlideId || (id !== undefined && !deck.slides.some((slide) => slide.id === id))) return deck
+  const next = { ...deck }
+  if (id === undefined) delete next.thumbnailSlideId
+  else next.thumbnailSlideId = id
+  return next
+}
+
+function setSlideField<Key extends 'transition' | 'background' | 'skipped'>(
+  deck: Deck, id: string, field: Key, value: Slide[Key],
+): Deck {
   const index = deck.slides.findIndex((slide) => slide.id === id)
   if (index === -1) return deck
   const current = deck.slides[index]
-  if (current.transition === transition) return deck
+  if (current[field] === value) return deck
   const next: Slide = { ...current }
-  if (transition) next.transition = transition
-  else delete next.transition
+  if (value === undefined) delete next[field]
+  else next[field] = value
   const slides = [...deck.slides]
   slides[index] = next
   return { ...deck, slides }
+}
+
+function afterSlideRemoval(deck: Deck, slides: Slide[]): Deck {
+  const next = { ...deck, slides }
+  if (next.thumbnailSlideId && !slides.some((slide) => slide.id === next.thumbnailSlideId)) delete next.thumbnailSlideId
+  return next
 }
 
 // ---------------------------------------------------------------------------
@@ -322,7 +355,7 @@ export function deleteSlides(deck: Deck, ids: readonly string[]): { deck: Deck; 
   // Never empty: keep the first selected slide.
   if (!slides.length) slides = [deck.slides[first]]
   if (slides.length === deck.slides.length) return { deck, selectId: deck.slides[first].id }
-  return { deck: { ...deck, slides }, selectId: slides[Math.min(first, slides.length - 1)].id }
+  return { deck: afterSlideRemoval(deck, slides), selectId: slides[Math.min(first, slides.length - 1)].id }
 }
 
 /** Copy the slides with these ids, as one block after the last of them, in deck order. */

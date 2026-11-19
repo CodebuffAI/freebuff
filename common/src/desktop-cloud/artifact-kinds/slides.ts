@@ -20,6 +20,7 @@
  *     "tokens": { "name": "Acme", "colors": { "accent": "#0057ff" }, "spacing": "roomy" },  // optional design system
  *     "footer": "Acme · Confidential",       // optional, <= 120 chars; absent: the deck title, "": none
  *     "slideNumbers": false,                 // optional; absent: numbers shown
+ *     "thumbnailSlideId": "cover",          // optional: which slide appears on the deck card
  *     "slides": [ Slide, ... ]               // 1-200 slides, in presenting order
  *   }
  *
@@ -43,6 +44,8 @@
  *     "build": "bullets",       // optional: present mode reveals top-level bullets one per click ("all": nested too)
  *     "sectionDescription": "…", // optional, <= 300 chars, with `section`: what that section covers
  *     "transition": "slide",    // optional: how present mode arrives at this slide (absent: the deck's)
+ *     "background": "#222423", // optional: this slide's canvas colour (absent: deck theme)
+ *     "skipped": true,         // optional: skip during playback
  *     "elements": [ Element ]   // optional, <= 40: free-position text boxes, shapes, lines, arrows,
  *                               // images above the layout, back to front (see SLIDES_GUIDE)
  *   }
@@ -74,8 +77,7 @@
  *   { "type": "bar" | "line" | "area", "title"?: string, "x": "<row key for the x axis>",
  *     "series": [{ "key": "<row key>", "label": "<legend label>" }],   // 1-8, unique, not x
  *     "data": [{ "<x>": "Week 1", "<series key>": 40 }, ...] }           // 1-500 rows
- *   Every row has the x key; series values are finite numbers. Exactly the
- *   rules of `parseChartSpec` in doc/DocChart.tsx (a test keeps them in step).
+ *   Every row has the x key; series values are finite numbers. Docs and Slides share chartSpecSchema.
  *
  * Editing: rewrite one slide by id (`replaceSlide`), reorder with the full id
  * list (`reorderSlides`), add or remove one at a time (`slides-ops.ts`). Always
@@ -158,6 +160,7 @@ export type TextAlign = (typeof TEXT_ALIGNS)[number]
 /** Text colours, each a role of the deck's theme (never a raw value): ink, soft ink, accent. */
 export const TEXT_COLORS = ['ink', 'soft', 'accent'] as const
 export type TextColor = (typeof TEXT_COLORS)[number]
+export const ELEMENT_TEXT_COLORS = [...TEXT_COLORS, 'paper'] as const
 
 /**
  * Present-mode builds: `bullets` reveals a slide's top-level list items one per click; `all`
@@ -182,7 +185,7 @@ export { FONT_IDS, FONT_STACKS, type FontId }
 export const SLIDE_WEB_FONTS = ['google-sans', 'inter', 'jetbrains-mono'] as const
 export type SlideWebFont = (typeof SLIDE_WEB_FONTS)[number]
 export const SLIDE_WEB_FONT_STACKS: Record<SlideWebFont, { label: string; stack: string; face: string }> = {
-  'google-sans': { label: 'Google Sans (web)', stack: 'var(--font-sans), system-ui, sans-serif', face: 'Google Sans' },
+  'google-sans': { label: 'Google Sans (web)', stack: 'var(--font-google-sans, var(--font-sans)), system-ui, sans-serif', face: 'Google Sans' },
   inter: { label: 'Inter (web)', stack: 'var(--font-inter), system-ui, sans-serif', face: 'Inter' },
   'jetbrains-mono': { label: 'JetBrains Mono (web)', stack: 'var(--font-mono), ui-monospace, monospace', face: 'JetBrains Mono' },
 }
@@ -327,6 +330,7 @@ const elementBase = {
 
 const HEX = /^#[0-9a-fA-F]{6}$/
 const hex = z.string().regex(HEX, 'a #rrggbb colour')
+export const isSlideColor = (value: string): boolean => HEX.test(value)
 const httpsUrl = z
   .string()
   .min(1)
@@ -338,14 +342,21 @@ const elementText = {
   text: z.string().max(LIMITS.elementText).optional(),
   size: z.number().finite().min(ELEMENT_BOUNDS.minFont).max(ELEMENT_BOUNDS.maxFont).optional(),
   align: z.enum(TEXT_ALIGNS).optional(),
-  color: z.enum(TEXT_COLORS).optional(),
+  color: z.enum(ELEMENT_TEXT_COLORS).optional(),
+  font: z.enum(DECK_FONT_IDS).optional(),
   bold: z.boolean().optional(),
 }
 
 const strokeWidth = z.number().finite().min(0).max(ELEMENT_BOUNDS.maxStroke).optional()
 
 export const slideElementSchema = z.discriminatedUnion('type', [
-  z.strictObject({ ...elementBase, type: z.literal('text'), ...elementText, fill: elementColor.optional() }),
+  z.strictObject({
+    ...elementBase,
+    type: z.literal('text'),
+    ...elementText,
+    fill: elementColor.optional(),
+    format: z.literal('markdown').optional(),
+  }),
   z.strictObject({
     ...elementBase,
     type: z.literal('rect'),
@@ -353,6 +364,7 @@ export const slideElementSchema = z.discriminatedUnion('type', [
     fill: elementColor.optional(),
     stroke: elementColor.optional(),
     strokeWidth,
+    radius: z.number().finite().min(0).max(ELEMENT_BOUNDS.maxSize / 2).optional(),
   }),
   z.strictObject({
     ...elementBase,
@@ -440,6 +452,8 @@ export const slideSchema = z
     sectionDescription: z.string().min(1).max(LIMITS.sectionDescription).optional(),
     // How present mode arrives at this slide; absent: the deck's transition.
     transition: z.enum(DECK_TRANSITIONS).optional(),
+    background: hex.optional(),
+    skipped: z.boolean().optional(),
     // Free-position elements above the layout, back to front.
     elements: z.array(slideElementSchema).max(LIMITS.elements).optional(),
     style: z
@@ -510,6 +524,7 @@ export const deckSchema = z
     footer: z.string().max(LIMITS.footer).optional(),
     // Slide numbers in the footer; absent means shown.
     slideNumbers: z.boolean().optional(),
+    thumbnailSlideId: z.string().min(1).max(LIMITS.idLength).regex(SLIDE_ID).optional(),
     slides: z.array(slideSchema).min(1).max(LIMITS.slides),
   })
   .superRefine((deck, ctx) => {
@@ -524,6 +539,9 @@ export const deckSchema = z
       }
       seen.add(slide.id)
     })
+    if (deck.thumbnailSlideId && !seen.has(deck.thumbnailSlideId)) {
+      ctx.addIssue({ code: 'custom', path: ['thumbnailSlideId'], message: 'the thumbnail must name a slide in the deck' })
+    }
   })
 
 export type Slide = z.infer<typeof slideSchema>
@@ -562,6 +580,7 @@ export const SLIDES_GUIDE = `Slides (kind "slides"): a deck is ONE JSON object, 
   "fonts"?: { "heading"?: font, "body"?: font } (font: ${DECK_FONT_IDS.map((id) => `"${id}"`).join(' | ')}; the first ${FONT_IDS.length} are system stacks, the last ${SLIDE_WEB_FONTS.length} the app's own web fonts; absent means the app font),
   "tokens"?: { "name"?: text <= ${LIMITS.tokenName}, "colors"?: { "ink"?, "soft"?, "accent"?, "paper"?, "tint"? } (each "#rrggbb": text, secondary text, accent, slide background, light fill), "spacing"?: "compact" | "normal" | "roomy" } (a design system over the theme; install one with installDesignSystem),
   "footer"?: text <= ${LIMITS.footer} on every content slide (absent: the deck title; "": no footer text), "slideNumbers"?: false hides the numbers,
+  "thumbnailSlideId"?: the slide used on the deck card (absent: the first slide),
   "slides": [Slide, ...] (1-${LIMITS.slides}, in presenting order) }
 
 Slide: { "id": "cover" (unique; letters, digits, "-" or "_", starting with a letter or digit, <= ${LIMITS.idLength} chars; keep ids stable, edits address slides by id),
@@ -574,13 +593,14 @@ Slide: { "id": "cover" (unique; letters, digits, "-" or "_", starting with a let
   "build"?: "bullets" | "all" (present mode reveals the top-level bullets one per click; "all" every list item, nested ones too; reduced motion shows them without animation),
   "sectionDescription"?: plain text <= ${LIMITS.sectionDescription}, only with "section": what that section covers (the grid view shows it),
   "transition"?: "none" | "fade" | "slide" | "push" | "magic" (how present mode arrives at THIS slide; absent: the deck's "transition"),
+  "background"?: "#rrggbb" (this slide's canvas colour; absent: deck theme), "skipped"?: true skips the slide during playback,
   "elements"?: [Element, ...] (<= ${LIMITS.elements}; free-position boxes drawn above the layout, back to front) }
 Element (positions in canvas pixels: 960x540, or 720x540 for 4:3; x/y may go off the canvas, which clips it):
   common: { "id": unique on the slide (same rules as slide ids), "type": see below, "x", "y", "w", "h" (w, h >= 1), "rotation"?: degrees clockwise about the centre,
     "build"?: 1-${LIMITS.elements} (present mode: it appears on that click, after the bullets; equal numbers appear together; absent: with the slide),
     "animate"?: ${ELEMENT_ANIMATIONS.map((name) => `"${name}"`).join(' | ')} (how it arrives), "readOrder"?: 1-${LIMITS.elements} (its place in what a screen reader reads; number every element on a busy slide) }
-  "text": "text"?: plain text <= ${LIMITS.elementText} (newlines kept, never Markdown or links), "size"?: px ${ELEMENT_BOUNDS.minFont}-${ELEMENT_BOUNDS.maxFont} (default 24), "align"?: "start" | "center" | "end", "color"?: "ink" | "soft" | "accent", "bold"?: true, "fill"?: colour
-  "rect" | "ellipse": "fill"?, "stroke"?: colour, "strokeWidth"?: 0-${ELEMENT_BOUNDS.maxStroke}, and an optional label with the text fields above
+  "text": "text"?: plain text <= ${LIMITS.elementText} (or Markdown with "format": "markdown"), "size"?: px ${ELEMENT_BOUNDS.minFont}-${ELEMENT_BOUNDS.maxFont} (default 24), "align"?: "start" | "center" | "end", "color"?: "ink" | "soft" | "accent" | "paper", "font"?: font, "bold"?: true, "fill"?: colour
+  "rect" | "ellipse": "fill"?, "stroke"?: colour, "strokeWidth"?: 0-${ELEMENT_BOUNDS.maxStroke}, and an optional plain-text label with the same style fields; "rect" also accepts "radius" for rounded corners in canvas pixels
   "line" | "arrow": drawn across the box at mid-height, left to right (the arrowhead at the right); rotate it for other angles. "stroke"?, "strokeWidth"?
   "image": "src" (same rule as image.src), "alt", "fit"?: "contain" | "cover"
   "icon": "icon": one of ${SLIDE_ICONS.map((name) => `"${name}"`).join(', ')}; "color"?: colour (default accent), "label"?: what it means for a screen reader (absent: decorative)

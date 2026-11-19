@@ -1,4 +1,4 @@
-import type { ShapeNode } from './design'
+import type { ShapeNode, StrokePattern } from './design'
 
 /**
  * Vector shape geometry: an SVG path (`d`) for a shape's kind inside its w×h box. The renderer,
@@ -6,6 +6,14 @@ import type { ShapeNode } from './design'
  */
 
 const r = (value: number) => Math.round(value * 100) / 100
+
+/** Rounded SVG caps turn a very short dash into a dot. */
+export function strokeDashArray(pattern: StrokePattern | undefined, width: number): string | undefined {
+  if (width <= 0) return undefined
+  if (pattern === 'dashed') return `${3 * width} ${2 * width}`
+  if (pattern === 'dotted') return `0.01 ${2 * width}`
+  return undefined
+}
 
 /** The shape kinds drawn as an SVG path rather than a CSS box. */
 export const VECTOR_KINDS = ['arrow', 'polygon', 'star', 'path'] as const

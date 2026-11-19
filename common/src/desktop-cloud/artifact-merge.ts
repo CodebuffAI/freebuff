@@ -1120,8 +1120,8 @@ function mergeSheet(base0: Obj, mine0: Obj, theirs0: Obj, ctx: MergeContext, und
 }
 
 const tokensUnit = unit('tokens', 'design tokens')
-const mergeSlides: JsonMerger = (base, mine, theirs, ctx) =>
-  mergeFields(base, mine, theirs, ctx, topUnit, {
+const mergeSlides: JsonMerger = (base, mine, theirs, ctx) => {
+  const deck = mergeFields(base, mine, theirs, ctx, topUnit, {
     // A design-system token set: each colour role, the spacing and the name its own unit.
     tokens: objectField(tokensUnit, { colors: objectField(tokensUnit) }),
     slides: keyedListField({
@@ -1140,6 +1140,13 @@ const mergeSlides: JsonMerger = (base, mine, theirs, ctx) =>
         }),
     }),
   })
+  // A concurrent deletion can remove the slide the other editor chose as the thumbnail.
+  if (typeof deck.thumbnailSlideId === 'string' && Array.isArray(deck.slides)
+    && !deck.slides.some((slide) => isObj(slide) && slide.id === deck.thumbnailSlideId)) {
+    delete deck.thumbnailSlideId
+  }
+  return deck
+}
 
 // Whiteboard: elements keyed by id, each merged key by key (a move on one side and a text edit on
 // the other both land); the list order is the layer order. Deleting an element removes the arrows
@@ -1232,8 +1239,16 @@ const dataList = (field: string, noun: string) =>
     whole: unit(field, field),
   })
 
+const dataAppearance: FieldMerger = (base, mine, theirs, ctx) => {
+  const sides = asObjects(base, mine, theirs)
+  if (!sides) return ABSENT
+  const merged = mergeFields(...sides, ctx, (key) => unit(`appearance/${key}`, `dashboard design ${key}`))
+  return Object.keys(merged).length ? merged : ABSENT
+}
+
 const mergeData: JsonMerger = (base, mine, theirs, ctx) =>
   mergeFields(base, mine, theirs, ctx, topUnit, {
+    appearance: dataAppearance,
     sources: dataList('sources', 'source'),
     datasets: dataList('datasets', 'dataset'),
     blocks: dataList('blocks', 'block'),

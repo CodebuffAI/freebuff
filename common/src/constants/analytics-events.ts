@@ -366,6 +366,7 @@ export enum AnalyticsEvent {
   // web | desktop; `streak`: the current streak in days (null before the
   // streak loaded). Measures who looks at the streak in streak_classic_2026_11,
   // whose exposure is only the streak's fetch.
+  FREEBUFF_ARTIFACT_USAGE = 'freebuff.artifact_usage',
   FREEBUFF_STREAK_OPENED = 'freebuff.streak.opened',
   // The workspace's Integrations page, to rank INTEGRATION_CATEGORIES by what
   // people want. `action`: category_opened (`category`) | connect_clicked

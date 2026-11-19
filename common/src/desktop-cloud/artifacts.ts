@@ -15,6 +15,7 @@ import { z } from 'zod/v4'
  *  - `PUT  artifacts/:id/template` `ArtifactTemplateRequest` → `ArtifactTemplateResponse` (owner only)
  *  - `POST artifacts` `ArtifactCreateRequest` → `ArtifactResponse`
  *  - `GET  artifacts/:id` → `ArtifactResponse`
+ *  - `GET  artifacts/:id?metadata=1` → `ArtifactLabelResponse` (a restored tab's label)
  *  - `PUT  artifacts/:id` `ArtifactSaveRequest` → `ArtifactResponse`, or 409 `ArtifactConflict`
  *  - `PATCH artifacts/:id` `ArtifactRenameRequest` → `{ artifact }`
  *  - `DELETE artifacts/:id` → `{ deleted: true }`
@@ -62,6 +63,20 @@ export const ARTIFACT_KINDS = [
 ] as const
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number]
 export const artifactKindSchema = z.enum(ARTIFACT_KINDS)
+
+/**
+ * Artifact kinds offered by the workspace gallery and the agent's creation tool: all six,
+ * everywhere. (`publicOrigin` is what callers pass from the days Docs alone was offered outside
+ * staging; it no longer changes the answer.)
+ */
+export function workspaceArtifactKinds(_publicOrigin?: string): readonly ArtifactKind[] {
+  return ARTIFACT_KINDS
+}
+
+/** Design authoring, and its compact canvas, are available wherever artifacts are. */
+export function canCreateDesignArtifact(_publicOrigin?: string): boolean {
+  return true
+}
 
 export const ARTIFACT_BODY_FORMATS = ['markdown', 'json'] as const
 export type ArtifactBodyFormat = (typeof ARTIFACT_BODY_FORMATS)[number]
@@ -280,7 +295,15 @@ export type ArtifactResponse = {
  * accepts (`artifacts/shared/:token/accept`), through its own access, never through the token.
  */
 export type ArtifactSharedInviteResponse = { via: 'invite'; kind: ArtifactKind }
+/**
+ * `artifacts/shared/:token/label`, with no sign-in: what the link's sign-in prompt may name. A
+ * live share link answers its artifact's kind and title (the token is the link's whole secret,
+ * and whoever holds it reads the artifact once signed in); a live invite email's token answers
+ * the kind alone. Never the body, an id, or who owns it.
+ */
+export type ArtifactSharedLabelResponse = { kind: ArtifactKind; title?: string }
 export type ArtifactListResponse = { artifacts: ArtifactMeta[] }
+export type ArtifactLabelResponse = { artifact: Pick<ArtifactMeta, 'id' | 'kind' | 'title' | 'revision'> }
 /** A 409 from save: someone saved first. Re-read, reapply, retry. */
 export type ArtifactConflict = { error: string; currentRevision: number }
 

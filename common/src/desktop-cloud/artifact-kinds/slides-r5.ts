@@ -22,7 +22,7 @@ import {
   type TokenColorRole,
 } from './slides'
 import { clampBox, uniqueElementId, type Box } from './slides-elements'
-import { uniqueSlideId } from './slides-ops'
+import { setDeckThumbnail, uniqueSlideId } from './slides-ops'
 
 const round = (value: number) => Math.round(value * 10) / 10
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
@@ -54,6 +54,9 @@ function reflowElement(element: SlideElement, factor: number): SlideElement {
   const next = { ...element, ...box } as SlideElement & { size?: number }
   if ('size' in element && typeof element.size === 'number')
     next.size = round(clamp(element.size * factor, ELEMENT_BOUNDS.minFont, ELEMENT_BOUNDS.maxFont))
+  if (next.type === 'rect' && next.radius !== undefined) {
+    next.radius = round(Math.min(next.radius * factor, ELEMENT_BOUNDS.maxSize / 2))
+  }
   return next
 }
 
@@ -519,7 +522,7 @@ export function slidesFromText(text: string, deck: Pick<Deck, 'slides'> = { slid
 /** Put imported slides in the deck: after slide `afterIndex` (-1: first), or instead of every slide. */
 export function importSlides(deck: Deck, slides: readonly Slide[], mode: 'insert' | 'replace', afterIndex = deck.slides.length - 1): Deck {
   if (!slides.length) return deck
-  if (mode === 'replace') return { ...deck, slides: slides.slice(0, LIMITS.slides) }
+  if (mode === 'replace') return setDeckThumbnail({ ...deck, slides: slides.slice(0, LIMITS.slides) }, undefined)
   const room = LIMITS.slides - deck.slides.length
   if (room <= 0) return deck
   const at = clamp(afterIndex + 1, 0, deck.slides.length)
@@ -576,8 +579,8 @@ export function mixHex(a: string, b: string, share: number): string {
 export function deckPalette(deck: Pick<Deck, 'tokens'>, mode: 'light' | 'dark'): Record<TokenColorRole, string> {
   const app =
     mode === 'light'
-      ? { ink: '#1a1a1d', soft: '#5c5c66', accent: '#507e35', paper: '#ffffff' }
-      : { ink: '#ebebeb', soft: '#9e9e9e', accent: '#a7d78e', paper: '#171717' }
+      ? { ink: '#1a1a1d', soft: '#5c5c66', accent: '#5e774e', paper: '#ffffff' }
+      : { ink: '#ebebeb', soft: '#9e9e9e', accent: '#b5cea5', paper: '#171717' }
   const colors = deck.tokens?.colors ?? {}
   const ink = colors.ink ?? app.ink
   const soft = colors.soft ?? app.soft

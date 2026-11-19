@@ -122,6 +122,14 @@ export const CELL_VALIGNS = ['top', 'middle', 'bottom'] as const
 export const CELL_FILLS = ['gray', 'green', 'yellow', 'red', 'blue', 'brand', 'orange', 'purple', 'pink', 'teal'] as const
 /** Text colours are the fill palette at full strength. */
 export const CELL_COLORS = CELL_FILLS
+export const sheetHexColorSchema = z.templateLiteral(['#', z.string().regex(/^[0-9a-fA-F]{6}$/)])
+export const sheetColorSchema = z.union([z.enum(CELL_FILLS), sheetHexColorSchema])
+export type SheetHexColor = z.infer<typeof sheetHexColorSchema>
+export type SheetColor = z.infer<typeof sheetColorSchema>
+
+export function isSheetHexColor(color: SheetColor | null | undefined): color is SheetHexColor {
+  return color?.startsWith('#') ?? false
+}
 export const FONT_SIZES = [10, 11, 12, 14, 18, 24] as const
 /** Font families a cell may use (the allow-list; the default is the app's sans). Names are as Excel writes them. */
 export const FONT_FAMILIES = ['Inter', 'Arial', 'Calibri', 'Georgia', 'Times New Roman', 'Courier New', 'Verdana'] as const
@@ -140,6 +148,24 @@ export const ICON_SETS = ['arrows', 'traffic', 'stars'] as const
 export const SHEET_CHART_TYPES = [...CHART_TYPES, 'pie', 'scatter', 'combo'] as const
 export type SheetChartType = (typeof SHEET_CHART_TYPES)[number]
 export const BORDER_STYLES = ['thin', 'thick', 'dashed'] as const
+export const BORDER_PRESETS = ['all', 'inner', 'horizontal', 'vertical', 'outer', 'top', 'bottom', 'left', 'right', 'none'] as const
+export type BorderPreset = (typeof BORDER_PRESETS)[number]
+const borderSideSchema = z.union([
+  z.enum(BORDER_STYLES),
+  z.strictObject({ style: z.enum(BORDER_STYLES), color: sheetColorSchema }),
+])
+export const sheetBorderSchema = z.strictObject({
+  top: borderSideSchema.optional(),
+  right: borderSideSchema.optional(),
+  bottom: borderSideSchema.optional(),
+  left: borderSideSchema.optional(),
+})
+export const sheetBorderPatchSchema = z.strictObject({
+  preset: z.enum(BORDER_PRESETS),
+  style: z.enum(BORDER_STYLES).optional(),
+  color: sheetColorSchema.optional(),
+})
+export type SheetBorderPatch = z.infer<typeof sheetBorderPatchSchema>
 export const DATE_STYLES = ['short', 'medium', 'long', 'iso'] as const
 export const RULE_TYPES = ['gt', 'lt', 'between', 'eq', 'contains', 'empty', 'duplicate', 'top', 'bottom', 'scale', 'bars', 'icons'] as const
 /** Currencies a `currency` cell may show (ISO 4217); without one, currency is USD. */
@@ -238,26 +264,19 @@ export const sheetCellSchema = z
     fmt: z.enum(CELL_FORMATS).optional(),
     bold: z.boolean().optional(),
     align: z.enum(CELL_ALIGNS).optional(),
-    bg: z.enum(CELL_FILLS).optional(),
+    bg: sheetColorSchema.optional(),
     // Optional styling, all additive (a v1 cell without them is unchanged).
     italic: z.boolean().optional(),
     underline: z.boolean().optional(),
     strike: z.boolean().optional(),
-    color: z.enum(CELL_COLORS).optional(),
+    color: sheetColorSchema.optional(),
     size: z
       .number()
       .refine((n) => (FONT_SIZES as readonly number[]).includes(n), `size is one of ${FONT_SIZES.join(', ')}`)
       .optional(),
     wrap: z.boolean().optional(),
     valign: z.enum(CELL_VALIGNS).optional(),
-    border: z
-      .strictObject({
-        top: z.enum(BORDER_STYLES).optional(),
-        right: z.enum(BORDER_STYLES).optional(),
-        bottom: z.enum(BORDER_STYLES).optional(),
-        left: z.enum(BORDER_STYLES).optional(),
-      })
-      .optional(),
+    border: sheetBorderSchema.optional(),
     /** Fixed decimals for number, currency, percent and general numbers (general: no grouping). */
     decimals: z.number().int().min(0).max(10).optional(),
     dateStyle: z.enum(DATE_STYLES).optional(),
@@ -678,7 +697,7 @@ Cell (keys are upper-case A1 addresses inside the tab's rows/cols):
 - "fmt": text | number (1,234.50) | currency (USD $1,234.50) | percent (a FRACTION: 0.125 shows 12.5%) | date (the value is an ISO "yyyy-mm-dd" string) | time (a day fraction: 0.5 is 12:00 PM) | datetime (day serial + fraction) | duration (days: 1.5 shows 36:00:00). Omit for general numbers.
 - "decimals"?: 0-10 fixed decimals (with no fmt: no thousands separator); "dateStyle"?: short (11/20/2026) | medium (Nov 20, 2026) | long | iso.
 - Style: "bold" "italic" "underline" "strike" "wrap": true; "align": left | center | right; "valign": top | middle | bottom; "size": ${FONT_SIZES.join(' | ')} (default 12);
-  "bg" (fill) and "color" (text): ${CELL_FILLS.join(' | ')} (theme tints, not hex); "border": {"top"|"right"|"bottom"|"left": thin | thick | dashed}; "note": text shown on hover.
+  "bg" (fill) and "color" (text): ${CELL_FILLS.join(' | ')} or #RRGGBB; "border": {"top"|"right"|"bottom"|"left": thin | thick | dashed or {"style":"thin","color":"#008877"}}; "note": text shown on hover.
 - Never write computed values: the app recalculates every formula.
 
 Tab extras (all optional): "rowMeta": {"12": {"height": 40, "hidden": true}} (1-based row keys, px ${MIN_ROW_HEIGHT}-${MAX_ROW_HEIGHT}); "columns": [{"width": 120, "hidden": true}];
@@ -710,7 +729,7 @@ Editing a stored workbook: edit_artifact with patch, ops applied in order then v
 - {"op":"insertRows","tab":"Budget","at":5,"count"?:2} inserts blank rows BEFORE row 5; {"op":"deleteRows","tab":"Budget","from":5,"count"?:2}.
   {"op":"insertColumns","tab":"Budget","at":"C","count"?:1} / {"op":"deleteColumns","tab":"Budget","from":"C","count"?:1}. Every formula, chart, merge, rule and table that points there follows (as in Excel: deleted references become #REF!, ranges shrink or grow). Prefer these over rewriting cells by hand.
 - {"op":"sortRange","tab":"Budget","range":"A1:E40","by":"C","desc"?:true,"header"?:true} sorts rows by one column (blanks last; with header the first row stays).
-- {"op":"formatRange","tab":"Budget","range":"B2:B40","format":{"fmt":"currency","decimals":0,"bold":true,"bg":"gray","color":"red","italic":true,"size":14,"wrap":true,"align":"right","valign":"middle","border":{"preset":"outer"|"all"|"top"|"bottom"|"left"|"right"|"none","style"?:"thin"|"thick"|"dashed"},"clear"?:true}} (null removes a property; keeps values).
+- {"op":"formatRange","tab":"Budget","range":"B2:B40","format":{"fmt":"currency","decimals":0,"bold":true,"bg":"gray","color":"red","italic":true,"size":14,"wrap":true,"align":"right","valign":"middle","border":{"preset":${BORDER_PRESETS.join(' | ')},"style"?:"thin"|"thick"|"dashed","color"?:"#008877"},"clear"?:true}} (null removes a property; keeps values).
 - {"op":"mergeCells","tab":"Budget","range":"A1:D1","unmerge"?:true}
 - {"op":"addChart","tab":"Budget","anchor":"H2","range":"A1:C7","type"?:"bar"|"line"|"area","title"?:"...","width"?:480,"height"?:300,"seriesIn"?:"rows","header"?:false,"xLabel"?:"Month","yLabel"?:"USD","legend"?:false}
 - {"op":"setValidation","tab":"Budget","range":"F2:F40","kind":"checkbox"|"list"|"number"|"date"|"custom"|"none","options"?:["Todo","Done"] or [{"value":"Done","color":"green"}],"min"?:0,"max"?:100,"integer"?:true,"from"?:"2026-01-01","to"?:"2026-12-31","formula"?:"=LEN(F2)<=10" (custom: TRUE for a good entry, written for the first cell),"mode"?:"reject"|"warn","message"?:"..."}. reject (the default for number/date/custom) refuses a bad typed value, in the page and in your setCells; warn keeps it and marks the cell. A list with a mode also refuses text that is not an option.

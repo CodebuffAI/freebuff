@@ -19,7 +19,7 @@ import {
 import { resolveInstance } from './design-components'
 import { hasLogic, logicScope, materializeBoardLogic, themedTokens } from './design-logic'
 import { breakpointOf, resolveNode } from './design-resolve'
-import { isVectorShape, shapeGeometry } from './design-vector'
+import { isVectorShape, shapeGeometry, strokeDashArray } from './design-vector'
 import { findNode, nodeChain } from './design-tree'
 
 /**
@@ -172,10 +172,17 @@ const font = (ctx: Ctx, role: 'heading' | 'body' | 'mono') => (ctx.useVars ? `va
 
 const pxv = (value: number) => `${Math.round(value * 100) / 100}px`
 
-function paddingCss(padding: Padding | undefined): string | undefined {
-  if (padding === undefined) return undefined
-  if (typeof padding === 'number') return pxv(padding)
-  return padding.map(pxv).join(' ')
+function spacingCss(spacing: Padding | undefined): string | undefined {
+  if (spacing === undefined) return undefined
+  if (typeof spacing === 'number') return pxv(spacing)
+  return spacing.map(pxv).join(' ')
+}
+
+function fillInsideMargin(margin: Padding | undefined, axis: 'width' | 'height', base = '100%'): string {
+  if (margin === undefined) return base
+  const [top, right, bottom = top, left = right] = typeof margin === 'number' ? [margin, margin] : margin
+  const total = axis === 'width' ? left + right : top + bottom
+  return total === 0 ? base : `calc(${base} - ${pxv(total)})`
 }
 
 type Parent = 'root' | 'stack-v' | 'stack-h' | 'grid' | 'absolute'
@@ -183,6 +190,7 @@ type Parent = 'root' | 'stack-v' | 'stack-h' | 'grid' | 'absolute'
 type Sized = {
   w?: Size; h?: Size; grow?: boolean; x?: number; y?: number
   opacity?: number; absolute?: boolean; anchor?: string; aspect?: number; blur?: number
+  margin?: Padding
 }
 
 /** How a node sizes and places itself in its parent: the renderer's rules, as CSS. */
@@ -198,9 +206,9 @@ function sizeCss(node: Sized, parent: Parent, defaults: { w?: Size; h?: Size } =
     if (typeof w === 'number') out.push(['width', pxv(w)])
     if (typeof h === 'number') out.push(['height', pxv(h)])
   } else if (parent === 'root') {
-    out.push(['width', typeof w === 'number' ? pxv(w) : '100%'])
+    out.push(['width', typeof w === 'number' ? pxv(w) : fillInsideMargin(node.margin, 'width')])
     if (typeof h === 'number') out.push(['height', pxv(h)])
-    else out.push(['min-height', '100%'])
+    else out.push(['min-height', fillInsideMargin(node.margin, 'height')])
   } else if (parent === 'absolute') {
     out.push(['position', 'absolute'], ['left', pxv(node.x ?? 0)], ['top', pxv(node.y ?? 0)])
     if (typeof w === 'number') out.push(['width', pxv(w)])
@@ -210,7 +218,7 @@ function sizeCss(node: Sized, parent: Parent, defaults: { w?: Size; h?: Size } =
   } else if (parent === 'grid') {
     if (typeof w === 'number') out.push(['width', pxv(w)])
     if (typeof h === 'number') out.push(['height', pxv(h)])
-    else if (h === 'fill') out.push(['height', '100%'])
+    else if (h === 'fill') out.push(['height', fillInsideMargin(node.margin, 'height')])
   } else {
     const row = parent === 'stack-h'
     const main = row ? w : h
@@ -220,6 +228,8 @@ function sizeCss(node: Sized, parent: Parent, defaults: { w?: Size; h?: Size } =
     if (cross === 'fill') out.push(['align-self', 'stretch'])
     else if (typeof cross === 'number') out.push([row ? 'height' : 'width', pxv(cross)])
   }
+  const margin = spacingCss(node.margin)
+  if (margin !== undefined) out.push(['margin', margin])
   if (node.opacity !== undefined && node.opacity < 1) out.push(['opacity', String(node.opacity)])
   if (node.aspect) out.push(['aspect-ratio', String(Math.round(node.aspect * 10000) / 10000)])
   if (node.blur) out.push(['filter', `blur(${node.blur}px)`])
@@ -269,7 +279,7 @@ function frameEl(raw: FrameNode, parent: Parent, ctx: Ctx, depth: number): El {
   if (shown.maxW !== undefined) css.push(['max-width', pxv(shown.maxW)])
   if (shown.minH !== undefined) css.push(['min-height', pxv(shown.minH)])
   if (shown.maxH !== undefined) css.push(['max-height', pxv(shown.maxH)])
-  const padding = paddingCss(shown.padding)
+  const padding = spacingCss(shown.padding)
   if (padding) css.push(['padding', padding])
   const fill = color(shown.fill, ctx)
   if (fill) css.push(['background-color', fill])
@@ -279,7 +289,7 @@ function frameEl(raw: FrameNode, parent: Parent, ctx: Ctx, depth: number): El {
   if (layers.length) css.push(['background-image', layers.join(', ')])
   if (shown.fillImage) css.push(['background-size', shown.fillImage.fit ?? 'cover'], ['background-position', 'center'])
   if (shown.stroke) {
-    const border = `${pxv(shown.strokeWidth ?? 1)} solid ${color(shown.stroke, ctx)}`
+    const border = `${pxv(shown.strokeWidth ?? 1)} ${shown.strokePattern ?? 'solid'} ${color(shown.stroke, ctx)}`
     if (!shown.strokeSides) css.push(['border', border])
     else for (const side of shown.strokeSides) css.push([`border-${side}`, border])
   }
@@ -334,7 +344,7 @@ function narrowDecls(node: DesignNode, ctx: Ctx): Decl[] | undefined {
   if (node.type === 'frame') {
     if (override.layout === 'stack-v' || override.layout === 'stack-h') out.push(['flex-direction', override.layout === 'stack-h' ? 'row' : 'column'])
     if (override.gap !== undefined) out.push(['gap', pxv(override.gap)])
-    const padding = paddingCss(override.padding)
+    const padding = spacingCss(override.padding)
     if (padding) out.push(['padding', padding])
     if (override.columns !== undefined) out.push(['grid-template-columns', override.columns === 1 ? 'minmax(0, 1fr)' : `repeat(${override.columns}, minmax(0, 1fr))`])
   }
@@ -342,7 +352,7 @@ function narrowDecls(node: DesignNode, ctx: Ctx): Decl[] | undefined {
     out.push(['font-size', pxv(override.fontSize ?? TEXT_SCALE[override.style ?? node.style].size)])
   }
   if (node.type === 'text' && override.weight !== undefined) out.push(['font-weight', String(override.weight)])
-  if (override.w !== undefined) out.push(['width', typeof override.w === 'number' ? pxv(override.w) : override.w === 'fill' ? '100%' : 'auto'])
+  if (override.w !== undefined) out.push(['width', typeof override.w === 'number' ? pxv(override.w) : override.w === 'fill' ? fillInsideMargin(node.margin, 'width') : 'auto'])
   return out.length ? out : undefined
 }
 
@@ -364,7 +374,8 @@ function nodeElInner(node: DesignNode, parent: Parent, ctx: Ctx, depth: number):
       const sized = sizeCss(node, parent).flatMap((decl): Decl[] =>
         decl[0] === 'width' && parent === 'stack-v' && typeof node.w === 'number' ? [decl, ['max-width', '100%']] : [decl],
       )
-      const css: Decl[] = [...sized, ['margin', '0'], ['font-family', font(ctx, scale.font)], ['font-size', pxv(node.fontSize ?? scale.size)]]
+      if (node.margin === undefined) sized.push(['margin', '0'])
+      const css: Decl[] = [...sized, ['font-family', font(ctx, scale.font)], ['font-size', pxv(node.fontSize ?? scale.size)]]
       css.push(['line-height', String(node.lineHeight ?? scale.line)], ['font-weight', String(node.weight ?? scale.weight)])
       const tracking = node.letterSpacing === undefined ? scale.tracking : scale.tracking === 'normal' ? pxv(node.letterSpacing) : `calc(${scale.tracking} + ${pxv(node.letterSpacing)})`
       if (tracking !== 'normal') css.push(['letter-spacing', tracking])
@@ -437,23 +448,32 @@ function nodeElInner(node: DesignNode, parent: Parent, ctx: Ctx, depth: number):
     case 'divider': {
       const vertical = parent === 'stack-h'
       const css: Decl[] = [
-        ...sizeCss({ x: node.x, y: node.y, opacity: node.opacity, absolute: node.absolute, anchor: node.anchor }, parent),
+        ...sizeCss(node, parent),
         ['flex-shrink', '0'],
-        ...(vertical ? ([['width', '1px'], ['align-self', 'stretch']] as Decl[]) : ([['height', '1px'], ['width', '100%']] as Decl[])),
+        ...(vertical ? ([['width', '1px'], ['align-self', 'stretch']] as Decl[]) : ([['height', '1px'], ['width', fillInsideMargin(node.margin, 'width')]] as Decl[])),
         ['background-color', color(node.color ?? 'border', ctx) ?? '#e2e8f0'],
       ]
-      return { tag: vertical ? 'div' : 'hr', name: nameOf(node), attrs: [], css: vertical ? css : [...css, ['border', '0'], ['margin', '0']], children: [] }
+      if (!vertical) {
+        css.push(['border', '0'])
+        if (node.margin === undefined) css.push(['margin', '0'])
+      }
+      return { tag: vertical ? 'div' : 'hr', name: nameOf(node), attrs: [], css, children: [] }
     }
     case 'shape': {
       if (isVectorShape(node)) return vectorEl(node, parent, ctx)
       const css: Decl[] = [...sizeCss(node, parent)]
       if (node.kind === 'line') {
-        css.push(['height', pxv(typeof node.h === 'number' ? Math.max(node.h, 1) : 2)], ['background-color', color(node.stroke ?? node.fill ?? 'border', ctx) ?? '#e2e8f0'])
+        const height = typeof node.h === 'number' ? Math.max(node.h, 1) : 2
+        const stroke = color(node.stroke ?? node.fill ?? 'border', ctx) ?? '#e2e8f0'
+        const patterned = node.strokePattern !== undefined && node.strokePattern !== 'solid'
+        css.push(['height', pxv(height)])
+        if (node.strokeWidth !== undefined || patterned) css.push(['border-top', `${pxv(node.strokeWidth ?? height)} ${node.strokePattern ?? 'solid'} ${stroke}`])
+        else css.push(['background-color', stroke])
       } else {
         const fill = color(node.fill, ctx)
         if (fill) css.push(['background-color', fill])
         if (node.gradient) css.push(['background-image', gradientCss(node.gradient, ctx)])
-        if (node.stroke) css.push(['border', `1.5px solid ${color(node.stroke, ctx)}`])
+        if (node.stroke) css.push(['border', `${pxv(node.strokeWidth ?? 1.5)} ${node.strokePattern ?? 'solid'} ${color(node.stroke, ctx)}`])
         if (node.kind === 'ellipse') css.push(['border-radius', '50%'])
         else if (node.radius) css.push(['border-radius', pxv(node.radius)])
       }
@@ -470,7 +490,12 @@ function vectorEl(node: ShapeNode, parent: Parent, ctx: Ctx): El {
   const stroke = color(node.stroke, ctx) ?? (geometry.closed ? undefined : color('text', ctx))
   const fill = geometry.closed ? color(node.fill, ctx) ?? (stroke ? undefined : color('primary', ctx)) : undefined
   const path: Decl[] = [['fill', fill ?? 'none']]
-  if (stroke) path.push(['stroke', stroke], ['stroke-width', pxv(node.strokeWidth ?? 2)], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'])
+  if (stroke) {
+    const width = node.strokeWidth ?? 2
+    path.push(['stroke', stroke], ['stroke-width', pxv(width)], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'])
+    const dashes = strokeDashArray(node.strokePattern, width)
+    if (dashes) path.push(['stroke-dasharray', dashes], ['vector-effect', 'non-scaling-stroke'])
+  }
   return {
     tag: 'svg',
     name: nameOf(node),
@@ -481,7 +506,7 @@ function vectorEl(node: ShapeNode, parent: Parent, ctx: Ctx): El {
 }
 
 function iconEl(icon: IconName, size: number, node: DesignNode | undefined, ctx: Ctx, parent: Parent = 'stack-h'): El {
-  const css: Decl[] = node ? sizeCss({ x: node.x, y: node.y, opacity: node.opacity, absolute: node.absolute, anchor: node.anchor }, parent) : []
+  const css: Decl[] = node ? sizeCss(node, parent) : []
   css.push(['width', pxv(size)], ['height', pxv(size)], ['flex-shrink', '0'])
   const c = node?.type === 'icon' ? color(node.color, ctx) : undefined
   if (c) css.push(['color', c])
@@ -537,7 +562,7 @@ function inputEl(node: Extract<DesignNode, { type: 'input' }>, parent: Parent, c
   )
 }
 
-function boardEl(design: Design, stored: DesignBoard, useVars: boolean): El {
+function boardEl(design: Design, stored: DesignBoard, useVars: boolean, inspectRoot = false): El {
   const mains = collectMains(design.boards)
   // Round 5: repeats, bindings and showIf drawn as the variables stand; a dark board's theme colours.
   const board = hasLogic(design) ? materializeBoardLogic(stored, logicScope(design, undefined, mains)) : stored
@@ -563,9 +588,22 @@ function boardEl(design: Design, stored: DesignBoard, useVars: boolean): El {
     ['font-size', '16px'],
     ['line-height', '1.5'],
   ]
+  const name = nameOf({ ...board.root, name: board.title })
+  const margin = board.root.margin ?? (board.root.instanceOf ? mains.get(board.root.instanceOf)?.margin : undefined)
+  if (margin !== undefined) {
+    // Keep the frame inside the artboard when it has outer spacing. The board's own background,
+    // centring and min-height should not move with that frame.
+    const content: El = {
+      ...root,
+      css: root.css.map(([prop, value]): Decl => prop === 'min-height'
+        ? [prop, fillInsideMargin(margin, 'height', pxv(board.h))]
+        : [prop, value]),
+    }
+    return inspectRoot ? content : { tag: 'main', name, attrs: [], css: [...css, ['display', 'flow-root']], children: [content] }
+  }
   return {
     tag: 'main',
-    name: nameOf({ ...board.root, name: board.title }),
+    name,
     attrs: [],
     css: [...css, ...root.css.filter(([p]) => !['width', 'min-height', 'height'].includes(p))],
     small: root.small,
@@ -919,7 +957,7 @@ export function nodeCode(design: Design, boardId: string, nodeId: string): NodeC
   const board = design.boards.find((entry) => entry.id === boardId)
   if (!board) return null
   const build = (useVars: boolean): El | null => {
-    if (board.root.id === nodeId) return boardEl(design, board, useVars)
+    if (board.root.id === nodeId) return boardEl(design, board, useVars, true)
     const hit = findNode(board.root, nodeId)
     if (!hit?.parent) return null
     const ctx: Ctx = { tokens: design.tokens, mains: collectMains(design.boards), useVars, styles: design.styles }

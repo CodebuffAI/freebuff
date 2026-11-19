@@ -226,7 +226,7 @@ const ANIMALS = [
   'Walrus', 'Bison', 'Ibis', 'Marten', 'Puffin', 'Quokka', 'Raven', 'Seal', 'Tapir', 'Yak',
 ] as const
 
-/** FNV-1a gives each peer id a stable display color. */
+/** FNV-1a: a small stable hash of a seed (a peer id), used only to pick a colour. */
 function hash(seed: string) {
   let h = 0x811c9dc5
   for (let i = 0; i < seed.length; i++) {

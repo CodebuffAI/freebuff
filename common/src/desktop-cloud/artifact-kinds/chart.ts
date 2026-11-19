@@ -8,9 +8,8 @@
  *     "data": [{ "<x>": "Week 1", "<series key>": 40 }, ...] }           // 1-500 rows
  *
  * Every row has the x key; every value is a string or a finite number, and
- * series values are numbers. It mirrors `parseChartSpec` (freebuff/web doc/
- * DocChart.tsx) rule for rule and is never looser: it also rejects unknown keys
- * on a series entry. `slides-model.test.ts` checks both agree.
+ * series values are numbers. Docs strips legacy metadata on series entries before
+ * validating fenced JSON with this schema. Stored slide charts use the strict schema directly.
  *
  * Sheet charts (a range of cells) and data charts (a dataset's columns) are not
  * this spec: sheet.ts shares `CHART_TYPES`, data.ts the series limit.

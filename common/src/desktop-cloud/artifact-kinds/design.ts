@@ -316,6 +316,9 @@ export function isSafeImageSrc(src: string): boolean {
 
 export type Size = number | 'fill' | 'hug'
 export type Padding = number | [number, number] | [number, number, number, number]
+
+export type StrokePattern = 'solid' | 'dashed' | 'dotted'
+const strokePattern = z.enum(['solid', 'dashed', 'dotted'])
 export type Align = 'start' | 'center' | 'end' | 'stretch'
 export const JUSTIFIES = ['start', 'center', 'end', 'between', 'around', 'evenly'] as const
 export type Justify = (typeof JUSTIFIES)[number]
@@ -477,6 +480,8 @@ type NodeBase = {
   id: string
   name?: string
   hidden?: boolean
+  /** Space outside the layer, in the same side order as padding. */
+  margin?: Padding
   /** Position inside an `absolute` frame (or with `absolute: true`); ignored elsewhere. */
   x?: number
   y?: number
@@ -517,6 +522,7 @@ export type FrameNode = NodeBase & {
   fill?: string
   stroke?: string
   strokeWidth?: number
+  strokePattern?: StrokePattern
   radius?: number
   shadow?: Shadow
   clip?: boolean
@@ -641,6 +647,7 @@ export type ShapeNode = NodeBase & {
   curves?: Array<[number, number, number, number] | null>
   /** Stroke width in px for vector shapes, lines and arrows. */
   strokeWidth?: number
+  strokePattern?: StrokePattern
   fillStyle?: string
 }
 
@@ -776,6 +783,7 @@ const base = {
   ...roundFiveBase,
   id,
   name: z.string().max(80).optional(),
+  margin: padding.optional(),
   hidden: z.boolean().optional(),
   x: coord.optional(),
   y: coord.optional(),
@@ -833,6 +841,7 @@ const frameObject = z.strictObject({
     fill: color.optional(),
     stroke: color.optional(),
     strokeWidth: px(16).optional(),
+    strokePattern: strokePattern.optional(),
     radius: px(999).optional(),
     shadow: z.enum(SHADOWS).optional(),
     clip: z.boolean().optional(),
@@ -957,6 +966,7 @@ const shapeSchema = z.strictObject({
     .max(DESIGN_LIMITS.maxVertices)
     .optional(),
   strokeWidth: px(32).optional(),
+  strokePattern: strokePattern.optional(),
   fillStyle: id.optional(),
 })
 

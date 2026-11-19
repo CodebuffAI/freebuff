@@ -19,8 +19,8 @@ import {
   tabCols,
   tabRows,
   type CellAlign,
-  type CellFill,
-  type BorderStyle,
+  type SheetColor,
+  type SheetBorderPatch,
   type CellFormat,
   type CellValign,
   type DateStyle,
@@ -141,11 +141,11 @@ export type FormatPatch = {
   fmt?: CellFormat | null
   bold?: boolean
   align?: CellAlign | null
-  bg?: CellFill | null
+  bg?: SheetColor | null
   italic?: boolean
   underline?: boolean
   strike?: boolean
-  color?: CellFill | null
+  color?: SheetColor | null
   size?: FontSize | null
   wrap?: boolean
   valign?: CellValign | null
@@ -159,7 +159,7 @@ export type FormatPatch = {
   list?: CellList | null
   pattern?: string | null
   /** Borders: `outer` draws the rect's outline, `all` every cell edge, `none` clears them. */
-  border?: { preset: 'all' | 'outer' | 'none' | 'top' | 'bottom' | 'left' | 'right'; style?: BorderStyle }
+  border?: SheetBorderPatch
   /** Clear every style (keeps values and formulas). */
   clear?: boolean
 }
@@ -197,9 +197,9 @@ export function formatRange(workbook: Workbook, tabId: string, rect: CellRect, p
       else record[key] = value
     }
     if (patch.border) {
-      const style = patch.border.style ?? 'thin'
+      const { style = 'thin', color, preset } = patch.border
+      const line = color ? { style, color } : style
       const border: NonNullable<SheetCell['border']> = { ...(cell.border ?? {}) }
-      const preset = patch.border.preset
       if (preset === 'none') {
         delete cell.border
       } else {
@@ -210,8 +210,10 @@ export function formatRange(workbook: Workbook, tabId: string, rect: CellRect, p
           right: pos.col === rect.right,
         }
         for (const side of ['top', 'right', 'bottom', 'left'] as const) {
-          if (preset === 'all' || (preset === 'outer' && edge[side]) || (preset === side && edge[side])) border[side] = style
+          if (preset === 'all' || (preset === 'outer' && edge[side]) || (preset === side && edge[side])) border[side] = line
         }
+        if ((preset === 'inner' || preset === 'horizontal') && !edge.bottom) border.bottom = line
+        if ((preset === 'inner' || preset === 'vertical') && !edge.right) border.right = line
         cell.border = border
       }
     }
