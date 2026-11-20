@@ -12,6 +12,7 @@ import { join } from 'path'
 
 import {
   reportFatalErrorSync,
+  wrapForMultiplexer,
   writeFileDescriptorSync,
   writeTerminalControlSync,
 } from '../terminal-io'
@@ -32,6 +33,35 @@ function captureDescriptorWrite(write: (fd: number) => void): string {
     rmSync(directory, { recursive: true, force: true })
   }
 }
+
+describe('multiplexer passthrough', () => {
+  const sequence = '\x1b]7501;state=idle:app=freebuff\x1b\\'
+
+  test('leaves the sequence alone outside a multiplexer', () => {
+    expect(wrapForMultiplexer(sequence, {})).toBe(sequence)
+  })
+
+  test('wraps for tmux with doubled escapes', () => {
+    expect(wrapForMultiplexer(sequence, { TMUX: '/tmp/tmux-1000' })).toBe(
+      `\x1bPtmux;${sequence.replace(/\x1b/g, '\x1b\x1b')}\x1b\\`,
+    )
+  })
+
+  test('wraps for screen without escaping', () => {
+    expect(wrapForMultiplexer(sequence, { TERM: 'screen-256color' })).toBe(
+      `\x1bP${sequence}\x1b\\`,
+    )
+    expect(wrapForMultiplexer(sequence, { STY: '1234.pts-0' })).toBe(
+      `\x1bP${sequence}\x1b\\`,
+    )
+  })
+
+  test('prefers the tmux passthrough inside tmux', () => {
+    expect(
+      wrapForMultiplexer(sequence, { TMUX: '/tmp/tmux-1000', STY: '1234' }),
+    ).toBe(`\x1bPtmux;${sequence.replace(/\x1b/g, '\x1b\x1b')}\x1b\\`)
+  })
+})
 
 describe('synchronous terminal I/O', () => {
   test('writes the complete byte sequence before returning', () => {

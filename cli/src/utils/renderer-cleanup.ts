@@ -10,6 +10,7 @@ import { holdsLiveFreebuffSlot } from './freebuff-session-api'
 import { isLauncherUpdateTermination } from './launcher-update-restart'
 import { logger } from './logger'
 import { trackHelperProcess } from './helper-process-telemetry'
+import { reportClear } from './program-status'
 import { flushLiveChatState } from './run-state-storage'
 import { reportFatalErrorSync, writeTerminalControlSync } from './terminal-io'
 import { TERMINAL_RESET_SEQUENCES } from './terminal-reset-sequences'
@@ -99,6 +100,8 @@ function resetTerminalState(): boolean {
   try {
     // Reset terminal title to default
     resetTerminalTitle()
+    // Stop counting as an agent in terminals that track OSC 7501 status.
+    reportClear()
     if (!process.stdout.isTTY) return true
 
     const resetCompletedSynchronously = writeTerminalControlSync(
