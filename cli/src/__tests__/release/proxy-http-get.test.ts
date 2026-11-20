@@ -334,6 +334,43 @@ for (const helperModule of helperModules) {
       expect(httpsGetCalls.every((call) => call.agent != null)).toBe(true)
     })
 
+    test('refuses redirect credentials and unexpected ports', async () => {
+      for (const location of [
+        'https://user:pass@github.com/releases/freebuff.tar.gz',
+        'https://github.com:444/releases/freebuff.tar.gz',
+      ]) {
+        let callCount = 0
+        const { createReleaseHttpClient } = require(helperModule.path)
+        const client = createReleaseHttpClient({
+          env: {},
+          userAgent: 'release-test-agent',
+          requestTimeout: 2500,
+          httpsModule: {
+            get(_options: unknown, callback: (response: Readable) => void) {
+              callCount += 1
+              queueMicrotask(() => {
+                callback(createResponse(302, { location }))
+              })
+              return {
+                on() {
+                  return this
+                },
+                setTimeout() {
+                  return this
+                },
+                destroy() {},
+              }
+            },
+          },
+        })
+
+        await expect(
+          client.httpGet('https://codebuff.com/api/releases/download/file'),
+        ).rejects.toMatchObject({ code: 'EREDIRECT_REFUSED' })
+        expect(callCount).toBe(1)
+      }
+    })
+
     test('limits redirect chains', async () => {
       const { createReleaseHttpClient } = require(helperModule.path)
       let callCount = 0
