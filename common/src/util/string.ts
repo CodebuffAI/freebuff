@@ -2,7 +2,16 @@ export const truncateString = (str: string, maxLength: number) => {
   if (str.length <= maxLength) {
     return str
   }
-  return str.slice(0, maxLength) + '...'
+  let end = maxLength
+  // If the cut lands on a high surrogate, back off by 1 so the astral character is not halved
+  if (
+    end > 0 &&
+    str.charCodeAt(end - 1) >= 0xd800 &&
+    str.charCodeAt(end - 1) <= 0xdbff
+  ) {
+    end--
+  }
+  return str.slice(0, end) + '...'
 }
 
 export const truncateStringWithMessage = ({
@@ -22,16 +31,56 @@ export const truncateStringWithMessage = ({
 
   if (remove === 'END') {
     const suffix = `\n[${message}...]`
-    return str.slice(0, maxLength - suffix.length) + suffix
+    if (maxLength <= suffix.length) {
+      return suffix.slice(0, maxLength)
+    }
+    let end = maxLength - suffix.length
+    if (
+      end > 0 &&
+      str.charCodeAt(end - 1) >= 0xd800 &&
+      str.charCodeAt(end - 1) <= 0xdbff
+    ) {
+      end--
+    }
+    return str.slice(0, end) + suffix
   }
   if (remove === 'START') {
     const prefix = `[...${message}]\n`
-    return prefix + str.slice(str.length - maxLength + prefix.length)
+    if (maxLength <= prefix.length) {
+      return prefix.slice(0, maxLength)
+    }
+    let start = str.length - (maxLength - prefix.length)
+    if (
+      start < str.length &&
+      str.charCodeAt(start) >= 0xdc00 &&
+      str.charCodeAt(start) <= 0xdfff
+    ) {
+      start++
+    }
+    return prefix + str.slice(start)
   }
 
   const middle = `\n[...${message}...]\n`
-  const length = Math.floor((maxLength - middle.length) / 2)
-  return str.slice(0, length) + middle + str.slice(-length)
+  if (maxLength <= middle.length) {
+    return middle.slice(0, maxLength)
+  }
+  let length = Math.floor((maxLength - middle.length) / 2)
+  if (
+    length > 0 &&
+    str.charCodeAt(length - 1) >= 0xd800 &&
+    str.charCodeAt(length - 1) <= 0xdbff
+  ) {
+    length--
+  }
+  let endStart = str.length - length
+  if (
+    endStart < str.length &&
+    str.charCodeAt(endStart) >= 0xdc00 &&
+    str.charCodeAt(endStart) <= 0xdfff
+  ) {
+    endStart++
+  }
+  return str.slice(0, length) + middle + str.slice(endStart)
 }
 
 /**
@@ -242,7 +291,8 @@ export const pluralize = (
  */
 export const capitalize = (str: string): string => {
   if (!str) return str
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
+  const [first = '', ...rest] = Array.from(str)
+  return first.toUpperCase() + rest.join('').toLowerCase()
 }
 
 /**
