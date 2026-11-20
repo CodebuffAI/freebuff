@@ -9,6 +9,13 @@ import type { FeedbackCategory } from '@codebuff/common/constants/feedback'
 import { setFreeModeCapacityDeferralListener } from '@codebuff/sdk'
 import { safeOpen } from './utils/open-url'
 import { getAuthToken } from './utils/auth'
+import { getCliEnv } from './utils/env'
+import {
+  reportProgramStatus,
+  statusReportFor,
+  type StatusReport,
+} from './utils/program-status'
+import { writeTerminalControlSync } from './utils/terminal-io'
 import { isSponsoredProposalBlock } from './types/chat'
 import { runSponsoredProposalControl } from './utils/sponsored-proposal-control'
 import { patchSponsoredProposalBlock } from './utils/sponsored-proposal-state'
@@ -2199,6 +2206,24 @@ export const Chat = ({
     isAskUserActive: askUserState !== null || sponsoredAccountAsking,
   })
   const hasStatusIndicatorContent = statusIndicatorState.kind !== 'idle'
+
+  // Report status to the terminal with OSC 7501, so a multiplexer or agent
+  // panel can show this pane without scraping the screen. One report per
+  // change; the ref keeps a finished turn reporting `done` instead of being
+  // overwritten by the next idle render.
+  const lastReport = useRef<StatusReport | null>(null)
+  useEffect(() => {
+    const next = statusReportFor(
+      statusIndicatorState.kind,
+      authStatus,
+      lastReport.current?.state ?? null,
+    )
+    if (!next) return
+    const previous = lastReport.current
+    if (previous?.state === next.state && previous.kind === next.kind) return
+    lastReport.current = next
+    reportProgramStatus(next, writeTerminalControlSync, getCliEnv())
+  }, [statusIndicatorState.kind, authStatus])
 
   // Auto-show subscription limit banner when rate limit becomes active
   const subscriptionLimitShownRef = useRef(false)
