@@ -208,6 +208,12 @@ export type CloudHistoryProjectUpdate = {
 /** Archived listings: Settings > Archived. */
 export type CloudHistoryArchivedFilter = { archived?: boolean }
 /**
+ * A project deleted for good from Settings > Archived. It is never listed, restored or reused
+ * again, and counts as archived forever: a folder Desktop still lists for it stays out of the
+ * sidebar, as an archived project's folder does.
+ */
+export type CloudDeletedProject = { id: string; deletedAt: string }
+/**
  * A server-internal run event marking that the run's SDK traces are stored in
  * R2 rather than as `trace` events. Never returned by the history API or the
  * live poll.
@@ -312,6 +318,9 @@ export function createCloudHistoryClient(
       get<CloudHistoryPage<CloudHistoryProject>>('projects', page, undefined, undefined, undefined, 'GET', page.archived),
     getProject: (projectId: string, signal?: AbortSignal) =>
       get<CloudHistoryProject>(`projects/${id(projectId)}`, { signal }),
+    /** The account's most recently deleted projects (at most 1000); older servers answer 404. */
+    listDeletedProjects: (signal?: AbortSignal) =>
+      get<{ projects: CloudDeletedProject[] }>('deleted-projects', { signal }),
     updateProject: (
       projectId: string,
       update: CloudHistoryProjectUpdate,
