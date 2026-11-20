@@ -12,31 +12,43 @@
 import type { FreebuffSubscriptionTierId } from '../constants/freebuff-subscriptions'
 
 /**
- * Who Community is on for. `limited` for now: accounts served at limited
- * access see it in place of Sites; an account at full access keeps Sites.
- * An admin tries it by being served as limited (Settings → Admin, the access
- * view): there is no separate admin switch. This is the workspace's rule
- * alone: the API answers any signed-in account. Opening it to everyone is
- * this constant, after the launch steps in docs/freebuff-community.md.
+ * Who Community is on for. `members` for now (Victor, 2026-11-20): it went
+ * out to every limited-access account for a day, and was pulled back to the
+ * people who had already posted a site on it. Everyone else has Sites, as
+ * before. An admin sees it by switching it on in Settings → Admin.
+ *
+ * This is the workspace's rule alone (`communityShownFor`): the API answers
+ * any signed-in account. Opening it to everyone is this constant, after the
+ * launch steps in docs/freebuff-community.md.
  */
-export type CommunityAudience = 'limited' | 'everyone'
-export const COMMUNITY_AUDIENCE: CommunityAudience = 'limited'
+export type CommunityAudience = 'members' | 'everyone'
+export const COMMUNITY_AUDIENCE: CommunityAudience = 'members'
 
 /** Read through a function so a caller's comparison is not narrowed away. */
 export function communityAudience(): CommunityAudience {
   return COMMUNITY_AUDIENCE
 }
 
+/** What the API says of the account asking: `GET /community/access`. */
+export type CommunityAccess = {
+  /** The account has a project posted in Community. */
+  member: boolean
+  admin: boolean
+}
+
 /**
- * Whether Community is on for an account served at `accessTier`. Anything
- * but `limited` (full, blocked, not known yet) is off until it is open to
- * everyone, so a tier that failed to resolve never opens it.
+ * Whether the workspace shows Community (in place of Sites) to an account.
+ * Until it is open to everyone: a member, or an admin who switched it on.
+ * `access` is null while it is not known, or when the API did not answer,
+ * and nothing is shown then.
  */
-export function communityOnFor(
-  accessTier: string | null | undefined,
+export function communityShownFor(
+  access: CommunityAccess | null | undefined,
+  adminSwitch: boolean,
   audience: CommunityAudience = communityAudience(),
 ): boolean {
-  return audience === 'everyone' || accessTier === 'limited'
+  if (!access) return false
+  return audience === 'everyone' || access.member || (access.admin && adminSwitch)
 }
 
 /** One per post; every site fits one. The feed's pills and Explore filter on it. */
