@@ -134,6 +134,44 @@ async function main() {
 main()
 ```
 
+### Execution permissions
+
+`client.run()` accepts `noShell`, `askShell`, `projectOnly`, and `readOnly` to
+enforce tool restrictions in the SDK runtime. `noShell` disables shell commands;
+`askShell` requires a host-provided approval callback and denies commands when
+that callback is absent. `readOnly` denies writes, and `projectOnly` restricts
+SDK-managed filesystem access to the project directory (see the guarantee
+boundaries below).
+
+The SDK does not yet apply an operating-system sandbox to shell commands.
+Because an unrestricted shell can write outside the SDK filesystem adapter or
+access paths outside the project, both `readOnly` and `projectOnly` also disable
+shell commands. This means commands such as `git status`, `git diff`, `ls`, and
+`cat` are unavailable in those modes. External MCP, custom, and host-provided
+tools are denied while any restriction is active unless the host explicitly
+sets `allowExternalTools: true`.
+
+The CLI's own `ask_user` prompt is the one exception: it is an audited UI
+capability that runs inside the host process and cannot reach the filesystem or
+the shell, so it keeps working under every restriction. A custom tool or MCP
+server that merely reuses the `ask_user` name is still treated as external.
+
+#### What `projectOnly` does and does not guarantee
+
+`projectOnly` restricts **SDK-managed** filesystem operations: reads and writes
+that go through the SDK's filesystem adapter, and tool targets the dispatcher can
+resolve. It is not an OS security boundary. In particular it does not prevent:
+
+- external processes (or a shell the host runs outside the SDK) from mutating the
+  same tree, or
+- a path being swapped for a symlink between the containment check and the file
+  operation (a time-of-check/time-of-use race).
+
+Symlink resolution uses `canonicalize` (default `fs.promises.realpath`). It must
+describe the same filesystem as the run's adapter: when a custom adapter is
+supplied without a matching canonicalizer, `projectOnly` is refused rather than
+silently checked against the host filesystem.
+
 ## API Reference
 
 ### Knowledge Files
