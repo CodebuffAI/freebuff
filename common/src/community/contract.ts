@@ -171,6 +171,8 @@ export type CommunityComment = {
   createdAt: string
   /** The viewer wrote it, or owns what it is on, and may remove it. */
   removable?: boolean
+  /** The viewer is an admin and may reword it. */
+  editable?: boolean
 }
 
 export type CommunityPost = {
@@ -194,14 +196,15 @@ export type CommunityPost = {
   /** The newest comments, so a feed card can show them without a second read. */
   recentComments: CommunityComment[]
   /**
-   * Sent to the owner alone, for a post nobody else can see yet: `pending`
-   * is waiting for its review, `held` did not pass it, `hidden` is a site
-   * that is not published.
+   * Sent to the owner, and to an admin, for a post nobody else can see:
+   * `pending` is waiting for its review, `held` did not pass it, `hidden` is
+   * a site that is not published. `removed` is an admin's removal, and is
+   * sent to admins alone: to its owner the post is gone.
    */
-  status?: 'pending' | 'held' | 'hidden'
+  status?: 'pending' | 'held' | 'hidden' | 'removed'
   /**
-   * Sent to the owner alone: they chose this picture, so a site's screenshot
-   * no longer replaces it.
+   * Sent to the owner, and to an admin: the picture was chosen by hand, so a
+   * site's screenshot no longer replaces it.
    */
   ownPicture?: true
 }
