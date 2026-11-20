@@ -33,23 +33,54 @@ export type NotificationInbox = {
 
 export type NotificationPreferenceView = {
   trigger: string
+  /** The settings row's label ("Chats that finish"). */
+  label: string
   description: string
   enabled: boolean
 }
+
+/**
+ * How notifications reach the account's devices (Settings → Notifications).
+ * Account-wide, not per device, like the trigger switches.
+ */
+export type NotificationDeliverySettings = {
+  /** Phones get pushes at all. */
+  mobilePush: boolean
+  /** No phone push while a client is in use (a focused, recently used window). */
+  silenceMobileWhenActive: boolean
+  /** The Desktop app shows OS notifications. */
+  desktopAlerts: boolean
+}
+
+export const DEFAULT_NOTIFICATION_DELIVERY_SETTINGS: NotificationDeliverySettings =
+  { mobilePush: true, silenceMobileWhenActive: true, desktopAlerts: true }
 
 export type NotificationPreferences = {
   /** False: every trigger is off, whatever the per-trigger answers say. */
   enabled: boolean
   triggers: NotificationPreferenceView[]
-}
+} & NotificationDeliverySettings
 
-/** `trigger` omitted: the switch for all notifications. */
-export const notificationPreferencePatchSchema = z
-  .object({
-    trigger: z.string().min(1).max(80).optional(),
-    enabled: z.boolean(),
-  })
-  .strict()
+/**
+ * One change per PATCH: a trigger's switch (`trigger` omitted: the switch for
+ * all notifications), or one or more delivery settings.
+ */
+export const notificationPreferencePatchSchema = z.union([
+  z
+    .object({
+      trigger: z.string().min(1).max(80).optional(),
+      enabled: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      mobilePush: z.boolean().optional(),
+      silenceMobileWhenActive: z.boolean().optional(),
+      desktopAlerts: z.boolean().optional(),
+    })
+    .strict()
+    .refine((patch) => Object.keys(patch).length > 0),
+])
 export type NotificationPreferencePatch = z.infer<
   typeof notificationPreferencePatchSchema
 >
