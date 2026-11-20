@@ -142,7 +142,7 @@ export type HostedBrowserLayout = HostedBrowserScope & {
   tabId: string
   /** CSS pixels in the hosted page; null detaches the view without stopping its agent. */
   bounds: { x: number; y: number; width: number; height: number } | null
-  /** Scroll position within a fixed-size preview (CSS pixels). */
+  /** Scroll position within a fixed-size preview (window pixels). Only a Desktop with `onPan` (0.0.202 to 0.0.204) reads it; newer ones fit the page. */
   scroll?: { x: number; y: number }
   /** Keep a still image under a web menu while the native view is detached. */
   occluded?: boolean
@@ -444,6 +444,7 @@ export type HostedWorkspaceHost = {
       request: HostedBrowserScope & { action: HostedBrowserAction },
     ): Promise<HostedBrowserSnapshot>
     layout(request: HostedBrowserLayout): Promise<void | { image: string }>
+    /** Set by a Desktop that pans a fixed page larger than its slot (0.0.202 to 0.0.204). Newer Desktops fit the page and omit it. */
     onPan?(callback: (scope: HostedBrowserScope, tabId: string, delta: { x: number; y: number }) => void): () => void
     onChanged?(
       listener: (
