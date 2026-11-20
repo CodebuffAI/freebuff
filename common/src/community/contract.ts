@@ -199,6 +199,20 @@ export type CommunityPost = {
    * that is not published.
    */
   status?: 'pending' | 'held' | 'hidden'
+  /**
+   * Sent to the owner alone: they chose this picture, so a site's screenshot
+   * no longer replaces it.
+   */
+  ownPicture?: true
+}
+
+/**
+ * An owner's edit of a post. `thumbnailUrl` is left out to keep the picture,
+ * an uploaded picture's address to set it, and null to give it up: a site
+ * goes back to its screenshot, a listing to none.
+ */
+export type CommunityPostEdit = Pick<CommunityPost, 'title' | 'description' | 'category'> & {
+  thumbnailUrl?: string | null
 }
 
 export type CommunityFeed = {
