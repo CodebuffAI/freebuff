@@ -412,6 +412,7 @@ export enum AnalyticsEvent {
   // fallback rate and added latency are queryable.
   FREEBUFF_CHAT_TITLE_GENERATED = 'freebuff.chat_title_generated',
   FREEBUFF_TITLE_RATE_LIMITED = 'api.freebuff_title_rate_limited',
+  FREEBUFF_QUICK_STATUS_RATE_LIMITED = 'api.freebuff_quick_status_rate_limited',
 
   // Freebuff - CLI landing page (/cli). Fired when the install command is
   // copied; `location` distinguishes hero vs install section. Lets us measure
