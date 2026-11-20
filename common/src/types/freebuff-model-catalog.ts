@@ -257,6 +257,14 @@ export const freebuffModelCatalogSchema = z.object({
    *  Max) and nothing else, and the trigger names the level alone. Absent:
    *  no slider. */
   effortSlider: z.boolean().optional(),
+  /** The hybrid picker A/B's `hybrid_picker` arm (new limited and tier-3
+   *  accounts; web/src/server/free-session/model-picker-experiment.ts), sent
+   *  with `hideModelPicker`: without Advanced Mode, Freebuff Web and hosted
+   *  Desktop show the account's default as "Powerful" behind one switch, and
+   *  turning it off (the account's `manualModels` preference) lists every
+   *  model. A client that does not read it shows no picker. Absent: no
+   *  switch. */
+  hybridModelPicker: z.boolean().optional(),
   /** False on a phone's read while `FREEBUFF_APP_MODEL_PICKER`
    *  (constants/freebuff-model-picker.ts) is off: the iOS and Android apps
    *  draw no Freebuff model picker, whatever `hideModelPicker` or Advanced

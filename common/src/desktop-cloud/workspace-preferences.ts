@@ -13,6 +13,10 @@ export const workspacePreferencesSchema = z.object({
    *  hour runs out (web/src/server/desktop-cloud/cloud-session-renewal.ts).
    *  Absent means on. Never defaulted, for the same reason as `notificationSounds`. */
   autoStartSessions: z.boolean().optional(),
+  /** The hybrid model picker's Powerful switch is off: the account picks its
+   *  own models (freebuff/web's model-picker-lock.ts). Absent means on. Never
+   *  defaulted, for the same reason as `notificationSounds`. */
+  manualModels: z.boolean().optional(),
   /** The streak day whose milestone share dialog this
    *  account was last shown, as that day's `nextResetAt`: the dialog opens once
    *  per milestone day on any surface, and again when a new streak reaches a
