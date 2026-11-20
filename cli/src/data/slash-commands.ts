@@ -49,6 +49,7 @@ const FREEBUFF_ONLY_COMMAND_IDS = new Set([
   'reasoning',
   'dashboard',
   'deals',
+  'btw',
 ])
 
 const ALL_SLASH_COMMANDS: SlashCommand[] = [
@@ -69,6 +70,11 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     label: 'diagnostics',
     description: 'Show local CLI resource usage and terminal tool process IDs',
     aliases: ['diag', 'processes'],
+  },
+  {
+    id: 'btw',
+    label: 'btw',
+    description: 'Ask a quick side question without adding it to the conversation',
   },
   {
     id: 'ads:enable',
