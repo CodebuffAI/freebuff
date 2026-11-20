@@ -207,6 +207,11 @@ export type CommunityPost = {
    * site's screenshot no longer replaces it.
    */
   ownPicture?: true
+  /**
+   * Sent on a post's own page, and only as `false`: the site refuses to be
+   * shown inside another page, so it is opened and not framed.
+   */
+  embeddable?: false
 }
 
 /**
