@@ -73,22 +73,18 @@ export const COMMUNITY_CATEGORY_LABELS: Record<CommunityCategory, string> = {
   creative: 'Creative',
 }
 
-/** Lowest first: a higher index is a higher league. */
-export const COMMUNITY_LEAGUES = [
-  'bronze',
-  'silver',
-  'gold',
-  'platinum',
-  'diamond',
-] as const
+/**
+ * Lowest first: a higher index is a higher league. Three for now (Victor,
+ * 2026-11-20); there were five. A league stored from before that is not in
+ * this list reads as the top one (`effectiveLeague`).
+ */
+export const COMMUNITY_LEAGUES = ['bronze', 'silver', 'gold'] as const
 export type CommunityLeague = (typeof COMMUNITY_LEAGUES)[number]
 
 export const COMMUNITY_LEAGUE_LABELS: Record<CommunityLeague, string> = {
   bronze: 'Bronze',
   silver: 'Silver',
   gold: 'Gold',
-  platinum: 'Platinum',
-  diamond: 'Diamond',
 }
 
 export const COMMUNITY_RANGES = ['week', 'month', 'all'] as const
@@ -212,6 +208,12 @@ export type CommunityPost = {
    * shown inside another page, so it is opened and not framed.
    */
   embeddable?: false
+  /**
+   * Sent in the feed, for a post worth a second look: `hot` is among what is
+   * being liked and opened most these days, `rising` is young and already
+   * getting attention, `new` is under a day old.
+   */
+  heat?: 'hot' | 'rising' | 'new'
 }
 
 /**
@@ -224,8 +226,10 @@ export type CommunityPostEdit = Pick<CommunityPost, 'title' | 'description' | 'c
 }
 
 export type CommunityFeed = {
-  /** The strip above the feed; sent with the first page only. */
+  /** What is hot, for the block above the feed; sent with the first page only. */
   trending: CommunityPost[]
+  /** Young posts already getting attention, for the same block; first page only. */
+  rising?: CommunityPost[]
   posts: CommunityPost[]
   /** Opaque; null at the end. */
   next: string | null
@@ -338,6 +342,18 @@ export type CommunityLeagueBoard = {
   weekStart: string
   weekEnd: string
   standings: CommunityLeagueStanding[]
+  /**
+   * What the week's top places win when it closes, in hours of usage.
+   * Absent while leagues carry no prize: the board then shows none.
+   */
+  prizes?: CommunityLeaguePrizes
+}
+
+export type CommunityLeaguePrizes = {
+  /** Hours for first place, second, and so on, in this league. */
+  places: number[]
+  /** The whole pool of each league, for the ladder: it grows with the league. */
+  pools: Record<CommunityLeague, number>
 }
 
 export type CommunityNotification = {
