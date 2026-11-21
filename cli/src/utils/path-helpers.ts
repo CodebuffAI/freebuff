@@ -28,7 +28,7 @@ export function formatCwd(cwd: string | undefined, env?: CliEnv): string {
  */
 export function getRelativePath(filePath: string): string {
   // If it's already a relative path, return as-is
-  if (!filePath.startsWith('/')) return filePath
+  if (!path.isAbsolute(filePath)) return filePath
 
   // Use the non-throwing accessor: the project root may legitimately be
   // unset (e.g. during early startup or in tests), and the fallback below
