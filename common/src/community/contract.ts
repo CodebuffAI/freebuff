@@ -307,6 +307,31 @@ export type CommunityMe = {
   unreadMessages: number
   /** The viewer may ban a member from Community. */
   admin?: boolean
+  /**
+   * The viewer still has the name every profile starts with, and is asked
+   * to choose their own. A profile is never named from the account
+   * (docs/freebuff-community.md, "The one rule that came from an incident").
+   */
+  needsName?: true
+}
+
+/** The name every profile starts with, until its owner chooses one. */
+export const COMMUNITY_DEFAULT_NAME = 'New maker'
+
+/**
+ * A handle to offer for a chosen name: its letters and digits, lowercased
+ * and joined by underscores. Null when that leaves too little.
+ */
+export function communityHandleFor(name: string): string | null {
+  const handle = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 20)
+    .replace(/_+$/, '')
+  return COMMUNITY_HANDLE_PATTERN.test(handle) ? handle : null
 }
 
 export type CommunityListingInput = {
