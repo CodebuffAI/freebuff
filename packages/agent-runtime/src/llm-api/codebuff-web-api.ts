@@ -252,6 +252,7 @@ export async function callGenerateImageAPI(
   params: WebToolClient & {
     prompt: string
     aspectRatio?: string
+    imageUrl?: string
   },
 ): Promise<
   { url: string; width: number; height: number } | { errorMessage: string }
@@ -260,6 +261,7 @@ export async function callGenerateImageAPI(
   let payload: Record<string, unknown> = {
     prompt: params.prompt,
     aspectRatio: params.aspectRatio,
+    imageUrl: params.imageUrl,
   }
   for (;;) {
     const res = await callCodebuffV1({

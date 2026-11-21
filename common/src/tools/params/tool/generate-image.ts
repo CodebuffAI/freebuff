@@ -28,6 +28,7 @@ export const GENERATE_IMAGE_ASPECT_RATIOS = Object.keys(
 ) as [GenerateImageAspectRatio, ...GenerateImageAspectRatio[]]
 
 export const GENERATE_IMAGE_MAX_PROMPT_CHARS = 2000
+export const GENERATE_IMAGE_MAX_URL_CHARS = 2048
 
 /**
  * How long the route waits on a Klein job before answering. Klein usually
@@ -62,8 +63,17 @@ const inputSchema = z
           .map(([ratio, { width, height }]) => `${ratio} ${width}x${height}`)
           .join(', ')}.`,
       ),
+    image_url: z
+      .string()
+      .trim()
+      .max(GENERATE_IMAGE_MAX_URL_CHARS)
+      .startsWith('https://')
+      .optional()
+      .describe(
+        'To edit an existing picture instead of starting from scratch: its https link, such as one generate_image returned.',
+      ),
   })
-  .describe('Generate one image from a text prompt.')
+  .describe('Generate one image from a text prompt, or edit one.')
 
 const description = `
 Generate one image (about one megapixel) from a text prompt, for example a hero image, illustration, background, product shot or placeholder art the user's project needs. Use it only when the request calls for new images.
@@ -71,6 +81,8 @@ Generate one image (about one megapixel) from a text prompt, for example a hero 
 It returns a temporary URL to a JPEG. Download it into the project right away with run_terminal_command (for example \`curl -fsSL -o public/images/hero.jpg "<url>"\`) and reference the local file. Never put the URL itself in code: it expires within the hour.
 
 Write a specific prompt and choose the aspect_ratio that fits where the image goes. Generated text, logos and exact layouts are unreliable; build those in code instead. Generate the images the work needs, not variations.
+
+To edit a picture (change a color, add or remove something, restyle it), pass its https link as image_url, such as a link generate_image returned, and say in the prompt what to change and what to keep. Pass the original's aspect_ratio to keep its shape. The result is a new picture with its own link.
 
 Example:
 ${$getNativeToolCallExampleString({

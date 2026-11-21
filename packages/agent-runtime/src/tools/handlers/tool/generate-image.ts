@@ -26,6 +26,7 @@ export const handleGenerateImage = (async (params: {
   const result = await callGenerateImageAPI({
     prompt: params.toolCall.input.prompt,
     aspectRatio: params.toolCall.input.aspect_ratio,
+    imageUrl: params.toolCall.input.image_url,
     signal: params.signal,
     fetch: params.fetch,
     logger: params.logger,
