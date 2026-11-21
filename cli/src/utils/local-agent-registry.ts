@@ -100,6 +100,23 @@ export async function initializeAgentRegistry({
 }
 
 /**
+ * Reload the local agent registry after the active project changes.
+ *
+ * The derived agent-list and directory caches depend on the current working
+ * directory, so they are cleared before the registry is initialized for the
+ * new project. `agentDirs` is required so a reload always goes through the
+ * caller's trust gate (`agent-dir-trust.ts`) instead of loading every default
+ * directory.
+ */
+export async function reloadLocalAgentRegistry(
+  agentDirs: string[],
+): Promise<void> {
+  cachedAgentsByMode.clear()
+  cachedAgentsDir = null
+  await initializeAgentRegistry({ agentDirs })
+}
+
+/**
  * Scan agent directories and build a map from agent ID to source file path.
  * Uses regex to extract IDs from files without requiring module loading.
  * Later directories in the list take precedence (can override earlier ones).
