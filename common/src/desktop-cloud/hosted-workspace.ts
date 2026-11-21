@@ -15,6 +15,27 @@ export const HOSTED_WORKSPACE_ENVIRONMENTS = [
   { apiOrigin: 'https://www.codebuff.com', authOrigin: 'https://freebuff.com' },
 ] as const
 
+/**
+ * AWS slots serve the API on `N.staging.codebuff.com` and auth/web on
+ * `N.staging.freebuff.com`; `slotOrigins()` in `infra/staging/instance.ts` derives both
+ * from the slot number. One reviewed rule rather than one entry per slot, and it still
+ * pairs a single number: a session cannot cross slots.
+ */
+const SLOT_API_ORIGIN = /^https:\/\/([1-9][0-9]?)\.staging\.codebuff\.com$/
+const SLOT_AUTH_ORIGIN = /^https:\/\/([1-9][0-9]?)\.staging\.freebuff\.com$/
+
+export function isStagingSlotOriginPair(apiOrigin: string, authOrigin: string): boolean {
+  const api = SLOT_API_ORIGIN.exec(apiOrigin)
+  const auth = SLOT_AUTH_ORIGIN.exec(authOrigin)
+  return api !== null && auth !== null && api[1] === auth[1]
+}
+
+/** The origins a hosted workspace may open on: a reviewed pair, or one slot's pair. */
+export function isHostedWorkspaceOrigin(apiOrigin: string, authOrigin: string): boolean {
+  return HOSTED_WORKSPACE_ENVIRONMENTS.some(environment => environment.apiOrigin === apiOrigin && environment.authOrigin === authOrigin)
+    || isStagingSlotOriginPair(apiOrigin, authOrigin)
+}
+
 
 export type HostedRuntimeProgress = {
   /** Absent from Desktops that only reported downloads: read it as `to-local`. */
