@@ -208,3 +208,46 @@ describe('Codebuff --trust-agents', () => {
     expect(result.initialPrompt).toBe('fix it')
   })
 })
+
+describe('Freebuff initial prompt', () => {
+  test('takes bare words as the initial prompt', () => {
+    const result = parseArgs({
+      argv: ['node', 'freebuff', 'fix the flaky login test'],
+      isFreebuff: true,
+      version: '1.0.0',
+    })
+    expect(result.initialPrompt).toBe('fix the flaky login test')
+    expect(result.command).toBeUndefined()
+  })
+
+  test('keeps login and doctor as commands, not prompts', () => {
+    for (const command of ['login', 'doctor']) {
+      const result = parseArgs({
+        argv: ['node', 'freebuff', command],
+        isFreebuff: true,
+        version: '1.0.0',
+      })
+      expect(result.command).toBe(command)
+      expect(result.initialPrompt).toBeNull()
+    }
+  })
+
+  test('joins a multi-word prompt that follows flags', () => {
+    const result = parseArgs({
+      argv: ['node', 'freebuff', '--trust-agents', 'fix', 'it'],
+      isFreebuff: true,
+      version: '1.0.0',
+    })
+    expect(result.trustAgents).toBe(true)
+    expect(result.initialPrompt).toBe('fix it')
+  })
+
+  test('leaves the codebuff prompt path alone', () => {
+    const result = parseArgs({
+      argv: ['node', 'codebuff', 'fix', 'it'],
+      isFreebuff: false,
+      version: '1.0.0',
+    })
+    expect(result.initialPrompt).toBe('fix it')
+  })
+})
