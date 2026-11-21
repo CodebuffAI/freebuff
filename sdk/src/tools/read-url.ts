@@ -330,9 +330,12 @@ function truncateText(
  * The transport used when the caller supplies no `fetch`.
  *
  * Normally {@link pinnedFetch}: the connection goes only to addresses that
- * were validated in the same resolution. Under Bun with a proxy configured,
- * Bun's own `fetch` instead, because it honours the proxy variables and
- * `node:http` there does not; the proxy, not this process, resolves the name.
+ * were validated in the same resolution. Under Bun with a proxy configured
+ * that guarantee cannot be kept: the proxy, not this process, resolves the
+ * name, so the address {@link assertUrlAllowed} validated is not the
+ * address the connection would use. Rather than fetch unvalidated through
+ * `globalThis.fetch`, the transport refuses until the pinned transport can
+ * speak proxy. A clear error beats a silent downgrade of the SSRF check.
  */
 function defaultTransport(opts: {
   lookupHost?: HostLookup
@@ -340,7 +343,11 @@ function defaultTransport(opts: {
 }): FetchLike {
   const isBun = typeof process !== 'undefined' && !!process.versions?.bun
   if (isBun && isHttpProxyConfiguredFromEnv()) {
-    return globalThis.fetch
+    return async () => {
+      throw new Error(
+        'read_url is unavailable while a proxy is configured (HTTP_PROXY, HTTPS_PROXY or ALL_PROXY is set): the proxy resolves hostnames itself, so the destination cannot be validated against the SSRF policy. Unset the proxy variables to use read_url.',
+      )
+    }
   }
   return async (input, init) =>
     pinnedFetch(String(input), {
