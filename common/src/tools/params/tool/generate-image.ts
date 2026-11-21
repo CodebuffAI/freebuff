@@ -76,9 +76,9 @@ const inputSchema = z
   .describe('Generate one image from a text prompt, or edit one.')
 
 const description = `
-Generate one image (about one megapixel) from a text prompt, for example a hero image, illustration, background, product shot or placeholder art the user's project needs. Use it only when the request calls for new images.
+Generate one image (about one megapixel) from a text prompt, for example a hero image, illustration, card, background, product shot or placeholder art. Use it only when the request calls for new images.
 
-It returns a temporary URL to a JPEG. Download it into the project right away with run_terminal_command (for example \`curl -fsSL -o public/images/hero.jpg "<url>"\`) and reference the local file. Never put the URL itself in code: it expires within the hour.
+It returns a link to the JPEG, and the user sees the image in the chat. When the work needs the file, download it into the project with run_terminal_command (for example \`curl -fsSL -o public/images/hero.jpg "<url>"\`) and reference the local file. Never put the link itself in code: the project should own its files.
 
 Write a specific prompt and choose the aspect_ratio that fits where the image goes. Generated text, logos and exact layouts are unreliable; build those in code instead. Generate the images the work needs, not variations.
 
