@@ -68,8 +68,8 @@ export interface FreebuffLifetimeTokens {
   /** Cache-inclusive, as everywhere: cache reads are inside this. */
   inputTokens: number
   outputTokens: number
-  /** What those tokens cost Freebuff at its providers, in USD: roughly what
-   *  the same use would have cost on the API, shown as the user's saving. */
+  /** What those tokens would have cost using Claude Code at API prices, in
+   *  USD (`claudeCodeEquivalentUsd` in web), shown as the user's saving. */
   costUsd: number
   /** The day with the most tokens, ever; null before the first. */
   peakDay: FreebuffTokenDay | null
