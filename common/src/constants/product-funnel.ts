@@ -20,7 +20,7 @@ export const productFunnelStageSchema = z.enum([
   'login',
   /** the first-sign-in welcome in the hosted Desktop workspace: shown, copied (the invite link), closed */
   'welcome',
-  /** the phone-app prompt, on a return to the workspace after a break or after a first finished reply: shown, clicked (a store link), closed */
+  /** the phone-app prompt, on a return to the workspace after a break, after a first finished reply or from the checklist: shown (a computer sees the QR code at once), clicked (a store button on a phone), opened (a store page on a computer), closed */
   'mobile_prompt',
   /** The Get started checklist: shown (once per page load), clicked (a step's button, `checklist_step`), closed (hidden from its menu or Done). Its A/B (`desktop_checklist_2026_11`, `checklist_variant`) ended 2026-11-13 with the card kept. */
   'checklist',
@@ -457,7 +457,7 @@ export const productFunnelPropertiesSchema = z
     checklist_step: checklistStepSchema.optional(),
     /** `mobile_prompt:shown`: what opened it, a return after a break, a reply that just finished, or the Get started checklist. */
     prompt_trigger: z.enum(['return', 'reply', 'checklist']).optional(),
-    /** `mobile_prompt:clicked`: which store's button. A scanned QR code is counted by `/mobile`, not here. */
+    /** `mobile_prompt:clicked` (a phone) and `opened` (a computer): which store. A scanned QR code is counted by `/mobile`, not here. */
     store: z.enum(['ios', 'android']).optional(),
     renderer: z.literal('web-workspace').optional(),
     appVersion: z
