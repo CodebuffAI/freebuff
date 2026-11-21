@@ -211,9 +211,9 @@ export type CommunityPost = {
   /**
    * Sent in the feed, for a post worth a second look: `hot` is among what is
    * being liked and opened most these days, `rising` is young and already
-   * getting attention, `new` is under a day old.
+   * getting attention. Most posts carry neither.
    */
-  heat?: 'hot' | 'rising' | 'new'
+  heat?: 'hot' | 'rising'
 }
 
 /**
