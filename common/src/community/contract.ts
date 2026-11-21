@@ -315,7 +315,7 @@ export type CommunityMe = {
   needsName?: true
 }
 
-/** The name every profile starts with, until its owner chooses one. */
+/** The name every profile started with before names were made up (`generatedIdentity`); still read as one nobody chose. */
 export const COMMUNITY_DEFAULT_NAME = 'New maker'
 
 /**
