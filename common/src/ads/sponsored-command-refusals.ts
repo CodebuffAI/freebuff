@@ -71,6 +71,18 @@ function lexCommandLine(command: string): Token[][] {
   let quoted = false
   let expands = false
   let inToken = false
+  // A substitution where the command word belongs (`$(echo docker) …`,
+  // `` `echo docker` … ``) splits into the inner line and the rest of the
+  // line, and neither half is the command that runs. The marker segment
+  // appended at the end lets the walk refuse the composed line while a
+  // refused inner line still reports its own kind first.
+  let headSubstitution = false
+  const atCommandWord = () =>
+    current.every(
+      (token) =>
+        !token.quoted && /^[A-Za-z_][A-Za-z0-9_]*=/.test(token.text),
+    ) &&
+    (!inToken || !text.includes('='))
   const endToken = () => {
     if (inToken) current.push({ text, quoted, literal: quoted && !expands })
     text = ''
@@ -112,11 +124,17 @@ function lexCommandLine(command: string): Token[][] {
       inToken = true
       continue
     }
-    if (';&|(){}`'.includes(ch)) {
+    if (ch === '`') {
+      if (atCommandWord()) headSubstitution = true
+      endSegment()
+      continue
+    }
+    if (';&|(){}'.includes(ch)) {
       endSegment()
       continue
     }
     if (ch === '$' && command[index + 1] === '(') {
+      if (atCommandWord()) headSubstitution = true
       endSegment()
       index++
       continue
@@ -125,6 +143,9 @@ function lexCommandLine(command: string): Token[][] {
     inToken = true
   }
   endSegment()
+  if (headSubstitution) {
+    segments.push([{ text: '$(…)', quoted: false, literal: false }])
+  }
   return segments
 }
 
@@ -765,6 +786,21 @@ const SCRIPT_RUNNER_VALUE_OPTIONS: ReadonlySet<string> = new Set([
 ])
 const PYTHONS = /^(python[\d.]*|py)$/
 
+/**
+ * Flags that hand an interpreter code as an argument instead of a command
+ * line: `node -e`, `python -c`, `php -r`. The code is data to the walk, not
+ * a command line it can read, so a spelling behind one of these flags is
+ * judged the way a PowerShell script file is: unverifiable.
+ */
+const INLINE_CODE_FLAGS: ReadonlyMap<string, readonly string[]> = new Map([
+  ['node', ['-e', '--eval', '-p', '--print']],
+  ['nodejs', ['-e', '--eval', '-p', '--print']],
+  ['bun', ['-e', '--eval']],
+  ['perl', ['-e', '-E']],
+  ['ruby', ['-e']],
+  ['php', ['-r']],
+])
+
 /** Decode `-EncodedCommand`'s base64 UTF-16LE, or null if it is not that. */
 function decodePowerShellCommand(encoded: string): string | null {
   try {
@@ -933,6 +969,22 @@ function analyzeSegment(
     if (found) return found
   }
 
+  // A command word the line itself builds, from a variable or a
+  // substitution, runs whatever the variable holds. The walk cannot read
+  // it, so it fails closed like the other unreadable shapes. A literal
+  // `$` in a command word is read as a variable on purpose: a real
+  // command name containing one is not a shape worth passing unread.
+  if (
+    headToken.text.includes('$') ||
+    headToken.text.includes('`') ||
+    /^%[^%]+%$/.test(headToken.text)
+  ) {
+    return {
+      kind: 'unverifiable',
+      invocation: 'a command word built from a variable',
+    }
+  }
+
   const linuxCommand = wslCommand(head, args, platform)
   if (linuxCommand !== null) {
     return analyzeRest(linuxCommand, 'linux', depth + 1, judge)
@@ -1014,6 +1066,28 @@ function analyzeSegment(
         ),
     )
     return analyzeSegment(rest, platform, depth + 1, judge)
+  }
+  // Code handed to an interpreter as an argument is not a command line the
+  // walk can read. `eval` and `iex` strings are re-analysed above because
+  // they hold shell text; interpreter code does not, so it fails closed
+  // instead of passing unread.
+  const inlineFlags = PYTHONS.test(head)
+    ? ['-c']
+    : INLINE_CODE_FLAGS.get(head)
+  if (inlineFlags) {
+    // The `=` form attaches the value to the flag (`--eval="…"`), so the
+    // token is the flag even where its value was quoted. A bare flag word
+    // only counts unquoted, like elsewhere in the walk.
+    const flag = args.find((token) =>
+      inlineFlags.some(
+        (candidate) =>
+          (token.text === candidate && !token.quoted) ||
+          token.text.startsWith(`${candidate}=`),
+      ),
+    )
+    if (flag) {
+      return { kind: 'unverifiable', invocation: `${head} ${flag.text}` }
+    }
   }
   if (COMMAND_LIST_RUNNERS.has(head)) {
     for (const token of args) {

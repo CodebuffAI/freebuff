@@ -477,6 +477,81 @@ describe('a line the walk cannot finish is refused, not allowed', () => {
     }
   })
 
+  it('refuses code handed to an interpreter as an argument', () => {
+    for (const command of [
+      'node -e "require(\'child_process\').execSync(\'docker compose down -v\')"',
+      'bun -e "Bun.spawnSync([\'docker\',\'compose\',\'down\'])"',
+      'python3 -c "import os; os.system(\'docker compose down -v\')"',
+      'php -r "shell_exec(\'docker compose down -v\');"',
+      'perl -e "system(\'docker compose down -v\')"',
+      'ruby -e "system(\'docker compose down -v\')"',
+    ]) {
+      expect({ command, kind: kindOf(command) }).toEqual({
+        command,
+        kind: 'unverifiable',
+      })
+    }
+  })
+
+  it('refuses a command word built from a variable', () => {
+    for (const command of [
+      '$D compose down -v',
+      '${D} compose down -v',
+      'D=docker $D compose down -v',
+    ]) {
+      expect({ command, kind: kindOf(command) }).toEqual({
+        command,
+        kind: 'unverifiable',
+      })
+    }
+  })
+
+  it('refuses inline code in the = form, quoted or not', () => {
+    for (const command of [
+      'node --eval=console.log(1)',
+      'node --eval="console.log(1)"',
+      "node --eval='console.log(1)'",
+      'bun -e="console.log(1)"',
+    ]) {
+      expect({ command, kind: kindOf(command) }).toEqual({
+        command,
+        kind: 'unverifiable',
+      })
+    }
+  })
+
+  it('refuses a command word built from a substitution', () => {
+    for (const command of [
+      '$(echo docker) compose down -v',
+      '$(docker) compose down -v',
+      '`echo docker` compose down -v',
+      'D=docker $(echo docker) compose down -v',
+    ]) {
+      expect({ command, kind: kindOf(command) }).toEqual({
+        command,
+        kind: 'unverifiable',
+      })
+    }
+  })
+
+  it('still judges a substitution in argument position on its own line', () => {
+    expectRefused('container', [
+      'echo $(docker compose down -v)',
+      'echo `docker compose down -v`',
+      'D=$(docker compose down -v)',
+      '$(docker compose down -v)',
+    ])
+  })
+
+  it('still allows interpreters running scripts and judged modules', () => {
+    expectAllowed([
+      'node server.js',
+      'python3 scripts/setup.py',
+      'python3 -m django check',
+      'php artisan migrate:status',
+    ])
+  })
+
   it('refuses an -EncodedCommand that does not decode', () => {
     expect(kindOf('powershell -EncodedCommand !!not-base64!!', 'win32')).toBe(
       'unverifiable',
