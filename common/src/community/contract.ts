@@ -74,6 +74,37 @@ export const COMMUNITY_CATEGORY_LABELS: Record<CommunityCategory, string> = {
 }
 
 /**
+ * The three kinds the page is browsed by. The seven categories are still
+ * what a post is filed under (the review picks one); a visitor is shown
+ * these, games first. Seven pills was a row nobody read (Victor, 2026-11-22:
+ * "just have the biggest categories (either games, projects, creative)").
+ */
+export const COMMUNITY_GROUPS = ['games', 'projects', 'creative'] as const
+export type CommunityGroup = (typeof COMMUNITY_GROUPS)[number]
+
+export const COMMUNITY_GROUP_LABELS: Record<CommunityGroup, string> = {
+  games: 'Games',
+  projects: 'Projects',
+  creative: 'Creative',
+}
+
+/** The group a category is shown under: games and creative are their own, the rest are projects. */
+export function communityGroupOf(category: CommunityCategory): CommunityGroup {
+  return category === 'games' || category === 'creative' ? category : 'projects'
+}
+
+/** The categories a group holds. */
+export function communityGroupCategories(group: CommunityGroup): CommunityCategory[] {
+  return COMMUNITY_CATEGORIES.filter((category) => communityGroupOf(category) === group)
+}
+
+/** What a post's opens are called: a game is played, anything else is viewed. */
+export function communityViewsLabel(category: CommunityCategory, count: number): string {
+  const noun = category === 'games' ? 'play' : 'view'
+  return count === 1 ? noun : `${noun}s`
+}
+
+/**
  * Lowest first: a higher index is a higher league. Three for now (Victor,
  * 2026-11-20); there were five. A league stored from before that is not in
  * this list reads as the top one (`effectiveLeague`).
@@ -224,14 +255,34 @@ export type CommunityPostEdit = Pick<CommunityPost, 'title' | 'description' | 'c
   thumbnailUrl?: string | null
 }
 
+/** What was made most recently, newest first: the endless list at the foot of Home. */
 export type CommunityFeed = {
-  /** What is hot, for the block above the feed; sent with the first page only. */
+  /**
+   * Always empty. It held what was hot before Home had shelves
+   * (`CommunityHome`); a page loaded before then still reads its length.
+   */
   trending: CommunityPost[]
-  /** Young posts already getting attention, for the same block; first page only. */
-  rising?: CommunityPost[]
   posts: CommunityPost[]
   /** Opaque; null at the end. */
   next: string | null
+}
+
+/** One row of Home: a few posts under a name that says why they are there. */
+export type CommunityShelf = {
+  /** Stable, for the page to tell shelves apart: `featured`, `hot-games`, `top-games`, ... */
+  id: string
+  title: string
+  /** The group its posts are from, where it has one: what "See all" opens. */
+  group?: CommunityGroup
+  posts: CommunityPost[]
+}
+
+/**
+ * Home, or one group's page: what is worth opening, in rows, most worth it
+ * first. A row with nothing in it is left out.
+ */
+export type CommunityHome = {
+  shelves: CommunityShelf[]
 }
 
 export type CommunityPostPage = {
