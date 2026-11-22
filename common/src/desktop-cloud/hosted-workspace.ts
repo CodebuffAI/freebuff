@@ -339,6 +339,9 @@ export type HostedWorkspaceHost = {
   /** This native build branches a forked chat's Claude Code or Codex session (`forkSession` on
    *  `harness_start`), so the sidebar offers Fork on its chats. Older builds omit it. */
   chatFork?: true
+  /** This native build forks a chat in its own worktree into a worktree of the fork's own
+   *  (`runtime` with `fork`, Desktop hosted-runtime.ts `worktreeFork`). Older builds omit it. */
+  worktreeFork?: true
   /** This native build runs a side chat's turns read-only (`readOnly` on `harness_start`), so the
    *  chat menu offers Side chat on its chats. Older builds omit it. */
   sideChat?: true
@@ -377,6 +380,11 @@ export type HostedWorkspaceHost = {
     /** A new worktree chat's first message: titled to name the chat and its branch. Sent only
      * when discovery answered `supportsWorktreeTitle`. */
     prompt?: string
+    /**
+     * Fork this chat, which runs in its own worktree, into a new worktree with a copy of its files
+     * (`worktreeFork`). `chatId` is the fork's id, kept across retries. Answered in `forked`.
+     */
+    fork?: { chatId: string }
   }): Promise<{
     /** `remote`: the chat runs on another of the account's computers, which is awake. */
     location: 'local' | 'worktree' | 'cloud' | 'remote'
@@ -398,7 +406,8 @@ export type HostedWorkspaceHost = {
      * answers the fork in `forked` (shared-fork.ts). Older Desktops omit it, and fork nothing.
      */
     sharedFork?: true
-    /** The fork a `location: 'local'` request made of a teammate's shared chat. */
+    /** The fork a `location: 'local'` request made of a teammate's shared chat, or a `fork` request
+     * made of a worktree chat. */
     forked?: { chat: import('./history').CloudHistoryChat; projectId: string }
     supportsWorktreeSourceBranch?: boolean
     supportsWorktreeTitle?: boolean

@@ -154,12 +154,18 @@ export type CloudHistoryChatUpdate = {
  */
 export type CloudHistoryChatFork = {
   chatId: string
+  /** As a side chat's (`CloudHistorySideChat.cutAtTurn`): a running chat of one of these harnesses
+   *  forks from its last finished turn now. Absent or without the chat's harness: it waits. */
+  cutAtTurn?: SideChatCutHarness[]
   /**
-   * Multiplayer: the fork of a chat shared with the caller lands in the caller's own account, in
-   * this project of theirs, on this computer binding of theirs (history-store.ts `forkSharedChat`).
-   * Required for a shared chat, refused for one's own.
+   * The folder the fork runs in, with the files Desktop copied there.
+   * - Multiplayer: the fork of a chat shared with the caller lands in the caller's own account, in
+   *   this project of theirs, on this computer binding of theirs (history-store.ts `forkSharedChat`).
+   *   Required for a shared chat.
+   * - One's own chat in its own worktree: the fork's own worktree, without `projectId`
+   *   (history-store.ts `forkChatToFolder`). The chat must not be running.
    */
-  into?: { projectId: string; deviceExecution: import('./device-execution').DeviceExecutionTarget }
+  into?: { projectId?: string; deviceExecution: import('./device-execution').DeviceExecutionTarget }
 }
 /** Multiplayer: the owner of a chat or project another account shared with the caller. */
 export type CloudHistorySharer = { email: string; name: string | null }
@@ -345,6 +351,12 @@ export function createCloudHistoryClient(
     sideChatAvailability: (chatId: string, cutAtTurn: readonly SideChatCutHarness[] | null, signal?: AbortSignal) =>
       get<CloudHistorySideChatAvailability>(
         `chats/${id(chatId)}/side${cutAtTurn?.length ? `?cutAtTurn=${cutAtTurn.join(',')}` : ''}`,
+        { signal },
+      ),
+    /** Why forking this chat would be refused right now, or null when it would fork. */
+    forkAvailability: (chatId: string, cutAtTurn: readonly SideChatCutHarness[] | null, signal?: AbortSignal) =>
+      get<CloudHistorySideChatAvailability>(
+        `chats/${id(chatId)}/fork${cutAtTurn?.length ? `?cutAtTurn=${cutAtTurn.join(',')}` : ''}`,
         { signal },
       ),
     rollbackChat: (chatId: string, rollback: CloudHistoryChatRollback, signal?: AbortSignal) =>
