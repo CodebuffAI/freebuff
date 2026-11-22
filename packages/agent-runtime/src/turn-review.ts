@@ -10,6 +10,7 @@ import {
   TURN_REVIEW_METADATA_KEY,
   TURN_REVIEW_PROMPT,
   TURN_REVIEW_TIMEOUT_MS,
+  turnReviewLogFields,
 } from '@codebuff/common/constants/turn-review'
 import { TURN_REVIEW_EVENT } from '@codebuff/common/util/axiom-only-log'
 import { getErrorObject } from '@codebuff/common/util/error'
@@ -84,9 +85,7 @@ export async function reviewTurn(params: {
           model: params.model,
           outcome,
           finish_reason: finishReason,
-          verdict: review?.verdict ?? undefined,
-          action_count: review?.actions.length ?? 0,
-          offers_brainstorm: review?.actions.some((action) => action.kind === 'brainstorm') ?? false,
+          ...turnReviewLogFields(review),
           duration_ms: Date.now() - started,
           ...(usage
             ? {

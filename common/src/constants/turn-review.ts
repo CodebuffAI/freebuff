@@ -19,13 +19,16 @@ export type TurnReviewVerdict = (typeof TURN_REVIEW_VERDICTS)[number]
 /**
  * In the order the pills show. `fix`: improves this change (a cut, a missing
  * piece, a better approach). `review`: the "Code review" pill, asking the
- * agent to review its own change. `next`: work beyond it. `brainstorm`: the
- * "Brainstorm follow-ups" pill once the work reaches a stopping point, its own
- * kind so analytics count it whatever the model labels it.
+ * agent to review its own change. `challenge`: the "Challenge the change"
+ * pill, asking whether the change is worth it at all. `next`: work beyond it.
+ * `brainstorm`: the "Brainstorm follow-ups" pill once the work reaches a
+ * stopping point. The pills have their own kinds so analytics count them
+ * whatever the model labels them.
  */
 export const TURN_REVIEW_ACTION_KINDS = [
   'fix',
   'review',
+  'challenge',
   'next',
   'brainstorm',
 ] as const
@@ -45,6 +48,23 @@ export type TurnReview = {
   /** The one message the review recommends sending next, offered in the composer (Tab fills it). */
   nextPrompt: string | null
   actions: TurnReviewAction[]
+}
+
+/**
+ * A review's fields on the Axiom `turn_review` row, shared by every path that
+ * logs one (agent-runtime turn-review.ts, a Claude Code or Codex fork in
+ * web worker.ts) so the rows stay comparable.
+ */
+export function turnReviewLogFields(review: TurnReview | null) {
+  const offers = (kind: TurnReviewActionKind) =>
+    review?.actions.some((action) => action.kind === kind) ?? false
+  return {
+    verdict: review?.verdict ?? undefined,
+    action_count: review?.actions.length ?? 0,
+    offers_code_review: offers('review'),
+    offers_brainstorm: offers('brainstorm'),
+    offers_challenge: offers('challenge'),
+  }
 }
 
 /** The run event that carries a review to the workspace. */
@@ -89,6 +109,7 @@ Turn the answers into at most ${MAX_TURN_REVIEW_ACTIONS} actions, the most valua
 - "label": two to four words that say what the button does, like "Cut retry wrapper" or "Try one query". The buttons share one row, so shorter is better.
 - "prompt": what the user would send, in their voice. It must stand alone, because the agent that receives it never sees this review: name what to change or try and why, in one or two sentences, and leave the how to the agent.
 When the turn changed code that has not been reviewed yet, include an action of kind "review" labeled "Code review" whose prompt asks the agent to review its own change with fresh eyes: switch to a better alternative where there is one, simplify the code, remove unnecessary cases, and cut anything not needed, for the cleanest, most maintainable result. Leave it out when the change is already done, such as merged or pushed, or when this turn or a recent one already reviewed it and little has changed since.
+Less often than "Code review", include an action of kind "challenge" labeled "Challenge the change" whose prompt asks the agent to step back and question the change as a whole: is it worth its complexity, is there a simpler or better alternative, could something else make a much bigger difference, and should we keep it, adjust it first, or scrap it. Offer it only for a substantial, unmerged change open to doubt, such as a lot of new machinery, a fix to a symptom rather than the cause, alternatives never weighed, or an unclear benefit. Leave it out for small, clearly right changes, and when this turn or a recent one already questioned the change.
 When the work is at a stopping point, such as a feature or fix just finished, committed or merged, include an action of kind "brainstorm" labeled "Brainstorm follow-ups" whose prompt asks the agent to use the whole conversation as context and think up the most valuable follow-up ideas, including new ones no one has mentioned yet rather than only restating what was already discussed, each with why it is worth doing, ranked by value, without starting on any of them. Leave it out in the middle of a change.
 Every action, and "nextPrompt", must be something the user could sensibly send as their very next message, right now. Never offer a step that has to wait on something that has not happened yet, such as a merge, a deploy, a release, a review, or data arriving, like "Re-measure after deploy" while the pull request is still open: no one clicks it now. Offer only what the agent can start on as soon as it is sent.
 Do not offer what was already done or declined, or two buttons that do the same thing.
@@ -96,7 +117,7 @@ Do not offer what was already done or declined, or two buttons that do the same 
 Last, write "nextPrompt": the single message you would recommend the user send next, taking all of the above into account. It is offered in their empty message box, where one key fills it in for them to send. It may combine several instructions, such as the fixes the change needs and one valuable follow-up, but keep it concise: one to three short sentences in the user's voice that stand alone. Use null when nothing is worth sending.
 
 Reply with only this JSON, and no other text:
-{"verdict": "ready" | "needs_changes" | "not_promising" | null, "reason": "..." | null, "actions": [{"kind": "fix" | "review" | "next" | "brainstorm", "label": "...", "prompt": "..."}], "nextPrompt": "..." | null}`
+{"verdict": "ready" | "needs_changes" | "not_promising" | null, "reason": "..." | null, "actions": [{"kind": "fix" | "review" | "challenge" | "next" | "brainstorm", "label": "...", "prompt": "..."}], "nextPrompt": "..." | null}`
 
 /**
  * A Chat-mode turn's review (docs/freebuff-workspace-modes.md): its user is not

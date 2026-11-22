@@ -533,8 +533,12 @@ const TURN_REVIEW_FIELDS = {
   /** `ready`, `needs_changes` or `not_promising`; absent with no verdict. */
   verdict: 'string',
   action_count: 'number',
+  /** Whether the review offered the "Code review" button. */
+  offers_code_review: 'boolean',
   /** Whether the review offered the "Brainstorm follow-ups" button. */
   offers_brainstorm: 'boolean',
+  /** Whether the review offered the "Challenge the change" button. */
+  offers_challenge: 'boolean',
   input_tokens: 'number',
   cached_input_tokens: 'number',
   output_tokens: 'number',
