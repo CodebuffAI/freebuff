@@ -15,6 +15,11 @@
  */
 
 import { FREE_MODE_ALLOWED_COUNTRIES } from '../constants/freebuff-countries'
+import {
+  getFreebucksInfo,
+  getFreebuffServerAccessTier,
+  getSubscriptionInfo,
+} from '../types/freebuff-session'
 
 import type {
   FreebuffIpPrivacySignal,
@@ -76,18 +81,25 @@ export function formatFreebuffCountryName(countryCode: string): string {
 
 /**
  * The one line to render next to the model list. Callers gate on the access
- * tier: a full-access account has the whole catalog and needs no explanation.
+ * tier and the plan (`getFreebuffSessionModelAvailabilityNotice` for one
+ * session response; Desktop's snapshot keeps both until contradicted): a
+ * full-access account has the whole catalog and needs no explanation, and a
+ * paying account is never called limited nor sent to verify (operator,
+ * 2026-10-01).
  *
  * A missing/unknown reason still returns a line — the reduced catalog is
  * visible either way, so saying nothing is the one option that leaves the
- * question unanswered.
+ * question unanswered. That line names no cause: it was "…on this
+ * connection" until 2026-11-21, and the CLI header drew it for every
+ * response without a reason, full access and paid plans included, which sent
+ * a paying user looking for a network problem.
  */
 const COUNTRY_PAGE = 'freebuff.com/account?tab=country'
 
 export function getFreebuffModelAvailabilityNotice(
   reason: FreebuffLimitedModeReason | null | undefined,
 ): string {
-  const generic = "Some models aren't available on this connection"
+  const generic = "Some models aren't available yet"
   if (!reason) return generic
 
   const countryCode =
@@ -136,4 +148,37 @@ export function getFreebuffModelAvailabilityNotice(
     default:
       return generic
   }
+}
+
+/**
+ * The notice for one session response, or null when it has nothing to
+ * explain. Only a response that itself puts the account at limited access,
+ * without a plan, and carries the reason fields raises it.
+ *
+ * - No session yet (launch, a failed or shed GET) and the refusals
+ *   (`model_locked`, `ip_capped`, `superseded`, …) carry no reason and no
+ *   plan, so they cannot say whether there is anything to explain. The CLI
+ *   header drew the fallback for all of them, and for full access.
+ * - The pre-join GET sends the reason with every limited verdict
+ *   (`toLimitedModeReason` in the session route), and an active or ended view
+ *   sends it from the session row, so a limited account keeps its line there.
+ * - Never on a paid plan: `subscription.tierId`, or the plan the Freebucks
+ *   pool was sized from.
+ */
+export function getFreebuffSessionModelAvailabilityNotice(
+  session: { status: string } | null | undefined,
+): string | null {
+  if (!session || getFreebuffServerAccessTier(session) !== 'limited') {
+    return null
+  }
+  if (
+    getSubscriptionInfo(session)?.tierId != null ||
+    getFreebucksInfo(session)?.planId
+  ) {
+    return null
+  }
+  if (!('countryBlockReason' in session)) return null
+  return getFreebuffModelAvailabilityNotice(
+    session as FreebuffLimitedModeReason,
+  )
 }

@@ -9,6 +9,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   formatFreebuffPrivacySignalList,
   getFreebuffModelAvailabilityNotice,
+  getFreebuffSessionModelAvailabilityNotice,
 } from '../util/freebuff-model-availability'
 
 describe('the availability notice', () => {
@@ -81,12 +82,16 @@ describe('the availability notice', () => {
     ).toBe("We couldn't finish a network check, so we're showing models available everywhere")
   })
 
-  test('a missing reason still answers the question — the short list is on screen either way', () => {
-    const generic = "Some models aren't available on this connection"
-    expect(getFreebuffModelAvailabilityNotice(null)).toBe(generic)
-    expect(getFreebuffModelAvailabilityNotice(undefined)).toBe(generic)
-    expect(getFreebuffModelAvailabilityNotice({})).toBe(generic)
-    expect(getFreebuffModelAvailabilityNotice({ countryCode: 'BR' })).toBe(generic)
+  // 2026-11-20: a paying CLI user was told "…on this connection" for a reason
+  // the server never gave, and went looking for a network problem.
+  test('a missing reason still answers the question, without naming a cause it does not know', () => {
+    for (const reason of [null, undefined, {}, { countryCode: 'BR' }]) {
+      const line = getFreebuffModelAvailabilityNotice(reason)
+      expect(line).not.toBe('')
+      expect(line.toLowerCase()).not.toMatch(
+        /connection|network|vpn|proxy|region|country/,
+      )
+    }
   })
 
   // the reason this copy exists in one shared place: every branch is read by
@@ -105,6 +110,36 @@ describe('the availability notice', () => {
     ]
     for (const line of lines) {
       expect(line.toLowerCase()).not.toMatch(/limited|blocked|restricted|denied|not allowed/)
+    }
+  })
+})
+
+describe('which session responses raise the notice', () => {
+  // Only a limited, planless response that says why. Everything else was
+  // shown the fallback by the CLI header, paying accounts included.
+  test('a limited account without a plan, and nobody else', () => {
+    const limited = {
+      status: 'none',
+      accessTier: 'limited',
+      countryCode: 'BR',
+      countryBlockReason: 'country_not_allowed',
+    } as const
+    expect(getFreebuffSessionModelAvailabilityNotice(limited)).toBe(
+      getFreebuffModelAvailabilityNotice(limited),
+    )
+
+    const onStarter = { ...limited, subscription: { tierId: 'starter' } }
+    const poolOnPro = { ...limited, freebucks: { planId: 'pro' } }
+    // A full-access override in a limited country still carries the reason.
+    const full = { ...limited, accessTier: 'full' }
+    const refused = {
+      status: 'model_locked',
+      accessTier: 'limited',
+      currentModel: 'a',
+      requestedModel: 'b',
+    }
+    for (const session of [null, onStarter, poolOnPro, full, refused]) {
+      expect(getFreebuffSessionModelAvailabilityNotice(session)).toBeNull()
     }
   })
 })
