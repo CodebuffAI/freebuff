@@ -20,14 +20,6 @@ export const DESKTOP_APPEARANCE_PRESET_IDS = [
  * unlock it; it is earned by using Freebuff seven days in a row.
  */
 export const STREAK_THEME_PRESET_ID = 'streak-fire'
-/** The first streak display experiment (docs/experiments.md, "Streaks"),
- *  replaced by `STREAK_CLASSIC_EXPERIMENT_KEY`: its `streak` arm saw the
- *  activity grid and keeps the Streak Fire offer. */
-export const STREAK_EXPERIMENT_KEY = 'streak_display_2026_11'
-/** The streak experiment (docs/experiments.md, "Classic streak"): its
- *  `classic` arm is shown the streak (the classic seven-day UI on web and
- *  Desktop) and offered Streak Fire; `control` sees no streak. */
-export const STREAK_CLASSIC_EXPERIMENT_KEY = 'streak_classic_2026_11'
 /** The streak that unlocks it: the reward interval, whose grant is the unlock. */
 export const STREAK_THEME_REQUIRED_DAYS = FREEBUFF_STREAK_REWARD_INTERVAL_DAYS
 

@@ -29,14 +29,13 @@ export interface ThemeReferralAccess {
   streakThemeUnlocked?: boolean
   /** The longest streak, in days, the account has reached since the later
    *  streak themes launched (or its current one), which unlocks them for
-   *  good (`STREAK_THEME_TIERS`). 0 for an account not offered them or
+   *  good (`STREAK_THEME_TIERS`). 0 for an account
    *  without Streak Fire. Absent from older servers, read as 0. */
   streakThemeDays?: number
-  /** The account is shown the streak (`streak_classic_2026_11`'s `classic`
-   *  arm, or `streak_display_2026_11`'s `streak` arm before it), so clients
-   *  show its Streak reward section: the streak themes earned and the next one
-   *  to earn. Everyone else never sees it. Absent from older servers, read as
-   *  false. */
+  /** The account is shown the streak, so clients show its Streak reward
+   *  section: the streak themes earned and the next one to earn. True for
+   *  every account since `streak_classic_2026_11` shipped (2026-11-22); kept
+   *  for app builds that read it. Absent from older servers, read as false. */
   streakThemeOffered?: boolean
   referralCode: string | null
   /** When the account was created (ISO), for the browser workspace's first-visit
