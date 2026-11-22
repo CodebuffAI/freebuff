@@ -100,7 +100,6 @@ export const COMMUNITY_LIMITS = {
   company: 60,
   link: 200,
   comment: 500,
-  message: 2000,
 } as const
 
 /** Lowercase letters, digits and underscores, 3 to 20. */
@@ -304,7 +303,6 @@ export type CommunityMe = {
   settings: CommunityProfileSettings
   plan: FreebuffSubscriptionTierId | null
   unreadNotifications: number
-  unreadMessages: number
   /** The viewer may ban a member from Community. */
   admin?: boolean
   /**
@@ -390,19 +388,6 @@ export type CommunityNotification = {
   text: string | null
   createdAt: string
   read: boolean
-}
-
-export type CommunityConversation = {
-  with: CommunityUser
-  last: { body: string; at: string; mine: boolean }
-  unread: number
-}
-
-export type CommunityMessage = {
-  id: string
-  body: string
-  at: string
-  mine: boolean
 }
 
 export type CommunitySearch = {
