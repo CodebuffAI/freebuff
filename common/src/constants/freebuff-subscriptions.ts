@@ -293,6 +293,40 @@ export function freebuffSubscriptionBillingInterval(
   return value === 'yearly' ? 'yearly' : 'monthly'
 }
 
+/** The longest calendar month. A longer grant needs monthly allowance windows. */
+const LONGEST_MONTH_MS = 31 * 24 * 60 * 60 * 1000
+
+/**
+ * The cadence a grant is stored with. The allowance code splits only yearly
+ * rows into monthly windows; a monthly row's whole period is one window, so a
+ * year-long grant stored as monthly never resets its monthly session count or
+ * wallet bonus. A grant of one month or less stays monthly.
+ */
+export function freebuffGrantBillingInterval(
+  periodStart: Date,
+  periodEnd: Date,
+): FreebuffSubscriptionBillingInterval {
+  return periodEnd.getTime() - periodStart.getTime() > LONGEST_MONTH_MS
+    ? 'yearly'
+    : 'monthly'
+}
+
+/**
+ * The cadence a subscription reports to clients. A grant is never billed: a
+ * long one is stored 'yearly' only so its allowance resets monthly, and
+ * clients read 'yearly' as a paid annual term that locks plan changes.
+ */
+export function freebuffReportedBillingInterval(subscription: {
+  source: string
+  billingInterval?: string | null
+}): FreebuffSubscriptionBillingInterval {
+  return subscription.source === 'grant'
+    ? 'monthly'
+    : freebuffSubscriptionBillingInterval(
+        subscription.billingInterval ?? 'monthly',
+      )
+}
+
 /**
  * What one subscription adds to MRR, the unit every MRR figure sums: the list
  * price of its NEXT renewal, monthly-normalised (a yearly plan is a twelfth of
