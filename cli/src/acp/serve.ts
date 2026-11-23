@@ -6,16 +6,23 @@ import * as acp from '@agentclientprotocol/sdk'
 import { Readable, Writable } from 'node:stream'
 
 import { logger } from '../utils/logger'
+import { loadPackageVersion } from '../cli-args'
 import { FreebuffAcpAgent } from './acp-agent'
 
 import type { Logger } from '@codebuff/common/types/contracts/logger'
+import type { AgentMode } from '../utils/constants'
 
 export const ACP_PROTOCOL_VERSION = acp.PROTOCOL_VERSION
 
-export function serveAcp(options: { logger?: Logger } = {}): void {
+export function serveAcp(
+  options: { logger?: Logger; agentMode?: AgentMode } = {},
+): void {
   const log: Logger = options.logger ?? logger
 
-  const backend = new FreebuffAcpAgent(log)
+  const backend = new FreebuffAcpAgent({
+    logger: log,
+    agentMode: options.agentMode,
+  })
 
   const app = acp
     .agent({ name: 'freebuff' })
@@ -25,7 +32,11 @@ export function serveAcp(options: { logger?: Logger } = {}): void {
         loadSession: false,
       },
       authMethods: [],
-      agentInfo: { name: 'freebuff', title: 'Freebuff', version: '1.0.0' },
+      agentInfo: {
+        name: 'freebuff',
+        title: 'Freebuff',
+        version: loadPackageVersion(),
+      },
     }))
     .onRequest(acp.methods.agent.session.new, ({ params }) => {
       const sessionId = backend.newSession(params.cwd)

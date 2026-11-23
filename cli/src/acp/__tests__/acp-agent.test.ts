@@ -1,18 +1,19 @@
 import { describe, expect, test } from 'bun:test'
 
+import { createMockLogger } from '@codebuff/common/testing/mocks/logger'
+
 import { FreebuffAcpAgent } from '../acp-agent'
 
+import type { AcpTurnRequest, AcpTurnResult } from '../acp-agent'
 import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
 
-function agent(runTurn?: unknown) {
+function agent(
+  runTurn?: (request: AcpTurnRequest) => Promise<AcpTurnResult>,
+) {
   const backend = new FreebuffAcpAgent({
-    runTurn: runTurn as never,
-    info: () => {},
-    error: () => {},
-    warn: () => {},
-    debug: () => {},
-    child: () => ({}) as never,
-  } as never)
+    logger: createMockLogger(),
+    ...(runTurn ? { runTurn } : {}),
+  })
   const sessionId = backend.newSession('/tmp/project')
   return { backend, sessionId }
 }

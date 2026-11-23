@@ -281,7 +281,7 @@ async function main(): Promise<void> {
   // Must precede the renderer setup: stdio belongs to the protocol there.
   if (serveAcpFlag) {
     const { serveAcp } = await import('./acp/serve')
-    serveAcp()
+    serveAcp({ agentMode: initialMode })
     return
   }
 

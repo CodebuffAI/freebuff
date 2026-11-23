@@ -27,7 +27,11 @@ import { RequestError } from '@agentclientprotocol/sdk'
 import { logger } from '../utils/logger'
 import { getCodebuffClient } from '../utils/codebuff-client'
 import { loadAgentDefinitions } from '../utils/local-agent-registry'
-import { AGENT_MODE_TO_COST_MODE, IS_FREEBUFF } from '../utils/constants'
+import {
+  AGENT_MODE_TO_COST_MODE,
+  AGENT_MODE_TO_ID,
+  IS_FREEBUFF,
+} from '../utils/constants'
 import { freebuffSessionMetadata } from '../utils/freebuff-session-identity'
 import { getFreebuffInstanceId } from '../hooks/use-freebuff-session'
 
@@ -35,6 +39,7 @@ import type { AgentContext } from '@agentclientprotocol/sdk'
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
 import type { RunState } from '@codebuff/sdk'
+import type { AgentMode } from '../utils/constants'
 import type { ContentBlock, ToolKind } from '@agentclientprotocol/sdk'
 
 /** Coarse ACP tool kind per Freebuff tool name. Unknown tools stay `other`. */
@@ -99,13 +104,20 @@ export class FreebuffAcpAgent {
   private readonly logger: Logger
   /** Runs one turn. Replaced in tests; the default is the SDK run. */
   private readonly runTurn: (request: AcpTurnRequest) => Promise<AcpTurnResult>
+  /** The agent+cost mode every turn runs in. Defaults to LITE, which is the
+   *  free tier on Freebuff builds. ACP has no mid-session mode switch yet. */
+  private readonly agentMode: AgentMode
 
   constructor(options: {
     logger?: Logger
     runTurn?: (request: AcpTurnRequest) => Promise<AcpTurnResult>
+    agentMode?: AgentMode
   } = {}) {
     this.logger = options.logger ?? logger
-    this.runTurn = options.runTurn ?? defaultRunTurn
+    this.runTurn =
+      options.runTurn ??
+      ((request) => defaultRunTurn(request, this.agentMode, this.logger))
+    this.agentMode = options.agentMode ?? 'LITE'
   }
 
   newSession(cwd: string): string {
@@ -234,7 +246,7 @@ export class FreebuffAcpAgent {
     session.openToolCalls.clear()
 
     const notify = async (update: AcpUpdate) => {
-      await cx.notify('session/update', { sessionId, update } as never)
+      await cx.notify('session/update', { sessionId, update })
     }
 
     try {
@@ -279,29 +291,33 @@ export class FreebuffAcpAgent {
 
 /** The production turn: one SDK `run` on the shared CLI client, the same path
  *  the TUI's send-message flow takes. */
-const defaultRunTurn = async (request: AcpTurnRequest): Promise<AcpTurnResult> => {
+const defaultRunTurn = async (
+  request: AcpTurnRequest,
+  agentMode: AgentMode,
+  log: Logger,
+): Promise<AcpTurnResult> => {
   const client = await getCodebuffClient()
   if (!client) throw RequestError.authRequired({})
 
   const agentDefinitions = loadAgentDefinitions()
   const freebuffInstanceId = IS_FREEBUFF ? getFreebuffInstanceId() : undefined
 
-  const result = (await client.run({
-    agent: 'base2-free',
+  const result = await client.run({
+    agent: AGENT_MODE_TO_ID[agentMode],
     prompt: request.prompt,
     agentDefinitions,
     previousRun: request.previousRun ?? undefined,
     cwd: request.cwd,
     signal: request.signal,
-    costMode: AGENT_MODE_TO_COST_MODE.LITE,
+    costMode: AGENT_MODE_TO_COST_MODE[agentMode],
     ...(freebuffInstanceId
       ? { extraCodebuffMetadata: freebuffSessionMetadata(freebuffInstanceId) }
       : {}),
     handleEvent: request.onEvent,
-  } as never)) as RunState
+  })
 
   if (result.output?.type === 'error' && !request.signal.aborted) {
-    logger.warn(
+    log.warn(
       { error: result.output.message },
       '[acp] turn ended with an error',
     )
