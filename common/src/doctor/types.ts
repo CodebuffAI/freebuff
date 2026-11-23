@@ -39,6 +39,7 @@ export type DoctorRepairKind =
   | 'reset-zoom'
   | 'relink-worktree'
   | 'trust-git-folder'
+  | 'clear-git-lock'
 
 export type DoctorRepair = {
   kind: DoctorRepairKind

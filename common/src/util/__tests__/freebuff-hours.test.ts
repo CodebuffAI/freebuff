@@ -3,12 +3,15 @@ import { describe, expect, test } from 'bun:test'
 import {
   FREEBUCKS_PER_HOUR,
   formatHours,
+  formatHoursClock,
   formatHoursShort,
   formatHoursWithUnit,
   freebucksToHours,
   freebuffModelMultiplierLabel,
   freebuffMultiplierText,
+  freebuffPriceHoursLabel,
   freebucksShortfallLine,
+  hoursClockUsage,
 } from '../freebuff-hours'
 
 describe('hours', () => {
@@ -66,6 +69,56 @@ describe('hours', () => {
   })
 })
 
+describe('hours and minutes', () => {
+  test.each([
+    [25, '5:00'],
+    [13, '2:36'],
+    [1, '0:12'],
+    [0, '0:00'],
+    // Rounded down to the minute; never negative or NaN.
+    [24.99, '4:59'],
+    [-5, '0:00'],
+    [Number.NaN, '0:00'],
+    [6_250, '1,250:00'],
+  ])('%p Freebucks reads as %p', (freebucks, text) => {
+    expect(formatHoursClock(freebucks)).toBe(text)
+  })
+
+  test('a usage figure: left, used and the allowance always add up', () => {
+    expect(hoursClockUsage({ limit: 25, remaining: 13.3 })).toEqual({
+      left: '2:39',
+      used: '2:21',
+      limit: '5:00',
+    })
+    // A lowered allowance never reads as more left than the pool.
+    expect(hoursClockUsage({ limit: 10, remaining: 25 })).toEqual({
+      left: '2:00',
+      used: '0:00',
+      limit: '2:00',
+    })
+    for (const usage of [
+      hoursClockUsage({ limit: 25, remaining: 0 }),
+      hoursClockUsage({ limit: 100, remaining: 65 }),
+    ])
+      expect(`${usage.left} ${usage.used} ${usage.limit}`).not.toContain('%')
+  })
+
+  test.each([
+    [15, '3 hrs'],
+    [5, '1 hr'],
+    [10, '2 hrs'],
+    [250, '50 hrs'],
+    [2, '0.4 hrs'],
+    [12, '2.4 hrs'],
+    [0, null],
+    [undefined, null],
+    [null, null],
+    [Number.NaN, null],
+  ])('a %p Freebuck row costs %p a session hour', (price, label) => {
+    expect(freebuffPriceHoursLabel(price)).toBe(label)
+  })
+})
+
 describe('freebucksShortfallLine', () => {
   test('says the device shared the allowance, not that the account spent it', () => {
     const { line, cheaperModelFits } = freebucksShortfallLine({
@@ -89,6 +142,16 @@ describe('freebucksShortfallLine', () => {
     expect(line).toBe(
       'An hour of DeepSeek V4.1 Flash uses 3 hours, and you have 2 hours left. Pick a model with a lower multiplier to keep going.',
     )
+  })
+
+  test('without a visible picker the hint says where to find one', () => {
+    const { line } = freebucksShortfallLine({
+      price: 15,
+      balance: 10,
+      modelPickerHidden: true,
+    })
+    expect(line).toContain('turn on Advanced Mode')
+    expect(line).not.toContain('Pick a model')
   })
 
   test('under one hour left suggests nothing a cheaper metered row could start', () => {

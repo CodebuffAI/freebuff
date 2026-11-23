@@ -4,8 +4,8 @@ import {
 } from '@codebuff/common/util/error'
 import { cleanMarkdownCodeBlock } from '@codebuff/common/util/file'
 import { FILE_WRITE_GUARD_EVENT } from '@codebuff/common/util/axiom-only-log'
-import { createPatch } from 'diff'
 
+import { createBoundedPatch } from './util/bounded-patch'
 import {
   detectTruncatedRewrite,
   truncatedRewriteMessage,
@@ -115,7 +115,11 @@ export async function processFileBlock(
     })
   }
 
-  let patch = createPatch(path, normalizedInitialContent, normalizedNewContent)
+  let patch = createBoundedPatch(
+    path,
+    normalizedInitialContent,
+    normalizedNewContent,
+  )
   const lines = patch.split('\n')
   const hunkStartIndex = lines.findIndex((line) => line.startsWith('@@'))
   if (hunkStartIndex !== -1) {

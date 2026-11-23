@@ -1,6 +1,7 @@
 import { createComposerIntentScheduler } from '@codebuff/common/ads/composer-intent-scheduler'
 import { useEffect, useRef, useState } from 'react'
 
+import { useAdExpired } from './ad-expiry-clock'
 import { getComposerIntentAd } from './partner-ads'
 
 import type { AdResponse } from '../hooks/use-gravity-ad'
@@ -41,5 +42,18 @@ export function useComposerIntentAd(
     if (enabled) scheduler.current?.update(draft)
   }, [draft, enabled])
 
-  return enabled ? ad : null
+  // Disabled (a menu, a form, or an ad-network ad on screen): a draft waiting
+  // for its idle timer is not asked about, a late answer is not shown, and
+  // the last row is forgotten, so reopening never redraws a stale row. An
+  // answer already asked for stays remembered by the scheduler and is shown
+  // again, with no new request, if the same draft is still there.
+  useEffect(() => {
+    if (enabled) return
+    scheduler.current?.update('')
+    setAd(null)
+  }, [enabled])
+
+  // Shown too long (`ad-expiry-clock.ts`): taken off until the next answer.
+  const expired = useAdExpired(ad?.impUrl)
+  return enabled && !expired ? ad : null
 }

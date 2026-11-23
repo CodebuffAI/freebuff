@@ -542,8 +542,7 @@ export function profileSurveyCompletionLines(
   return `${head}\nedit answers: ${accountUrl}`
 }
 
-export function profileSurveyDismissLine(snoozeDays: number | null): string {
-  return snoozeDays === null
-    ? "Got it, we won't ask again."
-    : `Not now: we'll ask again in ${snoozeDays} days.`
+/** The line after esc. It never says when the survey comes back (COD-1552). */
+export function profileSurveyDismissLine(stopped: boolean): string {
+  return stopped ? "Got it, we won't ask again." : 'Got it, not now.'
 }

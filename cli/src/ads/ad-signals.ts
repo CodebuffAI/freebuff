@@ -197,6 +197,23 @@ export function noteAdTerminalFocus(focused: boolean): void {
   notify(focusListeners, focused)
 }
 
+/**
+ * A key press or a prompt submit is proof the terminal has focus: a terminal
+ * that is not focused receives no typing. So a key or submit after a focus-out
+ * report sets focus back to focused. Without this, a terminal whose last
+ * report was focus-out and that then stops reporting (tmux detach/reattach, a
+ * child program turning focus reporting off) would read as unfocused for the
+ * rest of the session.
+ *
+ * Only the keyboard handler and the submit path call this. Mouse movement does
+ * not count (VS Code, Cursor and tmux with mouse on report hover while the
+ * terminal is unfocused), and neither do input changes made by the program.
+ * Focus reports themselves never arrive as key events.
+ */
+export function noteAdUserInput(): void {
+  if (terminalFocused === false) noteAdTerminalFocus(true)
+}
+
 /** Subscribe to the controller once; retried on the next call until it exists. */
 export function ensureAdTerminalFocusWatch(): void {
   if (focusWatchInstalled) return

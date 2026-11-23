@@ -91,8 +91,8 @@ describe('a refunded or superseded start (409 session_superseded)', () => {
 
   test('any other 409 is still retried', async () => {
     const server = serve(409, {
-      error: 'session_limit_reached',
-      message: 'too many tabs',
+      error: 'conflict',
+      message: 'try again',
     })
 
     await failureOf(1)

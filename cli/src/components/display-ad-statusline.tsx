@@ -16,6 +16,7 @@
  * draws nothing. × stays local (this session only).
  */
 import { sponsorFor } from '@codebuff/common/ads/display-ads/sponsors'
+import { useRef } from 'react'
 
 import { Button } from './button'
 import {
@@ -23,6 +24,7 @@ import {
   cliDisplayAdEnabled,
   cliSponsorColors,
 } from '../ads/display-ads'
+import { useNetworkAdOnScreen } from '../ads/ad-screen'
 import { useDisplayAdsStore } from '../ads/display-ads-store'
 import {
   trackCliDisplayAd,
@@ -60,7 +62,11 @@ export function DisplayAdStatusline({
   open?: (url: string) => unknown
 }) {
   const theme = useTheme()
-  const hidden = useDisplayAdsStore((s) => s.statuslineHidden)
+  const userHidden = useDisplayAdsStore((s) => s.statuslineHidden)
+  // One ad on screen at a time: our unit gives way (draws and requests
+  // nothing) while an ad-network ad is on screen in the chat.
+  const networkAdOnScreen = useNetworkAdOnScreen()
+  const hidden = userHidden || networkAdOnScreen
   const setHidden = useDisplayAdsStore((s) => s.setStatuslineHidden)
   const mock = enabled ? sponsorFor('cliStatusline') : null
   // Inactive (flag on, or hidden) the served hook holds and asks nothing.
@@ -69,7 +75,17 @@ export function DisplayAdStatusline({
   useCliDisplayAdImpression('cliStatusline', mock?.id, shownMock)
   useServedDisplayImpression(served)
   const sponsor: DisplaySponsor | null = shownMock ? mock : served
-  if (!sponsor) return null
+  // A row once drawn keeps its one row, blank, while it gives way to an
+  // ad-network ad, so the transcript above does not move each time the dock
+  // changes supplier. Hiding it (×, /deals off) gives the row back.
+  const drewRef = useRef(false)
+  if (userHidden) drewRef.current = false
+  if (!sponsor) {
+    return networkAdOnScreen && drewRef.current ? (
+      <box style={{ height: 1, flexShrink: 0 }} />
+    ) : null
+  }
+  drewRef.current = true
   return (
     <DisplayAdStatuslineView
       sponsor={sponsor}

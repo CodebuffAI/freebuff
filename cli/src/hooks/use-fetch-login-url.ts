@@ -4,6 +4,11 @@ import { safeOpen } from '../utils/open-url'
 
 import { LOGIN_WEBSITE_URL } from '../login/constants'
 import { generateLoginUrl } from '../login/login-flow'
+import {
+  loginLoopbackSupported,
+  startLoginLoopback,
+} from '../login/loopback-server'
+import { getCliEnv } from '../utils/env'
 import { captureCliFunnel } from '../utils/cli-product-funnel'
 import { trackEvent } from '../utils/analytics'
 import { logger } from '../utils/logger'
@@ -53,8 +58,18 @@ export function useFetchLoginUrl({
       setIsWaitingForEnter(true)
       setHasOpenedBrowser(true)
 
+      // Open the login through a loopback server when the browser runs on
+      // this machine, so /onboard can connect without the Connect click
+      // (login/loopback-server.ts). The URL shown for copying stays plain.
+      const loopback = loginLoopbackSupported(getCliEnv(), process.platform)
+        ? startLoginLoopback({
+            hostedLoginUrl: data.loginUrl,
+            fingerprintHash: data.fingerprintHash,
+          })
+        : null
+
       // OS handoff cannot confirm the browser loaded the auth page.
-      const opened = await safeOpen(data.loginUrl)
+      const opened = await safeOpen(loopback?.launchUrl ?? data.loginUrl)
       captureCliFunnel('browser', opened ? 'opened' : 'failed')
     },
     onError: (err) => {

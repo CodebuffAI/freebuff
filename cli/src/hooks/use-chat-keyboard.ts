@@ -3,6 +3,7 @@ import { statSync } from 'fs'
 import { useKeyboard } from '@opentui/react'
 import { useCallback, useRef } from 'react'
 
+import { noteAdUserInput } from '../ads/ad-signals'
 import { useChatStore } from '../state/chat-store'
 import { getProfileSurveyKeyContext } from '../state/profile-survey-store'
 import { getProjectRoot } from '../project-files'
@@ -334,6 +335,10 @@ export function useChatKeyboard({
   useKeyboard(
     useCallback(
       (key: KeyEvent) => {
+        // A real key press proves the terminal has focus. Not throttled, so the
+        // first key after a focus-out report restores focus at once.
+        noteAdUserInput()
+
         if (disabled) return
 
         // Report keyboard activity for activity-aware features (throttled)

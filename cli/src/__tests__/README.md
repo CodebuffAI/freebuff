@@ -4,13 +4,11 @@ Comprehensive testing suite for the Codebuff CLI using tmux for interactive term
 
 ## Test Naming Convention
 
-**IMPORTANT:** Follow these patterns for automatic tmux detection:
+Follow these naming patterns:
 
 - **Unit tests:** `*.test.ts` (e.g., `cli-args.test.ts`)
 - **E2E tests:** `e2e-*.test.ts` (e.g., `e2e-cli.test.ts`)
 - **Integration tests:** `integration-*.test.ts` (e.g., `integration-tmux.test.ts`)
-
-Files matching `*integration*.test.ts` or `*e2e*.test.ts` trigger automatic tmux availability checking in `.bin/bun`.
 
 ## Quick Start
 
@@ -74,21 +72,9 @@ bun test integration-tmux.test.ts
 bun run test:tmux-poc
 ```
 
-## Automatic tmux Detection
+## Skipping When Dependencies Are Missing
 
-The `.bin/bun` wrapper automatically checks for tmux when running integration/E2E tests:
-
-- **Detects** test files matching `*integration*.test.ts` or `*e2e*.test.ts`
-- **Checks** if tmux is installed
-- **Shows** installation instructions if missing
-- **Skips** tests gracefully if tmux unavailable
-
-**Benefits:**
-
-- ✅ Project-wide (works in any package)
-- ✅ No hardcoded paths
-- ✅ Clear test categorization
-- ✅ Automatic dependency validation
+Integration and E2E tests skip themselves with `describe.skipIf(...)` using `isTmuxAvailable()` / `isSDKBuilt()` from `test-utils.ts` (examples below).
 
 ## Test Structure
 

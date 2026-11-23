@@ -254,6 +254,33 @@ describe('parseAdEngagement', () => {
     expect(parseAdEngagement(record)).toEqual(record)
   })
 
+  test('keeps click.atClick and rejects a non-boolean one', () => {
+    const record = { v: 1, impUrl: 'https://ads.example/i', click: { region: 'cta', count: 1, atClick: true } }
+    expect(parseAdEngagement(record)).toEqual(record)
+    expect(parseAdEngagement({ ...record, click: { count: 1 } })?.click).toEqual({ count: 1 })
+    expect(parseAdEngagement({ ...record, click: { atClick: 'yes' } })).toBeUndefined()
+    expect(parseAdEngagement({ ...record, click: { atClick: 1 } })).toBeUndefined()
+  })
+
+  test('yielded: why an ad gave way and how long it was held hidden; unknown reasons fail', () => {
+    const record = {
+      v: 1,
+      impUrl: 'https://ads.example/i',
+      exit: 'unmount',
+      yielded: { reason: 'inline_card_in_view', count: 2, hiddenMs: 41_000 },
+    }
+    expect(parseAdEngagement(record)).toEqual(record)
+    const superseded = {
+      v: 1,
+      impUrl: 'https://ads.example/j',
+      yielded: { reason: 'newer_inline_card', count: 1 },
+    }
+    expect(parseAdEngagement(superseded)).toEqual(superseded)
+    expect(
+      parseAdEngagement({ v: 1, impUrl: 'https://ads.example/k', yielded: { reason: 'boredom' } }),
+    ).toBeUndefined()
+  })
+
   test('a post-click-only upsert is valid on its own', () => {
     const update = { v: 1, impUrl: 'https://ads.example/i', postClick: { returnMs: 2_000 } }
     expect(parseAdEngagement(update)).toEqual(update)
@@ -268,6 +295,25 @@ describe('parseAdEngagement', () => {
       focusedVisibleMs: 800,
     }
     expect(parseAdEngagement(record)).toEqual(record)
+  })
+
+  test('carries hidden time and why the ad stopped being drawn, and drops unknown reasons', () => {
+    const record = {
+      v: 1,
+      impUrl: 'https://ads.example/held',
+      visibleMs: 20_000,
+      hiddenMs: 180_000,
+      endedBy: 'outranked',
+      exit: 'rotation',
+    }
+    expect(parseAdEngagement(record)).toEqual(record)
+    for (const endedBy of ['gravity_took_screen', 'retired_by_newer_inline', 'expired'])
+      expect(parseAdEngagement({ ...record, endedBy })?.endedBy).toBe(endedBy)
+    // A reason this server does not know yet keeps the record, without the reason.
+    const unknown = parseAdEngagement({ ...record, endedBy: 'other' })
+    expect(unknown?.visibleMs).toBe(20_000)
+    expect(unknown?.endedBy).toBeUndefined()
+    expect(parseAdEngagement({ ...record, hiddenMs: -1 })).toBeUndefined()
   })
 
   test('requires impUrl and rejects out-of-range timings', () => {

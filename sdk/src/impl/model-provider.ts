@@ -328,12 +328,29 @@ export const BYOK_CONNECTION_FAILURE_MESSAGE =
  *   request's wait budget (web/.../model-queue.ts). Each retry re-enters the
  *   queue and waits that budget again before the same refusal, so it is
  *   surfaced at once — as its in-band form after the grace flush already is.
+ * - `free_mode_rate_limited` (429), only when its Retry-After is a minute or
+ *   more: a request window (5 hours, a day, the prompt windows) that no retry
+ *   outlasts, since the AI SDK waits out a Retry-After only under 60 s and
+ *   otherwise retries after 2-8 s. On a Desktop or Cloud model start the first
+ *   refusal also refunds the purchase, so the retry met `session_superseded`
+ *   instead and the user read "This model purchase was refunded … Start a new
+ *   session", which only bought another session into the same cap (Discord
+ *   #787: 29 Cloud runs in 2 hours on the daily window). A shorter wait is
+ *   still retried: the AI SDK sits it out first.
+ * - `session_limit_reached` (409): the account is over its tab ceiling. The
+ *   same shape as the daily window: on a model start the refusal refunds the
+ *   purchase and ends its row, so every retry met `session_superseded` and the
+ *   user read "This model purchase was refunded … Start a new session" instead
+ *   of "close another tab", and each new chat bought and refunded another hour
+ *   (11-14..17: ~85% of those Cloud failures).
  */
 const FINAL_REFUSALS: readonly {
   status: number
   error: string
   /** Used only when the body carries no `message` of its own. */
   fallbackMessage: string
+  /** Final only when this holds; always final without it. */
+  when?: (response: Response) => boolean
 }[] = [
   {
     status: 429,
@@ -352,7 +369,31 @@ const FINAL_REFUSALS: readonly {
     fallbackMessage:
       'This model is at capacity right now. Please try again in a few minutes or pick another model.',
   },
+  {
+    status: 429,
+    error: 'free_mode_rate_limited',
+    fallbackMessage:
+      'You have reached a free-model request limit. Try again later.',
+    when: (response) =>
+      retryAfterMsOf(response) >= AI_SDK_MAX_HONOURED_RETRY_AFTER_MS,
+  },
+  {
+    status: FREEBUFF_GATE_CODES.session_limit_reached.status,
+    error: 'session_limit_reached',
+    fallbackMessage:
+      'Too many Freebuff tabs are running at once. Close another tab and try again.',
+  },
 ]
+
+/** The AI SDK waits out a Retry-After shorter than this before retrying; a
+ *  longer one it ignores and retries on its own 2-8 s backoff. */
+const AI_SDK_MAX_HONOURED_RETRY_AFTER_MS = 60_000
+
+/** The server's Retry-After (whole seconds), or 0 when it sent none. */
+function retryAfterMsOf(response: Response): number {
+  const seconds = Number(response.headers.get('retry-after') ?? Number.NaN)
+  return Number.isFinite(seconds) ? seconds * 1000 : 0
+}
 
 async function throwIfFinalRefusal(
   response: Response,
@@ -371,7 +412,10 @@ async function throwIfFinalRefusal(
     return
   }
   const refusal = FINAL_REFUSALS.find(
-    (r) => r.status === response.status && r.error === body?.error,
+    (r) =>
+      r.status === response.status &&
+      r.error === body?.error &&
+      (r.when?.(response) ?? true),
   )
   if (!refusal) return
   throw new APICallError({

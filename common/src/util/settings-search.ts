@@ -9,7 +9,8 @@ type PageLabel =
   | 'MCP'
   | 'Updates'
   | 'Account standing'
-  | 'Referrals'
+  | 'Apps & downloads'
+  | 'Artifacts'
 
 // Index the settings themselves, including common names people use for them.
 // Keep this alongside the shared navigation, without mounting inactive pages or
@@ -24,7 +25,8 @@ const topics: Record<PageLabel, Topic[]> = {
   General: [
     {
       label: 'Advanced Mode',
-      keywords: 'composer mode buttons skills context usage slash commands',
+      keywords:
+        'composer mode buttons skills context usage slash commands model picker show all models',
     },
     {
       label: 'Show all models',
@@ -83,6 +85,31 @@ const topics: Record<PageLabel, Topic[]> = {
       surface: 'web',
     },
   ],
+  'Apps & downloads': [
+    {
+      label: 'Desktop app',
+      keywords: 'download install mac windows linux desktop app',
+      surface: 'web',
+    },
+    {
+      label: 'Command line',
+      keywords: 'cli terminal npm install command line',
+      surface: 'web',
+    },
+    {
+      label: 'Mobile app',
+      keywords: 'phone iphone android ios app store google play qr code mobile',
+      surface: 'web',
+    },
+  ],
+  Artifacts: [
+    {
+      label: 'Your artifacts',
+      keywords:
+        'docs documents slides decks sheets spreadsheets data whiteboards designs shared links share rename delete library',
+      surface: 'web',
+    },
+  ],
   'Account standing': [
     {
       label: 'Rules and appeals',
@@ -131,29 +158,17 @@ const topics: Record<PageLabel, Topic[]> = {
       : []),
     { label: 'Offers', keywords: 'earn rewards hours freebucks' },
   ],
-  // The web's full-access page in Earn's place (freebuff/web settings navigation).
-  Referrals: [
-    {
-      label: 'Invite link',
-      keywords: 'invite friends referral link share copy',
-      surface: 'web',
-    },
-    {
-      label: 'Rewards',
-      keywords: 'themes unlock custom',
-      surface: 'web',
-    },
-    {
-      label: 'Your referrals',
-      keywords: 'signups joined history status friends',
-      surface: 'web',
-    },
-  ],
   Integrations: [
     {
       label: 'Connected apps',
       keywords:
         'connect apps accounts tools gmail email inbox slack notion linear posthog google calendar drive',
+    },
+    // Desktop has its own MCP page; on the web, remote servers live here.
+    {
+      label: 'Custom MCP servers',
+      keywords: 'mcp model context protocol remote http sse servers tools connectors',
+      surface: 'web',
     },
   ],
   'Model Providers': [

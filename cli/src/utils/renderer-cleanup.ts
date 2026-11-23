@@ -13,6 +13,7 @@ import { trackHelperProcess } from './helper-process-telemetry'
 import { flushLiveChatState } from './run-state-storage'
 import { reportFatalErrorSync, writeTerminalControlSync } from './terminal-io'
 import { TERMINAL_RESET_SEQUENCES } from './terminal-reset-sequences'
+import { isTerminalGoneError } from './terminal-gone'
 import { stopTerminalWatchdog } from './terminal-watchdog'
 import { useFreebuffSessionStore } from '../state/freebuff-session-store'
 
@@ -41,6 +42,16 @@ export const CLI_RENDERER_EXIT_SIGNALS: NodeJS.Signals[] = [
 let renderer: CliRenderer | null = null
 let handlersInstalled = false
 let cleanupStarted = false
+let stdoutErrorsIgnored = false
+
+/** The reset's fallback write is best-effort: on a terminal that is gone the
+ *  stream reports EIO a tick later, which with no listener is an uncaught
+ *  exception. We are exiting; there is nothing to do about it. */
+function ignoreStdoutErrors(): void {
+  if (stdoutErrorsIgnored) return
+  stdoutErrorsIgnored = true
+  process.stdout.on('error', () => {})
+}
 
 function isProcessRunningSync(pid: number): boolean {
   try {
@@ -107,6 +118,7 @@ function resetTerminalState(): boolean {
     if (!resetCompletedSynchronously) {
       // Best-effort immediate reset. Keep the watchdog armed below so it can
       // retry after this process exits if the buffered write is lost.
+      ignoreStdoutErrors()
       process.stdout.write(TERMINAL_RESET_SEQUENCES)
     }
     return resetCompletedSynchronously
@@ -327,13 +339,23 @@ export function installProcessCleanupHandlers(cliRenderer: CliRenderer): void {
     }
   })
 
+  // The terminal went away (window closed, SSH dropped): a write or read on
+  // it fails. Not a crash. Mid-exit, let the exit already running finish;
+  // otherwise leave as a closed window does, keeping the hour for resume.
+  const handleTerminalGone = () => {
+    if (cleanupStarted) return
+    handleExternalExit()
+  }
+
   // uncaughtException - Safety net for unhandled errors
   process.on('uncaughtException', (error) => {
+    if (isTerminalGoneError(error)) return handleTerminalGone()
     exitCliWithFatalError('Uncaught exception', error)
   })
 
   // unhandledRejection - Safety net for unhandled promise rejections
   process.on('unhandledRejection', (reason) => {
+    if (isTerminalGoneError(reason)) return handleTerminalGone()
     exitCliWithFatalError('Unhandled rejection', reason)
   })
 }

@@ -1,3 +1,7 @@
+import {
+  isIdleReturn,
+  SUMMARY_IDLE_MS,
+} from '@codebuff/agent-runtime/conversation-summary'
 import { countTokensMessages } from '@codebuff/agent-runtime/util/token-counter'
 import { getInitialSessionState } from '@codebuff/common/types/session-state'
 import { getStubProjectFileContext } from '@codebuff/common/util/file'
@@ -49,6 +53,42 @@ function sessionStateWith(messageHistory: Message[]): SessionState {
 }
 
 describe('buildCancelledSessionState', () => {
+  test('a persisted interruption starts idle time at the stop, not the old reply', () => {
+    const before = Date.now()
+    const live = sessionStateWith([
+      { ...text('assistant', 'earlier reply'), sentAt: before - 6 * 60_000 },
+      {
+        ...text('user', 'continue'),
+        tags: ['USER_PROMPT'],
+        sentAt: before - 6 * 60_000,
+      },
+    ])
+    live.mainAgentState.lastActivityAt = before - 6 * 60_000
+    const saved = buildCancelledSessionState({
+      sessionState: live,
+      runtimeMadeProgress: true,
+      message: 'Run cancelled by user.',
+    })
+    const restored: SessionState = JSON.parse(JSON.stringify(saved))
+    const state = restored.mainAgentState
+    const stoppedAt = state.lastActivityAt!
+    expect(stoppedAt).toBeGreaterThanOrEqual(before)
+    expect(stoppedAt).toBeLessThanOrEqual(Date.now())
+    expect(live.mainAgentState.lastActivityAt).toBe(before - 6 * 60_000)
+    state.messageHistory.push({
+      ...text('user', 'continue again'),
+      tags: ['USER_PROMPT'],
+      sentAt: stoppedAt + 2000,
+    })
+    expect(
+      isIdleReturn(state.messageHistory, SUMMARY_IDLE_MS, undefined, stoppedAt),
+    ).toBe(false)
+    state.messageHistory.at(-1)!.sentAt = stoppedAt + SUMMARY_IDLE_MS + 1
+    expect(
+      isIdleReturn(state.messageHistory, SUMMARY_IDLE_MS, undefined, stoppedAt),
+    ).toBe(true)
+  })
+
   test('the count describes the history it persists', () => {
     // The turn ended, the runtime recounted, and THEN this appended the
     // cancellation message. Leaving the count alone persists a number that is

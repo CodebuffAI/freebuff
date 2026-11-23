@@ -71,7 +71,11 @@ import {
 } from '@codebuff/common/types/ad-client-context'
 
 export type EngagementExit = NonNullable<AdEngagement['exit']>
+export type AdYieldReason = NonNullable<
+  NonNullable<AdEngagement['yielded']>['reason']
+>
 export type ClickRegion = (typeof CLICK_REGIONS)[number]
+export type EngagementEndedBy = NonNullable<AdEngagement['endedBy']>
 
 /** A click followed by focus loss within this long means the browser took focus. */
 export const POST_CLICK_LEAVE_GRACE_MS = 3_000
@@ -184,6 +188,16 @@ export interface EngagementTracker {
   /** The first measurement wins. */
   truncated(value: boolean): void
   /**
+   * The ad gave way to another ad on screen. `held`: its slot keeps it to show
+   * again, so the time until {@link EngagementTracker.unhide} is counted as
+   * `yielded.hiddenMs`.
+   */
+  hide(reason: AdYieldReason, held: boolean): void
+  /** A held ad is shown again; ends the hidden interval. */
+  unhide(): void
+  /** Why the ad came off screen (`endedBy` on the final record). */
+  endedBy(value: EngagementEndedBy): void
+  /**
    * The bounded-exposure checkpoint: send the record so far and keep
    * tracking. At most once, shared with the leave-the-viewport checkpoint;
    * a no-op unless `checkpoints` is on.
@@ -272,6 +286,14 @@ export function createEngagementTracker(
   let reentries = 0
   let leftAt: number | undefined
   let keysVisible = 0
+
+  // one ad on screen at a time: why and how long this ad gave way
+  let yieldReason: AdYieldReason | undefined
+  let yieldCount = 0
+  let heldHiddenMs = 0
+  let heldEver = false
+  let hiddenSince: number | undefined
+  let endedBy: EngagementEndedBy | undefined
 
   let click: Omit<NonNullable<AdEngagement['click']>, 'count'> | undefined
   let clickCount = 0
@@ -458,7 +480,23 @@ export function createEngagementTracker(
           : clampMs(firstHoverAt - mountAt),
       sentMessageDuringExposure: sentMessage,
       exit,
+      yielded:
+        yieldCount > 0
+          ? defined({
+              reason: yieldReason,
+              count: count(yieldCount),
+              hiddenMs: heldEver
+                ? clampMs(
+                    heldHiddenMs +
+                      (hiddenSince !== undefined
+                        ? Math.max(0, lastAt - hiddenSince)
+                        : 0),
+                  )
+                : undefined,
+            })
+          : undefined,
       truncated,
+      endedBy,
       idleVisibleMs:
         visibilityKnown && lastInputAt !== undefined
           ? clampMs(idleVisibleMs)
@@ -481,6 +519,8 @@ export function createEngagementTracker(
       if (clickCount === 0) return priorClick
       return defined({
         ...priorClick,
+        // the late click went out the moment it landed
+        atClick: true,
         count: count((priorClick.count ?? 1) + clickCount),
       })
     }
@@ -587,6 +627,10 @@ export function createEngagementTracker(
             focusSupported && focused !== null ? focused : undefined,
           region: detail.region,
           modifier: detail.modifier,
+          // A click-only tracker and a checkpointing one both send this click
+          // the moment it lands (below); the flush's `click` replaces it in
+          // the server's shallow merge, so it must say so too.
+          atClick: clickOnly || checkpoints ? true : undefined,
         })
         armPostClick(t)
       })
@@ -626,6 +670,28 @@ export function createEngagementTracker(
     truncated(value) {
       if (flushed || truncated !== undefined) return
       truncated = value
+    },
+    hide(reason, held) {
+      if (flushed || clickOnly) return
+      update((t) => {
+        yieldReason = reason
+        yieldCount += 1
+        if (held && hiddenSince === undefined) {
+          heldEver = true
+          hiddenSince = t
+        }
+      })
+    },
+    unhide() {
+      if (flushed || hiddenSince === undefined) return
+      update((t) => {
+        heldHiddenMs += Math.max(0, t - (hiddenSince ?? t))
+        hiddenSince = undefined
+      })
+    },
+    endedBy(value) {
+      if (flushed || clickOnly) return
+      endedBy = value
     },
     checkpoint() {
       exposureCheckpoint()
@@ -740,6 +806,23 @@ export interface EngagementRegistry {
   unmount(handle: EngagementHandle): void
   /** Slots swapped creatives: `from` left on a rotation, `to` arrived. */
   noteSlotSwap(from: readonly string[], to: readonly string[]): void
+  /**
+   * The slot keeps `impUrl` to show again after another ad leaves the screen:
+   * the record stays open (no release grace, no flush) while it is not drawn,
+   * and the hidden time is counted. A no-op for an impression not tracked or
+   * already flushed.
+   */
+  hold(impUrl: string, reason: AdYieldReason): void
+  /** The held impression may show again; an undrawn one then ends as usual. */
+  release(impUrl: string): void
+  /** A drawn impression gave way for good (it will unmount now). */
+  noteYield(impUrl: string, reason: AdYieldReason): void
+  /**
+   * A drawn impression came off screen because it was shown too long
+   * (`common/src/ads/ad-expiry.ts`): it ends as `rotation` with
+   * `endedBy: 'expired'`. Call before the slot swaps it out.
+   */
+  noteExpired(impUrl: string): void
   terminalFocus(focused: boolean): void
   messageSent(): void
   userInput(): void
@@ -766,13 +849,17 @@ interface Entry {
   checkpointTimer: TimerHandle | null
   /** a click-only redraw of an already-flushed impression */
   late: boolean
+  /** kept by its slot to show again: no release grace while undrawn */
+  held: boolean
 }
 
 export function decideExit(input: {
   rotatedAway: boolean
   msSinceMessageSent: number | undefined
+  /** Taken off for being shown too long: a rotation with no successor. */
+  expired?: boolean
 }): EngagementExit {
-  if (input.rotatedAway) return 'rotation'
+  if (input.rotatedAway || input.expired) return 'rotation'
   if (
     input.msSinceMessageSent !== undefined &&
     input.msSinceMessageSent >= 0 &&
@@ -798,6 +885,7 @@ export function createEngagementRegistry(
   const lateEntries = new Map<string, Entry>()
   const finished = new Set<string>()
   const rotatedAway = new Set<string>()
+  const expired = new Set<string>()
   const swappedInAt = new Map<string, number>()
   // The click block each clicked impression has reported, for late clicks.
   const clicks = new Map<string, EngagementClickBlock>()
@@ -855,6 +943,7 @@ export function createEngagementRegistry(
     if (!entry.late) {
       finished.add(impUrl)
       rotatedAway.delete(impUrl)
+      expired.delete(impUrl)
     }
     safely(() => entry.tracker.flush(exit))
     safely(() => {
@@ -878,6 +967,7 @@ export function createEngagementRegistry(
       pendingExit: null,
       checkpointTimer: null,
       late,
+      held: false,
     }
     let idleMsAtMount: number | undefined
     try {
@@ -923,6 +1013,21 @@ export function createEngagementRegistry(
     return created
   }
 
+  /** The last owner left: decide the exit now, flush after the grace. */
+  const startRelease = (impUrl: string, entry: Entry) => {
+    const exit = decideExit({
+      rotatedAway: rotatedAway.has(impUrl),
+      expired: expired.has(impUrl),
+      msSinceMessageSent:
+        lastMessageAt === undefined ? undefined : env.now() - lastMessageAt,
+    })
+    entry.pendingExit = exit
+    entry.timer = setTimer(() => {
+      entry.timer = null
+      finish(impUrl, entry, exit)
+    }, grace)
+  }
+
   return {
     get size() {
       return entries.size + lateEntries.size
@@ -959,19 +1064,46 @@ export function createEngagementRegistry(
       ].find((candidate) => candidate?.tracker === handle.tracker)
       if (!entry || entry.tracker.flushed) return
       safely(() => entry.tracker.detach(handle.token))
-      if (entry.tracker.owners > 0 || entry.timer !== null) return
+      if (entry.tracker.owners > 0 || entry.timer !== null || entry.held)
+        return
       // The exit is decided NOW, from what is known at the moment the last
       // owner left; the flush waits out the grace for a remount.
-      const exit = decideExit({
-        rotatedAway: rotatedAway.has(handle.impUrl),
-        msSinceMessageSent:
-          lastMessageAt === undefined ? undefined : env.now() - lastMessageAt,
-      })
-      entry.pendingExit = exit
-      entry.timer = setTimer(() => {
+      startRelease(handle.impUrl, entry)
+    },
+    hold(impUrl, reason) {
+      const entry = entries.get(impUrl)
+      if (!entry || entry.tracker.flushed) return
+      // the owner may already have left: its grace is cancelled, not run
+      if (entry.timer !== null) {
+        clearTimer(entry.timer)
         entry.timer = null
-        finish(handle.impUrl, entry, exit)
-      }, grace)
+        entry.pendingExit = null
+      }
+      if (!entry.held) safely(() => entry.tracker.hide(reason, true))
+      entry.held = true
+    },
+    release(impUrl) {
+      const entry = entries.get(impUrl)
+      if (!entry || !entry.held) return
+      entry.held = false
+      safely(() => entry.tracker.unhide())
+      if (
+        !entry.tracker.flushed &&
+        entry.tracker.owners === 0 &&
+        entry.timer === null
+      )
+        startRelease(impUrl, entry)
+    },
+    noteYield(impUrl, reason) {
+      const entry = entries.get(impUrl)
+      if (!entry || entry.tracker.flushed || entry.held) return
+      safely(() => entry.tracker.hide(reason, false))
+    },
+    noteExpired(impUrl) {
+      const entry = entries.get(impUrl)
+      if (!entry || entry.tracker.flushed) return
+      remember(expired, impUrl)
+      safely(() => entry.tracker.endedBy('expired'))
     },
     noteSlotSwap(from, to) {
       const incoming = new Set(to)
@@ -1075,4 +1207,66 @@ export function rowsIntersect(
   )
     return undefined
   return card.top < viewport.bottom && card.top + card.height > viewport.top
+}
+
+/** Screen rows of something drawn in the transcript; `null` when unmeasurable. */
+export type MeasureRows = () => { top: number; height: number } | null
+
+/**
+ * The last screen row of a laid-out node (where content placed after it
+ * starts), or `null` when there is no node or it cannot be measured.
+ */
+export function lastRowOf(
+  node: { screenY: number; height: number; isDestroyed?: boolean } | null,
+): { top: number; height: number } | null {
+  if (!node || node.isDestroyed) return null
+  if (!Number.isFinite(node.screenY) || !Number.isFinite(node.height)) return null
+  if (node.height <= 0) return null
+  return { top: node.screenY + node.height - 1, height: 1 }
+}
+
+// ---------------------------------------------------------- seen-after-dwell
+
+/**
+ * How long a transcript card's rows must stay inside the viewport, with the
+ * terminal not known to be unfocused, before its impression is reported.
+ */
+export const TRANSCRIPT_IMPRESSION_DWELL_MS = 1_000
+
+export interface ViewDwellGate {
+  /**
+   * Feed one measurement. Returns `true` exactly once: on the first update at
+   * which the card has been continuously seen for the dwell.
+   *
+   * `visible: undefined` (unmeasurable: no viewport registered, or a node
+   * that cannot be measured) counts as seen, so a layout the check cannot
+   * read still reports what it draws. `focused: undefined` (the terminal has
+   * never reported focus) counts as focused. Only a definite `false` on
+   * either side breaks the run and restarts the dwell.
+   */
+  update(now: number, visible: boolean | undefined, focused: boolean | undefined): boolean
+  readonly fired: boolean
+}
+
+export function createViewDwellGate(
+  dwellMs: number = TRANSCRIPT_IMPRESSION_DWELL_MS,
+): ViewDwellGate {
+  let since: number | undefined
+  let fired = false
+  return {
+    update(now, visible, focused) {
+      if (fired) return false
+      if (visible === false || focused === false || !Number.isFinite(now)) {
+        since = undefined
+        return false
+      }
+      since ??= now
+      if (now - since < dwellMs) return false
+      fired = true
+      return true
+    },
+    get fired() {
+      return fired
+    },
+  }
 }

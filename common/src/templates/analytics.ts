@@ -27,7 +27,8 @@ export type TemplateAnalytics = {
   template_version?: string
   template_entry_point: TemplateEntryPoint
 }
+/** `clicked` is a card's Preview: the live copy opened, the template not chosen. */
 export type TemplateTracker = (
-  state: 'shown' | 'selected' | 'opened',
+  state: 'shown' | 'selected' | 'opened' | 'clicked',
   properties: TemplateAnalytics,
 ) => void

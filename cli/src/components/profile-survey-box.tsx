@@ -1,5 +1,4 @@
 import { TextAttributes } from '@opentui/core'
-import { profileSurveySnoozeDays } from '@codebuff/common/constants/freebuff-profile-survey'
 import { formatHoursWithUnit } from '@codebuff/common/util/freebuff-hours'
 import { SPONSORED_SURVEY_LIMITS } from '@codebuff/common/constants/freebuff-sponsored-survey'
 import { toSponsoredSurveyAdReport } from '@codebuff/common/ads/ad-report'
@@ -43,7 +42,6 @@ export function profileSurveyHint(state: ProfileSurveyState): string {
   const numbered = numberedOptions(question)
   const top = numbered.filter((n) => n.key > 0).length
   const hasNa = numbered.some((n) => n.key === 0)
-  const snoozeDays = profileSurveySnoozeDays(state.dismissCount + 1)
   const parts = [
     `${top > 9 ? `1–9, a–${surveyOptionKey(top)}` : `1–${top}`} ${question.sponsoredKind === 'ranking' ? 'pick in rank order (again to undo)' : question.multi ? 'toggle' : 'pick'}`,
     ...(question.multi || question.sponsoredKind === 'ranking'
@@ -51,9 +49,7 @@ export function profileSurveyHint(state: ProfileSurveyState): string {
       : []),
     ...(hasNa ? ["0 doesn't apply"] : []),
     ...(state.step > 0 ? ['← back'] : []),
-    ...(snoozeDays === null || state.sponsored
-      ? ['esc not now']
-      : [`esc not now (${snoozeDays} days)`]),
+    'esc not now',
   ]
   return parts.join(' · ')
 }

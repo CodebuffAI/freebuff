@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { TURN_REVIEW_ACTION_KINDS } from './turn-review'
 import { templateAnalyticsFields } from '../templates/analytics'
 
 export const PRODUCT_FUNNEL_EVENT = 'freebuff.product_funnel_step'
@@ -19,14 +20,20 @@ export const productFunnelStageSchema = z.enum([
   'login',
   /** the first-sign-in welcome in the hosted Desktop workspace: shown, copied (the invite link), closed */
   'welcome',
-  /** the phone-app prompt on a return to the workspace after a break: shown, clicked (a store link), closed */
+  /** the phone-app prompt, on a return to the workspace after a break, after a first finished reply or from the checklist: shown (a computer sees the QR code at once), clicked (a store button on a phone), opened (a store page on a computer), closed */
   'mobile_prompt',
+  /** The Get started checklist: shown (once per page load), clicked (a step's button, `checklist_step`), closed (hidden from its menu or Done). Its A/B (`desktop_checklist_2026_11`, `checklist_variant`) ended 2026-11-13 with the card kept. */
+  'checklist',
   'browser',
   'context',
   'composer',
   'draft',
   'project',
+  /** hosted Desktop's first-project screen ("Open a project to get started"): shown, selected (`project_choice`) */
+  'project_setup',
   'template',
+  /** a finished turn's review: shown, selected (one of its buttons) */
+  'turn_review',
   'model_picker',
   'model_selection',
   'admission',
@@ -34,6 +41,8 @@ export const productFunnelStageSchema = z.enum([
   'turn',
   'response',
   'preview',
+  /** the Publish button's own build and deploy: succeeded or failed */
+  'publish',
 ])
 export const productFunnelStateSchema = z.enum([
   'shown',
@@ -104,6 +113,27 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
   }),
   /** The CLI's referral banner (its link opens /get-started). */
   cli: Object.freeze({ link: 'cli_link', email: 'cli_email' }),
+  /** The Rewards page on the rail (docs/freebuff-referral-rewards.md). */
+  rewards: Object.freeze({ link: 'rewards_link', email: 'rewards_email' }),
+  /** The streak milestone dialog (docs/referrals.md). */
+  streak: Object.freeze({ link: 'streak_link', email: 'streak_email' }),
+  /** The invite dialog after the first real look at a site preview (`referral_moments_2026_11`). */
+  first_preview: Object.freeze({
+    link: 'first_preview_link',
+    email: 'first_preview_email',
+  }),
+  /** The invite dialog after the first finished site publish (`referral_moments_2026_11`). */
+  first_publish: Object.freeze({
+    link: 'first_publish_link',
+    email: 'first_publish_email',
+  }),
+  /** Settings → Usage → Share, the "year in Freebuff" card's link (docs/freebuff-account-hub.md). */
+  year: Object.freeze({ link: 'year_link', email: 'year_email' }),
+  /** The invite dialog when lifetime tokens pass a tier (docs/referrals.md). */
+  token_milestone: Object.freeze({
+    link: 'token_milestone_link',
+    email: 'token_milestone_email',
+  }),
 })
 /**
  * The inviter's own link in the "friend started coding" lifecycle email
@@ -136,7 +166,7 @@ export const OWN_REFERRAL_CODE_PERSON_PROPERTY = 'own_referral_code'
 /**
  * `via` values of links that carry only the account's own `/?ref=` link, with
  * no email invite behind them, so the invite route never accepts them.
- * `lifecycle_email`: the Activated sequence's day-7 referral ask
+ * `lifecycle_email`: the Activated sequence's day-3 referral ask
  * (docs/freebuff-lifecycle-email.md).
  */
 export const REFERRAL_LINK_ONLY_VIA = Object.freeze({
@@ -224,11 +254,39 @@ export const welcomeVariantSchema = z.enum([
   'give',
   'share',
   'paying',
+  // The click-through welcome flow's arms (welcome-flow/steps.ts): which steps
+  // it shows, or the one-screen welcome as it was (`flow_control`).
+  'flow_control',
+  'flow_full',
+  'flow_no_integrations',
+  // The same two arms after the flow went full screen with the app tour
+  // (2026-11-12): new names, so their rows never mix with the dialog's.
+  'flow_full_v2',
+  'flow_no_integrations_v2',
+])
+/** The Get started checklist A/B's arms; since it ended (2026-11-13) every event says `checklist`. */
+export const checklistVariantSchema = z.enum(['control', 'checklist'])
+/** A step of the Get started checklist (onboarding-checklist/model.ts). */
+export const checklistStepSchema = z.enum(['project', 'message', 'mobile', 'themes'])
+/** A step of the click-through welcome flow (welcome-flow/steps.ts). */
+export const welcomeStepSchema = z.enum([
+  'unlocked',
+  'build',
+  'modes',
+  'panel',
+  'integrations',
+  'mobile',
+  'invite',
+  // The onboarding questions, one step each (2026-11-22): asked inside the
+  // welcome instead of in a card over the chat after the first send.
+  'question_referral_source',
+  'question_role',
 ])
 export const productEntryRouteSchema = z.enum([
   '/',
   '/app',
   '/app-builder',
+  '/website-builder',
   '/students',
   '/cloud',
   '/chat',
@@ -275,8 +333,14 @@ export const productFunnelPropertiesSchema = z
         'unknown',
       ])
       .optional(),
+    /** `project_setup:selected` and local `project` events: which way in the
+     *  user took: an existing folder, a recent one, a new local folder, a
+     *  GitHub repo, a template, or Start from scratch. */
+    project_choice: z
+      .enum(['open_folder', 'recent_folder', 'new_local', 'github', 'template', 'scratch'])
+      .optional(),
     destination: z
-      .enum(['desktop', 'cli', 'web', 'app_builder', 'cowork', 'mobile'])
+      .enum(['desktop', 'cli', 'web', 'app_builder', 'cowork', 'chat', 'mobile'])
       .optional(),
     location: z
       .enum([
@@ -286,6 +350,8 @@ export const productFunnelPropertiesSchema = z
         'footer',
         'workspace',
         'picker',
+        // Settings → Apps & downloads (freebuff/web settings/apps-settings.tsx).
+        'settings',
         'unknown',
       ])
       .optional(),
@@ -336,6 +402,27 @@ export const productFunnelPropertiesSchema = z
       .string()
       .regex(/^[a-z0-9_]{1,40}$/)
       .optional(),
+    /** `turn_review`: the review's verdict, `none` when it judged no change. */
+    review_verdict: z
+      .enum(['ready', 'needs_changes', 'not_promising', 'none'])
+      .optional(),
+    /** `turn_review:selected`: which button, from 0 (the most valuable). */
+    review_action: z.number().int().min(0).max(9).optional(),
+    /** `turn_review:selected`: a fix to the change, the "Code review" pill,
+     *  the "Challenge the change" pill, a next step beyond it, the
+     *  "Brainstorm follow-ups" pill, or the recommended next message taken
+     *  into the composer with Tab. */
+    review_action_kind: z
+      .enum([...TURN_REVIEW_ACTION_KINDS, 'next_prompt'])
+      .optional(),
+    /** `turn_review:shown`: whether the review offered the "Code review" pill. */
+    review_offers_code_review: z.boolean().optional(),
+    /** `turn_review:shown`: whether the review offered the "Brainstorm follow-ups" pill. */
+    review_offers_brainstorm: z.boolean().optional(),
+    /** `turn_review:shown`: whether the review offered the "Challenge the change" pill. */
+    review_offers_challenge: z.boolean().optional(),
+    /** `turn_review:shown`: how many buttons the review offered. */
+    review_action_count: z.number().int().min(0).max(9).optional(),
     selection_kind: z
       .enum([
         'default',
@@ -369,6 +456,16 @@ export const productFunnelPropertiesSchema = z
     originApp: z.enum(['desktop', 'web']).optional(),
     executionTarget: z.enum(['device', 'cloud']).optional(),
     welcome_variant: welcomeVariantSchema.optional(),
+    /** `welcome` events from the click-through flow: the step on screen. */
+    welcome_step: welcomeStepSchema.optional(),
+    /** `checklist` events: the install's arm of the Get started checklist test. */
+    checklist_variant: checklistVariantSchema.optional(),
+    /** `checklist:clicked`: whose button. */
+    checklist_step: checklistStepSchema.optional(),
+    /** `mobile_prompt:shown`: what opened it, a return after a break, a reply that just finished, or the Get started checklist. */
+    prompt_trigger: z.enum(['return', 'reply', 'checklist']).optional(),
+    /** `mobile_prompt:clicked` (a phone) and `opened` (a computer): which store. A scanned QR code is counted by `/mobile`, not here. */
+    store: z.enum(['ios', 'android']).optional(),
     renderer: z.literal('web-workspace').optional(),
     appVersion: z
       .string()
@@ -396,6 +493,7 @@ export type ProductEntryRoute = z.infer<typeof productEntryRouteSchema>
 export type ProductFunnelStage = z.infer<typeof productFunnelStageSchema>
 export type ProductFunnelState = z.infer<typeof productFunnelStateSchema>
 export type WelcomeVariant = z.infer<typeof welcomeVariantSchema>
+export type WelcomeStep = z.infer<typeof welcomeStepSchema>
 export type ProductFunnelProperties = z.infer<
   typeof productFunnelPropertiesSchema
 >

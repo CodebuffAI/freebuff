@@ -179,26 +179,27 @@ export function freebucksResetCountdown(
  *
  * Users read the refund as pro-rated by TIME — "I ended 20 minutes early and
  * still lost all 100" — because nothing told them otherwise. It is not: the
- * server returns `charge / 2 - final provider cost`, in whole hours, so ending
- * early returns money and never minutes. Every line below therefore names the
+ * server returns the whole charge of an hour that cost us nothing, and
+ * `charge / 2 - final provider cost` of a used one (at most 2 hours a day), in
+ * whole hours, so ending early returns money and never minutes. Every line below therefore names the
  * quantity, and the zero case says so out loud instead of leaving the user to
  * infer that the feature was removed.
  *
- * `0` is a settled receipt and the ordinary outcome: limited access, a session
- * that ended 30 minutes or more after its charge (2026-10-30), a price of one
- * hour, usage that cost as much as half the price, or a day's allowance
- * already used up. An unsettled or dropped receipt is `null` and says nothing.
+ * `0` is a settled receipt and the ordinary outcome: usage that cost as much
+ * as half the price, a price of one hour that was used, the day's 2 hours of
+ * used-session refunds already paid, or a day's allowance already used up
+ * (from 2026-11-12; limited access and the 30-minute window no longer matter). An unsettled or dropped receipt is `null` and says nothing.
  */
 export function freebucksRefundLine(
   lastRefund: number | null,
   refundPending: boolean,
 ): string | null {
   if (refundPending) {
-    return "Refund settling: half this session's price less what it used may come back, in whole hours."
+    return "Refund settling: an unused session comes back in full; a used one returns half its price less what it used, up to 2 hours a day."
   }
   if (lastRefund === null) return null
   if (lastRefund <= 0) {
-    return "No hours returned: refunds apply only to full access sessions ended within 30 minutes, and a refund never refills a daily allowance already used up. A refund is half a session's price less what it used, in whole hours, never unused time."
+    return "No hours returned: a used session returns half its price less what it used, up to 2 hours a day, and a refund never refills a daily allowance already used up. Refunds are whole hours of balance, never unused time."
   }
-  return `${formatHoursWithUnit(lastRefund)} of balance returned: half the session's price less what it used, not the time left on it.`
+  return `${formatHoursWithUnit(lastRefund)} of balance returned: what the session did not cost, not the time left on it.`
 }

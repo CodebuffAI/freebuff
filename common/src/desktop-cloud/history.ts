@@ -1,6 +1,8 @@
 /** Shared history and attachment contract for the Postgres-backed Cloud service. */
 export type CloudHistoryPage<T> = { items: T[]; nextCursor: string | null }
 export type CloudHistoryProject = {
+  /** Multiplayer: set when another account shared this project, or a chat in it, with the caller. */
+  sharedBy?: CloudHistorySharer | null
   /** A durable local target; absence means a hosted project. Never inferred from presence. */
   deviceExecution?: import('./device-execution').DeviceExecutionTarget | null
   id: string
@@ -10,10 +12,26 @@ export type CloudHistoryProject = {
   /** The starter selected at project creation; absent from older servers. */
   template?: import('../templates/selected').SelectedTemplate | null
   /**
-   * When the user removed it from their project list, or null. A removed project is left out of
-   * `listProjects` until someone prompts in it again. Absent from older servers.
+   * Created with files: its folder source carries an upload (a chosen folder, a template, a legacy
+   * copy). False for an empty or GitHub project; absent from older servers.
    */
+  seeded?: boolean
+  /**
+   * The user started it empty in Freebuff ("From scratch"), the only kind of project whose new chat
+   * offers templates. False for a chosen folder, a GitHub repository, a template, a copy, and every
+   * project created before this was recorded; absent from older servers.
+   */
+  startedFromScratch?: boolean
+  /**
+   * When the user archived it, or null. Archiving archives its chats too; an archived project is
+   * left out of `listProjects` (Settings > Archived lists it) until it is restored or someone
+   * prompts in it again. Absent from older servers, which send only `removedAt`.
+   */
+  archivedAt?: string | null
+  /** @deprecated The same as `archivedAt`, under the name older clients read. */
   removedAt?: string | null
+  /** Its chats, archived or not. Only `listProjects({ archived: true })` counts them. */
+  chatCount?: number
   /**
    * Which workspace the project belongs to (workspace-mode.ts). Set at creation; absent or null
    * from older servers and for every project created before modes existed, both meaning Code.
@@ -39,6 +57,10 @@ export type CloudHistoryRun = {
   /** A queued turn's sibling chat running in the same folder, which it usually waits for;
    * null when there is none. `title` is null for an untitled chat. Absent from older servers. */
   waitingForChat?: { id: string; title: string | null } | null
+  /** Queued by the chat's Desktop when its Claude Code process answered on its own after a
+   *  background task finished (web device-execution/background-wake.ts): no message opens it.
+   *  Absent from older servers. */
+  backgroundWake?: boolean
 }
 /** A chat's `title` while it has neither a title nor a first run to name it (history-store.ts). */
 export const UNTITLED_CLOUD_CHAT_TITLE = 'Cloud chat'
@@ -50,6 +72,8 @@ export function isUntitledCloudChat(chat: Pick<CloudHistoryChat, 'title' | 'late
     (chat.title === UNTITLED_CLOUD_CHAT_TITLE || chat.title === UNTITLED_DEVICE_CHAT_TITLE)
 }
 export type CloudHistoryChat = {
+  /** Multiplayer: set when another account shared this chat with the caller; null or absent for their own. */
+  sharedBy?: CloudHistorySharer | null
   deviceExecution?: import('./device-execution').DeviceExecutionTarget | null
   mission?: import('./mission').CloudMission | null
   /** The chat this one was forked from (the sidebar nests it there), or null. Absent from older servers. */
@@ -72,6 +96,12 @@ export type CloudHistoryChat = {
    * so a client must not buy a session for one. Absent from older servers.
    */
   resourceLimited?: boolean
+  /**
+   * The project's latest checkpoint failed for being over the 4 GiB limit, so Cloud can neither
+   * archive it nor back up its newest changes; null once one succeeds. Every chat in the project
+   * carries it. Absent from older servers.
+   */
+  checkpointTooLarge?: import('./checkpoint-limit').CheckpointTooLarge | null
   metadataRevision: number
   phase: string
   updatedAt: string
@@ -105,6 +135,12 @@ export type CloudHistoryAttachment = {
     admittedAt: string
     expiresAt: string | null
   } | null
+  /**
+   * This claim bought an hour that is now over by the clock, so its next admission is refused
+   * (`purchase_claim_released`: claims are single-use). The composer starts a new claim before
+   * sending instead of learning it from that refusal. Absent: not ended, or an older server.
+   */
+  claimEnded?: true
 }
 export type CloudHistoryChatUpdate = {
   expectedRevision: number
@@ -116,13 +152,39 @@ export type CloudHistoryChatUpdate = {
  * session, holding no Freebuff session of its own until it is sent to. `chatId` is the new chat's
  * id, minted by the client and reused on a retry so the fork is created once.
  */
-export type CloudHistoryChatFork = { chatId: string }
+export type CloudHistoryChatFork = {
+  chatId: string
+  /** As a side chat's (`CloudHistorySideChat.cutAtTurn`): a running chat of one of these harnesses
+   *  forks from its last finished turn now. Absent or without the chat's harness: it waits. */
+  cutAtTurn?: SideChatCutHarness[]
+  /**
+   * The folder the fork runs in, with the files Desktop copied there.
+   * - Multiplayer: the fork of a chat shared with the caller lands in the caller's own account, in
+   *   this project of theirs, on this computer binding of theirs (history-store.ts `forkSharedChat`).
+   *   Required for a shared chat.
+   * - One's own chat in its own worktree: the fork's own worktree, without `projectId`
+   *   (history-store.ts `forkChatToFolder`). The chat must not be running.
+   */
+  into?: { projectId?: string; deviceExecution: import('./device-execution').DeviceExecutionTarget }
+}
+/** Multiplayer: the owner of a chat or project another account shared with the caller. */
+export type CloudHistorySharer = { email: string; name: string | null }
 /**
  * Open a side chat beside a chat on the computer it runs on: a fork, read-only and hidden from
  * chat lists, made from the chat's last saved turn even while a turn runs. Deleting it (or its
  * parent) discards it. `chatId` is minted by the client and reused on a retry.
  */
-export type CloudHistorySideChat = { chatId: string }
+/** A harness whose running turn's session a side chat can be cut back from (history-store.ts `sideChatCut`). */
+export type SideChatCutHarness = 'claude-code' | 'codex'
+export type CloudHistorySideChat = {
+  chatId: string
+  /** The harnesses this Desktop can cut a running turn's session for at a finished turn (Claude Code:
+   *  `claudeRollback`; Codex: `codexForkBeforeTurn`), so a side chat of a chat running one opens
+   *  now. Absent or without the chat's harness: it waits for the turn to finish. */
+  cutAtTurn?: SideChatCutHarness[]
+}
+/** `GET chats/:id/side`: why opening a side chat would be refused right now, or null when it opens. */
+export type CloudHistorySideChatAvailability = { unavailable: string | null }
 /** The ids of the turns a side chat copied from its parent start with this; its own turns' never
  *  do (they are client-minted UUIDs). Its panel shows only its own. */
 export const SIDE_CHAT_COPIED_RUN_PREFIX = 'side-'
@@ -138,12 +200,25 @@ export type CloudHistoryChatRolledBack = {
   mode: 'cut' | 'note' | 'unchanged'
 }
 /**
- * Last write wins: a project name has no revision to compare. Removing keeps its chats and files;
- * `removed: false` puts it back in the list.
+ * Last write wins: a project name has no revision to compare. `archived: true` archives the project
+ * and every chat in it; `archived: false` restores it with the chats it archived, while chats
+ * archived on their own stay archived. Nothing is deleted: files and chats are kept. `removed` is
+ * the name older clients send for `archived`.
  */
-export type CloudHistoryProjectUpdate =
-  | { name: string; removed?: boolean }
-  | { name?: string; removed: boolean }
+export type CloudHistoryProjectUpdate = {
+  name?: string
+  archived?: boolean
+  /** @deprecated Older clients' name for `archived`. */
+  removed?: boolean
+}
+/** Archived listings: Settings > Archived. */
+export type CloudHistoryArchivedFilter = { archived?: boolean }
+/**
+ * A project deleted for good from Settings > Archived. It is never listed, restored or reused
+ * again, and counts as archived forever: a folder Desktop still lists for it stays out of the
+ * sidebar, as an archived project's folder does.
+ */
+export type CloudDeletedProject = { id: string; deletedAt: string }
 /**
  * A server-internal run event marking that the run's SDK traces are stored in
  * R2 rather than as `trace` events. Never returned by the history API or the
@@ -207,9 +282,11 @@ export function createCloudHistoryClient(
     update?: CloudHistoryChatUpdate | CloudHistoryProjectUpdate | CloudHistoryChatFork | CloudHistoryChatRollback | CloudHistoryAttentionAck,
     search?: string,
     method: 'GET' | 'PATCH' | 'POST' = update ? 'PATCH' : 'GET',
+    archived?: boolean,
   ): Promise<T> {
     const query = new URLSearchParams()
     if (search) query.set('search', search)
+    if (archived) query.set('archived', 'true')
     if (page.cursor != null) query.set('cursor', page.cursor)
     if (page.limit !== undefined) query.set('limit', String(page.limit))
     if (projectId !== undefined) query.set('projectId', projectId)
@@ -243,10 +320,13 @@ export function createCloudHistoryClient(
   }
   const id = encodeURIComponent
   return {
-    listProjects: (page?: CloudHistoryOptions) =>
-      get<CloudHistoryPage<CloudHistoryProject>>('projects', page),
+    listProjects: (page: CloudHistoryOptions & CloudHistoryArchivedFilter = {}) =>
+      get<CloudHistoryPage<CloudHistoryProject>>('projects', page, undefined, undefined, undefined, 'GET', page.archived),
     getProject: (projectId: string, signal?: AbortSignal) =>
       get<CloudHistoryProject>(`projects/${id(projectId)}`, { signal }),
+    /** The account's most recently deleted projects (at most 1000); older servers answer 404. */
+    listDeletedProjects: (signal?: AbortSignal) =>
+      get<{ projects: CloudDeletedProject[] }>('deleted-projects', { signal }),
     updateProject: (
       projectId: string,
       update: CloudHistoryProjectUpdate,
@@ -258,14 +338,27 @@ export function createCloudHistoryClient(
         undefined,
         update,
       ),
-    listChats: (page: CloudHistoryOptions & { projectId?: string; search?: string } = {}) =>
-      get<CloudHistoryPage<CloudHistoryChat>>('chats', page, page.projectId, undefined, page.search),
+    /** `archived`: the chats Settings > Archived lists, archived alone or with their project. */
+    listChats: (page: CloudHistoryOptions & CloudHistoryArchivedFilter & { projectId?: string; search?: string } = {}) =>
+      get<CloudHistoryPage<CloudHistoryChat>>('chats', page, page.projectId, undefined, page.search, 'GET', page.archived),
     getChat: (chatId: string, signal?: AbortSignal) =>
       get<CloudHistoryChat>(`chats/${id(chatId)}`, { signal }),
     forkChat: (chatId: string, fork: CloudHistoryChatFork, signal?: AbortSignal) =>
       get<CloudHistoryChat>(`chats/${id(chatId)}/fork`, { signal }, undefined, fork, undefined, 'POST'),
     openSideChat: (chatId: string, side: CloudHistorySideChat, signal?: AbortSignal) =>
       get<CloudHistoryChat>(`chats/${id(chatId)}/side`, { signal }, undefined, side, undefined, 'POST'),
+    /** Why opening a side chat of this chat would be refused right now, or null when it would open. */
+    sideChatAvailability: (chatId: string, cutAtTurn: readonly SideChatCutHarness[] | null, signal?: AbortSignal) =>
+      get<CloudHistorySideChatAvailability>(
+        `chats/${id(chatId)}/side${cutAtTurn?.length ? `?cutAtTurn=${cutAtTurn.join(',')}` : ''}`,
+        { signal },
+      ),
+    /** Why forking this chat would be refused right now, or null when it would fork. */
+    forkAvailability: (chatId: string, cutAtTurn: readonly SideChatCutHarness[] | null, signal?: AbortSignal) =>
+      get<CloudHistorySideChatAvailability>(
+        `chats/${id(chatId)}/fork${cutAtTurn?.length ? `?cutAtTurn=${cutAtTurn.join(',')}` : ''}`,
+        { signal },
+      ),
     rollbackChat: (chatId: string, rollback: CloudHistoryChatRollback, signal?: AbortSignal) =>
       get<CloudHistoryChatRolledBack>(`chats/${id(chatId)}/rollback`, { signal }, undefined, rollback, undefined, 'POST'),
     getAttachment: (chatId: string, signal?: AbortSignal) =>

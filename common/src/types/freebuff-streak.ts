@@ -41,4 +41,17 @@ export interface FreebuffStreakResponse {
    * Pacific). Absent when nothing was granted, and from older servers.
    */
   bonusExpiresAt?: string | null
+  /**
+   * Whether the account has ever reached a 7-day streak, which unlocks the
+   * Streak Fire theme for good (`STREAK_THEME_PRESET_ID`). Absent from older
+   * servers, which clients read as false.
+   */
+  streakThemeUnlocked?: boolean
+  /**
+   * A streak milestone (a streak theme's days) reached today, set by
+   * freebuff.com's `/api/web/streak` for a `classic` account: the workspace
+   * offers to share it. Phone apps get it
+   * only when they ask with `?share=1`. Absent otherwise.
+   */
+  shareMilestone?: number
 }

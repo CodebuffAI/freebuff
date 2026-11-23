@@ -1,4 +1,5 @@
 import { contextPrunerBudgetForModel } from '@codebuff/common/constants/model-config'
+import { isRootStepReminderMessage } from '@codebuff/common/util/system-reminder'
 import { compactionThreshold } from '@codebuff/common/constants/compaction-policy'
 import { BYOK_RUN_ID_PREFIX } from '@codebuff/common/constants/byok'
 import {
@@ -59,7 +60,9 @@ import {
   manualCompactionIsWorthwhile,
   conversationSummaries,
   isIdleReturn,
+  midTurnSummaryIsDue,
   summarizeAndLog,
+  summaryBandStart,
   summaryIdleMs,
   summaryIsDue,
   summaryRequestHistory,
@@ -74,6 +77,8 @@ import {
   shouldOfferProjectProfileTool,
 } from './project-profile'
 import { getAgentStreamFromTemplate } from './prompt-agent-stream'
+import { capToolResultImages } from './util/tool-images'
+import { reviewTurn } from './turn-review'
 import { isThinkOnlyResponse } from './util/think-tags'
 import {
   decideFollowupTodoNudge,
@@ -187,6 +192,7 @@ import type {
   TextPart,
   ImagePart,
 } from '@codebuff/common/types/messages/content-part'
+import type { TurnReview } from '@codebuff/common/constants/turn-review'
 import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
 import type {
   AgentTemplateType,
@@ -286,6 +292,14 @@ export const runAgentStep = async (
      * (`withCompactionSummary` in the SDK), so a restart does not lose it.
      */
     onCompactionSummary?: (summary: ConversationSummary) => void
+    /**
+     * Given, a root turn that ended normally is reviewed by its own model in
+     * the background (turn-review.ts), usually after the run returned. The
+     * review never joins the history.
+     */
+    onTurnReview?: (review: TurnReview | null) => void
+    /** The review's instruction (`turnReviewPrompt`); TURN_REVIEW_PROMPT when absent. */
+    turnReviewPrompt?: string
   } & ParamsExcluding<
     typeof processStream,
     | 'agentContext'
@@ -405,23 +419,36 @@ export const runAgentStep = async (
   // and replayed, that one orphan would fail every later turn, so drop it here
   // — the single point every step's request is built — and assign the cleaned
   // history back so the checkpointed state is valid too.
-  const history = dropUnansweredToolCalls(
-    expireMessages(agentState.messageHistory, 'agentStep'),
+  // Only the newest tool-result images stay attached (tool-images.ts): a
+  // history of hundreds of page images re-sent on every step OOM-killed Cloud
+  // runners on 2026-11-11. Assigned back below, so the saved state shrinks too.
+  const history = capToolResultImages(
+    dropUnansweredToolCalls(
+      expireMessages(agentState.messageHistory, 'agentStep'),
+    ),
   )
 
-  const agentMessagesUntruncated = buildArray<Message>(
-    ...history,
-
-    stepPrompt &&
-      userMessage({
+  const stepMessage = stepPrompt
+    ? userMessage({
         content: stepPrompt,
         tags: ['STEP_PROMPT'],
 
         // James: Deprecate the below, only use tags, which are not prescriptive.
         timeToLive: 'agentStep' as const,
         keepDuringTruncation: true,
-      }),
-  )
+      })
+    : undefined
+  // base3's batching reminder stays in history instead of expiring after the
+  // step (2026-11-11). Deleting it each step meant no request extended the
+  // one before, so the provider re-read the previous step's tail and output
+  // uncached on every step: about a quarter of DeepSeek Flash's cache misses
+  // (~$300/day). Kept, the history only grows, at ~60 cached tokens a step.
+  // Compaction still leaves it out (`isEphemeral` reads the STEP_PROMPT tag).
+  // Other agents' step prompts still expire.
+  if (stepMessage && isRootStepReminderMessage(stepMessage))
+    delete stepMessage.timeToLive
+
+  const agentMessagesUntruncated = buildArray<Message>(...history, stepMessage)
 
   agentState.messageHistory = agentMessagesUntruncated
 
@@ -1507,7 +1534,12 @@ export async function loopAgentSteps(
   let compactionWindow: CompactionWindow | undefined
   let firstOutputLogged = false
   const idleMs = summaryIdleMs(agentTemplate.model)
-  const idleAtStart = isIdleReturn(currentAgentState.messageHistory, idleMs)
+  const idleAtStart = isIdleReturn(
+    currentAgentState.messageHistory,
+    idleMs,
+    undefined,
+    currentAgentState.lastActivityAt,
+  )
 
   const compactionVersion = agentTemplate.compactContext
     ? SUMMARY_COMPACTION_VERSION
@@ -1563,6 +1595,13 @@ export async function loopAgentSteps(
   /** The context size the provider reported for this run's latest step:
    *  input plus output tokens. Summary decisions use only this. */
   let stepUsageTokens: number | undefined
+  /** The last size any step of this run reported: a cancelled or failed
+   *  step reports none, and its turn-end summary is decided on this. */
+  let lastStepUsageTokens: number | undefined
+  /** Mid-turn summaries start in the band below the compaction threshold. */
+  const bandStart = summaryBandStart(maxContextLength)
+  /** Set when compaction left the run over its hard budget. */
+  let stoppedOverBudget = false
   // The server accepts a request only while its run is open, so the run
   // finishes after the summaries it started.
   const runSummaries: Promise<unknown>[] = []
@@ -1633,9 +1672,14 @@ export async function loopAgentSteps(
         }),
     })
 
-  /** Starts a background summary when the context grew enough since the
-   *  last one. The cache is warm here: a step or a turn just ended. */
-  const startSummaryIfDue = (midTurn: boolean, fixedTokenCount: number) => {
+  /** Starts a background summary when one is due: after a step, once the
+   *  context is in the near-limit band; at a turn's end, when it grew enough
+   *  since the last one. The cache is warm here: a step or a turn just ended. */
+  const startSummaryIfDue = (
+    midTurn: boolean,
+    fixedTokenCount: number,
+    contextTokens = stepUsageTokens,
+  ) => {
     if (!agentTemplate.compactContext || summaries.pending()) return
     const history = currentAgentState.messageHistory
     // A window too small for a summary to clear room (a large fixed prompt
@@ -1650,7 +1694,6 @@ export async function loopAgentSteps(
       })
     )
       return
-    const contextTokens = stepUsageTokens
     if (contextTokens === undefined) return
     const latest = summaries.latest(
       currentAgentState.compactionSummary,
@@ -1658,8 +1701,9 @@ export async function loopAgentSteps(
     )
     // Swapped in and not sized by a response yet: growth has no start.
     if (latest && latest.contextTokens === undefined) return
+    const due = midTurn ? midTurnSummaryIsDue : summaryIsDue
     if (
-      !summaryIsDue({
+      !due({
         contextTokens,
         maxContextLength,
         latestContextTokens: latest?.contextTokens,
@@ -1691,6 +1735,38 @@ export async function loopAgentSteps(
   }
 
   /**
+   * A cancelled or failed turn still leaves the user a history to return to,
+   * and the last step's request warmed its cache: summarize it as a finished
+   * turn would be. No step size is reported for the step that stopped, so it
+   * is decided on the last one this run had.
+   */
+  const startSummaryAfterTurnStopped = () => {
+    if (!agentTemplate.compactContext || manualCompaction) return
+    try {
+      startSummaryIfDue(
+        false,
+        countTokens(system) + countTokensJson(toolsForTokenCount),
+        lastStepUsageTokens,
+      )
+    } catch (error) {
+      logger.warn(
+        { error: getErrorObject(error) },
+        'Starting the summary of a stopped turn failed',
+      )
+    }
+  }
+
+  /** The server accepts a request only while its run is open: the run
+   *  finishes after its background work, without holding up the caller. */
+  const finishAfter = async (
+    background: Promise<unknown>[],
+    finish: () => Promise<unknown>,
+  ) => {
+    if (background.length) void Promise.allSettled(background).then(finish)
+    else await finish()
+  }
+
+  /**
    * Replaces the covered history with the newest summary. Waits for a summary
    * in progress. At the context limit, or on a manual request, with no usable
    * summary it makes one now (the cache is warm). After an idle gap it never
@@ -1710,6 +1786,7 @@ export async function loopAgentSteps(
     let waitedForPending = false
     let generatedForeground = false
     let summaryId: string | undefined
+    let summaryContextTokens: number | undefined
     const isRoot = !initialAgentState.parentId
     const before = currentAgentState.messageHistory
     // This turn's own request (and steering) stays a real message.
@@ -1741,9 +1818,19 @@ export async function loopAgentSteps(
       // A ready summary is used at once, even when a newer one is in
       // progress: waiting for it cost ~1 min a swap in the base3 eval
       // (10-28). The newer one replaces it at the next swap, when it adds
-      // something. Only with nothing ready does the run wait for it.
+      // something. The run waits for it with nothing ready, or at the limit
+      // when only it is in the near-limit band: mid-turn summaries start
+      // only there, so the ready one is from an earlier turn's end and would
+      // drop everything since.
       const pending = summaries.pending()
-      if (pending && !usable(applied)) {
+      const pendingIsFresher =
+        pending !== undefined &&
+        (trigger === 'context_limit' ||
+          trigger === 'context_limit_and_cache_expiry') &&
+        pending.contextTokens >= bandStart &&
+        (summary?.contextTokens === undefined ||
+          summary.contextTokens < bandStart)
+      if (pending && (!usable(applied) || pendingIsFresher)) {
         waitedForPending = true
         showStatus()
         const completed = await untilAborted(pending.promise, signal)
@@ -1782,6 +1869,7 @@ export async function loopAgentSteps(
       }
       if (!summary || !usable(applied)) return false
       summaryId = summary.id
+      summaryContextTokens = summary.contextTokens
 
       if (compactionWindow)
         closeCompactionWindow({
@@ -1870,6 +1958,7 @@ export async function loopAgentSteps(
             ready_summary: readySummary,
             waited_for_pending: waitedForPending,
             generated_foreground: generatedForeground,
+            summary_context_tokens: summaryContextTokens,
             context_token_count: preTokens,
             max_context_length: maxContextLength,
           },
@@ -1942,7 +2031,13 @@ export async function loopAgentSteps(
           currentAgentState.messageHistory,
         )
         const idle =
-          !idleChecked && isIdleReturn(currentAgentState.messageHistory, idleMs)
+          !idleChecked &&
+          isIdleReturn(
+            currentAgentState.messageHistory,
+            idleMs,
+            undefined,
+            currentAgentState.lastActivityAt,
+          )
         idleChecked = true
         // The provider's count for the latest response (input + output),
         // from this run or the saved state. What was added since (tool
@@ -1992,6 +2087,7 @@ export async function loopAgentSteps(
           contextTokens !== undefined &&
           contextTokens > maxContextLength
         ) {
+          stoppedOverBudget = true
           throw new Error(
             compactionOverBudgetMessage({
               maxContextLength,
@@ -2153,8 +2249,10 @@ export async function loopAgentSteps(
 
         onAgentUsageReceived: (usage) => {
           // Spawned agents report through the same callback.
-          if (usage.agentId === initialAgentState.agentId)
+          if (usage.agentId === initialAgentState.agentId) {
             stepUsageTokens = usage.inputTokens + usage.outputTokens
+            lastStepUsageTokens = stepUsageTokens
+          }
           params.onAgentUsageReceived?.(usage)
         },
         agentState: currentAgentState,
@@ -2437,24 +2535,64 @@ export async function loopAgentSteps(
       )
     }
 
-    const finishCompletedRun = () =>
-      finishAgentRun({
-        ...params,
-        runId,
-        status: 'completed',
-        totalSteps,
-        directCredits: currentAgentState.directCreditsUsed,
-        totalCredits: currentAgentState.creditsUsed,
-      })
-    const background = [
-      ...(projectProfileReport ? [projectProfileReport] : []),
-      ...runSummaries,
-    ]
-    if (background.length) {
-      void Promise.allSettled(background).then(finishCompletedRun)
-    } else {
-      await finishCompletedRun()
-    }
+    // The last response warmed the cache; the host shows what comes back.
+    const onTurnReview = params.onTurnReview
+    const turnReview =
+      onTurnReview && !initialAgentState.parentId && !manualCompaction
+        ? reviewTurn({
+            history: summaryRequestHistory(currentAgentState.messageHistory),
+            system,
+            prompt: params.turnReviewPrompt,
+            logger,
+            runId,
+            model: agentTemplate.model,
+            telemetry,
+            stream: (request) =>
+              getAgentStreamFromTemplate({
+                ...params,
+                agentId: undefined,
+                template: {
+                  ...agentTemplate,
+                  reasoningOptions: summaryReasoningOptions(
+                    agentTemplate.model,
+                    agentTemplate.reasoningOptions,
+                  ),
+                },
+                runId,
+                messages: request.messages,
+                tools,
+                includeCacheControl: supportsCacheControl(agentTemplate.model),
+                maxOutputTokens: request.maxOutputTokens,
+                signal: request.signal,
+                extraCodebuffMetadata: {
+                  ...runMetadata,
+                  ...request.extraCodebuffMetadata,
+                },
+                onFinishReason: request.onFinishReason,
+                onUsageReceived: request.onUsageReceived,
+                onCostCalculated: async () => {},
+              }),
+          }).then((review) => {
+            onTurnReview(review)
+          })
+        : undefined
+
+    await finishAfter(
+      [
+        ...(projectProfileReport ? [projectProfileReport] : []),
+        ...runSummaries,
+        ...(turnReview ? [turnReview] : []),
+      ],
+      () =>
+        finishAgentRun({
+          ...params,
+          runId,
+          status: 'completed',
+          totalSteps,
+          directCredits: currentAgentState.directCreditsUsed,
+          totalCredits: currentAgentState.creditsUsed,
+        }),
+    )
 
     return {
       agentState: currentAgentState,
@@ -2479,6 +2617,9 @@ export async function loopAgentSteps(
           'userPrompt',
         )
       }
+
+      // Before the note below, so the summary's history is the cached one.
+      startSummaryAfterTurnStopped()
 
       currentAgentState.messageHistory = [
         ...currentAgentState.messageHistory,
@@ -2505,14 +2646,16 @@ export async function loopAgentSteps(
       // and carries this count across those edits itself.
       recountContextTokensForTurnEnd()
 
-      await finishAgentRun({
-        ...params,
-        runId,
-        status: 'cancelled',
-        totalSteps,
-        directCredits: currentAgentState.directCreditsUsed,
-        totalCredits: currentAgentState.creditsUsed,
-      })
+      await finishAfter(runSummaries, () =>
+        finishAgentRun({
+          ...params,
+          runId,
+          status: 'cancelled',
+          totalSteps,
+          directCredits: currentAgentState.directCreditsUsed,
+          totalCredits: currentAgentState.creditsUsed,
+        }),
+      )
 
       return {
         agentState: currentAgentState,
@@ -2569,6 +2712,10 @@ export async function loopAgentSteps(
     if (refused)
       currentAgentState.messageHistory =
         currentAgentState.messageHistory.filter((m) => !refused.includes(m))
+    // Not after a refusal: an unpaid request, a refused message or a history
+    // over its budget would only be refused again.
+    if (statusCode !== 402 && !refused && !stoppedOverBudget)
+      startSummaryAfterTurnStopped()
     // End the failed turn in the root's history, as a cancellation is ended
     // above: left bare, its prompt joins the next one in the live request
     // that compaction keeps verbatim. A 402 propagates; the SDK ends it.
@@ -2583,15 +2730,17 @@ export async function loopAgentSteps(
     // A failed turn still leaves history behind, and the host still shows the
     // user a context reading before their next message.
     recountContextTokensForTurnEnd()
-    await finishAgentRun({
-      ...params,
-      runId,
-      status,
-      totalSteps,
-      directCredits: currentAgentState.directCreditsUsed,
-      totalCredits: currentAgentState.creditsUsed,
-      errorMessage,
-    })
+    await finishAfter(runSummaries, () =>
+      finishAgentRun({
+        ...params,
+        runId,
+        status,
+        totalSteps,
+        directCredits: currentAgentState.directCreditsUsed,
+        totalCredits: currentAgentState.creditsUsed,
+        errorMessage,
+      }),
+    )
 
     // Payment required errors (402) should propagate
     if (statusCode === 402) {
@@ -2622,6 +2771,7 @@ export async function loopAgentSteps(
       },
     }
   } finally {
+    currentAgentState.lastActivityAt = Date.now()
     if (compactionWindow)
       closeCompactionWindow({
         window: compactionWindow,

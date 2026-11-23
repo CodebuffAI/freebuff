@@ -500,9 +500,9 @@ describe('base2 context pruning', () => {
     expect(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID).toBe(
       'deepseek/deepseek-v4-flash',
     )
-    // 312.5k: Flash compacts at 0.8x = 250k (2026-11-04).
+    // 375k: Flash compacts at 0.8x = 300k (2026-11-10; 250k from 2026-11-04).
     const flashParams = {
-      maxContextLength: 312_500,
+      maxContextLength: 375_000,
       ...DEEPSEEK_FLASH_COMPACTION_POLICY,
     }
     const flash = { model: FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID }

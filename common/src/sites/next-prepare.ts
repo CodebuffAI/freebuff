@@ -228,7 +228,7 @@ export function nextPreparationEnvironment(
 // TypeScript loader, dependencies, filesystem or credentials.
 const NEXT_PREPARATION_PROGRAM = String.raw`
 import { readFile, writeFile, mkdir, readdir, realpath, lstat, copyFile, open, rm } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve, relative, join, dirname, extname, isAbsolute, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -267,16 +267,20 @@ try {
   const run = (command, args, windowsVerbatimArguments=false) => new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: project, env: childEnv, windowsVerbatimArguments, stdio: ['ignore', log.fd, log.fd] });
     child.once('error', reject);
-    child.once('close', (code) => code === 0 ? resolve() : reject(new Error('command failed')));
+    child.once('close', (code, signal) => code === 0 ? resolve() : reject(new Error([command, ...args].join(' ') + (signal ? ' was stopped by ' + signal : ' exited with code ' + code))));
   });
   const projectRequire = createRequire(pkgPath);
+  // Read node_modules directly, the way Node walks it. Asking Node to resolve a
+  // package before it is installed makes Node 20, 24 and 26 remember that it has
+  // no package.json for the rest of this process, so the same lookup after the
+  // install still fails and a first build stops here. Nothing above the install
+  // may call projectRequire.resolve or import a package by name.
   const packageRoot = (name) => {
-    let directory = dirname(projectRequire.resolve(name));
-    while (dirname(directory) !== directory) {
-      try { if (JSON.parse(readFileSync(join(directory,'package.json'),'utf8')).name === name) return directory; } catch {}
-      directory = dirname(directory);
+    for (let directory = project; ; directory = dirname(directory)) {
+      const candidate = join(directory, 'node_modules', name);
+      if (existsSync(join(candidate, 'package.json'))) return realpathSync(candidate);
+      if (dirname(directory) === directory) throw new Error('Package not found: ' + name);
     }
-    throw new Error('Package not found');
   };
   const installed = (name) => { try { return JSON.parse(readFileSync(join(packageRoot(name),'package.json'),'utf8')).version; } catch { return null; } };
   const assertSupportedNext = (version) => {
@@ -470,7 +474,8 @@ try {
   await log.close(); log=undefined;
   process.stdout.write('FREEBUFF_NEXT_RESULT:'+JSON.stringify({runtime:'opennext',manifestPath:slash(relative(root,join(out,'manifest.json'))),localWranglerConfigPath:slash(relative(root,join(project,'freebuff.wrangler.jsonc'))),...(realtime?{realtimeWranglerConfigPath:slash(relative(root,join(project,'freebuff-realtime/wrangler.jsonc')))}:{}),logPath,nextVersion,adapterVersion:input.adapterVersion})+'\n');
 } catch(error) {
-  if(log) { await log.write('\nPreparation failed at '+stage+'\n'); await log.close(); }
+  // The message below sends people to this log, so the reason must be in it.
+  if(log) { try { await log.write('\nPreparation failed at '+stage+'\n'+(error?.stack||String(error))+'\n'); await log.close(); } catch {} }
   const message=(error?.safe?error.message:'Next.js preparation failed while '+stage+'. Inspect '+logPath+' for the build error.').slice(0,4096);
   const errorLine='FREEBUFF_NEXT_ERROR:'+message+'\n';
   process.stderr.write(errorLine);

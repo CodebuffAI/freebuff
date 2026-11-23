@@ -34,6 +34,8 @@ export type AgentState = {
   subagents: AgentState[]
   childRunIds: string[]
   messageHistory: Message[]
+  /** Last turn end or in-flight checkpoint (Unix ms). Active work is not idle. */
+  lastActivityAt?: number
   stepsRemaining: number
   creditsUsed: number
   directCreditsUsed: number

@@ -11,6 +11,7 @@ import { cloudPlanReadyParams } from './params/tool/cloud-plan-ready'
 import { createPlanParams } from './params/tool/create-plan'
 import { endTurnParams } from './params/tool/end-turn'
 import { findFilesParams } from './params/tool/find-files'
+import { generateImageParams } from './params/tool/generate-image'
 import { globParams } from './params/tool/glob'
 import { gravityIndexParams } from './params/tool/gravity-index'
 import { listDirectoryParams } from './params/tool/list-directory'
@@ -54,6 +55,7 @@ export const toolParams = {
   create_plan: createPlanParams,
   end_turn: endTurnParams,
   find_files: findFilesParams,
+  generate_image: generateImageParams,
   glob: globParams,
   gravity_index: gravityIndexParams,
   list_directory: listDirectoryParams,

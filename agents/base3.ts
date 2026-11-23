@@ -130,10 +130,12 @@ export function createBase3(
     supportsBackgroundCommands?: boolean
     /** Append the "Work in batches" section, on a model in BATCHING_MODELS.
      *  For the roots that run the user's coding agent in build mode: the CLI
-     *  (`createBase3CliRoot`), Desktop and Desktop Cloud. Plan mode,
-     *  sponsored runs and Web/Cloud (whose platform runs the checks) leave it
-     *  off, and a lean row never gets it: its context budget says to read
-     *  narrowly. */
+     *  (`createBase3CliRoot`), Desktop and Desktop Cloud. Desktop Cloud passes
+     *  it in plan mode too, so its system prompt stays the same across a
+     *  Plan/Build switch, and drops the step reminder there. Desktop's plan
+     *  mode, sponsored runs and Web/Cloud (whose platform runs the checks)
+     *  leave it off, and a lean row never gets it: its context budget says to
+     *  read narrowly. */
     batching?: boolean
     /** The compiled model a catalog handle stands for, which decides the
      *  per-model parts below; defaults to `model`. */
@@ -182,14 +184,13 @@ export function createBase3(
     // the runtime default instead of the model's.
     compactContext,
     ...(turnEndingNote ? { instructionsPrompt: TURN_ENDING_NOTE } : {}),
-    // The section's reminder at the end of every step, dropped from history
-    // after it. Read once, Flash drifts back to one call per step; repeated,
-    // it keeps batching. A step prompt is deleted each step, so no request
-    // extends the previous one: a provider that caches only exact prefix
-    // extensions then misses most of every request (MiMo and Luna did,
-    // #1158), while Flash's lanes cache partial prefixes and kept their hit
-    // rate. The server skips it where it reads the user's own words
-    // (`isRootStepReminderMessage`).
+    // The section's reminder at the end of every step. Read once, Flash
+    // drifts back to one call per step; repeated, it keeps batching. It stays
+    // in history (run-agent-step.ts, 2026-11-11): deleted each step, no
+    // request extended the previous one, and Flash's lanes re-read the
+    // previous step's tail and output uncached on every step (about a quarter
+    // of its cache misses). The server skips it where it reads the user's own
+    // words (`isRootStepReminderMessage`).
     ...(batching ? { stepPrompt: BASE3_BATCHING_STEP_PROMPT } : {}),
     toolNames: [
       'read_files',
@@ -297,10 +298,11 @@ export function createBase3CliRoot(
   const root: Omit<SecretAgentDefinition, 'id'> = {
     ...base3,
     // base3's own eight, then the CLI surface: `web_search`/`read_url`
-    // replace the researcher subagents base2 spawned; the last five drive the
+    // replace the researcher subagents base2 spawned; the next five drive the
     // ask-user panel, the followup cards, service discovery, rendered UI and
-    // skills. (The shipped-agents CI guard checks this toolset by importing
-    // the definitions, so it may be assembled rather than restated.)
+    // skills; generate_image makes art for the project. (The shipped-agents
+    // CI guard checks this toolset by importing the definitions, so it may be
+    // assembled rather than restated.)
     toolNames: [
       ...base3.toolNames!,
       'web_search',
@@ -310,6 +312,7 @@ export function createBase3CliRoot(
       'gravity_index',
       'render_ui',
       'skill',
+      'generate_image',
     ],
     systemPrompt: `${base3.systemPrompt}
 ${extraSystemPrompt ? `${extraSystemPrompt}\n` : ''}${buildCliAppendix({

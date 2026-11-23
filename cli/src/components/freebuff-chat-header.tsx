@@ -32,7 +32,7 @@ import { useFreebuffChatStore } from '../state/freebuff-chat-store'
 import { formatHours } from '@codebuff/common/util/freebuff-hours'
 import { freebucksOf, freebucksRefundLine } from '../utils/freebucks'
 import { getFreebuffStreakBonusNoteForLayout } from '../utils/freebuff-streak-line'
-import { getFreebuffModelAvailabilityNotice } from '@codebuff/common/util/freebuff-model-availability'
+import { getFreebuffSessionModelAvailabilityNotice } from '@codebuff/common/util/freebuff-model-availability'
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
 
 const ignoreFocusTargets = () => {}
@@ -77,12 +77,13 @@ export function FreebuffChatHeader({
   const tier =
     session && 'accessTier' in session ? (session.accessTier ?? 'full') : 'full'
   const referral = getReferralInfo(session)
+  // Limited access without a plan only, as on Desktop: before the session
+  // loads, on a refusal, at full access or on a paid plan there is nothing to
+  // explain, and the fallback told those users "on this connection".
   const availability =
     freebucks === undefined
-      ? getFreebuffModelAvailabilityNotice(
-          session && 'countryBlockReason' in session ? session : null,
-        )
-      : ''
+      ? getFreebuffSessionModelAvailabilityNotice(session)
+      : null
   const streakBonus = getFreebuffStreakBonusNoteForLayout({
     streak: streak.data?.streak ?? 0,
     accessTier: tier,

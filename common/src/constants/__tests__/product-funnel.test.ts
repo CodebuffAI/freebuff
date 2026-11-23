@@ -129,6 +129,12 @@ test('each invite placement names its links; the route accepts only email values
     'appearance_email',
     'desktop_settings_email',
     'cli_email',
+    'rewards_email',
+    'streak_email',
+    'first_preview_email',
+    'first_publish_email',
+    'year_email',
+    'token_milestone_email',
   ])
 })
 
@@ -139,6 +145,9 @@ test('every placement maps its link and email via back to itself; anything else 
     'lifecycle_email',
     'friend_joined_lifecycle',
   ])
+  expect(referralInviteUrl('https://freebuff.com', 'c-1', 'friend_joined')).toBe(
+    'https://freebuff.com/?ref=c-1&via=friend_joined_link',
+  )
   expect(referralPlacementFromVia(WELCOME_INVITE_VIA.link)).toEqual({
     placement: 'welcome',
     method: 'link',
@@ -167,4 +176,12 @@ test('every placement maps its link and email via back to itself; anything else 
     })
     expect(isKnownReferralVia(via)).toBe(false)
   }
+})
+
+test('first-project setup choices and local project outcomes parse; unknown choices do not', () => {
+  const desktop = { ...payload, product: 'desktop' as const, entry_route: '/' as const, surface: 'desktop' as const, observer: 'ui' as const }
+  expect(productFunnelEventSchema.safeParse({ ...desktop, funnel_stage: 'project_setup', funnel_state: 'shown' }).success).toBe(true)
+  expect(productFunnelEventSchema.safeParse({ ...desktop, funnel_stage: 'project_setup', funnel_state: 'selected', project_choice: 'github' }).success).toBe(true)
+  expect(productFunnelEventSchema.safeParse({ ...desktop, funnel_stage: 'project', funnel_state: 'cancelled', project_kind: 'local', project_choice: 'open_folder' }).success).toBe(true)
+  expect(productFunnelEventSchema.safeParse({ ...desktop, funnel_stage: 'project_setup', funnel_state: 'selected', project_choice: '/Users/me/app' }).success).toBe(false)
 })

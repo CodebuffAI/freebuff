@@ -140,8 +140,8 @@ main()
 
 Knowledge files provide project context to the agent. The SDK auto-discovers:
 
-- **Project files**: `knowledge.md`, `AGENTS.md`, or `CLAUDE.md` in each directory (priority order)
-- **User files**: `~/.knowledge.md`, `~/.AGENTS.md`, or `~/.CLAUDE.md` (case-insensitive)
+- **Project files**: `AGENTS.md` or `CLAUDE.md` in each directory (priority order)
+- **User files**: `~/.AGENTS.md` or `~/.CLAUDE.md` (case-insensitive)
 
 Override with `knowledgeFiles` (replaces project files) or `userKnowledgeFiles` (merges with home directory files):
 
@@ -149,8 +149,8 @@ Override with `knowledgeFiles` (replaces project files) or `userKnowledgeFiles` 
 await client.run({
   agent: 'codebuff/base@0.0.16',
   prompt: 'Help me refactor',
-  knowledgeFiles: { 'knowledge.md': '# Guidelines\n- Use TypeScript' },
-  userKnowledgeFiles: { '~/.knowledge.md': '# Preferences\n- Be concise' },
+  knowledgeFiles: { 'AGENTS.md': '# Guidelines\n- Use TypeScript' },
+  userKnowledgeFiles: { '~/.AGENTS.md': '# Preferences\n- Be concise' },
 })
 ```
 

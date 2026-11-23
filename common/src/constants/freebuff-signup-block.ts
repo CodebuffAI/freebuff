@@ -78,8 +78,12 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
     'Please complete the verification check on the sign-in page and try again. If it never appeared, an ad blocker or network filter may be blocking www.google.com/recaptcha.',
   recaptcha_invalid:
     'That verification check could not be confirmed. Please try again.',
+  // Since 2026-11-12 an emailed code for a Gmail or Outlook alias signs in to
+  // the inbox's one account, so this is left for an inbox with two or more
+  // accounts, an alias on another provider, and OAuth sign-ups: say which
+  // address to use, not "sign in" (sign-in and sign-up are one email box).
   mailbox_already_registered:
-    'An account already exists for this email address. Try signing in instead.',
+    'This inbox already has a Freebuff account under another spelling of the address (dots or a +label). Sign in with the address you first used, or with Google, GitHub or Apple if that is how you signed up.',
   privacy_egress:
     'Accounts cannot be created over a VPN, proxy, or hosting provider. Please turn it off and try again — you can turn it back on afterwards.',
   untrusted_client_ip:
@@ -110,6 +114,28 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
     'This account was deleted. To restore it, email support@freebuff.com from its address.',
   github_email_unverified:
     "GitHub sign-in needs a verified email. Verify your email in GitHub's settings (Settings → Emails) and try again, or sign in with Google instead. If your email is already verified, GitHub may be temporarily unreachable; please try again in a few minutes.",
+}
+
+/**
+ * The refusals that mean only "no bot-check proof reached the server" (or one
+ * failed). Freebuff's login pages never show these as a refusal: they re-run
+ * the checks in the background and continue the same sign-in once they bank
+ * (`signup-challenge-client/challenge-recovery.ts`). The copy above remains
+ * for surfaces that do not recover.
+ */
+export const BOT_CHECK_REFUSALS = [
+  'captcha_missing',
+  'captcha_invalid',
+  'recaptcha_missing',
+  'recaptcha_invalid',
+] as const satisfies readonly SignupBlockReason[]
+
+export type BotCheckRefusal = (typeof BOT_CHECK_REFUSALS)[number]
+
+export function isBotCheckRefusal(
+  code: string | null | undefined,
+): code is BotCheckRefusal {
+  return (BOT_CHECK_REFUSALS as readonly string[]).includes(code ?? '')
 }
 
 /** True when `code` is a reason this module has copy for. Narrows an untrusted

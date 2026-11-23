@@ -1,7 +1,30 @@
 import { describe, expect, test } from 'bun:test'
 
 import { remoteMcpUrl } from '../client'
-import { normalizeMcpServerUrl } from '../server-url'
+import { isMcpServerAddress, normalizeMcpServerUrl } from '../server-url'
+
+describe('isMcpServerAddress', () => {
+  test.each([
+    'http://127.0.0.1:3738/mcp',
+    'HTTPS://example.com/mcp',
+    'localhost:3738/mcp',
+    '127.0.0.1:3738',
+    '[::1]:3738/mcp',
+    'localhost/mcp',
+    'mcp.example.com:8443/mcp',
+  ])('an address: %s', (input) => {
+    expect(isMcpServerAddress(` ${input} `)).toBe(true)
+  })
+
+  test.each([
+    'npx -y @modelcontextprotocol/server-filesystem ~/Documents',
+    'docker run -p 3000:3000 mcp/server',
+    'C:\\tools\\mcp.exe --port 3',
+    'uvx mcp-server-fetch',
+  ])('a command: %s', (input) => {
+    expect(isMcpServerAddress(input)).toBe(false)
+  })
+})
 
 describe('normalizeMcpServerUrl', () => {
   test.each([

@@ -16,16 +16,22 @@ export const ACCOUNT_SKILLS_STATE_PATH = `/api/v1/cloud/skills?${ACCOUNT_SKILLS_
 
 /**
  * The bytes of one uploaded skill package (a SKILL.md or a .zip) before
- * encoding. Base64 keeps the body under `ACCOUNT_SKILLS_UPLOAD_MAX_BYTES`, the
- * limit the browser gateway already applies to a skills save.
+ * encoding. This bounds the archive, not the skill: a GitHub "Download ZIP" is
+ * the whole repository, README images and all, around a skill of a few KB.
+ * Only the chosen skill's own files are read and held to the library's 2.5 MB.
  */
-export const SKILL_PACKAGE_MAX_BYTES = 3_000_000
+export const SKILL_PACKAGE_MAX_BYTES = 16_000_000
+const SKILL_PACKAGE_MAX_BASE64 = Math.ceil(SKILL_PACKAGE_MAX_BYTES / 3) * 4
+/** The upload request: the base64 package plus its small JSON envelope. */
+export const SKILL_UPLOAD_MAX_BYTES = SKILL_PACKAGE_MAX_BASE64 + 4096
 
 export const skillPackageUploadSchema = z
   .object({
     encoding: z.literal('base64'),
     format: z.enum(['markdown', 'zip']),
-    data: z.string().min(1).max(ACCOUNT_SKILLS_UPLOAD_MAX_BYTES),
+    data: z.string().min(1).max(SKILL_PACKAGE_MAX_BASE64),
+    /** Which folder of a .zip holding several skills to add. */
+    skill: z.string().min(1).max(512).optional(),
   })
   .strict()
 export type SkillPackageUpload = z.infer<typeof skillPackageUploadSchema>
@@ -40,8 +46,14 @@ function toBase64(bytes: Uint8Array) {
 export function encodeSkillPackageUpload(
   bytes: Uint8Array,
   format: SkillPackageUpload['format'],
+  skill?: string,
 ): SkillPackageUpload {
-  return { encoding: 'base64', format, data: toBase64(bytes) }
+  return {
+    encoding: 'base64',
+    format,
+    data: toBase64(bytes),
+    ...(skill ? { skill } : {}),
+  }
 }
 
 export function encodeAccountSkillsUpload(value: AccountSkillsSnapshot) {

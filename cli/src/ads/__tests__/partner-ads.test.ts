@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 
+import { noteAdDrawn, resetAdExpiryClock } from '../ad-expiry-clock'
 import { buildAdAuctionRequest } from '../ad-request'
 import {
   CLI_PARTNER_PLACEMENT_IDS,
@@ -68,6 +69,7 @@ function harness(
 
 beforeEach(() => {
   resetPartnerAds()
+  resetAdExpiryClock()
 })
 
 describe('the hold', () => {
@@ -91,6 +93,14 @@ describe('the hold', () => {
 
     await h.get()
     h.advance(PARTNER_AD_TTL_MS)
+    await h.get()
+    expect(h.asked).toEqual([PLACEMENT, PLACEMENT])
+  })
+
+  test('a held fill that expired on screen is not served again', async () => {
+    const h = harness()
+    await h.get()
+    noteAdDrawn(FILL.impUrl, Date.now() - 6 * 60_000)
     await h.get()
     expect(h.asked).toEqual([PLACEMENT, PLACEMENT])
   })

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:te
 
 import {
   INITIAL_RETRY_DELAY,
+  deadlineSignal,
   withRetry,
   withTimeout,
   withTimeoutOr,
@@ -413,5 +414,25 @@ describe('withTimeoutOr', () => {
     } finally {
       clear.mockRestore()
     }
+  })
+})
+
+describe('deadlineSignal', () => {
+  it('aborts with a TimeoutError after ms', async () => {
+    const { signal } = deadlineSignal(20)
+    await new Promise((resolve) => signal.addEventListener('abort', resolve))
+    expect((signal.reason as DOMException).name).toBe('TimeoutError')
+  })
+
+  it("aborts with a source signal's reason, and clear() stops the timer", async () => {
+    const source = new AbortController()
+    const deadline = deadlineSignal(20, source.signal)
+    source.abort('caller left')
+    expect(deadline.signal.reason).toBe('caller left')
+
+    const cleared = deadlineSignal(20)
+    cleared.clear()
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(cleared.signal.aborted).toBe(false)
   })
 })

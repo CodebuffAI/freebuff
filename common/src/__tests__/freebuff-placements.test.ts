@@ -23,9 +23,6 @@ import {
   PLACEMENT_SLOTS,
   SPONSOR_BREAK_CREATIVE_LIMITS,
   SPONSOR_BREAK_FORMATS,
-  INTERRUPTING_BREAK_FORMATS,
-  isInterruptingBreakFormat,
-  isInterruptingBreakPlacement,
   isTargetablePlacement,
   isPartnerFormat,
   isPartnerPlacement,
@@ -228,13 +225,22 @@ describe('copy and configuration', () => {
     // `available` partner slot would appear in the self-serve picker. The
     // billboards are operator-placed until the console can upload their art.
     // The branded (display-ad) units are sellable exactly when live, and none
-    // is live yet (`DISPLAY_AD_SERVING_LIVE`).
+    // is live yet (`DISPLAY_AD_SERVING_LIVE`). The inline link is operator-run
+    // behind the `inlineAdStyle` arm, so it stays out of the self-serve picker.
+    const darkInline = new Set([
+      'Inline-Link-After-Agent-Desktop',
+      'Inline-Link-After-Agent-Web',
+      'Inline-Link-After-Agent-CLI',
+      'Inline-Link-After-Agent-iOS',
+      'Inline-Link-After-Agent-Android',
+    ])
     for (const slot of PLACEMENT_SLOTS) {
       expect([slot.id, slot.available]).toEqual([
         slot.id,
         slot.format !== 'partner' &&
           slot.format !== 'billboard' &&
-          slot.format !== 'branded',
+          slot.format !== 'branded' &&
+          !darkInline.has(slot.id),
       ])
     }
     expect(new Set(PLACEMENT_SLOTS.map((slot) => slot.id)).size).toBe(
@@ -251,14 +257,15 @@ describe('copy and configuration', () => {
     // eight `CLI-Chat-Inline-N` ids:
     // no shipping client requests those, so selling them would be selling a
     // decaying legacy path.
-    // Plus the three sponsor breaks, the six partner slots and the two
+    // Plus the Showcase break, the six partner slots and the two
     // billboards, which are deliberately the same surface: each is a different
     // RENDERER on the same chat surface, not a new surface, and adding a
     // surface costs a house creative and a pinned rollup row. So are the six
-    // branded (display-ad) units, three of them mirrored to web.
+    // branded (display-ad) units, three of them mirrored to web, and the
+    // inline link renderers (Desktop and CLI).
     expect(bySurface('cli_chat')).toBe(21)
     expect(bySurface('waiting_room')).toBe(4)
-    expect(bySurface('freebuff_web_chat')).toBe(15)
+    expect(bySurface('freebuff_web_chat')).toBe(14)
     expect(bySurface('chat_assistant')).toBe(1)
   })
 
@@ -275,28 +282,31 @@ describe('copy and configuration', () => {
     }
   })
 
-  it('names the three sponsor breaks and leaves every other slot inline', () => {
+  it('names the one sponsor break left and leaves every other slot inline', () => {
     const breaks = PLACEMENT_SLOTS.filter((slot) =>
       isSponsorBreakPlacement(slot.id),
     ).map((slot) => slot.id)
-    expect(breaks).toEqual([
-      'Desktop-Spotlight',
-      'Desktop-Showcase',
-      'Desktop-Intermission',
-      'Desktop-Spotlight:web',
-      'Desktop-Showcase:web',
-      'Desktop-Intermission:web',
-    ])
-    expect(placementFormat('Desktop-Spotlight')).toBe('spotlight')
+    expect(breaks).toEqual(['Desktop-Showcase', 'Desktop-Showcase:web'])
     expect(placementFormat('Desktop-Showcase')).toBe('showcase')
-    expect(placementFormat('Desktop-Intermission')).toBe('intermission')
     // Resolvable as slots, exactly like every other sellable id.
     for (const id of breaks) expect(placementSurface(id)).toBe(id.endsWith(':web') ? 'freebuff_web_chat' : 'cli_chat')
-    expect(SPONSOR_BREAK_FORMATS).toEqual([
-      'showcase',
-      'spotlight',
+    expect(SPONSOR_BREAK_FORMATS).toEqual(['showcase'])
+  })
+
+  it('no longer registers Spotlight or Intermission (removed 2026-11-12)', () => {
+    for (const id of [
+      'Desktop-Spotlight',
+      'Desktop-Intermission',
+      'Desktop-Spotlight:web',
+      'Desktop-Intermission:web',
+    ]) {
+      expect(PLACEMENT_SLOTS.some((slot) => slot.id === id)).toBe(false)
+      expect(isSponsorBreakPlacement(id)).toBe(false)
+    }
+    expect(PLACEMENT_FORMATS as readonly string[]).not.toContain('spotlight')
+    expect(PLACEMENT_FORMATS as readonly string[]).not.toContain(
       'intermission',
-    ])
+    )
   })
 
   it('names the partner slots and keeps them out of the break family', () => {
@@ -319,7 +329,6 @@ describe('copy and configuration', () => {
       expect([id, placementFormat(id)]).toEqual([id, 'partner'])
       expect([id, isPartnerPlacement(id)]).toEqual([id, true])
       expect([id, isSponsorBreakPlacement(id)]).toEqual([id, false])
-      expect([id, isInterruptingBreakPlacement(id)]).toEqual([id, false])
       expect([id, placementSurface(id)]).toEqual([id, id.endsWith(':web') ? 'freebuff_web_chat' : 'cli_chat'])
     }
     expect(isPartnerFormat('inline')).toBe(false)
@@ -349,33 +358,6 @@ describe('copy and configuration', () => {
     expect(placementSlotLabel('CLI-Partner-Slash-Review')).toBe(
       'CLI — Slash menu (/review)',
     )
-  })
-
-  it('caps the two INTERRUPTING breaks and never Showcase (COD-455)', () => {
-    // Two predicates, two questions. The creative rules (hero required, no
-    // text-only house floor) are the same for all three; the daily cap, the
-    // min-session floor and the fail-closed-with-no-Redis are the price of
-    // TAKING THE SCREEN AWAY, which Showcase does not do -- it is the same
-    // above-composer slot drawn taller, on the same rotation as the banner it
-    // is being compared against. Capping it at one a day would leave the
-    // treatment arm byte-identical to control for all but one rotation, so the
-    // format test would measure nothing.
-    expect(INTERRUPTING_BREAK_FORMATS).toEqual(['spotlight', 'intermission'])
-    expect(isInterruptingBreakFormat('showcase')).toBe(false)
-    expect(isSponsorBreakFormat('showcase')).toBe(true)
-
-    const interrupting = PLACEMENT_SLOTS.filter((slot) =>
-      isInterruptingBreakPlacement(slot.id),
-    ).map((slot) => slot.id)
-    expect(interrupting).toEqual(['Desktop-Spotlight', 'Desktop-Intermission', 'Desktop-Spotlight:web', 'Desktop-Intermission:web'])
-    expect(isInterruptingBreakPlacement('Desktop-Showcase')).toBe(false)
-
-    // Still the conservative fallback for an unknown id, in both directions.
-    expect(isInterruptingBreakPlacement('some-future-grain')).toBe(false)
-    // Every interrupting format is a break; the reverse does not hold.
-    for (const format of INTERRUPTING_BREAK_FORMATS) {
-      expect([format, isSponsorBreakFormat(format)]).toEqual([format, true])
-    }
   })
 
   it('answers inline for an id it does not know, never undefined', () => {
@@ -474,6 +456,8 @@ describe('placementSlotLabel', () => {
     expect(placementSlotLabel('Desktop-Intermission')).toBe(
       'Desktop — Intermission',
     )
+    // The removed breaks keep their labels for historical delivery rows.
+    expect(placementSlotLabel('Desktop-Spotlight:web')).toBe('Web — Spotlight')
   })
 
   it('names the tracked-link grain, which no slot describes', () => {
@@ -504,7 +488,7 @@ describe('placement daily cap', () => {
     // it -- both read this constant, which is the whole reason it is here.
     expect(PLACEMENT_DAILY_CAP_MIN_CENTS).toBe(5_000)
     expect(PLACEMENT_DAILY_CAP_MAX_CENTS).toBe(500_000)
-    expect(PLACEMENT_DAILY_CAP_DEFAULT_CENTS).toBe(10_000)
+    expect(PLACEMENT_DAILY_CAP_DEFAULT_CENTS).toBe(20_000)
   })
 
   it('clamps into the bounds and answers with whole cents', () => {
@@ -562,7 +546,7 @@ it('web copies retain format labels and name the web surface', () => {
   const aliases = PLACEMENT_SLOTS.filter((slot) =>
     isWebDesktopPlacement(slot.id),
   )
-  expect(aliases).toHaveLength(13)
+  expect(aliases).toHaveLength(12)
   for (const slot of aliases) {
     expect(placementSlotLabel(slot.id)).toStartWith('Web — ')
     expect(placementSlotLabel(slot.id)).not.toContain(':web')

@@ -16,7 +16,7 @@ import type { FreebuffModelCatalog } from '../types/freebuff-model-catalog'
  *  heading: with Show all models off here, and for a new account's one row
  *  (`FREEBUFF_ONE_ROW`). */
 export const FREEBUFF_ONE_MODEL_TAGLINE =
-  'Performs at the level of Opus 5 on benchmarks'
+  'Performs at the level of Claude Opus 5 & Fable 5 on benchmarks'
 
 /**
  * Where the switch stands for this viewer: undefined when the catalog does

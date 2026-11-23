@@ -4,6 +4,7 @@ import {
   buildFreebuffUsageGrid,
   buildFreebuffUsageSummary,
   calculateLongestFreebuffStreak,
+  summarizeFreebuffLifetimeTokens,
 } from '../freebuff-usage-summary'
 
 describe('calculateLongestFreebuffStreak', () => {
@@ -185,9 +186,68 @@ describe('buildFreebuffUsageGrid', () => {
 
     const cells = grid.filter((cell) => cell !== null)
     expect(cells).toEqual([
-      { date: '2026-08-10', active: false },
-      { date: '2026-08-11', active: true },
-      { date: '2026-08-12', active: false },
+      { date: '2026-08-10', active: false, level: 0 },
+      { date: '2026-08-11', active: true, level: 4 },
+      { date: '2026-08-12', active: false, level: 0 },
     ])
+  })
+})
+
+describe('summarizeFreebuffLifetimeTokens', () => {
+  const day = (date: string, inputTokens: number, outputTokens: number) => ({
+    date,
+    inputTokens,
+    outputTokens,
+  })
+
+  it('never counts a stored day the live read also covers', () => {
+    // The nightly roll stored 11-16 and 11-17; the live read starts at 11-17
+    // (a stale coverage mark) and covers 11-17 and today.
+    const lifetime = summarizeFreebuffLifetimeTokens({
+      stored: [day('2026-11-16', 100, 10), day('2026-11-17', 500, 50)],
+      live: [day('2026-11-17', 600, 60), day('2026-11-18', 7, 3)],
+      liveFrom: '2026-11-17',
+      todayDateKey: '2026-11-18',
+    })
+    expect(lifetime.totalTokens).toBe(110 + 660 + 10)
+    expect(lifetime.days).toEqual([
+      { date: '2026-11-16', tokens: 110 },
+      { date: '2026-11-17', tokens: 660 },
+      { date: '2026-11-18', tokens: 10 },
+    ])
+  })
+
+  it('ignores live rows before the live start and sums split live days', () => {
+    const lifetime = summarizeFreebuffLifetimeTokens({
+      stored: [day('2026-11-16', 100, 10)],
+      // A live row dated before its start would be a stored day counted again.
+      live: [
+        day('2026-11-16', 999, 999),
+        day('2026-11-17', 40, 4),
+        day('2026-11-17', 60, 6),
+      ],
+      liveFrom: '2026-11-17',
+      todayDateKey: '2026-11-17',
+    })
+    expect(lifetime).toMatchObject({
+      totalTokens: 110 + 110,
+      inputTokens: 200,
+      outputTokens: 20,
+      peakDay: { date: '2026-11-16', tokens: 110 },
+      firstDate: '2026-11-16',
+    })
+  })
+
+  it('counts all of history but keeps only the window in days', () => {
+    const lifetime = summarizeFreebuffLifetimeTokens({
+      stored: [day('2024-10-05', 5_000, 500), day('2026-11-10', 10, 0)],
+      live: [],
+      liveFrom: '2026-11-17',
+      todayDateKey: '2026-11-17',
+      windowDays: 30,
+    })
+    expect(lifetime.totalTokens).toBe(5_510)
+    expect(lifetime.peakDay).toEqual({ date: '2024-10-05', tokens: 5_500 })
+    expect(lifetime.days).toEqual([{ date: '2026-11-10', tokens: 10 }])
   })
 })

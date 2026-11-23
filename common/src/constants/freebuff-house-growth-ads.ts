@@ -97,6 +97,24 @@ export const HOUSE_MOBILE_DOWNLOAD_URL = `${FREEBUFF_WEB_URL_PROD}/mobile`
  */
 export const HOUSE_IOS_APP_STORE_URL = FREEBUFF_IOS_APP_STORE_URL
 
+/** The Dark Mode Shirt's page in the merch store. */
+const HOUSE_STORE_SHIRT_URL = '/store/freebuff-dark-mode-shirt'
+
+/**
+ * The merch campaigns' icon: the Dark Mode Shirt's product photo on Shopify's
+ * CDN (allowed by the web CSP's `merch` hosts), resized by the CDN. If the
+ * photo is deleted in Shopify the icon breaks: update this URL with it.
+ */
+const HOUSE_STORE_ICON_URL =
+  'https://cdn.shopify.com/s/files/1/1009/5172/0225/files/14074578496085982312_2048_1400x.jpg?v=1794546590&width=128'
+
+/**
+ * The sticker creative's icon: the Classic Freebuff Logo Sticker's product
+ * photo on Shopify's CDN, same rules as `HOUSE_STORE_ICON_URL`.
+ */
+const HOUSE_STICKER_ICON_URL =
+  'https://cdn.shopify.com/s/files/1/1009/5172/0225/files/3161222930027690920_1200.jpg?v=1794542430&width=128'
+
 /** One-time actions: one impression a day at most per campaign. */
 const DAILY = { maxImpressions: 1, windowMinutes: 24 * 60 } as const
 
@@ -403,6 +421,41 @@ export const HOUSE_GROWTH_FEATURE_CAMPAIGNS: readonly HouseGrowthCampaign[] = [
     ],
   },
   {
+    // The merch store (docs/freebuff-merch-store.md). Ungated and measured on
+    // clicks alone: orders are Shopify's and never reach our servers, so
+    // there is no purchase to attribute and no buyer to withhold it from.
+    // The price is the shirt's Shopify price on 2026-11-12; it can change
+    // there with no deploy, so a price change needs a `copyRevision` here.
+    id: 'house-growth-store-shirt-v1',
+    name: 'Dark Mode Shirt (house)',
+    gate: null,
+    targeting: 'all',
+    frequencyCap: DAILY,
+    favicon: HOUSE_STORE_ICON_URL,
+    creatives: [
+      creative('Freebuff now has merch!', 'Get yours: the Dark Mode logo tee, $15.', 'Get yours', HOUSE_STORE_SHIRT_URL, HOUSE_STORE_ICON_URL),
+      creative('Rep Freebuff for $15', 'The Dark Mode logo tee, in Black Heather or Heather Forest.', 'Get the shirt', HOUSE_STORE_SHIRT_URL, HOUSE_STORE_ICON_URL),
+      creative('Freebuff merch is here', 'Rep Freebuff for $15. Sizes XS to 4XL.', 'Get yours', HOUSE_STORE_SHIRT_URL, HOUSE_STORE_ICON_URL),
+      creative('Get your Freebuff shirt', 'New in the store: the Dark Mode tee, $15.', 'Shop merch', HOUSE_STORE_SHIRT_URL, HOUSE_STORE_ICON_URL),
+      creative('The Freebuff shirt, now in dark mode', 'The classic logo tee in two dark colors. $15.', 'Get the shirt', HOUSE_STORE_SHIRT_URL, HOUSE_STORE_ICON_URL),
+    ],
+  },
+  {
+    // The whole store. No prices and no shipping claims, by Owen's review.
+    id: 'house-growth-store-v1',
+    name: 'Merch store (house)',
+    gate: null,
+    targeting: 'all',
+    frequencyCap: DAILY,
+    favicon: HOUSE_STORE_ICON_URL,
+    creatives: [
+      creative('The Freebuff store is open', 'Shirts, hoodies, stickers and more.', 'Shop the store', '/store', HOUSE_STORE_ICON_URL),
+      creative('Freebuff now has merch!', 'Stickers, shirts, hoodies and more. Get yours.', 'Get yours', '/store', HOUSE_STORE_ICON_URL),
+      creative('Freebuff stickers are here', 'Put the logo on your laptop.', 'Get stickers', '/store', HOUSE_STICKER_ICON_URL),
+      creative('Rep Freebuff at your desk', 'Desk mats, water bottles, hoodies and tees in the store.', 'Shop the store', '/store', HOUSE_STORE_ICON_URL),
+    ],
+  },
+  {
     id: 'house-growth-cli-tips-v1',
     name: 'Freebuff CLI tips (house)',
     gate: null,
@@ -456,12 +509,41 @@ const FAVICON_BY_ID: ReadonlyMap<string, string> = new Map(
 )
 
 /**
- * The icon a house campaign serves with when its creative uploaded none:
- * the app's logo for an integration campaign, else null (the caller falls
- * back to `HOUSE_AD_FAVICON_URL`).
+ * Creatives whose icon differs from their campaign's (the sticker creative in
+ * the merch store campaign), keyed by campaign id, then creative title.
  */
-export function houseCampaignFaviconFor(id: string): string | null {
-  return FAVICON_BY_ID.get(houseCampaignSourceId(id)) ?? null
+const CREATIVE_FAVICON_BY_ID: ReadonlyMap<
+  string,
+  ReadonlyMap<string, string>
+> = new Map(
+  HOUSE_GROWTH_CAMPAIGNS.flatMap((campaign) => {
+    const own = campaign.creatives.flatMap((creative) =>
+      creative.favicon && creative.favicon !== campaign.favicon
+        ? [[creative.title, creative.favicon] as const]
+        : [],
+    )
+    return own.length ? [[campaign.id, new Map(own)] as const] : []
+  }),
+)
+
+/**
+ * The icon a house campaign serves with when its creative uploaded none:
+ * the creative's own icon when the catalog gives it one (matched by
+ * `creativeTitle`), else the campaign's (the app's logo for an integration
+ * campaign), else null (the caller falls back to `HOUSE_AD_FAVICON_URL`).
+ */
+export function houseCampaignFaviconFor(
+  id: string,
+  creativeTitle?: string,
+): string | null {
+  const sourceId = houseCampaignSourceId(id)
+  return (
+    (creativeTitle === undefined
+      ? undefined
+      : CREATIVE_FAVICON_BY_ID.get(sourceId)?.get(creativeTitle)) ??
+    FAVICON_BY_ID.get(sourceId) ??
+    null
+  )
 }
 
 /** The integration slug an `integration:<slug>` gate names, else null. */

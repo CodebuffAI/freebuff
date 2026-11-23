@@ -122,31 +122,25 @@ const mountPanel = async (
   flushSync(() => root.render(<Harness />))
   await setup.renderOnce()
 
-  /** Input is delivered on the render loop and the state it sets is committed
-   *  by React's scheduler, so both have to drain before the next keypress. */
-  const settle = async () => {
-    await setup.renderOnce()
-    await new Promise((resolve) => setTimeout(resolve, 20))
+  /** Mock input reaches the handlers synchronously, so dispatching it inside
+   *  flushSync commits what it sets, effects included, before the next event.
+   *  Waiting a fixed 20ms for React's scheduler instead let a late commit on a
+   *  busy CI runner hand the next key to the previous render's handler. */
+  const dispatch = async (act: () => void) => {
+    flushSync(act)
     await setup.renderOnce()
   }
 
   return Object.assign(setup, {
-    settle,
     contents: () => state.queue.map((item) => item.content),
     closes: () => state.closes,
-    async press(act: () => void) {
-      act()
-      await settle()
-    },
+    press: dispatch,
     async click(x: number, y: number, button: 0 | 1 | 2 = 0) {
-      await setup.mockMouse.click(x, y, button)
-      await settle()
+      await dispatch(() => void setup.mockMouse.pressDown(x, y, button))
+      await dispatch(() => void setup.mockMouse.release(x, y, button))
     },
     /** The agent finished a turn and took the head of the queue. */
-    async dequeueHead() {
-      flushSync(() => state.write(state.queue.slice(1)))
-      await settle()
-    },
+    dequeueHead: () => dispatch(() => state.write(state.queue.slice(1))),
   })
 }
 

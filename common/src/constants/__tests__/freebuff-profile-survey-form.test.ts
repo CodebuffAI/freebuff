@@ -72,18 +72,16 @@ describe('copy and view helpers', () => {
     expect(profileSurveyRewardCopy(5, 10)).toBe('Answer all 10 to get 1 hour')
     expect(profileSurveyRewardCopy(0, 10)).toBeNull()
   })
-  it('dismiss copy counts answers and names the stop', () => {
-    expect(profileSurveyDismissCopy({ answered: 3, stopped: false, snoozeDays: 3 })).toBe(
-      "Got it. We'll ask again in 3 days. Your 3 answers so far are saved.",
+  it('dismiss copy counts answers and never says when it returns', () => {
+    expect(profileSurveyDismissCopy({ answered: 3, stopped: false })).toBe(
+      'Got it. Your 3 answers so far are saved.',
     )
-    expect(profileSurveyDismissCopy({ answered: 1, stopped: false, snoozeDays: 7 })).toContain(
-      'Your 1 answer so far is saved.',
+    expect(profileSurveyDismissCopy({ answered: 1, stopped: false })).toBe(
+      'Got it. Your 1 answer so far is saved.',
     )
-    expect(profileSurveyDismissCopy({ answered: 0, stopped: false, snoozeDays: 14 })).toBe(
-      "Got it. We'll ask again in 14 days.",
-    )
-    expect(profileSurveyDismissCopy({ answered: 4, stopped: true, snoozeDays: null })).toContain(
-      '6th “Not now”',
+    expect(profileSurveyDismissCopy({ answered: 0, stopped: false })).toBe('Got it.')
+    expect(profileSurveyDismissCopy({ answered: 4, stopped: true })).toBe(
+      "Got it. We won't ask again.",
     )
   })
   it('completion copy follows what the server credited', () => {

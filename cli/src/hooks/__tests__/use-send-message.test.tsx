@@ -31,6 +31,7 @@ type RunCall = {
 
 let sendMessageFromHost: SendMessageFn | null = null
 let runCalls: RunCall[] = []
+let droppedCopies: string[] = []
 let testRoot: string
 let originalProjectRoot: string
 let useHostedValidation = false
@@ -81,6 +82,9 @@ const Host = () => {
     isProcessingQueueRef,
     resumeQueue: () => {},
     requeueMessageAtFront: () => {},
+    dropQueuedCopies: (content) => {
+      droppedCopies.push(content)
+    },
     continueChat: false,
     subscriptionData: null,
     getClient: async () => fakeClient as any,
@@ -155,6 +159,7 @@ const settlePendingRuns = () => {
 beforeEach(() => {
   sendMessageFromHost = null
   runCalls = []
+  droppedCopies = []
   useHostedValidation = false
   validateBeforeSend = async () => ({ success: true, errors: [] })
   testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'use-send-message-'))
@@ -340,7 +345,10 @@ describe('useSendMessage continuation state', () => {
       )
       await waitFor('third SDK run', () => runCalls.length === 3)
 
-      expect(runCalls[2].runConfig.previousRun).toBe(abortedSnapshot)
+      // The snapshot, with its idle clock started at the stop.
+      expect(runCalls[2].runConfig.previousRun.traceSessionId).toBe(
+        abortedSnapshot.traceSessionId,
+      )
 
       const finalState = makeRunState('final')
       runCalls[2].resolve(finalState)
@@ -378,11 +386,18 @@ describe('useSendMessage continuation state', () => {
       runCalls[0].runConfig.onStateSnapshot(
         makeCancelledRunState('snap', [prompt, step], STATE_SNAPSHOT_INTERRUPTION_MESSAGE),
       )
+      const stoppedAt = Date.now()
       stopActiveRun('user-interrupt')
 
       // The next prompt can start before the aborted run returns.
       runs.push(sendMessageFromHost!({ content: 'go on', agentMode: 'DEFAULT' }))
       await waitFor('second SDK run', () => runCalls.length === 2)
+      // The snapshot is as old as the step it was taken at; the idle clock
+      // starts at the stop.
+      expect(
+        runCalls[1].runConfig.previousRun.sessionState.mainAgentState
+          .lastActivityAt,
+      ).toBeGreaterThanOrEqual(stoppedAt)
       const resumed = historyTexts(runCalls[1].runConfig.previousRun)
       expect(resumed).toEqual([
         'fix it',
@@ -472,6 +487,70 @@ describe('useSendMessage continuation state', () => {
         'fix it',
         `<system>${USER_INTERRUPTED_MESSAGE}</system>`,
       ])
+    } finally {
+      settlePendingRuns()
+      await Promise.all(runs)
+      flushSync(() => root.unmount())
+      setup.renderer.destroy()
+    }
+  })
+
+  const REFUSAL = {
+    statusCode: 403,
+    error: 'prompt_policy_refused',
+    message: 'Freebuff did not send this message to the model.',
+  }
+
+  test.each([
+    {
+      name: 'returned as the run output',
+      fail: (call: RunCall) =>
+        call.resolve({
+          ...makeRunState('refused'),
+          output: { type: 'error', ...REFUSAL },
+        } as unknown as RunState),
+    },
+    {
+      name: 'thrown by the run',
+      fail: (call: RunCall) => call.reject({ ...REFUSAL }),
+    },
+  ])(
+    'a usage-policy refusal ($name) drops queued copies of the refused text',
+    async ({ fail }) => {
+      const { setup, root } = await mountHost()
+      const run = sendMessageFromHost!({
+        content: 'same text',
+        agentMode: 'DEFAULT',
+      })
+      try {
+        await waitFor('SDK run', () => runCalls.length === 1)
+        fail(runCalls[0])
+        await run
+        expect(droppedCopies).toEqual(['same text'])
+      } finally {
+        settlePendingRuns()
+        await run
+        flushSync(() => root.unmount())
+        setup.renderer.destroy()
+      }
+    },
+  )
+
+  test('any other failed run leaves the queue alone', async () => {
+    const { setup, root } = await mountHost()
+    const runs: Promise<void>[] = []
+    try {
+      runs.push(sendMessageFromHost!({ content: 'one', agentMode: 'DEFAULT' }))
+      await waitFor('first SDK run', () => runCalls.length === 1)
+      runCalls[0].resolve(makeRunState('failed'))
+      await runs[0]
+
+      runs.push(sendMessageFromHost!({ content: 'two', agentMode: 'DEFAULT' }))
+      await waitFor('second SDK run', () => runCalls.length === 2)
+      runCalls[1].reject({ statusCode: 403, error: 'free_mode_unavailable' })
+      await runs[1]
+
+      expect(droppedCopies).toEqual([])
     } finally {
       settlePendingRuns()
       await Promise.all(runs)

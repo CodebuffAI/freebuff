@@ -38,3 +38,29 @@ describe('the auction request carries the client context (COD-757)', () => {
     }
   })
 })
+
+describe('networkAdInView on the auction request', () => {
+  test('sent as true only when asked; absent otherwise', async () => {
+    const saved = process.env.CODEBUFF_API_KEY
+    process.env.CODEBUFF_API_KEY = saved || 'test-key'
+    try {
+      const body = async (networkAdInView?: boolean) =>
+        JSON.parse(
+          String(
+            (await buildAdAuctionRequest({
+              provider: 'gravity',
+              surface: 'cli_chat',
+              placementId: 'Inline-After-Agent-CLI',
+              ...(networkAdInView === undefined ? {} : { networkAdInView }),
+            }))!.init.body,
+          ),
+        )
+      expect((await body(true)).networkAdInView).toBe(true)
+      expect('networkAdInView' in (await body(false))).toBe(false)
+      expect('networkAdInView' in (await body())).toBe(false)
+    } finally {
+      if (saved === undefined) delete process.env.CODEBUFF_API_KEY
+      else process.env.CODEBUFF_API_KEY = saved
+    }
+  })
+})

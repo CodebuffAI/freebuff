@@ -15,7 +15,7 @@ Use sites_* tools for agent-managed hosting when the user requests it. Sites cov
 
 Use sites_list/sites_inspect for current publication status: published is explicit per environment. A saved URL, deployed_at timestamp, or successful deployment receipt alone does not establish publication. On older backends without published, an environment is published only when deployed_at is set and unpublished_at is not set. Published environments can still be paused by hosting usage limits.
 
-Running or unknown first deployments reserve a publication slot because their upload may already be serving, even before published confirms a saved deployment. Inspect operation receipts; unpublish that environment to take it offline and release its reservation, or have an unknown outcome reconciled.
+Running or unknown first deployments reserve a publication slot because their upload may already be serving, even before published confirms a saved deployment. Inspect operation receipts; unpublish that environment to take it offline and release its reservation. An unknown outcome is settled with Cloudflare when the next change to that environment is requested at least 10 minutes after it ended.
 
 To take an environment offline, use sites_set_published with published=false (or Sites → Unpublish). This retains the deployment, data, secrets and URL; serving stops within 30 seconds. Preview and Production are independent. The allowance is 6 published sites: a site counts once when either environment is published. To free its slot, unpublish every published environment of that site; saved unpublished sites do not use a publication slot. Updates to unpublished environments stay offline until the user requests published=true. Do not delete data to take a site offline.
 

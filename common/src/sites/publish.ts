@@ -6,7 +6,11 @@ import {
   nextPreparationEnvironment,
 } from './next-prepare'
 import { SITE_DEPLOY_MANIFEST_FILES } from './project-context'
-import type { SitePublishEvent, SitePublishResult } from './publish-events'
+import type {
+  SitePublishEvent,
+  SitePublishReplace,
+  SitePublishResult,
+} from './publish-events'
 
 /**
  * Deterministic publishing for the chat Publish button: no agent turn. The
@@ -202,7 +206,20 @@ export async function prepareSiteLocally(
   }
 }
 
-type ToolRefusal = { error: string; message?: string }
+type ToolRefusal = {
+  error: string
+  message?: string
+  url?: string
+  deployedFromChat?: { id?: string; title?: string }
+}
+/** Cloud's refusal to deploy over another chat's live deploy (desktop-cloud/sites.ts). */
+class OtherChatDeployError extends Error {
+  constructor(public replace: SitePublishReplace) {
+    super(
+      `This site was last published from another chat in this project, "${replace.chatTitle}". Publishing here would replace it with this chat's version.`,
+    )
+  }
+}
 function refusal(value: unknown): ToolRefusal | null {
   const error = (value as { error?: unknown } | null)?.error
   return typeof error === 'string' ? (value as ToolRefusal) : null
@@ -236,8 +253,17 @@ function isPublished(environment: SiteEnvironment): boolean {
 /** Receipts keep only codes; say what each means without vendor prose. */
 export function operationFailureMessage(operation: Operation): string {
   const result = operation.result
-  if (operation.state === 'unknown' || result?.error === 'cloudflare_outcome_unknown')
-    return 'Cloudflare did not confirm the deployment. Check deployment activity in Manage site before publishing again.'
+  if (operation.state === 'unknown')
+    return 'Cloudflare did not confirm the deployment. Publish again in 10 minutes: Freebuff first checks with Cloudflare whether this one landed.'
+  // Settled later from Cloudflare's state (web reconcile.ts) without landing.
+  if (result?.error === 'cloudflare_outcome_unknown')
+    return 'Cloudflare did not confirm the deployment. Publish again.'
+  // The server stopped before recording a result, then settled it the same way.
+  if (result?.error === 'request_interrupted')
+    return 'Freebuff was interrupted before it recorded the deployment. Publish again.'
+  // No upload starts 15 minutes into a deployment (web reconcile.ts).
+  if (result?.error === 'operation_deadline')
+    return 'The deployment ran out of time and was stopped before it went live. Publish again.'
   const provider = result?.provider
   if (provider?.stage === 'worker_upload' && provider.codes?.includes(10021))
     return 'Cloudflare could not start the built Worker: it failed startup validation. This usually means code that cannot run on Workers, such as a Node.js-only module.'
@@ -275,6 +301,17 @@ export async function publishSite(options: {
   const call = async <T>(name: string, args: Record<string, unknown>) => {
     const value = await options.tool(name, args)
     const refused = refusal(value)
+    const owner = refused?.deployedFromChat
+    if (
+      refused?.error === 'site_deployed_from_another_chat' &&
+      typeof owner?.id === 'string' &&
+      typeof refused.url === 'string'
+    )
+      throw new OtherChatDeployError({
+        chatId: owner.id,
+        chatTitle: owner.title ?? '',
+        url: refused.url,
+      })
     if (refused)
       throw new SitesClientError(
         400,
@@ -381,6 +418,15 @@ export async function publishSite(options: {
     options.onEvent(event)
     return event
   } catch (error) {
+    if (error instanceof OtherChatDeployError) {
+      const event = {
+        type: 'error' as const,
+        message: error.message,
+        replace: error.replace,
+      }
+      options.onEvent(event)
+      return event
+    }
     return fail(
       error instanceof SitesClientError
         ? error.message

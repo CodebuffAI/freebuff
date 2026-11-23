@@ -1,3 +1,4 @@
+import { BASE3_BATCHING_STEP_PROMPT } from '@codebuff/common/constants/base3-step-prompt'
 import * as analytics from '@codebuff/common/analytics'
 import { FREEBUFF_TURN_SPEND_LIMIT_MESSAGE } from '@codebuff/common/constants/freebuff-errors'
 import { TEST_USER_ID } from '@codebuff/common/old-constants'
@@ -1095,6 +1096,43 @@ describe('loopAgentSteps - runAgentStep vs runProgrammaticStep behavior', () => 
     expect(requests).toHaveLength(2)
     expect(requests[1].slice(0, requests[0].length)).toEqual(requests[0])
     expect(JSON.stringify(requests[1]).split('Test user prompt')).toHaveLength(3)
+  })
+
+  // base3's batching reminder stays in history (2026-11-11): deleting it each
+  // step meant no request extended the one before, costing the provider's
+  // cache the previous step's tail and output. Other step prompts expire.
+  it.each([
+    [BASE3_BATCHING_STEP_PROMPT, true],
+    ['Test agent step prompt', false],
+  ] as const)('a step prompt (%s) stays in history: %s', async (stepPrompt, kept) => {
+    mockTemplate.stepPrompt = stepPrompt
+    const requests: unknown[][] = []
+    const promptAiSdkStream: Parameters<
+      typeof loopAgentSteps
+    >[0]['promptAiSdkStream'] = async function* ({ messages }) {
+      requests.push(JSON.parse(JSON.stringify(messages)))
+      yield { type: 'text', text: 'Done.' }
+      return promptSuccess(`step-${requests.length}`)
+    }
+    // A real root has an agent type, which wraps its step prompt in
+    // <system_reminder> tags; the reminder is recognised by that whole text.
+    const first = await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      agentState: { ...loopAgentStepsBaseParams.agentState, agentType: 'base3' },
+      promptAiSdkStream,
+    })
+    await loopAgentSteps({
+      ...loopAgentStepsBaseParams,
+      agentState: first.agentState,
+      prompt: 'continue',
+      promptAiSdkStream,
+    })
+    expect(requests).toHaveLength(2)
+    const copies = JSON.stringify(requests[1]).split(stepPrompt).length - 1
+    expect(copies).toBe(kept ? 2 : 1)
+    if (kept)
+      // The second request extends the first: nothing before it changed.
+      expect(requests[1].slice(0, requests[0].length)).toEqual(requests[0])
   })
 
   describe('suggest_prompts before the answer', () => {

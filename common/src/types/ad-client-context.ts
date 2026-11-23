@@ -119,6 +119,41 @@ export const ENGAGEMENT_EXITS = [
   'window_close',
 ] as const
 export const CLICK_REGIONS = ['title', 'body', 'cta', 'logo', 'other'] as const
+/**
+ * Why an ad stopped being drawn while still held, beside `exit` (how the
+ * record ended). A separate field, not new `exit` values: a server still on
+ * the older schema strips an unknown key but would refuse an unknown `exit`.
+ * - `outranked`: hidden because a higher-ranked ad came into view (the
+ *   web workspace's one-ad-on-screen order: an inline ad over the banner, a
+ *   newer inline ad over an older one).
+ * - `gravity_took_screen`: removed or hidden because a Gravity ad was drawn
+ *   (our billboards and partner units, or our banner or inline ad beside a
+ *   Gravity one).
+ * - `retired_by_newer_inline`: an inline ad retired by a newer one in its chat.
+ * - `expired`: taken off screen because it had been shown too long (the
+ *   wall-clock cap, or the shorter limit while the person was away).
+ *
+ * Adding a value is safe for older clients, and the schema drops a value it
+ * does not know (keeping the rest of the record), so a client may send a new
+ * value before every server knows it.
+ */
+export const ENGAGEMENT_ENDED_BY = [
+  'outranked',
+  'gravity_took_screen',
+  'retired_by_newer_inline',
+  'expired',
+] as const
+/**
+ * Why a drawn ad stopped being shown while another ad took the screen (one ad on screen at a time):
+ * - `inline_card_in_view`: the slot above the input gave way to an end-of-answer card in the transcript viewport;
+ * - `network_ad_on_screen`: one of our own ads gave way to an ad-network ad on screen;
+ * - `newer_inline_card`: an older answer's card gave way to a newer answer's card.
+ */
+export const AD_YIELD_REASONS = [
+  'inline_card_in_view',
+  'network_ad_on_screen',
+  'newer_inline_card',
+] as const
 
 // ---- context v1 additions (COD-757 wave 2). Additive and optional, so `v` stays 1. ----
 
@@ -562,6 +597,18 @@ export const adEngagementSchema = z.object({
   firstHoverMs: ms.optional(),
   sentMessageDuringExposure: z.boolean().optional(),
   exit: z.enum(ENGAGEMENT_EXITS).optional(),
+  /**
+   * The ad gave way to another ad on screen: the latest reason, how many times it gave way, and (when its slot held
+   * it to show again) the total ms it was hidden while held.
+   */
+  yielded: z
+    .object({
+      reason: z.enum(AD_YIELD_REASONS),
+      count: count,
+      hiddenMs: ms,
+    })
+    .partial()
+    .optional(),
   truncated: z.boolean().optional(),
   imageFailed: z.boolean().optional(),
   imageLoadMs: ms.optional(),
@@ -569,6 +616,19 @@ export const adEngagementSchema = z.object({
   idleVisibleMs: ms.optional(),
   /** times the ad re-entered the viewport after leaving it */
   reentries: count.optional(),
+  /** ad units drawn in the viewport when this ad was first seen, itself included */
+  adsInView: count.optional(),
+  /**
+   * Time the ad was held (mounted, the page visible) but hidden by the web
+   * workspace's one-ad or never-beside-Gravity rules. `visibleMs` never
+   * includes it. Absent when the ad was never hidden.
+   */
+  hiddenMs: ms.optional(),
+  /**
+   * Why the ad stopped being drawn while still held; see {@link ENGAGEMENT_ENDED_BY}.
+   * An unknown value is dropped, not refused: the record's timings stay.
+   */
+  endedBy: z.enum(ENGAGEMENT_ENDED_BY).optional().catch(undefined),
   /**
    * keystrokes while the ad was visible, BUCKETED: an exact count beside the exposure's own `visibleMs` would be a
    * typing-rate measurement finer than `attn.typingSpeed`, so only the coarse bucket is accepted
@@ -596,6 +656,12 @@ export const adEngagementSchema = z.object({
       region: z.enum(CLICK_REGIONS),
       modifier: z.boolean(),
       count: count,
+      /**
+       * A record carrying this click was sent AT the click, not only when the impression's record flushed later. The
+       * client half of matching against the server-seen click (`ad_impression.clicked_at`): a click with no record
+       * at all then means a lost send or a hit no client made, not a flush that never ran. Never billing.
+       */
+      atClick: z.boolean(),
     })
     .partial()
     .optional(),

@@ -13,14 +13,16 @@
  * IANA zone, sent only when `TZ` overrides it.
  */
 import { execFile } from 'child_process'
-import { readFile, readlink } from 'fs/promises'
+import { access, readFile, readlink } from 'fs/promises'
 
 import {
   FREEBUFF_CLIENT_DESCRIPTOR_VERSION,
   FREEBUFF_CLIENT_ENV_HEADER,
   type CloudIdeBucket,
+  type ContainerBucket,
   type ProcessKindBucket,
   type TerminalProgramBucket,
+  type VirtualizationBucket,
 } from '@codebuff/common/constants/freebuff-client-descriptor'
 import { getCiEnv } from '@codebuff/common/env-ci'
 
@@ -340,6 +342,108 @@ export const readSystemTimeZone: ReadSystemTimeZone = async () => {
   }
 }
 
+/** What the machine says about itself (Linux only): the container markers,
+ *  the DMI vendor/product strings, and the kernel's version line. Read once,
+ *  in the background. */
+export type MachineFacts = {
+  dockerenv: boolean
+  containerenv: boolean
+  cgroup: string | null
+  dmiVendor: string | null
+  dmiProduct: string | null
+  procVersion: string | null
+}
+
+export type ReadMachineFacts = () => Promise<MachineFacts | null>
+
+const readText = async (path: string): Promise<string | null> => {
+  try {
+    return (await readFile(path, 'utf8')).slice(0, 4096)
+  } catch {
+    return null
+  }
+}
+const exists = async (path: string): Promise<boolean> => {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Null off Linux: no files to read, and nothing is spawned anywhere. */
+export const readMachineFacts: ReadMachineFacts = async () => {
+  if (process.platform !== 'linux') return null
+  const [dockerenv, containerenv, cgroup, dmiVendor, dmiProduct, procVersion] =
+    await Promise.all([
+      exists('/.dockerenv'),
+      exists('/run/.containerenv'),
+      readText('/proc/1/cgroup'),
+      readText('/sys/class/dmi/id/sys_vendor'),
+      readText('/sys/class/dmi/id/product_name'),
+      readText('/proc/version'),
+    ])
+  return { dockerenv, containerenv, cgroup, dmiVendor, dmiProduct, procVersion }
+}
+
+/** Pure: the container this process runs in. */
+export function containerOf(facts: MachineFacts | null): ContainerBucket {
+  if (!facts) return 'na'
+  const cgroup = facts.cgroup?.toLowerCase() ?? ''
+  if (facts.containerenv || cgroup.includes('libpod')) return 'podman'
+  if (cgroup.includes('kubepods')) return 'k8s'
+  if (facts.dockerenv || cgroup.includes('docker')) return 'docker'
+  if (cgroup.includes('lxc')) return 'lxc'
+  return 'none'
+}
+
+const VIRTUALIZATION_MARKERS: Array<[string, VirtualizationBucket]> = [
+  ['amazon', 'aws'],
+  ['google', 'gcp'],
+  ['digitalocean', 'digitalocean'],
+  ['hetzner', 'hetzner'],
+  ['linode', 'linode'],
+  ['akamai', 'linode'],
+  ['vultr', 'vultr'],
+  ['ovh', 'ovh'],
+  ['oraclecloud', 'oracle'],
+  ['alibaba', 'alibaba'],
+  ['vmware', 'vmware'],
+  ['parallels', 'parallels'],
+  ['virtualbox', 'vbox'],
+  ['innotek', 'vbox'],
+  // Azure and a local Hyper-V VM both say Microsoft "Virtual Machine".
+  ['virtual machine', 'hyperv'],
+  ['xen', 'xen'],
+  ['qemu', 'qemu'],
+  ['bochs', 'qemu'],
+  ['openstack', 'kvm'],
+  ['kvm', 'kvm'],
+]
+
+/** Pure: the hypervisor or cloud the DMI strings name; `none` for real
+ *  hardware, `unk` when neither string could be read. */
+export function virtualizationOf(
+  facts: MachineFacts | null,
+): VirtualizationBucket {
+  if (!facts) return 'na'
+  if (facts.dmiVendor === null && facts.dmiProduct === null) return 'unk'
+  const text = `${facts.dmiVendor ?? ''} ${facts.dmiProduct ?? ''}`.toLowerCase()
+  for (const [marker, bucket] of VIRTUALIZATION_MARKERS) {
+    if (text.includes(marker)) return bucket
+  }
+  return 'none'
+}
+
+/** Pure: Windows Subsystem for Linux. */
+export function isWsl(env: CliEnv, facts: MachineFacts | null): boolean {
+  return Boolean(
+    env.WSL_DISTRO_NAME ||
+      facts?.procVersion?.toLowerCase().includes('microsoft'),
+  )
+}
+
 export type ClientEnvironmentInputs = {
   env: CliEnv
   ciEnv: CiEnv
@@ -364,6 +468,8 @@ export function formatClientEnvironment(
   ancestry: ProcessAncestry,
   colorReply: TerminalColorReply,
   systemZone: string | null = null,
+  /** `undefined` = not probed yet; null = not Linux. */
+  machine: MachineFacts | null | undefined = undefined,
 ): string {
   const { env, ciEnv } = inputs
   // Set at all, even empty: `TZ=` makes the process clock UTC and drops the
@@ -389,6 +495,9 @@ export function formatClientEnvironment(
     ['tls', env.NODE_TLS_REJECT_UNAUTHORIZED?.trim() === '0' ? '0' : '1'],
     ['ca', flag(env.NODE_EXTRA_CA_CERTS?.trim())],
     ['cde', cloudIdeOf(env)],
+    ['ctr', machine === undefined ? 'unk' : containerOf(machine)],
+    ['vm', machine === undefined ? 'unk' : virtualizationOf(machine)],
+    ['wsl', flag(isWsl(env, machine ?? null))],
   ]
   const zone = tzOverride ? zoneFromZoneinfo(systemZone ?? undefined) : null
   if (zone) fields.push(['stz', zone])
@@ -402,6 +511,7 @@ let inputs: ClientEnvironmentInputs | null = null
 let ancestry: ProcessAncestry = UNKNOWN_ANCESTRY
 let colorReply: TerminalColorReply = 'na'
 let systemZone: string | null = null
+let machine: MachineFacts | null | undefined = undefined
 let cached: string | null = null
 let probe: Promise<void> | null = null
 
@@ -423,6 +533,7 @@ function readInputs(): ClientEnvironmentInputs {
 export function startClientEnvironmentProbe(
   read: ReadProcessInfo = readProcessInfo,
   readZone: ReadSystemTimeZone = readSystemTimeZone,
+  readMachine: ReadMachineFacts = readMachineFacts,
 ): Promise<void> {
   if (probe) return probe
   const env = getCliEnv()
@@ -443,7 +554,13 @@ export function startClientEnvironmentProbe(
         cached = null
       })
     : Promise.resolve()
-  probe = Promise.all([ancestryLookup, zoneLookup])
+  const machineLookup = readMachine()
+    .then((facts) => {
+      machine = facts
+      cached = null
+    })
+    .catch(() => {})
+  probe = Promise.all([ancestryLookup, zoneLookup, machineLookup])
     .then(() => {})
     .catch(() => {})
   return probe
@@ -460,7 +577,13 @@ export function getClientEnvironmentDescriptor(): string {
   if (cached) return cached
   try {
     inputs ??= readInputs()
-    cached = formatClientEnvironment(inputs, ancestry, colorReply, systemZone)
+    cached = formatClientEnvironment(
+      inputs,
+      ancestry,
+      colorReply,
+      systemZone,
+      machine,
+    )
   } catch {
     cached = `${FREEBUFF_CLIENT_DESCRIPTOR_VERSION};err=1`
   }

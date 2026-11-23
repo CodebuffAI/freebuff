@@ -39,6 +39,7 @@ export const getCliEnv = (): CliEnv => ({
   GITPOD_WORKSPACE_ID: process.env.GITPOD_WORKSPACE_ID,
   CLOUD_SHELL: process.env.CLOUD_SHELL,
   CODER: process.env.CODER,
+  WSL_DISTRO_NAME: process.env.WSL_DISTRO_NAME,
 
   // Where Bun extracts embedded native libraries (the terminal renderer)
   BUN_TMPDIR: process.env.BUN_TMPDIR,

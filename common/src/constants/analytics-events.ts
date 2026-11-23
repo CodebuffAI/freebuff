@@ -230,6 +230,11 @@ export enum AnalyticsEvent {
   // Provider-ledger snapshot. Keep the latest fetched_at per UTC day before
   // summing; today's row is explicitly partial. No per-user identity.
   ADS_GRAVITY_REVENUE_DAILY = 'ads.gravity_revenue_daily',
+  // Our own Gravity counts from Postgres `ad_impression` per UTC day,
+  // placement, surface, client, render format and traffic class, set beside
+  // ads.gravity_revenue_daily. Restated hourly: keep the latest computed_at per
+  // day. No per-user identity.
+  ADS_GRAVITY_RECONCILIATION_DAILY = 'ads.gravity_reconciliation_daily',
   ADS_FIRST_PARTY_VIEW_ACK = 'ads.first_party_view_ack',
   /**
    * The CLI dock was expanded into its detail panel (COD-457). A UI gesture,
@@ -277,6 +282,8 @@ export enum AnalyticsEvent {
   /** Left the builder (navigated away, closed the tab) without saving. */
   ADVERTISER_BUILDER_ABANDONED = 'advertiser.builder_abandoned',
   ADVERTISER_CAMPAIGN_SAVED = 'advertiser.campaign_saved',
+  ADVERTISER_TARGET_COST_GUIDANCE_SHOWN = 'advertiser.target_cost_guidance_shown',
+  ADVERTISER_TARGET_COST_SAVED = 'advertiser.target_cost_saved',
   ADVERTISER_CAMPAIGN_SAVE_FAILED = 'advertiser.campaign_save_failed',
   ADVERTISER_CREATIVE_SAVED = 'advertiser.creative_saved',
   ADVERTISER_CAMPAIGN_LIFECYCLE_ACTION = 'advertiser.campaign_lifecycle_action',
@@ -354,6 +361,18 @@ export enum AnalyticsEvent {
   // local Desktop renderer reports the user actions as desktop.feature_used
   // `theme_referral.*` instead.
   FREEBUFF_THEME_REFERRAL_PROMPT = 'freebuff.theme_referral_prompt',
+  // The workspace streak popup opened from the New tab's chip or the sidebar
+  // row (web and hosted Desktop). `placement`: chip | sidebar; `surface`:
+  // web | desktop; `streak`: the current streak in days (null before the
+  // streak loaded). Who actually looks at the streak.
+  FREEBUFF_ARTIFACT_USAGE = 'freebuff.artifact_usage',
+  FREEBUFF_STREAK_OPENED = 'freebuff.streak.opened',
+  // The workspace's Integrations page, to rank INTEGRATION_CATEGORIES by what
+  // people want. `action`: category_opened (`category`) | connect_clicked
+  // (`app`, `from`: a category id | search | connected, `position`: 0-based
+  // in that list, absent for connected) | connected (`app`, `from`: the
+  // account appeared while the page waited) | search_more_clicked.
+  FREEBUFF_INTEGRATIONS_PAGE = 'freebuff.integrations_page',
   // Freebuff - Get Started Page (sign-up, then Freebuff Desktop; in order:
   //   viewed → sign_in_clicked → signed_in → eligibility_resolved →
   //   [connect_github_clicked] → web_clicked | freebuff.desktop_download_clicked
@@ -382,6 +401,8 @@ export enum AnalyticsEvent {
   FREEBUFF_START_ANDROID_STORE_CLICKED = 'freebuff.start_android_store_clicked',
   // An iPhone or iPad visitor tapped the handoff's App Store button.
   FREEBUFF_START_IOS_STORE_CLICKED = 'freebuff.start_ios_store_clicked',
+  // A phone visitor tapped "Start in your browser" under the store button.
+  FREEBUFF_START_BROWSER_CLICKED = 'freebuff.start_browser_clicked',
 
   // Freebuff - Chat
   // Emitted once per new-thread title generation attempt (server-side). The
@@ -390,6 +411,7 @@ export enum AnalyticsEvent {
   // fallback rate and added latency are queryable.
   FREEBUFF_CHAT_TITLE_GENERATED = 'freebuff.chat_title_generated',
   FREEBUFF_TITLE_RATE_LIMITED = 'api.freebuff_title_rate_limited',
+  FREEBUFF_QUICK_STATUS_RATE_LIMITED = 'api.freebuff_quick_status_rate_limited',
 
   // Freebuff - CLI landing page (/cli). Fired when the install command is
   // copied; `location` distinguishes hero vs install section. Lets us measure
@@ -398,11 +420,12 @@ export enum AnalyticsEvent {
   // separate identity space with no key back to the web landing.
   FREEBUFF_CLI_INSTALL_COMMAND_COPIED = 'freebuff.cli_install_command_copied',
 
-  // Freebuff - Enterprise landing page (/enterprise). Fired when the contact
-  // form is submitted successfully; carries `companySize` and whether the
-  // sender self-identified as an AI lab, so inbound demand can be segmented
-  // without reading the emails. The lead itself lands in james@/victor@ inboxes
-  // — this event only measures the funnel into them.
+  // Freebuff - Enterprise seat form (/enterprise). Fired by the server on each
+  // stored submission: `seats`, `monthly_total_usd`, the screening `status`
+  // and `qualified` (shown the booking link or not) with its reason codes,
+  // country, network type and email-domain kind. No company, email or IP.
+  // distinct_id is the browser's PostHog id when it sent one. The lead itself
+  // is in Postgres `enterprise_lead` and the founders' inbox.
   FREEBUFF_ENTERPRISE_CONTACT_SUBMITTED = 'freebuff.enterprise_contact_submitted',
 
   // Freebuff - Desktop download CTAs (home hero, products row, /desktop).
@@ -411,6 +434,10 @@ export enum AnalyticsEvent {
   // because the same download had just started (the "did that work?" double
   // click) — a direct read on whether the click feedback is landing.
   FREEBUFF_DESKTOP_DOWNLOAD_CLICKED = 'freebuff.desktop_download_clicked',
+
+  // Freebuff - a phone tapped its own app store button on the homepage or the
+  // sign-in step. `store` is ios | android, `location` the button.
+  FREEBUFF_MOBILE_APP_CLICKED = 'freebuff.mobile_app_clicked',
 
   // Freebuff Web creation gate: the user's idea was screened as something Web
   // cannot build, and they clicked through to the surface we suggested.
@@ -451,6 +478,22 @@ export enum AnalyticsEvent {
   FREEBUFF_HOME_GITHUB_CLICKED = 'freebuff.home_github_clicked',
   FREEBUFF_HOME_INSTALL_GUIDE_EXPANDED = 'freebuff.home_install_guide_expanded',
   FREEBUFF_HOME_FAQ_OPENED = 'freebuff.home_faq_opened',
+
+  // Freebuff - Merch store (/store, freebuff/web/src/lib/merch/store-analytics.ts).
+  // Page views are PostHog's own $pageview. The purchase happens on Shopify's
+  // checkout, so it is not here: the cart carries `_posthog_distinct_id` to
+  // join an order back to its visitor.
+  FREEBUFF_STORE_CATEGORY_SELECTED = 'freebuff.store_category_selected',
+  FREEBUFF_STORE_PRODUCT_CLICKED = 'freebuff.store_product_clicked',
+  FREEBUFF_STORE_PRODUCT_VIEWED = 'freebuff.store_product_viewed',
+  FREEBUFF_STORE_OPTION_SELECTED = 'freebuff.store_option_selected',
+  FREEBUFF_STORE_PHOTO_SELECTED = 'freebuff.store_photo_selected',
+  FREEBUFF_STORE_ADD_TO_CART = 'freebuff.store_add_to_cart',
+  FREEBUFF_STORE_CART_OPENED = 'freebuff.store_cart_opened',
+  FREEBUFF_STORE_CART_QUANTITY_CHANGED = 'freebuff.store_cart_quantity_changed',
+  FREEBUFF_STORE_CART_ITEM_REMOVED = 'freebuff.store_cart_item_removed',
+  FREEBUFF_STORE_CHECKOUT_STARTED = 'freebuff.store_checkout_started',
+  FREEBUFF_STORE_FAQ_OPENED = 'freebuff.store_faq_opened',
 
   // Freebuff - Home hero: the visitor committed to a product (`tab`, `surface`,
   // `action`; see HeroTabs.tsx). A hero Desktop download is instead
