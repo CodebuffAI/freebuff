@@ -353,6 +353,14 @@ export type RunOptions = {
    * writes commands for the shell that will run them. Unset keeps the default.
    */
   terminalShell?: 'bash' | 'powershell'
+  /**
+   * The operating system of the computer this run's commands execute on,
+   * when that is not this process's: a hosted runner driving a user's
+   * Desktop computer. Reported to the model as `systemInfo.platform`, so on
+   * a Windows computer it gets the Windows note (Git Bash, forward slashes)
+   * instead of the runner's "linux". Unset keeps this process's platform.
+   */
+  hostPlatform?: 'darwin' | 'linux' | 'win32'
   /** Stable id of the project this run works on. Defaults to a hash of the
    *  repository root resolved from `cwd`. */
   projectKey?: string
@@ -402,6 +410,22 @@ export function applyTerminalShell(
   sessionState.fileContext.systemInfo = {
     ...sessionState.fileContext.systemInfo,
     shell: terminalShell,
+  }
+}
+
+/**
+ * Report the platform the run's commands execute on (`RunOptions.hostPlatform`).
+ * Applied on every run, like the shell: a resumed state built on the runner
+ * carries the runner's platform, and a thread can move between computers.
+ */
+export function applyHostPlatform(
+  sessionState: SessionState,
+  hostPlatform: RunOptions['hostPlatform'],
+): void {
+  if (!hostPlatform) return
+  sessionState.fileContext.systemInfo = {
+    ...sessionState.fileContext.systemInfo,
+    platform: hostPlatform,
   }
 }
 
@@ -727,6 +751,7 @@ async function runOnce({
   onTurnReview,
   turnReviewPrompt,
   terminalShell,
+  hostPlatform,
   projectKey,
   traceSessionId: traceSessionIdOption,
   confineFileToolsToProject,
@@ -793,6 +818,7 @@ async function runOnce({
   }
   const traceSessionId =
     previousRun?.traceSessionId ?? traceSessionIdOption ?? crypto.randomUUID()
+  applyHostPlatform(sessionState, hostPlatform)
   applyTerminalShell(sessionState, terminalShell)
 
   if (byok) {
