@@ -30,6 +30,12 @@ export function isStagingSlotOriginPair(apiOrigin: string, authOrigin: string): 
   return api !== null && auth !== null && api[1] === auth[1]
 }
 
+/** A slot's auth origin from its API origin (`N.staging.codebuff.com` => `N.staging.freebuff.com`). */
+export function stagingSlotAuthOrigin(apiOrigin: string): string | null {
+  const api = SLOT_API_ORIGIN.exec(apiOrigin)
+  return api ? `https://${api[1]}.staging.freebuff.com` : null
+}
+
 /** The origins a hosted workspace may open on: a reviewed pair, or one slot's pair. */
 export function isHostedWorkspaceOrigin(apiOrigin: string, authOrigin: string): boolean {
   return HOSTED_WORKSPACE_ENVIRONMENTS.some(environment => environment.apiOrigin === apiOrigin && environment.authOrigin === authOrigin)
