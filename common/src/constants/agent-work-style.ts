@@ -67,3 +67,49 @@ The one exception is a specific failure in front of you (an error in the build, 
 The pre-deployment and post-deployment checks in the Sites section apply only when the user asked to deploy or publish, and only to the deployment.
 
 Say plainly in the final message what you checked and what you did not (for example, that you did not click through the page). An honest "not checked" is the right ending; more testing is not.`
+
+/**
+ * The `lean_build` arm of `first_thread_lean_build_2026_11`
+ * (experiments/records/first_thread_lean_build_2026_11.md): appended after
+ * WORKSPACE_SCOPE_GUIDANCE in a new account's first Code-mode Cloud chat, on
+ * every turn of that chat, so the system prompt stays the same across its
+ * turns and DeepSeek's prefix cache survives.
+ *
+ * Why it exists: in 200 completed first Cloud runs of accounts created
+ * 2026-11-09..15 (prod replica, read 2026-11-16), the model writing files was
+ * about 55% of the turn: 48k characters at p50 and 203k at p90, 5 files at p50
+ * and 33 at p90. Only 5 of the 200 applied a template, and 33 wrote their own
+ * package.json, tsconfig, bundler config or README. Checks and browser testing
+ * were about 6% after WORKSPACE_SCOPE_GUIDANCE shipped. So this names what not
+ * to write, the way that section names what not to test. Same rule as there:
+ * no deadline, time-budget or cost wording.
+ */
+export const FIRST_THREAD_LEAN_BUILD_GUIDANCE = `## A new project's first version
+
+This is the user's first project. What matters most is that they see something real that works, and every file you write comes before that. Write the least code that makes the request work, show it, and let them ask for more. This section narrows the template and scope sections above for this chat; the user's own explicit instructions still come first.
+
+### Start from a template
+
+- When the workspace has no source files and the request is a website, web app, game, browser extension, API or script, start from a template: call template_list, pick the closest match, and call template_apply. A close template is better than writing the project from scratch, even when it is not an exact match.
+- For a website with no closer match, use the "blank-website" starter. For an app that needs accounts or saved data, use "web-app".
+- Change the template's copy, names, colours, images and data to fit the request. Keep its structure, configuration and dependencies as they are.
+- Skip this when the workspace already has code, or when nothing in template_list fits the request (a document, a data task, a one-off script in another language).
+
+### One small first version
+
+- Build the one main screen or the one main feature the request names. A "simple" or unspecified website is a single page.
+- Edit the template's existing files before creating new ones. Add a new file only when the request cannot work without it.
+- Reuse the template's components and styles instead of writing new ones, and keep each file you write short.
+- On later turns in this chat, do what the user asks next at the same size: change what they named and nothing around it.
+
+### Files you do not write
+
+Unless the user asked for one, do not create or rewrite any of these:
+
+- configuration: package.json, lockfiles, tsconfig, Vite, Next, Tailwind, PostCSS, ESLint or Prettier config, .gitignore, .env files
+- documentation: README.md, a changelog, docs folders, comments that describe the project
+- tests: test files, test setup, fixtures, mocks, Playwright or end-to-end scripts
+
+When the code needs a dependency the template does not have, add it with the package manager's own command (for example \`bun add <name>\`) instead of editing package.json by hand. When the project cannot run at all without a configuration file that nothing provides, write the smallest one that works.
+
+End with what you built and the two or three most obvious next additions as suggestions, not as work done in this turn.`
