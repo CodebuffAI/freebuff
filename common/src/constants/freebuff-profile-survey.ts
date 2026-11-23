@@ -334,8 +334,9 @@ export const PROFILE_SURVEY_VERSIONS = [
 /** The version clients are shown. The launch gate: nothing is shown unless
  *  this names a version (null = survey off), never an env var. Version 1
  *  launched 2026-10-07, version 2 on 2026-10-09. The dev and admin previews
- *  run on the fake client and ignore it. */
-export const ACTIVE_PROFILE_SURVEY_VERSION: number | null = 2
+ *  run on the fake client and ignore it. Turned off 2026-11-23: the in-chat
+ *  card is no longer shown (the sponsored survey still is). */
+export const ACTIVE_PROFILE_SURVEY_VERSION: number | null = null
 
 /** Freebucks per arm. Index = arm; assignment is per user per version.
  *  Arm 2 paid 25 until 2026-10-07, when 5 proved enough; arms 1 and 2 paid 5
