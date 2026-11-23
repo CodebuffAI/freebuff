@@ -277,6 +277,10 @@ export const welcomeStepSchema = z.enum([
   'integrations',
   'mobile',
   'invite',
+  // The onboarding questions, one step each (2026-11-22): asked inside the
+  // welcome instead of in a card over the chat after the first send.
+  'question_referral_source',
+  'question_role',
 ])
 export const productEntryRouteSchema = z.enum([
   '/',

@@ -1,9 +1,16 @@
 /**
  * The post-signup onboarding questionnaire.
  *
- * Five questions, each a fixed option list plus a free-text "Other". Shared
- * between the form, the persistence layer and the admin view so a renamed
- * option cannot silently split one answer into two in the analytics.
+ * Two questions, each a fixed option list (the referral one with a free-text
+ * "Other"). Shared between the form, the persistence layer and the admin view
+ * so a renamed option cannot silently split one answer into two in the
+ * analytics.
+ *
+ * Until 2026-11-21 there were five. The three that went (proficiency, intended
+ * use, subscriptions) are kept in `RETIRED_ONBOARDING_QUESTIONS`: no longer
+ * asked or accepted, but still counted in the admin view, so their history
+ * stays readable. `FREEBUFF_ONBOARDING_REPORTED_QUESTIONS` is the union, and
+ * is what every tally and admin read uses.
  *
  * Why the option ids are opaque and permanent
  * -------------------------------------------
@@ -65,6 +72,9 @@ export type OnboardingQuestion = {
    *  successor. Not offered and not accepted, but still counted and shown in
    *  the admin view, so retiring one does not erase its history. */
   retiredOptions?: OnboardingRetiredOption[]
+  /** Set only on `RETIRED_ONBOARDING_QUESTIONS`: the UTC day the form stopped
+   *  asking it. Same meaning as `OnboardingRetiredOption.retiredOn`. */
+  retiredOn?: string
 }
 
 /** Every question offers this. The accompanying free text is stored separately
@@ -74,7 +84,7 @@ export const OTHER_OPTION_ID = 'other'
 export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
   {
     id: 'referral_source',
-    prompt: 'Where did you hear about Freebuff?',
+    prompt: 'How did you hear about Freebuff?',
     // Attribution is the one answer we cannot reconstruct later: referrer
     // headers are stripped, and self-report is the only signal for word of
     // mouth, which is where most of it actually comes from.
@@ -111,14 +121,34 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
     prompt: 'What best describes you?',
     options: [
       { id: 'professional_dev', label: 'Developer' },
-      { id: 'founder', label: 'Founder' },
       { id: 'student', label: 'Student' },
       { id: 'hobbyist', label: 'Hobbyist' },
-      { id: OTHER_OPTION_ID, label: 'Something else' },
+      { id: 'operations', label: 'Operations' },
+      { id: 'creative', label: 'Creative' },
+      // `founder` was labelled "Founder" before 2026-11-21; same people.
+      { id: 'founder', label: 'Founder/CEO' },
     ],
     multi: false,
     shuffleOptions: true,
+    retiredOptions: [
+      {
+        // No write-in since 2026-11-21: Operations and Creative were added to
+        // cover what it mostly held, and the six options are meant to be
+        // exhaustive. Answers from before stay counted here.
+        id: OTHER_OPTION_ID,
+        label: 'Something else (before 2026-11-21)',
+        retiredOn: '2026-11-21',
+      },
+    ],
   },
+] as const
+
+/**
+ * Questions the form asked once and no longer does. Not offered, not accepted
+ * by validation, and not needed for an account to count as complete, but
+ * still tallied and shown in the admin view so their answers stay readable.
+ */
+export const RETIRED_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
   {
     id: 'proficiency',
     prompt: 'How much do you code?',
@@ -133,6 +163,7 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
     // question is unusable for the segmentation it exists to support.
     multi: false,
     kind: 'scale',
+    retiredOn: '2026-11-21',
   },
   {
     id: 'intended_use',
@@ -147,6 +178,7 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
     ],
     multi: true,
     shuffleOptions: true,
+    retiredOn: '2026-11-21',
   },
   {
     id: 'subscriptions',
@@ -168,8 +200,15 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
     ],
     multi: true,
     shuffleOptions: true,
+    retiredOn: '2026-11-21',
   },
 ] as const
+
+/** Every question with answers on record, asked or retired: what the admin
+ *  view and every tally count. The form, validation and the completeness
+ *  check use `FREEBUFF_ONBOARDING_QUESTIONS` alone. */
+export const FREEBUFF_ONBOARDING_REPORTED_QUESTIONS: readonly OnboardingQuestion[] =
+  [...FREEBUFF_ONBOARDING_QUESTIONS, ...RETIRED_ONBOARDING_QUESTIONS]
 
 /**
  * Retired option id → the current option that now covers it.
@@ -193,7 +232,8 @@ export const ONBOARDING_LEGACY_OPTION_IDS: Partial<
   // Data/ML folded into the broader developer bucket. Designer-or-PM and
   // non-technical were retired without a successor (2026-09-16), so they and
   // the older `designer` id that used to fold into PM all read as "something
-  // else".
+  // else". (Role's "something else" is itself retired since 2026-11-21 but
+  // still counted, so these keep landing in it.)
   role: {
     data_ml: 'professional_dev',
     designer: OTHER_OPTION_ID,
@@ -316,7 +356,7 @@ export function onboardingSourceProperties(
  * the live ones, so platform-level comparisons are only clean from this day on.
  */
 export function latestOnboardingRetirementDay(
-  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_QUESTIONS,
+  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_REPORTED_QUESTIONS,
 ): string | null {
   let latest: string | null = null
   for (const question of questions) {
@@ -351,7 +391,7 @@ export const ONBOARDING_TALLY_VERSION = 5
  *  renders its full bar list rather than vanishing. Retired options without a
  *  successor are included: their past answers still count. */
 export function emptyOnboardingTally(
-  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_QUESTIONS,
+  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_REPORTED_QUESTIONS,
 ): OnboardingTally {
   return Object.fromEntries(
     questions.map((q) => [
@@ -378,7 +418,7 @@ export function applyOnboardingAnswersToTally(
   tally: OnboardingTally,
   answers: readonly StoredOnboardingAnswer[] | null | undefined,
   sign: 1 | -1 = 1,
-  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_QUESTIONS,
+  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_REPORTED_QUESTIONS,
 ): Record<string, string[]> {
   const otherTexts: Record<string, string[]> = {}
   const known = new Set(questions.map((q) => q.id))
@@ -420,7 +460,7 @@ export function onboardingTallyFromOptionCounts(
     otherText?: string | null
     count: number
   }>,
-  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_QUESTIONS,
+  questions: readonly OnboardingQuestion[] = FREEBUFF_ONBOARDING_REPORTED_QUESTIONS,
 ): OnboardingTally {
   const tally = emptyOnboardingTally(questions)
   for (const group of counts) {
