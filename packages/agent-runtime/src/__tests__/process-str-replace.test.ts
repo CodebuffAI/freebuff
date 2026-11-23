@@ -58,6 +58,38 @@ describe('processStrReplace', () => {
     }
   })
 
+  // 2026-11-23: an edit to a large file with mixed line endings rewrites every
+  // LF line, and the unbounded diff held a Cloud runner's event loop for 9-17
+  // minutes. Unfixed, this case runs ~17 s (past the 5 s test timeout).
+  it('edits a large mixed-line-ending file without a quadratic diff', async () => {
+    const lines = Array.from(
+      { length: 16_000 },
+      (_, i) => `const value${i} = ${i}${i % 2 ? '\r\n' : '\n'}`,
+    )
+    const initialContent = lines.join('')
+    const result = await processStrReplace({
+      path: 'big.ts',
+      replacements: [
+        {
+          oldString: 'const value10 = 10',
+          newString: 'const value10 = 11',
+          allowMultiple: false,
+        },
+      ],
+      initialContentPromise: Promise.resolve(initialContent),
+      logger,
+    })
+    expect('content' in result).toBe(true)
+    if ('content' in result) {
+      expect(result.content).toBe(
+        initialContent
+          .replace('const value10 = 10', 'const value10 = 11')
+          .replace(/\r?\n/g, '\r\n'),
+      )
+      expect(applyPatch(initialContent, result.patch)).toBe(result.content)
+    }
+  })
+
   it('should handle indentation differences', async () => {
     const initialContent = '  const x = 1;\n    const y = 2;\n'
     const oldStr = 'const y = 2;'

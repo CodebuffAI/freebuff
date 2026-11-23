@@ -1,6 +1,5 @@
-import { createPatch } from 'diff'
-
 import { tryToDoStringReplacementWithExtraIndentation } from './generate-diffs-prompt'
+import { createBoundedPatch } from './util/bounded-patch'
 
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 
@@ -118,7 +117,7 @@ export async function processStrReplace(params: {
     }
   }
 
-  let patch = createPatch(path, initialContent, currentContent)
+  let patch = createBoundedPatch(path, initialContent, currentContent)
   const lines = patch.split('\n')
   const hunkStartIndex = lines.findIndex((line) => line.startsWith('@@'))
   if (hunkStartIndex !== -1) {

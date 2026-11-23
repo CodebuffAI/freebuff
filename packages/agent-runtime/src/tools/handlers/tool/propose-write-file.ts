@@ -1,9 +1,8 @@
-import { createPatch } from 'diff'
-
 import {
   getProposedContent,
   setProposedContent,
 } from './proposed-content-store'
+import { createBoundedPatch } from '../../../util/bounded-patch'
 
 import type { CodebuffToolHandlerFunction } from '../handler-function-type'
 import type {
@@ -60,7 +59,7 @@ export const handleProposeWriteFile = (async (
 
   // Generate unified diff
   const oldContent = initialContent ?? ''
-  let patch = createPatch(path, oldContent, newContent)
+  let patch = createBoundedPatch(path, oldContent, newContent)
   
   // Strip the header lines, keep only from @@ onwards
   const lines = patch.split('\n')
