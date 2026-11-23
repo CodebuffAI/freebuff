@@ -21,6 +21,7 @@ import { sponsorFor } from '@codebuff/common/ads/display-ads/sponsors'
 import { TextAttributes } from '@opentui/core'
 
 import { Button } from './button'
+import { useNetworkAdOnScreen } from '../ads/ad-screen'
 import {
   CLI_DISPLAY_AD_PLACEMENT_IDS,
   cliDisplayAdEnabled,
@@ -76,7 +77,11 @@ export function DisplayAdSplash({
   open?: (url: string) => unknown
 }) {
   const theme = useTheme()
-  const hidden = useSplashHiddenToday()
+  const userHidden = useSplashHiddenToday()
+  // One ad on screen at a time: our unit gives way (draws and requests
+  // nothing) while an ad-network ad is on screen in the chat.
+  const networkAdOnScreen = useNetworkAdOnScreen()
+  const hidden = userHidden || networkAdOnScreen
   const hide = useDisplayAdsStore((s) => s.hideSplashForToday)
   const mock = enabled ? sponsorFor('cliSplash') : null
   const served = useServedDisplayAd(placementId, !enabled && !hidden, getServed)

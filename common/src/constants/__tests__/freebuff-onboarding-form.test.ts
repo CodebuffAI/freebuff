@@ -133,12 +133,12 @@ describe('toAnswerList', () => {
   it('produces something the real server accepts', () => {
     // The contract that actually matters: a partial set of picks made in the UI
     // must survive validation, or the answers are lost at the last step.
-    const [first, , third] = FREEBUFF_ONBOARDING_QUESTIONS
+    const [first, second] = FREEBUFF_ONBOARDING_QUESTIONS
     const answers = toAnswerList(
       FREEBUFF_ONBOARDING_QUESTIONS,
       {
         [first!.id]: [first!.options[0]!.id],
-        [third!.id]: [third!.options[1]!.id],
+        [second!.id]: [second!.options[1]!.id],
       },
       {},
     )

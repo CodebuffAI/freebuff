@@ -5,6 +5,7 @@ import {
   classifyOnboardingOtherText,
   emptyOnboardingTally,
   FREEBUFF_ONBOARDING_QUESTIONS,
+  FREEBUFF_ONBOARDING_REPORTED_QUESTIONS,
   isOnboardingComplete,
   ONBOARDING_LEGACY_OPTION_IDS,
   ONBOARDING_OTHER_TEXT_MAX,
@@ -13,7 +14,9 @@ import {
   OTHER_OPTION_ID,
   parseOnboardingSurface,
   resumableOnboardingAnswers,
+  RETIRED_ONBOARDING_QUESTIONS,
   type OnboardingAnswer,
+  type OnboardingQuestion,
   validateOnboardingSubmission,
 } from '../freebuff-onboarding'
 
@@ -22,9 +25,6 @@ function fullAnswers(overrides: OnboardingAnswer[] = []): OnboardingAnswer[] {
   const base: OnboardingAnswer[] = [
     { questionId: 'referral_source', optionIds: ['youtube'] },
     { questionId: 'role', optionIds: ['professional_dev'] },
-    { questionId: 'proficiency', optionIds: ['advanced'] },
-    { questionId: 'intended_use', optionIds: ['work', 'side_projects'] },
-    { questionId: 'subscriptions', optionIds: ['cursor'] },
   ]
   return base.map((a) => overrides.find((o) => o.questionId === a.questionId) ?? a)
 }
@@ -38,25 +38,70 @@ describe('the question set itself', () => {
     }
   })
 
-  it('offers Other everywhere except the ordinal scale', () => {
-    // Free text on an ordered scale is unusable for the segmentation the
-    // question exists to support.
-    for (const q of FREEBUFF_ONBOARDING_QUESTIONS) {
-      const hasOther = q.options.some((o) => o.id === OTHER_OPTION_ID)
-      expect(hasOther).toBe(q.id !== 'proficiency')
-    }
+  it('asks exactly the two questions, in order (2026-11-21)', () => {
+    expect(FREEBUFF_ONBOARDING_QUESTIONS.map((q) => q.id)).toEqual([
+      'referral_source',
+      'role',
+    ])
+    expect(FREEBUFF_ONBOARDING_QUESTIONS.map((q) => q.prompt)).toEqual([
+      'How did you hear about Freebuff?',
+      'What best describes you?',
+    ])
   })
 
-  it('maps every legacy option onto an option that still exists', () => {
+  it('offers the six roles and no write-in', () => {
+    const role = FREEBUFF_ONBOARDING_QUESTIONS.find((q) => q.id === 'role')!
+    expect(role.options.map((o) => [o.id, o.label])).toEqual([
+      ['professional_dev', 'Developer'],
+      ['student', 'Student'],
+      ['hobbyist', 'Hobbyist'],
+      ['operations', 'Operations'],
+      ['creative', 'Creative'],
+      ['founder', 'Founder/CEO'],
+    ])
+    expect(role.retiredOptions?.map((o) => o.id)).toEqual([OTHER_OPTION_ID])
+    const result = validateOnboardingSubmission({
+      answers: [{ questionId: 'role', optionIds: [OTHER_OPTION_ID], otherText: 'x' }],
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('keeps the dropped questions for reporting only', () => {
+    expect(RETIRED_ONBOARDING_QUESTIONS.map((q) => q.id)).toEqual([
+      'proficiency',
+      'intended_use',
+      'subscriptions',
+    ])
+    for (const q of RETIRED_ONBOARDING_QUESTIONS) expect(q.retiredOn).toBe('2026-11-21')
+    expect(FREEBUFF_ONBOARDING_REPORTED_QUESTIONS.map((q) => q.id)).toEqual([
+      'referral_source',
+      'role',
+      'proficiency',
+      'intended_use',
+      'subscriptions',
+    ])
+    // Not accepted any more: a stale client's answer is refused, not stored.
+    const result = validateOnboardingSubmission({
+      answers: [{ questionId: 'proficiency', optionIds: ['advanced'] }],
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('maps every legacy option onto an option that is still counted', () => {
     // A successor that no longer exists silently drops the answers it was
     // supposed to rescue — the exact failure the map exists to prevent.
     for (const [questionId, map] of Object.entries(ONBOARDING_LEGACY_OPTION_IDS)) {
-      const question = FREEBUFF_ONBOARDING_QUESTIONS.find((q) => q.id === questionId)
+      const question = FREEBUFF_ONBOARDING_REPORTED_QUESTIONS.find(
+        (q) => q.id === questionId,
+      )
       expect(question).toBeDefined()
       const live = new Set(question!.options.map((o) => o.id))
+      const counted = new Set(
+        [...question!.options, ...(question!.retiredOptions ?? [])].map((o) => o.id),
+      )
       for (const [retired, successor] of Object.entries(map ?? {})) {
         expect(live.has(retired)).toBe(false)
-        expect(live.has(successor)).toBe(true)
+        expect(counted.has(successor)).toBe(true)
       }
     }
   })
@@ -171,35 +216,36 @@ describe('validateOnboardingSubmission', () => {
     expect(result.ok).toBe(false)
   })
 
+  // Neither asked question is multi-select any more; the rules still hold for
+  // whichever one is next, so they are checked against a question of that shape.
+  const multiQuestion = RETIRED_ONBOARDING_QUESTIONS.find(
+    (q) => q.id === 'subscriptions',
+  )!
+  const withMulti: OnboardingQuestion[] = [{ ...multiQuestion, retiredOn: undefined }]
+
   it('rejects an exclusive option combined with others', () => {
     // "No subscriptions" and "Cursor" cannot both be true; a stored
     // contradiction has no honest reading in the tally.
-    const result = validateOnboardingSubmission({
-      answers: fullAnswers([
-        { questionId: 'subscriptions', optionIds: ['none', 'cursor'] },
-      ]),
-    })
+    const result = validateOnboardingSubmission(
+      { answers: [{ questionId: 'subscriptions', optionIds: ['none', 'cursor'] }] },
+      withMulti,
+    )
     expect(result.ok).toBe(false)
   })
 
   it('accepts the exclusive option on its own', () => {
-    const result = validateOnboardingSubmission({
-      answers: fullAnswers([
-        { questionId: 'subscriptions', optionIds: ['none'] },
-      ]),
-    })
+    const result = validateOnboardingSubmission(
+      { answers: [{ questionId: 'subscriptions', optionIds: ['none'] }] },
+      withMulti,
+    )
     expect(result.ok).toBe(true)
   })
 
   it('accepts multiple answers where the question allows it', () => {
-    const result = validateOnboardingSubmission({
-      answers: fullAnswers([
-        {
-          questionId: 'intended_use',
-          optionIds: ['work', 'learning', 'automation'],
-        },
-      ]),
-    })
+    const result = validateOnboardingSubmission(
+      { answers: [{ questionId: 'subscriptions', optionIds: ['cursor', 'codex'] }] },
+      withMulti,
+    )
     expect(result.ok).toBe(true)
   })
 })
@@ -208,7 +254,7 @@ describe('the Other option', () => {
   it('requires accompanying text', () => {
     const result = validateOnboardingSubmission({
       answers: fullAnswers([
-        { questionId: 'role', optionIds: [OTHER_OPTION_ID] },
+        { questionId: 'referral_source', optionIds: [OTHER_OPTION_ID] },
       ]),
     })
     expect(result.ok).toBe(false)
@@ -218,16 +264,16 @@ describe('the Other option', () => {
     const result = validateOnboardingSubmission({
       answers: fullAnswers([
         {
-          questionId: 'role',
+          questionId: 'referral_source',
           optionIds: [OTHER_OPTION_ID],
-          otherText: '  technical writer  ',
+          otherText: '  a podcast  ',
         },
       ]),
     })
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('unreachable')
-    const role = result.answers.find((a) => a.questionId === 'role')
-    expect(role?.otherText).toBe('technical writer')
+    const referral = result.answers.find((a) => a.questionId === 'referral_source')
+    expect(referral?.otherText).toBe('a podcast')
   })
 
   it('drops stray text when Other was NOT chosen', () => {
@@ -247,7 +293,7 @@ describe('the Other option', () => {
     const result = validateOnboardingSubmission({
       answers: fullAnswers([
         {
-          questionId: 'role',
+          questionId: 'referral_source',
           optionIds: [OTHER_OPTION_ID],
           otherText: 'x'.repeat(ONBOARDING_OTHER_TEXT_MAX + 500),
         },
@@ -255,7 +301,9 @@ describe('the Other option', () => {
     })
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('unreachable')
-    expect(result.answers.find((a) => a.questionId === 'role')?.otherText).toHaveLength(
+    expect(
+      result.answers.find((a) => a.questionId === 'referral_source')?.otherText,
+    ).toHaveLength(
       ONBOARDING_OTHER_TEXT_MAX,
     )
   })
@@ -264,7 +312,18 @@ describe('the Other option', () => {
 describe('isOnboardingComplete — the blocking gate reads this', () => {
   it('is true only when every question has an answer', () => {
     expect(isOnboardingComplete(fullAnswers())).toBe(true)
-    expect(isOnboardingComplete(fullAnswers().slice(0, 3))).toBe(false)
+    expect(isOnboardingComplete(fullAnswers().slice(0, 1))).toBe(false)
+  })
+
+  it('does not require the retired questions', () => {
+    // Someone who answered both current questions is done, whatever they did
+    // or did not say to the questions the form used to ask.
+    expect(
+      isOnboardingComplete([
+        ...fullAnswers(),
+        { questionId: 'proficiency', optionIds: ['advanced'] },
+      ] as OnboardingAnswer[]),
+    ).toBe(true)
   })
 
   it('treats null, undefined and empty as incomplete', () => {
@@ -320,6 +379,19 @@ describe('applyOnboardingAnswersToTally', () => {
     expect(others).toEqual({ role: ['lighthouse keeper'] })
   })
 
+  it('still counts the retired questions and the new roles', () => {
+    const tally = emptyOnboardingTally()
+    applyOnboardingAnswersToTally(tally, [
+      { questionId: 'role', optionIds: ['operations'] },
+      { questionId: 'proficiency', optionIds: ['advanced'] },
+      { questionId: 'intended_use', optionIds: ['work'] },
+    ])
+    expect(tally.role.operations).toBe(1)
+    expect(tally.role.creative).toBe(0)
+    expect(tally.proficiency.advanced).toBe(1)
+    expect(tally.intended_use.work).toBe(1)
+  })
+
   it('removes a resubmitted answer with sign -1 so a replace is not a double count', () => {
     const tally = emptyOnboardingTally()
     const first = [{ questionId: 'role', optionIds: ['student'] }]
@@ -333,7 +405,7 @@ describe('applyOnboardingAnswersToTally', () => {
 
   it('offers every current option at zero, so an unanswered question still has bars', () => {
     const tally = emptyOnboardingTally()
-    for (const q of FREEBUFF_ONBOARDING_QUESTIONS) {
+    for (const q of FREEBUFF_ONBOARDING_REPORTED_QUESTIONS) {
       expect(Object.keys(tally[q.id]).sort()).toEqual(
         [...q.options, ...(q.retiredOptions ?? [])].map((o) => o.id).sort(),
       )
@@ -352,17 +424,12 @@ describe('applyOnboardingAnswersToTally', () => {
 
 describe('question set (2026-09-16 edit)', () => {
   const byId = Object.fromEntries(FREEBUFF_ONBOARDING_QUESTIONS.map((q) => [q.id, q]))
-  it('no longer offers Reddit, GitHub, Designer/PM, Non-technical or Copilot', () => {
+  it('no longer offers Reddit, GitHub, Designer/PM or Non-technical', () => {
     const ids = (q: string) => byId[q].options.map((o) => o.id)
     expect(ids('referral_source')).not.toContain('reddit')
     expect(ids('referral_source')).not.toContain('github')
     expect(ids('role')).not.toContain('pm')
     expect(ids('role')).not.toContain('non_technical')
-    expect(ids('subscriptions')).not.toContain('copilot')
-  })
-  it('keeps the build and subscriptions questions multi-select', () => {
-    expect(byId.intended_use.multi).toBe(true)
-    expect(byId.subscriptions.multi).toBe(true)
   })
   it('offers Instagram, TikTok and Facebook separately (2026-09-28 split)', () => {
     const ids = byId.referral_source.options.map((o) => o.id)
@@ -375,10 +442,10 @@ describe('question set (2026-09-16 edit)', () => {
     })
     expect(result.ok).toBe(false)
   })
-  it('shuffles every choice question while preserving the proficiency scale', () => {
+  it('shuffles both questions', () => {
     expect(
       FREEBUFF_ONBOARDING_QUESTIONS.filter((q) => q.shuffleOptions).map((q) => q.id),
-    ).toEqual(['referral_source', 'role', 'intended_use', 'subscriptions'])
+    ).toEqual(['referral_source', 'role'])
   })
   it('still validates a retired id as unknown rather than silently storing it', () => {
     const result = validateOnboardingSubmission({
@@ -461,18 +528,22 @@ describe('resumableOnboardingAnswers', () => {
     const resumed = resumableOnboardingAnswers([
       { questionId: 'referral_source', optionIds: ['tiktok'] },
       { questionId: 'role', optionIds: ['student'] },
-      { questionId: 'subscriptions', optionIds: ['copilot', 'cursor'] },
-    ])
-    expect(resumed).toEqual([
-      { questionId: 'role', optionIds: ['student'] },
       { questionId: 'subscriptions', optionIds: ['cursor'] },
     ])
+    // the retired question goes too: sending it back would be refused
+    expect(resumed).toEqual([{ questionId: 'role', optionIds: ['student'] }])
     expect(validateOnboardingSubmission({ answers: resumed }).ok).toBe(true)
   })
 
   it('keeps write-in text only while "other" is still chosen', () => {
     expect(
       resumableOnboardingAnswers([
+        {
+          questionId: 'referral_source',
+          optionIds: [OTHER_OPTION_ID],
+          otherText: 'a podcast',
+        },
+        // role's write-in is retired: asked again rather than resent
         {
           questionId: 'role',
           optionIds: [OTHER_OPTION_ID],
@@ -481,9 +552,9 @@ describe('resumableOnboardingAnswers', () => {
       ]),
     ).toEqual([
       {
-        questionId: 'role',
+        questionId: 'referral_source',
         optionIds: [OTHER_OPTION_ID],
-        otherText: 'lighthouse keeper',
+        otherText: 'a podcast',
       },
     ])
   })

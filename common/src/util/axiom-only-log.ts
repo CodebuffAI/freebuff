@@ -97,6 +97,10 @@ export const COMPACTION_FOLLOWUP_EVENT = 'context_compaction.followup' as const
  *  prompt cache, and its size. Counts and labels only, never the summary. */
 export const COMPACTION_SUMMARY_EVENT = 'compaction_summary' as const
 export const COMPACTION_ATTEMPT_EVENT = 'context_compaction.attempt' as const
+/** One per finished-turn review request (packages/agent-runtime/src/
+ *  turn-review.ts): its outcome, verdict, how many actions it offered and how
+ *  much of its input came from the prompt cache. Never the actions' text. */
+export const TURN_REVIEW_EVENT = 'turn_review' as const
 /** One per physical provider bill (web/src/llm-api/compaction-usage.ts): what
  *  a request cost and which compaction it belongs to. Ids, labels and counts
  *  only, never a prompt, an email or a user id. */
@@ -142,6 +146,15 @@ export const ADS_EXTERNAL_CONVERSION_SELECTED_RAILS = [
 ] as const
 export type AdsExternalConversionSelectedRail =
   (typeof ADS_EXTERNAL_CONVERSION_SELECTED_RAILS)[number]
+
+/** The payload field names `replay_mismatch_fields` may carry. */
+export const ADS_EXTERNAL_CONVERSION_REPLAY_MISMATCH_FIELDS = [
+  'event_type',
+  'value',
+  'currency',
+  'plan',
+  'occurred_at',
+] as const
 /**
  * Durable campaign-health evidence. This stream also carries an opaque
  * campaign identifier, beyond the postback census's authenticated advertiser, so
@@ -428,6 +441,8 @@ const COMPACTION_ATTEMPT_FIELDS = {
   ready_summary: 'boolean',
   waited_for_pending: 'boolean',
   generated_foreground: 'boolean',
+  /** The applied summary's context size when it was requested. */
+  summary_context_tokens: 'number',
   context_token_count: 'number',
   max_context_length: 'number',
 } as const satisfies AxiomOnlyFieldSchema
@@ -506,6 +521,30 @@ const COMPACTION_SUMMARY_FIELDS = {
   duration_ms: 'number',
 } as const satisfies AxiomOnlyFieldSchema
 
+const TURN_REVIEW_FIELDS = {
+  ...COMPACTION_CORRELATION_FIELDS,
+  agent_run_id: 'string',
+  model: 'string',
+  /** `claude-code` or `codex` for a review of a turn on the user's computer; absent for Freebuff's agent. */
+  harness: 'string',
+  /** `completed`, `empty` (nothing to suggest), `unrecognized` (no review in the reply) or `failed`. */
+  outcome: 'string',
+  finish_reason: 'string',
+  /** `ready`, `needs_changes` or `not_promising`; absent with no verdict. */
+  verdict: 'string',
+  action_count: 'number',
+  /** Whether the review offered the "Code review" button. */
+  offers_code_review: 'boolean',
+  /** Whether the review offered the "Brainstorm follow-ups" button. */
+  offers_brainstorm: 'boolean',
+  /** Whether the review offered the "Challenge the change" button. */
+  offers_challenge: 'boolean',
+  input_tokens: 'number',
+  cached_input_tokens: 'number',
+  output_tokens: 'number',
+  duration_ms: 'number',
+} as const satisfies AxiomOnlyFieldSchema
+
 const COMPACTION_REQUEST_USAGE_FIELDS = {
   ...COMPACTION_CORRELATION_FIELDS,
   compaction_root_model: 'string',
@@ -577,6 +616,13 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    * serving, eligibility, pricing, or billing.
    */
   client_inline_cadence: 'string',
+  /**
+   * Why the request's stored client context is what it is: `parsed`,
+   * `absent`, `invalid`, `gpc`, `opted_out` or `consent_denied`
+   * (`AdClientContextStatus`). A label for counting dropped contexts; it never
+   * drives serving, eligibility, pricing, or billing.
+   */
+  client_context_status: 'string',
   /**
    * The REQUEST-grain correlation handle (`adr_`, COD-406): one per HTTP ad
    * request on both rails. Opaque and server-minted: never derived from the
@@ -820,6 +866,23 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   /** A Gravity no-fill that was a 205 release, which opens our paid first-party
    * legs. False on a 204 no-fill, which leaves the slot to house ads only. */
   gravity_no_fill_released: 'boolean',
+  /**
+   * Which identity signals the Gravity request carried, as presence flags
+   * (`gravity-signal-flags.ts`), never their values. Present only when
+   * Gravity was actually asked; absent when `gravity_outcome` is
+   * `not_attempted` and on rows logged before 2026-11-13.
+   */
+  gravity_signal_messages: 'boolean',
+  gravity_signal_session_id: 'boolean',
+  gravity_signal_user_id: 'boolean',
+  gravity_signal_user_id_top_level: 'boolean',
+  gravity_signal_email_hash: 'boolean',
+  gravity_signal_phone_hash: 'boolean',
+  gravity_signal_user_agent: 'boolean',
+  gravity_signal_ip: 'boolean',
+  gravity_signal_os: 'boolean',
+  gravity_signal_device_type: 'boolean',
+  gravity_signal_advertising_id: 'boolean',
   selection_reason: 'string',
   ad_count: 'number',
   surface: 'string',
@@ -830,15 +893,15 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   /** Each asked provider and its outcome, `gravity:no_fill>first_party:fill`. */
   yield_actual_attempt_chain: 'string',
   /**
-   * COD-453. The sticky sponsor-break arm this request's viewer is in
-   * (`control` | `reduced` | `reduced_spotlight` | `reduced_intermission`),
-   * and the separate showcase-cadence arm beside it.
+   * COD-453. The sticky cadence-holdout arm this request's viewer is in
+   * (`control` | `reduced`; historical rows also carry the removed
+   * `reduced_spotlight` / `reduced_intermission`), and the separate
+   * showcase-cadence arm beside it. The field keeps its sponsor-break name so
+   * every readout built on it still works.
    *
-   * Present on EVERY completion event, including the overwhelming majority
-   * that carry no break placement at all -- because the arm is a property of
-   * the PERSON, and the inline delivery a `reduced` user gets is exactly what
-   * the arm has to be compared on. Reporting it only on break requests would
-   * leave the cadence half of the hypothesis unmeasurable.
+   * Present on EVERY completion event, because the arm is a property of the
+   * PERSON, and the inline delivery a `reduced` user gets is exactly what the
+   * arm has to be compared on.
    *
    * While `FREEBUFF_SPONSOR_BREAK_EXPERIMENT` is `off` this reads `control`
    * for everyone, which is the same value it carried before the field
@@ -851,17 +914,6 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   gravity_showcase_config_id: 'string',
   gravity_showcase_arm: 'string',
   gravity_showcase_attempt_id: 'string',
-  /**
-   * The daily-cap verdict, present only on a request that RESOLVED a break
-   * placement: `allowed`, `capped`, `too_early` or `unavailable`.
-   *
-   * The three refusals collapse to one census code (`break_capped`) because
-   * the census is a closed histogram; they stay separate HERE because they are
-   * three different incidents. A rise in `unavailable` is Redis, a rise in
-   * `too_early` is the minimum-session floor binding harder than intended, and
-   * only `capped` is the feature working.
-   */
-  sponsor_break_cap_status: 'string',
   /**
    * The new-user ad ramp (`ad-serving/new-user-ad-ramp.ts`). Present only for
    * a real account under the ramp's age window; absent on every other
@@ -967,6 +1019,12 @@ const ADS_FIRST_PARTY_DECISION_FIELDS = {
   frequency_unavailable_causes: 'string',
   frequency_reservation_ms: 'number',
   frequency_max_reservation_ms: 'number',
+  /**
+   * Frequency reservations whose Redis reply arrived after the 75 ms bound but
+   * inside the short grace (`packages/internal/src/ad-serving/ad-redis-bound.ts`):
+   * each one served where a plain race would have refused. Absent when zero.
+   */
+  frequency_late_replies: 'number',
   duration_ms: 'number',
   /**
    * The L2 v0 ranker, present only while `FREEBUFF_FIRST_PARTY_RANKER` is not
@@ -1241,6 +1299,10 @@ const ADS_EXTERNAL_CONVERSION_POSTBACK_FIELDS = {
   email_hash_valid: 'boolean',
   outcome: 'string',
   rejection_reason: 'string',
+  // Only on `outcome: 'replay_mismatch'`: which payload fields of a reused
+  // event id differ from its first report, comma-joined from the fixed
+  // vocabulary below. Field names, never their values.
+  replay_mismatch_fields: 'string',
   click_id_shape: 'string',
   event_type: 'string',
   traffic_class: 'string',
@@ -1286,6 +1348,18 @@ function sanitizeExternalConversionPostbackFields(
     )
   ) {
     delete data.selected_rail
+  }
+  if (
+    typeof data.replay_mismatch_fields === 'string' &&
+    !data.replay_mismatch_fields
+      .split(',')
+      .every((field) =>
+        (
+          ADS_EXTERNAL_CONVERSION_REPLAY_MISMATCH_FIELDS as readonly string[]
+        ).includes(field),
+      )
+  ) {
+    delete data.replay_mismatch_fields
   }
   return data
 }
@@ -1386,7 +1460,7 @@ const ADS_REQUEST_REJECTED_FIELDS = {
 const ADS_SPONSOR_BREAK_FIELDS = {
   placement_id: 'string',
   surface: 'string',
-  /** `spotlight` | `showcase` | `intermission`. */
+  /** `showcase` (historically also `spotlight` | `intermission`). */
   format: 'string',
   sponsor_break_arm: 'string',
   policy_provenance: 'string',
@@ -1404,9 +1478,6 @@ const ADS_SPONSOR_BREAK_FIELDS = {
    * `render_delay_ms` follows.
    */
   dwell_ms: 'number',
-  /** Intermission's countdown, and whether it ran out before they acted. */
-  timer_ms: 'number',
-  timer_completed: 'boolean',
   dismiss_lock_ms: 'number',
   lock_completed: 'boolean',
   // COD-365 hygiene, required on every client ads event by the CI guard.
@@ -1429,6 +1500,7 @@ export type AxiomOnlyLogEvent = {
     | typeof CONTEXT_COMPACTION_COMPLETED_EVENT
     | typeof COMPACTION_FOLLOWUP_EVENT
     | typeof COMPACTION_SUMMARY_EVENT
+    | typeof TURN_REVIEW_EVENT
     | typeof COMPACTION_ATTEMPT_EVENT
     | typeof COMPACTION_REQUEST_USAGE_EVENT
     | typeof COMPACTION_FIRST_OUTPUT_EVENT
@@ -1548,6 +1620,12 @@ export function getAxiomOnlyLogEvent(
     return {
       event: eventName,
       data: sanitizeAllowlistedFields(record, COMPACTION_SUMMARY_FIELDS),
+    }
+  }
+  if (eventName === TURN_REVIEW_EVENT) {
+    return {
+      event: eventName,
+      data: sanitizeAllowlistedFields(record, TURN_REVIEW_FIELDS),
     }
   }
   if (eventName === COMPACTION_REQUEST_USAGE_EVENT) {

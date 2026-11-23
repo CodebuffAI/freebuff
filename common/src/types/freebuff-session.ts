@@ -189,6 +189,23 @@ export interface FreebuffFreebucksWindow {
    *  (`FREEBUCKS_SHARED_DEVICE_NOTE`). Server-resolved copy; absent means
    *  nothing to explain. */
   note?: string
+  /** Today's paid hours still running, each with the part of its price this
+   *  pool paid. `spent` and `remaining` already count every one in full.
+   *  Display only (2026-11-11): clients spread that part over its hour
+   *  (`freebucksDailyShown`); admission and every affordability check keep
+   *  reading `spent`, `remaining` and `balance`. Absent with no hour running,
+   *  and from older servers, whose clients show the debit all at once. */
+  openHours?: readonly FreebuffFreebucksOpenHour[]
+}
+
+/** One paid hour still running, as `FreebuffFreebucksWindow.openHours`. */
+export interface FreebuffFreebucksOpenHour {
+  /** Freebucks this hour's debit took from the daily pool (the wallet's part
+   *  is not usage). A refunded hour is not listed at all. */
+  amount: number
+  /** ISO instants of the hour the debit bought. */
+  startsAt: string
+  endsAt: string
 }
 
 /**
@@ -1255,8 +1272,10 @@ export type FreebuffSessionAdmissionResponse = (
  * (docs/freebuff-access-floor.md § Declare first):
  * - `limited_region`: the account is in (or declared) a limited-access
  *   country; verifying it grants nothing.
- * - `region_locked`: the account's region is set to limited access, and no
- *   self-serve verification changes it (only a region review).
+ * - `region_locked`: the account's region is set to limited access by a
+ *   lock no self-serve verification lifts (region-lock-lift.ts); a phone may
+ *   lift some of them (the status then carries `phoneOverride`). Any other
+ *   lock is `eligible`: a verification that passes clears it (2026-11-11).
  * - `eligible`: verifying from a direct connection in a full-access country
  *   can change it.
  */

@@ -3,8 +3,13 @@ import {
   SPONSORED_WINDOWS_CONTAINMENT,
   SPONSORED_WINDOWS_EXECUTION_SURFACE,
 } from '../ads/sponsored-windows'
+import { CLAUDE_TRANSCRIPT_ID } from './claude-turn-marks'
+
+/** A Codex turn id (`turn/started`), as a side chat forks its parent's thread before it. */
+export const CODEX_TURN_ID = /^[a-zA-Z0-9_.:-]{1,128}$/
 import { devicePanelOperation } from './device-panels'
 import { deviceGitHubRequest } from './device-github'
+import { deviceLocalMcpCallRequest } from './local-mcp'
 
 /** V1 stays read-only. V2 execution requires an explicit local opt-in. */
 export const DEVICE_EXECUTION_VERSION = 1
@@ -24,6 +29,19 @@ export const DEVICE_FRAME_BYTES = 512 * 1024
 export const DEVICE_EXEC_OUTPUT_BYTES = 16 * 1024 * 1024
 export const DEVICE_EXEC_FRAME_BYTES = 24 * 1024 * 1024
 export const DEVICE_EXEC_MS = 5 * 60_000
+/** How long Desktop's `request_elevation` card waits for the user to approve it (elevation.ts). */
+export const DEVICE_ELEVATION_APPROVAL_MS = 10 * 60_000
+/** How long an approved elevated command may run before Desktop gives up on it (elevation.ts). */
+export const DEVICE_ELEVATION_COMMAND_MS = 5 * 60_000
+/**
+ * A `request_elevation` operation's deadline: the approval window, then the command, plus a
+ * minute for delivery and the answer. Under DEVICE_EXEC_MS a user who took a few minutes to
+ * approve, or a command that ran a while, outlived the operation and Cloud refused Desktop's
+ * answer (`bridge` 504). Cloud applies a change at once and Desktop only with a release, so
+ * shortening either window leaves Cloud waiting less than installed builds take.
+ */
+export const DEVICE_ELEVATION_MS =
+  DEVICE_ELEVATION_APPROVAL_MS + DEVICE_ELEVATION_COMMAND_MS + 60_000
 export const deviceExecutionTarget = z
   .object({
     sessionId: z.string().uuid(),
@@ -37,6 +55,7 @@ export const deviceExecutionContext = z
     displayName: z.string().trim().min(1).max(200).optional(),
     nativeTools: z.boolean().optional(),
     panelProtocolVersion: z.literal(1).optional(),
+    tasksPanel: z.literal(true).optional(),
     nativeHarnesses: z.boolean().optional(),
     concurrentHarnesses: z.literal(true).optional(),
     /** Answers `move_export`: another of the account's computers can take over this folder's chats. */
@@ -47,7 +66,15 @@ export const deviceExecutionContext = z
     sponsoredExec: z.literal(true).optional(),
     /** Honours `scope.warmup`: a new Cloud chat's first turn runs here read-only while it moves (warmup.ts). */
     readOnlyOpener: z.literal(true).optional(),
+    /** Honours `scope.sideParentId`: a side chat's read-only turn runs in its parent's own worktree. */
+    sideParentScope: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
+    /** Answers `local_mcp_call` and publishes its local MCP servers (local-mcp.ts). Desktop's
+     * account-wide local MCP connection registers with only this; it is no folder's binding. */
+    localMcp: z.literal(true).optional(),
+    /** This install's earlier ids, from its own profile after Desktop restored an id a reset had
+     * replaced. A chat bound with one may move to this folder (web device-execution/rebind.ts). */
+    previousDeviceIds: z.array(z.string().uuid()).min(1).max(8).optional(),
     cwd: z.string().min(1).max(4096),
     rg: z.string().max(4096),
   })
@@ -125,6 +152,13 @@ export const deviceReadResult = z.discriminatedUnion('kind', [
     .strict(),
 ])
 export type DeviceReadResult = z.infer<typeof deviceReadResult>
+/**
+ * A turn review's native run (web `startDeviceTurnReview`): its own scope beside
+ * the turn it reviews, so the forked session never joins that turn's journal.
+ */
+export function deviceReviewRunId(runId: string) {
+  return `${runId}:review`
+}
 export const deviceToolScope = z
   .object({
     workspaceId: z.string().min(1).max(200),
@@ -139,6 +173,12 @@ export const deviceToolScope = z
      * WARMUP_REFUSAL. Sent only to a device whose context has `readOnlyOpener`.
      */
     warmup: z.literal(true).optional(),
+    /**
+     * A side chat's parent (history-store.ts `openSideChat`): its read-only turns may run in the
+     * parent's own checkout, a worktree that otherwise serves only the parent. Sent only to a
+     * device whose context has `sideParentScope`.
+     */
+    sideParentId: z.string().min(1).max(200).optional(),
   })
   .strict()
 export const deviceToolRequest = z
@@ -290,11 +330,30 @@ export const deviceHarnessRequest = z.discriminatedUnion('method', [
        */
       forkSession: z.literal(true).optional(),
       /**
+       * With `forkSession`, after a Claude Code chat was rolled back (claude-turn-marks.ts): the
+       * branch keeps the session only up to this transcript entry. A Desktop without it refuses the
+       * request (the schema is strict), never resuming the turns the user rolled back.
+       */
+      resumeSessionAt: z.string().regex(CLAUDE_TRANSCRIPT_ID).optional(),
+      /**
+       * With `forkSession`, a Codex side chat opened while its parent's turn ran: the branch keeps
+       * the thread up to before this turn (`thread/fork` `beforeTurnId`), so it holds no half-done
+       * turn. A Desktop without it refuses the request (the schema is strict), never forking the
+       * running turn in.
+       */
+      forkBeforeTurnId: z.string().regex(CODEX_TURN_ID).optional(),
+      /**
        * A side chat's turn (history-store.ts `openSideChat`): read-only, with no Freebuff tools,
        * because its parent's agent is working in the same folder. A Desktop without it refuses
        * the request (the schema is strict), never running a side chat with write access.
        */
       readOnly: z.literal(true).optional(),
+      /**
+       * A Claude Code chat's wake (the kept process answered on its own after a background task
+       * finished): the turn sends nothing and shows that answer (Desktop's claude-live-session.ts).
+       * Cloud queues one only for a Desktop that reported the wake, so no older build sees it.
+       */
+      backgroundWake: z.literal(true).optional(),
       importedHistory: z.string().max(20 * 1024 * 1024).optional(),
       /** Quoted history used only when neither Cloud nor Desktop has a CLI session. */
       initialPrompt: z.string().max(2 * 1024 * 1024).optional(),
@@ -374,6 +433,9 @@ const PICK_FREEBUFF = 'choose a Freebuff model from the model picker to keep goi
 
 /** Desktop's own copy for a turn it could not run, already worded for the
  *  user (harness/claude-code.ts, codex-errors.ts, codex.ts). */
+/** Desktop's refusal of a chat whose checkout (a worktree, or a chat moved there) is another chat's. */
+export const CHECKOUT_OTHER_CHAT_REFUSAL = 'This checkout belongs to another chat'
+
 const DESKTOP_WORDED = [
   /^This agent runs your local (Claude Code|Codex CLI), which is signed out\./,
   /^Your organization’s Claude Code policy disables autonomous permission mode\b/,
@@ -388,6 +450,15 @@ function limitReset(message: string): string | null {
     /\bresets (?:at )?([^()\n·∙|]{1,40}?(?: \([^)\n]{1,40}\))?)\.?\s*(?:$|[·∙|])/i.exec(message)
   return at?.[1]?.trim() || null
 }
+
+/**
+ * What to do when Desktop refuses a chat because its folder's identity no longer matches the chat's
+ * binding and no known input says why (Desktop's `bindingChangeAdvice` 'unknown'). The notice that
+ * shows it has Reconnect folder. Builds before this pointed at Settings > General > Diagnose, which
+ * the page no longer shows (#10015); the hosted page rewrites that sentence from them.
+ */
+export const CHECKOUT_RECONNECT_FIX =
+  'Choose Reconnect folder to connect it again, or start a new chat in this folder. This chat’s history is kept.'
 
 /** Added to a failed turn that started without its computer (web `cloudRunErrorMessage`): otherwise
  * the user saw only the generic failure and could not tell the turn never had their files or
@@ -417,6 +488,9 @@ export function deviceHarnessFailureMessage(
     return message
   if (/process aborted by user/i.test(message))
     return DEVICE_HARNESS_STOPPED_MESSAGE
+  // Desktops before `sideParentScope` refused every side chat of a chat in its own worktree.
+  if (message === CHECKOUT_OTHER_CHAT_REFUSAL)
+    return 'Freebuff on your computer refused this chat because its folder is another chat’s worktree. Update Freebuff Desktop on that computer, then send your message again.'
   if (message.length <= 1000 && DESKTOP_WORDED.some((pattern) => pattern.test(message)))
     return message
   if (!harness) return null
@@ -470,6 +544,7 @@ export const deviceRequest = z.union([
   deviceAgenticOfferFactsRequest,
   deviceSponsoredExecRequest,
   deviceGitHubRequest,
+  deviceLocalMcpCallRequest,
 ])
 export const deviceResult = z.union([
   deviceReadResult,
@@ -480,6 +555,16 @@ export const deviceResult = z.union([
 export type DeviceToolScope = z.infer<typeof deviceToolScope>
 export type DeviceRequest = z.infer<typeof deviceRequest>
 export type DeviceResult = z.infer<typeof deviceResult>
+/**
+ * How long a device operation may take: the server's deadline for a mutating one, from when it
+ * is posted, and Desktop's cap on its own work, from when it arrives. A read's server deadline
+ * is shorter (DEVICE_OPERATION_MS or the caller's `answerMs`).
+ */
+export function deviceOperationMs(request: DeviceRequest): number {
+  return request.method === 'tool' && request.name === 'request_elevation'
+    ? DEVICE_ELEVATION_MS
+    : DEVICE_EXEC_MS
+}
 export const deviceRegistration = z
   .object({
     protocolVersion: z.literal(DEVICE_EXECUTION_VERSION),
@@ -537,12 +622,18 @@ export const deviceCapabilities = z
     executionProtocolVersion: z.literal(2).optional(),
     nativeProtocolVersion: z.literal(3).optional(),
     panelProtocolVersion: z.literal(1).optional(),
+    tasksPanel: z.literal(true).optional(),
     concurrentHarnesses: z.literal(true).optional(),
     deviceMove: z.literal(true).optional(),
     agenticOffers: z.literal(true).optional(),
     sponsoredExec: z.literal(true).optional(),
     readOnlyOpener: z.literal(true).optional(),
+    sideParentScope: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
+    localMcp: z.literal(true).optional(),
+    previousDevices: z.literal(true).optional(),
+    /** Accepts `origin: 'scratch'` on a project Desktop creates or binds. */
+    projectOrigin: z.literal(true).optional(),
   })
   .strict()
 

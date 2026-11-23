@@ -110,6 +110,8 @@ export const SPONSORED_CAPABILITY_BY_TOOL: Readonly<
   read_docs: 'network',
   gravity_index: 'network',
   lookup_agent_info: 'network',
+  // Generates through our API, which calls a paid image provider.
+  generate_image: 'network',
 
   // human_in_loop
   ask_user: 'human_in_loop',

@@ -1000,6 +1000,36 @@ describe('loadLocalAgents', () => {
       ])
       expect(listLocalAgentFiles(path.join(tempDir, 'missing'))).toEqual([])
     })
+
+    // Other tools install third-party code under the shared ~/.agents/vendor;
+    // importing it ran a plugin hook that called process.exit(0) in the CLI.
+    test('skips vendor/', async () => {
+      const marker = '__codebuffVendorImported'
+      mkdirSync(path.join(agentsDir, 'vendor', 'plugin'), { recursive: true })
+      writeAgentFile(
+        agentsDir,
+        'a.ts',
+        `export default { id: 'mine', displayName: 'mine', model: '${MODEL_NAME}' }`,
+      )
+      writeAgentFile(
+        path.join(agentsDir, 'vendor'),
+        'x.ts',
+        `globalThis.${marker} = true`,
+      )
+      writeAgentFile(
+        path.join(agentsDir, 'vendor', 'plugin'),
+        'hook.js',
+        `globalThis.${marker} = true`,
+      )
+
+      expect(listLocalAgentFiles(agentsDir)).toEqual([
+        path.join(agentsDir, 'a.ts'),
+      ])
+      expect(
+        Object.keys(await loadLocalAgents({ agentsPath: agentsDir })),
+      ).toEqual(['mine'])
+      expect(marker in globalThis).toBe(false)
+    })
   })
 
   describe('getDefaultAgentDirs', () => {

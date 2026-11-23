@@ -45,6 +45,9 @@ process.env.FREEBUFF_GOD_QUOTA_EXEMPT = 'on'
 // Integration CI imports production secrets. Fixture campaigns must never
 // notify the real ads channel; notification tests inject their own transport.
 delete process.env.FREEBUFF_ADS_SLACK_WEBHOOK_URL
+// Nor send real mail: the onboarding fixture's launch mailed the review inbox
+// on every run. Tests that check mail inject their own `send`.
+delete process.env.RESEND_API_KEY
 // Submission fixtures must never update real Loops contacts or enroll leads.
 process.env.FREEBUFF_ADS_LEAD_NURTURE = 'off'
 // Fixture users, prompts and signups must never reach Vectoral's real feed
@@ -56,6 +59,10 @@ delete process.env.SP_API_KEY
 // Fixture accounts must never send real SMS (and spend real money) through
 // Prelude with the production key. The phone gate's tests inject `fetch`.
 delete process.env.PRELUDE_API_KEY
+// With the edge secret configured, a request without it loses its `cf-*`
+// trust (EDGE_SECRET_REQUIRED). Tests that send bare Cloudflare headers assume
+// no secret; the ones that exercise it set `env.FREEBUFF_EDGE_SECRET` themselves.
+delete process.env.FREEBUFF_EDGE_SECRET
 // The CPM leg defaults ON in production (COD-677: un-pausing an invoiced CPM
 // campaign is the only switch). Route tests written before that assume it
 // absent; the ones that exercise it set the knob themselves.

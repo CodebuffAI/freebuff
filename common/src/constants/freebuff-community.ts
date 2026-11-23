@@ -4,9 +4,9 @@
  * page a CLI or Desktop sign-in lands on. One invite and one headline count so
  * the surfaces cannot drift apart. Both are public.
  *
- * The count is a floor, not a live number: the server had 7,621 members on
- * 2026-09-27. Raise it by hand, in whole thousands, once the server passes the
+ * The count is a floor, not a live number: the server passed 23,000 members
+ * by 2026-11-23. Raise it by hand, in whole thousands, once the server passes the
  * next one — rounding down is what keeps the copy true without a lookup.
  */
 export const FREEBUFF_DISCORD_INVITE_URL = 'https://discord.gg/yXG3w7wxfs'
-export const FREEBUFF_DISCORD_MEMBERS_LABEL = '7,000+'
+export const FREEBUFF_DISCORD_MEMBERS_LABEL = '23,000+'

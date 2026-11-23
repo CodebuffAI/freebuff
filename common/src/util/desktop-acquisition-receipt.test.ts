@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
 import {
   DESKTOP_RECEIPT_PLATFORMS,
+  DESKTOP_INSTALLER_CODE_ALPHABET,
+  desktopInstallerCodeName,
   extractDesktopAcquisitionReceipt,
+  extractDesktopInstallerCode,
+  isDesktopInstallerCode,
   parseDesktopAcquisitionReceipt,
 } from './desktop-acquisition-receipt'
 
@@ -57,4 +61,47 @@ test('filename receipts survive browser collision suffixes across installer form
   expect(
     extractDesktopAcquisitionReceipt(`Freebuff--fb_${token()}.exe.untrusted`),
   ).toBeNull()
+})
+
+test('short installer codes name each filename-only installer and parse back', () => {
+  expect(desktopInstallerCodeName('Freebuff-1.2.3-win-x64.exe', 'k7m2qx')).toBe(
+    'Freebuff-Setup-k7m2qx.exe',
+  )
+  expect(
+    desktopInstallerCodeName(
+      'Freebuff-Installer-1.2.3-mac-arm64.dmg',
+      'k7m2qx',
+    ),
+  ).toBe('Freebuff-Installer-k7m2qx.dmg')
+  expect(
+    desktopInstallerCodeName('Freebuff-1.2.3-linux-x86_64.AppImage', 'k7m2qx'),
+  ).toBe('Freebuff-k7m2qx.AppImage')
+  expect(
+    desktopInstallerCodeName('Freebuff-1.2.3-linux-amd64.deb', 'k7m2qx'),
+  ).toBeNull()
+  expect(
+    desktopInstallerCodeName('Freebuff-1.2.3-win-x64.exe', 'k7m2q1'),
+  ).toBeNull()
+  for (const name of [
+    'C:\\Users\\a\\Downloads\\Freebuff-Setup-k7m2qx.exe',
+    'Freebuff-Setup-k7m2qx (12).exe',
+    '/tmp/Freebuff-Installer-k7m2qx.dmg',
+    'Freebuff-k7m2qx.AppImage',
+  ])
+    expect(extractDesktopInstallerCode(name)).toBe('k7m2qx')
+  for (const name of [
+    'Freebuff-Setup-k7m2qx.exe.untrusted',
+    'Freebuff-Setup-k7m2qx copy.exe',
+    'Freebuff-Setup-K7M2QX.exe',
+    'Freebuff-Setup-k7m2qxx.exe',
+    'Freebuff-1.2.3-win-x64.exe',
+  ])
+    expect(extractDesktopInstallerCode(name)).toBeNull()
+  // Every alphabet symbol is a valid code character, and nothing else is.
+  expect(DESKTOP_INSTALLER_CODE_ALPHABET).toHaveLength(32)
+  expect(
+    isDesktopInstallerCode(DESKTOP_INSTALLER_CODE_ALPHABET.slice(0, 6)),
+  ).toBe(true)
+  for (const ambiguous of ['0', '1', 'l', 'o'])
+    expect(isDesktopInstallerCode(`abcde${ambiguous}`)).toBe(false)
 })

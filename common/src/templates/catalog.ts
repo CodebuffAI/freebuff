@@ -55,7 +55,7 @@ export const templateCatalogSchema = z
   .object({
     version: z.literal(1),
     generatedAt: z.string(),
-    templates: z.array(templateCatalogEntrySchema).max(100),
+    templates: z.array(templateCatalogEntrySchema),
   })
   .strict()
   .refine(

@@ -1,5 +1,6 @@
 import { beforeEach, expect, test } from 'bun:test'
 
+import { noteAdDrawn, resetAdExpiryClock } from '../ad-expiry-clock'
 import { buildAdAuctionRequest } from '../ad-request'
 import {
   DISPLAY_AD_TTL_MS,
@@ -48,7 +49,18 @@ function harness(
   return { deps, asked, tick: (ms: number) => (clock += ms) }
 }
 
-beforeEach(resetServedDisplayAds)
+beforeEach(() => {
+  resetServedDisplayAds()
+  resetAdExpiryClock()
+})
+
+test('a held fill that expired on screen is not served again', async () => {
+  const h = harness()
+  await getDisplayAd('CLI-Statusline', h.deps)
+  noteAdDrawn(FILL.impUrl, Date.now() - 6 * 60_000)
+  await getDisplayAd('CLI-Statusline', h.deps)
+  expect(h.asked).toEqual(['CLI-Statusline', 'CLI-Statusline'])
+})
 
 test('the auction asks for this placement on cli_chat with no sponsored route', async () => {
   expect(displayAuctionParams('CLI-Splash')).toEqual({

@@ -240,6 +240,7 @@ export const ChatRuntimeProvider = ({
     resumeQueue: queue.resumeQueue,
     requeueMessageAtFront: queue.addToQueueFront,
     pauseQueue: queue.pauseQueue,
+    dropQueuedCopies: queue.dropQueuedCopies,
     continueChat,
     continueChatId,
     subscriptionData,

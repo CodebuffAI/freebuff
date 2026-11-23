@@ -44,6 +44,34 @@ export async function withRetry<T>(
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
+ * `AbortSignal.any([signal, AbortSignal.timeout(ms)])` that fires on Node.
+ * `any` holds its sources weakly, so GC can collect an inline
+ * `AbortSignal.timeout` (an awaiting function keeps only the variables it reads
+ * later) and the deadline never fires (Node 22; Bun is unaffected). Here the
+ * timer's closure holds the controller, and with it its signal. Call `clear()`
+ * when the work is done.
+ */
+export function deadlineSignal(
+  ms: number,
+  signal?: AbortSignal,
+): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController()
+  const timer = setTimeout(
+    () =>
+      controller.abort(
+        new DOMException('The operation timed out.', 'TimeoutError'),
+      ),
+    ms,
+  )
+  return {
+    signal: signal
+      ? AbortSignal.any([signal, controller.signal])
+      : controller.signal,
+    clear: () => clearTimeout(timer),
+  }
+}
+
+/**
  * Wraps a promise with a timeout
  * @param promise The promise to wrap
  * @param timeoutMs Timeout in milliseconds

@@ -5,13 +5,15 @@
  * decisions, requirements and next steps (accurate), and a user who returns
  * after the prompt cache expired sends a small request (no cold start).
  *
- * 1. When the context reaches FIRST_SUMMARY_TOKENS, and then each time it
- *    grows by SUMMARY_GROWTH_TOKENS since the last summary, the runtime asks
- *    the agent's own model for a summary of the whole conversation. The
- *    request is the agent's normal request plus one instruction, so the
- *    provider reads the history from its warm cache. It runs in the
- *    background: after a step, or when the turn ends. A new summary replaces
- *    the old one.
+ * 1. When a turn ends (or is cancelled or fails) with the context at
+ *    FIRST_SUMMARY_TOKENS, or SUMMARY_GROWTH_TOKENS past the last summary,
+ *    the runtime asks the agent's own model for a summary of the whole
+ *    conversation. Mid-turn, after a step, it asks only once the context is
+ *    in the band below the compaction threshold (`summaryBandStart`), the
+ *    only summary the limit will use. The request is the agent's normal
+ *    request plus one instruction, so the provider reads the history from its
+ *    warm cache. It runs in the background. A new summary replaces the old
+ *    one.
  * 2. The full history is still sent while the cache is warm.
  * 3. The summary is used only when the user returns after the model's idle
  *    threshold (`summaryIdleMs`), or when the context reaches its limit.
@@ -23,7 +25,10 @@
  * of the same conversation through an in-process store.
  */
 
-import { DEEPSEEK_FLASH_COMPACTION_POLICY } from '@codebuff/common/constants/compaction-policy'
+import {
+  compactionThreshold,
+  DEEPSEEK_FLASH_COMPACTION_POLICY,
+} from '@codebuff/common/constants/compaction-policy'
 import {
   buildCompactionSummaryPrompt,
   COMPACTION_SUMMARY_METADATA_KEY,
@@ -166,6 +171,38 @@ export function summaryIsDue(params: {
 }
 
 /**
+ * Where the near-limit band starts: one growth step below the compaction
+ * threshold (270k on DeepSeek V4 Flash's 375k budget, 290k on 400k).
+ */
+export function summaryBandStart(maxContextLength: number): number {
+  return (
+    compactionThreshold(maxContextLength) -
+    summaryThresholds(maxContextLength).growth
+  )
+}
+
+/**
+ * Whether a step inside a turn should start a summary. Only one in the band
+ * is ever used at the limit; a mid-turn summary below it is replaced by the
+ * turn-end one or a later one before anything reads it. Measured 2026-11-10:
+ * 416k mid-turn summaries a day against ~107k applied. So: one summary once
+ * the context reaches the band, and none while the newest is already in it.
+ */
+export function midTurnSummaryIsDue(params: {
+  contextTokens: number
+  maxContextLength: number
+  /** The newest summary made or in progress, as its context size. */
+  latestContextTokens: number | undefined
+}): boolean {
+  const bandStart = summaryBandStart(params.maxContextLength)
+  if (params.contextTokens < bandStart) return false
+  return (
+    params.latestContextTokens === undefined ||
+    params.latestContextTokens < bandStart
+  )
+}
+
+/**
  * Tags a prompt the host wrote to carry on work the user already asked for
  * (a Cloud turn resumed after a runner drain, a mission's next pass). It is
  * not the user returning: the gap before it is a queue, not a user who left.
@@ -174,13 +211,15 @@ export const CONTINUATION_PROMPT_TAG = 'CONTINUATION_PROMPT'
 
 /**
  * Whether the live prompt arrived after the conversation sat idle longer than
- * `idleMs`, measured from the last assistant message before it. Only true
- * before the assistant answers it, and never for a continuation prompt.
+ * `idleMs`, measured from the later of the last turn end or checkpoint
+ * (`lastActivityAt`) and the last assistant message. Never true after an
+ * answer or for a continuation prompt.
  */
 export function isIdleReturn(
   messages: Message[],
   idleMs = SUMMARY_IDLE_MS,
   now = Date.now(),
+  lastActivityAt?: number,
 ): boolean {
   const promptIndex = messages.findLastIndex((m) =>
     m.tags?.includes('USER_PROMPT'),
@@ -191,12 +230,17 @@ export function isIdleReturn(
   const prompt = messages[promptIndex]
   if (prompt.tags?.includes(CONTINUATION_PROMPT_TAG)) return false
   const sentAt = prompt.sentAt ?? now
+  // The later of the two: a runtime that predates `lastActivityAt` keeps the
+  // field but does not move it, so it can be older than the last reply.
+  let last = lastActivityAt
   for (let i = promptIndex - 1; i >= 0; i--) {
     const message = messages[i]
     if (message.role !== 'assistant') continue
-    return message.sentAt !== undefined && sentAt - message.sentAt > idleMs
+    if (message.sentAt !== undefined)
+      last = Math.max(last ?? message.sentAt, message.sentAt)
+    break
   }
-  return false
+  return last !== undefined && sentAt - last > idleMs
 }
 
 /** The history exactly as the agent's next request sends it. */
@@ -306,7 +350,8 @@ export function applyConversationSummary(params: {
 
 export type SummaryStream = (params: {
   messages: Message[]
-  maxOutputTokens: number
+  /** Absent: the agent's own limit. */
+  maxOutputTokens?: number
   signal: AbortSignal
   extraCodebuffMetadata: Record<string, string>
   onFinishReason: (reason: string) => void

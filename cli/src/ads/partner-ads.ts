@@ -31,6 +31,7 @@ import { sanitizeTerminalStrings } from '@codebuff/common/util/terminal-safe-tex
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 import { WEBSITE_URL } from '@codebuff/sdk'
 
+import { isAdExpired, noteAdDrawn } from './ad-expiry-clock'
 import { buildAdAuctionRequest } from './ad-request'
 import { timedAdFetch } from './ad-signals'
 import { getAdsEnabled } from '../commands/ads'
@@ -238,7 +239,14 @@ export async function getPartnerAd(
   syncCacheOwner(authToken)
 
   const answer = held.get(placementId)
-  if (answer && deps.now() < answer.expiresAt) return answer.ad
+  // A held fill that has been on screen too long is not served again: the
+  // slot asks for a new one (`ad-expiry-clock.ts`).
+  if (
+    answer &&
+    deps.now() < answer.expiresAt &&
+    !(answer.ad && isAdExpired(answer.ad.impUrl))
+  )
+    return answer.ad
   const pending = inFlight.get(placementId)
   if (pending) return pending
 
@@ -369,6 +377,8 @@ export async function getComposerIntentAd(
  * measures itself with.
  */
 export function recordPartnerImpression(ad: AdResponse): void {
+  // Called on insertion: the row's expiry clock starts at its first draw.
+  noteAdDrawn(ad.impUrl)
   if (!ad.impUrl || ackedImpressions.has(ad.impUrl)) return
   const authToken = getAuthToken()
   if (!authToken) return

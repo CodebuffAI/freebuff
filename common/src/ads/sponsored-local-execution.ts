@@ -298,8 +298,8 @@ export const SPONSORED_LOCAL_V1_GRANT: ReadonlySet<SponsoredCapability> =
   )
 
 /**
- * The arm for any machine whose containment we cannot stand up: option A from
- * the doc, kept as the explicit fallback rather than as an absence. A run
+ * The arm for any machine whose containment we cannot stand up: kept as the
+ * explicit fallback rather than as an absence. A run
  * holding this can still edit files through the three write tools, which is
  * where the path refusals are load-bearing again. (Windows used to be this arm
  * too; since COD-642 it is {@link SPONSORED_LOCAL_FLOOR_GRANT}, and only when

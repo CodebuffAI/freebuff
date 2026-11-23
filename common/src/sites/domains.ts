@@ -23,6 +23,8 @@ export interface SiteDomains {
   domains: SiteDomain[]
   primaryHostname: string | null
   defaultHostname: string
+  /** The permanent address the site was created with; it keeps redirecting after a rename. */
+  generatedHostname?: string | null
   /** Present on backends that support editing the Freebuff address. */
   platformDomain?: string
 }

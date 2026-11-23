@@ -34,6 +34,8 @@ export type CliEnv = BaseEnv & {
   GITPOD_WORKSPACE_ID?: string
   CLOUD_SHELL?: string
   CODER?: string
+  // Windows Subsystem for Linux (reported as `wsl`)
+  WSL_DISTRO_NAME?: string
 
   // Where Bun extracts embedded native libraries (the terminal renderer)
   BUN_TMPDIR?: string

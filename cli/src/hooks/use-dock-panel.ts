@@ -16,6 +16,7 @@ import {
 } from '@codebuff/common/ads/ad-event-hygiene'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { setAdExpiryPolicy } from '../ads/ad-expiry-clock'
 import { getAuthToken } from '../utils/auth'
 import { logger } from '../utils/logger'
 import { trackEvent } from '../utils/analytics'
@@ -83,6 +84,17 @@ export function getSessionDisplayPlacementIds(): readonly string[] | null {
   return sessionDisplayPlacementIds
 }
 
+/**
+ * The policy's `inlineAdStyle` (`card` | `link`), or `null` while the policy
+ * is unresolved. Read only through `cliInlineAdStyle`
+ * (`ads/inline-link-ad.ts`), which also requires the CLI's own gate.
+ */
+let sessionInlineAdStyle: 'card' | 'link' | null = null
+
+export function getSessionInlineAdStyle(): 'card' | 'link' | null {
+  return sessionInlineAdStyle
+}
+
 /** The one in-flight policy fetch, so concurrent askers share an answer. */
 let policyRequest: Promise<CliDockArm> | null = null
 
@@ -124,6 +136,7 @@ export function resetAdPolicySession(): void {
   sessionDockArm = null
   sessionPartnerPlacementIds = null
   sessionDisplayPlacementIds = null
+  sessionInlineAdStyle = null
   policyRequest = null
 }
 
@@ -158,19 +171,30 @@ export async function fetchDockArm(
       method: 'GET',
       headers: { Authorization: `Bearer ${authToken}` },
     })
-    if (!response.ok) return 'control'
+    if (!response.ok) {
+      setAdExpiryPolicy(null)
+      return 'control'
+    }
     const data = (await response.json()) as {
       dockArm?: unknown
       partnerPlacementIds?: unknown
       displayPlacementIds?: unknown
+      inlineAdStyle?: unknown
     }
+    // Anything but `link` (an older server, a missing field) is the card.
+    sessionInlineAdStyle = data?.inlineAdStyle === 'link' ? 'link' : 'card'
     sessionPartnerPlacementIds = policyPlacementIds(data?.partnerPlacementIds)
     sessionDisplayPlacementIds = policyPlacementIds(data?.displayPlacementIds)
+    // How long one ad may stay drawn (`adMaxShownMs`, `adAwayExpiryMs`);
+    // an older server sends neither and the defaults apply.
+    setAdExpiryPolicy(data)
     return data?.dockArm === 'expandable' ? 'expandable' : 'control'
   } catch (err) {
     logger.debug({ err }, '[ads] Failed to fetch dock policy')
     sessionPartnerPlacementIds = []
     sessionDisplayPlacementIds = []
+    sessionInlineAdStyle = 'card'
+    setAdExpiryPolicy(null)
     return 'control'
   }
 }

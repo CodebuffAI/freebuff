@@ -8,6 +8,7 @@ import { handleCloudPlanReady } from './tool/cloud-plan-ready'
 import { handleCreatePlan } from './tool/create-plan'
 import { handleEndTurn } from './tool/end-turn'
 import { handleFindFiles } from './tool/find-files'
+import { handleGenerateImage } from './tool/generate-image'
 import { handleGlob } from './tool/glob'
 import { handleGravityIndex } from './tool/gravity-index'
 import { handleListDirectory } from './tool/list-directory'
@@ -61,6 +62,7 @@ export const codebuffToolHandlers: {
   create_plan: handleCreatePlan,
   end_turn: handleEndTurn,
   find_files: handleFindFiles,
+  generate_image: handleGenerateImage,
   glob: handleGlob,
   gravity_index: handleGravityIndex,
   list_directory: handleListDirectory,

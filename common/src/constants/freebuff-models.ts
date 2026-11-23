@@ -527,6 +527,21 @@ export const FREEBUFF_GPT_61_TERRA_MAX_PRICE = {
   prompt: 1.25,
   completion: 6.25,
 } as const
+/**
+ * GPT-6.1 Terra on OpenAI's `fast` tier ($2/$10 per M, OpenRouter's
+ * `openai/fast` endpoint, read 2026-11-14): the first-thread A/B's one chat
+ * (web/src/server/free-session/first-thread-model-experiment.ts). Standard
+ * behind it, so a fast-tier capacity refusal is a slower turn, not a dead one.
+ */
+export const FREEBUFF_GPT_61_TERRA_FAST_UPSTREAM_ORDER = [
+  'openai/fast',
+  'openai',
+] as const
+/** Its ceiling: strictly above the fast card, so it admits `openai/fast`. */
+export const FREEBUFF_GPT_61_TERRA_FAST_MAX_PRICE = {
+  prompt: 2.5,
+  completion: 12.5,
+} as const
 /** Reasoning effort a GPT-6.1 Terra turn runs at unless the user picks one:
  *  `medium`, as on Sol, because reasoning bills as output. */
 export const FREEBUFF_GPT_61_TERRA_REASONING_EFFORT = 'medium' as const
@@ -3870,6 +3885,9 @@ export const FREEBUFF_SESSION_UNSUPPORTED_MESSAGE =
 export const FREEBUFF_ACTING_USER_HEADER = 'x-freebuff-acting-user-id'
 /** Server-to-server header; honoured only from the Freebuff Web service account. */
 export const FREEBUFF_PRIVILEGED_USER_HEADER = 'x-freebuff-privileged-user'
+/** Server-to-server header, sent only by the Freebuff Web admin proxy after
+ *  `checkGodAuth` passed; honoured only from the Freebuff Web service account. */
+export const FREEBUFF_GOD_USER_HEADER = 'x-freebuff-god-user'
 /**
  * The house-ad click id (`bfcid`) lifted out of its first-party freebuff.com
  * cookie and carried to the Stripe checkout route on codebuff.com, which
@@ -4618,7 +4636,7 @@ export function getFreebuffModelsForAccessTier(
   // limited viewer is FREEBUFF_LIMITED_TIER_PLAN_ONLY_MODEL_IDS, which is
   // every row appended below. They were hidden until then, which gave the
   // plans page nothing to point at from the CLI and Desktop pickers (the Web
-  // picker already listed them, LIMITED_TIER_PLAN_LOCKED_MODELS).
+  // picker already listed them).
   // `hasPaidSubscription` no longer changes WHICH rows are listed, only
   // whether they are locked; it stays in the signature for its callers.
   void hasPaidSubscription

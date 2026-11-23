@@ -24,6 +24,18 @@ test('finds controls on unopened pages using their names and everyday terms', ()
   }
 })
 
+test('MCP on the web finds Integrations, where its remote servers live', () => {
+  expect(search('mcp')[0]).toMatchObject({
+    page: { id: 'integrations' },
+    detail: 'Custom MCP servers',
+  })
+  expect(search('model context protocol')[0]?.page.id).toBe('integrations')
+  // Desktop lists its own MCP page, so Integrations does not claim the word.
+  expect(search('mcp', 'desktop').map(({ page }) => page.id)).not.toContain(
+    'integrations',
+  )
+})
+
 test('normalizes case, punctuation and whitespace, and tolerates a mistyped letter', () => {
   expect(search('  DÁRK   mode  ')[0]?.page.id).toBe('appearance')
   expect(search('api-key').map(({ page }) => page.id)).toContain('providers')
@@ -68,4 +80,14 @@ test('skips controls the caller hides', () => {
   expect(
     searchSettings('auto start', SHARED_SETTINGS_PAGES, 'desktop', [label]),
   ).toEqual([])
+})
+
+test('finds the web-only Artifacts section by its name and by what it lists', () => {
+  const pages = [
+    ...SHARED_SETTINGS_PAGES,
+    { id: 'artifacts', label: 'Artifacts' } as const,
+  ]
+  for (const query of ['artifacts', 'docs', 'slides', 'sheets', 'shared links'])
+    expect(searchSettings(query, pages, 'web')[0]?.page.id).toBe('artifacts')
+  expect(searchSettings('artifacts', pages, 'web')[0]?.detail).toBeUndefined()
 })

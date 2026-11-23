@@ -11,8 +11,8 @@ import {
 } from './web-desktop-placements'
 
 describe('Desktop inventory mirrored into Web', () => {
-  test('all thirteen copies preserve their format and targeting availability', () => {
-    expect(WEB_DESKTOP_SOURCE_PLACEMENTS).toHaveLength(13)
+  test('all twelve copies preserve their format and targeting availability', () => {
+    expect(WEB_DESKTOP_SOURCE_PLACEMENTS).toHaveLength(12)
     for (const id of WEB_DESKTOP_SOURCE_PLACEMENTS) {
       const web = webDesktopPlacement(id)!
       const source = PLACEMENT_SLOTS.find((slot) => slot.id === id)!
@@ -33,8 +33,8 @@ describe('Desktop inventory mirrored into Web', () => {
     expect(webDesktopPlacement('Inline-After-Agent-Desktop')).toBe(
       'Inline-After-Agent-Web',
     )
-    expect(webDesktopPlacement('Desktop-Spotlight')).toBe(
-      'Desktop-Spotlight:web',
+    expect(webDesktopPlacement('Desktop-Showcase')).toBe(
+      'Desktop-Showcase:web',
     )
     // A legacy source names the same copy.
     expect(webDesktopPlacement('Desktop-Below-Chat')).toBe('Above-Input-Web')
@@ -96,6 +96,14 @@ describe('Desktop inventory mirrored into Web', () => {
       expect(campaignTargetsPlacement(['Desktop-Inline-Chat'], id)).toBe(false)
     }
     expect(campaignTargetsPlacement([], 'Desktop-Inline-Chat:web')).toBe(false)
+  })
+
+  test('the removed break copies are no longer registered', () => {
+    for (const id of ['Desktop-Spotlight:web', 'Desktop-Intermission:web'])
+      expect(isWebDesktopPlacement(id)).toBe(false)
+    expect(webDesktopPlacement('Desktop-Spotlight')).toBeUndefined()
+    expect(webDesktopPlacement('Desktop-Intermission')).toBeUndefined()
+    expect(isWebDesktopPlacement('Desktop-Showcase:web')).toBe(true)
   })
 
   test('billboard artwork fits the same shapes on both copies', () => {

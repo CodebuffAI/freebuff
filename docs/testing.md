@@ -1,5 +1,85 @@
 # Testing
 
+## When to add a test, and when not to
+
+Read this before writing a test. Tests are not free: each one is typechecked,
+run on every PR that reaches its package, and has to be kept passing by
+whoever changes the code next. On 2026-11-12 the repo held 5,700 test files
+(1.7M lines), and 285 mounted-DOM files in `freebuff/web` took 590s of that
+suite's 820s while guarding almost nothing that had ever been an incident.
+They were cut. Do not grow them back.
+
+**The bar: a test earns its place only if its failure would mean a real
+incident.** Ask "if this assertion went red in prod instead of CI, would
+someone have to be told?" If the honest answer is "someone would notice a
+slightly different screen and fix it", do not write the test.
+
+Write a test for:
+
+- **Money**: billing, credits, quotas, ad spend, payouts, refunds, pricing.
+- **Access**: auth, sign-in, permissions, bans, rate limits, free-mode gates.
+- **Data loss or corruption**: drafts, messages, files, git state, migrations,
+  anything that deletes, or that sends twice or to the wrong place.
+- **Security**: sandbox and containment, consent, secrets or private code
+  reaching a published or client bundle, the DB access boundary.
+- **Contracts with something we cannot redeploy together**: the wire format
+  between a shipped CLI, SDK or Desktop build and the server, a provider API,
+  a persisted row or file format.
+- **Logic with real branching**: parsers, reducers, state machines, selection
+  and ranking, retries and concurrency. Test the pure function directly.
+- **A bug that reached users**, as one test at the lowest level that
+  reproduces it. Not a suite, and not for a cosmetic bug.
+
+Do not write a test for:
+
+- **How the UI looks or is arranged**: position, order, size, spacing,
+  colour, contrast, class names, CSS rules, icons, DOM structure, which
+  element wraps which, animation, scroll offsets, popover placement.
+- **Static copy**: labels, tooltips, placeholder and empty-state text.
+- **Presentational wiring**: "renders X when prop Y is set", "shows the
+  spinner while loading", "the button is disabled when the field is empty".
+  Verify these once in the preview or the growth lab when you make the change.
+- **Source text**: a test that reads a `.ts`, `.tsx` or `.css` file and
+  matches strings in it. It breaks on every refactor and proves nothing about
+  behaviour. The exception is a guard for an incident class above (a secret in
+  a published folder, a write opened on the wrong database lane), and its
+  header must name the incident.
+- **Markup snapshots.**
+- **Mocks talking to themselves**: asserting that a mock was called the way
+  the test set it up, with no logic of ours in between.
+- **What the typechecker already proves**: shapes, required props, exhaustive
+  switches, constants equal to themselves.
+- **Admin-only pages and internal dashboards** rendering their tables.
+- **A second copy** of coverage that exists one level down. If the reducer is
+  tested, do not also mount the component to watch it call the reducer.
+
+Rules of thumb:
+
+- **Put the logic where it is cheap to test.** Pull the decision out of the
+  component into a pure function and test that. A mounted-React test costs
+  100 to 1000 times a function test (a jsdom per file, seconds each) and fails
+  for reasons unrelated to the change.
+- **A mounted-DOM test (`*.dom.test.tsx`) is a last resort**, for a critical
+  flow (sending, stopping, sign-in, paying) that cannot be reached any other
+  way. One file per flow, not one per component.
+- **A change to how something looks needs no new test and may delete one.** If
+  an existing test fails only because an element moved or copy changed, delete
+  that assertion rather than updating it.
+- **No test over a second without a reason** in its header. Real sleeps,
+  spawned processes and whole-repo scans belong in an integration or smoke
+  lane, if anywhere.
+- **Fewer, not more, when fixing a bug.** One failing-then-passing case. Do
+  not add the six neighbouring cases "for completeness".
+- **Deleting a test is a normal change.** Say which and why in the PR body,
+  and lower the floor in `.github/test-baselines.json` ("The CI guard against
+  disappearing tests" below).
+
+A PR that only changes UI appearance, copy, docs or admin pages should usually
+add zero tests. Reviewers: ask for a test to be removed as readily as you ask
+for one to be added.
+
+## How to write the ones that are worth it
+
 - Prefer dependency injection over module mocking; define contracts in `common/src/types/contracts/`.
 - Use `spyOn()` only for globals / legacy seams.
 - Avoid `mock.module()` for functions; use `@codebuff/common/testing/mock-modules.ts` helpers for constants only. A module mock lasts for the rest of the `bun test` process, and `mock.restore()` does not undo it (see "the FILE ORDER").
@@ -285,9 +365,12 @@ for the same reason: setup was 75–95% of each.
 The opposite case: a suite too slow for one runner gets several lanes, one per
 `shard: i/n`, each naming the same single package. `test-with-guard --shard i/n`
 runs the files `scripts/ci/test-shard.ts` assigns to that shard and guards them
-under the key `<key>#i/n`. Today that is the `freebuff/web` and
-`freebuff-desktop` unit suites and `web`'s DB integration suite, two shards
-each.
+under the key `<key>#i/n`. Today that is the `freebuff/web` and `web` unit
+suites (three shards each), the `freebuff-desktop` unit suite and `web`'s DB
+integration suite (two each). The `freebuff/web` unit shards are a job of
+their own, `test-freebuff-web`, which does not wait on `changes`: each shard
+runs `affected-lanes.ts` itself and skips its steps when the PR cannot reach
+the package (`ci.yml` has the reasoning).
 
 - **Assignment is a hash of the file's path** (FNV-1a over the path
   `test:files` prints, modulo n). Adding or deleting a file changes one shard's
@@ -305,7 +388,14 @@ each.
   no declared shard or to two. Without that check, dropping the `2/2` lane would
   lose half the suite while every remaining lane passed.
 - **Some files must share a shard.** `SHARD_TOGETHER` in `test-shard.ts`
-  hashes a directory as one unit. web's `src/server/desktop-cloud/` is one:
+  hashes a directory of one suite as one unit (a suite is a guard key, so a
+  package's unit and integration suites are separate). Giving the group a
+  shard to itself was tried on 2026-11-11 (PR #10617) to even out web's DB
+  shards, 92s and 267s: alone, the directory ran in ~140s, but
+  `device-execution/execution.redis.integration.test.ts` then failed in 3 of
+  5 attempts ("Device transport unavailable"), which it does not do with the
+  rest of its shard around it. Find that dependency before trying again.
+  web's DB suite's `src/server/desktop-cloud/` is one:
   its suites start and stop local R2 (workerd) in-process, and split by file,
   `store.integration.test.ts` hung for 60s after `org-invite-store`, `storage`
   and `github` ran before it, reproducibly in CI. With the rest of the
@@ -429,7 +519,11 @@ runs save it under a key scoped to `bun.lock` and `next.config.mjs`; pull
 requests restore main's newest. The archive is ~1 GB (1.4 GB unpacked).
 Measured 2026-10-07 on two runs of #5845: the compile went from 112s cold to
 56s warm and the build step from 169s to 86s, against ~16s to restore and ~18s
-to save. Past 3 GiB the stash is dropped, so the next run starts cold.
+to save. Past 5 GiB the cache is dropped and a marker file is stashed in its
+place: that tiny entry becomes the newest under the key prefix, `restore`
+deletes it and the next run builds cold and saves a fresh cache. (Dropping
+without a marker saved nothing, so every run kept restoring the last entry
+under the cap and outgrowing it again.)
 `build-web` has no Next cache: web turns the persistent cache off in
 `web/next.config.mjs` because its cold compile is ~30s. `oven-sh/setup-bun`'s
 own small runtime cache is independent of dependency installation and also
@@ -788,9 +882,9 @@ cd freebuff-desktop && bun test \
   src/ui/shell/Tab.rename.test.tsx src/ui/agent/AgentPicker.menu.test.tsx
 ```
 
-Our own components do it too. Freebuff Web's survey cards show once per page load
-and keep that in module state behind a reset seam (`resetWorkspaceProfileSurveySession`,
-`resetWorkspaceOnboardingSurveySession`). Any file that renders `WorkspaceApp` can
+Our own components do it too. Freebuff Web's profile survey card shows once per page load
+and keeps that in module state behind a reset seam (`resetWorkspaceProfileSurveySession`).
+Any file that renders `WorkspaceApp` can
 spend it. So a test that needs the card resets it in `beforeEach`, not only
 `afterEach`. Otherwise its first test renders nothing whenever bun loads it after
 `workspace-app.dom` or `workspace-queue.dom` (2026-10-13, `sponsored-survey.dom`).
@@ -860,3 +954,39 @@ so the rule stands: **inside `waitFor` (or any retry), prefer
 spot the shape, time the case with `bun test --reporter=junit
 --reporter-outfile=…`: a mounted-React case taking over a second with no real
 I/O is almost always this.
+
+**A ninth shape, and one that is pure CPU: a role query over the whole page.**
+`getByRole('button', { name })` computes the accessible name of every button
+under its container, and each name asks jsdom for at least one computed style.
+jsdom 20 answered each of those by matching the element, and then every
+ancestor (to resolve the inherited `visibility`), against all 120 rules of its
+built-in stylesheet: 450 to 650 µs a call in this package's suites, so a
+page-wide lookup on a page with ~190 buttons cost ~100 ms on a laptop and
+about three times that on CI. Inside `findByRole` or `waitFor` every failed
+attempt pays it again. That was `DataPane` › "authoring: …" timing out at 5 s
+on unrelated PRs (2026-11-18, #11250), and most of what was left of the
+hidden-ads case in `workspace-app.projects-send` (#10286). `hidden: true` does
+not help: the cost is the name, not the inaccessibility check.
+
+`freebuff/web/test/support/jsdom-style-rules.ts` now remembers which of those
+built-in rules matched an element, until jsdom's own mutation counter for its
+tree or the focused element changes. Measured on the eight slowest mounted
+files, `getComputedStyle` went from 450-650 µs to 80-280 µs a call; `DataR3`,
+`DataPane` and `workspace-app.projects-send` run in less than half the time,
+and all 145 mounted files together in 177 s instead of 227 s. What it does not
+cover is the page's own stylesheets: their rules are still matched for the
+element and each ancestor on every call, so a suite that mounts a hundred
+rules of CSS (`CampaignOnboarding`, the file viewer) gains about half as much.
+The rule therefore still stands for a page with many controls: **scope the
+lookup** with `within(toolbar)`, or use `getByText` / `getByLabelText`, which
+compute no styles. jsdom 22 and later cache computed styles themselves (31 is
+50 to 100 times faster per call than 20), so that file is deleted when
+jsdom moves past 20; it says how it fails when that happens.
+
+A faster DOM also removes slack a test was leaning on without saying so.
+`DocTabs` › "a table cell picks up row, column and alignment tools" needed a
+zero-delay editor timer to fire before its click's `act()` resolved. That held
+while the click never took under 3.4 ms, and stopped holding once its fastest
+runs took 0.96 ms, inside the timer's 1 ms. **Wait behind such a timer** (a
+`setTimeout` of your own, created after it, inside the same `act`); do not
+count on the work before it being slow.

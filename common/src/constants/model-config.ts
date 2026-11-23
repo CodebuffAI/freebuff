@@ -233,8 +233,9 @@ export function supportsAssistantPrefill(model: Model): boolean {
  * 524,288, not the 1,048,576 OpenRouter advertises (Fireworks rejects with
  * "model maximum context length: 524287"), but 400k is still under it.
  *
- * DeepSeek V4.1 Flash and its fast mode get 312.5k, so they compact at 250k
- * (0.8x) rather than 320k (product, 2026-11-04, Victor). Not for the window:
+ * DeepSeek V4.1 Flash and its fast mode get 375k, so they compact at 300k
+ * (0.8x) rather than 320k (product, Victor): 250k from 2026-11-04, raised to
+ * 300k on 2026-11-10. Not for the window:
  * every request below the trigger re-reads its whole history, and on 11-02
  * 35% of Flash calls were past 180k, so the long tail of re-read cached input
  * is the bill. A compaction costs one cold prefill of ~50k tokens (~$0.003)
@@ -253,7 +254,7 @@ const DEEPSEEK_FLASH_MODELS: ReadonlySet<string> = new Set([
   FREEBUFF_DEEPSEEK_V4_FLASH_FAST_MODEL_ID,
 ])
 
-export const DEEPSEEK_FLASH_CONTEXT_BUDGET = 312_500
+export const DEEPSEEK_FLASH_CONTEXT_BUDGET = 375_000
 
 export function contextPrunerBudgetForModel(
   model: Model,

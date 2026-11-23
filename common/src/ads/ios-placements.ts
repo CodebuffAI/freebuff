@@ -9,6 +9,13 @@ export const IOS_AD_PLACEMENTS = [
     id: 'Inline-After-Agent-iOS',
     label: 'Coding · after an answer',
   },
+  // The one-line link at the end of a coding answer; served when the
+  // `inlineAdStyle` policy arm is `link`. Operator-run, not self-serve.
+  {
+    id: 'Inline-Link-After-Agent-iOS',
+    label: 'Coding · inline link after an answer',
+    available: false,
+  },
 ] as const
 
 export function isIOSAdPlacement(id: string | null | undefined): boolean {

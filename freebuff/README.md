@@ -22,6 +22,8 @@ freebuff
 ```
 freebuff/
 ├── cli/       # CLI build & npm release files
+├── e2e/       # End-to-end tests
+├── plunk/     # Plunk email tooling
 └── web/       # Freebuff website
 ```
 

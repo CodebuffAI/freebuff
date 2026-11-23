@@ -10,7 +10,16 @@ export type SitePublishResult =
       environment: 'preview' | 'production'
       url: string
     }
-  | { type: 'error'; message: string }
+  | {
+      type: 'error'
+      message: string
+      /**
+       * The environment was last deployed from another chat of the project:
+       * publishing again with `replaceChatId: chatId` replaces it.
+       */
+      replace?: SitePublishReplace
+    }
+export type SitePublishReplace = { chatId: string; chatTitle: string; url: string }
 export type SitePublishEvent =
   | { type: 'stage'; stage: SitePublishStage }
   | SitePublishResult
@@ -96,8 +105,25 @@ function parseEvent(line: string): SitePublishEvent | null {
       ['preview', 'production'].includes(value.environment)
     )
       return value
-    if (value.type === 'error' && typeof value.message === 'string')
-      return { type: 'error', message: value.message.slice(0, 4096) }
+    if (value.type === 'error' && typeof value.message === 'string') {
+      const replace = value.replace
+      return {
+        type: 'error',
+        message: value.message.slice(0, 4096),
+        ...(replace &&
+        typeof replace.chatId === 'string' &&
+        typeof replace.chatTitle === 'string' &&
+        typeof replace.url === 'string'
+          ? {
+              replace: {
+                chatId: replace.chatId.slice(0, 160),
+                chatTitle: replace.chatTitle.slice(0, 200),
+                url: replace.url.slice(0, 2048),
+              },
+            }
+          : {}),
+      }
+    }
     if (value.type === 'heartbeat') return value
   } catch {
     /* A partial or foreign line is not an event. */

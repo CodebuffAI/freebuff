@@ -117,7 +117,7 @@ describe('profile survey store', () => {
     expect(fake.requests).toEqual([
       { action: 'dismiss', version: 1, questionId: 'who_pays', surface: 'cli' },
     ])
-    expect(printed).toEqual(["Not now: we'll ask again in 3 days."])
+    expect(printed).toEqual(['Got it, not now.'])
   })
 
   test('Esc on the stopping dismissal says so', async () => {
@@ -227,7 +227,7 @@ describe('profile survey engagement events', () => {
       surface: 'cli',
     })
     expect(events(fake.requests).some((r) => r.action === 'event' && r.event === 'abandoned')).toBe(false)
-    expect(printed).toEqual(["Not now: we'll ask again in 3 days."])
+    expect(printed).toEqual(['Got it, not now.'])
   })
 
   test('typing a prompt after render reports abandoned', async () => {

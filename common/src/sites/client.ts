@@ -87,11 +87,15 @@ const IDEMPOTENT_TOOLS = new Set([
   'sites_set_published',
 ])
 
+/** Attribution sent with every request; a Cloud chat also names itself. */
+export type SiteRequestContext = {
+  originProjectId: string
+  originProjectType: 'local' | 'cloud'
+  originChatId?: string
+}
+
 export class SitesClient {
-  private context = new AsyncLocalStorage<{
-    originProjectId: string
-    originProjectType: 'local' | 'cloud'
-  }>()
+  private context = new AsyncLocalStorage<SiteRequestContext>()
   constructor(
     private options: {
       getToken: () => string | null | undefined
@@ -163,12 +167,17 @@ export class SitesClient {
           binding_exists:
             'That name is already used by a database or storage binding.',
           secret_not_found: 'This variable no longer exists. Refresh the list.',
+          // The server's refusal says which operation holds the environment and
+          // what to do: wait for it, retry in so many minutes, or ask support.
           environment_busy:
-            'An operation is still running, or an earlier one never reported its result. If this keeps happening, contact support@freebuff.com.',
+            data.message ??
+            'An operation is still running, or an earlier one ended without Cloudflare confirming it. Try again in 10 minutes. If this keeps happening, contact support@freebuff.com.',
           site_deletion_needs_reconciliation:
+            data.message ??
             'An earlier operation on this site never reported its result, so deletion is held until it is reconciled. Contact support@freebuff.com to have the site removed.',
           site_deleting: 'This site is being deleted.',
           subdomain_taken: 'This subdomain is already taken. Try another name.',
+          subdomain_unavailable: "That name isn't available. Choose a different domain.",
           invalid_subdomain: 'Use 1–63 letters, numbers or hyphens. Start and end with a letter or number; generated addresses and customers are reserved.',
           production_subdomain_only: 'Switch to Production to customize your Freebuff address.',
           invalid_domain: 'Enter a subdomain such as www.example.com, without a URL or path. Root domains and platform domains are not supported.',
@@ -326,7 +335,7 @@ export class SitesClient {
     cwd: string,
     mode: string,
     signal?: AbortSignal,
-    context?: { originProjectId: string; originProjectType: 'local' | 'cloud' },
+    context?: SiteRequestContext,
   ) {
     const run = () => this.runTool(tool, raw, cwd, mode, signal)
     return context ? this.context.run(context, run) : run()

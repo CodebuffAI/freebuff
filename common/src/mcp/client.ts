@@ -5,6 +5,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 import { getErrorObject } from '../util/error'
 import { mcpContentToToolResultOutputs } from './content-mapping'
+import { listAllMcpTools } from './list-tools'
 import { normalizeMcpServerUrl } from './server-url'
 
 import type { MCPConfig } from '../types/mcp'
@@ -180,9 +181,27 @@ export function listMCPTools(
     throw new Error(`listTools: client not found with id: ${clientId}`)
   }
   if (!listToolsCache[clientId]) {
-    listToolsCache[clientId] = client.listTools(...args)
+    const listing = listAllTools(client, ...args)
+    listToolsCache[clientId] = listing
+    // A failed listing is not kept, or one slow start would hide the server's tools for the rest
+    // of the process: the next call asks the server again.
+    listing.catch(() => {
+      if (listToolsCache[clientId] === listing) delete listToolsCache[clientId]
+    })
   }
   return listToolsCache[clientId]
+}
+
+/** Every page of a server's `tools/list` as one result, with no `nextCursor` (see list-tools.ts). */
+export async function listAllTools(
+  client: Pick<Client, 'listTools'>,
+  ...[params, options]: Parameters<typeof Client.prototype.listTools>
+): ReturnType<typeof Client.prototype.listTools> {
+  return {
+    tools: await listAllMcpTools((cursor) =>
+      client.listTools(cursor ? { ...params, cursor } : params, options),
+    ),
+  }
 }
 
 export async function callMCPTool(

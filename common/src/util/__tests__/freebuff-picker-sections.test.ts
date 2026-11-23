@@ -32,15 +32,14 @@ const none = { premium: false, locked: false, price: undefined }
 describe('freebuffPickerPlacement', () => {
   test('literal ids are the catalog constants', () => {
     const at = (id: string) => freebuffPickerPlacement([id], none)
-    // Standard matches the limited layout (2026-11-03): DeepSeek Slow (the
-    // MiMo Slow row, first from 2026-11-08; under More before), Nemotron,
-    // Glyph, Solar Pro 4 and Solar Mini 4, all in view.
-    const standard = ['m-61c26317cc', 'm-ddc687c50f', 'm-02244092cb', FREEBUFF_SOLAR_PRO_4_MODEL_ID, FREEBUFF_SOLAR_MINI_4_MODEL_ID]
-    for (const id of standard)
+    // Full access's Standard (2026-11-11): Beam 1.0 and Solar Pro 4 in view;
+    // DeepSeek Slow, Nemotron, Glyph and Solar Mini 4 under its "more".
+    for (const id of ['m-9877f4d3ee', FREEBUFF_SOLAR_PRO_4_MODEL_ID])
       expect(at(id)).toEqual({ section: 'standard', order: expect.any(Number) })
-    expect(at('m-61c26317cc')).toEqual({ section: 'standard', order: -1 })
-    const standardOrders = standard.map((id) => at(id).order)
-    expect(standardOrders).toEqual([-1, 1, 5, 10, 15])
+    const folded = ['m-61c26317cc', 'm-ddc687c50f', 'm-02244092cb', FREEBUFF_SOLAR_MINI_4_MODEL_ID]
+    for (const id of folded)
+      expect(at(id)).toEqual({ section: 'standard', order: expect.any(Number), more: true })
+    expect(folded.map((id) => at(id).order)).toEqual([-1, 1, 5, 15])
     // DeepSeek V4.1 Flash, shown as DeepSeek Fast (2026-11-08), leads Premium
     // as its pick since 2026-10-14.
     expect(at(FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID)).toEqual({ section: 'premium', order: 5, recommended: true })

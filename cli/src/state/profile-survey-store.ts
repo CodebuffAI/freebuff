@@ -20,7 +20,6 @@
  * chain, never block a key, and a failure is only logged at debug.
  */
 
-import { profileSurveySnoozeDays } from '@codebuff/common/constants/freebuff-profile-survey'
 import { create } from 'zustand'
 
 import { FREEBUFF_WEB_URL } from '../login/constants'
@@ -260,8 +259,6 @@ function runEffect(effect: ProfileSurveyEffect): void {
     return
   }
   if (effect.type === 'dismiss') {
-    const dismissCount =
-      useProfileSurveyStore.getState().survey?.dismissCount ?? 0
     enqueue(async () => {
       const response = await api.post({
         action: 'dismiss',
@@ -273,11 +270,7 @@ function runEffect(effect: ProfileSurveyEffect): void {
         surface: 'cli',
       })
       if (response.ok && 'dismissed' in response) {
-        print(
-          profileSurveyDismissLine(
-            response.stopped ? null : profileSurveySnoozeDays(dismissCount + 1),
-          ),
-        )
+        print(profileSurveyDismissLine(response.stopped))
       } else {
         logger.debug({ response }, '[profile-survey] dismiss not recorded')
       }

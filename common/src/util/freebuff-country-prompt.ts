@@ -2,11 +2,11 @@
  * What the Web and Cloud sidebars say about an account's country, from the
  * session GET (docs/freebuff-account-hub.md).
  *
- * Only a connection the user can do something about earns a banner: a VPN or
- * proxy exit in a full-access country, where turning it off or verifying the
- * country unlocks full access. An account that is limited because of where it
- * IS gets no banner (it read as a scolding, product 2026-11-09); its country
- * rides the daily hours row instead (`freebuffLimitedCountry`).
+ * Limited access is never explained, with one exception: a VPN or proxy exit
+ * in a full-access country, where turning it off or verifying the country
+ * unlocks full access. An account limited because of where it is, by the
+ * access floor or on an unresolved connection gets no banner and no sentence;
+ * nothing names its country or region (product, 2026-11-16).
  */
 
 import { FREE_MODE_ALLOWED_COUNTRIES } from '../constants/freebuff-countries'
@@ -14,7 +14,6 @@ import {
   getFreebuffServerAccessTier,
   getSubscriptionInfo,
 } from '../types/freebuff-session'
-import { formatFreebuffCountryName } from './freebuff-model-availability'
 
 import type {
   FreebuffCountryBlockReason,
@@ -85,26 +84,76 @@ export function freebuffCountryVerificationPrompt(
 }
 
 /**
- * The limited-access country an account is in, for the badge on its daily
- * hours row: set only when the account is limited because of where it is
- * (`country_not_allowed` in a limited-access country), never for a VPN,
- * proxy or unresolved connection.
+ * Why an account without a plan is on limited access, for surfaces that may
+ * explain the smaller allowance (plan card, Earn). Only a VPN or proxy exit
+ * in a full-access country is ever put into words (`freebuffLimitedAccessCopy`):
+ * - `vpn` / `proxy`: the sidebar's banner (`freebuffCountryVerificationPrompt`),
+ *   the only case that earns "verify country to unlock";
+ * - `anonymous`: a VPN or proxy the banner does not name (verifying cannot
+ *   help, a country already verified, or a limited-access exit). It carries
+ *   the exit's country, which decides whether it is said at all;
+ * - `country`: limited because of where it is (`country_not_allowed`);
+ * - `floor`: held by the access floor (`recent_limited_country`);
+ * - `unresolved`: the connection's region could not be confirmed;
+ * - `other`: no reason given (the limited-IP list, an older server).
+ * Null at full access and for a paying account, which is never called
+ * limited nor sent to verify (operator, 2026-10-01).
  */
-export function freebuffLimitedCountry(
+export type FreebuffLimitedAccessReason =
+  | { kind: 'vpn' | 'proxy'; prompt: FreebuffCountryVerificationPrompt }
+  | { kind: 'anonymous'; countryCode: string | null }
+  | { kind: 'country' | 'floor' | 'unresolved' | 'other' }
+
+export function freebuffLimitedAccessReason(
   session: SessionLike,
-): { code: string; name: string } | null {
+): FreebuffLimitedAccessReason | null {
   if (!session || getFreebuffServerAccessTier(session) !== 'limited') {
     return null
   }
+  if (getSubscriptionInfo(session)?.tierId != null) return null
+  const prompt = freebuffCountryVerificationPrompt(session)
+  if (prompt) return { kind: prompt.kind, prompt }
   const fields = session as CountryFields
-  const code = fields.countryCode
-  if (
-    fields.countryBlockReason !== 'country_not_allowed' ||
-    !code ||
-    code === 'UNKNOWN' ||
-    FREE_MODE_ALLOWED_COUNTRIES.has(code)
-  ) {
-    return null
+  switch (fields.countryBlockReason) {
+    case 'country_not_allowed':
+      return { kind: 'country' }
+    case 'recent_limited_country':
+      return { kind: 'floor' }
+    case 'anonymous_network':
+      return { kind: 'anonymous', countryCode: fields.countryCode ?? null }
+    case 'anonymized_or_unknown_country':
+    case 'missing_client_ip':
+    case 'unresolved_client_ip':
+    case 'ip_privacy_lookup_failed':
+      return { kind: 'unresolved' }
+    default:
+      return { kind: 'other' }
   }
-  return { code, name: formatFreebuffCountryName(code) }
+}
+
+/**
+ * The sentence a surface shows for a limited reason, and whether it may
+ * offer Account → Country beside it (`verify`, only the banner's VPN or
+ * proxy). Null unless a VPN or proxy exit in a full-access country is the
+ * cause: no other reason is explained, and nothing says "limited" or names a
+ * country or region (product, 2026-11-16).
+ */
+export function freebuffLimitedAccessCopy(
+  reason: FreebuffLimitedAccessReason | null,
+): { text: string; verify: boolean } | null {
+  switch (reason?.kind) {
+    case 'vpn':
+    case 'proxy':
+      return { text: `${reason.prompt.label}. ${reason.prompt.tooltip}`, verify: true }
+    case 'anonymous':
+      return reason.countryCode &&
+        FREE_MODE_ALLOWED_COUNTRIES.has(reason.countryCode)
+        ? {
+            text: 'This connection looks like a VPN or proxy, so a smaller allowance applies while you use it.',
+            verify: false,
+          }
+        : null
+    default:
+      return null
+  }
 }

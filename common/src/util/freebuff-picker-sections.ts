@@ -94,13 +94,15 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     // Standard, last in the picker: the same rows in the same places as the
     // limited layout (default-config.ts's `LIMITED_LAYOUT`), so every viewer
     // sees one Standard set (product, 2026-11-03, Victor).
-    // DeepSeek Slow (the MiMo Slow row) first (product, 2026-11-08, Victor).
-    'm-61c26317cc': { section: 'standard', order: -1 }, // DeepSeek Slow, 5 (new, promotional)
+    // At full access only Beam 1.0 and Solar Pro 4 are in view; the rest of
+    // Standard is under its "more" (product, 2026-11-11, Victor). Limited
+    // access keeps them all in view (default-config.ts's `LIMITED_LAYOUT`).
+    'm-61c26317cc': { section: 'standard', order: -1, more: true }, // DeepSeek Slow, 5 (new, promotional)
     'm-9877f4d3ee': { section: 'standard', order: 0 }, // Beam 1.0, 0 (new)
-    'm-ddc687c50f': { section: 'standard', order: 1 }, // Nemotron 3.5 Lightning, 0
-    'm-02244092cb': { section: 'standard', order: 5 }, // Glyph Cluster, 0
+    'm-ddc687c50f': { section: 'standard', order: 1, more: true }, // Nemotron 3.5 Lightning, 0
+    'm-02244092cb': { section: 'standard', order: 5, more: true }, // Glyph Cluster, 0
     'upstage/solar-pro4': { section: 'standard', order: 10 },
-    'upstage/solar-mini4': { section: 'standard', order: 15 },
+    'upstage/solar-mini4': { section: 'standard', order: 15, more: true },
     // (MiniMax M3.1 Flash, 'm-b2a427415d', retired 2026-10-24, has no place.)
     'm-916b95b337': { section: 'standard', order: 40, more: true }, // Ling 3.1 Flash
     'm-a273b5e513': { section: 'standard', order: 50, more: true }, // Laguna S 2.1

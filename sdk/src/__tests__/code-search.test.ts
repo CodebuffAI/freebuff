@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { PassThrough } from 'node:stream'
 
-import { codeSearch } from '../tools/code-search'
+import { codeSearch, ripgrepFailureMessage } from '../tools/code-search'
 
 import type { MockChildProcess } from '@codebuff/common/testing/mocks'
 import type { TerminalCommandBroker } from '../tools/run-terminal-command'
@@ -1161,5 +1161,30 @@ describe('codeSearch', () => {
       expect(value.stdout).toContain('.env.template')
       expect(value.stdout).toContain('Found 3 matches')
     })
+  })
+})
+
+describe('ripgrepFailureMessage', () => {
+  const errno = (code: string) =>
+    Object.assign(new Error(`spawn rg ${code}`), { code })
+  const cwd = tmpdir()
+
+  it('blames the install only when the binary is missing', () => {
+    const missing = path.join(cwd, 'no-such-rg-binary')
+    expect(ripgrepFailureMessage(errno('ENOENT'), missing, cwd)).toContain(
+      `Vendored ripgrep not found at ${missing}`,
+    )
+  })
+
+  it('leaves the install out of any other failure', () => {
+    const message = ripgrepFailureMessage(errno('EACCES'), '/bin/rg', cwd)
+    expect(message).toBe('Failed to execute ripgrep: spawn rg EACCES.')
+  })
+
+  it('still reports a missing search directory', () => {
+    const gone = path.join(cwd, 'no-such-search-dir-xyz')
+    expect(ripgrepFailureMessage(errno('ENOENT'), '/bin/rg', gone)).toBe(
+      `Search directory "${gone}" does not exist.`,
+    )
   })
 })

@@ -6,6 +6,10 @@ import {
 } from '@codebuff/common/types/ad-client-context'
 
 import {
+  createViewDwellGate,
+  TRANSCRIPT_IMPRESSION_DWELL_MS,
+} from '../ad-engagement'
+import {
   ENGAGEMENT_CHECKPOINT_MS,
   ENGAGEMENT_IDLE_AFTER_MS,
   ENGAGEMENT_RELEASE_GRACE_MS,
@@ -334,6 +338,24 @@ function registryHarness(focus: FocusState = NO_FOCUS) {
 }
 
 describe('engagement registry', () => {
+  test("an expired ad ends as `rotation` with `endedBy: 'expired'`", () => {
+    const { c, sent, registry } = registryHarness()
+    const a = registry.mount('a', 'pinned')!
+    c.advance(360_000)
+    registry.noteExpired('a')
+    registry.unmount(a)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    // the final record (a checkpoint may have gone out before it)
+    expect(sent.at(-1)).toMatchObject({ exit: 'rotation', endedBy: 'expired' })
+  })
+
+  test('an ordinary unmount carries no endedBy', () => {
+    const { c, sent, registry } = registryHarness()
+    registry.unmount(registry.mount('a', 'pinned')!)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    expect(sent[0]?.endedBy).toBeUndefined()
+  })
+
   test('a rotation ends the old record as `rotation` after the grace', () => {
     const { c, sent, registry } = registryHarness()
     registry.noteSlotSwap([], ['a'])
@@ -477,6 +499,9 @@ describe('helpers', () => {
     expect(
       decideExit({ rotatedAway: false, msSinceMessageSent: undefined }),
     ).toBe('unmount')
+    expect(
+      decideExit({ rotatedAway: false, msSinceMessageSent: 5_000, expired: true }),
+    ).toBe('rotation')
   })
 
   test('layoutTruncated', () => {
@@ -718,6 +743,7 @@ describe('late clicks: a redraw of an already-flushed impression (bug 1)', () =>
         pointerMovedOver: true,
         region: 'cta',
         count: 1,
+        atClick: true,
       },
     })
 
@@ -855,12 +881,20 @@ describe('checkpoints: records that do not wait for an unmount (bug 2)', () => {
     c.advance(1_000)
     tracker.click()
     expect(sent).toHaveLength(1)
-    expect(sent[0]).toMatchObject({ visibleMs: 1_000, click: { count: 1 } })
+    expect(sent[0]).toMatchObject({
+      visibleMs: 1_000,
+      click: { count: 1, atClick: true },
+    })
     expect(sent[0]!.exit).toBeUndefined()
     tracker.click()
     expect(sent).toHaveLength(1)
     tracker.flush('rotation')
-    expect(sent[1]).toMatchObject({ exit: 'rotation', click: { count: 2 } })
+    // the final record's `click` replaces the checkpoint's in the shallow
+    // merge, so it still says the click was sent at the click
+    expect(sent[1]).toMatchObject({
+      exit: 'rotation',
+      click: { count: 2, atClick: true },
+    })
   })
 
   test('post-click goes out once the click checkpoint has, not at the flush', () => {
@@ -891,6 +925,9 @@ describe('checkpoints: records that do not wait for an unmount (bug 2)', () => {
     tracker.click()
     tracker.checkpoint()
     expect(sent).toHaveLength(0)
+    // nothing went out at the click, so the flush does not claim it did
+    tracker.flush('unmount')
+    expect(sent[0]!.click?.atClick).toBeUndefined()
   })
 
   test('a card that never unmounts checkpoints after the bounded exposure', () => {
@@ -1112,5 +1149,154 @@ describe('the engagement poster', () => {
     await poster.post({ v: 1, impUrl: 'a' })
     await poster.post({ v: 1, impUrl: 'a', exit: 'unmount' })
     expect(seen).toEqual(['checkpoint', 'unmount'])
+  })
+})
+
+describe('createViewDwellGate (transcript card impression)', () => {
+  test('fires once, only after the rows stayed in the viewport for the dwell', () => {
+    expect(TRANSCRIPT_IMPRESSION_DWELL_MS).toBe(1_000)
+    const gate = createViewDwellGate()
+    expect(gate.update(0, true, true)).toBe(false)
+    expect(gate.update(500, true, true)).toBe(false)
+    expect(gate.update(999, true, true)).toBe(false)
+    expect(gate.update(1_000, true, true)).toBe(true)
+    expect(gate.update(5_000, true, true)).toBe(false)
+    expect(gate.fired).toBe(true)
+  })
+
+  test('leaving the viewport restarts the dwell', () => {
+    const gate = createViewDwellGate(1_000)
+    gate.update(0, true, true)
+    expect(gate.update(800, false, true)).toBe(false)
+    expect(gate.update(900, true, true)).toBe(false)
+    expect(gate.update(1_800, true, true)).toBe(false)
+    expect(gate.update(1_900, true, true)).toBe(true)
+  })
+
+  test('a card that is never in the viewport never fires', () => {
+    const gate = createViewDwellGate(1_000)
+    for (let t = 0; t <= 10_000; t += 250) {
+      expect(gate.update(t, false, true)).toBe(false)
+    }
+  })
+
+  test('an unfocused terminal pauses the dwell; unknown focus does not', () => {
+    const unfocused = createViewDwellGate(1_000)
+    for (let t = 0; t <= 5_000; t += 250) {
+      expect(unfocused.update(t, true, false)).toBe(false)
+    }
+    const unknown = createViewDwellGate(1_000)
+    unknown.update(0, true, undefined)
+    expect(unknown.update(1_000, true, undefined)).toBe(true)
+  })
+
+  test('an unmeasurable card counts as seen', () => {
+    const gate = createViewDwellGate(1_000)
+    gate.update(0, undefined, undefined)
+    expect(gate.update(1_000, undefined, undefined)).toBe(true)
+  })
+})
+
+describe('one ad on screen at a time: a held or superseded ad', () => {
+  test('a dock ad held while a card has the screen keeps one record and counts the hidden time', () => {
+    const { c, sent, registry } = registryHarness()
+    const first = registry.mount('a', 'pinned')!
+    c.advance(10_000)
+    // the dock draws a blank in its place: the card unmounts, then the slot holds it
+    registry.unmount(first)
+    registry.hold('a', 'inline_card_in_view')
+    c.advance(30_000)
+    // well past the release grace: nothing was flushed
+    expect(sent).toHaveLength(0)
+    const again = registry.mount('a', 'pinned')!
+    expect(again.tracker).toBe(first.tracker)
+    registry.release('a')
+    c.advance(5_000)
+    registry.unmount(again)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({
+      impUrl: 'a',
+      exit: 'unmount',
+      visibleMs: 15_000,
+      yielded: { reason: 'inline_card_in_view', count: 1, hiddenMs: 30_000 },
+    })
+  })
+
+  test('a hold placed before the unmount works the same way', () => {
+    const { c, sent, registry } = registryHarness()
+    const first = registry.mount('a', 'pinned')!
+    registry.hold('a', 'inline_card_in_view')
+    registry.unmount(first)
+    c.advance(5_000)
+    expect(sent).toHaveLength(0)
+    registry.closeAll()
+    expect(sent[0]).toMatchObject({
+      exit: 'window_close',
+      yielded: { reason: 'inline_card_in_view', count: 1, hiddenMs: 5_000 },
+    })
+  })
+
+  test('a held ad released without a redraw (it rotated away while hidden) ends after the grace', () => {
+    const { c, sent, registry } = registryHarness()
+    const first = registry.mount('a', 'pinned')!
+    registry.unmount(first)
+    registry.hold('a', 'inline_card_in_view')
+    c.advance(2_000)
+    registry.noteSlotSwap(['a'], ['b'])
+    registry.release('a')
+    expect(sent).toHaveLength(0)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    expect(sent[0]).toMatchObject({
+      impUrl: 'a',
+      exit: 'rotation',
+      yielded: { reason: 'inline_card_in_view', count: 1, hiddenMs: 2_000 },
+    })
+  })
+
+  test('two holds count twice and add their hidden time', () => {
+    const { c, sent, registry } = registryHarness()
+    let h = registry.mount('a', 'pinned')!
+    for (const hidden of [1_000, 3_000]) {
+      registry.unmount(h)
+      registry.hold('a', 'inline_card_in_view')
+      c.advance(hidden)
+      h = registry.mount('a', 'pinned')!
+      registry.release('a')
+    }
+    registry.unmount(h)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    expect(sent[0]!.yielded).toEqual({
+      reason: 'inline_card_in_view',
+      count: 2,
+      hiddenMs: 4_000,
+    })
+  })
+
+  test('a superseded card says why it went, with no hidden time', () => {
+    const { c, sent, registry } = registryHarness()
+    const card = registry.mount('old', 'measured')!
+    registry.noteYield('old', 'newer_inline_card')
+    registry.unmount(card)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    expect(sent[0]).toMatchObject({
+      impUrl: 'old',
+      exit: 'unmount',
+      yielded: { reason: 'newer_inline_card', count: 1 },
+    })
+    expect(sent[0]!.yielded!.hiddenMs).toBeUndefined()
+  })
+
+  test('holding or noting an unknown or flushed impression does nothing', () => {
+    const { c, sent, registry } = registryHarness()
+    registry.hold('nope', 'inline_card_in_view')
+    registry.noteYield('nope', 'network_ad_on_screen')
+    registry.release('nope')
+    const a = registry.mount('a', 'pinned')!
+    registry.unmount(a)
+    c.advance(ENGAGEMENT_RELEASE_GRACE_MS)
+    registry.hold('a', 'inline_card_in_view')
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.yielded).toBeUndefined()
   })
 })

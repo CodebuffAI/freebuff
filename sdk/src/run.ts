@@ -78,6 +78,7 @@ import type {
   AgentUsageData,
   ContextCompactionData,
 } from '@codebuff/common/types/contracts/llm'
+import type { TurnReview } from '@codebuff/common/constants/turn-review'
 import type { TraceWriter } from '@codebuff/common/types/contracts/trace'
 import type { DrainSteeringMessages } from '@codebuff/common/types/contracts/steering'
 import type { CodebuffFileSystem } from '@codebuff/common/types/filesystem'
@@ -336,12 +337,30 @@ export type RunOptions = {
    */
   onCompactionSummary?: (summary: ConversationSummary) => void
   /**
+   * Asks the agent's own model, once a turn ends normally, for a review of it:
+   * one-click next prompts and a verdict on any change (`TURN_REVIEW_PROMPT`).
+   * It reuses the turn's prompt cache, usually arrives a few seconds after the
+   * run returned, and never joins the history. Called with null when the review failed or
+   * held nothing, so a host stops waiting for it.
+   */
+  onTurnReview?: (review: TurnReview | null) => void
+  /** The review's instruction, e.g. `turnReviewPrompt(recentPrompts)`; TURN_REVIEW_PROMPT when absent. */
+  turnReviewPrompt?: string
+  /**
    * The shell this run's terminal commands actually execute in, when the host's
    * broker picks one other than the default (the sponsored Windows floor runs
    * Windows PowerShell 5.1). Reported to the model as `systemInfo.shell`, so it
    * writes commands for the shell that will run them. Unset keeps the default.
    */
   terminalShell?: 'bash' | 'powershell'
+  /**
+   * The operating system of the computer this run's commands execute on,
+   * when that is not this process's: a hosted runner driving a user's
+   * Desktop computer. Reported to the model as `systemInfo.platform`, so on
+   * a Windows computer it gets the Windows note (Git Bash, forward slashes)
+   * instead of the runner's "linux". Unset keeps this process's platform.
+   */
+  hostPlatform?: 'darwin' | 'linux' | 'win32'
   /** Stable id of the project this run works on. Defaults to a hash of the
    *  repository root resolved from `cwd`. */
   projectKey?: string
@@ -391,6 +410,22 @@ export function applyTerminalShell(
   sessionState.fileContext.systemInfo = {
     ...sessionState.fileContext.systemInfo,
     shell: terminalShell,
+  }
+}
+
+/**
+ * Report the platform the run's commands execute on (`RunOptions.hostPlatform`).
+ * Applied on every run, like the shell: a resumed state built on the runner
+ * carries the runner's platform, and a thread can move between computers.
+ */
+export function applyHostPlatform(
+  sessionState: SessionState,
+  hostPlatform: RunOptions['hostPlatform'],
+): void {
+  if (!hostPlatform) return
+  sessionState.fileContext.systemInfo = {
+    ...sessionState.fileContext.systemInfo,
+    platform: hostPlatform,
   }
 }
 
@@ -474,6 +509,9 @@ export function buildCancelledSessionState(params: {
     params
 
   const state = cloneSessionState(sessionState, logger)
+  // Also used for in-flight checkpoints: a host that exits mid-response must
+  // not count the time spent generating that response as user inactivity.
+  state.mainAgentState.lastActivityAt = Date.now()
   const previousHistory = state.mainAgentState.messageHistory
   // A checkpoint can land after an assistant tool call is recorded but before
   // its result arrives. Drop that half-step at the persistence boundary so a
@@ -710,7 +748,10 @@ async function runOnce({
   onCompactionStart,
   onCompactionEnd,
   onCompactionSummary,
+  onTurnReview,
+  turnReviewPrompt,
   terminalShell,
+  hostPlatform,
   projectKey,
   traceSessionId: traceSessionIdOption,
   confineFileToolsToProject,
@@ -777,6 +818,7 @@ async function runOnce({
   }
   const traceSessionId =
     previousRun?.traceSessionId ?? traceSessionIdOption ?? crypto.randomUUID()
+  applyHostPlatform(sessionState, hostPlatform)
   applyTerminalShell(sessionState, terminalShell)
 
   if (byok) {
@@ -796,7 +838,7 @@ async function runOnce({
             ? byokTemplate.compactContext
             : {}),
           maxContextLength: limits.maxContextLength,
-          maxOutputTokens: limits.maxOutputTokens,
+          maxOutputTokens: limits.reservedOutputTokens,
         }
       }
     }
@@ -1278,6 +1320,8 @@ async function runOnce({
     onCompactionStart: report(onCompactionStart),
     onCompactionEnd: reportSignal(onCompactionEnd),
     onCompactionSummary: report(onCompactionSummary),
+    onTurnReview: report(onTurnReview),
+    turnReviewPrompt,
   }).catch((error) => {
     // A caller's own deadline (`AbortSignal.timeout`) rejects with a
     // `TimeoutError`, the same name Bun's 5-minute fetch idle timeout uses, so
@@ -1476,7 +1520,7 @@ async function handleToolCall({
 
   if (
     byok &&
-    ['web_search', 'read_docs', 'gravity_index', 'render_ui'].includes(toolName)
+    ['web_search', 'read_docs', 'gravity_index', 'render_ui', 'generate_image'].includes(toolName)
   ) {
     return {
       output: [{ type: 'json', value: { errorMessage: `${toolName} is unavailable in a direct BYOK run` } }],

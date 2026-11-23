@@ -121,7 +121,7 @@ describe('ProfileSurveyBoxView', () => {
     expect(frame).toContain('1 Just me')
     expect(frame).toContain("0 Doesn't apply")
     expect(frame).toContain(
-      "1–5 pick · 0 doesn't apply · ← back · esc not now (3 days)",
+      "1–5 pick · 0 doesn't apply · ← back · esc not now",
     )
   })
 

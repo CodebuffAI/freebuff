@@ -41,7 +41,8 @@ export function codeSearch({
   maxResults = 15,
   globalMaxResults = 250,
   maxOutputStringLength = 20_000,
-  timeoutSeconds = 10,
+  // 10 s killed correct searches on big repos and slow disks.
+  timeoutSeconds = 20,
   logger,
   signal,
   processBroker,
@@ -189,14 +190,11 @@ export function codeSearch({
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
       return resolve([
         {
           type: 'json',
           value: {
-            errorMessage:
-              missingDirectoryError(error, searchCwd, 'Search directory') ??
-              `Failed to execute ripgrep: ${message}`,
+            errorMessage: ripgrepFailureMessage(error, rgPath, searchCwd),
           },
         },
       ])
@@ -588,12 +586,28 @@ export function codeSearch({
       })
       .catch((error: unknown) => {
         if (isResolved) return
-        const message = error instanceof Error ? error.message : String(error)
-        settle({
-          errorMessage:
-            missingDirectoryError(error, searchCwd, 'Search directory') ??
-            `Failed to execute ripgrep: ${message}. Vendored ripgrep not found; ensure @codebuff/sdk is up-to-date or set CODEBUFF_RG_PATH.`,
-        })
+        settle({ errorMessage: ripgrepFailureMessage(error, rgPath, searchCwd) })
       })
   })
+}
+
+/**
+ * Only a missing binary blames the install: saying so for every failure sent
+ * models off installing ripgrep when the cause was permissions or a busy system.
+ */
+export function ripgrepFailureMessage(
+  error: unknown,
+  rgPath: string,
+  searchCwd: string,
+): string {
+  const missingDirectory = missingDirectoryError(
+    error,
+    searchCwd,
+    'Search directory',
+  )
+  if (missingDirectory) return missingDirectory
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  const message = error instanceof Error ? error.message : String(error)
+  const binaryMissing = code === 'ENOENT' && !fs.existsSync(rgPath)
+  return `Failed to execute ripgrep: ${message}.${binaryMissing ? ` Vendored ripgrep not found at ${rgPath}; ensure @codebuff/sdk is up-to-date or set CODEBUFF_RG_PATH.` : ''}`
 }

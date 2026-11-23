@@ -15,6 +15,33 @@ export const HOSTED_WORKSPACE_ENVIRONMENTS = [
   { apiOrigin: 'https://www.codebuff.com', authOrigin: 'https://freebuff.com' },
 ] as const
 
+/**
+ * AWS slots serve the API on `N.staging.codebuff.com` and auth/web on
+ * `N.staging.freebuff.com`; `slotOrigins()` in `infra/staging/instance.ts` derives both
+ * from the slot number. One reviewed rule rather than one entry per slot, and it still
+ * pairs a single number: a session cannot cross slots.
+ */
+const SLOT_API_ORIGIN = /^https:\/\/([1-9][0-9]?)\.staging\.codebuff\.com$/
+const SLOT_AUTH_ORIGIN = /^https:\/\/([1-9][0-9]?)\.staging\.freebuff\.com$/
+
+export function isStagingSlotOriginPair(apiOrigin: string, authOrigin: string): boolean {
+  const api = SLOT_API_ORIGIN.exec(apiOrigin)
+  const auth = SLOT_AUTH_ORIGIN.exec(authOrigin)
+  return api !== null && auth !== null && api[1] === auth[1]
+}
+
+/** A slot's auth origin from its API origin (`N.staging.codebuff.com` => `N.staging.freebuff.com`). */
+export function stagingSlotAuthOrigin(apiOrigin: string): string | null {
+  const api = SLOT_API_ORIGIN.exec(apiOrigin)
+  return api ? `https://${api[1]}.staging.freebuff.com` : null
+}
+
+/** The origins a hosted workspace may open on: a reviewed pair, or one slot's pair. */
+export function isHostedWorkspaceOrigin(apiOrigin: string, authOrigin: string): boolean {
+  return HOSTED_WORKSPACE_ENVIRONMENTS.some(environment => environment.apiOrigin === apiOrigin && environment.authOrigin === authOrigin)
+    || isStagingSlotOriginPair(apiOrigin, authOrigin)
+}
+
 
 export type HostedRuntimeProgress = {
   /** Absent from Desktops that only reported downloads: read it as `to-local`. */
@@ -24,6 +51,18 @@ export type HostedRuntimeProgress = {
   receivedBytes: number
   /** Null while unknown; an upload streams, so it never knows its total. */
   totalBytes: number | null
+}
+
+/**
+ * What a `runtime` request asked for, as Desktop's `desktop.workspace_native` and the hosted
+ * page's `desktop.workspace_ipc` rows name it: `runtime:project` (a new chat's choices),
+ * `runtime:status` (a chat's), or `runtime:<location>` (a move).
+ */
+export function hostedRuntimeIpcOperation(input: unknown): string {
+  const scope = input && typeof input === 'object' ? (input as { threadId?: unknown; location?: unknown }) : {}
+  if (typeof scope.location === 'string' && ['local', 'worktree', 'cloud', 'remote'].includes(scope.location))
+    return `runtime:${scope.location}`
+  return scope.threadId ? 'runtime:status' : 'runtime:project'
 }
 
 export type HostedWorkspaceConnection = {
@@ -50,6 +89,10 @@ export type HostedWorkspaceStatus = {
     projectName: string
     reconnectStatus?: 'connecting' | 'retrying' | 'needs-approval'
     reconnectMessage?: string
+    /** Why Desktop's last automatic connect of this folder failed, while it keeps retrying (newer Desktop only). */
+    reconnectReason?: string
+    /** When Desktop next retries this folder on its own (epoch ms), while `retrying` (newer Desktop only). */
+    reconnectRetryAt?: number
   }>
 }
 
@@ -126,7 +169,7 @@ export type HostedBrowserLayout = HostedBrowserScope & {
   tabId: string
   /** CSS pixels in the hosted page; null detaches the view without stopping its agent. */
   bounds: { x: number; y: number; width: number; height: number } | null
-  /** Scroll position within a fixed-size preview (CSS pixels). */
+  /** Scroll position within a fixed-size preview (window pixels). Only a Desktop with `onPan` (0.0.202 to 0.0.204) reads it; newer ones fit the page. */
   scroll?: { x: number; y: number }
   /** Keep a still image under a web menu while the native view is detached. */
   occluded?: boolean
@@ -168,6 +211,8 @@ export type HostedNativeAgent = {
   harness: 'claude-code' | 'codex'
   installed: boolean
   signedIn?: boolean
+  /** Connected to the account in Settings → Model Providers (agent-logins.ts). */
+  connected?: boolean
   pending?: boolean
   needsUpdate?: boolean
   canInstall: boolean
@@ -178,12 +223,31 @@ export type HostedNativeAgentsRequest = {
   harness?: 'claude-code' | 'codex'
 }
 
+/** A folder Claude Code, Codex or Cursor worked in on this computer, as the page may see it: names
+ * and a window-scoped id, never a path. */
+export type HostedRecentProjectFolder = {
+  id: string
+  name: string
+  /** The containing folder's name, to tell two `web` folders apart. */
+  parentName: string
+  sources: Array<'claude-code' | 'codex' | 'cursor'>
+  lastActiveAt: string | null
+}
+
 /** Folder paths stay in Electron; the hosted form receives only a scoped selection receipt. */
 export type HostedLocalProjectInput = {
   id: string
   name: string
   folderId?: string
   templateId?: string
+}
+
+/** This computer's install id (as Cloud lists its devices) and its servers. */
+export type LocalMcpHostList = {
+  deviceId: string | null
+  servers: import('./local-mcp').LocalMcpServerView[]
+  /** Whether those servers reached the account's chats. Builds before 11-12 omit it. */
+  cloud?: import('./local-mcp').LocalMcpCloudStatus
 }
 
 export type HostedWorkspaceHost = {
@@ -213,6 +277,16 @@ export type HostedWorkspaceHost = {
     repair(input: { kind: import('../doctor/types').DoctorRepairKind; ref?: string }): Promise<import('../doctor/types').DoctorRepairResult>
     undo(undoRef: string): Promise<import('../doctor/types').DoctorRepairResult>
   }
+  /**
+   * Integrations > Custom: MCP servers on this computer (local-mcp.ts). Builds without it omit the
+   * key, and Integrations lists only the account's other computers' servers.
+   */
+  localMcp?: {
+    list(): Promise<LocalMcpHostList>
+    add(server: import('./local-mcp').LocalMcpAddInput): Promise<LocalMcpHostList>
+    remove(id: string): Promise<LocalMcpHostList>
+    setEnabled(id: string, enabled: boolean): Promise<LocalMcpHostList>
+  }
   /** Mirrors cloud-managed local work for the native quit confirmation. */
   activity?: {
     report(busy: boolean): Promise<void>
@@ -228,6 +302,15 @@ export type HostedWorkspaceHost = {
     action(action: import('./desktop-update').UpdateAction): Promise<string>
     check(): Promise<import('./desktop-update').UpdateCheckResult>
     onCard(listener: (card: import('./desktop-update').UpdateCard | null) => void): () => void
+  }
+  /**
+   * Settings > General > Discord: the "Playing Freebuff" Rich Presence switch
+   * (freebuff-desktop/electron/discord-presence.cjs). `null` when the build has
+   * no presence. Older builds omit the key, and the page hides the switch.
+   */
+  discordPresence?: {
+    enabled(): Promise<boolean | null>
+    setEnabled(enabled: boolean): Promise<boolean | null>
   }
   /** Open a reviewed HTTP(S) authorization link in the system browser. */
   openExternal?(url: string): Promise<void>
@@ -262,11 +345,27 @@ export type HostedWorkspaceHost = {
   /** This native build branches a forked chat's Claude Code or Codex session (`forkSession` on
    *  `harness_start`), so the sidebar offers Fork on its chats. Older builds omit it. */
   chatFork?: true
+  /** This native build forks a chat in its own worktree into a worktree of the fork's own
+   *  (`runtime` with `fork`, Desktop hosted-runtime.ts `worktreeFork`). Older builds omit it. */
+  worktreeFork?: true
   /** This native build runs a side chat's turns read-only (`readOnly` on `harness_start`), so the
    *  chat menu offers Side chat on its chats. Older builds omit it. */
   sideChat?: true
+  /** This native build resumes a rolled-back Claude Code chat at its kept turn (`resumeSessionAt`
+   *  on `harness_start`), so Roll back and Edit are offered on its messages. Older builds omit it. */
+  claudeRollback?: true
+  /** This native build forks a rolled-back Codex chat's thread through its kept turn
+   *  (`resumeSessionAt` on `harness_start`, `thread/fork` with `lastTurnId`), so Edit is offered on
+   *  its messages. Older builds omit it. */
+  codexRollback?: true
+  /** This native build forks a Codex thread before a turn (`forkBeforeTurnId` on `harness_start`),
+   *  so a Codex chat's side chat opens while its turn runs. Older builds omit it. */
+  codexForkBeforeTurn?: true
   files?: import('./hosted-files').HostedFilesHost
   git?: import('./hosted-git').HostedGitHost
+  /** A local Claude Code or Codex chat's background tasks and subagents (`hosted-tasks.ts`). Older
+   *  builds omit it; builds before Codex's answer a Codex chat with no process. */
+  tasks?: import('./hosted-tasks').HostedTasksHost
   /** Open a project's or chat's folder in an app on this computer. Older builds omit it. */
   openIn?: import('./hosted-open-in').HostedOpenInHost
   protocolVersion: typeof HOSTED_WORKSPACE_PROTOCOL_VERSION
@@ -287,6 +386,11 @@ export type HostedWorkspaceHost = {
     /** A new worktree chat's first message: titled to name the chat and its branch. Sent only
      * when discovery answered `supportsWorktreeTitle`. */
     prompt?: string
+    /**
+     * Fork this chat, which runs in its own worktree, into a new worktree with a copy of its files
+     * (`worktreeFork`). `chatId` is the fork's id, kept across retries. Answered in `forked`.
+     */
+    fork?: { chatId: string }
   }): Promise<{
     /** `remote`: the chat runs on another of the account's computers, which is awake. */
     location: 'local' | 'worktree' | 'cloud' | 'remote'
@@ -296,11 +400,21 @@ export type HostedWorkspaceHost = {
     model?: string
     /** Shown grayed out, with why: `no-checkout`, this computer has no clone of the project's
      * repository; `origin-unavailable`, the computer its folder is on does not answer; `origin-only`,
-     * only that computer can start it (Cloud, which it uploads). */
+     * only that computer can start it (Cloud, which it uploads); `cloud-only`, a new chat in a Cloud
+     * project with no folder on this computer (the page sets it: Local downloads an existing chat). */
     unavailable?: Array<{
       location: 'local' | 'worktree' | 'cloud' | 'remote'
-      reason: 'no-checkout' | 'origin-unavailable' | 'origin-only'
+      reason: 'no-checkout' | 'origin-unavailable' | 'origin-only' | 'cloud-only'
     }>
+    /**
+     * Multiplayer: this chat is one a teammate shared, on their computer, and this Desktop forks it
+     * here: `location: 'local'` copies its files into a new local project of this account's and
+     * answers the fork in `forked` (shared-fork.ts). Older Desktops omit it, and fork nothing.
+     */
+    sharedFork?: true
+    /** The fork a `location: 'local'` request made of a teammate's shared chat, or a `fork` request
+     * made of a worktree chat. */
+    forked?: { chat: import('./history').CloudHistoryChat; projectId: string }
     supportsWorktreeSourceBranch?: boolean
     supportsWorktreeTitle?: boolean
     /**
@@ -310,6 +424,12 @@ export type HostedWorkspaceHost = {
     supportsOpener?: boolean
     worktreeSourceBranch?: string | null
     progress?: HostedRuntimeProgress
+    /**
+     * A move that started and did not finish (its request failed, or Desktop quit). Another choice
+     * is refused until it finishes: a request for this location and branch finishes it. Builds
+     * before 11-18 omit it.
+     */
+    pendingMove?: { location: 'local' | 'worktree' | 'cloud'; sourceBranch?: string }
     /** Display-only metadata resolved by native code for the authenticated chat. */
     workspace?: {
       projectName: string
@@ -360,6 +480,7 @@ export type HostedWorkspaceHost = {
       request: HostedBrowserScope & { action: HostedBrowserAction },
     ): Promise<HostedBrowserSnapshot>
     layout(request: HostedBrowserLayout): Promise<void | { image: string }>
+    /** Set by a Desktop that pans a fixed page larger than its slot (0.0.202 to 0.0.204). Newer Desktops fit the page and omit it. */
     onPan?(callback: (scope: HostedBrowserScope, tabId: string, delta: { x: number; y: number }) => void): () => void
     onChanged?(
       listener: (
@@ -381,6 +502,9 @@ export type HostedWorkspaceHost = {
     /** Removing a project: this computer lets go of its folder for it, if it has one. `shared`:
      * the folder had joined another computer's project, which stays (older builds omit it). */
     forget?(input: { projectId: string }): Promise<{ shared: boolean } | null>
+    /** Newest first, at most eight; older builds omit both. Opening one enrolls it like the picker. */
+    recentFolders?(): Promise<HostedRecentProjectFolder[]>
+    openRecentFolder?(id: string): Promise<HostedWorkspaceConnection | null>
   }
   openLocalProject(): Promise<HostedWorkspaceConnection | null>
   disconnect(sessionId: string): Promise<void>

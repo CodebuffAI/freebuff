@@ -108,9 +108,12 @@ export type LoadLocalAgentsResult = {
 
 const agentFileExtensions = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs'])
 
+// `vendor` is skipped because other tools install third-party code under the
+// shared `~/.agents/vendor`, and importing it runs that code in the host.
 const shouldSkipAgentDirectory = (name: string): boolean =>
   name.startsWith('.') ||
   name === 'node_modules' ||
+  name === 'vendor' ||
   name === 'scripts' ||
   name === 'skills' ||
   name.startsWith('skills-')
@@ -127,9 +130,9 @@ const isLoadableAgentFileName = (fileName: string): boolean => {
 /**
  * List every file under `dir` that `loadLocalAgents` would import: `.ts`,
  * `.tsx`, `.js`, `.mjs` or `.cjs`, minus `.d.ts` and test files, skipping
- * `skills/`, `scripts/`, `node_modules` and dot-directories. Hosts use this to
- * decide whether a repository-scoped `.agents` directory contains anything
- * executable before importing it.
+ * `skills/` (and `skills-` prefixed), `scripts/`, `vendor/`, `node_modules` and
+ * dot-directories. Hosts use this to decide whether a repository-scoped
+ * `.agents` directory contains anything executable before importing it.
  *
  * @returns Absolute file paths; empty when the directory does not exist.
  */

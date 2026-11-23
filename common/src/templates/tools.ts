@@ -30,7 +30,7 @@ export const TEMPLATE_TOOL_SPECS: TemplateToolSpec[] = [
   {
     name: 'template_apply',
     description:
-      'Install a starter template into this workspace: downloads the template and writes its files into the project root. Refuses if any of the template’s top-level files already exist here, so use it only for a new or empty project, and only when the user asked for a template or their request clearly matches one. Afterwards read the template’s README.md and the files you need, then change names, copy, data, colours, images and structure until it matches the user’s request, and tell the user you started from the template.',
+      'Install a starter template into this workspace: downloads the template and writes its files into the project root. Refuses if any of the template’s top-level files already exist here, so use it only for a new or empty project, and only when the user asked for a template or their request clearly matches one. Afterwards read the template’s README.md and the files you need, adapt it as needed to the user’s request, and tell the user you started from the template. Follow its run commands: websites have browser previews, command-line tools use terminal output, and browser extensions run installed in a browser.',
     shape: { id: TEMPLATE_ARGS.id },
   },
 ]
