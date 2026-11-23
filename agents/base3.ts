@@ -154,7 +154,9 @@ export function createBase3(
     options.compaction ?? compactionPolicyForModel(model)
   const leanGuidance =
     lean && compactContext.maxContextLength
-      ? `\n${leanContextGuidance(compactContext.maxContextLength)}\n`
+      ? `\n${leanContextGuidance(compactContext.maxContextLength, {
+          workspace: options.workspace,
+        })}\n`
       : ''
   const batching = options.batching === true && batchingModel && !lean
   return {

@@ -9,10 +9,22 @@ import { compactionThreshold } from '@codebuff/common/constants/compaction-polic
  * often a run compacted. Telling the model to save context made it do less
  * work until the second paragraph said it must not, and the write_todos line
  * is what lets it resume after a pass (remaining todos survive in the
- * summary).
+ * summary). Workspace roots have no write_todos, so for them that line is a
+ * short plan in the transcript instead.
  */
-export function leanContextGuidance(maxContextLength: number): string {
+export function leanContextGuidance(
+  maxContextLength: number,
+  options: { workspace?: boolean } = {},
+): string {
   const condensedAt = Math.round(compactionThreshold(maxContextLength) / 1000)
+  // Desktop and Cloud workspace roots have no write_todos tool
+  // (agents/base3.ts drops it), so their plan has to live in the transcript.
+  const planGuidance = options.workspace
+    ? `- For any task with more than a couple of steps, keep a short plan in your reply and update it as you go. This workspace has no to-do tool; the plan in the transcript is what you check after condensing.`
+    : `- For any task with more than a couple of steps, write the plan with write_todos before editing and keep it current. Your remaining todos survive condensing, so they are how you pick up where you left off; without them you lose track of what is done.`
+  const stayGuidance = options.workspace
+    ? `- Stay within the request. After condensing, check your plan and the request before starting anything new rather than broadening the change.`
+    : `- Stay within the request. After condensing, check your todos and the request before starting anything new rather than broadening the change.`
   return `# Context budget
 
 Your context is small: everything you read or run stays in this conversation. When it grows past ~${condensedAt}k tokens it is condensed automatically: you keep the user's request, a log of your earlier messages and tool calls, the most recent file reads, and an outline with line numbers of the other files you read. Old tool output is gone after that, and files you edited are not carried over; re-read only the window you need, using the outline's line numbers.
@@ -24,7 +36,7 @@ The budget limits how you read, never how much of the task you do. Do every part
 - Don't re-read lines you have already seen unless the file changed since.
 - Keep terminal output short: filter long output (grep, head, tail -n 50) while preserving the exit status. Still run the typecheck and the tests that cover your change.
 - Edit with str_replace rather than rewriting whole files.
-- For any task with more than a couple of steps, write the plan with write_todos before editing and keep it current. Your remaining todos survive condensing, so they are how you pick up where you left off; without them you lose track of what is done.
-- Stay within the request. After condensing, check your todos and the request before starting anything new rather than broadening the change.
+${planGuidance}
+${stayGuidance}
 - Before finishing, code_search for remaining references to anything you renamed, removed or changed the signature of, including tests, and update them.`
 }
