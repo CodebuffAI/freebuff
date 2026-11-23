@@ -225,6 +225,7 @@ type TextSlot = {
   elementId?: string
   elementField?: DeckMatch['elementField']
   max: number
+  min?: number
   get: (slide: Slide) => string | undefined
   set: (slide: Slide, text: string) => Slide
 }
@@ -243,7 +244,16 @@ function textSlots(slide: Slide, includeNotes: boolean): TextSlot[] {
     field,
     max,
     get: (s) => s[field],
-    set: (s, text) => ({ ...s, [field]: text }),
+    set: (s, text) => {
+      const next = { ...s, [field]: text }
+      // Optional section metadata must be absent rather than empty. A description
+      // cannot survive removal of the section it describes.
+      if (!text && (field === 'section' || field === 'sectionDescription')) {
+        delete next[field]
+        if (field === 'section') delete next.sectionDescription
+      }
+      return next
+    },
   })
   const slots: TextSlot[] = [
     plain('title', LIMITS.title),
@@ -280,6 +290,7 @@ function textSlots(slide: Slide, includeNotes: boolean): TextSlot[] {
         elementId: element.id,
         elementField: key,
         max,
+        min: key === 'title' ? 1 : 0,
         get: (s) => {
           const found = s.elements?.find((item) => item.id === element.id) as Record<string, unknown> | undefined
           return typeof found?.[key] === 'string' ? (found[key] as string) : undefined
@@ -337,8 +348,8 @@ export type ReplaceResult = { deck: Deck; replaced: number; skipped: number }
 /**
  * Replace matches of `query` with `replacement`: every match, or only `only` (one match from
  * `findInDeck`, by slide, field, element and offset). A field the replacement would push past its
- * cap is left alone and counted in `skipped`; a title or other single-line field never gets a
- * newline. One deck out, so one undo step.
+ * length bounds is left alone and counted in `skipped`; empty optional section metadata is
+ * removed. A title or other single-line field never gets a newline. One deck out, so one undo step.
  */
 export function replaceInDeck(
   deck: Deck,
@@ -369,7 +380,7 @@ export function replaceInDeck(
         return value
       })
       if (!count) continue
-      if (result.length > slot.max) {
+      if (result.length > slot.max || result.length < (slot.min ?? 0)) {
         skipped += count
         continue
       }

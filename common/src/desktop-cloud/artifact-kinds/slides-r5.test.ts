@@ -218,6 +218,55 @@ describe('find and replace', () => {
     const long = replaceInDeck(deck, 'Q3 results', 'x'.repeat(500))
     expect(long).toMatchObject({ replaced: 0, skipped: 1 })
   })
+
+  test('empty replacements keep section metadata and required link titles saveable', () => {
+    // Live regression: removing the cover's section label made the entire deck unsaveable.
+    for (const description of [undefined, 'RemoveMe details']) {
+      const before = deckOf([
+        { id: 's', layout: 'title', title: 'Hello', section: 'RemoveMe', ...(description ? { sectionDescription: description } : {}) },
+        { id: 'other', layout: 'title', title: 'Keep me', section: 'Keep me' },
+      ], { title: 'Probe' })
+      const snapshot = json(before)
+      expect(parseDeck(before).ok).toBe(true)
+      const match = findInDeck(before, 'RemoveMe')[0]
+      for (const only of [undefined, match]) {
+        const result = replaceInDeck(before, 'RemoveMe', '', {}, only)
+        expect(result).toMatchObject({ replaced: 1, skipped: 0 })
+        expect(parseDeck(result.deck)).toEqual({ ok: true, deck: result.deck })
+        expect(result.deck.slides[0]).toEqual({ id: 's', layout: 'title', title: 'Hello' })
+        expect(result.deck.slides[1]).toBe(before.slides[1])
+        expect(before).toEqual(snapshot) // History retains the exact pre-edit deck.
+      }
+    }
+
+    const before = deckOf([{
+      id: 's', layout: 'title', title: 'RemoveMe', section: 'Keep RemoveMe', sectionDescription: 'RemoveMe',
+      elements: [{ id: 'link', type: 'link', x: 0, y: 0, w: 100, h: 100, url: 'https://example.com', title: 'RemoveMe', description: 'RemoveMe' }],
+    }])
+    const snapshot = json(before)
+    expect(parseDeck(before).ok).toBe(true)
+    const matches = findInDeck(before, 'RemoveMe')
+    const description = matches.find((match) => match.field === 'sectionDescription')!
+    const one = replaceInDeck(before, 'RemoveMe', '', {}, description)
+    expect(one).toMatchObject({ replaced: 1, skipped: 0 })
+    expect(one.deck.slides[0]).not.toHaveProperty('sectionDescription')
+    expect(one.deck.slides[0].section).toBe('Keep RemoveMe')
+    expect(one.deck.slides[0].title).toBe('RemoveMe')
+    expect(parseDeck(one.deck).ok).toBe(true)
+
+    const linkTitle = matches.find((match) => match.elementField === 'title')!
+    const skipped = replaceInDeck(before, 'RemoveMe', '', {}, linkTitle)
+    expect(skipped).toEqual({ deck: before, replaced: 0, skipped: 1 })
+    expect(skipped.deck).toBe(before)
+    const all = replaceInDeck(before, 'RemoveMe', '')
+    expect(all).toMatchObject({ replaced: 4, skipped: 1 })
+    expect(all.deck.slides[0]).toEqual({
+      id: 's', layout: 'title', title: '', section: 'Keep ',
+      elements: [{ ...before.slides[0].elements![0], description: '' }],
+    })
+    expect(parseDeck(all.deck)).toEqual({ ok: true, deck: all.deck })
+    expect(before).toEqual(snapshot)
+  })
 })
 
 describe('import', () => {
