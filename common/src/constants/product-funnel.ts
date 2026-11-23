@@ -129,7 +129,7 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
   }),
   /** Settings → Usage → Share, the "year in Freebuff" card's link (docs/freebuff-account-hub.md). */
   year: Object.freeze({ link: 'year_link', email: 'year_email' }),
-  /** The invite dialog when lifetime tokens pass a tier (`referral_token_milestones_2026_11`). */
+  /** The invite dialog when lifetime tokens pass a tier (docs/referrals.md). */
   token_milestone: Object.freeze({
     link: 'token_milestone_link',
     email: 'token_milestone_email',
