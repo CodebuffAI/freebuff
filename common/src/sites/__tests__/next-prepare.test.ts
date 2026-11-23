@@ -1,8 +1,15 @@
 import { afterEach, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { bundleSite } from '../local-files'
 import { withNodeStdinProbe } from './node-transport-fixture'
@@ -187,6 +194,50 @@ test('prepares the same private cache and public artifact contract without repla
     ),
   ).toHaveLength(2)
 })
+
+// Incident guard: every first Next.js publish failed on Node 20, 24 and 26.
+// The program asked Node for the adapter before installing it, Node kept the
+// miss, and the build step right after the install could not find the adapter.
+// The adapter's entry sits under dist/, as the real one does: a package with an
+// index.js at its root is still found and hides the failure.
+test.skipIf(process.platform === 'win32')(
+  'a first build installs the adapter and finds it in the same run',
+  async () => {
+    const root = await fixture()
+    const adapter = join(root, 'node_modules/@opennextjs/cloudflare')
+    await rm(join(adapter, 'index.js'))
+    await mkdir(join(adapter, 'dist/api'))
+    await writeFile(join(adapter, 'dist/api/index.js'), '')
+    await writeFile(
+      join(adapter, 'package.json'),
+      JSON.stringify({
+        name: '@opennextjs/cloudflare',
+        version: NEXT_ADAPTER_VERSION,
+        type: 'module',
+        main: './dist/api/index.js',
+        exports: { '.': './dist/api/index.js' },
+      }),
+    )
+    const staged = join(root, 'staged')
+    await mkdir(staged)
+    await rename(join(root, 'node_modules/@opennextjs'), join(staged, 'scope'))
+    const bin = join(root, 'install-bin')
+    await mkdir(bin)
+    await writeFile(
+      join(bin, 'npm'),
+      `#!/bin/sh\nmv '${join(staged, 'scope')}' node_modules/@opennextjs\n`,
+      { mode: 0o755 },
+    )
+    const previousPath = process.env.PATH
+    try {
+      process.env.PATH = bin + delimiter + (previousPath ?? '')
+      expect((await prepareNextSite(root)).runtime).toBe('opennext')
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH
+      else process.env.PATH = previousPath
+    }
+  },
+)
 
 test('refuses to overwrite an existing deployment config or unrelated output directory', async () => {
   const root = await fixture()
