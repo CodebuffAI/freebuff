@@ -5,6 +5,22 @@ import { serializeLogData, toJsonSafeLogData } from '../log-data'
 const parse = (data: unknown) => JSON.parse(serializeLogData(data)!)
 
 describe('serializeLogData', () => {
+  test('groups account-bound models in stream recovery logs without exposing handles', () => {
+    const handle = 'fbm1.synthetic-catalog-handle'
+    for (const metric of [
+      'stream_recovery_detected',
+      'stream_recovery_rescued',
+      'stream_recovery_gave_up',
+      'stream_silent_timeout_continued',
+    ]) {
+      const data = { metric, model: handle, runId: 'run-123' }
+      expect(parse(data)).toEqual({ ...data, model: 'catalog' })
+      expect(data.model).toBe(handle)
+      const plain = { ...data, model: 'openrouter/example' }
+      expect(parse(plain)).toEqual(plain)
+    }
+  })
+
   // JSON.stringify(new Error('x')) is '{}': the reason never reached Axiom.
   test('an error keeps its name and message', () => {
     const row = parse({ error: new TypeError('fetch failed') })
