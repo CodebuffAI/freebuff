@@ -367,6 +367,21 @@ export enum AnalyticsEvent {
   // streak loaded). Who actually looks at the streak.
   FREEBUFF_ARTIFACT_USAGE = 'freebuff.artifact_usage',
   FREEBUFF_STREAK_OPENED = 'freebuff.streak.opened',
+  // Workspace waits (web and hosted Desktop), freebuff/web/src/components/workspace/workspace-timing.ts.
+  // `surface`: web | desktop; `sample_rate`: the share reported, where sampled.
+  // A sampled chat tab switch, from the click, key or sidebar row to the frame after it painted.
+  // `duration_ms`; `tab_count`: tabs open; `start`: warm (shown before, still mounted) |
+  // prerendered (mounted hidden after launch, never shown) | cold (mounted by the switch);
+  // `input`: click | keyboard | sidebar.
+  FREEBUFF_TAB_SWITCHED = 'freebuff.tab_switched',
+  // Once per page load: navigation start to the frame that drew the first chat (or the new-chat
+  // screen) after the saved tabs were restored. `duration_ms`; `screen`: chat | new_chat. Not sent
+  // when the window was hidden before it was ready.
+  FREEBUFF_WORKSPACE_READY = 'freebuff.workspace_ready',
+  // A sampled share of page loads: the visit's slowest interaction (INP, web-vitals), sent when the
+  // page is hidden or left. `inp_ms`; `rating`: good | needs-improvement | poor; `target`: the
+  // element's CSS selector; `interaction`: pointer | keyboard.
+  FREEBUFF_WORKSPACE_INP = 'freebuff.workspace_inp',
   // The workspace's Integrations page, to rank INTEGRATION_CATEGORIES by what
   // people want. `action`: category_opened (`category`) | connect_clicked
   // (`app`, `from`: a category id | search | connected, `position`: 0-based
