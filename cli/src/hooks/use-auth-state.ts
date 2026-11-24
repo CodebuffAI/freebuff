@@ -50,7 +50,7 @@ export const useAuthState = ({
   )
   const [user, setUser] = useState<User | null>(null)
   const authToken = getAuthToken()
-  useLayoutEffect(() => adReports.syncAccount(), [authToken])
+  useLayoutEffect(() => adReports.reset(), [authToken])
 
   // Update authentication state when requireAuth changes
   useEffect(() => {

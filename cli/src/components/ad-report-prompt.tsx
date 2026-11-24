@@ -35,20 +35,11 @@ export function AdReportPrompt({
   const [value, setValue] = useState('')
   const [cursor, setCursor] = useState(0)
   const [field, setField] = useState(0)
-  const { entry } = prompt
-  const status = useSyncExternalStore(
-    (listener) => {
-      entry.listeners.add(listener)
-      return () => {
-        entry.listeners.delete(listener)
-      }
-    },
-    () => entry.status,
-  )
+  const { status } = prompt
   const busy = status === 'sending'
   const valid = AdReportReasonSchema.safeParse(value).success
   const submit = () => {
-    if (valid && !busy) void registry.submit(entry, value, prompt.send)
+    if (valid && !busy) void registry.submit(value)
   }
   useKeyboard((key) => {
     if (busy) return
@@ -87,7 +78,7 @@ export function AdReportPrompt({
       style={{ flexDirection: 'column', paddingLeft: 1, paddingRight: 1 }}
     >
       <text style={{ fg: theme.foreground }}>
-        {`Report ad ${entry.id}: ${sanitizeTerminalText(entry.snapshot.title)}`}
+        {`Report ad: ${sanitizeTerminalText(prompt.ad.title)}`}
       </text>
       <text style={{ fg: theme.secondary }}>
         {`Explain the problem (${AD_REPORT_REASON_MIN_LENGTH}–${AD_REPORT_REASON_MAX_LENGTH} characters).`}

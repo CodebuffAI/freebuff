@@ -445,12 +445,10 @@ export const Chat = ({
       )
         return
       if (control === 'report') {
-        const entry = adReports.register(
-          toSponsoredProposalAdReport(block.proposal, 'cli'),
-        )
         const proposalId = block.proposal._id
         patchProposalBlock(target, { menuOpen: false })
-        adReports.open(entry, async (reportSnapshot) => {
+        const ad = toSponsoredProposalAdReport(block.proposal, 'cli')
+        adReports.open(ad, async (reportSnapshot) => {
           if (getAuthToken() !== authToken)
             throw new Error('The report account changed')
           patchProposalBlock(target, { busy: true }, proposalId)
@@ -2491,7 +2489,7 @@ export const Chat = ({
         )}
 
         {adReportPrompt ? (
-          <AdReportPrompt key={adReportPrompt.entry.id} prompt={adReportPrompt} />
+          <AdReportPrompt prompt={adReportPrompt} />
         ) : freebuffControlsOpen && !askUserState ? (
           <FreebuffChatControls />
         ) : reviewMode ? (
