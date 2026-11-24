@@ -265,9 +265,10 @@ describe('Freebuff: live turn against the backend', () => {
         env: { CODEBUFF_API_KEY: apiKey!, FREEBUFF_CONFIG_DIR: configDir },
       })
 
-      // Nothing is admitted until the first send, and the chat header says so.
+      // Nothing is admitted until the first send: the chat header shows no session.
       const chat = await session.waitForText(FREEBUFF_CHAT_READY_TEXT, 90_000)
       expect(chat).not.toContain('Press ENTER to login')
+      expect(chat).not.toContain('Session active')
 
       // Picking a model is a preference for the next send.
       await session.send('/model')
