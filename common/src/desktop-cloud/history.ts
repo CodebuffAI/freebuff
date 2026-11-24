@@ -114,6 +114,19 @@ export type CloudHistoryChat = {
    * holds names it as `holderInstanceId`. Empty when it has none. Absent from older servers.
    */
   instanceId?: string
+  /**
+   * A staged undo (web chat-revert.ts): runs from `runId` on are hidden and the files they changed
+   * were put back. Redo cancels it; the next prompt makes it permanent (`rollbackChat`). Absent from
+   * older servers.
+   */
+  revert?: CloudChatRevert | null
+}
+export type CloudChatRevert = {
+  runId: string
+  /** The files the undo put back. */
+  files: string[]
+  /** Reverted runs whose file changes could not be put back (no snapshot). */
+  unrestored: number
 }
 /**
  * Each settled run raises `revision`; opening the chat on any device acknowledges through it.
