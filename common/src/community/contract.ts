@@ -239,6 +239,11 @@ export type CommunityPost = {
    */
   embeddable?: false
   /**
+   * Sent on a post's own page when the site answered with an error status
+   * (403, 404, 429...): the page says it is not loading, with that code.
+   */
+  siteStatus?: number
+  /**
    * Sent in the feed, for a post worth a second look: `hot` is among what is
    * being liked and opened most these days, `rising` is young and already
    * getting attention. Most posts carry neither.
