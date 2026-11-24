@@ -94,7 +94,7 @@ describe('the catalog with Show all models off', () => {
         models: [{ ...only!, id: only!.key }],
       }).map((preset) => [preset.label, preset.reasoningEffort]),
     ).toEqual([
-      ['Fast', 'low'],
+      ['Instant', 'low'],
       ['Default', 'high'],
       ['Max', 'max'],
     ])

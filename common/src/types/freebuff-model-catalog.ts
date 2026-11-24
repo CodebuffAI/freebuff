@@ -265,6 +265,17 @@ export const freebuffModelCatalogSchema = z.object({
    *  model. A client that does not read it shows no picker. Absent: no
    *  switch. */
   hybridModelPicker: z.boolean().optional(),
+  /** The picker A/Bs of 2026-12 (every arm of `powerful_toggle_2026_12` and
+   *  `full_access_picker_2026_12`; same module): whichever picker the other
+   *  flags draw, its reasoning slider is the filled one (Instant, Medium,
+   *  High), shown wherever the model has more than one level. A client that
+   *  does not read it draws that picker with its old slider. */
+  filledSlider: z.boolean().optional(),
+  /** `powerful_toggle_2026_12`'s `no_toggle` arm, sent with
+   *  `hybridModelPicker`: the Powerful, Balanced, Free sequence with no
+   *  switch, so the account cannot turn it off to list every model. A client
+   *  that does not read it draws the switch. */
+  powerfulFixed: z.boolean().optional(),
   /** False on a phone's read while `FREEBUFF_APP_MODEL_PICKER`
    *  (constants/freebuff-model-picker.ts) is off: the iOS and Android apps
    *  draw no Freebuff model picker, whatever `hideModelPicker` or Advanced
