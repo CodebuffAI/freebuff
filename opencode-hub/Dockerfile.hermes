@@ -1,0 +1,24 @@
+# Hermes Agent (NousResearch) memakai installer resmi, non-interaktif.
+# Setup wizard butuh TTY, jadi dijalankan terpisah:
+#   docker compose run --rm -it hermes hermes setup
+FROM python:3.12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+	HERMES_INSTALL_CHANNEL=stable \
+	HERMES_HOME=/root/.hermes
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends \
+		git curl ca-certificates tini procps ripgrep \
+	&& rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://hermes-agent.nousresearch.com/install.sh \
+	| bash -s -- --non-interactive
+
+# Installer menaruh binary di salah satu dari dua lokasi tergantung versi.
+ENV PATH="/root/.hermes/hermes-agent/.hermes/bin:/root/.hermes/bin:${PATH}"
+
+WORKDIR /workspace
+
+ENTRYPOINT ["tini", "--"]
+CMD ["hermes", "gateway", "start"]

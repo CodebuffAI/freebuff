@@ -1,0 +1,9 @@
+# Berkas ini di-import oleh Caddyfile di dalam blok domain hub.
+# install.sh menulis ulang isinya dengan hash password Anda:
+#   basic_auth {
+#       admin $2a$14$...
+#   }
+# Tanpa install.sh, berkas kosong ini berarti TIDAK ADA login sama sekali —
+# siapa pun yang tahu domain bisa memakai opencode (termasuk filesystem-nya).
+# Buat hash manual:
+#   docker compose run --rm caddy caddy hash-password --plaintext 'PASSWORD-PANJANG'

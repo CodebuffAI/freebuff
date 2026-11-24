@@ -168,7 +168,22 @@ export type CloudHistoryChatFork = {
   into?: { projectId?: string; deviceExecution: import('./device-execution').DeviceExecutionTarget }
 }
 /** Multiplayer: the owner of a chat or project another account shared with the caller. */
-export type CloudHistorySharer = { email: string; name: string | null }
+/**
+ * Who shared a chat or project with the caller. `role` is the caller's on a shared chat: a
+ * `viewer` reads and follows it, an `editor` also sends, steers and cancels. Absent from older
+ * servers, which gave every teammate an editor's access.
+ */
+export type CloudHistorySharer = {
+  email: string
+  name: string | null
+  role?: 'viewer' | 'editor'
+  /**
+   * On a chat's attachment for its editor: which of the owner's own logins a send may run on
+   * (a teammate's send runs on the owner's account, as Claude Code or Codex only). Whether each
+   * is connected, never anything of the login itself.
+   */
+  agents?: { claudeCode: boolean; codex: boolean }
+}
 /**
  * Open a side chat beside a chat on the computer it runs on: a fork, read-only and hidden from
  * chat lists, made from the chat's last saved turn even while a turn runs. Deleting it (or its

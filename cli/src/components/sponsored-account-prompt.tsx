@@ -229,8 +229,8 @@ export const SponsoredAccountPrompt: React.FC<{
         <>
           <text style={{ fg: theme.foreground, wrapMode: 'word' }}>
             {ask.opened
-              ? `Create a free account, or sign in, in the browser tab I just opened. That’s the last thing I need to finish your free ${ask.offerName}.`
-              : `Create a free account, or sign in, at this link. That’s the last thing I need to finish your free ${ask.offerName}:`}
+              ? `Create a free account, or sign in, in the browser tab I just opened. That’s the last thing I need to finish setting it up.`
+              : `Create a free account, or sign in, at this link. That’s the last thing I need to finish setting it up:`}
           </text>
           {signinUrl ? (
             <TerminalLink

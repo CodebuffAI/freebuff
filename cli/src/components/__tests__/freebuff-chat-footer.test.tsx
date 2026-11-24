@@ -47,7 +47,7 @@ test.each([120, 42])(
       })
       await setup.renderOnce()
       const frame = setup.captureCharFrame().replace(/\s+/g, ' ')
-      expect(frame).toContain('GLM 5.3 Flash • low')
+      expect(frame).toContain('GLM 5.3 Flash • Low')
       expect(frame).toContain('/tmp/project')
       expect(frame).toContain('Chat: Build a game')
     } finally {

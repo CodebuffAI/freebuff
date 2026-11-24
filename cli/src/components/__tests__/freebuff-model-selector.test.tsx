@@ -761,10 +761,10 @@ describe('FreebuffModelSelector tier layout', () => {
       frame.split('\n').find((line) => line.includes(tagline)) ?? ''
     const frame = (await renderSelector()).captureCharFrame()
 
-    expect(rowOf(frame, 'Smart & Fast')).toContain('• high')
+    expect(rowOf(frame, 'Smart & Fast')).toContain('• High')
     const lunaRow = rowOf(frame, 'GPT-6 Luna')
     expect(lunaRow).toContain('Strong all-around')
-    expect(lunaRow).toContain('• high')
+    expect(lunaRow).toContain('• High')
     expect(rowOf(frame, 'MiniMax M3')).not.toContain('Reasoning')
   })
 

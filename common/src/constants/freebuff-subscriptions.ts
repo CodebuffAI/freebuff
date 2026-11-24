@@ -420,7 +420,7 @@ export function freebuffSubscriptionTierDisclaimers(
     // to keep the old name, but this sentence and two account-page labels were
     // left describing a five-day rule that no longer exists.
     `The weekly limit is a rolling ${FREEBUFF_SUBSCRIPTION_FIVE_DAY_WINDOW_DAYS}-day window — it frees up as your oldest sessions age out, rather than resetting on a fixed day`,
-    'Daily hours reset at midnight Pacific; unused ones do not carry over',
+    'Daily hours reset at midnight in your local timezone; unused ones do not carry over',
     'Adds to your free sessions rather than replacing them',
   ]
   out.push('Limits are subject to change')

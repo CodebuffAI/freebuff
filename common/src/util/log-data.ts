@@ -1,4 +1,5 @@
 import { MAX_LOG_DATA_BYTES } from '../schemas/logs'
+import { isFreebuffModelHandle } from '../types/freebuff-model-catalog'
 import { redactErrorFieldForLog, redactQueryErrorForLog } from './log-redaction'
 
 import type { LogLevel } from '../types/contracts/logs'
@@ -170,6 +171,24 @@ function fitLogDataToCap(data: unknown, originalBytes: number): string {
   return fitted
 }
 
+function redactStreamRecoveryModel(data: unknown): unknown {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    return data
+  }
+  const { metric, model } = data as Record<string, unknown>
+  if (
+    typeof metric === 'string' &&
+    (metric.startsWith('stream_recovery_') ||
+      metric.startsWith('stream_silent_timeout_')) &&
+    typeof model === 'string' &&
+    isFreebuffModelHandle(model)
+  ) {
+    // Older clients also send the handle in unmarked error rows.
+    return { ...data, model: 'catalog' }
+  }
+  return data
+}
+
 /**
  * Serialize a log payload to a single string field, tolerating circular refs
  * and capping size. The cap applies to ALL sources so a large `data` payload
@@ -179,8 +198,9 @@ function fitLogDataToCap(data: unknown, originalBytes: number): string {
  * An oversized object keeps the fields that fit (see {@link fitLogDataToCap});
  * only an oversized string or array collapses to a `preview`.
  */
-export function serializeLogData(data: unknown): string | null {
-  if (data == null) return null
+export function serializeLogData(input: unknown): string | null {
+  if (input == null) return null
+  const data = redactStreamRecoveryModel(input)
   let serialized: string
   if (typeof data === 'string') {
     serialized = data

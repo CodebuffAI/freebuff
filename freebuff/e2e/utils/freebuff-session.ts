@@ -4,15 +4,16 @@ import path from 'path'
 
 import { tmuxCapture, tmuxSend, tmuxSendKey, tmuxStart, tmuxStop } from './tmux-helpers'
 
-/** The chat header's line while no session is admitted: on launch, and again once
- *  `/end-session` has released the slot. Chat-first since #4170. */
-export const FREEBUFF_CHAT_READY_TEXT = 'Your first message starts the session.'
+/** The footer's second line under the chat composer, drawn once the chat
+ *  screen is up. Not its first line: a long working directory wraps that one,
+ *  splitting "/model to change". Chat-first since #4170. */
+export const FREEBUFF_CHAT_READY_TEXT = 'for history'
 
 /** Static strings that prove the CLI reached a post-init boot screen. */
 export const FREEBUFF_BOOT_SIGNALS = [
   '█████╗  ██████╔╝', // ASCII logo (full or small variant)
-  // Chat-first startup (#4170): Freebuff opens straight into chat, whose header
-  // box says the first send admits a session and whose footer names the model.
+  // Chat-first startup (#4170): Freebuff opens straight into chat, whose footer
+  // names the model.
   FREEBUFF_CHAT_READY_TEXT,
   '/model to change',
   'Start coding for free',

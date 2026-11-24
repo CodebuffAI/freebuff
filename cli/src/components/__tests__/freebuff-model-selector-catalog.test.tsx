@@ -367,7 +367,7 @@ describe('the chat picker', () => {
     )
     const setup = await render({ selected: 'm-one', onSelectModel: () => {} })
     let frame = setup.captureCharFrame()
-    expect(lineWith(frame, 'Freebuff')).toContain('Freebuff • high')
+    expect(lineWith(frame, 'Freebuff')).toContain('Freebuff • High')
     expect(frame).toContain('Tab reasoning · Enter select · Esc cancel')
     expect(frame).not.toContain('↑↓ choose model')
     flushSync(() => setup.mockInput.pressKey('TAB'))
@@ -407,15 +407,15 @@ describe('the reasoning submenu', () => {
         onSelectModel: () => {},
       })
       expect(lineWith(setup.captureCharFrame(), 'Cheap Model')).toContain(
-        'Cheap Model • high',
+        'Cheap Model • High',
       )
       flushSync(() => setup.mockInput.pressKey('TAB'))
       await setup.renderOnce()
       const frame = setup.captureCharFrame()
       expect(frame).toContain('Cheap Model • Reasoning')
-      expect(frame).toContain('low')
-      expect(frame).toContain('high (default)')
-      expect(frame).toContain('max')
+      expect(frame).toContain('Low')
+      expect(frame).toContain('High (default)')
+      expect(frame).toContain('Max')
       flushSync(() => setup.mockInput.pressKey('ARROW_DOWN'))
       await setup.renderOnce()
       flushSync(() => setup.mockInput.pressEnter())

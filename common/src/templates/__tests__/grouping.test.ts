@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { PICKER_FEATURED_TEMPLATE_IDS, templateCategories } from '../grouping'
+import { templateCategories } from '../grouping'
 
 type Entry = { id: string; kind: 'site' | 'app'; tags: string[] }
 
@@ -26,7 +26,6 @@ describe('templateCategories', () => {
         { id: 'arcade-site', kind: 'site', tags: ['category:game', 'store'] },
       ]),
     ).toEqual([
-      ['Featured', ['store', 'portfolio']],
       ['All', ['saas-landing', 'store', 'portfolio', 'chess', 'crm', 'arcade-site']],
       ['Landing pages', ['saas-landing']],
       ['Stores', ['store']],
@@ -59,7 +58,6 @@ describe('templateCategories', () => {
         { id: 'moodboard', kind: 'app', tags: ['creative'] },
       ]),
     ).toEqual([
-      ['Featured', ['estate-agent', 'moodboard']],
       ['All', ['fintech-landing', 'estate-agent', 'shop', 'blog', 'flappy-bird', 'moodboard']],
       ['Landing pages', ['fintech-landing', 'estate-agent']],
       ['Stores', ['shop']],
@@ -69,21 +67,7 @@ describe('templateCategories', () => {
     ])
   })
 
-  test('Featured lists the picked templates in the picked order, starters never', () => {
-    expect(
-      chips(
-        [
-          { id: 'blank-website', kind: 'site', tags: ['category:starter'] },
-          { id: 'moodboard', kind: 'app', tags: ['category:saas'] },
-          { id: 'crm', kind: 'app', tags: ['category:saas'] },
-          { id: 'crosscut', kind: 'app', tags: ['category:game'] },
-        ],
-        { featured: PICKER_FEATURED_TEMPLATE_IDS, starters: true },
-      )[0],
-    ).toEqual(['Featured', ['crosscut', 'moodboard']])
-  })
-
-  test('a new-project picker drops Featured and keeps starters, in All and their own chip', () => {
+  test('a new-project picker keeps starters, in All and their own chip', () => {
     expect(
       chips(
         [
@@ -91,7 +75,7 @@ describe('templateCategories', () => {
           { id: 'store', kind: 'site', tags: ['category:store'] },
           { id: 'crm', kind: 'app', tags: ['category:saas'] },
         ],
-        { featured: false, starters: true },
+        { starters: true },
       ),
     ).toEqual([
       ['All', ['blank-website', 'store', 'crm']],

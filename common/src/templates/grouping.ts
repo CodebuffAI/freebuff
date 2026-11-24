@@ -5,38 +5,12 @@ import {
 } from './categories'
 
 /**
- * Category chips for a template gallery: optionally Featured, then All, then
- * one chip per template category tag (categories.ts) in that file's order.
+ * Category chips for a template gallery: All, then one chip per template
+ * category tag (categories.ts) in that file's order.
  * Shared by the website builder landing and the TemplatePicker that Desktop
  * and the web workspace use.
  */
-type CategoryTemplate = { id: string; kind: 'site' | 'app'; tags: string[] }
-
-/** Picked for range (light and dark, sites and apps). Ids missing from the catalogue are skipped. */
-export const FEATURED_TEMPLATE_IDS = [
-  'estate-agent',
-  'store',
-  'moodboard',
-  'tasks',
-  'portfolio',
-  'customer-health',
-] as const
-
-/**
- * The template picker's Featured chip (Sites page, new-project dialog, web
- * workspace): the eight showpieces, best first, in this order. Unlike the
- * landing's list it takes games. Ids missing from the catalogue are skipped.
- */
-export const PICKER_FEATURED_TEMPLATE_IDS = [
-  'crosscut',
-  'retro-terminal',
-  'creative-agency',
-  'indie-game',
-  'climate-story',
-  'fusion-energy',
-  'moodboard',
-  'illustration-store',
-] as const
+type CategoryTemplate = { kind: 'site' | 'app'; tags: string[] }
 
 const CHIP_LABEL: Record<TemplateCategory, string> = {
   'landing-page': 'Landing pages',
@@ -68,12 +42,6 @@ export type TemplateChip<T> = { id: string; label: string; templates: T[] }
 
 export type TemplateChipOptions = {
   /**
-   * Lead with a hand-picked Featured chip: `true` for the landing's
-   * {@link FEATURED_TEMPLATE_IDS} in the order given, or a list of ids to show
-   * in that list's order.
-   */
-  featured?: boolean | readonly string[]
-  /**
    * Keep near-empty starter projects, in All and in their own Starters chip.
    * The landing leaves them out; a new-project picker keeps them.
    */
@@ -82,36 +50,16 @@ export type TemplateChipOptions = {
 
 /**
  * The chips, in order, each with its templates in the order given; empty ones
- * are left out. Defaults suit the landing: Featured on, starters out.
+ * are left out. Defaults suit the landing: starters out.
  */
 export function templateCategories<T extends CategoryTemplate>(
   templates: T[],
-  { featured = true, starters = false }: TemplateChipOptions = {},
+  { starters = false }: TemplateChipOptions = {},
 ): TemplateChip<T>[] {
   const kept = starters
     ? templates
     : templates.filter((template) => templateCategory(template) !== 'starter')
-  const byId = new Map(kept.map((template) => [template.id, template]))
-  const picked = new Set<string>(FEATURED_TEMPLATE_IDS)
-  const featuredTemplates =
-    featured === true
-      ? kept.filter((template) => picked.has(template.id))
-      : featured
-        ? featured.flatMap((id) => {
-            const template = byId.get(id)
-            return template ? [template] : []
-          })
-        : []
   return [
-    ...(featured
-      ? [
-          {
-            id: 'featured',
-            label: 'Featured',
-            templates: featuredTemplates,
-          },
-        ]
-      : []),
     { id: 'all', label: 'All', templates: kept },
     ...TEMPLATE_CATEGORIES.map((category) => ({
       id: category,

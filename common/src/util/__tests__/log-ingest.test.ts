@@ -151,6 +151,19 @@ describe('buildLogRows', () => {
     expect(rows).toEqual([])
   })
 
+  test('keeps a client timestamp near receive time and replaces a wrong clock', () => {
+    const at = (timestamp: string) =>
+      buildLogRows({
+        ...base,
+        records: [{ level: 'info', event: 'ordinary.event', timestamp }],
+      })[0]?.timestamp
+    expect(at('2026-08-24T23:55:00.000Z')).toEqual(
+      new Date('2026-08-24T23:55:00.000Z'),
+    )
+    expect(at('1976-04-01T00:02:02.000Z')).toEqual(base.now)
+    expect(at('2118-12-31T23:02:28.000Z')).toEqual(base.now)
+  })
+
   test('leaves ordinary client records unchanged', () => {
     const [row] = buildLogRows({
       ...base,

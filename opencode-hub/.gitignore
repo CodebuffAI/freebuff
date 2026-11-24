@@ -1,0 +1,7 @@
+.runtime/
+.opencode-server-password
+node_modules/
+
+# Hasil install.sh di VPS — berisi password dan hash.
+deploy/.env
+deploy/.env.bak.*

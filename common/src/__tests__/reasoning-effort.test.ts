@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { FreebuffModelOption } from '../constants/freebuff-models'
 import {
   clampReasoningEffort,
+  reasoningEffortLabel,
   reasoningEffortRank,
   REASONING_EFFORTS,
   type ReasoningEffort,
@@ -158,15 +159,16 @@ describe('per-model effort ladders', () => {
     )
   })
 
-  test('DeepSeek exposes the three native V4 efforts on both models', () => {
+  test('DeepSeek exposes thinking off and the three native V4 efforts on both models', () => {
     // One ladder since the Pro 08/13 GA build: DeepSeek documents the same
     // requested→actual mapping for flash and pro, and low is a real template on
     // both. Medium is not, on either, so it must not appear as a rung.
+    // `minimal` is thinking off, the Instant stop (2026-11-24).
     for (const id of [
       FREEBUFF_DEEPSEEK_V4_PRO_MODEL_ID,
       FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID,
     ]) {
-      expect(getFreebuffModelEfforts(id)).toEqual(['low', 'high', 'max'])
+      expect(getFreebuffModelEfforts(id)).toEqual(['minimal', 'low', 'high', 'max'])
       expect(resolveFreebuffReasoningEffort(id, undefined)).toBe('high')
       expect(getFreebuffModelReasoningEffort(id)).toBe('high')
       expect(resolveFreebuffReasoningEffort(id, 'medium')).toBe('high')
@@ -239,4 +241,14 @@ describe('per-model effort ladders', () => {
       ),
     ).toBe('low')
   })
+})
+
+test('a rung is named by its ladder: DeepSeek reads Instant, Medium, High, Max, and Instant never thinks', () => {
+  const name = (ladder: readonly ReasoningEffort[]) =>
+    ladder.map((effort) => reasoningEffortLabel(effort, ladder))
+  expect(name(['minimal', 'low', 'high', 'max'])).toEqual(['Instant', 'Medium', 'High', 'Max'])
+  expect(name(['minimal', 'low', 'high'])).toEqual(['Instant', 'Medium', 'High'])
+  // Elsewhere each rung is itself: an OpenAI `minimal` still thinks.
+  expect(name(EFFORTS_THROUGH_XHIGH)).toEqual(['Minimal', 'Low', 'Medium', 'High', 'Extra high'])
+  expect(name(['low', 'high'])).toEqual(['Low', 'High'])
 })

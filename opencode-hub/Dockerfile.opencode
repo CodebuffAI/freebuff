@@ -1,0 +1,17 @@
+# Server agen opencode (headless). Port 4096, hanya di jaringan internal compose.
+FROM node:22-bookworm-slim
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends git ca-certificates curl ripgrep \
+	&& rm -rf /var/lib/apt/lists/*
+
+# Paket npm resmi opencode adalah "opencode-ai" (bukan @opencode/cli).
+RUN npm install -g opencode-ai@latest
+
+WORKDIR /workspace
+
+EXPOSE 4096
+
+ENTRYPOINT ["opencode"]
+# "web" = server agen + UI web asli opencode di akar origin (bukan hanya API).
+CMD ["web", "--port", "4096", "--hostname", "0.0.0.0"]

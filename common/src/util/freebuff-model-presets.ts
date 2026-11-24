@@ -55,8 +55,9 @@ export const FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY = FREEBUFF_DEEPSEEK_FLASH_CATALO
  * Luna until 2026-10-30, when it left the first view of the picker), at high
  * effort (the Luminal lane), and at max effort (since 2026-10-17; MiMo 2.6 Pro
  * before).
- * The first stop is no longer a cheap model, so it reads Fast rather than
- * Efficient; limited ladders keep Efficient.
+ * The first stop is no longer a cheap model but its lowest reasoning, so it
+ * reads Instant, as every model's lowest reasoning does (product, 2026-11-23,
+ * Victor; Fast before), rather than Efficient; limited ladders keep Efficient.
  *
  * LIMITED ACCESS DEFAULTS TO DEEPSEEK V4.1 FLASH SLOW for every account
  * (product, 2026-11-11, Victor: one picker everywhere), matching the server's
@@ -81,7 +82,7 @@ export const FREEBUFF_DEEPSEEK_SLOW_CATALOG_KEY = FREEBUFF_DEEPSEEK_FLASH_CATALO
  * (`chatMode`; product, 2026-11-11, Victor). Its Balanced stop, the one a new
  * Chat-mode chat starts on, was DeepSeek V4.1 Flash Fast at full access and
  * wherever the viewer's tier was not known yet, so a "hello" cost three
- * hours. The other stops are the tier's own, so a chat already on Fast,
+ * hours. The other stops are the tier's own, so a chat already on Instant,
  * Efficient or Powerful keeps it. Where Flash Slow is not listed or open,
  * Balanced stays the tier's. */
 export function getFreebuffModelPresets({
@@ -180,7 +181,7 @@ function tierPresets({
 
   if (!limited)
     return [
-      preset('efficient', 'Fast', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'low'),
+      preset('efficient', 'Instant', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'low'),
       preset('balanced', 'Balanced', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'high'),
       preset('powerful', 'Powerful', FREEBUFF_DEEPSEEK_V4_FLASH_MODEL_ID, 'max'),
     ]
@@ -255,14 +256,15 @@ function tierPresets({
 }
 
 /**
- * One model's thinking levels as the stops: its lowest rung (Fast), its
+ * One model's thinking levels as the stops: its lowest rung (Instant), its
  * default (Default, the Balanced stop new chats start on) and its highest
- * (Max). "Fast" rather than "Low": a quick answer is a reason to choose it,
- * where "low" sounds like less. DeepSeek V4.1 Flash's ladder is exactly
- * low / high / max.
+ * (Max). "Instant" rather than "Low": a quick answer is a reason to choose
+ * it, where "low" sounds like less; every model's lowest reasoning reads
+ * Instant (product, 2026-11-23, Victor). DeepSeek V4.1 Flash's ladder is
+ * exactly low / high / max.
  */
 const THINKING_LEVEL_LABELS: Record<FreebuffModelPreset['id'], string> = {
-  efficient: 'Fast',
+  efficient: 'Instant',
   balanced: 'Default',
   powerful: 'Max',
 }
@@ -273,14 +275,14 @@ export const FREEBUFF_THINKING_LEVEL_HINTS: Record<
   FreebuffModelPreset['id'],
   string
 > = {
-  efficient: 'Fast: light reasoning, quickest replies. Good for small edits and questions.',
+  efficient: 'Instant: light reasoning, quickest replies. Good for small edits and questions.',
   balanced: 'Default: thinks the task through before answering. Best for most work.',
   powerful: 'Max: the most reasoning, slowest replies. For hard bugs and large changes.',
 }
 
 /** The levels in one short line, for the one-model picker's info icon. */
 export const FREEBUFF_THINKING_LEVELS_SUMMARY =
-  'Fast answers quickest; Max thinks longest.'
+  'Instant answers quickest; Max thinks longest.'
 
 function thinkingLevelPresets(
   row: FreebuffPresetModel,
