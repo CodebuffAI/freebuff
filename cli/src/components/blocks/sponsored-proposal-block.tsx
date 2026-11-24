@@ -1,5 +1,5 @@
 import {
-  SPONSORED_CONSENT_IN_PLACE_SENTENCE,
+  SPONSORED_CARD_DISCLOSURE,
   SPONSORED_CONSENT_NO_NAME,
   sponsoredConsentName,
 } from '@codebuff/common/ads/sponsored-consent'
@@ -642,16 +642,20 @@ export const SponsoredProposalBlock: React.FC<{
 
       {block.whyOpen && <text style={{ fg: theme.muted }}>{view.whyThis}</text>}
 
-      {/* THE CONSENT: one sentence and two choices (COD-410), in the in-place
-          words Desktop's dialog uses (#3989): it names the folder, says nothing
-          is committed, and names the undo. The procedure is one keypress away
+      {/* THE CONSENT: one quiet line and two choices (COD-410), in the words
+          the Web and Desktop card use: it edits files here, commits nothing,
+          and can be undone; the folder is named under it. It leads with the
+          consent's own sponsor name, in bold and spaced, never pitched: that
+          name is who the Yes is given to. The procedure is one keypress away
           and is the exact text the Accept binds. */}
       {consent && (
         <box style={{ width: '100%', flexDirection: 'column' }}>
           {consentName ? (
-            <text style={{ fg: theme.foreground }}>
-              <span attributes={TextAttributes.BOLD}>{consentName}</span>
-              {SPONSORED_CONSENT_IN_PLACE_SENTENCE}
+            <text style={{ fg: theme.muted }}>
+              <span fg={theme.foreground} attributes={TextAttributes.BOLD}>
+                {consentName}
+              </span>
+              {`  ${SPONSORED_CARD_DISCLOSURE.inPlace}`}
             </text>
           ) : (
             <text style={{ fg: theme.foreground }}>

@@ -629,36 +629,32 @@
 │  [Report 1]      │
 │ Add one-click    │
 │ dep…             │
-│ Acme Deploys is  │
-│ sponsoring this  │
-│ agent run, so    │
-│ it’s free for    │
-│ you. Freebuff’s  │
-│ agent edits the  │
-│ files in the     │
-│ folder below     │
-│ and commits      │
-│ nothing. It      │
-│ runs in the      │
-│ background so    │
-│ you can keep     │
-│ working, and     │
-│ you can undo it  │
-│ after.           │
+│ Acme Deploys     │
+│ Edits files      │
+│ here, commits    │
+│ nothing, undo    │
+│ anytime          │
 │ Folder: /home/de │
 │ > No             │
+│   Yes            │
+│ enter · esc      │
+└──────────────────┘
+
+
+
+
+
+
+
+
 
 === consent @ 48 ===
 ┌──────────────────────────────────────────────┐
 │ Acme Deploys                       SPONSORED │
 │  [Report 1]                                  │
 │ Add one-click deploys to this project        │
-│ Acme Deploys is sponsoring this agent run,   │
-│ so it’s free for you. Freebuff’s agent       │
-│ edits the files in the folder below and      │
-│ commits nothing. It runs in the background   │
-│ so you can keep working, and you can undo    │
-│ it after.                                    │
+│ Acme Deploys  Edits files here, commits      │
+│ nothing, undo anytime                        │
 │ Folder: /home/dev/app                        │
 │ > No                                         │
 │   Yes                                        │
@@ -674,20 +670,24 @@
 
 
 
+
+
+
+
 === consent @ 60 ===
 ┌──────────────────────────────────────────────────────────┐
 │ Acme Deploys                                   SPONSORED │
 │  [Report 1]                                              │
 │ Add one-click deploys to this project                    │
-│ Acme Deploys is sponsoring this agent run, so it’s free  │
-│ for you. Freebuff’s agent edits the files in the folder  │
-│ below and commits nothing. It runs in the background so  │
-│ you can keep working, and you can undo it after.         │
+│ Acme Deploys  Edits files here, commits nothing, undo    │
+│ anytime                                                  │
 │ Folder: /home/dev/app                                    │
 │ > No                                                     │
 │   Yes                                                    │
 │ ↑↓ · enter choose · v steps · esc cancel                 │
 └──────────────────────────────────────────────────────────┘
+
+
 
 
 

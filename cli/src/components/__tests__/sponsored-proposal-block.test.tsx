@@ -197,18 +197,15 @@ describe('every state, at every width', () => {
       blockFor(SPONSORED_ROW_FIXTURES.offered, { consent: CONSENT }),
       60,
     )
-    // Two choices (COD-410) under the IN-PLACE words Desktop shows (#3989):
-    // who sponsors it, that it costs the user nothing, that it edits the
-    // files in this folder, that nothing is committed, and that it can be
-    // stopped and undone. The folder is named because it is now the whole of
-    // what changes; there is no branch to name.
+    // Two choices (COD-410) under the card's one line (#3989): that it edits
+    // files here, that nothing is committed, and that it can be undone. The
+    // line names the consent's sponsor and never pitches it. The folder is named because it is now the whole
+    // of what changes; there is no branch to name.
     // Read across the box's wrapped lines: borders and breaks are layout.
     const flat = consented.replace(/[│\s]+/g, ' ')
-    expect(flat).toContain('Acme Deploys is sponsoring this agent run')
-    expect(flat).toContain('free for you')
-    expect(flat).toContain('edits the files in the folder below')
-    expect(flat).toContain('commits nothing')
-    expect(flat).toContain('runs in the background so you can keep working')
+    expect(flat).toContain(
+      'Acme Deploys Edits files here, commits nothing, undo anytime',
+    )
     expect(consented).toContain(CONSENT.folder)
     expect(consented).not.toContain('its own branch')
     expect(consented).toContain('> No')
@@ -239,7 +236,7 @@ describe('every state, at every width', () => {
     )
     expect(out).not.toContain('\u202e')
     expect(out).toContain('\\u202e')
-    expect(out).toContain('is sponsoring this agent run')
+    expect(out).toContain('Edits files here')
     expect(out).toContain('> No')
     expect(out).toContain('  Yes')
   })
