@@ -84,7 +84,8 @@ export type CommunityGroup = (typeof COMMUNITY_GROUPS)[number]
 
 export const COMMUNITY_GROUP_LABELS: Record<CommunityGroup, string> = {
   games: 'Games',
-  projects: 'Projects',
+  // The group's id is on the wire and stays; its name is Tools (Sam, 2026-11-24).
+  projects: 'Tools',
   creative: 'Creative',
 }
 
