@@ -191,12 +191,22 @@ export const gravityIndexInputSchema = z
   })
   .describe(`Use the Gravity Index tool discovery and install API.`)
 
+// Catalog reads (browse / list_categories / get_service) keep only the
+// runtime-stamped `metadata`, so the server's attribution log can record which
+// surface made the call. They are plain GETs upstream: the server does not
+// forward metadata to Gravity for them, and they carry no user attribution.
+// Like every runtime field, this is server-side only: the flat tool-facing
+// schema above never offers `metadata` to the model.
+const catalogMetadataFields = {
+  metadata: runtimeAttributionFields.metadata,
+}
+
 export const gravityIndexApiInputSchema = z
   .discriminatedUnion('action', [
     searchInputSchema.extend(runtimeAttributionFields),
-    browseInputSchema,
-    listCategoriesInputSchema,
-    getServiceInputSchema,
+    browseInputSchema.extend(catalogMetadataFields),
+    listCategoriesInputSchema.extend(catalogMetadataFields),
+    getServiceInputSchema.extend(catalogMetadataFields),
     provisionInputSchema.extend(runtimeAttributionFields),
     reportIntegrationInputSchema.extend(runtimeAttributionFields),
   ])
