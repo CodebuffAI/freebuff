@@ -435,6 +435,13 @@ export enum AnalyticsEvent {
   // click) — a direct read on whether the click feedback is landing.
   FREEBUFF_DESKTOP_DOWNLOAD_CLICKED = 'freebuff.desktop_download_clicked',
 
+  // Freebuff - the Desktop step after signing in from the homepage (every
+  // account) or another landing (new accounts only). `viewed` fires when it
+  // shows, `phone` true for the phone variant; `exited` when the visitor
+  // leaves it for the browser workspace, `via` logo | menu.
+  FREEBUFF_DESKTOP_WELCOME_VIEWED = 'freebuff.desktop_welcome_viewed',
+  FREEBUFF_DESKTOP_WELCOME_EXITED = 'freebuff.desktop_welcome_exited',
+
   // Freebuff - a phone tapped its own app store button on the homepage or the
   // sign-in step. `store` is ios | android, `location` the button.
   FREEBUFF_MOBILE_APP_CLICKED = 'freebuff.mobile_app_clicked',
