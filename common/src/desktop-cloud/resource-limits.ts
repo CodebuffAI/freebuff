@@ -6,6 +6,11 @@ export const CLOUD_RESOURCE_PENDING =
 export const CLOUD_RESOURCE_MOVE_REASON =
   'The cloud environment is running low on resources. Continue the same task locally, preserving completed work and checking any interrupted command before retrying it.'
 export const CLOUD_RESOURCE_EVENT = 'resource_limit'
+/** A limited-access free account past its daily Cloud VM hours (web large-cap.ts `limitedVmS`).
+ *  Fixed: the workspace recognises it by equality and offers to run the chat on
+ *  this computer (Desktop). */
+export const LIMITED_VM_CAP_MESSAGE =
+  'You’ve used today’s 3 Cloud hours. They reset at midnight in your local timezone; until then, run chats on your computer with Freebuff Desktop. A plan lifts the limit.'
 export type CloudResourceKind =
   | 'disk'
   | 'memory'
