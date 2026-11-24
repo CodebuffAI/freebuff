@@ -3,8 +3,9 @@
 Tujuan: opencode punya **alamat tetap** (`https://domain-anda.com`) yang tetap hidup walaupun
 sesi chat ini (atau VM ini) sudah berakhir, dengan HTTPS otomatis dan login sendiri.
 
-Semua yang dibutuhkan ada di folder ini: `install.sh`, `docker-compose.yml`, `Caddyfile`,
-`auth.caddy`, `.env.example`. Tidak ada layanan pihak ketiga selain VPS dan domain Anda.
+Semua yang dibutuhkan ada di folder ini: `install.sh`, `bootstrap.sh`, `doctor.sh`,
+`docker-compose.yml`, `Caddyfile`, `auth.caddy`, `.env.example`. Tidak ada layanan pihak
+ketiga selain VPS dan domain Anda.
 
 ## Yang berjalan di VPS
 
@@ -113,6 +114,42 @@ Lalu buka `https://opencode.domain-anda.com` di browser: muncul prompt login (us
 password dari install.sh), setelah itu **UI opencode asli** (Projects / New session / Search
 sessions). `https://opencode.domain-anda.com/hub` = dashboard status, `/chat` = chat ringkas.
 
+## Kalau ada yang tidak jalan — `doctor.sh`
+
+Skrip pemeriksa mandiri. Hanya membaca keadaan VPS (tidak mengubah apa pun): resolusi DNS,
+port 80/443, status + health container, sertifikat Caddy, dan `curl /api/health`. Setiap
+kegagalan disertai saran perbaikan, dan kode keluarnya `0` (sehat) atau `1` (ada masalah).
+
+```bash
+cd /opt/freebuff/opencode-hub/deploy   # folder yang berisi .env & docker-compose.yml
+sudo ./doctor.sh                        # domain dibaca dari .env
+sudo ./doctor.sh --domain opencode.domain-anda.com   # kalau .env belum ada/beda domain
+```
+
+Belum punya salinan skripnya di VPS?
+
+```bash
+cd /opt/freebuff/opencode-hub/deploy
+curl -fsSL https://raw.githubusercontent.com/cramelolo291-bot/freebuff/main/opencode-hub/deploy/doctor.sh -o doctor.sh
+sudo bash doctor.sh
+```
+
+Contoh keluaran sehat:
+
+```
+== DNS: opencode.domain-anda.com ==
+[ ok ] opencode.domain-anda.com -> 203.0.113.10 (sama dengan IP publik server ini)
+== Sertifikat HTTPS (127.0.0.1:443) ==
+[ ok ] sertifikat publik (Let's Encrypt)
+[ ok ] sertifikat masih berlaku 87 hari
+== HTTP https://opencode.domain-anda.com/api/health ==
+[ ok ] 401 tanpa password = login basic auth aktif, hub sehat di baliknya
+```
+
+Skrip ini juga menandai kondisi yang sering terlewat: `.env` yang tidak mode 600,
+`auth.caddy` tanpa `basic_auth` (situs terbuka), container crash-loop, health check gagal,
+sertifikat internal Caddy (ACME belum berhasil), dan sertifikat yang tinggal < 14 hari.
+
 ## Kalau memilih langkah manual (tanpa install.sh)
 
 ```bash
@@ -187,6 +224,7 @@ sudo docker compose up -d
 
 | Gejala | Penyebab & solusi |
 | --- | --- |
+| Belum tahu bagian mana yang salah | `sudo ./doctor.sh` — memeriksa DNS, port, container, sertifikat, `/api/health` sekaligus dengan saran perbaikan. |
 | `caddy` log: `no such host` / `DNS problem: NXDOMAIN` | Record A belum ada/salah. `dig +short domain` harus = IP VPS. Perbaiki, lalu `docker compose restart caddy`. |
 | `caddy` log: `address already in use` | Port 80/443 dipakai nginx/apache. `sudo systemctl stop nginx` (atau `ss -ltnp \| grep :80`). |
 | Halaman 502 | Container `hub`/`opencode` belum siap atau crash. `docker compose logs hub opencode`. |
