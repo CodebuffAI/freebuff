@@ -48,4 +48,73 @@ describe('gravity-index schemas', () => {
       'metadata',
     )
   })
+  test('the tool-facing schema never offers the end-user runtime fields', () => {
+    const keys = Object.keys(gravityIndexInputSchema.shape)
+    for (const field of ['end_user_ip', 'end_user_agent', 'ad_session_id']) {
+      expect(keys).not.toContain(field)
+    }
+    const parsed = gravityIndexInputSchema.parse({
+      action: 'search',
+      query: 'email',
+      end_user_ip: '8.8.8.8',
+      end_user_agent: 'ua',
+      ad_session_id: 'session',
+    })
+    expect(parsed).not.toHaveProperty('end_user_ip')
+    expect(parsed).not.toHaveProperty('end_user_agent')
+    expect(parsed).not.toHaveProperty('ad_session_id')
+  })
+
+  test('the API search schema keeps the end-user runtime fields', () => {
+    const parsed = gravityIndexApiInputSchema.parse({
+      action: 'search',
+      query: 'email',
+      end_user_ip: '8.8.8.8',
+      end_user_agent: 'Mozilla/5.0',
+      ad_session_id: 'ad-session-1',
+    })
+    expect(parsed).toMatchObject({
+      end_user_ip: '8.8.8.8',
+      end_user_agent: 'Mozilla/5.0',
+      ad_session_id: 'ad-session-1',
+    })
+  })
+
+  test('the API search schema caps the end-user runtime fields', () => {
+    const base = { action: 'search', query: 'email' }
+    for (const [field, max] of [
+      ['end_user_ip', 64],
+      ['end_user_agent', 1024],
+      ['ad_session_id', 256],
+    ] as const) {
+      expect(
+        gravityIndexApiInputSchema.safeParse({ ...base, [field]: 'x'.repeat(max) })
+          .success,
+      ).toBe(true)
+      expect(
+        gravityIndexApiInputSchema.safeParse({
+          ...base,
+          [field]: 'x'.repeat(max + 1),
+        }).success,
+      ).toBe(false)
+    }
+  })
+
+  test('only search accepts the end-user runtime fields', () => {
+    for (const body of [
+      { action: 'browse', category: 'Email' },
+      { action: 'list_categories' },
+      { action: 'get_service', slug: 'sendgrid' },
+    ]) {
+      const parsed = gravityIndexApiInputSchema.parse({
+        ...body,
+        end_user_ip: '8.8.8.8',
+        end_user_agent: 'ua',
+        ad_session_id: 'session',
+      })
+      expect(parsed).not.toHaveProperty('end_user_ip')
+      expect(parsed).not.toHaveProperty('end_user_agent')
+      expect(parsed).not.toHaveProperty('ad_session_id')
+    }
+  })
 })

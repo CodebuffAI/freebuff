@@ -4,6 +4,7 @@ import { MAX_AGENT_STEPS_DEFAULT } from '@codebuff/common/constants/agents'
 import { FREEBUFF_BASE3_AGENT_IDS } from '@codebuff/common/constants/free-agents'
 import { isSensitiveEnvFilePath } from '@codebuff/common/util/env-file-path'
 
+import { gravityIndexRunMetadata } from '../ads/gravity-index-run-metadata'
 import {
   createEventHandler,
   createStreamChunkHandler,
@@ -162,7 +163,12 @@ export const createRunConfig = (params: CreateRunConfigParams) => {
     signal: params.signal,
     costMode,
     byok,
-    extraCodebuffMetadata,
+    // Every run, sponsored or not: the gravity_index handler reads these
+    // (see gravityIndexRunMetadata). The caller's own keys win.
+    extraCodebuffMetadata: {
+      ...gravityIndexRunMetadata(),
+      ...(extraCodebuffMetadata ?? {}),
+    },
     onStateSnapshot,
     onCompactionSummary,
     onCompactionStart,

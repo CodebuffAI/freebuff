@@ -1,3 +1,4 @@
+import { GRAVITY_END_USER_RUN_METADATA_KEYS } from '@codebuff/common/types/gravity-index'
 import { FREEBUFF_DESKTOP_THREAD_AGENT_ID } from '@codebuff/common/constants/free-agents'
 import { jsonToolResult } from '@codebuff/common/util/messages'
 
@@ -213,6 +214,30 @@ const resolveGravitySurface = (
   }
 }
 
+/** Run metadata keys our own code sets for Gravity's CPM search fields: the
+ *  hosted Cloud worker (end user's IP, user agent, ad session), the CLI and
+ *  Desktop (user agent, ad session). Server- or client-set run metadata, never
+ *  model output. The web API decides which of them to trust. */
+const GRAVITY_END_USER_METADATA = GRAVITY_END_USER_RUN_METADATA_KEYS
+
+/** The web API schema's caps (common/src/types/gravity-index.ts): a longer
+ *  value would fail the whole search's validation, so it is cut here. */
+const GRAVITY_END_USER_MAX = { end_user_ip: 64, end_user_agent: 1024, ad_session_id: 256 }
+
+const gravityEndUserFields = (
+  runMetadata: Record<string, string> | undefined,
+): Partial<Record<keyof typeof GRAVITY_END_USER_METADATA, string>> => {
+  const fields: Partial<Record<keyof typeof GRAVITY_END_USER_METADATA, string>> =
+    {}
+  for (const [field, key] of Object.entries(GRAVITY_END_USER_METADATA) as Array<
+    [keyof typeof GRAVITY_END_USER_METADATA, string]
+  >) {
+    const value = runMetadata?.[key]?.trim()
+    if (value) fields[field] = value.slice(0, GRAVITY_END_USER_MAX[field])
+  }
+  return fields
+}
+
 export const handleGravityIndex = (async (params: {
   previousToolCallFinished: Promise<void>
   toolCall: CodebuffToolCall<'gravity_index'>
@@ -341,14 +366,25 @@ export const handleGravityIndex = (async (params: {
         repo_id: repoId,
       }),
     }
+    // Runtime-only search fields come from run metadata alone, never from the
+    // tool call (the tool-facing schema already strips them; this keeps it so).
+    const {
+      end_user_ip: _modelEndUserIp,
+      end_user_agent: _modelEndUserAgent,
+      ad_session_id: _modelAdSessionId,
+      ...toolInput
+    } = existingInput as JSONObject
     const input = {
-      ...existingInput,
+      ...toolInput,
       external_session_id: clientSessionId,
       // On service-account surfaces, `fingerprintId` (e.g.
       // `freebuff-chat-<userId>` or the project id) is sent as the external
       // user id. Other surfaces omit it.
       ...(isServiceAccountSurface(surface)
         ? { external_user_id: fingerprintId }
+        : {}),
+      ...(toolCall.input.action === 'search'
+        ? gravityEndUserFields(extraCodebuffMetadata)
         : {}),
       metadata,
     } satisfies JSONObject

@@ -366,6 +366,10 @@ export enum AnalyticsEvent {
   // web | desktop; `streak`: the current streak in days (null before the
   // streak loaded). Who actually looks at the streak.
   FREEBUFF_ARTIFACT_USAGE = 'freebuff.artifact_usage',
+  // An inline visual in a chat reply (web and hosted Desktop), inline-visual-usage.ts. `action`:
+  // rendered | fallback (shown as text) | saved (as `kind`); `blocks`: the block names drawn;
+  // `originApp`: web | desktop. The server's per-turn sizes are the Axiom event of the same name.
+  FREEBUFF_INLINE_VISUAL = 'freebuff.inline_visual',
   FREEBUFF_STREAK_OPENED = 'freebuff.streak.opened',
   // Workspace waits (web and hosted Desktop), freebuff/web/src/components/workspace/workspace-timing.ts.
   // `surface`: web | desktop; `sample_rate`: the share reported, where sampled.
