@@ -1,3 +1,5 @@
+import { REASONING_EFFORT_LABELS } from '@codebuff/common/constants/reasoning-effort'
+
 import { Button } from './button'
 import { DisplayAdStatusline } from './display-ad-statusline'
 import { CLI_DISPLAY_AD_PLACEMENT_IDS } from '../ads/display-ads'
@@ -23,7 +25,11 @@ export function FreebuffChatFooter({ projectRoot }: { projectRoot: string }) {
   const nextModel = useFreebuffChatStore((s) => s.nextModel)
   const directory = useFreebuffModelDirectory()
   const model = directory.get(nextModel ?? selected)
-  const effort = getEffectiveFreebuffReasoningEffort(model.id)
+  // Named only where there is a choice of levels (product, 2026-11-24, Victor).
+  const effort =
+    (directory.efforts(model.id)?.length ?? 0) > 1
+      ? getEffectiveFreebuffReasoningEffort(model.id)
+      : null
   const prompt = useChatStore((s) => getFirstUserPrompt(s.messages))
   // Only while the message it names still opens the chat.
   const title = useChatStore((s) =>
@@ -45,7 +51,7 @@ export function FreebuffChatFooter({ projectRoot }: { projectRoot: string }) {
           <text style={{ wrapMode: 'word', fg: theme.foreground }}>
             <span
               fg={theme.primary}
-            >{`${model.displayName}${effort ? ` • ${effort}` : ''}`}</span>
+            >{`${model.displayName}${effort ? ` • ${REASONING_EFFORT_LABELS[effort]}` : ''}`}</span>
             <span fg={theme.muted}>{` · ${formatCwd(projectRoot)} · `}</span>
             <span fg={theme.primary}>/model</span>
             <span

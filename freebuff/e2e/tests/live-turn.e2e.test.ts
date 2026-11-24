@@ -50,11 +50,12 @@ const FLASH_FOOTER = new RegExp(
   `${FLASH_DISPLAY_NAME}(?: \\d{1,2}/\\d{1,2})?(?: • \\w+)? · `,
 )
 
-test('the Flash row is found past the Slow and Fast rows that share its name', () => {
+test('the Flash row is found past the Efficient, Slow and Fast rows that share its name', () => {
   const flash = focusedModelRow(FLASH_DISPLAY_NAME)
   expect('  › DeepSeek V4.1 Flash  10 Freebucks').toMatch(flash)
   expect('  › DeepSeek V4.1 Flash 10/17 • Recommended').toMatch(flash)
   for (const row of [
+    '  › DeepSeek V4.1 Flash Efficient  1 hr',
     '  › DeepSeek V4.1 Flash Slow  10 Freebucks',
     '  › DeepSeek V4.1 Flash Fast',
     '  › DeepSeek V4.1 Flash Fastest',
@@ -79,6 +80,7 @@ test('Flash footer accepts release dates without accepting Flash Fast', () => {
     'DeepSeek V4.1 Flash Fast 10/17 • high',
     'DeepSeek V4.1 Flash Fastest • high',
     'DeepSeek V4.1 Flash Slow • high',
+    'DeepSeek V4.1 Flash Efficient',
   ]) {
     expect(`${label} · /tmp/freebuff-smoke · /model to change`).not.toMatch(
       FLASH_FOOTER,
@@ -104,12 +106,12 @@ async function backendSessionStatus(): Promise<'active' | 'none'> {
  */
 /**
  * The picker's cursor on `name` itself. "DeepSeek V4.1 Flash Fast" and "DeepSeek
- * V4.1 Flash Slow" share the prefix (and the picker lists cheapest first, so
- * Slow comes before Flash); badges may follow the name.
+ * V4.1 Flash Efficient" (Slow until 2026-11-24) share the prefix (and the picker
+ * lists cheapest first, so Efficient comes before Flash); badges may follow the name.
  */
 function focusedModelRow(name: string): RegExp {
   return new RegExp(
-    `› ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\s*(?:Fast|Slow))`,
+    `› ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\s*(?:Fast|Slow|Efficient))`,
   )
 }
 

@@ -37,6 +37,20 @@ export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return REASONING_EFFORTS.includes(value as ReasoningEffort)
 }
 
+/**
+ * Each rung's name on every surface. `low` reads Instant on every model
+ * (product, 2026-11-23, Victor): a quick answer is the reason to choose it.
+ */
+export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
+  minimal: 'Minimal',
+  low: 'Instant',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
+  ultra: 'Ultra',
+}
+
 /** Position on the shared ladder, or -1. Exported for tests that assert one
  *  rung sits below another without hard-coding the list. */
 export function reasoningEffortRank(value: unknown): number {
