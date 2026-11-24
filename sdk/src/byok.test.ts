@@ -12,7 +12,6 @@ import {
   byokCompletionUrl,
   BYOK_DEFAULT_CONTEXT_WINDOW,
   BYOK_DEFAULT_MAX_OUTPUT_TOKENS,
-  BYOK_DISCOVERED_CONTEXT_WINDOW_CAP,
   BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW,
   clearByokContextWindowCache,
   contextWindowFromModelList,
@@ -734,10 +733,13 @@ describe('effective BYOK limits for a run', () => {
     expect(calls).toHaveLength(1)
   })
 
-  test('OpenRouter is asked without the key, and a huge window is capped', async () => {
+  test.each([
+    [1_048_576, 1_048_576, 940_032],
+    [4_000_000, 2_000_000, 1_796_313],
+  ])('OpenRouter window %i uses %i tokens and a %i compaction budget', async (reported, window, budget) => {
     const { calls, fetchImpl } = listing({
       data: [
-        { id: 'vendor/giant', context_length: 1_048_576 },
+        { id: 'vendor/giant', context_length: reported },
         { id: 'vendor/small', context_length: 40_960 },
       ],
     })
@@ -745,7 +747,8 @@ describe('effective BYOK limits for a run', () => {
       resolved({ provider: 'openrouter', baseUrl: undefined, model: 'vendor/giant' }),
       { fetch: fetchImpl },
     )
-    expect(giant.contextWindow).toBe(BYOK_DISCOVERED_CONTEXT_WINDOW_CAP)
+    expect(giant.contextWindow).toBe(window)
+    expect(byokModelLimits(giant).maxContextLength).toBe(budget)
     const free = await withEffectiveByokLimits(
       resolved({ provider: 'openrouter', baseUrl: undefined, model: 'vendor/small:free' }),
       { fetch: fetchImpl },

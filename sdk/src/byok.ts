@@ -24,6 +24,8 @@ import { getSystemProcessEnv } from './env'
 import { recoverByokLock } from './impl/byok-lock'
 
 export const BYOK_SECRET_SERVICE = 'com.freebuff.byok.v1'
+/** Largest context window supported by BYOK connection validation. */
+const BYOK_MAX_CONTEXT_WINDOW = 2_000_000
 const envReference = /^env:[A-Za-z_][A-Za-z0-9_]*$/
 const ownedReference = /^connection:[a-f0-9-]+:[1-9][0-9]*$/
 /** One ChatGPT sign-in, shared by every model saved from it (see saveChatGptSignIn). */
@@ -37,7 +39,7 @@ const connectionSchema = z
     provider: z.enum(['openrouter', 'openai-compatible', CHATGPT_BYOK_PROVIDER]),
     model: text,
     baseUrl: z.string().max(2048).optional(),
-    contextWindow: z.number().int().min(4096).max(2_000_000).optional(),
+    contextWindow: z.number().int().min(4096).max(BYOK_MAX_CONTEXT_WINDOW).optional(),
     maxOutputTokens: z.number().int().min(1).max(1_000_000).optional(),
     credentialRef: z
       .string()
@@ -295,12 +297,6 @@ export const BYOK_DEFAULT_CONTEXT_WINDOW = 32_768
 export const BYOK_DEFAULT_MAX_OUTPUT_TOKENS = 4_096
 /** A remote endpoint that does not report its model's window. */
 export const BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW = 131_072
-/**
- * The most an automatically-chosen window may be: the hosted budget's order of
- * magnitude, since every token of a BYOK request is billed to the user's key.
- * A user who wants more types it into the connection.
- */
-export const BYOK_DISCOVERED_CONTEXT_WINDOW_CAP = 400_000
 
 /**
  * A connection's limits as a run uses them. `maxOutputTokens` is the stored
@@ -324,7 +320,7 @@ export function byokModelLimits(connection: {
   if (
     !Number.isInteger(contextWindow) ||
     contextWindow < 4096 ||
-    contextWindow > 2_000_000 ||
+    contextWindow > BYOK_MAX_CONTEXT_WINDOW ||
     !Number.isInteger(maxOutputTokens) ||
     maxOutputTokens < 1 ||
     maxOutputTokens >= contextWindow
@@ -540,8 +536,8 @@ function copyRuntimeFields(
  * (Desktop feedback 2026-09-24 and 09-27, "compacts every 3-5 turns").
  *
  * The provider's own number wins when its `/models` listing reports one
- * (capped at BYOK_DISCOVERED_CONTEXT_WINDOW_CAP). Otherwise a remote endpoint
- * gets 128k, which nearly every hosted coding model supports, and a loopback
+ * (up to the same maximum as a manually configured window). Otherwise a remote
+ * endpoint gets 128k, which nearly every hosted coding model supports, and a loopback
  * server keeps the configured default, because a local server's window is
  * whatever it was launched with. Limits a user actually typed are never
  * replaced. The credential stays non-enumerable on the copy.
@@ -555,7 +551,7 @@ export async function withEffectiveByokLimits(
   const contextWindow =
     // A window must exceed the output limit (byokModelLimits' own rule).
     discovered !== undefined && discovered > BYOK_DEFAULT_MAX_OUTPUT_TOKENS
-      ? Math.min(discovered, BYOK_DISCOVERED_CONTEXT_WINDOW_CAP)
+      ? Math.min(discovered, BYOK_MAX_CONTEXT_WINDOW)
       : isLoopbackByokEndpoint(connection)
         ? BYOK_DEFAULT_CONTEXT_WINDOW
         : BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW
