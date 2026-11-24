@@ -144,10 +144,23 @@ export async function getMCPClient(config: MCPConfig): Promise<string> {
     }
   }
 
-  const client = new Client({
-    name: 'codebuff',
-    version: '1.0.0',
-  })
+  const client = new Client(
+    { name: 'codebuff', version: '1.0.0' },
+    {
+      listChanged: {
+        tools: {
+          // Invalidate immediately so the next model step need not wait for
+          // the SDK's debounce. Our listing handles every page; autoRefresh
+          // would fetch only the first. Lazy reads coalesce notification bursts.
+          autoRefresh: false,
+          debounceMs: 0,
+          onChanged: () => {
+            delete listToolsCache[key]
+          },
+        },
+      },
+    },
+  )
 
   try {
     await client.connect(transport)
@@ -181,7 +194,16 @@ export function listMCPTools(
     throw new Error(`listTools: client not found with id: ${clientId}`)
   }
   if (!listToolsCache[clientId]) {
-    const listing = listAllTools(client, ...args)
+    const listing: ReturnType<typeof Client.prototype.listTools> = listAllTools(
+      client,
+      ...args,
+    ).then((result) =>
+      // A notification during pagination invalidates the whole snapshot.
+      // Readers of the old in-flight promise must join a fresh listing too.
+      listToolsCache[clientId] === listing
+        ? result
+        : listMCPTools(clientId, ...args),
+    )
     listToolsCache[clientId] = listing
     // A failed listing is not kept, or one slow start would hide the server's tools for the rest
     // of the process: the next call asks the server again.

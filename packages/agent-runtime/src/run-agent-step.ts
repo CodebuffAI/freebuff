@@ -40,7 +40,7 @@ import {
   userMessage,
 } from '@codebuff/common/util/messages'
 import { type ToolSet } from 'ai'
-import { cloneDeep, mapValues } from 'lodash'
+import { cloneDeep, isEqual, mapValues } from 'lodash'
 import z from 'zod/v4'
 
 import type { CompactionTrigger } from './compact-history'
@@ -1328,6 +1328,15 @@ export async function loopAgentSteps(
   initialAgentState.runId = runId
 
   let cachedAdditionalToolDefinitions: CustomToolDefinitions | undefined
+  const additionalToolDefinitionsWithCache = async () => {
+    if (!cachedAdditionalToolDefinitions) {
+      cachedAdditionalToolDefinitions = await additionalToolDefinitions({
+        ...params,
+        agentTemplate,
+      })
+    }
+    return cachedAdditionalToolDefinitions
+  }
   // Use parent's tools for prompt caching when inheritParentSystemPrompt is true
   const useParentTools =
     agentTemplate.inheritParentSystemPrompt && parentTools !== undefined
@@ -1340,15 +1349,7 @@ export async function loopAgentSteps(
     promptType: { type: 'instructionsPrompt' },
     agentTemplates: localAgentTemplates,
     useParentTools,
-    additionalToolDefinitions: async () => {
-      if (!cachedAdditionalToolDefinitions) {
-        cachedAdditionalToolDefinitions = await additionalToolDefinitions({
-          ...params,
-          agentTemplate,
-        })
-      }
-      return cachedAdditionalToolDefinitions
-    },
+    additionalToolDefinitions: additionalToolDefinitionsWithCache,
   })
 
   // Build the initial message history with user prompt and instructions
@@ -1364,15 +1365,7 @@ export async function loopAgentSteps(
       agentTemplate,
       promptType: { type: 'systemPrompt' },
       agentTemplates: localAgentTemplates,
-      additionalToolDefinitions: async () => {
-        if (!cachedAdditionalToolDefinitions) {
-          cachedAdditionalToolDefinitions = await additionalToolDefinitions({
-            ...params,
-            agentTemplate,
-          })
-        }
-        return cachedAdditionalToolDefinitions
-      },
+      additionalToolDefinitions: additionalToolDefinitionsWithCache,
     })
     system = systemPrompt ?? ''
   }
@@ -1386,25 +1379,17 @@ export async function loopAgentSteps(
         agentTemplates: localAgentTemplates,
       })
 
-  const tools = useParentTools
-    ? parentTools
-    : await getToolSet({
-        toolNames: agentTemplate.toolNames,
-        windowedFileReads: agentTemplate.windowedFileReads === true,
-        suppressCommitAttribution:
-          agentTemplate.suppressCommitAttribution === true,
-        additionalToolDefinitions: async () => {
-          if (!cachedAdditionalToolDefinitions) {
-            cachedAdditionalToolDefinitions = await additionalToolDefinitions({
-              ...params,
-              agentTemplate,
-            })
-          }
-          return cachedAdditionalToolDefinitions
-        },
-        agentTools,
-        skills: fileContext.skills ?? {},
-      })
+  const buildTools = () =>
+    getToolSet({
+      toolNames: agentTemplate.toolNames,
+      windowedFileReads: agentTemplate.windowedFileReads === true,
+      suppressCommitAttribution:
+        agentTemplate.suppressCommitAttribution === true,
+      additionalToolDefinitions: additionalToolDefinitionsWithCache,
+      agentTools,
+      skills: fileContext.skills ?? {},
+    })
+  let tools = useParentTools ? parentTools : await buildTools()
 
   const hasUserMessage =
     !manualCompaction &&
@@ -1461,7 +1446,7 @@ export async function loopAgentSteps(
   // Tool definitions live in agent state (persisted, snapshotted, shipped over
   // the wire), so every inputSchema must be plain JSON Schema: Zod instances
   // are cyclic and break any JSON.stringify over the state.
-  const toolDefinitions =
+  let toolDefinitions =
     manualCompaction && initialAgentState.toolDefinitions
       ? initialAgentState.toolDefinitions
       : mapValues(tools, (tool) => ({
@@ -1469,16 +1454,6 @@ export async function loopAgentSteps(
             typeof tool.description === 'string' ? tool.description : undefined,
           inputSchema: toTokenCountInputSchema(tool.inputSchema) ?? {},
         }))
-
-  const additionalToolDefinitionsWithCache = async () => {
-    if (!cachedAdditionalToolDefinitions) {
-      cachedAdditionalToolDefinitions = await additionalToolDefinitions({
-        ...params,
-        agentTemplate,
-      })
-    }
-    return cachedAdditionalToolDefinitions
-  }
 
   // Mutate initialAgentState so that in-progress work propagates back to the
   // caller's shared reference (e.g. SDK's sessionState.mainAgentState) even if
@@ -1499,7 +1474,7 @@ export async function loopAgentSteps(
   }
 
   // Estimate the wire schemas, not Zod's internal object graph.
-  const toolsForTokenCount = toolsForContextEstimate(toolDefinitions)
+  let toolsForTokenCount = toolsForContextEstimate(toolDefinitions)
 
   // Keep the persisted/displayed count aligned after cancellation and TTL edits.
   // Uses the latest receipt plus cheap deltas; never re-tokenizes the history.
@@ -1980,6 +1955,33 @@ export async function loopAgentSteps(
 
       if (totalSteps === 1 && userPromptMessage) {
         assertUserContentSize([userPromptMessage], agentTemplate)
+      }
+
+      // Transport listings are cached until a list_changed notification. Read
+      // through that cache at each step so discovery can change this turn's
+      // model schemas, execution definitions and context estimate together.
+      if (
+        totalSteps > 1 &&
+        !useParentTools &&
+        Object.keys(agentTemplate.mcpServers).length > 0
+      ) {
+        const nextDefinitions = await additionalToolDefinitions({
+          ...params,
+          agentTemplate,
+        })
+        if (!isEqual(nextDefinitions, cachedAdditionalToolDefinitions)) {
+          cachedAdditionalToolDefinitions = nextDefinitions
+          tools = await buildTools()
+          toolDefinitions = mapValues(tools, (tool) => ({
+            description:
+              typeof tool.description === 'string'
+                ? tool.description
+                : undefined,
+            inputSchema: toTokenCountInputSchema(tool.inputSchema) ?? {},
+          }))
+          currentAgentState.toolDefinitions = toolDefinitions
+          toolsForTokenCount = toolsForContextEstimate(toolDefinitions)
+        }
       }
 
       const startTime = new Date()
