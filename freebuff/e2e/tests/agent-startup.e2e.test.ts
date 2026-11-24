@@ -53,7 +53,7 @@ describe('Freebuff: Agent startup smoke', () => {
       await session.waitForText('/help', 10_000)
       await session.sendKey('Enter')
 
-      const output = await session.waitForText('Shortcuts', 10_000)
+      const output = await session.waitForText('Keyboard shortcuts', 10_000)
       expect(output).toMatch(/shortcut|ctrl|esc/i)
     },
     TEST_TIMEOUT,

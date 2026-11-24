@@ -871,6 +871,28 @@ describe('validateAgents', () => {
       expect(result.validationErrors[0].message).toContain('Failed to connect')
     })
 
+    it('retries once when the connection was dropped, then sends', async () => {
+      const agents: AgentDefinition[] = [
+        { id: 'test-agent', displayName: 'Test Agent', model: 'm' },
+      ]
+      mockFetch
+        .mockRejectedValueOnce(
+          new Error('The socket connection was closed unexpectedly.'),
+        )
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ validationErrors: [] }),
+        })
+
+      const result = await validateAgents(agents, {
+        remote: true,
+        websiteUrl: 'https://test.codebuff.com',
+      })
+
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      expect(result.success).toBe(true)
+    })
+
     it('should handle malformed API responses', async () => {
       const agents: AgentDefinition[] = [
         {

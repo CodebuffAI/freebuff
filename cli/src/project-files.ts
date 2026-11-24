@@ -65,45 +65,27 @@ export function getProjectDataDir(): string {
 }
 
 /**
- * Find the most recent chat directory based on modification time
- * Returns null if no chat directories exist
+ * The most recently saved chat, for `--continue` without an id. Ranked by the
+ * saved chat files, not the directory: each launch's logger creates its own
+ * chat directory before the resume runs, and that empty one was always newest.
  */
 export function getMostRecentChatDir(): string | null {
   try {
     const chatsDir = path.join(getProjectDataDir(), 'chats')
-
-    // Single pass with dirents: the previous shape statted every entry twice
-    // (once for the mtime, again inside the filter's type guard to test
-    // isDirectory), which doubled the syscall count of this scan on the
-    // --continue resume path. The dirent answers isDirectory() from the
-    // directory record itself, so each entry is now statted exactly once, for
-    // the mtime; a failed stat skips the entry, same as before. (The missing
-    // chats dir falls into the catch and returns null, as it did via the
-    // throwIfNoEntry probe.)
-    const chatDirs = readdirSync(chatsDir, { withFileTypes: true })
-      .map((entry) => {
-        if (!entry.isDirectory()) {
-          return null
-        }
-        try {
-          const fullPath = path.join(chatsDir, entry.name)
-          return { name: entry.name, fullPath, mtime: statSync(fullPath).mtime }
-        } catch {
-          return null
-        }
-      })
-      .filter(
-        (item): item is { name: string; fullPath: string; mtime: Date } =>
-          item !== null,
+    let best: { dir: string; savedAt: number } | null = null
+    for (const entry of readdirSync(chatsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const dir = path.join(chatsDir, entry.name)
+      const savedAt = Math.max(
+        ...['run-state.json', 'chat-messages.json'].map(
+          (file) =>
+            statSync(path.join(dir, file), { throwIfNoEntry: false })
+              ?.mtimeMs ?? 0,
+        ),
       )
-
-    if (chatDirs.length === 0) {
-      return null
+      if (savedAt > (best?.savedAt ?? 0)) best = { dir, savedAt }
     }
-
-    // Sort by modification time, most recent first
-    chatDirs.sort((a, b) => b.mtime.getTime() - a.mtime.getTime())
-    return chatDirs[0].fullPath
+    return best?.dir ?? null
   } catch {
     return null
   }
