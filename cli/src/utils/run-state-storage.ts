@@ -566,6 +566,30 @@ function quarantinePersistedChatFile(
 }
 
 /**
+ * The chat directory `chatId` names, or null. The id must be one folder
+ * directly inside `chatsDir`, and stay there once links are followed: loading
+ * reads the chat's files and moves damaged ones aside, so `--continue ../x`
+ * must not reach a folder outside the chats directory.
+ */
+export function resolveRequestedChatDir(
+  chatsDir: string,
+  chatId: string,
+): string | null {
+  const id = chatId.trim()
+  if (!id || id === '.' || id === '..' || path.basename(id) !== id) return null
+  if (id.includes('/') || id.includes('\\')) return null
+  const candidateDir = path.join(chatsDir, id)
+  try {
+    if (!fs.statSync(candidateDir).isDirectory()) return null
+    const realChats = fs.realpathSync(chatsDir)
+    if (path.dirname(fs.realpathSync(candidateDir)) !== realChats) return null
+  } catch {
+    return null
+  }
+  return candidateDir
+}
+
+/**
  * Load both RunState and ChatMessage[] from a specific chat directory or the most recent one.
  * When chatId is provided, it is used to locate the chat directory; otherwise the most
  * recently modified chat directory is used.
@@ -579,15 +603,10 @@ export function loadMostRecentChatState(
 
     if (!chatDir && chatId && chatId.trim().length > 0) {
       const baseDir = path.join(getProjectDataDir(), 'chats')
-      const candidateDir = path.join(baseDir, chatId.trim())
-      if (
-        fs.existsSync(candidateDir) &&
-        fs.statSync(candidateDir).isDirectory()
-      ) {
-        chatDir = candidateDir
-      } else {
+      chatDir = resolveRequestedChatDir(baseDir, chatId)
+      if (!chatDir) {
         logger.debug(
-          { candidateDir, chatId },
+          { chatId },
           'Requested chatId directory not found, falling back to most recent chat directory',
         )
       }
