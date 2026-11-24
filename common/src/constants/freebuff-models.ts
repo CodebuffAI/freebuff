@@ -3938,6 +3938,10 @@ export const FREEBUFF_SESSION_HEARTBEAT_INTERVAL_MS = 45_000
  *  a click on a stale card can never end a tab the user was never shown. */
 export const FREEBUFF_TAKEOVER_INSTANCE_HEADER =
   'x-freebuff-takeover-instance-id'
+/** `1` on the workspace's admission for a Cloud run (not on the user's
+ *  computer, not sponsored): past a limited account's daily Cloud hours the
+ *  admission refuses before it buys an hour that no run could use. */
+export const FREEBUFF_CLOUD_RUN_HEADER = 'x-freebuff-cloud-run'
 /** Drain window after a session's `expires_at`: the gate still serves an
  *  in-flight agent run, but no new prompt should start. Shared because the
  *  client has to know it too — a tab keeps beating until its row is past this,
