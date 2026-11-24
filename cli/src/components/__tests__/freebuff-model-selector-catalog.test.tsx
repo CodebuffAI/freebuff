@@ -413,7 +413,7 @@ describe('the reasoning submenu', () => {
       await setup.renderOnce()
       const frame = setup.captureCharFrame()
       expect(frame).toContain('Cheap Model • Reasoning')
-      expect(frame).toContain('Instant')
+      expect(frame).toContain('Low')
       expect(frame).toContain('High (default)')
       expect(frame).toContain('Max')
       flushSync(() => setup.mockInput.pressKey('ARROW_DOWN'))

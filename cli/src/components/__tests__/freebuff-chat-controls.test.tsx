@@ -168,7 +168,7 @@ if (process.env.FREEBUFF_CHAT_CONTROLS_TEST !== '1') {
     try {
       const setup = await mount()
       expect(setup.captureCharFrame()).toContain('GLM 5.3 Flash • Reasoning')
-      expect(setup.captureCharFrame()).toContain('› Instant')
+      expect(setup.captureCharFrame()).toContain('› Low')
       flushSync(() => setup.mockInput.pressKey('ESCAPE'))
       await setup.renderOnce()
       expect(setup.captureCharFrame()).not.toContain('Enter save')

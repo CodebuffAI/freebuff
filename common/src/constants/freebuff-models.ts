@@ -1084,8 +1084,14 @@ export const EFFORTS_THROUGH_MAX = [
  * 200 (verified against the live API, 2026-08-12) — so a rung being accepted
  * proves nothing about it being distinct, and a ladder can never be derived by
  * probing.
+ *
+ * `minimal` below them is not a DeepSeek effort: it is thinking OFF, the
+ * Instant stop (product, 2026-11-24, Victor). `low` still thinks. The server
+ * turns `minimal` on a DeepSeek V4 model into `reasoning.enabled: false`
+ * (applyFreebuffReasoningDefaults), which every DeepSeek lane honours, and the
+ * pickers name the ladder Instant, Medium, High, Max (reasoningEffortLabel).
  */
-const DEEPSEEK_V4_REASONING_EFFORTS = ['low', 'high', 'max'] as const
+const DEEPSEEK_V4_REASONING_EFFORTS = ['minimal', 'low', 'high', 'max'] as const
 /** Ox Alpha's native ladder, read off the endpoint's `supported_efforts`.
  *  The same three rungs as DeepSeek V4 and, like it, no distinct medium — so
  *  it is a separate constant rather than a shared one only because the two

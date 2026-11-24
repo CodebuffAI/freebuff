@@ -1,4 +1,4 @@
-import { REASONING_EFFORT_LABELS } from '@codebuff/common/constants/reasoning-effort'
+import { reasoningEffortLabel } from '@codebuff/common/constants/reasoning-effort'
 
 import { Button } from './button'
 import { DisplayAdStatusline } from './display-ad-statusline'
@@ -51,7 +51,7 @@ export function FreebuffChatFooter({ projectRoot }: { projectRoot: string }) {
           <text style={{ wrapMode: 'word', fg: theme.foreground }}>
             <span
               fg={theme.primary}
-            >{`${model.displayName}${effort ? ` • ${REASONING_EFFORT_LABELS[effort]}` : ''}`}</span>
+            >{`${model.displayName}${effort ? ` • ${reasoningEffortLabel(effort, directory.efforts(model.id) ?? [])}` : ''}`}</span>
             <span fg={theme.muted}>{` · ${formatCwd(projectRoot)} · `}</span>
             <span fg={theme.primary}>/model</span>
             <span

@@ -67,7 +67,7 @@ import {
   freebuffFreeWindowsSummary,
   freebuffPlanSummary,
 } from '@codebuff/common/util/freebuff-plan-summary'
-import { REASONING_EFFORT_LABELS } from '@codebuff/common/constants/reasoning-effort'
+import { reasoningEffortLabel } from '@codebuff/common/constants/reasoning-effort'
 import { compiledFreebuffModelIdOfRow } from '@codebuff/common/util/freebuff-catalog-compiled-model'
 
 import { startFreebuffSession } from '../hooks/use-freebuff-session'
@@ -998,7 +998,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
         chosen && model.efforts?.includes(chosen)
           ? chosen
           : ((onSelectModel ? directory.defaultEffort(model.id) : null) ?? model.reasoningEffort)
-      return effort ? ` • ${REASONING_EFFORT_LABELS[effort]}` : ''
+      return effort ? ` • ${reasoningEffortLabel(effort, model.efforts ?? [])}` : ''
     },
     [reasoningEffortByModel, onSelectModel, directory],
   )
@@ -1756,7 +1756,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
             setReasoningModel(null)
           }}>
             <text style={{ fg: index === reasoningIndex ? theme.primary : theme.foreground }}>
-              {`${index === reasoningIndex ? '›' : ' '} ${REASONING_EFFORT_LABELS[effort]}${effort === directory.defaultEffort(reasoningModel) ? ' (default)' : ''}`}
+              {`${index === reasoningIndex ? '›' : ' '} ${reasoningEffortLabel(effort, efforts)}${effort === directory.defaultEffort(reasoningModel) ? ' (default)' : ''}`}
             </text>
           </Button>
         ))}
