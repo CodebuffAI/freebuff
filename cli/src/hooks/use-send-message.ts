@@ -42,6 +42,7 @@ import { loadAgentDefinitions } from '../utils/local-agent-registry'
 import { runWithFreebuffCatalogStaleRetry } from '../utils/freebuff-model-catalog'
 import { logger } from '../utils/logger'
 import { clearActiveRun, registerActiveRun } from '../utils/active-run'
+import { readChatTitle, titleChat } from '../utils/chat-title'
 import {
   clearLiveChatStateProvider,
   loadMostRecentChatState,
@@ -257,9 +258,17 @@ export const useSendMessage = ({
       if (loadedState) {
         previousRunStateRef.current = loadedState.runState
         setRunState(loadedState.runState)
-        setMessages(sanitizeRestoredMessages(loadedState.messages))
+        const messages = sanitizeRestoredMessages(loadedState.messages)
+        setMessages(messages)
         if (loadedState.chatId) {
           setCurrentChatId(loadedState.chatId)
+          const first = messages.find((m) => m.variant === 'user')
+          const title = readChatTitle(resolveCurrentChatDir())
+          if (first && title) {
+            useChatStore
+              .getState()
+              .setChatTitle({ messageId: first.id, title })
+          }
         }
       }
     }
@@ -559,6 +568,9 @@ export const useSendMessage = ({
         bashContextForPrompt = undefined
         finalContent = sponsored.plan.prompt
       } else {
+        const firstPrompt = !useChatStore
+          .getState()
+          .messages.some((m) => m.variant === 'user')
         try {
           const prepared = await prepareUserMessage({
             content,
@@ -585,6 +597,20 @@ export const useSendMessage = ({
           ])
           finishPreflight()
           return
+        }
+        // Named by the model, as on Desktop, which also leaves own-key
+        // chats untitled: their prompts are not ours to send to our model.
+        // A title that lands after the user has moved to another chat is
+        // still saved with its own chat.
+        if (firstPrompt && !shouldUseByok) {
+          const messageId = userMessageId
+          void titleChat({ chatDir: runChatDir, prompt: content }).then(
+            (title) => {
+              if (title) {
+                useChatStore.getState().setChatTitle({ messageId, title })
+              }
+            },
+          )
         }
       }
 

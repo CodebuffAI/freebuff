@@ -12,6 +12,7 @@ import {
   useFreebuffModelStore,
   getEffectiveFreebuffReasoningEffort,
 } from '../state/freebuff-model-store'
+import { truncateToSingleLinePreview } from '../utils/agent-display'
 import { getFirstUserPrompt } from '../utils/chat-meta'
 import { formatCwd } from '../utils/path-helpers'
 
@@ -23,7 +24,20 @@ export function FreebuffChatFooter({ projectRoot }: { projectRoot: string }) {
   const directory = useFreebuffModelDirectory()
   const model = directory.get(nextModel ?? selected)
   const effort = getEffectiveFreebuffReasoningEffort(model.id)
-  const name = useChatStore((s) => getFirstUserPrompt(s.messages))
+  const prompt = useChatStore((s) => getFirstUserPrompt(s.messages))
+  // Only while the message it names still opens the chat.
+  const title = useChatStore((s) =>
+    s.chatTitle &&
+    s.messages.find((m) => m.variant === 'user')?.id === s.chatTitle.messageId
+      ? s.chatTitle.title
+      : null,
+  )
+  // The prompt stands in until the model's title arrives, or if it never does.
+  const name =
+    title ??
+    (prompt === '(empty chat)'
+      ? 'New chat'
+      : truncateToSingleLinePreview(prompt, 40))
   return (
     <box style={{ flexDirection: 'column', flexShrink: 0 }}>
       <box style={{ flexDirection: 'column', paddingLeft: 1 }}>
@@ -36,7 +50,7 @@ export function FreebuffChatFooter({ projectRoot }: { projectRoot: string }) {
             <span fg={theme.primary}>/model</span>
             <span
               fg={theme.muted}
-            >{` to change · Chat: ${name === '(empty chat)' ? 'New chat' : name.replace(/\s+/g, ' ')}`}</span>
+            >{` to change · Chat: ${name}`}</span>
           </text>
         </Button>
         <text style={{ fg: theme.muted }}>
