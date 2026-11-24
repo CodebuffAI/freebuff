@@ -19,12 +19,23 @@ export function leanContextGuidance(
   const condensedAt = Math.round(compactionThreshold(maxContextLength) / 1000)
   // Desktop and Cloud workspace roots have no write_todos tool
   // (agents/base3.ts drops it), so their plan has to live in the transcript.
-  const planGuidance = options.workspace
-    ? `- For any task with more than a couple of steps, keep a short plan in your reply and update it as you go. This workspace has no to-do tool; the plan in the transcript is what you check after condensing.`
-    : `- For any task with more than a couple of steps, write the plan with write_todos before editing and keep it current. Your remaining todos survive condensing, so they are how you pick up where you left off; without them you lose track of what is done.`
-  const stayGuidance = options.workspace
-    ? `- Stay within the request. After condensing, check your plan and the request before starting anything new rather than broadening the change.`
-    : `- Stay within the request. After condensing, check your todos and the request before starting anything new rather than broadening the change.`
+  const plan = options.workspace
+    ? {
+        write: 'keep a short plan in your reply and update it as you go',
+        survives:
+          'This workspace has no to-do tool; the plan in the transcript is what you check after condensing.',
+        check: 'your plan',
+      }
+    : {
+        write:
+          'write the plan with write_todos before editing and keep it current',
+        survives:
+          'Your remaining todos survive condensing, so they are how you pick up where you left off; without them you lose track of what is done.',
+        check: 'your todos',
+      }
+  // One sentence skeleton, two variants: the non-workspace text stays as it was.
+  const planGuidance = `- For any task with more than a couple of steps, ${plan.write}. ${plan.survives}`
+  const stayGuidance = `- Stay within the request. After condensing, check ${plan.check} and the request before starting anything new rather than broadening the change.`
   return `# Context budget
 
 Your context is small: everything you read or run stays in this conversation. When it grows past ~${condensedAt}k tokens it is condensed automatically: you keep the user's request, a log of your earlier messages and tool calls, the most recent file reads, and an outline with line numbers of the other files you read. Old tool output is gone after that, and files you edited are not carried over; re-read only the window you need, using the outline's line numbers.
