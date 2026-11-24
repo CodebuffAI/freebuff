@@ -104,6 +104,9 @@ export function resolveSecretStore(params: {
   if (storeOverride !== undefined) return storeOverride
   if (!params.isFreebuff) return null
   if (getCliEnv().NODE_ENV === 'test') return null
+  // A locally built binary: macOS ties the Keychain item to each binary's
+  // ad-hoc signature, so every rebuild would ask for the login password.
+  if (getCliEnv().CODEBUFF_LOCAL_BUILD === 'true') return null
   // One item per credentials file, so FREEBUFF_CONFIG_DIR profiles and dev
   // stacks never share a token.
   return bunSecretStore('freebuff-cli', params.credentialsPath)
