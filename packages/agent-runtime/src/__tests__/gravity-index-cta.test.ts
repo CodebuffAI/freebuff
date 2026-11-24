@@ -13,6 +13,82 @@ const gravityResult = (toolCallId: string, value: JSONObject): Message => ({
 })
 
 describe('resolveGravityIndexLink', () => {
+  test('returns the selected service name and description for the card', () => {
+    const result = resolveGravityIndexLink({
+      reference: {
+        source: 'gravity_index',
+        search_id: 'search-1',
+        service_slug: 'neon',
+      },
+      messages: [
+        gravityResult('gravity-1', {
+          search_id: 'search-1',
+          recommendation: {
+            slug: 'supabase',
+            name: 'Supabase',
+            description: 'Postgres with auth',
+            click_url: 'https://index.trygravity.ai/go/supabase',
+          },
+          options: [
+            {
+              slug: 'neon',
+              name: '  Neon ',
+              description: 'Serverless Postgres with branching',
+              click_url: 'https://index.trygravity.ai/go/neon',
+            },
+          ],
+        }),
+      ],
+    })
+
+    expect(result).toEqual({
+      success: true,
+      value: {
+        url: 'https://index.trygravity.ai/go/neon',
+        service: {
+          name: 'Neon',
+          description: 'Serverless Postgres with branching',
+        },
+      },
+    })
+  })
+
+  test('omits the service when Gravity sent no name, and caps a long description', () => {
+    const noName = resolveGravityIndexLink({
+      reference: { source: 'gravity_index', search_id: 's', service_slug: 'x' },
+      messages: [
+        gravityResult('g', {
+          search_id: 's',
+          recommendation: {
+            slug: 'x',
+            description: 'orphan',
+            click_url: 'https://index.trygravity.ai/go/x',
+          },
+        }),
+      ],
+    })
+    expect(noName).toEqual({
+      success: true,
+      value: { url: 'https://index.trygravity.ai/go/x' },
+    })
+
+    const long = resolveGravityIndexLink({
+      reference: { source: 'gravity_index', search_id: 's', service_slug: 'x' },
+      messages: [
+        gravityResult('g', {
+          search_id: 's',
+          recommendation: {
+            slug: 'x',
+            name: 'X',
+            description: 'a'.repeat(400),
+            click_url: 'https://index.trygravity.ai/go/x',
+          },
+        }),
+      ],
+    })
+    expect(long.success && long.value.service?.description?.length).toBe(300)
+  })
+
   test('uses the selected recommendation click URL byte-for-byte', () => {
     const clickUrl =
       'https://index.trygravity.ai/go/recommendation?grclid=abc%2F123'
@@ -43,7 +119,7 @@ describe('resolveGravityIndexLink', () => {
       ],
     })
 
-    expect(result).toEqual({ success: true, value: clickUrl })
+    expect(result).toEqual({ success: true, value: { url: clickUrl } })
   })
 
   test('resolves an explicitly selected option instead of the recommendation', () => {
@@ -69,7 +145,7 @@ describe('resolveGravityIndexLink', () => {
       ],
     })
 
-    expect(result).toEqual({ success: true, value: optionUrl })
+    expect(result).toEqual({ success: true, value: { url: optionUrl } })
   })
 
   test('can use an earlier result when a follow-up reuses the search id', () => {
@@ -96,7 +172,7 @@ describe('resolveGravityIndexLink', () => {
       ],
     })
 
-    expect(result).toEqual({ success: true, value: earlierUrl })
+    expect(result).toEqual({ success: true, value: { url: earlierUrl } })
   })
 
   test('fails closed for unknown searches, services, and unsafe URLs', () => {

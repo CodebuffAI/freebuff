@@ -45,15 +45,32 @@ const findSearchResults = (
   return results
 }
 
+const MAX_SERVICE_NAME_LENGTH = 80
+const MAX_SERVICE_DESCRIPTION_LENGTH = 300
+
+const asText = (value: unknown, max: number): string | undefined => {
+  if (typeof value !== 'string') return undefined
+  const text = value.trim()
+  if (!text) return undefined
+  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`
+}
+
+export type ResolvedGravityIndexLink = {
+  url: string
+  /** The selected service as Gravity described it; absent without a name. */
+  service?: { name: string; description?: string }
+}
+
 /**
  * Resolves an agent-selected Gravity search/service pair to the exact tracked
- * URL stored in that tool result. A missing or invalid reference fails closed:
- * render_ui never receives a guessed or vendor-homepage fallback.
+ * URL stored in that tool result, plus the service's name and description from
+ * the same entry. A missing or invalid reference fails closed: render_ui never
+ * receives a guessed or vendor-homepage fallback.
  */
 export const resolveGravityIndexLink = (params: {
   reference: RenderUIGravityIndexLink
   messages: readonly Message[]
-}): ErrorOr<string> => {
+}): ErrorOr<ResolvedGravityIndexLink> => {
   const { reference } = params
   const searchResults = findSearchResults(params.messages, reference.search_id)
 
@@ -88,7 +105,19 @@ export const resolveGravityIndexLink = (params: {
         ? asHttpUrl(asRecord(searchResult.credential_request)?.setup_url)
         : undefined)
 
-    if (clickUrl) return success(clickUrl)
+    if (clickUrl) {
+      const name = asText(selectedService.name, MAX_SERVICE_NAME_LENGTH)
+      const description = asText(
+        selectedService.description,
+        MAX_SERVICE_DESCRIPTION_LENGTH,
+      )
+      return success({
+        url: clickUrl,
+        ...(name
+          ? { service: { name, ...(description ? { description } : {}) } }
+          : {}),
+      })
+    }
   }
 
   return failure(

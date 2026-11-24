@@ -461,6 +461,7 @@ describe('gravity_index tool', () => {
           name: 'SendGrid',
           slug: 'sendgrid',
           category: 'Email',
+          description: '  Transactional email API.  ',
           click_url: 'https://index.trygravity.ai/go/recommendation-fallback',
         },
         reasoning: 'Good transactional email fit.',
@@ -553,6 +554,11 @@ describe('gravity_index tool', () => {
       input: {
         widget: {
           link: 'https://index.trygravity.ai/go/recommendation-fallback',
+          gravity_search_id: 'search-1',
+          gravity_service: {
+            name: 'SendGrid',
+            description: 'Transactional email API.',
+          },
         },
       },
     })
