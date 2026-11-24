@@ -25,6 +25,7 @@
     "release:freebuff": "bun run --cwd=freebuff release",
     "build:sdk": "cd sdk && bun run build",
     "build:freebuff": "bun freebuff/cli/build.ts 0.0.0-dev",
+    "export:opencode": "bun scripts/export-opencode-agents.ts",
     "buffbench": "bun --cwd evals run-buffbench",
     "ci": "bun run build:sdk && bun run build:freebuff"
   },

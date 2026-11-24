@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "opencode-server",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  // Replace database_id with the id printed by:
+  //   wrangler d1 create opencode-server
+  // Local development (wrangler dev) uses a local SQLite file and accepts this
+  // placeholder id as-is.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "opencode-server",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  // Secrets (set with `wrangler secret put <NAME>`, or in .dev.vars locally):
+  //   ADMIN_TOKEN        - password for this dashboard and the /api routes
+  //   OPENAI_API_KEY, OPENROUTER_API_KEY, NOUS_API_KEY, GROQ_API_KEY, ...
+  //   PROVIDERS          - optional JSON array to configure upstreams explicitly
+  "vars": {
+    "DEFAULT_PROVIDER": "openai"
+  }
+}

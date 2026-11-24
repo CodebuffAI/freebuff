@@ -1,0 +1,20 @@
+{
+  "name": "opencode-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted OpenAI-compatible gateway + dashboard for opencode, with Freebuff-style agents.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:init": "wrangler d1 execute opencode-server --local --file=./schema.sql",
+    "db:init:remote": "wrangler d1 execute opencode-server --remote --file=./schema.sql",
+    "sync:models": "bun scripts/sync-models.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "typescript": "5.9.3",
+    "wrangler": "^4.167.0"
+  }
+}

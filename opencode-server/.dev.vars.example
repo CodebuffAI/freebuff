@@ -1,0 +1,8 @@
+# Copy to .dev.vars for local development (never commit .dev.vars).
+ADMIN_TOKEN=dev-admin-token
+
+# Upstream providers you already pay for. Use whichever you have.
+OPENAI_API_KEY=
+OPENROUTER_API_KEY=
+NOUS_API_KEY=
+GROQ_API_KEY=

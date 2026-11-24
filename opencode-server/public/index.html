@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opencode-server</title>
+    <style>
+      :root {
+        --bg: #0b0b10;
+        --panel: #14141c;
+        --panel-2: #1b1b26;
+        --line: #2a2a38;
+        --text: #ececf3;
+        --muted: #9494a8;
+        --accent: #a78bfa;
+        --accent-2: #6ee7b7;
+        --danger: #f87171;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 18px 24px;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        background: rgba(11, 11, 16, 0.9);
+        backdrop-filter: blur(8px);
+        z-index: 5;
+      }
+      .logo {
+        width: 28px; height: 28px; border-radius: 8px;
+        background: linear-gradient(135deg, var(--accent), #6d28d9);
+        display: grid; place-items: center; font-weight: 700; font-size: 13px;
+      }
+      h1 { font-size: 15px; margin: 0; letter-spacing: 0.2px; }
+      header .spacer { flex: 1; }
+      main { max-width: 1040px; margin: 0 auto; padding: 24px 24px 80px; }
+      nav { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
+      nav button {
+        background: transparent; color: var(--muted); border: 1px solid var(--line);
+        padding: 7px 14px; border-radius: 999px; cursor: pointer; font: inherit;
+      }
+      nav button.active { color: var(--text); border-color: var(--accent); background: rgba(167, 139, 250, 0.12); }
+      section { display: none; }
+      section.active { display: block; }
+      .card {
+        background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+        padding: 18px; margin-bottom: 16px;
+      }
+      .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 14px; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+      label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+      input, select {
+        background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+        padding: 9px 11px; border-radius: 9px; font: inherit; min-width: 0;
+      }
+      input:focus, select:focus { outline: 2px solid rgba(167, 139, 250, 0.45); outline-offset: 1px; }
+      button.primary {
+        background: linear-gradient(135deg, var(--accent), #7c3aed); color: #fff;
+        border: none; padding: 10px 18px; border-radius: 9px; cursor: pointer; font: inherit; font-weight: 600;
+      }
+      button.ghost {
+        background: transparent; color: var(--text); border: 1px solid var(--line);
+        padding: 8px 14px; border-radius: 9px; cursor: pointer; font: inherit;
+      }
+      button.ghost.danger { color: var(--danger); border-color: rgba(248, 113, 113, 0.4); }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+      th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+      code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
+      pre {
+        background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+        padding: 14px; overflow: auto; margin: 0;
+      }
+      .pill {
+        display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px;
+        background: rgba(110, 231, 183, 0.12); color: var(--accent-2); border: 1px solid rgba(110, 231, 183, 0.3);
+      }
+      .pill.off { background: rgba(248, 113, 113, 0.1); color: var(--danger); border-color: rgba(248, 113, 113, 0.3); }
+      .muted { color: var(--muted); }
+      .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+      .stat { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+      .stat .k { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+      .stat .v { font-size: 22px; font-weight: 650; margin-top: 4px; }
+      .bar { height: 7px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+      .bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #6d28d9); }
+      .keyrow code { color: var(--accent); }
+      #toast {
+        position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
+        background: var(--accent); color: #14002e; padding: 10px 18px; border-radius: 10px;
+        font-weight: 600; opacity: 0; transition: 0.25s; pointer-events: none;
+      }
+      #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+      .newkey {
+        border: 1px dashed rgba(167, 139, 250, 0.5); background: rgba(167, 139, 250, 0.07);
+        border-radius: 10px; padding: 14px; margin-bottom: 16px; display: none;
+      }
+      .newkey.show { display: block; }
+      .newkey code { color: var(--accent-2); word-break: break-all; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="logo">oc</div>
+      <h1>opencode-server</h1>
+      <div class="spacer"></div>
+      <div class="row" style="gap: 8px">
+        <input id="admin-token" type="password" placeholder="Admin token" style="width: 190px" />
+        <button class="ghost" id="save-token">Unlock</button>
+      </div>
+    </header>
+
+    <main>
+      <nav>
+        <button data-tab="keys" class="active">API keys</button>
+        <button data-tab="usage">Usage</button>
+        <button data-tab="models">Models</button>
+        <button data-tab="opencode">opencode config</button>
+      </nav>
+
+      <section id="tab-keys" class="active">
+        <div class="card">
+          <h2>Create a client key</h2>
+          <div class="row">
+            <div>
+              <label for="key-name">Name</label>
+              <input id="key-name" placeholder="laptop" />
+            </div>
+            <div>
+              <label for="key-rpm">Rate limit (req/min, blank = none)</label>
+              <input id="key-rpm" type="number" min="1" placeholder="none" style="width: 190px" />
+            </div>
+            <div>
+              <label for="key-budget">Monthly token budget (blank = none)</label>
+              <input id="key-budget" type="number" min="1" placeholder="none" style="width: 210px" />
+            </div>
+            <button class="primary" id="create-key">Create key</button>
+          </div>
+          <p class="muted" style="margin: 12px 0 0">
+            Limits are optional and off by default. Each key spends your own upstream provider quota.
+          </p>
+        </div>
+
+        <div class="newkey" id="newkey">
+          <div class="muted" style="margin-bottom: 6px">Copy this key now — it is shown once.</div>
+          <code id="newkey-value"></code>
+        </div>
+
+        <div class="card">
+          <h2>Keys</h2>
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Prefix</th><th>Limits</th><th>Last used</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody id="keys-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-usage">
+        <div class="card">
+          <h2>Last <span id="usage-days-label">7</span> days</h2>
+          <div class="row" style="margin-bottom: 14px">
+            <select id="usage-days">
+              <option value="1">24 hours</option>
+              <option value="7" selected>7 days</option>
+              <option value="30">30 days</option>
+            </select>
+          </div>
+          <div class="stats">
+            <div class="stat"><div class="k">Requests</div><div class="v" id="stat-requests">0</div></div>
+            <div class="stat"><div class="k">Prompt tokens</div><div class="v" id="stat-prompt">0</div></div>
+            <div class="stat"><div class="k">Completion tokens</div><div class="v" id="stat-completion">0</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>By key</h2>
+          <table><thead><tr><th>Key</th><th>Requests</th><th>Tokens</th></tr></thead><tbody id="usage-keys"></tbody></table>
+        </div>
+        <div class="card">
+          <h2>By model</h2>
+          <table><thead><tr><th>Model</th><th>Requests</th><th>Tokens</th></tr></thead><tbody id="usage-models"></tbody></table>
+        </div>
+        <div class="card">
+          <h2>By day</h2>
+          <table><thead><tr><th>Day</th><th>Requests</th><th>Tokens</th></tr></thead><tbody id="usage-days"></tbody></table>
+        </div>
+      </section>
+
+      <section id="tab-models">
+        <div class="card">
+          <h2>Upstream providers</h2>
+          <table><thead><tr><th>Provider</th><th>Base URL</th><th>Models</th></tr></thead><tbody id="providers-body"></tbody></table>
+        </div>
+      </section>
+
+      <section id="tab-opencode">
+        <div class="card">
+          <h2>Point opencode at this gateway</h2>
+          <p class="muted" style="margin-top: 0">
+            Save as <code>opencode.json</code> in your project (or <code>~/.config/opencode/opencode.json</code>).
+            The Freebuff agents exported to <code>.opencode/agents/</code> work with any of these models.
+          </p>
+          <pre id="opencode-config"></pre>
+          <div class="row" style="margin-top: 12px">
+            <button class="ghost" id="copy-config">Copy config</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast"></div>
+
+    <script>
+      const $ = (id) => document.getElementById(id)
+      const state = { token: sessionStorage.getItem('adminToken') || '', keys: [], models: [] }
+
+      function toast(message) {
+        const el = $('toast')
+        el.textContent = message
+        el.classList.add('show')
+        setTimeout(() => el.classList.remove('show'), 1800)
+      }
+
+      function num(value) {
+        return new Intl.NumberFormat().format(value || 0)
+      }
+
+      async function api(path, options = {}) {
+        const response = await fetch(path, {
+          ...options,
+          headers: {
+            'content-type': 'application/json',
+            'x-admin-token': state.token,
+            ...(options.headers || {}),
+          },
+        })
+        const text = await response.text()
+        let data = null
+        try {
+          data = text ? JSON.parse(text) : null
+        } catch {
+          data = { raw: text }
+        }
+        if (!response.ok) {
+          throw new Error((data && data.error && data.error.message) || response.statusText)
+        }
+        return data
+      }
+
+      function setTab(name) {
+        document.querySelectorAll('nav button').forEach((button) => {
+          button.classList.toggle('active', button.dataset.tab === name)
+        })
+        document.querySelectorAll('section').forEach((section) => {
+          section.classList.toggle('active', section.id === `tab-${name}`)
+        })
+        if (name === 'usage') loadUsage()
+        if (name === 'models') loadModels()
+        if (name === 'opencode') renderOpencodeConfig()
+      }
+
+      document.querySelectorAll('nav button').forEach((button) => {
+        button.addEventListener('click', () => setTab(button.dataset.tab))
+      })
+
+      $('save-token').addEventListener('click', async () => {
+        state.token = $('admin-token').value.trim()
+        sessionStorage.setItem('adminToken', state.token)
+        try {
+          await api('/api/me')
+          toast('Unlocked')
+          refresh()
+        } catch (error) {
+          toast(error.message)
+        }
+      })
+
+      $('create-key').addEventListener('click', async () => {
+        const rpm = $('key-rpm').value.trim()
+        const budget = $('key-budget').value.trim()
+        try {
+          const result = await api('/api/keys', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: $('key-name').value.trim() || undefined,
+              rateLimitRpm: rpm ? Number(rpm) : undefined,
+              monthlyTokenBudget: budget ? Number(budget) : undefined,
+            }),
+          })
+          $('newkey-value').textContent = result.key
+          $('newkey').classList.add('show')
+          $('key-name').value = ''
+          $('key-rpm').value = ''
+          $('key-budget').value = ''
+          await loadKeys()
+          renderOpencodeConfig()
+        } catch (error) {
+          toast(error.message)
+        }
+      })
+
+      async function loadKeys() {
+        const data = await api('/api/keys')
+        state.keys = data.keys
+        const body = $('keys-body')
+        body.textContent = ''
+        if (data.keys.length === 0) {
+          const row = document.createElement('tr')
+          const cell = document.createElement('td')
+          cell.colSpan = 6
+          cell.className = 'muted'
+          cell.textContent = 'No keys yet.'
+          row.appendChild(cell)
+          body.appendChild(row)
+          return
+        }
+        for (const key of data.keys) {
+          const row = document.createElement('tr')
+          row.className = 'keyrow'
+
+          const name = document.createElement('td')
+          name.textContent = key.name
+          row.appendChild(name)
+
+          const prefix = document.createElement('td')
+          const code = document.createElement('code')
+          code.textContent = `${key.key_prefix}…`
+          prefix.appendChild(code)
+          row.appendChild(prefix)
+
+          const limits = document.createElement('td')
+          const parts = []
+          if (key.rate_limit_rpm) parts.push(`${key.rate_limit_rpm} rpm`)
+          if (key.monthly_token_budget) parts.push(`${num(key.monthly_token_budget)} tok/mo`)
+          limits.textContent = parts.length ? parts.join(' · ') : 'none'
+          row.appendChild(limits)
+
+          const used = document.createElement('td')
+          used.textContent = key.last_used_at ? new Date(key.last_used_at).toLocaleString() : '—'
+          row.appendChild(used)
+
+          const status = document.createElement('td')
+          const pill = document.createElement('span')
+          pill.className = key.revoked_at ? 'pill off' : 'pill'
+          pill.textContent = key.revoked_at ? 'revoked' : 'active'
+          status.appendChild(pill)
+          row.appendChild(status)
+
+          const actions = document.createElement('td')
+          if (!key.revoked_at) {
+            const button = document.createElement('button')
+            button.className = 'ghost danger'
+            button.textContent = 'Revoke'
+            button.addEventListener('click', async () => {
+              try {
+                await api(`/api/keys/${key.id}/revoke`, { method: 'POST' })
+                await loadKeys()
+                toast('Key revoked')
+              } catch (error) {
+                toast(error.message)
+              }
+            })
+            actions.appendChild(button)
+          }
+          row.appendChild(actions)
+          body.appendChild(row)
+        }
+      }
+
+      async function loadUsage() {
+        const days = $('usage-days').value
+        $('usage-days-label').textContent = days
+        try {
+          const data = await api(`/api/usage?days=${days}`)
+          $('stat-requests').textContent = num(data.totals.requests)
+          $('stat-prompt').textContent = num(data.totals.promptTokens)
+          $('stat-completion').textContent = num(data.totals.completionTokens)
+
+          const fill = (id, rows, mapper) => {
+            const body = $(id)
+            body.textContent = ''
+            if (rows.length === 0) {
+              const row = document.createElement('tr')
+              const cell = document.createElement('td')
+              cell.colSpan = 3
+              cell.className = 'muted'
+              cell.textContent = 'No traffic yet.'
+              row.appendChild(cell)
+              body.appendChild(row)
+              return
+            }
+            for (const item of rows) {
+              const values = mapper(item)
+              const row = document.createElement('tr')
+              for (const value of values) {
+                const cell = document.createElement('td')
+                cell.textContent = value
+                row.appendChild(cell)
+              }
+              body.appendChild(row)
+            }
+          }
+
+          fill('usage-keys', data.byKey, (item) => [item.name, num(item.requests), num(item.tokens)])
+          fill('usage-models', data.byModel, (item) => [item.model, num(item.requests), num(item.tokens)])
+          fill('usage-days', data.byDay, (item) => [item.day, num(item.requests), num(item.tokens)])
+        } catch (error) {
+          toast(error.message)
+        }
+      }
+
+      $('usage-days').addEventListener('change', loadUsage)
+
+      async function loadModels() {
+        try {
+          const data = await api('/api/models')
+          state.providers = data.providers
+          state.models = data.models
+          const body = $('providers-body')
+          body.textContent = ''
+          if (data.providers.length === 0) {
+            const row = document.createElement('tr')
+            const cell = document.createElement('td')
+            cell.colSpan = 3
+            cell.className = 'muted'
+            cell.textContent = 'No upstream configured. Add OPENAI_API_KEY or PROVIDERS as a secret.'
+            row.appendChild(cell)
+            body.appendChild(row)
+            return
+          }
+          for (const provider of data.providers) {
+            const row = document.createElement('tr')
+            const name = document.createElement('td')
+            name.textContent = provider.id
+            const url = document.createElement('td')
+            const code = document.createElement('code')
+            code.textContent = provider.baseUrl
+            url.appendChild(code)
+            const models = document.createElement('td')
+            models.textContent = provider.models.length ? provider.models.join(', ') : 'any model id via prefix'
+            row.append(name, url, models)
+            body.appendChild(row)
+          }
+        } catch (error) {
+          toast(error.message)
+        }
+      }
+
+      function renderOpencodeConfig() {
+        const base = location.origin
+        const models = (state.models || []).slice(0, 6)
+        const modelEntries = {}
+        for (const model of models) {
+          modelEntries[model.id] = { name: `${model.id} (${model.owned_by})` }
+        }
+        const config = {
+          $schema: 'https://opencode.ai/config.json',
+          provider: {
+            'opencode-server': {
+              npm: '@ai-sdk/openai-compatible',
+              name: 'opencode-server',
+              options: { baseURL: `${base}/v1`, apiKey: 'sk-oc-…' },
+              models: modelEntries,
+            },
+          },
+        }
+        $('opencode-config').textContent = JSON.stringify(config, null, 2)
+      }
+
+      $('copy-config').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText($('opencode-config').textContent)
+          toast('Copied')
+        } catch {
+          toast('Copy failed — select the text manually')
+        }
+      })
+
+      async function refresh() {
+        if (!state.token) return
+        try {
+          await loadKeys()
+          loadModels()
+        } catch (error) {
+          toast(error.message)
+        }
+      }
+
+      if (state.token) {
+        $('admin-token').value = state.token
+        refresh()
+      }
+    </script>
+  </body>
+</html>

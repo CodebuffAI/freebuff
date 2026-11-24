@@ -1,0 +1,4 @@
+mock-model -> mock-model
+mock/auto -> mock/auto
+mock/gpt-x -> gpt-x
+unknown-model -> unknown-model
