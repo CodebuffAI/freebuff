@@ -1,3 +1,4 @@
+import { FREEBUFF_AI_TRAINING_NOTICE } from '@codebuff/common/constants/freebuff-data-use'
 import { FREEBUFF_ENABLE_STREAK_IN_UI } from '@codebuff/common/constants/freebuff-models'
 import {
   dailyMeterQuiet,
@@ -16,7 +17,10 @@ import {
   DisplayAdSplash,
   displayAdSplashVariant,
 } from './display-ad-splash'
-import { FreebuffPausedPlanNotice } from './freebuff-paused-plan-notice'
+import {
+  FreebuffPausedPlanNotice,
+  freebuffPausedPlanMessage,
+} from './freebuff-paused-plan-notice'
 import { FreebuffReferralBanner } from './freebuff-referral-banner'
 import {
   FREEBUFF_WORDMARK,
@@ -91,6 +95,95 @@ export function FreebuffChatHeader({
     terminalHeight,
     availableWidth: width - 4,
   })
+  // The model's data-use line (as on web's picker): quiet, after the status
+  // lines and before the referral pitch.
+  const dataUse =
+    model.warning ??
+    (model.dataUse === 'training' ? FREEBUFF_AI_TRAINING_NOTICE : undefined)
+  const lines = [
+    freebuffPausedPlanMessage(session) && (
+      <FreebuffPausedPlanNotice key="paused" session={session} />
+    ),
+    session?.status === 'active' && (
+      <text key="session" style={{ fg: theme.muted, wrapMode: 'word' }}>
+        {session.model === model.id
+          ? 'Session active'
+          : `Next message switches from ${directory.get(session.model).displayName}.`}
+      </text>
+    ),
+    freebucks && !dailyMeterQuiet(freebucks) && (
+      <text key="meter" style={{ fg: theme.foreground, wrapMode: 'word' }}>
+        {`${formatHours(freebucks.daily.remaining)}/${formatHours(freebucks.daily.limit)} hours remaining`}
+      </text>
+    ),
+    // The server's reason the pool is smaller than the account's own (a
+    // device's shared allowance, the VPN pool). Without it a shared pool reads
+    // "0/0 hours remaining" and looks like a broken account.
+    freebucks && !dailyMeterQuiet(freebucks) && freebucks.daily.note && (
+      <text key="note" style={{ fg: theme.muted, wrapMode: 'word' }}>
+        {freebucks.daily.note}
+      </text>
+    ),
+    freebucks === null && (
+      <text key="balance" style={{ fg: theme.secondary }}>
+        Balance unavailable
+      </text>
+    ),
+    refund && (
+      <text key="refund" style={{ fg: theme.secondary, wrapMode: 'word' }}>
+        {refund}
+      </text>
+    ),
+    plan && (
+      <text key="plan" style={{ fg: theme.muted, wrapMode: 'word' }}>
+        {freebucks === undefined
+          ? `${plan.tierName} plan · ${formatPlanWindows(plan)}`
+          : `${plan.tierName} plan`}
+      </text>
+    ),
+    freebucks === undefined && windows && (
+      <text key="windows" style={{ fg: theme.muted, wrapMode: 'word' }}>
+        {windows.windows
+          .map((w) => `${w.label} ${w.used} of ${w.limit}`)
+          .join(' · ')}
+      </text>
+    ),
+    availability && (
+      <text key="availability" style={{ fg: theme.muted, wrapMode: 'word' }}>
+        {availability}
+      </text>
+    ),
+    FREEBUFF_ENABLE_STREAK_IN_UI && Boolean(streak.data?.streak) && (
+      <text key="streak" style={{ fg: theme.primary }}>
+        {`${streak.data!.streak} day streak`}
+      </text>
+    ),
+    streakBonus && (
+      <text key="bonus" style={{ fg: theme.muted, wrapMode: 'word' }}>
+        {streakBonus}
+      </text>
+    ),
+    dataUse && (
+      <text key="data-use" style={{ fg: theme.muted, wrapMode: 'word' }}>
+        {dataUse}
+      </text>
+    ),
+  ].filter(Boolean)
+  if (referral) {
+    lines.push(
+      <FreebuffReferralBanner
+        key="referral"
+        width={width - 4}
+        referral={referral}
+        glmPromo={getGlmPromo(session)}
+        accessTier={tier}
+        metered={freebucks !== undefined}
+        flush={lines.length === 0}
+        focusedId=""
+        onFocusTargetsChange={ignoreFocusTargets}
+      />,
+    )
+  }
   return (
     <box
       style={{
@@ -103,91 +196,21 @@ export function FreebuffChatHeader({
       <text style={{ fg: theme.foreground, wrapMode: 'none', marginBottom: 1 }}>
         {wordmark}
       </text>
-      <box
-        style={{
-          width,
-          border: true,
-          borderColor: theme.border,
-          paddingLeft: 1,
-          paddingRight: 1,
-          flexDirection: 'column',
-        }}
-      >
-        <FreebuffPausedPlanNotice session={session} />
-        {model.warning && (
-          <text style={{ fg: theme.secondary, wrapMode: 'word' }}>
-            {model.warning}
-          </text>
-        )}
-        <text style={{ fg: theme.muted, wrapMode: 'word' }}>
-          {session?.status === 'active'
-            ? session.model === model.id
-              ? 'Session active'
-              : `Next message switches from ${directory.get(session.model).displayName}.`
-            : 'Your first message starts the session.'}
-        </text>
-        {freebucks && !dailyMeterQuiet(freebucks) && (
-          <text style={{ fg: theme.foreground, wrapMode: 'word' }}>
-            {`${formatHours(freebucks.daily.remaining)}/${formatHours(freebucks.daily.limit)} hours remaining`}
-          </text>
-        )}
-        {/* The server's reason the pool is smaller than the account's own
-            (a device's shared allowance, the VPN pool). Without it a shared
-            pool reads "0/0 hours remaining" and looks like a broken account. */}
-        {freebucks && !dailyMeterQuiet(freebucks) && freebucks.daily.note && (
-          <text style={{ fg: theme.muted, wrapMode: 'word' }}>
-            {freebucks.daily.note}
-          </text>
-        )}
-        {freebucks === null && (
-          <text style={{ fg: theme.secondary }}>Balance unavailable</text>
-        )}
-        {refund && (
-          <text style={{ fg: theme.secondary, wrapMode: 'word' }}>
-            {refund}
-          </text>
-        )}
-        {plan && (
-          <text style={{ fg: theme.muted, wrapMode: 'word' }}>
-            {freebucks === undefined
-              ? `${plan.tierName} plan · ${formatPlanWindows(plan)}`
-              : `${plan.tierName} plan`}
-          </text>
-        )}
-        {freebucks === undefined && windows && (
-          <text style={{ fg: theme.muted, wrapMode: 'word' }}>
-            {windows.windows
-              .map((w) => `${w.label} ${w.used} of ${w.limit}`)
-              .join(' · ')}
-          </text>
-        )}
-        {availability && (
-          <text style={{ fg: theme.muted, wrapMode: 'word' }}>
-            {availability}
-          </text>
-        )}
-        {FREEBUFF_ENABLE_STREAK_IN_UI && Boolean(streak.data?.streak) && (
-          <text
-            style={{ fg: theme.primary }}
-          >{`${streak.data!.streak} day streak`}</text>
-        )}
-        {streakBonus && (
-          <text style={{ fg: theme.muted, wrapMode: 'word' }}>
-            {streakBonus}
-          </text>
-        )}
-        {referral && (
-          <FreebuffReferralBanner
-            width={width - 4}
-            referral={referral}
-            glmPromo={getGlmPromo(session)}
-            accessTier={tier}
-            metered={freebucks !== undefined}
-            focusedId=""
-            onFocusTargetsChange={ignoreFocusTargets}
-          />
-        )}
-      </box>
+      {/* Before the session loads, or with nothing to report, no empty frame. */}
+      {lines.length > 0 && (
+        <box
+          style={{
+            width,
+            border: true,
+            borderColor: theme.border,
+            paddingLeft: 1,
+            paddingRight: 1,
+            flexDirection: 'column',
+          }}
+        >
+          {lines}
+        </box>
+      )}
       <DisplayAdSplash
         width={width}
         variant={displayAdSplashVariant(terminalHeight)}

@@ -1,3 +1,5 @@
+import { reasoningEffortLabel } from '@codebuff/common/constants/reasoning-effort'
+
 import { Button } from './button'
 import { DisplayAdStatusline } from './display-ad-statusline'
 import { CLI_DISPLAY_AD_PLACEMENT_IDS } from '../ads/display-ads'
@@ -12,6 +14,7 @@ import {
   useFreebuffModelStore,
   getEffectiveFreebuffReasoningEffort,
 } from '../state/freebuff-model-store'
+import { truncateToSingleLinePreview } from '../utils/agent-display'
 import { getFirstUserPrompt } from '../utils/chat-meta'
 import { formatCwd } from '../utils/path-helpers'
 
@@ -22,8 +25,25 @@ export function FreebuffChatFooter({ projectRoot }: { projectRoot: string }) {
   const nextModel = useFreebuffChatStore((s) => s.nextModel)
   const directory = useFreebuffModelDirectory()
   const model = directory.get(nextModel ?? selected)
-  const effort = getEffectiveFreebuffReasoningEffort(model.id)
-  const name = useChatStore((s) => getFirstUserPrompt(s.messages))
+  // Named only where there is a choice of levels (product, 2026-11-24, Victor).
+  const effort =
+    (directory.efforts(model.id)?.length ?? 0) > 1
+      ? getEffectiveFreebuffReasoningEffort(model.id)
+      : null
+  const prompt = useChatStore((s) => getFirstUserPrompt(s.messages))
+  // Only while the message it names still opens the chat.
+  const title = useChatStore((s) =>
+    s.chatTitle &&
+    s.messages.find((m) => m.variant === 'user')?.id === s.chatTitle.messageId
+      ? s.chatTitle.title
+      : null,
+  )
+  // The prompt stands in until the model's title arrives, or if it never does.
+  const name =
+    title ??
+    (prompt === '(empty chat)'
+      ? 'New chat'
+      : truncateToSingleLinePreview(prompt, 40))
   return (
     <box style={{ flexDirection: 'column', flexShrink: 0 }}>
       <box style={{ flexDirection: 'column', paddingLeft: 1 }}>
@@ -31,12 +51,12 @@ export function FreebuffChatFooter({ projectRoot }: { projectRoot: string }) {
           <text style={{ wrapMode: 'word', fg: theme.foreground }}>
             <span
               fg={theme.primary}
-            >{`${model.displayName}${effort ? ` • ${effort}` : ''}`}</span>
+            >{`${model.displayName}${effort ? ` • ${reasoningEffortLabel(effort, directory.efforts(model.id) ?? [])}` : ''}`}</span>
             <span fg={theme.muted}>{` · ${formatCwd(projectRoot)} · `}</span>
             <span fg={theme.primary}>/model</span>
             <span
               fg={theme.muted}
-            >{` to change · Chat: ${name === '(empty chat)' ? 'New chat' : name.replace(/\s+/g, ' ')}`}</span>
+            >{` to change · Chat: ${name}`}</span>
           </text>
         </Button>
         <text style={{ fg: theme.muted }}>

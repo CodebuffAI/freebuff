@@ -24,6 +24,8 @@ import { getSystemProcessEnv } from './env'
 import { recoverByokLock } from './impl/byok-lock'
 
 export const BYOK_SECRET_SERVICE = 'com.freebuff.byok.v1'
+/** Largest context window supported by BYOK connection validation. */
+const BYOK_MAX_CONTEXT_WINDOW = 2_000_000
 const envReference = /^env:[A-Za-z_][A-Za-z0-9_]*$/
 const ownedReference = /^connection:[a-f0-9-]+:[1-9][0-9]*$/
 /** One ChatGPT sign-in, shared by every model saved from it (see saveChatGptSignIn). */
@@ -37,7 +39,8 @@ const connectionSchema = z
     provider: z.enum(['openrouter', 'openai-compatible', CHATGPT_BYOK_PROVIDER]),
     model: text,
     baseUrl: z.string().max(2048).optional(),
-    contextWindow: z.number().int().min(4096).max(2_000_000).optional(),
+    contextWindow: z.number().int().min(4096).max(BYOK_MAX_CONTEXT_WINDOW).optional(),
+    contextWindowMode: z.enum(['auto', 'manual']).optional(),
     maxOutputTokens: z.number().int().min(1).max(1_000_000).optional(),
     credentialRef: z
       .string()
@@ -86,6 +89,7 @@ export type ByokMetadataStore = {
 export type ByokConnectionInput = {
   /** User-configured limits, not a claim of tested model capability. */
   contextWindow?: number
+  contextWindowMode?: 'auto' | 'manual'
   maxOutputTokens?: number
   name: string
   provider: ByokProvider
@@ -123,7 +127,7 @@ export type ByokConnectionStore = {
     revision: number
     model: Pick<
       ByokConnectionInput,
-      'name' | 'model' | 'contextWindow' | 'maxOutputTokens'
+      'name' | 'model' | 'contextWindow' | 'contextWindowMode' | 'maxOutputTokens'
     >
   }): Promise<ByokConnection>
   list(): Promise<ByokConnection[]>
@@ -271,7 +275,7 @@ function parseConnections(value: unknown): ByokConnection[] {
     throw new ByokConnectionStateError('BYOK connection metadata contains duplicate connections')
   }
   for (const item of parsed.data) {
-    byokModelLimits(item)
+    byokConnectionLimits(item)
     normalizeByokBaseUrl(item.provider, item.baseUrl)
     if (
       item.provider === CHATGPT_BYOK_PROVIDER
@@ -287,20 +291,13 @@ function parseConnections(value: unknown): ByokConnection[] {
   return parsed.data
 }
 /**
- * The limits a connection gets when nobody chose any. The Desktop settings
- * form pre-fills exactly this pair, and the store persists it, so a stored
- * 32,768 / 4,096 almost always means "not configured" rather than a decision.
+ * Legacy connections used this pair to mean "not configured". New forms
+ * explicitly save contextWindowMode, so typing these values is a real choice.
  */
 export const BYOK_DEFAULT_CONTEXT_WINDOW = 32_768
 export const BYOK_DEFAULT_MAX_OUTPUT_TOKENS = 4_096
 /** A remote endpoint that does not report its model's window. */
 export const BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW = 131_072
-/**
- * The most an automatically-chosen window may be: the hosted budget's order of
- * magnitude, since every token of a BYOK request is billed to the user's key.
- * A user who wants more types it into the connection.
- */
-export const BYOK_DISCOVERED_CONTEXT_WINDOW_CAP = 400_000
 
 /**
  * A connection's limits as a run uses them. `maxOutputTokens` is the stored
@@ -324,7 +321,7 @@ export function byokModelLimits(connection: {
   if (
     !Number.isInteger(contextWindow) ||
     contextWindow < 4096 ||
-    contextWindow > 2_000_000 ||
+    contextWindow > BYOK_MAX_CONTEXT_WINDOW ||
     !Number.isInteger(maxOutputTokens) ||
     maxOutputTokens < 1 ||
     maxOutputTokens >= contextWindow
@@ -345,17 +342,47 @@ export function byokModelLimits(connection: {
   }
 }
 
-/** True when the connection carries the untouched default limits (see above). */
+/** Explicit mode wins; absent mode preserves legacy connection behavior. */
 export function hasDefaultByokLimits(connection: {
   contextWindow?: number
+  contextWindowMode?: 'auto' | 'manual'
   maxOutputTokens?: number
 }): boolean {
+  if (connection.contextWindowMode !== undefined)
+    return connection.contextWindowMode === 'auto'
+  if (connection.contextWindow === undefined) return true
   return (
     (connection.contextWindow ?? BYOK_DEFAULT_CONTEXT_WINDOW) ===
       BYOK_DEFAULT_CONTEXT_WINDOW &&
     (connection.maxOutputTokens ?? BYOK_DEFAULT_MAX_OUTPUT_TOKENS) ===
       BYOK_DEFAULT_MAX_OUTPUT_TOKENS
   )
+}
+
+/** Validate saved limits without treating an Auto placeholder as model capacity. */
+export function byokConnectionLimits(input: {
+  contextWindow?: number
+  contextWindowMode?: 'auto' | 'manual'
+  maxOutputTokens?: number
+}) {
+  const contextWindowMode = z.enum(['auto', 'manual']).parse(
+    input.contextWindowMode ?? (hasDefaultByokLimits(input) ? 'auto' : 'manual'),
+  )
+  if (contextWindowMode === 'manual' && input.contextWindow === undefined)
+    throw new Error('Enter a context window for manual limits')
+  const limits = byokModelLimits({
+    contextWindow:
+      contextWindowMode === 'auto' ? BYOK_MAX_CONTEXT_WINDOW : input.contextWindow,
+    maxOutputTokens: input.maxOutputTokens,
+  })
+  if (limits.maxOutputTokens > 1_000_000)
+    throw new Error('Choose an output limit of 1–1000000 tokens')
+  return {
+    contextWindowMode,
+    contextWindow:
+      contextWindowMode === 'auto' ? BYOK_DEFAULT_CONTEXT_WINDOW : limits.contextWindow,
+    maxOutputTokens: limits.maxOutputTokens,
+  }
 }
 
 function isLoopbackByokEndpoint(
@@ -532,19 +559,20 @@ function copyRuntimeFields(
 }
 
 /**
- * The connection a run should use: identical, unless its limits are the
- * untouched defaults. Those are a 32,768-token guess, and for a coding agent
- * whose tool schemas and prompt alone are ~15-20k tokens, compacting at 80% of
+ * The connection a run should use: identical, unless it uses Auto (or the
+ * legacy untouched defaults). The old 32,768-token guess left little room:
+ * with tool schemas and prompt alone at ~15-20k tokens, compacting at 80% of
  * 90% of (32,768 - 4,096) leaves a few thousand tokens of conversation: every
  * few tool calls the run compacted, and the summary itself sat above the line
  * (Desktop feedback 2026-09-24 and 09-27, "compacts every 3-5 turns").
  *
  * The provider's own number wins when its `/models` listing reports one
- * (capped at BYOK_DISCOVERED_CONTEXT_WINDOW_CAP). Otherwise a remote endpoint
- * gets 128k, which nearly every hosted coding model supports, and a loopback
+ * (up to the same maximum as a manually configured window). Otherwise a remote
+ * endpoint gets 128k, which nearly every hosted coding model supports, and a loopback
  * server keeps the configured default, because a local server's window is
- * whatever it was launched with. Limits a user actually typed are never
- * replaced. The credential stays non-enumerable on the copy.
+ * whatever it was launched with. Manual context limits are never replaced.
+ * Auto bounds the output limit to fit the effective window without changing
+ * the saved setting. The credential stays non-enumerable on the copy.
  */
 export async function withEffectiveByokLimits(
   connection: ResolvedByokConnection,
@@ -553,21 +581,24 @@ export async function withEffectiveByokLimits(
   if (!hasDefaultByokLimits(connection)) return connection
   const discovered = await discoverByokContextWindow(connection, options.fetch)
   const contextWindow =
-    // A window must exceed the output limit (byokModelLimits' own rule).
-    discovered !== undefined && discovered > BYOK_DEFAULT_MAX_OUTPUT_TOKENS
-      ? Math.min(discovered, BYOK_DISCOVERED_CONTEXT_WINDOW_CAP)
+    discovered !== undefined && discovered >= 4096
+      ? Math.min(discovered, BYOK_MAX_CONTEXT_WINDOW)
       : isLoopbackByokEndpoint(connection)
         ? BYOK_DEFAULT_CONTEXT_WINDOW
         : BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW
+  const maxOutputTokens = Math.min(
+    connection.maxOutputTokens ?? BYOK_DEFAULT_MAX_OUTPUT_TOKENS,
+    contextWindow - 1,
+  )
   if (
-    contextWindow === (connection.contextWindow ?? BYOK_DEFAULT_CONTEXT_WINDOW)
+    contextWindow === (connection.contextWindow ?? BYOK_DEFAULT_CONTEXT_WINDOW) &&
+    maxOutputTokens === connection.maxOutputTokens
   )
     return connection
   const effective = {
     ...connection,
     contextWindow,
-    maxOutputTokens:
-      connection.maxOutputTokens ?? BYOK_DEFAULT_MAX_OUTPUT_TOKENS,
+    maxOutputTokens,
   } as ResolvedByokConnection
   return Object.freeze(copyRuntimeFields(effective, connection))
 }
@@ -575,7 +606,7 @@ export async function withEffectiveByokLimits(
 function cleanInput(input: ByokConnectionInput) {
   if (input.provider === CHATGPT_BYOK_PROVIDER)
     throw new Error('Sign in with ChatGPT to add a ChatGPT provider')
-  const limits = byokModelLimits(input)
+  const limits = byokConnectionLimits(input)
   const name = text.safeParse(input.name),
     model = text.safeParse(input.model)
   if (!name.success || !model.success)
@@ -603,6 +634,7 @@ function cleanInput(input: ByokConnectionInput) {
     throw new Error('Choose an API key or an environment reference, not both')
   }
   return {
+    contextWindowMode: limits.contextWindowMode,
     contextWindow: limits.contextWindow,
     maxOutputTokens: limits.maxOutputTokens,
     name: name.data,
@@ -890,6 +922,7 @@ export function createByokConnectionStore(params: {
           name: model.name,
           model: model.model,
           contextWindow: model.contextWindow,
+          contextWindowMode: model.contextWindowMode,
           maxOutputTokens: model.maxOutputTokens,
           provider: connection.provider,
           baseUrl: connection.baseUrl,
@@ -937,6 +970,11 @@ export function createByokConnectionStore(params: {
         const fields = cleanInput({
           ...existing,
           ...patch,
+          contextWindowMode:
+            patch.contextWindowMode ??
+            (patch.contextWindow !== undefined
+              ? 'manual'
+              : byokConnectionLimits(existing).contextWindowMode),
           credentialRef: patch.credentialRef,
           apiKey: patch.apiKey,
         })

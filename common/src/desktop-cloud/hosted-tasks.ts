@@ -61,6 +61,9 @@ export type HostedTasksRequest = HostedBrowserScope & (
 export type HostedTasksResponses = { list: BackgroundTasksSnapshot; stop: { stopped: boolean } }
 export type HostedTasksHost = {
   request<T extends HostedTasksRequest>(input: T): Promise<HostedTasksResponses[T['operation']]>
+  /** The chats on this computer with background work running. Older builds omit it, and the page
+   *  counts only the task lists it has read itself. */
+  runningChats?(): Promise<string[]>
 }
 
 /** Task ids are the CLI's own (Codex: a subagent's thread id, a command's item id); anything else

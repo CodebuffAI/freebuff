@@ -37,6 +37,38 @@ export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return REASONING_EFFORTS.includes(value as ReasoningEffort)
 }
 
+/** Each rung's own name, on every surface. Name a rung through
+ *  `reasoningEffortLabel`, which knows the one ladder that renames them. */
+export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
+  ultra: 'Ultra',
+}
+
+/**
+ * A rung's name on the ladder it is offered on. Instant is only ever a stop
+ * that does not think (product, 2026-11-24, Victor): DeepSeek V4's ladder is
+ * `minimal`, `low`, `high`, `max`, where `minimal` turns thinking off (the
+ * server sends `reasoning.enabled: false`) and `low` still thinks, so it
+ * reads Instant, Medium, High, Max. That is the one ladder with `minimal` and
+ * no `medium`; every other names each rung as itself (an OpenAI `minimal`
+ * still thinks a little, so it stays Minimal).
+ */
+export function reasoningEffortLabel(
+  effort: ReasoningEffort,
+  ladder: readonly string[] = [],
+): string {
+  if (ladder.includes('minimal') && !ladder.includes('medium')) {
+    if (effort === 'minimal') return 'Instant'
+    if (effort === 'low') return 'Medium'
+  }
+  return REASONING_EFFORT_LABELS[effort]
+}
+
 /** Position on the shared ladder, or -1. Exported for tests that assert one
  *  rung sits below another without hard-coding the list. */
 export function reasoningEffortRank(value: unknown): number {

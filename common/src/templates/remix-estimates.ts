@@ -1,0 +1,121 @@
+/**
+ * How many times each template has been picked to start a project: the
+ * remix count on its tile. A snapshot, not a live count. On 2026-11-23 it was
+ * read from PostHog: the template step's `selected` events
+ * (`freebuff.product_funnel_step`, `funnel_stage = 'template'`) since
+ * 2026-10-21, 54,576 in all over the 98 templates. Browsers that block
+ * analytics are not in it, so it is low. Victor, 2026-11-23: "show like a
+ * remix counter (estimate for now how much usage there is)".
+ *
+ * Refresh it with the same query when the catalogue changes. A template not
+ * here, or picked fewer than 25 times, shows no count.
+ */
+export const TEMPLATE_REMIX_ESTIMATES: Readonly<Record<string, number>> = {
+  'saas-landing': 8873,
+  crosscut: 4915,
+  crm: 3610,
+  store: 3529,
+  portfolio: 3441,
+  'retro-terminal': 3377,
+  study: 2971,
+  'ai-chat': 2747,
+  'creative-agency': 2698,
+  bedwars: 2003,
+  'fusion-energy': 1388,
+  chess: 1246,
+  'indie-game': 1028,
+  'illustration-store': 1028,
+  'climate-story': 1010,
+  'flappy-bird': 903,
+  coil: 859,
+  moodboard: 527,
+  orbit: 524,
+  'fintech-landing': 392,
+  'estate-agent': 350,
+  tasks: 337,
+  'bedwars-lite': 331,
+  'talent-agency': 313,
+  'study-planner': 306,
+  'motorcycle-shop': 296,
+  'customer-health': 275,
+  'designer-portfolio': 270,
+  'shopify-storefront': 255,
+  'food-ordering': 250,
+  'skincare-shop': 191,
+  'creator-course': 185,
+  'ai-study-assistant': 179,
+  waitlist: 172,
+  'web-app': 170,
+  'architecture-portfolio': 167,
+  'coding-assessment': 164,
+  'bug-tracker': 158,
+  'screen-recorder': 147,
+  'farm-produce': 141,
+  blog: 135,
+  'usage-billing': 131,
+  'python-script': 119,
+  'bookmark-library': 110,
+  'tour-operator': 106,
+  'newsletter-platform': 106,
+  'json-api': 105,
+  'desk-booking': 104,
+  'architecture-studio': 100,
+  'product-analytics': 97,
+  'burger-delivery': 92,
+  'browser-extension': 90,
+  'baby-tracker': 88,
+  'hello-world-cli': 85,
+  'online-courses': 78,
+  'blank-website': 74,
+  'messaging-saas': 65,
+  'hardware-product': 65,
+  'restaurant-chain': 57,
+  'luxury-hotel': 56,
+  'music-library': 55,
+  'team-platform': 54,
+  'e-learning': 50,
+  'course-platform': 47,
+  'maker-shop': 47,
+  'insurance-landing': 41,
+  'bar-lounge': 39,
+  'yacht-club': 39,
+  'kitchenware-shop': 37,
+  'interior-showroom': 36,
+  'luxury-real-estate': 32,
+  'mac-utility': 31,
+  'music-venue': 31,
+  'language-school': 31,
+  'film-studio': 31,
+  'voice-dictation': 30,
+  'payments-landing': 29,
+  'wellness-retreat': 28,
+  nonprofit: 27,
+  restaurant: 26,
+  'events-studio': 23,
+  'charity-impact': 23,
+  'fractional-hr': 21,
+  conservation: 19,
+  'interior-studio': 17,
+  'yacht-rental': 15,
+  fundraising: 15,
+  'travel-landing': 14,
+  'retirement-advisor': 13,
+  conference: 13,
+  'wedding-planner': 12,
+  theatre: 11,
+  'car-auction': 11,
+  marathon: 11,
+  'boutique-hotel': 10,
+  exhibition: 9,
+  'recycling-campaign': 6,
+  'energy-api': 3,
+}
+
+/** Below this a count reads as nobody, so the tile shows none. */
+const SHOWN_FROM = 25
+
+/** The remix count to show for a template, or null when there is none to show. */
+export function templateRemixes(id: string): number | null {
+  const count = TEMPLATE_REMIX_ESTIMATES[id]
+  return count !== undefined && count >= SHOWN_FROM ? count : null
+}

@@ -55,6 +55,9 @@ export type SignupBlockReason =
   // Not a signup decision: a returning sign-in to an account its owner
   // deleted (a soft delete: the account is kept, and support can restore it).
   | 'account_deleted'
+  // Not a signup decision: staging admits only the team and its listed
+  // testers (`stagingSignInAllowed` in @codebuff/auth/staging-sign-in).
+  | 'staging_not_allowed'
 
 /**
  * Deliberately actionable and non-accusatory.
@@ -112,6 +115,8 @@ export const SIGNUP_BLOCK_MESSAGES: Record<SignupBlockReason, string> = {
     "An account that was suspended has used this browser, so new accounts can't be created from it. If that account was yours, you can appeal from its Standing tab after signing in to it. If you think this is a mistake, contact support.",
   account_deleted:
     'This account was deleted. To restore it, email support@freebuff.com from its address.',
+  staging_not_allowed:
+    'This staging environment is for the Freebuff team. Ask the team to add your email.',
   github_email_unverified:
     "GitHub sign-in needs a verified email. Verify your email in GitHub's settings (Settings → Emails) and try again, or sign in with Google instead. If your email is already verified, GitHub may be temporarily unreachable; please try again in a few minutes.",
 }

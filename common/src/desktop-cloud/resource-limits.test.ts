@@ -9,6 +9,8 @@ import {
   cloudResourceRestarts,
   cloudResourceUsage,
   isCloudResourceMessage,
+  isLimitedVmCapMessage,
+  LIMITED_VM_CAP_MESSAGE,
   type CloudResourceKind,
 } from './resource-limits'
 
@@ -91,4 +93,17 @@ test('the note says how much of the limit was in use, when the runner read it', 
   // No reading: the note is exactly as before.
   expect(cloudResourceExplanation('disk', true, false, undefined)).toBe(cloudResourceExplanation('disk', true, false))
   expect(cloudResourceUsage('memory', null)).toBeNull()
+})
+
+test('the Cloud hours refusal is recognised in its current and earlier wording, and nothing else', () => {
+  expect(isLimitedVmCapMessage(LIMITED_VM_CAP_MESSAGE)).toBe(true)
+  // What servers sent until 11-24: a workspace deployed first must still offer its card.
+  expect(
+    isLimitedVmCapMessage(
+      'You’ve used today’s 3 Cloud hours. They reset at midnight in your local timezone; until then, run chats on your computer with Freebuff Desktop. A plan lifts the limit.',
+    ),
+  ).toBe(true)
+  expect(LIMITED_VM_CAP_MESSAGE).toContain('push it to GitHub')
+  expect(isLimitedVmCapMessage(CLOUD_RESOURCE_MESSAGE)).toBe(false)
+  expect(isLimitedVmCapMessage(null)).toBe(false)
 })

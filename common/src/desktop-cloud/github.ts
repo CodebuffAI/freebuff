@@ -62,6 +62,14 @@ export type GitHubProjectConnected = {
   project: { id: string; name: string; github: GitHubRepository }
   url: string
 }
+/** A GitHub-linked chat's files, committed and pushed to its own branch without a turn. */
+export type GitHubChatPushed = {
+  repository: string
+  branch: string
+  commit: string
+  /** The branch on github.com, where GitHub offers to open a pull request. */
+  url: string
+}
 /** Committing and pushing a chat's files, after any VM restore. */
 export const GITHUB_CONNECT_PUSH_MS = 10 * 60_000
 export const GITHUB_OWNER_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/

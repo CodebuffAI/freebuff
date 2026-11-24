@@ -12,7 +12,6 @@ import {
   byokCompletionUrl,
   BYOK_DEFAULT_CONTEXT_WINDOW,
   BYOK_DEFAULT_MAX_OUTPUT_TOKENS,
-  BYOK_DISCOVERED_CONTEXT_WINDOW_CAP,
   BYOK_UNKNOWN_REMOTE_CONTEXT_WINDOW,
   clearByokContextWindowCache,
   contextWindowFromModelList,
@@ -711,6 +710,37 @@ describe('effective BYOK limits for a run', () => {
     expect(calls).toEqual([])
   })
 
+  test('explicit Auto survives saving and output edits, while the old default numbers can be manual', async () => {
+    const { fetchImpl } = listing({ data: [{ id: input.model, context_length: 1_048_576 }] })
+    const { store } = fixture()
+    const created = await store.create({ ...input, contextWindowMode: 'auto', maxOutputTokens: 65_536 })
+    const fallback = await withEffectiveByokLimits(await store.resolve(created), {
+      fetch: listing({ data: [] }).fetchImpl,
+    })
+    expect(fallback).toMatchObject({ contextWindow: 32_768, maxOutputTokens: 32_767 })
+    expect(byokModelLimits(fallback).reservedOutputTokens).toBe(16_384)
+    expect((await store.list())[0].maxOutputTokens).toBe(65_536)
+    clearByokContextWindowCache()
+    const updated = await store.update({
+      id: created.id, revision: created.revision, patch: { maxOutputTokens: 32_000 },
+    })
+    const connection = await store.resolve(updated)
+    expect(await withEffectiveByokLimits(connection, { fetch: fetchImpl })).toMatchObject({
+      contextWindow: 1_048_576, maxOutputTokens: 32_000,
+    })
+    // An unknown local server keeps its small window and fits the output reservation.
+    clearByokContextWindowCache()
+    expect(await withEffectiveByokLimits(connection, { fetch: listing({ data: [] }).fetchImpl }))
+      .toMatchObject({ contextWindow: 32_768, maxOutputTokens: 32_000 })
+    const manual = await store.update({
+      id: updated.id, revision: updated.revision,
+      patch: { contextWindow: 32_768, maxOutputTokens: 4_096 },
+    })
+    expect(manual.contextWindowMode).toBe('manual')
+    const manualResolved = await store.resolve(manual)
+    expect(await withEffectiveByokLimits(manualResolved, { fetch: fetchImpl })).toBe(manualResolved)
+  })
+
   test('an untouched default takes the window the provider lists, keeping the credential hidden', async () => {
     const { calls, fetchImpl } = listing({
       data: [{ id: 'acme/coder', max_model_len: 65_536 }],
@@ -734,10 +764,13 @@ describe('effective BYOK limits for a run', () => {
     expect(calls).toHaveLength(1)
   })
 
-  test('OpenRouter is asked without the key, and a huge window is capped', async () => {
+  test.each([
+    [1_048_576, 1_048_576, 940_032],
+    [4_000_000, 2_000_000, 1_796_313],
+  ])('OpenRouter window %i uses %i tokens and a %i compaction budget', async (reported, window, budget) => {
     const { calls, fetchImpl } = listing({
       data: [
-        { id: 'vendor/giant', context_length: 1_048_576 },
+        { id: 'vendor/giant', context_length: reported },
         { id: 'vendor/small', context_length: 40_960 },
       ],
     })
@@ -745,7 +778,8 @@ describe('effective BYOK limits for a run', () => {
       resolved({ provider: 'openrouter', baseUrl: undefined, model: 'vendor/giant' }),
       { fetch: fetchImpl },
     )
-    expect(giant.contextWindow).toBe(BYOK_DISCOVERED_CONTEXT_WINDOW_CAP)
+    expect(giant.contextWindow).toBe(window)
+    expect(byokModelLimits(giant).maxContextLength).toBe(budget)
     const free = await withEffectiveByokLimits(
       resolved({ provider: 'openrouter', baseUrl: undefined, model: 'vendor/small:free' }),
       { fetch: fetchImpl },

@@ -6,6 +6,7 @@ import {
   getFirstUserPrompt,
   readChatMeta,
 } from './chat-meta'
+import { readChatTitle } from './chat-title'
 import { CHAT_LOG_FILENAME, logger } from './logger'
 import { getProjectDataDir } from '../project-files'
 
@@ -14,6 +15,8 @@ import type { ChatMessage } from '../types/chat'
 export interface ChatHistoryEntry {
   chatId: string
   lastPrompt: string
+  /** The chat's generated title, when one was saved. */
+  title?: string
   timestamp: Date
   messageCount: number
   /** True when chat-messages.json exists but can't be parsed (e.g. truncated
@@ -107,6 +110,7 @@ export function getAllChats(
           chats.push({
             chatId: info.chatId,
             lastPrompt,
+            title: readChatTitle(info.chatPath) ?? undefined,
             timestamp: info.mtime,
             messageCount,
           })

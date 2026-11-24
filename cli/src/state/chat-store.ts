@@ -57,6 +57,9 @@ export type ChatStoreState = {
   /** Unique ID for this chat session, regenerated on /new */
   chatSessionId: string
   messages: ChatMessage[]
+  /** The model's title for the chat whose first user message is
+   *  `messageId`; stale once that message is no longer first. */
+  chatTitle: { messageId: string; title: string } | null
   streamingAgents: Set<string>
   focusedAgentId: string | null
   inputValue: string
@@ -144,6 +147,7 @@ type ChatStoreActions = {
   setInputValue: (
     value: InputValue | ((prev: InputValue) => InputValue),
   ) => void
+  setChatTitle: (chatTitle: ChatStoreState['chatTitle']) => void
   setInputFocused: (focused: boolean) => void
   setIsFocusSupported: (supported: boolean) => void
   setActiveSubagents: (
@@ -204,6 +208,7 @@ const generateSessionId = () => crypto.randomUUID()
 const initialState: ChatStoreState = {
   chatSessionId: generateSessionId(),
   messages: [],
+  chatTitle: null,
   streamingAgents: new Set<string>(),
   focusedAgentId: null,
   inputValue: '',
@@ -253,6 +258,11 @@ export const useChatStore = create<ChatStore>()(
       set((state) => {
         state.focusedAgentId =
           typeof value === 'function' ? value(state.focusedAgentId) : value
+      }),
+
+    setChatTitle: (chatTitle) =>
+      set((state) => {
+        state.chatTitle = chatTitle
       }),
 
     setInputValue: (value) =>

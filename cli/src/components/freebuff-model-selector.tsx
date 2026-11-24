@@ -67,6 +67,7 @@ import {
   freebuffFreeWindowsSummary,
   freebuffPlanSummary,
 } from '@codebuff/common/util/freebuff-plan-summary'
+import { reasoningEffortLabel } from '@codebuff/common/constants/reasoning-effort'
 import { compiledFreebuffModelIdOfRow } from '@codebuff/common/util/freebuff-catalog-compiled-model'
 
 import { startFreebuffSession } from '../hooks/use-freebuff-session'
@@ -236,8 +237,11 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   const reasoningEffortByModel = useFreebuffModelStore(
     (s) => s.reasoningEffortByModel,
   )
+  // A level is chosen, and named, only where a model has more than one: one
+  // level is nothing to choose (product, 2026-11-24, Victor).
+  const hasReasoningChoice = (id: string) => (directory.efforts(id)?.length ?? 0) > 1
   const [reasoningModel, setReasoningModel] = useState<string | null>(() =>
-    initialView === 'reasoning' && directory.efforts(selectedModel)?.length
+    initialView === 'reasoning' && hasReasoningChoice(selectedModel)
       ? selectedModel
       : null,
   )
@@ -988,12 +992,13 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // Share the suffix between width calculations and rendering.
   const reasoningSuffixFor = useCallback(
     (model: FreebuffModelOption): string => {
+      if ((model.efforts?.length ?? 0) < 2) return ''
       const chosen = reasoningEffortByModel[model.id]
-      if (chosen && model.efforts?.includes(chosen)) {
-        return ` • ${chosen}`
-      }
-      const effort = (onSelectModel ? directory.defaultEffort(model.id) : null) ?? model.reasoningEffort
-      return effort ? ` • ${effort}` : ''
+      const effort =
+        chosen && model.efforts?.includes(chosen)
+          ? chosen
+          : ((onSelectModel ? directory.defaultEffort(model.id) : null) ?? model.reasoningEffort)
+      return effort ? ` • ${reasoningEffortLabel(effort, model.efforts ?? [])}` : ''
     },
     [reasoningEffortByModel, onSelectModel, directory],
   )
@@ -1368,7 +1373,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           key.preventDefault?.()
           key.stopPropagation?.()
           const efforts = directory.efforts(focusedId)
-          if (efforts?.length) {
+          if (efforts && hasReasoningChoice(focusedId)) {
             const current = reasoningEffortByModel[focusedId] ?? directory.defaultEffort(focusedId)
             setReasoningIndex(Math.max(0, efforts.indexOf(current!)))
             setReasoningModel(focusedId)
@@ -1751,7 +1756,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
             setReasoningModel(null)
           }}>
             <text style={{ fg: index === reasoningIndex ? theme.primary : theme.foreground }}>
-              {`${index === reasoningIndex ? '›' : ' '} ${effort}${effort === directory.defaultEffort(reasoningModel) ? ' (default)' : ''}`}
+              {`${index === reasoningIndex ? '›' : ' '} ${reasoningEffortLabel(effort, efforts)}${effort === directory.defaultEffort(reasoningModel) ? ' (default)' : ''}`}
             </text>
           </Button>
         ))}
@@ -1893,7 +1898,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       <text style={{ fg: theme.foreground }}>
         {freebuffChatPickerHint({
           modelCount: renderedModelIds.length,
-          focusedHasReasoning: Boolean(directory.efforts(focusedId)?.length),
+          focusedHasReasoning: hasReasoningChoice(focusedId),
         })}
       </text>
       {list}

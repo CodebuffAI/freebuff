@@ -97,7 +97,7 @@ const PLACEMENTS: Readonly<Record<string, FreebuffPickerPlacement>> =
     // At full access only Beam 1.0 and Solar Pro 4 are in view; the rest of
     // Standard is under its "more" (product, 2026-11-11, Victor). Limited
     // access keeps them all in view (default-config.ts's `LIMITED_LAYOUT`).
-    'm-61c26317cc': { section: 'standard', order: -1, more: true }, // DeepSeek Slow, 5 (new, promotional)
+    'm-61c26317cc': { section: 'standard', order: -1, more: true }, // DeepSeek Efficient, 5 (new, promotional)
     'm-9877f4d3ee': { section: 'standard', order: 0 }, // Beam 1.0, 0 (new)
     'm-ddc687c50f': { section: 'standard', order: 1, more: true }, // Nemotron 3.5 Lightning, 0
     'm-02244092cb': { section: 'standard', order: 5, more: true }, // Glyph Cluster, 0

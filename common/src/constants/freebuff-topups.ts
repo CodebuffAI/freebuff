@@ -72,10 +72,14 @@ export const AD_POSTPAID_COLLECTION_THRESHOLD_CENTS = 10_000
 /** Final collection tier; the effective trigger still reserves credit headroom. */
 export const AD_POSTPAID_MATURE_COLLECTION_THRESHOLD_CENTS = 20_000
 
-/** Collect earlier until the advertiser has established a payment history. */
-export const AD_POSTPAID_INITIAL_COLLECTION_THRESHOLD_CENTS = 2_500
+/**
+ * Collect earlier until the advertiser has established a payment history.
+ * $50, not $25: a $25 starter sent new advertisers mid-campaign receipts their
+ * accountants objected to.
+ */
+export const AD_POSTPAID_INITIAL_COLLECTION_THRESHOLD_CENTS = 5_000
 export const AD_POSTPAID_COLLECTION_MIN_SUCCESSES = 2
-export const AD_POSTPAID_COLLECTION_MIN_HISTORY_DAYS = 14
+export const AD_POSTPAID_COLLECTION_MIN_HISTORY_DAYS = 7
 
 /**
  * Referral launch promotion: qualify only after $100 has both been collected

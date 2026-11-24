@@ -72,6 +72,8 @@ export interface AccountByokConnection {
   /** Normalized endpoint. OpenRouter's and ChatGPT's are fixed. */
   baseUrl: string
   contextWindow: number
+  /** Absent on legacy rows; new settings explicitly choose discovery or a budget. */
+  contextWindowMode?: 'auto' | 'manual'
   maxOutputTokens: number
   keyUpdatedAt: string
   createdAt: string
@@ -85,6 +87,7 @@ export interface AccountByokConnectionInput {
   baseUrl?: string
   apiKey: string
   contextWindow?: number
+  contextWindowMode?: 'auto' | 'manual'
   maxOutputTokens?: number
 }
 

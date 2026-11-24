@@ -22,7 +22,10 @@ import { runBuffBench } from './run-buffbench'
  * arms' `message.provider` before trusting a result. Your own account is
  * METERED: the agents and the judge spend its Codebuff credits, and a 402
  * ("Out of credits") zeroes every task after it (2026-11-22: ~14 of 62 tasks
- * before the balance ran out), so top up first and --resume after:
+ * before the balance ran out; a full run took ~5,000 credits), so top up
+ * first. --resume does NOT retry those: a failed task still writes its result
+ * files, which `remainingTaskIds` counts as done. Rerun failed tasks by
+ * passing their ids as the second argument (comma-separated) instead:
  *
  *   bun run buffbench/main-flash-lanes-harness.ts 5 all --freestyle
  *   bun run buffbench/main-flash-lanes-harness.ts 5 all --freestyle --resume=<logsDir>
