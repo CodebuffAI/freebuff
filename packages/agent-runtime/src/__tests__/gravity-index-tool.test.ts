@@ -742,4 +742,131 @@ describe('gravity_index tool', () => {
       }),
     )
   })
+  describe('end-user signals from run metadata', () => {
+    const META = {
+      gravity_end_user_ip: '  8.8.4.4  ',
+      gravity_end_user_agent: ' Mozilla/5.0 (Macintosh) ',
+      gravity_ad_session_id: ' ad-session-9 ',
+    }
+
+    const runToolCall = async (
+      toolInput: Record<string, unknown>,
+      extraCodebuffMetadata?: Record<string, string>,
+    ) => {
+      const spy = spyOn(webApi, 'callGravityIndexAPI').mockResolvedValue({
+        result: { search_id: 'search-1' },
+      })
+      mockAgentStream([
+        createToolCallChunk('gravity_index', toolInput),
+        createToolCallChunk('end_turn', {}),
+      ])
+      const sessionState = getInitialSessionState(
+        runAgentStepBaseParams.fileContext,
+      )
+      const { agentTemplates } = assembleLocalAgentTemplates({
+        ...agentRuntimeImpl,
+        fileContext: runAgentStepBaseParams.fileContext,
+      })
+      await runAgentStep({
+        ...runAgentStepBaseParams,
+        localAgentTemplates: agentTemplates,
+        agentTemplate: agentTemplates['gravity-test-agent'],
+        agentState: {
+          ...sessionState.mainAgentState,
+          agentType: 'gravity-test-agent',
+        },
+        prompt: 'Find an email provider',
+        ...(extraCodebuffMetadata ? { extraCodebuffMetadata } : {}),
+      })
+      expect(spy).toHaveBeenCalledTimes(1)
+      return spy.mock.calls[0]?.[0]?.input as Record<string, unknown>
+    }
+
+    test('copies the run metadata onto a search, trimmed', async () => {
+      const input = await runToolCall(
+        { action: 'search', query: 'transactional email' },
+        META,
+      )
+      expect(input).toMatchObject({
+        end_user_ip: '8.8.4.4',
+        end_user_agent: 'Mozilla/5.0 (Macintosh)',
+        ad_session_id: 'ad-session-9',
+        // The runtime's own session id still rides along; the server picks.
+        external_session_id: 'test-session',
+      })
+    })
+
+    test('copies only the keys that are present and non-blank', async () => {
+      const input = await runToolCall(
+        { action: 'search', query: 'transactional email' },
+        { gravity_end_user_agent: 'Freebuff-CLI/0.2.38', gravity_end_user_ip: '   ' },
+      )
+      expect(input.end_user_agent).toBe('Freebuff-CLI/0.2.38')
+      expect(input).not.toHaveProperty('end_user_ip')
+      expect(input).not.toHaveProperty('ad_session_id')
+    })
+
+    test('a search with no run metadata carries none of the fields', async () => {
+      const input = await runToolCall({
+        action: 'search',
+        query: 'transactional email',
+      })
+      expect(input).not.toHaveProperty('end_user_ip')
+      expect(input).not.toHaveProperty('end_user_agent')
+      expect(input).not.toHaveProperty('ad_session_id')
+    })
+
+    test('caps each field at the web API schema limit', async () => {
+      const input = await runToolCall(
+        { action: 'search', query: 'transactional email' },
+        {
+          gravity_end_user_ip: 'i'.repeat(100),
+          gravity_end_user_agent: 'a'.repeat(2000),
+          gravity_ad_session_id: 's'.repeat(400),
+        },
+      )
+      expect(input.end_user_ip).toBe('i'.repeat(64))
+      expect(input.end_user_agent).toBe('a'.repeat(1024))
+      expect(input.ad_session_id).toBe('s'.repeat(256))
+    })
+
+    test.each([
+      [{ action: 'browse', category: 'Email' }],
+      [{ action: 'list_categories' }],
+      [{ action: 'get_service', slug: 'sendgrid' }],
+      // No search_id, so the report preflight is skipped and it goes upstream.
+      [{ action: 'report_integration', integrated_slug: 'sendgrid' }],
+    ])('does not stamp them on %o', async (toolInput) => {
+      const input = await runToolCall(toolInput, META)
+      expect(input.action).toBe(toolInput.action)
+      expect(input).not.toHaveProperty('end_user_ip')
+      expect(input).not.toHaveProperty('end_user_agent')
+      expect(input).not.toHaveProperty('ad_session_id')
+    })
+
+    test('model-written values never reach the API input', async () => {
+      const input = await runToolCall({
+        action: 'search',
+        query: 'transactional email',
+        end_user_ip: '6.6.6.6',
+        end_user_agent: 'evil',
+        ad_session_id: 'evil-session',
+      })
+      expect(input).not.toHaveProperty('end_user_ip')
+      expect(input).not.toHaveProperty('end_user_agent')
+      expect(input).not.toHaveProperty('ad_session_id')
+    })
+
+    test('run metadata wins over model-written values', async () => {
+      const input = await runToolCall(
+        {
+          action: 'search',
+          query: 'transactional email',
+          end_user_ip: '6.6.6.6',
+        },
+        META,
+      )
+      expect(input.end_user_ip).toBe('8.8.4.4')
+    })
+  })
 })
