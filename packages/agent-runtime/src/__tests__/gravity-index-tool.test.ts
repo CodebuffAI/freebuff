@@ -263,6 +263,131 @@ describe('gravity_index tool', () => {
     },
   )
 
+  // Hosted workspace runs (Web, /chat, iOS, Android, Desktop "send to Cloud") run the same root id
+  // as local Desktop; the Cloud worker's run metadata relabels them `freebuff_cloud` with the
+  // client's platform. They still run on the user's own workspace token: no external_user_id.
+  const runDesktopRootSearch = async (params: {
+    extraCodebuffMetadata?: Record<string, string>
+    modelMetadata?: Record<string, string>
+  }) => {
+    const rootAgentId = 'freebuff-desktop-thread-local-v3'
+    const spy = spyOn(webApi, 'callGravityIndexAPI').mockResolvedValue({
+      result: { search_id: 'search-1' },
+    })
+    mockAgentStream([
+      createToolCallChunk('gravity_index', {
+        action: 'search',
+        query: 'transactional email for Next.js',
+        ...(params.modelMetadata ? { metadata: params.modelMetadata } : {}),
+      }),
+      createToolCallChunk('end_turn', {}),
+    ])
+    const fileContext = {
+      ...mockFileContext,
+      agentTemplates: {
+        [rootAgentId]: {
+          ...gravityTestAgent,
+          id: rootAgentId,
+          displayName: 'Freebuff',
+        },
+      },
+    }
+    const sessionState = getInitialSessionState(fileContext)
+    const { agentTemplates } = assembleLocalAgentTemplates({
+      ...agentRuntimeImpl,
+      fileContext,
+    })
+    await runAgentStep({
+      ...runAgentStepBaseParams,
+      agentType: rootAgentId,
+      fileContext,
+      localAgentTemplates: agentTemplates,
+      agentTemplate: agentTemplates[rootAgentId],
+      agentState: { ...sessionState.mainAgentState, agentType: rootAgentId },
+      prompt: 'Find an email provider',
+      ...(params.extraCodebuffMetadata
+        ? { extraCodebuffMetadata: params.extraCodebuffMetadata }
+        : {}),
+    })
+    return spy.mock.calls[0]?.[0]?.input
+  }
+
+  test.each([
+    ['web', 'web'],
+    ['ios', 'ios'],
+    ['android', 'android'],
+    ['desktop', 'desktop'],
+    [undefined, 'web'],
+    ['not-a-platform', 'web'],
+  ])(
+    'tags a hosted run (client platform %s) as freebuff_cloud with client_platform %s',
+    async (platform, expected) => {
+      const input = await runDesktopRootSearch({
+        extraCodebuffMetadata: {
+          freebuff_instance_id: 'session',
+          freebuff_multi_session: '1',
+          gravity_surface: 'freebuff_cloud',
+          ...(platform ? { gravity_client_platform: platform } : {}),
+        },
+      })
+      expect(input).toMatchObject({
+        metadata: { surface: 'freebuff_cloud', client_platform: expected },
+      })
+      expect(input).not.toHaveProperty('external_user_id')
+    },
+  )
+
+  test('keeps local Desktop as freebuff_desktop with no client_platform', async () => {
+    const input = await runDesktopRootSearch({
+      extraCodebuffMetadata: {
+        freebuff_instance_id: 'session',
+        freebuff_multi_session: '1',
+      },
+      // A model-written client_platform is not trusted.
+      modelMetadata: { client_platform: 'ios' },
+    })
+    expect(input).toMatchObject({ metadata: { surface: 'freebuff_desktop' } })
+    expect(input?.metadata).not.toHaveProperty('client_platform')
+    expect(input).not.toHaveProperty('external_user_id')
+  })
+
+  test('a hosted hint never relabels a service-account surface', async () => {
+    const spy = spyOn(webApi, 'callGravityIndexAPI').mockResolvedValue({
+      result: { search_id: 'search-1' },
+    })
+    mockAgentStream([
+      createToolCallChunk('gravity_index', { action: 'search', query: 'email' }),
+      createToolCallChunk('end_turn', {}),
+    ])
+    const rootAgentId = 'base3-free-deepseek'
+    const fileContext = {
+      ...mockFileContext,
+      agentTemplates: {
+        [rootAgentId]: { ...gravityTestAgent, id: rootAgentId },
+      },
+    }
+    const sessionState = getInitialSessionState(fileContext)
+    const { agentTemplates } = assembleLocalAgentTemplates({
+      ...agentRuntimeImpl,
+      fileContext,
+    })
+    await runAgentStep({
+      ...runAgentStepBaseParams,
+      agentType: rootAgentId,
+      fileContext,
+      localAgentTemplates: agentTemplates,
+      agentTemplate: agentTemplates[rootAgentId],
+      agentState: { ...sessionState.mainAgentState, agentType: rootAgentId },
+      prompt: 'Find an email provider',
+      extraCodebuffMetadata: { gravity_surface: 'freebuff_cloud' },
+    })
+    const input = spy.mock.calls[0]?.[0]?.input
+    expect(input).toMatchObject({
+      metadata: { surface: 'freebuff_web' },
+      external_user_id: 'test-fingerprint',
+    })
+  })
+
   // Both freebuff Web root families, because the harness swap changed the id
   // prefix: a base3 root that fell through to `codebuff_cli` would attribute
   // Web clicks to the CLI and would stop forwarding the per-end-user id that
@@ -336,6 +461,7 @@ describe('gravity_index tool', () => {
           name: 'SendGrid',
           slug: 'sendgrid',
           category: 'Email',
+          description: '  Transactional email API.  ',
           click_url: 'https://index.trygravity.ai/go/recommendation-fallback',
         },
         reasoning: 'Good transactional email fit.',
@@ -428,6 +554,11 @@ describe('gravity_index tool', () => {
       input: {
         widget: {
           link: 'https://index.trygravity.ai/go/recommendation-fallback',
+          gravity_search_id: 'search-1',
+          gravity_service: {
+            name: 'SendGrid',
+            description: 'Transactional email API.',
+          },
         },
       },
     })

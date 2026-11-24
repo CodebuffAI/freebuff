@@ -566,8 +566,11 @@ export async function executeToolCall<T extends ToolName>(
         ...renderUIInput,
         widget: {
           ...renderUIInput.widget,
-          link: resolved.value,
+          link: resolved.value.url,
           gravity_search_id: link.search_id,
+          ...(resolved.value.service
+            ? { gravity_service: resolved.value.service }
+            : {}),
         },
       }
     }
