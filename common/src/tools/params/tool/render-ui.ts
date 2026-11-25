@@ -76,6 +76,15 @@ const resolvedButtonWidgetSchema = buttonWidgetBaseSchema.extend({
   // email sender): one selection stands per search, but separate searches each
   // keep their own button, and their own tracked setup link.
   gravity_search_id: z.string().min(1).optional(),
+  // Also stamped by the runtime from the same stored search result: the
+  // selected service's name and what it does, so a surface can draw the pick
+  // as a card instead of a bare button. Gravity sends no logo.
+  gravity_service: z
+    .object({
+      name: z.string().min(1).max(80),
+      description: z.string().min(1).max(300).optional(),
+    })
+    .optional(),
 })
 
 const buttonWidgetSchema = buttonWidgetBaseSchema.extend({

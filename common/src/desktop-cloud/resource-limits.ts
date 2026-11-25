@@ -6,6 +6,15 @@ export const CLOUD_RESOURCE_PENDING =
 export const CLOUD_RESOURCE_MOVE_REASON =
   'The cloud environment is running low on resources. Continue the same task locally, preserving completed work and checking any interrupted command before retrying it.'
 export const CLOUD_RESOURCE_EVENT = 'resource_limit'
+/** A limited-access free account past its daily Cloud VM hours (web large-cap.ts `limitedVmS`).
+ *  It refuses new turns only: Files, its downloads, a GitHub push and a move to the
+ *  computer stay open, and the workspace's card for it offers them. */
+export const LIMITED_VM_CAP_MESSAGE =
+  'You’ve used today’s 3 Cloud hours. They reset at midnight in your local timezone. Your work stays in this chat: you can still push it to GitHub, download it from Files, or move the chat to your computer with Freebuff Desktop. A plan lifts the limit.'
+/** Recognises the cap refusal by its opening, which every wording of it has kept, so
+ *  a workspace and a server deployed apart still agree. */
+export const isLimitedVmCapMessage = (message: string | null | undefined) =>
+  !!message?.startsWith('You’ve used today’s 3 Cloud hours.')
 export type CloudResourceKind =
   | 'disk'
   | 'memory'

@@ -87,4 +87,24 @@ describe('getProviderOptions — codebuff_metadata', () => {
     const meta = (opts.codebuff as any).codebuff_metadata
     expect(meta.run_id).toBe('run-1')
   })
+
+  it('never puts the end user\'s Gravity IP, user agent or ad session on a completion', () => {
+    const opts = getProviderOptions({
+      ...baseParams,
+      extraCodebuffMetadata: {
+        freebuff_instance_id: 'abc-123',
+        gravity_surface: 'freebuff_cloud',
+        gravity_end_user_ip: '8.8.8.8',
+        gravity_end_user_agent: 'Mozilla/5.0',
+        gravity_ad_session_id: 'thread-1',
+      },
+    })
+    const meta = (opts.codebuff as any).codebuff_metadata
+    expect(meta.freebuff_instance_id).toBe('abc-123')
+    expect(meta.gravity_surface).toBe('freebuff_cloud')
+    expect(meta).not.toHaveProperty('gravity_end_user_ip')
+    expect(meta).not.toHaveProperty('gravity_end_user_agent')
+    expect(meta).not.toHaveProperty('gravity_ad_session_id')
+  })
 })
+

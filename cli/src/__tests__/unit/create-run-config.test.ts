@@ -1,6 +1,8 @@
 import { describe, test, expect, mock } from 'bun:test'
 
+import { buildAdAuctionRequest } from '../../ads/ad-request'
 import { createStreamController } from '../../hooks/stream-state'
+import { useChatStore } from '../../state/chat-store'
 import { createMessageUpdater } from '../../utils/message-updater'
 import { createRunConfig, isSensitiveFile } from '../../utils/create-run-config'
 
@@ -152,5 +154,68 @@ describe('isSensitiveFile', () => {
     ['kube-config.ts', false],
   ])('%s → %s', (file, expected) => {
     expect(isSensitiveFile(file)).toBe(expected)
+  })
+})
+
+describe('every run carries the ad session and UA for gravity_index', () => {
+  const run = (extraCodebuffMetadata?: Record<string, string>) =>
+    createRunConfig({
+      agent: 'custom',
+      prompt: 'hi',
+      content: undefined,
+      previousRunState: null,
+      agentDefinitions: [],
+      signal: new AbortController().signal,
+      ...(extraCodebuffMetadata ? { extraCodebuffMetadata } : {}),
+    } as unknown as CreateRunConfigParams)
+
+  // The values Gravity sees on this chat's ad requests: body `sessionId` and
+  // the `User-Agent` header (resolveGravityUserAgent prefers the header).
+  const adRequestIdentity = async () => {
+    const saved = process.env.CODEBUFF_API_KEY
+    process.env.CODEBUFF_API_KEY = saved || 'test-key'
+    try {
+      const built = await buildAdAuctionRequest({
+        provider: 'gravity',
+        surface: 'cli_chat',
+        placementId: 'Above-Input-CLI',
+      })
+      expect(built).not.toBeNull()
+      return {
+        sessionId: JSON.parse(String(built!.init.body)).sessionId as string,
+        userAgent: (built!.init.headers as Record<string, string>)[
+          'User-Agent'
+        ],
+      }
+    } finally {
+      if (saved === undefined) delete process.env.CODEBUFF_API_KEY
+      else process.env.CODEBUFF_API_KEY = saved
+    }
+  }
+
+  test('equal to the ad request, with no caller metadata (Codebuff, BYOK)', async () => {
+    const ad = await adRequestIdentity()
+    expect(ad.sessionId).toBeString()
+    expect(run().extraCodebuffMetadata).toEqual({
+      gravity_ad_session_id: ad.sessionId,
+      gravity_end_user_agent: ad.userAgent,
+    })
+  })
+
+  test('follows a new chat, as the ad request does', async () => {
+    const before = run().extraCodebuffMetadata.gravity_ad_session_id
+    useChatStore.getState().reset()
+    const ad = await adRequestIdentity()
+    expect(ad.sessionId).not.toBe(before)
+    expect(run().extraCodebuffMetadata.gravity_ad_session_id).toBe(ad.sessionId)
+  })
+
+  test("merged under the caller's metadata, which is kept", async () => {
+    const ad = await adRequestIdentity()
+    expect(run({ freebuff_instance_id: 'inst-1' }).extraCodebuffMetadata).toEqual({
+      gravity_ad_session_id: ad.sessionId,
+      gravity_end_user_agent: ad.userAgent,
+      freebuff_instance_id: 'inst-1',
+    })
   })
 })

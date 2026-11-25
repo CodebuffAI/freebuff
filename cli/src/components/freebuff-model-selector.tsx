@@ -67,9 +67,11 @@ import {
   freebuffFreeWindowsSummary,
   freebuffPlanSummary,
 } from '@codebuff/common/util/freebuff-plan-summary'
+import { reasoningEffortLabel } from '@codebuff/common/constants/reasoning-effort'
 import { compiledFreebuffModelIdOfRow } from '@codebuff/common/util/freebuff-catalog-compiled-model'
 
 import { startFreebuffSession } from '../hooks/use-freebuff-session'
+import { useDailyDrainNow } from '../hooks/use-daily-drain-now'
 import { useNow } from '../hooks/use-now'
 import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { useFreebuffModelStore } from '../state/freebuff-model-store'
@@ -90,6 +92,7 @@ import type {
 } from '@codebuff/common/constants/freebuff-models'
 import type { FreebuffReferralFocusTarget } from './freebuff-referral-banner'
 import type { FreebuffCatalogBadge } from '@codebuff/common/types/freebuff-model-catalog'
+import type { FreebuffFreebucksInfo } from '@codebuff/common/types/freebuff-session'
 import type {
   BoxRenderable,
   KeyEvent,
@@ -114,6 +117,28 @@ const TOGGLE_ID = '__freebuff_toggle__'
 
 /** Joins the parts of a row's second line (see `rowDetails`). */
 const DETAIL_SEPARATOR = ' · '
+
+/** The picker's meter line, its own component so that only this line
+ *  re-renders while a running paid hour counts down (`useDailyDrainNow`). */
+function FreebucksMeterLine({
+  freebucks,
+  planName,
+  nowMs,
+  marginTop,
+}: {
+  freebucks: FreebuffFreebucksInfo
+  planName: string
+  nowMs?: number
+  marginTop: number
+}) {
+  const theme = useTheme()
+  const now = useDailyDrainNow(freebucks.daily, nowMs)
+  return (
+    <text style={{ fg: theme.muted, wrapMode: 'none', marginTop }}>
+      {planName.toUpperCase()} · {freebucksHeaderLine(freebucks, now)}
+    </text>
+  )
+}
 
 /** One chip on a row's second line. `highlight` draws it in the accent colour
  *  — a price a catalog discount moved. */
@@ -236,8 +261,11 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   const reasoningEffortByModel = useFreebuffModelStore(
     (s) => s.reasoningEffortByModel,
   )
+  // A level is chosen, and named, only where a model has more than one: one
+  // level is nothing to choose (product, 2026-11-24, Victor).
+  const hasReasoningChoice = (id: string) => (directory.efforts(id)?.length ?? 0) > 1
   const [reasoningModel, setReasoningModel] = useState<string | null>(() =>
-    initialView === 'reasoning' && directory.efforts(selectedModel)?.length
+    initialView === 'reasoning' && hasReasoningChoice(selectedModel)
       ? selectedModel
       : null,
   )
@@ -988,12 +1016,13 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
   // Share the suffix between width calculations and rendering.
   const reasoningSuffixFor = useCallback(
     (model: FreebuffModelOption): string => {
+      if ((model.efforts?.length ?? 0) < 2) return ''
       const chosen = reasoningEffortByModel[model.id]
-      if (chosen && model.efforts?.includes(chosen)) {
-        return ` • ${chosen}`
-      }
-      const effort = (onSelectModel ? directory.defaultEffort(model.id) : null) ?? model.reasoningEffort
-      return effort ? ` • ${effort}` : ''
+      const effort =
+        chosen && model.efforts?.includes(chosen)
+          ? chosen
+          : ((onSelectModel ? directory.defaultEffort(model.id) : null) ?? model.reasoningEffort)
+      return effort ? ` • ${reasoningEffortLabel(effort, model.efforts ?? [])}` : ''
     },
     [reasoningEffortByModel, onSelectModel, directory],
   )
@@ -1368,7 +1397,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           key.preventDefault?.()
           key.stopPropagation?.()
           const efforts = directory.efforts(focusedId)
-          if (efforts?.length) {
+          if (efforts && hasReasoningChoice(focusedId)) {
             const current = reasoningEffortByModel[focusedId] ?? directory.defaultEffort(focusedId)
             setReasoningIndex(Math.max(0, efforts.indexOf(current!)))
             setReasoningModel(focusedId)
@@ -1751,7 +1780,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
             setReasoningModel(null)
           }}>
             <text style={{ fg: index === reasoningIndex ? theme.primary : theme.foreground }}>
-              {`${index === reasoningIndex ? '›' : ' '} ${effort}${effort === directory.defaultEffort(reasoningModel) ? ' (default)' : ''}`}
+              {`${index === reasoningIndex ? '›' : ' '} ${reasoningEffortLabel(effort, efforts)}${effort === directory.defaultEffort(reasoningModel) ? ' (default)' : ''}`}
             </text>
           </Button>
         ))}
@@ -1820,15 +1849,12 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           </text>
         )}
         {freebucks && (
-          <text
-            style={{
-              fg: theme.muted,
-              wrapMode: 'none',
-              marginTop: SECTION_GAP,
-            }}
-          >
-            {planName.toUpperCase()} · {freebucksHeaderLine(freebucks, now)}
-          </text>
+          <FreebucksMeterLine
+            freebucks={freebucks}
+            planName={planName}
+            nowMs={nowMs}
+            marginTop={SECTION_GAP}
+          />
         )}
         {freebucks === undefined && freeWindows && !planSummary && (
           <text
@@ -1893,7 +1919,7 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
       <text style={{ fg: theme.foreground }}>
         {freebuffChatPickerHint({
           modelCount: renderedModelIds.length,
-          focusedHasReasoning: Boolean(directory.efforts(focusedId)?.length),
+          focusedHasReasoning: hasReasoningChoice(focusedId),
         })}
       </text>
       {list}

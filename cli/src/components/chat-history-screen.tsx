@@ -112,7 +112,7 @@ export const ChatHistoryScreen: React.FC<ChatHistoryScreenProps> = ({
           LAYOUT.MSGS_COL_WIDTH,
         )
         const prompt = padRight(
-          truncateText(chat.lastPrompt, maxPromptWidth),
+          truncateText(chat.title ?? chat.lastPrompt, maxPromptWidth),
           maxPromptWidth,
         )
 
@@ -122,7 +122,10 @@ export const ChatHistoryScreen: React.FC<ChatHistoryScreenProps> = ({
           // The full prompt is kept in secondary for search filtering
           label: `${time}${' '.repeat(LAYOUT.GAP_WIDTH)}${msgs}${' '.repeat(LAYOUT.GAP_WIDTH)}${prompt}`,
           icon: undefined,
-          secondary: chat.lastPrompt, // Keep original prompt for search
+          // The title and the original prompt, for search
+          secondary: chat.title
+            ? `${chat.title}\n${chat.lastPrompt}`
+            : chat.lastPrompt,
           hideSecondary: true, // Don't display secondary, only use for filtering
         }
       }),

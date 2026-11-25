@@ -130,9 +130,25 @@ export type SponsoredSkillLayer2Verify = z.infer<typeof layer2Verify>
 
 export const sponsoredSkillLayer2Schema = z
   .object({
-    /** Stable slug, `<advertiser>-<goal>`; one id has many versions. */
+    /**
+     * Stable slug, `<product>-<goal>` (or `<advertiser>-<goal>` when the
+     * campaign is for the advertiser's own product). One id has many versions.
+     */
     id: slug,
     advertiser: slug,
+    /**
+     * The product this campaign sells, when it is not the advertiser.
+     * Omitted for a single-product advertiser, which keeps the advertiser
+     * label. Step headings and the skill id use it; `advertiser` stays the
+     * company.
+     */
+    product: z
+      .string()
+      .trim()
+      .min(1)
+      .max(40)
+      .refine((value) => !/[\r\n]/.test(value), 'Use a single line.')
+      .optional(),
     /** One sentence: what the agent builds in the user's project. */
     goal: z.string().trim().min(10).max(300),
     docsUrl: httpsUrl,
@@ -189,18 +205,69 @@ export type Layer2BuildResult =
     }
   | { ok: false; errors: SponsoredSkillParseError[] }
 
+/** `PostHog, Inc.` → `posthog-inc`. Shared with the draft so ids match headings. */
+export function layer2Slug(text: string): string {
+  return text
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/g, '')
+}
+
 /** `posthog` → `Posthog`, `open-router` → `Open Router`: a label, never parsed. */
-function advertiserLabel(advertiser: string): string {
+export function layer2AdvertiserLabel(advertiser: string): string {
   return advertiser
     .split('-')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
 }
 
+/**
+ * The product field as stored. Blank, or the advertiser's own label, means
+ * there is no distinct product, so a save does not rename a single-product skill.
+ */
+export function layer2StoredProduct(
+  value: string,
+  advertiser: string,
+): string | undefined {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === layer2AdvertiserLabel(advertiser))
+    return undefined
+  return trimmed
+}
+
+/** The name step headings use: the product, else the advertiser label. */
+function brandLabel(
+  source: Pick<SponsoredSkillLayer2, 'advertiser' | 'product'>,
+): string {
+  return source.product?.trim() || layer2AdvertiserLabel(source.advertiser)
+}
+
+/** Product slug first, then the advertiser, so `SERPIE_API_KEY` and `GRIFFIN_KEY` both strip. */
+function brandPrefixes(
+  source: Pick<SponsoredSkillLayer2, 'advertiser' | 'product'>,
+): string[] {
+  const prefixes: string[] = []
+  for (const value of [source.product, source.advertiser]) {
+    const slug = value ? layer2Slug(value) : ''
+    if (slug && !prefixes.includes(slug)) prefixes.push(slug)
+  }
+  return prefixes
+}
+
 /** `POSTHOG_PROJECT_TOKEN` → `project token`, `EXA_API_KEY` → `API key`. */
-function keyLabel(env: string, advertiser: string): string {
-  const prefix = `${advertiser.replace(/-/g, '_').toUpperCase()}_`
-  const rest = env.startsWith(prefix) ? env.slice(prefix.length) : env
+function keyLabel(env: string, prefixes: readonly string[]): string {
+  let rest = env
+  for (const prefix of prefixes) {
+    const needle = `${prefix.replace(/-/g, '_').toUpperCase()}_`
+    if (rest.startsWith(needle)) {
+      rest = rest.slice(needle.length)
+      break
+    }
+  }
   return rest
     .split('_')
     .map((word) => (word === 'API' ? word : word.toLowerCase()))
@@ -234,7 +301,8 @@ export function compileLayer2Skill(
   const npm = source.packages.filter((pkg) => pkg.ecosystem === 'npm')
   const pypi = source.packages.filter((pkg) => pkg.ecosystem === 'pypi')
   const envKeys = source.envKeys ?? []
-  const label = advertiserLabel(source.advertiser)
+  const label = brandLabel(source)
+  const prefixes = brandPrefixes(source)
 
   // Format 1 has no fit block, so `frameworks` must be non-empty even for a
   // Python-only skill; it is informational there, like the archil skill's.
@@ -302,13 +370,21 @@ export function compileLayer2Skill(
         envKeys.length === 1 ? 'it' : 'each'
       } empty in the example env file.`
     : ''
+  const docsLine = `Docs: ${source.docsUrl}`
+  const scaffold = 'In an empty folder, scaffold a minimal project first.'
+  // A credential's get_url is already the first link in the rendered skill,
+  // so that step text stays as it was. A signup-only skill has to lead with
+  // the tracked URL: otherwise the docs link is first and review flags it.
+  const instructions = envKeys.length
+    ? `${source.goal}\n${docsLine}\n${scaffold}${envLine}`
+    : `${source.goal}\nAccount: ${source.signupUrl}\n${docsLine}\n${scaffold}`
   const integrate: SponsoredSkillStep = {
     id: 'integrate',
     kind: 'agent',
     title: `Build the ${label} integration in this project`,
     // Layer 1 already says fit the project, fewest changes, read the docs;
     // the renderer says a step is done when its checks pass.
-    instructions: `${source.goal}\nDocs: ${source.docsUrl}\nIn an empty folder, scaffold a minimal project first.${envLine}`,
+    instructions,
     checks: [
       ...verifyChecks,
       ...packageChecks,
@@ -324,21 +400,22 @@ export function compileLayer2Skill(
 
   const userSteps: SponsoredSkillStep[] = envKeys.length
     ? envKeys.map((env, index) => {
+        const key = keyLabel(env, prefixes)
         const credential: SponsoredRunCredential = {
           env,
-          label: `${label} ${keyLabel(env, source.advertiser)}`.slice(0, 60),
+          label: `${label} ${key}`.slice(0, 60),
           getUrl: source.signupUrl,
         }
         return {
           id: `connect-${index + 1}`,
           kind: 'user',
-          title: `Ask the user to create ${withArticle(`${label} ${keyLabel(env, source.advertiser)}`)} and paste it`,
+          title: `Ask the user to create ${withArticle(`${label} ${key}`)} and paste it`,
           instructions: `The harness saves the value; never read, write or print it or an env file. Once ${env} is set, run the feature once and report whether ${label} answered.`,
           checks: [
             {
               id: `credential-${index + 1}`,
               kind: 'credential_provided',
-              label: `the ${label} ${keyLabel(env, source.advertiser)} was provided`,
+              label: `the ${label} ${key} was provided`,
               envKey: env,
             },
           ],

@@ -44,6 +44,11 @@ function truncateData(data: unknown): unknown {
   }
 }
 
+// A client clock set to 1976 or 2097 became Axiom's `_time`, which widened its
+// block's time range so every query read that block (Axiom support, 11-23).
+// Clients flush within seconds, so a timestamp further off is a wrong clock.
+const MAX_CLIENT_CLOCK_SKEW_MS = 60 * 60 * 1000
+
 /**
  * Map validated client ingest records onto `LogRow`s. The server is the source
  * of truth for identity/environment: it stamps `source`, `service`, `env`, the
@@ -61,7 +66,11 @@ export function buildLogRows(params: {
 }): LogRow[] {
   const { records, source, service, env, userId = null, now } = params
   return records.flatMap((record) => {
-    const ts = record.timestamp ? new Date(record.timestamp) : now
+    const clientTs = record.timestamp ? new Date(record.timestamp) : now
+    const ts =
+      Math.abs(clientTs.getTime() - now.getTime()) > MAX_CLIENT_CLOCK_SKEW_MS
+        ? now
+        : clientTs
     const dataEvent =
       record.data &&
       typeof record.data === 'object' &&

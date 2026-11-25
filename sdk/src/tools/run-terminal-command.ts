@@ -307,7 +307,12 @@ export function spawnDirectTerminalCommand(
       stdio: 'pipe',
       // The direct SDK runner owns a process group. Interactive hosts should
       // provide a broker instead, so the shell never shares their console.
-      detached: true,
+      // POSIX only: on Windows `detached` means DETACHED_PROCESS, a shell with
+      // no console at all, so the first console program under it (node.exe,
+      // npm's cmd.exe) gets a new, visible window. Undetached with piped stdio
+      // and windowsHide, the shell gets a hidden console its whole tree
+      // shares. Windows kills the tree with taskkill /T, not a process group.
+      detached: os.platform() !== 'win32',
       windowsHide: true,
     },
   )

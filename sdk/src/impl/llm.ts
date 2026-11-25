@@ -1,5 +1,6 @@
 import { models, PROFIT_MARGIN } from '@codebuff/common/old-constants'
 import { buildArray } from '@codebuff/common/util/array'
+import { withoutGravityEndUserMetadata } from '@codebuff/common/types/gravity-index'
 import {
   STREAM_RECOVERY_EVENT,
   TOOL_CALL_REPAIR_EVENT,
@@ -132,8 +133,10 @@ export function getProviderOptions(params: {
       // All values here get appended to the request body
       codebuff_metadata: {
         // Caller-supplied keys go first so they can't override reserved
-        // identifiers the SDK sets, like run_id/client_id/cost_mode.
-        ...(extraCodebuffMetadata ?? {}),
+        // identifiers the SDK sets, like run_id/client_id/cost_mode. The end
+        // user's IP/UA/ad session are for the gravity_index tool only and
+        // never ride a completion (common/src/types/gravity-index.ts).
+        ...withoutGravityEndUserMetadata(extraCodebuffMetadata ?? {}),
         run_id: runId,
         client_id: clientSessionId,
         ...(n && { n }),

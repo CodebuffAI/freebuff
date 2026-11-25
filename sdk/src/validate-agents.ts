@@ -1,3 +1,4 @@
+import { isTransientNetworkError } from '@codebuff/common/util/error'
 import {
   validateAgents as validateAgentsCommon,
   type DynamicAgentValidationError,
@@ -103,12 +104,19 @@ export async function validateAgents(
       headers['Authorization'] = `Bearer ${apiKey}`
     }
 
-    try {
-      const response = await fetch(`${websiteUrl}/api/agents/validate`, {
+    const post = () =>
+      fetch(`${websiteUrl}/api/agents/validate`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ agentDefinitions: definitions }),
       })
+
+    try {
+      // A failure here blocks the CLI's send. After the CLI sits idle, Bun can
+      // reuse a socket the server already closed; one fresh attempt fixes it.
+      const response = await post().catch((error) =>
+        isTransientNetworkError(error) ? post() : Promise.reject(error),
+      )
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))

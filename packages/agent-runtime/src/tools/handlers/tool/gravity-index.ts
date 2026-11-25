@@ -1,3 +1,4 @@
+import { GRAVITY_END_USER_RUN_METADATA_KEYS } from '@codebuff/common/types/gravity-index'
 import { FREEBUFF_DESKTOP_THREAD_AGENT_ID } from '@codebuff/common/constants/free-agents'
 import { jsonToolResult } from '@codebuff/common/util/messages'
 
@@ -182,6 +183,61 @@ const gravitySurface = (agentTemplate: { id: string }): string => {
 const isServiceAccountSurface = (surface: string): boolean =>
   surface === 'freebuff_chat' || surface === 'freebuff_web'
 
+/** Run metadata keys the hosted Cloud worker (web/src/server/desktop-cloud/agent.ts) sets on
+ *  every hosted workspace run. Server-set only: the model cannot write run metadata. */
+const GRAVITY_SURFACE_METADATA_KEY = 'gravity_surface'
+const GRAVITY_CLIENT_PLATFORM_METADATA_KEY = 'gravity_client_platform'
+
+const GRAVITY_CLIENT_PLATFORMS = new Set(['web', 'ios', 'android', 'desktop'])
+
+/** Hosted workspace runs (freebuff.com Web, /chat, iOS, Android, Desktop "send to Cloud") share
+ *  local Desktop's root agent id, so the template alone labels them `freebuff_desktop`. The
+ *  worker's run-metadata hint relabels them `freebuff_cloud` with the client's platform. The hint
+ *  only upgrades a user-key surface: it never turns a service-account surface into one that drops
+ *  external_user_id. */
+const resolveGravitySurface = (
+  agentTemplate: { id: string },
+  runMetadata: Record<string, string> | undefined,
+): { surface: string; clientPlatform: string | undefined } => {
+  const surface = gravitySurface(agentTemplate)
+  if (
+    runMetadata?.[GRAVITY_SURFACE_METADATA_KEY] !== 'freebuff_cloud' ||
+    isServiceAccountSurface(surface)
+  ) {
+    return { surface, clientPlatform: undefined }
+  }
+  const platform = runMetadata[GRAVITY_CLIENT_PLATFORM_METADATA_KEY]
+  return {
+    surface: 'freebuff_cloud',
+    clientPlatform:
+      platform && GRAVITY_CLIENT_PLATFORMS.has(platform) ? platform : 'web',
+  }
+}
+
+/** Run metadata keys our own code sets for Gravity's CPM search fields: the
+ *  hosted Cloud worker (end user's IP, user agent, ad session), the CLI and
+ *  Desktop (user agent, ad session). Server- or client-set run metadata, never
+ *  model output. The web API decides which of them to trust. */
+const GRAVITY_END_USER_METADATA = GRAVITY_END_USER_RUN_METADATA_KEYS
+
+/** The web API schema's caps (common/src/types/gravity-index.ts): a longer
+ *  value would fail the whole search's validation, so it is cut here. */
+const GRAVITY_END_USER_MAX = { end_user_ip: 64, end_user_agent: 1024, ad_session_id: 256 }
+
+const gravityEndUserFields = (
+  runMetadata: Record<string, string> | undefined,
+): Partial<Record<keyof typeof GRAVITY_END_USER_METADATA, string>> => {
+  const fields: Partial<Record<keyof typeof GRAVITY_END_USER_METADATA, string>> =
+    {}
+  for (const [field, key] of Object.entries(GRAVITY_END_USER_METADATA) as Array<
+    [keyof typeof GRAVITY_END_USER_METADATA, string]
+  >) {
+    const value = runMetadata?.[key]?.trim()
+    if (value) fields[field] = value.slice(0, GRAVITY_END_USER_MAX[field])
+  }
+  return fields
+}
+
 export const handleGravityIndex = (async (params: {
   previousToolCallFinished: Promise<void>
   toolCall: CodebuffToolCall<'gravity_index'>
@@ -190,6 +246,8 @@ export const handleGravityIndex = (async (params: {
   agentState?: AgentState
   logger: Logger
   apiKey: string
+  /** The run's server-set metadata; carries the hosted Cloud surface hint. */
+  extraCodebuffMetadata?: Record<string, string>
 
   agentStepId: string
   clientSessionId: string
@@ -212,6 +270,7 @@ export const handleGravityIndex = (async (params: {
     agentState,
     agentStepId,
     apiKey,
+    extraCodebuffMetadata,
     clientSessionId,
     fingerprintId,
     logger,
@@ -288,11 +347,18 @@ export const handleGravityIndex = (async (params: {
     const existingMetadata = isJSONObject(existingInput.metadata)
       ? existingInput.metadata
       : {}
-    const surface = gravitySurface(agentTemplate)
+    const { surface, clientPlatform } = resolveGravitySurface(
+      agentTemplate,
+      extraCodebuffMetadata,
+    )
+    // client_platform is server-set only: drop any the model supplied.
+    const { client_platform: _modelClientPlatform, ...modelMetadata } =
+      existingMetadata
     const metadata = {
-      ...existingMetadata,
+      ...modelMetadata,
       ...omitUndefined({
         surface,
+        client_platform: clientPlatform,
         tool_call_id: toolCall.toolCallId,
         agent_step_id: agentStepId,
         fingerprint_id: fingerprintId,
@@ -300,14 +366,25 @@ export const handleGravityIndex = (async (params: {
         repo_id: repoId,
       }),
     }
+    // Runtime-only search fields come from run metadata alone, never from the
+    // tool call (the tool-facing schema already strips them; this keeps it so).
+    const {
+      end_user_ip: _modelEndUserIp,
+      end_user_agent: _modelEndUserAgent,
+      ad_session_id: _modelAdSessionId,
+      ...toolInput
+    } = existingInput as JSONObject
     const input = {
-      ...existingInput,
+      ...toolInput,
       external_session_id: clientSessionId,
       // On service-account surfaces, `fingerprintId` (e.g.
       // `freebuff-chat-<userId>` or the project id) is sent as the external
       // user id. Other surfaces omit it.
       ...(isServiceAccountSurface(surface)
         ? { external_user_id: fingerprintId }
+        : {}),
+      ...(toolCall.input.action === 'search'
+        ? gravityEndUserFields(extraCodebuffMetadata)
         : {}),
       metadata,
     } satisfies JSONObject

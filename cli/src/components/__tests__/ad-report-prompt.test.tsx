@@ -4,7 +4,6 @@ import { createRoot, flushSync } from '@opentui/react'
 import React from 'react'
 import type { AdReport } from '@codebuff/common/ads/ad-report'
 
-import { AdReportButton } from '../ad-report-button'
 import { AdReportPrompt, useAdReportPrompt } from '../ad-report-prompt'
 import { MultilineInput } from '../multiline-input'
 import { createAdReportRegistry } from '../../ads/ad-reports'
@@ -25,28 +24,16 @@ const AD = {
 }
 const REASON = 'This ad makes a misleading claim.'
 
-async function mount(
-  send: (ad: AdReport) => Promise<void>,
-  getAccount: () => string | null = () => null,
-) {
-  const registry = createAdReportRegistry(send, getAccount)
+async function mount(send: (ad: AdReport) => Promise<void>) {
+  const registry = createAdReportRegistry()
   let draft = 'My coding task'
   let chatSubmits = 0
-  let rotate!: () => void
   const Host = () => {
-    const [ad, setAd] = React.useState(AD)
     const prompt = useAdReportPrompt(registry)
-    rotate = () =>
-      setAd({ ...AD, title: 'Rotated advertiser', impUrl: 'rotated' })
     return (
       <box flexDirection="column">
-        <AdReportButton ad={ad} registry={registry} />
         {prompt ? (
-          <AdReportPrompt
-            key={prompt.entry.id}
-            prompt={prompt}
-            registry={registry}
-          />
+          <AdReportPrompt prompt={prompt} registry={registry} />
         ) : (
           <MultilineInput
             value={draft}
@@ -95,7 +82,10 @@ async function mount(
     click,
     settle,
     frame: () => setup.captureCharFrame(),
-    rotate: () => flushSync(() => rotate()),
+    async open() {
+      registry.open(AD, send)
+      await settle()
+    },
     draft: () => draft,
     chatSubmits: () => chatSubmits,
     async key(action: (input: typeof setup.mockInput) => unknown) {
@@ -106,27 +96,21 @@ async function mount(
 }
 
 describe('the CLI report explanation form', () => {
-  test('an account boundary discards the private draft and refreshes mounted report controls', async () => {
-    let account = 'first-account'
+  test('an account change discards the private draft', async () => {
     const sent: AdReport[] = []
-    const view = await mount(
-      async (ad) => {
-        sent.push(ad)
-      },
-      () => account,
-    )
-    await view.click('[Report 1]')
+    const view = await mount(async (ad) => {
+      sent.push(ad)
+    })
+    await view.open()
     await view.key((input) => input.pasteBracketedText(REASON))
-    account = 'second-account'
-    view.registry.syncAccount()
+    view.registry.reset()
     await view.settle()
     expect(view.registry.getPrompt()).toBeNull()
     expect(view.frame()).not.toContain(REASON)
     expect(view.draft()).toBe('My coding task')
     expect(view.chatSubmits()).toBe(0)
     expect(sent).toEqual([])
-    expect(await view.registry.command('1')).toContain('Ad not found')
-    await view.click('[Report 2]')
+    await view.open()
     expect(view.frame()).toContain('0/2000 characters')
     await view.click('[Submit report]')
     expect(sent).toEqual([])
@@ -137,8 +121,8 @@ describe('the CLI report explanation form', () => {
     const view = await mount(async (ad) => {
       sent.push(ad)
     })
-    await view.click('[Report 1]')
-    expect(view.frame()).toContain('Report ad 1: Original advertiser')
+    await view.open()
+    expect(view.frame()).toContain('Report ad: Original advertiser')
     await view.click('[Submit report]')
     await view.key((input) => input.pasteBracketedText('   short   '))
     await view.key((input) => input.pressKey('s', { ctrl: true }))
@@ -150,15 +134,12 @@ describe('the CLI report explanation form', () => {
     expect(view.chatSubmits()).toBe(0)
   })
 
-  test('numbered command selects the saved ad and keyboard submit sends trimmed explanation only', async () => {
+  test('keyboard submit sends the trimmed explanation only', async () => {
     const sent: AdReport[] = []
     const view = await mount(async (ad) => {
       sent.push(ad)
     })
-    view.rotate()
-    await view.settle()
-    expect(await view.registry.command('1')).toBeNull()
-    await view.settle()
+    await view.open()
     await view.key((input) => input.pasteBracketedText(`  ${REASON}  `))
     await view.key((input) => input.pressEnter())
     expect(sent).toEqual([])
@@ -170,7 +151,7 @@ describe('the CLI report explanation form', () => {
     expect(view.chatSubmits()).toBe(0)
   })
 
-  test('failure preserves typed text and the original snapshot through retry, duplicate clicks, and rotation', async () => {
+  test('failure preserves typed text through retry and duplicate clicks', async () => {
     const sent: AdReport[] = []
     let finish!: () => void
     const view = await mount(async (ad) => {
@@ -180,14 +161,11 @@ describe('the CLI report explanation form', () => {
         finish = resolve
       })
     })
-    await view.click('[Report 1]')
+    await view.open()
     await view.key((input) => input.pasteBracketedText(REASON))
     await view.click('[Submit report]')
     expect(view.frame()).toContain('Could not send the report')
     expect(view.frame()).toContain(REASON)
-    view.rotate()
-    await view.settle()
-    expect(view.frame()).toContain('Report ad 1: Original advertiser')
     await view.click('[Submit report]')
     await view.click('[Sending…]')
     await view.click('[Cancel]')
@@ -199,7 +177,6 @@ describe('the CLI report explanation form', () => {
     finish()
     await view.settle()
     expect(view.registry.getPrompt()).toBeNull()
-    expect(view.frame()).toContain('[Report 2]')
   })
 
   test('oversized explanations stay visible for correction; Escape cancels without sending', async () => {
@@ -207,7 +184,7 @@ describe('the CLI report explanation form', () => {
     const view = await mount(async (ad) => {
       sent.push(ad)
     })
-    await view.click('[Report 1]')
+    await view.open()
     await view.key((input) => input.pasteBracketedText('x'.repeat(2001)))
     await view.key((input) => input.pressKey('s', { ctrl: true }))
     expect(view.frame()).toContain('2001/2000 characters')

@@ -222,7 +222,7 @@ test('a row reads its price as a multiplier, 1x included; a free row carries non
   expect(detailsOf('DeepSeek V4.1 Flash')).toContain('1x')
   expect(frame).not.toContain('0x')
   expect(frame).not.toContain('Freebucks')
-  expect(frame).toContain('FREE · 5/5 hours daily')
+  expect(frame).toContain('FREE · 5:00/5:00 hours daily')
 })
 
 test('a solo-session discount shows the price the row charges, Free when it covers it', async () => {
@@ -280,16 +280,16 @@ test('the Freebucks picker waits after an expired reset and displays a confirmed
   }
   publish(0, FIXED_NOW_MS + 60_000)
   const setup = await renderSelector(48)
-  expect(setup.captureCharFrame()).toContain('0/20 hours daily · resets in 1m')
+  expect(setup.captureCharFrame()).toContain('0:00/20:00 hours daily · resets in 1m')
   for (const resetAt of [FIXED_NOW_MS, FIXED_NOW_MS - 60_000]) {
     publish(0, resetAt)
     await setup.renderOnce()
-    expect(setup.captureCharFrame()).toContain('0/20 hours daily · Updating balance…')
+    expect(setup.captureCharFrame()).toContain('0:00/20:00 hours daily · Updating balance…')
     expect(setup.captureCharFrame()).not.toContain('resets in now')
   }
   publish(100, FIXED_NOW_MS + 86_400_000)
   await setup.renderOnce()
-  expect(setup.captureCharFrame()).toContain('20/20 hours daily · resets in 1d 0h')
+  expect(setup.captureCharFrame()).toContain('20:00/20:00 hours daily · resets in 1d 0h')
   expect(setup.captureCharFrame()).not.toContain('Updating balance')
 })
 
@@ -761,10 +761,10 @@ describe('FreebuffModelSelector tier layout', () => {
       frame.split('\n').find((line) => line.includes(tagline)) ?? ''
     const frame = (await renderSelector()).captureCharFrame()
 
-    expect(rowOf(frame, 'Smart & Fast')).toContain('• high')
+    expect(rowOf(frame, 'Smart & Fast')).toContain('• High')
     const lunaRow = rowOf(frame, 'GPT-6 Luna')
     expect(lunaRow).toContain('Strong all-around')
-    expect(lunaRow).toContain('• high')
+    expect(lunaRow).toContain('• High')
     expect(rowOf(frame, 'MiniMax M3')).not.toContain('Reasoning')
   })
 
@@ -1822,7 +1822,7 @@ describe('unavailable balances in the mounted CLI picker', () => {
         .setSession({ ...pending, freebucks: freebucksFixture(5) })
       await setup.renderOnce()
       expect(setup.captureCharFrame()).not.toContain('unavailable')
-      expect(setup.captureCharFrame()).toContain('1/5 hours daily')
+      expect(setup.captureCharFrame()).toContain('1:00/5:00 hours daily')
       flushSync(() => setup.mockInput.pressEnter())
       await setup.renderOnce()
       expect(requests).toEqual([id, id])

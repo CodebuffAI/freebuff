@@ -142,6 +142,10 @@ turn — run it in the growth lab (`bun lab`, [`growth-lab.md`](./growth-lab.md)
 private stack from your checkout where personas sign up as brand-new users and
 screenshots and video come back as proof.
 
+Which change runs locally against a staging slot (the workspace page, Desktop,
+the CLI) and which needs a slot deploy is
+[Choosing where to test](./staging-environments.md#choosing-where-to-test).
+
 ## Cloud Agent smoke test (no credentials)
 
 A Cloud Agent — or any checkout without Infisical — can confirm the workspace can run a package-local unit test from the placeholder fixture alone. This is one file in `@codebuff/internal`. A pass does not validate the rest of the application, CI, or production runtime.
@@ -170,8 +174,9 @@ cd packages/internal
 
 ## The production-runtime smoke in `build-web`
 
-Everything else in CI runs under Bun. Production `web` runs under Node (Render's
-default, pinned in `.node-version` so CI and Render read the same file), and
+Everything else in CI runs under Bun. Production `web` runs under Node (the AWS
+ECS `backend` image's `NODE_VERSION` in `infra/aws-compute/docker/Dockerfile`,
+kept in step with `.node-version`, which CI and Render's fallback `web` read), and
 the two disagree on which JS built-ins exist: on 2026-09-11 a
 `Promise.withResolvers()` in the completions handler was green everywhere and
 threw on every request in production (#3218). `scripts/check-node-runtime-apis.ts`

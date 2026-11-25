@@ -171,6 +171,12 @@ async function main() {
     ['process.env.CODEBUFF_CLI_VERSION', `"${version}"`],
     ['process.env.CODEBUFF_CLI_TARGET', `"${getCliTargetLabel(targetInfo)}"`],
     ['process.env.FREEBUFF_MODE', `"${freebuffMode}"`],
+    // Releases build on GitHub Actions. A binary built anywhere else keeps its
+    // token out of the macOS Keychain (auth-token-store.ts).
+    [
+      'process.env.CODEBUFF_LOCAL_BUILD',
+      process.env.GITHUB_ACTIONS === 'true' ? '""' : '"true"',
+    ],
     ...nextPublicEnvVars,
   ]
 

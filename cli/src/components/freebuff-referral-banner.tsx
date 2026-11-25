@@ -229,6 +229,8 @@ interface FreebuffReferralBannerProps {
   /** The account is on the Freebucks meter: referrals pay hours, and
    *  nothing here may count sessions. */
   metered?: boolean
+  /** First line of its panel: no gap above. */
+  flush?: boolean
   focusedId: string
   onFocusTargetsChange: (targets: FreebuffReferralFocusTarget[]) => void
 }
@@ -239,10 +241,12 @@ export const FreebuffReferralBanner: React.FC<FreebuffReferralBannerProps> = ({
   glmPromo,
   accessTier,
   metered = false,
+  flush = false,
   focusedId,
   onFocusTargetsChange,
 }) => {
   const theme = useTheme()
+  const gap = flush ? 0 : 1
   const now = useNow(60_000)
   const copyFocused = focusedId === COPY_FOCUS_ID
   const dashboardFocused = focusedId === DASHBOARD_FOCUS_ID
@@ -311,7 +315,9 @@ export const FreebuffReferralBanner: React.FC<FreebuffReferralBannerProps> = ({
   // is a meter this account is no longer on.
   if (metered) {
     return (
-      <box style={{ flexDirection: 'column', width, marginTop: 1, flexShrink: 0 }}>
+      <box
+        style={{ flexDirection: 'column', width, marginTop: gap, flexShrink: 0 }}
+      >
         <text style={{ wrapMode: 'word' }}>
           <span fg={theme.muted}>✦ Refer friends → </span>
           <span fg={theme.foreground}>earn hours</span>
@@ -331,7 +337,7 @@ export const FreebuffReferralBanner: React.FC<FreebuffReferralBannerProps> = ({
           flexDirection: 'column',
           alignItems: 'flex-start',
           gap: 0,
-          marginTop: 1,
+          marginTop: gap,
           // Never let a height-starved landing column squash the banner — that
           // would draw the copy control on top of the pitch line above it.
           flexShrink: 0,
@@ -382,7 +388,7 @@ export const FreebuffReferralBanner: React.FC<FreebuffReferralBannerProps> = ({
         flexDirection: 'column',
         alignItems: 'flex-start',
         gap: 0,
-        marginTop: 1,
+        marginTop: gap,
         // Never let a height-starved landing column squash the banner — that
         // would draw the copy control on top of the pitch line above it.
         flexShrink: 0,

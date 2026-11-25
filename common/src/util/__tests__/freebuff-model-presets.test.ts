@@ -35,7 +35,7 @@ describe('model picker presets', () => {
       'max',
     ])
     expect(choices().map((preset) => preset.label)).toEqual([
-      'Fast',
+      'Instant',
       'Balanced',
       'Powerful',
     ])
@@ -216,7 +216,7 @@ describe('model picker presets', () => {
           preset.thinkingLevel,
         ]),
       ).toEqual([
-        ['efficient', 'Fast', 'm-flash', 'low', true],
+        ['efficient', 'Instant', 'm-flash', 'low', true],
         ['balanced', 'Default', 'm-flash', 'high', true],
         ['powerful', 'Max', 'm-flash', 'max', true],
       ])
@@ -245,7 +245,7 @@ describe('model picker presets', () => {
       choices({
         models: [one, { id: 'm-luna', compiledId: luna, displayName: 'GPT-6 Luna' }],
       }).map((preset) => preset.label),
-    ).toEqual(['Fast', 'Balanced', 'Powerful'])
+    ).toEqual(['Instant', 'Balanced', 'Powerful'])
   })
 
   // Chat mode's default stop (product, 2026-11-11, Victor): a "hello" on
@@ -263,7 +263,7 @@ describe('model picker presets', () => {
     // Full access, and a picker that has not read the tier yet.
     for (const accessTier of ['full', undefined] as const)
       expect(stops({ accessTier, models: [flashRow, slow] })).toEqual([
-        ['Fast', 'm-flash', 'low'],
+        ['Instant', 'm-flash', 'low'],
         ['Balanced', dsSlowKey, null],
         ['Powerful', 'm-flash', 'max'],
       ])

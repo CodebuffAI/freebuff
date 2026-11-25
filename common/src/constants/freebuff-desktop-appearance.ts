@@ -33,11 +33,11 @@ export const STREAK_THEME_REQUIRED_DAYS = FREEBUFF_STREAK_REWARD_INTERVAL_DAYS
  */
 export const STREAK_THEME_TIERS = [
   { id: STREAK_THEME_PRESET_ID, name: 'Streak Fire', days: STREAK_THEME_REQUIRED_DAYS },
-  { id: 'gold-streak-fire', name: 'Gold Streak Fire', days: 14 },
-  { id: 'white-streak-fire', name: 'White Streak Fire', days: 21 },
-  { id: 'blue-streak-fire', name: 'Blue Streak Fire', days: 28 },
-  { id: 'plasma-streak-fire', name: 'Plasma Streak Fire', days: 50 },
-  { id: 'rainbow-streak-fire', name: 'Rainbow Streak Fire', days: 100 },
+  { id: 'gold-streak-fire', name: 'Gold Streak', days: 14 },
+  { id: 'white-streak-fire', name: 'White Streak', days: 21 },
+  { id: 'blue-streak-fire', name: 'Blue Streak', days: 28 },
+  { id: 'plasma-streak-fire', name: 'Plasma Streak', days: 50 },
+  { id: 'rainbow-streak-fire', name: 'Rainbow Streak', days: 100 },
 ] as const
 export type StreakThemeTier = (typeof STREAK_THEME_TIERS)[number]
 

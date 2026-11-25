@@ -1348,8 +1348,12 @@ export interface FreebuffDesktopRefundInfo {
 
 export interface FreebuffDesktopPurchaseInfo {
   model: string
+  /** While paused, when the paused hour stops waiting. */
   expiresAt: string
   holderInstanceId?: string
+  /** A paused hour (`freebuff-session-pause.ts`): the time the next session
+   *  on this model resumes it with. Absent on a running hour. */
+  pausedRemainingMs?: number
 }
 
 /**

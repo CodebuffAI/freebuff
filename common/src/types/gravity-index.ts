@@ -124,6 +124,18 @@ const runtimeAttributionFields = {
     ),
 }
 
+// The end user's network identity and ad session, for Gravity's CPM search
+// fields (user_ip, user_agent, session_id). Stamped by the agent runtime from
+// server-set run metadata on hosted runs, the CLI and Desktop; never offered to
+// the model. The server decides what to trust: `end_user_ip` only from the
+// Freebuff Web service account or a Cloud run's own token (our servers), the
+// user agent and ad session from any caller.
+const searchRuntimeFields = {
+  end_user_ip: z.string().max(64).optional(),
+  end_user_agent: z.string().max(1024).optional(),
+  ad_session_id: z.string().max(256).optional(),
+}
+
 // Tool-facing schema presented to the LLM provider. Native function-calling
 // providers require the top-level `parameters` to be a JSON Schema of
 // `type: "object"`, so this MUST be a flat `z.object` rather than a top-level
@@ -191,15 +203,57 @@ export const gravityIndexInputSchema = z
   })
   .describe(`Use the Gravity Index tool discovery and install API.`)
 
+// Catalog reads (browse / list_categories / get_service) keep only the
+// runtime-stamped `metadata`, so the server's attribution log can record which
+// surface made the call. They are plain GETs upstream: the server does not
+// forward metadata to Gravity for them, and they carry no user attribution.
+// Like every runtime field, this is server-side only: the flat tool-facing
+// schema above never offers `metadata` to the model.
+const catalogMetadataFields = {
+  metadata: runtimeAttributionFields.metadata,
+}
+
 export const gravityIndexApiInputSchema = z
   .discriminatedUnion('action', [
-    searchInputSchema.extend(runtimeAttributionFields),
-    browseInputSchema,
-    listCategoriesInputSchema,
-    getServiceInputSchema,
+    searchInputSchema.extend({
+      ...runtimeAttributionFields,
+      ...searchRuntimeFields,
+    }),
+    browseInputSchema.extend(catalogMetadataFields),
+    listCategoriesInputSchema.extend(catalogMetadataFields),
+    getServiceInputSchema.extend(catalogMetadataFields),
     provisionInputSchema.extend(runtimeAttributionFields),
     reportIntegrationInputSchema.extend(runtimeAttributionFields),
   ])
   .describe(`Use the Gravity Index tool discovery and install API.`)
 
 export type GravityIndexInput = z.infer<typeof gravityIndexApiInputSchema>
+
+/**
+ * Run-metadata keys that carry the END USER's network identity and ad session
+ * to the gravity_index tool (the hosted Cloud worker, the CLI, the legacy Web
+ * runner set them on the SDK run's `extraCodebuffMetadata`). They are for the
+ * Gravity Index search alone: completion requests must never carry them, or
+ * the user's raw IP would reach LLM providers and our request audit logs. The
+ * SDK strips them where completion metadata is built (sdk/src/impl/llm.ts) and
+ * the completions route deletes them again on arrival.
+ */
+export const GRAVITY_END_USER_RUN_METADATA_KEYS = {
+  end_user_ip: 'gravity_end_user_ip',
+  end_user_agent: 'gravity_end_user_agent',
+  ad_session_id: 'gravity_ad_session_id',
+} as const
+
+const GRAVITY_END_USER_KEY_SET: ReadonlySet<string> = new Set(
+  Object.values(GRAVITY_END_USER_RUN_METADATA_KEYS),
+)
+
+/** A copy of run metadata without the end-user keys (for completion requests). */
+export function withoutGravityEndUserMetadata<T extends Record<string, unknown>>(
+  metadata: T,
+): T {
+  const rest: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(metadata))
+    if (!GRAVITY_END_USER_KEY_SET.has(key)) rest[key] = value
+  return rest as T
+}

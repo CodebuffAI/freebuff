@@ -366,7 +366,26 @@ export enum AnalyticsEvent {
   // web | desktop; `streak`: the current streak in days (null before the
   // streak loaded). Who actually looks at the streak.
   FREEBUFF_ARTIFACT_USAGE = 'freebuff.artifact_usage',
+  // An inline visual in a chat reply (web and hosted Desktop), inline-visual-usage.ts. `action`:
+  // rendered | fallback (shown as text) | saved (as `kind`); `blocks`: the block names drawn;
+  // `originApp`: web | desktop. The server's per-turn sizes are the Axiom event of the same name.
+  FREEBUFF_INLINE_VISUAL = 'freebuff.inline_visual',
   FREEBUFF_STREAK_OPENED = 'freebuff.streak.opened',
+  // Workspace waits (web and hosted Desktop), freebuff/web/src/components/workspace/workspace-timing.ts.
+  // `surface`: web | desktop; `sample_rate`: the share reported, where sampled.
+  // A sampled chat tab switch, from the click, key or sidebar row to the frame after it painted.
+  // `duration_ms`; `tab_count`: tabs open; `start`: warm (shown before, still mounted) |
+  // prerendered (mounted hidden after launch, never shown) | cold (mounted by the switch);
+  // `input`: click | keyboard | sidebar.
+  FREEBUFF_TAB_SWITCHED = 'freebuff.tab_switched',
+  // Once per page load: navigation start to the frame that drew the first chat (or the new-chat
+  // screen) after the saved tabs were restored. `duration_ms`; `screen`: chat | new_chat. Not sent
+  // when the window was hidden before it was ready.
+  FREEBUFF_WORKSPACE_READY = 'freebuff.workspace_ready',
+  // A sampled share of page loads: the visit's slowest interaction (INP, web-vitals), sent when the
+  // page is hidden or left. `inp_ms`; `rating`: good | needs-improvement | poor; `target`: the
+  // element's CSS selector; `interaction`: pointer | keyboard.
+  FREEBUFF_WORKSPACE_INP = 'freebuff.workspace_inp',
   // The workspace's Integrations page, to rank INTEGRATION_CATEGORIES by what
   // people want. `action`: category_opened (`category`) | connect_clicked
   // (`app`, `from`: a category id | search | connected, `position`: 0-based
@@ -434,6 +453,13 @@ export enum AnalyticsEvent {
   // because the same download had just started (the "did that work?" double
   // click) — a direct read on whether the click feedback is landing.
   FREEBUFF_DESKTOP_DOWNLOAD_CLICKED = 'freebuff.desktop_download_clicked',
+
+  // Freebuff - the Desktop step after signing in from the homepage (every
+  // account) or another landing (new accounts only). `viewed` fires when it
+  // shows, `phone` true for the phone variant; `exited` when the visitor
+  // leaves it for the browser workspace, `via` logo | menu.
+  FREEBUFF_DESKTOP_WELCOME_VIEWED = 'freebuff.desktop_welcome_viewed',
+  FREEBUFF_DESKTOP_WELCOME_EXITED = 'freebuff.desktop_welcome_exited',
 
   // Freebuff - a phone tapped its own app store button on the homepage or the
   // sign-in step. `store` is ios | android, `location` the button.

@@ -250,6 +250,9 @@ export type LocalMcpHostList = {
   cloud?: import('./local-mcp').LocalMcpCloudStatus
 }
 
+/** macOS's answer for Desktop's notifications (HostedWorkspaceHost.notificationPermission). */
+export type DesktopNotificationPermission = 'allowed' | 'blocked' | 'not-asked' | 'unknown'
+
 export type HostedWorkspaceHost = {
   /** Local branch names only; native resolves the enrolled folder and refuses unsafe switches. */
   projectBranches?(input: { projectId: string; branch?: string }): Promise<{
@@ -311,6 +314,18 @@ export type HostedWorkspaceHost = {
   discordPresence?: {
     enabled(): Promise<boolean | null>
     setEnabled(enabled: boolean): Promise<boolean | null>
+  }
+  /**
+   * Whether macOS shows this app's notifications
+   * (freebuff-desktop/electron/notification-permission.cjs): `unknown` off macOS and wherever
+   * Desktop cannot tell. `request()` asks macOS's one-time question only while it is `not-asked`.
+   * Older builds omit the key, and the page shows no permission notices.
+   */
+  notificationPermission?: {
+    state(): Promise<DesktopNotificationPermission>
+    request(): Promise<DesktopNotificationPermission>
+    openSettings(): Promise<boolean>
+    onChange(listener: (state: DesktopNotificationPermission) => void): () => void
   }
   /** Open a reviewed HTTP(S) authorization link in the system browser. */
   openExternal?(url: string): Promise<void>
