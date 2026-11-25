@@ -136,6 +136,7 @@ export type AgentTemplate<
   includeMessageHistory: boolean
   inheritParentSystemPrompt: boolean
   windowedFileReads?: boolean
+  confineFileToolsToProject?: boolean
   /** One final verification opportunity after tool work, within the existing step budget. */
   completionCheck?: boolean
   /** List the spawnable agents once in the system prompt instead of after every user prompt. */

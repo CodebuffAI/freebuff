@@ -200,6 +200,7 @@ export interface AgentDefinition {
    * style. Defaults to false, which keeps the legacy read behavior.
    */
   windowedFileReads?: boolean
+  confineFileToolsToProject?: boolean
   /** One final verification opportunity after tool work, within the existing step budget. */
   completionCheck?: boolean
 

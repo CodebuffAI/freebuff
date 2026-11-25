@@ -3,6 +3,8 @@ import { contextPrunerBudgetForModel } from '@codebuff/common/constants/model-co
 import { fitToolResults } from './fit-tool-results'
 import { countTokensMessages } from './token-counter'
 
+import { sanitizeToolOutputValue } from './sanitize-tool-output'
+
 import type { AgentTemplate } from '@codebuff/common/types/agent-template'
 import type {
   Message,
@@ -52,8 +54,20 @@ export function boundToolResult(
   result: ToolMessage,
   template: ContextPolicy,
 ): ToolMessage {
+  // Defensive Strategy 4a: strip common prompt-injection delimiter tags from
+  // tool output before it enters the model's context. Operate on a clone so
+  // the original result (and any UI/trace consumer) is untouched.
+  const sanitized: ToolMessage = {
+    ...result,
+    content: result.content.map((part) => {
+      if (part.type === 'json') {
+        return { ...part, value: sanitizeToolOutputValue(part.value) as any }
+      }
+      return part
+    }),
+  }
   return fitToolResults(
-    [result],
+    [sanitized],
     Math.min(64_000, Math.floor(contextBudget(template) / 4)),
   )[0] as ToolMessage
 }

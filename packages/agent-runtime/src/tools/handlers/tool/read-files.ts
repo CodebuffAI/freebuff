@@ -4,6 +4,8 @@ import { jsonToolResult, mediaToolResult } from '@codebuff/common/util/messages'
 
 import { getFileReadingUpdates } from '../../../get-file-reading-updates'
 import { renderReadFilesResult } from '../../../util/render-read-files-result'
+import { isPathConfined, isPathConfinedEnabled } from '../../../util/path-confinement'
+import { PATH_OUTSIDE_PROJECT_MESSAGE } from '../../../util/path-confinement'
 
 import type { CodebuffToolHandlerFunction } from '../handler-function-type'
 import type {
@@ -61,6 +63,8 @@ export const handleReadFiles = (async (
   await previousToolCallFinished
 
   const windowed = agentTemplate.windowedFileReads === true
+  const confined = isPathConfinedEnabled(agentTemplate)
+  const disallowedEntries: { path: string; content: string }[] = []
   const requestedFiles: string[] = []
   // Images skip the text read entirely: decoded as UTF-8 a PNG is a wall of
   // replacement characters, and the model reports "raw bytes" instead of
@@ -76,6 +80,13 @@ export const handleReadFiles = (async (
   const seenWindows: Record<string, Set<string>> = Object.create(null)
   for (const entry of paths) {
     const path = typeof entry === 'string' ? entry : entry.path
+    if (confined && !isPathConfined(path)) {
+      disallowedEntries.push({
+        path,
+        content: `${FILE_READ_STATUS.OUTSIDE_PROJECT} ${PATH_OUTSIDE_PROJECT_MESSAGE}`,
+      })
+      continue
+    }
     if (requestImageFile && isImagePath(path)) {
       if (!imagePaths.includes(path)) imagePaths.push(path)
       continue
@@ -133,7 +144,7 @@ export const handleReadFiles = (async (
     output: [
       ...jsonToolResult(
         renderReadFilesResult(
-          [...addedFiles, ...imageEntries],
+          [...addedFiles, ...disallowedEntries, ...imageEntries],
           fileContext.tokenCallers ?? {},
         ),
       ),

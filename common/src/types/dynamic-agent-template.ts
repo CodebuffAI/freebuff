@@ -200,6 +200,7 @@ export const DynamicAgentDefinitionSchema = z.object({
   completionCheck: z.boolean().optional(),
   spawnableAgentsInSystemPrompt: z.boolean().optional(),
   windowedFileReads: z.boolean().optional(),
+  confineFileToolsToProject: z.boolean().optional(),
   suppressCommitAttribution: z.boolean().optional(),
   compactContext: z
     .union([
