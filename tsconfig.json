@@ -22,6 +22,7 @@
     { "path": "./evals" },
     { "path": "./packages/agent-runtime" },
     { "path": "./packages/code-map" },
-    { "path": "./packages/llm-providers" }
+    { "path": "./packages/llm-providers" },
+    { "path": "./opencode-hub" }
   ]
 }
