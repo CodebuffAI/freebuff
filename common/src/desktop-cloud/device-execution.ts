@@ -68,6 +68,8 @@ export const deviceExecutionContext = z
     readOnlyOpener: z.literal(true).optional(),
     /** Honours `scope.sideParentId`: a side chat's read-only turn runs in its parent's own worktree. */
     sideParentScope: z.literal(true).optional(),
+    /** Honours `harness_start`'s `cloudTools`: a native turn may call tools Cloud runs (cloud-tools.ts). */
+    cloudTools: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
     /** Answers `local_mcp_call` and publishes its local MCP servers (local-mcp.ts). Desktop's
      * account-wide local MCP connection registers with only this; it is no folder's binding. */
@@ -293,6 +295,21 @@ export const deviceReceiptRequest = z
 export const deviceSteeringMessage = z
   .object({ id: deviceIdSchema, prompt: z.string().min(1).max(200_000) })
   .strict()
+/** Journal event kind of a native turn's call to a tool Cloud runs (`harness_start`'s `cloudTools`). */
+export const DEVICE_CLOUD_TOOL_EVENT = 'cloud_tool'
+export const DEVICE_CLOUD_TOOLS_MAX = 40
+/** The largest input (as JSON) Desktop journals for one call: well inside one `harness_read` (2 MB). */
+export const DEVICE_CLOUD_TOOL_INPUT_CHARS = 1_000_000
+/** One tool Cloud runs for a native turn: what the CLI is shown. Cloud parses the input again itself. */
+export const deviceCloudTool = z
+  .object({
+    name: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+    description: z.string().max(20_000),
+    /** The input's JSON Schema (an object schema). */
+    inputSchema: z.record(z.string(), z.unknown()),
+  })
+  .strict()
+export type DeviceCloudTool = z.infer<typeof deviceCloudTool>
 export const deviceHarnessRequest = z.discriminatedUnion('method', [
   z
     .object({
@@ -369,6 +386,15 @@ export const deviceHarnessRequest = z.discriminatedUnion('method', [
         .max(12)
         .optional(),
       injectAgentsMd: z.boolean().optional(),
+      /**
+       * Tools Cloud runs for this turn (web cloud-tools.ts: the artifact tools). Desktop offers
+       * each to the CLI beside its own; a call is journaled as a `cloud_tool` event
+       * `{ callId, name, input }` and answered with `harness_answer` (`questionId` is the call's
+       * id). Sent only to a device whose context has `cloudTools`: the schema is strict.
+       */
+      cloudTools: z.array(deviceCloudTool).max(DEVICE_CLOUD_TOOLS_MAX).optional(),
+      /** How to use `cloudTools`, appended to the CLI's instructions. */
+      cloudToolsPrompt: z.string().max(20_000).optional(),
     })
     .strict(),
   z
@@ -629,6 +655,7 @@ export const deviceCapabilities = z
     sponsoredExec: z.literal(true).optional(),
     readOnlyOpener: z.literal(true).optional(),
     sideParentScope: z.literal(true).optional(),
+    cloudTools: z.literal(true).optional(),
     githubConnect: z.literal(true).optional(),
     localMcp: z.literal(true).optional(),
     previousDevices: z.literal(true).optional(),
