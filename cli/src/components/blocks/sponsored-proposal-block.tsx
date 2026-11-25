@@ -10,17 +10,16 @@ import {
   sponsoredProposalViewModel,
 } from '@codebuff/common/ads/sponsored-proposal-view'
 import { sponsoredProgressPill } from '@codebuff/common/ads/sponsored-offer-plan'
-import { toSponsoredProposalAdReport } from '@codebuff/common/ads/ad-report'
 import {
   sanitizeTerminalStrings,
   sanitizeTerminalText,
 } from '@codebuff/common/util/terminal-safe-text'
 import { TextAttributes } from '@opentui/core'
 import { useKeyboard } from '@opentui/react'
-import React, { useCallback, useContext, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '../button'
-import { AdReportButton, AdReportRegistryContext } from '../ad-report-button'
+import { adReports } from '../../ads/ad-reports'
 import { useMessageBlockStore } from '../../state/message-block-store'
 import { getAuthToken } from '../../utils/auth'
 import { safeOpen } from '../../utils/open-url'
@@ -171,7 +170,6 @@ export const SponsoredProposalBlock: React.FC<{
   run?: SponsoredDockRun | null
 }> = ({ block, availableWidth, run = null }) => {
   const theme = useTheme()
-  const reportRegistry = useContext(AdReportRegistryContext)
   const callbacks = useMessageBlockStore((s) => s.callbacks)
   const [menuIndex, setMenuIndex] = useState(0)
 
@@ -302,7 +300,7 @@ export const SponsoredProposalBlock: React.FC<{
   useKeyboard(
     useCallback(
       (key: KeyEvent) => {
-        if (reportRegistry.getPrompt()) return
+        if (adReports.getPrompt()) return
         if (refreshUnavailable) return
         if (!block.menuOpen && !consent) return
         const preventDefault = () => {
@@ -401,7 +399,6 @@ export const SponsoredProposalBlock: React.FC<{
         menuIndex,
         onMenuKey,
         refreshUnavailable,
-        reportRegistry,
       ],
     ),
   )
@@ -484,7 +481,6 @@ export const SponsoredProposalBlock: React.FC<{
         </box>
       )}
 
-      <AdReportButton ad={toSponsoredProposalAdReport(block.proposal, 'cli')} />
       <text style={{ fg: theme.foreground }}>
         {clip(
           delivered

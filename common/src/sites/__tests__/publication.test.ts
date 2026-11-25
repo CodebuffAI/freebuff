@@ -115,3 +115,26 @@ test('a busy environment relays the server’s refusal, which says what to do', 
     (await refusal({ error: 'environment_busy' })).message,
   ).toContain('Try again in 10 minutes')
 })
+
+test('a deploy the content check refuses relays the server’s message', async () => {
+  const message =
+    'This site was not published because it appears to break the Freebuff hosting rules (for example phishing, scams, malware or sexually explicit content). If you think this is a mistake, contact support@freebuff.com.'
+  const result = (await new SitesClient({
+    getToken: randomUUID,
+    host: 'https://example.invalid',
+    originApp: 'desktop',
+    fetcher: async () =>
+      Response.json({ error: 'site_content_refused', message }, { status: 422 }),
+  }).runToolWithContext(
+    'sites_set_published',
+    {
+      siteId,
+      environment: 'production',
+      published: true,
+      requestId: 'request-0002',
+    },
+    '/workspace',
+    'build',
+  )) as { error: string; message: string }
+  expect(result).toMatchObject({ error: 'sites_request_failed', message })
+})

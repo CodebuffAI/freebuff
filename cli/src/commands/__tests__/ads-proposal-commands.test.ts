@@ -258,7 +258,6 @@ describe('the commands are reachable by typing them', () => {
       'ads:accept-proposal',
       'ads:undo',
       'ads:proposals-off',
-      'ads:report',
       'ads:report-proposal',
     ]) {
       expect(findCommand(name)?.name, name).toBe(name)

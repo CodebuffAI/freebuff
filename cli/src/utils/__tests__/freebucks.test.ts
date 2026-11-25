@@ -199,7 +199,7 @@ describe('ordering', () => {
 describe('the header line', () => {
   test('shows session balances and ignores legacy dollar caps', () => {
     expect(freebucksHeaderLine(metered())).toBe(
-      '6/15 hours daily · 4 hours in wallet',
+      '6:00/15:00 hours daily · 4 hours in wallet',
     )
   })
 
@@ -207,14 +207,14 @@ describe('the header line', () => {
     // "$0 left" to somebody with a full allowance is worse than saying nothing.
     const { monthly: _drop, ...rest } = metered()
     expect(freebucksHeaderLine(rest as FreebuffFreebucksInfo)).toBe(
-      '6/15 hours daily · 4 hours in wallet',
+      '6:00/15:00 hours daily · 4 hours in wallet',
     )
   })
 
   test('carries the reset countdown when given a clock', () => {
     const now = Date.parse('2026-09-05T02:48:00Z') // 4h 12m before the fixture's reset
     expect(freebucksHeaderLine(metered(), now)).toBe(
-      '6/15 hours daily · resets in 4h 12m · 4 hours in wallet',
+      '6:00/15:00 hours daily · resets in 4h 12m · 4 hours in wallet',
     )
   })
 
@@ -237,10 +237,10 @@ describe('the header line', () => {
   test('hides an empty wallet, as Web and Desktop do', () => {
     expect(
       freebucksHeaderLine(metered({ wallet: { balance: 0, monthlyBonus: 0 } })),
-    ).toBe('6/15 hours daily')
+    ).toBe('6:00/15:00 hours daily')
   })
 
-  test('rounds hours down to whole hours, so a balance never reads as more than it buys', () => {
+  test('rounds down, the daily pool to the minute and the wallet to whole hours, so a balance never reads as more than it buys', () => {
     expect(
       freebucksHeaderLine(
         metered({
@@ -248,16 +248,44 @@ describe('the header line', () => {
           wallet: { balance: 6, monthlyBonus: 0 },
         }),
       ),
-    ).toBe('5/15 hours daily · 1 hour in wallet')
+    ).toBe('5:48/15:00 hours daily · 1 hour in wallet')
+  })
+
+  test('given a clock, a running paid hour counts down over its hour', () => {
+    // A 3-hour model just bought on a 15-hour day: the server has taken all
+    // 15 Freebucks; the figure spends them as the hour runs.
+    const startsAt = Date.parse('2026-09-05T02:00:00Z')
+    const bought = metered({
+      daily: {
+        limit: 75,
+        spent: 15,
+        remaining: 60,
+        resetAt: '2026-09-05T07:00:00Z',
+        openHours: [
+          {
+            amount: 15,
+            startsAt: new Date(startsAt).toISOString(),
+            endsAt: new Date(startsAt + 3_600_000).toISOString(),
+          },
+        ],
+      },
+      wallet: { balance: 0, monthlyBonus: 0 },
+    })
+    const at = (ms: number) => freebucksHeaderLine(bought, startsAt + ms)
+    expect(at(0)).toStartWith('15:00/15:00 hours daily')
+    expect(at(60_000)).toStartWith('14:57/15:00 hours daily')
+    expect(at(3_600_000)).toStartWith('12:00/15:00 hours daily')
+    // No clock, nothing to spread by: the server's figure as sent.
+    expect(freebucksHeaderLine(bought)).toBe('12:00/15:00 hours daily')
   })
 
   test('a wallet under an hour is hidden, never "0 hours"', () => {
     expect(
       freebucksHeaderLine(metered({ wallet: { balance: 0.4, monthlyBonus: 0 } })),
-    ).toBe('6/15 hours daily')
+    ).toBe('6:00/15:00 hours daily')
     expect(
       freebucksHeaderLine(metered({ wallet: { balance: 5, monthlyBonus: 0 } })),
-    ).toBe('6/15 hours daily · 1 hour in wallet')
+    ).toBe('6:00/15:00 hours daily · 1 hour in wallet')
   })
 })
 

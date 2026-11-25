@@ -12,17 +12,18 @@
 import type { FreebuffSubscriptionTierId } from '../constants/freebuff-subscriptions'
 
 /**
- * Who Community is on for. `members` for now (Victor, 2026-11-20): it went
- * out to every limited-access account for a day, and was pulled back to the
- * people who had already posted a site on it. Everyone else has Sites, as
- * before. An admin sees it by switching it on in Settings → Admin.
+ * Who Community is on for. `everyone` since 2026-11-24 (Victor: "community
+ * is ready. flip it on and change the sites section to be the new one for
+ * all users"): every account's Sites page is the shared one, with the
+ * listing tick box in the Publish menu. It was `members` from 2026-11-20
+ * (the people who had posted a site, and admins who switched it on in
+ * Settings → Admin); setting it back is the way to close it again.
  *
  * This is the workspace's rule alone (`communityShownFor`): the API answers
- * any signed-in account. Opening it to everyone is this constant, after the
- * launch steps in docs/freebuff-community.md.
+ * any signed-in account.
  */
 export type CommunityAudience = 'members' | 'everyone'
-export const COMMUNITY_AUDIENCE: CommunityAudience = 'members'
+export const COMMUNITY_AUDIENCE: CommunityAudience = 'everyone'
 
 /** Read through a function so a caller's comparison is not narrowed away. */
 export function communityAudience(): CommunityAudience {
@@ -353,6 +354,18 @@ export type CommunityProfileSettings = {
   private: boolean
   /** Off: a published site stays out of the community until its owner posts it. */
   autoPost: boolean
+}
+
+/**
+ * One of the viewer's sites and its listing: `GET /community/sites`, and what
+ * listing one from the Sites page answers (`POST /community/sites/:id`).
+ * `live` is shown; `pending` waits for its review; `held` did not pass it;
+ * `hidden` is a site not published now. A site with none is not listed.
+ */
+export type CommunitySiteListing = {
+  siteId: string
+  postId: string
+  status: 'live' | 'pending' | 'held' | 'hidden'
 }
 
 export type CommunityMe = {

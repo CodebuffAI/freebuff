@@ -11,6 +11,7 @@ import {
   compileLayer2Skill,
   isLayer2Skill,
   layer2PackageKey,
+  layer2StoredProduct,
   LAYER2_MAX_VERIFY,
   LAYER2_SKILL_CHANGELOG,
   type SponsoredSkillLayer2,
@@ -442,12 +443,66 @@ describe('the agent step', () => {
     ).toBe(false)
   })
 
-  test('with no keys there is no env line', () => {
+  test('with no keys there is no env line, and the tracked signup link comes before the docs link', () => {
     const integrate = compileLayer2Skill(base, '1.0.0').steps[0]!
     expect(integrate.instructions).not.toContain('environment')
-    expect(integrate.instructions).toEndWith(
-      'In an empty folder, scaffold a minimal project first.',
+    expect(integrate.instructions).toBe(
+      `${base.goal}\nAccount: ${base.signupUrl}\nDocs: ${base.docsUrl}\nIn an empty folder, scaffold a minimal project first.`,
     )
+    const rendered = renderSponsoredSkillProcedure(
+      compileLayer2Skill(base, '1.0.0'),
+    )
+    const first = rendered.match(/https?:\/\/\S+/)?.[0] ?? ''
+    expect(first).toContain('bfcid={bfcid}')
+    expect(rendered.indexOf(SIGNUP)).toBeLessThan(
+      rendered.indexOf(base.docsUrl),
+    )
+    expect(
+      sponsoredStepNeedsUser(`${integrate.title} ${integrate.instructions}`),
+    ).toBe(false)
+  })
+
+  test('a product name replaces the advertiser in the headings, and a single-product skill stays the advertiser', () => {
+    const serpie = compileLayer2Skill(
+      {
+        ...base,
+        id: 'serpie-ai-search-seo',
+        advertiser: 'griffin',
+        product: 'Serpie',
+        packages: [],
+      },
+      '1.0.0',
+    )
+    expect(serpie.advertiser).toBe('griffin')
+    expect(serpie.steps.map((step) => step.title)).toEqual([
+      'Build the Serpie integration in this project',
+      'Ask the user to sign up for Serpie',
+    ])
+    expect(serpie.steps[1]!.checks[0]).toMatchObject({
+      label: 'the user finished signing up for Serpie',
+    })
+    const keyed = compileLayer2Skill(
+      {
+        ...base,
+        id: 'serpie-ai-search-seo',
+        advertiser: 'griffin',
+        product: 'Serpie',
+        packages: [],
+        envKeys: ['SERPIE_API_KEY'],
+      },
+      '1.0.0',
+    )
+    expect(keyed.steps[1]!.title).toBe(
+      'Ask the user to create a Serpie API key and paste it',
+    )
+    expect(keyed.steps[1]!.credential?.label).toBe('Serpie API key')
+    // The credential get_url is already first, so the docs step is unchanged.
+    expect(keyed.steps[0]!.instructions).not.toContain('Account:')
+    expect(compileLayer2Skill(base, '1.0.0').steps[0]!.title).toBe(
+      'Build the Posthog integration in this project',
+    )
+    expect(layer2StoredProduct('Griffin', 'griffin')).toBeUndefined()
+    expect(layer2StoredProduct('Serpie', 'griffin')).toBe('Serpie')
   })
 
   test('two keys share one line', () => {
