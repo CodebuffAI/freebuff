@@ -6,6 +6,7 @@ import { createMarkdownFileBlock } from '@codebuff/common/util/file'
 import { closeXml } from '@codebuff/common/util/xml'
 
 import { truncateFileTreeBasedOnTokenBudget } from './truncate-file-tree'
+import { UNTRUSTED_DATA_SYSTEM_INSTRUCTION } from '../util/untrusted-data'
 
 import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type { ProjectFileContext } from '@codebuff/common/util/file'
@@ -128,6 +129,8 @@ ${
 ${printedTree}
 ${closeXml('project_file_tree')}
 ${truncationNote}
+
+${UNTRUSTED_DATA_SYSTEM_INSTRUCTION}
 `.trim()
 }
 

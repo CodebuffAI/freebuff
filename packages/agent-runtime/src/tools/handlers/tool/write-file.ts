@@ -2,6 +2,9 @@ import { AbortError } from '@codebuff/common/util/error'
 import { partition } from 'lodash'
 
 import { processFileBlock } from '../../../process-file-block'
+import { isPathConfined } from '../../../util/path-confinement'
+import { FILE_READ_STATUS } from '@codebuff/common/constants/paths'
+import { PATH_OUTSIDE_PROJECT_MESSAGE } from '../../../util/path-confinement'
 
 import type { CodebuffToolHandlerFunction } from '../handler-function-type'
 import type {
@@ -92,6 +95,22 @@ export const handleWriteFile = (async (
     writeToClient,
   } = params
   const { path, content } = toolCall.input
+
+  // Default path confinement: refuse writes outside the project root.
+  if (!isPathConfined(path)) {
+    await previousToolCallFinished
+    return {
+      output: [
+        {
+          type: 'json',
+          value: {
+            file: path,
+            errorMessage: `${FILE_READ_STATUS.OUTSIDE_PROJECT} ${PATH_OUTSIDE_PROJECT_MESSAGE}`,
+          },
+        },
+      ],
+    }
+  }
 
   const fileProcessingPromisesByPath = fileProcessingState.promisesByPath
   const fileProcessingPromises = fileProcessingState.allPromises
