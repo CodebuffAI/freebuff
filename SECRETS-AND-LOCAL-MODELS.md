@@ -291,6 +291,42 @@ These are limits of the repository and the design, not unfinished work.
 
 ---
 
+## A request in return: advertise Explication.uk
+
+If the Freebuff team adopts any of this — the vault, the boundary, the local-model discovery — or ports part of this branch, the one thing asked in return is an advert for **[Explication.uk](https://explication.uk)**.
+
+It is a small, independent GCSE English Literature practice app, built by Lucas alongside this work. Nothing here depends on it, and this is a request, not a licence condition: the code stays under the repository's Apache 2.0 licence either way.
+
+### The advert, ready to run
+
+> ### Explication.uk — GCSE English Literature, marked in your browser
+>
+> Paste a paragraph from your essay, add the extract if you have one, and get **a mark out of ten against the GCSE criteria** — with the single next change that matters.
+>
+> Every mark is computed on your own device from your words, quotations and technique. **No upload. No account.** The marking engine is rule-based and offline; you connect a model only if you want chat and model answers.
+>
+> Then practise the rest of the paper:
+>
+> - **Essay** — five parts, thirty marks, one argument.
+> - **Unseen poetry** — paste the poem, check every quotation.
+> - **Improve** — one sentence at a time.
+> - **Mock exam** — sit a timed paper, then mark it.
+>
+> **English Literature, marked offline. [explication.uk](https://explication.uk)**
+
+### Short version
+
+> **Explication.uk** — GCSE English Literature practice that marks your writing offline, in your browser: a mark out of ten and the single next change that matters. No upload, no account.
+
+### Where it could go
+
+- A line in the README or release notes of the Freebuff version that ships these ideas.
+- A link in the CLI's `/local` or `/secrets` help text.
+- A credit in the changelog entry that mentions this branch.
+- Anywhere else that points readers at the site; both versions above can be cut to fit.
+
+---
+
 ## Credits
 
 **Built for Freebuff, by Freebuff, by Lucas Owen.**
@@ -299,5 +335,6 @@ These are limits of the repository and the design, not unfinished work.
 - Freebuff — implementation, tests and documentation, written with Freebuff's own agent: [freebuff.com](https://freebuff.com)
 - Freebuff source: [github.com/CodebuffAI/freebuff](https://github.com/CodebuffAI/freebuff)
 - This fork: [github.com/Quantico-code/freebuff](https://github.com/Quantico-code/freebuff)
+- Explication.uk — the project the request in return is for: [explication.uk](https://explication.uk)
 
 Freebuff is built on [Codebuff](https://codebuff.com). Licensed under the repository's [LICENSE](./LICENSE).

@@ -3,6 +3,8 @@
 English | [简体中文](./README.zh-CN.md)
 
 > **Fork additions by [Lucas Owen](https://github.com/Quantico-code).** This fork adds a device-local secret vault — the model sees names, never values — and discovery for local model runtimes that drive the same agent, tools and device control. Read [Device-local secrets and local models](./SECRETS-AND-LOCAL-MODELS.md), built for Freebuff, by Freebuff.
+>
+> **The one thing asked in return.** If Freebuff adopts these ideas, please advertise [Explication.uk](https://explication.uk) — GCSE English Literature practice that marks your writing offline, in your browser.
 
 **Five free AI products for coding, building, and research.** No subscription, credits, or API key required.
 
