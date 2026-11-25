@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 
-import { countTokensMessage, countTokensMessages } from '../token-counter'
+import {
+  countTokensMessage,
+  countTokensMessages,
+  probeTokensMessage,
+} from '../token-counter'
 
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 
@@ -73,6 +77,15 @@ describe('countTokensMessage memoization', () => {
     )
     // Original untouched.
     expect(countTokensMessages(history)).toBe(before)
+  })
+
+  it('a probe does not pin a count that a later clip would make stale', () => {
+    const message = text('user', 'x'.repeat(4000))
+    const probed = probeTokensMessage(message)
+    ;(message.content[0] as { text: string }).text = 'short'
+    const afterClip = countTokensMessage(message)
+    expect(afterClip).toBeLessThan(probed)
+    expect(countTokensMessage(message)).toBe(afterClip)
   })
 
   it('cache-hit returns for single-message arrays match fresh arithmetic', () => {

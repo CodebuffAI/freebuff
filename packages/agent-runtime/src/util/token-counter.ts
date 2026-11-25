@@ -106,6 +106,7 @@ export function countTokensMessage(message: Message): number {
   const cached = messageTokenCountCache.get(message)
   if (cached !== undefined) return cached
   const total = countTokensMessageUncached(message)
+  messageTokenCountCache.set(message, total)
   return total
 }
 
@@ -143,7 +144,6 @@ function countTokensMessageUncached(message: Message): number {
     }
   }
 
-  messageTokenCountCache.set(message, total)
   return total
 }
 
