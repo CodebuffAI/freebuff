@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 
 import { buildDispatch, triggerWorkflow } from '../../scripts/release'
 
@@ -40,11 +40,9 @@ import { buildDispatch, triggerWorkflow } from '../../scripts/release'
  *      goes red: the cause is what the maintainer needs.
  *  (e) remove the `import.meta.main` guard → this whole file dies at import,
  *      because with no token set the old `main()` called `process.exit(1)`.
- *
- * Deliberately not tested: the missing-token path. It still calls
- * `process.exit(1)`, which cannot be observed without killing the runner. That
- * is existing behaviour, unchanged here, and recorded so it is not mistaken for
- * a gap in coverage.
+ *  (f) make the missing-token branch return instead of exiting → "refuses to
+ *      run without a token" goes red on the exit assertion, and the
+ *      "nothing was sent" assertion is what proves it did not dispatch anyway.
  */
 
 const TOKEN = 'ghp_test_token_not_real'
@@ -222,6 +220,39 @@ describe('triggerWorkflow', () => {
     } finally {
       if (saved === undefined) delete process.env.CODEBUFF_GITHUB_TOKEN
       else process.env.CODEBUFF_GITHUB_TOKEN = saved
+    }
+  })
+
+  test('refuses to run without a token, and sends nothing', async () => {
+    const savedCodebuff = process.env.CODEBUFF_GITHUB_TOKEN
+    delete process.env.CODEBUFF_GITHUB_TOKEN
+    // `error()` exits the process. Spying on it is the only way to observe the
+    // refusal without killing the runner, which is what made this path untested
+    // before: process.exit is not something a test can survive.
+    const exit = spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`)
+    }) as never)
+    const originalError = console.error
+    const errors: string[] = []
+    console.error = (...parts: unknown[]) => {
+      errors.push(parts.map((part) => String(part)).join(' '))
+    }
+    const { calls, impl } = recordingFetch(new Response(null, { status: 204 }))
+
+    try {
+      await expect(triggerWorkflow('patch', impl)).rejects.toThrow(
+        'process.exit(1)',
+      )
+      // The mechanism, not the return value: a refusal that still sends the
+      // dispatch is the bug wearing a fix's clothes.
+      expect(calls).toHaveLength(0)
+      expect(errors.join('\n')).toContain('CODEBUFF_GITHUB_TOKEN')
+    } finally {
+      console.error = originalError
+      exit.mockRestore()
+      if (savedCodebuff !== undefined) {
+        process.env.CODEBUFF_GITHUB_TOKEN = savedCodebuff
+      }
     }
   })
 

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 
 /**
  * The SDK release script is a deliberate twin of `cli/scripts/release.ts`, and
@@ -185,6 +185,38 @@ describe('sdk triggerWorkflow', () => {
     expect(result).toBe('failed')
     expect(text).toContain('ENOTFOUND')
     expect(text).not.toContain('🎉')
+  })
+
+  test('refuses to run without a token, and sends nothing', async () => {
+    const savedCodebuff = process.env.CODEBUFF_GITHUB_TOKEN
+    delete process.env.CODEBUFF_GITHUB_TOKEN
+    // `error()` exits the process. Spying on it is the only way to observe the
+    // refusal without killing the runner.
+    const exit = spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`)
+    }) as never)
+    const originalError = console.error
+    const errors: string[] = []
+    console.error = (...parts: unknown[]) => {
+      errors.push(parts.map((part) => String(part)).join(' '))
+    }
+    const { calls, impl } = recordingFetch(new Response(null, { status: 204 }))
+
+    try {
+      await expect(release.triggerWorkflow('patch', impl)).rejects.toThrow(
+        'process.exit(1)',
+      )
+      // A refusal that still sends the dispatch is the bug wearing a fix's
+      // clothes.
+      expect(calls).toHaveLength(0)
+      expect(errors.join('\n')).toContain('CODEBUFF_GITHUB_TOKEN')
+    } finally {
+      console.error = originalError
+      exit.mockRestore()
+      if (savedCodebuff !== undefined) {
+        process.env.CODEBUFF_GITHUB_TOKEN = savedCodebuff
+      }
+    }
   })
 
   test('importing the module does not start a release', () => {

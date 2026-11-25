@@ -81,7 +81,7 @@ async function triggerWorkflow(
   // Injectable so the tests can prove what was handed to the network without
   // reaching GitHub. Defaults to the real fetch.
   fetchImpl = fetch,
-  token = process.env.CODEBUFF_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN,
+  token = process.env.CODEBUFF_GITHUB_TOKEN,
 ) {
   if (!token) {
     error('CODEBUFF_GITHUB_TOKEN environment variable is required but not set')
