@@ -164,6 +164,9 @@ export class SitesClient {
           variable_limit:
             'This project has reached its limit of 25 environment variables across Preview and Production. Replace or delete an existing variable.',
           deploy_required: 'Deploy this environment first.',
+          site_content_refused:
+            data.message ??
+            'This site was not published because it appears to break the Freebuff hosting rules. If you think this is a mistake, contact support@freebuff.com.',
           binding_exists:
             'That name is already used by a database or storage binding.',
           secret_not_found: 'This variable no longer exists. Refresh the list.',
