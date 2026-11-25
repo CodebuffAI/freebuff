@@ -1,3 +1,5 @@
+import * as path from 'node:path'
+
 import {
   DEFAULT_MAX_FILES,
   flattenTree,
@@ -25,13 +27,19 @@ export async function glob(params: {
       .map((node) => node.filePath)
 
     if (cwd) {
-      const cwdPrefix = cwd.endsWith('/') ? cwd : `${cwd}/`
-      allFilePaths = allFilePaths.filter(
-        (filePath) =>
-          filePath === cwd ||
-          filePath.startsWith(cwdPrefix) ||
-          filePath === cwd.replace(/\/$/, ''),
-      )
+      // Tree paths are project-relative and use '/' on every platform.
+      const normalizedCwd = path
+        .normalize(cwd)
+        .split(path.sep)
+        .join('/')
+        .replace(/\/$/, '')
+      if (normalizedCwd !== '.') {
+        const cwdPrefix = `${normalizedCwd}/`
+        allFilePaths = allFilePaths.filter(
+          (filePath) =>
+            filePath === normalizedCwd || filePath.startsWith(cwdPrefix),
+        )
+      }
     }
 
     const allMatchingFiles = micromatch(allFilePaths, pattern)
