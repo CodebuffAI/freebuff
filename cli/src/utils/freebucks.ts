@@ -27,7 +27,9 @@ import {
   formatHours,
   formatHoursWithUnit,
   freebuffModelMultiplierLabel,
+  hoursClockUsage,
 } from '@codebuff/common/util/freebuff-hours'
+import { freebucksDailyShown } from '@codebuff/common/util/freebucks-open-hours'
 import { compareByFreebucksPrice } from '@codebuff/common/util/freebuff-price-order'
 import { getFreebucksInfo } from '@codebuff/common/types/freebuff-session'
 import {
@@ -37,6 +39,7 @@ import {
 
 import type {
   FreebuffFreebucksInfo,
+  FreebuffFreebucksWindow,
   FreebuffSessionServerResponse,
 } from '@codebuff/common/types/freebuff-session'
 
@@ -95,10 +98,27 @@ export function sortModelsByPrice<
 }
 
 /**
+ * The daily pool as "left/limit" in hours and minutes, "4:57/5:00", as Desktop
+ * and Web read usage since 2026-11-11. Given a clock, a running paid hour is
+ * spread over its hour (`freebucksDailyShown`): whole hours would still drop a
+ * full hour the second a session starts on a full pool. Display only; every
+ * affordability check reads the server's `remaining` and `balance` as sent.
+ */
+export function freebucksDailyFigure(
+  daily: FreebuffFreebucksWindow,
+  nowMs?: number,
+): string {
+  const clock = hoursClockUsage(
+    nowMs === undefined ? daily : freebucksDailyShown(daily, nowMs),
+  )
+  return `${clock.left}/${clock.limit}`
+}
+
+/**
  * The one-line header for a metered account:
- * `20/20 hours daily · resets in 4h 12m · 4 hours in wallet`
+ * `20:00/20:00 hours daily · resets in 4h 12m · 4 hours in wallet`
  * (the countdown only when a clock is given, the wallet only when there is
- * something in it).
+ * something in it; a running hour counts down only with a clock).
  *
  * The same figures, in the same order, as the Web and Desktop pickers.
  * Built as a string rather than as components because the CLI's selector
@@ -111,11 +131,7 @@ export function freebucksHeaderLine(
   /** When given, the daily figure carries "resets in 4h 12m". */
   nowMs?: number,
 ): string {
-  const parts = [
-    `${formatHours(freebucks.daily.remaining)}/${formatHours(
-      freebucks.daily.limit,
-    )} hours daily`,
-  ]
+  const parts = [`${freebucksDailyFigure(freebucks.daily, nowMs)} hours daily`]
   if (nowMs !== undefined) {
     parts.push(
       freebucksRefillPending(freebucks.daily.resetAt, nowMs)

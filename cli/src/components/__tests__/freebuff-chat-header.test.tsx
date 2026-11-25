@@ -1,4 +1,11 @@
-import { afterEach, beforeAll, expect, test, spyOn } from 'bun:test'
+import {
+  afterEach,
+  beforeAll,
+  expect,
+  setSystemTime,
+  spyOn,
+  test,
+} from 'bun:test'
 import { createTestRenderer } from '@opentui/core/testing'
 import { createRoot, flushSync } from '@opentui/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -60,7 +67,7 @@ test.each([130, 42])(
     const frame = setup.captureCharFrame()
     expect(frame).toContain('Copy invite link')
     expect(frame).toContain('Learn More')
-    expect(frame).toContain('5/5 hours remaining')
+    expect(frame).toContain('5:00/5:00 hours remaining')
     expect(frame).not.toContain('/history')
     expect(frame).not.toContain('/dashboard')
     expect(frame.split('\n')[0]!.trim()).toStartWith(
@@ -203,7 +210,7 @@ test("the panel says why the daily pool is smaller than the account's own", asyn
   }
 
   const shared = await show(FREEBUCKS_SHARED_DEVICE_NOTE)
-  expect(shared).toContain('0/0 hours remaining')
+  expect(shared).toContain('0:00/0:00 hours remaining')
   expect(shared).toContain(FREEBUCKS_SHARED_DEVICE_NOTE)
   const lines = shared.split('\n')
   expect(
@@ -211,4 +218,69 @@ test("the panel says why the daily pool is smaller than the account's own", asyn
   ).toBe(lines.findIndex((line) => line.includes('hours remaining')) + 1)
 
   expect(await show()).not.toContain('share one daily allowance')
+})
+
+test('a running paid hour counts down over its hour, not at once', async () => {
+  // A 3-hour model takes 3 of the day's 5 hours at its first message. Desktop
+  // and Web have spread that over the hour since 2026-11-11; the panel showed
+  // the whole drop at once, which reads as the day gone after one "Hello".
+  const T0 = Date.parse('2026-09-05T20:00:00Z')
+  const token = spyOn(auth, 'getAuthToken').mockReturnValue(undefined)
+  const setup = await createTestRenderer({ width: 130, height: 32 })
+  const root = createRoot(setup.renderer)
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  cleanup = () => {
+    flushSync(() => root.unmount())
+    queries.clear()
+    setup.renderer.destroy()
+    token.mockRestore()
+    setSystemTime()
+  }
+  const bought = freebucksFixture(10)
+  bought.daily = {
+    ...bought.daily,
+    openHours: [
+      {
+        amount: 15,
+        startsAt: new Date(T0).toISOString(),
+        endsAt: new Date(T0 + 3_600_000).toISOString(),
+      },
+    ],
+  }
+  const show = async (atMs: number, daily = bought.daily) => {
+    setSystemTime(new Date(atMs))
+    flushSync(() =>
+      root.render(
+        <QueryClientProvider client={queries}>
+          <FreebuffChatHeader
+            projectRoot="/tmp/project"
+            session={{
+              status: 'active',
+              accessTier: 'full',
+              model: 'z-ai/glm-5.3-flash',
+              instanceId: 'test',
+              admittedAt: new Date(T0).toISOString(),
+              expiresAt: new Date(T0 + 3_600_000).toISOString(),
+              remainingMs: T0 + 3_600_000 - atMs,
+              freebucks: { ...bought, daily },
+            }}
+          />
+        </QueryClientProvider>,
+      ),
+    )
+    await setup.renderOnce()
+    return setup.captureCharFrame()
+  }
+
+  // Just bought: nothing shown as spent yet.
+  expect(await show(T0)).toContain('5:00/5:00 hours remaining')
+  // A minute in, three minutes of the pool: the hour runs at 3x.
+  expect(await show(T0 + 60_000)).toContain('4:57/5:00 hours remaining')
+  // At the hour's end, the server's balance.
+  expect(await show(T0 + 3_600_000)).toContain('2:00/5:00 hours remaining')
+  // An older server sends no running hours: the debit shows at once.
+  const { openHours: _, ...old } = bought.daily
+  expect(await show(T0 + 60_000, old)).toContain('2:00/5:00 hours remaining')
 })

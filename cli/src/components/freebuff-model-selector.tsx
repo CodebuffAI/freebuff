@@ -71,6 +71,7 @@ import { reasoningEffortLabel } from '@codebuff/common/constants/reasoning-effor
 import { compiledFreebuffModelIdOfRow } from '@codebuff/common/util/freebuff-catalog-compiled-model'
 
 import { startFreebuffSession } from '../hooks/use-freebuff-session'
+import { useDailyDrainNow } from '../hooks/use-daily-drain-now'
 import { useNow } from '../hooks/use-now'
 import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { useFreebuffModelStore } from '../state/freebuff-model-store'
@@ -91,6 +92,7 @@ import type {
 } from '@codebuff/common/constants/freebuff-models'
 import type { FreebuffReferralFocusTarget } from './freebuff-referral-banner'
 import type { FreebuffCatalogBadge } from '@codebuff/common/types/freebuff-model-catalog'
+import type { FreebuffFreebucksInfo } from '@codebuff/common/types/freebuff-session'
 import type {
   BoxRenderable,
   KeyEvent,
@@ -115,6 +117,28 @@ const TOGGLE_ID = '__freebuff_toggle__'
 
 /** Joins the parts of a row's second line (see `rowDetails`). */
 const DETAIL_SEPARATOR = ' · '
+
+/** The picker's meter line, its own component so that only this line
+ *  re-renders while a running paid hour counts down (`useDailyDrainNow`). */
+function FreebucksMeterLine({
+  freebucks,
+  planName,
+  nowMs,
+  marginTop,
+}: {
+  freebucks: FreebuffFreebucksInfo
+  planName: string
+  nowMs?: number
+  marginTop: number
+}) {
+  const theme = useTheme()
+  const now = useDailyDrainNow(freebucks.daily, nowMs)
+  return (
+    <text style={{ fg: theme.muted, wrapMode: 'none', marginTop }}>
+      {planName.toUpperCase()} · {freebucksHeaderLine(freebucks, now)}
+    </text>
+  )
+}
 
 /** One chip on a row's second line. `highlight` draws it in the accent colour
  *  — a price a catalog discount moved. */
@@ -1825,15 +1849,12 @@ export const FreebuffModelSelector: React.FC<FreebuffModelSelectorProps> = ({
           </text>
         )}
         {freebucks && (
-          <text
-            style={{
-              fg: theme.muted,
-              wrapMode: 'none',
-              marginTop: SECTION_GAP,
-            }}
-          >
-            {planName.toUpperCase()} · {freebucksHeaderLine(freebucks, now)}
-          </text>
+          <FreebucksMeterLine
+            freebucks={freebucks}
+            planName={planName}
+            nowMs={nowMs}
+            marginTop={SECTION_GAP}
+          />
         )}
         {freebucks === undefined && freeWindows && !planSummary && (
           <text

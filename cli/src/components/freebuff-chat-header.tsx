@@ -33,13 +33,30 @@ import { useFreebuffStreakQuery } from '../hooks/use-freebuff-streak-query'
 import { useFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { useFreebuffModelStore } from '../state/freebuff-model-store'
 import { useFreebuffChatStore } from '../state/freebuff-chat-store'
-import { formatHours } from '@codebuff/common/util/freebuff-hours'
-import { freebucksOf, freebucksRefundLine } from '../utils/freebucks'
+import { useDailyDrainNow } from '../hooks/use-daily-drain-now'
+import {
+  freebucksDailyFigure,
+  freebucksOf,
+  freebucksRefundLine,
+} from '../utils/freebucks'
 import { getFreebuffStreakBonusNoteForLayout } from '../utils/freebuff-streak-line'
 import { getFreebuffSessionModelAvailabilityNotice } from '@codebuff/common/util/freebuff-model-availability'
+import type { FreebuffFreebucksWindow } from '@codebuff/common/types/freebuff-session'
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
 
 const ignoreFocusTargets = () => {}
+
+/** The daily pool, its own component so that only this line re-renders while
+ *  a running paid hour counts down (`useDailyDrainNow`). */
+function DailyMeterLine({ daily }: { daily: FreebuffFreebucksWindow }) {
+  const theme = useTheme()
+  const now = useDailyDrainNow(daily)
+  return (
+    <text style={{ fg: theme.foreground, wrapMode: 'word' }}>
+      {`${freebucksDailyFigure(daily, now)} hours remaining`}
+    </text>
+  )
+}
 
 const wordmarkVariants = [FREEBUFF_WORDMARK, FREEBUFF_WORDMARK_COMPACT].map(
   (text) => ({
@@ -112,9 +129,7 @@ export function FreebuffChatHeader({
       </text>
     ),
     freebucks && !dailyMeterQuiet(freebucks) && (
-      <text key="meter" style={{ fg: theme.foreground, wrapMode: 'word' }}>
-        {`${formatHours(freebucks.daily.remaining)}/${formatHours(freebucks.daily.limit)} hours remaining`}
-      </text>
+      <DailyMeterLine key="meter" daily={freebucks.daily} />
     ),
     // The server's reason the pool is smaller than the account's own (a
     // device's shared allowance, the VPN pool). Without it a shared pool reads
