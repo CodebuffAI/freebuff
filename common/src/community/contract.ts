@@ -356,6 +356,18 @@ export type CommunityProfileSettings = {
   autoPost: boolean
 }
 
+/**
+ * One of the viewer's sites and its listing: `GET /community/sites`, and what
+ * listing one from the Sites page answers (`POST /community/sites/:id`).
+ * `live` is shown; `pending` waits for its review; `held` did not pass it;
+ * `hidden` is a site not published now. A site with none is not listed.
+ */
+export type CommunitySiteListing = {
+  siteId: string
+  postId: string
+  status: 'live' | 'pending' | 'held' | 'hidden'
+}
+
 export type CommunityMe = {
   profile: CommunityUser
   settings: CommunityProfileSettings
