@@ -156,6 +156,22 @@ function scrubByokCredentialEnv(
   return result
 }
 
+/**
+ * A host boundary for device-local secrets in terminal commands.
+ *
+ * The SDK knows nothing about how secrets are stored. After the model has
+ * written a command, the host resolves the names it references into the
+ * command's environment and returns a function that scrubs the values from
+ * the command's output. The model sees neither the value nor the substitution.
+ */
+export type TerminalSecretBoundary = (input: {
+  command: string
+  env: Record<string, string>
+}) => Promise<
+  | { env: Record<string, string>; redact: (text: string) => string }
+  | undefined
+>
+
 export type CodebuffClientOptions = {
   apiKey?: string
   /** Direct, local inference for this run. The key is intentionally runtime-only. */
@@ -225,6 +241,9 @@ export type CodebuffClientOptions = {
   /** Optional host process boundary that keeps terminal tools away from an
    * interactive console. Headless consumers can omit it. */
   terminalCommandBroker?: TerminalCommandBroker
+  /** Resolve device-local secrets into a terminal command's environment, and
+   *  scrub them from its output. The model never sees the values. */
+  terminalSecretBoundary?: TerminalSecretBoundary
 
   handleEvent?: (event: PrintModeEvent) => void | Promise<void>
   handleStreamChunk?: (
@@ -714,6 +733,7 @@ async function runOnce({
   maxAgentSteps = MAX_AGENT_STEPS_DEFAULT,
   env,
   terminalCommandBroker,
+  terminalSecretBoundary,
 
   handleEvent,
   handleStreamChunk,
@@ -1021,6 +1041,7 @@ async function runOnce({
         fs,
         env: toolEnv,
         terminalCommandBroker,
+        terminalSecretBoundary,
         byok,
         signal,
         projectFence,
@@ -1498,6 +1519,7 @@ async function handleToolCall({
   fs,
   env,
   terminalCommandBroker,
+  terminalSecretBoundary,
   byok,
   signal,
   projectFence,
@@ -1510,6 +1532,7 @@ async function handleToolCall({
   fs: CodebuffFileSystem
   env?: Record<string, string>
   terminalCommandBroker?: TerminalCommandBroker
+  terminalSecretBoundary?: TerminalSecretBoundary
   byok?: ResolvedByokConnection
   signal?: AbortSignal
   /** RunOptions.confineFileToolsToProject: unset for every other run. */
@@ -1616,10 +1639,22 @@ async function handleToolCall({
       })
     } else if (toolName === 'run_terminal_command') {
       const resolvedCwd = requireCwd(cwd, 'run_terminal_command')
+      let commandEnv: Record<string, string> | undefined = env
+      let redactOutput: ((text: string) => string) | undefined
+      if (terminalSecretBoundary) {
+        const boundary = await terminalSecretBoundary({
+          command: input.command,
+          env: { ...(env ?? {}) },
+        })
+        if (boundary) {
+          commandEnv = boundary.env
+          redactOutput = boundary.redact
+        }
+      }
       result = await runTerminalCommand({
         ...input,
         cwd: path.resolve(resolvedCwd, input.cwd ?? '.'),
-        env,
+        env: commandEnv,
         scrubEnvironmentKeys: byok
           ? [
               'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY',
@@ -1632,6 +1667,25 @@ async function handleToolCall({
         signal,
         terminalCommandBroker,
       } as Parameters<typeof runTerminalCommand>[0])
+      if (redactOutput) {
+        const redact = redactOutput
+        const redactValue = (value: unknown): unknown => {
+          if (typeof value === 'string') return redact(value)
+          if (Array.isArray(value)) return value.map(redactValue)
+          if (value === null || typeof value !== 'object') return value
+          return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+              redact(key),
+              redactValue(entry),
+            ]),
+          )
+        }
+        result = result.map((part) =>
+          part.type === 'json'
+            ? ({ ...part, value: redactValue(part.value) } as typeof part)
+            : part,
+        )
+      }
     } else if (toolName === 'read_url') {
       result = await readPage(input as CodebuffToolCall<'read_url'>['input'])
     } else if (toolName === 'code_search' && projectFence) {

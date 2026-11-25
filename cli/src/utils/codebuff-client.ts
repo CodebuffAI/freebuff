@@ -1,9 +1,18 @@
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+
 import { FREEBUFF_CLIENT_VERSION_HEADER } from '@codebuff/common/constants/freebuff-desktop-sessions'
 import { API_KEY_ENV_VAR } from '@codebuff/common/old-constants'
+import {
+  SecretsVault,
+  injectSecretEnv,
+  redactSecretText,
+  referencedSecretNames,
+} from '@codebuff/common/secrets'
 import { AskUserBridge } from '@codebuff/common/utils/ask-user-bridge'
 import { CodebuffClient } from '@codebuff/sdk'
 
-import { getAuthTokenDetails } from './auth'
+import { getAuthTokenDetails, getConfigDir } from './auth'
 import { getCliEnv, getSystemProcessEnv } from './env'
 import { freebuffCatalogCompletionHeaders } from './freebuff-device-key'
 import { loadAgentDefinitions } from './local-agent-registry'
@@ -114,6 +123,29 @@ export async function getCodebuffClient(
         logger,
         traceWriter: createTraceWriter(),
         terminalCommandBroker,
+        // Device-local secrets: after the model writes a command, inject the
+        // values it references by name, then scrub them from the output. The
+        // model sees the name and the redacted result, never the value.
+        terminalSecretBoundary: async ({ command, env }) => {
+          const directory = path.join(getConfigDir(), 'secrets')
+          // Do not create a vault (or its key) for a user who never made one.
+          if (!existsSync(path.join(directory, 'secrets.vault.json'))) {
+            return undefined
+          }
+          const vault = await SecretsVault.open({ directory })
+          const records = await vault.list()
+          if (records.length === 0) return undefined
+          const names = referencedSecretNames(
+            command,
+            records.map((record) => record.name),
+          )
+          if (names.length === 0) return undefined
+          const injected = await injectSecretEnv({ vault, names, baseEnv: env })
+          return {
+            env: injected.env as Record<string, string>,
+            redact: (text: string) => redactSecretText(text, injected.revealed),
+          }
+        },
         overrideTools: {
           ask_user: async (input: ClientToolCall<'ask_user'>['input']) => {
             const askUserResponse = await AskUserBridge.request(
