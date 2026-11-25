@@ -26,8 +26,14 @@ import { buildDispatch, triggerWorkflow } from '../../scripts/release'
  *      (`${DISPATCH_URL}?access_token=${token}`) → "token only in a header"
  *      goes red.
  *  (b) build `body` by interpolation instead of `JSON.stringify`
- *      (`{"ref":"main","inputs":{"version_type":"${versionType}"}}`) → both
- *      hostile-version assertions go red and the JSON parse names the reason.
+ *      (`{"ref":"main","inputs":{"version_type":"${versionType}"}}`) →
+ *      the punctuation case goes red. IT DID NOT GO RED against the shell
+ *      payload alone, and that is worth knowing: for
+ *      `x'; rm -rf ~ #` the interpolated string and `JSON.stringify` output are
+ *      byte-identical, because JSON never needed to escape a single quote. The
+ *      first version of this file therefore could not see the mutation at all.
+ *      The shell payload proves the value survives; only a value containing
+ *      `"` or `\` proves the serialiser is doing the work.
  *  (c) restore the old "does the response text contain workflow_dispatch"
  *      success test → the 401 case goes red, because that is a false 🎉.
  *  (d) drop `(err as Error).message` from the catch → the thrown-fetch case
@@ -42,7 +48,11 @@ import { buildDispatch, triggerWorkflow } from '../../scripts/release'
  */
 
 const TOKEN = 'ghp_test_token_not_real'
+// The shell payload: what used to break the `-d '…'` word.
 const HOSTILE = "x'; rm -rf ~ #"
+// The JSON payload: what interpolation cannot encode. Needed because the two
+// constructions above are identical for HOSTILE (see probe (b)).
+const HOSTILE_JSON = '1.2.3"},"extra":"1'
 const DISPATCH_URL =
   'https://api.github.com/repos/CodebuffAI/freebuff-private/actions/workflows/cli-release-prod.yml/dispatches'
 
@@ -98,6 +108,24 @@ describe('buildDispatch', () => {
     // between here and GitHub is a shell. (JSON does not escape `'` — an earlier
     // version of this test claimed it did, and was simply wrong.)
     expect(body).toBe(`{"ref":"main","inputs":{"version_type":"${HOSTILE}"}}`)
+  })
+
+  test('a versionType with quotes in it is encoded, not concatenated', () => {
+    const { init } = buildDispatch(HOSTILE_JSON, TOKEN)
+    const body = init.body as string
+
+    // Built by interpolation this is `…"version_type":"1.2.3"},"extra":"1"}}`:
+    // a different string, and not a document. That is the mutation this test
+    // exists for.
+    // String.raw because the expectation contains real backslashes, and a plain
+    // template literal would swallow them.
+    expect(body).toBe(
+      String.raw`{"ref":"main","inputs":{"version_type":"1.2.3\"},\"extra\":\"1"}}`,
+    )
+    expect(
+      (JSON.parse(body) as { inputs: { version_type: string } }).inputs
+        .version_type,
+    ).toBe(HOSTILE_JSON)
   })
 })
 

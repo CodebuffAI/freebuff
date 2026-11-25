@@ -16,14 +16,18 @@ import { describe, expect, test } from 'bun:test'
  *
  * Mutations run against this file 2026-11-26, each verified in the diff:
  * token into the URL → "token only in a header" red; `body` by interpolation
- * instead of `JSON.stringify` → both hostile-version assertions red; the old
- * "does the body contain workflow_dispatch" success test → the 401 case red;
- * `err.message` dropped from the catch → the thrown-fetch case red; the
+ * instead of `JSON.stringify` → the punctuation case red (NOT the shell payload
+ * alone: for `x'; rm -rf ~ #` the two are byte-identical, see the cli record);
+ * the old "does the body contain workflow_dispatch" success test → the 401 case
+ * red; `err.message` dropped from the catch → the thrown-fetch case red; the
  * `require.main === module` guard removed → this file dies at import.
  */
 
 const TOKEN = 'ghp_test_token_not_real'
+// The shell payload: what used to break the `-d '…'` word.
 const HOSTILE = "x'; rm -rf ~ #"
+// The JSON payload: what interpolation cannot encode.
+const HOSTILE_JSON = '1.2.3"},"extra":"1'
 const DISPATCH_URL =
   'https://api.github.com/repos/CodebuffAI/freebuff-private/actions/workflows/sdk-release.yml/dispatches'
 
@@ -92,6 +96,21 @@ describe('sdk buildDispatch', () => {
     // is a shell. (JSON does not escape `'` — an earlier version of this test
     // claimed it did, and was simply wrong.)
     expect(body).toBe(`{"ref":"main","inputs":{"version_type":"${HOSTILE}"}}`)
+  })
+
+  test('a versionType with quotes in it is encoded, not concatenated', () => {
+    const { init } = release.buildDispatch(HOSTILE_JSON, TOKEN)
+    const body = init.body as string
+
+    // String.raw because the expectation contains real backslashes, and a plain
+    // template literal would swallow them.
+    expect(body).toBe(
+      String.raw`{"ref":"main","inputs":{"version_type":"1.2.3\"},\"extra\":\"1"}}`,
+    )
+    expect(
+      (JSON.parse(body) as { inputs: { version_type: string } }).inputs
+        .version_type,
+    ).toBe(HOSTILE_JSON)
   })
 })
 
