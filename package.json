@@ -56,7 +56,7 @@
     "eslint-plugin-import": "^2.29.1",
     "eslint-plugin-unused-imports": "^4.1.4",
     "ignore": "^6.0.2",
-    "lodash": "4.17.23",
+    "lodash": "4.18.1",
     "prettier": "^3.7.4",
     "ts-node": "^10.9.2",
     "ts-pattern": "^5.9.0",
