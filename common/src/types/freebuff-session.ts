@@ -351,6 +351,13 @@ export interface FreebuffFreebucksInfo {
    * `dailyMeterQuiet`. Absent keeps the meter.
    */
   quietDailyMeter?: boolean
+  /**
+   * A chat opened while another chat holds a Powerful hour starts on Powerful
+   * too (2026-11-25: plan holders, and full access in tiers 1-2), each chat
+   * buying its own hour from the daily pool. Absent: that chat starts on
+   * Balanced (the workspace's powerful-ladder.ts).
+   */
+  parallelPowerful?: boolean
   /** The plan the daily pool and bonus were sized from; null on free. */
   planId: string | null
   /** Session price per model id. Only models on the meter appear here. */
