@@ -77,7 +77,7 @@ Text ads support the included models. Freebuff shows the applicable session limi
 
 <!-- BEGIN GENERATED FREEBUFF DATA USE -->
 
-**Is my data used to train AI?** Only when a model or feature says data may be used for AI training. Freebuff or the provider may then keep submissions to develop, train, test, evaluate, fine-tune, and improve AI models or products, and Freebuff may share or sell them to third parties. Separately, Freebuff may use your data to train the models that choose and measure ads.
+**Is my data used to train AI?** Some models and features collect limited data for advertising, AI training, and sharing or selling with third parties.
 
 **How is my data used and stored?** Freebuff uses your messages, agent traces, and files to run the service and respond to your requests. We may analyze this data, and how you use the app, to personalize ads and train ad models. We do not give separately uploaded files, project files, or connected repositories to advertising providers. Restricted partners may evaluate repositories you connect to Freebuff Cloud, but cannot otherwise use, broadly share, or train on them. See the Privacy Policy for details.
 

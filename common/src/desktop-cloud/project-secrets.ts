@@ -85,3 +85,21 @@ export type ProjectSecretsSnapshot = { secrets: ProjectSecretSummary[] }
 export function projectSecretHint(value: string) {
   return value.length >= 12 ? value.slice(-4) : ''
 }
+
+/**
+ * The secrets that point a project at a Convex backend, from its deploy key
+ * (`<dev|prod|preview>:<deployment>|<token>`): the key for the Convex CLI, and
+ * the URL and deployment the app's `.env.local` named. A legacy project copied
+ * into Cloud loses that file (Git ignores it), so its app reached no backend
+ * (2026-11-25: a user's copied template apps "still don't work"). A key whose
+ * deployment cannot be read gives the key alone.
+ */
+export function convexBackendSecrets(deployKey: string): Record<string, string> {
+  const secrets: Record<string, string> = { CONVEX_DEPLOY_KEY: deployKey }
+  const match = /^(dev|prod|preview):([a-z0-9]+(?:-[a-z0-9]+)*)\|/.exec(deployKey)
+  if (!match) return secrets
+  const [, kind, deployment] = match
+  secrets.VITE_CONVEX_URL = `https://${deployment}.convex.cloud`
+  if (kind === 'dev') secrets.CONVEX_DEPLOYMENT = `dev:${deployment}`
+  return secrets
+}

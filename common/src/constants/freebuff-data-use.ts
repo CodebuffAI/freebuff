@@ -1,11 +1,11 @@
-// Project profiles and local agent access added to both documents.
-const POLICY_EFFECTIVE_DATE = 'November 12, 2026'
+// AI training disclosure and sign-up agreement added to both documents.
+const POLICY_EFFECTIVE_DATE = 'December 26, 2026'
 
 export const FREEBUFF_POLICY_METADATA = {
-  version: '2026-11-12',
+  version: '2026-12-26',
   effectiveDate: POLICY_EFFECTIVE_DATE,
-  lastUpdated: 'October 13, 2026',
-  privacyPolicyLastUpdated: 'November 8, 2026',
+  lastUpdated: 'November 25, 2026',
+  privacyPolicyLastUpdated: 'November 25, 2026',
 } as const
 
 export const FREEBUFF_PRIVACY_POLICY_URL = 'https://freebuff.com/privacy-policy'
@@ -26,14 +26,15 @@ export const FREEBUFF_PUBLIC_DATA_USE_COPY = {
     'Freebuff collects prompts, messages, code, files, repository data, and agent traces when you use features that need them. Depending on the model or feature, AI model providers may also process that data. See the Privacy Policy for the uses and limits that apply.',
   trainingQuestion: 'Is my data used to train AI?',
   trainingAnswer:
-    'Only when a model or feature says data may be used for AI training. Freebuff or the provider may then keep submissions to develop, train, test, evaluate, fine-tune, and improve AI models or products, and Freebuff may share or sell them to third parties. Separately, Freebuff may use your data to train the models that choose and measure ads.',
+    'Some models and features collect limited data for advertising, AI training, and sharing or selling with third parties.',
   storageQuestion: 'How is my data used and stored?',
   storageAnswer: `Freebuff uses your messages, agent traces, and files to run the service and respond to your requests. We may analyze this data, and how you use the app, to personalize ads and train ad models. We do not give separately uploaded files, project files, or connected repositories to advertising providers. Restricted partners may evaluate repositories you connect to Freebuff Cloud, but cannot otherwise use, broadly share, or train on them. See the Privacy Policy for details.`,
   localFilesQuestion: 'Does Freebuff read files outside my project?',
   localFilesAnswer:
     'No, with a few exceptions, such as files an agent reads in the conversation, files you share, and settings like your agent instructions and skills. See the Privacy Policy for details.',
-  compactTrainingSummary: `Models or features labeled “${FREEBUFF_AI_TRAINING_NOTICE}” may keep submissions to develop, train, test, evaluate, fine-tune, and improve AI models or products, and Freebuff may share or sell them.`,
-  compactPrivacySummary: `Messages, agent traces, files, and app usage may be analyzed to personalize ads and train ad models. Separately uploaded files, project files, and connected repositories are not provided to advertising providers. Restricted partners may evaluate connected Cloud repositories, but cannot otherwise use, broadly share, or train on them. Models or features labeled “${FREEBUFF_AI_TRAINING_NOTICE}” may separately use submissions for AI training.`,
+  compactTrainingSummary:
+    'Some models and features collect your data for AI training, and Freebuff may share or sell it to third parties.',
+  compactPrivacySummary: `Messages, agent traces, files, and app usage may be analyzed to personalize ads and train ad models. Separately uploaded files, project files, and connected repositories are not provided to advertising providers. Restricted partners may evaluate connected Cloud repositories, but cannot otherwise use, broadly share, or train on them. Some models and features also collect your data for AI training, and Freebuff may share or sell it to third parties.`,
   localExecutionSummary:
     'Freebuff edits files locally but sends relevant prompts, code, files, and repository context to its servers and model providers. See the Privacy Policy for details.',
   compactLocalExecutionSummary:

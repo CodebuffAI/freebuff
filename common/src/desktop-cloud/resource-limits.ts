@@ -27,13 +27,16 @@ export const isCloudResourceMessage = (message: string | null | undefined) =>
 
 /**
  * Limits a running process hits, not the project itself: a watcher holding too
- * many files open, a burst of processes or threads, a memory spike. The chat's
- * saved copy restores without the processes that tripped it, so the chat may
- * run in Cloud again. A full disk (the files themselves are the problem) and
- * sustained CPU (the shape of mining) still keep a chat out of Cloud.
- * Web-only users had no way back from these at all (Lescence, Brendan, 11-04).
+ * many files open, a burst of processes or threads, a memory spike, a build that
+ * kept the CPU busy. The chat's saved copy restores without the processes that
+ * tripped it, so the chat may run in Cloud again, at most
+ * CLOUD_RESOURCE_RESTARTS_PER_DAY times a day. Only a full disk (the files
+ * themselves are the problem) still keeps a chat out of Cloud. Web-only users
+ * had no way back from these at all (Lescence, Brendan, 11-04). CPU joined on
+ * 11-26: Agent 37 VM chats were held to one CPU (#12044), so ordinary builds
+ * stopped about 550 chats for good on 11-25; the daily cap still bounds a miner.
  */
-export const CLOUD_RESTARTABLE_RESOURCES: readonly CloudResourceKind[] = ['files', 'processes', 'memory']
+export const CLOUD_RESTARTABLE_RESOURCES: readonly CloudResourceKind[] = ['files', 'processes', 'memory', 'cpu']
 export const cloudResourceRestarts = (kind: string | null | undefined) =>
   (CLOUD_RESTARTABLE_RESOURCES as readonly string[]).includes(kind ?? '')
 /** Restarts after a restartable trip, per chat per rolling day; past it the chat waits or goes to Desktop. */

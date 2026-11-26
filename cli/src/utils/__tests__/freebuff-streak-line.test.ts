@@ -54,106 +54,14 @@ describe('getFreebuffStreakLine', () => {
 
 describe('getFreebuffStreakBonusNote', () => {
   test('hidden with no streak at all', () => {
-    expect(
-      getFreebuffStreakBonusNote({ streak: 0, accessTier: 'full' }),
-    ).toBeNull()
-    expect(
-      getFreebuffStreakBonusNote({ streak: -1, accessTier: 'limited' }),
-    ).toBeNull()
-  })
-
-  test('teases the unlock countdown below the 7-day milestone', () => {
-    expect(getFreebuffStreakBonusNote({ streak: 3, accessTier: 'full' })).toBe(
-      '🎁 4 more days to unlock +1 bonus session every day + 1 reward session each day',
-    )
-    expect(
-      getFreebuffStreakBonusNote({ streak: 3, accessTier: 'limited' }),
-    ).toBe('🎁 4 more days to unlock +1 bonus session every day')
-  })
-
-  test('"day" goes singular on the eve of the milestone', () => {
-    expect(
-      getFreebuffStreakBonusNote({ streak: 6, accessTier: 'limited' }),
-    ).toBe('🎁 1 more day to unlock +1 bonus session every day')
-  })
-
-  test('full access advertises the daily session + daily GLM perk at 7+', () => {
-    const note = getFreebuffStreakBonusNote({ streak: 7, accessTier: 'full' })
-    expect(note).toBe(
-      '🎁 Streak perk: +1 bonus session every day + 1 reward session each day',
-    )
-  })
-
-  test('the GLM streak count grows per completed 7 days, capped at 4', () => {
-    expect(getFreebuffStreakBonusNote({ streak: 14, accessTier: 'full' })).toBe(
-      '🎁 Streak perk: +1 bonus session every day + 2 reward sessions each day',
-    )
-    expect(getFreebuffStreakBonusNote({ streak: 35, accessTier: 'full' })).toBe(
-      '🎁 Streak perk: +1 bonus session every day + 4 reward sessions each day',
-    )
-  })
-
-  test('limited access advertises only the daily session perk', () => {
-    const note = getFreebuffStreakBonusNote({
-      streak: 14,
-      accessTier: 'limited',
-    })
-    expect(note).toBe('🎁 Streak perk: +1 bonus session every day')
-  })
-
-  // On the Freebucks meter a session bonus buys nothing, so the perk is the
-  // daily-allowance bonus the server reports — for both tiers, and in the
-  // countdown. It never promises the wallet.
-  test('on the meter the perk is the daily allowance bonus', () => {
-    expect(
-      getFreebuffStreakBonusNote({
-        streak: 14,
-        accessTier: 'full',
-        freebucksDailyBonus: 15,
-      }),
-    ).toBe('🎁 Streak perk: +3 hours every day')
-    expect(
-      getFreebuffStreakBonusNote({
-        streak: 14,
-        accessTier: 'limited',
-        freebucksDailyBonus: 15,
-      }),
-    ).toBe('🎁 Streak perk: +3 hours every day')
-    expect(
-      getFreebuffStreakBonusNote({
-        streak: 3,
-        accessTier: 'full',
-        freebucksDailyBonus: 15,
-      }),
-    ).toBe('🎁 4 more days to unlock +3 hours every day')
-    // An older server sends no field; null keeps the session copy.
-    expect(
-      getFreebuffStreakBonusNote({
-        streak: 14,
-        accessTier: 'limited',
-        freebucksDailyBonus: null,
-      }),
-    ).toBe('🎁 Streak perk: +1 bonus session every day')
+    expect(getFreebuffStreakBonusNote({ streak: 0 })).toBeNull()
+    expect(getFreebuffStreakBonusNote({ streak: -1 })).toBeNull()
   })
 })
 
 describe('getFreebuffStreakBonusNoteForLayout', () => {
-  const params = {
-    streak: 7,
-    accessTier: 'full' as const,
-  }
+  const params = { streak: 7 }
   const note = getFreebuffStreakBonusNote(params)!
-
-  test('hides the unlock countdown before the bonus is earned', () => {
-    expect(
-      getFreebuffStreakBonusNoteForLayout({
-        ...params,
-        streak: 6,
-        terminalHeight: 30,
-        availableWidth: 200,
-      }),
-    ).toBeNull()
-  })
 
   test('hides the earned note below 30 rows', () => {
     expect(

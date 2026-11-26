@@ -22,6 +22,13 @@ export interface ThemeReferralAccess {
   /** Progress is capped at the unlock threshold; no referred identities leave the server. */
   qualifyingReferrals: number
   unlocked: boolean
+  /** A current subscription unlocks themes, which no invite ask is for.
+   *  Absent from servers before XP shipped (2026-11-24): there, an unlock
+   *  short of the referrals was a subscription. */
+  subscribed?: boolean
+  /** The account's XP, read only while nothing else unlocks themes (they
+   *  also unlock at `XP_THEMES_UNLOCK` XP); absent otherwise. */
+  xp?: number
   /** The account once reached a 7-day streak, which unlocks the Streak Fire
    *  theme (`STREAK_THEME_PRESET_ID`) on its own: `unlocked` does not include
    *  it, and it does not unlock the rest. Absent from servers before

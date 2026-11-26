@@ -19,10 +19,10 @@ export type SignupBlockReason =
   // logs. That is exactly the ambiguity that cost four attempts on 2026-08-12.
   | 'recaptcha_missing'
   | 'recaptcha_invalid'
-  // An OAuth sign-up from a datacenter network (a VPN or proxy on a hosting
-  // range, or a cloud host) with no Turnstile proof. Everywhere else an OAuth
-  // sign-up needs none; this is the one network it is still asked of, and
-  // the login page opens a step that waits for it instead of refusing.
+  // A GitHub sign-up from a datacenter network (a cloud host) with no
+  // Turnstile proof. Google and Apple sign-ups need none anywhere, and GitHub
+  // none elsewhere; the login page opens a step that waits for it instead of
+  // refusing.
   | 'datacenter_check'
   | 'mailbox_already_registered'
   | 'privacy_egress'

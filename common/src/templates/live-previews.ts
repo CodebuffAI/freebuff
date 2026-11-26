@@ -17,3 +17,21 @@ export function templateLivePreview(templateId: string): string | undefined {
     ? TEMPLATE_LIVE_PREVIEWS[templateId]
     : undefined
 }
+
+/** Hosts that let another page frame them; a live copy elsewhere opens in a tab only. */
+const FRAMEABLE_HOST = /\.freebuff\.(site|page)$/
+
+/**
+ * The live copy a client may show inside itself (the workspace's Template
+ * tab, the mobile new chat's card): the one a project started from a template
+ * shows before its first message. Undefined when there is none to frame.
+ */
+export function templateEmbedPreview(templateId: string): string | undefined {
+  const url = templateLivePreview(templateId)
+  if (!url) return undefined
+  try {
+    return FRAMEABLE_HOST.test(new URL(url).hostname) ? url : undefined
+  } catch {
+    return undefined
+  }
+}
