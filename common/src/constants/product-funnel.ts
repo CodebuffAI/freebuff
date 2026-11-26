@@ -29,7 +29,7 @@ export const productFunnelStageSchema = z.enum([
   'composer',
   'draft',
   'project',
-  /** hosted Desktop's first-project screen ("Open a project to get started"): shown, selected (`project_choice`) */
+  /** hosted Desktop's first-project screen ("Open a project to get started"): shown, selected (`project_choice`); skipped (desktop_project_setup_skip_2026_11's skip arm, with `recent_*`) */
   'project_setup',
   'template',
   /** a finished turn's review: shown, selected (one of its buttons), opened (its verdict, in the Overview) */
@@ -435,6 +435,12 @@ export const productFunnelPropertiesSchema = z
       .optional(),
     has_attachments: z.boolean().optional(),
     attachment_count: z.number().int().min(0).max(1000).optional(),
+    /** `project_setup:skipped`: the recent folders Desktop found, the ones the skip arm offered (worked
+     *  in within six months, at most three), opened as projects, and failed to open. */
+    recent_found: z.number().int().min(0).max(100).optional(),
+    recent_offered: z.number().int().min(0).max(8).optional(),
+    recent_opened: z.number().int().min(0).max(8).optional(),
+    recent_failed: z.number().int().min(0).max(8).optional(),
     character_count: z.number().int().min(0).max(10_000_000).optional(),
     duration_ms: z
       .number()
