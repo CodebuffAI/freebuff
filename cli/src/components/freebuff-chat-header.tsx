@@ -107,8 +107,6 @@ export function FreebuffChatHeader({
       : null
   const streakBonus = getFreebuffStreakBonusNoteForLayout({
     streak: streak.data?.streak ?? 0,
-    accessTier: tier,
-    freebucksDailyBonus: streak.data?.freebucksDailyBonus,
     terminalHeight,
     availableWidth: width - 4,
   })

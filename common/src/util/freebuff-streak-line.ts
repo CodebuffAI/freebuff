@@ -1,9 +1,4 @@
-import { formatHoursWithUnit } from './freebuff-hours'
 import { FREEBUFF_STREAK_REWARDS_ENABLED } from '../constants/freebuff-models'
-import {
-  getFreebuffStreakGlmWeeklyUnits,
-  isFreebuffStreakGlmBonusActive,
-} from './freebuff-streak'
 
 /** Days in a streak "week" — the milestone the progress dots fill toward. */
 export const FREEBUFF_STREAK_WEEK = 7
@@ -84,67 +79,17 @@ export function getFreebuffStreakLine(
   }
 }
 
-/** The perk a 7+ day streak pays, as copy: Freebucks on the meter (added to
- *  each day's allowance, gone at its reset), sessions off it. */
-function getFreebuffStreakPerk(params: {
-  streak: number
-  accessTier: 'full' | 'limited'
-  freebucksDailyBonus?: number | null
-}): string {
-  if (params.freebucksDailyBonus != null && params.freebucksDailyBonus > 0) {
-    // One short line on purpose (2026-10-18). The longer "to your daily
-    // allowance with each day's first message", followed by a status line on
-    // when today's bonus landed and expires, read as a paragraph.
-    return `+${formatHoursWithUnit(params.freebucksDailyBonus)} every day`
-  }
-  // Only advertise GLM when the recurring full-access streak entitlement is
-  // active, so the copy never promises a perk the gate won't honor.
-  const includesGlm =
-    params.accessTier === 'full' && isFreebuffStreakGlmBonusActive()
-  // Below the milestone this is the first tier being unlocked (1/day); at 7+
-  // it's whatever tier the current streak has earned (up to 4/day).
-  const glmDaily = Math.max(1, getFreebuffStreakGlmWeeklyUnits(params.streak))
-  return includesGlm
-    ? `+1 bonus session every day + ${glmDaily} reward ${glmDaily === 1 ? 'session' : 'sessions'} each day`
-    : '+1 bonus session every day'
-}
-
 /**
- * A short perk note for an active streak. Below the 7-day milestone it teases
- * the countdown ("N more days to unlock …") so the reward motivates the users
- * who haven't earned it yet; at 7+ it flips to describing the perk they're now
- * receiving. Returns null with no streak at all (the streak row is hidden then
- * too — a lapsed user needs a first day, not a countdown from seven).
- *
- * The daily-pool bonus (+1 session) recurs **every day** the streak stays at 7+,
- * so it's framed as "every day". The reward bonus refills with the reward pool —
- * daily since 2026-07-29 (weekly before) — while the streak remains active and
- * grows with the streak (one session per completed 7 days, max 4), so the
- * earned line shows the current tier's count. The exact remaining GLM count
- * lives in the referral banner; this line is the motivational why. GLM is
- * full-access only, so limited users get the daily session bonus alone.
- *
- * On the Freebucks meter none of that buys anything, and the streak adds
- * `freebucksDailyBonus` Freebucks to each streak day's allowance instead (both
- * tiers; it expires with the allowance, never reaching the wallet); the server
- * says which applies through the streak response, so the copy never promises
- * a currency the meter will not grant.
+ * The streak's perk note: every streak day earns XP on the Rewards page
+ * (docs/freebuff-xp.md). Null with no streak at all (the streak row is hidden
+ * then too). Until 2026-11-24 a 7+ day streak added Freebucks or a session to
+ * each day's allowance; that bonus is retired, so the server no longer sends
+ * `freebucksDailyBonus` and the note no longer reads it.
  */
 export function getFreebuffStreakBonusNote(params: {
   streak: number
-  accessTier: 'full' | 'limited'
-  /** Freebucks a streak day pays on this account (the streak response's
-   *  `freebucksDailyBonus`). A positive number means the account is on the
-   *  meter and the perk is Freebucks; null/undefined keeps the session copy. */
-  freebucksDailyBonus?: number | null
 }): string | null {
   if (!FREEBUFF_STREAK_REWARDS_ENABLED) return null
   if (params.streak <= 0) return null
-  const perk = getFreebuffStreakPerk(params)
-
-  if (params.streak < FREEBUFF_STREAK_WEEK) {
-    const remaining = FREEBUFF_STREAK_WEEK - params.streak
-    return `🎁 ${remaining} more ${remaining === 1 ? 'day' : 'days'} to unlock ${perk}`
-  }
-  return `🎁 Streak perk: ${perk}`
+  return '🎁 Every streak day earns XP toward rewards'
 }

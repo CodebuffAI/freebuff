@@ -8,7 +8,6 @@ export {
 export type { FreebuffStreakLine } from '@codebuff/common/util/freebuff-streak-line'
 
 import {
-  FREEBUFF_STREAK_WEEK,
   getFreebuffStreakBonusNote,
   getFreebuffStreakLine as getSharedFreebuffStreakLine,
 } from '@codebuff/common/util/freebuff-streak-line'
@@ -41,14 +40,9 @@ export function getFreebuffStreakLine(
  * without crowding the picker or wrapping onto additional rows. */
 export function getFreebuffStreakBonusNoteForLayout(params: {
   streak: number
-  accessTier: 'full' | 'limited'
-  /** From the streak response: Freebucks a streak day pays on the meter, or
-   *  null/undefined (an older server) for the session copy. */
-  freebucksDailyBonus?: number | null
   terminalHeight: number
   availableWidth: number
 }): string | null {
-  if (params.streak < FREEBUFF_STREAK_WEEK) return null
   if (params.terminalHeight < FREEBUFF_STREAK_BONUS_MIN_HEIGHT) return null
 
   const note = getFreebuffStreakBonusNote(params)
