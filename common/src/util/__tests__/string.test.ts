@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test'
 
-import { pluralize } from '../string'
+import {
+  capitalize,
+  pluralize,
+  truncateString,
+  truncateStringWithMessage,
+} from '../string'
 
 describe('pluralize', () => {
   it('should handle singular and plural cases correctly', () => {
@@ -53,13 +58,13 @@ describe('pluralize', () => {
     expect(pluralize(2, 'person')).toBe('2 people')
     expect(pluralize(2, 'child')).toBe('2 children')
     expect(pluralize(2, 'mouse')).toBe('2 mice')
-    
+
     // -ex/-ix → -ices (no reliable rule, must be hardcoded)
     expect(pluralize(2, 'index')).toBe('2 indices')
     expect(pluralize(2, 'vertex')).toBe('2 vertices')
     expect(pluralize(2, 'matrix')).toBe('2 matrices')
     expect(pluralize(2, 'appendix')).toBe('2 appendices')
-    
+
     // Latin -um → -a
     expect(pluralize(2, 'datum')).toBe('2 data')
     expect(pluralize(2, 'medium')).toBe('2 media')
@@ -123,7 +128,7 @@ describe('pluralize', () => {
     expect(pluralize(2, 'data')).toBe('2 data')
     expect(pluralize(2, 'metadata')).toBe('2 metadata')
     expect(pluralize(2, 'feedback')).toBe('2 feedback')
-    
+
     // Other words ending in -s that don't change
     expect(pluralize(2, 'series')).toBe('2 series')
     expect(pluralize(2, 'chassis')).toBe('2 chassis')
@@ -135,7 +140,7 @@ describe('pluralize', () => {
     expect(pluralize(2, 'hero')).toBe('2 heroes')
     expect(pluralize(2, 'echo')).toBe('2 echoes')
     expect(pluralize(2, 'veto')).toBe('2 vetoes')
-    
+
     // Tech terms that just add -s
     expect(pluralize(2, 'photo')).toBe('2 photos')
     expect(pluralize(2, 'video')).toBe('2 videos')
@@ -160,11 +165,11 @@ describe('pluralize', () => {
     expect(pluralize(2, 'shelf')).toBe('2 shelves')
     expect(pluralize(2, 'self')).toBe('2 selves')
     expect(pluralize(2, 'leaf')).toBe('2 leaves')
-    
+
     // -fe to -ves
     expect(pluralize(2, 'knife')).toBe('2 knives')
     expect(pluralize(2, 'life')).toBe('2 lives')
-    
+
     // Tech/design terms that just add -s
     expect(pluralize(2, 'proof')).toBe('2 proofs') // mathematical proofs
     expect(pluralize(2, 'brief')).toBe('2 briefs') // design briefs
@@ -237,3 +242,120 @@ describe('pluralize', () => {
   })
 })
 
+describe('truncateString', () => {
+  it('returns string unchanged when length <= maxLength', () => {
+    expect(truncateString('hello', 5)).toBe('hello')
+    expect(truncateString('hi', 5)).toBe('hi')
+    expect(truncateString('', 5)).toBe('')
+  })
+
+  it('truncates and appends ellipsis when length > maxLength', () => {
+    expect(truncateString('hello world', 5)).toBe('hello...')
+  })
+
+  it('does not split surrogate pairs when cut lands on a high surrogate', () => {
+    const rocket = '🚀' // \uD83D\uDE80 (high surrogate: \uD83D, low surrogate: \uDE80)
+    const str = 'abc' + rocket // length is 3 + 2 = 5
+    // Cutting at length 4 lands on \uD83D (the high surrogate of 🚀)
+    const truncated = truncateString(str, 4)
+    expect(truncated).toBe('abc...')
+    expect(truncated).not.toContain('\uD83D')
+  })
+})
+
+describe('truncateStringWithMessage', () => {
+  it('returns string unchanged when length <= maxLength', () => {
+    expect(truncateStringWithMessage({ str: 'hello', maxLength: 10 })).toBe(
+      'hello',
+    )
+    expect(truncateStringWithMessage({ str: 'hello', maxLength: 5 })).toBe(
+      'hello',
+    )
+  })
+
+  it('truncates from END and appends message', () => {
+    const str = 'a'.repeat(100)
+    const result = truncateStringWithMessage({
+      str,
+      maxLength: 50,
+      remove: 'END',
+    })
+    expect(result.length).toBe(50)
+    expect(result.endsWith('\n[TRUNCATED DUE TO LENGTH...]')).toBe(true)
+  })
+
+  it('truncates from START and prepends message', () => {
+    const str = 'a'.repeat(100)
+    const result = truncateStringWithMessage({
+      str,
+      maxLength: 50,
+      remove: 'START',
+    })
+    expect(result.length).toBe(50)
+    expect(result.startsWith('[...TRUNCATED DUE TO LENGTH]\n')).toBe(true)
+  })
+
+  it('truncates from MIDDLE and places message in center', () => {
+    const str = 'a'.repeat(100)
+    const result = truncateStringWithMessage({
+      str,
+      maxLength: 50,
+      remove: 'MIDDLE',
+    })
+    expect(result.length).toBeLessThanOrEqual(50)
+    expect(result).toContain('\n[...TRUNCATED DUE TO LENGTH...]\n')
+  })
+
+  it('never expands beyond maxLength when maxLength is smaller than message', () => {
+    const str = 'a'.repeat(100)
+    const endResult = truncateStringWithMessage({
+      str,
+      maxLength: 20,
+      remove: 'END',
+    })
+    expect(endResult.length).toBe(20)
+
+    const startResult = truncateStringWithMessage({
+      str,
+      maxLength: 20,
+      remove: 'START',
+    })
+    expect(startResult.length).toBe(20)
+
+    const midResult = truncateStringWithMessage({
+      str,
+      maxLength: 20,
+      remove: 'MIDDLE',
+    })
+    expect(midResult.length).toBe(20)
+  })
+
+  it('does not split surrogate pairs', () => {
+    const rocket = '🚀'
+    // 'a'.repeat(20) places the high surrogate at index 20.
+    // Default suffix '\n[TRUNCATED DUE TO LENGTH...]' is 29 chars long.
+    // maxLength = 50 -> cut index end = 50 - 29 = 21, landing right after the high surrogate.
+    const str = 'a'.repeat(20) + rocket + 'b'.repeat(50)
+    const result = truncateStringWithMessage({
+      str,
+      maxLength: 50,
+      remove: 'END',
+    })
+    expect(result).toBe('a'.repeat(20) + '\n[TRUNCATED DUE TO LENGTH...]')
+    expect(result).not.toContain('\uD83D')
+    expect(result.length).toBeLessThanOrEqual(50)
+  })
+})
+
+describe('capitalize', () => {
+  it('capitalizes ASCII strings', () => {
+    expect(capitalize('hello')).toBe('Hello')
+    expect(capitalize('WORLD')).toBe('World')
+    expect(capitalize('a')).toBe('A')
+    expect(capitalize('')).toBe('')
+  })
+
+  it('handles astral code points gracefully without corrupting surrogates', () => {
+    expect(capitalize('🚀rocket')).toBe('🚀rocket')
+  })
+})
