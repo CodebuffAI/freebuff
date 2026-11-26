@@ -42,7 +42,7 @@ export const STREAK_THEME_TIERS = [
 export type StreakThemeTier = (typeof STREAK_THEME_TIERS)[number]
 
 /** The highest streak theme a streak of `days` has reached, or undefined
- *  below 7: the streak's own colours (`workspace-streak-classic.css`). */
+ *  below 7: the streak's own colours (`streak/streak-tones.ts`). */
 export function streakThemeTierForDays(days: number): StreakThemeTier | undefined {
   return [...STREAK_THEME_TIERS].reverse().find((tier) => days >= tier.days)
 }
