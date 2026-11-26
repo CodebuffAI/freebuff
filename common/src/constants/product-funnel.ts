@@ -94,7 +94,7 @@ export const REFERRAL_INVITE_VIA = Object.freeze({
     link: 'friend_joined_link',
     email: 'friend_joined_email',
   }),
-  /** Settings → Earn → Referrals, the limited-access counterpart of `settings`. */
+  /** Settings → Earn → Referrals (retired 2026-11-26); kept for links already shared. */
   settings_earn: Object.freeze({
     link: 'settings_earn_link',
     email: 'settings_earn_email',
