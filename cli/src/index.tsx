@@ -33,7 +33,7 @@ import { loadPackageVersion, parseArgs } from './cli-args'
 import { handlePublish } from './commands/publish'
 import { runPlainLogin } from './login/plain-login'
 import { initializeApp } from './init/init-app'
-import { getProjectRoot, setProjectRoot } from './project-files'
+import { getProjectRoot } from './project-files'
 import { trackEvent } from './utils/analytics'
 import { captureCliFunnel } from './utils/cli-product-funnel'
 import { installAiSdkWarningLogger } from './utils/ai-sdk-warnings'
@@ -48,7 +48,6 @@ import {
   getAuthTokenDetails,
   loadStoredAuthToken,
 } from './utils/auth'
-import { resetCodebuffClient } from './utils/codebuff-client'
 import { setApiClientAuthToken } from './utils/codebuff-api'
 import { IS_FREEBUFF } from './utils/constants'
 import {
@@ -71,7 +70,10 @@ import { trimOversizedChatLogs } from './utils/chat-history'
 import { clearLogFile, logger } from './utils/logger'
 import { drainClientLogs } from './utils/log-shipper'
 import { takePreviousFatalCrash } from './utils/fatal-crash-report'
-import { shouldShowProjectPicker } from './utils/project-picker'
+import {
+  activateProject,
+  shouldShowProjectPicker,
+} from './utils/project-picker'
 import { saveRecentProject } from './utils/recent-projects'
 import { startEngagementTracking } from './utils/engagement'
 import {
@@ -475,18 +477,22 @@ async function main(): Promise<void> {
   // Repository-scoped .agents directories (cwd and its parent) execute code
   // on import and spawn mcp.json servers, so they pass the trust gate first;
   // ~/.agents is the user's own and is always loaded.
-  if (isPublishCommand || !hasAgentOverride) {
+  const resolveAgentDirs = async ({
+    interactive,
+    notify,
+  }: {
+    interactive: boolean
+    notify: (message: string) => void
+  }): Promise<string[]> => {
     const { agentDirs, skippedDirs } = await resolveTrustedAgentDirs({
       candidateDirs: getDefaultAgentDirs(),
       homeAgentsDir: path.join(os.homedir(), '.agents'),
-      interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      interactive,
       trustAll:
         trustAgents || isTruthyOptIn(getCliEnv().CODEBUFF_TRUST_AGENT_DIRS),
       storePath: getTrustStorePath(),
       prompt: promptForAgentDirTrust,
-      notify: (message) => {
-        console.log(yellow(message))
-      },
+      notify,
     })
     if (skippedDirs.length > 0) {
       logger.warn(
@@ -494,6 +500,15 @@ async function main(): Promise<void> {
         '[agents] Untrusted repository .agents directories were not loaded',
       )
     }
+    return agentDirs
+  }
+  if (isPublishCommand || !hasAgentOverride) {
+    const agentDirs = await resolveAgentDirs({
+      interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      notify: (message) => {
+        console.log(yellow(message))
+      },
+    })
     await initializeAgentRegistry({ agentDirs })
   }
 
@@ -582,8 +597,18 @@ async function main(): Promise<void> {
     // Callback for when user selects a new project from the picker
     const handleProjectChange = React.useCallback(
       async (newProjectPath: string) => {
-        // Change process working directory
-        process.chdir(newProjectPath)
+        await activateProject(newProjectPath, {
+          // The trust prompt can't run inside the TUI, so a project picked here
+          // only loads repository agents that are already trusted (or allowed
+          // by --trust-agents). Skipped directories are logged.
+          resolveAgentDirs: hasAgentOverride
+            ? undefined
+            : () =>
+                resolveAgentDirs({
+                  interactive: false,
+                  notify: (message) => logger.warn(message),
+                }),
+        })
         captureCliFunnel('context', 'succeeded', { project_kind: 'folder' })
 
         // Track directory change (avoid logging full paths for privacy)
@@ -594,10 +619,6 @@ async function main(): Promise<void> {
           pathDepth,
           isHomeDir: newProjectPath === os.homedir(),
         })
-        // Update the project root in the module state
-        setProjectRoot(newProjectPath)
-        // Reset client to ensure tools use the updated project root
-        resetCodebuffClient()
         // Save to recent projects list
         saveRecentProject(newProjectPath)
         // Update local state
