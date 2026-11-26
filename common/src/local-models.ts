@@ -254,18 +254,48 @@ export function parameterBillions(model: string): number | undefined {
 export type LocalFit = 'comfortable' | 'tight' | 'too-large' | 'unknown'
 
 /**
- * A rough memory fit for a quantized model. 4-bit weights are about 0.7 GB
- * per billion parameters; the agent also needs room for context. This is
- * guidance, not a benchmark, and says so.
+ * Defaults for {@link estimateLocalFit}.
+ *
+ * NON-AUTHORITATIVE. These are rules of thumb, not measurements or citations:
+ * 0.7 GB per billion parameters approximates 4-bit weights only, and treating
+ * 60% of total RAM as usable ignores the KV cache, context length, GPU offload,
+ * quantization, and everything else running on the machine. Real memory use
+ * varies by a factor of two or more either way.
+ */
+export const LOCAL_FIT_DEFAULTS = Object.freeze({
+  /** Bytes per billion parameters, assuming 4-bit weights. */
+  bytesPerBillionParams: 0.7 * 1024 ** 3,
+  /** Fraction of total memory assumed usable by the model. */
+  usableMemoryFraction: 0.6,
+})
+
+/**
+ * A rough memory fit for a quantized model, used only to warn before a
+ * multi-gigabyte download fails to load.
+ *
+ * NON-AUTHORITATIVE by construction: it reads the parameter count out of a
+ * model id and applies {@link LOCAL_FIT_DEFAULTS}. It is not a benchmark, it
+ * does not measure anything, and it must not be used to block a run — only to
+ * phrase a warning. Callers with better numbers (a runtime's reported size, a
+ * measured `nvidia-smi` figure) should pass `bytesPerBillionParams` and
+ * `usableMemoryFraction`, or ignore the result entirely.
  */
 export function estimateLocalFit(input: {
   model: string
   totalMemoryBytes: number
+  /** Override the 4-bit weight estimate, in bytes per billion parameters. */
+  bytesPerBillionParams?: number
+  /** Override the assumed fraction of total memory the model may use. */
+  usableMemoryFraction?: number
 }): LocalFit {
   const billions = parameterBillions(input.model)
   if (!billions) return 'unknown'
-  const needed = billions * 0.7 * 1024 ** 3
-  const usable = input.totalMemoryBytes * 0.6
+  const bytesPerBillion =
+    input.bytesPerBillionParams ?? LOCAL_FIT_DEFAULTS.bytesPerBillionParams
+  const usableFraction =
+    input.usableMemoryFraction ?? LOCAL_FIT_DEFAULTS.usableMemoryFraction
+  const needed = billions * bytesPerBillion
+  const usable = input.totalMemoryBytes * usableFraction
   if (needed <= usable * 0.7) return 'comfortable'
   if (needed <= usable) return 'tight'
   return 'too-large'

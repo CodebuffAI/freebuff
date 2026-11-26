@@ -35,6 +35,50 @@ export const LOCAL_USAGE = [
   'This saves an OpenAI-compatible BYOK connection pointed at 127.0.0.1 and selects it, so the same agent, tools and device control run without a Freebuff server in the inference path. `/byok off` returns to hosted models.',
 ].join('\n')
 
+const CONTEXT_WINDOW_FLAG = '--context-window'
+
+export type LocalUseArguments = {
+  runtimeId?: string
+  model?: string
+  contextWindow?: number
+  error?: string
+}
+
+/**
+ * Parse `/local use` arguments. A malformed flag is an error, not something to
+ * silently drop: `/local use ollama qwen --context-window=eight` used to save a
+ * connection with no window at all, which reads as success.
+ */
+export function parseLocalUseArguments(
+  tokens: string[],
+): LocalUseArguments {
+  const positional: string[] = []
+  let contextWindow: number | undefined
+  for (const token of tokens) {
+    if (token === CONTEXT_WINDOW_FLAG || token.startsWith(`${CONTEXT_WINDOW_FLAG}=`)) {
+      const raw = token.slice(CONTEXT_WINDOW_FLAG.length + 1)
+      const value = Number(raw)
+      if (!raw || !Number.isInteger(value) || value <= 0) {
+        return {
+          error: `\`${CONTEXT_WINDOW_FLAG}\` needs a positive whole number, e.g. \`${CONTEXT_WINDOW_FLAG}=8192\`.`,
+        }
+      }
+      contextWindow = value
+      continue
+    }
+    if (token.startsWith('--')) {
+      return { error: `Unknown option: ${token}` }
+    }
+    positional.push(token)
+  }
+  const [runtimeId, model] = positional
+  return {
+    ...(runtimeId ? { runtimeId } : {}),
+    ...(model ? { model } : {}),
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+  }
+}
+
 function post(params: RouterParams, message: string): void {
   params.setMessages((messages) => [...messages, getSystemMessage(message)])
   params.saveToHistory(params.inputValue.trim())
@@ -111,13 +155,12 @@ export async function handleLocalCommand(
   }
 
   if (action === 'use') {
-    const runtimeId = tokens.shift()
-    const model = tokens.shift()
-    let contextWindow: number | undefined
-    for (const token of tokens) {
-      const match = /^--context-window=(\d+)$/.exec(token)
-      if (match) contextWindow = Number(match[1])
+    const parsed = parseLocalUseArguments(tokens)
+    if (parsed.error) {
+      post(params, `${parsed.error}\n\n${LOCAL_USAGE}`)
+      return
     }
+    const { runtimeId, model, contextWindow } = parsed
     if (!runtimeId || !model) {
       post(params, `Usage: /local use <runtime> <model> [--context-window=N]\n\n${LOCAL_USAGE}`)
       return

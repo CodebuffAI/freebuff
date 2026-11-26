@@ -156,4 +156,31 @@ describe('local fit guidance', () => {
       'unknown',
     )
   })
+
+  test('is a non-authoritative rule of thumb with overridable constants', () => {
+    const eightGb = 8 * 1024 ** 3
+    // A caller that knows the weights are 8-bit passes twice the bytes and
+    // gets a stricter answer from the same heuristic.
+    expect(
+      estimateLocalFit({
+        model: 'small:4b',
+        totalMemoryBytes: eightGb,
+        bytesPerBillionParams: 1.4 * 1024 ** 3,
+      }),
+    ).toBe('too-large')
+    expect(
+      estimateLocalFit({
+        model: 'big:16b',
+        totalMemoryBytes: eightGb,
+        usableMemoryFraction: 1,
+      }),
+    ).toBe('too-large')
+    expect(
+      estimateLocalFit({
+        model: 'small:4b',
+        totalMemoryBytes: eightGb,
+        usableMemoryFraction: 0.2,
+      }),
+    ).toBe('too-large')
+  })
 })
