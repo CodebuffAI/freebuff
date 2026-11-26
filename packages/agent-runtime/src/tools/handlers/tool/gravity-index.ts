@@ -222,7 +222,7 @@ const GRAVITY_END_USER_METADATA = GRAVITY_END_USER_RUN_METADATA_KEYS
 
 /** The web API schema's caps (common/src/types/gravity-index.ts): a longer
  *  value would fail the whole search's validation, so it is cut here. */
-const GRAVITY_END_USER_MAX = { end_user_ip: 64, end_user_agent: 1024, ad_session_id: 256 }
+const GRAVITY_END_USER_MAX = { end_user_ip: 64, end_user_agent: 1024, ad_session_id: 256, end_user_id: 128 }
 
 const gravityEndUserFields = (
   runMetadata: Record<string, string> | undefined,

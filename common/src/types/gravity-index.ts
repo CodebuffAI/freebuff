@@ -134,6 +134,10 @@ const searchRuntimeFields = {
   end_user_ip: z.string().max(64).optional(),
   end_user_agent: z.string().max(1024).optional(),
   ad_session_id: z.string().max(256).optional(),
+  // Our own account id for the person whose turn this is. Honoured only from
+  // the Freebuff Web service account, whose key names no person; never sent
+  // to Gravity.
+  end_user_id: z.string().max(128).optional(),
 }
 
 // Tool-facing schema presented to the LLM provider. Native function-calling
@@ -242,6 +246,7 @@ export const GRAVITY_END_USER_RUN_METADATA_KEYS = {
   end_user_ip: 'gravity_end_user_ip',
   end_user_agent: 'gravity_end_user_agent',
   ad_session_id: 'gravity_ad_session_id',
+  end_user_id: 'gravity_end_user_id',
 } as const
 
 const GRAVITY_END_USER_KEY_SET: ReadonlySet<string> = new Set(
