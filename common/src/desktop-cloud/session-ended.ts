@@ -26,6 +26,13 @@ export const DEVICE_AWAY_HOUR_ENDED =
 
 /** The message that continues a turn that ended on `DEVICE_AWAY_HOUR_ENDED`.
  *  Its progress is in the chat's saved state; a plain Retry would start the
- *  task over. */
+ *  task over. The agent reads it; the transcript shows
+ *  `DEVICE_AWAY_CONTINUE_LABEL` in its place (`displayPrompt`). */
 export const DEVICE_AWAY_CONTINUE_PROMPT =
   'Continue from where the last turn stopped. Its hour ran out while my computer was away, so it stopped partway. Check where the task stands, then go on without redoing steps that are already done.'
+
+/** What the transcript shows for that continue: a quiet line, never a message
+ *  in the user's voice they did not write. The window knows the run by this
+ *  label (`automaticTurn`, freebuff/web history-transcript.ts), as a background
+ *  wake by its flag. */
+export const DEVICE_AWAY_CONTINUE_LABEL = 'Continued after your computer reconnected'
