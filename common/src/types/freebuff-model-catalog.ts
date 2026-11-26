@@ -267,7 +267,7 @@ export const freebuffModelCatalogSchema = z.object({
   hybridModelPicker: z.boolean().optional(),
   /** The picker A/Bs of 2026-12 (every arm of `powerful_toggle_2026_12` and
    *  `full_access_picker_2026_12`; same module): whichever picker the other
-   *  flags draw, its reasoning slider is the filled one (Instant, Medium,
+   *  flags draw, its reasoning slider is the filled one (Instant, Balanced,
    *  High), shown wherever the model has more than one level. A client that
    *  does not read it draws that picker with its old slider. */
   filledSlider: z.boolean().optional(),

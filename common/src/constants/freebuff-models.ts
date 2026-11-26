@@ -1089,7 +1089,7 @@ export const EFFORTS_THROUGH_MAX = [
  * Instant stop (product, 2026-11-24, Victor). `low` still thinks. The server
  * turns `minimal` on a DeepSeek V4 model into `reasoning.enabled: false`
  * (applyFreebuffReasoningDefaults), which every DeepSeek lane honours, and the
- * pickers name the ladder Instant, Medium, High, Max (reasoningEffortLabel).
+ * pickers name the ladder Instant, Balanced, High, Max (reasoningEffortLabel).
  */
 const DEEPSEEK_V4_REASONING_EFFORTS = ['minimal', 'low', 'high', 'max'] as const
 /** Ox Alpha's native ladder, read off the endpoint's `supported_efforts`.
