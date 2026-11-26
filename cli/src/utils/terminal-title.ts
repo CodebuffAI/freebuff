@@ -11,40 +11,20 @@
 
 import { IS_FREEBUFF } from './constants'
 import { getCliEnv } from './env'
-import { writeTerminalControlSync } from './terminal-io'
+import { wrapForMultiplexer, writeTerminalControlSync } from './terminal-io'
 
 const MAX_TITLE_LENGTH = 60
 const TITLE_PREFIX = IS_FREEBUFF ? 'Freebuff: ' : 'Codebuff: '
 const OSC_TERMINATOR = '\x07' // BEL
 
-function isInTmux(env: ReturnType<typeof getCliEnv>): boolean {
-  return Boolean(env.TMUX)
-}
-
-function isInScreen(env: ReturnType<typeof getCliEnv>): boolean {
-  if (env.STY) return true
-  const term = env.TERM ?? ''
-  return term.startsWith('screen') && !isInTmux(env)
-}
-
 /**
  * Build the OSC title sequence with tmux/screen passthrough if needed
  */
-function buildTitleSequence(title: string, env: ReturnType<typeof getCliEnv>): string {
-  const osc = `\x1b]0;${title}${OSC_TERMINATOR}`
-
-  // tmux passthrough: wrap in DCS and double ESC characters
-  if (isInTmux(env)) {
-    const escaped = osc.replace(/\x1b/g, '\x1b\x1b')
-    return `\x1bPtmux;${escaped}\x1b\\`
-  }
-
-  // GNU screen passthrough: wrap in DCS
-  if (isInScreen(env)) {
-    return `\x1bP${osc}\x1b\\`
-  }
-
-  return osc
+function buildTitleSequence(
+  title: string,
+  env: ReturnType<typeof getCliEnv>,
+): string {
+  return wrapForMultiplexer(`\x1b]0;${title}${OSC_TERMINATOR}`, env)
 }
 
 /**

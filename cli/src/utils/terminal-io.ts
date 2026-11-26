@@ -1,5 +1,14 @@
 import { closeSync, constants, openSync, writeSync } from 'fs'
 
+import { getCliEnv } from './env'
+
+/** The environment fields that decide how to reach the outer terminal. */
+export type MultiplexerEnv = {
+  TMUX?: string | undefined
+  STY?: string | undefined
+  TERM?: string | undefined
+}
+
 /** Write every byte to an already-open file descriptor before returning. */
 export function writeFileDescriptorSync(fd: number, value: string): boolean {
   try {
@@ -55,6 +64,39 @@ function stringifyFatalValue(value: unknown): string | undefined {
   } catch {
     return undefined
   }
+}
+
+export function isInTmux(env: MultiplexerEnv): boolean {
+  return Boolean(env.TMUX)
+}
+
+export function isInScreen(env: MultiplexerEnv): boolean {
+  if (env.STY) return true
+  const term = env.TERM ?? ''
+  return term.startsWith('screen') && !isInTmux(env)
+}
+
+/**
+ * Wrap a control sequence so multiplexers forward it to the terminal.
+ *
+ * tmux and screen drop escape sequences written to /dev/tty unless they arrive
+ * inside a DCS passthrough. tmux doubles the inner ESC characters so its parser
+ * does not end the passthrough early. Outside a multiplexer the sequence is
+ * returned unchanged, and with tmux's `allow-passthrough` off the wrapped bytes
+ * are discarded, so callers still degrade silently.
+ */
+export function wrapForMultiplexer(
+  sequence: string,
+  env: MultiplexerEnv = getCliEnv(),
+): string {
+  if (isInTmux(env)) {
+    const escaped = sequence.replace(/\x1b/g, '\x1b\x1b')
+    return `\x1bPtmux;${escaped}\x1b\\`
+  }
+  if (isInScreen(env)) {
+    return `\x1bP${sequence}\x1b\\`
+  }
+  return sequence
 }
 
 /**
