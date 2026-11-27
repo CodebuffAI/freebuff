@@ -22,6 +22,8 @@ export const productFunnelStageSchema = z.enum([
   'welcome',
   /** the phone-app prompt, on a return to the workspace after a break, after a first finished reply or from the checklist: shown (a computer sees the QR code at once), clicked (a store button on a phone), opened (a store page on a computer), closed */
   'mobile_prompt',
+  /** COD-1681's feature promo, one at the start of a web workspace session for a feature the account has not used (`feature_promos_2026_11`): shown, clicked (its button, or a store on the phone promo), closed */
+  'feature_promo',
   /** The Get started checklist: shown (once per page load), clicked (a step's button, `checklist_step`), closed (hidden from its menu or Done). Its A/B (`desktop_checklist_2026_11`, `checklist_variant`) ended 2026-11-13 with the card kept. */
   'checklist',
   'browser',
@@ -484,6 +486,16 @@ export const productFunnelPropertiesSchema = z
     prompt_trigger: z.enum(['return', 'reply', 'checklist']).optional(),
     /** `mobile_prompt:clicked` (a phone) and `opened` (a computer): which store. A scanned QR code is counted by `/mobile`, not here. */
     store: z.enum(['ios', 'android']).optional(),
+    /** `feature_promo`: the registry's promo and copy variant ids. */
+    promo_id: opaqueId.optional(),
+    variant_id: opaqueId.optional(),
+    /** `feature_promo`: the days drawn to the next pop-up, which open of the day this was, the picker's probability of this choice and which picker made it (the picker sub-arm, or `launch` for a launch promo). */
+    gap_days: z.number().int().min(0).max(60).optional(),
+    open_index: z.number().int().min(0).max(1000).optional(),
+    pick_prob: z.number().min(0).max(1).optional(),
+    picker: z.enum(['uniform', 'model', 'launch']).optional(),
+    /** `feature_promo:closed`: its X, or Escape and a click outside (the dialog reports both alike). */
+    close_reason: z.enum(['close_button', 'dismissed']).optional(),
     renderer: z.literal('web-workspace').optional(),
     appVersion: z
       .string()
