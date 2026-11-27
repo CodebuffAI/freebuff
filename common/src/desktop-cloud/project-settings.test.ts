@@ -303,3 +303,24 @@ test('skill enable state is optional for old libraries and preserved on save', (
     }).success,
   ).toBe(false)
 })
+
+test('a skill folder is optional, kept on save, and refused when empty, too long or unprintable', () => {
+  const skill = {
+    name: 'review',
+    description: 'Review changes',
+    instructions: 'Read the diff.',
+  }
+  const save = (folder?: unknown) =>
+    accountSkillsUpdateSchema.safeParse({
+      revision: 1,
+      settings: { skills: [{ ...skill, folder }] },
+    })
+  expect(save(undefined).success).toBe(true)
+  const kept = save('  Code review  ')
+  expect(kept.success && kept.data.settings.skills[0]?.folder).toBe('Code review')
+  expect(save('').success).toBe(false)
+  expect(save('   ').success).toBe(false)
+  expect(save('x'.repeat(41)).success).toBe(false)
+  expect(save('Ops\u0000').success).toBe(false)
+  expect(save(7).success).toBe(false)
+})

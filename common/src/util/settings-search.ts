@@ -9,7 +9,7 @@ type PageLabel =
   | 'Updates'
   | 'Account standing'
   | 'Apps & downloads'
-  | 'Artifacts'
+  | 'Import setup'
 
 // Index the settings themselves, including common names people use for them.
 // Keep this alongside the shared navigation, without mounting inactive pages or
@@ -36,6 +36,11 @@ const topics: Record<PageLabel, Topic[]> = {
     {
       label: 'Include AGENTS.md',
       keywords: 'agent instructions claude.md context rules',
+    },
+    {
+      label: 'Account instructions',
+      keywords: 'agent preferences personal rules edit',
+      surface: 'web',
     },
     {
       label: 'Automatically start the next session',
@@ -101,11 +106,10 @@ const topics: Record<PageLabel, Topic[]> = {
       surface: 'web',
     },
   ],
-  Artifacts: [
+  'Import setup': [
     {
-      label: 'Your artifacts',
-      keywords:
-        'docs documents slides decks sheets spreadsheets data whiteboards designs shared links share rename delete library',
+      label: 'Claude Code, Codex and Cursor',
+      keywords: 'import migrate setup settings skills agents instructions slash commands hooks mcp servers connectors',
       surface: 'web',
     },
   ],

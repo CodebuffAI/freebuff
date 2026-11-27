@@ -161,12 +161,14 @@ export type CloudHistoryChatUpdate = {
   archived?: boolean
 }
 /**
- * Fork a chat on the computer it runs on: a new chat with its transcript, attachments and agent
- * session, holding no Freebuff session of its own until it is sent to. `chatId` is the new chat's
+ * Fork a chat: a new chat with its transcript and attachments, holding no Freebuff session
+ * of its own until it is sent to. `chatId` is the new chat's
  * id, minted by the client and reused on a retry so the fork is created once.
  */
 export type CloudHistoryChatFork = {
   chatId: string
+  /** A finished Freebuff response to include as the last turn in a hosted fork. */
+  runId?: string
   /** As a side chat's (`CloudHistorySideChat.cutAtTurn`): a running chat of one of these harnesses
    *  forks from its last finished turn now. Absent or without the chat's harness: it waits. */
   cutAtTurn?: SideChatCutHarness[]
@@ -198,14 +200,16 @@ export type CloudHistorySharer = {
   agents?: { claudeCode: boolean; codex: boolean }
 }
 /**
- * Open a side chat beside a chat on the computer it runs on: a fork, read-only and hidden from
- * chat lists, made from the chat's last saved turn even while a turn runs. Deleting it (or its
- * parent) discards it. `chatId` is minted by the client and reused on a retry.
+ * Open a side chat beside a chat: a fork, read-only and hidden from chat lists, made from a
+ * settled response even while another turn runs. Closing it or deleting its parent discards it.
+ * `chatId` is minted by the client and reused on a retry.
  */
 /** A harness whose running turn's session a side chat can be cut back from (history-store.ts `sideChatCut`). */
 export type SideChatCutHarness = 'claude-code' | 'codex'
 export type CloudHistorySideChat = {
   chatId: string
+  /** A finished Freebuff response to include as the last source turn in a hosted side chat. */
+  runId?: string
   /** The harnesses this Desktop can cut a running turn's session for at a finished turn (Claude Code:
    *  `claudeRollback`; Codex: `codexForkBeforeTurn`), so a side chat of a chat running one opens
    *  now. Absent or without the chat's harness: it waits for the turn to finish. */

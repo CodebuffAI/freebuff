@@ -273,7 +273,7 @@ export const welcomeVariantSchema = z.enum([
 /** The Get started checklist A/B's arms; since it ended (2026-11-13) every event says `checklist`. */
 export const checklistVariantSchema = z.enum(['control', 'checklist'])
 /** A step of the Get started checklist (onboarding-checklist/model.ts). */
-export const checklistStepSchema = z.enum(['project', 'message', 'mobile', 'themes'])
+export const checklistStepSchema = z.enum(['import', 'project', 'message', 'mobile', 'themes'])
 /** A step of the click-through welcome flow (welcome-flow/steps.ts). */
 export const welcomeStepSchema = z.enum([
   'unlocked',

@@ -96,8 +96,24 @@ export function remoteMcpUrl(
   return url
 }
 
+// Hosted SDK users never open a local credential store. The interactive CLI installs this
+// callback for the last step before transport creation, after the remote protocol is finished.
+let resolveDeviceCredential: ((config: MCPConfig) => Promise<MCPConfig>) | undefined
+export function setLocalMcpCredentialResolver(resolve: (config: MCPConfig) => Promise<MCPConfig>) {
+  resolveDeviceCredential = resolve
+}
+
 export async function getMCPClient(config: MCPConfig): Promise<string> {
-  let key = hashConfig(config)
+  const marker = /^freebuff-keychain:[0-9a-f-]{36}$/
+  const imported = Object.values(config.type === 'stdio' ? config.env : config.headers).some(value => marker.test(value)) ||
+    (config.type === 'stdio' ? config.args.some(value => marker.test(value)) :
+      /\/\.freebuff\/imported-mcp\/freebuff-keychain:[0-9a-f-]{36}$/.test(config.url))
+  // This identifier may leave the client. Derive it before credentials are hydrated.
+  const key = imported ? JSON.stringify(config) : hashConfig(config)
+  if (imported) {
+    if (!resolveDeviceCredential) throw new Error('Open this connector on the computer where it was imported.')
+    config = await resolveDeviceCredential(config)
+  }
   if (key in runningClients) {
     return key
   }
@@ -111,7 +127,7 @@ export async function getMCPClient(config: MCPConfig): Promise<string> {
     const stdioTransport = new StdioClientTransport({
       command: config.command,
       args: config.args,
-      env: substituteEnvInRecord(config.env),
+      env: imported ? config.env : substituteEnvInRecord(config.env),
       stderr: 'pipe',
     })
     // When stderr is 'pipe' the SDK exposes a PassThrough immediately (before
@@ -125,7 +141,7 @@ export async function getMCPClient(config: MCPConfig): Promise<string> {
     transport = stdioTransport
   } else {
     const url = remoteMcpUrl(config)
-    const headers = substituteEnvInRecord(config.headers)
+    const headers = imported ? config.headers : substituteEnvInRecord(config.headers)
     if (config.type === 'http') {
       transport = new StreamableHTTPClientTransport(url, {
         requestInit: {
@@ -152,6 +168,7 @@ export async function getMCPClient(config: MCPConfig): Promise<string> {
   try {
     await client.connect(transport)
   } catch (error) {
+    if (imported) throw new Error('Could not start the imported connector on this computer.')
     const baseMessage = getErrorObject(error).message
     if (config.type === 'stdio') {
       const commandStr = [config.command, ...(config.args ?? [])].join(' ')

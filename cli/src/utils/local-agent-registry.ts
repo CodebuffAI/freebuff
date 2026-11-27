@@ -1,12 +1,16 @@
 import fs from 'fs'
+import { homedir } from 'os'
 import path from 'path'
 
 import {
   getDefaultAgentDirs,
   loadLocalAgents as sdkLoadLocalAgents,
   loadMCPConfigSync,
+  setLocalMcpCredentialResolver,
 } from '@codebuff/sdk'
 
+import { importedMcpOff } from '@codebuff/common/setup-import/local-sinks'
+import { resolveCliImportedMcp } from './imported-mcp'
 import type { MCPConfig } from '@codebuff/common/types/mcp'
 
 import { getFreebuffModelDirectory } from '../state/freebuff-catalog-store'
@@ -63,6 +67,7 @@ let mcpServersCache: Record<string, MCPConfig> = {}
 export async function initializeAgentRegistry({
   agentDirs = getDefaultAgentDirs(),
 }: { agentDirs?: string[] } = {}): Promise<void> {
+  if (IS_FREEBUFF) setLocalMcpCredentialResolver(resolveCliImportedMcp)
   try {
     userAgentsCache = await sdkLoadLocalAgents({ verbose: false, agentDirs })
     // Build ID-to-filepath map by scanning the same agent directories
@@ -84,6 +89,8 @@ export async function initializeAgentRegistry({
       configDirs: agentDirs,
     })
     mcpServersCache = mcpConfig.mcpServers
+    // Imported servers start off (common/src/setup-import/local-sinks.ts `IMPORTED_MCP_OFF_FILE`).
+    for (const name of await importedMcpOff(homedir())) delete mcpServersCache[name]
     if (Object.keys(mcpServersCache).length > 0) {
       logger.debug(
         {

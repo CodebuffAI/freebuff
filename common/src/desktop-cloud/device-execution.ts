@@ -587,7 +587,7 @@ export type DeviceResult = z.infer<typeof deviceResult>
  * is shorter (DEVICE_OPERATION_MS or the caller's `answerMs`).
  */
 export function deviceOperationMs(request: DeviceRequest): number {
-  return request.method === 'tool' && request.name === 'request_elevation'
+  return request.method === 'tool' && (request.name === 'request_elevation' || request.name === 'propose_hook')
     ? DEVICE_ELEVATION_MS
     : DEVICE_EXEC_MS
 }
