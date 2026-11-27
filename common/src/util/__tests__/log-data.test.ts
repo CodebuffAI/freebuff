@@ -21,6 +21,16 @@ describe('serializeLogData', () => {
     }
   })
 
+  test('redacts an account-bound model in an unmarked error payload', () => {
+    const model = 'fbm1.synthetic-catalog-handle'
+    const error = { name: 'TypeError', message: 'fetch failed' }
+    expect(parse({ model, error })).toEqual({ model: 'catalog', error })
+    expect(parse({ model: 'openrouter/example', error })).toEqual({
+      model: 'openrouter/example',
+      error,
+    })
+  })
+
   // JSON.stringify(new Error('x')) is '{}': the reason never reached Axiom.
   test('an error keeps its name and message', () => {
     const row = parse({ error: new TypeError('fetch failed') })
