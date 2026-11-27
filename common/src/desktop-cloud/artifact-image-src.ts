@@ -17,7 +17,7 @@
  * still save; the agent imports a picture (import_artifact_image) instead of hotlinking it.
  */
 
-import { ARTIFACT_ASSET_REF_PATTERN } from './artifacts'
+import { ARTIFACT_ASSET_REF_GLOBAL_PATTERN, ARTIFACT_ASSET_REF_PATTERN } from './artifacts'
 
 const CONTROL_OR_SPACE = /[\u0000- \u007f-\u009f]/
 const ENCODED_SEPARATOR = /%(?:2f|5c)/i
@@ -54,7 +54,7 @@ export function isStoredImageSrc(src: string): boolean {
   return ARTIFACT_ASSET_REF_PATTERN.test(src) || BUILT_IN_IMAGE_SRCS.has(src)
 }
 
-const MARKDOWN_IMAGE = /!\[[^\]]*\]\(\s*<?([^\s)>]+)/g
+const MARKDOWN_IMAGE = /!\[(?:\\.|[^\]\\])*\]\(\s*<?([^\s)>]+)/g
 const HTML_IMAGE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi
 
 /**
@@ -80,17 +80,34 @@ export function bodyImageSrcs(format: 'markdown' | 'json', body: string): string
   } catch {
     return []
   }
-  const walk = (value: unknown, depth: number) => {
-    if (depth > 64 || !value || typeof value !== 'object') return
-    if (Array.isArray(value)) for (const item of value) walk(item, depth + 1)
-    else
-      for (const [key, field] of Object.entries(value)) {
-        if (key === 'src') note(field)
-        else if (!FREE_FORM_KEYS.has(key)) walk(field, depth + 1)
-      }
-  }
-  walk(parsed, 0)
+  visitJsonImageSrcs(parsed, (src) => {
+    note(src)
+    return src
+  })
   return [...found]
+}
+
+/** Swap only matched image references, leaving other fields of structured artifacts intact. */
+export function remapArtifactImageSrcs(format: 'markdown' | 'json', body: string, refs: ReadonlyMap<string, string>): string {
+  const remap = (src: string) => refs.get(src) ?? src
+  if (!refs.size) return body
+  if (format === 'markdown') return body.replace(ARTIFACT_ASSET_REF_GLOBAL_PATTERN, remap)
+  const parsed: unknown = JSON.parse(body)
+  visitJsonImageSrcs(parsed, remap)
+  return JSON.stringify(parsed)
+}
+
+function visitJsonImageSrcs(value: unknown, visit: (src: string) => string, depth = 0) {
+  if (depth > 64 || !value || typeof value !== 'object') return
+  if (Array.isArray(value)) {
+    for (const item of value) visitJsonImageSrcs(item, visit, depth + 1)
+    return
+  }
+  const object = value as Record<string, unknown>
+  for (const [key, field] of Object.entries(object)) {
+    if (key === 'src' && typeof field === 'string') object[key] = visit(field)
+    else if (key !== 'src' && !FREE_FORM_KEYS.has(key)) visitJsonImageSrcs(field, visit, depth + 1)
+  }
 }
 
 /** Keys whose value is author-named data rows (chart.ts `data`, design.ts data lists' `rows`), never image holders. */
