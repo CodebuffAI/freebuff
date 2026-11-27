@@ -171,19 +171,12 @@ function fitLogDataToCap(data: unknown, originalBytes: number): string {
   return fitted
 }
 
-function redactStreamRecoveryModel(data: unknown): unknown {
+function redactAccountBoundModel(data: unknown): unknown {
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
     return data
   }
-  const { metric, model } = data as Record<string, unknown>
-  if (
-    typeof metric === 'string' &&
-    (metric.startsWith('stream_recovery_') ||
-      metric.startsWith('stream_silent_timeout_')) &&
-    typeof model === 'string' &&
-    isFreebuffModelHandle(model)
-  ) {
-    // Older clients also send the handle in unmarked error rows.
+  const { model } = data as Record<string, unknown>
+  if (typeof model === 'string' && isFreebuffModelHandle(model)) {
     return { ...data, model: 'catalog' }
   }
   return data
@@ -200,7 +193,7 @@ function redactStreamRecoveryModel(data: unknown): unknown {
  */
 export function serializeLogData(input: unknown): string | null {
   if (input == null) return null
-  const data = redactStreamRecoveryModel(input)
+  const data = redactAccountBoundModel(input)
   let serialized: string
   if (typeof data === 'string') {
     serialized = data
