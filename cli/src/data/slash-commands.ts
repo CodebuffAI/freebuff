@@ -207,6 +207,18 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
     aliases: ['provider'],
   },
   {
+    id: 'local',
+    label: 'local',
+    description: 'Detect and run on a local model runtime (Ollama, LM Studio, llama.cpp, vLLM)',
+    aliases: ['local-model'],
+  },
+  {
+    id: 'secrets',
+    label: 'secrets',
+    description: 'Manage encrypted device-local secrets the model can use but never see',
+    aliases: ['secret', 'vault'],
+  },
+  {
     id: 'model',
     label: 'model',
     description: 'Choose the model for your next message',

@@ -20,6 +20,8 @@ import {
 import { handleDealsCommand } from './deals'
 import { handleCopyConversationCommand } from './copy-conversation'
 import { handleExportConversationCommand } from './export-conversation'
+import { handleLocalCommand } from './local'
+import { handleSecretsCommand } from './secrets'
 import { handleHelpCommand } from './help'
 import { handleImageCommand } from './image'
 import { handleInitializationFlowLocally } from './init'
@@ -799,6 +801,21 @@ const ALL_COMMANDS: CommandDefinition[] = [
     name: 'byok',
     aliases: ['provider'],
     handler: handleByokCommand,
+  }),
+  // Device-local inference: discover a runtime on loopback and save it as a
+  // BYOK connection, so the same agent and tools run without a server in the
+  // inference path.
+  defineCommandWithArgs({
+    name: 'local',
+    aliases: ['local-model'],
+    handler: handleLocalCommand,
+  }),
+  // The encrypted, device-local secret vault. Values are read from the
+  // environment, never from the command, so they cannot enter the transcript.
+  defineCommandWithArgs({
+    name: 'secrets',
+    aliases: ['secret', 'vault'],
+    handler: handleSecretsCommand,
   }),
   defineCommand({
     name: 'model',
