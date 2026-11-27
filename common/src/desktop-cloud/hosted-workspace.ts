@@ -290,6 +290,43 @@ export type HostedWorkspaceHost = {
     remove(id: string): Promise<LocalMcpHostList>
     setEnabled(id: string, enabled: boolean): Promise<LocalMcpHostList>
   }
+  /**
+   * Settings > Hooks: the user's hooks on this computer (`~/.agents/hooks.json`, hooks-host.ts).
+   * Builds without it omit the key, and Settings hides Hooks. Every call answers with the whole list.
+   * `setEnabled(id, true)` always re-approves the version on disk through Desktop's native
+   * confirmation, even for a hook already enabled. A cancelled or declined confirmation resolves
+   * with the list unchanged, never rejects; so does a cancelled `add`. Everything else that stops a
+   * change rejects with a short readable message: busy (another approval open), unavailable (no
+   * secure storage), the same bytes declined within the last minute, this window paused after three
+   * declines in a minute, a command or matcher Desktop cannot show for approval, a matcher the
+   * hooks file would not load (`matcherProblem`, refused before the confirmation), a file already
+   * holding `HOOKS_LIMIT` hooks, a hook that changed since the list, and a file Desktop will not
+   * rewrite. A rejected add says the shared rules' sentence (hooks.ts), as `hookAddInput` does.
+   *
+   * `rename`, `remove` and `setEnabled(id, true)` must pass `expected`, the row's own `{event, matcher,
+   * command, timeout}` as the list gave them (`HookListedBytes`): Desktop acts only when this window
+   * was listed exactly those bytes at that id and the file still holds them, else it rejects with
+   * `HOOK_CHANGED_ON_DISK`. The `expected` argument to `remove` and `setEnabled` remains optional so
+   * an older page still compiles. `setEnabled(id, false)` ignores it.
+   * `rename` only changes the display label. Pass the row's current `displayName` in `expected`.
+   * Passing null for the new label clears it.
+   */
+  hooks?: {
+    list(): Promise<import('./hooks-host').HooksHostList>
+    add(hook: import('./hooks-host').HookAddInput): Promise<import('./hooks-host').HooksHostList>
+    rename?(id: string, displayName: string | null, expected: import('./hooks-host').HookRenameExpected): Promise<import('./hooks-host').HooksHostList>
+    remove(id: string, expected?: import('./hooks-host').HookListedBytes): Promise<import('./hooks-host').HooksHostList>
+    setEnabled(
+      id: string,
+      enabled: boolean,
+      expected?: import('./hooks-host').HookListedBytes,
+    ): Promise<import('./hooks-host').HooksHostList>
+  }
+  /** Desktop-only discovery. Paths, command bodies and connector credentials never return to the page. */
+  setupImport?: {
+    scan(): Promise<{ items: import('../setup-import/types').SetupImportItem[] }>
+    apply(ids: string[]): Promise<{ results: import('../setup-import/types').SetupImportResult[] }>
+  }
   /** Mirrors cloud-managed local work for the native quit confirmation. */
   activity?: {
     report(busy: boolean): Promise<void>

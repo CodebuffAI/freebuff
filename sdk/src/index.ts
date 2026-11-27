@@ -180,3 +180,5 @@ export {
   promptAiSdkStream,
   promptAiSdkStructured,
 } from './impl/llm'
+
+export { setLocalMcpCredentialResolver } from '@codebuff/common/mcp/client'

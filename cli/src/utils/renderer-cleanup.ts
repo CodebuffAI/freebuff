@@ -40,6 +40,18 @@ export const CLI_RENDERER_EXIT_SIGNALS: NodeJS.Signals[] = [
 ]
 
 let renderer: CliRenderer | null = null
+
+/** Give a local terminal workflow exclusive input (including masked credential prompts). */
+export async function withSuspendedRenderer<T>(run: () => Promise<T>): Promise<T> {
+  const active = renderer
+  active?.suspend()
+  try {
+    return await run()
+  } finally {
+    if (active && !active.isDestroyed) active.resume()
+  }
+}
+
 let handlersInstalled = false
 let cleanupStarted = false
 let stdoutErrorsIgnored = false

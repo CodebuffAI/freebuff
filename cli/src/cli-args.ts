@@ -68,7 +68,7 @@ export function parseArgs({
         "Load this repository's .agents files and mcp.json without asking (for CI)",
       )
       .addArgument(
-        new Argument('[command]', 'Command to run: login, or doctor to check this computer for common problems').choices(['login', 'doctor']),
+        new Argument('[command]', 'Command to run: login, doctor, or /import to review your local setup').choices(['login', 'doctor', '/import']),
       )
       .helpOption('-h, --help', 'Show this help message')
   } else {

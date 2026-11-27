@@ -80,3 +80,8 @@ test('skips controls the caller hides', () => {
     searchSettings('auto start', SHARED_SETTINGS_PAGES, 'desktop', [label]),
   ).toEqual([])
 })
+
+test('Hooks is not a shared page, so search never offers it', () => {
+  expect(SHARED_SETTINGS_PAGES.map(({ label }) => label)).not.toContain('Hooks')
+  expect(search('hooks').map(({ page }) => page.label)).not.toContain('Hooks')
+})
