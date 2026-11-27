@@ -2,7 +2,7 @@ import { existsSync } from 'fs'
 import path from 'path'
 import { describe, expect, test } from 'bun:test'
 
-import { getDefaultCliEnv } from './test-utils'
+import { describeEnvLoadFailure, getDefaultCliEnv } from './test-utils'
 
 /**
  * The test-env loader reaches for the private module
@@ -12,13 +12,15 @@ import { getDefaultCliEnv } from './test-utils'
  * Error` — and the loader used to answer `unknown error loading environment`,
  * discarding `Cannot find module '../../../packages/internal/src/env'`.
  *
- * That costs a contributor the one fact they needed. Two tests:
+ * That costs a contributor the one fact they needed. Three tests:
  *
  * 1. behavioural — through the real loader, and skipped where the private
  *    module exists and the failure cannot happen;
  * 2. the shape — the thrown value's own message must survive, whatever its
  *    prototype says. This one runs everywhere, so the guard does not depend on
- *    the private package being absent to be meaningful.
+ *    the private package being absent to be meaningful;
+ * 3. the adjacent case — a value with no message anywhere still produces
+ *    something a human can act on.
  *
  * Probes, run 2026-11-26 while writing this file. Both went green BEFORE the
  * change below, and red after. The mutation must be verified in the diff, not
@@ -36,10 +38,6 @@ import { getDefaultCliEnv } from './test-utils'
  */
 
 const PRIVATE_ENV_MODULE = path.join(__dirname, '../../../packages/internal/src/env')
-
-const describeEnvLoadFailure = (module: typeof import('./test-utils')) =>
-  (module as unknown as { describeEnvLoadFailure?: (error: unknown) => string })
-    .describeEnvLoadFailure
 
 describe('test environment loader error', () => {
   test('behavioural: a missing private env module is named, not called "unknown error"', () => {
@@ -60,7 +58,6 @@ describe('test environment loader error', () => {
   })
 
   test('shape: a thrown value that carries a message but is not an Error keeps that message', () => {
-    const describe = describeEnvLoadFailure(require('./test-utils'))
     // Bun's ResolveMessage is exactly this shape: a message, no Error prototype.
     const resolveMessage = {
       name: 'ResolveMessage',
@@ -69,7 +66,7 @@ describe('test environment loader error', () => {
     }
     expect(resolveMessage instanceof Error).toBe(false)
 
-    const text = describe!(resolveMessage)
+    const text = describeEnvLoadFailure(resolveMessage)
 
     expect(text).toContain('packages/internal/src/env')
     expect(text).toContain('Cannot find module')
@@ -77,9 +74,8 @@ describe('test environment loader error', () => {
   })
 
   test('shape: a value with nothing readable still says something a human can act on', () => {
-    const describe = describeEnvLoadFailure(require('./test-utils'))
     // Adjacent case that must keep working: no message anywhere.
-    const text = describe!(undefined)
+    const text = describeEnvLoadFailure(undefined)
     expect(text).toContain('packages/internal/src/env')
     expect(text).toContain('infisical')
   })
