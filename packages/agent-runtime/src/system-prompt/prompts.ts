@@ -131,9 +131,22 @@ ${truncationNote}
 `.trim()
 }
 
-const windowsNote = `
-Note: terminal commands run in bash on Windows too, not cmd.exe or PowerShell.
-Use POSIX syntax — \`ls\`, \`mv\`, \`rm\`, \`cp\`, \`grep\` — and never \`dir\`, \`move\`, \`del\`, \`copy\`, \`findstr\` or PowerShell cmdlets. Write paths with forward slashes: bash treats \`\\\` as an escape, so \`C:\\Users\\me\` becomes \`C:Usersme\`.
+/**
+ * Windows runs whose commands go through Git Bash: the CLI, and Desktop chats
+ * on a connected Windows computer (web/src/server/desktop-cloud/agent.ts).
+ * The last three points are the failures the daily trace report files under
+ * C5 (docs/daily-trace-report.md): PowerShell in bash double quotes, which
+ * bash rewrites before PowerShell runs it (`$_` became `/usr/bin/bash`);
+ * native `/switch` arguments turned into paths; long scripts broken in a
+ * heredoc. Windows-only tasks (services, scheduled tasks, the registry) still
+ * need PowerShell, so it says how to run it rather than forbidding it.
+ */
+export const windowsNote = `
+Note: terminal commands run in Git Bash on Windows, not cmd.exe or PowerShell.
+- Use POSIX syntax — \`ls\`, \`mv\`, \`rm\`, \`cp\`, \`grep\` — never \`dir\`, \`move\`, \`del\`, \`copy\` or \`findstr\`. Write paths with forward slashes: bash treats \`\\\` as an escape, so \`C:\\Users\\me\` becomes \`C:Usersme\`.
+- When a Windows-only task needs PowerShell, write the script to a \`.ps1\` file and run \`powershell.exe -NoProfile -ExecutionPolicy Bypass -File script.ps1\`. A short command with no quotes inside it can go in single quotes: \`powershell.exe -NoProfile -Command 'Get-Process node'\`. Never put PowerShell in bash double quotes: bash replaces \`$_\`, \`$env:NAME\` and backticks before PowerShell sees them.
+- Git Bash turns an argument that starts with \`/\` into a Windows path, so native switches such as \`/nologo\` break. Run such a command as \`MSYS2_ARG_CONV_EXCL='*' tool /switch\`, or from a \`.cmd\` or \`.ps1\` file.
+- Write a script longer than a few lines (Python, SQL, PowerShell) to a file and run the file, not through a heredoc or a \`-c\` one-liner.
 `.trim()
 
 /**
