@@ -1,4 +1,3 @@
-import { FREEBUFF_BOUNTIES_ENABLED } from '../constants/freebuff-bounties'
 import { SHARED_SETTINGS_PAGES } from '../constants/settings-pages'
 
 type Surface = 'desktop' | 'web'
@@ -147,16 +146,6 @@ const topics: Record<PageLabel, Topic[]> = {
       surface: 'web',
     },
     { label: 'Prepaid credits', keywords: 'developer api credit balance' },
-  ],
-  Earn: [
-    {
-      label: 'Referrals',
-      keywords: 'invite friends referral link rewards leaderboard',
-    },
-    ...(FREEBUFF_BOUNTIES_ENABLED
-      ? [{ label: 'Bounties', keywords: 'submissions tasks rewards hours freebucks' }]
-      : []),
-    { label: 'Offers', keywords: 'earn rewards hours freebucks' },
   ],
   Integrations: [
     {

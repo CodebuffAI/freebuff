@@ -5,7 +5,6 @@ export const SHARED_SETTINGS_PAGES = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'usage', label: 'Usage' },
   { id: 'billing', label: 'Billing' },
-  { id: 'earn', label: 'Earn' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'providers', label: 'Model Providers' },
   { id: 'api', label: 'Developer API' },

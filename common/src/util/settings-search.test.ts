@@ -16,7 +16,6 @@ test('finds controls on unopened pages using their names and everyday terms', ()
     ['buy freebucks', 'billing', 'Buy hours'],
     ['unarchive', 'archived', 'Archived chats'],
     ['claude.md', 'general', 'Include AGENTS.md'],
-    ['invite friends', 'earn', 'Referrals'],
   ]) {
     const result = search(query!)[0]
     expect(result?.page.id).toBe(page)

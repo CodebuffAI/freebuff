@@ -197,6 +197,16 @@ export const FREEBUFF_BASE3_FAST_WORKER_AGENT_ID =
 export const FREEBUFF_PROJECTS_SUBAGENT_ID = 'freebuff-projects-subagent'
 
 /**
+ * The auditor the Cloud root of an account allowed Ultra may spawn: on a turn
+ * at Ultra effort, one at a time, up to three times, or whenever the user asks
+ * for an audit (web/src/server/desktop-cloud/ultra.ts). It runs its root's
+ * model with the root's prompt and history, may read and run but not edit,
+ * and reports the four-dimension audit back to the root, which makes the
+ * fixes.
+ */
+export const FREEBUFF_AUDITOR_AGENT_ID = 'freebuff-auditor'
+
+/**
  * Most Projects subagents one root run may have running at once, nested ones
  * included (Owen, 2026-10-10: "a cap of like 10-15, not actually unlimited"; then "even for admin we should cap at like 20").
  * The agent runtime refuses a spawn past it (spawn-agents.ts); every
@@ -1066,6 +1076,8 @@ export const FREE_MODE_AGENT_MODELS: Record<string, Set<string>> = {
   // root's set. This entry only lets it bill as the session it belongs to;
   // who may run it at all is the completions route's Projects check.
   [FREEBUFF_PROJECTS_SUBAGENT_ID]: FREEBUFF_DESKTOP_MODELS,
+  // The auditor runs its root's model too, as the session it belongs to.
+  [FREEBUFF_AUDITOR_AGENT_ID]: FREEBUFF_DESKTOP_MODELS,
 
   // File exploration agents. file-picker and file-lister run GPT-6 Luna since
   // 2026-10-05; their Gemini models stay for released clients, which ship

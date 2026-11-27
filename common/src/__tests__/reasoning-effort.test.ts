@@ -243,12 +243,12 @@ describe('per-model effort ladders', () => {
   })
 })
 
-test('a rung is named by its ladder: DeepSeek reads Instant, Medium, High, Max, and Instant never thinks', () => {
+test('a rung is named by its ladder: DeepSeek reads Instant, Balanced, High, Max, and Instant never thinks', () => {
   const name = (ladder: readonly ReasoningEffort[]) =>
     ladder.map((effort) => reasoningEffortLabel(effort, ladder))
-  expect(name(['minimal', 'low', 'high', 'max'])).toEqual(['Instant', 'Medium', 'High', 'Max'])
-  expect(name(['minimal', 'low', 'high'])).toEqual(['Instant', 'Medium', 'High'])
+  expect(name(['minimal', 'low', 'high', 'max'])).toEqual(['Instant', 'Balanced', 'High', 'Max'])
+  expect(name(['minimal', 'low', 'high'])).toEqual(['Instant', 'Balanced', 'High'])
   // Elsewhere each rung is itself: an OpenAI `minimal` still thinks.
-  expect(name(EFFORTS_THROUGH_XHIGH)).toEqual(['Minimal', 'Low', 'Medium', 'High', 'Extra high'])
+  expect(name(EFFORTS_THROUGH_XHIGH)).toEqual(['Minimal', 'Low', 'Balanced', 'High', 'Extra high'])
   expect(name(['low', 'high'])).toEqual(['Low', 'High'])
 })

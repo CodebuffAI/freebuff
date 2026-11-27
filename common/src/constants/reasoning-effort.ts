@@ -37,12 +37,13 @@ export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return REASONING_EFFORTS.includes(value as ReasoningEffort)
 }
 
-/** Each rung's own name, on every surface. Name a rung through
+/** Each rung's own name, on every surface. The middle rung reads Balanced,
+ *  never Medium (product, 2026-11-26, Victor). Name a rung through
  *  `reasoningEffortLabel`, which knows the one ladder that renames them. */
 export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
   minimal: 'Minimal',
   low: 'Low',
-  medium: 'Medium',
+  medium: 'Balanced',
   high: 'High',
   xhigh: 'Extra high',
   max: 'Max',
@@ -54,7 +55,7 @@ export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
  * that does not think (product, 2026-11-24, Victor): DeepSeek V4's ladder is
  * `minimal`, `low`, `high`, `max`, where `minimal` turns thinking off (the
  * server sends `reasoning.enabled: false`) and `low` still thinks, so it
- * reads Instant, Medium, High, Max. That is the one ladder with `minimal` and
+ * reads Instant, Balanced, High, Max. That is the one ladder with `minimal` and
  * no `medium`; every other names each rung as itself (an OpenAI `minimal`
  * still thinks a little, so it stays Minimal).
  */
@@ -64,7 +65,7 @@ export function reasoningEffortLabel(
 ): string {
   if (ladder.includes('minimal') && !ladder.includes('medium')) {
     if (effort === 'minimal') return 'Instant'
-    if (effort === 'low') return 'Medium'
+    if (effort === 'low') return 'Balanced'
   }
   return REASONING_EFFORT_LABELS[effort]
 }

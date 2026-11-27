@@ -22,6 +22,13 @@ export const XP_ONE_TIME = {
 export type XpOneTimeKey = keyof typeof XP_ONE_TIME
 
 /**
+ * When every new GitHub connection began writing its own award
+ * (`awardGitHubXp`, #12041). A legacy `github_connection` made before it
+ * earns on read instead, so it also holds its GitHub account's award.
+ */
+export const GITHUB_XP_WRITER_LIVE = '2026-11-26T02:00:00Z'
+
+/**
  * The XP one day of a streak earns, for the `streakDay`th day (1-based):
  * 5 a day in week 1, 5 more each week after, 25 a day from week 5 on.
  * A broken streak starts again at day 1.

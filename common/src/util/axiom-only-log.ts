@@ -930,6 +930,12 @@ const ADS_FETCH_COMPLETED_FIELDS = {
   new_user_ramp_keep_bps: 'number',
   new_user_signup_day: 'string',
   /**
+   * The zero-ads holdout (`zero_ads_holdout_2026_12`,
+   * `ad-serving/zero-ads-holdout.ts`): `control` or `no_ads`. Present only
+   * for an assigned account while the experiment is running.
+   */
+  zero_ads_arm: 'string',
+  /**
    * Why a response carried zero ads (COD-760; COD-453 introduced it for
    * `break_capped` alone). Set on EVERY response with zero ads, on both
    * rails, naming the PAID stage that decided it -- never the house floor.
@@ -939,7 +945,8 @@ const ADS_FETCH_COMPLETED_FIELDS = {
    *   drives `exclusion_reasons: 'break_capped:1'`), `setup_invitation`,
    *   `invitation_recheck`, `partner_slot_empty`, `billboard_slot_empty`,
    *   `no_visible_slot`, `global_load`, `no_placements`, `new_user_ramp`
-   *   (COD-904: the new-user ad ramp withheld this request);
+   *   (COD-904: the new-user ad ramp withheld this request),
+   *   `zero_ads_holdout` (COD-1680: the zero-ads holdout withheld it);
    * - Gravity, when it was the last paid stage asked:
    *   `gravity_passed_to_us` (a 205), `gravity_kept_slot_empty` (a 204),
    *   `gravity_timeout`, `gravity_error`, `gravity_no_api_key`,
