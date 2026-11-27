@@ -31,6 +31,10 @@ import {
   SUGGEST_PROMPTS_BEFORE_ANSWER_MESSAGE,
   SUGGEST_PROMPTS_BEFORE_ANSWER_TAG,
 } from '../util/suggest-prompts-before-answer'
+import {
+  EMPTY_FINAL_REPLY_MESSAGE,
+  EMPTY_FINAL_REPLY_TAG,
+} from '../util/empty-final-reply-nudge'
 import { createToolCallChunk } from './test-utils'
 
 import type { AgentTemplate } from '../templates/types'
@@ -679,6 +683,87 @@ describe('runAgentStep - set_output tool', () => {
           m.content[0].text === 'Continuing with the analysis...',
       ),
     ).toBe(true)
+  })
+
+  describe('a turn ending with no text for the user', () => {
+    const plainAgent = (): AgentTemplate =>
+      createAgent('test-empty-reply-agent', { toolNames: ['read_files', 'end_turn'] })
+
+    /** One step whose whole reply is `text`, with no tool call. */
+    const step = (
+      text: string,
+      messageHistory: Message[] = [],
+      parentId?: string,
+    ) => {
+      runAgentStepBaseParams.promptAiSdkStream = async function* () {
+        if (text) yield { type: 'text' as const, text }
+        return promptSuccess('mock-message-id')
+      }
+      const agent = plainAgent()
+      return runAgentStep({
+        ...runAgentStepBaseParams,
+        agentType: agent.id,
+        localAgentTemplates: { [agent.id]: agent },
+        agentTemplate: agent,
+        agentState: {
+          ...getInitialSessionState(mockFileContext).mainAgentState,
+          messageHistory,
+          ...(parentId ? { parentId } : {}),
+        },
+        prompt: 'What does the login check?',
+      })
+    }
+
+    const notes = (history: Message[]) =>
+      history.filter((m) => m.tags?.includes(EMPTY_FINAL_REPLY_TAG))
+
+    it('continues an empty reply once, with the note last', async () => {
+      const result = await step('')
+      expect(result.shouldEndTurn).toBe(false)
+      const [note] = notes(result.agentState.messageHistory)
+      expect(note?.role).toBe('user')
+      expect(JSON.stringify(note?.content)).toContain(
+        JSON.stringify(EMPTY_FINAL_REPLY_MESSAGE).slice(1, -1),
+      )
+      expect(result.agentState.messageHistory.at(-1)).toBe(note)
+    })
+
+    it('continues a reply that is only whitespace', async () => {
+      const result = await step('\n')
+      expect(result.shouldEndTurn).toBe(false)
+      expect(notes(result.agentState.messageHistory)).toHaveLength(1)
+    })
+
+    it('ends the turn on a second empty reply for the same prompt', async () => {
+      const result = await step('', [
+        userMessage({ content: 'What does the login check?', tags: ['USER_PROMPT'] }),
+        userMessage({ content: EMPTY_FINAL_REPLY_MESSAGE, tags: [EMPTY_FINAL_REPLY_TAG] }),
+      ])
+      expect(result.shouldEndTurn).toBe(true)
+      expect(notes(result.agentState.messageHistory)).toHaveLength(1)
+    })
+
+    it('nudges again after a new user prompt', async () => {
+      const result = await step('', [
+        userMessage({ content: 'First question', tags: ['USER_PROMPT'] }),
+        userMessage({ content: EMPTY_FINAL_REPLY_MESSAGE, tags: [EMPTY_FINAL_REPLY_TAG] }),
+        assistantMessage('The answer to the first question.'),
+        userMessage({ content: 'What does the login check?', tags: ['USER_PROMPT'] }),
+      ])
+      expect(result.shouldEndTurn).toBe(false)
+    })
+
+    it('ends the turn on a reply with text, with no note', async () => {
+      const result = await step('It checks the token expiry.')
+      expect(result.shouldEndTurn).toBe(true)
+      expect(notes(result.agentState.messageHistory)).toHaveLength(0)
+    })
+
+    it('leaves a subagent alone', async () => {
+      const result = await step('', [], 'parent-run')
+      expect(result.shouldEndTurn).toBe(true)
+      expect(notes(result.agentState.messageHistory)).toHaveLength(0)
+    })
   })
 
   it('continues the turn when the LLM response is only think-tag scaffolding', async () => {

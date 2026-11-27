@@ -90,6 +90,12 @@ import {
   SUGGEST_PROMPTS_BEFORE_ANSWER_TAG,
 } from './util/suggest-prompts-before-answer'
 import {
+  EMPTY_FINAL_REPLY_EVENT,
+  EMPTY_FINAL_REPLY_MESSAGE,
+  EMPTY_FINAL_REPLY_TAG,
+  endsOnEmptyFinalReply,
+} from './util/empty-final-reply-nudge'
+import {
   decideGravityReportNudge,
   endsOnGravityReport,
   GRAVITY_REPORT_NUDGE_TAG,
@@ -1017,6 +1023,34 @@ export const runAgentStep = async (
       userMessage({
         content: withSystemTags(SUGGEST_PROMPTS_BEFORE_ANSWER_MESSAGE),
         tags: [SUGGEST_PROMPTS_BEFORE_ANSWER_TAG],
+      }),
+    )
+    shouldEndTurn = false
+  }
+
+  // A root turn about to end with nothing for the user to read gets one more
+  // step to give its answer; see util/empty-final-reply-nudge.ts. Not on a
+  // cancelled step: a Stop is the user ending the turn.
+  if (
+    shouldEndTurn &&
+    !hasTaskCompleted &&
+    !agentState.parentId &&
+    !params.signal.aborted &&
+    endsOnEmptyFinalReply(toolCalls, fullResponse, agentState.messageHistory)
+  ) {
+    logger.info(
+      {
+        axiomEvent: EMPTY_FINAL_REPLY_EVENT,
+        model: agentTemplate.model,
+        agentId: agentTemplate.id,
+        runId: agentState.runId,
+      },
+      'Turn ending with no text for the user; asking for the answer',
+    )
+    agentState.messageHistory.push(
+      userMessage({
+        content: withSystemTags(EMPTY_FINAL_REPLY_MESSAGE),
+        tags: [EMPTY_FINAL_REPLY_TAG],
       }),
     )
     shouldEndTurn = false
