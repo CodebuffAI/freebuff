@@ -185,3 +185,17 @@ test('first-project setup choices and local project outcomes parse; unknown choi
   expect(productFunnelEventSchema.safeParse({ ...desktop, funnel_stage: 'project', funnel_state: 'cancelled', project_kind: 'local', project_choice: 'open_folder' }).success).toBe(true)
   expect(productFunnelEventSchema.safeParse({ ...desktop, funnel_stage: 'project_setup', funnel_state: 'selected', project_choice: '/Users/me/app' }).success).toBe(false)
 })
+
+test('feature promo events carry bounded promo fields; free text and out-of-range values are dropped', () => {
+  const web = { ...payload, product: 'web' as const, entry_route: '/' as const, surface: 'web' as const, observer: 'ui' as const, funnel_stage: 'feature_promo' as const }
+  expect(productFunnelEventSchema.safeParse({
+    ...web, funnel_state: 'shown', promo_id: 'artifacts-doc', variant_id: 'b', gap_days: 3, open_index: 1, pick_prob: 0.25, picker: 'uniform',
+  }).success).toBe(true)
+  expect(productFunnelEventSchema.safeParse({ ...web, funnel_state: 'closed', promo_id: 'rewards', close_reason: 'dismissed' }).success).toBe(true)
+  for (const picker of ['model', 'launch'])
+    expect(productFunnelEventSchema.safeParse({ ...web, funnel_state: 'shown', picker }).success).toBe(true)
+  for (const extra of [
+    { promo_id: '/?view=sites' }, { variant_id: 'Try the new thing!' }, { gap_days: 2.5 }, { gap_days: 61 },
+    { open_index: -1 }, { pick_prob: 1.5 }, { picker: 'random' }, { picker: 'bandit' }, { close_reason: 'raw text' },
+  ]) expect(productFunnelEventSchema.safeParse({ ...web, funnel_state: 'shown', ...extra }).success).toBe(false)
+})
