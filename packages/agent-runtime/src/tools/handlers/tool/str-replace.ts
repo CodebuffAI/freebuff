@@ -3,6 +3,12 @@ import { processStrReplace } from '../../../process-str-replace'
 import { isPathConfined } from '../../../util/path-confinement'
 import { PATH_OUTSIDE_PROJECT_MESSAGE } from '../../../util/path-confinement'
 import { FILE_READ_STATUS } from '@codebuff/common/constants/paths'
+import type { AgentTemplate } from '@codebuff/common/types/agent-template'
+import { jsonToolResult } from '@codebuff/common/util/messages'
+import {
+  isDestructiveToolBlocked,
+  DESTRUCTIVE_TOOLS_DISABLED_MESSAGE,
+} from '../../../util/destructive-tool-gate'
 
 import type { CodebuffToolHandlerFunction } from '../handler-function-type'
 import type { FileProcessingState } from './write-file'
@@ -19,6 +25,7 @@ export const handleStrReplace = (async (
   params: {
     previousToolCallFinished: Promise<void>
     toolCall: CodebuffToolCall<'str_replace'>
+    agentTemplate: AgentTemplate
 
     fileProcessingState: FileProcessingState
     logger: Logger
@@ -34,6 +41,7 @@ export const handleStrReplace = (async (
   const {
     previousToolCallFinished,
     toolCall,
+    agentTemplate,
 
     fileProcessingState,
     logger,
@@ -43,6 +51,16 @@ export const handleStrReplace = (async (
     writeToClient,
   } = params
   const { path, replacements } = toolCall.input
+
+  if (isDestructiveToolBlocked(agentTemplate, 'str_replace')) {
+    await previousToolCallFinished
+    return {
+      output: jsonToolResult({
+        file: path,
+        errorMessage: DESTRUCTIVE_TOOLS_DISABLED_MESSAGE,
+      }),
+    }
+  }
 
   // Default path confinement: refuse edits outside the project root.
   if (!isPathConfined(path)) {

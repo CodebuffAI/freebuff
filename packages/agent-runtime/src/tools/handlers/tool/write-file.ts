@@ -5,6 +5,12 @@ import { processFileBlock } from '../../../process-file-block'
 import { isPathConfined } from '../../../util/path-confinement'
 import { FILE_READ_STATUS } from '@codebuff/common/constants/paths'
 import { PATH_OUTSIDE_PROJECT_MESSAGE } from '../../../util/path-confinement'
+import type { AgentTemplate } from '@codebuff/common/types/agent-template'
+import { jsonToolResult } from '@codebuff/common/util/messages'
+import {
+  isDestructiveToolBlocked,
+  DESTRUCTIVE_TOOLS_DISABLED_MESSAGE,
+} from '../../../util/destructive-tool-gate'
 
 import type { CodebuffToolHandlerFunction } from '../handler-function-type'
 import type {
@@ -68,6 +74,7 @@ export const handleWriteFile = (async (
     toolCall: CodebuffToolCall<'write_file'>
 
     agentState: AgentState
+    agentTemplate: AgentTemplate
     clientSessionId: string
     fileProcessingState: FileProcessingState
     fingerprintId: string
@@ -87,6 +94,7 @@ export const handleWriteFile = (async (
     previousToolCallFinished,
     toolCall,
 
+    agentTemplate,
     fileProcessingState,
     logger,
 
@@ -95,6 +103,16 @@ export const handleWriteFile = (async (
     writeToClient,
   } = params
   const { path, content } = toolCall.input
+
+  if (isDestructiveToolBlocked(agentTemplate, 'write_file')) {
+    await previousToolCallFinished
+    return {
+      output: jsonToolResult({
+        file: path,
+        errorMessage: DESTRUCTIVE_TOOLS_DISABLED_MESSAGE,
+      }),
+    }
+  }
 
   // Default path confinement: refuse writes outside the project root.
   if (!isPathConfined(path)) {
