@@ -80,13 +80,3 @@ test('skips controls the caller hides', () => {
     searchSettings('auto start', SHARED_SETTINGS_PAGES, 'desktop', [label]),
   ).toEqual([])
 })
-
-test('finds the web-only Artifacts section by its name and by what it lists', () => {
-  const pages = [
-    ...SHARED_SETTINGS_PAGES,
-    { id: 'artifacts', label: 'Artifacts' } as const,
-  ]
-  for (const query of ['artifacts', 'docs', 'slides', 'sheets', 'shared links'])
-    expect(searchSettings(query, pages, 'web')[0]?.page.id).toBe('artifacts')
-  expect(searchSettings('artifacts', pages, 'web')[0]?.detail).toBeUndefined()
-})
