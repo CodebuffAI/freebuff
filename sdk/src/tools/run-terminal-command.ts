@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'child_process'
 import { closeSync, mkdtempSync, openSync, statSync, writeFileSync } from 'fs'
 import { Readable as NodeReadable } from 'stream'
+import { StringDecoder } from 'string_decoder'
 import * as os from 'os'
 import * as path from 'path'
 
@@ -142,6 +143,21 @@ export class BoundedOutputBuffer {
     }
     return this.head + TRUNCATION_MARKER + this.tail
   }
+}
+
+// Keep broker streams in their original encoding for any other consumers.
+function collectDecodedOutput(
+  stream: Readable,
+  onText: (text: string) => void,
+): void {
+  const decoder = new StringDecoder('utf8')
+  const append = (text: string) => {
+    if (text) onText(text)
+  }
+  stream.on('data', (data: Buffer | string) => {
+    append(typeof data === 'string' ? data : decoder.write(data))
+  })
+  stream.once('end', () => append(decoder.end()))
 }
 
 function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals) {
@@ -584,13 +600,13 @@ export function runTerminalCommand({
     }
 
     // Collect stdout
-    childProcess.stdout.on('data', (data: Buffer) => {
-      stdout.append(data.toString())
+    collectDecodedOutput(childProcess.stdout, (data) => {
+      stdout.append(data)
     })
 
     // Collect stderr
-    childProcess.stderr.on('data', (data: Buffer) => {
-      stderr.append(data.toString())
+    collectDecodedOutput(childProcess.stderr, (data) => {
+      stderr.append(data)
     })
 
     // Handle process completion
@@ -730,8 +746,8 @@ async function startBackgroundCommand(
       [child.stderr, stderrPath],
     ] as const) {
       const output = new BoundedOutputBuffer(COMMAND_OUTPUT_LIMIT)
-      stream.on('data', (data: Buffer) => {
-        output.append(data.toString())
+      collectDecodedOutput(stream, (data) => {
+        output.append(data)
         try {
           writeFileSync(file, output.format())
         } catch {
