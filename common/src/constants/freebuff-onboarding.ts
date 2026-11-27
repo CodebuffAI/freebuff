@@ -127,14 +127,16 @@ export const FREEBUFF_ONBOARDING_QUESTIONS: readonly OnboardingQuestion[] = [
       { id: 'creative', label: 'Creative' },
       // `founder` was labelled "Founder" before 2026-11-21; same people.
       { id: 'founder', label: 'Founder/CEO' },
+      // Added 2026-11-26 with the role's starters (freebuff-starters.ts).
+      { id: 'web_designer', label: 'Web designer' },
     ],
     multi: false,
     shuffleOptions: true,
     retiredOptions: [
       {
         // No write-in since 2026-11-21: Operations and Creative were added to
-        // cover what it mostly held, and the six options are meant to be
-        // exhaustive. Answers from before stay counted here.
+        // cover what it mostly held, and the options (seven since Web designer,
+        // 2026-11-26) are meant to be exhaustive. Answers from before stay counted here.
         id: OTHER_OPTION_ID,
         label: 'Something else (before 2026-11-21)',
         retiredOn: '2026-11-21',
