@@ -7,6 +7,8 @@ export const CLOUD_SKILL_MAX_RESOURCE_CHARS = 100000
 /** Per account: the library is one row of `freebuff_account_skills`. */
 export const ACCOUNT_SKILLS_MAX_COUNT = 50
 export const ACCOUNT_SKILLS_MAX_BYTES = 2_500_000
+/** A folder is a label on a skill, shown as a group in Settings → Skills. */
+export const SKILL_FOLDER_MAX_CHARS = 40
 
 /**
  * What a skill may be called. Narrow on purpose: a name holds no user prose, so
@@ -29,6 +31,15 @@ export const cloudSkillSchema = z
       .min(1)
       .max(CLOUD_SKILL_MAX_INSTRUCTIONS_CHARS),
     enabled: z.boolean().optional(),
+    // Absent means no folder. No control characters: `jsonb` refuses some, and
+    // the name is drawn as a heading.
+    folder: z
+      .string()
+      .trim()
+      .min(1)
+      .max(SKILL_FOLDER_MAX_CHARS)
+      .regex(/^[^\x00-\x1f\x7f]+$/)
+      .optional(),
     files: z
       .array(
         z
