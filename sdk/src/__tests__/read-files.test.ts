@@ -1,3 +1,5 @@
+import path from 'node:path'
+
 import { FILE_READ_STATUS } from '@codebuff/common/old-constants'
 import { countTokens } from '@codebuff/agent-runtime/util/token-counter'
 import { MAX_READ_FILES_TOKENS } from '@codebuff/common/util/file-read-limits'
@@ -783,6 +785,29 @@ describe('getFiles', () => {
       { length: 3000 },
       (_, i) => `line ${i + 1}`,
     ).join('\n')
+
+    test('reads files with inherited names from a partial window map', async () => {
+      const cwd = path.resolve('/project')
+      const mockFs = createMockFs({
+        files: {
+          [path.join(cwd, 'constructor')]: { content: 'constructor content' },
+          [path.join(cwd, 'ordinary.txt')]: { content: 'alpha\nbeta\ngamma' },
+        },
+      })
+
+      const result = await getFiles({
+        filePaths: ['constructor', 'ordinary.txt'],
+        cwd,
+        fs: mockFs,
+        fileWindows: { 'ordinary.txt': [{ offset: 2, limit: 1 }] },
+      })
+
+      expect(result).toHaveProperty('constructor', 'constructor content')
+      expect(result['ordinary.txt']).toContain('beta')
+      expect(result['ordinary.txt']).toContain('showing lines 2-2 of 3')
+      expect(result['ordinary.txt']).not.toContain('alpha')
+      expect(result['ordinary.txt']).not.toContain('gamma')
+    })
 
     test('reads the whole file when no fileWindows map is given', async () => {
       const mockFs = createMockFs({

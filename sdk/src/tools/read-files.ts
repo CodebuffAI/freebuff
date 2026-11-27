@@ -13,8 +13,8 @@ import {
   isSensitiveEnvFilePath,
 } from '@codebuff/common/util/env-file-path'
 import {
+  applyFileReadWindows,
   createFileReadLimiter,
-  windowFileRead,
 } from '@codebuff/common/util/file-read-limits'
 import {
   PROJECT_UNDERSTANDING_NON_TEXT_MESSAGE,
@@ -171,11 +171,7 @@ export async function getFiles(params: {
       const windows = fileWindows?.[filePath]
       const windowedContent =
         limitContent && fileWindows !== undefined
-          ? (windows?.length ? windows : [{}])
-              .map((window: FileReadWindow) =>
-                windowFileRead(content, window.offset, window.limit),
-              )
-              .join('\n\n')
+          ? applyFileReadWindows(content, windows)
           : content
       const returnedContent = limiter?.limit(windowedContent) ?? windowedContent
       result[relativePath] = isExampleFile
