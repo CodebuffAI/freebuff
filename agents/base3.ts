@@ -117,6 +117,16 @@ const TURN_ENDING_NOTE_MODELS = [
   FREEBUFF_SOLAR_MINI_4_MODEL_ID,
 ]
 
+/** The root's routing. A subagent that inherits its prompt sends the same, so it reaches the
+ *  endpoint holding the root's prompt cache, under the same data policy. */
+export function base3ProviderOptions(
+  model: string,
+): NonNullable<SecretAgentDefinition['providerOptions']> {
+  return model.startsWith('anthropic/')
+    ? { only: ['amazon-bedrock'], data_collection: 'deny' }
+    : { data_collection: 'deny' }
+}
+
 export function createBase3(
   model: SecretAgentDefinition['model'] = OPUS_MODEL,
   options: {
@@ -160,9 +170,7 @@ export function createBase3(
   return {
     publisher,
     model,
-    providerOptions: model.startsWith('anthropic/')
-      ? { only: ['amazon-bedrock'], data_collection: 'deny' }
-      : { data_collection: 'deny' },
+    providerOptions: base3ProviderOptions(model),
     displayName: 'Buffy',
     spawnerPrompt:
       'Single-loop coding agent that explores, edits, and verifies directly with its own tools',
