@@ -34,6 +34,10 @@ export const productFunnelStageSchema = z.enum([
   'template',
   /** a finished turn's review: shown, selected (one of its buttons), opened (its verdict, in the Overview) */
   'turn_review',
+  /** a new account's starter pills under the new chat's composer (freebuff-starters.ts): shown
+   *  (once per landing and set, `starter_ids`), clicked (`starter_id`; `templates` for the
+   *  Start from a template pill). The run a click sends carries the id: server rows are `starter_*`. */
+  'starter',
   'model_picker',
   'model_selection',
   'admission',
@@ -462,6 +466,14 @@ export const productFunnelPropertiesSchema = z
     originApp: z.enum(['desktop', 'web']).optional(),
     executionTarget: z.enum(['device', 'cloud']).optional(),
     welcome_variant: welcomeVariantSchema.optional(),
+    /** `starter:clicked`: which pill (a starter id, or `templates`). */
+    starter_id: z.string().regex(/^[a-z0-9-]{1,40}$/).optional(),
+    /** `starter:shown`: the pills shown, in order, comma separated. */
+    starter_ids: z.string().max(400).regex(/^[a-z0-9,-]*$/).optional(),
+    /** `starter` events: the onboarding role that chose the pills. */
+    starter_role: z.string().regex(/^[a-z_]{1,40}$/).optional(),
+    /** `starter` events: the workspace the pills are in. */
+    workspace_mode: z.enum(['code', 'chat']).optional(),
     /** `welcome` events from the click-through flow: the step on screen. */
     welcome_step: welcomeStepSchema.optional(),
     /** `checklist` events: the install's arm of the Get started checklist test. */

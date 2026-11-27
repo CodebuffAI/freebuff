@@ -49,7 +49,7 @@ describe('the question set itself', () => {
     ])
   })
 
-  it('offers the six roles and no write-in', () => {
+  it('offers the seven roles and no write-in', () => {
     const role = FREEBUFF_ONBOARDING_QUESTIONS.find((q) => q.id === 'role')!
     expect(role.options.map((o) => [o.id, o.label])).toEqual([
       ['professional_dev', 'Developer'],
@@ -58,6 +58,7 @@ describe('the question set itself', () => {
       ['operations', 'Operations'],
       ['creative', 'Creative'],
       ['founder', 'Founder/CEO'],
+      ['web_designer', 'Web designer'],
     ])
     expect(role.retiredOptions?.map((o) => o.id)).toEqual([OTHER_OPTION_ID])
     const result = validateOnboardingSubmission({

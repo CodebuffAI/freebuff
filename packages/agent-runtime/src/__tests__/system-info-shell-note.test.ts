@@ -27,19 +27,30 @@ describe('the system info shell note', () => {
     expect(prompt).toContain('Remove-Item -Recurse -Force')
     expect(prompt).toContain('$null')
     expect(prompt).toContain('Shell: powershell')
-    expect(prompt).not.toContain('terminal commands run in bash')
+    expect(prompt).not.toContain('terminal commands run in Git Bash')
   })
 
   test('an ordinary Windows run keeps the Git Bash note', () => {
     const prompt = promptFor({ platform: 'win32', shell: 'bash' })
-    expect(prompt).toContain('terminal commands run in bash on Windows')
+    expect(prompt).toContain('terminal commands run in Git Bash on Windows')
     expect(prompt).not.toContain('PowerShell 5.1')
+  })
+
+  // The trace report's C5 failures on Windows (docs/daily-trace-report.md):
+  // PowerShell in bash double quotes, `/switch` arguments made into paths,
+  // long scripts in heredocs.
+  test('the Git Bash note says how to run PowerShell, switches and long scripts', () => {
+    const prompt = promptFor({ platform: 'win32', shell: 'bash' })
+    expect(prompt).toContain('-File script.ps1')
+    expect(prompt).toContain('Never put PowerShell in bash double quotes')
+    expect(prompt).toContain("MSYS2_ARG_CONV_EXCL='*'")
+    expect(prompt).toContain('not through a heredoc')
   })
 
   test('macOS and Linux get neither note', () => {
     for (const platform of ['darwin', 'linux']) {
       const prompt = promptFor({ platform, shell: 'bash' })
-      expect(prompt).not.toContain('terminal commands run in bash on Windows')
+      expect(prompt).not.toContain('terminal commands run in Git Bash on Windows')
       expect(prompt).not.toContain('PowerShell 5.1')
     }
   })

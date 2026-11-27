@@ -113,3 +113,27 @@ Unless the user asked for one, do not create or rewrite any of these:
 When the code needs a dependency the template does not have, add it with the package manager's own command (for example \`bun add <name>\`) instead of editing package.json by hand. When the project cannot run at all without a configuration file that nothing provides, write the smallest one that works.
 
 End with what you built and the two or three most obvious next additions as suggestions, not as work done in this turn.`
+
+/**
+ * Desktop chats whose tools run on the user's own computer
+ * (web/src/server/desktop-cloud/agent.ts, a connected device), appended after
+ * WORKSPACE_SCOPE_GUIDANCE, outside base3's core.
+ *
+ * Why it exists: the daily trace report's A4 "risky or unrequested actions"
+ * (docs/daily-trace-report.md) was 15% of sampled sessions on 2026-11-25, and
+ * half of that day's examples were the agent driving the person's real desktop
+ * while they used it: SendKeys and Alt+Tab landing in other windows and a
+ * screen reader restarted again and again, XTest clicks raising a system
+ * permission dialog, SetCursorPos moving their pointer ("please stop moving my
+ * mouse"). Others ran a data migration against the configured database, and a
+ * Chrome profile left inside the project broke its dev server. "Respect
+ * existing files and processes" was already in the prompt; like the scope
+ * section, this names the actions instead.
+ */
+export const USER_COMPUTER_GUIDANCE = `## The user's own computer
+
+Your tools act on the user's real computer, which they may be using right now.
+
+- Do not drive its real mouse, keyboard or screen: no synthetic input (SendKeys, SendInput, SetCursorPos, xdotool, XTest, AppleScript keystrokes or clicks), no switching windows, and no closing or restarting apps the user has open, unless the user asked for exactly that. To check a desktop app, run it headless, offscreen or in a virtual display, read its output and logs, or tell the user what to try.
+- Do not run migrations, imports or data changes against a database the project is configured to use, and do not send email or messages from the user's accounts, unless the user asked for that. Write such a step as a script and tell the user how to run it.
+- Keep browser profiles, screenshots and other temporary files in the system temp folder, not inside the project, and remove them when you are done.`

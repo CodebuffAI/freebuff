@@ -4,6 +4,7 @@ import {
 } from '@codebuff/common/constants/free-agents'
 import { MAX_LIVE_SUBAGENTS_PER_ROOT } from '@codebuff/common/tools/params/tool/spawn-agents'
 
+import { base3ProviderOptions } from './base3'
 import { publisher } from './constants'
 
 import type { SecretAgentDefinition } from './types/secret-agent-definition'
@@ -43,6 +44,7 @@ export function createProjectsSubagent(options: {
     id: FREEBUFF_PROJECTS_SUBAGENT_ID,
     publisher,
     model: options.model,
+    providerOptions: base3ProviderOptions(options.model),
     displayName: 'Buffy Subagent',
     spawnerPrompt:
       `A full coding agent that takes one piece of the current task and works it to the end in parallel with any siblings: it reads, edits, runs commands and tests, and can spawn subagents of its own. It sees this whole conversation and inherits your system prompt, so brief it rather than re-explaining. At most ${FREEBUFF_PROJECTS_MAX_LIVE_SUBAGENTS} may run at once in a session, counting the ones they spawn of themselves; the helpers each one spawns count against its own limit of ${MAX_LIVE_SUBAGENTS_PER_ROOT}, not yours. Its last message is its report.`,

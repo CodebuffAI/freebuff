@@ -278,9 +278,10 @@ export const freebuffModelCatalogSchema = z.object({
   powerfulFixed: z.boolean().optional(),
   /** Who has Ultra (web/src/server/free-session/ultra-effort.ts): the
    *  hosted workspace's reasoning slider has Ultra past the model's top
-   *  level, where the agent audits its own work with subagents. Absent: no
-   *  Ultra. */
-  ultraEffort: z.boolean().optional(),
+   *  level, where the agent audits its own work with subagents. `default`
+   *  (`ultra_effort_2026_12`'s `ultra_default` arm): the slider also starts
+   *  there until the user picks a level. Absent: no Ultra. */
+  ultraEffort: z.enum(['option', 'default']).optional(),
   /** False on a phone's read while `FREEBUFF_APP_MODEL_PICKER`
    *  (constants/freebuff-model-picker.ts) is off: the iOS and Android apps
    *  draw no Freebuff model picker, whatever `hideModelPicker` or Advanced
