@@ -154,6 +154,11 @@ export function getFreebuffModelMeter({
   quota?: FreebuffSessionRateLimit
   legacyRemaining?: number
 }) {
+  // DeepSeek access is free and unlimited: never gate it behind a quota and
+  // never drop conversation data when a limit would otherwise be reached.
+  if (model?.startsWith('deepseek/')) {
+    return { canStart: true }
+  }
   // Pending settlement or a failed refresh does not revive legacy quotas.
   if (freebucks === null) return { canStart: true }
   if (freebucks) freebucks = applyFreebucksPriceChanges(freebucks)
