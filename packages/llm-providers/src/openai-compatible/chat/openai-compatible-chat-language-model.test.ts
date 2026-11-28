@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'bun:test'
+import http from 'node:http'
+import { constants as zlibConstants, createGzip } from 'node:zlib'
+
 import { streamText } from 'ai'
+import { describe, expect, it } from 'bun:test'
 
 import { OpenAICompatibleChatLanguageModel } from './openai-compatible-chat-language-model'
 
@@ -37,7 +40,10 @@ function chunk(delta: object, extra: object = {}): string {
   })
 }
 
-async function streamParts(response: Response) {
+async function streamParts(
+  response: Response,
+  onPart?: (part: LanguageModelV2StreamPart) => void,
+) {
   // Bun's fetch type carries a `preconnect` member the mock doesn't need.
   const testFetch = (async () => response) as unknown as typeof fetch
   const model = new OpenAICompatibleChatLanguageModel('test-model', {
@@ -49,7 +55,7 @@ async function streamParts(response: Response) {
 
   const { stream } = await model.doStream({
     prompt: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
-    includeRawChunks: false,
+    includeRawChunks: onPart != null,
   })
 
   const parts: LanguageModelV2StreamPart[] = []
@@ -58,6 +64,7 @@ async function streamParts(response: Response) {
     const { done, value } = await reader.read()
     if (done) break
     parts.push(value)
+    onPart?.(value)
   }
   return parts
 }
@@ -71,6 +78,82 @@ const finishPartOf = (parts: LanguageModelV2StreamPart[]) => {
 }
 
 describe('OpenAICompatibleChatLanguageModel doStream', () => {
+  // #1656: Bun rejects an unfinished gzip trailer even after the complete SSE
+  // answer arrived. A transport error must not discard its finish/usage and
+  // force another model step. Loopback is needed to exercise real decompression.
+  it('keeps a completed response when only its gzip trailer is cut', async () => {
+    const compressors: ReturnType<typeof createGzip>[] = []
+    let cutResponse: () => void = () => {
+      throw new Error('response has not started')
+    }
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Content-Encoding': 'gzip',
+      })
+      const gzip = createGzip({ flush: zlibConstants.Z_SYNC_FLUSH })
+      compressors.push(gzip)
+      cutResponse = () => {
+        gzip.unpipe(res)
+        res.end()
+      }
+      gzip.pipe(res)
+      gzip.write(`data: ${chunk({ content: 'Done.' })}\n\n`)
+      if (req.url === '/complete') {
+        gzip.write(
+          `data: ${chunk(
+            {},
+            {
+              finish_reason: 'stop',
+            },
+          )}\n\n`,
+        )
+        gzip.write(
+          `data: ${JSON.stringify({
+            choices: [],
+            usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+          })}\n\ndata: [DONE]\n\n`,
+        )
+      }
+      gzip.flush()
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as { port: number }
+    try {
+      const parts = await streamParts(
+        await fetch(`http://127.0.0.1:${port}/complete`),
+        (part) => {
+          // Raw chunks are emitted in the same synchronous transform that
+          // records usage, after the earlier finish frame was parsed. Cut only
+          // once the consumer observes this frame, regardless of machine load.
+          if (
+            part.type === 'raw' &&
+            (part.rawValue as { usage?: unknown })?.usage != null
+          ) {
+            cutResponse()
+          }
+        },
+      )
+      expect(parts.filter((part) => part.type === 'text-delta')).toEqual([
+        { type: 'text-delta', id: 'txt-0', delta: 'Done.' },
+      ])
+      expect(finishPartOf(parts)).toMatchObject({
+        finishReason: 'stop',
+        usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+      })
+      // No completion status or usage: a cut body must still fail so the SDK
+      // can continue its partial answer through the existing capped recovery.
+      await expect(
+        streamParts(await fetch(`http://127.0.0.1:${port}/partial`), (part) => {
+          if (part.type === 'text-delta') cutResponse()
+        }),
+      ).rejects.toMatchObject({ code: 'ZlibError' })
+    } finally {
+      for (const gzip of compressors) gzip.destroy()
+      server.closeAllConnections()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
   it('a healthy stream finishes with a real reason and usage', async () => {
     const parts = await streamParts(
       sseResponse([

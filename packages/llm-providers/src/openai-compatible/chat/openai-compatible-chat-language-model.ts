@@ -450,7 +450,8 @@ export class OpenAICompatibleChatLanguageModel implements LanguageModelV2 {
     }
 
     return {
-      stream: response.pipeThrough(
+      stream: pipeCompletionStream(
+        response,
         new TransformStream<
           ParseResult<z.infer<typeof this.chunkSchema>>,
           LanguageModelV2StreamPart
@@ -792,11 +793,54 @@ export class OpenAICompatibleChatLanguageModel implements LanguageModelV2 {
             })
           },
         }),
+        () =>
+          finishReason !== 'unknown' &&
+          finishReason !== 'error' &&
+          [usage.promptTokens, usage.completionTokens, usage.totalTokens].some(
+            (tokens) => typeof tokens === 'number' && Number.isFinite(tokens),
+          ),
       ),
       request: { body },
       response: { headers: responseHeaders },
     }
   }
+}
+
+/**
+ * Bun can reject a gzip/br trailer after the provider's finish status and usage
+ * have arrived (#1656). Let the converter flush those confirmed results rather
+ * than lose them to a false interruption. Incomplete responses and every other
+ * error still propagate, including cancellation.
+ */
+function pipeCompletionStream<T, U>(
+  source: ReadableStream<T>,
+  transform: TransformStream<T, U>,
+  completed: () => boolean,
+): ReadableStream<U> {
+  void source
+    .pipeTo(transform.writable, { preventAbort: true })
+    .catch(async (error: unknown) => {
+      const code =
+        error != null && typeof error === 'object' && 'code' in error
+          ? error.code
+          : undefined
+      const writer = transform.writable.getWriter()
+      try {
+        if (
+          completed() &&
+          (code === 'ZlibError' || code === 'BrotliDecompressionError')
+        ) {
+          await writer.close()
+        } else {
+          await writer.abort(error)
+        }
+      } catch {
+        // A cancelled reader or a failed flush already errors the readable side.
+      } finally {
+        writer.releaseLock()
+      }
+    })
+  return transform.readable
 }
 
 /**
