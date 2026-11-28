@@ -447,10 +447,10 @@ export function codeSearch({
             if (isMatch) {
               fileMatchCounts.set(filePath, fileMatchCount + 1)
               matchesGlobal++
-
-              // Check global limit or output size limit
-              if (atResultLimit()) return settleAtResultLimit()
             }
+
+            // Check the output budget for context lines as well as matches.
+            if (atResultLimit()) return settleAtResultLimit()
           }
         }
       }
