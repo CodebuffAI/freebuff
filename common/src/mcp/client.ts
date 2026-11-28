@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
@@ -66,6 +68,9 @@ function hashConfig(config: MCPConfig): string {
       type: 'http',
       url: config.url,
       params: config.params,
+      headers: createHash('sha256')
+        .update(JSON.stringify(substituteEnvInRecord(config.headers)))
+        .digest('hex'),
     })
   }
   if (config.type === 'sse') {
@@ -73,6 +78,9 @@ function hashConfig(config: MCPConfig): string {
       type: 'sse',
       url: config.url,
       params: config.params,
+      headers: createHash('sha256')
+        .update(JSON.stringify(substituteEnvInRecord(config.headers)))
+        .digest('hex'),
     })
   }
   config.type satisfies never
