@@ -1,0 +1,97 @@
+name: opencode-hub
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HUB_DOMAIN: ${HUB_DOMAIN:?set HUB_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      OC_BASIC_USER: ${OC_BASIC_USER:-admin}
+      OC_BASIC_HASH: ${OC_BASIC_HASH:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./auth.caddy:/etc/caddy/auth.caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      hub:
+        condition: service_started
+    networks:
+      - edge
+
+  hub:
+    build:
+      context: ..
+      dockerfile: Dockerfile.hub
+    restart: unless-stopped
+    environment:
+      HUB_HOST: 0.0.0.0
+      HUB_PORT: "3000"
+      OPENCODE_URL: http://opencode:4096
+      DATA_URL: http://data:8788
+      OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:?set OPENCODE_SERVER_PASSWORD in .env}
+    networks:
+      - edge
+      - internal
+    depends_on:
+      data:
+        condition: service_started
+
+  data:
+    build:
+      context: ..
+      dockerfile: Dockerfile.hub
+    restart: unless-stopped
+    command: ["node", "data-server.mjs"]
+    environment:
+      DATA_HOST: 0.0.0.0
+      DATA_PORT: "8788"
+      DATA_ALLOW_ORIGIN: https://${HUB_DOMAIN}
+    networks:
+      - internal
+
+  opencode:
+    build:
+      context: ..
+      dockerfile: Dockerfile.opencode
+    restart: unless-stopped
+    environment:
+      OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:?set OPENCODE_SERVER_PASSWORD in .env}
+      HOME: /home/opencode
+    volumes:
+      - opencode_state:/home/opencode
+      - workspace:/workspace
+    networks:
+      - internal
+
+  hermes:
+    profiles: ["hermes"]
+    build:
+      context: ..
+      dockerfile: Dockerfile.hermes
+    restart: unless-stopped
+    environment:
+      NOUS_API_KEY: ${NOUS_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      HERMES_HOME: /root/.hermes
+    volumes:
+      - hermes_home:/root/.hermes
+      - workspace:/workspace
+    networks:
+      - internal
+
+networks:
+  edge:
+  internal:
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:
+  opencode_state:
+  hermes_home:
+  workspace:

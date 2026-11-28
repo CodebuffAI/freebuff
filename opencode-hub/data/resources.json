@@ -1,0 +1,96 @@
+{
+  "updated": "2026-11-24",
+  "note": "Registry data untuk opencode-hub. Server data ini terpisah dari server opencode.",
+  "groups": [
+    {
+      "id": "opencode",
+      "label": "opencode",
+      "items": [
+        {
+          "title": "anomalyco/opencode",
+          "url": "https://github.com/anomalyco/opencode",
+          "desc": "Sumber utama: \"The open source coding agent\" (TypeScript). Homepage opencode.ai.",
+          "verified": true
+        },
+        {
+          "title": "opencode docs — Server",
+          "url": "https://opencode.ai/docs/server/",
+          "desc": "Dokumentasi `opencode serve`: /global/health, /session, /event, /doc, OPENCODE_SERVER_PASSWORD.",
+          "verified": true
+        },
+        {
+          "title": "HN Algolia — opencode data",
+          "url": "https://hn.algolia.com/?q=opencode+data",
+          "desc": "Pencarian diskusi Hacker News seputar opencode.",
+          "verified": false
+        },
+        {
+          "title": "npm — @opencode/plugin",
+          "url": "https://www.npmjs.com/package/@opencode/plugin?activeTab=code",
+          "desc": "Paket plugin opencode. Registry memuat banyak build 0.0.0-dev-*; tidak ada rilis stabil di tag ini.",
+          "verified": true
+        },
+        {
+          "title": "npm search — @opencode/core",
+          "url": "https://www.npmjs.com/search?q=%40opencode%2Fcore",
+          "desc": "Hasil pencarian paket ber-scope @opencode.",
+          "verified": false
+        }
+      ]
+    },
+    {
+      "id": "referensi",
+      "label": "Referensi teknis",
+      "items": [
+        {
+          "title": "MediaWiki core — PHP docs",
+          "url": "https://doc.wikimedia.org/mediawiki-core/master/php/",
+          "desc": "Dokumentasi API PHP MediaWiki core (master).",
+          "verified": false
+        },
+        {
+          "title": "IETF datatracker — AtomPub WG",
+          "url": "https://datatracker.ietf.org/wg/atompub/documents/",
+          "desc": "Dokumen working group AtomPub (Atom Publishing Protocol, RFC 5023).",
+          "verified": false
+        },
+        {
+          "title": "Chromium issue 42450151",
+          "url": "https://project-zero.issues.chromium.org/issues/42450151",
+          "desc": "Tautan issue tracker Project Zero. Isinya belum diperiksa di sesi ini.",
+          "verified": false
+        },
+        {
+          "title": "nexusrootlab/incident",
+          "url": "https://github.com/nexusrootlab/incident",
+          "desc": "Public disclosure: kebocoran data lintas-sesi via OpenCode Zen (2026-04-02). Alasan untuk tidak mengekspos server opencode tanpa autentikasi.",
+          "verified": true
+        }
+      ]
+    },
+    {
+      "id": "lisensi",
+      "label": "Lisensi",
+      "items": [
+        {
+          "title": "Creative Commons BY 4.0 — legal code",
+          "url": "https://creativecommons.org/licenses/by/4.0/legalcode.en",
+          "desc": "Teks lisensi CC BY 4.0. opencode sendiri berlisensi MIT.",
+          "verified": true
+        }
+      ]
+    },
+    {
+      "id": "freebuff",
+      "label": "Freebuff",
+      "items": [
+        {
+          "title": "freebuff@0.2.36 — package.json",
+          "url": "https://unpkg.com/freebuff@0.2.36/package.json",
+          "desc": "Manifest npm Freebuff: MIT, bin `freebuff`, Node >=16, binari per platform.",
+          "verified": true
+        }
+      ]
+    }
+  ]
+}
