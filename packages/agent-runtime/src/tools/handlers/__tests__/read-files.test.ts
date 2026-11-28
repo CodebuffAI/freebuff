@@ -184,15 +184,15 @@ describe('handleReadFiles with prototype-member paths', () => {
       {
         type: 'json',
         value: [
-          { path: 'a.ts', content: 'content' },
+          { path: 'a.ts', content: '<untrusted_data>\ncontent\n</untrusted_data>' },
           {
             path: 'shot.PNG',
             content:
-              '[IMAGE] image/png, 2 KB. The image is attached after this result.',
+              '<untrusted_data>\n[IMAGE] image/png, 2 KB. The image is attached after this result.\n</untrusted_data>',
           },
           {
             path: 'missing.jpg',
-            content: '[FILE_DOES_NOT_EXIST]',
+            content: '<untrusted_data>\n[FILE_DOES_NOT_EXIST]\n</untrusted_data>',
           },
         ],
       },
@@ -251,11 +251,11 @@ describe('handleReadFiles with prototype-member paths', () => {
       ...images,
     ])
     expect(results.slice(0, 2).map((file) => file.content)).toEqual([
-      'content',
-      'content',
+      '<untrusted_data>\ncontent\n</untrusted_data>',
+      '<untrusted_data>\ncontent\n</untrusted_data>',
     ])
     for (const file of results.slice(-deferred.length)) {
-      expect(file.content).toStartWith(FILE_READ_STATUS.ERROR)
+      expect(file.content).toContain(FILE_READ_STATUS.ERROR)
       expect(file.content).toContain('at most 4 images per call')
       expect(file.content).toContain('in a later call')
     }

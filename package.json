@@ -29,8 +29,12 @@
     "ci": "bun run build:sdk && bun run build:freebuff"
   },
   "dependencies": {
+    "@prisma/composer": "^0.40.0",
+    "@prisma/composer-prisma-cloud": "^0.40.0",
+    "@strands-agents/harness": "^0.5.0",
     "canvas": "^3.2.0",
     "gif-encoder-2": "^1.0.5",
+    "openai": "^7.64.0",
     "zod": "^4.2.1"
   },
   "overrides": {
@@ -41,7 +45,7 @@
     "baseline-browser-mapping": "^2.9.14",
     "caniuse-lite": "^1.0.30001792",
     "zod": "^4.2.1",
-    "signal-exit": "3.0.7"
+    "signal-exit": "^4.1.0"
   },
   "devDependencies": {
     "@tanstack/react-query": "^5.90.12",
@@ -58,6 +62,7 @@
     "ignore": "^6.0.2",
     "lodash": "4.17.23",
     "prettier": "^3.7.4",
+    "prisma": "^8.0.0-rc.35",
     "ts-node": "^10.9.2",
     "ts-pattern": "^5.9.0",
     "tsc-alias": "^1.8.16",

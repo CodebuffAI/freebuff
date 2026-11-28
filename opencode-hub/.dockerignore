@@ -1,0 +1,8 @@
+# Jangan kirim runtime lokal, rahasia, dan riwayat git ke context build Docker.
+.runtime/
+.runtime-boot.log
+.opencode-server-password
+deploy/
+node_modules/
+.git/
+*.log
