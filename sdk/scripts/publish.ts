@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -12,12 +12,18 @@ function log(message) {
   console.log(`📦 ${message}`)
 }
 
-function run(command, options = {}) {
-  log(`Running: ${command}`)
+/**
+ * Takes an argv array, never a command line: no shell parses this, so nothing
+ * a caller passes can become syntax. `execSync(command)` runs its string
+ * through a shell, which is one interpolation away from an injection.
+ */
+function run(argv, options = {}) {
+  const [file, ...args] = argv
+  log(`Running: ${argv.join(' ')}`)
   try {
-    return execSync(command, { stdio: 'inherit', ...options })
+    return execFileSync(file, args, { stdio: 'inherit', ...options })
   } catch (error) {
-    console.error(`❌ Command failed: ${command}`)
+    console.error(`❌ Command failed: ${argv.join(' ')}`)
     process.exit(1)
   }
 }
@@ -30,7 +36,7 @@ function main() {
 
   // Verify the package
   log('Verifying package contents...')
-  run('npm pack --dry-run')
+  run(['npm', 'pack', '--dry-run'])
 
   if (isDryRun) {
     log('Dry run complete! Package is ready for publishing.')
@@ -41,7 +47,7 @@ function main() {
   // Publish
   log('Publishing to npm...')
   const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-  run('npm publish')
+  run(['npm', 'publish'])
   log('✅ SDK published successfully!')
   log(`📦 Package: ${packageJson.name}@${packageJson.version}`)
 }

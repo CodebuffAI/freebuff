@@ -8,7 +8,7 @@
  *   bun run verify --skip-build  # Skip build step (use existing dist)
  */
 
-import { execSync, type ExecSyncOptions } from 'child_process'
+import { execFileSync, type ExecFileSyncOptions } from 'child_process'
 import { existsSync, rmSync } from 'fs'
 import { join } from 'path'
 
@@ -44,8 +44,17 @@ function success(message: string) {
   console.log(`  ✅ ${message}`)
 }
 
-function run(command: string, options: ExecSyncOptions = {}) {
-  execSync(command, { cwd: sdkRoot, stdio: 'inherit', ...options })
+/**
+ * Takes an argv array, never a command line, so no argument can be read as
+ * shell syntax. The previous signature took a string and handed it to
+ * `execSync`, which runs it through a shell.
+ */
+function run(argv: readonly string[], options: ExecFileSyncOptions = {}) {
+  const [file, ...args] = argv
+  if (!file) {
+    throw new Error('run() needs a program name')
+  }
+  execFileSync(file, args, { cwd: sdkRoot, stdio: 'inherit', ...options })
 }
 
 function removeOldSdk(projectPath: string) {
@@ -63,7 +72,7 @@ function cleanAndBuild() {
   rmSync(distPath, { recursive: true, force: true })
 
   step('Building SDK...')
-  run('bun run build')
+  run(['bun', 'run', 'build'])
 
   success('Build complete')
 }
@@ -72,7 +81,7 @@ function typecheck() {
   log('Step 2: TypeScript Check')
 
   step('Running typecheck on source...')
-  run('tsc --noEmit -p .')
+  run(['tsc', '--noEmit', '-p', '.'])
 
   success('TypeScript check passed')
 }
@@ -81,7 +90,7 @@ function smokeTest() {
   log('Step 3: Smoke Test')
 
   step('Running dist smoke tests...')
-  run('bun run smoke-test-dist.ts')
+  run(['bun', 'run', 'smoke-test-dist.ts'])
 
   success('Smoke test passed')
 }
@@ -99,16 +108,22 @@ function runDistCopySubproject(projectName: string) {
   removeOldSdk(projectPath)
 
   // Install dependencies
-  execSync('npm install --silent --install-links', {
+  execFileSync('npm', ['install', '--silent', '--install-links'], {
     cwd: projectPath,
     stdio: 'inherit',
   })
 
   // Run setup (copies dist to node_modules)
-  execSync('npm run setup', { cwd: projectPath, stdio: 'inherit' })
+  execFileSync('npm', ['run', 'setup'], {
+    cwd: projectPath,
+    stdio: 'inherit',
+  })
 
   // Run all tests (imports + types)
-  execSync('npm run test:all', { cwd: projectPath, stdio: 'inherit' })
+  execFileSync('npm', ['run', 'test:all'], {
+    cwd: projectPath,
+    stdio: 'inherit',
+  })
 
   success(`${projectName} passed`)
 }
@@ -125,13 +140,16 @@ function runFileRefSubproject(projectName: string) {
   removeOldSdk(projectPath)
 
   // Install dependencies (uses file: reference)
-  execSync('npm install --silent --install-links', {
+  execFileSync('npm', ['install', '--silent', '--install-links'], {
     cwd: projectPath,
     stdio: 'inherit',
   })
 
   // Run all tests
-  execSync('npm run test:all', { cwd: projectPath, stdio: 'inherit' })
+  execFileSync('npm', ['run', 'test:all'], {
+    cwd: projectPath,
+    stdio: 'inherit',
+  })
 
   success(`${projectName} passed`)
 }

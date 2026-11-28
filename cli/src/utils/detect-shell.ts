@@ -1,4 +1,4 @@
-import { execSync } from 'child_process'
+import { execFileSync } from 'child_process'
 
 import { getCliEnv } from './env'
 
@@ -60,8 +60,9 @@ function detectFromEnvironment(env: CliEnv): ShellName | null {
 function detectViaParentProcessInspection(): ShellName | null {
   try {
     if (process.platform === 'win32') {
-      const parentProcess = execSync(
-        'wmic process get ParentProcessId,CommandLine',
+      const parentProcess = execFileSync(
+        'wmic',
+        ['process', 'get', 'ParentProcessId,CommandLine'],
         { stdio: 'pipe' },
       )
         .toString()
@@ -70,9 +71,15 @@ function detectViaParentProcessInspection(): ShellName | null {
       if (parentProcess.includes('powershell')) return 'powershell'
       if (parentProcess.includes('cmd.exe')) return 'cmd.exe'
     } else {
-      const parentProcess = execSync(`ps -p ${process.ppid} -o comm=`, {
-        stdio: 'pipe',
-      })
+      // Arguments, not a command line: `execSync` would hand this string to a
+      // shell, so `${process.ppid}` would be shell-parsed rather than passed.
+      // `process.ppid` is always a number today, which is why this is a change
+      // of shape rather than a fix for a live exploit.
+      const parentProcess = execFileSync(
+        'ps',
+        ['-p', String(process.ppid), '-o', 'comm='],
+        { stdio: 'pipe' },
+      )
         .toString()
         .trim()
       const normalized = normalizeCandidate(parentProcess)
