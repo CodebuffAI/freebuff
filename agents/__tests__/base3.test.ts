@@ -379,6 +379,20 @@ describe('a lean compaction policy', () => {
   test('keeps `lean` out of compactContext, whose schema is strict', () => {
     expect(lean.compactContext).toEqual(runtimePolicy)
   })
+
+  test('workspace roots get the budget without the todo tool they lack', () => {
+    // Desktop/Cloud workspace roots drop write_todos (agents/base3.ts), so
+    // telling them to write a todo plan leaves the guidance unactionable.
+    const workspaceLean = createBase3('anthropic/claude-haiku-5.5', {
+      compaction: LEAN_COMPACTION_POLICY,
+      workspace: true,
+    })
+    expect(workspaceLean.systemPrompt).toContain('# Context budget')
+    expect(workspaceLean.systemPrompt).not.toContain('write_todos')
+    expect(workspaceLean.systemPrompt).not.toContain('your todos')
+    expect(workspaceLean.systemPrompt).toContain('keep a short plan in your reply')
+    expect(lean.systemPrompt).toContain('write_todos')
+  })
 })
 
 describe('working in batches', () => {
