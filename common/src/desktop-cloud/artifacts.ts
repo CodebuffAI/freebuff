@@ -9,7 +9,8 @@ import { z } from 'zod/v4'
  *
  * Routes, all under `/api/v1/cloud/` (the workspace gateway serves the same
  * paths under `/api/workspace/cloud/`):
- *  - `GET  artifacts?scope=mine|shared&kind=&search=&limit=&sort=` → `ArtifactListResponse` (pinned first)
+ *  - `GET  artifacts?scope=mine|shared&kind=&search=&limit=&sort=` → `ArtifactListResponse` (pinned first);
+ *    `scope=all` and `kinds=doc,slides,…` list both scopes and every kind named at once, unordered
  *  - `GET  artifacts/:id/head?linkToken=` → `ArtifactHeadResponse` (the open tab's poll)
  *  - `PUT  artifacts/:id/pin` `ArtifactPinRequest` → `{ pinned }`
  *  - `PUT  artifacts/:id/template` `ArtifactTemplateRequest` → `ArtifactTemplateResponse` (owner only)
@@ -235,8 +236,15 @@ export type ArtifactHeadResponse = {
 
 export const artifactListQuerySchema = z
   .object({
-    scope: z.enum(['mine', 'shared']).default('mine'),
+    /** `all`: the account's own and those shared with it, in one list. */
+    scope: z.enum(['mine', 'shared', 'all']).default('mine'),
     kind: artifactKindSchema.optional(),
+    /** Several kinds, comma-separated (the gallery's one request); each kind gets its own `limit`. */
+    kinds: z
+      .string()
+      .transform((value) => [...new Set(value.split(','))])
+      .pipe(z.array(artifactKindSchema).min(1))
+      .optional(),
     search: z.string().trim().min(1).max(200).optional(),
     limit: z.coerce.number().int().min(1).max(ARTIFACT_LIST_MAX).optional(),
     /** Pinned first always; then newest change (default), newest created, or title A to Z. */
@@ -245,6 +253,7 @@ export const artifactListQuerySchema = z
     filter: z.enum(['templates']).optional(),
   })
   .strict()
+  .refine((query) => !(query.kind && query.kinds), 'kind or kinds, not both')
 export type ArtifactListQuery = z.infer<typeof artifactListQuerySchema>
 
 /** An artifact's id as the store mints it (a UUID, lower-case). */
