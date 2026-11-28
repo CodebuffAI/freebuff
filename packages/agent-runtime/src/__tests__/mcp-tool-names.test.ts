@@ -66,4 +66,66 @@ describe('MCP tool names reaching the provider', () => {
       'a.b',
     ])
   })
+
+  // A cleaned server name can equal another server's legal name. Losing one
+  // definition hides a tool; changing its origin can dispatch to the wrong server.
+  it('preserves colliding sanitized and legal names regardless of list completion order', async () => {
+    let previous: Awaited<ReturnType<typeof getMCPToolData>> | undefined
+    for (const order of [
+      ['files.prod', 'files_prod'],
+      ['files_prod', 'files.prod'],
+    ]) {
+      const listings = Object.fromEntries(
+        order.map((server) => [
+          server,
+          Promise.withResolvers<
+            { name: string; description: string; inputSchema: typeof schema }[]
+          >(),
+        ]),
+      )
+      const loading = getMCPToolData({
+        toolNames: [],
+        mcpServers: {
+          'files.prod': {
+            type: 'stdio',
+            command: 'files.prod',
+            args: [],
+            env: {},
+          },
+          files_prod: {
+            type: 'stdio',
+            command: 'files_prod',
+            args: [],
+            env: {},
+          },
+        },
+        requestMcpToolData: ({ mcpConfig }) => {
+          if (mcpConfig.type !== 'stdio')
+            throw new Error('Expected stdio config')
+          return listings[mcpConfig.command].promise
+        },
+      })
+      for (const server of order) {
+        listings[server].resolve([
+          { name: 'read', description: server, inputSchema: schema },
+        ])
+      }
+      const defs = await loading
+      expect(Object.keys(defs)).toHaveLength(2)
+      expect(defs.files_prod__read.description).toBe('files_prod')
+      expect(defs.files_prod__read.mcpOrigin).toBeUndefined()
+      const sanitized = Object.entries(defs).find(
+        ([, def]) => def.mcpOrigin?.server === 'files.prod',
+      )
+      expect(sanitized).toBeDefined()
+      expect(sanitized![0]).toMatch(PROVIDER_PATTERN)
+      expect(sanitized![1].mcpOrigin).toEqual({
+        server: 'files.prod',
+        tool: 'read',
+      })
+      expect(sanitized![1].description).toBe('files.prod')
+      if (previous) expect(defs).toEqual(previous)
+      previous = defs
+    }
+  })
 })

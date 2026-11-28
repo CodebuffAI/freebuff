@@ -70,52 +70,70 @@ export async function getMCPToolData(
     requestedToolsByMcp[mcpName].push(toolName)
   }
 
-  const promises: Promise<any>[] = []
-  for (const [mcpName, mcpConfig] of Object.entries(mcpServers)) {
-    promises.push(
-      (async () => {
-        try {
-          const mcpData = await requestMcpToolData({
-            mcpConfig,
-            toolNames: requestedToolsByMcp[mcpName] ?? null,
-          })
+  // Fetch concurrently, then register in configuration order. Response timing
+  // must not decide which original receives a colliding exposed name.
+  const catalogs = await Promise.all(
+    Object.entries(mcpServers).map(async ([mcpName, mcpConfig]) => {
+      try {
+        const mcpData = await requestMcpToolData({
+          mcpConfig,
+          toolNames: requestedToolsByMcp[mcpName] ?? null,
+        })
+        return { mcpName, mcpData }
+      } catch (error) {
+        // A failed MCP server (e.g. a stdio server that can't be spawned)
+        // should disable just its own tools, not abort the whole turn. The
+        // error from the client carries the actionable detail (command +
+        // captured stderr).
+        logger?.warn(
+          { error: getErrorObject(error), mcpServer: mcpName },
+          `Failed to load tools from MCP server "${mcpName}"; its tools will be unavailable for this step.`,
+        )
+        return { mcpName, mcpData: [] }
+      }
+    }),
+  )
 
-          for (const { name, description, inputSchema } of mcpData) {
-            const raw = mcpName + MCP_TOOL_SEPARATOR + name
-            let exposed = mcpExposedToolName(mcpName, name)
-            if (exposed !== raw && exposed in writeTo) {
-              // Two originals sanitized to the same name: keep both callable.
-              const hash = createHash('sha256').update(raw).digest('hex')
-              exposed = `${exposed.slice(0, 55)}_${hash.slice(0, 8)}`
-            }
-            // Store the raw JSON Schema from the server, NOT the converted Zod
-            // schema. Tool definitions are persisted in run state / session
-            // state and must stay JSON-serializable; Zod instances are cyclic
-            // and make any JSON.stringify over that state detonate. Consumers
-            // convert at point of use (ensureZodSchema / toTokenCountInputSchema).
-            writeTo[exposed] = {
-              inputSchema: inputSchema as {},
-              endsAgentStep: true,
-              description,
-              ...(exposed !== raw && {
-                mcpOrigin: { server: mcpName, tool: name },
-              }),
-            }
-          }
-        } catch (error) {
-          // A failed MCP server (e.g. a stdio server that can't be spawned)
-          // should disable just its own tools, not abort the whole turn. The
-          // error from the client carries the actionable detail (command +
-          // captured stderr).
-          logger?.warn(
-            { error: getErrorObject(error), mcpServer: mcpName },
-            `Failed to load tools from MCP server "${mcpName}"; its tools will be unavailable for this step.`,
-          )
-        }
-      })(),
-    )
+  // Reserve legal names before sanitizing any others, so a cleaned alias cannot
+  // steal a legal name that a later server (or tool) is about to register.
+  const reservedNames = new Set(Object.keys(writeTo))
+  for (const { mcpName, mcpData } of catalogs) {
+    for (const { name } of mcpData) {
+      const raw = mcpName + MCP_TOOL_SEPARATOR + name
+      if (mcpExposedToolName(mcpName, name) === raw) reservedNames.add(raw)
+    }
   }
-  await Promise.all(promises)
+
+  for (const { mcpName, mcpData } of catalogs) {
+    for (const { name, description, inputSchema } of mcpData) {
+      const raw = mcpName + MCP_TOOL_SEPARATOR + name
+      const base = mcpExposedToolName(mcpName, name)
+      let exposed = base
+      if (exposed !== raw) {
+        let attempt = 0
+        while (reservedNames.has(exposed) || exposed in writeTo) {
+          const hash = createHash('sha256')
+            .update(attempt === 0 ? raw : `${raw}:${attempt}`)
+            .digest('hex')
+          exposed = `${base.slice(0, 55)}_${hash.slice(0, 8)}`
+          attempt++
+        }
+      }
+      // Store the raw JSON Schema from the server, NOT the converted Zod
+      // schema. Tool definitions are persisted in run state / session
+      // state and must stay JSON-serializable; Zod instances are cyclic
+      // and make any JSON.stringify over that state detonate. Consumers
+      // convert at point of use (ensureZodSchema / toTokenCountInputSchema).
+      writeTo[exposed] = {
+        inputSchema: inputSchema as {},
+        endsAgentStep: true,
+        description,
+        ...(exposed !== raw && {
+          mcpOrigin: { server: mcpName, tool: name },
+        }),
+      }
+    }
+  }
 
   return writeTo
 }
