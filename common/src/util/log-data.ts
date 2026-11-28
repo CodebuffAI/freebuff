@@ -75,17 +75,28 @@ function errorToJson(original: Error): Record<string, unknown> {
   }
 }
 
+function redactModelSelector(key: string, value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  if (key === 'model' || key === 'compaction_root_model') {
+    return isFreebuffModelHandle(value) ? 'catalog' : value
+  }
+  if (key === 'requestBodyValues') {
+    return value.replace(/("model"\s*:\s*")fbm1\.[\w-]*/g, '$1catalog')
+  }
+  return value
+}
+
 /** Stringify a log payload, tolerating circular refs and unwrapping Errors. */
 export function stringifyLogData(data: unknown): string | undefined {
   try {
     const seen = new WeakSet()
-    return JSON.stringify(data, (_k, v) => {
+    return JSON.stringify(data, (key, v) => {
       if (typeof v === 'object' && v !== null) {
         if (seen.has(v)) return '[Circular]'
         seen.add(v)
         if (v instanceof Error) return errorToJson(v)
       }
-      return v
+      return redactModelSelector(key, v)
     })
   } catch {
     return undefined
@@ -129,7 +140,7 @@ function fitLogDataToCap(data: unknown, originalBytes: number): string {
   const sized: { key: string; value: unknown; bytes: number }[] = []
   for (const [key, value] of Object.entries(data)) {
     if (value === undefined) continue
-    const serialized = stringifyLogData(value)
+    const serialized = stringifyLogData(redactModelSelector(key, value))
     if (serialized === undefined) continue
     // `"key":` plus a separator, so the budget counts what the row will cost.
     sized.push({ key, value, bytes: serialized.length + key.length + 4 })
@@ -171,17 +182,6 @@ function fitLogDataToCap(data: unknown, originalBytes: number): string {
   return fitted
 }
 
-function redactAccountBoundModel(data: unknown): unknown {
-  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-    return data
-  }
-  const { model } = data as Record<string, unknown>
-  if (typeof model === 'string' && isFreebuffModelHandle(model)) {
-    return { ...data, model: 'catalog' }
-  }
-  return data
-}
-
 /**
  * Serialize a log payload to a single string field, tolerating circular refs
  * and capping size. The cap applies to ALL sources so a large `data` payload
@@ -191,9 +191,8 @@ function redactAccountBoundModel(data: unknown): unknown {
  * An oversized object keeps the fields that fit (see {@link fitLogDataToCap});
  * only an oversized string or array collapses to a `preview`.
  */
-export function serializeLogData(input: unknown): string | null {
-  if (input == null) return null
-  const data = redactAccountBoundModel(input)
+export function serializeLogData(data: unknown): string | null {
+  if (data == null) return null
   let serialized: string
   if (typeof data === 'string') {
     serialized = data

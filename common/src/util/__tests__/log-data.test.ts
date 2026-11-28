@@ -31,6 +31,44 @@ describe('serializeLogData', () => {
     })
   })
 
+  test('redacts compaction root selectors without changing ordinary models', () => {
+    const data = {
+      compaction_root_model: 'fbm1.synthetic-catalog-handle',
+      model: 'openrouter/example',
+      receipt_complete: true,
+    }
+    expect(parse(data)).toEqual({ ...data, compaction_root_model: 'catalog' })
+    const plain = { ...data, compaction_root_model: 'openrouter/other' }
+    expect(parse(plain)).toEqual(plain)
+    expect(
+      parse({ ...data, blob: 'x'.repeat(200_000) }).compaction_root_model,
+    ).toBe('catalog')
+  })
+
+  test('redacts selectors in nested CLI request diagnostics, even when capped', () => {
+    const handle = 'fbm1.synthetic-catalog-handle'
+    const error = {
+      requestBody: { model: handle, messageCount: 2 },
+      cause: {
+        requestBody: { model: 'openrouter/example' },
+        requestBodyValues: `{"fallback":{"model":"openrouter/example"},"model":"${handle}`,
+      },
+    }
+    const expected = {
+      requestBody: { model: 'catalog', messageCount: 2 },
+      cause: {
+        ...error.cause,
+        requestBodyValues:
+          '{"fallback":{"model":"openrouter/example"},"model":"catalog',
+      },
+    }
+    expect(toJsonSafeLogData({ error })).toEqual({ error: expected })
+    const row = parse({ error, blob: 'x'.repeat(200_000) })
+    expect(row._truncated).toBe(true)
+    expect(row.error).toEqual(expected)
+    expect(error.requestBody.model).toBe(handle)
+  })
+
   // JSON.stringify(new Error('x')) is '{}': the reason never reached Axiom.
   test('an error keeps its name and message', () => {
     const row = parse({ error: new TypeError('fetch failed') })
