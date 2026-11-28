@@ -22,7 +22,7 @@
         "eslint-plugin-import": "^2.29.1",
         "eslint-plugin-unused-imports": "^4.1.4",
         "ignore": "^6.0.2",
-        "lodash": "4.17.23",
+        "lodash": "4.18.1",
         "prettier": "^3.7.4",
         "ts-node": "^10.9.2",
         "ts-pattern": "^5.9.0",
@@ -83,7 +83,7 @@
         "ai": "^7.0.59",
         "gray-matter": "^4.0.3",
         "ignore": "5.3.2",
-        "lodash": "4.17.23",
+        "lodash": "4.18.1",
         "posthog-node": "^5.8.0",
         "seedrandom": "^3.0.5",
         "stripe": "^16.11.0",
@@ -118,7 +118,7 @@
       "version": "0.0.0",
       "dependencies": {
         "ai": "^7.0.59",
-        "lodash": "4.17.23",
+        "lodash": "4.18.1",
         "zod-from-json-schema": "0.4.2",
       },
     },
@@ -906,7 +906,7 @@
 
     "locate-path": ["locate-path@6.0.0", "", { "dependencies": { "p-locate": "^5.0.0" } }, "sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw=="],
 
-    "lodash": ["lodash@4.17.23", "", {}, "sha512-LgVTMpQtIopCi79SJeDiP0TfWi5CNEc/L/aRdTh3yIvmZXTnheWpKjSZhnvMl8iXbC1tFg9gdHHDMLoV7CnG+w=="],
+    "lodash": ["lodash@4.18.1", "", {}, "sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q=="],
 
     "lodash.merge": ["lodash.merge@4.6.2", "", {}, "sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ=="],
 
