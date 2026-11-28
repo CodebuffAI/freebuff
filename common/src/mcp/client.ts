@@ -20,6 +20,7 @@ import type {
 const STDERR_BUFFER_CAP = 8192
 
 const runningClients: Record<string, Client> = {}
+const connectingClients = new Map<string, Promise<string>>()
 const listToolsCache: Record<
   string,
   ReturnType<typeof Client.prototype.listTools>
@@ -118,6 +119,23 @@ export async function getMCPClient(config: MCPConfig): Promise<string> {
     return key
   }
 
+  const pending = connectingClients.get(key)
+  if (pending) return pending
+
+  const connection = connectMCPClient(config, key, imported)
+  connectingClients.set(key, connection)
+  try {
+    return await connection
+  } finally {
+    connectingClients.delete(key)
+  }
+}
+
+async function connectMCPClient(
+  config: MCPConfig,
+  key: string,
+  imported: boolean,
+): Promise<string> {
   let transport: Transport
   // Buffer the child process's stderr so that a server which crashes during
   // startup produces an actionable error instead of the opaque MCP SDK message
