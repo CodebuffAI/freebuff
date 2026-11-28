@@ -12,8 +12,8 @@ English | [简体中文](./README.zh-CN.md)
 | -------------------- | ----------------------------------- | --------------------------------------------------------------------- |
 | **Freebuff Desktop** | Run parallel agents locally         | [Download for macOS, Windows, or Linux](https://freebuff.com) |
 | **Freebuff CLI**     | Code from your terminal             | [Install the CLI](https://freebuff.com/cli)                           |
-| **Freebuff Web**     | Build and ship full-stack apps      | [Build an app](https://freebuff.com/web)                              |
-| **Freebuff Cloud**   | Run agents on any GitHub repository | [Connect a repository](https://freebuff.com/cloud)                    |
+| **Freebuff Web**     | Build and ship full-stack apps      | [Build an app](https://freebuff.com/app-builder)                            |
+| **Freebuff Cloud**   | Run agents on any GitHub repository | [Connect a repository](https://freebuff.com/?github=connect)                  |
 | **Freebuff Chat**    | Research and think with AI          | [Start a chat](https://freebuff.com/chat)                             |
 
 The Freebuff apps for iOS and Android let you follow and continue your chats from your phone, including chats running on your computer while Freebuff Desktop is open: [get the mobile app](https://freebuff.com/mobile).
