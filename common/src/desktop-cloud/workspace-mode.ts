@@ -16,16 +16,26 @@
  * is set once, at creation, and lives in the server-owned part of its
  * settings (`settings->>'mode'`); absent means `code`, which is what every
  * project created before modes existed is.
+ *
+ * `buffy` is the third face (buffy.ts): one endless thread per account with
+ * Buffy, the assistant that works the other two modes on the user's behalf.
+ * No project is ever in it and no chat joins it through a project: the
+ * account's one Buffy thread is the only chat there, marked by the server
+ * (`buffy` on the chat).
  */
-export type WorkspaceMode = 'code' | 'chat'
+export type WorkspaceMode = 'code' | 'chat' | 'buffy'
 
-export const WORKSPACE_MODES: readonly WorkspaceMode[] = ['code', 'chat']
+/** The modes a project can be created in, and the two the Code | Chat toggle switches between. */
+export type ProjectWorkspaceMode = 'code' | 'chat'
 
-export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = 'code'
+export const WORKSPACE_MODES: readonly ProjectWorkspaceMode[] = ['code', 'chat']
+
+export const DEFAULT_WORKSPACE_MODE: ProjectWorkspaceMode = 'code'
 
 export const WORKSPACE_MODE_LABELS: Record<WorkspaceMode, string> = {
   code: 'Code',
   chat: 'Chat',
+  buffy: 'Buffy',
 }
 
 /**
@@ -42,25 +52,31 @@ export const CHAT_MODE_MODEL_LABEL = 'Freebuff 1.5'
 export const PROJECT_FILES_DIR = 'files'
 
 export function isWorkspaceMode(value: unknown): value is WorkspaceMode {
+  return value === 'code' || value === 'chat' || value === 'buffy'
+}
+
+/** A mode a project can have: Buffy mode has none. */
+export function isProjectWorkspaceMode(value: unknown): value is ProjectWorkspaceMode {
   return value === 'code' || value === 'chat'
 }
 
 /** A project's mode; anything unrecognised (older servers) is Code. */
 export function projectWorkspaceMode(
   project: { mode?: string | null } | null | undefined,
-): WorkspaceMode {
+): ProjectWorkspaceMode {
   return project?.mode === 'chat' ? 'chat' : 'code'
 }
 
 /**
- * The mode a chat (or an unsent draft) belongs to, given its project. A
- * projectless chat is Chat mode; a device-bound chat is Code mode whatever
- * its project says.
+ * The mode a chat (or an unsent draft) belongs to, given its project. The
+ * account's Buffy thread is Buffy mode; otherwise a projectless chat is Chat
+ * mode and a device-bound chat is Code mode whatever its project says.
  */
 export function chatWorkspaceMode(
-  chat: { projectId: string | null; deviceExecution?: unknown },
+  chat: { projectId: string | null; deviceExecution?: unknown; buffy?: boolean | null },
   project: { mode?: string | null; deviceExecution?: unknown } | null | undefined,
 ): WorkspaceMode {
+  if (chat.buffy) return 'buffy'
   if (chat.deviceExecution) return 'code'
   if (chat.projectId === null) return 'chat'
   if (project?.deviceExecution) return 'code'

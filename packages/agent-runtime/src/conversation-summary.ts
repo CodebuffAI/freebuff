@@ -31,6 +31,9 @@ import {
 } from '@codebuff/common/constants/compaction-policy'
 import {
   buildCompactionSummaryPrompt,
+  COMPACTION_SUMMARY_FIRST_HEADING,
+  PERSONAL_SUMMARY_FIRST_HEADING,
+  type CompactionSummaryStyle,
   COMPACTION_SUMMARY_METADATA_KEY,
 } from '@codebuff/common/constants/compaction-summary'
 import {
@@ -126,10 +129,29 @@ export function summaryThresholds(maxContextLength: number): {
   }
 }
 
+/**
+ * A `personal` summary is asked to be longer: it is all that carries a thread
+ * of many subjects forward, where a task's summary carries one. Still a
+ * fraction of what the personal assistants this follows keep in every request
+ * (a recap of ~9k tokens beside a profile of ~4k).
+ */
+const PERSONAL_SUMMARY_TARGET_TOKENS = 3_000
+/**
+ * How much of the newest conversation a `personal` summary leaves word for
+ * word after it, in whole turns. A summary made as a turn ended covers that
+ * turn, so without this the person's next text, a quarter of an hour later,
+ * would be answered from a recap of the exchange it replies to: "yes, that
+ * one" needs the words it answers.
+ */
+export const PERSONAL_TAIL_TOKENS = 4_000
+
 /** How long a summary is asked to be: small windows get a shorter one. */
-export function summaryTargetTokens(maxContextLength: number): number {
+export function summaryTargetTokens(
+  maxContextLength: number,
+  style?: CompactionSummaryStyle,
+): number {
   return Math.min(
-    SUMMARY_TARGET_TOKENS,
+    style === 'personal' ? PERSONAL_SUMMARY_TARGET_TOKENS : SUMMARY_TARGET_TOKENS,
     Math.floor(maxContextLength * SUMMARY_TARGET_SHARE),
   )
 }
@@ -329,15 +351,26 @@ export function applyConversationSummary(params: {
   messages: Message[]
   summary: ConversationSummary
   keep?: (message: Message) => boolean
+  /**
+   * Also keep the newest covered turns word for word, whole, up to this many
+   * tokens (`PERSONAL_TAIL_TOKENS`). A turn starts at a user prompt, so what
+   * is kept never opens on a tool result or half an exchange.
+   */
+  tailTokens?: number
   now?: number
 }): { messages: Message[]; summary: ConversationSummary } | null {
   const index = anchorIndex(params.messages, params.summary)
   if (index < 0) return null
   const head = buildConversationSummaryMessage(params.summary.text, params.now)
   const { contextTokens: _, ...summary } = params.summary
-  const kept = params.keep
-    ? params.messages.slice(0, index + 1).filter(params.keep)
-    : []
+  const covered = params.messages.slice(0, index + 1)
+  const tailStart = params.tailTokens
+    ? coveredTailStart(covered, params.tailTokens)
+    : covered.length
+  const kept = [
+    ...(params.keep ? covered.slice(0, tailStart).filter(params.keep) : []),
+    ...covered.slice(tailStart),
+  ]
   return {
     messages: [head, ...kept, ...params.messages.slice(index + 1)],
     summary: {
@@ -346,6 +379,27 @@ export function applyConversationSummary(params: {
       anchor: messageFingerprint(head),
     },
   }
+}
+
+/**
+ * Where the newest whole turns that fit in `tailTokens` start in `covered`,
+ * or its length when none fits. Never reaches back over an earlier summary.
+ */
+function coveredTailStart(covered: Message[], tailTokens: number): number {
+  let start = covered.length
+  for (let i = covered.length - 1; i >= 0; i--) {
+    const message = covered[i]
+    if (message.tags?.includes(CONVERSATION_SUMMARY_TAG)) break
+    if (
+      message.role !== 'user' ||
+      message.tags?.includes('USER_PROMPT') !== true
+    )
+      continue
+    const turn = covered.slice(i).filter((m) => !isEphemeral(m))
+    if (countTokensMessages(turn) > tailTokens) break
+    start = i
+  }
+  return start
 }
 
 export type SummaryStream = (params: {
@@ -379,9 +433,16 @@ export class SummaryError extends Error {
  * did on 12% of its summaries, prod 2026-10-30, and each one was thrown away),
  * so a reply with the format's shape counts without the name.
  */
-export function summaryFromReply(reply: string): string {
+export function summaryFromReply(
+  reply: string,
+  style?: CompactionSummaryStyle,
+): string {
   const text = reply.replace(/<think>[\s\S]*?<\/think>/g, '')
-  const english = text.indexOf('## Objective')
+  const english = text.indexOf(
+    style === 'personal'
+      ? PERSONAL_SUMMARY_FIRST_HEADING
+      : COMPACTION_SUMMARY_FIRST_HEADING,
+  )
   if (english >= 0) return text.slice(english).trim()
   const sections = [...text.matchAll(/^## /gm)]
   return sections.length >= MIN_TRANSLATED_SECTIONS
@@ -400,6 +461,8 @@ export async function generateConversationSummary(params: {
   /** The provider's count when the summary was requested, if known. */
   contextTokens?: number
   targetTokens: number
+  /** Which format to ask for; absent is a coding task's. */
+  style?: CompactionSummaryStyle
   maxOutputTokens?: number
   stream: SummaryStream
   signal: AbortSignal
@@ -419,7 +482,7 @@ export async function generateConversationSummary(params: {
       // Tagged so the server's prompt classifier skips it as product text.
       userMessage({
         content: withSystemInstructionTags(
-          buildCompactionSummaryPrompt(params.targetTokens),
+          buildCompactionSummaryPrompt(params.targetTokens, params.style),
         ),
       }),
     ],
@@ -454,7 +517,7 @@ export async function generateConversationSummary(params: {
   params.signal.throwIfAborted()
   if (finishReason === 'length')
     throw new SummaryError('output_limit', 'The summary hit the output limit')
-  const summaryText = summaryFromReply(text)
+  const summaryText = summaryFromReply(text, params.style)
   if (summaryText.length < MIN_SUMMARY_CHARS)
     throw new SummaryError(
       text.trim().length < MIN_SUMMARY_CHARS ? 'empty' : 'unrecognized',

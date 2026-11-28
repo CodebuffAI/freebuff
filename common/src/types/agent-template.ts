@@ -148,6 +148,8 @@ export type AgentTemplate<
         maxOutputTokens?: number
         cacheExpiryMs?: number | null
         cacheExpiryMinTokens?: number | null
+        /** Which summary a compaction writes (constants/compaction-summary.ts). */
+        summary?: 'personal'
       }
   outputMode: 'last_message' | 'all_messages' | 'structured_output'
   outputSchema?: z.ZodSchema<any>

@@ -36,7 +36,7 @@ export type CloudHistoryProject = {
    * Which workspace the project belongs to (workspace-mode.ts). Set at creation; absent or null
    * from older servers and for every project created before modes existed, both meaning Code.
    */
-  mode?: import('./workspace-mode').WorkspaceMode | null
+  mode?: import('./workspace-mode').ProjectWorkspaceMode | null
 }
 export type CloudHistoryRun = {
   id: string
@@ -83,6 +83,11 @@ export type CloudHistoryChat = {
    * Side chats are left out of `listChats`. Absent from older servers.
    */
   sideOf?: string | null
+  /**
+   * The account's one Buffy thread (buffy.ts): Buffy mode's only chat. Left out of `listChats`,
+   * search, pins and archive lists, since Code and Chat mode never show it. Absent from older servers.
+   */
+  buffy?: boolean
   id: string
   projectId: string | null
   title: string

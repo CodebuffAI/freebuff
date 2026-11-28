@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   chatWorkspaceMode,
+  isProjectWorkspaceMode,
   isWorkspaceMode,
   projectWorkspaceMode,
 } from './workspace-mode'
@@ -30,10 +31,19 @@ describe('workspace mode', () => {
     ).toBe('code')
   })
 
-  test('only the two modes are modes', () => {
+  test('the Buffy thread is Buffy mode whatever else it carries', () => {
+    expect(chatWorkspaceMode({ projectId: null, buffy: true }, null)).toBe('buffy')
+    expect(chatWorkspaceMode({ projectId: 'p', buffy: true }, { mode: 'code' })).toBe('buffy')
+    expect(chatWorkspaceMode({ projectId: null, buffy: false }, null)).toBe('chat')
+  })
+
+  test('only the three modes are modes, and a project has one of two', () => {
     expect(isWorkspaceMode('code')).toBe(true)
     expect(isWorkspaceMode('chat')).toBe(true)
+    expect(isWorkspaceMode('buffy')).toBe(true)
     expect(isWorkspaceMode('Chat')).toBe(false)
     expect(isWorkspaceMode(null)).toBe(false)
+    expect(isProjectWorkspaceMode('chat')).toBe(true)
+    expect(isProjectWorkspaceMode('buffy')).toBe(false)
   })
 })

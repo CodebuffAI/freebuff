@@ -239,6 +239,10 @@ export interface AgentDefinition {
         maxOutputTokens?: number
         cacheExpiryMs?: number | null
         cacheExpiryMinTokens?: number | null
+        /** `personal`: the conversation is an ongoing personal thread, not one
+         * task. The summary keeps the person, what they asked of the agent and
+         * what is open, and the newest turns stay word for word after it. */
+        summary?: 'personal'
       }
 
   /** Background information for the agent. Fairly optional. Prefer using instructionsPrompt for agent instructions. */

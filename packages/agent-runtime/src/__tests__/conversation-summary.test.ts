@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'bun:test'
 
 import {
   applyConversationSummary,
+  buildConversationSummaryMessage,
   conversationSummaries,
   generateConversationSummary,
   CONTINUATION_PROMPT_TAG,
@@ -15,9 +16,13 @@ import {
   summaryIdleMs,
   summaryIsDue,
   summaryReasoningOptions,
+  summaryFromReply,
   summaryRequestHistory,
+  summaryTargetTokens,
   summaryThresholds,
 } from '../conversation-summary'
+
+import { countTokensMessages } from '../util/token-counter'
 
 import type { SummaryStream } from '../conversation-summary'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
@@ -274,6 +279,66 @@ describe('applyConversationSummary', () => {
         summary,
       }),
     ).toBeNull()
+  })
+})
+
+// A personal thread (`compactContext.summary: 'personal'`): a summary made as
+// a turn ended covers that turn, and the person's next text answers it.
+describe('a personal summary keeps the newest turns word for word', () => {
+  const long = 'x '.repeat(4_000)
+  const history: Message[] = [
+    prompt(`old ${long}`, 0),
+    { ...assistantMessage('old answer'), sentAt: 1 },
+    prompt('want takis or doritos?', 2),
+    { ...assistantMessage('takis, $16.99: order it?'), sentAt: 3 },
+    prompt('yes', 4),
+    { ...assistantMessage('approval link sent'), sentAt: 5 },
+    prompt('thx', 6),
+  ]
+  const summary: ConversationSummary = {
+    text: TEXT,
+    coveredMessages: 6,
+    anchor: messageFingerprint(history[5]),
+    contextTokens: 1,
+    createdAt: 1,
+  }
+
+  it('whole turns, newest first, up to the budget; older ones only as the summary', () => {
+    const applied = applyConversationSummary({ messages: history, summary, tailTokens: 500 })!
+    // The summary, the two short turns it covers, and the message after it.
+    expect(applied.messages.slice(1)).toEqual(history.slice(2))
+    expect(JSON.stringify(applied.messages)).not.toContain('old answer')
+    // Without it (a coding task's summary), everything covered is gone.
+    expect(applyConversationSummary({ messages: history, summary })!.messages.slice(1)).toEqual([history[6]])
+  })
+
+  it('never opens on half a turn, and keeps nothing when the newest turn alone is too big', () => {
+    // Room for the last turn only: it starts at its own prompt.
+    const lastTurn = countTokensMessages(history.slice(4, 6))
+    const one = applyConversationSummary({ messages: history, summary, tailTokens: lastTurn })!
+    expect(one.messages.slice(1)).toEqual(history.slice(4))
+    const none = applyConversationSummary({ messages: history, summary, tailTokens: 1 })!
+    expect(none.messages.slice(1)).toEqual([history[6]])
+  })
+
+  it('does not reach back over an earlier summary', () => {
+    const earlier = buildConversationSummaryMessage('## Standing Requests\n- call them Sam')
+    const messages = [earlier, ...history.slice(2)]
+    const applied = applyConversationSummary({ messages, summary, tailTokens: 100_000 })!
+    expect(applied.messages.slice(1)).toEqual(history.slice(2))
+  })
+
+  it('asks for its own format, a little longer, and reads the reply by its first heading', () => {
+    const personal = buildCompactionSummaryPrompt(3_000, 'personal')
+    for (const heading of ['## Standing Requests', '## About Them', '## Open Threads', '## Handed Off', '## Scheduled', '## Timeline', '## Latest Exchange'])
+      expect(personal).toContain(heading)
+    expect(personal).not.toContain('## Relevant Files')
+    expect(buildCompactionSummaryPrompt(2_000)).toContain('## Relevant Files')
+    expect(summaryTargetTokens(375_000, 'personal')).toBeGreaterThan(summaryTargetTokens(375_000))
+    const reply = `Sure.\n\n## Standing Requests\n- "call me Sam" (2026-11-26)\n\n## About Them\n- (none)`
+    expect(summaryFromReply(reply, 'personal')).toStartWith('## Standing Requests')
+    // A coding summary's reader does not take it for one of its own.
+    expect(summaryFromReply(reply)).toBe('')
   })
 })
 
