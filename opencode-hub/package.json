@@ -1,0 +1,15 @@
+{
+  "name": "opencode-hub",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Halaman server untuk opencode + server data terpisah, bergaya Freebuff",
+  "scripts": {
+    "start": "node hub-server.mjs",
+    "hub": "node hub-server.mjs",
+    "data": "node data-server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

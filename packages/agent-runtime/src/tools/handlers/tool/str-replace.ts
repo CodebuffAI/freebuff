@@ -1,5 +1,8 @@
 import { postStreamProcessing } from './write-file'
 import { processStrReplace } from '../../../process-str-replace'
+import { isPathConfined } from '../../../util/path-confinement'
+import { PATH_OUTSIDE_PROJECT_MESSAGE } from '../../../util/path-confinement'
+import { FILE_READ_STATUS } from '@codebuff/common/constants/paths'
 
 import type { CodebuffToolHandlerFunction } from '../handler-function-type'
 import type { FileProcessingState } from './write-file'
@@ -40,6 +43,22 @@ export const handleStrReplace = (async (
     writeToClient,
   } = params
   const { path, replacements } = toolCall.input
+
+  // Default path confinement: refuse edits outside the project root.
+  if (!isPathConfined(path)) {
+    await previousToolCallFinished
+    return {
+      output: [
+        {
+          type: 'json',
+          value: {
+            file: path,
+            errorMessage: `${FILE_READ_STATUS.OUTSIDE_PROJECT} ${PATH_OUTSIDE_PROJECT_MESSAGE}`,
+          },
+        },
+      ],
+    }
+  }
 
   if (!fileProcessingState.promisesByPath[path]) {
     fileProcessingState.promisesByPath[path] = []

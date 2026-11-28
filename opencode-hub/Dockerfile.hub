@@ -1,0 +1,14 @@
+# Image untuk server halaman (hub-server.mjs) dan server data (data-server.mjs).
+# Keduanya memakai image yang sama, dibedakan oleh command di compose.
+FROM node:22-alpine
+
+WORKDIR /app
+
+COPY opencode-hub/package.json ./
+COPY opencode-hub/hub-server.mjs opencode-hub/data-server.mjs ./
+COPY opencode-hub/data ./data
+COPY opencode-hub/public ./public
+
+ENV NODE_ENV=production
+
+CMD ["node", "hub-server.mjs"]

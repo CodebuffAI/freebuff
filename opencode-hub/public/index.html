@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opencode Server Hub</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="glow"></div>
+
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark">oc</span>
+        <div>
+          <strong>opencode <span class="slash">×</span> Freebuff Hub</strong>
+          <p>Halaman server untuk agen opencode &amp; server data terpisah</p>
+        </div>
+      </div>
+      <div class="pill" id="overall">
+        <span class="dot"></span><span id="overall-text">memeriksa…</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="cards">
+        <article class="card">
+          <div class="card-head">
+            <h2>Server opencode</h2>
+            <span class="badge" id="oc-badge">—</span>
+          </div>
+          <dl>
+            <div><dt>Endpoint</dt><dd id="oc-url">—</dd></div>
+            <div><dt>Versi</dt><dd id="oc-version">—</dd></div>
+            <div><dt>Sesi aktif</dt><dd id="oc-sessions">—</dd></div>
+            <div><dt>Latensi</dt><dd id="oc-latency">—</dd></div>
+            <div><dt>Password</dt><dd id="oc-auth">—</dd></div>
+          </dl>
+          <p class="hint">
+            Mode <code>opencode web</code> di port 4096, disajikan hub di akar origin (<code>/</code>).
+            Dashboard ini ada di <code>/hub</code>.
+          </p>
+          <a class="open-ui" href="/" target="_blank" rel="noreferrer">Buka server opencode →</a>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h2>Server data</h2>
+            <span class="badge" id="data-badge">—</span>
+          </div>
+          <dl>
+            <div><dt>Endpoint</dt><dd id="data-url">—</dd></div>
+            <div><dt>Uptime</dt><dd id="data-uptime">—</dd></div>
+            <div><dt>Grup tautan</dt><dd id="data-groups">—</dd></div>
+            <div><dt>Total entri</dt><dd id="data-items">—</dd></div>
+            <div><dt>Latensi</dt><dd id="data-latency">—</dd></div>
+          </dl>
+          <p class="hint">Proses terpisah, port terpisah (8788), data sendiri.</p>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h2>Hub</h2>
+            <span class="badge ok">online</span>
+          </div>
+          <dl>
+            <div><dt>Port</dt><dd id="hub-port">—</dd></div>
+            <div><dt>Uptime</dt><dd id="hub-uptime">—</dd></div>
+            <div><dt>Runtime</dt><dd id="hub-node">—</dd></div>
+            <div><dt>Terakhir cek</dt><dd id="hub-checked">—</dd></div>
+          </dl>
+          <p class="hint">Halaman ini memantau kedua server tiap 5 detik.</p>
+        </article>
+      </section>
+
+      <section class="panel warning">
+        <h2>Sebelum membuka ke publik</h2>
+        <p>
+          <code>opencode serve</code> / <code>opencode web</code> memberi kendali penuh atas sesi agen
+          dan filesystem. Jangan menaruhnya langsung di internet. Minimal:
+        </p>
+        <pre><code>OPENCODE_SERVER_PASSWORD='ganti-ini' \
+  opencode web --port 4096 --hostname 127.0.0.1</code></pre>
+        <p>
+          Lalu taruh reverse proxy (Caddy/Nginx) dengan HTTPS dan basic-auth di depannya. Repo
+          <a href="https://github.com/nexusrootlab/incident" target="_blank" rel="noreferrer"
+            >nexusrootlab/incident</a
+          >
+          mendokumentasikan kebocoran data lintas-sesi pada OpenCode Zen — alasan tambahan untuk
+          tidak mengekspos instance tanpa autentikasi.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Referensi &amp; tautan</h2>
+          <span class="muted" id="resources-source">sumber: server data</span>
+        </div>
+        <div id="resources" class="resources"><p class="muted">memuat…</p></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Sesi opencode terbaru</h2>
+          <button id="refresh" type="button">Muat ulang</button>
+        </div>
+        <div id="sessions" class="resources"><p class="muted">memuat…</p></div>
+      </section>
+
+      <section class="panel">
+        <h2>Menjalankan permanen</h2>
+        <p>Dua proses, dua port. Contoh systemd di mesin/VPS Anda sendiri:</p>
+        <pre><code>[Unit]
+Description=opencode headless server
+After=network.target
+
+[Service]
+Environment=OPENCODE_SERVER_PASSWORD=RAHASIA
+ExecStart=/usr/local/bin/opencode serve --port 4096 --hostname 127.0.0.1
+Restart=always
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+        <p>Untuk hub dan server data (dari folder ini):</p>
+        <pre><code>node data-server.mjs &amp;
+node hub-server.mjs</code></pre>
+      </section>
+
+      <footer>
+        <p>
+          Halaman ini bukan produk resmi opencode maupun Freebuff, dan tidak berafiliasi dengan
+          tim opencode.
+        </p>
+      </footer>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

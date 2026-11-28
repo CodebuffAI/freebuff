@@ -1,0 +1,43 @@
+# Domain custom sepenuhnya milik Anda: cukup arahkan DNS ke IP server ini.
+# Caddy menerbitkan sertifikat HTTPS otomatis (Let's Encrypt / ZeroSSL).
+
+{
+	email {$ACME_EMAIL}
+	servers {
+		protocols h1 h2
+	}
+}
+
+# Halaman hub publik.
+{$HUB_DOMAIN} {
+	encode zstd gzip
+
+	# Login untuk SEMUA rute (UI opencode, /chat, /hub, /api).
+	# Isi berkas ini ditulis oleh install.sh, atau buat hash manual:
+	#   docker compose run --rm caddy caddy hash-password --plaintext 'PASSWORD-PANJANG'
+	# Kalau berkas hanya berisi komentar, situs terbuka tanpa login.
+	import auth.caddy
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+	}
+
+	reverse_proxy hub:3000
+}
+
+# --- API opencode publik (opsional) -----------------------------------------
+# API opencode memberi kendali penuh atas sesi agen dan filesystem. Jangan
+# aktifkan tanpa basic auth + password server. Buat hash dulu:
+#   docker compose run --rm caddy caddy hash-password --plaintext 'PASSWORD-PANJANG'
+# lalu isi OC_BASIC_HASH di .env dan hapus tanda komentar di bawah.
+#
+# oc.{$HUB_DOMAIN} {
+# 	basic_auth {
+# 		{$OC_BASIC_USER:admin} {$OC_BASIC_HASH}
+# 	}
+# 	reverse_proxy opencode:4096
+# }

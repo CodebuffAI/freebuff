@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opencode chat</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --panel: #12151a;
+        --panel-2: #171b21;
+        --line: #232833;
+        --text: #e6e9ef;
+        --muted: #8b94a3;
+        --accent: #6ea8ff;
+        --ok: #4ade80;
+        --err: #f87171;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        overflow: hidden;
+      }
+      aside {
+        width: 250px;
+        flex: 0 0 250px;
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      aside header {
+        padding: 14px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .brand { font-weight: 700; letter-spacing: 0.2px; }
+      .brand span { color: var(--accent); }
+      button {
+        font: inherit;
+        color: var(--text);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 7px 10px;
+        cursor: pointer;
+      }
+      button:hover { border-color: #39404d; }
+      button.primary { background: #1d3a63; border-color: #2c5a96; color: #dcebff; }
+      button:disabled { opacity: 0.55; cursor: default; }
+      #sessions { overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+      .session {
+        text-align: left;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 8px 10px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--muted);
+      }
+      .session:hover { background: var(--panel-2); color: var(--text); }
+      .session.active { background: #1a2432; border-color: #2a3a52; color: var(--text); }
+      aside footer { padding: 10px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+      aside footer a { color: var(--accent); text-decoration: none; }
+
+      main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+      main header {
+        padding: 12px 18px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      #title { font-weight: 600; margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      select {
+        font: inherit;
+        color: var(--text);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 7px 9px;
+        max-width: 260px;
+      }
+      #log { flex: 1; overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+      .msg { display: flex; gap: 10px; }
+      .msg .who {
+        flex: 0 0 auto;
+        width: 34px;
+        height: 34px;
+        border-radius: 9px;
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        font-weight: 700;
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        color: var(--muted);
+      }
+      .msg.user .who { color: #cfe0ff; border-color: #2c5a96; background: #17242f; }
+      .msg.assistant .who { color: #b9f5cf; border-color: #276b45; background: #13231a; }
+      .bubble {
+        flex: 1;
+        min-width: 0;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 14px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .msg.user .bubble { background: #131a24; }
+      .bubble code {
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: #0d1015;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+      .meta { color: var(--muted); font-size: 11px; margin-top: 6px; }
+      .empty { margin: auto; text-align: center; color: var(--muted); max-width: 460px; }
+      .empty h1 { color: var(--text); font-size: 20px; margin: 0 0 8px; }
+      form {
+        border-top: 1px solid var(--line);
+        padding: 12px 18px 16px;
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+        background: var(--panel);
+      }
+      textarea {
+        flex: 1;
+        resize: none;
+        min-height: 46px;
+        max-height: 180px;
+        font: inherit;
+        color: var(--text);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 11px 13px;
+        outline: none;
+      }
+      textarea:focus { border-color: #2c5a96; }
+      #log { overflow-y: auto; overflow-x: hidden; }
+      #status { padding: 0 18px 14px; font-size: 12px; min-height: 16px; }
+
+      @media (max-width: 760px) {
+        body { flex-direction: column; }
+        aside {
+          width: auto;
+          flex: 0 0 auto;
+          max-height: 34vh;
+          border-right: none;
+          border-bottom: 1px solid var(--line);
+        }
+        aside header { padding: 10px 12px; }
+        #sessions { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 8px; }
+        .session { max-width: 60vw; }
+        aside footer { padding: 6px 12px; border-top: none; display: flex; gap: 8px; }
+        main { flex: 1 1 auto; }
+        main header { padding: 10px 12px; gap: 8px; }
+        #title { flex: 1 1 100%; }
+        select { max-width: 100%; flex: 1 1 auto; }
+        #log { padding: 12px; gap: 10px; }
+        .msg .who { width: 26px; height: 26px; font-size: 10px; }
+        .bubble { padding: 8px 11px; border-radius: 10px; }
+        form { padding: 10px 12px 12px; }
+        #status { padding: 0 12px 10px; }
+      }
+      #status.err { color: var(--err); }
+      #status.busy { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <aside>
+      <header>
+        <div class="brand">open<span>code</span></div>
+        <button id="new" title="Sesi baru">+ Baru</button>
+      </header>
+      <div id="sessions"></div>
+      <footer>
+        <span id="conn">menghubungkan…</span><br />
+        <a href="/hub">dashboard hub</a>
+      </footer>
+    </aside>
+
+    <main>
+      <header>
+        <div id="title">Chat</div>
+        <select id="model" title="Model"></select>
+      </header>
+      <div id="log">
+        <div class="empty" id="empty">
+          <h1>Mulai ngobrol dengan opencode</h1>
+          <p>Tulis pesan di bawah. Sesi dibuat otomatis kalau belum ada.</p>
+        </div>
+      </div>
+      <div id="status"></div>
+      <form id="composer">
+        <textarea id="input" rows="1" placeholder="Tulis pesan… (Enter kirim, Shift+Enter baris baru)"></textarea>
+        <button class="primary" id="send" type="submit">Kirim</button>
+      </form>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const state = {
+        sessionID: null,
+        model: { providerID: "opencode", modelID: "big-pickle" },
+        models: [],
+        busy: false,
+      };
+
+      async function api(path, options = {}) {
+        const res = await fetch(path, {
+          ...options,
+          headers: { "content-type": "application/json", ...(options.headers ?? {}) },
+        });
+        const text = await res.text();
+        let body = null;
+        try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+        if (!res.ok) {
+          const detail = body?.data?.message ?? body?.error ?? body?.message ?? res.statusText;
+          throw new Error(`${res.status} ${detail}`);
+        }
+        return body;
+      }
+
+      function setStatus(text, kind) {
+        const el = $("status");
+        el.textContent = text ?? "";
+        el.className = kind ?? "";
+      }
+
+      function textOf(parts) {
+        return (parts ?? [])
+          .filter((p) => p.type === "text" && typeof p.text === "string")
+          .map((p) => p.text)
+          .join("\n\n")
+          .trim();
+      }
+
+      function renderMessage(info, parts) {
+        const role = info?.role === "user" ? "user" : "assistant";
+        const text = textOf(parts);
+        if (!text) return null;
+        const wrap = document.createElement("div");
+        wrap.className = `msg ${role}`;
+        const who = document.createElement("div");
+        who.className = "who";
+        who.textContent = role === "user" ? "YOU" : "OC";
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = text;
+        if (role === "assistant" && info?.modelID) {
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          const usage = info.tokens?.total ? ` · ${info.tokens.total} token` : "";
+          meta.textContent = `${info.providerID ?? ""}/${info.modelID}${usage}`;
+          bubble.append(meta);
+        }
+        wrap.append(who, bubble);
+        return wrap;
+      }
+
+      async function loadModels() {
+        try {
+          const data = await api("/provider");
+          const connected = new Set(data.connected ?? []);
+          const list = [];
+          for (const provider of data.all ?? []) {
+            if (connected.size && !connected.has(provider.id)) continue;
+            for (const model of Object.values(provider.models ?? {})) {
+              list.push({ providerID: provider.id, modelID: model.id, name: `${provider.name} · ${model.name}` });
+            }
+          }
+          state.models = list;
+          const select = $("model");
+          select.innerHTML = "";
+          for (const item of list) {
+            const option = document.createElement("option");
+            option.value = `${item.providerID}/${item.modelID}`;
+            option.textContent = item.name;
+            select.append(option);
+          }
+          const preferred =
+            list.find((m) => m.providerID === "opencode" && m.modelID === "big-pickle") ??
+            list.find((m) => m.providerID === "opencode") ??
+            list[0];
+          if (preferred) {
+            state.model = { providerID: preferred.providerID, modelID: preferred.modelID };
+            select.value = `${preferred.providerID}/${preferred.modelID}`;
+          }
+          $("conn").textContent = `${list.length} model · ${connected.size || "?"} provider`;
+        } catch (error) {
+          $("conn").textContent = "model gagal dimuat";
+          setStatus(`Gagal memuat model: ${error.message}`, "err");
+        }
+      }
+
+      async function loadSessions() {
+        try {
+          const list = await api("/session");
+          const box = $("sessions");
+          box.innerHTML = "";
+          for (const session of (Array.isArray(list) ? list : []).slice(-50).reverse()) {
+            const button = document.createElement("button");
+            button.className = "session" + (session.id === state.sessionID ? " active" : "");
+            button.textContent = session.title || "(tanpa judul)";
+            button.onclick = () => openSession(session.id);
+            box.append(button);
+          }
+          return list;
+        } catch (error) {
+          setStatus(`Gagal memuat sesi: ${error.message}`, "err");
+          return [];
+        }
+      }
+
+      async function openSession(id) {
+        state.sessionID = id;
+        $("title").textContent = "memuat…";
+        const log = $("log");
+        log.innerHTML = "";
+        try {
+          const messages = await api(`/session/${id}/message`);
+          for (const item of messages ?? []) {
+            const node = renderMessage(item.info, item.parts);
+            if (node) log.append(node);
+          }
+          if (!log.childElementCount) {
+            log.innerHTML = '<div class="empty"><h1>Sesi kosong</h1><p>Tulis pesan untuk memulai.</p></div>';
+          }
+          const sessions = await api("/session");
+          const current = (sessions ?? []).find((s) => s.id === id);
+          $("title").textContent = current?.title || "Chat";
+          log.scrollTop = log.scrollHeight;
+          loadSessions();
+        } catch (error) {
+          $("title").textContent = "Chat";
+          setStatus(`Gagal memuat sesi: ${error.message}`, "err");
+        }
+      }
+
+      async function newSession() {
+        const session = await api("/session", {
+          method: "POST",
+          body: JSON.stringify({ title: "Chat baru" }),
+        });
+        state.sessionID = session.id;
+        $("title").textContent = session.title || "Chat baru";
+        $("log").innerHTML = '<div class="empty"><h1>Sesi baru</h1><p>Tulis pesan untuk memulai.</p></div>';
+        await loadSessions();
+        return session.id;
+      }
+
+      async function send(text) {
+        if (state.busy) return;
+        state.busy = true;
+        $("send").disabled = true;
+        setStatus("menunggu balasan opencode…", "busy");
+        const log = $("log");
+        const empty = log.querySelector(".empty");
+        if (empty) empty.remove();
+
+        const mine = document.createElement("div");
+        mine.className = "msg user";
+        mine.innerHTML = '<div class="who">YOU</div><div class="bubble"></div>';
+        mine.querySelector(".bubble").textContent = text;
+        log.append(mine);
+        log.scrollTop = log.scrollHeight;
+
+        try {
+          let id = state.sessionID;
+          if (!id) id = await newSession();
+          const reply = await api(`/session/${id}/message`, {
+            method: "POST",
+            body: JSON.stringify({
+              model: state.model,
+              parts: [{ type: "text", text }],
+            }),
+          });
+          const node = renderMessage(reply.info, reply.parts);
+          if (node) log.append(node);
+          else {
+            const note = document.createElement("div");
+            note.className = "msg assistant";
+            note.innerHTML = '<div class="who">OC</div><div class="bubble"></div>';
+            note.querySelector(".bubble").textContent = "(balasan tanpa teks)";
+            log.append(note);
+          }
+          log.scrollTop = log.scrollHeight;
+          setStatus("");
+          loadSessions();
+          if (state.sessionID) {
+            const sessions = await api("/session").catch(() => []);
+            const current = (sessions ?? []).find((s) => s.id === state.sessionID);
+            if (current) $("title").textContent = current.title || "Chat";
+          }
+        } catch (error) {
+          setStatus(`Gagal mengirim: ${error.message}`, "err");
+        } finally {
+          state.busy = false;
+          $("send").disabled = false;
+        }
+      }
+
+      $("composer").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const input = $("input");
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = "";
+        input.style.height = "auto";
+        send(text);
+      });
+
+      $("input").addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          $("composer").requestSubmit();
+        }
+      });
+
+      $("input").addEventListener("input", (event) => {
+        const el = event.target;
+        el.style.height = "auto";
+        el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+      });
+
+      $("model").addEventListener("change", (event) => {
+        const [providerID, ...rest] = event.target.value.split("/");
+        state.model = { providerID, modelID: rest.join("/") };
+        setStatus(`model: ${providerID}/${state.model.modelID}`);
+      });
+
+      $("new").addEventListener("click", () => {
+        newSession().catch((error) => setStatus(`Gagal membuat sesi: ${error.message}`, "err"));
+      });
+
+      (async () => {
+        await loadModels();
+        const sessions = await loadSessions();
+        const latest = (sessions ?? []).slice(-1)[0];
+        if (latest) openSession(latest.id);
+      })();
+    </script>
+  </body>
+</html>
