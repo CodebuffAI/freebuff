@@ -123,6 +123,34 @@ export function withSystemInstructionTags(str: string): string {
 export const USER_INTERRUPTED_MESSAGE =
   "User interrupted the response. The assistant's previous work has been preserved."
 
+/**
+ * Why a host stopped a run, when it says: an AbortError `signal.reason` whose
+ * message is a lowercase word (the Cloud worker's `runner_restart`,
+ * `time_limit`, ...). The CLI's Esc (`user-interrupt`), a bare abort and
+ * anything else give none.
+ */
+export function stopCause(reason: unknown): string | undefined {
+  const message =
+    reason instanceof Error && reason.name === 'AbortError'
+      ? reason.message
+      : undefined
+  return message && /^[a-z_]{1,40}$/.test(message) ? message : undefined
+}
+
+/**
+ * A runtime note with why and when it happened appended: the note reaches the
+ * model (and the trace) with the next request, so without its own time a
+ * stop reads as happening when the user next wrote (docs/daily-trace-report.md).
+ * The opening stays the note's, so matchers on it still match.
+ */
+export function noteWithCause(
+  note: string,
+  params: { cause?: string; at?: number } = {},
+): string {
+  const at = new Date(params.at ?? Date.now()).toISOString()
+  return `${note} (${params.cause ? `cause: ${params.cause}; ` : ''}at ${at})`
+}
+
 export function withSystemTags(str: string): string {
   return `<system>${str}${closeXml('system')}`
 }

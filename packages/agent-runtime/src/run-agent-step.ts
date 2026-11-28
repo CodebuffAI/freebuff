@@ -152,6 +152,8 @@ import {
   expireMessages,
   frameSteeringContent,
   USER_INTERRUPTED_MESSAGE,
+  noteWithCause,
+  stopCause,
 } from './util/messages'
 import {
   estimateContextTokens,
@@ -2676,7 +2678,11 @@ export async function loopAgentSteps(
       currentAgentState.messageHistory = [
         ...currentAgentState.messageHistory,
         userMessage(
-          withSystemTags(USER_INTERRUPTED_MESSAGE),
+          withSystemTags(
+            noteWithCause(USER_INTERRUPTED_MESSAGE, {
+              cause: stopCause(signal.reason),
+            }),
+          ),
         ),
       ]
 
@@ -2775,7 +2781,9 @@ export async function loopAgentSteps(
       currentAgentState.messageHistory = [
         ...currentAgentState.messageHistory,
         userMessage(
-          withSystemTags(refused ? USER_PROMPT_REFUSED_NOTE : TURN_FAILED_NOTE),
+          withSystemTags(
+            refused ? USER_PROMPT_REFUSED_NOTE : noteWithCause(TURN_FAILED_NOTE),
+          ),
         ),
       ]
     }

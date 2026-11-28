@@ -574,8 +574,11 @@ export function toUserInterruptedRunState(runState: RunState): RunState | undefi
   if (!sessionState) return undefined
   const previousHistory = sessionState.mainAgentState.messageHistory
   const interrupted = withSystemTags(USER_INTERRUPTED_MESSAGE)
+  // The runtime's own note also says when (and maybe why) the turn stopped.
+  const isInterrupted = (text: string | undefined) =>
+    !!text?.startsWith(`<system>${USER_INTERRUPTED_MESSAGE}`)
   const last = userMessageText(previousHistory.at(-1))
-  if (last === interrupted) return runState
+  if (isInterrupted(last)) return runState
 
   const appended =
     runState.output?.type === 'error' && runState.output.message
@@ -584,7 +587,7 @@ export function toUserInterruptedRunState(runState: RunState): RunState | undefi
   if (!appended || last !== appended) return runState
 
   const nextHistory = previousHistory.slice(0, -1)
-  if (userMessageText(nextHistory.at(-1)) !== interrupted) {
+  if (!isInterrupted(userMessageText(nextHistory.at(-1)))) {
     nextHistory.push({
       role: 'user' as const,
       content: [{ type: 'text' as const, text: interrupted }],
