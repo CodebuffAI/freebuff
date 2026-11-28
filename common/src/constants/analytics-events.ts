@@ -187,6 +187,9 @@ export enum AnalyticsEvent {
   DOCS_SEARCH_INSUFFICIENT_CREDITS = 'api.docs_search_insufficient_credits',
   DOCS_SEARCH_ERROR = 'api.docs_search_error',
   DOCS_SEARCH_RATE_LIMITED = 'api.docs_search_rate_limited',
+  // POST /api/v1/client-events (COD-1719): the native apps' event batch.
+  CLIENT_EVENTS_AUTH_ERROR = 'api.client_events_auth_error',
+  CLIENT_EVENTS_VALIDATION_ERROR = 'api.client_events_validation_error',
 
   GRAVITY_INDEX_REQUEST = 'api.gravity_index_request',
   GRAVITY_INDEX_AUTH_ERROR = 'api.gravity_index_auth_error',
@@ -370,7 +373,34 @@ export enum AnalyticsEvent {
   // rendered | fallback (shown as text) | saved (as `kind`); `blocks`: the block names drawn;
   // `originApp`: web | desktop. The server's per-turn sizes are the Axiom event of the same name.
   FREEBUFF_INLINE_VISUAL = 'freebuff.inline_visual',
+  // A Cloud chat's undo or redo as the server ended it (web desktop-cloud/chat-revert.ts):
+  // the click is the browser's `turn_action` funnel step. `action`: undo | redo;
+  // `outcome`: succeeded | failed; `run_id` (the undo's boundary turn; absent for a redo);
+  // `thread_id`; `error_status`: the refusal's HTTP status on a failure (499 the browser left, 500 unknown).
+  FREEBUFF_TURN_ACTION_OUTCOME = 'freebuff.turn_action_outcome',
   FREEBUFF_STREAK_OPENED = 'freebuff.streak.opened',
+  // Outcome events whose failures were already logged (COD-1727): each is the
+  // denominator its failure line lacked. Bounded values only.
+  // One per signed-in, unbanned dictation request (web/src/app/api/v1/dictation/_post.ts).
+  // `outcome`: succeeded | failed; `reason` (failed only): rate_limited | unavailable |
+  // transcribe_failed | bad_recording | cancelled | error; `duration_bucket`: the recording,
+  // lt_5s | 5_15s | 15_30s | 30_60s | gte_60s | unknown; `latency_bucket`: lt_1s | 1_3s |
+  // 3_10s | gte_10s; `surface`: web | desktop | unknown. GPC/DNT: Axiom only, no user.
+  FREEBUFF_DICTATION_OUTCOME = 'freebuff.dictation.outcome',
+  // The bell acted on (notifications/notification-analytics.ts), never per delivery.
+  // `action`: opened | tapped | cleared; `unread`: the unread count, capped at 10;
+  // `trigger` and `was_unread` on tapped; `surface`: web | desktop.
+  FREEBUFF_NOTIFICATION_INBOX = 'freebuff.notification_inbox',
+  // An XP level claimed (fn-registry/entries/xp-rewards.ts), server-side, once per
+  // claim created. `tier`: full | limited; `reward_key`: the XP_LEVELS key.
+  FREEBUFF_XP_CLAIMED = 'freebuff.xp.claimed',
+  // A one-time quest's button on the Rewards page. `quest`: discord | site | github;
+  // `surface`: web | desktop.
+  FREEBUFF_XP_QUEST_OPENED = 'freebuff.xp.quest_opened',
+  // A ban appeal decided (packages/internal/src/ban-appeal.ts), Axiom only: no user
+  // id, so it never reaches PostHog. `outcome`: reversed | upheld; `stage`: signature
+  // | reinstate; `reason` (upheld): the BanAppealRefusal; `reversed_count`; `appeal_id`.
+  FREEBUFF_BAN_APPEAL_OUTCOME = 'freebuff.ban_appeal.outcome',
   // Workspace waits (web and hosted Desktop), freebuff/web/src/components/workspace/workspace-timing.ts.
   // `surface`: web | desktop; `sample_rate`: the share reported, where sampled.
   // A sampled chat tab switch, from the click, key or sidebar row to the frame after it painted.
@@ -464,6 +494,16 @@ export enum AnalyticsEvent {
   // Freebuff - a phone tapped its own app store button on the homepage or the
   // sign-in step. `store` is ios | android, `location` the button.
   FREEBUFF_MOBILE_APP_CLICKED = 'freebuff.mobile_app_clicked',
+
+  // Native iOS/Android app events (COD-1719), ingested by
+  // `POST /api/v1/client-events` (web) with the account id as distinct id and
+  // `platform`/`appVersion` stamped by the server. The names and their props
+  // are the allowlist in common/src/analytics/client-events.ts.
+  MOBILE_APP_OPENED = 'mobile.app_opened',
+  MOBILE_REVIEW_PROMPT = 'mobile.review_prompt',
+  MOBILE_PUSH_TAPPED = 'mobile.push_tapped',
+  MOBILE_FEATURE_USED = 'mobile.feature_used',
+  MOBILE_CRASH_REPORT = 'mobile.crash_report',
 
   // Freebuff Web creation gate: the user's idea was screened as something Web
   // cannot build, and they clicked through to the surface we suggested.

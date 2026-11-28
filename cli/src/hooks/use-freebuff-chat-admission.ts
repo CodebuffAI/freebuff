@@ -16,7 +16,10 @@ import {
 } from '../state/freebuff-chat-store'
 import { getFreebuffModelDirectory } from '../state/freebuff-catalog-store'
 import { useFreebuffModelStore } from '../state/freebuff-model-store'
-import { useFreebuffSessionStore } from '../state/freebuff-session-store'
+import {
+  useFreebuffSessionStore,
+  type FreebuffSessionFailure,
+} from '../state/freebuff-session-store'
 import { freebucksOf, freebucksRowIntent } from '../utils/freebucks'
 import type { FreebuffSessionResponse } from '../types/freebuff-session'
 import type { StreamStatus } from './use-message-queue'
@@ -98,9 +101,18 @@ export async function beginFreebuffChatAdmission(admission: ChatAdmission) {
         ...starting,
         phase: 'failed',
         message: error instanceof Error ? error.message : String(error),
+        status: 'start_error',
       },
     })
   }
+}
+
+/** A session request's failure as `admission_status` (`^[a-z_]+$`, no HTTP code). */
+function sessionFailureStatus(failure: FreebuffSessionFailure): string {
+  if (failure.type === 'timeout') return 'request_timeout'
+  if (failure.type === 'http')
+    return failure.statusCode >= 500 ? 'server_error' : 'request_refused'
+  return 'request_failed'
 }
 
 /** A turn is running: its stream is live or its chain is still in progress. */
@@ -145,6 +157,7 @@ export function useFreebuffChatAdmission(enabled: boolean) {
             ...admission,
             phase: 'failed',
             message: failure.message,
+            status: sessionFailureStatus(failure),
           },
         })
       } else if (session === admission.previousSession) {
@@ -160,6 +173,7 @@ export function useFreebuffChatAdmission(enabled: boolean) {
               phase: 'failed',
               message,
               chooseModel: session?.status === 'rate_limited',
+              status: session?.status ?? 'no_session',
             },
           })
       }
@@ -174,6 +188,7 @@ export function useFreebuffChatAdmission(enabled: boolean) {
             ...admission,
             phase: 'failed',
             message: failure.message,
+            status: sessionFailureStatus(failure),
           },
         })
       return
@@ -195,6 +210,7 @@ export function useFreebuffChatAdmission(enabled: boolean) {
                 ...admission,
                 phase: 'failed',
                 message: error instanceof Error ? error.message : String(error),
+                status: 'metadata_error',
               },
             })
         })
@@ -206,6 +222,7 @@ export function useFreebuffChatAdmission(enabled: boolean) {
           ...admission,
           phase: 'failed',
           message: freebuffAdmissionNotice(session)!,
+          status: session.status,
         },
       })
       return
@@ -228,6 +245,7 @@ export function useFreebuffChatAdmission(enabled: boolean) {
         admission: {
           ...resolved,
           phase: 'failed',
+          status: 'paywall',
           message: `Not enough hours for ${getFreebuffModelDirectory().get(model).displayName}: an hour on it takes ${formatHoursWithUnit(intent.price)}. Choose another model or visit https://freebuff.com/plans.`,
           chooseModel: true,
         },

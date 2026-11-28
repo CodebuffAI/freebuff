@@ -157,7 +157,7 @@ test('a refused tool call or a rejected deployment ends with an explanation', as
     prepare: async () => prepared(),
     onEvent: () => {},
   })
-  expect(refused).toEqual({ type: 'error', message: 'Your free hosting allowance includes 6 published sites.' })
+  expect(refused).toEqual({ type: 'error', code: 'deploy_rejected', message: 'Your free hosting allowance includes 6 published sites.' })
 
   const rejected = fakeSites({}, {
     operation: {
@@ -184,7 +184,7 @@ test('a refused tool call or a rejected deployment ends with an explanation', as
     onEvent: () => {},
     errorMessage: () => undefined,
   })
-  expect(broken).toEqual({ type: 'error', message: 'Publishing failed. Try again, or ask the agent to publish.' })
+  expect(broken).toEqual({ type: 'error', code: 'unknown', message: 'Publishing failed. Try again, or ask the agent to publish.' })
 })
 
 test('a deployment still running is polled by its operation id', async () => {
@@ -240,7 +240,7 @@ test('publishing preserves a newer Unpublish made during the upload', async () =
   })
   expect(inspections).toBe(2)
   expect(publications).toBe(0)
-  expect(result).toEqual({ type: 'error', message: 'The deployment succeeded, but this environment is unpublished. Check Publication in Manage site.' })
+  expect(result).toEqual({ type: 'error', code: 'deploy_rejected', message: 'The deployment succeeded, but this environment is unpublished. Check Publication in Manage site.' })
 })
 
 test('publishing an unpublished environment reports the publication limit', async () => {
@@ -254,7 +254,7 @@ test('publishing an unpublished environment reports the publication limit', asyn
     prepare: async () => prepared(),
     onEvent: () => {},
   })
-  expect(result).toEqual({ type: 'error', message: 'Your free hosting allowance includes 6 published sites.' })
+  expect(result).toEqual({ type: 'error', code: 'deploy_rejected', message: 'Your free hosting allowance includes 6 published sites.' })
 })
 
 test('a successful publication receipt cannot announce done if the environment is now unpublished', async () => {
@@ -273,6 +273,7 @@ test('a successful publication receipt cannot announce done if the environment i
   })
   expect(result).toEqual({
     type: 'error',
+    code: 'deploy_rejected',
     message: 'The deployment succeeded, but this environment is unpublished. Check Publication in Manage site.',
   })
   expect(events.some((event) => event.type === 'done')).toBe(false)
@@ -455,7 +456,7 @@ test('the progress stream round-trips and a stream that ends early is an error',
   const early = sitePublishResponse(async () => {}, new AbortController().signal)
   expect((await readSitePublishStream(early)).type).toBe('error')
   const refused = Response.json({ error: 'This chat is already publishing.' }, { status: 409 })
-  expect(await readSitePublishStream(refused)).toEqual({ type: 'error', message: 'This chat is already publishing.' })
+  expect(await readSitePublishStream(refused)).toEqual({ type: 'error', code: 'refused', message: 'This chat is already publishing.' })
 })
 
 test('a refusal to replace another chat’s deploy reaches the button with what to confirm', async () => {

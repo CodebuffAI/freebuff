@@ -9,6 +9,9 @@ export const productFunnelProductSchema = z.enum([
   'students',
   'cli',
   'desktop',
+  /** The native apps: server-observed turn outcomes of their sends (COD-1719). */
+  'ios',
+  'android',
 ])
 export const productFunnelStageSchema = z.enum([
   'landing',
@@ -49,6 +52,10 @@ export const productFunnelStageSchema = z.enum([
   'preview',
   /** the Publish button's own build and deploy: succeeded or failed */
   'publish',
+  /** a user action on a finished turn: undo, redo, rollback, edit, retry or copy (`source`).
+   *  Stop is `turn:cancelled`. The server's outcome of an undo or redo is
+   *  `freebuff.turn_action_outcome` (docs/product-analytics.md, "Turn actions"). */
+  'turn_action',
 ])
 export const productFunnelStateSchema = z.enum([
   'shown',
@@ -69,6 +76,13 @@ export const productFunnelStateSchema = z.enum([
   'blocked',
   'skipped',
   'recovered',
+  // `turn_action`'s states: which action.
+  'undo',
+  'redo',
+  'rollback',
+  'edit',
+  'retry',
+  'copy',
 ])
 /**
  * The Desktop welcome's invite links carry `?via=` naming the share that made
@@ -408,6 +422,14 @@ export const productFunnelPropertiesSchema = z
       .string()
       .regex(/^[a-z0-9_]{1,40}$/)
       .optional(),
+    /** `publish:failed` and `preview:failed`, beside `reason`: a stable code for
+     *  what failed (`SitePublishFailureCode`, `previewFailureCode`), never its text. */
+    failure_code: z
+      .string()
+      .regex(/^[a-z0-9_]{1,40}$/)
+      .optional(),
+    /** `preview:failed`: an expected state, not a fault (no app running yet). */
+    expected: z.boolean().optional(),
     /** `turn_review`: the review's verdict, `none` when it judged no change. */
     review_verdict: z
       .enum(['ready', 'needs_changes', 'not_promising', 'none'])
@@ -429,6 +451,11 @@ export const productFunnelPropertiesSchema = z
     review_offers_challenge: z.boolean().optional(),
     /** `turn_review:shown`: how many buttons the review offered. */
     review_action_count: z.number().int().min(0).max(9).optional(),
+    /** `turn_review` shown/selected: the turn finished while this page watched it run,
+     *  so false is an older turn drawn again (a reload, a chat reopened, a scroll back). */
+    live: z.boolean().optional(),
+    /** `turn_action`: a button on the turn, or a `/undo` `/redo` typed in the composer. */
+    source: z.enum(['button', 'slash']).optional(),
     selection_kind: z
       .enum([
         'default',
@@ -514,7 +541,7 @@ export const productFunnelEventSchema = productFunnelPropertiesSchema.extend({
   funnel_stage: productFunnelStageSchema,
   funnel_state: productFunnelStateSchema,
   event_version: z.literal(1),
-  surface: z.enum(['web', 'cli', 'desktop']),
+  surface: z.enum(['web', 'cli', 'desktop', 'ios', 'android']),
   observer: z.enum(['ui', 'cli', 'server']),
 })
 

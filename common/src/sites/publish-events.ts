@@ -3,6 +3,45 @@
  * apart from `publish.ts` (Node only) so renderers can import it.
  */
 export type SitePublishStage = 'building' | 'deploying' | 'publishing'
+/**
+ * Why a publish failed, for analytics only (`failure_code` on `publish:failed`):
+ * stable and closed, never the message. Older servers send none (`unknown`).
+ */
+export const SITE_PUBLISH_FAILURE_CODES = [
+  /** The project is not one Publish supports, or its configuration is refused before deploying. */
+  'precheck_failed',
+  /** Installing dependencies or the build script failed, or produced no deployment. */
+  'build_failed',
+  /** The build hit its 15-minute limit, or the deployment did not settle in time. */
+  'timeout',
+  /** A Sites request was refused (create, inspect, storage, publication). */
+  'deploy_rejected',
+  /** Cloudflare rejected the uploaded deployment. */
+  'cloudflare_rejected',
+  /** Cloudflare could not start the built Worker (startup validation, 10021). */
+  'cloudflare_startup_failed',
+  /** Cloudflare rate limited the deployment (429). */
+  'cloudflare_rate_limited',
+  /** Cloudflare's outcome was not confirmed, or the request was interrupted. */
+  'cloudflare_unconfirmed',
+  /** Another chat of the project deployed there: the user is asked to replace it. */
+  'other_chat_deploy',
+  /** The Cloud chat's workspace could not be opened or used. */
+  'workspace_unavailable',
+  /** The browser could not reach Freebuff. */
+  'network',
+  /** The publish request was refused before it started (already publishing, invalid). */
+  'refused',
+  /** The stream ended without a result. */
+  'stopped',
+  /** The chat has no workspace yet (no first message). */
+  'not_started',
+  /** A Desktop too old to publish chats running on this computer. */
+  'desktop_outdated',
+  'unknown',
+] as const
+export type SitePublishFailureCode = (typeof SITE_PUBLISH_FAILURE_CODES)[number]
+const FAILURE_CODES = new Set<string>(SITE_PUBLISH_FAILURE_CODES)
 export type SitePublishResult =
   | {
       type: 'done'
@@ -13,6 +52,8 @@ export type SitePublishResult =
   | {
       type: 'error'
       message: string
+      /** Analytics only; absent from older servers and Desktops. */
+      code?: SitePublishFailureCode
       /**
        * The environment was last deployed from another chat of the project:
        * publishing again with `replaceChatId: chatId` replaces it.
@@ -35,6 +76,7 @@ export const SITE_PUBLISH_STAGE_LABELS: Record<SitePublishStage, string> = {
 export const SITE_PUBLISH_HEARTBEAT_MS = 15_000
 const STOPPED: SitePublishResult = {
   type: 'error',
+  code: 'stopped',
   message:
     'Publishing stopped before it finished. Check deployment activity in Manage site, then try again.',
 }
@@ -67,7 +109,11 @@ export function sitePublishResponse(
       )
       void run(write, stop)
         .catch(() =>
-          write({ type: 'error', message: 'Publishing failed. Try again.' }),
+          write({
+            type: 'error',
+            code: 'unknown',
+            message: 'Publishing failed. Try again.',
+          }),
         )
         .finally(() => {
           clearInterval(beat)
@@ -110,6 +156,9 @@ function parseEvent(line: string): SitePublishEvent | null {
       return {
         type: 'error',
         message: value.message.slice(0, 4096),
+        ...(typeof value.code === 'string' && FAILURE_CODES.has(value.code)
+          ? { code: value.code }
+          : {}),
         ...(replace &&
         typeof replace.chatId === 'string' &&
         typeof replace.chatTitle === 'string' &&
@@ -151,7 +200,7 @@ export async function readSitePublishStream(
         : typeof body?.error === 'string'
           ? body.error
           : 'Could not start publishing.'
-    return { type: 'error', message }
+    return { type: 'error', code: 'refused', message }
   }
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
   let buffer = ''

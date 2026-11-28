@@ -8,6 +8,7 @@ import {
 import { SITE_DEPLOY_MANIFEST_FILES } from './project-context'
 import type {
   SitePublishEvent,
+  SitePublishFailureCode,
   SitePublishReplace,
   SitePublishResult,
 } from './publish-events'
@@ -250,6 +251,45 @@ function isPublished(environment: SiteEnvironment): boolean {
   )
 }
 
+/** `operationFailureMessage`'s branches as a stable analytics code. */
+export function operationFailureCode(
+  operation: Operation,
+): SitePublishFailureCode {
+  const result = operation.result
+  if (
+    operation.state === 'unknown' ||
+    result?.error === 'cloudflare_outcome_unknown' ||
+    result?.error === 'request_interrupted'
+  )
+    return 'cloudflare_unconfirmed'
+  if (result?.error === 'operation_deadline') return 'timeout'
+  const provider = result?.provider
+  if (provider?.stage === 'worker_upload' && provider.codes?.includes(10021))
+    return 'cloudflare_startup_failed'
+  if (provider?.status === 429) return 'cloudflare_rate_limited'
+  if (result?.error === 'opennext_manifest_required') return 'deploy_rejected'
+  return 'cloudflare_rejected'
+}
+
+/**
+ * A `site_prepare_failed` refusal's code, from the messages this file and the
+ * preparation program write: the build itself failing, its time limit, or
+ * one of Publish's own checks on the project and its output.
+ */
+export function preparationFailureCode(
+  message: string,
+): SitePublishFailureCode {
+  if (message.startsWith('Publishing was cancelled or the build exceeded'))
+    return 'timeout'
+  if (
+    message.startsWith('Publishing failed while ') ||
+    message.startsWith('The site build failed') ||
+    message.startsWith('The site build did not finish')
+  )
+    return 'build_failed'
+  return 'precheck_failed'
+}
+
 /** Receipts keep only codes; say what each means without vendor prose. */
 export function operationFailureMessage(operation: Operation): string {
   const result = operation.result
@@ -293,8 +333,8 @@ export async function publishSite(options: {
   const { environment } = options
   const sleep =
     options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
-  const fail = (message: string) => {
-    const event = { type: 'error' as const, message }
+  const fail = (message: string, code: SitePublishFailureCode) => {
+    const event = { type: 'error' as const, message, code }
     options.onEvent(event)
     return event
   }
@@ -328,7 +368,7 @@ export async function publishSite(options: {
       manifestPath = (
         await call<{ manifestPath: string }>('sites_prepare_next', {})
       ).manifestPath
-    if (!manifestPath) return fail('The build did not produce a deployment.')
+    if (!manifestPath) return fail('The build did not produce a deployment.', 'build_failed')
 
     options.onEvent({ type: 'stage', stage: 'deploying' })
     let siteId = options.siteId
@@ -357,6 +397,7 @@ export async function publishSite(options: {
         if (added.operation && added.operation.state !== 'succeeded')
           return fail(
             `Could not create the ${kind === 'd1' ? 'database' : 'storage bucket'} ${name}. Check deployment activity in Manage site.`,
+            'deploy_rejected',
           )
       }
 
@@ -382,9 +423,13 @@ export async function publishSite(options: {
     if (operation.state === 'running')
       return fail(
         'The deployment is still running. Check deployment activity in Manage site.',
+        'timeout',
       )
     if (operation.state !== 'succeeded')
-      return fail(operationFailureMessage(operation))
+      return fail(
+        operationFailureMessage(operation),
+        operationFailureCode(operation),
+      )
 
     // A successful upload is not publication. Republish only when this request
     // started with an unpublished environment; preserve a newer Unpublish.
@@ -402,12 +447,14 @@ export async function publishSite(options: {
       if (publication.operation.state !== 'succeeded')
         return fail(
           'Publication was not confirmed. Check deployment activity in Manage site.',
+          'deploy_rejected',
         )
       current = (await inspect()).environment
     }
     if (!isPublished(current))
       return fail(
         'The deployment succeeded, but this environment is unpublished. Check Publication in Manage site.',
+        'deploy_rejected',
       )
     const event = {
       type: 'done' as const,
@@ -422,17 +469,26 @@ export async function publishSite(options: {
       const event = {
         type: 'error' as const,
         message: error.message,
+        code: 'other_chat_deploy' as const,
         replace: error.replace,
       }
       options.onEvent(event)
       return event
     }
-    return fail(
-      error instanceof SitesClientError
-        ? error.message
-        : (options.errorMessage?.(error) ??
-            'Publishing failed. Try again, or ask the agent to publish.'),
-    )
+    if (error instanceof SitesClientError)
+      return fail(
+        error.message,
+        error.code === 'site_prepare_failed'
+          ? preparationFailureCode(error.message)
+          : 'deploy_rejected',
+      )
+    const own = options.errorMessage?.(error)
+    return own !== undefined
+      ? fail(own, 'workspace_unavailable')
+      : fail(
+          'Publishing failed. Try again, or ask the agent to publish.',
+          'unknown',
+        )
   }
 }
 

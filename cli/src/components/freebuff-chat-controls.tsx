@@ -89,7 +89,15 @@ export function FreebuffChatControls() {
         : admission.phase === 'starting'
           ? 'started'
           : 'shown'
-    captureCliFunnel('admission', state, { model: admission.model })
+    // A status the schema refuses would drop the whole event: send only a valid one.
+    const status =
+      state === 'failed' && /^[a-z_]{1,40}$/.test(admission.status ?? '')
+        ? admission.status
+        : undefined
+    captureCliFunnel('admission', state, {
+      model: admission.model,
+      ...(status ? { admission_status: status } : {}),
+    })
   }, [admission?.phase, admission?.model])
 
   const cancel = useCallback(async () => {

@@ -35,6 +35,12 @@ export const feedbackRequestSchema = z.object({
   appVersion: z.string().max(100).optional(),
   platform: z.string().max(100).optional(),
   messageId: z.string().min(1).max(200).optional(),
+  /**
+   * The Cloud run a workspace thumb rates. Attribution only: the API reads the
+   * run's model and execution target from the run itself, and only from a run
+   * the submitter owns (docs/logging.md, "User feedback").
+   */
+  runId: z.string().min(1).max(200).optional(),
   messageVariant: z.enum(MESSAGE_VARIANTS).optional(),
   /**
    * The words of the message being rated, so a thumb or a message report says

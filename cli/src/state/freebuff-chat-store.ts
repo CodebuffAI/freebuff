@@ -17,6 +17,9 @@ export type ChatAdmission = {
   /** A refusal whose way out is another model (too few hours, a spent
    *  session limit): Enter opens the picker instead of retrying it. */
   chooseModel?: boolean
+  /** `failed`: what refused it, for `admission:failed`'s `admission_status`
+   *  (the session's refusing status, or the client step that failed). */
+  status?: string
 }
 
 /** Choosing a model is a preference. Only submitting a message admits it. */

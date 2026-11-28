@@ -17,6 +17,14 @@ const ALWAYS_TRACK_EVENTS = new Set<AnalyticsEvent>([
   AnalyticsEvent.PRODUCT_FUNNEL_STEP,
   // Engaged-time is summed from event counts, so it must never be sampled.
   AnalyticsEvent.PRODUCT_ACTIVE_MINUTE,
+  // Native app events (COD-1719): opens are a DAU denominator, review and
+  // push outcomes are ratios of their own `shown`, crashes are per-version
+  // counts, and feature adoption is unique users. A sample breaks each.
+  AnalyticsEvent.MOBILE_APP_OPENED,
+  AnalyticsEvent.MOBILE_REVIEW_PROMPT,
+  AnalyticsEvent.MOBILE_PUSH_TAPPED,
+  AnalyticsEvent.MOBILE_FEATURE_USED,
+  AnalyticsEvent.MOBILE_CRASH_REPORT,
   AnalyticsEvent.APP_LAUNCHED,
   AnalyticsEvent.CHANGE_DIRECTORY,
   AnalyticsEvent.FINGERPRINT_GENERATED,
