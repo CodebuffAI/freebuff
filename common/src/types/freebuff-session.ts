@@ -348,8 +348,8 @@ export interface FreebuffFreebucksInfo {
    * The daily meter stays out of sight until the day is mostly spent
    * (2026-10-29: full access in tiers 1 and 2, most of whom never come near
    * their pool). Clients hide it below `QUIET_DAILY_METER_SHOWS_AT`; see
-   * `dailyMeterQuiet`. Since 2026-11-27 it also means no hours: the meter
-   * reads the share used and the picker shows no hour prices. Absent keeps
+   * `dailyMeterQuiet`. Since 2026-11-27 Settings → Usage also reads it as a
+   * percent, not hours; the glances and the picker keep hours. Absent keeps
    * the meter and the hours.
    */
   quietDailyMeter?: boolean
