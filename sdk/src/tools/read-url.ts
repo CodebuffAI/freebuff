@@ -396,11 +396,11 @@ export async function readUrl({
   const onExternalAbort = () => controller.abort()
   signal?.addEventListener('abort', onExternalAbort, { once: true })
 
+  let response: Response | undefined
   try {
     // Follow redirects manually so every hop is re-validated against the SSRF
     // policy — a public URL must not be able to 30x its way to an internal one.
     let currentUrl = parsedUrl
-    let response: Response
     for (let redirects = 0; ; redirects++) {
       try {
         // Refuses non-http(s) schemes and private/reserved addresses, literal
@@ -505,5 +505,8 @@ export async function readUrl({
   } finally {
     clearTimeout(timeout)
     signal?.removeEventListener('abort', onExternalAbort)
+    if (response?.body && !response.body.locked) {
+      await response.body.cancel().catch(() => {})
+    }
   }
 }

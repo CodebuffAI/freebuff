@@ -16,10 +16,20 @@ import type { AddressInfo } from 'node:net'
 let server: http.Server
 let port = 0
 let hits: { path: string; host: string | undefined }[] = []
+let onHangingSocketClose: (() => void) | undefined
+let destroyHangingSocket: (() => void) | undefined
 
 beforeAll(async () => {
   server = http.createServer((request, response) => {
     hits.push({ path: request.url ?? '', host: request.headers.host })
+    if (request.url === '/unsupported-open') {
+      const socket = request.socket
+      destroyHangingSocket = () => socket.destroy()
+      socket.once('close', () => onHangingSocketClose?.())
+      response.writeHead(200, { 'content-type': 'application/octet-stream' })
+      response.write('an unsupported body that never ends')
+      return
+    }
     if (request.url === '/redirect-internal') {
       response.writeHead(302, {
         location: `http://internal.example:${port}/secret`,
@@ -61,6 +71,36 @@ function flippingResolver(...answers: string[][]) {
 const PUBLIC = '93.184.216.34'
 
 describe('readUrl pins the connection to the address it validated', () => {
+  /** A real socket close can cross event-loop turns; the 1s deadline detects a leaked connection. */
+  it('cancels rejected response bodies before returning', async () => {
+    const closed = Promise.withResolvers<void>()
+    onHangingSocketClose = closed.resolve
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const url = `http://127.0.0.1:${port}/unsupported-open`
+      const result = await readUrl({
+        url,
+        isBlocked: (ip) => ip !== '127.0.0.1',
+      })
+      expect(result[0].value).toEqual({
+        url,
+        errorMessage: 'Unsupported content type: application/octet-stream',
+      })
+      const socketClosed = await Promise.race([
+        closed.promise.then(() => true),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), 1_000)
+        }),
+      ])
+      expect(socketClosed).toBe(true)
+    } finally {
+      if (timer) clearTimeout(timer)
+      onHangingSocketClose = undefined
+      destroyHangingSocket?.()
+      destroyHangingSocket = undefined
+    }
+  })
+
   it('refuses a name that answers public for the check and private for the connection', async () => {
     hits = []
     // `localhost` so that a transport resolving the name on its own (the old
