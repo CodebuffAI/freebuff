@@ -29,7 +29,7 @@ export const FREEBUFF_MODEL_PICKER_RETIRED_SINCE = Date.parse(
  * (docs/freebuff-new-account-catalog.md, "The apps' level slider"). Set true to bring the picker back with no app release: the apps
  * then follow `hideModelPicker` and Advanced Mode again, as Web does.
  */
-export const FREEBUFF_APP_MODEL_PICKER: boolean = false
+export const FREEBUFF_APP_MODEL_PICKER: boolean = true
 
 /** Whether an account created at `createdAt` (ms or ISO) is past the cutoff. */
 export function modelPickerRetiredForAccount(
