@@ -43,6 +43,9 @@ export const artifactRenderTargetSchema = z
     overview: z.boolean().optional(),
     /** Slides: one slide at its design size. */
     slideId: id.optional(),
+    /** Slides: crop the rendered slide to the selected elements and/or layout image. */
+    composition: z.literal(true).optional(),
+    region: z.literal('image').optional(),
     /** Design: one board. */
     boardId: id.optional(),
     /** Data: one block (kpi, chart, table). Doc: start at this block (its outline id). */

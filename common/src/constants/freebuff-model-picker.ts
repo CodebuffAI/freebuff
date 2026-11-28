@@ -20,10 +20,13 @@ export const FREEBUFF_MODEL_PICKER_RETIRED_SINCE = Date.parse(
 /**
  * THE iOS AND ANDROID APPS' MODEL PICKER (product, Sam, 2026-11-19): off for
  * everyone, to cut choices on a phone. While false, every catalog read from a
- * phone carries `appModelPicker: false`, and the apps draw no Freebuff model
- * control for any account, Advanced Mode or not: Code mode runs on the
- * account's default, Chat mode on Balanced. Claude Code and Codex keep their
- * models. Set true to bring the picker back with no app release: the apps
+ * phone carries `appModelPicker: false`, and the apps list no Freebuff model
+ * for any account, Advanced Mode or not: Code mode runs on the account's
+ * default, Chat mode on Balanced. Claude Code and Codex keep their models.
+ * Since 2026-11-27 (Sam) the apps let Code mode slide that default model's
+ * own reasoning levels, where it has more than one: one slider under the
+ * level's name, never a choice of model
+ * (docs/freebuff-new-account-catalog.md, "The apps' level slider"). Set true to bring the picker back with no app release: the apps
  * then follow `hideModelPicker` and Advanced Mode again, as Web does.
  */
 export const FREEBUFF_APP_MODEL_PICKER: boolean = false

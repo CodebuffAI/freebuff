@@ -154,6 +154,7 @@ export const artifactCreateRequestSchema = z
     projectId: optionalId,
     /** Made from another artifact the creator can open (a duplicate): recorded for "Made from …". */
     sourceArtifactId: optionalId,
+    sourceLinkToken: z.string().max(64).optional(),
   })
   .strict()
 export type ArtifactCreateRequest = z.infer<typeof artifactCreateRequestSchema>
@@ -252,6 +253,21 @@ export const ARTIFACT_ID_PATTERN =
 
 /** A link token as minted: 32 random bytes, base64url. */
 export const ARTIFACT_LINK_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
+
+export const artifactCopySlideRequestSchema = z
+  .object({
+    sourceArtifactId: z.string().regex(ARTIFACT_ID_PATTERN),
+    sourceRevision: z.number().int().min(1),
+    slideId: z.string().min(1).max(120),
+    expectedRevision: z.number().int().min(1),
+    elementId: z.string().min(1).max(120).optional(),
+    assetId: z.string().regex(ARTIFACT_ID_PATTERN).optional(),
+    afterSlideId: z.string().min(1).max(120).optional(),
+    sourceLinkToken: linkToken,
+    linkToken,
+  })
+  .strict()
+export type ArtifactCopySlideRequest = z.infer<typeof artifactCopySlideRequestSchema>
 
 export type ArtifactMeta = {
   id: string
@@ -706,6 +722,7 @@ export type ArtifactAsset = {
   contentType: ArtifactAssetContentType
   bytes: number
   sha256: string
+  filename?: string
   /** From the image header; null when it could not be read cheaply. */
   width: number | null
   height: number | null
@@ -714,6 +731,15 @@ export type ArtifactAsset = {
   ref: string
 }
 export type ArtifactAssetListResponse = { assets: ArtifactAsset[] }
+export type ArtifactCopySlideResponse = ArtifactResponse & { copiedId: string; assets: ArtifactAsset[] }
+
+export const ARTIFACT_ASSET_FILENAME_MAX = 255
+
+/** Keep the upload's basename and discard path separators, control bytes and empty names. */
+export function cleanArtifactAssetFilename(value?: string): string | undefined {
+  const name = value?.split(/[\\/]/).pop()?.replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  return name && name !== '.' && name !== '..' && !/[\uD800-\uDFFF]/u.test(name) && name.length <= ARTIFACT_ASSET_FILENAME_MAX ? name : undefined
+}
 
 const ASSET_ID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 /** An asset reference as it appears in a body; group 1 is the asset id. */
