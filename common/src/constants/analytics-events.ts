@@ -406,7 +406,8 @@ export enum AnalyticsEvent {
   // A sampled chat tab switch, from the click, key or sidebar row to the frame after it painted.
   // `duration_ms`; `tab_count`: tabs open; `start`: warm (shown before, still mounted) |
   // prerendered (mounted hidden after launch, never shown) | cold (mounted by the switch);
-  // `input`: click | keyboard | sidebar.
+  // `input`: click | keyboard | sidebar; `scope_changed`: it left another project; `seen_before`: the
+  // tab was shown before in this page load.
   FREEBUFF_TAB_SWITCHED = 'freebuff.tab_switched',
   // Once per page load: navigation start to the frame that drew the first chat (or the new-chat
   // screen) after the saved tabs were restored. `duration_ms`; `screen`: chat | new_chat. Not sent
@@ -414,8 +415,13 @@ export enum AnalyticsEvent {
   FREEBUFF_WORKSPACE_READY = 'freebuff.workspace_ready',
   // A sampled share of page loads: the visit's slowest interaction (INP, web-vitals), sent when the
   // page is hidden or left. `inp_ms`; `rating`: good | needs-improvement | poor; `target`: the
-  // element's CSS selector; `interaction`: pointer | keyboard.
+  // element's CSS selector; `interaction`: pointer | keyboard; `input_delay_ms`, `processing_ms`,
+  // `presentation_ms`: its parts; `script_*`: the longest script in it, when the browser says;
+  // `streaming`: a reply was streaming in on the page then.
   FREEBUFF_WORKSPACE_INP = 'freebuff.workspace_inp',
+  // A sampled share of sends: from the press that sent a message to the frame after the one that
+  // drew the reply's first streamed preview. `duration_ms`.
+  FREEBUFF_FIRST_PREVIEW_PAINT = 'freebuff.first_preview_paint',
   // The workspace's Integrations page, to rank INTEGRATION_CATEGORIES by what
   // people want. `action`: category_opened (`category`) | connect_clicked
   // (`app`, `from`: a category id | search | connected, `position`: 0-based
