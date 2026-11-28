@@ -113,6 +113,33 @@ function ensureCliEnvDefaults(): void {
   }
 }
 
+/**
+ * The sentence a failed env load reports.
+ *
+ * The thrown value is frequently bun's `ResolveMessage` — it carries a real
+ * `message` ("Cannot find module '../../../packages/internal/src/env'") and is
+ * NOT an `Error`, so an `instanceof Error` check alone replaced the one fact a
+ * contributor needed with "unknown error loading environment". Read `message`
+ * off any object that has one, and fall back to `String(error)` only when
+ * nothing readable is left.
+ */
+export function describeEnvLoadFailure(error: unknown): string {
+  const carried =
+    error !== null && typeof error === 'object'
+      ? (error as { message?: unknown }).message
+      : undefined
+  const detail =
+    error instanceof Error
+      ? error.message
+      : typeof carried === 'string' && carried.length > 0
+        ? carried
+        : String(error)
+  return (
+    `Failed to load CLI environment via packages/internal/src/env: ${detail}. ` +
+    'Run commands via "infisical run -- bun …" or export the required variables.'
+  )
+}
+
 function loadCliEnv(): Record<string, string> {
   if (cachedEnv) {
     return cachedEnv
@@ -138,14 +165,7 @@ function loadCliEnv(): Record<string, string> {
 
     return cachedEnv
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'unknown error loading environment'
-    throw new Error(
-      `Failed to load CLI environment via packages/internal/src/env: ${message}. ` +
-        'Run commands via "infisical run -- bun …" or export the required variables.',
-    )
+    throw new Error(describeEnvLoadFailure(error))
   }
 }
 
