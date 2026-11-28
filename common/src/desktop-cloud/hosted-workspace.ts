@@ -522,6 +522,15 @@ export type HostedWorkspaceHost = {
       action: 'minimize' | 'maximize' | 'close' | 'back' | 'forward',
     ): Promise<void>
     onState(listener: (state: HostedWindowState) => void): () => void
+    /**
+     * macOS only (newer Desktop): the window's own buttons, which the interface size does not
+     * scale. The page places the centre of the first one, in window pixels; `span` is how far
+     * the three reach from that centre.
+     */
+    buttons?: {
+      span: number
+      place(centre: { x: number; y: number }): Promise<void>
+    }
   }
   browser?: {
     data?<T extends HostedBrowserDataRequest>(
