@@ -456,6 +456,14 @@ export const productFunnelPropertiesSchema = z
     live: z.boolean().optional(),
     /** `turn_action`: a button on the turn, or a `/undo` `/redo` typed in the composer. */
     source: z.enum(['button', 'slash']).optional(),
+    /** `send:clicked`: a message typed, the review's recommended next message taken into the
+     *  composer, or a review pill (its kind in `review_action_kind`). */
+    send_source: z.enum(['typed', 'suggestion', 'pill']).optional(),
+    /** `send:clicked` `suggestion`: the message differs from the suggestion it was taken from. */
+    suggestion_edited: z.boolean().optional(),
+    /** `next_prompt` taken and its `send:clicked`: Tab (or →), the box's badge, a double tap,
+     *  or a touch screen's send key on the empty box. */
+    suggestion_via: z.enum(['tab', 'badge', 'double_tap', 'send_key']).optional(),
     selection_kind: z
       .enum([
         'default',
@@ -484,6 +492,7 @@ export const productFunnelPropertiesSchema = z
     has_output: z.boolean().optional(),
     output_kind: z.enum(['text', 'tool', 'file_change']).optional(),
     restored: z.boolean().optional(),
+    /** `send:clicked`: the message waits behind a running turn or other queued work. */
     queued: z.boolean().optional(),
     release: z
       .string()
