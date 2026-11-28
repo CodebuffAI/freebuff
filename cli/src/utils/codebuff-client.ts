@@ -4,6 +4,7 @@ import { AskUserBridge } from '@codebuff/common/utils/ask-user-bridge'
 import { CodebuffClient } from '@codebuff/sdk'
 
 import { getAuthTokenDetails } from './auth'
+import { getCliAdRequestUserAgent } from './ad-client-identity'
 import { getCliEnv, getSystemProcessEnv } from './env'
 import { freebuffCatalogCompletionHeaders } from './freebuff-device-key'
 import { loadAgentDefinitions } from './local-agent-registry'
@@ -99,6 +100,11 @@ export async function getCodebuffClient(
         ...(apiKey
           ? {
               requestHeaders: async (request) => ({
+                // Completions must identify as Freebuff-CLI. Use lowercase
+                // `user-agent` so it overwrites the AI SDK's key in the
+                // merged header object (duplicate casing left both values
+                // and Freebuff parsed the first token as ai-sdk → 403).
+                'user-agent': getCliAdRequestUserAgent(),
                 ...cliVersionHeaders(),
                 ...(await freebuffCatalogCompletionHeaders(apiKey, request)),
               }),

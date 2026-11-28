@@ -18,6 +18,8 @@ export type ParsedArgs = {
   initialMode?: AgentMode
   /** Load repository `.agents` content without the trust prompt (CI opt-in). */
   trustAgents: boolean
+  /** Serve the Agent Client Protocol (ACP) over stdio instead of the TUI. */
+  acp: boolean
 }
 
 export function loadPackageVersion(): string {
@@ -67,6 +69,10 @@ export function parseArgs({
         '--trust-agents',
         "Load this repository's .agents files and mcp.json without asking (for CI)",
       )
+      .option(
+        '--acp',
+        'Serve the Agent Client Protocol (ACP) over stdio (for editors and other ACP clients)',
+      )
       .addArgument(
         new Argument('[command]', 'Command to run: login, doctor, or /import to review your local setup').choices(['login', 'doctor', '/import']),
       )
@@ -96,6 +102,10 @@ export function parseArgs({
       .option(
         '--trust-agents',
         "Load this repository's .agents files and mcp.json without asking (for CI)",
+      )
+      .option(
+        '--acp',
+        'Serve the Agent Client Protocol (ACP) over stdio (for editors and other ACP clients)',
       )
       .option('--lite', 'Start in LITE mode')
       .option('--free', 'Start in LITE mode (deprecated alias)')
@@ -140,6 +150,9 @@ export function parseArgs({
         : null,
     cwd: options.cwd,
     initialMode,
-    trustAgents: Boolean(options.trustAgents),
+    // ACP hosts (T3, Zed) have no TTY for the agent-dir trust prompt; treat
+    // --acp like an explicit --trust-agents so stdio never blocks on [y/N].
+    trustAgents: Boolean(options.trustAgents) || Boolean(options.acp),
+    acp: Boolean(options.acp),
   }
 }

@@ -8,9 +8,10 @@ if (!parsedEnv.success) {
 
 export const env = parsedEnv.data
 
-// Only log environment in non-production
+// Only log environment in non-production. Use stderr so ACP stdio hosts
+// (`freebuff --acp`) never see a non-JSON-RPC line on stdout.
 if (env.NEXT_PUBLIC_CB_ENVIRONMENT !== 'prod') {
-  console.log('Using environment:', env.NEXT_PUBLIC_CB_ENVIRONMENT)
+  console.error('Using environment:', env.NEXT_PUBLIC_CB_ENVIRONMENT)
 }
 
 // Derived environment constants for convenience
