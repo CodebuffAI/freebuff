@@ -208,6 +208,7 @@ export function codeSearch({
     // Track match count per file separately from total lines
     const fileMatchCounts = new Map<string, number>()
     const filesLimitedByMaxResults = new Set<string>()
+    const seenRecords = new Set<string>()
     let matchesGlobal = 0
     // A plain record is one result, but -c can report many matches in it.
     let countedMatches = 0
@@ -399,7 +400,11 @@ export function codeSearch({
         // Process both match and context events
         if (evt.type === 'match' || evt.type === 'context') {
           // Handle both text and bytes for non-UTF8 paths
-          const filePath = evt.data.path?.text ?? evt.data.path?.bytes ?? ''
+          const filePath = (
+            evt.data.path?.text ??
+            evt.data.path?.bytes ??
+            ''
+          ).replace(/^\.[\\/]/, '')
           // `read_files` refuses the env family outright
           // (`isSensitiveEnvFilePath`), and a code_search match line IS the
           // file's content -- for a `.env` it is the whole `KEY=secret` pair.
@@ -412,6 +417,9 @@ export function codeSearch({
           // same rule the read policy uses, so the two cannot drift.
           if (isSensitiveEnvFilePath(filePath)) continue
           const lineNumber = evt.data.line_number ?? 0
+          // Overlapping roots can emit the same match/context record twice.
+          const recordKey = `${filePath}\0${evt.type}\0${evt.data.absolute_offset ?? lineNumber}`
+          if (seenRecords.has(recordKey)) continue
           // Strip trailing newlines to prevent blank lines in output
           const rawText = evt.data.lines?.text ?? ''
           const lineText = clipLongLine(rawText.replace(/\r?\n$/, ''))
@@ -439,6 +447,7 @@ export function codeSearch({
           }
 
           if (shouldInclude) {
+            seenRecords.add(recordKey)
             // Add the line to output
             fileLines.push(formattedLine)
             estimatedOutputLen += formattedLine.length + 1
@@ -484,12 +493,18 @@ export function codeSearch({
               try {
                 const evt = JSON.parse(ln)
                 if (evt?.type === 'match' || evt?.type === 'context') {
-                  const filePath =
-                    evt.data.path?.text ?? evt.data.path?.bytes ?? ''
+                  const filePath = (
+                    evt.data.path?.text ??
+                    evt.data.path?.bytes ??
+                    ''
+                  ).replace(/^\.[\\/]/, '')
                   // Same env-family refusal as the streaming branch above; the
                   // tail of ripgrep's output arrives here, so both need it.
                   if (isSensitiveEnvFilePath(filePath)) continue
                   const lineNumber = evt.data.line_number ?? 0
+                  // Overlapping roots can emit the same match/context record twice.
+                  const recordKey = `${filePath}\0${evt.type}\0${evt.data.absolute_offset ?? lineNumber}`
+                  if (seenRecords.has(recordKey)) continue
                   const rawText = evt.data.lines?.text ?? ''
                   const lineText = rawText.replace(/\r?\n$/, '')
                   const formattedLine = `${filePath}:${lineNumber}:${lineText}`
@@ -516,6 +531,7 @@ export function codeSearch({
                   }
 
                   if (shouldInclude) {
+                    seenRecords.add(recordKey)
                     fileLines.push(formattedLine)
 
                     // Only increment match counter for actual matches
